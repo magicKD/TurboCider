@@ -1,0 +1,134 @@
+{
+  "id": "minimax-h3-turbo",
+  "name": "MiniMax H3 LightX2V Turbo",
+  "engine": "h3",
+  "version": "1.1",
+  "capabilities": {
+    "tasks": ["video"],
+    "inputs": ["text", "image", "video", "audio"],
+    "reference_roles": ["first_frame", "last_frame", "reference"],
+    "audio_output": true,
+    "audio_required": true,
+    "preview": true,
+    "profiles": ["quality", "balanced", "preview"],
+    "execution": ["gpu", "gpu_ane"],
+    "recommended_width": 512,
+    "recommended_height": 512,
+    "recommended_frames": 22,
+    "recommended_fps": 24,
+    "recommended_steps": 4
+  },
+  "config": {
+    "executable_path": "${WORKSPACE}/h3.c/h3",
+    "model_path_candidates": [
+      "${TURBOCIDER_MODELS}/MiniMax-H3-LightX2V-Turbo",
+      "${WORKSPACE}/h3.c/models/MiniMax-H3-LightX2V-Turbo"
+    ]
+  },
+  "preparation": {
+    "runtime_model_directory": "${TURBOCIDER_MODELS}/MiniMax-H3-LightX2V-Turbo",
+    "python_candidates": [
+      "${H3_PREPARE_PYTHON}",
+      "${WORKSPACE}/gpu_ane/flux2-runtime/.venv/bin/python"
+    ],
+    "sources": [
+      {
+        "role": "base",
+        "repo_id": "MiniMaxAI/MiniMax-H3",
+        "revision": "42ed227ee7df40d41602854ae760620d6eb651fe",
+        "destination": "${TURBOCIDER_MODELS}/MiniMax-H3",
+        "allow_patterns": ["FL2VA/**"],
+        "required_paths": ["FL2VA/transformer/model.safetensors.index.json"],
+        "estimated_download_bytes": 150323855360,
+        "max_workers": 8
+      },
+      {
+        "role": "adapter",
+        "repo_id": "lightx2v/Minimax-h3-Turbo",
+        "revision": "2f8ea0dc0a7e2b26c9a43124eb89673787189b4e",
+        "destination": "${TURBOCIDER_MODELS}/LightX2V-Minimax-H3-Turbo",
+        "allow_patterns": ["minimax_h3_fl2v_turbo_4step_v1.1_768p_bf16.safetensors"],
+        "required_paths": ["minimax_h3_fl2v_turbo_4step_v1.1_768p_bf16.safetensors"],
+        "estimated_download_bytes": 1383677808,
+        "max_workers": 4
+      }
+    ],
+    "merge": {
+      "tool": "${WORKSPACE}/h3.c/tools/merge_h3_lora.py",
+      "lora_subpath": "minimax_h3_fl2v_turbo_4step_v1.1_768p_bf16.safetensors",
+      "profile": "lightx2v-4step",
+      "source_revision": "2f8ea0dc0a7e2b26c9a43124eb89673787189b4e",
+      "estimated_output_bytes": 69793218560
+    },
+    "ane": {
+      "tool": "${WORKSPACE}/h3.c/tools/export_coreml_h3_blocks.py",
+      "output_directory": "${TURBOCIDER_MODELS}/coreml/minimax-h3-turbo",
+      "estimated_bytes": 42949672960
+    }
+  },
+  "plans": [
+    {
+      "id": "h3.gpu.quality",
+      "execution": "gpu",
+      "quality": "exact",
+      "profile": "quality",
+      "production": true,
+      "priority": 100,
+      "description": "Full 50-block native Metal/MPSGraph production path",
+      "requirements": {
+        "config_paths": ["executable_path", "model_path"]
+      },
+      "metadata": {
+        "h3_options": {"layers": 50, "reuse": 1}
+      }
+    },
+    {
+      "id": "h3.gpu.balanced",
+      "execution": "gpu",
+      "quality": "validated",
+      "profile": "balanced",
+      "production": true,
+      "priority": 100,
+      "description": "Validated 45-block, denoiser-reuse-2 H3 path",
+      "requirements": {
+        "config_paths": ["executable_path", "model_path"]
+      },
+      "metadata": {
+        "h3_options": {"layers": 45, "reuse": 2}
+      }
+    },
+    {
+      "id": "h3.gpu.preview",
+      "execution": "gpu",
+      "quality": "validated",
+      "profile": "preview",
+      "production": true,
+      "priority": 100,
+      "description": "Aggressive 40-block, denoiser-reuse-3 preview path",
+      "requirements": {
+        "config_paths": ["executable_path", "model_path"]
+      },
+      "metadata": {
+        "h3_options": {"layers": 40, "reuse": 3}
+      }
+    },
+    {
+      "id": "h3.gpu_ane.matched",
+      "execution": "gpu_ane",
+      "quality": "validated",
+      "profile": "quality",
+      "production": false,
+      "priority": 80,
+      "description": "Explicit matched-precision H3 GPU+ANE route; never selected by auto",
+      "requirements": {
+        "config_paths": ["executable_path", "model_path"],
+        "engine_options": {"h3": ["env"]},
+        "device_profiles": ["apple-m4-max-40gpu-64gb"]
+      },
+      "metadata": {
+        "status": "experimental-explicit",
+        "reason": "Current fastest production GPU graph is not consistently slower than this route"
+      }
+    }
+  ]
+}

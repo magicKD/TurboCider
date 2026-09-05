@@ -1,0 +1,79 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editors and IDE user state
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.xcuserstate
+xcuserdata/
+
+# Swift / Xcode
+/.build/
+/.swiftpm/
+/DerivedData/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Python environments and packaging
+.venv/
+venv/
+env/
+ENV/
+/build/
+/dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+!.env.template
+*.pem
+*.key
+*.p12
+*.mobileprovision
+
+# Logs, temporary files, and local databases
+*.log
+*.tmp
+*.temp
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+
+# TurboCider generated artifacts and runtime state
+/outputs/
+/state/
+/runtime.json
+/models/
+/${TURBOCIDER}/
+
+# Downloaded model weights and compiled model caches
+*.safetensors
+*.ckpt
+*.pth
+*.onnx
+*.gguf
+*.mlmodelc/

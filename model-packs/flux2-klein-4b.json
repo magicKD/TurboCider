@@ -1,0 +1,121 @@
+{
+  "id": "flux2-klein-4b",
+  "name": "FLUX.2 Klein 4B",
+  "engine": "flux2",
+  "version": "0.1",
+  "capabilities": {
+    "tasks": ["image"],
+    "inputs": ["text"],
+    "audio_output": false,
+    "profiles": ["quality", "balanced", "preview"],
+    "execution": ["gpu", "gpu_ane"],
+    "recommended_persistent": true,
+    "recommended_width": 512,
+    "recommended_height": 512,
+    "recommended_frames": 1,
+    "recommended_fps": 24,
+    "recommended_steps": 4
+  },
+  "config": {
+    "model_variant": "flux2-klein-4b",
+    "engine_root": "${WORKSPACE}/gpu_ane/flux2-engine",
+    "python_path_candidates": [
+      "${MFLUX_PY}",
+      "${WORKSPACE}/gpu_ane/flux2-runtime/.venv/bin/python"
+    ],
+    "model_path_candidates": [
+      "${FLUX2_MODEL_PATH}",
+      "${TURBOCIDER_MODELS}/FLUX.2-klein-4B",
+      "${WORKSPACE}/gpu_ane/flux2-runtime/models/FLUX.2-klein-4B"
+    ],
+    "mflux_root_candidates": [
+      "${MFLUX_ROOT}",
+      "${WORKSPACE}/gpu_ane/mflux-runtime"
+    ],
+    "bridge_dir_candidates": [
+      "${FLUX2_ANE_BRIDGE_DIR}",
+      "${WORKSPACE}/gpu_ane/flux2-engine/build"
+    ],
+    "ane_manifests_candidates": [
+      "${FLUX2_ANE_MANIFESTS}",
+      "${TURBOCIDER_MODELS}/coreml/flux2-klein-4b/m1088/compiled/manifest.json",
+      "${TURBOCIDER_MODELS}/coreml/flux2-klein-4b/m1088/manifest.json",
+      "${WORKSPACE}/gpu_ane/flux2-runtime/models/coreml/flux2_stack_runtime_m1088/compiled/manifest.json",
+      "${WORKSPACE}/gpu_ane/flux2-runtime/models/coreml/flux2_stack_runtime_m1088/manifest.json"
+    ]
+  },
+  "preparation": {
+    "runtime_model_directory": "${TURBOCIDER_MODELS}/FLUX.2-klein-4B",
+    "python_candidates": [
+      "${MFLUX_PY}",
+      "${WORKSPACE}/gpu_ane/flux2-runtime/.venv/bin/python"
+    ],
+    "sources": [
+      {
+        "role": "model",
+        "repo_id": "black-forest-labs/FLUX.2-klein-4B",
+        "revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+        "destination": "${TURBOCIDER_MODELS}/FLUX.2-klein-4B",
+        "allow_patterns": [
+          "vae/*.safetensors",
+          "vae/*.json",
+          "transformer/*.safetensors",
+          "transformer/*.json",
+          "text_encoder/*.safetensors",
+          "text_encoder/*.json",
+          "tokenizer/**",
+          "added_tokens.json",
+          "chat_template.jinja"
+        ],
+        "required_paths": [
+          "transformer/diffusion_pytorch_model.safetensors",
+          "vae/diffusion_pytorch_model.safetensors",
+          "text_encoder/model.safetensors.index.json",
+          "tokenizer/tokenizer.json"
+        ],
+        "estimated_download_bytes": 18253611008,
+        "max_workers": 8
+      }
+    ],
+    "ane": {
+      "tool": "${WORKSPACE}/gpu_ane/mac_local_ai/scripts/prepare_flux2_ane_stack.py",
+      "research_root": "${WORKSPACE}/gpu_ane/mac_local_ai",
+      "checkpoint_subpath": "transformer/diffusion_pytorch_model.safetensors",
+      "output_directory": "${TURBOCIDER_MODELS}/coreml/flux2-klein-4b",
+      "estimated_bytes": 2147483648
+    },
+    "cache": {
+      "tool": "${WORKSPACE}/gpu_ane/mac_local_ai/scripts/prepare_flux2_coreml_cache.py",
+      "estimated_bytes": 2147483648
+    }
+  },
+  "plans": [
+    {
+      "id": "flux2.mlx",
+      "execution": "gpu",
+      "quality": "exact",
+      "profile": "*",
+      "production": true,
+      "priority": 100,
+      "description": "Portable persistent MLX backend",
+      "requirements": {
+        "config_paths": ["engine_root", "python_path", "model_path", "mflux_root"]
+      }
+    },
+    {
+      "id": "flux2.mlx_ane.persistent",
+      "execution": "gpu_ane",
+      "quality": "validated",
+      "profile": "*",
+      "production": true,
+      "priority": 130,
+      "description": "Persistent MLX attention plus Core ML ANE MLP overlap",
+      "requirements": {
+        "config_paths": ["engine_root", "python_path", "model_path", "mflux_root", "bridge_dir"],
+        "config_path_lists": ["ane_manifests"],
+        "persistent": true,
+        "device_profiles": ["apple-m4-max-40gpu-64gb"]
+      }
+    }
+  ]
+}

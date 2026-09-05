@@ -1,0 +1,49 @@
+{
+  "id": "flux2-klein-4b-gpu-512-4step",
+  "warmup_runs": 0,
+  "runs": 1,
+  "direct": {
+    "kind": "command",
+    "cwd": "${WORKSPACE}/gpu_ane/flux2-engine",
+    "environment": {
+      "PYTHONPATH": "${WORKSPACE}/gpu_ane/flux2-engine/src:${WORKSPACE}/gpu_ane/mflux-runtime/src"
+    },
+    "output": "${TURBOCIDER}/outputs/benchmark-flux2-direct-gpu.png",
+    "command": [
+      "${WORKSPACE}/gpu_ane/flux2-runtime/.venv/bin/python",
+      "-m", "flux2_engine.cli", "generate",
+      "A cider press in an orchard",
+      "--model", "${WORKSPACE}/gpu_ane/flux2-runtime/models/FLUX.2-klein-4B",
+      "--mflux-root", "${WORKSPACE}/gpu_ane/mflux-runtime",
+      "--output", "{output}",
+      "--mode", "mlx",
+      "--width", "512", "--height", "512",
+      "--steps", "4", "--seed", "42", "--guidance", "1.0",
+      "--precision", "bf16"
+    ]
+  },
+  "turbocider": {
+    "kind": "turbocider",
+    "output": "${TURBOCIDER}/outputs/benchmark-flux2-turbocider-gpu.png",
+    "request": {
+      "model": "flux2-klein-4b",
+      "task": "image",
+      "prompt": "A cider press in an orchard",
+      "output": {
+        "type": "image",
+        "path": "${TURBOCIDER}/outputs/benchmark-flux2-turbocider-gpu.png",
+        "width": 512,
+        "height": 512,
+        "frames": 1,
+        "fps": 24
+      },
+      "sampling": {"seed": 42, "steps": 4, "guidance": 1.0},
+      "policy": {
+        "execution": "gpu",
+        "profile": "quality",
+        "approximation": "exact",
+        "persistent": false
+      }
+    }
+  }
+}

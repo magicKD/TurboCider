@@ -1,0 +1,81 @@
+{
+  "id": "ltx-2.5-gpu-worker-vs-turbocider-704x480-97f",
+  "warmup_runs": 1,
+  "runs": 1,
+  "direct": {
+    "kind": "command",
+    "cwd": "${WORKSPACE}/ltx-mac",
+    "output": "${TURBOCIDER}/outputs/benchmark-ltx-direct-gpu.mp4",
+    "sidecar": "{output_stem}.ltx-artifacts/turbocider.json",
+    "engine_metric_path": "wall_seconds",
+    "environment": {
+      "LTX_MEDIA_BACKEND": "mlx",
+      "LTX_MLX_MEDIA_WARMUP": "1"
+    },
+    "command": [
+      "python3", "${TURBOCIDER}/src/turbocider/workers/ltx_pipeline.py",
+      "--engine", "${WORKSPACE}/ltx-mac/build/bench_block_mlx",
+      "--ltx-root", "${WORKSPACE}/ltx-mac",
+      "--comfy-python", "${HOME}/ComfyUI-Installs/ComfyUI/ComfyUI/.venv/bin/python",
+      "--mlx-python", "${WORKSPACE}/ltx-mac/.venv-mlx/bin/python",
+      "--comfy-root", "${HOME}/ComfyUI-Installs/ComfyUI/ComfyUI",
+      "--text-encoder", "${HOME}/ComfyUI-Shared/models/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+      "--transformer", "${HOME}/ComfyUI-Shared/models/diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+      "--upsampler", "${HOME}/ComfyUI-Shared/models/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+      "--video-vae", "${HOME}/ComfyUI-Shared/models/vae/ltx-2.5-video-vae-conv-bf16.safetensors",
+      "--audio-vae", "${HOME}/ComfyUI-Shared/models/vae/ltx-2.5-audio-vae-bf16.safetensors",
+      "--conditioning", "${WORKSPACE}/ltx-mac/outputs/conditioning/coastal_runner/connected",
+      "--artifact-dir", "{output_stem}.ltx-artifacts",
+      "--output", "{output}",
+      "--prompt", "A cinematic red fox running through a snowy forest",
+      "--width", "704", "--height", "480", "--frames", "97", "--fps", "24",
+      "--seed", "42", "--dynamic-conditioning"
+    ]
+  },
+  "turbocider": {
+    "kind": "turbocider",
+    "sidecar": "{output_stem}.ltx-artifacts/turbocider.json",
+    "engine_metric_path": "engine_wall_seconds",
+    "request": {
+      "model": "ltx-2.5-distilled",
+      "task": "video",
+      "prompt": "A cinematic red fox running through a snowy forest",
+      "output": {
+        "type": "video",
+        "path": "${TURBOCIDER}/outputs/benchmark-ltx-turbocider-gpu.mp4",
+        "width": 704, "height": 480, "frames": 97, "fps": 24, "audio": true
+      },
+      "sampling": {"seed": 42, "steps": 11},
+      "policy": {
+        "execution": "gpu", "profile": "quality",
+        "approximation": "exact", "persistent": false
+      }
+    }
+  },
+  "artifact_pairs": [
+    {
+      "name": "video_latent.bf16",
+      "direct": "{direct_output_stem}.ltx-artifacts/video_latent.bf16",
+      "turbocider": "{turbocider_output_stem}.ltx-artifacts/video_latent.bf16"
+    },
+    {
+      "name": "audio_latent.bf16",
+      "direct": "{direct_output_stem}.ltx-artifacts/audio_latent.bf16",
+      "turbocider": "{turbocider_output_stem}.ltx-artifacts/audio_latent.bf16"
+    },
+    {
+      "name": "video_pixels.bf16",
+      "direct": "{direct_output_stem}.ltx-artifacts/video_pixels.bf16",
+      "turbocider": "{turbocider_output_stem}.ltx-artifacts/video_pixels.bf16"
+    }
+  ],
+  "metric_pairs": [
+    {"name": "worker", "direct": "wall_seconds", "turbocider": "engine_wall_seconds"},
+    {"name": "text conditioning", "direct": "phase_times.text_conditioning_seconds"},
+    {"name": "connector", "direct": "phase_times.connector_seconds"},
+    {"name": "native generation", "direct": "phase_times.native_generation_seconds"},
+    {"name": "video encode", "direct": "phase_times.video_encode_seconds"},
+    {"name": "audio finalize", "direct": "phase_times.audio_finalize_seconds"},
+    {"name": "mux", "direct": "phase_times.mux_seconds"}
+  ]
+}

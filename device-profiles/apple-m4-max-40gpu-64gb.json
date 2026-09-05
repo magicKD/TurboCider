@@ -1,0 +1,16 @@
+{
+  "id": "apple-m4-max-40gpu-64gb",
+  "description": "Validated TurboCider ANE partition for the 40-core Apple M4 Max with 64 GiB unified memory",
+  "match": {
+    "architectures": ["arm64"],
+    "machine_models": ["Mac16,9"],
+    "chips": ["Apple M4 Max"],
+    "gpu_cores": [40],
+    "memory_gib": {"min": 63.5, "max": 64.5}
+  },
+  "ane": {
+    "compute_units": "CPUAndNeuralEngine",
+    "validated": true,
+    "requires_local_compile_cache": true
+  }
+}

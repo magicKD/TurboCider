@@ -1,0 +1,42 @@
+{
+  "id": "minimax-h3-turbo-gpu-256-4step",
+  "warmup_runs": 0,
+  "runs": 1,
+  "direct": {
+    "kind": "command",
+    "cwd": "${WORKSPACE}/h3.c",
+    "output": "${TURBOCIDER}/outputs/benchmark-h3-direct-gpu.mp4",
+    "command": [
+      "${WORKSPACE}/h3.c/h3",
+      "-d", "${WORKSPACE}/h3.c/models/MiniMax-H3-LightX2V-Turbo",
+      "-p", "A red fox walking through fresh snow, static camera",
+      "-o", "{output}",
+      "--width", "256", "--height", "256", "--frames", "22",
+      "--steps", "4", "--seed", "42", "--layers", "50", "--reuse", "1"
+    ]
+  },
+  "turbocider": {
+    "kind": "turbocider",
+    "request": {
+      "model": "minimax-h3-turbo",
+      "task": "video",
+      "prompt": "A red fox walking through fresh snow, static camera",
+      "output": {
+        "type": "video",
+        "path": "${TURBOCIDER}/outputs/benchmark-h3-turbocider-gpu.mp4",
+        "width": 256,
+        "height": 256,
+        "frames": 22,
+        "fps": 24,
+        "audio": true
+      },
+      "sampling": {"seed": 42, "steps": 4},
+      "policy": {
+        "execution": "gpu",
+        "profile": "quality",
+        "approximation": "exact",
+        "persistent": false
+      }
+    }
+  }
+}
