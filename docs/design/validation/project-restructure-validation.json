@@ -1,0 +1,39 @@
+{
+  "date": "2026-09-05",
+  "legacy_git_commit": "0035171b0906d608f570072f62bcea8481fdac3d",
+  "repository_checks": 3,
+  "request_contract_tests": 9,
+  "swift_lifecycle": [
+    "cancel_before_export",
+    "cancel_at_export_boundary",
+    "same_session_recovery",
+    "three_identical_warm_outputs",
+    "bounded_retained_memory",
+    "changed_prompt_cache_invalidation",
+    "fixed_512_text_bucket",
+    "job_persistence"
+  ],
+  "service_checks": [
+    "restart_marks_incomplete_interrupted",
+    "registered_models",
+    "cross_process_gpu_lease",
+    "queued_cancel",
+    "actual_flux_generation",
+    "persistent_model_and_prompt_reuse",
+    "active_cancel_without_output",
+    "history_pagination",
+    "crash_stale_socket_recovery"
+  ],
+  "gui_checks": [
+    "packaged_app_launch",
+    "reference_image_import_and_thumbnail",
+    "actual_reference_edit_generation",
+    "completed_result_preview",
+    "history_parameter_reuse_restores_image_and_operation",
+    "renamed_app_restores_existing_history_and_two_reference_inputs"
+  ],
+  "video_execution_enabled": false,
+  "models_downloaded": false,
+  "canonical_app": "dist/TurboCider.app",
+  "canonical_cli": "dist/cli/turbocider"
+}

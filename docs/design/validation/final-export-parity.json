@@ -1,0 +1,7 @@
+{
+  "case": "same 512x512 seed42 4step hybrid, same 20 artifacts",
+  "identical_pixels": true,
+  "max_abs": 0.0,
+  "rmse": 0.0,
+  "note": "Final export denormalizes in VAE dtype before FP32 quantization. PNG metadata and compression bytes may differ."
+}

@@ -1,0 +1,39 @@
+# TurboCider 设计文档
+
+当前项目目录与旧代码退役：[项目重构](project-restructure.md)。
+
+当前实现入口：[FLUX 重构状态与模块职责](rewrite-implementation-status.md)、[同条件性能对比](flux-performance-comparison.md)、[H3/LTX 后续接入与验收](video-model-acceptance.md)。以下长期设计不等于已交付能力。
+
+## App 产品、界面与实现方案
+
+2026-09-05 的 App 设计提案，基于现有 SwiftUI 界面、兼容控制平面与新原生纵切的能力差异。以下为待实施设计，不代表三模型原生功能或实时资源遥测已完成。
+
+1. [App 整体产品与交互设计](app-product-design.md)：Studio、图像/编辑/视频流程、素材/任务/模型中心、首发范围及状态设计。
+2. [视觉系统与组件规范](app-visual-system.md)：现代原生风格、明暗配色、窗口布局、组件、动效与可访问性。
+3. [App 实现、契约与验收方案](app-implementation-plan.md)：SwiftUI 分层、运行时迁移、真实速度/ETA、模型加载与分阶段验收。
+
+4. [首版多模态输入、种子与高级参数](app-inputs-and-parameters.md)：图片插入/拖放/粘贴、角色槽、有序多图、默认 42 与随机种子、单输出首版及按代码开放参数。
+
+最新范围：每次一张图或一个视频，App 一次一个活动生成；多图输入不等于批量输出。原生代码的后续推进与现有文档差异见第 4 项的代码核对。
+
+## 原生引擎与运行时设计
+
+**后续整体重构主设计：[统一多模态框架](unified-multimodal-framework.md)。**
+
+该文重新梳理旧系统、新 native 纵切、多模态输入、ModelModule、设备配置/分区策略及原生服务。以下文档保留为此前架构背景和实际实现证据；不能把旧纵切状态当成最终架构。
+
+**模块职责、完整 App 与性能主线：[模块与高性能运行时详设](runtime-modules-and-performance.md)。**
+
+该文细化分区构建、编译与会话缓存、预热调度、统一内存 offloading、复用边界和功能清单。默认行为为原生 GPU，混合路线由用户配置启用。
+
+背景与验证文档：
+
+1. [总体架构](native-engine-rearchitecture.md)：长期目标、Metal/ANE 边界、模块划分与迁移原则。
+2. [本机实施设计](native-implementation-plan.md)：代码结构、共同抽象、依赖、真实 FLUX 路径，以及从纵切到完整 runtime 的迁移顺序。
+3. [本机验证记录](native-validation-report.md)：实际完成项、逐张量证据、性能、App 与独立包测试，明确未完成范围。
+4. [H3/LTX 迁移与验收](video-model-acceptance.md)：源文件迁移归属、无模型静态检查、权重到位后的数学和媒体退出条件。
+5. [原生代码使用说明](../USAGE.md)：构建、打包、CLI/SDK 与离线验收复现命令。
+
+[架构图](native-engine-architecture.svg) 表达最终方向，并非每个方框都已经实现。当前已完成真实 FLUX 原生纵切；H3/LTX 数学 executor、独立 daemon、通用执行器与自有 allocator 尚待实现。
+
+`validation/` 存放小型 JSON 证据和依赖身份。原始大张量、图像及过程日志保留在本机 `outputs/native-validation/`，不提交模型或大文件。

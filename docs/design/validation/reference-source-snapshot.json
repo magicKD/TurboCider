@@ -1,0 +1,3038 @@
+{
+  "root": "${MFLUX_SOURCE_ROOT}",
+  "reason": "Local reference checkout has uncommitted changes; HEAD alone is insufficient.",
+  "files": [
+    {
+      "path": "mflux/__init__.py",
+      "sha256": "abd499d7f6957b33a4a4e8bf55826c1d471f8a3ff6616d31d8ad931b0ac930c2"
+    },
+    {
+      "path": "mflux/callbacks/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/callbacks/callback.py",
+      "sha256": "26abb09bb475a3e7feae1e23aab86a027d344455dd4440eaed514b1936ea36cd"
+    },
+    {
+      "path": "mflux/callbacks/callback_manager.py",
+      "sha256": "68c096dae88f8b267916bd1be1ee83dcfa2f107905a6cfaeb1a70f1169c6e043"
+    },
+    {
+      "path": "mflux/callbacks/callback_registry.py",
+      "sha256": "5c6a2c6f013b17edbe9591dd6e846ae67acc4bdb37cd11519177a886ea90b9b0"
+    },
+    {
+      "path": "mflux/callbacks/callbacks.py",
+      "sha256": "2f867c3e967376ac9990f1ba1f309caae300f9e307b089457b907b6951ca4b11"
+    },
+    {
+      "path": "mflux/callbacks/generation_context.py",
+      "sha256": "53f7e769ec980e601e23650d96e00e02aeb18f1c4a1a23e6f9bdaaacf2e08f1a"
+    },
+    {
+      "path": "mflux/callbacks/instances/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/callbacks/instances/battery_saver.py",
+      "sha256": "d4c9b30286873f297a08bf680c6a6a987255f97feb4a99b39686486aebf75382"
+    },
+    {
+      "path": "mflux/callbacks/instances/canny_saver.py",
+      "sha256": "0a67d852ba062e931b78a03b66ee6506c1a6a04fce4f0d92f343da9b7e85754f"
+    },
+    {
+      "path": "mflux/callbacks/instances/depth_saver.py",
+      "sha256": "de563b08095a77bf03f72ed60f51811cb98ae2072571c64ff9595f6e7d9fa0ba"
+    },
+    {
+      "path": "mflux/callbacks/instances/memory_saver.py",
+      "sha256": "8056453a5e2968d6e5667e5c5719d959d293ad24c4bd647b118bba2c8cee3caa"
+    },
+    {
+      "path": "mflux/callbacks/instances/stepwise_handler.py",
+      "sha256": "72eef9e6984ba1f2128f0cf722d884494a3ad20177520adb86b825ea80f8f397"
+    },
+    {
+      "path": "mflux/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/cli/capabilities.py",
+      "sha256": "c1381670e1a4adc12fbe8d226c206734903d758ce2b88b54f4a16c5b33ed0422"
+    },
+    {
+      "path": "mflux/cli/completions/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/cli/completions/generator.py",
+      "sha256": "4739d0e28a35e713c3f95073e18ba735d131efa9f15cc60376912880f3913172"
+    },
+    {
+      "path": "mflux/cli/completions/install.py",
+      "sha256": "7ec579474a8ac51d3927622f870374f7db1eccb75bab9146b9e3792708a0653b"
+    },
+    {
+      "path": "mflux/cli/defaults/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/cli/defaults/defaults.py",
+      "sha256": "71bd368a43e74af60cc90af2085e5faa56a0ac4ed14415f922f0cfda5ed5e238"
+    },
+    {
+      "path": "mflux/cli/parser/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/cli/parser/parsers.py",
+      "sha256": "0f32962f6dd30d97340ed85e3bb747157c84c900361f2c48dd8aa64bbde516cc"
+    },
+    {
+      "path": "mflux/models/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/boogu/__init__.py",
+      "sha256": "ceac4d50348cbc6476f25b2d8f085674b9a99016d3e12c3b5bb7edfe9f2097fb"
+    },
+    {
+      "path": "mflux/models/boogu/boogu_initializer.py",
+      "sha256": "de80c0194f23d2f8b9ebabb2ff406508480cccb002289ce9064c2cd479f31a1d"
+    },
+    {
+      "path": "mflux/models/boogu/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/boogu/cli/boogu_image_generate.py",
+      "sha256": "8e739a38eb65eb05e5c7bc5d48c56b75988bf0768ad342924786d08b6406583b"
+    },
+    {
+      "path": "mflux/models/boogu/model/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/boogu/model/boogu_text_encoder.py",
+      "sha256": "5404fb53578059a89143b7da1185db8bf75c5bc36e4c28324d7f1efaa6f41a32"
+    },
+    {
+      "path": "mflux/models/boogu/model/boogu_transformer/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/boogu/model/boogu_transformer/boogu_attention.py",
+      "sha256": "520ef2f007117dd58670df9e35464059e8e8ef30093f0f75071881167c09674a"
+    },
+    {
+      "path": "mflux/models/boogu/model/boogu_transformer/boogu_blocks.py",
+      "sha256": "f6c72dd77d258c1195b2b75b4e9b707e20bdcb2d0f6dae87b6d0786675d07774"
+    },
+    {
+      "path": "mflux/models/boogu/model/boogu_transformer/boogu_embeddings.py",
+      "sha256": "2b43517ee4bb43e9ddd2c4e53e8dd51f569c7e5637c08bc0052f331003a5daaf"
+    },
+    {
+      "path": "mflux/models/boogu/model/boogu_transformer/boogu_rope.py",
+      "sha256": "e46d7618e57a576b0c9191819c5ef5b5a18698c0406cd3cedd47d18dd3fd7a67"
+    },
+    {
+      "path": "mflux/models/boogu/model/boogu_transformer/boogu_transformer.py",
+      "sha256": "6ebe8eef376078e430e3390316b269418a9aeca168f1ddd4161916913f3d3b01"
+    },
+    {
+      "path": "mflux/models/boogu/variants/__init__.py",
+      "sha256": "8949538fb754118916bbb44981f141634231ad7f6749ebae7310183ecb21f87b"
+    },
+    {
+      "path": "mflux/models/boogu/variants/txt2img/__init__.py",
+      "sha256": "906f5b3596fe2086bd3513060f0e46be31d797e927a9495546f3d7118c0368a8"
+    },
+    {
+      "path": "mflux/models/boogu/variants/txt2img/boogu_image.py",
+      "sha256": "deb8f1f6c5707823cd3668b86907a0f30fab19fd3d59edc63fac9dfc334de068"
+    },
+    {
+      "path": "mflux/models/boogu/weights/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/boogu/weights/boogu_weight_definition.py",
+      "sha256": "8e6545dc1957718129bcf38028e3ff0fc8bc2e7757c89d1538d58f339a23d17e"
+    },
+    {
+      "path": "mflux/models/boogu/weights/boogu_weight_mapping.py",
+      "sha256": "b071358e8cc5abf8755848702d6953db31ae58dfc9450b85d4d36484500c424a"
+    },
+    {
+      "path": "mflux/models/common/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/cli/info.py",
+      "sha256": "cc5f749b6df63297c9f59ff6dc25ca976aefb1bb4ed70b601dcdb6bf9b5dc780"
+    },
+    {
+      "path": "mflux/models/common/cli/lora_library.py",
+      "sha256": "dd4a9a27977634da2d2418e91b64a43096cd44746ddb7efb265df0772f78c9f3"
+    },
+    {
+      "path": "mflux/models/common/cli/save.py",
+      "sha256": "98f6de2a54d3cd2eaad8c9e2565f151c1d5e11d54d14c683800f06cd2842a656"
+    },
+    {
+      "path": "mflux/models/common/cli/train.py",
+      "sha256": "3176c039105303c306e00297c31b9d6a9f26ea07e9a7f4f7def4d42877340d00"
+    },
+    {
+      "path": "mflux/models/common/config/__init__.py",
+      "sha256": "e04d65bc70a5e61ec0906c9d9fa007b47204febd7eff92ac4f86cd1efb3abca9"
+    },
+    {
+      "path": "mflux/models/common/config/config.py",
+      "sha256": "c91fb8aa2249fee2fac703ae919217f0a92c229cfcf0fffbed8b988b8c5e4b30"
+    },
+    {
+      "path": "mflux/models/common/config/model_config.py",
+      "sha256": "da7624f9b13db4489a58b58c25ef6503ae51e703c8210cec8dacf9b53ab03857"
+    },
+    {
+      "path": "mflux/models/common/latent_creator/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/latent_creator/latent_creator.py",
+      "sha256": "3745a06028229dd9ddee4c91309ca596b3846c23da4f75c379a7813ed32f31aa"
+    },
+    {
+      "path": "mflux/models/common/lora/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/lora/layer/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/lora/layer/dense_weight.py",
+      "sha256": "6325b28fa813cbfa07445801ccbff93207fbd77a12fef49c3e5b66b7f16a2278"
+    },
+    {
+      "path": "mflux/models/common/lora/layer/fused_linear_lora_layer.py",
+      "sha256": "a7a0033018c0febf0216e4bf193a96bbce0fa74a23dbacd0705cf8adca97e04e"
+    },
+    {
+      "path": "mflux/models/common/lora/layer/linear_lokr_layer.py",
+      "sha256": "fe3fedaf0fc02fde21460b8a433ceca7d610cab9283d342987ed4ef81ee8e598"
+    },
+    {
+      "path": "mflux/models/common/lora/layer/linear_lora_layer.py",
+      "sha256": "2a67a9a03d72697493ff1109cbaddbce41dedd3bf2f2c1052b4051d2f6ef4b42"
+    },
+    {
+      "path": "mflux/models/common/lora/mapping/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/lora/mapping/lokr_factors.py",
+      "sha256": "0125ee8360b3ec1da657bd6c48c82ad38c5c5e34a20148acb638be89ee207dce"
+    },
+    {
+      "path": "mflux/models/common/lora/mapping/lora_loader.py",
+      "sha256": "f4c27f880dd8ec01c261049d4e5b4c9fcbfc19a931c4e8856d4eff9bb9d94733"
+    },
+    {
+      "path": "mflux/models/common/lora/mapping/lora_mapping.py",
+      "sha256": "2adba34daba7678938aa7c607f404e2998ecfbd8ee66bdc3b2d4ade6e6c7601f"
+    },
+    {
+      "path": "mflux/models/common/lora/mapping/lora_saver.py",
+      "sha256": "19e1edcaec3ef8315b2eee807b884e545047b24d5ac3714943c65755dc7099b3"
+    },
+    {
+      "path": "mflux/models/common/lora/mapping/lora_transforms.py",
+      "sha256": "15a10be25e432a9d4f501f5128fafeba96db7df733fa3c205b2cf34ce6eb9cee"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/caption_encoder.py",
+      "sha256": "3f01c5b42506c85cae46a3e1b82fa567c7d43d7a765885463fc140705b7e730d"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/caption_encoder_constants.py",
+      "sha256": "adda1979729200f7faf2ad3ea56ca06144ca228ebfb6ce23f77d59350e799947"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/gemma2/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/gemma2/gemma2_attention.py",
+      "sha256": "b4bc48989c9d16ef9b8228bb79fd527979fda5051f36e22c744c3b438dc9f0ba"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/gemma2/gemma2_config.py",
+      "sha256": "0d8126e5ffc0fb3e9edc79bba6cf5adc8b6dc5705d9acf7a24041f019a19bb56"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/gemma2/gemma2_mlp.py",
+      "sha256": "4a560b00afc691b1aea6d20539b1749d47e4e97bc52b1f97991a4018a9e9a65f"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/gemma2/gemma2_model.py",
+      "sha256": "9575328feec1752d641e54450eaf01f19e42c2b6b53e25c9ebaf7bcb6a18a4f0"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/gemma2/gemma2_rms_norm.py",
+      "sha256": "c65f83706515feef3b29bd1cb34a2d595066b528186e96c7c96160897cf6c3c3"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/gemma2/gemma2_transformer_block.py",
+      "sha256": "85fa38d4c361f680ba838b691efe0491953c4aa01bf4679f9db2da1adc98e910"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/gemma2/gemma2_weight_mapping.py",
+      "sha256": "eda20b191177f776341a0a625ec9a8a73209eb229ffb0b9272c9b231ef865c60"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pid_decoder.py",
+      "sha256": "7dac366f20060da2225e171c120d54160ca9f6e4e7012690b2040a3b23249906"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pid_sampler.py",
+      "sha256": "a8737275a8a164d3644284d2d004b1026dc3279a56a4bc7469103188240e09e7"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pid_weight_mapping.py",
+      "sha256": "7b4fde378bbc488626fe236f4b4e4ed188f4e51716bcb111acdc818672012350"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_attention.py",
+      "sha256": "ac61ab64a1eb15f48f9a401042a7fd95992f4503ddd22eb73ddeccea337b93e9"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_embedders.py",
+      "sha256": "44d0004193b41916973543147948f5f804439bdbb9be7055496d10958351915c"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_feed_forward.py",
+      "sha256": "44c94117a283b9ff48a80d96a6b75d73c8df6b9f9f04918923b3562ee45767eb"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_final_layer.py",
+      "sha256": "35a5ccbed7c48711858001800baf912d0fca7ea10d2aad4cd4e09d3d24891ae4"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_gates.py",
+      "sha256": "be4a0c43c1eb0742ee960dd0bdca179b155ca49ff857005b25816a773914ff38"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_lq_projection.py",
+      "sha256": "4c40ed4f02b9f056f9135cb3ede3bf62d87f91da1aa450da581c9b258bab9783"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_mmdit_block.py",
+      "sha256": "752d75de4b85c9a81bf86ec88ac2bd82816e6fe6bb8e57e0f54740e1fdbfdd06"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_network.py",
+      "sha256": "de8ff1b3b6fa208c85fe46bda3c236bede2b543fcebd4d20695240ca889f5cb9"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_pit_block.py",
+      "sha256": "eb9871e30fe572170a1131891b8b508573add5332683f997e06013d2d2a5cc02"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_rms_norm.py",
+      "sha256": "ea0355c567d6d53d6270f022c8550054b6c7f167c96a939705adc0c302dd751c"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_rope.py",
+      "sha256": "cdeecc72522943b977d3230f8d9b1d9bcfc2f0e0b3e37c1dcdcffe2501574a6f"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_sincos_pos_embed.py",
+      "sha256": "3adb4da1b2f1a83702d00349b1e90a8d4a6607a756c8b41a0bbc0e0205101ac8"
+    },
+    {
+      "path": "mflux/models/common/pid_decoder/pixdit/pixdit_timestep_conditioner.py",
+      "sha256": "a450ebd74777e2ebed7a825ed706cd4b411ff32e3859a0def7efebcaa5435aa3"
+    },
+    {
+      "path": "mflux/models/common/resolution/__init__.py",
+      "sha256": "ca9f1897b3b306e5d7549f318dce86646884cf55b1c3fdcc7e49aa0ff4d2053f"
+    },
+    {
+      "path": "mflux/models/common/resolution/actions.py",
+      "sha256": "e32ba8db8f028cbc8a5d032b5769225e41151abc14ecff81bcc6eb461af07b51"
+    },
+    {
+      "path": "mflux/models/common/resolution/config_resolution.py",
+      "sha256": "4a1fabbb8391aade70ffdf5c1ccc50f813a45be2a246bb4476e4a8bd2f1cd91e"
+    },
+    {
+      "path": "mflux/models/common/resolution/lora_resolution.py",
+      "sha256": "f4e5cb80fc6bdc0705be6c5e93a310855f3714d6ffa775e42eaf37e1bbc1c2eb"
+    },
+    {
+      "path": "mflux/models/common/resolution/path_resolution.py",
+      "sha256": "66bd618af9b4d1af313f721a8438848c178b2f6d1f1282c876b0b4230c6048d5"
+    },
+    {
+      "path": "mflux/models/common/resolution/quantization_resolution.py",
+      "sha256": "da11e15ba40bcdcea59f30b4a11dc865fdb76510cfe97ebd2e9f63eadc44b8bf"
+    },
+    {
+      "path": "mflux/models/common/schedulers/__init__.py",
+      "sha256": "4ff3285094a6804735b15b06893d6229aafe07154f095afd30c1f8ae819a676b"
+    },
+    {
+      "path": "mflux/models/common/schedulers/base_scheduler.py",
+      "sha256": "e7bae4df813277d2b26be28f91bf6e8eb14e7451a55be0fc86a1fd9c15b1def5"
+    },
+    {
+      "path": "mflux/models/common/schedulers/flow_match_euler_discrete_scheduler.py",
+      "sha256": "b4aaf451403acc61dd3b7181f9688b00947c534d65461ab962ae35c0293b5728"
+    },
+    {
+      "path": "mflux/models/common/schedulers/linear_scheduler.py",
+      "sha256": "294ef867120ad30e9a96b46a541e6ed3b037c53075d2244acb164683d97569b5"
+    },
+    {
+      "path": "mflux/models/common/schedulers/seedvr2_euler_scheduler.py",
+      "sha256": "b5f03516e9b5d397b43f1a88c08a6032c3fe8f5a3a51d60ed74f549a34623abf"
+    },
+    {
+      "path": "mflux/models/common/tokenizer/__init__.py",
+      "sha256": "7593e6c30c993864937a5d44b75501e8843dbaf761ad6b3f3bcc557940727173"
+    },
+    {
+      "path": "mflux/models/common/tokenizer/tokenizer.py",
+      "sha256": "9bf7edbe2cf8e43a1b20adf50ee77e5a8605b78dd10acec2a6ee7ae7f9c34f2e"
+    },
+    {
+      "path": "mflux/models/common/tokenizer/tokenizer_loader.py",
+      "sha256": "091bbf36a3d901ab5851ab82f3630056753ff204b34c647ec5e21ffcf8873158"
+    },
+    {
+      "path": "mflux/models/common/tokenizer/tokenizer_output.py",
+      "sha256": "da5a3cd0eedb7f1456b287471c85e1655736bd8d95b0ded578b0152e695dd56f"
+    },
+    {
+      "path": "mflux/models/common/training/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/training/adapters/__init__.py",
+      "sha256": "cac6f6645ac82f0daecc72e588d14ff9a1e837f3014a77e8c4eab5f4f1e61de0"
+    },
+    {
+      "path": "mflux/models/common/training/adapters/base.py",
+      "sha256": "32681f57c3283a36da74f5c6e5f9dda8083754d11681ebd71b9133b0a847fab7"
+    },
+    {
+      "path": "mflux/models/common/training/dataset/__init__.py",
+      "sha256": "86d45b60094f28150caf222dad942cd66d22827a1e056e4b7ffeae73b8665a88"
+    },
+    {
+      "path": "mflux/models/common/training/dataset/batch.py",
+      "sha256": "381b7a0de0faaaa1865234a31dcb863942560d233458ee8e334b310d06cc49d7"
+    },
+    {
+      "path": "mflux/models/common/training/dataset/data_cache.py",
+      "sha256": "b504270024f7f90d5dedf44b423460b8ad22a0040e2a92a700ca2a9c79c2bd9b"
+    },
+    {
+      "path": "mflux/models/common/training/dataset/dataset.py",
+      "sha256": "9c337b08144a95cf6d4e930d998accf3c8f003ec2234809634bee389a98c1ab2"
+    },
+    {
+      "path": "mflux/models/common/training/dataset/disk_backed_data.py",
+      "sha256": "1016e73d182bcf0a595b69f20cda49ba3dfebb454724015a7643e569ee2d3573"
+    },
+    {
+      "path": "mflux/models/common/training/dataset/iterator.py",
+      "sha256": "0ced3bbead3d9427fb8bfa32e5bc771800f387e4f2c9aac2c529da5b4b2c769f"
+    },
+    {
+      "path": "mflux/models/common/training/lora/__init__.py",
+      "sha256": "8c926a7f8a2fdda72d75d519cbcb0a2141305aec6c6121d783f53a66859fbe6d"
+    },
+    {
+      "path": "mflux/models/common/training/lora/path_util.py",
+      "sha256": "f8483c1b846ad96142280d5e936369926b585128e997af91911fe53f48aa4513"
+    },
+    {
+      "path": "mflux/models/common/training/lora/target_injector.py",
+      "sha256": "595155af30a3442be1f688a0eaf82f46d7c03945d5ec35467e7d4b87d2c75718"
+    },
+    {
+      "path": "mflux/models/common/training/optimization/__init__.py",
+      "sha256": "cc68b6a096fe5781d99738bfc1b37645491acd2dd3018295a59a9dabf32ce6cb"
+    },
+    {
+      "path": "mflux/models/common/training/optimization/optimizer.py",
+      "sha256": "5ed1dd9dc5f4bd20dcf3988e6b0ceab1a4d314ab84ebd99a5ba6e47c4d154995"
+    },
+    {
+      "path": "mflux/models/common/training/runner.py",
+      "sha256": "a7fe72afa9c1b92a0ba9ccd85a19e6afd373804f45cdbbd17a57eab25ad927d7"
+    },
+    {
+      "path": "mflux/models/common/training/state/__init__.py",
+      "sha256": "c69c10ceb21c05deea06038ad14394e6954a051d8446b381d4812b7ed88741ac"
+    },
+    {
+      "path": "mflux/models/common/training/state/training_spec.py",
+      "sha256": "e9a621540cafb5fa074edb6a33ab96789edb0a79ec7e5247f93ba4e99110de70"
+    },
+    {
+      "path": "mflux/models/common/training/state/training_state.py",
+      "sha256": "5d71e55e7be6c28a9648686de90f269a1f74d35c77d298f0d4a3fde7adee214b"
+    },
+    {
+      "path": "mflux/models/common/training/state/zip_util.py",
+      "sha256": "e5712cb32d953a87db99194345e1aeb06e6b48a41d71a27de67398279153cda6"
+    },
+    {
+      "path": "mflux/models/common/training/statistics/__init__.py",
+      "sha256": "c564eddefafff259293aeef493ac36c2e7f5dc233742d2d19ac97f2d87dd6b25"
+    },
+    {
+      "path": "mflux/models/common/training/statistics/plotter.py",
+      "sha256": "1d72ec74e86f5275e3a7ce5693bc5c48d5278dd155c5230ebbedcb1871e2bb78"
+    },
+    {
+      "path": "mflux/models/common/training/statistics/statistics.py",
+      "sha256": "8c931c43b5430db2be73ed532caf68d11b2e50a5322b2d023fc78c8185d02d3a"
+    },
+    {
+      "path": "mflux/models/common/training/trainer.py",
+      "sha256": "ec248fb9a00db29d30757baacbc55be5f425626b80e4a3fff4c8107aea045676"
+    },
+    {
+      "path": "mflux/models/common/training/utils.py",
+      "sha256": "2673d154305988f54962cdc23e4fd9866d00ca466c415671422a4dce273e3282"
+    },
+    {
+      "path": "mflux/models/common/vae/__init__.py",
+      "sha256": "ecc388ae11c72748e249a591d7d7f3641de79095ad5c3b03295f89a6adf7d343"
+    },
+    {
+      "path": "mflux/models/common/vae/tiling_config.py",
+      "sha256": "ec5660208bd620707e62a22546632b369b7560a71712ea9ab1c9a237c7a45ae5"
+    },
+    {
+      "path": "mflux/models/common/vae/vae_tiler.py",
+      "sha256": "8eafdb2e7a98a845a69a22e4045bb63b7a4097052562b003de18679dd4dd9f86"
+    },
+    {
+      "path": "mflux/models/common/vae/vae_util.py",
+      "sha256": "4cedca9900534e3d541ee434460a7717fd3136bef73d6bcb51bf9307021b26e2"
+    },
+    {
+      "path": "mflux/models/common/weights/__init__.py",
+      "sha256": "e43a96920524dff30e79afffcfd5bac7882de6124a4cb72a9ab0091a7f900d11"
+    },
+    {
+      "path": "mflux/models/common/weights/loading/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/weights/loading/loaded_weights.py",
+      "sha256": "f3075cacbe3458f2e079ab52a560e69f82dd5da199dbd7224e41cab715ac781a"
+    },
+    {
+      "path": "mflux/models/common/weights/loading/safetensors_reader.py",
+      "sha256": "b515ef356c1db7636b15c0877342d694f0e14d76727f4837a5bf311c3337fff7"
+    },
+    {
+      "path": "mflux/models/common/weights/loading/weight_applier.py",
+      "sha256": "efe179164e0397ba9c5d6d0b6943c334c5f74b30a9fa6f319a1ff23de5bce980"
+    },
+    {
+      "path": "mflux/models/common/weights/loading/weight_definition.py",
+      "sha256": "4cffb1f67175641a3bc5c615e097ad68bd90344916cefc8c534c574488b1f91f"
+    },
+    {
+      "path": "mflux/models/common/weights/loading/weight_loader.py",
+      "sha256": "66c57504af97032764b51b807c94737a2c66e83357685c8e83242a95f3dfdc06"
+    },
+    {
+      "path": "mflux/models/common/weights/mapping/__init__.py",
+      "sha256": "5ac765e9ddfa12d2c46a88914e57e84b44a4f549c0c26b7ea092d668a49c7863"
+    },
+    {
+      "path": "mflux/models/common/weights/mapping/weight_mapper.py",
+      "sha256": "ade6c47cabad0287930f2616de6f55ae585a0bb75fae7d0beccf8a4e345b00c3"
+    },
+    {
+      "path": "mflux/models/common/weights/mapping/weight_mapping.py",
+      "sha256": "53164aec06ecd642f3c8b518d843a104cafd92ab29f2cc3f7a04174a1cb90cca"
+    },
+    {
+      "path": "mflux/models/common/weights/mapping/weight_transforms.py",
+      "sha256": "616c1cb44e61e8e28571143b3aab54c8f09278333a344aa0946d13b819f7e292"
+    },
+    {
+      "path": "mflux/models/common/weights/saving/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common/weights/saving/model_saver.py",
+      "sha256": "561f33d82cdf990d4400e3918465689b524e3902f171304b1c4367b6a2546dcb"
+    },
+    {
+      "path": "mflux/models/common_models/__init__.py",
+      "sha256": "445a13412be23664f419d7fdcdbd61f94ac2c8b11ae785d73e325dc747aa1fc9"
+    },
+    {
+      "path": "mflux/models/common_models/gpt_oss/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/common_models/gpt_oss/activations.py",
+      "sha256": "dbca5bae41ba0a8380a53903c3e98da37c1e15b46383bc2edb5806ba94fafe72"
+    },
+    {
+      "path": "mflux/models/common_models/gpt_oss/base_utils.py",
+      "sha256": "8c9493ff6a698554375679e51a737697afefb1042138245f897c217948f08b88"
+    },
+    {
+      "path": "mflux/models/common_models/gpt_oss/gpt_oss.py",
+      "sha256": "b4334c924e382bfdbd9247a09015124d6bc925206f19945ea86adbc779188e90"
+    },
+    {
+      "path": "mflux/models/common_models/gpt_oss/rope_utils.py",
+      "sha256": "3597b152a9202f8b86f25c730fa6a7d6f97fa44ccccda132a989167e833675fc"
+    },
+    {
+      "path": "mflux/models/common_models/gpt_oss/switch_layers.py",
+      "sha256": "787e4c861dada3173e8e95576af5df0bfd74e6bbc0ad13a08d0713cd2cfabd2d"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/__init__.py",
+      "sha256": "efeedc99d1bbc44299568c5e6a5873c06f63b8e7fc13f13733b134c36636c5c2"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_attention.py",
+      "sha256": "be19003115c33d122de613f79aa87f105a7b22febbb07445d29754a0d6a55a9e"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_decoder.py",
+      "sha256": "672ddd29bac20bd1ce08ae57021b0aa42738be6dc16512aa863f702dafb68d55"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_decoder_layer.py",
+      "sha256": "31becbd835a9575fc7264b04d9639194324c49b3bbbec744deef87eec928e3fb"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_mlp.py",
+      "sha256": "85b0f712813f48b114217a5b6f2a7ce65bc66db49e2b9845f32e770e7a5fa2cf"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_rms_norm.py",
+      "sha256": "f78cdc4a8fcbeaa8357438b498a0f009a01433078b3dd0e881469dbcd4cde2f9"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_rope.py",
+      "sha256": "c78279580d2c2b3a428e04308c2862255c0b7b316b8dca4d1a399a80a3c561b9"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_util.py",
+      "sha256": "4b6b8a24209bd1dd77d740e15e3d8519221bc03d077bdff19215fc9cdd4edcc0"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_vision_attention.py",
+      "sha256": "38b32a0c5a2bdb1f79f54197b3cfe44d0e273f186c14fa1e8ebec70348fb2623"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_vision_block.py",
+      "sha256": "c0de03622c804ab08ab7d916cab67a28834af27c0c434ee2627f2400409701bb"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_vision_mlp.py",
+      "sha256": "f0c3f54a5d7d3e94787db94eee6671932b79426a232aed3eeae490e3040c9670"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_vision_model.py",
+      "sha256": "739153a213074c41f7614bdb2fc089a029566566ce48be2c78c6e16ef48a55ee"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_vision_patch_embed.py",
+      "sha256": "9344cdea3038c8ccdc9fd1febc9d288a0d49697e9050b90da5a52088b0428c74"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_vision_patch_merger.py",
+      "sha256": "2c5e6327f05ae0c0ea6905ec3b66615fd212f4cdd5d813ea514b810be24fba3e"
+    },
+    {
+      "path": "mflux/models/common_models/qwen3_vl/qwen3_vl_vision_rotary_embedding.py",
+      "sha256": "32e6e8af50d8b8aad41f894ac696a4fa509f25f41d5445a5e222ce34cae55351"
+    },
+    {
+      "path": "mflux/models/depth_pro/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/depth_pro/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/depth_pro/cli/save_depth.py",
+      "sha256": "cdfd198c62b9deee49624015eaa1af7afa17676b0ebc1151ff6c2a4e6ae490a0"
+    },
+    {
+      "path": "mflux/models/depth_pro/depth_pro_initializer.py",
+      "sha256": "bc1df36bc838b8b5fa6421ef6cb836efebac249a30dbba69ccc87f61af60a802"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/decoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/decoder/feature_fusion_block_2d.py",
+      "sha256": "333f8b2e77dcfc574b81002ac65dda5088e6cec984c2aad753370b7816729c29"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/decoder/multires_conv_decoder.py",
+      "sha256": "440c8b591e2e519c01641c62b91af694f455ebaa7f12a0300c29f549c290b496"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/decoder/residual_block.py",
+      "sha256": "8cd374cc066c88c3312ccece94e23fa4d099b4562c9ed3459821443ebaec7ffe"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/depth_pro.py",
+      "sha256": "142495a2cede72e313ec40d7fcf5ace686cbdd2d2bae0cc7edcbd641819c1b10"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/depth_pro_model.py",
+      "sha256": "e01ee70185d6649fc5070ffb468f089140ee63f69931510ebe7fa57dfce3e228"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/depth_pro_util.py",
+      "sha256": "8921d48fe50fd2d676505502fffdf836ff52f7b0c123b09f6520af09e16e09e6"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/dino_v2/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/dino_v2/attention.py",
+      "sha256": "5574ba776b7f48453c7cf144ff869bfc24bdf66027589dbac10712bc95ea1e34"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/dino_v2/dino_vision_transformer.py",
+      "sha256": "d029db3e7b5e058f0e10c3ec5cf9fb14d541018ea512901fe6b67283f5256d3b"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/dino_v2/layer_scale.py",
+      "sha256": "f7310adfdd06d030223bae60aa72c2b6caf92b89049b31a0742f5d01e8bb0eee"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/dino_v2/mlp.py",
+      "sha256": "ab413a7a9fcec8253c52bd45891054b54e12b6a90932446b7cbf0a5a21308a5a"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/dino_v2/patch_embed.py",
+      "sha256": "3cdbe3ecdd0f3279242ed2410dc3b61d89c312a0daf5ccd9b471dae997da8074"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/dino_v2/transformer_block.py",
+      "sha256": "a35d1e9f2ed71a412b7e9b4242ff60e08fc560a8d54e8e9a4b12ec7afae3000b"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/encoder/depth_pro_encoder.py",
+      "sha256": "0e9226b68d020bbf8756ca898c04546b121a3ba2c0d45a1f89011836b37c1520"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/encoder/upsample_block.py",
+      "sha256": "1c043ee461f11e224a20f4251d905cab46179072eb9fe9e09154ab6bd9f51133"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/head/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/depth_pro/model/head/fov_head.py",
+      "sha256": "ed6f1f6d7ae7c7797e1e376eedcfd7f1af0bd494e9a27dbac438ff73b9f374fc"
+    },
+    {
+      "path": "mflux/models/depth_pro/weights/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/depth_pro/weights/depth_pro_weight_definition.py",
+      "sha256": "5aa166db819ff363b9775b9c7e4d2168e448c0659b78fb0e7b62b294a9031e27"
+    },
+    {
+      "path": "mflux/models/depth_pro/weights/depth_pro_weight_mapping.py",
+      "sha256": "e8c0c17aba33c92578e1314d225ab11db3628205ab31c7952c9b8d36cb798f2a"
+    },
+    {
+      "path": "mflux/models/ernie_image/__init__.py",
+      "sha256": "5d8e6a300f972251585567e864ceb64efe11564989b75b90a3e2e5b816330268"
+    },
+    {
+      "path": "mflux/models/ernie_image/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/ernie_image/cli/ernie_image_generate.py",
+      "sha256": "9a00d02c93586093511e9ee7852bc5233e064e71c6392e9ede731b7219778eb5"
+    },
+    {
+      "path": "mflux/models/ernie_image/cli/ernie_image_turbo_generate.py",
+      "sha256": "7948b5bedab5f5d70f6e50565bf717be59b5451f2675b0f3653bed704facbb25"
+    },
+    {
+      "path": "mflux/models/ernie_image/ernie_image_initializer.py",
+      "sha256": "bbb00abf4130746def3043095558c6ebde88cb67c5e16db6424c02e1226ac878"
+    },
+    {
+      "path": "mflux/models/ernie_image/latent_creator/__init__.py",
+      "sha256": "2c04a665d40ce692b6efb32a80fd368e4a94ab1db3729dc6c100497b3060de51"
+    },
+    {
+      "path": "mflux/models/ernie_image/latent_creator/ernie_latent_creator.py",
+      "sha256": "21d930987e22e44a099e0a9caa94d10ce81c9df56c197888d09e396bc063e2fa"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/ernie_text_encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/ernie_text_encoder/prompt_encoder.py",
+      "sha256": "902e85b4f35bb93997344bb97a542580b335e595d1faf9306815bf09fac91d5f"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/ernie_text_encoder/text_encoder.py",
+      "sha256": "bf6a761f01d4f36a6a79bd7e135589f21bd5b6f444ab7535e4735afd90fab348"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/ernie_transformer/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/ernie_transformer/attention.py",
+      "sha256": "795428a7dda3347cbfc2deb72b00939870af47991298384d481b9917af72ab68"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/ernie_transformer/feed_forward.py",
+      "sha256": "8e3f941c0dd05f569958caa1efe1d4e8fec3068a021e8bad361c8743ae807aad"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/ernie_transformer/rope_embedder.py",
+      "sha256": "b453e06315d85f09f96c9d90a5878ce8e5c7c6d1b08d3a20867e26787446185c"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/ernie_transformer/timestep_embedder.py",
+      "sha256": "831473c17bed965c1c6842007270485d540da95e911d24f034c38354a097e354"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/ernie_transformer/transformer.py",
+      "sha256": "a4a3f75cfdbe418d2c0f25aeacdcbc501555d8b80bce84932443512b3db65169"
+    },
+    {
+      "path": "mflux/models/ernie_image/model/ernie_transformer/transformer_block.py",
+      "sha256": "d696164e5e2fcbf358d46a57eb5e97ef05e4b6d1142fbc568bfb7730aebe68a5"
+    },
+    {
+      "path": "mflux/models/ernie_image/training_adapter/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/ernie_image/training_adapter/ernie_training_adapter.py",
+      "sha256": "54af00f39c9560495a7b891e15dfb6df15de537c3835f7d3e77d938e613bfc54"
+    },
+    {
+      "path": "mflux/models/ernie_image/variants/__init__.py",
+      "sha256": "bdf3bbbaa54b29c2c94003ca3ec92665ed4ecf0dc2467c333f69139a7b8de832"
+    },
+    {
+      "path": "mflux/models/ernie_image/variants/txt2img/__init__.py",
+      "sha256": "bdf3bbbaa54b29c2c94003ca3ec92665ed4ecf0dc2467c333f69139a7b8de832"
+    },
+    {
+      "path": "mflux/models/ernie_image/variants/txt2img/ernie_image.py",
+      "sha256": "585bef0239c89391083aa4f19319a107ce71ad1db38c89b4145b33dbfde54d09"
+    },
+    {
+      "path": "mflux/models/ernie_image/weights/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/ernie_image/weights/ernie_lora_mapping.py",
+      "sha256": "89050f018a80d04bd2ced5021a5bb25edcae4a61511d5d86f98b53c60cf946f7"
+    },
+    {
+      "path": "mflux/models/ernie_image/weights/ernie_weight_definition.py",
+      "sha256": "dc7572993dac27daffb3cd98fd7cc7f2753f9c209054941b0e0186b1f61785c2"
+    },
+    {
+      "path": "mflux/models/ernie_image/weights/ernie_weight_mapping.py",
+      "sha256": "39c1c8955bdc7c5cfc29456b4dedcc4ca0ed265ee1297c4a54822876465750ca"
+    },
+    {
+      "path": "mflux/models/fibo/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo/cli/fibo_edit.py",
+      "sha256": "a29f56f97650635fb57415326026773c86ecc7d795d36420703c59a54f9d18f1"
+    },
+    {
+      "path": "mflux/models/fibo/cli/fibo_generate.py",
+      "sha256": "a494b6ca143c3150bf59d03ea845aef707aed90c5fd4bb19407038674e4d9568"
+    },
+    {
+      "path": "mflux/models/fibo/fibo_initializer.py",
+      "sha256": "e4f4c826f308ae296e2cd672cb247a796b51f60d09b9630975d63fafef59f690"
+    },
+    {
+      "path": "mflux/models/fibo/latent_creator/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo/latent_creator/fibo_latent_creator.py",
+      "sha256": "644b498101e53ea9b29cf94487437969182066279762eff05c1a20b26b866f42"
+    },
+    {
+      "path": "mflux/models/fibo/model/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_text_encoder/__init__.py",
+      "sha256": "9d24782a937a3ffa4cb42b17ca68a4ce8304ed393b9e52ad41b256527a165dfb"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_text_encoder/prompt_encoder.py",
+      "sha256": "764a68781ac615d1da0d32a0ba17986f8ef0c60f7b915075e87ec53396d691bd"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_attention.py",
+      "sha256": "bbd2766528f691d5cf6c3bf9fce6716106cf795039b2c60281c4c4b159493d9f"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_encoder_layer.py",
+      "sha256": "5d473ee638a0612a5303afd33426987e7cb638d4c799a94c9e8d2853d8451ff6"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_mlp.py",
+      "sha256": "7b201963d05a407b294c4df9660f833c6f083623e74000b85f18870e415d8373"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_rms_norm.py",
+      "sha256": "0de22e86e7e42cca9625554c05fb3249f16df3d84b0c7582d78d335633b17b33"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_rope.py",
+      "sha256": "cac7807cff296359c37fb970dd78b9a211f334b52e9ab437ad0b66fd1a015be4"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_text_encoder.py",
+      "sha256": "f84ebd0878da62d31f49b498aea04d89523e6403abae43a99d047691337ba060"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/__init__.py",
+      "sha256": "4913d11df1926f785e6470f1c4ae5c317b82f88e297f54377cc60e809cbfd82d"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/bria_fibo_timesteps.py",
+      "sha256": "c1bad45437cad34062c1379a6e2b972720dcee5bed2ecdcaca55f5e31f5b2f5d"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/feed_forward.py",
+      "sha256": "5f4dc5eb2af8a8baabe72d4b946ad9b83fc2233bd2f4835f490784603cc4ebd7"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/fibo_ada_layer_norm_zero.py",
+      "sha256": "5a71ca69ec7a935323055f863fc197dcea5169084be3c856e59a2e4df049300f"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/fibo_embed_nd.py",
+      "sha256": "0a6bd89d6c881b756f717acbda5d0c70c0fb63b28a68157ebc901475568476fc"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/fibo_gelu.py",
+      "sha256": "9e4461008b457ff7b17012b4c93884e779cd66f8a3e8944033c9efb3c49474d3"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/fibo_joint_attention.py",
+      "sha256": "df91a9e75e5139ae6e2ef0df32987e75d1be0e0f9b7e28ee08e808300da1c1b3"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/fibo_single_attention.py",
+      "sha256": "1b50bc7f52a29c825baf7302a8b98ffbb2086ca72ffa9056211fa04af79328df"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/joint_transformer_block.py",
+      "sha256": "d133b99ea579bfbf2ad41207a425bccfed98ae77f8339819bf9f2bb20ce089a7"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/single_transformer_block.py",
+      "sha256": "1d101aafd7a76d18798ba3544b9432c2e6aff9e531e2f8e01a004f2b13975cab"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/text_projection.py",
+      "sha256": "927aadf80b066b08436db1bb70e60127d58a0757516ff5cbf71848816969f14a"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/time_embed.py",
+      "sha256": "dd90d41340c05ed77edd15a3dfe94f42c017213ed27a7703578e49b3e163bfc9"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_transformer/transformer.py",
+      "sha256": "92198b5bc96db59a8d387d95b72edee77be66f22fac4b930b7a54de2b0e67627"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/common/__init__.py",
+      "sha256": "21e4bb8de81e2d2844ddeadb82ab93246cb5778bd169e568f5fe15fe066206a1"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/common/wan_2_2_attention_block.py",
+      "sha256": "e826a4f386400cb0709a45c2b038244cd9eb5c55343665f2881dd3519c8ff62f"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/common/wan_2_2_causal_conv_3d.py",
+      "sha256": "1a04cc56b15e3f240e331250b877047aa69679f596c5003db62ba2bd29b07d08"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/common/wan_2_2_mid_block.py",
+      "sha256": "d9df90c36260d45bcac9bb6af5e5e228db1f955d6231494811f04d61f79ab444"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/common/wan_2_2_resample.py",
+      "sha256": "0e0d1ab0a64bdaf28f6b54ad647344fa5881414426a157fd3d89b1c111ba771a"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/common/wan_2_2_residual_block.py",
+      "sha256": "20caf78c645e4f0a96725e15a7c63b0af666924737b48e8b6ec02f4660e1eab3"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/common/wan_2_2_rms_norm.py",
+      "sha256": "907cf32fcaf254fa4a32c86d92a051854a84570547bcc731145fc9b12169775f"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/decoder/__init__.py",
+      "sha256": "93fc120679dfb3b6b156ad50e4c2451d4cff7aa6f1033457c7dec11108dfd0fb"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/decoder/wan_2_2_decoder_3d.py",
+      "sha256": "a3b1263150d668d9e1da948cfe9eb725b72bf2423cc0c28a99cede72f0d75d1f"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/decoder/wan_2_2_dup_up_3d.py",
+      "sha256": "53582348c9c4cd07046753ddcee83898d33bcdf879d09c7052b9b96dcdbb9b7d"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/decoder/wan_2_2_residual_up_block.py",
+      "sha256": "4195be7b199c3a08eeea71f69493cddfed8ebbd7e7b38364fa5539520c64e4ef"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/decoder/wan_2_2_up_block.py",
+      "sha256": "9982004000a1705b8dcbfdd53a42d2f9300306bcd7e4e4a0b34b886c64c168de"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/encoder/__init__.py",
+      "sha256": "3c403ee3e90dbd85ecad00383cb5fba73259810e4f86c0c91587fe15014adb8e"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/encoder/wan_2_2_avg_down_3d.py",
+      "sha256": "d0ca7df3c6d3df18e6b422b3b4b705d6aee56fed1f8f9edb2753c60c5380db98"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/encoder/wan_2_2_down_block.py",
+      "sha256": "53abf94b6ee18de3107e6ad338a11ea929c7b47082004bd74e74a22ddffc6599"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/encoder/wan_2_2_encoder_3d.py",
+      "sha256": "c8b9070f0e14e474c16d741a8e2d32dbab39af10a37c7326b22d452d366a27e2"
+    },
+    {
+      "path": "mflux/models/fibo/model/fibo_vae/wan_2_2_vae.py",
+      "sha256": "ee87698a4be8c32627ffd12bd5b24fecdbff51501f77aa546fabc637678583ad"
+    },
+    {
+      "path": "mflux/models/fibo/variants/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo/variants/edit/__init__.py",
+      "sha256": "31321311144f8fb81694ec754ee36cb8780a4594dc3db12ec15277d17ceee79d"
+    },
+    {
+      "path": "mflux/models/fibo/variants/edit/fibo_edit.py",
+      "sha256": "57f1c985c43730fc45e736c9f09644cc68765c0a9d5ccd6a05aa3b98ad3e553b"
+    },
+    {
+      "path": "mflux/models/fibo/variants/edit/util.py",
+      "sha256": "b766ca74f11f10751ee37f2a17dd68a98c97275c4e933bf0e23cd4412b451616"
+    },
+    {
+      "path": "mflux/models/fibo/variants/txt2img/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo/variants/txt2img/fibo.py",
+      "sha256": "53bf368bd8774055fa6f6b2439656f466710a35883d86f75d9029648abda5cdd"
+    },
+    {
+      "path": "mflux/models/fibo/variants/txt2img/util.py",
+      "sha256": "c7f1efcc95b73502997bec1a9d5cc6f129d32333676ec1983a1c0b9db2bb29c6"
+    },
+    {
+      "path": "mflux/models/fibo/weights/__init__.py",
+      "sha256": "41541f17340e30f2cf20683df31a41fee55ef76d3322b56ca3d4146e50012eee"
+    },
+    {
+      "path": "mflux/models/fibo/weights/fibo_weight_definition.py",
+      "sha256": "999fde62d66b90d5f0137a405000a509b79c3059b39122fddeab59671e98fabc"
+    },
+    {
+      "path": "mflux/models/fibo/weights/fibo_weight_mapping.py",
+      "sha256": "73334ee97d4fb2192854906f695e3705c93424c2021d52a3fbf3a058a7dd7e69"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/cli/fibo_inspire.py",
+      "sha256": "df8b3e77fcfb86408903b56b1b1fe9a0b3f0361f1549f1ab8b9187921248b68f"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/cli/fibo_refine.py",
+      "sha256": "668b10eba194166808b39197e11b167be8005b02aef343e9f3b5686294f2d540"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/fibo_vlm_initializer.py",
+      "sha256": "1481139a8e24e5578d43f8d5e90adf7d5105121f235044f1afe5c0485861d2e5"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/model/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/model/fibo_vlm.py",
+      "sha256": "3cd3169a7414abe6af315779dcf1a725b28a6449c1f581add3ed721a92e4c8d2"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/model/util.py",
+      "sha256": "bb7fb2cae0d30a3f1819dc6d7178fa1bdf885ea42f82df3f9cb65bd42d8734ec"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/tokenizer/__init__.py",
+      "sha256": "572056dd09f76117185eece942bf176eddcb20c7661a6d44ebc166e7aa4128bd"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/tokenizer/qwen2vl_image_processor.py",
+      "sha256": "afee05948632be15a5ac8b4d641560527dd1589894aa3148a1e86f28255df014"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/tokenizer/qwen2vl_processor.py",
+      "sha256": "4b321858e34feb60f3c6bc654431006bf335309c2f6d510a8a4957c7638bf1c8"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/weights/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/weights/fibo_vlm_weight_definition.py",
+      "sha256": "38b492b5d1ecaebe8f315467ab9c0cec2d25e205743663b3787a559cd776e2cc"
+    },
+    {
+      "path": "mflux/models/fibo_vlm/weights/fibo_vlm_weight_mapping.py",
+      "sha256": "6a6d1dbf0db69a29f863830e94d2799c38dd7bbb2a7e8900607502bf7d507073"
+    },
+    {
+      "path": "mflux/models/flux/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_concept.py",
+      "sha256": "5bae942835d2a10738ba618590fd6a1ba136a9377699fe65d2c3958873e7901c"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_concept_from_image.py",
+      "sha256": "4a2b1b0e38e78a46c44eee0e28502c04dd4e08e0b8e4542d4dcc76392cb2c86b"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_generate.py",
+      "sha256": "1dd1688a98336a9395a1ead27aeb4cc8efe56de8b2e0ad094640f3bfad129414"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_generate_controlnet.py",
+      "sha256": "f92162744943177fdd7d0bc1a4694b33d45d767b32499bc657803bed4b72fd0c"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_generate_depth.py",
+      "sha256": "b9982973640d155fb85f08a5873695160241f27ed587c3d6c52485f2625ef094"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_generate_fill.py",
+      "sha256": "26be2c6331775dbd402dbadd0f6e89d8e55ce203d0103e2e597219e6cda54038"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_generate_in_context_catvton.py",
+      "sha256": "948f912c040cb349a0a2eeec69f13479687a79fc9155bd8e7a6ba73cc56cb7a1"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_generate_in_context_dev.py",
+      "sha256": "f3a225ec80bf7e22487d3444c257ecdf754469313010e8c78a0180a7ef686f38"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_generate_in_context_edit.py",
+      "sha256": "2fecc6941ed93282d42326e1668c2e051a79678600f12665e5d3082d4e72535b"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_generate_kontext.py",
+      "sha256": "9bbe47a2287e6d3390adef5c6cc7dc99c8a8fffbdd1b5c63862acd6444c04dc1"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_generate_redux.py",
+      "sha256": "8d29d7a4bf8b2d27f4bd1ee85a9556f271ed00e6311992e5397daa2979f5880c"
+    },
+    {
+      "path": "mflux/models/flux/cli/flux_upscale.py",
+      "sha256": "3b1fb6b799fff4f61bc2e517265ac939f23da330f4e96894757ed0f48df6319f"
+    },
+    {
+      "path": "mflux/models/flux/flux_initializer.py",
+      "sha256": "a701e18bb3869cc8d3e7fba821cc5a63927529969b8a41e443671c182b5a1930"
+    },
+    {
+      "path": "mflux/models/flux/latent_creator/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/latent_creator/flux_latent_creator.py",
+      "sha256": "897505135f1d411b8af4967f0b8327ca5b91f8e2b1b9ec503e3fc2ce9f270d5c"
+    },
+    {
+      "path": "mflux/models/flux/model/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/clip_encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_embeddings.py",
+      "sha256": "03c8ea94a1ca7b27559bcf6a25264fa040bdb14b29c0e9cba30ade1be49f4c37"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_encoder.py",
+      "sha256": "490a005f9fe545b535a5cc2c8e74dca08d07d190c7e7f5c5d37e9240ec43b72d"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_encoder_layer.py",
+      "sha256": "ce3ce70176fbae9689fac6d8a1c8efecabf11d6163dfcedca8d7e1c5533c5a9d"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_mlp.py",
+      "sha256": "82fcc7b19b14ea38d5e1943c0b847ea588d10ff22bd3a063e2b54fbac5f131ea"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_sdpa_attention.py",
+      "sha256": "a11eb55c7ca0cfc0bc503295151ac4857f2b6ea6f7ad0359e28321c689ed90b5"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_text_model.py",
+      "sha256": "7213c5cca1f10b5f2b3dd02f9a517b081ba3ff3b5ac6894cab10665ae6900111"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/clip_encoder/encoder_clip.py",
+      "sha256": "2d5d775207d610c0d1cd648d60a9c4667bef344115b10dd344221ca1ce6deda3"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/prompt_encoder.py",
+      "sha256": "ed9ea4c171e0b66163c7934b4a4641d08ed1922b7dcc858f0d71fdd304e477ad"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/t5_encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_attention.py",
+      "sha256": "6ce7f897dad068bfd08dd95b772dd7479188ed8afd5b8e531e54597ecaca78b3"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_block.py",
+      "sha256": "ad8fa38df96de7932dd2542b916290dd65f6facefefd283a017d99f16eb6f09b"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_dense_relu_dense.py",
+      "sha256": "1ee0697fc1748c85e8884b17e6035ade3294498165bba616e1482af1d32f271a"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_encoder.py",
+      "sha256": "6fb3138c5d5eb2c487da061e0b97a643f30f8c28a0d7c4eaa80a7cd210cd0153"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_feed_forward.py",
+      "sha256": "0829e8dbd365523aa39c62d65c5eb3465fbd6186451ff7f0364250531e83b29a"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_layer_norm.py",
+      "sha256": "19b973f5fa249e235b3e15fb9c58981629e4fc8911ddf6ef72a157b5a6003830"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_self_attention.py",
+      "sha256": "afc5b874d9227409780ba5f5b68cfb049c43cbaa715a9e0e27cdab7b3224a8e7"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/ada_layer_norm_continuous.py",
+      "sha256": "bf1db7df57e533f187f5c9a38a6330f65827304a74f6c955c3c51ce83d1f764a"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/ada_layer_norm_zero.py",
+      "sha256": "1c0a1d25dccda1a95ee45cbbeaa620f4c58968b0ec653c975b4dc41b972414c0"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/ada_layer_norm_zero_single.py",
+      "sha256": "6cec2e6115a572ab63d5e4586398f05c19bf99dc1122086a6dd7f44d051db70c"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/common/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/common/attention_utils.py",
+      "sha256": "87ce6b54bf66579ac86932fc2775dbf0c3b69baa88d76e2e51b6a8f4bd382edf"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/embed_nd.py",
+      "sha256": "62d20961fb083582d62496760596db5806aee0f739ddf63fb3906265b4abf17f"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/feed_forward.py",
+      "sha256": "3508722659c3557a60d4bcf1e7e8b8ccb162efe957585c990340afcd00918f8c"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/guidance_embedder.py",
+      "sha256": "d9c0fd9400666582e3921162590982be64ce804e9c5f1e763a627cc3c1214cfa"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/joint_attention.py",
+      "sha256": "071de6c52360f5b892c968def8c46c932fd26545d896ebe5aec743cdc5f3001e"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/joint_transformer_block.py",
+      "sha256": "93ebfc2239159ad5cefcf07230f0f28c3e9927fe02453f865815cc609b66e564"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/single_block_attention.py",
+      "sha256": "f8f75db8b33cda50a82b565dc2b06bc3b4b91b8f6d87d3039380697bc1f29ecd"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/single_transformer_block.py",
+      "sha256": "cd983cd84ab33f6718edc40055d5a72be75462dc90dc63c596a51ed4d2cebef1"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/text_embedder.py",
+      "sha256": "27c9dd65770ec9dafee4b0797cc419413b3cd8b5aed390937fd4bf3efc078ced"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/time_text_embed.py",
+      "sha256": "477789d3c25aec2a513d9f71d3ba46ceb589091b2147553e75d9381fe1bf3e64"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/timestep_embedder.py",
+      "sha256": "fbec04f90eea05e5037f04b0004e56810252a2253f923b2cd689340b5694ad75"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_transformer/transformer.py",
+      "sha256": "80b2c8234821a81450ef897d18ed3cb2f2b1dd0ad2e1d7e50ca82140c714f73d"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/common/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/common/attention.py",
+      "sha256": "973d1bd69532280bcea12d2a7b990ca0ce07231dc8b903a2978f48627b154bfa"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/common/resnet_block_2d.py",
+      "sha256": "0477b5148d4fbc70be3aa199f160c5d0df19bd002f14b0cc3fc6251a7281e175"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/common/unet_mid_block.py",
+      "sha256": "381e397d2113b2c0f868643b310b362ba9a9eb3f01557ef50fb8347e5d6296f3"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/decoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/decoder/conv_in.py",
+      "sha256": "16aa09b811a73695b2846ffef38cb6e99d4edd985dbdbcd86058a5eeff21da22"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/decoder/conv_norm_out.py",
+      "sha256": "d7d0110494271639b00c44f91e88e0efd0b640202211e67de9d1b33d787d935d"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/decoder/conv_out.py",
+      "sha256": "8dcb7dc222a6631bf314672b877470c71c8e711150da53a279110bb1a8986547"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/decoder/decoder.py",
+      "sha256": "69602bdff6e3509e38d12b30728ac1ea32114db74cd0ec513a0b69c49706525a"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/decoder/up_block_1_or_2.py",
+      "sha256": "4497a4758b4536aa9bc65a020f30e749a22caa98de9bc40193d03817c7558730"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/decoder/up_block_3.py",
+      "sha256": "3c9bb7c5e553db37ba8bf38bf43bbf1c7fdc37dbcc712aa05724f302e1cdf8c5"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/decoder/up_block_4.py",
+      "sha256": "130a4b33422b96b50329fcf9237e77d9c2d3673e6211a9daaeed84e3e0a017a4"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/decoder/up_sampler.py",
+      "sha256": "b7fb3ec972695aa01968b40f42f8752beef4f09365071b783f2cd8bbb02297dd"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/encoder/conv_in.py",
+      "sha256": "ffcd3e73a88385898d7a407501a0c0cf94d8e278a701487caadb1b966bdd4074"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/encoder/conv_norm_out.py",
+      "sha256": "15107d0f1ca402265e0d67858c49731591bf1edead9120330d060d2f167b15ee"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/encoder/conv_out.py",
+      "sha256": "b134f743275e4e9de9ae59cfbdce26e7a26c59d759bfa6c7e2bf2cfc23c9bcdc"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/encoder/down_block_1.py",
+      "sha256": "8aa6e7673cfe0082e59728fc02da35776b120c94054ce11ab40d16cef7b2f059"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/encoder/down_block_2.py",
+      "sha256": "84e006cb7642cb0052c5c0deb9747bc4878feff309f1e35ab556830eaeea4cab"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/encoder/down_block_3.py",
+      "sha256": "ddec33d3c2b5dc75a0f05940cd7e15d2c30a383a7dca8362a496b9f95c47f375"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/encoder/down_block_4.py",
+      "sha256": "c253e1893d781d4264697afae2da1b6ac1aba817c47151edc6b695e42039d038"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/encoder/down_sampler.py",
+      "sha256": "01ac0c9ed8790348aeaf3684dfe14ff63d6ffae6aa48c4a499f413ba118587cd"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/encoder/encoder.py",
+      "sha256": "3e5891b645b0ad05694b3cdf9e6eaf07408cd7b1e789cc22e32a904aa11b1749"
+    },
+    {
+      "path": "mflux/models/flux/model/flux_vae/vae.py",
+      "sha256": "d566e176cbf33f45cb02a7dbd714fa2797e41151beffd33ba0718f4344179722"
+    },
+    {
+      "path": "mflux/models/flux/model/redux_encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/redux_encoder/redux_encoder.py",
+      "sha256": "8ff38bd38306b9ffe426ff5e10352f52ba9bd6e6a558b7a2ceec2ffac1460f34"
+    },
+    {
+      "path": "mflux/models/flux/model/siglip_vision_transformer/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/model/siglip_vision_transformer/siglip_encoder.py",
+      "sha256": "d81b8012ef8d6a77a1a9c5e1ab2d323aa9b5145752c9a90613c95aa680bc57d9"
+    },
+    {
+      "path": "mflux/models/flux/model/siglip_vision_transformer/siglip_encoder_layer.py",
+      "sha256": "53f7f1b90e1a08eb5600e60330f9a7d71b3390a1d3ffc71a5c4233f5a4c448a1"
+    },
+    {
+      "path": "mflux/models/flux/model/siglip_vision_transformer/siglip_mlp.py",
+      "sha256": "6786e1b1be16b2ef8d6d41823bf79e1b16741b8be8ecd9758c688bfe3af9faef"
+    },
+    {
+      "path": "mflux/models/flux/model/siglip_vision_transformer/siglip_multi_head_attention_pooling_head.py",
+      "sha256": "c7cb848521cee05f3b9d9368ce61725c9532ed04b5b8b67861f58d99a0b3b3b5"
+    },
+    {
+      "path": "mflux/models/flux/model/siglip_vision_transformer/siglip_sdpa_attention.py",
+      "sha256": "665fb2a2ed0263574c293eec65f9ea5698c1c1b7ea4fa7995aeebbe1f0b5763f"
+    },
+    {
+      "path": "mflux/models/flux/model/siglip_vision_transformer/siglip_vision_embeddings.py",
+      "sha256": "307813a0c0efadf72299628d4c3f334a9c393bb4dfdefa6955a2fc24faf29ac8"
+    },
+    {
+      "path": "mflux/models/flux/model/siglip_vision_transformer/siglip_vision_transformer.py",
+      "sha256": "be35100683a5aebee48001b350301860c9b53572ec96e32a1941a1be87616ced"
+    },
+    {
+      "path": "mflux/models/flux/variants/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/variants/concept_attention/__init__.py",
+      "sha256": "3d7b0e2d2c66f154706a9021acfa9e67a3039499ab34f1d8de00b380053265ac"
+    },
+    {
+      "path": "mflux/models/flux/variants/concept_attention/attention_data.py",
+      "sha256": "f8dca7b455f4d8bfe4bd23132972cceb0439ba69faf5547458f144868238b957"
+    },
+    {
+      "path": "mflux/models/flux/variants/concept_attention/concept_util.py",
+      "sha256": "cd95524c796e7eb7f6fe87a22a45eba8b9f5e10e8ed3ef730af2ec2060c8fe4a"
+    },
+    {
+      "path": "mflux/models/flux/variants/concept_attention/flux_concept.py",
+      "sha256": "2059deb05ef67527bb35395a4af1bc659e05f02d92463aa55e177382bd6e37d2"
+    },
+    {
+      "path": "mflux/models/flux/variants/concept_attention/flux_concept_from_image.py",
+      "sha256": "15a7e11485379e8fee94725c0a902745e850cc9d00beee135a871ba1e5e1adce"
+    },
+    {
+      "path": "mflux/models/flux/variants/concept_attention/joint_attention_concept.py",
+      "sha256": "3395723f98e95bffb75823bcc9af9ffa17bc1f2ff3caaeb3272ba0323bdbd4f4"
+    },
+    {
+      "path": "mflux/models/flux/variants/concept_attention/joint_transformer_block_concept.py",
+      "sha256": "a3e3cf927090596b7e09a4cf7d52566a9b673cfc6ea4034c89011488f7f536d8"
+    },
+    {
+      "path": "mflux/models/flux/variants/concept_attention/transformer_concept.py",
+      "sha256": "4162840e1d73d7f6687a0e7bc0e3aaf4693eb06ed50ef64ef8bc433f2eebed62"
+    },
+    {
+      "path": "mflux/models/flux/variants/controlnet/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/variants/controlnet/controlnet_util.py",
+      "sha256": "d6c54231e5b8906d0258470bfa36ecf2fd074834fb664a0dafd381c82e401f8c"
+    },
+    {
+      "path": "mflux/models/flux/variants/controlnet/flux_controlnet.py",
+      "sha256": "25e13420d15a1e1f89b4a9d4bbaf8b05c1ffb2b09aff81aa7e297b0ca848d1e4"
+    },
+    {
+      "path": "mflux/models/flux/variants/controlnet/transformer_controlnet.py",
+      "sha256": "05825321120f51ca0acb184c70e4304b3e494189c95a6fdc2d6e1483f626671d"
+    },
+    {
+      "path": "mflux/models/flux/variants/depth/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/variants/depth/depth_util.py",
+      "sha256": "d01ea75ec744568e5db550e3cac5baf1976e71940a4c01fdbe599fc1c59f9b86"
+    },
+    {
+      "path": "mflux/models/flux/variants/depth/flux_depth.py",
+      "sha256": "9ff38c9a5610fa5448836d5cde1c42357343f172cf7291745dd1d8c2a4bebbeb"
+    },
+    {
+      "path": "mflux/models/flux/variants/fill/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/variants/fill/flux_fill.py",
+      "sha256": "d700d1c874f481f612c26af757498e4c5e426404e1cb56f3423f2a76e2c8a39f"
+    },
+    {
+      "path": "mflux/models/flux/variants/fill/mask_util.py",
+      "sha256": "b6f20892105b71e1ff64f325c2a3448d534f379ef95e44bec33d9224f5d5a7e9"
+    },
+    {
+      "path": "mflux/models/flux/variants/in_context/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/variants/in_context/flux_in_context_dev.py",
+      "sha256": "ede58631f05bbfb9f82e3bde590ce2995b21506a822904d03ed3d51b698003aa"
+    },
+    {
+      "path": "mflux/models/flux/variants/in_context/flux_in_context_fill.py",
+      "sha256": "21b5c2f44d70dd1e36db1ee2548bd3ef324e16463844d3b50fabd1a435a2b051"
+    },
+    {
+      "path": "mflux/models/flux/variants/in_context/utils/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/variants/in_context/utils/in_context_fill_util.py",
+      "sha256": "66709dcb6a8a96e40fd5a6b03c54c320927d19bad14340c2d443af1e25a46e7d"
+    },
+    {
+      "path": "mflux/models/flux/variants/in_context/utils/in_context_loras.py",
+      "sha256": "65b25a9a8baab9f29982ea97800ae0fc159b3e725d277f9a4aee6cb05b65abaa"
+    },
+    {
+      "path": "mflux/models/flux/variants/in_context/utils/in_context_mask_util.py",
+      "sha256": "d5d77d655e695a61ff714d217ed67938bc8a99c33c64e68c8b76b9c1732890d7"
+    },
+    {
+      "path": "mflux/models/flux/variants/kontext/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/variants/kontext/flux_kontext.py",
+      "sha256": "4cd18db29782f3022b4f008625bbef91928b0e5bf925ec459eb88f156a39ca06"
+    },
+    {
+      "path": "mflux/models/flux/variants/kontext/kontext_util.py",
+      "sha256": "169637eb55c34267f274b9f4dc731dcf6b1d782c8b5d242658f7940f73920097"
+    },
+    {
+      "path": "mflux/models/flux/variants/redux/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/variants/redux/flux_redux.py",
+      "sha256": "8748ea6e06dc05caed1987bcbe77bf2722f0bac9a2e75aa78310ec6388d6c28d"
+    },
+    {
+      "path": "mflux/models/flux/variants/redux/redux_util.py",
+      "sha256": "f6e2cbf27f464b184bc9d4877e841466e4f25a3d6cf1af76b1cbfeaa595c57da"
+    },
+    {
+      "path": "mflux/models/flux/variants/txt2img/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/flux/variants/txt2img/flux.py",
+      "sha256": "283e000210a89dace8e9331043b5fbdb20d96723aa8a27abbba07ef14491a764"
+    },
+    {
+      "path": "mflux/models/flux/weights/__init__.py",
+      "sha256": "78cd1c622a5d8bcf63f245fb71595c1f4f04cd43dee96ab735546ce895ec483f"
+    },
+    {
+      "path": "mflux/models/flux/weights/flux_lora_mapping.py",
+      "sha256": "3cb113b025d3a3794e6d8e945be7bb9242b1f8dead8eb31d5c204171c2e21f58"
+    },
+    {
+      "path": "mflux/models/flux/weights/flux_weight_definition.py",
+      "sha256": "9bcccf8f0e724f217b6219b7d74c046a9227ead748fcc376361fc61c0058ad86"
+    },
+    {
+      "path": "mflux/models/flux/weights/flux_weight_mapping.py",
+      "sha256": "6cddeb057f8c82f797e2471960cd2d83241133ed107b7e8260b71bca8aecace2"
+    },
+    {
+      "path": "mflux/models/flux2/__init__.py",
+      "sha256": "a85186ddd8bac243181af7526936194b04874caed70a4a2b36be0c5ffef923a6"
+    },
+    {
+      "path": "mflux/models/flux2/cli/__init__.py",
+      "sha256": "75ad4f4c2943325f88064ad2beae890b59674be2bf0404b30afc5584dc4de4bb"
+    },
+    {
+      "path": "mflux/models/flux2/cli/flux2_edit_generate.py",
+      "sha256": "87131879fbacb2a85198d1ffdbd199c32b1af1a086471cd4fc6b7b158f21097f"
+    },
+    {
+      "path": "mflux/models/flux2/cli/flux2_generate.py",
+      "sha256": "f4249a738ebb12a2f45f8ca07a4ab53172c8723e5155af16fe09afd81c1f4bb4"
+    },
+    {
+      "path": "mflux/models/flux2/flux2_initializer.py",
+      "sha256": "47e95828ddf22265196fb2ed7c5b6f0ba55b89fde493ad73b8cca4672da839b2"
+    },
+    {
+      "path": "mflux/models/flux2/latent_creator/__init__.py",
+      "sha256": "59883d85fd2ce3af9834dac8116a4a11df06dfb0e298aade519d4daa3c879de7"
+    },
+    {
+      "path": "mflux/models/flux2/latent_creator/flux2_latent_creator.py",
+      "sha256": "eec77a06180ffb839b2086aea560b64ed0dbaf4a31a747d7bf8fd699e3a09f84"
+    },
+    {
+      "path": "mflux/models/flux2/model/__init__.py",
+      "sha256": "d459e24e25c27da9b3e9b4e1b684212cb67d46649f9ca2c23ef9d13b838743be"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_text_encoder/__init__.py",
+      "sha256": "33d611a08bfd7777d3c8e95fbb404ef68a31ddcd76dbe67167ecb998be5acfdf"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_text_encoder/prompt_encoder.py",
+      "sha256": "8d1b5e7e9f26693c2f0f9a09aeb5a44f3171f97b137c691355c83adad54e43ba"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_text_encoder/qwen3_text_encoder.py",
+      "sha256": "a4e8f3b221d8df0a8e7b3317881068a628454a7ca6e31bf9a056393afb56e892"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_text_encoder/qwen3_text_rotary_embedding.py",
+      "sha256": "0f6a9d88b097902113ba605d5e054983d4b3d4a0e56413345057c780e49b2944"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/__init__.py",
+      "sha256": "715d624fbb879e04a3e19076c4e26693be6436f10700e819d71ef53361b00a06"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/attention.py",
+      "sha256": "18192f2956c4d510106cf23d0b68b4b20cf6b2363afcac060d9cc8d7ff31b865"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/feed_forward.py",
+      "sha256": "0f31196f465a387b972537cbf91df841a13ee9c09b26b10915eca4baa35f94de"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/flux2_kv_cache.py",
+      "sha256": "46aa4418a352a562c4893859d61088585700211ca1692fd8b816abb4ff96e843"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/modulation.py",
+      "sha256": "cc476342e005e09f3011b5442e9961430e5535466e7fc53aa74464b0c69c47fa"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/parallel_self_attention.py",
+      "sha256": "d927cc35f54ba9a8eedf293ae0aa0e2bc214cf72714241a6e5c37e1603ec056d"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/pos_embed.py",
+      "sha256": "f8f2147f51f996e8bfb1bb0792f734906e4c5fe987d959f161823aef9d399ca2"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/single_transformer_block.py",
+      "sha256": "f437a6601921b0ad9bafd94001d817dccadfbf206f44ed7c7265e312e7fd1d25"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/timestep_guidance_embeddings.py",
+      "sha256": "357a358b70c4417d55f1a5af111bc4a8c8c0492b18f26e1f426a692517fa03d2"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/transformer.py",
+      "sha256": "d28da322e4e284f9bac541ee15e017ba389b97b46ddbbe2a7cf2579e529065d9"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_transformer/transformer_block.py",
+      "sha256": "f5f5da50b1c6618079b19d80ac56bb87ab48a9bce48b48a74c6b490e2012589b"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/__init__.py",
+      "sha256": "cf0b2321c4374985fa65b0a0fbcbdf4342ec752762ae1cc66b0c1834455d3e98"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/common/__init__.py",
+      "sha256": "eeee6e96f9bc038b7ead2408ea7f1399ba7721de5e61904e71c9f14117de540d"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/common/attention.py",
+      "sha256": "2d0f333cb5b095acec5baac9609017c94d96d0a33ae78757ff415cb6ac495f59"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/common/batch_norm_stats.py",
+      "sha256": "c8966dac8b9f55588951be1507509344864d2820747d7aebb2e0a241a9ce7517"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/common/downsample_2d.py",
+      "sha256": "81a4f89afb65b5a871e383d9a3743e202f030325e5ee10521cef7daa2d706811"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/common/resnet_block_2d.py",
+      "sha256": "19cefa03258c5eef38709da28e4ae56b8a9778c0eb79300ad6fc42f32bca1e68"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/common/unet_mid_block.py",
+      "sha256": "d237076e5198ff144f9ce6f51de67609cb36d99d7223dd5510ad8bbbf97bac38"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/common/upsample_2d.py",
+      "sha256": "e3939c3cb0fc4c76b398705ca2b1b6d659589567e2c160201ff708241a718c32"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/decoder/__init__.py",
+      "sha256": "e0b17c03d6ec8a9809bdc1a8ca834bf105783eed3e79a5b48fc6f6819c68d349"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/decoder/conv_in.py",
+      "sha256": "1535157b0fbb3723e91aec94a0dea8e6a607f580e19663f08f0d98aa6295f1fc"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/decoder/conv_norm_out.py",
+      "sha256": "7a30a3704af94216436cb2b76fa8eeed83308c8ba234c529a716009c0380c5fa"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/decoder/conv_out.py",
+      "sha256": "5cab8fa2330ebbbc5a04c838ce60aeacdd7bde49531af4c1b54e0900112b366d"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/decoder/decoder.py",
+      "sha256": "2b54dee4758c9df9bcfcfabb97046bd6dc4ac44ea3d1f9c849fb041c0ff9ae54"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/decoder/up_decoder_block.py",
+      "sha256": "854abc857ba1dfaff35e543860e4b6f8a127b225524f8184e8eee9c63bb42d9b"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/encoder/__init__.py",
+      "sha256": "689b0c716b75c119dcb9c130ab28faabad2da9c2ec457b5f4d5056219c719ad1"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/encoder/conv_in.py",
+      "sha256": "1535157b0fbb3723e91aec94a0dea8e6a607f580e19663f08f0d98aa6295f1fc"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/encoder/conv_norm_out.py",
+      "sha256": "004692f0432021d1e8be10a5d685bc042c7019eafd679ba34f41abd78266d8b1"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/encoder/conv_out.py",
+      "sha256": "5cab8fa2330ebbbc5a04c838ce60aeacdd7bde49531af4c1b54e0900112b366d"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/encoder/down_encoder_block.py",
+      "sha256": "5926f34f8821f5ff5461b5c3f3d14805afeb38198ae72dc7bcff25351d9a4cb5"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/encoder/encoder.py",
+      "sha256": "3dfa91d73060914b56e88afaeba80378b07c5dde519caed0dd3e1f0a50a7d322"
+    },
+    {
+      "path": "mflux/models/flux2/model/flux2_vae/vae.py",
+      "sha256": "025b5fb3fa4a7893b1357b567ff3369236be2c45fcaf40d2ec4d74618b172341"
+    },
+    {
+      "path": "mflux/models/flux2/training_adapter/flux2_base_training_adapter.py",
+      "sha256": "b17caa1d03e16eb57dbe98d3e166aa20737b2558cd1b0e7b4d12ca64c7d67909"
+    },
+    {
+      "path": "mflux/models/flux2/training_adapter/flux2_edit_training_adapter.py",
+      "sha256": "5e30e15036b03f724c823456ac2091dea99f4044da252befe1fe4a54b3966452"
+    },
+    {
+      "path": "mflux/models/flux2/training_adapter/flux2_training_adapter.py",
+      "sha256": "40de31fc6a3456a212fda8fcf443b44e3fad34c1ce6ae70d95bc6ac4969d52a4"
+    },
+    {
+      "path": "mflux/models/flux2/variants/__init__.py",
+      "sha256": "c176e7a63ab080a759dbdcc29a73902cc1b5a94704d57de12499f7bec1fc3891"
+    },
+    {
+      "path": "mflux/models/flux2/variants/edit/__init__.py",
+      "sha256": "bed2f2fdbf7da7e8acfcbb2615a364763d6ae17d77d71722f701b756fc8b4be5"
+    },
+    {
+      "path": "mflux/models/flux2/variants/edit/flux2_klein_edit.py",
+      "sha256": "15c80f4a9b2225c226692f4a3e6720aa761284d74b420865f06f167599a17d24"
+    },
+    {
+      "path": "mflux/models/flux2/variants/edit/flux2_klein_edit_helpers.py",
+      "sha256": "c8d0b0592e5b8202f760b0e2baaba41069b5359e27db713345e3ac8b1f5d6144"
+    },
+    {
+      "path": "mflux/models/flux2/variants/txt2img/__init__.py",
+      "sha256": "4cbb77abac43b2e63a346ac5e95ed4caca4dc9490430ba41de3ab5b44198c1ea"
+    },
+    {
+      "path": "mflux/models/flux2/variants/txt2img/flux2_klein.py",
+      "sha256": "50be39f6a4fdb6a39a57c9989cc9e8d9238ff3ef60f670e7d59dfef8d12b27f3"
+    },
+    {
+      "path": "mflux/models/flux2/weights/__init__.py",
+      "sha256": "4e9af8dac4b42ca30197353e5004f353dbb37bba87f3b1fc354d10f1660f96e2"
+    },
+    {
+      "path": "mflux/models/flux2/weights/flux2_lora_mapping.py",
+      "sha256": "e79fdc728fab81616d37509c3c25d16b43bcb6e35eadb96f5a66f6eab998293a"
+    },
+    {
+      "path": "mflux/models/flux2/weights/flux2_weight_definition.py",
+      "sha256": "f01fccc04359e92f76aec2289acd0fe9ae4bb84d0782e975fd81220ff1b8d66f"
+    },
+    {
+      "path": "mflux/models/flux2/weights/flux2_weight_mapping.py",
+      "sha256": "f1f73271de0a4b48c5d2932819380939ca9aa39aa93fa2811948ab3bbf3fe122"
+    },
+    {
+      "path": "mflux/models/hed/__init__.py",
+      "sha256": "9c02906f11331f2ec3e2b30f19ae2dbeb63226f72031714dec97b4b3d9c5ba0f"
+    },
+    {
+      "path": "mflux/models/hed/hed.py",
+      "sha256": "cac2ceadfcec3916a92c0ab3356cae73e2eb607c97e83b49dca4dc0b99f32cc8"
+    },
+    {
+      "path": "mflux/models/ideogram4/__init__.py",
+      "sha256": "05757711a0dc87ffc8695fc00670226b32196f44a77269e6c57db18b9a45da64"
+    },
+    {
+      "path": "mflux/models/ideogram4/cli/__init__.py",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "mflux/models/ideogram4/cli/ideogram4_generate.py",
+      "sha256": "9b11b0d1c392a1d4b9d629ab549579124be5d4b96bd6ca2710fefa4451aeb546"
+    },
+    {
+      "path": "mflux/models/ideogram4/ideogram4_initializer.py",
+      "sha256": "4b8a9cc9e26a08ab861f3148f516b151a7e72d75c9f5f950e5fd0cc4b3c6332e"
+    },
+    {
+      "path": "mflux/models/ideogram4/latent_creator/__init__.py",
+      "sha256": "8020c1514700729cc4e6db993d8e9dc5736ba26900b425900791bbd841e9d882"
+    },
+    {
+      "path": "mflux/models/ideogram4/latent_creator/ideogram4_latent_creator.py",
+      "sha256": "47c6ee1de65e674eefbb688e0a55f1850c7c5aebc281d104056e85a32348138c"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/__init__.py",
+      "sha256": "e47bcdbe728f33bc07c486be8a9f99ba5f5e6ed89af6bf2ca84d3e76cbef2437"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_scheduler/__init__.py",
+      "sha256": "fb0851ce1d4e5cf8248a793a1acde9360b163adb540d79e3e0c483398ecd356e"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_scheduler/scheduler.py",
+      "sha256": "102bc20afc22d5315a46883dd664aac5ab0cd22a1c5e14e2450a1aa66cd65043"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_text_encoder/__init__.py",
+      "sha256": "a4ea629b11f3c37bd22848fda91ba9d8150382fe5e94410042c442402741e035"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_text_encoder/attention.py",
+      "sha256": "ce633b7d1234bc966c43fdaf93a112fbc81edd531ee7765e89fed013d6846a03"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_text_encoder/caption.py",
+      "sha256": "c4464b221afc65bb49e4f47788bdd4702540c241a69279bf50719eb2d329ffa5"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_text_encoder/decoder_layer.py",
+      "sha256": "13eaaf0acdfc641bc343335108361c300d7fca918c09e16ae23e291061cb8522"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_text_encoder/feed_forward.py",
+      "sha256": "362e8bf4c20ae4305854be0ab37da59ca0d30c17b860b7fc2a1f0f25b193e64f"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_text_encoder/prompt_encoder.py",
+      "sha256": "db963eddddb5560578b62a0a90053a48e58fcaf47686b13e5ba0380bf1bb2c1d"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_text_encoder/text_encoder.py",
+      "sha256": "baf52264e0454abf3995cb81b3200f935fdc6b81d151c3c42c12a579fa91df73"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_text_encoder/tokenizer.py",
+      "sha256": "24a06109c29b435c7b2b8540cb73902317861e0ca6a4adb19a0d9ab8f1c39fed"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_transformer/__init__.py",
+      "sha256": "0f981f54cc45794fb1157f05fdbc8390ae4b22f7621a50500ae9f2cab2ede3e8"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_transformer/attention.py",
+      "sha256": "7298fa351c572f175fb1d077d1dc7449c515e73f02795937559fa1103474d793"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_transformer/config.py",
+      "sha256": "1ffe5c71df3756cea522c8a424a1a6213d37bf2fa2ab0545ea8ce148e68b61d8"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_transformer/feed_forward.py",
+      "sha256": "2179e28d4de4eeed8fc34d3be4d811525c4d5fcc2078291f4df56e609f4b4188"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_transformer/fp8_linear.py",
+      "sha256": "3caa6291bcbf9316f63722a9e4b449b28690ee2356a810497496547adc3014b7"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_transformer/modulation.py",
+      "sha256": "2061095d4d442e43cc32bd182b5ed5d8726ff43c92deb43fca884e346e7e5961"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_transformer/rope_embedder.py",
+      "sha256": "1faa237bf921120ef411015045aae4d8524ecb95062b6388c51f7644ef8de52a"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_transformer/transformer.py",
+      "sha256": "a21d67ffcd43473088eb3ddb228795ee0f607e553029c7ccf672a194b28dd9fa"
+    },
+    {
+      "path": "mflux/models/ideogram4/model/ideogram4_transformer/transformer_block.py",
+      "sha256": "c4fd15f1f374669bc6cbef2c7be66ded8c1c42d88f57f545a78801e8ee67c87c"
+    },
+    {
+      "path": "mflux/models/ideogram4/variants/__init__.py",
+      "sha256": "72d6f0fcb6d48510dd71e32ef2589b6105963c2eb817fddc83c67f21f4e5d537"
+    },
+    {
+      "path": "mflux/models/ideogram4/variants/txt2img/__init__.py",
+      "sha256": "72d6f0fcb6d48510dd71e32ef2589b6105963c2eb817fddc83c67f21f4e5d537"
+    },
+    {
+      "path": "mflux/models/ideogram4/variants/txt2img/ideogram4.py",
+      "sha256": "a7c04712459fece7e2d3de117e88340cabe4e1beb97ba19a0e2b6ca0e683b40f"
+    },
+    {
+      "path": "mflux/models/ideogram4/weights/__init__.py",
+      "sha256": "4a6867741b17f6099857f4d2e7619fa9a1a0de7a60dbe2f4627c5f1f392e05e5"
+    },
+    {
+      "path": "mflux/models/ideogram4/weights/ideogram4_lora_mapping.py",
+      "sha256": "4ca6f442010818155c0bd737da596a2c028412c554e6153b6666574ec47d4e34"
+    },
+    {
+      "path": "mflux/models/ideogram4/weights/ideogram4_weight_definition.py",
+      "sha256": "698544cea4f036362731116b7f930fd885cb667a827764a8c44aeb8bbea5790a"
+    },
+    {
+      "path": "mflux/models/ideogram4/weights/ideogram4_weight_mapping.py",
+      "sha256": "f61960b137b42885de9f4d623b63f7fcff0daeb81a56ec249ce8ca4a0f8e199c"
+    },
+    {
+      "path": "mflux/models/krea2/__init__.py",
+      "sha256": "f7bc7b5cfd15e4d6a4d7322ed085c0a2317e54e3630532793c273cf88478cceb"
+    },
+    {
+      "path": "mflux/models/krea2/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/krea2/cli/krea2_generate.py",
+      "sha256": "030f5e03e6130963281f441b3c8434a1c83384cf39884326179854a4f78f27a2"
+    },
+    {
+      "path": "mflux/models/krea2/krea2_initializer.py",
+      "sha256": "43d0c5a64959ed41dc856356857b55a7fbcc12b1db3864f7f72e55f4dca26877"
+    },
+    {
+      "path": "mflux/models/krea2/latent_creator/__init__.py",
+      "sha256": "3e3b8a26fca27d727612a50193991872df8b5082d043e26bbf786f1bd46b2b1f"
+    },
+    {
+      "path": "mflux/models/krea2/latent_creator/krea2_latent_creator.py",
+      "sha256": "0f29aa28d8eed0de8d1f2b7bf41bb0212f2fd8d05612ed83ddef952271885c7a"
+    },
+    {
+      "path": "mflux/models/krea2/model/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_sampler.py",
+      "sha256": "74e8c63551233a2fc576739bcb7f737ac78788142c7abc68275da62216d0f2ed"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_scheduler/__init__.py",
+      "sha256": "aed79c3722003f15e96f1e8c7108b01ea112b2a0260109ed7a585ad15f8d2cda"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_scheduler/krea2_flow_scheduler.py",
+      "sha256": "a816593367a4e9f0edf215a0a14d3ab87d6fa193f9572e49ff135892859b0426"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_text_encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_text_encoder/prompt_encoder.py",
+      "sha256": "be621945ae96316c37f334ccf50cafdb810e1171ae0ddf65c6d85be2f1c4d790"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_text_encoder/text_encoder.py",
+      "sha256": "fbc609206541bb6c00214a1dd85ba1166ec32598dafa9b7e9ce66339ab06bc71"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/attention.py",
+      "sha256": "e4edf867496034af92be6a782ea8fd7ebaf7064286f7843c734730f99b838475"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/common.py",
+      "sha256": "0717fe820fcde40a3a856015171fe9fa41eeff223f3b8e413a1669e9e1513eb6"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/feed_forward.py",
+      "sha256": "4b0c0c1d1cf736333d0bf10d8c123bd114fbe6355d8a30197b35883dad250a6e"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/final_layer.py",
+      "sha256": "db96f4389ca14200087449612ffedb0187a1ede54c5c303f5d07b2b2eacb7e42"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/modulation.py",
+      "sha256": "efdbf9800887f04f6d9bbd5aeb5a39ba5ee9df16b5b2d8065a391cf029ec6672"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/rope_embedder.py",
+      "sha256": "d3a2d94c0923fc23c981f2290abbe73064f0d010b27b6f1825e874bcedf5b585"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/text_fusion.py",
+      "sha256": "40fbca1f1bc70b9c139add6ae1b079d50154160f19566ddba127bfe12cce9259"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/text_mlp.py",
+      "sha256": "0144cd368460dae404a33e3437cb84f2d5312e1140853b9cf17aefb9a1bd9ce6"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/timestep_embedder.py",
+      "sha256": "127291058519ba91111700b6696f0396fd2842912e5892032b4d97c26044364a"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/transformer.py",
+      "sha256": "5ffc844c1eaa274bbc26f2946f41cca545a156ca2c446713a44a2ae000fbcd3c"
+    },
+    {
+      "path": "mflux/models/krea2/model/krea2_transformer/transformer_block.py",
+      "sha256": "0c2a3213ef98c629e6b355560c44eabe433787487f7bca25ecc3593aaaba6ee1"
+    },
+    {
+      "path": "mflux/models/krea2/training_adapter/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/krea2/training_adapter/krea2_training_adapter.py",
+      "sha256": "ed0220744943ba9597e1896a8f9d582c5509eded4ac55694a165b31ee505db27"
+    },
+    {
+      "path": "mflux/models/krea2/variants/__init__.py",
+      "sha256": "5e84995a2b3197d6361d93072ce0c916623eee3853ae2795036cd25c49b12877"
+    },
+    {
+      "path": "mflux/models/krea2/variants/txt2img/__init__.py",
+      "sha256": "226850a1755bb4dae7586c7515047635e6d343de1b802728efdf7621fb560814"
+    },
+    {
+      "path": "mflux/models/krea2/variants/txt2img/krea2.py",
+      "sha256": "53ca785236eb347f1b13a4e86c99d7855a956d6f93ade71b2c163857ef508bd0"
+    },
+    {
+      "path": "mflux/models/krea2/weights/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/krea2/weights/krea2_lora_mapping.py",
+      "sha256": "625d505500929d47086c71fd4f147c15d6ddfdd7ddfacbd5364d6a7ec9ddf5c6"
+    },
+    {
+      "path": "mflux/models/krea2/weights/krea2_weight_definition.py",
+      "sha256": "6c31cbdae85bc767cc3dd85143c702088bcc215332501368cfb4b4affc658eb2"
+    },
+    {
+      "path": "mflux/models/krea2/weights/krea2_weight_mapping.py",
+      "sha256": "8eaf901d18929d07a90e5ac782eaa804fd720dc7331890239875c444608e5ee9"
+    },
+    {
+      "path": "mflux/models/lens/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/lens/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/lens/cli/lens_generate.py",
+      "sha256": "fafc8bde2c12e92b2be2c8a4bd60253019f002e48bdff07be921663337fcdad6"
+    },
+    {
+      "path": "mflux/models/lens/model/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/lens/model/text_encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/lens/model/text_encoder/lens_gpt_oss_encoder.py",
+      "sha256": "ff0724ddbab08ca95f713950a2212046cb1803dbf2777016d2cbe2e1a302b214"
+    },
+    {
+      "path": "mflux/models/lens/model/text_encoder/lens_prompt_template.py",
+      "sha256": "e414c83fed132f641ecb6cf73fea0267462f75e2ab85cd4a7d6f43abaf1c4879"
+    },
+    {
+      "path": "mflux/models/lens/model/transformer/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/lens/model/transformer/lens_attention.py",
+      "sha256": "fa27417bfd7f7ce3d85b0d88979cd8aea23ebdf813ca163d24b6f740c46d206a"
+    },
+    {
+      "path": "mflux/models/lens/model/transformer/lens_transformer.py",
+      "sha256": "754a980c6ad1fe0ac5eca6a8cc80e948d43a1d3db32c30ef52e4f9cd79cc6da4"
+    },
+    {
+      "path": "mflux/models/lens/model/transformer/lens_transformer_block.py",
+      "sha256": "4da4be14401983f508a54d1d502e9bd014260bb188556007ee24f48114e0355f"
+    },
+    {
+      "path": "mflux/models/lens/variants/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/lens/variants/txt2img/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/lens/variants/txt2img/lens_image.py",
+      "sha256": "cf4a6713601b6d93013dd8a50485e317c17c2bb399d8c3bb38d2a4c756c8227c"
+    },
+    {
+      "path": "mflux/models/lens/weights/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/lens/weights/lens_weight_definition.py",
+      "sha256": "e26bef93396980466839fd9b5fb9406ea902ed76ef11c5d252a8cafd6069febd"
+    },
+    {
+      "path": "mflux/models/openpose/__init__.py",
+      "sha256": "0c22f329e616112bbe8af124065e7d9bebb866d2926bb66e551e3c3eb84dab80"
+    },
+    {
+      "path": "mflux/models/openpose/openpose.py",
+      "sha256": "b65bd887619a5aa3424db2235144ee460e384ede7fa3061878396324da723b1d"
+    },
+    {
+      "path": "mflux/models/qwen/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/qwen/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/qwen/cli/qwen_image_edit_generate.py",
+      "sha256": "8457e9a0d46ed5b018b5397d6128bb8266f3278b818468d5ed6a74bba6e20f39"
+    },
+    {
+      "path": "mflux/models/qwen/cli/qwen_image_generate.py",
+      "sha256": "36b9060c46e05e22c25b6a363d4932b59248324908763ae59932be70a022cdee"
+    },
+    {
+      "path": "mflux/models/qwen/latent_creator/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/qwen/latent_creator/qwen_latent_creator.py",
+      "sha256": "3efe89ee478aac9ccaf020e143534304ac50a786ef6b7c165cbf6526423f1d2a"
+    },
+    {
+      "path": "mflux/models/qwen/model/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/__init__.py",
+      "sha256": "032cb4bc23ec496f30647f53fdc37fe457dfd50b03ab1b9d593f4afb961ce7e7"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_attention.py",
+      "sha256": "e657e08401f9d2b7d625aa15cd0ec1e32643c1a07ca23b64895d42023e282fdf"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_encoder.py",
+      "sha256": "606176045d019fc6e56e7a3e0ffb739d08bf444b370cf009b80058e596b518ba"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_encoder_layer.py",
+      "sha256": "60947e579638174e4a1035749b3bc7c807c9d966ec73efe16e1f98e20daec612"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_mlp.py",
+      "sha256": "bb3503e76db7da59182ef221c7919a048fb15178278aa78677afe94852e045d8"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_patch_merger.py",
+      "sha256": "a820a75735ca404892a0c9b7fa768bd78918b620efca1e28988d4b364bd75440"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_prompt_encoder.py",
+      "sha256": "773cbf2bcb6e194d8f50b921ff38c361649174f78046a1f4746b5f01c6e4868e"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_rms_norm.py",
+      "sha256": "f6d65d1d731ceb5b9efe4b3a3a99c4c2fcef57071dc762545a7384f4a7c0fd71"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_rope.py",
+      "sha256": "dd397f23e641b1d63fee3d181d3d960c846d1fa9b54d01cdad7057a88e03eee8"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_text_encoder.py",
+      "sha256": "cddca905670cf7c06e9faeafaa97a8fc89c766926c6faec7dd214b200ff58c1f"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_vision_attention.py",
+      "sha256": "06408f662ea57d73891a53557e0758c103c2fea3f0f47ec3ccb672458ef763b6"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_vision_block.py",
+      "sha256": "b2d62cf87f7a3b34315f1290de6b1ef172928b55f72e0dae5b13df9c3148e76f"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_vision_language_encoder.py",
+      "sha256": "9841ae256bff249788e7d0a772db88c9e31d52862df7fdc376ee22399b353275"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_vision_language_prompt_encoder.py",
+      "sha256": "f41fb283ca10b22af45678739c496d737231088b84d04a41f0a75fb77d026b7e"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_vision_mlp.py",
+      "sha256": "4cd1ab3f206ef4da01444be26705c307fa8b756e81fcafd2703a4b121cec35f0"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_vision_patch_embed.py",
+      "sha256": "54cf99bfe31f649265dcf6c535048aef02543a615b0553a490c3ef55027b0e6d"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_vision_rotary_embedding.py",
+      "sha256": "7cfa9954f91dc43b1b0814c3d420140e720f9945b6adebf5ab08a3782f609180"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_text_encoder/qwen_vision_transformer.py",
+      "sha256": "6de9bbca39e87623a7a1291649481ba29abfffb543750b188f940b11b69ce608"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/qwen_attention.py",
+      "sha256": "2a35b18b8fb87defc0cc4eb6e90f0795a51618b01df0fac44e80b56d6222b416"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/qwen_feed_forward.py",
+      "sha256": "cd59f6ed765782331ad869211edbf08bb486bca22d9980957737a62b01862007"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/qwen_layer_norm.py",
+      "sha256": "941a224408054eb6561edd3b12662d4ee6e298334ea0fc06c7da7b1122a77430"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/qwen_rope.py",
+      "sha256": "f7122b1c9afe911b53486931dd7b7526c90a47e729c3f629ce0f7c75716a6b68"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/qwen_time_text_embed.py",
+      "sha256": "e9315673acee7e404fcd25ce91bdeda20c500b9b81954a3d3165f96366574cc8"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/qwen_timestep_embedding.py",
+      "sha256": "79c7d948e75bd50a65ceeecc5211150a9b35a83a57d7ad2aaa4d5766269281c2"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/qwen_timesteps.py",
+      "sha256": "0ed471355bc75655f4e146ecc91d3cac50600d16710951364aa5b6e5d848b91f"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/qwen_transformer.py",
+      "sha256": "07d28211082bfaa59a4076ad80c25f5ea44a61281dc84882c9c5cc95e3e5c154"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/qwen_transformer_block.py",
+      "sha256": "afb4230821a4eba56ddf03bd95e9c653fee214b1e8a1df8a9580a810cdb80ec6"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_transformer/qwen_transformer_rms_norm.py",
+      "sha256": "8667fd1d273ee4390fecc70dd91a5ca9871bb5c9c2178ab79592ced4fb7b232a"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_image_attention_block_3d.py",
+      "sha256": "50d827ff8de20338b3869003b13bb74087c9872190a919a7beae54038df06ad5"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_image_causal_conv_3d.py",
+      "sha256": "f4b0f0ba185716f8e43b722d88d1a3cf5356b31e82e2810364b326b0df3f0bd4"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_image_decoder_3d.py",
+      "sha256": "7527d50a14ded51e5257f320cdf254652cd203df256e9d443c20fbd037e534b5"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_image_down_block_3d.py",
+      "sha256": "6328740e42788dc7c74942d9ef2757bc1fb5a808200f017574b13cc2b2dcba12"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_image_encoder_3d.py",
+      "sha256": "fe65cb9fd15985b7bcb52719a7551bbf3080f09cbad04587a69d641eeb9298f0"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_image_mid_block_3d.py",
+      "sha256": "d5b4cb3e70d358520067e34b121f837a754f373d01c13411cb4f3f3eb6577aeb"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_image_res_block_3d.py",
+      "sha256": "8655b7e5461cdb43acfa642d93381810befd35c616e50de61288706c7dfe69fc"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_image_resample_3d.py",
+      "sha256": "eac51814d434a368365e6089b04c31b0c9759ec88d19064c44105a53981281e5"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_image_rms_norm.py",
+      "sha256": "f213c2873888665d5e4452ed38b3f7db5c78149cfc6531c1b4c59ec3d0a6e24a"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_image_up_block_3d.py",
+      "sha256": "231c494a53760d48832981a17d38e0d0cd2b871931253a146a1bdc03db8e89d5"
+    },
+    {
+      "path": "mflux/models/qwen/model/qwen_vae/qwen_vae.py",
+      "sha256": "d42436bd93c880e17ef480b647ac327f8c2dc150afa0ad5c8926e178310742cd"
+    },
+    {
+      "path": "mflux/models/qwen/qwen_initializer.py",
+      "sha256": "7bd9ef2a49f12fac343c519294555307c989a7502a4eb4537cc8c62e6af60a63"
+    },
+    {
+      "path": "mflux/models/qwen/tokenizer/__init__.py",
+      "sha256": "3f82441b9ab1d92f2d01926fe2b54b8ca1f568c7538b823166212394c42adc83"
+    },
+    {
+      "path": "mflux/models/qwen/tokenizer/qwen_image_processor.py",
+      "sha256": "ecc6a36d83bd20b673bbecfd40bf495aa10225fa5dc87e193b69a7c00446c489"
+    },
+    {
+      "path": "mflux/models/qwen/tokenizer/qwen_vision_language_processor.py",
+      "sha256": "5ad5d25305a0ea0bc8bae1a129434c419b7bbfc2f30407d86a2c4bd8559dc97c"
+    },
+    {
+      "path": "mflux/models/qwen/tokenizer/qwen_vision_language_tokenizer.py",
+      "sha256": "2e97ada9626ab334dbdfd23fca71318713d8dfbaf6ccdb15d6b55d1f31281962"
+    },
+    {
+      "path": "mflux/models/qwen/variants/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/qwen/variants/edit/__init__.py",
+      "sha256": "6a4b32b8870e7867fdd32648cd66d0d14486cdefe4fb063e170ecf853a4ace96"
+    },
+    {
+      "path": "mflux/models/qwen/variants/edit/qwen_edit_util.py",
+      "sha256": "e0860769d875b135474b30dd319107bf5f699dbb9a286a3410bd3a5e42cd7a56"
+    },
+    {
+      "path": "mflux/models/qwen/variants/edit/qwen_image_edit.py",
+      "sha256": "2da022ac6a98be13d7cb6c97beba4d6e2a779251da6f92957001d5320f0e8de6"
+    },
+    {
+      "path": "mflux/models/qwen/variants/edit/qwen_prompt_rewriter.py",
+      "sha256": "a696fbaf60826affbe81a92bce487eb08f5c8e51d3d21aa9fe55c11da3d0b360"
+    },
+    {
+      "path": "mflux/models/qwen/variants/txt2img/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/qwen/variants/txt2img/qwen_image.py",
+      "sha256": "99909b985bf22f23970350553f56cc9f62d5ac5a3a8e034943e14970b5bedf2d"
+    },
+    {
+      "path": "mflux/models/qwen/weights/__init__.py",
+      "sha256": "a966a916e16b357059f55ef0a9e503564159beb07cd4d3a2eb9c1aaa45fd37ab"
+    },
+    {
+      "path": "mflux/models/qwen/weights/qwen_lora_mapping.py",
+      "sha256": "50ce7b63071bfcb83c11d14e37f5c6476baf2a3d64da902c0e44aa0685d440f5"
+    },
+    {
+      "path": "mflux/models/qwen/weights/qwen_weight_definition.py",
+      "sha256": "98d98c251ffff8947299e5a5be5864942671f27770929d5adbf0c367104058b5"
+    },
+    {
+      "path": "mflux/models/qwen/weights/qwen_weight_mapping.py",
+      "sha256": "3bad38b26348fc6cc15de1589e325e132500f88a89f1ba84811406c4b92d74b5"
+    },
+    {
+      "path": "mflux/models/seedvr2/__init__.py",
+      "sha256": "8b48d86b5657b7189d55d3b44408625b6325bdf9ac7b1e8accbc36e37e74eb6b"
+    },
+    {
+      "path": "mflux/models/seedvr2/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/cli/seedvr2_upscale.py",
+      "sha256": "34e778a1cebbf2d2f29776e3beec75dcf666ebfb9257c392d4bb6eea0d9d70e9"
+    },
+    {
+      "path": "mflux/models/seedvr2/latent_creator/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/latent_creator/seedvr2_latent_creator.py",
+      "sha256": "c5d33c8f70ddc10d425cc43d283cf439f09587fc0c4224673efb20c29585d041"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_text_encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_text_encoder/text_embeddings.py",
+      "sha256": "17e92ffd4b8f3dd38e3b075f6954f65b98ee1ed27526bb41a6f69023b4171275"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/ada_modulation.py",
+      "sha256": "394fa834b6efbd7ee842f61b71574f8fe111125277d621a670c1474659c36820"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/attention.py",
+      "sha256": "9a419ef20b3c84482ac5c9968fdab983b901bca947df9f38ad6d235190bbb715"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/mm_swiglu.py",
+      "sha256": "a0625f2ce3bd9fe08405395b37f8e781443f16479041bce6b51bbf01f3e8c0f5"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/patch_in.py",
+      "sha256": "b7d86f377cb006e26dde4b32e1bafeaa31f6483b683f3798e3ae4945eb0814c7"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/patch_out.py",
+      "sha256": "333d07b03b6d209085331c01060c9ed1c79e3a19464d54ccd85ddb5f342058da"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/rms_norm.py",
+      "sha256": "802f7b4c43001b447499aa480e7b50ec608eda69848ea0975db41cf6da212e56"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/rope.py",
+      "sha256": "4e38cc6494e0dc6c62e9dfa83ca970a39e2549b53defed51b58c2452714263ab"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/swiglu_mlp.py",
+      "sha256": "e412a7f1f2076dfa09abb0c2123410f19baa02fa8cb75884c91d802beded2975"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/time_embedding.py",
+      "sha256": "d7f4c95c124848f4c1f462d99a2366207c21c84a4516c846d35f0767ccb21dc4"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/transformer.py",
+      "sha256": "a88aa6f4d80b81ea124bd1a6000f1082bc89e0fb0e61dcf0a655da6601fa0628"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/transformer_block.py",
+      "sha256": "557754df5fecce942c93d6c69dd6ed8fabb09691e35bbc8cd99b915da107a63d"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_transformer/window.py",
+      "sha256": "6f73bc560f22737fc769bd22d791de00ff106377cb36d2e7a67918f46a0d9188"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/common/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/common/attention_3d.py",
+      "sha256": "fa421d0c9de881bde62829c23a5baa4b23f826b0bcb37caacdcd2a3325004238"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/common/conv3d.py",
+      "sha256": "3923d275aff2c216b3499138c4da88bcddfcc1111d8cb75be03796914dfff459"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/decoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/decoder/decoder_3d.py",
+      "sha256": "b7c466712cc6a1a15d159ebd63f085eee32a3a2cfa6d133a3c5bb995e697c4bd"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/decoder/decoder_mid_block_3d.py",
+      "sha256": "200cffd59f9685214fe091e377e25e755ac43c27fc577e5b9ddf84a82ac4c63b"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/decoder/decoder_resnet_block_3d.py",
+      "sha256": "e1e36bb99d7ca3886ee09391b6f632c11e95668e5844393e188f1bcad48b525c"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/decoder/up_block_3d.py",
+      "sha256": "3c0ffe5c00cc7ae07cad39528d4a240f347eb975559de6f03650790c80268771"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/decoder/upsample_3d.py",
+      "sha256": "efdc7bc90bcc477cb355722e51814223d623bbe259a532b5f9e1e01ce4cf3bb0"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/encoder/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/encoder/down_block_3d.py",
+      "sha256": "6915a6d1fa3f677a50fa6e520bec6b1cfe2becf940be33c0a3c7b1dbe8dfad09"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/encoder/downsample_3d.py",
+      "sha256": "cafe20089409149583a1d78b4ddc12a8f5cd7b54b5a2afbae65f8236e754d3b0"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/encoder/encoder_3d.py",
+      "sha256": "9ff0134f77e8843aefe21bf29d56994d7f0904c19c23960167fbfb510648f9de"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/encoder/mid_block_3d.py",
+      "sha256": "c9b2771b5faad5a4e5281093d9180071b3478c2a32b06cbe74139aaad9f7725f"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/encoder/resnet_block_3d.py",
+      "sha256": "e6bc2805ba1be3b2a7f24adacbb23d728af87c0451a1604710c2774128efa342"
+    },
+    {
+      "path": "mflux/models/seedvr2/model/seedvr2_vae/vae.py",
+      "sha256": "1d845d3f1049f56af4b29b337efe30ab0155bec1c0edb8bc303a75221708fd9d"
+    },
+    {
+      "path": "mflux/models/seedvr2/seedvr2_initializer.py",
+      "sha256": "9e35e8f1b3d4312ca280c62c144fb04468a7876c3e64a0b1b14cd5a2ee0adf81"
+    },
+    {
+      "path": "mflux/models/seedvr2/variants/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/variants/upscale/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/variants/upscale/seedvr2.py",
+      "sha256": "27d0654fe9a60a2b31c36017c80a2afb29b71d5a44a3536d3d9806a68886bcb8"
+    },
+    {
+      "path": "mflux/models/seedvr2/variants/upscale/seedvr2_util.py",
+      "sha256": "c2a6b65e22da8613c6181d26c05f6ba694f5e5ded388e0da331f0005b65f3284"
+    },
+    {
+      "path": "mflux/models/seedvr2/weights/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/seedvr2/weights/seedvr2_weight_definition.py",
+      "sha256": "d7ee49c5f3da9fd607aecaa8b16698d82c8080adfcd932c5698d80873cd1d657"
+    },
+    {
+      "path": "mflux/models/seedvr2/weights/seedvr2_weight_mapping.py",
+      "sha256": "c4a242ee31d472f7940ec1730dedda614b84a4b7e45d40d9c1c8c802c85f2fcf"
+    },
+    {
+      "path": "mflux/models/z_image/__init__.py",
+      "sha256": "656cdabf8239fc7e77ad14eb78ee89b903c49e51e3610402d5d874f41fae8cbf"
+    },
+    {
+      "path": "mflux/models/z_image/cli/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/models/z_image/cli/z_image_generate.py",
+      "sha256": "2dd15e97adb2f8f6a3a30c1144745f2c6e4f842470f277f3d859bf49712458d8"
+    },
+    {
+      "path": "mflux/models/z_image/cli/z_image_turbo_generate.py",
+      "sha256": "ac2f646415ea73935ebff1f8028203b94a0743905e4b4ffe85d76abb97bc4df3"
+    },
+    {
+      "path": "mflux/models/z_image/cli/z_image_turbo_generate_controlnet.py",
+      "sha256": "2e89a8a1cc5bb41a0b948d01031b6ac6c504185834bb653c579952e9eac20c06"
+    },
+    {
+      "path": "mflux/models/z_image/latent_creator/__init__.py",
+      "sha256": "f07a45a8e1996c30979482e7a484d63ca3fafedb529a02bfae1736c5f3c278eb"
+    },
+    {
+      "path": "mflux/models/z_image/latent_creator/z_image_latent_creator.py",
+      "sha256": "af29fe761e9ddc089d619cd19e3b40f4b29f93e0b45d73e1d3d6046a6837cc80"
+    },
+    {
+      "path": "mflux/models/z_image/model/__init__.py",
+      "sha256": "9cf52c84c7fdebde7b1ec25d0ee3f647efa0506b9ca4b29148b136160e67447e"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_text_encoder/__init__.py",
+      "sha256": "a2c4832c7214517bfed35d2090f6705409468cb8925e6c2df267d32ddcb587e2"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_text_encoder/attention.py",
+      "sha256": "ba6e7be96b500d92260a648681c344a4cf9a745453cc58c12f6bc03ce52cd68d"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_text_encoder/encoder_layer.py",
+      "sha256": "e8bbc0c17f3a6462a6c408df7a4f0e243eef0375cfd20248b54bd7ad37203a70"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_text_encoder/mlp.py",
+      "sha256": "59c5179a4312c1b2e276589721c395e4106dcb31ddd05c39911560bb418a2db3"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_text_encoder/prompt_encoder.py",
+      "sha256": "cee2e670f2a98c7cedcbf1d2b4fcf48bee3e75fa045e5a9eedf7e2ed0e65b7c5"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_text_encoder/rope.py",
+      "sha256": "eee28219a466f8877f5a9226f9893ec15510d38b0508af6bb64beb9b3bca6dde"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_text_encoder/text_encoder.py",
+      "sha256": "8e8b44d42180586c53a497b789682e206f89a1c9c3e08bbedac4d1c4165fae2c"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_transformer/__init__.py",
+      "sha256": "aada2a1ee7f759487acb72c1fd04e0a70799eae84c0400d21b0b06522cb3005d"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_transformer/attention.py",
+      "sha256": "016a9dc3efcc886f3015e532ad072751d77e44154904e3e3c4afbee3f5de7bfa"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_transformer/context_block.py",
+      "sha256": "430d62cacb159ff7245a1d1534c91b713fdaa24c2bb2c74506f3cf27d6562c0f"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_transformer/feed_forward.py",
+      "sha256": "f64c7771f78c2dd0d4236013cd2a5ecc491c4269d795d08d5dc41278ee09a4d5"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_transformer/final_layer.py",
+      "sha256": "f3faf99e4b4ee325bc230a1d284483e991e95d0f38b71fa507217638c3a90437"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_transformer/rope_embedder.py",
+      "sha256": "ca87252c74cb078b6ff03cc7224a5465dece639bd45a337c26c19f62bed86ed9"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_transformer/timestep_embedder.py",
+      "sha256": "a1f1dafdb6aa4a2b16659275f9d2746353eb5225e060fe17c315b6dd406d67ea"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_transformer/transformer.py",
+      "sha256": "a5143652a4d90a8f75e93383412c8b56f8a2bce3154d36eea93479739a834248"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_transformer/transformer_block.py",
+      "sha256": "e5286790e162702d1a41c3e14242f148f3c51315c7719e754886debea9bbfbfd"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/__init__.py",
+      "sha256": "7895ea4bc244dec13feba39ea1050572e16b93e3450afdcf74aa9a597f805fea"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/common/__init__.py",
+      "sha256": "33b45dc0ec85cc20bc83c29573af734ba67780ba661d0b39833994712b1c0394"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/common/attention.py",
+      "sha256": "06cc62f1b0ee439fd4ba355c412ae046b34e9c63ea3300ffb57d900b7f51536f"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/common/resnet_block_2d.py",
+      "sha256": "9e0ea2ae5c3e3e3f3a5c3bb128791bad62af528ffaad91b09e099c0505caf436"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/common/unet_mid_block.py",
+      "sha256": "5724a3a6d71d2b9ceba2e23a072e290229ff4247794763b31cf36a32ea7c082b"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/decoder/__init__.py",
+      "sha256": "f422414cd9f678ac197fa0fe7c369618fda604ffbb632eefdaedbdd1aac9dd4e"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/decoder/conv_in.py",
+      "sha256": "c9cfca047b12b4b5db96ade4bf73e59179fedbb8ee881660605d97a03c7e09d7"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/decoder/conv_norm_out.py",
+      "sha256": "053b8fbca4bb33c97873b485618abf9db3d6bc146e4d62b1b5eff0241c73a406"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/decoder/conv_out.py",
+      "sha256": "a546d833034f798e70ab686ddc862fb645d9d44f76f3b04bad939a3973c8ccdd"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/decoder/decoder.py",
+      "sha256": "f54a83c1e23ba800f83dbc4feb3cc45e579a7d060fbc22eb3acb57a3267f3563"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/decoder/up_decoder_block.py",
+      "sha256": "d4d7ce5cf08ca2fadeeb5752cc54e9698fa6f4836de84288cd3378e8372b991e"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/decoder/up_sampler.py",
+      "sha256": "62f825ba27d9f5e9ed8f112953a4d8a0b94d289a437109152711ddde15ad12cf"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/encoder/__init__.py",
+      "sha256": "df5dcc728aa04cfa135aad389bdb42ca5ab48ec7552c212ab59d0fad2ebafccf"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/encoder/conv_in.py",
+      "sha256": "c12b5733b704834714db4425ca75409e53b265f9bec093959870bfe4ef614f4f"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/encoder/conv_norm_out.py",
+      "sha256": "39e1fc72f0e87b8aa36d1fd98cf934ecec13fdb41ef224758d2ed46cbf91e3e3"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/encoder/conv_out.py",
+      "sha256": "851471abd71f4a42f1fca06aa5387cc659bfec2bea1a493ddc2cd6aec0e9f442"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/encoder/down_encoder_block.py",
+      "sha256": "ae864b08fc5c8528303ef8a5cb567d0e3e6deae6497c4d22caadfba171cbcac9"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/encoder/down_sampler.py",
+      "sha256": "85f4f8fce64f7cc992c1f777dfbee0a772f350e39454bf8ce79fcfec8fa83211"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/encoder/encoder.py",
+      "sha256": "868844983eeaf812a57e24e34dac9e1e7f79f731d1111bf4cf0b4def41913315"
+    },
+    {
+      "path": "mflux/models/z_image/model/z_image_vae/vae.py",
+      "sha256": "078409971764ba6480fc4a46a0968c9e34fef4756e7edb7e8398f4feea9a7fad"
+    },
+    {
+      "path": "mflux/models/z_image/training_adapter/z_image_training_adapter.py",
+      "sha256": "4c66b033421e31fd3a741c8210499331be488bc1767bea9f344872fd0c0d08f3"
+    },
+    {
+      "path": "mflux/models/z_image/variants/__init__.py",
+      "sha256": "a6fa06cb742c02c1b8ada716f553db6b67d546ff855120f462e2730517d18df2"
+    },
+    {
+      "path": "mflux/models/z_image/variants/controlnet/__init__.py",
+      "sha256": "70ca930442a547e552ad9826c02e87d9cc9e5567c0b06dd00107dcc4eeff2701"
+    },
+    {
+      "path": "mflux/models/z_image/variants/controlnet/control_types.py",
+      "sha256": "2cd289054244bff2442380cd8bd6e0b12e5096d71e1ae98b9dcfb255dbd907fa"
+    },
+    {
+      "path": "mflux/models/z_image/variants/controlnet/controlnet_util.py",
+      "sha256": "82ca70d08a71522f69e8fb4500449e7bc48e6ddaa34de0553827d9c94e9de531"
+    },
+    {
+      "path": "mflux/models/z_image/variants/controlnet/transformer_controlnet.py",
+      "sha256": "ede7387071c9d5bbb5d2818619adecde0e093c9b8105c3f500da3db8c68eb6df"
+    },
+    {
+      "path": "mflux/models/z_image/variants/controlnet/z_image_turbo_controlnet.py",
+      "sha256": "eca8f39149ecdc9777f55bdc6eabb2629cecf50b86fc4d6f4934ba76900a45d5"
+    },
+    {
+      "path": "mflux/models/z_image/variants/z_image.py",
+      "sha256": "279c2a7ef84409066cacd1c52f10076b535810d512f7374971aa7933ef10a095"
+    },
+    {
+      "path": "mflux/models/z_image/weights/__init__.py",
+      "sha256": "9c92292034f1022d26ee8c5e022cd257b904aa3e3b086b893e91bebcc4daea86"
+    },
+    {
+      "path": "mflux/models/z_image/weights/z_image_controlnet_weight_definition.py",
+      "sha256": "7af30f8dfa94a1c50122c11b16b2eb9634839d066b4c69299fb4b36fd2633b5d"
+    },
+    {
+      "path": "mflux/models/z_image/weights/z_image_controlnet_weight_mapping.py",
+      "sha256": "5213b5309a214b239651eca70a7612fa971f89f39fb75c855c3610fae29e141d"
+    },
+    {
+      "path": "mflux/models/z_image/weights/z_image_lora_mapping.py",
+      "sha256": "06360e732d6bfa0a554cb5e8f927d881e73332a6fdd2ee2207e9fcb928f2fe07"
+    },
+    {
+      "path": "mflux/models/z_image/weights/z_image_weight_definition.py",
+      "sha256": "7b0695ece8ca773eacc93d28847c2c2a0c562800edd51fd797acaaa0958c8c7b"
+    },
+    {
+      "path": "mflux/models/z_image/weights/z_image_weight_mapping.py",
+      "sha256": "16ac0e49dc8d4cb1a4c5bf2d2b23f64167b7c580576a0ec46743006dd772060e"
+    },
+    {
+      "path": "mflux/models/z_image/z_image_initializer.py",
+      "sha256": "8a594a161fccd8d2ebbe115c787d5e5db409b50bb0a5776ddd0c928cb6843a20"
+    },
+    {
+      "path": "mflux/release/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/release/changelog_parser.py",
+      "sha256": "52999c9c1b183a404697d3ae05d169dace69285e5704c8b3fe0ca453dc51b993"
+    },
+    {
+      "path": "mflux/release/git_operations.py",
+      "sha256": "af58c01aeda10f43aba9b85c790c7a62e099b463636ade7e08eb4798f136ca55"
+    },
+    {
+      "path": "mflux/release/github_api.py",
+      "sha256": "ce388f6fe3b9f4ebc1b3ed8500a0826cae69e2daf5980fc8a4bb5bdd4dbf13fc"
+    },
+    {
+      "path": "mflux/release/pypi_publisher.py",
+      "sha256": "3dd560b9c2de11b679b20ec6df700e79d9a19a3a22507406bc631c5ec6c703d5"
+    },
+    {
+      "path": "mflux/release/release_manager.py",
+      "sha256": "56f8cc6163f54686fe80fcd52fd901e62674adb8dadef08a68c576842ef0e644"
+    },
+    {
+      "path": "mflux/release/release_script.py",
+      "sha256": "c5885beebc5eaf0b07722173cb86cf858bc1e1dd1053769685fc62cdb0490522"
+    },
+    {
+      "path": "mflux/release/release_validator.py",
+      "sha256": "4d9cf5ffd7e776184bfab30f595ede7cd70490cb2bd2bb5f9dbfed90e61711a6"
+    },
+    {
+      "path": "mflux/utils/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "mflux/utils/apple_silicon.py",
+      "sha256": "db63df9c2ee9ee210f1032f9227836901784dfab1d523a47bc264e0b8d238ef1"
+    },
+    {
+      "path": "mflux/utils/box_values.py",
+      "sha256": "57882dbcc04b4e6691dc3463593d328078296fc1f01b57ae3907376d34e63b70"
+    },
+    {
+      "path": "mflux/utils/dimension_resolver.py",
+      "sha256": "cc4005debad7aaf3dd4676d99f2bc69972279f91a7446ccd9c71794853eea356"
+    },
+    {
+      "path": "mflux/utils/exceptions.py",
+      "sha256": "b218f9c85b01ec1aa36ea447cedb640da9920a745d3f678ec5f95492011b89a2"
+    },
+    {
+      "path": "mflux/utils/exif_orientation.py",
+      "sha256": "5116d99f4852b332952c1d47eb5f219cfc28026de0ac302f01f23164653c64cf"
+    },
+    {
+      "path": "mflux/utils/generated_image.py",
+      "sha256": "674c481915ee15e82447a363608892510448aa9a00ff4408ca1c1c1724afa8d3"
+    },
+    {
+      "path": "mflux/utils/image_compare.py",
+      "sha256": "2c7278191996d686c61676bc732f8f99e5b9beef5555c27ee2a7630f6d47d078"
+    },
+    {
+      "path": "mflux/utils/image_util.py",
+      "sha256": "b04e58cdb6b235a6b0d91968cab0668a55d971778dceaa6020868ad5712b1f3f"
+    },
+    {
+      "path": "mflux/utils/info_util.py",
+      "sha256": "24b2c9d4a6a8f119bb74e96e39eaa2ef7d6fc8e673590d52012f8a17ad9d275d"
+    },
+    {
+      "path": "mflux/utils/lora_library_util.py",
+      "sha256": "943e358b746aecee2ca50b9e57d57ec1d988e24f485a7a00bf0b5f1152678a51"
+    },
+    {
+      "path": "mflux/utils/metadata_builder.py",
+      "sha256": "644de9aafbe6128aa0bf324b81d44da8e4f4cde914e34c03c12f8b1d434b1b76"
+    },
+    {
+      "path": "mflux/utils/metadata_reader.py",
+      "sha256": "6c323433eb753ff072ccdf71ba872b3974cd7de8ec45f7fa5e0454e42dc31888"
+    },
+    {
+      "path": "mflux/utils/prompt_util.py",
+      "sha256": "07223555d3f4282eaf66943d6069db68a915f616d0688b547e2bcbdb8ca190b9"
+    },
+    {
+      "path": "mflux/utils/scale_factor.py",
+      "sha256": "3ac2a91f79090311c6eab99018e73dfeffacadf7c512d29b040618101eee7848"
+    },
+    {
+      "path": "mflux/utils/version_util.py",
+      "sha256": "a445d5d4d395bbc22a1f917456cb8f7c4e63cbc6c3a998a437222cce8e071217"
+    }
+  ]
+}

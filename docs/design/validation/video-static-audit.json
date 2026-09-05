@@ -1,0 +1,212 @@
+{
+  "scope": "syntax-only reference source; not new model executor parity; no model access/download",
+  "sdk": "${MACOS_SDK_ROOT}",
+  "checks": [
+    {
+      "model": "h3",
+      "file": "h3.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_host.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_safetensors.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_weights.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_text_encoder.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_dit_schedule.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_dit.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_video_vae.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_taeh3.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_video_encoder.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_audio_vae.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_ffmpeg.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_vision_encoder.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_multimodal.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_metal.m",
+      "status": "failed",
+      "diagnostics": "${H3_SOURCE_ROOT}/h3_metal.m:43:51: error: use of undeclared identifier 'MTLGPUFamilyMetal4'; did you mean 'MTLGPUFamilyMetal3'?\n   43 |             info->metal4 = [device supportsFamily:MTLGPUFamilyMetal4] ? 1 : 0;\n      |                                                   ^~~~~~~~~~~~~~~~~~\n      |                                                   MTLGPUFamilyMetal3\n${MACOS_SDK_ROOT}/System/Library/Frameworks/Metal.framework/Headers/MTLDevice.h:222:5: note: 'MTLGPUFamilyMetal3' declared here\n  222 |     MTLGPUFamilyMetal3 API_AVAILABLE(macos(13.0), ios(16.0)) = 5001,\n      |     ^\n1 error generated.\n"
+    },
+    {
+      "model": "h3",
+      "file": "h3_gpu.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_tokenizer.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_super.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "h3",
+      "file": "h3_coreml.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_conditioning.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_connector.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_transformer_io.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_latent_stats.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_rng.c",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_safetensors.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_weights.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_gpu.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_upsampler.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_video_vae.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_ane_mlp.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_ane_kv.m",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_mlx_upsampler.cpp",
+      "status": "passed",
+      "diagnostics": ""
+    },
+    {
+      "model": "ltx",
+      "file": "ltx_mlx_video_vae.cpp",
+      "status": "passed",
+      "diagnostics": ""
+    }
+  ],
+  "passed": 33,
+  "failed": 1
+}

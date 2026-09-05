@@ -1,0 +1,4 @@
+module CTurboCider {
+    header "turbocider/turbocider.h"
+    export *
+}
