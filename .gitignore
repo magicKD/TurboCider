@@ -68,14 +68,26 @@ pip-wheel-metadata/
 /state/
 /runtime.json
 /models/
+/Python/
 
 # Local monorepo/workspace pointer, only used while developing TurboCider
 # alongside the other native engine repositories.
 /workspace.path
 
-# Native engine installations are bootstrapped, never committed.
-/engines/*
-!/engines/README.md
+# Native engine build and runtime artifacts. Engine source is committed under
+# engines/ so TurboCider can build and run the inference engines itself.
+engines/**/*.o
+engines/**/*.d
+engines/**/*.a
+engines/**/build/
+engines/**/outputs/
+engines/**/.venv/
+engines/*/h3
+
+# Runtime/model directories that are bootstrapped from external installations.
+/engines/flux2/runtime
+/engines/fastmetal/engine
+/engines/fastmetal/runtime
 
 # Downloaded model weights and compiled model caches
 *.safetensors

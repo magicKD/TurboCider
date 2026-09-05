@@ -29,6 +29,7 @@
     "runtime_model_directory": "${TURBOCIDER_MODELS}/MiniMax-H3-LightX2V-Turbo",
     "python_candidates": [
       "${H3_PREPARE_PYTHON}",
+      "${TURBOCIDER}/Python/bin/python3",
       "${TURBOCIDER_ENGINES}/flux2/runtime/.venv/bin/python"
     ],
     "sources": [

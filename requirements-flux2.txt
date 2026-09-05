@@ -1,4 +1,5 @@
 mlx==0.32.2
+mflux==0.19.1
 numpy>=2,<3
 pillow>=12.3
 safetensors>=0.4.4,<1

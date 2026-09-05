@@ -24,16 +24,14 @@
     "engine_root": "${TURBOCIDER_ENGINES}/flux2/engine",
     "python_path_candidates": [
       "${MFLUX_PY}",
-      "${TURBOCIDER_ENGINES}/flux2/runtime/.venv/bin/python"
+      "${TURBOCIDER}/Python/bin/python3"
     ],
     "model_path_candidates": [
       "${FLUX2_MODEL_PATH}",
-      "${TURBOCIDER_MODELS}/FLUX.2-klein-4B",
-      "${TURBOCIDER_ENGINES}/flux2/runtime/models/FLUX.2-klein-4B"
+      "${TURBOCIDER_MODELS}/FLUX.2-klein-4B"
     ],
     "mflux_root_candidates": [
-      "${MFLUX_ROOT}",
-      "${TURBOCIDER_ENGINES}/flux2/mflux-runtime"
+      "${MFLUX_ROOT}"
     ],
     "bridge_dir_candidates": [
       "${FLUX2_ANE_BRIDGE_DIR}",
@@ -42,11 +40,8 @@
     "ane_manifests_candidates": [
       "${FLUX2_ANE_MANIFESTS}",
       "${TURBOCIDER_MODELS}/coreml/flux2-klein-4b/m1088-a6144/compiled/manifest.json",
-      "${TURBOCIDER_ENGINES}/flux2/runtime/models/coreml/flux2_stack_runtime_m1088_a6144/compiled/manifest.json",
       "${TURBOCIDER_MODELS}/coreml/flux2-klein-4b/m1088/compiled/manifest.json",
-      "${TURBOCIDER_MODELS}/coreml/flux2-klein-4b/m1088/manifest.json",
-      "${TURBOCIDER_ENGINES}/flux2/runtime/models/coreml/flux2_stack_runtime_m1088/compiled/manifest.json",
-      "${TURBOCIDER_ENGINES}/flux2/runtime/models/coreml/flux2_stack_runtime_m1088/manifest.json"
+      "${TURBOCIDER_MODELS}/coreml/flux2-klein-4b/m1088/manifest.json"
     ],
     "clear_mlx_cache_between_requests": false
   },
@@ -54,7 +49,7 @@
     "runtime_model_directory": "${TURBOCIDER_MODELS}/FLUX.2-klein-4B",
     "python_candidates": [
       "${MFLUX_PY}",
-      "${TURBOCIDER_ENGINES}/flux2/runtime/.venv/bin/python"
+      "${TURBOCIDER}/Python/bin/python3"
     ],
     "sources": [
       {
@@ -84,15 +79,15 @@
       }
     ],
     "ane": {
-      "tool": "${TURBOCIDER_ENGINES}/flux2/mac_local_ai/scripts/prepare_flux2_ane_stack.py",
-      "research_root": "${TURBOCIDER_ENGINES}/flux2/mac_local_ai",
+      "tool": "${FLUX2_ANE_TOOL}",
+      "research_root": "${FLUX2_ANE_RESEARCH_ROOT}",
       "checkpoint_subpath": "transformer/diffusion_pytorch_model.safetensors",
       "output_directory": "${TURBOCIDER_MODELS}/coreml/flux2-klein-4b",
       "mlp_width": 9216,
       "estimated_bytes": 2147483648
     },
     "cache": {
-      "tool": "${TURBOCIDER_ENGINES}/flux2/mac_local_ai/scripts/prepare_flux2_coreml_cache.py",
+      "tool": "${FLUX2_CACHE_TOOL}",
       "estimated_bytes": 2147483648
     }
   },

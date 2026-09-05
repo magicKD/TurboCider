@@ -144,6 +144,10 @@ class LTXAdapter(EngineAdapter):
         mlx_python = Path(str(options.get("mlx_python_path") or model.config.get("mlx_python_path", sys.executable)))
         comfy_root = Path(str(options.get("comfy_root") or model.config.get("comfy_root", "")))
         text_encoder = Path(str(options.get("text_encoder_path") or model.config.get("text_encoder_path", "")))
+        text_encoder_dir = Path(str(
+            options.get("text_encoder_dir")
+            or model.config.get("text_encoder_dir", "")
+        ))
         audio_vae = Path(audio_vae_value) if audio_vae_value else Path(
             "/__turbocider_missing_ltx_audio_vae__"
         )
@@ -178,6 +182,8 @@ class LTXAdapter(EngineAdapter):
                 "--image-crf", str(image_crf),
                 "--video-vae-helper", str(video_vae_helper),
             ])
+        if text_encoder_dir and str(text_encoder_dir) != ".":
+            argv.extend(["--text-encoder-dir", str(text_encoder_dir)])
         if request.output.audio and audio_vae.is_file():
             argv.extend(["--audio-vae", str(audio_vae)])
         extra = options.get("args", [])

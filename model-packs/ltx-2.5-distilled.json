@@ -40,6 +40,10 @@
       "${LTX_TEXT_ENCODER}",
       "${TURBOCIDER_MODELS}/LTX-2.5/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"
     ],
+    "text_encoder_dir_candidates": [
+      "${LTX_TEXT_ENCODER_DIR}",
+      "${TURBOCIDER_MODELS}/LTX-2.5"
+    ],
     "audio_vae_path_candidates": [
       "${LTX_AUDIO_VAE}",
       "${TURBOCIDER_MODELS}/LTX-2.5/vae/ltx-2.5-audio-vae-bf16.safetensors"
@@ -56,6 +60,7 @@
     ],
     "mlx_python_path_candidates": [
       "${LTX_MLX_PYTHON}",
+      "${TURBOCIDER}/Python/bin/python3",
       "${TURBOCIDER_ENGINES}/ltx-mac/.venv-mlx/bin/python"
     ],
     "ane_mlp_stage1_directory_candidates": [
@@ -79,6 +84,7 @@
     "runtime_model_directory": "${TURBOCIDER_MODELS}/LTX-2.5",
     "python_candidates": [
       "${LTX_COREML_PYTHON}",
+      "${TURBOCIDER}/Python/bin/python3",
       "${TURBOCIDER_ENGINES}/flux2/runtime/.venv/bin/python"
     ],
     "sources": [

@@ -23,6 +23,7 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--mlx-python", type=Path, required=True)
     root.add_argument("--comfy-root", type=Path, required=True)
     root.add_argument("--text-encoder", type=Path, required=True)
+    root.add_argument("--text-encoder-dir", type=Path)
     root.add_argument("--transformer", type=Path, required=True)
     root.add_argument("--upsampler", type=Path, required=True)
     root.add_argument("--video-vae", type=Path, required=True)
@@ -280,20 +281,46 @@ def main() -> None:
         conditioning = args.artifact_dir / "conditioning"
         started = time.perf_counter()
         progress("text_conditioning", 0)
-        run(
-            [
-                args.comfy_python,
-                bridge,
-                "--comfy-root", args.comfy_root,
-                "encode",
-                args.text_encoder,
-                args.transformer,
-                raw,
-                "--prompt", args.prompt,
-                "--raw-only",
-            ],
-            cwd=args.ltx_root,
+        text_encoder_dir = args.text_encoder_dir or (
+            Path(os.environ["LTX_TEXT_ENCODER_DIR"])
+            if os.environ.get("LTX_TEXT_ENCODER_DIR")
+            else None
         )
+        if text_encoder_dir:
+            mlx_python = args.mlx_python
+            mlx_environment = os.environ.copy()
+            bundled_python_path = args.ltx_root / "python"
+            if bundled_python_path.is_dir():
+                existing = mlx_environment.get("PYTHONPATH", "")
+                mlx_environment["PYTHONPATH"] = str(bundled_python_path) + (
+                    os.pathsep + existing if existing else ""
+                )
+            run(
+                [
+                    mlx_python,
+                    args.ltx_root / "tools" / "encode_text_mlx.py",
+                    "--model-dir", text_encoder_dir,
+                    "--output-dir", raw,
+                    "--prompt", args.prompt,
+                ],
+                cwd=args.ltx_root,
+                environment=mlx_environment,
+            )
+        else:
+            run(
+                [
+                    args.comfy_python,
+                    bridge,
+                    "--comfy-root", args.comfy_root,
+                    "encode",
+                    args.text_encoder,
+                    args.transformer,
+                    raw,
+                    "--prompt", args.prompt,
+                    "--raw-only",
+                ],
+                cwd=args.ltx_root,
+            )
         phase_times["text_conditioning_seconds"] = time.perf_counter() - started
         progress("text_conditioning", 1)
         started = time.perf_counter()

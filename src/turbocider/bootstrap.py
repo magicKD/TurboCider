@@ -14,11 +14,6 @@ ENGINE_MAPPINGS = {
     "h3": ["h3.c"],
     "ltx-mac": ["ltx-mac"],
     "flux2/engine": ["gpu_ane/flux2-engine"],
-    "flux2/mac_local_ai": ["gpu_ane/mac_local_ai"],
-    "flux2/runtime": ["gpu_ane/flux2-runtime"],
-    "flux2/mflux-runtime": ["gpu_ane/mflux-runtime"],
-    "fastmetal/engine": ["gpu_ane/fastmetal-engine"],
-    "fastmetal/runtime": ["gpu_ane/fastmetal-runtime"],
 }
 
 
