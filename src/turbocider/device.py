@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from turbocider.paths import PACKAGE_ROOT
+from turbocider.paths import data_root
 
 
 def _command(*argv: str) -> str:
@@ -101,7 +101,7 @@ def current_device() -> DeviceInfo:
 
 class DeviceProfileCatalog:
     def __init__(self, search_paths: Iterable[Path] = ()):
-        self.search_paths = [PACKAGE_ROOT / "device-profiles"]
+        self.search_paths = [data_root() / "device-profiles"]
         self.search_paths.extend(Path(path) for path in search_paths)
         self.profiles: Dict[str, Dict[str, Any]] = {}
         for directory in self.search_paths:

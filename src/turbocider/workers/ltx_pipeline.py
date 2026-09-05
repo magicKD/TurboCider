@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+from array import array
 import json
 import os
+import struct
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List
@@ -33,6 +36,10 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--frames", type=int, required=True)
     root.add_argument("--fps", type=int, required=True)
     root.add_argument("--seed", type=int, required=True)
+    root.add_argument("--first-frame", type=Path)
+    root.add_argument("--image-strength", type=float, default=1.0)
+    root.add_argument("--image-crf", type=int, default=33)
+    root.add_argument("--video-vae-helper", type=Path)
     root.add_argument("--dynamic-conditioning", action="store_true")
     root.add_argument("--engine-arg", action="append", default=[])
     return root
@@ -46,6 +53,146 @@ def run(command, *, cwd: Path, environment=None) -> None:
         env=environment,
         check=True,
     )
+
+
+def capture(command, *, cwd: Path) -> bytes:
+    print("worker_command=" + json.dumps([str(item) for item in command]), flush=True)
+    completed = subprocess.run(
+        [str(item) for item in command],
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        check=True,
+    )
+    return completed.stdout
+
+
+def _bf16_lookup() -> array:
+    values = array("H")
+    for byte in range(256):
+        value = byte / 127.5 - 1.0
+        bits = struct.unpack("<I", struct.pack("<f", value))[0]
+        bits += 0x7FFF + ((bits >> 16) & 1)
+        values.append(bits >> 16)
+    return values
+
+
+def preprocess_image_bf16(
+    image: Path,
+    output: Path,
+    *,
+    width: int,
+    height: int,
+    crf: int,
+    cwd: Path,
+) -> None:
+    """Match LTX I2V training preprocessing without a Python image package."""
+    if width <= 0 or height <= 0 or width % 32 or height % 32:
+        raise RuntimeError("LTX I2V dimensions must be positive multiples of 32")
+    if not 0 <= crf <= 51:
+        raise RuntimeError("LTX I2V image CRF must be between 0 and 51")
+    with tempfile.TemporaryDirectory(prefix="turbocider-ltx-i2v-") as temporary:
+        roundtrip = Path(temporary) / "first-frame.mp4"
+        run(
+            [
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-i", image,
+                "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                "-frames:v", "1", "-an", "-c:v", "libx264",
+                "-preset", "veryfast", "-crf", str(crf), roundtrip,
+            ],
+            cwd=cwd,
+        )
+        raw = capture(
+            [
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-i", roundtrip,
+                "-vf",
+                "scale=%d:%d:force_original_aspect_ratio=increase:flags=lanczos,"
+                "crop=%d:%d"
+                % (width, height, width, height),
+                "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24",
+                "pipe:1",
+            ],
+            cwd=cwd,
+        )
+    expected = width * height * 3
+    if len(raw) != expected:
+        raise RuntimeError(
+            "preprocessed LTX image has %d bytes; expected %d" % (len(raw), expected)
+        )
+    lookup = _bf16_lookup()
+    planar = array("H")
+    for channel in range(3):
+        planar.extend(lookup[raw[index]] for index in range(channel, len(raw), 3))
+    if os.sys.byteorder != "little":
+        planar.byteswap()
+    output.write_bytes(planar.tobytes())
+
+
+def prepare_i2v_latents(args, actual_width: int, actual_height: int) -> Dict[str, Any]:
+    if args.first_frame is None:
+        return {}
+    if not args.first_frame.is_file():
+        raise RuntimeError("LTX first-frame image does not exist: %s" % args.first_frame)
+    if not 0.0 <= args.image_strength <= 1.0:
+        raise RuntimeError("LTX image strength must be between 0 and 1")
+    helper = args.video_vae_helper or args.ltx_root / "build" / "bench_mlx_video_vae"
+    if not helper.is_file():
+        raise RuntimeError("LTX VAE encoder helper does not exist: %s" % helper)
+
+    stage1_width = actual_width // 2
+    stage1_height = actual_height // 2
+    stages = [
+        ("stage1", stage1_width, stage1_height),
+        ("stage2", actual_width, actual_height),
+    ]
+    report: Dict[str, Any] = {
+        "mode": "image_to_video",
+        "source": str(args.first_frame),
+        "strength": args.image_strength,
+        "crf": args.image_crf,
+        "stages": {},
+    }
+    for name, width, height in stages:
+        pixels = args.artifact_dir / ("i2v-%s-pixels.bf16" % name)
+        latent = args.artifact_dir / ("i2v-%s-latent.bf16" % name)
+        started = time.perf_counter()
+        preprocess_image_bf16(
+            args.first_frame, pixels, width=width, height=height,
+            crf=args.image_crf, cwd=args.ltx_root,
+        )
+        preprocess_seconds = time.perf_counter() - started
+        started = time.perf_counter()
+        try:
+            run(
+                [
+                    helper, "--encode", args.video_vae, "1",
+                    str(height), str(width), pixels, latent,
+                ],
+                cwd=args.ltx_root,
+            )
+        finally:
+            pixels.unlink(missing_ok=True)
+        encode_seconds = time.perf_counter() - started
+        expected_latent_bytes = (width // 32) * (height // 32) * 128 * 2
+        if not latent.is_file():
+            raise RuntimeError("LTX VAE encoder did not create %s" % latent)
+        actual_latent_bytes = latent.stat().st_size
+        if actual_latent_bytes != expected_latent_bytes:
+            raise RuntimeError(
+                "LTX %s latent has %d bytes; expected %d"
+                % (name, actual_latent_bytes, expected_latent_bytes)
+            )
+        report["stages"][name] = {
+            "width": width,
+            "height": height,
+            "latent": str(latent),
+            "latent_rows": (width // 32) * (height // 32),
+            "latent_bytes": actual_latent_bytes,
+            "preprocess_seconds": preprocess_seconds,
+            "encode_seconds": encode_seconds,
+        }
+    return report
 
 
 def progress(phase: str, completed: int, total: int = 1) -> None:
@@ -163,10 +310,26 @@ def main() -> None:
         progress("text_conditioning", 1)
         progress("connector", 1)
 
+    actual_width = (args.width // 64) * 64
+    actual_height = (args.height // 64) * 64
+    i2v_report: Dict[str, Any] = {}
+    if args.first_frame:
+        started = time.perf_counter()
+        progress("image_conditioning", 0)
+        i2v_report = prepare_i2v_latents(args, actual_width, actual_height)
+        phase_times["image_conditioning_seconds"] = time.perf_counter() - started
+        progress("image_conditioning", 1)
+    else:
+        progress("image_conditioning", 1)
+
     environment = os.environ.copy()
     environment["LTX_OUTPUT_WIDTH"] = str(args.width)
     environment["LTX_OUTPUT_HEIGHT"] = str(args.height)
     environment.setdefault("LTX_MEDIA_BACKEND", "mlx")
+    if i2v_report:
+        environment["LTX_I2V_STAGE1_LATENT"] = i2v_report["stages"]["stage1"]["latent"]
+        environment["LTX_I2V_STAGE2_LATENT"] = i2v_report["stages"]["stage2"]["latent"]
+        environment["LTX_I2V_STRENGTH"] = str(args.image_strength)
     started = time.perf_counter()
     progress("native_generation", 0)
     run(
@@ -187,8 +350,6 @@ def main() -> None:
     phase_times["native_generation_seconds"] = time.perf_counter() - started
     progress("native_generation", 1)
 
-    actual_width = (args.width // 64) * 64
-    actual_height = (args.height // 64) * 64
     started = time.perf_counter()
     progress("video_encode", 0)
     run(
@@ -214,10 +375,15 @@ def main() -> None:
         started = time.perf_counter()
         progress("audio_decode", 0)
         audio_environment = os.environ.copy()
-        reference_source = args.ltx_root.parent / "references" / "ltx-2-mlx" / "packages" / "ltx-core-mlx" / "src"
+        bundled_python = args.ltx_root / "python"
         existing = audio_environment.get("PYTHONPATH", "")
-        if reference_source.is_dir():
-            audio_environment["PYTHONPATH"] = str(reference_source) + (os.pathsep + existing if existing else "")
+        if not bundled_python.is_dir():
+            raise RuntimeError(
+                "bundled LTX audio runtime does not exist: %s" % bundled_python
+            )
+        audio_environment["PYTHONPATH"] = str(bundled_python) + (
+            os.pathsep + existing if existing else ""
+        )
         run(
             [
                 args.mlx_python,
@@ -258,6 +424,7 @@ def main() -> None:
         "fps": args.fps,
         "media_probe": media_report,
         "phase_times": phase_times,
+        "conditioning": i2v_report or {"mode": "text_to_video"},
         "wall_seconds": time.perf_counter() - worker_started,
     }
     (args.artifact_dir / "turbocider.json").write_text(

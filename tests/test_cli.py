@@ -112,7 +112,7 @@ class CLITests(unittest.TestCase):
         ])
         request = _parse_request(args)
         self.assertFalse(request.inputs[0].include_embedded_audio)
-        self.assertEqual(request.inputs[1].audio_path, "/tmp/audio.wav")
+        self.assertEqual(request.inputs[1].audio_path, str(Path("/tmp/audio.wav").resolve()))
         self.assertTrue(request.engine_options["h3"]["super"])
         self.assertEqual(
             request.engine_options["h3"]["env"]["H3_PRIVATE_ANE_QKV_CHECKPOINT"],

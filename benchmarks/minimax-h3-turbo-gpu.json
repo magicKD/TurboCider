@@ -4,11 +4,11 @@
   "runs": 1,
   "direct": {
     "kind": "command",
-    "cwd": "${WORKSPACE}/h3.c",
+    "cwd": "${TURBOCIDER_ENGINES}/h3",
     "output": "${TURBOCIDER}/outputs/benchmark-h3-direct-gpu.mp4",
     "command": [
-      "${WORKSPACE}/h3.c/h3",
-      "-d", "${WORKSPACE}/h3.c/models/MiniMax-H3-LightX2V-Turbo",
+      "${TURBOCIDER_ENGINES}/h3/h3",
+      "-d", "${TURBOCIDER_ENGINES}/h3/models/MiniMax-H3-LightX2V-Turbo",
       "-p", "A red fox walking through fresh snow, static camera",
       "-o", "{output}",
       "--width", "256", "--height", "256", "--frames", "22",

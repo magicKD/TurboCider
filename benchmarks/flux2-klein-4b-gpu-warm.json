@@ -1,37 +1,39 @@
 {
-  "id": "flux2-klein-4b-gpu-512-4step",
-  "warmup_runs": 0,
+  "id": "flux2-klein-4b-gpu-persistent-512-4step",
+  "warmup_runs": 1,
   "runs": 1,
   "direct": {
-    "kind": "command",
+    "kind": "batch-command",
     "cwd": "${TURBOCIDER_ENGINES}/flux2/engine",
     "environment": {
       "PYTHONPATH": "${TURBOCIDER_ENGINES}/flux2/engine/src:${TURBOCIDER_ENGINES}/flux2/mflux-runtime/src"
     },
-    "output": "${TURBOCIDER}/outputs/benchmark-flux2-direct-gpu.png",
+    "output_dir": "${TURBOCIDER}/outputs/benchmark-flux2-direct-gpu-persistent",
+    "report": "${TURBOCIDER}/outputs/benchmark-flux2-direct-gpu-persistent.json",
     "command": [
       "${TURBOCIDER_ENGINES}/flux2/runtime/.venv/bin/python",
-      "-m", "flux2_engine.cli", "generate",
+      "scripts/benchmark_engine.py",
       "A cider press in an orchard",
       "--model", "${TURBOCIDER_ENGINES}/flux2/runtime/models/FLUX.2-klein-4B",
       "--mflux-root", "${TURBOCIDER_ENGINES}/flux2/mflux-runtime",
-      "--output", "{output}",
       "--mode", "mlx",
+      "--no-clear-mlx-cache-between-requests",
+      "--output-dir", "{output_dir}",
+      "--repeats", "{total_runs}",
+      "--json", "{report}",
       "--width", "512", "--height", "512",
-      "--steps", "4", "--seed", "42", "--guidance", "1.0",
-      "--precision", "bf16"
+      "--steps", "4", "--seed", "42"
     ]
   },
   "turbocider": {
     "kind": "turbocider",
-    "output": "${TURBOCIDER}/outputs/benchmark-flux2-turbocider-gpu.png",
     "request": {
       "model": "flux2-klein-4b",
       "task": "image",
       "prompt": "A cider press in an orchard",
       "output": {
         "type": "image",
-        "path": "${TURBOCIDER}/outputs/benchmark-flux2-turbocider-gpu.png",
+        "path": "${TURBOCIDER}/outputs/benchmark-flux2-turbocider-gpu-persistent.png",
         "width": 512,
         "height": 512,
         "frames": 1,
@@ -42,7 +44,7 @@
         "execution": "gpu",
         "profile": "quality",
         "approximation": "exact",
-        "persistent": false
+        "persistent": true
       }
     }
   }

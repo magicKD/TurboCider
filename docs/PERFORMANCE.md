@@ -1,23 +1,21 @@
 # Verified Performance and Correctness
 
-Measurements below were collected on the current Apple Silicon host on September 4, 2026. They are regression evidence, not universal hardware promises.
+Measurements below were collected on the current Apple Silicon host through September 5, 2026. They are regression evidence, not universal hardware promises.
 
 | Path | Direct engine | TurboCider | Correctness |
 |---|---:|---:|---|
 | H3 GPU, 256×256, 22 frames, 4 steps | 29.309 s process | 29.714 s process | Byte-identical MP4 and decoded video/audio |
 | LTX GPU complete worker, 704×480×97 | 97.573 s | 96.952 s engine | MP4, decoded video/audio, and BF16 artifacts byte-identical |
 | LTX GPU+ANE complete worker, same request | 105.311 s | 103.245 s engine | MP4, decoded video/audio, and BF16 artifacts byte-identical |
-| FLUX.2 GPU, 512×512, 4 steps | 2.383 s engine | 2.386 s engine | Direct/TurboCider decoded RGB byte-identical |
-| FLUX.2 GPU+ANE, compiled-cache warm | 2.296 s engine | 2.303 s engine | 80 ANE calls; decoded RGB byte-identical |
+| FLUX.2 GPU persistent, 512×512, 4 steps | 2.216 s engine | 2.219 s engine | Direct/TurboCider decoded RGB byte-identical |
+| FLUX.2 GPU+ANE a6144 split, compiled-cache warm | 1.570 s engine | 1.576 s engine | 80 ANE calls; decoded RGB byte-identical |
 | FastMetal GPU, 832×480, 81 frames, 3 steps | 72.929 s engine | 72.937 s engine | Latent and MP4 byte-identical |
 | FastMetal GPU+ANE, same request | 69.970 s engine | 69.970 s engine | 90 ANE calls; latent and MP4 byte-identical |
 
 For the reproducible FLUX.2 benchmark prompt (`A cider press in an orchard`),
-INT8-ANE versus BF16 GPU measured RGB MAE 4.3128/255, PSNR 30.3296 dB, and
-cosine similarity 0.9982865. An earlier dynamic-text development sample
-measured MAE 1.8409/255, PSNR 34.7989 dB, and cosine 0.998702; that sample is
-retained as diagnostic evidence but is not the formal benchmark baseline. LTX
-media finalization validates that the muxed MP4 retains all 97 frames.
+the current a6144 INT8-ANE split versus BF16 GPU measured RGB MAE 3.9712/255,
+PSNR 30.8424 dB, and cosine similarity 0.998482. LTX media finalization
+validates that the muxed MP4 retains all 97 frames.
 
 FastMetal splits every INT8 FFN block at 4,096/4,864 intermediate channels.
 The retained hybrid implementation measured 66.08–66.19 seconds for denoise
@@ -40,26 +38,32 @@ completed in 112.72 seconds. Independent `ffprobe` validation reported 97 H.264
 frames at 704×448/24 fps plus 48 kHz stereo AAC; the longer audio no longer
 truncates the video stream.
 
-The stable FLUX.2 cache was generated from 20 existing INT8 packages in 1.85
-seconds of orchestration (0.70 seconds summed Core ML compile time) and occupies
-approximately 1.70 GB. A second `prepare-model --cache` invocation reported a
-cache hit without recompilation. The first and second compiled-cache outputs,
-and the prior source-manifest output for the same prompt/seed, had RGB MAE 0
-and identical decoded pixels.
+The current stable FLUX.2 split cache contains 20 INT8 Core ML branches. Source
+packages and compiled assets each occupy approximately 1.13 GB. A
+`prepare-model --cache` invocation now recognizes the selected compiled
+manifest as a cache hit and does not try to compile a compiled manifest again.
 
 The reproducible JSON benchmark runner measured the current FLUX.2 paths again:
 
 | Benchmark | Direct engine | TurboCider engine | Ratio | Decoded RGB |
 |---|---:|---:|---:|---|
-| 4B GPU, 512×512, 4 steps | 2.39 s | 2.39 s | 1.0012× | identical |
-| 4B GPU+ANE compiled-cache warm | 2.30 s | 2.30 s | 1.0034× | identical |
+| 4B GPU persistent, 512×512, 4 steps | 2.216 s | 2.219 s | 1.0010× | identical |
+| 4B GPU+ANE a6144 compiled-cache warm | 1.570 s | 1.576 s | 1.0033× | identical |
 
-After adding explicit 4B/9B model-variant handling, the 4B regression remained
-stable. Direct and TurboCider decoded RGB were identical within both GPU and
-GPU+ANE backends; the warm direct hybrid request completed in 2.2983 seconds
-versus the previous 2.2956-second baseline, with 80 ANE calls and no session
-reload. The cross-backend GPU-versus-hybrid values remain the formal MAE
-4.3128, PSNR 30.3296 dB, and cosine 0.9982865 reported above.
+The a6144 route assigns SwiGLU channels `[0,6144)` to ANE and evaluates the
+remaining 3,072 MLP channels together with attention on GPU. It reduces the
+TurboCider engine time from 2.2187 to 1.5756 seconds, a 1.408× speedup and
+28.98% latency reduction. The measured request made 80 Core ML calls with an
+ANE-call p50 of 10.53 ms. Its metadata reports `CPUAndNeuralEngine`, the a6144
+compiled manifest, and 100% steady-state input/output backing reuse.
+
+The previous full-ANE MLP route was load-imbalanced on the M4 Max. A compiled
+GPU attention+MLP block measured about 20.30 ms, while GPU attention alone was
+7.51 ms and the full ANE MLP took 19.33--19.54 ms. Each block therefore waited
+on ANE, limiting the complete request to roughly a 4% improvement over compiled
+GPU. With the 6,144/3,072 split, the ANE prefix measured about 10.59 ms and GPU
+attention plus the suffix about 11.88 ms, so the two sides overlap much more
+evenly.
 
 For the pure-GPU one-shot command, total process time was 1.046× direct. That
 includes Python process, request validation, job persistence, and log handling;
@@ -86,13 +90,22 @@ Each target gets one warmup followed by one measured process:
 |---|---:|---:|---:|
 | Dense GPU | 59.73 s | 74.82 s | 1.000× |
 | Dense GPU+ANE | 49.96 s | 73.25 s | 1.196× engine speedup |
+| Fast GPU+ANE, r256 K/V + Stage-2 Sol | 47.19 s | 75.22 s | 1.266× engine speedup |
 
-The GPU+ANE result uses the complete 48-block Video MLP split and Stage-1
+The dense GPU+ANE result uses the complete 48-block Video MLP split and Stage-1
 text-K/V placement while retaining dense attention and all 1,024 conditioning
 rows. Relative to GPU, the final video latent had cosine 0.97007, audio latent
 0.99971, and decoded BF16 pixels 0.99056. All tensors were finite. Fresh-process
 speedup is smaller because Core ML/session and checkpoint setup are outside the
 reported `two_stage_elapsed_seconds` hot path.
+
+The reproduced fast candidate completed Stage 1 in 18.317 seconds, Stage 2 in
+23.732 seconds, and VAE decode in 2.861 seconds, for 47.189 seconds from fixed
+conditioning to decoded pixels. This is within 0.78% of the earlier 46.824-second
+paired mean. It enabled all 48 ANE MLP branches, r256 ANE K/V in both stages,
+full-GPU MLP release, and Stage-2 Sol. This is an experimental preview route:
+the 256-row context pruning and Sol attention are approximate and require a
+broader visual-quality suite before becoming the quality default.
 
 The second layer invokes the same prompt-to-media worker directly and through a
 TurboCider job. Each side again receives one warmup and one measured run:
@@ -109,3 +122,11 @@ These worker totals include dynamic Gemma conditioning, the native connector,
 fresh native-engine setup, generation, H.264 encode, Audio VAE finalization,
 and AAC mux. They therefore must not be compared directly with the 49.96/59.73
 second native hot-path row.
+
+TurboCider previously failed to reproduce the 46--47 second candidate because
+the adapter replaced the fast plan's r256 K/V directory with the default r1024
+directory. The plan now maps `LTX_ANE_KV_DIR` to a distinct
+`ane_kv_r256_directory`; dry-run validation shows `LTX_TEXT_ROWS_LIMIT=256`,
+K/V enabled in both stages, and Stage-2 Sol enabled. The historical ~103-second
+TurboCider number is the complete dense prompt-to-media quality workload, not
+the same timing boundary as the 46--47 second fixed-conditioning preview path.

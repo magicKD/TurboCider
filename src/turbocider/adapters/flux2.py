@@ -36,6 +36,35 @@ class Flux2Adapter(EngineAdapter):
         options = request.engine_options.get("flux2", {})
         if not isinstance(options, dict):
             raise ValidationError("engine_options.flux2 must be an object")
+        image_assets = [item for item in request.inputs if item.type == "image"]
+        request_mode = request.resolved_mode
+        image_path = None
+        image_paths: List[str] = []
+        image_strength = float(options.get("image_strength", 0.75))
+        if request_mode == "text_to_image":
+            if image_assets:
+                raise ValidationError("text_to_image does not accept image inputs")
+            pipeline = "standard"
+        elif request_mode == "image_to_image":
+            if len(image_assets) != 1 or image_assets[0].role != "init_image":
+                raise ValidationError(
+                    "image_to_image requires exactly one image with role=init_image"
+                )
+            pipeline = "standard"
+            image_path = image_assets[0].path
+            if image_assets[0].strength is not None:
+                image_strength = image_assets[0].strength
+        elif request_mode == "image_edit":
+            if not image_assets or any(item.role != "reference" for item in image_assets):
+                raise ValidationError(
+                    "image_edit requires one or more images with role=reference"
+                )
+            pipeline = "edit"
+            image_paths = [str(item.path) for item in image_assets]
+        else:
+            raise ValidationError("unsupported FLUX.2 mode: %s" % request_mode)
+        if not 0.0 <= image_strength <= 1.0:
+            raise ValidationError("FLUX.2 image strength must be between 0 and 1")
         python_value = options.get("python_path") or model.config.get("python_path") or os.environ.get("MFLUX_PY", "")
         model_value = options.get("model_path") or model.config.get("model_path") or os.environ.get("FLUX2_MODEL_PATH", "")
         mflux_value = options.get("mflux_root") or model.config.get("mflux_root") or os.environ.get("MFLUX_ROOT", "")
@@ -65,7 +94,7 @@ class Flux2Adapter(EngineAdapter):
                 "FLUX.2 configuration is incomplete: %s" % ", ".join(missing)
             )
 
-        mode = "mlx-ane" if plan.execution is ExecutionMode.GPU_ANE else "mlx"
+        backend_mode = "mlx-ane" if plan.execution is ExecutionMode.GPU_ANE else "mlx"
         precision = str(options.get("precision", "bf16"))
         if precision not in ("bf16", "fp16"):
             raise ValidationError("engine_options.flux2.precision must be bf16 or fp16")
@@ -95,7 +124,10 @@ class Flux2Adapter(EngineAdapter):
             options.get("compile_quantized_gpu_attention", True)
         )
         clear_mlx_cache = bool(
-            options.get("clear_mlx_cache_between_requests", True)
+            options.get(
+                "clear_mlx_cache_between_requests",
+                model.config.get("clear_mlx_cache_between_requests", True),
+            )
         )
         ane_variant = str(options.get("ane_variant", "int8_pc"))
         if ane_variant not in ("int8_pc", "fp16"):
@@ -119,12 +151,14 @@ class Flux2Adapter(EngineAdapter):
             str(model_path),
             "--model-variant",
             model_variant,
+            "--pipeline",
+            pipeline,
             "--mflux-root",
             str(mflux_root),
             "--output",
             str(output_path),
             "--mode",
-            mode,
+            backend_mode,
             "--attention",
             attention,
             "--profile",
@@ -138,6 +172,14 @@ class Flux2Adapter(EngineAdapter):
             "--precision",
             precision,
         ]
+        if image_path:
+            argv.extend([
+                "--image-path", str(image_path),
+                "--image-strength", str(image_strength),
+            ])
+        if image_paths:
+            argv.append("--image-paths")
+            argv.extend(image_paths)
         if request.sampling.steps is not None:
             argv.extend(["--steps", str(request.sampling.steps)])
         if request.sampling.guidance is not None:
@@ -182,6 +224,7 @@ class Flux2Adapter(EngineAdapter):
         metadata: Dict[str, Any] = {
             "engine": "flux2",
             "plan": plan.id,
+            "mode": request_mode,
             "expected_seconds": float(
                 plan.metadata.get(
                     "expected_seconds_warm" if request.policy.persistent else "expected_seconds",
@@ -203,8 +246,9 @@ class Flux2Adapter(EngineAdapter):
                 str(python), str(worker),
                 "--model", str(model_path),
                 "--model-variant", model_variant,
+                "--pipeline", pipeline,
                 "--mflux-root", str(mflux_root),
-                "--mode", mode,
+                "--mode", backend_mode,
                 "--attention", attention,
                 "--precision", precision,
                 "--bridge-dir", str(bridge_dir),
@@ -242,6 +286,9 @@ class Flux2Adapter(EngineAdapter):
                     "guidance": request.sampling.guidance if request.sampling.guidance is not None else 1.0,
                     "profile": request.policy.profile.value,
                     "dynamic_text_length": dynamic_text_length,
+                    "image_path": str(image_path) if image_path else None,
+                    "image_paths": image_paths,
+                    "image_strength": image_strength,
                 },
             }
             argv = worker_argv

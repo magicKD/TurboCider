@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from turbocider.errors import ModelPreparationError
@@ -134,6 +135,78 @@ class ModelPreparationTests(unittest.TestCase):
         )
         action = report["actions"][0]
         self.assertEqual(action["estimated_bytes"], 2147483648 // 20)
+
+    def test_flux_split_ane_plan_is_reproducible(self):
+        report = self.preparer.prepare(
+            "flux2-klein-4b",
+            PreparationOptions(
+                ane=True,
+                cache=True,
+                dry_run=True,
+                minimum_free_gib=0,
+            ),
+        )
+        export, cache = report["actions"]
+        self.assertTrue(export["target"].endswith("/m1088-a6144"))
+        self.assertIn("--ane-mlp-width", export["command"])
+        width_index = export["command"].index("--ane-mlp-width") + 1
+        self.assertEqual(export["command"][width_index], "6144")
+        self.assertEqual(export["metadata"]["ane_mlp_width"], 6144)
+        self.assertEqual(export["metadata"]["gpu_mlp_width"], 3072)
+        self.assertEqual(cache["metadata"]["ane_mlp_width"], 6144)
+        self.assertTrue(
+            report["artifacts"]["ane_runtime_manifest"].endswith(
+                "/m1088-a6144/compiled/manifest.json"
+            )
+        )
+
+    def test_flux_ane_width_must_fit_model(self):
+        with self.assertRaisesRegex(ModelPreparationError, "model MLP width"):
+            self.preparer.prepare(
+                "flux2-klein-4b",
+                PreparationOptions(
+                    ane=True,
+                    dry_run=True,
+                    flux_ane_mlp_width=9280,
+                    minimum_free_gib=0,
+                ),
+            )
+
+    def test_flux_cache_only_reuses_selected_compiled_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "manifest.json"
+            compiled = root / "compiled" / "manifest.json"
+            compiled.parent.mkdir()
+            source.write_text("{}")
+            compiled.write_text("{}")
+            original = self.registry.get("flux2-klein-4b")
+            config = dict(original.config)
+            config["ane_manifests"] = str(compiled)
+            model = replace(original, config=config)
+
+            class Registry:
+                @staticmethod
+                def get(model_id):
+                    self.assertEqual(model_id, "flux2-klein-4b")
+                    return model
+
+            report = ModelPreparer(registry=Registry()).prepare(
+                "flux2-klein-4b",
+                PreparationOptions(
+                    cache=True,
+                    dry_run=True,
+                    minimum_free_gib=0,
+                ),
+            )
+            action = report["actions"][0]
+            self.assertTrue(action["cached"])
+            self.assertEqual(action["target"], str(compiled.parent.resolve()))
+            self.assertEqual(action["requires"], [str(source.resolve())])
+            self.assertEqual(
+                report["artifacts"]["ane_runtime_manifest"],
+                str(compiled.resolve()),
+            )
 
     def test_public_model_descriptor_does_not_expose_recipe_paths(self):
         descriptor = self.registry.get("flux2-klein-4b").public_dict()

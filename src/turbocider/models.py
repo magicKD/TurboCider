@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import math
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -50,17 +51,50 @@ class InputAsset:
     text: Optional[str] = None
     audio_path: Optional[str] = None
     include_embedded_audio: bool = True
+    strength: Optional[float] = None
+    frame_index: Optional[int] = None
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "InputAsset":
-        return cls(
+        strength = raw.get("strength")
+        frame_index = raw.get("frame_index")
+        path = raw.get("path")
+        audio_path = raw.get("audio_path")
+        asset = cls(
             type=str(raw.get("type", "")),
             role=str(raw.get("role", "reference")),
-            path=raw.get("path"),
+            path=(
+                str(Path(str(path)).expanduser().resolve())
+                if path is not None else None
+            ),
             text=raw.get("text"),
-            audio_path=raw.get("audio_path"),
+            audio_path=(
+                str(Path(str(audio_path)).expanduser().resolve())
+                if audio_path is not None else None
+            ),
             include_embedded_audio=bool(raw.get("include_embedded_audio", True)),
+            strength=float(strength) if strength is not None else None,
+            frame_index=int(frame_index) if frame_index is not None else None,
         )
+        asset.validate()
+        return asset
+
+    def validate(self) -> None:
+        if self.type not in {"text", "image", "video", "audio"}:
+            raise ValidationError("input.type must be text, image, video, or audio")
+        if not self.role:
+            raise ValidationError("input.role must not be empty")
+        if self.type == "text":
+            if not self.text:
+                raise ValidationError("text input requires text")
+        elif not self.path:
+            raise ValidationError("%s input requires path" % self.type)
+        if self.strength is not None and (
+            not math.isfinite(self.strength) or self.strength < 0.0 or self.strength > 1.0
+        ):
+            raise ValidationError("input.strength must be between 0 and 1")
+        if self.frame_index is not None and self.frame_index < 0:
+            raise ValidationError("input.frame_index must be non-negative")
 
 
 @dataclass(frozen=True)
@@ -128,6 +162,7 @@ class GenerationRequest:
     model: str
     task: str
     prompt: str
+    mode: str = "auto"
     inputs: List[InputAsset] = field(default_factory=list)
     output: OutputSpec = field(default_factory=OutputSpec)
     sampling: SamplingSpec = field(default_factory=SamplingSpec)
@@ -150,6 +185,7 @@ class GenerationRequest:
             model=str(raw.get("model", "")),
             task=task,
             prompt=prompt,
+            mode=str(raw.get("mode", "auto")),
             inputs=inputs,
             output=OutputSpec.from_dict(output_raw),
             sampling=SamplingSpec.from_dict(dict(raw.get("sampling", {}))),
@@ -164,6 +200,8 @@ class GenerationRequest:
             raise ValidationError("model must not be empty")
         if not self.prompt.strip():
             raise ValidationError("prompt must not be empty")
+        if not self.mode.strip():
+            raise ValidationError("mode must not be empty")
         if self.task not in {"image", "video", "audio"}:
             raise ValidationError("task must be image, video, or audio")
         if self.output.type != self.task:
@@ -181,6 +219,28 @@ class GenerationRequest:
             raise ValidationError("audio output is only valid for video generation")
         if self.sampling.steps is not None and self.sampling.steps <= 0:
             raise ValidationError("sampling steps must be positive")
+
+    @property
+    def resolved_mode(self) -> str:
+        if self.mode != "auto":
+            return self.mode
+        images = [item for item in self.inputs if item.type == "image"]
+        roles = {item.role for item in images}
+        if self.task == "image":
+            if not images:
+                return "text_to_image"
+            if len(images) == 1 and roles <= {"init_image"}:
+                return "image_to_image"
+            return "image_edit"
+        if self.task == "video":
+            if not images:
+                return "text_to_video"
+            if "last_frame" in roles or any(
+                item.frame_index not in (None, 0) for item in images
+            ):
+                return "keyframe_interpolation"
+            return "image_to_video"
+        return self.task
 
     def as_dict(self) -> Dict[str, Any]:
         raw = asdict(self)

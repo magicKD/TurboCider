@@ -16,6 +16,7 @@ from flux2_engine import (
     Flux2Engine,
     GenerationRequest,
     ModelVariant,
+    PipelineMode,
 )
 from flux2_engine.config import GenerationProfile
 
@@ -49,6 +50,12 @@ def parser() -> argparse.ArgumentParser:
         default=ModelVariant.AUTO,
     )
     root.add_argument("--mflux-root", type=Path, required=True)
+    root.add_argument(
+        "--pipeline",
+        type=PipelineMode,
+        choices=list(PipelineMode),
+        default=PipelineMode.STANDARD,
+    )
     root.add_argument("--mode", type=ExecutionMode, choices=list(ExecutionMode), required=True)
     root.add_argument(
         "--attention",
@@ -86,6 +93,7 @@ def main() -> None:
         model_path=args.model,
         mflux_root=args.mflux_root,
         model_variant=args.model_variant,
+        pipeline=args.pipeline,
         mode=args.mode,
         attention=args.attention,
         precision=args.precision,
@@ -113,6 +121,7 @@ def main() -> None:
             try:
                 payload = json.loads(raw)
                 output = Path(payload["output"]).expanduser().resolve()
+                image_path = payload.get("image_path")
                 result = engine.generate(GenerationRequest(
                     prompt=str(payload["prompt"]),
                     output=output,
@@ -123,6 +132,11 @@ def main() -> None:
                     guidance=float(payload.get("guidance", 1.0)),
                     profile=GenerationProfile(str(payload.get("profile", "quality"))),
                     dynamic_text_length=bool(payload.get("dynamic_text_length", True)),
+                    image_path=Path(image_path) if image_path else None,
+                    image_paths=tuple(
+                        Path(path) for path in payload.get("image_paths", [])
+                    ),
+                    image_strength=float(payload.get("image_strength", 0.75)),
                 ))
                 report = result.metrics.as_dict()
                 report["output"] = str(result.output) if result.output else None

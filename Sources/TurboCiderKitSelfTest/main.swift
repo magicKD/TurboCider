@@ -13,6 +13,7 @@ do {
         model: "minimax-h3-turbo",
         task: "video",
         prompt: "fox",
+        mode: "text_to_video",
         output: TCOutputSpec(type: "video"),
         policy: TCPolicySpec(execution: .gpuANE, allowFallback: false),
         engineOptions: [
@@ -27,6 +28,7 @@ do {
     let policy = object["policy"] as! [String: Any]
     require(policy["execution"] as? String == "gpu_ane", "execution wire value")
     require(policy["allow_fallback"] as? Bool == false, "fallback wire key")
+    require(object["mode"] as? String == "text_to_video", "generation mode wire value")
     let engineOptions = object["engine_options"] as! [String: Any]
     let h3 = engineOptions["h3"] as! [String: Any]
     require(h3["super"] as? Bool == true, "engine options boolean")
@@ -53,7 +55,7 @@ do {
     )
 
     let modelsData = Data("""
-    {"data":[{"id":"flux2-klein-4b","name":"FLUX.2 Klein 4B","engine":"flux2","version":"0.1","capabilities":{"tasks":["image"],"inputs":["text"],"reference_roles":["reference"],"profiles":["quality"],"execution":["gpu","gpu_ane"],"audio_output":false,"audio_required":false,"recommended_width":512,"recommended_height":512,"recommended_frames":1,"recommended_fps":24,"recommended_steps":4,"recommended_persistent":true},"plans":[{"id":"flux2.mlx","execution":"gpu","quality":"exact","profile":"*","production":true,"description":"Portable MLX backend"}]}]}
+    {"data":[{"id":"flux2-klein-4b","name":"FLUX.2 Klein 4B","engine":"flux2","version":"0.1","capabilities":{"tasks":["image"],"inputs":["text","image"],"reference_roles":["init_image","reference"],"modes":["text_to_image","image_to_image","image_edit"],"max_reference_images":8,"profiles":["quality"],"execution":["gpu","gpu_ane"],"audio_output":false,"audio_required":false,"recommended_width":512,"recommended_height":512,"recommended_frames":1,"recommended_fps":24,"recommended_steps":4,"recommended_persistent":true},"plans":[{"id":"flux2.mlx","execution":"gpu","quality":"exact","profile":"*","production":true,"description":"Portable MLX backend"}]}]}
     """.utf8)
     let models = try JSONDecoder().decode(TCModelsResponse.self, from: modelsData)
     require(models.data.count == 1, "model descriptor decoding")
@@ -61,7 +63,9 @@ do {
     require(models.data[0].capabilities.recommendedFrames == 1, "recommended frames decoding")
     require(models.data[0].capabilities.audioOutput == false, "audio capability decoding")
     require(models.data[0].capabilities.audioRequired == false, "audio requirement decoding")
-    require(models.data[0].capabilities.referenceRoles == ["reference"], "reference roles decoding")
+    require(models.data[0].capabilities.referenceRoles == ["init_image", "reference"], "reference roles decoding")
+    require(models.data[0].capabilities.modes == ["text_to_image", "image_to_image", "image_edit"], "generation modes decoding")
+    require(models.data[0].capabilities.maxReferenceImages == 8, "reference image limit decoding")
     require(models.data[0].capabilities.recommendedPersistent == true, "persistent recommendation decoding")
     require(models.data[0].plans?.first?.execution == .gpu, "model plan decoding")
 

@@ -1,23 +1,24 @@
 {
-  "id": "flux2-klein-4b-gpu-ane-compiled-512-4step",
+  "id": "flux2-klein-4b-gpu-ane-a6144-compiled-512-4step",
   "warmup_runs": 1,
   "runs": 1,
   "direct": {
     "kind": "batch-command",
-    "cwd": "${WORKSPACE}/gpu_ane/flux2-engine",
+    "cwd": "${TURBOCIDER_ENGINES}/flux2/engine",
     "environment": {
-      "PYTHONPATH": "${WORKSPACE}/gpu_ane/flux2-engine/src:${WORKSPACE}/gpu_ane/mflux-runtime/src"
+      "PYTHONPATH": "${TURBOCIDER_ENGINES}/flux2/engine/src:${TURBOCIDER_ENGINES}/flux2/mflux-runtime/src"
     },
     "output_dir": "${TURBOCIDER}/outputs/benchmark-flux2-direct-hybrid",
     "report": "${TURBOCIDER}/outputs/benchmark-flux2-direct-hybrid.json",
     "command": [
-      "${WORKSPACE}/gpu_ane/flux2-runtime/.venv/bin/python",
+      "${TURBOCIDER_ENGINES}/flux2/runtime/.venv/bin/python",
       "scripts/benchmark_engine.py",
       "A cider press in an orchard",
-      "--model", "${WORKSPACE}/gpu_ane/flux2-runtime/models/FLUX.2-klein-4B",
-      "--mflux-root", "${WORKSPACE}/gpu_ane/mflux-runtime",
+      "--model", "${TURBOCIDER_ENGINES}/flux2/runtime/models/FLUX.2-klein-4B",
+      "--mflux-root", "${TURBOCIDER_ENGINES}/flux2/mflux-runtime",
       "--mode", "mlx-ane",
-      "--ane-manifest", "${WORKSPACE}/gpu_ane/flux2-runtime/models/coreml/flux2_stack_runtime_m1088/compiled/manifest.json",
+      "--ane-manifest", "${TURBOCIDER_ENGINES}/flux2/runtime/models/coreml/flux2_stack_runtime_m1088_a6144/compiled/manifest.json",
+      "--no-clear-mlx-cache-between-requests",
       "--output-dir", "{output_dir}",
       "--repeats", "{total_runs}",
       "--json", "{report}",
@@ -28,7 +29,7 @@
   "turbocider": {
     "kind": "turbocider",
     "environment": {
-      "FLUX2_ANE_MANIFESTS": "${WORKSPACE}/gpu_ane/flux2-runtime/models/coreml/flux2_stack_runtime_m1088/compiled/manifest.json"
+      "FLUX2_ANE_MANIFESTS": "${TURBOCIDER_ENGINES}/flux2/runtime/models/coreml/flux2_stack_runtime_m1088_a6144/compiled/manifest.json"
     },
     "request": {
       "model": "flux2-klein-4b",

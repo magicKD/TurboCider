@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import AppKit
 import TurboCiderKit
+import UniformTypeIdentifiers
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -9,6 +10,7 @@ final class AppModel: ObservableObject {
     @Published var system: TCSystemReport?
     @Published var selectedModel = "minimax-h3-turbo"
     @Published var selectedTask = "video"
+    @Published var selectedMode = "auto"
     @Published var prompt = "A cinematic red fox walking through fresh snow"
     @Published var execution = TCExecutionMode.auto
     @Published var profile = TCGenerationProfile.quality
@@ -20,6 +22,7 @@ final class AppModel: ObservableObject {
     @Published var steps = 4
     @Published var seed = 42
     @Published var includeAudio = true
+    @Published var imageStrength = 0.75
     @Published var engineOptionsJSON = "{}"
     @Published var inputs: [TCInputAsset] = []
     @Published var job: TCJobRecord?
@@ -29,6 +32,7 @@ final class AppModel: ObservableObject {
     private let client: TurboCiderClient
     private let daemon: TurboCiderDaemon
     private var pollTask: Task<Void, Never>?
+    private var stagedInputs: Set<String> = []
 
     init(
         client: TurboCiderClient = TurboCiderClient(),
@@ -50,6 +54,45 @@ final class AppModel: ObservableObject {
 
     var taskType: String {
         taskTypes.contains(selectedTask) ? selectedTask : (taskTypes.first ?? "video")
+    }
+
+    var availableModes: [String] {
+        let declared = selectedDescriptor?.capabilities.modes ?? []
+        guard !declared.isEmpty else { return ["auto"] }
+        let imageModes: Set<String> = ["text_to_image", "image_to_image", "image_edit"]
+        let videoModes: Set<String> = ["text_to_video", "image_to_video", "keyframe_interpolation"]
+        let taskModes = declared.filter {
+            (taskType == "image" ? imageModes : videoModes).contains($0)
+        }
+        if !taskModes.isEmpty { return taskModes }
+        return ["auto"]
+    }
+
+    var hasDeclaredModes: Bool {
+        selectedDescriptor?.capabilities.modes?.isEmpty == false
+    }
+
+    var modeType: String {
+        availableModes.contains(selectedMode) ? selectedMode : (availableModes.first ?? "auto")
+    }
+
+    var maxReferenceImages: Int {
+        max(1, selectedDescriptor?.capabilities.maxReferenceImages ?? 1)
+    }
+
+    var modeHelp: String {
+        switch modeType {
+        case "image_to_image":
+            return "Uses one init image. Strength controls how far generation may move away from it."
+        case "image_edit":
+            return "Uses one or more ordered reference images with the FLUX edit pipeline."
+        case "image_to_video":
+            return "Anchors the generated video to the selected first frame."
+        case "keyframe_interpolation":
+            return "Generates motion between the selected first and last keyframes."
+        default:
+            return taskType == "image" ? "Generates an image from text only." : "Generates a video from text only."
+        }
     }
 
     var availableExecutionModes: [TCExecutionMode] {
@@ -136,6 +179,7 @@ final class AppModel: ObservableObject {
         if capabilities?.inputs?.contains(where: { $0 != "text" }) != true {
             inputs = []
         }
+        selectedMode = availableModes.first ?? "auto"
         applyTaskConstraints()
     }
 
@@ -148,6 +192,30 @@ final class AppModel: ObservableObject {
         } else if selectedDescriptor?.capabilities.audioRequired == true {
             includeAudio = true
         }
+        if !availableModes.contains(selectedMode) {
+            selectedMode = availableModes.first ?? "auto"
+        }
+        applyModeConstraints()
+    }
+
+    func applyModeConstraints() {
+        guard hasDeclaredModes else { return }
+        let acceptedRoles: Set<String>
+        switch modeType {
+        case "image_to_image":
+            acceptedRoles = ["init_image"]
+        case "image_edit":
+            acceptedRoles = ["reference"]
+        case "image_to_video":
+            acceptedRoles = ["first_frame"]
+        case "keyframe_interpolation":
+            acceptedRoles = ["first_frame", "last_frame"]
+        default:
+            acceptedRoles = []
+        }
+        let removed = inputs.filter { !acceptedRoles.contains($0.role) }
+        inputs.removeAll { !acceptedRoles.contains($0.role) }
+        removed.forEach { removeStagedFile($0.path) }
     }
 
     func generate() async {
@@ -167,6 +235,7 @@ final class AppModel: ObservableObject {
                 model: selectedModel,
                 task: taskType,
                 prompt: prompt,
+                mode: modeType,
                 inputs: inputs,
                 output: TCOutputSpec(
                     type: taskType,
@@ -197,20 +266,56 @@ final class AppModel: ObservableObject {
     func addInput(
         type: String,
         role: String,
-        includeEmbeddedAudio: Bool = true
+        includeEmbeddedAudio: Bool = true,
+        strength: Double? = nil,
+        frameIndex: Int? = nil
     ) {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = role == "reference"
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
+        switch type {
+        case "image": panel.allowedContentTypes = [.image]
+        case "video": panel.allowedContentTypes = [.movie]
+        case "audio": panel.allowedContentTypes = [.audio]
+        default: break
+        }
         guard panel.runModal() == .OK else { return }
-        for url in panel.urls {
-            inputs.append(TCInputAsset(
-                type: type,
-                role: role,
-                path: url.path,
-                includeEmbeddedAudio: includeEmbeddedAudio
-            ))
+        let availableSlots = role == "reference"
+            ? max(0, maxReferenceImages - inputs.filter { $0.role == "reference" }.count)
+            : 1
+        if availableSlots == 0 {
+            errorMessage = "This model accepts at most \(maxReferenceImages) reference image(s)."
+            return
+        }
+        do {
+            let selected = Array(panel.urls.prefix(availableSlots))
+            if role == "reference" && selected.count < panel.urls.count {
+                errorMessage = "Only the first \(selected.count) file(s) were added; this model accepts at most \(maxReferenceImages) references."
+            } else {
+                errorMessage = nil
+            }
+            for url in selected {
+                let staged = try stageInputFile(url)
+                let asset = TCInputAsset(
+                    type: type,
+                    role: role,
+                    path: staged.path,
+                    includeEmbeddedAudio: includeEmbeddedAudio,
+                    strength: strength,
+                    frameIndex: frameIndex
+                )
+                if role == "reference" {
+                    inputs.append(asset)
+                } else {
+                    let replaced = inputs.filter { $0.role == role }
+                    inputs.removeAll { $0.role == role }
+                    replaced.forEach { removeStagedFile($0.path) }
+                    inputs.append(asset)
+                }
+            }
+        } catch {
+            errorMessage = "Could not prepare input media: \(error.localizedDescription)"
         }
     }
 
@@ -229,16 +334,33 @@ final class AppModel: ObservableObject {
         audioPanel.message = "Choose the separate reference audio"
         guard audioPanel.runModal() == .OK, let audio = audioPanel.url else { return }
 
-        inputs.append(TCInputAsset(
-            type: "video",
-            role: "reference",
-            path: video.path,
-            audioPath: audio.path
-        ))
+        do {
+            let stagedVideo = try stageInputFile(video)
+            let stagedAudio = try stageInputFile(audio)
+            inputs.append(TCInputAsset(
+                type: "video",
+                role: "reference",
+                path: stagedVideo.path,
+                audioPath: stagedAudio.path
+            ))
+        } catch {
+            errorMessage = "Could not prepare input media: \(error.localizedDescription)"
+        }
     }
 
     func removeInput(id: UUID) {
+        if let input = inputs.first(where: { $0.id == id }) {
+            removeStagedFile(input.path)
+            removeStagedFile(input.audioPath)
+        }
         inputs.removeAll { $0.id == id }
+    }
+
+    func updateImageStrength(_ value: Double) {
+        imageStrength = value
+        for index in inputs.indices where ["init_image", "first_frame"].contains(inputs[index].role) {
+            inputs[index].strength = value
+        }
     }
 
     func cancel() async {
@@ -277,6 +399,28 @@ final class AppModel: ObservableObject {
     func shutdown() {
         pollTask?.cancel()
         daemon.stop()
+    }
+
+    private func stageInputFile(_ source: URL) throws -> URL {
+        let manager = FileManager.default
+        let support = manager.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        )[0].appendingPathComponent("TurboCider/inputs", isDirectory: true)
+        try manager.createDirectory(at: support, withIntermediateDirectories: true)
+        let accessed = source.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { source.stopAccessingSecurityScopedResource() }
+        }
+        let suffix = source.pathExtension.isEmpty ? "" : "." + source.pathExtension
+        let destination = support.appendingPathComponent(UUID().uuidString + suffix)
+        try manager.copyItem(at: source, to: destination)
+        stagedInputs.insert(destination.path)
+        return destination
+    }
+
+    private func removeStagedFile(_ path: String?) {
+        guard let path, stagedInputs.remove(path) != nil else { return }
+        try? FileManager.default.removeItem(atPath: path)
     }
 
     private func poll(jobID: String) {

@@ -21,5 +21,10 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.data-files]
+"share/turbocider/model-packs" = ["model-packs/*.json"]
+"share/turbocider/device-profiles" = ["device-profiles/*.json"]
+"share/turbocider/schemas" = ["schemas/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

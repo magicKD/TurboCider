@@ -16,33 +16,33 @@
     "recommended_steps": 3
   },
   "config": {
-    "engine_root": "${WORKSPACE}/gpu_ane/fastmetal-engine",
-    "script_path": "${WORKSPACE}/gpu_ane/fastmetal-engine/examples/inference/basic/mlx_wan_prompt_to_video.py",
+    "engine_root": "${TURBOCIDER_ENGINES}/fastmetal/engine",
+    "script_path": "${TURBOCIDER_ENGINES}/fastmetal/engine/examples/inference/basic/mlx_wan_prompt_to_video.py",
     "python_path_candidates": [
       "${FASTMETAL_PYTHON}",
-      "${WORKSPACE}/gpu_ane/fastmetal-runtime/.venv/bin/python"
+      "${TURBOCIDER_ENGINES}/fastmetal/runtime/.venv/bin/python"
     ],
     "model_path_candidates": [
       "${FASTMETAL_MODEL_PATH}",
       "${TURBOCIDER_MODELS}/FastMetal-1.3B-QAD",
-      "${WORKSPACE}/gpu_ane/fastmetal-runtime/models/FastMetal-1.3B-QAD"
+      "${TURBOCIDER_ENGINES}/fastmetal/runtime/models/FastMetal-1.3B-QAD"
     ],
     "ane_manifest_candidates": [
       "${FASTMETAL_ANE_MANIFEST}",
       "${TURBOCIDER_MODELS}/coreml/FastMetal-1.3B-QAD/m32760-a4096/manifest.json",
-      "${WORKSPACE}/gpu_ane/fastmetal-runtime/models/coreml/FastMetal-1.3B-QAD/m32760-a4096/manifest.json"
+      "${TURBOCIDER_ENGINES}/fastmetal/runtime/models/coreml/FastMetal-1.3B-QAD/m32760-a4096/manifest.json"
     ],
     "bridge_dir_candidates": [
       "${FASTMETAL_ANE_BRIDGE_DIR}",
-      "${WORKSPACE}/gpu_ane/flux2-engine/build"
+      "${TURBOCIDER_ENGINES}/flux2/engine/build"
     ]
   },
   "preparation": {
     "runtime_model_directory": "${TURBOCIDER_MODELS}/FastMetal-1.3B-QAD",
     "python_candidates": [
       "${FASTMETAL_PREPARE_PYTHON}",
-      "${WORKSPACE}/gpu_ane/flux2-runtime/.venv/bin/python",
-      "${WORKSPACE}/gpu_ane/fastmetal-runtime/.venv/bin/python"
+      "${TURBOCIDER_ENGINES}/flux2/runtime/.venv/bin/python",
+      "${TURBOCIDER_ENGINES}/fastmetal/runtime/.venv/bin/python"
     ],
     "sources": [
       {

@@ -125,6 +125,46 @@ class PolicyTests(unittest.TestCase):
         })
         self.assertEqual(choose_plan(model, matching).id, "fixed-fps")
 
+    def test_mode_requirement_routes_image_edit_away_from_hybrid(self):
+        gpu = ExecutionPlan.from_dict({
+            "id": "gpu-edit", "execution": "gpu", "quality": "exact",
+            "priority": 100, "production": True,
+            "requirements": {"modes": ["image_edit"]},
+        })
+        hybrid = ExecutionPlan.from_dict({
+            "id": "hybrid-standard", "execution": "gpu_ane",
+            "quality": "validated", "priority": 200, "production": True,
+            "requirements": {
+                "persistent": True,
+                "modes": ["text_to_image", "image_to_image"],
+            },
+        })
+        model = ModelDescriptor(
+            id="flux", name="Flux", engine="flux2", version="1",
+            capabilities={}, config={}, plans=[gpu, hybrid],
+        )
+        request = GenerationRequest.from_dict({
+            "model": "flux", "task": "image", "prompt": "edit",
+            "mode": "image_edit",
+            "inputs": [{
+                "type": "image", "role": "reference", "path": "/tmp/ref.png",
+            }],
+            "output": {"type": "image"},
+            "policy": {"persistent": True},
+        })
+        self.assertEqual(choose_plan(model, request).id, "gpu-edit")
+        request = GenerationRequest.from_dict({
+            "model": "flux", "task": "image", "prompt": "edit",
+            "mode": "image_edit",
+            "inputs": [{
+                "type": "image", "role": "reference", "path": "/tmp/ref.png",
+            }],
+            "output": {"type": "image"},
+            "policy": {"execution": "gpu_ane", "persistent": True},
+        })
+        with self.assertRaises(PlanUnavailableError):
+            choose_plan(model, request)
+
 
 if __name__ == "__main__":
     unittest.main()

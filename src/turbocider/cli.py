@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from turbocider import __version__
 from turbocider.benchmark import run_benchmark
+from turbocider.bootstrap import bootstrap_engines, print_bootstrap_report
 from turbocider.errors import TurboCiderError
 from turbocider.model_management import (
     ModelPreparer,
@@ -104,6 +105,14 @@ def _request_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--request", type=Path, help="load the complete request from JSON")
     parser.add_argument("--model", default="minimax-h3-turbo")
     parser.add_argument("--task", choices=("image", "video", "audio"), default="video")
+    parser.add_argument(
+        "--mode",
+        choices=(
+            "auto", "text_to_image", "image_to_image", "image_edit",
+            "text_to_video", "image_to_video", "keyframe_interpolation",
+        ),
+        default="auto",
+    )
     parser.add_argument("--prompt")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--width", type=int, default=512)
@@ -121,7 +130,12 @@ def _request_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-fallback", action="store_true")
     parser.add_argument("--first-frame", action="append", default=[])
     parser.add_argument("--last-frame", action="append", default=[])
+    parser.add_argument("--init-image")
     parser.add_argument("--ref-image", action="append", default=[])
+    parser.add_argument(
+        "--image-strength", type=float, default=0.75,
+        help="conditioning strength for --init-image/--first-frame (0..1)",
+    )
     parser.add_argument("--ref-video", action="append", default=[])
     parser.add_argument("--ref-silent-video", action="append", default=[])
     parser.add_argument(
@@ -158,9 +172,17 @@ def _parse_request(args) -> GenerationRequest:
         return GenerationRequest.from_dict(json.loads(args.request.read_text(encoding="utf-8")))
     inputs: List[Dict[str, Any]] = []
     for path in args.first_frame:
-        inputs.append({"type": "image", "role": "first_frame", "path": path})
+        inputs.append({
+            "type": "image", "role": "first_frame", "path": path,
+            "strength": args.image_strength, "frame_index": 0,
+        })
     for path in args.last_frame:
         inputs.append({"type": "image", "role": "last_frame", "path": path})
+    if args.init_image:
+        inputs.append({
+            "type": "image", "role": "init_image", "path": args.init_image,
+            "strength": args.image_strength,
+        })
     for path in args.ref_image:
         inputs.append({"type": "image", "role": "reference", "path": path})
     for path in args.ref_video:
@@ -213,6 +235,7 @@ def _parse_request(args) -> GenerationRequest:
     return GenerationRequest.from_dict({
         "model": args.model,
         "task": args.task,
+        "mode": args.mode,
         "prompt": args.prompt or "",
         "inputs": inputs,
         "output": {
@@ -251,6 +274,20 @@ def build_parser() -> argparse.ArgumentParser:
     models = subparsers.add_parser("models", help="list registered model packs")
     models.add_argument("--json", action="store_true")
 
+    bootstrap = subparsers.add_parser(
+        "bootstrap",
+        help="prepare the self-contained native engine directory",
+    )
+    bootstrap.add_argument(
+        "--source",
+        type=Path,
+        required=True,
+        help="root of a native-engine source checkout",
+    )
+    bootstrap.add_argument("--target", type=Path)
+    bootstrap.add_argument("--copy", action="store_true")
+    bootstrap.add_argument("--engine", action="append", default=[])
+
     prepare_model = subparsers.add_parser(
         "prepare-model",
         help="download pinned weights and prepare device-specific ANE artifacts",
@@ -285,6 +322,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="64-aligned FastMetal FFN channels assigned to ANE",
     )
     prepare_model.add_argument(
+        "--flux-ane-mlp-width", type=int, default=6144,
+        help="64-aligned FLUX.2 SwiGLU channels assigned to ANE",
+    )
+    prepare_model.add_argument(
         "--blocks", help="comma-separated indexes/ranges, such as 0-19,23"
     )
     prepare_model.add_argument("--ltx-text-rows", type=int, default=1024)
@@ -292,6 +333,17 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_model.add_argument("--workers", type=int, default=1)
     prepare_model.add_argument("--minimum-free-gib", type=float, default=5.0)
     prepare_model.add_argument("--python", type=Path)
+    prepare_model.add_argument(
+        "--hub",
+        choices=("huggingface", "modelscope"),
+        help="download source hub for models that support it",
+    )
+
+    assets = subparsers.add_parser(
+        "assets", help="list prepared model, ANE, and cache receipts"
+    )
+    assets.add_argument("model", nargs="?")
+    assets.add_argument("--json", action="store_true")
 
     benchmark = subparsers.add_parser(
         "benchmark", help="compare a direct engine with TurboCider"
@@ -337,6 +389,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> None:
     args = build_parser().parse_args(argv)
+    if args.command == "bootstrap":
+        try:
+            report = bootstrap_engines(
+                args.source,
+                target=args.target,
+                copy=args.copy,
+                engines=args.engine,
+            )
+            print_bootstrap_report(report)
+            return
+        except (OSError, ValueError) as error:
+            print("turbocider: %s" % error, file=sys.stderr)
+            raise SystemExit(2) from error
     if args.command == "prepare-model":
         try:
             preparer = ModelPreparer()
@@ -348,6 +413,14 @@ def main(argv=None) -> None:
                 if requested
                 else preparer.inspect(args.model)
             )
+            _json_print(report)
+            return
+        except (TurboCiderError, ValueError, OSError, json.JSONDecodeError) as error:
+            print("turbocider: %s" % error, file=sys.stderr)
+            raise SystemExit(2) from error
+    if args.command == "assets":
+        try:
+            report = ModelPreparer().assets(args.model)
             _json_print(report)
             return
         except (TurboCiderError, ValueError, OSError, json.JSONDecodeError) as error:

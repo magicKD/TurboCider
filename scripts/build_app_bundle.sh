@@ -2,7 +2,6 @@
 set -eu
 
 PACKAGE_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-WORKSPACE_ROOT=$(CDPATH= cd -- "$PACKAGE_ROOT/.." && pwd)
 CONFIGURATION=${CONFIGURATION:-release}
 
 cd "$PACKAGE_ROOT"
@@ -24,7 +23,15 @@ cp -R "$PACKAGE_ROOT/device-profiles" "$RESOURCES/device-profiles"
 cp -R "$PACKAGE_ROOT/schemas" "$RESOURCES/schemas"
 cp -R "$PACKAGE_ROOT/scripts" "$RESOURCES/scripts"
 cp -R "$PACKAGE_ROOT/benchmarks" "$RESOURCES/benchmarks"
-printf '%s\n' "$WORKSPACE_ROOT" > "$RESOURCES/workspace.path"
+if [ -d "$PACKAGE_ROOT/Python" ]; then
+    cp -R "$PACKAGE_ROOT/Python" "$RESOURCES/Python"
+fi
+if [ -d "$PACKAGE_ROOT/runtime" ]; then
+    cp -R "$PACKAGE_ROOT/runtime" "$RESOURCES/runtime"
+fi
+if [ -d "$PACKAGE_ROOT/engines" ]; then
+    cp -R "$PACKAGE_ROOT/engines" "$RESOURCES/engines"
+fi
 
 if command -v codesign >/dev/null 2>&1; then
     codesign --force --deep --sign - "$BUNDLE"

@@ -19,17 +19,17 @@
     "recommended_steps": 4
   },
   "config": {
-    "executable_path": "${WORKSPACE}/h3.c/h3",
+    "executable_path": "${TURBOCIDER_ENGINES}/h3/h3",
     "model_path_candidates": [
       "${TURBOCIDER_MODELS}/MiniMax-H3-LightX2V-Turbo",
-      "${WORKSPACE}/h3.c/models/MiniMax-H3-LightX2V-Turbo"
+      "${TURBOCIDER_ENGINES}/h3/models/MiniMax-H3-LightX2V-Turbo"
     ]
   },
   "preparation": {
     "runtime_model_directory": "${TURBOCIDER_MODELS}/MiniMax-H3-LightX2V-Turbo",
     "python_candidates": [
       "${H3_PREPARE_PYTHON}",
-      "${WORKSPACE}/gpu_ane/flux2-runtime/.venv/bin/python"
+      "${TURBOCIDER_ENGINES}/flux2/runtime/.venv/bin/python"
     ],
     "sources": [
       {
@@ -54,14 +54,14 @@
       }
     ],
     "merge": {
-      "tool": "${WORKSPACE}/h3.c/tools/merge_h3_lora.py",
+      "tool": "${TURBOCIDER_ENGINES}/h3/tools/merge_h3_lora.py",
       "lora_subpath": "minimax_h3_fl2v_turbo_4step_v1.1_768p_bf16.safetensors",
       "profile": "lightx2v-4step",
       "source_revision": "2f8ea0dc0a7e2b26c9a43124eb89673787189b4e",
       "estimated_output_bytes": 69793218560
     },
     "ane": {
-      "tool": "${WORKSPACE}/h3.c/tools/export_coreml_h3_blocks.py",
+      "tool": "${TURBOCIDER_ENGINES}/h3/tools/export_coreml_h3_blocks.py",
       "output_directory": "${TURBOCIDER_MODELS}/coreml/minimax-h3-turbo",
       "estimated_bytes": 42949672960
     }

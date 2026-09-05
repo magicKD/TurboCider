@@ -124,12 +124,14 @@ class PreparationOptions:
     h3_rows: Optional[int] = None
     fastmetal_rows: int = 32760
     fastmetal_ane_width: int = 4096
+    flux_ane_mlp_width: int = 6144
     blocks: Optional[str] = None
     ltx_text_rows: int = 1024
     buckets: Sequence[int] = (1088,)
     workers: int = 1
     minimum_free_gib: float = DEFAULT_RESERVE_GIB
     python: Optional[Path] = None
+    hub: Optional[str] = None
 
 
 class ModelPreparer:
@@ -162,8 +164,14 @@ class ModelPreparer:
             raise ModelPreparationError(
                 "fastmetal-ane-width must be a 64-aligned value in (0, 8960)"
             )
+        if options.flux_ane_mlp_width <= 0 or options.flux_ane_mlp_width % 64:
+            raise ModelPreparationError(
+                "flux-ane-mlp-width must be a positive 64-aligned value"
+            )
         if not options.buckets or any(int(value) <= 0 for value in options.buckets):
             raise ModelPreparationError("Core ML buckets must be positive")
+        if options.hub is not None and options.hub not in {"huggingface", "modelscope"}:
+            raise ModelPreparationError("hub must be huggingface or modelscope")
 
         model = self.registry.get(model_id)
         if not model.preparation:
@@ -295,6 +303,27 @@ class ModelPreparer:
             ),
         }
 
+    def assets(self, model_id: Optional[str] = None) -> Dict[str, Any]:
+        """Summarize prepared model, ANE, and cache receipts."""
+        root = self.state_directory / "model-management"
+        if model_id:
+            paths = [root / (model_id + ".json")]
+        else:
+            paths = sorted(root.glob("*.json"))
+        rows = []
+        for path in paths:
+            if not path.is_file():
+                continue
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+            rows.append({
+                "model": receipt.get("model"),
+                "engine": receipt.get("engine"),
+                "status": receipt.get("status"),
+                "prepared_at": receipt.get("prepared_at"),
+                "artifacts": receipt.get("artifacts", {}),
+            })
+        return {"data": rows}
+
     def _python(
         self,
         recipe: Mapping[str, Any],
@@ -363,7 +392,15 @@ class ModelPreparer:
     def _required_modules(actions: Sequence[PreparationAction]) -> set[str]:
         modules: set[str] = set()
         if any(action.kind == "download" and not action.cached for action in actions):
-            modules.add("huggingface_hub")
+            hubs = {
+                action.metadata.get("hub", "huggingface")
+                for action in actions
+                if action.kind == "download" and not action.cached
+            }
+            if "modelscope" in hubs:
+                modules.add("modelscope")
+            if "huggingface" in hubs:
+                modules.add("huggingface_hub")
         if any(
             action.kind in {"ane_export", "coreml_cache"} and not action.cached
             for action in actions
@@ -397,6 +434,7 @@ class ModelPreparer:
         python: Path,
         destination_override: Optional[Path],
         roles: Iterable[str],
+        hub: Optional[str] = None,
     ):
         selected_roles = set(roles)
         actions: List[PreparationAction] = []
@@ -406,6 +444,7 @@ class ModelPreparer:
             role = str(source["role"])
             if role not in selected_roles:
                 continue
+            source_hub = str(hub or source.get("hub", "huggingface"))
             destination = (
                 destination_override.expanduser().resolve()
                 if destination_override is not None and len(selected_roles) == 1
@@ -415,21 +454,37 @@ class ModelPreparer:
             expected = [destination / str(item) for item in source.get("required_paths", [])]
             cached = bool(expected) and all(path.exists() for path in expected)
             patterns = [str(item) for item in source.get("allow_patterns", [])]
-            command = [
-                str(python),
-                "-c",
-                (
-                    "import json,sys; from huggingface_hub import snapshot_download; "
-                    "snapshot_download(repo_id=sys.argv[1], revision=sys.argv[2], "
-                    "local_dir=sys.argv[3], allow_patterns=json.loads(sys.argv[4]), "
-                    "max_workers=int(sys.argv[5]))"
-                ),
-                str(source["repo_id"]),
-                str(source["revision"]),
-                str(destination),
-                json.dumps(patterns),
-                str(int(source.get("max_workers", 8))),
-            ]
+            if source_hub == "modelscope":
+                command = [
+                    str(python),
+                    "-c",
+                    (
+                        "import json,sys; "
+                        "from modelscope.hub.snapshot_download import snapshot_download; "
+                        "snapshot_download(model_id=sys.argv[1], revision=sys.argv[2], "
+                        "local_dir=sys.argv[3], allow_patterns=json.loads(sys.argv[4]))"
+                    ),
+                    str(source["repo_id"]),
+                    str(source["revision"]),
+                    str(destination),
+                    json.dumps(patterns),
+                ]
+            else:
+                command = [
+                    str(python),
+                    "-c",
+                    (
+                        "import json,sys; from huggingface_hub import snapshot_download; "
+                        "snapshot_download(repo_id=sys.argv[1], revision=sys.argv[2], "
+                        "local_dir=sys.argv[3], allow_patterns=json.loads(sys.argv[4]), "
+                        "max_workers=int(sys.argv[5]))"
+                    ),
+                    str(source["repo_id"]),
+                    str(source["revision"]),
+                    str(destination),
+                    json.dumps(patterns),
+                    str(int(source.get("max_workers", 8))),
+                ]
             actions.append(PreparationAction(
                 kind="download",
                 description="download pinned %s source" % role,
@@ -440,12 +495,13 @@ class ModelPreparer:
                 command=command,
                 cwd=PACKAGE_ROOT,
                 cached=cached,
-                metadata={"role": role},
+                metadata={"role": role, "hub": source_hub},
             ))
             sources.append({
                 "role": role,
                 "repo_id": str(source["repo_id"]),
                 "revision": str(source["revision"]),
+                "hub": source_hub,
                 "destination": str(destination),
                 "allow_patterns": patterns,
                 "required_paths": [str(item) for item in source.get("required_paths", [])],
@@ -473,7 +529,7 @@ class ModelPreparer:
             if lora is None:
                 roles.append("adapter")
             download_actions, source_rows, destinations = self._download_actions(
-                recipe, python, None, roles
+                recipe, python, None, roles, hub=options.hub
             )
             actions.extend(download_actions)
             sources.extend(source_rows)
@@ -594,7 +650,7 @@ class ModelPreparer:
         )
         if options.download:
             rows, source_rows, _ = self._download_actions(
-                recipe, python, model_directory, ("model",)
+                recipe, python, model_directory, ("model",), hub=options.hub
             )
             actions.extend(rows)
             sources.extend(source_rows)
@@ -692,7 +748,7 @@ class ModelPreparer:
         )
         if options.download:
             rows, source_rows, _ = self._download_actions(
-                recipe, python, model_directory, ("model",)
+                recipe, python, model_directory, ("model",), hub=options.hub
             )
             actions.extend(rows)
             sources.extend(source_rows)
@@ -706,22 +762,34 @@ class ModelPreparer:
             if configured.exists():
                 source_model = configured
         checkpoint = source_model / str(recipe["ane"]["checkpoint_subpath"])
+        mlp_width = int(recipe["ane"].get("mlp_width", 9216))
+        if options.flux_ane_mlp_width > mlp_width:
+            raise ModelPreparationError(
+                "flux-ane-mlp-width must not exceed the model MLP width %d"
+                % mlp_width
+            )
         blocks = _parse_blocks(options.blocks or "0-19", 20)
         bucket_text = "-".join(str(value) for value in sorted(set(options.buckets)))
         ane_output = (
             options.ane_output.expanduser().resolve()
             if options.ane_output
-                else Path(str(recipe["ane"]["output_directory"])).resolve()
-                    / ("m" + bucket_text)
+            else Path(str(recipe["ane"]["output_directory"])).resolve()
+                / ("m%s-a%d" % (bucket_text, options.flux_ane_mlp_width))
         )
         manifest = ane_output / "manifest.json"
+        configured_runtime_manifest: Optional[Path] = None
         if options.cache and not options.ane and options.ane_output is None:
             configured_manifest = model.config.get("ane_manifests", "")
             if isinstance(configured_manifest, str) and configured_manifest:
                 candidate = Path(configured_manifest).expanduser().resolve()
                 if candidate.is_file():
-                    manifest = candidate
-                    ane_output = candidate.parent
+                    if candidate.parent.name == "compiled":
+                        configured_runtime_manifest = candidate
+                        ane_output = candidate.parent.parent
+                        manifest = ane_output / "manifest.json"
+                    else:
+                        manifest = candidate
+                        ane_output = candidate.parent
         if options.ane:
             command = [
                 str(python), str(recipe["ane"]["tool"]),
@@ -729,6 +797,7 @@ class ModelPreparer:
                 "--buckets", *(str(value) for value in sorted(set(options.buckets))),
                 "--blocks", *(str(block) for block in blocks),
                 "--variants", "int8_pc",
+                "--ane-mlp-width", str(options.flux_ane_mlp_width),
             ]
             if options.force:
                 command.append("--overwrite")
@@ -754,15 +823,28 @@ class ModelPreparer:
                 environment=environment,
                 cached=cached and not options.force,
                 requires=[checkpoint],
-                metadata={"blocks": blocks, "buckets": list(options.buckets)},
+                metadata={
+                    "blocks": blocks,
+                    "buckets": list(options.buckets),
+                    "ane_mlp_width": options.flux_ane_mlp_width,
+                    "gpu_mlp_width": mlp_width - options.flux_ane_mlp_width,
+                },
             ))
         if options.cache:
             cache_directory = (
                 options.cache_directory.expanduser().resolve()
                 if options.cache_directory
-                else ane_output / "compiled"
+                else (
+                    configured_runtime_manifest.parent
+                    if configured_runtime_manifest is not None
+                    else ane_output / "compiled"
+                )
             )
-            runtime_manifest = cache_directory / "manifest.json"
+            runtime_manifest = (
+                configured_runtime_manifest
+                if configured_runtime_manifest is not None
+                else cache_directory / "manifest.json"
+            )
             cached = runtime_manifest.is_file() and not options.force
             command = [
                 str(python), str(recipe["cache"]["tool"]),
@@ -782,7 +864,10 @@ class ModelPreparer:
                 cwd=Path(str(recipe["cache"]["tool"])).resolve().parent.parent,
                 cached=cached,
                 requires=[manifest],
-                metadata={"workers": options.workers},
+                metadata={
+                    "workers": options.workers,
+                    "ane_mlp_width": options.flux_ane_mlp_width,
+                },
             ))
             artifacts["ane_runtime_manifest"] = str(runtime_manifest)
         elif options.ane:
@@ -802,7 +887,7 @@ class ModelPreparer:
         )
         if options.download:
             rows, source_rows, _ = self._download_actions(
-                recipe, python, model_directory, ("model",)
+                recipe, python, model_directory, ("model",), hub=options.hub
             )
             actions.extend(rows)
             sources.extend(source_rows)
@@ -933,10 +1018,12 @@ def preparation_options_from_namespace(args) -> PreparationOptions:
         h3_rows=args.h3_rows,
         fastmetal_rows=args.fastmetal_rows,
         fastmetal_ane_width=args.fastmetal_ane_width,
+        flux_ane_mlp_width=args.flux_ane_mlp_width,
         blocks=args.blocks,
         ltx_text_rows=args.ltx_text_rows,
         buckets=tuple(args.bucket or (1088,)),
         workers=args.workers,
         minimum_free_gib=args.minimum_free_gib,
         python=args.python,
+        hub=getattr(args, "hub", None),
     )

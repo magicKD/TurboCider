@@ -230,6 +230,7 @@ class AdapterTests(unittest.TestCase):
                     "mflux_root": str(mflux),
                     "bridge_dir": str(bridge),
                     "ane_manifests": [str(manifest)],
+                    "clear_mlx_cache_between_requests": False,
                 },
                 plans=[],
             )
@@ -242,7 +243,6 @@ class AdapterTests(unittest.TestCase):
                     "dynamic_text_length": False,
                     "reuse_ane_outputs": False,
                     "compile_quantized_gpu_attention": False,
-                    "clear_mlx_cache_between_requests": False,
                 }},
             })
             plan = ExecutionPlan.from_dict({
@@ -258,6 +258,90 @@ class AdapterTests(unittest.TestCase):
             self.assertIn("--no-compile-quantized-gpu-attention", worker["argv"])
             self.assertIn("--no-clear-mlx-cache-between-requests", worker["argv"])
             self.assertFalse(worker["request"]["dynamic_text_length"])
+
+            override = GenerationRequest.from_dict({
+                "model": "flux", "prompt": "hello", "task": "image",
+                "output": {"type": "image"},
+                "policy": {"persistent": True},
+                "engine_options": {"flux2": {
+                    "clear_mlx_cache_between_requests": True,
+                }},
+            })
+            override_spec = Flux2Adapter().build_command(
+                model, override, plan, root / "override.png"
+            )
+            override_argv = override_spec.metadata["persistent_worker"]["argv"]
+            self.assertIn("--clear-mlx-cache-between-requests", override_argv)
+            self.assertNotIn("--no-clear-mlx-cache-between-requests", override_argv)
+
+    def test_flux_single_image_and_multi_reference_inputs_reach_engine(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            engine = root / "engine"
+            model_path = root / "model"
+            mflux = root / "mflux"
+            for path in (engine, model_path, mflux):
+                path.mkdir()
+            model = ModelDescriptor(
+                id="flux", name="flux", engine="flux2", version="1",
+                capabilities={},
+                config={
+                    "python_path": "/usr/bin/python3",
+                    "engine_root": str(engine),
+                    "model_path": str(model_path),
+                    "mflux_root": str(mflux),
+                },
+                plans=[],
+            )
+            gpu = ExecutionPlan.from_dict({
+                "id": "gpu", "execution": "gpu", "quality": "exact",
+            })
+            init = root / "init.png"
+            first = root / "one.png"
+            second = root / "two.png"
+            for path in (init, first, second):
+                path.touch()
+
+            img2img = GenerationRequest.from_dict({
+                "model": "flux", "task": "image", "prompt": "restyle",
+                "mode": "image_to_image",
+                "inputs": [{
+                    "type": "image", "role": "init_image", "path": str(init),
+                    "strength": 0.4,
+                }],
+                "output": {"type": "image"},
+            })
+            img2img_spec = Flux2Adapter().build_command(
+                model, img2img, gpu, root / "img2img.png"
+            )
+            self.assertIn("--pipeline", img2img_spec.argv)
+            self.assertEqual(img2img_spec.argv[img2img_spec.argv.index("--pipeline") + 1], "standard")
+            self.assertEqual(
+                img2img_spec.argv[img2img_spec.argv.index("--image-path") + 1],
+                str(init.resolve()),
+            )
+            self.assertEqual(img2img_spec.argv[img2img_spec.argv.index("--image-strength") + 1], "0.4")
+
+            edit = GenerationRequest.from_dict({
+                "model": "flux", "task": "image", "prompt": "combine",
+                "mode": "image_edit",
+                "inputs": [
+                    {"type": "image", "role": "reference", "path": str(first)},
+                    {"type": "image", "role": "reference", "path": str(second)},
+                ],
+                "output": {"type": "image"},
+                "policy": {"persistent": True},
+            })
+            edit_spec = Flux2Adapter().build_command(
+                model, edit, gpu, root / "edit.png"
+            )
+            worker = edit_spec.metadata["persistent_worker"]
+            self.assertEqual(worker["argv"][worker["argv"].index("--pipeline") + 1], "edit")
+            self.assertEqual(
+                worker["request"]["image_paths"],
+                [str(first.resolve()), str(second.resolve())],
+            )
+            self.assertIsNone(worker["request"]["image_path"])
 
     def test_ltx_rejects_silently_ignored_sampling_options(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -448,6 +532,194 @@ class AdapterTests(unittest.TestCase):
                 EngineUnavailableError, "audio_vae=<unset>"
             ):
                 LTXAdapter().build_command(model, request, plan, root / "out.mp4")
+
+    def test_ltx_image_to_video_maps_first_frame_for_gpu_and_hybrid(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            build = root / "build"
+            build.mkdir()
+            gpu_engine = build / "bench_block_mlx"
+            hybrid_engine = build / "bench_block_mlx_ane"
+            helper = build / "bench_mlx_video_vae"
+            for path in (gpu_engine, hybrid_engine, helper):
+                path.touch()
+            for name in ("transformer", "upsampler", "video_vae"):
+                (root / name).touch()
+            conditioning = root / "conditioning"
+            conditioning.mkdir()
+            first_frame = root / "first.png"
+            first_frame.touch()
+            ane = {}
+            for name in ("stage1", "stage2", "kv"):
+                ane[name] = root / name
+                ane[name].mkdir()
+            model = ModelDescriptor(
+                id="ltx", name="ltx", engine="ltx25", version="1",
+                capabilities={},
+                config={
+                    "gpu_executable_path": str(gpu_engine),
+                    "hybrid_executable_path": str(hybrid_engine),
+                    "video_vae_helper_path": str(helper),
+                    "transformer_path": str(root / "transformer"),
+                    "upsampler_path": str(root / "upsampler"),
+                    "video_vae_path": str(root / "video_vae"),
+                    "conditioning_directory": str(conditioning),
+                    "ane_mlp_stage1_directory": str(ane["stage1"]),
+                    "ane_mlp_stage2_directory": str(ane["stage2"]),
+                    "ane_kv_directory": str(ane["kv"]),
+                },
+                plans=[],
+            )
+            request = GenerationRequest.from_dict({
+                "model": "ltx", "task": "video", "prompt": "animate",
+                "mode": "image_to_video",
+                "inputs": [{
+                    "type": "image", "role": "first_frame",
+                    "path": str(first_frame), "strength": 0.65,
+                    "frame_index": 0,
+                }],
+                "output": {
+                    "type": "video", "width": 704, "height": 480,
+                    "frames": 97, "fps": 24, "audio": False,
+                },
+                "engine_options": {"ltx": {"image_crf": 31}},
+            })
+            gpu = ExecutionPlan.from_dict({
+                "id": "gpu", "execution": "gpu", "quality": "exact",
+            })
+            hybrid = ExecutionPlan.from_dict({
+                "id": "hybrid", "execution": "gpu_ane",
+                "quality": "validated",
+            })
+
+            gpu_spec = LTXAdapter().build_command(
+                model, request, gpu, root / "gpu.mp4"
+            )
+            hybrid_spec = LTXAdapter().build_command(
+                model, request, hybrid, root / "hybrid.mp4"
+            )
+
+            for spec in (gpu_spec, hybrid_spec):
+                self.assertEqual(
+                    spec.argv[spec.argv.index("--first-frame") + 1],
+                    str(first_frame.resolve()),
+                )
+                self.assertEqual(
+                    spec.argv[spec.argv.index("--image-strength") + 1],
+                    "0.65",
+                )
+                self.assertEqual(
+                    spec.argv[spec.argv.index("--image-crf") + 1], "31"
+                )
+                self.assertEqual(
+                    spec.argv[spec.argv.index("--video-vae-helper") + 1],
+                    str(helper),
+                )
+                self.assertEqual(spec.metadata["conditioning_mode"], "image_to_video")
+            self.assertIn("LTX_ANE_", gpu_spec.unset_environment_prefixes)
+            self.assertEqual(
+                hybrid_spec.environment["LTX_ANE_MLP_STAGE1_DIR"],
+                str(ane["stage1"]),
+            )
+            self.assertEqual(
+                hybrid_spec.environment["LTX_ANE_MLP_STAGE2_DIR"],
+                str(ane["stage2"]),
+            )
+
+    def test_ltx_image_modes_are_strictly_validated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            build = root / "build"
+            build.mkdir()
+            engine = build / "bench_block_mlx"
+            engine.touch()
+            for name in ("transformer", "upsampler", "video_vae"):
+                (root / name).touch()
+            conditioning = root / "conditioning"
+            conditioning.mkdir()
+            image = root / "image.png"
+            image.touch()
+            model = ModelDescriptor(
+                id="ltx", name="ltx", engine="ltx25", version="1",
+                capabilities={},
+                config={
+                    "gpu_executable_path": str(engine),
+                    "transformer_path": str(root / "transformer"),
+                    "upsampler_path": str(root / "upsampler"),
+                    "video_vae_path": str(root / "video_vae"),
+                    "conditioning_directory": str(conditioning),
+                },
+                plans=[],
+            )
+            plan = ExecutionPlan.from_dict({
+                "id": "gpu", "execution": "gpu", "quality": "exact",
+            })
+
+            def request(mode, inputs, options=None):
+                return GenerationRequest.from_dict({
+                    "model": "ltx", "task": "video", "prompt": "animate",
+                    "mode": mode, "inputs": inputs,
+                    "output": {
+                        "type": "video", "width": 704, "height": 480,
+                        "frames": 97, "fps": 24, "audio": False,
+                    },
+                    "engine_options": {"ltx": options or {}},
+                })
+
+            with self.assertRaisesRegex(ValidationError, "does not accept image"):
+                LTXAdapter().build_command(
+                    model,
+                    request("text_to_video", [{
+                        "type": "image", "role": "first_frame",
+                        "path": str(image),
+                    }]),
+                    plan, root / "text.mp4",
+                )
+            with self.assertRaisesRegex(ValidationError, "exactly one image"):
+                LTXAdapter().build_command(
+                    model,
+                    request("image_to_video", [{
+                        "type": "image", "role": "reference",
+                        "path": str(image),
+                    }]),
+                    plan, root / "wrong-role.mp4",
+                )
+            with self.assertRaisesRegex(ValidationError, "unsupported LTX-2.5 mode"):
+                LTXAdapter().build_command(
+                    model,
+                    request("keyframe_interpolation", [{
+                        "type": "image", "role": "first_frame",
+                        "path": str(image),
+                    }]),
+                    plan, root / "keyframes.mp4",
+                )
+            with self.assertRaisesRegex(ValidationError, "image strength"):
+                LTXAdapter().build_command(
+                    model,
+                    request("image_to_video", [{
+                        "type": "image", "role": "first_frame",
+                        "path": str(image),
+                    }], {"image_strength": 1.1}),
+                    plan, root / "strength.mp4",
+                )
+            with self.assertRaisesRegex(ValidationError, "image_crf"):
+                LTXAdapter().build_command(
+                    model,
+                    request("image_to_video", [{
+                        "type": "image", "role": "first_frame",
+                        "path": str(image),
+                    }], {"image_crf": 52}),
+                    plan, root / "crf.mp4",
+                )
+            with self.assertRaisesRegex(EngineUnavailableError, "encoder helper"):
+                LTXAdapter().build_command(
+                    model,
+                    request("image_to_video", [{
+                        "type": "image", "role": "first_frame",
+                        "path": str(image),
+                    }]),
+                    plan, root / "helper.mp4",
+                )
 
 
 if __name__ == "__main__":

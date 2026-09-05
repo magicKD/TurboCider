@@ -20,16 +20,15 @@ from typing import Any, Dict, Iterable, Iterator, Mapping, MutableMapping, Optio
 
 from turbocider.errors import TurboCiderError, ValidationError
 from turbocider.models import GenerationRequest
-from turbocider.paths import PACKAGE_ROOT, workspace_root
+from turbocider.paths import PACKAGE_ROOT, engine_root, workspace_root
 from turbocider.runtime import TurboCiderRuntime
 
 
 def _expand(value: Any, context: Mapping[str, str]) -> Any:
     if isinstance(value, str):
         expanded = value.replace("${TURBOCIDER}", str(PACKAGE_ROOT))
-        expanded = expanded.replace(
-            "${WORKSPACE}", str(workspace_root())
-        )
+        expanded = expanded.replace("${WORKSPACE}", str(workspace_root()))
+        expanded = expanded.replace("${TURBOCIDER_ENGINES}", str(engine_root()))
         expanded = os.path.expandvars(os.path.expanduser(expanded))
         for key, replacement in context.items():
             expanded = expanded.replace("{%s}" % key, replacement)

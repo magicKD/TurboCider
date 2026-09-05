@@ -52,6 +52,44 @@ class LTXAdapter(EngineAdapter):
         if not isinstance(options, dict):
             raise ValidationError("engine_options.ltx must be an object")
 
+        request_mode = request.resolved_mode
+        image_assets = [item for item in request.inputs if item.type == "image"]
+        unsupported_assets = [
+            item for item in request.inputs if item.type not in {"text", "image"}
+        ]
+        first_frame = None
+        image_strength = float(options.get("image_strength", 1.0))
+        if request_mode == "text_to_video":
+            if image_assets:
+                raise ValidationError("text_to_video does not accept image inputs")
+            if unsupported_assets:
+                raise ValidationError(
+                    "text_to_video does not accept video or audio inputs"
+                )
+        elif request_mode == "image_to_video":
+            if unsupported_assets:
+                raise ValidationError(
+                    "image_to_video accepts only one first-frame image"
+                )
+            if len(image_assets) != 1 or image_assets[0].role != "first_frame":
+                raise ValidationError(
+                    "image_to_video requires exactly one image with role=first_frame"
+                )
+            first_frame = Path(str(image_assets[0].path))
+            if image_assets[0].strength is not None:
+                image_strength = image_assets[0].strength
+            if not first_frame.is_file():
+                raise EngineUnavailableError(
+                    "LTX first-frame image does not exist: %s" % first_frame
+                )
+        else:
+            raise ValidationError("unsupported LTX-2.5 mode: %s" % request_mode)
+        if not 0.0 <= image_strength <= 1.0:
+            raise ValidationError("LTX image strength must be between 0 and 1")
+        image_crf = int(options.get("image_crf", 33))
+        if not 0 <= image_crf <= 51:
+            raise ValidationError("engine_options.ltx.image_crf must be between 0 and 51")
+
         executable_key = "hybrid_executable_path" if plan.execution is ExecutionMode.GPU_ANE else "gpu_executable_path"
         executable = Path(str(model.config.get(executable_key, "")))
         transformer = _configured(model, options, "transformer_path")
@@ -59,13 +97,15 @@ class LTXAdapter(EngineAdapter):
         video_vae = _configured(model, options, "video_vae_path")
         conditioning = _configured(model, options, "conditioning_directory")
         audio_vae_value = _configured(model, options, "audio_vae_path")
+        dynamic_conditioning = bool(options.get("dynamic_conditioning", True))
         required = {
             "executable": str(executable),
             "transformer": transformer,
             "upsampler": upsampler,
             "video_vae": video_vae,
-            "conditioning": conditioning,
         }
+        if not dynamic_conditioning:
+            required["conditioning"] = conditioning
         if request.output.audio:
             required["audio_vae"] = audio_vae_value
         missing = [name for name, value in required.items() if not value or not Path(value).exists()]
@@ -90,6 +130,15 @@ class LTXAdapter(EngineAdapter):
             )
         output_dir = output_path.parent / (output_path.stem + ".ltx-artifacts")
         ltx_root = executable.parent.parent
+        video_vae_helper = Path(str(
+            options.get("video_vae_helper_path")
+            or model.config.get("video_vae_helper_path")
+            or ltx_root / "build" / "bench_mlx_video_vae"
+        ))
+        if first_frame is not None and not video_vae_helper.is_file():
+            raise EngineUnavailableError(
+                "LTX VAE encoder helper does not exist: %s" % video_vae_helper
+            )
         worker = Path(__file__).resolve().parents[1] / "workers" / "ltx_pipeline.py"
         comfy_python = Path(str(options.get("comfy_python_path") or model.config.get("comfy_python_path", sys.executable)))
         mlx_python = Path(str(options.get("mlx_python_path") or model.config.get("mlx_python_path", sys.executable)))
@@ -98,7 +147,6 @@ class LTXAdapter(EngineAdapter):
         audio_vae = Path(audio_vae_value) if audio_vae_value else Path(
             "/__turbocider_missing_ltx_audio_vae__"
         )
-        dynamic_conditioning = bool(options.get("dynamic_conditioning", True))
         argv: List[str] = [
             sys.executable,
             str(worker),
@@ -123,6 +171,13 @@ class LTXAdapter(EngineAdapter):
         ]
         if dynamic_conditioning:
             argv.append("--dynamic-conditioning")
+        if first_frame is not None:
+            argv.extend([
+                "--first-frame", str(first_frame),
+                "--image-strength", str(image_strength),
+                "--image-crf", str(image_crf),
+                "--video-vae-helper", str(video_vae_helper),
+            ])
         if request.output.audio and audio_vae.is_file():
             argv.extend(["--audio-vae", str(audio_vae)])
         extra = options.get("args", [])
@@ -169,11 +224,14 @@ class LTXAdapter(EngineAdapter):
                 "native_frames": 97,
                 "requested_fps": request.output.fps,
                 "dynamic_conditioning": dynamic_conditioning,
+                "conditioning_mode": request_mode,
+                "image_strength": image_strength if first_frame else None,
                 "expected_seconds": float(plan.metadata.get("expected_seconds", 113.0)),
                 "progress_phases": [
                     {"name": "text_conditioning", "weight": 0.17},
                     {"name": "connector", "weight": 0.03},
-                    {"name": "native_generation", "weight": 0.76},
+                    {"name": "image_conditioning", "weight": 0.02 if first_frame else 0.0},
+                    {"name": "native_generation", "weight": 0.74 if first_frame else 0.76},
                     {"name": "video_encode", "weight": 0.02},
                     {"name": "audio_decode", "weight": 0.01},
                     {"name": "mux", "weight": 0.01},
@@ -182,17 +240,21 @@ class LTXAdapter(EngineAdapter):
         )
 
     def doctor(self, model: ModelDescriptor) -> Dict[str, Any]:
+        def configured_path(key: str) -> Path:
+            value = str(model.config.get(key, "")).strip()
+            return Path(value).expanduser() if value else Path("/__turbocider_missing__")
+
         paths = {
-            "gpu_executable": Path(str(model.config.get("gpu_executable_path", ""))),
-            "hybrid_executable": Path(str(model.config.get("hybrid_executable_path", ""))),
-            "transformer": Path(str(model.config.get("transformer_path", ""))),
-            "upsampler": Path(str(model.config.get("upsampler_path", ""))),
-            "video_vae": Path(str(model.config.get("video_vae_path", ""))),
-            "conditioning": Path(str(model.config.get("conditioning_directory", ""))),
-            "text_encoder": Path(str(model.config.get("text_encoder_path", ""))),
-            "comfy_root": Path(str(model.config.get("comfy_root", ""))),
-            "comfy_python": Path(str(model.config.get("comfy_python_path", ""))),
-            "mlx_python": Path(str(model.config.get("mlx_python_path", ""))),
+            "gpu_executable": configured_path("gpu_executable_path"),
+            "hybrid_executable": configured_path("hybrid_executable_path"),
+            "transformer": configured_path("transformer_path"),
+            "upsampler": configured_path("upsampler_path"),
+            "video_vae": configured_path("video_vae_path"),
+            "conditioning": configured_path("conditioning_directory"),
+            "text_encoder": configured_path("text_encoder_path"),
+            "comfy_root": configured_path("comfy_root"),
+            "comfy_python": configured_path("comfy_python_path"),
+            "mlx_python": configured_path("mlx_python_path"),
         }
         report: Dict[str, Any] = {
             "engine": self.name,

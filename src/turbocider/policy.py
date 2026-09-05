@@ -53,6 +53,14 @@ def _requirement_failures(
     if requirements.get("persistent") and not request.policy.persistent:
         failures.append("plan requires persistent=true")
 
+    modes = requirements.get("modes", [])
+    if modes and request.resolved_mode not in modes:
+        failures.append("mode %s is unsupported" % request.resolved_mode)
+
+    excluded_modes = requirements.get("excluded_modes", [])
+    if request.resolved_mode in excluded_modes:
+        failures.append("mode %s is unsupported" % request.resolved_mode)
+
     shapes = requirements.get("shapes", [])
     if shapes:
         current = {

@@ -16,8 +16,8 @@ direct-engine speed and output behavior.
 | Model pack | Generation | Pure GPU | GPU+ANE | Model-specific features |
 |---|---|---:|---:|---|
 | `minimax-h3-turbo` | Video | Production | Explicit experimental route | Text, first/last frame, reference image/video/audio, embedded audio, preview profiles, native engine passthrough |
-| `ltx-2.5-distilled` | Video + synchronized audio | Production | Validated 704×480 route | Fixed distilled 8+3 schedule, parallel A/V finalization, dense and explicit preview plans |
-| `flux2-klein-4b` | Image | Production | Validated 512×512 route | Persistent model/ANE sessions, dynamic prompt length, precision and block controls |
+| `ltx-2.5-distilled` | Text-to-video + synchronized audio, single first-frame image-to-video | Production | Validated 704×480 route | Fixed distilled 8+3 schedule, parallel A/V finalization, dense and explicit preview plans, per-token first-frame conditioning for both GPU and GPU+ANE |
+| `flux2-klein-4b` | Text-to-image, img2img, multi-image edit | Production | Validated standard/img2img route | Persistent model/ANE sessions, dynamic prompt length, image strength, ordered references, precision and block controls |
 | `fastmetal-1.3b-qad` | Video | Production | Validated 832×480×81 route | Fixed 3-step DMD schedule, INT8 MLX DiT, 16 fps video without audio |
 
 Execution placement (`auto`, `gpu`, `gpu_ane`), generation profile (`quality`,
@@ -48,6 +48,21 @@ python3 -m pip install -e .
 turbocider doctor
 ```
 
+Native engines are resolved from `${TURBOCIDER_ENGINES}` and default to
+`engines/` inside this checkout. Point `TURBOCIDER_ENGINES_DIR` at an existing
+installation, or materialize the expected layout from engine source checkouts:
+
+```sh
+turbocider bootstrap --source /path/to/native-engines
+turbocider bootstrap --source /path/to/native-engines --copy
+```
+
+The bootstrap links (or copies) `h3`, `ltx-mac`, `flux2`, and `fastmetal`
+directories into `engines/` without recording any machine-specific monorepo
+paths in the repository. Set `TURBOCIDER_MODELS_DIR`,
+`TURBOCIDER_STATE_DIR`, and `TURBOCIDER_OUTPUT_DIR` to relocate downloaded
+models, receipts, and generated media.
+
 Common real-generation examples:
 
 ```sh
@@ -76,6 +91,25 @@ PYTHONPATH=src python3 -m turbocider.cli generate \
   --width 512 --height 512 --frames 1 --steps 4 \
   --execution gpu_ane --approximation validated --persistent \
   --output outputs/flux2-hybrid.png
+
+# FLUX.2 single-image img2img; standard token geometry remains GPU+ANE capable
+PYTHONPATH=src python3 -m turbocider.cli generate \
+  --model flux2-klein-4b --task image --mode image_to_image \
+  --prompt "Restyle this as a watercolor poster" \
+  --init-image input.png --image-strength 0.55 \
+  --width 512 --height 512 --steps 4 \
+  --execution gpu_ane --approximation validated --persistent \
+  --output outputs/flux2-img2img.png
+
+# FLUX.2 ordered multi-reference editing uses pure GPU/MLX because the
+# reference-token sequence is variable length.
+PYTHONPATH=src python3 -m turbocider.cli generate \
+  --model flux2-klein-4b --task image --mode image_edit \
+  --prompt "Combine the subject from the first image with the style of the second" \
+  --ref-image subject.png --ref-image style.png \
+  --width 512 --height 512 --steps 4 \
+  --execution gpu --approximation exact --persistent \
+  --output outputs/flux2-edit.png
 
 # FastMetal pure GPU
 PYTHONPATH=src python3 -m turbocider.cli generate \
@@ -111,6 +145,10 @@ Prepare the four current model families:
 # content-addressed .mlmodelc paths for Core ML specialization reuse.
 turbocider prepare-model flux2-klein-4b --download --ane --cache --workers 4
 
+# The same download step can use ModelScope when that hub hosts the pinned
+# revision. TurboCider keeps engine conversion identical for both hubs.
+turbocider prepare-model flux2-klein-4b --download --hub modelscope
+
 # LTX: download only the five Comfy/convrot files consumed by ltx-mac, then
 # export and compile the 1001/4004-row MLP and 1024-row text K/V artifacts.
 turbocider prepare-model ltx-2.5-distilled --download --ane --cache
@@ -122,7 +160,7 @@ turbocider prepare-model fastmetal-1.3b-qad --download --ane
 # H3: its Core ML graph is fixed-row. The exact target row count is mandatory;
 # TurboCider never guesses this shape.
 turbocider prepare-model minimax-h3-turbo --ane --cache \
-  --source-model ../h3.c/models/MiniMax-H3-LightX2V-Turbo \
+  --source-model engines/h3/models/MiniMax-H3-LightX2V-Turbo \
   --h3-rows 15405 --blocks 0-49
 ```
 
@@ -138,6 +176,13 @@ Successful non-dry runs write an auditable receipt under
 `$TURBOCIDER_STATE_DIR/model-management/`. Receipts include pinned revisions,
 commands, artifact sizes, timings, and the privacy-safe device profile. Model
 weights and generated Core ML artifacts remain ignored by Git.
+
+List downloaded models and their ANE/cache artifacts without starting a job:
+
+```sh
+turbocider assets
+turbocider assets flux2-klein-4b
+```
 
 `--first-frame`, `--last-frame`, `--ref-image`, `--ref-video`, and
 `--ref-silent-video`, `--ref-video-audio`, and `--ref-audio` expose H3's
@@ -161,6 +206,27 @@ namespaced `engine_options.h3`, `engine_options.ltx`,
 fields remain the preferred stable interface; adapter-specific options are the
 escape hatch for engine experiments and advanced deployment controls.
 
+### LTX-2.5 image-input status
+
+The LTX native adapter supports single first-frame image-to-video (`image_to_video`)
+on both pure GPU and GPU+ANE. Input images are CRF-preprocessed, encoded with the
+bundled VAE encoder helper, and carried through Stage-1 and Stage-2 as clean
+first-frame prefixes with split per-token timesteps. `strength` controls how far
+the first frame may move during denoising.
+
+```sh
+turbocider generate --model ltx-2.5-distilled \
+  --task video --mode image_to_video \
+  --first-frame input.png --image-strength 1.0 \
+  --width 704 --height 480 --frames 97 --fps 24 \
+  --execution gpu_ane --approximation validated \
+  --output outputs/ltx-i2v.mp4
+```
+
+The downloaded native pack is not the complete upstream LTX API surface.
+Multi-keyframe interpolation, retake, extend, audio-to-video, and IC-LoRA are
+not currently exposed through the native TurboCider adapter.
+
 ## FLUX.2 runtime bootstrap
 
 The reproducible bootstrap creates the Python environment, installs
@@ -168,14 +234,15 @@ The reproducible bootstrap creates the Python environment, installs
 native bridge, and exports the 20-block INT8 Core ML package:
 
 ```sh
-source ~/.bashrc
-setproxy
-python3 scripts/bootstrap_flux2.py
+python3 scripts/bootstrap_flux2.py \
+  --source /path/to/native-engines \
+  --target engines
 ```
 
-Use `--skip-model` or `--skip-ane` to reuse existing artifacts. Model weights,
-runtime environments, generated media, and Core ML packages are intentionally
-excluded from source control.
+The `--source` tree must contain `gpu_ane/flux2-engine` and
+`gpu_ane/mac_local_ai`. Use `--skip-model` or `--skip-ane` to reuse existing
+artifacts. Model weights, runtime environments, generated media, and Core ML
+packages are intentionally excluded from source control.
 
 ## Local HTTP API
 
@@ -194,7 +261,9 @@ curl -sS http://127.0.0.1:11435/v1/jobs \
   -d '{
     "model":"flux2-klein-4b",
     "task":"image",
+    "mode":"image_to_image",
     "prompt":"A glass of cider on a wooden table",
+    "inputs":[{"type":"image","role":"init_image","path":"/Users/me/Pictures/cider.png","strength":0.55}],
     "output":{"type":"image","width":512,"height":512,"frames":1},
     "sampling":{"seed":42,"steps":4},
     "policy":{"execution":"gpu_ane","approximation":"validated","persistent":true}
@@ -261,6 +330,15 @@ let request = TCGenerationRequest(
     model: "flux2-klein-4b",
     task: "image",
     prompt: "A glass of cider on a wooden table",
+    mode: "image_to_image",
+    inputs: [
+        TCInputAsset(
+            type: "image",
+            role: "init_image",
+            path: "/Users/me/Pictures/cider.png",
+            strength: 0.55
+        )
+    ],
     output: TCOutputSpec(type: "image", width: 512, height: 512, frames: 1),
     policy: TCPolicySpec(execution: .gpuANE, persistent: true),
     engineOptions: [
@@ -289,11 +367,13 @@ open dist/TurboCider.app
 ```
 
 The app starts/stops its owned daemon, displays model availability, live phase,
-progress, elapsed time, and ETA, accepts supported reference media, previews
+progress, elapsed time, and ETA, offers model-declared generation modes,
+accepts supported reference media with thumbnails and img2img strength, previews
 generated images/video, and opens or reveals outputs. It initializes generation
 settings from each model pack's recommended shape/FPS/step values, disables
 unsupported audio, locks required native audio, filters task/input/profile/
-execution controls from model capabilities, exposes advanced namespaced engine
+execution controls from model capabilities, stages selected input files under
+`~/Library/Application Support/TurboCider/inputs`, exposes advanced namespaced engine
 options as JSON, and uses SSE with polling fallback. Bundled state, logs, and
 outputs are written to
 `~/Library/Application Support/TurboCider/`, never into the signed app bundle.

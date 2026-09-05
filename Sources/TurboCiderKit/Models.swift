@@ -26,6 +26,8 @@ public struct TCModelCapabilities: Codable, Sendable {
     public let audioOutput: Bool?
     public let audioRequired: Bool?
     public let referenceRoles: [String]?
+    public let modes: [String]?
+    public let maxReferenceImages: Int?
     public let recommendedWidth: Int?
     public let recommendedHeight: Int?
     public let recommendedFrames: Int?
@@ -34,10 +36,11 @@ public struct TCModelCapabilities: Codable, Sendable {
     public let recommendedPersistent: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case tasks, inputs, profiles, execution
+        case tasks, inputs, profiles, execution, modes
         case audioOutput = "audio_output"
         case audioRequired = "audio_required"
         case referenceRoles = "reference_roles"
+        case maxReferenceImages = "max_reference_images"
         case recommendedWidth = "recommended_width"
         case recommendedHeight = "recommended_height"
         case recommendedFrames = "recommended_frames"
@@ -171,11 +174,15 @@ public struct TCInputAsset: Codable, Identifiable, Sendable {
     public var text: String?
     public var audioPath: String?
     public var includeEmbeddedAudio: Bool
+    public var strength: Double?
+    public var frameIndex: Int?
 
     enum CodingKeys: String, CodingKey {
         case type, role, path, text
         case audioPath = "audio_path"
         case includeEmbeddedAudio = "include_embedded_audio"
+        case strength
+        case frameIndex = "frame_index"
     }
 
     public init(
@@ -184,7 +191,9 @@ public struct TCInputAsset: Codable, Identifiable, Sendable {
         path: String? = nil,
         text: String? = nil,
         audioPath: String? = nil,
-        includeEmbeddedAudio: Bool = true
+        includeEmbeddedAudio: Bool = true,
+        strength: Double? = nil,
+        frameIndex: Int? = nil
     ) {
         self.id = UUID()
         self.type = type
@@ -193,6 +202,8 @@ public struct TCInputAsset: Codable, Identifiable, Sendable {
         self.text = text
         self.audioPath = audioPath
         self.includeEmbeddedAudio = includeEmbeddedAudio
+        self.strength = strength
+        self.frameIndex = frameIndex
     }
 
     public init(from decoder: Decoder) throws {
@@ -204,6 +215,8 @@ public struct TCInputAsset: Codable, Identifiable, Sendable {
         text = try container.decodeIfPresent(String.self, forKey: .text)
         audioPath = try container.decodeIfPresent(String.self, forKey: .audioPath)
         includeEmbeddedAudio = try container.decodeIfPresent(Bool.self, forKey: .includeEmbeddedAudio) ?? true
+        strength = try container.decodeIfPresent(Double.self, forKey: .strength)
+        frameIndex = try container.decodeIfPresent(Int.self, forKey: .frameIndex)
     }
 }
 
@@ -250,6 +263,7 @@ public struct TCGenerationRequest: Codable, Sendable {
     public var model: String
     public var task: String
     public var prompt: String
+    public var mode: String
     public var inputs: [TCInputAsset]
     public var output: TCOutputSpec
     public var sampling: TCSamplingSpec
@@ -257,7 +271,7 @@ public struct TCGenerationRequest: Codable, Sendable {
     public var engineOptions: [String: TCJSONValue]
 
     enum CodingKeys: String, CodingKey {
-        case model, task, prompt, inputs, output, sampling, policy
+        case model, task, prompt, mode, inputs, output, sampling, policy
         case engineOptions = "engine_options"
     }
 
@@ -265,6 +279,7 @@ public struct TCGenerationRequest: Codable, Sendable {
         model: String,
         task: String,
         prompt: String,
+        mode: String = "auto",
         inputs: [TCInputAsset] = [],
         output: TCOutputSpec,
         sampling: TCSamplingSpec = .init(),
@@ -274,6 +289,7 @@ public struct TCGenerationRequest: Codable, Sendable {
         self.model = model
         self.task = task
         self.prompt = prompt
+        self.mode = mode
         self.inputs = inputs
         self.output = output
         self.sampling = sampling
@@ -286,6 +302,7 @@ public struct TCGenerationRequest: Codable, Sendable {
         model = try container.decode(String.self, forKey: .model)
         task = try container.decode(String.self, forKey: .task)
         prompt = try container.decode(String.self, forKey: .prompt)
+        mode = try container.decodeIfPresent(String.self, forKey: .mode) ?? "auto"
         inputs = try container.decodeIfPresent([TCInputAsset].self, forKey: .inputs) ?? []
         output = try container.decode(TCOutputSpec.self, forKey: .output)
         sampling = try container.decodeIfPresent(TCSamplingSpec.self, forKey: .sampling) ?? .init()

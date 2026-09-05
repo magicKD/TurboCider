@@ -112,7 +112,16 @@ public final class TurboCiderDaemon: @unchecked Sendable {
         try handle.seekToEnd()
 
         let launched = Process()
-        let python = ProcessInfo.processInfo.environment["TURBOCIDER_PYTHON"]
+        let inheritedEnvironment = ProcessInfo.processInfo.environment
+        let bundledCandidates = [
+            root.appendingPathComponent("Python/bin/python3", isDirectory: false),
+            root.appendingPathComponent("runtime/bin/python3", isDirectory: false),
+            root.appendingPathComponent(".venv/bin/python3", isDirectory: false),
+        ]
+        let python = inheritedEnvironment["TURBOCIDER_PYTHON"]
+            ?? bundledCandidates.first {
+                FileManager.default.isExecutableFile(atPath: $0.path)
+            }?.path
             ?? "/usr/bin/python3"
         launched.executableURL = URL(fileURLWithPath: python)
         let host = client.baseURL.host ?? "127.0.0.1"
@@ -127,7 +136,7 @@ public final class TurboCiderDaemon: @unchecked Sendable {
             "--host", host, "--port", String(port),
         ]
         launched.currentDirectoryURL = root
-        var environment = ProcessInfo.processInfo.environment
+        var environment = inheritedEnvironment
         if environment["TURBOCIDER_STATE_DIR"] == nil {
             environment["TURBOCIDER_STATE_DIR"] = applicationSupport
                 .appendingPathComponent("state", isDirectory: true).path
@@ -139,6 +148,10 @@ public final class TurboCiderDaemon: @unchecked Sendable {
         if environment["TURBOCIDER_MODELS_DIR"] == nil {
             environment["TURBOCIDER_MODELS_DIR"] = applicationSupport
                 .appendingPathComponent("models", isDirectory: true).path
+        }
+        if environment["TURBOCIDER_ENGINES_DIR"] == nil {
+            environment["TURBOCIDER_ENGINES_DIR"] = root
+                .appendingPathComponent("engines", isDirectory: true).path
         }
         let workspaceFile = root.appendingPathComponent("workspace.path")
         if environment["TURBOCIDER_WORKSPACE"] == nil,

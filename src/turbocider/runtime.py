@@ -71,6 +71,29 @@ class TurboCiderRuntime:
                 "model %s does not support inputs: %s"
                 % (model.id, ", ".join(unsupported))
             )
+        reference_roles = model.capabilities.get("reference_roles", [])
+        unsupported_roles = sorted({
+            item.role for item in request.inputs
+            if item.type != "text" and reference_roles and item.role not in reference_roles
+        })
+        if unsupported_roles:
+            raise ValidationError(
+                "model %s does not support input roles: %s"
+                % (model.id, ", ".join(unsupported_roles))
+            )
+        modes = model.capabilities.get("modes", [])
+        if modes and request.resolved_mode not in modes:
+            raise ValidationError(
+                "model %s does not support mode %s; supported: %s"
+                % (model.id, request.resolved_mode, ", ".join(modes))
+            )
+        maximum_images = model.capabilities.get("max_reference_images")
+        image_count = sum(item.type == "image" for item in request.inputs)
+        if maximum_images is not None and image_count > int(maximum_images):
+            raise ValidationError(
+                "model %s supports at most %d image inputs"
+                % (model.id, int(maximum_images))
+            )
         if model.capabilities.get("audio_output") is False and request.output.audio:
             raise ValidationError(
                 "model %s does not support audio output" % model.id

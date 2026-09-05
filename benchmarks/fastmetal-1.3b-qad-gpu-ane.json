@@ -4,15 +4,15 @@
   "runs": 1,
   "direct": {
     "kind": "command",
-    "cwd": "${WORKSPACE}/gpu_ane/fastmetal-engine",
+    "cwd": "${TURBOCIDER_ENGINES}/fastmetal/engine",
     "output": "${TURBOCIDER}/outputs/benchmark-fastmetal-direct-gpu-ane.mp4",
     "sidecar": "{output_stem}.engine.json",
     "engine_metric_path": "total_s",
     "command": [
-      "${WORKSPACE}/gpu_ane/fastmetal-runtime/.venv/bin/python",
+      "${TURBOCIDER_ENGINES}/fastmetal/runtime/.venv/bin/python",
       "examples/inference/basic/mlx_wan_prompt_to_video.py",
-      "--model-root", "${WORKSPACE}/gpu_ane/fastmetal-runtime/models/FastMetal-1.3B-QAD",
-      "--mlx-checkpoint", "${WORKSPACE}/gpu_ane/fastmetal-runtime/models/FastMetal-1.3B-QAD",
+      "--model-root", "${TURBOCIDER_ENGINES}/fastmetal/runtime/models/FastMetal-1.3B-QAD",
+      "--mlx-checkpoint", "${TURBOCIDER_ENGINES}/fastmetal/runtime/models/FastMetal-1.3B-QAD",
       "--prompt", "A bird's-eye view of a misty forest valley at dawn.",
       "--output-path", "{output}",
       "--metrics-json", "{output_stem}.engine.json",
@@ -21,8 +21,8 @@
       "--dmd-denoising-steps", "1000,757,522",
       "--mlx-dtype", "fp16", "--mlx-quantization", "int8", "--mlx-compile",
       "--decode-backend", "taehv", "--text-encoder-dtype", "bf16",
-      "--ane-manifest", "${WORKSPACE}/gpu_ane/fastmetal-runtime/models/coreml/FastMetal-1.3B-QAD/m32760-a4096/manifest.json",
-      "--ane-bridge-dir", "${WORKSPACE}/gpu_ane/flux2-engine/build",
+      "--ane-manifest", "${TURBOCIDER_ENGINES}/fastmetal/runtime/models/coreml/FastMetal-1.3B-QAD/m32760-a4096/manifest.json",
+      "--ane-bridge-dir", "${TURBOCIDER_ENGINES}/flux2/engine/build",
       "--save-latents"
     ]
   },

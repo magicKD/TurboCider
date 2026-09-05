@@ -10,7 +10,13 @@ from typing import Any, Dict, Iterable, List
 
 from turbocider.errors import ModelNotFoundError, ValidationError
 from turbocider.models import ExecutionPlan, ModelDescriptor
-from turbocider.paths import PACKAGE_ROOT, model_root, workspace_root
+from turbocider.paths import (
+    PACKAGE_ROOT,
+    data_root,
+    engine_root,
+    model_root,
+    workspace_root,
+)
 
 
 _ENGINE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]+$")
@@ -21,6 +27,7 @@ def _expand_value(value: Any) -> Any:
         expanded = value.replace("${TURBOCIDER}", str(PACKAGE_ROOT))
         expanded = expanded.replace("${WORKSPACE}", str(workspace_root()))
         expanded = expanded.replace("${TURBOCIDER_MODELS}", str(model_root()))
+        expanded = expanded.replace("${TURBOCIDER_ENGINES}", str(engine_root()))
         return os.path.expandvars(os.path.expanduser(expanded))
     if isinstance(value, list):
         return [_expand_value(item) for item in value]
@@ -31,7 +38,7 @@ def _expand_value(value: Any) -> Any:
 
 class ModelRegistry:
     def __init__(self, search_paths: Iterable[Path] = ()):
-        default = PACKAGE_ROOT / "model-packs"
+        default = data_root() / "model-packs"
         self.search_paths = [default]
         self.search_paths.extend(Path(path).expanduser().resolve() for path in search_paths)
         env_paths = os.environ.get("TURBOCIDER_MODEL_PACKS", "")

@@ -25,6 +25,9 @@ class ServiceTests(unittest.TestCase):
         executable.write_text(
             "#!/usr/bin/env python3\n"
             "import pathlib, sys\n"
+            "if '--info' in sys.argv:\n"
+            "    print('h3 test fixture')\n"
+            "    sys.exit(0)\n"
             "out = pathlib.Path(sys.argv[sys.argv.index('-o') + 1])\n"
             "out.parent.mkdir(parents=True, exist_ok=True)\n"
             "out.write_bytes(b'test-output')\n"
@@ -40,7 +43,10 @@ class ServiceTests(unittest.TestCase):
             "engine": "h3",
             "capabilities": {
                 "tasks": ["video"],
-                "inputs": ["text"],
+                "inputs": ["text", "image"],
+                "reference_roles": ["first_frame"],
+                "modes": ["text_to_video", "image_to_video"],
+                "max_reference_images": 1,
                 "audio_output": True,
                 "audio_required": True,
             },
@@ -196,7 +202,10 @@ class ServiceTests(unittest.TestCase):
         _, response = self.json_request("/v1/system")
         rendered = json.dumps(response)
         self.assertNotIn(self.temporary.name, rendered)
-        self.assertEqual(response["models"][0]["available"], True)
+        model = next(
+            item for item in response["models"] if item["id"] == "test-h3"
+        )
+        self.assertEqual(model["available"], True)
 
     def test_api_rejects_output_outside_runtime_directory(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
@@ -215,6 +224,27 @@ class ServiceTests(unittest.TestCase):
                 "policy": {"execution": "gpu", "approximation": "exact"},
             })
         self.assertEqual(caught.exception.code, 400)
+
+    def test_api_accepts_allowed_image_input_and_preserves_mode(self):
+        image = Path(self.temporary.name) / "first.png"
+        image.write_bytes(b"fixture")
+        status, job = self.json_request("/v1/jobs", "POST", {
+            "model": "test-h3",
+            "prompt": "animate",
+            "task": "video",
+            "mode": "image_to_video",
+            "inputs": [{
+                "type": "image", "role": "first_frame", "path": str(image),
+                "strength": 0.8, "frame_index": 0,
+            }],
+            "output": {
+                "type": "video", "width": 32, "height": 32,
+                "frames": 22, "fps": 24,
+            },
+            "policy": {"execution": "gpu", "approximation": "exact"},
+        })
+        self.assertEqual(status, 202)
+        self.assertEqual(job["request"]["mode"], "image_to_video")
 
 
 if __name__ == "__main__":
