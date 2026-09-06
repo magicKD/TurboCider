@@ -108,4 +108,18 @@ Tokens Tokenizer::prompt(const std::string &s, bool dynamic) {
         t.ids.resize(512, 151643);
     return t;
 }
+Tokens Tokenizer::z_image_prompt(const std::string &s, bool dynamic) {
+    require(!s.empty(), "prompt must not be empty");
+    require(s.size() <= 32768, "prompt exceeds 32 KiB");
+    // Z-Image-Turbo uses Qwen3's chat template with enable_thinking=true.
+    // Unlike the FLUX conditioning template above, it must not prefill an
+    // empty <think>...</think> block after the assistant generation prompt.
+    auto ids = impl_->encode("<|im_start|>user\n" + s +
+                             "<|im_end|>\n<|im_start|>assistant\n");
+    require(ids.size() <= 512, "prompt exceeds 512 tokens; no silent truncation");
+    Tokens t{ids, int(ids.size())};
+    if (!dynamic)
+        t.ids.resize(512, 151643);
+    return t;
+}
 } // namespace tc

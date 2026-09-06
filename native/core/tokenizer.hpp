@@ -14,5 +14,6 @@ class Tokenizer {
     explicit Tokenizer(const std::filesystem::path &);
     ~Tokenizer();
     Tokens prompt(const std::string &, bool dynamic = true);
+    Tokens z_image_prompt(const std::string &, bool dynamic = true);
 };
 } // namespace tc

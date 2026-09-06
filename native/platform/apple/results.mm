@@ -63,6 +63,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                       r.model == "fastmetal-1.3b-qad" ? @"manifest_verified_python_runtime" :
                       r.model == "ltx-2.5-distilled" ?
                           (recipe.executable ? @"native_video_executor" : @"native_capability_gated") :
+                      r.model == "z-image-turbo" ? @"native_candidate" :
                       @"weights_pending";
     auto weight_validation = r.model.starts_with("flux2-klein-") ? @"see parity evidence" :
         r.model == "minimax-h3-turbo" ?
@@ -71,10 +72,13 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             (r.loras.empty() ? @"checkpoint-and-ane-identity-verified-at-load" : @"premerged-manifest-verified-at-execution") :
         r.model == "ltx-2.5-distilled" ?
             (r.loras.empty() ? @"checkpoint-validated-at-load" : @"runtime-cache-or-sidecar-verified-at-execution") :
+        r.model == "z-image-turbo" ?
+            (r.loras.empty() ? @"shape-validated-at-load; image-parity-pending" : @"in-memory-lora; image-parity-pending") :
         @"pending";
     auto lora_fusion = r.loras.empty() ? @"none" :
         (r.model.starts_with("flux2-klein-") ? @"load_time_baked" :
-         r.model == "fastmetal-1.3b-qad" ? @"premerged_manifest_verified" : @"runtime_bake_cache");
+         r.model == "fastmetal-1.3b-qad" ? @"premerged_manifest_verified" :
+         r.model == "z-image-turbo" ? @"in_memory_delta" : @"runtime_bake_cache");
     auto backend = hybrid ?
         (r.model == "fastmetal-1.3b-qad" ? @"fastmetal-mlx+ane_parallel" :
          r.model == "ltx-2.5-distilled" ? @"ltx-gpu+ane" : @"mlx_cpp_metal+coreml") :

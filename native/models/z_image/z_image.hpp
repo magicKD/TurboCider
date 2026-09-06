@@ -1,0 +1,40 @@
+#pragma once
+
+#include "../../backends/mlx.hpp"
+#include "../../core/tokenizer.hpp"
+#include "../../runtime/session.hpp"
+
+namespace tc {
+
+class ZImage final : public ModelSession {
+    std::filesystem::path root_;
+    std::filesystem::path text_path_, transformer_path_, vae_path_;
+    Tokenizer tokenizer_;
+    Weights text_encoder_;
+    Weights transformer_;
+    Weights vae_;
+    std::optional<Tensor> cached_conditioning_;
+    std::string cached_prompt_;
+    bool cached_dynamic_ = true;
+    std::vector<LoRAAsset> active_loras_;
+    std::string cached_lora_identity_;
+
+    void select_loras(const Request &);
+    Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);
+    Tensor denoise(const Tensor &, const Tensor &, float, float, int, int,
+                   const Event &, std::atomic<bool> &);
+    Tensor decode(const Tensor &, int, int, const Event &, std::atomic<bool> &);
+    bool conditioning(const Request &, const Event &, std::atomic<bool> &);
+    std::string select_acceleration(Request &, const Event &, std::atomic<bool> &);
+    RunResult run(const Request &, const Event &, std::atomic<bool> &, bool warmup);
+
+  public:
+    explicit ZImage(const std::filesystem::path &);
+    ~ZImage() override = default;
+    LoadResult load(const Event &, std::atomic<bool> &) override;
+    void unload() override;
+    RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) override;
+    RunResult generate(const Request &, const Event &, std::atomic<bool> &) override;
+};
+
+} // namespace tc

@@ -140,6 +140,15 @@ struct StudioBehaviorTests {
         let flux9 = try studio.draft.request(output: root.appendingPathComponent("flux9.png"))
         try check(flux9.model == "flux2-klein-9b" && flux9.operation == "image.generate" && flux9.frames == 1,
                   "FLUX 9B App selection changed")
+        studio.selectModel("z-image-turbo")
+        studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.7)]
+        studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane")
+        let zImage = try studio.draft.request(output: root.appendingPathComponent("z-image.png"))
+        try check(zImage.model == "z-image-turbo" && zImage.operation == "image.generate" &&
+                    zImage.width == 1024 && zImage.height == 1024 && zImage.steps == 9 &&
+                    zImage.frames == 1 && zImage.audio == false && zImage.execution == "gpu" &&
+                    zImage.loras?.first?.role == "transformer",
+                  "Z-Image App defaults, GPU fail-closed policy or separate LoRA forwarding changed")
         studio.newDraft()
         try check(studio.draft.seedText == "42" && !studio.draft.randomSeed && studio.draft.assets.isEmpty, "New draft defaults failed")
         print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/FastMetal defaults and separate LoRA forwarding")

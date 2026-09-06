@@ -124,14 +124,66 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
             if (pair.alpha) { require(pair.alpha->size() == 1, "LoRA alpha must be scalar: " + stem); mx::eval(*pair.alpha); scale *= pair.alpha->item<float>() / float(down.shape(0)); }
             int offset = 0;
             for (const auto &target : lora_targets(stem)) {
-                auto found = values_.find(target.ends_with(".weight") ? target : target + ".weight");
-                if (found == values_.end()) continue;
-                auto base = found->second;
-                require(base.ndim() == 2 && base.shape(1) == down.shape(1), "LoRA input does not match " + target);
-                int rows = base.shape(0); require(offset + rows <= up.shape(0), "LoRA output does not match " + target);
-                auto selected = lora_targets(stem).size() == 1 ? up : slice_axis(up, 0, offset, offset + rows); offset += rows;
-                auto delta = mx::matmul(mx::astype(selected, mx::float32), mx::astype(down, mx::float32)) * Tensor(scale, mx::float32);
-                found->second = mx::astype(mx::astype(base, mx::float32) + delta, base.dtype()); mx::eval(found->second); ++adapter_applied;
+                auto key = target.ends_with(".weight") ? target : target + ".weight";
+                auto found = values_.find(key);
+                if (found == values_.end() && target.ends_with(".attention.to_out.0")) {
+                    key = target.substr(0, target.size() - std::strlen("to_out.0")) + "out.weight";
+                    found = values_.find(key);
+                }
+                if (found != values_.end()) {
+                    auto base = found->second;
+                    require(base.ndim() == 2 && base.shape(1) == down.shape(1),
+                            "LoRA input does not match " + target);
+                    int rows = base.shape(0);
+                    require(offset + rows <= up.shape(0),
+                            "LoRA output does not match " + target);
+                    auto selected = lora_targets(stem).size() == 1
+                                        ? up
+                                        : slice_axis(up, 0, offset, offset + rows);
+                    offset += rows;
+                    auto delta = mx::matmul(mx::astype(selected, mx::float32),
+                                            mx::astype(down, mx::float32)) *
+                                 Tensor(scale, mx::float32);
+                    found->second = mx::astype(mx::astype(base, mx::float32) + delta,
+                                               base.dtype());
+                    mx::eval(found->second);
+                    ++adapter_applied;
+                    continue;
+                }
+
+                // Comfy's Z-Image single-file format stores Q/K/V as one
+                // [3*dim, dim] tensor.  Apply ordinary, independently stored
+                // LoRA projections to the corresponding in-memory row slice;
+                // no merged checkpoint is written to disk.
+                std::smatch projection;
+                if (std::regex_match(target, projection,
+                                     std::regex("^(.+\\.attention)\\.to_([qkv])$"))) {
+                    auto fused = values_.find(std::string(projection[1]) + ".qkv.weight");
+                    if (fused == values_.end()) continue;
+                    auto base = fused->second;
+                    require(base.ndim() == 2 && base.shape(0) % 3 == 0 &&
+                                base.shape(1) == down.shape(1),
+                            "Z-Image fused QKV geometry does not match " + target);
+                    int rows = base.shape(0) / 3;
+                    require(up.shape(0) == rows,
+                            "Z-Image LoRA output does not match " + target);
+                    char which = std::string(projection[2])[0];
+                    int begin = which == 'q' ? 0 : (which == 'k' ? rows : 2 * rows);
+                    auto delta = mx::matmul(mx::astype(up, mx::float32),
+                                            mx::astype(down, mx::float32)) *
+                                 Tensor(scale, mx::float32);
+                    auto merged = mx::astype(
+                        mx::astype(slice_axis(base, 0, begin, begin + rows), mx::float32) + delta,
+                        base.dtype());
+                    std::vector<Tensor> pieces;
+                    if (begin) pieces.push_back(slice_axis(base, 0, 0, begin));
+                    pieces.push_back(merged);
+                    if (begin + rows < base.shape(0))
+                        pieces.push_back(slice_axis(base, 0, begin + rows, base.shape(0)));
+                    fused->second = mx::concatenate(pieces, 0);
+                    mx::eval(fused->second);
+                    ++adapter_applied;
+                }
             }
         }
         require(adapter_applied > 0, "LoRA did not match any " + role + " weights: " + adapter.path);

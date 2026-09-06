@@ -7,7 +7,7 @@
 
 ## 一句话结论
 
-TurboCider 已经从单一 FLUX native 纵切扩展为五个注册模型模块：FLUX.2 Klein 4B/9B、FastMetal 1.3B QAD、MiniMax H3 Turbo 和 LTX 2.5 Distilled。H3、FastMetal、FLUX 4B 的核心路径已经接近 direct 实现；FLUX 9B 和 LTX video-only 已在本轮合并后的 C++ runtime 上完成真实生成。LTX 包含模型建立、warmup、Core ML attach 和 VAE 生命周期的端到端请求还没有稳定快于 mac-ltx。独立 LoRA 请求已经进入 C/Swift/App 接口和缓存边界，但 H3/LTX 仍会在首次使用时生成可清理的 merged runtime artifact，尚未完成纯内存融合。
+TurboCider 已经从单一 FLUX native 纵切扩展为六个注册模型模块：FLUX.2 Klein 4B/9B、FastMetal 1.3B QAD、MiniMax H3 Turbo、LTX 2.5 Distilled 和 Z-Image Turbo。H3、FastMetal、FLUX 4B 的核心路径已经接近 direct 实现；FLUX 9B 和 LTX video-only 已在本轮合并后的 C++ runtime 上完成真实生成。Z-Image 已进入同一 C++/MLX runtime、C ABI、plan 和 Swift App，支持 ComfyUI 分文件目录与独立 LoRA 内存 delta，但本受限会话无 Metal device，尚不能把真实出图 parity 或性能写成已验收。LTX 包含模型建立、warmup、Core ML attach 和 VAE 生命周期的端到端请求还没有稳定快于 mac-ltx。独立 LoRA 请求已经进入 C/Swift/App 接口和缓存边界，但 H3/LTX 仍会在首次使用时生成可清理的 merged runtime artifact，尚未完成纯内存融合。
 
 ## 代码结构与实现边界
 
@@ -21,6 +21,7 @@ native/backends/            C++ MLX 与 Apple Core ML/artifact cache
 native/models/flux2/*.cpp   FLUX 4B/9B 文本、DiT、VAE、LoRA
 native/models/h3_runtime/  H3 C/Metal/ANE vendor runtime
 native/models/ltx_runtime/  LTX C/Metal/ANE/MLX runtime
+native/models/z_image/      Z-Image C++/MLX Qwen3、S3-DiT、VAE runtime
 native/platform/apple/      ObjC++ Apple bridge 与 H3/LTX/FastMetal Session
 native/api/                 C ABI
 native/media/               图像、视频、音频和原子导出
@@ -45,6 +46,7 @@ docs/design/                长期设计、验收契约和历史架构
 | FastMetal 1.3B QAD | 持久 MLX/TAEHV worker、GPU/ANE split、取消重建、prompt cache | base GPU/GPU+ANE latent 与 direct 逐元素一致 | 多机器中位数、独立 LoRA runtime bake、LoRA ANE artifact |
 | MiniMax H3 Turbo | 文生视频、首尾帧、reference、音视频、streamed/resident/component-staged、manifest LoRA | 512×512、22 帧、4-step 输出 byte-exact | 更广输入/尺寸、resident/ANE 多轮矩阵 |
 | LTX 2.5 Distilled | video-only 文生视频、动态 Gemma、8+3、upsample、clean-exec Video VAE、conditioning cache、App 视频请求 | 704×448、97 帧既有真实生成；本轮另完成 704×448、9 帧 smoke | I2V 数值 parity、音频 Session parity、默认 GPU+ANE、端到端稳定快于 mac-ltx |
+| Z-Image Turbo | ComfyUI Qwen3/DiT/VAE、9-step 文生图、App/CLI/plan、独立 LoRA 内存融合 | native 编译/链接、模型目录构造、tokenizer、权重键和请求契约已通过；受限会话停在 Metal 权限门禁 | 真实图片 parity、1024×1024 性能、GPU+ANE 分区 |
 
 ## 性能与准确性证据
 
@@ -78,6 +80,7 @@ LTX GPU+ANE 当前只作为候选实验路径：同一动态 Gemma 请求约 125
 - H3/LTX native loader 仍消费 merged artifact；首次 cache miss 会临时占用接近 Transformer 的派生空间。
 - 最终目标“磁盘只保留 base + 独立 LoRA，逐层加载时在内存 merge/requantize”尚未实现。
 - FastMetal 目前仍要求 provenance-verified premerged MLX checkpoint，独立 LoRA runtime bake 和真实 LoRA parity/性能尚未完成。
+- Z-Image adapter 保持为独立 `.safetensors`；运行时只在内存中的 packed QKV/FFN/out projection 上应用 delta，不生成第二份 checkpoint。该路径已通过键名与几何静态校验，但真实图片 parity 仍待可见 Metal 会话验证。
 
 ## 测试、构建与运行状态
 
@@ -86,7 +89,7 @@ LTX GPU+ANE 当前只作为候选实验路径：同一动态 Gemma 请求约 125
 ```text
 make test
 Python/bin/python -m pytest -q <无参数单元与 fixture 测试集合>
-60 passed, 5 skipped, 37 subtests passed
+`make test` 当前为 47 项通过（含 Z-Image plan/LoRA/fail-closed 契约）；`make test-app` 通过，剪贴板服务在受限会话中按条件跳过。
 ```
 
 `tests/native` 同时包含需要 `--model/--manifest/--output` 的真实验收程序，因此不能把整个 `tests/` 当作无参数 pytest collection；这些入口应按文档单独运行。
@@ -102,6 +105,7 @@ Python/bin/python -m pytest -q <无参数单元与 fixture 测试集合>
 5. FastMetal 独立 LoRA runtime bake、LoRA 质量/性能和匹配 ANE artifacts。
 6. FLUX 9B 标准尺寸的 parity、warm/resident 和 AB/BA 性能矩阵。
 7. 多机器、多 macOS/Apple Silicon 版本和 Developer ID 公证包认证。
+8. Z-Image 真实权重图片 parity、1024×1024 warm 性能与 GPU+ANE 1.3× 目标。
 
 ## 当前版本定位
 

@@ -19,6 +19,7 @@ struct StudioModel: Decodable, Identifiable {
     let max_images: Int?
     let supports_lora: Bool?
     let runtime_lora: Bool?
+    let supports_gpu_ane: Bool?
     let lora_mode: String?
     var isVideo: Bool { output == "video" }
     static func catalog() -> [StudioModel] {
@@ -152,15 +153,17 @@ struct StudioDraft: Codable, Sendable {
         request.frames = frames; request.fps = fps; request.audio = audio
         request.dynamic_text = dynamicText; request.residency = residency
         request.profile = profilePath.isEmpty ? nil : profilePath
-        request.compile_gpu = acceleration?.compileGPU
+        request.compile_gpu = modelID.hasPrefix("flux2-") ? acceleration?.compileGPU : nil
         let acceleration = self.acceleration ?? (profilePath.isEmpty ? StudioAcceleration() : StudioAcceleration(policy: "profile"))
         if acceleration.policy != "profile" {
-            request.profile = nil; request.execution = acceleration.policy
+            request.profile = nil
+            request.execution = acceleration.policy == "gpu_ane" && model.supports_gpu_ane != true
+                ? "gpu" : acceleration.policy
             if acceleration.policy == "auto" {
                 request.ane_manifest = AccelerationDiscovery.find(modelPath: modelPath, preferred: acceleration.manifest, cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) })?.manifest
                 request.allow_approximation = true
             }
-            if acceleration.policy == "gpu_ane" {
+            if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true {
                 guard !acceleration.manifest.isEmpty else { throw NativeFailure(message: "请在模型中心选择已编译的分区 manifest，或先预编译本地源分区。") }
                 request.ane_manifest = acceleration.manifest; request.allow_approximation = true
             }

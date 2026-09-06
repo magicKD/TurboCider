@@ -30,7 +30,8 @@ SOURCES=(
  native/api/c_api.mm
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
- native/models/registry.cpp native/models/flux_module.cpp native/models/fastmetal_module.cpp native/models/h3_module.cpp native/models/ltx_module.cpp
+ native/models/registry.cpp native/models/flux_module.cpp native/models/fastmetal_module.cpp native/models/h3_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp
+ native/models/z_image/z_image.cpp
  native/models/flux2/pipeline.cpp native/models/flux2/flux_text.cpp native/models/flux2/flux_transformer.cpp
  native/models/flux2/flux_vae.cpp native/models/flux2/flux_encode.cpp
  native/media/image.mm native/media/input.mm native/media/video.mm native/media/audio.mm

@@ -5,7 +5,7 @@
 ## 结论
 
 TurboCider 已经是一个可以独立发布和启动的 native application/package，
-但还不是一个“下载一个仓库、零外部资源即可运行全部五个模型”的完全封闭系统。
+但还不是一个“下载一个仓库、零外部资源即可运行全部六个模型”的完全封闭系统。
 
 更准确的定义是：
 
@@ -26,6 +26,7 @@ TurboCider 已经是一个可以独立发布和启动的 native application/pack
 |---|---|---|
 | TurboCider core、C ABI、CLI、service、Swift App | 可独立运行 | macOS 系统框架、Apple Silicon、已构建 native dylib |
 | FLUX.2 Klein 4B/9B native | 基本独立 | 用户模型目录；发行包内的 MLX dylib/metallib |
+| Z-Image Turbo native | 源码独立、真实出图待验收 | 用户 ComfyUI Qwen3/DiT/VAE/tokenizer 目录；发行包内 MLX dylib/metallib |
 | LTX video-only native | 基本独立 | 用户 LTX checkpoint/Gemma/upsampler/VAE；发行包内 MLX dylib 和 helper |
 | H3 native denoise | 源码独立 | 用户 H3 模型目录、ANE/Core ML artifact（如启用） |
 | H3 输入/MP4 输出 | 非完全独立 | `ffmpeg` 与 `ffprobe`；可通过 `H3_FFMPEG`、`H3_FFPROBE` 指定路径 |
@@ -93,7 +94,7 @@ engine root、entrypoint、worker 和可选 ANE bridge；没有这些资源不�
 如果“独立运行”指：
 
 > 不安装任何外部工具、不提供模型、不提供 Python/FastVideo、不提供 FFmpeg，
-> 五个注册模型全部可以生成结果。
+> 六个注册模型全部可以生成结果。
 
 答案是：**尚未达到**。
 

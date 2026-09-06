@@ -288,7 +288,12 @@ struct StudioView: View {
                     TextField("采样步数", value: $studio.draft.steps, format: .number).textFieldStyle(.roundedBorder).accessibilityIdentifier("steps")
                     Text("1–50 步，推荐 4 步").font(.caption2).foregroundStyle(.secondary)
                     Toggle("动态文本长度", isOn: $studio.draft.dynamicText).controlSize(.small)
-                    Picker("模型驻留", selection: $studio.draft.residency) { Text("保留图像权重").tag("resident"); Text("分阶段释放").tag("component_staged") }
+                    if studio.draft.modelID == "z-image-turbo" {
+                        LabeledContent("模型驻留", value: "常驻（分阶段模式待实现）")
+                            .font(.caption)
+                    } else {
+                        Picker("模型驻留", selection: $studio.draft.residency) { Text("保留图像权重").tag("resident"); Text("分阶段释放").tag("component_staged") }
+                    }
                     if model?.supports_lora == true {
                         Divider()
                         HStack { Text("LoRA 独立文件").font(.caption); Spacer(); Button("添加…", action: chooseLoRA) }

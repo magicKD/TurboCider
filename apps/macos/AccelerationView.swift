@@ -4,6 +4,8 @@ import AppKit
 struct AccelerationView: View {
     @ObservedObject var store: NativeJobStore
     @ObservedObject var studio: StudioState
+    private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
+    private var supportsGPUANE: Bool { model?.supports_gpu_ane == true }
     private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration(policy: studio.draft.profilePath.isEmpty ? "auto" : "profile") }
     @State private var discoveryMessage = "正在检测本机分区…"
     private func update(_ change: (inout StudioAcceleration) -> Void) { var value = config; change(&value); value.automaticVersion = 1; studio.draft.acceleration = value }
@@ -11,15 +13,16 @@ struct AccelerationView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("推理加速与准备").font(.title2)
             Picker("计算模式", selection: Binding(get: { config.policy }, set: { mode in update { $0.policy = mode } })) {
-                Text("自动适配本机 · 优先 GPU + ANE").tag("auto")
+                Text(supportsGPUANE ? "自动适配本机 · 优先 GPU + ANE" : "自动适配本机 · GPU").tag("auto")
                 Text("GPU · 原始 BF16").tag("gpu")
-                Text("GPU + ANE · INT8 MLP 实验路线").tag("gpu_ane")
+                if supportsGPUANE { Text("GPU + ANE · INT8 MLP 实验路线").tag("gpu_ane") }
                 if !studio.draft.profilePath.isEmpty { Text("使用设备配置文件").tag("profile") }
             }.disabled(store.busy).accessibilityIdentifier("accelerationMode")
             if config.policy == "auto" {
                 Text(discoveryMessage).font(.caption).foregroundStyle(.secondary)
-                Text("兼容时使用 INT8 混合路线；容量不足或分区加载失败时回退 GPU。实际 ANE 驻留由系统决定。").font(.caption).foregroundStyle(.secondary)
-                Button("重新检测本机加速") { Task { await discover() } }.disabled(store.busy)
+                Text(supportsGPUANE ? "兼容时使用 INT8 混合路线；容量不足或分区加载失败时回退 GPU。实际 ANE 驻留由系统决定。" : "当前模型尚无已验证的 GPU + ANE 分区，自动模式使用 GPU。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if supportsGPUANE { Button("重新检测本机加速") { Task { await discover() } }.disabled(store.busy) }
             }
             if config.policy == "gpu_ane" {
                 Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定分区桶必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
@@ -27,8 +30,13 @@ struct AccelerationView: View {
                 if !config.manifest.isEmpty { Text(URL(fileURLWithPath: config.manifest).lastPathComponent).font(.caption).textSelection(.enabled) }
             }
             if config.policy == "gpu" {
-                Toggle("编译融合单流计算块", isOn: Binding(get: { config.compileGPU ?? false }, set: { value in update { $0.compileGPU = value } })).disabled(store.busy).accessibilityIdentifier("compileGPU")
-                Text("保留块间取消；首次使用新形状会编译，预热可提前完成。当前验证收益约 2%，并非整张网络一次融合。").font(.caption).foregroundStyle(.secondary)
+                if studio.draft.modelID.hasPrefix("flux2-") {
+                    Toggle("编译融合单流计算块", isOn: Binding(get: { config.compileGPU ?? false }, set: { value in update { $0.compileGPU = value } })).disabled(store.busy).accessibilityIdentifier("compileGPU")
+                    Text("保留块间取消；首次使用新形状会编译，预热可提前完成。当前验证收益约 2%，并非整张网络一次融合。").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("当前模型使用自身的 native Metal/MLX 图与 pipeline cache；没有可单独开启的 FLUX 单块编译选项。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             HStack {
                 Button("加载当前配置") { prepare(warmup: false) }.accessibilityIdentifier("prepareModel")
@@ -37,11 +45,18 @@ struct AccelerationView: View {
             }.disabled(store.busy || studio.draft.modelPath.isEmpty)
             Text("预热使用当前提示词、输入图、尺寸和模式，实际运行一次但不保存结果；更换这些条件后可能需要重新准备。").font(.caption).foregroundStyle(.secondary)
             Divider()
-            Button("选择已有 Core ML 源分区…") { choose(compiled: false) }.disabled(store.busy)
-            CoreMLStorageView(store: store, studio: studio)
+            if studio.draft.modelID == "flux2-klein-4b" {
+                Button("选择已有 Core ML 源分区…") { choose(compiled: false) }.disabled(store.busy)
+                CoreMLStorageView(store: store, studio: studio)
+            }
         }.task(id: studio.draft.modelPath) { await discover() }.padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
     }
     private func discover() async {
+        guard supportsGPUANE else {
+            discoveryMessage = "当前模型使用 GPU；GPU + ANE 分区尚未通过精度与性能验证。"
+            if config.policy == "gpu_ane" { update { $0.policy = "gpu" } }
+            return
+        }
         let path = studio.draft.modelPath, preferred = config.manifest
         let selectedCache = config.coreMLCache.map { URL(fileURLWithPath: $0) }
         let result = await Task.detached { AccelerationDiscovery.find(modelPath: path, preferred: preferred, cache: selectedCache) }.value

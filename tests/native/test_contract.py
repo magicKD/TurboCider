@@ -49,6 +49,34 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(p['decoded_shape'],[512,512,1])
         self.assertEqual([x['id'] for x in p['stages']],['text_encode','denoise','vae_decode','export'])
 
+    def test_z_image_native_contract_and_separate_lora(self):
+        request={
+            'model':'z-image-turbo', 'operation':'image.generate',
+            'prompt':'A red fox in snow', 'width':1024, 'height':1024,
+            'frames':1, 'steps':9, 'audio':False, 'execution':'auto',
+            'loras':[{'path':'/tmp/z-image-style.safetensors',
+                      'role':'transformer','strength':0.7}],
+        }
+        code,p,error=plan(request)
+        self.assertEqual(code,0,error)
+        self.assertTrue(p['executable'])
+        self.assertEqual(p['decoded_shape'],[1024,1024,1])
+        self.assertEqual(p['validation'],'native_candidate')
+        self.assertEqual(p['backend'],'mlx_cpp_metal')
+        self.assertEqual(p['lora_fusion'],'in_memory_delta')
+        self.assertEqual(p['weight_validation'],
+                         'in-memory-lora; image-parity-pending')
+        self.assertEqual([stage['id'] for stage in p['stages']],
+                         ['text_encode','denoise','vae_decode','export'])
+        self.assertEqual(p['stages'][1]['iterations'],9)
+        self.assertNotEqual(plan({**request,'steps':8})[0],0)
+        self.assertNotEqual(plan({**request,'operation':'image.edit'})[0],0)
+        self.assertNotEqual(plan({**request,'execution':'gpu_ane',
+                                  'ane_manifest':'/tmp/z-image.json'})[0],0)
+        self.assertNotEqual(plan({**request,'loras':[{
+            'path':'/tmp/z-image-style.safetensors',
+            'role':'text_encoder','strength':0.7}]})[0],0)
+
     def test_flux_text_taps_are_config_guarded_and_dead_tail_is_elided(self):
         platform=(ROOT/'native/platform/apple/device.mm').read_text()
         encoder=(ROOT/'native/models/flux2/flux_text.cpp').read_text()

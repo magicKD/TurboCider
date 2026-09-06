@@ -89,6 +89,9 @@ ExecutionPlan make_plan(const Request &r) {
     else if (r.model == "fastmetal-1.3b-qad")
         plan.memory_estimate_bytes = ((hybrid ? 12ull : 10ull) << 30) +
             uint64_t(r.width) * r.height * r.frames * 48;
+    else if (r.model == "z-image-turbo")
+        plan.memory_estimate_bytes = (25ull << 30) +
+            uint64_t(r.width) * r.height * 8192;
     return plan;
 }
 } // namespace tc
