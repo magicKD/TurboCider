@@ -50,17 +50,21 @@ class ContractTests(unittest.TestCase):
         self.assertEqual([x['id'] for x in p['stages']],['text_encode','denoise','vae_decode','export'])
 
     def test_flux_text_taps_are_config_guarded_and_dead_tail_is_elided(self):
-        source=(ROOT/'native/models/flux.mm').read_text()
-        encoder=(ROOT/'native/models/flux_text.mm').read_text()
-        self.assertIn('text_layers_=[q[@"num_hidden_layers"] intValue]',source)
-        self.assertIn('text_layers_==36',source)
-        self.assertIn('constexpr int output_layer=27',encoder)
-        self.assertIn('for(int i=0;i<output_layer;++i)',encoder)
-        self.assertIn('i==8||i==17||i==26',encoder)
+        platform=(ROOT/'native/platform/apple/device.mm').read_text()
+        encoder=(ROOT/'native/models/flux2/flux_text.cpp').read_text()
+        self.assertIn('[q[@"num_hidden_layers"] intValue] == 36',platform)
+        self.assertIn('[q[@"num_attention_heads"] intValue] == 32',platform)
+        self.assertIn('[q[@"num_key_value_heads"] intValue] == 8',platform)
+        # The C++ FLUX text path is deliberately bounded to the three tap
+        # layers used by Klein; it must not execute the dead tail of the
+        # source checkpoint.
+        self.assertIn('for (int i = 0; i < 27; ++i)',encoder)
+        self.assertIn('if (i == 8 || i == 17 || i == 26)',encoder)
+        self.assertNotIn('for (int i = 0; i < 36;',encoder)
 
     def test_flux_lora_identity_is_content_bound_and_not_ane_reused(self):
-        source=(ROOT/'native/models/flux.mm').read_text()
-        module=(ROOT/'native/models/flux_module.mm').read_text()
+        source=(ROOT/'native/models/flux2/pipeline.cpp').read_text()
+        module=(ROOT/'native/models/flux_module.cpp').read_text()
         for token in ['canonical(', 'file_size(', 'last_write_time(',
                       'sha256_file(', 'lora_hash_cache_', 'LoRA changed while it was being hashed']:
             self.assertIn(token,source)
@@ -125,7 +129,7 @@ class ContractTests(unittest.TestCase):
                 self.assertNotEqual(plan(invalid)[0],0)
 
     def test_ltx_i2v_native_path_uses_stage_specific_clean_prefixes(self):
-        source=(ROOT/'native/models/ltx_session.mm').read_text()
+        source=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         self.assertIn('ltx_mlx_video_vae_create_encoder',source)
         self.assertIn('ltx_mlx_video_vae_encode_pixels_bf16',source)
         self.assertIn('stage1_clean_prefix',source)
@@ -135,7 +139,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn('workload.stage2_latent_width * 32u',source)
 
     def test_ltx_resident_denoiser_cache_is_seed_independent(self):
-        source=(ROOT/'native/models/ltx_session.mm').read_text()
+        source=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         self.assertIn('root_(std::filesystem::absolute(root))',source)
         start=source.index('std::string denoiser_key =')
         end=source.index('if (denoiser_key != denoiser_key_)', start)
@@ -146,7 +150,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn('ltx_native_run(denoiser_.get(), 2, request.seed',source)
 
     def test_ltx_gpu_ane_requires_explicit_profile_and_binds_all_stages(self):
-        source=(ROOT/'native/models/ltx_session.mm').read_text()
+        source=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         runtime=(ROOT/'native/models/ltx_runtime/ltx_blocks.c').read_text()
         header=(ROOT/'native/models/ltx_runtime/ltx_native.h').read_text()
         self.assertIn('turbocider-ltx-ane-v1',source)
@@ -171,12 +175,12 @@ class ContractTests(unittest.TestCase):
         self.assertIn('loaded_qkv != 48u',runtime)
 
     def test_ltx_denoiser_cache_key_binds_residency_and_final_step_lifecycle(self):
-        source=(ROOT/'native/models/ltx_session.mm').read_text()
+        source=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         self.assertIn(':residency=" + request.residency',source)
         self.assertIn(':release_blocks=" +',source)
 
     def test_ltx_component_staged_uses_isolated_video_vae_helper(self):
-        session=(ROOT/'native/models/ltx_session.mm').read_text()
+        session=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         build=(ROOT/'tools/native/build.sh').read_text()
         helper=ROOT/'tools/native/ltx_video_vae_decode.c'
         self.assertTrue(helper.is_file())
@@ -188,7 +192,7 @@ class ContractTests(unittest.TestCase):
                       helper.read_text())
 
     def test_ltx_service_conditioning_cache_is_bound_and_observable(self):
-        session=(ROOT/'native/models/ltx_session.mm').read_text()
+        session=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         service=(ROOT/'services/turbociderd/service.mm').read_text()
         finalizer=(ROOT/'tools/native/ltx_video_finalizer.mm').read_text()
         for token in [
@@ -227,7 +231,7 @@ class ContractTests(unittest.TestCase):
     def test_ltx_service_worker_execs_shared_cpp_video_finalizer(self):
         cli=(ROOT/'apps/cli/main.mm').read_text()
         service=(ROOT/'services/turbociderd/service.mm').read_text()
-        session=(ROOT/'native/models/ltx_session.mm').read_text()
+        session=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         build=(ROOT/'tools/native/build.sh').read_text()
         finalizer=ROOT/'tools/native/ltx_video_finalizer.mm'
         converter=ROOT/'native/models/ltx_runtime/ltx_video_convert.cpp'
@@ -292,7 +296,7 @@ class ContractTests(unittest.TestCase):
             self.assertIn('must be 0..3',error)
 
     def test_ltx_candidate_dumps_stage_boundary_latents(self):
-        source=(ROOT/'native/models/ltx_session.mm').read_text()
+        source=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         for name in ['stage1_video', 'stage1_audio', 'stage2_input_video',
                      'stage2_video', 'stage2_audio', 'metadata.json']:
             self.assertIn(name, source)
@@ -336,7 +340,7 @@ class ContractTests(unittest.TestCase):
             self.assertIn('48 block manifests',error)
 
     def test_ltx_conditioning_cache_is_prompt_bound(self):
-        source=(ROOT/'native/models/ltx_session.mm').read_text()
+        source=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         self.assertIn('conditioning_prompt',source)
         self.assertIn('root_, selected_checkpoint, request.prompt',source)
         self.assertIn('if (!bound_prompt || *bound_prompt != requested_prompt)',source)
@@ -410,7 +414,7 @@ class ContractTests(unittest.TestCase):
                                   'ane_manifest':'/tmp/fastmetal-ane.json',
                                   'loras':[{'path':'/tmp/fastmetal.safetensors',
                                             'role':'transformer','strength':0.8}]})[0],0)
-        source=(ROOT/'native/models/fastmetal_module.mm').read_text()
+        source=(ROOT/'native/platform/apple/fastmetal_session.mm').read_text()
         self.assertIn('PersistentWorker',source)
         self.assertIn('fastmetal-python-persistent',source)
         self.assertIn('uses_parent_mlx() const override { return false; }',source)
@@ -558,9 +562,9 @@ class ContractTests(unittest.TestCase):
         self.assertNotEqual(plan({'model':'flux2-klein-9b','execution':'gpu_ane','ane_manifest':'/tmp/a'})[0],0)
 
     def test_flux_single_projection_has_runtime_layout_guard(self):
-        source=(ROOT/'native/models/flux_transformer.mm').read_text()
-        self.assertIn('parts.size()==5',source)
-        self.assertIn('parts[4].shape(-1)==hidden_*3',source)
+        source=(ROOT/'native/models/flux2/flux_transformer.cpp').read_text()
+        self.assertIn('parts.size() == 5',source)
+        self.assertIn('parts[4].shape(-1) == hidden_ * 3',source)
 
     def test_ltx_gemma_tokenizer_matches_reference_vectors(self):
         out,err=C.c_void_p(),C.c_void_p()
@@ -740,6 +744,12 @@ class ContractTests(unittest.TestCase):
             self.assertNotEqual(plan({'profile':str(path),'execution':'gpu_ane'})[0],0)
             path.write_text(json.dumps({'schema_version':1,'enabled':True,'match':{'gpu_name':'Wrong GPU','memory_bytes':1},'models':{}}))
             self.assertNotEqual(plan({'profile':str(path)})[0],0)
+    def test_resource_api_rejects_missing_engine(self):
+        out, err = C.c_void_p(), C.c_void_p()
+        self.assertNotEqual(lib.tc_engine_load(None, None, None, C.byref(out), C.byref(err)), 0)
+        self.assertIsNone(consume(out)); self.assertIn('missing engine', consume(err))
+        self.assertNotEqual(lib.tc_engine_unload(None, C.byref(out), C.byref(err)), 0)
+        self.assertIsNone(consume(out)); self.assertIn('missing engine', consume(err))
     def test_abi(self): self.assertEqual(lib.tc_abi_version(),1)
 
 if __name__=='__main__':unittest.main(verbosity=2)

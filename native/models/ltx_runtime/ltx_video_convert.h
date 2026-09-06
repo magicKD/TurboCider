@@ -10,7 +10,7 @@ extern "C" {
 
 /* Exact planar BCFHW BF16 [-1, 1] to frame-major interleaved RGB8 conversion.
  * Rows are parallelized, but each element keeps the scalar clamp/lround
- * arithmetic used by the original ltx-mac media finalizer. */
+ * arithmetic used by the reference media finalizer. */
 int ltx_video_bf16_planar_to_rgb24(
     uint8_t *output, size_t output_bytes,
     const uint16_t *input, size_t input_elements,

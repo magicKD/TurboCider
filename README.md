@@ -1,6 +1,6 @@
 # TurboCider
 
-Apple Silicon 原生多模态推理系统。C/C++/Objective-C++/Metal 推理库、SwiftUI App、CLI、C/Swift SDK 和本地任务服务共用一套实现。
+Apple Silicon 原生多模态推理系统。纯 C++/C/Objective-C++/Metal native runtime、SwiftUI App、CLI、C/Swift SDK 和本地任务服务共用一套实现；模型专用的 Apple bridge 保持在 platform/API 层，通用 runtime 不依赖 Foundation。原生推理不依赖 Python；FastMetal 仅在其明确配置的持久 worker 路径使用托管 Python/MLX。
 
 当前注册并提供五个模型模块：FLUX.2 Klein 4B/9B、MiniMax H3 Turbo、FastMetal 1.3B QAD 和 LTX 2.5 Distilled。FLUX/H3/LTX 的正式路径不依赖 Python 模型运行时；FastMetal 有意保留显式配置的持久 Python/MLX worker，以复用上游 FastVideo/TAEHV。LTX 当前公开 video-only 文生视频，I2V、音频和默认 GPU+ANE 仍按能力门禁。
 
@@ -8,10 +8,10 @@ Apple Silicon 原生多模态推理系统。C/C++/Objective-C++/Metal 推理库�
 
 ## 构建与运行
 
-需要 Apple Silicon、完整 Xcode，以及兼容的 MLX C++ 0.32.x。历史 FLUX 性能证据使用 0.32.0；当前本机构建也验证了 0.32.2。发行包的实际最低 macOS 版本取决于所绑定 MLX dylib 的 deployment target。
+需要 Apple Silicon、完整 Xcode、CPython 3.11（仅用于托管工具/显式 FastMetal worker）以及与已绑定 dylib 匹配的 MLX C++ 0.32.x。发行包的最低 macOS 版本取决于 MLX dylib 的 deployment target；可用 `TURBOCIDER_DEPLOYMENT_TARGET` 显式覆盖。
 
 ```sh
-export MLX_ROOT=/path/to/site-packages/mlx
+make setup
 make package
 make test
 build/native/turbocider doctor

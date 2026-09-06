@@ -19,9 +19,10 @@ static int create_for(const char *path,NSString *request,tc_engine **engine,char
  return tc_engine_create_model([model UTF8String],path,engine,error);
 }
 static tc_engine *active=nullptr;
+static bool resource_mode=false;
 static volatile std::sig_atomic_t interrupted=0;
 static void stop(int){interrupted=1;}
-static void event(const char*s,void*){if(interrupted)tc_engine_cancel(active);std::cerr<<s<<std::endl;}
+static void event(const char*s,void*){if(interrupted){if(resource_mode)tc_coreml_resources_cancel();else tc_engine_cancel(active);}std::cerr<<s<<std::endl;}
 static std::string executable_path(const char *fallback) {
  uint32_t size=PATH_MAX;std::vector<char> value(size);
  if(_NSGetExecutablePath(value.data(),&size)!=0){value.resize(size);if(_NSGetExecutablePath(value.data(),&size)!=0)return fallback;}
@@ -104,12 +105,17 @@ static int prepare_lora_main(int argc,char **argv,const char *executable) {
  }
 }
 int main(int argc,char**argv){@autoreleasepool{
- if(argc<2){std::cerr<<"turbocider doctor|models|self-test|plan REQUEST.json|tokenize MODEL PROMPT|generate MODEL REQUEST.json | batch MODEL REQUEST1.json REQUEST2.json ... | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
+ if(argc<2){std::cerr<<"turbocider coreml REQUEST.json | doctor|models|self-test|plan REQUEST.json|tokenize MODEL PROMPT|generate MODEL REQUEST.json | batch MODEL REQUEST1.json REQUEST2.json ... | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
  std::string cmd=argv[1];char*out=nullptr,*err=nullptr;int code=0;
  if(cmd=="prepare-lora")return prepare_lora_main(argc,argv,argv[0]);
  if(cmd=="serve"&&argc==4){auto executable=executable_path(argv[0]);return tc_service_main(argv[2],argv[3],executable.c_str());}
  if(cmd=="rpc"&&argc==4)return tc_rpc_main(argv[2],argv[3]);
- if(cmd=="doctor")out=tc_system_json();
+ if(cmd=="coreml"&&argc==3){
+  NSString*request=[NSString stringWithContentsOfFile:@(argv[2]) encoding:NSUTF8StringEncoding error:nil];
+  if(!request){std::cerr<<"cannot read resource request\n";return 1;}
+  resource_mode=true;std::signal(SIGINT,stop);code=tc_coreml_resources_json(request.UTF8String,event,nullptr,&out,&err);std::signal(SIGINT,SIG_DFL);
+ }
+ else if(cmd=="doctor")out=tc_system_json();
  else if(cmd=="models")out=tc_models_json();
  else if(cmd=="self-test")code=tc_native_self_test(&out,&err);
  else if(cmd=="compile-coreml"&&argc==4)code=tc_compile_coreml_json(argv[2],argv[3],&out,&err);

@@ -1,0 +1,167 @@
+[
+  {
+    "path": "${USER_CACHE_ROOT}/macllm-qwen25-native-session/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 2073665,
+    "allocated_bytes": 10301440
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/org.python.python/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 170262709,
+    "allocated_bytes": 171114496
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/macllm-qwen25-prefill-migration/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 1309805,
+    "allocated_bytes": 6320128
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/macllm_native_engine_tests/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 4542172,
+    "allocated_bytes": 22581248
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/com.apple.python3/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 30524930,
+    "allocated_bytes": 31223808
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/python3/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 2561,
+    "allocated_bytes": 12288
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/org.turbocider.native/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 53460,
+    "allocated_bytes": 245760
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/macllm_qwen25_generation_engine_tests/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 216180,
+    "allocated_bytes": 1077248
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 31331618,
+    "allocated_bytes": 31354880
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/python/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 1652078,
+    "allocated_bytes": 7643136
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/qwen35-full-attention-block/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 133293,
+    "allocated_bytes": 622592
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/com.apple.Spotlight/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 1314528,
+    "allocated_bytes": 1318912
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/hetero-ane/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 192137479,
+    "allocated_bytes": 192540672
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/macllm_qwen35_generation_engine_tests/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 140791,
+    "allocated_bytes": 708608
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/macllm-qwen35-native-session/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 442398,
+    "allocated_bytes": 2199552
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/coreml-metal-handoff/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 7865942,
+    "allocated_bytes": 8097792
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/macllm-qwen25-prefill/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 8009781,
+    "allocated_bytes": 39849984
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/macllm-qwen35-prefill/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 11707634,
+    "allocated_bytes": 41771008
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/local.desktop-pet.app/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 1147277,
+    "allocated_bytes": 1208320
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/MatAnyoneComputePlanProbe/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 143972375,
+    "allocated_bytes": 144113664
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/turbocider-native/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 53300,
+    "allocated_bytes": 245760
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/qwen35-gdn-groups/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 51636,
+    "allocated_bytes": 262144
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/qwen35-stack/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 4551087,
+    "allocated_bytes": 22888448
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/macllm/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 2469460070,
+    "allocated_bytes": 2482008064
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/macllm-qwen25-matrix-handoff/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 51796,
+    "allocated_bytes": 262144
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/com.apple.duetexpertd/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 173688,
+    "allocated_bytes": 196608
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/macllm_qwen35_native_engine_tests/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 5777550,
+    "allocated_bytes": 28565504
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/qwen35-ffn/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 157526513,
+    "allocated_bytes": 158224384
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/main.swift/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 178129,
+    "allocated_bytes": 282624
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/MatAnyoneANEProbe/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 89131620,
+    "allocated_bytes": 89255936
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/qwen35-gdn/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 5122,
+    "allocated_bytes": 24576
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/python3.13/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 108873,
+    "allocated_bytes": 499712
+  },
+  {
+    "path": "${USER_CACHE_ROOT}/hetero-transformer/com.apple.e5rt.e5bundlecache",
+    "logical_bytes": 12376877,
+    "allocated_bytes": 28155904
+  }
+]

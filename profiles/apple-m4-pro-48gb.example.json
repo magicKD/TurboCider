@@ -1,7 +1,10 @@
 {
   "schema_version": 1,
   "enabled": false,
-  "match": {"gpu_name": "Apple M4 Pro", "memory_bytes": 51539607552},
+  "match": {
+    "gpu_name": "Apple M4 Pro",
+    "memory_bytes": 51539607552
+  },
   "models": {
     "flux2-klein-4b": {
       "policy": "gpu_ane",
@@ -10,8 +13,17 @@
       "residency": "resident",
       "allocator_cache_bytes": 536870912,
       "memory_budget_bytes": 34359738368,
-      "warmup_iterations": 1
+      "warmup_iterations": 1,
+      "coreml_export": {
+        "bucket": 1088,
+        "variant": "int8_pc",
+        "output_dir": "../artifacts/flux2/source",
+        "cache_dir": "../artifacts/flux2/compiled"
+      }
     },
-    "minimax-h3-turbo": {"policy": "gpu", "residency": "streamed"}
+    "minimax-h3-turbo": {
+      "policy": "gpu",
+      "residency": "streamed"
+    }
   }
 }

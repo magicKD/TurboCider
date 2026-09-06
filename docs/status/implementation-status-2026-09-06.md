@@ -7,7 +7,7 @@
 
 ## 一句话结论
 
-TurboCider 已经从单一 FLUX native 纵切扩展为五个注册模型模块：FLUX.2 Klein 4B/9B、FastMetal 1.3B QAD、MiniMax H3 Turbo 和 LTX 2.5 Distilled。H3、FastMetal、FLUX 4B 的核心路径已经接近 direct 实现；LTX video-only 文生视频能够正常启动并生成视频，但包含模型建立、warmup、Core ML attach 和 VAE 生命周期的端到端请求还没有稳定快于 mac-ltx。独立 LoRA 请求已经进入接口和缓存边界，但 H3/LTX 仍会在首次使用时生成可清理的 merged runtime artifact，尚未完成纯内存融合。
+TurboCider 已经从单一 FLUX native 纵切扩展为五个注册模型模块：FLUX.2 Klein 4B/9B、FastMetal 1.3B QAD、MiniMax H3 Turbo 和 LTX 2.5 Distilled。H3、FastMetal、FLUX 4B 的核心路径已经接近 direct 实现；FLUX 9B 和 LTX video-only 已在本轮合并后的 C++ runtime 上完成真实生成。LTX 包含模型建立、warmup、Core ML attach 和 VAE 生命周期的端到端请求还没有稳定快于 mac-ltx。独立 LoRA 请求已经进入 C/Swift/App 接口和缓存边界，但 H3/LTX 仍会在首次使用时生成可清理的 merged runtime artifact，尚未完成纯内存融合。
 
 ## 代码结构与实现边界
 
@@ -15,12 +15,14 @@ TurboCider 已经从单一 FLUX native 纵切扩展为五个注册模型模块�
 apps/                       SwiftUI App、CLI
 bindings/                   C ABI、Swift SDK
 services/                   Unix socket 持久任务服务
-native/core/                Request、Recipe、ABI、缓存、生命周期
-native/backends/            MLX、Metal、Core ML、artifact cache
-native/models/flux*.mm      FLUX 4B/9B 文本、DiT、VAE、LoRA
+native/core/                纯 C++ Request/Recipe/common contracts
+native/runtime/             纯 C++ plan、execution、residency、session
+native/backends/            C++ MLX 与 Apple Core ML/artifact cache
+native/models/flux2/*.cpp   FLUX 4B/9B 文本、DiT、VAE、LoRA
 native/models/h3_runtime/  H3 C/Metal/ANE vendor runtime
 native/models/ltx_runtime/  LTX C/Metal/ANE/MLX runtime
-native/models/*_session.mm 模型 Session、请求校验、驻留和媒体边界
+native/platform/apple/      ObjC++ Apple bridge 与 H3/LTX/FastMetal Session
+native/api/                 C ABI
 native/media/               图像、视频、音频和原子导出
 profiles/                   显式设备/ANE/worker 配置
 examples/requests/          可审阅的请求样例
@@ -39,10 +41,10 @@ docs/design/                长期设计、验收契约和历史架构
 | 模型 | 当前可用能力 | 真实证据 | 尚未完成 |
 |---|---|---|---|
 | FLUX.2 Klein 4B | 文生图、图生图、多参考编辑、GPU/GPU+ANE、独立 LoRA | warm GPU/GPU+ANE 与 direct 接近，decoded visual 一致 | 更广尺寸/机器矩阵 |
-| FLUX.2 Klein 9B | GPU-only native 路径、文生图/图生图/编辑契约 | 64×64、1-step smoke，约 5.33 s，MLX peak 约 18.16 GB | 正式 parity、标准尺寸性能、GPU+ANE |
+| FLUX.2 Klein 9B | GPU-only native 路径、文生图/图生图/编辑契约、App 选择 | 256×256、4-step 真实生成，request wall 4.257 s，MLX peak 18.90 GB | 正式 reference parity、标准尺寸 warm/ABBA、GPU+ANE |
 | FastMetal 1.3B QAD | 持久 MLX/TAEHV worker、GPU/ANE split、取消重建、prompt cache | base GPU/GPU+ANE latent 与 direct 逐元素一致 | 多机器中位数、独立 LoRA runtime bake、LoRA ANE artifact |
 | MiniMax H3 Turbo | 文生视频、首尾帧、reference、音视频、streamed/resident/component-staged、manifest LoRA | 512×512、22 帧、4-step 输出 byte-exact | 更广输入/尺寸、resident/ANE 多轮矩阵 |
-| LTX 2.5 Distilled | video-only 文生视频、动态 Gemma、8+3、upsample、clean-exec Video VAE、conditioning cache | 704×448、97 帧真实生成；当前 CLI/service 可启动 | I2V 数值 parity、音频 Session parity、默认 GPU+ANE、端到端稳定快于 mac-ltx |
+| LTX 2.5 Distilled | video-only 文生视频、动态 Gemma、8+3、upsample、clean-exec Video VAE、conditioning cache、App 视频请求 | 704×448、97 帧既有真实生成；本轮另完成 704×448、9 帧 smoke | I2V 数值 parity、音频 Session parity、默认 GPU+ANE、端到端稳定快于 mac-ltx |
 
 ## 性能与准确性证据
 
@@ -82,11 +84,14 @@ LTX GPU+ANE 当前只作为候选实验路径：同一动态 Gemma 请求约 125
 已验证：
 
 ```text
-Python/bin/python -m pytest -q tests
+make test
+Python/bin/python -m pytest -q <无参数单元与 fixture 测试集合>
 60 passed, 5 skipped, 37 subtests passed
 ```
 
-构建脚本会显式编译 TurboCider core、H3 runtime、LTX runtime、LTX media helpers、CLI 和 Swift runners；不自动下载模型或依赖。deployment target 会从实际绑定的 MLX dylib 推导并同时应用到 native/Swift 产物；媒体探测已使用当前 AVFoundation track-loading API。本轮完整构建无编译或链接警告。真实 Apple Silicon 环境可以启动 CLI/service 并生成 H3、FastMetal、LTX video-only 和 FLUX 结果。当前受限沙箱没有 Metal device，所以其中的 native self-test 在沙箱内会按预期报告 GPU unavailable；这不应被记录为产品启动失败。
+`tests/native` 同时包含需要 `--model/--manifest/--output` 的真实验收程序，因此不能把整个 `tests/` 当作无参数 pytest collection；这些入口应按文档单独运行。
+
+构建脚本会显式编译 TurboCider core/runtime、H3 runtime、LTX runtime、LTX media helpers、CLI 和 Swift runners；不自动下载模型或依赖。deployment target 会从实际绑定的 MLX dylib 推导并同时应用到 native/Swift 产物。本轮最终完整构建无编译或链接 warning。真实 Apple Silicon 环境可以启动 CLI/service，并已新增 FLUX 9B、LTX video-only 与 Swift App embedded-session 的真实 smoke。受限沙箱没有 Metal/pasteboard service 时按测试条件跳过相应系统能力，不记为产品启动失败。
 
 ## 尚未达到的目标
 

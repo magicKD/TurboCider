@@ -11,6 +11,15 @@ public struct NativeInput: Codable, Sendable, Identifiable {
         self.kind = kind; self.role = role; self.path = path; self.strength = strength
     }
 }
+public struct NativeLoRA: Codable, Sendable, Identifiable {
+    public var id: String { path + role }
+    public var path: String
+    public var strength: Double
+    public var role: String
+    public init(path: String, strength: Double = 1.0, role: String = "transformer") {
+        self.path = path; self.strength = strength; self.role = role
+    }
+}
 public struct NativeRequest: Codable, Sendable {
     public var schema_version = 1
     public var model = "flux2-klein-4b"
@@ -23,6 +32,7 @@ public struct NativeRequest: Codable, Sendable {
     public var frames = 1
     public var execution = "gpu"
     public var dynamic_text = true
+    public var compile_gpu: Bool?
     public var ane_manifest: String?
     public var allow_approximation: Bool?
     public var dump_tensors: String?
@@ -31,6 +41,8 @@ public struct NativeRequest: Codable, Sendable {
     public var profile: String?
     public var residency: String?
     public var fps: Int?
+    public var audio: Bool?
+    public var loras: [NativeLoRA]?
     public init(prompt: String, output: String) { self.prompt = prompt; self.output = output }
 }
 public struct NativeEvent: Codable, Sendable {
@@ -73,6 +85,71 @@ public final class NativeEngine: @unchecked Sendable {
     }
     deinit { tc_engine_free(handle) }
     public func cancel() { tc_engine_cancel(handle) }
+    public static func open(modelURL: URL, modelID: String) async throws -> NativeEngine {
+        try await Task.detached(priority: .userInitiated) {
+            try NativeEngine(modelURL: modelURL, modelID: modelID)
+        }.value
+    }
+    public func load(onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        try await resources(load: true, onEvent: onEvent)
+    }
+    public func unload() async throws -> Data {
+        try await resources(load: false, onEvent: { _ in })
+    }
+    private func resources(load: Bool, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                let context = Unmanaged.passRetained(EventBox(onEvent)).toOpaque()
+                defer { Unmanaged<EventBox>.fromOpaque(context).release() }
+                var result: UnsafeMutablePointer<CChar>?
+                var error: UnsafeMutablePointer<CChar>?
+                let status = load ? tc_engine_load(handle, eventCallback, context, &result, &error)
+                                  : tc_engine_unload(handle, &result, &error)
+                let message = consume(error), output = consume(result)
+                if status == 0 { continuation.resume(returning: Data(output.utf8)) }
+                else if status == 2 { continuation.resume(throwing: CancellationError()) }
+                else { continuation.resume(throwing: NativeFailure(message: message)) }
+            }
+        }
+    }
+    public func prepare(_ request: NativeRequest, warmup: Bool, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        try await preparation(payload: JSONEncoder().encode(request), warmup: warmup, cache: false, onEvent: onEvent)
+    }
+    public func cache(action: String, directory: URL, source: URL? = nil, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        var value = ["action": action, "cache": directory.path]
+        if let source { value["source"] = source.path }
+        return try await preparation(payload: JSONEncoder().encode(value), warmup: false, cache: true, onEvent: onEvent)
+    }
+    private func preparation(payload: Data, warmup: Bool, cache: Bool, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                let context = Unmanaged.passRetained(EventBox(onEvent)).toOpaque()
+                defer { Unmanaged<EventBox>.fromOpaque(context).release() }
+                var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+                let status = String(decoding: payload, as: UTF8.self).withCString {
+                    cache ? tc_engine_cache(handle, $0, eventCallback, context, &result, &error)
+                          : tc_engine_prepare(handle, $0, warmup ? 1 : 0, eventCallback, context, &result, &error)
+                }
+                let message = consume(error), output = consume(result)
+                if status == 0 { continuation.resume(returning: Data(output.utf8)) }
+                else if status == 2 { continuation.resume(throwing: CancellationError()) }
+                else { continuation.resume(throwing: NativeFailure(message: message)) }
+            }
+        }
+    }
+    public static func cancelCoreMLResources() { tc_coreml_resources_cancel() }
+    public static func coreMLResources(_ payload: Data, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        try await Task.detached(priority: .userInitiated) {
+            let context = Unmanaged.passRetained(EventBox(onEvent)).toOpaque()
+            defer { Unmanaged<EventBox>.fromOpaque(context).release() }
+            var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+            let status = String(decoding: payload, as: UTF8.self).withCString { tc_coreml_resources_json($0, eventCallback, context, &result, &error) }
+            let message = consume(error), output = consume(result)
+            if status == 2 { throw CancellationError() }
+            guard status == 0 else { throw NativeFailure(message: message) }
+            return Data(output.utf8)
+        }.value
+    }
     public static func system() -> String { consume(tc_system_json()) }
     public static func models() -> String { consume(tc_models_json()) }
     public static func plan(_ request: NativeRequest) throws -> Data {

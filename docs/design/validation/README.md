@@ -12,9 +12,13 @@
 
 | 占位符 | 含义 |
 |---|---|
+| `${ISOLATED_PACKAGE_ROOT}` | 脱离源码的临时发行包验收目录 |
+| `${APP_SUPPORT_ROOT}` | TurboCiderNative 的 Application Support 目录 |
+| `${USER_CACHE_ROOT}` | 本机用户 Library/Caches 目录；各进程的可访问缓存抽样 |
 | `${PROJECT_ROOT}` | TurboCider 仓库根目录；其下 `outputs/` 为原始本机验收产物 |
 | `${FLUX_MODEL_ROOT}` | 本地 FLUX.2-klein-4B 模型根目录 |
 | `${MFLUX_SOURCE_ROOT}` | 验收所用 mflux checkout 的 `src/` 目录 |
+| `${COREML_PARTITION_ROOT}` | 本轮已有 FLUX Core ML 源分区及 compiled 子目录根目录 |
 | `${H3_SOURCE_ROOT}` | 静态检查所用 h3.c-fork checkout 根目录 |
 | `${MACOS_SDK_ROOT}` | 验收所用 macOS SDK 根目录 |
 
@@ -25,3 +29,5 @@
 本机启用的加速配置可命名为 `profiles/<device>.local.json`，不会进入版本控制；可移植的 `*.example.json` 应保留。
 
 `.gitignore` 不会自动停止跟踪已经提交的文件；如未来误提交原始产物，需要另外从 Git 索引移除，并保留本地文件。
+
+- `cpp-engine-refactor.json`：C++ 边界重构的完整版本对照、首次 Core ML 加载异常、ABBA App 性能和功能回归记录；不含本机绝对路径。

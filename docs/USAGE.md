@@ -5,12 +5,12 @@ C++/Objective-C++ 推理库、SwiftUI App、C/Swift SDK、CLI 与 Unix socket �
 ## 构建与发行目录
 
 ```sh
-export MLX_ROOT=/path/to/site-packages/mlx
-tools/native/build.sh
-tools/native/package.sh
+make setup
+make build
+make package
 ```
 
-需要兼容的 MLX C++ 0.32.x、完整 Xcode 和 Apple Silicon arm64。历史 FLUX parity/performance 使用 0.32.0，当前源码也用 0.32.2 完成构建；正式性能比较必须记录具体版本。通过 `DEVELOPER_DIR`/`SDKROOT` 选已有编译器。构建脚本会读取所绑定 `libmlx.dylib` 的 deployment target，同时用于 C/C++/Objective-C++、Swift 和发行包的最低系统版本，避免生成“主程序比依赖声明支持更旧系统”的不一致产物；可用 `TURBOCIDER_DEPLOYMENT_TARGET` 显式覆盖编译目标。当前本机 0.32.2 wheel 要求 macOS 26.2。构建不下载依赖。输出 `dist/TurboCider.app` 和 `dist/cli/`，包含 MLX dylib/metallib、H3/LTX shader 和 LTX clean-exec helper；本机 ad-hoc 签名不等于 Developer ID 公证。模型保持在用户选择的原目录。
+需要兼容的 MLX C++ 0.32.x、完整 Xcode 和 Apple Silicon arm64。通过 `DEVELOPER_DIR`/`SDKROOT` 选已有编译器；`tools/native/dependencies.sh` 优先使用项目托管依赖，也接受显式 `MLX_ROOT`。构建脚本会读取所绑定 `libmlx.dylib` 的 deployment target，同时用于 C/C++/Objective-C++、Swift 和发行包最低系统版本，可用 `TURBOCIDER_DEPLOYMENT_TARGET` 显式覆盖。构建不下载依赖。输出 `dist/TurboCider.app` 和 `dist/cli/`，包含 MLX dylib/metallib、H3/LTX shader 和 LTX clean-exec helper；本机 ad-hoc 签名不等于 Developer ID 公证。模型保持在用户选择的原目录。
 
 ## 请求与 CLI
 
@@ -89,7 +89,7 @@ Audio VAE 的 native runtime 已加入 `native/models/ltx_runtime/ltx_mlx_audio_
 
 ## 设备配置与编译缓存
 
-默认 GPU，`auto` 也选择 GPU。请求 `execution.profile` 可指向本地 JSON。`profiles/apple-m4-pro-48gb.example.json` 默认关闭，复制后填写匹配的设备身份、artifact 路径并显式启用。配置覆盖请求的 policy/residency，计划含配置内容 hash。可控制 allocator cache、预算和 Core ML warmup 次数。
+SDK 缺省为 GPU；App 的 `auto` 在本机、权重、桶和近似许可匹配时选择自有 GPU/ANE 分区，否则回退 GPU。请求 `execution.profile` 可指向本地 JSON。`profiles/apple-m4-pro-48gb.example.json` 默认关闭，复制后填写匹配的设备身份、artifact 路径并显式启用。配置覆盖请求的 policy/residency，计划含配置内容 hash。可控制 allocator cache、预算和 Core ML warmup 次数。
 
 混合 `gpu_ane` 必须 `allow_approximation=true`，使用本地 schema 2 `ane_manifest`。当前支持20个 single block MLP、K=N=3072、单固定桶。量化 MLP 改变算法精度，结果明确标注；公开 `cpuAndNeuralEngine` 不保证子图全部实际驻留 ANE。旧 artifact provenance 只有源路径/大小，故仍为实验。超过 bucket 明确失败，不裁剪输入、不静默改 GPU。
 
@@ -159,3 +159,13 @@ adapter 大小、SHA-256 和 strength。近似 kernel 测试必须同时显式�
 ```
 
 原生请求 `dump_tensors` 指定候选张量目录。性能测试不使用 dump；比较器任何缺失、shape/finite/数值差异均返回失败。最新证据与限制见 [重构状态](design/rewrite-implementation-status.md)、[性能对比](design/flux-performance-comparison.md)、[视频模型验收](design/video-model-acceptance.md)。
+
+## Studio App
+
+图像与视频创作、图片插入/粘贴、有序参考、随机种子、独立 LoRA 文件、模型选择及模型 Load/Unload 的已实现范围与测试入口见 [Studio 实现记录](design/app-studio-implementation.md)。模型中心根据 native descriptor 切换 FLUX 4B/9B、H3、LTX 和 FastMetal 的操作与默认帧参数；视频输出使用 MP4 预览，模型自身的 profile/provenance/audio 门禁仍由 native runtime 最终校验。
+
+模型页现支持当前配置加载、无输出完整预热、卸载、GPU/ANE 选择，以及已有 Core ML 分区的预编译/缓存清理。接口与复现见 [模型准备与性能](design/model-preparation-and-performance.md)。
+
+Core ML 模型/磁盘管理：`turbocider coreml request.json` 支持 `inventory`、`export`、`compile`、`delete_artifacts`、`clear_compiled`、`clear_runtime`。清理默认只预览；配置、请求范例及 C/Swift API 见 [资源管理说明](design/coreml-artifacts-and-storage.md)。
+
+项目独立性、托管依赖与隔离验收见 [独立部署说明](design/standalone-project.md)。原始模型可以位于任意用户指定目录；自动加速产物不再从相邻 workspace 发现。

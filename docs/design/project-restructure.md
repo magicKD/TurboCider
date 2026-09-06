@@ -59,7 +59,7 @@ TurboCider/
 
 正式入口 `make build` / `make package`，底层脚本明确列出每个发行源文件，不使用 `native/models/*.mm` 自动收集，防止实验目录意外链接。H3 与 LTX 正式 runtime 已进入动态库目标；package 同时携带两套 Metal shader 和 LTX clean-exec Video VAE helper。`experimental/video` 仍不进入构建。
 
-当前环境未安装CMake，系统xcrun存在本机工具链问题；已验证的构建直接使用完整Xcode编译器与SDK，MLX_ROOT明确指定本地MLX C++ 0.32.0。不新增一个无法在本机验证的占位CMake/SwiftPM配置，也不保留会构建旧App的Package.swift。后续引入CMake/SwiftPM时，必须调用同一库目标并通过相同验收，而不是再次产生另一套产品。
+当前环境未安装CMake，系统xcrun存在本机工具链问题；已验证的构建直接使用完整Xcode编译器与SDK，现由 `make setup` 安装项目自有 MLX C++ 0.32.0，构建自动解析 `.venv`；`MLX_ROOT` 仅保留为显式覆盖。不新增一个无法在本机验证的占位CMake/SwiftPM配置，也不保留会构建旧App的Package.swift。后续引入CMake/SwiftPM时，必须调用同一库目标并通过相同验收，而不是再次产生另一套产品。
 
 正式产物只有 `dist/TurboCider.app` 和 `dist/cli/turbocider`；不再生成名为Native的平行产品。动态库名 `libturbocider.dylib` 保持ABI兼容。Swift内部类型名和旧历史存储目录可以保留，避免仅改名字破坏用户已有历史。
 

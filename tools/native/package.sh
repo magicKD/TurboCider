@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-: "${MLX_ROOT:?Set MLX_ROOT to the local native dependency package}"
+source tools/native/dependencies.sh
 ROOT="$PWD"
 APP="$ROOT/dist/TurboCider.app"
 BIN="$APP/Contents/MacOS"
@@ -31,6 +31,8 @@ rm -rf "$APP" "$ROOT/dist/cli"
 mkdir -p "$BIN" "$RES" "$SCRIPTS" "$ROOT/dist/cli"
 cp build/native/TurboCiderNativeApp "$BIN/"
 for folder in "$BIN" "$ROOT/dist/cli"; do
+ mkdir -p "$folder/coreml"
+ cp tools/coreml/export_flux2.py "$folder/coreml/"
  cp build/native/libturbocider.dylib "$folder/"
  cp "$MLX_ROOT/lib/libmlx.dylib" "$MLX_ROOT/lib/libjaccl.dylib" "$MLX_ROOT/lib/mlx.metallib" "$folder/"
  cp build/native/h3_shaders.metal build/native/ltx_shaders.metal "$folder/"

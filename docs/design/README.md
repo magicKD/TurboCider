@@ -1,5 +1,13 @@
 # TurboCider 设计文档
 
+当前独立部署入口：[项目独立性与完整链路](standalone-project.md)。构建、转换工具链及加速产物均由 TurboCider 管理，原始模型路径可在外部。
+
+最新磁盘管理：[Core ML 源模型、编译与缓存管理](coreml-artifacts-and-storage.md)，包含实际占用检查、safetensors 离线导出、CLI/API 和 App 清理入口。
+
+最新实现：[模型准备、GPU/ANE 管理与性能](model-preparation-and-performance.md)，包含本机自动 GPU/ANE 适配、App 加载/预热、分区编译缓存及纯 GPU compile 实测。
+
+**已实现的 Studio 首版与测试：[实现记录](app-studio-implementation.md)。** 包含原生 FLUX 三操作、图片输入、种子、load/unload 及实际验证；早期设计中的目录/能力以当前实现记录为准。
+
 当前项目目录与旧代码退役：[项目重构](project-restructure.md)。
 
 当前实现、真实性能和剩余工作统一见 [2026-09-06 实现状态](../status/implementation-status-2026-09-06.md)，独立运行边界见 [外部依赖说明](../status/independence-and-dependencies-2026-09-06.md)，提交边界见 [版本准备度](../status/release-readiness-2026-09-06.md)。模型职责的详细说明见 [原生重构状态](rewrite-implementation-status.md)、[FLUX 同条件性能对比](flux-performance-comparison.md) 和 [H3/LTX 验收契约](video-model-acceptance.md)。以下长期设计不等于已交付能力。
@@ -37,3 +45,5 @@
 [架构图](native-engine-architecture.svg) 表达最终方向，并非每个方框都已经实现。当前 FLUX、H3、FastMetal 和 LTX video-only 已有执行入口；LTX I2V/音频、完整 GPU+ANE 门禁、通用执行器与自有 allocator 仍待完成。
 
 `validation/` 存放小型 JSON 证据和依赖身份。原始大张量、图像及过程日志保留在本机 `outputs/native-validation/`，不提交模型或大文件。
+
+- [原生 C++ 引擎边界与重构验收](native-cpp-engine.md)：当前源码划分、类型化接口、驻留策略与性能验证。

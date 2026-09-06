@@ -27,9 +27,7 @@ struct Request {
     std::vector<LoRAAsset> loras;
     int width = 512, height = 512, steps = 4, frames = 1, fps = 24;
     uint64_t seed = 42;
-    /* LTX native currently emits video-only output.  Other model families
-     * keep audio enabled by default for schema-2 compatibility.  The JSON
-     * parser applies the model-specific default before validation. */
+    bool compile_gpu = false;
     bool dynamic_text = true, allow_approximation = false, audio = true;
 };
 struct Stage {
@@ -42,4 +40,4 @@ struct Recipe {
     std::vector<Stage> stages;
     bool executable = false;
 };
-}
+} // namespace tc

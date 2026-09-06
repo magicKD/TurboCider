@@ -26,8 +26,6 @@
 #include <iostream>
 #include <vector>
 extern char **environ;
-extern "C" int tc_engine_create_model_candidate(
-    const char*, const char*, tc_engine**, char**);
 namespace {
 volatile std::sig_atomic_t stopping=0;
 void stop_service(int){stopping=1;}
@@ -319,11 +317,8 @@ class Service {
             if(external_worker){tc_engine_free(engine_);engine_=nullptr;loaded_.clear();}
             else if(loaded_!=identity){
                 tc_engine_free(engine_);engine_=nullptr;
-                status=resident_candidate ?
-                    tc_engine_create_model_candidate(
-                        model.c_str(),path.c_str(),&engine_,&error) :
-                    tc_engine_create_model(
-                        model.c_str(),path.c_str(),&engine_,&error);
+                status=tc_engine_create_model(
+                    model.c_str(),path.c_str(),&engine_,&error);
                 if(!status)loaded_=identity;
             }
             lock.unlock();
