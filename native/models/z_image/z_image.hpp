@@ -3,12 +3,13 @@
 #include "../../backends/mlx.hpp"
 #include "../../core/tokenizer.hpp"
 #include "../../runtime/session.hpp"
+#include "../../backends/coreml.hpp"
 
 namespace tc {
 
 class ZImage final : public ModelSession {
     std::filesystem::path root_;
-    std::filesystem::path text_path_, transformer_path_, vae_path_;
+    std::filesystem::path text_path_, transformer_path_, transformer_checkpoint_, vae_path_;
     bool diffusers_layout_ = false;
     Tokenizer tokenizer_;
     Weights text_encoder_;
@@ -20,6 +21,9 @@ class ZImage final : public ModelSession {
     std::vector<LoRAAsset> active_loras_;
     std::string cached_lora_identity_;
     size_t lora_applied_projections_ = 0;
+    std::unique_ptr<HybridSession> hybrid_;
+    std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
+    int hybrid_gpu_mlp_start_ = -1;
 
     void select_loras(const Request &);
     Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);
@@ -27,7 +31,7 @@ class ZImage final : public ModelSession {
                    const Event &, std::atomic<bool> &);
     Tensor decode(const Tensor &, int, int, const Event &, std::atomic<bool> &);
     bool conditioning(const Request &, const Event &, std::atomic<bool> &);
-    std::string select_acceleration(Request &, const Event &, std::atomic<bool> &);
+    std::string select_acceleration(Request &, int, const Event &, std::atomic<bool> &);
     RunResult run(const Request &, const Event &, std::atomic<bool> &, bool warmup);
 
   public:

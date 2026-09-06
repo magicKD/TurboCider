@@ -314,6 +314,24 @@ Tensor z_ffn(const Tensor &x, const Weights &w, const std::string &prefix) {
                          w, prefix + ".w2");
 }
 
+std::function<std::vector<Tensor>(const std::vector<Tensor> &)>
+make_z_hybrid_gpu_graph(int hidden, int mlp_width, int gpu_mlp_start) {
+    require(hidden == 3840 && mlp_width == 10240 && gpu_mlp_start > 0 &&
+                gpu_mlp_start < mlp_width,
+            "unsupported Z-Image hybrid FFN geometry");
+    return mx::compile(
+        [hidden, mlp_width, gpu_mlp_start](const std::vector<Tensor> &args) {
+            auto w1 = slice_axis(args[1], 0, gpu_mlp_start, mlp_width);
+            auto w3 = slice_axis(args[2], 0, gpu_mlp_start, mlp_width);
+            auto w2 = slice_axis(args[3], 1, gpu_mlp_start, mlp_width);
+            auto gate = mx::matmul(args[0], mx::transpose(w1));
+            auto up = mx::matmul(args[0], mx::transpose(w3));
+            auto value = mx::matmul(silu(gate) * up, mx::transpose(w2));
+            require(value.shape(-1) == hidden, "Z-Image hybrid FFN output mismatch");
+            return std::vector<Tensor>{value};
+        });
+}
+
 Tensor z_context_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs) {
     auto attention = z_attention(rms(x, w.at(prefix + ".attention_norm1.weight"), 1e-5f),
@@ -325,7 +343,9 @@ Tensor z_context_block(const Tensor &x, const Weights &w, const std::string &pre
 }
 
 Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
-               const Tensor &freqs, const Tensor &temb) {
+               const Tensor &freqs, const Tensor &temb, HybridSession *hybrid,
+               int hybrid_block,
+               const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph) {
     auto modulation = mx::expand_dims(linear_compat(temb, w, prefix + ".adaLN_modulation.0"), 1);
     auto parts = mx::split(modulation, 4, -1);
     auto scale_msa = Tensor(1.f, parts[0].dtype()) + parts[0];
@@ -336,8 +356,25 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                                      scale_msa,
                                  w, prefix, freqs);
     auto value = x + gate_msa * rms(attention, w.at(prefix + ".attention_norm2.weight"), 1e-5f);
-    auto feed = z_ffn(rms(value, w.at(prefix + ".ffn_norm1.weight"), 1e-5f) * scale_mlp,
-                      w, prefix + ".feed_forward");
+    auto feed_input = rms(value, w.at(prefix + ".ffn_norm1.weight"), 1e-5f) * scale_mlp;
+    Tensor feed = feed_input;
+    if (hybrid && gpu_graph) {
+        auto packed = mx::astype(feed_input, mx::float16);
+        const int actual_rows = packed.shape(1);
+        if (actual_rows < hybrid->rows)
+            packed = mx::concatenate(
+                {packed, mx::zeros({1, hybrid->rows - actual_rows, 3840}, mx::float16)}, 1);
+        mx::eval({feed_input, packed});
+        auto gpu = (*gpu_graph)({feed_input,
+                                 w.at(prefix + ".feed_forward.w1.weight"),
+                                 w.at(prefix + ".feed_forward.w3.weight"),
+                                 w.at(prefix + ".feed_forward.w2.weight")})[0];
+        mx::async_eval({gpu});
+        auto ane = slice_axis(hybrid->predict(hybrid_block, packed), 1, 0, actual_rows);
+        feed = gpu + mx::astype(ane, gpu.dtype());
+    } else {
+        feed = z_ffn(feed_input, w, prefix + ".feed_forward");
+    }
     return value + gate_mlp * rms(feed, w.at(prefix + ".ffn_norm2.weight"), 1e-5f);
 }
 
@@ -406,7 +443,8 @@ ZPatch z_patchify(const Tensor &latent, const Tensor &caption) {
 
 Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, int width,
                      int height, const Weights &w, const Event &event,
-                     std::atomic<bool> &cancelled) {
+                     std::atomic<bool> &cancelled, HybridSession *hybrid,
+                     const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph) {
     auto patch = z_patchify(latent, caption);
     auto image = linear_compat(patch.image, w, "x_embedder");
     auto caption_emb = linear_compat(
@@ -426,7 +464,8 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     caption_emb = mx::expand_dims(caption_emb, 0);
     for (int i = 0; i < 2; ++i) {
         checkpoint(cancelled);
-        image = z_block(image, w, "noise_refiner." + std::to_string(i), image_freqs, temb);
+        image = z_block(image, w, "noise_refiner." + std::to_string(i), image_freqs, temb,
+                        hybrid, i, gpu_graph);
         caption_emb = z_context_block(caption_emb, w,
                                       "context_refiner." + std::to_string(i), caption_freqs);
     }
@@ -435,7 +474,8 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     for (int i = 0; i < 30; ++i) {
         checkpoint(cancelled);
         event("z_image_denoise_block", i, 30);
-        unified = z_block(unified, w, "layers." + std::to_string(i), unified_freqs, temb);
+        unified = z_block(unified, w, "layers." + std::to_string(i), unified_freqs, temb,
+                          hybrid, 2 + i, gpu_graph);
         mx::eval(unified);
     }
     auto final_scale = Tensor(1.f, temb.dtype()) +
@@ -518,12 +558,14 @@ ZImage::ZImage(const std::filesystem::path &root)
         std::filesystem::is_regular_file(comfy_vae)) {
         text_path_ = std::move(comfy_text);
         transformer_path_ = std::move(comfy_transformer);
+        transformer_checkpoint_ = transformer_path_;
         vae_path_ = std::move(comfy_vae);
         return;
     }
     diffusers_layout_ = true;
     text_path_ = root / "text_encoder";
     transformer_path_ = root / "transformer";
+    transformer_checkpoint_ = transformer_path_ / "diffusion_pytorch_model.safetensors";
     vae_path_ = root / "vae";
     require(has_safetensors(text_path_),
             "missing Z-Image Qwen3 safetensors in text_encoder/");
@@ -554,6 +596,9 @@ void ZImage::select_loras(const Request &request) {
         return;
     cached_lora_identity_ = std::move(identity);
     active_loras_ = std::move(normalized);
+    hybrid_.reset();
+    hybrid_gpu_graph_ = {};
+    hybrid_gpu_mlp_start_ = -1;
     cached_conditioning_.reset();
     cached_prompt_.clear();
     transformer_.clear();
@@ -588,6 +633,9 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
 }
 
 void ZImage::unload() {
+    hybrid_.reset();
+    hybrid_gpu_graph_ = {};
+    hybrid_gpu_mlp_start_ = -1;
     cached_conditioning_.reset();
     cached_prompt_.clear();
     text_encoder_.clear();
@@ -618,13 +666,64 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
     return false;
 }
 
-std::string ZImage::select_acceleration(Request &r, const Event &, std::atomic<bool> &) {
-    if (r.execution == "auto") {
+std::string ZImage::select_acceleration(Request &r, int rows, const Event &event,
+                                        std::atomic<bool> &cancelled) {
+    const bool automatic = r.execution == "auto";
+    if (automatic) {
         r.execution = "gpu";
-        return "gpu: Z-Image ANE partition not validated for this checkpoint";
+        if (!r.allow_approximation || r.ane_manifest.empty()) {
+            hybrid_.reset();
+            return "gpu: no opted-in compatible local Z-Image partition";
+        }
+        if (!active_loras_.empty()) {
+            hybrid_.reset();
+            return "gpu: Z-Image LoRA changes FFN weights; base ANE artifacts are not reusable";
+        }
+        auto system = device_info();
+        if (system.gpu != "Apple M4 Max" || system.physical_memory != (64ull << 30)) {
+            hybrid_.reset();
+            return "gpu: automatic Z-Image hybrid policy is not validated on this hardware";
+        }
+        r.execution = "gpu_ane";
     }
-    require(r.execution == "gpu", "Z-Image GPU+ANE is not enabled without a validated profile");
-    return "gpu: native MLX single-stream S3-DiT";
+    if (r.execution != "gpu_ane") {
+        hybrid_.reset();
+        return "gpu: native MLX single-stream S3-DiT";
+    }
+    try {
+        require(std::filesystem::is_regular_file(transformer_checkpoint_),
+                "Z-Image hybrid currently requires a single-file transformer checkpoint");
+        if (!hybrid_ || hybrid_->manifest != r.ane_manifest)
+            hybrid_ = std::make_unique<HybridSession>(
+                r.ane_manifest, root_, rows, event, cancelled, r.warmup_iterations,
+                transformer_checkpoint_);
+        require(rows <= hybrid_->rows && hybrid_->hidden == 3840 &&
+                    hybrid_->block_count == 32 && hybrid_->mlp_width == 10240 &&
+                    hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end < 10240,
+                "Z-Image Core ML FFN partition geometry mismatch");
+        if (automatic)
+            require(hybrid_->ane_mlp_end == 7680,
+                    "M4 Max automatic Z-Image profile requires the validated 7680-channel ANE prefix");
+        if (!hybrid_gpu_graph_ || hybrid_gpu_mlp_start_ != hybrid_->ane_mlp_end) {
+            hybrid_gpu_graph_ = make_z_hybrid_gpu_graph(
+                hybrid_->hidden, hybrid_->mlp_width, hybrid_->ane_mlp_end);
+            hybrid_gpu_mlp_start_ = hybrid_->ane_mlp_end;
+        }
+        return automatic ? "gpu_ane: M4 Max checkpoint and Z-Image FFN partition matched"
+                         : "gpu_ane: explicitly selected Z-Image FFN partition";
+    } catch (const Cancelled &) {
+        throw;
+    } catch (const std::exception &error) {
+        if (!automatic)
+            throw;
+        hybrid_.reset();
+        hybrid_gpu_graph_ = {};
+        hybrid_gpu_mlp_start_ = -1;
+        mx::clear_cache();
+        r.execution = "gpu";
+        event("acceleration_gpu_fallback", 1, 1);
+        return std::string("gpu: ") + error.what();
+    }
 }
 
 RunResult ZImage::prepare(const Request &requested, bool warmup, const Event &event,
@@ -648,12 +747,14 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     require(r.inputs.empty(), "Z-Image-Turbo currently supports text-to-image only");
     require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
     select_loras(r);
-    auto selection = select_acceleration(r, event, cancelled);
-    if (plan.request.execution != r.execution)
-        plan = make_plan(r);
     auto text_start = Clock::now();
     bool prompt_hit = conditioning(r, event, cancelled);
     const double text_seconds = std::chrono::duration<double>(Clock::now() - text_start).count();
+    const int image_rows = ((r.height / 16) * (r.width / 16) + 31) / 32 * 32;
+    const int caption_rows = (cached_conditioning_->shape(0) + 31) / 32 * 32;
+    auto selection = select_acceleration(r, image_rows + caption_rows, event, cancelled);
+    if (plan.request.execution != r.execution)
+        plan = make_plan(r);
     load(event, cancelled);
     const int latent_h = r.height / 8, latent_w = r.width / 8;
     auto z = z_initial_noise(r, latent_h, latent_w);
@@ -705,6 +806,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.valid_text_tokens = reported_tokens.valid;
     result.actual_steps = r.steps;
     result.lora_applied_projections = lora_applied_projections_;
+    if (hybrid_)
+        result.hybrid = hybrid_->metrics();
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
     result.timings.text = text_seconds;
     result.timings.denoise = denoise_seconds;
@@ -719,7 +822,7 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
     auto model_input = mx::astype(latent, mx::bfloat16);
     return mx::astype(
         z_transformer(model_input, caption, sigma, int(width), height, transformer_, event,
-                      cancelled),
+                      cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr),
         mx::float32);
 }
 

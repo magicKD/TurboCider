@@ -145,6 +145,8 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"prediction_seconds_session_total" : @(m.prediction_seconds),
         @"calls_session_total" : @(m.calls),
         @"bucket" : @(m.bucket),
+        @"hidden" : @(m.hidden),
+        @"block_count" : @(m.block_count),
         @"mlp_width" : @(m.mlp_width),
         @"ane_mlp_range" : @[ @(m.ane_mlp_start), @(m.ane_mlp_end) ],
         @"compute_units" : @"cpuAndNeuralEngine",
