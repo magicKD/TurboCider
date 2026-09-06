@@ -18,6 +18,7 @@ const Tensor& Weights::at(const std::string& k)const{auto i=values_.find(k);requ
 bool Weights::has(const std::string& k)const{return values_.count(k);}
 void Weights::clear(){values_.clear();}
 size_t Weights::bytes()const{size_t n=0;for(auto&[k,v]:values_)n+=v.nbytes();return n;}
+void Weights::materialize(){std::vector<Tensor> arrays;arrays.reserve(values_.size());for(auto&[key,value]:values_)arrays.push_back(value);mx::eval(arrays);}
 Tensor linear(const Tensor& x,const Weights&w,const std::string& p){auto wt=mx::transpose(w.at(p+".weight"));return w.has(p+".bias")?mx::addmm(w.at(p+".bias"),x,wt):mx::matmul(x,wt);}
 Tensor silu(const Tensor& x){static auto compiled=mx::compile([](const std::vector<Tensor>& a){return std::vector<Tensor>{a[0]*mx::sigmoid(a[0])};},true);return compiled({x})[0];}
 Tensor rms(const Tensor& x,const Tensor&w,float eps){auto f=mx::astype(x,mx::float32);return mx::astype(f*mx::rsqrt(mx::mean(mx::square(f),-1,true)+eps)*mx::astype(w,mx::float32),x.dtype());}

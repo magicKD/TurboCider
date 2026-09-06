@@ -20,6 +20,7 @@ struct Request {
     std::vector<InputAsset> inputs;
     int width = 512, height = 512, steps = 4, frames = 1, fps = 24;
     uint64_t seed = 42;
+    bool compile_gpu = false;
     bool dynamic_text = true, allow_approximation = false, audio = true;
 };
 struct Stage {

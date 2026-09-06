@@ -1,0 +1,595 @@
+{
+  "passed": true,
+  "checks": [
+    "load_prompt_and_materialized_weights",
+    "warmup_no_output",
+    "prepared_prompt_reused",
+    "compile_20_partitions",
+    "content_cache_reused",
+    "compiled_partitions_predict_and_warmup",
+    "hybrid_session_reused",
+    "clear_owned_cache_only",
+    "unload_releases_weights_and_hybrid",
+    "warmup_cancellation"
+  ],
+  "reports": {
+    "prepare": {
+      "execution": "gpu",
+      "hybrid": {},
+      "mlx_active_bytes": 7919640654,
+      "prepared": true,
+      "prompt_cache_hit": false,
+      "seconds": 2.36585025,
+      "text_tokens": 28,
+      "total_tokens": 284,
+      "warmup": false
+    },
+    "warmup": {
+      "actual_denoise_steps": 4,
+      "gpu_graph": "eager_blocks",
+      "height": 256,
+      "hybrid": {},
+      "memory": {
+        "mlx_active_bytes": 7920099406,
+        "mlx_peak_bytes": 8566565986,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "model": "flux2-klein-4b",
+      "operation": "image.generate",
+      "output": null,
+      "plan": {
+        "algorithm_approximations": [],
+        "backend": "mlx_cpp_metal",
+        "decoded_shape": [
+          256,
+          256,
+          1
+        ],
+        "executable": true,
+        "execution": "gpu",
+        "limitation": "capabilities depend on model artifacts and configured hardware",
+        "memory_estimate_bytes": 13421772800,
+        "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "precision": "bf16",
+        "profile_identity": "",
+        "requested_shape": [
+          256,
+          256,
+          1
+        ],
+        "residency": "resident",
+        "schema_version": 1,
+        "stages": [
+          {
+            "dependencies": [],
+            "id": "text_encode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "text_encode"
+            ],
+            "id": "denoise",
+            "iterations": 4
+          },
+          {
+            "dependencies": [
+              "denoise"
+            ],
+            "id": "vae_decode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "vae_decode"
+            ],
+            "id": "export",
+            "iterations": 1
+          }
+        ],
+        "validation": "native_candidate",
+        "weight_validation": "see parity evidence"
+      },
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "schema_version": 1,
+      "seed": 42,
+      "steps": 4,
+      "text_tokens": 28,
+      "timings_seconds": {
+        "denoise": 1.546841167,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 1.938115958,
+        "text_encode": 1.9625e-05,
+        "vae_decode": 0.344716875
+      },
+      "valid_text_tokens": 28,
+      "validation": "candidate; consult recorded parity suite",
+      "warmup": true,
+      "width": 256
+    },
+    "generation": {
+      "actual_denoise_steps": 4,
+      "gpu_graph": "eager_blocks",
+      "height": 256,
+      "hybrid": {},
+      "memory": {
+        "mlx_active_bytes": 7920099406,
+        "mlx_peak_bytes": 8566565986,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "model": "flux2-klein-4b",
+      "operation": "image.generate",
+      "output": "${PROJECT_ROOT}/outputs/preparation-validation/lifecycle/generated.png",
+      "plan": {
+        "algorithm_approximations": [],
+        "backend": "mlx_cpp_metal",
+        "decoded_shape": [
+          256,
+          256,
+          1
+        ],
+        "executable": true,
+        "execution": "gpu",
+        "limitation": "capabilities depend on model artifacts and configured hardware",
+        "memory_estimate_bytes": 13421772800,
+        "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "precision": "bf16",
+        "profile_identity": "",
+        "requested_shape": [
+          256,
+          256,
+          1
+        ],
+        "residency": "resident",
+        "schema_version": 1,
+        "stages": [
+          {
+            "dependencies": [],
+            "id": "text_encode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "text_encode"
+            ],
+            "id": "denoise",
+            "iterations": 4
+          },
+          {
+            "dependencies": [
+              "denoise"
+            ],
+            "id": "vae_decode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "vae_decode"
+            ],
+            "id": "export",
+            "iterations": 1
+          }
+        ],
+        "validation": "native_candidate",
+        "weight_validation": "see parity evidence"
+      },
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "schema_version": 1,
+      "seed": 42,
+      "steps": 4,
+      "text_tokens": 28,
+      "timings_seconds": {
+        "denoise": 1.245532667,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 1.391000334,
+        "text_encode": 4.16e-07,
+        "vae_decode": 0.110227542
+      },
+      "valid_text_tokens": 28,
+      "validation": "candidate; consult recorded parity suite",
+      "warmup": false,
+      "width": 256
+    },
+    "compile": {
+      "action": "compile_manifest",
+      "cache": "${PROJECT_ROOT}/outputs/preparation-validation/lifecycle/cache",
+      "cache_hits": 0,
+      "manifest": "${PROJECT_ROOT}/outputs/preparation-validation/lifecycle/cache/manifest-bbdd9402e568c445f56c421169614e832a49797af67fd20a96ca2e25059a1880.json",
+      "partitions": 20
+    },
+    "compile_hit": {
+      "action": "compile_manifest",
+      "cache": "${PROJECT_ROOT}/outputs/preparation-validation/lifecycle/cache",
+      "cache_hits": 20,
+      "manifest": "${PROJECT_ROOT}/outputs/preparation-validation/lifecycle/cache/manifest-bbdd9402e568c445f56c421169614e832a49797af67fd20a96ca2e25059a1880.json",
+      "partitions": 20
+    },
+    "cache": {
+      "action": "inspect",
+      "bytes": 1699641020,
+      "cache": "${PROJECT_ROOT}/outputs/preparation-validation/lifecycle/cache",
+      "entries": [
+        {
+          "bytes": 84982051,
+          "key": "3b7315054c34f8ae42a6c336c8da084d7b7f7dab6149ed2ec97e30a67e724e71"
+        },
+        {
+          "bytes": 84982051,
+          "key": "5f62addbd41de6f397d4ce2b5357fc02fd859aa17c6b736d0bc901dea98ce59e"
+        },
+        {
+          "bytes": 84982051,
+          "key": "2ba351a4ec01c172c8b0029a66ae79c7414238c6a4322706254f65eb7f9a3e96"
+        },
+        {
+          "bytes": 84982051,
+          "key": "a30678fb6f5cc6724b806d31c7468cd20458b14f18f9a88fc777198a5e5d7558"
+        },
+        {
+          "bytes": 84982051,
+          "key": "650ce28518666f41406c951991de5c520e9369ee48a6b25eb4b2c35431a0d001"
+        },
+        {
+          "bytes": 84982051,
+          "key": "34d432e1729a45858cab23a68f3493046ab42186045518e84d5d47e28697ee67"
+        },
+        {
+          "bytes": 84982051,
+          "key": "630e40c6ee44526a6fa01df0761f49d2e6a64730ebe9ce1b9c13f78019cd3f8a"
+        },
+        {
+          "bytes": 84982051,
+          "key": "7fd08c9c7cdff1ad2fd3c5efc1539cba049e296bd5922b8448ebd59be745a517"
+        },
+        {
+          "bytes": 84982051,
+          "key": "59bbc3f41f3e03b4d7178a7cec1a450d7f21b09cf089209c266c614c1c365920"
+        },
+        {
+          "bytes": 84982051,
+          "key": "1a8c6d1f6a7c8a4fd95f428d2612230afb480a38f66a57a150c00338fbffa706"
+        },
+        {
+          "bytes": 84982051,
+          "key": "ad2549344db4da5fde3e093c5a54ac35359727dd09306e5309a5a551f57523b3"
+        },
+        {
+          "bytes": 84982051,
+          "key": "00fe2d519f4bc201aca4b77887d3bc5d1cdea7000a927f8a586483276b1f8717"
+        },
+        {
+          "bytes": 84982051,
+          "key": "a026a6b2570368f49b05e51669e0564bd3bf13cb05438279faa3753d0a00c3ca"
+        },
+        {
+          "bytes": 84982051,
+          "key": "a7063a2029f90b4df686bfc4e356af80ac75d1217657a313065f7f0012c5052c"
+        },
+        {
+          "bytes": 84982051,
+          "key": "b60589ad14411db5c84555a4b7dd365b30ae8dbd850659d1c1e21d31f3673e33"
+        },
+        {
+          "bytes": 84982051,
+          "key": "5e3b6c3dbb57e54e536e664f6b22ae8abdadf13b1d85f4773a1fb89aa2b19b20"
+        },
+        {
+          "bytes": 84982051,
+          "key": "9131351357f450548da88bd397011110121196a85791f853ad9dd9adb17ba3d3"
+        },
+        {
+          "bytes": 84982051,
+          "key": "6aec2dd072a21b3bb3d1c21c2e7a1f2dc5ef040db3690b527d2ea0dd77ccee65"
+        },
+        {
+          "bytes": 84982051,
+          "key": "bb6ffef4d94cc35438f75ca767b42a64dcb7e2c6ae0ce8ee409f829071bd085c"
+        },
+        {
+          "bytes": 84982051,
+          "key": "78c23ff41d3933ed72b30b903fbda4c8b032a0522282293b6c8aa5df98d27466"
+        }
+      ],
+      "removed_entries": 0,
+      "scope": "TurboCider-managed artifacts only; source weights and system Core ML caches are untouched"
+    },
+    "hybrid_warmup": {
+      "actual_denoise_steps": 4,
+      "gpu_graph": "eager_blocks",
+      "height": 256,
+      "hybrid": {
+        "bucket": 1088,
+        "calls_session_total": 80,
+        "compute_units": "cpuAndNeuralEngine",
+        "load_seconds": 8.396551083,
+        "observed_ane_residency": "unknown",
+        "output_copy_bytes_session_total": 0,
+        "prediction_seconds_session_total": 1.552545374,
+        "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+      },
+      "memory": {
+        "mlx_active_bytes": 8053792846,
+        "mlx_peak_bytes": 8700259426,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "model": "flux2-klein-4b",
+      "operation": "image.generate",
+      "output": null,
+      "plan": {
+        "algorithm_approximations": [
+          "single_block_mlp_int8_per_channel"
+        ],
+        "backend": "mlx_cpp_metal+coreml",
+        "decoded_shape": [
+          256,
+          256,
+          1
+        ],
+        "executable": true,
+        "execution": "gpu_ane_experimental",
+        "limitation": "capabilities depend on model artifacts and configured hardware",
+        "memory_estimate_bytes": 17716740096,
+        "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "precision": "bf16_gpu+int8_mlp_fp16_io",
+        "profile_identity": "",
+        "requested_shape": [
+          256,
+          256,
+          1
+        ],
+        "residency": "resident",
+        "schema_version": 1,
+        "stages": [
+          {
+            "dependencies": [],
+            "id": "text_encode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "text_encode"
+            ],
+            "id": "denoise",
+            "iterations": 4
+          },
+          {
+            "dependencies": [
+              "denoise"
+            ],
+            "id": "vae_decode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "vae_decode"
+            ],
+            "id": "export",
+            "iterations": 1
+          }
+        ],
+        "validation": "native_candidate",
+        "weight_validation": "see parity evidence"
+      },
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "schema_version": 1,
+      "seed": 42,
+      "steps": 4,
+      "text_tokens": 28,
+      "timings_seconds": {
+        "denoise": 2.208404584,
+        "hybrid_setup": 8.396552833,
+        "image_encode": 4.1e-08,
+        "request_wall": 10.738702542,
+        "text_encode": 1.3459e-05,
+        "vae_decode": 0.133040625
+      },
+      "valid_text_tokens": 28,
+      "validation": "candidate; consult recorded parity suite",
+      "warmup": true,
+      "width": 256
+    },
+    "hybrid": {
+      "actual_denoise_steps": 4,
+      "gpu_graph": "eager_blocks",
+      "height": 256,
+      "hybrid": {
+        "bucket": 1088,
+        "calls_session_total": 160,
+        "compute_units": "cpuAndNeuralEngine",
+        "load_seconds": 8.396551083,
+        "observed_ane_residency": "unknown",
+        "output_copy_bytes_session_total": 0,
+        "prediction_seconds_session_total": 3.0438993840000004,
+        "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+      },
+      "memory": {
+        "mlx_active_bytes": 8053792846,
+        "mlx_peak_bytes": 8700259426,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "model": "flux2-klein-4b",
+      "operation": "image.generate",
+      "output": "${PROJECT_ROOT}/outputs/preparation-validation/lifecycle/hybrid.png",
+      "plan": {
+        "algorithm_approximations": [
+          "single_block_mlp_int8_per_channel"
+        ],
+        "backend": "mlx_cpp_metal+coreml",
+        "decoded_shape": [
+          256,
+          256,
+          1
+        ],
+        "executable": true,
+        "execution": "gpu_ane_experimental",
+        "limitation": "capabilities depend on model artifacts and configured hardware",
+        "memory_estimate_bytes": 17716740096,
+        "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "precision": "bf16_gpu+int8_mlp_fp16_io",
+        "profile_identity": "",
+        "requested_shape": [
+          256,
+          256,
+          1
+        ],
+        "residency": "resident",
+        "schema_version": 1,
+        "stages": [
+          {
+            "dependencies": [],
+            "id": "text_encode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "text_encode"
+            ],
+            "id": "denoise",
+            "iterations": 4
+          },
+          {
+            "dependencies": [
+              "denoise"
+            ],
+            "id": "vae_decode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "vae_decode"
+            ],
+            "id": "export",
+            "iterations": 1
+          }
+        ],
+        "validation": "native_candidate",
+        "weight_validation": "see parity evidence"
+      },
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "schema_version": 1,
+      "seed": 42,
+      "steps": 4,
+      "text_tokens": 28,
+      "timings_seconds": {
+        "denoise": 1.931547333,
+        "hybrid_setup": 1.25e-07,
+        "image_encode": 4.1e-08,
+        "request_wall": 2.044288459,
+        "text_encode": 3.34e-07,
+        "vae_decode": 0.10895375
+      },
+      "valid_text_tokens": 28,
+      "validation": "candidate; consult recorded parity suite",
+      "warmup": false,
+      "width": 256
+    },
+    "clear": {
+      "action": "clear",
+      "bytes": 1699641020,
+      "cache": "${PROJECT_ROOT}/outputs/preparation-validation/lifecycle/cache",
+      "entries": [
+        {
+          "bytes": 84982051,
+          "key": "3b7315054c34f8ae42a6c336c8da084d7b7f7dab6149ed2ec97e30a67e724e71"
+        },
+        {
+          "bytes": 84982051,
+          "key": "5f62addbd41de6f397d4ce2b5357fc02fd859aa17c6b736d0bc901dea98ce59e"
+        },
+        {
+          "bytes": 84982051,
+          "key": "2ba351a4ec01c172c8b0029a66ae79c7414238c6a4322706254f65eb7f9a3e96"
+        },
+        {
+          "bytes": 84982051,
+          "key": "a30678fb6f5cc6724b806d31c7468cd20458b14f18f9a88fc777198a5e5d7558"
+        },
+        {
+          "bytes": 84982051,
+          "key": "650ce28518666f41406c951991de5c520e9369ee48a6b25eb4b2c35431a0d001"
+        },
+        {
+          "bytes": 84982051,
+          "key": "34d432e1729a45858cab23a68f3493046ab42186045518e84d5d47e28697ee67"
+        },
+        {
+          "bytes": 84982051,
+          "key": "630e40c6ee44526a6fa01df0761f49d2e6a64730ebe9ce1b9c13f78019cd3f8a"
+        },
+        {
+          "bytes": 84982051,
+          "key": "7fd08c9c7cdff1ad2fd3c5efc1539cba049e296bd5922b8448ebd59be745a517"
+        },
+        {
+          "bytes": 84982051,
+          "key": "59bbc3f41f3e03b4d7178a7cec1a450d7f21b09cf089209c266c614c1c365920"
+        },
+        {
+          "bytes": 84982051,
+          "key": "1a8c6d1f6a7c8a4fd95f428d2612230afb480a38f66a57a150c00338fbffa706"
+        },
+        {
+          "bytes": 84982051,
+          "key": "ad2549344db4da5fde3e093c5a54ac35359727dd09306e5309a5a551f57523b3"
+        },
+        {
+          "bytes": 84982051,
+          "key": "00fe2d519f4bc201aca4b77887d3bc5d1cdea7000a927f8a586483276b1f8717"
+        },
+        {
+          "bytes": 84982051,
+          "key": "a026a6b2570368f49b05e51669e0564bd3bf13cb05438279faa3753d0a00c3ca"
+        },
+        {
+          "bytes": 84982051,
+          "key": "a7063a2029f90b4df686bfc4e356af80ac75d1217657a313065f7f0012c5052c"
+        },
+        {
+          "bytes": 84982051,
+          "key": "b60589ad14411db5c84555a4b7dd365b30ae8dbd850659d1c1e21d31f3673e33"
+        },
+        {
+          "bytes": 84982051,
+          "key": "5e3b6c3dbb57e54e536e664f6b22ae8abdadf13b1d85f4773a1fb89aa2b19b20"
+        },
+        {
+          "bytes": 84982051,
+          "key": "9131351357f450548da88bd397011110121196a85791f853ad9dd9adb17ba3d3"
+        },
+        {
+          "bytes": 84982051,
+          "key": "6aec2dd072a21b3bb3d1c21c2e7a1f2dc5ef040db3690b527d2ea0dd77ccee65"
+        },
+        {
+          "bytes": 84982051,
+          "key": "bb6ffef4d94cc35438f75ca767b42a64dcb7e2c6ae0ce8ee409f829071bd085c"
+        },
+        {
+          "bytes": 84982051,
+          "key": "78c23ff41d3933ed72b30b903fbda4c8b032a0522282293b6c8aa5df98d27466"
+        }
+      ],
+      "removed_entries": 20,
+      "scope": "TurboCider-managed artifacts only; source weights and system Core ML caches are untouched"
+    },
+    "unload": {
+      "mlx_active_bytes": 0,
+      "released": true,
+      "scope": "MLX allocator; excludes OS/file cache"
+    }
+  }
+}

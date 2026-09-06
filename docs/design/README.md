@@ -1,5 +1,13 @@
 # TurboCider 设计文档
 
+当前独立部署入口：[项目独立性与完整链路](standalone-project.md)。构建、转换工具链及加速产物均由 TurboCider 管理，原始模型路径可在外部。
+
+最新磁盘管理：[Core ML 源模型、编译与缓存管理](coreml-artifacts-and-storage.md)，包含实际占用检查、safetensors 离线导出、CLI/API 和 App 清理入口。
+
+最新实现：[模型准备、GPU/ANE 管理与性能](model-preparation-and-performance.md)，包含本机自动 GPU/ANE 适配、App 加载/预热、分区编译缓存及纯 GPU compile 实测。
+
+**已实现的 Studio 首版与测试：[实现记录](app-studio-implementation.md)。** 包含原生 FLUX 三操作、图片输入、种子、load/unload 及实际验证；早期设计中的目录/能力以当前实现记录为准。
+
 当前项目目录与旧代码退役：[项目重构](project-restructure.md)。
 
 当前实现入口：[FLUX 重构状态与模块职责](rewrite-implementation-status.md)、[同条件性能对比](flux-performance-comparison.md)、[H3/LTX 后续接入与验收](video-model-acceptance.md)。以下长期设计不等于已交付能力。

@@ -1,0 +1,663 @@
+{
+  "passed": true,
+  "checks": [
+    "external_source_and_compiled_bytes_are_visible",
+    "twenty_compiled_partitions_reused",
+    "exported_safetensors_partitions_match_legacy_png",
+    "cleanup_preview_and_token_required",
+    "changed_deletion_plan_rejected",
+    "safetensors_deletion_rejected",
+    "only_previewed_sources_removed",
+    "validation_artifacts_released_originals_preserved",
+    "runtime_cache_preview_without_deletion",
+    "export_cancellation_stops_child_without_manifest"
+  ],
+  "reports": {
+    "inventory": {
+      "action": "inventory",
+      "allocated_bytes": 3400093696,
+      "bytes": 3399380952,
+      "cache": "${APP_SUPPORT_ROOT}/cache/coreml",
+      "entries": [
+        {
+          "allocated_bytes": 4096,
+          "bytes": 32,
+          "category": "managed_compiled",
+          "exists": true,
+          "files": 2,
+          "path": "${APP_SUPPORT_ROOT}/cache/coreml",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block0_mlp_branch.int8_pc.e2c8e125a36b8fa2.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block10_mlp_branch.int8_pc.ae48524dda42f367.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block11_mlp_branch.int8_pc.7721fba8a5ff852c.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block12_mlp_branch.int8_pc.5b9594dc4b666a0f.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block13_mlp_branch.int8_pc.ea205877773105d9.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block14_mlp_branch.int8_pc.4ce0bf9716872472.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block15_mlp_branch.int8_pc.c8ced12e7be272ad.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block16_mlp_branch.int8_pc.5359fa640daf378b.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block17_mlp_branch.int8_pc.56f1dc61624414c7.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block18_mlp_branch.int8_pc.ea9795d64e5f33f1.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block19_mlp_branch.int8_pc.bac890b7ac33fb02.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block1_mlp_branch.int8_pc.21d99c3ff0adc382.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block2_mlp_branch.int8_pc.af14d1bbf473e76d.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block3_mlp_branch.int8_pc.2ca80e6a479b8422.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block4_mlp_branch.int8_pc.2e0791b81bc43f2f.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block5_mlp_branch.int8_pc.1506f865a48e0753.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block6_mlp_branch.int8_pc.3c14ff5be4478c84.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block7_mlp_branch.int8_pc.9cb8b9e98f0e2cc9.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block8_mlp_branch.int8_pc.22fbe01fac6469c8.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84992000,
+          "bytes": 84981844,
+          "category": "compiled",
+          "exists": true,
+          "files": 4,
+          "path": "${COREML_PARTITION_ROOT}/compiled/block9_mlp_branch.int8_pc.dc5991d1058b6fa0.mlmodelc",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block0_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block10_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block11_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block12_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block13_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block14_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block15_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block16_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block17_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block18_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block19_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block1_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block2_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block3_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block4_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block5_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block6_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block7_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block8_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 84987904,
+          "bytes": 84981864,
+          "category": "source",
+          "exists": true,
+          "files": 3,
+          "path": "${COREML_PARTITION_ROOT}/block9_mlp_branch.int8_pc.mlpackage",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 245760,
+          "bytes": 53460,
+          "category": "runtime_specialization",
+          "exists": true,
+          "files": 60,
+          "path": "${USER_CACHE_ROOT}/org.turbocider.native/com.apple.e5rt.e5bundlecache",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 0,
+          "bytes": 0,
+          "category": "runtime_specialization",
+          "exists": false,
+          "files": 0,
+          "path": "${USER_CACHE_ROOT}/TurboCiderNativeApp/com.apple.e5rt.e5bundlecache",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 0,
+          "bytes": 0,
+          "category": "runtime_specialization",
+          "exists": false,
+          "files": 0,
+          "path": "${USER_CACHE_ROOT}/turbocider/com.apple.e5rt.e5bundlecache",
+          "removable": true
+        },
+        {
+          "allocated_bytes": 245760,
+          "bytes": 53300,
+          "category": "runtime_specialization",
+          "exists": true,
+          "files": 60,
+          "path": "${USER_CACHE_ROOT}/turbocider-native/com.apple.e5rt.e5bundlecache",
+          "removable": true
+        }
+      ],
+      "manifest": "${COREML_PARTITION_ROOT}/compiled/manifest.json",
+      "scope": "selected Core ML artifacts and TurboCider process caches; excludes other apps and global OS caches; APFS clones may share physical blocks",
+      "source_manifest": "${COREML_PARTITION_ROOT}/manifest.json",
+      "storage": "${APP_SUPPORT_ROOT}/coreml/flux2-klein-4b/m1088"
+    },
+    "compile_reuse": {
+      "action": "compile_manifest",
+      "cache": "${PROJECT_ROOT}/outputs/coreml-storage-validation/cache",
+      "cache_hits": 20,
+      "manifest": "${PROJECT_ROOT}/outputs/coreml-storage-validation/cache/manifest-79687a7739ad0da36c472eb77780b059e6a651b2e00a61f3073c194f13b7b490.json",
+      "partitions": 20
+    },
+    "converted": {
+      "acceleration_selection": "gpu_ane: explicitly selected",
+      "actual_denoise_steps": 4,
+      "gpu_graph": "eager_blocks",
+      "height": 256,
+      "hybrid": {
+        "bucket": 1088,
+        "calls_session_total": 80,
+        "compute_units": "cpuAndNeuralEngine",
+        "load_seconds": 8.665142125,
+        "observed_ane_residency": "unknown",
+        "output_copy_bytes_session_total": 0,
+        "prediction_seconds_session_total": 1.7679930419999998,
+        "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+      },
+      "memory": {
+        "mlx_active_bytes": 7984859206,
+        "mlx_peak_bytes": 8630135636,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "model": "flux2-klein-4b",
+      "operation": "image.generate",
+      "output": "${PROJECT_ROOT}/outputs/coreml-storage-validation/converted.png",
+      "plan": {
+        "algorithm_approximations": [
+          "single_block_mlp_int8_per_channel"
+        ],
+        "backend": "mlx_cpp_metal+coreml",
+        "decoded_shape": [
+          256,
+          256,
+          1
+        ],
+        "executable": true,
+        "execution": "gpu_ane_experimental",
+        "gpu_graph": "eager_blocks",
+        "limitation": "capabilities depend on model artifacts and configured hardware",
+        "memory_estimate_bytes": 17716740096,
+        "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "precision": "bf16_gpu+int8_mlp_fp16_io",
+        "profile_identity": "",
+        "requested_execution": "gpu_ane",
+        "requested_shape": [
+          256,
+          256,
+          1
+        ],
+        "residency": "resident",
+        "schema_version": 1,
+        "selection_pending": false,
+        "stages": [
+          {
+            "dependencies": [],
+            "id": "text_encode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "text_encode"
+            ],
+            "id": "denoise",
+            "iterations": 4
+          },
+          {
+            "dependencies": [
+              "denoise"
+            ],
+            "id": "vae_decode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "vae_decode"
+            ],
+            "id": "export",
+            "iterations": 1
+          }
+        ],
+        "validation": "native_candidate",
+        "weight_validation": "see parity evidence"
+      },
+      "prompt_cache_hit": false,
+      "reference_tokens": 0,
+      "schema_version": 1,
+      "seed": 42,
+      "steps": 4,
+      "text_tokens": 20,
+      "timings_seconds": {
+        "denoise": 3.361227875,
+        "hybrid_setup": 8.665172334,
+        "image_encode": 0,
+        "request_wall": 13.378234834,
+        "text_encode": 1.213336167,
+        "vae_decode": 0.126419625
+      },
+      "valid_text_tokens": 20,
+      "validation": "candidate; consult recorded parity suite",
+      "warmup": false,
+      "width": 256
+    },
+    "legacy": {
+      "acceleration_selection": "gpu_ane: explicitly selected",
+      "actual_denoise_steps": 4,
+      "gpu_graph": "eager_blocks",
+      "height": 256,
+      "hybrid": {
+        "bucket": 1088,
+        "calls_session_total": 80,
+        "compute_units": "cpuAndNeuralEngine",
+        "load_seconds": 0.509555625,
+        "observed_ane_residency": "unknown",
+        "output_copy_bytes_session_total": 0,
+        "prediction_seconds_session_total": 1.5492803749999997,
+        "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+      },
+      "memory": {
+        "mlx_active_bytes": 7984859206,
+        "mlx_peak_bytes": 8631325786,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "model": "flux2-klein-4b",
+      "operation": "image.generate",
+      "output": "${PROJECT_ROOT}/outputs/coreml-storage-validation/legacy.png",
+      "plan": {
+        "algorithm_approximations": [
+          "single_block_mlp_int8_per_channel"
+        ],
+        "backend": "mlx_cpp_metal+coreml",
+        "decoded_shape": [
+          256,
+          256,
+          1
+        ],
+        "executable": true,
+        "execution": "gpu_ane_experimental",
+        "gpu_graph": "eager_blocks",
+        "limitation": "capabilities depend on model artifacts and configured hardware",
+        "memory_estimate_bytes": 17716740096,
+        "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "precision": "bf16_gpu+int8_mlp_fp16_io",
+        "profile_identity": "",
+        "requested_execution": "gpu_ane",
+        "requested_shape": [
+          256,
+          256,
+          1
+        ],
+        "residency": "resident",
+        "schema_version": 1,
+        "selection_pending": false,
+        "stages": [
+          {
+            "dependencies": [],
+            "id": "text_encode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "text_encode"
+            ],
+            "id": "denoise",
+            "iterations": 4
+          },
+          {
+            "dependencies": [
+              "denoise"
+            ],
+            "id": "vae_decode",
+            "iterations": 1
+          },
+          {
+            "dependencies": [
+              "vae_decode"
+            ],
+            "id": "export",
+            "iterations": 1
+          }
+        ],
+        "validation": "native_candidate",
+        "weight_validation": "see parity evidence"
+      },
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "schema_version": 1,
+      "seed": 42,
+      "steps": 4,
+      "text_tokens": 20,
+      "timings_seconds": {
+        "denoise": 2.007993916,
+        "hybrid_setup": 0.547051667,
+        "image_encode": 4.2e-08,
+        "request_wall": 2.67307275,
+        "text_encode": 0,
+        "vae_decode": 0.112606417
+      },
+      "valid_text_tokens": 20,
+      "validation": "candidate; consult recorded parity suite",
+      "warmup": false,
+      "width": 256
+    },
+    "png_sha256": "26eed24a400cf453183e0850d46d24e987dce1a3ed3fb3110fd7c898d3d055d7",
+    "runtime_preview": {
+      "action": "clear_runtime",
+      "applied": false,
+      "bytes": 106760,
+      "entries": [
+        {
+          "bytes": 53460,
+          "path": "${USER_CACHE_ROOT}/org.turbocider.native/com.apple.e5rt.e5bundlecache"
+        },
+        {
+          "bytes": 53300,
+          "path": "${USER_CACHE_ROOT}/turbocider-native/com.apple.e5rt.e5bundlecache"
+        }
+      ],
+      "plan_token": "b3569a8e6699f6bd2742d6a0b79005ab96d794fa7611fd808b4b1c3116414af5",
+      "scope": "explicit listed artifacts only; source safetensors are never deleted"
+    }
+  }
+}

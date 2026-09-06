@@ -37,6 +37,9 @@ class ModelSession {
 public:
     virtual ~ModelSession() = default;
     virtual NSDictionary *generate(const Request&, const Event&, std::atomic<bool>&) = 0;
+    virtual NSDictionary *load(const Event&, std::atomic<bool>&) { throw std::runtime_error("explicit loading unavailable"); }
+    virtual void unload() {}
+    virtual NSDictionary *prepare(const Request&,bool,const Event&,std::atomic<bool>&) { throw std::runtime_error("preparation unavailable"); }
 };
 struct ModelModule {
     std::string id;
@@ -56,6 +59,7 @@ public:
     bool has(const std::string&) const;
     void clear();
     size_t bytes() const;
+    void materialize();
 };
 Tensor linear(const Tensor&, const Weights&, const std::string&);
 Tensor silu(const Tensor&);
@@ -88,10 +92,16 @@ class Flux : public ModelSession {
     bool cached_dynamic_=true;
     std::optional<Tensor> cached_conditioning_;
 public:
+    std::string select_acceleration(Request&,int,const Event&,std::atomic<bool>&);
+    bool conditioning(const Request&,const Tokens&,const Event&,std::atomic<bool>&);
+    NSDictionary *run(const Request&,const Event&,std::atomic<bool>&,bool);
+    NSDictionary *prepare(const Request&,bool,const Event&,std::atomic<bool>&) override;
     explicit Flux(const std::filesystem::path&);
     ~Flux();
+    NSDictionary *load(const Event&, std::atomic<bool>&) override;
+    void unload() override;
     Tensor encode(const Tokens&, const Event&, std::atomic<bool>&);
-    Tensor denoise(const Tensor&,const Tensor&,float,int,int,const Event&,std::atomic<bool>&,const std::vector<float>& reference_ids={});
+    Tensor denoise(const Tensor&,const Tensor&,float,int,int,const Event&,std::atomic<bool>&,const std::vector<float>& reference_ids={},bool compile_blocks=false);
     Tensor encode_image(const Tensor&,const Event&,std::atomic<bool>&);
     Tensor decode(const Tensor&,int,int,const Event&,std::atomic<bool>&,const std::string&);
     NSDictionary *generate(const Request&,const Event&,std::atomic<bool>&) override;
@@ -100,6 +110,8 @@ Tensor load_image_tensor(const std::filesystem::path&,int,int,bool reference);
 void save_png(const Tensor&,const std::filesystem::path&);
 NSDictionary *system_info();
 NSDictionary *compile_artifact(const std::filesystem::path&,const std::filesystem::path&);
+NSDictionary *coreml_resources(NSDictionary*,const Event&,std::atomic<bool>&);
+NSDictionary *manage_coreml_cache(NSDictionary*,const Event&,std::atomic<bool>&);
 void checkpoint(std::atomic<bool>&);
 }
 struct tc_engine {

@@ -41,9 +41,11 @@ Tensor CoreMLBranch::predict(const Tensor&input,int actual){
 }
 HybridSession::HybridSession(const std::filesystem::path&file,const std::filesystem::path&model,int tokens,const Event&event,std::atomic<bool>&cancelled,int warmups):manifest(file.string()){
  auto begin=Clock::now();auto d=read_json(file);
+ require([d[@"schema_version"] isKindOfClass:NSNumber.class]&&[d[@"shape"] isKindOfClass:NSDictionary.class]&&[d[@"source"] isKindOfClass:NSDictionary.class]&&[d[@"artifacts"] isKindOfClass:NSDictionary.class],"invalid hybrid manifest containers");
+ require([d[@"shape"][@"K"] isKindOfClass:NSNumber.class]&&[d[@"shape"][@"N"] isKindOfClass:NSNumber.class]&&[d[@"source"][@"checkpoint_bytes"] isKindOfClass:NSNumber.class],"invalid hybrid manifest numbers");
  require([d[@"schema_version"] intValue]==2,"hybrid requires manifest schema 2");
  require([d[@"shape"][@"K"] intValue]==3072&&[d[@"shape"][@"N"] intValue]==3072,"hybrid hidden dimension mismatch");
- NSArray*buckets=d[@"shape"][@"buckets"];require(buckets.count==1,"native hybrid requires a single fixed bucket");rows=[buckets[0] intValue];
+ NSArray*buckets=d[@"shape"][@"buckets"];require([buckets isKindOfClass:NSArray.class]&&buckets.count==1&&[buckets[0] isKindOfClass:NSNumber.class],"native hybrid requires a single fixed bucket");rows=[buckets[0] intValue];
  require(rows>=tokens&&rows<=8192,"Core ML token bucket cannot serve this request");
  auto checkpoint=model/"transformer/diffusion_pytorch_model.safetensors";
  std::filesystem::path source=string_value(d[@"source"],@"checkpoint");

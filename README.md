@@ -1,15 +1,15 @@
 # TurboCider
 
-Apple Silicon 原生多模态推理系统。C++/Metal 推理库、SwiftUI App、CLI、C/Swift SDK 和本地任务服务共用一套实现，运行不依赖 Python。
+Apple Silicon 原生多模态推理系统。C++/Metal 推理库、SwiftUI App、CLI、C/Swift SDK 和本地任务服务共用一套实现，原生推理不依赖 Python；离线 Core ML 转换使用本系统托管的 Python 工具链。
 
 当前交付聚焦 **FLUX.2-klein-4B**：文生图、图生图、多参考图编辑、GPU 默认执行、可配置 GPU/Core ML 分区、缓存与预热、取消与历史记录。H3/LTX 为后续接入设计和验收契约，默认不可执行，不下载其模型。
 
 ## 构建与运行
 
-需要 Apple Silicon、完整 Xcode，以及已有 MLX C++ 0.32.0。
+需要 Apple Silicon、macOS 26.2+、完整 Xcode 和 CPython 3.11。固定依赖由 TurboCider 自己管理。
 
 ```sh
-export MLX_ROOT=/path/to/site-packages/mlx
+make setup
 make package
 make test
 build/native/turbocider doctor

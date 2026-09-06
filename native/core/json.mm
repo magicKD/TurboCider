@@ -49,7 +49,7 @@ Request request_from_json(NSDictionary*d) {
     int version=number(d,@"schema_version",1);require(version==1||version==2,"unsupported schema_version");
     Request r;
     if(version==1) {
-        keys(d,@[@"schema_version",@"model",@"prompt",@"output",@"execution",@"width",@"height",@"steps",@"seed",@"frames",@"dynamic_text",@"dump_tensors",@"ane_manifest",@"allow_approximation",@"operation",@"inputs",@"fps",@"residency",@"profile"]);
+        keys(d,@[@"compile_gpu",@"schema_version",@"model",@"prompt",@"output",@"execution",@"width",@"height",@"steps",@"seed",@"frames",@"dynamic_text",@"dump_tensors",@"ane_manifest",@"allow_approximation",@"operation",@"inputs",@"fps",@"residency",@"profile"]);
         r.model=string_value(d,@"model",r.model);
         auto descriptor=module_for(r.model).describe();
         r.operation=string_value(d,@"operation",[descriptor[@"output"] isEqual:@"image"]?"image.generate":"video.generate");
@@ -57,7 +57,7 @@ Request request_from_json(NSDictionary*d) {
         r.execution=string_value(d,@"execution","gpu");r.ane_manifest=string_value(d,@"ane_manifest");
         r.width=number(d,@"width",512);r.height=number(d,@"height",512);r.frames=number(d,@"frames",1);
         r.steps=number(d,@"steps",4);r.seed=number(d,@"seed",42);r.fps=number(d,@"fps",24);
-        r.dynamic_text=boolean(d,@"dynamic_text",true);r.allow_approximation=boolean(d,@"allow_approximation",false);
+        r.compile_gpu=boolean(d,@"compile_gpu",false);r.dynamic_text=boolean(d,@"dynamic_text",true);r.allow_approximation=boolean(d,@"allow_approximation",false);
         r.residency=string_value(d,@"residency",r.residency);r.profile=string_value(d,@"profile");
     } else {
         keys(d,@[@"schema_version",@"model",@"operation",@"inputs",@"outputs",@"sampling",@"execution",@"parameters",@"dump_tensors"]);
@@ -78,7 +78,7 @@ Request request_from_json(NSDictionary*d) {
         r.ane_manifest=string_value(execution,@"ane_manifest");r.allow_approximation=boolean(execution,@"allow_approximation",false);
         r.residency=string_value(execution,@"residency",r.residency);
         auto parameters=d[@"parameters"]?dictionary(d[@"parameters"],"parameters"):@{};
-        keys(parameters,@[@"dynamic_text"]);r.dynamic_text=boolean(parameters,@"dynamic_text",true);
+        keys(parameters,@[@"dynamic_text",@"compile_gpu"]);r.compile_gpu=boolean(parameters,@"compile_gpu",false);r.dynamic_text=boolean(parameters,@"dynamic_text",true);
     }
     r.dump=string_value(d,@"dump_tensors");
     if(d[@"inputs"]) {

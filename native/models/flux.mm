@@ -9,25 +9,84 @@ Flux::Flux(const std::filesystem::path&root):root_(root),tokenizer_(root/"tokeni
  require([v[@"latent_channels"] intValue]==32,"unsupported Flux VAE");
 }
 Flux::~Flux()=default;
-NSDictionary *Flux::generate(const Request&r,const Event&event,std::atomic<bool>&cancelled){
- auto begin=Clock::now();auto plan=make_plan(r);
+NSDictionary *Flux::load(const Event&event,std::atomic<bool>&cancelled){
+ // Load image weights only: Qwen is intentionally staged during prompt encoding.
+ require([NSProcessInfo processInfo].physicalMemory >= (16ull<<30),"insufficient memory for BF16 image weights");
+ transformer_.load(root_/"transformer",event,cancelled);
+ vae_.load(root_/"vae",event,cancelled);
+ event("prepare_image_weights",0,2);transformer_.materialize();
+ event("prepare_image_weights",1,2);vae_.materialize();
+ event("prepare_image_weights",2,2);
+ checkpoint(cancelled);
+ return @{@"scope":@"image_weights; text encoder loads on demand",@"weight_bytes":@(transformer_.bytes()+vae_.bytes()),@"mlx_active_bytes":@(mx::get_active_memory())};
+}
+void Flux::unload(){
+ hybrid_.reset();cached_conditioning_.reset();cached_prompt_.clear();
+ transformer_.clear();vae_.clear();
+}
+bool Flux::conditioning(const Request&r,const Tokens&tokens,const Event&event,std::atomic<bool>&cancelled){
+ bool hit=cached_conditioning_.has_value()&&cached_prompt_==r.prompt&&cached_dynamic_==r.dynamic_text;
+ if(hit){event("text_cache_hit",1,1);return true;}
+ // Keep preloaded image weights on machines with enough conservative headroom.
+ // Smaller devices and explicit low budgets retain the staged text policy.
+ bool retain=r.residency=="resident"&&NSProcessInfo.processInfo.physicalMemory>=(32ull<<30)&&(!r.memory_budget_bytes||r.memory_budget_bytes>=(24ull<<30));
+ if(!retain){hybrid_.reset();transformer_.clear();vae_.clear();}
+ cached_conditioning_.reset();mx::clear_cache();
+ auto encoded=encode(tokens,event,cancelled);checkpoint(cancelled);
+ cached_conditioning_=encoded;cached_prompt_=r.prompt;cached_dynamic_=r.dynamic_text;mx::clear_cache();return false;
+}
+std::string Flux::select_acceleration(Request&r,int count,const Event&event,std::atomic<bool>&cancelled){
+ const bool automatic=r.execution=="auto";
+ if(automatic){
+  r.execution="gpu";
+  if(!r.allow_approximation||r.ane_manifest.empty()){hybrid_.reset();return "gpu: no opted-in compatible local partition";}
+  auto system=system_info();
+  // Automatic selection is limited to the device on which this partition policy was measured.
+  if(![system[@"gpu"] isEqual:@"Apple M4 Pro"]||NSProcessInfo.processInfo.physicalMemory!=(48ull<<30)){hybrid_.reset();return "gpu: automatic hybrid policy not validated on this hardware";}
+  uint64_t estimate=(16ull<<30)+uint64_t(r.width)*r.height*8192;
+  if(NSProcessInfo.processInfo.physicalMemory<estimate+(4ull<<30)||(r.memory_budget_bytes&&r.memory_budget_bytes<estimate)){hybrid_.reset();return "gpu: hybrid memory budget unavailable";}
+  r.execution="gpu_ane";
+ }
+ if(r.execution!="gpu_ane"){hybrid_.reset();return "gpu: explicitly selected";}
+ try {
+  checkpoint(cancelled);
+  if(!hybrid_||hybrid_->manifest!=r.ane_manifest)hybrid_=std::make_unique<HybridSession>(r.ane_manifest,root_,count,event,cancelled,r.warmup_iterations);
+  require(count<=hybrid_->rows,"Core ML token bucket cannot serve this request");
+  return automatic?"gpu_ane: hardware, checkpoint and token bucket matched":"gpu_ane: explicitly selected";
+ } catch(const Cancelled&){throw;} catch(const std::exception&error){
+  if(!automatic)throw;
+  hybrid_.reset();mx::clear_cache();r.execution="gpu";event("acceleration_gpu_fallback",1,1);
+  return std::string("gpu: ")+error.what();
+ }
+}
+NSDictionary *Flux::prepare(const Request&requested,bool warmup,const Event&event,std::atomic<bool>&cancelled){
+ if(warmup)return run(requested,event,cancelled,true);
+ auto r=requested;
+ auto begin=Clock::now();auto plan=make_plan(r);require(r.model=="flux2-klein-4b"&&!r.prompt.empty(),"FLUX preparation requires a prompt");
+ require(NSProcessInfo.processInfo.physicalMemory>=[plan[@"memory_estimate_bytes"] unsignedLongLongValue]+(4ull<<30),"insufficient physical memory for preparation");
+ require(!r.memory_budget_bytes||r.memory_budget_bytes>=[plan[@"memory_estimate_bytes"] unsignedLongLongValue],"preparation exceeds configured memory budget");
+ mx::set_cache_limit(r.allocator_cache_bytes);auto tokens=tokenizer_.prompt(r.prompt,r.dynamic_text);
+ bool hit=conditioning(r,tokens,event,cancelled);load(event,cancelled);
+ int count=int(tokens.ids.size())+(r.width/16)*(r.height/16);
+ for(auto& input:r.inputs)if(r.operation=="image.edit"){auto image=load_image_tensor(input.path,r.width,r.height,true);count+=(image.shape(1)/16)*(image.shape(2)/16);}
+ auto selection=select_acceleration(r,count,event,cancelled);
+ return @{@"acceleration_selection":@(selection.c_str()),@"prepared":@YES,@"warmup":@NO,@"prompt_cache_hit":@(hit),@"execution":@(r.execution.c_str()),@"text_tokens":@(tokens.ids.size()),@"total_tokens":@(count),@"seconds":@(std::chrono::duration<double>(Clock::now()-begin).count()),@"mlx_active_bytes":@(mx::get_active_memory()),@"hybrid":hybrid_?hybrid_->metrics():@{}};
+}
+NSDictionary *Flux::generate(const Request&r,const Event&event,std::atomic<bool>&cancelled){return run(r,event,cancelled,false);}
+NSDictionary *Flux::run(const Request&requested,const Event&event,std::atomic<bool>&cancelled,bool warmup){
+ auto r=requested;auto begin=Clock::now();auto plan=make_plan(r);
  require(r.model=="flux2-klein-4b","model executor unavailable; see static acceptance plan");
- require(!r.prompt.empty()&&!r.output.empty(),"prompt and output are required");
- require(std::filesystem::path(r.output).extension()==".png","native image output must be .png");
+ require(!r.prompt.empty()&&(warmup||!r.output.empty()),"prompt and output are required");
+ require(warmup||std::filesystem::path(r.output).extension()==".png","native image output must be .png");
  auto physical=[NSProcessInfo processInfo].physicalMemory;
  require(physical>=[plan[@"memory_estimate_bytes"] unsignedLongLongValue]+(4ull<<30),"insufficient physical memory for the conservative BF16 plan");
  require(!r.memory_budget_bytes||r.memory_budget_bytes>=[plan[@"memory_estimate_bytes"] unsignedLongLongValue],"profile memory budget is below the BF16 plan estimate");
  mx::reset_peak_memory();mx::set_cache_limit(r.allocator_cache_bytes);
  auto tokens=tokenizer_.prompt(r.prompt,r.dynamic_text);
- if(r.execution!="gpu_ane")hybrid_.reset();
+ if(r.execution!="gpu_ane"&&r.execution!="auto")hybrid_.reset();
  auto dump=[&](const std::string&name,const Tensor&a){if(!r.dump.empty()){std::filesystem::create_directories(r.dump);mx::save_safetensors((std::filesystem::path(r.dump)/(name+".safetensors")).string(),{{"tensor",a}});}};
- bool prompt_hit=cached_conditioning_.has_value()&&cached_prompt_==r.prompt&&cached_dynamic_==r.dynamic_text;
  auto text_start=Clock::now();
- if(!prompt_hit){
-  // A different prompt must not hold the resident DiT while encoding Qwen.
-  hybrid_.reset();transformer_.clear();vae_.clear();cached_conditioning_.reset();mx::clear_cache();
-  cached_conditioning_=encode(tokens,event,cancelled);cached_prompt_=r.prompt;cached_dynamic_=r.dynamic_text;mx::clear_cache();
- } else event("text_cache_hit",1,1);
+ bool prompt_hit=conditioning(r,tokens,event,cancelled);
  double text_s=std::chrono::duration<double>(Clock::now()-text_start).count();
  std::optional<Tensor> reference_latents, clean_latents;
  std::vector<float> reference_ids;
@@ -51,8 +110,7 @@ NSDictionary *Flux::generate(const Request&r,const Event&event,std::atomic<bool>
  int actual_tokens=int(tokens.ids.size())+(r.width/16)*(r.height/16)+(reference_latents?reference_latents->shape(1):0);
  require(actual_tokens<=20000,"request exceeds native token workspace budget");
  auto hybrid_start=Clock::now();
- if(r.execution=="gpu_ane"&&(!hybrid_||hybrid_->manifest!=r.ane_manifest))hybrid_=std::make_unique<HybridSession>(r.ane_manifest,root_,actual_tokens,event,cancelled,r.warmup_iterations);
- if(hybrid_)require(actual_tokens<=hybrid_->rows,"cached hybrid bucket too small");
+ auto selection=select_acceleration(r,actual_tokens,event,cancelled);plan=make_plan(r);
  double hybrid_s=std::chrono::duration<double>(Clock::now()-hybrid_start).count();
  auto text=*cached_conditioning_;dump("conditioning",text);
  checkpoint(cancelled);transformer_.load(root_/"transformer",event,cancelled);
@@ -68,7 +126,7 @@ NSDictionary *Flux::generate(const Request&r,const Event&event,std::atomic<bool>
  auto dit_start=Clock::now();
  for(int i=start_step;i<r.steps;++i){checkpoint(cancelled);event("denoise",i,r.steps);
   auto model_input=reference_latents?mx::concatenate({z,*reference_latents},1):z;
-  auto noise=denoise(model_input,text,sigmas[i],r.height,r.width,event,cancelled,reference_ids);
+  auto noise=denoise(model_input,text,sigmas[i],r.height,r.width,event,cancelled,reference_ids,r.compile_gpu);
   if(reference_latents)noise=slice_axis(noise,1,0,z.shape(1));mx::eval(noise);dump("noise_"+std::to_string(i),noise);
   z=euler_step(z,noise,sigmas[i+1]-sigmas[i]);mx::eval(z);dump("latent_"+std::to_string(i),z);
   require(mx::all(mx::isfinite(z)).item<bool>(),"nonfinite latent");event("denoise",i+1,r.steps);
@@ -80,10 +138,12 @@ NSDictionary *Flux::generate(const Request&r,const Event&event,std::atomic<bool>
  auto pixels=decode(z,r.height,r.width,event,cancelled,r.dump);dump("pixels_nhwc",pixels);
  require(mx::all(mx::isfinite(pixels)).item<bool>(),"nonfinite decoded pixels");
  double decode_s=std::chrono::duration<double>(Clock::now()-decode_start).count();
- checkpoint(cancelled);event("export",0,1);checkpoint(cancelled);save_png(pixels,r.output);event("export",1,1);
+ checkpoint(cancelled);
+ if(!warmup){event("export",0,1);checkpoint(cancelled);save_png(pixels,r.output);event("export",1,1);}
+ else event("warmup_complete",1,1);
  auto hybrid_metrics=hybrid_?hybrid_->metrics():@{};
  if(r.residency=="component_staged"){vae_.clear();mx::clear_cache();}
  double seconds=std::chrono::duration<double>(Clock::now()-begin).count();
- return @{@"schema_version":@1,@"model":@(r.model.c_str()),@"output":@(r.output.c_str()),@"width":@(r.width),@"height":@(r.height),@"seed":@(r.seed),@"steps":@(r.steps),@"operation":@(r.operation.c_str()),@"reference_tokens":@(reference_latents?reference_latents->shape(1):0),@"actual_denoise_steps":@(r.steps-start_step),@"text_tokens":@(tokens.ids.size()),@"valid_text_tokens":@(tokens.valid),@"prompt_cache_hit":@(prompt_hit),@"plan":plan,@"timings_seconds":@{@"request_wall":@(seconds),@"text_encode":@(text_s),@"image_encode":@(image_s),@"hybrid_setup":@(hybrid_s),@"denoise":@(dit_s),@"vae_decode":@(decode_s)},@"memory":@{@"mlx_peak_bytes":@(mx::get_peak_memory()),@"mlx_active_bytes":@(mx::get_active_memory()),@"scope":@"MLX allocator; excludes Core ML/OS/file cache"},@"hybrid":hybrid_metrics,@"validation":@"candidate; consult recorded parity suite"};
+ return @{@"acceleration_selection":@(selection.c_str()),@"schema_version":@1,@"warmup":@(warmup),@"model":@(r.model.c_str()),@"output":warmup?[NSNull null]:@(r.output.c_str()),@"width":@(r.width),@"height":@(r.height),@"seed":@(r.seed),@"steps":@(r.steps),@"operation":@(r.operation.c_str()),@"reference_tokens":@(reference_latents?reference_latents->shape(1):0),@"gpu_graph":r.compile_gpu?@"compiled_single_blocks":@"eager_blocks",@"actual_denoise_steps":@(r.steps-start_step),@"text_tokens":@(tokens.ids.size()),@"valid_text_tokens":@(tokens.valid),@"prompt_cache_hit":@(prompt_hit),@"plan":plan,@"timings_seconds":@{@"request_wall":@(seconds),@"text_encode":@(text_s),@"image_encode":@(image_s),@"hybrid_setup":@(hybrid_s),@"denoise":@(dit_s),@"vae_decode":@(decode_s)},@"memory":@{@"mlx_peak_bytes":@(mx::get_peak_memory()),@"mlx_active_bytes":@(mx::get_active_memory()),@"scope":@"MLX allocator; excludes Core ML/OS/file cache"},@"hybrid":hybrid_metrics,@"validation":@"candidate; consult recorded parity suite"};
 }
 }

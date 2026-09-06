@@ -2,7 +2,7 @@
 #include "../backends/coreml.hpp"
 #include <cmath>
 namespace tc {
-Tensor Flux::denoise(const Tensor&latent,const Tensor&text,float sigma,int height,int width,const Event&event,std::atomic<bool>&cancelled,const std::vector<float>&reference_ids){
+Tensor Flux::denoise(const Tensor&latent,const Tensor&text,float sigma,int height,int width,const Event&event,std::atomic<bool>&cancelled,const std::vector<float>&reference_ids,bool compile_blocks){
  auto&w=transformer_;int nt=text.shape(1),ni=latent.shape(1),n=nt+ni;
  auto t=Tensor(sigma*1000.f,latent.dtype());
  auto freq=mx::exp(mx::arange(128,mx::float32)*(-std::log(10000.f)/128.f));
@@ -57,6 +57,17 @@ Tensor Flux::denoise(const Tensor&latent,const Tensor&text,float sigma,int heigh
    mx::async_eval({gpu});
    auto ane=slice_axis(hybrid_->predict(i,packed),1,0,n);
    x=x+ms[2]*(gpu+mx::astype(ane,gpu.dtype()));
+  }else if(compile_blocks){
+   static auto single_graph=mx::compile([](const std::vector<Tensor>&args){
+    auto input=norm(args[0])*(1+args[2])+args[1];
+    auto parts=mx::split(mx::matmul(input,mx::transpose(args[6])),mx::Shape{3072,6144,9216,18432},-1);
+    auto q=mx::astype(mx::fast::rms_norm(mx::astype(heads(parts[0],24,128),mx::float32),args[7],1e-5f),mx::bfloat16);
+    auto k=mx::astype(mx::fast::rms_norm(mx::astype(heads(parts[1],24,128),mx::float32),args[8],1e-5f),mx::bfloat16);
+    auto att=attend(rope_pairs(q,args[4],args[5]),rope_pairs(k,args[4],args[5]),heads(parts[2],24,128));
+    auto mlp=silu(parts[3])*parts[4];
+    return std::vector<Tensor>{args[0]+args[3]*mx::matmul(mx::concatenate({att,mlp},-1),mx::transpose(args[9]))};
+   });
+   x=single_graph({x,ms[0],ms[1],ms[2],cos,sin,w.at(p+".to_qkv_mlp_proj.weight"),w.at(p+".norm_q.weight"),w.at(p+".norm_k.weight"),w.at(p+".to_out.weight")})[0];
   }else{
    auto proj=linear(a,w,p+".to_qkv_mlp_proj");
    auto parts=mx::split(proj,mx::Shape{3072,6144,9216,18432},-1);

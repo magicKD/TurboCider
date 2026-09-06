@@ -26,7 +26,7 @@ void resolve_profile(Request& r) {
     require([match[@"memory_bytes"] unsignedLongLongValue]==physical,"device profile memory does not match this machine");
     auto models=d[@"models"];require([models isKindOfClass:NSDictionary.class],"profile models must be object");
     auto model=models[@(r.model.c_str())];require([model isKindOfClass:NSDictionary.class],"profile does not contain requested model");
-    profile_keys(model,@[@"policy",@"residency",@"allow_approximation",@"ane_manifest",@"memory_budget_bytes",@"allocator_cache_bytes",@"warmup_iterations"]);
+    profile_keys(model,@[@"policy",@"residency",@"allow_approximation",@"ane_manifest",@"memory_budget_bytes",@"allocator_cache_bytes",@"warmup_iterations",@"coreml_export"]);
     r.execution=string_value(model,@"policy","gpu");r.residency=string_value(model,@"residency",r.residency);
     if(model[@"allow_approximation"]){require(CFGetTypeID((__bridge CFTypeRef)model[@"allow_approximation"])==CFBooleanGetTypeID(),"profile approximation must be boolean");r.allow_approximation=[model[@"allow_approximation"] boolValue];}
     auto artifact=string_value(model,@"ane_manifest");if(!artifact.empty())r.ane_manifest=(path.parent_path()/artifact).lexically_normal().string();

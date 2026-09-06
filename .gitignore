@@ -74,6 +74,7 @@ pip-wheel-metadata/
 
 # TurboCider generated artifacts and runtime state
 /outputs/
+/artifacts/
 /state/
 /runtime.json
 /models/

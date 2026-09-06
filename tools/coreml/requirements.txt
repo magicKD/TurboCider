@@ -1,0 +1,4 @@
+# Optional offline build tool; not imported by the inference runtime.
+# Validated with CPython 3.11 on Apple Silicon.
+coremltools==8.3.0
+numpy==2.0.2

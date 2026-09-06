@@ -65,6 +65,12 @@ class ContractTests(unittest.TestCase):
             self.assertNotEqual(plan({'profile':str(path),'execution':'gpu_ane'})[0],0)
             path.write_text(json.dumps({'schema_version':1,'enabled':True,'match':{'gpu_name':'Wrong GPU','memory_bytes':1},'models':{}}))
             self.assertNotEqual(plan({'profile':str(path)})[0],0)
+    def test_resource_api_rejects_missing_engine(self):
+        out, err = C.c_void_p(), C.c_void_p()
+        self.assertNotEqual(lib.tc_engine_load(None, None, None, C.byref(out), C.byref(err)), 0)
+        self.assertIsNone(consume(out)); self.assertIn('missing engine', consume(err))
+        self.assertNotEqual(lib.tc_engine_unload(None, C.byref(out), C.byref(err)), 0)
+        self.assertIsNone(consume(out)); self.assertIn('missing engine', consume(err))
     def test_abi(self): self.assertEqual(lib.tc_abi_version(),1)
 
 if __name__=='__main__':unittest.main(verbosity=2)

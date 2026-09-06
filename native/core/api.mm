@@ -67,3 +67,61 @@ int tc_native_self_test(char**out,char**error){if(out)*out=nullptr;if(error)*err
  }catch(const std::exception&e){return fail(error,e);}catch(...){return 1;}}}
 
 int tc_compile_coreml_json(const char*source,const char*cache,char**out,char**error){if(out)*out=nullptr;if(error)*error=nullptr;@autoreleasepool{try{tc::require(source&&cache&&out,"missing compile input/output");*out=copy(tc::json(tc::compile_artifact(source,cache)));return 0;}catch(const std::exception&e){return fail(error,e);}catch(...){if(error)*error=strdup("unknown compile error");return 1;}}}
+
+int tc_engine_load(tc_engine*e,tc_event_callback cb,void*ctx,char**out,char**error){
+ if(out)*out=nullptr;if(error)*error=nullptr;
+ @autoreleasepool{try{
+  tc::require(e&&out,"missing engine or output");
+  std::unique_lock<std::mutex>local(e->mutex,std::try_to_lock);tc::require(local.owns_lock(),"engine busy");
+  std::unique_lock<std::mutex>global(execution_mutex,std::try_to_lock);tc::require(global.owns_lock(),"native GPU runtime busy");
+  DeviceLease lease;configure_streams();e->cancelled.store(false);
+  auto begin=tc::Clock::now();uint64_t sequence=0;
+  tc::Event event=[&](const std::string&phase,int current,int total){tc::checkpoint(e->cancelled);if(cb){@autoreleasepool{
+   auto text=tc::json(@{@"sequence":@(++sequence),@"phase":@(phase.c_str()),@"completed":@(current),@"total":@(total),@"elapsed_seconds":@(std::chrono::duration<double>(tc::Clock::now()-begin).count())});cb(text.c_str(),ctx);
+  }}};
+  try{auto result=e->session->load(event,e->cancelled);tc::mx::synchronize();*out=copy(tc::json(result));}
+  catch(...){tc::mx::synchronize();e->session->unload();tc::mx::clear_cache();throw;}
+  return 0;
+ }catch(const std::exception&ex){return fail(error,ex);}catch(...){if(error)*error=strdup("unknown load error");return 1;}}
+}
+int tc_engine_unload(tc_engine*e,char**out,char**error){
+ if(out)*out=nullptr;if(error)*error=nullptr;
+ @autoreleasepool{try{
+  tc::require(e&&out,"missing engine or output");
+  std::unique_lock<std::mutex>local(e->mutex,std::try_to_lock);tc::require(local.owns_lock(),"engine busy");
+  std::unique_lock<std::mutex>global(execution_mutex,std::try_to_lock);tc::require(global.owns_lock(),"native GPU runtime busy");
+  configure_streams();tc::mx::synchronize();e->session->unload();tc::mx::clear_cache();
+  *out=copy(tc::json(@{@"released":@YES,@"mlx_active_bytes":@(tc::mx::get_active_memory()),@"scope":@"MLX allocator; excludes OS/file cache"}));return 0;
+ }catch(const std::exception&ex){return fail(error,ex);}catch(...){if(error)*error=strdup("unknown unload error");return 1;}}
+}
+
+static int preparation_call(tc_engine*e,const char*request,int warmup,bool cache,tc_event_callback cb,void*ctx,char**out,char**error){
+ if(out)*out=nullptr;if(error)*error=nullptr;
+ @autoreleasepool{try{
+  tc::require(e&&request&&out,"missing preparation input");
+  std::unique_lock<std::mutex>local(e->mutex,std::try_to_lock);tc::require(local.owns_lock(),"engine busy");
+  std::unique_lock<std::mutex>global(execution_mutex,std::try_to_lock);tc::require(global.owns_lock(),"native GPU runtime busy");
+  DeviceLease lease;configure_streams();e->cancelled.store(false);
+  struct Drain {~Drain(){try{tc::mx::synchronize();}catch(...){}}}drain;
+  auto begin=tc::Clock::now();uint64_t sequence=0;
+  tc::Event event=[&](const std::string&phase,int current,int total){tc::checkpoint(e->cancelled);if(cb){auto text=tc::json(@{@"sequence":@(++sequence),@"phase":@(phase.c_str()),@"completed":@(current),@"total":@(total),@"elapsed_seconds":@(std::chrono::duration<double>(tc::Clock::now()-begin).count())});cb(text.c_str(),ctx);}};
+  NSDictionary *result;
+  if(cache){auto value=tc::parse_json(request);if([value[@"action"] isEqual:@"clear"]){tc::mx::synchronize();e->session->unload();tc::mx::clear_cache();}result=tc::manage_coreml_cache(value,event,e->cancelled);}
+  else {tc::require(warmup==0||warmup==1,"warmup must be 0 or 1");auto r=tc::request_from_json(tc::parse_json(request));r.dump.clear();result=e->session->prepare(r,warmup!=0,event,e->cancelled);}
+  *out=copy(tc::json(result));return 0;
+ }catch(const std::exception&ex){return fail(error,ex);}catch(...){if(error)*error=strdup("unknown preparation error");return 1;}}
+}
+int tc_engine_prepare(tc_engine*e,const char*r,int warmup,tc_event_callback cb,void*ctx,char**out,char**error){return preparation_call(e,r,warmup,false,cb,ctx,out,error);}
+int tc_engine_cache(tc_engine*e,const char*r,tc_event_callback cb,void*ctx,char**out,char**error){return preparation_call(e,r,0,true,cb,ctx,out,error);}
+
+static std::atomic<bool> resource_cancelled{false};
+void tc_coreml_resources_cancel(){resource_cancelled.store(true);}
+int tc_coreml_resources_json(const char*request,tc_event_callback cb,void*ctx,char**out,char**error){
+ if(out)*out=nullptr;if(error)*error=nullptr;
+ @autoreleasepool{try{
+  tc::require(request&&out,"missing resource request");std::unique_lock<std::mutex>global(execution_mutex,std::try_to_lock);tc::require(global.owns_lock(),"runtime busy");DeviceLease lease;resource_cancelled.store(false);
+  auto begin=tc::Clock::now();uint64_t sequence=0;
+  tc::Event event=[&](const std::string&phase,int current,int total){tc::checkpoint(resource_cancelled);if(cb){auto text=tc::json(@{@"sequence":@(++sequence),@"phase":@(phase.c_str()),@"completed":@(current),@"total":@(total),@"elapsed_seconds":@(std::chrono::duration<double>(tc::Clock::now()-begin).count())});cb(text.c_str(),ctx);}};
+  *out=copy(tc::json(tc::coreml_resources(tc::parse_json(request),event,resource_cancelled)));return 0;
+ }catch(const std::exception&e){return fail(error,e);}catch(...){if(error)*error=strdup("unknown resource error");return 1;}}
+}
