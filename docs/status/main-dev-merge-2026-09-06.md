@@ -16,6 +16,8 @@
 - 将 FLUX 4B/9B 与 Z-Image 接入统一 registry、plan、C ABI、Swift binding、CLI 和 App 模型目录。
 - 修复 Z-Image Qwen3 输出维度：text encoder 的 `[1,T,2560]` 输出在截取有效 token 前去掉 batch 维，向 DiT 传递 `[T,2560]`。
 - 将 Z-Image 采样日程对齐 ComfyUI 的固定 `shift=3.0` discrete-flow simple scheduler，包括 1000-entry sigma table 的离散取样；Euler 状态保持 FP32、仅在 DiT/VAE 入口转 BF16。增加可选共享初始噪声和逐步 latent dump，供同噪声 oracle 定位数值差异，不改变正常请求的默认随机噪声路径。
+- 支持 ComfyUI split-files 与 Tongyi diffusers 组件目录；diffusers 多 shard、独立 Q/K/V、`all_x_embedder`/`all_final_layer` 与 VAE 命名在 C++ loader 内归一化，不依赖外部转换仓库。
+- 官方 Z-Image distill patch LoRA 以独立文件运行时内存融合，238 个 projection 全部应用；同噪声对 ComfyUI 的最终 latent cosine 0.998929、PNG correlation 0.999156。
 - 修复 App smoke 的多模型兼容：不再硬编码 256×256/4-step/PNG，而从模型 descriptor 读取操作、尺寸、步数、帧数、帧率、音频、驻留和输出媒体类型。
 
 ## 模型与 App 兼容矩阵
@@ -34,7 +36,7 @@
 使用仓库现有 MLX 0.32.2 环境显式设置 `MLX_ROOT`：
 
 ```text
-make test                         47 项通过
+make test                         48 项通过
 make test-app                     通过；无 pasteboard service 时仅跳过系统剪贴板检查
 make build                        native、CLI、Swift App、integration runners 编译链接通过
 make package                      App/CLI 打包与 ad-hoc codesign 验证通过
@@ -59,10 +61,10 @@ MLX peak           25.63 GB
 ## 仍然开放的风险
 
 - LTX GPU+ANE 当前速度和 latent parity 尚未过门禁，不能作为默认路径，也尚未证明包含完整生命周期时稳定快于 mac-ltx。
-- H3/LTX LoRA cache miss 仍会调用 Python merge 工具并产生可清理的 merged artifact，未达到纯内存逐层融合目标。
+- H3/LTX LoRA cache miss 现在调用 TurboCider 自带的 Python merge 工具并产生可清理的 merged artifact，不再从兄弟仓库发现脚本；仍未达到纯内存逐层融合目标。
 - FastMetal 仍依赖显式外部 worker/profile，独立 LoRA runtime bake 未完成。
 - FLUX 9B 尚缺标准尺寸、多轮 warm/resident parity 与性能矩阵。
-- Z-Image scheduler 已与 ComfyUI 的固定 `shift=3.0` 日程对齐；同 seed 仍会因 MLX 与 PyTorch RNG 不同而产生不同初始噪声，尚需用共享噪声完成逐阶段 oracle parity。真实独立 LoRA 图片 parity、多轮 warm 数据和 GPU+ANE 分区也仍未完成。
+- Z-Image scheduler、共享噪声最终 latent/PNG 和官方独立 LoRA 图片 parity 已完成；逐 step oracle、多轮 warm 数据和 GPU+ANE 分区仍未完成。
 - 当前包为本地 ad-hoc 签名，不是 Developer ID 公证发行包。
 
 ## 构建说明

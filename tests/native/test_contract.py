@@ -66,7 +66,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(p['backend'],'mlx_cpp_metal')
         self.assertEqual(p['lora_fusion'],'in_memory_delta')
         self.assertEqual(p['weight_validation'],
-                         'in-memory-lora; image-parity-pending')
+                         'in-memory-lora; comfy-oracle-validated')
         self.assertEqual([stage['id'] for stage in p['stages']],
                          ['text_encode','denoise','vae_decode','export'])
         self.assertEqual(p['stages'][1]['iterations'],9)
@@ -98,6 +98,9 @@ class ContractTests(unittest.TestCase):
         self.assertIn('return mx::astype(noise, mx::float32);',source)
         self.assertIn('auto model_input = mx::astype(latent, mx::bfloat16);',source)
         self.assertIn('z_vae_decode(mx::astype(latent, mx::bfloat16)',source)
+        self.assertIn('result.lora_applied_projections = lora_applied_projections_;',source)
+        results=(ROOT/'native/platform/apple/results.mm').read_text()
+        self.assertIn('@"lora_applied_projections"',results)
 
     def test_flux_text_taps_are_config_guarded_and_dead_tail_is_elided(self):
         platform=(ROOT/'native/platform/apple/device.mm').read_text()

@@ -71,6 +71,32 @@ void Weights::load_file(const std::filesystem::path &path, const std::string &pr
         }
     require(!values_.empty(), "no tensors match component prefix");
 }
+void Weights::remap_keys(const std::function<std::string(const std::string &)> &transform) {
+    std::unordered_map<std::string, Tensor> remapped;
+    remapped.reserve(values_.size());
+    for (auto &[key, value] : values_) {
+        auto target = transform(key);
+        require(!target.empty(), "weight key remap produced an empty key");
+        require(!remapped.count(target), "duplicate weight after key remap: " + target);
+        remapped.emplace(std::move(target), std::move(value));
+    }
+    values_ = std::move(remapped);
+}
+void Weights::fuse_keys(const std::string &target, const std::vector<std::string> &sources,
+                        int axis) {
+    require(!sources.empty(), "cannot fuse an empty weight list");
+    std::vector<Tensor> pieces;
+    pieces.reserve(sources.size());
+    for (const auto &source : sources) {
+        auto found = values_.find(source);
+        require(found != values_.end(), "missing weight needed for fusion: " + source);
+        pieces.push_back(found->second);
+    }
+    require(!values_.count(target), "fused weight already exists: " + target);
+    values_.emplace(target, mx::concatenate(pieces, axis));
+    for (const auto &source : sources)
+        values_.erase(source);
+}
 const Tensor &Weights::at(const std::string &k) const {
     auto i = values_.find(k);
     require(i != values_.end(), "missing weight: " + k);

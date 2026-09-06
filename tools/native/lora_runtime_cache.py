@@ -25,8 +25,8 @@ from typing import Any, Callable
 
 
 ALGORITHM = {
-    "h3": "h3.c-merge-h3-lora-v2",
-    "ltx": "h3.c-merge-ltx-refiner-v1",
+    "h3": "turbocider-h3-runtime-lora-bake-v3",
+    "ltx": "turbocider-ltx-refiner-bake-v2",
 }
 SCHEMA = "turbocider-runtime-lora-cache-v1"
 
@@ -139,12 +139,17 @@ def identity(
 
 
 def _script_path() -> Path:
-    configured = os.environ.get("TURBOCIDER_WORKSPACE")
-    if configured:
-        candidate = Path(configured).expanduser() / "h3.c" / "tools"
+    # A test/developer can point at an explicitly controlled implementation;
+    # this is never inferred from a workspace or sibling checkout.
+    override = os.environ.get("TURBOCIDER_LORA_TOOL_DIR")
+    if override:
+        candidate = Path(override).expanduser().resolve()
         if candidate.is_dir():
             return candidate
-    return Path(__file__).resolve().parents[3] / "h3.c" / "tools"
+    # The merge implementations ship beside this cache helper in both the
+    # source tree and packaged App/CLI. Never discover a sibling checkout:
+    # a portable TurboCider installation must be sufficient on its own.
+    return Path(__file__).resolve().parent
 
 
 def _run_merge(model: str, base: Path, adapter: Path, output: Path,

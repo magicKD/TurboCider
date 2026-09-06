@@ -56,8 +56,11 @@ for folder in "$BIN" "$ROOT/dist/cli"; do
  for library in "$folder"/*.dylib; do codesign --force --sign - "$library"; done
 done
 cp build/native/turbocider "$ROOT/dist/cli/"
-cp tools/native/prepare_lora.py tools/native/lora_runtime_cache.py tools/native/fastmetal_worker.py "$ROOT/dist/cli/"
-cp tools/native/lora_runtime_cache.py tools/native/fastmetal_worker.py "$SCRIPTS/"
+cp tools/native/prepare_lora.py tools/native/lora_runtime_cache.py \
+   tools/native/merge_h3_lora.py tools/native/merge_ltx_refiner.py \
+   tools/native/fastmetal_worker.py "$ROOT/dist/cli/"
+cp tools/native/lora_runtime_cache.py tools/native/merge_h3_lora.py \
+   tools/native/merge_ltx_refiner.py tools/native/fastmetal_worker.py "$SCRIPTS/"
 cp native/THIRD_PARTY_NOTICES.md "$RES/"
 cp "$MLX_LICENSE_PATH" "$RES/MLX-LICENSE.txt"
 cp "$RES/THIRD_PARTY_NOTICES.md" "$RES/MLX-LICENSE.txt" "$ROOT/dist/cli/"

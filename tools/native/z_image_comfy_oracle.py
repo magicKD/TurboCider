@@ -64,6 +64,11 @@ def main() -> None:
     parser.add_argument("--prefix", default="TurboCider-z-image-oracle")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--latent-output", type=Path)
+    parser.add_argument(
+        "--lora-name",
+        help="ComfyUI lora filename to insert after the diffusion-model loader",
+    )
+    parser.add_argument("--lora-strength", type=float, default=1.0)
     parser.add_argument("--timeout", type=float, default=900.0)
     args = parser.parse_args()
 
@@ -71,6 +76,19 @@ def main() -> None:
     sampler_id, sampler = node_item(prompt, "KSampler")
     _, positive = node_item(prompt, "CLIPTextEncode", "positive")
     _, saver = node_item(prompt, "SaveImage")
+    if args.lora_name:
+        loader_id, loader = node_item(prompt, "UNETLoader")
+        lora_id = str(max(map(int, prompt)) + 1)
+        prompt[lora_id] = {
+            "inputs": {
+                "model": [loader_id, 0],
+                "lora_name": args.lora_name,
+                "strength_model": args.lora_strength,
+            },
+            "class_type": "LoraLoaderModelOnly",
+            "_meta": {"title": "TurboCider LoRA oracle"},
+        }
+        sampler["inputs"]["model"] = [lora_id, 0]
     sampler["inputs"]["seed"] = args.seed
     positive["inputs"]["text"] = args.prompt
     saver["inputs"]["filename_prefix"] = args.prefix
@@ -120,6 +138,8 @@ def main() -> None:
                 "prompt_id": prompt_id,
                 "output": str(args.output),
                 "latent_output": str(args.latent_output) if args.latent_output else None,
+                "lora_name": args.lora_name,
+                "lora_strength": args.lora_strength if args.lora_name else None,
                 "comfy_output": image,
                 "status": status,
             },

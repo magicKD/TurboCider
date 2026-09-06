@@ -6,6 +6,7 @@
 
 #include <bit>
 #include <cmath>
+#include <cstring>
 #include <regex>
 
 namespace tc {
@@ -17,6 +18,96 @@ constexpr int kHeadDim = 128;
 constexpr int kHeads = 30;
 constexpr float kVaeScale = 0.3611f;
 constexpr float kVaeShift = 0.1159f;
+
+std::string z_diffusers_transformer_key(std::string key) {
+    for (const auto *prefix : {"transformer.", "diffusion_model."})
+        if (key.starts_with(prefix)) {
+            key.erase(0, std::strlen(prefix));
+            break;
+        }
+    if (key.starts_with("all_x_embedder.2-1."))
+        key.replace(0, std::strlen("all_x_embedder.2-1."), "x_embedder.");
+    else if (key.starts_with("all_final_layer.2-1."))
+        key.replace(0, std::strlen("all_final_layer.2-1."), "final_layer.");
+    key = std::regex_replace(key, std::regex("\\.attention\\.to_out\\.0\\."),
+                             ".attention.out.");
+    key = std::regex_replace(key, std::regex("\\.attention\\.norm_q\\."),
+                             ".attention.q_norm.");
+    key = std::regex_replace(key, std::regex("\\.attention\\.norm_k\\."),
+                             ".attention.k_norm.");
+    return key;
+}
+
+std::string z_diffusers_vae_key(std::string key) {
+    key = std::regex_replace(key, std::regex("^vae\\."), "");
+    key = std::regex_replace(key, std::regex("^decoder\\.mid_block\\.resnets\\.0\\."),
+                             "decoder.mid.block_1.");
+    key = std::regex_replace(key, std::regex("^decoder\\.mid_block\\.resnets\\.1\\."),
+                             "decoder.mid.block_2.");
+    key = std::regex_replace(key, std::regex("^decoder\\.mid_block\\.attentions\\.0\\.group_norm\\."),
+                             "decoder.mid.attn_1.norm.");
+    key = std::regex_replace(key, std::regex("^decoder\\.mid_block\\.attentions\\.0\\.to_q\\."),
+                             "decoder.mid.attn_1.q.");
+    key = std::regex_replace(key, std::regex("^decoder\\.mid_block\\.attentions\\.0\\.to_k\\."),
+                             "decoder.mid.attn_1.k.");
+    key = std::regex_replace(key, std::regex("^decoder\\.mid_block\\.attentions\\.0\\.to_v\\."),
+                             "decoder.mid.attn_1.v.");
+    key = std::regex_replace(key, std::regex("^decoder\\.mid_block\\.attentions\\.0\\.to_out\\.0\\."),
+                             "decoder.mid.attn_1.proj_out.");
+    std::smatch match;
+    if (std::regex_match(key, match,
+                         std::regex("^decoder\\.up_blocks\\.([0-9]+)\\.(.*)$"))) {
+        const int stage = 3 - std::stoi(match[1]);
+        auto tail = std::string(match[2]);
+        tail = std::regex_replace(tail, std::regex("^resnets\\.([0-9]+)\\.conv_shortcut\\."),
+                                  "block.$1.nin_shortcut.");
+        tail = std::regex_replace(tail, std::regex("^resnets\\.([0-9]+)\\."),
+                                  "block.$1.");
+        tail = std::regex_replace(tail, std::regex("^upsamplers\\.0\\.conv\\."),
+                                  "upsample.conv.");
+        key = "decoder.up." + std::to_string(stage) + "." + tail;
+    }
+    key = std::regex_replace(key, std::regex("^decoder\\.conv_norm_out\\."),
+                             "decoder.norm_out.");
+    return key;
+}
+
+void normalize_z_diffusers_transformer(Weights &weights) {
+    if (weights.has("x_embedder.weight"))
+        return;
+    weights.remap_keys(z_diffusers_transformer_key);
+    for (const char *group : {"noise_refiner", "context_refiner", "layers"}) {
+        const int count = std::string(group) == "layers" ? 30 : 2;
+        for (int i = 0; i < count; ++i) {
+            const auto prefix = std::string(group) + "." + std::to_string(i) + ".attention.";
+            weights.fuse_keys(prefix + "qkv.weight",
+                              {prefix + "to_q.weight", prefix + "to_k.weight",
+                               prefix + "to_v.weight"}, 0);
+        }
+    }
+}
+
+void normalize_z_diffusers_vae(Weights &weights) {
+    if (!weights.has("decoder.mid.block_1.conv1.weight"))
+        weights.remap_keys(z_diffusers_vae_key);
+}
+
+bool has_safetensors(const std::filesystem::path &directory) {
+    if (!std::filesystem::is_directory(directory))
+        return false;
+    for (const auto &entry : std::filesystem::directory_iterator(directory))
+        if (entry.is_regular_file() && entry.path().extension() == ".safetensors")
+            return true;
+    return false;
+}
+
+void load_z_component(Weights &weights, const std::filesystem::path &path,
+                      const Event &event, std::atomic<bool> &cancelled) {
+    if (std::filesystem::is_directory(path))
+        weights.load(path, event, cancelled);
+    else
+        weights.load_file(path);
+}
 
 Tensor linear_compat(const Tensor &x, const Weights &w, const std::string &prefix) {
     auto weight = w.at(prefix + ".weight");
@@ -418,12 +509,27 @@ Tensor z_initial_noise(const Request &r, int height, int width) {
 
 ZImage::ZImage(const std::filesystem::path &root)
     : root_(root), tokenizer_(root / "tokenizer") {
-    text_path_ = root / "split_files/text_encoders/qwen_3_4b.safetensors";
-    transformer_path_ = root / "split_files/diffusion_models/z_image_turbo_bf16.safetensors";
-    vae_path_ = root / "split_files/vae/ae.safetensors";
-    require(std::filesystem::is_regular_file(text_path_), "missing Z-Image Qwen3 checkpoint");
-    require(std::filesystem::is_regular_file(transformer_path_), "missing Z-Image DiT checkpoint");
-    require(std::filesystem::is_regular_file(vae_path_), "missing Z-Image VAE checkpoint");
+    auto comfy_text = root / "split_files/text_encoders/qwen_3_4b.safetensors";
+    auto comfy_transformer =
+        root / "split_files/diffusion_models/z_image_turbo_bf16.safetensors";
+    auto comfy_vae = root / "split_files/vae/ae.safetensors";
+    if (std::filesystem::is_regular_file(comfy_text) &&
+        std::filesystem::is_regular_file(comfy_transformer) &&
+        std::filesystem::is_regular_file(comfy_vae)) {
+        text_path_ = std::move(comfy_text);
+        transformer_path_ = std::move(comfy_transformer);
+        vae_path_ = std::move(comfy_vae);
+        return;
+    }
+    diffusers_layout_ = true;
+    text_path_ = root / "text_encoder";
+    transformer_path_ = root / "transformer";
+    vae_path_ = root / "vae";
+    require(has_safetensors(text_path_),
+            "missing Z-Image Qwen3 safetensors in text_encoder/");
+    require(has_safetensors(transformer_path_),
+            "missing Z-Image DiT safetensors in transformer/");
+    require(has_safetensors(vae_path_), "missing Z-Image VAE safetensors in vae/");
 }
 
 void ZImage::select_loras(const Request &request) {
@@ -451,6 +557,7 @@ void ZImage::select_loras(const Request &request) {
     cached_conditioning_.reset();
     cached_prompt_.clear();
     transformer_.clear();
+    lora_applied_projections_ = 0;
     mx::clear_cache();
 }
 
@@ -459,17 +566,22 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
     if (transformer_cold) {
         checkpoint(cancelled);
         event("load_z_image_transformer", 0, 1);
-        transformer_.load_file(transformer_path_);
+        load_z_component(transformer_, transformer_path_, event, cancelled);
+        if (diffusers_layout_)
+            normalize_z_diffusers_transformer(transformer_);
         event("load_z_image_transformer", 1, 1);
     }
     if (vae_.bytes() == 0) {
         checkpoint(cancelled);
         event("load_z_image_vae", 0, 1);
-        vae_.load_file(vae_path_);
+        load_z_component(vae_, vae_path_, event, cancelled);
+        if (diffusers_layout_)
+            normalize_z_diffusers_vae(vae_);
         event("load_z_image_vae", 1, 1);
     }
     if (transformer_cold && !active_loras_.empty())
-        transformer_.apply_loras(active_loras_, "transformer", event, cancelled);
+        lora_applied_projections_ =
+            transformer_.apply_loras(active_loras_, "transformer", event, cancelled);
     transformer_.materialize();
     vae_.materialize();
     return {uint64_t(transformer_.bytes() + vae_.bytes()), mx::get_active_memory()};
@@ -486,7 +598,7 @@ void ZImage::unload() {
 
 Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic<bool> &cancelled) {
     if (text_encoder_.bytes() == 0)
-        text_encoder_.load_file(text_path_);
+        load_z_component(text_encoder_, text_path_, event, cancelled);
     auto ids = Tensor(tokens.ids.data(), {1, int(tokens.ids.size())}, mx::int32);
     auto result = qwen_encode(ids, text_encoder_, tokens.valid, event, cancelled);
     result = slice_axis(mx::squeeze(result, 0), 0, 0, tokens.valid);
@@ -592,6 +704,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.text_tokens = int(reported_tokens.ids.size());
     result.valid_text_tokens = reported_tokens.valid;
     result.actual_steps = r.steps;
+    result.lora_applied_projections = lora_applied_projections_;
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
     result.timings.text = text_seconds;
     result.timings.denoise = denoise_seconds;

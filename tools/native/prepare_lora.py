@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Dispatch TurboCider LoRA preparation to the upstream merge tools.
+"""Dispatch TurboCider LoRA preparation to its bundled merge tools.
 
-The native runtime intentionally does not duplicate the large safetensors,
-ConvRot, or quantization implementations. This preparation boundary selects
-the audited h3.c merge tool and leaves its provenance manifest beside the
-merged checkpoint. Native inference itself does not require Python.
+The audited H3 safetensors and LTX ConvRot implementations live beside this
+entrypoint and are packaged with TurboCider. Preparation leaves a provenance
+manifest beside the merged checkpoint. Native inference itself does not
+require Python once the optional prepared artifact exists.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -27,29 +26,14 @@ MODEL_ALIASES = {
 }
 
 
-def turbo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-def workspace_root() -> Path:
-    configured = os.environ.get("TURBOCIDER_WORKSPACE")
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return turbo_root().parent
-
-
 def upstream_script(model: str) -> Path:
     canonical = MODEL_ALIASES[model]
     name = "merge_h3_lora.py" if canonical == "h3" else "merge_ltx_refiner.py"
-    adjacent = Path(__file__).resolve().parent / name
-    if adjacent.is_file():
-        return adjacent
-    source = workspace_root() / "h3.c" / "tools" / name
-    if source.is_file():
-        return source
+    bundled = Path(__file__).resolve().parent / name
+    if bundled.is_file():
+        return bundled
     raise FileNotFoundError(
-        f"upstream {name} is unavailable beside this script or at {source}; "
-        "set TURBOCIDER_WORKSPACE"
+        f"bundled {name} is unavailable beside {Path(__file__).name}"
     )
 
 

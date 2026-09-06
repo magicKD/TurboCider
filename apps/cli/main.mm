@@ -67,10 +67,6 @@ static std::filesystem::path lora_prepare_script(const char *executable) {
   auto source=root/"tools/native/prepare_lora.py";
   if(std::filesystem::is_regular_file(source))return source;
  }
- if(const char *workspace=std::getenv("TURBOCIDER_WORKSPACE")){
-  auto source=std::filesystem::path(workspace)/"TurboCider/tools/native/prepare_lora.py";
-  if(std::filesystem::is_regular_file(source))return source;
- }
  return {};
 }
 static int prepare_lora_main(int argc,char **argv,const char *executable) {
@@ -80,7 +76,7 @@ static int prepare_lora_main(int argc,char **argv,const char *executable) {
  }
  auto script=lora_prepare_script(executable);
  if(script.empty()){
-  std::cerr<<"cannot locate tools/native/prepare_lora.py; set TURBOCIDER_WORKSPACE\n";
+  std::cerr<<"cannot locate packaged tools/native/prepare_lora.py\n";
   return 1;
  }
  NSTask *task=[NSTask new];

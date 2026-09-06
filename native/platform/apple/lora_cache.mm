@@ -13,11 +13,6 @@ static std::filesystem::path cache_script() {
         if (*configured && std::filesystem::is_regular_file(configured))
             return std::filesystem::absolute(configured);
     }
-    if (const char* workspace = std::getenv("TURBOCIDER_WORKSPACE")) {
-        auto path = std::filesystem::path(workspace) /
-            "TurboCider/tools/native/lora_runtime_cache.py";
-        if (std::filesystem::is_regular_file(path)) return std::filesystem::absolute(path);
-    }
     uint32_t size = PATH_MAX;
     std::vector<char> executable(size);
     if (_NSGetExecutablePath(executable.data(), &size) != 0) {
@@ -73,7 +68,7 @@ RuntimeLoRACache ensure_runtime_lora_cache(
     auto script = cache_script();
     require(!script.empty(),
             "TurboCider runtime LoRA cache helper is unavailable; set "
-            "TURBOCIDER_LORA_CACHE_SCRIPT or TURBOCIDER_WORKSPACE");
+            "TURBOCIDER_LORA_CACHE_SCRIPT or install the packaged helper");
     require(std::filesystem::exists(base),
             "runtime LoRA cache base checkpoint is missing: " + base.string());
     require(model == "h3" || model == "ltx",

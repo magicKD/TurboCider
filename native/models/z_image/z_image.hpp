@@ -9,6 +9,7 @@ namespace tc {
 class ZImage final : public ModelSession {
     std::filesystem::path root_;
     std::filesystem::path text_path_, transformer_path_, vae_path_;
+    bool diffusers_layout_ = false;
     Tokenizer tokenizer_;
     Weights text_encoder_;
     Weights transformer_;
@@ -18,6 +19,7 @@ class ZImage final : public ModelSession {
     bool cached_dynamic_ = true;
     std::vector<LoRAAsset> active_loras_;
     std::string cached_lora_identity_;
+    size_t lora_applied_projections_ = 0;
 
     void select_loras(const Request &);
     Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);

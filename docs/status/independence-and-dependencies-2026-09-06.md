@@ -26,11 +26,11 @@ TurboCider 已经是一个可以独立发布和启动的 native application/pack
 |---|---|---|
 | TurboCider core、C ABI、CLI、service、Swift App | 可独立运行 | macOS 系统框架、Apple Silicon、已构建 native dylib |
 | FLUX.2 Klein 4B/9B native | 基本独立 | 用户模型目录；发行包内的 MLX dylib/metallib |
-| Z-Image Turbo native | 源码独立、真实出图待验收 | 用户 ComfyUI Qwen3/DiT/VAE/tokenizer 目录；发行包内 MLX dylib/metallib |
+| Z-Image Turbo native | 源码独立、base/LoRA 真实出图与 ComfyUI oracle 已验收 | 用户 ComfyUI split-files 或 Tongyi diffusers Qwen3/DiT/VAE/tokenizer 目录；发行包内 MLX dylib/metallib |
 | LTX video-only native | 基本独立 | 用户 LTX checkpoint/Gemma/upsampler/VAE；发行包内 MLX dylib 和 helper |
 | H3 native denoise | 源码独立 | 用户 H3 模型目录、ANE/Core ML artifact（如启用） |
 | H3 输入/MP4 输出 | 非完全独立 | `ffmpeg` 与 `ffprobe`；可通过 `H3_FFMPEG`、`H3_FFPROBE` 指定路径 |
-| H3/LTX runtime LoRA cache | 非完全独立 | Python；`h3.c/tools/merge_h3_lora.py` 或 `merge_ltx_refiner.py`；缓存目录 |
+| H3/LTX runtime LoRA cache | 不依赖兄弟源码仓库，但仍非纯内存 | TurboCider 自带 `tools/native/merge_h3_lora.py` / `merge_ltx_refiner.py`、Python/MLX 或 PyTorch merge 依赖、缓存目录 |
 | FastMetal 1.3B QAD | 明确是外部 worker 集成 | 用户 Python、MLX Python、PyTorch、FastVideo/TAEHV、entrypoint、profile、模型和 ANE artifacts |
 | 编译 TurboCider | 非零依赖 | Xcode/Command Line Tools、macOS SDK、MLX C++ headers/libs (`MLX_ROOT`) |
 
@@ -69,12 +69,14 @@ H3 runtime 的 `h3_ffmpeg.c` 通过 `posix_spawnp` 查找 `ffmpeg`/`ffprobe`，�
 图片、视频、音频输入以及 MP4 输出。当前 package 没有携带这两个二进制，因此
 H3 完整媒体请求不能宣称“零外部运行时依赖”。
 
-### 3. LoRA cache 仍是外部 Python merge
+### 3. LoRA cache 已移除兄弟仓库依赖，但仍是 Python/disk merge
 
-`lora_runtime_cache.py` 是缓存/身份封装，不包含实际的 H3/LTX safetensors、
-ConvRot 和量化 merge 算法。cache miss 会调用 `h3.c/tools` 的 merge 脚本；
-因此没有旁置的 merge 工具时，H3/LTX 独立 LoRA 请求会 fail closed。已经准备好
-并带 provenance 的 merged checkpoint 不需要在推理时重新 merge。
+`lora_runtime_cache.py` 现在和两套实际 merge 实现一起位于 TurboCider
+`tools/native/`，并会随 CLI/App package 分发；生产路径不再扫描或导入
+`h3.c/tools`。cache miss 仍会调用 Python merge 实现并写入内容寻址的可清理
+merged artifact，因此这一步解决的是“外部仓库独立性”，不是最终的“纯内存
+逐层融合”。已经准备好并带 provenance 的 merged checkpoint 不需要在推理时重新
+merge。
 
 ### 4. FastMetal 是受控外部集成
 
@@ -96,7 +98,9 @@ engine root、entrypoint、worker 和可选 ANE bridge；没有这些资源不�
 > 不安装任何外部工具、不提供模型、不提供 Python/FastVideo、不提供 FFmpeg，
 > 六个注册模型全部可以生成结果。
 
-答案是：**尚未达到**。
+答案是：**尚未达到**。H3/LTX 的 merge 算法本身已随 TurboCider 分发，但
+Python merge 运行时、FFmpeg、FastMetal worker 和模型资产仍是按能力选择的外部
+资源；H3/LTX 也尚未改为纯内存 LoRA。
 
 推荐把当前系统称为“可独立发布的 native host + 分层可选运行时”，而不是
 “完全封闭的 all-in-one inference appliance”。

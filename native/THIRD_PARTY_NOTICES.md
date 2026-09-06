@@ -41,6 +41,20 @@ H3 native kernels and model components are derived from h3.c-fork.
 The source copy is modified for library configuration, resource discovery and
 native Apple media I/O. Its license follows:
 
+TurboCider also vendors the LoRA preparation implementations
+`tools/native/merge_h3_lora.py` and `tools/native/merge_ltx_refiner.py` from
+the corresponding `h3.c/tools/` sources. The vendored files are kept
+byte-identical to the audited source revisions below so that packaged
+TurboCider installations do not need a sibling `h3.c` checkout:
+
+* `merge_h3_lora.py` SHA-256
+  `91bbb83eff93f2d97b8f53f62bf711f34eeef0ee438bb3b1244d5bc33b677703`
+* `merge_ltx_refiner.py` SHA-256
+  `e473d53681ae89cae83fce5253a18b7239e66bd701c314308a5eb210e68f6051`
+
+These scripts are covered by the same MIT license and copyright notice as the
+derived H3 tooling below.
+
 MIT License
 
 Copyright (c) 2026 Salvatore Sanfilippo

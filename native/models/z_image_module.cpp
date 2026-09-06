@@ -53,7 +53,7 @@ ModelModule z_image_module() {
             d.height = 1024;
             d.default_audio = false;
             d.default_residency = "resident";
-            d.weight_validation_pending = true;
+            d.weight_validation_pending = false;
             d.supports_lora = true;
             d.runtime_lora = true;
             d.lora_mode = "in-memory-delta";
@@ -64,7 +64,7 @@ ModelModule z_image_module() {
             d.candidate_limitations = {
                 "text-to-image only",
                 "GPU+ANE partition remains fail-closed until parity and speedup are validated",
-                "full real-weight image parity remains pending"
+                "1024×1024 warm-performance matrix remains pending"
             };
             return d;
         }

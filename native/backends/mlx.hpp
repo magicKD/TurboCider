@@ -6,6 +6,7 @@
 #include <optional>
 #include <unordered_map>
 #include <regex>
+#include <functional>
 namespace tc {
 void configure_streams();
 namespace mx = mlx::core;
@@ -16,6 +17,8 @@ class Weights {
   public:
     void load(const std::filesystem::path &, const Event &, std::atomic<bool> &);
     void load_file(const std::filesystem::path &, const std::string &prefix = "");
+    void remap_keys(const std::function<std::string(const std::string &)> &);
+    void fuse_keys(const std::string &, const std::vector<std::string> &, int axis);
     const Tensor &at(const std::string &) const;
     bool has(const std::string &) const;
     void clear();

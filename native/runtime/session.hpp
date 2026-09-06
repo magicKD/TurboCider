@@ -27,6 +27,7 @@ struct RunResult {
     ExecutionPlan plan;
     int text_tokens = 0, valid_text_tokens = 0, total_tokens = 0, reference_tokens = 0,
         actual_steps = 0;
+    size_t lora_applied_projections = 0;
     Timings timings;
     uint64_t active_bytes = 0, peak_bytes = 0;
     std::optional<HybridMetrics> hybrid;

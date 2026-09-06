@@ -25,7 +25,8 @@ class LayoutTests(unittest.TestCase):
         package=(ROOT/'tools/native/package.sh').read_text()
         for name in ['h3_shaders.metal','ltx_shaders.metal',
                      'ltx-video-finalizer','ltx-video-vae-decode',
-                     'lora_runtime_cache.py','fastmetal_worker.py']:
+                     'lora_runtime_cache.py','merge_h3_lora.py',
+                     'merge_ltx_refiner.py','fastmetal_worker.py']:
             self.assertIn(name,package)
         self.assertIn('MLX_LICENSE_PATH',package)
         self.assertNotIn('mlx-0.32.0.dist-info',package)

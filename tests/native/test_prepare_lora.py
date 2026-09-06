@@ -10,18 +10,14 @@ ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools/native/prepare_lora.py"
 
 
-def fake_workspace(tmp_path: Path) -> tuple[Path, dict[str, str]]:
-    tools = tmp_path / "h3.c/tools"
-    tools.mkdir(parents=True)
-    for name in ("merge_h3_lora.py", "merge_ltx_refiner.py"):
-        (tools / name).write_text("# fixture\n")
+def local_environment() -> dict[str, str]:
     environment = os.environ.copy()
-    environment["TURBOCIDER_WORKSPACE"] = str(tmp_path)
-    return tools, environment
+    environment.pop("TURBOCIDER_WORKSPACE", None)
+    return environment
 
 
 def run_tool(tmp_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-    _, environment = fake_workspace(tmp_path)
+    environment = local_environment()
     return subprocess.run(
         [sys.executable, str(TOOL), *arguments],
         text=True,
@@ -52,7 +48,7 @@ def test_h3_dispatch_preserves_upstream_options(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     value = json.loads(result.stdout)
     assert value["model"] == "h3"
-    assert value["upstream"].endswith("h3.c/tools/merge_h3_lora.py")
+    assert value["upstream"] == str(ROOT / "tools/native/merge_h3_lora.py")
     assert value["command"][-9:] == [
         "--check-only",
         "--device",
@@ -80,7 +76,7 @@ def test_ltx_dispatch_uses_existing_refiner_merger(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     value = json.loads(result.stdout)
     assert value["model"] == "ltx"
-    assert value["upstream"].endswith("h3.c/tools/merge_ltx_refiner.py")
+    assert value["upstream"] == str(ROOT / "tools/native/merge_ltx_refiner.py")
     assert value["command"][-2:] == ["--device", "auto"]
 
 
@@ -127,8 +123,9 @@ out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
     adapter = tmp_path / "adapter.safetensors"
     adapter.write_bytes(b"adapter-v1")
     environment = os.environ.copy()
-    environment["TURBOCIDER_WORKSPACE"] = str(tmp_path / "workspace")
+    environment.pop("TURBOCIDER_WORKSPACE", None)
     environment["TURBOCIDER_PREPARE_PYTHON"] = sys.executable
+    environment["TURBOCIDER_LORA_TOOL_DIR"] = str(tools)
     return base, adapter, counter, environment
 
 

@@ -73,7 +73,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         r.model == "ltx-2.5-distilled" ?
             (r.loras.empty() ? @"checkpoint-validated-at-load" : @"runtime-cache-or-sidecar-verified-at-execution") :
         r.model == "z-image-turbo" ?
-            (r.loras.empty() ? @"shape-validated-at-load; image-parity-pending" : @"in-memory-lora; image-parity-pending") :
+            (r.loras.empty() ? @"comfy-oracle-validated; gpu_ane-pending" :
+                               @"in-memory-lora; comfy-oracle-validated") :
         @"pending";
     auto lora_fusion = r.loras.empty() ? @"none" :
         (r.model.starts_with("flux2-klein-") ? @"load_time_baked" :
@@ -201,7 +202,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"mlx_active_bytes" : @(result.active_bytes),
             @"hybrid" : hybrid
         };
-    return @{
+    NSMutableDictionary *value = [@{
         @"acceleration_selection" : @(result.selection.c_str()),
         @"schema_version" : @1,
         @"warmup" : @(result.warmup),
@@ -234,6 +235,9 @@ NSDictionary *to_dictionary(const RunResult &result) {
         },
         @"hybrid" : hybrid,
         @"validation" : @"candidate; consult recorded parity suite"
-    };
+    } mutableCopy];
+    if (!r.loras.empty() && result.lora_applied_projections)
+        value[@"lora_applied_projections"] = @(result.lora_applied_projections);
+    return value;
 }
 } // namespace tc
