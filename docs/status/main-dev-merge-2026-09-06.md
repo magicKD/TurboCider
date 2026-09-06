@@ -79,6 +79,8 @@ MLX peak           25.63 GB
 
 Z-Image 7680-channel GPU+ANE 候选的常驻 warm request wall 约 47.52 s，GPU warm 基线约 45.17 s；虽然输出 correlation 0.998571、cosine 0.999819，但当前没有加速。因此 App/API 自动策略已收紧为 GPU，只有显式 `gpu_ane + allow_approximation + manifest` 才会进入实验路径。
 
+后续 4096-channel Core ML 复核使用 session-wide shared output backing，避免每个 block 各自保留同形状 FP16 buffer。真实双请求均成功，Core ML 输出拷贝计数为 0，PNG byte-identical；首次 request wall 约 44.69 s，第二次 warm/cache-hit 约 37.51 s。该优化改善了 backing/VAE 内存压力，但 GPU+ANE 仍未达到 1.3×，所以没有放开自动选择。
+
 ## 仍然开放的风险
 
 - LTX GPU+ANE 当前速度和 latent parity 尚未过门禁，不能作为默认路径，也尚未证明包含完整生命周期时稳定快于 mac-ltx。

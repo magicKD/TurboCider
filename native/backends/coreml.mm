@@ -5,15 +5,16 @@
 namespace tc {
 class CoreMLBranch {
     MLModel *model_;
+    Tensor output_storage_;
     MLMultiArray *output_;
     MLPredictionOptions *options_;
-    Tensor output_storage_;
     int rows_, hidden_;
 
   public:
     double seconds = 0;
     uint64_t calls = 0, copied_bytes = 0;
-    CoreMLBranch(const std::filesystem::path &, int rows, int hidden);
+    CoreMLBranch(const std::filesystem::path &, int rows, int hidden,
+                 const Tensor &output_storage, MLMultiArray *output_backing);
     Tensor predict(const Tensor &packed_input, int actual_rows);
 };
 struct HybridSession::Impl {
@@ -21,9 +22,9 @@ struct HybridSession::Impl {
 };
 HybridSession::~HybridSession() = default;
 
-CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidden)
-    : output_storage_(mx::contiguous(mx::zeros({1, rows, hidden}, mx::float16))), rows_(rows),
-      hidden_(hidden) {
+CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidden,
+                           const Tensor &output_storage, MLMultiArray *output_backing)
+    : output_storage_(output_storage), output_(output_backing), rows_(rows), hidden_(hidden) {
     require(path.extension() == ".mlmodelc" && std::filesystem::is_directory(path),
             "expected compiled Core ML artifact: " + path.string());
     auto config = [MLModelConfiguration new];
@@ -43,19 +44,7 @@ CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidd
                 input.dataType == MLMultiArrayDataTypeFloat16 &&
                 output.dataType == MLMultiArrayDataTypeFloat16,
             "Core ML feature ABI mismatch");
-    mx::eval(output_storage_);
-    require(output_storage_.data_size() == size_t(rows) * size_t(hidden) &&
-                output_storage_.flags().row_contiguous,
-            "Core ML output backing must be fully materialized and contiguous");
-    output_ =
-        [[MLMultiArray alloc] initWithDataPointer:output_storage_.data<mx::float16_t>()
-                                            shape:shape
-                                         dataType:MLMultiArrayDataTypeFloat16
-                                          strides:@[ @(rows * hidden), @1, @(rows * hidden), @(hidden) ]
-                                      deallocator:^(void *) {
-                                      }
-                                            error:&error];
-    require(output_ != nil, "Core ML backing allocation failed");
+    require(output_ != nil, "Core ML shared output backing missing");
     options_ = [MLPredictionOptions new];
     options_.outputBackings = @{@"y" : output_};
 }
@@ -166,6 +155,25 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     block_count = int([d[@"artifacts"] count]);
     require(block_count > 0 && block_count <= 64,
             "hybrid manifest has an invalid block count");
+    // Blocks execute serially and z_block materializes the prior consumer
+    // before the next prediction. One session-wide backing therefore avoids
+    // retaining block_count identical rows*hidden FP16 buffers without
+    // changing the prediction ABI or exposing a writable tensor to callers.
+    auto output_storage = mx::contiguous(mx::zeros({1, rows, hidden}, mx::float16));
+    mx::eval(output_storage);
+    require(output_storage.data_size() == size_t(rows) * size_t(hidden) &&
+                output_storage.flags().row_contiguous,
+            "Core ML output backing must be fully materialized and contiguous");
+    NSError *output_error = nil;
+    auto output =
+        [[MLMultiArray alloc] initWithDataPointer:output_storage.data<mx::float16_t>()
+                                            shape:@[ @1, @(hidden), @1, @(rows) ]
+                                         dataType:MLMultiArrayDataTypeFloat16
+                                          strides:@[ @(rows * hidden), @1, @(rows * hidden), @(hidden) ]
+                                      deallocator:^(void *) {
+                                      }
+                                            error:&output_error];
+    require(output != nil, "Core ML shared backing allocation failed");
     for (int i = 0; i < block_count; ++i) {
         tc::checkpoint(cancelled);
         event("coreml_load", i, block_count);
@@ -176,7 +184,8 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
         require(std::filesystem::weakly_canonical(path).string().starts_with(
                     std::filesystem::weakly_canonical(file.parent_path()).string() + "/"),
                 "artifact path escapes manifest directory");
-        impl_->branches.push_back(std::make_unique<CoreMLBranch>(path, rows, hidden));
+        impl_->branches.push_back(
+            std::make_unique<CoreMLBranch>(path, rows, hidden, output_storage, output));
     }
     if (warmups) {
         auto input = mx::zeros({1, rows, hidden}, mx::float16);

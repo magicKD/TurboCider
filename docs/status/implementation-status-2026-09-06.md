@@ -65,6 +65,8 @@ docs/design/                长期设计、验收契约和历史架构
 
 LTX 当前 public CLI 的最新重建二进制实测为：完整请求 86.284 s，conditioning cache 命中；pre-finalizer 81.918 s，clean-process Video VAE 3.410 s。此前相同 cache-hit 口径为 81.37 s。mac-ltx 的 59.483 s 是已准备 conditioning、已加载模型的 decoded-pixel 热路径，不包含同样的 cold/model setup，因此不能直接当作完整请求对比。扣除 TurboCider 的约 22.75 s model setup 后，热链路约 58.61 s，基本持平并略快，但波动不足以宣称稳定更快。
 
+本轮 Z-Image Core ML backing 复核将 32 个串行 block 的 FP16 output backing 收敛为一个 session-wide buffer；真实 M4 Max 4096-channel、1024×1024、9-step 双请求完成，`output_copy_bytes_session_total=0`，两次 PNG SHA-256 相同。首次 request wall 约 44.69 s，第二次 cache-hit/warm request wall 约 37.51 s，第二次 denoise 约 36.59 s、VAE 约 0.85 s；此前同配置曾观察到约 4.5 s 的 VAE 退化。相对约 45.19 s 的 warm GPU 请求和约 44.28 s 的 GPU denoise，当前单组观察约为 1.20× 端到端、1.21× denoise，仍未达到目标 1.3×；因此 `auto` 保持 GPU，GPU+ANE 仍是显式实验路径。
+
 LTX conditioning cache 已落盘并可跨 service 重启复用：cold 106.925 s，cache-hit 81.649 s，节省 23.64%；97 帧解码后的 framemd5 一致。resident candidate 曾出现 115–121 s，原因是保留 denoiser residency 使 VAE 从约 2.8–3.0 s 退化到约 14–15 s，因此默认仍使用 `component_staged + exec finalizer`。
 
 LTX GPU+ANE 当前只作为候选实验路径：同一动态 Gemma 请求约 125.90 s，dense 约 119.08 s；最终 video latent cosine 约 0.945，RGB cosine 约 0.978。它尚未通过 exact parity 或端到端性能门禁，不能默认启用。

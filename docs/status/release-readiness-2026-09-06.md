@@ -92,7 +92,7 @@ LTX 需要按 fresh、conditioning-cache hit、loaded-model hot path 和 residen
 3. **LoRA 磁盘风险**：H3/LTX 首次使用会生成临时 merged artifact，虽然可 prune，但还不是纯内存 merge。
 4. **环境复现风险**：统一内存调度和 Core ML on-device compile 会造成明显 wall 波动；当前只有 M4 Max 64 GB 的实机证据。
 5. **许可证发布风险**：FastMetal 依赖 FastVideo/TAEHV 的第三方许可证需要在最终发行包中逐项核对。
-6. **Z-Image 验收风险**：base/官方独立 LoRA 的共享噪声最终输出 parity 已有实机证据；逐 step oracle、多轮 warm 统计和 GPU+ANE 仍未形成可发布门禁。
+6. **Z-Image 验收风险**：base/官方独立 LoRA 的共享噪声最终输出 parity 已有实机证据；4096-channel shared output backing 已通过真实双请求和零拷贝验证，但逐 step oracle、多轮 warm 统计和 GPU+ANE 1.3× 仍未形成可发布门禁。
 
 ## 推荐的下一版退出条件
 
