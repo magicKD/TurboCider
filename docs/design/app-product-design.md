@@ -34,7 +34,7 @@ TurboCider 是 Apple Silicon 上的本地多模态创作工作室。第一版本
 | `Sources/TurboCiderKit/Models.swift` | 有任务阶段、总体进度、elapsed/ETA；无标准步速、资源采样字段 | 不能在客户端把百分比变化包装成真实推理速度 |
 | `src/turbocider/jobs.py`、`service.py` | 串行重任务、持久化任务、事件快照；SSE 无事件序号重放契约 | 可接任务列表，但重放、重排、后台生命周期需新增契约 |
 | `native/swift/App.swift`、`JobStore.swift` | 原生 FLUX 界面、历史记录、选择模型目录、单任务、阶段计数 | 是新 App 可落地的纵切；不是完整三模型运行平台 |
-| `native/models/*_module.mm`、`flux.mm`、`native/README.md` | 本轮源码已加入 FLUX transform/edit 与 H3 executor（权重验收 pending）；LTX executor=false；README 部分描述滞后 | 按 operation 区分实现与验收，详见第二轮代码核对 |
+| `native/models/*_module.mm`、`flux.mm`、`native/README.md` | FLUX transform/edit、H3、FastMetal 与 LTX video-only 已有 native executor；LTX I2V/音频仍 capability-gated | 按 operation 区分实现与验收，详见第二轮代码核对 |
 | `model-packs/*.json`、根 README | 兼容控制平面已有 FLUX 编辑、LTX 文/图生视频、H3 多模态、FastMetal | 保留兼容能力；不要将它们自动标记为原生已验收 |
 
 与原架构文档的关系：本设计是 [统一框架](unified-multimodal-framework.md) 与 [运行时详设](runtime-modules-and-performance.md) 中 App 部分的产品细化，不重定义推理数学、权重调度或 ANE 策略。
@@ -109,7 +109,7 @@ TurboCider 是 Apple Silicon 上的本地多模态创作工作室。第一版本
 - 高级：允许修改的步数、精度/近似许可、引擎专属参数。固定 schedule 为说明值，不给无效滑块。
 - 执行摘要：“GPU · 模型将按需加载”；已选混合路线则显示“混合加速 · 此规格已验证”或“实验”。点击进入详细计划。
 
-多个视频模型帧数存在离散合法集合。时长滑块/输入只落在已知合法规格；规格必须来自当前运行时：兼容 LTX 推荐 704×480，而本轮原生 descriptor 为 704×448 且 executor 尚不可执行，不混用两者预设。若推荐 97 帧/24 fps，显示“约 4.04 秒 · 97 帧 · 24 fps”，不能把 704×480 标成 16:9，也不能隐式提交任意 4 秒对应的 96 帧。最终播放器时长取媒体实际元数据。
+多个视频模型帧数存在离散合法集合。时长滑块/输入只落在已知合法规格；规格必须来自当前运行时：LTX 原生 video-only descriptor 为 704×448，已可执行；兼容控制平面仍可能显示 704×480，不混用两者预设。若推荐 97 帧/24 fps，显示“约 4.04 秒 · 97 帧 · 24 fps”，不能把 704×480 标成 16:9，也不能隐式提交任意 4 秒对应的 96 帧。最终播放器时长取媒体实际元数据。
 
 ## 5. 首发模型与操作矩阵
 

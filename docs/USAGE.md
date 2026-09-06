@@ -1,6 +1,6 @@
 # TurboCider Native
 
-C++/Objective-C++ 推理库、SwiftUI App、C/Swift SDK、CLI 与 Unix socket 服务。FLUX.2-klein-4B 支持文生图、图生图、1–8 张参考图编辑；H3/LTX 为不可执行的接入契约。运行无 Python 子进程，无模型自动下载。
+C++/Objective-C++ 推理库、SwiftUI App、C/Swift SDK、CLI 与 Unix socket 服务。FLUX.2 Klein 4B/9B 支持文生图、图生图、1–8 张参考图编辑；MiniMax H3 有 manifest-gated native executor；FastMetal 1.3B QAD 有显式配置的持久 MLX/TAEHV worker；LTX 2.5 的 video-only 文生视频已开放 native executor，I2V 与音频仍按能力门禁。除 FastMetal 的显式 Python worker 外，FLUX/H3/LTX 原生推理不依赖 Python 模型运行时，也不会自动下载模型。
 
 ## 构建与发行目录
 
@@ -10,7 +10,7 @@ tools/native/build.sh
 tools/native/package.sh
 ```
 
-固定 MLX C++ 0.32.0，完整 Xcode，Apple Silicon arm64。通过 `DEVELOPER_DIR`/`SDKROOT` 选已有编译器。部署目标 macOS 15.0；当前真实测试系统 macOS 26.6，其他系统尚待认证。构建不下载依赖。输出 `dist/TurboCider.app` 和 `dist/cli/`，包含 MLX dylib/metallib；本机 ad-hoc 签名不等于 Developer ID 公证。模型保持在用户选择的原目录。
+需要兼容的 MLX C++ 0.32.x、完整 Xcode 和 Apple Silicon arm64。历史 FLUX parity/performance 使用 0.32.0，当前源码也用 0.32.2 完成构建；正式性能比较必须记录具体版本。通过 `DEVELOPER_DIR`/`SDKROOT` 选已有编译器。构建脚本会读取所绑定 `libmlx.dylib` 的 deployment target，同时用于 C/C++/Objective-C++、Swift 和发行包的最低系统版本，避免生成“主程序比依赖声明支持更旧系统”的不一致产物；可用 `TURBOCIDER_DEPLOYMENT_TARGET` 显式覆盖编译目标。当前本机 0.32.2 wheel 要求 macOS 26.2。构建不下载依赖。输出 `dist/TurboCider.app` 和 `dist/cli/`，包含 MLX dylib/metallib、H3/LTX shader 和 LTX clean-exec helper；本机 ad-hoc 签名不等于 Developer ID 公证。模型保持在用户选择的原目录。
 
 ## 请求与 CLI
 
@@ -21,6 +21,27 @@ build/native/turbocider plan request.json
 build/native/turbocider generate /path/to/FLUX.2-klein-4B request.json
 build/native/turbocider batch /path/to/FLUX.2-klein-4B first.json second.json
 ```
+
+LoRA preparation uses the existing audited `h3.c` merge implementations rather
+than duplicating safetensors/ConvRot arithmetic inside the native inference
+library. The resulting checkpoint and provenance manifest are then consumed by
+the native H3/LTX sessions:
+
+```sh
+build/native/turbocider prepare-lora h3 \
+  /path/to/FL2VA/transformer /path/to/h3-lora.safetensors \
+  /path/to/merged-transformer --device mps
+build/native/turbocider prepare-lora ltx \
+  /path/to/ltx-2.5-22b-dev-transformer-comfy-int8-convrot.safetensors \
+  /path/to/ltx-refiner-lora.safetensors \
+  /path/to/ltx-2.5-22b-dev-refiner-lora-0.8-comfy-int8-convrot.safetensors \
+  --device mps
+```
+
+Use `--check-only` first for a shape/identity-only pass. Preparation may use
+Python and MPS; native generation does not. H3 and LTX inference remain
+fail-closed until the generated manifest, base, adapter, and merged output
+hashes all match the request.
 
 推荐 schema 2（schema 1 仍兼容）：
 
@@ -43,6 +64,28 @@ build/native/turbocider batch /path/to/FLUX.2-klein-4B first.json second.json
 文生图使用 `image.generate`，仅保留 prompt 输入。图生图使用 `image.transform`，一张图片角色 `init_image`，可附 `strength: 0.5`。strength 表示保留原图程度；正值从 `max(1, floor(steps*strength))` 的采样阶段开始，1 不执行 DiT，0 执行全部步骤。编辑参考图的 strength 不用于加噪控制；顺序影响 reference 位置编码。
 
 stdout 输出最终结果 JSON，stderr 输出事件 JSON。Ctrl-C 在安全边界取消，返回码 2；导出开始前可取消，文件原子提交后返回成功。使用唯一输出路径以保留历史。`batch` 复用同一会话，要求模型一致。动态文本最大 512 tokens；尺寸 64–2048 且 16 倍数，实际受内存预算限制；种子 0–2147483647，步数 1–50。
+
+## FastMetal 1.3B QAD
+
+FastMetal 是固定形状的 3-step、16 fps、`4n+1` 帧视频路径。它要求一个显式 profile（`TURBOCIDER_FASTMETAL_CONFIG`，或模型目录下的 `turbocider-fastmetal.json`），profile 绑定 Python、FastVideo engine、上游 entrypoint、TurboCider worker，以及可选的 Core ML ANE bridge；示例见 [`profiles/fastmetal.example.json`](../profiles/fastmetal.example.json)。没有 profile 或依赖不完整时，Session 会 fail closed，不会退回伪造媒体。
+
+GPU+ANE 只接受固定的 30-block manifest：`rows=32760`、`hidden=1536`、`intermediate=8960`、ANE/GPU split=`4096/4864`，并校验 checkpoint 与 packed `mlx_dit.json` 身份。worker 在 Session 内持久复用 DiT、TAEHV decoder 与 prompt cache；ANE bindings 在每次 denoise 前按需激活、在 decode 前释放，避免 Core ML/compiled shards 占用统一内存拖慢 TAEHV。取消会终止并重建 worker，视频通过临时文件原子提交。结果中会记录 `compile_enabled`、`denoise_step_s`、decoder 分段耗时、worker RSS 和 ANE 调用指标，便于区分模型计算与框架开销。
+
+FastMetal 接受至多一个 `transformer` LoRA，但不会把任意 adapter 动态注入 MLX。请求中的 LoRA 必须有同名 sidecar（`ADAPTER.safetensors.manifest.json`），或同目录的 `fastmetal-lora.manifest.json`；manifest schema 为 `turbocider-fastmetal-premerged-lora-v1`，绑定 `FastVideo/FastMetal-1.3B-QAD` revision `2dac0154b217adabf8895d6cde7d6d93e68b7bec`、固定 base `mlx_dit.safetensors/json`、LoRA 文件/role/strength、merged checkpoint 两个文件、完整 mapping、固定 shape 与 MLX INT8 config。所有 artifact 都按大小和 SHA-256 校验，worker 通过独立的 `--mlx-checkpoint` 加载 merged DiT，model root 仍只服务 tokenizer、text encoder 和 VAE。可先用只读 ABI `tc_fastmetal_lora_preflight_json` 检查安装；生成结果会报告 checkpoint/LoRA SHA、strength 和 `lora_fusion=premerged_manifest_verified`。当前 LoRA 只开放 GPU；`gpu_ane` 会 fail closed，直到安装与 merged checkpoint SHA 对应的完整 ANE artifacts。
+
+FastMetal base checkpoint 的真实 GPU/GPU+ANE latent parity 已与对应 direct baseline 逐元素一致。当前同热状态成对复测中，GPU worker 为 76.90 秒、direct 为 78.12 秒；GPU+ANE 两个 direct 样本中位数约 74.78 秒，三个优化后 TurboCider 完整 callback 样本中位数同为约 74.78 秒，暖请求为 74.29 秒，满足 5% 回归门槛。历史 72.93/69.97 秒绝对记录在当前热状态未复现，因此仍需多机器、冷暖交错矩阵，不能宣称普遍更快。FastMetal LoRA 尚无真实 merged checkpoint，因此只有 resolver/worker contract 验证，不能声称 LoRA 质量、latent parity 或性能已验证。LTX video-only 已有公共 executor；I2V 数值 parity、音频 Session parity、LoRA merged checkpoint 和完整 GPU+ANE 性能矩阵仍未完成。
+
+## LTX 2.5（公共 video-only executor）
+
+LTX 2.5 的 `video.generate`、`audio=false` 计划返回 `executable=true`，并默认选择 `component_staged`。单次 CLI 和 service worker 都直接复用 ltx-mac 的生命周期：Transformer 完成后 `exec` 到已有 C++/MLX Video VAE finalizer，使 decoder 不继承 denoiser 的 Metal/MPSGraph allocator 状态。CLI 默认把 conditioning cache 放在用户 Caches 目录；service 放在任务状态目录。两者均按 checkpoint/Gemma/tokenizer/prompt identity 绑定。`video.image` 与 `audio=true` 计划仍返回 `executable=false`，因为 I2V 数值 parity、音频资产 provenance 和完整音频 Session parity 尚未完成。
+
+M4 Max 64 GB、704×448、97 帧、24 fps、原始 8+3 schedule 的公共 CLI 实测：首次动态 Gemma 为 102.83 秒；相同 prompt 再次执行命中 connected-conditioning cache 为 81.37 秒。cache-hit 中 checkpoint/model 建立约 22.75 秒，扣除后从已加载模型到最终 MP4 的链路约 58.61 秒；ltx-mac 的 matched decoded-pixel 参考为 59.483 秒，两者处于同一性能水平。干净 exec finalizer 的 Video VAE 为 2.84–2.97 秒；旧 CLI 子进程方案为 16.35 秒。
+
+模型目录可通过 C ABI 的只读 `tc_ltx_audio_preflight_json(model_path, ...)` 检查音频资产。它只接受固定候选文件名，并要求旁置 `turbocider-ltx-audio-assets-v1` manifest，校验 Lightricks/LTX-2.5 revision、artifact 大小/SHA-256、Audio VAE/base vocoder/BWE/mel-STFT 组件、16/48 kHz 和双声道声明。返回 `assets_verified` 不等于音频 executor ready；即便 manifest 完整，音频 operation 仍保持关闭，直到端到端 Session parity 和所有 artifact provenance 门禁完成。当前本机 `models/LTX-2.5/vae/ltx-2.5-audio-vae-bf16.safetensors` 是共享目录的符号链接，能看到完整 safetensors 组件，但尚无 TurboCider provenance manifest，因此 preflight 状态为 `unverified`。
+
+Audio VAE 的 native runtime 已加入 `native/models/ltx_runtime/ltx_mlx_audio_vae.cpp`，实现 latent→mel 的 MLX/Metal 权重加载、因果 Conv2d、PixelNorm、残差块和时间/频率上采样；工具为 `build/native/ltx-audio-vae-decode CHECKPOINT INPUT_BF16 BATCH TOKENS OUTPUT_BF16`。它需要可见 Metal device，输出 `[B,2,4*tokens-3,64]` BF16 mel。已在可见 Metal 环境对 `[1,101,128]` 真实 latent 做逐阶段 Python oracle 对比：12 个阶段全部 `max_abs=0`、逐元素 100% 一致。
+
+16 kHz base vocoder 与 48 kHz BWE 已作为独立 runtime 加入，分别使用 667 与 560 个 resident FP32 tensors；BWE 工具为 `build/native/ltx-bwe-decode CHECKPOINT WAVE16_F32 BATCH SAMPLES OUTPUT48_F32`。真实 Metal 对比中 STFT/mel/skip 逐元素一致，生成器 stage 最大误差约 `1.21e-5`，residual/最终 48 kHz waveform 最大误差约 `5.6e-8`。`native/media/audio.mm` 负责有限值/clip 检查、原子 WAV 写出、视频时长同步和 AVFoundation AAC mux；独立媒体测试验证 97 帧@24fps 的 H.264/AAC 轨道时长均为 `4.041667` 秒。
 
 ## 设备配置与编译缓存
 
@@ -89,6 +132,23 @@ build/native/turbocider self-test
 build/native/turbocider-lifecycle-test /path/to/model /tmp/new-lifecycle-directory
 python3 tests/native/test_service.py --model /path/to/model --output /tmp/new-service-directory
 ```
+
+H3 的性能回归使用当前 `h3.c` 与 TurboCider native Session 做同模型、同请求、
+fresh-process 的顺序 AB/BA 对照。精确模式要求输出 MP4 字节一致，并默认拒绝超过 5% 的
+TurboCider 中位数回归：
+
+```sh
+Python/bin/python tools/native/benchmark_h3.py \
+  --h3-bin ../h3.c/h3 \
+  --turbocider-bin build/native/turbocider \
+  --model ../h3.c/models/MiniMax-H3-LightX2V-Turbo \
+  --output-dir /private/tmp/turbocider-h3-comparison
+```
+
+如需检查请求级 H3 LoRA provenance，再传 `--lora PATH --lora-strength 0.0625`。
+direct 与 TurboCider 都读取已经预合并的同一 Transformer；TurboCider 额外验证请求中的
+adapter 大小、SHA-256 和 strength。近似 kernel 测试必须同时显式传
+`--allow-approximation --allow-output-difference`，不能被记录为 exact parity。
 
 真实推理需要 Metal 权限。生命周期目录应为空。oracle 工具需要已有 mflux/MLX/transformers 的开发 Python 环境并强制离线：
 

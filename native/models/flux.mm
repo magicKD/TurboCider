@@ -1,17 +1,41 @@
 #include "runtime.hpp"
 #include "../backends/coreml.hpp"
+#include <CommonCrypto/CommonDigest.h>
+#include <array>
+#include <bit>
 #include <cmath>
+#include <fstream>
 namespace tc {
-Flux::Flux(const std::filesystem::path&root):root_(root),tokenizer_(root/"tokenizer"){
+namespace {
+static std::string sha256_file(const std::filesystem::path& path) {
+ std::ifstream stream(path,std::ios::binary);if(!stream.good())return {};
+ CC_SHA256_CTX context;if(CC_SHA256_Init(&context)!=1)return {};
+ std::array<char,1<<20> buffer{};
+ while(stream.good()){
+  stream.read(buffer.data(),static_cast<std::streamsize>(buffer.size()));
+  auto count=stream.gcount();
+  if(count>0&&CC_SHA256_Update(&context,buffer.data(),static_cast<CC_LONG>(count))!=1)return {};
+ }
+ if(!stream.eof())return {};
+ unsigned char digest[CC_SHA256_DIGEST_LENGTH];if(CC_SHA256_Final(digest,&context)!=1)return {};
+ static constexpr char hex[]="0123456789abcdef";std::string result(CC_SHA256_DIGEST_LENGTH*2,'0');
+ for(size_t i=0;i<CC_SHA256_DIGEST_LENGTH;++i){result[i*2]=hex[digest[i]>>4];result[i*2+1]=hex[digest[i]&15];}
+ return result;
+}
+}
+Flux::Flux(const std::filesystem::path&root,std::string model_id):root_(root),model_id_(std::move(model_id)),tokenizer_(root/"tokenizer"){
  auto t=read_json(root/"transformer/config.json"),q=read_json(root/"text_encoder/config.json"),v=read_json(root/"vae/config.json");
- require([t[@"num_attention_heads"] intValue]==24&&[t[@"attention_head_dim"] intValue]==128&&[t[@"num_layers"] intValue]==5&&[t[@"num_single_layers"] intValue]==20&&[t[@"joint_attention_dim"] intValue]==7680&&[t[@"in_channels"] intValue]==128&&![t[@"guidance_embeds"] boolValue],"only official FLUX.2 Klein 4B configuration supported");
- require([q[@"hidden_size"] intValue]==2560&&[q[@"num_hidden_layers"] intValue]==36&&[q[@"num_attention_heads"] intValue]==32&&[q[@"num_key_value_heads"] intValue]==8,"unsupported Qwen3 configuration");
+ heads_=[t[@"num_attention_heads"] intValue];hidden_=heads_*[t[@"attention_head_dim"] intValue];dual_layers_=[t[@"num_layers"] intValue];single_layers_=[t[@"num_single_layers"] intValue];
+ require([t[@"attention_head_dim"] intValue]==128&&[t[@"in_channels"] intValue]==128&&![t[@"guidance_embeds"] boolValue],"unsupported FLUX.2 configuration");
+ require((model_id_=="flux2-klein-4b"&&heads_==24&&dual_layers_==5&&single_layers_==20)||(model_id_=="flux2-klein-9b"&&heads_==32&&dual_layers_==8&&single_layers_==24),"FLUX config does not match selected module");
+ text_hidden_=[q[@"hidden_size"] intValue];text_heads_=[q[@"num_attention_heads"] intValue];text_kv_heads_=[q[@"num_key_value_heads"] intValue];text_layers_=[q[@"num_hidden_layers"] intValue];
+ require(text_hidden_>0&&text_heads_>0&&text_kv_heads_>0&&text_layers_==36&&[t[@"joint_attention_dim"] intValue]==text_hidden_*3,"unsupported Qwen3 configuration");
  require([v[@"latent_channels"] intValue]==32,"unsupported Flux VAE");
 }
 Flux::~Flux()=default;
 NSDictionary *Flux::generate(const Request&r,const Event&event,std::atomic<bool>&cancelled){
  auto begin=Clock::now();auto plan=make_plan(r);
- require(r.model=="flux2-klein-4b","model executor unavailable; see static acceptance plan");
+ require(r.model==model_id_,"model executor unavailable; see static acceptance plan");
  require(!r.prompt.empty()&&!r.output.empty(),"prompt and output are required");
  require(std::filesystem::path(r.output).extension()==".png","native image output must be .png");
  auto physical=[NSProcessInfo processInfo].physicalMemory;
@@ -19,6 +43,40 @@ NSDictionary *Flux::generate(const Request&r,const Event&event,std::atomic<bool>
  require(!r.memory_budget_bytes||r.memory_budget_bytes>=[plan[@"memory_estimate_bytes"] unsignedLongLongValue],"profile memory budget is below the BF16 plan estimate");
  mx::reset_peak_memory();mx::set_cache_limit(r.allocator_cache_bytes);
  auto tokens=tokenizer_.prompt(r.prompt,r.dynamic_text);
+ auto identify_lora=[&](const LoRAAsset& asset,LoRAAsset& normalized){
+  auto requested=std::filesystem::path(asset.path);
+  require(std::filesystem::is_regular_file(requested),"LoRA file missing: "+asset.path);
+  std::error_code error;
+  auto canonical=std::filesystem::canonical(requested,error);
+  require(!error,"cannot canonicalize LoRA path: "+asset.path);
+  normalized=asset;normalized.path=canonical.string();
+  auto bytes=std::filesystem::file_size(canonical,error);
+  require(!error,"cannot inspect LoRA size: "+canonical.string());
+  auto mtime=std::filesystem::last_write_time(canonical,error);
+  require(!error,"cannot inspect LoRA timestamp: "+canonical.string());
+  auto key=canonical.string();
+  auto found=lora_hash_cache_.find(key);
+  if(found==lora_hash_cache_.end()||found->second.bytes!=bytes||found->second.mtime!=mtime){
+   auto digest=sha256_file(canonical);
+   require(!digest.empty(),"cannot hash LoRA file: "+canonical.string());
+   std::error_code verify_error;
+   auto final_bytes=std::filesystem::file_size(canonical,verify_error);
+   require(!verify_error&&final_bytes==bytes,"LoRA changed while it was being hashed: "+canonical.string());
+   auto final_mtime=std::filesystem::last_write_time(canonical,verify_error);
+   require(!verify_error&&final_mtime==mtime,"LoRA changed while it was being hashed: "+canonical.string());
+   lora_hash_cache_[key]=LoRAFileHash{bytes,mtime,std::move(digest)};
+   found=lora_hash_cache_.find(key);
+  }
+  const auto& cached=found->second;
+  return std::to_string(asset.role.size())+":"+asset.role+":"+
+   std::to_string(key.size())+":"+key+":"+std::to_string(bytes)+":"+
+   std::to_string(static_cast<long long>(mtime.time_since_epoch().count()))+":"+
+   cached.sha256+":"+std::to_string(std::bit_cast<uint32_t>(asset.strength))+";";
+ };
+ std::string lora_identity;std::vector<LoRAAsset> normalized_loras;
+ normalized_loras.reserve(r.loras.size());
+ for(const auto& l:r.loras){normalized_loras.emplace_back();lora_identity+=identify_lora(l,normalized_loras.back());}
+ if(lora_identity!=cached_lora_identity_){cached_lora_identity_=lora_identity;cached_conditioning_.reset();transformer_.clear();vae_.clear();active_loras_=std::move(normalized_loras);mx::clear_cache();}
  if(r.execution!="gpu_ane")hybrid_.reset();
  auto dump=[&](const std::string&name,const Tensor&a){if(!r.dump.empty()){std::filesystem::create_directories(r.dump);mx::save_safetensors((std::filesystem::path(r.dump)/(name+".safetensors")).string(),{{"tensor",a}});}};
  bool prompt_hit=cached_conditioning_.has_value()&&cached_prompt_==r.prompt&&cached_dynamic_==r.dynamic_text;
@@ -55,7 +113,8 @@ NSDictionary *Flux::generate(const Request&r,const Event&event,std::atomic<bool>
  if(hybrid_)require(actual_tokens<=hybrid_->rows,"cached hybrid bucket too small");
  double hybrid_s=std::chrono::duration<double>(Clock::now()-hybrid_start).count();
  auto text=*cached_conditioning_;dump("conditioning",text);
- checkpoint(cancelled);transformer_.load(root_/"transformer",event,cancelled);
+ checkpoint(cancelled);bool transformer_cold=transformer_.bytes()==0;transformer_.load(root_/"transformer",event,cancelled);
+ if(transformer_cold&&!active_loras_.empty())transformer_.apply_loras(active_loras_,"transformer",event,cancelled);
  auto z=mx::astype(mx::random::normal({1,128,r.height/16,r.width/16},mx::float32,0,1,mx::random::key(r.seed)),mx::bfloat16);
  z=mx::transpose(mx::reshape(z,{1,128,(r.height/16)*(r.width/16)}),{0,2,1});mx::eval(z);dump("initial_latent",z);
  auto sigmas=flux_gpu_sigmas(z.shape(1),r.steps);

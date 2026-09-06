@@ -17,15 +17,15 @@ void resolve_profile(Request& r) {
     require(profile_number(d[@"schema_version"])&&[d[@"schema_version"] doubleValue]==1,"profile schema must be 1");
     require(d[@"enabled"]&&CFGetTypeID((__bridge CFTypeRef)d[@"enabled"])==CFBooleanGetTypeID(),"profile enabled must be boolean");
     if(![d[@"enabled"] boolValue]){require(r.execution!="gpu_ane","hybrid profile is disabled");return;}
-    auto match=d[@"match"];require([match isKindOfClass:NSDictionary.class],"profile requires hardware match");
+    NSDictionary *match=d[@"match"];require([match isKindOfClass:NSDictionary.class],"profile requires hardware match");
     profile_keys(match,@[@"gpu_name",@"memory_bytes"]);
     require([match[@"gpu_name"] isKindOfClass:NSString.class]&&profile_number(match[@"memory_bytes"]),"profile hardware identity has invalid types");
     id<MTLDevice> gpu=MTLCreateSystemDefaultDevice();
     require(gpu&&[match[@"gpu_name"] isEqual:gpu.name],"device profile GPU does not match this machine");
     uint64_t physical=NSProcessInfo.processInfo.physicalMemory;
     require([match[@"memory_bytes"] unsignedLongLongValue]==physical,"device profile memory does not match this machine");
-    auto models=d[@"models"];require([models isKindOfClass:NSDictionary.class],"profile models must be object");
-    auto model=models[@(r.model.c_str())];require([model isKindOfClass:NSDictionary.class],"profile does not contain requested model");
+    NSDictionary *models=d[@"models"];require([models isKindOfClass:NSDictionary.class],"profile models must be object");
+    NSDictionary *model=models[@(r.model.c_str())];require([model isKindOfClass:NSDictionary.class],"profile does not contain requested model");
     profile_keys(model,@[@"policy",@"residency",@"allow_approximation",@"ane_manifest",@"memory_budget_bytes",@"allocator_cache_bytes",@"warmup_iterations"]);
     r.execution=string_value(model,@"policy","gpu");r.residency=string_value(model,@"residency",r.residency);
     if(model[@"allow_approximation"]){require(CFGetTypeID((__bridge CFTypeRef)model[@"allow_approximation"])==CFBooleanGetTypeID(),"profile approximation must be boolean");r.allow_approximation=[model[@"allow_approximation"] boolValue];}

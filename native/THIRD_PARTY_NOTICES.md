@@ -25,6 +25,15 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+
+FastMetal's optional worker imports FastVideo and its TAEHV decoder from an
+external installation selected by the user profile. TurboCider does not copy
+those Python sources or model weights into this repository. A distributable
+FastMetal package must include the corresponding FastVideo/TAEHV Apache-2.0
+and third-party NOTICE files from the exact installation it bundles; the
+repository's `profiles/fastmetal.example.json` is intentionally only a
+portable configuration example.
+
 MLX is Copyright Apple Inc., MIT-licensed. Its unmodified native libraries
 are build dependencies; include their original license when packaging them.
 

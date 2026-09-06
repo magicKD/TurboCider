@@ -1,10 +1,12 @@
 #include "runtime.hpp"
 namespace tc {
-ModelModule flux_module();
+ModelModule flux4_module();
+ModelModule flux9_module();
+ModelModule fastmetal_module();
 ModelModule h3_module();
 ModelModule ltx_module();
 static const std::vector<ModelModule>& modules() {
-    static const std::vector<ModelModule> all = {flux_module(), h3_module(), ltx_module()};
+    static const std::vector<ModelModule> all = {flux4_module(), flux9_module(), fastmetal_module(), h3_module(), ltx_module()};
     return all;
 }
 const ModelModule& module_for(const std::string& id) {

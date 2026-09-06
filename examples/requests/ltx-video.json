@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "model": "ltx-2.5-distilled",
+  "operation": "video.generate",
+  "inputs": [
+    {
+      "kind": "text",
+      "role": "prompt",
+      "text": "A cinematic red fox running through a snowy forest"
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "video",
+      "path": "/tmp/turbocider-ltx-video.mp4",
+      "width": 704,
+      "height": 448,
+      "frames": 97,
+      "fps": 24,
+      "audio": false
+    }
+  ],
+  "sampling": {
+    "seed": 42,
+    "steps": 11
+  },
+  "execution": {
+    "policy": "gpu",
+    "residency": "component_staged"
+  }
+}

@@ -29,6 +29,18 @@ void tc_string_free(char *);
 int tc_compile_coreml_json(const char *source, const char *cache, char **result, char **error);
 int tc_native_self_test(char **report_json, char **error);
 int tc_tokenize_json(const char *model_path, const char *prompt, char **tokens, char **error);
+int tc_ltx_gemma_tokenize_json(const char *tokenizer_json, const char *prompt,
+                               uint32_t max_length, char **tokens, char **error);
+int tc_ltx_gemma_inspect_json(const char *checkpoint, char **result, char **error);
+int tc_ltx_lora_preflight_json(const char *model_path, const char *lora_path,
+                               float strength, char **result, char **error);
+int tc_fastmetal_lora_preflight_json(const char *model_path, const char *lora_path,
+                                     float strength, char **result, char **error);
+/* Read-only LTX Audio VAE/vocoder provenance check.  A successful response
+ * does not enable native audio execution; it reports whether the required
+ * artifact and manifest are present and verified. */
+int tc_ltx_audio_preflight_json(const char *model_path, char **result,
+                                char **error);
 #ifdef __cplusplus
 }
 #endif

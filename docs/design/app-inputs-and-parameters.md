@@ -27,7 +27,7 @@
 | `src/turbocider/adapters/ltx.py` | 单 first_frame，默认 strength 1.0；8+3 步；明确拒绝 guidance | 不提供多图插值或 CFG 控件；不能统一用 App 当前 0.75 初始化所有模型 |
 | `native/models/flux_module.mm`、`flux.mm` | 已声明并实现 image.generate/transform/edit 路径，最多 8 图 | 上轮“编辑尚未实现”已过时；应按 operation 进行真机/一致性验收再开放 |
 | `native/models/h3_module.mm` | executor=true，weight_validation=pending；首尾帧与 reference 互斥；4 步/24 fps | 已有执行入口，不等于权重与媒体已验收；分开关键帧/参考模式 |
-| `native/models/ltx_module.mm` | executor=false；默认 704×448；宽高 64 倍数，帧数 8n+1 | 与兼容推荐 704×480 不同；按运行时取默认，不能共用硬编码预设 |
+| `native/models/ltx_module.mm` | video-only `video.generate` executor=true；I2V/音频仍门禁；默认 704×448；宽高 64 倍数，帧数 8n+1 | 与兼容推荐 704×480 不同；按运行时取默认，只向 UI 开放已通过门禁的 operation |
 | `native/core/json.mm` | v2 单输出，有序 inputs；sampling 仅 seed/steps；参数仅 dynamic_text | JSON 可解析字段不等于高级参数全模型支持；不能把兼容 engine_options 原样传 native |
 | `native/swift/TurboCiderNative.swift` | NativeInput 有 kind/role/path/strength；id 目前由 path+role 拼接 | UI 改用独立 binding UUID，排序、重复素材、角色变更不能导致身份碰撞 |
 

@@ -1,6 +1,6 @@
 # TurboCider 原生重构：FLUX 首发实现与后续模型边界
 
-2026-09-05。本文是当前实现状态的入口，优先于此前的纵切验证报告。最新范围按用户要求收敛到完整 FLUX.2 路径；H3/LTX 以接入设计和验收契约推进，不以缺少真实权重为由宣称数值正确。
+2026-09-06。本文是当前实现状态的入口，优先于此前的纵切验证报告。FLUX.2、H3、FastMetal 和 LTX video-only 已有原生执行入口；各模型的质量/性能矩阵与 LTX 的 I2V、音频仍按独立验收契约管理，不把候选路径误报为完整能力。
 
 ## 实际架构
 
@@ -14,14 +14,16 @@ flowchart TD
   ABI --> Plan[版本化 Request / 校验 / Recipe / 设备 Profile]
   Plan --> Registry[ModelModule Registry / ModelSession]
   Registry --> Flux[FLUX 文本 / 图像条件 / DiT / VAE]
-  Registry -. 延期接入 .-> Video[H3 / LTX 契约]
+  Registry --> H3[MiniMax H3 native executor]
+  Registry --> FastMetal[FastMetal persistent MLX worker]
+  Registry --> LTX[LTX 2.5 video-only]
   Flux --> MLX[MLX C++ / Metal kernels]
   Flux --> CoreML[可选 Core ML MLP 分区]
   MLX --> Media[ImageIO PNG 原子提交]
   CoreML --> MLX
 ```
 
-一个动态库包含实际推理，无 Python/原引擎 CLI 子进程。动态库用于 App 嵌入、CLI 或常驻服务。服务与 App 共享同一推理实现，但当前 App 使用嵌入会话，未接入服务队列；多个客户端需要共享队列时使用服务 RPC。跨进程文件锁避免两个 TurboCider 进程同时开始 GPU 作业，冲突明确返回 busy。这不是把外部任意 Metal 程序纳入全机调度。
+一个动态库包含 FLUX/H3 的实际推理，无原引擎 CLI 子进程；FastMetal 是有意隔离的 Python JSONL worker 例外，用于复用上游 MLX/TAEHV 和可选 ANE bridge。动态库用于 App 嵌入、CLI 或常驻服务。服务与 App 共享同一推理实现，但当前 App 使用嵌入会话，未接入服务队列；多个客户端需要共享队列时使用服务 RPC。跨进程文件锁避免两个 TurboCider 进程同时开始 GPU 作业，冲突明确返回 busy。这不是把外部任意 Metal 程序纳入全机调度。
 
 ## 代码模块与所有权
 
@@ -34,6 +36,9 @@ flowchart TD
 | `native/core/api.mm` | 进程内与跨进程准入、流生命周期、异常边界、取消/事件 | 不在 token/block 热路径解析 JSON |
 | `native/models/registry.mm` | ModelModule 注册、描述、校验、Session 工厂 | 新模型增加模块；不要在客户端堆模型名分支 |
 | `native/models/flux*.mm` | Qwen3、DiT、VAE 编解码、采样、条件缓存和组件驻留 | 数学子图保持模型专属；不同模型不强套同一种 block |
+| `native/models/h3_*.mm` | H3 4-step 视频/音频 native session、manifest-bound LoRA 与 GPU/ANE join | 完整输入/质量/性能矩阵仍按 H3 acceptance matrix 验收 |
+| `native/models/fastmetal_module.mm` + `tools/native/fastmetal_worker.py` | FastMetal 固定 3-step persistent MLX/TAEHV worker、premerged LoRA checkpoint 选择与 30-block ANE split | base/LoRA/merged checkpoint、shape、mapping、artifact 身份全部 fail closed；base 成对 GPU/GPU+ANE 复测通过 5% 回归门槛，LoRA 实机 parity/质量/性能和跨机器矩阵仍待完成 |
+| `native/models/ltx_session.mm` + `native/models/ltx_runtime` | 公共 video-only LTX Session；复用 ltx-mac 的 C/Metal/ANE/C++ MLX runtime，增加 ABI、缓存、取消与 clean-exec VAE 生命周期 | 不在 Session 重写模型算子；I2V、音频、runtime LoRA 与 GPU+ANE 默认启用仍按独立门禁验收 |
 | `native/backends/mlx.mm` | MLX C++ 算子、权重映射、自定义 Metal Euler | MLX 负责张量和分配；不声称已重写通用 Metal 算子库 |
 | `native/backends/coreml*` | 固定桶 MLP 加载、公开 Core ML 执行、共享输出 backing、观测指标 | 有依赖的块内 join；不将 CPUAndNeuralEngine 当实际 ANE 驻留证据 |
 | `native/backends/artifact_cache.mm` | 本地模型编译、源内容哈希、OS/GPU 身份、互斥、临时目录原子提交 | 不在每个 denoise step 编译；内容/系统变化使缓存失效 |
@@ -42,7 +47,7 @@ flowchart TD
 | `apps/macos` / `bindings/swift` | async SDK、主线程 JobStore、SwiftUI 创作界面 | UI 不拥有 GPU 张量、不执行模型数学 |
 | `tests/native` / `tools/native` | 契约、生命周期、服务、oracle、对比性能、构建/打包 | Python 仅用于开发验证，不进入运行依赖 |
 
-H3 Session、LTX Gemma/去噪器与vendor已隔离到 `experimental/video/`，不进入默认库目标。H3/LTX executor为false。旧 `src/`、`Sources/`、`engines/`、Python包与旧构建入口已删除，必要历史可从Git恢复；详情见 [项目重构](project-restructure.md)。
+H3 与 LTX video-only Session 都已进入默认 native 库目标；LTX I2V/音频仍按 operation fail closed。旧 `src/`、`Sources/`、`engines/`、Python包与旧构建入口已删除，必要历史可从Git恢复；详情见 [项目重构](project-restructure.md)。
 
 ## FLUX 首发能力
 
@@ -76,4 +81,4 @@ FLUX single block 的 attention 与 MLP 使用同一 block 输入，可将独立
 
 ## 交付边界
 
-本次可用产品范围是 FLUX 图像生成系统，不是三模型全部验收。H3/LTX 默认不可执行；接入与验收见 [视频模型文档](video-model-acceptance.md)。本机 ad-hoc 签名包已用于开发验收，尚未 Developer ID 公证、Mac App Store 沙盒化或跨 macOS/芯片矩阵认证。现有单图输出不等于批量多图、LoRA、节点图编辑器或断点续推已经实现。
+本次可用产品范围包括 FLUX 图像、H3、FastMetal，以及 LTX 的 video-only 文生视频；各自仍有模型专属的质量/性能矩阵未完成。LTX I2V、音频、runtime LoRA 和默认 GPU+ANE 仍不可用。接入与验收见 [视频模型文档](video-model-acceptance.md)。本机 ad-hoc 签名包已用于开发验收，尚未 Developer ID 公证、Mac App Store 沙盒化或跨 macOS/芯片矩阵认证。

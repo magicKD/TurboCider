@@ -16,6 +16,7 @@ def main():
     args = parser.parse_args()
     import mlx.core as mx
     from mflux.models.common.config.config import Config
+    from mflux.models.common.config.model_config import ModelConfig
     from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
     from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
     from mflux.models.flux2.model.flux2_text_encoder.prompt_encoder import Flux2PromptEncoder
@@ -26,12 +27,34 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     mx.set_cache_limit(512 * 1024 * 1024)
     start = time.monotonic()
-    model = Flux2Klein(model_path=args.model)
+    model_id = r.get('model', '')
+    if model_id == 'flux2-klein-9b':
+        model_config = ModelConfig.flux2_klein_9b()
+    elif model_id == 'flux2-klein-4b':
+        model_config = ModelConfig.flux2_klein_4b()
+    else:
+        # Keep the oracle useful for older requests that omitted model, but
+        # never silently construct the 4B graph for a 9B checkpoint.
+        import json as _json
+        config_path = Path(args.model) / 'transformer' / 'config.json'
+        config_value = _json.loads(config_path.read_text())
+        heads = int(config_value.get('num_attention_heads', 24))
+        model_config = ModelConfig.flux2_klein_9b() if heads == 32 else ModelConfig.flux2_klein_4b()
+    model = Flux2Klein(model_path=args.model, model_config=model_config)
     config = Config(model_config=model.model_config, num_inference_steps=r['steps'], height=r['height'], width=r['width'], guidance=1.0, scheduler='flow_match_euler_discrete')
     def save(name, value):
         mx.eval(value)
         mx.save_safetensors(str(out / f'{name}.safetensors'), {'tensor': value})
-    text, text_ids = Flux2PromptEncoder.encode_prompt(r['prompt'], model.tokenizers['qwen3'], model.text_encoder, padding='longest' if r.get('dynamic_text', True) else None)
+    # mflux revisions expose dynamic padding on the tokenizer rather than on
+    # Flux2PromptEncoder.encode_prompt().  Keep the oracle on the same
+    # dynamic-text contract as the native/engine benchmark while accepting
+    # the current four-argument encoder API.
+    tokenizer = model.tokenizers['qwen3']
+    if hasattr(tokenizer, 'padding'):
+        tokenizer.padding = 'longest' if r.get('dynamic_text', True) else 'max_length'
+    text, text_ids = Flux2PromptEncoder.encode_prompt(
+        r['prompt'], tokenizer, model.text_encoder, max_sequence_length=512
+    )
     save('conditioning', text)
     # Stage release reflects the native budget policy, without altering math.
     del model.text_encoder

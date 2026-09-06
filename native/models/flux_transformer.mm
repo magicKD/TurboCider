@@ -23,10 +23,10 @@ Tensor Flux::denoise(const Tensor&latent,const Tensor&text,float sigma,int heigh
  auto ff=[&](const Tensor&a,const std::string&p){auto parts=mx::split(linear(a,w,p+".linear_in"),2,-1);return linear(silu(parts[0])*parts[1],w,p+".linear_out");};
  auto qnorm=[&](const Tensor& a,const Tensor& weight,float eps){return mx::astype(mx::fast::rms_norm(mx::astype(a,mx::float32),weight,eps),a.dtype());};
  auto qkv=[&](const Tensor&a,const std::string&p,bool ctx){
-  auto q=heads(linear(a,w,p+(ctx?".add_q_proj":".to_q")),24,128),k=heads(linear(a,w,p+(ctx?".add_k_proj":".to_k")),24,128),v=heads(linear(a,w,p+(ctx?".add_v_proj":".to_v")),24,128);
+  auto q=heads(linear(a,w,p+(ctx?".add_q_proj":".to_q")),heads_,128),k=heads(linear(a,w,p+(ctx?".add_k_proj":".to_k")),heads_,128),v=heads(linear(a,w,p+(ctx?".add_v_proj":".to_v")),heads_,128);
   return std::vector<Tensor>{qnorm(q,w.at(p+(ctx?".norm_added_q.weight":".norm_q.weight")),1e-5f),qnorm(k,w.at(p+(ctx?".norm_added_k.weight":".norm_k.weight")),1e-5f),v};
  };
- for(int i=0;i<5;++i){checkpoint(cancelled);event("transformer_block",i,25);auto p="transformer_blocks."+std::to_string(i);
+ for(int i=0;i<dual_layers_;++i){checkpoint(cancelled);event("transformer_block",i,dual_layers_+single_layers_);auto p="transformer_blocks."+std::to_string(i);
   auto a=qkv(norm(x)*(1+mi[1])+mi[0],p+".attn",false),b=qkv(norm(c)*(1+mt[1])+mt[0],p+".attn",true);
   auto q=rope_pairs(mx::concatenate({b[0],a[0]},2),cos,sin),k=rope_pairs(mx::concatenate({b[1],a[1]},2),cos,sin),v=mx::concatenate({b[2],a[2]},2);
   auto att=attend(q,k,v);
@@ -37,7 +37,7 @@ Tensor Flux::denoise(const Tensor&latent,const Tensor&text,float sigma,int heigh
  }
  x=mx::concatenate({c,x},1);
  auto sqnorm=[&](const Tensor&a,const Tensor&weight,float eps){return mx::astype(mx::fast::rms_norm(mx::astype(a,mx::float32),weight,eps),mx::bfloat16);};
- for(int i=0;i<20;++i){checkpoint(cancelled);event("transformer_block",5+i,25);auto p="single_transformer_blocks."+std::to_string(i)+".attn";
+ for(int i=0;i<single_layers_;++i){checkpoint(cancelled);event("transformer_block",dual_layers_+i,dual_layers_+single_layers_);auto p="single_transformer_blocks."+std::to_string(i)+".attn";
   auto a=norm(x)*(1+ms[1])+ms[0];
   if(hybrid_){
    auto packed=mx::astype(a,mx::float16);
@@ -59,10 +59,12 @@ Tensor Flux::denoise(const Tensor&latent,const Tensor&text,float sigma,int heigh
    x=x+ms[2]*(gpu+mx::astype(ane,gpu.dtype()));
   }else{
    auto proj=linear(a,w,p+".to_qkv_mlp_proj");
-   auto parts=mx::split(proj,mx::Shape{3072,6144,9216,18432},-1);
-   auto q=rope_pairs(sqnorm(heads(parts[0],24,128),w.at(p+".norm_q.weight"),1e-5f),cos,sin);
-   auto k=rope_pairs(sqnorm(heads(parts[1],24,128),w.at(p+".norm_k.weight"),1e-5f),cos,sin);
-   auto att=attend(q,k,heads(parts[2],24,128));auto mlp=silu(parts[3])*parts[4];
+   auto parts=mx::split(proj,mx::Shape{hidden_,hidden_*2,hidden_*3,hidden_*6},-1);
+   require(parts.size()==5,"Flux single projection must contain Q/K/V and two MLP parts");
+   require(parts[0].shape(-1)==hidden_&&parts[1].shape(-1)==hidden_&&parts[2].shape(-1)==hidden_&&parts[3].shape(-1)==hidden_*3&&parts[4].shape(-1)==hidden_*3,"Flux single projection has an unsupported packed layout");
+   auto q=rope_pairs(sqnorm(heads(parts[0],heads_,128),w.at(p+".norm_q.weight"),1e-5f),cos,sin);
+   auto k=rope_pairs(sqnorm(heads(parts[1],heads_,128),w.at(p+".norm_k.weight"),1e-5f),cos,sin);
+   auto att=attend(q,k,heads(parts[2],heads_,128));auto mlp=silu(parts[3])*parts[4];
    x=x+ms[2]*linear(mx::concatenate({att,mlp},-1),w,p+".to_out");
   }
   mx::eval(x);

@@ -1,34 +1,92 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+if [[ -z "${DEVELOPER_DIR:-}" ]]; then
+ if [[ -d /Applications/Xcode.app/Contents/Developer ]]; then export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+ else export DEVELOPER_DIR="$(xcode-select -p)"
+ fi
+fi
 : "${MLX_ROOT:?Set MLX_ROOT to an existing MLX C++ package with include/ and lib/ (no downloads performed)}"
 OUT="$PWD/build/native"
 mkdir -p "$OUT" "$OUT/module-cache"
 export CLANG_MODULE_CACHE_PATH="$OUT/module-cache"
-SDK="${SDKROOT:-$DEVELOPER_DIR/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
-CXX="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
-COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" -mmacosx-version-min=15.0 -I bindings/c/include -I native/core -isystem "$MLX_ROOT/include" -Wall -Wextra -Wno-unused-parameter)
+SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+TOOLCHAIN="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin"
+[[ -d "$TOOLCHAIN" ]] || TOOLCHAIN="$DEVELOPER_DIR/usr/bin"
+CXX="$TOOLCHAIN/clang++"
+MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
+ /cmd LC_BUILD_VERSION/{build=1; next}
+ build && /minos /{print $2; exit}
+')"
+DEPLOYMENT_TARGET="${TURBOCIDER_DEPLOYMENT_TARGET:-${MLX_MIN_MACOS:-15.0}}"
+MACOS_FLAGS=(-mmacosx-version-min="$DEPLOYMENT_TARGET")
+COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I bindings/c/include -I native/core -isystem "$MLX_ROOT/include" -Wall -Wextra -Wno-unused-parameter)
 OBJECTS=()
 SOURCES=(
- native/core/json.mm native/core/api.mm native/core/tokenizer.mm native/core/profile.mm
+ native/core/json.mm native/core/api.mm native/core/tokenizer.mm native/core/profile.mm native/core/lora_cache.mm
  native/backends/mlx.mm native/backends/coreml.mm native/backends/artifact_cache.mm
  native/models/registry.mm native/models/recipes.mm native/models/flux_module.mm
- native/models/h3_module.mm native/models/ltx_module.mm
+ native/models/fastmetal_module.mm native/models/h3_module.mm native/models/ltx_module.mm native/models/h3_session.mm native/models/ltx_session.mm
  native/models/flux.mm native/models/flux_text.mm native/models/flux_transformer.mm
  native/models/flux_vae.mm native/models/flux_encode.mm
- native/media/image.mm native/media/input.mm
+ native/media/image.mm native/media/input.mm native/media/video.mm native/media/audio.mm
 )
 for src in "${SOURCES[@]}"; do
  obj="$OUT/$(basename "${src%.mm}").o"
  "$CXX" "${COMMON[@]}" -fvisibility=default -c "$src" -o "$obj"
  OBJECTS+=("$obj")
 done
-"$CXX" -isysroot "$SDK" -mmacosx-version-min=15.0 -dynamiclib "${OBJECTS[@]}" -o "$OUT/libturbocider.dylib" -L"$MLX_ROOT/lib" -lmlx -ljaccl -framework Foundation -framework Metal -framework CoreML -framework ImageIO -framework CoreGraphics -framework UniformTypeIdentifiers -Wl,-rpath,"$MLX_ROOT/lib" -Wl,-install_name,@rpath/libturbocider.dylib
+VIDEO_ROOT="$PWD/native/models/h3_runtime"
+VIDEO_OUT="$OUT/h3-runtime"
+mkdir -p "$VIDEO_OUT"
+CC="$TOOLCHAIN/clang"
+H3_OBJECTS=()
+for src in h3 h3_host h3_safetensors h3_weights h3_text_encoder h3_dit_schedule h3_dit h3_video_vae h3_taeh3 h3_video_encoder h3_audio_vae h3_terminal h3_vision_encoder h3_multimodal h3_ffmpeg; do
+ "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c "$VIDEO_ROOT/$src.c" -o "$VIDEO_OUT/$src.o"
+ H3_OBJECTS+=("$VIDEO_OUT/$src.o")
+done
+for src in h3_metal h3_gpu h3_tokenizer h3_coreml h3_ane_bridge h3_ane_mlp h3_ane_linear; do
+ "$CC" -std=c11 -O3 -fobjc-arc -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c "$VIDEO_ROOT/$src.m" -o "$VIDEO_OUT/$src.o"
+ H3_OBJECTS+=("$VIDEO_OUT/$src.o")
+done
+install -m 0644 "$VIDEO_ROOT/h3_shaders.metal" "$OUT/h3_shaders.metal"
+LTX_ROOT="$PWD/native/models/ltx_runtime"
+LTX_OUT="$OUT/ltx-runtime"
+mkdir -p "$LTX_OUT"
+LTX_OBJECTS=()
+for src in ltx ltx_conditioning ltx_connector ltx_transformer_io ltx_latent_stats ltx_rng ltx_blocks; do
+ "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -DLTX_ENABLE_ANE_MLP -DLTX_ENABLE_ANE_V2A -DLTX_ENABLE_ANE_KV -DLTX_ENABLE_ANE_QKV -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c "$LTX_ROOT/$src.c" -o "$LTX_OUT/$src.o"
+ LTX_OBJECTS+=("$LTX_OUT/$src.o")
+done
+for src in ltx_safetensors ltx_weights ltx_gpu ltx_gemma_tokenizer ltx_gemma_encoder ltx_upsampler ltx_video_vae ltx_ane_mlp ltx_ane_v2a ltx_ane_kv ltx_ane_qkv; do
+ "$CC" -std=c11 -O3 -fobjc-arc -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c "$LTX_ROOT/$src.m" -o "$LTX_OUT/$src.o"
+ LTX_OBJECTS+=("$LTX_OUT/$src.o")
+done
+for src in ltx_mlx_upsampler ltx_mlx_video_vae ltx_mlx_audio_vae ltx_mlx_vocoder ltx_mlx_bwe ltx_video_convert; do
+ "$CXX" -std=c++20 -O3 -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -isystem "$MLX_ROOT/include" -c "$LTX_ROOT/$src.cpp" -o "$LTX_OUT/$src.o"
+ LTX_OBJECTS+=("$LTX_OUT/$src.o")
+done
+"$TOOLCHAIN/ar" rcs "$LTX_OUT/libltx-runtime.a" "${LTX_OBJECTS[@]}"
+install -m 0644 "$LTX_ROOT/ltx_shaders.metal" "$OUT/ltx_shaders.metal"
+"$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_gemma_encode.c -o "$LTX_OUT/ltx_gemma_encode_tool.o"
+"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_gemma_encode_tool.o" "$LTX_OUT/libltx-runtime.a" -o "$OUT/ltx-gemma-encode" -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph
+"$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_audio_vae_decode.c -o "$LTX_OUT/ltx_audio_vae_decode_tool.o"
+"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_audio_vae_decode_tool.o" "$LTX_OUT/libltx-runtime.a" -o "$OUT/ltx-audio-vae-decode" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,"$MLX_ROOT/lib"
+"$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_vocoder_decode.c -o "$LTX_OUT/ltx_vocoder_decode_tool.o"
+"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_vocoder_decode_tool.o" "$LTX_OUT/libltx-runtime.a" -o "$OUT/ltx-vocoder-decode" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,"$MLX_ROOT/lib"
+"$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_bwe_decode.c -o "$LTX_OUT/ltx_bwe_decode_tool.o"
+"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_bwe_decode_tool.o" "$LTX_OUT/libltx-runtime.a" -o "$OUT/ltx-bwe-decode" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,"$MLX_ROOT/lib"
+"$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_video_vae_decode.c -o "$LTX_OUT/ltx_video_vae_decode_tool.o"
+"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_video_vae_decode_tool.o" "$LTX_OUT/libltx-runtime.a" -o "$OUT/ltx-video-vae-decode" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -Wl,-rpath,"$MLX_ROOT/lib"
+"$CXX" -std=c++20 -O3 -fobjc-arc -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -I native/media -c tools/native/ltx_video_finalizer.mm -o "$LTX_OUT/ltx_video_finalizer_tool.o"
+"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_video_finalizer_tool.o" "$LTX_OUT/libltx-runtime.a" "$OUT/video.o" -o "$OUT/ltx-video-finalizer" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework AVFoundation -framework CoreMedia -framework CoreVideo -Wl,-rpath,"$MLX_ROOT/lib"
+"$CXX" -std=c++20 -O3 -fobjc-arc -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I native/media -c tools/native/ltx_audio_mux.mm -o "$LTX_OUT/ltx_audio_mux_tool.o"
+"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_audio_mux_tool.o" "$OUT/audio.o" "$OUT/video.o" -o "$OUT/ltx-audio-mux" -framework Foundation -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo
+"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" -dynamiclib "${OBJECTS[@]}" "${H3_OBJECTS[@]}" "$LTX_OUT/libltx-runtime.a" -o "$OUT/libturbocider.dylib" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework Accelerate -framework ImageIO -framework CoreGraphics -framework UniformTypeIdentifiers -framework Vision -Wl,-rpath,"$MLX_ROOT/lib" -Wl,-install_name,@rpath/libturbocider.dylib
 "$CXX" "${COMMON[@]}" apps/cli/main.mm services/turbociderd/service.mm -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
 printf 'Built %s\n' "$OUT/turbocider"
-SWIFTC="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
-SWIFT_FLAGS=(-sdk "$SDK" -target arm64-apple-macosx15.0 -module-cache-path "$OUT/module-cache" -I bindings/c/include -L "$OUT" -lturbocider -Xlinker -rpath -Xlinker @executable_path -parse-as-library -O)
+SWIFTC="$TOOLCHAIN/swiftc"
+SWIFT_FLAGS=(-sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -I bindings/c/include -L "$OUT" -lturbocider -Xlinker -rpath -Xlinker @executable_path -parse-as-library -O)
 "$SWIFTC" "${SWIFT_FLAGS[@]}" bindings/swift/TurboCiderNative.swift apps/macos/JobStore.swift apps/macos/App.swift -o "$OUT/TurboCiderNativeApp"
 "$SWIFTC" "${SWIFT_FLAGS[@]}" bindings/swift/TurboCiderNative.swift apps/macos/JobStore.swift tests/integration/AppSmoke.swift -o "$OUT/turbocider-app-smoke"
 printf 'Built native Swift App and integration runner\n'

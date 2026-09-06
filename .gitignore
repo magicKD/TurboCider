@@ -79,6 +79,9 @@ pip-wheel-metadata/
 /models/
 /Python/
 
+# Local research notes. Stable, path-sanitized conclusions belong in docs/.
+/notes/
+
 # Local monorepo/workspace pointer, only used while developing TurboCider
 # alongside the other native engine repositories.
 /workspace.path

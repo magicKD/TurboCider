@@ -11,7 +11,7 @@ TurboCider/
   native/                          推理引擎，不包含 App、服务或研究 vendor
     core/                          请求、ABI实现、设备配置、执行准入
     backends/                      MLX/Metal、Core ML、编译缓存
-    models/                        Registry、FLUX数学、H3/LTX能力契约
+    models/                        Registry、FLUX数学、H3/LTX/FastMetal Session 与正式 runtime
     media/                         正式图像输入与PNG导出
   apps/
     macos/                         SwiftUI App、客户端历史/草稿
@@ -29,9 +29,10 @@ TurboCider/
   tools/
     native/                        正式构建、打包、FLUX oracle和性能对比
     experimental/                  不进入默认目标的视频迁移工具
-  experimental/video/              H3/LTX源码草稿、vendor、合成测试
+  experimental/video/              已冻结的早期 H3/LTX源码草稿、vendor、合成测试
   docs/
     USAGE.md                       运行/SDK/服务说明
+    status/                        当前完成度、性能和版本提交准备度
     design/                        架构、性能、验收与JSON证据
     archive/control-plane/         已退役Python控制层的历史文档
   build/ dist/ outputs/             忽略版本控制的构建、发行及实验结果
@@ -46,7 +47,7 @@ TurboCider/
 | `src/turbocider` / `pyproject.toml` | Python runner、adapters、daemon、model management | native库 + 原生本地服务；模型下载/通用转换未纳入本期 |
 | `Sources` / 旧 `Package.swift` | 连接Python HTTP服务的Swift App/SDK/CLI | apps/macos + bindings/swift + apps/cli |
 | `scripts` / `packaging` / `requirements-flux2.txt` | Python环境bootstrap和旧App打包 | Makefile + tools/native，运行不依赖Python |
-| `engines` | 三个旧子进程引擎的副本 | FLUX原生数学已迁移；H3/LTX必要源码草稿隔离到experimental |
+| `engines` | 三个旧子进程引擎的副本 | FLUX/H3/LTX正式 runtime 已进入 `native/models`；历史草稿仍隔离到 `experimental/video` |
 | `model-packs` / `device-profiles` / `schemas` | 旧CLI路径/env与控制协议 | ModelModule能力、版本化Request、profiles；不保留冲突schema |
 | 旧 `tests` / `benchmarks` | 旧控制层与engine命令验收 | 新tests、examples与可重复AB/BA性能工具 |
 
@@ -56,7 +57,7 @@ TurboCider/
 
 ## 构建与依赖决定
 
-正式入口 `make build` / `make package`，底层脚本明确列出每个发行源文件，不再用 `native/models/*.mm` 自动收集，防止未验收视频源码意外链接。仅链接正式路径需要的 Apple 框架；H3的MPS/Vision和LTX vendor archive不进入FLUX发行库。
+正式入口 `make build` / `make package`，底层脚本明确列出每个发行源文件，不使用 `native/models/*.mm` 自动收集，防止实验目录意外链接。H3 与 LTX 正式 runtime 已进入动态库目标；package 同时携带两套 Metal shader 和 LTX clean-exec Video VAE helper。`experimental/video` 仍不进入构建。
 
 当前环境未安装CMake，系统xcrun存在本机工具链问题；已验证的构建直接使用完整Xcode编译器与SDK，MLX_ROOT明确指定本地MLX C++ 0.32.0。不新增一个无法在本机验证的占位CMake/SwiftPM配置，也不保留会构建旧App的Package.swift。后续引入CMake/SwiftPM时，必须调用同一库目标并通过相同验收，而不是再次产生另一套产品。
 
@@ -66,7 +67,7 @@ TurboCider/
 
 - App只经Swift SDK发起任务；CLI与服务只经C ABI，不嵌入模型数学。
 - 公共C头只包含基础C类型，MLX/Objective-C对象不跨ABI。
-- 模型Module管理能力、语义与Session工厂。H3/LTX工厂为空、executor=false，不能由于vendor能编译就开放生成。
+- 模型Module管理能力、语义与Session工厂。H3、FastMetal 与 LTX video-only 已有显式 executor；LTX I2V/音频仍需各自 parity/provenance gate，不能由于 vendor 能编译就开放未验收 operation。
 - `experimental/video`不属于库依赖；后续每迁一个真实子图，先通过测试再移入native，并在构建源清单显式加入。
 - 原生服务目前通过CLI的serve子命令启动；是否最终拆出独立helper可后续决定，服务实现已与CLI参数层分离。
 - 默认App嵌入式、服务共享队列、通用AssetStore/自动分区等剩余设计边界见实现状态。目录重构不掩盖这些差距。

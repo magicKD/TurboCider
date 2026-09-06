@@ -185,7 +185,7 @@ P1/P2 可以发布明确的 FLUX 预览；“完整三模型首发”必须等�
 
 1. 固定测试 fixture：无模型、GPU 就绪、缺组件、文生图运行、无 telemetry、失败、长提示词。
 2. 提取现有参数逻辑与文件选择行为，替换视觉外壳；保留旧构建入口用于回归。
-3. 接 native FLUX 文生图、job 观察与能力描述；对新加入的 FLUX transform/edit、H3 executor 逐项做真机验收，再开放生产入口；LTX executor=false 时不启用。
+3. 接 native FLUX 文生图、job 观察与能力描述；对 FLUX transform/edit、H3、FastMetal 和 LTX video-only executor 逐项做真机验收；LTX I2V/音频按 operation 能力门禁，不因 video-only 已开放而自动启用。
 4. 检查数据更新不重建播放器/缩略图，任务、草稿与选中历史互不污染。
 5. 真实生成与取消通过后，再接入并验收编辑/视频；UI 重构不同时改模型数学。
 

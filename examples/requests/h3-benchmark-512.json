@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "model": "minimax-h3-turbo",
+  "operation": "video.generate",
+  "inputs": [
+    {
+      "kind": "text",
+      "role": "prompt",
+      "text": "A red fox walking through fresh snow, static camera"
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "video",
+      "path": "/private/tmp/turbocider-h3-benchmark-512.mp4",
+      "width": 512,
+      "height": 512,
+      "frames": 22,
+      "fps": 24,
+      "audio": true
+    }
+  ],
+  "sampling": {
+    "seed": 42,
+    "steps": 4
+  },
+  "execution": {
+    "policy": "gpu",
+    "residency": "streamed"
+  }
+}

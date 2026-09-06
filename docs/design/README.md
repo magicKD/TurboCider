@@ -2,7 +2,7 @@
 
 当前项目目录与旧代码退役：[项目重构](project-restructure.md)。
 
-当前实现入口：[FLUX 重构状态与模块职责](rewrite-implementation-status.md)、[同条件性能对比](flux-performance-comparison.md)、[H3/LTX 后续接入与验收](video-model-acceptance.md)。以下长期设计不等于已交付能力。
+当前实现、真实性能和剩余工作统一见 [2026-09-06 实现状态](../status/implementation-status-2026-09-06.md)，独立运行边界见 [外部依赖说明](../status/independence-and-dependencies-2026-09-06.md)，提交边界见 [版本准备度](../status/release-readiness-2026-09-06.md)。模型职责的详细说明见 [原生重构状态](rewrite-implementation-status.md)、[FLUX 同条件性能对比](flux-performance-comparison.md) 和 [H3/LTX 验收契约](video-model-acceptance.md)。以下长期设计不等于已交付能力。
 
 ## App 产品、界面与实现方案
 
@@ -34,6 +34,6 @@
 4. [H3/LTX 迁移与验收](video-model-acceptance.md)：源文件迁移归属、无模型静态检查、权重到位后的数学和媒体退出条件。
 5. [原生代码使用说明](../USAGE.md)：构建、打包、CLI/SDK 与离线验收复现命令。
 
-[架构图](native-engine-architecture.svg) 表达最终方向，并非每个方框都已经实现。当前已完成真实 FLUX 原生纵切；H3/LTX 数学 executor、独立 daemon、通用执行器与自有 allocator 尚待实现。
+[架构图](native-engine-architecture.svg) 表达最终方向，并非每个方框都已经实现。当前 FLUX、H3、FastMetal 和 LTX video-only 已有执行入口；LTX I2V/音频、完整 GPU+ANE 门禁、通用执行器与自有 allocator 仍待完成。
 
 `validation/` 存放小型 JSON 证据和依赖身份。原始大张量、图像及过程日志保留在本机 `outputs/native-validation/`，不提交模型或大文件。

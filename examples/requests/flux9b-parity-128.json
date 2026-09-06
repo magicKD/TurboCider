@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "model": "flux2-klein-9b",
+  "operation": "image.generate",
+  "prompt": "A red fox walking through fresh snow, static camera",
+  "width": 128,
+  "height": 128,
+  "steps": 1,
+  "seed": 42,
+  "dynamic_text": true,
+  "residency": "resident"
+}

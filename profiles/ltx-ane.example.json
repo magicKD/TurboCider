@@ -1,0 +1,16 @@
+{
+  "schema": "turbocider-ltx-ane-v1",
+  "variant": "int8_pc",
+  "parallel_av": true,
+  "preload_stage2": true,
+  "release_full_gpu_mlp": true,
+  "detach_stage1": true,
+  "detach_stage2": true,
+  "release_blocks_final_step": true,
+  "fused_mlp_residual": false,
+  "fused_mlp_adaln_pack": false,
+  "kv_stage_mask": 1,
+  "mlp_stage1": "../artifacts/ltx/coreml/mlp/stage1",
+  "mlp_stage2": "../artifacts/ltx/coreml/mlp/stage2",
+  "kv": "../artifacts/ltx/coreml/text_kv"
+}

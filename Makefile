@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help build package test test-model doctor
 help:
-	@echo 'TurboCider — native FLUX inference system'
+	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
 	@echo 'MLX_ROOT=/path/to/mlx make package  Build and create dist/TurboCider.app + dist/cli'
 	@echo 'make test                         Verify repository boundaries and request contracts'

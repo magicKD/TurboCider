@@ -1,5 +1,7 @@
 #include "runtime.hpp"
 #include <cmath>
+#include <cstring>
+#include <regex>
 namespace tc {
 void Weights::load(const std::filesystem::path& p,const Event& event,std::atomic<bool>& cancelled){
  if(!values_.empty())return;
@@ -16,6 +18,85 @@ void Weights::load_file(const std::filesystem::path& path,const std::string& pre
 }
 const Tensor& Weights::at(const std::string& k)const{auto i=values_.find(k);require(i!=values_.end(),"missing weight: "+k);return i->second;}
 bool Weights::has(const std::string& k)const{return values_.count(k);}
+namespace {
+struct LoRAPair { std::optional<Tensor> down,up,alpha; };
+static bool remove_suffix(std::string& value,const std::string& suffix) {
+ if(!value.ends_with(suffix))return false;value.resize(value.size()-suffix.size());return true;
+}
+static std::string strip_lora_prefix(std::string value) {
+ for(const auto& prefix:{"base_model.model.","transformer.","diffusion_model.","model."})
+  if(value.starts_with(prefix)){value.erase(0,strlen(prefix));break;}
+ return value;
+}
+static std::string kohya_to_bfl(const std::string& stem) {
+ std::smatch m;
+ if(std::regex_match(stem,m,std::regex("^(?:lora_unet_|lycoris_)(double_blocks|single_blocks)_([0-9]+)_(.+)$"))) {
+  static const std::map<std::string,std::string> tails={
+   {"img_attn_qkv","img_attn.qkv"},{"img_attn_proj","img_attn.proj"},{"txt_attn_qkv","txt_attn.qkv"},{"txt_attn_proj","txt_attn.proj"},
+   {"img_mlp_0","img_mlp.0"},{"img_mlp_2","img_mlp.2"},{"txt_mlp_0","txt_mlp.0"},{"txt_mlp_2","txt_mlp.2"},
+   {"img_mod_lin","img_mod.lin"},{"txt_mod_lin","txt_mod.lin"},{"linear1","linear1"},{"linear2","linear2"},{"modulation_lin","modulation.lin"}};
+  auto found=tails.find(m[3]);if(found!=tails.end())return std::string(m[1])+"."+std::string(m[2])+"."+found->second;
+ }
+ return stem;
+}
+static std::vector<std::string> lora_targets(std::string stem) {
+ stem=kohya_to_bfl(strip_lora_prefix(stem));
+ std::vector<std::string> result{stem};
+ std::smatch m;
+ if(std::regex_match(stem,m,std::regex("^double_blocks\\.([0-9]+)\\.(.+)$"))) {
+  std::string p="transformer_blocks."+std::string(m[1])+".", tail=m[2];
+  if(tail=="img_attn.qkv")return {p+"attn.to_q",p+"attn.to_k",p+"attn.to_v"};
+  if(tail=="txt_attn.qkv")return {p+"attn.add_q_proj",p+"attn.add_k_proj",p+"attn.add_v_proj"};
+  static const std::map<std::string,std::string> map={{"img_attn.proj","attn.to_out.0"},{"txt_attn.proj","attn.to_add_out"},{"img_mlp.0","ff.linear_in"},{"img_mlp.2","ff.linear_out"},{"txt_mlp.0","ff_context.linear_in"},{"txt_mlp.2","ff_context.linear_out"},{"img_mod.lin","double_stream_modulation_img.linear"},{"txt_mod.lin","double_stream_modulation_txt.linear"}};
+  if(auto found=map.find(tail);found!=map.end())return {p+found->second};
+ }
+ if(std::regex_match(stem,m,std::regex("^single_blocks\\.([0-9]+)\\.(.+)$"))) {
+  std::string p="single_transformer_blocks."+std::string(m[1])+".attn.",tail=m[2];
+  if(tail=="linear1")return {p+"to_qkv_mlp_proj"};if(tail=="linear2")return {p+"to_out"};
+  if(tail=="modulation.lin")return {"single_stream_modulation.linear"};
+ }
+ static const std::map<std::string,std::string> aliases={{"img_in","x_embedder"},{"txt_in","context_embedder"},{"time_in.in_layer","time_guidance_embed.timestep_embedder.linear_1"},{"time_in.out_layer","time_guidance_embed.timestep_embedder.linear_2"},{"final_layer.adaLN_modulation.1","norm_out.linear"},{"final_layer.linear","proj_out"}};
+ if(auto found=aliases.find(stem);found!=aliases.end())return {found->second};
+ return result;
+}
+}
+size_t Weights::apply_loras(const std::vector<LoRAAsset>& adapters,const std::string& role,const Event& event,std::atomic<bool>& cancel) {
+ size_t applied=0;
+ for(size_t adapter_index=0;adapter_index<adapters.size();++adapter_index) {
+  const auto& adapter=adapters[adapter_index];if(adapter.role!=role)continue;
+  require(std::filesystem::is_regular_file(adapter.path),"LoRA file missing: "+adapter.path);
+  checkpoint(cancel);event("load_lora",int(adapter_index),int(adapters.size()));
+  auto data=mx::load_safetensors(adapter.path);std::map<std::string,LoRAPair> pairs;
+  for(auto&[raw,value]:data.first) {
+   std::string stem=raw;
+   if(remove_suffix(stem,".lora_A.default.weight")||remove_suffix(stem,".lora_A.weight")||remove_suffix(stem,".lora_down.weight")||remove_suffix(stem,".lora.down.weight")||remove_suffix(stem,".lora_A"))pairs[stem].down=value;
+   else if(remove_suffix(stem,".lora_B.default.weight")||remove_suffix(stem,".lora_B.weight")||remove_suffix(stem,".lora_up.weight")||remove_suffix(stem,".lora.up.weight")||remove_suffix(stem,".lora_B"))pairs[stem].up=value;
+   else if(remove_suffix(stem,".alpha")||remove_suffix(stem,".lora_alpha"))pairs[stem].alpha=value;
+  }
+  size_t adapter_applied=0;
+  for(auto&[stem,pair]:pairs) {
+   if(!pair.down&&!pair.up)continue;
+   require(pair.down&&pair.up,"incomplete LoRA pair: "+stem);
+   const auto& down=*pair.down;const auto& up=*pair.up;
+   require(down.ndim()==2&&up.ndim()==2&&down.shape(0)==up.shape(1),"invalid LoRA rank geometry: "+stem);
+   float scale=adapter.strength;if(pair.alpha){require(pair.alpha->size()==1,"LoRA alpha must be scalar: "+stem);mx::eval(*pair.alpha);scale*=pair.alpha->item<float>()/float(down.shape(0));}
+   auto targets=lora_targets(stem);int offset=0;
+   for(const auto& target:targets) {
+    auto key=target.ends_with(".weight")?target:target+".weight";auto found=values_.find(key);
+    if(found==values_.end())continue;
+    const auto& base=found->second;require(base.ndim()==2&&base.shape(1)==down.shape(1),"LoRA input does not match "+key);
+    int rows=base.shape(0);require(offset+rows<=up.shape(0),"LoRA output does not match "+key);
+    auto selected=targets.size()==1?up:slice_axis(up,0,offset,offset+rows);offset+=rows;
+    require(selected.shape(0)==rows&&selected.shape(1)==down.shape(0),"LoRA rank does not match "+key);
+    auto delta=mx::matmul(mx::astype(selected,mx::float32),mx::astype(down,mx::float32))*Tensor(scale,mx::float32);
+    auto merged=mx::astype(mx::astype(base,mx::float32)+delta,base.dtype());mx::eval(merged);found->second=merged;++adapter_applied;
+   }
+  }
+  require(adapter_applied>0,"LoRA did not match any "+role+" weights: "+adapter.path);applied+=adapter_applied;
+  event("load_lora",int(adapter_index+1),int(adapters.size()));
+ }
+ return applied;
+}
 void Weights::clear(){values_.clear();}
 size_t Weights::bytes()const{size_t n=0;for(auto&[k,v]:values_)n+=v.nbytes();return n;}
 Tensor linear(const Tensor& x,const Weights&w,const std::string& p){auto wt=mx::transpose(w.at(p+".weight"));return w.has(p+".bias")?mx::addmm(w.at(p+".bias"),x,wt):mx::matmul(x,wt);}

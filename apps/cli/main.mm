@@ -3,7 +3,13 @@
 #include <iostream>
 #include <csignal>
 #include <atomic>
-int tc_service_main(const char*,const char*);
+#include <cstdlib>
+#include <cstring>
+#include <mach-o/dyld.h>
+#include <limits.h>
+#include <filesystem>
+#include <vector>
+int tc_service_main(const char*,const char*,const char*);
 int tc_rpc_main(const char*,const char*);
 static int create_for(const char *path,NSString *request,tc_engine **engine,char **error) {
  NSDictionary *value=[NSJSONSerialization JSONObjectWithData:[request dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
@@ -16,10 +22,92 @@ static tc_engine *active=nullptr;
 static volatile std::sig_atomic_t interrupted=0;
 static void stop(int){interrupted=1;}
 static void event(const char*s,void*){if(interrupted)tc_engine_cancel(active);std::cerr<<s<<std::endl;}
+static std::string executable_path(const char *fallback) {
+ uint32_t size=PATH_MAX;std::vector<char> value(size);
+ if(_NSGetExecutablePath(value.data(),&size)!=0){value.resize(size);if(_NSGetExecutablePath(value.data(),&size)!=0)return fallback;}
+ char resolved[PATH_MAX];return realpath(value.data(),resolved)?resolved:fallback;
+}
+static bool ltx_exec_finalizer_plan(NSString *request) {
+ char *text=nullptr,*failure=nullptr;
+ int status=tc_plan_json(request.UTF8String,&text,&failure);
+ if(failure)tc_string_free(failure);
+ if(status||!text)return false;
+ NSData *data=[NSData dataWithBytes:text length:strlen(text)];
+ tc_string_free(text);
+ id value=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+ return [value isKindOfClass:NSDictionary.class]&&
+        [value[@"model"] isEqual:@"ltx-2.5-distilled"]&&
+        [value[@"operation"] isEqual:@"video.generate"]&&
+        [value[@"residency"] isEqual:@"component_staged"]&&
+        ![value[@"audio"] boolValue];
+}
+static void configure_ltx_cli_environment(NSString *request) {
+ if(!ltx_exec_finalizer_plan(request))return;
+ /* Keep the connected Gemma tensors across one-shot CLI invocations too.
+  * The cache identity includes the model/checkpoint/tokenizer/prompt, so a
+  * shared temporary root cannot mix incompatible conditioning. */
+ setenv("TURBOCIDER_LTX_EXEC_FINALIZER","1",1);
+ if(!std::getenv("TURBOCIDER_LTX_CONDITIONING_CACHE_DIR")){
+  NSURL *base=[NSFileManager.defaultManager URLForDirectory:NSCachesDirectory
+    inDomain:NSUserDomainMask appropriateForURL:nil create:YES error:nil];
+  NSString *path=[[base URLByAppendingPathComponent:@"TurboCider"
+    isDirectory:YES] URLByAppendingPathComponent:@"ltx-conditioning"
+    isDirectory:YES].path;
+  if(path.length)setenv("TURBOCIDER_LTX_CONDITIONING_CACHE_DIR",path.UTF8String,0);
+ }
+}
+static std::filesystem::path lora_prepare_script(const char *executable) {
+ std::error_code error;
+ auto executable_path_value=std::filesystem::absolute(executable,error);
+ if(!error){
+  auto adjacent=executable_path_value.parent_path()/"prepare_lora.py";
+  if(std::filesystem::is_regular_file(adjacent))return adjacent;
+  auto root=executable_path_value.parent_path().parent_path().parent_path();
+  auto source=root/"tools/native/prepare_lora.py";
+  if(std::filesystem::is_regular_file(source))return source;
+ }
+ if(const char *workspace=std::getenv("TURBOCIDER_WORKSPACE")){
+  auto source=std::filesystem::path(workspace)/"TurboCider/tools/native/prepare_lora.py";
+  if(std::filesystem::is_regular_file(source))return source;
+ }
+ return {};
+}
+static int prepare_lora_main(int argc,char **argv,const char *executable) {
+ if(argc<6){
+  std::cerr<<"usage: turbocider prepare-lora MODEL BASE LORA OUTPUT [options]\n";
+  return 1;
+ }
+ auto script=lora_prepare_script(executable);
+ if(script.empty()){
+  std::cerr<<"cannot locate tools/native/prepare_lora.py; set TURBOCIDER_WORKSPACE\n";
+  return 1;
+ }
+ NSTask *task=[NSTask new];
+ NSMutableArray<NSString*> *arguments=[NSMutableArray array];
+ if(const char *configured=std::getenv("TURBOCIDER_PREPARE_PYTHON")){
+  task.launchPath=@(configured);
+ }else{
+  auto source_root=script.parent_path().parent_path().parent_path();
+  auto bundled=source_root/"Python/bin/python";
+  if(std::filesystem::is_regular_file(bundled))task.launchPath=@(bundled.c_str());
+  else {task.launchPath=@"/usr/bin/env";[arguments addObject:@"python3"];}
+ }
+ [arguments addObject:@(script.c_str())];
+ for(int index=2;index<argc;index++) [arguments addObject:@(argv[index])];
+ task.arguments=arguments;
+ task.standardOutput=[NSFileHandle fileHandleWithStandardOutput];
+ task.standardError=[NSFileHandle fileHandleWithStandardError];
+ @try {[task launch];[task waitUntilExit];return task.terminationStatus;}
+ @catch(NSException *exception){
+  std::cerr<<"cannot launch LoRA preparation tool: "<<exception.reason.UTF8String<<"\n";
+  return 1;
+ }
+}
 int main(int argc,char**argv){@autoreleasepool{
- if(argc<2){std::cerr<<"turbocider doctor|models|self-test|plan REQUEST.json|tokenize MODEL PROMPT|generate MODEL REQUEST.json | batch MODEL REQUEST1.json REQUEST2.json ...\n";return 1;}
+ if(argc<2){std::cerr<<"turbocider doctor|models|self-test|plan REQUEST.json|tokenize MODEL PROMPT|generate MODEL REQUEST.json | batch MODEL REQUEST1.json REQUEST2.json ... | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
  std::string cmd=argv[1];char*out=nullptr,*err=nullptr;int code=0;
- if(cmd=="serve"&&argc==4)return tc_service_main(argv[2],argv[3]);
+ if(cmd=="prepare-lora")return prepare_lora_main(argc,argv,argv[0]);
+ if(cmd=="serve"&&argc==4){auto executable=executable_path(argv[0]);return tc_service_main(argv[2],argv[3],executable.c_str());}
  if(cmd=="rpc"&&argc==4)return tc_rpc_main(argv[2],argv[3]);
  if(cmd=="doctor")out=tc_system_json();
  else if(cmd=="models")out=tc_models_json();
@@ -36,11 +124,18 @@ int main(int argc,char**argv){@autoreleasepool{
     if(code)break;
   }std::signal(SIGINT,SIG_DFL);}tc_engine_free(active);
  }
- else if((cmd=="plan"&&argc==3)||(cmd=="generate"&&argc==4)){
+ else if((cmd=="plan"&&argc==3)||(cmd=="generate"&&argc==4)||
+         (cmd=="ltx-worker"&&argc==4)){
   NSString*request=[NSString stringWithContentsOfFile:@(argv[argc-1]) encoding:NSUTF8StringEncoding error:nil];
   if(!request){std::cerr<<"cannot read request\n";return 1;}
   if(cmd=="plan")code=tc_plan_json(request.UTF8String,&out,&err);
-  else {code=create_for(argv[2],[NSString stringWithContentsOfFile:@(argv[3]) encoding:NSUTF8StringEncoding error:nil],&active,&err);if(!code){std::signal(SIGINT,stop);code=tc_engine_generate(active,request.UTF8String,event,nullptr,&out,&err);std::signal(SIGINT,SIG_DFL);}tc_engine_free(active);}
+  else {
+   if(cmd=="generate"||cmd=="ltx-worker")
+    configure_ltx_cli_environment(request);
+   code=create_for(argv[2],[NSString stringWithContentsOfFile:@(argv[3]) encoding:NSUTF8StringEncoding error:nil],&active,&err);
+   if(!code){std::signal(SIGINT,stop);std::signal(SIGTERM,stop);code=tc_engine_generate(active,request.UTF8String,event,nullptr,&out,&err);std::signal(SIGINT,SIG_DFL);std::signal(SIGTERM,SIG_DFL);}
+   tc_engine_free(active);
+  }
  }else{std::cerr<<"invalid command or arguments\n";return 1;}
  if(out){std::cout<<out<<std::endl;tc_string_free(out);}if(err){std::cerr<<err<<std::endl;tc_string_free(err);}return code;
 }}

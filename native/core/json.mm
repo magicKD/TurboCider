@@ -49,8 +49,9 @@ Request request_from_json(NSDictionary*d) {
     int version=number(d,@"schema_version",1);require(version==1||version==2,"unsupported schema_version");
     Request r;
     if(version==1) {
-        keys(d,@[@"schema_version",@"model",@"prompt",@"output",@"execution",@"width",@"height",@"steps",@"seed",@"frames",@"dynamic_text",@"dump_tensors",@"ane_manifest",@"allow_approximation",@"operation",@"inputs",@"fps",@"residency",@"profile"]);
+        keys(d,@[@"schema_version",@"model",@"prompt",@"output",@"execution",@"width",@"height",@"steps",@"seed",@"frames",@"dynamic_text",@"dump_tensors",@"ane_manifest",@"allow_approximation",@"operation",@"inputs",@"fps",@"residency",@"profile",@"model_variant",@"loras",@"audio"]);
         r.model=string_value(d,@"model",r.model);
+        r.model_variant=string_value(d,@"model_variant",r.model_variant);
         auto descriptor=module_for(r.model).describe();
         r.operation=string_value(d,@"operation",[descriptor[@"output"] isEqual:@"image"]?"image.generate":"video.generate");
         r.prompt=string_value(d,@"prompt");r.output=string_value(d,@"output");
@@ -58,10 +59,18 @@ Request request_from_json(NSDictionary*d) {
         r.width=number(d,@"width",512);r.height=number(d,@"height",512);r.frames=number(d,@"frames",1);
         r.steps=number(d,@"steps",4);r.seed=number(d,@"seed",42);r.fps=number(d,@"fps",24);
         r.dynamic_text=boolean(d,@"dynamic_text",true);r.allow_approximation=boolean(d,@"allow_approximation",false);
-        r.residency=string_value(d,@"residency",r.residency);r.profile=string_value(d,@"profile");
+        bool default_audio = descriptor[@"default_audio"] ?
+            [descriptor[@"default_audio"] boolValue] : true;
+        r.audio=boolean(d,@"audio",default_audio);
+        std::string default_residency =
+            [descriptor[@"default_residency"] isKindOfClass:NSString.class] ?
+                std::string([descriptor[@"default_residency"] UTF8String]) :
+                r.residency;
+        r.residency=string_value(d,@"residency",default_residency);r.profile=string_value(d,@"profile");
     } else {
-        keys(d,@[@"schema_version",@"model",@"operation",@"inputs",@"outputs",@"sampling",@"execution",@"parameters",@"dump_tensors"]);
+        keys(d,@[@"schema_version",@"model",@"operation",@"inputs",@"outputs",@"sampling",@"execution",@"parameters",@"dump_tensors",@"model_variant",@"loras"]);
         r.model=string_value(d,@"model",r.model);
+        r.model_variant=string_value(d,@"model_variant",r.model_variant);
         auto descriptor=module_for(r.model).describe();
         r.operation=string_value(d,@"operation");require(!r.operation.empty(),"operation is required");
         NSArray *outputs=d[@"outputs"];require([outputs isKindOfClass:NSArray.class]&&outputs.count==1,"one primary output is required");
@@ -69,18 +78,33 @@ Request request_from_json(NSDictionary*d) {
         require([@(string_value(output,@"kind").c_str()) isEqual:descriptor[@"output"]],"output kind does not match model");
         r.output=string_value(output,@"path");r.width=number(output,@"width",[descriptor[@"default_width"] intValue]);
         r.height=number(output,@"height",[descriptor[@"default_height"] intValue]);r.frames=number(output,@"frames",[descriptor[@"default_frames"] intValue]);
-        r.fps=number(output,@"fps",24);r.audio=boolean(output,@"audio",true);
+        r.fps=number(output,@"fps",[descriptor[@"default_fps"] intValue]?:24);
+        bool default_audio = descriptor[@"default_audio"] ?
+            [descriptor[@"default_audio"] boolValue] : true;
+        r.audio=boolean(output,@"audio",default_audio);
         auto sampling=d[@"sampling"]?dictionary(d[@"sampling"],"sampling"):@{};
         keys(sampling,@[@"seed",@"steps"]);r.seed=number(sampling,@"seed",42);r.steps=number(sampling,@"steps",[descriptor[@"default_steps"] intValue]);
         auto execution=d[@"execution"]?dictionary(d[@"execution"],"execution"):@{};
         keys(execution,@[@"policy",@"profile",@"ane_manifest",@"allow_approximation",@"residency"]);
         r.execution=string_value(execution,@"policy","gpu");r.profile=string_value(execution,@"profile");
         r.ane_manifest=string_value(execution,@"ane_manifest");r.allow_approximation=boolean(execution,@"allow_approximation",false);
-        r.residency=string_value(execution,@"residency",r.residency);
+        std::string default_residency =
+            [descriptor[@"default_residency"] isKindOfClass:NSString.class] ?
+                std::string([descriptor[@"default_residency"] UTF8String]) :
+                r.residency;
+        r.residency=string_value(execution,@"residency",default_residency);
         auto parameters=d[@"parameters"]?dictionary(d[@"parameters"],"parameters"):@{};
         keys(parameters,@[@"dynamic_text"]);r.dynamic_text=boolean(parameters,@"dynamic_text",true);
     }
     r.dump=string_value(d,@"dump_tensors");
+    if(d[@"loras"]) {
+        NSArray *loras=d[@"loras"];require([loras isKindOfClass:NSArray.class]&&loras.count<=8,"loras must contain at most 8 adapters");
+        for(id value in loras) {
+            auto l=dictionary(value,"lora");keys(l,@[@"path",@"strength",@"role"]);
+            LoRAAsset adapter;adapter.path=string_value(l,@"path");adapter.strength=float(numeric(l,@"strength",1.0));adapter.role=string_value(l,@"role","transformer");
+            require(!adapter.path.empty(),"lora path is required");require(std::isfinite(adapter.strength)&&adapter.strength>=-8.f&&adapter.strength<=8.f,"lora strength must be -8...8");require(adapter.role=="transformer"||adapter.role=="text_encoder"||adapter.role=="refiner","unsupported lora role");r.loras.push_back(std::move(adapter));
+        }
+    }
     if(d[@"inputs"]) {
         NSArray *inputs=d[@"inputs"];require([inputs isKindOfClass:NSArray.class]&&inputs.count<=32,"inputs must be an array of at most 32 assets");
         bool text_seen=!r.prompt.empty();
