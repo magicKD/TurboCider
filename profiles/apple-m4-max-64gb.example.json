@@ -22,6 +22,22 @@
         "cache_dir": "../artifacts/flux2/m4max-a6144/compiled"
       }
     },
+    "z-image-turbo": {
+      "policy": "gpu_ane",
+      "allow_approximation": true,
+      "ane_manifest": "../artifacts/z-image/m4max-a7680-b4608/compiled/manifest.json",
+      "residency": "resident",
+      "allocator_cache_bytes": 536870912,
+      "memory_budget_bytes": 60129542144,
+      "warmup_iterations": 1,
+      "coreml_export": {
+        "bucket": 4608,
+        "ane_mlp_width": 7680,
+        "variant": "int8_pc",
+        "output_dir": "../artifacts/z-image/m4max-a7680-b4608/source",
+        "cache_dir": "../artifacts/z-image/m4max-a7680-b4608/compiled"
+      }
+    },
     "minimax-h3-turbo": {
       "policy": "gpu",
       "residency": "streamed"

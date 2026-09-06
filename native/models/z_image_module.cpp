@@ -25,8 +25,12 @@ ModelModule z_image_module() {
             require(r.steps == 9, "Z-Image-Turbo requires its 9-step schedule");
             require(r.model_variant == "auto" || r.model_variant == "z-image-turbo",
                     "model_variant does not match Z-Image-Turbo");
-            require(r.execution != "gpu_ane",
-                    "Z-Image GPU+ANE partition is not validated; use gpu or auto");
+            if (r.execution == "gpu_ane") {
+                require(r.allow_approximation,
+                        "Z-Image GPU+ANE requires allow_approximation=true");
+                require(r.loras.empty(),
+                        "Z-Image LoRA currently requires GPU execution because base Core ML artifacts do not include LoRA deltas");
+            }
             require(r.residency == "resident",
                     "Z-Image component-staged residency is not implemented");
             require(r.loras.size() <= 8, "at most eight Z-Image LoRA adapters may be active");
@@ -57,13 +61,14 @@ ModelModule z_image_module() {
             d.supports_lora = true;
             d.runtime_lora = true;
             d.lora_mode = "in-memory-delta";
-            d.supports_gpu_ane = false;
+            d.supports_gpu_ane = true;
             d.backend = "mlx_cpp_metal";
             d.runtime_dependency = "bundled-native-mlx-cpp";
-            d.parallel_strategy = "single Metal GPU stream; ANE partition pending";
+            d.parallel_strategy = "explicit GPU attention + MLP suffix with Core ML ANE gated-MLP prefix; automatic selection disabled";
             d.candidate_limitations = {
                 "text-to-image only",
-                "GPU+ANE partition remains fail-closed until parity and speedup are validated",
+                "GPU+ANE is explicit opt-in and requires a matching 32-block Core ML manifest",
+                "the measured 7680-channel M4 Max partition is slower than the warm GPU baseline",
                 "1024×1024 warm-performance matrix remains pending"
             };
             return d;

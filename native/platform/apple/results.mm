@@ -149,6 +149,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"block_count" : @(m.block_count),
         @"mlp_width" : @(m.mlp_width),
         @"ane_mlp_range" : @[ @(m.ane_mlp_start), @(m.ane_mlp_end) ],
+        @"output_scale" : @(m.output_scale),
         @"compute_units" : @"cpuAndNeuralEngine",
         @"observed_ane_residency" : @"unknown",
         @"output_copy_bytes_session_total" : @(m.copied_bytes),

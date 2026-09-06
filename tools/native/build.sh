@@ -93,6 +93,6 @@ install -m 0644 "$LTX_ROOT/ltx_shaders.metal" "$OUT/ltx_shaders.metal"
 "$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
 printf 'Built %s\n' "$OUT/turbocider"
 mkdir -p "$OUT/coreml"
-cp tools/coreml/export_flux2.py "$OUT/coreml/"
+cp tools/coreml/export_flux2.py tools/coreml/export_z_image.py "$OUT/coreml/"
 export TURBOCIDER_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
 tools/native/build_app.sh

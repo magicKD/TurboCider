@@ -160,12 +160,22 @@ struct StudioDraft: Codable, Sendable {
             request.execution = acceleration.policy == "gpu_ane" && model.supports_gpu_ane != true
                 ? "gpu" : acceleration.policy
             if acceleration.policy == "auto" {
-                request.ane_manifest = AccelerationDiscovery.find(modelPath: modelPath, preferred: acceleration.manifest, cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) }, enforceAutomaticPolicy: true)?.manifest
+                request.ane_manifest = AccelerationDiscovery.find(modelPath: modelPath, preferred: acceleration.manifest, cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) }, enforceAutomaticPolicy: true, modelID: modelID)?.manifest
                 request.allow_approximation = true
             }
-            if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true {
+            let loraRequiresBaseGPU = !loras.isEmpty &&
+                (modelID.hasPrefix("flux2-") || modelID == "z-image-turbo")
+            if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true && !loraRequiresBaseGPU {
                 guard !acceleration.manifest.isEmpty else { throw NativeFailure(message: "请在模型中心选择已编译的分区 manifest，或先预编译本地源分区。") }
                 request.ane_manifest = acceleration.manifest; request.allow_approximation = true
+            }
+            // A base Core ML artifact does not contain an active LoRA delta.
+            // Keep App requests safe and usable by selecting the native GPU path
+            // before the manifest guard; direct native gpu_ane requests remain
+            // fail-closed in the model executor.
+            if loraRequiresBaseGPU {
+                request.execution = "gpu"
+                request.ane_manifest = nil
             }
         }
         request.inputs = activeAssets.enumerated().map { index, asset in
@@ -181,7 +191,8 @@ struct StudioDraft: Codable, Sendable {
         }
         request.loras = loras.isEmpty ? nil : loras.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
         if modelID == "fastmetal-1.3b-qad" && !loras.isEmpty { request.execution = "gpu" }
-        if modelID.hasPrefix("flux2-") && !loras.isEmpty && request.execution == "gpu_ane" {
+        if (modelID.hasPrefix("flux2-") || modelID == "z-image-turbo") &&
+            !loras.isEmpty && request.execution == "gpu_ane" {
             request.execution = "gpu"
             request.ane_manifest = nil
         }

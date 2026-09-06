@@ -11,6 +11,7 @@ class HybridSession {
     std::string manifest;
     int rows = 0, hidden = 0, block_count = 0;
     int mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;
+    float output_scale = 1.f;
     bool checkpoint_sha_verified = false;
     double load_seconds = 0;
     HybridSession(const std::filesystem::path &, const std::filesystem::path &model, int tokens,

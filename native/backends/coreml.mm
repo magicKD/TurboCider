@@ -140,8 +140,13 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     ane_mlp_end = [manifest_mlp_end isKindOfClass:NSNumber.class]
                       ? [manifest_mlp_end intValue]
                       : mlp_width;
+    id manifest_output_scale = d[@"shape"][@"output_scale"];
+    output_scale = [manifest_output_scale isKindOfClass:NSNumber.class]
+                       ? [manifest_output_scale floatValue]
+                       : 1.f;
     require(mlp_width > 0 && mlp_width <= 65536 && ane_mlp_start == 0 &&
-                ane_mlp_end > 0 && ane_mlp_end <= mlp_width,
+                ane_mlp_end > 0 && ane_mlp_end <= mlp_width && std::isfinite(output_scale) &&
+                output_scale >= 1.f && output_scale <= 256.f,
             "unsupported Core ML MLP partition; expected a nonempty [0,N) prefix");
     auto checkpoint = requested_checkpoint.empty()
                           ? model / "transformer/diffusion_pytorch_model.safetensors"
@@ -199,6 +204,7 @@ HybridMetrics HybridSession::metrics() const {
     metrics.mlp_width = mlp_width;
     metrics.ane_mlp_start = ane_mlp_start;
     metrics.ane_mlp_end = ane_mlp_end;
+    metrics.output_scale = output_scale;
     metrics.checkpoint_sha_verified = checkpoint_sha_verified;
     for (auto &branch : impl_->branches) {
         metrics.calls += branch->calls;

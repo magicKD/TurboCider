@@ -45,6 +45,7 @@ struct StudioBehaviorTests {
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled)?.rows == 1088, "Compatible local partition not found")
         try check(AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 9216, start: 0, end: 6144), "M4 Max validated prefix was rejected")
         try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 9216, start: 0, end: 9216), "M4 Max accepted the unvalidated full MLP partition")
+        try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 10240, start: 0, end: 7680, modelID: "z-image-turbo"), "Z-Image candidate bypassed the end-to-end performance gate")
         manifest["source"] = ["checkpoint": weight.path, "checkpoint_bytes": 4]
         try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled) == nil, "Wrong checkpoint accepted")

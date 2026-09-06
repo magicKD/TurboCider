@@ -18,7 +18,12 @@ struct AccelerationDiscovery {
                 (value["physical_memory_bytes"] as? NSNumber)?.uint64Value ?? 0)
     }
     static func automaticPolicyMatches(gpu: String, memory: UInt64,
-                                       mlpWidth: Int, start: Int, end: Int) -> Bool {
+                                       mlpWidth: Int, start: Int, end: Int,
+                                       modelID: String = "flux2-klein-4b") -> Bool {
+        // Automatic selection is a performance promise, not merely a
+        // capability check. Keep candidates opt-in until their warm
+        // end-to-end path beats the GPU baseline on validated hardware.
+        guard modelID == "flux2-klein-4b" else { return false }
         if gpu == "Apple M4 Max" && memory == 64 * 1024 * 1024 * 1024 {
             return mlpWidth == 9216 && start == 0 && end == 6144
         }
@@ -28,11 +33,21 @@ struct AccelerationDiscovery {
         return false
     }
     static func find(modelPath: String, preferred: String = "", cache: URL? = nil,
-                     enforceAutomaticPolicy: Bool = false) -> Match? {
+                     enforceAutomaticPolicy: Bool = false,
+                     modelID: String = "flux2-klein-4b") -> Match? {
         guard !modelPath.isEmpty else { return nil }
         let hardware = enforceAutomaticPolicy ? currentHardware() : nil
         let model = URL(fileURLWithPath: modelPath).resolvingSymlinksInPath()
-        let checkpoint = model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors")
+        let checkpointCandidates: [URL]
+        if modelID == "z-image-turbo" {
+            checkpointCandidates = [
+                model.appendingPathComponent("split_files/diffusion_models/z_image_turbo_bf16.safetensors"),
+                model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors")
+            ]
+        } else {
+            checkpointCandidates = [model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors")]
+        }
+        guard let checkpoint = checkpointCandidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return nil }
         guard let size = (try? FileManager.default.attributesOfItem(atPath: checkpoint.path))?[.size] as? NSNumber else { return nil }
         let fm = FileManager.default
         let appCache = cache ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("TurboCiderNative/cache/coreml")
@@ -44,7 +59,9 @@ struct AccelerationDiscovery {
             guard let data = try? Data(contentsOf: file),
                   let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   value["schema_version"] as? Int == 2,
-                  let shape = value["shape"] as? [String: Any], shape["K"] as? Int == 3072, shape["N"] as? Int == 3072,
+                  let shape = value["shape"] as? [String: Any],
+                  let hidden = (shape["K"] as? NSNumber)?.intValue,
+                  (shape["N"] as? NSNumber)?.intValue == hidden,
                   let buckets = shape["buckets"] as? [Int], buckets.count == 1, (1...8192).contains(buckets[0]),
                   let source = value["source"] as? [String: Any], let path = source["checkpoint"] as? String,
                   URL(fileURLWithPath: path).resolvingSymlinksInPath() == checkpoint,
@@ -56,10 +73,13 @@ struct AccelerationDiscovery {
             if let hardware {
                 guard automaticPolicyMatches(gpu: hardware.0, memory: hardware.1,
                                              mlpWidth: mlpWidth,
-                                             start: aneMLPStart, end: aneMLPEnd) else { continue }
+                                             start: aneMLPStart, end: aneMLPEnd,
+                                             modelID: modelID) else { continue }
             }
             let parent = file.deletingLastPathComponent().resolvingSymlinksInPath()
-            let complete = (0..<20).allSatisfy { index in
+            let expectedBlocks = modelID == "z-image-turbo" ? 32 : 20
+            guard hidden == (modelID == "z-image-turbo" ? 3840 : 3072) else { continue }
+            let complete = (0..<expectedBlocks).allSatisfy { index in
                 guard let relative = artifacts[String(index)]?["int8_pc"] else { return false }
                 let artifact = parent.appendingPathComponent(relative).resolvingSymlinksInPath()
                 var directory: ObjCBool = false

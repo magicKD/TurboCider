@@ -72,8 +72,11 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(p['stages'][1]['iterations'],9)
         self.assertNotEqual(plan({**request,'steps':8})[0],0)
         self.assertNotEqual(plan({**request,'operation':'image.edit'})[0],0)
-        self.assertNotEqual(plan({**request,'execution':'gpu_ane',
-                                  'ane_manifest':'/tmp/z-image.json'})[0],0)
+        code,_,error=plan({**request,'execution':'gpu_ane',
+                           'allow_approximation':True,
+                           'ane_manifest':'/tmp/z-image.json'})
+        self.assertNotEqual(code,0)
+        self.assertIn('LoRA currently requires GPU execution',error)
         self.assertNotEqual(plan({**request,'loras':[{
             'path':'/tmp/z-image-style.safetensors',
             'role':'text_encoder','strength':0.7}]})[0],0)

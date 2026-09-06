@@ -14,6 +14,7 @@ struct HybridMetrics {
     uint64_t calls = 0, copied_bytes = 0;
     int bucket = 0, hidden = 0, block_count = 0;
     int mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;
+    float output_scale = 1.f;
     bool checkpoint_sha_verified = false;
 };
 struct LoadResult {

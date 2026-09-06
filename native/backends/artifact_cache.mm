@@ -81,19 +81,21 @@ NSDictionary *manage_coreml_cache(NSDictionary*request,const Event&event,std::at
  auto is_key=[](const std::string&s){return s.size()==64&&s.find_first_not_of("0123456789abcdef")==std::string::npos;};
  NSMutableArray *entries=[NSMutableArray array];uint64_t bytes=0;int removed=0;
  if(action=="compile_manifest"){
-  auto source=std::filesystem::absolute(string_value(request,@"source"));auto d=read_json(source);
+ auto source=std::filesystem::absolute(string_value(request,@"source"));auto d=read_json(source);
   require([d[@"shape"] isKindOfClass:NSDictionary.class]&&[d[@"artifacts"] isKindOfClass:NSDictionary.class]&&[d[@"source"] isKindOfClass:NSDictionary.class],"invalid source partition manifest");
+  int partition_count=int([d[@"artifacts"] count]);
+  require(partition_count>0&&partition_count<=64,"partition manifest must contain 1...64 blocks");
   auto artifacts=[NSMutableDictionary dictionary];int hits=0;
   // Validate all input paths before compiling any partition.
   std::vector<std::filesystem::path> paths;auto base=std::filesystem::weakly_canonical(source.parent_path());
-  for(int i=0;i<20;++i){NSString*k=[NSString stringWithFormat:@"%d",i];NSDictionary *entry=d[@"artifacts"][k];require([entry isKindOfClass:NSDictionary.class],"missing partition");auto path=std::filesystem::weakly_canonical(base/string_value(entry,@"int8_pc"));require(path.string().starts_with(base.string()+"/")&&(path.extension()==".mlpackage"||path.extension()==".mlmodel"),"select the source manifest containing .mlpackage partitions");paths.push_back(path);}
-  for(int i=0;i<20;++i){checkpoint(cancelled);event("coreml_compile",i,20);auto result=compile_artifact(paths[i],root);if([result[@"cache_hit"] boolValue])++hits;NSString*k=[NSString stringWithFormat:@"%d",i];artifacts[k]=@{@"int8_pc":[NSString stringWithFormat:@"%@/model.mlmodelc",result[@"key"]]};}
+  for(int i=0;i<partition_count;++i){NSString*k=[NSString stringWithFormat:@"%d",i];NSDictionary *entry=d[@"artifacts"][k];require([entry isKindOfClass:NSDictionary.class],"missing contiguous partition");auto path=std::filesystem::weakly_canonical(base/string_value(entry,@"int8_pc"));require(path.string().starts_with(base.string()+"/")&&(path.extension()==".mlpackage"||path.extension()==".mlmodel"),"select the source manifest containing .mlpackage partitions");paths.push_back(path);}
+  for(int i=0;i<partition_count;++i){checkpoint(cancelled);event("coreml_compile",i,partition_count);auto result=compile_artifact(paths[i],root);if([result[@"cache_hit"] boolValue])++hits;NSString*k=[NSString stringWithFormat:@"%d",i];artifacts[k]=@{@"int8_pc":[NSString stringWithFormat:@"%@/model.mlmodelc",result[@"key"]]};}
   checkpoint(cancelled);NSMutableDictionary *compiled=[d mutableCopy];compiled[@"schema_version"]=@2;compiled[@"artifacts"]=artifacts;compiled[@"source_manifest"]=@(source.c_str());
   auto content=json(compiled);unsigned char hash[CC_SHA256_DIGEST_LENGTH];CC_SHA256(content.data(),CC_LONG(content.size()),hash);
   auto target=root/("manifest-"+hex_digest(hash,sizeof(hash))+".json");
   require([[NSData dataWithBytes:content.data() length:content.size()] writeToFile:@(target.c_str()) options:NSDataWritingAtomic error:nil],"cannot publish compiled manifest");
-  event("coreml_compile",20,20);
-  return @{@"action":@"compile_manifest",@"manifest":@(target.c_str()),@"partitions":@20,@"cache_hits":@(hits),@"cache":@(root.c_str())};
+  event("coreml_compile",partition_count,partition_count);
+  return @{@"action":@"compile_manifest",@"manifest":@(target.c_str()),@"partitions":@(partition_count),@"cache_hits":@(hits),@"cache":@(root.c_str())};
  }
  for(auto& entry:std::filesystem::directory_iterator(root)){
   auto name=entry.path().filename().string();if(entry.is_symlink())continue;

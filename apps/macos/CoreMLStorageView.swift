@@ -12,7 +12,10 @@ struct CoreMLStorageView: View {
     private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration() }
     private func update(_ change: (inout StudioAcceleration) -> Void) { var c = config; change(&c); c.automaticVersion = 1; studio.draft.acceleration = c }
     private func size(_ value: Any?) -> String { ByteCountFormatter.string(fromByteCount: (value as? NSNumber)?.int64Value ?? 0, countStyle: .file) }
-    private var defaultStorage: String { store.directory.appendingPathComponent("coreml/flux2-klein-4b/m1088").path }
+    private var isZImage: Bool { studio.draft.modelID == "z-image-turbo" }
+    private var defaultStorage: String {
+        store.directory.appendingPathComponent(isZImage ? "coreml/z-image-turbo/m4608" : "coreml/flux2-klein-4b/m1088").path
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Core ML 模型与磁盘空间").font(.title2)
@@ -43,7 +46,10 @@ struct CoreMLStorageView: View {
             }.disabled(store.busy)
             Divider()
             Text("从 safetensors 构建 Core ML 分区").font(.headline)
-            Text("导出 FLUX 的 20 个 INT8 MLP 分区；attention 仍在 GPU。转换默认使用 TurboCider 托管工具链（由 make setup 安装），正常推理不依赖 Python。不会自动下载模型或安装依赖。").font(.caption).foregroundStyle(.secondary)
+            Text(isZImage ? "导出 Z-Image 的 32 个 INT8 gated-MLP 前缀分区；GPU 并行计算 attention 和 MLP 后缀。" : "导出 FLUX 的 20 个 INT8 MLP 分区；attention 和未分配给 ANE 的 MLP 后缀仍在 GPU。")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("转换默认使用 TurboCider 托管工具链（由 make setup 安装），正常推理不依赖 Python。不会自动下载模型或安装依赖。")
+                .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button("选择构建配置…") { chooseFile { path in update { $0.exportProfile = path } } }
                 Button("选择 Python…") { chooseFile(json: false) { path in update { $0.exportPython = path } } }
@@ -88,7 +94,7 @@ struct CoreMLStorageView: View {
         if panel.runModal() == .OK, let path = panel.url?.path { action(path) }
     }
     private func request(_ action: String, kind: String?) -> [String: Any] {
-        var r: [String: Any] = ["action": action, "model_root": studio.draft.modelPath]
+        var r: [String: Any] = ["action": action, "model": studio.draft.modelID, "model_root": studio.draft.modelPath]
         for (key, value) in [("manifest",config.manifest),("source_manifest",config.sourceManifest),("profile",config.exportProfile ?? studio.draft.profilePath),("storage",config.coreMLStorage ?? ""),("cache",config.coreMLCache ?? ""),("python",config.exportPython ?? ""),("python_path",config.exportPythonPath ?? "")] where !value.isEmpty { r[key] = value }
         if let kind { r["kind"] = kind }; return r
     }

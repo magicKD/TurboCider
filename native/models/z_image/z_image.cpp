@@ -314,6 +314,10 @@ Tensor z_ffn(const Tensor &x, const Weights &w, const std::string &prefix) {
                          w, prefix + ".w2");
 }
 
+float z_hybrid_output_scale(const HybridSession *hybrid) {
+    return hybrid ? hybrid->output_scale : 1.f;
+}
+
 std::function<std::vector<Tensor>(const std::vector<Tensor> &)>
 make_z_hybrid_gpu_graph(int hidden, int mlp_width, int gpu_mlp_start) {
     require(hidden == 3840 && mlp_width == 10240 && gpu_mlp_start > 0 &&
@@ -371,7 +375,36 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                                  w.at(prefix + ".feed_forward.w2.weight")})[0];
         mx::async_eval({gpu});
         auto ane = slice_axis(hybrid->predict(hybrid_block, packed), 1, 0, actual_rows);
-        feed = gpu + mx::astype(ane, gpu.dtype());
+        auto ane_scaled = mx::astype(ane, gpu.dtype()) * Tensor(z_hybrid_output_scale(hybrid), gpu.dtype());
+        feed = gpu + ane_scaled;
+        if (std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE")) {
+            auto reference = z_ffn(feed_input, w, prefix + ".feed_forward");
+            mx::eval({gpu, ane, feed, reference});
+            const bool gpu_finite = mx::all(mx::isfinite(gpu)).item<bool>();
+            const bool ane_finite = mx::all(mx::isfinite(ane)).item<bool>();
+            const bool ane_scaled_finite = mx::all(mx::isfinite(ane_scaled)).item<bool>();
+            const bool feed_finite = mx::all(mx::isfinite(feed)).item<bool>();
+            const float gpu_max = mx::max(mx::abs(gpu)).item<float>();
+            const float ane_max = mx::max(mx::abs(ane_scaled)).item<float>();
+            const float reference_max = mx::max(mx::abs(reference)).item<float>();
+            const float mae = mx::mean(mx::abs(feed - reference)).item<float>();
+            if (const char *directory = std::getenv("TURBOCIDER_Z_HYBRID_DUMP");
+                directory && hybrid_block == 0) {
+                std::filesystem::create_directories(directory);
+                auto root = std::filesystem::path(directory);
+                mx::save_safetensors((root / "input.safetensors").string(), {{"x", packed}});
+                mx::save_safetensors((root / "ane.safetensors").string(), {{"y", ane}});
+                mx::save_safetensors((root / "reference.safetensors").string(),
+                                     {{"y", reference}});
+            }
+            std::fprintf(stderr,
+                         "z_hybrid block=%d gpu_finite=%d ane_finite=%d ane_scaled_finite=%d feed_finite=%d "
+                         "gpu_max=%g ane_max=%g reference_max=%g mae=%g\n",
+                         hybrid_block, gpu_finite, ane_finite, ane_scaled_finite, feed_finite, gpu_max, ane_max,
+                         reference_max, mae);
+            require(gpu_finite && ane_finite && ane_scaled_finite && feed_finite,
+                    "nonfinite Z-Image hybrid FFN at block " + std::to_string(hybrid_block));
+        }
     } else {
         feed = z_ffn(feed_input, w, prefix + ".feed_forward");
     }
@@ -671,25 +704,15 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
     const bool automatic = r.execution == "auto";
     if (automatic) {
         r.execution = "gpu";
-        if (!r.allow_approximation || r.ane_manifest.empty()) {
-            hybrid_.reset();
-            return "gpu: no opted-in compatible local Z-Image partition";
-        }
-        if (!active_loras_.empty()) {
-            hybrid_.reset();
-            return "gpu: Z-Image LoRA changes FFN weights; base ANE artifacts are not reusable";
-        }
-        auto system = device_info();
-        if (system.gpu != "Apple M4 Max" || system.physical_memory != (64ull << 30)) {
-            hybrid_.reset();
-            return "gpu: automatic Z-Image hybrid policy is not validated on this hardware";
-        }
-        r.execution = "gpu_ane";
+        hybrid_.reset();
+        return "gpu: Z-Image hybrid has not passed the warm end-to-end performance gate";
     }
     if (r.execution != "gpu_ane") {
         hybrid_.reset();
         return "gpu: native MLX single-stream S3-DiT";
     }
+    require(active_loras_.empty(),
+            "Z-Image LoRA changes FFN weights; base ANE artifacts are not reusable");
     try {
         require(std::filesystem::is_regular_file(transformer_checkpoint_),
                 "Z-Image hybrid currently requires a single-file transformer checkpoint");
@@ -701,16 +724,12 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
                     hybrid_->block_count == 32 && hybrid_->mlp_width == 10240 &&
                     hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end < 10240,
                 "Z-Image Core ML FFN partition geometry mismatch");
-        if (automatic)
-            require(hybrid_->ane_mlp_end == 7680,
-                    "M4 Max automatic Z-Image profile requires the validated 7680-channel ANE prefix");
         if (!hybrid_gpu_graph_ || hybrid_gpu_mlp_start_ != hybrid_->ane_mlp_end) {
             hybrid_gpu_graph_ = make_z_hybrid_gpu_graph(
                 hybrid_->hidden, hybrid_->mlp_width, hybrid_->ane_mlp_end);
             hybrid_gpu_mlp_start_ = hybrid_->ane_mlp_end;
         }
-        return automatic ? "gpu_ane: M4 Max checkpoint and Z-Image FFN partition matched"
-                         : "gpu_ane: explicitly selected Z-Image FFN partition";
+        return "gpu_ane: explicitly selected Z-Image FFN partition";
     } catch (const Cancelled &) {
         throw;
     } catch (const std::exception &error) {
