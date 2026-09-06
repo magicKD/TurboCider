@@ -151,6 +151,6 @@ struct StudioBehaviorTests {
                   "Z-Image App defaults, GPU fail-closed policy or separate LoRA forwarding changed")
         studio.newDraft()
         try check(studio.draft.seedText == "42" && !studio.draft.randomSeed && studio.draft.assets.isEmpty, "New draft defaults failed")
-        print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/FastMetal defaults and separate LoRA forwarding")
+        print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/FastMetal/Z-Image defaults and separate LoRA forwarding")
     }
 }

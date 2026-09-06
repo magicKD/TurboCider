@@ -451,7 +451,7 @@ Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic
         text_encoder_.load_file(text_path_);
     auto ids = Tensor(tokens.ids.data(), {1, int(tokens.ids.size())}, mx::int32);
     auto result = qwen_encode(ids, text_encoder_, tokens.valid, event, cancelled);
-    result = slice_axis(result, 1, 0, tokens.valid);
+    result = slice_axis(mx::squeeze(result, 0), 0, 0, tokens.valid);
     text_encoder_.clear();
     mx::clear_cache();
     return result;

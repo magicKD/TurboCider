@@ -1,10 +1,10 @@
 # TurboCider 版本提交准备度
 
-更新时间：2026-09-06
+更新时间：2026-09-06（合并验收补充）
 
 ## 结论
 
-当前工作树可以整理并提交一个**开发验收版本**，但不应把这次提交命名或描述为“全部模型生产版”。代码、测试、请求样例、配置样例和正式文档已经形成一个可审阅的纵切；LTX ANE、LTX I2V/音频、FLUX 9B 完整矩阵、FastMetal 独立 LoRA、H3/LTX 纯内存 LoRA，以及 Z-Image 的真实图片 parity/性能仍是明确的后续工作。
+当前工作树可以整理并提交一个**开发验收版本**，但不应把这次提交命名或描述为“全部模型生产版”。代码、测试、请求样例、配置样例和正式文档已经形成一个可审阅的纵切；LTX ANE、LTX I2V/音频、FLUX 9B 完整矩阵、FastMetal 独立 LoRA、H3/LTX 纯内存 LoRA，以及 Z-Image 的 ComfyUI/LoRA parity、warm 性能和 GPU+ANE 仍是明确的后续工作。
 
 建议提交主题：
 
@@ -62,7 +62,7 @@ feat(native): integrate H3 FastMetal and LTX video runtime
 - FastMetal LoRA 继续要求 provenance-verified premerged manifest；不能把 `runtime_lora=false` 改成 true 来掩盖缺口。
 - H3/LTX LoRA 的 runtime cache 是可清理临时 artifact，不应在文档中写成已经完全不产生 merged 权重。
 - FLUX 9B 的 5.33 秒 smoke 不得写成正式 parity/性能验收。
-- Z-Image 的 compile、plan、模型目录构造和静态权重校验不得写成真实出图或性能验收；GPU+ANE 继续 fail closed。
+- Z-Image 已有 Apple M4 Max 真实 1024×1024 base 出图和 App smoke；仍不得把它写成已完成 ComfyUI oracle/LoRA parity 或 GPU+ANE 验收，GPU+ANE 继续 fail closed。
 
 ### 测试门禁
 
@@ -91,7 +91,7 @@ LTX 需要按 fresh、conditioning-cache hit、loaded-model hot path 和 residen
 3. **LoRA 磁盘风险**：H3/LTX 首次使用会生成临时 merged artifact，虽然可 prune，但还不是纯内存 merge。
 4. **环境复现风险**：统一内存调度和 Core ML on-device compile 会造成明显 wall 波动；当前只有 M4 Max 64 GB 的实机证据。
 5. **许可证发布风险**：FastMetal 依赖 FastVideo/TAEHV 的第三方许可证需要在最终发行包中逐项核对。
-6. **Z-Image 验收风险**：当前沙箱不可见 Metal，Qwen3/DiT/VAE 真实数值与 1024×1024 wall 尚未形成可发布证据。
+6. **Z-Image 验收风险**：base 真实出图与 1024×1024 wall 已有实机证据，但 ComfyUI scheduler/oracle、独立 LoRA 图片 parity 和多轮 warm 统计尚未形成可发布门禁。
 
 ## 推荐的下一版退出条件
 
