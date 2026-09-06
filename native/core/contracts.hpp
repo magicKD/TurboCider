@@ -17,7 +17,7 @@ struct LoRAAsset {
 struct Request {
     std::string model = "flux2-klein-4b";
     std::string operation = "image.generate";
-    std::string prompt, output, execution = "gpu", dump, ane_manifest;
+    std::string prompt, output, execution = "gpu", dump, noise_path, ane_manifest;
     std::string profile, residency = "resident";
     std::string profile_identity;
     std::string model_variant = "auto";

@@ -62,7 +62,7 @@ feat(native): integrate H3 FastMetal and LTX video runtime
 - FastMetal LoRA 继续要求 provenance-verified premerged manifest；不能把 `runtime_lora=false` 改成 true 来掩盖缺口。
 - H3/LTX LoRA 的 runtime cache 是可清理临时 artifact，不应在文档中写成已经完全不产生 merged 权重。
 - FLUX 9B 的 5.33 秒 smoke 不得写成正式 parity/性能验收。
-- Z-Image 已有 Apple M4 Max 真实 1024×1024 base 出图和 App smoke；仍不得把它写成已完成 ComfyUI oracle/LoRA parity 或 GPU+ANE 验收，GPU+ANE 继续 fail closed。
+- Z-Image 已有 Apple M4 Max 真实 1024×1024 base 出图和 App smoke，scheduler 已对齐固定 `shift=3.0`；MLX/PyTorch RNG 不同，仍须通过共享初始噪声完成逐阶段 ComfyUI oracle parity。不得写成已完成 LoRA parity 或 GPU+ANE 验收，GPU+ANE 继续 fail closed。
 
 ### 测试门禁
 
@@ -91,7 +91,7 @@ LTX 需要按 fresh、conditioning-cache hit、loaded-model hot path 和 residen
 3. **LoRA 磁盘风险**：H3/LTX 首次使用会生成临时 merged artifact，虽然可 prune，但还不是纯内存 merge。
 4. **环境复现风险**：统一内存调度和 Core ML on-device compile 会造成明显 wall 波动；当前只有 M4 Max 64 GB 的实机证据。
 5. **许可证发布风险**：FastMetal 依赖 FastVideo/TAEHV 的第三方许可证需要在最终发行包中逐项核对。
-6. **Z-Image 验收风险**：base 真实出图与 1024×1024 wall 已有实机证据，但 ComfyUI scheduler/oracle、独立 LoRA 图片 parity 和多轮 warm 统计尚未形成可发布门禁。
+6. **Z-Image 验收风险**：base 真实出图与 1024×1024 wall 已有实机证据，scheduler 已对齐，但共享初始噪声的 ComfyUI 逐阶段 oracle、独立 LoRA 图片 parity 和多轮 warm 统计尚未形成可发布门禁。
 
 ## 推荐的下一版退出条件
 

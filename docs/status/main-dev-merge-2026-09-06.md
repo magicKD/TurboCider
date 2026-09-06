@@ -15,6 +15,7 @@
 - 将 FastMetal 作为受控外部 worker 模块注册，保留 profile、provenance 和 GPU+ANE 完整性门禁。
 - 将 FLUX 4B/9B 与 Z-Image 接入统一 registry、plan、C ABI、Swift binding、CLI 和 App 模型目录。
 - 修复 Z-Image Qwen3 输出维度：text encoder 的 `[1,T,2560]` 输出在截取有效 token 前去掉 batch 维，向 DiT 传递 `[T,2560]`。
+- 将 Z-Image 采样日程对齐 ComfyUI 的固定 `shift=3.0` discrete-flow simple scheduler；增加可选共享初始噪声和逐步 latent dump，供同噪声 oracle 定位数值差异，不改变正常请求的默认随机噪声路径。
 - 修复 App smoke 的多模型兼容：不再硬编码 256×256/4-step/PNG，而从模型 descriptor 读取操作、尺寸、步数、帧数、帧率、音频、驻留和输出媒体类型。
 
 ## 模型与 App 兼容矩阵
@@ -61,7 +62,7 @@ MLX peak           25.63 GB
 - H3/LTX LoRA cache miss 仍会调用 Python merge 工具并产生可清理的 merged artifact，未达到纯内存逐层融合目标。
 - FastMetal 仍依赖显式外部 worker/profile，独立 LoRA runtime bake 未完成。
 - FLUX 9B 尚缺标准尺寸、多轮 warm/resident parity 与性能矩阵。
-- Z-Image 尚缺 ComfyUI oracle/scheduler parity、真实独立 LoRA 图片 parity、多轮 warm 数据和 GPU+ANE 分区。
+- Z-Image scheduler 已与 ComfyUI 的固定 `shift=3.0` 日程对齐；同 seed 仍会因 MLX 与 PyTorch RNG 不同而产生不同初始噪声，尚需用共享噪声完成逐阶段 oracle parity。真实独立 LoRA 图片 parity、多轮 warm 数据和 GPU+ANE 分区也仍未完成。
 - 当前包为本地 ad-hoc 签名，不是 Developer ID 公证发行包。
 
 ## 构建说明

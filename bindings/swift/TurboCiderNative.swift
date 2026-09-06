@@ -32,6 +32,7 @@ public struct NativeRequest: Codable, Sendable {
     public var frames = 1
     public var execution = "gpu"
     public var dynamic_text = true
+    public var noise_path: String?
     public var compile_gpu: Bool?
     public var ane_manifest: String?
     public var allow_approximation: Bool?

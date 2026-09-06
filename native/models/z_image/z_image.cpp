@@ -361,19 +361,50 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
 }
 
 std::vector<float> z_sigmas(int width, int height, int steps) {
+    // ComfyUI registers Z-Image as ModelSamplingDiscreteFlow with shift=3.0
+    // and the official workflow uses its `simple` scheduler.  This is the
+    // fixed-shift flow schedule, not FLUX/MFLUX's resolution-dependent
+    // exponential time shift.  Keeping it here makes the native sampler
+    // numerically compatible with ComfyUI at 1024² and at other supported
+    // dimensions while leaving the execution path entirely native.
+    (void)width;
+    (void)height;
+    constexpr float shift = 3.f;
     std::vector<float> result;
-    std::vector<float> base;
-    for (int i = 0; i < steps; ++i)
-        base.push_back(1.f - float(i) / steps);
-    const float m = (1.15f - 0.5f) / (4096.f - 256.f);
-    const float b = 0.5f - m * 256.f;
-    const float mu = m * float(width * height) / 256.f + b;
-    for (float sigma : base) {
-        float e = std::exp(mu);
-        result.push_back(e / (e + (1.f / sigma - 1.f)));
+    result.reserve(size_t(steps) + 1);
+    for (int i = 0; i < steps; ++i) {
+        const float t = 1.f - float(i) / float(steps);
+        result.push_back(shift * t / (1.f + (shift - 1.f) * t));
     }
     result.push_back(0.f);
     return result;
+}
+
+Tensor z_initial_noise(const Request &r, int height, int width) {
+    if (r.noise_path.empty()) {
+        return mx::astype(mx::random::normal({16, 1, height, width}, mx::float32, 0.f, 1.f,
+                                              mx::random::key(r.seed)),
+                          mx::bfloat16);
+    }
+    require(std::filesystem::is_regular_file(r.noise_path),
+            "initial noise file missing: " + r.noise_path);
+    auto loaded = mx::load_safetensors(r.noise_path);
+    require(!loaded.first.empty(), "initial noise file contains no tensors");
+    auto found = loaded.first.find("noise");
+    if (found == loaded.first.end())
+        found = loaded.first.find("tensor");
+    if (found == loaded.first.end())
+        found = loaded.first.find("latent_tensor");
+    require(found != loaded.first.end(),
+            "initial noise file must contain noise, tensor, or latent_tensor");
+    auto noise = found->second;
+    require(noise.ndim() == 4, "initial noise must be rank four");
+    if (noise.shape(0) == 1 && noise.shape(1) == 16)
+        noise = mx::transpose(noise, {1, 0, 2, 3});
+    require(noise.shape(0) == 16 && noise.shape(1) == 1 &&
+                noise.shape(2) == height && noise.shape(3) == width,
+            "initial noise shape must be [1,16,H,W] or [16,1,H,W]");
+    return mx::astype(noise, mx::bfloat16);
 }
 
 } // namespace
@@ -506,10 +537,16 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const double text_seconds = std::chrono::duration<double>(Clock::now() - text_start).count();
     load(event, cancelled);
     const int latent_h = r.height / 8, latent_w = r.width / 8;
-    auto z = mx::astype(mx::random::normal({16, 1, latent_h, latent_w}, mx::float32, 0.f, 1.f,
-                                           mx::random::key(r.seed)),
-                        mx::bfloat16);
+    auto z = z_initial_noise(r, latent_h, latent_w);
     mx::eval(z);
+    auto dump = [&](const std::string &name, const Tensor &value) {
+        if (r.dump.empty())
+            return;
+        std::filesystem::create_directories(r.dump);
+        mx::save_safetensors((std::filesystem::path(r.dump) / (name + ".safetensors")).string(),
+                             {{"tensor", value}});
+    };
+    dump("z_latent_initial", z);
     auto sigmas = z_sigmas(r.width, r.height, r.steps);
     const auto caption = *cached_conditioning_;
     auto dit_start = Clock::now();
@@ -519,6 +556,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         auto noise = denoise(z, caption, sigmas[i], float(r.width), r.height, i, event, cancelled);
         z = euler_step(z, noise, sigmas[i + 1] - sigmas[i]);
         mx::eval(z);
+        dump("z_latent_step_" + std::to_string(i + 1), z);
         require(mx::all(mx::isfinite(z)).item<bool>(), "nonfinite Z-Image latent");
         event("denoise", i + 1, r.steps);
     }
@@ -526,6 +564,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     checkpoint(cancelled);
     auto decode_start = Clock::now();
     auto decoded = decode(z, r.width, r.height, event, cancelled);
+    dump("z_latent_final", z);
+    dump("z_decoded", decoded);
     const double decode_seconds = std::chrono::duration<double>(Clock::now() - decode_start).count();
     require(mx::all(mx::isfinite(decoded)).item<bool>(), "nonfinite Z-Image pixels");
     auto pixels = mx::transpose(decoded, {0, 2, 3, 1});

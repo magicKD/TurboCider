@@ -79,7 +79,7 @@ Request request_from_json(NSDictionary *d) {
             @"dump_tensors", @"ane_manifest",   @"allow_approximation",
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
-            @"loras",        @"audio"
+            @"loras",        @"audio",          @"noise_path"
         ]);
         r.model = string_value(d, @"model", r.model);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
@@ -104,6 +104,7 @@ Request request_from_json(NSDictionary *d) {
         r.audio = boolean(d, @"audio", model_descriptor.default_audio);
         r.residency = string_value(d, @"residency", model_descriptor.default_residency);
         r.profile = string_value(d, @"profile");
+        r.noise_path = string_value(d, @"noise_path");
     } else {
         keys(d, @[
             @"schema_version", @"model", @"operation", @"inputs", @"outputs", @"sampling",
@@ -141,9 +142,10 @@ Request request_from_json(NSDictionary *d) {
         r.allow_approximation = boolean(execution, @"allow_approximation", false);
         r.residency = string_value(execution, @"residency", model_descriptor.default_residency);
         auto parameters = d[@"parameters"] ? dictionary(d[@"parameters"], "parameters") : @{};
-        keys(parameters, @[ @"dynamic_text", @"compile_gpu" ]);
+        keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path" ]);
         r.compile_gpu = boolean(parameters, @"compile_gpu", false);
         r.dynamic_text = boolean(parameters, @"dynamic_text", true);
+        r.noise_path = string_value(parameters, @"noise_path");
     }
     r.dump = string_value(d, @"dump_tensors");
     if (d[@"loras"]) {

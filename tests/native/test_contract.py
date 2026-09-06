@@ -54,6 +54,7 @@ class ContractTests(unittest.TestCase):
             'model':'z-image-turbo', 'operation':'image.generate',
             'prompt':'A red fox in snow', 'width':1024, 'height':1024,
             'frames':1, 'steps':9, 'audio':False, 'execution':'auto',
+            'noise_path':'/tmp/z-image-shared-noise.safetensors',
             'loras':[{'path':'/tmp/z-image-style.safetensors',
                       'role':'transformer','strength':0.7}],
         }
@@ -76,6 +77,20 @@ class ContractTests(unittest.TestCase):
         self.assertNotEqual(plan({**request,'loras':[{
             'path':'/tmp/z-image-style.safetensors',
             'role':'text_encoder','strength':0.7}]})[0],0)
+        schema2={
+            'schema_version':2,
+            'model':'z-image-turbo',
+            'operation':'image.generate',
+            'inputs':[{'kind':'text','role':'prompt','text':'A red fox in snow'}],
+            'outputs':[{'kind':'image','path':'/tmp/z-image.png',
+                        'width':1024,'height':1024,'frames':1,'audio':False}],
+            'sampling':{'seed':42,'steps':9},
+            'execution':{'policy':'gpu','residency':'resident'},
+            'parameters':{'noise_path':'/tmp/z-image-shared-noise.safetensors'},
+        }
+        code,p,error=plan(schema2)
+        self.assertEqual(code,0,error)
+        self.assertTrue(p['executable'])
 
     def test_flux_text_taps_are_config_guarded_and_dead_tail_is_elided(self):
         platform=(ROOT/'native/platform/apple/device.mm').read_text()
