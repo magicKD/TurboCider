@@ -46,7 +46,7 @@ docs/design/                长期设计、验收契约和历史架构
 | FastMetal 1.3B QAD | 持久 MLX/TAEHV worker、GPU/ANE split、取消重建、prompt cache | base GPU/GPU+ANE latent 与 direct 逐元素一致 | 多机器中位数、独立 LoRA runtime bake、LoRA ANE artifact |
 | MiniMax H3 Turbo | 文生视频、首尾帧、reference、音视频、streamed/resident/component-staged、manifest LoRA | 512×512、22 帧、4-step 输出 byte-exact | 更广输入/尺寸、resident/ANE 多轮矩阵 |
 | LTX 2.5 Distilled | video-only 文生视频、动态 Gemma、8+3、upsample、clean-exec Video VAE、conditioning cache、App 视频请求 | 704×448、97 帧既有真实生成；本轮另完成 704×448、9 帧 smoke | I2V 数值 parity、音频 Session parity、默认 GPU+ANE、端到端稳定快于 mac-ltx |
-| Z-Image Turbo | ComfyUI Qwen3/DiT/VAE、固定 shift=3.0 的 9-step flow schedule、App/CLI/plan、独立 LoRA 内存融合、共享初始噪声/逐步 latent parity 工具 | Apple M4 Max 真实 1024×1024 出图；Swift App→C ABI→C++ runtime smoke 通过，request wall 47.445 s，峰值 MLX 25.63 GB | 同噪声 ComfyUI 逐阶段 oracle parity、独立 LoRA 真实出图 parity、warm 性能、GPU+ANE 分区 |
+| Z-Image Turbo | ComfyUI Qwen3/DiT/VAE、固定 shift=3.0/离散 sigma table 的 9-step flow schedule、FP32 Euler 状态、App/CLI/plan、独立 LoRA 内存融合、共享初始噪声/逐步 latent parity 工具 | Apple M4 Max 真实 1024×1024 出图；Swift App→C ABI→C++ runtime smoke 通过，request wall 47.445 s，峰值 MLX 25.63 GB | 同噪声 ComfyUI 逐阶段 oracle parity、独立 LoRA 真实出图 parity、warm 性能、GPU+ANE 分区 |
 
 ## 性能与准确性证据
 

@@ -15,7 +15,7 @@
 - 将 FastMetal 作为受控外部 worker 模块注册，保留 profile、provenance 和 GPU+ANE 完整性门禁。
 - 将 FLUX 4B/9B 与 Z-Image 接入统一 registry、plan、C ABI、Swift binding、CLI 和 App 模型目录。
 - 修复 Z-Image Qwen3 输出维度：text encoder 的 `[1,T,2560]` 输出在截取有效 token 前去掉 batch 维，向 DiT 传递 `[T,2560]`。
-- 将 Z-Image 采样日程对齐 ComfyUI 的固定 `shift=3.0` discrete-flow simple scheduler；增加可选共享初始噪声和逐步 latent dump，供同噪声 oracle 定位数值差异，不改变正常请求的默认随机噪声路径。
+- 将 Z-Image 采样日程对齐 ComfyUI 的固定 `shift=3.0` discrete-flow simple scheduler，包括 1000-entry sigma table 的离散取样；Euler 状态保持 FP32、仅在 DiT/VAE 入口转 BF16。增加可选共享初始噪声和逐步 latent dump，供同噪声 oracle 定位数值差异，不改变正常请求的默认随机噪声路径。
 - 修复 App smoke 的多模型兼容：不再硬编码 256×256/4-step/PNG，而从模型 descriptor 读取操作、尺寸、步数、帧数、帧率、音频、驻留和输出媒体类型。
 
 ## 模型与 App 兼容矩阵

@@ -370,10 +370,15 @@ std::vector<float> z_sigmas(int width, int height, int steps) {
     (void)width;
     (void)height;
     constexpr float shift = 3.f;
+    constexpr int training_steps = 1000;
     std::vector<float> result;
     result.reserve(size_t(steps) + 1);
     for (int i = 0; i < steps; ++i) {
-        const float t = 1.f - float(i) / float(steps);
+        // ComfyUI's `simple` scheduler indexes the 1000-entry training sigma
+        // table with `-(1 + int(i * 1000 / steps))`; preserve that discrete
+        // rounding instead of approximating it with the continuous fraction.
+        const int table_step = training_steps - (i * training_steps / steps);
+        const float t = float(table_step) / float(training_steps);
         result.push_back(shift * t / (1.f + (shift - 1.f) * t));
     }
     result.push_back(0.f);
@@ -382,9 +387,8 @@ std::vector<float> z_sigmas(int width, int height, int steps) {
 
 Tensor z_initial_noise(const Request &r, int height, int width) {
     if (r.noise_path.empty()) {
-        return mx::astype(mx::random::normal({16, 1, height, width}, mx::float32, 0.f, 1.f,
-                                              mx::random::key(r.seed)),
-                          mx::bfloat16);
+        return mx::random::normal({16, 1, height, width}, mx::float32, 0.f, 1.f,
+                                  mx::random::key(r.seed));
     }
     require(std::filesystem::is_regular_file(r.noise_path),
             "initial noise file missing: " + r.noise_path);
@@ -404,7 +408,10 @@ Tensor z_initial_noise(const Request &r, int height, int width) {
     require(noise.shape(0) == 16 && noise.shape(1) == 1 &&
                 noise.shape(2) == height && noise.shape(3) == width,
             "initial noise shape must be [1,16,H,W] or [16,1,H,W]");
-    return mx::astype(noise, mx::bfloat16);
+    // ComfyUI keeps the Euler sampler state in FP32 and casts only the model
+    // input to BF16.  Keeping the shared noise and every update in FP32 avoids
+    // accumulating a BF16 residual-rounding difference at all nine steps.
+    return mx::astype(noise, mx::float32);
 }
 
 } // namespace
@@ -596,11 +603,15 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
 
 Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma, float width,
                        int height, int, const Event &event, std::atomic<bool> &cancelled) {
-    return z_transformer(latent, caption, sigma, int(width), height, transformer_, event, cancelled);
+    auto model_input = mx::astype(latent, mx::bfloat16);
+    return mx::astype(
+        z_transformer(model_input, caption, sigma, int(width), height, transformer_, event,
+                      cancelled),
+        mx::float32);
 }
 
 Tensor ZImage::decode(const Tensor &latent, int, int, const Event &, std::atomic<bool> &) {
-    return z_vae_decode(latent, vae_);
+    return z_vae_decode(mx::astype(latent, mx::bfloat16), vae_);
 }
 
 } // namespace tc

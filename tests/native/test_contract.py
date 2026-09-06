@@ -92,6 +92,13 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(code,0,error)
         self.assertTrue(p['executable'])
 
+    def test_z_image_comfy_sampler_precision_contract(self):
+        source=(ROOT/'native/models/z_image/z_image.cpp').read_text()
+        self.assertIn('training_steps - (i * training_steps / steps)',source)
+        self.assertIn('return mx::astype(noise, mx::float32);',source)
+        self.assertIn('auto model_input = mx::astype(latent, mx::bfloat16);',source)
+        self.assertIn('z_vae_decode(mx::astype(latent, mx::bfloat16)',source)
+
     def test_flux_text_taps_are_config_guarded_and_dead_tail_is_elided(self):
         platform=(ROOT/'native/platform/apple/device.mm').read_text()
         encoder=(ROOT/'native/models/flux2/flux_text.cpp').read_text()
