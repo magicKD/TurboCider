@@ -15,6 +15,8 @@ class Flux : public ModelSession {
     std::string cached_prompt_;
     bool cached_dynamic_ = true;
     std::optional<Tensor> cached_conditioning_;
+    std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
+    int hybrid_gpu_mlp_start_ = -1;
     std::vector<LoRAAsset> active_loras_;
     std::string cached_lora_identity_;
     struct LoRAFileHash {

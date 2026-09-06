@@ -18,7 +18,7 @@ feat(native): integrate H3 FastMetal and LTX video runtime
 2. `feat(native): integrate H3 FastMetal and LTX runtimes`
 3. `docs(status): record model readiness and release boundaries`
 
-本轮没有自动执行 `git commit`。
+`main` 合并提交已经存在；本轮新增的 M4 Max FLUX 6144 前缀收口适合单独提交，保持性能候选与未完成项的边界可审阅。
 
 ## 可以进入版本的内容
 
@@ -63,6 +63,7 @@ feat(native): integrate H3 FastMetal and LTX video runtime
 - H3/LTX LoRA 的 runtime cache 是可清理临时 artifact，merge 实现已随 TurboCider 分发但仍依赖 Python 运行环境；不应写成已经完全不产生 merged 权重或已经纯内存融合。
 - FLUX 9B 的 5.33 秒 smoke 不得写成正式 parity/性能验收。
 - Z-Image 已有 Apple M4 Max 真实 1024×1024 base/官方独立 LoRA 出图和 App smoke；共享初始噪声下最终 latent/PNG 已通过 ComfyUI oracle。不得把最终输出 parity 扩大表述为逐 step parity 或 GPU+ANE 验收，GPU+ANE 继续 fail closed。
+- FLUX 4B M4 Max 自动路径只接受 `[0,6144)` ANE 前缀，GPU 必须补算 `[6144,9216)` 后缀；M4 Pro 继续只接受完整 MLP。单组 1.409× warm 观察尚不能替代 AB/BA p50/p95。
 
 ### 测试门禁
 

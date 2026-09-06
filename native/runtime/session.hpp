@@ -12,7 +12,8 @@ ExecutionPlan make_plan(const Request &);
 struct HybridMetrics {
     double load_seconds = 0, prediction_seconds = 0;
     uint64_t calls = 0, copied_bytes = 0;
-    int bucket = 0;
+    int bucket = 0, mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;
+    bool checkpoint_sha_verified = false;
 };
 struct LoadResult {
     uint64_t weight_bytes = 0, active_bytes = 0;

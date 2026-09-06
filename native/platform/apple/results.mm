@@ -145,11 +145,15 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"prediction_seconds_session_total" : @(m.prediction_seconds),
         @"calls_session_total" : @(m.calls),
         @"bucket" : @(m.bucket),
+        @"mlp_width" : @(m.mlp_width),
+        @"ane_mlp_range" : @[ @(m.ane_mlp_start), @(m.ane_mlp_end) ],
         @"compute_units" : @"cpuAndNeuralEngine",
         @"observed_ane_residency" : @"unknown",
         @"output_copy_bytes_session_total" : @(m.copied_bytes),
-        @"provenance" :
-            @"local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+        @"checkpoint_sha256_verified" : @(m.checkpoint_sha_verified),
+        @"provenance" : m.checkpoint_sha_verified
+            ? @"local checkpoint path, size and SHA-256 verified"
+            : @"local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
     };
 }
 RunResult native_run_result(NSDictionary *value, const Request &request,

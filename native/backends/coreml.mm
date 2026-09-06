@@ -1,5 +1,6 @@
 #include "coreml.hpp"
 #include "../platform/apple/bridge.hpp"
+#include "../platform/apple/platform.hpp"
 #import <CoreML/CoreML.h>
 namespace tc {
 class CoreMLBranch {
@@ -122,12 +123,36 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
             "native hybrid requires a single fixed bucket");
     rows = [buckets[0] intValue];
     require(rows >= tokens && rows <= 8192, "Core ML token bucket cannot serve this request");
+    id manifest_mlp_width = d[@"shape"][@"mlp_width"];
+    id manifest_mlp_start = d[@"shape"][@"ane_mlp_start"];
+    id manifest_mlp_end = d[@"shape"][@"ane_mlp_end"];
+    // Legacy manifests describe a full 9,216-channel MLP branch implicitly.
+    // New prefix manifests make the split explicit; the C++ GPU branch must
+    // compute every channel outside this ANE-owned prefix.
+    mlp_width = [manifest_mlp_width isKindOfClass:NSNumber.class]
+                    ? [manifest_mlp_width intValue]
+                    : 9216;
+    ane_mlp_start = [manifest_mlp_start isKindOfClass:NSNumber.class]
+                        ? [manifest_mlp_start intValue]
+                        : 0;
+    ane_mlp_end = [manifest_mlp_end isKindOfClass:NSNumber.class]
+                      ? [manifest_mlp_end intValue]
+                      : mlp_width;
+    require(mlp_width == 9216 && ane_mlp_start == 0 && ane_mlp_end > 0 &&
+                ane_mlp_end <= mlp_width,
+            "unsupported Core ML MLP partition; expected a [0,N) prefix of 9216 channels");
     auto checkpoint = model / "transformer/diffusion_pytorch_model.safetensors";
     std::filesystem::path source = string_value(d[@"source"], @"checkpoint");
     require(std::filesystem::equivalent(source, checkpoint) &&
                 [d[@"source"][@"checkpoint_bytes"] unsignedLongLongValue] ==
                     std::filesystem::file_size(checkpoint),
             "artifact checkpoint provenance mismatch");
+    id checkpoint_sha = d[@"source"][@"checkpoint_sha256"];
+    if ([checkpoint_sha isKindOfClass:NSString.class]) {
+        require(sha256_file(checkpoint) == std::string([(NSString *)checkpoint_sha UTF8String]),
+                "artifact checkpoint SHA-256 mismatch");
+        checkpoint_sha_verified = true;
+    }
     // Existing local manifests lack a full source SHA; explicitly research-only.
     for (int i = 0; i < 20; ++i) {
         tc::checkpoint(cancelled);
@@ -161,6 +186,10 @@ HybridMetrics HybridSession::metrics() const {
     HybridMetrics metrics;
     metrics.load_seconds = load_seconds;
     metrics.bucket = rows;
+    metrics.mlp_width = mlp_width;
+    metrics.ane_mlp_start = ane_mlp_start;
+    metrics.ane_mlp_end = ane_mlp_end;
+    metrics.checkpoint_sha_verified = checkpoint_sha_verified;
     for (auto &branch : impl_->branches) {
         metrics.calls += branch->calls;
         metrics.copied_bytes += branch->copied_bytes;

@@ -7,7 +7,7 @@
 
 ## 一句话结论
 
-TurboCider 已经从单一 FLUX native 纵切扩展为六个注册模型模块：FLUX.2 Klein 4B/9B、FastMetal 1.3B QAD、MiniMax H3 Turbo、LTX 2.5 Distilled 和 Z-Image Turbo。`main` 的 C++ core/runtime 已通过 merge commit `2cee456` 进入 `dev`；各模型执行器、C ABI、Swift binding 与 App 使用同一模块注册和请求契约。H3、FastMetal、FLUX 4B 的核心路径已经接近 direct 实现；FLUX 9B 和 LTX video-only 已在合并后的 C++ runtime 上完成真实生成。Z-Image 已完成 Apple M4 Max 真实 1024×1024、9-step 出图、Swift App embedded-session smoke，以及 base/官方独立 LoRA 的 ComfyUI 同噪声最终 latent/PNG parity；支持 ComfyUI split-files 和 Tongyi diffusers 目录入口，LoRA 只在内存中融合。Z-Image GPU+ANE 和逐 step oracle 仍未完成。LTX 包含模型建立、warmup、Core ML attach 和 VAE 生命周期的端到端请求还没有稳定快于 mac-ltx。独立 LoRA 请求已经进入 C/Swift/App 接口；H3/LTX 的审计过的 merge 实现现已随 TurboCider 源码和发行包提供，不再从兄弟仓库发现脚本，但首次使用仍会生成可清理的 merged runtime artifact，尚未完成纯内存融合。
+TurboCider 已经从单一 FLUX native 纵切扩展为六个注册模型模块：FLUX.2 Klein 4B/9B、FastMetal 1.3B QAD、MiniMax H3 Turbo、LTX 2.5 Distilled 和 Z-Image Turbo。`main` 的 C++ core/runtime 已通过 merge commit `2cee456` 进入 `dev`；各模型执行器、C ABI、Swift binding 与 App 使用同一模块注册和请求契约。H3、FastMetal、FLUX 4B 的核心路径已经接近 direct 实现；FLUX 4B 在 M4 Max 上新增正确的 `[0,6144)` ANE MLP 前缀 + GPU 后缀并行路径，单组 warm 观察为 1.409×，输出对 GPU 的 latent cosine 0.999660、PNG correlation 0.998391。FLUX 9B 和 LTX video-only 已在合并后的 C++ runtime 上完成真实生成。Z-Image 已完成 Apple M4 Max 真实 1024×1024、9-step 出图、Swift App embedded-session smoke，以及 base/官方独立 LoRA 的 ComfyUI 同噪声最终 latent/PNG parity；支持 ComfyUI split-files 和 Tongyi diffusers 目录入口，LoRA 只在内存中融合。Z-Image GPU+ANE 和逐 step oracle 仍未完成。LTX 包含模型建立、warmup、Core ML attach 和 VAE 生命周期的端到端请求还没有稳定快于 mac-ltx。独立 LoRA 请求已经进入 C/Swift/App 接口；H3/LTX 的审计过的 merge 实现现已随 TurboCider 源码和发行包提供，不再从兄弟仓库发现脚本，但首次使用仍会生成可清理的 merged runtime artifact，尚未完成纯内存融合。
 
 ## 代码结构与实现边界
 
@@ -41,7 +41,7 @@ docs/design/                长期设计、验收契约和历史架构
 
 | 模型 | 当前可用能力 | 真实证据 | 尚未完成 |
 |---|---|---|---|
-| FLUX.2 Klein 4B | 文生图、图生图、多参考编辑、GPU/GPU+ANE、独立 LoRA | warm GPU/GPU+ANE 与 direct 接近，decoded visual 一致 | 更广尺寸/机器矩阵 |
+| FLUX.2 Klein 4B | 文生图、图生图、多参考编辑、GPU/GPU+ANE、独立 LoRA；M4 Max 使用 6144 ANE 前缀 + GPU 后缀 | 6144 路径 warm 1.409×；latent cosine 0.999660、PNG correlation 0.998391；自动/显式输出一致 | 交错 AB/BA p50/p95、更广尺寸/机器矩阵、LoRA 专用 ANE artifact |
 | FLUX.2 Klein 9B | GPU-only native 路径、文生图/图生图/编辑契约、App 选择 | 256×256、4-step 真实生成，request wall 4.257 s，MLX peak 18.90 GB | 正式 reference parity、标准尺寸 warm/ABBA、GPU+ANE |
 | FastMetal 1.3B QAD | 持久 MLX/TAEHV worker、GPU/ANE split、取消重建、prompt cache | base GPU/GPU+ANE latent 与 direct 逐元素一致 | 多机器中位数、独立 LoRA runtime bake、LoRA ANE artifact |
 | MiniMax H3 Turbo | 文生视频、首尾帧、reference、音视频、streamed/resident/component-staged、manifest LoRA | 512×512、22 帧、4-step 输出 byte-exact | 更广输入/尺寸、resident/ANE 多轮矩阵 |
@@ -59,6 +59,7 @@ docs/design/                长期设计、验收契约和历史架构
 | FastMetal GPU+ANE engine wall | 69.970 s | 69.970 s | 计算热路径基本相同，输出一致 |
 | FLUX 4B warm GPU engine wall | 2.216 s | 2.219 s | 慢约 0.1%，decoded visual 一致 |
 | FLUX 4B warm GPU+ANE engine wall | 2.296 s | 2.303 s | 慢约 0.3%，decoded visual 一致 |
+| FLUX 4B M4 Max 6144 前缀 warm | 2.3479 s GPU | 1.6659 s GPU+ANE | 单组观察快 1.409×；尚非正式 AB/BA 中位数 |
 | 旧 LTX worker full chain | 97.573 s | 96.952 s | TurboCider 快约 0.64%，共享 artifact 一致 |
 
 LTX 当前 public CLI 的最新重建二进制实测为：完整请求 86.284 s，conditioning cache 命中；pre-finalizer 81.918 s，clean-process Video VAE 3.410 s。此前相同 cache-hit 口径为 81.37 s。mac-ltx 的 59.483 s 是已准备 conditioning、已加载模型的 decoded-pixel 热路径，不包含同样的 cold/model setup，因此不能直接当作完整请求对比。扣除 TurboCider 的约 22.75 s model setup 后，热链路约 58.61 s，基本持平并略快，但波动不足以宣称稳定更快。
@@ -89,7 +90,7 @@ LTX GPU+ANE 当前只作为候选实验路径：同一动态 Gemma 请求约 125
 ```text
 make test
 Python/bin/python -m pytest -q <无参数单元与 fixture 测试集合>
-`make test` 当前为 48 项通过（含 Z-Image plan/LoRA/fail-closed 契约）；`make test-app` 通过，剪贴板服务在受限会话中按条件跳过。
+`make test` 当前为 42 项 contract 加 9 项 repository/boundary 检查通过（含 Z-Image plan/LoRA/fail-closed、FLUX 6144 补算和 M4 Max profile 契约）；`make test-app` 通过，剪贴板服务在受限会话中按条件跳过。
 ```
 
 `tests/native` 同时包含需要 `--model/--manifest/--output` 的真实验收程序，因此不能把整个 `tests/` 当作无参数 pytest collection；这些入口应按文档单独运行。

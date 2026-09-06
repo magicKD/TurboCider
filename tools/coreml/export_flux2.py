@@ -15,8 +15,9 @@ def sha(path):
         for block in iter(lambda:stream.read(8<<20),b''):result.update(block)
     return result.hexdigest()
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--model',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--bucket',type=int,required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--model',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--bucket',type=int,required=True);p.add_argument('--ane-mlp-width',type=int,default=9216);a=p.parse_args()
     if not 64<=a.bucket<=8192:raise ValueError('bucket must be 64...8192')
+    if not 0<a.ane_mlp_width<=9216:raise ValueError('ane-mlp-width must be 1...9216')
     import numpy as np
     import coremltools as ct
     import coremltools.optimize.coreml as optimize
@@ -34,6 +35,7 @@ def main():
     with os.fdopen(descriptor,'w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         identity={'owner':'turbocider.flux.coreml.v1','checkpoint':str(checkpoint),'checkpoint_bytes':checkpoint.stat().st_size,'checkpoint_sha256':sha(checkpoint),'bucket':a.bucket,'variant':'int8_pc','coremltools':ct.__version__,'numpy':np.__version__,'recipe':1}
+        if a.ane_mlp_width!=9216:identity.update(ane_mlp_width=a.ane_mlp_width,recipe=2)
         marker=output/'.turbocider-export.json'
         if marker.exists():
             if marker.is_symlink() or json.loads(marker.read_text())!=identity:raise ValueError('export identity changed; select a new output directory')
@@ -66,7 +68,11 @@ def main():
                     if destination.exists():raise ValueError('incomplete artifact must be removed before rebuilding')
                     wide=tensor(f'single_transformer_blocks.{i}.attn.to_qkv_mlp_proj.weight',(27648,3072))
                     projected=tensor(f'single_transformer_blocks.{i}.attn.to_out.weight',(3072,12288))
-                    first=np.ascontiguousarray(wide[9216:,:,None,None]);last=np.ascontiguousarray(projected[:,3072:,None,None]);del wide,projected
+                    # The ANE owns a contiguous prefix of the two MLP input
+                    # projections and the matching output columns.  The native
+                    # GPU graph computes the complementary suffix in parallel.
+                    width=a.ane_mlp_width
+                    first=np.ascontiguousarray(np.concatenate((wide[9216:9216+width],wide[18432:18432+width]),axis=0)[:,:,None,None]);last=np.ascontiguousarray(projected[:,3072:3072+width,None,None]);del wide,projected
                     @mb.program(input_specs=[mb.TensorSpec(shape=(1,3072,1,a.bucket),dtype=types.fp16)],opset_version=ct.target.macOS15)
                     def branch(x):
                         hidden=mb.conv(x=x,weight=first,pad_type='valid',name='projected')
@@ -83,6 +89,6 @@ def main():
                 artifacts[str(i)]={'int8_pc':name}
                 atom(output/'progress.json',{'completed':i+1,'total':20});print(f'partition {i+1}/20 ready',flush=True)
         if sha(checkpoint)!=identity['checkpoint_sha256']:raise ValueError('checkpoint changed during export')
-        atom(manifest,{'schema_version':1,'source':{'checkpoint':str(checkpoint),'checkpoint_bytes':identity['checkpoint_bytes'],'checkpoint_sha256':identity['checkpoint_sha256'],'blocks':list(range(20))},'shape':{'K':3072,'N':3072,'buckets':[a.bucket]},'functions':{str(a.bucket):'main'},'artifacts':artifacts,'artifact_sha256':checksums,'export_identity':identity})
+        atom(manifest,{'schema_version':1,'source':{'checkpoint':str(checkpoint),'checkpoint_bytes':identity['checkpoint_bytes'],'checkpoint_sha256':identity['checkpoint_sha256'],'blocks':list(range(20))},'shape':{'K':3072,'N':3072,'mlp_width':9216,'ane_mlp_start':0,'ane_mlp_end':a.ane_mlp_width,'buckets':[a.bucket]},'functions':{str(a.bucket):'main'},'artifacts':artifacts,'artifact_sha256':checksums,'export_identity':identity})
         print(json.dumps({'source_manifest':str(manifest)}),flush=True)
 if __name__=='__main__':main()

@@ -18,6 +18,9 @@
 - 将 Z-Image 采样日程对齐 ComfyUI 的固定 `shift=3.0` discrete-flow simple scheduler，包括 1000-entry sigma table 的离散取样；Euler 状态保持 FP32、仅在 DiT/VAE 入口转 BF16。增加可选共享初始噪声和逐步 latent dump，供同噪声 oracle 定位数值差异，不改变正常请求的默认随机噪声路径。
 - 支持 ComfyUI split-files 与 Tongyi diffusers 组件目录；diffusers 多 shard、独立 Q/K/V、`all_x_embedder`/`all_final_layer` 与 VAE 命名在 C++ loader 内归一化，不依赖外部转换仓库。
 - 官方 Z-Image distill patch LoRA 以独立文件运行时内存融合，238 个 projection 全部应用；同噪声对 ComfyUI 的最终 latent cosine 0.998929、PNG correlation 0.999156。
+- 修复 FLUX 4B 的 M4 Max 6144-channel ANE 前缀分区：manifest 明确记录 `[0,6144)`，GPU 编译图并行补算 attention 与 `[6144,9216)` MLP 后缀；此前只计算前缀却未补尾部的错误不再存在。
+- 离线导出器、Core ML 资源服务和 App 已共同支持 `ane_mlp_width`；新增 `apple-m4-max-64gb.example.json`。M4 Max 自动路径只接受 6144 前缀，M4 Pro 自动路径只接受已验证的完整 MLP，其他硬件继续 fail closed。
+- FLUX 独立 LoRA 继续在加载时内存融合；因为 base Core ML artifact 不含 LoRA delta，App 的显式 GPU+ANE 请求安全切换到 GPU，native 直接请求仍保持严格校验。
 - 修复 App smoke 的多模型兼容：不再硬编码 256×256/4-step/PNG，而从模型 descriptor 读取操作、尺寸、步数、帧数、帧率、音频、驻留和输出媒体类型。
 
 ## 模型与 App 兼容矩阵
@@ -36,7 +39,7 @@
 使用仓库现有 MLX 0.32.2 环境显式设置 `MLX_ROOT`：
 
 ```text
-make test                         48 项通过
+make test                         42 项 contract + 9 项 repository/boundary 检查通过
 make test-app                     通过；无 pasteboard service 时仅跳过系统剪贴板检查
 make build                        native、CLI、Swift App、integration runners 编译链接通过
 make package                      App/CLI 打包与 ad-hoc codesign 验证通过
@@ -45,6 +48,19 @@ turbocider doctor（实机）          Apple M4 Max、64 GB、Metal GPU、MLX 0.
 全部 examples/requests plan        executable=true
 git diff --check                  通过
 ```
+
+FLUX 4B M4 Max 6144 前缀实机复核：
+
+```text
+GPU warm 基线                         2.3479 s
+GPU+ANE 6144 前缀 warm                1.6659 s
+观察加速比                            1.409×
+对 GPU latent cosine                 0.999660
+对 GPU PNG correlation               0.998391
+对 GPU PNG MAE                       1.484 / 255
+```
+
+这是本机候选路径的一组 warm 观察，不替代交错 AB/BA 的 p50/p95 正式矩阵。重新构建后的自动选择测试通过 session reuse、自动/显式 PNG byte-identical、超桶/缺失/损坏 manifest 回退、近似 opt-in 和显式严格失败等门禁。
 
 Z-Image Swift App embedded-session 实机 smoke：
 
@@ -64,6 +80,7 @@ MLX peak           25.63 GB
 - H3/LTX LoRA cache miss 现在调用 TurboCider 自带的 Python merge 工具并产生可清理的 merged artifact，不再从兄弟仓库发现脚本；仍未达到纯内存逐层融合目标。
 - FastMetal 仍依赖显式外部 worker/profile，独立 LoRA runtime bake 未完成。
 - FLUX 9B 尚缺标准尺寸、多轮 warm/resident parity 与性能矩阵。
+- FLUX 4B M4 Max 6144 前缀已达到单组 warm 1.409× 观察值并通过输出一致性复核；仍需多轮交错 AB/BA 后才可写成稳定性能承诺。
 - Z-Image scheduler、共享噪声最终 latent/PNG 和官方独立 LoRA 图片 parity 已完成；逐 step oracle、多轮 warm 数据和 GPU+ANE 分区仍未完成。
 - 当前包为本地 ad-hoc 签名，不是 Developer ID 公证发行包。
 

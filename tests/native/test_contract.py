@@ -619,6 +619,31 @@ class ContractTests(unittest.TestCase):
         self.assertIn('parts.size() == 5',source)
         self.assertIn('parts[4].shape(-1) == hidden_ * 3',source)
 
+    def test_flux_hybrid_prefix_computes_gpu_mlp_complement(self):
+        transformer=(ROOT/'native/models/flux2/flux_transformer.cpp').read_text()
+        coreml=(ROOT/'native/backends/coreml.mm').read_text()
+        exporter=(ROOT/'tools/coreml/export_flux2.py').read_text()
+        resources=(ROOT/'native/backends/coreml_resources.mm').read_text()
+        self.assertIn('make_hybrid_gpu_graph',transformer)
+        self.assertIn('projection_offset + gpu_mlp_start',transformer)
+        self.assertIn('hidden + gpu_mlp_start',transformer)
+        self.assertIn('hybrid_->ane_mlp_end',transformer)
+        self.assertIn('@"ane_mlp_end"',coreml)
+        self.assertIn('ane_mlp_end <= mlp_width',coreml)
+        self.assertIn("--ane-mlp-width",exporter)
+        self.assertIn("'ane_mlp_end':a.ane_mlp_width",exporter)
+        self.assertIn('ane_mlp_width',resources)
+
+    def test_flux_m4_max_profile_is_fail_closed_to_validated_prefix(self):
+        profile=json.loads((ROOT/'profiles/apple-m4-max-64gb.example.json').read_text())
+        model=profile['models']['flux2-klein-4b']
+        self.assertEqual(profile['match'],{'gpu_name':'Apple M4 Max','memory_bytes':64<<30})
+        self.assertEqual(model['coreml_export']['ane_mlp_width'],6144)
+        self.assertIn('a6144',model['ane_manifest'])
+        discovery=(ROOT/'apps/macos/AccelerationDiscovery.swift').read_text()
+        self.assertIn('Apple M4 Max',discovery)
+        self.assertIn('end == 6144',discovery)
+
     def test_ltx_gemma_tokenizer_matches_reference_vectors(self):
         out,err=C.c_void_p(),C.c_void_p()
         tokenizer=ROOT/'models/LTX-2.5/gemma4-12b-ltx-v1/tokenizer.json'

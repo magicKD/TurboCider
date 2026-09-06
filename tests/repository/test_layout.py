@@ -15,7 +15,7 @@ class LayoutTests(unittest.TestCase):
             if p.suffix in ['.cpp','.mm','.hpp','.h']:
                 self.assertNotIn('vendor/',p.read_text(),str(p))
     def test_product_entries(self):
-        for name in ['apps/macos/App.swift','apps/cli/main.mm','services/turbociderd/service.mm','bindings/c/include/turbocider/turbocider.h','bindings/swift/TurboCiderNative.swift','profiles/apple-m4-pro-48gb.example.json']:
+        for name in ['apps/macos/App.swift','apps/cli/main.mm','services/turbociderd/service.mm','bindings/c/include/turbocider/turbocider.h','bindings/swift/TurboCiderNative.swift','profiles/apple-m4-pro-48gb.example.json','profiles/apple-m4-max-64gb.example.json']:
             self.assertTrue((ROOT/name).is_file(),name)
     def test_package_contains_video_runtime_resources(self):
         build=(ROOT/'tools/native/build.sh').read_text()

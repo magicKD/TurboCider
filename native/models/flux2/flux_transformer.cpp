@@ -2,6 +2,58 @@
 #include "../../backends/coreml.hpp"
 #include <cmath>
 namespace tc {
+namespace {
+std::function<std::vector<Tensor>(const std::vector<Tensor> &)>
+make_hybrid_gpu_graph(int hidden, int head_count, int mlp_width, int gpu_mlp_start) {
+    require(hidden == 3072 && mlp_width == 9216 && head_count == 24,
+            "unsupported FLUX hybrid graph geometry");
+    require(gpu_mlp_start > 0 && gpu_mlp_start <= mlp_width,
+            "invalid FLUX GPU MLP complement");
+    auto graph = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>(
+        [hidden, head_count, mlp_width, gpu_mlp_start](const std::vector<Tensor> &args) {
+            const int projection_offset = hidden * 3;
+            auto qkv = mx::matmul(
+                args[0], mx::transpose(slice_axis(args[3], 0, 0, projection_offset)));
+            auto parts = mx::split(qkv, 3, -1);
+            auto q = mx::astype(
+                mx::fast::rms_norm(
+                    mx::astype(heads(parts[0], head_count, 128), mx::float32), args[4],
+                    1e-5f),
+                mx::bfloat16);
+            auto k = mx::astype(
+                mx::fast::rms_norm(
+                    mx::astype(heads(parts[1], head_count, 128), mx::float32), args[5],
+                    1e-5f),
+                mx::bfloat16);
+            auto attention = attend(rope_pairs(q, args[1], args[2]),
+                                    rope_pairs(k, args[1], args[2]),
+                                    heads(parts[2], head_count, 128));
+            auto result = mx::matmul(
+                attention, mx::transpose(slice_axis(args[6], 1, 0, hidden)));
+            if (gpu_mlp_start < mlp_width) {
+                auto gate = mx::matmul(
+                    args[0],
+                    mx::transpose(slice_axis(args[3], 0,
+                                             projection_offset + gpu_mlp_start,
+                                             projection_offset + mlp_width)));
+                auto up = mx::matmul(
+                    args[0],
+                    mx::transpose(slice_axis(args[3], 0,
+                                             projection_offset + mlp_width + gpu_mlp_start,
+                                             projection_offset + 2 * mlp_width)));
+                auto activated = silu(gate) * up;
+                auto complement = mx::matmul(
+                    activated,
+                    mx::transpose(slice_axis(args[6], 1, hidden + gpu_mlp_start,
+                                             hidden + mlp_width)));
+                result = result + complement;
+            }
+            return std::vector<Tensor>{result};
+        });
+    return mx::compile(std::move(graph));
+}
+} // namespace
+
 Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int height, int width,
                      const Event &event, std::atomic<bool> &cancelled,
                      const std::vector<float> &reference_ids, bool compile_blocks) {
@@ -89,27 +141,19 @@ Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int 
                 packed = mx::concatenate(
                     {packed, mx::zeros({1, hybrid_->rows - n, 3072}, mx::float16)}, 1);
             mx::eval({a, packed});
-            // Compile the independent GPU branch once per shape/dtype. Weights are
-            // explicit inputs, so the cached graph cannot retain an old model session.
-            static auto attention_graph = mx::compile([](const std::vector<Tensor> &args) {
-                auto proj = mx::matmul(args[0], mx::transpose(slice_axis(args[3], 0, 0, 9216)));
-                auto parts = mx::split(proj, 3, -1);
-                auto q =
-                    mx::astype(mx::fast::rms_norm(mx::astype(heads(parts[0], 24, 128), mx::float32),
-                                                  args[4], 1e-5f),
-                               mx::bfloat16);
-                auto k =
-                    mx::astype(mx::fast::rms_norm(mx::astype(heads(parts[1], 24, 128), mx::float32),
-                                                  args[5], 1e-5f),
-                               mx::bfloat16);
-                auto att = attend(rope_pairs(q, args[1], args[2]), rope_pairs(k, args[1], args[2]),
-                                  heads(parts[2], 24, 128));
-                return std::vector<Tensor>{
-                    mx::matmul(att, mx::transpose(slice_axis(args[6], 1, 0, 3072)))};
-            });
-            auto gpu = attention_graph({a, cos, sin, w.at(p + ".to_qkv_mlp_proj.weight"),
-                                        w.at(p + ".norm_q.weight"), w.at(p + ".norm_k.weight"),
-                                        w.at(p + ".to_out.weight")})[0];
+            // The ANE model may own only a prefix of the 9,216-channel MLP.
+            // Compile attention plus the complementary GPU suffix as one graph,
+            // then submit it before the blocking Core ML prediction so both devices
+            // execute concurrently. Weights remain explicit inputs and cannot be
+            // retained across a model/LoRA identity change.
+            if (!hybrid_gpu_graph_ || hybrid_gpu_mlp_start_ != hybrid_->ane_mlp_end) {
+                hybrid_gpu_graph_ = make_hybrid_gpu_graph(
+                    hidden_, heads_, hybrid_->mlp_width, hybrid_->ane_mlp_end);
+                hybrid_gpu_mlp_start_ = hybrid_->ane_mlp_end;
+            }
+            auto gpu = hybrid_gpu_graph_({a, cos, sin, w.at(p + ".to_qkv_mlp_proj.weight"),
+                                          w.at(p + ".norm_q.weight"), w.at(p + ".norm_k.weight"),
+                                          w.at(p + ".to_out.weight")})[0];
             mx::async_eval({gpu});
             auto ane = slice_axis(hybrid_->predict(i, packed), 1, 0, n);
             x = x + ms[2] * (gpu + mx::astype(ane, gpu.dtype()));

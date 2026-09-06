@@ -52,6 +52,8 @@ void Flux::select_loras(const Request &request) {
     cached_lora_identity_ = std::move(identity);
     active_loras_ = std::move(normalized);
     hybrid_.reset(); cached_conditioning_.reset(); cached_prompt_.clear();
+    hybrid_gpu_graph_ = {};
+    hybrid_gpu_mlp_start_ = -1;
     transformer_.clear(); vae_.clear(); mx::clear_cache();
 }
 LoadResult Flux::load(const Event &event, std::atomic<bool> &cancelled) {
@@ -73,6 +75,8 @@ LoadResult Flux::load(const Event &event, std::atomic<bool> &cancelled) {
 }
 void Flux::unload() {
     hybrid_.reset();
+    hybrid_gpu_graph_ = {};
+    hybrid_gpu_mlp_start_ = -1;
     cached_conditioning_.reset();
     cached_prompt_.clear();
     transformer_.clear();
@@ -114,9 +118,19 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
             hybrid_.reset();
             return "gpu: no opted-in compatible local partition";
         }
+        if (!active_loras_.empty()) {
+            hybrid_.reset();
+            return "gpu: FLUX LoRA uses load-time baked weights; base ANE artifacts are not reusable";
+        }
         auto system = device_info();
-        // Automatic selection is limited to the device on which this partition policy was measured.
-        if (system.gpu != "Apple M4 Pro" || device_info().physical_memory != (48ull << 30)) {
+        // Automatic selection is limited to the exact device profile on which
+        // this partition policy was measured. M4 Max uses the 6,144-channel
+        // prefix artifact; the older M4 Pro profile remains valid separately.
+        const bool m4_pro_profile =
+            system.gpu == "Apple M4 Pro" && system.physical_memory == (48ull << 30);
+        const bool m4_max_profile =
+            system.gpu == "Apple M4 Max" && system.physical_memory == (64ull << 30);
+        if (!m4_pro_profile && !m4_max_profile) {
             hybrid_.reset();
             return "gpu: automatic hybrid policy not validated on this hardware";
         }
@@ -138,6 +152,17 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
             hybrid_ = std::make_unique<HybridSession>(r.ane_manifest, root_, count, event,
                                                       cancelled, r.warmup_iterations);
         require(count <= hybrid_->rows, "Core ML token bucket cannot serve this request");
+        if (automatic) {
+            auto system = device_info();
+            if (system.gpu == "Apple M4 Max")
+                require(hybrid_->mlp_width == 9216 && hybrid_->ane_mlp_start == 0 &&
+                            hybrid_->ane_mlp_end == 6144,
+                        "M4 Max automatic profile requires the validated 6144-channel ANE prefix");
+            else if (system.gpu == "Apple M4 Pro")
+                require(hybrid_->mlp_width == 9216 && hybrid_->ane_mlp_start == 0 &&
+                            hybrid_->ane_mlp_end == 9216,
+                        "M4 Pro automatic profile requires the validated full ANE MLP partition");
+        }
         return automatic ? "gpu_ane: hardware, checkpoint and token bucket matched"
                          : "gpu_ane: explicitly selected";
     } catch (const Cancelled &) {

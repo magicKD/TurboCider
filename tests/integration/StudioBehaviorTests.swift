@@ -43,6 +43,8 @@ struct StudioBehaviorTests {
         let manifestFile = compiled.appendingPathComponent("manifest.json")
         try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled)?.rows == 1088, "Compatible local partition not found")
+        try check(AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 9216, start: 0, end: 6144), "M4 Max validated prefix was rejected")
+        try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 9216, start: 0, end: 9216), "M4 Max accepted the unvalidated full MLP partition")
         manifest["source"] = ["checkpoint": weight.path, "checkpoint_bytes": 4]
         try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled) == nil, "Wrong checkpoint accepted")
@@ -135,6 +137,12 @@ struct StudioBehaviorTests {
         let fastmetal = try studio.draft.request(output: root.appendingPathComponent("fastmetal.mp4"))
         try check(fastmetal.width == 832 && fastmetal.height == 480 && fastmetal.frames == 81 && fastmetal.fps == 16 && fastmetal.execution == "gpu" && fastmetal.loras?.count == 1,
                   "FastMetal defaults or separate LoRA forwarding changed")
+        studio.selectModel("flux2-klein-4b")
+        studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.8)]
+        studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/compiled/manifest.json")
+        let fluxLoRA = try studio.draft.request(output: root.appendingPathComponent("flux-lora.png"))
+        try check(fluxLoRA.execution == "gpu" && fluxLoRA.ane_manifest == nil && fluxLoRA.loras?.count == 1,
+                  "FLUX separate LoRA request did not safely avoid the base ANE artifact")
         studio.selectModel("flux2-klein-9b")
         studio.draft.loras = []
         let flux9 = try studio.draft.request(output: root.appendingPathComponent("flux9.png"))

@@ -160,7 +160,7 @@ struct StudioDraft: Codable, Sendable {
             request.execution = acceleration.policy == "gpu_ane" && model.supports_gpu_ane != true
                 ? "gpu" : acceleration.policy
             if acceleration.policy == "auto" {
-                request.ane_manifest = AccelerationDiscovery.find(modelPath: modelPath, preferred: acceleration.manifest, cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) })?.manifest
+                request.ane_manifest = AccelerationDiscovery.find(modelPath: modelPath, preferred: acceleration.manifest, cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) }, enforceAutomaticPolicy: true)?.manifest
                 request.allow_approximation = true
             }
             if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true {
@@ -181,6 +181,10 @@ struct StudioDraft: Codable, Sendable {
         }
         request.loras = loras.isEmpty ? nil : loras.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
         if modelID == "fastmetal-1.3b-qad" && !loras.isEmpty { request.execution = "gpu" }
+        if modelID.hasPrefix("flux2-") && !loras.isEmpty && request.execution == "gpu_ane" {
+            request.execution = "gpu"
+            request.ane_manifest = nil
+        }
         return request
     }
 }

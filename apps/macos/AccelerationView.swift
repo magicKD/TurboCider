@@ -26,6 +26,10 @@ struct AccelerationView: View {
             }
             if config.policy == "gpu_ane" {
                 Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定分区桶必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
+                if studio.draft.modelID.hasPrefix("flux2-") && !studio.draft.loras.isEmpty {
+                    Text("当前 LoRA 以独立文件在加载时融合；基础 Core ML 分区不包含该增量，本次请求会安全切换到 GPU。")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 Button(config.manifest.isEmpty ? "选择已编译分区 manifest…" : "更换已编译分区 manifest…") { choose(compiled: true) }
                 if !config.manifest.isEmpty { Text(URL(fileURLWithPath: config.manifest).lastPathComponent).font(.caption).textSelection(.enabled) }
             }
@@ -59,12 +63,15 @@ struct AccelerationView: View {
         }
         let path = studio.draft.modelPath, preferred = config.manifest
         let selectedCache = config.coreMLCache.map { URL(fileURLWithPath: $0) }
-        let result = await Task.detached { AccelerationDiscovery.find(modelPath: path, preferred: preferred, cache: selectedCache) }.value
+        let result = await Task.detached { AccelerationDiscovery.find(modelPath: path, preferred: preferred, cache: selectedCache, enforceAutomaticPolicy: true) }.value
         guard studio.draft.modelPath == path else { return }
         let system = (try? JSONSerialization.jsonObject(with: Data(NativeEngine.system().utf8))) as? [String: Any]
-        let supported = system?["gpu"] as? String == "Apple M4 Pro" && (system?["physical_memory_bytes"] as? NSNumber)?.uint64Value == 48 * 1024 * 1024 * 1024
+        let gpu = system?["gpu"] as? String
+        let memory = (system?["physical_memory_bytes"] as? NSNumber)?.uint64Value
+        let supported = (gpu == "Apple M4 Pro" && memory == 48 * 1024 * 1024 * 1024) ||
+            (gpu == "Apple M4 Max" && memory == 64 * 1024 * 1024 * 1024)
         if let result {
-            discoveryMessage = supported ? "已发现本机可用分区 · \(result.rows) token；生成时按实际输入复核。" : "已发现本地分区；此机型尚无自动混合策略验证，自动模式使用 GPU。"
+            discoveryMessage = supported ? "已发现本机可用分区 · \(result.rows) token · ANE MLP \(result.aneMLPEnd - result.aneMLPStart)/\(result.mlpWidth)；生成时按实际输入复核。" : "已发现本地分区；此机型尚无自动混合策略验证，自动模式使用 GPU。"
             if config.policy == "auto" || config.manifest.isEmpty { update { $0.manifest = result.manifest; $0.sourceManifest = result.source } }
         } else { discoveryMessage = "未发现匹配当前权重的完整编译分区，自动模式使用 GPU。可先预编译或指定本地分区。" }
     }
