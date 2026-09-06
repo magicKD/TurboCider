@@ -29,3 +29,5 @@
 本机启用的加速配置可命名为 `profiles/<device>.local.json`，不会进入版本控制；可移植的 `*.example.json` 应保留。
 
 `.gitignore` 不会自动停止跟踪已经提交的文件；如未来误提交原始产物，需要另外从 Git 索引移除，并保留本地文件。
+
+- `cpp-engine-refactor.json`：C++ 边界重构的完整版本对照、首次 Core ML 加载异常、ABBA App 性能和功能回归记录；不含本机绝对路径。

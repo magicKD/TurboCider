@@ -1,4 +1,4 @@
-#include "runtime.hpp"
+#include "../platform/apple/bridge.hpp"
 #import <CommonCrypto/CommonDigest.h>
 #include <sys/stat.h>
 #include <dlfcn.h>

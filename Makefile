@@ -21,6 +21,7 @@ package: build
 test:
 	@python3 tests/repository/test_layout.py
 	@python3 tests/repository/test_independence.py
+	@python3 tests/repository/test_cpp_boundaries.py
 	@python3 tests/native/test_contract.py
 test-app:
 	@build/native/turbocider-studio-tests

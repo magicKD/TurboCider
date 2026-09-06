@@ -1,0 +1,2518 @@
+{
+  "schema_version": 1,
+  "passed": true,
+  "baseline_commit": "f36eb1c0c424dec0191043b29bbd4b7c1f18cabc",
+  "scope": "Native C++ boundary refactor; FLUX real-weight inference; H3/LTX contracts only",
+  "environment": {
+    "device": "Apple M4 Pro",
+    "physical_memory_gib": 48,
+    "macos": "26.6 (25G72)",
+    "mlx": "0.32.0",
+    "width": 512,
+    "height": 512,
+    "steps": 4,
+    "seed": 42,
+    "residency": "resident",
+    "gpu_compile": false,
+    "hybrid_bucket": 1088,
+    "hybrid_precision": "BF16 GPU + INT8 MLP with FP16 IO",
+    "ane_residency": "not observed"
+  },
+  "acceptance": {
+    "threshold_percent": 3,
+    "method": "ABBA App NativeJobStore crossover under changing local load",
+    "passed": true,
+    "all_recorded_png_hashes_match": true,
+    "c_abi_exports_unchanged": 19,
+    "cpu_only_runtime_boundary_test": true,
+    "static_and_contract_tests": 17,
+    "app_behavior_tests": true,
+    "signed_app_verified": true,
+    "neural_math_unchanged_ignoring_formatting": [
+      "flux_transformer",
+      "flux_text",
+      "flux_encode",
+      "flux_vae"
+    ]
+  },
+  "serial_measurements": {
+    "gpu": {
+      "baseline": {
+        "mode": "gpu",
+        "cold_e2e_seconds": 7.638276959070936,
+        "warm_median_seconds": 4.8179015829227865,
+        "runs": [
+          {
+            "wall": 7.490002084057778,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.656792917,
+              "hybrid_setup": 2.2167e-05,
+              "image_encode": 0,
+              "request_wall": 7.395351334,
+              "text_encode": 1.17819575,
+              "vae_decode": 0.54063025
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9899043154,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.819519625045359,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.283923,
+              "hybrid_setup": 7.375e-06,
+              "image_encode": 0,
+              "request_wall": 4.819150375,
+              "text_encode": 8.3e-08,
+              "vae_decode": 0.521357875
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9900594264,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.840783959021792,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.33120575,
+              "hybrid_setup": 6.625e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 4.84059625,
+              "text_encode": 2.92e-07,
+              "vae_decode": 0.495752375
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9900594264,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.8179015829227865,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.308787875,
+              "hybrid_setup": 7e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 4.817708584,
+              "text_encode": 1.66e-07,
+              "vae_decode": 0.496367625
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9900594264,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.755592208937742,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.267156791,
+              "hybrid_setup": 6.5e-06,
+              "image_encode": 0,
+              "request_wall": 4.755389542,
+              "text_encode": 2.08e-07,
+              "vae_decode": 0.474896041
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9900594264,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.728889999911189,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.224144041,
+              "hybrid_setup": 7.75e-06,
+              "image_encode": 0,
+              "request_wall": 4.728705375,
+              "text_encode": 2.08e-07,
+              "vae_decode": 0.491774834
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9900594264,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          }
+        ]
+      },
+      "candidate": {
+        "mode": "gpu",
+        "cold_e2e_seconds": 7.321047166828066,
+        "warm_median_seconds": 4.896698875003494,
+        "runs": [
+          {
+            "wall": 7.161913457908668,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.373366875,
+              "hybrid_setup": 5.542e-06,
+              "image_encode": 0,
+              "request_wall": 7.052703958,
+              "text_encode": 1.116596209,
+              "vae_decode": 0.517151
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9899026770,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.847292708000168,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.338613,
+              "hybrid_setup": 3e-06,
+              "image_encode": 0,
+              "request_wall": 4.847071667,
+              "text_encode": 2.5e-07,
+              "vae_decode": 0.495999
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9900594264,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.896698875003494,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.3979045,
+              "hybrid_setup": 2.916e-06,
+              "image_encode": 0,
+              "request_wall": 4.896457625,
+              "text_encode": 2.5e-07,
+              "vae_decode": 0.485167334
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9900594264,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.875580957974307,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.376382125,
+              "hybrid_setup": 3.041e-06,
+              "image_encode": 0,
+              "request_wall": 4.875359458,
+              "text_encode": 2.91e-07,
+              "vae_decode": 0.484760917
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9900594264,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 5.413885790971108,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.872514584,
+              "hybrid_setup": 3.791e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 5.41366225,
+              "text_encode": 5.84e-07,
+              "vae_decode": 0.528367666
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9900594264,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 5.692320500034839,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.173886584,
+              "hybrid_setup": 2.709e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 5.692092459,
+              "text_encode": 2.08e-07,
+              "vae_decode": 0.50459825
+            },
+            "memory": {
+              "mlx_active_bytes": 7852689478,
+              "mlx_peak_bytes": 9900594264,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          }
+        ]
+      },
+      "warm_change_percent": 1.635510620640468,
+      "png_parity": true
+    },
+    "gpu_ane": {
+      "baseline": {
+        "mode": "gpu_ane",
+        "cold_e2e_seconds": 6.237362249870785,
+        "warm_median_seconds": 3.0186712910654023,
+        "runs": [
+          {
+            "wall": 6.085757749970071,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 3.815185666,
+              "hybrid_setup": 0.494956791,
+              "image_encode": 8.4e-08,
+              "request_wall": 5.97816225,
+              "text_encode": 1.130061083,
+              "vae_decode": 0.517113459
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10032736594,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 80,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.494684875,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 1.7390269980000002,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.078732500085607,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.562582792,
+              "hybrid_setup": 8.958e-06,
+              "image_encode": 0,
+              "request_wall": 3.078455625,
+              "text_encode": 3.75e-07,
+              "vae_decode": 0.502630375
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 160,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.494684875,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 3.300787335,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.0455652920063585,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.56454125,
+              "hybrid_setup": 6.667e-06,
+              "image_encode": 0,
+              "request_wall": 3.045349084,
+              "text_encode": 2.5e-07,
+              "vae_decode": 0.467201292
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 240,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.494684875,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 4.856692462,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.0186712910654023,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.524841167,
+              "hybrid_setup": 7.958e-06,
+              "image_encode": 0,
+              "request_wall": 3.018454,
+              "text_encode": 3.209e-06,
+              "vae_decode": 0.480355
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 320,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.494684875,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 6.398867421,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.0113197499886155,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.516187583,
+              "hybrid_setup": 6.834e-06,
+              "image_encode": 0,
+              "request_wall": 3.010938167,
+              "text_encode": 3.084e-06,
+              "vae_decode": 0.481486542
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 400,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.494684875,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 7.920145959999998,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 2.996395834023133,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.508105458,
+              "hybrid_setup": 1.3041e-05,
+              "image_encode": 4.1e-08,
+              "request_wall": 2.996177,
+              "text_encode": 3.75e-07,
+              "vae_decode": 0.474269166
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 480,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.494684875,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 9.442049210999999,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "mode": "gpu_ane",
+        "cold_e2e_seconds": 4.681753208045848,
+        "warm_median_seconds": 3.006833583000116,
+        "runs": [
+          {
+            "wall": 4.53819204098545,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 3.002867125,
+              "hybrid_setup": 0.472782,
+              "image_encode": 1.67e-07,
+              "request_wall": 4.4406245,
+              "text_encode": 0.456651791,
+              "vae_decode": 0.472535417
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10032752978,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 80,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.472774416,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 1.6019904139999999,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.006833583000116,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.539027584,
+              "hybrid_setup": 4.917e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 3.006581334,
+              "text_encode": 2.5e-07,
+              "vae_decode": 0.450306917
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 160,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.472774416,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 3.144154707,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.008334540994838,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.533337709,
+              "hybrid_setup": 2.958e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.008096709,
+              "text_encode": 3.33e-07,
+              "vae_decode": 0.461666834
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 240,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.472774416,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 4.682010210999999,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.0047953749308363,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.523108416,
+              "hybrid_setup": 3.375e-06,
+              "image_encode": 0,
+              "request_wall": 3.004533584,
+              "text_encode": 2.92e-07,
+              "vae_decode": 0.465214708
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 320,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.472774416,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 6.214832582000001,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.016889875056222,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.52438825,
+              "hybrid_setup": 3.417e-06,
+              "image_encode": 0,
+              "request_wall": 3.016588875,
+              "text_encode": 3.33e-07,
+              "vae_decode": 0.479497917
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 400,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.472774416,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 7.757425121,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.002135874936357,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.5116655,
+              "hybrid_setup": 3.875e-06,
+              "image_encode": 0,
+              "request_wall": 3.001878083,
+              "text_encode": 3.75e-07,
+              "vae_decode": 0.4762045
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 480,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.472774416,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 9.288684531999998,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          }
+        ]
+      },
+      "warm_change_percent": -0.39214962226338246,
+      "png_parity": true
+    },
+    "app-gpu": {
+      "baseline": {
+        "mode": "gpu",
+        "cold_e2e_seconds": 6.129935541,
+        "warm_median_seconds": 4.882452167,
+        "runs": [
+          {
+            "wall": 6.129935541,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.841148709,
+              "hybrid_setup": 1.7209e-05,
+              "image_encode": 8.3e-08,
+              "request_wall": 5.968487167,
+              "text_encode": 0.567476709,
+              "vae_decode": 0.540232709
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9898994002,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.972998208,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.466234708,
+              "hybrid_setup": 8.25e-06,
+              "image_encode": 0,
+              "request_wall": 4.9720175,
+              "text_encode": 3.0917e-05,
+              "vae_decode": 0.491455833
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.85788725,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.376849167,
+              "hybrid_setup": 8.208e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 4.856836791,
+              "text_encode": 3.3375e-05,
+              "vae_decode": 0.466643458
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.848042333,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.342363083,
+              "hybrid_setup": 7e-06,
+              "image_encode": 0,
+              "request_wall": 4.846908458,
+              "text_encode": 2.1292e-05,
+              "vae_decode": 0.491906125
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.882452167,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.358910667,
+              "hybrid_setup": 6.625e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 4.881091334,
+              "text_encode": 2.6e-05,
+              "vae_decode": 0.509683208
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.957057375,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.452206083,
+              "hybrid_setup": 6.875e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 4.955477166,
+              "text_encode": 3.9834e-05,
+              "vae_decode": 0.490540834
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          }
+        ]
+      },
+      "candidate": {
+        "mode": "gpu",
+        "cold_e2e_seconds": 6.294101125,
+        "warm_median_seconds": 4.860580709,
+        "runs": [
+          {
+            "wall": 6.294101125,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.903119208,
+              "hybrid_setup": 6.375e-06,
+              "image_encode": 1.25e-07,
+              "request_wall": 6.138825458,
+              "text_encode": 0.659437583,
+              "vae_decode": 0.533978041
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9899010386,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.803499625,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.309125208,
+              "hybrid_setup": 2.958e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 4.802510625,
+              "text_encode": 2.825e-05,
+              "vae_decode": 0.479889291
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.860580709,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.355512916,
+              "hybrid_setup": 2.916e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 4.85929875,
+              "text_encode": 2.025e-05,
+              "vae_decode": 0.490791625
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.902767667,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.397097791,
+              "hybrid_setup": 2.5e-06,
+              "image_encode": 0,
+              "request_wall": 4.90151075,
+              "text_encode": 2.9958e-05,
+              "vae_decode": 0.491401416
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.853781875,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.350699375,
+              "hybrid_setup": 3.125e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 4.852313333,
+              "text_encode": 2.5708e-05,
+              "vae_decode": 0.487874875
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 4.947130542,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 4.418640125,
+              "hybrid_setup": 2.792e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 4.946100167,
+              "text_encode": 2.9542e-05,
+              "vae_decode": 0.512365625
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          }
+        ]
+      },
+      "warm_change_percent": -0.44796051762324707,
+      "png_parity": true
+    },
+    "app-gpu_ane": {
+      "baseline": {
+        "mode": "gpu_ane",
+        "cold_e2e_seconds": 4.908187625,
+        "warm_median_seconds": 3.010828875,
+        "runs": [
+          {
+            "wall": 4.908187625,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 3.083263417,
+              "hybrid_setup": 0.200390458,
+              "image_encode": 0,
+              "request_wall": 4.761347583,
+              "text_encode": 0.95558125,
+              "vae_decode": 0.504912375
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10032736594,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 80,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.200354834,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 1.5825960830000003,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 2.990344625,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.5171745,
+              "hybrid_setup": 7.083e-06,
+              "image_encode": 0,
+              "request_wall": 2.989350792,
+              "text_encode": 2.2666e-05,
+              "vae_decode": 0.459375875
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 160,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.200354834,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 3.113965874999999,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.010828875,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.522710334,
+              "hybrid_setup": 7.083e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 3.009682083,
+              "text_encode": 3.4375e-05,
+              "vae_decode": 0.473668416
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 240,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.200354834,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 4.649256291,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 2.982501833,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.50378175,
+              "hybrid_setup": 6.666e-06,
+              "image_encode": 0,
+              "request_wall": 2.981057958,
+              "text_encode": 2.3958e-05,
+              "vae_decode": 0.464669125
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 320,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.200354834,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 6.180413835,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.018071416,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.515850792,
+              "hybrid_setup": 8e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 3.016568917,
+              "text_encode": 2.6125e-05,
+              "vae_decode": 0.487532375
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 400,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.200354834,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 7.713794586000001,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.104971333,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.579418375,
+              "hybrid_setup": 8.25e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.103768292,
+              "text_encode": 2.7125e-05,
+              "vae_decode": 0.511589167
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 480,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.200354834,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 9.290359214,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "mode": "gpu_ane",
+        "cold_e2e_seconds": 13.357300292,
+        "warm_median_seconds": 3.010304833,
+        "runs": [
+          {
+            "wall": 13.357300292,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.987436042,
+              "hybrid_setup": 9.289478125,
+              "image_encode": 4.2e-08,
+              "request_wall": 13.202948041,
+              "text_encode": 0.42198075,
+              "vae_decode": 0.465160584
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10032736594,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 80,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.289457417,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 1.589473914,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 2.999283417,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.535639333,
+              "hybrid_setup": 3.334e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 2.998194917,
+              "text_encode": 3.3958e-05,
+              "vae_decode": 0.449862458
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 160,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.289457417,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 3.1336072910000006,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.014798292,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.520633208,
+              "hybrid_setup": 3.5e-06,
+              "image_encode": 0,
+              "request_wall": 3.013643167,
+              "text_encode": 3.9208e-05,
+              "vae_decode": 0.479522375
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 240,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.289457417,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 4.666287997,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.076251083,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.583756959,
+              "hybrid_setup": 4.125e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.074982834,
+              "text_encode": 4.1292e-05,
+              "vae_decode": 0.478148083
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 320,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.289457417,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 6.214771533999999,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.007566208,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.535756084,
+              "hybrid_setup": 2.667e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 3.006316959,
+              "text_encode": 2.0542e-05,
+              "vae_decode": 0.457907625
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 400,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.289457417,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 7.748820697999999,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.010304833,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.542182791,
+              "hybrid_setup": 4.125e-06,
+              "image_encode": 0,
+              "request_wall": 3.009169875,
+              "text_encode": 3.5958e-05,
+              "vae_decode": 0.454465584
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 480,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.289457417,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 9.291472826,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          }
+        ]
+      },
+      "warm_change_percent": -0.01740524027623591,
+      "png_parity": true
+    },
+    "app-repeat-gpu": {
+      "baseline": {
+        "mode": "gpu",
+        "cold_e2e_seconds": 6.94708975,
+        "warm_median_seconds": 6.044902167,
+        "runs": [
+          {
+            "wall": 6.94708975,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.69872725,
+              "hybrid_setup": 1.9166e-05,
+              "image_encode": 4.2e-08,
+              "request_wall": 6.791514458,
+              "text_encode": 0.525638792,
+              "vae_decode": 0.548065958
+            },
+            "memory": {
+              "mlx_active_bytes": 7852640326,
+              "mlx_peak_bytes": 9898994002,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 5.781963833,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.204919208,
+              "hybrid_setup": 9e-06,
+              "image_encode": 0,
+              "request_wall": 5.780470208,
+              "text_encode": 3.1e-05,
+              "vae_decode": 0.5618705
+            },
+            "memory": {
+              "mlx_active_bytes": 7852640326,
+              "mlx_peak_bytes": 9900545112,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 5.983365875,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.401151875,
+              "hybrid_setup": 6.208e-06,
+              "image_encode": 0,
+              "request_wall": 5.982285875,
+              "text_encode": 2.6833e-05,
+              "vae_decode": 0.567926791
+            },
+            "memory": {
+              "mlx_active_bytes": 7852640326,
+              "mlx_peak_bytes": 9900545112,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 6.044902167,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.460523416,
+              "hybrid_setup": 7.75e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 6.043559167,
+              "text_encode": 3.9208e-05,
+              "vae_decode": 0.569326
+            },
+            "memory": {
+              "mlx_active_bytes": 7852640326,
+              "mlx_peak_bytes": 9900545112,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 6.119588666,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.559432291,
+              "hybrid_setup": 6.917e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 6.1183325,
+              "text_encode": 3.0833e-05,
+              "vae_decode": 0.546682042
+            },
+            "memory": {
+              "mlx_active_bytes": 7852640326,
+              "mlx_peak_bytes": 9900545112,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 6.092408125,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.497543084,
+              "hybrid_setup": 6.833e-06,
+              "image_encode": 0,
+              "request_wall": 6.091168167,
+              "text_encode": 2.1875e-05,
+              "vae_decode": 0.577028208
+            },
+            "memory": {
+              "mlx_active_bytes": 7852640326,
+              "mlx_peak_bytes": 9900545112,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          }
+        ]
+      },
+      "candidate": {
+        "mode": "gpu",
+        "cold_e2e_seconds": 6.829237583,
+        "warm_median_seconds": 6.019900833,
+        "runs": [
+          {
+            "wall": 6.829237583,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.696796625,
+              "hybrid_setup": 1.225e-05,
+              "image_encode": 8.3e-08,
+              "request_wall": 6.673778708,
+              "text_encode": 0.400867667,
+              "vae_decode": 0.534363084
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9898994002,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 6.19439975,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.631633458,
+              "hybrid_setup": 2.416e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 6.193276875,
+              "text_encode": 3.2875e-05,
+              "vae_decode": 0.547617541
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 6.24782975,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.673111125,
+              "hybrid_setup": 3.083e-06,
+              "image_encode": 0,
+              "request_wall": 6.246735042,
+              "text_encode": 3.425e-05,
+              "vae_decode": 0.5603665
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 5.925434083,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.395705792,
+              "hybrid_setup": 2.709e-06,
+              "image_encode": 0,
+              "request_wall": 5.92414875,
+              "text_encode": 2.6292e-05,
+              "vae_decode": 0.515817667
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 6.019900833,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.45915875,
+              "hybrid_setup": 3.042e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 6.018706292,
+              "text_encode": 3.4916e-05,
+              "vae_decode": 0.542533208
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          },
+          {
+            "wall": 5.831172292,
+            "png_sha256": "313c816d96d49ade45c1addda235fb488fa71139e0a3d2ef60961b80ce3af18a",
+            "timings_seconds": {
+              "denoise": 5.277771083,
+              "hybrid_setup": 2.958e-06,
+              "image_encode": 0,
+              "request_wall": 5.830124917,
+              "text_encode": 4.9625e-05,
+              "vae_decode": 0.53603075
+            },
+            "memory": {
+              "mlx_active_bytes": 7852656710,
+              "mlx_peak_bytes": 9900561496,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {}
+          }
+        ]
+      },
+      "warm_change_percent": -0.41359369116816813,
+      "png_parity": true
+    },
+    "app-repeat-gpu_ane": {
+      "baseline": {
+        "mode": "gpu_ane",
+        "cold_e2e_seconds": 4.207548292,
+        "warm_median_seconds": 3.0090135,
+        "runs": [
+          {
+            "wall": 4.207548292,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.807707708,
+              "hybrid_setup": 0.432889083,
+              "image_encode": 0,
+              "request_wall": 4.066340042,
+              "text_encode": 0.342312916,
+              "vae_decode": 0.466336834
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10032736594,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 80,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.432849958,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 1.5911385430000002,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.02198125,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.55691525,
+              "hybrid_setup": 8.75e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.021006792,
+              "text_encode": 4.8792e-05,
+              "vae_decode": 0.450234417
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 160,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.432849958,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 3.1502419600000002,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.0090135,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.53763325,
+              "hybrid_setup": 6.167e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 3.007973083,
+              "text_encode": 2.75e-05,
+              "vae_decode": 0.457821083
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 240,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.432849958,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 4.697433043,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 2.993619083,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.529573792,
+              "hybrid_setup": 8.833e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 2.992488291,
+              "text_encode": 2.1125e-05,
+              "vae_decode": 0.450283292
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 320,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.432849958,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 6.243785373,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 2.983738333,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.503331791,
+              "hybrid_setup": 9.5e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 2.982624542,
+              "text_encode": 1.65e-05,
+              "vae_decode": 0.466392916
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 400,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.432849958,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 7.776984078999999,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.243228125,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.702545708,
+              "hybrid_setup": 7.417e-06,
+              "image_encode": 0,
+              "request_wall": 3.242071667,
+              "text_encode": 1.6875e-05,
+              "vae_decode": 0.52681125
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 480,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.432849958,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 9.332305992,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "mode": "gpu_ane",
+        "cold_e2e_seconds": 4.543634042,
+        "warm_median_seconds": 3.300082334,
+        "runs": [
+          {
+            "wall": 4.543634042,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 3.066528209,
+              "hybrid_setup": 0.2077905,
+              "image_encode": 0,
+              "request_wall": 4.378509875,
+              "text_encode": 0.5595445,
+              "vae_decode": 0.505956584
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10032736594,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 80,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.207781375,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 1.585737705,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.300082334,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.768547417,
+              "hybrid_setup": 3.416e-06,
+              "image_encode": 0,
+              "request_wall": 3.299110375,
+              "text_encode": 5.3458e-05,
+              "vae_decode": 0.516134916
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 160,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.207781375,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 3.1387925429999997,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.273482958,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.749626041,
+              "hybrid_setup": 3.167e-06,
+              "image_encode": 0,
+              "request_wall": 3.27232575,
+              "text_encode": 2.9125e-05,
+              "vae_decode": 0.503687709
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 240,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.207781375,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 4.689718631999999,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.311228708,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.77090675,
+              "hybrid_setup": 4.375e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 3.30997775,
+              "text_encode": 5.3e-05,
+              "vae_decode": 0.523447667
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 320,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.207781375,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 6.241667963,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.292987333,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.771552083,
+              "hybrid_setup": 2.958e-06,
+              "image_encode": 4.1e-08,
+              "request_wall": 3.291881958,
+              "text_encode": 4.9042e-05,
+              "vae_decode": 0.507110209
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 400,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.207781375,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 7.796771587,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.341438291,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.817222208,
+              "hybrid_setup": 4.458e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.340325042,
+              "text_encode": 4.4166e-05,
+              "vae_decode": 0.50834075
+            },
+            "memory": {
+              "mlx_active_bytes": 7986382918,
+              "mlx_peak_bytes": 10034287704,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 480,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.207781375,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 9.35421909,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          }
+        ]
+      },
+      "warm_change_percent": 9.673231243395875,
+      "png_parity": true
+    },
+    "app-cold-control": {
+      "baseline": {
+        "mode": "gpu_ane",
+        "cold_e2e_seconds": 13.436351167,
+        "warm_median_seconds": 3.28914825,
+        "runs": [
+          {
+            "wall": 13.436351167,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 3.071255625,
+              "hybrid_setup": 9.286395167,
+              "image_encode": 4.2e-08,
+              "request_wall": 13.276863834,
+              "text_encode": 0.372944708,
+              "vae_decode": 0.527504125
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10032752978,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 80,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.286324208,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 1.600924996,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.31931175,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.794033833,
+              "hybrid_setup": 7.417e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.31825575,
+              "text_encode": 2.7958e-05,
+              "vae_decode": 0.510285334
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 160,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.286324208,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 3.173135777,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.303893083,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.769868125,
+              "hybrid_setup": 1.6375e-05,
+              "image_encode": 0,
+              "request_wall": 3.302704167,
+              "text_encode": 3.1e-05,
+              "vae_decode": 0.519155208
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 240,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.286324208,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 4.722188696,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.286084708,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.759157292,
+              "hybrid_setup": 6.917e-06,
+              "image_encode": 0,
+              "request_wall": 3.284927334,
+              "text_encode": 2.3458e-05,
+              "vae_decode": 0.51268925
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 320,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.286324208,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 6.272147404,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.28914825,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.762967292,
+              "hybrid_setup": 7.458e-06,
+              "image_encode": 0,
+              "request_wall": 3.2880935,
+              "text_encode": 2.4083e-05,
+              "vae_decode": 0.512181125
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 400,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.286324208,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 7.821566071000001,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.283478167,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.761674791,
+              "hybrid_setup": 7.458e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.282371917,
+              "text_encode": 2.5667e-05,
+              "vae_decode": 0.507385042
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 480,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 9.286324208,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 9.376387829,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "mode": "gpu_ane",
+        "cold_e2e_seconds": 4.899242291,
+        "warm_median_seconds": 3.643249459,
+        "runs": [
+          {
+            "wall": 4.899242291,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 3.025571333,
+              "hybrid_setup": 0.212024667,
+              "image_encode": 1.25e-07,
+              "request_wall": 4.727361916,
+              "text_encode": 0.921764792,
+              "vae_decode": 0.531062125
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10032752978,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 80,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.212013125,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 1.5876182060000006,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.922385834,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 3.369513584,
+              "hybrid_setup": 3.833e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.921190292,
+              "text_encode": 3.475e-05,
+              "vae_decode": 0.53920975
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 160,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.212013125,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 3.1180974599999995,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.48538025,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 2.91784975,
+              "hybrid_setup": 3.708e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.484107042,
+              "text_encode": 4.5708e-05,
+              "vae_decode": 0.55147175
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 240,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.212013125,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 4.654174876999999,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.721751167,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 3.180610167,
+              "hybrid_setup": 2.75e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.720581583,
+              "text_encode": 2.1625e-05,
+              "vae_decode": 0.527025125
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 320,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.212013125,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 6.201828450000002,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.591107625,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 3.038688375,
+              "hybrid_setup": 3.75e-06,
+              "image_encode": 4.2e-08,
+              "request_wall": 3.590021,
+              "text_encode": 4.1833e-05,
+              "vae_decode": 0.535750041
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 400,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.212013125,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 7.737455160000002,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          },
+          {
+            "wall": 3.643249459,
+            "png_sha256": "3879870359a9cc5bc6e0b4368b144479923e9813da4ace2957f62a677ed748b7",
+            "timings_seconds": {
+              "denoise": 3.085333709,
+              "hybrid_setup": 3.25e-06,
+              "image_encode": 0,
+              "request_wall": 3.642089042,
+              "text_encode": 3.425e-05,
+              "vae_decode": 0.541591458
+            },
+            "memory": {
+              "mlx_active_bytes": 7986399302,
+              "mlx_peak_bytes": 10034304088,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "hybrid": {
+              "bucket": 1088,
+              "calls_session_total": 480,
+              "compute_units": "cpuAndNeuralEngine",
+              "load_seconds": 0.212013125,
+              "observed_ane_residency": "unknown",
+              "output_copy_bytes_session_total": 0,
+              "prediction_seconds_session_total": 9.288820867,
+              "provenance": "local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+            }
+          }
+        ]
+      },
+      "warm_change_percent": 10.765741829970722,
+      "png_parity": true
+    }
+  },
+  "paired_measurements": {
+    "passed": true,
+    "scope": "Same Swift NativeJobStore, two resident processes, sequential ABBA requests; two priming calls then eight measured calls per version; not a cold-start measurement",
+    "reports": {
+      "gpu_ane": {
+        "sequence": [
+          {
+            "label": "baseline",
+            "measured": false,
+            "seconds": 13.371074291,
+            "completed_at": 842229.162236666
+          },
+          {
+            "label": "candidate",
+            "measured": false,
+            "seconds": 7.291701,
+            "completed_at": 842236.454517958
+          },
+          {
+            "label": "candidate",
+            "measured": false,
+            "seconds": 3.604032958,
+            "completed_at": 842240.058924583
+          },
+          {
+            "label": "baseline",
+            "measured": false,
+            "seconds": 4.005209708,
+            "completed_at": 842244.064623083
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 3.578187917,
+            "completed_at": 842247.643235166
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 3.3577065,
+            "completed_at": 842251.001350708
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 3.375845875,
+            "completed_at": 842254.37757
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 3.370183625,
+            "completed_at": 842257.748137
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 3.374326958,
+            "completed_at": 842261.122857541
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 3.48259625,
+            "completed_at": 842264.605902375
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 3.057780458,
+            "completed_at": 842267.664030541
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 3.070205625,
+            "completed_at": 842270.734592916
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 3.048862917,
+            "completed_at": 842273.783805958
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 3.013811458,
+            "completed_at": 842276.7979895
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 3.01416325,
+            "completed_at": 842279.812506166
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 3.05757975,
+            "completed_at": 842282.870439
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 3.052285,
+            "completed_at": 842285.923064
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 3.023190375,
+            "completed_at": 842288.946658166
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 3.038449375,
+            "completed_at": 842291.985460541
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 3.0721495,
+            "completed_at": 842295.057976291
+          }
+        ],
+        "medians": {
+          "baseline": 3.0711775625,
+          "candidate": 3.0481149165
+        },
+        "change_percent": -0.7509382160641564
+      },
+      "gpu": {
+        "sequence": [
+          {
+            "label": "baseline",
+            "measured": false,
+            "seconds": 6.819457625,
+            "completed_at": 842302.079527208
+          },
+          {
+            "label": "candidate",
+            "measured": false,
+            "seconds": 6.755923792,
+            "completed_at": 842308.835887875
+          },
+          {
+            "label": "candidate",
+            "measured": false,
+            "seconds": 5.060708917,
+            "completed_at": 842313.896973791
+          },
+          {
+            "label": "baseline",
+            "measured": false,
+            "seconds": 5.53104875,
+            "completed_at": 842319.428428125
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 5.06551025,
+            "completed_at": 842324.494278291
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 5.293734,
+            "completed_at": 842329.788423125
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 5.096094959,
+            "completed_at": 842334.884946458
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 5.20060825,
+            "completed_at": 842340.085914875
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 5.04352075,
+            "completed_at": 842345.129805791
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 5.012585584,
+            "completed_at": 842350.142765125
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 4.9513525,
+            "completed_at": 842355.094467041
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 4.922158083,
+            "completed_at": 842360.017000916
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 4.856935958,
+            "completed_at": 842364.874283375
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 4.85856,
+            "completed_at": 842369.733260583
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 6.091196292,
+            "completed_at": 842375.824806875
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 6.196302625,
+            "completed_at": 842382.021460958
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 4.926610791,
+            "completed_at": 842386.948422208
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 4.85936775,
+            "completed_at": 842391.808129583
+          },
+          {
+            "label": "candidate",
+            "measured": true,
+            "seconds": 4.908568,
+            "completed_at": 842396.717083583
+          },
+          {
+            "label": "baseline",
+            "measured": true,
+            "seconds": 4.966479208,
+            "completed_at": 842401.683932
+          }
+        ],
+        "medians": {
+          "baseline": 5.004999979,
+          "candidate": 4.981969041999999
+        },
+        "change_percent": -0.4601585833493238
+      }
+    }
+  },
+  "regression": {
+    "studio": {
+      "passed": true,
+      "checks": [
+        "explicit_image_weight_load",
+        "text_to_image",
+        "single_active_job",
+        "busy_unload_rejected",
+        "immutable_request",
+        "completed_step_telemetry",
+        "single_image_transform_actual_steps",
+        "ordered_multi_reference_edit",
+        "asset_and_job_persistence",
+        "unload_releases_allocator_weights",
+        "app_direct_png_parity_three_operations",
+        "cancel_before_generation",
+        "reload_after_unload_same_output"
+      ]
+    },
+    "lifecycle": {
+      "passed": true,
+      "checks": [
+        "cancel_before_export",
+        "cancel_at_export_boundary",
+        "same_session_recovery",
+        "three_identical_warm_outputs",
+        "bounded_retained_memory",
+        "changed_prompt_cache_invalidation",
+        "fixed_512_text_bucket",
+        "job_persistence"
+      ]
+    },
+    "service": {
+      "passed": true,
+      "checks": [
+        "restart_marks_incomplete_interrupted",
+        "registered_models",
+        "cross_process_gpu_lease",
+        "queued_cancel",
+        "actual_flux_generation",
+        "persistent_model_and_prompt_reuse",
+        "active_cancel_without_output",
+        "history_pagination",
+        "crash_stale_socket_recovery"
+      ]
+    },
+    "auto": {
+      "passed": true,
+      "checks": [
+        "hardware_checkpoint_and_bucket_match",
+        "hybrid_session_reused",
+        "auto_explicit_png_identical",
+        "oversize_bucket_falls_back",
+        "missing_manifest_falls_back",
+        "malformed_manifest_falls_back",
+        "approximation_opt_in_required",
+        "explicit_hybrid_still_strict"
+      ]
+    },
+    "staged": {
+      "passed": true,
+      "checks": [
+        "resident_staged_png_parity_both_image_operations_both_backends",
+        "staged_releases_weights",
+        "hybrid_metrics_survive_unload"
+      ]
+    },
+    "preparation": {
+      "passed": true,
+      "checks": [
+        "load_prompt_and_materialized_weights",
+        "warmup_no_output",
+        "prepared_prompt_reused",
+        "compile_20_partitions",
+        "content_cache_reused",
+        "compiled_partitions_predict_and_warmup",
+        "hybrid_session_reused",
+        "clear_owned_cache_only",
+        "unload_releases_weights_and_hybrid",
+        "warmup_cancellation"
+      ]
+    }
+  },
+  "staged_final_active_bytes": {
+    "gpu-image.transform-staged": 917504,
+    "gpu-image.edit-staged": 851968,
+    "gpu_ane-image.transform-staged": 917504,
+    "gpu_ane-image.edit-staged": 851968
+  },
+  "observations": [
+    "First serial App trial: GPU 4.88245 -> 4.86058 seconds; hybrid 3.01083 -> 3.01030 seconds. First native C ABI GPU trial was +1.64%; retained rather than hidden.",
+    "Later sequential trial crossed a changing machine-load interval: hybrid 3.00901 -> 3.30008 seconds; old GPU also slowed to 6.04490 seconds and new GPU to 6.01990. Browser renderer and WindowServer CPU load were observed. This does not prove a GPU utilization attribution; ABBA is the controlled follow-up.",
+    "First new App client: Core ML load 9.28946 seconds. Reversed order with a new executable name: OLD engine Core ML load 9.28632 seconds, NEW engine 0.21201 seconds. Evidence supports first-client cache preparation rather than C++ boundary overhead; no internal OS compilation trace was collected.",
+    "New-process first calls are not OS-cold-cache experiments. App benchmarks include NativeJobStore events and persistence but exclude window rendering.",
+    "Resident modes unchanged. Staged image-input mode additionally drops VAE before denoising and preserves hybrid statistics across unload. No generic block streaming or prefetch engine was introduced.",
+    "Final binary differs from the first candidate only by serializing the existing typed memory estimate directly and include ordering; final App repeats/ABBA test the packaged final binary. Regression mathematical paths and policies are unchanged."
+  ],
+  "artifacts_sha256": {
+    "baseline_library": "cff80d1ac61e70f5bc4eaa56ed3f713c6d766cb18c328cad8d0f92634e4682c8",
+    "candidate_library": "6e30573a57a9bd80ed1177154fb22ffe00825cb300e21f73404a4b4983ffcc95",
+    "candidate_app": "de72a32d65449b4dc2bb1de967dd92f5c59b40424d2605bca4d151d25ef587a0",
+    "mlx_library": "f7178a17d01050515309c93b51a12eff2ec2635651b68a191ac833835fa23b02",
+    "paired_benchmark": "ed2297690feaaba7bf21771cb4d34e0c8a63cea785644ade3cfcb6eadfad0308"
+  },
+  "native_source_sha256": {
+    "native/api/c_api.mm": "fd89e3d8968d1692df8ad9914564f182aeaab8a7a209bf2034d9bf4021a548dd",
+    "native/backends/artifact_cache.mm": "3ffb386d2936992a839ff6b45364d9690f63b5e0680d4061b2666264f6e1da28",
+    "native/backends/coreml.hpp": "570c540181125f0be9f5ee9bdc03bb129ce8e8b3b2c8c46364a86d38c4fe6bb6",
+    "native/backends/coreml.mm": "b3c593a92f746e5f1c3b13917bd55481d74f9cb66b4b64850ecf670fec516cef",
+    "native/backends/coreml_resources.mm": "867457a518049663c12372453222fe05d1035abad4a54964280142ff9f191601",
+    "native/backends/mlx.cpp": "7438bfad97738e2846bab35e6f78d660026fe4674c18bd67124931d54a5dec9a",
+    "native/backends/mlx.hpp": "cb5d332213073aa4bbe0fa94f4caebae8647327aa523da408b109622daf87dbf",
+    "native/core/common.cpp": "071c46962b5b5ed21955987351672b4d79a36d85ae1c138b8c1ba8c04f1b307f",
+    "native/core/common.hpp": "03eae74b3c8c2beda75f69963923978123d38c3fbfe853e8600834dd8fc5e966",
+    "native/core/contracts.hpp": "ad5d86dc526eebc66e3ae24cae7ba57a03cbee7c396871b6193e98960aa6fa30",
+    "native/core/tokenizer.hpp": "5de664bf18b876b0189bbf589f9e47dbd72141f5fb858ef48f0d2183d1d4c35a",
+    "native/media/image.hpp": "9aee9f71d15e6dbd1483116858099223e1385e238b1037530fed411af250c2c0",
+    "native/media/image.mm": "ced109c2b98585a586ab88984511e6ef6b425767ebc3f2a09728acf21d2c3bea",
+    "native/media/input.mm": "c1c4f4b51cc7bde3ab7f2a2995aa5dfeda48822b8e1831c85a8beb42fedfe8f1",
+    "native/models/flux2/flux.hpp": "c24ba5bf3e9b6b443abdf6c7ccd944866c1ac5d20a5794caf906e93dfc65896b",
+    "native/models/flux2/flux_encode.cpp": "ddb046936e2be49323a6d3cc7b6cd9998bcfa9a113295faa052cc93cbf4191ca",
+    "native/models/flux2/flux_text.cpp": "cc13d7cd29397e1c35f11d4bf0287eb672ef7404e4549bb727edcffc55a9bc9f",
+    "native/models/flux2/flux_transformer.cpp": "b78efc1f42d000da961c94795401ebb35529b986a8b0a7dbcd15aac95706db38",
+    "native/models/flux2/flux_vae.cpp": "0f1c8bd079abb78518f99133d21816d15ce1ad7e166d6ccf79520a59616da01c",
+    "native/models/flux2/flux_vae_ops.hpp": "a87bceafb339415f4c0c2e81cb3093ebefcc6a09510b474dc5fb7f1299fae1ef",
+    "native/models/flux2/pipeline.cpp": "bebc56f1de7c73cd82d68789019c32ca51f6a3a178d02dc7759ec7cfa0be6680",
+    "native/models/flux_module.cpp": "bd04e2aeddb027fe1a3679380a454c725a7ae1f985fc0a8e3c15d5854c2d2916",
+    "native/models/h3_module.cpp": "f94667a2e8020b053762f26d11cf18cdc1f9349b52f3a3142fabd8e489058710",
+    "native/models/ltx_module.cpp": "08d397ee000ae155d81b06651f294dc2b7a1fa31aa012b598d6193e935b33b1c",
+    "native/models/registry.cpp": "a41c44f9a3b0bcc4c596e8f380dd835a257a8fdbe465ee5e696b9a3022f16af6",
+    "native/platform/apple/bridge.hpp": "20eea120869a4a054feb2df39de540511db2e1e89e35292a6db6e80afb4176e8",
+    "native/platform/apple/device.mm": "fbd19ccd3cb329d681ce894f920ecb99d3539c78b4b19b13b617e0dd0682bcfd",
+    "native/platform/apple/platform.hpp": "56757c132e6e71326f2b4903f440f2658bd81abc15bf361e2db18fcd29147b1d",
+    "native/platform/apple/profile.mm": "aa5ad53caefa2d22d45c258db63d9162b1185f524242ab130185e7b9c58daf3c",
+    "native/platform/apple/request.mm": "0f3b45429304462ce3d43810fd7b361538c103ea651118b0baa37e598a32d70f",
+    "native/platform/apple/results.mm": "fa83234b8e2cc9cc821af30c0cbedf78ad6e47486c68618fcbf4ff2f0e5151e5",
+    "native/platform/apple/tokenizer.mm": "5a1d62179f1fe03535c0b25db30798bec2f89b24053c94a277ee4c63feb647ef",
+    "native/runtime/execution.cpp": "3f7a287a3d867c456e669626d8be7f0aa770408eaef0b8341d695296ad91f4ac",
+    "native/runtime/execution.hpp": "f5fc350fef62b140464caed0a6a745b183e1e4f621ac3762aca1fd07dcbda5af",
+    "native/runtime/plan.cpp": "308a770821a83dc21e9d3b9a2f6ed5c11ce9725635333798e7036cd36c554041",
+    "native/runtime/residency.cpp": "c62b2fa85711ef47806374b03a4a0996803292d9d7baaa703179c78ddf5fafee",
+    "native/runtime/residency.hpp": "ff9952f4ac74193a538803ab7a926b65550c75850ca8daf5f0f211e4e024c0b1",
+    "native/runtime/session.hpp": "8058603de61f7ae4116baaa70161ea7f9d9ab20276f750bd4a01bfb9ff838926"
+  }
+}

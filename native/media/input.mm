@@ -1,4 +1,5 @@
-#include "runtime.hpp"
+#include "../platform/apple/bridge.hpp"
+#include "image.hpp"
 #import <ImageIO/ImageIO.h>
 #include <cmath>
 namespace tc {

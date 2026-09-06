@@ -33,4 +33,4 @@ struct Recipe {
     std::vector<Stage> stages;
     bool executable = false;
 };
-}
+} // namespace tc

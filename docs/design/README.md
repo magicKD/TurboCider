@@ -45,3 +45,5 @@
 [架构图](native-engine-architecture.svg) 表达最终方向，并非每个方框都已经实现。当前已完成真实 FLUX 原生纵切；H3/LTX 数学 executor、独立 daemon、通用执行器与自有 allocator 尚待实现。
 
 `validation/` 存放小型 JSON 证据和依赖身份。原始大张量、图像及过程日志保留在本机 `outputs/native-validation/`，不提交模型或大文件。
+
+- [原生 C++ 引擎边界与重构验收](native-cpp-engine.md)：当前源码划分、类型化接口、驻留策略与性能验证。

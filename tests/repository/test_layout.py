@@ -9,9 +9,10 @@ class LayoutTests(unittest.TestCase):
     def test_shipping_boundary(self):
         build=(ROOT/'tools/native/build.sh').read_text()
         self.assertNotIn('experimental/',build)
-        self.assertNotIn('*.mm',build)
+        self.assertIn('SOURCES=(',build)
+        self.assertNotIn('find native',build)
         for p in (ROOT/'native').rglob('*'):
-            if p.suffix in ['.mm','.hpp','.h']:
+            if p.suffix in ['.cpp','.mm','.hpp','.h']:
                 self.assertNotIn('vendor/',p.read_text(),str(p))
     def test_product_entries(self):
         for name in ['apps/macos/App.swift','apps/cli/main.mm','services/turbociderd/service.mm','bindings/c/include/turbocider/turbocider.h','bindings/swift/TurboCiderNative.swift','profiles/apple-m4-pro-48gb.example.json']:

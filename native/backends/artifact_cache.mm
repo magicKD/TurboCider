@@ -1,4 +1,4 @@
-#include "runtime.hpp"
+#include "../platform/apple/bridge.hpp"
 #import <CoreML/CoreML.h>
 #import <Metal/Metal.h>
 #import <CommonCrypto/CommonDigest.h>
