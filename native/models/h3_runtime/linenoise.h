@@ -112,4 +112,3 @@ void linenoiseMaskModeDisable(void);
 #endif
 
 #endif /* __LINENOISE_H */
-

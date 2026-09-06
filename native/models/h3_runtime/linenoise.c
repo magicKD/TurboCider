@@ -1761,4 +1761,3 @@ int linenoiseHistoryLoad(const char *filename) {
     fclose(fp);
     return 0;
 }
-
