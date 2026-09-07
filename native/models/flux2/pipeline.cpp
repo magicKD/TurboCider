@@ -1,3 +1,4 @@
+#include "../../runtime/acceleration.hpp"
 #include "flux.hpp"
 #include "../../platform/apple/platform.hpp"
 #include "../../runtime/residency.hpp"
@@ -60,6 +61,7 @@ bool Flux::conditioning(const Request &r, const Tokens &tokens, const Event &eve
 std::string Flux::select_acceleration(Request &r, int count, const Event &event,
                                       std::atomic<bool> &cancelled) {
     const bool automatic = r.execution == "auto";
+    const AccelerationCase *matched = nullptr;
     if (automatic) {
         r.execution = "gpu";
         if (!r.allow_approximation || r.ane_manifest.empty()) {
@@ -71,6 +73,11 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
         if (system.gpu != "Apple M4 Pro" || device_info().physical_memory != (48ull << 30)) {
             hybrid_.reset();
             return "gpu: automatic hybrid policy not validated on this hardware";
+        }
+        matched = hybrid_case(r, count, system.gpu, system.physical_memory);
+        if (!matched) {
+            hybrid_.reset();
+            return "gpu: no measured hybrid case for operation, dimensions, steps and token bucket";
         }
         uint64_t estimate = (16ull << 30) + uint64_t(r.width) * r.height * 8192;
         if (device_info().physical_memory < estimate + (4ull << 30) ||
@@ -86,11 +93,13 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
     }
     try {
         checkpoint(cancelled);
+        if (automatic && hybrid_ && hybrid_->rows != matched->bucket)
+            hybrid_.reset();
         if (!hybrid_ || hybrid_->manifest != r.ane_manifest)
             hybrid_ = std::make_unique<HybridSession>(r.ane_manifest, root_, count, event,
-                                                      cancelled, r.warmup_iterations);
+                                                      cancelled, r.warmup_iterations, matched ? matched->bucket : 0);
         require(count <= hybrid_->rows, "Core ML token bucket cannot serve this request");
-        return automatic ? "gpu_ane: hardware, checkpoint and token bucket matched"
+        return automatic ? std::string("gpu_ane: measured case ") + matched->id
                          : "gpu_ane: explicitly selected";
     } catch (const Cancelled &) {
         throw;
@@ -124,6 +133,7 @@ RunResult Flux::prepare(const Request &requested, bool warmup, const Event &even
             count += (image.shape(1) / 16) * (image.shape(2) / 16);
         }
     auto selection = select_acceleration(r, count, event, cancelled);
+    event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
     RunResult result;
     result.prepared = true;
     result.selection = selection;
@@ -205,6 +215,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     require(actual_tokens <= 20000, "request exceeds native token workspace budget");
     auto hybrid_start = Clock::now();
     auto selection = select_acceleration(r, actual_tokens, event, cancelled);
+    event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
     plan = make_plan(r);
     double hybrid_s = std::chrono::duration<double>(Clock::now() - hybrid_start).count();
     auto text = *cached_conditioning_;

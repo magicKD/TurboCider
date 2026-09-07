@@ -13,9 +13,50 @@ struct StudioBehaviorTests {
         }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("tc-studio-test-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = ResourceMonitor()
+        monitor.sample()
+        try check(monitor.residentBytes.map { $0 > 0 } == true, "Resident memory unavailable")
+        monitor.sample()
+        try check(monitor.cpuPercent.map { (0...100).contains($0) } ?? true, "Invalid CPU counter")
+        try check(monitor.gpuPercent.map { (0...100).contains($0) } ?? true, "Invalid GPU counter")
+        let fifo = root.appendingPathComponent("blocked-manifest.json")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        guard mkfifo(fifo.path, 0o600) == 0 else { throw NativeFailure(message: "FIFO fixture failed") }
+        let inventoryStore = NativeJobStore(directory: root.appendingPathComponent("inventory-store"))
+        let inventoryPayload = try JSONSerialization.data(withJSONObject: ["action": "inventory", "cache": root.appendingPathComponent("empty-cache").path, "source_manifest": fifo.path])
+        let inspection = Task { try await inventoryStore.coreMLResources(inventoryPayload) }
+        while !inventoryStore.inspectingResources { await Task.yield() }
+        try check(!inventoryStore.busy, "Disk inspection blocked generation controls")
+        _ = try await inspection.value
+        try check(!inventoryStore.busy && !inventoryStore.inspectingResources, "Inspection left controls locked")
+        // Simulate a helper stuck in an external file provider. NSData rejects
+        // FIFOs promptly on this OS, so a FIFO alone cannot exercise the deadline.
+        let helper = root.appendingPathComponent("blocked-helper")
+        try "#!/bin/sh\nexec /bin/sleep 30\n".write(to: helper, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
+        let inventoryStart = ContinuousClock.now
+        do {
+            _ = try await ResourceInventory.run(inventoryPayload, timeout: 0.3, executableURL: helper)
+            throw NativeFailure(message: "Blocked helper did not time out")
+        } catch { try check(error.localizedDescription.contains("超时"), "Unexpected inspection failure: \(error)") }
+        try check(inventoryStart.duration(to: .now) < .seconds(3), "Disk inspection exceeded deadline")
         let studio = StudioState(directory: root)
         studio.draft.modelPaths["flux2-klein-4b"] = "/test/model"
         let output = root.appendingPathComponent("output.png")
+        let textOnly = StudioModel(id: "flux2-klein-4b", name: "Text only fixture", executor: true, output: "image", operations: ["image.generate"], default_steps: 4, default_frames: 1, default_width: 512, default_height: 512)
+        try studio.draft.validate(models: [textOnly])
+        let restricted = StudioState(directory: root.appendingPathComponent("restricted"), models: [textOnly])
+        restricted.draft.operation = "image.edit"
+        restricted.changeModel(textOnly.id)
+        try check(restricted.draft.operation == "image.generate" && !restricted.supportsImageInputs, "Model switch did not normalize unsupported operation")
+        restricted.changeOperation("image.edit")
+        try check(restricted.draft.operation == "image.generate", "Unsupported operation entered through UI")
+        await restricted.addFiles([root.appendingPathComponent("unused.png")])
+        try check(restricted.draft.assets.isEmpty && restricted.message?.contains("未开放") == true, "Text-only import not rejected")
+        var unsupported = studio.draft; unsupported.operation = "image.edit"
+        try rejects { try unsupported.validate(models: [textOnly]) }
+        unsupported.modelID = "missing-model"
+        try rejects { try unsupported.validate() }
         try check(try studio.draft.request(output: output).seed == 42, "Default seed changed")
         var oldDraftJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(studio.draft)) as! [String: Any]
         oldDraftJSON.removeValue(forKey: "acceleration")
@@ -43,6 +84,7 @@ struct StudioBehaviorTests {
         let manifestFile = compiled.appendingPathComponent("manifest.json")
         try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled)?.rows == 1088, "Compatible local partition not found")
+        try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled, minimumRows: 4097) == nil, "1024 task accepted undersized partition")
         manifest["source"] = ["checkpoint": weight.path, "checkpoint_bytes": 4]
         try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled) == nil, "Wrong checkpoint accepted")
@@ -50,6 +92,11 @@ struct StudioBehaviorTests {
         try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
         try FileManager.default.removeItem(at: compiled.appendingPathComponent("block19.mlmodelc"))
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled) == nil, "Incomplete partition accepted")
+        var resourceDraft = studio.draft
+        resourceDraft.acceleration = StudioAcceleration(exportProfile: "/unavailable/build-profile.json")
+        resourceDraft.profilePath = "/unavailable/inference-profile.json"
+        try check(resourceDraft.coreMLResourceRequest("inventory")["profile"] == nil, "Inventory opened an unrelated build profile")
+        try check(resourceDraft.coreMLResourceRequest("export")["profile"] as? String == "/unavailable/build-profile.json", "Explicit export profile lost")
         studio.draft.acceleration = nil
         studio.draft.seedText = "123"
         try check(try studio.draft.request(output: output).seed == 123, "Fixed seed ignored")

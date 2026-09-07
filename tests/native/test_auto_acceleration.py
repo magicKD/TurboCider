@@ -1,7 +1,7 @@
 """Real-weight automatic selection, fallback and explicit-route parity. No downloads."""
 import argparse, ctypes as C, hashlib, json
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--model',required=True);p.add_argument('--manifest',required=True);p.add_argument('--output',required=True);a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--model',required=True);p.add_argument('--manifest',required=True);p.add_argument('--manifest-1024',required=True);p.add_argument('--output',required=True);a=p.parse_args()
 root=Path(__file__).resolve().parents[2];out=Path(a.output).resolve();out.mkdir(parents=True,exist_ok=True)
 lib=C.CDLL(str(root/'build/native/libturbocider.dylib'))
 lib.tc_string_free.argtypes=[C.c_void_p];lib.tc_engine_free.argtypes=[C.c_void_p]
@@ -19,7 +19,7 @@ def call(request,prepare=False):
  code=(lib.tc_engine_prepare if prepare else lib.tc_engine_generate)(*args);s,e=take(result),take(error)
  if code:raise RuntimeError(e)
  return json.loads(s)
-r={'model':'flux2-klein-4b','prompt':'A red fox in a snowy forest.','width':256,'height':256,'steps':4,'seed':42,'execution':'auto','allow_approximation':True,'ane_manifest':a.manifest}
+r={'model':'flux2-klein-4b','prompt':'A red fox in a snowy forest.','width':512,'height':512,'steps':4,'seed':42,'execution':'auto','allow_approximation':True,'ane_manifest':a.manifest}
 reports={};checks=[]
 try:
  reports['prepare']=call(r,True);assert reports['prepare']['execution']=='gpu_ane';checks.append('hardware_checkpoint_and_bucket_match')
@@ -28,11 +28,21 @@ try:
  sha=lambda name:hashlib.sha256((out/name).read_bytes()).hexdigest()
  assert sha('auto.png')==sha('explicit.png');checks.extend(['hybrid_session_reused','auto_explicit_png_identical'])
  r.update(execution='auto',width=768,height=768);reports['oversize']=call(r,True);assert reports['oversize']['execution']=='gpu' and 'bucket' in reports['oversize']['acceleration_selection'];checks.append('oversize_bucket_falls_back')
- r.update(width=256,height=256,ane_manifest=str(out/'missing.json'));reports['missing']=call(r,True);assert reports['missing']['execution']=='gpu';checks.append('missing_manifest_falls_back')
+ r.update(width=512,height=512,ane_manifest=str(out/'missing.json'));reports['missing']=call(r,True);assert reports['missing']['execution']=='gpu';checks.append('missing_manifest_falls_back')
  malformed=out/'malformed.json';malformed.write_text('{"schema_version":2,"shape":null}')
  r['ane_manifest']=str(malformed);reports['malformed']=call(r,True);assert reports['malformed']['execution']=='gpu';checks.append('malformed_manifest_falls_back')
  r.update(ane_manifest=a.manifest,allow_approximation=False);reports['exact_only']=call(r,True);assert reports['exact_only']['execution']=='gpu';checks.append('approximation_opt_in_required')
- r.update(ane_manifest=str(out/'missing.json'),execution='gpu_ane',allow_approximation=True)
+ r.update(width=1024,height=1024,ane_manifest=a.manifest,allow_approximation=True)
+ reports['1024']=call(r,True);assert reports['1024']['execution']=='gpu' and 'bucket' in reports['1024']['acceleration_selection'];checks.append('1024_does_not_inherit_512_route')
+ r.update(ane_manifest=a.manifest_1024,output=str(out/'auto-1024.png'))
+ reports['auto1024']=call(r);assert reports['auto1024']['plan']['execution'].startswith('gpu_ane');assert reports['auto1024']['hybrid']['bucket']==4160
+ r.update(execution='gpu_ane',output=str(out/'explicit-1024.png'));reports['explicit1024']=call(r)
+ assert sha('auto-1024.png')==sha('explicit-1024.png');checks.append('1024_independent_bucket_and_explicit_parity')
+ r.update(execution='auto',width=256,height=256,ane_manifest=a.manifest)
+ reports['padding']=call(r,True);assert reports['padding']['execution']=='gpu';checks.append('small_image_avoids_unmeasured_padding')
+ r.update(width=512,height=512,steps=1)
+ reports['steps']=call(r,True);assert reports['steps']['execution']=='gpu';checks.append('different_steps_require_measurement')
+ r.update(steps=4,ane_manifest=str(out/'missing.json'),execution='gpu_ane',allow_approximation=True)
  try:call(r,True);raise AssertionError('explicit hybrid silently fell back')
  except RuntimeError:checks.append('explicit_hybrid_still_strict')
  reports['png_sha256']=sha('auto.png')

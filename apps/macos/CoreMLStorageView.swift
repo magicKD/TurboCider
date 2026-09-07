@@ -18,7 +18,7 @@ struct CoreMLStorageView: View {
             Text("Core ML 模型与磁盘空间").font(.title2)
             Text("当前分区、编译目录及本 App 的设备专用缓存合计：\(total)").font(.headline)
             HStack {
-                Button("刷新占用") { perform("inventory") }.accessibilityIdentifier("refreshCoreMLStorage")
+                Button("刷新占用") { perform("inventory") }.disabled(store.inspectingResources).accessibilityIdentifier("refreshCoreMLStorage")
                 Button("清理 App 设备缓存…") { perform("clear_runtime") }
                 Button("清理托管编译缓存…") { perform("clear_compiled") }
             }.disabled(store.busy)
@@ -63,6 +63,7 @@ struct CoreMLStorageView: View {
                 Button("预编译当前源分区") { perform("compile") }.disabled(config.sourceManifest.isEmpty)
             }.disabled(store.busy)
         }
+        .overlay(alignment: .topTrailing) { if store.inspectingResources { ProgressView().controlSize(.small).help("正在统计磁盘空间，生成仍可用") } }
         .task(id: config.manifest + config.sourceManifest + (config.coreMLCache ?? "")) {
             while store.busy { do { try await Task.sleep(for: .milliseconds(100)) } catch { return } }
             if !Task.isCancelled { perform("inventory") }
@@ -88,9 +89,7 @@ struct CoreMLStorageView: View {
         if panel.runModal() == .OK, let path = panel.url?.path { action(path) }
     }
     private func request(_ action: String, kind: String?) -> [String: Any] {
-        var r: [String: Any] = ["action": action, "model_root": studio.draft.modelPath]
-        for (key, value) in [("manifest",config.manifest),("source_manifest",config.sourceManifest),("profile",config.exportProfile ?? studio.draft.profilePath),("storage",config.coreMLStorage ?? ""),("cache",config.coreMLCache ?? ""),("python",config.exportPython ?? ""),("python_path",config.exportPythonPath ?? "")] where !value.isEmpty { r[key] = value }
-        if let kind { r["kind"] = kind }; return r
+        studio.draft.coreMLResourceRequest(action, kind: kind)
     }
     private func perform(_ action: String, kind: String? = nil) {
         let value = request(action, kind: kind)

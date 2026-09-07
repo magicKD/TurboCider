@@ -3,6 +3,7 @@
 #include <iostream>
 #include <csignal>
 #include <atomic>
+#include <unistd.h>
 int tc_service_main(const char*,const char*);
 int tc_rpc_main(const char*,const char*);
 static int create_for(const char *path,NSString *request,tc_engine **engine,char **error) {
@@ -25,7 +26,11 @@ int main(int argc,char**argv){@autoreleasepool{
  if(cmd=="coreml"&&argc==3){
   NSString*request=[NSString stringWithContentsOfFile:@(argv[2]) encoding:NSUTF8StringEncoding error:nil];
   if(!request){std::cerr<<"cannot read resource request\n";return 1;}
-  resource_mode=true;std::signal(SIGINT,stop);code=tc_coreml_resources_json(request.UTF8String,event,nullptr,&out,&err);std::signal(SIGINT,SIG_DFL);
+  id resource=[NSJSONSerialization JSONObjectWithData:[request dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+  bool inspection=[resource isKindOfClass:NSDictionary.class] && [resource[@"action"] isEqual:@"inventory"];
+  // A helper must also stop if its UI parent exits during a blocked file-provider read.
+  if(inspection)alarm(6);
+  resource_mode=true;std::signal(SIGINT,stop);code=tc_coreml_resources_json(request.UTF8String,event,nullptr,&out,&err);std::signal(SIGINT,SIG_DFL);if(inspection)alarm(0);
  }
  else if(cmd=="doctor")out=tc_system_json();
  else if(cmd=="models")out=tc_models_json();

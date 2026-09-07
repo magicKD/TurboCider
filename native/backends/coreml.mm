@@ -100,7 +100,7 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual) {
 }
 HybridSession::HybridSession(const std::filesystem::path &file, const std::filesystem::path &model,
                              int tokens, const Event &event, std::atomic<bool> &cancelled,
-                             int warmups)
+                             int warmups, int policy_rows)
     : impl_(std::make_unique<Impl>()), manifest(file.string()) {
     auto begin = Clock::now();
     auto d = read_json(file);
@@ -121,6 +121,7 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                 [buckets[0] isKindOfClass:NSNumber.class],
             "native hybrid requires a single fixed bucket");
     rows = [buckets[0] intValue];
+    require(!policy_rows || rows == policy_rows, "Core ML bucket has no matching measured policy");
     require(rows >= tokens && rows <= 8192, "Core ML token bucket cannot serve this request");
     auto checkpoint = model / "transformer/diffusion_pytorch_model.safetensors";
     std::filesystem::path source = string_value(d[@"source"], @"checkpoint");

@@ -12,7 +12,7 @@ class HybridSession {
     int rows = 0;
     double load_seconds = 0;
     HybridSession(const std::filesystem::path &, const std::filesystem::path &model, int tokens,
-                  const Event &, std::atomic<bool> &, int warmups = 0);
+                  const Event &, std::atomic<bool> &, int warmups = 0, int policy_rows = 0);
     ~HybridSession();
     Tensor predict(int block, const Tensor &input);
     HybridMetrics metrics() const;

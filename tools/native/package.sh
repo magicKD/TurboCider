@@ -8,6 +8,7 @@ BIN="$APP/Contents/MacOS"
 RES="$APP/Contents/Resources"
 mkdir -p "$BIN" "$RES" "$ROOT/dist/cli"
 cp build/native/TurboCiderNativeApp "$BIN/"
+cp build/native/turbocider "$BIN/"
 for folder in "$BIN" "$ROOT/dist/cli"; do
  mkdir -p "$folder/coreml"
  cp tools/coreml/export_flux2.py "$folder/coreml/"

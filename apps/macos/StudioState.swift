@@ -13,6 +13,10 @@ struct StudioModel: Decodable, Identifiable {
     let default_frames: Int
     let default_width: Int
     let default_height: Int
+    var executor_operations: [String]? = nil
+    var inputs: [String]? = nil
+    var max_images: Int? = nil
+    func supports(_ operation: String) -> Bool { executor && (executor_operations ?? operations).contains(operation) }
     static func catalog() -> [StudioModel] {
         struct Registry: Decodable { var models: [StudioModel] }
         return (try? JSONDecoder().decode(Registry.self, from: Data(NativeEngine.models().utf8)).models) ?? []
@@ -56,6 +60,29 @@ struct StudioDraft: Codable, Sendable {
     var assets: [StudioAsset] = []
     var initImageID: UUID?
     var modelPath: String { modelPaths[modelID] ?? "" }
+    var accelerationHint: String {
+        let policy = acceleration?.policy ?? (profilePath.isEmpty ? "auto" : "profile")
+        if policy == "gpu" { return "GPU · BF16，按所选融合设置运行" }
+        if policy == "profile" { return "设备配置 · 运行时校验" }
+        if policy == "gpu_ane" { return "手动混合 · 需匹配实际 token 容量，可能不比 GPU 快" }
+        if modelID == "flux2-klein-4b", operation == "image.generate", width == height, [512, 1024].contains(width), steps == 4, residency == "resident" {
+            return "\(width) 文生图 · 候选 GPU + Core ML；需核对硬件、文本长度与 \(width == 512 ? 1088 : 4160) 分区"
+        }
+        return "当前任务 · GPU；尚无匹配此尺寸、操作与步数的混合收益验证"
+    }
+    func coreMLResourceRequest(_ action: String, kind: String? = nil) -> [String: Any] {
+        let config = acceleration ?? StudioAcceleration()
+        var result: [String: Any] = ["action": action, "model_root": modelPath]
+        for (key, value) in [("manifest", config.manifest), ("source_manifest", config.sourceManifest),
+                             ("storage", config.coreMLStorage ?? ""), ("cache", config.coreMLCache ?? ""),
+                             ("python", config.exportPython ?? ""), ("python_path", config.exportPythonPath ?? "")] where !value.isEmpty {
+            result[key] = value
+        }
+        // Disk inventory must not open an unrelated, potentially unavailable build profile.
+        if action == "export", let profile = config.exportProfile, !profile.isEmpty { result["profile"] = profile }
+        if let kind { result["kind"] = kind }
+        return result
+    }
     var activeAssets: [StudioAsset] {
         switch operation {
         case "image.transform": return assets.filter { $0.id == initImageID }
@@ -63,8 +90,11 @@ struct StudioDraft: Codable, Sendable {
         default: return []
         }
     }
-    func validate() throws {
-        guard !modelPath.isEmpty else { throw NativeFailure(message: "请先在模型中心选择 FLUX 模型文件夹。") }
+    func validate(models: [StudioModel] = StudioModel.catalog()) throws {
+        guard let model = models.first(where: { $0.id == modelID }), model.supports(operation) else {
+            throw NativeFailure(message: "当前模型不支持此创作方式，请重新选择模型或操作。")
+        }
+        guard !modelPath.isEmpty else { throw NativeFailure(message: "请先在模型中心选择模型文件夹。") }
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
         guard ["image.generate", "image.transform", "image.edit"].contains(operation) else { throw NativeFailure(message: "此操作尚未开放。") }
         guard (64...2048).contains(width), (64...2048).contains(height), width % 16 == 0, height % 16 == 0 else { throw NativeFailure(message: "宽高需为 64–2048 之间的 16 倍数。") }
@@ -73,6 +103,11 @@ struct StudioDraft: Codable, Sendable {
         guard strength.isFinite, (0...1).contains(strength) else { throw NativeFailure(message: "图像强度需为 0–1。") }
         if operation == "image.transform" && activeAssets.count != 1 { throw NativeFailure(message: "请选择一张原图。") }
         if operation == "image.edit" && !(1...8).contains(activeAssets.count) { throw NativeFailure(message: "参考编辑需要 1–8 张有序参考图。") }
+        if !activeAssets.isEmpty {
+            guard model.inputs?.contains("image") != false, activeAssets.count <= (model.max_images ?? 8) else {
+                throw NativeFailure(message: "当前模型不支持这些图片输入，或超过图片数量上限。")
+            }
+        }
         for asset in activeAssets where !FileManager.default.fileExists(atPath: asset.path) { throw NativeFailure(message: "找不到素材：\(asset.name)。请重新添加。") }
     }
     func fixedSeed() throws -> Int {
@@ -87,12 +122,12 @@ struct StudioDraft: Codable, Sendable {
         request.seed = randomSeed ? random() : try fixedSeed()
         request.frames = 1; request.dynamic_text = dynamicText; request.residency = residency
         request.profile = profilePath.isEmpty ? nil : profilePath
-        request.compile_gpu = acceleration?.compileGPU
         let acceleration = self.acceleration ?? (profilePath.isEmpty ? StudioAcceleration() : StudioAcceleration(policy: "profile"))
+        request.compile_gpu = acceleration.policy == "gpu" ? acceleration.compileGPU : nil
         if acceleration.policy != "profile" {
             request.profile = nil; request.execution = acceleration.policy
             if acceleration.policy == "auto" {
-                request.ane_manifest = AccelerationDiscovery.find(modelPath: modelPath, preferred: acceleration.manifest, cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) })?.manifest
+                request.ane_manifest = AccelerationDiscovery.find(modelPath: modelPath, preferred: acceleration.manifest, cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) }, minimumRows: (width / 16) * (height / 16) + 1)?.manifest
                 request.allow_approximation = true
             }
             if acceleration.policy == "gpu_ane" {
@@ -148,12 +183,13 @@ final class StudioState: ObservableObject {
     @Published var importing = false
     @Published var saved = true
     @Published var lastSeed: Int?
-    let models = StudioModel.catalog()
+    let models: [StudioModel]
     let importer: StudioAssetImporter
     private let file: URL
     private var saveTask: Task<Void, Never>?
     private var undoAssets: [([StudioAsset], UUID?)] = []
-    init(directory: URL) {
+    init(directory: URL, models: [StudioModel] = StudioModel.catalog()) {
+        self.models = models
         file = directory.appendingPathComponent("studio-draft.json")
         importer = StudioAssetImporter(directory: directory.appendingPathComponent("inputs"))
         if FileManager.default.fileExists(atPath: file.path) {
@@ -185,7 +221,20 @@ final class StudioState: ObservableObject {
             try JSONEncoder().encode(draft).write(to: file, options: .atomic); saved = true
         } catch { saved = false; message = "草稿保存失败：\(error.localizedDescription)" }
     }
+    func changeModel(_ id: String) {
+        guard !importing, let model = models.first(where: { $0.id == id }), model.executor, model.output == "image" else { return }
+        if draft.modelID != id { draft.acceleration = StudioAcceleration(); draft.profilePath = "" }
+        draft.modelID = id
+        if !model.supports(draft.operation) {
+            draft.operation = (model.executor_operations ?? model.operations).first ?? ""
+        }
+        draft.steps = model.default_steps
+        message = nil
+    }
     func changeOperation(_ operation: String) {
+        guard models.first(where: { $0.id == draft.modelID })?.supports(operation) == true else {
+            message = "当前模型不支持此创作方式。"; return
+        }
         message = nil
         draft.operation = operation
         if draft.initImageID == nil { draft.initImageID = draft.assets.first?.id }
@@ -199,7 +248,16 @@ final class StudioState: ObservableObject {
     }
     var canUndoAssets: Bool { !undoAssets.isEmpty }
     func undoAssetChange() { if let previous = undoAssets.popLast() { draft.assets = previous.0; draft.initImageID = previous.1 } }
+    var supportsImageInputs: Bool {
+        guard let model = models.first(where: { $0.id == draft.modelID }), model.executor, model.inputs?.contains("image") != false, (model.max_images ?? 8) > 0 else { return false }
+        return (model.executor_operations ?? model.operations).contains { ["image.transform", "image.edit"].contains($0) }
+    }
+    private func validateImageImport() -> Bool {
+        guard supportsImageInputs else { message = "当前模型未开放图片输入。已有素材会继续保留。"; return false }
+        return true
+    }
     func addFiles(_ urls: [URL]) async {
+        guard validateImageImport() else { return }
         guard !importing else { return }
         importing = true; defer { importing = false }
         var staged: [StudioAsset] = []
@@ -210,6 +268,7 @@ final class StudioState: ObservableObject {
         } catch { await importer.discard(staged); message = error.localizedDescription }
     }
     func pasteImage(from board: NSPasteboard = .general) async {
+        guard validateImageImport() else { return }
         let urls = (board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
         if !urls.isEmpty { await addFiles(urls); return }
         // One representation per pasteboard item, even when TIFF and PNG coexist.
@@ -225,6 +284,7 @@ final class StudioState: ObservableObject {
         } catch { await importer.discard(staged); message = error.localizedDescription }
     }
     func importProviders(_ providers: [NSItemProvider]) async {
+        guard validateImageImport() else { return }
         guard !importing else { return }
         importing = true; defer { importing = false }
         var staged: [StudioAsset] = []

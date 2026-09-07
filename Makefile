@@ -23,6 +23,7 @@ test:
 	@python3 tests/repository/test_independence.py
 	@python3 tests/repository/test_cpp_boundaries.py
 	@python3 tests/native/test_contract.py
+	@python3 tests/native/test_inventory.py
 test-app:
 	@build/native/turbocider-studio-tests
 test-model:
