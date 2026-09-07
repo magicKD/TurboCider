@@ -99,7 +99,7 @@
       },
       "model": "flux2-klein-4b",
       "operation": "image.generate",
-      "output": "/Users/kd/Documents/project/TurboCider/outputs/studio-validation/final/service/warm.png",
+      "output": "outputs/studio-validation/final/service/warm.png",
       "plan": {
         "algorithm_approximations": [],
         "backend": "mlx_cpp_metal",

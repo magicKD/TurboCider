@@ -43,9 +43,28 @@ struct StudioBehaviorTests {
         let manifestFile = compiled.appendingPathComponent("manifest.json")
         try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled)?.rows == 1088, "Compatible local partition not found")
+        let discoveryLoRAFile = root.appendingPathComponent("discovery-lora.safetensors")
+        try Data([7, 8]).write(to: discoveryLoRAFile)
+        let discoveryLoRA = StudioLoRA(path: discoveryLoRAFile.path, strength: 0.6)
+        try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path,
+                                             cache: compiled, loras: [discoveryLoRA]) == nil,
+                  "Base partition was reused for an active LoRA")
+        manifest["source"] = [
+            "checkpoint": weight.path,
+            "checkpoint_bytes": 3,
+            "loras": [["path": discoveryLoRAFile.path, "bytes": 2,
+                        "sha256": String(repeating: "a", count: 64),
+                        "role": "transformer", "strength": 0.6]]
+        ]
+        try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
+        try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path,
+                                             cache: compiled, loras: [discoveryLoRA])?.rows == 1088,
+                  "LoRA-bound partition was not discovered")
         try check(AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 9216, start: 0, end: 6144), "M4 Max validated prefix was rejected")
         try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 9216, start: 0, end: 9216), "M4 Max accepted the unvalidated full MLP partition")
-        try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 10240, start: 0, end: 7680, modelID: "z-image-turbo"), "Z-Image candidate bypassed the end-to-end performance gate")
+        try check(AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 10240, start: 0, end: 4096, modelID: "z-image-turbo"), "Validated Z-Image M4 Max prefix was rejected")
+        try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 10240, start: 0, end: 5120, modelID: "z-image-turbo"), "Unvalidated Z-Image prefix bypassed the automatic policy")
+        try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Pro", memory: 48 * 1024 * 1024 * 1024, mlpWidth: 10240, start: 0, end: 4096, modelID: "z-image-turbo"), "M4 Max Z-Image policy leaked to M4 Pro")
         manifest["source"] = ["checkpoint": weight.path, "checkpoint_bytes": 4]
         try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled) == nil, "Wrong checkpoint accepted")
@@ -172,6 +191,12 @@ struct StudioBehaviorTests {
                     zImage.frames == 1 && zImage.audio == false && zImage.execution == "gpu" &&
                     zImage.loras?.first?.role == "transformer",
                   "Z-Image App defaults, GPU fail-closed policy or separate LoRA forwarding changed")
+        studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: loraManifest.path)
+        studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.8)]
+        let zImageLoRAHybrid = try studio.draft.request(output: root.appendingPathComponent("z-image-lora-hybrid.png"))
+        try check(zImageLoRAHybrid.execution == "gpu_ane" &&
+                    zImageLoRAHybrid.ane_manifest == loraManifest.path,
+                  "Z-Image LoRA-bound ANE artifact was not forwarded")
         studio.newDraft()
         try check(studio.draft.seedText == "42" && !studio.draft.randomSeed && studio.draft.assets.isEmpty, "New draft defaults failed")
         print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/FastMetal/Z-Image defaults and separate LoRA forwarding")

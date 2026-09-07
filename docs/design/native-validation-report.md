@@ -74,7 +74,7 @@ Apple M4 Pro，48 GiB 物理内存，macOS 26.6 build 25G72；Metal recommended 
 
 ## 打包与独立运行
 
-`dist/TurboCiderNative.app` 和 `dist/native-cli/` 携带自身 dylib/metallib，通过本机 ad-hoc 签名校验。从 `/private/tmp` 调用打包 CLI 的 self-test 与真实 FLUX generate 成功，输出与最终 GPU 基线 PNG 一致。实际加载依赖见 [发行依赖检查](validation/packaged-dependencies.json)；无 libpython，也不需要 mflux 源码作为运行 cwd。
+`dist/TurboCiderNative.app` 和 `dist/native-cli/` 携带自身 dylib/metallib，通过本机 ad-hoc 签名校验。从工作区以外的临时目录调用打包 CLI 的 self-test 与真实 FLUX generate 成功，输出与最终 GPU 基线 PNG 一致。实际加载依赖见 [发行依赖检查](validation/packaged-dependencies.json)；无 libpython，也不需要 mflux 源码作为运行 cwd。
 
 CLI/App 不附带模型；本轮未下载任何模型。当前仍依赖 Apple 系统框架及 bundled MLX 动态库，不是独立开发完成全部 Metal 算子的宣称。尚未做 Developer ID 签名、公证、App Store sandbox、升级迁移、跨机器安装验证。
 

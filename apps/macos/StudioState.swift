@@ -160,7 +160,7 @@ struct StudioDraft: Codable, Sendable {
             request.execution = acceleration.policy == "gpu_ane" && model.supports_gpu_ane != true
                 ? "gpu" : acceleration.policy
             if acceleration.policy == "auto" {
-                request.ane_manifest = AccelerationDiscovery.find(modelPath: modelPath, preferred: acceleration.manifest, cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) }, enforceAutomaticPolicy: true, modelID: modelID)?.manifest
+                request.ane_manifest = AccelerationDiscovery.find(modelPath: modelPath, preferred: acceleration.manifest, cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) }, enforceAutomaticPolicy: true, modelID: modelID, loras: loras)?.manifest
                 request.allow_approximation = true
             }
             let imageLoRA = !loras.isEmpty &&

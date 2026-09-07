@@ -89,7 +89,7 @@ Audio VAE 的 native runtime 已加入 `native/models/ltx_runtime/ltx_mlx_audio_
 
 ## 设备配置与编译缓存
 
-SDK 缺省为 GPU；App 的 `auto` 在本机、权重、桶、MLP 分区和近似许可匹配时选择自有 GPU/ANE 分区，否则回退 GPU。请求 `execution.profile` 可指向本地 JSON。`profiles/apple-m4-pro-48gb.example.json` 使用完整 ANE MLP，`profiles/apple-m4-max-64gb.example.json` 使用 6144-channel ANE 前缀并由 GPU 并行补算后缀；两者默认关闭，复制后填写 artifact 路径并显式启用。配置覆盖请求的 policy/residency，计划含配置内容 hash。可控制 allocator cache、预算和 Core ML warmup 次数。FLUX 使用独立 LoRA 时基础 ANE artifact 不再匹配，App 会安全使用 GPU。
+SDK 缺省为 GPU；App 的 `auto` 在本机、权重、桶、MLP 分区和近似许可匹配时选择自有 GPU/ANE 分区，否则回退 GPU。当前自动 GPU+ANE 仅对通过完整端到端门槛的 exact device profile 开放：M4 Max 64 GB 的 FLUX 4B a6144 与 Z-Image base a4096，M4 Pro 48 GB 的 FLUX 4B full-MLP profile。请求 `execution.profile` 可指向本地 JSON。`profiles/apple-m4-pro-48gb.example.json` 使用完整 ANE MLP，`profiles/apple-m4-max-64gb.example.json` 使用 6144-channel FLUX 前缀和 4096-channel Z-Image 前缀并由 GPU 并行补算后缀；两者默认关闭，复制后填写 artifact 路径并显式启用。配置覆盖请求的 policy/residency，计划含配置内容 hash。可控制 allocator cache、预算和 Core ML warmup 次数。带独立 LoRA 时基础 ANE artifact 不再匹配，App 会安全使用 GPU；只有 provenance 完整的 LoRA-bound manifest 才能显式使用混合路径。
 
 混合 `gpu_ane` 必须 `allow_approximation=true`，使用本地 schema 2 `ane_manifest`。当前支持20个 single block MLP、K=N=3072、单固定桶。量化 MLP 改变算法精度，结果明确标注；公开 `cpuAndNeuralEngine` 不保证子图全部实际驻留 ANE。旧 artifact provenance 只有源路径/大小，故仍为实验。超过 bucket 明确失败，不裁剪输入、不静默改 GPU。
 
@@ -142,7 +142,7 @@ Python/bin/python tools/native/benchmark_h3.py \
   --h3-bin ../h3.c/h3 \
   --turbocider-bin build/native/turbocider \
   --model ../h3.c/models/MiniMax-H3-LightX2V-Turbo \
-  --output-dir /private/tmp/turbocider-h3-comparison
+  --output-dir outputs/benchmarks/h3-comparison
 ```
 
 如需检查请求级 H3 LoRA provenance，再传 `--lora PATH --lora-strength 0.0625`。

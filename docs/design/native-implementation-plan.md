@@ -4,7 +4,7 @@
 
 ## 本机约束
 
-- 只使用 `/Users/kd/Documents/project/mac_image_generation/models/FLUX.2-klein-4B` 的既有模型文件；本轮不下载任何模型，包括 H3/LTX。
+- 只使用本地被 Git 忽略的 `models/FLUX.2-klein-4B` 既有模型文件；本轮不下载任何模型，包括 H3/LTX。
 - 现有 macOS 26.6；默认 Command Line Tools 与完整 Xcode 都是较旧的 16.x 工具链。Xcode launcher 存在 CoreDevice/Mercury 符号加载问题。构建脚本直接指定已有 compiler 和 SDK，避免更改系统 xcode-select 或修补系统。
 - 可复用的原生 MLX 0.32.0 在 mflux 虚拟环境中的 `mlx/include` 与 `mlx/lib`。这是本地依赖来源，发布时需复制 dylib/metallib 并重写相对加载路径；推理不启动 Python。
 - 不使用私有 ANE API。已有 Core ML artifact 已接入 native hybrid 并真实运行；显式标为 INT8 近似实验路线，不能凭 cpuAndNeuralEngine 就宣称实际驻留 ANE，也不进入 auto。

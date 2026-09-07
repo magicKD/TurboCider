@@ -1,6 +1,8 @@
 # main 合并到 dev 的兼容与验收记录
 
-日期：2026-09-06；2026-09-07 复核
+日期：2026-09-06；2026-09-07 LoRA-bound/分区复核
+
+本文是合并历史记录；当前实现和性能结论见 [2026-09-07 当前状态](current-status-2026-09-07.md)。
 
 ## 结论
 
@@ -20,9 +22,9 @@
 - 官方 Z-Image distill patch LoRA 以独立文件运行时内存融合，238 个 projection 全部应用；同噪声对 ComfyUI 的最终 latent cosine 0.998929、PNG correlation 0.999156。
 - 修复 FLUX 4B 的 M4 Max 6144-channel ANE 前缀分区：manifest 明确记录 `[0,6144)`，GPU 编译图并行补算 attention 与 `[6144,9216)` MLP 后缀；此前只计算前缀却未补尾部的错误不再存在。
 - 离线导出器、Core ML 资源服务和 App 已共同支持 `ane_mlp_width`；新增 `apple-m4-max-64gb.example.json`。M4 Max 自动路径只接受 6144 前缀，M4 Pro 自动路径只接受已验证的完整 MLP，其他硬件继续 fail closed。
-- FLUX 与 Z-Image 独立 LoRA 继续在加载时/运行时内存融合；因为 base Core ML artifact 不含 LoRA delta，App 的显式或自动 GPU+ANE 请求安全切换到 GPU，native 直接请求仍保持严格校验。
-- FLUX/Z-Image 的 LoRA-bound Core ML 导出使用由适配器路径、大小、SHA-256、角色和强度派生的独立存储目录；资源服务现在先确定该目录，再把同一路径传给导出器、进度监控和 manifest 检查，避免合并后导出写入旧目录而 App 等待新目录。
-- Z-Image 新增 32 分区 Core ML 导出、`output_scale` ABI 和 Core ML 资源编译；M4 Max GPU+ANE 目前仅为显式 opt-in 候选，自动模式保持 GPU，仍需逐 step parity、warm 矩阵和正式加速门禁，不能作为默认性能承诺。
+- FLUX 与 Z-Image 独立 LoRA 继续在加载时/运行时内存融合；base Core ML artifact 不含 LoRA delta，因此带 LoRA 的 App 请求安全切到 GPU，或仅接受同一 adapter 绑定的显式 LoRA-bound manifest；无 LoRA 的 Z-Image a4096 base 在 exact M4 Max 64 GB 上可自动 GPU+ANE，native 直接请求仍保持严格校验。
+- FLUX/Z-Image 的 LoRA-bound Core ML 导出使用由适配器路径、大小、SHA-256、角色和强度派生的独立存储目录；资源服务现在先确定该目录，再把同一路径传给导出器、进度监控和 manifest 检查，避免合并后导出写入旧目录而 App 等待新目录。请求层现已允许匹配的 LoRA-bound artifact 进入显式 GPU+ANE；base artifact 仍回退 GPU。
+- Z-Image 新增 32 分区 Core ML 导出、`output_scale` ABI 和 Core ML 资源编译；后续 GPU fusion 将 warm 从 45.22 s 降到 36.3685 s，并快于 stock ComfyUI 40.110 s。最终构建的 M4 Max base a4096 warm 中位数为 30.0014 s，相对优化 GPU 为 1.212×、warm 范围 29.9956–30.0072 s，按 1.2×端到端门槛进入 exact-device 自动策略；LoRA-bound 路线仍为显式 opt-in。
 - 修复 App smoke 的多模型兼容：不再硬编码 256×256/4-step/PNG，而从模型 descriptor 读取操作、尺寸、步数、帧数、帧率、音频、驻留和输出媒体类型。
 
 ## 模型与 App 兼容矩阵
@@ -34,14 +36,14 @@
 | MiniMax H3 Turbo | 已通过 | 已通过 | 独立文件请求；首次生成 runtime cache | native Metal/MPS，可按 manifest 启用 ANE |
 | LTX 2.5 Distilled | 已通过 | 已通过 | 独立文件请求；首次生成 runtime cache | public video-only；GPU+ANE 候选继续门禁 |
 | FastMetal 1.3B QAD | 已通过 | 已通过 | 当前要求 provenance-verified premerged checkpoint | 显式 Python/FastVideo worker profile |
-| Z-Image Turbo | 已通过 | 已通过 | 独立文件，运行时内存 delta | GPU 默认；32 分区 GPU+ANE 候选已接入但继续 fail closed/opt-in |
+| Z-Image Turbo | 已通过 | 已通过 | 独立文件，运行时内存 delta | M4 Max 64 GB base a4096 可自动 GPU+ANE；LoRA-bound 分区显式 opt-in；其他机器 GPU |
 
 ## 验证结果
 
 使用仓库现有 MLX 0.32.2 环境显式设置 `MLX_ROOT`：
 
 ```text
-make test                         44 项 contract + 9 项 repository/boundary 检查通过；系统 Python 缺 NumPy 时仅跳过 1 项数值测试
+make test                         46 项 contract + 9 项 repository/boundary 检查通过；系统 Python 缺 NumPy 时仅跳过 1 项数值测试
 Python/bin/python LoRA/分片测试    4 项 Core ML LoRA + 5 项 Z-Image shard 测试全部通过
 make test-app                     通过；无 pasteboard service 时仅跳过系统剪贴板检查
 make build                        native、CLI、Swift App、integration runners 编译链接通过
@@ -52,18 +54,18 @@ turbocider doctor（实机）          Apple M4 Max、64 GB、Metal GPU、MLX 0.
 git diff --check                  通过
 ```
 
-FLUX 4B M4 Max 6144 前缀实机复核：
+FLUX 4B M4 Max 6144 前缀最终实机复核：
 
 ```text
-GPU warm 基线                         2.3479 s
-GPU+ANE 6144 前缀 warm                1.6659 s
-观察加速比                            1.409×
-对 GPU latent cosine                 0.999660
-对 GPU PNG correlation               0.998391
-对 GPU PNG MAE                       1.484 / 255
+GPU warm 中位数                       2.2663 s
+GPU+ANE 6144 前缀 warm 中位数          1.6279 s
+稳定复测加速比                        1.392×
+对 GPU PNG cosine                     0.999840
+对 GPU PNG correlation                0.999262
+对 GPU PNG MAE                        1.285 / 255
 ```
 
-这是本机候选路径的一组 warm 观察，不替代交错 AB/BA 的 p50/p95 正式矩阵。重新构建后的自动选择测试通过 session reuse、自动/显式 PNG byte-identical、超桶/缺失/损坏 manifest 回退、近似 opt-in 和显式严格失败等门禁。
+这是 M4 Max 512²/4-step 的稳定 warm 复测；仍不替代更广尺寸/机器和交错 AB/BA 的 p50/p95 正式矩阵。重新构建后的自动选择测试通过 session reuse、自动/显式 PNG byte-identical、超桶/缺失/损坏 manifest 回退、近似 opt-in 和显式严格失败等门禁。
 
 Z-Image Swift App embedded-session 实机 smoke：
 
@@ -77,13 +79,13 @@ MLX peak           25.63 GB
 输出                可解码、非空 PNG
 ```
 
-本轮合并后重新验证：`make build`、`make package`、`make test`、`make test-app` 均通过；全部请求样例可生成 `executable=true` 的计划；实机 `doctor/self-test` 识别 Apple M4 Max、64 GB、Metal 和 MLX 0.32.2。Z-Image embedded-session 端到端 request wall 为 45.632 s，生成 `/private/tmp/tc-app-z-smoke/app-generated.png`。
+本轮合并后重新验证：`make build`、`make package`、`make test`、`make test-app` 均通过；全部请求样例可生成 `executable=true` 的计划；实机 `doctor/self-test` 识别 Apple M4 Max、64 GB、Metal 和 MLX 0.32.2。Z-Image embedded-session 端到端 request wall 为 45.632 s，在临时验证目录中生成可解码 PNG。
 
-2026-09-07 复核：`turbocider-app-smoke models/Comfy-Org-z_image_turbo ... z-image-turbo` 真实运行成功，输出 `/private/tmp/tc-app-z-smoke-latest/app-generated.png`，request wall `47.840 s`、denoise `43.917 s`，App job/persistence 校验通过；本次为纯 GPU 默认路径，未把 GPU+ANE 候选误报成默认加速。
+2026-09-07 复核：`turbocider-app-smoke models/Comfy-Org-z_image_turbo ... z-image-turbo` 真实运行成功，在临时验证目录中生成可解码 PNG，request wall `47.840 s`、denoise `43.917 s`，App job/persistence 校验通过；本次为纯 GPU 默认路径，未把 GPU+ANE 候选误报成默认加速。
 
-Z-Image 7680-channel GPU+ANE 候选的常驻 warm request wall 约 47.52 s，GPU warm 基线约 45.17 s；虽然输出 correlation 0.998571、cosine 0.999819，但当前没有加速。因此 App/API 自动策略已收紧为 GPU，只有显式 `gpu_ane + allow_approximation + manifest` 才会进入实验路径。
+Z-Image 7680-channel GPU+ANE 候选的常驻 warm request wall 约 47.52 s，旧 GPU warm 基线约 45.17 s；4096 LoRA-bound 旧矩阵约 1.21×。本轮 GPU fusion 后，base GPU warm 中位数为 36.3685 s，stock ComfyUI 为 40.110 s；最终构建的自动 4096 base 请求为 37.5838/29.9956/30.0072 s，warm 中位数 30.0014 s、相对优化 GPU 为 1.212×。App/API 因此仅对 exact M4 Max 64 GB 的 base a4096 自动启用；带 LoRA 时仍必须显式选择并绑定相同 LoRA identity。
 
-后续 4096-channel Core ML 复核使用 session-wide shared output backing，避免每个 block 各自保留同形状 FP16 buffer。真实双请求均成功，Core ML 输出拷贝计数为 0，PNG byte-identical；首次 request wall 约 44.69 s，第二次 warm/cache-hit 约 37.51 s。该优化改善了 backing/VAE 内存压力，但 GPU+ANE 仍未达到 1.3×，所以没有放开自动选择。
+4096-channel Core ML 路线使用 session-wide shared output backing，避免每个 block 各自保留同形状 FP16 buffer。最终构建的 Core ML 输出拷贝计数为 0，两次 warm 请求范围为 29.9956–30.0072 s，同 seed GPU↔ANE PNG correlation 0.999231；该 geometry 现在同时作为 exact-device base 自动路线和 LoRA-bound 显式候选。
 
 ## 仍然开放的风险
 
@@ -91,8 +93,8 @@ Z-Image 7680-channel GPU+ANE 候选的常驻 warm request wall 约 47.52 s，GPU
 - H3/LTX LoRA cache miss 现在调用 TurboCider 自带的 Python merge 工具并产生可清理的 merged artifact，不再从兄弟仓库发现脚本；仍未达到纯内存逐层融合目标。
 - FastMetal 仍依赖显式外部 worker/profile，独立 LoRA runtime bake 未完成。
 - FLUX 9B 尚缺标准尺寸、多轮 warm/resident parity 与性能矩阵。
-- FLUX 4B M4 Max 6144 前缀已达到单组 warm 1.409× 观察值并通过输出一致性复核；仍需多轮交错 AB/BA 后才可写成稳定性能承诺。
-- Z-Image scheduler、共享噪声最终 latent/PNG 和官方独立 LoRA 图片 parity 已完成；32 分区 GPU+ANE 导出/ABI 已接入，但逐 step oracle、多轮 warm 数据和正式 GPU+ANE 性能门禁仍未完成。
+- FLUX 4B M4 Max 6144 前缀最终 warm 中位数为 1.6279 s，相对 GPU 为 1.392×，并通过输出一致性复核；仍需更广尺寸/机器的交错 AB/BA 矩阵。
+- Z-Image scheduler、共享噪声最终 latent/PNG 和官方独立 LoRA 图片 parity 已完成；优化 GPU 已快于 stock ComfyUI，base a4096 通过相对优化 GPU 的 1.2×重复 warm 门槛，仍缺逐 step oracle、LoRA-bound 优化后多轮 warm 和多机器矩阵。
 - 当前包为本地 ad-hoc 签名，不是 Developer ID 公证发行包。
 
 ## 构建说明

@@ -6,7 +6,9 @@ struct AccelerationView: View {
     @ObservedObject var studio: StudioState
     private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
     private var supportsGPUANE: Bool { model?.supports_gpu_ane == true }
-    private var supportsAutomaticGPUANE: Bool { studio.draft.modelID == "flux2-klein-4b" }
+    private var supportsAutomaticGPUANE: Bool {
+        studio.draft.modelID == "flux2-klein-4b" || studio.draft.modelID == "z-image-turbo"
+    }
     private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration(policy: studio.draft.profilePath.isEmpty ? "auto" : "profile") }
     @State private var discoveryMessage = "正在检测本机分区…"
     private func update(_ change: (inout StudioAcceleration) -> Void) { var value = config; change(&value); value.automaticVersion = 1; studio.draft.acceleration = value }
@@ -66,7 +68,8 @@ struct AccelerationView: View {
         let path = studio.draft.modelPath, preferred = config.manifest
         let selectedCache = config.coreMLCache.map { URL(fileURLWithPath: $0) }
         let modelID = studio.draft.modelID
-        let result = await Task.detached { AccelerationDiscovery.find(modelPath: path, preferred: preferred, cache: selectedCache, enforceAutomaticPolicy: true, modelID: modelID) }.value
+        let loras = studio.draft.loras
+        let result = await Task.detached { AccelerationDiscovery.find(modelPath: path, preferred: preferred, cache: selectedCache, enforceAutomaticPolicy: true, modelID: modelID, loras: loras) }.value
         guard studio.draft.modelPath == path else { return }
         let system = (try? JSONSerialization.jsonObject(with: Data(NativeEngine.system().utf8))) as? [String: Any]
         let gpu = system?["gpu"] as? String

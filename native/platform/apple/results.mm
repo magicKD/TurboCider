@@ -1,5 +1,15 @@
 #include "bridge.hpp"
 namespace tc {
+static NSString *gpu_graph_label(const Request &r) {
+    if (r.model == "z-image-turbo" && r.execution == "gpu_ane")
+        return @"compiled_mlp_complement";
+    if (r.model.starts_with("flux2-klein-") && r.execution == "gpu_ane")
+        return @"compiled_hybrid_complement";
+    if (!r.compile_gpu)
+        return @"eager_blocks";
+    return r.model == "z-image-turbo" ? @"compiled_fused_blocks"
+                                       : @"compiled_single_blocks";
+}
 static NSArray *strings(const std::vector<std::string> &values) {
     NSMutableArray *array = [NSMutableArray array];
     for (auto &value : values)
@@ -73,7 +83,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         r.model == "ltx-2.5-distilled" ?
             (r.loras.empty() ? @"checkpoint-validated-at-load" : @"runtime-cache-or-sidecar-verified-at-execution") :
         r.model == "z-image-turbo" ?
-            (r.loras.empty() ? @"comfy-oracle-validated; gpu_ane-pending" :
+            (r.loras.empty() ? @"comfy-oracle-validated; m4max-a4096-hybrid-qualified" :
                                @"in-memory-lora; comfy-oracle-validated") :
         @"pending";
     auto lora_fusion = r.loras.empty() ? @"none" :
@@ -107,7 +117,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"validation" : validation,
         @"backend" : backend,
         @"execution" : hybrid ? @"gpu_ane_experimental" : @"gpu",
-        @"gpu_graph" : r.compile_gpu ? @"compiled_single_blocks" : @"eager_blocks",
+        @"gpu_graph" : gpu_graph_label(r),
         @"precision" : hybrid ? @"bf16_gpu+int8_mlp_fp16_io" : @"bf16",
         @"algorithm_approximations" : hybrid ? @[ @"single_block_mlp_int8_per_channel" ] : @[],
         @"requested_shape" : @[ @(r.width), @(r.height), @(r.frames) ],
@@ -222,7 +232,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
         @"steps" : @(r.steps),
         @"operation" : @(r.operation.c_str()),
         @"reference_tokens" : @(result.reference_tokens),
-        @"gpu_graph" : r.compile_gpu ? @"compiled_single_blocks" : @"eager_blocks",
+        @"gpu_graph" : gpu_graph_label(r),
         @"actual_denoise_steps" : @(result.actual_steps),
         @"text_tokens" : @(result.text_tokens),
         @"valid_text_tokens" : @(result.valid_text_tokens),

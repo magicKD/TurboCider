@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-07",
+  "hardware": "Apple M4 Max, 64 GB unified memory",
+  "model": "z-image-turbo",
+  "workload": {
+    "width": 1024,
+    "height": 1024,
+    "steps": 9,
+    "seed": 42,
+    "prompt": "A cinematic red fox walking through fresh snow, soft morning light."
+  },
+  "turbo_cider_gpu": {
+    "implementation": [
+      "MLX fast::rms_norm with FP32 accumulation",
+      "single-dispatch native Metal Q/K RoPE",
+      "MLX fused scaled-dot-product attention",
+      "compiled full Z-Image block graph with explicit weights",
+      "BF16 block modulation boundary and per-step synchronization"
+    ],
+    "request_wall_seconds": [39.472777167044114, 36.360000207962, 36.37694141600514],
+    "warm_median_seconds": 36.36847081198357,
+    "warm_denoise_seconds": [35.437059625, 35.452223417],
+    "warm_spread_percent_of_median": 0.0466,
+    "gpu_graph": "compiled_fused_blocks"
+  },
+  "stock_comfyui_gpu": {
+    "version": "0.32.0",
+    "custom_nodes": "disabled",
+    "workflow": "official embedded Z-Image workflow",
+    "warm_seed43_to_45_seconds": [40.122, 40.090, 40.110],
+    "warm_median_seconds": 40.110,
+    "timing_source": "ComfyUI execution_start/execution_success timestamps",
+    "cold_seconds": 48.945
+  },
+  "gpu_comparison": {
+    "turbo_cider_speedup_vs_comfyui": 1.102878375265192,
+    "turbo_cider_percent_faster_vs_comfyui": 9.32817050116288,
+    "optimized_gpu_speedup_vs_previous_turbocider_gpu": 1.24333245227073,
+    "previous_turbocider_gpu_warm_seconds": 45.2181
+  },
+  "gpu_ane_4096": {
+    "manifest": "z_image_m4max_a4096_s8_o32_b4128",
+    "ane_mlp_range": [0, 4096],
+    "gpu_graph": "compiled_mlp_complement",
+    "request_wall_seconds": [37.58384237496648, 29.995563916978426, 30.007244999986142],
+    "warm_median_seconds": 30.001404458482284,
+    "warm_spread_percent_of_median": 0.03893512060037261,
+    "speedup_vs_optimized_gpu": 1.2122256097147854,
+    "speedup_vs_stock_comfyui": 1.3369374108970995,
+    "coreml_calls_per_request": 288,
+    "output_copy_bytes": 0,
+    "gpu_ane_png_cosine_vs_gpu": 0.9999033020364985,
+    "gpu_ane_png_correlation_vs_gpu": 0.9992307997880183,
+    "decision": "automatic base-model policy enabled only on exact M4 Max 64 GB",
+    "raw_report": "outputs/z-image-final-gpu-ane-a4096-2026-09-07/report.json (gitignored local evidence)"
+  },
+  "shared_noise_parity": {
+    "comfyui_png_correlation": 0.9986646746,
+    "comfyui_png_cosine": 0.9997699,
+    "comfyui_png_mae_255": 1.2825,
+    "comfyui_latent_correlation": 0.9986974,
+    "comfyui_latent_cosine": 0.9981197
+  },
+  "conclusion": "After native fusion and the ComfyUI-matched BF16 timestep boundary, TurboCider GPU is faster than stock ComfyUI on the matched warm workload. The final-build 4096-channel ANE split remains a stable approximately 1.21x end-to-end improvement over the optimized GPU path."
+}

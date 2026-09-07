@@ -10,7 +10,9 @@
 
 当前项目目录与旧代码退役：[项目重构](project-restructure.md)。
 
-当前 main→dev 合并与六模型/App 回归见 [2026-09-06 合并验收](../status/main-dev-merge-2026-09-06.md)。当前实现、真实性能和剩余工作统一见 [实现状态](../status/implementation-status-2026-09-06.md)，独立运行边界见 [外部依赖说明](../status/independence-and-dependencies-2026-09-06.md)，提交边界见 [版本准备度](../status/release-readiness-2026-09-06.md)。模型职责的详细说明见 [原生重构状态](rewrite-implementation-status.md)、[FLUX 同条件性能对比](flux-performance-comparison.md) 和 [H3/LTX 验收契约](video-model-acceptance.md)。以下长期设计不等于已交付能力。
+当前 main→dev 合并与六模型/App 回归见 [2026-09-06 合并验收](../status/main-dev-merge-2026-09-06.md)。当前状态、真实性能和剩余工作统一见 [2026-09-07 当前状态](../status/current-status-2026-09-07.md) 与 [状态文档入口](../status/README.md)，独立运行边界见 [外部依赖说明](../status/independence-and-dependencies-2026-09-06.md)，提交边界见 [版本准备度](../status/release-readiness-2026-09-06.md)。模型职责的详细说明见 [原生重构状态](rewrite-implementation-status.md)、[FLUX 同条件性能对比](flux-performance-comparison.md) 和 [H3/LTX 验收契约](video-model-acceptance.md)。以下长期设计不等于已交付能力。
+
+当前各模型在 M4 Max/M4 Pro 及其他 Apple Silicon 上的 GPU/ANE fork-join 方案、自动门禁和实测口径见 [GPU/ANE 并行化方案](parallel-acceleration.md) 与 [并行化 SVG 图](parallel-acceleration.svg)。
 
 ## App 产品、界面与实现方案
 

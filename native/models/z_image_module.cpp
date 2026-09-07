@@ -28,8 +28,6 @@ ModelModule z_image_module() {
             if (r.execution == "gpu_ane") {
                 require(r.allow_approximation,
                         "Z-Image GPU+ANE requires allow_approximation=true");
-                require(r.loras.empty(),
-                        "Z-Image LoRA currently requires GPU execution because base Core ML artifacts do not include LoRA deltas");
             }
             require(r.residency == "resident",
                     "Z-Image component-staged residency is not implemented");
@@ -64,12 +62,12 @@ ModelModule z_image_module() {
             d.supports_gpu_ane = true;
             d.backend = "mlx_cpp_metal";
             d.runtime_dependency = "bundled-native-mlx-cpp";
-            d.parallel_strategy = "explicit GPU attention + MLP suffix with Core ML ANE gated-MLP prefix; automatic selection disabled";
+            d.parallel_strategy = "GPU attention + MLP suffix overlaps Core ML ANE gated-MLP prefix; base 4096-channel M4 Max route is automatic";
             d.candidate_limitations = {
                 "text-to-image only",
-                "GPU+ANE is explicit opt-in and requires a matching 32-block Core ML manifest",
-                "the measured 7680-channel M4 Max partition is slower than the warm GPU baseline",
-                "1024×1024 warm-performance matrix remains pending"
+                "automatic GPU+ANE is limited to the base model on Apple M4 Max 64 GB with the measured 4096-channel 32-block manifest",
+                "the repeated warm 1024x1024 base workload measured about 1.21x end-to-end versus the optimized GPU path",
+                "LoRA GPU+ANE remains explicit and requires an artifact bound to the exact adapter path, content, role and strength"
             };
             return d;
         }

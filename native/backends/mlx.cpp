@@ -237,6 +237,12 @@ Tensor silu(const Tensor &x) {
 }
 Tensor rms(const Tensor &x, const Tensor &w, float eps) {
     auto f = mx::astype(x, mx::float32);
+    // MLX's fast RMSNorm is a fused Metal primitive.  Keep the former FP32
+    // accumulation/weight contract and cast only the final value back to the
+    // activation dtype so existing BF16 parity is preserved.
+    if (!std::getenv("TURBOCIDER_DISABLE_FUSED_RMSNORM"))
+        return mx::astype(mx::fast::rms_norm(f, mx::astype(w, mx::float32), eps),
+                          x.dtype());
     return mx::astype(f * mx::rsqrt(mx::mean(mx::square(f), -1, true) + eps) *
                           mx::astype(w, mx::float32),
                       x.dtype());
@@ -256,11 +262,12 @@ Tensor heads(const Tensor &x, int n, int d) {
     return mx::transpose(mx::reshape(x, {1, x.shape(1), n, d}), {0, 2, 1, 3});
 }
 Tensor attend(const Tensor &q, const Tensor &k, const Tensor &v, bool f32,
-              const std::optional<Tensor> &mask) {
+              const std::optional<Tensor> &mask, bool force_fused) {
     auto dtype = q.dtype();
     auto a = mx::fast::scaled_dot_product_attention(
         f32 ? mx::astype(q, mx::float32) : q, f32 ? mx::astype(k, mx::float32) : k,
-        f32 ? mx::astype(v, mx::float32) : v, 1.f / std::sqrt(float(q.shape(-1))), "", mask);
+        f32 ? mx::astype(v, mx::float32) : v, 1.f / std::sqrt(float(q.shape(-1))), "", mask,
+        {}, force_fused);
     if (f32)
         a = mx::astype(a, dtype);
     return mx::reshape(mx::transpose(a, {0, 2, 1, 3}), {1, q.shape(2), q.shape(1) * q.shape(3)});
@@ -272,6 +279,35 @@ Tensor rope_pairs(const Tensor &x, const Tensor &cos, const Tensor &sin) {
     auto c = mx::reshape(cos, {1, 1, x.shape(2), 64}), s = mx::reshape(sin, {1, 1, x.shape(2), 64});
     return mx::astype(mx::reshape(mx::stack({a * c - b * s, b * c + a * s}, -1), x.shape()),
                       x.dtype());
+}
+std::vector<Tensor> rope_pairs_pair(const Tensor &q, const Tensor &k,
+                                    const Tensor &cos, const Tensor &sin) {
+    require(q.shape() == k.shape() && q.ndim() == 4 && q.shape(-1) % 2 == 0,
+            "paired RoPE geometry mismatch");
+    require(cos.shape() == sin.shape() && cos.size() == size_t(q.shape(2) * q.shape(3) / 2),
+            "paired RoPE frequency geometry mismatch");
+    // Rotate Q and K in one native Metal dispatch.  FLUX repeats one
+    // [sequence, head_dim / 2] frequency table across all heads, so the
+    // modulo maps a flat Q/K pair back to its shared frequency element.
+    static auto kernel = mx::fast::metal_kernel(
+        "tc_rope_qk", {"q", "k", "cosine", "sine", "pair_count", "frequency_span"},
+        {"q_out", "k_out"},
+        "uint pair = thread_position_in_grid.x; "
+        "if (pair < uint(pair_count)) { "
+        "  uint frequency = pair % uint(frequency_span); uint base = pair * 2; "
+        "  float c = float(cosine[frequency]); float s = float(sine[frequency]); "
+        "  float qa = float(q[base]); float qb = float(q[base + 1]); "
+        "  float ka = float(k[base]); float kb = float(k[base + 1]); "
+        "  q_out[base] = T(qa * c - qb * s); "
+        "  q_out[base + 1] = T(qb * c + qa * s); "
+        "  k_out[base] = T(ka * c - kb * s); "
+        "  k_out[base + 1] = T(kb * c + ka * s); "
+        "}");
+    const int pairs = int(q.size() / 2);
+    const int frequency_span = q.shape(2) * q.shape(3) / 2;
+    return kernel({q, k, cos, sin, Tensor(pairs), Tensor(frequency_span)},
+                  {q.shape(), k.shape()}, {q.dtype(), k.dtype()}, {pairs, 1, 1},
+                  {256, 1, 1}, {{"T", q.dtype()}}, {}, false, {});
 }
 std::vector<float> flux_gpu_sigmas(int tokens, int steps) {
     double m200 = .00016927 * tokens + .45666666, mu = m200;

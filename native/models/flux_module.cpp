@@ -36,8 +36,6 @@ ModelModule flux_module() {
                 require(r.residency == "resident" || r.residency == "component_staged",
                         "FLUX block streaming is not supported");
                 require(r.loras.size() <= 8, "at most eight LoRA adapters may be active");
-                require(r.loras.empty() || r.execution != "gpu_ane",
-                        "FLUX LoRA currently requires GPU execution; base Core ML artifacts cannot represent merged LoRA MLP weights");
                 for (const auto &lora : r.loras) {
                     require(lora.role == "transformer" || lora.role == "text_encoder",
                             "unsupported FLUX LoRA role");
@@ -55,6 +53,13 @@ ModelModule flux_module() {
                 d.steps = 4; d.frames = 1; d.width = 512; d.height = 512; d.default_audio = false;
                 d.supports_lora = true; d.runtime_lora = true; d.lora_mode = "load-time-baked";
                 d.supports_gpu_ane = true; d.backend = "mlx_cpp_metal";
+                d.runtime_dependency = "bundled-native-mlx-cpp";
+                d.parallel_strategy = "compiled GPU attention/MLP complement overlaps a Core ML ANE MLP prefix";
+                d.candidate_limitations = {
+                    "compiled fused GPU blocks are automatic for the validated 4B geometry",
+                    "automatic GPU+ANE remains restricted to exact validated device and manifest geometry",
+                    "LoRA GPU+ANE requires an artifact bound to the exact adapter path, content, role and strength"
+                };
                 return d;
             }};
 }

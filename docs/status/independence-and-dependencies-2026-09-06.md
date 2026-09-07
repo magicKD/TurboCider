@@ -1,6 +1,8 @@
 # TurboCider 独立运行与外部依赖边界
 
-更新时间：2026-09-06
+更新时间：2026-09-07（模型资产与 LoRA-bound 复核）
+
+当前代码卫生和未完成项汇总见 [2026-09-07 当前状态](current-status-2026-09-07.md)。
 
 ## 结论
 
@@ -26,7 +28,7 @@ TurboCider 已经是一个可以独立发布和启动的 native application/pack
 |---|---|---|
 | TurboCider core、C ABI、CLI、service、Swift App | 可独立运行 | macOS 系统框架、Apple Silicon、已构建 native dylib |
 | FLUX.2 Klein 4B/9B native | 基本独立 | 用户模型目录；发行包内的 MLX dylib/metallib |
-| Z-Image Turbo native | 源码独立、base/LoRA 真实出图与 ComfyUI oracle 已验收 | 用户 ComfyUI split-files 或 Tongyi diffusers Qwen3/DiT/VAE/tokenizer 目录；发行包内 MLX dylib/metallib |
+| Z-Image Turbo native | 源码独立、base/LoRA 真实出图与 ComfyUI oracle 已验收；LoRA-bound Core ML artifact 可显式 GPU+ANE 执行 | 用户 ComfyUI split-files 或 Tongyi diffusers Qwen3/DiT/VAE/tokenizer 目录；发行包内 MLX dylib/metallib；LoRA-bound 分区按设备单独生成 |
 | LTX video-only native | 基本独立 | 用户 LTX checkpoint/Gemma/upsampler/VAE；发行包内 MLX dylib 和 helper |
 | H3 native denoise | 源码独立 | 用户 H3 模型目录、ANE/Core ML artifact（如启用） |
 | H3 输入/MP4 输出 | 非完全独立 | `ffmpeg` 与 `ffprobe`；可通过 `H3_FFMPEG`、`H3_FFPROBE` 指定路径 |
@@ -45,12 +47,13 @@ Video VAE helper 也从 dylib/发行目录定位。因而删除源码工作区�
 `dist/cli/` 仍能执行：
 
 ```sh
-cp -R dist/cli /private/tmp/turbocider-portable
-cd /private/tmp
+TC_PORTABLE_DIR="${TMPDIR:-/tmp}/turbocider-portable"
+cp -R dist/cli "$TC_PORTABLE_DIR"
+cd "${TMPDIR:-/tmp}"
 env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin \
-  /private/tmp/turbocider-portable/turbocider models
+  "$TC_PORTABLE_DIR/turbocider" models
 env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin \
-  /private/tmp/turbocider-portable/turbocider doctor
+  "$TC_PORTABLE_DIR/turbocider" doctor
 ```
 
 本轮两条命令均已通过。受限环境中的 `doctor` 报告 GPU unavailable 是硬件权限

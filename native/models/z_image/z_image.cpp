@@ -287,7 +287,7 @@ Tensor z_vae_decode(const Tensor &latent, const Weights &w) {
     return z_conv(x, w, "decoder.conv_out");
 }
 
-Tensor z_apply_rope(const Tensor &x, const Tensor &freqs) {
+Tensor z_apply_rope_reference(const Tensor &x, const Tensor &freqs) {
     // x: [1, heads, sequence, 128], freqs: [sequence, 64, 2].
     auto pair = mx::reshape(mx::astype(x, mx::float32),
                             {x.shape(0), x.shape(1), x.shape(2), x.shape(3) / 2, 2});
@@ -298,6 +298,40 @@ Tensor z_apply_rope(const Tensor &x, const Tensor &freqs) {
     auto s = mx::squeeze(slice_axis(f, -1, 1, 2), -1);
     return mx::astype(mx::reshape(mx::stack({a * c - b * s, a * s + b * c}, -1), x.shape()),
                       x.dtype());
+}
+
+std::vector<Tensor> z_apply_rope_pair(const Tensor &q, const Tensor &k,
+                                      const Tensor &freqs) {
+    require(q.shape() == k.shape() && q.ndim() == 4 && q.shape(-1) == kHeadDim,
+            "Z-Image Q/K RoPE geometry mismatch");
+    if (std::getenv("TURBOCIDER_Z_EAGER_ROPE"))
+        return {z_apply_rope_reference(q, freqs), z_apply_rope_reference(k, freqs)};
+
+    // One native MLX Metal dispatch rotates Q and K together.  The frequency
+    // table is shared across batch/head rows, while each pair is accumulated
+    // in FP32 and stored in the original activation dtype.  This removes the
+    // eager cast/reshape/slice/stack chain from every attention block without
+    // introducing a PyTorch or third-party runtime dependency.
+    static auto kernel = mx::fast::metal_kernel(
+        "tc_z_image_rope_qk", {"q", "k", "freqs", "pair_count", "frequency_span"},
+        {"q_out", "k_out"},
+        "uint pair = thread_position_in_grid.x; "
+        "if (pair < uint(pair_count)) { "
+        "  uint fi = pair % uint(frequency_span); "
+        "  uint base = pair * 2; uint fbase = fi * 2; "
+        "  float c = float(freqs[fbase]); float s = float(freqs[fbase + 1]); "
+        "  float qa = float(q[base]); float qb = float(q[base + 1]); "
+        "  float ka = float(k[base]); float kb = float(k[base + 1]); "
+        "  q_out[base] = T(qa * c - qb * s); "
+        "  q_out[base + 1] = T(qa * s + qb * c); "
+        "  k_out[base] = T(ka * c - kb * s); "
+        "  k_out[base + 1] = T(ka * s + kb * c); "
+        "}");
+    const int pairs = int(q.size() / 2);
+    const int frequency_span = q.shape(2) * (q.shape(3) / 2);
+    return kernel({q, k, freqs, Tensor(pairs), Tensor(frequency_span)},
+                  {q.shape(), k.shape()}, {q.dtype(), k.dtype()}, {pairs, 1, 1},
+                  {256, 1, 1}, {{"T", q.dtype()}}, {}, false, {});
 }
 
 Tensor z_rope(const Tensor &ids) {
@@ -319,12 +353,14 @@ Tensor z_attention(const Tensor &x, const Weights &w, const std::string &prefix,
                    const Tensor &freqs) {
     auto qkv = linear_compat(x, w, prefix + ".attention.qkv");
     auto chunks = mx::split(qkv, 3, -1);
-    auto q = z_apply_rope(rms(heads(chunks[0], kHeads, kHeadDim),
-                              w.at(prefix + ".attention.q_norm.weight"), 1e-5f), freqs);
-    auto k = z_apply_rope(rms(heads(chunks[1], kHeads, kHeadDim),
-                              w.at(prefix + ".attention.k_norm.weight"), 1e-5f), freqs);
+    auto q = rms(heads(chunks[0], kHeads, kHeadDim),
+                 w.at(prefix + ".attention.q_norm.weight"), 1e-5f);
+    auto k = rms(heads(chunks[1], kHeads, kHeadDim),
+                 w.at(prefix + ".attention.k_norm.weight"), 1e-5f);
+    auto rotated = z_apply_rope_pair(q, k, freqs);
     auto v = heads(chunks[2], kHeads, kHeadDim);
-    auto result = attend(q, k, v, false);
+    auto result = attend(rotated[0], rotated[1], v, false, {},
+                         !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA"));
     return linear_compat(result, w, prefix + ".attention.out");
 }
 
@@ -356,6 +392,61 @@ make_z_hybrid_gpu_graph(int hidden, int mlp_width, int gpu_mlp_start) {
         });
 }
 
+std::function<std::vector<Tensor>(const std::vector<Tensor> &)> &z_gpu_block_graph() {
+    static auto graph = mx::compile([](const std::vector<Tensor> &args) {
+        require(args.size() == 16, "invalid Z-Image compiled block inputs");
+        auto fast_rms = [](const Tensor &x, const Tensor &weight) {
+            return mx::astype(
+                mx::fast::rms_norm(mx::astype(x, mx::float32),
+                                   mx::astype(weight, mx::float32), 1e-5f),
+                x.dtype());
+        };
+        auto modulation = mx::expand_dims(
+            mx::matmul(args[2], mx::transpose(args[3])) + args[4], 1);
+        auto mod = mx::split(modulation, 4, -1);
+        auto attention_input =
+            fast_rms(args[0], args[5]) * (Tensor(1.f, mod[0].dtype()) + mod[0]);
+        auto qkv = mx::matmul(attention_input, mx::transpose(args[6]));
+        auto qkv_parts = mx::split(qkv, 3, -1);
+        auto q = fast_rms(heads(qkv_parts[0], kHeads, kHeadDim), args[7]);
+        auto k = fast_rms(heads(qkv_parts[1], kHeads, kHeadDim), args[8]);
+        auto rotated = z_apply_rope_pair(q, k, args[1]);
+        auto attention = mx::matmul(
+            attend(rotated[0], rotated[1], heads(qkv_parts[2], kHeads, kHeadDim), false, {},
+                   !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA")),
+            mx::transpose(args[9]));
+        auto value = args[0] + mx::tanh(mod[1]) * fast_rms(attention, args[10]);
+        auto feed_input =
+            fast_rms(value, args[11]) * (Tensor(1.f, mod[2].dtype()) + mod[2]);
+        auto gate = mx::matmul(feed_input, mx::transpose(args[12]));
+        auto up = mx::matmul(feed_input, mx::transpose(args[13]));
+        auto feed = mx::matmul((gate * mx::sigmoid(gate)) * up,
+                               mx::transpose(args[14]));
+        return std::vector<Tensor>{
+            value + mx::tanh(mod[3]) * fast_rms(feed, args[15])};
+    });
+    return graph;
+}
+
+Tensor z_compiled_gpu_block(const Tensor &x, const Weights &w, const std::string &prefix,
+                            const Tensor &freqs, const Tensor &temb) {
+    return z_gpu_block_graph()(
+        {x, freqs, temb,
+         w.at(prefix + ".adaLN_modulation.0.weight"),
+         w.at(prefix + ".adaLN_modulation.0.bias"),
+         w.at(prefix + ".attention_norm1.weight"),
+         w.at(prefix + ".attention.qkv.weight"),
+         w.at(prefix + ".attention.q_norm.weight"),
+         w.at(prefix + ".attention.k_norm.weight"),
+         w.at(prefix + ".attention.out.weight"),
+         w.at(prefix + ".attention_norm2.weight"),
+         w.at(prefix + ".ffn_norm1.weight"),
+         w.at(prefix + ".feed_forward.w1.weight"),
+         w.at(prefix + ".feed_forward.w3.weight"),
+         w.at(prefix + ".feed_forward.w2.weight"),
+         w.at(prefix + ".ffn_norm2.weight")})[0];
+}
+
 Tensor z_context_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs) {
     auto attention = z_attention(rms(x, w.at(prefix + ".attention_norm1.weight"), 1e-5f),
@@ -370,6 +461,8 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                const Tensor &freqs, const Tensor &temb, HybridSession *hybrid,
                int hybrid_block,
                const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph) {
+    if (!hybrid && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS"))
+        return z_compiled_gpu_block(x, w, prefix, freqs, temb);
     auto modulation = mx::expand_dims(linear_compat(temb, w, prefix + ".adaLN_modulation.0"), 1);
     auto parts = mx::split(modulation, 4, -1);
     auto scale_msa = Tensor(1.f, parts[0].dtype()) + parts[0];
@@ -436,9 +529,16 @@ Tensor z_timestep(float timestep, const Weights &w) {
     auto half = n / 2;
     auto freq = mx::exp(-std::log(10000.f) * mx::arange(0, half, mx::float32) / float(half));
     auto args = Tensor(timestep) * freq;
-    auto embedding = mx::reshape(mx::concatenate({mx::cos(args), mx::sin(args)}, -1), {1, n});
-    return linear_compat(silu(linear_compat(embedding, w, "t_embedder.mlp.0")), w,
-                         "t_embedder.mlp.2");
+    // Keep the tiny timestep MLP in FP32 for parity with the established
+    // ComfyUI oracle, then cast its 256-value result to the model dtype.  The
+    // output cast is the important performance boundary: without it every
+    // block's scale/gate arithmetic promotes the full activation to FP32.
+    auto embedding =
+        mx::reshape(mx::concatenate({mx::cos(args), mx::sin(args)}, -1), {1, n});
+    return mx::astype(
+        linear_compat(silu(linear_compat(embedding, w, "t_embedder.mlp.0")), w,
+                      "t_embedder.mlp.2"),
+        mx::bfloat16);
 }
 
 struct ZPatch {
@@ -529,7 +629,17 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
         event("z_image_denoise_block", i, 30);
         unified = z_block(unified, w, "layers." + std::to_string(i), unified_freqs, temb,
                           hybrid, 2 + i, gpu_graph);
-        mx::eval(unified);
+        // Compiled blocks retain the allocator dependency chain, so pure GPU
+        // execution does not need a host synchronization after every one of
+        // the 270 main blocks in a 9-step request. The sampler synchronizes at
+        // the end of every denoise step, which remains a bounded cancellation
+        // point. Hybrid execution must synchronize around its Core ML calls;
+        // the eager compatibility path keeps its former per-block behavior.
+        const bool eager = std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
+        if (eager || hybrid) {
+            mx::eval(unified);
+            checkpoint(cancelled);
+        }
     }
     auto final_scale = Tensor(1.f, temb.dtype()) +
                        linear_compat(silu(temb), w, "final_layer.adaLN_modulation.1");
@@ -731,8 +841,26 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
     const bool automatic = r.execution == "auto";
     if (automatic) {
         r.execution = "gpu";
-        hybrid_.reset();
-        return "gpu: Z-Image hybrid has not passed the warm end-to-end performance gate";
+        if (!r.allow_approximation || r.ane_manifest.empty()) {
+            hybrid_.reset();
+            return "gpu: no opted-in compatible local Z-Image partition";
+        }
+        if (!active_loras_.empty()) {
+            hybrid_.reset();
+            return "gpu: automatic Z-Image LoRA hybrid is not performance-qualified";
+        }
+        auto system = device_info();
+        if (system.gpu != "Apple M4 Max" || system.physical_memory != (64ull << 30)) {
+            hybrid_.reset();
+            return "gpu: automatic Z-Image hybrid is not validated on this hardware";
+        }
+        const uint64_t estimate = (30ull << 30) + uint64_t(r.width) * r.height * 12288;
+        if (system.physical_memory < estimate + (4ull << 30) ||
+            (r.memory_budget_bytes && r.memory_budget_bytes < estimate)) {
+            hybrid_.reset();
+            return "gpu: Z-Image hybrid memory budget unavailable";
+        }
+        r.execution = "gpu_ane";
     }
     if (r.execution != "gpu_ane") {
         hybrid_.reset();
@@ -749,12 +877,16 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
                     hybrid_->block_count == 32 && hybrid_->mlp_width == 10240 &&
                     hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end < 10240,
                 "Z-Image Core ML FFN partition geometry mismatch");
+        if (automatic)
+            require(hybrid_->ane_mlp_end == 4096,
+                    "M4 Max automatic Z-Image profile requires the validated 4096-channel ANE prefix");
         if (!hybrid_gpu_graph_ || hybrid_gpu_mlp_start_ != hybrid_->ane_mlp_end) {
             hybrid_gpu_graph_ = make_z_hybrid_gpu_graph(
                 hybrid_->hidden, hybrid_->mlp_width, hybrid_->ane_mlp_end);
             hybrid_gpu_mlp_start_ = hybrid_->ane_mlp_end;
         }
-        return "gpu_ane: explicitly selected Z-Image FFN partition";
+        return automatic ? "gpu_ane: M4 Max base checkpoint and 4096-channel partition matched"
+                         : "gpu_ane: explicitly selected Z-Image FFN partition";
     } catch (const Cancelled &) {
         throw;
     } catch (const std::exception &error) {
@@ -797,7 +929,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const int image_rows = ((r.height / 16) * (r.width / 16) + 31) / 32 * 32;
     const int caption_rows = (cached_conditioning_->shape(0) + 31) / 32 * 32;
     auto selection = select_acceleration(r, image_rows + caption_rows, event, cancelled);
-    if (plan.request.execution != r.execution)
+    r.compile_gpu = r.execution == "gpu" && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
+    if (plan.request.execution != r.execution || plan.request.compile_gpu != r.compile_gpu)
         plan = make_plan(r);
     load(event, cancelled);
     const int latent_h = r.height / 8, latent_w = r.width / 8;

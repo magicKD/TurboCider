@@ -118,10 +118,6 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
             hybrid_.reset();
             return "gpu: no opted-in compatible local partition";
         }
-        if (!active_loras_.empty()) {
-            hybrid_.reset();
-            return "gpu: automatic GPU+ANE remains disabled until a LoRA-bound artifact passes the performance gate";
-        }
         auto system = device_info();
         // Automatic selection is limited to the exact device profile on which
         // this partition policy was measured. M4 Max uses the 6,144-channel
@@ -200,6 +196,10 @@ RunResult Flux::prepare(const Request &requested, bool warmup, const Event &even
             count += (image.shape(1) / 16) * (image.shape(2) / 16);
         }
     auto selection = select_acceleration(r, count, event, cancelled);
+    if (r.execution == "gpu" && model_id_ == "flux2-klein-4b" &&
+        !std::getenv("TURBOCIDER_FLUX_EAGER_BLOCKS"))
+        r.compile_gpu = true;
+    plan = make_plan(r);
     RunResult result;
     result.prepared = true;
     result.selection = selection;
@@ -282,6 +282,9 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     require(actual_tokens <= 20000, "request exceeds native token workspace budget");
     auto hybrid_start = Clock::now();
     auto selection = select_acceleration(r, actual_tokens, event, cancelled);
+    if (r.execution == "gpu" && model_id_ == "flux2-klein-4b" &&
+        !std::getenv("TURBOCIDER_FLUX_EAGER_BLOCKS"))
+        r.compile_gpu = true;
     plan = make_plan(r);
     double hybrid_s = std::chrono::duration<double>(Clock::now() - hybrid_start).count();
     auto text = *cached_conditioning_;

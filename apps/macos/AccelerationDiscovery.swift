@@ -52,19 +52,32 @@ struct AccelerationDiscovery {
         // Automatic selection is a performance promise, not merely a
         // capability check. Keep candidates opt-in until their warm
         // end-to-end path beats the GPU baseline on validated hardware.
-        guard modelID == "flux2-klein-4b" else { return false }
         if gpu == "Apple M4 Max" && memory == 64 * 1024 * 1024 * 1024 {
-            return mlpWidth == 9216 && start == 0 && end == 6144
+            if modelID == "flux2-klein-4b" {
+                return mlpWidth == 9216 && start == 0 && end == 6144
+            }
+            if modelID == "z-image-turbo" {
+                return mlpWidth == 10240 && start == 0 && end == 4096
+            }
+            return false
         }
         if gpu == "Apple M4 Pro" && memory == 48 * 1024 * 1024 * 1024 {
-            return mlpWidth == 9216 && start == 0 && end == 9216
+            return modelID == "flux2-klein-4b" &&
+                mlpWidth == 9216 && start == 0 && end == 9216
         }
         return false
     }
     static func find(modelPath: String, preferred: String = "", cache: URL? = nil,
                      enforceAutomaticPolicy: Bool = false,
-                     modelID: String = "flux2-klein-4b") -> Match? {
+                     modelID: String = "flux2-klein-4b",
+                     loras: [StudioLoRA] = []) -> Match? {
         guard !modelPath.isEmpty else { return nil }
+        // Z-Image's repeated ~1.21x result covers the base checkpoint only.
+        // Adapter-bound partitions remain explicit until each LoRA geometry
+        // has its own repeated warm end-to-end validation.
+        if enforceAutomaticPolicy && modelID == "z-image-turbo" && !loras.isEmpty {
+            return nil
+        }
         let hardware = enforceAutomaticPolicy ? currentHardware() : nil
         let model = URL(fileURLWithPath: modelPath).resolvingSymlinksInPath()
         let checkpointCandidates: [URL]
@@ -97,6 +110,7 @@ struct AccelerationDiscovery {
                   URL(fileURLWithPath: path).resolvingSymlinksInPath() == checkpoint,
                   (source["checkpoint_bytes"] as? NSNumber)?.uint64Value == size.uint64Value,
                   let artifacts = value["artifacts"] as? [String: [String: String]] else { continue }
+            if !loras.isEmpty && !manifestBinds(manifest: file.path, loras: loras) { continue }
             let mlpWidth = (shape["mlp_width"] as? NSNumber)?.intValue ?? 9216
             let aneMLPStart = (shape["ane_mlp_start"] as? NSNumber)?.intValue ?? 0
             let aneMLPEnd = (shape["ane_mlp_end"] as? NSNumber)?.intValue ?? mlpWidth

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-07",
+  "hardware": {"gpu": "Apple M4 Max", "unified_memory_bytes": 68719476736},
+  "runtime": {
+    "engine": "TurboCider native persistent C ABI",
+    "model": "z-image-turbo",
+    "checkpoint_layout": "ComfyUI split-files",
+    "manifest": "z_image_m4max_a4096_s8_o32_b4128",
+    "ane_mlp_range": [0, 4096],
+    "coreml_blocks": 32,
+    "mlx_version": "0.32.2"
+  },
+  "workload": {"width": 1024, "height": 1024, "steps": 9, "seed": 42,
+    "prompt": "A cinematic red fox walking through fresh snow, soft morning light."},
+  "gpu_baseline": {"warm_request_wall_seconds": 36.36847081198357, "gpu_graph": "compiled_fused_blocks", "stock_comfyui_warm_seconds": 40.110},
+  "automatic_gpu_ane": {
+    "requested_policy": "auto",
+    "selected_execution": "gpu_ane",
+    "selection": "gpu_ane: M4 Max base checkpoint and 4096-channel partition matched",
+    "gpu_graph": "compiled_mlp_complement",
+    "request_wall_seconds": [37.58384237496648, 29.995563916978426, 30.007244999986142],
+    "warm_request_wall_seconds": [29.995563916978426, 30.007244999986142],
+    "warm_median_seconds": 30.001404458482284,
+    "warm_min_seconds": 29.995563916978426,
+    "warm_max_seconds": 30.007244999986142,
+    "warm_spread_percent_of_median": 0.03893512060037261,
+    "warm_speedup_vs_gpu": 1.2122256097147854,
+    "coreml_calls_per_request": 288,
+    "output_copy_bytes_session_total": 0,
+    "raw_report": "outputs/z-image-final-gpu-ane-a4096-2026-09-07/report.json (gitignored local evidence)",
+    "parity_reference": "docs/design/validation/z-image-m4max-hybrid-lora-2026-09-07.json"
+  },
+  "decision": {
+    "automatic_base_model": "enabled on exact Apple M4 Max 64 GB profile",
+    "automatic_lora_model": "disabled pending repeated LoRA-bound warm matrix",
+    "minimum_accepted_end_to_end_speedup": 1.2,
+    "gpu_regression_requirement": "TurboCider GPU must not regress against the matched direct/original baseline",
+    "quality_requirement": "shared-noise latent/PNG parity and finite outputs"
+  }
+}

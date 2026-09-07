@@ -2,7 +2,7 @@
 
 日期：2026-09-05。状态：架构建议，尚未实施。
 
-[查看架构图](/Users/kd/Documents/project/TurboCider/docs/design/native-engine-architecture.png) · [可编辑 Excalidraw](/Users/kd/Documents/project/TurboCider/docs/design/native-engine-architecture.excalidraw) · [SVG](/Users/kd/Documents/project/TurboCider/docs/design/native-engine-architecture.svg)。图中 Native Library 在服务模式由 Engine Host 加载，也可直接嵌入 SDK 调用方；PNG/SVG 在本地从图元导出。
+[查看架构图](native-engine-architecture.png) · [可编辑 Excalidraw](native-engine-architecture.excalidraw) · [SVG](native-engine-architecture.svg)。图中 Native Library 在服务模式由 Engine Host 加载，也可直接嵌入 SDK 调用方；PNG/SVG 在本地从图元导出。
 
 ## 1. 建议与边界
 
@@ -298,13 +298,11 @@ research/                   私有 ANE/未验收算法；独立构建目标
 
 ## 15. 阅读依据
 
-以下本地材料用于本提案；性能数字均引用已有记录，未在本轮重新测量。
+以下材料用于本提案；性能数字均引用已有记录，未在本轮重新测量。其中上游文件名是 provenance 记录，不是 TurboCider 的运行时路径。
 
-- [现有 TurboCider 架构](/Users/kd/Documents/project/TurboCider/docs/ARCHITECTURE.md)
-- [H3 公共 API](/Users/kd/Documents/project/h3.c-fork/h3.h)、[GPU 张量 API](/Users/kd/Documents/project/h3.c-fork/h3_gpu.h)
-- [H3 ANE 实验结论](/Users/kd/Documents/project/h3.c-fork/notes/gpu-ane-h3-turbo-final-2026-09-01.md)
-- [LTX 技术报告](/Users/kd/Documents/project/ltx-mac/notes/technical-report-2026-09-04.md)
-- [FLUX 引擎说明](/Users/kd/Documents/project/mac_image_generation/flux2-engine/README.md)、[架构](/Users/kd/Documents/project/mac_image_generation/flux2-engine/docs/ARCHITECTURE.md)
-- [FLUX 原生 Core ML bridge](/Users/kd/Documents/project/mac_image_generation/flux2-engine/native/flux2_ane_bridge.mm)、[当前 attention patch](/Users/kd/Documents/project/mac_image_generation/flux2-engine/src/flux2_engine/backends/hybrid_ops.py)
+- [当前 TurboCider 概览](../../README.md)
+- H3 公共 API `h3.h`、GPU 张量 API `h3_gpu.h` 与当时的 ANE 实验记录
+- LTX 技术报告 `technical-report-2026-09-04.md`
+- FLUX 引擎说明、架构、`flux2_ane_bridge.mm` 和 `hybrid_ops.py`
 - [Apple Metal 4](https://developer.apple.com/videos/play/wwdc2025/205/)、[GPU TensorOps/MPP](https://developer.apple.com/videos/play/tech-talks/111432/)
 - [Core ML compute units](https://developer.apple.com/documentation/coreml/mlcomputeunits/cpuandneuralengine)、[Core ML compute plan](https://developer.apple.com/documentation/coreml/mlcomputeplan-85vdw)

@@ -1,10 +1,12 @@
 # TurboCider 版本提交准备度
 
-更新时间：2026-09-06（合并验收补充）
+更新时间：2026-09-07（LoRA-bound GPU+ANE 复核）
+
+当前性能、双格式 Z-Image 和 LoRA 证据以 [2026-09-07 当前状态](current-status-2026-09-07.md) 为准。
 
 ## 结论
 
-当前工作树可以整理并提交一个**开发验收版本**，但不应把这次提交命名或描述为“全部模型生产版”。代码、测试、请求样例、配置样例和正式文档已经形成一个可审阅的纵切；LTX ANE、LTX I2V/音频、FLUX 9B 完整矩阵、FastMetal 独立 LoRA、H3/LTX 纯内存 LoRA，以及 Z-Image 的逐 step oracle、warm 性能和 GPU+ANE 仍是明确的后续工作。Z-Image base/官方独立 LoRA 的同噪声最终 latent/PNG parity 已完成。
+当前工作树可以整理并提交一个**开发验收版本**，但不应把这次提交命名或描述为“全部模型生产版”。代码、测试、请求样例、配置样例和正式文档已经形成一个可审阅的纵切；LTX ANE、LTX I2V/音频、FLUX 9B 完整矩阵、FastMetal 独立 LoRA、H3/LTX 纯内存 LoRA，以及 Z-Image 的逐 step oracle和 LoRA-bound 多轮性能仍是明确的后续工作。Z-Image base/官方独立 LoRA 的同噪声最终 latent/PNG parity 已完成；优化 GPU 已快于 stock ComfyUI，M4 Max base a4096 也已通过相对优化 GPU 的 1.2×重复 warm 门槛。
 
 建议提交主题：
 
@@ -62,8 +64,8 @@ feat(native): integrate H3 FastMetal and LTX video runtime
 - FastMetal LoRA 继续要求 provenance-verified premerged manifest；不能把 `runtime_lora=false` 改成 true 来掩盖缺口。
 - H3/LTX LoRA 的 runtime cache 是可清理临时 artifact，merge 实现已随 TurboCider 分发但仍依赖 Python 运行环境；不应写成已经完全不产生 merged 权重或已经纯内存融合。
 - FLUX 9B 的 5.33 秒 smoke 不得写成正式 parity/性能验收。
-- Z-Image 已有 Apple M4 Max 真实 1024×1024 base/官方独立 LoRA 出图和 App smoke；共享初始噪声下最终 latent/PNG 已通过 ComfyUI oracle。32 分区 Core ML 导出和 output scaling 已接入，但不得把最终输出 parity 扩大表述为逐 step parity 或 GPU+ANE 验收，GPU+ANE 继续 opt-in/fail closed。
-- FLUX 4B M4 Max 自动路径只接受 `[0,6144)` ANE 前缀，GPU 必须补算 `[6144,9216)` 后缀；M4 Pro 继续只接受完整 MLP。单组 1.409× warm 观察尚不能替代 AB/BA p50/p95。
+- Z-Image 已有 Apple M4 Max 真实 1024×1024 base/官方独立 LoRA 出图和 App smoke；共享初始噪声下最终 latent/PNG 已通过 ComfyUI oracle。优化 GPU warm 中位数 36.3685 s，stock ComfyUI 为 40.110 s；最终构建的自动 base a4096 warm 中位数为 30.0014 s，相对优化 GPU 为 1.212×，可在 exact M4 Max 64 GB 自动启用；LoRA-bound 仍显式/fail closed。
+- FLUX 4B M4 Max 自动路径只接受 `[0,6144)` ANE 前缀，GPU 必须补算 `[6144,9216)` 后缀；M4 Pro 继续只接受完整 MLP。最终 512²/4-step 复测为 GPU 2.2663 s、GPU+ANE 1.6279 s（1.392×）；仍需更广尺寸/机器和交错 AB/BA p50/p95 矩阵。
 
 ### 测试门禁
 
@@ -92,7 +94,7 @@ LTX 需要按 fresh、conditioning-cache hit、loaded-model hot path 和 residen
 3. **LoRA 磁盘风险**：H3/LTX 首次使用会生成临时 merged artifact，虽然可 prune，但还不是纯内存 merge。
 4. **环境复现风险**：统一内存调度和 Core ML on-device compile 会造成明显 wall 波动；当前只有 M4 Max 64 GB 的实机证据。
 5. **许可证发布风险**：FastMetal 依赖 FastVideo/TAEHV 的第三方许可证需要在最终发行包中逐项核对。
-6. **Z-Image 验收风险**：base/官方独立 LoRA 的共享噪声最终输出 parity 已有实机证据；4096-channel shared output backing 已通过真实双请求和零拷贝验证，但逐 step oracle、多轮 warm 统计和 GPU+ANE 1.3× 仍未形成可发布门禁。
+6. **Z-Image 验收风险**：base/官方独立 LoRA 的共享噪声最终输出 parity 已有实机证据；优化 GPU 已通过 stock ComfyUI 对照，base a4096 已形成重复 warm 统计并通过 1.2×门槛；逐 step oracle、LoRA-bound 优化后重复 warm 和多机器速度矩阵仍未完成。
 
 ## 推荐的下一版退出条件
 
@@ -102,3 +104,9 @@ LTX 需要按 fresh、conditioning-cache hit、loaded-model hot path 和 residen
 - FastMetal 独立 LoRA 完成真实 merged checkpoint 的 latent/媒体/性能验证；
 - FLUX 9B 完成 128/512 标准尺寸 parity 与 warm/resident 矩阵；
 - 补齐 FastVideo/TAEHV 许可证 NOTICE 后再制作 Developer ID 包。
+
+本轮新增的退出条件：
+
+- FLUX/Z-Image 带 LoRA 的 GPU+ANE 必须使用同一 LoRA-bound manifest；App 自动发现和 native SHA-256 校验均已覆盖；
+- Z-Image 4096-channel base 候选已在最终构建形成重复 warm 数据并以 1.212×解除 exact M4 Max 64 GB 自动门禁；LoRA-bound 路线继续显式；
+- H3/LTX 仍需后续逐层 native in-memory LoRA merge，当前 vendored Python/runtime cache 不应宣称为纯内存实现。

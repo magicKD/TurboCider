@@ -265,7 +265,7 @@ curl -sS http://127.0.0.1:11435/v1/jobs \
     "task":"image",
     "mode":"image_to_image",
     "prompt":"A glass of cider on a wooden table",
-    "inputs":[{"type":"image","role":"init_image","path":"/Users/me/Pictures/cider.png","strength":0.55}],
+    "inputs":[{"type":"image","role":"init_image","path":"inputs/cider.png","strength":0.55}],
     "output":{"type":"image","width":512,"height":512,"frames":1},
     "sampling":{"seed":42,"steps":4},
     "policy":{"execution":"gpu_ane","approximation":"validated","persistent":true}
@@ -337,7 +337,7 @@ let request = TCGenerationRequest(
         TCInputAsset(
             type: "image",
             role: "init_image",
-            path: "/Users/me/Pictures/cider.png",
+            path: "inputs/cider.png",
             strength: 0.55
         )
     ],

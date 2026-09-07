@@ -75,8 +75,7 @@ class ContractTests(unittest.TestCase):
         code,_,error=plan({**request,'execution':'gpu_ane',
                            'allow_approximation':True,
                            'ane_manifest':'/tmp/z-image.json'})
-        self.assertNotEqual(code,0)
-        self.assertIn('LoRA currently requires GPU execution',error)
+        self.assertEqual(code,0,error)
         self.assertNotEqual(plan({**request,'loras':[{
             'path':'/tmp/z-image-style.safetensors',
             'role':'text_encoder','strength':0.7}]})[0],0)
@@ -143,17 +142,40 @@ class ContractTests(unittest.TestCase):
         self.assertIn('if (i == 8 || i == 17 || i == 26)',encoder)
         self.assertNotIn('for (int i = 0; i < 36;',encoder)
 
-    def test_flux_lora_identity_is_content_bound_and_not_ane_reused(self):
+    def test_flux_lora_identity_is_content_bound_and_requires_bound_ane_artifact(self):
         source=(ROOT/'native/models/flux2/pipeline.cpp').read_text()
         module=(ROOT/'native/models/flux_module.cpp').read_text()
+        coreml=(ROOT/'native/backends/coreml.mm').read_text()
         for token in ['canonical(', 'file_size(', 'last_write_time(',
                       'sha256_file(', 'lora_hash_cache_', 'LoRA changed while it was being hashed']:
             self.assertIn(token,source)
-        self.assertIn('FLUX LoRA currently requires GPU execution',module)
+        self.assertNotIn('FLUX LoRA currently requires GPU execution',module)
+        self.assertIn('active_loras_', source)
+        self.assertNotIn('automatic GPU+ANE remains disabled until a LoRA-bound artifact passes the performance gate', source)
+        self.assertIn('Core ML artifact does not match the active LoRA set', coreml)
+        self.assertIn('Core ML LoRA SHA-256 mismatch', coreml)
         code,p,error=plan({'model':'flux2-klein-4b','execution':'gpu_ane',
-                           'ane_manifest':'/tmp/flux.json',
+                           'allow_approximation':True,'ane_manifest':'/tmp/flux.json',
                            'loras':[{'path':'/tmp/style.safetensors','strength':0.8}]})
-        self.assertNotEqual(code,0)
+        self.assertEqual(code,0,error)
+        self.assertEqual(p['execution'],'gpu_ane_experimental')
+        self.assertEqual(p['lora_fusion'],'load_time_baked')
+
+    def test_z_image_lora_can_use_identity_bound_ane_artifact(self):
+        source=(ROOT/'native/models/z_image/z_image.cpp').read_text()
+        module=(ROOT/'native/models/z_image_module.cpp').read_text()
+        results=(ROOT/'native/platform/apple/results.mm').read_text()
+        self.assertNotIn('Z-Image LoRA currently requires GPU execution',module)
+        self.assertIn('transformer_checkpoint_, active_loras_',source)
+        self.assertIn('compiled_fused_blocks',results)
+        self.assertIn('compiled_mlp_complement',results)
+        code,p,error=plan({'model':'z-image-turbo','width':1024,'height':1024,
+                           'steps':9,'execution':'gpu_ane','allow_approximation':True,
+                           'ane_manifest':'/tmp/z-image.json',
+                           'loras':[{'path':'/tmp/z-style.safetensors','strength':0.7}]})
+        self.assertEqual(code,0,error)
+        self.assertEqual(p['execution'],'gpu_ane_experimental')
+        self.assertEqual(p['lora_fusion'],'in_memory_delta')
     def test_ltx_schedule_and_shape(self):
         code,p,error=plan({'model':'ltx-2.5-distilled','width':704,'height':448,'frames':97,'steps':11})
         self.assertEqual(code,0,error);self.assertTrue(p['executable'])
@@ -646,6 +668,19 @@ class ContractTests(unittest.TestCase):
         source=(ROOT/'native/models/flux2/flux_transformer.cpp').read_text()
         self.assertIn('parts.size() == 5',source)
         self.assertIn('parts[4].shape(-1) == hidden_ * 3',source)
+
+    def test_flux_gpu_uses_fused_rope_sdpa_and_compiled_step_boundary(self):
+        transformer=(ROOT/'native/models/flux2/flux_transformer.cpp').read_text()
+        mlx=(ROOT/'native/backends/mlx.cpp').read_text()
+        pipeline=(ROOT/'native/models/flux2/pipeline.cpp').read_text()
+        results=(ROOT/'native/platform/apple/results.mm').read_text()
+        self.assertIn('rope_pairs_pair', transformer)
+        self.assertIn('TURBOCIDER_FLUX_EAGER_ROPE', transformer)
+        self.assertIn('TURBOCIDER_FLUX_FORCE_FUSED_SDPA', transformer)
+        self.assertIn('TURBOCIDER_FLUX_SYNC_BLOCKS', transformer)
+        self.assertIn('tc_rope_qk', mlx)
+        self.assertIn('r.compile_gpu = true', pipeline)
+        self.assertIn('@"compiled_hybrid_complement"', results)
 
     def test_flux_hybrid_prefix_computes_gpu_mlp_complement(self):
         transformer=(ROOT/'native/models/flux2/flux_transformer.cpp').read_text()

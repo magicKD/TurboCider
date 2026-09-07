@@ -1,8 +1,24 @@
 #include "flux.hpp"
 #include "../../backends/coreml.hpp"
 #include <cmath>
+#include <cstdlib>
 namespace tc {
 namespace {
+std::vector<Tensor> flux_rope_pair(const Tensor &q, const Tensor &k,
+                                   const Tensor &cos, const Tensor &sin) {
+    if (std::getenv("TURBOCIDER_FLUX_EAGER_ROPE"))
+        return {rope_pairs(q, cos, sin), rope_pairs(k, cos, sin)};
+    return rope_pairs_pair(q, k, cos, sin);
+}
+
+bool flux_force_fused_sdpa() {
+    // MLX already selects its fused Metal kernel for the validated FLUX
+    // geometry.  The forced-path A/B differed by only about 0.2% on M4 Max,
+    // so keep the upstream heuristic as the default and retain this opt-in
+    // for profiling unusual token shapes and memory pressure.
+    return std::getenv("TURBOCIDER_FLUX_FORCE_FUSED_SDPA") != nullptr;
+}
+
 std::function<std::vector<Tensor>(const std::vector<Tensor> &)>
 make_hybrid_gpu_graph(int hidden, int head_count, int mlp_width, int gpu_mlp_start) {
     require(hidden == 3072 && mlp_width == 9216 && head_count == 24,
@@ -25,9 +41,10 @@ make_hybrid_gpu_graph(int hidden, int head_count, int mlp_width, int gpu_mlp_sta
                     mx::astype(heads(parts[1], head_count, 128), mx::float32), args[5],
                     1e-5f),
                 mx::bfloat16);
-            auto attention = attend(rope_pairs(q, args[1], args[2]),
-                                    rope_pairs(k, args[1], args[2]),
-                                    heads(parts[2], head_count, 128));
+            auto rotated = flux_rope_pair(q, k, args[1], args[2]);
+            auto attention = attend(rotated[0], rotated[1],
+                                    heads(parts[2], head_count, 128), false, {},
+                                    flux_force_fused_sdpa());
             auto result = mx::matmul(
                 attention, mx::transpose(slice_axis(args[6], 1, 0, hidden)));
             if (gpu_mlp_start < mlp_width) {
@@ -115,10 +132,10 @@ Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int 
         auto p = "transformer_blocks." + std::to_string(i);
         auto a = qkv(norm(x) * (1 + mi[1]) + mi[0], p + ".attn", false),
              b = qkv(norm(c) * (1 + mt[1]) + mt[0], p + ".attn", true);
-        auto q = rope_pairs(mx::concatenate({b[0], a[0]}, 2), cos, sin),
-             k = rope_pairs(mx::concatenate({b[1], a[1]}, 2), cos, sin),
-             v = mx::concatenate({b[2], a[2]}, 2);
-        auto att = attend(q, k, v);
+        auto qk = flux_rope_pair(mx::concatenate({b[0], a[0]}, 2),
+                                 mx::concatenate({b[1], a[1]}, 2), cos, sin);
+        auto v = mx::concatenate({b[2], a[2]}, 2);
+        auto att = attend(qk[0], qk[1], v, false, {}, flux_force_fused_sdpa());
         x = x + mi[2] * linear(slice_axis(att, 1, nt, n), w, p + ".attn.to_out.0");
         c = c + mt[2] * linear(slice_axis(att, 1, 0, nt), w, p + ".attn.to_add_out");
         x = x + mi[5] * ff(norm(x) * (1 + mi[4]) + mi[3], p + ".ff");
@@ -170,8 +187,9 @@ Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int 
                     mx::astype(mx::fast::rms_norm(mx::astype(heads(parts[1], 24, 128), mx::float32),
                                                   args[8], 1e-5f),
                                mx::bfloat16);
-                auto att = attend(rope_pairs(q, args[4], args[5]), rope_pairs(k, args[4], args[5]),
-                                  heads(parts[2], 24, 128));
+                auto rotated = flux_rope_pair(q, k, args[4], args[5]);
+                auto att = attend(rotated[0], rotated[1], heads(parts[2], 24, 128),
+                                  false, {}, flux_force_fused_sdpa());
                 auto mlp = silu(parts[3]) * parts[4];
                 return std::vector<Tensor>{
                     args[0] +
@@ -188,15 +206,23 @@ Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int 
                         parts[1].shape(-1) == hidden_ && parts[2].shape(-1) == hidden_ &&
                         parts[3].shape(-1) == hidden_ * 3 && parts[4].shape(-1) == hidden_ * 3,
                     "FLUX single-block packed projection layout mismatch");
-            auto q = rope_pairs(sqnorm(heads(parts[0], heads_, 128), w.at(p + ".norm_q.weight"), 1e-5f),
-                                cos, sin);
-            auto k = rope_pairs(sqnorm(heads(parts[1], heads_, 128), w.at(p + ".norm_k.weight"), 1e-5f),
-                                cos, sin);
-            auto att = attend(q, k, heads(parts[2], heads_, 128));
+            auto q = sqnorm(heads(parts[0], heads_, 128),
+                            w.at(p + ".norm_q.weight"), 1e-5f);
+            auto k = sqnorm(heads(parts[1], heads_, 128),
+                            w.at(p + ".norm_k.weight"), 1e-5f);
+            auto rotated = flux_rope_pair(q, k, cos, sin);
+            auto att = attend(rotated[0], rotated[1], heads(parts[2], heads_, 128),
+                              false, {}, flux_force_fused_sdpa());
             auto mlp = silu(parts[3]) * parts[4];
             x = x + ms[2] * linear(mx::concatenate({att, mlp}, -1), w, p + ".to_out");
         }
-        mx::eval(x);
+        // A compiled pure-GPU block retains its allocator dependency chain;
+        // the caller synchronizes the final denoiser output once per step.
+        // Avoiding twenty host waits per FLUX.2 Klein 4B step is safe because
+        // hybrid Core ML boundaries and eager/9B paths still synchronize.
+        if (hybrid_ || !compile_blocks || model_id_ != "flux2-klein-4b" ||
+            std::getenv("TURBOCIDER_FLUX_SYNC_BLOCKS"))
+            mx::eval(x);
     }
     auto outmod = mx::split(mx::expand_dims(linear(silu(temb), w, "norm_out.linear"), 1), 2, -1);
     return linear(norm(slice_axis(x, 1, nt, n)) * (1 + outmod[0]) + outmod[1], w, "proj_out");

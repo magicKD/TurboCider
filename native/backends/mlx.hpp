@@ -34,8 +34,10 @@ Tensor norm(const Tensor &);
 Tensor slice_axis(const Tensor &, int axis, int start, int stop);
 Tensor heads(const Tensor &, int count, int dim);
 Tensor attend(const Tensor &, const Tensor &, const Tensor &, bool fp32 = false,
-              const std::optional<Tensor> &mask = {});
+              const std::optional<Tensor> &mask = {}, bool force_fused = false);
 Tensor rope_pairs(const Tensor &, const Tensor &, const Tensor &);
+std::vector<Tensor> rope_pairs_pair(const Tensor &, const Tensor &,
+                                    const Tensor &, const Tensor &);
 Tensor euler_step(const Tensor &, const Tensor &, float dt);
 std::vector<float> flux_gpu_sigmas(int image_tokens, int steps);
 } // namespace tc
