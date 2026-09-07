@@ -154,6 +154,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"observed_ane_residency" : @"unknown",
         @"output_copy_bytes_session_total" : @(m.copied_bytes),
         @"checkpoint_sha256_verified" : @(m.checkpoint_sha_verified),
+        @"lora_identity_verified" : @(m.lora_identity_verified),
         @"provenance" : m.checkpoint_sha_verified
             ? @"local checkpoint path, size and SHA-256 verified"
             : @"local checkpoint path+size; source SHA absent in legacy artifact; experimental only"

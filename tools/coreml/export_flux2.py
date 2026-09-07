@@ -3,8 +3,13 @@
 Dependencies: coremltools 8.3.0 and numpy 2.0.2 (validated on Python 3.11).
 The runtime stays C++/Metal; this optional build tool emits 20 INT8 partitions.
 """
-import argparse, fcntl, gc, hashlib, json, mmap, os, shutil, signal, struct, tempfile
+import argparse, fcntl, gc, hashlib, json, mmap, os, shutil, signal, struct, sys, tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lora import apply as apply_lora
+from lora import load as load_loras
+from lora import provenance as lora_provenance
 
 def atom(path, value):
     temporary=path.with_suffix('.tmp')
@@ -15,7 +20,7 @@ def sha(path):
         for block in iter(lambda:stream.read(8<<20),b''):result.update(block)
     return result.hexdigest()
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--model',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--bucket',type=int,required=True);p.add_argument('--ane-mlp-width',type=int,default=9216);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--model',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--bucket',type=int,required=True);p.add_argument('--ane-mlp-width',type=int,default=9216);p.add_argument('--lora',action='append',default=[]);p.add_argument('--lora-strength',action='append',default=[]);p.add_argument('--lora-role',default='transformer');a=p.parse_args()
     if not 64<=a.bucket<=8192:raise ValueError('bucket must be 64...8192')
     if not 0<a.ane_mlp_width<=9216:raise ValueError('ane-mlp-width must be 1...9216')
     import numpy as np
@@ -24,6 +29,11 @@ def main():
     from coremltools.converters.mil import Builder as mb
     from coremltools.converters.mil.mil import types
     signal.signal(signal.SIGTERM,lambda *_:(_ for _ in ()).throw(KeyboardInterrupt()))
+    if a.lora_strength and len(a.lora_strength) != len(a.lora): raise ValueError('--lora-strength must be repeated once per --lora')
+    lora_strengths=[float(value) for value in a.lora_strength] or [1.0]*len(a.lora)
+    lora_roles=[a.lora_role]*len(a.lora)
+    lora_records=lora_provenance(a.lora,lora_strengths,lora_roles)
+    lora_bundles=load_loras(a.lora,lora_strengths,lora_roles,np)
     checkpoint=(a.model/'transformer/diffusion_pytorch_model.safetensors').resolve(strict=True)
     config=json.loads((a.model/'transformer/config.json').read_text())
     if config.get('num_single_layers')!=20 or config.get('num_attention_heads')!=24 or config.get('attention_head_dim')!=128:raise ValueError('only official FLUX.2 Klein 4B supported')
@@ -35,6 +45,7 @@ def main():
     with os.fdopen(descriptor,'w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         identity={'owner':'turbocider.flux.coreml.v1','checkpoint':str(checkpoint),'checkpoint_bytes':checkpoint.stat().st_size,'checkpoint_sha256':sha(checkpoint),'bucket':a.bucket,'variant':'int8_pc','coremltools':ct.__version__,'numpy':np.__version__,'recipe':1}
+        if lora_records: identity.update(loras=lora_records,recipe=2)
         if a.ane_mlp_width!=9216:identity.update(ane_mlp_width=a.ane_mlp_width,recipe=2)
         marker=output/'.turbocider-export.json'
         if marker.exists():
@@ -68,6 +79,8 @@ def main():
                     if destination.exists():raise ValueError('incomplete artifact must be removed before rebuilding')
                     wide=tensor(f'single_transformer_blocks.{i}.attn.to_qkv_mlp_proj.weight',(27648,3072))
                     projected=tensor(f'single_transformer_blocks.{i}.attn.to_out.weight',(3072,12288))
+                    wide,_=apply_lora(f'single_transformer_blocks.{i}.attn.to_qkv_mlp_proj.weight',wide,lora_bundles,np)
+                    projected,_=apply_lora(f'single_transformer_blocks.{i}.attn.to_out.weight',projected,lora_bundles,np)
                     # The ANE owns a contiguous prefix of the two MLP input
                     # projections and the matching output columns.  The native
                     # GPU graph computes the complementary suffix in parallel.
@@ -89,6 +102,10 @@ def main():
                 artifacts[str(i)]={'int8_pc':name}
                 atom(output/'progress.json',{'completed':i+1,'total':20});print(f'partition {i+1}/20 ready',flush=True)
         if sha(checkpoint)!=identity['checkpoint_sha256']:raise ValueError('checkpoint changed during export')
-        atom(manifest,{'schema_version':1,'source':{'checkpoint':str(checkpoint),'checkpoint_bytes':identity['checkpoint_bytes'],'checkpoint_sha256':identity['checkpoint_sha256'],'blocks':list(range(20))},'shape':{'K':3072,'N':3072,'mlp_width':9216,'ane_mlp_start':0,'ane_mlp_end':a.ane_mlp_width,'buckets':[a.bucket]},'functions':{str(a.bucket):'main'},'artifacts':artifacts,'artifact_sha256':checksums,'export_identity':identity})
+        for bundle in lora_bundles:
+            if bundle['role']=='transformer' and bundle['applied']==0: raise ValueError(f"LoRA did not match an exported FLUX weight: {bundle['path']}")
+        source={'checkpoint':str(checkpoint),'checkpoint_bytes':identity['checkpoint_bytes'],'checkpoint_sha256':identity['checkpoint_sha256'],'blocks':list(range(20))}
+        if lora_records: source['loras']=lora_records
+        atom(manifest,{'schema_version':2,'source':source,'shape':{'K':3072,'N':3072,'mlp_width':9216,'ane_mlp_start':0,'ane_mlp_end':a.ane_mlp_width,'buckets':[a.bucket]},'functions':{str(a.bucket):'main'},'artifacts':artifacts,'artifact_sha256':checksums,'export_identity':identity})
         print(json.dumps({'source_manifest':str(manifest)}),flush=True)
 if __name__=='__main__':main()

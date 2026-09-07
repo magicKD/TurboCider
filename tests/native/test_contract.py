@@ -105,6 +105,31 @@ class ContractTests(unittest.TestCase):
         results=(ROOT/'native/platform/apple/results.mm').read_text()
         self.assertIn('@"lora_applied_projections"',results)
 
+    def test_z_image_sharded_hybrid_provenance_contract(self):
+        source=(ROOT/'native/models/z_image/z_image.cpp').read_text()
+        coreml=(ROOT/'native/backends/coreml.mm').read_text()
+        resources=(ROOT/'native/backends/coreml_resources.mm').read_text()
+        exporter=(ROOT/'tools/coreml/export_z_image.py').read_text()
+        mlx=(ROOT/'native/backends/mlx.cpp').read_text()
+        self.assertIn('diffusion_pytorch_model.safetensors.index.json',source)
+        self.assertIn('transformer_checkpoint_ = std::move(diffusers_index)',source)
+        self.assertIn('checkpoint_shards',coreml)
+        self.assertIn('std::filesystem::file_size(checkpoint)',coreml)
+        self.assertIn('sha256_file(checkpoint)',coreml)
+        self.assertIn('diffusion_pytorch_model.safetensors.index.json',resources)
+        self.assertIn('class SafetensorsSource',exporter)
+        self.assertIn('self.weight_map.get(name)',exporter)
+        self.assertIn('checkpoint_shards',exporter)
+        self.assertIn('!f.is_symlink()',mlx)
+        self.assertIn('f.is_regular_file()',mlx)
+
+    def test_coreml_lora_export_uses_identity_scoped_output(self):
+        resources=(ROOT/'native/backends/coreml_resources.mm').read_text()
+        scoped=resources.index('storage=storage.parent_path()/(storage.filename().string()+"-lora-"')
+        output_argument=resources.index('NSMutableArray<NSString*> *export_arguments=')
+        self.assertLess(scoped,output_argument)
+        self.assertIn('[export_arguments addObjectsFromArray:lora_arguments]',resources)
+
     def test_flux_text_taps_are_config_guarded_and_dead_tail_is_elided(self):
         platform=(ROOT/'native/platform/apple/device.mm').read_text()
         encoder=(ROOT/'native/models/flux2/flux_text.cpp').read_text()

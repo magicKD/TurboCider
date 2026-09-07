@@ -1,4 +1,5 @@
 #include "../platform/apple/bridge.hpp"
+#include "../platform/apple/platform.hpp"
 #import <CommonCrypto/CommonDigest.h>
 #include <sys/stat.h>
 #include <dlfcn.h>
@@ -29,7 +30,7 @@ static std::vector<fs::path> artifacts(const fs::path&file,const std::string&kin
  std::sort(paths.begin(),paths.end());paths.erase(std::unique(paths.begin(),paths.end()),paths.end());return paths;
 }
 NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomic<bool>&cancelled){
- for(NSString*k in request)require([@[@"action",@"cache",@"manifest",@"source_manifest",@"storage",@"profile",@"model",@"model_root",@"python",@"python_path",@"kind",@"apply",@"plan_token"] containsObject:k],"unknown Core ML resource request field");
+ for(NSString*k in request)require([@[@"action",@"cache",@"manifest",@"source_manifest",@"storage",@"profile",@"model",@"model_root",@"python",@"python_path",@"loras",@"kind",@"apply",@"plan_token"] containsObject:k],"unknown Core ML resource request field");
  auto action=string_value(request,@"action");
  require(action=="inventory"||action=="delete_artifacts"||action=="clear_runtime"||action=="clear_compiled"||action=="export"||action=="compile","unknown Core ML resource action");
  auto absolute=[](const std::string&s){return fs::absolute(s).lexically_normal();};
@@ -50,12 +51,42 @@ NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomi
  if(source.empty()&&fs::is_regular_file(storage/"manifest.json"))source=(storage/"manifest.json").string();
  if(action=="compile")return manage_coreml_cache(@{@"action":@"compile_manifest",@"cache":@(cache.c_str()),@"source":@(source.c_str())},event,cancelled);
  if(action=="export"){
-  auto model=absolute(string_value(request,@"model_root"));bool model_ready=fs::is_regular_file(model/"transformer/diffusion_pytorch_model.safetensors");if(z_image)model_ready=model_ready||fs::is_regular_file(model/"split_files/diffusion_models/z_image_turbo_bf16.safetensors");require(model_ready,"matching safetensors model required");
+  auto model=absolute(string_value(request,@"model_root"));bool model_ready=fs::is_regular_file(model/"transformer/diffusion_pytorch_model.safetensors");if(z_image)model_ready=model_ready||fs::is_regular_file(model/"transformer/diffusion_pytorch_model.safetensors.index.json")||fs::is_regular_file(model/"split_files/diffusion_models/z_image_turbo_bf16.safetensors");require(model_ready,"matching safetensors model required");
   auto python=string_value(request,@"python",export_python);require(!python.empty()&&fs::path(python).is_absolute()&&access(python.c_str(),X_OK)==0,"configure an executable Python with coremltools and numpy for offline export");
   Dl_info info{};require(dladdr((void*)&coreml_resources,&info)!=0,"cannot locate bundled exporter");auto script=fs::path(info.dli_fname).parent_path()/"coreml"/(z_image?"export_z_image.py":"export_flux2.py");require(fs::is_regular_file(script),"bundled offline exporter missing");
-  require(!fs::is_symlink(storage)&&storage!=storage.root_path(),"invalid export storage");fs::create_directories(storage);
+  NSTask*task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:@(python.c_str())];
+  NSMutableArray<NSString*> *lora_arguments=[NSMutableArray array];
+  NSArray *requested_loras=request[@"loras"];
+  std::string lora_storage_identity;
+  if (requested_loras != nil) {
+   require([requested_loras isKindOfClass:NSArray.class] && requested_loras.count <= 8,
+           "Core ML exporter loras must be an array with at most 8 entries");
+   for (NSDictionary *lora in requested_loras) {
+    require([lora isKindOfClass:NSDictionary.class] && [lora[@"path"] isKindOfClass:NSString.class] &&
+                [lora[@"strength"] isKindOfClass:NSNumber.class],
+            "Core ML exporter LoRA record must contain path and strength");
+    require(string_value(lora, @"role", "transformer") == "transformer",
+            "Core ML FFN exporter only supports transformer LoRA assets");
+    std::error_code canonical_error;
+    auto path=std::filesystem::canonical(string_value(lora,@"path"),canonical_error);
+    require(!canonical_error && std::filesystem::is_regular_file(path),
+            "Core ML exporter LoRA must be a regular file: "+path.string());
+    lora_storage_identity+=path.string()+":"+std::to_string(std::filesystem::file_size(path))+":"+
+        sha256_file(path)+":"+string_value(lora,@"role","transformer")+":"+
+        std::string([lora[@"strength"] stringValue].UTF8String)+";";
+    [lora_arguments addObject:@"--lora"]; [lora_arguments addObject:@(path.c_str())];
+    [lora_arguments addObject:@"--lora-strength"]; [lora_arguments addObject:[lora[@"strength"] stringValue]];
+   }
+  }
+  if (!lora_storage_identity.empty() && string_value(request,@"storage").empty())
+   storage=storage.parent_path()/(storage.filename().string()+"-lora-"+
+       digest(lora_storage_identity).substr(0,12));
+  NSMutableArray<NSString*> *export_arguments=[NSMutableArray arrayWithObjects:@(script.c_str()),@"--model",@(model.c_str()),@"--output",@(storage.c_str()),@"--bucket",@(std::to_string(bucket).c_str()),@"--ane-mlp-width",@(std::to_string(ane_mlp_width).c_str()),nil];
+  [export_arguments addObjectsFromArray:lora_arguments];
+  require(!fs::is_symlink(storage)&&storage!=storage.root_path(),"invalid export storage");
+  std::filesystem::create_directories(storage);
   auto log=storage/"export.log";require(!fs::is_symlink(log),"invalid exporter log");int fd=open(log.c_str(),O_CREAT|O_TRUNC|O_WRONLY|O_NOFOLLOW,0600);require(fd>=0,"cannot create export log");auto handle=[[NSFileHandle alloc]initWithFileDescriptor:fd closeOnDealloc:YES];
-  NSTask*task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:@(python.c_str())];task.arguments=@[@(script.c_str()),@"--model",@(model.c_str()),@"--output",@(storage.c_str()),@"--bucket",@(std::to_string(bucket).c_str()),@"--ane-mlp-width",@(std::to_string(ane_mlp_width).c_str())];
+  task.arguments=export_arguments;
   NSMutableDictionary *env=[NSProcessInfo.processInfo.environment mutableCopy];[env removeObjectForKey:@"PYTHONPATH"];[env removeObjectForKey:@"PYTHONHOME"];env[@"PYTHONNOUSERSITE"]=@"1";auto python_path=string_value(request,@"python_path",export_python_path);if(!python_path.empty())env[@"PYTHONPATH"]=@(python_path.c_str());env[@"PYTHONUNBUFFERED"]=@"1";task.environment=env;task.standardOutput=handle;task.standardError=handle;
   NSError*error=nil;require([task launchAndReturnError:&error],"cannot launch exporter");
   struct TaskGuard {NSTask*task;~TaskGuard(){if(task.running){[task terminate];[task waitUntilExit];}}} task_guard{task};

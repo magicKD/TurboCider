@@ -2,6 +2,7 @@
 #include "../platform/apple/bridge.hpp"
 #include "../platform/apple/platform.hpp"
 #import <CoreML/CoreML.h>
+#include <set>
 namespace tc {
 class CoreMLBranch {
     MLModel *model_;
@@ -91,7 +92,8 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual) {
 }
 HybridSession::HybridSession(const std::filesystem::path &file, const std::filesystem::path &model,
                              int tokens, const Event &event, std::atomic<bool> &cancelled,
-                             int warmups, const std::filesystem::path &requested_checkpoint)
+                             int warmups, const std::filesystem::path &requested_checkpoint,
+                             const std::vector<LoRAAsset> &requested_loras)
     : impl_(std::make_unique<Impl>()), manifest(file.string()) {
     auto begin = Clock::now();
     auto d = read_json(file);
@@ -147,10 +149,95 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
             "artifact checkpoint provenance mismatch");
     id checkpoint_sha = d[@"source"][@"checkpoint_sha256"];
     if ([checkpoint_sha isKindOfClass:NSString.class]) {
-        require(sha256_file(checkpoint) == std::string([(NSString *)checkpoint_sha UTF8String]),
+        require(sha256_file(checkpoint) ==
+                    std::string([(NSString *)checkpoint_sha UTF8String]),
                 "artifact checkpoint SHA-256 mismatch");
         checkpoint_sha_verified = true;
     }
+    const bool indexed_checkpoint = checkpoint.filename().string().ends_with(
+        ".safetensors.index.json");
+    NSDictionary *checkpoint_shards = d[@"source"][@"checkpoint_shards"];
+    if (indexed_checkpoint) {
+        auto index = read_json(checkpoint);
+        NSDictionary *weight_map = index[@"weight_map"];
+        require([weight_map isKindOfClass:NSDictionary.class] && weight_map.count > 0 &&
+                    [checkpoint_shards isKindOfClass:NSDictionary.class],
+                "indexed checkpoint requires a complete shard identity map");
+        std::set<std::string> expected_shards;
+        for (NSString *tensor in weight_map) {
+            id value = weight_map[tensor];
+            require([tensor isKindOfClass:NSString.class] && tensor.length > 0 &&
+                        [value isKindOfClass:NSString.class],
+                    "invalid checkpoint weight map");
+            expected_shards.emplace([(NSString *)value UTF8String]);
+        }
+        require(checkpoint_shards.count == expected_shards.size(),
+                "checkpoint shard identity map is incomplete");
+        for (const auto &expected_name : expected_shards) {
+            NSString *name = @(expected_name.c_str());
+            require(name.length > 0 && [name rangeOfString:@"/"].location == NSNotFound &&
+                        [name rangeOfString:@"\\"].location == NSNotFound &&
+                        ![name isEqual:@"."] && ![name isEqual:@".."],
+                    "invalid checkpoint shard name");
+            auto shard = source.parent_path() / name.UTF8String;
+            NSDictionary *identity = checkpoint_shards[name];
+            require([identity isKindOfClass:NSDictionary.class] &&
+                        [identity[@"bytes"] isKindOfClass:NSNumber.class] &&
+                        std::filesystem::is_regular_file(shard) &&
+                        std::filesystem::file_size(shard) ==
+                            [identity[@"bytes"] unsignedLongLongValue],
+                    "artifact checkpoint shard provenance mismatch");
+            id shard_sha = identity[@"sha256"];
+            require([shard_sha isKindOfClass:NSString.class] &&
+                        sha256_file(shard) ==
+                            std::string([(NSString *)shard_sha UTF8String]),
+                    "artifact checkpoint shard SHA-256 mismatch");
+        }
+    } else
+        require(checkpoint_shards == nil,
+                "single-file checkpoint must not declare sharded provenance");
+    id manifest_loras_value = d[@"source"][@"loras"];
+    NSArray *manifest_loras = nil;
+    if (manifest_loras_value != nil) {
+        require([manifest_loras_value isKindOfClass:NSArray.class],
+                "artifact LoRA provenance must be an array");
+        manifest_loras = manifest_loras_value;
+    }
+    const NSUInteger manifest_lora_count = manifest_loras ? manifest_loras.count : 0;
+    require(manifest_lora_count == requested_loras.size(),
+            requested_loras.empty()
+                ? "LoRA-bound Core ML artifact cannot serve a base request"
+                : "Core ML artifact does not match the active LoRA set");
+    for (NSUInteger index = 0; index < manifest_lora_count; ++index) {
+        tc::checkpoint(cancelled);
+        NSDictionary *identity = manifest_loras[index];
+        require([identity isKindOfClass:NSDictionary.class] &&
+                    [identity[@"path"] isKindOfClass:NSString.class] &&
+                    [identity[@"bytes"] isKindOfClass:NSNumber.class] &&
+                    [identity[@"sha256"] isKindOfClass:NSString.class] &&
+                    [identity[@"role"] isKindOfClass:NSString.class] &&
+                    [identity[@"strength"] isKindOfClass:NSNumber.class],
+                "invalid Core ML LoRA provenance record");
+        const auto &requested = requested_loras[index];
+        std::error_code path_error;
+        auto requested_path = std::filesystem::canonical(requested.path, path_error);
+        require(!path_error && std::filesystem::is_regular_file(requested_path) &&
+                    !std::filesystem::is_symlink(requested_path),
+                "active LoRA file is missing or invalid: " + requested.path);
+        std::filesystem::path manifest_path = string_value(identity, @"path");
+        require(manifest_path.is_absolute() && std::filesystem::is_regular_file(manifest_path) &&
+                    std::filesystem::equivalent(manifest_path, requested_path) &&
+                    [identity[@"bytes"] unsignedLongLongValue] ==
+                        std::filesystem::file_size(requested_path),
+                "Core ML LoRA path or size mismatch");
+        require(string_value(identity, @"role") == requested.role &&
+                    std::abs([identity[@"strength"] doubleValue] -
+                             double(requested.strength)) <= 1e-7,
+                "Core ML LoRA role or strength mismatch");
+        require(sha256_file(requested_path) == string_value(identity, @"sha256"),
+                "Core ML LoRA SHA-256 mismatch");
+    }
+    lora_identity_verified = !requested_loras.empty();
     // Existing local manifests lack a full source SHA; explicitly research-only.
     block_count = int([d[@"artifacts"] count]);
     require(block_count > 0 && block_count <= 64,
@@ -215,6 +302,7 @@ HybridMetrics HybridSession::metrics() const {
     metrics.ane_mlp_end = ane_mlp_end;
     metrics.output_scale = output_scale;
     metrics.checkpoint_sha_verified = checkpoint_sha_verified;
+    metrics.lora_identity_verified = lora_identity_verified;
     for (auto &branch : impl_->branches) {
         metrics.calls += branch->calls;
         metrics.copied_bytes += branch->copied_bytes;

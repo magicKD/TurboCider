@@ -25,6 +25,8 @@ test:
 	@python3 tests/repository/test_independence.py
 	@python3 tests/repository/test_cpp_boundaries.py
 	@python3 tests/native/test_contract.py
+	@python3 -B tests/native/test_z_image_sharded_checkpoint.py
+	@python3 -B tests/native/test_coreml_lora.py
 test-app:
 	@build/native/turbocider-studio-tests
 test-model:

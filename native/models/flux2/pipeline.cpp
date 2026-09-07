@@ -120,7 +120,7 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
         }
         if (!active_loras_.empty()) {
             hybrid_.reset();
-            return "gpu: FLUX LoRA uses load-time baked weights; base ANE artifacts are not reusable";
+            return "gpu: automatic GPU+ANE remains disabled until a LoRA-bound artifact passes the performance gate";
         }
         auto system = device_info();
         // Automatic selection is limited to the exact device profile on which
@@ -150,7 +150,9 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
         checkpoint(cancelled);
         if (!hybrid_ || hybrid_->manifest != r.ane_manifest)
             hybrid_ = std::make_unique<HybridSession>(r.ane_manifest, root_, count, event,
-                                                      cancelled, r.warmup_iterations);
+                                                      cancelled, r.warmup_iterations,
+                                                      std::filesystem::path{},
+                                                      active_loras_);
         require(count <= hybrid_->rows, "Core ML token bucket cannot serve this request");
         if (automatic) {
             auto system = device_info();

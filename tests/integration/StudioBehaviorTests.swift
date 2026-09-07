@@ -144,6 +144,20 @@ struct StudioBehaviorTests {
         let fluxLoRA = try studio.draft.request(output: root.appendingPathComponent("flux-lora.png"))
         try check(fluxLoRA.execution == "gpu" && fluxLoRA.ane_manifest == nil && fluxLoRA.loras?.count == 1,
                   "FLUX separate LoRA request did not safely avoid the base ANE artifact")
+        let loraManifest = root.appendingPathComponent("lora-aware-manifest.json")
+        let loraIdentity: [String: Any] = [
+            "path": lora.path, "bytes": 1,
+            "sha256": String(repeating: "0", count: 64),
+            "role": "transformer", "strength": 0.8
+        ]
+        try JSONSerialization.data(withJSONObject: [
+            "schema_version": 2, "source": ["loras": [loraIdentity]]
+        ]).write(to: loraManifest)
+        studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: loraManifest.path)
+        let fluxLoRAHybrid = try studio.draft.request(output: root.appendingPathComponent("flux-lora-hybrid.png"))
+        try check(fluxLoRAHybrid.execution == "gpu_ane" &&
+                    fluxLoRAHybrid.ane_manifest == loraManifest.path,
+                  "FLUX LoRA-bound ANE artifact was not forwarded")
         studio.selectModel("flux2-klein-9b")
         studio.draft.loras = []
         let flux9 = try studio.draft.request(output: root.appendingPathComponent("flux9.png"))

@@ -28,7 +28,7 @@ struct AccelerationView: View {
             if config.policy == "gpu_ane" {
                 Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定分区桶必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
                 if (studio.draft.modelID.hasPrefix("flux2-") || studio.draft.modelID == "z-image-turbo") && !studio.draft.loras.isEmpty {
-                    Text("当前 LoRA 以独立文件在加载时融合；基础 Core ML 分区不包含该增量，本次请求会安全切换到 GPU。")
+                    Text("带 LoRA 的 GPU + ANE 必须选择用同一独立 LoRA 导出的分区；否则 App 会安全切到 GPU。运行时会严格核验路径、大小、SHA-256、角色和强度。")
                         .font(.caption).foregroundStyle(.orange)
                 }
                 Button(config.manifest.isEmpty ? "选择已编译分区 manifest…" : "更换已编译分区 manifest…") { choose(compiled: true) }

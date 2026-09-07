@@ -32,7 +32,7 @@ mkdir -p "$BIN" "$RES" "$SCRIPTS" "$ROOT/dist/cli"
 cp build/native/TurboCiderNativeApp "$BIN/"
 for folder in "$BIN" "$ROOT/dist/cli"; do
  mkdir -p "$folder/coreml"
- cp tools/coreml/export_flux2.py tools/coreml/export_z_image.py "$folder/coreml/"
+ cp tools/coreml/export_flux2.py tools/coreml/export_z_image.py tools/coreml/lora.py "$folder/coreml/"
  cp build/native/libturbocider.dylib "$folder/"
  cp "$MLX_ROOT/lib/libmlx.dylib" "$MLX_ROOT/lib/libjaccl.dylib" "$MLX_ROOT/lib/mlx.metallib" "$folder/"
  cp build/native/h3_shaders.metal build/native/ltx_shaders.metal "$folder/"

@@ -39,9 +39,17 @@ void Weights::load(const std::filesystem::path &p, const Event &event,
         return;
     require(std::filesystem::is_directory(p), "missing component: " + p.string());
     std::vector<std::filesystem::path> shards;
-    for (auto &f : std::filesystem::directory_iterator(p))
-        if (f.path().extension() == ".safetensors")
+    for (auto &f : std::filesystem::directory_iterator(p)) {
+        // Diffusers index directories can contain convenience symlinks (for
+        // example a link to a ComfyUI single-file checkpoint).  Loading those
+        // alongside the real shards would duplicate tensors and can make a
+        // partially downloaded model look valid until a late duplicate-key
+        // or memory failure.  Only immutable regular shard files belong to a
+        // directory-backed component; direct single-file paths remain
+        // supported by load_file().
+        if (!f.is_symlink() && f.is_regular_file() && f.path().extension() == ".safetensors")
             shards.push_back(f.path());
+    }
     std::sort(shards.begin(), shards.end());
     require(!shards.empty(), "no safetensors in " + p.string());
     try {

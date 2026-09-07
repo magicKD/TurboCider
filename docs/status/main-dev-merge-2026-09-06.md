@@ -1,6 +1,6 @@
 # main 合并到 dev 的兼容与验收记录
 
-日期：2026-09-06
+日期：2026-09-06；2026-09-07 复核
 
 ## 结论
 
@@ -21,6 +21,7 @@
 - 修复 FLUX 4B 的 M4 Max 6144-channel ANE 前缀分区：manifest 明确记录 `[0,6144)`，GPU 编译图并行补算 attention 与 `[6144,9216)` MLP 后缀；此前只计算前缀却未补尾部的错误不再存在。
 - 离线导出器、Core ML 资源服务和 App 已共同支持 `ane_mlp_width`；新增 `apple-m4-max-64gb.example.json`。M4 Max 自动路径只接受 6144 前缀，M4 Pro 自动路径只接受已验证的完整 MLP，其他硬件继续 fail closed。
 - FLUX 与 Z-Image 独立 LoRA 继续在加载时/运行时内存融合；因为 base Core ML artifact 不含 LoRA delta，App 的显式或自动 GPU+ANE 请求安全切换到 GPU，native 直接请求仍保持严格校验。
+- FLUX/Z-Image 的 LoRA-bound Core ML 导出使用由适配器路径、大小、SHA-256、角色和强度派生的独立存储目录；资源服务现在先确定该目录，再把同一路径传给导出器、进度监控和 manifest 检查，避免合并后导出写入旧目录而 App 等待新目录。
 - Z-Image 新增 32 分区 Core ML 导出、`output_scale` ABI 和 Core ML 资源编译；M4 Max GPU+ANE 目前仅为显式 opt-in 候选，自动模式保持 GPU，仍需逐 step parity、warm 矩阵和正式加速门禁，不能作为默认性能承诺。
 - 修复 App smoke 的多模型兼容：不再硬编码 256×256/4-step/PNG，而从模型 descriptor 读取操作、尺寸、步数、帧数、帧率、音频、驻留和输出媒体类型。
 
@@ -40,7 +41,8 @@
 使用仓库现有 MLX 0.32.2 环境显式设置 `MLX_ROOT`：
 
 ```text
-make test                         42 项 contract + 9 项 repository/boundary 检查通过
+make test                         44 项 contract + 9 项 repository/boundary 检查通过；系统 Python 缺 NumPy 时仅跳过 1 项数值测试
+Python/bin/python LoRA/分片测试    4 项 Core ML LoRA + 5 项 Z-Image shard 测试全部通过
 make test-app                     通过；无 pasteboard service 时仅跳过系统剪贴板检查
 make build                        native、CLI、Swift App、integration runners 编译链接通过
 make package                      App/CLI 打包与 ad-hoc codesign 验证通过
@@ -75,7 +77,9 @@ MLX peak           25.63 GB
 输出                可解码、非空 PNG
 ```
 
-本轮合并后重新验证：`make build`、`make package`、`make test`、`make test-app` 均通过；实机 `doctor/self-test` 识别 Apple M4 Max、64 GB、Metal 和 MLX 0.32.2。Z-Image embedded-session 端到端 request wall 为 45.632 s，生成 `/private/tmp/tc-app-z-smoke/app-generated.png`。
+本轮合并后重新验证：`make build`、`make package`、`make test`、`make test-app` 均通过；全部请求样例可生成 `executable=true` 的计划；实机 `doctor/self-test` 识别 Apple M4 Max、64 GB、Metal 和 MLX 0.32.2。Z-Image embedded-session 端到端 request wall 为 45.632 s，生成 `/private/tmp/tc-app-z-smoke/app-generated.png`。
+
+2026-09-07 复核：`turbocider-app-smoke models/Comfy-Org-z_image_turbo ... z-image-turbo` 真实运行成功，输出 `/private/tmp/tc-app-z-smoke-latest/app-generated.png`，request wall `47.840 s`、denoise `43.917 s`，App job/persistence 校验通过；本次为纯 GPU 默认路径，未把 GPU+ANE 候选误报成默认加速。
 
 Z-Image 7680-channel GPU+ANE 候选的常驻 warm request wall 约 47.52 s，GPU warm 基线约 45.17 s；虽然输出 correlation 0.998571、cosine 0.999819，但当前没有加速。因此 App/API 自动策略已收紧为 GPU，只有显式 `gpu_ane + allow_approximation + manifest` 才会进入实验路径。
 

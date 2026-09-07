@@ -16,6 +16,7 @@ struct HybridMetrics {
     int mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;
     float output_scale = 1.f;
     bool checkpoint_sha_verified = false;
+    bool lora_identity_verified = false;
 };
 struct LoadResult {
     uint64_t weight_bytes = 0, active_bytes = 0;

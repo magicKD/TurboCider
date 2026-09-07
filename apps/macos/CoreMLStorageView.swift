@@ -96,6 +96,9 @@ struct CoreMLStorageView: View {
     private func request(_ action: String, kind: String?) -> [String: Any] {
         var r: [String: Any] = ["action": action, "model": studio.draft.modelID, "model_root": studio.draft.modelPath]
         for (key, value) in [("manifest",config.manifest),("source_manifest",config.sourceManifest),("profile",config.exportProfile ?? studio.draft.profilePath),("storage",config.coreMLStorage ?? ""),("cache",config.coreMLCache ?? ""),("python",config.exportPython ?? ""),("python_path",config.exportPythonPath ?? "")] where !value.isEmpty { r[key] = value }
+        if !studio.draft.loras.isEmpty {
+            r["loras"] = studio.draft.loras.map { ["path": $0.path, "strength": $0.strength, "role": $0.role] }
+        }
         if let kind { r["kind"] = kind }; return r
     }
     private func perform(_ action: String, kind: String? = nil) {

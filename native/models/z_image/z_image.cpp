@@ -96,15 +96,35 @@ bool has_safetensors(const std::filesystem::path &directory) {
     if (!std::filesystem::is_directory(directory))
         return false;
     for (const auto &entry : std::filesystem::directory_iterator(directory))
-        if (entry.is_regular_file() && entry.path().extension() == ".safetensors")
+        if ((entry.is_regular_file() || entry.is_symlink()) &&
+            entry.path().extension() == ".safetensors")
             return true;
     return false;
 }
 
 void load_z_component(Weights &weights, const std::filesystem::path &path,
                       const Event &event, std::atomic<bool> &cancelled) {
-    if (std::filesystem::is_directory(path))
-        weights.load(path, event, cancelled);
+    if (std::filesystem::is_directory(path)) {
+        // A few diffusers snapshots expose a convenience symlink such as
+        // text_encoder/model.safetensors -> a shared ComfyUI file.  Generic
+        // directory loading intentionally ignores symlinks so an index folder
+        // cannot load the same checkpoint twice; for a component directory
+        // containing only that symlink, load the explicit file once instead.
+        bool has_regular = false;
+        std::filesystem::path linked;
+        for (const auto &entry : std::filesystem::directory_iterator(path)) {
+            if (!entry.is_symlink() && entry.is_regular_file() &&
+                entry.path().extension() == ".safetensors")
+                has_regular = true;
+            else if (entry.is_symlink() && entry.path().extension() == ".safetensors" &&
+                     linked.empty())
+                linked = entry.path();
+        }
+        if (!has_regular && !linked.empty())
+            weights.load_file(linked);
+        else
+            weights.load(path, event, cancelled);
+    }
     else
         weights.load_file(path);
 }
@@ -598,7 +618,14 @@ ZImage::ZImage(const std::filesystem::path &root)
     diffusers_layout_ = true;
     text_path_ = root / "text_encoder";
     transformer_path_ = root / "transformer";
-    transformer_checkpoint_ = transformer_path_ / "diffusion_pytorch_model.safetensors";
+    // Indexed diffusers checkpoints stay sharded. Core ML provenance binds the
+    // index plus every shard instead of requiring a merged 24 GB file.
+    auto diffusers_checkpoint = transformer_path_ / "diffusion_pytorch_model.safetensors";
+    auto diffusers_index = transformer_path_ / "diffusion_pytorch_model.safetensors.index.json";
+    if (std::filesystem::is_regular_file(diffusers_index))
+        transformer_checkpoint_ = std::move(diffusers_index);
+    else if (std::filesystem::is_regular_file(diffusers_checkpoint))
+        transformer_checkpoint_ = std::move(diffusers_checkpoint);
     vae_path_ = root / "vae";
     require(has_safetensors(text_path_),
             "missing Z-Image Qwen3 safetensors in text_encoder/");
@@ -711,15 +738,13 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
         hybrid_.reset();
         return "gpu: native MLX single-stream S3-DiT";
     }
-    require(active_loras_.empty(),
-            "Z-Image LoRA changes FFN weights; base ANE artifacts are not reusable");
     try {
         require(std::filesystem::is_regular_file(transformer_checkpoint_),
-                "Z-Image hybrid currently requires a single-file transformer checkpoint");
+                "Z-Image hybrid requires a safetensors file or index");
         if (!hybrid_ || hybrid_->manifest != r.ane_manifest)
             hybrid_ = std::make_unique<HybridSession>(
                 r.ane_manifest, root_, rows, event, cancelled, r.warmup_iterations,
-                transformer_checkpoint_);
+                transformer_checkpoint_, active_loras_);
         require(rows <= hybrid_->rows && hybrid_->hidden == 3840 &&
                     hybrid_->block_count == 32 && hybrid_->mlp_width == 10240 &&
                     hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end < 10240,

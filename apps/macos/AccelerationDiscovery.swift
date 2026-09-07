@@ -17,6 +17,35 @@ struct AccelerationDiscovery {
         return (value["gpu"] as? String ?? "unknown",
                 (value["physical_memory_bytes"] as? NSNumber)?.uint64Value ?? 0)
     }
+    static func manifestBinds(manifest: String, loras: [StudioLoRA]) -> Bool {
+        guard !manifest.isEmpty, !loras.isEmpty,
+              let data = try? Data(contentsOf: URL(fileURLWithPath: manifest)),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              value["schema_version"] as? Int == 2,
+              let source = value["source"] as? [String: Any],
+              let identities = source["loras"] as? [[String: Any]],
+              identities.count == loras.count else { return false }
+        let fm = FileManager.default
+        for (identity, lora) in zip(identities, loras) {
+            guard let recordedPath = identity["path"] as? String,
+                  let recordedBytes = identity["bytes"] as? NSNumber,
+                  let recordedSHA = identity["sha256"] as? String,
+                  recordedSHA.count == 64,
+                  recordedSHA.allSatisfy({ $0.isHexDigit }),
+                  let recordedRole = identity["role"] as? String,
+                  let recordedStrength = identity["strength"] as? NSNumber,
+                  recordedRole == lora.role,
+                  abs(recordedStrength.doubleValue - lora.strength) <= 1e-7 else {
+                return false
+            }
+            let active = URL(fileURLWithPath: lora.path).resolvingSymlinksInPath().standardizedFileURL
+            let recorded = URL(fileURLWithPath: recordedPath).resolvingSymlinksInPath().standardizedFileURL
+            guard active == recorded,
+                  let size = (try? fm.attributesOfItem(atPath: active.path))?[.size] as? NSNumber,
+                  size.uint64Value == recordedBytes.uint64Value else { return false }
+        }
+        return true
+    }
     static func automaticPolicyMatches(gpu: String, memory: UInt64,
                                        mlpWidth: Int, start: Int, end: Int,
                                        modelID: String = "flux2-klein-4b") -> Bool {
@@ -42,6 +71,7 @@ struct AccelerationDiscovery {
         if modelID == "z-image-turbo" {
             checkpointCandidates = [
                 model.appendingPathComponent("split_files/diffusion_models/z_image_turbo_bf16.safetensors"),
+                model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors.index.json"),
                 model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors")
             ]
         } else {

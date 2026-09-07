@@ -163,8 +163,16 @@ struct StudioDraft: Codable, Sendable {
                 request.ane_manifest = AccelerationDiscovery.find(modelPath: modelPath, preferred: acceleration.manifest, cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) }, enforceAutomaticPolicy: true, modelID: modelID)?.manifest
                 request.allow_approximation = true
             }
-            let loraRequiresBaseGPU = !loras.isEmpty &&
+            let imageLoRA = !loras.isEmpty &&
                 (modelID.hasPrefix("flux2-") || modelID == "z-image-turbo")
+            // Automatic/profile selection must not guess that a base artifact
+            // contains the active adapter. Explicit GPU+ANE is allowed only if
+            // the selected manifest declares this exact adapter set; native
+            // loading then verifies SHA-256 in addition to this App preflight.
+            let loraManifestMatches = imageLoRA && acceleration.policy == "gpu_ane" &&
+                AccelerationDiscovery.manifestBinds(manifest: acceleration.manifest,
+                                                    loras: loras)
+            let loraRequiresBaseGPU = imageLoRA && !loraManifestMatches
             if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true && !loraRequiresBaseGPU {
                 guard !acceleration.manifest.isEmpty else { throw NativeFailure(message: "请在模型中心选择已编译的分区 manifest，或先预编译本地源分区。") }
                 request.ane_manifest = acceleration.manifest; request.allow_approximation = true
@@ -191,11 +199,6 @@ struct StudioDraft: Codable, Sendable {
         }
         request.loras = loras.isEmpty ? nil : loras.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
         if modelID == "fastmetal-1.3b-qad" && !loras.isEmpty { request.execution = "gpu" }
-        if (modelID.hasPrefix("flux2-") || modelID == "z-image-turbo") &&
-            !loras.isEmpty && request.execution == "gpu_ane" {
-            request.execution = "gpu"
-            request.ane_manifest = nil
-        }
         return request
     }
 }

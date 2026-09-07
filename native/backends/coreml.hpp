@@ -13,10 +13,12 @@ class HybridSession {
     int mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;
     float output_scale = 1.f;
     bool checkpoint_sha_verified = false;
+    bool lora_identity_verified = false;
     double load_seconds = 0;
     HybridSession(const std::filesystem::path &, const std::filesystem::path &model, int tokens,
                   const Event &, std::atomic<bool> &, int warmups = 0,
-                  const std::filesystem::path &checkpoint = {});
+                  const std::filesystem::path &checkpoint = {},
+                  const std::vector<LoRAAsset> &loras = {});
     ~HybridSession();
     Tensor predict(int block, const Tensor &input);
     HybridMetrics metrics() const;
