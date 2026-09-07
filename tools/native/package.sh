@@ -30,6 +30,7 @@ PACKAGE_MIN_MACOS="${TURBOCIDER_PACKAGE_MIN_MACOS:-${MLX_MIN_MACOS:-15.0}}"
 rm -rf "$APP" "$ROOT/dist/cli"
 mkdir -p "$BIN" "$RES" "$SCRIPTS" "$ROOT/dist/cli"
 cp build/native/TurboCiderNativeApp "$BIN/"
+cp build/native/turbocider "$BIN/"
 for folder in "$BIN" "$ROOT/dist/cli"; do
  mkdir -p "$folder/coreml"
  cp tools/coreml/export_flux2.py tools/coreml/export_z_image.py tools/coreml/lora.py "$folder/coreml/"

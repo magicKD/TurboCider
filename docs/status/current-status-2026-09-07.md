@@ -13,6 +13,7 @@
 ## 当前代码和仓库卫生
 
 - `main` 的 C++ core/runtime 已合入 `dev`；模型实现位于 TurboCider 自己的 `native/`，运行时不从 `h3.c`、`ltx-mac` 或 `references/` 加载源码。
+- 2026-09-07 已继续合入 `origin/main@7e84bbe` 的 task-aware acceleration、资源监控、磁盘 inventory 和实际路径显示；冲突处保留了 `dev` 的六模型、独立 LoRA、FLUX a6144 和 Z-Image a4096 实现。
 - 通用模型数学使用 C++/MLX，Apple bridge 使用 Objective-C++/Metal/Core ML，App 使用 Swift；没有要求把所有功能重写成 Objective-C。
 - `.gitignore` 已排除 `build/`、`dist/`、`models/`、`outputs/`、`artifacts/`、`Python/`、虚拟环境、Core ML 编译产物、缓存和本机研究记录。
 - 当前 `git status` 中没有模型权重、生成图片/视频、构建对象、Python 环境或 Core ML artifact；未跟踪项均是本轮计划进入版本的正式 Markdown、SVG 和去路径化 validation JSON。
@@ -87,8 +88,8 @@ mac-ltx 的 59.483 s 是 conditioning 已准备、模型已加载的 decoded-pix
 
 ## 自动 GPU/ANE 策略
 
-- Apple M4 Max / 64 GB：FLUX 4B base a6144 和 Z-Image base a4096 可以在 manifest/checkpoint/shape/预算全部匹配时自动选择。
-- Apple M4 Pro / 48 GB：只保留已验证的 FLUX 4B full-MLP profile；不复用 M4 Max Z-Image 策略。
+- Apple M4 Max / 64 GB：FLUX 4B base 仅对 512×512 / 4 步 / 1088 桶的 a6144 案例自动选择；Z-Image base 仅对 1024×1024 / 9 步 / 4128 桶的 a4096 案例自动选择。
+- Apple M4 Pro / 48 GB：FLUX 4B full-MLP 保留 512 / 1088 桶和 1024 / 4160 桶两个独立实测案例；不复用 M4 Max Z-Image 策略。
 - 其他芯片、内存容量不匹配、缺失/损坏 artifact、LoRA identity 不匹配或超出 token bucket：`auto` 回退 GPU；显式 `gpu_ane` 直接报错。
 - FLUX/Z-Image 带 LoRA：只有绑定同一 adapter identity 的 artifact 才能显式使用；Z-Image LoRA 不自动选择 ANE。
 
@@ -98,7 +99,7 @@ mac-ltx 的 59.483 s 是 conditioning 已准备、模型已加载的 decoded-pix
 
 - native CLI、`libturbocider.dylib`、Swift App 和 integration runner 构建成功。
 - native self-test 在 Apple M4 Max Metal 设备上通过。
-- 46 项 contract、9 项 repository/boundary、5 项 Z-Image shard、4 项 Core ML LoRA 测试通过；其中需要 NumPy 的 1 项数值测试在缺依赖的系统 Python 下明确跳过。
+- 46 项 contract、9 项 repository/boundary、5 项 Z-Image shard、4 项 Core ML LoRA 和 2 项 inventory 测试通过；其中需要 NumPy 的 1 项数值测试在缺依赖的系统 Python 下明确跳过。
 - App 行为测试通过；受限会话无 pasteboard service 时只跳过系统剪贴板检查。
 - validation JSON 和 GPU/ANE SVG 可解析；`git diff --check` 通过。
 

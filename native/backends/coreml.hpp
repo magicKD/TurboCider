@@ -18,7 +18,7 @@ class HybridSession {
     HybridSession(const std::filesystem::path &, const std::filesystem::path &model, int tokens,
                   const Event &, std::atomic<bool> &, int warmups = 0,
                   const std::filesystem::path &checkpoint = {},
-                  const std::vector<LoRAAsset> &loras = {});
+                  const std::vector<LoRAAsset> &loras = {}, int policy_rows = 0);
     ~HybridSession();
     Tensor predict(int block, const Tensor &input);
     HybridMetrics metrics() const;

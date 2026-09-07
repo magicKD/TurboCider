@@ -14,6 +14,13 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var resultJSON: String?
     var secondsPerStep: Double?
     var modelPath: String?
+    var routeSummary: String? {
+        guard let resultJSON, let data = resultJSON.data(using: .utf8),
+              let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let plan = result["plan"] as? [String: Any], let execution = plan["execution"] as? String else { return nil }
+        if execution.hasPrefix("gpu_ane") { return "GPU + Core ML · INT8 · ANE 驻留未知" }
+        return result["gpu_graph"] as? String == "compiled_single_blocks" ? "GPU · BF16 · 融合计算块" : "GPU · BF16"
+    }
     var isTerminal: Bool { ["succeeded", "failed", "cancelled", "interrupted"].contains(state) }
 }
 
@@ -47,6 +54,8 @@ final class NativeJobStore: ObservableObject {
     @Published private(set) var sessionState = "未加载"
     @Published private(set) var loadedPath: String?
     @Published private(set) var loadedModelID: String?
+    @Published private(set) var inspectingResources = false
+    @Published private(set) var actualRoute: String?
     @Published private(set) var resourceReport: String?
     let directory: URL
     private var engine: NativeEngine?
@@ -132,8 +141,13 @@ final class NativeJobStore: ObservableObject {
         } catch { sessionState = "释放失败 · 会话保留"; throw error }
     }
     func coreMLResources(_ payload: Data) async throws -> Data {
-        guard !busy else { throw NativeFailure(message: "请等待当前任务完成。") }
         let request = (try JSONSerialization.jsonObject(with: payload)) as? [String: Any]
+        if request?["action"] as? String == "inventory" {
+            guard !inspectingResources else { throw NativeFailure(message: "正在统计磁盘空间，请稍候。") }
+            inspectingResources = true; defer { inspectingResources = false }
+            return try await ResourceInventory.run(payload)
+        }
+        guard !busy else { throw NativeFailure(message: "请等待当前任务完成。") }
         let applying = request?["apply"] as? Bool == true
         busy = true; coreMLResourceBusy = true; cancelRequested = false
         let id = UUID(); preparationID = id
@@ -199,7 +213,7 @@ final class NativeJobStore: ObservableObject {
         guard !busy else { throw NativeFailure(message: "一次只能生成一张图或一个视频。") }
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
         // Close the reentrancy window before any async plan/session operation.
-        busy = true; cancelRequested = false
+        busy = true; cancelRequested = false; actualRoute = nil
         defer { busy = false; activeID = nil }
         do { _ = try await Task.detached { try NativeEngine.plan(request) }.value }
         catch { throw error }
@@ -238,6 +252,10 @@ final class NativeJobStore: ObservableObject {
     private func receive(_ event: NativeEvent, id: UUID) {
         guard activeID == id, event.sequence > lastSequence, let i = jobs.firstIndex(where: { $0.id == id }), !jobs[i].isTerminal else { return }
         lastSequence = event.sequence
+        if event.phase.hasPrefix("route_") {
+            actualRoute = event.phase == "route_gpu_ane" ? "GPU + Core ML · ANE 驻留未知" : "Metal GPU · BF16"
+            return
+        }
         if cancelRequested { engine?.cancel() }
         // Block callbacks keep cancellation responsive but must not replace the
         // sampling stage or make speed flash briefly between individual blocks.

@@ -35,7 +35,7 @@ NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomi
  require(action=="inventory"||action=="delete_artifacts"||action=="clear_runtime"||action=="clear_compiled"||action=="export"||action=="compile","unknown Core ML resource action");
  auto absolute=[](const std::string&s){return fs::absolute(s).lexically_normal();};
  auto model_id=string_value(request,@"model","flux2-klein-4b");require(model_id=="flux2-klein-4b"||model_id=="z-image-turbo","Core ML resource model must be flux2-klein-4b or z-image-turbo");
- bool z_image=model_id=="z-image-turbo";int bucket=z_image?4608:1088,ane_mlp_width=z_image?7680:9216,partition_count=z_image?32:20,ane_mlp_limit=z_image?10239:9216;
+ bool z_image=model_id=="z-image-turbo";int bucket=z_image?4128:1088,ane_mlp_width=z_image?4096:9216,partition_count=z_image?32:20,ane_mlp_limit=z_image?10239:9216;
  fs::path storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket)),cache=support()/"cache/coreml";
  std::string manifest=string_value(request,@"manifest"),source=string_value(request,@"source_manifest"),export_python=(support()/"toolchains/coreml/bin/python3").string(),export_python_path;
  auto profile=string_value(request,@"profile");

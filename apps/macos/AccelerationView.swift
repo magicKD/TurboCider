@@ -9,6 +9,17 @@ struct AccelerationView: View {
     private var supportsAutomaticGPUANE: Bool {
         studio.draft.modelID == "flux2-klein-4b" || studio.draft.modelID == "z-image-turbo"
     }
+    private var automaticBucket: Int? {
+        AccelerationDiscovery.automaticBucket(
+            modelID: studio.draft.modelID, operation: studio.draft.operation,
+            width: studio.draft.width, height: studio.draft.height,
+            steps: studio.draft.steps, residency: studio.draft.residency,
+            hasInputs: !studio.draft.activeAssets.isEmpty)
+    }
+    private var discoveryID: String {
+        let adapters = studio.draft.loras.map { "\($0.path):\($0.strength):\($0.role)" }.joined(separator: "|")
+        return "\(studio.draft.modelID)|\(studio.draft.modelPath)|\(studio.draft.operation)|\(studio.draft.width)x\(studio.draft.height)|\(studio.draft.steps)|\(studio.draft.residency)|\(adapters)"
+    }
     private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration(policy: studio.draft.profilePath.isEmpty ? "auto" : "profile") }
     @State private var discoveryMessage = "正在检测本机分区…"
     private func update(_ change: (inout StudioAcceleration) -> Void) { var value = config; change(&value); value.automaticVersion = 1; studio.draft.acceleration = value }
@@ -16,14 +27,16 @@ struct AccelerationView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("推理加速与准备").font(.title2)
             Picker("计算模式", selection: Binding(get: { config.policy }, set: { mode in update { $0.policy = mode } })) {
-                Text(supportsAutomaticGPUANE ? "自动适配本机 · 优先 GPU + ANE" : "自动适配本机 · GPU").tag("auto")
+                Text(supportsAutomaticGPUANE ? "自动 · 按任务匹配 GPU / ANE" : "自动 · 稳定 GPU").tag("auto")
                 Text("GPU · 原始 BF16").tag("gpu")
                 if supportsGPUANE { Text("GPU + ANE · INT8 MLP 实验路线").tag("gpu_ane") }
                 if !studio.draft.profilePath.isEmpty { Text("使用设备配置文件").tag("profile") }
             }.disabled(store.busy).accessibilityIdentifier("accelerationMode")
             if config.policy == "auto" {
                 Text(discoveryMessage).font(.caption).foregroundStyle(.secondary)
-                Text(supportsAutomaticGPUANE ? "兼容时使用 INT8 混合路线；容量不足或分区加载失败时回退 GPU。实际 ANE 驻留由系统决定。" : "当前模型尚无通过端到端性能门禁的自动 GPU + ANE 配置，自动模式使用稳定路径。")
+                Text(supportsAutomaticGPUANE
+                     ? "只有机型、任务、尺寸、步数、token 容量和分区几何都命中实测案例时才使用混合路线；其余情况回退 GPU。实际 ANE 驻留由系统决定。"
+                     : "当前模型尚无通过端到端性能门禁的自动 GPU + ANE 配置，自动模式使用稳定路径。")
                     .font(.caption).foregroundStyle(.secondary)
                 if supportsAutomaticGPUANE { Button("重新检测本机加速") { Task { await discover() } }.disabled(store.busy) }
             }
@@ -39,7 +52,7 @@ struct AccelerationView: View {
             if config.policy == "gpu" {
                 if studio.draft.modelID.hasPrefix("flux2-") {
                     Toggle("编译融合单流计算块", isOn: Binding(get: { config.compileGPU ?? false }, set: { value in update { $0.compileGPU = value } })).disabled(store.busy).accessibilityIdentifier("compileGPU")
-                    Text("保留块间取消；首次使用新形状会编译，预热可提前完成。当前验证收益约 2%，并非整张网络一次融合。").font(.caption).foregroundStyle(.secondary)
+                    Text("保留块间取消；首次使用新形状会编译，预热可提前完成。不同尺寸的收益需分别实测，并非整张网络一次融合。").font(.caption).foregroundStyle(.secondary)
                 } else {
                     Text("当前模型使用自身的 native Metal/MLX 图与 pipeline cache；没有可单独开启的 FLUX 单块编译选项。")
                         .font(.caption).foregroundStyle(.secondary)
@@ -56,7 +69,7 @@ struct AccelerationView: View {
                 Button("选择已有 Core ML 源分区…") { choose(compiled: false) }.disabled(store.busy)
                 CoreMLStorageView(store: store, studio: studio)
             }
-        }.task(id: studio.draft.modelPath) { await discover() }.padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+        }.task(id: discoveryID) { await discover() }.padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
     }
     private func discover() async {
         guard supportsAutomaticGPUANE else {
@@ -65,12 +78,23 @@ struct AccelerationView: View {
                 : "当前模型使用稳定 GPU 路径。"
             return
         }
+        guard let requiredRows = automaticBucket else {
+            discoveryMessage = "当前操作、尺寸、步数或驻留模式没有实测混合案例，自动模式使用 GPU。"
+            return
+        }
         let path = studio.draft.modelPath, preferred = config.manifest
+        let minimumRows = (studio.draft.width / 16) * (studio.draft.height / 16) + 1
         let selectedCache = config.coreMLCache.map { URL(fileURLWithPath: $0) }
         let modelID = studio.draft.modelID
         let loras = studio.draft.loras
-        let result = await Task.detached { AccelerationDiscovery.find(modelPath: path, preferred: preferred, cache: selectedCache, enforceAutomaticPolicy: true, modelID: modelID, loras: loras) }.value
-        guard studio.draft.modelPath == path else { return }
+        let result = await Task.detached {
+            AccelerationDiscovery.find(modelPath: path, preferred: preferred,
+                                       cache: selectedCache, minimumRows: minimumRows,
+                                       requiredRows: requiredRows,
+                                       enforceAutomaticPolicy: true,
+                                       modelID: modelID, loras: loras)
+        }.value
+        guard !Task.isCancelled, studio.draft.modelPath == path else { return }
         let system = (try? JSONSerialization.jsonObject(with: Data(NativeEngine.system().utf8))) as? [String: Any]
         let gpu = system?["gpu"] as? String
         let memory = (system?["physical_memory_bytes"] as? NSNumber)?.uint64Value
@@ -88,7 +112,8 @@ struct AccelerationView: View {
     }
     private func prepare(warmup: Bool) {
         do {
-            let request = try studio.draft.request(output: store.directory.appendingPathComponent("unused-warmup.png"))
+            let ext = model?.isVideo == true ? "mp4" : "png"
+            let request = try studio.draft.request(output: store.directory.appendingPathComponent("unused-warmup.\(ext)"))
             let modelURL = URL(fileURLWithPath: studio.draft.modelPath); studio.message = nil
             Task { do { try await store.prepare(modelURL: modelURL, request: request, warmup: warmup) } catch { studio.message = error is CancellationError ? "准备已取消" : error.localizedDescription } }
         } catch { studio.message = error.localizedDescription }

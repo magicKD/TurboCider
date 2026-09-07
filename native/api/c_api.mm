@@ -546,14 +546,21 @@ int tc_coreml_resources_json(const char *request, tc_event_callback cb, void *ct
     @autoreleasepool {
         try {
             tc::require(request && out, "missing resource request");
-            std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
-            tc::require(global.owns_lock(), "runtime busy");
-            DeviceLease lease;
-            resource_cancelled.store(false);
+            auto parsed = tc::parse_json(request);
+            const bool inventory = tc::string_value(parsed, @"action") == "inventory";
+            std::unique_lock<std::mutex> global(tc::execution_mutex(), std::defer_lock);
+            std::unique_ptr<DeviceLease> lease;
+            if (!inventory) {
+                tc::require(global.try_lock(), "runtime busy");
+                lease = std::make_unique<DeviceLease>();
+            }
+            std::atomic<bool> inventory_cancelled{false};
+            auto &cancelled = inventory ? inventory_cancelled : resource_cancelled;
+            cancelled.store(false);
             auto begin = tc::Clock::now();
             uint64_t sequence = 0;
             tc::Event event = [&](const std::string &phase, int current, int total) {
-                tc::checkpoint(resource_cancelled);
+                tc::checkpoint(cancelled);
                 if (cb) {
                     auto text = tc::json(@{
                         @"sequence" : @(++sequence),
@@ -567,7 +574,7 @@ int tc_coreml_resources_json(const char *request, tc_event_callback cb, void *ct
                 }
             };
             *out = copy(
-                tc::json(tc::coreml_resources(tc::parse_json(request), event, resource_cancelled)));
+                tc::json(tc::coreml_resources(parsed, event, cancelled)));
             return 0;
         } catch (const std::exception &e) {
             return fail(error, e);

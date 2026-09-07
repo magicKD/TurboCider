@@ -93,7 +93,7 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual) {
 HybridSession::HybridSession(const std::filesystem::path &file, const std::filesystem::path &model,
                              int tokens, const Event &event, std::atomic<bool> &cancelled,
                              int warmups, const std::filesystem::path &requested_checkpoint,
-                             const std::vector<LoRAAsset> &requested_loras)
+                             const std::vector<LoRAAsset> &requested_loras, int policy_rows)
     : impl_(std::make_unique<Impl>()), manifest(file.string()) {
     auto begin = Clock::now();
     auto d = read_json(file);
@@ -115,6 +115,7 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                 [buckets[0] isKindOfClass:NSNumber.class],
             "native hybrid requires a single fixed bucket");
     rows = [buckets[0] intValue];
+    require(!policy_rows || rows == policy_rows, "Core ML bucket has no matching measured policy");
     require(rows >= tokens && rows <= 8192, "Core ML token bucket cannot serve this request");
     id manifest_mlp_width = d[@"shape"][@"mlp_width"];
     id manifest_mlp_start = d[@"shape"][@"ane_mlp_start"];

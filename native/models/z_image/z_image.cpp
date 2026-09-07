@@ -2,6 +2,7 @@
 
 #include "../../media/image.hpp"
 #include "../../platform/apple/platform.hpp"
+#include "../../runtime/acceleration.hpp"
 #include "../../runtime/residency.hpp"
 
 #include <bit>
@@ -839,6 +840,7 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
 std::string ZImage::select_acceleration(Request &r, int rows, const Event &event,
                                         std::atomic<bool> &cancelled) {
     const bool automatic = r.execution == "auto";
+    const AccelerationCase *matched = nullptr;
     if (automatic) {
         r.execution = "gpu";
         if (!r.allow_approximation || r.ane_manifest.empty()) {
@@ -853,6 +855,11 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
         if (system.gpu != "Apple M4 Max" || system.physical_memory != (64ull << 30)) {
             hybrid_.reset();
             return "gpu: automatic Z-Image hybrid is not validated on this hardware";
+        }
+        matched = hybrid_case(r, rows, system.gpu, system.physical_memory);
+        if (!matched) {
+            hybrid_.reset();
+            return "gpu: no measured Z-Image hybrid case for operation, dimensions, steps and token bucket";
         }
         const uint64_t estimate = (30ull << 30) + uint64_t(r.width) * r.height * 12288;
         if (system.physical_memory < estimate + (4ull << 30) ||
@@ -869,10 +876,12 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
     try {
         require(std::filesystem::is_regular_file(transformer_checkpoint_),
                 "Z-Image hybrid requires a safetensors file or index");
+        if (automatic && hybrid_ && hybrid_->rows != matched->bucket)
+            hybrid_.reset();
         if (!hybrid_ || hybrid_->manifest != r.ane_manifest)
             hybrid_ = std::make_unique<HybridSession>(
                 r.ane_manifest, root_, rows, event, cancelled, r.warmup_iterations,
-                transformer_checkpoint_, active_loras_);
+                transformer_checkpoint_, active_loras_, matched ? matched->bucket : 0);
         require(rows <= hybrid_->rows && hybrid_->hidden == 3840 &&
                     hybrid_->block_count == 32 && hybrid_->mlp_width == 10240 &&
                     hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end < 10240,
@@ -885,7 +894,7 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
                 hybrid_->hidden, hybrid_->mlp_width, hybrid_->ane_mlp_end);
             hybrid_gpu_mlp_start_ = hybrid_->ane_mlp_end;
         }
-        return automatic ? "gpu_ane: M4 Max base checkpoint and 4096-channel partition matched"
+        return automatic ? std::string("gpu_ane: measured case ") + matched->id
                          : "gpu_ane: explicitly selected Z-Image FFN partition";
     } catch (const Cancelled &) {
         throw;
@@ -929,6 +938,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const int image_rows = ((r.height / 16) * (r.width / 16) + 31) / 32 * 32;
     const int caption_rows = (cached_conditioning_->shape(0) + 31) / 32 * 32;
     auto selection = select_acceleration(r, image_rows + caption_rows, event, cancelled);
+    event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
     r.compile_gpu = r.execution == "gpu" && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
     if (plan.request.execution != r.execution || plan.request.compile_gpu != r.compile_gpu)
         plan = make_plan(r);

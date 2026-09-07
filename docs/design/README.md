@@ -1,5 +1,6 @@
 # TurboCider 设计文档
 
+当前任务感知路由与实时资源设计：[按任务选择计算路径](task-aware-acceleration.md)。
 当前独立部署入口：[项目独立性与完整链路](standalone-project.md)。构建、转换工具链及加速产物均由 TurboCider 管理，原始模型路径可在外部。
 
 最新磁盘管理：[Core ML 源模型、编译与缓存管理](coreml-artifacts-and-storage.md)，包含实际占用检查、safetensors 离线导出、CLI/API 和 App 清理入口。

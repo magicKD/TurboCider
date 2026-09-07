@@ -107,6 +107,7 @@ struct StudioView: View {
                     Label("本机运行", systemImage: "circle.fill").foregroundStyle(.green).font(.caption)
                     Text(store.sessionState).font(.caption).foregroundStyle(.secondary)
                 }.padding(12)
+                ResourceMonitorView().padding(.horizontal, 12)
                 SettingsLink { Label("设置", systemImage: "gearshape") }.buttonStyle(.plain).padding(12)
             }.navigationSplitViewColumnWidth(min: 170, ideal: 185, max: 230)
         } detail: {
@@ -133,7 +134,7 @@ struct StudioView: View {
             VStack(spacing: 12) {
                 HStack {
                     Picker("创作方式", selection: Binding(get: { studio.draft.operation }, set: { studio.changeOperation($0); compareOriginal = false })) {
-                        ForEach(model?.operations ?? [], id: \.self) { Text(operationName($0)).tag($0) }
+                        ForEach(model?.executor_operations ?? model?.operations ?? [], id: \.self) { Text(operationName($0)).tag($0) }
                     }.pickerStyle(.segmented).frame(maxWidth: 380).accessibilityIdentifier("operation")
                     Spacer()
                     Text("STUDIO").font(.caption2).tracking(2).foregroundStyle(.secondary)
@@ -159,6 +160,7 @@ struct StudioView: View {
                 }
                 StudioOutputPreview(path: compareOriginal ? (job.request.inputs?.first?.path ?? job.request.output) : job.request.output)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityIdentifier("generatedImage")
+                if let route = job.routeSummary { Text("实际路径：\(route)").font(.caption2).foregroundStyle(.secondary) }
                 HStack(spacing: 12) {
                     Text("\(job.request.width) × \(job.request.height) · 种子 \(job.request.seed)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
                     Spacer()
@@ -196,8 +198,8 @@ struct StudioView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Button(action: chooseImages) { Label("添加图片", systemImage: "plus") }.accessibilityIdentifier("addImages")
-                Button { Task { await studio.pasteImage() } } label: { Label("粘贴图片", systemImage: "doc.on.clipboard") }.accessibilityIdentifier("pasteImages")
+                Button(action: chooseImages) { Label("添加图片", systemImage: "plus") }.disabled(!studio.supportsImageInputs).accessibilityIdentifier("addImages")
+                Button { Task { await studio.pasteImage() } } label: { Label("粘贴图片", systemImage: "doc.on.clipboard") }.disabled(!studio.supportsImageInputs).accessibilityIdentifier("pasteImages")
                 if studio.canUndoAssets { Button { studio.undoAssetChange() } label: { Image(systemName: "arrow.uturn.backward") }.help("撤销素材修改") }
                 Spacer()
                 if studio.importing { ProgressView().controlSize(.small) }
@@ -251,14 +253,16 @@ struct StudioView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text("生成参数").font(.headline)
             VStack(alignment: .leading, spacing: 8) {
-                Text(model?.name ?? "FLUX.2 Klein 4B").font(.subheadline.weight(.medium))
-                Label(studio.draft.acceleration?.policy == "gpu_ane" ? "GPU + ANE · INT8 混合" : (studio.draft.acceleration?.policy ?? "auto") == "auto" ? "本机自动适配 · GPU / ANE" : "本地 BF16 · Metal GPU", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
+                Picker("模型", selection: Binding(get: { studio.draft.modelID }, set: { studio.changeModel($0) })) {
+                    ForEach(studio.models.filter(\.executor)) { Text($0.name).tag($0.id) }
+                }.disabled(store.busy || studio.importing).accessibilityIdentifier("studioModel")
+                Text(studio.draft.accelerationHint).font(.caption).foregroundStyle(.secondary)
                 Button(studio.draft.modelPath.isEmpty ? "选择模型…" : "管理模型") { page = .models }
             }
             Divider()
             Text("输出尺寸").font(.subheadline)
             HStack { TextField("宽", value: $studio.draft.width, format: .number).accessibilityIdentifier("width"); Text("×"); TextField("高", value: $studio.draft.height, format: .number).accessibilityIdentifier("height") }.textFieldStyle(.roundedBorder)
-            HStack { ForEach([256, 512, 768], id: \.self) { size in Button("\(size)") { studio.draft.width = size; studio.draft.height = size }.font(.caption) } }
+            HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in Button("\(size)") { studio.draft.width = size; studio.draft.height = size }.font(.caption) } }
             if model?.isVideo == true {
                 Divider()
                 Text("视频参数").font(.subheadline)
@@ -329,6 +333,7 @@ struct StudioView: View {
     private var runStatus: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let job = store.activeJob {
+                Text(store.actualRoute.map { "实际路径：\($0)" } ?? "实际路径：准备后确认").font(.caption2).foregroundStyle(.secondary)
                 ProgressView(value: Double(job.completed), total: Double(max(1, job.total))).tint(ciderAccent)
                 HStack {
                     Text("\(stateName(job.state)) · \(phaseName(job.phase)) \(job.completed)/\(job.total)")
@@ -358,6 +363,7 @@ struct StudioView: View {
             ForEach(studio.models) { item in
                 VStack(alignment: .leading, spacing: 14) {
                     HStack { Label(item.name, systemImage: "cpu").font(.title3); Spacer(); Text(item.executor ? "已接入" : "暂不可用").font(.caption).foregroundStyle(.secondary) }
+                    Text(item.operations.map(operationName).joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                     if item.executor {
                         Text(studio.draft.modelPaths[item.id] ?? "尚未选择模型文件夹").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                         HStack {

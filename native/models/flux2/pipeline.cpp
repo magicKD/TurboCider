@@ -1,3 +1,4 @@
+#include "../../runtime/acceleration.hpp"
 #include "flux.hpp"
 #include "../../platform/apple/platform.hpp"
 #include "../../runtime/residency.hpp"
@@ -112,6 +113,7 @@ bool Flux::conditioning(const Request &r, const Tokens &tokens, const Event &eve
 std::string Flux::select_acceleration(Request &r, int count, const Event &event,
                                       std::atomic<bool> &cancelled) {
     const bool automatic = r.execution == "auto";
+    const AccelerationCase *matched = nullptr;
     if (automatic) {
         r.execution = "gpu";
         if (!r.allow_approximation || r.ane_manifest.empty()) {
@@ -130,6 +132,11 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
             hybrid_.reset();
             return "gpu: automatic hybrid policy not validated on this hardware";
         }
+        matched = hybrid_case(r, count, system.gpu, system.physical_memory);
+        if (!matched) {
+            hybrid_.reset();
+            return "gpu: no measured hybrid case for operation, dimensions, steps and token bucket";
+        }
         uint64_t estimate = (16ull << 30) + uint64_t(r.width) * r.height * 8192;
         if (device_info().physical_memory < estimate + (4ull << 30) ||
             (r.memory_budget_bytes && r.memory_budget_bytes < estimate)) {
@@ -144,11 +151,14 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
     }
     try {
         checkpoint(cancelled);
+        if (automatic && hybrid_ && hybrid_->rows != matched->bucket)
+            hybrid_.reset();
         if (!hybrid_ || hybrid_->manifest != r.ane_manifest)
             hybrid_ = std::make_unique<HybridSession>(r.ane_manifest, root_, count, event,
                                                       cancelled, r.warmup_iterations,
                                                       std::filesystem::path{},
-                                                      active_loras_);
+                                                      active_loras_,
+                                                      matched ? matched->bucket : 0);
         require(count <= hybrid_->rows, "Core ML token bucket cannot serve this request");
         if (automatic) {
             auto system = device_info();
@@ -161,7 +171,7 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
                             hybrid_->ane_mlp_end == 9216,
                         "M4 Pro automatic profile requires the validated full ANE MLP partition");
         }
-        return automatic ? "gpu_ane: hardware, checkpoint and token bucket matched"
+        return automatic ? std::string("gpu_ane: measured case ") + matched->id
                          : "gpu_ane: explicitly selected";
     } catch (const Cancelled &) {
         throw;
@@ -200,6 +210,7 @@ RunResult Flux::prepare(const Request &requested, bool warmup, const Event &even
         !std::getenv("TURBOCIDER_FLUX_EAGER_BLOCKS"))
         r.compile_gpu = true;
     plan = make_plan(r);
+    event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
     RunResult result;
     result.prepared = true;
     result.selection = selection;
@@ -285,6 +296,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     if (r.execution == "gpu" && model_id_ == "flux2-klein-4b" &&
         !std::getenv("TURBOCIDER_FLUX_EAGER_BLOCKS"))
         r.compile_gpu = true;
+    event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
     plan = make_plan(r);
     double hybrid_s = std::chrono::duration<double>(Clock::now() - hybrid_start).count();
     auto text = *cached_conditioning_;

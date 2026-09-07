@@ -48,34 +48,53 @@ struct AccelerationDiscovery {
     }
     static func automaticPolicyMatches(gpu: String, memory: UInt64,
                                        mlpWidth: Int, start: Int, end: Int,
-                                       modelID: String = "flux2-klein-4b") -> Bool {
+                                       modelID: String = "flux2-klein-4b",
+                                       bucket: Int? = nil) -> Bool {
         // Automatic selection is a performance promise, not merely a
         // capability check. Keep candidates opt-in until their warm
         // end-to-end path beats the GPU baseline on validated hardware.
         if gpu == "Apple M4 Max" && memory == 64 * 1024 * 1024 * 1024 {
             if modelID == "flux2-klein-4b" {
-                return mlpWidth == 9216 && start == 0 && end == 6144
+                return mlpWidth == 9216 && start == 0 && end == 6144 &&
+                    (bucket == nil || bucket == 1088)
             }
             if modelID == "z-image-turbo" {
-                return mlpWidth == 10240 && start == 0 && end == 4096
+                return mlpWidth == 10240 && start == 0 && end == 4096 &&
+                    (bucket == nil || bucket == 4128)
             }
             return false
         }
         if gpu == "Apple M4 Pro" && memory == 48 * 1024 * 1024 * 1024 {
             return modelID == "flux2-klein-4b" &&
-                mlpWidth == 9216 && start == 0 && end == 9216
+                mlpWidth == 9216 && start == 0 && end == 9216 &&
+                (bucket == nil || bucket == 1088 || bucket == 4160)
         }
         return false
     }
+    static func automaticBucket(modelID: String, operation: String,
+                                width: Int, height: Int, steps: Int,
+                                residency: String, hasInputs: Bool) -> Int? {
+        guard operation == "image.generate", width == height,
+              residency == "resident", !hasInputs else { return nil }
+        if modelID == "flux2-klein-4b" && steps == 4 {
+            if width == 512 { return 1088 }
+            if width == 1024 { return 4160 }
+        }
+        if modelID == "z-image-turbo" && width == 1024 && steps == 9 {
+            return 4128
+        }
+        return nil
+    }
     static func find(modelPath: String, preferred: String = "", cache: URL? = nil,
+                     minimumRows: Int = 0,
+                     requiredRows: Int? = nil,
                      enforceAutomaticPolicy: Bool = false,
                      modelID: String = "flux2-klein-4b",
                      loras: [StudioLoRA] = []) -> Match? {
         guard !modelPath.isEmpty else { return nil }
-        // Z-Image's repeated ~1.21x result covers the base checkpoint only.
         // Adapter-bound partitions remain explicit until each LoRA geometry
         // has its own repeated warm end-to-end validation.
-        if enforceAutomaticPolicy && modelID == "z-image-turbo" && !loras.isEmpty {
+        if enforceAutomaticPolicy && !loras.isEmpty {
             return nil
         }
         let hardware = enforceAutomaticPolicy ? currentHardware() : nil
@@ -98,6 +117,7 @@ struct AccelerationDiscovery {
         if !preferred.isEmpty, URL(fileURLWithPath: preferred).resolvingSymlinksInPath().path.hasPrefix(appCache.resolvingSymlinksInPath().path + "/") { candidates.append(URL(fileURLWithPath: preferred)) }
         if let configured = ProcessInfo.processInfo.environment["TURBOCIDER_ANE_MANIFEST"] { candidates.append(URL(fileURLWithPath: configured)) }
         candidates += ((try? fm.contentsOfDirectory(at: appCache, includingPropertiesForKeys: nil)) ?? []).filter { $0.lastPathComponent.hasPrefix("manifest-") && $0.pathExtension == "json" }.sorted { $0.path < $1.path }
+        var matches: [Match] = []
         for file in candidates {
             guard let data = try? Data(contentsOf: file),
                   let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -105,12 +125,18 @@ struct AccelerationDiscovery {
                   let shape = value["shape"] as? [String: Any],
                   let hidden = (shape["K"] as? NSNumber)?.intValue,
                   (shape["N"] as? NSNumber)?.intValue == hidden,
-                  let buckets = shape["buckets"] as? [Int], buckets.count == 1, (1...8192).contains(buckets[0]),
+                  let buckets = shape["buckets"] as? [Int], buckets.count == 1, (1...8192).contains(buckets[0]), buckets[0] >= minimumRows,
                   let source = value["source"] as? [String: Any], let path = source["checkpoint"] as? String,
                   URL(fileURLWithPath: path).resolvingSymlinksInPath() == checkpoint,
                   (source["checkpoint_bytes"] as? NSNumber)?.uint64Value == size.uint64Value,
                   let artifacts = value["artifacts"] as? [String: [String: String]] else { continue }
-            if !loras.isEmpty && !manifestBinds(manifest: file.path, loras: loras) { continue }
+            if let requiredRows, buckets[0] != requiredRows { continue }
+            let declaredLoRAs = source["loras"] as? [[String: Any]]
+            if loras.isEmpty {
+                if declaredLoRAs?.isEmpty == false { continue }
+            } else if !manifestBinds(manifest: file.path, loras: loras) {
+                continue
+            }
             let mlpWidth = (shape["mlp_width"] as? NSNumber)?.intValue ?? 9216
             let aneMLPStart = (shape["ane_mlp_start"] as? NSNumber)?.intValue ?? 0
             let aneMLPEnd = (shape["ane_mlp_end"] as? NSNumber)?.intValue ?? mlpWidth
@@ -118,7 +144,8 @@ struct AccelerationDiscovery {
                 guard automaticPolicyMatches(gpu: hardware.0, memory: hardware.1,
                                              mlpWidth: mlpWidth,
                                              start: aneMLPStart, end: aneMLPEnd,
-                                             modelID: modelID) else { continue }
+                                             modelID: modelID,
+                                             bucket: buckets[0]) else { continue }
             }
             let parent = file.deletingLastPathComponent().resolvingSymlinksInPath()
             let expectedBlocks = modelID == "z-image-turbo" ? 32 : 20
@@ -131,11 +158,11 @@ struct AccelerationDiscovery {
             }
             guard complete else { continue }
             let sourceFile = (value["source_manifest"] as? String).map { URL(fileURLWithPath: $0) } ?? parent.deletingLastPathComponent().appendingPathComponent("manifest.json")
-            return Match(manifest: file.path,
-                         source: fm.fileExists(atPath: sourceFile.path) ? sourceFile.path : "",
-                         rows: buckets[0], mlpWidth: mlpWidth,
-                         aneMLPStart: aneMLPStart, aneMLPEnd: aneMLPEnd)
+            matches.append(Match(manifest: file.path,
+                                 source: fm.fileExists(atPath: sourceFile.path) ? sourceFile.path : "",
+                                 rows: buckets[0], mlpWidth: mlpWidth,
+                                 aneMLPStart: aneMLPStart, aneMLPEnd: aneMLPEnd))
         }
-        return nil
+        return matches.min { $0.rows < $1.rows }
     }
 }
