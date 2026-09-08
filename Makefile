@@ -32,6 +32,7 @@ test:
 	@python3 -B tests/native/test_coreml_lora.py
 	@python3 -B tests/native/test_llada_reference.py
 	@python3 -B tests/native/test_quality_gate.py
+	@python3 -B tests/native/test_video_quality_gate.py
 	@python3 tests/native/test_inventory.py
 test-app:
 	@build/native/turbocider-studio-tests

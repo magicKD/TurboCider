@@ -92,6 +92,8 @@ LLaDA 原生 C++/MLX session 也已通过公共 `tc_engine_prepare` 支持真正
 
 跨后端不再以逐 bit/逐像素一致作为唯一正确性定义。新增 `tools/native/quality_gate.py`，默认离线 RGB 门禁为 correlation ≥ 0.99、cosine ≥ 0.995、MAE ≤ 5/255；LLaDA benchmark 会始终记录门禁结果，并可用 `--require-quality` 让未通过结果返回失败。阈值属于可记录、可覆盖的 workload 策略，不会把单一阈值冒充为所有图像/视频模型的普适标准。FLUX load-only prepare 同时修复为返回 resolved `ExecutionPlan`，准备遥测现在与随后实际执行路由一致。
 
+视频路径现已增加流式解码的 `tools/native/video_quality_gate.py`，不把完整 H3/LTX RGB 序列同时载入内存。现有 matched GPU 产物中，TurboCider 对 H3 direct 和 LTX direct 的 MP4 都逐文件一致；但 LTX GPU 对 GPU+ANE 的 704×448、97 帧输出只有 mean correlation `0.8498`、minimum correlation `0.7751`、mean MAE `21.59/255`，虽然 frame-to-frame motion energy 最大相对误差为 `8.04%`，仍明确未过门禁。因此 LTX `auto` 保持 GPU，不得把约 1.20× 的局部/历史加速写成已验收的正式 E2E hybrid。结构化证据见 `docs/design/validation/video-quality-gate-2026-09-08.json`。
+
 重新生成的 `dist/cli` 已复制到源码目录之外，在 `env -i` 仅保留系统 PATH 的环境中成功执行 `models` 和 `doctor`；`libturbocider.dylib` 的非系统依赖仅为 `@rpath/libmlx.dylib` 与 `@rpath/libjaccl.dylib`，发行包 rpath 为 `@loader_path`。App 深度签名校验通过。摘要见 `docs/design/validation/packaged-portable-2026-09-08.json`。
 
 下一阶段按优先级：

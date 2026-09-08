@@ -105,6 +105,8 @@ TurboCider 当前使用两个 GPU queue 交错音视频支路，并可让 Video 
 
 Video self-QKV sequence split 虽让 Stage-2 attention 从 62.148 ms 降到 52.431 ms，48-block 8+3 E2E 却是 54.848 s，慢于 dense GPU+ANE 的 49.467 s。原因是每 block session、load/switch、ANE queue 和 UMA contention 吃掉了局部收益。
 
+LTX 的视频级近似也需要单独看，而不能只看 latent cosine。对同一 704×448、97 帧、24 fps、8+3 steps 的 GPU 与 GPU+ANE 输出，帧级门禁记录 mean correlation `0.8498`、minimum correlation `0.7751`、mean MAE `21.59/255`；虽然最大 frame-to-frame motion energy 相对误差为 `8.04%`，仍未通过 RGB 质量阈值。因此当前 LTX GPU+ANE 只能作为显式实验候选，不能自动替代 GPU。完整指标见 [视频质量门禁记录](validation/video-quality-gate-2026-09-08.json)。
+
 ## 4. Attention、QKV 和 sequence parallel 的负结果
 
 QKV 只能按完整 head/output channel 切分。H3 原型已让 ANE prefix 与 GPU complement 直接写最终 Q/K/V head slot，并让 segmented norm/RoPE 原地消费，因此失败原因不是 concat 或 reshape。真实 864×480 FP16 16-head projection 中，GPU+ANE overlap 约 358 ms，完整 GPU 约 249 ms，pack+join 仅 3–4 ms；ANE projection 是 straggler。

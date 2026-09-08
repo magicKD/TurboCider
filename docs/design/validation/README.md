@@ -38,5 +38,9 @@
 
 LLaDA GPU/ANE benchmark 可用 `--require-quality` 启用该门禁；不传此参数时仍会记录 `quality_gate_passed`，但不会因为实验性近似结果而阻断性能探索。运行时不会加载参考图片做比较，因此正式推理不会隐式承担 benchmark 成本。
 
+视频模型使用 `tools/native/video_quality_gate.py` 做离线帧级验收。除逐帧 RGB correlation/cosine/MAE 外，它还检查尺寸、帧数、帧率和 frame-to-frame motion energy；默认要求 mean correlation ≥ 0.99、最低单帧 correlation ≥ 0.95、mean cosine ≥ 0.995、mean MAE ≤ 5/255、最大运动能量相对误差 ≤ 15%。这同样不是运行时参考推理，也不代表所有视频模型都必须使用同一阈值；H3/LTX 的正式门禁还需多 prompt、seed、分辨率和音视频 mux 矩阵。
+
+当前 LTX GPU 与 GPU+ANE 的单个 704×448、97 帧配对证据见 `video-quality-gate-2026-09-08.json`：运动能量相对误差为 8.0%，但 mean RGB correlation 仅 0.850、mean MAE 21.59/255，因此没有通过质量门禁，GPU+ANE 不能自动启用。
+
 - `transformer-heterogeneous-2026-09-08.json`：固定版本的 mac_transformer/ANE 证据、MLP/模型 E2E、Core ML startup 和异构采用结论。
 - `private-ane-shipping-isolation-2026-09-08.json`：private `_ANE*` 源码隔离、shipping binary 字符串/依赖审计、portable package 和测试结果。
