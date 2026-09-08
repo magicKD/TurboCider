@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-08",
+  "tool": "build/native/vision-feature-distance",
+  "framework": "Vision VNGenerateImageFeaturePrintRequest",
+  "vision_request_revision": 2,
+  "hardware": {
+    "chip": "Apple M4 Max",
+    "unified_memory_gb": 64,
+    "macos": "26.6.2"
+  },
+  "workload": {
+    "model": "ltx-2.5-distilled",
+    "shape": "704x448",
+    "frames": 97,
+    "fps": 24,
+    "sample_stride": 24,
+    "sampled_frames": [0, 24, 48, 72, 96]
+  },
+  "reference": "${PROJECT_ROOT}/outputs/benchmark-ltx-turbocider-gpu-run1.mp4",
+  "candidate": "${PROJECT_ROOT}/outputs/benchmark-ltx-turbocider-gpu-ane-run1.mp4",
+  "feature_print": {
+    "metric": "VNFeaturePrintObservation distance",
+    "image_crop_and_scale": "scale_fill",
+    "lower_is_more_similar": true,
+    "pair_count": 5,
+    "mean_distance": 0.18619432747364045,
+    "maximum_distance": 0.20790031552314758,
+    "distances_by_frame": {
+      "0": 0.16331006586551666,
+      "24": 0.18711479008197784,
+      "48": 0.19339106976985931,
+      "72": 0.17925539612770081,
+      "96": 0.20790031552314758
+    }
+  },
+  "controls": {
+    "identical_decoded_frame_distance": 0.0,
+    "gpu_frame_0_to_gpu_frame_24_distance": 0.28152871131896973,
+    "interpretation": "corresponding GPU/GPU+ANE frames were closer than this one-second temporal control in the recorded sample; this is diagnostic, not a release threshold"
+  },
+  "aligned_rgb_gate": {
+    "mean_correlation": 0.8498202365546745,
+    "minimum_correlation": 0.7751332108572102,
+    "mean_cosine": 0.9771980875535691,
+    "mean_mae_255": 21.59210327382696,
+    "maximum_motion_relative_error": 0.08044076733223772,
+    "passed": false
+  },
+  "decision": "diagnostic_only; keep_ltx_gpu_ane_explicit_and_keep_gpu_auto_default",
+  "notes": [
+    "Vision distance is not a universal quality threshold and was not used to auto-enable this route.",
+    "The runtime never renders a reference video during an inference request.",
+    "Multi-prompt, multi-seed and cross-machine perceptual calibration remains pending."
+  ]
+}

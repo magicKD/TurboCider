@@ -105,7 +105,7 @@ TurboCider 当前使用两个 GPU queue 交错音视频支路，并可让 Video 
 
 Video self-QKV sequence split 虽让 Stage-2 attention 从 62.148 ms 降到 52.431 ms，48-block 8+3 E2E 却是 54.848 s，慢于 dense GPU+ANE 的 49.467 s。原因是每 block session、load/switch、ANE queue 和 UMA contention 吃掉了局部收益。
 
-LTX 的视频级近似也需要单独看，而不能只看 latent cosine。对同一 704×448、97 帧、24 fps、8+3 steps 的 GPU 与 GPU+ANE 输出，帧级门禁记录 mean correlation `0.8498`、minimum correlation `0.7751`、mean MAE `21.59/255`；虽然最大 frame-to-frame motion energy 相对误差为 `8.04%`，仍未通过 RGB 质量阈值。因此当前 LTX GPU+ANE 只能作为显式实验候选，不能自动替代 GPU。完整指标见 [视频质量门禁记录](validation/video-quality-gate-2026-09-08.json)。
+LTX 的视频级近似也需要单独看，而不能只看 latent cosine。对同一 704×448、97 帧、24 fps、8+3 steps 的 GPU 与 GPU+ANE 输出，帧级门禁记录 mean correlation `0.8498`、minimum correlation `0.7751`、mean MAE `21.59/255`；虽然最大 frame-to-frame motion energy 相对误差为 `8.04%`，仍未通过对齐 RGB 回归阈值。公开 Vision feature-print 的 5 帧抽样距离为 mean `0.1862`、maximum `0.2079`，说明两条生成路径仍保留相近主体/构图，但这个指标尚未跨 prompt、seed 和系统版本校准。因此结论不是“视觉质量必然失败”，而是“现有证据不足以自动替代 GPU”；当前 LTX GPU+ANE 只能作为显式实验候选。完整指标见 [视频质量门禁记录](validation/video-quality-gate-2026-09-08.json)和 [Vision 感知诊断](validation/vision-feature-print-2026-09-08.json)。
 
 ## 4. Attention、QKV 和 sequence parallel 的负结果
 

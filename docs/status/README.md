@@ -4,6 +4,8 @@
 
 优先阅读 [2026-09-08 当前目标状态](current-status-2026-09-08.md)。它是 GGUF、LLaDA、LoRA 三模式、ConvRot 原生 ANE、真实性能和未完成门禁的最新统一快照。
 
+按原始目标逐项核对请看 [原始目标完成度审计](objective-audit-2026-09-08.md)。
+
 [2026-09-07 当前状态](current-status-2026-09-07.md)保留为合入 GGUF 和 LLaDA 之前后的阶段记录，不再作为最新结论。
 
 专项材料：

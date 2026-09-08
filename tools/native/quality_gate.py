@@ -12,6 +12,7 @@ import argparse
 import json
 import math
 import struct
+import subprocess
 import zlib
 from pathlib import Path
 
@@ -145,13 +146,59 @@ def image_metrics(reference: Path, candidate: Path) -> dict[str, float | bool]:
     }
 
 
+def vision_metrics(reference: Path, candidate: Path, helper: Path) -> dict:
+    """Return the public-Vision feature-print distance for an image pair.
+
+    Vision feature-print values are OS/revision dependent, so this function
+    deliberately records a distance without imposing a universal threshold.
+    A benchmark must supply a workload-calibrated maximum when it elects to
+    accept perceptual divergence from the aligned RGB reference.
+    """
+    completed = subprocess.run(
+        [str(helper), str(reference), str(candidate)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    result = json.loads(completed.stdout)
+    if result.get("pair_count") != 1:
+        raise ValueError("Vision helper did not return exactly one image pair")
+    mean_distance = float(result.get("mean_distance", float("nan")))
+    maximum_distance = float(result.get("maximum_distance", float("nan")))
+    if not math.isfinite(mean_distance) or not math.isfinite(maximum_distance):
+        raise ValueError("Vision helper returned a non-finite distance")
+    return {
+        "metric": result.get("metric", "VNFeaturePrintObservation distance"),
+        "vision_request_revision": result.get("vision_request_revision"),
+        "image_crop_and_scale": result.get("image_crop_and_scale"),
+        "operating_system": result.get("operating_system", "unknown"),
+        "pair_count": 1,
+        "mean_distance": mean_distance,
+        "maximum_distance": maximum_distance,
+    }
+
+
+def contract_passes(metrics: dict[str, float | bool]) -> bool:
+    return bool(metrics.get("shape_equal") and metrics.get("finite"))
+
+
 def passes(metrics: dict[str, float | bool], *, min_correlation: float,
-           min_cosine: float, max_mae_255: float) -> bool:
+           min_cosine: float, max_mae_255: float,
+           require_aligned_rgb: bool = True,
+           max_vision_distance: float | None = None) -> bool:
+    if not contract_passes(metrics):
+        return False
+    if require_aligned_rgb:
+        return bool(
+            float(metrics.get("correlation", 0.0)) >= min_correlation and
+            float(metrics.get("cosine", 0.0)) >= min_cosine and
+            float(metrics.get("mae_255", float("inf"))) <= max_mae_255
+        )
+    vision = metrics.get("vision_feature_print")
     return bool(
-        metrics.get("shape_equal") and metrics.get("finite") and
-        float(metrics.get("correlation", 0.0)) >= min_correlation and
-        float(metrics.get("cosine", 0.0)) >= min_cosine and
-        float(metrics.get("mae_255", float("inf"))) <= max_mae_255
+        max_vision_distance is not None and isinstance(vision, dict) and
+        int(vision.get("pair_count", 0)) == 1 and
+        float(vision.get("maximum_distance", float("inf"))) <= max_vision_distance
     )
 
 
@@ -162,8 +209,24 @@ def main() -> int:
     parser.add_argument("--min-correlation", type=float, default=0.99)
     parser.add_argument("--min-cosine", type=float, default=0.995)
     parser.add_argument("--max-mae-255", type=float, default=5.0)
+    parser.add_argument("--vision-helper", type=Path)
+    parser.add_argument("--allow-aligned-rgb-divergence", action="store_true",
+                        help="use a calibrated Vision feature distance instead of "
+                             "requiring aligned RGB similarity")
+    parser.add_argument("--max-vision-distance", type=float,
+                        help="workload-calibrated maximum Vision feature distance")
     args = parser.parse_args()
+    if args.allow_aligned_rgb_divergence:
+        if args.vision_helper is None or args.max_vision_distance is None:
+            parser.error("perceptual divergence requires --vision-helper and "
+                         "--max-vision-distance")
+        if args.max_vision_distance < 0:
+            parser.error("--max-vision-distance must be non-negative")
     metrics = image_metrics(args.reference, args.candidate)
+    if args.vision_helper is not None:
+        metrics["vision_feature_print"] = vision_metrics(
+            args.reference, args.candidate, args.vision_helper
+        )
     result = {
         "reference": str(args.reference),
         "candidate": str(args.candidate),
@@ -171,14 +234,40 @@ def main() -> int:
             "minimum_correlation": args.min_correlation,
             "minimum_cosine": args.min_cosine,
             "maximum_mae_255": args.max_mae_255,
+            "maximum_vision_distance": args.max_vision_distance,
         },
         "metrics": metrics,
+        "acceptance_mode": (
+            "calibrated_vision_perceptual"
+            if args.allow_aligned_rgb_divergence else "aligned_rgb_regression"
+        ),
     }
+    result["contract_passed"] = contract_passes(metrics)
+    result["aligned_rgb_gate_passed"] = passes(
+        metrics,
+        min_correlation=args.min_correlation,
+        min_cosine=args.min_cosine,
+        max_mae_255=args.max_mae_255,
+    )
+    result["perceptual_gate_passed"] = (
+        passes(
+            metrics,
+            min_correlation=args.min_correlation,
+            min_cosine=args.min_cosine,
+            max_mae_255=args.max_mae_255,
+            require_aligned_rgb=False,
+            max_vision_distance=args.max_vision_distance,
+        )
+        if args.vision_helper is not None and args.max_vision_distance is not None
+        else None
+    )
     result["passed"] = passes(
         metrics,
         min_correlation=args.min_correlation,
         min_cosine=args.min_cosine,
         max_mae_255=args.max_mae_255,
+        require_aligned_rgb=not args.allow_aligned_rgb_divergence,
+        max_vision_distance=args.max_vision_distance,
     )
     print(json.dumps(result, indent=2))
     return 0 if result["passed"] else 1

@@ -15,6 +15,7 @@ import json
 import math
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -130,8 +131,48 @@ def _motion_energy(previous: bytes, current: bytes) -> float:
     return sum(abs(left - right) for left, right in zip(previous, current)) / len(previous)
 
 
+def _vision_metrics(samples: list[tuple[int, bytes, bytes]], width: int, height: int,
+                    helper: str) -> dict:
+    helper_path = _command("vision-feature-distance", helper)
+    with tempfile.TemporaryDirectory(prefix="turbocider-vision-quality-") as raw:
+        directory = Path(raw)
+        arguments = [helper_path]
+        for frame, reference, candidate in samples:
+            reference_path = directory / f"reference-{frame:06d}.ppm"
+            candidate_path = directory / f"candidate-{frame:06d}.ppm"
+            header = f"P6\n{width} {height}\n255\n".encode("ascii")
+            reference_path.write_bytes(header + reference)
+            candidate_path.write_bytes(header + candidate)
+            arguments.extend((str(reference_path), str(candidate_path)))
+        completed = subprocess.run(
+            arguments, check=True, capture_output=True, text=True
+        )
+    result = json.loads(completed.stdout)
+    if int(result.get("pair_count", 0)) != len(samples):
+        raise ValueError("Vision helper returned an unexpected sample count")
+    mean_distance = float(result.get("mean_distance", float("nan")))
+    maximum_distance = float(result.get("maximum_distance", float("nan")))
+    if not math.isfinite(mean_distance) or not math.isfinite(maximum_distance):
+        raise ValueError("Vision helper returned a non-finite distance")
+    return {
+        "metric": result.get("metric", "VNFeaturePrintObservation distance"),
+        "vision_request_revision": result.get("vision_request_revision"),
+        "image_crop_and_scale": result.get("image_crop_and_scale"),
+        "operating_system": result.get("operating_system", "unknown"),
+        "sampled_frames": [frame for frame, _, _ in samples],
+        "pair_count": len(samples),
+        "mean_distance": mean_distance,
+        "maximum_distance": maximum_distance,
+    }
+
+
 def compare(reference: Path, candidate: Path, *, ffmpeg: str = "ffmpeg",
-            ffprobe: str = "ffprobe") -> dict:
+            ffprobe: str = "ffprobe", vision_helper: Optional[str] = None,
+            vision_sample_stride: int = 24, vision_max_samples: int = 16) -> dict:
+    if vision_sample_stride <= 0:
+        raise ValueError("vision_sample_stride must be positive")
+    if vision_max_samples <= 0:
+        raise ValueError("vision_max_samples must be positive")
     ffmpeg_path = _command("ffmpeg", ffmpeg)
     ffprobe_path = _command("ffprobe", ffprobe)
     reference_meta = _probe(reference, ffprobe_path)
@@ -157,6 +198,7 @@ def compare(reference: Path, candidate: Path, *, ffmpeg: str = "ffmpeg",
             "mean_motion_energy_reference": 0.0,
             "mean_motion_energy_candidate": 0.0,
             "maximum_motion_relative_error": float("inf"),
+            "vision_feature_print": None,
         }
     frame_bytes = reference_meta["width"] * reference_meta["height"] * 3
     reference_process = _decode_process(reference, ffmpeg_path)
@@ -166,6 +208,7 @@ def compare(reference: Path, candidate: Path, *, ffmpeg: str = "ffmpeg",
     candidate_motion: list[float] = []
     reference_count = candidate_count = 0
     previous_reference = previous_candidate = None
+    vision_samples: list[tuple[int, bytes, bytes]] = []
     try:
         assert reference_process.stdout is not None and candidate_process.stdout is not None
         while True:
@@ -178,7 +221,11 @@ def compare(reference: Path, candidate: Path, *, ffmpeg: str = "ffmpeg",
             if candidate_frame is not None:
                 candidate_count += 1
             if reference_frame is not None and candidate_frame is not None:
+                frame_index = len(frame_metrics)
                 frame_metrics.append(_rgb_metrics(reference_frame, candidate_frame))
+                if (vision_helper and frame_index % vision_sample_stride == 0 and
+                        len(vision_samples) < vision_max_samples):
+                    vision_samples.append((frame_index, reference_frame, candidate_frame))
                 if previous_reference is not None and previous_candidate is not None:
                     reference_motion.append(_motion_energy(previous_reference, reference_frame))
                     candidate_motion.append(_motion_energy(previous_candidate, candidate_frame))
@@ -202,6 +249,20 @@ def compare(reference: Path, candidate: Path, *, ffmpeg: str = "ffmpeg",
             if process.stderr is not None:
                 process.stderr.close()
     frame_count_equal = reference_count == candidate_count
+    if (vision_helper and frame_count_equal and frame_metrics and
+            previous_reference is not None and
+            previous_candidate is not None):
+        final_index = len(frame_metrics) - 1
+        sampled_final = vision_samples and vision_samples[-1][0] == final_index
+        if not sampled_final and len(vision_samples) < vision_max_samples:
+            vision_samples.append((final_index, previous_reference, previous_candidate))
+    vision = (
+        _vision_metrics(
+            vision_samples, reference_meta["width"], reference_meta["height"],
+            vision_helper,
+        )
+        if vision_helper and frame_count_equal and vision_samples else None
+    )
     motion_count = min(len(reference_motion), len(candidate_motion))
     motion_relative_errors = [
         abs(left - right) / max(left, right, 1.0)
@@ -234,22 +295,40 @@ def compare(reference: Path, candidate: Path, *, ffmpeg: str = "ffmpeg",
             sum(candidate_motion[:motion_count]) / motion_count if motion_count else 0.0
         ),
         "maximum_motion_relative_error": max(motion_relative_errors, default=float("inf")),
+        "vision_feature_print": vision,
     }
+
+
+def contract_passes(metrics: dict) -> bool:
+    return bool(
+        metrics.get("shape_equal") and metrics.get("frame_count_equal") and
+        metrics.get("fps_equal") and metrics.get("finite")
+    )
 
 
 def passes(metrics: dict, *, min_mean_correlation: float = 0.99,
            min_frame_correlation: float = 0.95, min_mean_cosine: float = 0.995,
            max_mean_mae_255: float = 5.0,
-           max_motion_relative_error: float = 0.15) -> bool:
+           max_motion_relative_error: float = 0.15,
+           require_aligned_rgb: bool = True,
+           max_vision_distance: Optional[float] = None) -> bool:
+    if not contract_passes(metrics):
+        return False
+    if (float(metrics.get("maximum_motion_relative_error", float("inf"))) >
+            max_motion_relative_error):
+        return False
+    if require_aligned_rgb:
+        return bool(
+            float(metrics.get("mean_correlation", 0.0)) >= min_mean_correlation and
+            float(metrics.get("minimum_correlation", 0.0)) >= min_frame_correlation and
+            float(metrics.get("mean_cosine", 0.0)) >= min_mean_cosine and
+            float(metrics.get("mean_mae_255", float("inf"))) <= max_mean_mae_255
+        )
+    vision = metrics.get("vision_feature_print")
     return bool(
-        metrics.get("shape_equal") and metrics.get("frame_count_equal") and
-        metrics.get("fps_equal") and metrics.get("finite") and
-        float(metrics.get("mean_correlation", 0.0)) >= min_mean_correlation and
-        float(metrics.get("minimum_correlation", 0.0)) >= min_frame_correlation and
-        float(metrics.get("mean_cosine", 0.0)) >= min_mean_cosine and
-        float(metrics.get("mean_mae_255", float("inf"))) <= max_mean_mae_255 and
-        float(metrics.get("maximum_motion_relative_error", float("inf"))) <=
-        max_motion_relative_error
+        max_vision_distance is not None and isinstance(vision, dict) and
+        int(vision.get("pair_count", 0)) > 0 and
+        float(vision.get("maximum_distance", float("inf"))) <= max_vision_distance
     )
 
 
@@ -264,9 +343,26 @@ def main() -> int:
     parser.add_argument("--min-mean-cosine", type=float, default=0.995)
     parser.add_argument("--max-mean-mae-255", type=float, default=5.0)
     parser.add_argument("--max-motion-relative-error", type=float, default=0.15)
+    parser.add_argument("--vision-helper")
+    parser.add_argument("--vision-sample-stride", type=int, default=24)
+    parser.add_argument("--vision-max-samples", type=int, default=16)
+    parser.add_argument("--allow-aligned-rgb-divergence", action="store_true",
+                        help="use calibrated Vision feature distance plus motion "
+                             "instead of requiring aligned RGB similarity")
+    parser.add_argument("--max-vision-distance", type=float,
+                        help="workload-calibrated maximum sampled-frame Vision distance")
     args = parser.parse_args()
+    if args.allow_aligned_rgb_divergence:
+        if not args.vision_helper or args.max_vision_distance is None:
+            parser.error("perceptual divergence requires --vision-helper and "
+                         "--max-vision-distance")
+        if args.max_vision_distance < 0:
+            parser.error("--max-vision-distance must be non-negative")
     metrics = compare(args.reference, args.candidate, ffmpeg=args.ffmpeg or "ffmpeg",
-                      ffprobe=args.ffprobe or "ffprobe")
+                      ffprobe=args.ffprobe or "ffprobe",
+                      vision_helper=args.vision_helper,
+                      vision_sample_stride=args.vision_sample_stride,
+                      vision_max_samples=args.vision_max_samples)
     result = {
         "reference": str(args.reference),
         "candidate": str(args.candidate),
@@ -276,9 +372,36 @@ def main() -> int:
             "minimum_mean_cosine": args.min_mean_cosine,
             "maximum_mean_mae_255": args.max_mean_mae_255,
             "maximum_motion_relative_error": args.max_motion_relative_error,
+            "maximum_vision_distance": args.max_vision_distance,
         },
         "metrics": metrics,
+        "acceptance_mode": (
+            "calibrated_vision_perceptual"
+            if args.allow_aligned_rgb_divergence else "aligned_rgb_regression"
+        ),
     }
+    result["contract_passed"] = contract_passes(metrics)
+    result["aligned_rgb_gate_passed"] = passes(
+        metrics,
+        min_mean_correlation=args.min_mean_correlation,
+        min_frame_correlation=args.min_frame_correlation,
+        min_mean_cosine=args.min_mean_cosine,
+        max_mean_mae_255=args.max_mean_mae_255,
+        max_motion_relative_error=args.max_motion_relative_error,
+    )
+    result["perceptual_gate_passed"] = (
+        passes(
+            metrics,
+            min_mean_correlation=args.min_mean_correlation,
+            min_frame_correlation=args.min_frame_correlation,
+            min_mean_cosine=args.min_mean_cosine,
+            max_mean_mae_255=args.max_mean_mae_255,
+            max_motion_relative_error=args.max_motion_relative_error,
+            require_aligned_rgb=False,
+            max_vision_distance=args.max_vision_distance,
+        )
+        if args.vision_helper and args.max_vision_distance is not None else None
+    )
     result["passed"] = passes(
         metrics,
         min_mean_correlation=args.min_mean_correlation,
@@ -286,6 +409,8 @@ def main() -> int:
         min_mean_cosine=args.min_mean_cosine,
         max_mean_mae_255=args.max_mean_mae_255,
         max_motion_relative_error=args.max_motion_relative_error,
+        require_aligned_rgb=not args.allow_aligned_rgb_divergence,
+        max_vision_distance=args.max_vision_distance,
     )
     print(json.dumps(result, indent=2))
     return 0 if result["passed"] else 1

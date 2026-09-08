@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-sd-cpp build build-app package test test-app test-model doctor
+.PHONY: help setup setup-sd-cpp build build-app build-vision-quality package test test-app test-model doctor
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -9,6 +9,7 @@ help:
 	@echo 'make build                       Build engine, CLI, App and Swift tests'
 	@echo 'make package                      Build and create dist/TurboCider.app + dist/cli'
 	@echo 'make build-app                    Rebuild Swift UI after an engine build'
+	@echo 'make build-vision-quality         Build optional public-Vision quality helper'
 	@echo 'make test-app                     Run App behavior tests (macOS clipboard access)'
 	@echo 'make test                         Verify repository boundaries and request contracts'
 	@echo 'make test-model MODEL=/path/to/FLUX.2-klein-4B OUTPUT=/tmp/new-tc-validation'
@@ -21,6 +22,8 @@ build-app:
 	@tools/native/build_app.sh
 build:
 	@tools/native/build.sh
+build-vision-quality:
+	@tools/native/build_vision_feature_distance.sh
 package: build
 	@tools/native/package.sh
 test:

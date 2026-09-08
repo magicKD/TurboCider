@@ -66,13 +66,17 @@
       "mean_mae_255": 21.59210327382696,
       "maximum_mae_255": 26.69315645292208,
       "maximum_motion_relative_error": 0.08044076733223772,
+      "contract_passed": true,
+      "aligned_rgb_gate_passed": false,
+      "perceptual_status": "inconclusive_without_calibrated_multi_prompt_feature_threshold",
       "passed": false,
       "decision": "keep GPU default; hybrid remains an explicit experimental candidate"
     }
   ],
   "notes": [
     "This is an offline paired-video check; runtime requests never render a reference video.",
-    "The LTX hybrid candidate preserves broad motion energy but fails aligned RGB quality thresholds.",
+    "The LTX hybrid candidate preserves broad motion energy but fails aligned RGB regression thresholds; this alone does not prove perceptual quality failure.",
+    "Public Vision feature-print diagnostics are recorded separately and are not yet calibrated for automatic qualification.",
     "The result is evidence against automatic GPU+ANE selection, not proof that every prompt or seed fails identically."
   ]
 }

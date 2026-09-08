@@ -67,6 +67,65 @@ class VideoQualityGateTests(unittest.TestCase):
             self.assertFalse(metrics["shape_equal"])
             self.assertEqual(metrics["frame_count_compared"], 0)
 
+    def test_calibrated_perceptual_mode_can_accept_rgb_divergence(self):
+        metrics = {
+            "shape_equal": True,
+            "frame_count_equal": True,
+            "fps_equal": True,
+            "finite": True,
+            "mean_correlation": 0.85,
+            "minimum_correlation": 0.77,
+            "mean_cosine": 0.97,
+            "mean_mae_255": 21.0,
+            "maximum_motion_relative_error": 0.08,
+            "vision_feature_print": {
+                "pair_count": 5,
+                "maximum_distance": 0.21,
+            },
+        }
+        self.assertFalse(QUALITY_GATE.passes(metrics))
+        self.assertTrue(QUALITY_GATE.passes(
+            metrics,
+            require_aligned_rgb=False,
+            max_vision_distance=0.25,
+        ))
+        self.assertFalse(QUALITY_GATE.passes(
+            metrics,
+            require_aligned_rgb=False,
+            max_vision_distance=0.20,
+        ))
+        self.assertFalse(QUALITY_GATE.passes(
+            metrics,
+            require_aligned_rgb=False,
+        ))
+
+    def test_compare_records_optional_vision_samples(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            reference = self.make_video(directory, "reference.mp4", "red", "blue")
+            candidate = directory / "candidate.mp4"
+            candidate.write_bytes(reference.read_bytes())
+            helper = directory / "fake-vision-helper"
+            helper.write_text(
+                "#!/bin/sh\n"
+                "count=$(($# / 2))\n"
+                "printf '{\"metric\":\"fake\",\"operating_system\":\"test\","
+                "\"pair_count\":%s,\"mean_distance\":0.1,"
+                "\"maximum_distance\":0.1}\\n' \"$count\"\n"
+            )
+            helper.chmod(0o755)
+            metrics = QUALITY_GATE.compare(
+                reference, candidate, ffmpeg=self.ffmpeg, ffprobe=self.ffprobe,
+                vision_helper=str(helper), vision_sample_stride=2,
+                vision_max_samples=4,
+            )
+            vision = metrics["vision_feature_print"]
+            self.assertEqual(vision["pair_count"], 3)
+            self.assertEqual(vision["sampled_frames"], [0, 2, 3])
+            self.assertTrue(QUALITY_GATE.passes(
+                metrics, require_aligned_rgb=False, max_vision_distance=0.15
+            ))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

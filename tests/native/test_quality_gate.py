@@ -62,6 +62,36 @@ class QualityGateTests(unittest.TestCase):
                 min_correlation=0.99, min_cosine=0.995, max_mae_255=5.0,
             ))
 
+    def test_calibrated_perceptual_mode_does_not_require_aligned_rgb(self):
+        metrics = {
+            "shape_equal": True,
+            "finite": True,
+            "correlation": 0.80,
+            "cosine": 0.95,
+            "mae_255": 20.0,
+            "vision_feature_print": {
+                "pair_count": 1,
+                "maximum_distance": 0.20,
+            },
+        }
+        thresholds = {
+            "min_correlation": 0.99,
+            "min_cosine": 0.995,
+            "max_mae_255": 5.0,
+        }
+        self.assertFalse(QUALITY_GATE.passes(metrics, **thresholds))
+        self.assertTrue(QUALITY_GATE.passes(
+            metrics, **thresholds, require_aligned_rgb=False,
+            max_vision_distance=0.25,
+        ))
+        self.assertFalse(QUALITY_GATE.passes(
+            metrics, **thresholds, require_aligned_rgb=False,
+            max_vision_distance=0.10,
+        ))
+        self.assertFalse(QUALITY_GATE.passes(
+            metrics, **thresholds, require_aligned_rgb=False,
+        ))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

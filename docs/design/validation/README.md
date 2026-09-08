@@ -40,7 +40,11 @@ LLaDA GPU/ANE benchmark 可用 `--require-quality` 启用该门禁；不传此�
 
 视频模型使用 `tools/native/video_quality_gate.py` 做离线帧级验收。除逐帧 RGB correlation/cosine/MAE 外，它还检查尺寸、帧数、帧率和 frame-to-frame motion energy；默认要求 mean correlation ≥ 0.99、最低单帧 correlation ≥ 0.95、mean cosine ≥ 0.995、mean MAE ≤ 5/255、最大运动能量相对误差 ≤ 15%。这同样不是运行时参考推理，也不代表所有视频模型都必须使用同一阈值；H3/LTX 的正式门禁还需多 prompt、seed、分辨率和音视频 mux 矩阵。
 
+扩散纹理发生可接受偏移时，可额外构建 `build/native/vision-feature-distance`，用 macOS 公开 Vision feature print 记录感知距离。只有传入显式、同 OS/revision/workload 校准过的 `--max-vision-distance` 时，门禁才允许用感知距离替代对齐 RGB 阈值；默认模式保持不变。该指标不能单独验证 prompt 遵循、人物细节或音视频同步，设计边界见 `docs/design/vision-quality-diagnostics.md`。
+
 当前 LTX GPU 与 GPU+ANE 的单个 704×448、97 帧配对证据见 `video-quality-gate-2026-09-08.json`：运动能量相对误差为 8.0%，但 mean RGB correlation 仅 0.850、mean MAE 21.59/255，因此没有通过质量门禁，GPU+ANE 不能自动启用。
+
+- `vision-feature-print-2026-09-08.json`：同一 LTX 样本的公开 Vision revision 2 抽样诊断；只作感知证据补充，不构成自动放行阈值。
 
 - `transformer-heterogeneous-2026-09-08.json`：固定版本的 mac_transformer/ANE 证据、MLP/模型 E2E、Core ML startup 和异构采用结论。
 - `private-ane-shipping-isolation-2026-09-08.json`：private `_ANE*` 源码隔离、shipping binary 字符串/依赖审计、portable package 和测试结果。

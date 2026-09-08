@@ -60,7 +60,7 @@ FastMetal 保留受控 Python/MLX worker，30 个 INT8 FFN block 固定按 4096/
 2. 带 LoRA 时，manifest 还必须绑定 adapter 的 canonical path、bytes、SHA-256、role 和 strength；否则 App 先切 GPU，native 仍会拒绝不匹配 artifact。
 3. “稳定提升”按同一 workload 的完整 request wall 判断，不只看 denoise kernel；至少要有重复 warm 样本，并记录最慢样本的波动。
 4. 纯 GPU 路径必须与原始框架或 direct baseline 做同条件比较；当前最终 FLUX 4B GPU 与 direct engine 差约 0.09%，H3/FastMetal 仍在既有门槛内，LTX GPU worker 热路径基本持平。Z-Image 优化后 TurboCider GPU warm 中位数 36.3685 s，stock ComfyUI warm 中位数 40.11 s，已通过“不慢于 ComfyUI”门槛。
-5. 任何 shape、内存、artifact 完整性或质量检查失败都回退 GPU（自动模式）或直接报错（显式 `gpu_ane`），不静默裁剪 token、不减少 steps。
+5. 任何 shape、内存、artifact 完整性或已校准质量资格不匹配都回退 GPU（自动模式）；显式 `gpu_ane` 对运行时契约错误直接报错，并继续标记为实验路径，不静默裁剪 token、不减少 steps。离线 RGB/感知门禁不会在每次正式推理时重复生成参考结果。
 
 ## 证据索引
 
