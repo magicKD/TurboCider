@@ -46,6 +46,12 @@ child lifetime physical footprint 约为 11.22–11.35 GB，不应写成总进�
 
 H3 现在有 resident 和 BF16 SSD streaming 两条正式路径。streaming 使用两个 Metal BF16 layer slot，在计算当前 block 时后台 `pread` 下一 block，并在 command boundary 等待；这已经避免了把完整 transformer 常驻 unified memory。`ssd_streaming` 与当前运行期 INT8 MLP/QKV 互斥，原因是量化 buffer、scale 和 reload 生命周期尚未统一。
 
+当前还加入了动态 pinned-prefix：当 streamed H3 请求提供 `memory_budget_bytes` 时，运行时按实际请求的 activation geometry、两个 BF16 slot 和固定安全余量计算每个完整 block 的 BF16 payload，自动保留尽可能多的前置 active blocks，剩余 suffix 继续 disk streaming。显式 `ssd_pinned_prefix` 只能减少自动选择的前缀，不能让预算超限；策略始终保留至少一个 streamed block。没有预算时仍保持原来的两-slot 行为，避免改变既有默认性能。
+
+这不是硬性进程内存上限：预算是 H3 DiT working-set target，系统 allocator、VAE、文本编码器和文件缓存仍可能产生额外 footprint。运行结果会记录 pinned/streamed block 数、估算 block/activation bytes、总读取和未隐藏等待时间。
+
+真实 62 GiB Transformer 的 256²、22 帧、四步 A/B/B/A probe 中，16 GiB 预算选择 14 pinned/36 streamed blocks；四份最终 video/audio latent 字节完全一致。无预算与 16 GiB 的 denoise 中位数分别为 17.306 s 和 15.180 s（1.140×），每次读取由 154.91 GB 降到 111.75 GB，等待中位数由 10.738 s 降到 6.917 s；但 pinned 首次装载更慢，fresh 总时间中位数为 22.932 s 对 22.943 s，仅基本持平。因此这项优化适合常驻 Session/重复请求，不应宣传为 cold E2E 加速。完整记录见 [H3 pinned-prefix DiT probe](validation/h3-ssd-pinned-prefix-dit-2026-09-08.json)。
+
 ### LTX 2.5
 
 LTX 当前只有 resident/component-staged；component-staged 会按 text/transformer/VAE 生命周期释放组件，但尚未像 vpipe 一样完成每 block 双 slot streaming。LTX 的 non-block trunk（尤其 text connector）约数 GB，不能只按 Transformer block 大小估 floor；低内存计划还必须把 audio/video arena、VAE peak 和 stage boundary 纳入预算。

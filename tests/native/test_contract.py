@@ -755,6 +755,37 @@ class ContractTests(unittest.TestCase):
         self.assertNotEqual(code,0)
         self.assertIn('allow_approximation=true',error)
 
+    def test_h3_streaming_budget_drives_fail_closed_pinned_prefix(self):
+        request={'model':'minimax-h3-turbo','frames':22,'width':512,
+                 'height':512,'steps':4,'residency':'streamed',
+                 'memory_budget_bytes':16 << 30}
+        code,p,error=plan(request)
+        self.assertEqual(code,0,error)
+        self.assertTrue(p['streaming_offload'])
+        self.assertEqual(p['memory_budget_scope'],
+                         'h3_dit_working_set_target_not_process_cap')
+        minimum=(4 << 30)+2*770725376
+        code,_,error=plan({**request,'memory_budget_bytes':minimum-1})
+        self.assertNotEqual(code,0)
+        self.assertIn('two-slot minimum',error)
+        code,_,error=plan({**request,'residency':'resident',
+                           'memory_budget_bytes':64 << 30})
+        self.assertNotEqual(code,0)
+        self.assertIn('requires streamed residency',error)
+        session=(ROOT/'native/platform/apple/h3_session.mm').read_text()
+        runtime=(ROOT/'native/models/h3_runtime/h3_dit.c').read_text()
+        public=(ROOT/'native/models/h3_runtime/h3.h').read_text()
+        core=(ROOT/'native/models/h3_runtime/h3.c').read_text()
+        self.assertIn('parameters.ssd_memory_budget_bytes',session)
+        self.assertIn('@"ssd_pinned_blocks"',session)
+        self.assertIn('stream_block_pinned(dit, index)',runtime)
+        self.assertIn('first_streamed_block(dit)',runtime)
+        self.assertIn('next_streamed_block(dit, block)',runtime)
+        self.assertIn('h3_stream_plan_build(',runtime)
+        self.assertIn('int ssd_pinned_prefix;',public)
+        self.assertIn('uint64_t ssd_memory_budget_bytes;',public)
+        self.assertIn('|ssd-pinned=%d|ssd-budget=%llu',core)
+
     def test_fastmetal_is_an_executable_persistent_runtime_candidate(self):
         request={'model':'fastmetal-1.3b-qad','width':832,'height':480,
                  'frames':81,'fps':16,'steps':3}

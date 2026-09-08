@@ -37,6 +37,7 @@ test:
 	@python3 -B tests/native/test_quality_gate.py
 	@python3 -B tests/native/test_video_quality_gate.py
 	@python3 -B tests/native/test_gguf_streaming_benchmark.py
+	@python3 -B tests/native/test_h3_streaming_policy.py
 	@python3 tests/native/test_inventory.py
 test-app:
 	@build/native/turbocider-studio-tests

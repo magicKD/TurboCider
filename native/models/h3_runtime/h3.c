@@ -231,15 +231,18 @@ static char *h3_resident_key(const char *dit_path, const char *dit_index,
     h3_key key = {0};
     if (!h3_key_append(
             &key,
-            "resident-v1|mode=%d|path=%zu:%s|steps=%d"
+            "resident-v2|mode=%d|path=%zu:%s|steps=%d"
             "|shifts=%.17g,%.17g|layers=%d"
             "|reuse-core=%d|reduce=%d|row-fc2=%d|ssd-streaming=%d"
+            "|ssd-pinned=%d|ssd-budget=%llu"
             "|condition=%d%d|slow=%d%d%d%d%d%d%d%d%d%d",
             ref2va, strlen(dit_path), dit_path, params->steps,
             params->video_flow_shift, params->audio_flow_shift,
             params->dit_layers, params->core_reuse,
             params->token_reduction, params->use_int8_row_fc2,
-            params->ssd_streaming, video_condition, audio_condition,
+            params->ssd_streaming, params->ssd_pinned_prefix,
+            (unsigned long long)params->ssd_memory_budget_bytes,
+            video_condition, audio_condition,
             params->use_slower_bf16_mlp,
             params->use_slower_bf16_qkv,
             params->use_slower_bf16_attention_output,
@@ -300,6 +303,7 @@ static char *h3_prepared_key(const char *conditioning,
             "%s|shape=%dx%dx%d|steps=%d|shifts=%.17g,%.17g"
             "|layers=%d|reuse-core=%d|reduce=%d"
             "|row-fc2=%d|reference-rope=%d|ssd-streaming=%d"
+            "|ssd-pinned=%d|ssd-budget=%llu"
             "|slow=%d%d%d%d%d%d%d%d%d%d|layer-policy=%zu:%s"
             "|gate-skip=%zu:%s|gate-cache=%zu:%s",
             conditioning, render_width, render_height, params->frames,
@@ -308,6 +312,8 @@ static char *h3_prepared_key(const char *conditioning,
             params->token_reduction, params->use_int8_row_fc2,
             params->use_reference_rope,
             params->ssd_streaming,
+            params->ssd_pinned_prefix,
+            (unsigned long long)params->ssd_memory_budget_bytes,
             params->use_slower_bf16_mlp,
             params->use_slower_bf16_qkv,
             params->use_slower_bf16_attention_output,
@@ -735,6 +741,18 @@ static int h3_valid_params(h3_ctx *ctx, const h3_params *params) {
         h3_set_error(ctx, "SSD streaming must be zero or one");
         return 0;
     }
+    if (params->ssd_pinned_prefix < 0 ||
+        params->ssd_pinned_prefix > H3_DEFAULT_DIT_LAYERS) {
+        h3_set_error(ctx, "SSD pinned prefix must be in [0, %d]",
+                     H3_DEFAULT_DIT_LAYERS);
+        return 0;
+    }
+    if (!params->ssd_streaming &&
+        (params->ssd_pinned_prefix || params->ssd_memory_budget_bytes)) {
+        h3_set_error(ctx,
+                     "SSD pinned prefix/budget requires SSD streaming");
+        return 0;
+    }
     if (params->ssd_streaming && params->use_int8_row_fc2) {
         h3_set_error(ctx, "SSD streaming uses original BF16 weights and cannot "
                          "be combined with int8 row FC2");
@@ -840,6 +858,8 @@ typedef struct {
     unsigned core_reuse_interval;
     int token_reduction;
     int ssd_streaming;
+    int ssd_pinned_prefix;
+    uint64_t ssd_memory_budget_bytes;
     float spatial_rope_scale;
     int use_slower_bf16_mlp;
     int use_slower_bf16_qkv;
@@ -883,6 +903,7 @@ static void *h3_parallel_prepare_main(void *opaque) {
         &prepare->text, &prepare->layout, prepare->sigmas,
         prepare->active_blocks, prepare->core_reuse_interval,
         prepare->token_reduction, prepare->ssd_streaming,
+        prepare->ssd_pinned_prefix, prepare->ssd_memory_budget_bytes,
         prepare->spatial_rope_scale,
         prepare->use_slower_bf16_mlp,
         prepare->use_slower_bf16_qkv,
@@ -929,6 +950,8 @@ static int h3_parallel_prepare_start(
     prepare->core_reuse_interval = (unsigned)params->core_reuse;
     prepare->token_reduction = params->token_reduction;
     prepare->ssd_streaming = params->ssd_streaming;
+    prepare->ssd_pinned_prefix = params->ssd_pinned_prefix;
+    prepare->ssd_memory_budget_bytes = params->ssd_memory_budget_bytes;
     prepare->spatial_rope_scale = spatial_rope_scale;
     prepare->use_slower_bf16_mlp = params->use_slower_bf16_mlp;
     prepare->use_slower_bf16_qkv = params->use_slower_bf16_qkv;
@@ -1255,6 +1278,8 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     memset(&waveform, 0, sizeof(waveform));
     uint8_t *rgb8 = NULL;
     h3_result *result = NULL;
+    h3_dit_streaming_info streaming_info;
+    memset(&streaming_info, 0, sizeof(streaming_info));
     char *conditioning_key = NULL;
     char *prepared_key = NULL;
     char *resident_key = NULL;
@@ -1975,6 +2000,8 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             (unsigned)params->dit_layers, (unsigned)params->core_reuse,
             params->token_reduction,
             params->ssd_streaming,
+            params->ssd_pinned_prefix,
+            params->ssd_memory_budget_bytes,
             spatial_rope_scale,
             params->use_slower_bf16_mlp,
             params->use_slower_bf16_qkv,
@@ -1996,6 +2023,8 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             (unsigned)params->dit_layers, (unsigned)params->core_reuse,
             params->token_reduction,
             params->ssd_streaming,
+            params->ssd_pinned_prefix,
+            params->ssd_memory_budget_bytes,
             spatial_rope_scale,
             params->use_slower_bf16_mlp,
             params->use_slower_bf16_qkv,
@@ -2090,6 +2119,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         }
         goto cleanup;
     }
+    (void)h3_dit_get_streaming_info(dit, &streaming_info);
     if (!h3_dump_video_latent(ctx, video, video_count, temporal.video_t,
                               latent_h, latent_w))
         goto cleanup;
@@ -2250,6 +2280,16 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     result->fps = H3_FPS;
     result->sample_rate = waveform.sample_rate;
     result->seed = params->seed;
+    result->ssd_streaming = streaming_info.enabled;
+    result->ssd_pinned_blocks = (int)streaming_info.pinned_blocks;
+    result->ssd_streamed_blocks = (int)streaming_info.streamed_blocks;
+    result->ssd_memory_budget_bytes = streaming_info.memory_budget_bytes;
+    result->ssd_block_bytes = streaming_info.block_bytes;
+    result->ssd_activation_reserve_bytes =
+        streaming_info.activation_reserve_bytes;
+    result->ssd_bytes_read = streaming_info.bytes_read;
+    result->ssd_read_seconds = streaming_info.read_seconds;
+    result->ssd_wait_seconds = streaming_info.wait_seconds;
     if (params->retain_decoded) {
         result->decoded_width = frames.width;
         result->decoded_height = frames.height;

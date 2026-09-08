@@ -186,11 +186,23 @@ public:
         const auto *info=h3_model(context_.get());const auto *device=h3_device(context_.get());
         uint64_t transformer_bytes=r.operation=="video.reference"?info->ref2va_transformer.tensor_bytes:info->fl2va_transformer.tensor_bytes;
         require(r.residency=="streamed"||transformer_bytes<device->recommended_working_set,"H3 weights exceed this GPU working set; select streamed residency");
+        require(!r.memory_budget_bytes || r.memory_budget_bytes <= device->physical_memory,
+                "H3 memory budget exceeds physical memory");
+        require(r.residency=="streamed" || !r.memory_budget_bytes,
+                "H3 memory budget requires streamed residency");
         h3_cache_set_enabled(context_.get(),r.residency=="resident");
         h3_params parameters=H3_PARAMS_DEFAULT;
         parameters.width=r.width;parameters.height=r.height;parameters.frames=r.frames;parameters.steps=r.steps;parameters.seed=r.seed;
         parameters.video_flow_shift=video_shift;parameters.audio_flow_shift=3;
         parameters.ssd_streaming=r.residency=="streamed";
+        /* A nonzero request budget lets the H3 runtime choose the largest
+         * safe resident prefix after accounting for its actual activation
+         * geometry and two BF16 stream slots. With no explicit budget keep the
+         * original two-slot streaming behavior unchanged. */
+        parameters.ssd_pinned_prefix=0;
+        parameters.ssd_memory_budget_bytes =
+            (r.residency == "streamed" && r.memory_budget_bytes) ?
+                r.memory_budget_bytes : 0;
         parameters.use_reference_rope=1;
         parameters.use_slower_bf16_mlp=!r.allow_approximation;
         parameters.use_slower_bf16_qkv=!r.allow_approximation;
@@ -212,6 +224,15 @@ public:
                   @"operation":@(r.operation.c_str()),@"output":@(r.output.c_str()),
                   @"width":@(result->width),@"height":@(result->height),
                   @"frames":@(result->frames),@"fps":@(result->fps),@"audio":@(r.audio),
+                  @"ssd_streaming":@(result->ssd_streaming),
+                  @"ssd_pinned_blocks":@(result->ssd_pinned_blocks),
+                  @"ssd_streamed_blocks":@(result->ssd_streamed_blocks),
+                  @"ssd_memory_budget_bytes":@(result->ssd_memory_budget_bytes),
+                  @"ssd_block_bytes":@(result->ssd_block_bytes),
+                  @"ssd_activation_reserve_bytes":@(result->ssd_activation_reserve_bytes),
+                  @"ssd_bytes_read":@(result->ssd_bytes_read),
+                  @"ssd_read_seconds":@(result->ssd_read_seconds),
+                  @"ssd_wait_seconds":@(result->ssd_wait_seconds),
                   @"plan":to_dictionary(plan),
                   @"seconds":@(std::chrono::duration<double>(Clock::now()-start).count()),
                   @"validation": used_runtime_cache ? @"native_executor_runtime_lora_cache_verified" : @"native_executor_manifest_verified",

@@ -1,0 +1,111 @@
+{
+  "schema": "turbocider-h3-ssd-pinned-prefix-dit-v1",
+  "date": "2026-09-08",
+  "hardware": {
+    "gpu": "Apple M4 Max",
+    "physical_memory_bytes": 68719476736,
+    "recommended_working_set_bytes": 55662788608,
+    "mlx_version": "0.32.2",
+    "macos": "26.6.2"
+  },
+  "scope": {
+    "weights": "real 62 GiB MiniMax-H3 LightX2V Turbo Transformer",
+    "pipeline": "native h3_dit_load_t2va plus four-step h3_dit_denoise_euler",
+    "input": "deterministic synthetic 32-row BF16 text embedding and seed-42 video/audio latent",
+    "shape": {
+      "requested_video": [22, 256, 256],
+      "video_latent_elements": 43008,
+      "audio_latent_elements": 2368
+    },
+    "excluded": [
+      "tokenizer",
+      "Qwen text encoder",
+      "video VAE",
+      "audio VAE",
+      "MP4 mux"
+    ],
+    "reason_for_exclusion": "the local model fixture retains the complete Transformer but its non-Transformer component symlinks are broken; no additional approximately 72 GiB download was performed"
+  },
+  "method": {
+    "order": ["streamed", "pinned_16_gib", "pinned_16_gib", "streamed"],
+    "processes_per_route": 2,
+    "command": "build/native/h3-dit-streaming-probe ${H3_TRANSFORMER_ROOT} MEMORY_BUDGET_BYTES outputs/h3-pinned-prefix-2026-09-08/OUTPUT.f32",
+    "exact_kernel_flags": true,
+    "os_file_cache_flushed": false
+  },
+  "streamed": {
+    "memory_budget_bytes": 0,
+    "pinned_blocks": 0,
+    "streamed_blocks": 50,
+    "block_bytes": 770725376,
+    "activation_reserve_bytes": 4294967296,
+    "bytes_read_per_run": 154911375360,
+    "samples": [
+      {
+        "load_seconds": 5.780935,
+        "denoise_seconds": 18.193501,
+        "total_seconds": 23.975402,
+        "read_seconds": 18.300059,
+        "wait_seconds": 11.609715,
+        "peak_live_bytes": 1680843112
+      },
+      {
+        "load_seconds": 5.491598,
+        "denoise_seconds": 16.417807,
+        "total_seconds": 21.910105,
+        "read_seconds": 16.540654001,
+        "wait_seconds": 9.866982,
+        "peak_live_bytes": 1680843112
+      }
+    ],
+    "median_load_seconds": 5.6362665,
+    "median_denoise_seconds": 17.305654,
+    "median_total_seconds": 22.9427535,
+    "median_wait_seconds": 10.7383485
+  },
+  "pinned_16_gib": {
+    "memory_budget_bytes": 17179869184,
+    "pinned_blocks": 14,
+    "streamed_blocks": 36,
+    "block_bytes": 770725376,
+    "activation_reserve_bytes": 4294967296,
+    "bytes_read_per_run": 111751987200,
+    "samples": [
+      {
+        "load_seconds": 8.284939,
+        "denoise_seconds": 15.155885,
+        "total_seconds": 23.441917,
+        "read_seconds": 11.980041,
+        "wait_seconds": 6.576561,
+        "peak_live_bytes": 12470690152
+      },
+      {
+        "load_seconds": 7.216326,
+        "denoise_seconds": 15.205109,
+        "total_seconds": 22.422172,
+        "read_seconds": 12.145633,
+        "wait_seconds": 7.257696,
+        "peak_live_bytes": 12470690152
+      }
+    ],
+    "median_load_seconds": 7.7506325,
+    "median_denoise_seconds": 15.180497,
+    "median_total_seconds": 22.9320445,
+    "median_wait_seconds": 6.9171285
+  },
+  "comparison": {
+    "all_outputs_finite": true,
+    "all_outputs_byte_exact": true,
+    "output_sha256": "04d7ce2e361e773c347ad2c839a45a3e459f6d467dc8ec690785c086348c71b8",
+    "denoise_speedup": 1.1399925839,
+    "fresh_total_speedup": 1.0004669885,
+    "stream_bytes_reduction_fraction": 0.2786069652,
+    "median_wait_reduction_fraction": 0.3558480152,
+    "interpretation": "Pinned-prefix preserves exact DiT output and materially reduces streamed I/O and denoise waiting. Its first-load cost offsets the gain in a fresh process, so the main benefit is a retained session or repeated request rather than cold click-to-output latency."
+  },
+  "status": {
+    "real_transformer_execution": "passed",
+    "full_model_mp4_e2e": "pending_missing_local_non_transformer_fixture",
+    "automatic_policy": "not enabled from this two-sample single-machine probe"
+  }
+}

@@ -48,5 +48,9 @@ LLaDA GPU/ANE benchmark 可用 `--require-quality` 启用该门禁；不传此�
 
 - `z-image-gguf-streaming-matrix-2026-09-08.json`：M4 Max 上 Q3_K_S、Q4_K_M、Q8_0 256² resident/streaming ABBA×2 矩阵；包含重复 warm、物理 footprint、预算语义和逐像素质量门禁。
 
+- `h3-ssd-pinned-prefix-policy-2026-09-08.json`：H3 动态 pinned-prefix 的无模型权重策略测试；验证双 slot、activation reserve、预算上限和至少一个 streamed block 的 fail-closed 约束。真实 H3 权重 E2E 仍待补。
+
+- `h3-ssd-pinned-prefix-dit-2026-09-08.json`：真实 62 GiB H3 Transformer 的 A/B/B/A DiT probe。16 GiB 预算选择 14 个 pinned block，四份最终 latent 字节完全一致；denoise 中位数约提升 1.140×，fresh 总时间基本持平。由于本机完整模型的 tokenizer/text encoder/VAE 符号链接已失效，该记录不包含完整 MP4 E2E。
+
 - `transformer-heterogeneous-2026-09-08.json`：固定版本的 mac_transformer/ANE 证据、MLP/模型 E2E、Core ML startup 和异构采用结论。
 - `private-ane-shipping-isolation-2026-09-08.json`：private `_ANE*` 源码隔离、shipping binary 字符串/依赖审计、portable package 和测试结果。

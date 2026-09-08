@@ -172,10 +172,15 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             (r.model == "z-image-turbo-gguf" &&
              (r.streaming_offload || r.residency == "streaming"))
                 ? @"sd_cpp_max_vram_hint_not_process_cap"
+                : (r.model == "minimax-h3-turbo" &&
+                   r.residency == "streamed" && r.memory_budget_bytes)
+                    ? @"h3_dit_working_set_target_not_process_cap"
                 : (r.memory_budget_bytes ? @"runtime_request_budget" : @"unset"),
         @"operation" : @(r.operation.c_str()),
         @"residency" : @(r.residency.c_str()),
-        @"streaming_offload" : @(r.streaming_offload || r.residency == "streaming"),
+        @"streaming_offload" : @(r.streaming_offload ||
+                                  r.residency == "streaming" ||
+                                  r.residency == "streamed"),
         @"profile_identity" : @(r.profile_identity.c_str()),
         @"weight_validation" : weight_validation,
         @"lora_count" : @(r.loras.size()),

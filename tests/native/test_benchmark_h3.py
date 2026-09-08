@@ -34,6 +34,7 @@ def arguments(tmp_path: Path, **overrides) -> argparse.Namespace:
         "steps": 4,
         "seed": 42,
         "residency": "streamed",
+        "memory_budget_bytes": 0,
         "rounds": 2,
         "max_overhead_percent": 5.0,
         "allow_approximation": False,
@@ -71,6 +72,19 @@ def test_lora_request_is_manifest_bound(tmp_path: Path) -> None:
         }
     ]
     assert request["execution"]["residency"] == "streamed"
+
+
+def test_memory_budget_is_forwarded_for_streamed_requests(tmp_path: Path) -> None:
+    args = arguments(tmp_path, memory_budget_bytes=16 << 30)
+    benchmark_h3.validate_args(args)
+    request = benchmark_h3.build_turbocider_request(args, tmp_path / "out.mp4")
+    assert request["execution"]["memory_budget_bytes"] == 16 << 30
+
+
+def test_memory_budget_requires_streamed_residency(tmp_path: Path) -> None:
+    args = arguments(tmp_path, residency="resident", memory_budget_bytes=16 << 30)
+    with pytest.raises(ValueError, match="streamed residency"):
+        benchmark_h3.validate_args(args)
 
 
 def test_approximation_cannot_be_mislabeled_exact(tmp_path: Path) -> None:

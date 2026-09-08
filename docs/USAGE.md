@@ -168,7 +168,13 @@ Python/bin/python tools/native/benchmark_h3.py \
   --output-dir outputs/benchmarks/h3-comparison
 ```
 
+在 streamed 路径上测试预算驱动的 pinned-prefix，可附加
+`--memory-budget-bytes 17179869184`（16 GiB）；对照工具会把预算只写入
+TurboCider 请求，direct `h3.c` 仍使用无预算的双槽 streamed 基线。
+
 如需检查请求级 H3 LoRA provenance，再传 `--lora PATH --lora-strength 0.0625`。
+
+H3 在 `residency: "streamed"` 下支持可选的 `memory_budget_bytes`。设定预算后，运行时会根据当前视频布局的 activation scratch、两个 BF16 streaming slot 和每个 DiT block 的 payload，自动把前置 active blocks 保留在 GPU 可读内存中，其余 block 继续从 safetensors 后台流入；结果 JSON 会返回 `ssd_pinned_blocks`、`ssd_streamed_blocks` 和 I/O 等指标。预算是 working-set 目标而非整个进程的硬上限，低于最低 reserve、超出物理内存或无法保留 streamed suffix 时会直接拒绝。没有预算时仍使用原来的双 slot streaming。
 direct 与 TurboCider 都读取已经预合并的同一 Transformer；TurboCider 额外验证请求中的
 adapter 大小、SHA-256 和 strength。近似 kernel 测试必须同时显式传
 `--allow-approximation --allow-output-difference`，不能被记录为 exact parity。

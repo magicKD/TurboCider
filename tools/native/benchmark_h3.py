@@ -35,6 +35,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--steps", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--residency", choices=("resident", "streamed"), default="streamed")
+    parser.add_argument(
+        "--memory-budget-bytes",
+        type=int,
+        default=0,
+        help="TurboCider streamed working-set target; zero preserves the original two-slot path",
+    )
     parser.add_argument("--rounds", type=int, default=2)
     parser.add_argument("--max-overhead-percent", type=float, default=5.0)
     parser.add_argument("--allow-approximation", action="store_true")
@@ -68,6 +74,10 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("the H3 Turbo comparison requires four steps")
     if args.rounds < 1:
         raise ValueError("rounds must be positive")
+    if args.memory_budget_bytes < 0:
+        raise ValueError("memory budget must be non-negative")
+    if args.memory_budget_bytes and args.residency != "streamed":
+        raise ValueError("memory budget requires streamed residency")
     if args.max_overhead_percent < 0:
         raise ValueError("max overhead percent must be non-negative")
     if args.allow_approximation and not args.allow_output_difference:
@@ -129,6 +139,7 @@ def build_turbocider_request(args: argparse.Namespace, output: Path) -> dict:
             "policy": "gpu",
             "residency": args.residency,
             "allow_approximation": args.allow_approximation,
+            "memory_budget_bytes": args.memory_budget_bytes,
         },
     }
     if args.lora is not None:

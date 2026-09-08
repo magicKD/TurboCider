@@ -177,18 +177,18 @@ TurboCider 当前对应能力：
 | 量化模型 | 准备期 4-bit/8-bit | Z-Image GGUF 多 K-quant + native Q8；H3 运行期 INT8 kernel，但 streamed H3 仍 BF16 |
 | block streaming | 动态 residency + reusable refill | H3 BF16 双 slot + background `pread`；Z-Image GGUF 由 pinned sd.cpp `--stream-layers` |
 | 低内存 LTX | plugin 支持 16 GB | TurboCider 只有 `component_staged`，尚无 LTX per-block streaming |
-| 自适应 pinning | 基于 trunk、真实 block bytes、scratch 和 RAM | TurboCider H3 目前是 resident/streamed 二选一，缺动态 pinned prefix |
+| 自适应 pinning | 基于 trunk、真实 block bytes、scratch 和 RAM | TurboCider H3 streamed 请求已支持按 activation reserve、双 slot 和 BF16 block bytes 选择动态 pinned prefix；真实权重 E2E 仍待复测 |
 | offload 质量 | 同模型专用准备 | GGUF Q3/Q4/Q8 256² streaming 与 resident decoded RGB 完全一致 |
 
 Z-Image 的重复 ABBA×2 256²矩阵显示，Q3_K_S/Q4_K_M/Q8_0 的 streaming warm 中位数相对 resident 分别慢 `4.00%/7.75%/7.83%`，而 child lifetime physical footprint 分别降低 `25.2%/30.0%/38.3%`；十二组 decoded RGB 配对全部逐像素一致。这里的 8 GiB `memory_budget_bytes` 只是 sd.cpp `--max-vram` working-set hint，实际 child physical footprint 仍为约 11.22–11.35 GB。因此 low-memory 路径已经可用且数值正确，但不是无代价加速；三种量化均未通过当前 1.02 material-regression gate，1024²、多 seed 和 LoRA 矩阵仍待补齐。完整证据见 [`z-image-gguf-streaming-matrix-2026-09-08.json`](validation/z-image-gguf-streaming-matrix-2026-09-08.json)。
 
 下一步最有价值的 vpipe-style 改进是：
 
-1. 给 H3 加入基于真实 block bytes、activation scratch 和内存压力的动态 pinned prefix，而不是全 resident/全 streamed；
+1. 用真实 H3 权重做 resident、无预算 streamed 和 budgeted pinned-prefix 的 E2E ABBA，确认前缀遥测、输出和 wall-time；
 2. 让 H3 streaming 支持量化 block payload，避免目前 streaming 与 INT8 MLP/QKV 互斥；
 3. 给 LTX 实现 stage-aware 双 slot per-block refill，并把 4.6 GB 级 non-block trunk、text connector 和 VAE 峰值纳入预算；
 4. 用 `pread` 到已分配 Metal buffer，保留少数不可 raw-copy tensor 的原加载路径；
-5. 用真实 E2E ABBA 比较 resident、component-staged、streamed、pinned-prefix，而不是只测 SSD GB/s。
+5. 扩展真实多尺寸、多 seed 和多机器的低内存矩阵，而不是只测 SSD GB/s。
 
 ## 8. 模型级采用矩阵
 

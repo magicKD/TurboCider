@@ -100,6 +100,17 @@ typedef struct {
     /* Keep only two original BF16 DiT blocks in memory and overlap reading the
      * next block from the checkpoint with execution of the current block. */
     int ssd_streaming;
+    /* With SSD streaming, keep this many leading active DiT blocks resident
+     * and stream the remaining suffix. Zero keeps the original two-slot
+     * behavior when no memory budget is supplied; with a budget, zero asks
+     * the runtime to choose the largest prefix that fits. The runtime rejects
+     * values that leave no active block to stream. */
+    int ssd_pinned_prefix;
+    /* Optional total DiT working-set target. When nonzero, the runtime picks
+     * the largest safe pinned prefix after accounting for actual request
+     * activations, two streaming slots, fixed weights and safety headroom.
+     * An explicit ssd_pinned_prefix may request fewer blocks, never more. */
+    uint64_t ssd_memory_budget_bytes;
     /* Optional lower internal model canvas. Both must be zero (exact output
      * canvas) or valid same-aspect dimensions no larger than width/height. */
     int render_width;
@@ -140,7 +151,7 @@ typedef struct {
     H3_DEFAULT_WIDTH, H3_DEFAULT_HEIGHT, H3_DEFAULT_FRAMES, H3_DEFAULT_STEPS, \
     12.0, 3.0, UINT64_C(42), NULL, NULL, NULL, NULL, 0, \
     H3_REFERENCE_IMAGE_MATCH, \
-    1, H3_DEFAULT_DIT_LAYERS, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL \
+    1, H3_DEFAULT_DIT_LAYERS, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL \
 }
 
 typedef struct {
@@ -176,6 +187,15 @@ struct h3_result {
     int fps;
     int sample_rate;
     uint64_t seed;
+    int ssd_streaming;
+    int ssd_pinned_blocks;
+    int ssd_streamed_blocks;
+    uint64_t ssd_memory_budget_bytes;
+    uint64_t ssd_block_bytes;
+    uint64_t ssd_activation_reserve_bytes;
+    uint64_t ssd_bytes_read;
+    double ssd_read_seconds;
+    double ssd_wait_seconds;
     int decoded_width;
     int decoded_height;
     int decoded_frames;

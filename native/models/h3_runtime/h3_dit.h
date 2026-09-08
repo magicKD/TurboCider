@@ -17,6 +17,19 @@ typedef enum {
     H3_DIT_COREML_BENCHMARK_CANDIDATE
 } h3_dit_coreml_benchmark_route;
 
+typedef struct {
+    int enabled;
+    unsigned active_blocks;
+    unsigned pinned_blocks;
+    unsigned streamed_blocks;
+    uint64_t memory_budget_bytes;
+    uint64_t block_bytes;
+    uint64_t activation_reserve_bytes;
+    uint64_t bytes_read;
+    double read_seconds;
+    double wait_seconds;
+} h3_dit_streaming_info;
+
 typedef void (*h3_dit_progress)(const char *phase, int completed, int total,
                                 void *opaque);
 
@@ -36,6 +49,8 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
                          unsigned core_reuse_interval,
                          int token_reduction,
                          int ssd_streaming,
+                         int ssd_pinned_prefix,
+                         uint64_t ssd_memory_budget_bytes,
                          float spatial_rope_scale,
                          int use_slower_bf16_mlp,
                          int use_slower_bf16_qkv,
@@ -66,6 +81,8 @@ h3_dit *h3_dit_load_t2va_core(
                          unsigned core_reuse_interval,
                          int token_reduction,
                          int ssd_streaming,
+                         int ssd_pinned_prefix,
+                         uint64_t ssd_memory_budget_bytes,
                          float spatial_rope_scale,
                          int use_slower_bf16_mlp,
                          int use_slower_bf16_qkv,
@@ -94,6 +111,8 @@ h3_dit *h3_dit_load_conditioned(
                          unsigned core_reuse_interval,
                          int token_reduction,
                          int ssd_streaming,
+                         int ssd_pinned_prefix,
+                         uint64_t ssd_memory_budget_bytes,
                          float spatial_rope_scale,
                          int use_slower_bf16_mlp,
                          int use_slower_bf16_qkv,
@@ -204,6 +223,8 @@ int h3_dit_reuse_schedule(int steps, int reuse_interval, uint8_t *selected,
                           size_t selected_count);
 
 int h3_dit_get_gpu_stats(const h3_dit *dit, h3_gpu_stats *stats);
+int h3_dit_get_streaming_info(const h3_dit *dit,
+                              h3_dit_streaming_info *info);
 /* True after an opt-in final-pass progressive eviction consumed resident
  * block weights. Such a DiT is intentionally one-shot and cannot be cached or
  * reprepared for another request. */

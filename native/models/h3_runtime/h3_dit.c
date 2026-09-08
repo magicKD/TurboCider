@@ -5,6 +5,7 @@
 #include "h3_ane_linear.h"
 #include "h3_ane_mlp.h"
 #include "h3_dit_schedule.h"
+#include "h3_streaming_policy.h"
 #include "h3_weights.h"
 
 #include <ctype.h>
@@ -185,6 +186,8 @@ struct h3_dit {
     int use_slower_grouped_quantizer;
     int use_int8_row_fc2;
     int ssd_streaming;
+    int ssd_pinned_prefix;
+    uint64_t ssd_memory_budget_bytes;
     int keep_bf16_mlp;
     int request_ready;
     int activation_aliases;
@@ -867,30 +870,21 @@ static uint32_t token_reduced_parent(const h3_dit *dit, uint32_t full_row) {
            (local % spatial_width) / 2;
 }
 
-static int load_block(h3_dit *dit, h3_dit_block *block, const char *prefix,
-                      int load_mlp, char *error, size_t error_size) {
+static int load_block_matrices(h3_dit *dit, h3_dit_block *block,
+                               const char *prefix, int load_mlp,
+                               char *error, size_t error_size) {
     char name[160];
-#define LOAD1(field, suffix, width) do {                                       \
-    snprintf(name, sizeof(name), "%s%s", prefix, suffix);                    \
-    block->field = bf1(dit, name, width, error, error_size);                    \
-    if (!block->field) return 0;                                                \
-} while (0)
 #define LOAD2(field, suffix, rows, columns) do {                               \
     snprintf(name, sizeof(name), "%s%s", prefix, suffix);                    \
     block->field = bf2(dit, name, rows, columns, error, error_size);            \
     if (!block->field) return 0;                                                \
 } while (0)
-    LOAD1(norm1, "norm1.weight", HIDDEN);
-    LOAD1(norm2, "norm2.weight", HIDDEN);
     LOAD2(qkv, "attn.qkv_proj.weight", INNER * 3, HIDDEN);
-    LOAD1(q_norm, "attn.q_norm.weight", HEAD_DIM);
-    LOAD1(k_norm, "attn.k_norm.weight", HEAD_DIM);
     LOAD2(out, "attn.out_proj.weight", HIDDEN, INNER);
     if (load_mlp) {
         LOAD2(fc1, "mlp.fc1.weight", FFN * 2, HIDDEN);
         LOAD2(fc2, "mlp.fc2.weight", HIDDEN, FFN);
     }
-#undef LOAD1
 #undef LOAD2
     return 1;
 }
@@ -910,6 +904,13 @@ static int load_block_norms(h3_dit *dit, h3_dit_block *block,
     LOAD1(k_norm, "attn.k_norm.weight", HEAD_DIM);
 #undef LOAD1
     return 1;
+}
+
+static int load_block(h3_dit *dit, h3_dit_block *block, const char *prefix,
+                      int load_mlp, char *error, size_t error_size) {
+    return load_block_norms(dit, block, prefix, error, error_size) &&
+        load_block_matrices(
+            dit, block, prefix, load_mlp, error, error_size);
 }
 
 static int parse_coreml_block(unsigned *selected,
@@ -4492,6 +4493,99 @@ static unsigned first_active_block(const h3_dit *dit) {
     return H3_DIT_BLOCKS;
 }
 
+static unsigned active_block_ordinal(const h3_dit *dit, unsigned block) {
+    unsigned ordinal = 0;
+    if (!dit || block >= H3_DIT_BLOCKS || !dit->block_active[block])
+        return UINT_MAX;
+    for (unsigned index = 0; index < block; index++)
+        if (dit->block_active[index]) ordinal++;
+    return ordinal;
+}
+
+static int stream_block_pinned(const h3_dit *dit, unsigned block) {
+    unsigned ordinal = active_block_ordinal(dit, block);
+    return ordinal != UINT_MAX && ordinal < (unsigned)dit->ssd_pinned_prefix;
+}
+
+static unsigned first_streamed_block(const h3_dit *dit) {
+    for (unsigned block = 0; block < H3_DIT_BLOCKS; block++)
+        if (dit->block_active[block] && !stream_block_pinned(dit, block))
+            return block;
+    return H3_DIT_BLOCKS;
+}
+
+static unsigned next_streamed_block(const h3_dit *dit, unsigned current) {
+    for (unsigned offset = 1; offset <= H3_DIT_BLOCKS; offset++) {
+        unsigned block = (current + offset) % H3_DIT_BLOCKS;
+        if (dit->block_active[block] && !stream_block_pinned(dit, block))
+            return block;
+    }
+    return H3_DIT_BLOCKS;
+}
+
+/* Return the BF16 payload size of one complete transformer block. This is
+ * intentionally derived from the compiled model constants rather than a
+ * checkpoint-specific file size so the policy remains valid with sharding. */
+static uint64_t ssd_full_block_bytes(void) {
+    uint64_t elements = (uint64_t)INNER * 3u * HIDDEN +
+        (uint64_t)HIDDEN * INNER +
+        (uint64_t)FFN * 2u * HIDDEN +
+        (uint64_t)HIDDEN * FFN +
+        (uint64_t)HIDDEN * 2u + (uint64_t)HEAD_DIM * 2u;
+    return elements * sizeof(uint16_t);
+}
+
+static uint64_t ssd_activation_reserve_bytes(const h3_dit *dit) {
+    if (!dit) return 0;
+    /* The request arena contains multiple HIDDEN and INNER work buffers. Use
+     * a conservative 8/4-buffer envelope plus a fixed 4 GiB margin for the
+     * VAE, text encoder and allocator slack. This is a placement hint, not a
+     * claim about the process hard limit. */
+    uint64_t hidden = (uint64_t)dit->sequence * HIDDEN;
+    uint64_t inner = (uint64_t)dit->sequence * INNER;
+    if (hidden > UINT64_MAX / (8u * sizeof(uint16_t)) ||
+        inner > UINT64_MAX / (4u * sizeof(uint16_t))) return UINT64_MAX;
+    uint64_t bytes = hidden * 8u * sizeof(uint16_t) +
+        inner * 4u * sizeof(uint16_t);
+    return bytes > (4ull << 30) ? bytes : (4ull << 30);
+}
+
+static int configure_ssd_pinned_prefix(h3_dit *dit, int requested,
+                                       uint64_t budget,
+                                       char *error, size_t error_size) {
+    if (!dit || requested < 0 || requested > H3_DIT_BLOCKS) {
+        fail(error, error_size, "invalid H3 SSD pinned prefix");
+        return 0;
+    }
+    if (!dit->ssd_streaming && (requested || budget)) {
+        fail(error, error_size,
+             "SSD pinned prefix/budget requires SSD streaming");
+        return 0;
+    }
+    h3_stream_plan plan;
+    h3_stream_plan_status status = h3_stream_plan_build(
+        budget, ssd_activation_reserve_bytes(dit), ssd_full_block_bytes(),
+        dit->active_block_count, (unsigned)requested, &plan);
+    if (status != H3_STREAM_PLAN_OK) {
+        fail(error, error_size, "cannot configure H3 SSD streaming plan: %s",
+             h3_stream_plan_status_string(status));
+        return 0;
+    }
+    dit->ssd_pinned_prefix = (int)plan.pinned_blocks;
+    dit->ssd_memory_budget_bytes = budget;
+    if (h3_runtime_getenv("H3_PROFILE")) {
+        fprintf(stderr,
+                "h3: SSD pinned-prefix=%d/%u budget=%llu block=%.3f GiB "
+                "activation-reserve=%.3f GiB\n",
+                dit->ssd_pinned_prefix, dit->active_block_count,
+                (unsigned long long)budget,
+                (double)plan.block_bytes / (1024.0 * 1024.0 * 1024.0),
+                (double)plan.activation_reserve_bytes /
+                    (1024.0 * 1024.0 * 1024.0));
+    }
+    return 1;
+}
+
 static unsigned next_active_block(const h3_dit *dit, unsigned current) {
     for (unsigned block = current + 1; block < H3_DIT_BLOCKS; block++)
         if (dit->block_active[block]) return block;
@@ -4598,9 +4692,14 @@ static int load_core(h3_dit *dit, h3_dit_progress progress, void *opaque,
         snprintf(prefix, sizeof(prefix), "blocks.%u.", index);
         if (dit->ssd_streaming) {
             if (!load_block_norms(dit, &dit->blocks[index], prefix,
-                                  error, error_size) ||
-                !prepare_stream_layer(dit, index, error, error_size))
+                                  error, error_size))
                 return 0;
+            if (stream_block_pinned(dit, index)) {
+                if (!load_block_matrices(
+                        dit, &dit->blocks[index], prefix, 1,
+                        error, error_size)) return 0;
+            } else if (!prepare_stream_layer(
+                           dit, index, error, error_size)) return 0;
         } else {
             int use_coreml_mlp = coreml_mlp_enabled(
                 index, error, error_size);
@@ -4690,7 +4789,7 @@ static int load_core(h3_dit *dit, h3_dit_progress progress, void *opaque,
                                   error, error_size) ||
             !allocate_stream_slot(dit, &dit->stream_slots[1],
                                   error, error_size)) return 0;
-        unsigned first = first_active_block(dit);
+        unsigned first = first_streamed_block(dit);
         if (first == H3_DIT_BLOCKS) {
             fail(error, error_size, "SSD stream has no active DiT block");
             return 0;
@@ -5207,6 +5306,8 @@ static h3_dit *load_dit(const char *weight_directory,
                         unsigned core_reuse_interval,
                         int token_reduction,
                         int ssd_streaming,
+                        int ssd_pinned_prefix,
+                        uint64_t ssd_memory_budget_bytes,
                         float spatial_rope_scale,
                         int use_slower_bf16_mlp,
                         int use_slower_bf16_qkv,
@@ -5230,6 +5331,7 @@ static h3_dit *load_dit(const char *weight_directory,
     if (!weight_directory || !shader_source_path || !layout || !sigmas ||
         (defer_request_state != 0 && defer_request_state != 1) ||
         (ssd_streaming != 0 && ssd_streaming != 1) ||
+        ssd_pinned_prefix < 0 || ssd_pinned_prefix > H3_DIT_BLOCKS ||
         !isfinite(spatial_rope_scale) || spatial_rope_scale <= 0.0f ||
         active_blocks < H3_DIT_BLOCKS / 2 ||
         active_blocks > H3_DIT_BLOCKS || core_reuse_interval < 1 ||
@@ -5275,6 +5377,8 @@ static h3_dit *load_dit(const char *weight_directory,
     dit->bf16_final = h3_runtime_getenv("H3_DIT_F32_FINAL") == NULL;
     dit->core_reuse_interval = core_reuse_interval;
     dit->ssd_streaming = ssd_streaming;
+    dit->ssd_pinned_prefix = ssd_pinned_prefix;
+    dit->ssd_memory_budget_bytes = ssd_memory_budget_bytes;
     dit->spatial_rope_scale = spatial_rope_scale;
     configure_active_blocks(dit, active_blocks);
     if (!configure_explicit_gate_skip(dit, error, error_size) ||
@@ -5415,7 +5519,10 @@ static h3_dit *load_dit(const char *weight_directory,
     }
     profile_step_gate_scores(dit);
     if (!dit->schedule ||
-        !configure_step_gate_skip(dit, sigmas, error, error_size)) goto failed;
+        !configure_step_gate_skip(dit, sigmas, error, error_size) ||
+        !configure_ssd_pinned_prefix(
+            dit, ssd_pinned_prefix, ssd_memory_budget_bytes,
+            error, error_size)) goto failed;
     if (defer_request_state) {
         if (!load_core(dit, progress, progress_opaque,
                        error, error_size) ||
@@ -5456,6 +5563,8 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
                          unsigned core_reuse_interval,
                          int token_reduction,
                          int ssd_streaming,
+                         int ssd_pinned_prefix,
+                         uint64_t ssd_memory_budget_bytes,
                          float spatial_rope_scale,
                          int use_slower_bf16_mlp,
                          int use_slower_bf16_qkv,
@@ -5472,7 +5581,8 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
                          char *error, size_t error_size) {
     return load_dit(weight_directory, shader_source_path, text, layout, sigmas,
                     active_blocks, core_reuse_interval, token_reduction,
-                    ssd_streaming,
+                    ssd_streaming, ssd_pinned_prefix,
+                    ssd_memory_budget_bytes,
                     spatial_rope_scale,
                     use_slower_bf16_mlp, use_slower_bf16_qkv,
                     use_slower_bf16_attention_output,
@@ -5499,6 +5609,8 @@ h3_dit *h3_dit_load_t2va_core(
                          unsigned core_reuse_interval,
                          int token_reduction,
                          int ssd_streaming,
+                         int ssd_pinned_prefix,
+                         uint64_t ssd_memory_budget_bytes,
                          float spatial_rope_scale,
                          int use_slower_bf16_mlp,
                          int use_slower_bf16_qkv,
@@ -5515,7 +5627,8 @@ h3_dit *h3_dit_load_t2va_core(
                          char *error, size_t error_size) {
     return load_dit(weight_directory, shader_source_path, text, layout, sigmas,
                     active_blocks, core_reuse_interval, token_reduction,
-                    ssd_streaming, spatial_rope_scale,
+                    ssd_streaming, ssd_pinned_prefix,
+                    ssd_memory_budget_bytes, spatial_rope_scale,
                     use_slower_bf16_mlp, use_slower_bf16_qkv,
                     use_slower_bf16_attention_output,
                     use_slower_row_major_attention_output,
@@ -5540,6 +5653,8 @@ h3_dit *h3_dit_load_conditioned(
                          unsigned core_reuse_interval,
                          int token_reduction,
                          int ssd_streaming,
+                         int ssd_pinned_prefix,
+                         uint64_t ssd_memory_budget_bytes,
                          float spatial_rope_scale,
                          int use_slower_bf16_mlp,
                          int use_slower_bf16_qkv,
@@ -5560,7 +5675,8 @@ h3_dit *h3_dit_load_conditioned(
                          char *error, size_t error_size) {
     return load_dit(weight_directory, shader_source_path, text, layout, sigmas,
                     active_blocks, core_reuse_interval, token_reduction,
-                    ssd_streaming,
+                    ssd_streaming, ssd_pinned_prefix,
+                    ssd_memory_budget_bytes,
                     spatial_rope_scale,
                     use_slower_bf16_mlp, use_slower_bf16_qkv,
                     use_slower_bf16_attention_output,
@@ -6906,7 +7022,7 @@ static int encode_forward(h3_dit *dit, int step, int begin, int submit,
             h3_dit_stream_job stream_job;
             pthread_t stream_thread;
             int stream_started = 0;
-            if (dit->ssd_streaming) {
+            if (dit->ssd_streaming && !stream_block_pinned(dit, block)) {
                 if (dit->stream_ready_layer != block ||
                     dit->stream_ready_slot > 1) {
                     fail(error, error_size,
@@ -6923,24 +7039,24 @@ static int encode_forward(h3_dit *dit, int step, int begin, int submit,
                 streamed_weight.fc2 = slot->fc2;
                 weight = &streamed_weight;
 
-                unsigned future = next_active_block(dit, block);
-                if (future == H3_DIT_BLOCKS)
-                    future = first_active_block(dit);
-                stream_job = (h3_dit_stream_job){
-                    .dit = dit,
-                    .layer = future,
-                    .slot = dit->stream_ready_slot ^ 1u
-                };
-                int thread_error = pthread_create(
-                    &stream_thread, NULL, read_stream_layer_thread,
-                    &stream_job);
-                if (thread_error) {
-                    fail(error, error_size,
-                         "cannot start DiT SSD prefetch for block %u: %s",
-                         future, strerror(thread_error));
-                    return 0;
+                unsigned future = next_streamed_block(dit, block);
+                if (future != H3_DIT_BLOCKS) {
+                    stream_job = (h3_dit_stream_job){
+                        .dit = dit,
+                        .layer = future,
+                        .slot = dit->stream_ready_slot ^ 1u
+                    };
+                    int thread_error = pthread_create(
+                        &stream_thread, NULL, read_stream_layer_thread,
+                        &stream_job);
+                    if (thread_error) {
+                        fail(error, error_size,
+                             "cannot start DiT SSD prefetch for block %u: %s",
+                             future, strerror(thread_error));
+                        return 0;
+                    }
+                    stream_started = 1;
                 }
-                stream_started = 1;
             }
             int block_ok = run_block(
                 dit, block, step, weight, fused_token_adaln,
@@ -7375,7 +7491,7 @@ int h3_dit_reprepare(h3_dit *dit,
         return 0;
     }
     if (dit->ssd_streaming &&
-        (dit->stream_ready_layer != first_active_block(dit) ||
+        (dit->stream_ready_layer != first_streamed_block(dit) ||
          dit->stream_ready_slot > 1)) {
         fail(error, error_size,
              "resident SSD stream is not reset to its first active block");
@@ -7761,6 +7877,24 @@ int h3_dit_forward(h3_dit *dit, int step,
 
 int h3_dit_get_gpu_stats(const h3_dit *dit, h3_gpu_stats *stats) {
     return dit && h3_gpu_get_stats(dit->gpu, stats);
+}
+
+int h3_dit_get_streaming_info(const h3_dit *dit,
+                              h3_dit_streaming_info *info) {
+    if (!dit || !info) return 0;
+    memset(info, 0, sizeof(*info));
+    info->enabled = dit->ssd_streaming;
+    info->active_blocks = dit->active_block_count;
+    if (!dit->ssd_streaming) return 1;
+    info->pinned_blocks = (unsigned)dit->ssd_pinned_prefix;
+    info->streamed_blocks = info->active_blocks - info->pinned_blocks;
+    info->memory_budget_bytes = dit->ssd_memory_budget_bytes;
+    info->block_bytes = ssd_full_block_bytes();
+    info->activation_reserve_bytes = ssd_activation_reserve_bytes(dit);
+    info->bytes_read = dit->stream_bytes;
+    info->read_seconds = dit->stream_read_seconds;
+    info->wait_seconds = dit->stream_wait_seconds;
+    return 1;
 }
 
 int h3_dit_final_evicted(const h3_dit *dit) {

@@ -14,9 +14,10 @@
 
 - 已将 `gpu_ane/mac_transformer@9f322e1` 的 tensor/sequence/head/CPU/GPU/ANE、public/private ANE 和 1/multi-block 结论整理为 [Transformer 异构并行技术报告](../design/transformer-heterogeneous-report.md)。报告明确区分 hot operator、fresh process 和模型 E2E，不把 1.5–2.6× MLP micro 写成 H3/LTX 点击生成加速。
 - 已补充 [Core ML / ANE 启动报告](../design/coreml-ane-startup.md)：编译、load、interface/backing、zero-input warmup、first/subsequent prediction 分开计时；`prepare(load-only)` 能前移首请求开销，但不能减少 prepare+generate 总工作。
-- 已补充 [vpipe/H3/LTX 量化与 streaming 对照](../design/quantized-streaming-vpipe-comparison.md)：Z-Image GGUF streaming 的 Q3/Q4/Q8 256² 重复 ABBA×2 已完成，physical footprint 降低 25.2–38.3%，但 warm 代价为 4.00–7.83%，因此保持显式低内存 fallback；H3 已有 BF16 双 slot 后台 `pread`，LTX 仍缺 per-block streaming 和动态 pinned prefix。
+- 已补充 [vpipe/H3/LTX 量化与 streaming 对照](../design/quantized-streaming-vpipe-comparison.md)：Z-Image GGUF streaming 的 Q3/Q4/Q8 256² 重复 ABBA×2 已完成，physical footprint 降低 25.2–38.3%，但 warm 代价为 4.00–7.83%，因此保持显式低内存 fallback；H3 已有 BF16 双 slot 后台 `pread` 和预算驱动 pinned-prefix，LTX 仍缺 per-block streaming。
 - private ANE 已严格移入实验边界：正式 `native/` 删除调用 `_ANEInMemoryModel*` 的 bridge/MLP/linear 实现，产品构建链接 `h3_ane_disabled.c`；真实研究实现只留在 `experimental/video/h3/vendor`。完整 build 后 `libturbocider.dylib` 中没有 `_ANEInMemoryModel`、`_ANERequest`、`_ANEIOSurfaceObject` 或 AppleNeuralEngine 未解析符号。
 - `tools/native/build.sh`、`tests/repository/test_layout.py` 已加入静态 fail-closed 回归；public H3 Core ML、其他 native 模型和 Swift App 在移除 private bridge 后重新构建通过。
+- H3 BF16 SSD streaming 已加入预算驱动的动态 pinned-prefix：`memory_budget_bytes` 会按 activation reserve、两个 streaming slot 和完整 block payload 自动选择前缀；`h3_result`/运行 JSON 记录 pinned/streamed 数量和 I/O 遥测。无预算仍保持原有两槽路径，预算不足、前缀耗尽 streamed suffix 或显式前缀超预算均 fail closed。真实 62 GiB Transformer 的 A/B/B/A DiT probe 中，16 GiB 预算选择 14 个 pinned block，四份最终 latent 字节完全一致；denoise 中位数从 17.306 s 降到 15.180 s（1.140×），但首次权重加载变慢，fresh 总时间约 22.93 s 对 22.94 s，基本持平。完整 MP4 E2E 仍因本机非 Transformer fixture 的失效符号链接待补。
 
 ## 目标逐项状态
 
