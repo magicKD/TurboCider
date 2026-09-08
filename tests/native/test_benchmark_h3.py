@@ -87,6 +87,14 @@ def test_memory_budget_requires_streamed_residency(tmp_path: Path) -> None:
         benchmark_h3.validate_args(args)
 
 
+def test_retained_probe_reports_request_deltas_and_resets_the_dit() -> None:
+    source = (ROOT / "tools/native/h3_dit_streaming_probe.c").read_text()
+    assert "h3_dit_reset_run(dit" in source
+    assert '\\"bytes_read_delta\\"' in source
+    assert '\\"wait_seconds_delta\\"' in source
+    assert '\\"outputs_equal\\"' in source
+
+
 def test_approximation_cannot_be_mislabeled_exact(tmp_path: Path) -> None:
     args = arguments(tmp_path, allow_approximation=True)
     with pytest.raises(ValueError, match="allow-output-difference"):

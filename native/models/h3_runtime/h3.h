@@ -196,6 +196,11 @@ struct h3_result {
     uint64_t ssd_bytes_read;
     double ssd_read_seconds;
     double ssd_wait_seconds;
+    /* Per-request deltas. The fields above remain cumulative for retained
+     * sessions so existing one-shot telemetry keeps its original meaning. */
+    uint64_t ssd_request_bytes_read;
+    double ssd_request_read_seconds;
+    double ssd_request_wait_seconds;
     int decoded_width;
     int decoded_height;
     int decoded_frames;
@@ -218,6 +223,12 @@ const h3_model_info *h3_model(const h3_ctx *ctx);
 /* Interactive-session reuse. Disabled by default so one-shot callers retain
  * the original phase-by-phase memory lifetime. */
 void h3_cache_set_enabled(h3_ctx *ctx, int enabled);
+/* Control only the resident video/preview decoder portion of the interactive
+ * cache.  DiT and conditioning reuse remain governed by
+ * h3_cache_set_enabled().  This lets SSD-streamed serving retain its prepared
+ * transformer without silently changing the original phase-scoped VAE
+ * memory lifetime. */
+void h3_cache_set_decoder_enabled(h3_ctx *ctx, int enabled);
 void h3_cache_clear(h3_ctx *ctx);
 void h3_cache_get_info(const h3_ctx *ctx, h3_cache_info *info);
 

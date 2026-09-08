@@ -777,14 +777,23 @@ class ContractTests(unittest.TestCase):
         public=(ROOT/'native/models/h3_runtime/h3.h').read_text()
         core=(ROOT/'native/models/h3_runtime/h3.c').read_text()
         self.assertIn('parameters.ssd_memory_budget_bytes',session)
+        self.assertIn('r.residency == "resident" ||',session)
+        self.assertIn('r.residency == "streamed"',session)
+        self.assertIn('h3_cache_set_decoder_enabled(context_.get()',session)
         self.assertIn('@"ssd_pinned_blocks"',session)
+        self.assertIn('@"ssd_request_bytes_read"',session)
+        self.assertIn('@"cache_prepared_dit"',session)
+        self.assertIn('@"cache_video_decoder"',session)
         self.assertIn('stream_block_pinned(dit, index)',runtime)
         self.assertIn('first_streamed_block(dit)',runtime)
         self.assertIn('next_streamed_block(dit, block)',runtime)
         self.assertIn('h3_stream_plan_build(',runtime)
         self.assertIn('int ssd_pinned_prefix;',public)
         self.assertIn('uint64_t ssd_memory_budget_bytes;',public)
+        self.assertIn('uint64_t ssd_request_bytes_read;',public)
+        self.assertIn('void h3_cache_set_decoder_enabled(',public)
         self.assertIn('|ssd-pinned=%d|ssd-budget=%llu',core)
+        self.assertIn('h3_decoder_cache_enabled(ctx)',core)
 
     def test_fastmetal_is_an_executable_persistent_runtime_candidate(self):
         request={'model':'fastmetal-1.3b-qad','width':832,'height':480,

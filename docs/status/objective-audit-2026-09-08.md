@@ -8,7 +8,7 @@
 
 当前 TurboCider 已是可构建、可独立启动的 Apple-native runtime，正式构建不链接 private ANE API，FLUX、Z-Image、LLaDA、H3/LTX 以及 GGUF 的主要路径和统一请求/计划/生命周期已经接入。近似路径也已正确区分“允许尝试”和“质量/性能已验收”：默认 GPU，`gpu_ane` 必须显式许可和 manifest，自动策略只使用有实测证据的设备/shape/checkpoint 桶。
 
-但是，原始目标还没有全部完成。主要未闭环项是：GGUF streaming 的 1024²、多 seed 和 LoRA 矩阵；LTX hybrid 的 RGB/感知质量仍未通过；LLaDA LoRA、H3 动态 pinned-prefix、FLUX 9B hybrid 和跨机器/多 seed 验收尚未完成。当前分支不应被标记为“所有模型和所有 ANE 路径已经生产级完成”。
+但是，原始目标还没有全部完成。主要未闭环项是：GGUF streaming 的 1024²、多 seed 和 LoRA 矩阵；LTX hybrid 的 RGB/感知质量仍未通过；LLaDA LoRA、H3 量化 streaming 与完整媒体 E2E、FLUX 9B hybrid，以及跨机器/多 seed 验收。H3 动态 pinned-prefix 和 retained DiT 已完成真实 Transformer 验证。当前分支不应被标记为“所有模型和所有 ANE 路径已经生产级完成”。
 
 ## 逐项证据
 
@@ -21,7 +21,7 @@
 | Transformer tensor/sequence/head/CPU/GPU/ANE 对比 | `docs/design/transformer-heterogeneous-report.md`；`validation/transformer-heterogeneous-2026-09-08.json` | 主要实验完成 | FFN channel split 是当前推荐；attention/sequence/head split 的负结果和 Amdahl 限制已记录；仍需更多 block/shape/机器复测 |
 | 不要求逐 bit/逐像素完全对齐 | `native/runtime/plan.cpp`；`tools/native/quality_gate.py`；`tools/native/video_quality_gate.py` | 机制已完成，模型资格分层 | 允许近似不等于无条件通过；LTX hybrid 当前明确失败并保持 GPU 默认 |
 
-H3 低内存策略补充：`native/models/h3_runtime/h3_streaming_policy.[ch]` 提供无 GPU 依赖的预算规划器；它按两个 slot、activation reserve 和 block bytes 选择 pinned-prefix，并拒绝低于最低 working-set、超预算前缀和没有 streamed suffix 的请求。除无权重策略测试外，真实 62 GiB Transformer 的 A/B/B/A DiT probe 已完成：16 GiB 路线固定选择 14 pinned/36 streamed blocks，四份 latent 字节一致，denoise 中位数提升 1.140×，fresh 总时间基本持平。完整 tokenizer/text encoder/VAE/MP4 E2E 仍待恢复本机缺失 fixture 后补测。
+H3 低内存策略补充：`native/models/h3_runtime/h3_streaming_policy.[ch]` 提供无 GPU 依赖的预算规划器；它按两个 slot、activation reserve 和 block bytes 选择 pinned-prefix，并拒绝低于最低 working-set、超预算前缀和没有 streamed suffix 的请求。真实 62 GiB Transformer 的 A/B/B/A DiT probe 已完成：16 GiB 路线固定选择 14 pinned/36 streamed blocks，四份 latent 字节一致，denoise 中位数提升 1.140×，fresh 总时间基本持平。随后同一进程 retained probe 验证 streamed cursor 能回到首个 streamed block、第二次请求可 reset/reuse，且两次输出 SHA-256 一致；TurboCider Session 仅保留 streamed DiT/conditioning，不保留 VAE decoder。完整 tokenizer/text encoder/VAE/MP4 E2E 仍待恢复本机缺失 fixture 后补测。
 
 ## 近似正确性审计
 
@@ -37,14 +37,14 @@ H3 低内存策略补充：`native/models/h3_runtime/h3_streaming_policy.[ch]` �
 
 1. GGUF streaming 1024²、多 seed、LoRA 以及 8/16/24 GiB budget 矩阵；256² Q3/Q4/Q8 多轮 ABBA 已完成。
 2. LTX GPU+ANE 的多 prompt/seed 质量修复，以及低内存 16/24/32 GB 验收。
-3. H3 pinned-prefix 的完整 tokenizer/text encoder/VAE/MP4 E2E，以及正式 GPU+ANE 端到端资格；真实 Transformer DiT 对照已通过。
+3. H3 完整 tokenizer/text encoder/VAE/MP4 E2E、量化 streaming，以及正式 GPU+ANE 端到端资格；动态 pinned-prefix 和 retained Transformer DiT 对照已通过。
 4. LLaDA 独立 LoRA 文件、in-memory/inference-time 分支和多机器验证。
 5. FLUX 9B GPU+ANE；FLUX/Z-Image/GGUF LoRA 的异常、取消、多 adapter、多尺寸矩阵。
 6. 以统一的感知/语义指标补充 RGB 门禁，但仍需保留 tensor、media、性能和 provenance 门禁。
 
 ## 当前可提交性
 
-工作树在本审计开始时干净，`dev` 相对 `origin/dev` 领先两个提交。新增的 Vision 诊断、门禁测试和本审计文档完成后，应先运行：
+本次 H3 retained-session 变更前，工作树在审计开始时干净；当前 `dev` 相对 `origin/dev` 领先五个提交。新增代码、验证摘要和文档完成后，应先运行：
 
 ```sh
 make build-vision-quality

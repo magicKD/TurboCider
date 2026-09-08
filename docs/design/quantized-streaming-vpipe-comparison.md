@@ -50,7 +50,9 @@ H3 现在有 resident 和 BF16 SSD streaming 两条正式路径。streaming 使�
 
 这不是硬性进程内存上限：预算是 H3 DiT working-set target，系统 allocator、VAE、文本编码器和文件缓存仍可能产生额外 footprint。运行结果会记录 pinned/streamed block 数、估算 block/activation bytes、总读取和未隐藏等待时间。
 
-真实 62 GiB Transformer 的 256²、22 帧、四步 A/B/B/A probe 中，16 GiB 预算选择 14 pinned/36 streamed blocks；四份最终 video/audio latent 字节完全一致。无预算与 16 GiB 的 denoise 中位数分别为 17.306 s 和 15.180 s（1.140×），每次读取由 154.91 GB 降到 111.75 GB，等待中位数由 10.738 s 降到 6.917 s；但 pinned 首次装载更慢，fresh 总时间中位数为 22.932 s 对 22.943 s，仅基本持平。因此这项优化适合常驻 Session/重复请求，不应宣传为 cold E2E 加速。完整记录见 [H3 pinned-prefix DiT probe](validation/h3-ssd-pinned-prefix-dit-2026-09-08.json)。
+真实 62 GiB Transformer 的 256²、22 帧、四步 A/B/B/A probe 中，16 GiB 预算选择 14 pinned/36 streamed blocks；四份最终 video/audio latent 字节完全一致。无预算与 16 GiB 的 denoise 中位数分别为 17.306 s 和 15.180 s（1.140×），每次读取由 154.91 GB 降到 111.75 GB，等待中位数由 10.738 s 降到 6.917 s；但 pinned 首次装载更慢，fresh 总时间中位数为 22.932 s 对 22.943 s，仅基本持平。
+
+TurboCider Session 现已允许 streamed/pinned DiT 和 conditioning 跨请求保留，同时关闭 streamed 路线的 resident Video VAE/TAEH3 decoder，避免改变原有阶段式 VAE 内存生命周期。同一进程的两次 retained probe 中，四份输出 SHA-256 仍完全一致；第二次 16 GiB pinned denoise 为 11.109 s，无预算 streamed 为 15.469 s，读取量降低 28.0%、未隐藏等待降低 48.4%。这是单机单次 warm 对照，OS file cache 未清空，不替代完整 E2E ABBA。证据见 [fresh DiT probe](validation/h3-ssd-pinned-prefix-dit-2026-09-08.json)与 [retained DiT probe](validation/h3-ssd-pinned-prefix-retained-2026-09-08.json)。
 
 ### LTX 2.5
 
@@ -63,20 +65,19 @@ LTX 当前只有 resident/component-staged；component-staged 会按 text/transf
 | custom Metal forward | 全部 generative stack | H3/LTX custom Metal；图像模型主要 MLX/Metal | 图像模型仍依赖 MLX runtime |
 | quantized preparation | 4/8-bit 预处理 | GGUF 原生、多种 Q-format；H3 运行期 INT8 | H3 streaming 还不能带量化 shard |
 | block streaming | 通用双 slot + pread | H3 双 slot；GGUF 委托 sd.cpp | LTX 尚未 per-block streaming |
-| dynamic residency | 依据 trunk、block bytes、scratch、RAM 增长/回收 | resident、component-staged、streamed 固定策略 | 缺 pinned-prefix tuner |
+| dynamic residency | 依据 trunk、block bytes、scratch、RAM 增长/回收 | H3 budget-driven pinned-prefix；其余为 resident/component-staged/streamed | LTX/GGUF 尚无统一 tuner |
 | low-memory E2E | 16 GB 工作流已有公开案例 | GGUF 8 GB budget 已验证 256²；H3/LTX 仍需完整矩阵 | 不能把 256²证据外推到大图/视频 |
 
 ## 优化优先级
 
-1. 把 H3 当前全 resident/全 streamed 二选一升级为 pinned-prefix：根据真实 block bytes、trunk 和 scratch 预算决定保留前缀；
-2. 让 H3 streaming slot 支持已量化的 FC1/FC2/QKV payload，必要时在 refill 阶段只转换 scale，不重新 materialize 全 BF16；
+1. 让 H3 streaming slot 支持已量化的 FC1/FC2/QKV payload，必要时在 refill 阶段只转换 scale，不重新 materialize 全 BF16；
+2. 恢复完整 H3 tokenizer/text encoder/VAE fixture，做 resident/streamed/pinned 的真实媒体 E2E ABBA；
 3. 给 LTX 加 stage-aware 双 slot refill，明确 text connector、双流 audio/video 和 VAE 的 floor；
-4. 对不能 raw-copy 的 F32 modulation tensor 使用 `kUnservable` 式慢路径，不因少数 tensor 放弃整个 block streaming；
-5. 优先做 resident/component-staged/streamed/pinned 的真实 E2E ABBA；不要只比较 SSD 带宽或单层 matmul；
-6. 将 quality gate 与 memory gate 同时纳入自动策略：低内存节省不能以 silent steps/shape/token 裁剪换取。
+4. 对不能 raw-copy 的 F32 modulation tensor使用受控慢路径，不因少数 tensor 放弃整个 block streaming；
+5. 将 quality gate 与 memory gate 同时纳入自动策略：低内存节省不能以 silent steps/shape/token 裁剪换取。
 
 ## 当前判断
 
-TurboCider 已经具备可交付的 GGUF resident/streaming 路径；256² Q3/Q4/Q8 的重复 decoded-RGB gate 已通过，但 1.02 material-regression gate 未通过，因此它是正确的显式低内存 fallback，而不是自动性能优化。它还不是 vpipe 那种覆盖所有 DiT 的通用低内存调度器。当前最现实的目标是先完成 H3 pinned-prefix + quantized refill，再补 GGUF 1024²/多 seed/LoRA 和 LTX per-block streaming、16/24/32 GB 矩阵。
+TurboCider 已经具备可交付的 GGUF resident/streaming 路径；256² Q3/Q4/Q8 的重复 decoded-RGB gate 已通过，但 1.02 material-regression gate 未通过，因此它是正确的显式低内存 fallback，而不是自动性能优化。H3 pinned-prefix 与 retained DiT reuse 已完成真实 Transformer 验证，但量化 refill 和完整媒体 E2E 仍缺。TurboCider 还不是 vpipe 那种覆盖所有 DiT 的通用低内存调度器；下一步重点是 H3 quantized refill、GGUF 1024²/多 seed/LoRA，以及 LTX per-block streaming 的 16/24/32 GB 矩阵。
 
 证据：[Z-Image GGUF streaming matrix](validation/z-image-gguf-streaming-matrix-2026-09-08.json)、[Z-Image GGUF 总结](z-image-gguf.md)、[Transformer 异构报告](transformer-heterogeneous-report.md)。vpipe 仅作为外部设计参考，不进入 TurboCider 构建或运行时依赖。

@@ -1,0 +1,106 @@
+{
+  "schema": "turbocider-h3-ssd-pinned-prefix-retained-v1",
+  "date": "2026-09-08",
+  "hardware": {
+    "gpu": "Apple M4 Max",
+    "physical_memory_bytes": 68719476736,
+    "macos": "26.6.2",
+    "mlx_version": "0.32.2"
+  },
+  "scope": {
+    "weights": "real 62 GiB MiniMax-H3 LightX2V Turbo FL2VA Transformer",
+    "pipeline": "native h3_dit_load_t2va plus two retained h3_dit_denoise_euler requests",
+    "input": "deterministic synthetic 32-row BF16 text embedding and seed-42 video/audio latent",
+    "shape": {
+      "requested_video": [22, 256, 256],
+      "video_latent_elements": 43008,
+      "audio_latent_elements": 2368
+    },
+    "excluded": [
+      "tokenizer",
+      "Qwen text encoder",
+      "video VAE",
+      "audio VAE",
+      "MP4 mux"
+    ],
+    "reason_for_exclusion": "the local fixture has the complete Transformer but broken non-Transformer component symlinks"
+  },
+  "method": {
+    "command": "build/native/h3-dit-streaming-probe TRANSFORMER_DIR MEMORY_BUDGET_BYTES OUTPUT_F32 2",
+    "request_count": 2,
+    "same_process": true,
+    "same_shape_prompt_seed_and_latent": true,
+    "per_request_telemetry": "deltas from cumulative retained DiT counters",
+    "route_order": ["streamed", "pinned_16_gib"],
+    "os_file_cache_flushed": false,
+    "sample_limit": "one two-request process per route; use as lifecycle evidence, not a stable performance distribution"
+  },
+  "routes": {
+    "streamed": {
+      "memory_budget_bytes": 0,
+      "pinned_blocks": 0,
+      "streamed_blocks": 50,
+      "load_seconds": 5.710534,
+      "requests": [
+        {
+          "index": 1,
+          "denoise_seconds": 16.286245,
+          "bytes_read": 154140672000,
+          "read_seconds": 16.269061,
+          "wait_seconds": 9.743047001,
+          "gpu_seconds": 1.274206666,
+          "output_sha256": "04d7ce2e361e773c347ad2c839a45a3e459f6d467dc8ec690785c086348c71b8"
+        },
+        {
+          "index": 2,
+          "denoise_seconds": 15.469243,
+          "bytes_read": 154140672000,
+          "read_seconds": 15.452405001,
+          "wait_seconds": 8.964798,
+          "gpu_seconds": 1.273603916,
+          "output_sha256": "04d7ce2e361e773c347ad2c839a45a3e459f6d467dc8ec690785c086348c71b8"
+        }
+      ],
+      "outputs_equal": true,
+      "retained_request_speedup": 1.052814608
+    },
+    "pinned_16_gib": {
+      "memory_budget_bytes": 17179869184,
+      "pinned_blocks": 14,
+      "streamed_blocks": 36,
+      "load_seconds": 7.888868,
+      "requests": [
+        {
+          "index": 1,
+          "denoise_seconds": 15.177829,
+          "bytes_read": 110981283840,
+          "read_seconds": 12.212991,
+          "wait_seconds": 7.432763,
+          "gpu_seconds": 0.919905708,
+          "output_sha256": "04d7ce2e361e773c347ad2c839a45a3e459f6d467dc8ec690785c086348c71b8"
+        },
+        {
+          "index": 2,
+          "denoise_seconds": 11.109213,
+          "bytes_read": 110981283840,
+          "read_seconds": 9.351002,
+          "wait_seconds": 4.62234,
+          "gpu_seconds": 0.920467333,
+          "output_sha256": "04d7ce2e361e773c347ad2c839a45a3e459f6d467dc8ec690785c086348c71b8"
+        }
+      ],
+      "outputs_equal": true,
+      "retained_request_speedup": 1.366238004,
+      "second_request_vs_streamed_second_speedup": 1.392469746,
+      "second_request_read_reduction_fraction": 0.28,
+      "second_request_wait_reduction_fraction": 0.484389944
+    }
+  },
+  "conclusion": {
+    "stream_cursor_reset": "passed",
+    "retained_dit_reuse": "passed",
+    "same_request_output": "byte-identical across both routes and both requests",
+    "fresh_e2e": "not measured here; tokenizer/text encoder/VAE/MP4 fixture is incomplete",
+    "automatic_policy": "not enabled from this single-machine synthetic-conditioning probe"
+  }
+}

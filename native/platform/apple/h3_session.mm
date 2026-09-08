@@ -190,7 +190,17 @@ public:
                 "H3 memory budget exceeds physical memory");
         require(r.residency=="streamed" || !r.memory_budget_bytes,
                 "H3 memory budget requires streamed residency");
-        h3_cache_set_enabled(context_.get(),r.residency=="resident");
+        /* Streamed DiT sessions are reusable too.  The runtime's resident key
+         * includes streaming mode, pinned prefix and memory budget, while a
+         * failed/cancelled denoise detaches the cached DiT and reprepare
+         * requires the refill cursor to be back at the first streamed block.
+         * Keeping this cache enabled is what makes the measured retained-
+         * session benefit observable through the TurboCider Session API. */
+        h3_cache_set_enabled(context_.get(),
+                             r.residency == "resident" ||
+                             r.residency == "streamed");
+        h3_cache_set_decoder_enabled(context_.get(),
+                                     r.residency == "resident");
         h3_params parameters=H3_PARAMS_DEFAULT;
         parameters.width=r.width;parameters.height=r.height;parameters.frames=r.frames;parameters.steps=r.steps;parameters.seed=r.seed;
         parameters.video_flow_shift=video_shift;parameters.audio_flow_shift=3;
@@ -220,6 +230,8 @@ public:
         std::unique_ptr<h3_result,decltype(&h3_result_free)> result(h3_generate(context_.get(),r.prompt.c_str(),&parameters),h3_result_free);
         if(progress.failure)std::rethrow_exception(progress.failure);
         if(!result){checkpoint(cancel);throw std::runtime_error(h3_last_error(context_.get()));}
+        h3_cache_info cache_info{};
+        h3_cache_get_info(context_.get(), &cache_info);
         auto value = @{ @"schema_version":@1,@"model":@(r.model.c_str()),
                   @"operation":@(r.operation.c_str()),@"output":@(r.output.c_str()),
                   @"width":@(result->width),@"height":@(result->height),
@@ -233,6 +245,12 @@ public:
                   @"ssd_bytes_read":@(result->ssd_bytes_read),
                   @"ssd_read_seconds":@(result->ssd_read_seconds),
                   @"ssd_wait_seconds":@(result->ssd_wait_seconds),
+                  @"ssd_request_bytes_read":@(result->ssd_request_bytes_read),
+                  @"ssd_request_read_seconds":@(result->ssd_request_read_seconds),
+                  @"ssd_request_wait_seconds":@(result->ssd_request_wait_seconds),
+                  @"cache_prepared_dit":@(cache_info.prepared_dit),
+                  @"cache_video_decoder":@(cache_info.video_decoder),
+                  @"cache_embedding_entries":@(cache_info.embedding_entries),
                   @"plan":to_dictionary(plan),
                   @"seconds":@(std::chrono::duration<double>(Clock::now()-start).count()),
                   @"validation": used_runtime_cache ? @"native_executor_runtime_lora_cache_verified" : @"native_executor_manifest_verified",

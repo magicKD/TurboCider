@@ -79,6 +79,25 @@ void h3_cache_set_enabled(h3_ctx *ctx, int enabled) {
     ctx->cache_enabled = enabled != 0;
 }
 
+void h3_cache_set_decoder_enabled(h3_ctx *ctx, int enabled) {
+    if (!ctx) return;
+    if (!enabled) {
+        h3_video_vae_decoder_free(ctx->video_decoder);
+        ctx->video_decoder = NULL;
+        free(ctx->video_decoder_key);
+        ctx->video_decoder_key = NULL;
+        h3_taeh3_decoder_free(ctx->taeh3_decoder);
+        ctx->taeh3_decoder = NULL;
+        free(ctx->taeh3_decoder_key);
+        ctx->taeh3_decoder_key = NULL;
+    }
+    ctx->cache_decoder_enabled = enabled != 0;
+}
+
+static int h3_decoder_cache_enabled(const h3_ctx *ctx) {
+    return ctx && ctx->cache_enabled && ctx->cache_decoder_enabled;
+}
+
 void h3_cache_get_info(const h3_ctx *ctx, h3_cache_info *info) {
     if (!info) return;
     memset(info, 0, sizeof(*info));
@@ -600,6 +619,10 @@ h3_ctx *h3_load_dir(const char *model_dir) {
         h3_set_error(NULL, "out of memory creating H3 context");
         return NULL;
     }
+    /* Preserve the original interactive-cache behavior for callers that only
+     * opt into h3_cache_set_enabled().  Serving integrations can narrow this
+     * before generation. */
+    ctx->cache_decoder_enabled = 1;
     ctx->model_dir = strdup(model_dir);
     if (!ctx->model_dir) {
         h3_set_error(NULL, "out of memory copying model path");
@@ -1052,13 +1075,13 @@ static h3_video_vae_decoder *h3_acquire_video_decoder(
         int latent_height, int latent_width, h3_video_vae_progress progress,
         void *progress_opaque, int *cached, char *error, size_t error_size) {
     *cached = 0;
-    if (ctx->cache_enabled && ctx->video_decoder &&
+    if (h3_decoder_cache_enabled(ctx) && ctx->video_decoder &&
         ctx->video_decoder_key && !strcmp(ctx->video_decoder_key, key)) {
         *cached = 1;
         fprintf(stderr, "h3: video VAE cache hit\n");
         return ctx->video_decoder;
     }
-    if (ctx->cache_enabled) {
+    if (h3_decoder_cache_enabled(ctx)) {
         h3_video_vae_decoder_free(ctx->video_decoder);
         ctx->video_decoder = NULL;
         free(ctx->video_decoder_key);
@@ -1067,7 +1090,7 @@ static h3_video_vae_decoder *h3_acquire_video_decoder(
     h3_video_vae_decoder *decoder = h3_video_vae_decoder_load(
         weight_directory, "h3_shaders.metal", latent_height, latent_width,
         progress, progress_opaque, error, error_size);
-    if (!decoder || !ctx->cache_enabled) return decoder;
+    if (!decoder || !h3_decoder_cache_enabled(ctx)) return decoder;
     char *key_copy = strdup(key);
     if (!key_copy) {
         fprintf(stderr, "h3: warning: could not retain video VAE cache key\n");
@@ -1280,6 +1303,8 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     h3_result *result = NULL;
     h3_dit_streaming_info streaming_info;
     memset(&streaming_info, 0, sizeof(streaming_info));
+    h3_dit_streaming_info streaming_before;
+    memset(&streaming_before, 0, sizeof(streaming_before));
     char *conditioning_key = NULL;
     char *prepared_key = NULL;
     char *resident_key = NULL;
@@ -1354,14 +1379,14 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         }
         taeh3_key = taeh3_cache_key.text;
     }
-    if (ctx->cache_enabled && ctx->video_decoder &&
+    if (h3_decoder_cache_enabled(ctx) && ctx->video_decoder &&
         (!ctx->video_decoder_key || strcmp(ctx->video_decoder_key, decoder_key))) {
         h3_video_vae_decoder_free(ctx->video_decoder);
         ctx->video_decoder = NULL;
         free(ctx->video_decoder_key);
         ctx->video_decoder_key = NULL;
     }
-    if (ctx->cache_enabled && ctx->taeh3_decoder &&
+    if (h3_decoder_cache_enabled(ctx) && ctx->taeh3_decoder &&
         (!taeh3_key || !ctx->taeh3_decoder_key ||
          strcmp(ctx->taeh3_decoder_key, taeh3_key))) {
         h3_taeh3_decoder_free(ctx->taeh3_decoder);
@@ -2102,6 +2127,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     h3_rng_seed(&audio_rng, params->seed);
     h3_rng_fill_normal(&video_rng, video, video_count);
     h3_rng_fill_normal(&audio_rng, audio, audio_count);
+    (void)h3_dit_get_streaming_info(dit, &streaming_before);
     if (!h3_dit_denoise_euler_preview(
             dit, video, audio, params->denoise_reuse,
             h3_dit_progress_bridge, &progress,
@@ -2147,7 +2173,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     free(audio);
     audio = NULL;
     if (progress.cancelled) goto cleanup;
-    if (!use_taeh3 && !preview_decoder && ctx->cache_enabled) {
+    if (!use_taeh3 && !preview_decoder && h3_decoder_cache_enabled(ctx)) {
         h3_progress_emit(&progress, "video VAE load", 0, 36);
         preview_decoder = h3_acquire_video_decoder(
             ctx, decoder_key, vae_path, latent_h, latent_w,
@@ -2163,7 +2189,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     int video_ok = 0;
     if (use_taeh3) {
         h3_progress_emit(&progress, "TAEH3 load", 0, 1);
-        if (ctx->cache_enabled && ctx->taeh3_decoder &&
+        if (h3_decoder_cache_enabled(ctx) && ctx->taeh3_decoder &&
             ctx->taeh3_decoder_key && taeh3_key &&
             !strcmp(ctx->taeh3_decoder_key, taeh3_key)) {
             taeh3_decoder = ctx->taeh3_decoder;
@@ -2173,7 +2199,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             taeh3_decoder = h3_taeh3_decoder_load(
                 taeh3_weights, "h3_shaders.metal", latent_h, latent_w,
                 detail, sizeof(detail));
-            if (taeh3_decoder && ctx->cache_enabled) {
+            if (taeh3_decoder && h3_decoder_cache_enabled(ctx)) {
                 char *key_copy = strdup(taeh3_key);
                 if (key_copy) {
                     ctx->taeh3_decoder = taeh3_decoder;
@@ -2290,6 +2316,18 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     result->ssd_bytes_read = streaming_info.bytes_read;
     result->ssd_read_seconds = streaming_info.read_seconds;
     result->ssd_wait_seconds = streaming_info.wait_seconds;
+    result->ssd_request_bytes_read = streaming_info.bytes_read >=
+            streaming_before.bytes_read ?
+        streaming_info.bytes_read - streaming_before.bytes_read :
+        streaming_info.bytes_read;
+    result->ssd_request_read_seconds = streaming_info.read_seconds >=
+            streaming_before.read_seconds ?
+        streaming_info.read_seconds - streaming_before.read_seconds :
+        streaming_info.read_seconds;
+    result->ssd_request_wait_seconds = streaming_info.wait_seconds >=
+            streaming_before.wait_seconds ?
+        streaming_info.wait_seconds - streaming_before.wait_seconds :
+        streaming_info.wait_seconds;
     if (params->retain_decoded) {
         result->decoded_width = frames.width;
         result->decoded_height = frames.height;
