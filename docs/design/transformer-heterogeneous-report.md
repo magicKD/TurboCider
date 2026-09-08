@@ -178,9 +178,9 @@ TurboCider 当前对应能力：
 | block streaming | 动态 residency + reusable refill | H3 BF16 双 slot + background `pread`；Z-Image GGUF 由 pinned sd.cpp `--stream-layers` |
 | 低内存 LTX | plugin 支持 16 GB | TurboCider 只有 `component_staged`，尚无 LTX per-block streaming |
 | 自适应 pinning | 基于 trunk、真实 block bytes、scratch 和 RAM | TurboCider H3 目前是 resident/streamed 二选一，缺动态 pinned prefix |
-| offload 质量 | 同模型专用准备 | GGUF Q3_K_S 256² streaming 与 resident decoded RGB 完全一致 |
+| offload 质量 | 同模型专用准备 | GGUF Q3/Q4/Q8 256² streaming 与 resident decoded RGB 完全一致 |
 
-Z-Image Q3_K_S 256²实测中，streaming physical footprint 从约 14.91 GB 降到 9.52 GB，降低 36.1%；单个 warm 样本为 9.995 s 对 resident 9.534 s，慢约 4.8%。这说明当前 low-memory 路径已经可用，但还不能宣称“不影响性能”，因为只有每路线一个 warm 样本且没有 1024²矩阵。
+Z-Image 的重复 ABBA×2 256²矩阵显示，Q3_K_S/Q4_K_M/Q8_0 的 streaming warm 中位数相对 resident 分别慢 `4.00%/7.75%/7.83%`，而 child lifetime physical footprint 分别降低 `25.2%/30.0%/38.3%`；十二组 decoded RGB 配对全部逐像素一致。这里的 8 GiB `memory_budget_bytes` 只是 sd.cpp `--max-vram` working-set hint，实际 child physical footprint 仍为约 11.22–11.35 GB。因此 low-memory 路径已经可用且数值正确，但不是无代价加速；三种量化均未通过当前 1.02 material-regression gate，1024²、多 seed 和 LoRA 矩阵仍待补齐。完整证据见 [`z-image-gguf-streaming-matrix-2026-09-08.json`](validation/z-image-gguf-streaming-matrix-2026-09-08.json)。
 
 下一步最有价值的 vpipe-style 改进是：
 

@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "superseded_for_current_performance_claims_by": "z-image-gguf-streaming-matrix-2026-09-08.json",
   "model": "z-image-turbo-gguf",
   "workload": {
     "variant": "Q3_K_S",

@@ -8,14 +8,14 @@
 
 当前 TurboCider 已是可构建、可独立启动的 Apple-native runtime，正式构建不链接 private ANE API，FLUX、Z-Image、LLaDA、H3/LTX 以及 GGUF 的主要路径和统一请求/计划/生命周期已经接入。近似路径也已正确区分“允许尝试”和“质量/性能已验收”：默认 GPU，`gpu_ane` 必须显式许可和 manifest，自动策略只使用有实测证据的设备/shape/checkpoint 桶。
 
-但是，原始目标还没有全部完成。主要未闭环项是：GGUF streaming 缺少多轮 ABBA 和更高分辨率矩阵；LTX hybrid 的 RGB/感知质量仍未通过；LLaDA LoRA、H3 动态 pinned-prefix、FLUX 9B hybrid 和跨机器/多 seed 验收尚未完成。当前分支不应被标记为“所有模型和所有 ANE 路径已经生产级完成”。
+但是，原始目标还没有全部完成。主要未闭环项是：GGUF streaming 的 1024²、多 seed 和 LoRA 矩阵；LTX hybrid 的 RGB/感知质量仍未通过；LLaDA LoRA、H3 动态 pinned-prefix、FLUX 9B hybrid 和跨机器/多 seed 验收尚未完成。当前分支不应被标记为“所有模型和所有 ANE 路径已经生产级完成”。
 
 ## 逐项证据
 
 | 原始要求 | 当前证据 | 状态 | 说明 |
 |---|---|---|---|
 | TurboCider 自包含、整理并可提交 | `make build`、`make test`、`make package`；`docs/status/independence-and-dependencies-2026-09-06.md`；`tests/repository/test_independence.py` | 已完成（有边界） | H3/LTX runtime 已 vendored；模型权重、FFmpeg、FastMetal Python worker 仍是明确外部资源边界 |
-| GGUF 量化和低内存 streaming | `native/models/z_image_gguf_module.cpp`；`docs/design/z-image-gguf.md`；`validation/z-image-gguf-streaming-2026-09-08.json` | 基础完成，矩阵未完成 | sd.cpp disk-backed streaming 已工作；Q3_K_S 256² 物理 footprint 约降 36.1%，但目前每路线仅单 warm 样本 |
+| GGUF 量化和低内存 streaming | `native/models/z_image_gguf_module.cpp`；`tools/native/benchmark_z_image_gguf_streaming.py`；`validation/z-image-gguf-streaming-matrix-2026-09-08.json` | 基础完成，256² 三量化矩阵完成，整体目标未完成 | Q3/Q4/Q8 256² 四样本 ABBA×2 均像素精确，physical footprint 降 25.2–38.3%，但 warm 慢 4.00–7.83%；1.02 性能门禁均未通过，1024²/多 seed/LoRA 仍待补 |
 | Core ML/ANE 启动开销、预加载和隐藏 | `docs/design/coreml-ane-startup.md`；`validation/coreml-startup-overhead-2026-09-08.json` | 已完成 | load-only、zero-input warmup、first/subsequent prediction 已分开；尚需更多机器和多轮缓存 ABBA |
 | private ANE 实验但不进入正式产品 | `experimental/private-ane/README.md`；`validation/private-ane-shipping-isolation-2026-09-08.json`；shipping binary 审计 | 已完成（研究结论有限） | 正式 binary 无 `_ANE*` 符号/私有 framework；private 路径仅保留实验记录，不能当产品性能保证 |
 | Transformer tensor/sequence/head/CPU/GPU/ANE 对比 | `docs/design/transformer-heterogeneous-report.md`；`validation/transformer-heterogeneous-2026-09-08.json` | 主要实验完成 | FFN channel split 是当前推荐；attention/sequence/head split 的负结果和 Amdahl 限制已记录；仍需更多 block/shape/机器复测 |
@@ -33,7 +33,7 @@
 
 ## 尚未完成的明确工作
 
-1. GGUF streaming 多轮 ABBA、1024²、多 seed 和多量化完整矩阵。
+1. GGUF streaming 1024²、多 seed、LoRA 以及 8/16/24 GiB budget 矩阵；256² Q3/Q4/Q8 多轮 ABBA 已完成。
 2. LTX GPU+ANE 的多 prompt/seed 质量修复，以及低内存 16/24/32 GB 验收。
 3. H3 动态 pinned-prefix 和正式 GPU+ANE 端到端资格。
 4. LLaDA 独立 LoRA 文件、in-memory/inference-time 分支和多机器验证。

@@ -34,13 +34,27 @@ requires resident packed weights. `in_memory_merge` LoRA is rejected in this
 mode; separate LoRA files remain available through the request-time
 `inference_time` path.
 
-On the M4 Max validation host, Q3_K_S at 256²/9 steps with an 8 GiB budget
-generated successfully. The child process lifetime peak physical footprint was
-9.52 GB versus 14.91 GB for resident control, a 36.1% reduction. The single
-warm request was 9.995 seconds versus 9.534 seconds (4.8% slower); decoded RGB
-pixels were identical. Sampled RSS is reported separately because mapped file
-pages make RSS unsuitable as the sole low-memory metric. The sanitized record
-is [`z-image-gguf-streaming-2026-09-08.json`](validation/z-image-gguf-streaming-2026-09-08.json).
+The requested budget is an sd.cpp `--max-vram` working-set hint, not a hard cap
+on the whole child process or a promise that an 8 GiB Mac can run the model.
+TurboCider reports the child process lifetime physical footprint separately;
+sampled RSS can be higher because memory-mapped file pages are counted.
+
+The repeated M4 Max ABBA×2 matrix at 256²/9 steps used one warmup and four
+measured requests per route. All twelve paired decoded outputs were pixel
+exact, while streaming reduced lifetime physical footprint by 25.2–38.3%:
+
+| Variant | Resident warm median | Streaming warm median | Streaming overhead | Resident → streaming physical footprint |
+|---|---:|---:|---:|---:|
+| Q3_K_S | 9.605 s | 9.989 s | +4.00% | 14.997 → 11.220 GB (−25.2%) |
+| Q4_K_M | 9.484 s | 10.219 s | +7.75% | 16.145 → 11.301 GB (−30.0%) |
+| Q8_0 | 9.327 s | 10.058 s | +7.83% | 18.389 → 11.348 GB (−38.3%) |
+
+The default material-regression gate is streaming/resident ≤ 1.02, so none
+of these low-memory routes is currently performance-qualified as a free
+optimization. They are valid explicit low-memory fallbacks with exact decoded
+RGB results. The sanitized repeated evidence is
+[`z-image-gguf-streaming-matrix-2026-09-08.json`](validation/z-image-gguf-streaming-matrix-2026-09-08.json);
+the earlier single-warm record is retained as historical evidence only.
 
 ## Quantization and validated files
 
@@ -81,7 +95,7 @@ Native MLX GGUF now supports Q8_0/Q4_0/Q4_1 affine weights. For the validated Q8
 
 ## Matched Unsloth/runtime measurement
 
-Use `tools/native/benchmark_z_image_gguf.py` after the model and runtime are installed. It keeps a direct reference server and TurboCider backend resident simultaneously, then issues the requested AB/BA order serially with identical files, sampler, prompt and seed. `--turbocider-backend sd-cpp` measures bridge overhead; `--turbocider-backend native-mlx` measures the native quantized implementation against the pinned Unsloth runtime. The required gate defaults to a strict ratio of 1.0; a separate 1.02 noise diagnostic is recorded but does not replace it.
+Use `tools/native/benchmark_z_image_gguf.py` after the model and runtime are installed to compare TurboCider with the direct pinned sd.cpp server. Use `tools/native/benchmark_z_image_gguf_streaming.py` for a repeated resident/streaming ABBA comparison; it records per-request wall time, decoded-pixel metrics, and child lifetime physical footprint. Both tools keep sessions resident and use the same files, sampler, prompt and seed. The streaming tool's required gate defaults to a material ratio of 1.02 plus a 25% footprint reduction; strict no-slowdown is reported separately.
 
 Current matched results are:
 

@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-08",
+  "tool": "tools/native/benchmark_z_image_gguf_streaming.py",
+  "hardware": {
+    "model": "Mac16,9",
+    "chip": "Apple M4 Max",
+    "unified_memory_bytes": 68719476736,
+    "macos": "26.6.2"
+  },
+  "runtime": {
+    "backend": "pinned stable-diffusion.cpp Metal",
+    "sd_server_sha256": "97e7d8332cb45019297e3c3d4e04fb483abc218b6a6e375b3c9dfb58ccdcfef7",
+    "resident_flags": [
+      "--diffusion-fa",
+      "--diffusion-conv-direct",
+      "--clip-on-cpu",
+      "--cfg-scale",
+      "1.0"
+    ],
+    "streaming_extra_flags": [
+      "--params-backend",
+      "disk",
+      "--mmap",
+      "--stream-layers",
+      "--max-vram",
+      "8.000",
+      "--vae-tiling"
+    ]
+  },
+  "workload": {
+    "width": 256,
+    "height": 256,
+    "steps": 9,
+    "seed": 42,
+    "prompt": "A cinematic red fox walking through fresh snow, soft morning light.",
+    "requested_memory_budget_bytes": 8589934592,
+    "requested_memory_budget_scope": "sd_cpp_max_vram_hint_not_process_cap",
+    "order": "ABBA",
+    "order_repetitions": 2,
+    "warmups_per_route": 1,
+    "measured_samples_per_route": 4
+  },
+  "gates": {
+    "maximum_streaming_over_resident": 1.02,
+    "minimum_physical_footprint_reduction": 0.25,
+    "decoded_pixel_exact_required": true
+  },
+  "variants": [
+    {
+      "variant": "Q3_K_S",
+      "checkpoint_sha256": "918f233b1697b36f2906b86187c8514d60676eb3b7bcf29dd24b93ba33a19283",
+      "resident_seconds": [
+        9.614177541000004,
+        9.595016125,
+        9.637351166999991,
+        9.551289042000008
+      ],
+      "streaming_seconds": [
+        10.002902083000002,
+        9.982326457999996,
+        9.99589791599999,
+        9.961116415999996
+      ],
+      "resident_median_seconds": 9.604596833000002,
+      "streaming_median_seconds": 9.989112186999993,
+      "streaming_over_resident": 1.0400345127115436,
+      "resident_peak_physical_footprint_bytes": 14997482728,
+      "streaming_peak_physical_footprint_bytes": 11220321368,
+      "physical_footprint_reduction": 0.25185302283750033,
+      "paired_outputs": 4,
+      "decoded_pixel_exact_pairs": 4,
+      "minimum_correlation": 1.0,
+      "maximum_mae_255": 0.0,
+      "performance_gate_passed": false,
+      "footprint_gate_passed": true,
+      "quality_gate_passed": true,
+      "passed": false
+    },
+    {
+      "variant": "Q4_K_M",
+      "checkpoint_sha256": "e6494f87de6abaf6a561924f50317a5f271fc34bb4222aabbd801197df8f7daa",
+      "resident_seconds": [
+        9.503973125000002,
+        9.464595457999998,
+        9.444801167000008,
+        9.512778166000004
+      ],
+      "streaming_seconds": [
+        10.232227541999997,
+        10.215972790999999,
+        10.189172333000002,
+        10.222246749999996
+      ],
+      "resident_median_seconds": 9.4842842915,
+      "streaming_median_seconds": 10.219109770499998,
+      "streaming_over_resident": 1.0774782214888436,
+      "resident_peak_physical_footprint_bytes": 16144674912,
+      "streaming_peak_physical_footprint_bytes": 11300570992,
+      "physical_footprint_reduction": 0.3000434475394409,
+      "paired_outputs": 4,
+      "decoded_pixel_exact_pairs": 4,
+      "minimum_correlation": 1.0,
+      "maximum_mae_255": 0.0,
+      "performance_gate_passed": false,
+      "footprint_gate_passed": true,
+      "quality_gate_passed": true,
+      "passed": false
+    },
+    {
+      "variant": "Q8_0",
+      "checkpoint_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+      "resident_seconds": [
+        9.309488708,
+        9.325448750000007,
+        9.328614459000008,
+        9.349229750000006
+      ],
+      "streaming_seconds": [
+        10.052049415999996,
+        10.067669041999999,
+        10.045745834000002,
+        10.063353790999997
+      ],
+      "resident_median_seconds": 9.327031604500007,
+      "streaming_median_seconds": 10.057701603499996,
+      "streaming_over_resident": 1.0783389646334491,
+      "resident_peak_physical_footprint_bytes": 18388989584,
+      "streaming_peak_physical_footprint_bytes": 11348413904,
+      "physical_footprint_reduction": 0.3828690884748722,
+      "paired_outputs": 4,
+      "decoded_pixel_exact_pairs": 4,
+      "minimum_correlation": 1.0,
+      "maximum_mae_255": 0.0,
+      "performance_gate_passed": false,
+      "footprint_gate_passed": true,
+      "quality_gate_passed": true,
+      "passed": false
+    }
+  ],
+  "decision": "streaming is correct and materially lower-footprint at 256 square, but it is not performance-qualified under the 1.02 material-regression gate",
+  "notes": [
+    "Resident and streaming were separate TurboCider sessions that stayed alive throughout each interleaved sequence.",
+    "All twelve paired decoded outputs were pixel exact; PNG container SHA-256 values differ between routes.",
+    "The requested 8 GiB value is forwarded to stable-diffusion.cpp as --max-vram. It is not a hard total-process or minimum-machine-memory cap; observed lifetime physical footprints were about 11.22 to 11.35 GB.",
+    "Sampled RSS includes mapped file pages and exceeded physical footprint for streaming, so it is retained only in ignored raw reports and is not used as the acceptance metric.",
+    "The earlier single-warm Q3 result remains historical evidence but is superseded by this repeated matrix for current performance and footprint claims.",
+    "A 1024-square, multi-seed and independent-LoRA streaming matrix remains pending."
+  ]
+}

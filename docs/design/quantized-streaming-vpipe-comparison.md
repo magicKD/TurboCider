@@ -27,14 +27,20 @@ checkpoint tensor table
 
 TurboCider 已支持 Q2–Q8、IQ、F16/BF16/F32 descriptor 解析；mixed K-quant 由固定版本 stable-diffusion.cpp Metal 执行，Q8_0 还可切到 native MLX affine quantized matmul 和 checkpoint-bound GPU+ANE。LoRA 使用独立文件，混合 K-quant 的请求期 LoRA 由 sd.cpp 处理，不生成永久 merged checkpoint。
 
-Q3_K_S 256²、9 steps 的真实 streaming 对照：
+Q3_K_S、Q4_K_M、Q8_0 的 256²、9-step 重复 ABBA×2 对照（每条路线四个 warm 样本）如下：
 
-| 路径 | warm | physical footprint | RGB |
-|---|---:|---:|---|
-| resident sd.cpp | 9.534 s | 14.91 GB | — |
-| streaming `--mmap --stream-layers --max-vram 8 --vae-tiling` | 9.995 s | 9.52 GB | decoded pixel exact |
+| Variant | Resident warm median | Streaming warm median | Overhead | Physical footprint reduction | RGB |
+|---|---:|---:|---:|---:|---|
+| Q3_K_S | 9.605 s | 9.989 s | +4.00% | 25.2% | exact |
+| Q4_K_M | 9.484 s | 10.219 s | +7.75% | 30.0% | exact |
+| Q8_0 | 9.327 s | 10.058 s | +7.83% | 38.3% | exact |
 
-physical footprint 降低 36.1%，warm 慢约 4.8%。但每条路线只有一个真实 warm 样本，不能称稳定 median；1024²和更多 quantization 尚未完成。
+所有十二个配对输出的 decoded RGB 都逐像素一致。这里的
+`memory_budget_bytes=8 GiB` 只是 sd.cpp 的 `--max-vram` working-set hint；实际
+child lifetime physical footprint 约为 11.22–11.35 GB，不应写成总进程被限制在
+8 GiB。当前 1.02 material-regression gate 对三种量化都未通过，因此 streaming
+是正确的低内存显式 fallback，而不是无代价优化。原始数字和 SHA-256 见
+[`z-image-gguf-streaming-matrix-2026-09-08.json`](validation/z-image-gguf-streaming-matrix-2026-09-08.json)。
 
 ### H3
 
@@ -65,6 +71,6 @@ LTX 当前只有 resident/component-staged；component-staged 会按 text/transf
 
 ## 当前判断
 
-TurboCider 已经具备可交付的 GGUF resident/streaming 路径和 H3 BF16 streaming 原型，且通过了 Q3_K_S 256² decoded-RGB exact gate；它还不是 vpipe 那种覆盖所有 DiT 的通用低内存调度器。当前最现实的目标是先完成 H3 pinned-prefix + quantized refill，再补 LTX per-block streaming 和 16/24/32 GB 矩阵。
+TurboCider 已经具备可交付的 GGUF resident/streaming 路径；256² Q3/Q4/Q8 的重复 decoded-RGB gate 已通过，但 1.02 material-regression gate 未通过，因此它是正确的显式低内存 fallback，而不是自动性能优化。它还不是 vpipe 那种覆盖所有 DiT 的通用低内存调度器。当前最现实的目标是先完成 H3 pinned-prefix + quantized refill，再补 GGUF 1024²/多 seed/LoRA 和 LTX per-block streaming、16/24/32 GB 矩阵。
 
-证据：[Z-Image GGUF streaming](validation/z-image-gguf-streaming-2026-09-08.json)、[Z-Image GGUF 总结](z-image-gguf.md)、[Transformer 异构报告](transformer-heterogeneous-report.md)。vpipe 仅作为外部设计参考，不进入 TurboCider 构建或运行时依赖。
+证据：[Z-Image GGUF streaming matrix](validation/z-image-gguf-streaming-matrix-2026-09-08.json)、[Z-Image GGUF 总结](z-image-gguf.md)、[Transformer 异构报告](transformer-heterogeneous-report.md)。vpipe 仅作为外部设计参考，不进入 TurboCider 构建或运行时依赖。

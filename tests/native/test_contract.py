@@ -150,6 +150,8 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(p['residency'],'streaming')
         self.assertTrue(p['streaming_offload'])
         self.assertEqual(p['backend'],'stable_diffusion_cpp_metal')
+        self.assertEqual(p['memory_budget_bytes'],8*(1<<30))
+        self.assertEqual(p['memory_budget_scope'],'sd_cpp_max_vram_hint_not_process_cap')
         self.assertNotEqual(plan({**streaming,'memory_budget_bytes':0})[0],0)
         self.assertNotEqual(plan({**streaming,'execution':'gpu_ane',
                                   'allow_approximation':True,

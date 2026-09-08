@@ -166,6 +166,13 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"memory_estimate_bytes" : plan.memory_estimate_bytes ? @(*plan.memory_estimate_bytes)
                                                               : [NSNull null],
         @"memory_estimate_kind" : @"conservative_heuristic_not_hard_limit",
+        @"memory_budget_bytes" : r.memory_budget_bytes ? @(r.memory_budget_bytes)
+                                                        : [NSNull null],
+        @"memory_budget_scope" :
+            (r.model == "z-image-turbo-gguf" &&
+             (r.streaming_offload || r.residency == "streaming"))
+                ? @"sd_cpp_max_vram_hint_not_process_cap"
+                : (r.memory_budget_bytes ? @"runtime_request_budget" : @"unset"),
         @"operation" : @(r.operation.c_str()),
         @"residency" : @(r.residency.c_str()),
         @"streaming_offload" : @(r.streaming_offload || r.residency == "streaming"),

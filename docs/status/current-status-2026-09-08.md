@@ -8,13 +8,13 @@
 
 当前 `dev` 已经把 Z-Image GGUF、LLaDA-Image-Turbo 原生 C++/MLX、Z-Image ConvRot packed Q8 GPU 和原生 ConvRot Core ML/ANE 候选接入 TurboCider。LLaDA 正式 descriptor 只公开自包含的原生文生图；尚需外部 Python/reference source 的单参考图编辑已从发行能力移除，仅保留显式开发诊断入口，不再扫描兄弟仓库或随正式 package 分发。LLaDA 1024² 原生 GPU+ANE 已完成真实 resident E2E，达到相对匹配 GPU 的 1.203×，因此可以作为显式近似候选；仍不自动覆盖 exact GPU 路径，直到多机器/多 seed 矩阵完成。Z-Image BF16 基础模型仍是当前最快的稳定路径；ConvRot 原生 GPU+ANE 相对同一 ConvRot GPU 达到 1.249×，但仍比已有 BF16-derived ANE 路线慢 8.65%，因此保持显式候选。
 
-完整目标尚未达成。公共 `lora_strategy` 三模式契约现已贯穿 schema 1/2、descriptor、plan/result、Swift 和 Studio App；量化 Z-Image 保持 packed base 的原生 inference-time 低秩分支已经可以真实生成，并通过 strength=0 精确退化检查，但 256² 对内存融合的最终 latent correlation 仍只有 0.986464，因此继续保持显式候选。Q4_K_M 官方独立 LoRA 在补齐 `--cfg-scale 1.0` 并统一双方 100 ms polling 后，严格 ABBA×2 的 TurboCider/direct 比值为 0.999417、4/4 输出逐像素一致，已通过该 workload 的“不慢”门禁。LLaDA GPU+ANE 已在当前单机 1024²验证中达到 1.203×；主要缺口变为它的多机器/多 seed 门禁、packed LoRA 的质量门禁、FLUX/Z-Image LoRA 异常和取消矩阵，以及更多机器和尺寸的重复性能验证。
+完整目标尚未达成。公共 `lora_strategy` 三模式契约现已贯穿 schema 1/2、descriptor、plan/result、Swift 和 Studio App；量化 Z-Image 保持 packed base 的原生 inference-time 低秩分支已经可以真实生成，并通过 strength=0 精确退化检查，但 256² 对内存融合的最终 latent correlation 仍只有 0.986464，因此继续保持显式候选。Q4_K_M 官方独立 LoRA 在补齐 `--cfg-scale 1.0` 并统一双方 100 ms polling 后，严格 ABBA×2 的 TurboCider/direct 比值为 0.999417、4/4 输出逐像素一致，已通过该 workload 的“不慢”门禁。新增的 GGUF streaming ABBA×2 矩阵确认 Q3/Q4/Q8 256² decoded RGB 全部精确，physical footprint 降低 25.2–38.3%，但 warm 代价为 4.00–7.83%，所以仍是显式低内存 fallback。LLaDA GPU+ANE 已在当前单机 1024²验证中达到 1.203×；主要缺口变为它的多机器/多 seed 门禁、packed LoRA 的质量门禁、FLUX/Z-Image LoRA 异常和取消矩阵，以及更多机器和尺寸的重复性能验证。
 
 ## 本轮架构与发行边界收口
 
 - 已将 `gpu_ane/mac_transformer@9f322e1` 的 tensor/sequence/head/CPU/GPU/ANE、public/private ANE 和 1/multi-block 结论整理为 [Transformer 异构并行技术报告](../design/transformer-heterogeneous-report.md)。报告明确区分 hot operator、fresh process 和模型 E2E，不把 1.5–2.6× MLP micro 写成 H3/LTX 点击生成加速。
 - 已补充 [Core ML / ANE 启动报告](../design/coreml-ane-startup.md)：编译、load、interface/backing、zero-input warmup、first/subsequent prediction 分开计时；`prepare(load-only)` 能前移首请求开销，但不能减少 prepare+generate 总工作。
-- 已补充 [vpipe/H3/LTX 量化与 streaming 对照](../design/quantized-streaming-vpipe-comparison.md)：Z-Image GGUF streaming 已能降低约 36.1% physical footprint；H3 已有 BF16 双 slot 后台 `pread`，LTX 仍缺 per-block streaming 和动态 pinned prefix。
+- 已补充 [vpipe/H3/LTX 量化与 streaming 对照](../design/quantized-streaming-vpipe-comparison.md)：Z-Image GGUF streaming 的 Q3/Q4/Q8 256² 重复 ABBA×2 已完成，physical footprint 降低 25.2–38.3%，但 warm 代价为 4.00–7.83%，因此保持显式低内存 fallback；H3 已有 BF16 双 slot 后台 `pread`，LTX 仍缺 per-block streaming 和动态 pinned prefix。
 - private ANE 已严格移入实验边界：正式 `native/` 删除调用 `_ANEInMemoryModel*` 的 bridge/MLP/linear 实现，产品构建链接 `h3_ane_disabled.c`；真实研究实现只留在 `experimental/video/h3/vendor`。完整 build 后 `libturbocider.dylib` 中没有 `_ANEInMemoryModel`、`_ANERequest`、`_ANEIOSurfaceObject` 或 AppleNeuralEngine 未解析符号。
 - `tools/native/build.sh`、`tests/repository/test_layout.py` 已加入静态 fail-closed 回归；public H3 Core ML、其他 native 模型和 Swift App 在移除 private bridge 后重新构建通过。
 
@@ -23,6 +23,7 @@
 | 目标 | 当前实现 | 证据 | 未完成 |
 |---|---|---|---|
 | Z-Image GGUF 多量化 | mixed K-quant 使用常驻 stable-diffusion.cpp Metal；Q8_0/Q4_0/Q4_1 使用 native MLX affine quantized matmul；F16/BF16/F32 可走 native floating 路径 | Q3_K_S、Q4_K_M、Q8_0 已真实生成；Q4_K_M base 1024² TurboCider/direct 为 179.6199/179.7119 s；Q4_K_M LoRA 256² 为 13.1163/13.1240 s，均逐像素一致且严格不慢 | 更多量化的 native ANE、LoRA 1024²/多 seed 矩阵 |
+| GGUF streaming | mixed K-quant 使用 pinned sd.cpp disk backend、mmap、layer streaming 和 VAE tiling；`memory_budget_bytes` 明确标为 max-vram hint | Q3/Q4/Q8 256² ABBA×2：physical footprint 降 25.2–38.3%，12/12 decoded RGB pixel exact | warm 慢 4.00–7.83%，均未过 1.02 性能门禁；1024²、多 seed、LoRA 和低内存机器实测待补 |
 | GGUF GPU+ANE | Q8_0 使用 checkpoint-bound a4096 FFN 分区 | Q8 GPU 45.9634 s，GPU+ANE 37.5848 s，1.223× | 自动设备策略、多尺寸、Q4_0/Q4_1 和 floating GGUF 矩阵 |
 | GGUF LoRA | mixed K-quant 使用 sd.cpp 请求期独立文件；native-compatible GGUF 支持内存 delta，并可在 native GPU 开关启用时使用 packed-base inference-time A/B；LoRA-bound Core ML manifest | Q4_K_M request-time LoRA 严格 ABBA×2 ratio 0.999417、4/4 pixel exact；native 路线官方 LoRA 命中 238 projection；ConvRot packed A/B 把 active MLX 降低 46.7% | Q8 LoRA GPU+ANE 65.02 s 慢于 GPU 55.76 s；packed A/B 仍未通过严格 parity，不能自动启用；Q4 LoRA 1024²待补 |
 | LLaDA 文生图 | 原生 C++/MLX tokenizer、QueryFormer、MoE 文本编码器、DiT、4-step stochastic scheduler、Flux2 VAE、PNG；GPU block compile；大图 staged text | 1024² native GPU warm `17.971 s`；官方 PyTorch/MPS `19.601 s`；TurboCider 快约 `8.3%` | 多机器/多 seed 质量矩阵；LoRA；编辑原生化 |

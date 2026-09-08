@@ -65,6 +65,27 @@ hashes all match the request.
 
 stdout 输出最终结果 JSON，stderr 输出事件 JSON。Ctrl-C 在安全边界取消，返回码 2；导出开始前可取消，文件原子提交后返回成功。使用唯一输出路径以保留历史。`batch` 复用同一会话，要求模型一致。动态文本最大 512 tokens；尺寸 64–2048 且 16 倍数，实际受内存预算限制；种子 0–2147483647，步数 1–50。
 
+Z-Image GGUF 的 `residency: "streaming"` 会把
+`memory_budget_bytes` 作为 stable-diffusion.cpp `--max-vram` working-set
+hint；它不是整个子进程的硬内存上限。运行结果的
+`plan.memory_budget_scope=sd_cpp_max_vram_hint_not_process_cap` 和
+`memory.peak_physical_footprint_bytes` 分别说明预算语义与实测进程峰值。
+重复 resident/streaming 对照可运行：
+
+```sh
+python3 -B tools/native/benchmark_z_image_gguf_streaming.py \
+  --model-root /path/to/unsloth-Z-Image-Turbo-GGUF \
+  --variant Q3_K_S \
+  --library build/native/libturbocider.dylib \
+  --server .deps/stable-diffusion-cpp/master-813-bfbef5b-u13b9d92/sd-server \
+  --output outputs/gguf-streaming-q3
+```
+
+默认执行 ABBA×2，每条路线一个预热、四个计时样本；要求 physical
+footprint 至少降低 25%、decoded pixels 完全一致，并把超过 2% 的 warm
+回归判为未通过。当前 M4 Max 256² Q3/Q4/Q8 结果与限制见
+[GGUF streaming matrix](design/validation/z-image-gguf-streaming-matrix-2026-09-08.json)。
+
 ## FastMetal 1.3B QAD
 
 FastMetal 是固定形状的 3-step、16 fps、`4n+1` 帧视频路径。它要求一个显式 profile（`TURBOCIDER_FASTMETAL_CONFIG`，或模型目录下的 `turbocider-fastmetal.json`），profile 绑定 Python、FastVideo engine、上游 entrypoint、TurboCider worker，以及可选的 Core ML ANE bridge；示例见 [`profiles/fastmetal.example.json`](../profiles/fastmetal.example.json)。没有 profile 或依赖不完整时，Session 会 fail closed，不会退回伪造媒体。

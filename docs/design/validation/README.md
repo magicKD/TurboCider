@@ -46,5 +46,7 @@ LLaDA GPU/ANE benchmark 可用 `--require-quality` 启用该门禁；不传此�
 
 - `vision-feature-print-2026-09-08.json`：同一 LTX 样本的公开 Vision revision 2 抽样诊断；只作感知证据补充，不构成自动放行阈值。
 
+- `z-image-gguf-streaming-matrix-2026-09-08.json`：M4 Max 上 Q3_K_S、Q4_K_M、Q8_0 256² resident/streaming ABBA×2 矩阵；包含重复 warm、物理 footprint、预算语义和逐像素质量门禁。
+
 - `transformer-heterogeneous-2026-09-08.json`：固定版本的 mac_transformer/ANE 证据、MLP/模型 E2E、Core ML startup 和异构采用结论。
 - `private-ane-shipping-isolation-2026-09-08.json`：private `_ANE*` 源码隔离、shipping binary 字符串/依赖审计、portable package 和测试结果。

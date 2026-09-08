@@ -56,10 +56,15 @@ sd.cpp 的 disk-backed parameter backend、mmap、layer streaming、max-vram 和
 VAE tiling；native MLX/ANE 与 `in_memory_merge` LoRA 会明确拒绝，避免把全量
 常驻误报为低内存。
 
-Q3_K_S/256²/9 steps/8 GiB 已在 M4 Max 真实启动并出图。child physical
-footprint 峰值 9.52 GB，相对 resident 14.91 GB 降低 36.1%；唯一 warm 样本
-慢 4.8%，解码像素逐点相同。当前只验收这一量化/尺寸，1024²、其它量化和
-自动预算策略仍需补矩阵。
+Q3_K_S、Q4_K_M、Q8_0/256²/9 steps/8 GiB 已在 M4 Max 通过重复 ABBA×2
+真实启动并出图。四个 measured warm 样本中，streaming 相对 resident 分别慢
+4.00%、7.75%、7.83%，child lifetime physical footprint 分别降低 25.2%、
+30.0%、38.3%，十二组 decoded RGB 全部逐像素相同。8 GiB 是 sd.cpp 的
+`--max-vram` working-set hint，实际 child physical footprint 仍约 11.22–11.35
+GB，不是总进程硬上限。当前 1.02 material-regression gate 三种量化均未通过，
+因此 streaming 是正确的显式低内存 fallback，不是无代价优化；1024²、其它
+量化、LoRA 和自动预算策略仍需补矩阵。完整证据见
+[`z-image-gguf-streaming-matrix-2026-09-08.json`](../design/validation/z-image-gguf-streaming-matrix-2026-09-08.json)。
 
 1. GGUF GPU+ANE 已对 Q8_0 native MLX 路径完成真实候选验收；仍需把它从显式候选收口为经过设备/LoRA/多轮质量矩阵的自动策略，并对 Q4_0/Q4_1、F16/BF16/F32 和其他量化补齐矩阵。外部 sd-server 仍无法提供同样的 ANE fork/join，因此 mixed K-quant 继续使用 sd.cpp Metal。
 2. 对尚未下载的 Q2、其余 Q3/Q4/Q5/Q6/IQ/F16/BF16/F32 变体补齐 load、出图、质量和性能矩阵；当前只实测 Q3_K_S、Q4_K_M、Q8_0。
