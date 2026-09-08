@@ -15,5 +15,6 @@ class Tokenizer {
     ~Tokenizer();
     Tokens prompt(const std::string &, bool dynamic = true);
     Tokens z_image_prompt(const std::string &, bool dynamic = true);
+    Tokens llada_image_prompt(const std::string &);
 };
 } // namespace tc

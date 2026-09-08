@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-08",
+  "hardware": {
+    "chip": "Apple M4 Max",
+    "unified_memory_gb": 64,
+    "macos": "26.6.2"
+  },
+  "evidence_sources": {
+    "mac_transformer_commit": "9f322e10e0165e59d498e6a0daf17ad750a9bb12",
+    "ane_commit": "d91c9845c0784dec7753048954fc6d0e8411fe29",
+    "transformer_report_sha256": "20f988b89840c56a584047e3f35134f2bef4c92a7a849865a709c201dea53797",
+    "experiment_matrix_sha256": "f3a71842b5e02726bf2938786b0513fa06a1fe187e4432605892484145732344",
+    "omlx_analysis_sha256": "742eb88e89fd03f1e17fa654f2f60a07131e43661bdfb46076be516c54b9b30a",
+    "ane_readme_sha256": "c43358ad78af2375301d98cbaea8f682269a4b32ce35fd2176077ba84e01c62f"
+  },
+  "microbenchmarks": [
+    {"shape": "512x1024x4096", "precision": "fp16", "split": "gpu2048/ane2048", "gpu_ms": 1.342, "hybrid_ms": 0.891, "speedup": 1.525},
+    {"shape": "512x1024x4096", "precision": "ane_int8", "split": "gpu1024/ane3072", "gpu_ms": 1.468, "hybrid_ms": 1.023, "speedup": 1.471},
+    {"shape": "512x1024x4096", "precision": "fp16", "split": "gpu1792/ane1792/cpu512", "gpu_ms": 1.369, "hybrid_ms": 1.390, "speedup": 0.981},
+    {"shape": "1001x4096x16384", "precision": "fp16", "split": "gpu9472/ane6912", "gpu_ms": 258.817, "hybrid_ms": 147.544, "speedup": 1.754},
+    {"shape": "1001x4096x16384", "precision": "ane_int8", "split": "gpu9472/ane6912", "gpu_ms": 260.809, "hybrid_ms": 130.616, "speedup": 1.997},
+    {"shape": "4004x4096x16384", "precision": "fp16", "split": "gpu9472/ane6912", "gpu_ms": 971.685, "hybrid_ms": 564.292, "speedup": 1.722},
+    {"shape": "4004x4096x16384", "precision": "ane_int8", "split": "gpu9472/ane6912", "gpu_ms": 971.698, "hybrid_ms": 496.760, "speedup": 1.956}
+  ],
+  "model_e2e": [
+    {"model": "flux2-klein-4b", "workload": "512x512, 4 steps", "gpu_s": 2.2663, "hybrid_s": 1.6279, "speedup": 1.392},
+    {"model": "z-image-turbo-bf16", "workload": "1024x1024, 9 steps", "gpu_s": 36.3685, "hybrid_s": 30.0014, "speedup": 1.212},
+    {"model": "llada-image-turbo", "workload": "1024x1024, 4 steps", "gpu_s": 17.971, "hybrid_s": 14.934, "speedup": 1.203},
+    {"model": "h3-private-research", "workload": "matched fully-warm BF16 MLP+QKV", "gpu_s": 319.34, "hybrid_s": 306.85, "speedup": 1.041}
+  ],
+  "coreml_startup": {
+    "mac_transformer_fresh_process_ms": 92.378,
+    "mac_transformer_hot_mlp_ms": 1.353,
+    "setup_proxy_ms": 91.025,
+    "z_image_load_only_prepare_s": 12.792,
+    "z_image_after_load_generate_s": 11.201,
+    "z_image_after_full_warmup_generate_s": 10.895
+  },
+  "private_ane": {
+    "shipping_enabled": false,
+    "formal_bridge_implementation": "excluded",
+    "shipping_stub": "native/models/h3_runtime/h3_ane_disabled.c",
+    "research_snapshot": "experimental/video/h3/vendor",
+    "handoff_speedup_2048x512_vs_public_direct": 1.398,
+    "decision": "experimental only; public Core ML remains the shipping ANE backend"
+  },
+  "decisions": {
+    "default_parallel_axis": "paired FFN intermediate-channel tensor parallel with hidden-size partial join",
+    "attention": "Metal fused/tiled GPU",
+    "cpu_tail": "disabled unless p95 proves it completes before the first consumer",
+    "sequence_parallel": "not a default GPU/ANE path",
+    "automatic_hybrid": "fail closed by device, shape, checkpoint, LoRA, memory and quality gates"
+  }
+}

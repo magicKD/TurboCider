@@ -1,0 +1,49 @@
+{
+  "block": 0,
+  "checkpoint": "models/inclusionAI-LLaDA-Image-Turbo/transformer/diffusion_pytorch_model.safetensors.index.json",
+  "create_seconds": 5.665103832958266,
+  "hidden": 3840,
+  "manifest": "models/coreml/llada_a4096_s8_o32_b544_all/compiled-cache/manifest-1431a72c61643833cfe53e9391c88c98af1d787763746321625e156ea475885f.json",
+  "native_metrics": {
+    "ane_mlp_range": [
+      0,
+      4096
+    ],
+    "block_count": 32,
+    "bucket": 544,
+    "calls_session_total": 3,
+    "checkpoint_sha256_verified": true,
+    "compute_units": "cpuAndNeuralEngine",
+    "hidden": 3840,
+    "load_seconds": 5.645576875,
+    "lora_identity_verified": false,
+    "mlp_width": 10240,
+    "observed_ane_residency": "unknown",
+    "output_copy_bytes_session_total": 0,
+    "output_scale": 32,
+    "prediction_seconds_session_total": 0.025419874,
+    "provenance": "local checkpoint path, size and SHA-256 verified"
+  },
+  "oracle": {
+    "bitwise_equal": true,
+    "correlation": 0.9999999403953552,
+    "cosine": 1.0,
+    "mae": 0.0,
+    "max_abs_error": 0.0,
+    "package": "models/coreml/llada_a4096_s8_o32_b544_all/block0_mlp_branch.int8_pc.mlpackage"
+  },
+  "output": {
+    "all_finite": true,
+    "max_abs": 3.720703125,
+    "mean": 0.0003821606223937124,
+    "sha256": "f5292c5605b70b0fa87e4d06776ad0f683375ee721645aa75cb53a566b26dd1e"
+  },
+  "prediction_median_seconds": 0.007794000033754855,
+  "prediction_seconds": [
+    0.011960541014559567,
+    0.007794000033754855,
+    0.006242416973691434
+  ],
+  "rows": 544,
+  "schema_version": 1
+}

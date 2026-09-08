@@ -216,6 +216,11 @@ RunResult Flux::prepare(const Request &requested, bool warmup, const Event &even
     result.selection = selection;
     result.prompt_cache_hit = hit;
     result.request = r;
+    // `select_acceleration` may resolve `auto` to a concrete GPU/ANE route
+    // and the second `make_plan` above captures the resulting compile and
+    // execution flags.  Preserve that resolved plan in the preparation
+    // result so load-only telemetry describes the same route as generation.
+    result.plan = std::move(plan);
     result.text_tokens = int(tokens.ids.size());
     result.total_tokens = count;
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();

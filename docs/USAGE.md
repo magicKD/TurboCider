@@ -91,6 +91,8 @@ Audio VAE 的 native runtime 已加入 `native/models/ltx_runtime/ltx_mlx_audio_
 
 SDK 缺省为 GPU；App 的 `auto` 在本机、权重、桶、MLP 分区和近似许可匹配时选择自有 GPU/ANE 分区，否则回退 GPU。当前自动 GPU+ANE 仅对通过完整端到端门槛的 exact device profile 开放：M4 Max 64 GB 的 FLUX 4B a6144 与 Z-Image base a4096，M4 Pro 48 GB 的 FLUX 4B full-MLP profile。请求 `execution.profile` 可指向本地 JSON。`profiles/apple-m4-pro-48gb.example.json` 使用完整 ANE MLP，`profiles/apple-m4-max-64gb.example.json` 使用 6144-channel FLUX 前缀和 4096-channel Z-Image 前缀并由 GPU 并行补算后缀；两者默认关闭，复制后填写 artifact 路径并显式启用。配置覆盖请求的 policy/residency，计划含配置内容 hash。可控制 allocator cache、预算和 Core ML warmup 次数。带独立 LoRA 时基础 ANE artifact 不再匹配，App 会安全使用 GPU；只有 provenance 完整的 LoRA-bound manifest 才能显式使用混合路径。
 
+LoRA 请求可在 schema 1 或 schema 2 顶层指定 `lora_strategy`：`auto`、`disk_premerge`、`in_memory_merge` 或 `inference_time`。`auto` 按模型 descriptor 的 `default_lora_strategy` 解析；不支持的显式组合会直接失败。当前 FLUX 使用内存融合；Z-Image safetensors 默认内存融合，也允许显式使用运行时低秩分支；H3/LTX/FastMetal 使用磁盘预融合或内容寻址 runtime cache。Z-Image GGUF 的 mixed K-quant 默认由 sd.cpp 在请求期加载 adapter；Q8_0/Q4_0/Q4_1/F16/BF16/F32 在 `TURBOCIDER_Z_GGUF_NATIVE_GPU=1` 时也可使用 native MLX packed-base 低秩分支，或显式选择 MLX 内存融合。带 LoRA 的 GPU+ANE 仍只接受 `in_memory_merge` 和匹配同一 adapter identity 的 manifest。完整矩阵及当前精度/内存取舍见 [LoRA 执行策略](design/lora-execution-strategies.md)。
+
 混合 `gpu_ane` 必须 `allow_approximation=true`，使用本地 schema 2 `ane_manifest`。当前支持20个 single block MLP、K=N=3072、单固定桶。量化 MLP 改变算法精度，结果明确标注；公开 `cpuAndNeuralEngine` 不保证子图全部实际驻留 ANE。旧 artifact provenance 只有源路径/大小，故仍为实验。超过 bucket 明确失败，不裁剪输入、不静默改 GPU。
 
 ```sh

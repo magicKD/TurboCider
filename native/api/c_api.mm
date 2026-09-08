@@ -1,5 +1,6 @@
 #include "../platform/apple/bridge.hpp"
 #include "../backends/mlx.hpp"
+#include "../backends/coreml.hpp"
 #include "turbocider/turbocider.h"
 #include <mutex>
 #include <cstring>
@@ -12,6 +13,10 @@ struct tc_engine {
     std::unique_ptr<tc::ModelSession> session;
     std::mutex mutex;
     std::atomic<bool> cancelled{false};
+};
+struct tc_coreml_ffn {
+    std::unique_ptr<tc::HybridSession> session;
+    std::mutex mutex;
 };
 namespace {
 using tc::configure_streams;
@@ -34,6 +39,107 @@ uint32_t tc_abi_version(void) {
 }
 void tc_string_free(char *s) {
     free(s);
+}
+int tc_coreml_ffn_create(const char *manifest, const char *checkpoint,
+                         int minimum_rows, int warmups,
+                         tc_coreml_ffn **bridge, char **error) {
+    if (bridge)
+        *bridge = nullptr;
+    if (error)
+        *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(manifest && checkpoint && bridge,
+                        "missing Core ML FFN manifest/checkpoint or output handle");
+            tc::require(minimum_rows > 0 && minimum_rows <= 8192,
+                        "invalid Core ML FFN minimum row count");
+            tc::require(warmups >= 0 && warmups <= 8,
+                        "invalid Core ML FFN warmup count");
+            configure_streams();
+            auto value = std::make_unique<tc_coreml_ffn>();
+            std::atomic<bool> cancelled{false};
+            tc::Event event = [](const std::string &, int, int) {};
+            value->session = std::make_unique<tc::HybridSession>(
+                std::filesystem::path(manifest), std::filesystem::path{}, minimum_rows,
+                event, cancelled, warmups, std::filesystem::path(checkpoint));
+            *bridge = value.release();
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error)
+                *error = strdup("unknown Core ML FFN creation error");
+            return 1;
+        }
+    }
+}
+int tc_coreml_ffn_predict(tc_coreml_ffn *bridge, int block,
+                          const uint16_t *input, int rows,
+                          uint16_t *output, char **error) {
+    if (error)
+        *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(bridge && bridge->session && input && output,
+                        "missing Core ML FFN bridge or buffer");
+            std::lock_guard<std::mutex> lock(bridge->mutex);
+            auto metrics = bridge->session->metrics();
+            tc::require(rows > 0 && rows <= metrics.bucket,
+                        "Core ML FFN request exceeds the manifest row bucket");
+            tc::require(block >= 0 && block < metrics.block_count,
+                        "Core ML FFN block index is out of range");
+            // `input` contains IEEE FP16 bit patterns.  The iterator
+            // constructor would numerically convert each uint16_t value to
+            // FP16 (for example 0x3400 -> 13312) instead of reinterpreting the
+            // bits.  Wrap the caller-owned storage explicitly for the
+            // duration of this synchronous prediction.
+            auto value = tc::Tensor(
+                const_cast<uint16_t *>(input), {1, rows, metrics.hidden},
+                tc::mx::float16, [](void *) {});
+            if (rows < metrics.bucket)
+                value = tc::mx::concatenate(
+                    {value, tc::mx::zeros({1, metrics.bucket - rows, metrics.hidden},
+                                         tc::mx::float16)},
+                    1);
+            tc::mx::eval(value);
+            auto prediction = bridge->session->predict(block, value);
+            prediction = tc::slice_axis(prediction, 1, 0, rows);
+            tc::mx::eval(prediction);
+            std::memcpy(output, prediction.data<tc::mx::float16_t>(),
+                        size_t(rows) * size_t(metrics.hidden) * sizeof(uint16_t));
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error)
+                *error = strdup("unknown Core ML FFN prediction error");
+            return 1;
+        }
+    }
+}
+int tc_coreml_ffn_metrics_json(tc_coreml_ffn *bridge, char **result, char **error) {
+    if (result)
+        *result = nullptr;
+    if (error)
+        *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(bridge && bridge->session && result,
+                        "missing Core ML FFN bridge or result pointer");
+            std::lock_guard<std::mutex> lock(bridge->mutex);
+            *result = copy(tc::json(tc::to_dictionary(bridge->session->metrics())));
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error)
+                *error = strdup("unknown Core ML FFN metrics error");
+            return 1;
+        }
+    }
+}
+void tc_coreml_ffn_free(tc_coreml_ffn *bridge) {
+    delete bridge;
 }
 char *tc_system_json(void) {
     @autoreleasepool {
@@ -131,18 +237,24 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
             tc::require(global.owns_lock(), "native GPU runtime busy");
             DeviceLease device_lease;
             e->cancelled.store(false);
-            tc::require(tc::mx::is_available(tc::mx::Device(tc::mx::Device::gpu)),
-                        "Metal GPU unavailable");
-            configure_streams();
+            auto request = tc::request_from_json(tc::parse_json(r));
+            const bool parent_mlx = e->session->uses_parent_mlx(request);
+            if (parent_mlx) {
+                tc::require(tc::mx::is_available(tc::mx::Device(tc::mx::Device::gpu)),
+                            "Metal GPU unavailable");
+                configure_streams();
+            }
             struct Drain {
+                bool enabled;
                 ~Drain() {
-                    try {
-                        tc::mx::synchronize();
-                    } catch (...) {
+                    if (enabled) {
+                        try {
+                            tc::mx::synchronize();
+                        } catch (...) {
+                        }
                     }
                 }
-            } drain;
-            auto request = tc::request_from_json(tc::parse_json(r));
+            } drain{parent_mlx};
             uint64_t seq = 0;
             auto begin = tc::Clock::now();
             tc::Event event = [&](const std::string &phase, int current, int total) {
@@ -385,7 +497,9 @@ int tc_engine_load(tc_engine *e, tc_event_callback cb, void *ctx, char **out, ch
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
             DeviceLease lease;
-            configure_streams();
+            const bool parent_mlx = e->session->uses_parent_mlx();
+            if (parent_mlx)
+                configure_streams();
             e->cancelled.store(false);
             auto begin = tc::Clock::now();
             uint64_t sequence = 0;
@@ -407,12 +521,15 @@ int tc_engine_load(tc_engine *e, tc_event_callback cb, void *ctx, char **out, ch
             };
             try {
                 auto result = e->session->load(event, e->cancelled);
-                tc::mx::synchronize();
+                if (parent_mlx)
+                    tc::mx::synchronize();
                 *out = copy(tc::json(tc::to_dictionary(result)));
             } catch (...) {
-                tc::mx::synchronize();
+                if (parent_mlx)
+                    tc::mx::synchronize();
                 e->session->unload();
-                tc::mx::clear_cache();
+                if (parent_mlx)
+                    tc::mx::clear_cache();
                 throw;
             }
             return 0;
@@ -437,14 +554,19 @@ int tc_engine_unload(tc_engine *e, char **out, char **error) {
             tc::require(local.owns_lock(), "engine busy");
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
-            configure_streams();
-            tc::mx::synchronize();
+            const bool parent_mlx = e->session->uses_parent_mlx();
+            if (parent_mlx) {
+                configure_streams();
+                tc::mx::synchronize();
+            }
             e->session->unload();
-            tc::mx::clear_cache();
+            if (parent_mlx)
+                tc::mx::clear_cache();
             *out = copy(tc::json(@{
                 @"released" : @YES,
-                @"mlx_active_bytes" : @(tc::mx::get_active_memory()),
-                @"scope" : @"MLX allocator; excludes OS/file cache"
+                @"mlx_active_bytes" : @(parent_mlx ? tc::mx::get_active_memory() : 0),
+                @"scope" : parent_mlx ? @"MLX allocator; excludes OS/file cache"
+                                        : @"external native backend released"
             }));
             return 0;
         } catch (const std::exception &ex) {
@@ -471,16 +593,24 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
             DeviceLease lease;
-            configure_streams();
+            std::optional<tc::Request> parsed_request;
+            if (!cache)
+                parsed_request = tc::request_from_json(tc::parse_json(request));
+            const bool parent_mlx = cache || e->session->uses_parent_mlx(*parsed_request);
+            if (parent_mlx)
+                configure_streams();
             e->cancelled.store(false);
             struct Drain {
+                bool enabled;
                 ~Drain() {
-                    try {
-                        tc::mx::synchronize();
-                    } catch (...) {
+                    if (enabled) {
+                        try {
+                            tc::mx::synchronize();
+                        } catch (...) {
+                        }
                     }
                 }
-            } drain;
+            } drain{parent_mlx};
             auto begin = tc::Clock::now();
             uint64_t sequence = 0;
             tc::Event event = [&](const std::string &phase, int current, int total) {
@@ -508,7 +638,7 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
                 result = tc::manage_coreml_cache(value, event, e->cancelled);
             } else {
                 tc::require(warmup == 0 || warmup == 1, "warmup must be 0 or 1");
-                auto r = tc::request_from_json(tc::parse_json(request));
+                auto r = std::move(*parsed_request);
                 r.dump.clear();
                 result =
                     tc::to_dictionary(e->session->prepare(r, warmup != 0, event, e->cancelled));

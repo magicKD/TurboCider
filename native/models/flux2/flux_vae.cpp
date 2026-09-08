@@ -1,14 +1,10 @@
 #include "flux.hpp"
+#include "flux_vae_ops.hpp"
 namespace tc {
-Tensor Flux::decode(const Tensor &latent, int height, int width, const Event &event,
-                    std::atomic<bool> &cancelled, const std::string &dump) {
-    auto trace = [&](const std::string &name, const Tensor &a) {
-        if (!dump.empty())
-            mx::save_safetensors(
-                (std::filesystem::path(dump) / ("vae_" + name + ".safetensors")).string(),
-                {{"tensor", a}});
-    };
-    auto &w = vae_;
+Tensor flux_vae_decode(const Tensor &latent, Weights &weights, int height, int width,
+                       const Event &event, std::atomic<bool> &cancelled,
+                       const std::string &dump) {
+    auto &w = weights;
     int h = height / 16, ww = width / 16;
     auto packed = mx::transpose(mx::reshape(latent, {1, h, ww, 128}), {0, 3, 1, 2});
     packed = packed * mx::sqrt(mx::reshape(w.at("bn.running_var"), {1, 128, 1, 1}) +
@@ -17,6 +13,22 @@ Tensor Flux::decode(const Tensor &latent, int height, int width, const Event &ev
     auto x =
         mx::reshape(mx::transpose(mx::reshape(packed, {1, 32, 2, 2, h, ww}), {0, 1, 4, 2, 5, 3}),
                     {1, 32, h * 2, ww * 2});
+    return flux_vae_decode_raw(x, w, height, width, event, cancelled, dump);
+}
+
+Tensor flux_vae_decode_raw(const Tensor &raw_latent, Weights &weights, int height, int width,
+                           const Event &event, std::atomic<bool> &cancelled,
+                           const std::string &dump) {
+    auto &w = weights;
+    auto trace = [&](const std::string &name, const Tensor &a) {
+        if (!dump.empty())
+            mx::save_safetensors(
+                (std::filesystem::path(dump) / ("vae_" + name + ".safetensors")).string(),
+                {{"tensor", a}});
+    };
+    require(raw_latent.ndim() == 4 && raw_latent.shape(0) == 1 && raw_latent.shape(1) == 32,
+            "Flux VAE raw latent must be [1,32,height,width]");
+    auto x = raw_latent;
     x = mx::transpose(x, {0, 2, 3, 1});
     trace("unpack", x);
     auto conv = [&](const Tensor &a, const std::string &p) {
@@ -79,5 +91,10 @@ Tensor Flux::decode(const Tensor &latent, int height, int width, const Event &ev
     mx::eval(x);
     event("vae_decode", 4, 4);
     return x;
+}
+
+Tensor Flux::decode(const Tensor &latent, int height, int width, const Event &event,
+                    std::atomic<bool> &cancelled, const std::string &dump) {
+    return flux_vae_decode(latent, vae_, height, width, event, cancelled, dump);
 }
 } // namespace tc

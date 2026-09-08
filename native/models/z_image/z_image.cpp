@@ -131,13 +131,7 @@ void load_z_component(Weights &weights, const std::filesystem::path &path,
 }
 
 Tensor linear_compat(const Tensor &x, const Weights &w, const std::string &prefix) {
-    auto weight = w.at(prefix + ".weight");
-    if (weight.ndim() != 2)
-        weight = mx::reshape(weight, {weight.shape(0), int(weight.size() / weight.shape(0))});
-    auto output = mx::matmul(x, mx::transpose(weight));
-    if (w.has(prefix + ".bias"))
-        output = output + w.at(prefix + ".bias");
-    return output;
+    return w.project(x, prefix);
 }
 
 Tensor rope_text(const Tensor &x, const Tensor &cos, const Tensor &sin) {
@@ -353,6 +347,13 @@ Tensor z_rope(const Tensor &ids) {
 Tensor z_attention(const Tensor &x, const Weights &w, const std::string &prefix,
                    const Tensor &freqs) {
     auto qkv = linear_compat(x, w, prefix + ".attention.qkv");
+    if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
+        mx::eval({qkv});
+        auto qkv32 = mx::astype(qkv, mx::float32);
+        std::fprintf(stderr, "convrot_debug attention=%s qkv_finite=%d qkv_max=%g\n",
+                     prefix.c_str(), mx::all(mx::isfinite(qkv32)).item<bool>(),
+                     mx::max(mx::abs(qkv32)).item<float>());
+    }
     auto chunks = mx::split(qkv, 3, -1);
     auto q = rms(heads(chunks[0], kHeads, kHeadDim),
                  w.at(prefix + ".attention.q_norm.weight"), 1e-5f);
@@ -362,7 +363,30 @@ Tensor z_attention(const Tensor &x, const Weights &w, const std::string &prefix,
     auto v = heads(chunks[2], kHeads, kHeadDim);
     auto result = attend(rotated[0], rotated[1], v, false, {},
                          !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA"));
-    return linear_compat(result, w, prefix + ".attention.out");
+    if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
+        mx::eval({rotated[0], rotated[1], v, result});
+        auto q32 = mx::astype(rotated[0], mx::float32);
+        auto k32 = mx::astype(rotated[1], mx::float32);
+        auto v32 = mx::astype(v, mx::float32);
+        auto result32 = mx::astype(result, mx::float32);
+        std::fprintf(stderr,
+                     "convrot_debug attention=%s q_finite=%d q_max=%g k_finite=%d k_max=%g v_finite=%d v_max=%g sdpa_finite=%d sdpa_max=%g\n",
+                     prefix.c_str(), mx::all(mx::isfinite(q32)).item<bool>(),
+                     mx::max(mx::abs(q32)).item<float>(),
+                     mx::all(mx::isfinite(k32)).item<bool>(), mx::max(mx::abs(k32)).item<float>(),
+                     mx::all(mx::isfinite(v32)).item<bool>(), mx::max(mx::abs(v32)).item<float>(),
+                     mx::all(mx::isfinite(result32)).item<bool>(),
+                     mx::max(mx::abs(result32)).item<float>());
+    }
+    auto output = linear_compat(result, w, prefix + ".attention.out");
+    if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
+        mx::eval({output});
+        auto output32 = mx::astype(output, mx::float32);
+        std::fprintf(stderr, "convrot_debug attention=%s out_finite=%d out_max=%g\n",
+                     prefix.c_str(), mx::all(mx::isfinite(output32)).item<bool>(),
+                     mx::max(mx::abs(output32)).item<float>());
+    }
+    return output;
 }
 
 Tensor z_ffn(const Tensor &x, const Weights &w, const std::string &prefix) {
@@ -390,7 +414,85 @@ make_z_hybrid_gpu_graph(int hidden, int mlp_width, int gpu_mlp_start) {
             auto value = mx::matmul(silu(gate) * up, mx::transpose(w2));
             require(value.shape(-1) == hidden, "Z-Image hybrid FFN output mismatch");
             return std::vector<Tensor>{value};
-        });
+    });
+}
+
+struct ZQuantizedGeometry {
+    int group_size = 0;
+    int bits = 0;
+};
+
+ZQuantizedGeometry z_quantized_geometry(const Tensor &weight, const Tensor &scales,
+                                        int logical_input) {
+    require(weight.ndim() == 2 && scales.ndim() == 2 && logical_input > 0 &&
+                logical_input % scales.shape(1) == 0 &&
+                (weight.shape(1) * 32) % logical_input == 0,
+            "invalid Z-Image GGUF affine geometry");
+    const int group_size = logical_input / scales.shape(1);
+    const int bits = weight.shape(1) * 32 / logical_input;
+    require(group_size == 32 && (bits == 4 || bits == 8),
+            "Z-Image hybrid requires native Q4_0/Q4_1/Q8_0 affine weights");
+    return {group_size, bits};
+}
+
+Tensor z_hybrid_output_range(const Tensor &x, const Weights &w,
+                             const std::string &prefix, int start, int end) {
+    if (w.convrot(prefix)) {
+        const auto &weight = w.at(prefix + ".weight");
+        const int logical_input = weight.dtype() == mx::uint32
+                                      ? weight.shape(1) * 4
+                                      : weight.shape(1);
+        return w.project_range(x, prefix, start, end, 0, logical_input);
+    }
+    if (!w.quantized(prefix)) {
+        auto weight = slice_axis(w.at(prefix + ".weight"), 0, start, end);
+        return mx::matmul(x, mx::transpose(weight));
+    }
+    const auto &full_weight = w.at(prefix + ".weight");
+    const auto &full_scales = w.at(prefix + ".scales");
+    auto geometry = z_quantized_geometry(full_weight, full_scales, x.shape(-1));
+    auto weight = slice_axis(full_weight, 0, start, end);
+    auto scales = slice_axis(full_scales, 0, start, end);
+    std::optional<Tensor> biases;
+    if (w.has(prefix + ".biases"))
+        biases = slice_axis(w.at(prefix + ".biases"), 0, start, end);
+    return mx::quantized_matmul(x, weight, scales, biases, true,
+                                geometry.group_size, geometry.bits, "affine");
+}
+
+Tensor z_hybrid_input_range(const Tensor &x, const Weights &w,
+                            const std::string &prefix, int full_input,
+                            int start, int end) {
+    if (w.convrot(prefix))
+        return w.project_range(x, prefix, 0, w.at(prefix + ".weight").shape(0), start, end);
+    if (!w.quantized(prefix)) {
+        auto weight = slice_axis(w.at(prefix + ".weight"), 1, start, end);
+        return mx::matmul(x, mx::transpose(weight));
+    }
+    const auto &full_weight = w.at(prefix + ".weight");
+    const auto &full_scales = w.at(prefix + ".scales");
+    auto geometry = z_quantized_geometry(full_weight, full_scales, full_input);
+    require(start % geometry.group_size == 0 && end % geometry.group_size == 0 &&
+                (start * geometry.bits) % 32 == 0 && (end * geometry.bits) % 32 == 0,
+            "Z-Image hybrid split must align to the GGUF quantization group");
+    auto weight = slice_axis(full_weight, 1, start * geometry.bits / 32,
+                             end * geometry.bits / 32);
+    auto scales = slice_axis(full_scales, 1, start / geometry.group_size,
+                             end / geometry.group_size);
+    std::optional<Tensor> biases;
+    if (w.has(prefix + ".biases"))
+        biases = slice_axis(w.at(prefix + ".biases"), 1,
+                            start / geometry.group_size, end / geometry.group_size);
+    return mx::quantized_matmul(x, weight, scales, biases, true,
+                                geometry.group_size, geometry.bits, "affine");
+}
+
+Tensor z_hybrid_gpu_suffix(const Tensor &x, const Weights &w,
+                           const std::string &prefix, int start, int end) {
+    auto gate = z_hybrid_output_range(x, w, prefix + ".w1", start, end);
+    auto up = z_hybrid_output_range(x, w, prefix + ".w3", start, end);
+    return z_hybrid_input_range(silu(gate) * up, w, prefix + ".w2", end,
+                                start, end);
 }
 
 std::function<std::vector<Tensor>(const std::vector<Tensor> &)> &z_gpu_block_graph() {
@@ -462,9 +564,37 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                const Tensor &freqs, const Tensor &temb, HybridSession *hybrid,
                int hybrid_block,
                const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph) {
-    if (!hybrid && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS"))
+    // A LoRA can dequantize only the projections it touches.  Do not infer
+    // that the whole block is dense from QKV/w1 alone: Q8 GGUF modulation or
+    // the remaining attention/FFN weights may still be packed affine tensors.
+    // The compiled graph accepts ordinary dense matrices only; mixed
+    // dense/quantized blocks stay on linear_compat below.
+    const bool fully_dense =
+        !w.quantized(prefix + ".adaLN_modulation.0") &&
+        !w.convrot(prefix + ".adaLN_modulation.0") &&
+        !w.quantized(prefix + ".attention.qkv") &&
+        !w.convrot(prefix + ".attention.qkv") &&
+        !w.quantized(prefix + ".attention.out") &&
+        !w.convrot(prefix + ".attention.out") &&
+        !w.quantized(prefix + ".feed_forward.w1") &&
+        !w.convrot(prefix + ".feed_forward.w1") &&
+        !w.quantized(prefix + ".feed_forward.w2") &&
+        !w.convrot(prefix + ".feed_forward.w2") &&
+        !w.quantized(prefix + ".feed_forward.w3") &&
+        !w.convrot(prefix + ".feed_forward.w3");
+    if (!hybrid && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && fully_dense &&
+        !w.has_runtime_loras())
         return z_compiled_gpu_block(x, w, prefix, freqs, temb);
     auto modulation = mx::expand_dims(linear_compat(temb, w, prefix + ".adaLN_modulation.0"), 1);
+    if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
+        mx::eval({temb, modulation});
+        std::fprintf(stderr,
+                     "convrot_debug block=%s temb_finite=%d temb_max=%g modulation_finite=%d modulation_max=%g\n",
+                     prefix.c_str(), mx::all(mx::isfinite(temb)).item<bool>(),
+                     mx::max(mx::abs(temb)).item<float>(),
+                     mx::all(mx::isfinite(modulation)).item<bool>(),
+                     mx::max(mx::abs(modulation)).item<float>());
+    }
     auto parts = mx::split(modulation, 4, -1);
     auto scale_msa = Tensor(1.f, parts[0].dtype()) + parts[0];
     auto gate_msa = mx::tanh(parts[1]);
@@ -475,6 +605,16 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                                  w, prefix, freqs);
     auto value = x + gate_msa * rms(attention, w.at(prefix + ".attention_norm2.weight"), 1e-5f);
     auto feed_input = rms(value, w.at(prefix + ".ffn_norm1.weight"), 1e-5f) * scale_mlp;
+    if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
+        mx::eval({attention, value, feed_input});
+        std::fprintf(stderr,
+                     "convrot_debug block=%s attention_finite=%d attention_max=%g value_finite=%d value_max=%g feed_input_finite=%d feed_input_max=%g\n",
+                     prefix.c_str(), mx::all(mx::isfinite(attention)).item<bool>(),
+                     mx::max(mx::abs(attention)).item<float>(),
+                     mx::all(mx::isfinite(value)).item<bool>(), mx::max(mx::abs(value)).item<float>(),
+                     mx::all(mx::isfinite(feed_input)).item<bool>(),
+                     mx::max(mx::abs(feed_input)).item<float>());
+    }
     Tensor feed = feed_input;
     if (hybrid && gpu_graph) {
         auto packed = mx::astype(feed_input, mx::float16);
@@ -483,10 +623,15 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
             packed = mx::concatenate(
                 {packed, mx::zeros({1, hybrid->rows - actual_rows, 3840}, mx::float16)}, 1);
         mx::eval({feed_input, packed});
-        auto gpu = (*gpu_graph)({feed_input,
-                                 w.at(prefix + ".feed_forward.w1.weight"),
-                                 w.at(prefix + ".feed_forward.w3.weight"),
-                                 w.at(prefix + ".feed_forward.w2.weight")})[0];
+        const auto ffn = prefix + ".feed_forward";
+        const bool dense = !w.quantized(ffn + ".w1") && !w.convrot(ffn + ".w1") &&
+                           !w.quantized(ffn + ".w2") && !w.convrot(ffn + ".w2") &&
+                           !w.quantized(ffn + ".w3") && !w.convrot(ffn + ".w3");
+        auto gpu = dense
+            ? (*gpu_graph)({feed_input, w.at(ffn + ".w1.weight"),
+                            w.at(ffn + ".w3.weight"), w.at(ffn + ".w2.weight")})[0]
+            : z_hybrid_gpu_suffix(feed_input, w, ffn, hybrid->ane_mlp_end,
+                                  hybrid->mlp_width);
         mx::async_eval({gpu});
         auto ane = slice_axis(hybrid->predict(hybrid_block, packed), 1, 0, actual_rows);
         auto ane_scaled = mx::astype(ane, gpu.dtype()) * Tensor(z_hybrid_output_scale(hybrid), gpu.dtype());
@@ -522,7 +667,22 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
     } else {
         feed = z_ffn(feed_input, w, prefix + ".feed_forward");
     }
-    return value + gate_mlp * rms(feed, w.at(prefix + ".ffn_norm2.weight"), 1e-5f);
+    if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
+        mx::eval({feed});
+        std::fprintf(stderr, "convrot_debug block=%s feed_finite=%d feed_max=%g\n",
+                     prefix.c_str(), mx::all(mx::isfinite(feed)).item<bool>(),
+                     mx::max(mx::abs(feed)).item<float>());
+    }
+    auto result = value + gate_mlp * rms(feed, w.at(prefix + ".ffn_norm2.weight"), 1e-5f);
+    if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
+        mx::eval({result});
+        const bool finite = mx::all(mx::isfinite(result)).item<bool>();
+        const float max_abs = mx::max(mx::abs(result)).item<float>();
+        std::fprintf(stderr, "convrot_debug block=%s finite=%d max=%g\n",
+                     prefix.c_str(), finite, max_abs);
+        require(finite, "nonfinite ConvRot block output: " + prefix);
+    }
+    return result;
 }
 
 Tensor z_timestep(float timestep, const Weights &w) {
@@ -603,6 +763,12 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     auto image = linear_compat(patch.image, w, "x_embedder");
     auto caption_emb = linear_compat(
         rms(patch.caption, w.at("cap_embedder.0.weight"), 1e-5f), w, "cap_embedder.1");
+    if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
+        mx::eval({image, caption_emb});
+        std::fprintf(stderr, "convrot_debug inputs image_finite=%d image_max=%g caption_finite=%d caption_max=%g\n",
+                     mx::all(mx::isfinite(image)).item<bool>(), mx::max(mx::abs(image)).item<float>(),
+                     mx::all(mx::isfinite(caption_emb)).item<bool>(), mx::max(mx::abs(caption_emb)).item<float>());
+    }
     if (image.shape(0) > patch.image_length)
         image = mx::concatenate(
             {slice_axis(image, 0, 0, patch.image_length),
@@ -611,6 +777,12 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
         caption_emb = mx::concatenate(
             {slice_axis(caption_emb, 0, 0, patch.caption_length),
              mx::repeat(w.at("cap_pad_token"), caption_emb.shape(0) - patch.caption_length, 0)}, 0);
+    // The ConvRot checkpoint stores unquantized tensors as FP32, while Comfy
+    // executes the transformer with BF16 manual-cast semantics.  Pin this
+    // boundary after embedding and padding so those storage dtypes cannot
+    // promote every residual and modulation tensor to FP32.
+    image = mx::astype(image, mx::bfloat16);
+    caption_emb = mx::astype(caption_emb, mx::bfloat16);
     auto temb = z_timestep((1.f - sigma) * 1000.f, w);
     auto image_freqs = z_rope(patch.image_ids);
     auto caption_freqs = z_rope(patch.caption_ids);
@@ -712,11 +884,40 @@ Tensor z_initial_noise(const Request &r, int height, int width) {
 } // namespace
 
 ZImage::ZImage(const std::filesystem::path &root)
-    : root_(root), tokenizer_(root / "tokenizer") {
+    : ZImage(root, "z-image-turbo", {}) {}
+
+ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
+               const std::filesystem::path &transformer_checkpoint)
+    : root_(root), model_id_(std::move(model_id)), tokenizer_(root / "tokenizer") {
     auto comfy_text = root / "split_files/text_encoders/qwen_3_4b.safetensors";
     auto comfy_transformer =
         root / "split_files/diffusion_models/z_image_turbo_bf16.safetensors";
+    if (const char *override_path = std::getenv("TURBOCIDER_Z_IMAGE_TRANSFORMER");
+        override_path && *override_path)
+        comfy_transformer = std::filesystem::canonical(override_path);
+    convrot_transformer_ = comfy_transformer.filename().string().find("convrot") !=
+                           std::string::npos;
     auto comfy_vae = root / "split_files/vae/ae.safetensors";
+    if (!transformer_checkpoint.empty()) {
+        require(std::filesystem::is_regular_file(transformer_checkpoint) &&
+                    transformer_checkpoint.extension() == ".gguf",
+                "native Z-Image GGUF transformer checkpoint is invalid");
+        transformer_path_ = std::filesystem::canonical(transformer_checkpoint);
+        transformer_checkpoint_ = transformer_path_;
+        gguf_transformer_ = true;
+        if (std::filesystem::is_regular_file(comfy_text) &&
+            std::filesystem::is_regular_file(comfy_vae)) {
+            text_path_ = std::move(comfy_text);
+            vae_path_ = std::move(comfy_vae);
+            return;
+        }
+        text_path_ = root / "text_encoder";
+        vae_path_ = root / "vae";
+        require(has_safetensors(text_path_),
+                "missing Z-Image Qwen3 safetensors in text_encoder/");
+        require(has_safetensors(vae_path_), "missing Z-Image VAE safetensors in vae/");
+        return;
+    }
     if (std::filesystem::is_regular_file(comfy_text) &&
         std::filesystem::is_regular_file(comfy_transformer) &&
         std::filesystem::is_regular_file(comfy_vae)) {
@@ -746,7 +947,8 @@ ZImage::ZImage(const std::filesystem::path &root)
 }
 
 void ZImage::select_loras(const Request &request) {
-    std::string identity;
+    const auto strategy = effective_lora_strategy(request);
+    std::string identity = "strategy:" + strategy + ";";
     std::vector<LoRAAsset> normalized;
     for (const auto &adapter : request.loras) {
         std::error_code error;
@@ -767,6 +969,7 @@ void ZImage::select_loras(const Request &request) {
         return;
     cached_lora_identity_ = std::move(identity);
     active_loras_ = std::move(normalized);
+    active_lora_strategy_ = strategy;
     hybrid_.reset();
     hybrid_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
@@ -782,9 +985,15 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
     if (transformer_cold) {
         checkpoint(cancelled);
         event("load_z_image_transformer", 0, 1);
-        load_z_component(transformer_, transformer_path_, event, cancelled);
+        if (gguf_transformer_)
+            transformer_.load_gguf_file(transformer_path_);
+        else
+            load_z_component(transformer_, transformer_path_, event, cancelled);
         if (diffusers_layout_)
             normalize_z_diffusers_transformer(transformer_);
+        convrot_transformer_ = transformer_.convrot("layers.0.attention.qkv");
+        if (convrot_transformer_)
+            transformer_.cast_unquantized_float32(mx::bfloat16);
         event("load_z_image_transformer", 1, 1);
     }
     if (vae_.bytes() == 0) {
@@ -797,7 +1006,17 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
     }
     if (transformer_cold && !active_loras_.empty())
         lora_applied_projections_ =
-            transformer_.apply_loras(active_loras_, "transformer", event, cancelled);
+            transformer_.apply_loras(active_loras_, "transformer", event, cancelled,
+                                     active_lora_strategy_ == "inference_time");
+    if (transformer_cold && convrot_transformer_) {
+        // Apply LoRA against the original ConvRot representation first. The
+        // touched projections are deliberately materialized as dense BF16;
+        // only untouched projections take the packed affine-Q8 fast path.
+        const auto packed = transformer_.pack_convrot_q8();
+        if (active_loras_.empty())
+            require(packed > 0, "ConvRot checkpoint contains no packable INT8 projections");
+        event("pack_z_image_convrot_q8", int(packed), int(packed));
+    }
     transformer_.materialize();
     vae_.materialize();
     return {uint64_t(transformer_.bytes() + vae_.bytes()), mx::get_active_memory()};
@@ -913,21 +1132,22 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
 
 RunResult ZImage::prepare(const Request &requested, bool warmup, const Event &event,
                           std::atomic<bool> &cancelled) {
-    return run(requested, event, cancelled, warmup);
+    return run(requested, event, cancelled, warmup, !warmup);
 }
 
 RunResult ZImage::generate(const Request &r, const Event &event, std::atomic<bool> &cancelled) {
-    return run(r, event, cancelled, false);
+    return run(r, event, cancelled, false, false);
 }
 
 RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
-                      bool warmup) {
+                      bool warmup, bool load_only) {
     auto r = requested;
     auto begin = Clock::now();
-    require(r.model == "z-image-turbo", "Z-Image session received a different model id");
+    require(r.model == model_id_, "Z-Image session received a different model id");
     auto plan = make_plan(r);
-    require(!r.prompt.empty() && (warmup || !r.output.empty()), "prompt and output are required");
-    require(warmup || std::filesystem::path(r.output).extension() == ".png",
+    require(!r.prompt.empty() && (warmup || load_only || !r.output.empty()),
+            "prompt and output are required");
+    require(warmup || load_only || std::filesystem::path(r.output).extension() == ".png",
             "Z-Image output must be .png");
     require(r.inputs.empty(), "Z-Image-Turbo currently supports text-to-image only");
     require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
@@ -939,10 +1159,44 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const int caption_rows = (cached_conditioning_->shape(0) + 31) / 32 * 32;
     auto selection = select_acceleration(r, image_rows + caption_rows, event, cancelled);
     event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
-    r.compile_gpu = r.execution == "gpu" && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
+    r.compile_gpu = r.execution == "gpu" && !gguf_transformer_ && !convrot_transformer_ &&
+                    active_lora_strategy_ != "inference_time" &&
+                    !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
     if (plan.request.execution != r.execution || plan.request.compile_gpu != r.compile_gpu)
         plan = make_plan(r);
     load(event, cancelled);
+    if (load_only) {
+        RunResult result;
+        result.prepared = true;
+        result.request = r;
+        result.plan = std::move(plan);
+        result.selection = selection;
+        result.prompt_cache_hit = prompt_hit;
+        auto reported_tokens = tokenizer_.z_image_prompt(r.prompt, r.dynamic_text);
+        result.text_tokens = int(reported_tokens.ids.size());
+        result.valid_text_tokens = reported_tokens.valid;
+        result.lora_applied_projections = lora_applied_projections_;
+        if (gguf_transformer_) {
+            result.backend = "mlx_cpp_metal_gguf";
+            result.precision = "gguf_native:" + r.model_variant;
+            result.checkpoint = transformer_checkpoint_.filename().string();
+        } else if (convrot_transformer_) {
+            result.backend = "mlx_cpp_metal_convrot_packed_q8";
+            result.precision = "int8_tensorwise_convrot_g256";
+            result.checkpoint = transformer_checkpoint_.filename().string();
+        } else {
+            result.backend = hybrid_ ? "mlx_cpp_metal+coreml" : "mlx_cpp_metal";
+            result.precision = hybrid_ ? "bf16_gpu+int8_mlp_fp16_io" : "bf16";
+        }
+        if (hybrid_)
+            result.hybrid = hybrid_->metrics();
+        result.timings.wall =
+            std::chrono::duration<double>(Clock::now() - begin).count();
+        result.timings.text = text_seconds;
+        result.peak_bytes = mx::get_peak_memory();
+        result.active_bytes = mx::get_active_memory();
+        return result;
+    }
     const int latent_h = r.height / 8, latent_w = r.width / 8;
     auto z = z_initial_noise(r, latent_h, latent_w);
     mx::eval(z);
@@ -993,6 +1247,15 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.valid_text_tokens = reported_tokens.valid;
     result.actual_steps = r.steps;
     result.lora_applied_projections = lora_applied_projections_;
+    if (gguf_transformer_) {
+        result.backend = "mlx_cpp_metal_gguf";
+        result.precision = "gguf_native:" + r.model_variant;
+        result.checkpoint = transformer_checkpoint_.filename().string();
+    } else if (convrot_transformer_) {
+        result.backend = "mlx_cpp_metal_convrot_packed_q8";
+        result.precision = "int8_tensorwise_convrot_g256";
+        result.checkpoint = transformer_checkpoint_.filename().string();
+    }
     if (hybrid_)
         result.hybrid = hybrid_->metrics();
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();

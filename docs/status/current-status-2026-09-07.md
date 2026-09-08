@@ -1,14 +1,16 @@
 # TurboCider 当前状态与未完成项
 
+> 此快照已由 [2026-09-08 当前目标状态](current-status-2026-09-08.md)取代。
+
 更新时间：2026-09-07
 
 验证机器：Apple M4 Max，64 GB unified memory，MLX 0.32.2
 
 ## 结论
 
-当前 `dev` 是一个可独立编译和启动、并提供六个 executable model descriptor/执行路径的开发验收版本；实际生成仍要求相应模型资产和各模型列出的系统/可选依赖。FLUX.2 Klein 4B 和 Z-Image Turbo 的 native GPU 路径已经吸收 fused RMSNorm、Metal Q/K RoPE、MLX SDPA 和 compiled block 等优化；M4 Max 64 GB 的 FLUX a6144 与 Z-Image base a4096 GPU+ANE 路径具有严格的设备、checkpoint、shape、manifest、内存和近似许可门禁。
+当前 `dev` 是一个可独立编译和启动、并提供七个 executable model descriptor/执行路径的开发验收版本；新增的第七条是 `z-image-turbo-gguf`。mixed K-quant 使用常驻 sd.cpp Metal，Q8_0/Q4_0/Q4_1 可进入 native MLX；Q8_0 已完成 checkpoint-bound GPU+ANE 候选实测。实际生成仍要求相应模型资产和各模型列出的系统/可选依赖。FLUX.2 Klein 4B 和 safetensors Z-Image Turbo 的 native GPU 路径已经吸收 fused RMSNorm、Metal Q/K RoPE、MLX SDPA 和 compiled block 等优化；M4 Max 64 GB 的 FLUX a6144、Z-Image base a4096 与 GGUF Q8 a4096 GPU+ANE 路径都有显式 checkpoint/shape/manifest 门禁。
 
-当前版本适合整理后提交为多模型 native integration / FLUX-Z-Image optimization milestone，但还不是“所有模型生产完成版”。最主要的未完成项是 LTX 完整端到端 GPU+ANE、H3/LTX/FastMetal 纯内存 LoRA、FLUX 9B 的正式矩阵，以及 Z-Image LoRA-bound 混合路径的优化后重复 warm 验收。
+当前版本适合整理后提交为多模型 native integration / FLUX-Z-Image optimization milestone，但还不是“所有模型生产完成版”。GGUF Q8_0 base native GPU+ANE 已完成 1024² resident warm 验证；Q8 LoRA-bound 已完成导出、编译和真实启动，但其 1024² E2E warm 未通过不慢门禁。仍未完成的是 LTX 完整端到端 GPU+ANE、H3/LTX/FastMetal 纯内存 LoRA、FLUX 9B 的正式矩阵，以及 LoRA-bound 混合路径的优化和自动策略。
 
 ## 当前代码和仓库卫生
 
@@ -17,7 +19,7 @@
 - 通用模型数学使用 C++/MLX，Apple bridge 使用 Objective-C++/Metal/Core ML，App 使用 Swift；没有要求把所有功能重写成 Objective-C。
 - `.gitignore` 已排除 `build/`、`dist/`、`models/`、`outputs/`、`artifacts/`、`Python/`、虚拟环境、Core ML 编译产物、缓存和本机研究记录。
 - 当前 `git status` 中没有模型权重、生成图片/视频、构建对象、Python 环境或 Core ML artifact；未跟踪项均是本轮计划进入版本的正式 Markdown、SVG 和去路径化 validation JSON。
-- `git diff --check` 无 whitespace 错误。源码中没有兄弟仓库运行路径；`h3_ane_bridge.h` 中的 `references/h3.c-ane` 仅是许可证来源注释。
+- `git diff --check` 无 whitespace 错误。源码中没有兄弟仓库运行路径。后续 2026-09-08 收口进一步把 private ANE bridge 从正式 `native/` 删除，仅在 `experimental/` 保留研究快照；本段其余结论保留为当日历史记录。
 
 本机物理磁盘仍接近满载，当前可用空间约 8.3 GiB。被忽略的本地数据约包括：`models/` 106 GB、`outputs/` 3.0 GB、`Python/` 1.2 GB、`build/` 340 MB、`dist/` 401 MB。它们没有进入 Git，因此不影响提交卫生；若需要释放空间，优先候选是可重建的旧 `outputs/`、`build/` 和 `dist/`。模型与 Core ML artifact 仍是后续复测依据，本轮没有擅自删除。
 
@@ -28,6 +30,7 @@
 | FLUX.2 Klein 4B | native GPU；M4 Max a6144 GPU+ANE | 独立文件在 MLX 权重内存中融合；不写 merged checkpoint；LoRA-bound ANE manifest 可显式使用 | LoRA GPU+ANE 尚无优化后重复性能矩阵；多尺寸/多机器 AB/BA 待补 |
 | FLUX.2 Klein 9B | native GPU | 与 4B 共用 load-time in-memory delta | 标准尺寸 parity、warm/resident 和 GPU+ANE 未完成 |
 | Z-Image Turbo | Comfy split-files 或 Tongyi diffusers shards；native GPU；M4 Max base a4096 GPU+ANE | 独立 LoRA 在 MLX 内存中融合；官方 patch 的 238 个 projection 全部应用 | base ANE 为自动路线；LoRA-bound ANE 仍显式；逐 step oracle 待补 |
+| Z-Image Turbo GGUF | Q3_K_S/Q4_K_M/Q8_0 已真实运行；Q8_0 native MLX GPU 与 GPU+ANE；mixed K-quant 常驻 sd.cpp Metal GPU | 独立 LoRA 已支持：sd.cpp 请求期加载、native MLX 内存 delta、Q8 LoRA-bound Core ML 可显式启动 | Q8 base GPU+ANE 1024² warm 37.5848 s，相对 native GPU 45.9634 s 为 1.223×；Q8 LoRA-bound E2E warm 65.02 s 对 GPU 55.76 s，未过不慢门禁，仍显式 |
 | MiniMax H3 Turbo | native Metal/MPS；manifest-gated ANE | 独立文件接口已接入，但首次使用生成 repository-local Python 工具构造的可清理 runtime cache | 尚未做到逐层纯内存 LoRA；ANE 多轮矩阵待补 |
 | LTX 2.5 Distilled | video-only public native 路径；GPU+ANE candidate | 独立文件接口已接入，但 refiner 仍通过 repository-local runtime bake/cache | 完整端到端 GPU+ANE 尚未过速度/数值门禁；I2V/音频 Session parity 未完成 |
 | FastMetal 1.3B QAD | 受控持久 Python/MLX worker；固定 shape GPU/GPU+ANE | 只接受 provenance-verified premerged checkpoint | 独立 LoRA runtime bake 和对应 ANE artifact 未完成 |
@@ -107,10 +110,11 @@ mac-ltx 的 59.483 s 是 conditioning 已准备、模型已加载的 decoded-pix
 
 1. LTX 在相同 fresh/cache-hit/loaded-model/resident 口径下完成 TurboCider GPU、TurboCider GPU+ANE 与 mac-ltx 的重复 AB/BA；当前 hybrid 更慢且 latent parity 不合格。
 2. 将 H3/LTX 的 LoRA 从 runtime merged cache 改成真正逐层 native in-memory delta；FastMetal 仍需独立 LoRA runtime bake。
-3. Z-Image LoRA-bound a4096 在当前 compiled GPU 基线上完成重复 warm 和同噪声 parity；未通过前保持显式。
+3. Z-Image LoRA-bound a4096 已完成一次三轮 GPU/GPU+ANE 实跑和 provenance 校验，但 E2E warm 为 65.02 s 对 55.76 s，未通过前保持显式并继续优化。
 4. Z-Image 若要达到 1.3×，需要减少 288 次 block 级 Core ML 边界/输入打包开销，或改变分区粒度；扩大到 a5120/a6144 已证明无效。
 5. FLUX 4B 补齐多尺寸、多 prompt、多机器和交错 AB/BA p50/p95；FLUX 9B 补齐标准尺寸 parity、warm/resident 与 GPU+ANE。
 6. Z-Image 完成逐 step latent oracle 和多机器矩阵；LTX I2V/音频完成公开 Session parity。
-7. 发布前补齐 FastVideo/TAEHV 第三方 NOTICE、Developer ID 签名和公证；当前只验证本地 ad-hoc package。
+7. Q8 GGUF LoRA 的 reference 对照工具已固定使用 Z-Image Turbo 正确的 CFG=1.0；仍需补更稳定的多轮/多尺寸 LoRA E2E 统计，不能把 denoise 约 1.04× 写成端到端加速。
+8. 发布前补齐 FastVideo/TAEHV 第三方 NOTICE、Developer ID 签名和公证；当前只验证本地 ad-hoc package。
 
 原始大文件报告位于被忽略的 `outputs/`。可提交的去路径化摘要位于 `docs/design/validation/`。

@@ -34,8 +34,13 @@ NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomi
  auto action=string_value(request,@"action");
  require(action=="inventory"||action=="delete_artifacts"||action=="clear_runtime"||action=="clear_compiled"||action=="export"||action=="compile","unknown Core ML resource action");
  auto absolute=[](const std::string&s){return fs::absolute(s).lexically_normal();};
- auto model_id=string_value(request,@"model","flux2-klein-4b");require(model_id=="flux2-klein-4b"||model_id=="z-image-turbo","Core ML resource model must be flux2-klein-4b or z-image-turbo");
- bool z_image=model_id=="z-image-turbo";int bucket=z_image?4128:1088,ane_mlp_width=z_image?4096:9216,partition_count=z_image?32:20,ane_mlp_limit=z_image?10239:9216;
+ auto model_id=string_value(request,@"model","flux2-klein-4b");
+ require(model_id=="flux2-klein-4b"||model_id=="z-image-turbo"||
+             model_id=="z-image-turbo-gguf",
+         "Core ML resource model must be flux2-klein-4b, z-image-turbo or z-image-turbo-gguf");
+ bool z_image=model_id=="z-image-turbo"||model_id=="z-image-turbo-gguf";
+ int bucket=z_image?4128:1088,ane_mlp_width=z_image?4096:9216,
+     partition_count=z_image?32:20,ane_mlp_limit=z_image?10239:9216;
  fs::path storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket)),cache=support()/"cache/coreml";
  std::string manifest=string_value(request,@"manifest"),source=string_value(request,@"source_manifest"),export_python=(support()/"toolchains/coreml/bin/python3").string(),export_python_path;
  auto profile=string_value(request,@"profile");
@@ -51,7 +56,14 @@ NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomi
  if(source.empty()&&fs::is_regular_file(storage/"manifest.json"))source=(storage/"manifest.json").string();
  if(action=="compile")return manage_coreml_cache(@{@"action":@"compile_manifest",@"cache":@(cache.c_str()),@"source":@(source.c_str())},event,cancelled);
  if(action=="export"){
-  auto model=absolute(string_value(request,@"model_root"));bool model_ready=fs::is_regular_file(model/"transformer/diffusion_pytorch_model.safetensors");if(z_image)model_ready=model_ready||fs::is_regular_file(model/"transformer/diffusion_pytorch_model.safetensors.index.json")||fs::is_regular_file(model/"split_files/diffusion_models/z_image_turbo_bf16.safetensors");require(model_ready,"matching safetensors model required");
+  auto model=absolute(string_value(request,@"model_root"));
+  bool model_ready = fs::is_regular_file(model) &&
+                     (model.extension()==".gguf" || model.extension()==".safetensors");
+  if (!model_ready)
+   model_ready=fs::is_regular_file(model/"transformer/diffusion_pytorch_model.safetensors");
+  if(z_image && model_id!="z-image-turbo-gguf")
+   model_ready=model_ready||fs::is_regular_file(model/"transformer/diffusion_pytorch_model.safetensors.index.json")||fs::is_regular_file(model/"split_files/diffusion_models/z_image_turbo_bf16.safetensors");
+  require(model_ready,"matching safetensors or GGUF model required");
   auto python=string_value(request,@"python",export_python);require(!python.empty()&&fs::path(python).is_absolute()&&access(python.c_str(),X_OK)==0,"configure an executable Python with coremltools and numpy for offline export");
   Dl_info info{};require(dladdr((void*)&coreml_resources,&info)!=0,"cannot locate bundled exporter");auto script=fs::path(info.dli_fname).parent_path()/"coreml"/(z_image?"export_z_image.py":"export_flux2.py");require(fs::is_regular_file(script),"bundled offline exporter missing");
   NSTask*task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:@(python.c_str())];

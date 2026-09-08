@@ -1,0 +1,38 @@
+{
+  "schema_version": 2,
+  "model": "z-image-turbo",
+  "operation": "image.generate",
+  "inputs": [
+    {
+      "kind": "text",
+      "role": "prompt",
+      "text": "A cinematic red fox walking through fresh snow, soft morning light."
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "image",
+      "path": "outputs/z-image-in-memory-lora.png",
+      "width": 256,
+      "height": 256,
+      "frames": 1,
+      "audio": false
+    }
+  ],
+  "sampling": {
+    "seed": 42,
+    "steps": 9
+  },
+  "execution": {
+    "policy": "gpu",
+    "residency": "resident"
+  },
+  "lora_strategy": "in_memory_merge",
+  "loras": [
+    {
+      "path": "models/loras/z-image-style.safetensors",
+      "role": "transformer",
+      "strength": 1.0
+    }
+  ]
+}

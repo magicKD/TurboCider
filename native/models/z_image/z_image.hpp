@@ -10,7 +10,8 @@ namespace tc {
 class ZImage final : public ModelSession {
     std::filesystem::path root_;
     std::filesystem::path text_path_, transformer_path_, transformer_checkpoint_, vae_path_;
-    bool diffusers_layout_ = false;
+    std::string model_id_ = "z-image-turbo";
+    bool diffusers_layout_ = false, gguf_transformer_ = false, convrot_transformer_ = false;
     Tokenizer tokenizer_;
     Weights text_encoder_;
     Weights transformer_;
@@ -20,6 +21,7 @@ class ZImage final : public ModelSession {
     bool cached_dynamic_ = true;
     std::vector<LoRAAsset> active_loras_;
     std::string cached_lora_identity_;
+    std::string active_lora_strategy_ = "none";
     size_t lora_applied_projections_ = 0;
     std::unique_ptr<HybridSession> hybrid_;
     std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
@@ -32,10 +34,13 @@ class ZImage final : public ModelSession {
     Tensor decode(const Tensor &, int, int, const Event &, std::atomic<bool> &);
     bool conditioning(const Request &, const Event &, std::atomic<bool> &);
     std::string select_acceleration(Request &, int, const Event &, std::atomic<bool> &);
-    RunResult run(const Request &, const Event &, std::atomic<bool> &, bool warmup);
+    RunResult run(const Request &, const Event &, std::atomic<bool> &, bool warmup,
+                  bool load_only = false);
 
   public:
     explicit ZImage(const std::filesystem::path &);
+    ZImage(const std::filesystem::path &, std::string,
+           const std::filesystem::path &transformer_checkpoint);
     ~ZImage() override = default;
     LoadResult load(const Event &, std::atomic<bool> &) override;
     void unload() override;

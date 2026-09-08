@@ -27,11 +27,15 @@ SOURCES=(
  native/platform/apple/request.mm native/platform/apple/profile.mm native/platform/apple/tokenizer.mm
  native/platform/apple/device.mm native/platform/apple/results.mm native/platform/apple/lora_cache.mm
  native/platform/apple/fastmetal_session.mm native/platform/apple/h3_session.mm native/platform/apple/ltx_session.mm
+ native/platform/apple/llada_session.mm
  native/api/c_api.mm
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
- native/models/registry.cpp native/models/flux_module.cpp native/models/fastmetal_module.cpp native/models/h3_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp
+ native/models/registry.cpp native/models/flux_module.cpp native/models/fastmetal_module.cpp native/models/h3_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
+ native/platform/apple/sd_cpp_session.mm
  native/models/z_image/z_image.cpp
+ native/models/llada/llada.cpp native/models/llada/llada_text.cpp
+ native/models/llada/llada_transformer.cpp
  native/models/flux2/pipeline.cpp native/models/flux2/flux_text.cpp native/models/flux2/flux_transformer.cpp
  native/models/flux2/flux_vae.cpp native/models/flux2/flux_encode.cpp
  native/media/image.mm native/media/input.mm native/media/video.mm native/media/audio.mm
@@ -48,11 +52,11 @@ VIDEO_OUT="$OUT/h3-runtime"
 mkdir -p "$VIDEO_OUT"
 CC="$TOOLCHAIN/clang"
 H3_OBJECTS=()
-for src in h3 h3_host h3_safetensors h3_weights h3_text_encoder h3_dit_schedule h3_dit h3_video_vae h3_taeh3 h3_video_encoder h3_audio_vae h3_terminal h3_vision_encoder h3_multimodal h3_ffmpeg; do
+for src in h3 h3_host h3_safetensors h3_weights h3_text_encoder h3_dit_schedule h3_dit h3_video_vae h3_taeh3 h3_video_encoder h3_audio_vae h3_terminal h3_vision_encoder h3_multimodal h3_ffmpeg h3_ane_disabled; do
  "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c "$VIDEO_ROOT/$src.c" -o "$VIDEO_OUT/$src.o"
  H3_OBJECTS+=("$VIDEO_OUT/$src.o")
 done
-for src in h3_metal h3_gpu h3_tokenizer h3_coreml h3_ane_bridge h3_ane_mlp h3_ane_linear; do
+for src in h3_metal h3_gpu h3_tokenizer h3_coreml; do
  "$CC" -std=c11 -O3 -fobjc-arc -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c "$VIDEO_ROOT/$src.m" -o "$VIDEO_OUT/$src.o"
  H3_OBJECTS+=("$VIDEO_OUT/$src.o")
 done
@@ -91,6 +95,11 @@ install -m 0644 "$LTX_ROOT/ltx_shaders.metal" "$OUT/ltx_shaders.metal"
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_audio_mux_tool.o" "$OUT/audio.o" "$OUT/video.o" -o "$OUT/ltx-audio-mux" -framework Foundation -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" -dynamiclib "${OBJECTS[@]}" "${H3_OBJECTS[@]}" "$LTX_OUT/libltx-runtime.a" -o "$OUT/libturbocider.dylib" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework Accelerate -framework ImageIO -framework CoreGraphics -framework UniformTypeIdentifiers -framework Vision -Wl,-rpath,"$MLX_ROOT/lib" -Wl,-install_name,@rpath/libturbocider.dylib
 "$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
+SD_CPP_ROOT="$PWD/.deps/stable-diffusion-cpp/current"
+if [[ -x "$SD_CPP_ROOT/sd-server" ]]; then
+ cp "$SD_CPP_ROOT/sd-server" "$SD_CPP_ROOT/sd-cli" "$OUT/"
+ cp "$SD_CPP_ROOT/LICENSE" "$OUT/SD-CPP-LICENSE.txt"
+fi
 printf 'Built %s\n' "$OUT/turbocider"
 mkdir -p "$OUT/coreml"
 cp tools/coreml/export_flux2.py tools/coreml/export_z_image.py tools/coreml/lora.py "$OUT/coreml/"

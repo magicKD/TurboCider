@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-08",
+  "source_head_before_release_commit": "59d9c437f5bae7c23277e35a0dccd7503711d789",
+  "host": {
+    "architecture": "arm64",
+    "macos": "26.6.2",
+    "build": "25G83"
+  },
+  "build": {
+    "native_library": "passed",
+    "cli": "passed",
+    "swift_app": "passed",
+    "integration_test_binaries": "passed",
+    "package_minimum_macos": "26.2",
+    "app_signature": "ad-hoc; codesign --verify --deep --strict passed"
+  },
+  "portable_check": {
+    "source": "dist/cli",
+    "destination": "${ISOLATED_PACKAGE_ROOT}/cli",
+    "environment": "env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+    "models_command": "passed; 8 registered modules returned",
+    "doctor_command": "passed; MLX 0.32.2 loaded from package",
+    "gpu_note": "doctor reported GPU unavailable in the restricted validation session; this is an execution-environment permission result, not a missing package dependency",
+    "source_or_sibling_rpath_found": false,
+    "library_rpaths": [
+      "@loader_path"
+    ],
+    "packaged_non_system_dependencies": [
+      "@rpath/libmlx.dylib",
+      "@rpath/libjaccl.dylib"
+    ]
+  },
+  "artifacts": {
+    "turbocider": {
+      "bytes": 142976,
+      "sha256": "cfc1f06433bb46eb080355eb1bd2b4160ca6fc402749a92521e63250dd4bb219"
+    },
+    "libturbocider.dylib": {
+      "bytes": 3048752,
+      "sha256": "8d6bd90d13bbaff4d32f4a0e38b7d05a689c5ff73721afebf41236ecbc8ff5b7"
+    },
+    "libmlx.dylib": {
+      "bytes": 21833088,
+      "sha256": "7a4134828ed1f9861754343838595a52d8c0899a5eec42af00169b60d5891fa9"
+    },
+    "libjaccl.dylib": {
+      "bytes": 1564672,
+      "sha256": "123b629ed623b821bbdf0f1ce62b8c6d67828e27134a457e87e81fea0afe6f81"
+    }
+  },
+  "tests": {
+    "make_test": "passed; expected NumPy-dependent semantic subtests skipped under system Python",
+    "managed_python_targeted": "70 passed, 47 subtests passed",
+    "app_behavior": "passed; pasteboard-only check skipped because the service was unavailable",
+    "git_diff_check": "passed"
+  },
+  "scope": "This proves package startup and linked-code independence. Model weights, optional Core ML artifacts, H3 media tools and the explicit FastMetal worker remain separately declared capabilities."
+}

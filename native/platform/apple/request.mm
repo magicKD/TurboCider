@@ -53,6 +53,13 @@ static int number(NSDictionary *d, NSString *k, int fallback) {
     require(x == std::floor(x) && x >= 0 && x <= 2147483647, "invalid integer");
     return int(x);
 }
+static uint64_t byte_count(NSDictionary *d, NSString *k, uint64_t fallback) {
+    double x = numeric(d, k, double(fallback));
+    constexpr double maximum = double(1ull << 50);
+    require(x == std::floor(x) && x >= 0 && x <= maximum,
+            "invalid byte count: " + std::string(k.UTF8String));
+    return uint64_t(x);
+}
 static bool boolean(NSDictionary *d, NSString *k, bool fallback) {
     id v = d[k];
     if (!v)
@@ -79,7 +86,9 @@ Request request_from_json(NSDictionary *d) {
             @"dump_tensors", @"ane_manifest",   @"allow_approximation",
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
-            @"loras",        @"audio",          @"noise_path"
+            @"loras",        @"audio",          @"noise_path",
+            @"lora_strategy", @"streaming_offload", @"memory_budget_bytes",
+            @"warmup_iterations"
         ]);
         r.model = string_value(d, @"model", r.model);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
@@ -103,12 +112,18 @@ Request request_from_json(NSDictionary *d) {
         r.allow_approximation = boolean(d, @"allow_approximation", false);
         r.audio = boolean(d, @"audio", model_descriptor.default_audio);
         r.residency = string_value(d, @"residency", model_descriptor.default_residency);
+        r.streaming_offload = boolean(d, @"streaming_offload", false);
+        r.memory_budget_bytes = byte_count(d, @"memory_budget_bytes", 0);
+        r.warmup_iterations = number(d, @"warmup_iterations", 0);
+        require(r.warmup_iterations >= 0 && r.warmup_iterations <= 8,
+                "warmup_iterations must be 0...8");
         r.profile = string_value(d, @"profile");
         r.noise_path = string_value(d, @"noise_path");
     } else {
         keys(d, @[
             @"schema_version", @"model", @"operation", @"inputs", @"outputs", @"sampling",
-            @"execution", @"parameters", @"dump_tensors", @"model_variant", @"loras"
+            @"execution", @"parameters", @"dump_tensors", @"model_variant", @"loras",
+            @"lora_strategy"
         ]);
         r.model = string_value(d, @"model", r.model);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
@@ -135,18 +150,26 @@ Request request_from_json(NSDictionary *d) {
         r.steps = number(sampling, @"steps", [descriptor[@"default_steps"] intValue]);
         auto execution = d[@"execution"] ? dictionary(d[@"execution"], "execution") : @{};
         keys(execution,
-             @[ @"policy", @"profile", @"ane_manifest", @"allow_approximation", @"residency" ]);
+             @[ @"policy", @"profile", @"ane_manifest", @"allow_approximation",
+                @"residency", @"memory_budget_bytes", @"warmup_iterations" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");
         r.allow_approximation = boolean(execution, @"allow_approximation", false);
         r.residency = string_value(execution, @"residency", model_descriptor.default_residency);
+        r.memory_budget_bytes = byte_count(execution, @"memory_budget_bytes", 0);
+        r.warmup_iterations = number(execution, @"warmup_iterations", 0);
+        require(r.warmup_iterations >= 0 && r.warmup_iterations <= 8,
+                "execution.warmup_iterations must be 0...8");
         auto parameters = d[@"parameters"] ? dictionary(d[@"parameters"], "parameters") : @{};
-        keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path" ]);
+        keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path",
+                            @"streaming_offload" ]);
         r.compile_gpu = boolean(parameters, @"compile_gpu", false);
         r.dynamic_text = boolean(parameters, @"dynamic_text", true);
         r.noise_path = string_value(parameters, @"noise_path");
+        r.streaming_offload = boolean(parameters, @"streaming_offload", false);
     }
+    r.lora_strategy = string_value(d, @"lora_strategy", r.lora_strategy);
     r.dump = string_value(d, @"dump_tensors");
     if (d[@"loras"]) {
         NSArray *loras = d[@"loras"];

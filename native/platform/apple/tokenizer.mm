@@ -122,4 +122,16 @@ Tokens Tokenizer::z_image_prompt(const std::string &s, bool dynamic) {
         t.ids.resize(512, 151643);
     return t;
 }
+Tokens Tokenizer::llada_image_prompt(const std::string &s) {
+    require(!s.empty(), "prompt must not be empty");
+    require(s.size() <= 32768, "prompt exceeds 32 KiB");
+    // LLaDA-Image uses its own role/image tokens and does not add BOS/EOS.
+    // Keep this template byte-for-byte aligned with the official pipeline;
+    // the trailing newline before <IMAGE1> is part of the token sequence.
+    auto ids = impl_->encode("<role>HUMAN</role> Generate an image: " + s +
+                             "\n<role>ASSISTANT</role>\n<IMAGE1>");
+    require(ids.size() <= 2048, "LLaDA prompt exceeds 2048 tokens; no silent truncation");
+    const int valid = int(ids.size());
+    return {std::move(ids), valid};
+}
 } // namespace tc

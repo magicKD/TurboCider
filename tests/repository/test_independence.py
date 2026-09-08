@@ -12,6 +12,14 @@ class IndependenceTests(unittest.TestCase):
             for p in (ROOT/folder).rglob('*'):
                 if p.suffix not in ['.swift','.cpp','.mm','.hpp','.h']:continue
                 for token in forbidden:self.assertNotIn(token,p.read_text(),str(p))
+        llada=(ROOT/'native/platform/apple/llada_session.mm').read_text()
+        self.assertNotIn('references/LLaDA-Image',llada)
+        self.assertNotIn('repository / "Python/bin/python3"',llada)
+        self.assertIn('TURBOCIDER_LLADA_WORKER',llada)
+        self.assertIn('TURBOCIDER_LLADA_PYTHON',llada)
+        self.assertIn('TURBOCIDER_LLADA_SOURCE',llada)
+        package=(ROOT/'tools/native/package.sh').read_text()
+        self.assertNotIn('llada_worker.py',package)
     def test_managed_build_and_export(self):
         self.assertIn('dependencies.sh',(ROOT/'tools/native/build.sh').read_text())
         self.assertIn('dependencies.sh',(ROOT/'tools/native/package.sh').read_text())

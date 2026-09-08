@@ -12,11 +12,14 @@ class CoreMLBranch {
     int rows_, hidden_;
 
   public:
-    double seconds = 0;
-    uint64_t calls = 0, copied_bytes = 0;
+    double model_load_seconds = 0, interface_setup_seconds = 0;
+    double seconds = 0, warmup_seconds = 0;
+    double first_runtime_seconds = 0, subsequent_runtime_seconds = 0;
+    uint64_t calls = 0, copied_bytes = 0, warmup_calls = 0, runtime_calls = 0;
+    uint64_t first_runtime_calls = 0, subsequent_runtime_calls = 0;
     CoreMLBranch(const std::filesystem::path &, int rows, int hidden,
                  const Tensor &output_storage, MLMultiArray *output_backing);
-    Tensor predict(const Tensor &packed_input, int actual_rows);
+    Tensor predict(const Tensor &packed_input, int actual_rows, bool warmup = false);
 };
 struct HybridSession::Impl {
     std::vector<std::unique_ptr<CoreMLBranch>> branches;
@@ -26,15 +29,19 @@ HybridSession::~HybridSession() = default;
 CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidden,
                            const Tensor &output_storage, MLMultiArray *output_backing)
     : output_storage_(output_storage), output_(output_backing), rows_(rows), hidden_(hidden) {
+    auto setup_begin = Clock::now();
     require(path.extension() == ".mlmodelc" && std::filesystem::is_directory(path),
             "expected compiled Core ML artifact: " + path.string());
     auto config = [MLModelConfiguration new];
     config.computeUnits = MLComputeUnitsCPUAndNeuralEngine;
     config.functionName = @"main";
     NSError *error = nil;
+    auto model_load_begin = Clock::now();
     model_ = [MLModel modelWithContentsOfURL:[NSURL fileURLWithPath:@(path.c_str())]
                                configuration:config
                                        error:&error];
+    model_load_seconds =
+        std::chrono::duration<double>(Clock::now() - model_load_begin).count();
     require(model_ != nil,
             "Core ML load failed: " +
                 std::string(error ? error.localizedDescription.UTF8String : "unknown"));
@@ -48,8 +55,11 @@ CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidd
     require(output_ != nil, "Core ML shared output backing missing");
     options_ = [MLPredictionOptions new];
     options_.outputBackings = @{@"y" : output_};
+    interface_setup_seconds =
+        std::chrono::duration<double>(Clock::now() - setup_begin).count() -
+        model_load_seconds;
 }
-Tensor CoreMLBranch::predict(const Tensor &input, int actual) {
+Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
     // Input has been materialized before GPU attention submission. No writable alias
     // is exposed to callers; output storage is leased until the block completes.
     auto begin = Clock::now();
@@ -86,8 +96,22 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual) {
     // The model coordinator and per-block eval guarantee that the prior
     // consumer has completed before this branch writes its next output. Core ML
     // writes directly into an MLX-owned shared buffer; no tensor escapes the block.
+    const double elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
     ++calls;
-    seconds += std::chrono::duration<double>(Clock::now() - begin).count();
+    seconds += elapsed;
+    if (warmup) {
+        ++warmup_calls;
+        warmup_seconds += elapsed;
+    } else {
+        ++runtime_calls;
+        if (first_runtime_calls == 0) {
+            ++first_runtime_calls;
+            first_runtime_seconds += elapsed;
+        } else {
+            ++subsequent_runtime_calls;
+            subsequent_runtime_seconds += elapsed;
+        }
+    }
     return slice_axis(output_storage_, 1, 0, actual);
 }
 HybridSession::HybridSession(const std::filesystem::path &file, const std::filesystem::path &model,
@@ -243,10 +267,13 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     block_count = int([d[@"artifacts"] count]);
     require(block_count > 0 && block_count <= 64,
             "hybrid manifest has an invalid block count");
+    manifest_validation_seconds =
+        std::chrono::duration<double>(Clock::now() - begin).count();
     // Blocks execute serially and z_block materializes the prior consumer
     // before the next prediction. One session-wide backing therefore avoids
     // retaining block_count identical rows*hidden FP16 buffers without
     // changing the prediction ABI or exposing a writable tensor to callers.
+    auto output_setup_begin = Clock::now();
     auto output_storage = mx::contiguous(mx::zeros({1, rows, hidden}, mx::float16));
     mx::eval(output_storage);
     require(output_storage.data_size() == size_t(rows) * size_t(hidden) &&
@@ -262,6 +289,8 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                                       }
                                             error:&output_error];
     require(output != nil, "Core ML shared backing allocation failed");
+    output_backing_setup_seconds =
+        std::chrono::duration<double>(Clock::now() - output_setup_begin).count();
     for (int i = 0; i < block_count; ++i) {
         tc::checkpoint(cancelled);
         event("coreml_load", i, block_count);
@@ -276,6 +305,7 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
             std::make_unique<CoreMLBranch>(path, rows, hidden, output_storage, output));
     }
     if (warmups) {
+        auto warmup_begin = Clock::now();
         auto input = mx::zeros({1, rows, hidden}, mx::float16);
         mx::eval(input);
         for (int iteration = 0; iteration < warmups; ++iteration)
@@ -283,9 +313,11 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                 tc::checkpoint(cancelled);
                 event("coreml_warmup", iteration * block_count + block,
                       warmups * block_count);
-                auto result = impl_->branches[block]->predict(input, rows);
+                auto result = impl_->branches[block]->predict(input, rows, true);
                 mx::eval(result);
             }
+        zero_input_warmup_seconds =
+            std::chrono::duration<double>(Clock::now() - warmup_begin).count();
     }
     load_seconds = std::chrono::duration<double>(Clock::now() - begin).count();
 }
@@ -295,6 +327,9 @@ Tensor HybridSession::predict(int block, const Tensor &input) {
 HybridMetrics HybridSession::metrics() const {
     HybridMetrics metrics;
     metrics.load_seconds = load_seconds;
+    metrics.manifest_validation_seconds = manifest_validation_seconds;
+    metrics.output_backing_setup_seconds = output_backing_setup_seconds;
+    metrics.zero_input_warmup_seconds = zero_input_warmup_seconds;
     metrics.bucket = rows;
     metrics.hidden = hidden;
     metrics.block_count = block_count;
@@ -305,9 +340,17 @@ HybridMetrics HybridSession::metrics() const {
     metrics.checkpoint_sha_verified = checkpoint_sha_verified;
     metrics.lora_identity_verified = lora_identity_verified;
     for (auto &branch : impl_->branches) {
+        metrics.model_load_seconds += branch->model_load_seconds;
+        metrics.model_interface_setup_seconds += branch->interface_setup_seconds;
         metrics.calls += branch->calls;
         metrics.copied_bytes += branch->copied_bytes;
         metrics.prediction_seconds += branch->seconds;
+        metrics.warmup_calls += branch->warmup_calls;
+        metrics.runtime_calls += branch->runtime_calls;
+        metrics.first_runtime_prediction_calls += branch->first_runtime_calls;
+        metrics.subsequent_runtime_prediction_calls += branch->subsequent_runtime_calls;
+        metrics.first_runtime_prediction_seconds += branch->first_runtime_seconds;
+        metrics.subsequent_runtime_prediction_seconds += branch->subsequent_runtime_seconds;
     }
     return metrics;
 }

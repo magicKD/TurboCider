@@ -11,6 +11,22 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('experimental/',build)
         self.assertIn('SOURCES=(',build)
         self.assertNotIn('find native',build)
+        self.assertIn('h3_ane_disabled',build)
+        h3_objc_line=next(
+            line for line in build.splitlines()
+            if line.startswith('for src in h3_metal '))
+        for private_source in ['h3_ane_bridge','h3_ane_mlp','h3_ane_linear']:
+            self.assertNotIn(private_source,h3_objc_line,
+                             f'{private_source} must not be linked into shipping')
+        disabled=(ROOT/'native/models/h3_runtime/h3_ane_disabled.c').read_text()
+        self.assertIn('private ANE support is excluded',disabled)
+        self.assertNotIn('_ANEInMemoryModel',disabled)
+        self.assertFalse((ROOT/'native/models/h3_runtime/h3_ane_bridge.m').exists())
+        self.assertFalse((ROOT/'native/models/h3_runtime/h3_ane_bridge.h').exists())
+        for private_class in ['_ANEInMemoryModel','_ANERequest','_ANEIOSurfaceObject']:
+            for p in (ROOT/'native').rglob('*'):
+                if p.suffix in ['.c','.cpp','.m','.mm','.h','.hpp']:
+                    self.assertNotIn(private_class,p.read_text(),str(p))
         for p in (ROOT/'native').rglob('*'):
             if p.suffix in ['.cpp','.mm','.hpp','.h']:
                 self.assertNotIn('vendor/',p.read_text(),str(p))

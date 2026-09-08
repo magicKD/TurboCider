@@ -94,6 +94,20 @@ struct StudioView: View {
     @State private var submitting = false
     private var selectedJob: NativeJob? { store.jobs.first { $0.id == selected } ?? store.jobs.first { $0.state == "succeeded" } }
     private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
+    private var loraStrategyHint: String {
+        let selected = studio.draft.loraStrategy == "auto"
+            ? model?.default_lora_strategy : studio.draft.loraStrategy
+        switch selected {
+        case "disk_premerge":
+            return "会使用或创建内容寻址的预融合缓存；基础模型和独立 LoRA 文件不会被修改。"
+        case "in_memory_merge":
+            return "加载时把 delta 融合到内存，不写完整 merged checkpoint。"
+        case "inference_time":
+            return "推理请求期间加载独立 LoRA；不会长期保存融合后的模型权重。"
+        default:
+            return "自动选择当前模型已声明的默认 LoRA 策略。"
+        }
+    }
     private var inputSummary: String {
         let output = model?.isVideo == true ? "视频" : "图像"
         return "\(studio.draft.activeAssets.count) 张输入 → 1 个\(output)"
@@ -315,7 +329,17 @@ struct StudioView: View {
                                 }
                             }
                         }
-                        Text(model?.runtime_lora == true ? "运行时按文件身份缓存并应用，不复制整份 checkpoint。" : "此模型要求 LoRA 对应的预融合 checkpoint 与 provenance manifest。")
+                        Picker("LoRA 执行策略", selection: $studio.draft.loraStrategy) {
+                            Text("自动").tag("auto")
+                            ForEach(model?.lora_strategies ?? [], id: \.self) { strategy in
+                                Text(strategy == "disk_premerge" ? "磁盘预融合" :
+                                     strategy == "in_memory_merge" ? "内存融合" :
+                                     strategy == "inference_time" ? "推理时融合" : strategy)
+                                    .tag(strategy)
+                            }
+                        }
+                        .disabled(studio.draft.loras.isEmpty)
+                        Text(loraStrategyHint)
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Button(studio.draft.profilePath.isEmpty ? "选择加速配置…" : "更换加速配置…", action: chooseProfile)

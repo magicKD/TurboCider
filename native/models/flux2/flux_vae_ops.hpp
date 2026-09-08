@@ -33,4 +33,9 @@ struct FluxVaeOps {
         return x + linear(mx::reshape(attend(q, k, v), x.shape()), weights, p + ".to_out.0");
     }
 };
+
+Tensor flux_vae_decode(const Tensor &, Weights &, int, int, const Event &,
+                       std::atomic<bool> &, const std::string &dump = "");
+Tensor flux_vae_decode_raw(const Tensor &, Weights &, int, int, const Event &,
+                           std::atomic<bool> &, const std::string &dump = "");
 } // namespace tc

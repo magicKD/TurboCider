@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-08",
+  "hardware": {
+    "gpu": "Apple M4 Max",
+    "unified_memory_gb": 64,
+    "mlx_version": "0.32.2"
+  },
+  "model": {
+    "id": "z-image-turbo",
+    "checkpoint": "models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors",
+    "format": "ComfyUI ConvRot signed INT8 packed to MLX affine Q8",
+    "width": 256,
+    "height": 256,
+    "steps": 9,
+    "seed": 42
+  },
+  "lora": {
+    "path": "models/Comfy-Org-z_image_turbo/split_files/loras/z_image_turbo_distill_patch_lora_bf16.safetensors",
+    "role": "transformer",
+    "strength": 1.0,
+    "applied_projections": 238,
+    "storage": "independent file; no merged checkpoint written"
+  },
+  "comparison": {
+    "in_memory_merge": {
+      "warm_request_wall_seconds": 2.6349213539797347,
+      "warm_denoise_seconds": 2.5033135829999997,
+      "mlx_active_bytes": 12522666520,
+      "runtime_precision": "int8_tensorwise_convrot_g256",
+      "behavior": "LoRA-hit ConvRot projections are dequantized to dense BF16 before delta merge"
+    },
+    "inference_time": {
+      "warm_request_wall_seconds": 2.9408374580089003,
+      "warm_denoise_seconds": 2.8090171870000002,
+      "mlx_active_bytes": 6672964072,
+      "runtime_precision": "int8_tensorwise_convrot_g256",
+      "behavior": "packed base projection plus FP32-accumulated low-rank A/B branch"
+    },
+    "inference_time_overheads": {
+      "request_wall_ratio": 1.1161006583999615,
+      "denoise_ratio": 1.1221195802539616,
+      "active_memory_reduction_fraction": 0.467129140479579
+    }
+  },
+  "parity": {
+    "inference_time_vs_in_memory_png": {
+      "mae_255": 4.0652109781901045,
+      "rmse_255": 12.793676825188166,
+      "max_abs_255": 234.0,
+      "correlation": 0.9788073532670681,
+      "cosine": 0.997736848688724
+    },
+    "inference_time_vs_in_memory_latent_final": {
+      "mae": 0.08140501,
+      "rmse": 0.17885478,
+      "max_abs": 3.569441,
+      "correlation": 0.9864636558820118,
+      "cosine": 0.986503
+    },
+    "zero_strength_regression": {
+      "request": "same packed checkpoint and LoRA file with strength=0",
+      "png_pixel_exact": true,
+      "mae_255": 0.0,
+      "max_abs_255": 0.0
+    }
+  },
+  "verification": {
+    "build": "MLX_ROOT=.../ltx-mac/.venv-mlx/lib/python3.13/site-packages/mlx make build",
+    "tests": "Python/bin/python -m pytest -q tests/native/test_contract.py tests/native/test_z_image_sharded_checkpoint.py tests/native/test_coreml_lora.py",
+    "test_result": "62 passed, 47 subtests passed",
+    "status": "functional low-memory candidate; not default-quality/performance qualified"
+  },
+  "remaining": [
+    "match inference-time against a packed-base reference rather than dense in-memory merge",
+    "complete 1024x1024 and multi-seed latent/PNG parity",
+    "qualify LoRA-bound GPU+ANE with repeated end-to-end samples",
+    "cover multi-adapter, cancellation and malformed-adapter E2E cases"
+  ]
+}

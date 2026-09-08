@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "model": "z-image-turbo-gguf",
+  "operation": "image.generate",
+  "prompt": "A cinematic red fox walking through fresh snow, soft morning light.",
+  "output": "outputs/z-image-gguf-resident-256.png",
+  "execution": "gpu",
+  "model_variant": "Q3_K_S",
+  "residency": "resident",
+  "width": 256,
+  "height": 256,
+  "steps": 9,
+  "frames": 1,
+  "seed": 42,
+  "audio": false
+}

@@ -21,6 +21,7 @@ struct Request {
     std::string profile, residency = "resident";
     std::string profile_identity;
     std::string model_variant = "auto";
+    std::string lora_strategy = "auto";
     uint64_t memory_budget_bytes = 0, allocator_cache_bytes = 512ull << 20;
     int warmup_iterations = 0;
     std::vector<InputAsset> inputs;
@@ -29,6 +30,9 @@ struct Request {
     uint64_t seed = 42;
     bool compile_gpu = false;
     bool dynamic_text = true, allow_approximation = false, audio = true;
+    // GGUF-only low-memory hint.  The sd.cpp backend streams parameters and
+    // layers instead of requiring the complete quantized transformer resident.
+    bool streaming_offload = false;
 };
 struct Stage {
     std::string id;

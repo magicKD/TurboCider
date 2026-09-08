@@ -15,6 +15,9 @@ class HybridSession {
     bool checkpoint_sha_verified = false;
     bool lora_identity_verified = false;
     double load_seconds = 0;
+    double manifest_validation_seconds = 0;
+    double output_backing_setup_seconds = 0;
+    double zero_input_warmup_seconds = 0;
     HybridSession(const std::filesystem::path &, const std::filesystem::path &model, int tokens,
                   const Event &, std::atomic<bool> &, int warmups = 0,
                   const std::filesystem::path &checkpoint = {},

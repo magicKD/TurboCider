@@ -44,10 +44,17 @@ void resolve_profile(Request &r) {
     require([model isKindOfClass:NSDictionary.class], "profile does not contain requested model");
     profile_keys(model, @[
         @"policy", @"residency", @"allow_approximation", @"ane_manifest", @"memory_budget_bytes",
-        @"allocator_cache_bytes", @"warmup_iterations", @"coreml_export"
+        @"allocator_cache_bytes", @"warmup_iterations", @"coreml_export",
+        @"streaming_offload"
     ]);
     r.execution = string_value(model, @"policy", "gpu");
     r.residency = string_value(model, @"residency", r.residency);
+    if (model[@"streaming_offload"]) {
+        require(CFGetTypeID((__bridge CFTypeRef)model[@"streaming_offload"]) ==
+                    CFBooleanGetTypeID(),
+                "profile streaming_offload must be boolean");
+        r.streaming_offload = [model[@"streaming_offload"] boolValue];
+    }
     if (model[@"allow_approximation"]) {
         require(CFGetTypeID((__bridge CFTypeRef)model[@"allow_approximation"]) ==
                     CFBooleanGetTypeID(),

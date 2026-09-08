@@ -31,3 +31,12 @@
 `.gitignore` 不会自动停止跟踪已经提交的文件；如未来误提交原始产物，需要另外从 Git 索引移除，并保留本地文件。
 
 - `cpp-engine-refactor.json`：C++ 边界重构的完整版本对照、首次 Core ML 加载异常、ABBA App 性能和功能回归记录；不含本机绝对路径。
+
+## 近似路径质量门禁
+
+跨后端近似不要求逐 bit/逐像素相同，但不能只凭肉眼或单个相关性数字宣称通过。`tools/native/quality_gate.py` 提供离线、可复现的 RGB 配对门禁；默认策略是 correlation ≥ 0.99、cosine ≥ 0.995、MAE ≤ 5/255。默认值是当前图像实验的保守起点，不是所有模型和分辨率的普适真理；报告必须同时记录模型、尺寸、seed、prompt、dtype、参考实现和阈值。
+
+LLaDA GPU/ANE benchmark 可用 `--require-quality` 启用该门禁；不传此参数时仍会记录 `quality_gate_passed`，但不会因为实验性近似结果而阻断性能探索。运行时不会加载参考图片做比较，因此正式推理不会隐式承担 benchmark 成本。
+
+- `transformer-heterogeneous-2026-09-08.json`：固定版本的 mac_transformer/ANE 证据、MLP/模型 E2E、Core ML startup 和异构采用结论。
+- `private-ane-shipping-isolation-2026-09-08.json`：private `_ANE*` 源码隔离、shipping binary 字符串/依赖审计、portable package 和测试结果。

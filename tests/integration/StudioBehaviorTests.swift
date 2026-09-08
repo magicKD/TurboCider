@@ -202,6 +202,7 @@ struct StudioBehaviorTests {
                     ltx.steps == 11 && (ltx.inputs?.isEmpty ?? true),
                   "LTX descriptor defaults or public text-to-video mapping changed")
         studio.selectModel("fastmetal-1.3b-qad")
+        try check(studio.draft.loraStrategy == "auto", "Model switch did not reset LoRA strategy")
         let lora = root.appendingPathComponent("adapter.safetensors"); try Data([9]).write(to: lora)
         studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.8)]
         let fastmetal = try studio.draft.request(output: root.appendingPathComponent("fastmetal.mp4"))
@@ -209,9 +210,11 @@ struct StudioBehaviorTests {
                   "FastMetal defaults or separate LoRA forwarding changed")
         studio.selectModel("flux2-klein-4b")
         studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.8)]
+        studio.draft.loraStrategy = "in_memory_merge"
         studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/compiled/manifest.json")
         let fluxLoRA = try studio.draft.request(output: root.appendingPathComponent("flux-lora.png"))
-        try check(fluxLoRA.execution == "gpu" && fluxLoRA.ane_manifest == nil && fluxLoRA.loras?.count == 1,
+        try check(fluxLoRA.execution == "gpu" && fluxLoRA.ane_manifest == nil &&
+                    fluxLoRA.loras?.count == 1 && fluxLoRA.lora_strategy == "in_memory_merge",
                   "FLUX separate LoRA request did not safely avoid the base ANE artifact")
         let loraManifest = root.appendingPathComponent("lora-aware-manifest.json")
         let loraIdentity: [String: Any] = [
@@ -234,6 +237,7 @@ struct StudioBehaviorTests {
                   "FLUX 9B App selection changed")
         studio.selectModel("z-image-turbo")
         studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.7)]
+        studio.draft.loraStrategy = "in_memory_merge"
         studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane")
         let zImage = try studio.draft.request(output: root.appendingPathComponent("z-image.png"))
         try check(zImage.model == "z-image-turbo" && zImage.operation == "image.generate" &&

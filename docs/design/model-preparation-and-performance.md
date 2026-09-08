@@ -30,8 +30,8 @@
 
 | 操作 | 实际工作与边界 |
 |---|---|
-| 加载当前配置 | 编码并缓存当前文本，materialize DiT/VAE 权重；混合模式还加载指定 Core ML 分区并检查 token 桶。不会生成图片。文本编码器本身仍按阶段释放。 |
-| 预热当前任务 | 按当前提示词、输入图、尺寸、步数、种子和计算模式完整执行一次，包含 DiT 与 VAE；跳过文件输出和任务历史。改变形状/条件后可能重新编译或准备。 |
+| 加载当前配置 | 编码并缓存当前文本，materialize DiT/VAE 权重；混合模式还加载指定 Core ML 分区并检查 token 桶。不会生成图片。Z-Image/LLaDA 现在也走真正的 load-only 分支，不执行 latent denoise 或 VAE decode。文本编码器本身仍按阶段释放。 |
+| 预热当前任务 | 按当前提示词、输入图、尺寸、步数、种子和计算模式完整执行一次，包含 DiT 与 VAE；跳过文件输出和任务历史。改变形状/条件后可能重新编译或准备。Core ML 分区可额外设置 `warmup_iterations` 做零输入预测预热。 |
 | 卸载模型 | 安全边界同步，释放权重、conditioning、Core ML 会话及 MLX allocator cache。不会删除源文件，也不宣称 OS 页缓存归零。 |
 | GPU | 原始 BF16 路线，可显式启用单流块编译融合，默认关闭。 |
 | GPU + ANE | GPU attention 与 Core ML INT8 MLP 分支并发；用户必须提供适配的分区 manifest。量化属于近似，不承诺与 BF16 位级一致。 |
@@ -57,7 +57,9 @@
 | `native/models/flux_transformer.mm` | 可选单流块 MLX compile，保留块间取消边界 |
 | `native/backends/artifact_cache.mm` | 内容寻址编译缓存与 manifest 生命周期 |
 
-`tc_engine_load` 保留其原有“仅图像权重载入”契约；App 使用更完整的 `tc_engine_prepare(request, warmup)`。`warmup=0` 准备，`warmup=1` 实际执行；后者返回 `output:null`。请求支持 `compile_gpu`，v2 对应 `parameters.compile_gpu`。Swift 暴露相同能力，其他语言通过 C ABI 接入即可。
+`tc_engine_load` 保留其原有“仅图像权重载入”契约；App 使用更完整的 `tc_engine_prepare(request, warmup)`。`warmup=0` 是 load-only 准备，`warmup=1` 执行无输出完整预热，后者返回 `output:null`。请求支持 `compile_gpu`，v2 对应 `parameters.compile_gpu`；Core ML 的 `warmup_iterations` 位于 schema 1 顶层或 schema 2 的 `execution` 对象，范围为 0–8。Swift 暴露相同能力，其他语言通过 C ABI 接入即可。
+
+Core ML 结果中的 `hybrid` 遥测会拆分 `manifest_validation_seconds`、`output_backing_setup_seconds`、`model_load_seconds`、`model_interface_setup_seconds`、`zero_input_warmup_seconds`、`first_runtime_prediction_seconds_session_total` 和 `subsequent_runtime_prediction_seconds_session_total`。`load_seconds` 仍表示整个 `HybridSession` 构造/预热阶段，`prediction_seconds_session_total` 包含所有预测；因此不能把总 load 时间误认为 Core ML 编译时间。`.mlmodelc` 编译发生在独立的 `coreml compile`/`compile_manifest` 管理操作中，命中内容寻址缓存时不会再次编译。
 
 缓存请求形如 `{"action":"compile_manifest","cache":"/absolute/app-cache","source":"/absolute/source/manifest.json"}`，另有 `inspect`、`clear`。路径是调用方提供的本地配置，不写死本机目录。
 
@@ -65,7 +67,7 @@
 
 App 缓存位于 Application Support 下 `TurboCiderNative/cache/coreml`。编译键包含源内容 SHA、系统 build、GPU 架构与编译器身份；每项使用文件锁、原子提交并在编译后复核源内容。批量 manifest 使用相对编译路径。管理入口检查所有权标记、路径和符号链接，只删除识别到的编译项，保留用户未知文件。空缓存可以直接清理；非空且无所有权标记的目录拒绝清除。
 
-这不是系统 ANE 全局缓存管理器；Core ML 内部可能还进行设备相关准备，因此“已编译”与“已预热”是两层状态。旧源 manifest 的权重 provenance 只有路径/大小，不能把新增的分区内容 SHA 误称为完整源权重 SHA 证明。
+这不是系统 ANE 全局缓存管理器；Core ML 内部可能还进行设备相关准备，因此“已编译”“已加载”和“已预热”是三层状态。已编译只表示 `.mlmodelc` 产物存在或被缓存；`prepare(load-only)` 会加载模型和 backing，但不执行预测；`warmup_iterations>0` 才会提前触发零输入预测。旧源 manifest 的权重 provenance 只有路径/大小，不能把新增的分区内容 SHA 误称为完整源权重 SHA 证明。
 
 修复了预加载后首次编码文本无条件释放图像权重的问题：已有驻留权重且物理内存至少 32 GiB、请求预算未设置或至少 24 GiB 时，编码新提示词保留图像权重及混合会话；较低内存仍采用阶段释放。这是保守启发式，不是完整的内存压力预测器。`component_staged` 仍在阶段结束释放权重，不能同时宣称其具有完整驻留预热收益。
 

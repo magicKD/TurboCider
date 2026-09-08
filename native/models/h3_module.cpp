@@ -71,6 +71,8 @@ ModelModule h3_module() {
                 d.fps = 24; d.supports_lora = true; d.runtime_lora = true;
                 d.default_audio = true; d.default_residency = "resident";
                 d.lora_mode = "runtime-bake-cache"; d.supports_gpu_ane = true;
+                d.lora_strategies = {"disk_premerge"};
+                d.default_lora_strategy = "disk_premerge";
                 d.request_lora_identity_validation = true;
                 d.backend = "metal_mps_native";
                 d.parallel_strategy = "GPU denoise + ANE MLP/QKV with explicit join";

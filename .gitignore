@@ -79,6 +79,7 @@ pip-wheel-metadata/
 /runtime.json
 /models/
 /Python/
+/.deps/
 
 # Local research notes. Stable, path-sanitized conclusions belong in docs/.
 /notes/

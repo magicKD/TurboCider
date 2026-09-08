@@ -50,6 +50,8 @@ ModelModule ltx_module() {
                 d.output = "video"; d.steps = 11; d.frames = 97; d.width = 704; d.height = 448; d.fps = 24;
                 d.default_audio = false; d.default_residency = "component_staged";
                 d.supports_lora = true; d.runtime_lora = true; d.lora_mode = "runtime-bake-cache";
+                d.lora_strategies = {"disk_premerge"};
+                d.default_lora_strategy = "disk_premerge";
                 d.request_lora_identity_validation = true; d.supports_gpu_ane = true;
                 d.backend = "metal+mlx_cpp";
                 d.runtime_dependency = "bundled-native-ltx-runtime";

@@ -46,6 +46,8 @@ ModelModule fastmetal_module() {
             d.default_audio = false; d.default_residency = "resident";
             d.supports_lora = true; d.runtime_lora = false;
             d.lora_mode = "premerged-manifest";
+            d.lora_strategies = {"disk_premerge"};
+            d.default_lora_strategy = "disk_premerge";
             d.request_lora_identity_validation = true; d.supports_gpu_ane = true;
             d.backend = "mlx+ane-bridge";
             d.runtime_dependency = "explicit-python-fastvideo-worker";

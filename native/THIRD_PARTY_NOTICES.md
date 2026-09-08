@@ -37,6 +37,13 @@ portable configuration example.
 MLX is Copyright Apple Inc., MIT-licensed. Its unmodified native libraries
 are build dependencies; include their original license when packaging them.
 
+The optional GGUF image backend packages an unmodified stable-diffusion.cpp
+`sd-cli`/`sd-server` build pinned by `tools/native/install_sd_cpp.py`. The
+currently pinned Apple Silicon archive is built by the Unsloth mirror from
+source commit `13b9d92b5e9a1563536c9c980e700470f9ab6702`. stable-diffusion.cpp is
+Copyright (c) 2023 leejet and MIT-licensed. The package includes the original
+license as `SD-CPP-LICENSE.txt`; model weights remain external user assets.
+
 H3 native kernels and model components are derived from h3.c-fork.
 The source copy is modified for library configuration, resource discovery and
 native Apple media I/O. Its license follows:
@@ -60,7 +67,10 @@ MIT License
 Copyright (c) 2026 Salvatore Sanfilippo
 
 The experimental Apple Neural Engine bridge and related ANE paths are also
-Copyright (c) 2026 Manjeet Singh.
+Copyright (c) 2026 Manjeet Singh. The private bridge sources are retained only
+under `experimental/video/h3/vendor`; they are not linked into the shipping
+TurboCider library. The shipping H3 runtime uses a fail-closed stub and public
+Core ML where applicable.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

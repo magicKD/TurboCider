@@ -28,6 +28,9 @@ ModelModule z_image_module() {
             if (r.execution == "gpu_ane") {
                 require(r.allow_approximation,
                         "Z-Image GPU+ANE requires allow_approximation=true");
+                if (!r.loras.empty())
+                    require(r.lora_strategy == "in_memory_merge",
+                            "Z-Image GPU+ANE LoRA requires lora_strategy=in_memory_merge");
             }
             require(r.residency == "resident",
                     "Z-Image component-staged residency is not implemented");
@@ -59,12 +62,15 @@ ModelModule z_image_module() {
             d.supports_lora = true;
             d.runtime_lora = true;
             d.lora_mode = "in-memory-delta";
+            d.lora_strategies = {"in_memory_merge", "inference_time"};
+            d.default_lora_strategy = "in_memory_merge";
             d.supports_gpu_ane = true;
             d.backend = "mlx_cpp_metal";
             d.runtime_dependency = "bundled-native-mlx-cpp";
-            d.parallel_strategy = "GPU attention + MLP suffix overlaps Core ML ANE gated-MLP prefix; base 4096-channel M4 Max route is automatic";
+            d.parallel_strategy = "GPU computes attention first, then the compiled MLP suffix overlaps the Core ML ANE gated-MLP prefix; base 4096-channel M4 Max route is automatic";
             d.candidate_limitations = {
                 "text-to-image only",
+                "inference_time LoRA is an explicit GPU path and is not yet performance-qualified",
                 "automatic GPU+ANE is limited to the base model on Apple M4 Max 64 GB with the measured 4096-channel 32-block manifest",
                 "the repeated warm 1024x1024 base workload measured about 1.21x end-to-end versus the optimized GPU path",
                 "LoRA GPU+ANE remains explicit and requires an artifact bound to the exact adapter path, content, role and strength"

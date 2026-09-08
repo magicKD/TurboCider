@@ -22,6 +22,10 @@ fi
  echo "MLX license is missing: $MLX_LICENSE_PATH" >&2
  exit 1
 }
+[[ -x build/native/sd-server && -x build/native/sd-cli && -f build/native/SD-CPP-LICENSE.txt ]] || {
+ echo 'GGUF runtime missing. Run make setup-sd-cpp and make build before packaging.' >&2
+ exit 1
+}
 MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
  /cmd LC_BUILD_VERSION/{build=1; next}
  build && /minos /{print $2; exit}
@@ -35,6 +39,7 @@ for folder in "$BIN" "$ROOT/dist/cli"; do
  mkdir -p "$folder/coreml"
  cp tools/coreml/export_flux2.py tools/coreml/export_z_image.py tools/coreml/lora.py "$folder/coreml/"
  cp build/native/libturbocider.dylib "$folder/"
+ cp build/native/sd-server build/native/sd-cli "$folder/"
  cp "$MLX_ROOT/lib/libmlx.dylib" "$MLX_ROOT/lib/libjaccl.dylib" "$MLX_ROOT/lib/mlx.metallib" "$folder/"
  cp build/native/h3_shaders.metal build/native/ltx_shaders.metal "$folder/"
  cp build/native/ltx-video-finalizer build/native/ltx-video-vae-decode "$folder/"
@@ -61,10 +66,12 @@ cp tools/native/prepare_lora.py tools/native/lora_runtime_cache.py \
    tools/native/merge_h3_lora.py tools/native/merge_ltx_refiner.py \
    tools/native/fastmetal_worker.py "$ROOT/dist/cli/"
 cp tools/native/lora_runtime_cache.py tools/native/merge_h3_lora.py \
-   tools/native/merge_ltx_refiner.py tools/native/fastmetal_worker.py "$SCRIPTS/"
+   tools/native/merge_ltx_refiner.py tools/native/fastmetal_worker.py \
+   "$SCRIPTS/"
 cp native/THIRD_PARTY_NOTICES.md "$RES/"
 cp "$MLX_LICENSE_PATH" "$RES/MLX-LICENSE.txt"
-cp "$RES/THIRD_PARTY_NOTICES.md" "$RES/MLX-LICENSE.txt" "$ROOT/dist/cli/"
+cp build/native/SD-CPP-LICENSE.txt "$RES/"
+cp "$RES/THIRD_PARTY_NOTICES.md" "$RES/MLX-LICENSE.txt" "$RES/SD-CPP-LICENSE.txt" "$ROOT/dist/cli/"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

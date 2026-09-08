@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-08",
+  "purpose": "prove that Apple private ANE APIs remain research-only and are absent from the TurboCider shipping binary",
+  "source_boundary": {
+    "shipping_stub": "native/models/h3_runtime/h3_ane_disabled.c",
+    "research_snapshot": "experimental/video/h3/vendor",
+    "deleted_shipping_sources": [
+      "native/models/h3_runtime/h3_ane_bridge.h",
+      "native/models/h3_runtime/h3_ane_bridge.m",
+      "native/models/h3_runtime/h3_ane_mlp.m",
+      "native/models/h3_runtime/h3_ane_linear.m"
+    ],
+    "shipping_build_uses_private_bridge": false
+  },
+  "build": {
+    "native_and_swift_app": "passed",
+    "library_sha256_before_packaging": "eb831da9d1c8b01201581d27aebffd9a05820f9a84259b196c60132401a1f0a3",
+    "packaged_library_sha256_after_rpath_and_codesign": "67fdedcb96626aaa535b79a763a1b7d86defd154e9b386f536f4c4c5aa9cb7a0",
+    "app_codesign_verify_deep_strict": "passed",
+    "package_minimum_macos": "26.2"
+  },
+  "binary_audit": {
+    "searched_strings": [
+      "_ANEInMemoryModel",
+      "_ANERequest",
+      "_ANEIOSurfaceObject",
+      "_ANECompiler",
+      "_ANEClient"
+    ],
+    "matching_strings": 0,
+    "unresolved_private_ane_symbols": 0,
+    "private_apple_framework_dependencies": 0,
+    "non_system_runtime_dependencies": [
+      "@rpath/libmlx.dylib",
+      "@rpath/libjaccl.dylib"
+    ]
+  },
+  "portable_package": {
+    "copied_outside_source_tree": true,
+    "environment": "env -i with system PATH only",
+    "models_command": "passed; 8 models",
+    "doctor_command": "passed",
+    "private_ane_string_audit": "passed"
+  },
+  "tests": {
+    "make_test": "passed",
+    "managed_pytest": "80 passed, 47 subtests passed",
+    "app_behavior": "passed; pasteboard check skipped because the service was unavailable"
+  },
+  "decision": "public Core ML remains the only shipping ANE backend; private API experiments cannot be enabled by product requests or packages"
+}

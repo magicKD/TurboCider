@@ -44,6 +44,7 @@ public struct NativeRequest: Codable, Sendable {
     public var fps: Int?
     public var audio: Bool?
     public var loras: [NativeLoRA]?
+    public var lora_strategy: String?
     public init(prompt: String, output: String) { self.prompt = prompt; self.output = output }
 }
 public struct NativeEvent: Codable, Sendable {

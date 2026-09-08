@@ -9,9 +9,21 @@ struct ExecutionPlan {
     std::optional<uint64_t> memory_estimate_bytes;
 };
 ExecutionPlan make_plan(const Request &);
+std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
-    double load_seconds = 0, prediction_seconds = 0;
+    double load_seconds = 0;
+    double manifest_validation_seconds = 0;
+    double output_backing_setup_seconds = 0;
+    double model_load_seconds = 0;
+    double model_interface_setup_seconds = 0;
+    double zero_input_warmup_seconds = 0;
+    double prediction_seconds = 0;
+    double first_runtime_prediction_seconds = 0;
+    double subsequent_runtime_prediction_seconds = 0;
     uint64_t calls = 0, copied_bytes = 0;
+    uint64_t warmup_calls = 0, runtime_calls = 0;
+    uint64_t first_runtime_prediction_calls = 0;
+    uint64_t subsequent_runtime_prediction_calls = 0;
     int bucket = 0, hidden = 0, block_count = 0;
     int mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;
     float output_scale = 1.f;
@@ -26,7 +38,7 @@ struct Timings {
 };
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
-    std::string selection;
+    std::string selection, backend, precision, checkpoint;
     Request request;
     ExecutionPlan plan;
     int text_tokens = 0, valid_text_tokens = 0, total_tokens = 0, reference_tokens = 0,
@@ -34,6 +46,9 @@ struct RunResult {
     size_t lora_applied_projections = 0;
     Timings timings;
     uint64_t active_bytes = 0, peak_bytes = 0;
+    uint64_t external_resident_bytes = 0, external_peak_resident_bytes = 0;
+    uint64_t external_physical_footprint_bytes = 0,
+             external_peak_physical_footprint_bytes = 0;
     std::optional<HybridMetrics> hybrid;
     std::string native_json;
 };
@@ -41,6 +56,7 @@ class ModelSession {
   public:
     virtual ~ModelSession() = default;
     virtual bool uses_parent_mlx() const { return true; }
+    virtual bool uses_parent_mlx(const Request &) const { return uses_parent_mlx(); }
     virtual RunResult generate(const Request &, const Event &, std::atomic<bool> &) = 0;
     virtual LoadResult load(const Event &, std::atomic<bool> &) {
         throw std::runtime_error("explicit loading unavailable");
@@ -68,6 +84,8 @@ struct ModelDescriptor {
     bool native_base_vocoder_candidate = false, audio_output = false;
     bool request_lora_identity_validation = false;
     std::string backend, lora_mode, runtime_dependency, parallel_strategy, audio_capability;
+    std::vector<std::string> lora_strategies;
+    std::string default_lora_strategy;
     std::vector<std::string> executor_operations, candidate_limitations;
 };
 struct ModelModule {

@@ -161,6 +161,49 @@ class ShardedCheckpointTests(unittest.TestCase):
                         np.array([1.5, -2.25], dtype=np.float16),
                     )
 
+    def test_convrot_int8_can_stay_rotated_or_derotate_offline(self):
+        if np is None:
+            self.skipTest("numpy unavailable")
+        with tempfile.TemporaryDirectory() as temporary:
+            checkpoint = Path(temporary) / "z_image_turbo_int8_convrot.safetensors"
+            quantized = np.array([
+                [-4, -2, 0, 2],
+                [1, 3, 5, 7],
+            ], dtype=np.int8)
+            scales = np.array([[0.5], [0.25]], dtype=np.float32)
+            marker = json.dumps({
+                "format": "int8_tensorwise",
+                "convrot": True,
+                "convrot_groupsize": 4,
+            }).encode()
+            name = "layers.0.feed_forward.w1"
+            write_safetensors(checkpoint, {
+                name + ".weight": ("I8", quantized.shape, quantized.tobytes()),
+                name + ".weight_scale": ("F32", scales.shape, scales.tobytes()),
+                name + ".comfy_quant": ("U8", (len(marker),), marker),
+            })
+            expected_rotated = (quantized.astype(np.float32) * scales).astype(np.float16)
+
+            native = EXPORTER.SafetensorsSource.from_model(checkpoint, convrot_mode="native")
+            self.assertTrue(native.has_convrot)
+            with native as reader:
+                self.assertEqual(reader.convrot_group(name + ".weight", np), 4)
+                np.testing.assert_array_equal(
+                    reader.tensor(name + ".weight", quantized.shape, np),
+                    expected_rotated,
+                )
+
+            derotated = EXPORTER.SafetensorsSource.from_model(
+                checkpoint, convrot_mode="derotate"
+            )
+            with derotated as reader:
+                expected = EXPORTER.rotate_convrot_matrix(
+                    expected_rotated.astype(np.float32), 4, np
+                ).astype(np.float16)
+                np.testing.assert_array_equal(
+                    reader.tensor(name + ".weight", quantized.shape, np), expected
+                )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

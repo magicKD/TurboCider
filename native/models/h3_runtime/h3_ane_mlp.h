@@ -6,10 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Experimental fixed-shape MLP on the private ANE bridge. The official
- * checkpoint remains BF16 on disk. A plan may convert its ANE shard to FP16
- * or quantize it per output channel to symmetric INT8 while the GPU
- * complement remains BF16. */
+/* Historical private-ANE MLP interface retained by the shared DiT source.
+ * Shipping builds link h3_ane_disabled.c, so this API always fails closed.
+ * The research-only implementation lives under experimental/video/h3/vendor
+ * and is never compiled or packaged by tools/native/build.sh. */
 typedef struct h3_ane_mlp_io h3_ane_mlp_io;
 typedef struct h3_ane_mlp h3_ane_mlp;
 

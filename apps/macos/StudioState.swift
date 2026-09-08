@@ -23,6 +23,8 @@ struct StudioModel: Decodable, Identifiable {
     var runtime_lora: Bool? = nil
     var supports_gpu_ane: Bool? = nil
     var lora_mode: String? = nil
+    var lora_strategies: [String]? = nil
+    var default_lora_strategy: String? = nil
     var isVideo: Bool { output == "video" }
     func supports(_ operation: String) -> Bool {
         executor && (executor_operations ?? operations).contains(operation)
@@ -77,6 +79,7 @@ struct StudioDraft: Codable, Sendable {
     var residency = "resident"
     var profilePath = ""
     var acceleration: StudioAcceleration?
+    var loraStrategy = "auto"
     var assets: [StudioAsset] = []
     var loras: [StudioLoRA] = []
     var initImageID: UUID?
@@ -84,7 +87,7 @@ struct StudioDraft: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio
         case seedText, randomSeed, strength, dynamicText, residency, profilePath, acceleration
-        case assets, loras, initImageID
+        case assets, loras, initImageID, loraStrategy
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -106,6 +109,7 @@ struct StudioDraft: Codable, Sendable {
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
         profilePath = try c.decodeIfPresent(String.self, forKey: .profilePath) ?? profilePath
         acceleration = try c.decodeIfPresent(StudioAcceleration.self, forKey: .acceleration)
+        loraStrategy = try c.decodeIfPresent(String.self, forKey: .loraStrategy) ?? loraStrategy
         assets = try c.decodeIfPresent([StudioAsset].self, forKey: .assets) ?? assets
         loras = try c.decodeIfPresent([StudioLoRA].self, forKey: .loras) ?? loras
         initImageID = try c.decodeIfPresent(UUID.self, forKey: .initImageID)
@@ -183,6 +187,16 @@ struct StudioDraft: Codable, Sendable {
         }
         if let max = model.max_images, activeAssets.count > max { throw NativeFailure(message: "当前模型最多接受 \(max) 张输入图片。") }
         if !loras.isEmpty && model.supports_lora != true { throw NativeFailure(message: "当前模型不支持 LoRA。") }
+        guard ["auto", "disk_premerge", "in_memory_merge", "inference_time"].contains(loraStrategy) else {
+            throw NativeFailure(message: "不支持的 LoRA 执行策略：\(loraStrategy)")
+        }
+        if loras.isEmpty && loraStrategy != "auto" {
+            throw NativeFailure(message: "选择 LoRA 执行策略前请先添加 LoRA 文件。")
+        }
+        if !loras.isEmpty, let supported = model.lora_strategies,
+           loraStrategy != "auto" && !supported.contains(loraStrategy) {
+            throw NativeFailure(message: "当前模型不支持 LoRA 执行策略：\(loraStrategy)")
+        }
         for lora in loras {
             guard FileManager.default.fileExists(atPath: lora.path) else { throw NativeFailure(message: "找不到 LoRA 文件：\(lora.path)") }
             guard lora.strength.isFinite, (-8...8).contains(lora.strength) else { throw NativeFailure(message: "LoRA 强度需为 -8–8。") }
@@ -204,6 +218,7 @@ struct StudioDraft: Codable, Sendable {
         request.seed = randomSeed ? random() : try fixedSeed()
         request.frames = frames; request.fps = fps; request.audio = audio
         request.dynamic_text = dynamicText; request.residency = residency
+        request.lora_strategy = loraStrategy
         request.profile = profilePath.isEmpty ? nil : profilePath
         let acceleration = self.acceleration ?? (profilePath.isEmpty ? StudioAcceleration() : StudioAcceleration(policy: "profile"))
         request.compile_gpu = acceleration.policy == "gpu" && modelID.hasPrefix("flux2-")
@@ -227,12 +242,14 @@ struct StudioDraft: Codable, Sendable {
                 request.allow_approximation = true
             }
             let imageLoRA = !loras.isEmpty &&
-                (modelID.hasPrefix("flux2-") || modelID == "z-image-turbo")
+                (modelID.hasPrefix("flux2-") || modelID == "z-image-turbo" ||
+                 modelID == "z-image-turbo-gguf")
             // Automatic/profile selection must not guess that a base artifact
             // contains the active adapter. Explicit GPU+ANE is allowed only if
             // the selected manifest declares this exact adapter set; native
             // loading then verifies SHA-256 in addition to this App preflight.
-            let loraManifestMatches = imageLoRA && acceleration.policy == "gpu_ane" &&
+            let loraManifestMatches = imageLoRA && loraStrategy != "inference_time" &&
+                acceleration.policy == "gpu_ane" &&
                 AccelerationDiscovery.manifestBinds(manifest: acceleration.manifest,
                                                     loras: loras)
             let loraRequiresBaseGPU = imageLoRA && !loraManifestMatches
@@ -378,6 +395,7 @@ final class StudioState: ObservableObject {
         draft.profilePath = ""
         draft.acceleration = StudioAcceleration(policy: "auto")
         draft.loras = []
+        draft.loraStrategy = "auto"
         if !model.operations.contains(where: { $0 != "image.generate" && $0 != "video.generate" }) {
             draft.assets.removeAll(); draft.initImageID = nil
         }
@@ -483,6 +501,7 @@ final class StudioState: ObservableObject {
         draft.dynamicText = request.dynamic_text
         draft.assets = (request.inputs ?? []).map { StudioAsset(path: $0.path, name: URL(fileURLWithPath: $0.path).lastPathComponent, width: 0, height: 0) }
         draft.loras = (request.loras ?? []).map { StudioLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
+        draft.loraStrategy = request.lora_strategy ?? "auto"
         draft.initImageID = draft.assets.first?.id; draft.strength = request.inputs?.first?.strength ?? 0.75
     }
     func newDraft() { guard !importing else { message = "请等待素材导入完成。"; return }; let paths = draft.modelPaths; draft = StudioDraft(); draft.modelPaths = paths; undoAssets = []; lastSeed = nil }

@@ -6,10 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Experimental fixed-shape projection on the private ANE bridge. Inputs and
- * outputs use channel-major F32 IOSurfaces because that is the stable private
- * request ABI. Checkpoint weights remain BF16 on disk and are converted to
- * FP16 or per-output-channel symmetric INT8 while the model is created. */
+/* Historical private-ANE projection interface retained by the shared DiT
+ * source. Shipping builds link h3_ane_disabled.c, so this API always fails
+ * closed. The implementation is isolated under experimental/video/h3/vendor
+ * and is never compiled or packaged by tools/native/build.sh. */
 typedef struct h3_ane_linear_io h3_ane_linear_io;
 typedef struct h3_ane_linear h3_ane_linear;
 

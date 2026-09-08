@@ -52,6 +52,8 @@ ModelModule flux_module() {
                 d.roles = {"init_image", "reference"}; d.max_images = 8; d.output = "image";
                 d.steps = 4; d.frames = 1; d.width = 512; d.height = 512; d.default_audio = false;
                 d.supports_lora = true; d.runtime_lora = true; d.lora_mode = "load-time-baked";
+                d.lora_strategies = {"in_memory_merge"};
+                d.default_lora_strategy = "in_memory_merge";
                 d.supports_gpu_ane = true; d.backend = "mlx_cpp_metal";
                 d.runtime_dependency = "bundled-native-mlx-cpp";
                 d.parallel_strategy = "compiled GPU attention/MLP complement overlaps a Core ML ANE MLP prefix";
@@ -108,6 +110,8 @@ ModelModule flux9_module() {
             d.inputs = {"text", "image"}; d.roles = {"init_image", "reference"}; d.max_images = 8;
             d.output = "image"; d.steps = 4; d.frames = 1; d.width = 512; d.height = 512;
             d.supports_lora = true; d.runtime_lora = true; d.lora_mode = "load-time-baked";
+            d.lora_strategies = {"in_memory_merge"};
+            d.default_lora_strategy = "in_memory_merge";
             d.backend = "mlx_cpp_metal"; d.default_residency = "resident";
             d.default_audio = false; d.candidate_limitations = {"9B runtime requires a matching 9B checkpoint and remains GPU-only"};
             return d;

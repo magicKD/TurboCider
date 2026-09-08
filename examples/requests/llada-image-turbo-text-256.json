@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "model": "llada-image-turbo",
+  "operation": "image.generate",
+  "inputs": [
+    {
+      "kind": "text",
+      "role": "prompt",
+      "text": "A red fox in fresh snow, cinematic photograph"
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "image",
+      "path": "/tmp/turbocider-llada-text-256.png",
+      "width": 256,
+      "height": 256,
+      "frames": 1
+    }
+  ],
+  "sampling": {
+    "seed": 42,
+    "steps": 4
+  },
+  "execution": {
+    "policy": "gpu",
+    "residency": "resident"
+  }
+}

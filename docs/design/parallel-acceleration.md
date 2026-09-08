@@ -1,6 +1,6 @@
 # TurboCider GPU / ANE 并行化方案
 
-更新时间：2026-09-07
+更新时间：2026-09-08
 
 这份文档描述当前 `dev` 合并版已经实现或验证过的异构执行方式。它把“能调用 ANE”与“端到端值得自动启用”分开：只有同一请求的 GPU 基线、输出质量和完整 request wall 都有证据时，才会进入自动策略；否则只能显式选择并保持 fail-closed。
 
@@ -24,13 +24,23 @@
 
 ### Z-Image Turbo
 
-32 个 S3-DiT block 保持串行 block 顺序；每个 block 内部把 gated FFN 的 `[0,4096)` 前缀交给 ANE，GPU 同时执行 attention 和 `[4096,10240)` 后缀，然后 join 回 residual。纯 GPU 侧使用 MLX fused RMSNorm、单 dispatch Q/K RoPE、fused SDPA 与编译 block 图；混合路径的 GPU MLP 后缀也使用缓存的 `mx::compile` complement 图，attention/Core ML join 仍保留逐 block 依赖。Core ML 输出使用 session-wide shared backing，当前实测没有 output copy。
+32 个 S3-DiT block 保持串行 block 顺序。每个 block 先在 GPU 完成 modulation、attention 和 attention residual，物化共同的 FFN 输入后才分叉：gated FFN `[0,4096)` 前缀交给 ANE，GPU 异步计算 `[4096,10240)` 后缀，然后 join 回 residual。当前并行范围是 FFN intermediate-channel split，不是 GPU attention 与 ANE FFN 的重叠。纯 GPU 侧使用 MLX fused RMSNorm、单 dispatch Q/K RoPE、fused SDPA 与编译 block 图；混合路径的 GPU MLP 后缀也使用缓存的 `mx::compile` complement 图。Core ML 输出使用 session-wide shared backing，当前实测没有 output copy。
 
 2026-09-07 的最终同条件复核（1024×1024、9 steps、seed 42）为：TurboCider GPU 首轮 39.4728 s，warm 36.3600/36.3769 s，中位数 `36.3685 s`；stock ComfyUI 0.32.0、custom nodes disabled 的 warm 中位数为 40.11 s，TurboCider GPU 快 `1.103×`。a4096 GPU+ANE 首轮 37.5838 s，warm 29.9956/30.0072 s，中位数 `30.0014 s`，相对优化 GPU `1.212×`；Core ML 每请求 288 次、output copy 0、GPU↔ANE PNG correlation `0.999231`、cosine `0.999903`。因此 M4 Max 基础模型继续允许自动 GPU+ANE；LoRA-bound 路线仍必须显式指定绑定同一 adapter 的 manifest，不能用基础 artifact 冒充稳定的自动 LoRA profile。
+
+2026-09-08 新增 ConvRot 原生候选。GPU 把 signed tensor-wise INT8 映射成 packed affine Q8，并在投影前执行 grouped H256；Core ML 原生模式保留 rotated weights，在图内对 FFN 输入和 `w2` 输入执行 grouped H256。ConvRot GPU warm 中位数 `40.7288 s`，native a4096 GPU+ANE 为 `32.5979 s`，相对匹配 GPU `1.249×`；PNG correlation `0.999659`、cosine `0.999957`，active MLX 约 6.56 GB。但它仍比已有 BF16-derived a4096 的 `30.0014 s` 慢 `8.65%`，因此保持显式低内存候选，不替换全局最优自动路径。
 
 ### MiniMax H3 Turbo
 
 H3 的 native runtime 以 Metal/MPS 为默认路径；在显式 manifest 存在时，block MLP/QKV 可按已验证的 Core ML 分区执行，GPU 负责其余算子并在 block join 汇合。H3 的 manifest、LoRA identity、取消和媒体生命周期已接入统一 Session，但当前没有足够跨请求/跨输入的稳定端到端 ANE 中位数，所以 App/API 不自动选择它。
+
+### LLaDA-Image-Turbo
+
+正式 LLaDA descriptor 当前只公开自包含的原生 C++/MLX `image.generate`。早期常驻 PyTorch/MPS worker 及单参考图 `image.edit` 只保留为显式开发诊断入口，不再自动发现兄弟 reference source，也不随正式 package 分发；它的历史性能不能代表当前发行能力。
+
+现已增加显式 GPU+ANE 实验路径：2 个 `noise_refiner` 和 30 个主 `layers` 的 FFN 前缀 `[0,4096)` 调用 checkpoint-bound Core ML，原生 C++/MLX 计算后缀 `[4096,10240)`；context/sigvq refiner 保持 MLX。C ABI 的 FP16 输入边界已与直接 `.mlpackage` prediction 做 bitwise parity（MAE 0），正式路径不依赖 Python worker；旧 worker 仅保留为显式开发诊断工具。
+
+旧 Python worker 的 256²测量（GPU+ANE 约 `0.873×`、图片 correlation `0.705–0.722`）不代表当前发行 executor，已从自动能力结论中移除。当前原生 C++/MLX 1024²、4 steps、resident 复测为 GPU warm `17.971 s`、GPU+ANE warm `14.934 s`，speedup `1.203×`，PNG correlation `0.995194`、cosine `0.998969`、MAE `2.649/255`。它满足本轮“可接受近似 + 至少 1.2×”的单机候选门槛，但仍只允许显式 `gpu_ane`；多机器、多 seed 和自动质量门禁尚未完成。
 
 ### LTX 2.5 Distilled
 
@@ -55,6 +65,7 @@ FastMetal 保留受控 Python/MLX worker，30 个 INT8 FFN block 固定按 4096/
 ## 证据索引
 
 - `docs/design/validation/z-image-m4max-hybrid-lora-2026-09-07.json`：Z-Image LoRA-bound 与 base 分区数据。
+- `docs/design/validation/z-image-convrot-native-ane-2026-09-08.json`：ConvRot packed Q8、原生 ANE、LoRA 内存和 parity 数据。
 - `docs/design/validation/z-image-auto-m4max-2026-09-07.json`：最终构建的自动 4096-channel 重复 warm 复核。
 - `docs/design/validation/z-image-gpu-comfy-2026-09-07.json`：TurboCider 优化 GPU、stock ComfyUI GPU 与 GPU↔ANE parity 摘要。
 - `docs/design/validation/flux2-m4max-2026-09-07.json`：FLUX 4B 最终 GPU/direct、GPU+ANE、融合开关 A/B 与 parity 摘要。
