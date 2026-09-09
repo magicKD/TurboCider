@@ -56,9 +56,10 @@ position buckets and zero padding, but non-exact encoder outputs; its successful
 exit proves only those structural/finite-value gates, not numerical equivalence.
 After matching the FP32 GELU scalar boundary, the first report reaches final
 block RMSE about 4.98 and maximum absolute difference 320 in BF16 tensors, while
-the final normalized conditioning output cosine is about 0.99983. The remaining attention/
-projection/FFN precision boundary and video impact remain
-unproven, so this is a release blocker for Wan prompt parity.
+the final normalized conditioning output cosine is about 0.99983. The remaining
+attention/projection/FFN precision boundary is not bit-exact. The qualified
+832x480x81 native-vs-reference video gate passes, but this does not establish
+parity for every prompt, size, or hardware target.
 
 ## Remaining production migration
 
