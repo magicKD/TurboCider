@@ -37,6 +37,13 @@
   a speedup; it remains explicit and approximation-opt-in.
 - Repeated 5-frame ABBA warm medians: eager 2.96943 s, compiled 2.71741 s.
   These compare current modes on one Mac, not every pre/post-refactor model.
+- A development-only probe extracted the pinned pre-refactor FLUX/Z-Image
+  Qwen3 tensor bodies from Git commit `bd5953a` and compared them in the same
+  Metal process and weights. At 64 tokens / 47 valid tokens, both modes were
+  elementwise exact. ABBA medians were 0.047516 s old versus 0.046590 s shared
+  for FLUX Klein (0.981x), and 0.116708 s versus 0.116555 s for Z-Image
+  (0.999x). These timings exclude loading/tokenization and are a focused
+  encoder measurement, not a whole-pipeline benchmark.
 - UMT5 normalized conditioning differs from PyTorch (cosine ~0.999825).
   Small tensor parity, high cosine and successful generation alone do not
   establish universal video quality parity.
