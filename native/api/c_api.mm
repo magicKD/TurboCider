@@ -309,6 +309,21 @@ int tc_tokenize_json(const char *path, const char *prompt, char **out, char **er
         }
     }
 }
+int tc_z_image_tokenize_json(const char *path, const char *prompt, char **out, char **error) {
+    if (out) *out = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(path && prompt && out, "missing Z-Image tokenizer input");
+            tc::Tokenizer tokenizer(std::filesystem::path(path) / "tokenizer");
+            auto tokens = tokenizer.z_image_prompt(prompt, true);
+            *out = copy(tc::json(@{@"valid": @(tokens.valid),
+                                  @"padded": @((tokens.valid + 31) / 32 * 32), @"limit": @512}));
+            return 0;
+        } catch (const std::exception &e) { return fail(error, e); }
+        catch (...) { if (error) *error = strdup("unknown tokenizer error"); return 1; }
+    }
+}
 int tc_ltx_gemma_tokenize_json(const char *tokenizer_json, const char *prompt,
                                uint32_t max_length, char **out, char **error) {
     if (out) *out = nullptr;

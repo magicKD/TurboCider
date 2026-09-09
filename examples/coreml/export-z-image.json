@@ -1,0 +1,6 @@
+{
+  "action": "export",
+  "model": "z-image-turbo",
+  "model_root": "/absolute/path/to/installed-z-image",
+  "profile": "profiles/z-image-flex-512.example.json"
+}

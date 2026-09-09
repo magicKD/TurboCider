@@ -18,6 +18,8 @@
 - [Z-Image Turbo GGUF](z-image-gguf-2026-09-07.md)：GGUF 常驻 GPU、CPU-staged 低内存 streaming、独立 LoRA、量化选择和未完成的 ANE/基准门禁。
 - [LoRA 执行策略](../design/lora-execution-strategies.md)：三种公共策略、模型映射、GGUF 请求级路由和剩余 packed 低秩分支。
 
+- [Z-Image 可变长度 ANE](z-image-flexible-ane-2026-09-08.md)：512-token 容量、固定/枚举/范围输入实验、实际 App 验证与编译缓存复用。
+- [App 控制与缓存](app-controls-and-cache-2026-09-07.md)：图片/任务删除、LoRA 开关与强度、GPU/ANE 选择。
 - [FLUX / Z-Image 优化验收](optimization-validation-2026-09-07.md)：本轮图像模型的最终 warm 数据和质量指标。
 - [Transformer / Core ML / Streaming 技术报告](../design/transformer-heterogeneous-report.md)：异构并行、public/private ANE、启动开销和 vpipe/H3/LTX 低内存对照。
 - [Private ANE 实验边界](../../experimental/private-ane/README.md)：研究入口、版本固定和正式构建隔离。

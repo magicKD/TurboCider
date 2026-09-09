@@ -1,0 +1,6 @@
+{
+  "action": "compile",
+  "model": "z-image-turbo",
+  "source_manifest": "/absolute/path/from-export/source/manifest.json",
+  "cache": "/absolute/path/to/coreml-cache"
+}

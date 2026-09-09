@@ -12,11 +12,31 @@
 #include <unistd.h>
 int tc_service_main(const char*,const char*,const char*);
 int tc_rpc_main(const char*,const char*);
+static std::string executable_path(const char *fallback);
+static NSString *registered_model_path(const char *alias,NSString *expected_model) {
+ auto helper=std::filesystem::path(executable_path("turbocider")).parent_path()/"turbocider-library";
+ NSTask *task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:@(helper.c_str())];
+ task.arguments=@[@"resolve",@(alias+1)];NSPipe *pipe=[NSPipe pipe];task.standardOutput=pipe;
+ task.standardError=[NSFileHandle fileHandleWithStandardError];NSError *failure=nil;
+ if(![task launchAndReturnError:&failure])return nil;
+ NSData *data=[pipe.fileHandleForReading readDataToEndOfFile];[task waitUntilExit];
+ if(task.terminationStatus!=0)return nil;
+ id envelope=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+ if(![envelope isKindOfClass:NSDictionary.class])return nil;
+ id result=envelope[@"result"];
+ if(![result isKindOfClass:NSDictionary.class]||![result[@"modelID"] isEqual:expected_model]||![result[@"path"] isKindOfClass:NSString.class])return nil;
+ return result[@"path"];
+}
 static int create_for(const char *path,NSString *request,tc_engine **engine,char **error) {
  NSDictionary *value=[NSJSONSerialization JSONObjectWithData:[request dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
  if(![value isKindOfClass:NSDictionary.class]){*error=strdup("request must be a JSON object");return 1;}
  id model=value[@"model"]?:@"flux2-klein-4b";
  if(![model isKindOfClass:NSString.class]){*error=strdup("model must be a string");return 1;}
+ if(path&&path[0]=='@'){
+  NSString *resolved=registered_model_path(path,model);
+  if(!resolved){*error=strdup("cannot resolve registered model or alias does not match request.model; use turbocider library list");return 1;}
+  return tc_engine_create_model([model UTF8String],resolved.UTF8String,engine,error);
+ }
  return tc_engine_create_model([model UTF8String],path,engine,error);
 }
 static tc_engine *active=nullptr;
@@ -58,9 +78,27 @@ static void configure_ltx_cli_environment(NSString *request) {
   if(path.length)setenv("TURBOCIDER_LTX_CONDITIONING_CACHE_DIR",path.UTF8String,0);
  }
 }
+static int library_main(int argc,char **argv) {
+ auto helper=std::filesystem::path(executable_path(argv[0])).parent_path()/"turbocider-library";
+ if(!std::filesystem::is_regular_file(helper)){
+  std::cerr<<"Model-library helper is missing. Rebuild or restore the complete CLI bundle.\n";return 1;
+ }
+ NSTask *task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:@(helper.c_str())];
+ NSMutableArray<NSString*> *arguments=[NSMutableArray array];
+ if(std::string(argv[1])=="cache")[arguments addObject:@"cache"];
+ for(int index=2;index<argc;index++)[arguments addObject:@(argv[index])];
+ if(argc==2)[arguments addObject:@"help"];
+ task.arguments=arguments;
+ task.standardOutput=[NSFileHandle fileHandleWithStandardOutput];
+ task.standardError=[NSFileHandle fileHandleWithStandardError];
+ NSError *error=nil;
+ if(![task launchAndReturnError:&error]){std::cerr<<"Cannot launch model library: "<<error.localizedDescription.UTF8String<<"\n";return 1;}
+ [task waitUntilExit];return task.terminationStatus;
+}
 int main(int argc,char**argv){@autoreleasepool{
- if(argc<2){std::cerr<<"turbocider coreml REQUEST.json | doctor|models|self-test|plan REQUEST.json|tokenize MODEL PROMPT|generate MODEL REQUEST.json | batch MODEL REQUEST1.json REQUEST2.json ...\n";return 1;}
+ if(argc<2){std::cerr<<"turbocider library help | cache help | serve SOCKET STATE | rpc SOCKET REQUEST.json | coreml REQUEST.json | doctor|models|self-test|plan REQUEST.json|tokenize MODEL PROMPT|generate MODEL REQUEST.json | batch MODEL REQUEST1.json REQUEST2.json ... | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
  std::string cmd=argv[1];char*out=nullptr,*err=nullptr;int code=0;
+ if(cmd=="library"||cmd=="cache")return library_main(argc,argv);
  if(cmd=="prepare-lora"){std::cerr<<"LoRA preparation is offline-only; run python3 tools/native/prepare_lora.py MODEL BASE LORA OUTPUT [options] in the development environment\n";return 1;}
  if(cmd=="serve"&&argc==4){auto executable=executable_path(argv[0]);return tc_service_main(argv[2],argv[3],executable.c_str());}
  if(cmd=="rpc"&&argc==4)return tc_rpc_main(argv[2],argv[3]);

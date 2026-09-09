@@ -46,8 +46,9 @@ def main():
   assert await_state(queued)['state']=='cancelled';checks.append('queued_cancel')
   result=await_state(first);assert result['state']=='succeeded',result
   assert Path(request['output']).is_file();checks.append('actual_flux_generation')
-  second=submit({**request,'output':str(out/'warm.png')});warm=await_state(second);assert warm['state']=='succeeded',warm
+  second=submit({**request,'seed':43,'output':str(out/'warm.png')});warm=await_state(second);assert warm['state']=='succeeded',warm
   assert warm['result']['prompt_cache_hit'];checks.append('persistent_model_and_prompt_reuse')
+  assert warm['result']['seed']==43;checks.append('prompt_cache_reused_across_seeds')
   third=submit({**request,'output':str(out/'active-cancelled.png')});await_state(third,False);rpc({'action':'cancel','id':third})
   assert await_state(third)['state']=='cancelled';assert not (out/'active-cancelled.png').exists();checks.append('active_cancel_without_output')
   page=rpc({'action':'jobs','limit':2});assert len(page['jobs'])==2 and page['next_offset']==2;checks.append('history_pagination')

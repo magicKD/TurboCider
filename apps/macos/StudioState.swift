@@ -15,6 +15,7 @@ struct StudioModel: Decodable, Identifiable {
     let default_height: Int
     var default_fps: Int? = nil
     var default_audio: Bool? = nil
+    var audio_output: Bool? = nil
     var default_residency: String? = nil
     var executor_operations: [String]? = nil
     var inputs: [String]? = nil
@@ -26,6 +27,20 @@ struct StudioModel: Decodable, Identifiable {
     var lora_strategies: [String]? = nil
     var default_lora_strategy: String? = nil
     var isVideo: Bool { output == "video" }
+    // Legacy H3 exposes audio through its executable default; newer modules
+    // also report audio_output independently from upstream candidate support.
+    var canGenerateAudio: Bool { executor && isVideo && (audio_output == true || default_audio == true) }
+    var availableOperations: [String] { executor ? (executor_operations ?? operations) : [] }
+    var acceptsImageInputs: Bool {
+        inputs?.contains("image") != false && (max_images ?? 8) > 0 &&
+        availableOperations.contains { $0 != "image.generate" && $0 != "video.generate" }
+    }
+    func matchesLibrarySearch(_ query: String, path: String) -> Bool {
+        let words = query.split(whereSeparator: { $0.isWhitespace })
+        let fields = ([name, id, output, path, isVideo ? "视频 video" : "图像 image",
+                       acceptsImageInputs ? "图片输入 image input" : "文字输入 text input"] + availableOperations).joined(separator: " ")
+        return words.allSatisfy { fields.localizedCaseInsensitiveContains(String($0)) }
+    }
     func supports(_ operation: String) -> Bool {
         executor && (executor_operations ?? operations).contains(operation)
     }
@@ -40,6 +55,19 @@ struct StudioLoRA: Codable, Sendable, Identifiable, Equatable {
     var path: String
     var strength: Double = 1.0
     var role: String = "transformer"
+    var enabled: Bool = true
+    init(id: UUID = UUID(), path: String, strength: Double = 1.0, role: String = "transformer", enabled: Bool = true) {
+        self.id = id; self.path = path; self.strength = strength; self.role = role; self.enabled = enabled
+    }
+    private enum CodingKeys: String, CodingKey { case id, path, strength, role, enabled }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        path = try c.decode(String.self, forKey: .path)
+        strength = try c.decodeIfPresent(Double.self, forKey: .strength) ?? 1.0
+        role = try c.decodeIfPresent(String.self, forKey: .role) ?? "transformer"
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+    }
 }
 
 struct StudioAsset: Codable, Identifiable, Equatable, Sendable {
@@ -50,10 +78,11 @@ struct StudioAsset: Codable, Identifiable, Equatable, Sendable {
     var height: Int
 }
 struct StudioAcceleration: Codable, Sendable {
-    var policy = "auto"
+    var policy = "gpu"
     var automaticVersion: Int? = 1
     var manifest = ""
     var sourceManifest = ""
+    var knownManifests: [String]?
     var compileGPU: Bool?
     var coreMLStorage: String?
     var coreMLCache: String?
@@ -114,14 +143,20 @@ struct StudioDraft: Codable, Sendable {
         loras = try c.decodeIfPresent([StudioLoRA].self, forKey: .loras) ?? loras
         initImageID = try c.decodeIfPresent(UUID.self, forKey: .initImageID)
     }
+    var activeLoRAs: [StudioLoRA] { loras.filter(\.enabled) }
+    var usesANE: Bool { acceleration?.policy == "gpu_ane" }
     var modelPath: String { modelPaths[modelID] ?? "" }
     var accelerationHint: String {
-        let policy = acceleration?.policy ?? (profilePath.isEmpty ? "auto" : "profile")
+        let policy = acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")
         if policy == "gpu" { return "GPU · BF16，按所选融合设置运行" }
         if policy == "profile" { return "设备配置 · 运行时校验" }
         if policy == "gpu_ane" { return "手动混合 · 需匹配实际 token 容量，可能不比 GPU 快" }
         if modelID == "flux2-klein-4b", operation == "image.generate", width == height, [512, 1024].contains(width), steps == 4, residency == "resident" {
             return "\(width) 文生图 · 候选 GPU + Core ML；最终按机型、文本长度与 \(width == 512 ? 1088 : 4160) 分区复核"
+        }
+        if modelID == "z-image-turbo", operation == "image.generate",
+           width == 512, height == 512, steps == 9 {
+            return "512 文生图 · 自动使用 GPU；可导入本机验证过的 GPU + ANE 生成配置"
         }
         if modelID == "z-image-turbo", operation == "image.generate",
            width == 1024, height == 1024, steps == 9, residency == "resident" {
@@ -160,8 +195,17 @@ struct StudioDraft: Codable, Sendable {
         guard !modelPath.isEmpty else { throw NativeFailure(message: "请先在模型中心选择模型文件夹。") }
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
         guard model.supports(operation) else { throw NativeFailure(message: "当前模型不支持“\(operation)”操作。") }
+        guard !audio || model.canGenerateAudio else { throw NativeFailure(message: "当前执行器尚未开放音频输出，请关闭音频。") }
         guard (64...2048).contains(width), (64...2048).contains(height), width % 16 == 0, height % 16 == 0 else { throw NativeFailure(message: "宽高需为 64–2048 之间的 16 倍数。") }
         guard (1...50).contains(steps) else { throw NativeFailure(message: "采样步数需为 1–50，推荐 4 步。") }
+        if modelID == "z-image-turbo" {
+            guard steps == 9, residency == "resident", frames == 1, !audio else {
+                throw NativeFailure(message: "Z-Image-Turbo 使用固定 9 步、常驻模型和单张图片。")
+            }
+            guard activeLoRAs.allSatisfy({ $0.role == "transformer" }) else {
+                throw NativeFailure(message: "Z-Image LoRA 仅支持 transformer 角色。")
+            }
+        }
         guard frames >= 1 && frames <= 362 else { throw NativeFailure(message: "帧数超出支持范围。") }
         guard (1...120).contains(fps) else { throw NativeFailure(message: "帧率超出支持范围。") }
         if !randomSeed { _ = try fixedSeed() }
@@ -176,7 +220,7 @@ struct StudioDraft: Codable, Sendable {
             }
         }
         if let max = model.max_images, activeAssets.count > max { throw NativeFailure(message: "当前模型最多接受 \(max) 张输入图片。") }
-        if !loras.isEmpty && model.supports_lora != true { throw NativeFailure(message: "当前模型不支持 LoRA。") }
+        if !activeLoRAs.isEmpty && model.supports_lora != true { throw NativeFailure(message: "当前模型不支持 LoRA。") }
         if modelID == "z-image-turbo-gguf" && residency != "resident" {
             throw NativeFailure(message: "GGUF 当前只支持原生 MLX 常驻模式，请将模型驻留改为 resident。")
         }
@@ -186,11 +230,11 @@ struct StudioDraft: Codable, Sendable {
         if loras.isEmpty && loraStrategy != "auto" {
             throw NativeFailure(message: "选择 LoRA 执行策略前请先添加 LoRA 文件。")
         }
-        if !loras.isEmpty, let supported = model.lora_strategies,
+        if !activeLoRAs.isEmpty, let supported = model.lora_strategies,
            loraStrategy != "auto" && !supported.contains(loraStrategy) {
             throw NativeFailure(message: "当前模型不支持 LoRA 执行策略：\(loraStrategy)")
         }
-        for lora in loras {
+        for lora in activeLoRAs {
             guard FileManager.default.fileExists(atPath: lora.path) else { throw NativeFailure(message: "找不到 LoRA 文件：\(lora.path)") }
             guard lora.strength.isFinite, (-8...8).contains(lora.strength) else { throw NativeFailure(message: "LoRA 强度需为 -8–8。") }
             guard ["transformer", "text_encoder", "refiner"].contains(lora.role) else { throw NativeFailure(message: "不支持的 LoRA 角色。") }
@@ -211,7 +255,7 @@ struct StudioDraft: Codable, Sendable {
         request.seed = randomSeed ? random() : try fixedSeed()
         request.frames = frames; request.fps = fps; request.audio = audio
         request.dynamic_text = dynamicText; request.residency = residency
-        request.lora_strategy = loraStrategy
+        request.lora_strategy = activeLoRAs.isEmpty ? "auto" : loraStrategy
         request.profile = profilePath.isEmpty ? nil : profilePath
         let acceleration = self.acceleration ?? (profilePath.isEmpty ? StudioAcceleration() : StudioAcceleration(policy: "profile"))
         request.compile_gpu = acceleration.policy == "gpu" && modelID.hasPrefix("flux2-")
@@ -230,11 +274,11 @@ struct StudioDraft: Codable, Sendable {
                         cache: acceleration.coreMLCache.map { URL(fileURLWithPath: $0) },
                         minimumRows: (width / 16) * (height / 16) + 1,
                         requiredRows: $0, enforceAutomaticPolicy: true,
-                        modelID: modelID, loras: loras)?.manifest
+                        modelID: modelID, loras: activeLoRAs)?.manifest
                 }
                 request.allow_approximation = true
             }
-            let imageLoRA = !loras.isEmpty &&
+            let imageLoRA = !activeLoRAs.isEmpty &&
                 (modelID.hasPrefix("flux2-") || modelID == "z-image-turbo" ||
                  modelID == "z-image-turbo-gguf")
             // Automatic/profile selection must not guess that a base artifact
@@ -244,7 +288,7 @@ struct StudioDraft: Codable, Sendable {
             let loraManifestMatches = imageLoRA && loraStrategy != "inference_time" &&
                 acceleration.policy == "gpu_ane" &&
                 AccelerationDiscovery.manifestBinds(manifest: acceleration.manifest,
-                                                    loras: loras)
+                                                    loras: activeLoRAs)
             let loraRequiresBaseGPU = imageLoRA && !loraManifestMatches
             if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true && !loraRequiresBaseGPU {
                 guard !acceleration.manifest.isEmpty else { throw NativeFailure(message: "请在模型中心选择已编译的分区 manifest，或先预编译本地源分区。") }
@@ -270,8 +314,8 @@ struct StudioDraft: Codable, Sendable {
             return NativeInput(kind: "image", role: role, path: asset.path,
                                strength: (operation == "image.transform" || operation == "video.image") ? strength : nil)
         }
-        request.loras = loras.isEmpty ? nil : loras.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
-        if modelID == "wan2.1-1.3b-qad" && !loras.isEmpty { request.execution = "gpu" }
+        request.loras = activeLoRAs.isEmpty ? nil : activeLoRAs.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
+        if modelID == "wan2.1-1.3b-qad" && !activeLoRAs.isEmpty { request.execution = "gpu" }
         return request
     }
 }
@@ -332,10 +376,9 @@ final class StudioState: ObservableObject {
             do { draft = try JSONDecoder().decode(StudioDraft.self, from: Data(contentsOf: file)) }
             catch { message = "无法恢复草稿：\(error.localizedDescription)" }
         }
-        if draft.acceleration?.automaticVersion == nil, draft.profilePath.isEmpty,
-           draft.acceleration == nil || draft.acceleration?.policy == "gpu" {
+        if draft.profilePath.isEmpty, draft.acceleration == nil || draft.acceleration?.policy == "auto" {
             var configuration = draft.acceleration ?? StudioAcceleration()
-            configuration.policy = "auto"; configuration.automaticVersion = 1; draft.acceleration = configuration
+            configuration.policy = "gpu"; configuration.automaticVersion = 1; draft.acceleration = configuration
         }
         if draft.modelPath.isEmpty {
             draft.modelPaths["flux2-klein-4b"] = ProcessInfo.processInfo.environment["TURBOCIDER_FLUX_MODEL"]
@@ -356,6 +399,49 @@ final class StudioState: ObservableObject {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(draft).write(to: file, options: .atomic); saved = true
         } catch { saved = false; message = "草稿保存失败：\(error.localizedDescription)" }
+    }
+    func installZImage(model: URL, sharedText: URL?) throws {
+        let installed = try ZImageInstallation.install(model: model, sharedText: sharedText,
+            directory: file.deletingLastPathComponent().appendingPathComponent("models"))
+        selectModel("z-image-turbo")
+        draft.modelPaths["z-image-turbo"] = installed.path
+        save()
+    }
+    func importConfiguration(from url: URL) throws {
+        let data = try Data(contentsOf: url)
+        guard let fields = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              fields["modelID"] is String, fields["modelPaths"] is [String: String] else {
+            throw NativeFailure(message: "请选择含 modelID 和 modelPaths 的 App 生成配置。")
+        }
+        let imported = try JSONDecoder().decode(StudioDraft.self, from: data)
+        try imported.validate(models: models)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: imported.modelPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw NativeFailure(message: "配置中的模型目录不存在，请先选择本地模型。")
+        }
+        // Preserve registrations for other models; replace only this creation draft.
+        var selected = imported
+        selected.modelPaths = draft.modelPaths.merging(imported.modelPaths.filter { !$0.value.isEmpty }) { _, incoming in incoming }
+        draft = selected
+        message = nil
+        save()
+    }
+    func setANEEnabled(_ enabled: Bool) {
+        var config = draft.acceleration ?? StudioAcceleration()
+        config.policy = enabled ? "gpu_ane" : "gpu"
+        config.automaticVersion = 1
+        draft.profilePath = ""
+        draft.acceleration = config
+    }
+    func rememberAcceleration(_ resolved: StudioDraft) {
+        guard draft.modelID == resolved.modelID, draft.activeLoRAs == resolved.activeLoRAs,
+              draft.acceleration?.policy == resolved.acceleration?.policy else { return }
+        draft.acceleration = resolved.acceleration
+        save()
+    }
+    func preparationRequest(modelID: String, output: URL) throws -> NativeRequest {
+        if draft.modelID != modelID { selectModel(modelID) }
+        return try draft.request(output: output)
     }
     func changeModel(_ id: String) {
         guard !importing, let model = models.first(where: { $0.id == id }), model.executor else { return }
@@ -381,12 +467,13 @@ final class StudioState: ObservableObject {
         draft.operation = (model.executor_operations ?? model.operations).first ??
             (model.isVideo ? "video.generate" : "image.generate")
         draft.width = model.default_width; draft.height = model.default_height
+        if id == "z-image-turbo" { draft.width = 512; draft.height = 512 }
         draft.steps = model.default_steps; draft.frames = model.default_frames
         draft.fps = model.default_fps ?? (model.isVideo ? 24 : 1)
         draft.audio = model.default_audio ?? false
         draft.residency = model.default_residency ?? "resident"
         draft.profilePath = ""
-        draft.acceleration = StudioAcceleration(policy: "auto")
+        draft.acceleration = StudioAcceleration(policy: "gpu")
         draft.loras = []
         draft.loraStrategy = "auto"
         if !model.operations.contains(where: { $0 != "image.generate" && $0 != "video.generate" }) {

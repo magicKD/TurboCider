@@ -79,7 +79,7 @@ class IndependenceTests(unittest.TestCase):
         cache=(ROOT/'tools/native/lora_runtime_cache.py').read_text()
         prepare=(ROOT/'tools/native/prepare_lora.py').read_text()
         cli=(ROOT/'apps/cli/main.mm').read_text()
-        for token in ['NSTask', 'TURBOCIDER_PREPARE_PYTHON', 'Python/bin',
+        for token in ['TURBOCIDER_PREPARE_PYTHON', 'Python/bin',
                       'lora_prepare_script']:
             self.assertNotIn(token, cli)
         for name in ['prepare_lora.py', 'merge_h3_lora.py',

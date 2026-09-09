@@ -2,7 +2,7 @@
 #include "platform.hpp"
 #import <Metal/Metal.h>
 #include <CommonCrypto/CommonDigest.h>
-#include <array>
+#include <vector>
 #include <fstream>
 namespace tc {
 DeviceInfo device_info() {
@@ -40,7 +40,9 @@ std::string sha256_file(const std::filesystem::path &path) {
     require(stream.good(), "cannot open file for SHA-256: " + path.string());
     CC_SHA256_CTX context;
     require(CC_SHA256_Init(&context) == 1, "cannot initialize SHA-256");
-    std::array<char, 1 << 20> buffer{};
+    // App inference runs on libdispatch workers with a roughly 512 KiB stack.
+    // A 1 MiB automatic buffer crashes before hashing LoRA/Core ML provenance.
+    std::vector<char> buffer(1 << 20);
     while (stream.good()) {
         stream.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         auto count = stream.gcount();

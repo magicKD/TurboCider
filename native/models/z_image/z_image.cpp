@@ -859,10 +859,14 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
         require(has_safetensors(vae_path_), "missing Z-Image VAE safetensors in vae/");
         return;
     }
-    if (std::filesystem::is_regular_file(comfy_text) &&
-        std::filesystem::is_regular_file(comfy_transformer) &&
+    if (std::filesystem::is_regular_file(comfy_transformer) &&
         std::filesystem::is_regular_file(comfy_vae)) {
-        text_path_ = std::move(comfy_text);
+        // Comfy checkpoints may share a sharded Qwen3 encoder through the
+        // App's text_encoder/ directory binding instead of a single file.
+        text_path_ = std::filesystem::is_regular_file(comfy_text)
+                         ? comfy_text : root / "text_encoder";
+        require(std::filesystem::is_regular_file(text_path_) || has_safetensors(text_path_),
+                "missing Z-Image Qwen3 weights; select a shared text model in the App");
         transformer_path_ = std::move(comfy_transformer);
         transformer_checkpoint_ = transformer_path_;
         vae_path_ = std::move(comfy_vae);
@@ -1042,7 +1046,8 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
             hybrid_ = std::make_unique<HybridSession>(
                 r.ane_manifest, root_, rows, event, cancelled, r.warmup_iterations,
                 transformer_checkpoint_, active_loras_, matched ? matched->bucket : 0);
-        require(rows <= hybrid_->rows && hybrid_->hidden == 3840 &&
+        hybrid_->set_tokens(rows);
+        require(hybrid_->hidden == 3840 &&
                     hybrid_->block_count == 32 && hybrid_->mlp_width == 10240 &&
                     hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end < 10240,
                 "Z-Image Core ML FFN partition geometry mismatch");
@@ -1059,12 +1064,14 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
     } catch (const Cancelled &) {
         throw;
     } catch (const std::exception &error) {
-        if (!automatic)
-            throw;
+        // A failed shape rebinding must not leave partially rebound branches
+        // available to the next request in this persistent session.
         hybrid_.reset();
         hybrid_gpu_graph_ = {};
         hybrid_gpu_mlp_start_ = -1;
         mx::clear_cache();
+        if (!automatic)
+            throw;
         r.execution = "gpu";
         event("acceleration_gpu_fallback", 1, 1);
         return std::string("gpu: ") + error.what();
@@ -1116,6 +1123,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         auto reported_tokens = tokenizer_.z_image_prompt(r.prompt, r.dynamic_text);
         result.text_tokens = int(reported_tokens.ids.size());
         result.valid_text_tokens = reported_tokens.valid;
+        result.total_tokens = image_rows + caption_rows;
         result.lora_applied_projections = lora_applied_projections_;
         if (gguf_transformer_) {
             result.backend = hybrid_ ? "mlx_cpp_metal_gguf+coreml" : "mlx_cpp_metal_gguf";

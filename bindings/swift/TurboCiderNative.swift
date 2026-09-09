@@ -153,6 +153,17 @@ public final class NativeEngine: @unchecked Sendable {
             return Data(output.utf8)
         }.value
     }
+    public static func zImageTokenCount(modelPath: String, prompt: String) throws -> Int {
+        var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+        let status = modelPath.withCString { path in
+            prompt.withCString { tc_z_image_tokenize_json(path, $0, &result, &error) }
+        }
+        let message = consume(error), output = consume(result)
+        guard status == 0 else { throw NativeFailure(message: message) }
+        guard let value = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any],
+              let count = value["valid"] as? Int else { throw NativeFailure(message: "文本 token 计数结果无效。") }
+        return count
+    }
     public static func system() -> String { consume(tc_system_json()) }
     public static func models() -> String { consume(tc_models_json()) }
     public static func plan(_ request: NativeRequest) throws -> Data {

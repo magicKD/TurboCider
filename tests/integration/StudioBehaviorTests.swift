@@ -62,6 +62,18 @@ struct StudioBehaviorTests {
         unsupported.modelID = "missing-model"
         try rejects { try unsupported.validate() }
         try check(try studio.draft.request(output: output).seed == 42, "Default seed changed")
+        try check(try studio.draft.request(output: output).execution == "gpu", "New drafts must default to GPU only")
+        let legacyAdapter = try JSONDecoder().decode(StudioLoRA.self, from: Data("{\"path\":\"/missing-adapter\"}".utf8))
+        try check(legacyAdapter.enabled && legacyAdapter.strength == 1.0, "Legacy LoRA defaults changed")
+        studio.draft.loras = [StudioLoRA(path: "/missing-adapter", strength: 0.6, enabled: false)]
+        try check(try studio.draft.request(output: output).loras == nil, "Disabled LoRA was validated or forwarded")
+        let roundTrip = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(studio.draft))
+        try check(!roundTrip.loras[0].enabled && roundTrip.loras[0].strength == 0.6, "LoRA switch or strength did not persist")
+        studio.draft.loras = []
+        studio.setANEEnabled(true)
+        try check(studio.draft.usesANE, "ANE toggle did not enable hybrid")
+        studio.setANEEnabled(false)
+        try check(try studio.draft.request(output: output).execution == "gpu", "ANE toggle did not restore GPU")
         var oldDraftJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(studio.draft)) as! [String: Any]
         oldDraftJSON.removeValue(forKey: "acceleration")
         let oldDraft = try JSONDecoder().decode(StudioDraft.self, from: JSONSerialization.data(withJSONObject: oldDraftJSON))
@@ -88,6 +100,12 @@ struct StudioBehaviorTests {
         let manifestFile = compiled.appendingPathComponent("manifest.json")
         try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled)?.rows == 1088, "Compatible local partition not found")
+        var cachedDraft = studio.draft
+        cachedDraft.modelPaths[cachedDraft.modelID] = fixture.path
+        cachedDraft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: manifestFile.path)
+        let resolvedCache = try await inventoryStore.resolveAcceleration(cachedDraft)
+        try check(resolvedCache.acceleration?.manifest == manifestFile.path && inventoryStore.accelerationStatus?.contains("未重新编译") == true,
+                  "An explicitly selected compiled partition outside the App cache was not reused")
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled, minimumRows: 4097) == nil, "1024 task accepted undersized partition")
         let discoveryLoRAFile = root.appendingPathComponent("discovery-lora.safetensors")
         try Data([7, 8]).write(to: discoveryLoRAFile)
@@ -210,6 +228,12 @@ struct StudioBehaviorTests {
         try check(ltx.width == 704 && ltx.height == 448 && ltx.frames == 97 &&
                     ltx.steps == 11 && (ltx.inputs?.isEmpty ?? true),
                   "LTX descriptor defaults or public text-to-video mapping changed")
+        studio.draft.audio = true
+        do {
+            _ = try studio.draft.request(output: root.appendingPathComponent("invalid-ltx-audio.mp4"))
+            throw NativeFailure(message: "Unqualified LTX audio request accepted")
+        } catch { try check(error.localizedDescription.contains("尚未开放音频"), "Wrong LTX audio capability error") }
+        studio.draft.audio = false
         studio.selectModel("wan2.1-1.3b-qad")
         try check(studio.draft.loraStrategy == "auto", "Model switch did not reset LoRA strategy")
         let lora = root.appendingPathComponent("adapter.safetensors"); try Data([9]).write(to: lora)
@@ -250,7 +274,7 @@ struct StudioBehaviorTests {
         studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane")
         let zImage = try studio.draft.request(output: root.appendingPathComponent("z-image.png"))
         try check(zImage.model == "z-image-turbo" && zImage.operation == "image.generate" &&
-                    zImage.width == 1024 && zImage.height == 1024 && zImage.steps == 9 &&
+                    zImage.width == 512 && zImage.height == 512 && zImage.steps == 9 &&
                     zImage.frames == 1 && zImage.audio == false && zImage.execution == "gpu" &&
                     zImage.loras?.first?.role == "transformer",
                   "Z-Image App defaults, GPU fail-closed policy or separate LoRA forwarding changed")
@@ -260,8 +284,70 @@ struct StudioBehaviorTests {
         try check(zImageLoRAHybrid.execution == "gpu_ane" &&
                     zImageLoRAHybrid.ane_manifest == loraManifest.path,
                   "Z-Image LoRA-bound ANE artifact was not forwarded")
+        let preparedZ = try studio.preparationRequest(modelID: "z-image-turbo", output: output)
+        try check(preparedZ.loras?.first?.strength == 0.8 && preparedZ.ane_manifest == loraManifest.path && preparedZ.width == 512,
+                  "Loading the current model discarded LoRA, dimensions or acceleration")
+        var invalidZ = studio.draft; invalidZ.steps = 4
+        try rejects { try invalidZ.validate() }
+        invalidZ.steps = 9; invalidZ.loras[0].role = "text_encoder"
+        try rejects { try invalidZ.validate() }
+        let comfy = root.appendingPathComponent("comfy-z")
+        let shared = root.appendingPathComponent("shared-qwen")
+        for name in ["models/diffusion_models/z_image_turbo_bf16.safetensors", "models/vae/ae.safetensors"] {
+            let path = comfy.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data([1, 2, 3]).write(to: path)
+        }
+        try check(ZImageInstallation.needsSharedText(comfy), "Comfy installation failed to request missing text components")
+        try rejects { _ = try ZImageInstallation.install(model: comfy, sharedText: nil, directory: root.appendingPathComponent("bindings")) }
+        for name in ["text_encoder/model.safetensors", "tokenizer/tokenizer.json"] {
+            let path = shared.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data([1]).write(to: path)
+        }
+        try studio.installZImage(model: comfy, sharedText: shared)
+        let installed = URL(fileURLWithPath: studio.draft.modelPath)
+        try check(installed.appendingPathComponent("split_files").resolvingSymlinksInPath().path == comfy.appendingPathComponent("models").resolvingSymlinksInPath().path, "Comfy weights were not bound in place")
+        try check(installed.appendingPathComponent("text_encoder").resolvingSymlinksInPath().path == shared.appendingPathComponent("text_encoder").resolvingSymlinksInPath().path, "Shared text weights were not bound in place")
+        try check(!FileManager.default.fileExists(atPath: comfy.appendingPathComponent("tokenizer").path), "App modified the original model directory")
+        studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.8)]
+        studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: loraManifest.path)
+        let configuration = root.appendingPathComponent("app-configuration.json")
+        studio.draft.modelPaths["flux2-klein-4b"] = ""
+        try JSONEncoder().encode(studio.draft).write(to: configuration)
+        studio.draft.modelPaths["flux2-klein-4b"] = shared.path
+        studio.draft.loras = []; studio.draft.width = 1024
+        try studio.importConfiguration(from: configuration)
+        try check(studio.draft.loras.count == 1 && studio.draft.width == 512 && studio.draft.acceleration?.manifest == loraManifest.path,
+                  "App configuration failed to restore LoRA, dimensions and acceleration")
+        try check(studio.draft.modelPaths["flux2-klein-4b"] == shared.path,
+                  "Empty configuration registration erased another installed model")
+        let invalidConfiguration = root.appendingPathComponent("invalid-configuration.json")
+        try Data("{}".utf8).write(to: invalidConfiguration)
+        try rejects { try studio.importConfiguration(from: invalidConfiguration) }
+        try check(studio.draft.loras.count == 1, "Rejected configuration changed the active draft")
         studio.newDraft()
         try check(studio.draft.seedText == "42" && !studio.draft.randomSeed && studio.draft.assets.isEmpty, "New draft defaults failed")
+        let deletionRoot = root.appendingPathComponent("deletion")
+        let deletionOutput = deletionRoot.appendingPathComponent("outputs/delete-test.png")
+        try FileManager.default.createDirectory(at: deletionOutput.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([1, 2, 3]).write(to: deletionOutput)
+        let completedJob = NativeJob(id: UUID(), createdAt: Date(), request: NativeRequest(prompt: "deletion fixture", output: deletionOutput.path), state: "succeeded", phase: "complete", completed: 1, total: 1, elapsed: 1)
+        try JSONEncoder().encode([completedJob]).write(to: deletionRoot.appendingPathComponent("jobs.json"))
+        let deletionStore = NativeJobStore(directory: deletionRoot)
+        try deletionStore.deleteJob(completedJob.id)
+        try check(deletionStore.jobs.isEmpty && FileManager.default.fileExists(atPath: deletionOutput.path), "Deleting a task removed its image")
+        try deletionStore.undoDeleteJob()
+        try check(deletionStore.jobs.count == 1, "Undo failed to restore task")
+        let trashed = try deletionStore.trashOutput(completedJob.id)
+        try check(!FileManager.default.fileExists(atPath: deletionOutput.path) && !deletionStore.jobs[0].hasOutput, "Deleting an image left it visible")
+        try check(NativeJobStore(directory: deletionRoot).jobs[0].outputDeleted == true, "Image deletion did not persist")
+        if let trashed { try FileManager.default.moveItem(at: trashed, to: deletionOutput) }
+        var externalJob = completedJob
+        externalJob = NativeJob(id: UUID(), createdAt: Date(), request: NativeRequest(prompt: "external fixture", output: output.path), state: "succeeded", phase: "complete", completed: 1, total: 1, elapsed: 1)
+        try JSONEncoder().encode([externalJob]).write(to: deletionRoot.appendingPathComponent("jobs.json"))
+        let externalStore = NativeJobStore(directory: deletionRoot)
+        try rejects { _ = try externalStore.trashOutput(externalJob.id) }
         print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/Wan/Z-Image defaults and separate LoRA forwarding")
     }
 }

@@ -1,0 +1,493 @@
+{
+  "hardware": "Apple M4 Pro 48GB",
+  "resolution": [
+    512,
+    512
+  ],
+  "steps": 9,
+  "seed": 42,
+  "default": "enumerated",
+  "results": [
+    {
+      "group": ".",
+      "mode": "enumerated",
+      "runs": [
+        {
+          "index": 0,
+          "case": "short",
+          "seconds": 133.81914529192727,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 115.526906666
+        },
+        {
+          "index": 1,
+          "case": "short",
+          "seconds": 14.397096249973401,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 115.526906666
+        },
+        {
+          "index": 2,
+          "case": "short",
+          "seconds": 14.201289749937132,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 115.526906666
+        },
+        {
+          "index": 3,
+          "case": "long",
+          "seconds": 29.879664874984883,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 115.526906666
+        },
+        {
+          "index": 4,
+          "case": "long",
+          "seconds": 20.428511875099503,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 115.526906666
+        },
+        {
+          "index": 5,
+          "case": "long",
+          "seconds": 20.421396207995713,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 115.526906666
+        },
+        {
+          "index": 6,
+          "case": "medium",
+          "seconds": 20.12281291699037,
+          "error": null,
+          "token_count": 55,
+          "bucket": 1088,
+          "coreml_load_seconds": 115.526906666
+        },
+        {
+          "index": 7,
+          "case": "short",
+          "seconds": 18.334614625084214,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 115.526906666
+        }
+      ]
+    },
+    {
+      "group": ".",
+      "mode": "fixed",
+      "runs": [
+        {
+          "index": 0,
+          "case": "short",
+          "seconds": 41.8875284580281,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1536,
+          "coreml_load_seconds": 21.375078125
+        },
+        {
+          "index": 1,
+          "case": "short",
+          "seconds": 16.89746512507554,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1536,
+          "coreml_load_seconds": 21.375078125
+        },
+        {
+          "index": 2,
+          "case": "short",
+          "seconds": 16.80304604198318,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1536,
+          "coreml_load_seconds": 21.375078125
+        },
+        {
+          "index": 3,
+          "case": "long",
+          "seconds": 24.70977887499612,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 21.375078125
+        },
+        {
+          "index": 4,
+          "case": "long",
+          "seconds": 19.66470195900183,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 21.375078125
+        },
+        {
+          "index": 5,
+          "case": "long",
+          "seconds": 19.892207833006978,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 21.375078125
+        },
+        {
+          "index": 6,
+          "case": "medium",
+          "seconds": 20.83841229195241,
+          "error": null,
+          "token_count": 55,
+          "bucket": 1536,
+          "coreml_load_seconds": 21.375078125
+        },
+        {
+          "index": 7,
+          "case": "short",
+          "seconds": 20.476463166996837,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1536,
+          "coreml_load_seconds": 21.375078125
+        }
+      ]
+    },
+    {
+      "group": ".",
+      "mode": "fixed1056",
+      "runs": [
+        {
+          "index": 0,
+          "case": "short",
+          "seconds": 24.271655624965206,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 6.774856833
+        },
+        {
+          "index": 1,
+          "case": "short",
+          "seconds": 13.880762625019997,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 6.774856833
+        },
+        {
+          "index": 2,
+          "case": "short",
+          "seconds": 13.889119417057373,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 6.774856833
+        },
+        {
+          "index": 3,
+          "case": "short",
+          "seconds": 13.976950165932067,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 6.774856833
+        }
+      ]
+    },
+    {
+      "group": ".",
+      "mode": "gpu",
+      "runs": [
+        {
+          "index": 0,
+          "case": "short",
+          "seconds": 20.008736375020817,
+          "error": null,
+          "token_count": 21,
+          "bucket": null,
+          "coreml_load_seconds": null
+        },
+        {
+          "index": 1,
+          "case": "short",
+          "seconds": 16.9478242500918,
+          "error": null,
+          "token_count": 21,
+          "bucket": null,
+          "coreml_load_seconds": null
+        },
+        {
+          "index": 2,
+          "case": "short",
+          "seconds": 16.868701833998784,
+          "error": null,
+          "token_count": 21,
+          "bucket": null,
+          "coreml_load_seconds": null
+        },
+        {
+          "index": 3,
+          "case": "long",
+          "seconds": 28.863862958038226,
+          "error": null,
+          "token_count": 512,
+          "bucket": null,
+          "coreml_load_seconds": null
+        },
+        {
+          "index": 4,
+          "case": "long",
+          "seconds": 23.893812875030562,
+          "error": null,
+          "token_count": 512,
+          "bucket": null,
+          "coreml_load_seconds": null
+        },
+        {
+          "index": 5,
+          "case": "long",
+          "seconds": 24.033816916984506,
+          "error": null,
+          "token_count": 512,
+          "bucket": null,
+          "coreml_load_seconds": null
+        },
+        {
+          "index": 6,
+          "case": "medium",
+          "seconds": 20.53198395902291,
+          "error": null,
+          "token_count": 55,
+          "bucket": null,
+          "coreml_load_seconds": null
+        },
+        {
+          "index": 7,
+          "case": "short",
+          "seconds": 20.20535275002476,
+          "error": null,
+          "token_count": 21,
+          "bucket": null,
+          "coreml_load_seconds": null
+        }
+      ]
+    },
+    {
+      "group": ".",
+      "mode": "range",
+      "runs": [
+        {
+          "index": 0,
+          "case": "short",
+          "seconds": 29.542706500040367,
+          "error": "Core ML prediction failed: Unable to compute the prediction using ML Program. It can be an invalid input data or broken/unsupported model.",
+          "token_count": 21,
+          "bucket": null,
+          "coreml_load_seconds": null
+        }
+      ]
+    },
+    {
+      "group": "recheck",
+      "mode": "enumerated",
+      "runs": [
+        {
+          "index": 0,
+          "case": "short",
+          "seconds": 24.813694667071104,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 6.912734459
+        },
+        {
+          "index": 1,
+          "case": "short",
+          "seconds": 14.053619750076905,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 6.912734459
+        },
+        {
+          "index": 2,
+          "case": "long",
+          "seconds": 24.794882708927616,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 6.912734459
+        },
+        {
+          "index": 3,
+          "case": "long",
+          "seconds": 19.787237582961097,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 6.912734459
+        }
+      ]
+    },
+    {
+      "group": "recheck",
+      "mode": "gpu",
+      "runs": [
+        {
+          "index": 0,
+          "case": "short",
+          "seconds": 19.885914084035903,
+          "error": null,
+          "token_count": 21,
+          "bucket": null,
+          "coreml_load_seconds": null
+        },
+        {
+          "index": 1,
+          "case": "short",
+          "seconds": 16.939504917012528,
+          "error": null,
+          "token_count": 21,
+          "bucket": null,
+          "coreml_load_seconds": null
+        },
+        {
+          "index": 2,
+          "case": "long",
+          "seconds": 28.432669000001624,
+          "error": null,
+          "token_count": 512,
+          "bucket": null,
+          "coreml_load_seconds": null
+        },
+        {
+          "index": 3,
+          "case": "long",
+          "seconds": 24.581624999991618,
+          "error": null,
+          "token_count": 512,
+          "bucket": null,
+          "coreml_load_seconds": null
+        }
+      ]
+    },
+    {
+      "group": "recheck",
+      "mode": "range",
+      "runs": [
+        {
+          "index": 0,
+          "case": "short",
+          "seconds": 25.18036145810038,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 7.042159291
+        },
+        {
+          "index": 1,
+          "case": "short",
+          "seconds": 14.635136083001271,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 7.042159291
+        },
+        {
+          "index": 2,
+          "case": "long",
+          "seconds": 28.615940875024535,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 7.042159291
+        },
+        {
+          "index": 3,
+          "case": "long",
+          "seconds": 20.03284887492191,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 7.042159291
+        }
+      ]
+    },
+    {
+      "group": "lora",
+      "mode": "enumerated",
+      "runs": [
+        {
+          "index": 0,
+          "case": "short",
+          "seconds": 90.07490308396518,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 75.278559958
+        },
+        {
+          "index": 1,
+          "case": "long",
+          "seconds": 24.396275541977957,
+          "error": null,
+          "token_count": 512,
+          "bucket": 1536,
+          "coreml_load_seconds": 75.278559958
+        },
+        {
+          "index": 2,
+          "case": "short",
+          "seconds": 16.450018291943707,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 75.278559958
+        }
+      ]
+    },
+    {
+      "group": "range-isolated",
+      "mode": "range",
+      "runs": [
+        {
+          "index": 0,
+          "case": "short",
+          "seconds": 23.99881858297158,
+          "error": null,
+          "token_count": 21,
+          "bucket": 1056,
+          "coreml_load_seconds": 7.880023833
+        }
+      ]
+    }
+  ],
+  "cache_reuse": [
+    {
+      "model": "base",
+      "cache_hits": 32,
+      "compiled_file_count": 128,
+      "compiled_file_mtimes_unchanged": true,
+      "manifest": "/Users/kd/Documents/project/TurboCider/outputs/z-image-flex-20260908/compiled-enumerated/manifest-03ee870888478e91f6900e886a9649d83d3bd219e028e6b412a24d9075fc867f.json"
+    },
+    {
+      "model": "lora",
+      "cache_hits": 32,
+      "compiled_file_count": 128,
+      "compiled_file_mtimes_unchanged": true,
+      "manifest": "/Users/kd/Documents/project/TurboCider/outputs/z-image-flex-20260908/lora/compiled/manifest-d883d8bcf329ce37653ab04c8488bc0c1619e0e6d9682fa70a94b9e5b4b55335.json"
+    }
+  ]
+}

@@ -29,8 +29,11 @@ PACKAGE_MIN_MACOS="${TURBOCIDER_PACKAGE_MIN_MACOS:-${MLX_MIN_MACOS:-15.0}}"
 rm -rf "$APP" "$ROOT/dist/cli"
 mkdir -p "$BIN" "$RES" "$ROOT/dist/cli"
 cp build/native/TurboCiderNativeApp "$BIN/"
+cp assets/branding/AppIcon.icns assets/branding/LogoMark.png "$RES/"
 cp build/native/turbocider "$BIN/"
 for folder in "$BIN" "$ROOT/dist/cli"; do
+ cp build/native/turbocider-library "$folder/"
+ codesign --force --sign - "$folder/turbocider-library"
  cp build/native/libturbocider.dylib "$folder/"
  cp build/native/h3-quantize-stream-cache "$folder/"
  cp "$MLX_ROOT/lib/libmlx.dylib" "$MLX_ROOT/lib/libjaccl.dylib" "$MLX_ROOT/lib/mlx.metallib" "$folder/"
@@ -60,16 +63,19 @@ cp build/native/turbocider "$ROOT/dist/cli/"
 # intentionally not copied into the App bundle: production sessions accept
 # provenance-verified premerged checkpoints and never launch Python.
 cp native/THIRD_PARTY_NOTICES.md "$RES/"
+cp LICENSE "$RES/TurboCider-LICENSE.txt"
 cp "$MLX_LICENSE_PATH" "$RES/MLX-LICENSE.txt"
 cp "$RES/THIRD_PARTY_NOTICES.md" "$RES/MLX-LICENSE.txt" "$ROOT/dist/cli/"
 cp native/licenses/FastVideo-LICENSE.txt native/licenses/TAEHV-LICENSE.txt "$RES/"
 cp native/licenses/FastVideo-LICENSE.txt native/licenses/TAEHV-LICENSE.txt "$ROOT/dist/cli/"
+cp "$RES/TurboCider-LICENSE.txt" "$ROOT/dist/cli/"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>org.turbocider.native</string>
 <key>CFBundleName</key><string>TurboCider</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleExecutable</key><string>TurboCiderNativeApp</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.2.0</string>

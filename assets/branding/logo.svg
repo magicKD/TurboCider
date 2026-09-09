@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 280" role="img" aria-label="TurboCider — more from your Mac">
+<rect width="920" height="280" rx="28" fill="#FCFCFA"/>
+<g transform="translate(2 -2) scale(.55)"><path fill="#292D30" d="M 133 104 C 123 97 117 104 117 119 L 117 136 C 166 190 166 248 117 303 L 117 320 C 117 335 123 341 136 334 C 229 291 229 151 133 104 Z"/>
+<path fill="#292D30" d="M 379 104 C 389 97 395 104 395 119 L 395 136 C 346 190 346 248 395 303 L 395 320 C 395 335 389 341 376 334 C 283 291 283 151 379 104 Z"/>
+<path fill="#56863F" d="M 244 163 C 248 125 274 100 303 100 C 304 131 283 158 244 163 Z"/>
+<path fill="#A8ADAD" d="M 238 178 L 274 178 C 288 178 294 185 294 198 L 294 235 C 294 248 287 255 274 255 L 238 255 C 225 255 218 248 218 235 L 218 198 C 218 185 225 178 238 178 Z"/>
+<path fill="#E8AA2B" d="M 256 270 C 242 292 220 318 220 340 C 220 388 292 388 292 340 C 292 318 270 292 256 270 Z"/>
+<path fill="#FFF9E9" d="M 237 319 C 231 335 231 353 244 361 C 250 365 252 357 247 353 C 238 346 240 333 244 322 C 247 315 240 312 237 319 Z"/></g>
+<text x="270" y="147" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="76" font-weight="750" fill="#292D30">Turbo<tspan fill="#56863F">Cider</tspan></text>
+<text x="275" y="192" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="21" letter-spacing="2.5" fill="#666C6B">MORE FROM YOUR MAC.</text>
+</svg>

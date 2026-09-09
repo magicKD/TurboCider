@@ -5,6 +5,7 @@ struct CoreMLStorageView: View {
     @ObservedObject var store: NativeJobStore
     @ObservedObject var studio: StudioState
     @State private var inventory: [StorageEntry] = []
+    @State private var reportedStorage: String?
     @State private var total = "尚未统计"
     @State private var pending: Cleanup?
     private struct Cleanup: Identifiable { let id = UUID(); let payload: Data; let paths: String; let bytes: String }
@@ -14,7 +15,7 @@ struct CoreMLStorageView: View {
     private func size(_ value: Any?) -> String { ByteCountFormatter.string(fromByteCount: (value as? NSNumber)?.int64Value ?? 0, countStyle: .file) }
     private var isZImage: Bool { studio.draft.modelID == "z-image-turbo" }
     private var defaultStorage: String {
-        store.directory.appendingPathComponent(isZImage ? "coreml/z-image-turbo/m4128" : "coreml/flux2-klein-4b/m1088").path
+        reportedStorage ?? store.directory.appendingPathComponent(isZImage ? "coreml/z-image-turbo" : "coreml/flux2-klein-4b/m1088").path
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -98,6 +99,7 @@ struct CoreMLStorageView: View {
                 let result = try await store.coreMLResources(JSONSerialization.data(withJSONObject: value))
                 guard let report = try JSONSerialization.jsonObject(with: result) as? [String: Any] else { return }
                 if action == "inventory" {
+                    reportedStorage = report["storage"] as? String
                     total = size(report["bytes"])
                     let labels = ["source":"Core ML 源模型", "compiled":"当前编译分区", "managed_compiled":"托管编译目录", "runtime_specialization":"App 设备专用缓存"]
                     inventory = (report["entries"] as? [[String: Any]] ?? []).map { StorageEntry(path: $0["path"] as? String ?? "", category: labels[$0["category"] as? String ?? ""] ?? "资源", size: size($0["bytes"]), error: $0["error"] as? String) }
@@ -107,8 +109,8 @@ struct CoreMLStorageView: View {
                     pending = Cleanup(payload: try JSONSerialization.data(withJSONObject: next), paths: paths, bytes: size(report["bytes"]))
                 } else {
                     if let source = report["source_manifest"] as? String { update { $0.sourceManifest = source } }
-                    if let manifest = report["manifest"] as? String { update { $0.manifest = manifest } }
-                    studio.message = "Core ML 分区已编译。"
+                    if let manifest = report["manifest"] as? String { update { $0.knownManifests = Array(Set(($0.knownManifests ?? []) + [$0.manifest, manifest])).filter { !$0.isEmpty }; $0.manifest = manifest } }
+                    studio.message = "ANE 分区就绪 · 复用 \(report["cache_hits"] as? Int ?? 0)/\(report["partitions"] as? Int ?? 0) 个缓存分区。"
                     perform("inventory")
                 }
             } catch { studio.message = error is CancellationError ? "资源操作已取消" : error.localizedDescription }

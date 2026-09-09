@@ -1110,10 +1110,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(model['audio_capability'],'latent_to_48khz_aac_candidate')
         self.assertFalse(model['default_audio'])
 
-    def test_ltx_shared_hot_path_stays_synced_with_ltx_mac(self):
-        upstream=ROOT.parent/'ltx-mac'
-        if not upstream.is_dir():
-            self.skipTest('sibling ltx-mac checkout is unavailable')
+    def test_ltx_shared_hot_path_matches_recorded_source(self):
         shared=[
             'ltx.c','ltx_conditioning.c','ltx_connector.c',
             'ltx_transformer_io.c','ltx_latent_stats.c','ltx_rng.c',
@@ -1122,10 +1119,21 @@ class ContractTests(unittest.TestCase):
             'ltx_upsampler.m',
         ]
         vendored=ROOT/'native/models/ltx_runtime'
+        manifest=json.loads((vendored/'SOURCE_MANIFEST.json').read_text())
+        self.assertEqual(manifest['schema_version'],1)
+        self.assertEqual(set(manifest['files']),set(shared))
         for name in shared:
             with self.subTest(source=name):
-                self.assertEqual((vendored/name).read_bytes(),
-                                 (upstream/name).read_bytes())
+                self.assertEqual(hashlib.sha256((vendored/name).read_bytes()).hexdigest(),manifest['files'][name])
+        # Explicit development gate; unrelated sibling edits must not change the
+        # result of a standalone checkout's default test suite.
+        reference=os.environ.get('TURBOCIDER_LTX_REFERENCE')
+        if reference:
+            upstream=Path(reference)
+            self.assertTrue(upstream.is_dir(),'Configured LTX reference is missing')
+            for name in shared:
+                with self.subTest(reference_source=name):
+                    self.assertEqual((vendored/name).read_bytes(),(upstream/name).read_bytes())
 
     def test_ltx_audio_preflight_is_fail_closed_and_read_only(self):
         def preflight(root):
