@@ -71,6 +71,10 @@ void write_video_rgb24(const std::filesystem::path& output,
         };
         AVAssetWriterInput* video = [AVAssetWriterInput
             assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:settings];
+        // AVFoundation's default 600-tick timebase cannot represent 1/16 s.
+        // Use one exact frame per media tick rather than rounding frame times.
+        video.mediaTimeScale = fps;
+        writer.movieTimeScale = fps;
         video.expectsMediaDataInRealTime = NO;
         NSDictionary* attributes = @{
             (NSString*)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),

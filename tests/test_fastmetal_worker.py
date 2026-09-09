@@ -1,4 +1,4 @@
-"""CPU-only regression tests for the persistent FastMetal JSONL protocol."""
+"""CPU-only regression tests for the development-only legacy Wan oracle."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKER_PATH = ROOT / "tools/native/fastmetal_worker.py"
+WORKER_PATH = ROOT / "tools/validation/wan/python_worker.py"
 SPEC = importlib.util.spec_from_file_location("turbocider_fastmetal_worker", WORKER_PATH)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)

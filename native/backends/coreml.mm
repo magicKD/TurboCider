@@ -1,4 +1,5 @@
 #include "coreml.hpp"
+#include "coreml_partitions.hpp"
 #include "../platform/apple/bridge.hpp"
 #include "../platform/apple/platform.hpp"
 #import <CoreML/CoreML.h>
@@ -25,6 +26,57 @@ struct HybridSession::Impl {
     std::vector<std::unique_ptr<CoreMLBranch>> branches;
 };
 HybridSession::~HybridSession() = default;
+
+struct CoreMLPartitions::Impl {
+    std::vector<std::unique_ptr<CoreMLBranch>> branches;
+};
+
+CoreMLPartitions::~CoreMLPartitions() = default;
+
+CoreMLPartitions::CoreMLPartitions(const std::vector<std::filesystem::path> &paths,
+                                   int rows, int hidden, const Event &event,
+                                   std::atomic<bool> &cancelled)
+    : impl_(std::make_unique<Impl>()), rows_(rows), hidden_(hidden) {
+    require(rows > 0 && rows <= 65536 && hidden > 0 && hidden <= 16384 &&
+                !paths.empty() && paths.size() <= 64, "invalid Core ML partition geometry");
+    checkpoint(cancelled);
+    auto storage = mx::contiguous(mx::zeros({1, rows, hidden}, mx::float16));
+    mx::eval(storage);
+    NSError *error = nil;
+    auto backing = [[MLMultiArray alloc] initWithDataPointer:storage.data<mx::float16_t>()
+        shape:@[@1, @(hidden), @1, @(rows)] dataType:MLMultiArrayDataTypeFloat16
+        strides:@[@(size_t(rows) * hidden), @1, @(size_t(rows) * hidden), @(hidden)]
+        deallocator:^(void *) {} error:&error];
+    require(backing != nil, "Core ML partition output allocation failed");
+    for (size_t index = 0; index < paths.size(); ++index) {
+        checkpoint(cancelled);
+        require(paths[index].is_absolute(), "Core ML partition path must be absolute");
+        event("coreml_partition_load", int(index), int(paths.size()));
+        impl_->branches.push_back(std::make_unique<CoreMLBranch>(paths[index], rows, hidden, storage, backing));
+    }
+    checkpoint(cancelled);
+    event("coreml_partition_load", int(paths.size()), int(paths.size()));
+}
+
+Tensor CoreMLPartitions::predict(int block, const Tensor &input) {
+    require(block >= 0 && size_t(block) < impl_->branches.size(), "invalid Core ML partition index");
+    require(input.shape() == mx::Shape{1, rows_, hidden_} && input.dtype() == mx::float16 &&
+                input.flags().row_contiguous, "Core ML partition requires contiguous FP16 [1,R,H]");
+    mx::eval(input);
+    return impl_->branches[block]->predict(input, rows_);
+}
+
+uint64_t CoreMLPartitions::calls() const {
+    uint64_t total = 0;
+    for (const auto &branch : impl_->branches) total += branch->calls;
+    return total;
+}
+
+uint64_t CoreMLPartitions::copied_bytes() const {
+    uint64_t total = 0;
+    for (const auto &branch : impl_->branches) total += branch->copied_bytes;
+    return total;
+}
 
 CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidden,
                            const Tensor &output_storage, MLMultiArray *output_backing)

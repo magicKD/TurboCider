@@ -7,8 +7,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class LLaDAReferenceTests(unittest.TestCase):
+    def test_native_models_do_not_read_reference_environment(self):
+        for path in (ROOT / 'native/models/llada').glob('*.cpp'):
+            source = path.read_text()
+            self.assertNotIn('getenv(', source, str(path))
+            self.assertNotIn('TURBOCIDER_LLADA_REFERENCE_', source, str(path))
+            self.assertNotIn('TURBOCIDER_LLADA_EAGER_BLOCKS', source, str(path))
+
     def test_reference_tools_compile_and_keep_persistent_protocol(self):
-        worker = ROOT / "tools/native/llada_worker.py"
+        worker = ROOT / "tools/validation/llada/python_worker.py"
         benchmark = ROOT / "tools/native/benchmark_llada_reference.py"
         source = worker.read_text()
         compile(source, str(worker), "exec")
@@ -42,7 +49,7 @@ class LLaDAReferenceTests(unittest.TestCase):
         registry = (ROOT / "native/models/registry.cpp").read_text()
         module = (ROOT / "native/models/llada_module.cpp").read_text()
         session = (ROOT / "native/platform/apple/llada_session.mm").read_text()
-        worker = (ROOT / "tools/native/llada_worker.py").read_text()
+        worker = (ROOT / "tools/validation/llada/python_worker.py").read_text()
         self.assertIn("llada_module()", registry)
         self.assertIn('d.operations = {"image.generate"}', module)
         self.assertIn('if (r.execution == "gpu_ane")', module)
@@ -50,8 +57,11 @@ class LLaDAReferenceTests(unittest.TestCase):
         self.assertIn('d.supports_gpu_ane = true', module)
         self.assertIn("uses_parent_mlx() const override { return true; }", session)
         self.assertIn("create_llada_image_native", session)
-        self.assertIn("std::unique_ptr<LLaDAWorker>", session)
-        self.assertIn('request.execution == "gpu" || request.execution == "gpu_ane"', session)
+        self.assertNotIn("LLaDAWorker", session)
+        self.assertNotIn("getenv(", session)
+        self.assertNotIn("posix_spawn", session)
+        self.assertIn('return native().generate(request, event, cancelled);', session)
+        self.assertFalse((ROOT / "tools/native/llada_worker.py").exists())
         self.assertIn("class CoreMLFFNBridge", worker)
         self.assertIn("class HybridFeedForward", worker)
         self.assertIn("class ConditioningCache", worker)

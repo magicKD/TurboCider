@@ -21,9 +21,9 @@ NSDictionary *compile_artifact(const std::filesystem::path &, const std::filesys
 NSDictionary *coreml_resources(NSDictionary *, const Event &, std::atomic<bool> &);
 NSDictionary *manage_coreml_cache(NSDictionary *, const Event &, std::atomic<bool> &);
 NSDictionary *preflight_ltx_lora(const std::filesystem::path &, const LoRAAsset &);
-NSDictionary *preflight_fastmetal_lora(const std::filesystem::path &, const LoRAAsset &);
+NSDictionary *preflight_wan_lora(const std::filesystem::path &, const LoRAAsset &);
 NSDictionary *preflight_ltx_audio(const std::filesystem::path &);
 std::string validate_ltx_ane_profile(const std::filesystem::path &,
                                      uint32_t, uint32_t, uint32_t, uint32_t);
-std::string validate_fastmetal_ane_manifest(const std::filesystem::path &);
+std::string validate_wan_ane_manifest(const std::filesystem::path &);
 } // namespace tc

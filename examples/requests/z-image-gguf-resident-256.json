@@ -5,7 +5,7 @@
   "prompt": "A cinematic red fox walking through fresh snow, soft morning light.",
   "output": "outputs/z-image-gguf-resident-256.png",
   "execution": "gpu",
-  "model_variant": "Q3_K_S",
+  "model_variant": "Q8_0",
   "residency": "resident",
   "width": 256,
   "height": 256,

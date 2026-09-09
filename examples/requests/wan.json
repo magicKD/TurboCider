@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "model": "wan2.1-1.3b-qad",
+  "operation": "video.generate",
+  "prompt": "A bird's-eye view of a misty forest valley at dawn.",
+  "output": "outputs/wan-example.mp4",
+  "execution": "gpu",
+  "width": 832,
+  "height": 480,
+  "frames": 81,
+  "fps": 16,
+  "steps": 3,
+  "seed": 1024,
+  "residency": "resident"
+}

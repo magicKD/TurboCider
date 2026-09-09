@@ -143,28 +143,6 @@ Tensor sparse_moe(const Tensor &x, const Weights &weights, const std::string &pr
     top_weights = top_weights /
                   (mx::sum(top_weights, -1, true) + Tensor(1e-20f, mx::float32));
     top_weights = top_weights * Tensor(2.5f, mx::float32);
-    if (const char *reference = std::getenv("TURBOCIDER_LLADA_REFERENCE_ROUTER_DIR")) {
-        auto directory = std::filesystem::path(reference);
-        auto indices_path = directory /
-                            ("text_router_indices_layer_" + std::to_string(layer) +
-                             ".safetensors");
-        auto weights_path = directory /
-                            ("text_router_weights_layer_" + std::to_string(layer) +
-                             ".safetensors");
-        require(std::filesystem::is_regular_file(indices_path) &&
-                    std::filesystem::is_regular_file(weights_path),
-                "LLaDA diagnostic router dump is incomplete for layer " +
-                    std::to_string(layer));
-        auto reference_indices = mx::load_safetensors(indices_path.string()).first;
-        auto reference_weights = mx::load_safetensors(weights_path.string()).first;
-        require(reference_indices.count("tensor") && reference_weights.count("tensor"),
-                "LLaDA diagnostic router tensors must use the tensor key");
-        top_indices = mx::astype(reference_indices.at("tensor"), mx::int32);
-        top_weights = mx::astype(reference_weights.at("tensor"), mx::float32);
-        require(top_indices.shape() == mx::Shape({tokens, kExpertsPerToken}) &&
-                    top_weights.shape() == top_indices.shape(),
-                "LLaDA diagnostic router geometry mismatch");
-    }
     if (!dump_directory.empty()) {
         dump_text_stage(dump_directory,
                         "router_logits_layer_" + std::to_string(layer),
@@ -377,21 +355,6 @@ LLaDAConditioning llada_encode_text(const std::filesystem::path &root,
         auto ids = Tensor(tokens.ids.data(), {1, tokens.valid}, mx::int32);
         auto embeddings = mx::take(text.at("word_embeddings.weight"), ids, 0);
         auto query_embeddings = queryformer(embeddings, query);
-        if (const char *reference =
-                std::getenv("TURBOCIDER_LLADA_REFERENCE_QUERYFORMER_DIR")) {
-            auto path = std::filesystem::path(reference) /
-                        "text_queryformer.safetensors";
-            require(std::filesystem::is_regular_file(path),
-                    "LLaDA diagnostic QueryFormer tensor is missing: " +
-                        path.string());
-            auto loaded = mx::load_safetensors(path.string()).first;
-            require(loaded.count("tensor"),
-                    "LLaDA diagnostic QueryFormer tensor must use the tensor key");
-            auto candidate = loaded.at("tensor");
-            require(candidate.shape() == query_embeddings.shape(),
-                    "LLaDA diagnostic QueryFormer geometry mismatch");
-            query_embeddings = mx::astype(candidate, embeddings.dtype());
-        }
         dump_text_stage(dump_directory, "token_embeddings", embeddings);
         dump_text_stage(dump_directory, "queryformer", query_embeddings);
         auto combined = mx::concatenate({embeddings, query_embeddings}, 1);

@@ -1,5 +1,14 @@
 # Core ML 模型、编译产物与磁盘管理
 
+2026-09-09 边界更新：正式 App 和核心库已移除 Python 导出入口。
+`export` 资源请求明确拒绝；请在开发环境运行
+`tools/coreml/export_flux2.py` 或 `tools/coreml/export_z_image.py`，
+使用显式 `--model`、`--output`、`--bucket`，带 LoRA 时同时传入
+`--lora` / `--lora-strength`，并为不同融合身份选择不同输出目录。
+导出器继续校验输出身份，App/native 继续校验 artifact 与请求 LoRA 身份。
+App 通过选择源 manifest 使用原生编译和缓存管理，不选择 Python 环境。
+以下旧导出 API / App 操作说明仅记录历史实现，不是当前支持的调用方式。
+
 2026-09-06 实现与本机检查。当前支持 FLUX.2 Klein 4B 的 20 个 INT8 单流块 MLP 分区；没有宣称能把任意 safetensors 自动转换成完整 Core ML 网络。
 
 最新独立性更新见 [独立部署说明](standalone-project.md)：本机已重新导出至 TurboCider 自有目录，不再使用下文记录的旧外部分区；下文的外部占用是当时的诊断证据。

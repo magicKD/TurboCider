@@ -8,7 +8,7 @@
 - `media/`：Apple 图像编解码。
 - `api/`：稳定 C ABI 与 JSON/事件兼容层。
 
-使用方法见 [使用文档](../docs/USAGE.md)，当前完成度见 [实现状态](../docs/status/implementation-status-2026-09-06.md)，构建从仓库根目录执行 `tools/native/build.sh`。FLUX、H3、LTX video-only native session，以及 manifest-gated FastMetal session 已进入正式目标；LTX 音频和 I2V 仍按 operation 做能力门禁。完整验收边界见 [视频模型验收](../docs/design/video-model-acceptance.md)。
+使用方法见 [使用文档](../docs/USAGE.md)，当前完成度见 [实现状态](../docs/status/implementation-status-2026-09-06.md)，构建从仓库根目录执行 `tools/native/build.sh`。FLUX、H3、LTX video-only native session，以及 manifest-gated 原生 Wan session 已进入正式目标；LTX 音频和 I2V 仍按 operation 做能力门禁。完整验收边界见 [视频模型验收](../docs/design/video-model-acceptance.md)。
 
 LTX 的 `video.generate`、`audio=false` 路径已经可以通过公共 native engine 创建；默认 residency 为 `component_staged`，使用动态 Gemma/connected conditioning、双阶段 Transformer，以及 ltx-mac 已验证的 C++/MLX clean-exec Video VAE finalizer。CLI 默认在用户 Caches 目录持久化 identity-bound conditioning。I2V 和音频仍然是 capability-gated candidate，不会因为模型描述为可执行而被静默放行。`tc_ltx_audio_preflight_json` 只做只读 provenance/能力检查，不执行外部 Python finalizer。
 

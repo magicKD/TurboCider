@@ -23,7 +23,7 @@ lib.tc_ltx_lora_preflight_json.argtypes = [
     C.c_char_p, C.c_char_p, C.c_float,
     C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)
 ]
-lib.tc_fastmetal_lora_preflight_json.argtypes = [
+lib.tc_wan_lora_preflight_json.argtypes = [
     C.c_char_p, C.c_char_p, C.c_float,
     C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)
 ]
@@ -100,22 +100,22 @@ class ContractTests(unittest.TestCase):
             'model':'z-image-turbo-gguf', 'operation':'image.generate',
             'prompt':'A red fox in snow', 'output':'/tmp/z-image-gguf.png',
             'width':1024, 'height':1024, 'frames':1, 'steps':9,
-            'audio':False, 'execution':'gpu', 'model_variant':'Q4_K_M',
+            'audio':False, 'execution':'gpu', 'model_variant':'Q8_0',
             'loras':[{'path':'/tmp/z-image-style.safetensors',
                       'role':'transformer','strength':0.7}],
         }
         code,p,error=plan(request)
         self.assertEqual(code,0,error)
         self.assertTrue(p['executable'])
-        self.assertEqual(p['backend'],'stable_diffusion_cpp_metal')
-        self.assertEqual(p['gpu_graph'],'resident_sd_cpp_gguf')
+        self.assertEqual(p['backend'],'mlx_cpp_metal_gguf')
+        self.assertEqual(p['gpu_graph'],'native_quantized_blocks')
         self.assertEqual(p['precision'],'checkpoint_defined_gguf')
         self.assertEqual(p['lora_strategy'],'inference_time')
-        self.assertEqual(p['lora_fusion'],'sd_cpp_request_time')
+        self.assertEqual(p['lora_fusion'],'inference_time_low_rank')
         self.assertEqual(p['validation'],'native_gguf_candidate')
         self.assertEqual([stage['id'] for stage in p['stages']],
-                         ['native_server_load','text_encode','denoise','vae_decode','export'])
-        self.assertEqual(p['stages'][2]['iterations'],9)
+                         ['text_encode','denoise','vae_decode','export'])
+        self.assertEqual(p['stages'][1]['iterations'],9)
         self.assertNotEqual(plan({**request,'steps':8})[0],0)
         hybrid={**request,'model_variant':'Q8_0','execution':'gpu_ane',
                 'allow_approximation':True,
@@ -130,49 +130,18 @@ class ContractTests(unittest.TestCase):
         self.assertNotEqual(plan({**request,'loras':[{
             'path':'/tmp/z-image-style.safetensors',
             'role':'text_encoder','strength':0.7}]})[0],0)
-        session=(ROOT/'native/platform/apple/sd_cpp_session.mm').read_text()
-        for token in ['TURBOCIDER_SD_CPP_BIN', '--diffusion-model',
-                      '--diffusion-fa', '--diffusion-conv-direct',
-                      '@"--params-backend", @"diffusion=cpu,te=disk,vae=disk"',
-                      '@"--stream-layers"',
-                      '@"--cfg-scale", @"1.0"',
-                      '/sdcpp/v1/img_gen', '/sdcpp/v1/jobs/',
-                      '@"lora"', '@"multiplier"', 'validate_gguf_header',
-                      'TURBOCIDER_Z_GGUF_NATIVE_GPU', 'native_mlx_gguf_supported',
-                      'gpu_ane_native_mlx_gguf']:
-            self.assertIn(token,session)
-        self.assertIn('usleep(100000);',session)
-        streaming={**request,
-                   'residency':'streaming',
-                   'streaming_offload':True,
-                   'memory_budget_bytes':8*(1<<30),
-                   'loras':[]}
-        code,p,error=plan(streaming)
-        self.assertEqual(code,0,error)
-        self.assertEqual(p['residency'],'streaming')
-        self.assertTrue(p['streaming_offload'])
-        self.assertEqual(p['backend'],'stable_diffusion_cpp_metal')
-        self.assertEqual(p['memory_budget_bytes'],8*(1<<30))
-        self.assertEqual(p['memory_budget_scope'],'sd_cpp_max_vram_hint_not_process_cap')
-        self.assertNotEqual(plan({**streaming,'memory_budget_bytes':0})[0],0)
-        self.assertNotEqual(plan({**streaming,'execution':'gpu_ane',
-                                  'allow_approximation':True,
-                                  'ane_manifest':'/tmp/z.json'})[0],0)
-        self.assertNotEqual(plan({**streaming,'lora_strategy':'in_memory_merge',
-                                  'loras':[{'path':'/tmp/a.safetensors',
-                                            'role':'transformer','strength':1.0}]})[0],0)
-        for quantization in [
-            'q2_k', 'q3_k_s', 'q3_k_m', 'q3_k_l',
-            'q4_0', 'q4_1', 'q4_k_s', 'q4_k_m',
-            'q5_0', 'q5_1', 'q5_k_s', 'q5_k_m',
-            'q6_k', 'q8_0', 'iq4_nl', 'iq4_xs',
-            'f16', 'bf16', 'f32',
-        ]:
-            self.assertIn(f'"{quantization}"',session)
-        benchmark=(ROOT/'tools/native/benchmark_z_image_gguf.py').read_text()
-        self.assertIn('default=1.0',benchmark)
-        self.assertIn('within_measurement_noise',benchmark)
-        self.assertIn('time.sleep(0.1)',benchmark)
+        session=(ROOT/'native/models/z_image/gguf.cpp').read_text()
+        self.assertNotIn('NSTask',session)
+        self.assertNotIn('getenv',session)
+        self.assertIn('validate_native_gguf',session)
+        streaming={**request, 'residency':'streaming', 'streaming_offload':True,
+                   'memory_budget_bytes':8*(1<<30), 'loras':[]}
+        self.assertNotEqual(plan(streaming)[0],0)
+        self.assertNotEqual(plan({**request,'streaming_offload':True})[0],0)
+        models=json.loads(consume(C.c_void_p(lib.tc_models_json())))
+        descriptor=next(d for d in models['models'] if d['id']=='z-image-turbo-gguf')
+        self.assertEqual(descriptor['backend'],'mlx_cpp_metal_gguf')
+        self.assertEqual(descriptor['runtime_dependency'],'bundled-native-mlx-cpp')
 
     def test_z_image_comfy_sampler_precision_contract(self):
         source=(ROOT/'native/models/z_image/z_image.cpp').read_text()
@@ -266,7 +235,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn('bool load_only = false',llada)
         self.assertIn('run(request, event, cancelled, warmup, !warmup)',llada)
         self.assertIn('if (load_only) {',llada)
-        self.assertIn('return native_->prepare(request, warmup, event, cancelled);',
+        self.assertIn('return native().prepare(request, warmup, event, cancelled);',
                       llada_session)
 
     def test_z_image_sharded_hybrid_provenance_contract(self):
@@ -280,32 +249,47 @@ class ContractTests(unittest.TestCase):
         self.assertIn('checkpoint_shards',coreml)
         self.assertIn('std::filesystem::file_size(checkpoint)',coreml)
         self.assertIn('sha256_file(checkpoint)',coreml)
-        self.assertIn('diffusion_pytorch_model.safetensors.index.json',resources)
+        self.assertIn('diffusion_pytorch_model.safetensors.index.json',exporter)
         self.assertIn('class SafetensorsSource',exporter)
         self.assertIn('self.weight_map.get(name)',exporter)
         self.assertIn('checkpoint_shards',exporter)
         self.assertIn('!f.is_symlink()',mlx)
         self.assertIn('f.is_regular_file()',mlx)
 
-    def test_coreml_lora_export_uses_identity_scoped_output(self):
+    def test_coreml_export_is_offline_only(self):
+        lib.tc_coreml_resources_json.argtypes = [C.c_char_p, C.c_void_p,
+            C.c_void_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
+        out, err = C.c_void_p(), C.c_void_p()
+        status = lib.tc_coreml_resources_json(b'{"action":"export"}',
+            None, None, C.byref(out), C.byref(err))
+        result, error = consume(out), consume(err)
+        self.assertNotEqual(status, 0)
+        self.assertIsNone(result)
+        self.assertIn('offline-only', error)
         resources=(ROOT/'native/backends/coreml_resources.mm').read_text()
-        scoped=resources.index('storage=storage.parent_path()/(storage.filename().string()+"-lora-"')
-        output_argument=resources.index('NSMutableArray<NSString*> *export_arguments=')
-        self.assertLess(scoped,output_argument)
-        self.assertIn('[export_arguments addObjectsFromArray:lora_arguments]',resources)
+        self.assertIn('Core ML export is offline-only',resources)
+        self.assertNotIn('NSTask',resources)
+        self.assertNotIn('export_arguments',resources)
+        for name in ['export_flux2.py', 'export_z_image.py']:
+            exporter=(ROOT/'tools/coreml'/name).read_text()
+            self.assertIn('lora_records',exporter)
+            self.assertIn('export identity changed',exporter)
 
     def test_flux_text_taps_are_config_guarded_and_dead_tail_is_elided(self):
         platform=(ROOT/'native/platform/apple/device.mm').read_text()
         encoder=(ROOT/'native/models/flux2/flux_text.cpp').read_text()
+        shared=(ROOT/'native/components/text/qwen3.cpp').read_text()
+        header=(ROOT/'native/components/text/qwen3.hpp').read_text()
         self.assertIn('[q[@"num_hidden_layers"] intValue] == 36',platform)
         self.assertIn('[q[@"num_attention_heads"] intValue] == 32',platform)
         self.assertIn('[q[@"num_key_value_heads"] intValue] == 8',platform)
-        # The C++ FLUX text path is deliberately bounded to the three tap
-        # layers used by Klein; it must not execute the dead tail of the
-        # source checkpoint.
-        self.assertIn('for (int i = 0; i < 27; ++i)',encoder)
-        self.assertIn('if (i == 8 || i == 17 || i == 26)',encoder)
-        self.assertNotIn('for (int i = 0; i < 36;',encoder)
+        # FLUX and Z-Image share the Qwen3 implementation; the consumer only
+        # selects the tap policy.  The loop is bounded by the final requested
+        # tap, so Klein does not execute the dead tail of the checkpoint.
+        self.assertIn('Qwen3Conditioning::flux_klein()', encoder)
+        self.assertIn('config.output_layers = {8, 17, 26}', shared)
+        self.assertIn('const int layers = config.output_layers.back() + 1', shared)
+        self.assertIn('std::vector<int> output_layers', header)
 
     def test_flux_prepare_returns_resolved_execution_plan(self):
         source=(ROOT/'native/models/flux2/pipeline.cpp').read_text()
@@ -401,7 +385,7 @@ class ContractTests(unittest.TestCase):
             'z-image-turbo-gguf':(['inference_time','in_memory_merge'],'inference_time'),
             'minimax-h3-turbo':(['disk_premerge'],'disk_premerge'),
             'ltx-2.5-distilled':(['disk_premerge'],'disk_premerge'),
-            'fastmetal-1.3b-qad':(['disk_premerge'],'disk_premerge'),
+            'wan2.1-1.3b-qad':(['disk_premerge'],'disk_premerge'),
             'llada-image-turbo':([],None),
         }
         for model_id,(strategies,default) in expected.items():
@@ -449,9 +433,9 @@ class ContractTests(unittest.TestCase):
         self.assertIn('mux',{stage['id'] for stage in p['stages']})
         code,p,error=plan({'model':'ltx-2.5-distilled','width':704,'height':448,'frames':97,'steps':11,'loras':[{'path':'/tmp/ltx.safetensors','role':'refiner','strength':0.8}]})
         self.assertEqual(code,0,error)
-        self.assertEqual(p['lora_fusion'],'runtime_bake_cache')
+        self.assertEqual(p['lora_fusion'],'premerged_manifest_verified')
         self.assertEqual(p['lora_strategy'],'disk_premerge')
-        self.assertEqual(p['weight_validation'],'runtime-cache-or-sidecar-verified-at-execution')
+        self.assertEqual(p['weight_validation'],'premerged-sidecar-verified-at-execution')
         self.assertNotEqual(plan({'model':'ltx-2.5-distilled','width':704,'height':448,'frames':97,'steps':11,'loras':[{'path':'/tmp/ltx.safetensors','role':'text_encoder','strength':0.8}]})[0],0)
         self.assertNotEqual(plan({'model':'ltx-2.5-distilled','width':704,'height':448,'frames':97,'steps':11,'loras':[{'path':'/tmp/ltx.safetensors','strength':-0.8}]})[0],0)
 
@@ -745,7 +729,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(p['weight_validation'],'manifest-verified')
         code,p,error=plan({'model':'minimax-h3-turbo','frames':22,'width':512,'height':512,'steps':4,'loras':[{'path':'/tmp/h3.safetensors','strength':0.0625}]})
         self.assertEqual(code,0,error)
-        self.assertEqual(p['lora_fusion'],'runtime_bake_cache')
+        self.assertEqual(p['lora_fusion'],'premerged_manifest_verified')
         self.assertEqual(p['lora_strategy'],'disk_premerge')
         self.assertNotEqual(plan({'model':'minimax-h3-turbo','frames':22,'width':512,'height':512,'steps':4,'loras':[{'path':'/tmp/h3.safetensors','role':'text_encoder'}]})[0],0)
         hybrid={'model':'minimax-h3-turbo','frames':22,'width':512,
@@ -824,14 +808,14 @@ class ContractTests(unittest.TestCase):
         self.assertNotEqual(code,0)
         self.assertIn('two-slot minimum',error)
 
-    def test_fastmetal_is_an_executable_persistent_runtime_candidate(self):
-        request={'model':'fastmetal-1.3b-qad','width':832,'height':480,
+    def test_wan_is_an_executable_persistent_runtime_candidate(self):
+        request={'model':'wan2.1-1.3b-qad','width':832,'height':480,
                  'frames':81,'fps':16,'steps':3}
         code,p,error=plan(request)
         self.assertEqual(code,0,error)
         self.assertTrue(p['executable'])
-        self.assertEqual(p['backend'],'fastmetal-mlx')
-        self.assertEqual(p['validation'],'manifest_verified_python_runtime')
+        self.assertEqual(p['backend'],'wan-mlx')
+        self.assertEqual(p['validation'],'manifest_verified_native')
         self.assertEqual([s['id'] for s in p['stages']],
                          ['text_encode','dit','video_vae','export'])
         for invalid in [
@@ -852,22 +836,24 @@ class ContractTests(unittest.TestCase):
                                   'ane_manifest':'/tmp/fastmetal-ane.json',
                                   'loras':[{'path':'/tmp/fastmetal.safetensors',
                                             'role':'transformer','strength':0.8}]})[0],0)
-        source=(ROOT/'native/platform/apple/fastmetal_session.mm').read_text()
-        self.assertIn('PersistentWorker',source)
-        self.assertIn('fastmetal-python-persistent',source)
-        self.assertIn('uses_parent_mlx() const override { return false; }',source)
-        self.assertIn('turbocider-fastmetal-premerged-lora-v1',source)
-        self.assertIn('--mlx-checkpoint', (ROOT/'tools/native/fastmetal_worker.py').read_text())
-        self.assertIn('turbocider-fastmetal-v1', (ROOT/'profiles/fastmetal.example.json').read_text())
+        source=(ROOT/'native/platform/apple/wan_session.mm').read_text()
+        self.assertNotIn('PersistentWorker',source)
+        self.assertNotIn('posix_spawn',source)
+        self.assertNotIn('getenv(',source)
+        self.assertIn('uses_parent_mlx() const override { return true; }',source)
+        self.assertIn('wan::Pipeline',source)
+        self.assertIn('turbocider-wan-premerged-lora-v1',source)
+        self.assertNotIn('fastmetal_worker.py', (ROOT/'tools/native/package.sh').read_text())
         models=json.loads(consume(C.c_void_p(lib.tc_models_json())))['models']
-        descriptor=next(value for value in models if value['id']=='fastmetal-1.3b-qad')
+        descriptor=next(value for value in models if value['id']=='wan2.1-1.3b-qad')
+        self.assertEqual(descriptor['runtime_dependency'], 'native')
         self.assertTrue(descriptor['supports_lora'])
         self.assertFalse(descriptor['runtime_lora'])
         self.assertEqual(descriptor['lora_mode'],'premerged-manifest')
         self.assertEqual(descriptor['lora_strategies'],['disk_premerge'])
         self.assertEqual(descriptor['default_lora_strategy'],'disk_premerge')
 
-    def test_fastmetal_gpu_ane_manifest_requires_complete_fixed_shape_tree(self):
+    def test_wan_gpu_ane_manifest_requires_complete_fixed_shape_tree(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
             for block in range(30):
@@ -884,13 +870,13 @@ class ContractTests(unittest.TestCase):
                 'artifacts':{str(i):f'block{i}.mlmodelc' for i in range(30)},
             }
             path=root/'manifest.json';path.write_text(json.dumps(manifest))
-            request={'model':'fastmetal-1.3b-qad','execution':'gpu_ane',
+            request={'model':'wan2.1-1.3b-qad','execution':'gpu_ane',
                      'allow_approximation':True,
                      'ane_manifest':str(path),'width':832,'height':480,
                      'frames':81,'fps':16,'steps':3}
             code,p,error=plan(request)
             self.assertEqual(code,0,error)
-            self.assertEqual(p['backend'],'fastmetal-mlx+ane_parallel')
+            self.assertEqual(p['backend'],'wan-mlx+coreml')
             code,p,error=plan({**request,'allow_approximation':False})
             self.assertNotEqual(code,0)
             self.assertIn('allow_approximation=true',error)
@@ -899,7 +885,7 @@ class ContractTests(unittest.TestCase):
             self.assertNotEqual(code,0)
             self.assertIn('ANE block artifact',error)
 
-    def test_fastmetal_lora_preflight_binds_pinned_base_and_merged_checkpoint(self):
+    def test_wan_lora_preflight_binds_pinned_base_and_merged_checkpoint(self):
         configured=os.environ.get('TURBOCIDER_FASTMETAL_TEST_MODEL')
         fixture=(Path(configured).resolve() if configured else
                  (ROOT.parent/'gpu_ane/fastmetal-runtime/models/FastMetal-1.3B-QAD').resolve())
@@ -968,7 +954,7 @@ class ContractTests(unittest.TestCase):
 
             def preflight(strength=0.8):
                 out,err=C.c_void_p(),C.c_void_p()
-                code=lib.tc_fastmetal_lora_preflight_json(
+                code=lib.tc_wan_lora_preflight_json(
                     str(model).encode(),str(lora).encode(),C.c_float(strength),
                     C.byref(out),C.byref(err))
                 value,failure=consume(out),consume(err)
@@ -1102,8 +1088,8 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(model['native_i2v_clean_prefix'])
         self.assertTrue(model['native_gpu_ane_profile'])
         self.assertTrue(model['supports_lora'])
-        self.assertTrue(model['runtime_lora'])
-        self.assertEqual(model['lora_mode'],'runtime-bake-cache')
+        self.assertFalse(model['runtime_lora'])
+        self.assertEqual(model['lora_mode'],'premerged-manifest')
         self.assertEqual(model['lora_strategies'],['disk_premerge'])
         self.assertEqual(model['default_lora_strategy'],'disk_premerge')
         self.assertTrue(any('broader prompt-suite qualification remains pending'

@@ -1,6 +1,6 @@
 # TurboCider 独立运行与外部依赖边界
 
-更新时间：2026-09-08（GGUF、LLaDA 与独立发行包复核）
+更新时间：2026-09-09（GGUF 正式路径改为 native-only；sd.cpp 仅为开发对照工具）
 
 当前代码卫生和未完成项汇总见 [2026-09-07 当前状态](current-status-2026-09-07.md)。
 
@@ -29,7 +29,7 @@ TurboCider 已经是一个可以独立发布和启动的 native application/pack
 | TurboCider core、C ABI、CLI、service、Swift App | 可独立运行 | macOS 系统框架、Apple Silicon、已构建 native dylib |
 | FLUX.2 Klein 4B/9B native | 基本独立 | 用户模型目录；发行包内的 MLX dylib/metallib |
 | Z-Image Turbo native | 源码独立、base/LoRA 真实出图与 ComfyUI oracle 已验收；LoRA-bound Core ML artifact 可显式 GPU+ANE 执行 | 用户 ComfyUI split-files 或 Tongyi diffusers Qwen3/DiT/VAE/tokenizer 目录；发行包内 MLX dylib/metallib；LoRA-bound 分区按设备单独生成 |
-| Z-Image Turbo GGUF | 正式发行包内携带固定版本的 stable-diffusion.cpp CLI/server；native-compatible GGUF 也可走 MLX | 用户提供 GGUF transformer、Qwen3 text encoder 和 VAE；低内存 streaming 需要明确 memory budget |
+| Z-Image Turbo GGUF | 正式发行包只使用 native MLX GGUF，不携带 sd.cpp；mixed K-quants 和 GGUF streaming 暂不支持 | 用户提供 native-compatible GGUF transformer、tokenizer、Qwen3 text encoder 和 VAE |
 | LLaDA-Image-Turbo 文生图 | 原生 C++/MLX executor 随发行包构建，不读取兄弟 LLaDA 源码 | 用户 LLaDA checkpoint/tokenizer；可选 checkpoint-bound Core ML artifact |
 | LLaDA 图像编辑诊断 | 不属于正式 descriptor/package 能力 | 只有显式设置 worker、Python 和 source 环境变量时才可用于开发诊断 |
 | LTX video-only native | 基本独立 | 用户 LTX checkpoint/Gemma/upsampler/VAE；发行包内 MLX dylib 和 helper |

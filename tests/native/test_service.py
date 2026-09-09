@@ -32,7 +32,7 @@ def main():
    time.sleep(.1)
   assert rpc({'action':'status','id':interrupted_id})['state']=='interrupted';checks.append('restart_marks_incomplete_interrupted')
   model_ids={model['id'] for model in rpc({'action':'models'})['models']}
-  assert {'flux2-klein-4b','flux2-klein-9b','fastmetal-1.3b-qad','minimax-h3-turbo','ltx-2.5-distilled'} <= model_ids
+  assert {'flux2-klein-4b','flux2-klein-9b','wan2.1-1.3b-qad','minimax-h3-turbo','ltx-2.5-distilled'} <= model_ids
   checks.append('registered_models')
   request={'model':'flux2-klein-4b','prompt':'A red fox sitting in a snowy forest, soft morning light, detailed photography.','width':512,'height':512,'steps':4,'seed':42,'output':str(out/'first.png')}
   def submit(r):return rpc({'action':'submit','model_path':a.model,'request':r})['id']

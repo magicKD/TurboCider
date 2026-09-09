@@ -1,14 +1,14 @@
 # TurboCider
 
-Apple Silicon 原生多模态推理系统。纯 C++/C/Objective-C++/Metal native runtime、SwiftUI App、CLI、C/Swift SDK 和本地任务服务共用一套实现；模型专用的 Apple bridge 保持在 platform/API 层，通用 runtime 不依赖 Foundation。原生推理不依赖 Python；FastMetal 仅在其明确配置的持久 worker 路径使用托管 Python/MLX。
+Apple Silicon 原生多模态推理系统。纯 C++/C/Objective-C++/Metal native runtime、SwiftUI App、CLI、C/Swift SDK 和本地任务服务共用一套实现；模型专用的 Apple bridge 保持在 platform/API 层，通用 runtime 不依赖 Foundation。Wan 已接入原生 Pipeline；H3/LTX 磁盘 LoRA 融合等运行时 Python 路径仍在清理，暂不能宣称所有用户功能都无 Python 依赖。
 
-当前注册并提供八个模型模块：FLUX.2 Klein 4B/9B、MiniMax H3 Turbo、FastMetal 1.3B QAD、LTX 2.5 Distilled、Z-Image Turbo、Z-Image Turbo GGUF 和 LLaDA-Image-Turbo。FLUX/H3/LTX/Z-Image/LLaDA 的正式路径不依赖外部模型源码仓库；FastMetal 有意保留显式配置的持久 Python/MLX worker，以复用上游 FastVideo/TAEHV。LTX 当前公开 video-only 文生视频；Z-Image 已接入 BF16、ConvRot、GGUF、独立 LoRA 和低内存 streaming 路线，M4 Max 64 GB 的 base a4096 GPU+ANE 路线已通过重复 warm 端到端门槛；优化后的纯 GPU 路径也快于 stock ComfyUI GPU。LLaDA 当前正式公开自包含的原生文生图，图像编辑和 LoRA 尚未作为发行能力开放。
+当前注册并提供八个模型模块：FLUX.2 Klein 4B/9B、MiniMax H3 Turbo、Wan 2.1 1.3B QAD、LTX 2.5 Distilled、Z-Image Turbo、Z-Image Turbo GGUF 和 LLaDA-Image-Turbo。FLUX/H3/LTX/Z-Image/LLaDA 的正式路径不依赖外部模型源码仓库；Wan 使用原生 UMT5、DiT、TAEHV 与 Core ML 分片；完整视频质量和性能验收仍在进行。LTX 当前公开 video-only 文生视频；Z-Image 已接入 BF16、ConvRot、GGUF 和独立 LoRA 路线，M4 Max 64 GB 的 base a4096 GPU+ANE 路线已通过重复 warm 端到端门槛；优化后的纯 GPU 路径也快于 stock ComfyUI GPU。LLaDA 当前正式公开自包含的原生文生图，图像编辑和 LoRA 尚未作为发行能力开放。
 
 当前完成度、真实性能和未完成项以 [2026-09-08 当前状态](docs/status/current-status-2026-09-08.md) 为准；历史实现边界见 [实现状态](docs/status/implementation-status-2026-09-06.md)，提交前检查见 [版本准备度](docs/status/release-readiness-2026-09-06.md)。
 
 ## 构建与运行
 
-需要 Apple Silicon、完整 Xcode、CPython 3.11（仅用于托管工具/显式 FastMetal worker）以及与已绑定 dylib 匹配的 MLX C++ 0.32.x。发行包的最低 macOS 版本取决于 MLX dylib 的 deployment target；可用 `TURBOCIDER_DEPLOYMENT_TARGET` 显式覆盖。
+需要 Apple Silicon、完整 Xcode、CPython（开发、离线转换及尚未原生化的 LoRA 工具）以及与已绑定 dylib 匹配的 MLX C++ 0.32.x。发行包的最低 macOS 版本取决于 MLX dylib 的 deployment target；可用 `TURBOCIDER_DEPLOYMENT_TARGET` 显式覆盖。
 
 ```sh
 make setup
@@ -45,3 +45,5 @@ App：`dist/TurboCider.app`。独立 CLI：`dist/cli/turbocider`。本机 ad-hoc
 - [FLUX 性能对比](docs/design/flux-performance-comparison.md)：保留 FLUX 专项历史对照；跨模型的最新性能和完成度以 [实现状态](docs/status/implementation-status-2026-09-06.md) 为准。
 - [GPU/ANE 并行化方案与 SVG 图](docs/design/parallel-acceleration.md)：按模型、芯片和 LoRA 门禁说明 fork/join 执行路径。
 - [H3/LTX 接入与验收](docs/design/video-model-acceptance.md)
+
+GGUF 发行路径仅使用 native MLX（Q8_0/Q4_0/Q4_1/F16/BF16/F32），暂不支持 mixed K-quants 或 GGUF streaming。App 不包含 stable-diffusion.cpp；对照工具隔离在 `tools/validation/sd_cpp/`。当前边界见 [native-only 整理说明](docs/status/native-gguf-boundary-2026-09-09.md)。

@@ -46,9 +46,6 @@ struct RunResult {
     size_t lora_applied_projections = 0;
     Timings timings;
     uint64_t active_bytes = 0, peak_bytes = 0;
-    uint64_t external_resident_bytes = 0, external_peak_resident_bytes = 0;
-    uint64_t external_physical_footprint_bytes = 0,
-             external_peak_physical_footprint_bytes = 0;
     std::optional<HybridMetrics> hybrid;
     std::string native_json;
 };
@@ -100,13 +97,5 @@ std::vector<ModelDescriptor> describe_modules();
 Recipe model_recipe(const std::string &);
 void validate_recipe(const Recipe &);
 std::vector<float> flux_sigmas(int, int);
-struct RuntimeLoRACache {
-    std::filesystem::path artifact;
-    std::filesystem::path manifest;
-    std::string cache_key;
-    bool cache_hit = false;
-};
-RuntimeLoRACache ensure_runtime_lora_cache(
-    const std::string &, const std::filesystem::path &, const LoRAAsset &,
-    const std::string &profile = "auto");
+
 } // namespace tc

@@ -58,53 +58,10 @@ static void configure_ltx_cli_environment(NSString *request) {
   if(path.length)setenv("TURBOCIDER_LTX_CONDITIONING_CACHE_DIR",path.UTF8String,0);
  }
 }
-static std::filesystem::path lora_prepare_script(const char *executable) {
- std::error_code error;
- auto executable_path_value=std::filesystem::absolute(executable,error);
- if(!error){
-  auto adjacent=executable_path_value.parent_path()/"prepare_lora.py";
-  if(std::filesystem::is_regular_file(adjacent))return adjacent;
-  auto root=executable_path_value.parent_path().parent_path().parent_path();
-  auto source=root/"tools/native/prepare_lora.py";
-  if(std::filesystem::is_regular_file(source))return source;
- }
- return {};
-}
-static int prepare_lora_main(int argc,char **argv,const char *executable) {
- if(argc<6){
-  std::cerr<<"usage: turbocider prepare-lora MODEL BASE LORA OUTPUT [options]\n";
-  return 1;
- }
- auto script=lora_prepare_script(executable);
- if(script.empty()){
-  std::cerr<<"cannot locate packaged tools/native/prepare_lora.py\n";
-  return 1;
- }
- NSTask *task=[NSTask new];
- NSMutableArray<NSString*> *arguments=[NSMutableArray array];
- if(const char *configured=std::getenv("TURBOCIDER_PREPARE_PYTHON")){
-  task.launchPath=@(configured);
- }else{
-  auto source_root=script.parent_path().parent_path().parent_path();
-  auto bundled=source_root/"Python/bin/python";
-  if(std::filesystem::is_regular_file(bundled))task.launchPath=@(bundled.c_str());
-  else {task.launchPath=@"/usr/bin/env";[arguments addObject:@"python3"];}
- }
- [arguments addObject:@(script.c_str())];
- for(int index=2;index<argc;index++) [arguments addObject:@(argv[index])];
- task.arguments=arguments;
- task.standardOutput=[NSFileHandle fileHandleWithStandardOutput];
- task.standardError=[NSFileHandle fileHandleWithStandardError];
- @try {[task launch];[task waitUntilExit];return task.terminationStatus;}
- @catch(NSException *exception){
-  std::cerr<<"cannot launch LoRA preparation tool: "<<exception.reason.UTF8String<<"\n";
-  return 1;
- }
-}
 int main(int argc,char**argv){@autoreleasepool{
- if(argc<2){std::cerr<<"turbocider coreml REQUEST.json | doctor|models|self-test|plan REQUEST.json|tokenize MODEL PROMPT|generate MODEL REQUEST.json | batch MODEL REQUEST1.json REQUEST2.json ... | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
+ if(argc<2){std::cerr<<"turbocider coreml REQUEST.json | doctor|models|self-test|plan REQUEST.json|tokenize MODEL PROMPT|generate MODEL REQUEST.json | batch MODEL REQUEST1.json REQUEST2.json ...\n";return 1;}
  std::string cmd=argv[1];char*out=nullptr,*err=nullptr;int code=0;
- if(cmd=="prepare-lora")return prepare_lora_main(argc,argv,argv[0]);
+ if(cmd=="prepare-lora"){std::cerr<<"LoRA preparation is offline-only; run python3 tools/native/prepare_lora.py MODEL BASE LORA OUTPUT [options] in the development environment\n";return 1;}
  if(cmd=="serve"&&argc==4){auto executable=executable_path(argv[0]);return tc_service_main(argv[2],argv[3],executable.c_str());}
  if(cmd=="rpc"&&argc==4)return tc_rpc_main(argv[2],argv[3]);
  if(cmd=="coreml"&&argc==3){

@@ -232,8 +232,8 @@ Request request_from_json(NSDictionary *d) {
                 "gpu_ane requires an explicit ANE manifest or partition directory");
         if (r.model == "ltx-2.5-distilled")
             validate_ltx_ane_profile(r.ane_manifest, r.width, r.height, r.frames, r.fps);
-        else if (r.model == "fastmetal-1.3b-qad")
-            validate_fastmetal_ane_manifest(r.ane_manifest);
+        else if (r.model == "wan2.1-1.3b-qad")
+            validate_wan_ane_manifest(r.ane_manifest);
         else if (r.model == "flux2-klein-4b")
             require(r.allow_approximation,
                     "FLUX gpu_ane requires allow_approximation=true");

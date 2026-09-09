@@ -1,6 +1,6 @@
 # TurboCider LoRA 执行策略
 
-更新时间：2026-09-08
+更新时间：2026-09-09
 
 TurboCider 的 schema 1、schema 2、C++ runtime、Swift binding 和 Studio App 现在使用同一个 `lora_strategy` 契约。LoRA 文件仍以独立资产传入；策略只决定基础权重和低秩增量在什么阶段组合，不会修改用户的基础 checkpoint 或 LoRA 文件。
 
@@ -9,11 +9,11 @@ TurboCider 的 schema 1、schema 2、C++ runtime、Swift binding 和 Studio App 
 | `lora_strategy` | 含义 | 磁盘行为 |
 |---|---|---|
 | `auto` | 根据模型 descriptor 的 `default_lora_strategy` 解析 | 由解析后的策略决定 |
-| `disk_premerge` | 使用 provenance-verified 的预融合 checkpoint；允许创建内容寻址 runtime cache | 可能保存一份可清理的 merged runtime artifact |
+| `disk_premerge` | 使用离线生成、provenance-verified 的预融合 checkpoint | 运行时不创建融合产物 |
 | `in_memory_merge` | 加载权重时在 unified memory 中应用 delta | 不写 merged checkpoint |
 | `inference_time` | 请求期间由执行后端加载独立 adapter | 不长期保存融合后的 checkpoint |
 
-没有 LoRA 文件时只能使用 `auto`，计划中报告 `lora_strategy=none`。带 LoRA 时，`auto` 会解析为模型默认值；未知策略以及模型未声明的策略均 fail closed。旧的 `lora_fusion` 字段继续保留，用于兼容已有 telemetry，例如 `load_time_baked`、`in_memory_delta`、`sd_cpp_request_time` 和 `runtime_bake_cache`。
+没有 LoRA 文件时只能使用 `auto`，计划中报告 `lora_strategy=none`。带 LoRA 时，`auto` 会解析为模型默认值；未知策略以及模型未声明的策略均 fail closed。旧的 `lora_fusion` 字段继续保留，用于兼容已有 telemetry，例如 `load_time_baked`、`in_memory_delta`、`inference_time_low_rank` 和 `premerged_manifest_verified`。
 
 ## 当前模型能力
 
@@ -21,13 +21,13 @@ TurboCider 的 schema 1、schema 2、C++ runtime、Swift binding 和 Studio App 
 |---|---|---|---|
 | FLUX.2 Klein 4B/9B | `in_memory_merge` | `in_memory_merge` | Transformer/Text Encoder 在加载时融合；不写 merged checkpoint |
 | Z-Image Turbo safetensors | `in_memory_merge`、`inference_time` | `in_memory_merge` | BF16 内存融合已完成 ComfyUI parity；packed ConvRot 可用低秩运行时分支保持量化基础权重 |
-| Z-Image Turbo GGUF | `inference_time`、`in_memory_merge` | `inference_time` | mixed K-quant 使用 resident sd.cpp；Q8_0/Q4_0/Q4_1/F16/BF16/F32 可选择 native MLX 内存融合或 packed 低秩分支 |
-| MiniMax H3 Turbo | `disk_premerge` | `disk_premerge` | 使用已安装 sidecar 或内容寻址 runtime bake cache |
-| LTX 2.5 Distilled | `disk_premerge` | `disk_premerge` | 使用已安装 sidecar 或内容寻址 runtime bake cache |
-| FastMetal 1.3B QAD | `disk_premerge` | `disk_premerge` | 要求预融合 checkpoint 和完整 provenance manifest |
+| Z-Image Turbo GGUF | `inference_time`、`in_memory_merge` | `inference_time` | Q8_0/Q4_0/Q4_1/F16/BF16/F32 使用 native MLX 内存融合或 packed 低秩分支；mixed K-quant 不支持 |
+| MiniMax H3 Turbo | `disk_premerge` | `disk_premerge` | 仅使用已安装的预融合 checkpoint 与验证通过的 sidecar；不启动 Python |
+| LTX 2.5 Distilled | `disk_premerge` | `disk_premerge` | 仅使用已安装的预融合 checkpoint 与验证通过的 sidecar；不启动 Python |
+| Wan 2.1 1.3B QAD | `disk_premerge` | `disk_premerge` | 要求预融合 checkpoint 和完整 provenance manifest；ANE 仍需单独匹配 artifact |
 | LLaDA-Image-Turbo | 无 | 无 | 当前原生 executor 拒绝 LoRA；旧 worker 仅是显式诊断入口 |
 
-Z-Image GGUF 的策略会和 checkpoint 格式共同决定后端：mixed K-quant 的 `inference_time` 使用 resident sd.cpp 请求期 adapter；对 Q8_0/Q4_0/Q4_1/F16/BF16/F32 设置 `TURBOCIDER_Z_GGUF_NATIVE_GPU=1` 后，`inference_time` 可进入 native MLX packed-base 低秩分支。`in_memory_merge` 始终要求 native-compatible checkpoint，并在其他量化格式上 fail closed。运行结果的 `runtime_backend` 和 runtime `plan.lora_fusion` 记录实际选择，不能只根据静态请求推断。带 LoRA 的 `gpu_ane` 只允许 `in_memory_merge`，因为当前 Core ML 分区需要先得到融合后的对应权重并绑定相同 adapter provenance。
+Z-Image GGUF 只使用 native MLX，默认 inference_time，也支持显式 in_memory_merge。不再使用后端环境变量或 sd.cpp fallback；不支持的 tensor 类型在加载时拒绝。带 LoRA 的 gpu_ane 只允许 in_memory_merge，且 Core ML 分区必须绑定相同 adapter provenance。
 
 ## 请求示例
 
@@ -37,7 +37,7 @@ Schema 1：
 {
   "schema_version": 1,
   "model": "z-image-turbo-gguf",
-  "model_variant": "Q4_K_M",
+  "model_variant": "Q8_0",
   "lora_strategy": "inference_time",
   "loras": [
     {"path": "models/loras/style.safetensors", "role": "transformer", "strength": 0.8}

@@ -1,13 +1,13 @@
 #include "bridge.hpp"
 namespace tc {
 static NSString *gpu_graph_label(const Request &r) {
+    if (r.model == "wan2.1-1.3b-qad")
+        return r.execution == "gpu_ane" ? @"compiled_mlp_complement" :
+            (r.compile_gpu ? @"compiled_whole_dit" : @"eager_blocks");
     if (r.model == "z-image-turbo-gguf") {
         if (r.execution == "gpu_ane")
             return @"compiled_mlp_complement";
-        if (r.streaming_offload || r.residency == "streaming")
-            return @"streamed_sd_cpp_gguf";
-        return effective_lora_strategy(r) == "in_memory_merge"
-            ? @"native_quantized_blocks" : @"resident_sd_cpp_gguf";
+        return @"native_quantized_blocks";
     }
     if (r.model == "z-image-turbo" && r.execution == "gpu_ane")
         return @"compiled_mlp_complement";
@@ -19,9 +19,6 @@ static NSString *gpu_graph_label(const Request &r) {
                                        : @"compiled_single_blocks";
 }
 static NSString *gpu_graph_label(const RunResult &result) {
-    if (result.backend.starts_with("stable-diffusion-cpp-metal"))
-        return result.request.streaming_offload || result.request.residency == "streaming"
-            ? @"streamed_sd_cpp_gguf" : @"resident_sd_cpp_gguf";
     if (result.backend == "mlx_cpp_metal_gguf+coreml")
         return @"compiled_mlp_complement";
     if (result.backend == "mlx_cpp_metal_gguf")
@@ -93,7 +90,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     auto validation = r.model == "z-image-turbo-gguf" ? @"native_gguf_candidate" :
                       r.model.starts_with("flux2-klein-") ? @"native_candidate" :
                       r.model == "minimax-h3-turbo" ? @"manifest_verified_native" :
-                      r.model == "fastmetal-1.3b-qad" ? @"manifest_verified_python_runtime" :
+                      r.model == "wan2.1-1.3b-qad" ? @"manifest_verified_native" :
                       r.model == "ltx-2.5-distilled" ?
                           (recipe.executable ? @"native_video_executor" : @"native_capability_gated") :
                       r.model == "z-image-turbo" ? @"native_candidate" :
@@ -103,11 +100,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             @"GGUF header checked at load; paired output parity pending" :
         r.model.starts_with("flux2-klein-") ? @"see parity evidence" :
         r.model == "minimax-h3-turbo" ?
-            (r.loras.empty() ? @"manifest-verified" : @"runtime-cache-or-sidecar-verified-at-execution") :
-        r.model == "fastmetal-1.3b-qad" ?
+            (r.loras.empty() ? @"manifest-verified" : @"premerged-sidecar-verified-at-execution") :
+        r.model == "wan2.1-1.3b-qad" ?
             (r.loras.empty() ? @"checkpoint-and-ane-identity-verified-at-load" : @"premerged-manifest-verified-at-execution") :
         r.model == "ltx-2.5-distilled" ?
-            (r.loras.empty() ? @"checkpoint-validated-at-load" : @"runtime-cache-or-sidecar-verified-at-execution") :
+            (r.loras.empty() ? @"checkpoint-validated-at-load" : @"premerged-sidecar-verified-at-execution") :
         r.model == "z-image-turbo" ?
             (r.loras.empty() ? @"comfy-oracle-validated; m4max-a4096-hybrid-qualified" :
                                @"in-memory-lora; comfy-oracle-validated") :
@@ -116,21 +113,20 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"pending";
     auto lora_fusion = lora_strategy == "none" ? @"none" :
         (lora_strategy == "inference_time" ?
-            (r.model == "z-image-turbo-gguf" ? @"sd_cpp_request_time"
-                                               : @"inference_time_low_rank") :
+            @"inference_time_low_rank" :
          lora_strategy == "in_memory_merge" ?
             (r.model.starts_with("flux2-klein-") ? @"load_time_baked" : @"in_memory_delta") :
-         r.model == "fastmetal-1.3b-qad" ? @"premerged_manifest_verified" :
-         @"runtime_bake_cache");
+         r.model == "wan2.1-1.3b-qad" ? @"premerged_manifest_verified" :
+         @"premerged_manifest_verified");
     auto backend = hybrid ?
-        (r.model == "fastmetal-1.3b-qad" ? @"fastmetal-mlx+ane_parallel" :
-         r.model == "ltx-2.5-distilled" ? @"ltx-gpu+ane" : @"mlx_cpp_metal+coreml") :
+        (r.model == "wan2.1-1.3b-qad" ? @"wan-mlx+coreml" :
+         r.model == "ltx-2.5-distilled" ? @"ltx-gpu+ane" :
+         r.model == "z-image-turbo-gguf" ? @"mlx_cpp_metal_gguf+coreml" : @"mlx_cpp_metal+coreml") :
         r.model == "z-image-turbo-gguf" ?
-            (lora_strategy == "in_memory_merge" ? @"mlx_cpp_metal_gguf"
-                                                  : @"stable_diffusion_cpp_metal") :
+            @"mlx_cpp_metal_gguf" :
         r.model == "minimax-h3-turbo" ? @"h3-metal-mps" :
         r.model == "ltx-2.5-distilled" ? @"ltx-metal-mps" :
-        r.model == "fastmetal-1.3b-qad" ? @"fastmetal-mlx" :
+        r.model == "wan2.1-1.3b-qad" ? @"wan-mlx" :
         r.model == "llada-image-turbo" ? @"mlx_cpp_metal" :
             @"mlx_cpp_metal";
     int dw = r.width, dh = r.height;
@@ -155,7 +151,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"backend" : backend,
         @"execution" : hybrid ? @"gpu_ane_experimental" : @"gpu",
         @"gpu_graph" : gpu_graph_label(r),
-        @"precision" : r.model == "z-image-turbo-gguf" ? @"checkpoint_defined_gguf" :
+        @"precision" : r.model == "wan2.1-1.3b-qad" ? @"fp16-int8-affine-dit+bf16-umt5+fp32-taehv" :
+                      r.model == "z-image-turbo-gguf" ? @"checkpoint_defined_gguf" :
             (!r.quantized_cache.empty() ? @"int8_weight_bf16_activation_streamed" :
              (hybrid ? @"bf16_gpu+int8_mlp_fp16_io" : @"bf16")),
         @"algorithm_approximations" : r.model == "z-image-turbo-gguf" ?
@@ -172,10 +169,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"memory_budget_bytes" : r.memory_budget_bytes ? @(r.memory_budget_bytes)
                                                         : [NSNull null],
         @"memory_budget_scope" :
-            (r.model == "z-image-turbo-gguf" &&
-             (r.streaming_offload || r.residency == "streaming"))
-                ? @"sd_cpp_max_vram_hint_not_process_cap"
-                : (r.model == "minimax-h3-turbo" &&
+            (r.model == "minimax-h3-turbo" &&
                    r.residency == "streamed" && r.memory_budget_bytes)
                     ? @"h3_dit_working_set_target_not_process_cap"
                 : (r.memory_budget_bytes ? @"runtime_request_budget" : @"unset"),
@@ -195,7 +189,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"audio_capability" : r.model == "ltx-2.5-distilled" ?
             (r.audio ? @"latent_to_48khz_aac_candidate" : @"video_only_native") : @"not_applicable",
         @"executor_operations" : r.model == "ltx-2.5-distilled" ? @[ @"video.generate" ] :
-            (r.model == "fastmetal-1.3b-qad" ? @[ @"video.generate" ] : [NSNull null]),
+            (r.model == "wan2.1-1.3b-qad" ? @[ @"video.generate" ] : [NSNull null]),
         @"limitation" : recipe.executable
             ? @"capabilities depend on model artifacts and configured hardware"
             : @"native executor migration incomplete"
@@ -211,25 +205,16 @@ static NSDictionary *runtime_plan(const RunResult &result) {
     const bool hybrid = result.request.execution == "gpu_ane";
     plan[@"execution"] = hybrid ? @"gpu_ane_experimental" : @"gpu";
     if (result.request.model == "z-image-turbo-gguf") {
-        const bool native = result.backend.starts_with("mlx_cpp_metal_gguf");
-        const bool streaming = result.request.streaming_offload ||
-                               result.request.residency == "streaming";
-        plan[@"validation"] = native
-            ? (hybrid ? @"checkpoint_bound_native_gguf_hybrid_candidate"
-                      : @"native_mlx_gguf_candidate")
-            : (streaming ? @"streamed_sd_cpp_gguf_candidate"
-                         : @"resident_sd_cpp_gguf");
-        plan[@"weight_validation"] = native
-            ? (hybrid ? @"GGUF checkpoint and Core ML manifest verified at execution"
-                      : @"GGUF loaded directly by native MLX")
-            : (streaming
-                   ? @"GGUF header and CPU-staged sd.cpp layer-streaming runtime verified at load"
-                   : @"GGUF header and resident sd.cpp runtime verified at load");
+        plan[@"validation"] = hybrid ? @"checkpoint_bound_native_gguf_hybrid_candidate"
+                                     : @"native_mlx_gguf_candidate";
+        plan[@"weight_validation"] = hybrid
+            ? @"GGUF checkpoint and Core ML manifest verified at execution"
+            : @"GGUF loaded directly by native MLX";
         if (!result.request.loras.empty()) {
             const auto strategy = effective_lora_strategy(result.request);
             plan[@"lora_strategy"] = @(strategy.c_str());
             plan[@"lora_fusion"] = strategy == "inference_time"
-                ? (native ? @"inference_time_low_rank" : @"sd_cpp_request_time")
+                ? @"inference_time_low_rank"
                 : @"in_memory_delta";
         }
         plan[@"algorithm_approximations"] = hybrid
@@ -342,16 +327,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"mlx_active_bytes" : @(result.active_bytes),
             @"hybrid" : hybrid
         };
-    NSDictionary *memory = result.external_physical_footprint_bytes
-        ? @{
-              @"resident_bytes" : @(result.external_resident_bytes),
-              @"sampled_peak_resident_bytes" : @(result.external_peak_resident_bytes),
-              @"physical_footprint_bytes" : @(result.external_physical_footprint_bytes),
-              @"peak_physical_footprint_bytes" :
-                  @(result.external_peak_physical_footprint_bytes),
-              @"scope" : @"sd-server child process; peak resident sampled at job polling cadence"
-          }
-        : @{
+    NSDictionary *memory = @{
               @"mlx_peak_bytes" : @(result.peak_bytes),
               @"mlx_active_bytes" : @(result.active_bytes),
               @"scope" : @"MLX allocator; excludes Core ML/OS/file cache"

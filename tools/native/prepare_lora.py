@@ -2,7 +2,8 @@
 """Dispatch TurboCider LoRA preparation to its bundled merge tools.
 
 The audited H3 safetensors and LTX ConvRot implementations live beside this
-entrypoint and are packaged with TurboCider. Preparation leaves a provenance
+entrypoint in the development repository, not the App/CLI release package.
+Preparation leaves a provenance
 manifest beside the merged checkpoint. Native inference itself does not
 require Python once the optional prepared artifact exists.
 """

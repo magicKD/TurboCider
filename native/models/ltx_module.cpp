@@ -49,7 +49,7 @@ ModelModule ltx_module() {
                 d.inputs = {"text", "image"}; d.roles = {"first_frame"}; d.max_images = 1;
                 d.output = "video"; d.steps = 11; d.frames = 97; d.width = 704; d.height = 448; d.fps = 24;
                 d.default_audio = false; d.default_residency = "component_staged";
-                d.supports_lora = true; d.runtime_lora = true; d.lora_mode = "runtime-bake-cache";
+                d.supports_lora = true; d.runtime_lora = false; d.lora_mode = "premerged-manifest";
                 d.lora_strategies = {"disk_premerge"};
                 d.default_lora_strategy = "disk_premerge";
                 d.request_lora_identity_validation = true; d.supports_gpu_ane = true;
@@ -60,7 +60,7 @@ ModelModule ltx_module() {
                 d.candidate_limitations = {
                     "broader prompt-suite qualification remains pending",
                     "native Audio VAE/base-vocoder/BWE and AVFoundation AAC mux are validated on local fixtures; end-to-end native Session parity still pending",
-                    "LoRA is identity-bound through a runtime cache or verified sidecar manifest"
+                    "LoRA requires an offline-premerged checkpoint and verified sidecar manifest"
                 };
                 d.native_gemma4_candidate = true; d.native_conditioning_connector = true;
                 d.native_i2v_clean_prefix = true; d.native_gpu_ane_profile = true;

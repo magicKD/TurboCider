@@ -94,6 +94,14 @@ struct StudioDraft: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         modelID = try c.decodeIfPresent(String.self, forKey: .modelID) ?? modelID
         modelPaths = try c.decodeIfPresent([String: String].self, forKey: .modelPaths) ?? modelPaths
+        // Migrate saved drafts, not runtime model aliases. Preserve the old
+        // path entry as user data, and never overwrite an explicit Wan path.
+        let legacyWanID = "fastmetal-1.3b-qad"
+        let wanID = "wan2.1-1.3b-qad"
+        if modelID == legacyWanID { modelID = wanID }
+        if modelPaths[wanID] == nil, let path = modelPaths[legacyWanID] {
+            modelPaths[wanID] = path
+        }
         operation = try c.decodeIfPresent(String.self, forKey: .operation) ?? operation
         prompt = try c.decodeIfPresent(String.self, forKey: .prompt) ?? prompt
         width = try c.decodeIfPresent(Int.self, forKey: .width) ?? width
@@ -134,20 +142,10 @@ struct StudioDraft: Codable, Sendable {
         var result: [String: Any] = ["action": action, "model": modelID,
                                      "model_root": modelPath]
         for (key, value) in [("manifest", config.manifest), ("source_manifest", config.sourceManifest),
-                             ("storage", config.coreMLStorage ?? ""), ("cache", config.coreMLCache ?? ""),
-                             ("python", config.exportPython ?? ""), ("python_path", config.exportPythonPath ?? "")] where !value.isEmpty {
+                             ("storage", config.coreMLStorage ?? ""), ("cache", config.coreMLCache ?? "")] where !value.isEmpty {
             result[key] = value
         }
-        // Disk inventory must not open an unrelated, potentially unavailable build profile.
-        if action == "export" {
-            let profile = config.exportProfile ?? profilePath
-            if !profile.isEmpty { result["profile"] = profile }
-            if !loras.isEmpty {
-                result["loras"] = loras.map {
-                    ["path": $0.path, "strength": $0.strength, "role": $0.role]
-                }
-            }
-        }
+        // Runtime resource operations never forward developer toolchain settings.
         if let kind { result["kind"] = kind }
         return result
     }
@@ -187,6 +185,9 @@ struct StudioDraft: Codable, Sendable {
         }
         if let max = model.max_images, activeAssets.count > max { throw NativeFailure(message: "当前模型最多接受 \(max) 张输入图片。") }
         if !loras.isEmpty && model.supports_lora != true { throw NativeFailure(message: "当前模型不支持 LoRA。") }
+        if modelID == "z-image-turbo-gguf" && residency != "resident" {
+            throw NativeFailure(message: "GGUF 当前只支持原生 MLX 常驻模式，请将模型驻留改为 resident。")
+        }
         guard ["auto", "disk_premerge", "in_memory_merge", "inference_time"].contains(loraStrategy) else {
             throw NativeFailure(message: "不支持的 LoRA 执行策略：\(loraStrategy)")
         }
@@ -278,7 +279,7 @@ struct StudioDraft: Codable, Sendable {
                                strength: (operation == "image.transform" || operation == "video.image") ? strength : nil)
         }
         request.loras = loras.isEmpty ? nil : loras.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
-        if modelID == "fastmetal-1.3b-qad" && !loras.isEmpty { request.execution = "gpu" }
+        if modelID == "wan2.1-1.3b-qad" && !loras.isEmpty { request.execution = "gpu" }
         return request
     }
 }

@@ -4,6 +4,7 @@
 #include "../../platform/apple/platform.hpp"
 #include "../../runtime/acceleration.hpp"
 #include "../../runtime/residency.hpp"
+#include "../../components/text/qwen3.hpp"
 
 #include <bit>
 #include <cmath>
@@ -13,8 +14,6 @@
 namespace tc {
 namespace {
 
-constexpr int kTextHeads = 32;
-constexpr int kTextKVHeads = 8;
 constexpr int kHeadDim = 128;
 constexpr int kHeads = 30;
 constexpr float kVaeScale = 0.3611f;
@@ -132,64 +131,6 @@ void load_z_component(Weights &weights, const std::filesystem::path &path,
 
 Tensor linear_compat(const Tensor &x, const Weights &w, const std::string &prefix) {
     return w.project(x, prefix);
-}
-
-Tensor rope_text(const Tensor &x, const Tensor &cos, const Tensor &sin) {
-    // Qwen3 uses rotate-half RoPE, not the interleaved complex pairs used by
-    // the Z-Image DiT below.
-    auto halves = mx::split(x, 2, -1);
-    auto rotated = mx::concatenate({-halves[1], halves[0]}, -1);
-    return x * mx::expand_dims(cos, 1) + rotated * mx::expand_dims(sin, 1);
-}
-
-Tensor qwen_attention(const Tensor &x, const Weights &w, const std::string &prefix,
-                      const Tensor &cos, const Tensor &sin, const Tensor &mask) {
-    auto q = heads(linear_compat(x, w, prefix + ".q_proj"), kTextHeads, kHeadDim);
-    auto k = heads(linear_compat(x, w, prefix + ".k_proj"), kTextKVHeads, kHeadDim);
-    auto v = heads(linear_compat(x, w, prefix + ".v_proj"), kTextKVHeads, kHeadDim);
-    q = rope_text(rms(q, w.at(prefix + ".q_norm.weight"), 1e-6f), cos, sin);
-    k = rope_text(rms(k, w.at(prefix + ".k_norm.weight"), 1e-6f), cos, sin);
-    k = mx::repeat(k, kTextHeads / kTextKVHeads, 1);
-    v = mx::repeat(v, kTextHeads / kTextKVHeads, 1);
-    return linear_compat(attend(q, k, v, true, mask), w, prefix + ".o_proj");
-}
-
-Tensor qwen_encode(const Tensor &ids, const Weights &w, int valid, const Event &event,
-                   std::atomic<bool> &cancelled) {
-    const int n = ids.shape(1);
-    auto x = mx::astype(mx::take(w.at("model.embed_tokens.weight"), ids, 0), mx::float32);
-    auto freq = 1.f / mx::power(Tensor(1000000.f), mx::arange(0, kHeadDim, 2, mx::float32) /
-                                                       float(kHeadDim));
-    auto angle = mx::reshape(mx::arange(n, mx::float32), {1, n, 1}) *
-                 mx::reshape(freq, {1, 1, kHeadDim / 2});
-    auto doubled = mx::concatenate({angle, angle}, -1);
-    auto cos = mx::cos(doubled);
-    auto sin = mx::sin(doubled);
-    auto qi = mx::reshape(mx::arange(n, mx::int32), {n, 1});
-    auto ki = mx::reshape(mx::arange(n, mx::int32), {1, n});
-    auto forbidden = mx::logical_or(ki > qi, ki >= Tensor(valid));
-    auto mask = mx::reshape(mx::where(forbidden, Tensor(-INFINITY, mx::float32),
-                                      Tensor(0.f, mx::float32)),
-                            {1, 1, n, n});
-    // Qwen3Model returns all_hidden_states[-2].  That value is the output of
-    // layer 34, so the final (36th) layer and final RMSNorm are dead work.
-    for (int i = 0; i < 35; ++i) {
-        checkpoint(cancelled);
-        event("z_image_text_encode", i, 35);
-        auto p = "model.layers." + std::to_string(i);
-        auto residual = x;
-        x = residual + qwen_attention(rms(x, w.at(p + ".input_layernorm.weight"), 1e-6f), w,
-                                      p + ".self_attn", cos, sin, mask);
-        residual = x;
-        auto a = rms(x, w.at(p + ".post_attention_layernorm.weight"), 1e-6f);
-        x = residual + linear_compat(
-                            silu(linear_compat(a, w, p + ".mlp.gate_proj")) *
-                                linear_compat(a, w, p + ".mlp.up_proj"),
-                            w, p + ".mlp.down_proj");
-        mx::eval(x);
-    }
-    event("z_image_text_encode", 35, 35);
-    return mx::astype(x, mx::bfloat16);
 }
 
 Tensor z_group_norm(const Tensor &x, const Weights &w, const std::string &prefix, int groups) {
@@ -1037,8 +978,8 @@ void ZImage::unload() {
 Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic<bool> &cancelled) {
     if (text_encoder_.bytes() == 0)
         load_z_component(text_encoder_, text_path_, event, cancelled);
-    auto ids = Tensor(tokens.ids.data(), {1, int(tokens.ids.size())}, mx::int32);
-    auto result = qwen_encode(ids, text_encoder_, tokens.valid, event, cancelled);
+    auto result = components::qwen3_conditioning(
+        tokens, text_encoder_, components::Qwen3Conditioning::z_image(), event, cancelled);
     result = slice_axis(mx::squeeze(result, 0), 0, 0, tokens.valid);
     text_encoder_.clear();
     mx::clear_cache();
@@ -1177,7 +1118,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         result.valid_text_tokens = reported_tokens.valid;
         result.lora_applied_projections = lora_applied_projections_;
         if (gguf_transformer_) {
-            result.backend = "mlx_cpp_metal_gguf";
+            result.backend = hybrid_ ? "mlx_cpp_metal_gguf+coreml" : "mlx_cpp_metal_gguf";
             result.precision = "gguf_native:" + r.model_variant;
             result.checkpoint = transformer_checkpoint_.filename().string();
         } else if (convrot_transformer_) {
@@ -1248,7 +1189,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.actual_steps = r.steps;
     result.lora_applied_projections = lora_applied_projections_;
     if (gguf_transformer_) {
-        result.backend = "mlx_cpp_metal_gguf";
+        result.backend = hybrid_ ? "mlx_cpp_metal_gguf+coreml" : "mlx_cpp_metal_gguf";
         result.precision = "gguf_native:" + r.model_variant;
         result.checkpoint = transformer_checkpoint_.filename().string();
     } else if (convrot_transformer_) {

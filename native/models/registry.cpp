@@ -4,13 +4,13 @@ ModelModule flux_module();
 ModelModule flux9_module();
 ModelModule h3_module();
 ModelModule ltx_module();
-ModelModule fastmetal_module();
+ModelModule wan_module();
 ModelModule z_image_module();
 ModelModule z_image_gguf_module();
 ModelModule llada_module();
 static const std::vector<ModelModule> &modules() {
     static const std::vector<ModelModule> all = {
-        flux_module(), flux9_module(), h3_module(), ltx_module(), fastmetal_module(),
+        flux_module(), flux9_module(), h3_module(), ltx_module(), wan_module(),
         z_image_module(), z_image_gguf_module(), llada_module()
     };
     return all;

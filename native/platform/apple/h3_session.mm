@@ -88,45 +88,11 @@ public:
         // authorize running an unmodified Ref2VA checkpoint at four steps.
         auto component=r.operation=="video.reference"?"Ref2VA":"FL2VA";
         std::filesystem::path active_root = root_;
-        tc::RuntimeLoRACache runtime_cache;
-        bool used_runtime_cache = false;
         if (!r.loras.empty()) {
-            bool sidecar_matches = false;
-            try {
-                auto sidecar = root_/component/"transformer/h3-turbo-merge-manifest.json";
-                if (std::filesystem::is_regular_file(sidecar)) {
-                    auto candidate = read_json(sidecar);
-                    id identity = candidate[@"identity"];
-                    auto requested = std::filesystem::absolute(r.loras.front().path);
-                    sidecar_matches = [identity isKindOfClass:NSDictionary.class] &&
-                        std::filesystem::is_regular_file(requested) &&
-                        std::abs([identity[@"strength"] doubleValue] -
-                                 r.loras.front().strength) <= 1e-6 &&
-                        sha256_file(requested) == string_value(identity, @"lora_sha256") &&
-                        [identity[@"lora_bytes"] unsignedLongLongValue] ==
-                            std::filesystem::file_size(requested);
-                }
-            } catch (...) {
-                sidecar_matches = false;
-            }
-            if (!sidecar_matches) {
-                std::filesystem::path base;
-                if (const char* configured = std::getenv("TURBOCIDER_H3_LORA_BASE"))
-                    if (*configured) base = configured;
-                auto installed_transformer = root_/component/"transformer";
-                if (base.empty() && !std::filesystem::is_regular_file(
-                        installed_transformer/"h3-turbo-merge-manifest.json"))
-                    base = installed_transformer;
-                require(!base.empty(),
-                        "H3 model root already contains a different merged adapter; "
-                        "set TURBOCIDER_H3_LORA_BASE to the unmerged "
-                        "COMPONENT/transformer directory");
-                runtime_cache = ensure_runtime_lora_cache(
-                    "h3", base, r.loras.front(),
-                    "lightx2v-4step");
-                active_root = runtime_cache.artifact;
-                used_runtime_cache = true;
-            }
+            require(std::filesystem::is_regular_file(
+                        root_/component/"transformer/h3-turbo-merge-manifest.json"),
+                    "H3 LoRA requires an offline-premerged model with a provenance manifest; "
+                    "the app does not perform disk fusion");
         }
         auto manifest=read_json(active_root/component/"transformer/h3-turbo-merge-manifest.json");
         require([manifest[@"schema"] isEqual:@"h3-turbo-merge-manifest-v2"],"H3 Turbo requires a merge provenance manifest");
@@ -172,8 +138,7 @@ public:
                     "H3 requested LoRA strength does not match the merged checkpoint");
         }
         double video_shift=v11?6.0:12.0;
-        const auto context_identity = active_root.string() + ":" +
-            (used_runtime_cache ? runtime_cache.cache_key : "installed");
+        const auto context_identity = active_root.string() + ":installed";
         if(!context_ || loaded_context_identity_ != context_identity) {
             context_.reset();
             event("model_load",0,1);
@@ -260,12 +225,9 @@ public:
                   @"cache_embedding_entries":@(cache_info.embedding_entries),
                   @"plan":to_dictionary(plan),
                   @"seconds":@(std::chrono::duration<double>(Clock::now()-start).count()),
-                  @"validation": used_runtime_cache ? @"native_executor_runtime_lora_cache_verified" : @"native_executor_manifest_verified",
+                  @"validation": @"native_executor_manifest_verified",
                   @"lora_fusion": r.loras.empty() ? @"none" :
-                      (used_runtime_cache ? @"runtime_bake_cache" : @"sidecar_manifest_verified"),
-                  @"lora_cache_key": runtime_cache.cache_key.empty() ?
-                      (id)[NSNull null] : @(runtime_cache.cache_key.c_str()),
-                  @"lora_cache_hit": @(runtime_cache.cache_hit) };
+                      @"sidecar_manifest_verified" };
         return native_run_result(value, r, plan);
     }
 };

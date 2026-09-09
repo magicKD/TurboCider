@@ -1,4 +1,5 @@
 #include "mlx.hpp"
+#include "../core/gguf.hpp"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -116,6 +117,7 @@ void Weights::load_gguf_file(const std::filesystem::path &path) {
     require(std::filesystem::is_regular_file(path) && path.extension() == ".gguf",
             "GGUF checkpoint missing: " + path.string());
     try {
+        validate_native_gguf(path);
         auto data = mx::load_gguf(path.string());
         for (auto &[name, value] : data.first) {
             require(!values_.count(name), "duplicate GGUF tensor: " + name);

@@ -89,9 +89,9 @@ ModelModule h3_module() {
                 d.inputs = {"text", "image", "video", "audio"};
                 d.roles = {"first_frame", "last_frame", "reference"};
                 d.output = "video"; d.steps = 4; d.frames = 22; d.width = 512; d.height = 512;
-                d.fps = 24; d.supports_lora = true; d.runtime_lora = true;
+                d.fps = 24; d.supports_lora = true; d.runtime_lora = false;
                 d.default_audio = true; d.default_residency = "resident";
-                d.lora_mode = "runtime-bake-cache"; d.supports_gpu_ane = true;
+                d.lora_mode = "premerged-manifest"; d.supports_gpu_ane = true;
                 d.lora_strategies = {"disk_premerge"};
                 d.default_lora_strategy = "disk_premerge";
                 d.request_lora_identity_validation = true;

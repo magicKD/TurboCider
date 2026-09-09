@@ -177,8 +177,7 @@ class LLaDAImageNative final : public ModelSession {
                 "LLaDA dimensions must be multiples of 16");
         require(request.steps == 4, "LLaDA-Image-Turbo requires 4 steps");
         require(request.loras.empty(), "native LLaDA LoRA is not implemented yet");
-        request.compile_gpu = request.execution == "gpu" &&
-                              !std::getenv("TURBOCIDER_LLADA_EAGER_BLOCKS");
+        request.compile_gpu = request.execution == "gpu";
 
         auto begin = Clock::now();
         auto plan = make_plan(request);
@@ -187,32 +186,6 @@ class LLaDAImageNative final : public ModelSession {
         mx::set_cache_limit(request.allocator_cache_bytes);
         auto text_start = Clock::now();
         const bool prompt_hit = prepare_conditioning(request, event, cancelled);
-        if (std::getenv("TURBOCIDER_LLADA_REFERENCE_CONDITIONING")) {
-            require(!request.noise_path.empty(),
-                    "reference conditioning requires a diagnostic noise path");
-            auto path = std::filesystem::path(request.noise_path).parent_path() /
-                        "conditioning.safetensors";
-            require(std::filesystem::is_regular_file(path),
-                    "LLaDA reference conditioning is missing: " + path.string());
-            auto loaded = mx::load_safetensors(path.string());
-            auto found = loaded.first.find("conditioning");
-            if (found == loaded.first.end())
-                found = loaded.first.find("tensor");
-            require(found != loaded.first.end(),
-                    "LLaDA reference conditioning must contain conditioning or tensor");
-            auto features = found->second;
-            if (features.ndim() == 3) {
-                require(features.shape(0) == 1,
-                        "LLaDA reference conditioning batch must be one");
-                features = mx::squeeze(features, 0);
-            }
-            require(features.ndim() == 2 && features.shape(1) == 2560,
-                    "LLaDA reference conditioning geometry mismatch");
-            conditioning_->features = mx::astype(features, mx::bfloat16);
-            conditioning_->total_tokens = conditioning_->features.shape(0);
-            mx::eval(conditioning_->features);
-            event("llada_reference_conditioning", 1, 1);
-        }
         const double text_seconds =
             std::chrono::duration<double>(Clock::now() - text_start).count();
 

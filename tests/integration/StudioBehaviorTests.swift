@@ -41,6 +41,15 @@ struct StudioBehaviorTests {
         } catch { try check(error.localizedDescription.contains("超时"), "Unexpected inspection failure: \(error)") }
         try check(inventoryStart.duration(to: .now) < .seconds(3), "Disk inspection exceeded deadline")
         let studio = StudioState(directory: root)
+        let legacyDraft = Data(#"{"modelID":"fastmetal-1.3b-qad","modelPaths":{"fastmetal-1.3b-qad":"/models/old-wan"},"prompt":"keep my prompt","frames":81}"#.utf8)
+        let migratedWan = try JSONDecoder().decode(StudioDraft.self, from: legacyDraft)
+        try check(migratedWan.modelID == "wan2.1-1.3b-qad" && migratedWan.modelPath == "/models/old-wan" &&
+                    migratedWan.prompt == "keep my prompt" && migratedWan.frames == 81,
+                  "Legacy Wan draft migration lost user data")
+        let dualDraft = Data(#"{"modelID":"fastmetal-1.3b-qad","modelPaths":{"fastmetal-1.3b-qad":"/models/old-wan","wan2.1-1.3b-qad":"/models/new-wan"}}"#.utf8)
+        let existingWan = try JSONDecoder().decode(StudioDraft.self, from: dualDraft)
+        try check(existingWan.modelPath == "/models/new-wan" && existingWan.modelPaths["fastmetal-1.3b-qad"] == "/models/old-wan",
+                  "Legacy migration overwrote an explicit Wan path")
         studio.draft.modelPaths["flux2-klein-4b"] = "/test/model"
         let output = root.appendingPathComponent("output.png")
         let textOnly = StudioModel(id: "flux2-klein-4b", name: "Text only fixture", executor: true, output: "image", operations: ["image.generate"], default_steps: 4, default_frames: 1, default_width: 512, default_height: 512)
@@ -118,7 +127,12 @@ struct StudioBehaviorTests {
         resourceDraft.acceleration = StudioAcceleration(exportProfile: "/unavailable/build-profile.json")
         resourceDraft.profilePath = "/unavailable/inference-profile.json"
         try check(resourceDraft.coreMLResourceRequest("inventory")["profile"] == nil, "Inventory opened an unrelated build profile")
-        try check(resourceDraft.coreMLResourceRequest("export")["profile"] as? String == "/unavailable/build-profile.json", "Explicit export profile lost")
+        resourceDraft.acceleration?.exportPython = "/unavailable/python"
+        resourceDraft.acceleration?.exportPythonPath = "/unavailable/packages"
+        for action in ["inventory", "compile", "export"] {
+            let resource = resourceDraft.coreMLResourceRequest(action)
+            try check(resource["profile"] == nil && resource["python"] == nil && resource["python_path"] == nil, "Runtime resources leaked developer toolchain settings")
+        }
         studio.draft.acceleration = nil
         studio.draft.seedText = "123"
         try check(try studio.draft.request(output: output).seed == 123, "Fixed seed ignored")
@@ -201,13 +215,13 @@ struct StudioBehaviorTests {
         try check(ltx.width == 704 && ltx.height == 448 && ltx.frames == 97 &&
                     ltx.steps == 11 && (ltx.inputs?.isEmpty ?? true),
                   "LTX descriptor defaults or public text-to-video mapping changed")
-        studio.selectModel("fastmetal-1.3b-qad")
+        studio.selectModel("wan2.1-1.3b-qad")
         try check(studio.draft.loraStrategy == "auto", "Model switch did not reset LoRA strategy")
         let lora = root.appendingPathComponent("adapter.safetensors"); try Data([9]).write(to: lora)
         studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.8)]
-        let fastmetal = try studio.draft.request(output: root.appendingPathComponent("fastmetal.mp4"))
-        try check(fastmetal.width == 832 && fastmetal.height == 480 && fastmetal.frames == 81 && fastmetal.fps == 16 && fastmetal.execution == "gpu" && fastmetal.loras?.count == 1,
-                  "FastMetal defaults or separate LoRA forwarding changed")
+        let wan = try studio.draft.request(output: root.appendingPathComponent("wan.mp4"))
+        try check(wan.width == 832 && wan.height == 480 && wan.frames == 81 && wan.fps == 16 && wan.execution == "gpu" && wan.loras?.count == 1,
+                  "Wan defaults or separate LoRA forwarding changed")
         studio.selectModel("flux2-klein-4b")
         studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.8)]
         studio.draft.loraStrategy = "in_memory_merge"
@@ -253,6 +267,6 @@ struct StudioBehaviorTests {
                   "Z-Image LoRA-bound ANE artifact was not forwarded")
         studio.newDraft()
         try check(studio.draft.seedText == "42" && !studio.draft.randomSeed && studio.draft.assets.isEmpty, "New draft defaults failed")
-        print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/FastMetal/Z-Image defaults and separate LoRA forwarding")
+        print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/Wan/Z-Image defaults and separate LoRA forwarding")
     }
 }

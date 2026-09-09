@@ -2,11 +2,6 @@
 #include "../platform/apple/platform.hpp"
 #import <CommonCrypto/CommonDigest.h>
 #include <sys/stat.h>
-#include <dlfcn.h>
-#include <thread>
-#include <sys/file.h>
-#include <fcntl.h>
-#include <unistd.h>
 namespace tc {
 namespace fs=std::filesystem;
 static fs::path support(){return fs::path(NSHomeDirectory().UTF8String)/"Library/Application Support/TurboCiderNative";}
@@ -30,82 +25,31 @@ static std::vector<fs::path> artifacts(const fs::path&file,const std::string&kin
  std::sort(paths.begin(),paths.end());paths.erase(std::unique(paths.begin(),paths.end()),paths.end());return paths;
 }
 NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomic<bool>&cancelled){
- for(NSString*k in request)require([@[@"action",@"cache",@"manifest",@"source_manifest",@"storage",@"profile",@"model",@"model_root",@"python",@"python_path",@"loras",@"kind",@"apply",@"plan_token"] containsObject:k],"unknown Core ML resource request field");
+ for(NSString*k in request)require([@[@"action",@"cache",@"manifest",@"source_manifest",@"storage",@"profile",@"model",@"model_root",@"kind",@"apply",@"plan_token"] containsObject:k],"unknown Core ML resource request field");
  auto action=string_value(request,@"action");
- require(action=="inventory"||action=="delete_artifacts"||action=="clear_runtime"||action=="clear_compiled"||action=="export"||action=="compile","unknown Core ML resource action");
+ require(action!="export", "Core ML export is offline-only; run tools/coreml/export_flux2.py or export_z_image.py, then import and compile the resulting manifest");
+ require(action=="inventory"||action=="delete_artifacts"||action=="clear_runtime"||action=="clear_compiled"||action=="compile","unknown Core ML resource action");
  auto absolute=[](const std::string&s){return fs::absolute(s).lexically_normal();};
  auto model_id=string_value(request,@"model","flux2-klein-4b");
  require(model_id=="flux2-klein-4b"||model_id=="z-image-turbo"||
              model_id=="z-image-turbo-gguf",
          "Core ML resource model must be flux2-klein-4b, z-image-turbo or z-image-turbo-gguf");
  bool z_image=model_id=="z-image-turbo"||model_id=="z-image-turbo-gguf";
- int bucket=z_image?4128:1088,ane_mlp_width=z_image?4096:9216,
-     partition_count=z_image?32:20,ane_mlp_limit=z_image?10239:9216;
+ int bucket=z_image?4128:1088,ane_mlp_limit=z_image?10239:9216;
  fs::path storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket)),cache=support()/"cache/coreml";
- std::string manifest=string_value(request,@"manifest"),source=string_value(request,@"source_manifest"),export_python=(support()/"toolchains/coreml/bin/python3").string(),export_python_path;
+ std::string manifest=string_value(request,@"manifest"),source=string_value(request,@"source_manifest");
  auto profile=string_value(request,@"profile");
  if(!profile.empty()){
   auto file=absolute(profile);auto d=read_json(file);require([d[@"schema_version"] isKindOfClass:NSNumber.class]&&[d[@"schema_version"] intValue]==1,"profile schema must be 1");require([d[@"models"] isKindOfClass:NSDictionary.class],"profile models missing");NSDictionary *model=d[@"models"][@(model_id.c_str())];require([model isKindOfClass:NSDictionary.class],"requested model profile missing");
   if(manifest.empty()){auto p=string_value(model,@"ane_manifest");if(!p.empty())manifest=(file.parent_path()/p).lexically_normal().string();}
   id config=model[@"coreml_export"];
-  if(config){require([config isKindOfClass:NSDictionary.class],"coreml_export must be object");for(NSString*k in config)require([@[@"bucket",@"ane_mlp_width",@"variant",@"output_dir",@"cache_dir",@"python",@"python_path"] containsObject:k],"unknown coreml_export field");require([config[@"bucket"] isKindOfClass:NSNumber.class],"export bucket required");double n=[config[@"bucket"] doubleValue];require(n==int(n)&&n>=64&&n<=8192,"invalid fixed bucket");bucket=int(n);if(config[@"ane_mlp_width"]){require([config[@"ane_mlp_width"] isKindOfClass:NSNumber.class],"ane_mlp_width must be numeric");double width=[config[@"ane_mlp_width"] doubleValue];require(width==int(width)&&width>0&&width<=ane_mlp_limit,"invalid ANE MLP width");ane_mlp_width=int(width);}storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket));require(string_value(config,@"variant","int8_pc")=="int8_pc","native hybrid supports int8_pc only");auto output=string_value(config,@"output_dir");if(!output.empty())storage=absolute((file.parent_path()/output).string());auto interpreter=string_value(config,@"python");if(!interpreter.empty())export_python=absolute((file.parent_path()/interpreter).string()).string();auto dependencies=string_value(config,@"python_path");if(!dependencies.empty())export_python_path=absolute((file.parent_path()/dependencies).string()).string();auto c=string_value(config,@"cache_dir");if(!c.empty())cache=absolute((file.parent_path()/c).string());}
+  if(config){require([config isKindOfClass:NSDictionary.class],"coreml_export must be object");for(NSString*k in config)require([@[@"bucket",@"ane_mlp_width",@"variant",@"output_dir",@"cache_dir",@"python",@"python_path"] containsObject:k],"unknown coreml_export field");require([config[@"bucket"] isKindOfClass:NSNumber.class],"export bucket required");double n=[config[@"bucket"] doubleValue];require(n==int(n)&&n>=64&&n<=8192,"invalid fixed bucket");bucket=int(n);if(config[@"ane_mlp_width"]){require([config[@"ane_mlp_width"] isKindOfClass:NSNumber.class],"ane_mlp_width must be numeric");double width=[config[@"ane_mlp_width"] doubleValue];require(width==int(width)&&width>0&&width<=ane_mlp_limit,"invalid ANE MLP width");}storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket));require(string_value(config,@"variant","int8_pc")=="int8_pc","native hybrid supports int8_pc only");auto output=string_value(config,@"output_dir");if(!output.empty())storage=absolute((file.parent_path()/output).string());auto c=string_value(config,@"cache_dir");if(!c.empty())cache=absolute((file.parent_path()/c).string());}
  }
  if(!string_value(request,@"storage").empty())storage=absolute(string_value(request,@"storage"));
  if(!string_value(request,@"cache").empty())cache=absolute(string_value(request,@"cache"));
  if(source.empty()&&!manifest.empty()&&fs::is_regular_file(manifest)){auto d=read_json(manifest);source=string_value(d,@"source_manifest");}
  if(source.empty()&&fs::is_regular_file(storage/"manifest.json"))source=(storage/"manifest.json").string();
  if(action=="compile")return manage_coreml_cache(@{@"action":@"compile_manifest",@"cache":@(cache.c_str()),@"source":@(source.c_str())},event,cancelled);
- if(action=="export"){
-  auto model=absolute(string_value(request,@"model_root"));
-  bool model_ready = fs::is_regular_file(model) &&
-                     (model.extension()==".gguf" || model.extension()==".safetensors");
-  if (!model_ready)
-   model_ready=fs::is_regular_file(model/"transformer/diffusion_pytorch_model.safetensors");
-  if(z_image && model_id!="z-image-turbo-gguf")
-   model_ready=model_ready||fs::is_regular_file(model/"transformer/diffusion_pytorch_model.safetensors.index.json")||fs::is_regular_file(model/"split_files/diffusion_models/z_image_turbo_bf16.safetensors");
-  require(model_ready,"matching safetensors or GGUF model required");
-  auto python=string_value(request,@"python",export_python);require(!python.empty()&&fs::path(python).is_absolute()&&access(python.c_str(),X_OK)==0,"configure an executable Python with coremltools and numpy for offline export");
-  Dl_info info{};require(dladdr((void*)&coreml_resources,&info)!=0,"cannot locate bundled exporter");auto script=fs::path(info.dli_fname).parent_path()/"coreml"/(z_image?"export_z_image.py":"export_flux2.py");require(fs::is_regular_file(script),"bundled offline exporter missing");
-  NSTask*task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:@(python.c_str())];
-  NSMutableArray<NSString*> *lora_arguments=[NSMutableArray array];
-  NSArray *requested_loras=request[@"loras"];
-  std::string lora_storage_identity;
-  if (requested_loras != nil) {
-   require([requested_loras isKindOfClass:NSArray.class] && requested_loras.count <= 8,
-           "Core ML exporter loras must be an array with at most 8 entries");
-   for (NSDictionary *lora in requested_loras) {
-    require([lora isKindOfClass:NSDictionary.class] && [lora[@"path"] isKindOfClass:NSString.class] &&
-                [lora[@"strength"] isKindOfClass:NSNumber.class],
-            "Core ML exporter LoRA record must contain path and strength");
-    require(string_value(lora, @"role", "transformer") == "transformer",
-            "Core ML FFN exporter only supports transformer LoRA assets");
-    std::error_code canonical_error;
-    auto path=std::filesystem::canonical(string_value(lora,@"path"),canonical_error);
-    require(!canonical_error && std::filesystem::is_regular_file(path),
-            "Core ML exporter LoRA must be a regular file: "+path.string());
-    lora_storage_identity+=path.string()+":"+std::to_string(std::filesystem::file_size(path))+":"+
-        sha256_file(path)+":"+string_value(lora,@"role","transformer")+":"+
-        std::string([lora[@"strength"] stringValue].UTF8String)+";";
-    [lora_arguments addObject:@"--lora"]; [lora_arguments addObject:@(path.c_str())];
-    [lora_arguments addObject:@"--lora-strength"]; [lora_arguments addObject:[lora[@"strength"] stringValue]];
-   }
-  }
-  if (!lora_storage_identity.empty() && string_value(request,@"storage").empty())
-   storage=storage.parent_path()/(storage.filename().string()+"-lora-"+
-       digest(lora_storage_identity).substr(0,12));
-  NSMutableArray<NSString*> *export_arguments=[NSMutableArray arrayWithObjects:@(script.c_str()),@"--model",@(model.c_str()),@"--output",@(storage.c_str()),@"--bucket",@(std::to_string(bucket).c_str()),@"--ane-mlp-width",@(std::to_string(ane_mlp_width).c_str()),nil];
-  [export_arguments addObjectsFromArray:lora_arguments];
-  require(!fs::is_symlink(storage)&&storage!=storage.root_path(),"invalid export storage");
-  std::filesystem::create_directories(storage);
-  auto log=storage/"export.log";require(!fs::is_symlink(log),"invalid exporter log");int fd=open(log.c_str(),O_CREAT|O_TRUNC|O_WRONLY|O_NOFOLLOW,0600);require(fd>=0,"cannot create export log");auto handle=[[NSFileHandle alloc]initWithFileDescriptor:fd closeOnDealloc:YES];
-  task.arguments=export_arguments;
-  NSMutableDictionary *env=[NSProcessInfo.processInfo.environment mutableCopy];[env removeObjectForKey:@"PYTHONPATH"];[env removeObjectForKey:@"PYTHONHOME"];env[@"PYTHONNOUSERSITE"]=@"1";auto python_path=string_value(request,@"python_path",export_python_path);if(!python_path.empty())env[@"PYTHONPATH"]=@(python_path.c_str());env[@"PYTHONUNBUFFERED"]=@"1";task.environment=env;task.standardOutput=handle;task.standardError=handle;
-  NSError*error=nil;require([task launchAndReturnError:&error],"cannot launch exporter");
-  struct TaskGuard {NSTask*task;~TaskGuard(){if(task.running){[task terminate];[task waitUntilExit];}}} task_guard{task};
-  while(task.running){if(cancelled.load()){[task terminate];[task waitUntilExit];throw Cancelled();}int completed=0;try{if(fs::is_regular_file(storage/"progress.json"))completed=[read_json(storage/"progress.json")[@"completed"] intValue];}catch(...){}event("coreml_export",completed,partition_count);std::this_thread::sleep_for(std::chrono::milliseconds(250));}
-  require(task.terminationStatus==0,"Core ML export failed; inspect "+log.string());checkpoint(cancelled);require(fs::is_regular_file(storage/"manifest.json"),"export did not publish manifest");event("coreml_export",partition_count,partition_count);
-  return @{ @"action":@"export", @"model":@(model_id.c_str()), @"source_manifest":@((storage/"manifest.json").c_str()), @"storage":@(storage.c_str()), @"log":@(log.c_str()), @"bucket":@(bucket), @"ane_mlp_width":@(ane_mlp_width), @"partitions":@(partition_count) };
- }
  if(action=="inventory"){
   NSMutableArray*rows=[NSMutableArray array];std::vector<fs::path> counted;uint64_t total=0,allocated=0;
   auto add=[&](fs::path path,const char*category,bool removable){path=absolute(path.string());for(auto&p:counted)if(path==p||path.string().starts_with(p.string()+"/"))return;try{auto u=usage(path);[rows addObject:@{@"path":@(path.c_str()),@"category":@(category),@"bytes":@(u.bytes),@"allocated_bytes":@(u.allocated),@"files":@(u.files),@"exists":@(fs::exists(path)),@"removable":@(removable)}];counted.push_back(path);total+=u.bytes;allocated+=u.allocated;}catch(const std::exception&e){[rows addObject:@{@"path":@(path.c_str()),@"category":@(category),@"error":@(e.what()),@"removable":@NO}];}};

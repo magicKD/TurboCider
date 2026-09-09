@@ -9,8 +9,7 @@ ModelModule z_image_gguf_module() {
         "z-image-turbo-gguf",
         [] {
             return Recipe{"z-image-turbo-gguf",
-                          {{"native_server_load", {}},
-                           {"text_encode", {"native_server_load"}},
+                          {{"text_encode", {}},
                            {"denoise", {"text_encode"}, 9},
                            {"vae_decode", {"denoise"}},
                            {"export", {"vae_decode"}}},
@@ -34,16 +33,8 @@ ModelModule z_image_gguf_module() {
             if (r.execution == "gpu_ane" && !r.loras.empty())
                 require(r.lora_strategy == "in_memory_merge",
                         "Z-Image GGUF GPU+ANE LoRA requires lora_strategy=in_memory_merge");
-            require(r.residency == "resident" || r.residency == "streaming",
-                    "Z-Image GGUF residency must be resident or streaming");
-            if (r.streaming_offload || r.residency == "streaming") {
-                require(r.memory_budget_bytes >= (1ull << 30),
-                        "Z-Image GGUF streaming offload requires memory_budget_bytes >= 1 GiB");
-                require(r.execution != "gpu_ane",
-                        "Z-Image GGUF streaming offload is GPU-only");
-                require(effective_lora_strategy(r) != "in_memory_merge",
-                        "Z-Image GGUF streaming offload cannot use in_memory_merge; use inference_time");
-            }
+            require(r.residency == "resident" && !r.streaming_offload,
+                    "native MLX GGUF currently supports resident execution only");
             require(r.loras.size() <= 8, "at most eight Z-Image GGUF LoRAs may be active");
             for (const auto &lora : r.loras) {
                 require(lora.role == "transformer",
@@ -70,20 +61,19 @@ ModelModule z_image_gguf_module() {
             d.default_residency = "resident";
             d.supports_lora = true;
             d.runtime_lora = true;
-            d.lora_mode = "sd-cpp-request-time-or-native-low-rank";
+            d.lora_mode = "native-low-rank-or-in-memory-merge";
             d.lora_strategies = {"inference_time", "in_memory_merge"};
             d.default_lora_strategy = "inference_time";
             d.supports_gpu_ane = true;
-            d.backend = "stable-diffusion-cpp-metal or native MLX GGUF";
-            d.runtime_dependency = "managed-stable-diffusion-cpp and bundled-native-mlx-cpp";
-            d.parallel_strategy = "sd.cpp Metal for broad quantization coverage; Q8_0/Q4_0/Q4_1 native MLX can split the FFN between Metal and Core ML ANE";
+            d.backend = "mlx_cpp_metal_gguf";
+            d.runtime_dependency = "bundled-native-mlx-cpp";
+            d.parallel_strategy = "Q8_0/Q4_0/Q4_1 native MLX can split the FFN between Metal and Core ML ANE";
             d.candidate_limitations = {
-                "requires a compatible sd-server binary",
                 "GGUF transformer, VAE and Qwen3 text encoder remain separate files",
-                "mixed K-quants remain on sd.cpp Metal; native GPU+ANE currently accepts Q8_0/Q4_0/Q4_1 or floating GGUF",
+                "native MLX currently accepts Q8_0/Q4_0/Q4_1 or floating GGUF; mixed K-quants are unsupported",
                 "in_memory_merge requires a native-compatible Q8_0/Q4_0/Q4_1 or floating GGUF checkpoint",
-                "inference_time uses sd.cpp for mixed K-quants and can use the packed native low-rank branch for native-compatible GGUF when TURBOCIDER_Z_GGUF_NATIVE_GPU is enabled",
-                "streaming residency uses the pinned sd.cpp CPU-staged layer-prefetch path, keeps text/VAE disk-backed, and requires an explicit memory budget",
+                "inference_time uses the native packed low-rank branch",
+                "streaming residency is not yet supported by the native MLX GGUF executor",
                 "GPU+ANE remains explicit until checkpoint-bound artifacts pass paired performance and quality gates",
                 "quality and speed gates require the downloaded Q4 checkpoint and paired reference run"
             };

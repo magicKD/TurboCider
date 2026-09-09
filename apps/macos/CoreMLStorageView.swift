@@ -45,27 +45,20 @@ struct CoreMLStorageView: View {
                 Button("删除当前 Core ML 源模型…") { perform("delete_artifacts", kind: "source") }.disabled(config.sourceManifest.isEmpty)
             }.disabled(store.busy)
             Divider()
-            Text("从 safetensors 构建 Core ML 分区").font(.headline)
-            Text(isZImage ? "导出 Z-Image 的 32 个 INT8 gated-MLP 前缀分区；GPU 并行计算 attention 和 MLP 后缀。" : "导出 FLUX 的 20 个 INT8 MLP 分区；attention 和未分配给 ANE 的 MLP 后缀仍在 GPU。")
+            Text("导入并编译 Core ML 分区").font(.headline)
+            Text("请选择离线导出工具生成的 manifest。编译与推理均在 App 内原生执行。")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("转换默认使用 TurboCider 托管工具链（由 make setup 安装），正常推理不依赖 Python。不会自动下载模型或安装依赖。")
-                .font(.caption).foregroundStyle(.secondary)
+            Button("选择源分区 manifest…") { chooseFile { path in update { $0.sourceManifest = path } } }
+                .disabled(store.busy)
             HStack {
-                Button("选择构建配置…") { chooseFile { path in update { $0.exportProfile = path } } }
-                Button("选择 Python…") { chooseFile(json: false) { path in update { $0.exportPython = path } } }
-                Button("选择 Python 依赖目录…") { chooseDirectory { path in update { $0.exportPythonPath = path } } }
-            }.disabled(store.busy)
-            pathRow("构建配置", path: config.exportProfile ?? studio.draft.profilePath)
-            pathRow("Python", path: config.exportPython ?? "TurboCider 托管工具链（可由构建配置覆盖）")
-            pathRow("Python 依赖目录（可选）", path: config.exportPythonPath ?? "使用 Python 自身环境")
-            HStack {
-                Button("选择源模型输出目录…") { chooseDirectory { path in update { $0.coreMLStorage = path } } }
+                Button("选择源分区目录…") { chooseDirectory { path in update { $0.coreMLStorage = path } } }
                 Button("选择编译缓存目录…") { chooseDirectory { path in update { $0.coreMLCache = path } } }
             }.disabled(store.busy)
             pathRow("源模型输出", path: config.coreMLStorage ?? "使用构建配置；未配置时：\(defaultStorage)")
             pathRow("编译缓存", path: config.coreMLCache ?? "使用构建配置；未配置时：\(store.compilationDirectory.path)")
             HStack {
-                Button("导出 safetensors → Core ML") { perform("export") }.disabled(studio.draft.modelPath.isEmpty)
+                Text("Core ML 导出请使用 tools/coreml/export_*.py（开发/发布工具）；正式 App 只导入并编译已导出的分区。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Button("预编译当前源分区") { perform("compile") }.disabled(config.sourceManifest.isEmpty)
             }.disabled(store.busy)
         }
@@ -115,7 +108,7 @@ struct CoreMLStorageView: View {
                 } else {
                     if let source = report["source_manifest"] as? String { update { $0.sourceManifest = source } }
                     if let manifest = report["manifest"] as? String { update { $0.manifest = manifest } }
-                    studio.message = action == "export" ? "Core ML 源模型已导出；现在可以预编译。" : "Core ML 分区已编译。"
+                    studio.message = "Core ML 分区已编译。"
                     perform("inventory")
                 }
             } catch { studio.message = error is CancellationError ? "资源操作已取消" : error.localizedDescription }

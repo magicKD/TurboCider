@@ -24,15 +24,24 @@ COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_
 OBJECTS=()
 SOURCES=(
  native/core/common.cpp
+ native/components/text/qwen3.cpp
+ native/components/text/umt5.cpp
+ native/components/weights/affine.cpp native/platform/apple/wan_checkpoint.mm
+ native/components/diffusion/wan.cpp
+ native/components/vae/taehv.cpp
+ native/models/wan/dit.cpp
+ native/models/wan/wan_pipeline.cpp
+ native/models/wan/hybrid.cpp native/platform/apple/wan_hybrid.mm
  native/platform/apple/request.mm native/platform/apple/profile.mm native/platform/apple/tokenizer.mm
- native/platform/apple/device.mm native/platform/apple/results.mm native/platform/apple/lora_cache.mm
- native/platform/apple/fastmetal_session.mm native/platform/apple/h3_session.mm native/platform/apple/ltx_session.mm
+ native/platform/apple/unigram_tokenizer.mm
+ native/platform/apple/device.mm native/platform/apple/results.mm
+ native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/ltx_session.mm
  native/platform/apple/llada_session.mm
  native/api/c_api.mm
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
- native/models/registry.cpp native/models/flux_module.cpp native/models/fastmetal_module.cpp native/models/h3_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
- native/platform/apple/sd_cpp_session.mm
+ native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
+ native/models/z_image/gguf.cpp
  native/models/z_image/z_image.cpp
  native/models/llada/llada.cpp native/models/llada/llada_text.cpp
  native/models/llada/llada_transformer.cpp
@@ -99,13 +108,7 @@ install -m 0644 "$LTX_ROOT/ltx_shaders.metal" "$OUT/ltx_shaders.metal"
 "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_quantize_stream_cache.c -o "$VIDEO_OUT/h3_quantize_stream_cache.o"
 "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_quantize_stream_cache.o" -L"$OUT" -lturbocider -o "$OUT/h3-quantize-stream-cache" -Wl,-rpath,@executable_path
 "$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
-SD_CPP_ROOT="$PWD/.deps/stable-diffusion-cpp/current"
-if [[ -x "$SD_CPP_ROOT/sd-server" ]]; then
- cp "$SD_CPP_ROOT/sd-server" "$SD_CPP_ROOT/sd-cli" "$OUT/"
- cp "$SD_CPP_ROOT/LICENSE" "$OUT/SD-CPP-LICENSE.txt"
-fi
 printf 'Built %s\n' "$OUT/turbocider"
 mkdir -p "$OUT/coreml"
-cp tools/coreml/export_flux2.py tools/coreml/export_z_image.py tools/coreml/lora.py "$OUT/coreml/"
 export TURBOCIDER_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
 tools/native/build_app.sh

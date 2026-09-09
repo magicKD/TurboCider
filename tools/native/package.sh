@@ -6,7 +6,6 @@ ROOT="$PWD"
 APP="$ROOT/dist/TurboCider.app"
 BIN="$APP/Contents/MacOS"
 RES="$APP/Contents/Resources"
-SCRIPTS="$RES/TurboCider/scripts"
 MLX_LICENSE_PATH="${MLX_LICENSE_PATH:-}"
 if [[ -z "$MLX_LICENSE_PATH" ]]; then
  shopt -s nullglob
@@ -22,24 +21,17 @@ fi
  echo "MLX license is missing: $MLX_LICENSE_PATH" >&2
  exit 1
 }
-[[ -x build/native/sd-server && -x build/native/sd-cli && -f build/native/SD-CPP-LICENSE.txt ]] || {
- echo 'GGUF runtime missing. Run make setup-sd-cpp and make build before packaging.' >&2
- exit 1
-}
 MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
  /cmd LC_BUILD_VERSION/{build=1; next}
  build && /minos /{print $2; exit}
 ')"
 PACKAGE_MIN_MACOS="${TURBOCIDER_PACKAGE_MIN_MACOS:-${MLX_MIN_MACOS:-15.0}}"
 rm -rf "$APP" "$ROOT/dist/cli"
-mkdir -p "$BIN" "$RES" "$SCRIPTS" "$ROOT/dist/cli"
+mkdir -p "$BIN" "$RES" "$ROOT/dist/cli"
 cp build/native/TurboCiderNativeApp "$BIN/"
 cp build/native/turbocider "$BIN/"
 for folder in "$BIN" "$ROOT/dist/cli"; do
- mkdir -p "$folder/coreml"
- cp tools/coreml/export_flux2.py tools/coreml/export_z_image.py tools/coreml/lora.py "$folder/coreml/"
  cp build/native/libturbocider.dylib "$folder/"
- cp build/native/sd-server build/native/sd-cli "$folder/"
  cp build/native/h3-quantize-stream-cache "$folder/"
  cp "$MLX_ROOT/lib/libmlx.dylib" "$MLX_ROOT/lib/libjaccl.dylib" "$MLX_ROOT/lib/mlx.metallib" "$folder/"
  cp build/native/h3_shaders.metal build/native/ltx_shaders.metal "$folder/"
@@ -64,16 +56,14 @@ for folder in "$BIN" "$ROOT/dist/cli"; do
  for library in "$folder"/*.dylib; do codesign --force --sign - "$library"; done
 done
 cp build/native/turbocider "$ROOT/dist/cli/"
-cp tools/native/prepare_lora.py tools/native/lora_runtime_cache.py \
-   tools/native/merge_h3_lora.py tools/native/merge_ltx_refiner.py \
-   tools/native/fastmetal_worker.py "$ROOT/dist/cli/"
-cp tools/native/lora_runtime_cache.py tools/native/merge_h3_lora.py \
-   tools/native/merge_ltx_refiner.py tools/native/fastmetal_worker.py \
-   "$SCRIPTS/"
+# LoRA conversion/merge scripts are release-pipeline tools only.  They are
+# intentionally not copied into the App bundle: production sessions accept
+# provenance-verified premerged checkpoints and never launch Python.
 cp native/THIRD_PARTY_NOTICES.md "$RES/"
 cp "$MLX_LICENSE_PATH" "$RES/MLX-LICENSE.txt"
-cp build/native/SD-CPP-LICENSE.txt "$RES/"
-cp "$RES/THIRD_PARTY_NOTICES.md" "$RES/MLX-LICENSE.txt" "$RES/SD-CPP-LICENSE.txt" "$ROOT/dist/cli/"
+cp "$RES/THIRD_PARTY_NOTICES.md" "$RES/MLX-LICENSE.txt" "$ROOT/dist/cli/"
+cp native/licenses/FastVideo-LICENSE.txt native/licenses/TAEHV-LICENSE.txt "$RES/"
+cp native/licenses/FastVideo-LICENSE.txt native/licenses/TAEHV-LICENSE.txt "$ROOT/dist/cli/"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

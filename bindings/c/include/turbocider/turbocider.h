@@ -47,6 +47,9 @@ int tc_ltx_gemma_tokenize_json(const char *tokenizer_json, const char *prompt,
 int tc_ltx_gemma_inspect_json(const char *checkpoint, char **result, char **error);
 int tc_ltx_lora_preflight_json(const char *model_path, const char *lora_path,
                                float strength, char **result, char **error);
+int tc_wan_lora_preflight_json(const char *model_path, const char *lora_path,
+                             float strength, char **out_json, char **out_error);
+/* Deprecated ABI alias. Executes the same native Wan provenance check. */
 int tc_fastmetal_lora_preflight_json(const char *model_path, const char *lora_path,
                                      float strength, char **result, char **error);
 /* Low-level fixed-shape Core ML FFN bridge used by managed persistent workers.

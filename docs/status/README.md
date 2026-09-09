@@ -2,7 +2,12 @@
 
 更新时间：2026-09-09
 
-优先阅读 [2026-09-09 当前目标状态](current-status-2026-09-09.md)。它是 GGUF CPU-staged streaming、近似质量门禁、LLaDA、LoRA 三模式、ConvRot 原生 ANE、真实性能和未完成门禁的最新统一快照。
+本轮重构与提交范围以 [原生框架重构总结](native-refactor-summary-2026-09-09.md) 为准。
+其中区分已完成的结构整理、实际运行结果和仍未证明的发布/性能范围。
+
+优先阅读 [native-only GGUF 发行边界](native-gguf-boundary-2026-09-09.md)，它取代以下历史报告中的 sd.cpp 发行与 GGUF streaming 描述。
+
+历史验证快照：[2026-09-09 当前目标状态](current-status-2026-09-09.md)。它是 GGUF CPU-staged streaming、近似质量门禁、LLaDA、LoRA 三模式、ConvRot 原生 ANE、真实性能和未完成门禁的最新统一快照。
 
 按原始目标逐项核对请看 [原始目标完成度审计](objective-audit-2026-09-09.md)。
 

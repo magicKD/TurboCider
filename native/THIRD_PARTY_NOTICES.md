@@ -26,23 +26,26 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-FastMetal's optional worker imports FastVideo and its TAEHV decoder from an
-external installation selected by the user profile. TurboCider does not copy
-those Python sources or model weights into this repository. A distributable
-FastMetal package must include the corresponding FastVideo/TAEHV Apache-2.0
-and third-party NOTICE files from the exact installation it bundles; the
-repository's `profiles/fastmetal.example.json` is intentionally only a
-portable configuration example.
+The native Wan DiT, QAD sampling and TAEHV decoder were ported with reference
+to FastVideo's MLX runtime (local reference revision
+7bb76b5ec99807a66aa3047b901f15019abe0f00). These are modified C++ implementations:
+checkpoint discovery is explicit, Python runtime imports/downloads are absent,
+and progress/cancellation and native media integration are TurboCider additions.
+FastVideo's Apache-2.0 license and TAEHV's upstream license are included in
+`licenses/FastVideo-LICENSE.txt` and `licenses/TAEHV-LICENSE.txt` in source, and
+as `FastVideo-LICENSE.txt` and `TAEHV-LICENSE.txt` in distribution resources.
+Model weights are not distributed in this repository.
+
+The historical Python worker is retained only in `tools/validation/wan/` as a
+development oracle. It is not linked, discovered or copied into the App/CLI.
+Production Wan sessions use the native components above; source repository
+names remain in pinned model provenance and license records.
+
+The LLaDA Python worker used by historical acceptance tests is likewise kept
+under `tools/validation/llada/` and is not a production session dependency.
 
 MLX is Copyright Apple Inc., MIT-licensed. Its unmodified native libraries
 are build dependencies; include their original license when packaging them.
-
-The optional GGUF image backend packages an unmodified stable-diffusion.cpp
-`sd-cli`/`sd-server` build pinned by `tools/native/install_sd_cpp.py`. The
-currently pinned Apple Silicon archive is built by the Unsloth mirror from
-source commit `13b9d92b5e9a1563536c9c980e700470f9ab6702`. stable-diffusion.cpp is
-Copyright (c) 2023 leejet and MIT-licensed. The package includes the original
-license as `SD-CPP-LICENSE.txt`; model weights remain external user assets.
 
 H3 native kernels and model components are derived from h3.c-fork.
 The source copy is modified for library configuration, resource discovery and

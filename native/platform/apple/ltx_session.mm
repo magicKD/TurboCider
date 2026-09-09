@@ -356,9 +356,6 @@ struct LtxCheckpointSelection {
     std::string checkpoint_sha256;
     std::string lora_sha256;
     double strength = 0.0;
-    std::string cache_key;
-    bool runtime_cache = false;
-    bool runtime_cache_hit = false;
 };
 
 static void add_manifest_candidate(std::vector<std::filesystem::path>& paths,
@@ -529,39 +526,8 @@ static LtxCheckpointSelection resolve_ltx_checkpoint(
                                  output_hash_cache, selection, failure))
             return selection;
     }
-    /* A user-owned adapter is sufficient.  If no legacy sidecar points at a
-     * merged artifact, build the exact same upstream merge into the
-     * content-addressed runtime cache.  The cache lives outside the model
-     * directory and can be evicted without touching base or adapter files. */
-    std::vector<std::filesystem::path> base_candidates;
-    if (const char* configured = std::getenv("TURBOCIDER_LTX_LORA_BASE"))
-        if (*configured) base_candidates.emplace_back(configured);
-    base_candidates.push_back(root / "diffusion_models" /
-        "ltx-2.5-22b-dev-transformer-comfy-int8-convrot.safetensors");
-    base_candidates.push_back(root / "ltx-2.5-22b-dev-transformer-comfy-int8-convrot.safetensors");
-    std::string runtime_failure = failure;
-    for (const auto& base : base_candidates) {
-        if (!std::filesystem::is_regular_file(base)) continue;
-        try {
-            auto cache = ensure_runtime_lora_cache(
-                "ltx", base, requested, "auto");
-            std::string cache_failure;
-            if (inspect_ltx_manifest(cache.manifest, requested,
-                                     base_hash_cache, lora_hash_cache,
-                                     output_hash_cache, selection,
-                                     cache_failure)) {
-                selection.cache_key = cache.cache_key;
-                selection.runtime_cache = true;
-                selection.runtime_cache_hit = cache.cache_hit;
-                return selection;
-            }
-            runtime_failure = cache_failure;
-        } catch (const std::exception& exception) {
-            runtime_failure = exception.what();
-        }
-    }
-    require(false, "LTX LoRA has no provenance-verified checkpoint or "
-                      "runtime cache: " + runtime_failure);
+    require(false, "LTX LoRA requires an offline-premerged checkpoint and "
+                   "matching provenance manifest: " + failure);
     return selection;
 }
 
@@ -2068,11 +2034,7 @@ public:
                   @"video_vae_isolation": @(video_vae_isolation.c_str()),
                   @"plan": to_dictionary(plan),
                   @"lora_fusion": request.loras.empty() ? @"none" :
-                      (selection.runtime_cache ? @"runtime_bake_cache" :
-                       @"sidecar_manifest_verified"),
-                  @"lora_cache_key": selection.cache_key.empty() ?
-                      (id)[NSNull null] : @(selection.cache_key.c_str()),
-                  @"lora_cache_hit": @(selection.runtime_cache_hit),
+                      @"sidecar_manifest_verified",
                   @"checkpoint_sha256": selection.checkpoint_sha256.empty() ?
                       (id)[NSNull null] : @(selection.checkpoint_sha256.c_str()),
                   @"validation": request.audio ?

@@ -1,11 +1,10 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-sd-cpp build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache
+.PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
 	@echo 'MLX_ROOT=/path/to/mlx make package  Build and create dist/TurboCider.app + dist/cli'
 	@echo 'make setup                       Install pinned, TurboCider-owned dependencies'
-	@echo 'make setup-sd-cpp                Install pinned GGUF Metal runtime under .deps/'
 	@echo 'make build                       Build engine, CLI, App and Swift tests'
 	@echo 'make package                      Build and create dist/TurboCider.app + dist/cli'
 	@echo 'make build-app                    Rebuild Swift UI after an engine build'
@@ -17,8 +16,6 @@ help:
 	@echo 'make h3-quant-cache MODEL=/path/to/transformer OUTPUT=/path/to/cache'
 setup:
 	@python3.11 tools/setup_dependencies.py
-setup-sd-cpp:
-	@python3 tools/native/install_sd_cpp.py
 build-app:
 	@tools/native/build_app.sh
 build:
@@ -37,7 +34,9 @@ test:
 	@python3 -B tests/native/test_llada_reference.py
 	@python3 -B tests/native/test_quality_gate.py
 	@python3 -B tests/native/test_video_quality_gate.py
-	@python3 -B tests/native/test_gguf_streaming_benchmark.py
+	@python3 -B tests/native/test_video_timing.py
+	@python3 -B tests/native/test_wan_benchmark.py
+	@python3 -B tests/native/test_native_gguf.py
 	@python3 -B tests/native/test_h3_streaming_policy.py
 	@python3 -B tests/native/test_h3_quant_cache.py
 	@python3 tests/native/test_inventory.py

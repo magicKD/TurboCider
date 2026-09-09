@@ -5,7 +5,7 @@
   "prompt": "A cinematic red fox walking through fresh snow, soft morning light.",
   "output": "outputs/z-image-gguf-lora-inference-time.png",
   "execution": "gpu",
-  "model_variant": "Q4_K_M",
+  "model_variant": "Q8_0",
   "lora_strategy": "inference_time",
   "loras": [
     {

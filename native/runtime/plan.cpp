@@ -118,9 +118,12 @@ ExecutionPlan make_plan(const Request &requested) {
     else if (r.model == "minimax-h3-turbo")
         plan.memory_estimate_bytes = (32ull << 30) +
             uint64_t(r.width) * r.height * r.frames * 64;
-    else if (r.model == "fastmetal-1.3b-qad")
-        plan.memory_estimate_bytes = ((hybrid ? 12ull : 10ull) << 30) +
-            uint64_t(r.width) * r.height * r.frames * 48;
+    else if (r.model == "wan2.1-1.3b-qad")
+        // Native full-video peaks exceed the historical Python-worker estimate.
+        // Account for staged UMT5 plus DiT/decoder activations, with headroom;
+        // this remains a heuristic, not an allocator-enforced limit.
+        plan.memory_estimate_bytes = (12ull << 30) +
+            uint64_t(r.width) * r.height * r.frames * (hybrid ? 1024 : 1408);
     else if (r.model == "z-image-turbo")
         plan.memory_estimate_bytes = (25ull << 30) +
             uint64_t(r.width) * r.height * 8192;
