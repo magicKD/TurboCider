@@ -53,6 +53,8 @@ h3_gpu_tensor *h3_gpu_tensor_from_u32(h3_gpu *gpu, const uint32_t *values,
 /* Allocate shared Metal storage and pread BF16 payload directly into it. */
 h3_gpu_tensor *h3_gpu_tensor_load_bf16(h3_gpu *gpu, const char *path,
                                        uint64_t file_offset, size_t elements);
+h3_gpu_tensor *h3_gpu_tensor_load_i8(h3_gpu *gpu, const char *path,
+                                     uint64_t file_offset, size_t elements);
 h3_gpu_tensor *h3_gpu_tensor_load_f32(h3_gpu *gpu, const char *path,
                                       uint64_t file_offset, size_t elements);
 /* Map a page-aligned BF16 file range into a GPU-readable shared buffer using
@@ -72,6 +74,12 @@ int h3_gpu_tensor_read_file_bf16(h3_gpu_tensor *tensor, const char *path,
 int h3_gpu_tensor_stream_file_bf16(h3_gpu_tensor *tensor, const char *path,
                                    uint64_t file_offset, size_t elements,
                                    char *error, size_t error_size);
+int h3_gpu_tensor_stream_file_i8(h3_gpu_tensor *tensor, const char *path,
+                                 uint64_t file_offset, size_t elements,
+                                 char *error, size_t error_size);
+int h3_gpu_tensor_stream_file_f32(h3_gpu_tensor *tensor, const char *path,
+                                  uint64_t file_offset, size_t elements,
+                                  char *error, size_t error_size);
 void h3_gpu_tensor_free(h3_gpu_tensor *tensor);
 size_t h3_gpu_tensor_elements(const h3_gpu_tensor *tensor);
 size_t h3_gpu_tensor_bytes(const h3_gpu_tensor *tensor);

@@ -36,7 +36,7 @@ TurboCider 不要求 GPU、MLX、Core ML/ANE、GGUF 和参考实现逐 bit 或�
 | Core ML/ANE 启动 | 机制已完成 | load-only prepare、zero-input warmup、first/subsequent prediction 分开；可把启动工作移到用户可见生成前，但不能减少总计算 |
 | private ANE 隔离 | 已完成 | private bridge 仅在 `experimental/`；正式 dylib 无 `_ANE*` private symbols/framework |
 | Transformer 异构实验 | 主要结论已完成 | FFN channel split 是当前有效方向；sequence/head split 的 Amdahl 负结果、public/private ANE 差异已记录 |
-| H3 streaming | Transformer 级完成 | BF16 双 slot、background `pread`、budget-driven pinned-prefix、retained DiT 已验证；完整媒体 E2E 和量化 refill 仍缺 |
+| H3 streaming | Transformer 级完成；量化缓存已接入 | BF16 双 slot、background `pread`、budget-driven pinned-prefix、retained DiT 已验证；新增 provenance-bound I8/F32 safetensors shard、双 typed slot 和离线生成器；完整媒体 E2E/量化真实模型验收仍缺 |
 
 ## GGUF 当前实测
 
@@ -75,7 +75,7 @@ LoRA SHA、strength=1.0 和 `inference_time` strategy 均被记录。`memory_bud
 
 1. 将 GGUF 1024²从当前两个 base seed/一个 LoRA seed 扩展到更多 prompt、seed、adapter、Q-format 和真实 8/16/24 GB 物理机器矩阵。
 2. GGUF Q4/Q8 GPU+ANE 多尺寸、多机器、LoRA 和自动策略门禁。
-3. H3 完整 tokenizer/text encoder/VAE/MP4 E2E、量化 streaming refill；LTX per-block streaming 和 16/24/32 GB 验收。
+3. H3 完整 tokenizer/text encoder/VAE/MP4 E2E、量化 streaming refill 的真实模型质量/性能矩阵；LTX per-block streaming 和 16/24/32 GB 验收。
 4. LTX hybrid 质量修复、多 prompt/seed；LLaDA 独立 LoRA；FLUX 9B hybrid。
 5. FLUX/Z-Image/GGUF 的多 adapter、取消、失败恢复、缓存失效和跨机器完整矩阵。
 
@@ -87,11 +87,14 @@ LoRA SHA、strength=1.0 和 `inference_time` strategy 均被记录。`memory_bud
 
 ```text
 Python/bin/python3 -m pytest -q \
-  tests/native/test_gguf_streaming_benchmark.py \
+  tests/native/test_contract.py \
+  tests/native/test_h3_streaming_policy.py \
+  tests/native/test_h3_quant_cache.py \
   tests/native/test_quality_gate.py \
-  tests/native/test_video_quality_gate.py \
-  tests/native/test_contract.py
-68 passed, 49 subtests passed
+  tests/native/test_video_quality_gate.py
+65 passed, 45 subtests passed（本轮针对性回归）；完整 `make test` 亦通过
 ```
 
 此外，完整 `make test` 的所有 target 均通过（2 个 Python 测试因当前环境无 NumPy 而明确 skip），native/Swift build、public Vision helper、`make package`、App behavior test、App 深度签名、portable `env -i` CLI `models/doctor`、动态依赖和 private ANE symbol audit 均已通过。`git diff --check` 通过，索引中没有模型权重、`outputs/`、build 或 dist 产物。
+
+本轮还修正了 H3 量化流式预算：量化路径按约 385,617,408 bytes/block 计算双槽下限，BF16 路径仍按约 770,725,376 bytes/block 计算；两者都保留 activation reserve，不能把 working-set budget 当作整个进程硬上限。量化缓存 schema、源权重 identity、block 数/维度、I8 权重和 F32 scale 的 dtype/shape 均在启动时 fail closed。仓库没有 H3 checkpoint，因此上述“已完成”是代码/schema/契约层完成，不是 H3 真实媒体 E2E 质量或加速承诺。

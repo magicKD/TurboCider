@@ -156,10 +156,13 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"execution" : hybrid ? @"gpu_ane_experimental" : @"gpu",
         @"gpu_graph" : gpu_graph_label(r),
         @"precision" : r.model == "z-image-turbo-gguf" ? @"checkpoint_defined_gguf" :
-            (hybrid ? @"bf16_gpu+int8_mlp_fp16_io" : @"bf16"),
+            (!r.quantized_cache.empty() ? @"int8_weight_bf16_activation_streamed" :
+             (hybrid ? @"bf16_gpu+int8_mlp_fp16_io" : @"bf16")),
         @"algorithm_approximations" : r.model == "z-image-turbo-gguf" ?
             @[ @"checkpoint_defined_gguf_weight_quantization" ] :
-            (hybrid ? @[ @"single_block_mlp_int8_per_channel" ] : @[]),
+            (!r.quantized_cache.empty() ?
+                @[ @"row_symmetric_int8_weight_quantization" ] :
+             (hybrid ? @[ @"single_block_mlp_int8_per_channel" ] : @[])),
         @"requested_shape" : @[ @(r.width), @(r.height), @(r.frames) ],
         @"decoded_shape" : @[ @(dw), @(dh), @(r.frames) ],
         @"stages" : stages,
@@ -181,6 +184,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"streaming_offload" : @(r.streaming_offload ||
                                   r.residency == "streaming" ||
                                   r.residency == "streamed"),
+        @"quantized_cache" : r.quantized_cache.empty()
+            ? (id)[NSNull null] : @(r.quantized_cache.c_str()),
         @"profile_identity" : @(r.profile_identity.c_str()),
         @"weight_validation" : weight_validation,
         @"lora_count" : @(r.loras.size()),

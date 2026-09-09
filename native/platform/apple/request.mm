@@ -88,6 +88,7 @@ Request request_from_json(NSDictionary *d) {
             @"residency",    @"profile",        @"model_variant",
             @"loras",        @"audio",          @"noise_path",
             @"lora_strategy", @"streaming_offload", @"memory_budget_bytes",
+            @"quantized_cache",
             @"warmup_iterations"
         ]);
         r.model = string_value(d, @"model", r.model);
@@ -114,6 +115,7 @@ Request request_from_json(NSDictionary *d) {
         r.residency = string_value(d, @"residency", model_descriptor.default_residency);
         r.streaming_offload = boolean(d, @"streaming_offload", false);
         r.memory_budget_bytes = byte_count(d, @"memory_budget_bytes", 0);
+        r.quantized_cache = string_value(d, @"quantized_cache");
         r.warmup_iterations = number(d, @"warmup_iterations", 0);
         require(r.warmup_iterations >= 0 && r.warmup_iterations <= 8,
                 "warmup_iterations must be 0...8");
@@ -151,13 +153,15 @@ Request request_from_json(NSDictionary *d) {
         auto execution = d[@"execution"] ? dictionary(d[@"execution"], "execution") : @{};
         keys(execution,
              @[ @"policy", @"profile", @"ane_manifest", @"allow_approximation",
-                @"residency", @"memory_budget_bytes", @"warmup_iterations" ]);
+                @"residency", @"memory_budget_bytes", @"warmup_iterations",
+                @"quantized_cache" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");
         r.allow_approximation = boolean(execution, @"allow_approximation", false);
         r.residency = string_value(execution, @"residency", model_descriptor.default_residency);
         r.memory_budget_bytes = byte_count(execution, @"memory_budget_bytes", 0);
+        r.quantized_cache = string_value(execution, @"quantized_cache");
         r.warmup_iterations = number(execution, @"warmup_iterations", 0);
         require(r.warmup_iterations >= 0 && r.warmup_iterations <= 8,
                 "execution.warmup_iterations must be 0...8");

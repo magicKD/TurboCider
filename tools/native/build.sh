@@ -52,7 +52,7 @@ VIDEO_OUT="$OUT/h3-runtime"
 mkdir -p "$VIDEO_OUT"
 CC="$TOOLCHAIN/clang"
 H3_OBJECTS=()
-for src in h3 h3_host h3_safetensors h3_weights h3_text_encoder h3_dit_schedule h3_dit h3_streaming_policy h3_video_vae h3_taeh3 h3_video_encoder h3_audio_vae h3_terminal h3_vision_encoder h3_multimodal h3_ffmpeg h3_ane_disabled; do
+for src in h3 h3_host h3_safetensors h3_weights h3_quant_cache h3_text_encoder h3_dit_schedule h3_dit h3_streaming_policy h3_video_vae h3_taeh3 h3_video_encoder h3_audio_vae h3_terminal h3_vision_encoder h3_multimodal h3_ffmpeg h3_ane_disabled; do
  "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c "$VIDEO_ROOT/$src.c" -o "$VIDEO_OUT/$src.o"
  H3_OBJECTS+=("$VIDEO_OUT/$src.o")
 done
@@ -96,6 +96,8 @@ install -m 0644 "$LTX_ROOT/ltx_shaders.metal" "$OUT/ltx_shaders.metal"
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" -dynamiclib "${OBJECTS[@]}" "${H3_OBJECTS[@]}" "$LTX_OUT/libltx-runtime.a" -o "$OUT/libturbocider.dylib" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework Accelerate -framework ImageIO -framework CoreGraphics -framework UniformTypeIdentifiers -framework Vision -Wl,-rpath,"$MLX_ROOT/lib" -Wl,-install_name,@rpath/libturbocider.dylib
 "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_dit_streaming_probe.c -o "$VIDEO_OUT/h3_dit_streaming_probe.o"
 "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_dit_streaming_probe.o" -L"$OUT" -lturbocider -o "$OUT/h3-dit-streaming-probe" -Wl,-rpath,@executable_path
+"$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_quantize_stream_cache.c -o "$VIDEO_OUT/h3_quantize_stream_cache.o"
+"$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_quantize_stream_cache.o" -L"$OUT" -lturbocider -o "$OUT/h3-quantize-stream-cache" -Wl,-rpath,@executable_path
 "$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
 SD_CPP_ROOT="$PWD/.deps/stable-diffusion-cpp/current"
 if [[ -x "$SD_CPP_ROOT/sd-server" ]]; then

@@ -144,7 +144,7 @@ int main(int argc, char **argv) {
     double load_started = total_started;
     h3_dit *dit = h3_dit_load_t2va(
         argv[1], "h3_shaders.metal", &text, &layout, &sigmas,
-        50, 1, 0, 1, 0, budget, 1.0f,
+        50, 1, 0, 1, 0, budget, NULL, 1.0f,
         1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
         progress, NULL, error, sizeof(error));
     double load_seconds = now_seconds() - load_started;

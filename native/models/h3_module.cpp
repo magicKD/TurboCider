@@ -2,8 +2,15 @@
 namespace tc {
 std::unique_ptr<ModelSession> create_h3(const std::filesystem::path &);
 namespace {
-constexpr uint64_t h3_streaming_minimum_bytes =
-    (4ull << 30) + 2ull * 770725376ull;
+constexpr uint64_t h3_streaming_activation_reserve_bytes = 4ull << 30;
+constexpr uint64_t h3_bf16_stream_block_bytes = 770725376ull;
+constexpr uint64_t h3_quantized_stream_block_bytes = 385617408ull;
+
+constexpr uint64_t h3_streaming_minimum_bytes(bool quantized) {
+    return h3_streaming_activation_reserve_bytes + 2ull *
+        (quantized ? h3_quantized_stream_block_bytes :
+                     h3_bf16_stream_block_bytes);
+}
 }
 ModelModule h3_module() {
     return {"minimax-h3-turbo",
@@ -30,8 +37,13 @@ ModelModule h3_module() {
                         "unsupported H3 residency");
                 require(!r.memory_budget_bytes || r.residency == "streamed",
                         "H3 memory budget requires streamed residency");
+                require(r.quantized_cache.empty() || r.residency == "streamed",
+                        "H3 quantized cache requires streamed residency");
+                require(r.quantized_cache.empty() || r.allow_approximation,
+                        "H3 quantized cache requires allow_approximation=true");
                 require(!r.memory_budget_bytes ||
-                            r.memory_budget_bytes >= h3_streaming_minimum_bytes,
+                            r.memory_budget_bytes >= h3_streaming_minimum_bytes(
+                                !r.quantized_cache.empty()),
                         "H3 streamed memory budget is below the activation and two-slot minimum");
                 require(r.steps == 4, "H3 Turbo requires four steps");
                 require(r.loras.size() <= 1, "H3 supports one Turbo LoRA adapter");

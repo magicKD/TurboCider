@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-sd-cpp build build-app build-vision-quality package test test-app test-model doctor
+.PHONY: help setup setup-sd-cpp build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -14,6 +14,7 @@ help:
 	@echo 'make test                         Verify repository boundaries and request contracts'
 	@echo 'make test-model MODEL=/path/to/FLUX.2-klein-4B OUTPUT=/tmp/new-tc-validation'
 	@echo 'make doctor                       Inspect this Mac and native dependencies'
+	@echo 'make h3-quant-cache MODEL=/path/to/transformer OUTPUT=/path/to/cache'
 setup:
 	@python3.11 tools/setup_dependencies.py
 setup-sd-cpp:
@@ -38,6 +39,7 @@ test:
 	@python3 -B tests/native/test_video_quality_gate.py
 	@python3 -B tests/native/test_gguf_streaming_benchmark.py
 	@python3 -B tests/native/test_h3_streaming_policy.py
+	@python3 -B tests/native/test_h3_quant_cache.py
 	@python3 tests/native/test_inventory.py
 test-app:
 	@build/native/turbocider-studio-tests
@@ -49,3 +51,6 @@ test-model:
 	@python3 tests/native/test_service.py --model "$(MODEL)" --output "$(OUTPUT)/service"
 doctor:
 	@build/native/turbocider doctor
+h3-quant-cache: build
+	@test -n "$(MODEL)" -a -n "$(OUTPUT)" || (echo 'MODEL and OUTPUT are required'; exit 1)
+	@build/native/h3-quantize-stream-cache --transformer "$(MODEL)" --shader build/native/h3_shaders.metal --output "$(OUTPUT)"

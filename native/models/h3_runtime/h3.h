@@ -111,6 +111,10 @@ typedef struct {
      * activations, two streaming slots, fixed weights and safety headroom.
      * An explicit ssd_pinned_prefix may request fewer blocks, never more. */
     uint64_t ssd_memory_budget_bytes;
+    /* Optional provenance-bound INT8 shard cache for streamed blocks. The
+     * cache is produced offline and must contain all active block matrices;
+     * NULL keeps the original BF16 streaming route. */
+    const char *ssd_quantized_cache_directory;
     /* Optional lower internal model canvas. Both must be zero (exact output
      * canvas) or valid same-aspect dimensions no larger than width/height. */
     int render_width;
@@ -148,10 +152,26 @@ typedef struct {
 } h3_params;
 
 #define H3_PARAMS_DEFAULT { \
-    H3_DEFAULT_WIDTH, H3_DEFAULT_HEIGHT, H3_DEFAULT_FRAMES, H3_DEFAULT_STEPS, \
-    12.0, 3.0, UINT64_C(42), NULL, NULL, NULL, NULL, 0, \
-    H3_REFERENCE_IMAGE_MATCH, \
-    1, H3_DEFAULT_DIT_LAYERS, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL \
+    .width = H3_DEFAULT_WIDTH, .height = H3_DEFAULT_HEIGHT, \
+    .frames = H3_DEFAULT_FRAMES, .steps = H3_DEFAULT_STEPS, \
+    .video_flow_shift = 12.0, .audio_flow_shift = 3.0, \
+    .seed = UINT64_C(42), .output_path = NULL, .first_frame = NULL, \
+    .last_frame = NULL, .references = NULL, .reference_count = 0, \
+    .reference_image_size = H3_REFERENCE_IMAGE_MATCH, \
+    .denoise_reuse = 1, .dit_layers = H3_DEFAULT_DIT_LAYERS, \
+    .core_reuse = 1, .token_reduction = 0, .use_int8_row_fc2 = 0, \
+    .use_reference_rope = 0, .ssd_streaming = 0, \
+    .ssd_pinned_prefix = 0, .ssd_memory_budget_bytes = 0, \
+    .ssd_quantized_cache_directory = NULL, .render_width = 0, \
+    .render_height = 0, .use_slower_bf16_mlp = 0, \
+    .use_slower_bf16_qkv = 0, .use_slower_bf16_attention_output = 0, \
+    .use_slower_row_major_attention_output = 0, \
+    .use_slower_unfused_int8_inputs = 0, \
+    .use_slower_unfused_qkv_rope = 0, .use_slower_scalar_qkv_rms = 0, \
+    .use_slower_uncached_int8_scales = 0, \
+    .use_slower_dynamic_fc1_k = 0, .use_slower_grouped_quantizer = 0, \
+    .preview_denoise = 0, .retain_decoded = 0, .on_frame = NULL, \
+    .on_progress = NULL, .callback_opaque = NULL \
 }
 
 typedef struct {
@@ -188,6 +208,7 @@ struct h3_result {
     int sample_rate;
     uint64_t seed;
     int ssd_streaming;
+    int ssd_quantized;
     int ssd_pinned_blocks;
     int ssd_streamed_blocks;
     uint64_t ssd_memory_budget_bytes;

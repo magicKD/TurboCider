@@ -797,6 +797,33 @@ class ContractTests(unittest.TestCase):
         self.assertIn('|ssd-pinned=%d|ssd-budget=%llu',core)
         self.assertIn('h3_decoder_cache_enabled(ctx)',core)
 
+    def test_h3_quantized_streaming_is_explicit_and_reported(self):
+        request={'model':'minimax-h3-turbo','frames':22,'width':512,
+                 'height':512,'steps':4,'residency':'streamed',
+                 'quantized_cache':'/tmp/h3-quantized-cache',
+                 'allow_approximation':True}
+        code,p,error=plan(request)
+        self.assertEqual(code,0,error)
+        self.assertEqual(p['precision'],
+                         'int8_weight_bf16_activation_streamed')
+        self.assertEqual(p['algorithm_approximations'],
+                         ['row_symmetric_int8_weight_quantization'])
+        self.assertEqual(p['quantized_cache'],
+                         '/tmp/h3-quantized-cache')
+        self.assertTrue(p['streaming_offload'])
+        code,_,error=plan({**request,'residency':'resident'})
+        self.assertNotEqual(code,0)
+        self.assertIn('requires streamed residency',error)
+        code,_,error=plan({**request,'allow_approximation':False})
+        self.assertNotEqual(code,0)
+        self.assertIn('allow_approximation=true',error)
+        minimum=(4 << 30)+2*385617408
+        code,_,error=plan({**request,'memory_budget_bytes':minimum})
+        self.assertEqual(code,0,error)
+        code,_,error=plan({**request,'memory_budget_bytes':minimum-1})
+        self.assertNotEqual(code,0)
+        self.assertIn('two-slot minimum',error)
+
     def test_fastmetal_is_an_executable_persistent_runtime_candidate(self):
         request={'model':'fastmetal-1.3b-qad','width':832,'height':480,
                  'frames':81,'fps':16,'steps':3}

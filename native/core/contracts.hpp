@@ -18,7 +18,7 @@ struct Request {
     std::string model = "flux2-klein-4b";
     std::string operation = "image.generate";
     std::string prompt, output, execution = "gpu", dump, noise_path, ane_manifest;
-    std::string profile, residency = "resident";
+    std::string profile, residency = "resident", quantized_cache;
     std::string profile_identity;
     std::string model_variant = "auto";
     std::string lora_strategy = "auto";

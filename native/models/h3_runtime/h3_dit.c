@@ -146,7 +146,15 @@ enum {
     STREAM_OUT,
     STREAM_FC1,
     STREAM_FC2,
-    STREAM_MATRICES
+    STREAM_QKV_INT8,
+    STREAM_QKV_SCALES,
+    STREAM_OUT_INT8,
+    STREAM_OUT_SCALES,
+    STREAM_FC1_INT8,
+    STREAM_FC1_SCALES,
+    STREAM_FC2_INT8,
+    STREAM_FC2_SCALES,
+    STREAM_FIELDS
 };
 
 typedef struct {
@@ -154,10 +162,12 @@ typedef struct {
     uint64_t file_offset;
     size_t elements;
     unsigned field;
+    h3_gpu_dtype dtype;
 } h3_dit_stream_source;
 
 typedef struct {
-    h3_dit_stream_source sources[STREAM_MATRICES];
+    h3_dit_stream_source sources[H3_QUANT_CACHE_SOURCES];
+    unsigned source_count;
 } h3_dit_stream_layer;
 
 struct h3_dit {
@@ -186,8 +196,10 @@ struct h3_dit {
     int use_slower_grouped_quantizer;
     int use_int8_row_fc2;
     int ssd_streaming;
+    int ssd_quantized;
     int ssd_pinned_prefix;
     uint64_t ssd_memory_budget_bytes;
+    h3_quant_cache quant_cache;
     int keep_bf16_mlp;
     int request_ready;
     int activation_aliases;
@@ -2451,13 +2463,45 @@ static int prepare_stream_source(h3_dit *dit,
     source->file_offset = tensor->file_offset;
     source->elements = (size_t)(rows * columns);
     source->field = field;
+    source->dtype = H3_GPU_BF16;
     return 1;
 }
 
 static int prepare_stream_layer(h3_dit *dit, unsigned layer,
                                 char *error, size_t error_size) {
+    if (dit->ssd_quantized) {
+        const h3_quant_cache_layer *cached = h3_quant_cache_layer_at(
+            &dit->quant_cache, layer);
+        if (!cached) {
+            fail(error, error_size,
+                 "H3 quantized cache has no block %u", layer);
+            return 0;
+        }
+        h3_dit_stream_layer *stream = &dit->stream_layers[layer];
+        stream->source_count = H3_QUANT_CACHE_SOURCES;
+        for (unsigned index = 0; index < H3_QUANT_CACHE_SOURCES; index++) {
+            const h3_quant_cache_source *source = &cached->sources[index];
+            stream->sources[index] = (h3_dit_stream_source){
+                .path = source->path,
+                .file_offset = source->file_offset,
+                .elements = source->elements,
+                .field = source->field == H3_QUANT_QKV_WEIGHT ?
+                    STREAM_QKV_INT8 : source->field == H3_QUANT_QKV_SCALES ?
+                    STREAM_QKV_SCALES : source->field == H3_QUANT_OUT_WEIGHT ?
+                    STREAM_OUT_INT8 : source->field == H3_QUANT_OUT_SCALES ?
+                    STREAM_OUT_SCALES : source->field == H3_QUANT_FC1_WEIGHT ?
+                    STREAM_FC1_INT8 : source->field == H3_QUANT_FC1_SCALES ?
+                    STREAM_FC1_SCALES : source->field == H3_QUANT_FC2_WEIGHT ?
+                    STREAM_FC2_INT8 : STREAM_FC2_SCALES,
+                .dtype = source->dtype == H3_DTYPE_I8 ?
+                    H3_GPU_I8 : H3_GPU_F32
+            };
+        }
+        return 1;
+    }
     char name[160];
     h3_dit_stream_layer *stream = &dit->stream_layers[layer];
+    stream->source_count = 4;
 #define SOURCE(index, suffix, rows, columns, field) do {                        \
     snprintf(name, sizeof(name), "blocks.%u.%s", layer, suffix);              \
     if (!prepare_stream_source(dit, &stream->sources[index], name,             \
@@ -2469,13 +2513,37 @@ static int prepare_stream_layer(h3_dit *dit, unsigned layer,
     SOURCE(2, "mlp.fc1.weight", FFN * 2, HIDDEN, STREAM_FC1);
     SOURCE(3, "mlp.fc2.weight", HIDDEN, FFN, STREAM_FC2);
 #undef SOURCE
-    qsort(stream->sources, STREAM_MATRICES, sizeof(stream->sources[0]),
+    qsort(stream->sources, stream->source_count, sizeof(stream->sources[0]),
           compare_stream_sources);
     return 1;
 }
 
 static int allocate_stream_slot(h3_dit *dit, h3_dit_block *slot,
                                 char *error, size_t error_size) {
+    if (dit->ssd_quantized) {
+        slot->qkv_int8 = h3_gpu_tensor_new_i8(
+            dit->gpu, (size_t)INNER * 3 * HIDDEN);
+        slot->qkv_scales = h3_gpu_tensor_new_f32(
+            dit->gpu, INNER * 3);
+        slot->out_int8 = h3_gpu_tensor_new_i8(
+            dit->gpu, (size_t)HIDDEN * INNER);
+        slot->out_scales = h3_gpu_tensor_new_f32(dit->gpu, HIDDEN);
+        slot->fc1_int8 = h3_gpu_tensor_new_i8(
+            dit->gpu, (size_t)FFN * 2 * HIDDEN);
+        slot->fc1_scales = h3_gpu_tensor_new_f32(dit->gpu, FFN * 2);
+        slot->fc2_int8 = h3_gpu_tensor_new_i8(
+            dit->gpu, (size_t)HIDDEN * FFN);
+        slot->fc2_scales = h3_gpu_tensor_new_f32(dit->gpu, HIDDEN);
+        if (!slot->qkv_int8 || !slot->qkv_scales || !slot->out_int8 ||
+            !slot->out_scales || !slot->fc1_int8 || !slot->fc1_scales ||
+            !slot->fc2_int8 || !slot->fc2_scales) {
+            fail(error, error_size,
+                 "cannot allocate INT8 SSD layer slot: %s",
+                 h3_gpu_error(dit->gpu));
+            return 0;
+        }
+        return 1;
+    }
     slot->qkv = h3_gpu_tensor_new_bf16(
         dit->gpu, (size_t)INNER * 3 * HIDDEN);
     slot->out = h3_gpu_tensor_new_bf16(
@@ -2492,12 +2560,64 @@ static int allocate_stream_slot(h3_dit *dit, h3_dit_block *slot,
     return 1;
 }
 
+static int load_quantized_block(h3_dit *dit, h3_dit_block *block,
+                                unsigned layer,
+                                char *error, size_t error_size) {
+    const h3_quant_cache_layer *cached = h3_quant_cache_layer_at(
+        &dit->quant_cache, layer);
+    if (!cached) {
+        fail(error, error_size, "H3 quantized cache has no block %u", layer);
+        return 0;
+    }
+    for (unsigned index = 0; index < H3_QUANT_CACHE_SOURCES; index++) {
+        const h3_quant_cache_source *source = &cached->sources[index];
+        h3_gpu_tensor **target = NULL;
+        switch (source->field) {
+        case H3_QUANT_QKV_WEIGHT: target = &block->qkv_int8; break;
+        case H3_QUANT_QKV_SCALES: target = &block->qkv_scales; break;
+        case H3_QUANT_OUT_WEIGHT: target = &block->out_int8; break;
+        case H3_QUANT_OUT_SCALES: target = &block->out_scales; break;
+        case H3_QUANT_FC1_WEIGHT: target = &block->fc1_int8; break;
+        case H3_QUANT_FC1_SCALES: target = &block->fc1_scales; break;
+        case H3_QUANT_FC2_WEIGHT: target = &block->fc2_int8; break;
+        case H3_QUANT_FC2_SCALES: target = &block->fc2_scales; break;
+        }
+        if (!target) {
+            fail(error, error_size,
+                 "H3 quantized cache block %u has an invalid field", layer);
+            return 0;
+        }
+        *target = source->dtype == H3_DTYPE_I8 ?
+            h3_gpu_tensor_load_i8(dit->gpu, source->path,
+                                  source->file_offset, source->elements) :
+            source->dtype == H3_DTYPE_F32 ?
+            h3_gpu_tensor_load_f32(dit->gpu, source->path,
+                                   source->file_offset, source->elements) :
+            NULL;
+        if (!*target) {
+            fail(error, error_size,
+                 "cannot load H3 quantized cache block %u: %s",
+                 layer, h3_gpu_error(dit->gpu));
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static h3_gpu_tensor *stream_slot_target(h3_dit_block *slot,
                                          unsigned field) {
     if (field == STREAM_QKV) return slot->qkv;
     if (field == STREAM_OUT) return slot->out;
     if (field == STREAM_FC1) return slot->fc1;
     if (field == STREAM_FC2) return slot->fc2;
+    if (field == STREAM_QKV_INT8) return slot->qkv_int8;
+    if (field == STREAM_QKV_SCALES) return slot->qkv_scales;
+    if (field == STREAM_OUT_INT8) return slot->out_int8;
+    if (field == STREAM_OUT_SCALES) return slot->out_scales;
+    if (field == STREAM_FC1_INT8) return slot->fc1_int8;
+    if (field == STREAM_FC1_SCALES) return slot->fc1_scales;
+    if (field == STREAM_FC2_INT8) return slot->fc2_int8;
+    if (field == STREAM_FC2_SCALES) return slot->fc2_scales;
     return NULL;
 }
 
@@ -2518,19 +2638,35 @@ static int read_stream_layer(h3_dit_stream_job *job) {
     job->ok = 1;
     job->bytes = 0;
     job->error[0] = '\0';
-    for (unsigned index = 0; index < STREAM_MATRICES; index++) {
+    for (unsigned index = 0; index < layer->source_count; index++) {
         const h3_dit_stream_source *source = &layer->sources[index];
         h3_gpu_tensor *target = stream_slot_target(slot, source->field);
-        if (!target || !h3_gpu_tensor_stream_file_bf16(
-                target, source->path, source->file_offset, source->elements,
-                job->error, sizeof(job->error))) {
-            if (!job->error[0])
-                snprintf(job->error, sizeof(job->error),
-                         "invalid BF16 streaming destination");
+        if (!target) {
+            snprintf(job->error, sizeof(job->error),
+                     "invalid typed streaming destination");
             job->ok = 0;
             break;
         }
-        job->bytes += (uint64_t)source->elements * sizeof(uint16_t);
+        int ok = source->dtype == H3_GPU_BF16 ?
+            h3_gpu_tensor_stream_file_bf16(
+                target, source->path, source->file_offset, source->elements,
+                job->error, sizeof(job->error)) :
+            source->dtype == H3_GPU_I8 ? h3_gpu_tensor_stream_file_i8(
+                target, source->path, source->file_offset, source->elements,
+                job->error, sizeof(job->error)) :
+            source->dtype == H3_GPU_F32 && h3_gpu_tensor_stream_file_f32(
+                target, source->path, source->file_offset, source->elements,
+                job->error, sizeof(job->error));
+        if (!ok) {
+            if (!job->error[0])
+                snprintf(job->error, sizeof(job->error),
+                         "invalid typed streaming destination");
+            job->ok = 0;
+            break;
+        }
+        job->bytes += (uint64_t)source->elements *
+            (source->dtype == H3_GPU_BF16 ? sizeof(uint16_t) :
+             source->dtype == H3_GPU_I8 ? sizeof(int8_t) : sizeof(float));
     }
     job->seconds = stream_now() - started;
     return job->ok;
@@ -4526,13 +4662,29 @@ static unsigned next_streamed_block(const h3_dit *dit, unsigned current) {
 /* Return the BF16 payload size of one complete transformer block. This is
  * intentionally derived from the compiled model constants rather than a
  * checkpoint-specific file size so the policy remains valid with sharding. */
-static uint64_t ssd_full_block_bytes(void) {
-    uint64_t elements = (uint64_t)INNER * 3u * HIDDEN +
+static uint64_t ssd_full_block_bytes(const h3_dit *dit) {
+    uint64_t elements = (uint64_t)HIDDEN * 2u +
+        (uint64_t)HEAD_DIM * 2u;
+    if (dit && dit->ssd_quantized) {
+        uint64_t weights = (uint64_t)INNER * 3u * HIDDEN +
+            (uint64_t)HIDDEN * INNER +
+            (uint64_t)FFN * 2u * HIDDEN +
+            (uint64_t)HIDDEN * FFN;
+        uint64_t scales = (uint64_t)INNER * 3u + HIDDEN +
+            (uint64_t)FFN * 2u + HIDDEN;
+        if (weights > UINT64_MAX - elements ||
+            scales > (UINT64_MAX - elements - weights) / 4u)
+            return UINT64_MAX;
+        return elements * sizeof(uint16_t) + weights + scales * sizeof(float);
+    }
+    uint64_t matrices = (uint64_t)INNER * 3u * HIDDEN +
         (uint64_t)HIDDEN * INNER +
         (uint64_t)FFN * 2u * HIDDEN +
-        (uint64_t)HIDDEN * FFN +
-        (uint64_t)HIDDEN * 2u + (uint64_t)HEAD_DIM * 2u;
-    return elements * sizeof(uint16_t);
+        (uint64_t)HIDDEN * FFN;
+    if (matrices > UINT64_MAX - elements ||
+        matrices + elements > UINT64_MAX / sizeof(uint16_t))
+        return UINT64_MAX;
+    return (matrices + elements) * sizeof(uint16_t);
 }
 
 static uint64_t ssd_activation_reserve_bytes(const h3_dit *dit) {
@@ -4564,7 +4716,7 @@ static int configure_ssd_pinned_prefix(h3_dit *dit, int requested,
     }
     h3_stream_plan plan;
     h3_stream_plan_status status = h3_stream_plan_build(
-        budget, ssd_activation_reserve_bytes(dit), ssd_full_block_bytes(),
+        budget, ssd_activation_reserve_bytes(dit), ssd_full_block_bytes(dit),
         dit->active_block_count, (unsigned)requested, &plan);
     if (status != H3_STREAM_PLAN_OK) {
         fail(error, error_size, "cannot configure H3 SSD streaming plan: %s",
@@ -4695,9 +4847,13 @@ static int load_core(h3_dit *dit, h3_dit_progress progress, void *opaque,
                                   error, error_size))
                 return 0;
             if (stream_block_pinned(dit, index)) {
-                if (!load_block_matrices(
-                        dit, &dit->blocks[index], prefix, 1,
-                        error, error_size)) return 0;
+                if (dit->ssd_quantized) {
+                    if (!load_quantized_block(
+                            dit, &dit->blocks[index], index,
+                            error, error_size)) return 0;
+                } else if (!load_block_matrices(
+                               dit, &dit->blocks[index], prefix, 1,
+                               error, error_size)) return 0;
             } else if (!prepare_stream_layer(
                            dit, index, error, error_size)) return 0;
         } else {
@@ -5308,6 +5464,7 @@ static h3_dit *load_dit(const char *weight_directory,
                         int ssd_streaming,
                         int ssd_pinned_prefix,
                         uint64_t ssd_memory_budget_bytes,
+                        const char *ssd_quantized_cache_directory,
                         float spatial_rope_scale,
                         int use_slower_bf16_mlp,
                         int use_slower_bf16_qkv,
@@ -5331,6 +5488,7 @@ static h3_dit *load_dit(const char *weight_directory,
     if (!weight_directory || !shader_source_path || !layout || !sigmas ||
         (defer_request_state != 0 && defer_request_state != 1) ||
         (ssd_streaming != 0 && ssd_streaming != 1) ||
+        (ssd_quantized_cache_directory && !ssd_streaming) ||
         ssd_pinned_prefix < 0 || ssd_pinned_prefix > H3_DIT_BLOCKS ||
         !isfinite(spatial_rope_scale) || spatial_rope_scale <= 0.0f ||
         active_blocks < H3_DIT_BLOCKS / 2 ||
@@ -5377,6 +5535,8 @@ static h3_dit *load_dit(const char *weight_directory,
     dit->bf16_final = h3_runtime_getenv("H3_DIT_F32_FINAL") == NULL;
     dit->core_reuse_interval = core_reuse_interval;
     dit->ssd_streaming = ssd_streaming;
+    dit->ssd_quantized = ssd_quantized_cache_directory &&
+        *ssd_quantized_cache_directory;
     dit->ssd_pinned_prefix = ssd_pinned_prefix;
     dit->ssd_memory_budget_bytes = ssd_memory_budget_bytes;
     dit->spatial_rope_scale = spatial_rope_scale;
@@ -5429,18 +5589,35 @@ static h3_dit *load_dit(const char *weight_directory,
     dit->weights = h3_weight_store_open(
         dit->weight_directory, error, error_size);
     if (!dit->weights) goto failed;
+    if (dit->ssd_quantized) {
+        uint64_t identity = 0;
+        if (!h3_weight_store_identity(
+                dit->weights, &identity, error, error_size) ||
+            !h3_quant_cache_open(
+                &dit->quant_cache, ssd_quantized_cache_directory,
+                identity, H3_DIT_BLOCKS, HIDDEN, INNER, FFN,
+                error, error_size)) goto failed;
+        if (h3_runtime_getenv("H3_PROFILE"))
+            fprintf(stderr,
+                    "h3: provenance-bound INT8 SSD cache source=%016" PRIx64
+                    " block=%.3f GiB\n", identity,
+                    (double)dit->quant_cache.block_bytes /
+                        (1024.0 * 1024.0 * 1024.0));
+    }
     if (prepare_gate_cache_identity(dit, sigmas))
         (void)configure_cached_gate_skip(dit);
     dit->gpu = h3_gpu_create(shader_source_path, error, error_size);
     if (!dit->gpu) goto failed;
     dit->nax_mlp = dit->fused_mlp && h3_gpu_has_nax_mlp(dit->gpu);
-    dit->int8_mlp = !dit->ssd_streaming && dit->fused_mlp &&
+    dit->int8_mlp = (!dit->ssd_streaming || dit->ssd_quantized) &&
+                    dit->fused_mlp &&
                     !use_slower_bf16_mlp &&
                     h3_gpu_has_int8_mlp(dit->gpu);
-    dit->int8_qkv = !dit->ssd_streaming && !use_slower_bf16_qkv &&
+    dit->int8_qkv = (!dit->ssd_streaming || dit->ssd_quantized) &&
+                    !use_slower_bf16_qkv &&
                     dit->sequence >= 128 &&
                     h3_gpu_has_int8_mlp(dit->gpu);
-    dit->int8_attention_out = !dit->ssd_streaming &&
+    dit->int8_attention_out = (!dit->ssd_streaming || dit->ssd_quantized) &&
                               !use_slower_bf16_attention_output &&
                               dit->sequence >= 128 &&
                               h3_gpu_has_int8_mlp(dit->gpu);
@@ -5565,6 +5742,7 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
                          int ssd_streaming,
                          int ssd_pinned_prefix,
                          uint64_t ssd_memory_budget_bytes,
+                         const char *ssd_quantized_cache_directory,
                          float spatial_rope_scale,
                          int use_slower_bf16_mlp,
                          int use_slower_bf16_qkv,
@@ -5583,6 +5761,7 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
                     active_blocks, core_reuse_interval, token_reduction,
                     ssd_streaming, ssd_pinned_prefix,
                     ssd_memory_budget_bytes,
+                    ssd_quantized_cache_directory,
                     spatial_rope_scale,
                     use_slower_bf16_mlp, use_slower_bf16_qkv,
                     use_slower_bf16_attention_output,
@@ -5611,6 +5790,7 @@ h3_dit *h3_dit_load_t2va_core(
                          int ssd_streaming,
                          int ssd_pinned_prefix,
                          uint64_t ssd_memory_budget_bytes,
+                         const char *ssd_quantized_cache_directory,
                          float spatial_rope_scale,
                          int use_slower_bf16_mlp,
                          int use_slower_bf16_qkv,
@@ -5628,7 +5808,8 @@ h3_dit *h3_dit_load_t2va_core(
     return load_dit(weight_directory, shader_source_path, text, layout, sigmas,
                     active_blocks, core_reuse_interval, token_reduction,
                     ssd_streaming, ssd_pinned_prefix,
-                    ssd_memory_budget_bytes, spatial_rope_scale,
+                    ssd_memory_budget_bytes,
+                    ssd_quantized_cache_directory, spatial_rope_scale,
                     use_slower_bf16_mlp, use_slower_bf16_qkv,
                     use_slower_bf16_attention_output,
                     use_slower_row_major_attention_output,
@@ -5655,6 +5836,7 @@ h3_dit *h3_dit_load_conditioned(
                          int ssd_streaming,
                          int ssd_pinned_prefix,
                          uint64_t ssd_memory_budget_bytes,
+                         const char *ssd_quantized_cache_directory,
                          float spatial_rope_scale,
                          int use_slower_bf16_mlp,
                          int use_slower_bf16_qkv,
@@ -5677,6 +5859,7 @@ h3_dit *h3_dit_load_conditioned(
                     active_blocks, core_reuse_interval, token_reduction,
                     ssd_streaming, ssd_pinned_prefix,
                     ssd_memory_budget_bytes,
+                    ssd_quantized_cache_directory,
                     spatial_rope_scale,
                     use_slower_bf16_mlp, use_slower_bf16_qkv,
                     use_slower_bf16_attention_output,
@@ -7033,10 +7216,21 @@ static int encode_forward(h3_dit *dit, int step, int begin, int submit,
                 h3_dit_block *slot =
                     &dit->stream_slots[dit->stream_ready_slot];
                 streamed_weight = dit->blocks[block];
-                streamed_weight.qkv = slot->qkv;
-                streamed_weight.out = slot->out;
-                streamed_weight.fc1 = slot->fc1;
-                streamed_weight.fc2 = slot->fc2;
+                if (dit->ssd_quantized) {
+                    streamed_weight.qkv_int8 = slot->qkv_int8;
+                    streamed_weight.qkv_scales = slot->qkv_scales;
+                    streamed_weight.out_int8 = slot->out_int8;
+                    streamed_weight.out_scales = slot->out_scales;
+                    streamed_weight.fc1_int8 = slot->fc1_int8;
+                    streamed_weight.fc1_scales = slot->fc1_scales;
+                    streamed_weight.fc2_int8 = slot->fc2_int8;
+                    streamed_weight.fc2_scales = slot->fc2_scales;
+                } else {
+                    streamed_weight.qkv = slot->qkv;
+                    streamed_weight.out = slot->out;
+                    streamed_weight.fc1 = slot->fc1;
+                    streamed_weight.fc2 = slot->fc2;
+                }
                 weight = &streamed_weight;
 
                 unsigned future = next_streamed_block(dit, block);
@@ -7889,7 +8083,8 @@ int h3_dit_get_streaming_info(const h3_dit *dit,
     info->pinned_blocks = (unsigned)dit->ssd_pinned_prefix;
     info->streamed_blocks = info->active_blocks - info->pinned_blocks;
     info->memory_budget_bytes = dit->ssd_memory_budget_bytes;
-    info->block_bytes = ssd_full_block_bytes();
+    info->block_bytes = ssd_full_block_bytes(dit);
+    info->quantized = dit->ssd_quantized;
     info->activation_reserve_bytes = ssd_activation_reserve_bytes(dit);
     info->bytes_read = dit->stream_bytes;
     info->read_seconds = dit->stream_read_seconds;
@@ -8555,8 +8750,9 @@ void h3_dit_free(h3_dit *dit) {
     if (dit->ssd_streaming && h3_runtime_getenv("H3_PROFILE")) {
         double gib = (double)dit->stream_bytes / (1024.0 * 1024.0 * 1024.0);
         fprintf(stderr,
-                "h3: BF16 SSD stream %.3f GiB read in %.3fs (%.3f GiB/s), "
+                "h3: %s SSD stream %.3f GiB read in %.3fs (%.3f GiB/s), "
                 "unhidden wait %.3fs\n",
+                dit->ssd_quantized ? "INT8/F32" : "BF16",
                 gib, dit->stream_read_seconds,
                 dit->stream_read_seconds > 0.0
                     ? gib / dit->stream_read_seconds : 0.0,
@@ -8600,6 +8796,7 @@ void h3_dit_free(h3_dit *dit) {
     h3_dit_schedule_free(dit->schedule);
     h3_gpu_free(dit->gpu);
     h3_weight_store_free(dit->weights);
+    h3_quant_cache_close(&dit->quant_cache);
     free(dit->weight_directory);
     free(dit);
 }

@@ -40,6 +40,7 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('apple-macosx15.0',build)
         package=(ROOT/'tools/native/package.sh').read_text()
         for name in ['h3_shaders.metal','ltx_shaders.metal',
+                     'h3-quantize-stream-cache',
                      'ltx-video-finalizer','ltx-video-vae-decode',
                      'lora_runtime_cache.py','merge_h3_lora.py',
                      'merge_ltx_refiner.py','fastmetal_worker.py']:

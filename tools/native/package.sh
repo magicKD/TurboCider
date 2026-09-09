@@ -40,6 +40,7 @@ for folder in "$BIN" "$ROOT/dist/cli"; do
  cp tools/coreml/export_flux2.py tools/coreml/export_z_image.py tools/coreml/lora.py "$folder/coreml/"
  cp build/native/libturbocider.dylib "$folder/"
  cp build/native/sd-server build/native/sd-cli "$folder/"
+ cp build/native/h3-quantize-stream-cache "$folder/"
  cp "$MLX_ROOT/lib/libmlx.dylib" "$MLX_ROOT/lib/libjaccl.dylib" "$MLX_ROOT/lib/mlx.metallib" "$folder/"
  cp build/native/h3_shaders.metal build/native/ltx_shaders.metal "$folder/"
  cp build/native/ltx-video-finalizer build/native/ltx-video-vae-decode "$folder/"
@@ -52,7 +53,8 @@ for folder in "$BIN" "$ROOT/dist/cli"; do
   done < <(otool -l "$library" | awk '/cmd LC_RPATH/{found=1; next} found && /path /{print $2;found=0}')
   install_name_tool -add_rpath @loader_path "$library"
  done
- for helper in "$folder/ltx-video-finalizer" "$folder/ltx-video-vae-decode"; do
+ for helper in "$folder/ltx-video-finalizer" "$folder/ltx-video-vae-decode" \
+               "$folder/h3-quantize-stream-cache"; do
   while IFS= read -r rpath; do
    [ -n "$rpath" ] && install_name_tool -delete_rpath "$rpath" "$helper"
   done < <(otool -l "$helper" | awk '/cmd LC_RPATH/{found=1; next} found && /path /{print $2;found=0}')

@@ -59,9 +59,9 @@ MAE `2.136/255`，质量通过但性能未过门禁。完整证据见
 
 ### H3
 
-H3 现在有 resident 和 BF16 SSD streaming 两条正式路径。streaming 使用两个 Metal BF16 layer slot，在计算当前 block 时后台 `pread` 下一 block，并在 command boundary 等待；这已经避免了把完整 transformer 常驻 unified memory。`ssd_streaming` 与当前运行期 INT8 MLP/QKV 互斥，原因是量化 buffer、scale 和 reload 生命周期尚未统一。
+H3 现在有 resident、BF16 SSD streaming 和独立量化 shard streaming 三条路径。BF16 streaming 使用两个 Metal BF16 layer slot，在计算当前 block 时后台 `pread` 下一 block；量化路径使用离线生成的 provenance-bound I8 权重/F32 row-scale safetensors shard 和两个 typed I8/F32 slot，不会在每个 denoise step 重新从完整 BF16 block 量化。量化缓存只在 `streamed + allow_approximation=true` 且 M5-class Metal 4 INT8 能力下接受；原始 BF16 checkpoint 不被修改。
 
-当前还加入了动态 pinned-prefix：当 streamed H3 请求提供 `memory_budget_bytes` 时，运行时按实际请求的 activation geometry、两个 BF16 slot 和固定安全余量计算每个完整 block 的 BF16 payload，自动保留尽可能多的前置 active blocks，剩余 suffix 继续 disk streaming。显式 `ssd_pinned_prefix` 只能减少自动选择的前缀，不能让预算超限；策略始终保留至少一个 streamed block。没有预算时仍保持原来的两-slot 行为，避免改变既有默认性能。
+当前还加入了动态 pinned-prefix：当 streamed H3 请求提供 `memory_budget_bytes` 时，运行时按实际请求的 activation geometry、两个 typed slot 和固定安全余量计算 block payload；BF16 block 约 770,725,376 bytes，量化 block 约 385,617,408 bytes。它会自动保留尽可能多的前置 active blocks，剩余 suffix 继续 disk streaming。显式 `ssd_pinned_prefix` 只能减少自动选择的前缀，不能让预算超限；策略始终保留至少一个 streamed block。没有预算时仍保持原来的两-slot 行为，避免改变既有默认性能。
 
 这不是硬性进程内存上限：预算是 H3 DiT working-set target，系统 allocator、VAE、文本编码器和文件缓存仍可能产生额外 footprint。运行结果会记录 pinned/streamed block 数、估算 block/activation bytes、总读取和未隐藏等待时间。
 
@@ -78,18 +78,17 @@ LTX 当前只有 resident/component-staged；component-staged 会按 text/transf
 | 能力 | vpipe | TurboCider | 差距 |
 |---|---|---|---|
 | custom Metal forward | 全部 generative stack | H3/LTX custom Metal；图像模型主要 MLX/Metal | 图像模型仍依赖 MLX runtime |
-| quantized preparation | 4/8-bit 预处理 | GGUF 原生、多种 Q-format；H3 运行期 INT8 | H3 streaming 还不能带量化 shard |
+| quantized preparation | 4/8-bit 预处理 | GGUF 原生、多种 Q-format；H3 离线 I8/F32 shard + typed refill | H3 真实模型 E2E/性能和更多量化方案仍未验收 |
 | block streaming | 通用双 slot + pread | H3 双 slot；GGUF 委托 sd.cpp | LTX 尚未 per-block streaming |
 | dynamic residency | 依据 trunk、block bytes、scratch、RAM 增长/回收 | H3 budget-driven pinned-prefix；其余为 resident/component-staged/streamed | LTX/GGUF 尚无统一 tuner |
 | low-memory E2E | 16 GB 工作流已有公开案例 | GGUF 8 GiB hint 已验证 256²、两个 base 1024² seed 和一个 LoRA 1024² seed；H3/LTX 仍需完整矩阵 | hint 不是 8 GB 物理机证明；单 prompt/机器不能外推 |
 
 ## 优化优先级
 
-1. 让 H3 streaming slot 支持已量化的 FC1/FC2/QKV payload，必要时在 refill 阶段只转换 scale，不重新 materialize 全 BF16；
-2. 恢复完整 H3 tokenizer/text encoder/VAE fixture，做 resident/streamed/pinned 的真实媒体 E2E ABBA；
-3. 给 LTX 加 stage-aware 双 slot refill，明确 text connector、双流 audio/video 和 VAE 的 floor；
-4. 对不能 raw-copy 的 F32 modulation tensor使用受控慢路径，不因少数 tensor 放弃整个 block streaming；
-5. 将 quality gate 与 memory gate 同时纳入自动策略：低内存节省不能以 silent steps/shape/token 裁剪换取。
+1. 恢复完整 H3 tokenizer/text encoder/VAE fixture，做 resident/streamed/pinned/quantized 的真实媒体 E2E ABBA；
+2. 给 LTX 加 stage-aware 双 slot refill，明确 text connector、双流 audio/video 和 VAE 的 floor；
+3. 对不能 raw-copy 的 F32 modulation tensor使用受控慢路径，不因少数 tensor 放弃整个 block streaming；
+4. 将 quality gate 与 memory gate 同时纳入自动策略：低内存节省不能以 silent steps/shape/token 裁剪换取。
 
 ## 当前判断
 
@@ -98,9 +97,9 @@ TurboCider 已经具备可交付的 GGUF resident/streaming 路径；256² Q3/Q4
 也通过近似图片质量门禁，
 但所有 corrected streaming 路线均未通过 1.02 material-regression gate。因此它是
 正确的显式低内存 fallback，而不是自动性能优化。H3 pinned-prefix 与 retained
-DiT reuse 已完成真实 Transformer 验证，但量化 refill 和完整媒体 E2E 仍缺。
+DiT reuse 已完成真实 Transformer 验证；量化 refill 的代码、schema、fail-closed 契约已完成，但量化真实媒体 E2E、质量和性能仍缺。
 TurboCider 还不是 vpipe 那种覆盖所有 DiT 的通用低内存调度器；下一步重点是
-H3 quantized refill、GGUF 1024²更多 prompt/seed/adapter，以及 LTX per-block streaming 的
+H3 量化真实 E2E、GGUF 1024²更多 prompt/seed/adapter，以及 LTX per-block streaming 的
 16/24/32 GB 矩阵。
 
 证据：[Z-Image GGUF streaming 2026-09-09](validation/z-image-gguf-streaming-2026-09-09.json)、[Z-Image GGUF 总结](z-image-gguf.md)、[Transformer 异构报告](transformer-heterogeneous-report.md)。vpipe 仅作为外部设计参考，不进入 TurboCider 构建或运行时依赖。

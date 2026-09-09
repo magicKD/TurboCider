@@ -253,7 +253,7 @@ static char *h3_resident_key(const char *dit_path, const char *dit_index,
             "resident-v2|mode=%d|path=%zu:%s|steps=%d"
             "|shifts=%.17g,%.17g|layers=%d"
             "|reuse-core=%d|reduce=%d|row-fc2=%d|ssd-streaming=%d"
-            "|ssd-pinned=%d|ssd-budget=%llu"
+            "|ssd-pinned=%d|ssd-budget=%llu|ssd-cache=%zu:%s"
             "|condition=%d%d|slow=%d%d%d%d%d%d%d%d%d%d",
             ref2va, strlen(dit_path), dit_path, params->steps,
             params->video_flow_shift, params->audio_flow_shift,
@@ -261,6 +261,10 @@ static char *h3_resident_key(const char *dit_path, const char *dit_index,
             params->token_reduction, params->use_int8_row_fc2,
             params->ssd_streaming, params->ssd_pinned_prefix,
             (unsigned long long)params->ssd_memory_budget_bytes,
+            params->ssd_quantized_cache_directory ?
+                strlen(params->ssd_quantized_cache_directory) : 0,
+            params->ssd_quantized_cache_directory ?
+                params->ssd_quantized_cache_directory : "",
             video_condition, audio_condition,
             params->use_slower_bf16_mlp,
             params->use_slower_bf16_qkv,
@@ -322,7 +326,7 @@ static char *h3_prepared_key(const char *conditioning,
             "%s|shape=%dx%dx%d|steps=%d|shifts=%.17g,%.17g"
             "|layers=%d|reuse-core=%d|reduce=%d"
             "|row-fc2=%d|reference-rope=%d|ssd-streaming=%d"
-            "|ssd-pinned=%d|ssd-budget=%llu"
+            "|ssd-pinned=%d|ssd-budget=%llu|ssd-cache=%zu:%s"
             "|slow=%d%d%d%d%d%d%d%d%d%d|layer-policy=%zu:%s"
             "|gate-skip=%zu:%s|gate-cache=%zu:%s",
             conditioning, render_width, render_height, params->frames,
@@ -333,6 +337,10 @@ static char *h3_prepared_key(const char *conditioning,
             params->ssd_streaming,
             params->ssd_pinned_prefix,
             (unsigned long long)params->ssd_memory_budget_bytes,
+            params->ssd_quantized_cache_directory ?
+                strlen(params->ssd_quantized_cache_directory) : 0,
+            params->ssd_quantized_cache_directory ?
+                params->ssd_quantized_cache_directory : "",
             params->use_slower_bf16_mlp,
             params->use_slower_bf16_qkv,
             params->use_slower_bf16_attention_output,
@@ -771,14 +779,27 @@ static int h3_valid_params(h3_ctx *ctx, const h3_params *params) {
         return 0;
     }
     if (!params->ssd_streaming &&
-        (params->ssd_pinned_prefix || params->ssd_memory_budget_bytes)) {
+        (params->ssd_pinned_prefix || params->ssd_memory_budget_bytes ||
+         params->ssd_quantized_cache_directory)) {
         h3_set_error(ctx,
-                     "SSD pinned prefix/budget requires SSD streaming");
+                     "SSD pinned prefix/budget/quantized cache requires SSD streaming");
         return 0;
     }
-    if (params->ssd_streaming && params->use_int8_row_fc2) {
-        h3_set_error(ctx, "SSD streaming uses original BF16 weights and cannot "
-                         "be combined with int8 row FC2");
+    if (params->ssd_quantized_cache_directory &&
+        (!*params->ssd_quantized_cache_directory ||
+         params->use_slower_bf16_mlp || params->use_slower_bf16_qkv ||
+         params->use_slower_bf16_attention_output)) {
+        h3_set_error(ctx, "H3 quantized SSD cache requires the INT8 MLP, QKV, "
+                         "and attention-output routes");
+        return 0;
+    }
+    if (params->ssd_streaming && !params->ssd_quantized_cache_directory &&
+        params->use_int8_row_fc2) {
+        h3_set_error(ctx, "BF16 SSD streaming cannot be combined with int8 row FC2");
+        return 0;
+    }
+    if (params->ssd_quantized_cache_directory && !h3_device(ctx)->metal4) {
+        h3_set_error(ctx, "H3 quantized SSD streaming requires an M5-class Metal 4 GPU");
         return 0;
     }
     if (params->use_int8_row_fc2 && params->use_slower_bf16_mlp) {
@@ -883,6 +904,7 @@ typedef struct {
     int ssd_streaming;
     int ssd_pinned_prefix;
     uint64_t ssd_memory_budget_bytes;
+    const char *ssd_quantized_cache_directory;
     float spatial_rope_scale;
     int use_slower_bf16_mlp;
     int use_slower_bf16_qkv;
@@ -927,6 +949,7 @@ static void *h3_parallel_prepare_main(void *opaque) {
         prepare->active_blocks, prepare->core_reuse_interval,
         prepare->token_reduction, prepare->ssd_streaming,
         prepare->ssd_pinned_prefix, prepare->ssd_memory_budget_bytes,
+        prepare->ssd_quantized_cache_directory,
         prepare->spatial_rope_scale,
         prepare->use_slower_bf16_mlp,
         prepare->use_slower_bf16_qkv,
@@ -975,6 +998,8 @@ static int h3_parallel_prepare_start(
     prepare->ssd_streaming = params->ssd_streaming;
     prepare->ssd_pinned_prefix = params->ssd_pinned_prefix;
     prepare->ssd_memory_budget_bytes = params->ssd_memory_budget_bytes;
+    prepare->ssd_quantized_cache_directory =
+        params->ssd_quantized_cache_directory;
     prepare->spatial_rope_scale = spatial_rope_scale;
     prepare->use_slower_bf16_mlp = params->use_slower_bf16_mlp;
     prepare->use_slower_bf16_qkv = params->use_slower_bf16_qkv;
@@ -2027,6 +2052,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             params->ssd_streaming,
             params->ssd_pinned_prefix,
             params->ssd_memory_budget_bytes,
+            params->ssd_quantized_cache_directory,
             spatial_rope_scale,
             params->use_slower_bf16_mlp,
             params->use_slower_bf16_qkv,
@@ -2050,6 +2076,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             params->ssd_streaming,
             params->ssd_pinned_prefix,
             params->ssd_memory_budget_bytes,
+            params->ssd_quantized_cache_directory,
             spatial_rope_scale,
             params->use_slower_bf16_mlp,
             params->use_slower_bf16_qkv,
@@ -2307,6 +2334,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     result->sample_rate = waveform.sample_rate;
     result->seed = params->seed;
     result->ssd_streaming = streaming_info.enabled;
+    result->ssd_quantized = streaming_info.quantized;
     result->ssd_pinned_blocks = (int)streaming_info.pinned_blocks;
     result->ssd_streamed_blocks = (int)streaming_info.streamed_blocks;
     result->ssd_memory_budget_bytes = streaming_info.memory_budget_bytes;

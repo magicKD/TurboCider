@@ -45,10 +45,14 @@ void resolve_profile(Request &r) {
     profile_keys(model, @[
         @"policy", @"residency", @"allow_approximation", @"ane_manifest", @"memory_budget_bytes",
         @"allocator_cache_bytes", @"warmup_iterations", @"coreml_export",
-        @"streaming_offload"
+        @"streaming_offload", @"quantized_cache"
     ]);
     r.execution = string_value(model, @"policy", "gpu");
     r.residency = string_value(model, @"residency", r.residency);
+    auto quantized_cache = string_value(model, @"quantized_cache");
+    if (!quantized_cache.empty())
+        r.quantized_cache = (path.parent_path() / quantized_cache)
+                                .lexically_normal().string();
     if (model[@"streaming_offload"]) {
         require(CFGetTypeID((__bridge CFTypeRef)model[@"streaming_offload"]) ==
                     CFBooleanGetTypeID(),

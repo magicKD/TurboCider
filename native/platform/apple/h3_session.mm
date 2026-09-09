@@ -190,6 +190,10 @@ public:
                 "H3 memory budget exceeds physical memory");
         require(r.residency=="streamed" || !r.memory_budget_bytes,
                 "H3 memory budget requires streamed residency");
+        if (!r.quantized_cache.empty())
+            require(std::filesystem::is_directory(r.quantized_cache),
+                    "H3 quantized cache directory is missing: " +
+                        r.quantized_cache);
         /* Streamed DiT sessions are reusable too.  The runtime's resident key
          * includes streaming mode, pinned prefix and memory budget, while a
          * failed/cancelled denoise detaches the cached DiT and reprepare
@@ -213,6 +217,8 @@ public:
         parameters.ssd_memory_budget_bytes =
             (r.residency == "streamed" && r.memory_budget_bytes) ?
                 r.memory_budget_bytes : 0;
+        parameters.ssd_quantized_cache_directory =
+            r.quantized_cache.empty() ? nullptr : r.quantized_cache.c_str();
         parameters.use_reference_rope=1;
         parameters.use_slower_bf16_mlp=!r.allow_approximation;
         parameters.use_slower_bf16_qkv=!r.allow_approximation;
@@ -237,6 +243,7 @@ public:
                   @"width":@(result->width),@"height":@(result->height),
                   @"frames":@(result->frames),@"fps":@(result->fps),@"audio":@(r.audio),
                   @"ssd_streaming":@(result->ssd_streaming),
+                  @"ssd_quantized":@(result->ssd_quantized),
                   @"ssd_pinned_blocks":@(result->ssd_pinned_blocks),
                   @"ssd_streamed_blocks":@(result->ssd_streamed_blocks),
                   @"ssd_memory_budget_bytes":@(result->ssd_memory_budget_bytes),
