@@ -1,7 +1,9 @@
-# Local API / 本地 API
+# Local API
+
+[Documentation](README.md) · [Usage reference](USAGE.md)
 
 TurboCider exposes a persistent job service over a user-only Unix socket.
-The App's **本地 API** page starts an owned service and shows its socket path.
+The App's local API page starts an owned service and shows its socket path.
 It releases the embedded model session first. Stop the API to resume generation
 inside the App. Quit or unexpected App termination stops its owned service;
 an independently launched CLI service has its own lifecycle.
@@ -24,6 +26,22 @@ state directory or socket.
 Do not put `TURBOCIDER_SERVICE_PARENT_PID` in a shell profile. The App sets this
 internally to bind its child's lifetime to the App; standalone `serve` does
 not need it.
+
+## RPC fields
+
+Send one newline-terminated JSON object per connection. Responses use
+`{"ok": true, "result": ...}` or `{"ok": false, "error": ...}`.
+
+| Action | Additional fields |
+|---|---|
+| `submit` | `model_path` and complete `request`; returns a job ID |
+| `status`, `cancel` | `id` |
+| `jobs` | Optional `offset`, `limit` (default 20, maximum 100) |
+| `plan` | `request` |
+| `models`, `doctor`, `service_status` | None |
+
+For the CLI client, save an action such as `{"action":"models"}` to
+`rpc.json`, then run `dist/cli/turbocider rpc /tmp/turbocider.sock rpc.json`.
 
 ## Python client
 
@@ -87,16 +105,13 @@ A compatible resident session reuses conditioning; check `prompt_cache_hit`
 in the result. Changing model or relevant input identity invalidates reuse.
 The service admits up to 32 pending jobs; history is capped at 10,000 records.
 
-## Validation
+## Troubleshooting
 
-```sh
-make build-app
-make test-api
-python3 tests/native/test_service.py --model /absolute/FLUX.2-klein-4B \
-  --output /absolute/new-test-output
-```
+Start with `models` and `service_status` to check connectivity without loading
+weights. Use `plan` to inspect a request before submitting it. If the socket is
+unavailable, confirm the service is running and use the path shown in the App.
+Another process cannot use the same state directory or socket concurrently.
 
-The first tests use temporary state and no model weights. The last test uses
-existing local weights to verify real generation, changed-seed prompt reuse,
-queue/active cancellation, GPU ownership and crash recovery. None downloads
-models. macOS must permit local socket and Metal access.
+Actual generation requires compatible local weights and macOS permission to
+access Metal. A successful connection or plan does not certify model output.
+Use unique output paths; stop an App-owned service through its local API page.

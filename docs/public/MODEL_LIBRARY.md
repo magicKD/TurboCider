@@ -1,4 +1,6 @@
-# Model library / 模型库
+# Model library
+
+[Documentation](README.md) · [Getting started](GETTING_STARTED.md)
 
 The native `turbocider library` helper provides model registration and verified
 downloads without Python or a GPU. App and CLI share its index and configured
@@ -9,7 +11,7 @@ and cancellation; existing draft paths are registered without moving weights.
 
 The default managed root is
 `~/Library/Application Support/TurboCider/Models`. Select another root with
-`turbocider library configure DIRECTORY` or **管理目录** in the App. The shared
+`turbocider library configure DIRECTORY` or the managed-directory control in the App. The shared
 setting lives in `~/Library/Application Support/TurboCider/library-settings.json`.
 `TURBOCIDER_MODEL_LIBRARY` overrides it; `--root DIRECTORY` overrides one command.
 An existing external installation can remain in its original directory:
@@ -31,7 +33,7 @@ The alias must match the request model. `library catalog` shows download recipes
 Registration does not prove that the weights can run; native model loading
 still validates the actual layout and tensors.
 
-Use **检查安装** beside the selected path, or:
+Use the installation-inspection control beside the selected path, or:
 
 ```sh
 turbocider library inspect z-image-turbo /absolute/existing-model
@@ -43,7 +45,7 @@ length. FLUX checks also distinguish the 4B/9B architecture configurations.
 `files_present` means this file check passed, not that a generation was run;
 `incomplete` lists file problems, and `needs_preparation` lists remaining runtime
 setup. App downloads run this check after publishing the selected files, so a
-partial selection is not described as a ready model. Use “选择文件夹” to repair a
+partial selection is not described as a ready model. Use the folder picker to repair a
 moved installation, then remove the obsolete registration without deleting files.
 The byte count covers referenced weight files, including shared files; it is
 not additional disk usage. Reports are timestamped snapshots; recheck after
@@ -164,16 +166,9 @@ partial staging directory; completed verified blobs remain reusable on retry.
 The current transfer retries at file granularity; it does not promise byte-range
 resume. Forced process termination may leave unpublished staging data.
 
-No complete model downloads are needed for validation:
-
-```sh
-make build-app
-make test-library
-```
-
-The test server listens only on loopback and serves tiny fixtures. It covers
-both providers, pagination/traversal, component skips, cross-provider reuse,
-bad sizes/hashes, unsafe paths, cancellation and redirect credential handling.
+After a download, inspect the installation before generating. A file preview
+or successful transfer alone does not establish numerical model compatibility.
+Use the [getting-started workflow](GETTING_STARTED.md) for the first GPU request.
 
 API references: [Hugging Face Hub API](https://huggingface.co/docs/hub/en/api),
 [ModelScope Hub API implementation](https://github.com/modelscope/modelscope_hub/blob/main/src/modelscope_hub/_legacy_api.py).

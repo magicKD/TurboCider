@@ -58,7 +58,7 @@ private enum StudioPage: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var symbol: String { switch self { case .studio: return "sparkles"; case .library: return "photo.on.rectangle"; case .tasks: return "clock"; case .models: return "cpu"; case .api: return "network" } }
 }
-private let ciderAccent = Color(red: 0.96, green: 0.70, blue: 0.37)
+private let ciderAccent = Color(red: 0.02, green: 0.70, blue: 0.64)
 private func operationName(_ value: String) -> String {
     ["image.generate": "文生图", "image.transform": "单图修改", "image.edit": "参考编辑",
      "video.generate": "文生视频", "video.image": "图生视频", "video.keyframes": "关键帧视频",
@@ -173,9 +173,18 @@ struct StudioView: View {
             VStack(spacing: 12) {
                 if api.running { HStack { Label("本地 API 正在接收任务", systemImage: "network"); Spacer(); Button("管理服务") { page = .api } }.font(.callout).padding(10).background(ciderAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8)) }
                 HStack {
+                    Picker("创作类型", selection: Binding(get: { studio.creationKind }, set: { studio.changeCreationKind($0); compareOriginal = false })) {
+                        Label("图片生成", systemImage: "photo").tag("image")
+                        Label("视频生成", systemImage: "video").tag("video")
+                    }.pickerStyle(.segmented).frame(maxWidth: 300)
+                        .disabled(store.busy || studio.importing).accessibilityIdentifier("creationKind")
+                    Spacer()
+                    Button { page = .models } label: { Label("模型中心", systemImage: "square.stack.3d.up") }
+                }
+                HStack {
                     Picker("创作方式", selection: Binding(get: { studio.draft.operation }, set: { studio.changeOperation($0); compareOriginal = false })) {
-                        ForEach(model?.executor_operations ?? model?.operations ?? [], id: \.self) { Text(operationName($0)).tag($0) }
-                    }.pickerStyle(.segmented).frame(maxWidth: 380).accessibilityIdentifier("operation")
+                        ForEach(studio.creationOperations, id: \.self) { Text(operationName($0)).tag($0) }
+                    }.pickerStyle(.segmented).frame(maxWidth: 440).disabled(store.busy || studio.importing).accessibilityIdentifier("operation")
                     Spacer()
                     Text("STUDIO").font(.caption2).tracking(2).foregroundStyle(.secondary)
                 }
@@ -297,12 +306,22 @@ struct StudioView: View {
             Text("生成参数").font(.headline)
             VStack(alignment: .leading, spacing: 8) {
                 Picker("模型", selection: Binding(get: { studio.draft.modelID }, set: { studio.changeModel($0) })) {
-                    ForEach(studio.models.filter(\.executor)) { Text($0.name).tag($0.id) }
+                    ForEach(studio.creationModels) { Text($0.name).tag($0.id) }
                 }.disabled(store.busy || studio.importing).accessibilityIdentifier("studioModel")
                 Text(studio.draft.accelerationHint).font(.caption).foregroundStyle(.secondary)
                 Button(studio.draft.modelPath.isEmpty ? "选择模型…" : "管理模型") { page = .models }
             }
             Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("采样步数")
+                    TextField("采样步数", value: $studio.draft.steps, format: .number)
+                        .textFieldStyle(.roundedBorder).accessibilityIdentifier("steps")
+                    Button("重置") { studio.draft.steps = model?.default_steps ?? 4 }
+                }
+                Text(studio.draft.modelID.hasPrefix("z-image-turbo") ? "1–50 步，默认 9 步。其他步数的画质与加速收益需自行验证。" : "1–50 步，默认 \(model?.default_steps ?? 4) 步。")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             Text("输出尺寸").font(.subheadline)
             HStack { TextField("宽", value: $studio.draft.width, format: .number).accessibilityIdentifier("width"); Text("×"); TextField("高", value: $studio.draft.height, format: .number).accessibilityIdentifier("height") }.textFieldStyle(.roundedBorder)
             HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in Button("\(size)") { studio.draft.width = size; studio.draft.height = size }.font(.caption) } }
@@ -372,8 +391,6 @@ struct StudioView: View {
             }
             DisclosureGroup("高级参数") {
                 VStack(alignment: .leading, spacing: 12) {
-                    TextField("采样步数", value: $studio.draft.steps, format: .number).textFieldStyle(.roundedBorder).disabled(studio.draft.modelID == "z-image-turbo").accessibilityIdentifier("steps")
-                    Text(studio.draft.modelID == "z-image-turbo" ? "Z-Image-Turbo 固定 9 步" : "1–50 步，推荐 4 步").font(.caption2).foregroundStyle(.secondary)
                     Toggle("动态文本长度", isOn: $studio.draft.dynamicText).controlSize(.small)
                     if ["z-image-turbo", "z-image-turbo-gguf"].contains(studio.draft.modelID) {
                         LabeledContent("模型驻留", value: "常驻（分阶段模式待实现）")

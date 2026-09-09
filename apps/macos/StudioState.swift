@@ -197,10 +197,10 @@ struct StudioDraft: Codable, Sendable {
         guard model.supports(operation) else { throw NativeFailure(message: "当前模型不支持“\(operation)”操作。") }
         guard !audio || model.canGenerateAudio else { throw NativeFailure(message: "当前执行器尚未开放音频输出，请关闭音频。") }
         guard (64...2048).contains(width), (64...2048).contains(height), width % 16 == 0, height % 16 == 0 else { throw NativeFailure(message: "宽高需为 64–2048 之间的 16 倍数。") }
-        guard (1...50).contains(steps) else { throw NativeFailure(message: "采样步数需为 1–50，推荐 4 步。") }
-        if modelID == "z-image-turbo" {
-            guard steps == 9, residency == "resident", frames == 1, !audio else {
-                throw NativeFailure(message: "Z-Image-Turbo 使用固定 9 步、常驻模型和单张图片。")
+        guard (1...50).contains(steps) else { throw NativeFailure(message: "采样步数需为 1–50，当前模型默认 \(model.default_steps) 步。") }
+        if ["z-image-turbo", "z-image-turbo-gguf"].contains(modelID) {
+            guard residency == "resident", frames == 1, !audio else {
+                throw NativeFailure(message: "Z-Image-Turbo 使用常驻模型和单张图片，采样步数默认 9 步。")
             }
             guard activeLoRAs.allSatisfy({ $0.role == "transformer" }) else {
                 throw NativeFailure(message: "Z-Image LoRA 仅支持 transformer 角色。")
@@ -445,18 +445,46 @@ final class StudioState: ObservableObject {
     }
     func changeModel(_ id: String) {
         guard !importing, let model = models.first(where: { $0.id == id }), model.executor else { return }
-        if draft.modelID != id { selectModel(id); return }
+        if draft.modelID != id {
+            let operation = draft.operation
+            selectModel(id)
+            if model.supports(operation) { draft.operation = operation }
+            return
+        }
         if !model.supports(draft.operation) {
             draft.operation = (model.executor_operations ?? model.operations).first ?? ""
         }
-        draft.steps = model.default_steps
         message = nil
     }
+    var creationKind: String { draft.operation.hasPrefix("video.") ? "video" : "image" }
+    var creationModels: [StudioModel] {
+        models.filter { model in model.availableOperations.contains { $0.hasPrefix(creationKind + ".") } }
+    }
+    var creationOperations: [String] {
+        let operations = creationModels.flatMap(\.availableOperations)
+        let preferred = ["image.generate", "image.transform", "image.edit", "video.generate", "video.image", "video.keyframes", "video.reference"]
+        return preferred.filter { operations.contains($0) } + Set(operations).subtracting(preferred).sorted()
+    }
+    func changeCreationKind(_ kind: String) {
+        guard ["image", "video"].contains(kind), kind != creationKind else { return }
+        changeOperation(kind + ".generate")
+    }
     func changeOperation(_ operation: String) {
-        guard models.first(where: { $0.id == draft.modelID })?.supports(operation) == true else {
-            message = "当前模型不支持此创作方式。"; return
+        guard !importing else { return }
+        var switchedModel: StudioModel? = nil
+        if models.first(where: { $0.id == draft.modelID })?.supports(operation) != true {
+            let candidates = models.filter { $0.supports(operation) }
+            guard let candidate = candidates.first(where: { !(draft.modelPaths[$0.id] ?? "").isEmpty }) ?? candidates.first else {
+                message = "暂时没有支持此创作方式的执行器，请前往模型中心查看。"; return
+            }
+            let assets = draft.assets
+            let initImageID = draft.initImageID
+            selectModel(candidate.id)
+            draft.assets = assets
+            draft.initImageID = initImageID
+            switchedModel = candidate
         }
-        message = nil
+        message = switchedModel.map { "已切换至 \($0.name)，模型参数、LoRA 与加速配置已重置。" + (draft.modelPath.isEmpty ? "请在模型中心配置模型文件。" : "请核对生成参数。") }
         draft.operation = operation
         if draft.initImageID == nil { draft.initImageID = draft.assets.first?.id }
     }

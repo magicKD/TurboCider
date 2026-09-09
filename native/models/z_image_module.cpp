@@ -22,7 +22,8 @@ ModelModule z_image_module() {
             require(!r.audio, "Z-Image-Turbo does not produce audio");
             require(r.width % 16 == 0 && r.height % 16 == 0,
                     "Z-Image dimensions must be multiples of 16");
-            require(r.steps == 9, "Z-Image-Turbo requires its 9-step schedule");
+            require(r.steps >= 1 && r.steps <= 50,
+                    "Z-Image-Turbo steps must be 1...50 (default 9)");
             require(r.model_variant == "auto" || r.model_variant == "z-image-turbo",
                     "model_variant does not match Z-Image-Turbo");
             if (r.execution == "gpu_ane") {

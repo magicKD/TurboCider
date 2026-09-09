@@ -1,4 +1,6 @@
-# Caches and memory / 缓存与内存
+# Caches and memory
+
+[Documentation](README.md) · [Usage reference](USAGE.md)
 
 ## Repeated prompts
 
@@ -9,17 +11,17 @@ The native LTX route can also persist connected conditioning on disk with an
 identity derived from model, checkpoint, tokenizer and prompt. Cache reuse is
 reported by the executor rather than inferred from a faster request.
 
-App tasks display **已复用文本编码** when the result reports a hit.
+App tasks display a text-conditioning cache-hit message when the result reports a hit.
 Z-Image layer callbacks update elapsed time without replacing the completed
 denoise-step counter. Task details
-and the model's **当前会话最近采样** panel expose text/denoise timing, MLX memory
+and the model's recent-session sampling panel expose text/denoise timing, MLX memory
 and available Core ML metrics. Core ML calls, prediction time and output-copy
 bytes are cumulative within that session; they are not per-request counters
 or an ANE occupancy measurement. MLX snapshots exclude Core ML and OS/file
 caches. Peak memory is the allocator's recorded peak, not total physical RAM.
 
 Z-Image releases encoder weights after encoding while retaining the resulting
-conditioning tensor. **清理内存缓存并卸载会话** in Settings closes the embedded
+conditioning tensor. the clear-memory-and-unload control in Settings closes the embedded
 session and releases its model and prompt caches; the next request reloads.
 App-owned API sessions are released by stopping the service. Original model
 weights, media and source files remain on disk.
@@ -63,7 +65,7 @@ and symlink entries are skipped. Cleanup acquires the same cross-process lease
 as native inference and refuses to run while the runtime holds it. Next use
 regenerates removed tensors from the available original weights.
 
-For optional FLUX/Z-Image diagnostic dumps, use **登记输出张量目录…** in Settings
+For optional FLUX/Z-Image diagnostic dumps, use the register-diagnostic-tensor-directory control in Settings
 or explicitly enroll the actual dump directory:
 
 ```sh

@@ -287,10 +287,36 @@ struct StudioBehaviorTests {
         let preparedZ = try studio.preparationRequest(modelID: "z-image-turbo", output: output)
         try check(preparedZ.loras?.first?.strength == 0.8 && preparedZ.ane_manifest == loraManifest.path && preparedZ.width == 512,
                   "Loading the current model discarded LoRA, dimensions or acceleration")
-        var invalidZ = studio.draft; invalidZ.steps = 4
+        for steps in [1, 4, 8, 9, 20, 50] {
+            studio.draft.steps = steps
+            let configurable = try studio.preparationRequest(modelID: "z-image-turbo", output: output)
+            try check(configurable.steps == steps, "Z-Image custom steps were discarded")
+            studio.changeModel("z-image-turbo")
+            try check(studio.draft.steps == steps, "Reselecting the current model reset custom steps")
+        }
+        studio.save()
+        let restoredSteps = StudioState(directory: root)
+        try check(restoredSteps.draft.steps == 50, "Custom steps did not persist")
+        studio.draft.steps = 9
+        var invalidZ = studio.draft; invalidZ.steps = 0
+        try rejects { try invalidZ.validate() }
+        invalidZ.steps = 51
         try rejects { try invalidZ.validate() }
         invalidZ.steps = 9; invalidZ.loras[0].role = "text_encoder"
         try rejects { try invalidZ.validate() }
+        let creationStudio = StudioState(directory: root.appendingPathComponent("creation-first"))
+        try check(creationStudio.creationOperations.contains("image.generate"), "Image entry missing without installed models")
+        creationStudio.changeCreationKind("video")
+        try check(creationStudio.creationKind == "video" && creationStudio.draft.operation == "video.generate", "Video entry did not select a compatible executor")
+        try check(creationStudio.creationModels.allSatisfy { $0.availableOperations.contains { $0.hasPrefix("video.") } }, "Image model leaked into video choices")
+        creationStudio.changeCreationKind("image")
+        creationStudio.changeOperation("image.edit")
+        try check(creationStudio.draft.operation == "image.edit" && creationStudio.models.first { $0.id == creationStudio.draft.modelID }!.supports("image.edit"), "Operation-first selection failed")
+        creationStudio.changeModel("flux2-klein-9b")
+        try check(creationStudio.draft.operation == "image.edit", "Compatible model switch discarded operation")
+        let previousCreation = creationStudio.draft
+        creationStudio.changeOperation("unsupported.operation")
+        try check(creationStudio.draft.modelID == previousCreation.modelID && creationStudio.draft.operation == previousCreation.operation, "Unsupported operation changed the draft")
         let comfy = root.appendingPathComponent("comfy-z")
         let shared = root.appendingPathComponent("shared-qwen")
         for name in ["models/diffusion_models/z_image_turbo_bf16.safetensors", "models/vae/ae.safetensors"] {

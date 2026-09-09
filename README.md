@@ -4,7 +4,7 @@
 
 <p align="center"><strong>Native inference. More of your Apple silicon.</strong></p>
 <p align="center">SwiftUI Studio · Native CLI · C / Swift SDK · Local API</p>
-<p align="center"><a href="README.zh-CN.md">中文</a> · <strong>English</strong> · <a href="docs/GETTING_STARTED.md">Getting started</a> · <a href="docs/PERFORMANCE.md">Benchmarks</a></p>
+<p align="center"><a href="README.zh-CN.md">中文</a> · <strong>English</strong> · <a href="docs/public/GETTING_STARTED.md">Getting started</a> · <a href="docs/public/PERFORMANCE.md">Benchmarks</a></p>
 
 TurboCider is a local multimodal inference engine for Apple silicon. It turns unified memory into an opportunity for **heterogeneous execution: the CPU orchestrates native work while GPU and ANE process selected model partitions in parallel**. Shared output buffers, compiled GPU graphs and reusable sessions reduce copies and repeated preparation in compute-intensive image inference.
 
@@ -19,19 +19,39 @@ Create images and videos in a native SwiftUI studio, automate jobs with the CLI,
 - **Explicit capabilities:** image generation, image editing and video generation are offered only where the executor supports them. LoRA and GPU / ANE controls remain explicit.
 - **Shared model management:** App / CLI registrations, ModelScope / Hugging Face download previews and compatible text-component reuse. Start the local API from the App and manage regenerable text-tensor retention.
 
-The ANE routes use validated INT8 partitions: they are high-fidelity approximations, not bit-exact inference. Gains depend on hardware, model and shape. GPU is the default. Core ML compute-unit selection is not proof of ANE occupancy. These are reproducible workload results, not a universal SOTA claim. See the measurements below and [benchmark methodology](docs/PERFORMANCE.md).
+The ANE routes use validated INT8 partitions: they are high-fidelity approximations, not bit-exact inference. Gains depend on hardware, model and shape. GPU is the default. Core ML compute-unit selection is not proof of ANE occupancy. These are reproducible workload results, not a universal SOTA claim. See the measurements below and [benchmark methodology](docs/public/PERFORMANCE.md).
 
-## Measured performance
+## Performance highlights
 
-Median warm request wall times for the named workloads below, excluding first model loading and compilation. Throughput multiplier = GPU baseline time / hybrid time.
+**More performance from the same Mac: 1.39× on M4 Max FLUX GPU → hybrid,
+1.34× versus the recorded ComfyUI Z-Image workload, and up to 1.64× in a
+historical M4 Pro FLUX snapshot.**
 
-| Model / device / workload | TurboCider GPU | GPU + ANE | Throughput |
-|---|---:|---:|---:|
-| FLUX.2 Klein 4B · M4 Max 64 GB · 512² · 4 steps | 2.266 s | **1.628 s** | **1.39×** |
-| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 steps | 36.369 s | **30.001 s** | **1.21×** |
-| Z-Image Turbo · M4 Pro 48 GB · 512² · 512 tokens · 9 steps | 23.964 s | **20.425 s** | **1.17×** |
+Selected **warm request medians**, not the fastest individual run:
 
-[Methodology, quality metrics and sources](docs/PERFORMANCE.md). Support for 512 text tokens does not imply support for arbitrary image resolutions.
+| Workload | Baseline → TurboCider | Speedup |
+|---|---|---:|
+| FLUX 4B · M4 Pro 48 GiB · 512² · 4 steps | Native GPU 4.758 s → GPU + ANE **2.896 s** | **1.64×**¹ |
+| FLUX 4B · M4 Max 64 GB · 512² · 4 steps | Native GPU 2.266 s → GPU + ANE **1.628 s** | **1.39×** |
+| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 steps | Stock ComfyUI GPU 40.110 s → GPU + ANE **30.001 s** | **1.34×**² |
+
+The M4 Max FLUX hybrid result cuts request time by **28.2%**, with recorded
+GPU/hybrid PNG cosine similarity **0.999840**. Native Z-Image GPU alone took
+36.369 s; its hybrid route adds **1.21×** over that optimized GPU baseline.
+
+¹ September 5, 2026 historical cross-phase ratio, not a same-build paired rerun;
+the legacy hybrid artifact had path/size-only provenance.
+² September 7, 2026 recorded workflow comparison: native seed 42 and two warm
+samples versus ComfyUI seeds 43–45 and three samples, using different timing
+interfaces. It is not a seed-identical framework ranking.
+
+Hybrid uses approximate INT8 partitions; warm timings exclude initial setup
+and compilation. These selected dated results have **not been rerun for this
+documentation update** and are not promises for every device or the latest build.
+The older native hybrid was not faster than the original hybrid engine.
+
+[Performance and fidelity](docs/public/PERFORMANCE.md) ·
+[Public samples, conditions and comparison limits](docs/public/BENCHMARKS.md)
 
 ## Build and run
 
@@ -44,9 +64,9 @@ make test
 open dist/TurboCider.app
 ```
 
-Register an existing model folder in the App, choose an operation, and generate with GPU first. Compatible Z-Image text components can be linked from a local FLUX.2 Klein 4B installation. Configure ANE only after preparing artifacts for the actual model, shape and LoRA identity. Current packages are locally ad-hoc signed, not notarized releases.
+Choose image or video creation in the App; a compatible executor is selected automatically. Register its model folder and generate with GPU first. Compatible Z-Image text components can be linked from a local FLUX.2 Klein 4B installation. Configure ANE only after preparing artifacts for the actual model, shape and LoRA identity. Current packages are locally ad-hoc signed, not notarized releases.
 
-For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`. `batch` reuses a session; `serve` exposes the local job API. See [getting started](docs/GETTING_STARTED.md) and the [request / SDK / API reference](docs/USAGE.md).
+For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`. `batch` reuses a session; `serve` exposes the local job API. See [getting started](docs/public/GETTING_STARTED.md) and the [request / SDK / API reference](docs/public/USAGE.md).
 
 ## Model capabilities
 
@@ -72,16 +92,15 @@ Weights retain their upstream licenses. Large model files and generated outputs 
 | `bindings/` | C ABI and Swift SDK |
 | `profiles/`, `examples/` | Hardware policies and runnable request examples |
 | `tools/`, `tests/` | Setup, packaging, conversion, regression and benchmark tools |
-| `assets/branding/` | Vector identity and reproducible App icon |
-| `docs/` | User guides, design and retained development records |
-| `experimental/video/` | Frozen migration snapshots, excluded from shipping builds |
+| `assets/branding/` | Turbo Drop artwork and reproducible App icon |
+| `docs/public/` | Self-contained English user guides and published benchmark evidence |
 
-[Contributing](CONTRIBUTING.md) · [Third-party notices](native/THIRD_PARTY_NOTICES.md) · [Current validation records](docs/status/README.md)
+[Documentation](docs/public/README.md) · [Benchmark evidence](docs/public/BENCHMARKS.md)
 
-[Model library](docs/MODEL_LIBRARY.md) · [Local API](docs/LOCAL_API.md) · [Cache and memory](docs/CACHES.md)
+[Model library](docs/public/MODEL_LIBRARY.md) · [Local API](docs/public/LOCAL_API.md) · [Cache and memory](docs/public/CACHES.md)
 
-Original TurboCider code is provided under [MIT](LICENSE). Third-party code
-retains its [original notices](native/THIRD_PARTY_NOTICES.md); model weights
-remain subject to their upstream terms.
+Original TurboCider code uses the MIT license. Third-party code and model
+weights retain their respective terms; retain the license and notices supplied
+with the source or package.
 
-Native-only boundaries and GGUF limitations: [refactor summary](docs/status/native-refactor-summary-2026-09-09.md).
+[Native model capabilities, GGUF limits and LoRA](docs/public/USAGE.md#model-capabilities).

@@ -4,7 +4,7 @@
 
 <p align="center"><strong>原生推理，释放 Apple Silicon 的更多算力。</strong></p>
 <p align="center">SwiftUI 工作室 · 原生命令行 · C / Swift SDK · 本地 API</p>
-<p align="center"><strong>中文</strong> · <a href="README.md">English</a> · <a href="docs/GETTING_STARTED.md">快速开始</a> · <a href="docs/PERFORMANCE.md">性能测试</a></p>
+<p align="center"><strong>中文</strong> · <a href="README.md">English</a> · <a href="docs/public/GETTING_STARTED.md">快速开始</a> · <a href="docs/public/PERFORMANCE.md">性能测试</a></p>
 
 TurboCider 是面向 Apple Silicon Mac 的本地多模态推理引擎。它把统一内存架构变成实际的优化空间：**CPU 调度原生计算，GPU 与 ANE 并行处理选定的模型分区**，减少设备边界的复制和等待，让计算密集型图像推理用上 GPU 之外的算力。
 
@@ -21,17 +21,33 @@ TurboCider 是面向 Apple Silicon Mac 的本地多模态推理引擎。它把�
 
 ANE 路径使用经过验证的 INT8 分区，属于高保真近似，不是逐位无损。不同模型、芯片和输入的收益不同；默认使用 GPU。公开 Core ML 接口不能保证每个算子都实际驻留 ANE，也不提供可靠的本任务 ANE 占用百分比。我们公开边界和测量方法，不以单项测试宣称通用 SOTA。
 
-## 实测表现
+## 性能亮点
 
-以下为命名工作负载的 warm request wall 中位数；不含首次模型加载和编译。吞吐倍数 = 基线耗时 / 优化耗时。
+**同一台 Mac，用上更多算力：M4 Max FLUX 的 GPU → 混合加速达到 1.39×，
+Z-Image 相对记录中的 ComfyUI 为 1.34×；历史 M4 Pro FLUX 快照最高达到 1.64×。**
 
-| 模型 / 设备 / 工作负载 | TurboCider GPU | GPU + ANE | 吞吐倍数 |
-|---|---:|---:|---:|
-| FLUX.2 Klein 4B · M4 Max 64 GB · 512² · 4 步 | 2.266 s | **1.628 s** | **1.39×** |
-| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 步 | 36.369 s | **30.001 s** | **1.21×** |
-| Z-Image Turbo · M4 Pro 48 GB · 512² · 512 tokens · 9 步 | 23.964 s | **20.425 s** | **1.17×** |
+以下挑选已有记录中的 **warm request 中位数**，不是最快的单次运行：
 
-[性能方法、质量指标和完整来源](docs/PERFORMANCE.md)。512-token 的可变长度分区不等于任意图片分辨率。
+| 工作负载 | 基线 → TurboCider | 加速比 |
+|---|---|---:|
+| FLUX 4B · M4 Pro 48 GiB · 512² · 4 步 | 原生 GPU 4.758 s → GPU + ANE **2.896 s** | **1.64×**¹ |
+| FLUX 4B · M4 Max 64 GB · 512² · 4 步 | 原生 GPU 2.266 s → GPU + ANE **1.628 s** | **1.39×** |
+| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 步 | Stock ComfyUI GPU 40.110 s → GPU + ANE **30.001 s** | **1.34×**² |
+
+M4 Max FLUX 的生成耗时降低 **28.2%**，对应 GPU／混合输出 PNG 余弦相似度
+**0.999840**。Z-Image 原生 GPU 单独为 36.369 s，混合路线在此基础上再提速 **1.21×**。
+
+¹ 来自 2026-09-05 两个测量阶段的历史比值，不是同一构建的配对复测；
+旧混合产物只记录了路径／大小来源信息。
+² 来自 2026-09-07 的工作流记录：原生 seed 42、每路线 2 次 warm；
+ComfyUI seed 43–45、3 次 warm，计时接口不同，并非同 seed 的严格框架排名。
+
+混合路线采用近似 INT8 分区；warm 耗时不含首次准备和编译。
+**本次文档更新没有重跑实验**，精选历史结果不代表所有设备或最新构建的保证。
+历史原生混合路线也并未快于原始引擎的混合路线。
+
+[性能与保真度（英文）](docs/public/PERFORMANCE.md) ·
+[公开样本、测量条件与比较边界（英文）](docs/public/BENCHMARKS.md)
 
 ## 开始使用
 
@@ -44,7 +60,7 @@ make test
 open dist/TurboCider.app
 ```
 
-在 App 的模型库选择模型文件夹，再进入创作。已有权重可以继续放在原来的目录；Z-Image 可关联 FLUX.2 Klein 4B 的兼容文本组件。首次先使用 GPU，成功生成后再按设备配置 ANE。发行目录中的 App 当前为本机 ad-hoc 签名，尚未完成 Developer ID 公证。
+在 App 先选择图片或视频创作，自动匹配兼容执行器，再登记所需模型文件夹。已有权重可以继续放在原来的目录；Z-Image 可关联 FLUX.2 Klein 4B 的兼容文本组件。首次先使用 GPU，成功生成后再按设备配置 ANE。发行目录中的 App 当前为本机 ad-hoc 签名，尚未完成 Developer ID 公证。
 
 CLI 示例：
 
@@ -55,7 +71,7 @@ dist/cli/turbocider plan examples/requests/z-image-turbo.json
 dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z-image-turbo.json
 ```
 
-相对输出路径按当前工作目录解析；示例可能使用 `/tmp` 下的绝对路径。完整图像、视频、LoRA、ANE 准备和服务步骤见[快速开始](docs/GETTING_STARTED.md)与[使用参考](docs/USAGE.md)。
+相对输出路径按当前工作目录解析；示例可能使用 `/tmp` 下的绝对路径。完整图像、视频、LoRA、ANE 准备和服务步骤见[快速开始](docs/public/GETTING_STARTED.md)与[使用参考](docs/public/USAGE.md)。
 
 ## 模型能力
 
@@ -81,12 +97,11 @@ dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z
 | `bindings/` | C ABI 与 Swift SDK |
 | `profiles/`、`examples/` | 硬件策略与请求示例 |
 | `tools/`、`tests/` | 安装、打包、转换、回归测试与性能测试工具 |
-| `assets/branding/` | 矢量标识与可复现的 App 图标 |
-| `docs/` | 使用指南、设计与保留的开发记录 |
-| `experimental/video/` | 冻结的迁移快照，不参与发行构建 |
+| `assets/branding/` | Turbo Drop 标识与可复现的 App 图标 |
+| `docs/public/` | 独立英文使用指南与公开性能证据 |
 
-[参与贡献](CONTRIBUTING.md) · [第三方声明](native/THIRD_PARTY_NOTICES.md) · [当前验收记录](docs/status/README.md)
+[公开文档（英文）](docs/public/README.md) · [性能证据（英文）](docs/public/BENCHMARKS.md)
 
-[模型库](docs/MODEL_LIBRARY.md) · [本地 API](docs/LOCAL_API.md) · [缓存与内存](docs/CACHES.md)
+[模型库](docs/public/MODEL_LIBRARY.md) · [本地 API](docs/public/LOCAL_API.md) · [缓存与内存](docs/public/CACHES.md)
 
-TurboCider 原创代码采用 [MIT 许可证](LICENSE)。第三方代码保留[原有许可声明](native/THIRD_PARTY_NOTICES.md)，模型权重遵循各自的上游条款。
+TurboCider 原创代码采用 MIT 许可证；第三方代码和模型权重遵循各自条款，请保留源码或发行包附带的许可证及声明。

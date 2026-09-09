@@ -43,6 +43,20 @@ def plan(r):
     return status,json.loads(a) if a else None,b
 
 class ContractTests(unittest.TestCase):
+    def test_z_image_step_range_and_defaults(self):
+        for model in ['z-image-turbo', 'z-image-turbo-gguf']:
+            request = {'model': model, 'width': 512, 'height': 512,
+                       'frames': 1, 'audio': False, 'execution': 'gpu'}
+            code, configured, error = plan(request)
+            self.assertEqual(code, 0, error)
+            self.assertEqual(configured['stages'][1]['iterations'], 9)
+            for steps in [1, 8, 9, 20, 50]:
+                code, configured, error = plan({**request, 'steps': steps})
+                self.assertEqual(code, 0, error)
+                self.assertEqual(configured['stages'][1]['iterations'], steps)
+            for steps in [0, 51]:
+                self.assertNotEqual(plan({**request, 'steps': steps})[0], 0)
+
     def test_flux(self):
         code,p,error=plan({'width':512,'height':512})
         self.assertEqual(code,0,error);self.assertTrue(p['executable'])
@@ -71,7 +85,12 @@ class ContractTests(unittest.TestCase):
         self.assertEqual([stage['id'] for stage in p['stages']],
                          ['text_encode','denoise','vae_decode','export'])
         self.assertEqual(p['stages'][1]['iterations'],9)
-        self.assertNotEqual(plan({**request,'steps':8})[0],0)
+        for steps in [1, 8, 9, 20, 50]:
+            code, configured, error = plan({**request, 'steps': steps})
+            self.assertEqual(code, 0, error)
+            self.assertEqual(configured['stages'][1]['iterations'], steps)
+        for steps in [0, 51]:
+            self.assertNotEqual(plan({**request, 'steps': steps})[0], 0)
         self.assertNotEqual(plan({**request,'operation':'image.edit'})[0],0)
         code,_,error=plan({**request,'execution':'gpu_ane',
                            'allow_approximation':True,
@@ -116,7 +135,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual([stage['id'] for stage in p['stages']],
                          ['text_encode','denoise','vae_decode','export'])
         self.assertEqual(p['stages'][1]['iterations'],9)
-        self.assertNotEqual(plan({**request,'steps':8})[0],0)
+        self.assertEqual(plan({**request,'steps':8})[0],0)
         hybrid={**request,'model_variant':'Q8_0','execution':'gpu_ane',
                 'allow_approximation':True,
                 'ane_manifest':'/tmp/z-image-gguf.json',

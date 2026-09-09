@@ -23,7 +23,8 @@ ModelModule z_image_gguf_module() {
             require(!r.audio, "Z-Image GGUF does not produce audio");
             require(r.width % 16 == 0 && r.height % 16 == 0,
                     "Z-Image GGUF dimensions must be multiples of 16");
-            require(r.steps == 9, "Z-Image-Turbo GGUF requires its 9-step schedule");
+            require(r.steps >= 1 && r.steps <= 50,
+                    "Z-Image-Turbo GGUF steps must be 1...50 (default 9)");
             require(r.execution == "gpu" || r.execution == "auto" ||
                         r.execution == "gpu_ane",
                     "Z-Image GGUF execution must be gpu, auto or gpu_ane");
