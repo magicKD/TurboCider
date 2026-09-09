@@ -13,8 +13,8 @@
   `components/weights` contains affine weight operations. Model orchestration
   remains under `native/models`; Apple runtime/media adapters stay separate.
 - Wan 2.1 1.3B QAD replaces the FastMetal production Python session and naming.
-  Old ABI/schema strings are read-only compatibility aliases, not external
-  runtime discovery. Unsupported formats/options fail explicitly.
+  Old ABI/schema aliases and saved-draft migration have been removed.
+  Only the genuine upstream repository identity remains for provenance. Unsupported formats/options fail explicitly.
 - H3/LTX/Wan use verified premerged LoRA artifacts. FLUX/Z-Image retain their
   supported native in-memory/low-rank LoRA modes. This is not a universal ban
   on runtime LoRA.

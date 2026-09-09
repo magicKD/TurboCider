@@ -56,16 +56,16 @@ def process_rss_bytes() -> int | None:
 
 def load_entrypoint(path: Path) -> Any:
     spec = importlib.util.spec_from_file_location(
-        "_turbocider_fastmetal_entrypoint", path
+        "_turbocider_wan_reference_entrypoint", path
     )
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot import FastMetal entrypoint: {path}")
+        raise RuntimeError(f"cannot import Wan reference entrypoint: {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-class FastMetalWorker:
+class WanReferenceWorker:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.model_root = args.model_root.resolve()
@@ -74,7 +74,7 @@ class FastMetalWorker:
             self.mlx_checkpoint / "mlx_dit.safetensors"
         ).is_file():
             raise ValueError(
-                "FastMetal MLX checkpoint must contain mlx_dit.json and "
+                "Wan reference MLX checkpoint must contain mlx_dit.json and "
                 f"mlx_dit.safetensors: {self.mlx_checkpoint}"
             )
         self.entrypoint = load_entrypoint(args.entrypoint.resolve())
@@ -110,7 +110,7 @@ class FastMetalWorker:
         # RSS spikes and a 4+s decode regression; they are cheap enough to load
         # at the denoise boundary and release before decode.
         self.ane_load_s = 0.0
-        # FastMetal QAD uses the fixed FlowMatch shift=8 training schedule.
+        # Wan reference QAD uses the fixed FlowMatch shift=8 training schedule.
         # Construct precisely the float32 table used by the upstream scheduler
         # without importing its optional SciPy-only schedule variants.
         training_timesteps = np.linspace(
@@ -332,16 +332,16 @@ class FastMetalWorker:
         output = Path(request["output"])
         dump = request.get("dump")
         if not prompt:
-            raise ValueError("FastMetal prompt is required")
+            raise ValueError("Wan reference prompt is required")
         if width % 16 or height % 16 or frames % 4 != 1:
-            raise ValueError("FastMetal shape is not VAE/patch aligned")
+            raise ValueError("Wan reference shape is not VAE/patch aligned")
 
         latent_frames = (frames - 1) // 4 + 1
         latent_height = height // 8
         latent_width = width // 8
         pt, ph, pw = self.patch_size
         if latent_frames % pt or latent_height % ph or latent_width % pw:
-            raise ValueError("FastMetal latent grid is not patch aligned")
+            raise ValueError("Wan reference latent grid is not patch aligned")
         rows = latent_frames * (latent_height // ph) * (latent_width // pw)
         total_started = time.perf_counter()
         prompt_embeds, prompt_cache_hit, prompt_s = self.prompt_embeds(prompt)
@@ -352,7 +352,7 @@ class FastMetalWorker:
             self.ane_load_s = ane_reactivation_s
         if self.ane_session is not None and rows != self.ane_session.manifest.rows:
             raise ValueError(
-                "FastMetal ANE manifest rows do not match the request: "
+                "Wan reference ANE manifest rows do not match the request: "
                 f"manifest={self.ane_session.manifest.rows}, request={rows}"
             )
 
@@ -563,7 +563,7 @@ def main() -> None:
     if args.ane_manifest is not None and args.ane_bridge_dir is None:
         raise SystemExit("--ane-manifest requires --ane-bridge-dir")
     try:
-        worker = FastMetalWorker(args)
+        worker = WanReferenceWorker(args)
     except BaseException as error:
         emit(
             "fatal",

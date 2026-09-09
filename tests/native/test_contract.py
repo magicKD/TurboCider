@@ -824,17 +824,17 @@ class ContractTests(unittest.TestCase):
         ]:
             with self.subTest(invalid=invalid):
                 self.assertNotEqual(plan(invalid)[0],0)
-        code,p,error=plan({**request,'loras':[{'path':'/tmp/fastmetal.safetensors',
+        code,p,error=plan({**request,'loras':[{'path':'/tmp/wan.safetensors',
                                                'role':'transformer','strength':0.8}]})
         self.assertEqual(code,0,error)
         self.assertEqual(p['lora_fusion'],'premerged_manifest_verified')
         self.assertEqual(p['lora_strategy'],'disk_premerge')
         self.assertEqual(p['weight_validation'],'premerged-manifest-verified-at-execution')
-        self.assertNotEqual(plan({**request,'loras':[{'path':'/tmp/fastmetal.safetensors',
+        self.assertNotEqual(plan({**request,'loras':[{'path':'/tmp/wan.safetensors',
                                                       'role':'text_encoder','strength':0.8}]})[0],0)
         self.assertNotEqual(plan({**request,'execution':'gpu_ane',
-                                  'ane_manifest':'/tmp/fastmetal-ane.json',
-                                  'loras':[{'path':'/tmp/fastmetal.safetensors',
+                                  'ane_manifest':'/tmp/wan-ane.json',
+                                  'loras':[{'path':'/tmp/wan.safetensors',
                                             'role':'transformer','strength':0.8}]})[0],0)
         source=(ROOT/'native/platform/apple/wan_session.mm').read_text()
         self.assertNotIn('PersistentWorker',source)
@@ -859,8 +859,8 @@ class ContractTests(unittest.TestCase):
             for block in range(30):
                 (root/f'block{block}.mlmodelc').mkdir()
             manifest={
-                'schema':'turbocider-fastmetal-ane-mlp-v1',
-                'checkpoint':'/missing/fastmetal/mlx_dit.safetensors',
+                'schema':'turbocider-wan-ane-mlp-v1',
+                'checkpoint':'/missing/wan/mlx_dit.safetensors',
                 'checkpoint_sha256':'a48f7370cab9664ebc71afefa6cbc2ea2ab1970b06aa9ad77712179cf52213ff',
                 'mlx_dit_json_sha256':'db5603223f17a03051d36e4a3a218477dd48a7723117743d5d916d1db3f87691',
                 'shape':{'rows':32760,'hidden':1536,'intermediate':8960,
@@ -877,6 +877,13 @@ class ContractTests(unittest.TestCase):
             code,p,error=plan(request)
             self.assertEqual(code,0,error)
             self.assertEqual(p['backend'],'wan-mlx+coreml')
+            manifest['schema']='turbocider-fastmetal-ane-mlp-v1'
+            path.write_text(json.dumps(manifest))
+            code,p,error=plan(request)
+            self.assertNotEqual(code,0)
+            self.assertIn('schema',error)
+            manifest['schema']='turbocider-wan-ane-mlp-v1'
+            path.write_text(json.dumps(manifest))
             code,p,error=plan({**request,'allow_approximation':False})
             self.assertNotEqual(code,0)
             self.assertIn('allow_approximation=true',error)
@@ -886,13 +893,13 @@ class ContractTests(unittest.TestCase):
             self.assertIn('ANE block artifact',error)
 
     def test_wan_lora_preflight_binds_pinned_base_and_merged_checkpoint(self):
-        configured=os.environ.get('TURBOCIDER_FASTMETAL_TEST_MODEL')
+        configured=os.environ.get('TURBOCIDER_WAN_TEST_MODEL')
         fixture=(Path(configured).resolve() if configured else
-                 (ROOT.parent/'gpu_ane/fastmetal-runtime/models/FastMetal-1.3B-QAD').resolve())
+                 (ROOT/'models/Wan2.1-1.3B-QAD').resolve())
         base_weights=fixture/'mlx_dit.safetensors'
         base_config=fixture/'mlx_dit.json'
         if not base_weights.is_file() or not base_config.is_file():
-            self.skipTest('validated FastMetal base fixture is unavailable')
+            self.skipTest('validated Wan base fixture is unavailable')
 
         def digest(path):
             return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -902,14 +909,14 @@ class ContractTests(unittest.TestCase):
             model=root/'model';model.mkdir()
             (model/'mlx_dit.safetensors').symlink_to(base_weights)
             (model/'mlx_dit.json').symlink_to(base_config)
-            lora=root/'style.safetensors';lora.write_bytes(b'fastmetal lora fixture')
+            lora=root/'style.safetensors';lora.write_bytes(b'wan lora fixture')
             merged=root/'merged';merged.mkdir()
             output_weights=merged/'mlx_dit.safetensors'
-            output_weights.write_bytes(b'premerged FastMetal checkpoint fixture')
+            output_weights.write_bytes(b'premerged Wan checkpoint fixture')
             output_config=merged/'mlx_dit.json'
             output_config.write_bytes(base_config.read_bytes())
             manifest={
-                'schema':'turbocider-fastmetal-premerged-lora-v1',
+                'schema':'turbocider-wan-premerged-lora-v1',
                 'algorithm':'fastvideo-mlx-runtime-equivalent-transformer-lora-premerge-v1',
                 'repository':'FastVideo/FastMetal-1.3B-QAD',
                 'revision':'2dac0154b217adabf8895d6cde7d6d93e68b7bec',
@@ -973,12 +980,12 @@ class ContractTests(unittest.TestCase):
             self.assertNotEqual(code,0)
             self.assertIn('strength',error)
             self.assertIsNone(payload)
-            lora.write_bytes(b'tampered adapter')
+            lora.write_bytes(b'tampered adapter with different length')
             code,payload,error=preflight()
             self.assertNotEqual(code,0)
             self.assertIn('size',error)
             self.assertIsNone(payload)
-            lora.write_bytes(b'fastmetal lora fixture')
+            lora.write_bytes(b'wan lora fixture')
             manifest['mapping']['missing']=1
             manifest_path.write_text(json.dumps(manifest))
             code,payload,error=preflight()

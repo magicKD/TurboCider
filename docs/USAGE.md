@@ -92,7 +92,7 @@ model_variant，或直接选择单文件。不再通过环境变量或兄弟目�
 
 开发者用 `tools/convert/wan_taehv.py SOURCE.pth MODEL/vae/taew2_1.safetensors` 离线准备 decoder。转换器校验固定 source SHA 并写入 native metadata，不覆盖已有目标。最终用户取得准备好的模型包即可，无需运行转换器。
 
-GPU+ANE 要求显式完整 30-block manifest：`rows=32760`、`hidden=1536`、`intermediate=8960`、ANE/GPU split=`4096/4864`，只支持 832×480×81。纯 GPU 可设 `compile_gpu=true`；整图编译与 hybrid 互斥。新 artifact schema 是 `turbocider-wan-ane-mlp-v1`，暂兼容历史 FastMetal schema。Session 校验实际选择的 checkpoint，不追随旧 manifest 中的开发机源路径。
+GPU+ANE 要求显式完整 30-block manifest：`rows=32760`、`hidden=1536`、`intermediate=8960`、ANE/GPU split=`4096/4864`，只支持 832×480×81。纯 GPU 可设 `compile_gpu=true`；整图编译与 hybrid 互斥。新 artifact schema 是 `turbocider-wan-ane-mlp-v1`，不再接受历史 schema。Session 校验实际选择的 checkpoint，不追随旧 manifest 中的开发机源路径。
 
 Wan 接受至多一个带 provenance 的预融合 transformer LoRA。校验固定 base/config 身份、adapter role/strength、merged 文件大小与 SHA、完整 mapping。native Pipeline 加载选定 merged DiT，其他组件来自原模型包。sidecar 为 `ADAPTER.safetensors.manifest.json` 或 `wan-lora.manifest.json`；新 schema 为 `turbocider-wan-premerged-lora-v1`。历史 schema/文件名只作为资源兼容保留。只读 ABI 是 `tc_wan_lora_preflight_json`，旧 C ABI 为弃用别名。LoRA 目前仅允许 GPU，不能复用基础模型的 ANE 权重。
 
@@ -114,7 +114,7 @@ Audio VAE 的 native runtime 已加入 `native/models/ltx_runtime/ltx_mlx_audio_
 
 SDK 缺省为 GPU；App 的 `auto` 在本机、权重、桶、MLP 分区和近似许可匹配时选择自有 GPU/ANE 分区，否则回退 GPU。当前自动 GPU+ANE 仅对通过完整端到端门槛的 exact device profile 开放：M4 Max 64 GB 的 FLUX 4B a6144 与 Z-Image base a4096，M4 Pro 48 GB 的 FLUX 4B full-MLP profile。请求 `execution.profile` 可指向本地 JSON。`profiles/apple-m4-pro-48gb.example.json` 使用完整 ANE MLP，`profiles/apple-m4-max-64gb.example.json` 使用 6144-channel FLUX 前缀和 4096-channel Z-Image 前缀并由 GPU 并行补算后缀；两者默认关闭，复制后填写 artifact 路径并显式启用。配置覆盖请求的 policy/residency，计划含配置内容 hash。可控制 allocator cache、预算和 Core ML warmup 次数。带独立 LoRA 时基础 ANE artifact 不再匹配，App 会安全使用 GPU；只有 provenance 完整的 LoRA-bound manifest 才能显式使用混合路径。
 
-LoRA 请求可在 schema 1 或 schema 2 顶层指定 `lora_strategy`：`auto`、`disk_premerge`、`in_memory_merge` 或 `inference_time`。`auto` 按模型 descriptor 的 `default_lora_strategy` 解析；不支持的显式组合会直接失败。当前 FLUX 使用内存融合；Z-Image safetensors 默认内存融合，也允许显式使用运行时低秩分支；H3/LTX/FastMetal 使用磁盘预融合或内容寻址 runtime cache。Z-Image GGUF 默认使用 native MLX packed-base 低秩分支，也可显式选择 MLX 内存融合；mixed K-quant 不支持。带 LoRA 的 GPU+ANE 仍只接受 `in_memory_merge` 和匹配同一 adapter identity 的 manifest。完整矩阵及当前精度/内存取舍见 [LoRA 执行策略](design/lora-execution-strategies.md)。
+LoRA 请求可在 schema 1 或 schema 2 顶层指定 `lora_strategy`：`auto`、`disk_premerge`、`in_memory_merge` 或 `inference_time`。`auto` 按模型 descriptor 的 `default_lora_strategy` 解析；不支持的显式组合会直接失败。当前 FLUX 使用内存融合；Z-Image safetensors 默认内存融合，也允许显式使用运行时低秩分支；H3/LTX/Wan 只接受离线预融合且通过 provenance 校验的模型，不在运行时启动磁盘融合。Z-Image GGUF 默认使用 native MLX packed-base 低秩分支，也可显式选择 MLX 内存融合；mixed K-quant 不支持。带 LoRA 的 GPU+ANE 仍只接受 `in_memory_merge` 和匹配同一 adapter identity 的 manifest。完整矩阵及当前精度/内存取舍见 [LoRA 执行策略](design/lora-execution-strategies.md)。
 
 混合 `gpu_ane` 必须 `allow_approximation=true`，使用本地 schema 2 `ane_manifest`。当前支持20个 single block MLP、K=N=3072、单固定桶。量化 MLP 改变算法精度，结果明确标注；公开 `cpuAndNeuralEngine` 不保证子图全部实际驻留 ANE。旧 artifact provenance 只有源路径/大小，故仍为实验。超过 bucket 明确失败，不裁剪输入、不静默改 GPU。
 

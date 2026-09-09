@@ -41,15 +41,10 @@ struct StudioBehaviorTests {
         } catch { try check(error.localizedDescription.contains("超时"), "Unexpected inspection failure: \(error)") }
         try check(inventoryStart.duration(to: .now) < .seconds(3), "Disk inspection exceeded deadline")
         let studio = StudioState(directory: root)
-        let legacyDraft = Data(#"{"modelID":"fastmetal-1.3b-qad","modelPaths":{"fastmetal-1.3b-qad":"/models/old-wan"},"prompt":"keep my prompt","frames":81}"#.utf8)
-        let migratedWan = try JSONDecoder().decode(StudioDraft.self, from: legacyDraft)
-        try check(migratedWan.modelID == "wan2.1-1.3b-qad" && migratedWan.modelPath == "/models/old-wan" &&
-                    migratedWan.prompt == "keep my prompt" && migratedWan.frames == 81,
-                  "Legacy Wan draft migration lost user data")
-        let dualDraft = Data(#"{"modelID":"fastmetal-1.3b-qad","modelPaths":{"fastmetal-1.3b-qad":"/models/old-wan","wan2.1-1.3b-qad":"/models/new-wan"}}"#.utf8)
-        let existingWan = try JSONDecoder().decode(StudioDraft.self, from: dualDraft)
-        try check(existingWan.modelPath == "/models/new-wan" && existingWan.modelPaths["fastmetal-1.3b-qad"] == "/models/old-wan",
-                  "Legacy migration overwrote an explicit Wan path")
+        let wanDraft = Data(#"{"modelID":"wan2.1-1.3b-qad","modelPaths":{"wan2.1-1.3b-qad":"/models/wan"},"prompt":"keep my prompt","frames":81}"#.utf8)
+        let decodedWan = try JSONDecoder().decode(StudioDraft.self, from: wanDraft)
+        try check(decodedWan.modelPath == "/models/wan" && decodedWan.frames == 81 &&
+                    decodedWan.prompt == "keep my prompt", "Wan draft round trip lost user data")
         studio.draft.modelPaths["flux2-klein-4b"] = "/test/model"
         let output = root.appendingPathComponent("output.png")
         let textOnly = StudioModel(id: "flux2-klein-4b", name: "Text only fixture", executor: true, output: "image", operations: ["image.generate"], default_steps: 4, default_frames: 1, default_width: 512, default_height: 512)

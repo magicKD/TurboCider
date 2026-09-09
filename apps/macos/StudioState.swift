@@ -94,14 +94,6 @@ struct StudioDraft: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         modelID = try c.decodeIfPresent(String.self, forKey: .modelID) ?? modelID
         modelPaths = try c.decodeIfPresent([String: String].self, forKey: .modelPaths) ?? modelPaths
-        // Migrate saved drafts, not runtime model aliases. Preserve the old
-        // path entry as user data, and never overwrite an explicit Wan path.
-        let legacyWanID = "fastmetal-1.3b-qad"
-        let wanID = "wan2.1-1.3b-qad"
-        if modelID == legacyWanID { modelID = wanID }
-        if modelPaths[wanID] == nil, let path = modelPaths[legacyWanID] {
-            modelPaths[wanID] = path
-        }
         operation = try c.decodeIfPresent(String.self, forKey: .operation) ?? operation
         prompt = try c.decodeIfPresent(String.self, forKey: .prompt) ?? prompt
         width = try c.decodeIfPresent(Int.self, forKey: .width) ?? width

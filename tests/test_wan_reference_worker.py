@@ -11,7 +11,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER_PATH = ROOT / "tools/validation/wan/python_worker.py"
-SPEC = importlib.util.spec_from_file_location("turbocider_fastmetal_worker", WORKER_PATH)
+SPEC = importlib.util.spec_from_file_location("turbocider_wan_reference_worker", WORKER_PATH)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
@@ -103,4 +103,4 @@ def test_worker_rejects_incomplete_mlx_checkpoint_before_importing_mlx(
         },
     )()
     with pytest.raises(ValueError, match="must contain mlx_dit.json"):
-        MODULE.FastMetalWorker(args)
+        MODULE.WanReferenceWorker(args)

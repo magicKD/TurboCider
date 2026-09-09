@@ -15,6 +15,7 @@ namespace {
 constexpr const char* kWanSchema = "turbocider-wan-ane-mlp-v1";
 constexpr const char* kWanLoRASchema =
     "turbocider-wan-premerged-lora-v1";
+// Actual upstream checkpoint identity, not a runtime name or compatibility alias.
 constexpr const char* kWanRepository = "FastVideo/FastMetal-1.3B-QAD";
 constexpr const char* kWanRevision =
     "2dac0154b217adabf8895d6cde7d6d93e68b7bec";
@@ -281,8 +282,7 @@ static bool inspect_wan_lora_manifest(
         std::string& failure) {
     try {
         auto manifest = read_json(manifest_path);
-        require((string_value(manifest, @"schema") == kWanLoRASchema ||
-                 string_value(manifest, @"schema") == "turbocider-fastmetal-premerged-lora-v1"),
+        require(string_value(manifest, @"schema") == kWanLoRASchema,
                 "unsupported Wan LoRA manifest schema");
         require(string_value(manifest, @"algorithm") ==
                     "fastvideo-mlx-runtime-equivalent-transformer-lora-premerge-v1",
@@ -422,8 +422,6 @@ static WanLoRASelection resolve_wan_lora(
                                          "wan-lora.manifest.json");
     add_wan_manifest_candidate(candidates,
                                      model_root / "wan-lora.manifest.json");
-    add_wan_manifest_candidate(candidates, lora_path.parent_path() / "fastmetal-lora.manifest.json");
-    add_wan_manifest_candidate(candidates, model_root / "fastmetal-lora.manifest.json");
     std::string failure = "no candidate manifest found";
     WanLoRASelection selection;
     for (const auto& candidate : candidates) {
@@ -584,8 +582,7 @@ std::string validate_wan_ane_manifest(const std::filesystem::path& path) {
     require(std::filesystem::is_regular_file(path),
             "Wan ANE manifest is missing: " + path.string());
     auto manifest = read_json(path);
-    require((string_value(manifest, @"schema") == kWanSchema ||
-             string_value(manifest, @"schema") == "turbocider-fastmetal-ane-mlp-v1"),
+    require(string_value(manifest, @"schema") == kWanSchema,
             "unsupported Wan ANE manifest schema");
     NSDictionary* shape = [manifest[@"shape"] isKindOfClass:NSDictionary.class]
         ? manifest[@"shape"] : nil;

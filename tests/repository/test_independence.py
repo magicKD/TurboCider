@@ -3,6 +3,16 @@ from pathlib import Path
 import unittest
 ROOT=Path(__file__).resolve().parents[2]
 class IndependenceTests(unittest.TestCase):
+    def test_no_fastmetal_shipping_aliases(self):
+        for folder in ['apps', 'native', 'bindings', 'services']:
+            for path in (ROOT/folder).rglob('*'):
+                if path.suffix not in ['.cpp', '.mm', '.h', '.hpp', '.swift', '.c', '.m']:
+                    continue
+                source = path.read_text()
+                # This is the real upstream checkpoint name, not a runtime alias.
+                source = source.replace('FastVideo/FastMetal-1.3B-QAD', '')
+                self.assertNotIn('fastmetal', source.lower(), str(path))
+
     def test_wan_shipping_path_is_native(self):
         session = (ROOT/'native/platform/apple/wan_session.mm').read_text()
         for token in ['posix_spawn', 'PersistentWorker', 'NSTask', 'getenv(',

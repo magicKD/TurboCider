@@ -11,8 +11,7 @@ std::unique_ptr<HybridFFN> load_hybrid(const std::filesystem::path &file,
     require(file.is_absolute() && model_root.is_absolute(), "Wan hybrid asset paths must be absolute");
     checkpoint(cancelled);
     auto manifest = read_json(file);
-    require(string_value(manifest, @"schema") == "turbocider-wan-ane-mlp-v1" ||
-                string_value(manifest, @"schema") == "turbocider-fastmetal-ane-mlp-v1",
+    require(string_value(manifest, @"schema") == "turbocider-wan-ane-mlp-v1",
             "unsupported Wan hybrid manifest schema");
     NSDictionary *shape = manifest[@"shape"];
     require([shape isKindOfClass:NSDictionary.class], "Wan hybrid shape missing");

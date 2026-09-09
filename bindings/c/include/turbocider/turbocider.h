@@ -49,9 +49,6 @@ int tc_ltx_lora_preflight_json(const char *model_path, const char *lora_path,
                                float strength, char **result, char **error);
 int tc_wan_lora_preflight_json(const char *model_path, const char *lora_path,
                              float strength, char **out_json, char **out_error);
-/* Deprecated ABI alias. Executes the same native Wan provenance check. */
-int tc_fastmetal_lora_preflight_json(const char *model_path, const char *lora_path,
-                                     float strength, char **result, char **error);
 /* Low-level fixed-shape Core ML FFN bridge used by managed persistent workers.
  * Input/output are IEEE FP16 bit patterns in contiguous [1, rows, hidden]
  * row-major order. The manifest remains checkpoint/provenance verified. */

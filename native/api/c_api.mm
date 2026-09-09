@@ -369,7 +369,7 @@ int tc_ltx_gemma_inspect_json(const char *checkpoint, char **out, char **error) 
     }
 }
 static int lora_preflight(const char *model_path, const char *lora_path, float strength,
-                          bool fastmetal, char **out, char **error) {
+                          bool wan, char **out, char **error) {
     if (out) *out = nullptr;
     if (error) *error = nullptr;
     @autoreleasepool {
@@ -378,7 +378,7 @@ static int lora_preflight(const char *model_path, const char *lora_path, float s
             tc::require(std::isfinite(strength) && strength > 0.0f && strength <= 4.0f,
                         "LoRA strength must be in (0, 4]");
             tc::LoRAAsset lora{lora_path, strength, "transformer"};
-            auto result = fastmetal ? tc::preflight_wan_lora(model_path, lora)
+            auto result = wan ? tc::preflight_wan_lora(model_path, lora)
                                     : tc::preflight_ltx_lora(model_path, lora);
             *out = copy(tc::json(result));
             return 0;
@@ -389,10 +389,6 @@ static int lora_preflight(const char *model_path, const char *lora_path, float s
 int tc_ltx_lora_preflight_json(const char *model_path, const char *lora_path,
                                float strength, char **out, char **error) {
     return lora_preflight(model_path, lora_path, strength, false, out, error);
-}
-int tc_fastmetal_lora_preflight_json(const char *model_path, const char *lora_path,
-                                     float strength, char **out, char **error) {
-    return lora_preflight(model_path, lora_path, strength, true, out, error);
 }
 int tc_wan_lora_preflight_json(const char *model_path, const char *lora_path,
                               float strength, char **out, char **error) {
