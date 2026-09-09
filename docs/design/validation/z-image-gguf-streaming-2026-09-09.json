@@ -9,6 +9,16 @@
     "unified_memory_bytes": 68719476736,
     "macos": "26.6.2"
   },
+  "artifacts": {
+    "checkpoint": {
+      "filename": "z-image-turbo-Q4_K_M.gguf",
+      "sha256": "e6494f87de6abaf6a561924f50317a5f271fc34bb4222aabbd801197df8f7daa"
+    },
+    "vae_sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+    "text_encoder_sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a",
+    "sd_server_sha256": "97e7d8332cb45019297e3c3d4e04fb483abc218b6a6e375b3c9dfb58ccdcfef7",
+    "turbocider_library_sha256": "4d623df37fe3b8c4b8f1cce3ccf31afed0f14ff1f8493588b84db8acfa241f78"
+  },
   "runtime": {
     "backend": "pinned stable-diffusion.cpp Metal",
     "params_backend": "diffusion=cpu,te=disk,vae=disk",
@@ -45,7 +55,11 @@
   "workload": {
     "prompt": "A cinematic red fox walking through fresh snow, soft morning light.",
     "steps": 9,
-    "seed": 42,
+    "base_1024_seeds": [
+      42,
+      314159
+    ],
+    "lora_1024_seed": 42,
     "machine_memory_budget_scope": "sd_cpp_max_vram_hint_not_process_cap"
   },
   "results": {
@@ -120,6 +134,7 @@
     },
     "q4_k_m_base_1024": [
       {
+        "seed": 42,
         "memory_budget_gib": 8,
         "samples_per_route": 2,
         "resident_median_seconds": 94.585900,
@@ -136,6 +151,24 @@
         "performance_passed": false
       },
       {
+        "seed": 314159,
+        "memory_budget_gib": 8,
+        "samples_per_route": 2,
+        "resident_median_seconds": 94.552628,
+        "streaming_median_seconds": 107.816283,
+        "streaming_over_resident": 1.140278,
+        "resident_peak_physical_footprint_bytes": 15446552048,
+        "streaming_peak_physical_footprint_bytes": 10013868832,
+        "footprint_reduction": 0.351708,
+        "minimum_correlation": 0.997056,
+        "minimum_cosine": 0.999787,
+        "maximum_mae_255": 2.679392,
+        "pixel_exact_pairs": 0,
+        "quality_passed": true,
+        "performance_passed": false
+      },
+      {
+        "seed": 42,
         "memory_budget_gib": 16,
         "samples_per_route": 1,
         "resident_median_seconds": 97.471265,
@@ -152,17 +185,38 @@
         "performance_passed": false,
         "note": "Direction-only single sample; 8 GiB repeated ABBA is the primary 1024² evidence."
       }
-    ]
+    ],
+    "q4_k_m_lora_1024": {
+      "seed": 42,
+      "lora_file": "z_image_turbo_distill_patch_lora_bf16.safetensors",
+      "lora_sha256": "340cc573d887681b89a45d850af77db43fb82dd994872be5d0a9d48649eb91c8",
+      "strategy": "inference_time",
+      "samples_per_route": 2,
+      "resident_median_seconds": 135.442211,
+      "streaming_median_seconds": 148.673340,
+      "streaming_over_resident": 1.097688,
+      "resident_peak_physical_footprint_bytes": 15637147312,
+      "streaming_peak_physical_footprint_bytes": 10187834312,
+      "footprint_reduction": 0.348485,
+      "minimum_correlation": 0.998205,
+      "minimum_cosine": 0.999851,
+      "maximum_mae_255": 2.136491,
+      "pixel_exact_pairs": 0,
+      "quality_passed": true,
+      "performance_passed": false,
+      "same_session_pixel_repeatability": true
+    }
   },
   "decision": {
-    "correctness": "passed under shape/finite/image quality gates; 256² is pixel exact and 1024² is high-correlation approximate output",
+    "correctness": "passed under shape/finite/image quality gates; 256² is pixel exact, 1024² base passed for two seeds, and 1024² independent LoRA passed for seed 42 as high-correlation approximate output",
     "memory": "passed physical-footprint reduction gate",
     "performance": "not qualified under the 1.02 material-regression gate",
     "automatic_policy": "keep resident for performance; expose streaming only as explicit low-memory fallback",
     "not_claimed": [
       "8 GiB is not a hard total-process memory cap",
       "streaming is not an end-to-end speed optimization",
-      "1024² single-seed evidence is not a multi-machine or multi-seed guarantee"
+      "two base seeds and one prompt on one M4 Max are not a multi-machine or broad prompt-suite guarantee",
+      "1024² LoRA evidence currently covers one seed and one adapter"
     ]
   }
 }

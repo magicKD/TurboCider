@@ -64,12 +64,17 @@ Q3_K_S、Q4_K_M、Q8_0/256²/9 steps/8 GiB 已在 M4 Max 通过重复 ABBA×2
 `--max-vram` working-set hint，实际 child physical footprint 约 10.00–10.01 GB，
 不是总进程硬上限。
 
-Q4_K_M 1024²、8 GiB hint 的重复对照慢 14.14%，footprint 降低 35.2%；输出
+Q4_K_M 1024²、8 GiB hint 的 seed 42 重复对照慢 14.14%，footprint 降低 35.2%；输出
 并非 pixel exact，但 correlation 0.998117、cosine 0.999823、MAE 2.147/255，
 通过显式近似质量门禁。16 GiB 单次 probe 仍慢 11.43%。Q4 官方独立 LoRA 的
-256²对照保持 4/4 pixel exact，footprint 降低 37.6%，但慢 3.86%。所有路线均
-未通过当前 1.02 performance gate，因此 streaming 是正确的显式低内存 fallback，
-不是无代价优化；1024²多 seed、1024² LoRA、其它量化和真实低内存机器仍需补矩阵。
+256²对照保持 4/4 pixel exact，footprint 降低 37.6%，但慢 3.86%。新增 seed
+314159 的 1024² base 重复对照为 94.553 → 107.816 秒（1.1403×），footprint
+降低 35.17%，correlation 0.997056、MAE 2.679/255。新增 1024²官方独立 LoRA
+seed 42 对照为 135.442 → 148.673 秒（1.0977×），footprint 降低 34.85%，
+correlation 0.998205、MAE 2.136/255；LoRA provenance 正确，同一路线重复输出
+pixel-exact。所有路线均未通过当前 1.02 performance gate，因此 streaming 是
+正确的显式低内存 fallback，不是无代价优化；更多 prompt/seed/adapter、其它量化
+和真实低内存机器仍需补矩阵。
 完整证据见
 [`z-image-gguf-streaming-2026-09-09.json`](../design/validation/z-image-gguf-streaming-2026-09-09.json)。
 

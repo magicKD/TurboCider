@@ -183,10 +183,12 @@ TurboCider 当前对应能力：
 修正后的 Z-Image CPU-staged ABBA×2 256²矩阵显示，Q3_K_S/Q4_K_M/Q8_0
 streaming 相对 resident 分别慢 `5.02%/5.23%/14.32%`，child lifetime physical
 footprint 分别降低 `33.3%/37.7%/45.9%`；十二组 decoded RGB 配对全部逐像素
-一致。Q4_K_M 1024²的 8 GiB hint 重复对照慢 `14.14%`、footprint 降低
-`35.2%`，correlation/cosine/MAE 为 `0.998117/0.999823/2.147`，因此质量通过但
-并非 exact。Q4 独立 LoRA 256²也保持 4/4 exact，footprint 降低 `37.6%`，但慢
-`3.86%`。这里的预算只是 sd.cpp `--max-vram` working-set hint，不是总进程硬上限。
+一致。Q4_K_M 1024²的 seed 42/314159 两个 8 GiB hint 重复对照分别慢
+`14.14%/14.03%`、footprint 均降低约 `35.2%`；correlation 为
+`0.998117/0.997056`，质量通过但并非 exact。Q4 独立 LoRA 256²保持 4/4 exact，
+footprint 降低 `37.6%`、慢 `3.86%`；1024² seed 42 的 LoRA 对照慢 `9.77%`、
+footprint 降低 `34.85%`、correlation `0.998205`，同样质量通过但非 exact。
+这里的预算只是 sd.cpp `--max-vram` working-set hint，不是总进程硬上限。
 所有路线均未通过 1.02 performance gate，所以只作为显式低内存 fallback。
 完整证据见 [`z-image-gguf-streaming-2026-09-09.json`](validation/z-image-gguf-streaming-2026-09-09.json)。
 
@@ -218,7 +220,7 @@ footprint 分别降低 `33.3%/37.7%/45.9%`；十二组 decoded RGB 配对全部�
 - H3 完整媒体 E2E 与量化 streaming；动态 pinned-prefix/retained DiT 已完成 Transformer 验证；
 - LTX per-block streaming、16/24/32 GB 低内存验收；
 - LLaDA hybrid 的多机器、多 seed 自动门禁；
-- GGUF Q2/Q3/Q4/Q5/Q6/IQ/F16/BF16/F32 的多尺寸、多 seed；Q4 1024² base 单 seed和 256² LoRA 已有初步 streaming 证据，但 1024² LoRA 仍缺；
+- GGUF Q2/Q3/Q4/Q5/Q6/IQ/F16/BF16/F32 的多尺寸、多 seed；当前已有 Q4 1024² 两个 base seed 和一个 LoRA seed，但更多 prompt/adapter/量化仍缺；
 - private procedure-bank 只可继续研究，不能改变正式发行边界。
 
 结构化摘要见 [Transformer 异构验证记录](validation/transformer-heterogeneous-2026-09-08.json)。

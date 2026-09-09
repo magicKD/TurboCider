@@ -68,6 +68,15 @@ independent LoRA at 256² also remained a separate request-time file and produce
 4/4 pixel-exact resident/streaming pairs, with `37.6%` footprint reduction and
 `1.0386×` runtime ratio.
 
+A second 1024² base seed (`314159`) reproduced the result: resident `94.553 s`,
+streaming `107.816 s` (`1.1403×`), footprint reduction `35.17%`, correlation
+`0.997056`, cosine `0.999787`, and MAE `2.679/255`. The first 1024² independent
+LoRA matrix (seed `42`, official LoRA, strength `1.0`) measured resident
+`135.442 s`, streaming `148.673 s` (`1.0977×`), footprint reduction `34.85%`,
+correlation `0.998205`, cosine `0.999851`, and MAE `2.136/255`. Both routes were
+pixel-repeatable within the same session. These results extend the evidence but
+do not qualify streaming as a no-slowdown path.
+
 The current sanitized evidence is
 [`z-image-gguf-streaming-2026-09-09.json`](validation/z-image-gguf-streaming-2026-09-09.json).
 The 2026-09-08 files are retained as historical disk-backend measurements; that

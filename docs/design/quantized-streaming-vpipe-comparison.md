@@ -48,8 +48,13 @@ child lifetime physical footprint 约为 10.00–10.01 GB，不应写成总进�
 Q4_K_M 1024²的 8 GiB 重复对照为 resident `94.586 s`、streaming
 `107.956 s`，footprint 降低 `35.2%`。输出不逐像素一致，但 correlation
 `0.998117`、cosine `0.999823`、MAE `2.147/255`，通过当前显式质量门禁。
-16 GiB 单次方向性 probe 仍慢 `11.43%`。Q4_K_M + 独立官方 LoRA 的 256²
-对照降低 `37.6%` footprint、慢 `3.86%`，4/4 decoded pixels exact。完整证据见
+第二个 base seed `314159` 复现为 resident `94.553 s`、streaming `107.816 s`
+（`1.1403×`）、footprint 降低 `35.17%`、correlation `0.997056`、MAE
+`2.679/255`。16 GiB 单次方向性 probe 仍慢 `11.43%`。Q4_K_M + 独立官方
+LoRA 的 256²对照降低 `37.6%` footprint、慢 `3.86%`，4/4 decoded pixels exact；
+1024² seed 42 首次 LoRA streaming 对照为 resident `135.442 s`、streaming
+`148.673 s`（`1.0977×`）、footprint 降低 `34.85%`、correlation `0.998205`、
+MAE `2.136/255`，质量通过但性能未过门禁。完整证据见
 [`z-image-gguf-streaming-2026-09-09.json`](validation/z-image-gguf-streaming-2026-09-09.json)。
 
 ### H3
@@ -76,7 +81,7 @@ LTX 当前只有 resident/component-staged；component-staged 会按 text/transf
 | quantized preparation | 4/8-bit 预处理 | GGUF 原生、多种 Q-format；H3 运行期 INT8 | H3 streaming 还不能带量化 shard |
 | block streaming | 通用双 slot + pread | H3 双 slot；GGUF 委托 sd.cpp | LTX 尚未 per-block streaming |
 | dynamic residency | 依据 trunk、block bytes、scratch、RAM 增长/回收 | H3 budget-driven pinned-prefix；其余为 resident/component-staged/streamed | LTX/GGUF 尚无统一 tuner |
-| low-memory E2E | 16 GB 工作流已有公开案例 | GGUF 8 GiB hint 已验证 256²和单 seed 1024²；H3/LTX 仍需完整矩阵 | hint 不是 8 GB 物理机证明；不能把单 seed 外推 |
+| low-memory E2E | 16 GB 工作流已有公开案例 | GGUF 8 GiB hint 已验证 256²、两个 base 1024² seed 和一个 LoRA 1024² seed；H3/LTX 仍需完整矩阵 | hint 不是 8 GB 物理机证明；单 prompt/机器不能外推 |
 
 ## 优化优先级
 
@@ -89,12 +94,13 @@ LTX 当前只有 resident/component-staged；component-staged 会按 text/transf
 ## 当前判断
 
 TurboCider 已经具备可交付的 GGUF resident/streaming 路径；256² Q3/Q4/Q8
-以及 Q4 独立 LoRA 的质量检查通过，Q4 1024²单 seed 也通过近似图片质量门禁，
+以及 Q4 独立 LoRA 的质量检查通过，Q4 1024²两个 base seed 和一个 LoRA seed
+也通过近似图片质量门禁，
 但所有 corrected streaming 路线均未通过 1.02 material-regression gate。因此它是
 正确的显式低内存 fallback，而不是自动性能优化。H3 pinned-prefix 与 retained
 DiT reuse 已完成真实 Transformer 验证，但量化 refill 和完整媒体 E2E 仍缺。
 TurboCider 还不是 vpipe 那种覆盖所有 DiT 的通用低内存调度器；下一步重点是
-H3 quantized refill、GGUF 1024²多 seed/LoRA，以及 LTX per-block streaming 的
+H3 quantized refill、GGUF 1024²更多 prompt/seed/adapter，以及 LTX per-block streaming 的
 16/24/32 GB 矩阵。
 
 证据：[Z-Image GGUF streaming 2026-09-09](validation/z-image-gguf-streaming-2026-09-09.json)、[Z-Image GGUF 总结](z-image-gguf.md)、[Transformer 异构报告](transformer-heterogeneous-report.md)。vpipe 仅作为外部设计参考，不进入 TurboCider 构建或运行时依赖。

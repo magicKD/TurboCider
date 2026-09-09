@@ -8,7 +8,7 @@
 |---|---|---|
 | 自包含、整洁、可独立运行 | 本轮 `make build/package/test`、App 签名、源码外 `env -i` CLI `models/doctor`、独立性测试 | 基本完成；模型权重和系统媒体工具仍是明确外部资源边界；FastMetal worker 代码已打包但其模型/Python runtime 是可选资源 |
 | GGUF 多量化 | pinned sd.cpp 覆盖混合 K-quants；native Q8/Q4 affine 分支 | 基础完成；只实测 Q3_K_S/Q4_K_M/Q8_0，其他 label 不能称为已验收 |
-| 低内存 streaming/offload | CPU-staged sd.cpp layer prefetch/evict、mmap、VAE tiling；显式预算 | 256²和单 seed 1024²可用；未证明“不影响性能”，当前明确存在 3.9–14.3% 回归 |
+| 低内存 streaming/offload | CPU-staged sd.cpp layer prefetch/evict、mmap、VAE tiling；显式预算 | 256²、两个 base 1024² seed 和单 seed 1024² LoRA 可用；未证明“不影响性能”，当前明确存在 3.9–14.3% 回归 |
 | Core ML/ANE 启动优化 | prepare/load-only、zero warmup、生命周期遥测和复用 | 机制完成；多机器、多轮 cold/cache-hit ABBA 仍缺 |
 | private ANE 实验 | `experimental/` bridge、shipping static audit、正式 disabled stub | 正式隔离完成；研究性能不能作为产品承诺 |
 | Transformer 并行探索 | tensor/sequence/head/CPU/GPU/ANE、1/multi-block、public/private report | 主要结论完成；更多机器/shape/block 矩阵仍缺 |
@@ -27,7 +27,7 @@ benchmark 现在显式记录 `shape_equal`、`finite` 和 paired output count；
 
 ## 未完成的关键闭环
 
-- GGUF 1024² 多 seed、LoRA 1024²、更多量化、真实低内存物理机器和跨机器矩阵；
+- GGUF 1024²更多 prompt/seed/LoRA adapter、更多量化、真实低内存物理机器和跨机器矩阵；当前已补两个 base seed 与一个 LoRA seed；
 - Q4/Q8 GPU+ANE 的自动设备策略、LoRA 绑定 artifact 和多尺寸质量门禁；
 - H3 完整媒体 E2E、量化 streaming；LTX per-block streaming 和 hybrid 质量；
 - LLaDA 独立 LoRA、FLUX 9B hybrid；

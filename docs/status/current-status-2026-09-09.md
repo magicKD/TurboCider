@@ -31,8 +31,8 @@ TurboCider 不要求 GPU、MLX、Core ML/ANE、GGUF 和参考实现逐 bit 或�
 |---|---|---|
 | GGUF resident | 已完成 | Q3_K_S、Q4_K_M、Q8_0 真实生成；TurboCider 与同版本 sd.cpp direct 的已测请求 ratio ≤ 1.0、输出 exact |
 | GGUF streaming | 已完成基础实现 | CPU-staged layer streaming；Q3/Q4/Q8 256²质量通过、footprint 降 33.3–45.9%；所有路线未过 1.02 性能门禁，因此只作显式 fallback |
-| GGUF 1024² | 初步完成 | Q4_K_M 8 GiB hint：94.586 s → 107.956 s，footprint 降 35.2%，correlation 0.998117、cosine 0.999823、MAE 2.147/255；单 seed、非 exact |
-| 独立 LoRA | 已完成基础请求期路径 | GGUF LoRA 保持独立文件，不生成 merged checkpoint；Q4 256² LoRA 4/4 exact，streaming footprint 降 37.6%，但慢 3.86% |
+| GGUF 1024² | 两 seed 初步完成 | Q4_K_M 8 GiB hint 在 seed 42/314159 均通过质量和内存门禁；streaming 慢 14.14%/14.03%，footprint 均降约 35.2%，非 exact |
+| 独立 LoRA | 256²与单 seed 1024²完成 | GGUF LoRA 保持独立文件，不生成 merged checkpoint；1024²质量通过、footprint 降 34.85%，但 streaming 慢 9.77% |
 | Core ML/ANE 启动 | 机制已完成 | load-only prepare、zero-input warmup、first/subsequent prediction 分开；可把启动工作移到用户可见生成前，但不能减少总计算 |
 | private ANE 隔离 | 已完成 | private bridge 仅在 `experimental/`；正式 dylib 无 `_ANE*` private symbols/framework |
 | Transformer 异构实验 | 主要结论已完成 | FFN channel split 是当前有效方向；sequence/head split 的 Amdahl 负结果、public/private ANE 差异已记录 |
@@ -49,7 +49,17 @@ TurboCider 不要求 GPU、MLX、Core ML/ANE、GGUF 和参考实现逐 bit 或�
 | Q8_0 | 9.341 s | 10.679 s | 1.1432× | 45.9% | 4/4 pixel exact |
 | Q4_K_M + LoRA | 13.365 s | 13.881 s | 1.0386× | 37.6% | 4/4 pixel exact |
 
-1024² Q4_K_M 8 GiB hint的 streaming 质量通过默认近似门禁，但性能未通过；16 GiB 单次方向性 probe 仍为 1.1143×，说明增加 hint 尚未消除 staging/scheduling/VAE tiling 固定开销。`memory_budget_bytes` 是 sd.cpp `--max-vram` working-set hint，不是整个进程的物理内存上限。
+1024² Q4_K_M 8 GiB hint在两个 seed 上均通过默认近似质量门禁。seed 42 为
+94.586 → 107.956 秒、correlation 0.998117；seed 314159 为 94.553 →
+107.816 秒、correlation 0.997056。两者的 footprint 均降低约 35.2%，性能均慢约
+14%。16 GiB 单次方向性 probe 仍为 1.1143×，说明增加 hint 尚未消除
+staging/scheduling/VAE tiling 固定开销。
+
+Q4_K_M + 官方独立 LoRA 的 1024² seed 42 对照为 135.442 → 148.673 秒，
+streaming 慢 9.77%，footprint 降低 34.85%；correlation 0.998205、cosine
+0.999851、MAE 2.136/255，质量通过。同一路线两次 decoded pixels 完全一致，
+LoRA SHA、strength=1.0 和 `inference_time` strategy 均被记录。`memory_budget_bytes`
+仍是 sd.cpp `--max-vram` working-set hint，不是整个进程的物理内存上限。
 
 完整摘要：[z-image-gguf-streaming-2026-09-09.json](../design/validation/z-image-gguf-streaming-2026-09-09.json)。
 
@@ -63,7 +73,7 @@ TurboCider 不要求 GPU、MLX、Core ML/ANE、GGUF 和参考实现逐 bit 或�
 
 ## 尚未完成
 
-1. GGUF 1024² 多 seed、LoRA 1024²、更多 Q-format 和真实 8/16/24 GB 物理机器矩阵。
+1. 将 GGUF 1024²从当前两个 base seed/一个 LoRA seed 扩展到更多 prompt、seed、adapter、Q-format 和真实 8/16/24 GB 物理机器矩阵。
 2. GGUF Q4/Q8 GPU+ANE 多尺寸、多机器、LoRA 和自动策略门禁。
 3. H3 完整 tokenizer/text encoder/VAE/MP4 E2E、量化 streaming refill；LTX per-block streaming 和 16/24/32 GB 验收。
 4. LTX hybrid 质量修复、多 prompt/seed；LLaDA 独立 LoRA；FLUX 9B hybrid。
