@@ -175,12 +175,20 @@ TurboCider 当前对应能力：
 |---|---|---|
 | 自定义 GPU forward | custom Metal | H3/LTX custom Metal；图像模型主要 MLX/Metal |
 | 量化模型 | 准备期 4-bit/8-bit | Z-Image GGUF 多 K-quant + native Q8；H3 运行期 INT8 kernel，但 streamed H3 仍 BF16 |
-| block streaming | 动态 residency + reusable refill | H3 BF16 双 slot + background `pread`；Z-Image GGUF 由 pinned sd.cpp `--stream-layers` |
+| block streaming | 动态 residency + reusable refill | H3 BF16 双 slot + background `pread`；Z-Image GGUF 使用 sd.cpp CPU-staged layer prefetch/evict |
 | 低内存 LTX | plugin 支持 16 GB | TurboCider 只有 `component_staged`，尚无 LTX per-block streaming |
 | 自适应 pinning | 基于 trunk、真实 block bytes、scratch 和 RAM | TurboCider H3 streamed 请求已支持按 activation reserve、双 slot 和 BF16 block bytes 选择动态 pinned prefix；真实 Transformer fresh 与 retained DiT 已验证，完整媒体 E2E 待补 |
-| offload 质量 | 同模型专用准备 | GGUF Q3/Q4/Q8 256² streaming 与 resident decoded RGB 完全一致 |
+| offload 质量 | 同模型专用准备 | GGUF Q3/Q4/Q8 256²逐像素一致；Q4 1024²通过显式近似质量门禁 |
 
-Z-Image 的重复 ABBA×2 256²矩阵显示，Q3_K_S/Q4_K_M/Q8_0 的 streaming warm 中位数相对 resident 分别慢 `4.00%/7.75%/7.83%`，而 child lifetime physical footprint 分别降低 `25.2%/30.0%/38.3%`；十二组 decoded RGB 配对全部逐像素一致。这里的 8 GiB `memory_budget_bytes` 只是 sd.cpp `--max-vram` working-set hint，实际 child physical footprint 仍为约 11.22–11.35 GB。因此 low-memory 路径已经可用且数值正确，但不是无代价加速；三种量化均未通过当前 1.02 material-regression gate，1024²、多 seed 和 LoRA 矩阵仍待补齐。完整证据见 [`z-image-gguf-streaming-matrix-2026-09-08.json`](validation/z-image-gguf-streaming-matrix-2026-09-08.json)。
+修正后的 Z-Image CPU-staged ABBA×2 256²矩阵显示，Q3_K_S/Q4_K_M/Q8_0
+streaming 相对 resident 分别慢 `5.02%/5.23%/14.32%`，child lifetime physical
+footprint 分别降低 `33.3%/37.7%/45.9%`；十二组 decoded RGB 配对全部逐像素
+一致。Q4_K_M 1024²的 8 GiB hint 重复对照慢 `14.14%`、footprint 降低
+`35.2%`，correlation/cosine/MAE 为 `0.998117/0.999823/2.147`，因此质量通过但
+并非 exact。Q4 独立 LoRA 256²也保持 4/4 exact，footprint 降低 `37.6%`，但慢
+`3.86%`。这里的预算只是 sd.cpp `--max-vram` working-set hint，不是总进程硬上限。
+所有路线均未通过 1.02 performance gate，所以只作为显式低内存 fallback。
+完整证据见 [`z-image-gguf-streaming-2026-09-09.json`](validation/z-image-gguf-streaming-2026-09-09.json)。
 
 下一步最有价值的 vpipe-style 改进是：
 
@@ -198,7 +206,7 @@ Z-Image 的重复 ABBA×2 256²矩阵显示，Q3_K_S/Q4_K_M/Q8_0 的 streaming w
 | FLUX 9B | GPU-only | 未验证 | staged text | 不自动 ANE |
 | Z-Image BF16 | compiled MLX/Metal | a4096 | component release | 当前全局最优图像路线 |
 | Z-Image ConvRot | packed Q8 | native ConvRot a4096 | active MLX 约 6.5 GB | 显式候选 |
-| Z-Image GGUF | sd.cpp Metal / native Q8 | native Q8 a4096 | disk/mmap/stream-layers | mixed K-quant 留 sd.cpp |
+| Z-Image GGUF | sd.cpp Metal / native Q8 | native Q8 a4096 | diffusion CPU-staged + text/VAE disk + layer streaming | mixed K-quant 留 sd.cpp |
 | LLaDA | native C++/MLX | a4096 prefix | large-image staged text | hybrid 仍显式 |
 | H3 | custom Metal/MPS | public Core ML MLP/QKV | BF16 SSD double-buffer + budget pinned-prefix + retained DiT | 完整媒体 E2E 与量化 streaming 待补 |
 | LTX | custom Metal/MLX helper | public Core ML MLP/KV/QKV + dual GPU queue | component-staged | 缺 per-block streaming 与完整 hybrid 质量门禁 |
@@ -210,7 +218,7 @@ Z-Image 的重复 ABBA×2 256²矩阵显示，Q3_K_S/Q4_K_M/Q8_0 的 streaming w
 - H3 完整媒体 E2E 与量化 streaming；动态 pinned-prefix/retained DiT 已完成 Transformer 验证；
 - LTX per-block streaming、16/24/32 GB 低内存验收；
 - LLaDA hybrid 的多机器、多 seed 自动门禁；
-- GGUF Q2/Q3/Q4/Q5/Q6/IQ/F16/BF16/F32 的多尺寸、LoRA 和 1024² streaming；
+- GGUF Q2/Q3/Q4/Q5/Q6/IQ/F16/BF16/F32 的多尺寸、多 seed；Q4 1024² base 单 seed和 256² LoRA 已有初步 streaming 证据，但 1024² LoRA 仍缺；
 - private procedure-bank 只可继续研究，不能改变正式发行边界。
 
 结构化摘要见 [Transformer 异构验证记录](validation/transformer-heterogeneous-2026-09-08.json)。

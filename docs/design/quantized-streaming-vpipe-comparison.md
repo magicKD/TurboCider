@@ -1,6 +1,6 @@
 # 量化、Streaming Offload 与 vpipe/H3/LTX 对照
 
-更新时间：2026-09-08
+更新时间：2026-09-09
 
 ## 对照边界
 
@@ -27,20 +27,30 @@ checkpoint tensor table
 
 TurboCider 已支持 Q2–Q8、IQ、F16/BF16/F32 descriptor 解析；mixed K-quant 由固定版本 stable-diffusion.cpp Metal 执行，Q8_0 还可切到 native MLX affine quantized matmul 和 checkpoint-bound GPU+ANE。LoRA 使用独立文件，混合 K-quant 的请求期 LoRA 由 sd.cpp 处理，不生成永久 merged checkpoint。
 
+当前实现将 diffusion 参数放在 CPU backend、text encoder/VAE 放在 disk
+backend；这是 sd.cpp 真正启用 `--stream-layers` 的前提。旧的全 disk backend
+虽然降低了 footprint，但会忽略 layer streaming，现只保留为历史对照。
+
 Q3_K_S、Q4_K_M、Q8_0 的 256²、9-step 重复 ABBA×2 对照（每条路线四个 warm 样本）如下：
 
 | Variant | Resident warm median | Streaming warm median | Overhead | Physical footprint reduction | RGB |
 |---|---:|---:|---:|---:|---|
-| Q3_K_S | 9.605 s | 9.989 s | +4.00% | 25.2% | exact |
-| Q4_K_M | 9.484 s | 10.219 s | +7.75% | 30.0% | exact |
-| Q8_0 | 9.327 s | 10.058 s | +7.83% | 38.3% | exact |
+| Q3_K_S | 9.551 s | 10.031 s | +5.02% | 33.3% | exact |
+| Q4_K_M | 9.497 s | 9.994 s | +5.23% | 37.7% | exact |
+| Q8_0 | 9.341 s | 10.679 s | +14.32% | 45.9% | exact |
 
 所有十二个配对输出的 decoded RGB 都逐像素一致。这里的
 `memory_budget_bytes=8 GiB` 只是 sd.cpp 的 `--max-vram` working-set hint；实际
-child lifetime physical footprint 约为 11.22–11.35 GB，不应写成总进程被限制在
+child lifetime physical footprint 约为 10.00–10.01 GB，不应写成总进程被限制在
 8 GiB。当前 1.02 material-regression gate 对三种量化都未通过，因此 streaming
-是正确的低内存显式 fallback，而不是无代价优化。原始数字和 SHA-256 见
-[`z-image-gguf-streaming-matrix-2026-09-08.json`](validation/z-image-gguf-streaming-matrix-2026-09-08.json)。
+是正确的低内存显式 fallback，而不是无代价优化。
+
+Q4_K_M 1024²的 8 GiB 重复对照为 resident `94.586 s`、streaming
+`107.956 s`，footprint 降低 `35.2%`。输出不逐像素一致，但 correlation
+`0.998117`、cosine `0.999823`、MAE `2.147/255`，通过当前显式质量门禁。
+16 GiB 单次方向性 probe 仍慢 `11.43%`。Q4_K_M + 独立官方 LoRA 的 256²
+对照降低 `37.6%` footprint、慢 `3.86%`，4/4 decoded pixels exact。完整证据见
+[`z-image-gguf-streaming-2026-09-09.json`](validation/z-image-gguf-streaming-2026-09-09.json)。
 
 ### H3
 
@@ -66,7 +76,7 @@ LTX 当前只有 resident/component-staged；component-staged 会按 text/transf
 | quantized preparation | 4/8-bit 预处理 | GGUF 原生、多种 Q-format；H3 运行期 INT8 | H3 streaming 还不能带量化 shard |
 | block streaming | 通用双 slot + pread | H3 双 slot；GGUF 委托 sd.cpp | LTX 尚未 per-block streaming |
 | dynamic residency | 依据 trunk、block bytes、scratch、RAM 增长/回收 | H3 budget-driven pinned-prefix；其余为 resident/component-staged/streamed | LTX/GGUF 尚无统一 tuner |
-| low-memory E2E | 16 GB 工作流已有公开案例 | GGUF 8 GB budget 已验证 256²；H3/LTX 仍需完整矩阵 | 不能把 256²证据外推到大图/视频 |
+| low-memory E2E | 16 GB 工作流已有公开案例 | GGUF 8 GiB hint 已验证 256²和单 seed 1024²；H3/LTX 仍需完整矩阵 | hint 不是 8 GB 物理机证明；不能把单 seed 外推 |
 
 ## 优化优先级
 
@@ -78,6 +88,13 @@ LTX 当前只有 resident/component-staged；component-staged 会按 text/transf
 
 ## 当前判断
 
-TurboCider 已经具备可交付的 GGUF resident/streaming 路径；256² Q3/Q4/Q8 的重复 decoded-RGB gate 已通过，但 1.02 material-regression gate 未通过，因此它是正确的显式低内存 fallback，而不是自动性能优化。H3 pinned-prefix 与 retained DiT reuse 已完成真实 Transformer 验证，但量化 refill 和完整媒体 E2E 仍缺。TurboCider 还不是 vpipe 那种覆盖所有 DiT 的通用低内存调度器；下一步重点是 H3 quantized refill、GGUF 1024²/多 seed/LoRA，以及 LTX per-block streaming 的 16/24/32 GB 矩阵。
+TurboCider 已经具备可交付的 GGUF resident/streaming 路径；256² Q3/Q4/Q8
+以及 Q4 独立 LoRA 的质量检查通过，Q4 1024²单 seed 也通过近似图片质量门禁，
+但所有 corrected streaming 路线均未通过 1.02 material-regression gate。因此它是
+正确的显式低内存 fallback，而不是自动性能优化。H3 pinned-prefix 与 retained
+DiT reuse 已完成真实 Transformer 验证，但量化 refill 和完整媒体 E2E 仍缺。
+TurboCider 还不是 vpipe 那种覆盖所有 DiT 的通用低内存调度器；下一步重点是
+H3 quantized refill、GGUF 1024²多 seed/LoRA，以及 LTX per-block streaming 的
+16/24/32 GB 矩阵。
 
-证据：[Z-Image GGUF streaming matrix](validation/z-image-gguf-streaming-matrix-2026-09-08.json)、[Z-Image GGUF 总结](z-image-gguf.md)、[Transformer 异构报告](transformer-heterogeneous-report.md)。vpipe 仅作为外部设计参考，不进入 TurboCider 构建或运行时依赖。
+证据：[Z-Image GGUF streaming 2026-09-09](validation/z-image-gguf-streaming-2026-09-09.json)、[Z-Image GGUF 总结](z-image-gguf.md)、[Transformer 异构报告](transformer-heterogeneous-report.md)。vpipe 仅作为外部设计参考，不进入 TurboCider 构建或运行时依赖。

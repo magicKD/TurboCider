@@ -1,0 +1,168 @@
+{
+  "schema_version": 2,
+  "date": "2026-09-09",
+  "tool": "tools/native/benchmark_z_image_gguf_streaming.py",
+  "scope": "current CPU-staged sd.cpp layer-prefetch implementation",
+  "hardware": {
+    "model": "Mac16,9",
+    "chip": "Apple M4 Max",
+    "unified_memory_bytes": 68719476736,
+    "macos": "26.6.2"
+  },
+  "runtime": {
+    "backend": "pinned stable-diffusion.cpp Metal",
+    "params_backend": "diffusion=cpu,te=disk,vae=disk",
+    "stream_layers_effective": true,
+    "resident_flags": [
+      "--diffusion-fa",
+      "--diffusion-conv-direct",
+      "--clip-on-cpu",
+      "--cfg-scale",
+      "1.0"
+    ],
+    "streaming_flags": [
+      "--params-backend",
+      "diffusion=cpu,te=disk,vae=disk",
+      "--mmap",
+      "--stream-layers",
+      "--max-vram",
+      "<budget GiB>",
+      "--vae-tiling"
+    ],
+    "stream_layers_note": "sd.cpp only enables --stream-layers when diffusion params use the CPU backend; the previous params-backend=disk combination silently ignored it and is retained only as a historical baseline."
+  },
+  "gates": {
+    "maximum_streaming_over_resident": 1.02,
+    "minimum_physical_footprint_reduction": 0.25,
+    "minimum_correlation": 0.99,
+    "minimum_cosine": 0.995,
+    "maximum_mae_255": 5.0,
+    "shape_equal": true,
+    "finite": true,
+    "paired_output_count": "must equal both measured route sample counts",
+    "pixel_exact": "diagnostic_only_unless_require_pixel_exact"
+  },
+  "workload": {
+    "prompt": "A cinematic red fox walking through fresh snow, soft morning light.",
+    "steps": 9,
+    "seed": 42,
+    "machine_memory_budget_scope": "sd_cpp_max_vram_hint_not_process_cap"
+  },
+  "results": {
+    "base_256": [
+      {
+        "variant": "Q3_K_S",
+        "samples_per_route": 4,
+        "resident_median_seconds": 9.551117,
+        "streaming_median_seconds": 10.030795,
+        "streaming_over_resident": 1.050222,
+        "resident_peak_physical_footprint_bytes": 15015488840,
+        "streaming_peak_physical_footprint_bytes": 10012852352,
+        "footprint_reduction": 0.333165,
+        "minimum_correlation": 1.0,
+        "minimum_cosine": 1.0,
+        "maximum_mae_255": 0.0,
+        "pixel_exact_pairs": 4,
+        "quality_passed": true,
+        "performance_passed": false
+      },
+      {
+        "variant": "Q4_K_M",
+        "samples_per_route": 4,
+        "resident_median_seconds": 9.497056,
+        "streaming_median_seconds": 9.993977,
+        "streaming_over_resident": 1.052324,
+        "resident_peak_physical_footprint_bytes": 16062902320,
+        "streaming_peak_physical_footprint_bytes": 10010379184,
+        "footprint_reduction": 0.376801,
+        "minimum_correlation": 1.0,
+        "minimum_cosine": 1.0,
+        "maximum_mae_255": 0.0,
+        "pixel_exact_pairs": 4,
+        "quality_passed": true,
+        "performance_passed": false
+      },
+      {
+        "variant": "Q8_0",
+        "samples_per_route": 4,
+        "resident_median_seconds": 9.341350,
+        "streaming_median_seconds": 10.678718,
+        "streaming_over_resident": 1.143167,
+        "resident_peak_physical_footprint_bytes": 18484098824,
+        "streaming_peak_physical_footprint_bytes": 10003810664,
+        "footprint_reduction": 0.458788,
+        "minimum_correlation": 1.0,
+        "minimum_cosine": 1.0,
+        "maximum_mae_255": 0.0,
+        "pixel_exact_pairs": 4,
+        "quality_passed": true,
+        "performance_passed": false
+      }
+    ],
+    "q4_k_m_lora_256": {
+      "lora_file": "z_image_turbo_distill_patch_lora_bf16.safetensors",
+      "lora_sha256": "340cc573d887681b89a45d850af77db43fb82dd994872be5d0a9d48649eb91c8",
+      "strategy": "inference_time",
+      "samples_per_route": 4,
+      "resident_median_seconds": 13.365473,
+      "streaming_median_seconds": 13.881453,
+      "streaming_over_resident": 1.038605,
+      "resident_peak_physical_footprint_bytes": 16315183320,
+      "streaming_peak_physical_footprint_bytes": 10185327680,
+      "footprint_reduction": 0.375715,
+      "minimum_correlation": 1.0,
+      "minimum_cosine": 1.0,
+      "maximum_mae_255": 0.0,
+      "pixel_exact_pairs": 4,
+      "quality_passed": true,
+      "performance_passed": false,
+      "same_session_pixel_repeatability": true
+    },
+    "q4_k_m_base_1024": [
+      {
+        "memory_budget_gib": 8,
+        "samples_per_route": 2,
+        "resident_median_seconds": 94.585900,
+        "streaming_median_seconds": 107.955855,
+        "streaming_over_resident": 1.141353,
+        "resident_peak_physical_footprint_bytes": 15454187064,
+        "streaming_peak_physical_footprint_bytes": 10014901072,
+        "footprint_reduction": 0.351962,
+        "minimum_correlation": 0.998117,
+        "minimum_cosine": 0.999823,
+        "maximum_mae_255": 2.147359,
+        "pixel_exact_pairs": 0,
+        "quality_passed": true,
+        "performance_passed": false
+      },
+      {
+        "memory_budget_gib": 16,
+        "samples_per_route": 1,
+        "resident_median_seconds": 97.471265,
+        "streaming_median_seconds": 108.610268,
+        "streaming_over_resident": 1.114280,
+        "resident_peak_physical_footprint_bytes": 15434919576,
+        "streaming_peak_physical_footprint_bytes": 9523557216,
+        "footprint_reduction": 0.382986,
+        "minimum_correlation": 0.998117,
+        "minimum_cosine": 0.999823,
+        "maximum_mae_255": 2.147359,
+        "pixel_exact_pairs": 0,
+        "quality_passed": true,
+        "performance_passed": false,
+        "note": "Direction-only single sample; 8 GiB repeated ABBA is the primary 1024² evidence."
+      }
+    ]
+  },
+  "decision": {
+    "correctness": "passed under shape/finite/image quality gates; 256² is pixel exact and 1024² is high-correlation approximate output",
+    "memory": "passed physical-footprint reduction gate",
+    "performance": "not qualified under the 1.02 material-regression gate",
+    "automatic_policy": "keep resident for performance; expose streaming only as explicit low-memory fallback",
+    "not_claimed": [
+      "8 GiB is not a hard total-process memory cap",
+      "streaming is not an end-to-end speed optimization",
+      "1024² single-seed evidence is not a multi-machine or multi-seed guarantee"
+    ]
+  }
+}

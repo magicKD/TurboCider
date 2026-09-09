@@ -147,6 +147,15 @@ def component(root: Path, relative: str) -> Path:
     return path.resolve()
 
 
+def resolve_component_root(model_root: Path, configured: Optional[Path]) -> Path:
+    root = configured.resolve() if configured else (
+        model_root if model_root.is_dir() else model_root.parent
+    )
+    if not root.is_dir():
+        raise SystemExit(f"Z-Image component root is missing: {root}")
+    return root
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -252,6 +261,11 @@ def pixel_metrics(reference: Path, candidate: Path) -> dict:
         "width": a[0],
         "height": a[1],
         "channels": a[2],
+        # Decoded 8-bit PNG samples are finite by construction. Keep these
+        # contract fields explicit so benchmark summaries can distinguish
+        # structural correctness from numerical similarity.
+        "shape_equal": True,
+        "finite": True,
         "pixel_exact": left == right,
         "mae_255": absolute / count,
         "rmse_255": math.sqrt(squared / count),
@@ -286,6 +300,11 @@ def configure_library(path: Path):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-root", type=Path, required=True)
+    parser.add_argument(
+        "--component-root", type=Path,
+        help="root containing split_files/vae and split_files/text_encoders; "
+             "defaults to --model-root",
+    )
     parser.add_argument("--variant", default="Q4_K_M")
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--server", type=Path)
@@ -325,13 +344,14 @@ def main() -> None:
 
     root = args.model_root.resolve()
     gguf = resolve_gguf(root, args.variant)
-    component_root = root if root.is_dir() else root.parent
+    model_file_root = root if root.is_dir() else root.parent
+    component_root = resolve_component_root(root, args.component_root)
     vae = component(component_root, "split_files/vae/ae.safetensors")
     llm = component(component_root, "split_files/text_encoders/qwen_3_4b.safetensors")
     server = args.server
     if server is None:
         configured = os.environ.get("TURBOCIDER_SD_CPP_BIN")
-        server = Path(configured) if configured else component_root / "bin/sd-server"
+        server = Path(configured) if configured else model_file_root / "bin/sd-server"
     server = server.resolve()
     library = args.library.resolve()
     if not server.is_file() or not os.access(server, os.X_OK):

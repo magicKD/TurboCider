@@ -218,7 +218,7 @@ static NSDictionary *runtime_plan(const RunResult &result) {
             ? (hybrid ? @"GGUF checkpoint and Core ML manifest verified at execution"
                       : @"GGUF loaded directly by native MLX")
             : (streaming
-                   ? @"GGUF header and disk-backed sd.cpp layer-streaming runtime verified at load"
+                   ? @"GGUF header and CPU-staged sd.cpp layer-streaming runtime verified at load"
                    : @"GGUF header and resident sd.cpp runtime verified at load");
         if (!result.request.loras.empty()) {
             const auto strategy = effective_lora_strategy(result.request);

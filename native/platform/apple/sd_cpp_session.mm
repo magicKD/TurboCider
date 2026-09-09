@@ -466,7 +466,12 @@ class ZImageGGUF final : public ModelSession {
                     "Z-Image GGUF streaming offload requires memory_budget_bytes");
             const double gib = double(request.memory_budget_bytes) / double(1ull << 30);
             [arguments addObjectsFromArray:@[
-                @"--params-backend", @"disk", @"--mmap", @"--stream-layers",
+                // Layer streaming is only active when diffusion parameters use
+                // the CPU backend. Keep the text encoder/VAE disk-backed, but
+                // retain diffusion weights in host memory so sd.cpp can
+                // prefetch/evict transformer blocks instead of re-reading each
+                // block from disk and silently ignoring --stream-layers.
+                @"--params-backend", @"diffusion=cpu,te=disk,vae=disk", @"--mmap", @"--stream-layers",
                 @"--max-vram", [NSString stringWithFormat:@"%.3f", std::max(1.0, gib)],
                 @"--vae-tiling"
             ]];

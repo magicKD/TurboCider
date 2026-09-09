@@ -30,8 +30,8 @@ struct Request {
     uint64_t seed = 42;
     bool compile_gpu = false;
     bool dynamic_text = true, allow_approximation = false, audio = true;
-    // GGUF-only low-memory hint.  The sd.cpp backend streams parameters and
-    // layers instead of requiring the complete quantized transformer resident.
+    // GGUF-only low-memory hint. The sd.cpp backend keeps diffusion parameters
+    // on the host and prefetches/evicts layers under the requested budget.
     bool streaming_offload = false;
 };
 struct Stage {

@@ -83,7 +83,7 @@ ModelModule z_image_gguf_module() {
                 "mixed K-quants remain on sd.cpp Metal; native GPU+ANE currently accepts Q8_0/Q4_0/Q4_1 or floating GGUF",
                 "in_memory_merge requires a native-compatible Q8_0/Q4_0/Q4_1 or floating GGUF checkpoint",
                 "inference_time uses sd.cpp for mixed K-quants and can use the packed native low-rank branch for native-compatible GGUF when TURBOCIDER_Z_GGUF_NATIVE_GPU is enabled",
-                "streaming residency uses the pinned sd.cpp disk-backed graph-cut layer streamer and requires an explicit memory budget",
+                "streaming residency uses the pinned sd.cpp CPU-staged layer-prefetch path, keeps text/VAE disk-backed, and requires an explicit memory budget",
                 "GPU+ANE remains explicit until checkpoint-bound artifacts pass paired performance and quality gates",
                 "quality and speed gates require the downloaded Q4 checkpoint and paired reference run"
             };

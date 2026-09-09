@@ -48,6 +48,8 @@ LLaDA GPU/ANE benchmark 可用 `--require-quality` 启用该门禁；不传此�
 
 - `z-image-gguf-streaming-matrix-2026-09-08.json`：M4 Max 上 Q3_K_S、Q4_K_M、Q8_0 256² resident/streaming ABBA×2 矩阵；包含重复 warm、物理 footprint、预算语义和逐像素质量门禁。
 
+- `z-image-gguf-streaming-2026-09-09.json`：修正为 CPU-staged diffusion 参数 backend 后的 GGUF streaming 证据，包含 Q3/Q4/Q8 256²、Q4 LoRA 256²、Q4 1024² 8/16 GiB probe，以及 shape/finite/近似质量和性能门禁。2026-09-08 的矩阵保留为旧 disk-backend 历史数据。
+
 - `h3-ssd-pinned-prefix-policy-2026-09-08.json`：H3 动态 pinned-prefix 的无模型权重策略测试；验证双 slot、activation reserve、预算上限和至少一个 streamed block 的 fail-closed 约束。真实 Transformer fresh/retained probe 见下面两份记录；完整媒体 E2E 仍待补。
 
 - `h3-ssd-pinned-prefix-dit-2026-09-08.json`：真实 62 GiB H3 Transformer 的 A/B/B/A DiT probe。16 GiB 预算选择 14 个 pinned block，四份最终 latent 字节完全一致；denoise 中位数约提升 1.140×，fresh 总时间基本持平。由于本机完整模型的 tokenizer/text encoder/VAE 符号链接已失效，该记录不包含完整 MP4 E2E。

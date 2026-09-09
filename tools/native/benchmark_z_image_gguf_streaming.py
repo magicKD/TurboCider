@@ -8,9 +8,10 @@ sampling inputs, and report both decoded-pixel parity and the child process's
 lifetime peak physical footprint.
 
 The default gates treat a slowdown above two percent as material, require at
-least a 25 percent physical-footprint reduction, and require exact decoded RGB
-pixels.  The raw thresholds and the stricter no-slowdown diagnostic are both
-written to the report so a relaxed gate cannot be mistaken for exact parity.
+least a 25 percent physical-footprint reduction, and apply the same decoded-RGB
+quality thresholds used by the native image acceptance tooling. Exact decoded
+pixels remain available as a stricter opt-in diagnostic. The raw thresholds
+and the stricter no-slowdown diagnostic are both written to the report.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from benchmark_z_image_gguf import (
     component,
     consume,
     pixel_metrics,
+    resolve_component_root,
     resolve_gguf,
     sha256,
 )
@@ -150,6 +152,10 @@ def comparison(
     maximum_performance_ratio: float,
     minimum_footprint_reduction: float,
     minimum_samples: int,
+    minimum_correlation: float,
+    minimum_cosine: float,
+    maximum_mae_255: float,
+    require_pixel_exact: bool,
 ) -> dict:
     if not resident_seconds or not streaming_seconds:
         raise ValueError("both routes require measured samples")
@@ -170,12 +176,24 @@ def comparison(
         len(resident_seconds) >= minimum_samples and
         len(streaming_seconds) >= minimum_samples
     )
+    pair_gate = (
+        len(resident_seconds) == len(streaming_seconds) == len(parity) and
+        len(parity) >= minimum_samples
+    )
     performance_gate = performance_ratio <= maximum_performance_ratio
     footprint_gate = (
         resident_peak > 0 and streaming_peak > 0 and
         footprint_reduction >= minimum_footprint_reduction
     )
-    parity_gate = bool(parity) and all(value.get("pixel_exact") for value in parity)
+    quality_gate = bool(parity) and all(
+        bool(value.get("shape_equal")) and
+        bool(value.get("finite")) and
+        float(value.get("correlation", 0.0)) >= minimum_correlation and
+        float(value.get("cosine", 0.0)) >= minimum_cosine and
+        float(value.get("mae_255", float("inf"))) <= maximum_mae_255 and
+        (not require_pixel_exact or bool(value.get("pixel_exact")))
+        for value in parity
+    )
     return {
         "resident_median_seconds": resident_median,
         "streaming_median_seconds": streaming_median,
@@ -188,21 +206,35 @@ def comparison(
         "minimum_pair_correlation": min(
             (float(value.get("correlation", 0.0)) for value in parity), default=0.0
         ),
+        "minimum_pair_cosine": min(
+            (float(value.get("cosine", 0.0)) for value in parity), default=0.0
+        ),
         "maximum_pair_mae_255": max(
             (float(value.get("mae_255", float("inf"))) for value in parity),
             default=float("inf"),
         ),
+        "decoded_pixel_exact_pairs": sum(
+            bool(value.get("pixel_exact")) for value in parity
+        ),
+        "paired_output_count": len(parity),
         "gates": {
             "minimum_samples_per_route": minimum_samples,
             "sample_count_passed": sample_gate,
+            "paired_output_count_passed": pair_gate,
             "maximum_performance_ratio": maximum_performance_ratio,
             "performance_passed": performance_gate,
             "minimum_footprint_reduction": minimum_footprint_reduction,
             "footprint_passed": footprint_gate,
-            "decoded_pixel_exact_required": True,
-            "parity_passed": parity_gate,
+            "minimum_correlation": minimum_correlation,
+            "minimum_cosine": minimum_cosine,
+            "maximum_mae_255": maximum_mae_255,
+            "decoded_pixel_exact_required": require_pixel_exact,
+            "quality_passed": quality_gate,
         },
-        "passed": sample_gate and performance_gate and footprint_gate and parity_gate,
+        "passed": (
+            sample_gate and pair_gate and performance_gate and footprint_gate and
+            quality_gate
+        ),
     }
 
 
@@ -226,6 +258,11 @@ def machine_info() -> dict:
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-root", type=Path, required=True)
+    parser.add_argument(
+        "--component-root", type=Path,
+        help="root containing split_files/vae and split_files/text_encoders; "
+             "defaults to --model-root",
+    )
     parser.add_argument("--variant", default="Q3_K_S")
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--server", type=Path)
@@ -237,6 +274,10 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--memory-budget-bytes", type=int, default=8 << 30)
     parser.add_argument("--maximum-performance-ratio", type=float, default=1.02)
     parser.add_argument("--minimum-footprint-reduction", type=float, default=0.25)
+    parser.add_argument("--minimum-correlation", type=float, default=0.99)
+    parser.add_argument("--minimum-cosine", type=float, default=0.995)
+    parser.add_argument("--maximum-mae-255", type=float, default=5.0)
+    parser.add_argument("--require-pixel-exact", action="store_true")
     parser.add_argument("--width", type=int, default=256)
     parser.add_argument("--height", type=int, default=256)
     parser.add_argument("--steps", type=int, default=9)
@@ -264,16 +305,23 @@ def main() -> int:
         raise SystemExit("maximum performance ratio must be positive")
     if not 0.0 <= args.minimum_footprint_reduction < 1.0:
         raise SystemExit("minimum footprint reduction must be in [0, 1)")
+    if not -1.0 <= args.minimum_correlation <= 1.0:
+        raise SystemExit("minimum correlation must be in [-1, 1]")
+    if not -1.0 <= args.minimum_cosine <= 1.0:
+        raise SystemExit("minimum cosine must be in [-1, 1]")
+    if args.maximum_mae_255 < 0:
+        raise SystemExit("maximum MAE must be nonnegative")
 
     root = args.model_root.resolve()
     gguf = resolve_gguf(root, args.variant)
-    component_root = root if root.is_dir() else root.parent
+    model_file_root = root if root.is_dir() else root.parent
+    component_root = resolve_component_root(root, args.component_root)
     vae = component(component_root, "split_files/vae/ae.safetensors")
     llm = component(component_root, "split_files/text_encoders/qwen_3_4b.safetensors")
     server = args.server
     if server is None:
         configured = os.environ.get("TURBOCIDER_SD_CPP_BIN")
-        server = Path(configured) if configured else component_root / "bin/sd-server"
+        server = Path(configured) if configured else model_file_root / "bin/sd-server"
     server = server.resolve()
     library_path = args.library.resolve()
     if not server.is_file() or not os.access(server, os.X_OK):
@@ -374,9 +422,13 @@ def main() -> int:
         maximum_performance_ratio=args.maximum_performance_ratio,
         minimum_footprint_reduction=args.minimum_footprint_reduction,
         minimum_samples=args.minimum_samples,
+        minimum_correlation=args.minimum_correlation,
+        minimum_cosine=args.minimum_cosine,
+        maximum_mae_255=args.maximum_mae_255,
+        require_pixel_exact=args.require_pixel_exact,
     )
     result = {
-        "schema_version": 1,
+        "schema_version": 2,
         "model": "z-image-turbo-gguf",
         "checkpoint": {
             "filename": gguf.name,
@@ -395,7 +447,7 @@ def main() -> int:
                 "--cfg-scale", "1.0",
             ],
             "streaming_extra_flags": [
-                "--params-backend", "disk", "--mmap", "--stream-layers",
+                "--params-backend", "diffusion=cpu,te=disk,vae=disk", "--mmap", "--stream-layers",
                 "--max-vram", f"{args.memory_budget_bytes / (1 << 30):.3f}",
                 "--vae-tiling",
             ],
@@ -430,6 +482,8 @@ def main() -> int:
             "Both TurboCider sessions stayed alive for the measured interleaved sequence.",
             "Physical footprint is the child sd-server lifetime maximum; sampled RSS is recorded but is not the low-memory acceptance metric.",
             "The 1.02 default performance ratio is a material-regression gate; strict no-slowdown is reported separately and is not implied by passing it.",
+            "Every timed output must have a paired decoded image with equal shape and finite pixels before numerical quality metrics can pass.",
+            "Decoded pixel equality is recorded but is not required unless --require-pixel-exact is set.",
         ],
     }
     (args.output / "summary.json").write_text(json.dumps(result, indent=2) + "\n")

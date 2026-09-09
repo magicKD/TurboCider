@@ -1,6 +1,6 @@
 # Z-Image Turbo GGUF backend
 
-更新时间：2026-09-08
+更新时间：2026-09-09
 
 TurboCider now exposes a separate `z-image-turbo-gguf` model module. It accepts a local GGUF transformer plus the independent Z-Image VAE and Qwen3-4B text encoder:
 
@@ -28,7 +28,10 @@ make setup-sd-cpp
 
 Set `residency` to `streaming` (or set `streaming_offload: true`) and provide an
 explicit `memory_budget_bytes`. TurboCider then launches the pinned server with
-`--params-backend disk --mmap --stream-layers --max-vram <GiB> --vae-tiling`.
+`--params-backend diffusion=cpu,te=disk,vae=disk --mmap --stream-layers
+--max-vram <GiB> --vae-tiling`. The diffusion parameters stay in host memory so
+sd.cpp's layer prefetch/eviction path is actually enabled; the text encoder and
+VAE remain disk-backed.
 The request is routed to sd.cpp rather than native MLX/ANE, because the latter
 requires resident packed weights. `in_memory_merge` LoRA is rejected in this
 mode; separate LoRA files remain available through the request-time
@@ -39,22 +42,37 @@ on the whole child process or a promise that an 8 GiB Mac can run the model.
 TurboCider reports the child process lifetime physical footprint separately;
 sampled RSS can be higher because memory-mapped file pages are counted.
 
-The repeated M4 Max ABBA×2 matrix at 256²/9 steps used one warmup and four
-measured requests per route. All twelve paired decoded outputs were pixel
-exact, while streaming reduced lifetime physical footprint by 25.2–38.3%:
+The corrected CPU-staged M4 Max ABBA×2 matrix at 256²/9 steps used one warmup
+and four measured requests per route. All twelve paired decoded outputs were
+pixel exact, while streaming reduced lifetime physical footprint by
+33.3–45.9%:
 
 | Variant | Resident warm median | Streaming warm median | Streaming overhead | Resident → streaming physical footprint |
 |---|---:|---:|---:|---:|
-| Q3_K_S | 9.605 s | 9.989 s | +4.00% | 14.997 → 11.220 GB (−25.2%) |
-| Q4_K_M | 9.484 s | 10.219 s | +7.75% | 16.145 → 11.301 GB (−30.0%) |
-| Q8_0 | 9.327 s | 10.058 s | +7.83% | 18.389 → 11.348 GB (−38.3%) |
+| Q3_K_S | 9.551 s | 10.031 s | +5.02% | 15.015 → 10.013 GB (−33.3%) |
+| Q4_K_M | 9.497 s | 9.994 s | +5.23% | 16.063 → 10.010 GB (−37.7%) |
+| Q8_0 | 9.341 s | 10.679 s | +14.32% | 18.484 → 10.004 GB (−45.9%) |
 
 The default material-regression gate is streaming/resident ≤ 1.02, so none
 of these low-memory routes is currently performance-qualified as a free
 optimization. They are valid explicit low-memory fallbacks with exact decoded
-RGB results. The sanitized repeated evidence is
-[`z-image-gguf-streaming-matrix-2026-09-08.json`](validation/z-image-gguf-streaming-matrix-2026-09-08.json);
-the earlier single-warm record is retained as historical evidence only.
+RGB results at 256².
+
+Q4_K_M at 1024² with the 8 GiB hint measured 94.586 s resident and 107.956 s
+streaming (`1.1414×`), while physical footprint fell from 15.454 GB to
+10.015 GB (`35.2%`). The decoded images were not pixel exact, but passed the
+explicit image-quality gate: correlation `0.998117`, cosine `0.999823`, and
+MAE `2.147/255`. A direction-only 16 GiB probe remained `1.1143×` slower, so
+raising the hint did not make this a performance optimization. The official
+independent LoRA at 256² also remained a separate request-time file and produced
+4/4 pixel-exact resident/streaming pairs, with `37.6%` footprint reduction and
+`1.0386×` runtime ratio.
+
+The current sanitized evidence is
+[`z-image-gguf-streaming-2026-09-09.json`](validation/z-image-gguf-streaming-2026-09-09.json).
+The 2026-09-08 files are retained as historical disk-backend measurements; that
+configuration did reduce footprint, but sd.cpp ignored `--stream-layers` when
+the diffusion parameter backend was `disk`.
 
 ## Quantization and validated files
 
@@ -95,7 +113,7 @@ Native MLX GGUF now supports Q8_0/Q4_0/Q4_1 affine weights. For the validated Q8
 
 ## Matched Unsloth/runtime measurement
 
-Use `tools/native/benchmark_z_image_gguf.py` after the model and runtime are installed to compare TurboCider with the direct pinned sd.cpp server. Use `tools/native/benchmark_z_image_gguf_streaming.py` for a repeated resident/streaming ABBA comparison; it records per-request wall time, decoded-pixel metrics, and child lifetime physical footprint. Both tools keep sessions resident and use the same files, sampler, prompt and seed. The streaming tool's required gate defaults to a material ratio of 1.02 plus a 25% footprint reduction; strict no-slowdown is reported separately.
+Use `tools/native/benchmark_z_image_gguf.py` after the model and runtime are installed to compare TurboCider with the direct pinned sd.cpp server. Use `tools/native/benchmark_z_image_gguf_streaming.py` for a repeated resident/streaming ABBA comparison; it records per-request wall time, decoded-pixel metrics, and child lifetime physical footprint. Both tools keep sessions resident and use the same files, sampler, prompt and seed. The streaming tool's required gate defaults to a material ratio of 1.02, a 25% footprint reduction, correlation ≥ 0.99, cosine ≥ 0.995 and MAE ≤ 5/255; strict no-slowdown and decoded-pixel equality are reported separately. `--require-pixel-exact` is available for workloads that genuinely require it.
 
 Current matched results are:
 

@@ -75,16 +75,24 @@ hint；它不是整个子进程的硬内存上限。运行结果的
 ```sh
 python3 -B tools/native/benchmark_z_image_gguf_streaming.py \
   --model-root /path/to/unsloth-Z-Image-Turbo-GGUF \
+  --component-root /path/to/Comfy-Org-z_image_turbo \
   --variant Q3_K_S \
   --library build/native/libturbocider.dylib \
   --server .deps/stable-diffusion-cpp/master-813-bfbef5b-u13b9d92/sd-server \
   --output outputs/gguf-streaming-q3
 ```
 
+`--component-root` 可与 GGUF 根目录分开，目录内需要
+`split_files/vae/ae.safetensors` 和
+`split_files/text_encoders/qwen_3_4b.safetensors`。如果 GGUF 目录本身已经
+包含这两个组件，可以省略该参数。`sd-server` 默认仍从 GGUF 根目录的
+`bin/` 查找，也可用 `--server` 显式指定。
+
 默认执行 ABBA×2，每条路线一个预热、四个计时样本；要求 physical
-footprint 至少降低 25%、decoded pixels 完全一致，并把超过 2% 的 warm
-回归判为未通过。当前 M4 Max 256² Q3/Q4/Q8 结果与限制见
-[GGUF streaming matrix](design/validation/z-image-gguf-streaming-matrix-2026-09-08.json)。
+footprint 至少降低 25%，默认图片质量门槛为 correlation ≥ 0.99、cosine
+≥ 0.995、MAE ≤ 5/255，并把超过 2% 的 warm 回归判为未通过。需要逐像素
+严格诊断时可加 `--require-pixel-exact`。当前 M4 Max 256² Q3/Q4/Q8 结果与限制见
+[GGUF streaming validation](design/validation/z-image-gguf-streaming-2026-09-09.json)。
 
 ## FastMetal 1.3B QAD
 

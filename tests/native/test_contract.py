@@ -133,6 +133,8 @@ class ContractTests(unittest.TestCase):
         session=(ROOT/'native/platform/apple/sd_cpp_session.mm').read_text()
         for token in ['TURBOCIDER_SD_CPP_BIN', '--diffusion-model',
                       '--diffusion-fa', '--diffusion-conv-direct',
+                      '@"--params-backend", @"diffusion=cpu,te=disk,vae=disk"',
+                      '@"--stream-layers"',
                       '@"--cfg-scale", @"1.0"',
                       '/sdcpp/v1/img_gen', '/sdcpp/v1/jobs/',
                       '@"lora"', '@"multiplier"', 'validate_gguf_header',
