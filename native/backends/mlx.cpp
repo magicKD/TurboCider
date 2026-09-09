@@ -2,8 +2,25 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <type_traits>
 namespace tc {
 namespace {
+// MLX 0.32.0 (our pinned runtime) selects fused attention internally. Newer
+// runtimes additionally let the caller force it. Keep both public signatures
+// usable without dropping the explicit preference when it is available.
+template <typename Attention>
+Tensor compatible_sdpa(Attention attention, const Tensor &q, const Tensor &k,
+                       const Tensor &v, float scale, const std::optional<Tensor> &mask,
+                       bool force_fused) {
+    if constexpr (std::is_invocable_v<Attention, const Tensor &, const Tensor &,
+                                      const Tensor &, float, const std::string &,
+                                      std::optional<Tensor>, const std::optional<Tensor> &,
+                                      bool, mx::StreamOrDevice>)
+        return attention(q, k, v, scale, "", mask, {}, force_fused, mx::StreamOrDevice{});
+    else
+        return attention(q, k, v, scale, "", mask, {}, mx::StreamOrDevice{});
+}
+
 struct LoRAPair { std::optional<Tensor> down, up, alpha; };
 static bool remove_suffix(std::string &value, const std::string &suffix) {
     if (!value.ends_with(suffix)) return false;
@@ -264,10 +281,10 @@ Tensor heads(const Tensor &x, int n, int d) {
 Tensor attend(const Tensor &q, const Tensor &k, const Tensor &v, bool f32,
               const std::optional<Tensor> &mask, bool force_fused) {
     auto dtype = q.dtype();
-    auto a = mx::fast::scaled_dot_product_attention(
+    auto a = compatible_sdpa(mx::fast::scaled_dot_product_attention,
         f32 ? mx::astype(q, mx::float32) : q, f32 ? mx::astype(k, mx::float32) : k,
-        f32 ? mx::astype(v, mx::float32) : v, 1.f / std::sqrt(float(q.shape(-1))), "", mask,
-        {}, force_fused);
+        f32 ? mx::astype(v, mx::float32) : v, 1.f / std::sqrt(float(q.shape(-1))), mask,
+        force_fused);
     if (f32)
         a = mx::astype(a, dtype);
     return mx::reshape(mx::transpose(a, {0, 2, 1, 3}), {1, q.shape(2), q.shape(1) * q.shape(3)});

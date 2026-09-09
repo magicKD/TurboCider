@@ -30,8 +30,11 @@ PACKAGE_MIN_MACOS="${TURBOCIDER_PACKAGE_MIN_MACOS:-${MLX_MIN_MACOS:-15.0}}"
 rm -rf "$APP" "$ROOT/dist/cli"
 mkdir -p "$BIN" "$RES" "$SCRIPTS" "$ROOT/dist/cli"
 cp build/native/TurboCiderNativeApp "$BIN/"
+cp assets/branding/AppIcon.icns assets/branding/LogoMark.png "$RES/"
 cp build/native/turbocider "$BIN/"
 for folder in "$BIN" "$ROOT/dist/cli"; do
+ cp build/native/turbocider-library "$folder/"
+ codesign --force --sign - "$folder/turbocider-library"
  mkdir -p "$folder/coreml"
  cp tools/coreml/export_flux2.py tools/coreml/export_z_image.py tools/coreml/lora.py "$folder/coreml/"
  cp build/native/libturbocider.dylib "$folder/"
@@ -63,14 +66,17 @@ cp tools/native/prepare_lora.py tools/native/lora_runtime_cache.py \
 cp tools/native/lora_runtime_cache.py tools/native/merge_h3_lora.py \
    tools/native/merge_ltx_refiner.py tools/native/fastmetal_worker.py "$SCRIPTS/"
 cp native/THIRD_PARTY_NOTICES.md "$RES/"
+cp LICENSE "$RES/TurboCider-LICENSE.txt"
 cp "$MLX_LICENSE_PATH" "$RES/MLX-LICENSE.txt"
 cp "$RES/THIRD_PARTY_NOTICES.md" "$RES/MLX-LICENSE.txt" "$ROOT/dist/cli/"
+cp "$RES/TurboCider-LICENSE.txt" "$ROOT/dist/cli/"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>org.turbocider.native</string>
 <key>CFBundleName</key><string>TurboCider</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleExecutable</key><string>TurboCiderNativeApp</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.2.0</string>

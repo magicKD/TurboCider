@@ -717,10 +717,14 @@ ZImage::ZImage(const std::filesystem::path &root)
     auto comfy_transformer =
         root / "split_files/diffusion_models/z_image_turbo_bf16.safetensors";
     auto comfy_vae = root / "split_files/vae/ae.safetensors";
-    if (std::filesystem::is_regular_file(comfy_text) &&
-        std::filesystem::is_regular_file(comfy_transformer) &&
+    if (std::filesystem::is_regular_file(comfy_transformer) &&
         std::filesystem::is_regular_file(comfy_vae)) {
-        text_path_ = std::move(comfy_text);
+        // Comfy checkpoints may share a sharded Qwen3 encoder through the
+        // App's text_encoder/ directory binding instead of a single file.
+        text_path_ = std::filesystem::is_regular_file(comfy_text)
+                         ? comfy_text : root / "text_encoder";
+        require(std::filesystem::is_regular_file(text_path_) || has_safetensors(text_path_),
+                "missing Z-Image Qwen3 weights; select a shared text model in the App");
         transformer_path_ = std::move(comfy_transformer);
         transformer_checkpoint_ = transformer_path_;
         vae_path_ = std::move(comfy_vae);
@@ -882,7 +886,8 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
             hybrid_ = std::make_unique<HybridSession>(
                 r.ane_manifest, root_, rows, event, cancelled, r.warmup_iterations,
                 transformer_checkpoint_, active_loras_, matched ? matched->bucket : 0);
-        require(rows <= hybrid_->rows && hybrid_->hidden == 3840 &&
+        hybrid_->set_tokens(rows);
+        require(hybrid_->hidden == 3840 &&
                     hybrid_->block_count == 32 && hybrid_->mlp_width == 10240 &&
                     hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end < 10240,
                 "Z-Image Core ML FFN partition geometry mismatch");
@@ -899,12 +904,14 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
     } catch (const Cancelled &) {
         throw;
     } catch (const std::exception &error) {
-        if (!automatic)
-            throw;
+        // A failed shape rebinding must not leave partially rebound branches
+        // available to the next request in this persistent session.
         hybrid_.reset();
         hybrid_gpu_graph_ = {};
         hybrid_gpu_mlp_start_ = -1;
         mx::clear_cache();
+        if (!automatic)
+            throw;
         r.execution = "gpu";
         event("acceleration_gpu_fallback", 1, 1);
         return std::string("gpu: ") + error.what();
@@ -913,7 +920,40 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
 
 RunResult ZImage::prepare(const Request &requested, bool warmup, const Event &event,
                           std::atomic<bool> &cancelled) {
-    return run(requested, event, cancelled, warmup);
+    if (warmup)
+        return run(requested, event, cancelled, true);
+    auto r = requested;
+    auto begin = Clock::now();
+    auto plan = make_plan(r);
+    require(r.model == "z-image-turbo" && !r.prompt.empty(),
+            "Z-Image preparation requires its model id and a prompt");
+    require(r.inputs.empty(), "Z-Image-Turbo currently supports text-to-image only");
+    require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
+    select_loras(r);
+    const bool prompt_hit = conditioning(r, event, cancelled);
+    const int image_rows = ((r.height / 16) * (r.width / 16) + 31) / 32 * 32;
+    const int caption_rows = (cached_conditioning_->shape(0) + 31) / 32 * 32;
+    auto selection = select_acceleration(r, image_rows + caption_rows, event, cancelled);
+    if (plan.request.execution != r.execution)
+        plan = make_plan(r);
+    load(event, cancelled);
+    RunResult result;
+    result.request = r;
+    result.plan = std::move(plan);
+    result.selection = selection;
+    result.prepared = true;
+    result.prompt_cache_hit = prompt_hit;
+    auto tokens = tokenizer_.z_image_prompt(r.prompt, r.dynamic_text);
+    result.text_tokens = int(tokens.ids.size());
+    result.valid_text_tokens = tokens.valid;
+    result.total_tokens = image_rows + caption_rows;
+    result.lora_applied_projections = lora_applied_projections_;
+    if (hybrid_)
+        result.hybrid = hybrid_->metrics();
+    result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
+    result.peak_bytes = mx::get_peak_memory();
+    result.active_bytes = mx::get_active_memory();
+    return result;
 }
 
 RunResult ZImage::generate(const Request &r, const Event &event, std::atomic<bool> &cancelled) {

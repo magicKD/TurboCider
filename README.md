@@ -1,47 +1,85 @@
-# TurboCider
+<p align="center">
+  <img src="assets/branding/logo.svg" width="760" alt="TurboCider — More from your Mac." />
+</p>
 
-Apple Silicon 原生多模态推理系统。纯 C++/C/Objective-C++/Metal native runtime、SwiftUI App、CLI、C/Swift SDK 和本地任务服务共用一套实现；模型专用的 Apple bridge 保持在 platform/API 层，通用 runtime 不依赖 Foundation。原生推理不依赖 Python；FastMetal 仅在其明确配置的持久 worker 路径使用托管 Python/MLX。
+<p align="center"><strong>Native inference. More of your Apple silicon.</strong></p>
+<p align="center">SwiftUI Studio · Native CLI · C / Swift SDK · Local API</p>
+<p align="center"><a href="README.zh-CN.md">中文</a> · <strong>English</strong> · <a href="docs/GETTING_STARTED.md">Getting started</a> · <a href="docs/PERFORMANCE.md">Benchmarks</a></p>
 
-当前注册并提供六个模型模块：FLUX.2 Klein 4B/9B、MiniMax H3 Turbo、FastMetal 1.3B QAD、LTX 2.5 Distilled 和 Z-Image Turbo。FLUX/H3/LTX/Z-Image 的正式路径不依赖 Python 模型运行时；FastMetal 有意保留显式配置的持久 Python/MLX worker，以复用上游 FastVideo/TAEHV。LTX 当前公开 video-only 文生视频；Z-Image 已接入 ComfyUI 单文件目录、Qwen3、VAE 和独立 LoRA 内存融合，M4 Max 64 GB 的 base a4096 GPU+ANE 路线已通过重复 warm 端到端门槛；优化后的纯 GPU 路径也快于 stock ComfyUI GPU。
+TurboCider is a local multimodal inference engine for Apple silicon. It turns unified memory into an opportunity for **heterogeneous execution: the CPU orchestrates native work while GPU and ANE process selected model partitions in parallel**. Shared output buffers, compiled GPU graphs and reusable sessions reduce copies and repeated preparation in compute-intensive image inference.
 
-当前完成度、真实性能和未完成项以 [2026-09-07 当前状态](docs/status/current-status-2026-09-07.md) 为准；历史实现边界见 [实现状态](docs/status/implementation-status-2026-09-06.md)，提交前检查见 [版本准备度](docs/status/release-readiness-2026-09-06.md)。
+Create images and videos in a native SwiftUI studio, automate jobs with the CLI, or embed the same runtime through C / Swift bindings and a local task API. Models and generated media stay on your Mac.
 
-## 构建与运行
+## What makes it different
 
-需要 Apple Silicon、完整 Xcode、CPython 3.11（仅用于托管工具/显式 FastMetal worker）以及与已绑定 dylib 匹配的 MLX C++ 0.32.x。发行包的最低 macOS 版本取决于 MLX dylib 的 deployment target；可用 `TURBOCIDER_DEPLOYMENT_TARGET` 显式覆盖。
+- **Hardware-aware parallelism:** Metal / MLX on the GPU and Core ML FFN partitions eligible for the Neural Engine, coordinated by the CPU.
+- **Measured performance and fidelity:** FLUX.2 Klein 4B at 512×512, 4 steps on M4 Max 64 GB achieved **1.39× throughput and 28% lower generation time**, with GPU-to-hybrid pixel cosine similarity **0.999840**.
+- **Reuse across requests:** resident sessions, prompt encoding caches, compiled graphs and Core ML artifact caches. Z-Image's flexible ANE partitions support up to 512 encoded text tokens at 512×512.
+- **One runtime:** native App, CLI, C / Swift SDK and a local Unix socket job service share execution contracts.
+- **Explicit capabilities:** image generation, image editing and video generation are offered only where the executor supports them. LoRA and GPU / ANE controls remain explicit.
+- **Shared model management:** App / CLI registrations, ModelScope / Hugging Face download previews and compatible text-component reuse. Start the local API from the App and manage regenerable text-tensor retention.
+
+The ANE routes use validated INT8 partitions: they are high-fidelity approximations, not bit-exact inference. Gains depend on hardware, model and shape. GPU is the default. Core ML compute-unit selection is not proof of ANE occupancy. These are reproducible workload results, not a universal SOTA claim. See the measurements below and [benchmark methodology](docs/PERFORMANCE.md).
+
+## Measured performance
+
+Median warm request wall times for the named workloads below, excluding first model loading and compilation. Throughput multiplier = GPU baseline time / hybrid time.
+
+| Model / device / workload | TurboCider GPU | GPU + ANE | Throughput |
+|---|---:|---:|---:|
+| FLUX.2 Klein 4B · M4 Max 64 GB · 512² · 4 steps | 2.266 s | **1.628 s** | **1.39×** |
+| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 steps | 36.369 s | **30.001 s** | **1.21×** |
+| Z-Image Turbo · M4 Pro 48 GB · 512² · 512 tokens · 9 steps | 23.964 s | **20.425 s** | **1.17×** |
+
+[Methodology, quality metrics and sources](docs/PERFORMANCE.md). Support for 512 text tokens does not imply support for arbitrary image resolutions.
+
+## Build and run
+
+Use an Apple silicon Mac, a working macOS SDK / Swift / Clang toolchain and MLX 0.32.x. Full Xcode is recommended; an existing Command Line Tools installation can be selected with `DEVELOPER_DIR` and `SDKROOT`. Python 3.11 is used for setup and offline tools; the FLUX / Z-Image / H3 / LTX inference paths are native. FastMetal intentionally uses a configured persistent Python / MLX worker.
 
 ```sh
 make setup
 make package
 make test
-build/native/turbocider doctor
-build/native/turbocider generate /path/to/FLUX.2-klein-4B examples/requests/generate.json
-build/native/turbocider generate /path/to/Comfy-Org-z_image_turbo examples/requests/z-image-turbo.json
+open dist/TurboCider.app
 ```
 
-App：`dist/TurboCider.app`。独立 CLI：`dist/cli/turbocider`。本机 ad-hoc 签名，尚未公证发行。
+Register an existing model folder in the App, choose an operation, and generate with GPU first. Compatible Z-Image text components can be linked from a local FLUX.2 Klein 4B installation. Configure ANE only after preparing artifacts for the actual model, shape and LoRA identity. Current packages are locally ad-hoc signed, not notarized releases.
 
-## 代码结构
+For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`. `batch` reuses a session; `serve` exposes the local job API. See [getting started](docs/GETTING_STARTED.md) and the [request / SDK / API reference](docs/USAGE.md).
 
-| 目录 | 职责 |
+## Model capabilities
+
+`turbocider models` reports the authoritative executable operations. Availability below describes the current runtime, not every upstream model feature.
+
+| Model | Output | Input | Notes |
+|---|---|---|---|
+| FLUX.2 Klein 4B / 9B | Image | Text; image transform; reference editing | 4B has qualified hybrid profiles; 9B performance coverage is incomplete |
+| Z-Image Turbo | Image | Text | Comfy / Diffusers layouts; in-memory LoRA; flexible ANE inputs |
+| MiniMax H3 Turbo | Video | Text; keyframes; references | Native Metal / MPS; artifact-gated ANE; media tools required |
+| LTX 2.5 Distilled | Video | Text, video-only | Image input and audio remain gated; staged residency |
+| FastMetal 1.3B QAD | Video | Fixed-shape executor; see registry | Explicit persistent Python worker; verified premerged LoRA only |
+
+Weights retain their upstream licenses. Large model files and generated outputs are not included in the repository.
+
+## Project map
+
+| Directory | Responsibility |
 |---|---|
-| `native/` | 推理核心、后端、模型模块、图像处理 |
-| `apps/` | macOS App 与 CLI |
-| `services/` | 原生本地持久任务服务 |
-| `bindings/` | 公共 C ABI 与 Swift SDK |
-| `profiles/`、`examples/` | 设备策略与请求示例 |
-| `tests/`、`tools/` | 契约/集成测试、构建和性能验证 |
-| `experimental/video/` | 已冻结的早期 H3/LTX 迁移快照，不进入构建 |
-| `docs/` | 当前状态、使用、设计、验收及历史资料 |
+| `native/` | Inference core, model executors, Metal / MLX / Core ML backends |
+| `apps/` | SwiftUI App and native CLI |
+| `services/` | Persistent local task service and model/cache management helper |
+| `bindings/` | C ABI and Swift SDK |
+| `profiles/`, `examples/` | Hardware policies and runnable request examples |
+| `tools/`, `tests/` | Setup, packaging, conversion, regression and benchmark tools |
+| `assets/branding/` | Vector identity and reproducible App icon |
+| `docs/` | User guides, design and retained development records |
+| `experimental/video/` | Frozen migration snapshots, excluded from shipping builds |
 
-旧 Python 控制层、旧 Swift App、重复引擎适配器及其构建入口已经退役；恢复位置记录在项目重构文档中。
+[Contributing](CONTRIBUTING.md) · [Third-party notices](native/THIRD_PARTY_NOTICES.md) · [Current validation records](docs/status/README.md)
 
-- [使用、SDK 与服务](docs/USAGE.md)
-- [当前实现、性能与未完成项](docs/status/implementation-status-2026-09-06.md)
-- [独立运行与外部依赖边界](docs/status/independence-and-dependencies-2026-09-06.md)
-- [版本提交准备度](docs/status/release-readiness-2026-09-06.md)
-- [项目级重构与旧代码退役](docs/design/project-restructure.md)
-- [当前实现与模块职责](docs/design/rewrite-implementation-status.md)
-- [FLUX 性能对比](docs/design/flux-performance-comparison.md)：保留 FLUX 专项历史对照；跨模型的最新性能和完成度以 [实现状态](docs/status/implementation-status-2026-09-06.md) 为准。
-- [GPU/ANE 并行化方案与 SVG 图](docs/design/parallel-acceleration.md)：按模型、芯片和 LoRA 门禁说明 fork/join 执行路径。
-- [H3/LTX 接入与验收](docs/design/video-model-acceptance.md)
+[Model library](docs/MODEL_LIBRARY.md) · [Local API](docs/LOCAL_API.md) · [Cache and memory](docs/CACHES.md)
+
+Original TurboCider code is provided under [MIT](LICENSE). Third-party code
+retains its [original notices](native/THIRD_PARTY_NOTICES.md); model weights
+remain subject to their upstream terms.

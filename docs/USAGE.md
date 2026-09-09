@@ -65,6 +65,18 @@ hashes all match the request.
 
 stdout 输出最终结果 JSON，stderr 输出事件 JSON。Ctrl-C 在安全边界取消，返回码 2；导出开始前可取消，文件原子提交后返回成功。使用唯一输出路径以保留历史。`batch` 复用同一会话，要求模型一致。动态文本最大 512 tokens；尺寸 64–2048 且 16 倍数，实际受内存预算限制；种子 0–2147483647，步数 1–50。
 
+## Z-Image-Turbo App
+
+在模型中心选择 Z-Image-Turbo 的本地目录，支持完整 Diffusers 目录，以及包含 `models/diffusion_models/z_image_turbo_bf16.safetensors` 与 `models/vae/ae.safetensors` 的 Comfy 目录。缺少文本组件时，第二个目录选择框可选 `FLUX.2-klein-4B`，复用其 `text_encoder` 与 `tokenizer`。App 在自己的状态目录创建目录链接，不下载、复制或改写原始模型。
+
+默认 512×512、固定 9 步、常驻模式，计算设备默认只使用 GPU。在创作参数中勾选“额外启用 ANE”可启用混合加速。在 LoRA 区域添加独立 `.safetensors` 文件，角色为 `transformer`；每个文件可单独勾选启用，强度默认 1.0，可输入 −8 到 8。关闭 LoRA 保留文件与强度，但不会传给推理或分区导出。加载当前模型保留 LoRA、尺寸与加速配置，加载操作只准备权重和提示词，不生成图片；预热另行执行。
+
+启用 ANE 后，生成、加载和预热都会先查找当前模型、尺寸、已启用 LoRA 及其强度匹配的完整 `.mlmodelc` 分区，并优先使用已选择或已记住的编译缓存。缺少可用编译分区时，使用对应源 manifest 调用原有缓存编译器；缓存按源内容、系统 build、GPU 和架构识别，只编译缺失部分。改变 LoRA 强度后须使用对应的源分区或缓存，不能复用基础模型或其他强度的分区。
+
+结果菜单、缩略图右键菜单、素材库和任务详情可删除图片，文件移到废纸篓，任务记录保留。任务详情可单独“删除任务记录”，结果文件保留，并支持“撤销删除任务”。只能删除 App 自己输出目录中的图片；运行中的任务须先取消或等完成。
+
+模型中心的“导入生成配置…”可恢复 App 导出的草稿 JSON，包括模型目录、LoRA、提示词与加速设置。M4 Pro 48 GB 的 512 实测配置和验证入口见 [App 验证记录](status/z-image-app-support-2026-09-07.md)。本机自动策略仍使用 GPU；显式 GPU + ANE 需选择匹配基础模型或相同 LoRA/强度的已编译 manifest。旧 1056-row 分区在 512×512 下仅为编码后的文本预留 32 tokens；新的 enumerated 可变长度分区覆盖 1056–1536 rows，可支持最多 512 个编码后的文本 tokens。App 按真实 token 数选择分区；旧缓存容量不足时需要重新导出匹配的分区或选择 GPU。
+
 ## FastMetal 1.3B QAD
 
 FastMetal 是固定形状的 3-step、16 fps、`4n+1` 帧视频路径。它要求一个显式 profile（`TURBOCIDER_FASTMETAL_CONFIG`，或模型目录下的 `turbocider-fastmetal.json`），profile 绑定 Python、FastVideo engine、上游 entrypoint、TurboCider worker，以及可选的 Core ML ANE bridge；示例见 [`profiles/fastmetal.example.json`](../profiles/fastmetal.example.json)。没有 profile 或依赖不完整时，Session 会 fail closed，不会退回伪造媒体。
@@ -169,3 +181,11 @@ adapter 大小、SHA-256 和 strength。近似 kernel 测试必须同时显式�
 Core ML 模型/磁盘管理：`turbocider coreml request.json` 支持 `inventory`、`export`、`compile`、`delete_artifacts`、`clear_compiled`、`clear_runtime`。清理默认只预览；配置、请求范例及 C/Swift API 见 [资源管理说明](design/coreml-artifacts-and-storage.md)。
 
 项目独立性、托管依赖与隔离验收见 [独立部署说明](design/standalone-project.md)。原始模型可以位于任意用户指定目录；自动加速产物不再从相邻 workspace 发现。
+
+### Z-Image 长提示词与可变 ANE 分区
+
+在 M4 Pro 48 GB 上，App 默认导出的 ANE 分区现在按 32 行递增支持 1056–1536 行；512×512 下可容纳最多 512 个编码后的文本 tokens（含聊天模板）。短提示词使用较小形状，避免固定补齐到 512 tokens 的额外 FFN 开销。GPU 仍为默认设备，ANE 由用户勾选。
+
+生成前会用实际 tokenizer 计数，选择容量、模型、LoRA 文件和强度均匹配的已编译缓存。旧 1056 分区只支持最多 32 个补齐后的文本 tokens；可在模型中心选择新的可变分区，或导出并预编译一次。现有缓存会复用；Core ML 首次设备优化仍可能需要数分钟，重装、系统更新或系统缓存回收后也可能重新优化。
+
+自定义构建配置的 `coreml_export` 可指定 `shape_mode: "enumerated"`、`min_bucket: 1056`、`bucket: 1536`、`ane_mlp_width: 8192`。连续范围 `shape_mode: "range"` 仅供实验，本机完整生图曾出现 ANE 设备错误；默认采用枚举形状。更大分辨率需要另设总行数容量。超过 tokenizer 的 512-token 上限会明确报错，不会截断文本。

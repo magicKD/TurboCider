@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "upstream_base_commit": "f1a47138ea18355df8f3df5d8d2d19cd012dd2ad",
+  "turbocider_snapshot_commit": "59d9c437f5bae7c23277e35a0dccd7503711d789",
+  "note": "Committed TurboCider shared-runtime snapshot including local adaptations; not a claim of exact upstream parity.",
+  "files": {
+    "ltx.c": "86441e6e0c60e86e16a45412b1b1cb854ddeb57325b4a07d79c4a98ca4373edc",
+    "ltx_conditioning.c": "c460c17aa6a820537b3dbf5d35132654153eceef352f63d79697984e83b9b194",
+    "ltx_connector.c": "3de47032324a7c0bea8d2d650fba5c6480ef4d0890bce10c23cdb6090dcbe4eb",
+    "ltx_transformer_io.c": "6384c166ec88f528d1823b63300eacf3a7a5b1b44370060f0ce2dfcdb16a473d",
+    "ltx_latent_stats.c": "7e439d4d4fed240fb594ac4225b87c25b7d5451f70494788c7e8733c56800f26",
+    "ltx_rng.c": "d7645ae4f144f7d7c8c9427d5bbd3b0466577127e1dfdafe10d2349b91d56d4f",
+    "ltx_shaders.metal": "c0ba06331c731db81ba16554d18866d7ef7ef4e3cac36fa5d251da69021c2269",
+    "ltx_ane_mlp.m": "e0d1fc5d9fecc3de0a218b5a88d961c8344b221585843527c5c9af755937a724",
+    "ltx_ane_v2a.m": "999e1bb81dfe4e4c5122da3275bb6a7fa84c44297a1e651a8e3c916f448ae0d4",
+    "ltx_ane_kv.m": "9d9df613f3bd3f03236555b2670cdcfa58e3ab7314795229a150af33dc1002e8",
+    "ltx_ane_qkv.m": "0698779f21fc8bc2655f4fc150e083dd947965fa6b514ddeb043f777013cebd6",
+    "ltx_mlx_upsampler.cpp": "dace043ff0ef4f3f9f5c0cb17cb312c628c1b5be889760d840ad5f62a5100697",
+    "ltx_upsampler.m": "c01890106546a694aaa4cf9d165875818118e587f0f3cf10fda921ee99ebe69f"
+  }
+}

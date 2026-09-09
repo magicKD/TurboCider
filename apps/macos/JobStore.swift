@@ -14,6 +14,8 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var resultJSON: String?
     var secondsPerStep: Double?
     var modelPath: String?
+    var outputDeleted: Bool?
+    var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
     var routeSummary: String? {
         guard let resultJSON, let data = resultJSON.data(using: .utf8),
               let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -52,16 +54,22 @@ final class NativeJobStore: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var storageError: String?
     @Published private(set) var sessionState = "未加载"
+    @Published var externalServiceActive = false
     @Published private(set) var loadedPath: String?
     @Published private(set) var loadedModelID: String?
     @Published private(set) var inspectingResources = false
     @Published private(set) var actualRoute: String?
     @Published private(set) var resourceReport: String?
+    @Published private(set) var sessionReport: String?
+    @Published private(set) var accelerationStatus: String?
+    @Published private(set) var resolvingAcceleration = false
+    @Published private(set) var deletedJob: NativeJob?
     let directory: URL
     private var engine: NativeEngine?
     private var activeID: UUID?
     private var preparationID: UUID?
     private var cancelRequested = false
+    private var tensorCacheTask: Task<Data, Error>?
     private var lastPersist = Date.distantPast
     private var telemetry = StepTelemetry()
     private var lastSequence = -1
@@ -89,10 +97,113 @@ final class NativeJobStore: ObservableObject {
         try JSONEncoder().encode(jobs).write(to: directory.appendingPathComponent("jobs.json"), options: .atomic)
         lastPersist = Date()
     }
+    func deleteJob(_ id: UUID) throws {
+        guard let job = jobs.first(where: { $0.id == id }), job.isTerminal, activeID != id else {
+            throw NativeFailure(message: "请先取消或等待任务完成，再删除记录。")
+        }
+        let previous = jobs
+        jobs.removeAll { $0.id == id }
+        do { try persist(); deletedJob = job }
+        catch { jobs = previous; throw error }
+    }
+    func undoDeleteJob() throws {
+        guard let job = deletedJob else { return }
+        let previous = jobs
+        jobs.append(job); jobs.sort { $0.createdAt > $1.createdAt }
+        do { try persist(); deletedJob = nil }
+        catch { jobs = previous; throw error }
+    }
+    @discardableResult func trashOutput(_ id: UUID) throws -> URL? {
+        guard !busy, let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].hasOutput,
+              jobs[index].isTerminal, activeID != id else {
+            throw NativeFailure(message: "只能删除已完成任务的结果。")
+        }
+        let url = URL(fileURLWithPath: jobs[index].request.output)
+        let canonical = url.resolvingSymlinksInPath()
+        let managed = directory.appendingPathComponent("outputs").resolvingSymlinksInPath()
+        guard canonical.path.hasPrefix(managed.path + "/"),
+              (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else {
+            throw NativeFailure(message: "只能在 App 中删除本 App 输出目录里的结果；外部文件请在 Finder 中管理。")
+        }
+        guard !(activeJob?.request.inputs ?? []).contains(where: { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath() == canonical }) else {
+            throw NativeFailure(message: "当前任务正在使用此图片，请等待完成。")
+        }
+        var trashed: NSURL?
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.trashItem(at: url, resultingItemURL: &trashed)
+        }
+        jobs[index].outputDeleted = true
+        do { try persist() }
+        catch {
+            jobs[index].outputDeleted = nil
+            if let trashed { try? FileManager.default.moveItem(at: trashed as URL, to: url) }
+            throw error
+        }
+        return trashed as URL?
+    }
+    /// Resolve on each request so changing an adapter/strength cannot reuse a stale partition.
+    func resolveAcceleration(_ draft: StudioDraft) async throws -> StudioDraft {
+        guard draft.usesANE, ["flux2-klein-4b", "z-image-turbo"].contains(draft.modelID) else { return draft }
+        guard !busy, !resolvingAcceleration else { throw NativeFailure(message: "请等待当前任务完成。") }
+        resolvingAcceleration = true
+        defer { resolvingAcceleration = false }
+        var resolved = draft
+        var config = draft.acceleration ?? StudioAcceleration()
+        let cache = config.coreMLCache.map { URL(fileURLWithPath: $0) } ?? compilationDirectory
+        let preferred = config.manifest, known = config.knownManifests ?? []
+        accelerationStatus = "正在检查 ANE 编译缓存…"
+        let textTokens = draft.modelID == "z-image-turbo"
+            ? try await Task.detached {
+                try NativeEngine.zImageTokenCount(modelPath: draft.modelPath, prompt: draft.prompt)
+            }.value : 32
+        let minimumRows = ((draft.width / 16) * (draft.height / 16) + 31) / 32 * 32
+            + (textTokens + 31) / 32 * 32
+        let match = await Task.detached {
+            AccelerationDiscovery.find(modelPath: draft.modelPath, preferred: preferred, cache: cache,
+                minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs, knownManifests: known)
+        }.value
+        try Task.checkCancellation()
+        if let match {
+            config.manifest = match.manifest
+            config.sourceManifest = match.source
+            accelerationStatus = "已复用 ANE 编译缓存 · 未重新编译"
+        } else {
+            let source = config.sourceManifest
+            let sourceMatch = await Task.detached {
+                let linkedSources = ([preferred] + known).compactMap { file -> String? in
+                    guard !file.isEmpty, let data = try? Data(contentsOf: URL(fileURLWithPath: file)),
+                          let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+                    return value["source_manifest"] as? String
+                }
+                let sources = ([source] + linkedSources).filter { !$0.isEmpty }
+                return AccelerationDiscovery.find(modelPath: draft.modelPath, preferred: sources.first ?? "", cache: cache,
+                    minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs,
+                    knownManifests: Array(sources.dropFirst()), requireCompiled: false)
+            }.value
+            guard let sourceMatch else {
+                accelerationStatus = "没有匹配当前模型、LoRA、强度与文本长度的 ANE 缓存"
+                throw NativeFailure(message: "没有匹配当前模型、LoRA、强度与文本长度的 ANE 分区（需要 \(minimumRows) 行，文本 \(textTokens) tokens）。请在模型中心选择容量足够的固定或可变长度分区，或关闭 ANE 使用 GPU。")
+            }
+            config.sourceManifest = sourceMatch.manifest
+            config.coreMLCache = cache.path
+            resolved.acceleration = config
+            accelerationStatus = "正在检查源分区缓存，仅编译缺失部分…"
+            let data = try await coreMLResources(JSONSerialization.data(withJSONObject: resolved.coreMLResourceRequest("compile")))
+            guard let report = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let manifest = report["manifest"] as? String else { throw NativeFailure(message: "编译结果缺少分区路径。") }
+            config.manifest = manifest
+            let hits = report["cache_hits"] as? Int ?? 0, count = report["partitions"] as? Int ?? 0
+            accelerationStatus = "ANE 分区就绪 · 复用 \(hits)/\(count) 个编译缓存"
+        }
+        config.knownManifests = Array(Set(known + [preferred, config.manifest])).filter { !$0.isEmpty }.sorted()
+        resolved.acceleration = config
+        return resolved
+    }
     private var coreMLResourceBusy = false
     func cancel() {
         guard busy else { return }
         cancelRequested = true
+        tensorCacheTask?.cancel()
         if coreMLResourceBusy { NativeEngine.cancelCoreMLResources() }
         engine?.cancel()
         if let id = activeID, let i = jobs.firstIndex(where: { $0.id == id }) {
@@ -101,10 +212,12 @@ final class NativeJobStore: ObservableObject {
         }
     }
     private func acquire(_ url: URL, modelID: String) async throws -> NativeEngine {
+        guard !externalServiceActive else { throw NativeFailure(message: "本地 API 正在运行，请先在 API 页面停止服务。") }
         let path = url.standardizedFileURL.path
         if loadedPath == path, loadedModelID == modelID, let engine { return engine }
         if let old = engine { _ = try await old.unload() }
         engine = nil; loadedPath = nil; loadedModelID = nil
+        sessionReport = nil
         sessionState = "正在检查模型…"
         let opened = try await NativeEngine.open(modelURL: url, modelID: modelID)
         engine = opened; loadedPath = path; loadedModelID = modelID
@@ -123,6 +236,7 @@ final class NativeJobStore: ObservableObject {
                 Task { @MainActor [weak self] in if self?.cancelRequested == true { self?.engine?.cancel() } }
             }
             resourceReport = String(decoding: data, as: UTF8.self)
+            sessionReport = resourceReport
             sessionState = "图像权重已加载 · 文本按需"
         } catch {
             sessionState = engine == nil ? "加载失败" : "会话就绪 · 加载未完成"
@@ -138,7 +252,17 @@ final class NativeJobStore: ObservableObject {
             let data = try await engine.unload()
             resourceReport = String(decoding: data, as: UTF8.self)
             self.engine = nil; loadedPath = nil; loadedModelID = nil; sessionState = "未加载"
+            sessionReport = nil
         } catch { sessionState = "释放失败 · 会话保留"; throw error }
+    }
+    func pruneTensorCache(days: Int) async throws -> Data {
+        guard !busy, !externalServiceActive, !resolvingAcceleration else { throw NativeFailure(message: "请在推理与 API 空闲时清理缓存。") }
+        busy = true; cancelRequested = false
+        let previous = sessionState; sessionState = "正在清理可重建张量缓存…"
+        defer { busy = false; tensorCacheTask = nil; sessionState = previous }
+        let work = Task { try await LibraryTool.run(["cache", "prune", String(days)]) }
+        tensorCacheTask = work
+        return try await work.value
     }
     func coreMLResources(_ payload: Data) async throws -> Data {
         let request = (try JSONSerialization.jsonObject(with: payload)) as? [String: Any]
@@ -149,11 +273,13 @@ final class NativeJobStore: ObservableObject {
         }
         guard !busy else { throw NativeFailure(message: "请等待当前任务完成。") }
         let applying = request?["apply"] as? Bool == true
+        guard !externalServiceActive else { throw NativeFailure(message: "请先停止本地 API，再管理加速缓存。") }
         busy = true; coreMLResourceBusy = true; cancelRequested = false
         let id = UUID(); preparationID = id
         defer { busy = false; coreMLResourceBusy = false; preparationID = nil }
         if applying, let engine {
             _ = try await engine.unload(); self.engine = nil; loadedPath = nil; loadedModelID = nil; sessionState = "未加载"
+            sessionReport = nil
         }
         let result = try await NativeEngine.coreMLResources(payload) { [weak self] event in
             DispatchQueue.main.async { [weak self] in
@@ -171,6 +297,7 @@ final class NativeJobStore: ObservableObject {
     private func preparationEvent(_ event: NativeEvent, id: UUID) {
         guard busy, preparationID == id else { return }
         if cancelRequested { engine?.cancel() }
+        if event.phase == "transformer_block" || event.phase == "z_image_denoise_block" { return }
         let phase = event.phase == "coreml_compile" ? "预编译" : event.phase == "denoise" ? "预热采样" : event.phase.contains("text") ? "文本准备" : event.phase.contains("coreml") ? "加速分区准备" : "模型准备"
         sessionState = "\(phase) · \(event.completed)/\(event.total) · \(String(format: "%.1f", event.elapsed_seconds)) 秒"
     }
@@ -187,6 +314,7 @@ final class NativeJobStore: ObservableObject {
             }
             resourceReport = String(decoding: data, as: UTF8.self)
             let report = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            sessionReport = resourceReport
             let plan = report?["plan"] as? [String: Any]
             let mode = (report?["execution"] as? String) ?? (plan?["execution"] as? String) ?? "gpu"
             sessionState = (warmup ? "当前任务已预热 · 未保存图片" : "权重与当前文本已就绪") + (mode.hasPrefix("gpu_ane") ? " · GPU + ANE" : " · GPU")
@@ -204,7 +332,7 @@ final class NativeJobStore: ObservableObject {
                 DispatchQueue.main.async { [weak self] in self?.preparationEvent(event, id: id) }
             }
             resourceReport = String(decoding: data, as: UTF8.self)
-            if action == "clear" { engine = nil; loadedPath = nil; loadedModelID = nil; sessionState = "模型已卸载 · 编译缓存已清除" }
+            if action == "clear" { engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil; sessionState = "模型已卸载 · 编译缓存已清除" }
             else { sessionState = action == "compile_manifest" ? "加速分区预编译完成" : "缓存检查完成" }
             return data
         } catch { sessionState = "缓存操作未完成 · 可重试"; throw error }
@@ -231,6 +359,7 @@ final class NativeJobStore: ObservableObject {
             guard let i = jobs.firstIndex(where: { $0.id == id }) else { throw NativeFailure(message: "Missing job") }
             jobs[i].state = "succeeded"; jobs[i].phase = "complete"
             jobs[i].resultJSON = String(decoding: result, as: UTF8.self)
+            sessionReport = jobs[i].resultJSON
             jobs[i].elapsed = Self.seconds(start.duration(to: .now))
             sessionState = request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
             try persist()
@@ -259,7 +388,7 @@ final class NativeJobStore: ObservableObject {
         if cancelRequested { engine?.cancel() }
         // Block callbacks keep cancellation responsive but must not replace the
         // sampling stage or make speed flash briefly between individual blocks.
-        if event.phase == "transformer_block" {
+        if event.phase == "transformer_block" || event.phase == "z_image_denoise_block" {
             if event.elapsed_seconds - lastDetailUpdate >= 0.25 {
                 jobs[i].elapsed = event.elapsed_seconds; lastDetailUpdate = event.elapsed_seconds
             }

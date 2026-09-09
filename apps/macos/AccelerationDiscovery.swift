@@ -1,8 +1,17 @@
 import Foundation
+import Darwin
 
 /// Bounded local discovery. Never walks a home directory or downloads artifacts.
 struct AccelerationDiscovery {
-    struct Match {
+    private static func fileIdentity(_ url: URL) -> (bytes: UInt64, inode: UInt64, device: Int32)? {
+        // Foundation attributesOfItem also queries extended attributes. Cache
+        // discovery only needs stat fields; a file-provider getxattr can stall.
+        var info = stat()
+        guard fstatat(AT_FDCWD, url.path, &info, 0) == 0, info.st_size >= 0,
+              info.st_mode & S_IFMT == S_IFREG else { return nil }
+        return (UInt64(info.st_size), UInt64(info.st_ino), info.st_dev)
+    }
+    struct Match: Sendable {
         var manifest: String
         var source: String
         var rows: Int
@@ -17,6 +26,12 @@ struct AccelerationDiscovery {
         return (value["gpu"] as? String ?? "unknown",
                 (value["physical_memory_bytes"] as? NSNumber)?.uint64Value ?? 0)
     }
+    private static func sameCheckpoint(_ recorded: URL, _ active: URL) -> Bool {
+        if recorded.resolvingSymlinksInPath() == active.resolvingSymlinksInPath() { return true }
+        // Existing installations can bind the same checkpoint through hard links.
+        guard let a = fileIdentity(recorded), let b = fileIdentity(active) else { return false }
+        return a.inode == b.inode && a.device == b.device
+    }
     static func manifestBinds(manifest: String, loras: [StudioLoRA]) -> Bool {
         guard !manifest.isEmpty, !loras.isEmpty,
               let data = try? Data(contentsOf: URL(fileURLWithPath: manifest)),
@@ -25,7 +40,6 @@ struct AccelerationDiscovery {
               let source = value["source"] as? [String: Any],
               let identities = source["loras"] as? [[String: Any]],
               identities.count == loras.count else { return false }
-        let fm = FileManager.default
         for (identity, lora) in zip(identities, loras) {
             guard let recordedPath = identity["path"] as? String,
                   let recordedBytes = identity["bytes"] as? NSNumber,
@@ -41,8 +55,8 @@ struct AccelerationDiscovery {
             let active = URL(fileURLWithPath: lora.path).resolvingSymlinksInPath().standardizedFileURL
             let recorded = URL(fileURLWithPath: recordedPath).resolvingSymlinksInPath().standardizedFileURL
             guard active == recorded,
-                  let size = (try? fm.attributesOfItem(atPath: active.path))?[.size] as? NSNumber,
-                  size.uint64Value == recordedBytes.uint64Value else { return false }
+                  let size = fileIdentity(active)?.bytes,
+                  size == recordedBytes.uint64Value else { return false }
         }
         return true
     }
@@ -90,7 +104,8 @@ struct AccelerationDiscovery {
                      requiredRows: Int? = nil,
                      enforceAutomaticPolicy: Bool = false,
                      modelID: String = "flux2-klein-4b",
-                     loras: [StudioLoRA] = []) -> Match? {
+                     loras: [StudioLoRA] = [], knownManifests: [String] = [],
+                     requireCompiled: Bool = true) -> Match? {
         guard !modelPath.isEmpty else { return nil }
         // Adapter-bound partitions remain explicit until each LoRA geometry
         // has its own repeated warm end-to-end validation.
@@ -109,12 +124,14 @@ struct AccelerationDiscovery {
         } else {
             checkpointCandidates = [model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors")]
         }
-        guard let checkpoint = checkpointCandidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return nil }
-        guard let size = (try? FileManager.default.attributesOfItem(atPath: checkpoint.path))?[.size] as? NSNumber else { return nil }
+        guard let located = checkpointCandidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return nil }
+        let checkpoint = located.resolvingSymlinksInPath()
+        guard let size = fileIdentity(checkpoint)?.bytes else { return nil }
         let fm = FileManager.default
         let appCache = cache ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("TurboCiderNative/cache/coreml")
         var candidates: [URL] = []
-        if !preferred.isEmpty, URL(fileURLWithPath: preferred).resolvingSymlinksInPath().path.hasPrefix(appCache.resolvingSymlinksInPath().path + "/") { candidates.append(URL(fileURLWithPath: preferred)) }
+        if !preferred.isEmpty, !enforceAutomaticPolicy || URL(fileURLWithPath: preferred).resolvingSymlinksInPath().path.hasPrefix(appCache.resolvingSymlinksInPath().path + "/") { candidates.append(URL(fileURLWithPath: preferred)) }
+        if !enforceAutomaticPolicy { candidates += knownManifests.map { URL(fileURLWithPath: $0) } }
         if let configured = ProcessInfo.processInfo.environment["TURBOCIDER_ANE_MANIFEST"] { candidates.append(URL(fileURLWithPath: configured)) }
         candidates += ((try? fm.contentsOfDirectory(at: appCache, includingPropertiesForKeys: nil)) ?? []).filter { $0.lastPathComponent.hasPrefix("manifest-") && $0.pathExtension == "json" }.sorted { $0.path < $1.path }
         var matches: [Match] = []
@@ -125,12 +142,16 @@ struct AccelerationDiscovery {
                   let shape = value["shape"] as? [String: Any],
                   let hidden = (shape["K"] as? NSNumber)?.intValue,
                   (shape["N"] as? NSNumber)?.intValue == hidden,
-                  let buckets = shape["buckets"] as? [Int], buckets.count == 1, (1...8192).contains(buckets[0]), buckets[0] >= minimumRows,
+                  let buckets = shape["buckets"] as? [Int], !buckets.isEmpty, buckets.count <= 128,
+                  buckets.allSatisfy({ (1...8192).contains($0) }),
+                  buckets == Array(Set(buckets)).sorted(),
+                  (buckets.count == 1 || ["enumerated", "range"].contains(shape["input_mode"] as? String ?? "")),
+                  let selectedRows = buckets.first(where: { $0 >= minimumRows }),
                   let source = value["source"] as? [String: Any], let path = source["checkpoint"] as? String,
-                  URL(fileURLWithPath: path).resolvingSymlinksInPath() == checkpoint,
-                  (source["checkpoint_bytes"] as? NSNumber)?.uint64Value == size.uint64Value,
+                  sameCheckpoint(URL(fileURLWithPath: path), checkpoint),
+                  (source["checkpoint_bytes"] as? NSNumber)?.uint64Value == size,
                   let artifacts = value["artifacts"] as? [String: [String: String]] else { continue }
-            if let requiredRows, buckets[0] != requiredRows { continue }
+            if let requiredRows, selectedRows != requiredRows { continue }
             let declaredLoRAs = source["loras"] as? [[String: Any]]
             if loras.isEmpty {
                 if declaredLoRAs?.isEmpty == false { continue }
@@ -145,7 +166,7 @@ struct AccelerationDiscovery {
                                              mlpWidth: mlpWidth,
                                              start: aneMLPStart, end: aneMLPEnd,
                                              modelID: modelID,
-                                             bucket: buckets[0]) else { continue }
+                                             bucket: selectedRows) else { continue }
             }
             let parent = file.deletingLastPathComponent().resolvingSymlinksInPath()
             let expectedBlocks = modelID == "z-image-turbo" ? 32 : 20
@@ -154,13 +175,25 @@ struct AccelerationDiscovery {
                 guard let relative = artifacts[String(index)]?["int8_pc"] else { return false }
                 let artifact = parent.appendingPathComponent(relative).resolvingSymlinksInPath()
                 var directory: ObjCBool = false
-                return artifact.path.hasPrefix(parent.path + "/") && artifact.pathExtension == "mlmodelc" && fm.fileExists(atPath: artifact.path, isDirectory: &directory) && directory.boolValue
+                guard artifact.path.hasPrefix(parent.path + "/"), fm.fileExists(atPath: artifact.path, isDirectory: &directory) else { return false }
+                if !requireCompiled { return ["mlpackage", "mlmodel"].contains(artifact.pathExtension) }
+                guard artifact.pathExtension == "mlmodelc", directory.boolValue else { return false }
+                let identity = artifact.deletingLastPathComponent().appendingPathComponent("identity.json")
+                if fm.fileExists(atPath: identity.path) {
+                    guard let bytes = try? Data(contentsOf: identity),
+                          let value = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
+                          let build = value["os_build"] as? String, !build.isEmpty,
+                          ProcessInfo.processInfo.operatingSystemVersionString.contains(build),
+                          value["gpu"] as? String == currentHardware().0,
+                          value["architecture"] as? String == "arm64" else { return false }
+                }
+                return true
             }
             guard complete else { continue }
             let sourceFile = (value["source_manifest"] as? String).map { URL(fileURLWithPath: $0) } ?? parent.deletingLastPathComponent().appendingPathComponent("manifest.json")
             matches.append(Match(manifest: file.path,
                                  source: fm.fileExists(atPath: sourceFile.path) ? sourceFile.path : "",
-                                 rows: buckets[0], mlpWidth: mlpWidth,
+                                 rows: selectedRows, mlpWidth: mlpWidth,
                                  aneMLPStart: aneMLPStart, aneMLPEnd: aneMLPEnd))
         }
         return matches.min { $0.rows < $1.rows }

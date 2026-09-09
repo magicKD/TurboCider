@@ -3,6 +3,7 @@
 #include "../platform/apple/platform.hpp"
 #import <CoreML/CoreML.h>
 #include <set>
+#include <algorithm>
 namespace tc {
 class CoreMLBranch {
     MLModel *model_;
@@ -10,27 +11,36 @@ class CoreMLBranch {
     MLMultiArray *output_;
     MLPredictionOptions *options_;
     int rows_, hidden_;
+    bool flexible_;
 
   public:
     double seconds = 0;
     uint64_t calls = 0, copied_bytes = 0;
     CoreMLBranch(const std::filesystem::path &, int rows, int hidden,
-                 const Tensor &output_storage, MLMultiArray *output_backing);
+                 const Tensor &output_storage, MLMultiArray *output_backing, bool flexible);
+    void bind(int rows, const Tensor &storage, MLMultiArray *output);
     Tensor predict(const Tensor &packed_input, int actual_rows);
 };
 struct HybridSession::Impl {
     std::vector<std::unique_ptr<CoreMLBranch>> branches;
+    std::vector<int> buckets;
+    bool flexible = false;
 };
 HybridSession::~HybridSession() = default;
 
 CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidden,
-                           const Tensor &output_storage, MLMultiArray *output_backing)
-    : output_storage_(output_storage), output_(output_backing), rows_(rows), hidden_(hidden) {
+                           const Tensor &output_storage, MLMultiArray *output_backing, bool flexible)
+    : output_storage_(output_storage), output_(output_backing), rows_(rows), hidden_(hidden), flexible_(flexible) {
     require(path.extension() == ".mlmodelc" && std::filesystem::is_directory(path),
             "expected compiled Core ML artifact: " + path.string());
     auto config = [MLModelConfiguration new];
     config.computeUnits = MLComputeUnitsCPUAndNeuralEngine;
     config.functionName = @"main";
+    if (flexible) {
+        auto hints = [MLOptimizationHints new];
+        hints.reshapeFrequency = MLReshapeFrequencyHintInfrequent;
+        config.optimizationHints = hints;
+    }
     NSError *error = nil;
     model_ = [MLModel modelWithContentsOfURL:[NSURL fileURLWithPath:@(path.c_str())]
                                configuration:config
@@ -40,15 +50,34 @@ CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidd
                 std::string(error ? error.localizedDescription.UTF8String : "unknown"));
     auto input = model_.modelDescription.inputDescriptionsByName[@"x"].multiArrayConstraint;
     auto output = model_.modelDescription.outputDescriptionsByName[@"y"].multiArrayConstraint;
-    NSArray *shape = @[ @1, @(hidden), @1, @(rows) ];
-    require(input && output && [input.shape isEqual:shape] && [output.shape isEqual:shape] &&
-                input.dataType == MLMultiArrayDataTypeFloat16 &&
+    require(input && output && input.dataType == MLMultiArrayDataTypeFloat16 &&
                 output.dataType == MLMultiArrayDataTypeFloat16,
-            "Core ML feature ABI mismatch");
-    require(output_ != nil, "Core ML shared output backing missing");
+            "Core ML feature dtype mismatch");
+    bind(rows, output_storage, output_backing);
+}
+void CoreMLBranch::bind(int rows, const Tensor &storage, MLMultiArray *output) {
+    NSArray *shape = @[ @1, @(hidden_), @1, @(rows) ];
+    auto constraint = model_.modelDescription.inputDescriptionsByName[@"x"].multiArrayConstraint;
+    bool compatible = [constraint.shape isEqual:shape];
+    auto flexible = constraint.shapeConstraint;
+    if (flexible_ && flexible.type == MLMultiArrayShapeConstraintTypeEnumerated)
+        compatible = [flexible.enumeratedShapes containsObject:shape];
+    if (flexible_ && flexible.type == MLMultiArrayShapeConstraintTypeRange && flexible.sizeRangeForDimension.count == 4) {
+        compatible = true;
+        for (int i = 0; i < 4; ++i)
+            compatible &= NSLocationInRange([shape[i] unsignedIntegerValue], [flexible.sizeRangeForDimension[i] rangeValue]);
+    }
+    auto outputConstraint = model_.modelDescription.outputDescriptionsByName[@"y"].multiArrayConstraint;
+    require(compatible && (flexible_ || [outputConstraint.shape isEqual:shape]),
+            "Core ML feature shape ABI mismatch for " + std::to_string(rows) + " rows");
+    require(output != nil, "Core ML shared output backing missing");
+    rows_ = rows;
+    output_storage_ = storage;
+    output_ = output;
     options_ = [MLPredictionOptions new];
     options_.outputBackings = @{@"y" : output_};
 }
+
 Tensor CoreMLBranch::predict(const Tensor &input, int actual) {
     // Input has been materialized before GPU attention submission. No writable alias
     // is exposed to callers; output storage is leased until the block completes.
@@ -71,7 +100,10 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual) {
             "Core ML prediction failed: " +
                 std::string(error ? error.localizedDescription.UTF8String : "unknown"));
     auto actual_output = [result featureValueForName:@"y"].multiArrayValue;
-    require(actual_output != nil, "missing Core ML output");
+    require(actual_output != nil &&
+                [actual_output.shape isEqual:@[ @1, @(hidden_), @1, @(rows_) ]] &&
+                actual_output.dataType == MLMultiArrayDataTypeFloat16,
+            "Core ML returned an unexpected output shape or dtype");
     if (actual_output.dataPointer != output_.dataPointer) {
         copied_bytes += uint64_t(rows_) * uint64_t(hidden_) * 2;
         // Strides can differ when the framework declines the caller output backing.
@@ -111,12 +143,21 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     require(hidden > 0 && hidden <= 8192 && [d[@"shape"][@"N"] intValue] == hidden,
             "hybrid hidden dimension mismatch");
     NSArray *buckets = d[@"shape"][@"buckets"];
-    require([buckets isKindOfClass:NSArray.class] && buckets.count == 1 &&
-                [buckets[0] isKindOfClass:NSNumber.class],
-            "native hybrid requires a single fixed bucket");
-    rows = [buckets[0] intValue];
+    const auto mode = string_value(d[@"shape"], @"input_mode", "fixed");
+    impl_->flexible = mode == "enumerated" || mode == "range";
+    require(mode == "fixed" || impl_->flexible, "unknown Core ML input shape mode");
+    require([buckets isKindOfClass:NSArray.class] && buckets.count > 0 && buckets.count <= 128 &&
+                (impl_->flexible || buckets.count == 1), "invalid Core ML input buckets");
+    int previous = 0;
+    for (id bucket in buckets) {
+        require([bucket isKindOfClass:NSNumber.class] && [bucket doubleValue] == [bucket intValue] &&
+                    [bucket intValue] > previous && [bucket intValue] <= 8192,
+                "Core ML buckets must be increasing positive integers up to 8192");
+        previous = [bucket intValue];
+        impl_->buckets.push_back(previous);
+    }
+    set_tokens(tokens);
     require(!policy_rows || rows == policy_rows, "Core ML bucket has no matching measured policy");
-    require(rows >= tokens && rows <= 8192, "Core ML token bucket cannot serve this request");
     id manifest_mlp_width = d[@"shape"][@"mlp_width"];
     id manifest_mlp_start = d[@"shape"][@"ane_mlp_start"];
     id manifest_mlp_end = d[@"shape"][@"ane_mlp_end"];
@@ -273,7 +314,7 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                     std::filesystem::weakly_canonical(file.parent_path()).string() + "/"),
                 "artifact path escapes manifest directory");
         impl_->branches.push_back(
-            std::make_unique<CoreMLBranch>(path, rows, hidden, output_storage, output));
+            std::make_unique<CoreMLBranch>(path, rows, hidden, output_storage, output, impl_->flexible));
     }
     if (warmups) {
         auto input = mx::zeros({1, rows, hidden}, mx::float16);
@@ -289,8 +330,34 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     }
     load_seconds = std::chrono::duration<double>(Clock::now() - begin).count();
 }
+void HybridSession::set_tokens(int tokens) {
+    require(tokens > 0, "Core ML input row count must be positive");
+    auto chosen = std::lower_bound(impl_->buckets.begin(), impl_->buckets.end(), tokens);
+    require(chosen != impl_->buckets.end(),
+            "Core ML token capacity exceeded: request needs " + std::to_string(tokens) +
+            " rows, artifact supports at most " + std::to_string(impl_->buckets.back()) +
+            ". Select a larger/flexible artifact or use GPU.");
+    if (rows == *chosen) return;
+    const int selected = *chosen;
+    if (!impl_->branches.empty()) {
+        auto storage = mx::contiguous(mx::zeros({1, selected, hidden}, mx::float16));
+        mx::eval(storage);
+        NSError *error = nil;
+        auto output = [[MLMultiArray alloc] initWithDataPointer:storage.data<mx::float16_t>()
+            shape:@[ @1, @(hidden), @1, @(selected) ] dataType:MLMultiArrayDataTypeFloat16
+            strides:@[ @(selected * hidden), @1, @(selected * hidden), @(hidden) ]
+            deallocator:^(void *) {} error:&error];
+        require(output != nil, "Core ML flexible backing allocation failed");
+        for (auto &branch : impl_->branches) branch->bind(selected, storage, output);
+    }
+    rows = selected;
+}
 Tensor HybridSession::predict(int block, const Tensor &input) {
-    return impl_->branches.at(block)->predict(input, input.shape(1));
+    try { return impl_->branches.at(block)->predict(input, input.shape(1)); }
+    catch (const std::exception &error) {
+        throw std::runtime_error("Core ML block " + std::to_string(block) +
+            " (" + std::to_string(rows) + " rows): " + error.what());
+    }
 }
 HybridMetrics HybridSession::metrics() const {
     HybridMetrics metrics;

@@ -36,14 +36,35 @@ NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomi
  auto absolute=[](const std::string&s){return fs::absolute(s).lexically_normal();};
  auto model_id=string_value(request,@"model","flux2-klein-4b");require(model_id=="flux2-klein-4b"||model_id=="z-image-turbo","Core ML resource model must be flux2-klein-4b or z-image-turbo");
  bool z_image=model_id=="z-image-turbo";int bucket=z_image?4128:1088,ane_mlp_width=z_image?4096:9216,partition_count=z_image?32:20,ane_mlp_limit=z_image?10239:9216;
- fs::path storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket)),cache=support()/"cache/coreml";
+ std::string shape_mode="fixed"; int min_bucket=bucket;
+ // Local measured 512x512 profile. GPU remains the default execution device;
+ // this only selects the offline artifact recipe when the user exports ANE.
+ auto hardware=device_info();
+ if(z_image && hardware.gpu=="Apple M4 Pro" && hardware.physical_memory==(48ull<<30)) {
+  bucket=1536; min_bucket=1056; shape_mode="enumerated";
+  const bool adapters=[request[@"loras"] isKindOfClass:NSArray.class] && [request[@"loras"] count]>0;
+  ane_mlp_width=adapters?6144:8192;
+ }
+ fs::path storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket)+(shape_mode=="fixed"?"":"-"+shape_mode+"-a"+std::to_string(ane_mlp_width))),cache=support()/"cache/coreml";
  std::string manifest=string_value(request,@"manifest"),source=string_value(request,@"source_manifest"),export_python=(support()/"toolchains/coreml/bin/python3").string(),export_python_path;
  auto profile=string_value(request,@"profile");
  if(!profile.empty()){
   auto file=absolute(profile);auto d=read_json(file);require([d[@"schema_version"] isKindOfClass:NSNumber.class]&&[d[@"schema_version"] intValue]==1,"profile schema must be 1");require([d[@"models"] isKindOfClass:NSDictionary.class],"profile models missing");NSDictionary *model=d[@"models"][@(model_id.c_str())];require([model isKindOfClass:NSDictionary.class],"requested model profile missing");
   if(manifest.empty()){auto p=string_value(model,@"ane_manifest");if(!p.empty())manifest=(file.parent_path()/p).lexically_normal().string();}
   id config=model[@"coreml_export"];
-  if(config){require([config isKindOfClass:NSDictionary.class],"coreml_export must be object");for(NSString*k in config)require([@[@"bucket",@"ane_mlp_width",@"variant",@"output_dir",@"cache_dir",@"python",@"python_path"] containsObject:k],"unknown coreml_export field");require([config[@"bucket"] isKindOfClass:NSNumber.class],"export bucket required");double n=[config[@"bucket"] doubleValue];require(n==int(n)&&n>=64&&n<=8192,"invalid fixed bucket");bucket=int(n);if(config[@"ane_mlp_width"]){require([config[@"ane_mlp_width"] isKindOfClass:NSNumber.class],"ane_mlp_width must be numeric");double width=[config[@"ane_mlp_width"] doubleValue];require(width==int(width)&&width>0&&width<=ane_mlp_limit,"invalid ANE MLP width");ane_mlp_width=int(width);}storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket));require(string_value(config,@"variant","int8_pc")=="int8_pc","native hybrid supports int8_pc only");auto output=string_value(config,@"output_dir");if(!output.empty())storage=absolute((file.parent_path()/output).string());auto interpreter=string_value(config,@"python");if(!interpreter.empty())export_python=absolute((file.parent_path()/interpreter).string()).string();auto dependencies=string_value(config,@"python_path");if(!dependencies.empty())export_python_path=absolute((file.parent_path()/dependencies).string()).string();auto c=string_value(config,@"cache_dir");if(!c.empty())cache=absolute((file.parent_path()/c).string());}
+  if(config){require([config isKindOfClass:NSDictionary.class],"coreml_export must be object");for(NSString*k in config)require([@[@"bucket",@"ane_mlp_width",@"variant",@"output_dir",@"cache_dir",@"python",@"python_path",@"shape_mode",@"min_bucket"] containsObject:k],"unknown coreml_export field");require([config[@"bucket"] isKindOfClass:NSNumber.class],"export bucket required");double n=[config[@"bucket"] doubleValue];require(n==int(n)&&n>=64&&n<=8192,"invalid fixed bucket");bucket=int(n);
+   ane_mlp_width=z_image?4096:9216;
+   shape_mode=string_value(config,@"shape_mode","fixed");
+   require(shape_mode=="fixed"||(z_image&&(shape_mode=="enumerated"||shape_mode=="range")),"invalid Core ML shape mode");
+   min_bucket=bucket;
+   if(shape_mode!="fixed") {
+    require([config[@"min_bucket"] isKindOfClass:NSNumber.class],"flexible export requires min_bucket");
+    double minimum=[config[@"min_bucket"] doubleValue];
+    require(minimum==int(minimum)&&minimum>=64&&minimum<bucket&&(bucket-int(minimum))%32==0&&
+        (bucket-int(minimum))/32+1<=128,"invalid flexible bucket range");
+    min_bucket=int(minimum);
+   }
+   if(config[@"ane_mlp_width"]){require([config[@"ane_mlp_width"] isKindOfClass:NSNumber.class],"ane_mlp_width must be numeric");double width=[config[@"ane_mlp_width"] doubleValue];require(width==int(width)&&width>0&&width<=ane_mlp_limit,"invalid ANE MLP width");ane_mlp_width=int(width);}storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket)+(shape_mode=="fixed"?"":"-"+shape_mode+"-a"+std::to_string(ane_mlp_width)));require(string_value(config,@"variant","int8_pc")=="int8_pc","native hybrid supports int8_pc only");auto output=string_value(config,@"output_dir");if(!output.empty())storage=absolute((file.parent_path()/output).string());auto interpreter=string_value(config,@"python");if(!interpreter.empty())export_python=absolute((file.parent_path()/interpreter).string()).string();auto dependencies=string_value(config,@"python_path");if(!dependencies.empty())export_python_path=absolute((file.parent_path()/dependencies).string()).string();auto c=string_value(config,@"cache_dir");if(!c.empty())cache=absolute((file.parent_path()/c).string());}
  }
  if(!string_value(request,@"storage").empty())storage=absolute(string_value(request,@"storage"));
  if(!string_value(request,@"cache").empty())cache=absolute(string_value(request,@"cache"));
@@ -82,6 +103,7 @@ NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomi
    storage=storage.parent_path()/(storage.filename().string()+"-lora-"+
        digest(lora_storage_identity).substr(0,12));
   NSMutableArray<NSString*> *export_arguments=[NSMutableArray arrayWithObjects:@(script.c_str()),@"--model",@(model.c_str()),@"--output",@(storage.c_str()),@"--bucket",@(std::to_string(bucket).c_str()),@"--ane-mlp-width",@(std::to_string(ane_mlp_width).c_str()),nil];
+  if (shape_mode!="fixed") [export_arguments addObjectsFromArray:@[@"--shape-mode",@(shape_mode.c_str()),@"--min-bucket",@(std::to_string(min_bucket).c_str())]];
   [export_arguments addObjectsFromArray:lora_arguments];
   require(!fs::is_symlink(storage)&&storage!=storage.root_path(),"invalid export storage");
   std::filesystem::create_directories(storage);
@@ -92,7 +114,7 @@ NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomi
   struct TaskGuard {NSTask*task;~TaskGuard(){if(task.running){[task terminate];[task waitUntilExit];}}} task_guard{task};
   while(task.running){if(cancelled.load()){[task terminate];[task waitUntilExit];throw Cancelled();}int completed=0;try{if(fs::is_regular_file(storage/"progress.json"))completed=[read_json(storage/"progress.json")[@"completed"] intValue];}catch(...){}event("coreml_export",completed,partition_count);std::this_thread::sleep_for(std::chrono::milliseconds(250));}
   require(task.terminationStatus==0,"Core ML export failed; inspect "+log.string());checkpoint(cancelled);require(fs::is_regular_file(storage/"manifest.json"),"export did not publish manifest");event("coreml_export",partition_count,partition_count);
-  return @{ @"action":@"export", @"model":@(model_id.c_str()), @"source_manifest":@((storage/"manifest.json").c_str()), @"storage":@(storage.c_str()), @"log":@(log.c_str()), @"bucket":@(bucket), @"ane_mlp_width":@(ane_mlp_width), @"partitions":@(partition_count) };
+  return @{ @"action":@"export", @"model":@(model_id.c_str()), @"source_manifest":@((storage/"manifest.json").c_str()), @"storage":@(storage.c_str()), @"log":@(log.c_str()), @"bucket":@(bucket), @"shape_mode":@(shape_mode.c_str()), @"min_bucket":@(min_bucket), @"ane_mlp_width":@(ane_mlp_width), @"partitions":@(partition_count) };
  }
  if(action=="inventory"){
   NSMutableArray*rows=[NSMutableArray array];std::vector<fs::path> counted;uint64_t total=0,allocated=0;

@@ -17,21 +17,29 @@ struct AccelerationView: View {
             hasInputs: !studio.draft.activeAssets.isEmpty)
     }
     private var discoveryID: String {
-        let adapters = studio.draft.loras.map { "\($0.path):\($0.strength):\($0.role)" }.joined(separator: "|")
+        let adapters = studio.draft.activeLoRAs.map { "\($0.path):\($0.strength):\($0.role)" }.joined(separator: "|")
         return "\(studio.draft.modelID)|\(studio.draft.modelPath)|\(studio.draft.operation)|\(studio.draft.width)x\(studio.draft.height)|\(studio.draft.steps)|\(studio.draft.residency)|\(adapters)"
     }
-    private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration(policy: studio.draft.profilePath.isEmpty ? "auto" : "profile") }
+    private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration(policy: studio.draft.profilePath.isEmpty ? "gpu" : "profile") }
+    @State private var zImageBucket: Int?
+    private var zImageCapacity: String? {
+        guard studio.draft.modelID == "z-image-turbo", let zImageBucket else { return nil }
+        let imageRows = ((studio.draft.width / 16) * (studio.draft.height / 16) + 31) / 32 * 32
+        let textRows = min(512, max(0, (zImageBucket - imageRows) / 32 * 32))
+        return textRows == 0
+            ? "此分区无法容纳当前尺寸和提示词，请选择更大的分区或使用 GPU。"
+            : "当前尺寸可容纳最多 \(textRows) 个编码后的文本 token；更长的提示词需要更大分区或使用 GPU。"
+    }
     @State private var discoveryMessage = "正在检测本机分区…"
     private func update(_ change: (inout StudioAcceleration) -> Void) { var value = config; change(&value); value.automaticVersion = 1; studio.draft.acceleration = value }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("推理加速与准备").font(.title2)
-            Picker("计算模式", selection: Binding(get: { config.policy }, set: { mode in update { $0.policy = mode } })) {
-                Text(supportsAutomaticGPUANE ? "自动 · 按任务匹配 GPU / ANE" : "自动 · 稳定 GPU").tag("auto")
-                Text("GPU · 原始 BF16").tag("gpu")
-                if supportsGPUANE { Text("GPU + ANE · INT8 MLP 实验路线").tag("gpu_ane") }
-                if !studio.draft.profilePath.isEmpty { Text("使用设备配置文件").tag("profile") }
-            }.disabled(store.busy).accessibilityIdentifier("accelerationMode")
+            Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
+            Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE }, set: { studio.setANEEnabled($0) }))
+                .toggleStyle(.checkbox).disabled(store.busy || !supportsGPUANE).accessibilityIdentifier("enableANE")
+            Text("默认只使用 GPU；勾选 ANE 后先复用已编译缓存，缺失时才编译源分区。").font(.caption).foregroundStyle(.secondary)
+            if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption).foregroundStyle(.secondary) }
             if config.policy == "auto" {
                 Text(discoveryMessage).font(.caption).foregroundStyle(.secondary)
                 Text(supportsAutomaticGPUANE
@@ -42,12 +50,13 @@ struct AccelerationView: View {
             }
             if config.policy == "gpu_ane" {
                 Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定分区桶必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
-                if (studio.draft.modelID.hasPrefix("flux2-") || studio.draft.modelID == "z-image-turbo") && !studio.draft.loras.isEmpty {
-                    Text("带 LoRA 的 GPU + ANE 必须选择用同一独立 LoRA 导出的分区；否则 App 会安全切到 GPU。运行时会严格核验路径、大小、SHA-256、角色和强度。")
+                if (studio.draft.modelID.hasPrefix("flux2-") || studio.draft.modelID == "z-image-turbo") && !studio.draft.activeLoRAs.isEmpty {
+                    Text("带 LoRA 的 ANE 加速需要匹配同一文件与强度的分区。没有匹配缓存时会提示选择对应分区，或关闭 ANE 使用 GPU。")
                         .font(.caption).foregroundStyle(.orange)
                 }
                 Button(config.manifest.isEmpty ? "选择已编译分区 manifest…" : "更换已编译分区 manifest…") { choose(compiled: true) }
                 if !config.manifest.isEmpty { Text(URL(fileURLWithPath: config.manifest).lastPathComponent).font(.caption).textSelection(.enabled) }
+                if let zImageCapacity { Text(zImageCapacity).font(.caption).foregroundStyle(.secondary) }
             }
             if config.policy == "gpu" {
                 if studio.draft.modelID.hasPrefix("flux2-") {
@@ -62,14 +71,31 @@ struct AccelerationView: View {
                 Button("加载当前配置") { prepare(warmup: false) }.accessibilityIdentifier("prepareModel")
                 Button("预热当前任务") { prepare(warmup: true) }.accessibilityIdentifier("warmupModel")
                 Button("卸载模型") { Task { do { try await store.unload() } catch { studio.message = error.localizedDescription } } }.disabled(!store.canUnload).accessibilityIdentifier("unloadModel")
-            }.disabled(store.busy || studio.draft.modelPath.isEmpty)
+            }.disabled(store.busy || store.externalServiceActive || studio.draft.modelPath.isEmpty)
             Text("预热使用当前提示词、输入图、尺寸和模式，实际运行一次但不保存结果；更换这些条件后可能需要重新准备。").font(.caption).foregroundStyle(.secondary)
             Divider()
             if studio.draft.modelID == "flux2-klein-4b" || studio.draft.modelID == "z-image-turbo" {
                 Button("选择已有 Core ML 源分区…") { choose(compiled: false) }.disabled(store.busy)
                 CoreMLStorageView(store: store, studio: studio)
             }
-        }.task(id: discoveryID) { await discover() }.padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+        }.task(id: discoveryID) { await discover() }
+            .task(id: "\(studio.draft.modelID)|\(config.manifest)") { await readZImageBucket() }
+            .padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+    }
+    private func readZImageBucket() async {
+        zImageBucket = nil
+        guard studio.draft.modelID == "z-image-turbo", !config.manifest.isEmpty else { return }
+        let path = config.manifest
+        // File access may wait for macOS permissions; never do it during rendering.
+        let bucket = await Task.detached(priority: .utility) { () -> Int? in
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+                  let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let shape = manifest["shape"] as? [String: Any],
+                  let buckets = shape["buckets"] as? [Int], !buckets.isEmpty else { return nil }
+            return buckets.max()
+        }.value
+        guard !Task.isCancelled else { return }
+        zImageBucket = bucket
     }
     private func discover() async {
         guard supportsAutomaticGPUANE else {
@@ -86,7 +112,7 @@ struct AccelerationView: View {
         let minimumRows = (studio.draft.width / 16) * (studio.draft.height / 16) + 1
         let selectedCache = config.coreMLCache.map { URL(fileURLWithPath: $0) }
         let modelID = studio.draft.modelID
-        let loras = studio.draft.loras
+        let loras = studio.draft.activeLoRAs
         let result = await Task.detached {
             AccelerationDiscovery.find(modelPath: path, preferred: preferred,
                                        cache: selectedCache, minimumRows: minimumRows,
@@ -108,14 +134,18 @@ struct AccelerationView: View {
     private func choose(compiled: Bool) {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
         panel.message = compiled ? "选择引用 .mlmodelc 的分区 manifest" : "选择引用 .mlpackage 的源分区 manifest"
-        if panel.runModal() == .OK, let url = panel.url { update { if compiled { $0.manifest = url.path } else { $0.sourceManifest = url.path } } }
+        if panel.runModal() == .OK, let url = panel.url { update { if compiled { $0.knownManifests = Array(Set(($0.knownManifests ?? []) + [$0.manifest, url.path])).filter { !$0.isEmpty }; $0.manifest = url.path } else { $0.sourceManifest = url.path } } }
     }
     private func prepare(warmup: Bool) {
-        do {
-            let ext = model?.isVideo == true ? "mp4" : "png"
-            let request = try studio.draft.request(output: store.directory.appendingPathComponent("unused-warmup.\(ext)"))
-            let modelURL = URL(fileURLWithPath: studio.draft.modelPath); studio.message = nil
-            Task { do { try await store.prepare(modelURL: modelURL, request: request, warmup: warmup) } catch { studio.message = error is CancellationError ? "准备已取消" : error.localizedDescription } }
-        } catch { studio.message = error.localizedDescription }
+        guard !store.externalServiceActive else { studio.message = "请先停止本地 API。"; return }
+        let snapshot = studio.draft
+        studio.message = nil
+        Task { do {
+            let resolved = try await store.resolveAcceleration(snapshot)
+            studio.rememberAcceleration(resolved)
+            let output = store.directory.appendingPathComponent("unused-warmup.png")
+            let request = try await Task.detached { try resolved.request(output: output) }.value
+            try await store.prepare(modelURL: URL(fileURLWithPath: resolved.modelPath), request: request, warmup: warmup)
+        } catch { studio.message = error is CancellationError ? "准备已取消" : error.localizedDescription } }
     }
 }

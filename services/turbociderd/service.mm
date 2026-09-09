@@ -385,6 +385,10 @@ public:
         if(action=="doctor")return decode(take(tc_system_json()));
         if(action=="plan") {char *result=nullptr,*error=nullptr;auto text=encode(request[@"request"]);auto status=tc_plan_json(text.c_str(),&result,&error);auto value=take(result),message=take(error);check(status==0,message.c_str());return decode(value);}
         std::lock_guard<std::mutex> lock(mutex_);
+        if(action=="service_status") {
+            auto model=engine_?loaded_.substr(0,loaded_.find('\n')):std::string();
+            return @{@"pid":@(getpid()),@"active_job":@(active_.c_str()),@"history_count":@(jobs_.size()),@"closing":@(closing_),@"session_model":@(model.c_str()),@"session_open":@(engine_!=nullptr),@"external_worker_active":@(active_child_>0)};
+        }
         if(action=="submit") {
             check(pending_.size()<32,"job queue is full");check(jobs_.size()<10000,"job history limit reached");
             check([request[@"request"] isKindOfClass:NSDictionary.class],"request must be object");
@@ -431,6 +435,12 @@ void send_all(int fd,const std::string& text){size_t offset=0;while(offset<text.
 void configure(int fd){int one=1;setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&one,sizeof(one));timeval timeout{5,0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));}
 }
 int tc_service_main(const char *socket_path,const char *directory,const char *executable) {@autoreleasepool{try {
+    pid_t owner=0;
+    if(const char *text=std::getenv("TURBOCIDER_SERVICE_PARENT_PID")) {
+        char *end=nullptr;long value=std::strtol(text,&end,10);
+        check(end&&end!=text&&*end=='\0'&&value>1&&value==getppid(),"invalid or departed service parent");
+        owner=static_cast<pid_t>(value);
+    }
     check([NSFileManager.defaultManager createDirectoryAtPath:@(directory) withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:nil],"cannot create service state directory");
     File lock{open((std::string(directory)+"/.service.lock").c_str(),O_CREAT|O_RDWR|O_CLOEXEC|O_NOFOLLOW,0600)};check(lock.fd>=0&&flock(lock.fd,LOCK_EX|LOCK_NB)==0,"service store is locked");
     File socket_lock{open((std::string(socket_path)+".lock").c_str(),O_CREAT|O_RDWR|O_CLOEXEC|O_NOFOLLOW,0600)};
@@ -448,7 +458,7 @@ int tc_service_main(const char *socket_path,const char *directory,const char *ex
     check(executable&&*executable,"service executable path is required");
     Service service(directory,executable);stopping=0;std::signal(SIGINT,stop_service);std::signal(SIGTERM,stop_service);
     std::cout<<"{\"ready\":true}"<<std::endl;
-    while(!stopping){pollfd p{server.fd,POLLIN,0};if(poll(&p,1,200)<=0)continue;File client{accept(server.fd,nullptr,nullptr)};if(client.fd<0)continue;configure(client.fd);
+    while(!stopping){if(owner&&getppid()!=owner)break;pollfd p{server.fd,POLLIN,0};if(poll(&p,1,200)<=0)continue;File client{accept(server.fd,nullptr,nullptr)};if(client.fd<0)continue;configure(client.fd);
         @autoreleasepool {try{id request=decode(receive(client.fd));check([request isKindOfClass:NSDictionary.class],"RPC must be object");id result=service.rpc(request);send_all(client.fd,encode(@{@"ok":@YES,@"result":result})+"\n");}catch(const std::exception& e){try{send_all(client.fd,encode(@{@"ok":@NO,@"error":@(e.what())})+"\n");}catch(...){}}}
     }
     std::signal(SIGINT,SIG_DFL);std::signal(SIGTERM,SIG_DFL);return 0;

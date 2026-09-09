@@ -221,6 +221,10 @@ def main() -> None:
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--bucket", type=int, default=4608)
+    parser.add_argument("--shape-mode", choices=["fixed", "enumerated", "range"], default="fixed")
+    parser.add_argument("--min-bucket", type=int, default=1056,
+                        help="minimum and default row count for flexible exports")
+    parser.add_argument("--bucket-step", type=int, default=32)
     parser.add_argument("--ane-mlp-width", type=int, default=7680)
     parser.add_argument("--activation-scale", type=float, default=8.0)
     parser.add_argument("--output-scale", type=float, default=32.0)
@@ -234,6 +238,13 @@ def main() -> None:
     args = parser.parse_args()
     if not 64 <= args.bucket <= 8192:
         raise ValueError("bucket must be 64...8192")
+    if args.shape_mode != "fixed" and (not 64 <= args.min_bucket <= args.bucket or
+            args.bucket_step <= 0 or (args.bucket - args.min_bucket) % args.bucket_step):
+        raise ValueError("flexible buckets must form an aligned bounded range")
+    buckets = ([args.bucket] if args.shape_mode == "fixed" else
+               list(range(args.min_bucket, args.bucket + 1, args.bucket_step)))
+    if args.shape_mode == "enumerated" and not 2 <= len(buckets) <= 128:
+        raise ValueError("enumerated export requires 2...128 shapes")
     if args.ane_mlp_width <= 0 or args.ane_mlp_width >= MLP_WIDTH:
         raise ValueError("ane-mlp-width must be in 1...10239")
     if not 1.0 <= args.activation_scale <= 64.0:
@@ -246,7 +257,7 @@ def main() -> None:
     import coremltools as ct
     import coremltools.optimize.coreml as optimize
     from coremltools.converters.mil import Builder as mb
-    from coremltools.converters.mil.mil import types
+    from coremltools.converters.mil.mil import types, get_new_symbol
 
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     checkpoint_source = SafetensorsSource.from_model(args.model)
@@ -282,6 +293,9 @@ def main() -> None:
             "numpy": np.__version__,
             "recipe": 2 if checkpoint_source.weight_map is not None else 1,
         }
+        if args.shape_mode != "fixed":
+            identity["input_shapes"] = {"mode": args.shape_mode, "buckets": buckets,
+                                        "default": args.min_bucket}
         if lora_records:
             identity["loras"] = lora_records
             identity["recipe"] = 3
@@ -335,8 +349,19 @@ def main() -> None:
                     )
                     del w1, w2, w3
 
+                    convert_inputs = {}
+                    rows = args.bucket
+                    if args.shape_mode != "fixed":
+                        rows = get_new_symbol()
+                        shape = (ct.EnumeratedShapes(
+                            shapes=[(1, HIDDEN, 1, n) for n in buckets],
+                            default=(1, HIDDEN, 1, args.min_bucket))
+                            if args.shape_mode == "enumerated" else ct.Shape(
+                                (1, HIDDEN, 1, ct.RangeDim(args.min_bucket, args.bucket,
+                                                         default=args.min_bucket))))
+                        convert_inputs["inputs"] = [ct.TensorType(name="x", shape=shape, dtype=np.float16)]
                     @mb.program(
-                        input_specs=[mb.TensorSpec(shape=(1, HIDDEN, 1, args.bucket), dtype=types.fp16)],
+                        input_specs=[mb.TensorSpec(shape=(1, HIDDEN, 1, rows), dtype=types.fp16)],
                         opset_version=ct.target.macOS15,
                     )
                     def branch(x):
@@ -354,6 +379,7 @@ def main() -> None:
                         minimum_deployment_target=ct.target.macOS15,
                         compute_precision=ct.precision.FLOAT16,
                         skip_model_load=True,
+                        **convert_inputs,
                     )
                     if args.variant == "int8_pc":
                         quantizer = optimize.OptimizationConfig(
@@ -399,9 +425,11 @@ def main() -> None:
                 "ane_mlp_end": args.ane_mlp_width,
                 "activation_scale": args.activation_scale,
                 "output_scale": args.output_scale,
-                "buckets": [args.bucket],
+                "buckets": buckets,
+                **({"input_mode": args.shape_mode, "default_bucket": args.min_bucket}
+                   if args.shape_mode != "fixed" else {}),
             },
-            "functions": {str(args.bucket): "main"},
+            "functions": {str(bucket): "main" for bucket in buckets},
             "artifacts": artifacts,
             "artifact_sha256": checksums,
             "export_identity": identity,

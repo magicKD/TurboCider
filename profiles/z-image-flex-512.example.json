@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "models": {
+    "z-image-turbo": {
+      "coreml_export": {
+        "bucket": 1536,
+        "min_bucket": 1056,
+        "shape_mode": "enumerated",
+        "ane_mlp_width": 8192,
+        "variant": "int8_pc"
+      }
+    }
+  }
+}
