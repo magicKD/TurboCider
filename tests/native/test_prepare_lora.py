@@ -80,6 +80,25 @@ def test_ltx_dispatch_uses_existing_refiner_merger(tmp_path: Path) -> None:
     assert value["command"][-2:] == ["--device", "auto"]
 
 
+def test_ltx_dispatch_forwards_explicit_strength(tmp_path: Path) -> None:
+    result = run_tool(
+        tmp_path,
+        "ltx",
+        "base.safetensors",
+        "adapter.safetensors",
+        "merged.safetensors",
+        "--device",
+        "auto",
+        "--strength",
+        "1.25",
+        "--print-command",
+    )
+    assert result.returncode == 0, result.stderr
+    value = json.loads(result.stdout)
+    assert value["model"] == "ltx"
+    assert value["command"][-4:] == ["--device", "auto", "--strength", "1.25"]
+
+
 def test_ltx_rejects_h3_only_merge_options(tmp_path: Path) -> None:
     result = run_tool(
         tmp_path,
@@ -87,8 +106,8 @@ def test_ltx_rejects_h3_only_merge_options(tmp_path: Path) -> None:
         "base.safetensors",
         "adapter.safetensors",
         "merged.safetensors",
-        "--strength",
-        "0.8",
+        "--profile",
+        "native",
         "--print-command",
     )
     assert result.returncode == 2
@@ -185,3 +204,73 @@ def test_runtime_cache_lock_builds_once_across_processes(tmp_path: Path) -> None
     assert sorted(value["cache_hit"] for value in values) == [False, True]
     assert values[0]["cache_key"] == values[1]["cache_key"]
     assert counter.read_text().splitlines() == ["1"]
+
+
+def ltx_runtime_fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    merger = tools / "merge_ltx_refiner.py"
+    merger.write_text(
+        """#!/usr/bin/env python3
+import argparse
+from pathlib import Path
+p=argparse.ArgumentParser()
+p.add_argument('base');p.add_argument('lora');p.add_argument('output')
+p.add_argument('--strength');p.add_argument('--device')
+a=p.parse_args()
+Path(__file__).with_name('captured.txt').write_text(a.strength)
+out=Path(a.output)
+out.write_bytes(b'artifact')
+Path(str(out)+'.manifest.json').write_text('{}')
+"""
+    )
+    merger.chmod(0o755)
+    base = tmp_path / "base.safetensors"
+    adapter = tmp_path / "adapter.safetensors"
+    base.write_bytes(b"base")
+    adapter.write_bytes(b"adapter")
+    environment = local_environment()
+    environment["TURBOCIDER_PREPARE_PYTHON"] = sys.executable
+    environment["TURBOCIDER_LORA_TOOL_DIR"] = str(tools)
+    return base, adapter, environment
+
+
+def test_runtime_cache_ltx_identity_forwards_strength_and_role(tmp_path: Path) -> None:
+    base, adapter, environment = ltx_runtime_fixture(tmp_path)
+    command = [
+        sys.executable,
+        str(ROOT / "tools/native/lora_runtime_cache.py"),
+        "ltx", str(base), str(adapter), "--strength", "1.25",
+        "--role", "refiner", "--cache-dir", str(tmp_path / "cache"),
+    ]
+    result = subprocess.run(command, text=True, capture_output=True,
+                            env=environment, check=True)
+    value = json.loads(result.stdout)
+    assert value["cache_hit"] is False
+    assert value["identity"]["role"] == "refiner"
+    assert value["identity"]["strength"] == 1.25
+    assert Path(value["artifact"]).is_file()
+    assert Path(value["artifact"]).name == (
+        "ltx-2.5-22b-runtime-refiner-comfy-int8-convrot.safetensors"
+    )
+    assert Path(value["manifest"]).name == (
+        "ltx-2.5-22b-runtime-refiner-comfy-int8-convrot.safetensors.manifest.json"
+    )
+    package = Path(value["artifact"]).parent
+    assert (package / base.name).resolve() == base.resolve()
+    assert (package / adapter.name).resolve() == adapter.resolve()
+    assert (tmp_path / "tools/captured.txt").read_text() == "1.25"
+
+
+def test_runtime_cache_rejects_nonfinite_strength(tmp_path: Path) -> None:
+    base, adapter, environment = ltx_runtime_fixture(tmp_path)
+    command = [
+        sys.executable,
+        str(ROOT / "tools/native/lora_runtime_cache.py"),
+        "ltx", str(base), str(adapter), "--strength", "nan",
+        "--cache-dir", str(tmp_path / "cache"),
+    ]
+    result = subprocess.run(command, text=True, capture_output=True,
+                            env=environment, check=False)
+    assert result.returncode != 0
+    assert "finite" in result.stderr

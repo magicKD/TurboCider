@@ -176,7 +176,7 @@ TurboCider 当前对应能力：
 | 自定义 GPU forward | custom Metal | H3/LTX custom Metal；图像模型主要 MLX/Metal |
 | 量化模型 | 准备期 4-bit/8-bit | Z-Image GGUF 多 K-quant + native Q8；H3 运行期 INT8 kernel，但 streamed H3 仍 BF16 |
 | block streaming | 动态 residency + reusable refill | H3 BF16 双 slot + background `pread`；Z-Image GGUF 使用 sd.cpp CPU-staged layer prefetch/evict |
-| 低内存 LTX | plugin 支持 16 GB | TurboCider 只有 `component_staged`，尚无 LTX per-block streaming |
+| 低内存 LTX | plugin 支持 16 GB | TurboCider 已有 GPU-only per-block streaming；完整 trunk/VAE floor 与 16/24/32 GB 矩阵仍待验收 |
 | 自适应 pinning | 基于 trunk、真实 block bytes、scratch 和 RAM | TurboCider H3 streamed 请求已支持按 activation reserve、双 slot 和 BF16 block bytes 选择动态 pinned prefix；真实 Transformer fresh 与 retained DiT 已验证，完整媒体 E2E 待补 |
 | offload 质量 | 同模型专用准备 | GGUF Q3/Q4/Q8 256²逐像素一致；Q4 1024²通过显式近似质量门禁 |
 
@@ -196,7 +196,7 @@ footprint 降低 `34.85%`、correlation `0.998205`，同样质量通过但非 ex
 
 1. 恢复完整 H3 tokenizer/text encoder/VAE fixture，用真实媒体做 resident、无预算 streamed 和 budgeted pinned-prefix 的 E2E ABBA；Transformer-only fresh/retained probe 已完成；
 2. 让 H3 streaming 支持量化 block payload，避免目前 streaming 与 INT8 MLP/QKV 互斥；
-3. 给 LTX 实现 stage-aware 双 slot per-block refill，并把 4.6 GB 级 non-block trunk、text connector 和 VAE 峰值纳入预算；
+3. 扩展 LTX 已有 stage-aware per-block refill，把 4.6 GB 级 non-block trunk、text connector 和 VAE 峰值纳入更高层预算；
 4. 用 `pread` 到已分配 Metal buffer，保留少数不可 raw-copy tensor 的原加载路径；
 5. 扩展真实多尺寸、多 seed 和多机器的低内存矩阵，而不是只测 SSD GB/s。
 
@@ -211,14 +211,14 @@ footprint 降低 `34.85%`、correlation `0.998205`，同样质量通过但非 ex
 | Z-Image GGUF | sd.cpp Metal / native Q8 | native Q8 a4096 | diffusion CPU-staged + text/VAE disk + layer streaming | mixed K-quant 留 sd.cpp |
 | LLaDA | native C++/MLX | a4096 prefix | large-image staged text | hybrid 仍显式 |
 | H3 | custom Metal/MPS | public Core ML MLP/QKV | BF16 SSD double-buffer + budget pinned-prefix + retained DiT | 完整媒体 E2E 与量化 streaming 待补 |
-| LTX | custom Metal/MLX helper | public Core ML MLP/KV/QKV + dual GPU queue | component-staged | 缺 per-block streaming 与完整 hybrid 质量门禁 |
+| LTX | custom Metal/MLX helper | public Core ML MLP/KV/QKV + dual GPU queue | component-staged/shared-policy streamed | 缺完整 hybrid 质量门禁与 streamed 媒体矩阵 |
 
 ## 9. 尚未完成的验证
 
 - Core ML cold process、disk cache hit、load、interface、zero warmup、first/subsequent prediction 的多轮 ABBA 矩阵；
 - H3 与 LTX 在同一机器、同一输入、同一输出边界下对 vpipe 的 matched E2E；
 - H3 完整媒体 E2E 与量化 streaming；动态 pinned-prefix/retained DiT 已完成 Transformer 验证；
-- LTX per-block streaming、16/24/32 GB 低内存验收；
+- LTX shared-policy per-block streaming、16/24/32 GB 低内存验收；
 - LLaDA hybrid 的多机器、多 seed 自动门禁；
 - GGUF Q2/Q3/Q4/Q5/Q6/IQ/F16/BF16/F32 的多尺寸、多 seed；当前已有 Q4 1024² 两个 base seed 和一个 LoRA seed，但更多 prompt/adapter/量化仍缺；
 - private procedure-bank 只可继续研究，不能改变正式发行边界。

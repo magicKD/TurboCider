@@ -31,7 +31,7 @@ benchmark 现在显式记录 `shape_equal`、`finite` 和 paired output count；
 
 - GGUF 1024²更多 prompt/seed/LoRA adapter、更多量化、真实低内存物理机器和跨机器矩阵；当前已补两个 base seed 与一个 LoRA seed；
 - Q4/Q8 GPU+ANE 的自动设备策略、LoRA 绑定 artifact 和多尺寸质量门禁；
-- H3 完整媒体 E2E、量化 streaming 的真实 checkpoint 验收；LTX per-block streaming 和 hybrid 质量；
+- H3 完整媒体 E2E、量化 streaming 的真实 checkpoint 验收；LTX shared-policy per-block streaming 的 16/24/32 GB 矩阵和 hybrid 质量；
 - LLaDA 独立 LoRA、FLUX 9B hybrid；
 - 所有模型的多 adapter、取消、异常恢复和 cache invalidation 矩阵。
 

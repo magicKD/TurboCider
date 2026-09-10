@@ -1,0 +1,106 @@
+{
+  "schema": "turbocider-ltx-streamed-residency-v1",
+  "date": "2026-09-09",
+  "hardware": {
+    "gpu": "Apple M4 Max",
+    "physical_memory_bytes": 68719476736,
+    "macos": "26.6.2"
+  },
+  "scope": {
+    "checkpoint": "LTX-2.5 22B distilled Transformer Comfy ConvRot INT8",
+    "operation": "native text-to-video, video-only",
+    "shape": {
+      "width": 64,
+      "height": 64,
+      "frames": 9,
+      "fps": 24,
+      "steps": 11
+    },
+    "prompt": "A cinematic red fox running through a snowy forest",
+    "seed": 42,
+    "request_count_per_route": 2
+  },
+  "method": {
+    "command": "Python/bin/python3 tools/native/benchmark_ltx_resident.py --library build/native/libturbocider.dylib --model models/LTX-2.5 --cache CACHE --output OUTPUT --report REPORT --runs 2 --width 64 --height 64 --frames 9 --residency paired --memory-budget-bytes 12884901888 --require-quality --require-memory-budget",
+    "one_clean_worker_process_per_residency": true,
+    "retained_engine_within_each_route": true,
+    "conditioning_cache_isolated_per_route": true,
+    "peak_rss_scope": "benchmark worker self; spawned isolated video decoder excluded",
+    "file_cache_flushed": false,
+    "sample_limit": "one two-request process per route; performance numbers are implementation evidence, not a stable distribution"
+  },
+  "resident": {
+    "process_peak_rss_bytes": 26645774336,
+    "requests": [
+      {
+        "index": 1,
+        "request_wall_seconds": 41.133854083,
+        "denoise_seconds": 9.902627751,
+        "model_load_seconds": 5.200235833
+      },
+      {
+        "index": 2,
+        "request_wall_seconds": 8.270179625,
+        "denoise_seconds": 8.0737245,
+        "model_load_seconds": 0.0
+      }
+    ]
+  },
+  "streamed": {
+    "memory_budget_bytes": 12884901888,
+    "memory_budget_scope": "ltx_denoiser_working_set_target_not_process_cap",
+    "estimated_denoiser_working_set_bytes": 12842131712,
+    "activation_reserve_bytes": 4299685888,
+    "block_bytes": 388292992,
+    "pinned_blocks": 20,
+    "streamed_blocks": 28,
+    "refill_slots": 2,
+    "process_peak_rss_bytes": 26646036480,
+    "requests": [
+      {
+        "index": 1,
+        "request_wall_seconds": 29.470781416,
+        "denoise_seconds": 11.884437374,
+        "model_load_seconds": 1.661050708,
+        "bytes_loaded": 119594241536,
+        "load_seconds": 8.268836000235751,
+        "wait_seconds": 3.285058999201283,
+        "prefetch_hidden_load_fraction": 0.6027180852168765,
+        "slot_allocations": 2,
+        "slot_refills": 306
+      },
+      {
+        "index": 2,
+        "request_wall_seconds": 11.223571208,
+        "denoise_seconds": 11.030060709,
+        "model_load_seconds": 0.0,
+        "bytes_loaded": 119594241536,
+        "load_seconds": 7.723266999004409,
+        "wait_seconds": 2.7972109999973327,
+        "prefetch_hidden_load_fraction": 0.6378202384615325,
+        "slot_allocations": 0,
+        "slot_refills": 308
+      }
+    ]
+  },
+  "comparison": {
+    "first_request_speedup": 1.3957503705913952,
+    "warm_request_speedup": 0.7368581240082601,
+    "warm_denoise_speedup": 0.7319746203583657,
+    "stage2_video_latent_byte_exact_all_pairs": true,
+    "decoded_rgb_byte_equivalent_all_pairs": true,
+    "decoded_rgb_mean_correlation": 1.0,
+    "decoded_rgb_mean_cosine": 1.0,
+    "decoded_rgb_mae_255": 0.0,
+    "quality_gate_passed": true,
+    "denoiser_budget_gate_passed": true,
+    "warm_speed_gate_at_1_0x_passed": false
+  },
+  "conclusion": {
+    "correctness": "passed at the validated small shape",
+    "reusable_refill_buffers": "passed; the retained second request allocated zero suffix slots",
+    "memory": "the budgeted denoiser estimate fits the 12 GiB target; worker peak RSS is dominated by other request phases and is not a process hard cap",
+    "performance": "first request is faster because fewer blocks are initially loaded, but the retained streamed request is 1.357x slower than resident at this small compute shape",
+    "shipping_status": "candidate only; larger-shape performance and prompt-suite qualification remain pending"
+  }
+}

@@ -172,6 +172,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             (r.model == "minimax-h3-turbo" &&
                    r.residency == "streamed" && r.memory_budget_bytes)
                     ? @"h3_dit_working_set_target_not_process_cap"
+                : (r.model == "ltx-2.5-distilled" &&
+                   r.residency == "streamed" && r.memory_budget_bytes)
+                    ? @"ltx_denoiser_working_set_target_not_process_cap"
                 : (r.memory_budget_bytes ? @"runtime_request_budget" : @"unset"),
         @"operation" : @(r.operation.c_str()),
         @"residency" : @(r.residency.c_str()),
@@ -267,6 +270,27 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             : @"local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
     };
 }
+static NSDictionary *to_dictionary(const BlockResidencyMetrics &m) {
+    return @{
+        @"policy" : @"shared_block_residency_v1",
+        @"enabled" : @(m.enabled),
+        @"fully_resident" : @(m.fully_resident),
+        @"quantized" : @(m.quantized),
+        @"active_blocks" : @(m.active_blocks),
+        @"pinned_blocks" : @(m.pinned_blocks),
+        @"streamed_blocks" : @(m.streamed_blocks),
+        @"refill_slots" : @(m.refill_slots),
+        @"memory_budget_bytes" : @(m.memory_budget_bytes),
+        @"activation_reserve_bytes" : @(m.activation_reserve_bytes),
+        @"block_bytes" : @(m.block_bytes),
+        @"estimated_working_set_bytes" : @(m.estimated_working_set_bytes),
+        @"request_bytes_loaded" : @(m.request_bytes_loaded),
+        @"request_slot_allocations" : @(m.request_slot_allocations),
+        @"request_slot_refills" : @(m.request_slot_refills),
+        @"request_load_seconds" : @(m.request_load_seconds),
+        @"request_wait_seconds" : @(m.request_wait_seconds),
+    };
+}
 RunResult native_run_result(NSDictionary *value, const Request &request,
                             const ExecutionPlan &plan) {
     require([value isKindOfClass:NSDictionary.class], "native session returned an invalid result");
@@ -302,6 +326,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         if (!copy[@"execution"]) copy[@"execution"] = @(result.request.execution.c_str());
         if (!copy[@"lora_strategy"])
             copy[@"lora_strategy"] = @(effective_lora_strategy(result.request).c_str());
+        if (result.block_residency)
+            copy[@"block_residency"] = to_dictionary(*result.block_residency);
         return copy;
     }
     const auto &r = result.request;
@@ -371,6 +397,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
     } mutableCopy];
     if (!r.loras.empty() && result.lora_applied_projections)
         value[@"lora_applied_projections"] = @(result.lora_applied_projections);
+    if (result.block_residency)
+        value[@"block_residency"] = to_dictionary(*result.block_residency);
     return value;
 }
 } // namespace tc

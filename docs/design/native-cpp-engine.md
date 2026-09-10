@@ -7,7 +7,7 @@
 | 位置 | 职责 | 语言与依赖 |
 | --- | --- | --- |
 | `native/core` | 请求契约、事件、异常、取消、分词器抽象 | 标准 C++，无 Foundation / MLX |
-| `native/runtime` | 模型会话、描述、类型化结果、执行计划、驻留策略、进程执行互斥 | 标准 C++；设备租约使用 POSIX |
+| `native/runtime` | 模型会话、描述、类型化结果、执行计划、阶段驻留策略、共享 block working-set 规划、进程执行互斥 | 标准 C++；设备租约使用 POSIX；block 规划以 C ABI 同时供 C runtime 使用 |
 | `native/models` | 模型注册和约束；FLUX 文本、图像、去噪和解码流程 | C++；具体 FLUX 执行器直接调用 MLX |
 | `native/backends/mlx.*` | 权重、张量操作、流配置、编译与定制 Metal kernel | MLX C++ |
 | `native/backends/coreml.*` | Core ML 分区加载、预测、GPU/ANE 交接、性能统计 | C++ 接口；Objective-C++ 实现 |
@@ -49,11 +49,17 @@ FLUX 混合 block 仍按以下依赖运行：输入 materialize → GPU attentio
 
 本次补齐了输入图像编码后、去噪前的 VAE 释放。混合统计在分区卸载前采集，避免 staged 模式丢失统计。原始模型文件和转换分区不因内存卸载而删除。
 
-预算仍为保守估算，非硬限制；MLX 内存指标不包含 Core ML/系统/文件缓存。暂未实现 block 流式权重、磁盘预取和新的量化路径；不能将组件卸载称为已完成通用大模型 offload。后续实现需验证实际 RSS、内存压力、吞吐及在途资源安全。
+预算仍为保守估算，非硬限制；MLX 内存指标不包含 Core ML/系统/文件缓存。H3 与 LTX 的 denoiser 已使用 `native/runtime/block_residency.h` 的共享 working-set 规划：H3 保留固定双槽并按预算选择 pinned prefix，LTX 使用最多三个可复用 look-ahead 槽并在预算足够时自动退化为全驻留。C++ `BlockResidencyPlan` 是同一决策的类型化视图，Session 会在返回结果前校验 C runtime 与框架计划一致；实际块读取、Metal kernel 和取消边界仍由各自 C runtime 所有者管理。请求预算仍不是整个进程 RSS 硬上限，必须继续用真实 RSS、吞吐和质量矩阵验收。
+
+### H3 / LTX 共享流式驻留合同
+
+`native/runtime/block_residency.c` 只负责可审计的容量计算，不持有模型权重，也不引入 MLX、Foundation 或 Metal。H3 的既有 `h3_streaming_policy` 现在只是兼容性薄包装，因此旧 C 测试和 ABI 不变；LTX loader 直接使用同一策略，并把 `pinned_blocks`、`streamed_blocks`、`refill_slots` 与 working-set 估计写入 native result。这样可以借用 vpipe 的“预算选择驻留子集、异步补块、可复用槽”思路，而不把 vpipe 较慢的算子或进程边界带入 TurboCider。
+
+本轮的 CPU-only 回归覆盖 H3 双槽预算边界、LTX 1/2/3 槽容量阶梯、48-block 全驻留退化、溢出和取消；Apple native build 进一步验证了 C/C++/Objective-C++ 链接边界。2026-09-10 主机复测中，H3 matched DiT 仍快于 vpipe，LTX 9 帧 streamed smoke 相对 resident 更快且 latent/RGB byte-exact；这些结果只约束对应 workload，未放宽 ANE、I2V、音频或 97 帧完整矩阵门禁。
 
 ## H3 / LTX 接入合同
 
-两者的注册、请求验证、阶段定义和描述现已迁移为 C++。执行器保持不可用，未下载权重，也不宣称推理正确性已验证。
+两者的注册、请求验证、阶段定义、Session 生命周期和结果遥测现已接入 C++ runtime。H3/LTX 数学仍保留已验证的 C/Metal 路径，新的共享组件只统一驻留决策和类型化遥测；模型级 parity、E2E 速度和 ANE 质量门禁仍分别记录，不能由框架接入本身推导通过。
 
 后续执行器必须：
 
@@ -61,7 +67,7 @@ FLUX 混合 block 仍按以下依赖运行：输入 materialize → GPU attentio
 2. 保持平台对象不进入模型公共头文件。
 3. 描述实际阶段依赖和驻留策略，不能直接套用 FLUX 的组件结构或内存估计。
 4. 验证文本及各媒体输入、取消恢复、重复加载、输出时空形状、音画同步和参考实现误差。
-5. 对 streamed/prefetch 实现验证内存预算、同步与逐块输出对照，然后才开放能力。
+5. 对 streamed/prefetch 实现验证内存预算、同步与逐块输出对照；当前 H3/LTX 已完成代码和 CPU policy 验证，真实媒体矩阵仍是模型级开放条件。
 
 `experimental/video` 仍是未进入构建的历史迁移材料，其中旧 `runtime.hpp` 引用不是可用接口。应按上述新合同移植，不能直接加入 SOURCES。
 
@@ -107,4 +113,4 @@ M4 Pro 48 GiB、MLX 0.32.0、512×512、4 步、固定提示词与 seed=42。最
 
 17 项仓库/请求/边界测试、App 行为测试和真实权重的 6 组回归通过。分阶段模式中，两种图像输入操作分别在 GPU 与 GPU+ANE 上和 resident 输出一致，返回时 MLX 活跃内存为 851,968 或 917,504 字节；这不代表整个进程占用不到 1 MiB。Transformer、文本编码器、VAE 编解码的数学实现除格式与注释外保持一致。
 
-已重新构建并验证本地签名 App。H3/LTX 只有类型化注册与验收合同，未宣称实际推理验收通过。
+已重新构建并验证本地签名 App。H3/LTX 已有实际 native Session 与 GPU streaming 执行路径；仍未宣称所有输入、音频、LoRA 或 GPU+ANE 组合均通过正式质量/性能验收。

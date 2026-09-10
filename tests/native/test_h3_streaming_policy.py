@@ -15,6 +15,10 @@ def main() -> int:
     compiler = subprocess.run(
         ["xcrun", "--find", "clang"], check=True, capture_output=True, text=True
     ).stdout.strip()
+    sdk = subprocess.run(
+        ["xcrun", "--sdk", "macosx", "--show-sdk-path"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
     with tempfile.TemporaryDirectory(prefix="turbocider-h3-stream-policy-") as raw:
         binary = Path(raw) / "h3-streaming-policy-test"
         subprocess.run(
@@ -24,10 +28,13 @@ def main() -> int:
                 "-Wall",
                 "-Wextra",
                 "-Werror",
+                "-isysroot",
+                sdk,
                 "-I",
                 str(ROOT / "native/models/h3_runtime"),
                 str(ROOT / "tests/native/h3_streaming_policy_test.c"),
                 str(ROOT / "native/models/h3_runtime/h3_streaming_policy.c"),
+                str(ROOT / "native/runtime/block_residency.c"),
                 "-o",
                 str(binary),
             ],

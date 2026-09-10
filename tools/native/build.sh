@@ -38,7 +38,7 @@ SOURCES=(
  native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/ltx_session.mm
  native/platform/apple/llada_session.mm
  native/api/c_api.mm
- native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp
+ native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/lora_identity.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
  native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
  native/models/z_image/gguf.cpp
@@ -74,6 +74,8 @@ LTX_ROOT="$PWD/native/models/ltx_runtime"
 LTX_OUT="$OUT/ltx-runtime"
 mkdir -p "$LTX_OUT"
 LTX_OBJECTS=()
+"$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I native/runtime -c native/runtime/block_residency.c -o "$LTX_OUT/block_residency.o"
+LTX_OBJECTS+=("$LTX_OUT/block_residency.o")
 for src in ltx ltx_conditioning ltx_connector ltx_transformer_io ltx_latent_stats ltx_rng ltx_blocks; do
  "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -DLTX_ENABLE_ANE_MLP -DLTX_ENABLE_ANE_V2A -DLTX_ENABLE_ANE_KV -DLTX_ENABLE_ANE_QKV -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c "$LTX_ROOT/$src.c" -o "$LTX_OUT/$src.o"
  LTX_OBJECTS+=("$LTX_OUT/$src.o")

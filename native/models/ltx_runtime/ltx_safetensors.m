@@ -350,7 +350,7 @@ int ltx_st_read_data(const ltx_st_header *header,
         return ltx_st_fail(error, error_size,
                            "tensor read size mismatch: expected %llu, got %zu",
                            (unsigned long long)expected, bytes);
-    int descriptor = open(header->path, O_RDONLY);
+    int descriptor = open(header->path, O_RDONLY | O_CLOEXEC);
     if (descriptor < 0)
         return ltx_st_fail(error, error_size, "open %s: %s", header->path,
                            strerror(errno));
@@ -369,19 +369,22 @@ int ltx_st_map_open(const ltx_st_header *header, ltx_st_mapping *mapping,
     if (!header->file_size || header->file_size > SIZE_MAX)
         return ltx_st_fail(error, error_size,
                            "safetensors file is too large to map");
-    int descriptor = open(header->path, O_RDONLY);
+    int descriptor = open(header->path, O_RDONLY | O_CLOEXEC);
     if (descriptor < 0)
         return ltx_st_fail(error, error_size, "open %s: %s", header->path,
                            strerror(errno));
     size_t bytes = (size_t)header->file_size;
     void *address = mmap(NULL, bytes, PROT_READ, MAP_PRIVATE, descriptor, 0);
     int saved = errno;
-    close(descriptor);
-    if (address == MAP_FAILED)
+    if (address == MAP_FAILED) {
+        close(descriptor);
         return ltx_st_fail(error, error_size, "mmap %s: %s", header->path,
                            strerror(saved));
+    }
     mapping->address = address;
     mapping->bytes = bytes;
+    mapping->descriptor = descriptor;
+    mapping->descriptor_open = 1;
     return 1;
 }
 
@@ -396,10 +399,28 @@ int ltx_st_map_discard(const ltx_st_mapping *mapping,
     return 1;
 }
 
+int ltx_st_read_mapped_data(const ltx_st_mapping *mapping,
+                            const ltx_st_tensor *tensor,
+                            void *data, size_t bytes,
+                            char *error, size_t error_size) {
+    if (!mapping || !mapping->descriptor_open || mapping->descriptor < 0 ||
+        !tensor || (!data && bytes))
+        return ltx_st_fail(error, error_size,
+                           "missing mapped tensor read argument");
+    uint64_t expected = tensor->data_end - tensor->data_begin;
+    if (expected != bytes || tensor->file_offset > mapping->bytes ||
+        bytes > mapping->bytes - (size_t)tensor->file_offset)
+        return ltx_st_fail(error, error_size,
+                           "mapped tensor read range mismatch");
+    return ltx_pread_exact(mapping->descriptor, data, bytes,
+                           tensor->file_offset, error, error_size);
+}
+
 void ltx_st_map_close(ltx_st_mapping *mapping) {
     if (!mapping) return;
     if (mapping->address && mapping->bytes)
         munmap(mapping->address, mapping->bytes);
+    if (mapping->descriptor_open) close(mapping->descriptor);
     memset(mapping, 0, sizeof(*mapping));
 }
 

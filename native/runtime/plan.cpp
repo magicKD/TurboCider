@@ -112,9 +112,14 @@ ExecutionPlan make_plan(const Request &requested) {
             ((hybrid ? 16ull : 12ull) << 30) + uint64_t(r.width) * r.height * 8192;
     else if (r.model == "flux2-klein-9b")
         plan.memory_estimate_bytes = (28ull << 30) + uint64_t(r.width) * r.height * 12288;
-    else if (r.model == "ltx-2.5-distilled")
-        plan.memory_estimate_bytes = (36ull << 30) +
+    else if (r.model == "ltx-2.5-distilled") {
+        const uint64_t geometry =
             uint64_t(r.width) * r.height * r.frames * 128;
+        if (r.residency == "streamed")
+            plan.memory_estimate_bytes = (26ull << 30) + geometry;
+        else
+            plan.memory_estimate_bytes = (36ull << 30) + geometry;
+    }
     else if (r.model == "minimax-h3-turbo")
         plan.memory_estimate_bytes = (32ull << 30) +
             uint64_t(r.width) * r.height * r.frames * 64;

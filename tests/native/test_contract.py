@@ -458,6 +458,28 @@ class ContractTests(unittest.TestCase):
         self.assertNotEqual(plan({'model':'ltx-2.5-distilled','width':704,'height':448,'frames':97,'steps':11,'loras':[{'path':'/tmp/ltx.safetensors','role':'text_encoder','strength':0.8}]})[0],0)
         self.assertNotEqual(plan({'model':'ltx-2.5-distilled','width':704,'height':448,'frames':97,'steps':11,'loras':[{'path':'/tmp/ltx.safetensors','strength':-0.8}]})[0],0)
 
+        streamed = {
+            'model':'ltx-2.5-distilled', 'operation':'video.generate',
+            'width':704, 'height':448, 'frames':97, 'steps':11,
+            'audio':False, 'execution':'gpu', 'residency':'streamed',
+            'memory_budget_bytes':12*(1<<30),
+        }
+        code,p,error = plan(streamed)
+        self.assertEqual(code,0,error)
+        self.assertEqual(p['residency'],'streamed')
+        self.assertEqual(p['memory_budget_scope'],
+                         'ltx_denoiser_working_set_target_not_process_cap')
+        self.assertGreater(p['memory_estimate_bytes'],
+                           p['memory_budget_bytes'])
+        self.assertNotIn('streamed', p['algorithm_approximations'])
+        self.assertNotEqual(plan({**streamed, 'audio':True})[0], 0)
+        self.assertNotEqual(plan({**streamed, 'operation':'video.image'})[0], 0)
+        self.assertNotEqual(plan({**streamed, 'execution':'gpu_ane',
+                                 'allow_approximation':True,
+                                 'ane_manifest':'/tmp/ltx.json'})[0], 0)
+        self.assertNotEqual(plan({**streamed,
+                                 'memory_budget_bytes':7*(1<<30)})[0], 0)
+
     def test_ltx_image_to_video_contract(self):
         request={
             'model':'ltx-2.5-distilled',
@@ -524,7 +546,9 @@ class ContractTests(unittest.TestCase):
                       'detach_ane_stage1', 'detach_ane_stage2',
                       'release_blocks_final_step', 'ane_kv_stage_mask',
                       'ane_mlp_fused_residual',
-                      'ane_mlp_fused_adaln_pack']:
+                      'ane_mlp_fused_adaln_pack',
+                      'ane_mlp_first_block', 'ane_mlp_block_count',
+                      'ane_mlp_stage_mask']:
             self.assertIn(field, header)
             self.assertIn(f'options.{field}', source)
         self.assertIn('ltx_native_release_full_gpu_mlp',runtime)
@@ -632,6 +656,8 @@ class ContractTests(unittest.TestCase):
                 'detach_stage2':False,'release_blocks_final_step':True,
                 'fused_mlp_residual':False,
                 'fused_mlp_adaln_pack':False,'kv_stage_mask':1,
+                'mlp_block_start':0,'mlp_block_count':48,
+                'mlp_stage_mask':3,
             }
             request={'model':'ltx-2.5-distilled','execution':'gpu_ane',
                      'allow_approximation':True,
@@ -640,6 +666,47 @@ class ContractTests(unittest.TestCase):
             profile.write_text(json.dumps(base))
             code,p,error=plan(request)
             self.assertEqual(code,0,error)
+            stage2_only = {**base,
+                'release_full_gpu_mlp':False,
+                'mlp_block_start':36,'mlp_block_count':12,
+                'mlp_stage_mask':2}
+            stage2_only.pop('mlp_stage1')
+            profile.write_text(json.dumps(stage2_only))
+            code,p,error=plan(request)
+            self.assertEqual(code,0,error)
+            stage1_only = {**base,
+                'release_full_gpu_mlp':False,
+                'mlp_block_start':36,'mlp_block_count':12,
+                'mlp_stage_mask':1}
+            stage1_only.pop('mlp_stage2')
+            profile.write_text(json.dumps(stage1_only))
+            code,p,error=plan(request)
+            self.assertEqual(code,0,error)
+            missing_enabled_stage = dict(stage2_only)
+            missing_enabled_stage.pop('mlp_stage2')
+            profile.write_text(json.dumps(missing_enabled_stage))
+            code,p,error=plan(request)
+            self.assertNotEqual(code,0)
+            self.assertIn('missing stage2 MLP',error)
+            self.assertIn('mlp_window=',
+                          (ROOT/'native/platform/apple/ltx_session.mm').read_text())
+            profile.write_text(json.dumps({**base,
+                'mlp_block_start':36,'mlp_block_count':12}))
+            code,p,error=plan(request)
+            self.assertNotEqual(code,0)
+            self.assertIn('complete Stage-1/Stage-2 coverage',error)
+            profile.write_text(json.dumps({**base,
+                'release_full_gpu_mlp':False,
+                'mlp_block_start':40,'mlp_block_count':12}))
+            code,p,error=plan(request)
+            self.assertNotEqual(code,0)
+            self.assertIn('fit within 48 blocks',error)
+            profile.write_text(json.dumps({**base,
+                'release_full_gpu_mlp':False,'mlp_stage_mask':0}))
+            code,p,error=plan(request)
+            self.assertNotEqual(code,0)
+            self.assertIn('mlp_stage_mask must be 1..3',error)
+            profile.write_text(json.dumps(base))
             code,p,error=plan({**request,'allow_approximation':False})
             self.assertNotEqual(code,0)
             self.assertIn('allow_approximation=true',error)
@@ -664,6 +731,26 @@ class ContractTests(unittest.TestCase):
                      'stage2_video', 'stage2_audio', 'metadata.json']:
             self.assertIn(name, source)
         self.assertIn('request.dump', source)
+
+    def test_ltx_streaming_reuses_refill_slots_and_direct_file_reads(self):
+        blocks=(ROOT/'native/models/ltx_runtime/ltx_blocks.c').read_text()
+        safetensors=(ROOT/'native/models/ltx_runtime/ltx_safetensors.m').read_text()
+        benchmark=(ROOT/'tools/native/benchmark_ltx_resident.py').read_text()
+        self.assertIn('refill_block_weights', blocks)
+        self.assertIn('LTX_MAX_REFILL_SLOTS = 3', blocks)
+        self.assertIn('streaming_slots[LTX_MAX_REFILL_SLOTS]', blocks)
+        self.assertIn('tc_block_residency_plan_build', blocks)
+        policy=(ROOT/'native/runtime/block_residency.c').read_text()
+        self.assertIn('capacity >= active_blocks', policy)
+        self.assertIn('return finish_plan(plan, active_blocks, 0u, 1)', policy)
+        self.assertIn('request_slot_refills',
+                      (ROOT/'native/platform/apple/ltx_session.mm').read_text())
+        self.assertIn('ltx_st_read_mapped_data', blocks)
+        self.assertIn('ltx_gpu_buffer_contents', blocks)
+        self.assertIn('ltx_pread_exact(mapping->descriptor', safetensors)
+        self.assertIn('stage2_video.bf16', benchmark)
+        self.assertIn('compare_video', benchmark)
+        self.assertIn('require_speedup', benchmark)
 
     def test_ltx_gpu_ane_plan_rejects_incomplete_artifact_tree(self):
         with tempfile.TemporaryDirectory() as d:
@@ -713,7 +800,7 @@ class ContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); lora_dir=root/'models'/'loras'; diff_dir=root/'models'/'diffusion_models'
             lora_dir.mkdir(parents=True); diff_dir.mkdir(parents=True)
-            base=diff_dir/'base.safetensors'; lora=lora_dir/'adapter.safetensors'; output=diff_dir/'merged.safetensors'
+            base=diff_dir/'base.safetensors'; lora=lora_dir/'adapter.safetensors'; output=diff_dir/'ltx-2.5-22b-runtime-refiner-comfy-int8-convrot.safetensors'
             base.write_bytes(b'base checkpoint'); lora.write_bytes(b'lora adapter'); output.write_bytes(b'merged checkpoint')
             digest=lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
             manifest={
@@ -726,12 +813,13 @@ class ContractTests(unittest.TestCase):
                 'output':{'filename':output.name,'bytes':output.stat().st_size,'sha256':digest(output)},
                 'mapping':{'total':2,'missing':0,'int8_convrot':1,'bf16':1},
             }
-            (diff_dir/'merged.safetensors.manifest.json').write_text(json.dumps(manifest))
+            (diff_dir/(output.name + '.manifest.json')).write_text(json.dumps(manifest))
             out,err=C.c_void_p(),C.c_void_p()
             code=lib.tc_ltx_lora_preflight_json(str(root/'models').encode(),str(lora).encode(),C.c_float(0.8),C.byref(out),C.byref(err))
             value,failure=consume(out),consume(err)
             self.assertEqual(code,0,failure); payload=json.loads(value)
             self.assertEqual(payload['validation'],'premerged_manifest_verified')
+            self.assertEqual(payload['checkpoint'],str(output))
             self.assertEqual(payload['checkpoint_sha256'],digest(output))
             out,err=C.c_void_p(),C.c_void_p()
             code=lib.tc_ltx_lora_preflight_json(str(root/'models').encode(),str(lora).encode(),C.c_float(0.7),C.byref(out),C.byref(err))

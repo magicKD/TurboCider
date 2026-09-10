@@ -15,6 +15,7 @@ import contextlib
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -26,7 +27,11 @@ from typing import Any, Callable
 
 ALGORITHM = {
     "h3": "turbocider-h3-runtime-lora-bake-v3",
-    "ltx": "turbocider-ltx-refiner-bake-v2",
+    # v3 records and passes the requested multiplier to the LTX merger.  The
+    # previous helper advertised arbitrary strengths in its cache identity
+    # while the merger always baked 0.8, which could return a misleading
+    # cache artifact that native provenance validation correctly rejected.
+    "ltx": "turbocider-ltx-refiner-bake-v3",
 }
 SCHEMA = "turbocider-runtime-lora-cache-v1"
 
@@ -168,6 +173,7 @@ def _run_merge(model: str, base: Path, adapter: Path, output: Path,
         command = [
             os.environ.get("TURBOCIDER_PREPARE_PYTHON", os.sys.executable),
             str(script), str(base), str(adapter), str(output),
+            "--strength", str(strength),
             "--device", os.environ.get("TURBOCIDER_LORA_MERGE_DEVICE", "auto"),
         ]
     else:
@@ -197,6 +203,14 @@ def ensure_cache(
         raise FileNotFoundError(f"LoRA base does not exist: {base_path}")
     if not adapter_path.is_file():
         raise FileNotFoundError(f"LoRA adapter does not exist: {adapter_path}")
+    if not isinstance(strength, (int, float)) or not math.isfinite(strength):
+        raise ValueError("LoRA strength must be finite")
+    if strength <= 0.0 or strength > 4.0:
+        raise ValueError("LoRA strength must be in (0, 4]")
+    if model == "h3" and role != "transformer":
+        raise ValueError("H3 runtime cache supports only the transformer role")
+    if model == "ltx" and role not in {"transformer", "refiner"}:
+        raise ValueError("LTX runtime cache supports transformer or refiner role")
     cache_base = cache_root(cache_dir)
     cache_base.mkdir(parents=True, exist_ok=True)
     with contextlib.closing(_lock(cache_base / ".hashes.lock")):
@@ -251,7 +265,10 @@ def ensure_cache(
                 artifact = model_tree
                 manifest = cached_component / "transformer" / "h3-turbo-merge-manifest.json"
             elif model == "ltx":
-                output = staging / "ltx-2.5-22b-dev-refiner-lora-0.8-comfy-int8-convrot.safetensors"
+                # The cache directory already carries the complete identity;
+                # use a strength-neutral filename so non-default multipliers
+                # are never mislabeled as the published 0.8 artifact.
+                output = staging / "ltx-2.5-22b-runtime-refiner-comfy-int8-convrot.safetensors"
                 _run_merge(model, base_path, adapter_path, output, strength, profile)
                 # The upstream manifest records plain filenames and the native
                 # validator deliberately requires those records to resolve in

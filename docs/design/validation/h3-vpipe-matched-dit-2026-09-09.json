@@ -1,0 +1,125 @@
+{
+  "schema": "turbocider-vpipe-h3-matched-dit-v2",
+  "date": "2026-09-09",
+  "hardware": {
+    "gpu": "Apple M4 Max",
+    "macos": "26.6.2",
+    "architecture": "arm64"
+  },
+  "scope": {
+    "model": "h3.c/models/MiniMax-H3-LightX2V-Turbo/FL2VA/transformer",
+    "operation": "matched H3 DiT-only inference",
+    "text_rows": 32,
+    "sequence_rows": 554,
+    "width": 256,
+    "height": 256,
+    "frames": 22,
+    "model_evaluations": 4,
+    "seed": 42,
+    "video_elements": 43008,
+    "audio_elements": 2368,
+    "requests_per_process": 2
+  },
+  "method": {
+    "ordering": "fresh processes in alternating AB/BA order",
+    "caches": "file and Metal caches not flushed",
+    "comparison": "little-endian float32 latent outputs",
+    "conditioning": "synthetic BF16 text, identical PCG/Box-Muller noise, explicit canonical-to-packed latent conversion",
+    "turbocider_memory_budget_bytes": 17179869184,
+    "vpipe_ram_limit_mb": 16384,
+    "vpipe_adaptive_residency": true
+  },
+  "performance": {
+    "turbocider": {
+      "process_wall_median_seconds": 35.02197029202944,
+      "first_request_denoise_median_seconds": 15.815749499999999,
+      "retained_request_denoise_median_seconds": 11.503616,
+      "pinned_blocks": 14,
+      "streamed_blocks": 36,
+      "activation_reserve_bytes": 4294967296
+    },
+    "vpipe": {
+      "process_wall_median_seconds": 53.70335662498837,
+      "first_request_denoise_median_seconds": 26.420070395499998,
+      "retained_request_denoise_median_seconds": 26.373475083499997,
+      "resident_blocks": 0,
+      "resident_block_bytes": 0,
+      "prefetch_started": 0,
+      "prefetch_hits": 0,
+      "slot_pair": false
+    },
+    "vpipe_over_turbocider_ratio": {
+      "process_wall": 1.533424732817727,
+      "first_request_denoise": 1.670489795560347,
+      "retained_request_denoise": 2.292629114955848
+    }
+  },
+  "quality": {
+    "finite": true,
+    "retained_outputs_byte_exact_within_engine": true,
+    "maximum_mae": 0.05672802884983624,
+    "rmse": 0.07826723665017057,
+    "relative_l2": 0.09735461341773509,
+    "cosine": 0.9952882657997941,
+    "thresholds": {
+      "maximum_relative_l2": 0.0001,
+      "minimum_cosine": 0.99999
+    },
+    "parity_passed": false
+  },
+  "diagnostics": {
+    "probe_environment_bridge": "standalone TurboCider probe now explicitly opts into diagnostic environment variables; shipping requests remain configuration-table-only",
+    "refined_text_rms": {
+      "turbocider": 2.26025555,
+      "vpipe": 2.26029
+    },
+    "block_output_rms_relative_delta_turbocider_minus_vpipe": {
+      "block_0": {"text": -0.000712, "audio": 0.002699, "video": -0.000053},
+      "block_3": {"text": -0.000430, "audio": 0.002907, "video": -0.000880},
+      "block_24": {"text": -0.001354, "audio": -0.000065, "video": -0.003413},
+      "block_49": {"text": 0.007902, "audio": -0.002567, "video": -0.002480}
+    },
+    "elementwise_block_0_relative_l2": {
+      "refined_text": 0.005507829157003214,
+      "qkv_projection_input": 0.00817197426299667,
+      "attention_output_projection_input": 0.009130810478277187,
+      "mlp_input": 0.015384416452838527,
+      "block_output": 0.004554124212615604
+    },
+    "operator_path_ab": {
+      "split_bf16_final_head": {
+        "relative_l2": 0.09696255271907597,
+        "cosine": 0.9952882657997941,
+        "result": "no material improvement"
+      },
+      "f32_final_head": {
+        "relative_l2": 0.11489,
+        "cosine": 0.99338,
+        "result": "worse"
+      },
+      "unfused_mlp": {
+        "relative_l2": 0.10422068132766242,
+        "cosine": 0.9945541967086374,
+        "result": "worse"
+      },
+      "vpipe_scalar_sdpa_against_turbocider": {
+        "relative_l2": 0.0905803658168054,
+        "cosine": 0.9958954532246522,
+        "result": "attention contributes but is not the first divergence"
+      },
+      "turbocider_non_mps_bf16_linear": {
+        "relative_l2": 0.08665855553490805,
+        "cosine": 0.9962385930109496,
+        "result": "partial improvement only; still far outside parity gate and not retained"
+      }
+    },
+    "interpretation": "Per-element dumps locate the first mismatch before main block 0: refined text already differs by 0.55% relative L2 and the first QKV input by 0.82%. Disabling TurboCider's MPSGraph BF16 linear route improves final relative L2 only from about 9.70% to 8.67%, while vpipe's scalar attention improves it only to 9.06%. The residual is therefore cumulative BF16 kernel reduction/order drift across projection, refiner, attention and MLP paths, not a row-layout, schedule, final-head or single fused-operator bug."
+  },
+  "conclusion": {
+    "correctness": "failed parity gate",
+    "memory": "TurboCider admitted 14 pinned blocks under the 16 GiB target; vpipe admitted zero resident blocks and used a single streaming slot",
+    "performance": "TurboCider is approximately 1.53x faster process-wall, 1.67x faster on the first denoise, and 2.29x faster on the retained denoise request",
+    "shipping_status": "vpipe cannot replace the shipping H3 runtime",
+    "next_required_work": "A replacement runtime would need a shared arithmetic contract or matched BF16 kernels beginning with condition/patch projection and the text refiner; vpipe loading/offloading features may be ported independently, but vpipe execution must remain disabled until the existing quality gate passes."
+  }
+}
