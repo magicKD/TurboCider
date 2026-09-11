@@ -188,6 +188,48 @@ bool Weights::convrot(const std::string &prefix) const {
     return raw || packed;
 }
 
+bool Weights::nvfp4(const std::string &prefix) const {
+    return has(prefix + ".weight") && has(prefix + ".weight_scale_2") &&
+           (has(prefix + ".nvfp4_scales") || has(prefix + ".weight_scale"));
+}
+
+size_t Weights::pack_comfy_nvfp4() {
+    std::vector<std::string> prefixes;
+    for (const auto &[key, _] : values_)
+        if (key.ends_with(".weight_scale_2"))
+            prefixes.push_back(key.substr(0, key.size() - std::strlen(".weight_scale_2")));
+    for (const auto &prefix : prefixes) {
+        require(!has(prefix + ".pre_quant_scale"), "NVFP4 pre_quant_scale is not supported");
+        if (has(prefix + ".nvfp4_scales")) continue;
+        const auto &raw = at(prefix + ".weight");
+        const auto &scales = at(prefix + ".weight_scale");
+        const auto &global = at(prefix + ".weight_scale_2");
+        require(raw.ndim() == 2 && raw.dtype() == mx::uint8 && raw.shape(1) % 8 == 0 &&
+                    scales.dtype() == mx::uint8 && global.size() == 1 && global.dtype() == mx::float32,
+                "invalid Comfy NVFP4 storage: " + prefix);
+        const int rows = raw.shape(0), columns = raw.shape(1) / 8;
+        const int row_tiles = (rows + 127) / 128, column_tiles = (columns + 3) / 4;
+        require(scales.size() == size_t(row_tiles) * column_tiles * 512,
+                "invalid tiled Comfy NVFP4 scales: " + prefix);
+        // Comfy: high nibble first, cuBLAS tiled E4M3 scales. MLX: low
+        // nibble first, row-major scales. No additional weight quantization.
+        auto swapped = mx::bitwise_or(mx::left_shift(raw, Tensor(4, mx::uint8)),
+                                       mx::right_shift(raw, Tensor(4, mx::uint8)));
+        auto packed = mx::view(swapped, mx::uint32);
+        auto reordered = mx::reshape(mx::transpose(
+            mx::reshape(scales, {row_tiles, column_tiles, 32, 4, 4}), {0, 3, 2, 1, 4}),
+            {row_tiles * 128, column_tiles * 4});
+        reordered = slice_axis(slice_axis(reordered, 0, 0, rows), 1, 0, columns);
+        mx::eval(packed, reordered, global);
+        require(std::isfinite(global.item<float>()) && global.item<float>() > 0,
+                "invalid Comfy NVFP4 global scale: " + prefix);
+        values_.at(prefix + ".weight") = packed;
+        values_.emplace(prefix + ".nvfp4_scales", reordered);
+        values_.erase(prefix + ".weight_scale");
+    }
+    return prefixes.size();
+}
+
 void Weights::cast_unquantized_float32(mx::Dtype dtype) {
     std::vector<Tensor> converted;
     for (auto &[key, value] : values_) {
@@ -278,7 +320,16 @@ QuantizedGeometry quantized_geometry(const Tensor &weight, const Tensor &scales,
 Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
     const auto &weight = at(prefix + ".weight");
     Tensor output = x;
-    if (convrot(prefix)) {
+    if (nvfp4(prefix)) {
+        require(has(prefix + ".nvfp4_scales") && weight.dtype() == mx::uint32 &&
+                    weight.ndim() == 2 && weight.shape(1) * 8 == x.shape(-1),
+                "NVFP4 weights must be packed before projection: " + prefix);
+        // Weight-only W4A16: input_scale is intentionally unused. This is
+        // not NVIDIA's activation-quantized W4A4 Tensor Core execution.
+        auto product = mx::quantized_matmul(x, weight, at(prefix + ".nvfp4_scales"),
+                                            std::nullopt, true, 16, 4, "nvfp4");
+        output = mx::astype(mx::astype(product, mx::float32) * at(prefix + ".weight_scale_2"), x.dtype());
+    } else if (convrot(prefix)) {
         const bool packed = weight.dtype() == mx::uint32;
         const int logical_input = packed ? weight.shape(1) * 4 : weight.shape(1);
         require(weight.ndim() == 2 && logical_input % 256 == 0,

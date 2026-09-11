@@ -39,6 +39,7 @@ test:
 	@python3 -B tests/native/test_video_timing.py
 	@python3 -B tests/native/test_wan_benchmark.py
 	@python3 -B tests/native/test_native_gguf.py
+	@python3 -B tests/native/test_nvfp4.py
 	@python3 -B tests/native/test_h3_streaming_policy.py
 	@python3 -B tests/native/test_h3_quant_cache.py
 	@python3 tests/native/test_inventory.py
