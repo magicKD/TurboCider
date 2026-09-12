@@ -65,6 +65,7 @@ enum LibraryTool {
 @MainActor final class ModelLibraryController: ObservableObject {
     @Published private(set) var root = LibraryStore.defaultRoot.path
     @Published private(set) var installations: [LibraryInstallation] = []
+    @Published private(set) var loras: [LibraryLoRA] = []
     @Published private(set) var busy = false
     @Published private(set) var event: LibraryDownloadEvent?
     @Published var message: String?
@@ -94,18 +95,43 @@ enum LibraryTool {
     }
     private func readIndex() async throws {
         let data = try await LibraryTool.run(["list", "--root", root])
-        installations = try LibraryTool.decode(LibraryIndex.self, from: data).installations
+        let index = try LibraryTool.decode(LibraryIndex.self, from: data)
+        installations = index.installations
+        loras = index.loras ?? []
     }
     func refresh(studio: StudioState, migrate: Bool = false) {
         perform { [self] in
             let location = try LibraryTool.decode([String: String].self, from: await LibraryTool.run(["location"]))
             root = location["root"] ?? root
             if migrate {
+                // Older App versions stored bindings beside test/job output. Rebuild
+                // links from their resolved sources in the persistent library.
+                if let path = studio.draft.modelPaths["z-image-turbo"], !path.isEmpty,
+                   !path.hasPrefix(root + "/"),
+                   FileManager.default.fileExists(atPath: URL(fileURLWithPath: path).appendingPathComponent("installation.json").path),
+                   ZImageInstallation.splitDirectory(URL(fileURLWithPath: path)) != nil {
+                    let installed = try ZImageInstallation.install(model: URL(fileURLWithPath: path), sharedText: nil,
+                        directory: URL(fileURLWithPath: root).appendingPathComponent("bindings"))
+                    studio.draft.modelPaths["z-image-turbo"] = installed.path
+                    studio.save()
+                }
                 let data = try JSONEncoder().encode(["modelPaths": studio.draft.modelPaths])
                 let response = try await LibraryTool.run(["import", "{request}", "--root", root], payload: data)
                 if let raw = try JSONSerialization.jsonObject(with: response) as? [String: Any],
                    let result = raw["result"] as? [String: Any], let errors = result["errors"] as? [String: String], !errors.isEmpty {
                     message = errors.sorted { $0.key < $1.key }.map { "\($0.key)：\($0.value)" }.joined(separator: "\n")
+                }
+            }
+            if migrate {
+                for lora in studio.draft.loras where FileManager.default.isReadableFile(atPath: lora.path) {
+                    _ = try await LibraryTool.run(["register-lora", studio.draft.modelID, lora.path, "--root", root])
+                }
+                if let path = studio.draft.modelPaths["z-image-turbo"],
+                   let split = ZImageInstallation.splitDirectory(URL(fileURLWithPath: path)) {
+                    let files = (try? FileManager.default.contentsOfDirectory(at: split.appendingPathComponent("loras"), includingPropertiesForKeys: nil)) ?? []
+                    for file in files.sorted(by: { $0.path < $1.path }) where file.pathExtension == "safetensors" {
+                        _ = try await LibraryTool.run(["register-lora", "z-image-turbo", file.path, "--root", root])
+                    }
                 }
             }
             try await readIndex()
@@ -137,8 +163,45 @@ enum LibraryTool {
             let raw = try JSONSerialization.jsonObject(with: response) as? [String: Any]
             let result = raw?["result"] as? [String: Any]
             if let errors = result?["errors"] as? [String: String], !errors.isEmpty { message = errors.values.sorted().joined(separator: "\n") }
-            for item in installations where (studio.draft.modelPaths[item.modelID] ?? "").isEmpty { studio.draft.modelPaths[item.modelID] = item.path }
+            if let imported = result?["installations"],
+               let data = try? JSONSerialization.data(withJSONObject: imported),
+               let items = try? JSONDecoder().decode([LibraryInstallation].self, from: data) {
+                for item in items { studio.draft.modelPaths[item.modelID] = item.path }
+            }
         }
+    }
+    func registerLoRA(_ url: URL, modelID: String) {
+        perform { [self] in
+            _ = try await LibraryTool.run(["register-lora", modelID, url.path, "--root", root])
+            try await readIndex()
+        }
+    }
+    func removeLoRA(_ item: LibraryLoRA) {
+        perform { [self] in
+            _ = try await LibraryTool.run(["remove-lora", item.id, "--root", root])
+            try await readIndex()
+        }
+    }
+    func discoverLoRAs(modelID: String, path: String) {
+        perform { [self] in
+            let base = URL(fileURLWithPath: path)
+            let directories = [base.appendingPathComponent("loras"), base.appendingPathComponent("split_files/loras"), base.appendingPathComponent("models/loras")]
+            for directory in directories {
+                let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+                for file in files.sorted(by: { $0.path < $1.path }) where file.pathExtension == "safetensors" {
+                    _ = try await LibraryTool.run(["register-lora", modelID, file.path, "--root", root])
+                }
+            }
+            try await readIndex()
+            message = "已扫描模型的 loras 目录。登记不自动启用；请确认 LoRA 与基础模型兼容。"
+        }
+    }
+    func exportConfiguration(to url: URL, studio: StudioState) {
+        do {
+            let object: [String: Any] = ["schemaVersion": 1, "modelPaths": studio.draft.modelPaths,
+                "loras": loras.map { ["modelID": $0.modelID, "path": $0.path] }]
+            try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
+        } catch { message = error.localizedDescription }
     }
     func preview(_ request: LibraryDownloadRequest, completion: @escaping (LibraryDownloadPlan) -> Void) {
         perform { [self] in

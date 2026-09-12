@@ -219,6 +219,14 @@ final class NativeJobStore: ObservableObject {
         engine = nil; loadedPath = nil; loadedModelID = nil
         sessionReport = nil
         sessionState = "正在检查模型…"
+        if modelID == "z-image-turbo" {
+            let report = await Task.detached(priority: .utility) {
+                InstallationInspection.inspect(modelID: modelID, root: url)
+            }.value
+            guard report.issues.isEmpty else {
+                throw NativeFailure(message: "Z-Image 模型检查失败，请在模型库重新选择原始模型目录：\n" + report.issues.map { "\($0.path)：\($0.message)" }.joined(separator: "\n"))
+            }
+        }
         let opened = try await NativeEngine.open(modelURL: url, modelID: modelID)
         engine = opened; loadedPath = path; loadedModelID = modelID
         sessionState = "会话就绪 · 权重按需加载"

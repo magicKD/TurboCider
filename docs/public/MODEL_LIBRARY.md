@@ -225,3 +225,47 @@ Use the [getting-started workflow](GETTING_STARTED.md) for the first GPU request
 
 API references: [Hugging Face Hub API](https://huggingface.co/docs/hub/en/api),
 [ModelScope Hub API implementation](https://github.com/modelscope/modelscope_hub/blob/main/src/modelscope_hub/_legacy_api.py).
+
+## Model and LoRA configuration
+
+The App's **管理目录 → 导出模型与 LoRA 配置** writes a portable JSON
+configuration. Import it with **导入模型与 LoRA 配置** or `library import`:
+
+```json
+{
+  "schemaVersion": 1,
+  "modelPaths": {
+    "z-image-turbo": "/absolute/model-library/bindings/z-image-installation",
+    "flux2-klein-4b": "/absolute/external/FLUX.2-klein-4B"
+  },
+  "loras": [
+    {"modelID": "z-image-turbo", "path": "/absolute/external/loras/style.safetensors"}
+  ]
+}
+```
+
+Paths must exist on the destination machine. Import changes successfully
+registered model selections, retains unrelated entries, and reports missing
+paths individually. It does not change prompts or enable imported adapters.
+`library.json` remains the shared inventory of installations, components,
+provenance and model-associated LoRA records; old indexes without `loras` remain
+readable. External paths are references, so weights are never copied just to
+register them. LoRA aliases resolve to a canonical path and deduplicate per
+model. CLI commands are `register-lora MODEL_ID FILE` and `remove-lora ID`.
+Removing registration always retains the original weights.
+
+Each model's **LoRA 模型库** supports registering files, scanning its `loras/`,
+`split_files/loras/` and `models/loras/` directories, and adding a registered
+adapter to the creation draft. Registration records the intended base model;
+it does not prove tensor compatibility. Discovered adapters are not automatically
+enabled. Switching models preserves each model's draft adapters and strengths.
+The execution strategy resets to automatic when switching models.
+
+Z-Image bindings now live under the configured library's `bindings/` directory.
+On startup, readable legacy bindings with `installation.json` outside this root
+are recreated there, with links directly to the resolved source directories.
+The old output directory can then be removed without breaking the new binding;
+the actual source weights must remain available. Existing registrations are
+retained for review. App session opening checks Z-Image component files, shard
+indexes and safetensors ranges before invoking the engine, and reports broken
+links or missing files with their component paths.

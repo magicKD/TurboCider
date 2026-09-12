@@ -27,9 +27,17 @@ struct LibraryInstallation: Codable, Identifiable, Sendable {
     var createdAt: Date
 }
 
+struct LibraryLoRA: Codable, Identifiable, Sendable {
+    var id: String
+    var modelID: String
+    var path: String
+    var name: String
+}
+
 struct LibraryIndex: Codable, Sendable {
     var schemaVersion = 1
     var installations: [LibraryInstallation] = []
+    var loras: [LibraryLoRA]? = nil
 }
 
 /// An OS lock, not a stale timestamp file. A crashed process releases the lease.
@@ -111,6 +119,29 @@ struct LibraryStore: Sendable {
             components: components, createdAt: Date())
         index.installations.append(installation); try write(index)
         return installation
+    }
+
+    @discardableResult func registerLoRA(modelID: String, path: URL) throws -> LibraryLoRA {
+        let lease = try acquireLease(); defer { withExtendedLifetime(lease) {} }
+        try Self.validateIdentifier(modelID)
+        let canonical = path.standardizedFileURL.resolvingSymlinksInPath()
+        guard canonical.pathExtension == "safetensors",
+              try canonical.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+            throw LibraryFailure(message: "请选择存在的 .safetensors LoRA 文件。")
+        }
+        var index = try read()
+        if let existing = index.loras?.first(where: { $0.modelID == modelID && $0.path == canonical.path }) { return existing }
+        let item = LibraryLoRA(id: UUID().uuidString, modelID: modelID, path: canonical.path, name: canonical.lastPathComponent)
+        index.loras = (index.loras ?? []) + [item]
+        try write(index)
+        return item
+    }
+
+    func unregisterLoRA(id: String) throws {
+        let lease = try acquireLease(); defer { withExtendedLifetime(lease) {} }
+        var index = try read()
+        index.loras = (index.loras ?? []).filter { $0.id != id }
+        try write(index)
     }
 
     /// Remove only the registration. Both external and managed bytes are retained.

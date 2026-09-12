@@ -1,10 +1,40 @@
 import Foundation
 
 @main struct ModelLibraryTests {
-    static func main() throws {
+    @MainActor static func main() throws {
         func check(_ value: Bool, _ message: String) throws {
             if !value { throw NativeFailure(message: message) }
         }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tc-model-switch-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let studio = StudioState(directory: directory)
+        studio.selectModel("z-image-turbo")
+        studio.draft.loras = [StudioLoRA(path: "/fixture/z.safetensors", strength: 0.6)]
+        studio.selectModel("flux2-klein-4b")
+        try check(studio.draft.loras.isEmpty, "Z-Image LoRA leaked into FLUX")
+        studio.selectModel("z-image-turbo")
+        try check(studio.draft.loras.first?.strength == 0.6, "Model switch lost LoRA settings")
+        studio.save()
+        let restored = StudioState(directory: directory)
+        restored.selectModel("flux2-klein-4b")
+        restored.selectModel("z-image-turbo")
+        try check(restored.draft.loras.first?.path == "/fixture/z.safetensors", "LoRA association did not survive restart")
+        let fm = FileManager.default
+        let source = directory.appendingPathComponent("source")
+        for folder in ["models/diffusion_models", "models/vae", "text_encoder", "tokenizer"] {
+            try fm.createDirectory(at: source.appendingPathComponent(folder), withIntermediateDirectories: true)
+        }
+        for file in ["models/diffusion_models/z_image_turbo_bf16.safetensors", "models/vae/ae.safetensors", "text_encoder/model.safetensors", "tokenizer/tokenizer.json"] {
+            try Data("fixture".utf8).write(to: source.appendingPathComponent(file))
+        }
+        let oldParent = directory.appendingPathComponent("old-output")
+        let old = try ZImageInstallation.install(model: source, sharedText: nil, directory: oldParent)
+        let migrated = try ZImageInstallation.install(model: old, sharedText: nil, directory: directory.appendingPathComponent("library/bindings"))
+        try fm.removeItem(at: oldParent)
+        try check(ZImageInstallation.splitDirectory(migrated) != nil && ZImageInstallation.hasSharedText(migrated), "Migrated binding still depends on old output")
+        try fm.removeItem(at: source.appendingPathComponent("models/diffusion_models/z_image_turbo_bf16.safetensors"))
+        let inspection = InstallationInspection.inspect(modelID: "z-image-turbo", root: migrated)
+        try check(!inspection.issues.isEmpty, "Broken weight link was not diagnosed")
         let catalog = StudioModel.catalog()
         guard let ltx = catalog.first(where: { $0.id == "ltx-2.5-distilled" }),
               let z = catalog.first(where: { $0.id == "z-image-turbo" }),

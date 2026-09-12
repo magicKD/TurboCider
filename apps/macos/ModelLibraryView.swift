@@ -48,7 +48,8 @@ struct ModelLibraryView: View {
                 Spacer()
                 Menu("管理目录") {
                     Button("更换模型库目录…", action: chooseLibraryRoot)
-                    Button("导入模型路径配置…", action: importPaths)
+                    Button("导入模型与 LoRA 配置…", action: importPaths)
+                    Button("导出模型与 LoRA 配置…", action: exportPaths)
                     Button("在 Finder 中打开") { NSWorkspace.shared.open(URL(fileURLWithPath: library.root)) }
                     Button("刷新并同步已有路径") { library.refresh(studio: studio, migrate: true) }
                 }.disabled(library.busy || store.busy).accessibilityIdentifier("manageModelLibrary")
@@ -156,6 +157,7 @@ struct ModelLibraryView: View {
                         Text("此执行器当前只接受提示词，创作页不会启用图片输入。").font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                if item.supports_lora == true { loraLibrary(item) }
                 let registered = library.installations.filter { $0.modelID == item.id }
                 if !registered.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -222,6 +224,39 @@ struct ModelLibraryView: View {
         panel.message = "选择 App 和 CLI 共用的模型目录。更换目录不会移动或删除已有模型文件。"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         library.configure(root: url, studio: studio)
+    }
+    private func loraLibrary(_ model: StudioModel) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("LoRA 模型库").font(.headline)
+                Spacer()
+                Button("登记文件…") {
+                    let panel = NSOpenPanel(); panel.canChooseDirectories = false
+                    if panel.runModal() == .OK, let url = panel.url { library.registerLoRA(url, modelID: model.id) }
+                }
+                Button("扫描模型目录") { library.discoverLoRAs(modelID: model.id, path: studio.draft.modelPaths[model.id] ?? "") }
+                    .disabled((studio.draft.modelPaths[model.id] ?? "").isEmpty)
+            }
+            Text("按基础模型登记外部文件，不复制权重。扫描 loras 目录后，选择需要启用的文件。").font(.caption).foregroundStyle(.secondary)
+            ForEach(library.loras.filter { $0.modelID == model.id }) { item in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name).font(.callout)
+                    Text(item.path).font(.caption2).textSelection(.enabled)
+                    HStack {
+                        if !FileManager.default.isReadableFile(atPath: item.path) { Text("文件不可读取，请重新登记").foregroundStyle(.red) }
+                        Button("添加到创作") {
+                            if studio.draft.modelID != model.id { studio.selectModel(model.id) }
+                            studio.draft.loras.append(StudioLoRA(path: item.path))
+                        }.disabled(!FileManager.default.isReadableFile(atPath: item.path) || (studio.draft.modelID == model.id && (studio.draft.loras.count >= 8 || studio.draft.loras.contains { $0.path == item.path })))
+                        Button("移除登记") { library.removeLoRA(item) }
+                    }
+                }
+            }
+        }.disabled(library.busy || store.busy)
+    }
+    private func exportPaths() {
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "turbocider-models.json"
+        if panel.runModal() == .OK, let url = panel.url { library.exportConfiguration(to: url, studio: studio) }
     }
     private func importPaths() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]

@@ -360,7 +360,16 @@ struct StudioView: View {
             }
             if model?.supports_lora == true {
                 Divider()
-                HStack { Text("LoRA 独立文件").font(.caption); Spacer(); Button("添加…", action: chooseLoRA) }
+                HStack {
+                    Text("LoRA 独立文件").font(.caption); Spacer()
+                    Menu("模型库") {
+                        ForEach(library.loras.filter { $0.modelID == studio.draft.modelID }) { item in
+                            Button(item.name) { studio.draft.loras.append(StudioLoRA(path: item.path)) }
+                                .disabled(studio.draft.loras.count >= 8 || studio.draft.loras.contains { $0.path == item.path } || !FileManager.default.isReadableFile(atPath: item.path))
+                        }
+                    }.disabled(!library.loras.contains { $0.modelID == studio.draft.modelID })
+                    Button("添加…", action: chooseLoRA)
+                }
                 ForEach(studio.draft.loras.indices, id: \.self) { index in
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle(isOn: $studio.draft.loras[index].enabled) { Text(URL(fileURLWithPath: studio.draft.loras[index].path).lastPathComponent).font(.caption2).lineLimit(1) }.toggleStyle(.checkbox).accessibilityIdentifier("loraEnabled-\(index)")
@@ -545,6 +554,7 @@ struct StudioView: View {
         }
         if panel.runModal() == .OK, let url = panel.url {
             studio.draft.loras.append(StudioLoRA(path: url.path))
+            library.registerLoRA(url, modelID: studio.draft.modelID)
         }
     }
     private func loadModel(_ id: String) {

@@ -27,6 +27,11 @@ struct ZImageInstallation {
             }
             return model
         }
+        let weights = split.appendingPathComponent("diffusion_models")
+        let candidates = ["z_image_turbo_bf16.safetensors", "z_image_turbo_int8_convrot.safetensors", "z_image_turbo_nvfp4.safetensors"]
+        guard candidates.contains(where: { FileManager.default.isReadableFile(atPath: weights.appendingPathComponent($0).path) }) else {
+            throw NativeFailure(message: "Z-Image 权重无法读取，请检查原始模型目录、文件权限及符号链接目标：\(weights.path)")
+        }
         let text = sharedText ?? model
         if sharedText != nil || needsSharedText(model) {
             guard hasSharedText(text) else { throw NativeFailure(message: "共享文本模型需包含 tokenizer/tokenizer.json 和 text_encoder 权重，例如 FLUX.2-klein-4B。") }
