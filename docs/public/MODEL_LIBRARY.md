@@ -108,7 +108,7 @@ installation directories to select another precision explicitly. A root-level
 
 Disk weight totals and physical RAM are displayed separately. Runtime memory
 also depends on resolution, activation buffers and staged release of the text
-encoder. See [local quantization measurements](QUANTIZATION_2026-09-10.md).
+encoder. See [local quantization measurements](../status/QUANTIZATION_2026-09-10.md).
 
 ### Generic download request
 
