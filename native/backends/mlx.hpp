@@ -31,6 +31,7 @@ class Weights {
     void fuse_keys(const std::string &, const std::vector<std::string> &, int axis);
     void cast_unquantized_float32(mx::Dtype);
     size_t pack_convrot_q8();
+    size_t pack_comfy_nvfp4();
     void dequantize(const std::vector<std::string> &);
     const Tensor &at(const std::string &) const;
     bool has(const std::string &) const;
@@ -38,6 +39,7 @@ class Weights {
     void erase_prefix(const std::string &);
     bool quantized(const std::string &) const;
     bool convrot(const std::string &) const;
+    bool nvfp4(const std::string &) const;
     bool has_runtime_loras() const { return !runtime_loras_.empty(); }
     Tensor project(const Tensor &, const std::string &) const;
     Tensor project_range(const Tensor &, const std::string &, int row_start, int row_end,

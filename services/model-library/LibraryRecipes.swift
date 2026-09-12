@@ -1,5 +1,26 @@
 import Foundation
 
+/// A precision is a concrete storage/runtime contract, not just a bit count.
+struct ZImageVariant: Identifiable, Sendable {
+    var id: String
+    var title: String
+    var filename: String
+    var weightBytes: Int64
+    var runnable: Bool
+    var note: String
+    static let all: [Self] = [
+        .init(id: "bf16", title: "BF16 · 原始精度", filename: "z_image_turbo_bf16.safetensors", weightBytes: 12_309_866_400, runnable: true, note: "质量基线；权重约 12.31 GB。"),
+        .init(id: "int8-convrot", title: "INT8 ConvRot · 低内存", filename: "z_image_turbo_int8_convrot.safetensors", weightBytes: 6_201_001_296, runnable: true, note: "原生旋转 + MLX Q8 运算；速度和质量需按任务实测。"),
+        .init(id: "nvfp4", title: "NVFP4 · 实验性 GPU W4A16", filename: "z_image_turbo_nvfp4.safetensors", weightBytes: 4_509_509_600, runnable: true, note: "原生重排 Comfy NVFP4 权重，MLX W4A16（BF16 激活），不是 NVIDIA W4A4。仅 GPU；不支持此版本的 LoRA / ANE。质量变化可能更明显。")
+    ]
+    static let repository = "Comfy-Org/z_image_turbo"
+    var path: String { "split_files/diffusion_models/" + filename }
+    func include(sharedText: Bool) -> [String] {
+        [path, "split_files/vae/ae.safetensors"] + (sharedText ? [] : ["split_files/text_encoders/qwen_3_4b.safetensors", "tokenizer/tokenizer.json", "tokenizer/tokenizer_config.json"])
+    }
+    static let tokenizerSource = LibrarySupplement(repository: "Tongyi-MAI/Z-Image-Turbo", include: ["tokenizer/tokenizer.json", "tokenizer/tokenizer_config.json"])
+}
+
 struct LibraryRecipe: Codable, Sendable {
     var modelID: String
     var repository: String

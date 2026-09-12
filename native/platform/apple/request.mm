@@ -87,6 +87,9 @@ Request request_from_json(NSDictionary *d) {
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
             @"loras",        @"audio",          @"noise_path",
+            @"vsa",          @"vsa_sparsity",   @"vsa_tile_size",
+            @"vsa_prefix_mode", @"vsa_dense_first_n_steps",
+            @"vsa_dense_layers", @"vsa_impl",
             @"lora_strategy", @"streaming_offload", @"memory_budget_bytes",
             @"quantized_cache",
             @"warmup_iterations"
@@ -121,6 +124,24 @@ Request request_from_json(NSDictionary *d) {
                 "warmup_iterations must be 0...8");
         r.profile = string_value(d, @"profile");
         r.noise_path = string_value(d, @"noise_path");
+        r.vsa = boolean(d, @"vsa", false);
+        r.vsa_sparsity = numeric(d, @"vsa_sparsity", r.vsa_sparsity);
+        r.vsa_tile_size = number(d, @"vsa_tile_size", r.vsa_tile_size);
+        r.vsa_prefix_mode = string_value(d, @"vsa_prefix_mode", r.vsa_prefix_mode);
+        r.vsa_dense_first_n_steps = number(d, @"vsa_dense_first_n_steps", 0);
+        r.vsa_impl = string_value(d, @"vsa_impl", r.vsa_impl);
+        if (d[@"vsa_dense_layers"]) {
+            NSArray *layers = d[@"vsa_dense_layers"];
+            require([layers isKindOfClass:NSArray.class],
+                    "vsa_dense_layers must be an array");
+            for (id raw in layers) {
+                require([raw isKindOfClass:NSNumber.class] &&
+                            CFGetTypeID((__bridge CFTypeRef)raw) != CFBooleanGetTypeID() &&
+                            [raw doubleValue] == [raw intValue] && [raw intValue] >= 0,
+                        "vsa_dense_layers entries must be nonnegative integers");
+                r.vsa_dense_layers.push_back([raw intValue]);
+            }
+        }
     } else {
         keys(d, @[
             @"schema_version", @"model", @"operation", @"inputs", @"outputs", @"sampling",
@@ -167,11 +188,32 @@ Request request_from_json(NSDictionary *d) {
                 "execution.warmup_iterations must be 0...8");
         auto parameters = d[@"parameters"] ? dictionary(d[@"parameters"], "parameters") : @{};
         keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path",
-                            @"streaming_offload" ]);
+                            @"streaming_offload", @"vsa", @"vsa_sparsity",
+                            @"vsa_tile_size", @"vsa_prefix_mode",
+                            @"vsa_dense_first_n_steps", @"vsa_dense_layers",
+                            @"vsa_impl" ]);
         r.compile_gpu = boolean(parameters, @"compile_gpu", false);
         r.dynamic_text = boolean(parameters, @"dynamic_text", true);
         r.noise_path = string_value(parameters, @"noise_path");
         r.streaming_offload = boolean(parameters, @"streaming_offload", false);
+        r.vsa = boolean(parameters, @"vsa", false);
+        r.vsa_sparsity = numeric(parameters, @"vsa_sparsity", r.vsa_sparsity);
+        r.vsa_tile_size = number(parameters, @"vsa_tile_size", r.vsa_tile_size);
+        r.vsa_prefix_mode = string_value(parameters, @"vsa_prefix_mode", r.vsa_prefix_mode);
+        r.vsa_dense_first_n_steps = number(parameters, @"vsa_dense_first_n_steps", 0);
+        r.vsa_impl = string_value(parameters, @"vsa_impl", r.vsa_impl);
+        if (parameters[@"vsa_dense_layers"]) {
+            NSArray *layers = parameters[@"vsa_dense_layers"];
+            require([layers isKindOfClass:NSArray.class],
+                    "vsa_dense_layers must be an array");
+            for (id raw in layers) {
+                require([raw isKindOfClass:NSNumber.class] &&
+                            CFGetTypeID((__bridge CFTypeRef)raw) != CFBooleanGetTypeID() &&
+                            [raw doubleValue] == [raw intValue] && [raw intValue] >= 0,
+                        "vsa_dense_layers entries must be nonnegative integers");
+                r.vsa_dense_layers.push_back([raw intValue]);
+            }
+        }
     }
     r.lora_strategy = string_value(d, @"lora_strategy", r.lora_strategy);
     r.dump = string_value(d, @"dump_tensors");

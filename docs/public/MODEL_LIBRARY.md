@@ -59,6 +59,59 @@ with the same verified SHA-256 reuse the same stored bytes, even across sources.
 
 ## Preview before downloading
 
+### Z-Image precision choices
+
+The App defaults Z-Image downloads to `Comfy-Org/z_image_turbo` on ModelScope.
+Select one diffusion checkpoint independently from the text component:
+
+| Diffusion checkpoint | File size (decimal GB) | Runtime |
+|---|---:|---|
+| `z_image_turbo_bf16.safetensors` | 12.31 | BF16 GPU, qualified ANE profiles |
+| `z_image_turbo_int8_convrot.safetensors` | 6.20 | Native ConvRot + MLX packed Q8 |
+| `z_image_turbo_nvfp4.safetensors` | 4.51 | Experimental native MLX W4A16; GPU only, no LoRA/ANE |
+
+NVFP4 files require high/low nibble and tiled-scale reordering, which the native
+loader now performs without requantizing weights. Activations remain BF16;
+this is **not** NVIDIA W4A4 execution. Smaller weights do not guarantee faster
+inference or identical images. Inspection checks files, not numerical quality.
+
+The Comfy repository has no tokenizer. When downloading Qwen BF16, the App
+adds the two tokenizer JSON files from `Tongyi-MAI/Z-Image-Turbo` with their own
+source revision/integrity record. See `examples/requests/download-z-image-int8.json`.
+Reusing a local encoder skips both its weights and tokenizer downloads.
+
+Qwen3-4B choices are BF16 (8.04 GB), locally converted MLX affine Q4
+(3.05 GB), or Q8 (4.87 GB). These conversions retain dense BF16 embeddings,
+use group size 32 and are not interchangeable with GGUF or Comfy FP4/FP8 mixed.
+Q4/Q8 currently require this **offline developer conversion**, not an in-App
+quantizer or a one-click download of a third-party quantized repository:
+
+```sh
+Python/bin/python3 tools/convert/qwen3_affine.py \
+  --source models/Comfy-Org-z_image_turbo \
+  --weights models/Comfy-Org-z_image_turbo/split_files/text_encoders/qwen_3_4b.safetensors \
+  --bits 4 --output models/qwen3-4b-tc-q4
+```
+
+Use a Python environment with MLX (the example is this development workspace's
+environment); `--bits 8` produces Q8. Existing output directories are refused.
+Select Q4/Q8 in the download dialog, then choose the converted component root
+under shared text. The native runtime does not invoke Python. The conversion
+records source SHA-256 and MLX version. Preserve the original model license.
+
+Each downloaded precision combination receives its own installation and name.
+Use **Use this installation** to switch; content-addressed VAE/tokenizer files
+are shared. For a manually assembled Comfy directory containing several DiT
+files, discovery prioritizes BF16, then INT8, then NVFP4. Use separate
+installation directories to select another precision explicitly. A root-level
+`text_encoder/` binding overrides the Comfy BF16 text file, allowing Q4/Q8 reuse.
+
+Disk weight totals and physical RAM are displayed separately. Runtime memory
+also depends on resolution, activation buffers and staged release of the text
+encoder. See [local quantization measurements](QUANTIZATION_2026-09-10.md).
+
+### Generic download request
+
 Create `download.json`:
 
 ```json

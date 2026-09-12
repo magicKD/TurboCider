@@ -1,6 +1,8 @@
 # TurboCider 当前目标状态
 
 > 发行边界更新：本文的 sd.cpp/GGUF streaming 数据是历史实验记录。正式 App 已移除 sd.cpp，只支持 native MLX GGUF resident；当前规则见 [native-only GGUF](native-gguf-boundary-2026-09-09.md)。
+>
+> H3/LTX 共享驻留策略与 2026-09-10 主机复测见 [最新增量状态](current-status-2026-09-10.md)。
 
 更新时间：2026-09-09
 
@@ -38,7 +40,8 @@ TurboCider 不要求 GPU、MLX、Core ML/ANE、GGUF 和参考实现逐 bit 或�
 | Core ML/ANE 启动 | 机制已完成 | load-only prepare、zero-input warmup、first/subsequent prediction 分开；可把启动工作移到用户可见生成前，但不能减少总计算 |
 | private ANE 隔离 | 已完成 | private bridge 仅在 `experimental/`；正式 dylib 无 `_ANE*` private symbols/framework |
 | Transformer 异构实验 | 主要结论已完成 | FFN channel split 是当前有效方向；sequence/head split 的 Amdahl 负结果、public/private ANE 差异已记录 |
-| H3 streaming | Transformer 级完成；量化缓存已接入 | BF16 双 slot、background `pread`、budget-driven pinned-prefix、retained DiT 已验证；新增 provenance-bound I8/F32 safetensors shard、双 typed slot 和离线生成器；完整媒体 E2E/量化真实模型验收仍缺 |
+| H3 streaming | Transformer 级完成；量化缓存已接入 | BF16 双 slot、background `pread`、budget-driven pinned-prefix、retained DiT 已验证；新增 provenance-bound I8/F32 safetensors shard、双 typed slot 和离线生成器；共享 `native/runtime/block_residency` policy 已接入 C++ Session 交叉校验；完整媒体 E2E/量化真实模型验收仍缺 |
+| LTX block streaming | 代码与策略完成，模型级矩阵进行中 | 共享 policy 驱动最多三个 look-ahead refill slot；预算足够时自动全驻留；Session 返回 pinned/streamed/refill/working-set 遥测并校验 C/C++ 计划一致；完整 16/24/32 GiB 媒体矩阵仍需在可用 Metal 主机复测 |
 
 ## GGUF 当前实测
 
@@ -77,7 +80,7 @@ LoRA SHA、strength=1.0 和 `inference_time` strategy 均被记录。`memory_bud
 
 1. 将 GGUF 1024²从当前两个 base seed/一个 LoRA seed 扩展到更多 prompt、seed、adapter、Q-format 和真实 8/16/24 GB 物理机器矩阵。
 2. GGUF Q4/Q8 GPU+ANE 多尺寸、多机器、LoRA 和自动策略门禁。
-3. H3 完整 tokenizer/text encoder/VAE/MP4 E2E、量化 streaming refill 的真实模型质量/性能矩阵；LTX per-block streaming 和 16/24/32 GB 验收。
+3. H3 完整 tokenizer/text encoder/VAE/MP4 E2E、量化 streaming refill 的真实模型质量/性能矩阵；LTX shared-policy streaming 的 16/24/32 GB 质量/性能矩阵。
 4. LTX hybrid 质量修复、多 prompt/seed；LLaDA 独立 LoRA；FLUX 9B hybrid。
 5. FLUX/Z-Image/GGUF 的多 adapter、取消、失败恢复、缓存失效和跨机器完整矩阵。
 
@@ -100,3 +103,5 @@ Python/bin/python3 -m pytest -q \
 此外，完整 `make test` 的所有 target 均通过（2 个 Python 测试因当前环境无 NumPy 而明确 skip），native/Swift build、public Vision helper、`make package`、App behavior test、App 深度签名、portable `env -i` CLI `models/doctor`、动态依赖和 private ANE symbol audit 均已通过。`git diff --check` 通过，索引中没有模型权重、`outputs/`、build 或 dist 产物。
 
 本轮还修正了 H3 量化流式预算：量化路径按约 385,617,408 bytes/block 计算双槽下限，BF16 路径仍按约 770,725,376 bytes/block 计算；两者都保留 activation reserve，不能把 working-set budget 当作整个进程硬上限。量化缓存 schema、源权重 identity、block 数/维度、I8 权重和 F32 scale 的 dtype/shape 均在启动时 fail closed。仓库没有 H3 checkpoint，因此上述“已完成”是代码/schema/契约层完成，不是 H3 真实媒体 E2E 质量或加速承诺。
+
+2026-09-09 增量：H3 与 LTX 的容量计算已收敛到 `native/runtime/block_residency.c`。H3 通过兼容 wrapper 保持旧 C policy/ABI；LTX 直接使用 adaptive 1/2/3-slot 规划和 48-block 全驻留退化。C++ `BlockResidencyPlan` 在两个 Apple Session 返回前复算并校验 pinned/streamed/refill/working-set 字段，结果统一标记 `shared_block_residency_v1`。CPU-only policy sweep、contract/boundary tests、完整 Apple native build 和 host-services `make test` 通过。详细摘要见 [H3/LTX shared residency validation](../design/validation/h3-ltx-shared-residency-2026-09-09.json)。

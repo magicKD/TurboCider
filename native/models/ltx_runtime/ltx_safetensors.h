@@ -44,6 +44,8 @@ typedef struct {
 typedef struct {
     void *address;
     size_t bytes;
+    int descriptor;
+    int descriptor_open;
 } ltx_st_mapping;
 
 int ltx_st_read_header(const char *path, ltx_st_header *header,
@@ -64,6 +66,10 @@ int ltx_st_map_open(const ltx_st_header *header, ltx_st_mapping *mapping,
  * later tensor access is required. */
 int ltx_st_map_discard(const ltx_st_mapping *mapping,
                        char *error, size_t error_size);
+int ltx_st_read_mapped_data(const ltx_st_mapping *mapping,
+                            const ltx_st_tensor *tensor,
+                            void *data, size_t bytes,
+                            char *error, size_t error_size);
 void ltx_st_map_close(ltx_st_mapping *mapping);
 const void *ltx_st_map_tensor(const ltx_st_mapping *mapping,
                               const ltx_st_tensor *tensor,

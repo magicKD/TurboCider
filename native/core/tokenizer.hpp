@@ -13,6 +13,7 @@ class Tokenizer {
   public:
     explicit Tokenizer(const std::filesystem::path &);
     ~Tokenizer();
+    Tokens raw(const std::string &) const;
     Tokens prompt(const std::string &, bool dynamic = true);
     Tokens z_image_prompt(const std::string &, bool dynamic = true);
     Tokens llada_image_prompt(const std::string &);

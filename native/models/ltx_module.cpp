@@ -29,8 +29,21 @@ ModelModule ltx_module() {
                                 r.inputs[0].role == "first_frame",
                             "LTX image-to-video requires one first_frame");
                 require(r.fps == 24, "LTX distilled contract requires 24 fps");
-                require(r.residency == "resident" || r.residency == "component_staged",
-                        "LTX block streaming is not yet supported");
+                require(r.residency == "resident" ||
+                            r.residency == "component_staged" ||
+                            r.residency == "streamed",
+                        "unsupported LTX residency");
+                if (r.residency == "streamed") {
+                    require(r.operation == "video.generate",
+                            "LTX block streaming currently supports text-to-video only");
+                    require(!r.audio,
+                            "LTX block streaming currently supports video-only output");
+                    require(r.execution != "gpu_ane",
+                            "LTX block streaming currently requires GPU execution");
+                    require(!r.memory_budget_bytes ||
+                                r.memory_budget_bytes >= (8ull << 30),
+                            "LTX streamed memory budget must be at least 8 GiB");
+                }
                 require(r.loras.size() <= 1, "LTX supports one transformer LoRA adapter");
                 for (const auto &lora : r.loras) {
                     require(lora.role == "transformer" || lora.role == "refiner",
@@ -60,7 +73,8 @@ ModelModule ltx_module() {
                 d.candidate_limitations = {
                     "broader prompt-suite qualification remains pending",
                     "native Audio VAE/base-vocoder/BWE and AVFoundation AAC mux are validated on local fixtures; end-to-end native Session parity still pending",
-                    "LoRA requires an offline-premerged checkpoint and verified sidecar manifest"
+                    "LoRA requires an offline-premerged checkpoint and verified sidecar manifest",
+                    "streamed residency uses a budget-selected resident prefix and up to three reusable look-ahead refill slots on GPU; budgets that fit all 48 blocks automatically avoid refill I/O; the budget targets the denoiser working set, not whole-process peak RSS, and hybrid streaming remains gated"
                 };
                 d.native_gemma4_candidate = true; d.native_conditioning_connector = true;
                 d.native_i2v_clean_prefix = true; d.native_gpu_ane_profile = true;

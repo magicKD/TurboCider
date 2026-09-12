@@ -1,5 +1,6 @@
 #include "execution.hpp"
 #include "common.hpp"
+#include <filesystem>
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -10,7 +11,8 @@ std::mutex &execution_mutex() {
     return mutex;
 }
 DeviceLease::DeviceLease() {
-    auto path = std::string("/private/tmp/turbocider-gpu-") + std::to_string(geteuid()) + ".lock";
+    auto path = std::filesystem::temp_directory_path() /
+        ("turbocider-gpu-" + std::to_string(geteuid()) + ".lock");
     fd = open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);
     if (fd < 0)
         throw std::runtime_error("cannot open GPU coordination lock");

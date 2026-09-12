@@ -19,8 +19,25 @@ Tokenizer::Impl::Impl(const std::filesystem::path &root) {
     NSArray *merges = config[@"model"][@"merges"];
     int rank = 0;
     for (id pair in merges) {
-        require([pair isKindOfClass:NSArray.class] && [pair count] == 2, "unsupported BPE merges");
-        std::string a = [pair[0] UTF8String], b = [pair[1] UTF8String];
+        std::string a, b;
+        if ([pair isKindOfClass:NSArray.class]) {
+            require([pair count] == 2, "unsupported BPE merges");
+            a = [pair[0] UTF8String];
+            b = [pair[1] UTF8String];
+        } else if ([pair isKindOfClass:NSString.class]) {
+            // Tokenizers >= 0.20 serialise Qwen3 BPE merges as a single
+            // space-separated string. Byte-level symbols encode spaces as Ġ,
+            // so the first ASCII space is an unambiguous separator.
+            NSString *line = (NSString *)pair;
+            NSRange separator = [line rangeOfString:@" "];
+            require(separator.location != NSNotFound && separator.location > 0 &&
+                        separator.location + 1 < line.length,
+                    "unsupported BPE merge string");
+            a = [[line substringToIndex:separator.location] UTF8String];
+            b = [[line substringFromIndex:separator.location + 1] UTF8String];
+        } else {
+            require(false, "unsupported BPE merges");
+        }
         ranks_[a + '\0' + b] = rank++;
     }
     NSString *regex = config[@"pre_tokenizer"][@"pretokenizers"][0][@"pattern"][@"Regex"];
@@ -97,6 +114,15 @@ std::vector<int> Tokenizer::Impl::encode(const std::string &raw) {
 }
 Tokenizer::Tokenizer(const std::filesystem::path &root) : impl_(std::make_unique<Impl>(root)) {}
 Tokenizer::~Tokenizer() = default;
+Tokens Tokenizer::raw(const std::string &s) const {
+    require(!s.empty(), "prompt must not be empty");
+    require(s.size() <= 32768, "prompt exceeds 32 KiB");
+    auto ids = impl_->encode(s);
+    require(!ids.empty() && ids.size() <= 512,
+            "raw prompt must contain 1...512 tokens");
+    int valid = int(ids.size());
+    return {std::move(ids), valid};
+}
 Tokens Tokenizer::prompt(const std::string &s, bool dynamic) {
     require(!s.empty(), "prompt must not be empty");
     require(s.size() <= 32768, "prompt exceeds 32 KiB");

@@ -12,6 +12,7 @@
 #include "ltx_video_vae.h"
 #include "ltx_weights.h"
 #include "ltx_mlx_upsampler.h"
+#include "../../runtime/block_residency.h"
 
 #ifdef LTX_ENABLE_ANE_MLP
 #include "ltx_ane_mlp.h"
@@ -1514,31 +1515,84 @@ static int load_linear(const ltx_st_header *header,
                  "%s is not a supported ConvRot INT8 linear", prefix);
         return 0;
     }
-    size_t weight_bytes = 0;
-    size_t scale_bytes = 0;
-    size_t bias_bytes = 0;
-    const void *weight = ltx_st_map_tensor(
-        mapping, info.weight, &weight_bytes, error, error_size);
-    const void *scale = ltx_st_map_tensor(
-        mapping, info.weight_scale, &scale_bytes, error, error_size);
-    const void *bias = info.bias ? ltx_st_map_tensor(
-        mapping, info.bias, &bias_bytes, error, error_size) : NULL;
-    if (!weight || !scale || (info.bias && !bias)) return 0;
-    linear->weight = ltx_gpu_buffer_new_copy(
-        gpu, weight, weight_bytes, error, error_size);
-    linear->scale = ltx_gpu_buffer_new_copy(
-        gpu, scale, scale_bytes, error, error_size);
-    if (bias)
-        linear->bias = ltx_gpu_buffer_new_copy(
-            gpu, bias, bias_bytes, error, error_size);
+    size_t weight_bytes = (size_t)(
+        info.weight->data_end - info.weight->data_begin);
+    size_t scale_bytes = (size_t)(
+        info.weight_scale->data_end - info.weight_scale->data_begin);
+    size_t bias_bytes = info.bias ? (size_t)(
+        info.bias->data_end - info.bias->data_begin) : 0u;
+    linear->weight = ltx_gpu_buffer_new(
+        gpu, weight_bytes, error, error_size);
+    linear->scale = ltx_gpu_buffer_new(
+        gpu, scale_bytes, error, error_size);
+    if (info.bias)
+        linear->bias = ltx_gpu_buffer_new(
+            gpu, bias_bytes, error, error_size);
     linear->input_dim = info.input_dim;
     linear->output_dim = info.output_dim;
     linear->weight_bytes = weight_bytes;
-    if (!linear->weight || !linear->scale || (bias && !linear->bias)) {
+    if (!linear->weight || !linear->scale ||
+        (info.bias && !linear->bias) ||
+        !ltx_st_read_mapped_data(
+            mapping, info.weight, ltx_gpu_buffer_contents(linear->weight),
+            weight_bytes, error, error_size) ||
+        !ltx_st_read_mapped_data(
+            mapping, info.weight_scale,
+            ltx_gpu_buffer_contents(linear->scale),
+            scale_bytes, error, error_size) ||
+        (info.bias && !ltx_st_read_mapped_data(
+            mapping, info.bias, ltx_gpu_buffer_contents(linear->bias),
+            bias_bytes, error, error_size))) {
         free_linear(linear);
         return 0;
     }
     return 1;
+}
+
+static int refill_linear(const ltx_st_header *header,
+                         const ltx_st_mapping *mapping,
+                         const char *prefix, gpu_linear *linear,
+                         char *error, size_t error_size) {
+    ltx_linear_weight_info info;
+    if (!linear || !ltx_linear_weight_resolve(
+            header, mapping, prefix, &info, error, error_size)) return 0;
+    if (!info.quantized_int8 || !info.convrot ||
+        info.convrot_group_size != 256u || !info.weight_scale ||
+        info.weight->dtype != LTX_DTYPE_I8 ||
+        info.weight_scale->dtype != LTX_DTYPE_F32 ||
+        (info.bias && info.bias->dtype != LTX_DTYPE_BF16) ||
+        info.input_dim != linear->input_dim ||
+        info.output_dim != linear->output_dim) {
+        snprintf(error, error_size,
+                 "%s differs from the reusable ConvRot INT8 slot", prefix);
+        return 0;
+    }
+    size_t weight_bytes = (size_t)(
+        info.weight->data_end - info.weight->data_begin);
+    size_t scale_bytes = (size_t)(
+        info.weight_scale->data_end - info.weight_scale->data_begin);
+    size_t bias_bytes = info.bias ? (size_t)(
+        info.bias->data_end - info.bias->data_begin) : 0u;
+    if (
+        weight_bytes != ltx_gpu_buffer_bytes(linear->weight) ||
+        scale_bytes != ltx_gpu_buffer_bytes(linear->scale) ||
+        (bias_bytes != ltx_gpu_buffer_bytes(linear->bias)) ||
+        weight_bytes != linear->weight_bytes) {
+        if (!error[0])
+            snprintf(error, error_size,
+                     "%s differs from the reusable buffer geometry", prefix);
+        return 0;
+    }
+    return ltx_st_read_mapped_data(
+            mapping, info.weight, ltx_gpu_buffer_contents(linear->weight),
+            weight_bytes, error, error_size) &&
+        ltx_st_read_mapped_data(
+            mapping, info.weight_scale,
+            ltx_gpu_buffer_contents(linear->scale),
+            scale_bytes, error, error_size) &&
+        (!info.bias || ltx_st_read_mapped_data(
+            mapping, info.bias, ltx_gpu_buffer_contents(linear->bias),
+            bias_bytes, error, error_size));
 }
 
 static void free_attention(attention_weights *attention) {
@@ -1556,11 +1610,21 @@ static void free_attention(attention_weights *attention) {
 static ltx_gpu_buffer *upload_tensor(
         const ltx_st_mapping *mapping, const ltx_st_tensor *tensor,
         ltx_gpu *gpu, char *error, size_t error_size) {
-    size_t bytes = 0;
-    const void *data = ltx_st_map_tensor(
-        mapping, tensor, &bytes, error, error_size);
-    return data ? ltx_gpu_buffer_new_copy(
-        gpu, data, bytes, error, error_size) : NULL;
+    if (!tensor || tensor->data_end < tensor->data_begin ||
+        tensor->data_end - tensor->data_begin > SIZE_MAX) {
+        snprintf(error, error_size, "invalid tensor upload range");
+        return NULL;
+    }
+    size_t bytes = (size_t)(tensor->data_end - tensor->data_begin);
+    ltx_gpu_buffer *buffer = ltx_gpu_buffer_new(
+        gpu, bytes, error, error_size);
+    if (!buffer || !ltx_st_read_mapped_data(
+            mapping, tensor, ltx_gpu_buffer_contents(buffer), bytes,
+            error, error_size)) {
+        ltx_gpu_buffer_free(buffer);
+        return NULL;
+    }
+    return buffer;
 }
 
 static int load_attention(const ltx_st_header *header,
@@ -1641,6 +1705,74 @@ static int load_attention(const ltx_st_header *header,
     return 1;
 }
 
+static int refill_tensor(const ltx_st_mapping *mapping,
+                         const ltx_st_tensor *tensor,
+                         ltx_gpu_buffer *buffer,
+                         char *error, size_t error_size) {
+    size_t bytes = tensor && tensor->data_end >= tensor->data_begin ?
+        (size_t)(tensor->data_end - tensor->data_begin) : 0u;
+    if (!tensor || !bytes || bytes != ltx_gpu_buffer_bytes(buffer)) {
+        if (!error[0])
+            snprintf(error, error_size,
+                     "tensor differs from reusable buffer geometry");
+        return 0;
+    }
+    return ltx_st_read_mapped_data(
+        mapping, tensor, ltx_gpu_buffer_contents(buffer), bytes,
+        error, error_size);
+}
+
+static int refill_attention(const ltx_st_header *header,
+                            const ltx_st_mapping *mapping,
+                            const char *prefix,
+                            attention_weights *attention,
+                            char *error, size_t error_size) {
+    char linear_prefix[1024];
+#define LTX_REFILL_PROJECTION(FIELD, SUFFIX) \
+    (make_name(linear_prefix, sizeof(linear_prefix), prefix, (SUFFIX), \
+               error, error_size) && \
+     refill_linear(header, mapping, linear_prefix, \
+                   &(attention)->FIELD, error, error_size))
+    if (!LTX_REFILL_PROJECTION(query, "to_q") ||
+        !LTX_REFILL_PROJECTION(key, "to_k") ||
+        !LTX_REFILL_PROJECTION(value, "to_v") ||
+        !LTX_REFILL_PROJECTION(output, "to_out.0")) {
+#undef LTX_REFILL_PROJECTION
+        return 0;
+    }
+#undef LTX_REFILL_PROJECTION
+    const ltx_st_tensor *query_norm = find_tensor(
+        header, prefix, "q_norm.weight", error, error_size);
+    const ltx_st_tensor *key_norm = find_tensor(
+        header, prefix, "k_norm.weight", error, error_size);
+    const ltx_st_tensor *gate_weight = find_tensor(
+        header, prefix, "to_gate_logits.weight", error, error_size);
+    const ltx_st_tensor *gate_bias = find_tensor(
+        header, prefix, "to_gate_logits.bias", error, error_size);
+    if (!query_norm || !key_norm || !gate_weight || !gate_bias ||
+        query_norm->dtype != LTX_DTYPE_BF16 || query_norm->ndim != 1u ||
+        query_norm->shape[0] != attention->inner_dim ||
+        key_norm->dtype != LTX_DTYPE_BF16 || key_norm->ndim != 1u ||
+        key_norm->shape[0] != attention->inner_dim ||
+        gate_weight->dtype != LTX_DTYPE_BF16 || gate_weight->ndim != 2u ||
+        gate_weight->shape[0] != attention->heads ||
+        gate_weight->shape[1] != attention->query_dim ||
+        gate_bias->dtype != LTX_DTYPE_BF16 || gate_bias->ndim != 1u ||
+        gate_bias->shape[0] != attention->heads) {
+        snprintf(error, error_size,
+                 "%s differs from the reusable attention geometry", prefix);
+        return 0;
+    }
+    return refill_tensor(mapping, query_norm, attention->query_norm,
+                         error, error_size) &&
+        refill_tensor(mapping, key_norm, attention->key_norm,
+                      error, error_size) &&
+        refill_tensor(mapping, gate_weight, attention->gate_weight,
+                      error, error_size) &&
+        refill_tensor(mapping, gate_bias, attention->gate_bias,
+                      error, error_size);
+}
+
 static void free_mlp(mlp_weights *mlp) {
     free_linear(&mlp->fc1);
     free_linear(&mlp->fc2);
@@ -1678,6 +1810,22 @@ static int load_mlp(const ltx_st_header *header,
     return 1;
 }
 
+static int refill_mlp(const ltx_st_header *header,
+                      const ltx_st_mapping *mapping,
+                      const char *prefix, mlp_weights *mlp,
+                      char *error, size_t error_size) {
+    char fc1_prefix[1024];
+    char fc2_prefix[1024];
+    return make_name(fc1_prefix, sizeof(fc1_prefix), prefix, "net.0.proj",
+                     error, error_size) &&
+        make_name(fc2_prefix, sizeof(fc2_prefix), prefix, "net.2",
+                  error, error_size) &&
+        refill_linear(header, mapping, fc1_prefix, &mlp->fc1,
+                      error, error_size) &&
+        refill_linear(header, mapping, fc2_prefix, &mlp->fc2,
+                      error, error_size);
+}
+
 static void free_table(parameter_table *table) {
     for (uint32_t row = 0; row < table->rows; row++)
         ltx_gpu_buffer_free(table->row[row]);
@@ -1702,14 +1850,16 @@ static int load_table(const ltx_st_header *header,
         snprintf(error, error_size, "invalid %s.%s", prefix, suffix);
         return 0;
     }
-    size_t mapped_bytes = 0;
-    const float *values = ltx_st_map_tensor(
-        mapping, tensor, &mapped_bytes, error, error_size);
     size_t expected_bytes = 0;
-    if (!values ||
-        !checked_bytes((uint64_t)expected_rows * expected_columns,
+    if (!checked_bytes((uint64_t)expected_rows * expected_columns,
                        sizeof(float), &expected_bytes) ||
-        mapped_bytes != expected_bytes) return 0;
+        tensor->data_end - tensor->data_begin != expected_bytes) return 0;
+    float *values = malloc(expected_bytes);
+    if (!values || !ltx_st_read_mapped_data(
+            mapping, tensor, values, expected_bytes, error, error_size)) {
+        free(values);
+        return 0;
+    }
     size_t converted_bytes = 0;
     if (!checked_bytes((uint64_t)expected_rows * expected_columns,
                        sizeof(uint16_t), &converted_bytes)) {
@@ -1734,11 +1884,57 @@ static int load_table(const ltx_st_header *header,
             (size_t)expected_columns * sizeof(uint16_t),
             error, error_size);
         if (!table->row[row]) {
+            free(values);
             free_table(table);
             return 0;
         }
     }
+    free(values);
     return 1;
+}
+
+static int refill_table(const ltx_st_header *header,
+                        const ltx_st_mapping *mapping,
+                        const char *prefix, const char *suffix,
+                        parameter_table *table,
+                        char *error, size_t error_size) {
+    const ltx_st_tensor *tensor = find_tensor(
+        header, prefix, suffix, error, error_size);
+    if (!tensor || !table || !table->base_values ||
+        tensor->dtype != LTX_DTYPE_F32 || tensor->ndim != 2u ||
+        tensor->shape[0] != table->rows ||
+        tensor->shape[1] != table->columns) {
+        snprintf(error, error_size,
+                 "invalid reusable %s.%s", prefix, suffix);
+        return 0;
+    }
+    size_t expected_bytes = 0;
+    if (!checked_bytes((uint64_t)table->rows * table->columns,
+                       sizeof(float), &expected_bytes) ||
+        tensor->data_end - tensor->data_begin != expected_bytes) return 0;
+    float *values = malloc(expected_bytes);
+    if (!values || !ltx_st_read_mapped_data(
+            mapping, tensor, values, expected_bytes, error, error_size)) {
+        free(values);
+        return 0;
+    }
+    size_t row_bytes = (size_t)table->columns * sizeof(uint16_t);
+    int ok = 1;
+    for (uint32_t row = 0; row < table->rows; row++) {
+        uint16_t *converted = table->base_values +
+            (uint64_t)row * table->columns;
+        for (uint32_t column = 0; column < table->columns; column++)
+            converted[column] = f32_to_bf16(
+                values[(uint64_t)row * table->columns + column]);
+        if (ltx_gpu_buffer_bytes(table->row[row]) != row_bytes ||
+            !ltx_gpu_buffer_write(table->row[row], converted, row_bytes,
+                                  error, error_size)) {
+            ok = 0;
+            break;
+        }
+    }
+    free(values);
+    return ok;
 }
 
 static void free_block_weights(block_weights *weights) {
@@ -1883,6 +2079,67 @@ static int load_block_weights(const ltx_st_header *header,
     return 1;
 }
 
+static int refill_block_weights(const ltx_st_header *header,
+                                const ltx_st_mapping *mapping,
+                                uint32_t block,
+                                block_weights *weights,
+                                char *error, size_t error_size) {
+    char prefix[1024];
+    int length = snprintf(prefix, sizeof(prefix),
+        "model.diffusion_model.transformer_blocks.%u", block);
+    if (length < 0 || (size_t)length >= sizeof(prefix)) {
+        snprintf(error, error_size, "block prefix is too long");
+        return 0;
+    }
+    char module[1024];
+#define LTX_REFILL_ATTENTION(FIELD, SUFFIX) \
+    (make_name(module, sizeof(module), prefix, (SUFFIX), \
+               error, error_size) && \
+     refill_attention(header, mapping, module, \
+                      &(weights)->FIELD, error, error_size))
+#define LTX_REFILL_MLP(FIELD, SUFFIX) \
+    (make_name(module, sizeof(module), prefix, (SUFFIX), \
+               error, error_size) && \
+     refill_mlp(header, mapping, module, \
+                &(weights)->FIELD, error, error_size))
+    if (!LTX_REFILL_ATTENTION(video_self, "attn1") ||
+        !LTX_REFILL_ATTENTION(audio_self, "audio_attn1") ||
+        !LTX_REFILL_ATTENTION(video_text, "attn2") ||
+        !LTX_REFILL_ATTENTION(audio_text, "audio_attn2") ||
+        !LTX_REFILL_ATTENTION(audio_to_video, "audio_to_video_attn") ||
+        !LTX_REFILL_ATTENTION(video_to_audio, "video_to_audio_attn") ||
+        !LTX_REFILL_MLP(video_mlp, "ff") ||
+        !LTX_REFILL_MLP(audio_mlp, "audio_ff")) {
+#undef LTX_REFILL_ATTENTION
+#undef LTX_REFILL_MLP
+        return 0;
+    }
+#undef LTX_REFILL_ATTENTION
+#undef LTX_REFILL_MLP
+    return refill_table(header, mapping, prefix, "scale_shift_table",
+                        &weights->video_adaln, error, error_size) &&
+        refill_table(header, mapping, prefix, "scale_shift_table",
+                     &weights->video_adaln_conditioned,
+                     error, error_size) &&
+        refill_table(header, mapping, prefix, "audio_scale_shift_table",
+                     &weights->audio_adaln, error, error_size) &&
+        refill_table(header, mapping, prefix, "prompt_scale_shift_table",
+                     &weights->video_prompt, error, error_size) &&
+        refill_table(header, mapping, prefix,
+                     "audio_prompt_scale_shift_table",
+                     &weights->audio_prompt, error, error_size) &&
+        refill_table(header, mapping, prefix,
+                     "scale_shift_table_a2v_ca_video",
+                     &weights->av_video, error, error_size) &&
+        refill_table(header, mapping, prefix,
+                     "scale_shift_table_a2v_ca_video",
+                     &weights->av_video_conditioned,
+                     error, error_size) &&
+        refill_table(header, mapping, prefix,
+                     "scale_shift_table_a2v_ca_audio",
+                     &weights->av_audio, error, error_size);
+}
+
 static int add_parameters_to_table(
         parameter_table *table, uint32_t first_row, uint32_t row_count,
         const uint16_t *parameters,
@@ -1957,6 +2214,52 @@ static int apply_scalar_conditioning(
                 &weights[block].av_audio, 4u, 1u,
                 values->v2a_gate, error, error_size);
     return ok;
+}
+
+/* Apply one timestep's modulation to a single block.  Keeping this helper
+ * separate from the resident-array wrapper is what lets streamed execution
+ * refill a block, update its per-step AdaLN tables, run it, and immediately
+ * release it without ever materialising the full 48-block stack. */
+static int apply_scalar_conditioning_one(
+        ltx_transformer_conditioning_values *values,
+        block_weights *weight, char *error, size_t error_size) {
+    return add_parameters_to_table(
+            &weight->video_adaln, 0u, 9u, values->video_adaln,
+            error, error_size) &&
+        add_parameters_to_table(
+            &weight->audio_adaln, 0u, 9u, values->audio_adaln,
+            error, error_size) &&
+        add_parameters_to_table(
+            &weight->video_prompt, 0u, 2u, values->video_prompt,
+            error, error_size) &&
+        add_parameters_to_table(
+            &weight->audio_prompt, 0u, 2u, values->audio_prompt,
+            error, error_size) &&
+        add_parameters_to_table(
+            &weight->av_video, 0u, 4u, values->av_video,
+            error, error_size) &&
+        add_parameters_to_table(
+            &weight->av_video, 4u, 1u, values->a2v_gate,
+            error, error_size) &&
+        add_parameters_to_table(
+            &weight->av_audio, 0u, 4u, values->av_audio,
+            error, error_size) &&
+        add_parameters_to_table(
+            &weight->av_audio, 4u, 1u, values->v2a_gate,
+            error, error_size);
+}
+
+static int apply_video_split_conditioning_one(
+        ltx_transformer_conditioning_values *values,
+        ltx_transformer_conditioning_values *conditioned,
+        block_weights *weight, char *error, size_t error_size) {
+    return add_parameters_to_table(
+            &weight->video_adaln_conditioned, 0u, 9u,
+            conditioned->video_adaln, error, error_size) &&
+        add_parameters_to_table(
+            &weight->av_video_conditioned, 0u, 4u,
+            conditioned->av_video, error, error_size) &&
+        apply_scalar_conditioning_one(values, weight, error, error_size);
 }
 
 static int apply_video_split_conditioning(
@@ -3609,6 +3912,55 @@ static size_t block_weight_bytes(const block_weights *weights) {
         weights->audio_mlp.fc2.weight_bytes;
 }
 
+static size_t linear_resident_bytes(const gpu_linear *linear) {
+    return ltx_gpu_buffer_bytes(linear->weight) +
+        ltx_gpu_buffer_bytes(linear->scale) +
+        ltx_gpu_buffer_bytes(linear->bias);
+}
+
+static size_t attention_resident_bytes(const attention_weights *attention) {
+    return linear_resident_bytes(&attention->query) +
+        linear_resident_bytes(&attention->key) +
+        linear_resident_bytes(&attention->value) +
+        linear_resident_bytes(&attention->output) +
+        ltx_gpu_buffer_bytes(attention->query_norm) +
+        ltx_gpu_buffer_bytes(attention->key_norm) +
+        ltx_gpu_buffer_bytes(attention->gate_weight) +
+        ltx_gpu_buffer_bytes(attention->gate_bias);
+}
+
+static size_t mlp_resident_bytes(const mlp_weights *mlp) {
+    return linear_resident_bytes(&mlp->fc1) +
+        linear_resident_bytes(&mlp->fc2);
+}
+
+static size_t table_resident_bytes(const parameter_table *table) {
+    size_t bytes = table->base_values ?
+        (size_t)table->rows * table->columns * sizeof(uint16_t) : 0u;
+    for (uint32_t row = 0; row < table->rows; row++)
+        bytes += ltx_gpu_buffer_bytes(table->row[row]);
+    return bytes;
+}
+
+static size_t block_resident_bytes(const block_weights *weights) {
+    return attention_resident_bytes(&weights->video_self) +
+        attention_resident_bytes(&weights->audio_self) +
+        attention_resident_bytes(&weights->video_text) +
+        attention_resident_bytes(&weights->audio_text) +
+        attention_resident_bytes(&weights->audio_to_video) +
+        attention_resident_bytes(&weights->video_to_audio) +
+        mlp_resident_bytes(&weights->video_mlp) +
+        mlp_resident_bytes(&weights->audio_mlp) +
+        table_resident_bytes(&weights->video_adaln) +
+        table_resident_bytes(&weights->video_adaln_conditioned) +
+        table_resident_bytes(&weights->audio_adaln) +
+        table_resident_bytes(&weights->video_prompt) +
+        table_resident_bytes(&weights->audio_prompt) +
+        table_resident_bytes(&weights->av_video) +
+        table_resident_bytes(&weights->av_video_conditioned) +
+        table_resident_bytes(&weights->av_audio);
+}
+
 static int run_blocks_and_release(
         ltx_gpu *gpu, block_weights *weights,
         uint32_t first_block, uint32_t block_count,
@@ -3642,10 +3994,212 @@ static int run_blocks_and_release(
     return 1;
 }
 
+typedef struct {
+    const ltx_st_header *header;
+    const ltx_st_mapping *mapping;
+    ltx_gpu *gpu;
+    uint32_t total_blocks;
+    uint32_t refill_slots;
+    struct streamed_block_slot *slots;
+    uint64_t *bytes_loaded;
+    uint64_t *slot_allocations;
+    uint64_t *slot_refills;
+    double *load_seconds;
+    double *wait_seconds;
+} block_stream_source;
+
+enum {
+    LTX_MAX_REFILL_SLOTS = 3,
+};
+
+typedef struct streamed_block_slot {
+    block_weights weights;
+    uint32_t block;
+    int initialized;
+} streamed_block_slot;
+
+typedef struct {
+    const block_stream_source *source;
+    streamed_block_slot *slot;
+    uint32_t block;
+    pthread_t thread;
+    int threaded;
+    int ok;
+    int was_initialized;
+    size_t loaded_bytes;
+    double elapsed_seconds;
+    char error[1024];
+} streamed_block_load;
+
+static void *load_streamed_block_worker(void *opaque) {
+    streamed_block_load *load = opaque;
+    double started = now_seconds();
+    load->was_initialized = load->slot->initialized;
+    if (load->slot->initialized) {
+        load->ok = refill_block_weights(
+            load->source->header, load->source->mapping, load->block,
+            &load->slot->weights, load->error, sizeof(load->error));
+    } else {
+        load->ok = load_block_weights(
+            load->source->header, load->source->mapping, load->source->gpu,
+            load->block, &load->slot->weights,
+            load->error, sizeof(load->error));
+    }
+    if (load->ok) {
+        load->slot->initialized = 1;
+        load->slot->block = load->block;
+        load->loaded_bytes = block_resident_bytes(&load->slot->weights);
+    }
+    if (!load->ok) {
+        free_block_weights(&load->slot->weights);
+        memset(load->slot, 0, sizeof(*load->slot));
+        load->loaded_bytes = 0u;
+    }
+    load->elapsed_seconds = now_seconds() - started;
+    return NULL;
+}
+
+static void start_streamed_block_load(
+        streamed_block_load *load, const block_stream_source *source,
+        streamed_block_slot *slot, uint32_t block, int asynchronous) {
+    memset(load, 0, sizeof(*load));
+    load->source = source;
+    load->slot = slot;
+    load->block = block;
+    if (asynchronous && pthread_create(
+            &load->thread, NULL, load_streamed_block_worker, load) == 0) {
+        load->threaded = 1;
+        return;
+    }
+    load_streamed_block_worker(load);
+}
+
+static int finish_streamed_block_load(
+        streamed_block_load *load, char *error, size_t error_size) {
+    double wait_started = now_seconds();
+    int was_threaded = load->threaded;
+    if (load->threaded && pthread_join(load->thread, NULL) != 0) {
+        snprintf(error, error_size,
+                 "cannot join LTX streamed block %u loader", load->block);
+        return 0;
+    }
+    if (load->source->wait_seconds)
+        *load->source->wait_seconds += was_threaded ?
+            now_seconds() - wait_started : load->elapsed_seconds;
+    load->threaded = 0;
+    if (load->source->load_seconds)
+        *load->source->load_seconds += load->elapsed_seconds;
+    if (load->source->bytes_loaded)
+        *load->source->bytes_loaded += load->loaded_bytes;
+    if (load->ok) {
+        if (load->was_initialized) {
+            if (load->source->slot_refills)
+                (*load->source->slot_refills)++;
+        } else if (load->source->slot_allocations) {
+            (*load->source->slot_allocations)++;
+        }
+        return 1;
+    }
+    snprintf(error, error_size, "load streamed block %u: %s", load->block,
+             load->error[0] ? load->error : "unknown load failure");
+    return 0;
+}
+
+static void discard_streamed_block_load(streamed_block_load *load) {
+    if (!load) return;
+    if (load->threaded) {
+        (void)pthread_join(load->thread, NULL);
+        load->threaded = 0;
+    }
+}
+
+static void discard_streamed_block_loads(
+        streamed_block_load *loads, uint32_t count) {
+    for (uint32_t index = 0; index < count; index++)
+        discard_streamed_block_load(&loads[index]);
+}
+
+static int run_streamed_block_stack(
+        ltx_gpu *gpu, block_weights *pinned, uint32_t pinned_count,
+        const block_stream_source *source,
+        ltx_transformer_conditioning_values *conditioning_values,
+        const block_rope *rope, block_workspace *workspace,
+        const ltx_gpu_buffer *video_text,
+        const ltx_gpu_buffer *audio_text,
+        const ltx_gpu_buffer *text_mask,
+        uint32_t video_rows, uint32_t audio_rows,
+        uint32_t text_rows, block_timing *timing,
+        char *error, size_t error_size) {
+    if (!source || !source->slots || !pinned_count ||
+        pinned_count >= source->total_blocks || !conditioning_values ||
+        !source->refill_slots ||
+        source->refill_slots > LTX_MAX_REFILL_SLOTS) {
+        snprintf(error, error_size, "invalid LTX block streaming plan");
+        return 0;
+    }
+
+    streamed_block_load loads[LTX_MAX_REFILL_SLOTS] = {0};
+    uint32_t depth = source->refill_slots;
+    uint32_t streamed_count = source->total_blocks - pinned_count;
+    uint32_t initial_loads = depth < streamed_count ? depth : streamed_count;
+    if (depth > 1u) {
+        for (uint32_t index = 0; index < initial_loads; index++)
+            start_streamed_block_load(
+                &loads[index], source, &source->slots[index],
+                pinned_count + index, 1);
+    }
+
+    for (uint32_t block = 0; block < pinned_count; block++) {
+        if (report_progress("ltx_block", (int)block,
+                            (int)source->total_blocks, error, error_size) ||
+            !run_block(gpu, &pinned[block], block, rope, workspace,
+                       video_text, audio_text, text_mask,
+                       video_rows, audio_rows, text_rows, timing,
+                       error, error_size)) {
+            discard_streamed_block_loads(loads, depth);
+            return 0;
+        }
+    }
+
+    for (uint32_t block = pinned_count;
+         block < source->total_blocks; block++) {
+        uint32_t slot = (block - pinned_count) % depth;
+        if (depth == 1u)
+            start_streamed_block_load(
+                &loads[slot], source, &source->slots[slot], block, 0);
+        if (!finish_streamed_block_load(
+                &loads[slot], error, error_size)) {
+            discard_streamed_block_loads(loads, depth);
+            return 0;
+        }
+        if (!apply_scalar_conditioning_one(
+                conditioning_values, &loads[slot].slot->weights,
+                error, error_size) ||
+            report_progress("ltx_block", (int)block,
+                            (int)source->total_blocks, error, error_size) ||
+            !run_block(gpu, &loads[slot].slot->weights, block,
+                       rope, workspace, video_text, audio_text, text_mask,
+                       video_rows, audio_rows, text_rows, timing,
+                       error, error_size)) {
+            discard_streamed_block_loads(loads, depth);
+            return 0;
+        }
+        memset(&loads[slot], 0, sizeof(loads[slot]));
+        uint32_t next_block = block + depth;
+        if (depth > 1u && next_block < source->total_blocks) {
+            start_streamed_block_load(
+                &loads[slot], source, &source->slots[slot],
+                next_block, 1);
+        }
+    }
+    return 1;
+}
+
 #ifdef LTX_ENABLE_ANE_MLP
 static int attach_ane_video_mlp(
         ltx_gpu *gpu, block_weights *weights, uint32_t block,
         uint32_t expected_rows, const char *manifest, const char *variant,
+        uint32_t stage_mask,
         char *error, size_t error_size) {
     unsigned slot = expected_rows == active_geometry.stage1_rows ? 0u :
         expected_rows == active_geometry.stage2_rows ? 1u : 2u;
@@ -3689,7 +4243,8 @@ static int attach_ane_video_mlp(
     unsigned other_slot = slot ^ 1u;
     uint32_t other_rows = other_slot == 0u ?
         active_geometry.stage1_rows : active_geometry.stage2_rows;
-    if (!weights->ane_video_mlp[other_slot] &&
+    if ((stage_mask & (1u << other_slot)) &&
+        !weights->ane_video_mlp[other_slot] &&
         ltx_ane_mlp_supports_rows(model, other_rows))
         weights->ane_video_mlp[other_slot] = model;
     return 1;
@@ -3699,7 +4254,8 @@ static int attach_ane_directory(
         ltx_gpu *gpu, block_weights *weights,
         uint32_t first_block, uint32_t block_count,
         uint32_t rows, const char *directory, const char *variant,
-        uint32_t *attached, char *error, size_t error_size) {
+        uint32_t stage_mask, uint32_t *attached,
+        char *error, size_t error_size) {
     if (!directory || !directory[0]) return 1;
     for (uint32_t index = 0; index < block_count; index++) {
         uint32_t block = first_block + index;
@@ -3720,7 +4276,8 @@ static int attach_ane_directory(
         }
         if (!S_ISREG(info.st_mode) ||
             !attach_ane_video_mlp(
-                gpu, &weights[index], block, rows, manifest, variant,
+                gpu, &weights[block], block, rows, manifest, variant,
+                stage_mask,
                 error, error_size)) return 0;
         (*attached)++;
     }
@@ -4496,6 +5053,8 @@ static void fill_schedule_noise(float *values, uint32_t elements,
 static int run_denoise_schedule(
         ltx_gpu *gpu, block_weights *weights,
         uint32_t first_block, uint32_t block_count,
+        uint32_t pinned_block_count,
+        const block_stream_source *stream_source,
         const block_rope *rope, block_workspace *workspace,
         ltx_transformer_io *io,
         ltx_transformer_conditioning *conditioning,
@@ -4531,7 +5090,9 @@ static int run_denoise_schedule(
         conditioned_prefix_rows > video_rows ||
         (has_video_conditioning && !video_clean_prefix) ||
         !isfinite(conditioning_strength) || conditioning_strength < 0.0f ||
-        conditioning_strength > 1.0f) {
+        conditioning_strength > 1.0f ||
+        (stream_source && (!pinned_block_count ||
+                           pinned_block_count >= block_count))) {
         snprintf(error, error_size, "invalid denoise schedule arguments");
         return 0;
     }
@@ -4643,8 +5204,10 @@ static int run_denoise_schedule(
         float sigma_next = sigmas[step + 1u];
         ltx_transformer_conditioning_values values = {0};
         double conditioning_start = now_seconds();
+        const uint32_t resident_conditioning_blocks = stream_source ?
+            pinned_block_count : block_count;
         if (!apply_video_split_conditioning(
-                conditioning, weights, block_count, sigma,
+                conditioning, weights, resident_conditioning_blocks, sigma,
                 sigma * conditioning_mask, conditioned_video_embedded,
                 &values,
                 error, error_size)) {
@@ -4669,7 +5232,12 @@ static int run_denoise_schedule(
             !ltx_transformer_io_patchify_audio(
                 io, workspace->audio_state[0], audio_current,
                 audio_rows, error, error_size) ||
-            !(release_blocks ?
+            !(stream_source ?
+              run_streamed_block_stack(
+                  gpu, weights, pinned_block_count, stream_source, &values,
+                  rope, workspace, video_text, audio_text, text_mask,
+                  video_rows, audio_rows, text_rows, NULL,
+                  error, error_size) : release_blocks ?
               run_blocks_and_release(
                   gpu, weights, first_block, block_count, rope, workspace,
                   video_text, audio_text, text_mask,
@@ -4875,6 +5443,20 @@ struct ltx_native_denoiser {
     ltx_gpu *gpu;
     ltx_gpu *audio_gpu;
     block_weights weights[48];
+    ltx_st_header streaming_header;
+    ltx_st_mapping streaming_mapping;
+    streamed_block_slot streaming_slots[LTX_MAX_REFILL_SLOTS];
+    uint32_t pinned_blocks;
+    uint32_t refill_slots;
+    uint64_t streaming_budget_bytes;
+    uint64_t streaming_activation_reserve_bytes;
+    uint64_t streaming_block_bytes;
+    uint64_t streaming_estimated_working_set_bytes;
+    uint64_t streaming_bytes_loaded;
+    uint64_t streaming_slot_allocations;
+    uint64_t streaming_slot_refills;
+    double streaming_load_seconds;
+    double streaming_wait_seconds;
     ltx_transformer_io *io;
     ltx_transformer_conditioning *conditioning;
     int full_gpu_mlp_released;
@@ -4935,17 +5517,71 @@ static void ltx_native_detach_ane_stage(
 void ltx_native_free(ltx_native_denoiser *ctx) {
     if(!ctx)return;
     for(unsigned i=0;i<48;++i)free_block_weights(&ctx->weights[i]);
+    for (unsigned i = 0; i < LTX_MAX_REFILL_SLOTS; i++)
+        free_block_weights(&ctx->streaming_slots[i].weights);
     ltx_transformer_conditioning_free(ctx->conditioning);
     ltx_transformer_io_free(ctx->io);ltx_gpu_free(ctx->audio_gpu);ltx_gpu_free(ctx->gpu);
+    ltx_st_map_close(&ctx->streaming_mapping);
+    ltx_st_free_header(&ctx->streaming_header);
     for(unsigned i=0;i<9;++i)free(ctx->owned_strings[i]);
     free(ctx);
+}
+
+int ltx_native_get_streaming_info(
+        const ltx_native_denoiser *ctx,
+        ltx_native_streaming_info *info) {
+    if (!ctx || !info) return 0;
+    memset(info, 0, sizeof(*info));
+    info->enabled = ctx->options.stream_blocks != 0;
+    info->pinned_blocks = ctx->pinned_blocks;
+    info->streamed_blocks = info->enabled ? 48u - ctx->pinned_blocks : 0u;
+    info->refill_slots = ctx->refill_slots;
+    info->memory_budget_bytes = ctx->streaming_budget_bytes;
+    info->activation_reserve_bytes =
+        ctx->streaming_activation_reserve_bytes;
+    info->block_bytes = ctx->streaming_block_bytes;
+    info->estimated_working_set_bytes =
+        ctx->streaming_estimated_working_set_bytes;
+    info->bytes_loaded = ctx->streaming_bytes_loaded;
+    info->slot_allocations = ctx->streaming_slot_allocations;
+    info->slot_refills = ctx->streaming_slot_refills;
+    info->load_seconds = ctx->streaming_load_seconds;
+    info->wait_seconds = ctx->streaming_wait_seconds;
+    return 1;
 }
 ltx_native_denoiser *ltx_native_create(const ltx_native_options *options,
     ltx_native_progress progress,void *opaque,char *error,size_t error_size) {
     if(!options||!options->checkpoint||options->fps!=24){snprintf(error,error_size,"LTX requires checkpoint and 24 fps");return NULL;}
+    uint32_t ane_mlp_first_block = options->ane_mlp_block_count ?
+        options->ane_mlp_first_block : 0u;
+    uint32_t ane_mlp_block_count = options->ane_mlp_block_count ?
+        options->ane_mlp_block_count : 48u;
+    uint32_t ane_mlp_stage_mask = options->ane_mlp_stage_mask ?
+        options->ane_mlp_stage_mask : 3u;
+    if (ane_mlp_first_block >= 48u || !ane_mlp_block_count ||
+        ane_mlp_block_count > 48u - ane_mlp_first_block ||
+        ane_mlp_stage_mask < 1u || ane_mlp_stage_mask > 3u) {
+        snprintf(error, error_size,
+                 "LTX ANE MLP block window/stage mask is invalid");
+        return NULL;
+    }
+    if (options->stream_blocks &&
+        (options->preload_ane_stage2 || options->release_full_gpu_mlp ||
+         options->detach_ane_stage1 || options->detach_ane_stage2 ||
+         options->release_blocks_final_step ||
+         options->mlp_directories[0] || options->mlp_directories[1] ||
+         options->v2a_directories[0] || options->v2a_directories[1] ||
+         options->kv_directory || options->qkv_directories[0] ||
+         options->qkv_directories[1])) {
+        snprintf(error, error_size,
+                 "LTX block streaming cannot attach resident ANE artifacts");
+        return NULL;
+    }
 #ifdef LTX_ENABLE_ANE_MLP
     if (options->release_full_gpu_mlp &&
-        (!options->preload_ane_stage2 || !options->mlp_directories[0] ||
+        (ane_mlp_first_block != 0u || ane_mlp_block_count != 48u ||
+         ane_mlp_stage_mask != 3u ||
+         !options->preload_ane_stage2 || !options->mlp_directories[0] ||
          !options->mlp_directories[1] ||
          !ane_mlp_directory_complete(options->mlp_directories[0], 0u, 48u) ||
          !ane_mlp_directory_complete(options->mlp_directories[1], 0u, 48u))) {
@@ -4963,6 +5599,9 @@ ltx_native_denoiser *ltx_native_create(const ltx_native_options *options,
 #endif
     ltx_native_denoiser *ctx=calloc(1,sizeof(*ctx));if(!ctx){snprintf(error,error_size,"allocation failed");return NULL;}
     ctx->options=*options;
+    ctx->options.ane_mlp_first_block = ane_mlp_first_block;
+    ctx->options.ane_mlp_block_count = ane_mlp_block_count;
+    ctx->options.ane_mlp_stage_mask = ane_mlp_stage_mask;
     ltx_st_header header={0};ltx_st_mapping mapping={0};
     const char **fields[]={&ctx->options.checkpoint,&ctx->options.shader_source,&ctx->options.mlp_directories[0],&ctx->options.mlp_directories[1],&ctx->options.v2a_directories[0],&ctx->options.v2a_directories[1],&ctx->options.kv_directory,&ctx->options.qkv_directories[0],&ctx->options.qkv_directories[1]};
     for(unsigned i=0;i<9;++i)if(*fields[i]){ctx->owned_strings[i]=strdup(*fields[i]);if(!ctx->owned_strings[i]){snprintf(error,error_size,"option allocation failed");goto failed;}*fields[i]=ctx->owned_strings[i];}
@@ -4972,29 +5611,78 @@ ltx_native_denoiser *ltx_native_create(const ltx_native_options *options,
     ctx->gpu=ltx_gpu_create(shader_source,error,error_size);if(!ctx->gpu)goto failed;
     if(options->parallel_av){ctx->audio_gpu=ltx_gpu_create(shader_source,error,error_size);if(!ctx->audio_gpu)goto failed;}
     if(!ltx_st_read_header(options->checkpoint,&header,error,error_size)||!ltx_st_map_open(&header,&mapping,error,error_size))goto failed;
-    for(unsigned i=0;i<48;++i){
+    uint32_t load_blocks = 48u;
+    if (options->stream_blocks) {
+        const uint64_t geometry_bytes =
+            (uint64_t)options->width * options->height * options->frames * 128u;
+        ctx->streaming_budget_bytes = options->memory_budget_bytes ?
+            options->memory_budget_bytes : (12ull << 30) + geometry_bytes;
+        ctx->streaming_activation_reserve_bytes =
+            (4ull << 30) + geometry_bytes;
+        double first_load_started = now_seconds();
+        if (progress && progress("ltx_load_block", 0, 48, opaque)) {
+            snprintf(error,error_size,"generation cancelled");goto failed;
+        }
+        if (!load_block_weights(
+                &header, &mapping, ctx->gpu, 0u, &ctx->weights[0],
+                error, error_size)) goto failed;
+        ctx->streaming_load_seconds += now_seconds() - first_load_started;
+        ctx->streaming_block_bytes = block_resident_bytes(&ctx->weights[0]);
+        ctx->streaming_bytes_loaded += ctx->streaming_block_bytes;
+        tc_block_residency_plan residency_plan;
+        tc_block_residency_status residency_status =
+            tc_block_residency_plan_build(
+                ctx->streaming_budget_bytes,
+                ctx->streaming_activation_reserve_bytes,
+                ctx->streaming_block_bytes, 48u, 0u,
+                LTX_MAX_REFILL_SLOTS, 1, 1, &residency_plan);
+        if (residency_status != TC_BLOCK_RESIDENCY_OK) {
+            snprintf(error, error_size,
+                     "LTX streamed memory budget is below the activation, "
+                     "resident-prefix, and refill floor: %s",
+                     tc_block_residency_status_string(residency_status));
+            goto failed;
+        }
+        ctx->pinned_blocks = residency_plan.pinned_blocks;
+        ctx->refill_slots = residency_plan.refill_slots;
+        ctx->streaming_estimated_working_set_bytes =
+            residency_plan.estimated_working_set_bytes;
+        load_blocks = ctx->pinned_blocks;
+    }
+    for(unsigned i=options->stream_blocks ? 1u : 0u;i<load_blocks;++i){
         if(progress&&progress("ltx_load_block",i,48,opaque)){snprintf(error,error_size,"generation cancelled");goto failed;}
+        double block_load_started = now_seconds();
         if(!load_block_weights(&header,&mapping,ctx->gpu,i,&ctx->weights[i],error,error_size))goto failed;
+        if (options->stream_blocks) {
+            ctx->streaming_load_seconds += now_seconds() - block_load_started;
+            ctx->streaming_bytes_loaded += block_resident_bytes(&ctx->weights[i]);
+        }
     }
     ctx->io=ltx_transformer_io_load(&header,&mapping,ctx->gpu,"model.diffusion_model",error,error_size);
     ctx->conditioning=ltx_transformer_conditioning_load(&header,&mapping,ctx->gpu,"model.diffusion_model",error,error_size);
     if(!ctx->io||!ctx->conditioning)goto failed;
     ltx_native_activate_geometry(ctx);
 #ifdef LTX_ENABLE_ANE_MLP
-    if (ctx->options.preload_ane_stage2 && ctx->options.mlp_directories[1]) {
+    if (ctx->options.preload_ane_stage2 &&
+        (ctx->options.ane_mlp_stage_mask & 2u) &&
+        ctx->options.mlp_directories[1]) {
         uint32_t attached = 0u;
         if (progress && progress("ltx_preload_ane_stage2", 0, 1, opaque)) {
             snprintf(error,error_size,"generation cancelled");goto failed;
         }
         if (!attach_ane_directory(
-                ctx->gpu, ctx->weights, 0u, 48u,
+                ctx->gpu, ctx->weights,
+                ctx->options.ane_mlp_first_block,
+                ctx->options.ane_mlp_block_count,
                 active_geometry.stage2_rows,
-                ctx->options.mlp_directories[1], "int8_pc", &attached,
-                error, error_size) || attached != 48u) {
+                ctx->options.mlp_directories[1], "int8_pc",
+                ctx->options.ane_mlp_stage_mask, &attached,
+                error, error_size) ||
+            attached != ctx->options.ane_mlp_block_count) {
             if (!error[0])
                 snprintf(error, error_size,
-                         "Stage-2 ANE MLP preload attached %u of 48 blocks",
-                         attached);
+                         "Stage-2 ANE MLP preload attached %u of %u blocks",
+                         attached, ctx->options.ane_mlp_block_count);
             goto failed;
         }
         if (progress && progress("ltx_preload_ane_stage2", 1, 1, opaque)) {
@@ -5022,6 +5710,13 @@ ltx_native_denoiser *ltx_native_create(const ltx_native_options *options,
                 error, error_size) || attached != 48u) goto failed;
     }
 #endif
+    if (options->stream_blocks && ctx->pinned_blocks < 48u) {
+        if (!ltx_st_map_discard(&mapping, error, error_size)) goto failed;
+        ctx->streaming_header = header;
+        ctx->streaming_mapping = mapping;
+        memset(&header, 0, sizeof(header));
+        memset(&mapping, 0, sizeof(mapping));
+    }
     ltx_st_map_close(&mapping);ltx_st_free_header(&header);return ctx;
 failed:
     ltx_st_map_close(&mapping);ltx_st_free_header(&header);ltx_native_free(ctx);return NULL;
@@ -5032,6 +5727,11 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
     uint32_t text_rows,const uint16_t *first_frame,float strength,
     ltx_native_progress progress,void *opaque,char *error,size_t error_size) {
     if(!ctx||stage<1||stage>2||!video||!audio||!video_text_host||!audio_text_host||text_rows==0||text_rows>4096){snprintf(error,error_size,"invalid LTX stage input");return 0;}
+    if (ctx->options.stream_blocks && first_frame) {
+        snprintf(error, error_size,
+                 "LTX block streaming currently supports text-to-video only");
+        return 0;
+    }
     ltx_workload *g=&ctx->workload;
     uint32_t rows=(uint32_t)(stage==1?g->stage1_video_tokens:g->stage2_video_tokens);
     uint32_t audio_rows=g->audio_tokens,vd=ltx_transformer_io_video_hidden_dim(ctx->io),ad=ltx_transformer_io_audio_hidden_dim(ctx->io);
@@ -5071,11 +5771,20 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
     if(first_frame&&!clean)goto cleanup;
 #ifdef LTX_ENABLE_ANE_MLP
     uint32_t loaded=0;
-    if(ctx->options.mlp_directories[stage-1]&&!attach_ane_directory(gpu,ctx->weights,0,48,rows,ctx->options.mlp_directories[stage-1],"int8_pc",&loaded,error,error_size))goto cleanup;
-    if (ctx->options.mlp_directories[stage-1] && loaded != 48u) {
+    if((ctx->options.ane_mlp_stage_mask & (1u << (stage - 1))) &&
+        ctx->options.mlp_directories[stage-1] &&
+        !attach_ane_directory(
+            gpu,ctx->weights,ctx->options.ane_mlp_first_block,
+            ctx->options.ane_mlp_block_count,rows,
+            ctx->options.mlp_directories[stage-1],"int8_pc",
+            ctx->options.ane_mlp_stage_mask,&loaded,
+            error,error_size))goto cleanup;
+    if ((ctx->options.ane_mlp_stage_mask & (1u << (stage - 1))) &&
+        ctx->options.mlp_directories[stage-1] &&
+        loaded != ctx->options.ane_mlp_block_count) {
         snprintf(error, error_size,
-                 "LTX ANE MLP Stage %d attached %u of 48 blocks",
-                 stage, loaded);
+                 "LTX ANE MLP Stage %d attached %u of %u blocks",
+                 stage, loaded, ctx->options.ane_mlp_block_count);
         goto cleanup;
     }
     if (!ltx_native_release_full_gpu_mlp(ctx, error, error_size)) goto cleanup;
@@ -5120,7 +5829,24 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
     if(!create_block_rope(gpu,&ctx->weights[0],rows,audio_rows,&rope,error,error_size)||!create_workspace(gpu,rows,vd,ctx->weights[0].video_self.heads,audio_rows,ad,text_rows,&workspace,error,error_size))goto cleanup;
     size_t count=0;const float *sigmas=stage==1?ltx_distilled_stage1_sigmas(&count):ltx_distilled_stage2_sigmas(&count);
     ltx_rng video_rng,audio_rng;ltx_rng_seed(&video_rng,seed+(stage==1?10000u:2u),0);ltx_rng_seed(&audio_rng,seed+2u,0);
-    ok=run_denoise_schedule(gpu,ctx->weights,0,48,&rope,&workspace,ctx->io,ctx->conditioning,buffers[2],buffers[3],buffers[4],buffers[0],buffers[1],clean,prefix,strength,buffers[5],buffers[6],buffers[7],buffers[8],rows,audio_rows,text_rows,vp,ap,sigmas,count,stage==1,&video_rng,stage==1?&video_rng:&audio_rng,stage==2&&ctx->options.release_blocks_final_step,error,error_size);
+    block_stream_source stream_source = {
+        .header = &ctx->streaming_header,
+        .mapping = &ctx->streaming_mapping,
+        .gpu = ctx->gpu,
+        .total_blocks = 48u,
+        .refill_slots = ctx->refill_slots,
+        .slots = ctx->streaming_slots,
+        .bytes_loaded = &ctx->streaming_bytes_loaded,
+        .slot_allocations = &ctx->streaming_slot_allocations,
+        .slot_refills = &ctx->streaming_slot_refills,
+        .load_seconds = &ctx->streaming_load_seconds,
+        .wait_seconds = &ctx->streaming_wait_seconds,
+    };
+    ok=run_denoise_schedule(gpu,ctx->weights,0,48,
+        ctx->options.stream_blocks ? ctx->pinned_blocks : 48u,
+        ctx->options.stream_blocks && ctx->pinned_blocks < 48u ?
+            &stream_source : NULL,
+        &rope,&workspace,ctx->io,ctx->conditioning,buffers[2],buffers[3],buffers[4],buffers[0],buffers[1],clean,prefix,strength,buffers[5],buffers[6],buffers[7],buffers[8],rows,audio_rows,text_rows,vp,ap,sigmas,count,stage==1,&video_rng,stage==1?&video_rng:&audio_rng,stage==2&&ctx->options.release_blocks_final_step,error,error_size);
     if(ok)ok=ltx_gpu_buffer_read(buffers[0],video,video_elements*2,error,error_size)&&ltx_gpu_buffer_read(buffers[1],audio,audio_elements*2,error,error_size);
 cleanup:
     free_workspace(&workspace);free_block_rope(&rope);ltx_gpu_buffer_free(clean);

@@ -4,7 +4,9 @@ import Foundation
 struct ZImageInstallation {
     static func splitDirectory(_ model: URL) -> URL? {
         [model.appendingPathComponent("split_files"), model.appendingPathComponent("models"), model]
-            .first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("diffusion_models/z_image_turbo_bf16.safetensors").path)
+            .first { (FileManager.default.fileExists(atPath: $0.appendingPathComponent("diffusion_models/z_image_turbo_bf16.safetensors").path)
+                || FileManager.default.fileExists(atPath: $0.appendingPathComponent("diffusion_models/z_image_turbo_int8_convrot.safetensors").path)
+                || FileManager.default.fileExists(atPath: $0.appendingPathComponent("diffusion_models/z_image_turbo_nvfp4.safetensors").path))
                 && FileManager.default.fileExists(atPath: $0.appendingPathComponent("vae/ae.safetensors").path) }
     }
     static func hasSharedText(_ model: URL) -> Bool {

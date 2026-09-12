@@ -1,6 +1,8 @@
 #include "bridge.hpp"
 namespace tc {
 static NSString *gpu_graph_label(const Request &r) {
+    if (r.model.starts_with("minimax-h3-fasth3-mlx-int6"))
+        return r.model.ends_with("-vsa") ? @"fasth3_int6_vsa" : @"fasth3_int6_qmm";
     if (r.model == "wan2.1-1.3b-qad")
         return r.execution == "gpu_ane" ? @"compiled_mlp_complement" :
             (r.compile_gpu ? @"compiled_whole_dit" : @"eager_blocks");
@@ -19,6 +21,9 @@ static NSString *gpu_graph_label(const Request &r) {
                                        : @"compiled_single_blocks";
 }
 static NSString *gpu_graph_label(const RunResult &result) {
+    if (result.backend == "mlx_cpp_metal" &&
+        result.request.model.starts_with("minimax-h3-fasth3-mlx-int6"))
+        return result.request.model.ends_with("-vsa") ? @"fasth3_int6_vsa" : @"fasth3_int6_qmm";
     if (result.backend == "mlx_cpp_metal_gguf+coreml")
         return @"compiled_mlp_complement";
     if (result.backend == "mlx_cpp_metal_gguf")
@@ -93,6 +98,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                       r.model == "wan2.1-1.3b-qad" ? @"manifest_verified_native" :
                       r.model == "ltx-2.5-distilled" ?
                           (recipe.executable ? @"native_video_executor" : @"native_capability_gated") :
+                      r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"modelscope_int6_parity_candidate" :
                       r.model == "z-image-turbo" ? @"native_candidate" :
                       r.model == "llada-image-turbo" ? @"native_llada_candidate" :
                       @"weights_pending";
@@ -105,6 +111,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             (r.loras.empty() ? @"checkpoint-and-ane-identity-verified-at-load" : @"premerged-manifest-verified-at-execution") :
         r.model == "ltx-2.5-distilled" ?
             (r.loras.empty() ? @"checkpoint-validated-at-load" : @"premerged-sidecar-verified-at-execution") :
+        r.model.starts_with("minimax-h3-fasth3-mlx-int6") ?
+            @"ModelScope FastH3 manifest and component checks at execution" :
         r.model == "z-image-turbo" ?
             (r.loras.empty() ? @"comfy-oracle-validated; m4max-a4096-hybrid-qualified" :
                                @"in-memory-lora; comfy-oracle-validated") :
@@ -124,6 +132,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
          r.model == "z-image-turbo-gguf" ? @"mlx_cpp_metal_gguf+coreml" : @"mlx_cpp_metal+coreml") :
         r.model == "z-image-turbo-gguf" ?
             @"mlx_cpp_metal_gguf" :
+        r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"mlx_cpp_metal" :
         r.model == "minimax-h3-turbo" ? @"h3-metal-mps" :
         r.model == "ltx-2.5-distilled" ? @"ltx-metal-mps" :
         r.model == "wan2.1-1.3b-qad" ? @"wan-mlx" :
@@ -151,7 +160,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"backend" : backend,
         @"execution" : hybrid ? @"gpu_ane_experimental" : @"gpu",
         @"gpu_graph" : gpu_graph_label(r),
-        @"precision" : r.model == "wan2.1-1.3b-qad" ? @"fp16-int8-affine-dit+bf16-umt5+fp32-taehv" :
+        @"precision" : r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"int6_g64_bf16_activation" :
+                      r.model == "wan2.1-1.3b-qad" ? @"fp16-int8-affine-dit+bf16-umt5+fp32-taehv" :
                       r.model == "z-image-turbo-gguf" ? @"checkpoint_defined_gguf" :
             (!r.quantized_cache.empty() ? @"int8_weight_bf16_activation_streamed" :
              (hybrid ? @"bf16_gpu+int8_mlp_fp16_io" : @"bf16")),
@@ -172,6 +182,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             (r.model == "minimax-h3-turbo" &&
                    r.residency == "streamed" && r.memory_budget_bytes)
                     ? @"h3_dit_working_set_target_not_process_cap"
+                : (r.model == "ltx-2.5-distilled" &&
+                   r.residency == "streamed" && r.memory_budget_bytes)
+                    ? @"ltx_denoiser_working_set_target_not_process_cap"
                 : (r.memory_budget_bytes ? @"runtime_request_budget" : @"unset"),
         @"operation" : @(r.operation.c_str()),
         @"residency" : @(r.residency.c_str()),
@@ -186,9 +199,12 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"lora_strategy" : @(lora_strategy.c_str()),
         @"lora_fusion" : lora_fusion,
         @"audio" : @(r.audio),
-        @"audio_capability" : r.model == "ltx-2.5-distilled" ?
-            (r.audio ? @"latent_to_48khz_aac_candidate" : @"video_only_native") : @"not_applicable",
-        @"executor_operations" : r.model == "ltx-2.5-distilled" ? @[ @"video.generate" ] :
+        @"audio_capability" : r.model.starts_with("minimax-h3-fasth3-mlx-int6") ?
+            (r.audio ? @"full_h3_audio_vae_32khz_stereo" : @"video_only_native") :
+            (r.model == "ltx-2.5-distilled" ?
+             (r.audio ? @"latent_to_48khz_aac_candidate" : @"video_only_native") : @"not_applicable"),
+        @"executor_operations" : r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @[ @"video.generate" ] :
+            r.model == "ltx-2.5-distilled" ? @[ @"video.generate" ] :
             (r.model == "wan2.1-1.3b-qad" ? @[ @"video.generate" ] : [NSNull null]),
         @"limitation" : recipe.executable
             ? @"capabilities depend on model artifacts and configured hardware"
@@ -267,6 +283,27 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             : @"local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
     };
 }
+static NSDictionary *to_dictionary(const BlockResidencyMetrics &m) {
+    return @{
+        @"policy" : @"shared_block_residency_v1",
+        @"enabled" : @(m.enabled),
+        @"fully_resident" : @(m.fully_resident),
+        @"quantized" : @(m.quantized),
+        @"active_blocks" : @(m.active_blocks),
+        @"pinned_blocks" : @(m.pinned_blocks),
+        @"streamed_blocks" : @(m.streamed_blocks),
+        @"refill_slots" : @(m.refill_slots),
+        @"memory_budget_bytes" : @(m.memory_budget_bytes),
+        @"activation_reserve_bytes" : @(m.activation_reserve_bytes),
+        @"block_bytes" : @(m.block_bytes),
+        @"estimated_working_set_bytes" : @(m.estimated_working_set_bytes),
+        @"request_bytes_loaded" : @(m.request_bytes_loaded),
+        @"request_slot_allocations" : @(m.request_slot_allocations),
+        @"request_slot_refills" : @(m.request_slot_refills),
+        @"request_load_seconds" : @(m.request_load_seconds),
+        @"request_wait_seconds" : @(m.request_wait_seconds),
+    };
+}
 RunResult native_run_result(NSDictionary *value, const Request &request,
                             const ExecutionPlan &plan) {
     require([value isKindOfClass:NSDictionary.class], "native session returned an invalid result");
@@ -302,6 +339,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         if (!copy[@"execution"]) copy[@"execution"] = @(result.request.execution.c_str());
         if (!copy[@"lora_strategy"])
             copy[@"lora_strategy"] = @(effective_lora_strategy(result.request).c_str());
+        if (result.block_residency)
+            copy[@"block_residency"] = to_dictionary(*result.block_residency);
         return copy;
     }
     const auto &r = result.request;
@@ -371,6 +410,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
     } mutableCopy];
     if (!r.loras.empty() && result.lora_applied_projections)
         value[@"lora_applied_projections"] = @(result.lora_applied_projections);
+    if (result.block_residency)
+        value[@"block_residency"] = to_dictionary(*result.block_residency);
     return value;
 }
 } // namespace tc

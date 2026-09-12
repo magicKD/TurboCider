@@ -18,7 +18,8 @@ import Darwin
     private var logHandle: FileHandle?
     init(directory: URL, executable: URL? = nil, socketPath: String? = nil) {
         self.directory = directory.appendingPathComponent("api-service")
-        self.socketPath = socketPath ?? "/private/tmp/turbocider-app-\(getuid()).sock"
+        self.socketPath = socketPath ?? FileManager.default.temporaryDirectory
+            .appendingPathComponent("turbocider-app-\(getuid()).sock").path
         self.executable = executable ?? Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("turbocider")
     }
     func start(store: NativeJobStore) async {

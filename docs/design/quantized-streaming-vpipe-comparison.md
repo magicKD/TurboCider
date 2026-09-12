@@ -71,7 +71,7 @@ TurboCider Session 现已允许 streamed/pinned DiT 和 conditioning 跨请求�
 
 ### LTX 2.5
 
-LTX 当前只有 resident/component-staged；component-staged 会按 text/transformer/VAE 生命周期释放组件，但尚未像 vpipe 一样完成每 block 双 slot streaming。LTX 的 non-block trunk（尤其 text connector）约数 GB，不能只按 Transformer block 大小估 floor；低内存计划还必须把 audio/video arena、VAE peak 和 stage boundary 纳入预算。
+LTX 现在支持 resident、component-staged 和 GPU-only streamed 三条路径。streamed loader 采用共享 `block_residency` policy：按 denoiser activation reserve 与实际 block bytes 选择 resident prefix，容量允许时自动全驻留，否则使用最多三个可复用 look-ahead refill slot。component-staged 仍按 text/transformer/VAE 生命周期释放组件；LTX 的 non-block trunk（尤其 text connector）约数 GB，因此当前 working-set budget 只约束 denoiser，audio/video arena、VAE peak 和 stage boundary 仍需单独记录。streamed 路径暂不附着 resident ANE artifacts，也不开放 I2V/音频，避免把未经验证的组合当作低内存产品能力。
 
 ## vpipe 思路与 TurboCider 的差距
 
@@ -79,14 +79,14 @@ LTX 当前只有 resident/component-staged；component-staged 会按 text/transf
 |---|---|---|---|
 | custom Metal forward | 全部 generative stack | H3/LTX custom Metal；图像模型主要 MLX/Metal | 图像模型仍依赖 MLX runtime |
 | quantized preparation | 4/8-bit 预处理 | GGUF 原生、多种 Q-format；H3 离线 I8/F32 shard + typed refill | H3 真实模型 E2E/性能和更多量化方案仍未验收 |
-| block streaming | 通用双 slot + pread | H3 双 slot；GGUF 委托 sd.cpp | LTX 尚未 per-block streaming |
-| dynamic residency | 依据 trunk、block bytes、scratch、RAM 增长/回收 | H3 budget-driven pinned-prefix；其余为 resident/component-staged/streamed | LTX/GGUF 尚无统一 tuner |
+| block streaming | 通用双 slot + pread | H3 双 slot；LTX 最多三 slot；GGUF 委托 sd.cpp | H3/LTX 已共享容量 policy；完整媒体矩阵仍缺 |
+| dynamic residency | 依据 trunk、block bytes、scratch、RAM 增长/回收 | H3/LTX 共享 `block_residency`，分别固定双槽与自适应 1/2/3 槽 | 仍需把非 denoiser trunk 与全进程 RSS 纳入更高层 tuner |
 | low-memory E2E | 16 GB 工作流已有公开案例 | GGUF 8 GiB hint 已验证 256²、两个 base 1024² seed 和一个 LoRA 1024² seed；H3/LTX 仍需完整矩阵 | hint 不是 8 GB 物理机证明；单 prompt/机器不能外推 |
 
 ## 优化优先级
 
 1. 恢复完整 H3 tokenizer/text encoder/VAE fixture，做 resident/streamed/pinned/quantized 的真实媒体 E2E ABBA；
-2. 给 LTX 加 stage-aware 双 slot refill，明确 text connector、双流 audio/video 和 VAE 的 floor；
+2. 在 LTX 已有 stage-aware refill 基础上，补齐 text connector、双流 audio/video 和 VAE floor 的真实预算矩阵；
 3. 对不能 raw-copy 的 F32 modulation tensor使用受控慢路径，不因少数 tensor 放弃整个 block streaming；
 4. 将 quality gate 与 memory gate 同时纳入自动策略：低内存节省不能以 silent steps/shape/token 裁剪换取。
 
@@ -99,7 +99,7 @@ TurboCider 已经具备可交付的 GGUF resident/streaming 路径；256² Q3/Q4
 正确的显式低内存 fallback，而不是自动性能优化。H3 pinned-prefix 与 retained
 DiT reuse 已完成真实 Transformer 验证；量化 refill 的代码、schema、fail-closed 契约已完成，但量化真实媒体 E2E、质量和性能仍缺。
 TurboCider 还不是 vpipe 那种覆盖所有 DiT 的通用低内存调度器；下一步重点是
-H3 量化真实 E2E、GGUF 1024²更多 prompt/seed/adapter，以及 LTX per-block streaming 的
+H3 量化真实 E2E、GGUF 1024²更多 prompt/seed/adapter，以及 LTX shared-policy streaming 的
 16/24/32 GB 矩阵。
 
 证据：[Z-Image GGUF streaming 2026-09-09](validation/z-image-gguf-streaming-2026-09-09.json)、[Z-Image GGUF 总结](z-image-gguf.md)、[Transformer 异构报告](transformer-heterogeneous-report.md)。vpipe 仅作为外部设计参考，不进入 TurboCider 构建或运行时依赖。
