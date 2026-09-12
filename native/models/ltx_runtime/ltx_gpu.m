@@ -1024,6 +1024,10 @@ size_t ltx_gpu_buffer_bytes(const ltx_gpu_buffer *buffer) {
     return buffer ? buffer->bytes : 0;
 }
 
+void *ltx_gpu_buffer_contents(ltx_gpu_buffer *buffer) {
+    return buffer ? ltx_buffer(buffer).contents : NULL;
+}
+
 int ltx_gpu_buffer_write(ltx_gpu_buffer *buffer, const void *data,
                          size_t bytes, char *error, size_t error_size) {
     if (!buffer || (!data && bytes) || bytes > buffer->bytes)

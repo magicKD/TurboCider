@@ -51,6 +51,11 @@ OFFICIAL_LORA_BYTES = 8_899_889_568
 OFFICIAL_LORA_SHA256 = (
     "86370bbf79a9eb4edaa158907e2b48a5188fe4c5dc8ce30c7eb8f2f131a9bbf5"
 )
+# The published distilled adapter is normally consumed at 0.8, but the
+# merger is also used by the identity-bound runtime cache.  Keep the default
+# compatible with the audited artifact while making the requested strength an
+# explicit part of the merge state and manifest instead of silently baking a
+# different value than the caller asked for.
 OFFICIAL_STRENGTH = 0.8
 OFFICIAL_RAW_TENSORS = 3_320
 OFFICIAL_PATCHES = 1_660
@@ -98,6 +103,12 @@ def parse_args() -> argparse.Namespace:
         choices=("auto", "mps", "cpu"),
         default="auto",
         help="merge device; auto prefers MPS",
+    )
+    parser.add_argument(
+        "--strength",
+        type=float,
+        default=OFFICIAL_STRENGTH,
+        help="LoRA multiplier recorded in the manifest (default: 0.8)",
     )
     parser.add_argument(
         "--overwrite",
@@ -345,7 +356,9 @@ def verify_official_file(
     return digest
 
 
-def _state_identity(base: Path, lora: Path, output: Path) -> dict[str, Any]:
+def _state_identity(
+    base: Path, lora: Path, output: Path, strength: float
+) -> dict[str, Any]:
     return {
         "schema": STATE_SCHEMA,
         "algorithm": ALGORITHM,
@@ -354,7 +367,7 @@ def _state_identity(base: Path, lora: Path, output: Path) -> dict[str, Any]:
         "lora_path": str(lora.resolve()),
         "lora_sha256": OFFICIAL_LORA_SHA256,
         "output_path": str(output.resolve()),
-        "strength": OFFICIAL_STRENGTH,
+        "strength": float(strength),
     }
 
 
@@ -437,6 +450,7 @@ def merge_checkpoint(
     device_name: str,
     overwrite: bool,
     limit: int | None,
+    strength: float,
 ) -> None:
     import torch
     from safetensors import safe_open
@@ -445,8 +459,8 @@ def merge_checkpoint(
         quantize_int8_convrot_weight,
     )
 
-    if output_path.name != MERGED_NAME:
-        raise ValueError(f"official merged output must be named {MERGED_NAME}")
+    if output_path.suffix != ".safetensors":
+        raise ValueError("LTX merged output must use a .safetensors filename")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path = output_path.with_suffix(output_path.suffix + ".manifest.json")
     partial_path = output_path.with_name(f".{output_path.name}.partial")
@@ -463,7 +477,7 @@ def merge_checkpoint(
     _, lora_tensors, _ = read_safetensors_header(lora_path)
     quant_metadata = decode_quant_metadata(base_path, base_tensors)
     plan = build_plan(base_tensors, lora_tensors, quant_metadata)
-    identity = _state_identity(base_path, lora_path, output_path)
+    identity = _state_identity(base_path, lora_path, output_path, strength)
     state = _load_or_create_state(
         state_path, identity, partial_path, base_path
     )
@@ -476,7 +490,7 @@ def merge_checkpoint(
     device = torch.device(device_name)
     print(
         f"merge device={device} updates={len(plan)} resume={len(completed)} "
-        f"strength={OFFICIAL_STRENGTH}"
+        f"strength={strength}"
     )
     descriptor = os.open(partial_path, os.O_RDWR)
     run_started = time.perf_counter()
@@ -507,7 +521,7 @@ def merge_checkpoint(
                         f"computed LoRA shape mismatch for {update.target}: "
                         f"{tuple(delta.shape)} != {update.shape}"
                     )
-                delta = (delta * OFFICIAL_STRENGTH).to(torch.float16)
+                delta = (delta * strength).to(torch.float16)
 
                 if update.dtype == "BF16":
                     weight = base.get_tensor(update.target).to(
@@ -615,7 +629,7 @@ def merge_checkpoint(
             "filename": OFFICIAL_LORA_NAME,
             "bytes": OFFICIAL_LORA_BYTES,
             "sha256": OFFICIAL_LORA_SHA256,
-            "strength": OFFICIAL_STRENGTH,
+            "strength": float(strength),
             "raw_tensors": OFFICIAL_RAW_TENSORS,
             "patches": OFFICIAL_PATCHES,
         },
@@ -658,6 +672,8 @@ def main() -> int:
     base = args.base.resolve()
     lora = args.lora.resolve()
     output = args.output.resolve()
+    if not math.isfinite(args.strength) or args.strength <= 0.0 or args.strength > 4.0:
+        raise ValueError("--strength must be finite and in (0, 4]")
     verify_official_file(
         base, OFFICIAL_BASE_NAME, OFFICIAL_BASE_BYTES, OFFICIAL_BASE_SHA256
     )
@@ -682,6 +698,7 @@ def main() -> int:
         args.device,
         args.overwrite,
         args.limit,
+        args.strength,
     )
     return 0
 

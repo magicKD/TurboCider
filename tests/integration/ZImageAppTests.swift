@@ -7,6 +7,12 @@ struct ZImageAppTests {
         let args = CommandLine.arguments
         guard args.count == 7 else { throw NativeFailure(message: "z-image-app-tests MODEL SHARED_TEXT LORA BASE_MANIFEST LORA_MANIFEST OUTPUT") }
         let root = URL(fileURLWithPath: args[6])
+        let previousLibrary = getenv("TURBOCIDER_MODEL_LIBRARY").map { String(cString: $0) }
+        setenv("TURBOCIDER_MODEL_LIBRARY", root.appendingPathComponent("model-library").path, 1)
+        defer {
+            if let previousLibrary { setenv("TURBOCIDER_MODEL_LIBRARY", previousLibrary, 1) }
+            else { unsetenv("TURBOCIDER_MODEL_LIBRARY") }
+        }
         let studio = StudioState(directory: root)
         let store = NativeJobStore(directory: root)
         func check(_ value: @autoclosure () -> Bool, _ message: String) throws {

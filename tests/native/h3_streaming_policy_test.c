@@ -1,4 +1,5 @@
 #include "h3_streaming_policy.h"
+#include "../../native/runtime/block_residency.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -42,6 +43,43 @@ int main(void) {
     assert(h3_stream_plan_build(
                UINT64_MAX, reserve, UINT64_MAX, 50, 0, &plan) ==
            H3_STREAM_PLAN_OVERFLOW);
-    puts("PASS: H3 streaming budget and pinned-prefix policy");
+
+    /* The shared runtime policy must preserve the two pre-refactor formulas
+     * over every meaningful capacity, not just the benchmarked budgets. */
+    for (unsigned capacity = 2; capacity <= 70; capacity++) {
+        uint64_t budget = reserve + (uint64_t)capacity * block;
+        assert(h3_stream_plan_build(
+                   budget, reserve, block, 50, 0, &plan) ==
+               H3_STREAM_PLAN_OK);
+        unsigned expected = capacity - 2u;
+        if (expected > 49u) expected = 49u;
+        assert(plan.pinned_blocks == expected);
+        assert(plan.streamed_blocks == 50u - expected);
+    }
+
+    const uint64_t ltx_block = 768 * UINT64_C(1024) * 1024;
+    for (unsigned capacity = 2; capacity <= 60; capacity++) {
+        tc_block_residency_plan common;
+        uint64_t budget = reserve + (uint64_t)capacity * ltx_block;
+        assert(tc_block_residency_plan_build(
+                   budget, reserve, ltx_block, 48u, 0u, 3u, 1, 1,
+                   &common) == TC_BLOCK_RESIDENCY_OK);
+        if (capacity >= 48u) {
+            assert(common.fully_resident);
+            assert(common.pinned_blocks == 48u);
+            assert(common.streamed_blocks == 0u);
+            assert(common.refill_slots == 0u);
+        } else {
+            unsigned expected_slots = capacity >= 4u ? 3u :
+                capacity >= 3u ? 2u : 1u;
+            assert(!common.fully_resident);
+            assert(common.refill_slots == expected_slots);
+            assert(common.pinned_blocks == capacity - expected_slots);
+            assert(common.streamed_blocks ==
+                   48u - common.pinned_blocks);
+        }
+        assert(common.estimated_working_set_bytes <= budget);
+    }
+    puts("PASS: shared H3/LTX block residency policy");
     return 0;
 }

@@ -17,6 +17,17 @@ class CppBoundaries(unittest.TestCase):
     def test_cpu_only_runtime(self):
         with tempfile.TemporaryDirectory(prefix='tc-cpp-policy-') as directory:
             binary=str(Path(directory)/'test')
-            subprocess.run(['clang++','-std=c++20','-Wall','-Wextra','-Werror','-I',str(ROOT/'native'),'-I',str(ROOT/'native/core'),str(ROOT/'tests/native/runtime_policy_test.cpp'),str(ROOT/'native/core/common.cpp'),str(ROOT/'native/runtime/residency.cpp'),'-o',binary],check=True)
+            policy_object=str(Path(directory)/'block_residency.o')
+            subprocess.run(['clang','-std=c11','-Wall','-Wextra','-Werror',
+                            '-I',str(ROOT/'native/runtime'),'-c',
+                            str(ROOT/'native/runtime/block_residency.c'),
+                            '-o',policy_object],check=True)
+            subprocess.run(['clang++','-std=c++20','-Wall','-Wextra','-Werror',
+                            '-I',str(ROOT/'native'),'-I',str(ROOT/'native/core'),
+                            str(ROOT/'tests/native/runtime_policy_test.cpp'),
+                            str(ROOT/'native/core/common.cpp'),
+                            str(ROOT/'native/runtime/residency.cpp'),
+                            str(ROOT/'native/runtime/lora_identity.cpp'),policy_object,
+                            '-o',binary],check=True)
             subprocess.run([binary],check=True)
 if __name__=='__main__':unittest.main(verbosity=2)

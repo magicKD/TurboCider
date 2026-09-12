@@ -101,6 +101,7 @@ struct LibraryDownloader: Sendable {
         }
         let selected = allFiles.filter { file in
             (request.include.isEmpty || request.include.contains { $0 == file.path || ($0.hasSuffix("/") && file.path.hasPrefix($0)) }) &&
+            !(request.modelID == "z-image-turbo" && request.components["text_encoder"] != nil && file.path.hasPrefix("split_files/text_encoders/")) &&
             !request.components.keys.contains { file.path == $0 || file.path.hasPrefix($0 + "/") }
         }
         guard Set(selected.map(\.path)).count == selected.count else {

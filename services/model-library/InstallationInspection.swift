@@ -155,10 +155,11 @@ private struct InstallationProbe {
         switch report.modelID {
         case "z-image-turbo":
             json("tokenizer/tokenizer.json")
-            let comfy = "split_files/diffusion_models/z_image_turbo_bf16.safetensors"
+            let comfy = ZImageVariant.all.filter(\.runnable).map(\.path).first(where: { exists($0) }) ?? ZImageVariant.all[0].path
             if exists(comfy) && exists("split_files/vae/ae.safetensors") {
                 weights(comfy); weights("split_files/vae/ae.safetensors")
-                if exists("split_files/text_encoders/qwen_3_4b.safetensors") { weights("split_files/text_encoders/qwen_3_4b.safetensors") }
+                if exists("text_encoder") { component("text_encoder", mlxDirectory: true, allowSingleLink: true) }
+                else if exists("split_files/text_encoders/qwen_3_4b.safetensors") { weights("split_files/text_encoders/qwen_3_4b.safetensors") }
                 else { component("text_encoder", mlxDirectory: true, allowSingleLink: true) }
             } else {
                 for path in ["transformer", "text_encoder", "vae"] { component(path, mlxDirectory: true, allowSingleLink: true) }

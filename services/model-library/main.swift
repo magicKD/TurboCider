@@ -27,6 +27,10 @@ private struct Failure: Encodable { let ok = false; let error: String }
             turbocider library list [--root DIRECTORY]
             turbocider library register MODEL_ID DIRECTORY [--root DIRECTORY]
             turbocider library remove INSTALLATION_ID [--root DIRECTORY]
+            turbocider library register-ane MODEL_ID MANIFEST.json [--root DIRECTORY]
+            turbocider library remove-ane PARTITION_ID [--root DIRECTORY]
+            turbocider library register-lora MODEL_ID FILE [--root DIRECTORY]
+            turbocider library remove-lora LORA_ID [--root DIRECTORY]
             turbocider library plan REQUEST.json [--root DIRECTORY]
             turbocider library download REQUEST.json [--root DIRECTORY]
             turbocider library configure DIRECTORY
@@ -86,8 +90,34 @@ private struct Failure: Encodable { let ok = false; let error: String }
                 do { imported.append(try store.register(modelID: model, path: URL(fileURLWithPath: path))) }
                 catch { errors[model] = error.localizedDescription }
             }
+            if let loras = raw?["loras"] as? [[String: String]] {
+                for item in loras {
+                    guard let model = item["modelID"], let path = item["path"] else {
+                        errors["loras"] = "LoRA 需要 modelID 和 path。"; continue
+                    }
+                    do { _ = try store.registerLoRA(modelID: model, path: URL(fileURLWithPath: path)) }
+                    catch { errors[path] = error.localizedDescription }
+                }
+            }
+            if let partitions = raw?["anePartitions"] as? [[String: String]] {
+                for item in partitions {
+                    guard let model = item["modelID"], let path = item["path"] else {
+                        errors["anePartitions"] = "ANE 分区需要 modelID 和 path。"; continue
+                    }
+                    do { _ = try store.registerANE(modelID: model, manifest: URL(fileURLWithPath: path)) }
+                    catch { errors[path] = error.localizedDescription }
+                }
+            }
             struct ImportResult: Encodable { var installations: [LibraryInstallation]; var errors: [String: String] }
             emit(Success(result: ImportResult(installations: imported, errors: errors)))
+        case "register-ane" where args.count == 3:
+            emit(Success(result: try store.registerANE(modelID: args[1], manifest: URL(fileURLWithPath: args[2]))))
+        case "remove-ane" where args.count == 2:
+            try store.unregisterANE(id: args[1]); emit(Success(result: ["removed": args[1]]))
+        case "register-lora" where args.count == 3:
+            emit(Success(result: try store.registerLoRA(modelID: args[1], path: URL(fileURLWithPath: args[2]))))
+        case "remove-lora" where args.count == 2:
+            try store.unregisterLoRA(id: args[1]); emit(Success(result: ["removed": args[1]]))
         case "list" where args.count == 1:
             emit(Success(result: try store.read()))
         case "catalog" where args.count == 1:

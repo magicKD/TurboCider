@@ -39,10 +39,17 @@ test:
 	@python3 -B tests/native/test_video_timing.py
 	@python3 -B tests/native/test_wan_benchmark.py
 	@python3 -B tests/native/test_native_gguf.py
+	@python3 -B tests/native/test_nvfp4.py
 	@python3 -B tests/native/test_h3_streaming_policy.py
 	@python3 -B tests/native/test_h3_quant_cache.py
+	@python3 -B tests/native/test_h3_mlx_source_contract.py
+	@python3 -B tests/native/test_h3_mlx_geometry.py
+	@python3 -B tests/native/test_h3_mlx_cache.py
+	@python3 -B tests/native/test_h3_mlx_prepare.py
+	@python3 -B tests/native/test_h3_mlx_modelscope.py
 	@python3 tests/native/test_inventory.py
 test-app:
+	@build/native/turbocider-ane-library-tests
 	@build/native/turbocider-studio-tests
 	@build/native/turbocider-model-library-tests
 	@build/native/turbocider-library-store-tests

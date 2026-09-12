@@ -1,0 +1,17 @@
+{
+  "modelID": "z-image-turbo",
+  "name": "Z-Image Turbo · INT8 ConvRot · Qwen BF16",
+  "repository": "Comfy-Org/z_image_turbo",
+  "provider": "modelscope",
+  "include": [
+    "split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors",
+    "split_files/vae/ae.safetensors",
+    "split_files/text_encoders/qwen_3_4b.safetensors",
+    "tokenizer/tokenizer.json",
+    "tokenizer/tokenizer_config.json"
+  ],
+  "supplements": [{
+    "repository": "Tongyi-MAI/Z-Image-Turbo",
+    "include": ["tokenizer/tokenizer.json", "tokenizer/tokenizer_config.json"]
+  }]
+}

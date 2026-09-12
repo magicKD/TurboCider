@@ -316,9 +316,9 @@ int tc_z_image_tokenize_json(const char *path, const char *prompt, char **out, c
         try {
             tc::require(path && prompt && out, "missing Z-Image tokenizer input");
             tc::Tokenizer tokenizer(std::filesystem::path(path) / "tokenizer");
-            auto tokens = tokenizer.z_image_prompt(prompt, true);
+            auto tokens = tokenizer.z_image_tokens(prompt);
             *out = copy(tc::json(@{@"valid": @(tokens.valid),
-                                  @"padded": @((tokens.valid + 31) / 32 * 32), @"limit": @512}));
+                                  @"padded": @((tokens.valid + 31) / 32 * 32), @"limit": @(tc::Tokenizer::z_image_limit)}));
             return 0;
         } catch (const std::exception &e) { return fail(error, e); }
         catch (...) { if (error) *error = strdup("unknown tokenizer error"); return 1; }

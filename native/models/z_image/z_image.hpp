@@ -12,6 +12,7 @@ class ZImage final : public ModelSession {
     std::filesystem::path text_path_, transformer_path_, transformer_checkpoint_, vae_path_;
     std::string model_id_ = "z-image-turbo";
     bool diffusers_layout_ = false, gguf_transformer_ = false, convrot_transformer_ = false;
+    bool nvfp4_transformer_ = false;
     Tokenizer tokenizer_;
     Weights text_encoder_;
     Weights transformer_;

@@ -60,10 +60,12 @@ def build_command(args: argparse.Namespace) -> list[str]:
             command.extend(["--strength", str(args.strength)])
         if args.source_revision:
             command.extend(["--source-revision", args.source_revision])
-    elif args.profile != "auto" or args.strength is not None or args.source_revision:
+    elif args.profile != "auto" or args.source_revision:
         raise ValueError(
-            "--profile, --strength and --source-revision are only valid for H3"
+            "--profile and --source-revision are only valid for H3"
         )
+    elif args.strength is not None:
+        command.extend(["--strength", str(args.strength)])
     return command
 
 
@@ -94,6 +96,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="auto",
     )
     parser.add_argument("--strength", type=float)
+    parser.add_argument(
+        "--role",
+        choices=("transformer", "refiner"),
+        default="transformer",
+    )
     parser.add_argument("--source-revision")
     parser.add_argument("--print-command", action="store_true")
     parser.add_argument("--cache-dir")
@@ -107,13 +114,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.output is not None:
             print("runtime-cache does not accept an output positional", file=sys.stderr)
             return 2
+        if args.strength is None:
+            print("runtime-cache requires an explicit --strength", file=sys.stderr)
+            return 2
         try:
             value = ensure_cache(
                 MODEL_ALIASES[args.model],
                 args.base,
                 args.lora,
-                args.strength if args.strength is not None else 1.0,
-                role="transformer",
+                args.strength,
+                role=args.role,
                 cache_dir=args.cache_dir,
                 profile=args.profile,
                 hardware=args.hardware,

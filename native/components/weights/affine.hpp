@@ -16,11 +16,13 @@ class AffineMatrix {
 
   public:
     AffineMatrix(Tensor packed, Tensor scales, std::optional<Tensor> offsets,
-                 int group_size, int bits);
+                 int group_size, int bits, int logical_input_channels = 0);
     int input_channels() const { return input_channels_; }
     int output_channels() const { return packed_.shape(0); }
+    int group_size() const { return group_size_; }
+    int bits() const { return bits_; }
     // Preserve the source runtime's cast before adding the layer bias.
-    Tensor project(const Tensor &) const;
+    Tensor project(const Tensor &, bool dequantize_for_wide_gemm = false) const;
     AffineMatrix slice(int row_begin, int row_end, int column_begin, int column_end) const;
 };
 

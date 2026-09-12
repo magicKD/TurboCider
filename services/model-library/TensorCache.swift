@@ -111,7 +111,8 @@ struct TensorCache {
     }
     func prune(olderThanDays days: Int, now: Date = Date(), leaseURL: URL? = nil) throws -> TensorCacheReport {
         guard (0...3650).contains(days) else { throw LibraryFailure(message: "Invalid age threshold.") }
-        let path = leaseURL ?? URL(fileURLWithPath: "/private/tmp/turbocider-gpu-\(geteuid()).lock")
+        let path = leaseURL ?? FileManager.default.temporaryDirectory
+            .appendingPathComponent("turbocider-gpu-\(geteuid()).lock")
         let lease: LibraryLease
         do { lease = try LibraryLease(path) } catch { throw LibraryFailure(message: "推理正在运行或无法取得缓存维护锁，请在空闲时重试。") }
         defer { withExtendedLifetime(lease) {} }

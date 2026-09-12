@@ -36,6 +36,16 @@ struct LoadResult {
 struct Timings {
     double wall = 0, text = 0, image = 0, hybrid = 0, denoise = 0, decode = 0;
 };
+struct BlockResidencyMetrics {
+    bool enabled = false, fully_resident = false, quantized = false;
+    unsigned active_blocks = 0, pinned_blocks = 0, streamed_blocks = 0;
+    unsigned refill_slots = 0;
+    uint64_t memory_budget_bytes = 0, activation_reserve_bytes = 0;
+    uint64_t block_bytes = 0, estimated_working_set_bytes = 0;
+    uint64_t request_bytes_loaded = 0, request_slot_allocations = 0;
+    uint64_t request_slot_refills = 0;
+    double request_load_seconds = 0, request_wait_seconds = 0;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::string selection, backend, precision, checkpoint;
@@ -47,6 +57,7 @@ struct RunResult {
     Timings timings;
     uint64_t active_bytes = 0, peak_bytes = 0;
     std::optional<HybridMetrics> hybrid;
+    std::optional<BlockResidencyMetrics> block_residency;
     std::string native_json;
 };
 class ModelSession {

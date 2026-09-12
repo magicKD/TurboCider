@@ -1,6 +1,7 @@
 #include "runtime/residency.hpp"
 #include "runtime/acceleration.hpp"
 #include "runtime/execution.hpp"
+#include "runtime/lora_identity.hpp"
 #include "core/tokenizer.hpp"
 #include "platform/apple/platform.hpp"
 #include <cassert>
@@ -58,6 +59,35 @@ int main() {
     assert(rejects([&] { ResidencyPolicy::validate_budget(plan, 48ull << 30); }));
     plan.memory_estimate_bytes.reset();
     assert(rejects([&] { ResidencyPolicy::validate_budget(plan, 48ull << 30); }));
+    auto h3_stream = make_block_residency_plan(
+        16ull << 30, 4ull << 30, 770725376ull, 50u, 0u, 2u, false, false);
+    assert(h3_stream.pinned_blocks ==
+           static_cast<unsigned>(((16ull << 30) - (4ull << 30) -
+                                   2ull * 770725376ull) / 770725376ull));
+    assert(h3_stream.streamed_blocks == 50u - h3_stream.pinned_blocks &&
+           h3_stream.refill_slots == 2u && !h3_stream.fully_resident);
+    auto ltx_stream = make_block_residency_plan(
+        8ull << 30, 4ull << 30, 768ull << 20, 48u, 0u, 3u, true, true);
+    assert(ltx_stream.pinned_blocks == 2u &&
+           ltx_stream.streamed_blocks == 46u &&
+           ltx_stream.refill_slots == 3u);
+    auto ltx_resident = make_block_residency_plan(
+        40ull << 30, 4ull << 30, 768ull << 20, 48u, 0u, 3u, true, true);
+    assert(ltx_resident.fully_resident && ltx_resident.pinned_blocks == 48u &&
+           ltx_resident.refill_slots == 0u);
+    LoRAAsset adapter{"relative/adapter.safetensors", 0.8f, "refiner"};
+    auto lora = make_verified_lora_identity(
+        adapter, "/models/adapter.safetensors", 1234u,
+        std::string(64, 'a'));
+    auto lora_key = lora.cache_key("ltx-in-memory-v1");
+    assert(lora_key.find("|path=27:/models/adapter.safetensors") !=
+               std::string::npos &&
+           lora_key.find("|bytes=1234") != std::string::npos &&
+           lora_key.find("|role=7:refiner") != std::string::npos &&
+           lora_key.find("|strength_bits=3f4ccccd") != std::string::npos);
+    auto transformer_lora = lora;
+    transformer_lora.role = "transformer";
+    assert(transformer_lora.cache_key("ltx-in-memory-v1") != lora_key);
     std::atomic<bool> cancel{true};
     bool cancelled = false;
     try {

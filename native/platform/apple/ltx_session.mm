@@ -1,4 +1,6 @@
 #include "bridge.hpp"
+#include "../../runtime/lora_identity.hpp"
+#include "../../runtime/residency.hpp"
 #include "../../backends/mlx.hpp"
 #include "../../media/image.hpp"
 #include "../../media/audio.hpp"
@@ -355,6 +357,7 @@ struct LtxCheckpointSelection {
     std::filesystem::path manifest;
     std::string checkpoint_sha256;
     std::string lora_sha256;
+    std::string lora_cache_identity;
     double strength = 0.0;
 };
 
@@ -523,8 +526,22 @@ static LtxCheckpointSelection resolve_ltx_checkpoint(
     for (const auto& candidate : candidates) {
         if (inspect_ltx_manifest(candidate, requested,
                                  base_hash_cache, lora_hash_cache,
-                                 output_hash_cache, selection, failure))
+                                 output_hash_cache, selection, failure)) {
+            std::error_code path_error;
+            auto lora_path = std::filesystem::canonical(
+                requested.path, path_error);
+            require(!path_error,
+                    "cannot canonicalize requested LTX LoRA path");
+            auto lora_bytes = std::filesystem::file_size(
+                lora_path, path_error);
+            require(!path_error,
+                    "cannot inspect requested LTX LoRA size");
+            selection.lora_cache_identity = make_verified_lora_identity(
+                requested, lora_path, lora_bytes,
+                selection.lora_sha256).cache_key(
+                    "ltx-premerged-manifest-v1");
             return selection;
+        }
     }
     require(false, "LTX LoRA requires an offline-premerged checkpoint and "
                    "matching provenance manifest: " + failure);
@@ -742,6 +759,11 @@ struct ConditioningCacheLocation {
     std::string key;
 };
 
+constexpr uint32_t kLtxTransformerBlockCount = 48u;
+constexpr uint32_t kLtxStage1Mask = 1u;
+constexpr uint32_t kLtxStage2Mask = 2u;
+constexpr uint32_t kLtxAllStageMask = kLtxStage1Mask | kLtxStage2Mask;
+
 struct LtxAneConfig {
     std::filesystem::path mlp_stage1;
     std::filesystem::path mlp_stage2;
@@ -759,7 +781,10 @@ struct LtxAneConfig {
     bool release_blocks_final_step = false;
     bool fused_mlp_residual = false;
     bool fused_mlp_adaln_pack = false;
-    uint32_t kv_stage_mask = 1u;
+    uint32_t mlp_block_start = 0u;
+    uint32_t mlp_block_count = kLtxTransformerBlockCount;
+    uint32_t mlp_stage_mask = kLtxAllStageMask;
+    uint32_t kv_stage_mask = kLtxStage1Mask;
     std::string identity;
 };
 
@@ -770,16 +795,24 @@ static void validate_ane_profile_keys(NSDictionary* dictionary) {
         @"variant", @"parallel_av", @"preload_stage2",
         @"release_full_gpu_mlp", @"detach_stage1", @"detach_stage2",
         @"release_blocks_final_step", @"fused_mlp_residual",
-        @"fused_mlp_adaln_pack", @"kv_stage_mask"]];
+        @"fused_mlp_adaln_pack", @"mlp_block_start", @"mlp_block_count",
+        @"mlp_stage_mask", @"kv_stage_mask"]];
     for (NSString* key in dictionary)
         require([allowed containsObject:key],
                 "unknown LTX ANE profile field: " +
                     std::string(key.UTF8String));
 }
 
-static bool complete_ane_directory(const std::filesystem::path& directory) {
+static bool complete_ane_directory(
+        const std::filesystem::path& directory,
+        uint32_t first_block = 0u,
+        uint32_t block_count = kLtxTransformerBlockCount) {
     if (!std::filesystem::is_directory(directory)) return false;
-    for (uint32_t block = 0; block < 48u; ++block) {
+    if (first_block >= kLtxTransformerBlockCount || !block_count ||
+        block_count > kLtxTransformerBlockCount - first_block)
+        return false;
+    for (uint32_t block = first_block;
+         block < first_block + block_count; ++block) {
         if (!std::filesystem::is_regular_file(
                 directory / ("block-" + std::to_string(block)) /
                 "manifest.json")) return false;
@@ -838,12 +871,15 @@ static void validate_ane_source_identity(
 static void validate_ane_directory_geometry(
         const std::filesystem::path& directory, const char* name,
         NSString* schema, NSString* shape_key, uint32_t expected_rows,
-        const std::filesystem::path& checkpoint = {}) {
-    require(complete_ane_directory(directory),
+        const std::filesystem::path& checkpoint = {},
+        uint32_t first_block = 0u,
+        uint32_t block_count = kLtxTransformerBlockCount) {
+    require(complete_ane_directory(directory, first_block, block_count),
             std::string("LTX ANE ") + name +
-                " must contain all 48 block manifests");
+                " is missing a required block manifest");
     uint32_t observed_rows = 0;
-    for (uint32_t block = 0; block < 48u; ++block) {
+    for (uint32_t block = first_block;
+         block < first_block + block_count; ++block) {
         auto manifest_path = directory / ("block-" + std::to_string(block)) /
             "manifest.json";
         auto manifest = read_json(manifest_path);
@@ -869,7 +905,7 @@ static void validate_ane_directory_geometry(
         require(rows > 0 && rows <= UINT32_MAX,
                 std::string("LTX ANE ") + name +
                     " block manifest has invalid row geometry");
-        if (block == 0u) observed_rows = static_cast<uint32_t>(rows);
+        if (block == first_block) observed_rows = static_cast<uint32_t>(rows);
         require(rows == observed_rows,
                 std::string("LTX ANE ") + name +
                     " block manifests disagree on row geometry");
@@ -931,7 +967,7 @@ static LtxAneConfig resolve_ltx_ane_config(
     result.release_full_gpu_mlp = true;
     result.detach_stage1 = true;
     result.release_blocks_final_step = true;
-    result.kv_stage_mask = 1u;
+    result.kv_stage_mask = kLtxStage1Mask;
     NSDictionary* profile = nil;
     std::filesystem::path base = absolute;
     if (std::filesystem::is_regular_file(absolute)) {
@@ -940,8 +976,10 @@ static LtxAneConfig resolve_ltx_ane_config(
         require(string_value(profile, @"schema") == "turbocider-ltx-ane-v1",
                 "unsupported LTX ANE profile schema");
         base = absolute.parent_path();
-        result.mlp_stage1 = ane_profile_path(profile, @"mlp_stage1", base, true);
-        result.mlp_stage2 = ane_profile_path(profile, @"mlp_stage2", base, true);
+        result.mlp_stage1 = ane_profile_path(
+            profile, @"mlp_stage1", base, false);
+        result.mlp_stage2 = ane_profile_path(
+            profile, @"mlp_stage2", base, false);
         result.v2a_stage1 = ane_profile_path(profile, @"v2a_stage1", base, false);
         result.v2a_stage2 = ane_profile_path(profile, @"v2a_stage2", base, false);
         result.kv = ane_profile_path(profile, @"kv", base, false);
@@ -968,6 +1006,23 @@ static LtxAneConfig resolve_ltx_ane_config(
                         " must be bool");
             return [value boolValue];
         };
+        auto read_u32 = [&](NSString* key, uint32_t current) {
+            id value = profile[key];
+            if (!value) return current;
+            require([value isKindOfClass:NSNumber.class] &&
+                        CFGetTypeID((__bridge CFTypeRef)value) !=
+                            CFBooleanGetTypeID(),
+                    "LTX ANE profile " + std::string(key.UTF8String) +
+                        " must be numeric");
+            double number = [value doubleValue];
+            require(std::isfinite(number) && number == std::floor(number) &&
+                        number >= 0.0 &&
+                        number <= kLtxTransformerBlockCount,
+                    "LTX ANE profile " + std::string(key.UTF8String) +
+                        " must be an integer in 0.." +
+                        std::to_string(kLtxTransformerBlockCount));
+            return static_cast<uint32_t>(number);
+        };
         result.preload_stage2 = read_bool(
             @"preload_stage2", result.preload_stage2);
         result.release_full_gpu_mlp = read_bool(
@@ -982,6 +1037,19 @@ static LtxAneConfig resolve_ltx_ane_config(
             @"fused_mlp_residual", result.fused_mlp_residual);
         result.fused_mlp_adaln_pack = read_bool(
             @"fused_mlp_adaln_pack", result.fused_mlp_adaln_pack);
+        result.mlp_block_start = read_u32(
+            @"mlp_block_start", result.mlp_block_start);
+        result.mlp_block_count = read_u32(
+            @"mlp_block_count", result.mlp_block_count);
+        require(result.mlp_block_count > 0u &&
+                    result.mlp_block_start < kLtxTransformerBlockCount &&
+                    result.mlp_block_count <=
+                        kLtxTransformerBlockCount - result.mlp_block_start,
+                "LTX ANE MLP block window must fit within 48 blocks");
+        result.mlp_stage_mask = read_u32(
+            @"mlp_stage_mask", result.mlp_stage_mask);
+        require(result.mlp_stage_mask >= 1u && result.mlp_stage_mask <= 3u,
+                "LTX ANE profile mlp_stage_mask must be 1..3");
         id kv_mask = profile[@"kv_stage_mask"];
         if (kv_mask) {
             require([kv_mask isKindOfClass:NSNumber.class] &&
@@ -1011,33 +1079,53 @@ static LtxAneConfig resolve_ltx_ane_config(
     }
     require(!result.release_full_gpu_mlp || result.preload_stage2,
             "LTX ANE full GPU MLP release requires Stage-2 preload");
+    require(!result.release_full_gpu_mlp ||
+                (result.mlp_block_start == 0u &&
+                 result.mlp_block_count == kLtxTransformerBlockCount &&
+                 result.mlp_stage_mask == kLtxAllStageMask),
+            "LTX ANE full GPU MLP release requires complete Stage-1/Stage-2 coverage");
     require(!(result.fused_mlp_residual && result.fused_mlp_adaln_pack),
             "LTX ANE MLP residual and AdaLN-pack fusion cannot both be enabled");
     if (result.kv.empty()) result.kv_stage_mask = 0u;
     auto validate = [](const std::filesystem::path& path,
-                       const char* name, bool required) {
+                       const char* name, bool required,
+                       uint32_t first_block = 0u,
+                       uint32_t block_count = kLtxTransformerBlockCount) {
         if (path.empty()) {
             require(!required, std::string("LTX ANE profile is missing ") + name);
             return;
         }
-        require(complete_ane_directory(path),
+        const bool complete = complete_ane_directory(
+            path, first_block, block_count);
+        require(complete,
                 std::string("LTX ANE ") + name +
-                    " must contain all 48 block manifests");
+                    ((first_block == 0u &&
+                      block_count == kLtxTransformerBlockCount) ?
+                        " must contain all 48 block manifests" :
+                        " is missing a required block manifest"));
     };
-    validate(result.mlp_stage1, "stage1 MLP", true);
-    validate(result.mlp_stage2, "stage2 MLP", true);
+    validate(result.mlp_stage1, "stage1 MLP",
+             (result.mlp_stage_mask & kLtxStage1Mask) != 0u,
+             result.mlp_block_start, result.mlp_block_count);
+    validate(result.mlp_stage2, "stage2 MLP",
+             (result.mlp_stage_mask & kLtxStage2Mask) != 0u,
+             result.mlp_block_start, result.mlp_block_count);
     validate(result.v2a_stage1, "stage1 V2A", false);
     validate(result.v2a_stage2, "stage2 V2A", false);
     validate(result.kv, "text K/V", false);
     validate(result.qkv_stage1, "stage1 QKV", false);
     validate(result.qkv_stage2, "stage2 QKV", false);
     if (expected_stage1_rows && expected_stage2_rows) {
-        validate_ane_directory_geometry(
-            result.mlp_stage1, "stage1 MLP", @"ltx-ane-mlp-v1", @"rows",
-            expected_stage1_rows, checkpoint);
-        validate_ane_directory_geometry(
-            result.mlp_stage2, "stage2 MLP", @"ltx-ane-mlp-v1", @"rows",
-            expected_stage2_rows, checkpoint);
+        if (result.mlp_stage_mask & kLtxStage1Mask)
+            validate_ane_directory_geometry(
+                result.mlp_stage1, "stage1 MLP", @"ltx-ane-mlp-v1",
+                @"rows", expected_stage1_rows, checkpoint,
+                result.mlp_block_start, result.mlp_block_count);
+        if (result.mlp_stage_mask & kLtxStage2Mask)
+            validate_ane_directory_geometry(
+                result.mlp_stage2, "stage2 MLP", @"ltx-ane-mlp-v1",
+                @"rows", expected_stage2_rows, checkpoint,
+                result.mlp_block_start, result.mlp_block_count);
         if (!result.v2a_stage1.empty())
             validate_ane_directory_geometry(
                 result.v2a_stage1, "stage1 V2A", @"ltx-ane-v2a-v1",
@@ -1078,6 +1166,10 @@ static LtxAneConfig resolve_ltx_ane_config(
         std::to_string(result.kv_stage_mask) + ":fused=" +
         (result.fused_mlp_adaln_pack ? "adaln" :
          result.fused_mlp_residual ? "residual" : "none");
+    result.identity += ":mlp_window=" +
+        std::to_string(result.mlp_block_start) + "+" +
+        std::to_string(result.mlp_block_count) + ":mlp_stages=" +
+        std::to_string(result.mlp_stage_mask);
     return result;
 }
 
@@ -1526,9 +1618,11 @@ public:
             selection.checkpoint = checkpoint_path_;
         }
         const auto& selected_checkpoint = selection.checkpoint;
-        const std::string selected_identity = selection.checkpoint_sha256.empty() ?
+        std::string selected_identity = selection.checkpoint_sha256.empty() ?
             checkpoint_stat_identity(selected_checkpoint) :
             selected_checkpoint.string() + ":sha256=" + selection.checkpoint_sha256;
+        if (!selection.lora_cache_identity.empty())
+            selected_identity += ":" + selection.lora_cache_identity;
         auto workload = ltx_workload{};
         char error[1024] = {};
         require(ltx_workload_init(&workload, request.width, request.height,
@@ -1542,16 +1636,28 @@ public:
                 static_cast<uint32_t>(workload.stage2_video_tokens), 1024u,
                 selected_checkpoint);
         require(request.residency == "resident" ||
-                request.residency == "component_staged",
+                request.residency == "component_staged" ||
+                request.residency == "streamed",
                 "unsupported LTX residency");
         const bool component_staged = request.residency == "component_staged";
+        const bool streamed = request.residency == "streamed";
+        if (streamed) {
+            require(!image_to_video,
+                    "LTX block streaming currently supports text-to-video only");
+            require(!request.audio,
+                    "LTX block streaming currently supports video-only output");
+            require(effective_execution == "gpu",
+                    "LTX block streaming currently requires GPU execution");
+        }
         auto conditioning = load_conditioning(
             root_, selected_checkpoint, request.prompt);
         bool used_dynamic_gemma = false;
-        ScopeExit staged_cleanup([this, component_staged] {
-            if (!component_staged) return;
-            denoiser_.reset();
-            denoiser_key_.clear();
+        ScopeExit staged_cleanup([this, component_staged, streamed] {
+            if (component_staged) {
+                denoiser_.reset();
+                denoiser_key_.clear();
+            }
+            if (!component_staged && !streamed) return;
             gemma_encoder_.reset();
             video_vae_.reset();
             audio_vae_.reset();
@@ -1670,6 +1776,7 @@ public:
             effective_execution + ":" +
             (ane_config.identity.empty() ? "dense" : ane_config.identity) +
             ":residency=" + request.residency +
+            ":memory_budget=" + std::to_string(request.memory_budget_bytes) +
             ":release_blocks=" +
             ((component_staged && (effective_execution != "gpu_ane" ||
                                    ane_config.release_blocks_final_step)) ?
@@ -1692,6 +1799,8 @@ public:
             options.frames = request.frames;
             options.fps = request.fps;
             options.parallel_av = ane_config.parallel_av ? 1 : 0;
+            options.stream_blocks = streamed ? 1 : 0;
+            options.memory_budget_bytes = request.memory_budget_bytes;
             options.preload_ane_stage2 = ane_config.preload_stage2 ? 1 : 0;
             options.release_full_gpu_mlp =
                 ane_config.release_full_gpu_mlp ? 1 : 0;
@@ -1703,6 +1812,9 @@ public:
                 ane_config.fused_mlp_residual ? 1 : 0;
             options.ane_mlp_fused_adaln_pack =
                 ane_config.fused_mlp_adaln_pack ? 1 : 0;
+            options.ane_mlp_first_block = ane_config.mlp_block_start;
+            options.ane_mlp_block_count = ane_config.mlp_block_count;
+            options.ane_mlp_stage_mask = ane_config.mlp_stage_mask;
             options.ane_kv_stage_mask = ane_config.kv_stage_mask;
             options.mlp_directories[0] = ane_config.mlp_stage1.empty() ?
                 nullptr : ane_config.mlp_stage1.c_str();
@@ -1728,6 +1840,10 @@ public:
             event("model_load", 1, 1);
         }
         const auto model_ready = Clock::now();
+        ltx_native_streaming_info streaming_before{};
+        require(ltx_native_get_streaming_info(
+                    denoiser_.get(), &streaming_before),
+                "cannot inspect LTX block streaming state");
 
         size_t stage1_video_count = static_cast<size_t>(workload.stage1_video_tokens) *
             kLtxVideoChannels;
@@ -1816,6 +1932,10 @@ public:
         dump_ltx_bf16(request.dump, "stage2_audio", audio.data(), audio.size());
         checkpoint(cancel);
         const auto stage2_finished = Clock::now();
+        ltx_native_streaming_info streaming_after{};
+        require(ltx_native_get_streaming_info(
+                    denoiser_.get(), &streaming_after),
+                "cannot inspect LTX block streaming result");
         if (component_staged) {
             denoiser_.reset();
             denoiser_key_.clear();
@@ -1998,6 +2118,33 @@ public:
                   @"conditioning_cache_hit": @(conditioning.cache_hit),
                   @"conditioning_mode": @(conditioning_mode.c_str()),
                   @"denoiser_cache_hit": @(denoiser_cache_hit),
+                  @"block_streaming": @{
+                      @"enabled": @(streaming_after.enabled != 0),
+                      @"pinned_blocks": @(streaming_after.pinned_blocks),
+                      @"streamed_blocks": @(streaming_after.streamed_blocks),
+                      @"refill_slots": @(streaming_after.refill_slots),
+                      @"memory_budget_bytes": @(streaming_after.memory_budget_bytes),
+                      @"activation_reserve_bytes": @(
+                          streaming_after.activation_reserve_bytes),
+                      @"block_bytes": @(streaming_after.block_bytes),
+                      @"estimated_working_set_bytes": @(
+                          streaming_after.estimated_working_set_bytes),
+                      @"request_bytes_loaded": @(
+                          streaming_after.bytes_loaded -
+                          streaming_before.bytes_loaded),
+                      @"request_slot_allocations": @(
+                          streaming_after.slot_allocations -
+                          streaming_before.slot_allocations),
+                      @"request_slot_refills": @(
+                          streaming_after.slot_refills -
+                          streaming_before.slot_refills),
+                      @"request_load_seconds": @(
+                          streaming_after.load_seconds -
+                          streaming_before.load_seconds),
+                      @"request_wait_seconds": @(
+                          streaming_after.wait_seconds -
+                          streaming_before.wait_seconds),
+                  },
                   @"timings_seconds": @{
                       @"pre_model_load": @(
                           std::chrono::duration<double>(
@@ -2046,7 +2193,41 @@ public:
                       (used_native_connector ?
                       @"native_gpu_video_only_connector_verified" :
                       @"native_gpu_video_only_conditioning_verified"))) };
-        return native_run_result(value, request, plan);
+        auto run = native_run_result(value, request, plan);
+        if (streaming_after.enabled) {
+            const auto residency = make_block_residency_plan(
+                streaming_after.memory_budget_bytes,
+                streaming_after.activation_reserve_bytes,
+                streaming_after.block_bytes, kLtxTransformerBlockCount,
+                0u, 3u, true, true);
+            require(residency.pinned_blocks == streaming_after.pinned_blocks &&
+                        residency.streamed_blocks ==
+                            streaming_after.streamed_blocks &&
+                        residency.refill_slots == streaming_after.refill_slots &&
+                        residency.estimated_working_set_bytes ==
+                            streaming_after.estimated_working_set_bytes,
+                    "LTX native and framework block residency plans differ");
+            run.block_residency = BlockResidencyMetrics{
+                true,
+                residency.fully_resident,
+                false,
+                residency.active_blocks,
+                residency.pinned_blocks,
+                residency.streamed_blocks,
+                residency.refill_slots,
+                residency.memory_budget_bytes,
+                residency.activation_reserve_bytes,
+                residency.block_bytes,
+                residency.estimated_working_set_bytes,
+                streaming_after.bytes_loaded - streaming_before.bytes_loaded,
+                streaming_after.slot_allocations -
+                    streaming_before.slot_allocations,
+                streaming_after.slot_refills - streaming_before.slot_refills,
+                streaming_after.load_seconds - streaming_before.load_seconds,
+                streaming_after.wait_seconds - streaming_before.wait_seconds,
+            };
+        }
+        return run;
     }
 
 private:
