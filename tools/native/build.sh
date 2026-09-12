@@ -35,12 +35,13 @@ SOURCES=(
  native/platform/apple/request.mm native/platform/apple/profile.mm native/platform/apple/tokenizer.mm
  native/platform/apple/unigram_tokenizer.mm
  native/platform/apple/device.mm native/platform/apple/results.mm
- native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/ltx_session.mm
+ native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/h3_mlx_session.mm native/platform/apple/ltx_session.mm
  native/platform/apple/llada_session.mm
  native/api/c_api.mm
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/lora_identity.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
- native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
+ native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/h3_mlx_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
+ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
  native/models/z_image/gguf.cpp
  native/models/z_image/z_image.cpp
  native/models/llada/llada.cpp native/models/llada/llada_text.cpp
@@ -50,7 +51,10 @@ SOURCES=(
  native/media/image.mm native/media/input.mm native/media/video.mm native/media/audio.mm
 )
 for src in "${SOURCES[@]}"; do
- obj="$OUT/$(basename "${src%.*}").o"
+ # Keep the relative path in the object name.  Multiple model directories
+ # intentionally contain common names such as dit.cpp and pipeline.cpp.
+ relative="${src%.*}"
+ obj="$OUT/${relative//\//_}.o"
  flags=(-x c++)
  if [[ "$src" == *.mm ]]; then flags=(-x objective-c++ -fobjc-arc); fi
  "$CXX" "${COMMON[@]}" "${flags[@]}" -fvisibility=default -c "$src" -o "$obj"
@@ -110,7 +114,21 @@ install -m 0644 "$LTX_ROOT/ltx_shaders.metal" "$OUT/ltx_shaders.metal"
 "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_quantize_stream_cache.c -o "$VIDEO_OUT/h3_quantize_stream_cache.o"
 "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_quantize_stream_cache.o" -L"$OUT" -lturbocider -o "$OUT/h3-quantize-stream-cache" -Wl,-rpath,@executable_path
 "$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_tensor_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-tensor-probe"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_tokenizer_probe.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/h3-mlx-tokenizer-probe"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_conditioner_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-conditioner-probe"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_prompt_cache_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-prompt-cache-probe"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_pipeline_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-pipeline-probe"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_vsa_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-vsa-probe"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_vsa_pipeline_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-vsa-pipeline-probe"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_vsa_e2e_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-vsa-e2e-probe"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_linear_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-linear-probe"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_audio_vae_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-audio-vae-probe"
+"$CXX" "${COMMON[@]}" tools/native/h3_mlx_video_vae_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-video-vae-probe"
 printf 'Built %s\n' "$OUT/turbocider"
+if [[ "${TURBOCIDER_NATIVE_ONLY:-0}" == "1" ]]; then
+ exit 0
+fi
 mkdir -p "$OUT/coreml"
 export TURBOCIDER_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
 tools/native/build_app.sh

@@ -848,6 +848,113 @@ class ContractTests(unittest.TestCase):
         self.assertNotEqual(code,0)
         self.assertIn('allow_approximation=true',error)
 
+    def test_fasth3_mlx_int6_is_explicit_and_does_not_replace_legacy_h3(self):
+        request={
+            'model':'minimax-h3-fasth3-mlx-int6',
+            'operation':'video.generate',
+            'prompt':'A red fox runs through fresh snow.',
+            'output':'/tmp/h3-mlx.mp4',
+            'frames':22,'width':832,'height':480,'fps':24,'steps':4,
+            'audio':True,'execution':'gpu','residency':'component_staged',
+        }
+        code,p,error=plan(request)
+        self.assertEqual(code,0,error)
+        self.assertTrue(p['executable'])
+        self.assertEqual(p['backend'],'mlx_cpp_metal')
+        self.assertEqual(p['gpu_graph'],'fasth3_int6_qmm')
+        self.assertEqual(p['precision'],'int6_g64_bf16_activation')
+        self.assertEqual(p['validation'],'modelscope_int6_parity_candidate')
+        self.assertEqual(p['audio_capability'],'full_h3_audio_vae_32khz_stereo')
+        self.assertEqual([stage['id'] for stage in p['stages']],
+                         ['text_encode','av_denoise','video_decode',
+                          'audio_decode','mux'])
+        self.assertEqual(p['stages'][1]['iterations'],4)
+        for invalid in [
+            {**request,'steps':3},
+            {**request,'fps':25},
+            {**request,'frames':23},
+            {**request,'width':816},
+            {**request,'execution':'gpu_ane'},
+            {**request,'loras':[{'path':'/tmp/h3.safetensors'}]},
+        ]:
+            self.assertNotEqual(plan(invalid)[0],0)
+        legacy={
+            'model':'minimax-h3-turbo','frames':22,'width':512,
+            'height':512,'fps':24,'steps':4,
+        }
+        code,p,error=plan(legacy)
+        self.assertEqual(code,0,error)
+        self.assertEqual(p['backend'],'h3-metal-mps')
+
+    def test_fasth3_mlx_vsa_is_separate_validated_profile(self):
+        request={
+            'model':'minimax-h3-fasth3-mlx-int6-vsa',
+            'operation':'video.generate',
+            'prompt':'A red fox runs through fresh snow.',
+            'output':'/tmp/h3-mlx-vsa.mp4',
+            'frames':22,'width':832,'height':480,'fps':24,'steps':4,
+            'audio':True,'execution':'gpu','residency':'component_staged',
+            'vsa':True,'vsa_sparsity':0.9,'vsa_tile_size':64,
+            'vsa_prefix_mode':'exempt','vsa_dense_first_n_steps':0,
+            'vsa_dense_layers':[],'vsa_impl':'reference',
+        }
+        code,p,error=plan(request)
+        self.assertEqual(code,0,error)
+        self.assertTrue(p['executable'])
+        self.assertEqual(p['backend'],'mlx_cpp_metal')
+        self.assertEqual(p['gpu_graph'],'fasth3_int6_vsa')
+        self.assertEqual(p['precision'],'int6_g64_bf16_activation')
+        self.assertEqual(p['validation'],'modelscope_int6_parity_candidate')
+        self.assertEqual([stage['id'] for stage in p['stages']],
+                         ['text_encode','av_denoise','video_decode',
+                          'audio_decode','mux'])
+        self.assertEqual(p['stages'][1]['iterations'],4)
+        for change in [
+            {'vsa':False},
+            {'vsa_sparsity':-0.01},
+            {'vsa_sparsity':1.0},
+            {'vsa_tile_size':128},
+            {'vsa_prefix_mode':'dense'},
+            {'vsa_dense_first_n_steps':5},
+            {'vsa_dense_layers':[50]},
+            {'vsa_dense_layers':[3,3]},
+            {'vsa_impl':'metal'},
+        ]:
+            with self.subTest(change=change):
+                self.assertNotEqual(plan({**request,**change})[0],0)
+
+        dense={**request,'model':'minimax-h3-fasth3-mlx-int6',
+               'output':'/tmp/h3-mlx-dense.mp4'}
+        self.assertNotEqual(plan(dense)[0],0)
+        dense_defaults={
+            'model':'minimax-h3-fasth3-mlx-int6',
+            'operation':'video.generate','prompt':request['prompt'],
+            'output':'/tmp/h3-mlx-dense.mp4','frames':22,
+            'width':832,'height':480,'fps':24,'steps':4,
+            'audio':True,'execution':'gpu','residency':'component_staged',
+        }
+        self.assertEqual(plan(dense_defaults)[0],0)
+
+        schema2={
+            'schema_version':2,
+            'model':'minimax-h3-fasth3-mlx-int6-vsa',
+            'operation':'video.generate',
+            'inputs':[{'kind':'text','role':'prompt','text':request['prompt']}],
+            'outputs':[{'kind':'video','path':'/tmp/h3-mlx-vsa.mp4',
+                        'width':832,'height':480,'frames':22,
+                        'fps':24,'audio':True}],
+            'sampling':{'seed':2026,'steps':4},
+            'execution':{'policy':'gpu','residency':'component_staged'},
+            'parameters':{
+                'vsa':True,'vsa_sparsity':0.9,'vsa_tile_size':256,
+                'vsa_prefix_mode':'compete','vsa_dense_first_n_steps':1,
+                'vsa_dense_layers':[3,7],'vsa_impl':'auto',
+            },
+        }
+        code,p,error=plan(schema2)
+        self.assertEqual(code,0,error)
+        self.assertEqual(p['gpu_graph'],'fasth3_int6_vsa')
+
     def test_h3_streaming_budget_drives_fail_closed_pinned_prefix(self):
         request={'model':'minimax-h3-turbo','frames':22,'width':512,
                  'height':512,'steps':4,'residency':'streamed',

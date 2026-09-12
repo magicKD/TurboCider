@@ -1,6 +1,8 @@
 #include "bridge.hpp"
 namespace tc {
 static NSString *gpu_graph_label(const Request &r) {
+    if (r.model.starts_with("minimax-h3-fasth3-mlx-int6"))
+        return r.model.ends_with("-vsa") ? @"fasth3_int6_vsa" : @"fasth3_int6_qmm";
     if (r.model == "wan2.1-1.3b-qad")
         return r.execution == "gpu_ane" ? @"compiled_mlp_complement" :
             (r.compile_gpu ? @"compiled_whole_dit" : @"eager_blocks");
@@ -19,6 +21,9 @@ static NSString *gpu_graph_label(const Request &r) {
                                        : @"compiled_single_blocks";
 }
 static NSString *gpu_graph_label(const RunResult &result) {
+    if (result.backend == "mlx_cpp_metal" &&
+        result.request.model.starts_with("minimax-h3-fasth3-mlx-int6"))
+        return result.request.model.ends_with("-vsa") ? @"fasth3_int6_vsa" : @"fasth3_int6_qmm";
     if (result.backend == "mlx_cpp_metal_gguf+coreml")
         return @"compiled_mlp_complement";
     if (result.backend == "mlx_cpp_metal_gguf")
@@ -93,6 +98,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                       r.model == "wan2.1-1.3b-qad" ? @"manifest_verified_native" :
                       r.model == "ltx-2.5-distilled" ?
                           (recipe.executable ? @"native_video_executor" : @"native_capability_gated") :
+                      r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"modelscope_int6_parity_candidate" :
                       r.model == "z-image-turbo" ? @"native_candidate" :
                       r.model == "llada-image-turbo" ? @"native_llada_candidate" :
                       @"weights_pending";
@@ -105,6 +111,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             (r.loras.empty() ? @"checkpoint-and-ane-identity-verified-at-load" : @"premerged-manifest-verified-at-execution") :
         r.model == "ltx-2.5-distilled" ?
             (r.loras.empty() ? @"checkpoint-validated-at-load" : @"premerged-sidecar-verified-at-execution") :
+        r.model.starts_with("minimax-h3-fasth3-mlx-int6") ?
+            @"ModelScope FastH3 manifest and component checks at execution" :
         r.model == "z-image-turbo" ?
             (r.loras.empty() ? @"comfy-oracle-validated; m4max-a4096-hybrid-qualified" :
                                @"in-memory-lora; comfy-oracle-validated") :
@@ -124,6 +132,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
          r.model == "z-image-turbo-gguf" ? @"mlx_cpp_metal_gguf+coreml" : @"mlx_cpp_metal+coreml") :
         r.model == "z-image-turbo-gguf" ?
             @"mlx_cpp_metal_gguf" :
+        r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"mlx_cpp_metal" :
         r.model == "minimax-h3-turbo" ? @"h3-metal-mps" :
         r.model == "ltx-2.5-distilled" ? @"ltx-metal-mps" :
         r.model == "wan2.1-1.3b-qad" ? @"wan-mlx" :
@@ -151,7 +160,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"backend" : backend,
         @"execution" : hybrid ? @"gpu_ane_experimental" : @"gpu",
         @"gpu_graph" : gpu_graph_label(r),
-        @"precision" : r.model == "wan2.1-1.3b-qad" ? @"fp16-int8-affine-dit+bf16-umt5+fp32-taehv" :
+        @"precision" : r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"int6_g64_bf16_activation" :
+                      r.model == "wan2.1-1.3b-qad" ? @"fp16-int8-affine-dit+bf16-umt5+fp32-taehv" :
                       r.model == "z-image-turbo-gguf" ? @"checkpoint_defined_gguf" :
             (!r.quantized_cache.empty() ? @"int8_weight_bf16_activation_streamed" :
              (hybrid ? @"bf16_gpu+int8_mlp_fp16_io" : @"bf16")),
@@ -189,9 +199,12 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"lora_strategy" : @(lora_strategy.c_str()),
         @"lora_fusion" : lora_fusion,
         @"audio" : @(r.audio),
-        @"audio_capability" : r.model == "ltx-2.5-distilled" ?
-            (r.audio ? @"latent_to_48khz_aac_candidate" : @"video_only_native") : @"not_applicable",
-        @"executor_operations" : r.model == "ltx-2.5-distilled" ? @[ @"video.generate" ] :
+        @"audio_capability" : r.model.starts_with("minimax-h3-fasth3-mlx-int6") ?
+            (r.audio ? @"full_h3_audio_vae_32khz_stereo" : @"video_only_native") :
+            (r.model == "ltx-2.5-distilled" ?
+             (r.audio ? @"latent_to_48khz_aac_candidate" : @"video_only_native") : @"not_applicable"),
+        @"executor_operations" : r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @[ @"video.generate" ] :
+            r.model == "ltx-2.5-distilled" ? @[ @"video.generate" ] :
             (r.model == "wan2.1-1.3b-qad" ? @[ @"video.generate" ] : [NSNull null]),
         @"limitation" : recipe.executable
             ? @"capabilities depend on model artifacts and configured hardware"

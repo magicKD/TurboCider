@@ -47,6 +47,8 @@
 4. [H3/LTX 迁移与验收](video-model-acceptance.md)：源文件迁移归属、无模型静态检查、权重到位后的数学和媒体退出条件。
 5. [原生代码使用说明](../USAGE.md)：构建、打包、CLI/SDK 与离线验收复现命令。
 
+H3 在 Apple Silicon 上迁移到 FastH3 C++/MLX、固定四步 affine INT6/g64，并对齐 FastVideo 性能/质量的具体实施合同见 [H3 C++/MLX INT6 加速方案与验收计划](h3-mlx-int6-fastvideo-parity-plan.md)。该文档包含当前原型边界、分阶段工作包、checkpoint/量化合同、同条件 ABBA benchmark 和发布门禁；在真实模型验收完成前不代表已交付能力。
+
 [架构图](native-engine-architecture.svg) 表达最终方向，并非每个方框都已经实现。当前 FLUX、H3、FastMetal 和 LTX video-only 已有执行入口；LTX I2V/音频、完整 GPU+ANE 门禁、通用执行器与自有 allocator 仍待完成。
 
 `validation/` 存放小型 JSON 证据和依赖身份。原始大张量、图像及过程日志保留在本机 `outputs/native-validation/`，不提交模型或大文件。

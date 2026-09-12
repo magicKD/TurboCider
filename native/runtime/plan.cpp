@@ -120,7 +120,8 @@ ExecutionPlan make_plan(const Request &requested) {
         else
             plan.memory_estimate_bytes = (36ull << 30) + geometry;
     }
-    else if (r.model == "minimax-h3-turbo")
+    else if (r.model == "minimax-h3-turbo" ||
+             r.model.starts_with("minimax-h3-fasth3-mlx-int6"))
         plan.memory_estimate_bytes = (32ull << 30) +
             uint64_t(r.width) * r.height * r.frames * 64;
     else if (r.model == "wan2.1-1.3b-qad")
