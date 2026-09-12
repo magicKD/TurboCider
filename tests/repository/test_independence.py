@@ -60,6 +60,24 @@ class IndependenceTests(unittest.TestCase):
         self.assertIn('create_llada_image_native',llada)
         package=(ROOT/'tools/native/package.sh').read_text()
         self.assertNotIn('llada_worker.py',package)
+    def test_shipping_paths_are_repository_and_system_relative(self):
+        forbidden = ['/Users/', '/home/', '/private/tmp',
+                     '../references', 'references/vpipe']
+        files = [ROOT/'tools/native/build.sh', ROOT/'tools/native/package.sh']
+        for folder in ['apps', 'native', 'services', 'bindings']:
+            files.extend(path for path in (ROOT/folder).rglob('*')
+                         if path.suffix in ['.swift', '.cpp', '.mm', '.hpp',
+                                            '.h', '.c', '.m'])
+        for path in files:
+            source = path.read_text()
+            for token in forbidden:
+                self.assertNotIn(token, source, str(path))
+        for path in [
+            'tools/native/benchmark_h3_vpipe_dit.py',
+            'tools/native/build_vpipe_h3_probe.sh',
+            'tools/native/vpipe_h3_dit_probe.cpp',
+        ]:
+            self.assertFalse((ROOT/path).exists(), path)
     def test_managed_build_and_export(self):
         self.assertIn('dependencies.sh',(ROOT/'tools/native/build.sh').read_text())
         self.assertIn('dependencies.sh',(ROOT/'tools/native/package.sh').read_text())

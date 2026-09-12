@@ -22,6 +22,16 @@ struct Request {
     std::string profile_identity;
     std::string model_variant = "auto";
     std::string lora_strategy = "auto";
+    bool vsa = false;
+    // Preserve the JSON decimal through top-k computation. A float-rounded
+    // 0.9 retains 29 of 280 tiles after ceil(), while FastVideo's double
+    // parameter correctly retains 28.
+    double vsa_sparsity = 0.9;
+    int vsa_tile_size = 64;
+    std::string vsa_prefix_mode = "exempt";
+    int vsa_dense_first_n_steps = 0;
+    std::vector<int> vsa_dense_layers;
+    std::string vsa_impl = "auto";
     uint64_t memory_budget_bytes = 0, allocator_cache_bytes = 512ull << 20;
     int warmup_iterations = 0;
     std::vector<InputAsset> inputs;

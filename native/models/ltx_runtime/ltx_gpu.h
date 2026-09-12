@@ -35,6 +35,7 @@ ltx_gpu_buffer *ltx_gpu_buffer_new_copy(ltx_gpu *gpu, const void *data,
                                         char *error, size_t error_size);
 void ltx_gpu_buffer_free(ltx_gpu_buffer *buffer);
 size_t ltx_gpu_buffer_bytes(const ltx_gpu_buffer *buffer);
+void *ltx_gpu_buffer_contents(ltx_gpu_buffer *buffer);
 int ltx_gpu_buffer_write(ltx_gpu_buffer *buffer, const void *data,
                          size_t bytes, char *error, size_t error_size);
 int ltx_gpu_buffer_read(const ltx_gpu_buffer *buffer, void *data,

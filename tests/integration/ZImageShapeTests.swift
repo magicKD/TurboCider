@@ -14,10 +14,8 @@ import Foundation
         let long = short + String(repeating: " snow", count: 491)
         try check(try NativeEngine.zImageTokenCount(modelPath: model, prompt: short) == 21, "Short count mismatch")
         try check(try NativeEngine.zImageTokenCount(modelPath: model, prompt: long) == 512, "512-token boundary mismatch")
-        do {
-            _ = try NativeEngine.zImageTokenCount(modelPath: model, prompt: long + " snow")
-            throw NativeFailure(message: "513 tokens silently accepted")
-        } catch { try check(error.localizedDescription.contains("512 tokens"), "Wrong overlength error") }
+        try check(try NativeEngine.zImageTokenCount(modelPath: model, prompt: long + " snow") == 513, "Extended prompt count mismatch")
+        try check(try NativeEngine.zImageTokenCount(modelPath: model, prompt: long + String(repeating: " snow", count: 513)) == 1025, "Overlimit UI count must remain available")
         let flexible = try manifest("enumerated"), fixed = try manifest("fixed")
         let oldData = try Data(contentsOf: root.deletingLastPathComponent().appendingPathComponent("z-image-m4pro-512-20260907/ane-a8192-b1056.compile.json"))
         let old = (try JSONSerialization.jsonObject(with: oldData) as! [String: Any])["manifest"] as! String
@@ -40,6 +38,6 @@ import Foundation
             _ = try await store.resolveAcceleration(draft)
             throw NativeFailure(message: "Old 32-token cache accepted a 512-token prompt")
         } catch { try check(error.localizedDescription.contains("1536"), "Capacity error does not explain required rows") }
-        print("PASS: exact token count, 512/513 boundary, variable cache routing, legacy capacity rejection, no recompilation")
+        print("PASS: exact token count, extended and overlimit counting, variable cache routing, legacy capacity rejection, no recompilation")
     }
 }

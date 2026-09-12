@@ -1,0 +1,50 @@
+{
+  "format": "turbocider-h3-ltx-shared-block-residency-v1",
+  "date": "2026-09-09",
+  "scope": "typed C++ runtime policy shared by H3 and LTX C denoisers",
+  "implementation": {
+    "policy_header": "native/runtime/block_residency.h",
+    "policy_source": "native/runtime/block_residency.c",
+    "cpp_view": "native/runtime/residency.hpp::BlockResidencyPlan",
+    "h3_adapter": "native/models/h3_runtime/h3_streaming_policy.c",
+    "ltx_consumer": "native/models/ltx_runtime/ltx_blocks.c",
+    "session_cross_check": [
+      "native/platform/apple/h3_session.mm",
+      "native/platform/apple/ltx_session.mm"
+    ]
+  },
+  "policy_contract": {
+    "h3": {
+      "active_blocks": 50,
+      "refill_slots": 2,
+      "adaptive_refill_slots": false,
+      "allow_full_resident": false,
+      "budget_zero_preserves_two_slot_streaming": true
+    },
+    "ltx": {
+      "active_blocks": 48,
+      "maximum_refill_slots": 3,
+      "adaptive_refill_slots": true,
+      "allow_full_resident": true,
+      "capacity_2_slots": 1,
+      "capacity_3_slots": 2,
+      "capacity_4_or_more_slots": 3,
+      "capacity_48_or_more": "fully_resident"
+    }
+  },
+  "verification": {
+    "focused_tests": "68 passed, 1 skipped, 45 subtests passed",
+    "cpu_cpp_boundary_test": "passed",
+    "h3_policy_capacity_sweep": "passed",
+    "contract_streaming_tests": "passed",
+    "apple_native_build": "passed",
+    "metal_benchmark": "not part of this policy-only record",
+    "metal_benchmark_reason": "see the dated host validation record"
+  },
+  "non_goals": [
+    "does not replace H3 or LTX Metal kernels",
+    "does not make memory_budget_bytes a process RSS hard cap",
+    "does not enable LTX GPU+ANE or change existing quality gates",
+    "does not claim end-to-end speedup without a workload-matched host run"
+  ]
+}

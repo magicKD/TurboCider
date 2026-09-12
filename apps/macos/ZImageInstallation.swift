@@ -4,7 +4,9 @@ import Foundation
 struct ZImageInstallation {
     static func splitDirectory(_ model: URL) -> URL? {
         [model.appendingPathComponent("split_files"), model.appendingPathComponent("models"), model]
-            .first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("diffusion_models/z_image_turbo_bf16.safetensors").path)
+            .first { (FileManager.default.fileExists(atPath: $0.appendingPathComponent("diffusion_models/z_image_turbo_bf16.safetensors").path)
+                || FileManager.default.fileExists(atPath: $0.appendingPathComponent("diffusion_models/z_image_turbo_int8_convrot.safetensors").path)
+                || FileManager.default.fileExists(atPath: $0.appendingPathComponent("diffusion_models/z_image_turbo_nvfp4.safetensors").path))
                 && FileManager.default.fileExists(atPath: $0.appendingPathComponent("vae/ae.safetensors").path) }
     }
     static func hasSharedText(_ model: URL) -> Bool {
@@ -24,6 +26,11 @@ struct ZImageInstallation {
                 throw NativeFailure(message: "请选择完整的 Z-Image 模型目录，包含 diffusion_models/vae 或 transformer/vae。")
             }
             return model
+        }
+        let weights = split.appendingPathComponent("diffusion_models")
+        let candidates = ["z_image_turbo_bf16.safetensors", "z_image_turbo_int8_convrot.safetensors", "z_image_turbo_nvfp4.safetensors"]
+        guard candidates.contains(where: { FileManager.default.isReadableFile(atPath: weights.appendingPathComponent($0).path) }) else {
+            throw NativeFailure(message: "Z-Image 权重无法读取，请检查原始模型目录、文件权限及符号链接目标：\(weights.path)")
         }
         let text = sharedText ?? model
         if sharedText != nil || needsSharedText(model) {

@@ -270,14 +270,17 @@ int ltx_linear_weight_resolve(const ltx_st_header *header,
         return ltx_weights_fail(error, error_size,
                                 "invalid Comfy quant metadata for %s", prefix);
 
-    size_t metadata_bytes = 0;
-    const void *metadata = ltx_st_map_tensor(mapping, info->quant_metadata,
-                                             &metadata_bytes, error,
-                                             error_size);
-    if (!metadata || !metadata_bytes || metadata_bytes > 4096u)
+    uint64_t metadata_bytes64 = info->quant_metadata->data_end -
+        info->quant_metadata->data_begin;
+    if (!metadata_bytes64 || metadata_bytes64 > 4096u)
         return ltx_weights_fail(error, error_size,
                                 "invalid Comfy quant metadata payload for %s",
                                 prefix);
+    size_t metadata_bytes = (size_t)metadata_bytes64;
+    unsigned char metadata[4096];
+    if (!ltx_st_read_mapped_data(
+            mapping, info->quant_metadata, metadata, metadata_bytes,
+            error, error_size)) return 0;
     @autoreleasepool {
         NSData *data = [NSData dataWithBytes:metadata length:metadata_bytes];
         NSError *json_error = nil;

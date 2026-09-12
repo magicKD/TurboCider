@@ -511,6 +511,12 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
     // The compiled graph accepts ordinary dense matrices only; mixed
     // dense/quantized blocks stay on linear_compat below.
     const bool fully_dense =
+        !w.nvfp4(prefix + ".adaLN_modulation.0") &&
+        !w.nvfp4(prefix + ".attention.qkv") &&
+        !w.nvfp4(prefix + ".attention.out") &&
+        !w.nvfp4(prefix + ".feed_forward.w1") &&
+        !w.nvfp4(prefix + ".feed_forward.w2") &&
+        !w.nvfp4(prefix + ".feed_forward.w3") &&
         !w.quantized(prefix + ".adaLN_modulation.0") &&
         !w.convrot(prefix + ".adaLN_modulation.0") &&
         !w.quantized(prefix + ".attention.qkv") &&
@@ -833,11 +839,18 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
     auto comfy_text = root / "split_files/text_encoders/qwen_3_4b.safetensors";
     auto comfy_transformer =
         root / "split_files/diffusion_models/z_image_turbo_bf16.safetensors";
+    if (!std::filesystem::is_regular_file(comfy_transformer)) {
+        auto int8 = root / "split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors";
+        if (std::filesystem::is_regular_file(int8)) comfy_transformer = int8;
+        else comfy_transformer = root / "split_files/diffusion_models/z_image_turbo_nvfp4.safetensors";
+    }
     if (const char *override_path = std::getenv("TURBOCIDER_Z_IMAGE_TRANSFORMER");
         override_path && *override_path)
         comfy_transformer = std::filesystem::canonical(override_path);
     convrot_transformer_ = comfy_transformer.filename().string().find("convrot") !=
                            std::string::npos;
+    nvfp4_transformer_ = std::filesystem::is_regular_file(comfy_transformer) &&
+                         comfy_transformer.filename().string().find("nvfp4") != std::string::npos;
     auto comfy_vae = root / "split_files/vae/ae.safetensors";
     if (!transformer_checkpoint.empty()) {
         require(std::filesystem::is_regular_file(transformer_checkpoint) &&
@@ -846,6 +859,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
         transformer_path_ = std::filesystem::canonical(transformer_checkpoint);
         transformer_checkpoint_ = transformer_path_;
         gguf_transformer_ = true;
+        nvfp4_transformer_ = false;
         if (std::filesystem::is_regular_file(comfy_text) &&
             std::filesystem::is_regular_file(comfy_vae)) {
             text_path_ = std::move(comfy_text);
@@ -863,8 +877,8 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
         std::filesystem::is_regular_file(comfy_vae)) {
         // Comfy checkpoints may share a sharded Qwen3 encoder through the
         // App's text_encoder/ directory binding instead of a single file.
-        text_path_ = std::filesystem::is_regular_file(comfy_text)
-                         ? comfy_text : root / "text_encoder";
+        text_path_ = has_safetensors(root / "text_encoder")
+                         ? root / "text_encoder" : comfy_text;
         require(std::filesystem::is_regular_file(text_path_) || has_safetensors(text_path_),
                 "missing Z-Image Qwen3 weights; select a shared text model in the App");
         transformer_path_ = std::move(comfy_transformer);
@@ -937,6 +951,11 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
         if (diffusers_layout_)
             normalize_z_diffusers_transformer(transformer_);
         convrot_transformer_ = transformer_.convrot("layers.0.attention.qkv");
+        nvfp4_transformer_ = transformer_.nvfp4("layers.0.attention.qkv");
+        if (nvfp4_transformer_) {
+            require(active_loras_.empty() && !hybrid_, "NVFP4 currently supports GPU without LoRA/ANE only");
+            transformer_.pack_comfy_nvfp4();
+        }
         if (convrot_transformer_)
             transformer_.cast_unquantized_float32(mx::bfloat16);
         event("load_z_image_transformer", 1, 1);
@@ -1003,6 +1022,12 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
 
 std::string ZImage::select_acceleration(Request &r, int rows, const Event &event,
                                         std::atomic<bool> &cancelled) {
+    if (nvfp4_transformer_) {
+        require(active_loras_.empty() && r.execution != "gpu_ane", "NVFP4 currently supports GPU without LoRA/ANE only");
+        r.execution = "gpu";
+        hybrid_.reset();
+        return "gpu: Comfy NVFP4 weights via MLX W4A16; no activation quantization";
+    }
     const bool automatic = r.execution == "auto";
     const AccelerationCase *matched = nullptr;
     if (automatic) {
@@ -1107,7 +1132,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const int caption_rows = (cached_conditioning_->shape(0) + 31) / 32 * 32;
     auto selection = select_acceleration(r, image_rows + caption_rows, event, cancelled);
     event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
-    r.compile_gpu = r.execution == "gpu" && !gguf_transformer_ && !convrot_transformer_ &&
+    r.compile_gpu = r.execution == "gpu" && !gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ &&
                     active_lora_strategy_ != "inference_time" &&
                     !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
     if (plan.request.execution != r.execution || plan.request.compile_gpu != r.compile_gpu)
@@ -1128,6 +1153,10 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         if (gguf_transformer_) {
             result.backend = hybrid_ ? "mlx_cpp_metal_gguf+coreml" : "mlx_cpp_metal_gguf";
             result.precision = "gguf_native:" + r.model_variant;
+            result.checkpoint = transformer_checkpoint_.filename().string();
+        } else if (nvfp4_transformer_) {
+            result.backend = "mlx_cpp_metal_nvfp4_w4a16";
+            result.precision = "nvfp4_weights_bf16_activations";
             result.checkpoint = transformer_checkpoint_.filename().string();
         } else if (convrot_transformer_) {
             result.backend = "mlx_cpp_metal_convrot_packed_q8";
@@ -1199,6 +1228,10 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     if (gguf_transformer_) {
         result.backend = hybrid_ ? "mlx_cpp_metal_gguf+coreml" : "mlx_cpp_metal_gguf";
         result.precision = "gguf_native:" + r.model_variant;
+        result.checkpoint = transformer_checkpoint_.filename().string();
+    } else if (nvfp4_transformer_) {
+        result.backend = "mlx_cpp_metal_nvfp4_w4a16";
+        result.precision = "nvfp4_weights_bf16_activations";
         result.checkpoint = transformer_checkpoint_.filename().string();
     } else if (convrot_transformer_) {
         result.backend = "mlx_cpp_metal_convrot_packed_q8";

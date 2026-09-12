@@ -111,12 +111,13 @@ struct StudioDraft: Codable, Sendable {
     var loraStrategy = "auto"
     var assets: [StudioAsset] = []
     var loras: [StudioLoRA] = []
+    var modelLoRAs: [String: [StudioLoRA]] = [:]
     var initImageID: UUID?
     init() {}
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio
         case seedText, randomSeed, strength, dynamicText, residency, profilePath, acceleration
-        case assets, loras, initImageID, loraStrategy
+        case assets, loras, initImageID, loraStrategy, modelLoRAs
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -141,6 +142,7 @@ struct StudioDraft: Codable, Sendable {
         loraStrategy = try c.decodeIfPresent(String.self, forKey: .loraStrategy) ?? loraStrategy
         assets = try c.decodeIfPresent([StudioAsset].self, forKey: .assets) ?? assets
         loras = try c.decodeIfPresent([StudioLoRA].self, forKey: .loras) ?? loras
+        modelLoRAs = try c.decodeIfPresent([String: [StudioLoRA]].self, forKey: .modelLoRAs) ?? [:]
         initImageID = try c.decodeIfPresent(UUID.self, forKey: .initImageID)
     }
     var activeLoRAs: [StudioLoRA] { loras.filter(\.enabled) }
@@ -402,7 +404,7 @@ final class StudioState: ObservableObject {
     }
     func installZImage(model: URL, sharedText: URL?) throws {
         let installed = try ZImageInstallation.install(model: model, sharedText: sharedText,
-            directory: file.deletingLastPathComponent().appendingPathComponent("models"))
+            directory: LibraryStore.defaultRoot.appendingPathComponent("bindings"))
         selectModel("z-image-turbo")
         draft.modelPaths["z-image-turbo"] = installed.path
         save()
@@ -484,13 +486,14 @@ final class StudioState: ObservableObject {
             draft.initImageID = initImageID
             switchedModel = candidate
         }
-        message = switchedModel.map { "已切换至 \($0.name)，模型参数、LoRA 与加速配置已重置。" + (draft.modelPath.isEmpty ? "请在模型中心配置模型文件。" : "请核对生成参数。") }
+        message = switchedModel.map { "已切换至 \($0.name)，模型参数与加速配置已重置，已恢复该模型的 LoRA 选择。" + (draft.modelPath.isEmpty ? "请在模型中心配置模型文件。" : "请核对生成参数。") }
         draft.operation = operation
         if draft.initImageID == nil { draft.initImageID = draft.assets.first?.id }
     }
     func selectModel(_ id: String) {
         guard let model = models.first(where: { $0.id == id }), model.executor else { return }
         message = nil
+        draft.modelLoRAs[draft.modelID] = draft.loras
         draft.modelID = id
         draft.operation = (model.executor_operations ?? model.operations).first ??
             (model.isVideo ? "video.generate" : "image.generate")
@@ -502,7 +505,7 @@ final class StudioState: ObservableObject {
         draft.residency = model.default_residency ?? "resident"
         draft.profilePath = ""
         draft.acceleration = StudioAcceleration(policy: "gpu")
-        draft.loras = []
+        draft.loras = draft.modelLoRAs[id] ?? []
         draft.loraStrategy = "auto"
         if !model.operations.contains(where: { $0 != "image.generate" && $0 != "video.generate" }) {
             draft.assets.removeAll(); draft.initImageID = nil

@@ -1,0 +1,54 @@
+{
+  "schema": "turbocider-lora-identity-runtime-cache-v1",
+  "date": "2026-09-10",
+  "scope": {
+    "models": ["minimax-h3-turbo", "ltx-2.5-distilled"],
+    "production_strategy": "disk_premerge",
+    "runtime_lora": false,
+    "ane_lora": "fail_closed"
+  },
+  "identity_contract": {
+    "verified_lora_fields": [
+      "canonical_path",
+      "bytes",
+      "sha256",
+      "role",
+      "strength_bits",
+      "algorithm"
+    ],
+    "h3_context_cache": [
+      "selected_component",
+      "provenance_manifest_sha256",
+      "verified_lora_identity"
+    ],
+    "ltx_checkpoint_cache": [
+      "selected_checkpoint_sha256",
+      "verified_lora_identity"
+    ],
+    "ltx_runtime_cache_algorithm": "turbocider-ltx-refiner-bake-v3",
+    "strength_domain": "finite and in (0, 4]"
+  },
+  "ltx_cache_packaging": {
+    "artifact_filename": "ltx-2.5-22b-runtime-refiner-comfy-int8-convrot.safetensors",
+    "manifest_filename": "ltx-2.5-22b-runtime-refiner-comfy-int8-convrot.safetensors.manifest.json",
+    "base_and_adapter": "same-directory symlinks to the verified source files",
+    "native_validation": "manifest output.filename is resolved as a plain filename relative to the cache entry",
+    "neutral_filename_compatibility": "passed"
+  },
+  "validation": {
+    "python_tests": "focused native/contract/prepare_lora suite passed after rebuild",
+    "native_preflight": "accepted the neutral runtime-cache artifact filename and matched output SHA-256",
+    "cache_fixture": "forwarded explicit LTX strength and refiner role; artifact and sidecar manifest names matched the packaged layout"
+  },
+  "runtime_lora_measurement": {
+    "decision": "not enabled",
+    "basis": "rank-450 inference-time branches add approximately 8.1 ms per block/stage 1 and 20.7 ms per block/stage 2 for three representative video projections",
+    "estimated_schedule_penalty": "approximately 6 seconds over the measured 48-block 8+3 schedule before counting the remaining adapter projections",
+    "safe_future_direction": "per-block load-time delta application or precomputed adapter-bound artifacts"
+  },
+  "conclusion": {
+    "cache_identity": "strength- and provenance-bound",
+    "filename_policy": "neutral cache artifact name is safe because the manifest is authoritative and native validation accepts any safe plain filename",
+    "shipping_status": "H3/LTX remain fail-closed to verified offline-premerged GPU paths; no inference-time LoRA or ANE LoRA enablement"
+  }
+}

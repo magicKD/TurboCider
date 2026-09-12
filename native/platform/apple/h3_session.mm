@@ -1,4 +1,7 @@
 #include "bridge.hpp"
+#include "platform.hpp"
+#include "../../runtime/lora_identity.hpp"
+#include "../../runtime/residency.hpp"
 #include "../../models/h3_runtime/h3.h"
 #include "../../models/h3_runtime/h3_runtime_config.h"
 #include <CommonCrypto/CommonDigest.h>
@@ -94,7 +97,9 @@ public:
                     "H3 LoRA requires an offline-premerged model with a provenance manifest; "
                     "the app does not perform disk fusion");
         }
-        auto manifest=read_json(active_root/component/"transformer/h3-turbo-merge-manifest.json");
+        const auto manifest_path = active_root / component /
+            "transformer/h3-turbo-merge-manifest.json";
+        auto manifest=read_json(manifest_path);
         require([manifest[@"schema"] isEqual:@"h3-turbo-merge-manifest-v2"],"H3 Turbo requires a merge provenance manifest");
         NSDictionary *identity=manifest[@"identity"];
         NSDictionary *mapping=manifest[@"mapping"],*source=manifest[@"source"],*shards=manifest[@"shards"];
@@ -107,6 +112,7 @@ public:
         bool v01=(variant.empty()||variant=="v0.1-544p")&&revision=="050494d5fe05bd1b1140b8565ea51dc33a5085a5"&&source_revision==revision&&lora_sha=="5ff4a12c8b4599fec716e1b15a45e504e0d1129111896bdcde5ac4a15e395b29"&&[identity[@"lora_bytes"] unsignedLongLongValue]==1383677888ULL&&std::abs(strength-0.0625)<=1e-12&&(!identity[@"video_flow_shift"]||std::abs([identity[@"video_flow_shift"] doubleValue]-12.0)<=1e-12)&&(!identity[@"audio_flow_shift"]||std::abs([identity[@"audio_flow_shift"] doubleValue]-3.0)<=1e-12)&&(artifact.empty()||artifact=="v0.1-544p");
         bool v11=variant=="v1.1-768p"&&revision=="2f8ea0dc0a7e2b26c9a43124eb89673787189b4e"&&source_revision==revision&&lora_sha=="b5e25a59292d51bca3fc02b9a0b2284e11b4eb20921a9c5adc2db785956b8966"&&[identity[@"lora_bytes"] unsignedLongLongValue]==1383677808ULL&&std::abs(strength-1.0)<=1e-12&&std::abs([identity[@"video_flow_shift"] doubleValue]-6.0)<=1e-12&&std::abs([identity[@"audio_flow_shift"] doubleValue]-3.0)<=1e-12&&artifact=="v1.1-768p";
         require(v01||v11,"unsupported or untrusted H3 Turbo checkpoint variant");
+        std::optional<VerifiedLoRAIdentity> requested_lora_identity;
         if(!r.loras.empty()) {
             const auto& requested=r.loras.front();
             auto lora_path=std::filesystem::path(requested.path);
@@ -136,9 +142,25 @@ public:
                     "H3 requested LoRA SHA-256 does not match the merge manifest");
             require(std::abs(requested.strength-float(strength))<=1e-6f,
                     "H3 requested LoRA strength does not match the merged checkpoint");
+            requested_lora_identity = make_verified_lora_identity(
+                requested, absolute_path, lora_bytes,
+                verified_lora_sha256_);
         }
         double video_shift=v11?6.0:12.0;
-        const auto context_identity = active_root.string() + ":installed";
+        // h3_load_dir owns a process-local prepared-DiT cache.  The model
+        // root is intentionally stable across requests, so a root-only key
+        // could retain FL2VA/Ref2VA or a newly replaced premerged LoRA
+        // artifact after the sidecar changed.  Include the selected component
+        // and the tiny provenance manifest digest; the native h3 resident key
+        // separately includes the actual transformer index contents.
+        const auto manifest_sha256 = sha256_file(manifest_path);
+        require(!manifest_sha256.empty(),
+                "cannot hash H3 checkpoint provenance manifest");
+        auto context_identity = active_root.string() + ":" + component +
+            ":manifest_sha256=" + manifest_sha256;
+        if (requested_lora_identity)
+            context_identity += ":" + requested_lora_identity->cache_key(
+                "h3-premerged-manifest-v1");
         if(!context_ || loaded_context_identity_ != context_identity) {
             context_.reset();
             event("model_load",0,1);
@@ -228,9 +250,44 @@ public:
                   @"validation": @"native_executor_manifest_verified",
                   @"lora_fusion": r.loras.empty() ? @"none" :
                       @"sidecar_manifest_verified" };
-        return native_run_result(value, r, plan);
+        auto run = native_run_result(value, r, plan);
+        if (result->ssd_streaming) {
+            const unsigned active_blocks = static_cast<unsigned>(
+                result->ssd_pinned_blocks + result->ssd_streamed_blocks);
+            const auto residency = make_block_residency_plan(
+                result->ssd_memory_budget_bytes,
+                result->ssd_activation_reserve_bytes,
+                result->ssd_block_bytes, active_blocks, 0u, 2u, false, false);
+            require(residency.pinned_blocks ==
+                        static_cast<unsigned>(result->ssd_pinned_blocks) &&
+                    residency.streamed_blocks ==
+                        static_cast<unsigned>(result->ssd_streamed_blocks),
+                    "H3 native and framework block residency plans differ");
+            run.block_residency = BlockResidencyMetrics{
+                true,
+                false,
+                result->ssd_quantized != 0,
+                active_blocks,
+                residency.pinned_blocks,
+                residency.streamed_blocks,
+                residency.refill_slots,
+                residency.memory_budget_bytes,
+                residency.activation_reserve_bytes,
+                residency.block_bytes,
+                residency.estimated_working_set_bytes,
+                result->ssd_request_bytes_read,
+                0,
+                0,
+                result->ssd_request_read_seconds,
+                result->ssd_request_wait_seconds,
+            };
+        }
+        return run;
     }
 };
 }
-extern "C" const char *h3_runtime_getenv(const char *key) {auto found=h3_configuration.find(key);return found==h3_configuration.end()?nullptr:found->second.c_str();}
+extern "C" const char *h3_runtime_getenv(const char *key) {
+    auto found = h3_configuration.find(key);
+    return found == h3_configuration.end() ? nullptr : found->second.c_str();
+}
 namespace tc {std::unique_ptr<ModelSession> create_h3(const std::filesystem::path& root){return std::make_unique<H3Session>(root);}}

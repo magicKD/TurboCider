@@ -1,0 +1,51 @@
+{
+  "format": "turbocider-h3-ltx-shared-block-residency-host-v1",
+  "date": "2026-09-10",
+  "hardware": {
+    "gpu": "Apple M4 Max",
+    "macos": "26.6.2",
+    "architecture": "arm64"
+  },
+  "scope": "host-service validation of the shared H3/LTX block residency policy",
+  "h3_vpipe_abba": {
+    "workload": "256x256x22, 4 DiT evaluations, 2 rounds ABBA, no budget",
+    "turbocider_first_request_denoise_median_seconds": 17.235825,
+    "turbocider_retained_request_denoise_median_seconds": 16.833305,
+    "vpipe_first_request_denoise_median_seconds": 20.788215,
+    "vpipe_retained_request_denoise_median_seconds": 20.721903,
+    "turbocider_denoise_speedup_first": 1.206,
+    "turbocider_denoise_speedup_retained": 1.231,
+    "turbocider_retained_outputs_byte_exact": true,
+    "cross_runtime_parity_gate": "failed; rel_l2=0.0973546, cosine=0.9952883",
+    "interpretation": "TurboCider remains faster on denoise work; vpipe is not a replacement runtime until arithmetic parity is fixed"
+  },
+  "ltx_streamed_smoke": {
+    "workload": "704x448x9, 11 steps, video-only, 2 runs per residency",
+    "memory_budget_bytes": 12884901888,
+    "pinned_blocks": 18,
+    "streamed_blocks": 30,
+    "refill_slots": 3,
+    "estimated_working_set_bytes": 12812451712,
+    "warm_request_speedup_streamed_over_resident": 1.071987,
+    "warm_denoise_speedup_streamed_over_resident": 1.080471,
+    "latent_byte_exact": true,
+    "rgb_quality_gate_passed": true,
+    "process_peak_rss_is_not_budget_cap": true
+  },
+  "gates": {
+    "shared_policy_consistency": "passed",
+    "h3_vpipe_replacement": "disabled_by_quality_gate",
+    "ltx_streamed_default": "not enabled globally; smoke is video-only and does not qualify ANE/I2V/audio",
+    "ane_enablement": "unchanged; LTX GPU+ANE remains fail-closed"
+  },
+  "delivery_cleanup": {
+    "external_project_runtime_dependency": false,
+    "external_vpipe_probe_sources_shipped": false,
+    "machine_specific_shipping_paths": false,
+    "temporary_paths": "resolved through system temporary-directory APIs",
+    "native_and_swift_build": "passed",
+    "focused_tests": "87 passed, 1 skipped, 45 subtests passed",
+    "repository_tests": "13 passed",
+    "diff_check": "passed"
+  }
+}

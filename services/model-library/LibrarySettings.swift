@@ -32,6 +32,12 @@ struct SharedTextComponents {
               config["num_hidden_layers"] as? Int == 36, config["vocab_size"] as? Int == 151936 else {
             throw LibraryFailure(message: "共享编码器须为 Qwen3-4B（2560 hidden、36 层、151936 vocab）。")
         }
+        if let quant = config["quantization"] as? [String: Any] {
+            guard quant["mode"] as? String == "affine", quant["group_size"] as? Int == 32,
+                  [4, 8].contains(quant["bits"] as? Int ?? 0), config["turbocider_dense_embedding"] as? Bool == true else {
+                throw LibraryFailure(message: "量化共享组件需由 qwen3_affine.py 转换：MLX affine Q4/Q8、group 32、BF16 embedding。")
+            }
+        }
         let tokenConfig = try JSONSerialization.jsonObject(with: Data(contentsOf: tokenizer.appendingPathComponent("tokenizer_config.json"))) as? [String: Any]
         guard ["Qwen2Tokenizer", "Qwen2TokenizerFast"].contains(tokenConfig?["tokenizer_class"] as? String ?? ""),
               FileManager.default.fileExists(atPath: tokenizer.appendingPathComponent("tokenizer.json").path) else {

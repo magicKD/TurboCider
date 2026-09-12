@@ -156,6 +156,9 @@ final class NativeJobStore: ObservableObject {
             ? try await Task.detached {
                 try NativeEngine.zImageTokenCount(modelPath: draft.modelPath, prompt: draft.prompt)
             }.value : 32
+        if draft.modelID == "z-image-turbo", textTokens > 1024 {
+            throw NativeFailure(message: "Z-Image 提示词为 \(textTokens) tokens，超过当前 1024 上限；GPU 与 ANE 相同，请缩短文本。不会自动截断。")
+        }
         let minimumRows = ((draft.width / 16) * (draft.height / 16) + 31) / 32 * 32
             + (textTokens + 31) / 32 * 32
         let match = await Task.detached {
@@ -182,7 +185,7 @@ final class NativeJobStore: ObservableObject {
             }.value
             guard let sourceMatch else {
                 accelerationStatus = "没有匹配当前模型、LoRA、强度与文本长度的 ANE 缓存"
-                throw NativeFailure(message: "没有匹配当前模型、LoRA、强度与文本长度的 ANE 分区（需要 \(minimumRows) 行，文本 \(textTokens) tokens）。请在模型中心选择容量足够的固定或可变长度分区，或关闭 ANE 使用 GPU。")
+                throw NativeFailure(message: "没有匹配当前模型、LoRA、强度与文本长度的 ANE 分区（需要 \(minimumRows) 行，文本 \(textTokens) tokens）。请在模型库的“ANE 分区”登记匹配的源 manifest 或编译 manifest。变长分区也有容量上限，且需匹配当前 LoRA 与强度；勾选 ANE 不会自动导出分区。")
             }
             config.sourceManifest = sourceMatch.manifest
             config.coreMLCache = cache.path
@@ -192,6 +195,9 @@ final class NativeJobStore: ObservableObject {
             guard let report = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let manifest = report["manifest"] as? String else { throw NativeFailure(message: "编译结果缺少分区路径。") }
             config.manifest = manifest
+            // Compilation is derived data, but retain its source relationship in
+            // the shared inventory so subsequent sessions can discover it.
+            _ = try await LibraryTool.run(["register-ane", draft.modelID, manifest])
             let hits = report["cache_hits"] as? Int ?? 0, count = report["partitions"] as? Int ?? 0
             accelerationStatus = "ANE 分区就绪 · 复用 \(hits)/\(count) 个编译缓存"
         }
@@ -219,6 +225,14 @@ final class NativeJobStore: ObservableObject {
         engine = nil; loadedPath = nil; loadedModelID = nil
         sessionReport = nil
         sessionState = "正在检查模型…"
+        if modelID == "z-image-turbo" {
+            let report = await Task.detached(priority: .utility) {
+                InstallationInspection.inspect(modelID: modelID, root: url)
+            }.value
+            guard report.issues.isEmpty else {
+                throw NativeFailure(message: "Z-Image 模型检查失败，请在模型库重新选择原始模型目录：\n" + report.issues.map { "\($0.path)：\($0.message)" }.joined(separator: "\n"))
+            }
+        }
         let opened = try await NativeEngine.open(modelURL: url, modelID: modelID)
         engine = opened; loadedPath = path; loadedModelID = modelID
         sessionState = "会话就绪 · 权重按需加载"

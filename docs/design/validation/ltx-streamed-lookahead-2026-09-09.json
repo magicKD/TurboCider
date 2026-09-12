@@ -1,0 +1,177 @@
+{
+  "schema": "turbocider-ltx-streamed-lookahead-v1",
+  "date": "2026-09-09",
+  "hardware": {
+    "gpu": "Apple M4 Max",
+    "physical_memory_bytes": 68719476736,
+    "macos": "26.6.2"
+  },
+  "change": {
+    "summary": "Budget-selected streamed LTX execution now uses up to three reusable refill slots with two-block look-ahead. Budgets that fit all 48 blocks use the resident execution path and perform no suffix refills.",
+    "files": [
+      "native/models/ltx_runtime/ltx_blocks.c",
+      "native/models/ltx_module.cpp"
+    ],
+    "correctness": "The streamed path keeps the existing BF16 execution and conditioning order; only block load scheduling and residency selection change."
+  },
+  "small_shape": {
+    "width": 64,
+    "height": 64,
+    "frames": 9,
+    "steps": 11,
+    "seed": 42,
+    "prompt": "A cinematic red fox running through a snowy forest",
+    "method": "One retained engine, two requests; warm request is index 1. The pre-change values are from ltx-streamed-residency-2026-09-09.json.",
+    "routes": {
+      "before_12_gib": {
+        "memory_budget_bytes": 12884901888,
+        "pinned_blocks": 20,
+        "streamed_blocks": 28,
+        "refill_slots": 2,
+        "warm_request_wall_seconds": 11.223571208,
+        "warm_denoise_seconds": 11.030060709,
+        "warm_request_bytes_loaded": 119594241536,
+        "warm_wait_seconds": 2.7972109999973327
+      },
+      "after_12_gib": {
+        "memory_budget_bytes": 12884901888,
+        "pinned_blocks": 19,
+        "streamed_blocks": 29,
+        "refill_slots": 3,
+        "warm_request_wall_seconds": 8.430924208,
+        "warm_denoise_seconds": 8.232657917,
+        "warm_request_bytes_loaded": 123865464448,
+        "warm_wait_seconds": 0.0031639989465475082,
+        "latent_byte_exact": true,
+        "decoded_rgb_byte_equivalent": true
+      },
+      "before_16_gib": {
+        "memory_budget_bytes": 17179869184,
+        "pinned_blocks": 31,
+        "streamed_blocks": 17,
+        "refill_slots": 2,
+        "warm_request_wall_seconds": 10.261034625,
+        "warm_denoise_seconds": 10.063344583,
+        "warm_wait_seconds": 1.8560200005304068
+      },
+      "after_16_gib": {
+        "memory_budget_bytes": 17179869184,
+        "pinned_blocks": 30,
+        "streamed_blocks": 18,
+        "refill_slots": 3,
+        "warm_request_wall_seconds": 8.386770375,
+        "warm_denoise_seconds": 8.19148075,
+        "warm_wait_seconds": 0.0016009986866265535
+      },
+      "after_24_gib": {
+        "memory_budget_bytes": 25769803776,
+        "pinned_blocks": 48,
+        "streamed_blocks": 0,
+        "refill_slots": 0,
+        "warm_request_wall_seconds": 8.355197541,
+        "warm_denoise_seconds": 8.157338751,
+        "warm_request_bytes_loaded": 0,
+        "warm_wait_seconds": 0.0
+      },
+      "after_32_gib": {
+        "memory_budget_bytes": 34359738368,
+        "pinned_blocks": 48,
+        "streamed_blocks": 0,
+        "refill_slots": 0,
+        "warm_request_wall_seconds": 8.314745917,
+        "warm_denoise_seconds": 8.116653501,
+        "warm_request_bytes_loaded": 0,
+        "warm_wait_seconds": 0.0
+      }
+    },
+    "derived": {
+      "12_gib_warm_denoise_speedup_vs_before": 1.3397933960335597,
+      "16_gib_warm_denoise_speedup_vs_before": 1.228513487381387
+    }
+  },
+  "production_shape": {
+    "width": 704,
+    "height": 448,
+    "frames": 97,
+    "steps": 11,
+    "seed": 42,
+    "method": "Single retained-engine streamed request per budget; full-size runs are thermal-state samples, not a stable distribution.",
+    "routes": {
+      "16_gib": {
+        "memory_budget_bytes": 17179869184,
+        "pinned_blocks": 20,
+        "streamed_blocks": 28,
+        "refill_slots": 3,
+        "estimated_working_set_bytes": 17141613184,
+        "request_bytes_loaded": 119594241536,
+        "request_wall_seconds": [95.740636125, 85.243444375],
+        "denoise_seconds": [55.857646375, 75.46163125],
+        "wait_seconds": [0.11395500018261373, 0.001794000854715705]
+      },
+      "24_gib": {
+        "memory_budget_bytes": 25769803776,
+        "pinned_blocks": 42,
+        "streamed_blocks": 6,
+        "refill_slots": 3,
+        "estimated_working_set_bytes": 25684059008,
+        "request_bytes_loaded": 25627337472,
+        "request_wall_seconds": [93.780746541],
+        "denoise_seconds": [55.753368792],
+        "wait_seconds": [0.00037799926940351725]
+      },
+      "32_gib": {
+        "memory_budget_bytes": 34359738368,
+        "pinned_blocks": 48,
+        "streamed_blocks": 0,
+        "refill_slots": 0,
+        "estimated_working_set_bytes": 26848937984,
+        "request_bytes_loaded": 0,
+        "request_wall_seconds": [99.034617917],
+        "denoise_seconds": [55.998124],
+        "wait_seconds": [0.0]
+      }
+    }
+  },
+  "ane_probe": {
+    "updated_date": "2026-09-09",
+    "workload": "704x448x97, resident, two retained requests",
+    "profile": "48 current-system dual-shape Stage-1/Stage-2 MLP artifacts; KV disabled for this probe",
+    "reported_execution": "gpu_ane",
+    "request_wall_seconds": [113.862596542, 82.854057833],
+    "denoise_seconds": [47.509063999999995, 74.184410958],
+    "matched_gpu_request_wall_seconds": [71.978828084, 76.593449541],
+    "matched_gpu_denoise_seconds": [55.341090041, 66.491781417],
+    "per_request_denoise_speedup": [1.1648533012774154, 0.8963039614164324],
+    "warm_denoise_speedup": 0.8963039614164324,
+    "valid_ane_measurement": true,
+    "runtime_diagnostic": "No E5 bundle load failure was reported; all 48 current-system compiled MLP bundles executed.",
+    "speed_gate_required": 1.1,
+    "speed_gate_evaluated": true,
+    "speed_gate_passed": false,
+    "quality": {
+      "latent_rel_l2": 0.3306327593411613,
+      "latent_cosine": 0.9451489027244127,
+      "mean_rgb_correlation": 0.8585822481641694,
+      "minimum_rgb_correlation": 0.8075179277464063,
+      "mean_rgb_cosine": 0.9784363780058357,
+      "mean_rgb_mae_255": 20.514268089352658,
+      "maximum_motion_relative_error": 0.05319525301435046,
+      "quality_gate_passed": false
+    },
+    "fp16_single_block_probe": {
+      "rows": 4004,
+      "gpu_p50_ms": 80.662,
+      "hetero_p50_ms": 103.484,
+      "speedup": 0.779463,
+      "rel_l2": 0.00306669976,
+      "cosine": 0.99999614,
+      "decision": "not pursued; fails the >=1.1x speed requirement before full-model qualification"
+    },
+    "reason": "The recompiled E5 bundles make this a valid ANE execution measurement, but the warm paired speed is below the 1.1x requirement and the full-model latent/RGB quality gates fail. ANE remains disabled."
+  },
+  "quality_and_release": {
+    "small_shape_quality_gate_passed": true,
+    "ane_status": "Current-system E5 bundles execute on ANE, but the paired production probe fails both the stable >=1.1x speed requirement and the aligned latent/RGB quality gates; ANE remains disabled and no artifacts are shipped.",
+    "shipping_default": "GPU; streamed GPU only when explicitly requested; no automatic ANE selection."
+  }
+}

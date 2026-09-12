@@ -131,7 +131,15 @@ struct AccelerationDiscovery {
         let appCache = cache ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("TurboCiderNative/cache/coreml")
         var candidates: [URL] = []
         if !preferred.isEmpty, !enforceAutomaticPolicy || URL(fileURLWithPath: preferred).resolvingSymlinksInPath().path.hasPrefix(appCache.resolvingSymlinksInPath().path + "/") { candidates.append(URL(fileURLWithPath: preferred)) }
-        if !enforceAutomaticPolicy { candidates += knownManifests.map { URL(fileURLWithPath: $0) } }
+        if !enforceAutomaticPolicy {
+            candidates += knownManifests.map { URL(fileURLWithPath: $0) }
+            for item in LibraryANEPartition.registered(modelID: modelID) {
+                candidates.append(URL(fileURLWithPath: item.path))
+                if !requireCompiled, let source = item.sourceManifest, !source.isEmpty {
+                    candidates.append(URL(fileURLWithPath: source))
+                }
+            }
+        }
         if let configured = ProcessInfo.processInfo.environment["TURBOCIDER_ANE_MANIFEST"] { candidates.append(URL(fileURLWithPath: configured)) }
         candidates += ((try? fm.contentsOfDirectory(at: appCache, includingPropertiesForKeys: nil)) ?? []).filter { $0.lastPathComponent.hasPrefix("manifest-") && $0.pathExtension == "json" }.sorted { $0.path < $1.path }
         var matches: [Match] = []
@@ -196,6 +204,6 @@ struct AccelerationDiscovery {
                                  rows: selectedRows, mlpWidth: mlpWidth,
                                  aneMLPStart: aneMLPStart, aneMLPEnd: aneMLPEnd))
         }
-        return matches.min { $0.rows < $1.rows }
+        return matches.first { $0.manifest == preferred } ?? matches.min { $0.rows < $1.rows }
     }
 }

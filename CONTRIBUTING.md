@@ -1,7 +1,7 @@
 # Contributing
 
 TurboCider is a native Apple silicon inference project. Start with the
-[README](README.md) and [build guide](docs/GETTING_STARTED.md). Original project
+[README](README.md) and [build guide](docs/public/GETTING_STARTED.md). Original project
 code uses the [MIT license](LICENSE); retained third-party notices govern the
 corresponding derived components. Model weights have separate upstream terms.
 
@@ -30,7 +30,7 @@ real weights, Metal, clipboard access or a specific chip explicitly.
 
 Performance changes should identify the workload, device, precision, cache
 state and baseline. Preserve raw samples locally and commit portable summaries.
-Consult [performance methodology](docs/PERFORMANCE.md); do not convert a block
+Consult [performance methodology](docs/public/PERFORMANCE.md); do not convert a block
 microbenchmark into an end-to-end claim.
 
 ## Repository hygiene

@@ -45,6 +45,18 @@ import Foundation
         let registration = try store.register(modelID: "z-image-turbo", path: external)
         let duplicate = try store.register(modelID: "z-image-turbo", path: external)
         try check(registration.id == duplicate.id && !registration.managed, "External registration is not idempotent")
+        let adapter = external.appendingPathComponent("adapter.safetensors")
+        try Data(repeating: 0, count: 16).write(to: adapter)
+        let firstLoRA = try store.registerLoRA(modelID: "z-image-turbo", path: adapter)
+        let alias = external.appendingPathComponent("alias.safetensors")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: adapter)
+        try check(try store.registerLoRA(modelID: "z-image-turbo", path: alias).id == firstLoRA.id, "LoRA aliases should deduplicate")
+        _ = try store.registerLoRA(modelID: "flux2-klein-4b", path: adapter)
+        try check(try store.read().loras?.count == 2, "LoRA association must be per model")
+        try store.unregisterLoRA(id: firstLoRA.id)
+        try check(FileManager.default.fileExists(atPath: adapter.path), "Removing LoRA registration deleted weights")
+        try FileManager.default.removeItem(at: adapter)
+        try rejects { _ = try store.registerLoRA(modelID: "z-image-turbo", path: alias) }
         let reopened = try LibraryStore(root: store.root)
         try check(try reopened.read().installations.count == 1, "Index did not persist")
         do {

@@ -17,9 +17,25 @@ class VideoTimingTests(unittest.TestCase):
         library = ROOT / 'build/native'
         sdk = subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'],
                                       text=True).strip()
+        # Match the deployment target required by the native library (MLX can
+        # be built for a newer macOS than clang's default test target).
+        load_commands = subprocess.check_output(
+            ['otool', '-l', str(library / 'libturbocider.dylib')], text=True
+        )
+        deployment_target = None
+        build_version = False
+        for line in load_commands.splitlines():
+            if line.strip() == 'cmd LC_BUILD_VERSION':
+                build_version = True
+            elif build_version and line.strip().startswith('minos '):
+                deployment_target = line.strip().split()[1]
+                break
+        if deployment_target is None:
+            self.fail('could not determine native library deployment target')
         with tempfile.TemporaryDirectory(prefix='tc-video-timing-') as directory:
             probe = Path(directory) / 'probe'
             subprocess.run(['xcrun', 'clang++', '-std=c++20', '-isysroot', sdk,
+                            '-mmacosx-version-min=' + deployment_target,
                             str(ROOT / 'tests/native/video_timing_probe.cpp'),
                             '-L' + str(library), '-lturbocider',
                             '-Wl,-rpath,' + str(library), '-o', str(probe)], check=True)

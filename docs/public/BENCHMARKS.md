@@ -3,8 +3,7 @@
 [Documentation](README.md) · [Performance highlights](PERFORMANCE.md)
 
 This is a public, self-contained export of existing project measurements.
-The [machine-readable timing samples](benchmarks/measurements.json) preserve
-the selected records without depending on private development documents.
+The summaries below preserve selected timing records and test conditions.
 No new benchmark or generation was run for this publication pass.
 
 Weights, raw images and full execution logs are not bundled. Consequently this

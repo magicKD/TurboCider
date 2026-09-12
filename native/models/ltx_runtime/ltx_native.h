@@ -11,6 +11,12 @@ typedef struct {
     const char *shader_source;
     uint32_t width,height,frames,fps;
     int parallel_av;
+    /* Low-memory execution keeps a budget-selected prefix resident and
+     * refills the remaining Transformer blocks through one or two reusable
+     * slots. A zero budget selects the default 12-GiB-plus-geometry denoiser
+     * target; resident execution ignores both fields. */
+    int stream_blocks;
+    uint64_t memory_budget_bytes;
     /* Lifecycle options are explicit at the library boundary.  The embedded
      * runtime deliberately does not inherit the benchmark CLI's environment
      * variables. */
@@ -21,15 +27,39 @@ typedef struct {
     int release_blocks_final_step;
     int ane_mlp_fused_residual;
     int ane_mlp_fused_adaln_pack;
-    /* Bit zero enables Stage 1 and bit one enables Stage 2. */
+    /* Restrict ANE MLP execution to a contiguous Transformer block window.
+     * A zero count preserves the legacy all-48-block ABI default. Partial
+     * windows retain the original GPU MLP weights outside the window and
+     * cannot request release_full_gpu_mlp. */
+    uint32_t ane_mlp_first_block;
+    uint32_t ane_mlp_block_count;
+    /* Stage masks use bit zero for Stage 1 and bit one for Stage 2. */
+    uint32_t ane_mlp_stage_mask;
     uint32_t ane_kv_stage_mask;
     const char *mlp_directories[2];
     const char *v2a_directories[2];
     const char *kv_directory;
     const char *qkv_directories[2];
 } ltx_native_options;
+typedef struct {
+    int enabled;
+    uint32_t pinned_blocks;
+    uint32_t streamed_blocks;
+    uint32_t refill_slots;
+    uint64_t memory_budget_bytes;
+    uint64_t activation_reserve_bytes;
+    uint64_t block_bytes;
+    uint64_t estimated_working_set_bytes;
+    uint64_t bytes_loaded;
+    uint64_t slot_allocations;
+    uint64_t slot_refills;
+    double load_seconds;
+    double wait_seconds;
+} ltx_native_streaming_info;
 ltx_native_denoiser *ltx_native_create(const ltx_native_options*,ltx_native_progress,void*,char*,size_t);
 void ltx_native_free(ltx_native_denoiser*);
+int ltx_native_get_streaming_info(
+    const ltx_native_denoiser*, ltx_native_streaming_info*);
 /* All inputs are BF16. Stage 1 receives seeded noise, stage 2 receives the
  * normalized upsampled stage-1 latent. Each stage updates video/audio in place
  * only after successful completion; cancelled runs leave caller buffers intact. */

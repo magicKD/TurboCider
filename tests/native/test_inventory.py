@@ -24,7 +24,8 @@ class InventoryTests(unittest.TestCase):
             source.write_text(json.dumps({'artifacts': artifacts}))
             request = root / 'request.json'
             request.write_text(json.dumps({'action': 'inventory', 'cache': str(root/'cache'), 'source_manifest': str(source)}))
-            with open(f'/private/tmp/turbocider-gpu-{os.geteuid()}.lock', 'a') as lease:
+            lock = Path(tempfile.gettempdir()) / f'turbocider-gpu-{os.geteuid()}.lock'
+            with lock.open('a') as lease:
                 fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 result = subprocess.run([str(CLI), 'coreml', str(request)], capture_output=True, text=True, timeout=8)
                 self.assertEqual(result.returncode, 0, result.stderr)
