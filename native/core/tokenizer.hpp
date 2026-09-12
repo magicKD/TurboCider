@@ -15,6 +15,8 @@ class Tokenizer {
     ~Tokenizer();
     Tokens raw(const std::string &) const;
     Tokens prompt(const std::string &, bool dynamic = true);
+    static constexpr int z_image_limit = 1024;
+    Tokens z_image_tokens(const std::string &);
     Tokens z_image_prompt(const std::string &, bool dynamic = true);
     Tokens llada_image_prompt(const std::string &);
 };

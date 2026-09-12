@@ -264,6 +264,7 @@ struct StudioView: View {
             }
             PromptEditor(text: $studio.draft.prompt) { Task { await studio.pasteImage() } }
                 .frame(height: 72).accessibilityIdentifier("prompt")
+            PromptCapacityView(studio: studio, busy: store.busy || submitting)
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(inputSummary).font(.caption)
@@ -354,7 +355,7 @@ struct StudioView: View {
                 Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
                 Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE }, set: { studio.setANEEnabled($0) }))
                     .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true).accessibilityIdentifier("enableANE")
-                Text(studio.draft.usesANE ? "生成前检查并复用匹配的编译缓存。" : "默认只使用 GPU。").font(.caption2).foregroundStyle(.secondary)
+                Text(studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。").font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.usesANE { Button("管理 ANE 分区与缓存") { page = .models } }
                 if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption2).foregroundStyle(.secondary) }
             }

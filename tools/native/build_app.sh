@@ -49,3 +49,4 @@ printf 'Built Swift App and integration tests\n'
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/RunInsightsTests.swift -o "$OUT/turbocider-run-insights-tests"
 
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ANELibraryTests.swift -o "$OUT/turbocider-ane-library-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" tests/integration/ZImagePromptTests.swift -o "$OUT/turbocider-z-image-prompt-tests"

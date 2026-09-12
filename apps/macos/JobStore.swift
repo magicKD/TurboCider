@@ -156,6 +156,9 @@ final class NativeJobStore: ObservableObject {
             ? try await Task.detached {
                 try NativeEngine.zImageTokenCount(modelPath: draft.modelPath, prompt: draft.prompt)
             }.value : 32
+        if draft.modelID == "z-image-turbo", textTokens > 1024 {
+            throw NativeFailure(message: "Z-Image 提示词为 \(textTokens) tokens，超过当前 1024 上限；GPU 与 ANE 相同，请缩短文本。不会自动截断。")
+        }
         let minimumRows = ((draft.width / 16) * (draft.height / 16) + 31) / 32 * 32
             + (textTokens + 31) / 32 * 32
         let match = await Task.detached {

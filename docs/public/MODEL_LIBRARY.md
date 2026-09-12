@@ -319,3 +319,18 @@ enumerated` or `--shape-mode range`. For 512×512 output, `--min-bucket 1056
 --bucket 1536 --bucket-step 32` covers 1024 image rows plus up to 512 text rows.
 Changing output resolution can require a larger export. Checking ANE in the App
 compiles an existing source; it does not run the offline Python exporter.
+
+### Z-Image 提示词与计算设备
+
+输入框显示字符数及原生 tokenizer 的实际 tokens（包含聊天模板），两者不等价。
+Z-Image 的 512 tokens 是原先执行器采用的默认长度，不是 ANE 特有的限制。
+当前允许最多 1024 tokens，超过时明确拒绝，不会静默截断；GPU 和 ANE 共用该上限。
+512 以上属于长文本扩展，会增加内存与耗时，描述遵循效果仍需对具体提示词验证。
+即使关闭动态文本，超过 512 的合法输入也完整保留。
+
+ANE 还需要与模型、LoRA、强度和总行数匹配的分区：图像行数加上文本向上补齐到 32 的行数。
+例如 512×512 图像和 513 tokens 需要 1568 行，已有上限 1536 的变长分区仍然不够。
+“变长”仅在导出分区声明的范围内有效。GPU 不需要这些分区；容量不足、首次加载较慢或
+ANE 实测更慢时，可使用输入框旁的“改用 GPU”。此操作不会绕过 1024 tokens 的执行器上限。
+
+真实模型边界验证：`build/native/turbocider-z-image-prompt-tests MODEL OUTPUT`。
