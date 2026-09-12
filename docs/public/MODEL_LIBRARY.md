@@ -269,3 +269,53 @@ the actual source weights must remain available. Existing registrations are
 retained for review. App session opening checks Z-Image component files, shard
 indexes and safetensors ranges before invoking the engine, and reports broken
 links or missing files with their component paths.
+
+## ANE partitions in the shared library
+
+The model page includes **ANE 分区** for Z-Image Turbo and FLUX.2 Klein 4B.
+Register either a source `.mlpackage` manifest or a compiled `.mlmodelc`
+manifest. Registration reads schema 2 metadata and checks the architecture,
+shape mode, sorted capacity buckets, complete block list, LoRA identities and
+referenced artifact directories. A manifest left behind after package deletion
+is rejected with the missing block path; registration does not regenerate it.
+Files remain in place. Removing a registration retains the files.
+
+`library.json` now includes optional `anePartitions` records: model ID, canonical
+manifest path, source/compiled kind, fixed/enumerated/range mode, buckets,
+checkpoint, LoRA file/strength/role, block count and linked source manifest.
+Re-registering the same path refreshes its metadata and retains its ID. Old
+indexes and configurations without this field remain compatible.
+
+```sh
+turbocider library register-ane z-image-turbo /absolute/source/manifest.json
+turbocider library register-ane z-image-turbo /absolute/cache/manifest-HASH.json
+turbocider library remove-ane PARTITION_ID
+```
+
+The App's unified import/export includes manifest references:
+
+```json
+{
+  "modelPaths": {},
+  "anePartitions": [
+    {"modelID": "z-image-turbo", "path": "/absolute/source/manifest.json"}
+  ]
+}
+```
+
+The App discovers registered partitions on each explicit ANE request, even when
+no partition path is saved in the draft. It rechecks checkpoint identity, LoRA
+identity/strength, token capacity, artifact existence and compiled-cache machine
+identity. Registry snapshots never bypass these checks. Registered source
+partitions can be compiled on demand; the resulting compiled manifest is also
+registered. **编译并登记** in the library writes to `<model-root>/ane-cache` and
+retains the source relationship. Existing default App caches remain supported.
+An explicitly selected compatible manifest takes precedence over other matches.
+Hardware-specific automatic performance gates remain unchanged.
+
+Variable-length support must exist in the exported source model. The Z-Image
+exporter still defaults to fixed shape; explicitly request `--shape-mode
+enumerated` or `--shape-mode range`. For 512×512 output, `--min-bucket 1056
+--bucket 1536 --bucket-step 32` covers 1024 image rows plus up to 512 text rows.
+Changing output resolution can require a larger export. Checking ANE in the App
+compiles an existing source; it does not run the offline Python exporter.

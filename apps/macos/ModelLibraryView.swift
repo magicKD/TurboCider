@@ -48,8 +48,8 @@ struct ModelLibraryView: View {
                 Spacer()
                 Menu("管理目录") {
                     Button("更换模型库目录…", action: chooseLibraryRoot)
-                    Button("导入模型与 LoRA 配置…", action: importPaths)
-                    Button("导出模型与 LoRA 配置…", action: exportPaths)
+                    Button("导入模型、LoRA 与 ANE 配置…", action: importPaths)
+                    Button("导出模型、LoRA 与 ANE 配置…", action: exportPaths)
                     Button("在 Finder 中打开") { NSWorkspace.shared.open(URL(fileURLWithPath: library.root)) }
                     Button("刷新并同步已有路径") { library.refresh(studio: studio, migrate: true) }
                 }.disabled(library.busy || store.busy).accessibilityIdentifier("manageModelLibrary")
@@ -88,6 +88,8 @@ struct ModelLibraryView: View {
                 }.frame(maxWidth: .infinity)
             }.background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
         }.padding(24)
+            .task { library.refresh(studio: studio) }
+            .onChange(of: store.busy) { _, busy in if !busy { library.refresh(studio: studio) } }
             .sheet(item: $downloadModel) { item in ModelDownloadView(model: item, library: library, studio: studio) }
             .onChange(of: studio.draft.modelPaths) { _, _ in library.refresh(studio: studio, migrate: true) }
     }
@@ -158,6 +160,9 @@ struct ModelLibraryView: View {
                     }
                 }
                 if item.supports_lora == true { loraLibrary(item) }
+                if ["z-image-turbo", "flux2-klein-4b"].contains(item.id) {
+                    ANELibraryView(modelID: item.id, library: library, studio: studio, store: store)
+                }
                 let registered = library.installations.filter { $0.modelID == item.id }
                 if !registered.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -188,7 +193,7 @@ struct ModelLibraryView: View {
                 }
                 Text("加载与预热可能需要准备提示词和加速分区。会话打开后按需加载权重；分阶段模式会释放已完成阶段的权重。").font(.caption).foregroundStyle(.secondary)
                 if studio.draft.modelID == item.id {
-                    DisclosureGroup("加速与编译缓存") { AccelerationView(store: store, studio: studio).padding(.top, 12) }
+                    DisclosureGroup("加速与编译缓存") { AccelerationView(store: store, studio: studio, library: library).padding(.top, 12) }
                 } else {
                     Text("设为创作模型后，可配置此模型的 GPU / ANE 加速。").font(.caption).foregroundStyle(.secondary)
                 }

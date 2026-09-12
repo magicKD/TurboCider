@@ -182,7 +182,7 @@ final class NativeJobStore: ObservableObject {
             }.value
             guard let sourceMatch else {
                 accelerationStatus = "没有匹配当前模型、LoRA、强度与文本长度的 ANE 缓存"
-                throw NativeFailure(message: "没有匹配当前模型、LoRA、强度与文本长度的 ANE 分区（需要 \(minimumRows) 行，文本 \(textTokens) tokens）。请在模型中心选择容量足够的固定或可变长度分区，或关闭 ANE 使用 GPU。")
+                throw NativeFailure(message: "没有匹配当前模型、LoRA、强度与文本长度的 ANE 分区（需要 \(minimumRows) 行，文本 \(textTokens) tokens）。请在模型库的“ANE 分区”登记匹配的源 manifest 或编译 manifest。变长分区也有容量上限，且需匹配当前 LoRA 与强度；勾选 ANE 不会自动导出分区。")
             }
             config.sourceManifest = sourceMatch.manifest
             config.coreMLCache = cache.path
@@ -192,6 +192,9 @@ final class NativeJobStore: ObservableObject {
             guard let report = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let manifest = report["manifest"] as? String else { throw NativeFailure(message: "编译结果缺少分区路径。") }
             config.manifest = manifest
+            // Compilation is derived data, but retain its source relationship in
+            // the shared inventory so subsequent sessions can discover it.
+            _ = try await LibraryTool.run(["register-ane", draft.modelID, manifest])
             let hits = report["cache_hits"] as? Int ?? 0, count = report["partitions"] as? Int ?? 0
             accelerationStatus = "ANE 分区就绪 · 复用 \(hits)/\(count) 个编译缓存"
         }

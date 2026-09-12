@@ -65,15 +65,17 @@ enum LibraryTool {
 @MainActor final class ModelLibraryController: ObservableObject {
     @Published private(set) var root = LibraryStore.defaultRoot.path
     @Published private(set) var installations: [LibraryInstallation] = []
+    @Published private(set) var anePartitions: [LibraryANEPartition] = []
     @Published private(set) var loras: [LibraryLoRA] = []
     @Published private(set) var busy = false
     @Published private(set) var event: LibraryDownloadEvent?
     @Published var message: String?
     @Published private(set) var inspections: [String: InstallationInspection] = [:]
     private var operation: Task<Void, Never>?
+    private weak var compilationStore: NativeJobStore?
     var canCancel: Bool { busy }
 
-    func cancel() { operation?.cancel() }
+    func cancel() { operation?.cancel(); compilationStore?.cancel() }
     func inspection(modelID: String, path: String) -> InstallationInspection? { inspections[modelID + "\n" + path] }
     @discardableResult private func readInspection(modelID: String, path: String) async throws -> InstallationInspection {
         let data = try await LibraryTool.run(["inspect", modelID, path, "--root", root])
@@ -98,6 +100,7 @@ enum LibraryTool {
         let index = try LibraryTool.decode(LibraryIndex.self, from: data)
         installations = index.installations
         loras = index.loras ?? []
+        anePartitions = index.anePartitions ?? []
     }
     func refresh(studio: StudioState, migrate: Bool = false) {
         perform { [self] in
@@ -132,6 +135,15 @@ enum LibraryTool {
                     for file in files.sorted(by: { $0.path < $1.path }) where file.pathExtension == "safetensors" {
                         _ = try await LibraryTool.run(["register-lora", "z-image-turbo", file.path, "--root", root])
                     }
+                }
+            }
+            if migrate, let config = studio.draft.acceleration {
+                let paths = Set([config.manifest, config.sourceManifest] + (config.knownManifests ?? []))
+                for path in paths.sorted() where !path.isEmpty {
+                    // Older settings may retain another model's cache; infer the
+                    // architecture from the manifest rather than the active draft.
+                    do { _ = try await LibraryTool.run(["register-ane", "auto", path, "--root", root]) }
+                    catch { message = "旧 ANE 分区未能登记：\(error.localizedDescription)" }
                 }
             }
             try await readIndex()
@@ -199,9 +211,58 @@ enum LibraryTool {
     func exportConfiguration(to url: URL, studio: StudioState) {
         do {
             let object: [String: Any] = ["schemaVersion": 1, "modelPaths": studio.draft.modelPaths,
-                "loras": loras.map { ["modelID": $0.modelID, "path": $0.path] }]
+                "loras": loras.map { ["modelID": $0.modelID, "path": $0.path] },
+                "anePartitions": anePartitions.map { ["modelID": $0.modelID, "path": $0.path] }]
             try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
         } catch { message = error.localizedDescription }
+    }
+    func registerANE(_ url: URL, modelID: String, studio: StudioState? = nil, select: Bool = false) {
+        perform { [self] in
+            let data = try await LibraryTool.run(["register-ane", modelID, url.path, "--root", root])
+            let item = try LibraryTool.decode(LibraryANEPartition.self, from: data)
+            try await readIndex()
+            if select, let studio { useANE(item, studio: studio) }
+            message = "ANE 分区已登记 · \(item.capacity)。生成时复核基础权重与 LoRA。"
+        }
+    }
+    func useANE(_ item: LibraryANEPartition, studio: StudioState) {
+        if studio.draft.modelID != item.modelID { studio.selectModel(item.modelID) }
+        var config = studio.draft.acceleration ?? StudioAcceleration()
+        config.manifest = item.kind == "compiled" ? item.path : ""
+        config.sourceManifest = item.kind == "source" ? item.path : item.sourceManifest ?? ""
+        config.policy = "gpu_ane"
+        config.automaticVersion = 1
+        studio.draft.profilePath = ""
+        studio.draft.acceleration = config
+        studio.save()
+    }
+    func removeANE(_ item: LibraryANEPartition, studio: StudioState) {
+        perform { [self] in
+            _ = try await LibraryTool.run(["remove-ane", item.id, "--root", root])
+            if var config = studio.draft.acceleration {
+                if config.manifest == item.path { config.manifest = "" }
+                if config.sourceManifest == item.path { config.sourceManifest = "" }
+                config.knownManifests = config.knownManifests?.filter { $0 != item.path }
+                studio.draft.acceleration = config
+            }
+            try await readIndex()
+            message = "已移除 ANE 登记；源分区与编译文件保留。"
+        }
+    }
+    func compileANE(_ item: LibraryANEPartition, store: NativeJobStore) {
+        perform { [self] in
+            compilationStore = store
+            defer { compilationStore = nil }
+            let request: [String: Any] = ["action": "compile", "model": item.modelID,
+                "source_manifest": item.path, "cache": URL(fileURLWithPath: root).appendingPathComponent("ane-cache").path]
+            let data = try await store.coreMLResources(JSONSerialization.data(withJSONObject: request))
+            guard let report = try JSONSerialization.jsonObject(with: data) as? [String: Any], let path = report["manifest"] as? String else {
+                throw NativeFailure(message: "ANE 编译结果缺少 manifest。")
+            }
+            _ = try await LibraryTool.run(["register-ane", item.modelID, path, "--root", root])
+            try await readIndex()
+            message = "编译完成并登记；已存在的兼容缓存可复用。"
+        }
     }
     func preview(_ request: LibraryDownloadRequest, completion: @escaping (LibraryDownloadPlan) -> Void) {
         perform { [self] in

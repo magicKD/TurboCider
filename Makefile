@@ -49,6 +49,7 @@ test:
 	@python3 -B tests/native/test_h3_mlx_modelscope.py
 	@python3 tests/native/test_inventory.py
 test-app:
+	@build/native/turbocider-ane-library-tests
 	@build/native/turbocider-studio-tests
 	@build/native/turbocider-model-library-tests
 	@build/native/turbocider-library-store-tests

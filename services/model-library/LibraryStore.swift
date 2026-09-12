@@ -38,6 +38,7 @@ struct LibraryIndex: Codable, Sendable {
     var schemaVersion = 1
     var installations: [LibraryInstallation] = []
     var loras: [LibraryLoRA]? = nil
+    var anePartitions: [LibraryANEPartition]? = nil
 }
 
 /// An OS lock, not a stale timestamp file. A crashed process releases the lease.
@@ -92,7 +93,8 @@ struct LibraryStore: Sendable {
         return value
     }
 
-    private func write(_ index: LibraryIndex) throws {
+    // Caller holds a library lease for all index mutations.
+    func write(_ index: LibraryIndex) throws {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(index).write(to: indexURL, options: .atomic)
     }
