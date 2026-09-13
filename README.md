@@ -45,6 +45,12 @@ GPU/hybrid PNG cosine similarity **0.999840**. Native Z-Image GPU alone took
 
 Results vary by device and workload. Warm timings exclude initial setup and compilation; detailed test conditions are linked below.
 
+**LTX 2.5 pure GPU snapshot (September 13, 2026):** Apple M4 Max, 64 GB unified
+memory; 704×448, 97 frames (4.04 seconds), 24 FPS, 11 steps, audio off and text
+conditioning cache hits. App end-to-end generation time: **63.08 s text-to-video**,
+**62.35 s image-to-video**. These are existing single-run records, not medians;
+ANE and approximate acceleration were disabled, with staged weight release.
+
 [Performance and fidelity](docs/public/PERFORMANCE.md) ·
 [Public samples, conditions and comparison limits](docs/public/BENCHMARKS.md)
 

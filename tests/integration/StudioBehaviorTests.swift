@@ -228,12 +228,19 @@ struct StudioBehaviorTests {
         try check(h3.inputs?.map(\.role) == ["first_frame", "last_frame"], "H3 keyframe roles were not mapped")
         studio.selectModel("ltx-2.5-distilled")
         try check(studio.draft.operation == "video.generate", "LTX did not select its public executor operation")
+        let ltxText = try studio.draft.request(output: root.appendingPathComponent("ltx-text.mp4"))
+        try check(ltxText.execution == "gpu" && ltxText.allow_approximation != true &&
+                    LTXWorker.accepts(ltxText), "LTX must default to exact GPU in a disposable worker")
         studio.changeOperation("video.image")
         try check(studio.draft.operation == "video.image", "LTX I2V operation was not selectable")
         let ltx = try studio.draft.request(output: root.appendingPathComponent("ltx.mp4"))
         try check(ltx.width == 704 && ltx.height == 448 && ltx.frames == 97 &&
                     ltx.steps == 11 && ltx.inputs?.map(\.role) == ["first_frame"],
                   "LTX descriptor defaults or public image-to-video mapping changed")
+        studio.draft.residency = "streamed"
+        try rejects { try studio.draft.validate() }
+        studio.draft.residency = "component_staged"
+        try check(LTXWorker.accepts(ltx), "LTX I2V must also use the disposable worker")
         studio.draft.audio = true
         let ltxAV = try studio.draft.request(
             output: root.appendingPathComponent("ltx-ax-audio.mp4"))

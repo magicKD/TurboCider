@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache test-library test-api
+.PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -62,6 +62,9 @@ test-library:
 	@build/native/turbocider-installation-tests
 	@build/native/turbocider-library-tool-tests
 	@python3 tests/native/test_model_library_download.py
+test-video-preview:
+	@test -n "$(VIDEO)" || (echo 'VIDEO=/path/to/generated.mp4 is required'; exit 1)
+	@build/native/turbocider-video-preview-tests "$(VIDEO)"
 test-api:
 	@build/native/turbocider-local-api-tests
 	@python3 tests/native/test_service_lifecycle.py

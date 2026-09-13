@@ -80,10 +80,11 @@ private struct StudioOutputPreview: View {
     var maxPixel = 1600
     private var video: Bool { ["mp4", "mov", "m4v"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()) }
     var body: some View {
-        if video { VideoPlayer(player: AVPlayer(url: URL(fileURLWithPath: path))) }
+        if video { SafeVideoPreview(path: path) }
         else { MediaPreview(path: path, maxPixel: maxPixel) }
     }
 }
+
 private struct StudioResultThumbnail: View {
     let path: String
     private var video: Bool { ["mp4", "mov", "m4v"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()) }

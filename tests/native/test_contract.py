@@ -710,7 +710,9 @@ class ContractTests(unittest.TestCase):
         self.assertIn('video_vae_compute',finalizer.read_text())
         self.assertIn('remove_managed_staging_directory',finalizer.read_text())
         self.assertIn('turbocider-ltx-exec-finalizer-',finalizer.read_text())
-        self.assertIn('"$OUT/audio.o" "$OUT/video.o"',build)
+        self.assertIn('"$OUT/native_media_audio.o" "$OUT/native_media_video.o"',build)
+        self.assertNotIn('"$OUT/audio.o"',build)
+        self.assertNotIn('"$OUT/video.o"',build)
 
     def test_ltx_ane_lifecycle_profile_is_typed_and_fail_closed(self):
         with tempfile.TemporaryDirectory() as d:

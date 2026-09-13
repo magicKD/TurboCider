@@ -232,6 +232,9 @@ struct StudioDraft: Codable, Sendable {
             if ltxBackend == "cpp_mlx" && operation == "video.image" {
                 throw NativeFailure(message: "LTX C++/MLX 当前只支持文生视频；图生视频请选择 C/Metal。")
             }
+            if residency == "streamed" && operation == "video.image" {
+                throw NativeFailure(message: "LTX 图生视频不支持 streamed 驻留，请选择分阶段释放或常驻。")
+            }
             if ltxAccelerationMode != "quality" {
                 guard ltxBackend != "cpp_mlx" else {
                     throw NativeFailure(message: "LTX Sol 近似加速当前只支持 C/Metal。")
