@@ -134,18 +134,22 @@ Tokens Tokenizer::prompt(const std::string &s, bool dynamic) {
         t.ids.resize(512, 151643);
     return t;
 }
-Tokens Tokenizer::z_image_prompt(const std::string &s, bool dynamic) {
-    require(!s.empty(), "prompt must not be empty");
+Tokens Tokenizer::z_image_tokens(const std::string &s) {
     require(s.size() <= 32768, "prompt exceeds 32 KiB");
-    // Z-Image-Turbo uses Qwen3's chat template with enable_thinking=true.
-    // Unlike the FLUX conditioning template above, it must not prefill an
-    // empty <think>...</think> block after the assistant generation prompt.
+    // Share the exact generation template with the UI counter, including role tokens.
     auto ids = impl_->encode("<|im_start|>user\n" + s +
                              "<|im_end|>\n<|im_start|>assistant\n");
-    require(ids.size() <= 512, "prompt exceeds 512 tokens; no silent truncation");
-    Tokens t{ids, int(ids.size())};
+    return {ids, int(ids.size())};
+}
+Tokens Tokenizer::z_image_prompt(const std::string &s, bool dynamic) {
+    require(!s.empty(), "prompt must not be empty");
+    auto t = z_image_tokens(s);
+    // 512 is the upstream default, not an ANE restriction. Bound our extended
+    // context below the 1536-position caption RoPE table (including padding).
+    require(t.valid <= z_image_limit,
+            "Z-Image prompt exceeds 1024 tokens; no silent truncation; GPU and ANE share this limit");
     if (!dynamic)
-        t.ids.resize(512, 151643);
+        t.ids.resize(std::max(512, t.valid), 151643);
     return t;
 }
 Tokens Tokenizer::llada_image_prompt(const std::string &s) {

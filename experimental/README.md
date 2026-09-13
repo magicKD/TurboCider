@@ -12,6 +12,7 @@
 
 目录说明：
 
+- `transformer/`：M4 Pro 上独立 1–3 层 Transformer 的 tensor、FFN sequence-row、完整 attention-head 并行研究，包含 public/private API 对照、原始数据和 [完整技术报告](transformer/notes/REPORT.md)；
 - `video/`：H3/LTX 迁移早期快照，不应继续同步模型数学；
 - `private-ane/`：private API 的适用范围、实测结论和不可发行原因；
 - `tools/experimental/`：只构建研究快照的显式入口，与 `make build`、`make package` 无关。

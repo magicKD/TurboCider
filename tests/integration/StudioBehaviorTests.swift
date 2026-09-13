@@ -12,6 +12,12 @@ struct StudioBehaviorTests {
             throw NativeFailure(message: "Expected validation failure")
         }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("tc-studio-test-\(UUID())")
+        let previousLibrary = getenv("TURBOCIDER_MODEL_LIBRARY").map { String(cString: $0) }
+        setenv("TURBOCIDER_MODEL_LIBRARY", root.appendingPathComponent("model-library").path, 1)
+        defer {
+            if let previousLibrary { setenv("TURBOCIDER_MODEL_LIBRARY", previousLibrary, 1) }
+            else { unsetenv("TURBOCIDER_MODEL_LIBRARY") }
+        }
         defer { try? FileManager.default.removeItem(at: root) }
         let monitor = ResourceMonitor()
         monitor.sample()

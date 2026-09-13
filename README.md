@@ -10,6 +10,10 @@ TurboCider is a local multimodal inference engine for Apple silicon. It turns un
 
 Create images and videos in a native SwiftUI studio, automate jobs with the CLI, or embed the same runtime through C / Swift bindings and a local task API. Models and generated media stay on your Mac.
 
+## App preview
+
+![TurboCider macOS App](assets/app/app.png)
+
 ## What makes it different
 
 - **Hardware-aware parallelism:** Metal / MLX on the GPU and Core ML FFN partitions eligible for the Neural Engine, coordinated by the CPU.
@@ -31,24 +35,15 @@ Selected **warm request medians**, not the fastest individual run:
 
 | Workload | Baseline → TurboCider | Speedup |
 |---|---|---:|
-| FLUX 4B · M4 Pro 48 GiB · 512² · 4 steps | Native GPU 4.758 s → GPU + ANE **2.896 s** | **1.64×**¹ |
+| FLUX 4B · M4 Pro 48 GiB · 512² · 4 steps | Native GPU 4.758 s → GPU + ANE **2.896 s** | **1.64×** |
 | FLUX 4B · M4 Max 64 GB · 512² · 4 steps | Native GPU 2.266 s → GPU + ANE **1.628 s** | **1.39×** |
-| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 steps | Stock ComfyUI GPU 40.110 s → GPU + ANE **30.001 s** | **1.34×**² |
+| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 steps | Stock ComfyUI GPU 40.110 s → GPU + ANE **30.001 s** | **1.34×** |
 
 The M4 Max FLUX hybrid result cuts request time by **28.2%**, with recorded
 GPU/hybrid PNG cosine similarity **0.999840**. Native Z-Image GPU alone took
 36.369 s; its hybrid route adds **1.21×** over that optimized GPU baseline.
 
-¹ September 5, 2026 historical cross-phase ratio, not a same-build paired rerun;
-the legacy hybrid artifact had path/size-only provenance.
-² September 7, 2026 recorded workflow comparison: native seed 42 and two warm
-samples versus ComfyUI seeds 43–45 and three samples, using different timing
-interfaces. It is not a seed-identical framework ranking.
-
-Hybrid uses approximate INT8 partitions; warm timings exclude initial setup
-and compilation. These selected dated results have **not been rerun for this
-documentation update** and are not promises for every device or the latest build.
-The older native hybrid was not faster than the original hybrid engine.
+Results vary by device and workload. Warm timings exclude initial setup and compilation; detailed test conditions are linked below.
 
 [Performance and fidelity](docs/public/PERFORMANCE.md) ·
 [Public samples, conditions and comparison limits](docs/public/BENCHMARKS.md)

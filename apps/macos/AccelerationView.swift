@@ -4,6 +4,7 @@ import AppKit
 struct AccelerationView: View {
     @ObservedObject var store: NativeJobStore
     @ObservedObject var studio: StudioState
+    @ObservedObject var library: ModelLibraryController
     private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
     private var supportsGPUANE: Bool { model?.supports_gpu_ane == true }
     private var supportsAutomaticGPUANE: Bool {
@@ -49,7 +50,7 @@ struct AccelerationView: View {
                 if supportsAutomaticGPUANE { Button("重新检测本机加速") { Task { await discover() } }.disabled(store.busy) }
             }
             if config.policy == "gpu_ane" {
-                Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定分区桶必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
+                Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定或变长分区的容量必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
                 if (studio.draft.modelID.hasPrefix("flux2-") || studio.draft.modelID == "z-image-turbo") && !studio.draft.activeLoRAs.isEmpty {
                     Text("带 LoRA 的 ANE 加速需要匹配同一文件与强度的分区。没有匹配缓存时会提示选择对应分区，或关闭 ANE 使用 GPU。")
                         .font(.caption).foregroundStyle(.orange)
@@ -134,7 +135,9 @@ struct AccelerationView: View {
     private func choose(compiled: Bool) {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
         panel.message = compiled ? "选择引用 .mlmodelc 的分区 manifest" : "选择引用 .mlpackage 的源分区 manifest"
-        if panel.runModal() == .OK, let url = panel.url { update { if compiled { $0.knownManifests = Array(Set(($0.knownManifests ?? []) + [$0.manifest, url.path])).filter { !$0.isEmpty }; $0.manifest = url.path } else { $0.sourceManifest = url.path } } }
+        if panel.runModal() == .OK, let url = panel.url {
+            library.registerANE(url, modelID: studio.draft.modelID, studio: studio, select: true)
+        }
     }
     private func prepare(warmup: Bool) {
         guard !store.externalServiceActive else { studio.message = "请先停止本地 API。"; return }

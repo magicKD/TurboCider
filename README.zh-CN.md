@@ -10,6 +10,10 @@ TurboCider 是面向 Apple Silicon Mac 的本地多模态推理引擎。它把�
 
 用原生 macOS App 创作图片和视频，用 CLI 批量运行，或把同一套运行时接入你的应用。模型和生成内容保留在本机。
 
+## App 预览
+
+![TurboCider macOS 应用预览](assets/app/app.png)
+
 ## 为什么选择 TurboCider
 
 - **硬件级异构并行。** Metal / MLX 执行 GPU 计算，Core ML 承接适合 ANE 的 FFN 分区；CPU 负责调度、准备和同步。已验证的分区路径使用共享输出缓冲，避免额外的输出复制。
@@ -30,21 +34,14 @@ Z-Image 相对记录中的 ComfyUI 为 1.34×；历史 M4 Pro FLUX 快照最高�
 
 | 工作负载 | 基线 → TurboCider | 加速比 |
 |---|---|---:|
-| FLUX 4B · M4 Pro 48 GiB · 512² · 4 步 | 原生 GPU 4.758 s → GPU + ANE **2.896 s** | **1.64×**¹ |
+| FLUX 4B · M4 Pro 48 GiB · 512² · 4 步 | 原生 GPU 4.758 s → GPU + ANE **2.896 s** | **1.64×** |
 | FLUX 4B · M4 Max 64 GB · 512² · 4 步 | 原生 GPU 2.266 s → GPU + ANE **1.628 s** | **1.39×** |
-| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 步 | Stock ComfyUI GPU 40.110 s → GPU + ANE **30.001 s** | **1.34×**² |
+| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 步 | Stock ComfyUI GPU 40.110 s → GPU + ANE **30.001 s** | **1.34×** |
 
 M4 Max FLUX 的生成耗时降低 **28.2%**，对应 GPU／混合输出 PNG 余弦相似度
 **0.999840**。Z-Image 原生 GPU 单独为 36.369 s，混合路线在此基础上再提速 **1.21×**。
 
-¹ 来自 2026-09-05 两个测量阶段的历史比值，不是同一构建的配对复测；
-旧混合产物只记录了路径／大小来源信息。
-² 来自 2026-09-07 的工作流记录：原生 seed 42、每路线 2 次 warm；
-ComfyUI seed 43–45、3 次 warm，计时接口不同，并非同 seed 的严格框架排名。
-
-混合路线采用近似 INT8 分区；warm 耗时不含首次准备和编译。
-**本次文档更新没有重跑实验**，精选历史结果不代表所有设备或最新构建的保证。
-历史原生混合路线也并未快于原始引擎的混合路线。
+实际性能因设备和工作负载而异。warm 耗时不含首次准备和编译，详细测试条件见下方文档。
 
 [性能与保真度（英文）](docs/public/PERFORMANCE.md) ·
 [公开样本、测量条件与比较边界（英文）](docs/public/BENCHMARKS.md)

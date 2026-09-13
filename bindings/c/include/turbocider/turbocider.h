@@ -42,7 +42,8 @@ void tc_string_free(char *);
 int tc_compile_coreml_json(const char *source, const char *cache, char **result, char **error);
 int tc_native_self_test(char **report_json, char **error);
 int tc_tokenize_json(const char *model_path, const char *prompt, char **tokens, char **error);
-/* Exact chat-template token count for Z-Image; no weights loaded, no truncation. */
+/* Exact chat-template token count for Z-Image; no weights loaded, no truncation.
+ * Returns valid/padded/limit even above the generation limit (up to 32 KiB). */
 int tc_z_image_tokenize_json(const char *model_path, const char *prompt, char **result, char **error);
 int tc_ltx_gemma_tokenize_json(const char *tokenizer_json, const char *prompt,
                                uint32_t max_length, char **tokens, char **error);
