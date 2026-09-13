@@ -85,16 +85,20 @@ LtxServiceRequest inspect_ltx_request(NSDictionary *request) {
 }
 bool external_ltx_request(NSDictionary *request) {
     auto value = inspect_ltx_request(request);
-    return value.matches && value.residency == "component_staged" &&
-        !value.audio;
+    /* Component-staged LTX requests run in a disposable worker so the
+     * post-denoise Video/Audio VAE finalizer can exec into a clean MLX
+     * process.  Audio used to be excluded here, which left the daemon's
+     * MPSGraph allocator resident and made Video VAE decode 3–5x slower. */
+    return value.matches && value.residency == "component_staged";
 }
 bool resident_ltx_candidate_request(NSDictionary *request) {
     const char *enabled = std::getenv("TURBOCIDER_LTX_RESIDENT_CANDIDATE");
     if (!enabled || std::strcmp(enabled, "1") != 0) return false;
     auto value = inspect_ltx_request(request);
-    /* The resident path intentionally keeps the native Transformer, Gemma,
-     * MPSGraph and MLX objects in one daemon Session.  Audio remains outside
-     * this candidate until its end-to-end provenance/parity gate is complete. */
+    /* The resident candidate intentionally keeps the native Transformer,
+     * Gemma, MPSGraph and MLX objects in one daemon Session.  Component-
+     * staged requests, including audio, use the disposable worker instead so
+     * finalization can cross a real process boundary. */
     return value.matches && value.residency == "resident" && !value.audio;
 }
 struct File {int fd=-1;~File(){if(fd>=0)close(fd);}};

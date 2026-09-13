@@ -19,6 +19,7 @@ struct Request {
     std::string operation = "image.generate";
     std::string prompt, output, execution = "gpu", dump, noise_path, ane_manifest;
     std::string profile, residency = "resident", quantized_cache;
+    std::string ltx_backend = "auto";
     std::string profile_identity;
     std::string model_variant = "auto";
     std::string lora_strategy = "auto";
@@ -40,6 +41,19 @@ struct Request {
     uint64_t seed = 42;
     bool compile_gpu = false;
     bool dynamic_text = true, allow_approximation = false, audio = true;
+    bool ltx_fast_av = true;
+    // Strictly equivalent Video attention command batching. This is opt-in
+    // because its full-request gain is device/schedule sensitive.
+    bool ltx_video_attention_batch = false;
+    // LTX quality-preserving GPU defaults stay dense.  These fields expose
+    // the ltx-mac approximate fast path explicitly; the parser rejects it
+    // unless allow_approximation is true.
+    bool ltx_sol_stage1 = false;
+    bool ltx_sol_stage2 = false;
+    double ltx_sol_tau = 0.5;
+    int ltx_sol_dense_edge_blocks = 1;
+    int ltx_sol_dense_edge_steps = 1;
+    int ltx_stage2_text_rows = 0;
     // Reserved legacy GGUF hint. Native backends reject unsupported offload;
     // this never selects or launches an external inference engine.
     bool streaming_offload = false;

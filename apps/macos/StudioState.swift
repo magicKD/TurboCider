@@ -101,6 +101,10 @@ struct StudioDraft: Codable, Sendable {
     var frames = 1
     var fps = 24
     var audio = false
+    var ltxBackend = "auto"
+    var ltxFastAV = true
+    var ltxVideoAttentionBatch = false
+    var ltxAccelerationMode = "quality"
     var seedText = "42"
     var randomSeed = false
     var strength = 0.75
@@ -114,7 +118,7 @@ struct StudioDraft: Codable, Sendable {
     var initImageID: UUID?
     init() {}
     private enum CodingKeys: String, CodingKey {
-        case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio
+        case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
         case seedText, randomSeed, strength, dynamicText, residency, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy
     }
@@ -131,6 +135,12 @@ struct StudioDraft: Codable, Sendable {
         frames = try c.decodeIfPresent(Int.self, forKey: .frames) ?? frames
         fps = try c.decodeIfPresent(Int.self, forKey: .fps) ?? fps
         audio = try c.decodeIfPresent(Bool.self, forKey: .audio) ?? audio
+        ltxBackend = try c.decodeIfPresent(String.self, forKey: .ltxBackend) ?? ltxBackend
+        ltxFastAV = try c.decodeIfPresent(Bool.self, forKey: .ltxFastAV) ?? ltxFastAV
+        ltxVideoAttentionBatch = try c.decodeIfPresent(
+            Bool.self, forKey: .ltxVideoAttentionBatch) ?? ltxVideoAttentionBatch
+        ltxAccelerationMode = try c.decodeIfPresent(
+            String.self, forKey: .ltxAccelerationMode) ?? ltxAccelerationMode
         seedText = try c.decodeIfPresent(String.self, forKey: .seedText) ?? seedText
         randomSeed = try c.decodeIfPresent(Bool.self, forKey: .randomSeed) ?? randomSeed
         strength = try c.decodeIfPresent(Double.self, forKey: .strength) ?? strength
@@ -195,6 +205,42 @@ struct StudioDraft: Codable, Sendable {
         guard !modelPath.isEmpty else { throw NativeFailure(message: "请先在模型中心选择模型文件夹。") }
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
         guard model.supports(operation) else { throw NativeFailure(message: "当前模型不支持“\(operation)”操作。") }
+        if modelID == "ltx-2.5-distilled" {
+            guard ["auto", "c_metal", "cpp_mlx"].contains(ltxBackend) else {
+                throw NativeFailure(message: "LTX 后端选择无效。")
+            }
+            guard ["quality", "sol", "fast_approx"].contains(ltxAccelerationMode) else {
+                throw NativeFailure(message: "LTX 加速模式无效。")
+            }
+            guard width % 64 == 0, height % 64 == 0 else {
+                throw NativeFailure(message: "LTX 2.5 的宽高必须是 64 的倍数。")
+            }
+            guard steps == 11 else {
+                throw NativeFailure(message: "LTX 2.5 Distilled 固定使用 8+3，共 11 步。")
+            }
+            guard frames >= 9, frames % 8 == 1 else {
+                throw NativeFailure(message: "LTX 2.5 帧数必须满足 8n+1，例如 97 或 121 帧。")
+            }
+            guard fps == 24 else {
+                throw NativeFailure(message: "LTX 2.5 Distilled 当前固定使用 24 FPS。")
+            }
+            if audio && residency == "streamed" {
+                throw NativeFailure(message: "LTX 带音频输出暂不支持 streamed 驻留，请选择常驻或分阶段释放。")
+            }
+            if ltxBackend == "cpp_mlx" && operation == "video.image" {
+                throw NativeFailure(message: "LTX C++/MLX 当前只支持文生视频；图生视频请选择 C/Metal。")
+            }
+            if ltxAccelerationMode != "quality" {
+                guard ltxBackend != "cpp_mlx" else {
+                    throw NativeFailure(message: "LTX Sol 近似加速当前只支持 C/Metal。")
+                }
+                let latentFrames = (frames - 1) / 8 + 1
+                let stage2Rows = latentFrames * (width / 32) * (height / 32)
+                guard stage2Rows <= 4096 else {
+                    throw NativeFailure(message: "LTX Sol 近似加速当前最多支持 4096 个 Stage-2 视频 token；720p 请使用画质优先模式。")
+                }
+            }
+        }
         guard !audio || model.canGenerateAudio else { throw NativeFailure(message: "当前执行器尚未开放音频输出，请关闭音频。") }
         guard (64...2048).contains(width), (64...2048).contains(height), width % 16 == 0, height % 16 == 0 else { throw NativeFailure(message: "宽高需为 64–2048 之间的 16 倍数。") }
         guard (1...50).contains(steps) else { throw NativeFailure(message: "采样步数需为 1–50，当前模型默认 \(model.default_steps) 步。") }
@@ -254,6 +300,22 @@ struct StudioDraft: Codable, Sendable {
         request.width = width; request.height = height; request.steps = steps
         request.seed = randomSeed ? random() : try fixedSeed()
         request.frames = frames; request.fps = fps; request.audio = audio
+        if modelID == "ltx-2.5-distilled" {
+            request.ltx_backend = ltxBackend
+            request.ltx_fast_av = ltxFastAV
+            request.ltx_video_attention_batch =
+                ltxAccelerationMode == "quality" && ltxVideoAttentionBatch
+            if ltxAccelerationMode != "quality" {
+                request.allow_approximation = true
+                request.ltx_sol_stage2 = true
+                request.ltx_sol_tau = 1.0
+                request.ltx_sol_dense_edge_blocks = 1
+                request.ltx_sol_dense_edge_steps = 0
+                if ltxAccelerationMode == "fast_approx" {
+                    request.ltx_stage2_text_rows = 256
+                }
+            }
+        }
         request.dynamic_text = dynamicText; request.residency = residency
         request.lora_strategy = activeLoRAs.isEmpty ? "auto" : loraStrategy
         request.profile = profilePath.isEmpty ? nil : profilePath
@@ -499,6 +561,9 @@ final class StudioState: ObservableObject {
         draft.steps = model.default_steps; draft.frames = model.default_frames
         draft.fps = model.default_fps ?? (model.isVideo ? 24 : 1)
         draft.audio = model.default_audio ?? false
+        draft.ltxBackend = "auto"; draft.ltxFastAV = true
+        draft.ltxVideoAttentionBatch = false
+        draft.ltxAccelerationMode = "quality"
         draft.residency = model.default_residency ?? "resident"
         draft.profilePath = ""
         draft.acceleration = StudioAcceleration(policy: "gpu")

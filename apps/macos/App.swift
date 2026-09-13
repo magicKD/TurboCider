@@ -284,14 +284,17 @@ struct StudioView: View {
         ScrollView(.horizontal) { HStack(alignment: .top, spacing: 10) {
             ForEach(Array(studio.draft.assets.enumerated()), id: \.element.id) { index, asset in
                 VStack(alignment: .leading, spacing: 4) {
-                    Button { if studio.draft.operation == "image.transform" { studio.draft.initImageID = asset.id } } label: {
+                    Button { if ["image.transform", "video.image"].contains(studio.draft.operation) { studio.draft.initImageID = asset.id } } label: {
                         MediaPreview(path: asset.path, maxPixel: 160).frame(width: 78, height: 54).clipped()
                             .overlay(RoundedRectangle(cornerRadius: 5).stroke(studio.draft.activeAssets.contains(asset) ? ciderAccent : .clear, lineWidth: 2))
                     }.buttonStyle(.plain).accessibilityLabel("参考图 \(index + 1)，\(asset.name)，点击选为原图")
                     HStack(spacing: 4) {
-                        Text(studio.draft.operation == "image.transform" && studio.draft.initImageID == asset.id ? "原图" : "参考 \(index + 1)").font(.caption2)
+                        Text(["image.transform", "video.image"].contains(studio.draft.operation) && studio.draft.initImageID == asset.id ? "原图" : "参考 \(index + 1)").font(.caption2)
                         Menu {
-                            Button("设为原图") { studio.changeOperation("image.transform"); studio.draft.initImageID = asset.id }
+                            Button("设为原图") {
+                                let operation = studio.draft.modelID == "ltx-2.5-distilled" ? "video.image" : "image.transform"
+                                studio.changeOperation(operation); studio.draft.initImageID = asset.id
+                            }
                             Button("向前移动") { studio.move(asset.id, offset: -1) }.disabled(index == 0)
                             Button("向后移动") { studio.move(asset.id, offset: 1) }.disabled(index == studio.draft.assets.count - 1)
                             Button("移除", role: .destructive) { studio.remove(asset.id) }
@@ -324,7 +327,24 @@ struct StudioView: View {
             }
             Text("输出尺寸").font(.subheadline)
             HStack { TextField("宽", value: $studio.draft.width, format: .number).accessibilityIdentifier("width"); Text("×"); TextField("高", value: $studio.draft.height, format: .number).accessibilityIdentifier("height") }.textFieldStyle(.roundedBorder)
-            HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in Button("\(size)") { studio.draft.width = size; studio.draft.height = size }.font(.caption) } }
+            if studio.draft.modelID == "ltx-2.5-distilled" {
+                HStack {
+                    Button("5 秒 · 480p 桶") {
+                        studio.draft.width = 768; studio.draft.height = 448
+                        studio.draft.frames = 121; studio.draft.fps = 24
+                        studio.draft.steps = 11
+                    }.font(.caption)
+                    Button("5 秒 · 720p 桶") {
+                        studio.draft.width = 1280; studio.draft.height = 704
+                        studio.draft.frames = 121; studio.draft.fps = 24
+                        studio.draft.steps = 11
+                    }.font(.caption)
+                }
+                Text("LTX 会使用 64 的倍数；480/720 高度分别向下对齐为 448/704。121 帧约 5.04 秒。")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else {
+                HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in Button("\(size)") { studio.draft.width = size; studio.draft.height = size }.font(.caption) } }
+            }
             if model?.isVideo == true {
                 Divider()
                 Text("视频参数").font(.subheadline)
@@ -336,9 +356,9 @@ struct StudioView: View {
                     Toggle("生成音频", isOn: $studio.draft.audio).controlSize(.small)
                 } else { Text("当前执行器输出无音轨视频。").font(.caption).foregroundStyle(.secondary) }
             }
-            if studio.draft.operation == "image.transform" {
+            if ["image.transform", "video.image"].contains(studio.draft.operation) {
                 Divider()
-                HStack { Text("原图保留强度"); Spacer(); Text(studio.draft.strength, format: .number.precision(.fractionLength(2))).monospacedDigit() }.font(.caption)
+                HStack { Text(studio.draft.operation == "video.image" ? "首帧保留强度" : "原图保留强度"); Spacer(); Text(studio.draft.strength, format: .number.precision(.fractionLength(2))).monospacedDigit() }.font(.caption)
                 Slider(value: $studio.draft.strength, in: 0...1, step: 0.05).accessibilityLabel("原图保留强度")
                 Text("值越大，保留原图越多；1 仅进行 VAE 重建，0 使用完整采样。实际采样步数随强度变化。").font(.caption2).foregroundStyle(.secondary)
             }
@@ -392,6 +412,31 @@ struct StudioView: View {
             DisclosureGroup("高级参数") {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("动态文本长度", isOn: $studio.draft.dynamicText).controlSize(.small)
+                    if studio.draft.modelID == "ltx-2.5-distilled" {
+                        Picker("LTX 后端", selection: $studio.draft.ltxBackend) {
+                            Text("自动（C/Metal）").tag("auto")
+                            Text("C/Metal").tag("c_metal")
+                            Text("C++/MLX（实验）").tag("cpp_mlx")
+                        }
+                        Toggle("GPU 快速 A/V 调度", isOn: $studio.draft.ltxFastAV)
+                            .controlSize(.small)
+                        Text("Fast A/V 会并行音频分支并合并命令缓冲区；已通过 97 帧 latent 一致性门禁。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        Toggle("Video Attention 批处理（实验）",
+                               isOn: $studio.draft.ltxVideoAttentionBatch)
+                            .controlSize(.small)
+                            .disabled(studio.draft.ltxAccelerationMode != "quality")
+                        Text("严格等价；当前 97 帧 ABBA 的 denoise 约快 1.1%，但总耗时收益不稳定。Sol 模式会自动关闭。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        Picker("LTX 加速模式", selection: $studio.draft.ltxAccelerationMode) {
+                            Text("画质优先（Dense）").tag("quality")
+                            Text("Stage-2 Sol 近似").tag("sol")
+                            Text("Sol + 256 行文本（最快候选）").tag("fast_approx")
+                        }
+                        .disabled(store.busy || submitting)
+                        Text("近似模式只修改 Stage-2；需要多 prompt/seed 质量回归，720p 自动限制为画质优先。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                     if ["z-image-turbo", "z-image-turbo-gguf"].contains(studio.draft.modelID) {
                         LabeledContent("模型驻留", value: "常驻（分阶段模式待实现）")
                             .font(.caption)

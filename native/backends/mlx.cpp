@@ -73,7 +73,7 @@ static const Tensor &convrot_h256() {
     return matrix;
 }
 
-static Tensor convrot_rotate(const Tensor &x) {
+static Tensor convrot_rotate_dense(const Tensor &x) {
     require(x.shape(-1) % 256 == 0, "ConvRot input must align to 256 values");
     auto grouped_shape = x.shape();
     grouped_shape.back() = x.shape(-1) / 256;
@@ -82,6 +82,55 @@ static Tensor convrot_rotate(const Tensor &x) {
     auto hadamard = mx::astype(convrot_h256(), x.dtype());
     return mx::reshape(mx::matmul(grouped, hadamard), x.shape());
 }
+
+static Tensor convrot_rotate_metal(const Tensor &x) {
+    require(x.shape(-1) % 256 == 0, "ConvRot input must align to 256 values");
+    require(x.dtype() == mx::bfloat16 || x.dtype() == mx::float16 ||
+                x.dtype() == mx::float32,
+            "Metal ConvRot requires a floating-point activation");
+    /* H_256 = H_4 kron H_4 kron H_4 kron H_4.  One threadgroup owns one
+     * contiguous 256-value tile, reducing the transform from a dense
+     * 256x256 matmul to four radix-4 butterflies.  Accumulation stays FP32
+     * and the final store rounds once to the input dtype. */
+    static auto kernel = mx::fast::metal_kernel(
+        "tc_convrot_h256", {"x", "columns"}, {"out"},
+        "threadgroup float current[256]; "
+        "threadgroup float next[256]; "
+        "uint lane = thread_index_in_threadgroup; "
+        "uint K = uint(columns); "
+        "uint base = threadgroup_position_in_grid.y * K + "
+        "            threadgroup_position_in_grid.x * 256; "
+        "current[lane] = float(x[base + lane]); "
+        "threadgroup_barrier(mem_flags::mem_threadgroup); "
+        "for (uint stride = 1; stride < 256; stride *= 4) { "
+        "  uint digit = (lane / stride) & 3; "
+        "  uint butterfly = lane - digit * stride; "
+        "  float a = current[butterfly]; "
+        "  float b = current[butterfly + stride]; "
+        "  float c = current[butterfly + 2 * stride]; "
+        "  float d = current[butterfly + 3 * stride]; "
+        "  switch (digit) { "
+        "    case 0: next[lane] = a + b + c - d; break; "
+        "    case 1: next[lane] = a + b - c + d; break; "
+        "    case 2: next[lane] = a - b + c + d; break; "
+        "    default: next[lane] = -a + b + c + d; break; "
+        "  } "
+        "  threadgroup_barrier(mem_flags::mem_threadgroup); "
+        "  current[lane] = next[lane]; "
+        "  threadgroup_barrier(mem_flags::mem_threadgroup); "
+        "} "
+        "out[base + lane] = T(current[lane] * 0.0625f); ");
+    const int columns = x.shape(-1);
+    const int rows = static_cast<int>(x.size() / columns);
+    return kernel({x, Tensor(columns)}, {x.shape()}, {x.dtype()},
+                  {columns, rows, 1}, {256, 1, 1}, {{"T", x.dtype()}}, {},
+                  false, {})[0];
+}
+
+static Tensor convrot_rotate(const Tensor &x, bool metal) {
+    return metal ? convrot_rotate_metal(x) : convrot_rotate_dense(x);
+}
+
 }
 void Weights::load(const std::filesystem::path &p, const Event &event,
                    std::atomic<bool> &cancelled) {
@@ -172,6 +221,27 @@ void Weights::fuse_keys(const std::string &target, const std::vector<std::string
     for (const auto &source : sources)
         values_.erase(source);
 }
+
+std::vector<std::string> Weights::sorted_keys() const {
+    std::vector<std::string> keys;
+    keys.reserve(values_.size());
+    for (const auto &[key, _] : values_)
+        keys.push_back(key);
+    std::sort(keys.begin(), keys.end());
+    return keys;
+}
+
+void Weights::bind_arrays(const std::vector<std::string> &keys,
+                          const std::vector<Tensor> &arrays, size_t offset) {
+    require(offset <= arrays.size() && keys.size() <= arrays.size() - offset,
+            "weight binding array range is invalid");
+    values_.clear();
+    runtime_loras_.clear();
+    values_.reserve(keys.size());
+    for (size_t index = 0; index < keys.size(); ++index)
+        values_.emplace(keys[index], arrays[offset + index]);
+}
+
 bool Weights::quantized(const std::string &prefix) const {
     return has(prefix + ".weight") && has(prefix + ".scales") &&
            !has(prefix + ".comfy_quant") &&
@@ -247,6 +317,15 @@ void Weights::cast_unquantized_float32(mx::Dtype dtype) {
 }
 
 size_t Weights::pack_convrot_q8() {
+    return pack_convrot_q8(
+        32, std::getenv("TURBOCIDER_Z_CONVROT_FP32_SCALES")
+                ? mx::float32
+                : mx::bfloat16);
+}
+
+size_t Weights::pack_convrot_q8(int group_size, mx::Dtype scale_dtype) {
+    require(group_size == 32 || group_size == 64 || group_size == 128,
+            "unsupported ConvRot affine group size");
     std::vector<std::string> prefixes;
     for (const auto &[key, _] : values_)
         if (key.ends_with(".comfy_quant"))
@@ -272,18 +351,14 @@ size_t Weights::pack_convrot_q8() {
         // Comfy ConvRot stores signed q in [-128, 127] with one scale for an
         // entire output row. MLX affine Q8 consumes unsigned bytes and
         // reconstructs scale*q+bias per group. The q+128 / -128*scale mapping
-        // is exact; repeating the row scale over 32-value groups only changes
-        // layout. BF16 scale storage is the fast model-dtype path. FP32 remains
-        // available for parity diagnosis because MLX dispatches a materially
-        // slower kernel for the full 1024-token workload with FP32 scales.
+        // is exact; repeating the row scale over the requested MLX groups only
+        // changes layout. BF16 scale storage is the existing fast Z-Image
+        // profile; LTX uses FP32 scales to match its Python MLX reference.
         auto unsigned_weight = mx::astype(
             mx::astype(weight, mx::int32) + Tensor(128, mx::int32), mx::uint8);
         auto packed = mx::view(unsigned_weight, mx::uint32);
-        const auto scale_dtype = std::getenv("TURBOCIDER_Z_CONVROT_FP32_SCALES")
-                                     ? mx::float32
-                                     : mx::bfloat16;
         auto scales = mx::repeat(mx::astype(row_scale, scale_dtype),
-                                 weight.shape(1) / 32, 1);
+                                 weight.shape(1) / group_size, 1);
         auto biases = scales * Tensor(-128.f, scale_dtype);
         mx::eval({packed, scales, biases});
 
@@ -337,12 +412,19 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
         const int input = x.shape(-1);
         require(input == logical_input && input % 256 == 0,
                 "ConvRot input does not match " + prefix);
-        auto rotated = convrot_rotate(x);
+        auto rotated = convrot_rotate(x, metal_convrot_);
         if (packed) {
+            const auto &scales = at(prefix + ".scales");
+            require(scales.ndim() == 2 && scales.shape(0) == weight.shape(0) &&
+                        logical_input % scales.shape(1) == 0,
+                    "invalid packed ConvRot scale geometry: " + prefix);
+            const int group_size = logical_input / scales.shape(1);
+            require(group_size == 32 || group_size == 64 || group_size == 128,
+                    "unsupported packed ConvRot group size: " + prefix);
             output = mx::astype(
-                mx::quantized_matmul(rotated, weight, at(prefix + ".scales"),
-                                     at(prefix + ".biases"), true, 32, 8,
-                                     "affine"),
+                mx::quantized_matmul(rotated, weight, scales,
+                                     at(prefix + ".biases"), true,
+                                     group_size, 8, "affine"),
                 x.dtype());
         } else {
             rotated = mx::astype(rotated, mx::float32);
@@ -406,6 +488,65 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
     return output;
 }
 
+std::vector<Tensor> Weights::project_many(
+    const Tensor &x, const std::vector<std::string> &prefixes) const {
+    require(!prefixes.empty(), "cannot project an empty prefix list");
+    bool shared_convrot = true;
+    for (const auto &prefix : prefixes) {
+        if (!convrot(prefix) || runtime_loras_.count(prefix)) {
+            shared_convrot = false;
+            break;
+        }
+    }
+    if (!shared_convrot) {
+        std::vector<Tensor> outputs;
+        outputs.reserve(prefixes.size());
+        for (const auto &prefix : prefixes)
+            outputs.push_back(project(x, prefix));
+        return outputs;
+    }
+
+    // Q/K/V and K/V projections often consume exactly the same activation.
+    // Make the ConvRot dependency explicit once so MLX does not build and run
+    // two or three equivalent 256-wide Hadamard transforms.
+    auto rotated = convrot_rotate(x, metal_convrot_);
+    std::vector<Tensor> outputs;
+    outputs.reserve(prefixes.size());
+    for (const auto &prefix : prefixes) {
+        const auto &weight = at(prefix + ".weight");
+        const bool packed = weight.dtype() == mx::uint32;
+        const int logical_input = packed ? weight.shape(1) * 4 : weight.shape(1);
+        require(weight.ndim() == 2 && logical_input == x.shape(-1),
+                "shared ConvRot input does not match " + prefix);
+        Tensor output = x;
+        if (packed) {
+            const auto &scales = at(prefix + ".scales");
+            require(scales.ndim() == 2 && scales.shape(0) == weight.shape(0) &&
+                        logical_input % scales.shape(1) == 0,
+                    "invalid shared ConvRot scale geometry: " + prefix);
+            const int group_size = logical_input / scales.shape(1);
+            require(group_size == 32 || group_size == 64 || group_size == 128,
+                    "unsupported shared ConvRot group size: " + prefix);
+            output = mx::astype(
+                mx::quantized_matmul(rotated, weight, scales,
+                                     at(prefix + ".biases"), true,
+                                     group_size, 8, "affine"),
+                x.dtype());
+        } else {
+            auto dense = mx::astype(weight, mx::float32) *
+                         mx::astype(at(prefix + ".weight_scale"), mx::float32);
+            output = mx::astype(
+                mx::matmul(mx::astype(rotated, mx::float32),
+                           mx::transpose(dense)),
+                x.dtype());
+        }
+        if (has(prefix + ".bias"))
+            output = output + mx::astype(at(prefix + ".bias"), output.dtype());
+        outputs.push_back(std::move(output));
+    }
+    return outputs;
+}
+
 
 Tensor Weights::project_range(const Tensor &x, const std::string &prefix,
                               int row_start, int row_end,
@@ -420,16 +561,27 @@ Tensor Weights::project_range(const Tensor &x, const std::string &prefix,
                 col_end <= logical_input && col_start % 256 == 0 &&
                 col_end % 256 == 0 && x.shape(-1) == col_end - col_start,
             "invalid ConvRot projection range: " + prefix);
-    auto rotated = convrot_rotate(x);
+    auto rotated = convrot_rotate(x, metal_convrot_);
     if (weight.dtype() == mx::uint32) {
+        const auto &all_scales = at(prefix + ".scales");
+        const auto &all_biases = at(prefix + ".biases");
+        require(all_scales.ndim() == 2 &&
+                    all_scales.shape(0) == weight.shape(0) &&
+                    logical_input % all_scales.shape(1) == 0,
+                "invalid packed ConvRot scale geometry: " + prefix);
+        const int group_size = logical_input / all_scales.shape(1);
+        require(group_size == 32 || group_size == 64 || group_size == 128,
+                "unsupported packed ConvRot group size: " + prefix);
         auto q = slice_axis(weight, 0, row_start, row_end);
         q = slice_axis(q, 1, col_start / 4, col_end / 4);
-        auto scales = slice_axis(at(prefix + ".scales"), 0, row_start, row_end);
-        scales = slice_axis(scales, 1, col_start / 32, col_end / 32);
-        auto biases = slice_axis(at(prefix + ".biases"), 0, row_start, row_end);
-        biases = slice_axis(biases, 1, col_start / 32, col_end / 32);
+        auto scales = slice_axis(all_scales, 0, row_start, row_end);
+        scales = slice_axis(scales, 1, col_start / group_size,
+                            col_end / group_size);
+        auto biases = slice_axis(all_biases, 0, row_start, row_end);
+        biases = slice_axis(biases, 1, col_start / group_size,
+                            col_end / group_size);
         return mx::astype(mx::quantized_matmul(rotated, q, scales, biases, true,
-                                               32, 8, "affine"),
+                                               group_size, 8, "affine"),
                           x.dtype());
     }
     auto q = slice_axis(weight, 0, row_start, row_end);
@@ -448,13 +600,23 @@ void Weights::dequantize(const std::vector<std::string> &prefixes) {
             const int logical_input = affine ? packed.shape(1) * 4 : packed.shape(1);
             require(packed.ndim() == 2 && logical_input % 256 == 0,
                     "invalid ConvRot geometry: " + prefix);
+            int group_size = 0;
+            if (affine) {
+                const auto &scales = at(prefix + ".scales");
+                require(scales.ndim() == 2 && scales.shape(0) == packed.shape(0) &&
+                            logical_input % scales.shape(1) == 0,
+                        "invalid packed ConvRot scale geometry: " + prefix);
+                group_size = logical_input / scales.shape(1);
+                require(group_size == 32 || group_size == 64 || group_size == 128,
+                        "unsupported packed ConvRot group size: " + prefix);
+            }
             auto rotated = affine
                 ? mx::dequantize(packed, at(prefix + ".scales"),
-                                 at(prefix + ".biases"), 32, 8, "affine",
+                                 at(prefix + ".biases"), group_size, 8, "affine",
                                  std::nullopt, mx::float32)
                 : mx::astype(packed, mx::float32) *
                       mx::astype(at(prefix + ".weight_scale"), mx::float32);
-            auto dense = convrot_rotate(rotated);
+            auto dense = convrot_rotate(rotated, metal_convrot_);
             dense = mx::astype(dense, mx::bfloat16);
             mx::eval(dense);
             values_.at(prefix + ".weight") = std::move(dense);
@@ -511,6 +673,7 @@ void Weights::clear() {
     values_.clear();
     runtime_loras_.clear();
 }
+
 size_t Weights::bytes() const {
     size_t n = 0;
     for (auto &[k, v] : values_)

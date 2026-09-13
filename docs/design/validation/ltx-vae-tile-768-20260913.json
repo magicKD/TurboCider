@@ -1,0 +1,46 @@
+{
+  "schema": "turbocider-ltx-vae-tile-ab-v1",
+  "date": "2026-09-13",
+  "hardware": "Apple M4 Max 40-core GPU",
+  "workload": {
+    "latent_frames": 16,
+    "latent_height": 22,
+    "latent_width": 40,
+    "output": "1280x704x121@24",
+    "same_stage2_latent": true,
+    "overlap_pixels": 64
+  },
+  "reference": {
+    "tile_pixels": 512,
+    "decode_seconds": 12.55
+  },
+  "candidate": {
+    "tile_pixels": 768,
+    "decode_seconds": 10.11,
+    "speedup": 1.2413
+  },
+  "quality_vs_reference": {
+    "mean_correlation": 0.9991012578,
+    "minimum_correlation": 0.9987474736,
+    "mean_cosine": 0.9998356339,
+    "mean_mae_255": 1.5592433304,
+    "maximum_motion_relative_error": 0.0112038634,
+    "passed": true
+  },
+  "integrated_same_binary": {
+    "tile_512_request_seconds": 249.856549167,
+    "tile_512_video_vae_seconds": 26.854642166,
+    "tile_768_request_seconds": 250.320357791,
+    "tile_768_video_vae_seconds": 27.613226458
+  },
+  "decision": {
+    "status": "retain_512_default",
+    "default_tile_pixels": 512,
+    "experimental_tile_pixels": 768,
+    "reason": "standalone decode was faster at 768, but same-binary integrated helper path was not"
+  },
+  "notes": [
+    "Standalone decode timing excludes the denoise stage and MP4 mux.",
+    "The integrated 5-second 720p audio request must be rerun after rebuilding the native binary."
+  ]
+}

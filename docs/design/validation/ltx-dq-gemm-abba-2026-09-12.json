@@ -1,0 +1,100 @@
+{
+  "schema": "turbocider-ltx-dq-gemm-abba-v1",
+  "date": "2026-09-12",
+  "hardware": {
+    "model": "Mac Studio Mac16,9",
+    "chip": "Apple M4 Max",
+    "memory_gib": 64,
+    "macos": "26.6.2"
+  },
+  "build": {
+    "library": "build/native/libturbocider.dylib",
+    "route": "C++/MLX GPU with Metal ConvRot",
+    "baseline_environment": [
+      "TURBOCIDER_LTX_MLX=1",
+      "TURBOCIDER_LTX_MLX_METAL_CONVROT=1"
+    ],
+    "candidate_environment": [
+      "TURBOCIDER_LTX_MLX=1",
+      "TURBOCIDER_LTX_MLX_METAL_CONVROT=1",
+      "TURBOCIDER_LTX_MLX_DQ_GEMM_MIN_ROWS=768"
+    ],
+    "candidate_scope": "video self-attention and video FFN projections only"
+  },
+  "workload": {
+    "model": "ltx-2.5-distilled",
+    "width": 704,
+    "height": 448,
+    "frames": 97,
+    "steps": 11,
+    "seed": 42,
+    "prompt": "A cinematic red fox running through a snowy forest",
+    "execution": "gpu",
+    "residency": "component_staged",
+    "audio": false
+  },
+  "method": {
+    "warmups": ["baseline", "candidate"],
+    "measured_sequence": [
+      "baseline", "candidate", "candidate", "baseline",
+      "candidate", "baseline", "baseline", "candidate"
+    ],
+    "samples": {
+      "baseline": 4,
+      "candidate": 4
+    },
+    "source_report": "/private/tmp/turbocider-ltx-dq-abba-prod.json"
+  },
+  "results": {
+    "baseline_denoise_seconds": [
+      66.451580666,
+      66.523709583,
+      66.483567207,
+      66.495224375
+    ],
+    "candidate_denoise_seconds": [
+      65.825505166,
+      65.827474292,
+      65.855496083,
+      65.8688145
+    ],
+    "baseline_median_request_wall_seconds": 69.900254292,
+    "candidate_median_request_wall_seconds": 69.257366792,
+    "request_wall_speedup": 1.0092825865287482,
+    "baseline_median_denoise_seconds": 66.48939579099999,
+    "candidate_median_denoise_seconds": 65.8414851875,
+    "denoise_speedup": 1.0098404615517846,
+    "candidate_denoise_change_percent": -0.9744570480631376,
+    "all_latents_finite": true,
+    "all_latents_byte_exact": true,
+    "all_media_byte_exact": false
+  },
+  "quality": {
+    "stage2_video_latent": {
+      "candidate_pairs": 4,
+      "all_finite": true,
+      "all_byte_exact": true,
+      "relative_l2": 0.0,
+      "cosine": 1.0,
+      "max_abs": 0.0
+    },
+    "decoded_video_pair": {
+      "frames_compared": 97,
+      "shape_equal": true,
+      "fps_equal": true,
+      "mean_correlation": 1.0,
+      "minimum_correlation": 1.0,
+      "mean_cosine": 1.0,
+      "mean_mae_255": 0.0,
+      "maximum_motion_relative_error": 0.0,
+      "passed": true
+    },
+    "container_note": "MP4 SHA differs because the container is not byte deterministic; all decoded frames in the checked pair are byte equivalent."
+  },
+  "decision": {
+    "performance_gate_2_percent": false,
+    "quality_gate": "latent byte exact for all four pairs; media byte identity is not required",
+    "status": "rejected_as_production_optimization",
+    "reason": "The measured gain is below the 2% retention threshold; remove the DQ-GEMM switch and keep the quantized ConvRot path."
+  }
+}

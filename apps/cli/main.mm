@@ -59,9 +59,9 @@ static bool ltx_exec_finalizer_plan(NSString *request) {
  id value=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
  return [value isKindOfClass:NSDictionary.class]&&
         [value[@"model"] isEqual:@"ltx-2.5-distilled"]&&
-        [value[@"operation"] isEqual:@"video.generate"]&&
-        [value[@"residency"] isEqual:@"component_staged"]&&
-        ![value[@"audio"] boolValue];
+        ([value[@"operation"] isEqual:@"video.generate"]||
+         [value[@"operation"] isEqual:@"video.image"])&&
+        [value[@"residency"] isEqual:@"component_staged"];
 }
 static void configure_ltx_cli_environment(NSString *request) {
  if(!ltx_exec_finalizer_plan(request))return;

@@ -1,0 +1,210 @@
+{
+  "schema": "turbocider-ltx-validation-summary-v1",
+  "date": "2026-09-13",
+  "hardware": "Apple M4 Max 40-core GPU",
+  "workload": {
+    "width": 704,
+    "height": 448,
+    "frames": 97,
+    "steps": 11,
+    "seed": 42,
+    "prompt": "A cinematic red fox running through a snowy forest"
+  },
+  "gpu_baseline": {
+    "execution": "gpu",
+    "implementation": "c_metal",
+    "warm_request_seconds": 67.493331708,
+    "warm_denoise_seconds": 52.352844042,
+    "stage1_seconds": 22.587895,
+    "stage2_seconds": 29.764949042,
+    "source_report": "ltx-gpu-recompiled-20260913.json"
+  },
+  "ane_int8": {
+    "execution": "gpu_ane",
+    "variant": "int8_pc",
+    "blocks": 48,
+    "stages": 3,
+    "kv_stage_mask": 0,
+    "warm_request_seconds": 65.646093,
+    "warm_denoise_seconds": 45.76088875,
+    "stage1_seconds": 19.629953083,
+    "stage2_seconds": 26.130935667,
+    "warm_denoise_speedup": 1.1440521693,
+    "warm_request_speedup": 1.0281393549,
+    "latent_vs_gpu": {
+      "relative_l2": 0.3306327593,
+      "cosine": 0.9451489027,
+      "quality_gate_passed": false
+    },
+    "rgb_vs_gpu": {
+      "mean_correlation": 0.8585822482,
+      "mean_cosine": 0.9784363780,
+      "mean_mae_255": 20.5142680894,
+      "maximum_motion_relative_error": 0.0531952530,
+      "quality_gate_passed": false
+    },
+    "delivery_status": "experimental_speed_pass_quality_fail",
+    "source_report": "ltx-ane-recompiled-20260913.json"
+  },
+  "ane_fp16": {
+    "execution": "gpu_ane",
+    "variant": "fp16",
+    "blocks": 48,
+    "warm_request_seconds": 84.923541792,
+    "warm_denoise_seconds": 58.780731791,
+    "warm_denoise_speedup_vs_gpu": 0.8906463470,
+    "latent_vs_gpu": {
+      "relative_l2": 0.2995296698,
+      "cosine": 0.9549615333
+    },
+    "rgb_vs_gpu": {
+      "mean_correlation": 0.8764821702,
+      "mean_cosine": 0.9814335230,
+      "mean_mae_255": 19.0479384668,
+      "maximum_motion_relative_error": 0.0592215517,
+      "quality_gate_passed": false
+    },
+    "delivery_status": "not_retained_slower_than_gpu",
+    "source_report": "ltx-ane-fp16-20260913.json"
+  },
+    "video_vae_tiled_720p": {
+    "width": 1280,
+    "height": 704,
+    "frames": 121,
+    "fps": 24,
+    "audio": {
+      "codec": "aac",
+      "sample_rate": 48000,
+      "channels": 2,
+      "duration_seconds": 5.041666667
+    },
+    "video": {
+      "codec": "h264",
+      "duration_seconds": 5.041667
+    },
+    "untiled_request_wall_seconds": 635.719404084,
+    "tiled_request_wall_seconds": 249.051799291,
+    "request_speedup": 2.5525589692,
+    "untiled_denoise_seconds": 194.502781166,
+    "tiled_denoise_seconds": 194.434716375,
+    "untiled_video_vae_seconds": 412.936201584,
+    "tiled_video_vae_seconds": 26.145656875,
+    "vae_speedup": 15.7936824291,
+    "tiled_output": "outputs/ltx25-5s-validation-2026-09-13/720p-bucket-tiled/component_staged/request-0.mp4",
+    "same_latent_quality": {
+      "psnr_db": 41.989241,
+      "ssim_all": 0.987276,
+      "latent_byte_exact": true
+    },
+        "source_report": "ltx-5s-720p-tiled-20260913.json"
+    },
+    "gpu_production_480p_text_to_video": {
+        "operation": "video.generate",
+        "execution": "gpu",
+        "implementation": "c_metal",
+        "width": 768,
+        "height": 448,
+        "frames": 121,
+        "fps": 24,
+        "steps": 11,
+        "seed": 42,
+        "audio": {
+            "codec": "aac",
+            "sample_rate": 48000,
+            "channels": 2,
+            "duration_seconds": 5.041666667
+        },
+        "video": {
+            "codec": "h264",
+            "duration_seconds": 5.041667
+        },
+        "first_request_seconds": 115.50257725,
+        "warm_request_seconds": 85.603227666,
+        "warm_denoise_seconds": 68.728665459,
+        "stage1_seconds": 28.383038875,
+        "stage2_seconds": 40.345626584,
+        "video_vae_seconds": 10.918450666,
+        "source_report": "ltx-480-report-20260913.json",
+        "output_root": "local-output/ltx-480-output-20260913/component_staged",
+        "status": "passed_native_gpu_audio_video_smoke"
+    },
+    "gpu_production_480p_image_to_video": {
+        "operation": "video.image",
+        "execution": "gpu",
+        "implementation": "c_metal",
+        "width": 768,
+        "height": 448,
+        "frames": 97,
+        "fps": 24,
+        "steps": 11,
+        "seed": 42,
+        "first_frame_strength": 0.65,
+        "audio": {
+            "codec": "aac",
+            "sample_rate": 48000,
+            "channels": 2,
+            "duration_seconds": 4.041666667
+        },
+        "video": {
+            "codec": "h264",
+            "duration_seconds": 4.041667
+        },
+        "request_seconds": 99.819655208,
+        "denoise_seconds": 57.80494675,
+        "stage1_seconds": 25.1045065,
+        "stage2_seconds": 32.70044025,
+        "video_vae_seconds": 13.21317,
+        "first_frame_quality_against_input": {
+            "psnr_db": 32.042881,
+            "ssim_all": 0.972011,
+            "note": "single decoded first-frame smoke comparison; not a full reference-quality gate"
+        },
+        "source_report": "ltx-i2v-report-20260913.json",
+        "output_root": "local-output/ltx-i2v-output-20260913/component_staged",
+        "status": "passed_native_gpu_audio_image_to_video_smoke"
+    },
+    "ane_stage2_only_visual_check": {
+        "execution": "gpu_ane",
+        "variant": "int8_pc",
+        "scope": "stage2_only",
+        "warm_denoise_speedup_vs_gpu": 1.0417,
+        "rgb_vs_gpu": {
+            "frame_count": 97,
+            "mean_correlation": 0.9740965372,
+            "minimum_correlation": 0.9622589157,
+            "mean_cosine": 0.9960740589,
+            "minimum_cosine": 0.9944099022,
+            "mean_mae_255": 8.2641534227,
+            "maximum_motion_relative_error": 0.0183600349
+        },
+        "delivery_status": "promising_quality_but_below_1_10x_end_to_end_denoise_target",
+        "source_report": "ltx-ane-stage2-20260913.json",
+        "output": "local-output/ltx-ane-stage2-output-20260913/component_staged/request-0.mp4"
+    },
+    "ane_last24_blocks_both_stages_visual_check": {
+        "execution": "gpu_ane",
+        "variant": "int8_pc",
+        "scope": "blocks_24_through_47_stage1_and_stage2",
+        "request_seconds": 99.246599166,
+        "denoise_seconds": 50.227216958,
+        "denoise_speedup_vs_gpu": 1.0423,
+        "rgb_vs_gpu": {
+            "frame_count": 97,
+            "mean_correlation": 0.8635605414,
+            "minimum_correlation": 0.8298133097,
+            "mean_cosine": 0.9791752678,
+            "minimum_cosine": 0.9727758754,
+            "mean_mae_255": 20.5214400403,
+            "maximum_motion_relative_error": 0.0471881438
+        },
+        "delivery_status": "rejected_quality_regression_and_below_1_10x_denoise_target",
+        "source_report": "ltx-ane-int8-last24-report-20260913.json",
+        "output": "local-output/ltx-ane-int8-last24-output-20260913/component_staged/request-0.mp4"
+    },
+    "regression": {
+    "command": "Python/bin/python -m pytest tests/native/test_contract.py -k 'ltx' -q",
+    "passed": 26,
+    "deselected": 39,
+    "subtests_passed": 17
+  }
+}

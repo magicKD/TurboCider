@@ -24,8 +24,8 @@ class H3MLXSourceContractTests(unittest.TestCase):
             '@"format_version", 1',
             '@"bits", 6',
             '@"group_size", 64',
-            'timesteps.count == 8',
-            'four_step_adaln_union()',
+            'timesteps.count == expected_ladder.size()',
+            'adaln_timestep_union(expected_steps)',
             '"__adaln_cache."',
             'affine_dq_gemm_min_rows_ = 768',
             'mx::float32',
@@ -41,6 +41,21 @@ class H3MLXSourceContractTests(unittest.TestCase):
         self.assertIn("h3_mlx_vsa_probe.cpp", build)
         self.assertIn("h3_mlx_vsa_pipeline_probe.cpp", build)
         self.assertIn("h3_mlx_vsa_e2e_probe.cpp", build)
+        self.assertIn("h3_mlx_vdn_solve_probe.cpp", build)
+        self.assertIn("h3_mlx_vdn_e2e_probe.cpp", build)
+
+    def test_vdn_schedule_is_checkpoint_bound_not_hardcoded_to_fast_h3(self):
+        geometry = (ROOT / "native/models/h3_mlx/geometry.cpp").read_text()
+        header = (ROOT / "native/models/h3_mlx/geometry.hpp").read_text()
+        loader = (ROOT / "native/platform/apple/h3_mlx_checkpoint.mm").read_text()
+        pipeline = (ROOT / "native/models/h3_mlx/pipeline.cpp").read_text()
+        self.assertIn("adaln_timestep_union(int steps)", header)
+        self.assertIn("return adaln_timestep_union(4);", geometry)
+        self.assertIn('profile == "minimax-h3-vdn"', loader)
+        self.assertIn("expected_steps = vdn_profile ? 6 : 4", loader)
+        self.assertIn("adaln_timestep_union(expected_steps)", loader)
+        self.assertIn("options.steps == checkpoint_.identity().steps", pipeline)
+        self.assertNotIn('options.steps == 4, "FastH3 MLX', pipeline)
 
     def test_results_exposes_fastvideo_int6_graph(self):
         source = (ROOT / "native/platform/apple/results.mm").read_text()
@@ -82,6 +97,56 @@ class H3MLXSourceContractTests(unittest.TestCase):
             'native/models/h3_mlx/vsa_attention.cpp',
         ]:
             self.assertIn(path, build)
+
+    def test_vdn_profile_is_independent_and_fail_closed(self):
+        module = (ROOT / "native/models/h3_mlx_module.cpp").read_text()
+        registry = (ROOT / "native/models/registry.cpp").read_text()
+        results = (ROOT / "native/platform/apple/results.mm").read_text()
+        for token in [
+            'minimax-h3-vdn',
+            'VDN H3 stage-DMD requires exactly six steps',
+            'VDN H3 uses the manifest-bound stage-DMD Turbo adapter',
+            'd.executable = true',
+            'create_h3_mlx_vdn',
+            'window softmax + bidirectional VDN solve',
+        ]:
+            self.assertIn(token, module)
+        self.assertIn('h3_mlx_vdn_module()', registry)
+        self.assertIn('h3_vdn_int6_window_delta', results)
+        self.assertIn('int6_g64_base+bf16_vdn+fp32_solve', results)
+        self.assertIn('vdn_ ? @"int6_g64_base+bf16_vdn+fp32_solve"',
+                      (ROOT / "native/platform/apple/h3_mlx_session.mm").read_text())
+
+    def test_vdn_transition_scales_inverse_rows(self):
+        source = (ROOT / "native/models/h3_mlx/vdn_mlx.cpp").read_text()
+        self.assertIn("mx::expand_dims(alpha, 3) * inv", source)
+        self.assertNotIn("mx::expand_dims(alpha, 2) * inv", source)
+
+    def test_vdn_experimental_memory_and_gemm_knobs_are_opt_in(self):
+        pipeline = (ROOT / "native/models/h3_mlx/pipeline.cpp").read_text()
+        branch = (ROOT / "native/models/h3_mlx/vdn_mlx.cpp").read_text()
+        self.assertIn('"TURBOCIDER_VDN_DQ_GEMM_MIN_ROWS"', pipeline)
+        self.assertIn('"TURBOCIDER_VDN_COMPACT_LINEAR_OUTPUT"', branch)
+        self.assertIn("options.affine_dq_gemm_min_rows", pipeline)
+        self.assertIn("auto zeros = mx::zeros", branch)
+
+    def test_vdn_window_indices_are_cached_with_diagnostic_opt_out(self):
+        branch = (ROOT / "native/models/h3_mlx/vdn_mlx.cpp").read_text()
+        self.assertIn("VDNWindowIndexCache", branch)
+        self.assertIn("static thread_local std::optional<VDNWindowIndexCache> cache",
+                      branch)
+        self.assertIn("TURBOCIDER_VDN_DISABLE_WINDOW_INDEX_CACHE", branch)
+        self.assertIn("if (disable_cache) cache.reset();", branch)
+
+    def test_vdn_fused_qkv_is_explicit_and_observable(self):
+        dit = (ROOT / "native/models/h3_mlx/dit.cpp").read_text()
+        pipeline = (ROOT / "native/models/h3_mlx/pipeline.cpp").read_text()
+        session = (ROOT / "native/platform/apple/h3_mlx_session.mm").read_text()
+        header = (ROOT / "native/models/h3_mlx/pipeline.hpp").read_text()
+        self.assertIn("weights_.experimental_fused_qkv()", dit)
+        self.assertIn("TURBOCIDER_VDN_EXPERIMENTAL_FUSED_QKV", pipeline)
+        self.assertIn("experimental_fused_qkv = false", header)
+        self.assertIn('@"experimental_fused_qkv"', session)
 
     def test_session_removes_video_only_file_after_successful_mux(self):
         source = (ROOT / "native/platform/apple/h3_mlx_session.mm").read_text()

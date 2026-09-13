@@ -47,6 +47,8 @@ test:
 	@python3 -B tests/native/test_h3_mlx_cache.py
 	@python3 -B tests/native/test_h3_mlx_prepare.py
 	@python3 -B tests/native/test_h3_mlx_modelscope.py
+	@python3 -B tests/native/test_vdn_modelscope.py
+	@python3 -B tests/native/test_vdn_mlx_solve.py
 	@python3 tests/native/test_inventory.py
 test-app:
 	@build/native/turbocider-studio-tests

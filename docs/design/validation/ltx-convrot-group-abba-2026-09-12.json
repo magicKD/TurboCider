@@ -1,0 +1,48 @@
+{
+  "schema": "turbocider-ltx-convrot-group-abba-v1",
+  "date": "2026-09-12",
+  "hardware": {
+    "chip": "Apple M4 Max",
+    "memory_gib": 64,
+    "macos": "26.6.2",
+    "mlx": "0.32.2"
+  },
+  "workload": {
+    "model": "ltx-2.5-distilled",
+    "width": 704,
+    "height": 448,
+    "frames": 97,
+    "steps": 11,
+    "seed": 42,
+    "residency": "component_staged",
+    "execution": "gpu",
+    "audio": false
+  },
+  "method": {
+    "baseline_group": 64,
+    "candidate_group": 128,
+    "sequence": ["baseline", "candidate", "candidate", "baseline"],
+    "samples": {"baseline": 2, "candidate": 2},
+    "raw_report": "/private/tmp/turbocider-ltx-g128-abba-prod.json",
+    "note": "Denoise is the primary metric; both routes use the same Metal ConvRot rotation and differ only in repeated affine-Q8 scale layout."
+  },
+  "results": {
+    "baseline_denoise_seconds": [66.60221275, 66.554689583],
+    "candidate_denoise_seconds": [66.587447417, 66.43087825],
+    "baseline_median_denoise_seconds": 66.578451167,
+    "candidate_median_denoise_seconds": 66.509162834,
+    "denoise_speedup": 1.001041786,
+    "candidate_denoise_change_percent": -0.104070209,
+    "baseline_median_request_wall_seconds": 70.032969355,
+    "candidate_median_request_wall_seconds": 69.945496042,
+    "request_wall_speedup": 1.001250593,
+    "all_latents_byte_exact": true,
+    "all_latents_finite": true
+  },
+  "decision": {
+    "performance_gate_2_percent": false,
+    "status": "retain_as_explicit_tuning_switch_only",
+    "default_group": 64,
+    "reason": "g128 is numerically equivalent and slightly faster in the measured sample, but the end-to-end denoise gain is only 0.10%, below the promotion threshold."
+  }
+}

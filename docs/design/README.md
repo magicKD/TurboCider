@@ -49,7 +49,24 @@
 
 H3 在 Apple Silicon 上迁移到 FastH3 C++/MLX、固定四步 affine INT6/g64，并对齐 FastVideo 性能/质量的具体实施合同见 [H3 C++/MLX INT6 加速方案与验收计划](h3-mlx-int6-fastvideo-parity-plan.md)。该文档包含当前原型边界、分阶段工作包、checkpoint/量化合同、同条件 ABBA benchmark 和发布门禁；在真实模型验收完成前不代表已交付能力。
 
-[架构图](native-engine-architecture.svg) 表达最终方向，并非每个方框都已经实现。当前 FLUX、H3、FastMetal 和 LTX video-only 已有执行入口；LTX I2V/音频、完整 GPU+ANE 门禁、通用执行器与自有 allocator 仍待完成。
+LTX 2.5 的 C++/MLX/Core ML 融合与受限内存 streaming、VDN H3 独立 profile、以及两者完整 denoise 的 ANE 1.2× 门禁，统一记录在 [LTX 2.5、VDN H3 与 ANE 加速实施及验收方案](ltx25-vdn-h3-ane-implementation-plan.md)。
+
+LTX 2.5 对照 `ltx-mac` 的逐项实现审计、C/Metal Fast A/V 默认路径、fixed-shape
+GPU+ANE profile、Stage-2 Sol/text256 可选近似、T2V/I2V/音频矩阵和严格 ABBA 质量门见
+[LTX 2.5 加速对齐与验收方案](ltx25-ltx-mac-acceleration-parity-plan.md)。当前 ANE
+复跑受 E5 bundle 重编译警告污染，不能把该轮耗时视为正式性能结果。
+
+当前 Video VAE 的进程生命周期、clean `exec` finalizer、带音频 component-staged 路径、
+VAE/Transformer 分阶段性能门和代码职责整理见
+[LTX 2.5 Video VAE 生命周期优化与代码整理](ltx25-vae-lifecycle-and-code-cleanup-20260913.md)。
+Sol attention 与 ANE 在该路径中继续默认关闭。
+
+2026-09-12 的 VDN H3/MLX GPU 复验记录见
+[VDN H3 MLX GPU 验证](validation/vdn-h3-mlx-gpu-validation-2026-09-12.json)。该记录明确
+区分了 MLX 官方算子能力、TurboCider 自定义 Metal solve、CPU/GPU 数值对照以及仍未
+完成的 vpipe matched ABBA；不能把一次可生成 MP4 的 smoke 当成性能达标。
+
+[架构图](native-engine-architecture.svg) 表达最终方向，并非每个方框都已经实现。当前 FLUX、H3、FastMetal 和 LTX T2V/I2V/音频已有执行入口；LTX 完整 GPU+ANE 性能与多样本质量门、通用执行器与自有 allocator 仍待完成。
 
 `validation/` 存放小型 JSON 证据和依赖身份。原始大张量、图像及过程日志保留在本机 `outputs/native-validation/`，不提交模型或大文件。
 

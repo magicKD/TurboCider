@@ -2,6 +2,9 @@
 
 #include <mlx/random.h>
 
+#include <cstdlib>
+#include <string>
+
 namespace tc::h3_mlx {
 namespace {
 double seconds_since(Clock::time_point start) {
@@ -87,7 +90,8 @@ DenoiseResult Pipeline::denoise(const Tensor &text_rows,
                 options.width % 32 == 0 && options.height % 32 == 0,
             "H3 MLX dimensions must be positive multiples of 32");
     require(options.fps == 24, "H3 MLX requires 24 fps");
-    require(options.steps == 4, "FastH3 MLX requires exactly four steps");
+    require(options.steps == checkpoint_.identity().steps,
+            "H3 MLX request steps do not match the checkpoint schedule");
     require(options.frames >= 1, "H3 MLX frame count must be positive");
     require(text_rows.ndim() == 2 && text_rows.shape(0) > 0 &&
                 text_rows.shape(1) == checkpoint_.config().text_dim,
@@ -120,9 +124,33 @@ DenoiseResult Pipeline::denoise(const Tensor &text_rows,
                    checkpoint_.config().audio_latent_channels, "audio");
     mx::eval({video, audio});
 
-    auto video_scheduler = Scheduler::create(video_shift, options.steps);
-    auto audio_scheduler = Scheduler::create(audio_shift, options.steps);
-    checkpoint_.set_affine_dq_gemm_min_rows(options.affine_dq_gemm_min_rows);
+    const int denoise_steps = checkpoint_.identity().denoise_steps;
+    require(denoise_steps > 0 && denoise_steps <= options.steps,
+            "invalid checkpoint-bound H3 denoise step count");
+    auto video_scheduler = Scheduler::create(video_shift, denoise_steps);
+    auto audio_scheduler = Scheduler::create(audio_shift, denoise_steps);
+    int affine_dq_gemm_min_rows = options.affine_dq_gemm_min_rows;
+    /* Keep the shipped profile explicit, while allowing a local benchmark
+     * sweep to select the dense-dequantization crossover without rebuilding
+     * the native probe.  A value of zero is valid and disables the
+     * dequantize-then-dense route, leaving all affine projections on MLX
+     * quantized_matmul. */
+    if (const char *configured = std::getenv(
+            "TURBOCIDER_VDN_DQ_GEMM_MIN_ROWS")) {
+        char *end = nullptr;
+        const long parsed = std::strtol(configured, &end, 10);
+        if (end && *end == '\0' && parsed >= 0 && parsed <= 1'000'000)
+            affine_dq_gemm_min_rows = static_cast<int>(parsed);
+    }
+    checkpoint_.set_affine_dq_gemm_min_rows(affine_dq_gemm_min_rows);
+    // Keep the optimization fail-closed by default. The environment switch
+    // is useful for native probes and does not silently alter shipped profiles.
+    const char *fused_qkv = std::getenv("TURBOCIDER_VDN_EXPERIMENTAL_FUSED_QKV");
+    checkpoint_.set_experimental_fused_qkv(
+        options.experimental_fused_qkv ||
+        (fused_qkv && (std::string(fused_qkv) == "1" ||
+                       std::string(fused_qkv) == "true" ||
+                       std::string(fused_qkv) == "yes")));
     options.vsa.validate(checkpoint_.config().num_layers);
     require(!options.vsa.enabled || checkpoint_.identity().vsa_capable,
             "H3 VSA requires a VSA-capable checkpoint; dense-only checkpoint rejected");
@@ -134,16 +162,16 @@ DenoiseResult Pipeline::denoise(const Tensor &text_rows,
     std::optional<Tensor> first_video_sample;
     std::optional<Tensor> first_audio_sample;
     std::vector<DenoiseStepCapture> steps;
-    if (options.capture_steps) steps.reserve(options.steps);
+    if (options.capture_steps) steps.reserve(denoise_steps);
     DiTDebugCapture debug;
     std::optional<VSAStats> vsa_stats;
     if (options.vsa.enabled) {
         vsa_stats.emplace();
         vsa_stats->capture_debug = options.capture_debug;
     }
-    for (int step = 0; step < options.steps; ++step) {
+    for (int step = 0; step < denoise_steps; ++step) {
         tc::checkpoint(cancelled);
-        event("h3_mlx_denoise", step, options.steps);
+        event("h3_mlx_denoise", step, denoise_steps);
         auto row_timesteps = build_row_timesteps(
             layout, video_scheduler.timesteps[step],
             audio_scheduler.timesteps[step]);
@@ -172,7 +200,7 @@ DenoiseResult Pipeline::denoise(const Tensor &text_rows,
         }
     }
     tc::checkpoint(cancelled);
-    event("h3_mlx_denoise", options.steps, options.steps);
+    event("h3_mlx_denoise", denoise_steps, denoise_steps);
 
     DenoiseMetrics metrics;
     metrics.load_seconds = last_load_seconds_;
@@ -180,7 +208,9 @@ DenoiseResult Pipeline::denoise(const Tensor &text_rows,
     metrics.peak_bytes = mx::get_peak_memory();
     metrics.quantized_matmul_calls = checkpoint_.quantized_matmul_calls();
     metrics.dequantized_gemm_calls = checkpoint_.dequantized_gemm_calls();
+    metrics.model_evaluations = denoise_steps;
     metrics.affine_dq_gemm_min_rows = checkpoint_.affine_dq_gemm_min_rows();
+    metrics.experimental_fused_qkv = checkpoint_.experimental_fused_qkv();
     metrics.vsa = std::move(vsa_stats);
     if (metrics.vsa)
         metrics.vsa->configured_sparsity = options.vsa.sparsity;

@@ -12,10 +12,14 @@ import Foundation
               let h3 = catalog.first(where: { $0.id == "minimax-h3-turbo" }) else {
             throw NativeFailure(message: "Native catalog is incomplete")
         }
-        try check(!ltx.acceptsImageInputs && ltx.availableOperations == ["video.generate"], "LTX browser leaked unqualified image operations")
+        try check(ltx.acceptsImageInputs &&
+                  ltx.availableOperations == ["video.generate", "video.image"],
+                  "LTX browser did not expose validated image-to-video")
         try check(!z.acceptsImageInputs && z.availableOperations == ["image.generate"], "Z-Image browser accepts images")
         try check(flux.acceptsImageInputs && h3.acceptsImageInputs, "Validated reference inputs are hidden")
-        try check(!ltx.canGenerateAudio && !z.canGenerateAudio && !flux.canGenerateAudio && h3.canGenerateAudio, "Audio gate differs from executable model capabilities")
+        try check(ltx.canGenerateAudio && !z.canGenerateAudio &&
+                  !flux.canGenerateAudio && h3.canGenerateAudio,
+                  "Audio gate differs from executable model capabilities")
         try check(z.matchesLibrarySearch("Z-IMAGE turbo", path: ""), "Case-insensitive model search failed")
         try check(z.matchesLibrarySearch("文字", path: ""), "Capability search failed")
         try check(ltx.matchesLibrarySearch("视频", path: ""), "Video search failed")

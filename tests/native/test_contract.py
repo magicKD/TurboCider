@@ -445,7 +445,7 @@ class ContractTests(unittest.TestCase):
         code,p,error=plan({'model':'ltx-2.5-distilled','width':704,'height':448,
                            'frames':97,'steps':11,'audio':True})
         self.assertEqual(code,0,error)
-        self.assertFalse(p['executable'])
+        self.assertTrue(p['executable'])
         self.assertTrue(p['audio'])
         self.assertEqual(p['audio_capability'],'latent_to_48khz_aac_candidate')
         self.assertIn('audio_vae_vocoder',{stage['id'] for stage in p['stages']})
@@ -509,6 +509,58 @@ class ContractTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 self.assertNotEqual(plan(invalid)[0],0)
 
+    def test_ltx_approximate_fast_path_is_explicit_and_shape_gated(self):
+        request={
+            'model':'ltx-2.5-distilled', 'operation':'video.generate',
+            'prompt':'A cinematic red fox running through a snowy forest',
+            'output':'/tmp/ltx-fast-approx.mp4',
+            'width':704, 'height':448, 'frames':97, 'steps':11,
+            'fps':24, 'audio':True, 'execution':'gpu',
+            'ltx_backend':'c_metal', 'ltx_fast_av':True,
+            'ltx_sol_stage2':True, 'ltx_sol_tau':1.0,
+            'ltx_sol_dense_edge_blocks':1,
+            'ltx_sol_dense_edge_steps':0,
+            'ltx_stage2_text_rows':256,
+        }
+        code,_,error=plan(request)
+        self.assertNotEqual(code,0)
+        self.assertIn('allow_approximation=true',error)
+        code,p,error=plan({**request,'allow_approximation':True})
+        self.assertEqual(code,0,error)
+        self.assertEqual(p['gpu_graph'],'ltx_c_metal_fast_av_sol_text_pruned')
+        self.assertTrue(p['ltx_sol_stage2'])
+        self.assertEqual(p['ltx_sol_tau'],1.0)
+        self.assertEqual(p['ltx_stage2_text_rows'],256)
+        self.assertIn('ltx_sol_stage2',p['algorithm_approximations'])
+        self.assertIn('ltx_stage2_text_context_pruning',
+                      p['algorithm_approximations'])
+        self.assertNotEqual(plan({**request,'allow_approximation':True,
+                                  'ltx_backend':'cpp_mlx'})[0],0)
+        code,p,error=plan({**request,'allow_approximation':True,
+                           'width':1280,'height':704,'frames':121})
+        self.assertEqual(code,0,error)
+        self.assertEqual(p['requested_shape'],[1280,704,121])
+        self.assertTrue(p['ltx_sol_stage2'])
+        self.assertNotEqual(plan({**request,'allow_approximation':True,
+                                  'width':1536,'height':960,
+                                  'frames':121})[0],0)
+        self.assertNotEqual(plan({**request,'allow_approximation':True,
+                                  'ltx_stage2_text_rows':64})[0],0)
+        self.assertNotEqual(plan({**request,'allow_approximation':True,
+                                  'ltx_video_attention_batch':True})[0],0)
+
+        exact={key:value for key,value in request.items()
+               if not key.startswith('ltx_sol_') and
+                  key != 'ltx_stage2_text_rows'}
+        exact['ltx_video_attention_batch']=True
+        code,p,error=plan(exact)
+        self.assertEqual(code,0,error)
+        self.assertTrue(p['ltx_video_attention_batch'])
+        self.assertEqual(p['algorithm_approximations'],[])
+        self.assertNotEqual(plan({**exact,'execution':'gpu_ane',
+                                  'allow_approximation':True,
+                                  'ane_manifest':'/tmp/missing'})[0],0)
+
     def test_ltx_i2v_native_path_uses_stage_specific_clean_prefixes(self):
         source=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         self.assertIn('ltx_mlx_video_vae_create_encoder',source)
@@ -523,7 +575,7 @@ class ContractTests(unittest.TestCase):
         source=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         self.assertIn('root_(std::filesystem::absolute(root))',source)
         start=source.index('std::string denoiser_key =')
-        end=source.index('if (denoiser_key != denoiser_key_)', start)
+        end=source.index('if (!denoiser_cache_hit)', start)
         self.assertNotIn('request.seed', source[start:end])
         self.assertIn('selected_identity', source[start:end])
         self.assertNotIn('options.seed = request.seed',source)
@@ -548,9 +600,10 @@ class ContractTests(unittest.TestCase):
                       'ane_mlp_fused_residual',
                       'ane_mlp_fused_adaln_pack',
                       'ane_mlp_first_block', 'ane_mlp_block_count',
-                      'ane_mlp_stage_mask']:
+                      'ane_mlp_stage_mask', 'ane_variant']:
             self.assertIn(field, header)
             self.assertIn(f'options.{field}', source)
+        self.assertIn('ctx->options.ane_variant', runtime)
         self.assertIn('ltx_native_release_full_gpu_mlp',runtime)
         self.assertIn('detach_ane_stage(ctx->weights',runtime)
         self.assertIn('stage==2&&ctx->options.release_blocks_final_step',runtime)
@@ -574,6 +627,17 @@ class ContractTests(unittest.TestCase):
         self.assertIn('ltx_mlx_video_vae_decode_tokens_bf16',
                       helper.read_text())
 
+    def test_ltx_quality_defaults_keep_approximation_and_ane_off(self):
+        contracts=(ROOT/'native/core/contracts.hpp').read_text()
+        self.assertIn('allow_approximation = false',contracts)
+        self.assertIn('bool ltx_video_attention_batch = false',contracts)
+        self.assertIn('bool ltx_sol_stage1 = false',contracts)
+        self.assertIn('bool ltx_sol_stage2 = false',contracts)
+        request=(ROOT/'native/platform/apple/request.mm').read_text()
+        self.assertIn('boolean(d, @"allow_approximation", false)',request)
+        self.assertIn('request.execution == "gpu_ane"',
+                      (ROOT/'native/platform/apple/ltx_session.mm').read_text())
+
     def test_ltx_service_conditioning_cache_is_bound_and_observable(self):
         session=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
         service=(ROOT/'services/turbociderd/service.mm').read_text()
@@ -595,6 +659,10 @@ class ContractTests(unittest.TestCase):
         source=(ROOT/'services/turbociderd/service.mm').read_text()
         self.assertIn('external_ltx_request(inference)',source)
         self.assertNotIn('external_ltx_request(plan_value)',source)
+        route=source[source.index('bool external_ltx_request'):
+                     source.index('bool resident_ltx_candidate_request')]
+        self.assertIn('value.residency == "component_staged"',route)
+        self.assertNotIn('!value.audio',route)
 
     def test_service_reuses_resident_ltx_candidate_session(self):
         source=(ROOT/'services/turbociderd/service.mm').read_text()
@@ -632,6 +700,17 @@ class ContractTests(unittest.TestCase):
                       finalizer.read_text())
         self.assertIn('ltx_video_bf16_planar_to_rgb24',
                       finalizer.read_text())
+        self.assertIn('ltx_mlx_audio_vae_decode_bf16',
+                      finalizer.read_text())
+        self.assertIn('ltx_mlx_vocoder_decode_base_bf16',
+                      finalizer.read_text())
+        self.assertIn('ltx_mlx_bwe_extend_f32',finalizer.read_text())
+        self.assertIn('mux_video_with_audio',finalizer.read_text())
+        self.assertIn('video_vae_weight_load',finalizer.read_text())
+        self.assertIn('video_vae_compute',finalizer.read_text())
+        self.assertIn('remove_managed_staging_directory',finalizer.read_text())
+        self.assertIn('turbocider-ltx-exec-finalizer-',finalizer.read_text())
+        self.assertIn('"$OUT/audio.o" "$OUT/video.o"',build)
 
     def test_ltx_ane_lifecycle_profile_is_typed_and_fail_closed(self):
         with tempfile.TemporaryDirectory() as d:
@@ -666,6 +745,13 @@ class ContractTests(unittest.TestCase):
             profile.write_text(json.dumps(base))
             code,p,error=plan(request)
             self.assertEqual(code,0,error)
+            profile.write_text(json.dumps({**base,'variant':'fp16'}))
+            code,p,error=plan(request)
+            self.assertEqual(code,0,error)
+            profile.write_text(json.dumps({**base,'variant':'q4'}))
+            code,p,error=plan(request)
+            self.assertNotEqual(code,0)
+            self.assertIn('unsupported LTX ANE artifact variant',error)
             stage2_only = {**base,
                 'release_full_gpu_mlp':False,
                 'mlp_block_start':36,'mlp_block_count':12,
@@ -751,6 +837,45 @@ class ContractTests(unittest.TestCase):
         self.assertIn('stage2_video.bf16', benchmark)
         self.assertIn('compare_video', benchmark)
         self.assertIn('require_speedup', benchmark)
+        self.assertIn('--ltx-fast-mode', benchmark)
+        self.assertIn('--ltx-video-attention-batch', benchmark)
+        self.assertIn('ltx_stage2_text_rows', benchmark)
+        self.assertIn('ltx_sol_dense_edge_steps', benchmark)
+
+    def test_ltx_mlx_convrot_group_tuning_is_explicit_and_bounded(self):
+        session = (ROOT / 'native/platform/apple/ltx_session.mm').read_text()
+        native = (ROOT / 'native/models/ltx_mlx/native.cpp').read_text()
+        options = (ROOT / 'native/models/ltx_mlx/native.hpp').read_text()
+        sweep = (ROOT / 'tools/native/benchmark_ltx_qmm_groups.py').read_text()
+        self.assertIn('TURBOCIDER_LTX_MLX_CONVROT_GROUP_SIZE', session)
+        self.assertIn('options.convrot_group_size', session)
+        self.assertIn('options->convrot_group_size == 32u', native)
+        self.assertIn('options->convrot_group_size == 128u', native)
+        self.assertIn('uint32_t convrot_group_size', options)
+        self.assertIn('stage2_video_ffn_in', sweep)
+        self.assertIn('fastest_group', sweep)
+
+    def test_ltx_rejected_attention_batch_stays_opt_in_and_excludes_sol(self):
+        blocks = (ROOT / 'native/models/ltx_runtime/ltx_blocks.c').read_text()
+        self.assertIn('TURBOCIDER_LTX_VIDEO_ATTENTION_BATCH', blocks)
+        self.assertNotIn('video_attention_batch=1;', blocks)
+        self.assertIn(
+            '(ctx->options.sol_stage1 || ctx->options.sol_stage2)', blocks)
+
+    def test_ltx_mlx_periodic_eval_is_explicit_and_bounded(self):
+        model = (ROOT / 'native/models/ltx_mlx/model.cpp').read_text()
+        self.assertIn('TURBOCIDER_LTX_MLX_EVAL_EVERY', model)
+        self.assertIn('parsed < 1 || parsed > 48', model)
+        self.assertIn('periodic_flush', model)
+
+    def test_ltx_mlx_rope_cache_is_identity_bound_and_opt_in(self):
+        model = (ROOT / 'native/models/ltx_mlx/model.cpp').read_text()
+        header = (ROOT / 'native/models/ltx_mlx/model.hpp').read_text()
+        self.assertIn('TURBOCIDER_LTX_MLX_CACHE_ROPE', model)
+        self.assertIn('video_positions.id()', model)
+        self.assertIn('audio_positions.id()', model)
+        self.assertIn('rope_video_positions_id_', header)
+        self.assertIn('cached_video_cross_rope_', header)
 
     def test_ltx_gpu_ane_plan_rejects_incomplete_artifact_tree(self):
         with tempfile.TemporaryDirectory() as d:
@@ -903,6 +1028,7 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(p['executable'])
         self.assertEqual(p['backend'],'mlx_cpp_metal')
         self.assertEqual(p['gpu_graph'],'fasth3_int6_vsa')
+
         self.assertEqual(p['precision'],'int6_g64_bf16_activation')
         self.assertEqual(p['validation'],'modelscope_int6_parity_candidate')
         self.assertEqual([stage['id'] for stage in p['stages']],
@@ -954,6 +1080,60 @@ class ContractTests(unittest.TestCase):
         code,p,error=plan(schema2)
         self.assertEqual(code,0,error)
         self.assertEqual(p['gpu_graph'],'fasth3_int6_vsa')
+
+    def test_vdn_h3_is_a_separate_six_step_profile(self):
+        request={
+            'model':'minimax-h3-vdn',
+            'operation':'video.generate',
+            'prompt':'A red fox runs through fresh snow.',
+            'output':'/tmp/h3-vdn.mp4',
+            'frames':124,'width':960,'height':544,'fps':24,'steps':6,
+            'audio':True,'execution':'gpu','residency':'component_staged',
+        }
+        code,p,error=plan(request)
+        self.assertEqual(code,0,error)
+        self.assertTrue(p['executable'])
+        self.assertEqual(p['backend'],'mlx_cpp_metal')
+        self.assertEqual(p['gpu_graph'],'h3_vdn_int6_window_delta')
+        self.assertEqual(p['precision'],'int6_g64_base+bf16_vdn+fp32_solve')
+        self.assertEqual(p['validation'],'modelscope_vdn_stage_dmd_candidate')
+        self.assertEqual(p['audio_capability'],'full_h3_audio_vae_32khz_stereo')
+        self.assertEqual([stage['id'] for stage in p['stages']],
+                         ['text_encode','av_denoise','video_decode',
+                          'audio_decode','mux'])
+        self.assertEqual(p['stages'][1]['iterations'],6)
+        for invalid in [
+            {**request,'steps':4},
+            {**request,'fps':25},
+            {**request,'frames':123},
+            {**request,'width':944},
+            {**request,'execution':'gpu_ane','allow_approximation':True,
+             'ane_manifest':'/tmp/vdn-ane'},
+            {**request,'loras':[{'path':'/tmp/other.safetensors'}]},
+            {**request,'vsa':True},
+            {**request,'memory_budget_bytes':32 << 30},
+        ]:
+            with self.subTest(invalid=invalid):
+                self.assertNotEqual(plan(invalid)[0],0)
+        streamed={**request,'residency':'streamed',
+                  'memory_budget_bytes':32 << 30}
+        code,p,error=plan(streamed)
+        self.assertEqual(code,0,error)
+        self.assertTrue(p['streaming_offload'])
+        self.assertEqual(p['memory_budget_scope'],
+                         'vdn_base_branch_working_set_target_not_process_cap')
+
+        fast={**request,'model':'minimax-h3-fasth3-mlx-int6','steps':4,
+              'output':'/tmp/h3-fast.mp4','frames':22,'width':832,'height':480}
+        code,p,error=plan(fast)
+        self.assertEqual(code,0,error)
+        self.assertEqual(p['gpu_graph'],'fasth3_int6_qmm')
+        self.assertEqual(p['precision'],'int6_g64_bf16_activation')
+        self.assertEqual(p['validation'],'modelscope_int6_parity_candidate')
+        self.assertEqual([stage['id'] for stage in p['stages']],
+                         ['text_encode','av_denoise','video_decode',
+                          'audio_decode','mux'])
+        self.assertEqual(p['stages'][1]['iterations'],4)
 
     def test_h3_streaming_budget_drives_fail_closed_pinned_prefix(self):
         request={'model':'minimax-h3-turbo','frames':22,'width':512,
@@ -1302,7 +1482,7 @@ class ContractTests(unittest.TestCase):
         model=next(value for value in payload['models']
                    if value['id']=='ltx-2.5-distilled')
         self.assertTrue(model['executor'])
-        self.assertEqual(model['executor_operations'],['video.generate'])
+        self.assertEqual(model['executor_operations'],['video.generate','video.image'])
         self.assertEqual(model['default_residency'],'component_staged')
         self.assertTrue(model['native_gemma4_candidate'])
         self.assertTrue(model['native_conditioning_connector'])
@@ -1315,9 +1495,9 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(model['default_lora_strategy'],'disk_premerge')
         self.assertTrue(any('broader prompt-suite qualification remains pending'
                             in value for value in model['candidate_limitations']))
-        self.assertTrue(any('end-to-end native Session parity still pending' in value
+        self.assertTrue(any('5-second multi-prompt quality suite remains pending' in value
                             for value in model['candidate_limitations']))
-        self.assertFalse(model['audio_output'])
+        self.assertTrue(model['audio_output'])
         self.assertTrue(model['native_audio_output_candidate'])
         self.assertTrue(model['native_audio_vae_candidate'])
         self.assertTrue(model['native_base_vocoder_candidate'])
@@ -1394,7 +1574,7 @@ class ContractTests(unittest.TestCase):
             self.assertTrue(payload['native_audio_candidate'])
             self.assertFalse(payload['native_audio_supported'])
             self.assertFalse(payload['executor_ready'])
-            self.assertIn('end_to_end_session_audio_parity',payload['blocking_components'])
+            self.assertIn('pinned_distribution_identity',payload['blocking_components'])
             artifact.write_bytes(b'validated audio bundlE')
             code,payload,error=preflight(root)
             self.assertEqual(code,0,error)

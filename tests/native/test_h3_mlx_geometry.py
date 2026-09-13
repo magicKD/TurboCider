@@ -22,6 +22,17 @@ class H3MLXGeometryTests(unittest.TestCase):
             ], check=True, cwd=ROOT)
             subprocess.run([str(binary)], check=True, cwd=ROOT)
 
+    def test_vdn_geometry_and_solve(self):
+        with tempfile.TemporaryDirectory(prefix="turbocider-vdn-geometry-") as directory:
+            binary = Path(directory) / "vdn-geometry-test"
+            subprocess.run([
+                "clang++", "-std=c++20", "-O2",
+                str(ROOT / "tests/native/vdn_geometry_test.cpp"),
+                str(ROOT / "native/models/h3_mlx/vdn.cpp"),
+                "-o", str(binary),
+            ], check=True, cwd=ROOT)
+            subprocess.run([str(binary)], check=True, cwd=ROOT)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,94 @@
+{
+  "schema": "turbocider-vdn-h3-attention-candidates-v1",
+  "date": "2026-09-12",
+  "model": "minimax-h3-vdn",
+  "checkpoint": "models/VDN-H3-MLX/int6",
+  "hardware_scope": "local Apple Silicon Metal GPU",
+  "attention_microbenchmark": {
+    "command": "build/native/h3-mlx-vdn-attention-probe",
+    "geometry": {
+      "sequence": 4416,
+      "heads": 4,
+      "head_dim": 128,
+      "chunk": 5,
+      "radius": 1
+    },
+    "mlx_grouped_sdpa_seconds": 0.003402667,
+    "scalar_span_seconds": 0.045538292,
+    "scalar_span_speedup": 0.0747210062,
+    "scalar_span_quality": {
+      "max_abs": 0.0000305175781,
+      "relative_rmse": 0.0000799616391,
+      "cosine": 1.0
+    },
+    "mma_block_span_seconds": 0.007886541,
+    "mma_block_span_speedup": 0.431452395,
+    "mma_block_span_quality": {
+      "max_abs": 0.0000947713852,
+      "relative_rmse": 0.0089808302,
+      "cosine": 0.999959648
+    }
+  },
+  "small_e2e": {
+    "geometry": {
+      "width": 384,
+      "height": 384,
+      "frames": 22,
+      "steps": 6,
+      "sequence": 1090,
+      "conditioning": "eight zero text rows",
+      "seed": 42
+    },
+    "default_denoise_seconds": 25.3664,
+    "mma_span_denoise_seconds": 25.8885,
+    "mma_span_speedup": 0.979833516,
+    "decision": "keep MLX grouped SDPA as the default"
+  },
+  "dq_gemm_sweep": {
+    "default_floor_rows": 768,
+    "default_seconds": 25.3664,
+    "all_quantized_seconds": 25.7931,
+    "floor_2048_seconds": 25.5100,
+    "decision": "keep the measured 768-row crossover; retain TURBOCIDER_VDN_DQ_GEMM_MIN_ROWS for explicit local sweeps"
+  },
+  "compact_linear_output": {
+    "switch": "TURBOCIDER_VDN_COMPACT_LINEAR_OUTPUT=1",
+    "scope": "allocate only the leading global/anchor rows and trailing anchor frame instead of a full zero sequence",
+    "small_e2e_default_peak_bytes": 21954284366,
+    "small_e2e_compact_peak_bytes": 21933640530,
+    "peak_reduction_bytes": 20643836,
+    "small_e2e_compact_denoise_seconds": 25.9338,
+    "decision": "memory-only experiment; default disabled because the single run was slower"
+  },
+  "window_index_cache": {
+    "scope": "cache fixed MLX query/key index tensors for the 50-block, six-step window-softmax geometry",
+    "diagnostic_switch": "TURBOCIDER_VDN_DISABLE_WINDOW_INDEX_CACHE=1",
+    "geometry": "384x384x22, six steps, eight zero text rows, seed 42",
+    "cache_enabled_seconds": [24.7367, 24.7243, 24.7363, 24.7354, 24.7389],
+    "cache_disabled_seconds": [24.7317, 24.7429, 24.7371, 24.7465],
+    "cache_enabled_median_seconds": 24.7363,
+    "cache_disabled_median_seconds": 24.7400,
+    "median_speedup": 1.000149,
+    "output_parity": {
+      "video_rows_exact": true,
+      "audio_rows_exact": true,
+      "first_video_velocity_exact": true,
+      "first_audio_velocity_exact": true
+    },
+    "peak_bytes_enabled": 21954262438,
+    "peak_bytes_disabled": 21954262438,
+    "decision": "keep the cache for deterministic geometry reuse and lower host allocation churn; do not claim a material GPU speedup"
+  },
+  "rejected_ltx_qkv_experiment": {
+    "scope": "runtime concatenation of packed ConvRot affine-Q8 Q/K/V rows",
+    "production_candidate_denoise_seconds": 67.549105417,
+    "stage2_latent_relative_l2_vs_unfused": 0.6706095554,
+    "stage2_latent_cosine_vs_unfused": 0.7808847439,
+    "decision": "removed; performance observations are invalid because parity failed"
+  },
+  "conclusion": {
+    "default_changed": false,
+    "reason": "The window-index cache is exactly parity-safe but its strict A/B median effect is negligible. MMA attention, compact output, and alternate DQ-GEMM floors either lost wall time or reduced memory only. The existing MLX grouped-SDPA and 768-row DQ-GEMM crossover remain the fastest qualified choices in this matrix.",
+    "remaining_gate": "matched 960x544x124 TurboCider versus vpipe ABBA and full quality panel"
+  }
+}

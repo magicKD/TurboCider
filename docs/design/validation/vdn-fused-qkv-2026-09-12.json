@@ -1,0 +1,61 @@
+{
+  "schema": "turbocider-vdn-fused-qkv-validation-v1",
+  "date": "2026-09-12",
+  "scope": {
+    "model": "minimax-h3-vdn",
+    "checkpoint": "models/VDN-H3-MLX/int6",
+    "quantization": "affine-int6-g64",
+    "geometry": {
+      "width": 384,
+      "height": 384,
+      "frames": 22,
+      "steps": 6,
+      "sequence": 1090,
+      "video_rows": 1008,
+      "audio_rows": 74
+    },
+    "seed": 42,
+    "conditioning": "eight zero text rows; identical for both runs",
+    "noise": "runtime seed; identical for both runs",
+    "method": "Two isolated native probe processes, same binary and checkpoint; one default path and one explicit experimental path."
+  },
+  "commands": {
+    "unfused": "./build/native/h3-mlx-vdn-e2e-probe models/VDN-H3-MLX/int6 /private/tmp/turbocider-vdn-fused-ab/unfused.safetensors 384 384 22",
+    "fused": "TURBOCIDER_VDN_EXPERIMENTAL_FUSED_QKV=1 ./build/native/h3-mlx-vdn-e2e-probe models/VDN-H3-MLX/int6 /private/tmp/turbocider-vdn-fused-ab/fused.safetensors 384 384 22"
+  },
+  "runs": {
+    "unfused": {
+      "denoise_seconds": 24.7354,
+      "peak_bytes": 21954284366,
+      "qmm_calls": 72,
+      "dq_gemm_calls": 1800,
+      "experimental_fused_qkv": false
+    },
+    "fused": {
+      "denoise_seconds": 24.8911,
+      "peak_bytes": 21954284366,
+      "qmm_calls": 72,
+      "dq_gemm_calls": 1200,
+      "experimental_fused_qkv": true
+    }
+  },
+  "derived": {
+    "fused_speedup_vs_unfused": 0.993744622,
+    "fused_slowdown_percent": 0.6294,
+    "peak_bytes_delta": 0,
+    "dq_gemm_call_reduction_percent": 33.3333
+  },
+  "quality": {
+    "comparison": "safetensors numpy comparison of video_rows, audio_rows, first_video_velocity, and first_audio_velocity",
+    "max_abs": 0.0,
+    "relative_l2": 0.0,
+    "rmse": 0.0,
+    "decision": "exact for this probe output"
+  },
+  "decision": {
+    "default": "keep fused-QKV disabled",
+    "experimental_switch": "TURBOCIDER_VDN_EXPERIMENTAL_FUSED_QKV=1",
+    "reason": "The candidate is numerically exact and reduces DQ-GEMM dispatches, but the measured denoise path is 0.63% slower and peak memory is unchanged. It is not a product optimization yet.",
+    "next_step": "Profile larger production sequence and optimize expression-local concatenation/dequantization before reconsidering default enablement."
+  }
+}

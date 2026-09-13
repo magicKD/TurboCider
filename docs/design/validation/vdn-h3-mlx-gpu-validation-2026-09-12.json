@@ -1,0 +1,115 @@
+{
+  "schema": "turbocider-vdn-h3-mlx-gpu-validation-v1",
+  "date": "2026-09-12",
+  "model": "minimax-h3-vdn",
+  "source": {
+    "base": "ModelScope MiniMax/MiniMax-H3 FL2VA transformer",
+    "vdn": "ModelScope OpenVDN/vdn-minimax-h3",
+    "checkpoint": "models/VDN-H3-MLX/int6",
+    "quantization": "affine-int6-g64",
+    "branch_dtype": "bf16",
+    "solve_dtype": "fp32"
+  },
+  "mlx": {
+    "installed": "0.32.2",
+    "pypi_latest_checked": "0.32.2",
+    "checked_on": "2026-09-12",
+    "gpu_linalg": {
+      "cholesky": "not_available_as_a_Metal_primitive",
+      "inverse": "not_available_as_a_Metal_primitive",
+      "solve": "not_available_as_a_Metal_primitive",
+      "eigh": "not_available_as_a_Metal_primitive"
+    },
+    "decision": "keep_custom_metal_cholesky_and_triangular_inverse"
+  },
+  "solve_probe": {
+    "dimensions": [7, 31, 32, 33, 64, 128],
+    "matrices_per_dimension": 3,
+    "max_abs": 7.15255737e-7,
+    "relative_rmse": 2.16197648e-7,
+    "max_residual": 1.31130219e-6,
+    "passed": true
+  },
+  "smoke": [
+    {
+      "frames": 22,
+      "width": 960,
+      "height": 544,
+      "steps": 6,
+      "seed": 2026,
+      "output": "outputs/vdn-h3-validation-2026-09-12/h3-vdn-22-gpu-fixed.mp4",
+      "denoise_seconds": 81.393571833,
+      "request_wall_seconds": 96.043686875,
+      "mlx_peak_bytes": 22309367910,
+      "quality_reference": "h3-vdn-22-cpu-recheck.mp4",
+      "video_psnr_db": 29.985496,
+      "video_ssim_all": 0.962459
+    },
+    {
+      "frames": 56,
+      "width": 960,
+      "height": 544,
+      "steps": 6,
+      "seed": 2026,
+      "output": "outputs/vdn-h3-validation-2026-09-12/h3-vdn-56-gpu-fixed.mp4",
+      "denoise_seconds": 228.781765709,
+      "request_wall_seconds": 271.116646958,
+      "quality_reference": "h3-vdn-56.mp4",
+      "video_psnr_db": 25.856998,
+      "video_ssim_all": 0.923503,
+      "media": {
+        "width": 960,
+        "height": 544,
+        "frames": 56,
+        "fps": 24,
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "audio_rate": 32000,
+        "audio_channels": 2
+      }
+    },
+    {
+      "frames": 124,
+      "width": 960,
+      "height": 544,
+      "steps": 6,
+      "seed": 2026,
+      "output": "outputs/vdn-h3-validation-2026-09-12/h3-vdn-124-gpu-fixed.mp4",
+      "denoise_seconds": 528.341852084,
+      "request_wall_seconds": 624.901181334,
+      "mlx_peak_bytes": 29554516914,
+      "media": {
+        "width": 960,
+        "height": 544,
+        "frames": 124,
+        "fps": 24,
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "audio_rate": 32000,
+        "audio_channels": 2,
+        "duration_seconds": 5.198656
+      },
+      "visual_check": "fox subject stable across frames 0,31,62,93,123"
+    }
+  ],
+  "profiling": {
+    "enabled_by": "TURBOCIDER_VDN_PROFILE=1",
+    "geometry": "960x544x56, six steps, block 0 only",
+    "block0_phase_seconds_total_over_six_steps": {
+      "window_softmax": 0.902505,
+      "base_qkv": 0.997996,
+      "base_ffn": 1.720473,
+      "attention_output_projection": 0.563526,
+      "linear_features": 0.090084,
+      "solve": 0.056351,
+      "linear_readout": 0.029420
+    },
+    "next_priority": "port_block_span_online_softmax_before_further_solve_work"
+  },
+  "not_yet_passed": [
+    "matched_vpipe_ABBA_960x544x124_6step",
+    "multi_prompt_multi_seed_quality_panel",
+    "full_denoise_GPU_plus_ANE_speedup_1.20x",
+    "LTX_2.5_completion"
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "schema": "turbocider-ltx-acceleration-audit-v1",
+  "date": "2026-09-13",
+  "reference": {
+    "repository": "../ltx-mac",
+    "notes_reviewed": [
+      "notes/gpu-ane-av-parallel-2026-09-03.md",
+      "notes/audio-ane-residency-2026-09-03.md",
+      "notes/sol-attention-e2e-2026-09-03.md",
+      "notes/stage2-text-context-pruning-2026-09-03.md",
+      "notes/attention-dispatch-2026-09-03.md",
+      "notes/qkv-sequence-e2e-2026-09-03.md",
+      "notes/mlp-boundary-fusion-2026-09-03.md",
+      "notes/av-persistent-worker-2026-09-03.md",
+      "notes/projection-backend-negative-results-2026-09-03.md",
+      "notes/video-text-kv-cache-rejection-2026-09-03.md",
+      "notes/technical-report-2026-09-04.md",
+      "notes/720p-gpu-2026-09-03.md"
+    ],
+    "reference_seconds": {
+      "gpu_dense_decoded_pixels": 59.483,
+      "gpu_ane_fixed_shape_dense": 49.467,
+      "gpu_ane_sol_stage2": 48.837,
+      "gpu_ane_sol_stage2_text256": 47.708
+    },
+    "reference_workload": {
+      "width": 704,
+      "height": 448,
+      "frames": 97,
+      "steps": 11,
+      "stage1_steps": 8,
+      "stage2_steps": 3,
+      "text_rows": 1024,
+      "seed": 42
+    }
+  },
+  "turbocider_implementation": {
+    "default_backend": "c_metal",
+    "default_mode": "quality",
+    "implemented": [
+      "gpu_fast_av_dual_queue",
+      "audio_command_batching",
+      "checkpoint_early_unmap",
+      "stage2_final_step_block_release",
+      "mlx_spatial_upsampler",
+      "mlx_video_and_audio_finalization",
+      "fixed_shape_int8_ane_mlp",
+      "stage1_ane_video_text_kv",
+      "stage2_sol_request_options",
+      "stage2_text_context_pruning_request_option",
+      "t2v",
+      "i2v_clean_prefix",
+      "request_and_result_metadata",
+      "studio_quality_sol_fast_approx_modes"
+    ],
+    "diagnostic_only": [
+      "cpp_mlx_transformer",
+      "metal_convrot_mlp",
+      "video_attention_command_batch",
+      "ane_v2a",
+      "ane_qkv"
+    ],
+    "rejected_default_candidates": [
+      "persistent_audio_worker",
+      "qkv_sequence_split",
+      "coreml_selector_or_multifunction",
+      "ane_v2a_with_dual_gpu_queue",
+      "mlp_boundary_fusion",
+      "metal_simd_int8_projection",
+      "bf16_preexpanded_projection",
+      "cross_step_video_text_kv_cache",
+      "packed_qkv",
+      "sol_command_batching",
+      "dual_shape_mlp"
+    ]
+  },
+  "benchmark_status": {
+    "status": "blocked_by_device_coreml_recompile",
+    "warning": "Must re-compile the E5 bundle",
+    "not_a_performance_result": true,
+    "invalid_diagnostic_reports": [
+      "/private/tmp/ltx-fixed-int8-stage1-kv-20260913.json",
+      "/private/tmp/ltx-fixed-int8-stage1-kv-warm-20260913.json"
+    ],
+    "observed_request_wall_seconds_range": [
+      80.03,
+      184.05
+    ],
+    "next_action": "re-export or recompile the fixed-shape Core ML artifacts for the current device, verify warning-free warm loads, then restart ABBA"
+  },
+  "gpu_only_probe": {
+    "status": "preliminary_not_release_qualified",
+    "workload": {
+      "width": 704,
+      "height": 448,
+      "frames": 97,
+      "steps": 11,
+      "seed": 42,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "prompt": "A cinematic red fox running through a snowy forest"
+    },
+    "warm_run_1_seconds": {
+      "quality_request_wall": 69.640798875,
+      "quality_denoise": 52.943718042,
+      "sol_request_wall": 67.072617917,
+      "sol_denoise": 51.713993333,
+      "fast_approx_request_wall": 65.472420292,
+      "fast_approx_denoise": 50.552071666
+    },
+    "speedup_vs_quality_denoise": {
+      "sol": 1.0237793415,
+      "fast_approx": 1.0473105512
+    },
+    "quality_vs_quality_request_1": {
+      "sol": {
+        "mean_correlation": 0.8361967392,
+        "minimum_correlation": 0.7708877979,
+        "mean_cosine": 0.9757631999,
+        "mean_mae_255": 23.0296530564,
+        "maximum_motion_relative_error": 0.0788730523,
+        "stage2_latent_cosine": 0.9345708721,
+        "stage2_latent_rel_l2": 0.3603457074,
+        "passed_formal_quality_gate": false
+      },
+      "fast_approx": {
+        "mean_correlation": 0.8159346181,
+        "minimum_correlation": 0.7465115767,
+        "mean_cosine": 0.9723085761,
+        "mean_mae_255": 25.0245557506,
+        "maximum_motion_relative_error": 0.0831262055,
+        "stage2_latent_cosine": 0.9236730872,
+        "stage2_latent_rel_l2": 0.3885528825,
+        "passed_formal_quality_gate": false
+      }
+    },
+    "interpretation": "The contact sheet preserves the fox, snow forest and left-to-right motion, but aligned RGB/latent metrics are below the release gate. Keep both modes explicit and collect the multi-prompt/seed suite before considering any broader recommendation.",
+    "artifacts": {
+      "quality_report": "/private/tmp/turbocider-ltx-gpu-quality-20260913.json",
+      "sol_report": "/private/tmp/turbocider-ltx-gpu-sol-20260913.json",
+      "fast_approx_report": "/private/tmp/turbocider-ltx-gpu-fast-20260913.json",
+      "contact_sheet": "/private/tmp/turbocider-ltx-quality-sol-fast-contact-20260913.jpg"
+    }
+  },
+  "acceptance_pending": [
+    "warning_free_gpu_ane_abba",
+    "gpu_quality_vs_sol_vs_fast_approx_abba",
+    "t2v_and_i2v_audio_matrix",
+    "twelve_prompt_three_seed_quality_suite",
+    "peak_rss_and_zero_swap_gate"
+  ],
+  "model_download_policy": "modelscope_only",
+  "large_artifacts_committed": false
+}

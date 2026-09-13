@@ -1,0 +1,18 @@
+{
+  "schema": "turbocider-ltx-ane-v1",
+  "variant": "fp16",
+  "parallel_av": true,
+  "preload_stage2": true,
+  "release_full_gpu_mlp": false,
+  "detach_stage1": true,
+  "detach_stage2": true,
+  "release_blocks_final_step": true,
+  "fused_mlp_residual": false,
+  "fused_mlp_adaln_pack": false,
+  "mlp_block_start": 0,
+  "mlp_block_count": 1,
+  "mlp_stage_mask": 2,
+  "kv_stage_mask": 0,
+  "mlp_stage1": "../models/coreml/ltx_mlp_a6912_dual_fp16_block0_20260913",
+  "mlp_stage2": "../models/coreml/ltx_mlp_a6912_dual_fp16_block0_20260913"
+}

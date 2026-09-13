@@ -62,9 +62,9 @@ int tc_coreml_ffn_predict(tc_coreml_ffn *bridge, int block,
                           uint16_t *output, char **error);
 int tc_coreml_ffn_metrics_json(tc_coreml_ffn *bridge, char **result, char **error);
 void tc_coreml_ffn_free(tc_coreml_ffn *bridge);
-/* Read-only LTX Audio VAE/vocoder provenance check.  A successful response
- * does not enable native audio execution; it reports whether the required
- * artifact and manifest are present and verified. */
+/* Read-only LTX Audio VAE/vocoder provenance check.  executor_ready is true
+ * only for the pinned ModelScope artifact identity accepted by the native
+ * Audio VAE, vocoder, BWE, and AAC mux path. */
 int tc_ltx_audio_preflight_json(const char *model_path, char **result,
                                 char **error);
 #ifdef __cplusplus
