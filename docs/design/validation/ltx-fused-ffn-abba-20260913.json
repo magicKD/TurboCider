@@ -1,0 +1,44 @@
+{
+  "format": "turbocider-ltx-gpu-candidate-v1",
+  "date": "2026-09-13",
+  "hardware": "Apple M4 Max 40-core GPU",
+  "candidate": {
+    "environment": "TURBOCIDER_LTX_GPU_FUSED_FFN",
+    "value": "1",
+    "scope": "video FFN AdaLN+INT8 MLP+residual, no conditioned prefix"
+  },
+  "workload": {
+    "width": 704,
+    "height": 448,
+    "frames": 97,
+    "steps": 11,
+    "seed": 42,
+    "prompt": "A cinematic red fox running through a snowy forest",
+    "execution": "gpu",
+    "residency": "resident",
+    "memory_budget_bytes": 0,
+    "audio": false
+  },
+  "summary": {
+    "baseline_samples": 2,
+    "candidate_samples": 2,
+    "baseline_median_request_wall_seconds": 81.843912667,
+    "candidate_median_request_wall_seconds": 83.11039964599999,
+    "request_wall_speedup": 0.984761389857413,
+    "baseline_median_denoise_seconds": 71.634732042,
+    "candidate_median_denoise_seconds": 73.687057583,
+    "denoise_speedup": 0.9721480866746742,
+    "candidate_denoise_change_percent": 2.864986693600957,
+    "all_latents_finite": true,
+    "all_latents_byte_exact": true,
+    "all_media_byte_exact": false,
+    "process_peak_rss_bytes": 29869555712,
+    "process_peak_rss_scope": "benchmark worker self; spawned isolated video decoder excluded"
+  },
+  "quality_gate": {
+    "all_latents_byte_exact": true,
+    "status": "passed"
+  },
+  "delivery_status": "rejected_slower_than_c_metal",
+  "notes": "Steady-state 97-frame ABBA candidate denoise was 2.86% slower; candidate remains opt-in only during this record and is removed from production source."
+}

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 @main struct LibraryStoreTests {
     static func main() throws {
@@ -11,6 +12,11 @@ import Foundation
         func rejects(_ operation: () throws -> Void) throws {
             do { try operation() } catch { return }
             throw LibraryFailure(message: "Expected rejection")
+        }
+        func fileInfo(_ file: URL) throws -> stat {
+            var value = stat()
+            try check(lstat(file.path, &value) == 0, "Missing file: \(file.path)")
+            return value
         }
         let previousSettings = getenv("TURBOCIDER_LIBRARY_SETTINGS").map { String(cString: $0) }
         let previousRoot = getenv("TURBOCIDER_MODEL_LIBRARY").map { String(cString: $0) }
@@ -83,17 +89,40 @@ import Foundation
         try check(blob == reused && !FileManager.default.fileExists(atPath: temporary.path), "Cross-download blob reuse failed")
         let staging = try store.managedDirectory("staging").appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
-        try LibraryStore.link(blob, at: "transformer/model.safetensors", in: staging)
+        try LibraryStore.linkBlob(blob, at: "transformer/model.safetensors", in: staging)
+        try LibraryStore.linkBlob(blob, at: "vae/model.safetensors", in: staging)
+        let blobInfo = try fileInfo(blob)
+        for component in ["transformer", "vae"] {
+            let linked = try fileInfo(staging.appendingPathComponent("\(component)/model.safetensors"))
+            try check((linked.st_mode & S_IFMT) == S_IFREG && linked.st_ino == blobInfo.st_ino && linked.st_dev == blobInfo.st_dev,
+                      "Downloaded weight must be a regular hard link to its content blob")
+            try check(linked.st_nlink == 3 && linked.st_mode & 0o222 == 0, "Shared blob lost deduplication or read-only permissions")
+        }
         try LibraryStore.link(external, at: "text_encoder", in: staging)
+        try check((try fileInfo(staging.appendingPathComponent("text_encoder"))).st_mode & S_IFMT == S_IFLNK,
+                  "Explicit shared component must remain a symbolic link")
+        try rejects { try LibraryStore.linkBlob(blob, at: "text_encoder/overwrite.bin", in: staging) }
         try rejects { try LibraryStore.link(blob, at: "text_encoder/overwrite.bin", in: staging) }
+        for path in ["../escape", "/absolute", "a/../../b"] {
+            try rejects { try LibraryStore.linkBlob(blob, at: path, in: staging) }
+        }
+        try rejects { try LibraryStore.linkBlob(external, at: "directory-blob", in: staging) }
+        let blobAlias = root.appendingPathComponent("blob-alias")
+        try FileManager.default.createSymbolicLink(at: blobAlias, withDestinationURL: blob)
+        try rejects { try LibraryStore.linkBlob(blobAlias, at: "symlink-blob", in: staging) }
+        try rejects { try LibraryStore.linkBlob(blob, at: "text_encoder", in: staging) }
         try check(!FileManager.default.fileExists(atPath: external.appendingPathComponent("overwrite.bin").path), "Link collision wrote into an external component")
         let installed = try store.publish(staging: staging, modelID: "z-image-turbo", name: "Fixture", provider: "fixture", repository: "test/tiny", revision: "test-sha", components: [:])
         try check(installed.managed, "Published installation not marked managed")
         try check(try Data(contentsOf: URL(fileURLWithPath: installed.path).appendingPathComponent("transformer/model.safetensors")) == bytes, "Published blob link is broken")
+        try FileManager.default.removeItem(at: URL(fileURLWithPath: installed.path).appendingPathComponent("transformer/model.safetensors"))
+        try check(try Data(contentsOf: blob) == bytes, "Removing a snapshot link deleted the content blob")
+        try check(try Data(contentsOf: URL(fileURLWithPath: installed.path).appendingPathComponent("vae/model.safetensors")) == bytes,
+                  "Removing one snapshot link damaged another")
         try check(try store.read().installations.count == 1, "Published installation is missing")
         try rejects { _ = try store.managedDirectory("../external") }
         try FileManager.default.createSymbolicLink(at: store.root.appendingPathComponent("unsafe"), withDestinationURL: external)
         try rejects { _ = try store.managedDirectory("unsafe") }
-        print("PASS: persistence, external registration, multiprocess lock, path validation, SHA/size integrity, content deduplication, shared links, atomic publication")
+        print("PASS: persistence, external registration, multiprocess lock, path validation, SHA/size integrity, regular-file hard-link deduplication, shared directory symlinks, atomic publication")
     }
 }

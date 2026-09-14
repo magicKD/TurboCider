@@ -52,6 +52,11 @@ Tensor AffineMatrix::project(const Tensor &x, bool dequantize_for_wide_gemm) con
                                            group_size_, bits_, "affine"), x.dtype());
 }
 
+Tensor AffineMatrix::dequantized(mx::Dtype dtype) const {
+    return mx::dequantize(packed_, scales_, offsets_, group_size_, bits_,
+                          "affine", std::nullopt, dtype);
+}
+
 AffineMatrix AffineMatrix::slice(int row_begin, int row_end, int column_begin, int column_end) const {
     require(32 % bits_ == 0,
             "affine column slicing is unsupported for cross-word packed bit widths");

@@ -10,7 +10,7 @@
     "ltx_transformer_io.c": "6384c166ec88f528d1823b63300eacf3a7a5b1b44370060f0ce2dfcdb16a473d",
     "ltx_latent_stats.c": "7e439d4d4fed240fb594ac4225b87c25b7d5451f70494788c7e8733c56800f26",
     "ltx_rng.c": "d7645ae4f144f7d7c8c9427d5bbd3b0466577127e1dfdafe10d2349b91d56d4f",
-    "ltx_shaders.metal": "c0ba06331c731db81ba16554d18866d7ef7ef4e3cac36fa5d251da69021c2269",
+    "ltx_shaders.metal": "7e8a03f23b45dd08d238f2056201b53ec5d2733857e44d8251ca95177f112c8a",
     "ltx_ane_mlp.m": "e0d1fc5d9fecc3de0a218b5a88d961c8344b221585843527c5c9af755937a724",
     "ltx_ane_v2a.m": "999e1bb81dfe4e4c5122da3275bb6a7fa84c44297a1e651a8e3c916f448ae0d4",
     "ltx_ane_kv.m": "9d9df613f3bd3f03236555b2670cdcfa58e3ab7314795229a150af33dc1002e8",

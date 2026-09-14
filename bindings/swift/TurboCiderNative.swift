@@ -44,6 +44,15 @@ public struct NativeRequest: Codable, Sendable {
     public var quantized_cache: String?
     public var fps: Int?
     public var audio: Bool?
+    public var ltx_backend: String?
+    public var ltx_fast_av: Bool?
+    public var ltx_video_attention_batch: Bool?
+    public var ltx_sol_stage1: Bool?
+    public var ltx_sol_stage2: Bool?
+    public var ltx_sol_tau: Double?
+    public var ltx_sol_dense_edge_blocks: Int?
+    public var ltx_sol_dense_edge_steps: Int?
+    public var ltx_stage2_text_rows: Int?
     public var loras: [NativeLoRA]?
     public var lora_strategy: String?
     public init(prompt: String, output: String) { self.prompt = prompt; self.output = output }

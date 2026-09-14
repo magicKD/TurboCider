@@ -92,7 +92,11 @@ Request request_from_json(NSDictionary *d) {
             @"vsa_dense_layers", @"vsa_impl",
             @"lora_strategy", @"streaming_offload", @"memory_budget_bytes",
             @"quantized_cache",
-            @"warmup_iterations"
+            @"warmup_iterations", @"ltx_backend", @"ltx_fast_av",
+            @"ltx_video_attention_batch",
+            @"ltx_sol_stage1", @"ltx_sol_stage2", @"ltx_sol_tau",
+            @"ltx_sol_dense_edge_blocks", @"ltx_sol_dense_edge_steps",
+            @"ltx_stage2_text_rows"
         ]);
         r.model = string_value(d, @"model", r.model);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
@@ -119,6 +123,19 @@ Request request_from_json(NSDictionary *d) {
         r.streaming_offload = boolean(d, @"streaming_offload", false);
         r.memory_budget_bytes = byte_count(d, @"memory_budget_bytes", 0);
         r.quantized_cache = string_value(d, @"quantized_cache");
+        r.ltx_backend = string_value(d, @"ltx_backend", r.ltx_backend);
+        r.ltx_fast_av = boolean(d, @"ltx_fast_av", r.ltx_fast_av);
+        r.ltx_video_attention_batch = boolean(
+            d, @"ltx_video_attention_batch", r.ltx_video_attention_batch);
+        r.ltx_sol_stage1 = boolean(d, @"ltx_sol_stage1", r.ltx_sol_stage1);
+        r.ltx_sol_stage2 = boolean(d, @"ltx_sol_stage2", r.ltx_sol_stage2);
+        r.ltx_sol_tau = numeric(d, @"ltx_sol_tau", r.ltx_sol_tau);
+        r.ltx_sol_dense_edge_blocks = number(
+            d, @"ltx_sol_dense_edge_blocks", r.ltx_sol_dense_edge_blocks);
+        r.ltx_sol_dense_edge_steps = number(
+            d, @"ltx_sol_dense_edge_steps", r.ltx_sol_dense_edge_steps);
+        r.ltx_stage2_text_rows = number(
+            d, @"ltx_stage2_text_rows", r.ltx_stage2_text_rows);
         r.warmup_iterations = number(d, @"warmup_iterations", 0);
         require(r.warmup_iterations >= 0 && r.warmup_iterations <= 8,
                 "warmup_iterations must be 0...8");
@@ -175,7 +192,11 @@ Request request_from_json(NSDictionary *d) {
         keys(execution,
              @[ @"policy", @"profile", @"ane_manifest", @"allow_approximation",
                 @"residency", @"memory_budget_bytes", @"warmup_iterations",
-                @"quantized_cache" ]);
+                @"quantized_cache", @"ltx_backend", @"ltx_fast_av",
+                @"ltx_video_attention_batch",
+                @"ltx_sol_stage1", @"ltx_sol_stage2", @"ltx_sol_tau",
+                @"ltx_sol_dense_edge_blocks", @"ltx_sol_dense_edge_steps",
+                @"ltx_stage2_text_rows" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");
@@ -183,6 +204,20 @@ Request request_from_json(NSDictionary *d) {
         r.residency = string_value(execution, @"residency", model_descriptor.default_residency);
         r.memory_budget_bytes = byte_count(execution, @"memory_budget_bytes", 0);
         r.quantized_cache = string_value(execution, @"quantized_cache");
+        r.ltx_backend = string_value(execution, @"ltx_backend", r.ltx_backend);
+        r.ltx_fast_av = boolean(execution, @"ltx_fast_av", r.ltx_fast_av);
+        r.ltx_video_attention_batch = boolean(
+            execution, @"ltx_video_attention_batch",
+            r.ltx_video_attention_batch);
+        r.ltx_sol_stage1 = boolean(execution, @"ltx_sol_stage1", r.ltx_sol_stage1);
+        r.ltx_sol_stage2 = boolean(execution, @"ltx_sol_stage2", r.ltx_sol_stage2);
+        r.ltx_sol_tau = numeric(execution, @"ltx_sol_tau", r.ltx_sol_tau);
+        r.ltx_sol_dense_edge_blocks = number(
+            execution, @"ltx_sol_dense_edge_blocks", r.ltx_sol_dense_edge_blocks);
+        r.ltx_sol_dense_edge_steps = number(
+            execution, @"ltx_sol_dense_edge_steps", r.ltx_sol_dense_edge_steps);
+        r.ltx_stage2_text_rows = number(
+            execution, @"ltx_stage2_text_rows", r.ltx_stage2_text_rows);
         r.warmup_iterations = number(execution, @"warmup_iterations", 0);
         require(r.warmup_iterations >= 0 && r.warmup_iterations <= 8,
                 "execution.warmup_iterations must be 0...8");

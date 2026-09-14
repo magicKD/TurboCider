@@ -1,6 +1,7 @@
 #include "../../native/models/h3_mlx/pipeline.hpp"
 
 #include <iostream>
+#include <cstdlib>
 #include <unordered_map>
 
 int main(int argc, char **argv) {

@@ -102,9 +102,9 @@ ExecutionPlan make_plan(const Request &requested) {
             if (stage.id == "av_stage1")
                 stage.dependencies.push_back("first_frame_vae_encode");
     }
-    if (r.model == "ltx-2.5-distilled" &&
-        (r.audio || r.operation != "video.generate"))
-        recipe.executable = false;
+    /* LTX audio finalization and first-frame I2V are native Session paths.
+     * Request-time validation remains fail-closed for missing/invalid audio
+     * assets, while the optional MLX denoiser still rejects I2V explicitly. */
     validate_recipe(recipe);
     ExecutionPlan plan{r, recipe, {}};
     if (r.model == "flux2-klein-4b")
@@ -119,6 +119,13 @@ ExecutionPlan make_plan(const Request &requested) {
             plan.memory_estimate_bytes = (26ull << 30) + geometry;
         else
             plan.memory_estimate_bytes = (36ull << 30) + geometry;
+    }
+    else if (r.model == "minimax-h3-vdn") {
+        const uint64_t geometry =
+            uint64_t(r.width) * r.height * r.frames * 80;
+        plan.memory_estimate_bytes =
+            (r.residency == "streamed" ? (28ull << 30) : (36ull << 30)) +
+            geometry;
     }
     else if (r.model == "minimax-h3-turbo" ||
              r.model.starts_with("minimax-h3-fasth3-mlx-int6"))

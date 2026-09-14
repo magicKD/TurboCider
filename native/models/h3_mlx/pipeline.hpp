@@ -12,6 +12,9 @@ struct DenoiseOptions {
     int steps = 4;
     uint64_t seed = 0;
     int affine_dq_gemm_min_rows = 768;
+    // Experimental VDN-only optimization. It is intentionally opt-in until
+    // matched real-model quality and performance evidence is available.
+    bool experimental_fused_qkv = false;
     std::optional<Tensor> video_noise;
     std::optional<Tensor> audio_noise;
     bool capture_first_velocity = false;
@@ -26,7 +29,9 @@ struct DenoiseMetrics {
     uint64_t peak_bytes = 0;
     uint64_t quantized_matmul_calls = 0;
     uint64_t dequantized_gemm_calls = 0;
+    int model_evaluations = 0;
     int affine_dq_gemm_min_rows = 768;
+    bool experimental_fused_qkv = false;
     std::optional<VSAStats> vsa;
 };
 

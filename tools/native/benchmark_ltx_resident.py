@@ -93,6 +93,15 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--frames", type=int, default=97)
     parser.add_argument("--steps", type=int, default=11)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--audio", action="store_true")
+    parser.add_argument(
+        "--first-frame",
+        help=(
+            "run image-to-video with this image as the first-frame condition; "
+            "resident or component_staged only"
+        ),
+    )
+    parser.add_argument("--first-frame-strength", type=float, default=1.0)
     parser.add_argument(
         "--prompt", default="A cinematic red fox running through a snowy forest"
     )
@@ -103,6 +112,20 @@ def arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "--execution", choices=("gpu", "gpu_ane"), default="gpu"
+    )
+    parser.add_argument(
+        "--ltx-fast-mode",
+        choices=("quality", "sol", "fast_approx"),
+        default="quality",
+        help=(
+            "LTX C/Metal policy: dense quality path, Stage-2 Sol, or Sol "
+            "plus Stage-2 text256"
+        ),
+    )
+    parser.add_argument(
+        "--ltx-video-attention-batch",
+        action="store_true",
+        help="opt in to exact Video attention command batching",
     )
     parser.add_argument("--ane-manifest")
     parser.add_argument("--memory-budget-bytes", type=int, default=12 * (1 << 30))
@@ -133,6 +156,18 @@ def arguments() -> argparse.Namespace:
         parser.error("gpu_ane execution requires --ane-manifest")
     if args.execution == "gpu_ane" and args.residency in ("paired", "streamed"):
         parser.error("gpu_ane execution requires resident or component_staged")
+    if args.ltx_video_attention_batch and args.execution != "gpu":
+        parser.error("--ltx-video-attention-batch requires --execution gpu")
+    if args.ltx_video_attention_batch and args.ltx_fast_mode != "quality":
+        parser.error(
+            "--ltx-video-attention-batch cannot be combined with Sol modes"
+        )
+    if args.first_frame and args.residency in ("paired", "streamed"):
+        parser.error(
+            "image-to-video requires --residency resident or component_staged"
+        )
+    if not 0.0 <= args.first_frame_strength <= 1.0:
+        parser.error("--first-frame-strength must be in [0, 1]")
     if args.ane_manifest and args.execution != "gpu_ane":
         parser.error("--ane-manifest requires --execution gpu_ane")
     if args.require_speedup < 0:
@@ -197,7 +232,9 @@ def run_mode(library, model: Path, output: Path, report: Path,
             request = {
                 "schema_version": 1,
                 "model": "ltx-2.5-distilled",
-                "operation": "video.generate",
+                "operation": (
+                    "video.image" if args.first_frame else "video.generate"
+                ),
                 "prompt": args.prompt,
                 "width": args.width,
                 "height": args.height,
@@ -210,10 +247,30 @@ def run_mode(library, model: Path, output: Path, report: Path,
                 "memory_budget_bytes": (
                     args.memory_budget_bytes if residency == "streamed" else 0
                 ),
-                "audio": False,
+                "audio": args.audio,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": True,
+                "ltx_video_attention_batch": args.ltx_video_attention_batch,
                 "dump_tensors": str(dump.resolve()),
                 "output": str(destination.resolve()),
             }
+            if args.ltx_fast_mode != "quality":
+                request.update({
+                    "allow_approximation": True,
+                    "ltx_sol_stage2": True,
+                    "ltx_sol_tau": 1.0,
+                    "ltx_sol_dense_edge_blocks": 1,
+                    "ltx_sol_dense_edge_steps": 0,
+                })
+                if args.ltx_fast_mode == "fast_approx":
+                    request["ltx_stage2_text_rows"] = 256
+            if args.first_frame:
+                request["inputs"] = [{
+                    "kind": "image",
+                    "role": "first_frame",
+                    "path": str(Path(args.first_frame).resolve()),
+                    "strength": args.first_frame_strength,
+                }]
             if args.execution == "gpu_ane":
                 request["allow_approximation"] = True
                 request["ane_manifest"] = str(
@@ -371,7 +428,22 @@ def run_paired_workers(args: argparse.Namespace, output: Path,
             "--prompt", args.prompt,
             "--residency", residency,
             "--memory-budget-bytes", str(args.memory_budget_bytes),
+            "--execution", args.execution,
+            "--ltx-fast-mode", args.ltx_fast_mode,
         ]
+        if args.ltx_video_attention_batch:
+            command.append("--ltx-video-attention-batch")
+        if args.audio:
+            command.append("--audio")
+        if args.first_frame:
+            command.extend([
+                "--first-frame", str(Path(args.first_frame).resolve()),
+                "--first-frame-strength", str(args.first_frame_strength),
+            ])
+        if args.ane_manifest:
+            command.extend([
+                "--ane-manifest", str(Path(args.ane_manifest).resolve())
+            ])
         completed = subprocess.run(command)
         if completed.returncode:
             raise RuntimeError(
@@ -399,6 +471,9 @@ def main() -> int:
     report_value = {
         "format": "turbocider-ltx-residency-c-abi-benchmark-v2",
         "workload": {
+            "operation": (
+                "video.image" if args.first_frame else "video.generate"
+            ),
             "width": args.width,
             "height": args.height,
             "frames": args.frames,
@@ -406,6 +481,15 @@ def main() -> int:
             "seed": args.seed,
             "prompt": args.prompt,
             "execution": args.execution,
+            "ltx_fast_mode": args.ltx_fast_mode,
+            "ltx_video_attention_batch": args.ltx_video_attention_batch,
+            "audio": args.audio,
+            "first_frame": (
+                str(Path(args.first_frame).resolve()) if args.first_frame else None
+            ),
+            "first_frame_strength": (
+                args.first_frame_strength if args.first_frame else None
+            ),
         },
         "memory_budget_bytes": args.memory_budget_bytes,
         "method": (

@@ -28,6 +28,8 @@ LIBRARY+=(services/model-library/InstallationInspection.swift)
 STATE+=("${LIBRARY[@]}" apps/macos/ModelLibraryController.swift apps/macos/LocalAPIController.swift)
 STATE+=(apps/macos/RunInsights.swift)
 STATE+=(apps/macos/TensorCacheController.swift)
+STATE+=(apps/macos/LTXWorker.swift)
+STATE+=(apps/macos/VideoPreview.swift)
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" services/model-library/main.swift -o "$OUT/turbocider-library"
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/LibraryStoreTests.swift -o "$OUT/turbocider-library-store-tests"
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/HubClientTests.swift -o "$OUT/turbocider-hub-tests"
@@ -47,6 +49,8 @@ printf 'Built Swift App and integration tests\n'
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/LibraryToolTests.swift -o "$OUT/turbocider-library-tool-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/LocalAPITests.swift -o "$OUT/turbocider-local-api-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/RunInsightsTests.swift -o "$OUT/turbocider-run-insights-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/StudioGPUModelTests.swift -o "$OUT/turbocider-studio-gpu-model-tests"
 
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ANELibraryTests.swift -o "$OUT/turbocider-ane-library-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" tests/integration/ZImagePromptTests.swift -o "$OUT/turbocider-z-image-prompt-tests"
+"$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O apps/macos/VideoPreview.swift tests/integration/VideoPreviewTests.swift -o "$OUT/turbocider-video-preview-tests"

@@ -160,8 +160,13 @@ Scheduler Scheduler::create(float shift_value, int steps) {
 }
 
 std::vector<float> four_step_adaln_union() {
-    auto video = Scheduler::create(video_shift, 4);
-    auto audio = Scheduler::create(audio_shift, 4);
+    return adaln_timestep_union(4);
+}
+
+std::vector<float> adaln_timestep_union(int steps) {
+    require(steps > 0, "H3 AdaLN schedule must have positive steps");
+    auto video = Scheduler::create(video_shift, steps);
+    auto audio = Scheduler::create(audio_shift, steps);
     std::vector<float> result{1.f};
     result.insert(result.end(), video.timesteps.begin(), video.timesteps.end());
     result.insert(result.end(), audio.timesteps.begin(), audio.timesteps.end());

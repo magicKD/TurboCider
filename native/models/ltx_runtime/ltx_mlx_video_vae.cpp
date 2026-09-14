@@ -3,7 +3,10 @@
 
 #include <mlx/mlx.h>
 
+#include <algorithm>
+#include <bit>
 #include <cstdarg>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <exception>
@@ -39,6 +42,91 @@ size_t checked_product(const std::vector<uint32_t> &dimensions) {
         result *= dimension;
     }
     return result;
+}
+
+bool environment_enabled(const char *name, bool default_value) {
+    /* The VAE helper is an isolated process, so it is safe to honor the
+     * explicit decode tuning switches here. The shared runtime intentionally
+     * keeps its generic environment hook disabled for library callers. */
+    const char *value = std::getenv(name);
+    if (!value || !value[0]) return default_value;
+    return std::strcmp(value, "0") != 0 &&
+        std::strcmp(value, "false") != 0 &&
+        std::strcmp(value, "off") != 0;
+}
+
+uint32_t environment_u32(const char *name,
+                         uint32_t default_value,
+                         uint32_t minimum,
+                         uint32_t maximum,
+                         uint32_t multiple) {
+    const char *text = std::getenv(name);
+    if (!text || !text[0]) return default_value;
+    char *end = nullptr;
+    const unsigned long value = std::strtoul(text, &end, 10);
+    if (!end || *end || value < minimum || value > maximum ||
+        value % multiple != 0) {
+        return default_value;
+    }
+    return static_cast<uint32_t>(value);
+}
+
+struct TileInterval {
+    uint32_t begin;
+    uint32_t end;
+    uint32_t left_ramp;
+    uint32_t right_ramp;
+};
+
+std::vector<TileInterval> split_spatial_tiles(uint32_t dimension,
+                                              uint32_t size,
+                                              uint32_t overlap) {
+    if (dimension <= size) return {{0u, dimension, 0u, 0u}};
+    const uint32_t stride = size - overlap;
+    const uint32_t amount =
+        (dimension + size - 2u * overlap - 1u) / stride;
+    std::vector<TileInterval> result;
+    result.reserve(amount);
+    for (uint32_t index = 0; index < amount; ++index) {
+        const uint32_t begin = index * stride;
+        const uint32_t end = index + 1u == amount ?
+            dimension : std::min(dimension, begin + size);
+        result.push_back({
+            begin,
+            end,
+            index == 0u ? 0u : overlap,
+            index + 1u == amount ? 0u : overlap,
+        });
+    }
+    return result;
+}
+
+std::vector<float> trapezoidal_mask(uint32_t length,
+                                    uint32_t left_ramp,
+                                    uint32_t right_ramp) {
+    std::vector<float> mask(length, 1.0f);
+    left_ramp = std::min(left_ramp, length);
+    right_ramp = std::min(right_ramp, length);
+    for (uint32_t index = 0; index < left_ramp; ++index) {
+        mask[index] *= static_cast<float>(index + 1u) /
+            static_cast<float>(left_ramp + 1u);
+    }
+    for (uint32_t index = 0; index < right_ramp; ++index) {
+        mask[length - right_ramp + index] *=
+            static_cast<float>(right_ramp - index) /
+            static_cast<float>(right_ramp + 1u);
+    }
+    return mask;
+}
+
+float bfloat16_to_float(uint16_t value) {
+    return std::bit_cast<float>(static_cast<uint32_t>(value) << 16u);
+}
+
+uint16_t float_to_bfloat16(float value) {
+    uint32_t bits = std::bit_cast<uint32_t>(value);
+    const uint32_t rounding = 0x7fffu + ((bits >> 16u) & 1u);
+    return static_cast<uint16_t>((bits + rounding) >> 16u);
 }
 
 std::vector<std::string> decoder_weight_names(void) {
@@ -278,6 +366,35 @@ class VideoVAE {
             throw std::invalid_argument("video VAE output element count mismatch");
         }
 
+        /* FastVideo's LTX-2 VAE defaults to 512-pixel spatial tiles with a
+         * 64-pixel overlap. The untiled 1280x704x121 graph peaks above the
+         * physical memory of the 64 GiB target and spends minutes paging.
+         * Keep the small-shape reference route, but automatically bound the
+         * graph for wider-than-768-pixel or taller-than-768-pixel outputs.
+         * The environment switch is intentionally public for parity tests. */
+        const bool automatic_tiling = width > 24u || height > 24u;
+        if (batch == 1u && environment_enabled(
+                "TURBOCIDER_LTX_VAE_TILED", automatic_tiling)) {
+            decode_spatially_tiled(
+                output, output_elements, input, input_elements,
+                batch, frames, height, width);
+            return;
+        }
+
+        decode_reference(output, output_elements, input, input_elements,
+                         batch, frames, height, width);
+    }
+
+ private:
+    void decode_reference(uint16_t *output,
+                          size_t output_elements,
+                          const uint16_t *input,
+                          size_t input_elements,
+                          uint32_t batch,
+                          uint32_t frames,
+                          uint32_t height,
+                          uint32_t width) const {
+
         const mx::bfloat16_t *typed_input =
             reinterpret_cast<const mx::bfloat16_t *>(input);
         mx::array value(
@@ -333,7 +450,122 @@ class VideoVAE {
                     output_elements * sizeof(uint16_t));
     }
 
- private:
+    void decode_spatially_tiled(uint16_t *output,
+                                size_t output_elements,
+                                const uint16_t *input,
+                                size_t input_elements,
+                                uint32_t batch,
+                                uint32_t frames,
+                                uint32_t height,
+                                uint32_t width) const {
+        const uint32_t tile_pixels = environment_u32(
+            "TURBOCIDER_LTX_VAE_TILE_PIXELS", 512u, 64u, 2048u, 32u);
+        uint32_t overlap_pixels = environment_u32(
+            "TURBOCIDER_LTX_VAE_TILE_OVERLAP_PIXELS", 64u,
+            0u, tile_pixels - 32u, 32u);
+        overlap_pixels = std::min(overlap_pixels, tile_pixels - 32u);
+        const uint32_t tile_latent = tile_pixels / 32u;
+        const uint32_t overlap_latent = overlap_pixels / 32u;
+        const auto rows = split_spatial_tiles(
+            height, tile_latent, overlap_latent);
+        const auto columns = split_spatial_tiles(
+            width, tile_latent, overlap_latent);
+        if (rows.size() == 1u && columns.size() == 1u) {
+            decode_reference(output, output_elements, input, input_elements,
+                             batch, frames, height, width);
+            return;
+        }
+
+        const uint32_t output_frames = frames * 8u - 7u;
+        const uint32_t output_height = height * 32u;
+        const uint32_t output_width = width * 32u;
+        std::vector<float> accumulation(output_elements, 0.0f);
+
+        for (const auto &row : rows) {
+            const uint32_t tile_height = row.end - row.begin;
+            const uint32_t tile_output_height = tile_height * 32u;
+            const auto row_mask = trapezoidal_mask(
+                tile_output_height, row.left_ramp * 32u,
+                row.right_ramp * 32u);
+            for (const auto &column : columns) {
+                const uint32_t tile_width = column.end - column.begin;
+                const uint32_t tile_output_width = tile_width * 32u;
+                const auto column_mask = trapezoidal_mask(
+                    tile_output_width, column.left_ramp * 32u,
+                    column.right_ramp * 32u);
+                const size_t tile_input_elements = checked_product(
+                    {batch, frames, tile_height, tile_width, 128u});
+                std::vector<uint16_t> tile_input(tile_input_elements);
+                for (uint32_t batch_index = 0; batch_index < batch;
+                     ++batch_index) {
+                    for (uint32_t frame = 0; frame < frames; ++frame) {
+                        for (uint32_t tile_y = 0; tile_y < tile_height;
+                             ++tile_y) {
+                            const size_t source_offset =
+                                (((static_cast<size_t>(batch_index) * frames +
+                                   frame) * height + row.begin + tile_y) *
+                                 width + column.begin) * 128u;
+                            const size_t destination_offset =
+                                (((static_cast<size_t>(batch_index) * frames +
+                                   frame) * tile_height + tile_y) *
+                                 tile_width) * 128u;
+                            std::memcpy(
+                                tile_input.data() + destination_offset,
+                                input + source_offset,
+                                static_cast<size_t>(tile_width) * 128u *
+                                    sizeof(uint16_t));
+                        }
+                    }
+                }
+
+                const size_t tile_output_elements = checked_product(
+                    {batch, 3u, output_frames, tile_output_height,
+                     tile_output_width});
+                std::vector<uint16_t> tile_output(tile_output_elements);
+                decode_reference(
+                    tile_output.data(), tile_output.size(), tile_input.data(),
+                    tile_input.size(), batch, frames, tile_height, tile_width);
+
+                for (uint32_t batch_index = 0; batch_index < batch;
+                     ++batch_index) {
+                    for (uint32_t channel = 0; channel < 3u; ++channel) {
+                        for (uint32_t frame = 0; frame < output_frames;
+                             ++frame) {
+                            for (uint32_t tile_y = 0;
+                                 tile_y < tile_output_height; ++tile_y) {
+                                const float y_weight = row_mask[tile_y];
+                                const uint32_t output_y =
+                                    row.begin * 32u + tile_y;
+                                const size_t source_offset =
+                                    ((((static_cast<size_t>(batch_index) * 3u +
+                                        channel) * output_frames + frame) *
+                                      tile_output_height + tile_y) *
+                                     tile_output_width);
+                                const size_t destination_offset =
+                                    ((((static_cast<size_t>(batch_index) * 3u +
+                                        channel) * output_frames + frame) *
+                                      output_height + output_y) * output_width) +
+                                    column.begin * 32u;
+                                for (uint32_t tile_x = 0;
+                                     tile_x < tile_output_width; ++tile_x) {
+                                    accumulation[destination_offset + tile_x] +=
+                                        bfloat16_to_float(
+                                            tile_output[source_offset + tile_x]) *
+                                        y_weight * column_mask[tile_x];
+                                }
+                            }
+                        }
+                    }
+                }
+                mx::clear_cache();
+            }
+        }
+        for (size_t index = 0; index < output_elements; ++index) {
+            output[index] = float_to_bfloat16(accumulation[index]);
+        }
+        (void)input_elements;
+    }
+
     const mx::array &weight(const std::string &name) const {
         const auto found = weights_.find(name);
         if (found == weights_.end()) {

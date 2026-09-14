@@ -23,6 +23,7 @@ class AffineMatrix {
     int bits() const { return bits_; }
     // Preserve the source runtime's cast before adding the layer bias.
     Tensor project(const Tensor &, bool dequantize_for_wide_gemm = false) const;
+    Tensor dequantized(mx::Dtype dtype) const;
     AffineMatrix slice(int row_begin, int row_end, int column_begin, int column_end) const;
 };
 

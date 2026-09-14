@@ -43,12 +43,19 @@ M4 Max FLUX 的生成耗时降低 **28.2%**，对应 GPU／混合输出 PNG 余�
 
 实际性能因设备和工作负载而异。warm 耗时不含首次准备和编译，详细测试条件见下方文档。
 
+**LTX 2.5 纯 GPU 实测（2026-09-13）：** Apple M4 Max、64 GB 统一内存；
+704×448、97 帧（约 4.04 秒）、24 FPS、11 步，关闭音频，命中文本条件缓存。
+App 端到端生成耗时：**文生视频 63.08 秒，图生视频 62.35 秒**。
+以上为已有单次记录，非中位数；未启用 ANE 或近似加速，使用分阶段权重释放。
+
 [性能与保真度（英文）](docs/public/PERFORMANCE.md) ·
 [公开样本、测量条件与比较边界（英文）](docs/public/BENCHMARKS.md)
 
 ## 开始使用
 
-需要 Apple Silicon、可用的 macOS SDK / Swift / Clang 和兼容的 MLX 0.32.x。推荐完整 Xcode；已有 Command Line Tools 可通过 `DEVELOPER_DIR`、`SDKROOT` 选择。Python 3.11 用于依赖安装、离线转换及特定模型工具，FLUX / Z-Image / H3 / LTX 的原生推理不依赖 Python 模型运行时。
+需要 Apple Silicon、可用的 macOS SDK / Swift / Clang 和兼容的 MLX 0.32.x。已验证仅安装 Command Line Tools 即可完成构建，可通过 `DEVELOPER_DIR`、`SDKROOT` 选择。执行 `make setup` **之前需要先安装 arm64 CPython 3.11**；Python 用于依赖安装和离线工具，生产推理使用原生运行时。
+
+新机器请先看[本地环境配置指南（英文）](docs/public/ENVIRONMENT_SETUP.md)：包含系统 Python 版本不足时的本地安装方法、两套锁定依赖环境、SDK 选择、FFmpeg 视频测试依赖和实际配置中遇到的问题。最低运行系统版本由链接的 MLX 库决定，不能用 SDK 版本代替判断。
 
 ```sh
 make setup
@@ -56,6 +63,8 @@ make package
 make test
 open dist/TurboCider.app
 ```
+
+`make setup` 会安装 `.venv` 和独立的离线 Core ML 工具环境，不会下载 Python、模型权重或 ANE 产物。模型下载、检查及 ANE 导出／编译／登记的完整命令见 [FLUX.2 Klein 4B 准备指南（英文）](docs/public/FLUX_PREPARATION.md)。配置、文件检查和请求规划通过，仅表示准备步骤通过，真实生成和性能复现需要另行验证。
 
 在 App 先选择图片或视频创作，自动匹配兼容执行器，再登记所需模型文件夹。已有权重可以继续放在原来的目录；Z-Image 可关联 FLUX.2 Klein 4B 的兼容文本组件。首次先使用 GPU，成功生成后再按设备配置 ANE。发行目录中的 App 当前为本机 ad-hoc 签名，尚未完成 Developer ID 公证。
 
