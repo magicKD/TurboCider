@@ -5,7 +5,9 @@ CLI, C / Swift SDK or local job API.
 
 | Guide | Start here when you want to… |
 |---|---|
+| [Local environment setup](ENVIRONMENT_SETUP.md) | Prepare Python, Apple tools, pinned dependencies and media tests on a fresh Mac |
 | [Getting started](GETTING_STARTED.md) | Build, register weights and create your first output |
+| [FLUX.2 Klein 4B preparation](FLUX_PREPARATION.md) | Download and inspect weights, export/compile ANE partitions and plan a first comparison |
 | [Usage reference](USAGE.md) | Configure requests, model capabilities, LoRA, ANE and SDKs |
 | [Model library](MODEL_LIBRARY.md) | Register, inspect, download and share model components |
 | [Local API](LOCAL_API.md) | Submit jobs and reuse a persistent session |

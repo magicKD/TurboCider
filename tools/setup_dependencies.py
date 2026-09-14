@@ -16,7 +16,8 @@ def main():
         if destination.is_symlink():raise SystemExit('Toolchain must not be a symlink')
         if not (destination/'pyvenv.cfg').exists():
             if destination.exists() and any(destination.iterdir()):raise SystemExit('Refusing to adopt a nonempty non-venv directory')
-            venv.EnvBuilder(with_pip=True).create(destination)
+            # Preserve relocatable Python installations' path to their standard library.
+            venv.EnvBuilder(with_pip=True,symlinks=True).create(destination)
         command=[str(destination/'bin/python3'),'-m','pip','install','--requirement',str(lock)]
         if a.offline:command+=['--no-index']
         if a.wheelhouse:command+=['--find-links',str(a.wheelhouse.resolve())]
