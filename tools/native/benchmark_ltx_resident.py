@@ -490,6 +490,10 @@ def main() -> int:
             "first_frame_strength": (
                 args.first_frame_strength if args.first_frame else None
             ),
+            "ane_persistent_worker": os.environ.get(
+                "TURBOCIDER_LTX_ANE_PERSISTENT_WORKER", "0"
+            ) == "1",
+            "c_profile": os.environ.get("TURBOCIDER_LTX_C_PROFILE", "0") == "1",
         },
         "memory_budget_bytes": args.memory_budget_bytes,
         "method": (

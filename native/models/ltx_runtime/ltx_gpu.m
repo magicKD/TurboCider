@@ -2617,6 +2617,11 @@ typedef struct {
     uint32_t head_major_output;
     float scale_log2;
     float tau;
+    uint32_t mode;
+    uint32_t radius;
+    uint32_t anchor_stride;
+    uint32_t tokens_per_frame;
+    uint32_t keep_blocks;
 } ltx_sol_args;
 
 static int ltx_gpu_linear_impl(ltx_gpu *gpu, ltx_gpu_buffer *output,
@@ -3158,7 +3163,7 @@ int ltx_gpu_unpack_heads_gate_bf16(
     }
 }
 
-int ltx_gpu_self_attention_core_sol_bf16(
+int ltx_gpu_self_attention_core_sparse_bf16(
                           ltx_gpu *gpu, ltx_gpu_buffer *output,
                           const ltx_gpu_buffer *query,
                           const ltx_gpu_buffer *key,
@@ -3180,12 +3185,13 @@ int ltx_gpu_self_attention_core_sol_bf16(
                           uint32_t sink_start, uint32_t sink_end,
                           uint32_t sink_query_start,
                           uint32_t sink_query_end,
+                          const ltx_sparse_pattern *pattern,
                           char *error, size_t error_size) {
     uint32_t blocks = rows ? (rows + 63u) / 64u : 0u;
     uint64_t elements = (uint64_t)rows * heads * head_dim;
     uint64_t summary_elements = (uint64_t)heads * blocks * head_dim;
     uint64_t threshold_elements = (uint64_t)heads * blocks;
-    uint64_t route_elements = threshold_elements * blocks;
+    uint64_t route_elements = ltx_sparse_route_scratch_words(rows, heads);
     uint64_t tensor_bytes = 0;
     uint64_t frequency_bytes = 0;
     uint64_t gate_bytes = 0;
@@ -3204,10 +3210,15 @@ int ltx_gpu_self_attention_core_sol_bf16(
                             &bf16_summary_bytes) ||
         !ltx_required_bytes(threshold_elements, sizeof(float),
                             &threshold_bytes) ||
-        !ltx_required_bytes(route_elements, sizeof(float), &route_bytes) ||
+        !ltx_required_bytes(route_elements, sizeof(uint32_t), &route_bytes) ||
         elements > UINT32_MAX || !gpu || !rows || !heads ||
         head_dim != 128u || !blocks || !(scale > 0.0f) ||
         !isfinite(scale) || !isfinite(tau) ||
+        (pattern && (pattern->mode > 5u || pattern->radius > 16384u ||
+                     ((pattern->mode == 4u || pattern->mode == 5u) &&
+                      (!pattern->keep_blocks || pattern->keep_blocks > 256u)) ||
+                     pattern->tokens_per_frame > rows ||
+                     (pattern->tokens_per_frame && rows % pattern->tokens_per_frame))) ||
         sink_start > sink_end || sink_end > blocks ||
         sink_query_start > sink_query_end || sink_query_end > blocks ||
         !ltx_buffer_fits(query, tensor_bytes) ||
@@ -3255,6 +3266,7 @@ int ltx_gpu_self_attention_core_sol_bf16(
             key_stats.maxTotalThreadsPerThreadgroup < 128u ||
             threshold_stats.maxTotalThreadsPerThreadgroup < 128u ||
             route.maxTotalThreadsPerThreadgroup < 128u ||
+            route.threadExecutionWidth != 32u ||
             attention.maxTotalThreadsPerThreadgroup < 256u || blocks > 256u)
             return ltx_gpu_fail(error, error_size,
                                 "device cannot dispatch BF16 Sol attention for this row count");
@@ -3267,7 +3279,12 @@ int ltx_gpu_self_attention_core_sol_bf16(
         ltx_sol_args sol_args = {
             rows, heads, head_dim, blocks,
             sink_start, sink_end, sink_query_start, sink_query_end,
-            1u, 1u, scale * 1.4426950408889634f, tau
+            1u, 1u, scale * 1.4426950408889634f, tau,
+            pattern ? pattern->mode : 0u,
+            pattern ? pattern->radius : 1u,
+            pattern ? pattern->anchor_stride : 0u,
+            pattern ? pattern->tokens_per_frame : 0u,
+            pattern ? pattern->keep_blocks : 0u
         };
         uint32_t count = (uint32_t)elements;
         id<MTLComputeCommandEncoder> encoder =
@@ -3324,9 +3341,15 @@ int ltx_gpu_self_attention_core_sol_bf16(
                  threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
         [encoder endEncoding];
 
+        /* Structured and top-k modes route directly from Q/K centroids and do
+         * not consume thresholds.  Avoid the Sol statistics/threshold passes
+         * in those modes; this preserves the route mask exactly while
+         * removing two dispatches from the hot path. */
+        bool needs_thresholds = !pattern || pattern->mode == 0u ||
+                                pattern->mode == 3u;
         uint64_t stats_bytes =
             (uint64_t)heads * head_dim * 2u * sizeof(float);
-        if (route_bytes >= stats_bytes) {
+        if (needs_thresholds && route_bytes >= stats_bytes) {
             encoder = [command computeCommandEncoder];
             if (!encoder)
                 return ltx_gpu_fail(error, error_size,
@@ -3352,7 +3375,7 @@ int ltx_gpu_self_attention_core_sol_bf16(
             [encoder dispatchThreadgroups:MTLSizeMake(blocks, heads, 1)
                      threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
             [encoder endEncoding];
-        } else {
+        } else if (needs_thresholds) {
             encoder = [command computeCommandEncoder];
             if (!encoder)
                 return ltx_gpu_fail(error, error_size,
@@ -3414,6 +3437,28 @@ int ltx_gpu_self_attention_core_sol_bf16(
         return ltx_finish_command(gpu, command, "Sol attention", error,
                                   error_size);
     }
+}
+
+int ltx_gpu_self_attention_core_sol_bf16(
+    ltx_gpu *gpu, ltx_gpu_buffer *output,
+    const ltx_gpu_buffer *query, const ltx_gpu_buffer *key,
+    const ltx_gpu_buffer *value, const ltx_gpu_buffer *cosine,
+    const ltx_gpu_buffer *sine, const ltx_gpu_buffer *gate,
+    ltx_gpu_buffer *packed_query, ltx_gpu_buffer *packed_key,
+    ltx_gpu_buffer *packed_value, ltx_gpu_buffer *packed_output,
+    ltx_gpu_buffer *query_centroids, ltx_gpu_buffer *key_centroids,
+    ltx_gpu_buffer *value_sums, ltx_gpu_buffer *thresholds,
+    ltx_gpu_buffer *routes, uint32_t rows, uint32_t heads,
+    uint32_t head_dim, float scale, float tau,
+    uint32_t sink_start, uint32_t sink_end,
+    uint32_t sink_query_start, uint32_t sink_query_end,
+    char *error, size_t error_size) {
+    return ltx_gpu_self_attention_core_sparse_bf16(
+        gpu, output, query, key, value, cosine, sine, gate,
+        packed_query, packed_key, packed_value, packed_output,
+        query_centroids, key_centroids, value_sums, thresholds, routes,
+        rows, heads, head_dim, scale, tau, sink_start, sink_end,
+        sink_query_start, sink_query_end, NULL, error, error_size);
 }
 
 int ltx_gpu_linear_int8_weight_bf16(

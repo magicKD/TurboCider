@@ -5,10 +5,39 @@ implements full causal pre-norm RMSNorm/SwiGLU blocks, with independent weights
 and buffers for 1–3 layers. It does not modify production model routing.
 
 - [Full technical report](notes/REPORT.md)
+- [M4 Max reproduction (ongoing, separate from historical M4 Pro)](notes/M4_MAX_REPRODUCTION.md)
 - [Protocol and implementation audit](notes/PROTOCOL.md)
 - Machine-readable summary: `notes/summary.json` (generated locally)
 - [All measurements](notes/measurements.csv)
 - Raw measurements, exact commands, stdout/stderr: `notes/raw` (generated locally)
+
+## Current code map
+
+This directory now contains two related but distinct experiment families:
+
+| Area | Main entry points | Scope |
+|---|---|---|
+| Synthetic Transformer GPU/ANE | `scripts/campaign.py`, `scripts/prepare.py`, `src/runner*.mm` | Fixed-shape operator/block scheduling; not pretrained-video quality evidence |
+| Real LTX replay and lifecycle diagnostics | `src/ltx_stage2_replay.c`, `scripts/audit_ltx_replay_inputs.py`, `scripts/compare_workers.py` | Reuses real cached conditioning and tensor dumps without changing production routing |
+| VAE tiling quality | `scripts/evaluate_vae_tiling.py`, `config/ltx_m4max_vae256.env` | Opt-in decoder comparison with byte-exact denoising tensors |
+| Perceptual and temporal video evaluation | `../../tools/native/evaluate_ltx_lpips.py`, `../../tools/native/evaluate_ltx_temporal.py` | Descriptive quality diagnostics; no universal pass threshold |
+
+Production LTX request parsing and kernels remain under `native/`. Sparse/Sol
+attention and persistent ANE-worker experiments require explicit opt-in fields
+or environment variables; dense GPU behavior and decoder defaults are
+unchanged. Generated models, tensor dumps, videos and reports belong under
+`outputs/` and are not source files.
+
+Build the real-checkpoint replay only after the native runtime exists:
+
+```sh
+make -C experimental/transformer build/ltx-stage2-replay
+```
+
+The replay has a fixed geometry and validates byte-exact references. See
+`notes/M4_MAX_REPRODUCTION.md` for its full argument contract and measured
+limitations. Do not use replay, QKV capture or VAE intervention runs as
+end-to-end production benchmarks.
 
 ## Build and reproduce
 

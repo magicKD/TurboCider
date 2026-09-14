@@ -148,6 +148,7 @@ static sol_video_self_options sol_video_self = {
     .active_step = SIZE_MAX,
     .active_step_count = 0u,
 };
+static ltx_sparse_pattern sol_sparse_pattern = {0u, 1u, 0u, 0u, 0u};
 
 enum {
     LTX_MAX_TABLE_ROWS = 9,
@@ -2589,7 +2590,7 @@ static int create_sol_video_self_workspace(
     uint64_t gate_elements = (uint64_t)rows * heads;
     uint64_t summary_elements = (uint64_t)heads * blocks * head_dim;
     uint64_t threshold_elements = (uint64_t)heads * blocks;
-    uint64_t route_elements = threshold_elements * blocks;
+    uint64_t route_elements = ltx_sparse_route_scratch_words(rows, heads);
 #define LTX_NEW_SOL_TENSOR(FIELD) \
     ((workspace)->FIELD = new_elements( \
         gpu, tensor_elements, sizeof(uint16_t), error, error_size))
@@ -2621,7 +2622,7 @@ static int create_sol_video_self_workspace(
               gpu, threshold_elements, sizeof(float),
               error, error_size)) != NULL) &&
         ((workspace->video_sol_routes = new_elements(
-              gpu, route_elements, sizeof(float),
+              gpu, route_elements, sizeof(uint32_t),
               error, error_size)) != NULL);
 #undef LTX_NEW_SOL_TENSOR
     return ok;
@@ -2770,13 +2771,84 @@ static int run_self_attention(ltx_gpu *gpu, ltx_gpu_buffer *output,
         error, error_size);
 }
 
+/* Explicit diagnostic capture, never enabled by normal requests. Capturing
+ * incurs CPU I/O and must not be used as a performance result. Step/block
+ * defaults pick the first sparse-admitted block of the first Stage-2 step. */
+static int capture_sol_qkv(const attention_weights *weights,
+        const rope_pair *rope, block_workspace *workspace,
+        uint32_t rows, uint32_t block_index, char *error, size_t error_size) {
+    const char *directory = getenv("TURBOCIDER_LTX_CAPTURE_QKV_DIR");
+    if (!directory || !directory[0] || rows != active_geometry.stage2_rows)
+        return 1;
+    const char *step_text = getenv("TURBOCIDER_LTX_CAPTURE_QKV_STEP");
+    const char *block_text = getenv("TURBOCIDER_LTX_CAPTURE_QKV_BLOCK");
+    unsigned long selected_step = 0, selected_block = 1;
+    char *end = NULL;
+    if (step_text) {
+        selected_step = strtoul(step_text, &end, 10);
+        if (end == step_text || *end || selected_step >= 32) goto invalid;
+    }
+    if (block_text) {
+        selected_block = strtoul(block_text, &end, 10);
+        if (end == block_text || *end || selected_block >= 48) goto invalid;
+    }
+    if (sol_video_self.active_step != selected_step || block_index != selected_block)
+        return 1;
+    if (!ensure_directory(directory, error, error_size)) return 0;
+    const char *names[] = {"query.bf16", "key.bf16", "value.bf16",
+                          "cosine.bf16", "sine.bf16", "gate.bf16"};
+    const ltx_gpu_buffer *buffers[] = {workspace->video_sol_query,
+        workspace->video_sol_key, workspace->video_sol_value,
+        rope->cosine, rope->sine, workspace->video_sol_gate};
+    char path[4096];
+    for (unsigned i = 0; i < 6; ++i) {
+        if (!fixture_path(path, sizeof(path), directory, names[i], error, error_size))
+            return 0;
+        FILE *file = fopen(path, "wbx");
+        if (!file) {
+            snprintf(error, error_size, "cannot exclusively create capture %s", path);
+            return 0;
+        }
+        size_t bytes = ltx_gpu_buffer_bytes(buffers[i]);
+        void *data = ltx_gpu_buffer_contents((ltx_gpu_buffer *)buffers[i]);
+        size_t written = fwrite(data, 1, bytes, file);
+        int closed = fclose(file);
+        if (written != bytes || closed) {
+            snprintf(error, error_size, "cannot write capture %s", path);
+            return 0;
+        }
+    }
+    if (!fixture_path(path, sizeof(path), directory, "metadata.json", error, error_size))
+        return 0;
+    FILE *metadata = fopen(path, "wx");
+    if (!metadata) {
+        snprintf(error, error_size, "cannot exclusively create capture metadata");
+        return 0;
+    }
+    int result = fprintf(metadata,
+        "{\"schema\":\"ltx-qkv-replay-v1\",\"rows\":%u,\"heads\":%u,"
+        "\"dim\":%u,\"stage\":2,\"step\":%zu,\"block\":%u,"
+        "\"tokens_per_frame\":%u,\"qkv_layout\":\"row-head-dim\","
+        "\"rope_layout\":\"head-row-halfdim\",\"dtype\":\"bf16\"}\n",
+        rows, weights->heads, weights->head_dim, sol_video_self.active_step,
+        block_index, active_geometry.stage2_height * active_geometry.stage2_width);
+    int closed = fclose(metadata);
+    return result > 0 && !closed;
+invalid:
+    snprintf(error, error_size, "invalid QKV capture step/block selector");
+    return 0;
+}
+
 static int run_sol_video_self_attention(
         ltx_gpu *gpu, ltx_gpu_buffer *output,
         const ltx_gpu_buffer *input,
         const attention_weights *weights,
         const rope_pair *rope, block_workspace *workspace,
-        uint32_t rows, char *error, size_t error_size) {
+        uint32_t rows, uint32_t block_index, char *error, size_t error_size) {
     uint32_t inner_dim = weights->inner_dim;
+    ltx_sparse_pattern active_pattern = sol_sparse_pattern;
+    if (active_pattern.mode == 0u)
+        active_pattern = (ltx_sparse_pattern){0u, 1u, 0u, 0u, 0u};
     if (!workspace->video_sol_query || !workspace->video_sol_key ||
         !workspace->video_sol_value ||
         !workspace->video_sol_gate_logits || !workspace->video_sol_gate ||
@@ -2820,7 +2892,7 @@ static int run_sol_video_self_attention(
             gpu, workspace->video_sol_gate,
             workspace->video_sol_gate_logits,
             rows * weights->heads, error, error_size) &&
-        ltx_gpu_self_attention_core_sol_bf16(
+        ltx_gpu_self_attention_core_sparse_bf16(
             gpu, workspace->video_sol_core,
             workspace->video_sol_query,
             workspace->video_sol_key,
@@ -2839,7 +2911,7 @@ static int run_sol_video_self_attention(
             rows, weights->heads, weights->head_dim,
             1.0f / sqrtf((float)weights->head_dim),
             sol_video_self_current_tau(),
-            0u, 0u, 0u, 0u, error, error_size) &&
+            0u, 0u, 0u, 0u, &active_pattern, error, error_size) &&
         ltx_gpu_convrot_bf16(
             gpu, workspace->video_sol_rotated,
             workspace->video_sol_core,
@@ -2850,14 +2922,17 @@ static int run_sol_video_self_attention(
             weights->output.bias,
             rows, inner_dim, weights->output_dim,
             error, error_size);
-    if (!sol_video_self.batch_commands) return ok;
+    if (!sol_video_self.batch_commands)
+        return ok && capture_sol_qkv(weights, rope, workspace, rows,
+                                     block_index, error, error_size);
     char batch_error[1024] = {0};
     int batch_ok = ltx_gpu_batch_end(
         gpu, batch_error, sizeof(batch_error));
     if (!batch_ok && ok)
         snprintf(error, error_size, "%s", batch_error[0] ?
                  batch_error : "Sol attention command batch failed");
-    return ok && batch_ok;
+    return ok && batch_ok && capture_sol_qkv(weights, rope, workspace, rows,
+                                            block_index, error, error_size);
 }
 
 #ifdef LTX_ENABLE_ANE_QKV
@@ -2984,7 +3059,7 @@ static int run_video_self_attention(
     if (sol_video_self_should_run(rows, block_index))
         return run_sol_video_self_attention(
             gpu, output, input, &block->video_self,
-            rope, workspace, rows, error, error_size);
+            rope, workspace, rows, block_index, error, error_size);
     return run_self_attention(
         gpu, output, input, &block->video_self,
         rope, rows, error, error_size);
@@ -5584,7 +5659,10 @@ static int run_denoise_schedule(
             "video_to_audio_ms=%.3f av_residual_ms=%.3f "
             "video_ffn_ms=%.3f audio_ffn_ms=%.3f "
             "parallel_stream_wall_ms=%.3f parallel_cross_wall_ms=%.3f "
-            "parallel_ffn_wall_ms=%.3f\n",
+            "parallel_ffn_wall_ms=%.3f "
+            "ane_mlp_pack_ms=%.3f ane_mlp_overlap_ms=%.3f "
+            "ane_mlp_gpu_ms=%.3f ane_mlp_compute_ms=%.3f "
+            "ane_mlp_join_ms=%.3f\n",
             schedule_stage,
             profile_timing.video_self * 1000.0,
             profile_timing.audio_self * 1000.0,
@@ -5598,7 +5676,12 @@ static int run_denoise_schedule(
             profile_timing.audio_ffn * 1000.0,
             profile_timing.av_parallel_stream_wall * 1000.0,
             profile_timing.av_parallel_cross_wall * 1000.0,
-            profile_timing.av_parallel_ffn_wall * 1000.0);
+            profile_timing.av_parallel_ffn_wall * 1000.0,
+            profile_timing.ane_mlp_pack * 1000.0,
+            profile_timing.ane_mlp_overlap * 1000.0,
+            profile_timing.ane_mlp_gpu * 1000.0,
+            profile_timing.ane_mlp_ane * 1000.0,
+            profile_timing.ane_mlp_join * 1000.0);
     }
     if (nonfinite) {
         snprintf(error, error_size,
@@ -5750,6 +5833,7 @@ int ltx_native_get_streaming_info(
     info->wait_seconds = ctx->streaming_wait_seconds;
     return 1;
 }
+
 ltx_native_denoiser *ltx_native_create(const ltx_native_options *options,
     ltx_native_progress progress,void *opaque,char *error,size_t error_size) {
     if(!options||!options->checkpoint||options->fps!=24){snprintf(error,error_size,"LTX requires checkpoint and 24 fps");return NULL;}
@@ -5810,6 +5894,19 @@ ltx_native_denoiser *ltx_native_create(const ltx_native_options *options,
     for(unsigned i=0;i<10;++i)if(*fields[i]){ctx->owned_strings[i]=strdup(*fields[i]);if(!ctx->owned_strings[i]){snprintf(error,error_size,"option allocation failed");goto failed;}*fields[i]=ctx->owned_strings[i];}
     if(!ltx_workload_init(&ctx->workload,options->width,options->height,options->frames,options->fps,error,error_size))goto failed;
     if(ctx->workload.output_width!=options->width||ctx->workload.output_height!=options->height||ctx->workload.frames!=options->frames){snprintf(error,error_size,"LTX dimensions must already satisfy the two-stage geometry");goto failed;}
+    if (ctx->options.sparse_mode > 5u ||
+        ((ctx->options.sparse_mode == 4u || ctx->options.sparse_mode == 5u) &&
+         (!ctx->options.sparse_keep_blocks || ctx->options.sparse_keep_blocks > 256u)) ||
+        (ctx->options.sparse_mode &&
+         (!ctx->options.sol_stage2 || ctx->options.sol_stage1 ||
+          ctx->options.sparse_radius > 256u ||
+          ctx->options.sparse_anchor_stride > 256u ||
+          (ctx->options.sparse_tokens_per_frame &&
+           ctx->options.sparse_tokens_per_frame !=
+               ctx->workload.stage2_latent_height * ctx->workload.stage2_latent_width)))) {
+        snprintf(error, error_size, "invalid Stage-2 sparse pattern geometry");
+        goto failed;
+    }
     if ((ctx->options.sol_stage1 || ctx->options.sol_stage2) &&
         (!isfinite(ctx->options.sol_tau) ||
          ctx->options.sol_tau < -2.0f || ctx->options.sol_tau > 3.0f ||
@@ -5953,6 +6050,14 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
     uint32_t audio_rows=g->audio_tokens,vd=ltx_transformer_io_video_hidden_dim(ctx->io),ad=ltx_transformer_io_audio_hidden_dim(ctx->io);
     uint32_t vp=ltx_transformer_io_video_patch_dim(ctx->io),ap=ltx_transformer_io_audio_patch_dim(ctx->io);
     if(video_elements!=(size_t)rows*vp||audio_elements!=(size_t)audio_rows*ap){snprintf(error,error_size,"LTX latent tensor size mismatch");return 0;}
+    /* Default-off lifecycle diagnostic. Graphs carry no model weights;
+     * retain the weight buffers and Core ML sessions while rebuilding graphs
+     * at the request's Stage-1 boundary. All previous stage work is joined. */
+    const char *reset_graphs = getenv("TURBOCIDER_LTX_RESET_GRAPHS_STAGE1");
+    if (stage == 1 && reset_graphs && strcmp(reset_graphs, "1") == 0) {
+        ltx_gpu_clear_graph_cache(ctx->gpu);
+        ltx_gpu_clear_graph_cache(ctx->audio_gpu);
+    }
     ltx_native_activate_geometry(ctx);
     native_progress=progress;native_opaque=opaque;
     av_parallel_audio_gpu=ctx->audio_gpu;av_parallel_streams=ctx->options.parallel_av;
@@ -5990,6 +6095,11 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
     sol_video_self.dense_edge_blocks = ctx->options.sol_dense_edge_blocks;
     sol_video_self.dense_edge_steps = ctx->options.sol_dense_edge_steps;
     sol_video_self.tau = ctx->options.sol_tau;
+    sol_sparse_pattern.mode = ctx->options.sparse_mode;
+    sol_sparse_pattern.radius = ctx->options.sparse_radius;
+    sol_sparse_pattern.anchor_stride = ctx->options.sparse_anchor_stride;
+    sol_sparse_pattern.tokens_per_frame = ctx->options.sparse_tokens_per_frame;
+    sol_sparse_pattern.keep_blocks = ctx->options.sparse_keep_blocks;
 #ifdef LTX_ENABLE_ANE_MLP
     ane_mlp_fused_residual=ctx->options.ane_mlp_fused_residual;
     ane_mlp_fused_adaln_pack=ctx->options.ane_mlp_fused_adaln_pack;

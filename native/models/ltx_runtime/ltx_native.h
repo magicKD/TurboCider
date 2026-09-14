@@ -43,6 +43,11 @@ typedef struct {
     uint32_t sol_dense_edge_blocks;
     uint32_t sol_dense_edge_steps;
     float sol_tau;
+    uint32_t sparse_mode;
+    uint32_t sparse_radius;
+    uint32_t sparse_anchor_stride;
+    uint32_t sparse_tokens_per_frame;
+    uint32_t sparse_keep_blocks;
     /* Restrict ANE MLP execution to a contiguous Transformer block window.
      * A zero count preserves the legacy all-48-block ABI default. Partial
      * windows retain the original GPU MLP weights outside the window and

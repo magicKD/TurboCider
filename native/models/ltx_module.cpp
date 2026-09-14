@@ -2,6 +2,39 @@
 #include <cmath>
 namespace tc {
 std::unique_ptr<ModelSession> create_ltx_native_candidate(const std::filesystem::path &);
+namespace {
+bool is_ltx_topk_sparse_mode(int mode) {
+    return mode == 4 || mode == 5;
+}
+void validate_ltx_sparse_options(const Request &r) {
+    require(r.ltx_sparse_mode >= 0 && r.ltx_sparse_mode <= 5,
+            "LTX sparse mode must be 0...5");
+    require(is_ltx_topk_sparse_mode(r.ltx_sparse_mode) ?
+                (r.ltx_sparse_keep_blocks > 0 && r.ltx_sparse_keep_blocks <= 256) :
+                r.ltx_sparse_keep_blocks == 0,
+            "LTX top-k sparse mode requires keep blocks 1...256; other modes require zero");
+    require(r.ltx_sparse_radius >= 0 && r.ltx_sparse_radius <= 256,
+            "LTX sparse radius must be 0...256");
+    require(r.ltx_sparse_anchor_stride >= 0 && r.ltx_sparse_anchor_stride <= 256,
+            "LTX sparse anchor stride must be 0...256");
+    require(r.ltx_sparse_tokens_per_frame >= 0 &&
+                r.ltx_sparse_tokens_per_frame <= 16384,
+            "LTX sparse tokens-per-frame out of range");
+    if (r.ltx_sparse_mode != 0) {
+        require(r.ltx_sol_stage2 && !r.ltx_sol_stage1,
+                "Experimental sparse patterns require Stage-2-only Sol admission");
+        const int stage2_tokens_per_frame = (r.width / 32) * (r.height / 32);
+        require(!r.ltx_sparse_tokens_per_frame ||
+                    r.ltx_sparse_tokens_per_frame == stage2_tokens_per_frame,
+                "LTX sparse frame geometry must match Stage-2 latent geometry");
+    } else {
+        require(r.ltx_sparse_radius == 1 &&
+                    r.ltx_sparse_anchor_stride == 0 &&
+                    r.ltx_sparse_tokens_per_frame == 0,
+                "Custom sparse geometry requires a nonzero sparse mode");
+    }
+}
+} // namespace
 ModelModule ltx_module() {
     return {"ltx-2.5-distilled",
             [] {
@@ -67,6 +100,7 @@ ModelModule ltx_module() {
                 require(r.ltx_sol_dense_edge_steps >= 0 &&
                             r.ltx_sol_dense_edge_steps <= 16,
                         "LTX Sol dense edge steps must be 0...16");
+                validate_ltx_sparse_options(r);
                 require(r.ltx_stage2_text_rows >= 0 &&
                             r.ltx_stage2_text_rows <= 4096,
                         "LTX Stage-2 text rows must be 0...4096");

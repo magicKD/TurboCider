@@ -358,6 +358,46 @@ int ltx_gpu_self_attention_core_mps_bf16(
                           uint32_t rows, uint32_t heads,
                           uint32_t head_dim, float scale,
                           char *error, size_t error_size);
+/* Experimental block patterns. Existing Sol API always uses mode 0.
+ * mode: 0=Sol, 1=structured drop, 2=structured pooled, 3=CiderSol,
+ * 4=pooled-QK top-k blocks plus exact safety region, remote blocks dropped;
+ * 5=pooled-QK top-k exact blocks plus pooled remote correction.
+ * When tokens_per_frame > 0, radius is in latent frames and the route
+ * includes the union of query/key frames intersected by each 64-token tile.
+ * Otherwise radius is in contiguous 64-token blocks (not a 3D window).
+ * anchor_stride is in blocks; zero disables anchors. */
+typedef struct {
+    uint32_t mode;
+    uint32_t radius;
+    uint32_t anchor_stride;
+    uint32_t tokens_per_frame;
+    uint32_t keep_blocks; /* Modes 4/5; 1...256, clamped to block count. */
+} ltx_sparse_pattern;
+/* Route scratch is uint32 [head][query_block][ceil(key_blocks/32)], LSB first.
+ * Tail bits are zero. Reserve extra words for the preceding Sol key statistics.
+ * Scratch consumers must rebuild with this layout; function signatures and
+ * request options are unchanged. The supported attention head dimension is 128. */
+static inline uint64_t ltx_sparse_route_scratch_words(uint32_t rows, uint32_t heads) {
+    if (!rows || rows > 16384u || !heads) return 0;
+    uint64_t blocks = (rows + 63u) / 64u;
+    uint64_t packed = (uint64_t)heads * blocks * ((blocks + 31u) / 32u);
+    uint64_t statistics = (uint64_t)heads * 128u * 2u;
+    return packed > statistics ? packed : statistics;
+}
+int ltx_gpu_self_attention_core_sparse_bf16(
+    ltx_gpu *gpu, ltx_gpu_buffer *output,
+    const ltx_gpu_buffer *query, const ltx_gpu_buffer *key,
+    const ltx_gpu_buffer *value, const ltx_gpu_buffer *cosine,
+    const ltx_gpu_buffer *sine, const ltx_gpu_buffer *gate,
+    ltx_gpu_buffer *packed_query, ltx_gpu_buffer *packed_key,
+    ltx_gpu_buffer *packed_value, ltx_gpu_buffer *packed_output,
+    ltx_gpu_buffer *query_centroids, ltx_gpu_buffer *key_centroids,
+    ltx_gpu_buffer *value_sums, ltx_gpu_buffer *thresholds,
+    ltx_gpu_buffer *routes, uint32_t rows, uint32_t heads,
+    uint32_t head_dim, float scale, float tau,
+    uint32_t sink_start, uint32_t sink_end,
+    uint32_t sink_query_start, uint32_t sink_query_end,
+    const ltx_sparse_pattern *pattern, char *error, size_t error_size);
 int ltx_gpu_self_attention_core_sol_bf16(
                           ltx_gpu *gpu, ltx_gpu_buffer *output,
                           const ltx_gpu_buffer *query,

@@ -40,6 +40,11 @@ struct ltx_sol_args {
     uint head_major_output;
     float scale_log2;
     float tau;
+    uint mode;
+    uint radius;
+    uint anchor_stride;
+    uint tokens_per_frame;
+    uint keep_blocks;
 };
 
 struct ltx_broadcast_args {
@@ -1158,7 +1163,7 @@ kernel void ltx_sol_route_mask_bf16(
                          device const float *query_centroids [[buffer(0)]],
                          device const ushort *key_centroids [[buffer(1)]],
                          device const float *thresholds [[buffer(2)]],
-                         device float *routes [[buffer(3)]],
+                         device uint *routes [[buffer(3)]],
                          constant ltx_sol_args &args [[buffer(4)]],
                          uint tid [[thread_index_in_threadgroup]],
                          uint2 group [[threadgroup_position_in_grid]]) {
@@ -1169,24 +1174,64 @@ kernel void ltx_sol_route_mask_bf16(
                       query_block < args.sink_query_end;
     uint query_base =
         (head * args.blocks + query_block) * args.head_dim;
-    for (uint key_block = tid; key_block < args.blocks; key_block += 128u) {
-        bool neighbor = abs(int(query_block) - int(key_block)) <= 1;
-        bool key_sink = key_block >= args.sink_start &&
-                        key_block < args.sink_end;
-        bool exact = query_sink || neighbor || key_sink;
-        if (!exact) {
-            uint key_base =
-                (head * args.blocks + key_block) * args.head_dim;
+    // Direct block routing: 1 KiB of local scores, no token sorting or KV
+    // gather. Stable rank breaks score ties by block index. The exact safety
+    // region is unioned with top-k, so total retained degree can exceed k.
+    threadgroup float top_scores[256];
+    if (args.mode == 4u || args.mode == 5u) {
+        for (uint kb = tid; kb < args.blocks; kb += 128u) {
             float score = 0.0f;
-            for (uint dimension = 0; dimension < args.head_dim; dimension++)
-                score = fma(query_centroids[query_base + dimension],
-                    ltx_bf16_to_f32(key_centroids[key_base + dimension]),
-                    score);
-            exact = score * args.scale_log2 >
-                thresholds[head * args.blocks + query_block];
+            uint base = (head * args.blocks + kb) * args.head_dim;
+            for (uint d = 0; d < args.head_dim; ++d)
+                score = fma(query_centroids[query_base + d],
+                            ltx_bf16_to_f32(key_centroids[base + d]), score);
+            top_scores[kb] = score;
         }
-        routes[(head * args.blocks + query_block) * args.blocks +
-               key_block] = exact ? 1.0f : 0.0f;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    uint route_words = (args.blocks + 31u) / 32u;
+    // All lanes participate, including zero tail bits, so each SIMD reduction
+    // produces a complete word without atomics or an initialization dispatch.
+    for (uint base_block = 0; base_block < args.blocks; base_block += 128u) {
+        uint key_block = base_block + tid;
+        bool exact = false;
+        if (key_block < args.blocks) {
+            bool neighbor = abs(int(query_block) - int(key_block)) <= int(args.radius);
+            if (args.tokens_per_frame) {
+                uint q_first = query_block * 64u / args.tokens_per_frame;
+                uint q_last = (min((query_block + 1u) * 64u, args.rows) - 1u) / args.tokens_per_frame;
+                uint k_first = key_block * 64u / args.tokens_per_frame;
+                uint k_last = (min((key_block + 1u) * 64u, args.rows) - 1u) / args.tokens_per_frame;
+                neighbor = k_first <= q_last + args.radius && q_first <= k_last + args.radius;
+            }
+            bool key_sink = key_block >= args.sink_start &&
+                            key_block < args.sink_end;
+            bool anchor = args.anchor_stride && key_block % args.anchor_stride == 0u;
+            exact = query_sink || neighbor || key_sink || anchor;
+            if (!exact && (args.mode == 4u || args.mode == 5u)) {
+                uint rank = 0u;
+                float score = top_scores[key_block];
+                for (uint kb = 0; kb < args.blocks; ++kb)
+                    rank += top_scores[kb] > score ||
+                            (top_scores[kb] == score && kb < key_block);
+                exact = rank < args.keep_blocks;
+            }
+            if (!exact && (args.mode == 0u || args.mode == 3u)) {
+                uint key_base =
+                    (head * args.blocks + key_block) * args.head_dim;
+                float score = 0.0f;
+                for (uint dimension = 0; dimension < args.head_dim; dimension++)
+                    score = fma(query_centroids[query_base + dimension],
+                        ltx_bf16_to_f32(key_centroids[key_base + dimension]),
+                        score);
+                exact = score * args.scale_log2 >
+                    thresholds[head * args.blocks + query_block];
+            }
+        }
+        uint word = simd_sum(uint(exact) << (tid & 31u));
+        if ((tid & 31u) == 0u && key_block < args.blocks)
+            routes[(head * args.blocks + query_block) * route_words +
+                   key_block / 32u] = word;
     }
 }
 
@@ -1196,7 +1241,7 @@ kernel void ltx_sol_attention_bf16(
                          device const ushort *value [[buffer(2)]],
                          device const ushort *key_centroids [[buffer(3)]],
                          device const ushort *value_sums [[buffer(4)]],
-                         device const float *routes [[buffer(5)]],
+                         device const uint *routes [[buffer(5)]],
                          device ushort *output [[buffer(6)]],
                          constant ltx_sol_args &args [[buffer(7)]],
                          uint lane [[thread_index_in_simdgroup]],
@@ -1216,9 +1261,10 @@ kernel void ltx_sol_attention_bf16(
     float maximum = -INFINITY;
     float denominator = 0.0f;
     uint query_block = row / 64u;
-    uint route_base = (head * args.blocks + query_block) * args.blocks;
+    uint route_base = (head * args.blocks + query_block) * ((args.blocks + 31u) / 32u);
     for (uint block = 0; block < args.blocks; block++) {
-        bool exact = routes[route_base + block] != 0.0f;
+        bool exact = ((routes[route_base + block / 32u] >> (block & 31u)) & 1u) != 0u;
+        if (!exact && (args.mode == 1u || args.mode == 4u)) continue;
         uint begin = block * 64u;
         uint end = min(begin + 64u, args.rows);
         uint count = exact ? end - begin : 1u;
@@ -1631,7 +1677,7 @@ kernel void ltx_sol_attention_tiled_bf16(
                          device const bfloat *value [[buffer(2)]],
                          device const bfloat *key_centroids [[buffer(3)]],
                          device const bfloat *value_sums [[buffer(4)]],
-                         device const float *routes [[buffer(5)]],
+                         device const uint *routes [[buffer(5)]],
                          device bfloat *output [[buffer(6)]],
                          constant ltx_sol_args &args [[buffer(7)]],
                          uint lane [[thread_index_in_simdgroup]],
@@ -1662,7 +1708,7 @@ kernel void ltx_sol_attention_tiled_bf16(
     value += head_offset;
     key_centroids += head * args.blocks * DIMENSION;
     value_sums += head * args.blocks * DIMENSION;
-    routes += (head * args.blocks + query_block) * args.blocks;
+    routes += (head * args.blocks + query_block) * ((args.blocks + 31u) / 32u);
     output += head_offset + query_start * DIMENSION;
 
     threadgroup bfloat query_shared[BLOCK * QUERY_LD];
@@ -1684,7 +1730,7 @@ kernel void ltx_sol_attention_tiled_bf16(
     uint route_mask_hi = 0u;
     if (lane == 0u && args.blocks <= 64u) {
         for (uint block = 0; block < args.blocks; block++) {
-            uint route_bit = uint(routes[block] != 0.0f);
+            uint route_bit = (routes[block / 32u] >> (block & 31u)) & 1u;
             if (block < 32u)
                 route_mask_lo |= route_bit << block;
             else
@@ -1722,7 +1768,7 @@ kernel void ltx_sol_attention_tiled_bf16(
 
     threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint summary_block_start = 0u;
-         summary_block_start < args.blocks;
+         args.mode != 1u && args.mode != 4u && summary_block_start < args.blocks;
          summary_block_start += uint(BLOCK)) {
         uint summary_count = min(
             uint(BLOCK), args.blocks - summary_block_start);
@@ -1758,7 +1804,7 @@ kernel void ltx_sol_attention_tiled_bf16(
                     routed = args.blocks <= 64u ? (block < 32u ?
                         ((route_mask_lo >> block) & 1u) != 0u :
                         ((route_mask_hi >> (block - 32u)) & 1u) != 0u) :
-                        routes[block] != 0.0f;
+                        ((routes[block / 32u] >> (block & 31u)) & 1u) != 0u;
                 }
                 if (local_block >= summary_count || routed)
                     score_tile.at(0, key_index)[element] = -INFINITY;
@@ -1781,7 +1827,7 @@ kernel void ltx_sol_attention_tiled_bf16(
         bool routed = args.blocks <= 64u ? (block < 32u ?
             ((route_mask_lo >> block) & 1u) != 0u :
             ((route_mask_hi >> (block - 32u)) & 1u) != 0u) :
-            routes[block] != 0.0f;
+            ((routes[block / 32u] >> (block & 31u)) & 1u) != 0u;
         if (!routed) continue;
         uint key_start = block * BLOCK;
         uint key_count = min(uint(BLOCK), args.rows - key_start);

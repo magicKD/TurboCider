@@ -43,6 +43,62 @@ def plan(r):
     return status,json.loads(a) if a else None,b
 
 class ContractTests(unittest.TestCase):
+    def test_ltx_sparse_patterns_are_explicit_stage2_only(self):
+        request = {
+            'model': 'ltx-2.5-distilled', 'width': 768, 'height': 448,
+            'frames': 121, 'steps': 11, 'execution': 'gpu',
+            'ltx_backend': 'c_metal', 'ltx_sol_stage2': True,
+            'allow_approximation': True, 'ltx_sparse_mode': 2,
+            'ltx_sparse_radius': 1, 'ltx_sparse_anchor_stride': 16,
+            'ltx_sparse_tokens_per_frame': 336,
+        }
+        status, result, error = plan(request)
+        self.assertEqual(status, 0, error)
+        for key in ('ltx_sparse_mode', 'ltx_sparse_radius',
+                    'ltx_sparse_anchor_stride', 'ltx_sparse_tokens_per_frame'):
+            self.assertEqual(result[key], request[key])
+        topk = {**request, 'ltx_sparse_mode': 4, 'ltx_sparse_keep_blocks': 32}
+        status, result, error = plan(topk)
+        self.assertEqual(status, 0, error)
+        self.assertEqual(result['ltx_sparse_keep_blocks'], 32)
+        status, result, error = plan({**topk, 'ltx_sparse_mode': 5})
+        self.assertEqual(status, 0, error)
+        self.assertEqual(result['ltx_sparse_mode'], 5)
+        schema2 = {
+            'schema_version': 2,
+            'model': 'ltx-2.5-distilled',
+            'operation': 'video.generate',
+            'inputs': [{'kind': 'text', 'role': 'prompt', 'text': 'A red fox'}],
+            'outputs': [{'kind': 'video', 'path': '/tmp/ltx-sparse.mp4',
+                         'width': 768, 'height': 448, 'frames': 121,
+                         'fps': 24, 'audio': False}],
+            'sampling': {'seed': 42, 'steps': 11},
+            'execution': {
+                'policy': 'gpu', 'residency': 'component_staged',
+                'allow_approximation': True, 'ltx_backend': 'c_metal',
+                'ltx_sol_stage2': True, 'ltx_sparse_mode': 5,
+                'ltx_sparse_radius': 0, 'ltx_sparse_keep_blocks': 32,
+                'ltx_sparse_tokens_per_frame': 336,
+            },
+        }
+        status, result, error = plan(schema2)
+        self.assertEqual(status, 0, error)
+        self.assertEqual(result['ltx_sparse_mode'], 5)
+        self.assertEqual(result['ltx_sparse_keep_blocks'], 32)
+        self.assertNotEqual(plan({**topk, 'ltx_sparse_mode': 5,
+                                 'ltx_sparse_keep_blocks': 0})[0], 0)
+        self.assertNotEqual(plan({**topk, 'ltx_sparse_keep_blocks': 257})[0], 0)
+        self.assertNotEqual(plan({**request, 'ltx_sparse_keep_blocks': 32})[0], 0)
+        for change in (
+            {'allow_approximation': False}, {'ltx_sol_stage2': False},
+            {'ltx_sol_stage1': True}, {'ltx_sparse_mode': 4},
+            {'ltx_sparse_radius': -1}, {'ltx_sparse_anchor_stride': 257},
+            {'ltx_sparse_tokens_per_frame': 335}, {'ltx_backend': 'cpp_mlx'},
+            {'ltx_sparse_mode': 0},
+        ):
+            with self.subTest(change=change):
+                self.assertNotEqual(plan({**request, **change})[0], 0)
+
     def test_z_image_step_range_and_defaults(self):
         for model in ['z-image-turbo', 'z-image-turbo-gguf']:
             request = {'model': model, 'width': 512, 'height': 512,
