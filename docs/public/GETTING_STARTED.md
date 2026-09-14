@@ -5,8 +5,11 @@
 ## 1. Build or use a local package
 
 Use an Apple silicon Mac with a working macOS SDK, Swift / Clang toolchain and
-compatible MLX 0.32.x dependencies. Python 3.11 is used for setup and offline
-preparation, not production model inference. From the repository root:
+compatible MLX 0.32.x dependencies. Install arm64 CPython 3.11 before running
+setup; it is used for setup and offline preparation, not production model
+inference. For Python bootstrapping, dependency locations, optional video tools
+and SDK troubleshooting, start with [local environment setup](ENVIRONMENT_SETUP.md).
+From the repository root:
 
 ```sh
 make setup
@@ -14,7 +17,8 @@ make package
 dist/cli/turbocider doctor
 ```
 
-Setup installs development dependencies, not model weights. Packaging creates
+Setup installs pinned development packages into `.venv` and a separate offline
+Core ML environment; it does not install Python, FFmpeg or model weights. Packaging creates
 `dist/TurboCider.app` and `dist/cli/`. Keep the CLI directory intact: it includes
 required dynamic libraries, Metal resources and native helpers.
 
@@ -24,8 +28,9 @@ signing is not Developer ID notarization. If the default Xcode selection is
 unusable but Command Line Tools is installed:
 
 ```sh
-DEVELOPER_DIR=/Library/Developer/CommandLineTools \
-SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk make package
+export DEVELOPER_DIR=/Library/Developer/CommandLineTools
+export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+make package
 ```
 
 An existing compatible MLX installation can be selected with `MLX_ROOT`.
@@ -60,6 +65,8 @@ If you need weights, preview the download file list and required space first.
 ModelScope is the default provider; Hugging Face is also supported. Downloads
 are explicit and cancellable. See [model management](MODEL_LIBRARY.md) for
 registration, sharing, integrity checks and model-specific preparation.
+For a complete FLUX.2 Klein 4B recipe with a pinned source revision, see
+[FLUX preparation](FLUX_PREPARATION.md).
 
 A saved registration is not proof that a model can generate. The library's
 inspection checks files and metadata; the native loader validates tensors.
@@ -128,6 +135,8 @@ LoRA identity. Export is offline preparation; the production App does not run
 a Python exporter. Obtain compatible source partitions, then compile them
 through the App's acceleration/cache panel or the
 [Core ML resource interface](USAGE.md#core-ml-artifacts).
+The [FLUX preparation walkthrough](FLUX_PREPARATION.md) includes the offline
+export command, compilation JSON, manifest registration and token-capacity check.
 
 Select the compiled manifest and explicitly enable ANE. Editing manifest
 dimensions cannot enlarge a compiled graph. First-use specialization can

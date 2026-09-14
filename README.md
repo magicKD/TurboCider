@@ -56,7 +56,9 @@ ANE and approximate acceleration were disabled, with staged weight release.
 
 ## Build and run
 
-Use an Apple silicon Mac, a working macOS SDK / Swift / Clang toolchain and MLX 0.32.x. Full Xcode is recommended; an existing Command Line Tools installation can be selected with `DEVELOPER_DIR` and `SDKROOT`. Python 3.11 is used for setup and offline tools; all production inference paths, including Wan, are native. Python export and merge tools are development-only.
+Use an Apple silicon Mac, a working macOS SDK / Swift / Clang toolchain and MLX 0.32.x. A working Command Line Tools installation is sufficient for the validated build; select it with `DEVELOPER_DIR` and `SDKROOT` if necessary. Install arm64 CPython 3.11 **before** `make setup`; Python is used for setup and offline tools, while all production inference paths, including Wan, are native.
+
+On a fresh Mac, follow [local environment setup](docs/public/ENVIRONMENT_SETUP.md) for Python bootstrapping, pinned dependency environments, SDK selection, optional FFmpeg tools and troubleshooting. The minimum runtime macOS version follows the linked MLX library, not the SDK version.
 
 ```sh
 make setup
@@ -64,6 +66,8 @@ make package
 make test
 open dist/TurboCider.app
 ```
+
+`make setup` installs the pinned packages into `.venv` and a separate offline Core ML environment. Model weights and ANE artifacts require additional preparation; see the [FLUX.2 Klein 4B walkthrough](docs/public/FLUX_PREPARATION.md).
 
 Choose image or video creation in the App; a compatible executor is selected automatically. Register its model folder and generate with GPU first. Compatible Z-Image text components can be linked from a local FLUX.2 Klein 4B installation. Configure ANE only after preparing artifacts for the actual model, shape and LoRA identity. Current packages are locally ad-hoc signed, not notarized releases.
 
