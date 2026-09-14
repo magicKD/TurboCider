@@ -167,7 +167,7 @@ struct LibraryDownloader: Sendable {
                     totalFiles: plan.files.count, completedBytes: completed + file.size, totalBytes: totalBytes))
                 blob = try store.commitBlob(temporary: temporary, expectedSize: file.size, expectedSHA256: file.sha256)
             }
-            try LibraryStore.link(blob, at: file.path, in: staging)
+            try LibraryStore.linkBlob(blob, at: file.path, in: staging)
             completed += file.size
             progress(LibraryDownloadEvent(phase: "installed_file", file: file.path, completedFiles: index + 1,
                 totalFiles: plan.files.count, completedBytes: completed, totalBytes: totalBytes))
