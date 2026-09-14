@@ -22,6 +22,7 @@ class Weights {
     };
     std::unordered_map<std::string, Tensor> values_;
     std::unordered_map<std::string, std::vector<RuntimeLoRA>> runtime_loras_;
+    bool metal_convrot_ = false;
 
   public:
     void load(const std::filesystem::path &, const Event &, std::atomic<bool> &);
@@ -30,7 +31,17 @@ class Weights {
     void remap_keys(const std::function<std::string(const std::string &)> &);
     void fuse_keys(const std::string &, const std::vector<std::string> &, int axis);
     void cast_unquantized_float32(mx::Dtype);
+    void set_metal_convrot(bool enabled) { metal_convrot_ = enabled; }
+    bool metal_convrot() const { return metal_convrot_; }
+    std::vector<std::string> sorted_keys() const;
+    void bind_arrays(const std::vector<std::string> &,
+                     const std::vector<Tensor> &, size_t offset = 0);
+    // Pack Comfy signed tensor-wise INT8 ConvRot rows into MLX affine Q8.
+    // The no-argument overload preserves the historical Z-Image g32 profile
+    // and its FP32 diagnostic environment switch. LTX explicitly selects
+    // g64/FP32 scales to match its MLX reference.
     size_t pack_convrot_q8();
+    size_t pack_convrot_q8(int group_size, mx::Dtype scale_dtype);
     size_t pack_comfy_nvfp4();
     void dequantize(const std::vector<std::string> &);
     const Tensor &at(const std::string &) const;
@@ -42,6 +53,8 @@ class Weights {
     bool nvfp4(const std::string &) const;
     bool has_runtime_loras() const { return !runtime_loras_.empty(); }
     Tensor project(const Tensor &, const std::string &) const;
+    std::vector<Tensor> project_many(const Tensor &,
+                                     const std::vector<std::string> &) const;
     Tensor project_range(const Tensor &, const std::string &, int row_start, int row_end,
                         int col_start, int col_end) const;
     void clear();

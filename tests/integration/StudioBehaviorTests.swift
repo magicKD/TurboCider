@@ -228,17 +228,43 @@ struct StudioBehaviorTests {
         try check(h3.inputs?.map(\.role) == ["first_frame", "last_frame"], "H3 keyframe roles were not mapped")
         studio.selectModel("ltx-2.5-distilled")
         try check(studio.draft.operation == "video.generate", "LTX did not select its public executor operation")
+        let ltxText = try studio.draft.request(output: root.appendingPathComponent("ltx-text.mp4"))
+        try check(ltxText.execution == "gpu" && ltxText.allow_approximation != true &&
+                    LTXWorker.accepts(ltxText), "LTX must default to exact GPU in a disposable worker")
         studio.changeOperation("video.image")
-        try check(studio.draft.operation == "video.generate", "Unvalidated LTX I2V operation became selectable")
+        try check(studio.draft.operation == "video.image", "LTX I2V operation was not selectable")
         let ltx = try studio.draft.request(output: root.appendingPathComponent("ltx.mp4"))
         try check(ltx.width == 704 && ltx.height == 448 && ltx.frames == 97 &&
-                    ltx.steps == 11 && (ltx.inputs?.isEmpty ?? true),
-                  "LTX descriptor defaults or public text-to-video mapping changed")
+                    ltx.steps == 11 && ltx.inputs?.map(\.role) == ["first_frame"],
+                  "LTX descriptor defaults or public image-to-video mapping changed")
+        studio.draft.residency = "streamed"
+        try rejects { try studio.draft.validate() }
+        studio.draft.residency = "component_staged"
+        try check(LTXWorker.accepts(ltx), "LTX I2V must also use the disposable worker")
         studio.draft.audio = true
-        do {
-            _ = try studio.draft.request(output: root.appendingPathComponent("invalid-ltx-audio.mp4"))
-            throw NativeFailure(message: "Unqualified LTX audio request accepted")
-        } catch { try check(error.localizedDescription.contains("尚未开放音频"), "Wrong LTX audio capability error") }
+        let ltxAV = try studio.draft.request(
+            output: root.appendingPathComponent("ltx-ax-audio.mp4"))
+        try check(ltxAV.audio == true && ltxAV.inputs?.map(\.role) == ["first_frame"],
+                  "LTX image-to-video audio request was not forwarded")
+        studio.draft.ltxBackend = "c_metal"
+        studio.draft.ltxVideoAttentionBatch = true
+        let ltxExactBatch = try studio.draft.request(
+            output: root.appendingPathComponent("ltx-exact-batch.mp4"))
+        try check(ltxExactBatch.ltx_video_attention_batch == true &&
+                    ltxExactBatch.allow_approximation != true,
+                  "LTX exact Video attention batch was not forwarded")
+        studio.draft.ltxAccelerationMode = "fast_approx"
+        let ltxFast = try studio.draft.request(
+            output: root.appendingPathComponent("ltx-fast-approx.mp4"))
+        try check(ltxFast.allow_approximation == true &&
+                    ltxFast.ltx_sol_stage2 == true &&
+                    ltxFast.ltx_sol_tau == 1.0 &&
+                    ltxFast.ltx_sol_dense_edge_blocks == 1 &&
+                    ltxFast.ltx_sol_dense_edge_steps == 0 &&
+                    ltxFast.ltx_stage2_text_rows == 256 &&
+                    ltxFast.ltx_video_attention_batch == false &&
+                    ltxFast.inputs?.map(\.role) == ["first_frame"],
+                  "LTX optional Sol/text-pruned I2V mode was not forwarded")
         studio.draft.audio = false
         studio.selectModel("wan2.1-1.3b-qad")
         try check(studio.draft.loraStrategy == "auto", "Model switch did not reset LoRA strategy")

@@ -71,6 +71,12 @@ static ltx_gpu *av_parallel_audio_gpu;
 static int av_parallel_streams;
 static int av_parallel_cross;
 static int av_parallel_ffn;
+static int batch_audio_commands;
+/* Explicit opt-in for the split Metal ConvRot + MPSGraph INT8 MLP path.
+ * The production graph keeps ConvRot fused with the linear operations until
+ * this candidate passes latency and quality gates on the target machine. */
+static int metal_convrot_mlp;
+static int metal_convrot_mlp_stage2_only;
 static int av_persistent_worker_enabled;
 static int video_text_kv_prefetch_stage1;
 static int video_text_kv_prefetch_stage2;
@@ -249,6 +255,10 @@ typedef struct {
     ltx_gpu_buffer *audio_a2v;
     ltx_gpu_buffer *video_v2a;
     ltx_gpu_buffer *audio_v2a;
+    /* Reusable scratch for the split Metal ConvRot MLP candidate.  These are
+     * allocated once per denoise stage and shared by every block in order to
+     * keep the candidate free of per-block Metal allocation overhead. */
+    ltx_gpu_buffer *video_ffn_hidden;
     ltx_gpu_buffer *video_sol_query;
     ltx_gpu_buffer *video_sol_key;
     ltx_gpu_buffer *video_sol_value;
@@ -935,6 +945,29 @@ static int write_gpu_buffer_file(
         write_file_exact(path, host, bytes, error, error_size);
     free(host);
     return ok;
+}
+
+/* Step-level scheduler fixtures are disabled by default because each dump
+ * fences the GPU and copies the complete BF16 latent to the host.  They are
+ * only used to locate the first C/Metal versus C++/MLX divergence. */
+static int write_schedule_step_file(
+        const ltx_gpu_buffer *buffer, void *host, size_t bytes,
+        const char *directory, int stage, size_t step, const char *kind,
+        char *error, size_t error_size) {
+    char name[128];
+    char path[4096];
+    int length = snprintf(name, sizeof(name),
+                          "stage%d_step%02zu_%s.bf16", stage, step, kind);
+    if (length < 0 || (size_t)length >= sizeof(name) ||
+        !fixture_path(path, sizeof(path), directory, name,
+                      error, error_size) ||
+        !ltx_gpu_buffer_read(buffer, host, bytes, error, error_size) ||
+        !write_file_exact(path, host, bytes, error, error_size)) {
+        if (!error[0])
+            snprintf(error, error_size, "cannot write LTX schedule step");
+        return 0;
+    }
+    return 1;
 }
 
 static int write_generation_outputs(
@@ -2546,9 +2579,9 @@ static int create_sol_video_self_workspace(
         char *error, size_t error_size) {
     if (!sol_video_self_stage_enabled(rows)) return 1;
     uint32_t blocks = (rows + 63u) / 64u;
-    if (blocks > 64u) {
+    if (blocks > 256u) {
         snprintf(error, error_size,
-                 "tiled Sol attention supports at most 4096 rows, got %u",
+                 "tiled Sol attention supports at most 16384 rows, got %u",
                  rows);
         return 0;
     }
@@ -2613,6 +2646,7 @@ static void free_workspace(block_workspace *workspace) {
     ltx_gpu_buffer_free(workspace->audio_a2v);
     ltx_gpu_buffer_free(workspace->video_v2a);
     ltx_gpu_buffer_free(workspace->audio_v2a);
+    ltx_gpu_buffer_free(workspace->video_ffn_hidden);
     ltx_gpu_buffer_free(workspace->video_sol_query);
     ltx_gpu_buffer_free(workspace->video_sol_key);
     ltx_gpu_buffer_free(workspace->video_sol_value);
@@ -2646,6 +2680,7 @@ static void free_workspace(block_workspace *workspace) {
 
 static int create_workspace(ltx_gpu *gpu,
                             uint32_t video_rows, uint32_t video_dim,
+                            uint32_t video_ffn_hidden,
                             uint32_t video_heads,
                             uint32_t audio_rows, uint32_t audio_dim,
                             uint32_t text_rows,
@@ -2678,6 +2713,10 @@ static int create_workspace(ltx_gpu *gpu,
         LTX_NEW_VIDEO(video_norm3) && LTX_NEW_AUDIO(audio_norm3) &&
         LTX_NEW_VIDEO(video_a2v) && LTX_NEW_AUDIO(audio_a2v) &&
         LTX_NEW_VIDEO(video_v2a) && LTX_NEW_AUDIO(audio_v2a) &&
+        (!metal_convrot_mlp ||
+         ((workspace->video_ffn_hidden = new_tensor(
+              gpu, video_rows, video_ffn_hidden,
+              error, error_size)) != NULL)) &&
         video_heads && video_dim % video_heads == 0u &&
         create_sol_video_self_workspace(
             gpu, video_rows, video_dim, video_heads,
@@ -3218,38 +3257,64 @@ static int run_audio_pre_cross(
         block_timing *timing, char *error, size_t error_size) {
     uint32_t audio_dim = weights->audio_self.query_dim;
     double start = now_seconds();
-    if (!ltx_gpu_adaln_bf16(
+    int self_batched = batch_audio_commands;
+    if (self_batched &&
+        !ltx_gpu_batch_begin(gpu, error, error_size)) return 0;
+    int self_ok = ltx_gpu_adaln_bf16(
             gpu, workspace->audio_normed, workspace->audio_state[0],
             weights->audio_adaln.row[1], weights->audio_adaln.row[0],
-            audio_rows, audio_dim, 1u, 1e-6f, error, error_size) ||
-        !run_self_attention(
+            audio_rows, audio_dim, 1u, 1e-6f, error, error_size) &&
+        run_self_attention(
             gpu, workspace->audio_branch, workspace->audio_normed,
             &weights->audio_self, &rope->audio_self, audio_rows,
-            error, error_size) ||
-        !ltx_gpu_residual_gate_bf16(
+            error, error_size) &&
+        ltx_gpu_residual_gate_bf16(
             gpu, workspace->audio_state[1], workspace->audio_state[0],
             workspace->audio_branch, weights->audio_adaln.row[2],
-            audio_rows, audio_dim, 1u, error, error_size)) return 0;
+            audio_rows, audio_dim, 1u, error, error_size);
+    if (self_batched) {
+        char batch_error[1024] = {0};
+        int batch_ok = ltx_gpu_batch_end(
+            gpu, batch_error, sizeof(batch_error));
+        if (!batch_ok && self_ok)
+            snprintf(error, error_size, "%s", batch_error[0] ?
+                     batch_error : "batched Audio self-attention failed");
+        self_ok = self_ok && batch_ok;
+    }
+    if (!self_ok) return 0;
     if (timing) timing->audio_self += now_seconds() - start;
 
     start = now_seconds();
-    if (!ltx_gpu_adaln_bf16(
+    int text_batched = batch_audio_commands;
+    if (text_batched &&
+        !ltx_gpu_batch_begin(gpu, error, error_size)) return 0;
+    int text_ok = ltx_gpu_adaln_bf16(
             gpu, workspace->audio_normed, workspace->audio_state[1],
             weights->audio_adaln.row[7], weights->audio_adaln.row[6],
-            audio_rows, audio_dim, 1u, 1e-6f, error, error_size) ||
-        !ltx_gpu_affine_bf16(
+            audio_rows, audio_dim, 1u, 1e-6f, error, error_size) &&
+        ltx_gpu_affine_bf16(
             gpu, workspace->audio_text_scaled, audio_text,
             weights->audio_prompt.row[1], weights->audio_prompt.row[0],
-            text_rows, audio_dim, 1u, error, error_size) ||
-        !run_cross_attention(
+            text_rows, audio_dim, 1u, error, error_size) &&
+        run_cross_attention(
             gpu, workspace->audio_branch, workspace->audio_normed,
             workspace->audio_text_scaled, &weights->audio_text,
             NULL, NULL, text_mask, text_mask ? 1u : 0u,
-            audio_rows, text_rows, error, error_size) ||
-        !ltx_gpu_residual_gate_bf16(
+            audio_rows, text_rows, error, error_size) &&
+        ltx_gpu_residual_gate_bf16(
             gpu, workspace->audio_state[0], workspace->audio_state[1],
             workspace->audio_branch, weights->audio_adaln.row[8],
-            audio_rows, audio_dim, 1u, error, error_size)) return 0;
+            audio_rows, audio_dim, 1u, error, error_size);
+    if (text_batched) {
+        char batch_error[1024] = {0};
+        int batch_ok = ltx_gpu_batch_end(
+            gpu, batch_error, sizeof(batch_error));
+        if (!batch_ok && text_ok)
+            snprintf(error, error_size, "%s", batch_error[0] ?
+                     batch_error : "batched Audio text-attention failed");
+        text_ok = text_ok && batch_ok;
+    }
+    if (!text_ok) return 0;
     if (timing) timing->audio_text += now_seconds() - start;
     return 1;
 }
@@ -3290,6 +3355,61 @@ static int run_mlp(ltx_gpu *gpu, ltx_gpu_buffer *output,
         weights->output_dim, 256u, error, error_size);
 }
 
+/* Candidate path for the dominant video FFN.  The production MPSGraph MLP
+ * keeps both ConvRot transforms inside one graph, where they become dense
+ * 256x256 matmuls.  This opt-in path uses the existing butterfly Metal
+ * kernel for both transforms, MPSGraph only for the two INT8 linears, and a
+ * Metal GELU.  The hidden scratch buffer is stage-persistent; the regular
+ * video branch buffer safely holds the rotated input, while elementwise GELU
+ * and the group-local butterfly ConvRot operate in-place on hidden scratch. */
+static int run_video_mlp(ltx_gpu *gpu, ltx_gpu_buffer *output,
+                         const ltx_gpu_buffer *input,
+                         const mlp_weights *weights,
+                         block_workspace *workspace, uint32_t rows,
+                         char *error, size_t error_size) {
+    if (!metal_convrot_mlp ||
+        (metal_convrot_mlp_stage2_only &&
+         rows != active_geometry.stage2_rows))
+        return run_mlp(gpu, output, input, weights, rows,
+                       error, error_size);
+    if (!workspace || !workspace->video_ffn_hidden) {
+        snprintf(error, error_size,
+                 "Metal ConvRot MLP scratch is unavailable");
+        return 0;
+    }
+    if (!ltx_gpu_batch_begin(gpu, error, error_size)) return 0;
+    int ok =
+        ltx_gpu_convrot_bf16(
+            gpu, output, input,
+            rows, weights->input_dim, 256u, error, error_size) &&
+        ltx_gpu_linear_int8_weight_mps_bf16(
+            gpu, workspace->video_ffn_hidden,
+            output,
+            weights->fc1.weight, weights->fc1.scale, weights->fc1.bias,
+            rows, weights->input_dim, weights->hidden_dim,
+            error, error_size) &&
+        ltx_gpu_gelu_tanh_bf16(
+            gpu,
+            workspace->video_ffn_hidden,
+            workspace->video_ffn_hidden,
+            rows * weights->hidden_dim, error, error_size) &&
+        ltx_gpu_convrot_bf16(
+            gpu, workspace->video_ffn_hidden,
+            workspace->video_ffn_hidden,
+            rows, weights->hidden_dim, 256u, error, error_size) &&
+        ltx_gpu_linear_int8_weight_mps_bf16(
+            gpu, output, workspace->video_ffn_hidden,
+            weights->fc2.weight, weights->fc2.scale, weights->fc2.bias,
+            rows, weights->hidden_dim, weights->output_dim,
+            error, error_size);
+    char batch_error[1024] = {0};
+    int batch_ok = ltx_gpu_batch_end(gpu, batch_error, sizeof(batch_error));
+    if (!batch_ok && ok)
+        snprintf(error, error_size, "%s", batch_error[0] ? batch_error :
+                 "Metal ConvRot MLP command batch failed");
+    return ok && batch_ok;
+}
+
 typedef struct {
     ltx_gpu *gpu;
     const block_weights *weights;
@@ -3306,6 +3426,13 @@ static void *run_audio_ffn_thread(void *opaque) {
     audio_ffn_task *task = opaque;
     uint32_t audio_dim = task->weights->audio_self.query_dim;
     double start = now_seconds();
+    int batched = batch_audio_commands;
+    if (batched && !ltx_gpu_batch_begin(
+            task->gpu, task->error, sizeof(task->error))) {
+        task->ok = 0;
+        task->elapsed_seconds = now_seconds() - start;
+        return NULL;
+    }
     task->ok = ltx_gpu_adaln_bf16(
             task->gpu, task->workspace->audio_normed,
             task->audio_hidden,
@@ -3324,6 +3451,16 @@ static void *run_audio_ffn_thread(void *opaque) {
             task->weights->audio_adaln.row[5],
             task->audio_rows, audio_dim, 1u,
             task->error, sizeof(task->error));
+    if (batched) {
+        char batch_error[1024] = {0};
+        int batch_ok = ltx_gpu_batch_end(
+            task->gpu, batch_error, sizeof(batch_error));
+        if (!batch_ok && task->ok)
+            snprintf(task->error, sizeof(task->error), "%s",
+                     batch_error[0] ? batch_error :
+                     "batched Audio FFN failed");
+        task->ok = task->ok && batch_ok;
+    }
     task->elapsed_seconds = now_seconds() - start;
     return NULL;
 }
@@ -3770,9 +3907,9 @@ static int run_block(ltx_gpu *gpu, block_weights *weights,
                     ane_video_mlp, gpu, workspace->video_branch,
                     workspace->video_normed, &ane_mlp_timing,
                     error, error_size) :
-                run_mlp(gpu, workspace->video_branch,
-                        workspace->video_normed, &weights->video_mlp,
-                        video_rows, error, error_size)) &&
+                run_video_mlp(gpu, workspace->video_branch,
+                              workspace->video_normed, &weights->video_mlp,
+                              workspace, video_rows, error, error_size)) &&
                 video_residual_gate(
                     gpu, video_next, video_hidden, workspace->video_branch,
                     &weights->video_adaln,
@@ -3786,9 +3923,10 @@ static int run_block(ltx_gpu *gpu, block_weights *weights,
             &weights->video_adaln, &weights->video_adaln_conditioned,
             4u, 3u, video_rows, video_dim, error, error_size);
     if (video_ffn_ok)
-        video_ffn_ok = run_mlp(
+        video_ffn_ok = run_video_mlp(
             gpu, workspace->video_branch, workspace->video_normed,
-            &weights->video_mlp, video_rows, error, error_size) &&
+            &weights->video_mlp, workspace, video_rows,
+            error, error_size) &&
             video_residual_gate(
             gpu, video_next, video_hidden, workspace->video_branch,
             &weights->video_adaln, &weights->video_adaln_conditioned, 5u,
@@ -4839,7 +4977,8 @@ static int run_block_fixture(
             gpu, weights, video_positions, audio_positions,
             video_rows, audio_rows, &rope, error, error_size) ||
         !create_workspace(
-            gpu, video_rows, video_dim, weights->video_self.heads,
+            gpu, video_rows, video_dim, weights->video_mlp.hidden_dim,
+            weights->video_self.heads,
             audio_rows, audio_dim,
             text_rows, &workspace, error, error_size)) goto cleanup;
     video_patch_input = ltx_gpu_buffer_new_copy(
@@ -5195,6 +5334,29 @@ static int run_denoise_schedule(
     ltx_gpu_buffer *audio_current = audio_latent;
     ltx_gpu_buffer *video_next = video_scratch;
     ltx_gpu_buffer *audio_next = audio_scratch;
+    const char *step_dump_directory = getenv("TURBOCIDER_LTX_C_DUMP_STEPS");
+    const int dump_steps = step_dump_directory && step_dump_directory[0];
+    const int schedule_stage = ancestral ? 1 : 2;
+    const char *profile_setting = getenv("TURBOCIDER_LTX_C_PROFILE");
+    const int profile_blocks =
+        profile_setting && profile_setting[0] &&
+        strcmp(profile_setting, "0") != 0 &&
+        strcmp(profile_setting, "false") != 0 &&
+        strcmp(profile_setting, "off") != 0;
+    block_timing profile_timing = {0};
+    if (dump_steps &&
+        (!ensure_directory(step_dump_directory, error, error_size) ||
+         !write_schedule_step_file(
+             video_current, video_final_host, video_bf16_bytes,
+             step_dump_directory, schedule_stage, 0u, "video",
+             error, error_size) ||
+         !write_schedule_step_file(
+             audio_current, audio_final_host, audio_bf16_bytes,
+             step_dump_directory, schedule_stage, 0u, "audio",
+             error, error_size))) {
+        ok = 0;
+        goto cleanup;
+    }
     double schedule_start = now_seconds();
     for (size_t step = 0; step + 1u < sigma_count; step++) {
         if(report_progress("ltx_step",(int)step,(int)sigma_count-1,error,error_size)){ok=0;goto cleanup;}
@@ -5236,17 +5398,20 @@ static int run_denoise_schedule(
               run_streamed_block_stack(
                   gpu, weights, pinned_block_count, stream_source, &values,
                   rope, workspace, video_text, audio_text, text_mask,
-                  video_rows, audio_rows, text_rows, NULL,
+                  video_rows, audio_rows, text_rows,
+                  profile_blocks ? &profile_timing : NULL,
                   error, error_size) : release_blocks ?
               run_blocks_and_release(
                   gpu, weights, first_block, block_count, rope, workspace,
                   video_text, audio_text, text_mask,
-                  video_rows, audio_rows, text_rows, NULL,
+                  video_rows, audio_rows, text_rows,
+                  profile_blocks ? &profile_timing : NULL,
                   &released_block_bytes, error, error_size) :
               run_blocks(
                   gpu, weights, first_block, block_count, rope, workspace,
                   video_text, audio_text, text_mask,
-                  video_rows, audio_rows, text_rows, NULL,
+                  video_rows, audio_rows, text_rows,
+                  profile_blocks ? &profile_timing : NULL,
                   error, error_size)) ||
             !(has_video_conditioning ?
               ltx_transformer_io_output_video_split(
@@ -5359,6 +5524,18 @@ static int run_denoise_schedule(
         double update_seconds = now_seconds() - update_start;
         swap_buffers(&video_current, &video_next);
         swap_buffers(&audio_current, &audio_next);
+        if (dump_steps &&
+            (!write_schedule_step_file(
+                 video_current, video_final_host, video_bf16_bytes,
+                 step_dump_directory, schedule_stage, step + 1u, "video",
+                 error, error_size) ||
+             !write_schedule_step_file(
+                 audio_current, audio_final_host, audio_bf16_bytes,
+                 step_dump_directory, schedule_stage, step + 1u, "audio",
+                 error, error_size))) {
+            ok = 0;
+            goto cleanup;
+        }
         printf("schedule_step=%zu sigma=%.9g sigma_next=%.9g "
                "conditioning_ms=%.3f transformer_ms=%.3f update_ms=%.3f\n",
                step, sigma, sigma_next,
@@ -5399,6 +5576,30 @@ static int run_denoise_schedule(
            (unsigned long long)nonfinite,
            video_noise_rng || audio_noise_rng ?
                "seeded-pcg32-gaussian" : "deterministic-synthetic");
+    if (profile_blocks) {
+        fprintf(stderr,
+            "ltx_c_profile stage=%d video_self_ms=%.3f audio_self_ms=%.3f "
+            "video_text_ms=%.3f audio_text_ms=%.3f "
+            "av_norm_ms=%.3f audio_to_video_ms=%.3f "
+            "video_to_audio_ms=%.3f av_residual_ms=%.3f "
+            "video_ffn_ms=%.3f audio_ffn_ms=%.3f "
+            "parallel_stream_wall_ms=%.3f parallel_cross_wall_ms=%.3f "
+            "parallel_ffn_wall_ms=%.3f\n",
+            schedule_stage,
+            profile_timing.video_self * 1000.0,
+            profile_timing.audio_self * 1000.0,
+            profile_timing.video_text * 1000.0,
+            profile_timing.audio_text * 1000.0,
+            profile_timing.av_norm_modulation * 1000.0,
+            profile_timing.audio_to_video * 1000.0,
+            profile_timing.video_to_audio * 1000.0,
+            profile_timing.av_residual * 1000.0,
+            profile_timing.video_ffn * 1000.0,
+            profile_timing.audio_ffn * 1000.0,
+            profile_timing.av_parallel_stream_wall * 1000.0,
+            profile_timing.av_parallel_cross_wall * 1000.0,
+            profile_timing.av_parallel_ffn_wall * 1000.0);
+    }
     if (nonfinite) {
         snprintf(error, error_size,
                  "denoise schedule produced non-finite values");
@@ -5438,7 +5639,7 @@ cleanup:
  * raw conditioning files, generated-media files or child process boundary. */
 struct ltx_native_denoiser {
     ltx_native_options options;
-    char *owned_strings[9];
+    char *owned_strings[10];
     ltx_workload workload;
     ltx_gpu *gpu;
     ltx_gpu *audio_gpu;
@@ -5523,7 +5724,7 @@ void ltx_native_free(ltx_native_denoiser *ctx) {
     ltx_transformer_io_free(ctx->io);ltx_gpu_free(ctx->audio_gpu);ltx_gpu_free(ctx->gpu);
     ltx_st_map_close(&ctx->streaming_mapping);
     ltx_st_free_header(&ctx->streaming_header);
-    for(unsigned i=0;i<9;++i)free(ctx->owned_strings[i]);
+    for(unsigned i=0;i<10;++i)free(ctx->owned_strings[i]);
     free(ctx);
 }
 
@@ -5602,11 +5803,26 @@ ltx_native_denoiser *ltx_native_create(const ltx_native_options *options,
     ctx->options.ane_mlp_first_block = ane_mlp_first_block;
     ctx->options.ane_mlp_block_count = ane_mlp_block_count;
     ctx->options.ane_mlp_stage_mask = ane_mlp_stage_mask;
+    if (!ctx->options.ane_variant || !ctx->options.ane_variant[0])
+        ctx->options.ane_variant = "int8_pc";
     ltx_st_header header={0};ltx_st_mapping mapping={0};
-    const char **fields[]={&ctx->options.checkpoint,&ctx->options.shader_source,&ctx->options.mlp_directories[0],&ctx->options.mlp_directories[1],&ctx->options.v2a_directories[0],&ctx->options.v2a_directories[1],&ctx->options.kv_directory,&ctx->options.qkv_directories[0],&ctx->options.qkv_directories[1]};
-    for(unsigned i=0;i<9;++i)if(*fields[i]){ctx->owned_strings[i]=strdup(*fields[i]);if(!ctx->owned_strings[i]){snprintf(error,error_size,"option allocation failed");goto failed;}*fields[i]=ctx->owned_strings[i];}
+    const char **fields[]={&ctx->options.checkpoint,&ctx->options.shader_source,&ctx->options.ane_variant,&ctx->options.mlp_directories[0],&ctx->options.mlp_directories[1],&ctx->options.v2a_directories[0],&ctx->options.v2a_directories[1],&ctx->options.kv_directory,&ctx->options.qkv_directories[0],&ctx->options.qkv_directories[1]};
+    for(unsigned i=0;i<10;++i)if(*fields[i]){ctx->owned_strings[i]=strdup(*fields[i]);if(!ctx->owned_strings[i]){snprintf(error,error_size,"option allocation failed");goto failed;}*fields[i]=ctx->owned_strings[i];}
     if(!ltx_workload_init(&ctx->workload,options->width,options->height,options->frames,options->fps,error,error_size))goto failed;
     if(ctx->workload.output_width!=options->width||ctx->workload.output_height!=options->height||ctx->workload.frames!=options->frames){snprintf(error,error_size,"LTX dimensions must already satisfy the two-stage geometry");goto failed;}
+    if ((ctx->options.sol_stage1 || ctx->options.sol_stage2) &&
+        (!isfinite(ctx->options.sol_tau) ||
+         ctx->options.sol_tau < -2.0f || ctx->options.sol_tau > 3.0f ||
+         ctx->options.sol_dense_edge_blocks > 24u ||
+         ctx->options.sol_dense_edge_steps > 16u ||
+         (ctx->options.sol_stage1 &&
+          ctx->workload.stage1_video_tokens > 4096u) ||
+        (ctx->options.sol_stage2 &&
+         ctx->workload.stage2_video_tokens > 16384u))) {
+        snprintf(error, error_size,
+                 "LTX Sol options exceed the supported tau/edge/16384-row limits");
+        goto failed;
+    }
     const char *shader_source=ctx->options.shader_source?ctx->options.shader_source:"ltx_shaders.metal";
     ctx->gpu=ltx_gpu_create(shader_source,error,error_size);if(!ctx->gpu)goto failed;
     if(options->parallel_av){ctx->audio_gpu=ltx_gpu_create(shader_source,error,error_size);if(!ctx->audio_gpu)goto failed;}
@@ -5675,7 +5891,7 @@ ltx_native_denoiser *ltx_native_create(const ltx_native_options *options,
                 ctx->options.ane_mlp_first_block,
                 ctx->options.ane_mlp_block_count,
                 active_geometry.stage2_rows,
-                ctx->options.mlp_directories[1], "int8_pc",
+                ctx->options.mlp_directories[1], ctx->options.ane_variant,
                 ctx->options.ane_mlp_stage_mask, &attached,
                 error, error_size) ||
             attached != ctx->options.ane_mlp_block_count) {
@@ -5741,7 +5957,39 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
     native_progress=progress;native_opaque=opaque;
     av_parallel_audio_gpu=ctx->audio_gpu;av_parallel_streams=ctx->options.parallel_av;
     av_parallel_cross=ctx->options.parallel_av;av_parallel_ffn=ctx->options.parallel_av;
-    av_persistent_worker_enabled=0;video_attention_batch=1;
+    batch_audio_commands=ctx->options.batch_audio_commands;
+    const char *metal_mlp_setting = getenv("TURBOCIDER_LTX_GPU_METAL_CONVROT_MLP");
+    metal_convrot_mlp = metal_mlp_setting && metal_mlp_setting[0] &&
+        strcmp(metal_mlp_setting, "0") != 0 &&
+        strcmp(metal_mlp_setting, "false") != 0 &&
+        strcmp(metal_mlp_setting, "off") != 0;
+    const char *metal_mlp_stage2 = getenv(
+        "TURBOCIDER_LTX_GPU_METAL_CONVROT_MLP_STAGE2_ONLY");
+    metal_convrot_mlp_stage2_only = metal_mlp_stage2 && metal_mlp_stage2[0] &&
+        strcmp(metal_mlp_stage2, "0") != 0 &&
+        strcmp(metal_mlp_stage2, "false") != 0 &&
+        strcmp(metal_mlp_stage2, "off") != 0;
+    av_persistent_worker_enabled=0;
+    /* ltx-mac measured Video attention command batching as a micro-only
+     * optimization and disabled it for the production E2E path.  Keep the
+     * exact-arithmetic optimization available for diagnostics, but do not
+     * pay its extra command-buffer lifecycle cost by default. */
+    const char *video_batch = getenv("TURBOCIDER_LTX_VIDEO_ATTENTION_BATCH");
+    video_attention_batch = ctx->options.video_attention_batch ||
+        (video_batch && video_batch[0] &&
+         strcmp(video_batch, "0") != 0 &&
+         strcmp(video_batch, "false") != 0 &&
+         strcmp(video_batch, "off") != 0);
+    if ((ctx->options.sol_stage1 || ctx->options.sol_stage2) &&
+        video_attention_batch) {
+        video_attention_batch = 0;
+    }
+    sol_video_self.stage1_enabled = ctx->options.sol_stage1 != 0;
+    sol_video_self.stage2_enabled = ctx->options.sol_stage2 != 0;
+    sol_video_self.batch_commands = ctx->options.sol_batch_commands != 0;
+    sol_video_self.dense_edge_blocks = ctx->options.sol_dense_edge_blocks;
+    sol_video_self.dense_edge_steps = ctx->options.sol_dense_edge_steps;
+    sol_video_self.tau = ctx->options.sol_tau;
 #ifdef LTX_ENABLE_ANE_MLP
     ane_mlp_fused_residual=ctx->options.ane_mlp_fused_residual;
     ane_mlp_fused_adaln_pack=ctx->options.ane_mlp_fused_adaln_pack;
@@ -5776,7 +6024,7 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
         !attach_ane_directory(
             gpu,ctx->weights,ctx->options.ane_mlp_first_block,
             ctx->options.ane_mlp_block_count,rows,
-            ctx->options.mlp_directories[stage-1],"int8_pc",
+            ctx->options.mlp_directories[stage-1],ctx->options.ane_variant,
             ctx->options.ane_mlp_stage_mask,&loaded,
             error,error_size))goto cleanup;
     if ((ctx->options.ane_mlp_stage_mask & (1u << (stage - 1))) &&
@@ -5826,7 +6074,7 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
 #endif
     /* Workspace shape depends on the active ANE K/V and QKV partitions, so
      * attach and validate those artifacts before allocating stage buffers. */
-    if(!create_block_rope(gpu,&ctx->weights[0],rows,audio_rows,&rope,error,error_size)||!create_workspace(gpu,rows,vd,ctx->weights[0].video_self.heads,audio_rows,ad,text_rows,&workspace,error,error_size))goto cleanup;
+    if(!create_block_rope(gpu,&ctx->weights[0],rows,audio_rows,&rope,error,error_size)||!create_workspace(gpu,rows,vd,ctx->weights[0].video_mlp.hidden_dim,ctx->weights[0].video_self.heads,audio_rows,ad,text_rows,&workspace,error,error_size))goto cleanup;
     size_t count=0;const float *sigmas=stage==1?ltx_distilled_stage1_sigmas(&count):ltx_distilled_stage2_sigmas(&count);
     ltx_rng video_rng,audio_rng;ltx_rng_seed(&video_rng,seed+(stage==1?10000u:2u),0);ltx_rng_seed(&audio_rng,seed+2u,0);
     block_stream_source stream_source = {
@@ -5863,7 +6111,10 @@ cleanup:
     ane_mlp_fused_residual=0;
     ane_mlp_fused_adaln_pack=0;
 #endif
-    native_progress=NULL;native_opaque=NULL;av_parallel_audio_gpu=NULL;return ok;
+    native_progress=NULL;native_opaque=NULL;av_parallel_audio_gpu=NULL;
+    batch_audio_commands=0;metal_convrot_mlp=0;metal_convrot_mlp_stage2_only=0;
+    video_text_kv_prefetch_stage1=0;
+    video_text_kv_prefetch_stage2=0;return ok;
 }
 
 int ltx_native_upsample_stage2(
@@ -5961,5 +6212,35 @@ cleanup:
     ltx_gpu_buffer_free(audio_in);ltx_gpu_buffer_free(video_in);
     ltx_connector_free(connector);ltx_st_map_close(&mapping);
     ltx_st_free_header(&header);
+    return ok;
+}
+
+int ltx_native_connect_conditioning_file(
+    const char *checkpoint,const char *shader_source,
+    uint16_t *video_output,size_t video_output_elements,
+    uint16_t *audio_output,size_t audio_output_elements,
+    uint16_t *mask_output,size_t mask_output_elements,
+    uint32_t output_rows,
+    const uint16_t *video_input,size_t video_input_elements,
+    const uint16_t *audio_input,size_t audio_input_elements,
+    const uint16_t *mask_input,size_t mask_input_elements,
+    uint32_t input_rows,
+    char *error,size_t error_size) {
+    if(!checkpoint||!shader_source){
+        snprintf(error,error_size,"invalid LTX connector checkpoint");
+        return 0;
+    }
+    ltx_gpu *gpu=ltx_gpu_create(shader_source,error,error_size);
+    if(!gpu)return 0;
+    ltx_native_denoiser connector_only={0};
+    connector_only.options.checkpoint=checkpoint;
+    connector_only.gpu=gpu;
+    int ok=ltx_native_connect_conditioning(
+        &connector_only,video_output,video_output_elements,
+        audio_output,audio_output_elements,mask_output,mask_output_elements,
+        output_rows,video_input,video_input_elements,audio_input,
+        audio_input_elements,mask_input,mask_input_elements,input_rows,
+        error,error_size);
+    ltx_gpu_free(gpu);
     return ok;
 }

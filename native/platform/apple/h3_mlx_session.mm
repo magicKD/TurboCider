@@ -162,11 +162,60 @@ class H3MLXSession final : public ModelSession {
     std::filesystem::path video_vae_root_;
     std::filesystem::path audio_vae_root_;
     std::filesystem::path checkpoint_root_;
+    bool vdn_ = false;
     bool resolved_vsa_ = false;
     std::unique_ptr<Conditioner> conditioner_;
     Pipeline pipeline_;
 
     void resolve_components(bool vsa) {
+        if (vdn_) {
+            if (!text_encoder_.empty()) return;
+            root_ = std::filesystem::absolute(root_).lexically_normal();
+            std::filesystem::path components;
+            if (const char *configured = std::getenv("TURBOCIDER_H3_COMPONENT_ROOT"))
+                if (*configured && std::filesystem::is_directory(configured))
+                    components = std::filesystem::absolute(configured).lexically_normal();
+            if (components.empty()) {
+                const auto parent = root_.parent_path();
+                for (const auto &candidate : {
+                         root_ / "FastH3-ModelScope",
+                         parent / "FastH3-ModelScope",
+                         root_ / ".." / "FastH3-ModelScope",
+                         parent / ".." / "FastH3-ModelScope"}) {
+                    if (std::filesystem::is_directory(candidate)) {
+                        components = std::filesystem::absolute(candidate).lexically_normal();
+                        break;
+                    }
+                }
+            }
+            require(!components.empty(),
+                    "VDN H3 requires a sibling FastH3-ModelScope component tree; "
+                    "set TURBOCIDER_H3_COMPONENT_ROOT to override it");
+            require_modelscope_provenance(components, false);
+            text_encoder_ = component_path(components, "text_encoder");
+            tokenizer_ = component_path(components, "tokenizer");
+            video_vae_root_ = component_path(components, "vae");
+            audio_vae_root_ = component_path(components, "audio_vae");
+
+            const auto parent = root_.parent_path();
+            for (const auto &candidate : {
+                     root_ / "int6",
+                     root_ / "VDN-H3-MLX" / "int6",
+                     parent / "VDN-H3-MLX" / "int6",
+                     root_ / ".." / "VDN-H3-MLX" / "int6"}) {
+                const auto absolute = std::filesystem::absolute(candidate).lexically_normal();
+                if (std::filesystem::is_regular_file(absolute / "mlx_h3_dit.json") &&
+                    std::filesystem::is_regular_file(absolute / "mlx_h3_dit.safetensors")) {
+                    checkpoint_root_ = absolute;
+                    break;
+                }
+            }
+            require(!checkpoint_root_.empty(),
+                    "VDN H3 INT6 checkpoint is missing; expected VDN-H3-MLX/int6");
+            resolved_vsa_ = false;
+            conditioner_ = std::make_unique<Conditioner>(text_encoder_, tokenizer_);
+            return;
+        }
         if (!text_encoder_.empty() && resolved_vsa_ == vsa) return;
         if (!text_encoder_.empty()) unload();
         root_ = std::filesystem::absolute(root_).lexically_normal();
@@ -181,7 +230,8 @@ class H3MLXSession final : public ModelSession {
     }
 
   public:
-    explicit H3MLXSession(const std::filesystem::path &root) : root_(root) {
+    explicit H3MLXSession(const std::filesystem::path &root, bool vdn = false)
+        : root_(root), vdn_(vdn) {
         require(std::filesystem::is_directory(root_),
                 "FastH3 ModelScope root is missing: " + root_.string());
     }
@@ -202,9 +252,11 @@ class H3MLXSession final : public ModelSession {
 
     RunResult generate(const Request &request, const Event &event,
                        std::atomic<bool> &cancelled) override {
-        require(request.model == "minimax-h3-fasth3-mlx-int6" ||
-                    request.model == "minimax-h3-fasth3-mlx-int6-vsa",
-                "request model differs from FastH3 MLX session");
+        require((!vdn_ && (request.model == "minimax-h3-fasth3-mlx-int6" ||
+                           request.model == "minimax-h3-fasth3-mlx-int6-vsa")) ||
+                    (vdn_ && request.model == "minimax-h3-vdn"),
+                vdn_ ? "request model differs from VDN H3 session"
+                     : "request model differs from FastH3 MLX session");
         const bool use_vsa = request.model == "minimax-h3-fasth3-mlx-int6-vsa";
         auto plan = make_plan(request);
         require(!request.prompt.empty() && !request.output.empty(),
@@ -355,10 +407,17 @@ class H3MLXSession final : public ModelSession {
             @"model": @(request.model.c_str()),
             @"profile": @(request.model.c_str()),
             @"backend": @"mlx_cpp_metal",
-            @"precision": @"int6_g64_bf16_activation",
+            // VDN keeps the base DiT in affine INT6, the learned branch in
+            // BF16, and performs the small SPD/state solve in FP32. Keep the
+            // emitted runtime record aligned with the plan/result metadata;
+            // otherwise a successful GPU VDN run is incorrectly reported as
+            // the dense FastH3 precision contract.
+            @"precision": vdn_ ? @"int6_g64_base+bf16_vdn+fp32_solve"
+                                : @"int6_g64_bf16_activation",
             @"checkpoint": @(checkpoint_root_.string().c_str()),
             @"checkpoint_sha256": @(checkpoint_sha.c_str()),
-            @"schedule_id": @"fasth3-v0.2-v12-a3-4step",
+            @"schedule_id": vdn_ ? @"vdn-stage-dmd-step250-v12-a3-6step"
+                                  : @"fasth3-v0.2-v12-a3-4step",
             @"decoder": @"full-h3-vae",
             @"prompt_cache_hit": @(cache_hit),
             @"noise_fixture": request.noise_path.empty()
@@ -390,6 +449,7 @@ class H3MLXSession final : public ModelSession {
                 @"dq_gemm_floor_m": @(denoise_metrics.affine_dq_gemm_min_rows),
                 @"qmm_calls": @(denoise_metrics.quantized_matmul_calls),
                 @"dq_gemm_calls": @(denoise_metrics.dequantized_gemm_calls),
+                @"experimental_fused_qkv": @(denoise_metrics.experimental_fused_qkv),
             },
             @"vsa": denoise_metrics.vsa ? @{
                 @"enabled": @YES,
@@ -418,10 +478,11 @@ class H3MLXSession final : public ModelSession {
         };
         auto result = native_run_result(value, request, plan);
         result.backend = "mlx_cpp_metal";
-        result.precision = "int6_g64_bf16_activation";
+        result.precision = vdn_ ? "int6_g64_base+bf16_vdn+fp32_solve"
+                                : "int6_g64_bf16_activation";
         result.checkpoint = checkpoint_root_.string();
         result.prompt_cache_hit = cache_hit;
-        result.actual_steps = 4;
+        result.actual_steps = request.steps;
         return result;
     }
 };
@@ -434,5 +495,9 @@ std::unique_ptr<ModelSession> create_h3_mlx(const std::filesystem::path &root) {
 
 std::unique_ptr<ModelSession> create_h3_mlx_vsa(const std::filesystem::path &root) {
     return std::make_unique<H3MLXSession>(root);
+}
+
+std::unique_ptr<ModelSession> create_h3_mlx_vdn(const std::filesystem::path &root) {
+    return std::make_unique<H3MLXSession>(root, true);
 }
 } // namespace tc

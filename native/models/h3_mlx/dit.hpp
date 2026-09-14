@@ -2,6 +2,7 @@
 
 #include "checkpoint.hpp"
 #include "geometry.hpp"
+#include "vdn_mlx.hpp"
 #include "vsa_attention.hpp"
 
 namespace tc::h3_mlx {
@@ -40,6 +41,7 @@ class DiT {
     Tensor apply_rotary(const Tensor &, const Tensor &, const Tensor &) const;
     Tensor attention(const Tensor &, const std::string &prefix,
                      const std::optional<std::pair<Tensor, Tensor>> &rope,
+                     const PackedLayout * = nullptr,
                      DiTDebugCapture * = nullptr,
                      const VSAGeometry * = nullptr,
                      double vsa_sparsity = 0.0,
@@ -52,6 +54,7 @@ class DiT {
     Tensor block(const Tensor &, int index, const Tensor &adaln_indices,
                  const Tensor &cosine, const Tensor &sine,
                  int step_index, const VSAConfig &, const VSAGeometry *, VSAStats *,
+                 const PackedLayout &,
                  DiTDebugCapture * = nullptr) const;
 
   public:

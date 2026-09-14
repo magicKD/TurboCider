@@ -68,7 +68,11 @@ def run(binary: Path, directory: Path, identity: int = IDENTITY) -> subprocess.C
 
 def main() -> int:
     compiler = subprocess.run(
-        ["xcrun", "--find", "clang"], check=True,
+        ["xcrun", "--sdk", "macosx", "--find", "clang"], check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
+    sdk = subprocess.run(
+        ["xcrun", "--sdk", "macosx", "--show-sdk-path"], check=True,
         capture_output=True, text=True,
     ).stdout.strip()
     with tempfile.TemporaryDirectory(prefix="turbocider-h3-quant-cache-") as raw:
@@ -76,7 +80,7 @@ def main() -> int:
         binary = root / "h3-quant-cache-test"
         subprocess.run(
             [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
-             "-D_DARWIN_C_SOURCE",
+             "-D_DARWIN_C_SOURCE", "-isysroot", sdk,
              "-I", str(ROOT / "native/models/h3_runtime"),
              str(ROOT / "tests/native/h3_quant_cache_test.c"),
              str(ROOT / "native/models/h3_runtime/h3_quant_cache.c"),

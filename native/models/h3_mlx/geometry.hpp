@@ -59,5 +59,6 @@ RowTimesteps build_row_timesteps(const PackedLayout &, float video_timestep,
                                  float condition_video_timestep = 1.f,
                                  float condition_audio_timestep = 1.f);
 std::vector<float> four_step_adaln_union();
+std::vector<float> adaln_timestep_union(int steps);
 
 } // namespace tc::h3_mlx

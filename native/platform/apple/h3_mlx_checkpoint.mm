@@ -93,6 +93,13 @@ void Checkpoint::load(const std::filesystem::path &root, const Event &event,
     expected_integer(manifest, @"format_version", 1);
     expected_integer(manifest, @"num_blocks", config_.num_layers);
     expected_integer(manifest, @"num_refiner_blocks", config_.refiner_layers);
+    const std::string profile = text(manifest, @"profile", "fasth3");
+    const bool vdn_profile = profile == "minimax-h3-vdn";
+    require(profile == "fasth3" || vdn_profile,
+            "unsupported H3 MLX checkpoint profile: " + profile);
+    const int expected_steps = vdn_profile ? 6 : 4;
+    if (manifest[@"steps"])
+        expected_integer(manifest, @"steps", expected_steps);
 
     NSDictionary *config = object(manifest[@"config"], "config");
     expected_integer(config, @"hidden_size", config_.hidden_size);
@@ -127,9 +134,11 @@ void Checkpoint::load(const std::filesystem::path &root, const Event &event,
     NSArray *timesteps = array(adaln[@"timesteps"], "adaln_cache.timesteps");
     // video shift 12 contributes {0, 1/37, 1/13, 1/5}; audio shift 3
     // contributes {0, 1/10, 1/4, 1/2}; conversion also stores clean time 1.
-    require(timesteps.count == 8,
-            "H3 MLX INT6 checkpoint requires the fixed four-step AdaLN ladder");
-    auto expected_ladder = four_step_adaln_union();
+    const auto expected_ladder = adaln_timestep_union(expected_steps);
+    require(timesteps.count == expected_ladder.size(),
+            vdn_profile
+                ? "VDN H3 MLX checkpoint requires the fixed six-step AdaLN ladder"
+                : "H3 MLX INT6 checkpoint requires the fixed four-step AdaLN ladder");
     identity_.adaln_timesteps.reserve(timesteps.count);
     for (id raw in timesteps) {
         require([raw isKindOfClass:NSNumber.class] &&
@@ -141,11 +150,19 @@ void Checkpoint::load(const std::filesystem::path &root, const Event &event,
             "H3 MLX AdaLN ladder size mismatch");
     for (size_t index = 0; index < expected_ladder.size(); ++index)
         require(std::abs(identity_.adaln_timesteps[index] - expected_ladder[index]) <= 1e-6f,
-                "H3 MLX AdaLN ladder does not match the four-step FastH3 schedule");
+                vdn_profile
+                    ? "VDN H3 MLX AdaLN ladder does not match the six-step stage-DMD schedule"
+                    : "H3 MLX AdaLN ladder does not match the four-step FastH3 schedule");
 
     NSDictionary *vsa = object(manifest[@"vsa"], "vsa");
     identity_.format_version = 1;
-    identity_.steps = 4;
+    identity_.steps = expected_steps;
+    // The checkpoint schedule and the number of model evaluations are
+    // profile-bound.  FastH3 uses four evaluations; the VDN stage-DMD
+    // artifact uses six.  Keep this explicit instead of relying on the
+    // struct default, so a VDN load cannot silently fall back to the
+    // FastH3/default schedule.
+    identity_.denoise_steps = expected_steps;
     identity_.video_shift = 12.f;
     identity_.audio_shift = 3.f;
     identity_.vsa_capable = boolean(vsa, @"capable");
@@ -159,8 +176,108 @@ void Checkpoint::load(const std::filesystem::path &root, const Event &event,
             "H3 VSA checkpoint capability and gate count disagree");
     NSDictionary *source = manifest[@"source"] ? object(manifest[@"source"], "source") : nil;
     if (source) {
-        identity_.source_sha256 = text(source, @"checkpoint_sha256");
+        identity_.source_sha256 = text(source, @"checkpoint_sha256",
+                                       text(source, @"transformer_index_sha256"));
         identity_.source_repository = text(source, @"repository");
+    }
+
+    std::unordered_map<std::string, Tensor> vdn_arrays;
+    if (vdn_profile) {
+        NSDictionary *vdn = object(manifest[@"vdn"], "vdn");
+        require(text(vdn, @"stage") == "stage-dmd-step-250" &&
+                    text(vdn, @"repository") == "OpenVDN/vdn-minimax-h3" &&
+                    text(vdn, @"turbo_adapter_family") == "larryvrh_v4_step600_ema",
+                "unsupported VDN H3 stage or adapter identity");
+        const auto branch_sha256 = text(vdn, @"branch_sha256");
+        require(branch_sha256.size() == 64,
+                "VDN H3 branch SHA-256 must be present in the manifest");
+        const int64_t branch_bytes = [vdn[@"branch_bytes"] longLongValue];
+        require(branch_bytes == 4'279'428'112ll,
+                "unsupported VDN H3 linear branch byte size");
+
+        NSDictionary *attention = object(vdn[@"attention"], "vdn.attention");
+        expected_integer(attention, @"version", 2);
+        require(text(attention, @"anchor_frames") == "both" &&
+                    text(attention, @"delta_rule") == "vdn_solve" &&
+                    text(attention, @"bridge") == "alpha",
+                "unsupported VDN H3 hybrid attention algorithm");
+        expected_integer(attention, @"softmax_chunk", 5);
+        expected_integer(attention, @"softmax_radius", 1);
+        expected_integer(attention, @"linear_head_dim", config_.head_dim);
+        require(boolean(attention, @"a_fp32") &&
+                    boolean(attention, @"enable_text_state") &&
+                    boolean(attention, @"enable_softmax_gate"),
+                "VDN H3 requires FP32 A, text state, and the softmax gate");
+        NSArray *conv_targets = array(attention[@"short_conv_targets"],
+                                      "vdn.attention.short_conv_targets");
+        require([conv_targets isEqual:@[@"k", @"v"]],
+                "VDN H3 short convolution must target K and V only");
+
+        identity_.vdn.enabled = true;
+        identity_.vdn.version = 2;
+        identity_.vdn.softmax_chunk = 5;
+        identity_.vdn.softmax_radius = 1;
+        identity_.vdn.linear_head_dim = config_.head_dim;
+        identity_.vdn.anchor_rows = true;
+        identity_.vdn.anchor_columns = true;
+        identity_.vdn.a_fp32 = true;
+        identity_.vdn.bridge_alpha = true;
+        identity_.vdn.enable_text_state = true;
+        identity_.vdn.enable_softmax_gate = true;
+        identity_.vdn.conv_k = true;
+        identity_.vdn.conv_v = true;
+        identity_.vdn.delta_rule = "vdn_solve";
+        identity_.vdn.branch_sha256 = branch_sha256;
+        identity_.vdn.branch_bytes = uint64_t(branch_bytes);
+
+        NSDictionary *assets = object(vdn[@"assets"], "vdn.assets");
+        const auto relative = text(assets, @"linear_branch");
+        require(!relative.empty() && std::filesystem::path(relative).is_relative(),
+                "VDN H3 linear branch path must be relative to the checkpoint");
+        std::error_code path_error;
+        auto branch_path = std::filesystem::weakly_canonical(root / relative,
+                                                              path_error);
+        require(!path_error && std::filesystem::is_regular_file(branch_path) &&
+                    std::filesystem::file_size(branch_path) == uint64_t(branch_bytes),
+                "VDN H3 linear branch asset is missing or has the wrong size");
+        event("h3_mlx_load_vdn", 0, 1);
+        vdn_arrays = mx::load_safetensors(branch_path.string()).first;
+        std::set<std::string> consumed_vdn;
+        auto expect_vdn = [&](const std::string &name, const mx::Shape &shape) {
+            auto found = vdn_arrays.find(name);
+            require(found != vdn_arrays.end(),
+                    "missing VDN H3 linear branch tensor: " + name);
+            require(found->second.dtype() == mx::bfloat16 &&
+                        found->second.shape() == shape,
+                    "invalid VDN H3 linear branch tensor: " + name);
+            consumed_vdn.insert(name);
+        };
+        for (int index = 0; index < config_.num_layers; ++index) {
+            checkpoint(cancelled);
+            const auto prefix = "transformer_blocks." + std::to_string(index) +
+                                ".attn.";
+            const auto linear = prefix + "linear_attention.";
+            expect_vdn(linear + "short_conv.k_sp.weight", {7168, 1, 5, 5});
+            expect_vdn(linear + "short_conv.k_tm.weight", {7168, 1, 5});
+            expect_vdn(linear + "short_conv.v_sp.weight", {7168, 1, 5, 5});
+            expect_vdn(linear + "short_conv.v_tm.weight", {7168, 1, 5});
+            expect_vdn(linear + "beta_proj.weight", {56, 5376});
+            expect_vdn(linear + "alpha.down.weight", {128, 5376});
+            expect_vdn(linear + "alpha.up.weight", {7168, 128});
+            expect_vdn(linear + "alpha.dt_bias", {7168});
+            expect_vdn(linear + "alpha.A_log", {56});
+            expect_vdn(linear + "output_gate.down.weight", {128, 5376});
+            expect_vdn(linear + "output_gate.up.weight", {7168, 128});
+            expect_vdn(linear + "output_gate.up.bias", {7168});
+            expect_vdn(linear + "norm.weight", {128});
+            expect_vdn(prefix + "softmax_gate.up.weight", {56, 5376});
+            expect_vdn(prefix + "softmax_gate.up.bias", {56});
+            expect_vdn(prefix + "to_out_linear.weight", {5376, 7168});
+        }
+        require(consumed_vdn.size() == vdn_arrays.size() &&
+                    consumed_vdn.size() == 800,
+                "VDN H3 linear branch contains undeclared tensors");
+        event("h3_mlx_load_vdn", 1, 1);
     }
 
     event("h3_mlx_load_dit", 0, 1);
@@ -232,15 +349,18 @@ void Checkpoint::load(const std::filesystem::path &root, const Event &event,
     checkpoint(cancelled);
     arrays_ = std::move(arrays);
     quantized_ = std::move(matrices);
+    vdn_arrays_ = std::move(vdn_arrays);
     event("h3_mlx_load_dit", 1, 1);
 }
 
 void Checkpoint::clear() {
     quantized_.clear();
     arrays_.clear();
+    vdn_arrays_.clear();
     quantization_ = {};
     identity_ = {};
     affine_dq_gemm_min_rows_ = 768;
+    experimental_fused_qkv_ = false;
     reset_dispatch_metrics();
 }
 
@@ -251,6 +371,16 @@ const Tensor &Checkpoint::at(const std::string &name) const {
 }
 
 bool Checkpoint::has(const std::string &name) const { return arrays_.count(name) != 0; }
+
+const Tensor &Checkpoint::vdn_at(const std::string &name) const {
+    auto found = vdn_arrays_.find(name);
+    require(found != vdn_arrays_.end(), "missing VDN H3 weight: " + name);
+    return found->second;
+}
+
+bool Checkpoint::vdn_has(const std::string &name) const {
+    return vdn_arrays_.count(name) != 0;
+}
 
 bool Checkpoint::is_quantized(const std::string &prefix) const {
     return quantized_.count(prefix + ".weight") != 0;
@@ -285,6 +415,48 @@ Tensor Checkpoint::linear(const Tensor &x, const std::string &prefix,
     return output;
 }
 
+Tensor Checkpoint::linear_fused(const Tensor &x,
+                                const std::vector<std::string> &prefixes,
+                                bool prefer_wide_dense) const {
+    require(!prefixes.empty(), "H3 fused linear requires at least one prefix");
+    for (const auto &prefix : prefixes)
+        require(is_quantized(prefix),
+                "H3 fused linear currently requires quantized projections: " + prefix);
+    const int rows = x.size() / x.shape(-1);
+    const bool wide = prefer_wide_dense && affine_dq_gemm_min_rows_ > 0 &&
+                      rows >= affine_dq_gemm_min_rows_;
+    if (!wide) {
+        std::vector<Tensor> outputs;
+        outputs.reserve(prefixes.size());
+        for (const auto &prefix : prefixes)
+            outputs.push_back(linear(x, prefix, prefer_wide_dense));
+        return mx::concatenate(outputs, -1);
+    }
+
+    std::vector<Tensor> dense_weights;
+    dense_weights.reserve(prefixes.size());
+    std::vector<Tensor> biases;
+    const bool has_bias = has(prefixes.front() + ".bias");
+    if (has_bias) biases.reserve(prefixes.size());
+    for (const auto &prefix : prefixes) {
+        const auto found = quantized_.find(prefix + ".weight");
+        require(found != quantized_.end(),
+                "missing H3 fused quantized projection: " + prefix);
+        dense_weights.push_back(found->second.dequantized(x.dtype()));
+        require(has(prefix + ".bias") == has_bias,
+                "H3 fused linear bias presence must be consistent");
+        if (has_bias)
+            biases.push_back(mx::astype(at(prefix + ".bias"), x.dtype()));
+    }
+    ++dequantized_gemm_calls_;
+    auto weight = mx::concatenate(dense_weights, 0);
+    auto output = mx::astype(mx::matmul(x, mx::transpose(weight)), x.dtype());
+    if (has_bias) {
+        output = output + mx::concatenate(biases, 0);
+    }
+    return output;
+}
+
 void Checkpoint::set_affine_dq_gemm_min_rows(int rows) {
     require(rows >= 0, "H3 MLX affine DQ-GEMM row threshold must be nonnegative");
     affine_dq_gemm_min_rows_ = rows;
@@ -298,6 +470,7 @@ void Checkpoint::reset_dispatch_metrics() const {
 size_t Checkpoint::bytes() const {
     size_t result = 0;
     for (const auto &[_, value] : arrays_) result += value.nbytes();
+    for (const auto &[_, value] : vdn_arrays_) result += value.nbytes();
     return result;
 }
 

@@ -34,6 +34,11 @@ int main() {
     auto union_values = four_step_adaln_union();
     assert(union_values.size() == 8);
     assert(union_values.front() == 0.f && union_values.back() == 1.f);
+    auto vdn_union_values = adaln_timestep_union(6);
+    assert(vdn_union_values.size() == 11);
+    assert(vdn_union_values.front() == 0.f && vdn_union_values.back() == 1.f);
+    assert(std::abs(vdn_union_values[3] - 0.0625f) < 1e-6f);
+    assert(std::abs(vdn_union_values[8] - 0.4f) < 1e-6f);
 
     VSAConfig vsa;
     vsa.enabled = true;

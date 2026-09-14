@@ -1,7 +1,10 @@
 #include "dit.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace tc::h3_mlx {
 namespace {
@@ -11,6 +14,24 @@ Tensor indices(const std::vector<int32_t> &values) {
 
 Tensor silu_local(const Tensor &value) {
     return value * mx::sigmoid(value);
+}
+
+bool vdn_profile_block_enabled(int block) {
+    if (std::getenv("TURBOCIDER_VDN_PROFILE") == nullptr) return false;
+    const char *selected = std::getenv("TURBOCIDER_VDN_PROFILE_BLOCK");
+    return !selected || !*selected || std::atoi(selected) == block;
+}
+
+void vdn_profile_eval(const char *phase, int block, const Tensor &value) {
+    if (!vdn_profile_block_enabled(block)) return;
+    const auto started = Clock::now();
+    mx::eval(value);
+    const double elapsed =
+        std::chrono::duration<double>(Clock::now() - started).count();
+    std::fprintf(stderr,
+                 "{\"event\":\"h3_vdn_profile\",\"block\":%d,"
+                 "\"phase\":\"%s\",\"seconds\":%.9f}\n",
+                 block, phase, elapsed);
 }
 
 Tensor modulate(const Tensor &value, const Tensor &scale, const Tensor &shift) {
@@ -69,6 +90,7 @@ Tensor DiT::apply_rotary(const Tensor &value, const Tensor &cosine,
 Tensor DiT::attention(
     const Tensor &input, const std::string &prefix,
     const std::optional<std::pair<Tensor, Tensor>> &rotary,
+    const PackedLayout *layout,
     DiTDebugCapture *debug,
     const VSAGeometry *vsa_geometry,
     double vsa_sparsity,
@@ -78,15 +100,31 @@ Tensor DiT::attention(
     VSAStats *vsa_stats) const {
     const auto &config = weights_.config();
     const int sequence = input.shape(0);
-    auto q = mx::reshape(weights_.linear(cast_for(input, prefix + ".attn.to_q"),
-                                         prefix + ".attn.to_q"),
-                         {sequence, config.num_heads, config.head_dim});
-    auto k = mx::reshape(weights_.linear(cast_for(input, prefix + ".attn.to_k"),
-                                         prefix + ".attn.to_k"),
-                         {sequence, config.num_heads, config.head_dim});
-    auto v = mx::reshape(weights_.linear(cast_for(input, prefix + ".attn.to_v"),
-                                         prefix + ".attn.to_v"),
-                         {sequence, config.num_heads, config.head_dim});
+    const auto q_prefix = prefix + ".attn.to_q";
+    const auto k_prefix = prefix + ".attn.to_k";
+    const auto v_prefix = prefix + ".attn.to_v";
+    auto qkv_input = cast_for(input, q_prefix);
+    std::vector<Tensor> qkv_parts;
+    if (weights_.identity().vdn.enabled && weights_.experimental_fused_qkv() &&
+        weights_.is_quantized(q_prefix) && weights_.is_quantized(k_prefix) &&
+        weights_.is_quantized(v_prefix)) {
+        qkv_parts = mx::split(weights_.linear_fused(
+            qkv_input, {q_prefix, k_prefix, v_prefix}), 3, -1);
+    } else {
+        qkv_parts = mx::split(mx::concatenate({
+            weights_.linear(qkv_input, q_prefix),
+            weights_.linear(qkv_input, k_prefix),
+            weights_.linear(qkv_input, v_prefix)}, -1), 3, -1);
+    }
+    auto q_raw = mx::reshape(qkv_parts[0],
+                             {sequence, config.num_heads, config.head_dim});
+    auto k_raw = mx::reshape(qkv_parts[1],
+                             {sequence, config.num_heads, config.head_dim});
+    auto v_raw = mx::reshape(qkv_parts[2],
+                             {sequence, config.num_heads, config.head_dim});
+    auto q = q_raw;
+    auto k = k_raw;
+    auto v = v_raw;
     q = rms(q, prefix + ".attn.norm_q.weight", config.qk_norm_epsilon);
     k = rms(k, prefix + ".attn.norm_k.weight", config.qk_norm_epsilon);
     if (rotary) {
@@ -100,13 +138,27 @@ Tensor DiT::attention(
         mx::eval(*debug->first_query, *debug->first_key, *debug->first_value);
     }
     std::optional<Tensor> attended_rows;
-    if (vsa_geometry && rotary && (vsa_sparsity > 0.f || gate_compress)) {
+    std::optional<Tensor> vdn_readout;
+    const bool vdn_main = weights_.identity().vdn.enabled && layout &&
+                          prefix.starts_with("blocks.");
+    const int vdn_block_index = vdn_main
+        ? std::stoi(prefix.substr(std::string("blocks.").size())) : -1;
+    if (vdn_main) {
+        auto branch = vdn_forward(weights_, input, q_raw, k_raw, v_raw,
+                                   q, k, v, *layout,
+                                   vdn_block_index);
+        attended_rows = mx::reshape(branch.softmax,
+                                    {sequence, config.num_heads * config.head_dim});
+        vdn_readout = branch.linear_readout;
+    } else if (vsa_geometry && rotary && (vsa_sparsity > 0.f || gate_compress)) {
         auto attended = vsa_attention(q, k, v, *vsa_geometry, vsa_sparsity,
                                       vsa_prefix_mode, vsa_implementation,
                                       gate_compress, vsa_stats);
         if (debug)
-            debug->first_attended = attended;
-        attended_rows = mx::reshape(attended,
+            debug->first_attended = mx::reshape(attended,
+                                                {sequence, config.num_heads,
+                                                 config.head_dim});
+        attended_rows = mx::reshape(mx::transpose(attended, {0, 2, 1, 3}),
                                     {sequence, config.num_heads * config.head_dim});
     } else {
         q = mx::expand_dims(mx::transpose(q, {1, 0, 2}), 0);
@@ -122,8 +174,19 @@ Tensor DiT::attention(
                                     {sequence, config.num_heads * config.head_dim});
     }
     require(attended_rows.has_value(), "H3 attention did not produce output");
-    return weights_.linear(cast_for(*attended_rows, prefix + ".attn.to_out.0"),
-                           prefix + ".attn.to_out.0");
+    auto output = weights_.linear(cast_for(*attended_rows, prefix + ".attn.to_out.0"),
+                                  prefix + ".attn.to_out.0");
+    if (vdn_readout) {
+        auto branch = weights_.vdn_at(
+            "transformer_blocks." +
+            prefix.substr(std::string("blocks.").size()) +
+            ".attn.to_out_linear.weight");
+        auto projected = mx::matmul(mx::astype(*vdn_readout, branch.dtype()),
+                                    mx::transpose(branch));
+        output = output + projected;
+        vdn_profile_eval("attention_output_projection", vdn_block_index, output);
+    }
+    return output;
 }
 
 Tensor DiT::feed_forward(const Tensor &input, const std::string &prefix) const {
@@ -141,7 +204,7 @@ Tensor DiT::refine_text(const Tensor &text) const {
     for (int index = 0; index < config.refiner_layers; ++index) {
         const auto prefix = "refiner." + std::to_string(index);
         auto normalized = rms(hidden, prefix + ".norm1.weight", config.norm_epsilon);
-        hidden = hidden + attention(normalized, prefix, std::nullopt);
+        hidden = hidden + attention(normalized, prefix, std::nullopt, nullptr);
         normalized = rms(hidden, prefix + ".norm2.weight", config.norm_epsilon);
         hidden = hidden + feed_forward(normalized, prefix);
     }
@@ -152,6 +215,7 @@ Tensor DiT::block(const Tensor &input, int index, const Tensor &adaln_indices,
                   const Tensor &cosine, const Tensor &sine,
                   int step_index, const VSAConfig &vsa_config,
                   const VSAGeometry *vsa_geometry, VSAStats *vsa_stats,
+                  const PackedLayout &layout,
                   DiTDebugCapture *debug) const {
     const auto &config = weights_.config();
     const auto prefix = "blocks." + std::to_string(index);
@@ -179,7 +243,7 @@ Tensor DiT::block(const Tensor &input, int index, const Tensor &adaln_indices,
     if (debug && gate)
         debug->first_gate = *gate;
     auto attended = attention(
-        normalized, prefix, {{cosine, sine}}, debug, vsa_geometry,
+        normalized, prefix, {{cosine, sine}}, &layout, debug, vsa_geometry,
         vsa_config.layer_sparsity(index, step_index), vsa_config.prefix_mode,
         vsa_config.implementation, gate ? &*gate : nullptr, vsa_stats);
     if (debug) debug->first_attention = attended;
@@ -190,6 +254,8 @@ Tensor DiT::block(const Tensor &input, int index, const Tensor &adaln_indices,
     normalized = modulate(normalized, Tensor(1.f, normalized.dtype()) + gather(4), gather(3));
     if (debug) debug->first_modulated2 = normalized;
     auto fed = feed_forward(normalized, prefix);
+    if (weights_.identity().vdn.enabled)
+        vdn_profile_eval("base_ffn", index, fed);
     if (debug) {
         debug->first_feed_forward = fed;
         mx::eval(*debug->first_norm1, *debug->first_modulated1,
@@ -266,6 +332,7 @@ DiTOutput DiT::forward(const Tensor &video_rows, const Tensor &audio_rows,
         packed = block(packed, index, adaln_indices, rotary.first, rotary.second,
                        step_index, vsa_config,
                        vsa_geometry ? &*vsa_geometry : nullptr, vsa_stats,
+                       layout,
                        debug && index == 0 ? debug : nullptr);
         if (debug && index == 0) {
             debug->first_block = packed;

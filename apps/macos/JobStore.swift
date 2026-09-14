@@ -70,6 +70,7 @@ final class NativeJobStore: ObservableObject {
     private var preparationID: UUID?
     private var cancelRequested = false
     private var tensorCacheTask: Task<Data, Error>?
+    private var ltxTask: Task<Data, Error>?
     private var lastPersist = Date.distantPast
     private var telemetry = StepTelemetry()
     private var lastSequence = -1
@@ -210,6 +211,7 @@ final class NativeJobStore: ObservableObject {
         guard busy else { return }
         cancelRequested = true
         tensorCacheTask?.cancel()
+        ltxTask?.cancel()
         if coreMLResourceBusy { NativeEngine.cancelCoreMLResources() }
         engine?.cancel()
         if let id = activeID, let i = jobs.firstIndex(where: { $0.id == id }) {
@@ -356,7 +358,7 @@ final class NativeJobStore: ObservableObject {
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
         // Close the reentrancy window before any async plan/session operation.
         busy = true; cancelRequested = false; actualRoute = nil
-        defer { busy = false; activeID = nil }
+        defer { busy = false; activeID = nil; ltxTask = nil }
         do { _ = try await Task.detached { try NativeEngine.plan(request) }.value }
         catch { throw error }
         let id = UUID(); activeID = id; telemetry = StepTelemetry(); lastSequence = -1; denoiseStart = nil; lastDetailUpdate = 0
@@ -364,18 +366,31 @@ final class NativeJobStore: ObservableObject {
         let start = ContinuousClock.now
         do {
             try persist()
-            let opened = try await acquire(modelURL, modelID: request.model)
-            if cancelRequested { throw CancellationError() }
-            sessionState = "使用中"
-            let result = try await opened.generate(request) { [weak self] event in
+            let callback: @Sendable (NativeEvent) -> Void = { [weak self] event in
                 DispatchQueue.main.async { [weak self] in self?.receive(event, id: id) }
+            }
+            let result: Data
+            if LTXWorker.accepts(request) {
+                guard !externalServiceActive else { throw NativeFailure(message: "本地 API 正在运行，请先在 API 页面停止服务。") }
+                if let old = engine { _ = try await old.unload() }
+                engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil
+                if cancelRequested { throw CancellationError() }
+                sessionState = "LTX 独立 GPU 进程运行中"
+                let work = Task { try await LTXWorker.generate(model: modelURL, request: request, onEvent: callback) }
+                ltxTask = work
+                result = try await work.value
+            } else {
+                let opened = try await acquire(modelURL, modelID: request.model)
+                if cancelRequested { throw CancellationError() }
+                sessionState = "使用中"
+                result = try await opened.generate(request, onEvent: callback)
             }
             guard let i = jobs.firstIndex(where: { $0.id == id }) else { throw NativeFailure(message: "Missing job") }
             jobs[i].state = "succeeded"; jobs[i].phase = "complete"
             jobs[i].resultJSON = String(decoding: result, as: UTF8.self)
             sessionReport = jobs[i].resultJSON
             jobs[i].elapsed = Self.seconds(start.duration(to: .now))
-            sessionState = request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
+            sessionState = LTXWorker.accepts(request) ? "视频完成 · 独立进程已释放" : request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
             try persist()
             return jobs[i]
         } catch {

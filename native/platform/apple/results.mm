@@ -1,11 +1,21 @@
 #include "bridge.hpp"
 namespace tc {
 static NSString *gpu_graph_label(const Request &r) {
+    if (r.model == "minimax-h3-vdn")
+        return @"h3_vdn_int6_window_delta";
     if (r.model.starts_with("minimax-h3-fasth3-mlx-int6"))
         return r.model.ends_with("-vsa") ? @"fasth3_int6_vsa" : @"fasth3_int6_qmm";
     if (r.model == "wan2.1-1.3b-qad")
         return r.execution == "gpu_ane" ? @"compiled_mlp_complement" :
             (r.compile_gpu ? @"compiled_whole_dit" : @"eager_blocks");
+    if (r.model == "ltx-2.5-distilled")
+        return r.ltx_backend == "cpp_mlx" ? @"ltx_cpp_mlx_blocks" :
+            (r.ltx_sol_stage2 ?
+                (r.ltx_stage2_text_rows ?
+                    @"ltx_c_metal_fast_av_sol_text_pruned" :
+                    @"ltx_c_metal_fast_av_sol") :
+                (r.ltx_fast_av ? @"ltx_c_metal_fast_av" :
+                                     @"ltx_c_metal_baseline"));
     if (r.model == "z-image-turbo-gguf") {
         if (r.execution == "gpu_ane")
             return @"compiled_mlp_complement";
@@ -21,6 +31,8 @@ static NSString *gpu_graph_label(const Request &r) {
                                        : @"compiled_single_blocks";
 }
 static NSString *gpu_graph_label(const RunResult &result) {
+    if (result.request.model == "minimax-h3-vdn")
+        return @"h3_vdn_int6_window_delta";
     if (result.backend == "mlx_cpp_metal" &&
         result.request.model.starts_with("minimax-h3-fasth3-mlx-int6"))
         return result.request.model.ends_with("-vsa") ? @"fasth3_int6_vsa" : @"fasth3_int6_qmm";
@@ -98,6 +110,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                       r.model == "wan2.1-1.3b-qad" ? @"manifest_verified_native" :
                       r.model == "ltx-2.5-distilled" ?
                           (recipe.executable ? @"native_video_executor" : @"native_capability_gated") :
+                      r.model == "minimax-h3-vdn" ? @"modelscope_vdn_stage_dmd_candidate" :
                       r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"modelscope_int6_parity_candidate" :
                       r.model == "z-image-turbo" ? @"native_candidate" :
                       r.model == "llada-image-turbo" ? @"native_llada_candidate" :
@@ -111,6 +124,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             (r.loras.empty() ? @"checkpoint-and-ane-identity-verified-at-load" : @"premerged-manifest-verified-at-execution") :
         r.model == "ltx-2.5-distilled" ?
             (r.loras.empty() ? @"checkpoint-validated-at-load" : @"premerged-sidecar-verified-at-execution") :
+        r.model == "minimax-h3-vdn" ?
+            @"ModelScope VDN stage, FL2VA base, Turbo adapter, and prepared artifact identity required at execution" :
         r.model.starts_with("minimax-h3-fasth3-mlx-int6") ?
             @"ModelScope FastH3 manifest and component checks at execution" :
         r.model == "z-image-turbo" ?
@@ -132,9 +147,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
          r.model == "z-image-turbo-gguf" ? @"mlx_cpp_metal_gguf+coreml" : @"mlx_cpp_metal+coreml") :
         r.model == "z-image-turbo-gguf" ?
             @"mlx_cpp_metal_gguf" :
-        r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"mlx_cpp_metal" :
+        (r.model == "minimax-h3-vdn" ||
+         r.model.starts_with("minimax-h3-fasth3-mlx-int6")) ? @"mlx_cpp_metal" :
         r.model == "minimax-h3-turbo" ? @"h3-metal-mps" :
-        r.model == "ltx-2.5-distilled" ? @"ltx-metal-mps" :
+        r.model == "ltx-2.5-distilled" ?
+            (r.ltx_backend == "cpp_mlx" ? @"mlx_cpp_metal" : @"ltx-metal-mps") :
         r.model == "wan2.1-1.3b-qad" ? @"wan-mlx" :
         r.model == "llada-image-turbo" ? @"mlx_cpp_metal" :
             @"mlx_cpp_metal";
@@ -150,6 +167,27 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             @"iterations" : @(s.id == "denoise" ? r.steps : s.iterations)
         }];
     }
+    NSMutableArray *algorithm_approximations = [NSMutableArray array];
+    if (r.model == "minimax-h3-vdn")
+        [algorithm_approximations addObject:
+            @"affine_int6_g64_base_weight_quantization"];
+    else if (r.model == "z-image-turbo-gguf")
+        [algorithm_approximations addObject:
+            @"checkpoint_defined_gguf_weight_quantization"];
+    else if (!r.quantized_cache.empty())
+        [algorithm_approximations addObject:
+            @"row_symmetric_int8_weight_quantization"];
+    else if (hybrid)
+        [algorithm_approximations addObject:
+            @"single_block_mlp_int8_per_channel"];
+    if (r.model == "ltx-2.5-distilled") {
+        if (r.ltx_sol_stage1)
+            [algorithm_approximations addObject:@"ltx_sol_stage1"];
+        if (r.ltx_sol_stage2)
+            [algorithm_approximations addObject:@"ltx_sol_stage2"];
+        if (r.ltx_stage2_text_rows)
+            [algorithm_approximations addObject:@"ltx_stage2_text_context_pruning"];
+    }
     return @{
         @"selection_pending" : @(r.execution == "auto"),
         @"requested_execution" : @(r.execution.c_str()),
@@ -160,16 +198,13 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"backend" : backend,
         @"execution" : hybrid ? @"gpu_ane_experimental" : @"gpu",
         @"gpu_graph" : gpu_graph_label(r),
-        @"precision" : r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"int6_g64_bf16_activation" :
+        @"precision" : r.model == "minimax-h3-vdn" ? @"int6_g64_base+bf16_vdn+fp32_solve" :
+                      r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"int6_g64_bf16_activation" :
                       r.model == "wan2.1-1.3b-qad" ? @"fp16-int8-affine-dit+bf16-umt5+fp32-taehv" :
                       r.model == "z-image-turbo-gguf" ? @"checkpoint_defined_gguf" :
             (!r.quantized_cache.empty() ? @"int8_weight_bf16_activation_streamed" :
              (hybrid ? @"bf16_gpu+int8_mlp_fp16_io" : @"bf16")),
-        @"algorithm_approximations" : r.model == "z-image-turbo-gguf" ?
-            @[ @"checkpoint_defined_gguf_weight_quantization" ] :
-            (!r.quantized_cache.empty() ?
-                @[ @"row_symmetric_int8_weight_quantization" ] :
-             (hybrid ? @[ @"single_block_mlp_int8_per_channel" ] : @[])),
+        @"algorithm_approximations" : algorithm_approximations,
         @"requested_shape" : @[ @(r.width), @(r.height), @(r.frames) ],
         @"decoded_shape" : @[ @(dw), @(dh), @(r.frames) ],
         @"stages" : stages,
@@ -179,7 +214,10 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"memory_budget_bytes" : r.memory_budget_bytes ? @(r.memory_budget_bytes)
                                                         : [NSNull null],
         @"memory_budget_scope" :
-            (r.model == "minimax-h3-turbo" &&
+            (r.model == "minimax-h3-vdn" &&
+                   r.residency == "streamed" && r.memory_budget_bytes)
+                    ? @"vdn_base_branch_working_set_target_not_process_cap"
+                : (r.model == "minimax-h3-turbo" &&
                    r.residency == "streamed" && r.memory_budget_bytes)
                     ? @"h3_dit_working_set_target_not_process_cap"
                 : (r.model == "ltx-2.5-distilled" &&
@@ -199,12 +237,23 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"lora_strategy" : @(lora_strategy.c_str()),
         @"lora_fusion" : lora_fusion,
         @"audio" : @(r.audio),
-        @"audio_capability" : r.model.starts_with("minimax-h3-fasth3-mlx-int6") ?
+        @"ltx_backend" : @(r.ltx_backend.c_str()),
+        @"ltx_fast_av" : @(r.ltx_fast_av),
+        @"ltx_video_attention_batch" : @(r.ltx_video_attention_batch),
+        @"ltx_sol_stage1" : @(r.ltx_sol_stage1),
+        @"ltx_sol_stage2" : @(r.ltx_sol_stage2),
+        @"ltx_sol_tau" : @(r.ltx_sol_tau),
+        @"ltx_sol_dense_edge_blocks" : @(r.ltx_sol_dense_edge_blocks),
+        @"ltx_sol_dense_edge_steps" : @(r.ltx_sol_dense_edge_steps),
+        @"ltx_stage2_text_rows" : @(r.ltx_stage2_text_rows),
+        @"audio_capability" : (r.model == "minimax-h3-vdn" ||
+                                  r.model.starts_with("minimax-h3-fasth3-mlx-int6")) ?
             (r.audio ? @"full_h3_audio_vae_32khz_stereo" : @"video_only_native") :
             (r.model == "ltx-2.5-distilled" ?
              (r.audio ? @"latent_to_48khz_aac_candidate" : @"video_only_native") : @"not_applicable"),
-        @"executor_operations" : r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @[ @"video.generate" ] :
-            r.model == "ltx-2.5-distilled" ? @[ @"video.generate" ] :
+        @"executor_operations" : (r.model == "minimax-h3-vdn" ||
+                                      r.model.starts_with("minimax-h3-fasth3-mlx-int6")) ? @[ @"video.generate" ] :
+            r.model == "ltx-2.5-distilled" ? @[ @"video.generate", @"video.image" ] :
             (r.model == "wan2.1-1.3b-qad" ? @[ @"video.generate" ] : [NSNull null]),
         @"limitation" : recipe.executable
             ? @"capabilities depend on model artifacts and configured hardware"

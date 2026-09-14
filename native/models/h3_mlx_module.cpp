@@ -6,16 +6,34 @@
 namespace tc {
 std::unique_ptr<ModelSession> create_h3_mlx(const std::filesystem::path &);
 std::unique_ptr<ModelSession> create_h3_mlx_vsa(const std::filesystem::path &);
+std::unique_ptr<ModelSession> create_h3_mlx_vdn(const std::filesystem::path &);
 
 namespace {
 constexpr const char *dense_id = "minimax-h3-fasth3-mlx-int6";
 constexpr const char *vsa_id = "minimax-h3-fasth3-mlx-int6-vsa";
+constexpr const char *vdn_id = "minimax-h3-vdn";
 
 Recipe recipe(const char *model) {
     return Recipe{
         model,
         {{"text_encode", {}},
          {"av_denoise", {"text_encode"}, 4},
+         {"video_decode", {"av_denoise"}},
+         {"audio_decode", {"av_denoise"}},
+         {"mux", {"video_decode", "audio_decode"}}},
+        true,
+    };
+}
+
+Recipe vdn_recipe() {
+    return Recipe{
+        vdn_id,
+        {{"text_encode", {}},
+         // TurboCider's public `steps` field reports actual model
+         // evaluations.  Keep the validated VDN profile at six evaluations;
+         // vpipe must be invoked with the matching evaluation count when
+         // collecting comparative performance evidence.
+         {"av_denoise", {"text_encode"}, 6},
          {"video_decode", {"av_denoise"}},
          {"audio_decode", {"av_denoise"}},
          {"mux", {"video_decode", "audio_decode"}}},
@@ -109,6 +127,74 @@ ModelDescriptor descriptor(bool vsa) {
               "old minimax-h3-turbo C/Metal module remains the compatibility default"};
     return d;
 }
+
+void validate_vdn(const Request &r) {
+    require(r.model_variant == "auto" || r.model_variant == vdn_id,
+            "model_variant does not match the VDN H3 profile");
+    require(r.operation == "video.generate",
+            "VDN H3 currently supports video.generate only");
+    require(r.inputs.empty(), "VDN H3 T2VA does not accept media inputs");
+    require(r.loras.empty(),
+            "VDN H3 uses the manifest-bound stage-DMD Turbo adapter");
+    require(r.steps == 6, "VDN H3 stage-DMD requires exactly six steps");
+    require(r.fps == 24, "VDN H3 requires 24 fps");
+    require(r.width % 32 == 0 && r.height % 32 == 0 &&
+                int64_t(r.width) * r.height <= 768 * 1344,
+            "VDN H3 canvas must be multiples of 32 within 768*1344 pixels");
+    require(r.frames >= 22 && r.frames <= 362 && (r.frames - 5) % 17 == 0,
+            "VDN H3 frames must be 5+17n, between 22 and 362");
+    require(r.execution == "gpu" || r.execution == "auto",
+            "VDN H3 supports gpu or auto execution until ANE qualification passes");
+    require(r.residency == "resident" ||
+                r.residency == "component_staged" ||
+                r.residency == "streamed",
+            "VDN H3 residency must be resident, component_staged, or streamed");
+    require(!r.memory_budget_bytes || r.residency == "streamed",
+            "VDN H3 memory budget requires streamed residency");
+    require(r.quantized_cache.empty(),
+            "VDN H3 uses its manifest-bound affine INT6 artifact, not legacy quantized_cache");
+    require(!r.vsa && r.vsa_sparsity == 0.9 && r.vsa_tile_size == 64 &&
+                r.vsa_prefix_mode == "exempt" &&
+                r.vsa_dense_first_n_steps == 0 &&
+                r.vsa_dense_layers.empty() && r.vsa_impl == "auto",
+            "FastH3 VSA parameters are not accepted by the VDN H3 profile");
+    if (!r.noise_path.empty())
+        require(std::filesystem::path(r.noise_path).extension() == ".safetensors",
+                "VDN H3 noise fixtures must be safetensors files");
+}
+
+ModelDescriptor vdn_descriptor() {
+    ModelDescriptor d;
+    d.id = vdn_id;
+    d.name = "MiniMax H3 VDN stage-DMD";
+    d.executable = true;
+    d.operations = {"video.generate"};
+    d.inputs = {"text"};
+    d.output = "video";
+    d.steps = 6;
+    d.frames = 124;
+    d.width = 960;
+    d.height = 544;
+    d.fps = 24;
+    d.default_audio = true;
+    d.default_residency = "component_staged";
+    d.backend = "mlx_cpp_metal";
+    d.runtime_dependency =
+        "pinned FL2VA base + ModelScope OpenVDN stage-DMD branch/adapter + MLX C++";
+    d.parallel_strategy =
+        "window softmax + bidirectional VDN solve with block-coupled streaming";
+    d.audio_output = true;
+    d.native_audio_output_candidate = true;
+    d.native_audio_vae_candidate = true;
+    d.audio_capability = "full-h3-audio-vae-32khz-stereo";
+    d.executor_operations = {"video.generate"};
+    d.candidate_limitations = {
+        "T2VA only; stage-DMD step 250 and larryvrh_v4_step600_ema are identity-bound",
+        "native VDN checkpoint/attention integration is enabled; matched vpipe qualification remains pending",
+        "ANE remains disabled until full-denoise ABBA reaches 1.20x with quality gates",
+        "legacy H3 and both FastH3 profiles remain unchanged"};
+    return d;
+}
 } // namespace
 
 ModelModule h3_mlx_module() {
@@ -140,6 +226,16 @@ ModelModule h3_mlx_vsa_module() {
         },
         create_h3_mlx_vsa,
         [] { return descriptor(true); },
+    };
+}
+
+ModelModule h3_mlx_vdn_module() {
+    return {
+        vdn_id,
+        vdn_recipe,
+        validate_vdn,
+        create_h3_mlx_vdn,
+        vdn_descriptor,
     };
 }
 } // namespace tc

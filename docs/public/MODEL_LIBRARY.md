@@ -52,10 +52,23 @@ not additional disk usage. Reports are timestamped snapshots; recheck after
 changing files. No tensor data is loaded, full weight hashes are not computed,
 and ANE compilation is not triggered by inspection.
 
-The library stores an atomic `library.json` index, `installations/` links,
+The library stores an atomic `library.json` index, `installations/` directories,
 content-addressed `blobs/`, provenance under `manifests/`, and unpublished
 `staging/` directories. A process lock serializes App/CLI writers. Two files
 with the same verified SHA-256 reuse the same stored bytes, even across sources.
+
+Managed downloads publish individual files as **regular-file hard links** to
+verified blobs. This preserves deduplication and avoids MLX rejecting file
+symlinks. Keep managed blobs and installations on the same filesystem for hard
+linking. Shared component directories may still be symbolic links; their source
+directories must remain available. Older installations with per-file symlinks
+can be reinstalled through the updated downloader, reusing verified cached blobs.
+Check and select the new installation before removing the old registration.
+Do not edit managed weight files in place: the installation and blob paths
+share the same bytes.
+
+For a complete FLUX.2 Klein 4B download and inspection recipe followed by offline
+ANE preparation, see [FLUX preparation](FLUX_PREPARATION.md).
 
 ## Preview before downloading
 

@@ -3255,9 +3255,9 @@ int ltx_gpu_self_attention_core_sol_bf16(
             key_stats.maxTotalThreadsPerThreadgroup < 128u ||
             threshold_stats.maxTotalThreadsPerThreadgroup < 128u ||
             route.maxTotalThreadsPerThreadgroup < 128u ||
-            attention.maxTotalThreadsPerThreadgroup < 256u || blocks > 64u)
+            attention.maxTotalThreadsPerThreadgroup < 256u || blocks > 256u)
             return ltx_gpu_fail(error, error_size,
-                                "device cannot dispatch BF16 Sol attention");
+                                "device cannot dispatch BF16 Sol attention for this row count");
 
         id<MTLCommandBuffer> command = [ltx_queue(gpu) commandBuffer];
         if (!command)
@@ -4011,6 +4011,7 @@ int ltx_gpu_mlp_int8_convrot_mps_bf16(
                                       error, error_size);
     }
 }
+
 
 static LTXInt8QKVGraph *ltx_int8_qkv_graph(
         ltx_gpu *gpu, uint32_t rows, uint32_t input_dim,

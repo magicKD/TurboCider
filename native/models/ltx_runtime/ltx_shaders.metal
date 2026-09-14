@@ -1653,7 +1653,7 @@ kernel void ltx_sol_attention_tiled_bf16(
     uint query_block = group.x;
     uint head = group.y;
     if (query_block >= args.blocks || head >= args.heads ||
-        args.head_dim != DIMENSION || args.blocks > 64u) return;
+        args.head_dim != DIMENSION || args.blocks > 256u) return;
     uint query_start = query_block * BLOCK;
     uint query_count = min(uint(BLOCK), args.rows - query_start);
     uint head_offset = head * args.rows * DIMENSION;
@@ -1677,9 +1677,12 @@ kernel void ltx_sol_attention_tiled_bf16(
     else
         query_loader.load_unsafe();
 
+    /* Keep the compact two-word route broadcast for the common <=4096-row
+     * case. Larger explicit Sol requests use the materialized route row
+     * directly, avoiding another large per-query bitset. */
     uint route_mask_lo = 0u;
     uint route_mask_hi = 0u;
-    if (lane == 0u) {
+    if (lane == 0u && args.blocks <= 64u) {
         for (uint block = 0; block < args.blocks; block++) {
             uint route_bit = uint(routes[block] != 0.0f);
             if (block < 32u)
@@ -1688,16 +1691,18 @@ kernel void ltx_sol_attention_tiled_bf16(
                 route_mask_hi |= route_bit << (block - 32u);
         }
     }
-    route_mask_lo |= simd_shuffle_xor(route_mask_lo, ushort(16));
-    route_mask_hi |= simd_shuffle_xor(route_mask_hi, ushort(16));
-    route_mask_lo |= simd_shuffle_xor(route_mask_lo, ushort(8));
-    route_mask_hi |= simd_shuffle_xor(route_mask_hi, ushort(8));
-    route_mask_lo |= simd_shuffle_xor(route_mask_lo, ushort(4));
-    route_mask_hi |= simd_shuffle_xor(route_mask_hi, ushort(4));
-    route_mask_lo |= simd_shuffle_xor(route_mask_lo, ushort(2));
-    route_mask_hi |= simd_shuffle_xor(route_mask_hi, ushort(2));
-    route_mask_lo |= simd_shuffle_xor(route_mask_lo, ushort(1));
-    route_mask_hi |= simd_shuffle_xor(route_mask_hi, ushort(1));
+    if (args.blocks <= 64u) {
+        route_mask_lo |= simd_shuffle_xor(route_mask_lo, ushort(16));
+        route_mask_hi |= simd_shuffle_xor(route_mask_hi, ushort(16));
+        route_mask_lo |= simd_shuffle_xor(route_mask_lo, ushort(8));
+        route_mask_hi |= simd_shuffle_xor(route_mask_hi, ushort(8));
+        route_mask_lo |= simd_shuffle_xor(route_mask_lo, ushort(4));
+        route_mask_hi |= simd_shuffle_xor(route_mask_hi, ushort(4));
+        route_mask_lo |= simd_shuffle_xor(route_mask_lo, ushort(2));
+        route_mask_hi |= simd_shuffle_xor(route_mask_hi, ushort(2));
+        route_mask_lo |= simd_shuffle_xor(route_mask_lo, ushort(1));
+        route_mask_hi |= simd_shuffle_xor(route_mask_hi, ushort(1));
+    }
 
     ltx_sol_mma_tile<float, 1, 1, Fragment> query_tile;
     ltx_sol_mma_tile<float, 1, 8, Fragment> key_tile;
@@ -1716,47 +1721,67 @@ kernel void ltx_sol_attention_tiled_bf16(
     float denominator[1] = {0.0f};
 
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    KeyLoader summary_key_loader(
-        key_centroids, DIMENSION, keys, simdgroup, lane);
-    summary_key_loader.load_safe(short2(DIMENSION, args.blocks));
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    score_tile.clear();
-    LTX_SOL_UNROLL
-    for (short dimension_tile = 0; dimension_tile < 16;
-         dimension_tile++) {
-        query_tile.template load<bfloat, 1, 1, QUERY_LD, 1>(
-            &query_shared[query_offset + dimension_tile * 8]);
-        key_tile.template load<bfloat, 1, 1, KEY_LD, 1>(
-            &keys[key_offset + dimension_tile * 8 * KEY_LD]);
-        simdgroup_barrier(mem_flags::mem_none);
-        ltx_sol_tile_multiply(score_tile, query_tile, key_tile, score_tile);
-    }
-    LTX_SOL_UNROLL
-    for (short key_index = 0; key_index < 8; key_index++) {
+    for (uint summary_block_start = 0u;
+         summary_block_start < args.blocks;
+         summary_block_start += uint(BLOCK)) {
+        uint summary_count = min(
+            uint(BLOCK), args.blocks - summary_block_start);
+        KeyLoader summary_key_loader(
+            key_centroids + summary_block_start * DIMENSION,
+            DIMENSION, keys, simdgroup, lane);
+        summary_key_loader.load_safe(
+            short2(DIMENSION, short(summary_count)));
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        score_tile.clear();
         LTX_SOL_UNROLL
-        for (short element = 0; element < Fragment::elements; element++) {
-            uint block = column + key_index * 8 + element;
-            score_tile.at(0, key_index)[element] *= score_scale;
-            bool routed = block < 32u ?
-                ((route_mask_lo >> block) & 1u) != 0u :
-                ((route_mask_hi >> (block - 32u)) & 1u) != 0u;
-            if (block >= args.blocks || routed)
-                score_tile.at(0, key_index)[element] = -INFINITY;
+        for (short dimension_tile = 0; dimension_tile < 16;
+             dimension_tile++) {
+            query_tile.template load<bfloat, 1, 1, QUERY_LD, 1>(
+                &query_shared[query_offset + dimension_tile * 8]);
+            key_tile.template load<bfloat, 1, 1, KEY_LD, 1>(
+                &keys[key_offset + dimension_tile * 8 * KEY_LD]);
+            simdgroup_barrier(mem_flags::mem_none);
+            ltx_sol_tile_multiply(
+                score_tile, query_tile, key_tile, score_tile);
         }
-    }
+        LTX_SOL_UNROLL
+        for (short key_index = 0; key_index < 8; key_index++) {
+            LTX_SOL_UNROLL
+            for (short element = 0; element < Fragment::elements;
+                 element++) {
+                uint local_block = uint(column) +
+                    uint(key_index) * 8u + uint(element);
+                uint block = summary_block_start + local_block;
+                score_tile.at(0, key_index)[element] *= score_scale;
+                bool routed = false;
+                if (block < args.blocks) {
+                    routed = args.blocks <= 64u ? (block < 32u ?
+                        ((route_mask_lo >> block) & 1u) != 0u :
+                        ((route_mask_hi >> (block - 32u)) & 1u) != 0u) :
+                        routes[block] != 0.0f;
+                }
+                if (local_block >= summary_count || routed)
+                    score_tile.at(0, key_index)[element] = -INFINITY;
+            }
+        }
 
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    ValueLoader summary_value_loader(
-        value_sums, DIMENSION, values, simdgroup, lane);
-    summary_value_loader.load_safe(short2(DIMENSION, args.blocks));
-    ltx_sol_accumulate_tile<true>(
-        score_tile, output_tile, values, value_offset,
-        maximum, denominator, 0u, column, args.blocks, args.rows);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        ValueLoader summary_value_loader(
+            value_sums + summary_block_start * DIMENSION,
+            DIMENSION, values, simdgroup, lane);
+        summary_value_loader.load_safe(
+            short2(DIMENSION, short(summary_count)));
+        ltx_sol_accumulate_tile<true>(
+            score_tile, output_tile, values, value_offset,
+            maximum, denominator, summary_block_start, column,
+            args.blocks, args.rows);
+    }
 
     for (uint block = 0; block < args.blocks; block++) {
-        bool routed = block < 32u ?
+        bool routed = args.blocks <= 64u ? (block < 32u ?
             ((route_mask_lo >> block) & 1u) != 0u :
-            ((route_mask_hi >> (block - 32u)) & 1u) != 0u;
+            ((route_mask_hi >> (block - 32u)) & 1u) != 0u) :
+            routes[block] != 0.0f;
         if (!routed) continue;
         uint key_start = block * BLOCK;
         uint key_count = min(uint(BLOCK), args.rows - key_start);

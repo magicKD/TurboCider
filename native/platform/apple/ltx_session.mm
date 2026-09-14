@@ -14,6 +14,7 @@
 #include "../../models/ltx_runtime/ltx_native.h"
 #include "../../models/ltx_runtime/ltx_rng.h"
 #include "../../models/ltx_runtime/ltx_video_convert.h"
+#include "../../models/ltx_mlx/native.hpp"
 
 #include <CommonCrypto/CommonDigest.h>
 #include <algorithm>
@@ -215,6 +216,17 @@ static bool valid_sha256(const std::string& value) {
  * assets may qualify for an eventual public executor. */
 constexpr const char* kLtxAudioManifestSchema =
     "turbocider-ltx-audio-assets-v1";
+constexpr const char* kLtxAudioModelScopeManifestSchema =
+    "turbocider-ltx-audio-assets-modelscope-v1";
+constexpr const char* kLtxAudioModelScopeEndpoint = "https://modelscope.cn";
+constexpr const char* kLtxAudioModelScopeModel = "Lightricks/LTX-2.5";
+constexpr const char* kLtxAudioModelScopePath =
+    "vae/ltx-2.5-audio-vae-bf16.safetensors";
+constexpr const char* kLtxAudioModelScopeRevision =
+    "5a5da253b8bd7ae649a8c7acdec41e6c1a1cffda";
+constexpr const char* kLtxAudioModelScopeSha256 =
+    "c52733d37f6a7fb7949c3dc0fb468c6cb2169e4d836983a73babb9f0d54837a5";
+constexpr uint64_t kLtxAudioModelScopeBytes = 364866540ull;
 static constexpr std::array<const char*, 5> kLtxAudioArtifactNames = {
     "ltx-2.5-audio-vae-bf16.safetensors",
     "ltx-2.5-audio-vae-vocoder-bf16.safetensors",
@@ -231,6 +243,7 @@ struct LtxAudioAssetStatus {
     std::string reason;
     bool assets_verified = false;
     bool native_supported = false;
+    bool executor_ready = false;
 };
 
 static std::filesystem::path find_ltx_audio_artifact(
@@ -290,12 +303,31 @@ static LtxAudioAssetStatus inspect_ltx_audio_assets(
     }
     try {
         auto manifest = read_json(result.manifest);
-        require(string_value(manifest, @"schema") == kLtxAudioManifestSchema,
+        auto schema = string_value(manifest, @"schema");
+        const bool modelscope = schema == kLtxAudioModelScopeManifestSchema;
+        require(schema == kLtxAudioManifestSchema || modelscope,
                 "unsupported LTX audio asset manifest schema");
-        require(string_value(manifest, @"repository") == "Lightricks/LTX-2.5",
-                "LTX audio asset manifest repository is not trusted");
-        require(string_value(manifest, @"revision") == kLtxRevision,
-                "LTX audio asset manifest revision is not trusted");
+        if (modelscope) {
+            NSDictionary* source =
+                [manifest[@"source"] isKindOfClass:NSDictionary.class] ?
+                    manifest[@"source"] : nil;
+            require(source && string_value(source, @"provider") == "modelscope" &&
+                        string_value(source, @"endpoint") ==
+                            kLtxAudioModelScopeEndpoint &&
+                        string_value(source, @"model_id") ==
+                            kLtxAudioModelScopeModel &&
+                        string_value(source, @"path") ==
+                            kLtxAudioModelScopePath &&
+                        string_value(source, @"revision") ==
+                            kLtxAudioModelScopeRevision,
+                    "LTX audio ModelScope provenance is not trusted");
+        } else {
+            require(string_value(manifest, @"repository") ==
+                        "Lightricks/LTX-2.5",
+                    "LTX audio asset manifest repository is not trusted");
+            require(string_value(manifest, @"revision") == kLtxRevision,
+                    "LTX audio asset manifest revision is not trusted");
+        }
         NSDictionary* artifact = [manifest[@"artifact"] isKindOfClass:NSDictionary.class] ?
             manifest[@"artifact"] : nil;
         NSDictionary* components = [manifest[@"components"] isKindOfClass:NSDictionary.class] ?
@@ -312,6 +344,11 @@ static LtxAudioAssetStatus inspect_ltx_audio_assets(
         auto expected_sha = string_value(artifact, @"sha256");
         require(valid_sha256(expected_sha),
                 "LTX audio asset manifest contains a malformed SHA-256 identity");
+        if (modelscope) {
+            require(bytes == kLtxAudioModelScopeBytes &&
+                        expected_sha == kLtxAudioModelScopeSha256,
+                    "LTX audio artifact does not match the pinned ModelScope record");
+        }
         require_audio_component(components, @"audio_vae_decoder");
         require_audio_component(components, @"base_vocoder");
         require_audio_component(components, @"bwe_vocoder");
@@ -342,9 +379,12 @@ static LtxAudioAssetStatus inspect_ltx_audio_assets(
                 "LTX audio artifact SHA-256 does not match its manifest");
         result.assets_verified = true;
         result.native_supported = true;
-        result.status = "verified_native_candidate_session_parity_pending";
-        result.reason =
-            "Audio assets and the native decode/mux path are available; end-to-end Session parity and public executor validation remain pending";
+        result.executor_ready = modelscope;
+        result.status = modelscope ? "verified_native_modelscope" :
+            "verified_native_candidate_session_parity_pending";
+        result.reason = modelscope ?
+            "Pinned ModelScope audio assets are verified for native Audio VAE, base vocoder, BWE, and AAC mux execution" :
+            "Audio assets and the native decode/mux path are available; a pinned distribution identity is still required for public execution";
     } catch (const std::exception& exception) {
         result.status = "invalid";
         result.reason = exception.what();
@@ -658,15 +698,17 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
     TemporaryDirectoryCleanup cleanup{directory};
     auto input = directory / "video_latent.bf16";
     auto output = directory / "video_pixels.bf16";
+    auto timing = directory / "video_vae_timing.json";
     write_exact(input, latent.data(), latent.size() * sizeof(uint16_t),
                 "LTX Video VAE latent input");
-    std::array<std::string, 7> arguments = {
+    std::array<std::string, 8> arguments = {
         helper.string(), checkpoint.string(), input.string(),
         std::to_string(workload.latent_frames),
         std::to_string(workload.stage2_latent_height),
         std::to_string(workload.stage2_latent_width), output.string(),
+        timing.string(),
     };
-    std::array<char*, 8> argv{};
+    std::array<char*, 9> argv{};
     for (size_t index = 0; index < arguments.size(); ++index)
         argv[index] = arguments[index].data();
     pid_t child = -1;
@@ -694,6 +736,17 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
     require(WIFEXITED(status) && WEXITSTATUS(status) == 0,
             "LTX Video VAE helper failed with status " +
                 std::to_string(status));
+    if (const char *diagnostics = std::getenv("TURBOCIDER_LTX_VAE_TIMING")) {
+        if (std::strcmp(diagnostics, "0") != 0 &&
+            std::strcmp(diagnostics, "false") != 0 &&
+            std::strcmp(diagnostics, "off") != 0) {
+            std::ifstream stream(timing);
+            std::string line((std::istreambuf_iterator<char>(stream)),
+                             std::istreambuf_iterator<char>());
+            if (!line.empty())
+                std::fprintf(stderr, "ltx_video_vae_timing=%s", line.c_str());
+        }
+    }
     size_t pixel_count = static_cast<size_t>(3) * workload.frames *
         workload.output_height * workload.output_width;
     std::vector<uint16_t> pixels(pixel_count);
@@ -707,6 +760,8 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
         const std::filesystem::path& helper,
         const std::filesystem::path& checkpoint,
         const std::vector<uint16_t>& latent,
+        const std::filesystem::path& audio_checkpoint,
+        const std::vector<uint16_t>& audio_latent,
         const ltx_workload& workload,
         const Request& request,
         const std::string& execution) {
@@ -723,19 +778,41 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
             "cannot create LTX exec finalizer directory: " +
                 std::string(std::strerror(errno)));
     const auto directory = std::filesystem::path(created);
+    /* exec replaces this process and therefore never runs the destructor on
+     * success.  If execve itself fails, retain normal RAII cleanup rather than
+     * leaking the latent staging directory.  The finalizer removes the same
+     * managed directory after a successful replacement. */
+    TemporaryDirectoryCleanup cleanup{directory};
     const auto input = directory / "video_latent.bf16";
     write_exact(input, latent.data(), latent.size() * sizeof(uint16_t),
                 "LTX exec finalizer latent");
-    std::array<std::string, 9> arguments = {
+    std::vector<std::string> arguments = {
         helper.string(), checkpoint.string(), input.string(),
         std::to_string(workload.latent_frames),
         std::to_string(workload.stage2_latent_height),
         std::to_string(workload.stage2_latent_width), request.output,
         request.operation, execution,
     };
-    std::array<char*, 10> argv{};
+    if (request.audio) {
+        require(std::filesystem::is_regular_file(audio_checkpoint),
+                "LTX audio checkpoint is missing for exec finalizer");
+        require(audio_latent.size() ==
+                    static_cast<size_t>(workload.audio_tokens) *
+                        kLtxAudioChannels,
+                "LTX audio latent has an unexpected size");
+        const auto audio_input = directory / "audio_latent.bf16";
+        write_exact(audio_input, audio_latent.data(),
+                    audio_latent.size() * sizeof(uint16_t),
+                    "LTX exec finalizer audio latent");
+        arguments.push_back(audio_checkpoint.string());
+        arguments.push_back(audio_input.string());
+        arguments.push_back(std::to_string(workload.audio_tokens));
+    }
+    std::vector<char*> argv;
+    argv.reserve(arguments.size() + 1u);
     for (size_t index = 0; index < arguments.size(); ++index)
-        argv[index] = arguments[index].data();
+        argv.push_back(arguments[index].data());
+    argv.push_back(nullptr);
     fflush(nullptr);
     ::execve(helper.c_str(), argv.data(), ::environ);
     throw std::runtime_error("exec LTX Video VAE finalizer: " +
@@ -986,7 +1063,7 @@ static LtxAneConfig resolve_ltx_ane_config(
         result.qkv_stage1 = ane_profile_path(profile, @"qkv_stage1", base, false);
         result.qkv_stage2 = ane_profile_path(profile, @"qkv_stage2", base, false);
         result.variant = string_value(profile, @"variant", result.variant);
-        require(result.variant == "int8_pc",
+        require(result.variant == "int8_pc" || result.variant == "fp16",
                 "unsupported LTX ANE artifact variant");
         id parallel = profile[@"parallel_av"];
         if (parallel) {
@@ -1520,6 +1597,80 @@ private:
     std::function<void()> action_;
 };
 
+static bool ltx_mlx_requested(const Request& request) {
+    if (request.ltx_backend == "cpp_mlx") return true;
+    if (request.ltx_backend == "c_metal") return false;
+    const char* value = std::getenv("TURBOCIDER_LTX_MLX");
+    return value && std::strcmp(value, "1") == 0;
+}
+
+static bool ltx_gpu_parallel_av_requested() {
+    const char* fast = std::getenv("TURBOCIDER_LTX_GPU_FAST_AV");
+    if (fast && *fast)
+        return std::string_view(fast) != "0" &&
+            std::string_view(fast) != "false" &&
+            std::string_view(fast) != "off";
+    const char* value = std::getenv("TURBOCIDER_LTX_GPU_PARALLEL_AV");
+    if (value && *value)
+        return std::string_view(value) != "0" &&
+            std::string_view(value) != "false" &&
+            std::string_view(value) != "off";
+    // The 97-frame ABBA gate is now passed with byte-exact latent output;
+    // make the safe C/Metal optimization the production default.  Set
+    // TURBOCIDER_LTX_GPU_FAST_AV=0 for a strict historical baseline.
+    return true;
+}
+
+static bool ltx_gpu_batch_audio_requested() {
+    const char* fast = std::getenv("TURBOCIDER_LTX_GPU_FAST_AV");
+    if (fast && *fast)
+        return std::string_view(fast) != "0" &&
+            std::string_view(fast) != "false" &&
+            std::string_view(fast) != "off";
+    const char* value = std::getenv("TURBOCIDER_LTX_GPU_BATCH_AUDIO");
+    if (value && *value)
+        return std::string_view(value) != "0" &&
+            std::string_view(value) != "false" &&
+            std::string_view(value) != "off";
+    return true;
+}
+
+static size_t ltx_mlx_cache_capacity(const Request& request) {
+    if (const char* configured = std::getenv(
+            "TURBOCIDER_LTX_MLX_CACHE_CAPACITY")) {
+        char* end = nullptr;
+        const auto value = std::strtoull(configured, &end, 10);
+        if (end && *end == '\0' && value >= 1u && value <= 48u)
+            return static_cast<size_t>(value);
+    }
+    if (request.residency == "resident") return 48u;
+    // The measured packed LTX block is about 436 MiB on the current
+    // checkpoint. Use a conservative 512 MiB budget unit; the previous 128
+    // MiB heuristic selected all 48 blocks on a 12 GiB request and silently
+    // exceeded the requested unified-memory budget.
+    constexpr uint64_t kReserve = 4ull << 30;
+    constexpr uint64_t kBlockBudget = 512ull << 20;
+    if (!request.memory_budget_bytes ||
+        request.memory_budget_bytes <= kReserve + kBlockBudget)
+        return request.residency == "streamed" ? 1u : 48u;
+    const auto available = request.memory_budget_bytes - kReserve;
+    return std::clamp<size_t>(
+        static_cast<size_t>(available / kBlockBudget), 1u, 48u);
+}
+
+static uint32_t ltx_mlx_convrot_group_size() {
+    const char* configured =
+        std::getenv("TURBOCIDER_LTX_MLX_CONVROT_GROUP_SIZE");
+    if (!configured || !*configured)
+        return 64u;
+    char* end = nullptr;
+    const auto value = std::strtoul(configured, &end, 10);
+    if (end && *end == '\0' &&
+        (value == 32u || value == 64u || value == 128u))
+        return static_cast<uint32_t>(value);
+    return 64u;
+}
+
 class LtxNativeSession final : public ModelSession {
 public:
     explicit LtxNativeSession(const std::filesystem::path& root)
@@ -1553,6 +1704,7 @@ public:
     }
     void unload() override {
         denoiser_.reset(); denoiser_key_.clear(); gemma_encoder_.reset();
+        mlx_denoiser_.reset(); mlx_denoiser_key_.clear();
         video_vae_.reset(); audio_vae_.reset(); base_vocoder_.reset(); bwe_.reset();
     }
 
@@ -1598,7 +1750,8 @@ public:
         if (request.audio) {
             auto audio_assets = inspect_ltx_audio_assets(root_);
             require(audio_assets.assets_verified &&
-                        audio_assets.native_supported,
+                        audio_assets.native_supported &&
+                        audio_assets.executor_ready,
                     "native LTX audio assets are not ready: " +
                         audio_assets.reason);
             audio_checkpoint_path_ = std::move(audio_assets.artifact);
@@ -1608,6 +1761,17 @@ public:
                 "native LTX session supports auto, gpu, or explicit gpu_ane");
         const std::string effective_execution =
             request.execution == "auto" ? "gpu" : request.execution;
+        const bool use_mlx = ltx_mlx_requested(request);
+        if (use_mlx) {
+            require(effective_execution == "gpu",
+                    "TURBOCIDER_LTX_MLX=1 requires execution=gpu; ANE is a separate candidate");
+            require(!image_to_video,
+                    "TURBOCIDER_LTX_MLX=1 currently supports text-to-video only");
+            require(request.residency == "resident" ||
+                        request.residency == "component_staged" ||
+                        request.residency == "streamed",
+                    "TURBOCIDER_LTX_MLX=1 received an unsupported residency");
+        }
         checkpoint(cancel);
         LtxCheckpointSelection selection;
         if (!request.loras.empty()) {
@@ -1635,12 +1799,22 @@ public:
                 static_cast<uint32_t>(workload.stage1_video_tokens),
                 static_cast<uint32_t>(workload.stage2_video_tokens), 1024u,
                 selected_checkpoint);
+        if (request.ltx_stage2_text_rows &&
+            (ane_config.kv_stage_mask & kLtxStage2Mask))
+            require(false,
+                    "LTX Stage-2 text pruning requires Stage-2 ANE text K/V to be disabled");
         require(request.residency == "resident" ||
                 request.residency == "component_staged" ||
                 request.residency == "streamed",
                 "unsupported LTX residency");
         const bool component_staged = request.residency == "component_staged";
         const bool streamed = request.residency == "streamed";
+        const bool gpu_parallel_av = effective_execution == "gpu" &&
+            request.ltx_fast_av &&
+            ltx_gpu_parallel_av_requested();
+        const bool gpu_batch_audio = effective_execution == "gpu" &&
+            request.ltx_fast_av &&
+            ltx_gpu_batch_audio_requested();
         if (streamed) {
             require(!image_to_video,
                     "LTX block streaming currently supports text-to-video only");
@@ -1656,6 +1830,8 @@ public:
             if (component_staged) {
                 denoiser_.reset();
                 denoiser_key_.clear();
+                mlx_denoiser_.reset();
+                mlx_denoiser_key_.clear();
             }
             if (!component_staged && !streamed) return;
             gemma_encoder_.reset();
@@ -1716,6 +1892,10 @@ public:
                 denoiser_.reset();
                 denoiser_key_.clear();
             }
+            if (mlx_denoiser_) {
+                mlx_denoiser_.reset();
+                mlx_denoiser_key_.clear();
+            }
             require(std::filesystem::is_regular_file(gemma_checkpoint_path_),
                     "LTX Gemma4 checkpoint is missing; provide conditioning or "
                     "install the text encoder checkpoint");
@@ -1769,7 +1949,12 @@ public:
             gemma_encoder_.reset();
         }
 
-        std::string denoiser_key = std::to_string(request.width) + "x" +
+        const size_t mlx_cache_capacity = use_mlx ?
+            ltx_mlx_cache_capacity(request) : 48u;
+        const uint32_t mlx_convrot_group_size = use_mlx ?
+            ltx_mlx_convrot_group_size() : 64u;
+        std::string denoiser_key = std::string(use_mlx ? "cpp_mlx:" : "c_metal:") +
+            std::to_string(request.width) + "x" +
             std::to_string(request.height) + "x" +
             std::to_string(request.frames) + "@" +
             std::to_string(request.fps) + ":" + selected_identity + ":" +
@@ -1777,73 +1962,132 @@ public:
             (ane_config.identity.empty() ? "dense" : ane_config.identity) +
             ":residency=" + request.residency +
             ":memory_budget=" + std::to_string(request.memory_budget_bytes) +
+            ":mlx_cache=" + std::to_string(mlx_cache_capacity) +
+            ":convrot_group=" + std::to_string(mlx_convrot_group_size) +
             ":release_blocks=" +
             ((component_staged && (effective_execution != "gpu_ane" ||
                                    ane_config.release_blocks_final_step)) ?
-                "1" : "0");
+                "1" : "0") +
+            ":parallel_av=" + (gpu_parallel_av ? "1" : "0") +
+            ":batch_audio=" + (gpu_batch_audio ? "1" : "0") +
+            ":video_attention_batch=" +
+                (request.ltx_video_attention_batch ? "1" : "0") +
+            ":sol_stage1=" + (request.ltx_sol_stage1 ? "1" : "0") +
+            ":sol_stage2=" + (request.ltx_sol_stage2 ? "1" : "0") +
+            ":sol_tau=" + std::to_string(request.ltx_sol_tau) +
+            ":sol_edge_blocks=" +
+                std::to_string(request.ltx_sol_dense_edge_blocks) +
+            ":sol_edge_steps=" +
+                std::to_string(request.ltx_sol_dense_edge_steps);
         const bool release_blocks_final_step = component_staged &&
             (effective_execution != "gpu_ane" ||
              ane_config.release_blocks_final_step);
-        const bool denoiser_cache_hit = denoiser_ != nullptr &&
-            denoiser_key == denoiser_key_;
+        const bool denoiser_cache_hit = use_mlx ?
+            (mlx_denoiser_ != nullptr && denoiser_key == mlx_denoiser_key_) :
+            (denoiser_ != nullptr && denoiser_key == denoiser_key_);
         const auto model_load_started = Clock::now();
-        if (denoiser_key != denoiser_key_) {
+        if (!denoiser_cache_hit) {
             denoiser_.reset();
             denoiser_key_.clear();
+            mlx_denoiser_.reset();
+            mlx_denoiser_key_.clear();
             event("model_load", 0, 1);
-            ltx_native_options options{};
-            options.checkpoint = selected_checkpoint.c_str();
-            options.shader_source = shader_path_.c_str();
-            options.width = request.width;
-            options.height = request.height;
-            options.frames = request.frames;
-            options.fps = request.fps;
-            options.parallel_av = ane_config.parallel_av ? 1 : 0;
-            options.stream_blocks = streamed ? 1 : 0;
-            options.memory_budget_bytes = request.memory_budget_bytes;
-            options.preload_ane_stage2 = ane_config.preload_stage2 ? 1 : 0;
-            options.release_full_gpu_mlp =
-                ane_config.release_full_gpu_mlp ? 1 : 0;
-            options.detach_ane_stage1 = ane_config.detach_stage1 ? 1 : 0;
-            options.detach_ane_stage2 = ane_config.detach_stage2 ? 1 : 0;
-            options.release_blocks_final_step =
-                release_blocks_final_step ? 1 : 0;
-            options.ane_mlp_fused_residual =
-                ane_config.fused_mlp_residual ? 1 : 0;
-            options.ane_mlp_fused_adaln_pack =
-                ane_config.fused_mlp_adaln_pack ? 1 : 0;
-            options.ane_mlp_first_block = ane_config.mlp_block_start;
-            options.ane_mlp_block_count = ane_config.mlp_block_count;
-            options.ane_mlp_stage_mask = ane_config.mlp_stage_mask;
-            options.ane_kv_stage_mask = ane_config.kv_stage_mask;
-            options.mlp_directories[0] = ane_config.mlp_stage1.empty() ?
-                nullptr : ane_config.mlp_stage1.c_str();
-            options.mlp_directories[1] = ane_config.mlp_stage2.empty() ?
-                nullptr : ane_config.mlp_stage2.c_str();
-            options.v2a_directories[0] = ane_config.v2a_stage1.empty() ?
-                nullptr : ane_config.v2a_stage1.c_str();
-            options.v2a_directories[1] = ane_config.v2a_stage2.empty() ?
-                nullptr : ane_config.v2a_stage2.c_str();
-            options.kv_directory = ane_config.kv.empty() ?
-                nullptr : ane_config.kv.c_str();
-            options.qkv_directories[0] = ane_config.qkv_stage1.empty() ?
-                nullptr : ane_config.qkv_stage1.c_str();
-            options.qkv_directories[1] = ane_config.qkv_stage2.empty() ?
-                nullptr : ane_config.qkv_stage2.c_str();
             Progress progress{event, cancel, {}};
-            auto* created = ltx_native_create(&options, Progress::receive,
-                                              &progress, error, sizeof(error));
-            if (progress.failure) std::rethrow_exception(progress.failure);
-            denoiser_.reset(created);
-            require(denoiser_ != nullptr, error);
-            denoiser_key_ = denoiser_key;
+            if (use_mlx) {
+                ltx_mlx_options options{};
+                options.checkpoint = selected_checkpoint.c_str();
+                options.width = request.width;
+                options.height = request.height;
+                options.frames = request.frames;
+                options.fps = request.fps;
+                options.block_cache_capacity =
+                    static_cast<uint32_t>(mlx_cache_capacity);
+                options.convrot_group_size = mlx_convrot_group_size;
+                // Resident MLX keeps all 48 blocks alive, so the lazy graph
+                // can be evaluated once per Transformer step. Capacity-
+                // limited caches must still fence each block before eviction.
+                options.force_eval_each_block =
+                    mlx_cache_capacity < 48u ? 1 : 0;
+                // Match the current C/Metal runtime: base/prompt AdaLN consumes
+                // sigma*1000, while AV-cross AdaLN and gates consume sigma.
+                options.av_ca_timestep_scale_multiplier = 1.0f;
+                auto* created = ltx_mlx_create(
+                    &options, Progress::receive, &progress, error,
+                    sizeof(error));
+                if (progress.failure) std::rethrow_exception(progress.failure);
+                mlx_denoiser_.reset(created);
+                require(mlx_denoiser_ != nullptr, error);
+                mlx_denoiser_key_ = denoiser_key;
+            } else {
+                ltx_native_options options{};
+                options.checkpoint = selected_checkpoint.c_str();
+                options.shader_source = shader_path_.c_str();
+                options.width = request.width;
+                options.height = request.height;
+                options.frames = request.frames;
+                options.fps = request.fps;
+                options.parallel_av =
+                    (ane_config.parallel_av || gpu_parallel_av) ? 1 : 0;
+                options.video_attention_batch =
+                    request.ltx_video_attention_batch ? 1 : 0;
+                options.batch_audio_commands = gpu_batch_audio ? 1 : 0;
+                options.stream_blocks = streamed ? 1 : 0;
+                options.memory_budget_bytes = request.memory_budget_bytes;
+                options.preload_ane_stage2 = ane_config.preload_stage2 ? 1 : 0;
+                options.release_full_gpu_mlp =
+                    ane_config.release_full_gpu_mlp ? 1 : 0;
+                options.detach_ane_stage1 = ane_config.detach_stage1 ? 1 : 0;
+                options.detach_ane_stage2 = ane_config.detach_stage2 ? 1 : 0;
+                options.release_blocks_final_step =
+                    release_blocks_final_step ? 1 : 0;
+                options.ane_mlp_fused_residual =
+                    ane_config.fused_mlp_residual ? 1 : 0;
+                options.ane_mlp_fused_adaln_pack =
+                    ane_config.fused_mlp_adaln_pack ? 1 : 0;
+                options.sol_stage1 = request.ltx_sol_stage1 ? 1 : 0;
+                options.sol_stage2 = request.ltx_sol_stage2 ? 1 : 0;
+                options.sol_batch_commands = 0;
+                options.sol_dense_edge_blocks = static_cast<uint32_t>(
+                    request.ltx_sol_dense_edge_blocks);
+                options.sol_dense_edge_steps = static_cast<uint32_t>(
+                    request.ltx_sol_dense_edge_steps);
+                options.sol_tau = static_cast<float>(request.ltx_sol_tau);
+                options.ane_mlp_first_block = ane_config.mlp_block_start;
+                options.ane_mlp_block_count = ane_config.mlp_block_count;
+                options.ane_mlp_stage_mask = ane_config.mlp_stage_mask;
+                options.ane_kv_stage_mask = ane_config.kv_stage_mask;
+                options.ane_variant = ane_config.variant.c_str();
+                options.mlp_directories[0] = ane_config.mlp_stage1.empty() ?
+                    nullptr : ane_config.mlp_stage1.c_str();
+                options.mlp_directories[1] = ane_config.mlp_stage2.empty() ?
+                    nullptr : ane_config.mlp_stage2.c_str();
+                options.v2a_directories[0] = ane_config.v2a_stage1.empty() ?
+                    nullptr : ane_config.v2a_stage1.c_str();
+                options.v2a_directories[1] = ane_config.v2a_stage2.empty() ?
+                    nullptr : ane_config.v2a_stage2.c_str();
+                options.kv_directory = ane_config.kv.empty() ?
+                    nullptr : ane_config.kv.c_str();
+                options.qkv_directories[0] = ane_config.qkv_stage1.empty() ?
+                    nullptr : ane_config.qkv_stage1.c_str();
+                options.qkv_directories[1] = ane_config.qkv_stage2.empty() ?
+                    nullptr : ane_config.qkv_stage2.c_str();
+                auto* created = ltx_native_create(
+                    &options, Progress::receive, &progress, error,
+                    sizeof(error));
+                if (progress.failure) std::rethrow_exception(progress.failure);
+                denoiser_.reset(created);
+                require(denoiser_ != nullptr, error);
+                denoiser_key_ = denoiser_key;
+            }
             event("model_load", 1, 1);
         }
         const auto model_ready = Clock::now();
         ltx_native_streaming_info streaming_before{};
-        require(ltx_native_get_streaming_info(
-                    denoiser_.get(), &streaming_before),
-                "cannot inspect LTX block streaming state");
+        if (!use_mlx) {
+            require(ltx_native_get_streaming_info(
+                        denoiser_.get(), &streaming_before),
+                    "cannot inspect LTX block streaming state");
+        }
 
         size_t stage1_video_count = static_cast<size_t>(workload.stage1_video_tokens) *
             kLtxVideoChannels;
@@ -1865,13 +2109,23 @@ public:
             std::vector<uint16_t> connected_audio(
                 static_cast<size_t>(conditioning.rows) * kLtxAudioDim);
             std::vector<uint16_t> connected_mask(conditioning.rows);
-            require(ltx_native_connect_conditioning(
-                denoiser_.get(), connected_video.data(), connected_video.size(),
-                connected_audio.data(), connected_audio.size(),
-                connected_mask.data(), connected_mask.size(), conditioning.rows,
-                raw_video.data(), raw_video.size(), raw_audio.data(), raw_audio.size(),
-                raw_mask.data(), raw_mask.size(), conditioning.raw_rows,
-                error, sizeof(error)), error);
+            const bool connected = use_mlx ?
+                ltx_native_connect_conditioning_file(
+                    selected_checkpoint.c_str(), shader_path_.c_str(),
+                    connected_video.data(), connected_video.size(),
+                    connected_audio.data(), connected_audio.size(),
+                    connected_mask.data(), connected_mask.size(), conditioning.rows,
+                    raw_video.data(), raw_video.size(), raw_audio.data(), raw_audio.size(),
+                    raw_mask.data(), raw_mask.size(), conditioning.raw_rows,
+                    error, sizeof(error)) :
+                ltx_native_connect_conditioning(
+                    denoiser_.get(), connected_video.data(), connected_video.size(),
+                    connected_audio.data(), connected_audio.size(),
+                    connected_mask.data(), connected_mask.size(), conditioning.rows,
+                    raw_video.data(), raw_video.size(), raw_audio.data(), raw_audio.size(),
+                    raw_mask.data(), raw_mask.size(), conditioning.raw_rows,
+                    error, sizeof(error));
+            require(connected, error);
             conditioning.video.swap(connected_video);
             conditioning.audio.swap(connected_audio);
             conditioning.mask.swap(connected_mask);
@@ -1885,6 +2139,11 @@ public:
             "connected_cache" : (used_dynamic_gemma ? "dynamic_gemma" :
             (used_native_connector ? "native_connector" :
              "connected_artifact"));
+        const uint32_t stage2_text_rows = request.ltx_stage2_text_rows ?
+            static_cast<uint32_t>(request.ltx_stage2_text_rows) :
+            conditioning.rows;
+        require(stage2_text_rows <= conditioning.rows,
+                "LTX Stage-2 text rows exceed the connected conditioning rows");
         ltx_rng video_rng{}, audio_rng{};
         ltx_rng_seed(&video_rng, request.seed + 10000u, 0u);
         ltx_rng_seed(&audio_rng, request.seed + 2u, 0u);
@@ -1892,15 +2151,22 @@ public:
         ltx_rng_fill_normal_bf16(&audio_rng, audio.data(), audio.size());
         Progress progress{event, cancel, {}};
         const auto stage1_started = Clock::now();
-        bool stage1_ok = ltx_native_run(denoiser_.get(), 1, request.seed,
-                                video.data(), video.size(),
-                                audio.data(), audio.size(), conditioning.video.data(),
-                                conditioning.audio.data(), conditioning.mask.data(),
-                                conditioning.rows,
-                                stage1_clean_prefix.empty() ? nullptr :
-                                    stage1_clean_prefix.data(),
-                                first_frame_strength,
-                                Progress::receive, &progress, error, sizeof(error));
+        bool stage1_ok = use_mlx ?
+            ltx_mlx_run(mlx_denoiser_.get(), 1, request.seed,
+                        video.data(), video.size(), audio.data(), audio.size(),
+                        conditioning.video.data(), conditioning.audio.data(),
+                        conditioning.mask.data(), conditioning.rows,
+                        nullptr, 0.0f, Progress::receive, &progress,
+                        error, sizeof(error)) :
+            ltx_native_run(denoiser_.get(), 1, request.seed,
+                           video.data(), video.size(),
+                           audio.data(), audio.size(), conditioning.video.data(),
+                           conditioning.audio.data(), conditioning.mask.data(),
+                           conditioning.rows,
+                           stage1_clean_prefix.empty() ? nullptr :
+                               stage1_clean_prefix.data(),
+                           first_frame_strength,
+                           Progress::receive, &progress, error, sizeof(error));
         if (progress.failure) std::rethrow_exception(progress.failure);
         require(stage1_ok, error);
         dump_ltx_bf16(request.dump, "stage1_video", video.data(), video.size());
@@ -1909,23 +2175,38 @@ public:
         const auto stage1_finished = Clock::now();
         event("latent_upsample", 0, 1);
         std::vector<uint16_t> upsampled(stage2_video_count);
-        require(ltx_native_upsample_stage2(
-            denoiser_.get(), upsampler_path_.c_str(), video_vae_path_.c_str(),
-            upsampled.data(), upsampled.size(), video.data(), video.size(),
-            error, sizeof(error)), error);
+        if (use_mlx) {
+            require(ltx_mlx_upsample_stage2(
+                upsampled.data(), upsampled.size(), video.data(), video.size(),
+                upsampler_path_.c_str(), video_vae_path_.c_str(),
+                workload.latent_frames, workload.stage1_latent_height,
+                workload.stage1_latent_width, error, sizeof(error)), error);
+        } else {
+            require(ltx_native_upsample_stage2(
+                denoiser_.get(), upsampler_path_.c_str(), video_vae_path_.c_str(),
+                upsampled.data(), upsampled.size(), video.data(), video.size(),
+                error, sizeof(error)), error);
+        }
         event("latent_upsample", 1, 1);
         video.swap(upsampled);
         dump_ltx_bf16(request.dump, "stage2_input_video", video.data(), video.size());
         const auto upsample_finished = Clock::now();
-        bool stage2_ok = ltx_native_run(denoiser_.get(), 2, request.seed,
-                                video.data(), video.size(),
-                                audio.data(), audio.size(), conditioning.video.data(),
-                                conditioning.audio.data(), conditioning.mask.data(),
-                                conditioning.rows,
-                                stage2_clean_prefix.empty() ? nullptr :
-                                    stage2_clean_prefix.data(),
-                                first_frame_strength,
-                                Progress::receive, &progress, error, sizeof(error));
+        bool stage2_ok = use_mlx ?
+            ltx_mlx_run(mlx_denoiser_.get(), 2, request.seed,
+                        video.data(), video.size(), audio.data(), audio.size(),
+                        conditioning.video.data(), conditioning.audio.data(),
+                        conditioning.mask.data(), stage2_text_rows,
+                        nullptr, 0.0f, Progress::receive, &progress,
+                        error, sizeof(error)) :
+            ltx_native_run(denoiser_.get(), 2, request.seed,
+                           video.data(), video.size(),
+                           audio.data(), audio.size(), conditioning.video.data(),
+                           conditioning.audio.data(), conditioning.mask.data(),
+                           stage2_text_rows,
+                           stage2_clean_prefix.empty() ? nullptr :
+                               stage2_clean_prefix.data(),
+                           first_frame_strength,
+                           Progress::receive, &progress, error, sizeof(error));
         if (progress.failure) std::rethrow_exception(progress.failure);
         require(stage2_ok, error);
         dump_ltx_bf16(request.dump, "stage2_video", video.data(), video.size());
@@ -1933,16 +2214,24 @@ public:
         checkpoint(cancel);
         const auto stage2_finished = Clock::now();
         ltx_native_streaming_info streaming_after{};
-        require(ltx_native_get_streaming_info(
-                    denoiser_.get(), &streaming_after),
-                "cannot inspect LTX block streaming result");
+        ltx_mlx_info mlx_info{};
+        if (use_mlx) {
+            require(ltx_mlx_get_info(mlx_denoiser_.get(), &mlx_info),
+                    "cannot inspect LTX MLX block cache result");
+        } else {
+            require(ltx_native_get_streaming_info(
+                        denoiser_.get(), &streaming_after),
+                    "cannot inspect LTX block streaming result");
+        }
         if (component_staged) {
             denoiser_.reset();
             denoiser_key_.clear();
+            mlx_denoiser_.reset();
+            mlx_denoiser_key_.clear();
         }
         event("video_vae", 0, 1);
         const char* exec_value = std::getenv("TURBOCIDER_LTX_EXEC_FINALIZER");
-        const bool exec_finalizer = component_staged && !request.audio &&
+        const bool exec_finalizer = component_staged &&
             exec_value && std::strcmp(exec_value, "1") == 0;
         if (exec_finalizer) {
             /* Only a single-shot CLI or disposable service worker may set
@@ -1970,19 +2259,19 @@ public:
             ::setenv("TURBOCIDER_LTX_CONDITIONING_MODE",
                      conditioning_mode.c_str(), 1);
             exec_ltx_video_finalizer(
-                video_vae_finalizer_path_, video_vae_path_, video, workload,
-                request, effective_execution);
+                video_vae_finalizer_path_, video_vae_path_, video,
+                audio_checkpoint_path_, audio, workload, request,
+                effective_execution);
         }
         std::string video_vae_isolation;
         std::vector<uint16_t> pixels;
-        if (!request.audio &&
-            std::filesystem::is_regular_file(video_vae_helper_path_)) {
-            /* The old native runtime proved that a clean MLX process restores
-             * the Video VAE from roughly 14 seconds to roughly 2.8 seconds at
-             * the 13x14x22 latent shape.  For component-staged requests the
-             * Transformer is already released; for resident requests the
-             * clean child preserves the hot Transformer Session without
-             * mixing its MPSGraph allocator with the MLX decoder. */
+        if (std::filesystem::is_regular_file(video_vae_helper_path_)) {
+            /* This spawned-helper path isolates user-space MLX objects, but
+             * the Transformer parent remains alive.  Unified-memory pressure
+             * from the parent's Metal/MPSGraph allocations can therefore make
+             * it materially slower than a clean exec finalizer.  Keep it as a
+             * resident/embedding fallback, not as the component-staged
+             * performance path. */
             video_vae_.reset();
             ltx_mlx_video_vae_clear_cache();
             pixels = decode_ltx_video_isolated(
@@ -2013,6 +2302,14 @@ public:
                     workload.frames, workload.output_height,
                     workload.output_width, error, sizeof(error)), error);
         const auto rgb_finished = Clock::now();
+        if (request.audio && component_staged) {
+            /* Do not keep the 1.4 GiB Video VAE graph alive while the audio
+             * bundle is loaded.  This matters for 720p on 36/48 GiB Macs:
+             * decoded RGB is retained for export, but decoder weights and
+             * MLX allocator cache are no longer needed. */
+            video_vae_.reset();
+            ltx_mlx_video_vae_clear_cache();
+        }
         std::filesystem::path video_only = request.output;
         std::filesystem::path audio_wav;
         ScopeExit media_cleanup([&] {
@@ -2030,6 +2327,8 @@ public:
                           workload.fps);
         event("export", 1, 1);
         const auto video_export_finished = Clock::now();
+        auto audio_decode_finished = video_export_finished;
+        auto audio_mux_finished = video_export_finished;
         tc::AudioMediaInfo audio_info{};
         if (request.audio) {
             const uint32_t audio_tokens = workload.audio_tokens;
@@ -2077,6 +2376,7 @@ public:
                 waveform16.data(), waveform16.size(), 1,
                 static_cast<uint32_t>(waveform_samples), error, sizeof(error)), error);
             checkpoint(cancel);
+            audio_decode_finished = Clock::now();
             audio_wav = video_only;
             audio_wav += ".wav";
             audio_info = write_audio_pcm16_wav(
@@ -2087,6 +2387,7 @@ public:
                 video_only, request.output, waveform48.data(),
                 waveform48_elements / 2u, 48000, 2);
             event("audio_mux", 1, 1);
+            audio_mux_finished = Clock::now();
         }
         auto info = probe_video(request.output);
         require(info.frames == static_cast<int>(workload.frames),
@@ -2119,31 +2420,46 @@ public:
                   @"conditioning_mode": @(conditioning_mode.c_str()),
                   @"denoiser_cache_hit": @(denoiser_cache_hit),
                   @"block_streaming": @{
-                      @"enabled": @(streaming_after.enabled != 0),
-                      @"pinned_blocks": @(streaming_after.pinned_blocks),
-                      @"streamed_blocks": @(streaming_after.streamed_blocks),
-                      @"refill_slots": @(streaming_after.refill_slots),
-                      @"memory_budget_bytes": @(streaming_after.memory_budget_bytes),
-                      @"activation_reserve_bytes": @(
+                      @"enabled": @(use_mlx ?
+                          (mlx_info.block_cache_capacity < mlx_info.block_count) :
+                          (streaming_after.enabled != 0)),
+                      @"pinned_blocks": @(use_mlx ?
+                          mlx_info.pinned_block_count : streaming_after.pinned_blocks),
+                      @"streamed_blocks": @(use_mlx ?
+                          (mlx_info.block_count > mlx_info.pinned_block_count ?
+                              mlx_info.block_count - mlx_info.pinned_block_count : 0u) :
+                          streaming_after.streamed_blocks),
+                      @"refill_slots": @(use_mlx ? mlx_info.refill_slot_count :
+                          streaming_after.refill_slots),
+                      @"memory_budget_bytes": @(use_mlx ?
+                          request.memory_budget_bytes : streaming_after.memory_budget_bytes),
+                      @"activation_reserve_bytes": @(use_mlx ? 0ull :
                           streaming_after.activation_reserve_bytes),
-                      @"block_bytes": @(streaming_after.block_bytes),
-                      @"estimated_working_set_bytes": @(
+                      @"block_bytes": @(use_mlx ?
+                          (mlx_info.resident_bytes && mlx_info.block_cache_capacity ?
+                              mlx_info.resident_bytes / mlx_info.block_cache_capacity : 0ull) :
+                          streaming_after.block_bytes),
+                      @"estimated_working_set_bytes": @(use_mlx ?
+                          mlx_info.top_weight_bytes + mlx_info.peak_resident_bytes :
                           streaming_after.estimated_working_set_bytes),
-                      @"request_bytes_loaded": @(
-                          streaming_after.bytes_loaded -
-                          streaming_before.bytes_loaded),
-                      @"request_slot_allocations": @(
-                          streaming_after.slot_allocations -
-                          streaming_before.slot_allocations),
-                      @"request_slot_refills": @(
-                          streaming_after.slot_refills -
-                          streaming_before.slot_refills),
-                      @"request_load_seconds": @(
-                          streaming_after.load_seconds -
-                          streaming_before.load_seconds),
-                      @"request_wait_seconds": @(
-                          streaming_after.wait_seconds -
-                          streaming_before.wait_seconds),
+                      @"request_bytes_loaded": @(use_mlx ?
+                          mlx_info.cache_load_bytes :
+                          streaming_after.bytes_loaded - streaming_before.bytes_loaded),
+                      @"request_slot_allocations": @(use_mlx ?
+                          mlx_info.slot_allocations :
+                          streaming_after.slot_allocations - streaming_before.slot_allocations),
+                      @"request_slot_refills": @(use_mlx ?
+                          mlx_info.slot_refills :
+                          streaming_after.slot_refills - streaming_before.slot_refills),
+                      @"request_load_seconds": @(use_mlx ?
+                          mlx_info.cache_load_seconds :
+                          streaming_after.load_seconds - streaming_before.load_seconds),
+                      @"request_wait_seconds": @(use_mlx ? 0.0 :
+                          streaming_after.wait_seconds - streaming_before.wait_seconds),
+                      @"implementation": use_mlx ? @"cpp_mlx" : @"c_metal",
+                      @"cache_loads": @(use_mlx ? mlx_info.cache_loads : 0ull),
+                      @"cache_hits": @(use_mlx ? mlx_info.cache_hits : 0ull),
+                      @"cache_evictions": @(use_mlx ? mlx_info.cache_evictions : 0ull),
                   },
                   @"timings_seconds": @{
                       @"pre_model_load": @(
@@ -2173,9 +2489,20 @@ public:
                       @"video_export": @(
                           std::chrono::duration<double>(
                               video_export_finished - rgb_finished).count()),
+                      @"audio_decode": @(
+                          std::chrono::duration<double>(
+                              audio_decode_finished - video_export_finished).count()),
+                      @"audio_mux": @(
+                          std::chrono::duration<double>(
+                              audio_mux_finished - audio_decode_finished).count()),
                       @"request_wall": @(request_wall_seconds),
                   },
                   @"execution": @(effective_execution.c_str()),
+                  @"denoiser_implementation": use_mlx ? @"cpp_mlx" : @"c_metal",
+                  @"gpu_parallel_av": @(gpu_parallel_av),
+                  @"gpu_batch_audio_commands": @(gpu_batch_audio),
+                  @"gpu_video_attention_batch": @(
+                      request.ltx_video_attention_batch),
                   @"ane_profile": ane_config.identity.empty() ?
                       (id)[NSNull null] : @(ane_config.identity.c_str()),
                   @"video_vae_isolation": @(video_vae_isolation.c_str()),
@@ -2242,10 +2569,12 @@ private:
     std::filesystem::path video_vae_helper_path_;
     std::filesystem::path video_vae_finalizer_path_;
     std::string denoiser_key_;
+    std::string mlx_denoiser_key_;
     HashCache base_hash_cache_;
     HashCache lora_hash_cache_;
     HashCache output_hash_cache_;
     std::unique_ptr<ltx_native_denoiser, decltype(&ltx_native_free)> denoiser_{nullptr, ltx_native_free};
+    std::unique_ptr<ltx_mlx_denoiser, decltype(&ltx_mlx_free)> mlx_denoiser_{nullptr, ltx_mlx_free};
     std::unique_ptr<ltx_gemma_encoder, decltype(&ltx_gemma_encoder_free)> gemma_encoder_{nullptr, ltx_gemma_encoder_free};
     std::unique_ptr<ltx_mlx_video_vae, decltype(&ltx_mlx_video_vae_free)> video_vae_{nullptr, ltx_mlx_video_vae_free};
     std::unique_ptr<ltx_mlx_audio_vae, decltype(&ltx_mlx_audio_vae_free)> audio_vae_{nullptr, ltx_mlx_audio_vae_free};
@@ -2298,9 +2627,8 @@ NSDictionary* preflight_ltx_lora(const std::filesystem::path& root,
 
 NSDictionary* preflight_ltx_audio(const std::filesystem::path& root) {
     auto status = inspect_ltx_audio_assets(root);
-    NSArray* blockers = status.assets_verified ? @[
-        @"end_to_end_session_audio_parity",
-        @"public_executor_validation",
+    NSArray* blockers = status.executor_ready ? @[] : status.assets_verified ? @[
+        @"pinned_distribution_identity",
     ] : @[
         @"provenance_verified_audio_weights",
         @"end_to_end_session_audio_parity",
@@ -2314,8 +2642,8 @@ NSDictionary* preflight_ltx_audio(const std::filesystem::path& root) {
         @"assets_verified": @(status.assets_verified),
         @"native_runtime_available": @YES,
         @"native_audio_candidate": @(status.native_supported),
-        @"native_audio_supported": @NO,
-        @"executor_ready": @NO,
+        @"native_audio_supported": @(status.executor_ready),
+        @"executor_ready": @(status.executor_ready),
         @"artifact": status.artifact.empty() ?
             (id)[NSNull null] : @(status.artifact.c_str()),
         @"manifest": status.manifest.empty() ?
