@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 @main struct HubClientTests {
     static func main() async throws {
@@ -11,6 +12,15 @@ import Foundation
         try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
         try Data("local encoder".utf8).write(to: external.appendingPathComponent("config.json"))
         func check(_ condition: Bool, _ message: String) throws { if !condition { throw LibraryFailure(message: message) } }
+        func checkBlobLink(_ file: URL) throws {
+            let hash = try LibraryStore.sha256(file)
+            let blob = store.root.appendingPathComponent("blobs/\(hash)")
+            var snapshotInfo = stat(), blobInfo = stat()
+            try check(lstat(file.path, &snapshotInfo) == 0 && lstat(blob.path, &blobInfo) == 0,
+                      "Snapshot or content blob is missing")
+            try check((snapshotInfo.st_mode & S_IFMT) == S_IFREG && snapshotInfo.st_ino == blobInfo.st_ino && snapshotInfo.st_dev == blobInfo.st_dev,
+                      "Downloaded snapshot must contain regular hard links to its content blobs")
+        }
         let decoded = try JSONDecoder().decode(LibraryDownloadRequest.self, from: Data("{\"modelID\":\"fixture\",\"repository\":\"test/tiny\"}".utf8))
         try check(decoded.provider == .modelscope && decoded.include.isEmpty, "ModelScope is not the JSON default")
         for provider in HubProvider.allCases {
@@ -24,6 +34,8 @@ import Foundation
             let installed = try await downloader.install(request)
             let path = URL(fileURLWithPath: installed.path)
             try check(try String(contentsOf: path.appendingPathComponent("config.json"), encoding: .utf8) == "{\"fixture\":true}", "Config download changed bytes")
+            try checkBlobLink(path.appendingPathComponent("config.json"))
+            try checkBlobLink(path.appendingPathComponent("weights.bin"))
             try check(path.appendingPathComponent("text_encoder").resolvingSymlinksInPath().path == external.path, "External encoder was copied instead of linked")
             try check(installed.manifest != nil, "Installed snapshot has no provenance record")
         }
@@ -62,6 +74,24 @@ import Foundation
             _ = try await downloader.plan(conflict)
             throw LibraryFailure(message: "Source path conflict accepted")
         } catch let error as LibraryFailure { try check(error.message.contains("conflicting"), "Wrong source conflict error") }
+        let fluxRequest = LibraryDownloadRequest(modelID: "flux2-klein-4b", repository: "test/flux", provider: .huggingface)
+        let fluxInstall = try await downloader.install(fluxRequest)
+        let fluxRoot = URL(fileURLWithPath: fluxInstall.path)
+        let inspection = InstallationInspection.inspect(modelID: fluxRequest.modelID, root: fluxRoot)
+        try check(inspection.status == "files_present" && inspection.checkedWeightFiles == 3,
+                  "Downloaded FLUX layout rejected by installation inspection: \(inspection.issues.map(\.message))")
+        for component in ["transformer", "text_encoder", "vae"] {
+            try checkBlobLink(fluxRoot.appendingPathComponent("\(component)/model.safetensors"))
+        }
+        let cachedFlux = try await downloader.plan(fluxRequest)
+        try check(cachedFlux.downloadBytes == 0 && cachedFlux.cachedBytes > 0, "FLUX snapshot was not fully reusable")
+        let repeatedFlux = try await downloader.install(fluxRequest)
+        let repeatedRoot = URL(fileURLWithPath: repeatedFlux.path)
+        try check(InstallationInspection.inspect(modelID: fluxRequest.modelID, root: repeatedRoot).status == "files_present",
+                  "Cached FLUX installation rejected by inspection")
+        for component in ["transformer", "text_encoder", "vae"] {
+            try checkBlobLink(repeatedRoot.appendingPathComponent("\(component)/model.safetensors"))
+        }
         let delegate = HubTransferDelegate()
         let response = HTTPURLResponse(url: URL(string: "https://huggingface.co/file")!, statusCode: 302, httpVersion: nil, headerFields: nil)!
         var redirected = URLRequest(url: URL(string: "https://cdn.example/file")!)
@@ -72,6 +102,6 @@ import Foundation
             stripped = next != nil && next?.value(forHTTPHeaderField: "Authorization") == nil && next?.value(forHTTPHeaderField: "Cookie") == nil
         }
         try check(stripped, "Credentials leaked to the CDN redirect")
-        print("PASS: MS traversal, HF pinned pagination, shared-component skip, cross-provider dedup, multi-repository provenance/reuse/conflict, integrity errors, path rejection, cancellation, redirect credentials")
+        print("PASS: MS traversal, HF pinned pagination, shared-component skip, cross-provider hard-link dedup, FLUX download/install inspection and cached reuse, multi-repository provenance/reuse/conflict, integrity errors, path rejection, cancellation, redirect credentials")
     }
 }

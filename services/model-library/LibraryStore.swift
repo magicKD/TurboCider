@@ -241,9 +241,27 @@ struct LibraryStore: Sendable {
         return destination
     }
 
-    /// Link a validated blob or an explicitly selected compatible local component.
-    /// Reject ancestor symlinks, including collisions with an earlier component.
+    /// Downloaded snapshots must contain regular files: MLX skips file symlinks.
+    /// Blobs and staging share the library filesystem, so hard links retain deduplication.
+    static func linkBlob(_ source: URL, at relative: String, in staging: URL) throws {
+        let destination = try linkDestination(at: relative, in: staging)
+        var info = stat()
+        guard lstat(source.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              source.resolvingSymlinksInPath().path == source.standardizedFileURL.path else {
+            throw LibraryFailure(message: "Content-store blob must be a regular file without symlinks.")
+        }
+        try FileManager.default.linkItem(at: source, to: destination)
+    }
+
+    /// Explicitly selected compatible local components remain directory links.
     static func link(_ source: URL, at relative: String, in staging: URL) throws {
+        let destination = try linkDestination(at: relative, in: staging)
+        guard FileManager.default.fileExists(atPath: source.path) else { throw LibraryFailure(message: "Shared artifact no longer exists.") }
+        try FileManager.default.createSymbolicLink(at: destination, withDestinationURL: source.resolvingSymlinksInPath())
+    }
+
+    /// Reject ancestor symlinks, including collisions with an earlier component.
+    private static func linkDestination(at relative: String, in staging: URL) throws -> URL {
         try validateRelativePath(relative)
         let destination = staging.appendingPathComponent(relative)
         var ancestor = destination.deletingLastPathComponent()
@@ -254,7 +272,6 @@ struct LibraryStore: Sendable {
             ancestor.deleteLastPathComponent()
         }
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard FileManager.default.fileExists(atPath: source.path) else { throw LibraryFailure(message: "Shared artifact no longer exists.") }
-        try FileManager.default.createSymbolicLink(at: destination, withDestinationURL: source.resolvingSymlinksInPath())
+        return destination
     }
 }

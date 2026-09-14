@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import struct
 import tempfile
 import threading
 import time
@@ -16,6 +17,25 @@ SLOW = b'x' * 131072
 SUPPLEMENT = b'{"tokenizer_fixture":true}'
 REVISION = 'a' * 40
 COUNTS = {}
+
+
+def safetensors_fixture():
+    header = json.dumps({'weight': {'dtype': 'BF16', 'shape': [1], 'data_offsets': [0, 2]}}).encode()
+    header += b' ' * (-len(header) % 8)
+    return struct.pack('<Q', len(header)) + header + b'\0\0'
+
+
+FLUX_FILES = {
+    'tokenizer/tokenizer.json': json.dumps({'model': {'type': 'BPE'}}).encode(),
+    'transformer/config.json': json.dumps({'attention_head_dim': 128, 'in_channels': 128, 'num_attention_heads': 24,
+                                         'num_layers': 5, 'num_single_layers': 20, 'joint_attention_dim': 7680,
+                                         'guidance_embeds': False}).encode(),
+    'text_encoder/config.json': json.dumps({'hidden_size': 2560, 'num_hidden_layers': 36,
+                                          'num_attention_heads': 32, 'num_key_value_heads': 8}).encode(),
+    'vae/config.json': json.dumps({'latent_channels': 32}).encode(),
+    'transformer/model.safetensors.index.json': json.dumps({'weight_map': {'weight': 'model.safetensors'}}).encode(),
+    **{f'{component}/model.safetensors': safetensors_fixture() for component in ('transformer', 'text_encoder', 'vae')},
+}
 
 
 def sha(data):
@@ -47,6 +67,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({'sha': REVISION})
         if '/tree/' in path:
             repo = path.split('/')[4]
+            if repo == 'flux':
+                return self.reply([{'type': 'file', 'path': name, 'size': len(data), 'lfs': {'oid': sha(data)}}
+                                   for name, data in FLUX_FILES.items()])
             if repo == 'supplement':
                 return self.reply([{'type': 'file', 'path': 'extra/tokenizer.json', 'size': len(SUPPLEMENT), 'lfs': {'oid': sha(SUPPLEMENT)}}])
             if repo == 'unsafe':
@@ -77,6 +100,8 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
             return
+        if path.startswith('/test/flux/resolve/'):
+            return self.reply(FLUX_FILES[name])
         if name.startswith('text_encoder/'):
             raise AssertionError('Shared encoder must not be downloaded')
         if name == 'extra/tokenizer.json':
@@ -92,14 +117,16 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(CONFIG if name == 'config.json' else WEIGHTS)
 
 
-def main():
+def main(binary=ROOT / 'build/native/turbocider-hub-tests'):
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
     try:
         with tempfile.TemporaryDirectory(prefix='tc-hub-fixture-') as temporary:
-            subprocess.run([str(ROOT / 'build/native/turbocider-hub-tests'),
+            subprocess.run([str(binary),
                             f'http://127.0.0.1:{server.server_port}', temporary], check=True)
         assert COUNTS.get(f'/test/tiny/resolve/{REVISION}/weights.bin', 0) == 0, COUNTS
+        assert sum(COUNTS.get(f'/test/flux/resolve/{REVISION}/{component}/model.safetensors', 0)
+                   for component in ('transformer', 'text_encoder', 'vae')) == 1, COUNTS
         print('PASS: all network traffic stayed on the tiny fixture server; no full model downloaded')
     finally:
         server.shutdown(); server.server_close(); thread.join()

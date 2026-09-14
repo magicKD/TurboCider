@@ -204,6 +204,10 @@ Exporting partitions from weights is offline preparation with a separate
 toolchain. The production resource API compiles existing sources; it does not
 convert arbitrary networks or run Python exporters.
 
+See [local environment setup](ENVIRONMENT_SETUP.md) for the pinned export
+environment and [FLUX preparation](FLUX_PREPARATION.md) for an end-to-end example
+of exporting, compiling and registering FLUX.2 Klein 4B partitions.
+
 Save a compilation request as `coreml-request.json`:
 
 ```json
