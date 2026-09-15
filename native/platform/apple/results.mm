@@ -42,6 +42,57 @@ static NSString *gpu_graph_label(const RunResult &result) {
         return @"native_quantized_blocks";
     return gpu_graph_label(result.request);
 }
+static bool h3_qwen3_vl_encoder(const Request &request) {
+    return request.model == "minimax-h3-vdn" ||
+           request.model.starts_with("minimax-h3-fasth3-mlx-int6");
+}
+static bool ltx_gemma4_encoder(const Request &request) {
+    return request.model == "ltx-2.5-distilled";
+}
+static NSString *encoder_backend_label(const Request &request, bool hybrid) {
+    if (ltx_gemma4_encoder(request))
+        return hybrid ? @"metal_mps+coreml" : @"metal_mps";
+    return hybrid ? @"mlx_cpp_metal+coreml" : @"mlx_cpp_metal";
+}
+static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
+    if (ltx_gemma4_encoder(request))
+        return hybrid ? @"gemma4_encoder_mlp_complement"
+                      : @"gemma4_gpu_only";
+    if (h3_qwen3_vl_encoder(request))
+        return hybrid ? @"qwen3_vl_encoder_mlp_complement"
+                      : @"qwen3_vl_gpu_only";
+    return hybrid ? @"qwen3_encoder_mlp_complement" : @"qwen3_gpu_only";
+}
+static NSString *encoder_weight_validation_label(const Request &request,
+                                                  bool hybrid,
+                                                  bool executed) {
+    if (ltx_gemma4_encoder(request)) {
+        if (hybrid)
+            return executed
+                ? @"Gemma4 checkpoint and Core ML bank verified at execution"
+                : @"Gemma4 checkpoint and Core ML bank must be verified at execution";
+        return @"native Gemma4 checkpoint loaded directly";
+    }
+    if (h3_qwen3_vl_encoder(request)) {
+        if (hybrid)
+            return executed
+                ? @"Qwen3-VL shard set and Core ML manifest verified at execution"
+                : @"Qwen3-VL shard set and Core ML manifest must be verified at execution";
+        return @"native Qwen3-VL shard set loaded directly";
+    }
+    if (hybrid)
+        return executed
+            ? @"Qwen3 checkpoint and Core ML manifest verified at execution"
+            : @"Qwen3 checkpoint and Core ML manifest must be verified at execution";
+    return @"native Qwen3 checkpoint loaded directly";
+}
+static NSString *encoder_approximation_label(const Request &request) {
+    if (ltx_gemma4_encoder(request))
+        return @"gemma4_encoder_mlp_int8_per_channel";
+    return h3_qwen3_vl_encoder(request)
+        ? @"qwen3_vl_encoder_mlp_int8_per_channel"
+        : @"qwen3_encoder_mlp_int8_per_channel";
+}
 static NSArray *strings(const std::vector<std::string> &values) {
     NSMutableArray *array = [NSMutableArray array];
     for (auto &value : values)
@@ -71,6 +122,12 @@ NSDictionary *to_dictionary(const ModelDescriptor &d) {
     result[@"supports_lora"] = @(d.supports_lora);
     result[@"runtime_lora"] = @(d.runtime_lora);
     result[@"supports_gpu_ane"] = @(d.supports_gpu_ane);
+    result[@"default_execution"] = @"gpu";
+    result[@"gpu_ane_policy"] = d.supports_gpu_ane
+        ? @"optional_manifest_gated" : @"unsupported";
+    result[@"supports_encoder_gpu_ane"] = @(d.supports_encoder_gpu_ane);
+    result[@"encoder_gpu_ane_policy"] = d.supports_encoder_gpu_ane
+        ? @"optional_explicit_manifest" : @"unsupported";
     result[@"native_gemma4_candidate"] = @(d.native_gemma4_candidate);
     result[@"native_conditioning_connector"] = @(d.native_conditioning_connector);
     result[@"native_i2v_clean_prefix"] = @(d.native_i2v_clean_prefix);
@@ -103,6 +160,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     auto &r = plan.request;
     auto &recipe = plan.recipe;
     bool hybrid = r.execution == "gpu_ane";
+    bool encoder_hybrid = !r.encoder_ane_manifest.empty();
     const auto lora_strategy = effective_lora_strategy(r);
     auto validation = r.model == "z-image-turbo-gguf" ? @"native_gguf_candidate" :
                       r.model.starts_with("flux2-klein-") ? @"native_candidate" :
@@ -180,6 +238,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     else if (hybrid)
         [algorithm_approximations addObject:
             @"single_block_mlp_int8_per_channel"];
+    if (encoder_hybrid)
+        [algorithm_approximations addObject:encoder_approximation_label(r)];
     if (r.model == "ltx-2.5-distilled") {
         if (r.ltx_sol_stage1)
             [algorithm_approximations addObject:@"ltx_sol_stage1"];
@@ -197,6 +257,13 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"validation" : validation,
         @"backend" : backend,
         @"execution" : hybrid ? @"gpu_ane_experimental" : @"gpu",
+        @"encoder_execution" : encoder_hybrid ? @"gpu_ane_experimental" : @"gpu",
+        @"encoder_backend" : encoder_backend_label(r, encoder_hybrid),
+        @"encoder_gpu_graph" : encoder_gpu_graph_label(r, encoder_hybrid),
+        @"encoder_precision" : encoder_hybrid ? @"bf16_gpu+int8_mlp_fp16_io"
+                                                : @"bf16",
+        @"encoder_weight_validation" :
+            encoder_weight_validation_label(r, encoder_hybrid, false),
         @"gpu_graph" : gpu_graph_label(r),
         @"precision" : r.model == "minimax-h3-vdn" ? @"int6_g64_base+bf16_vdn+fp32_solve" :
                       r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"int6_g64_bf16_activation" :
@@ -273,7 +340,17 @@ static NSDictionary *runtime_plan(const RunResult &result) {
         plan[@"precision"] = @(result.precision.c_str());
     plan[@"gpu_graph"] = gpu_graph_label(result);
     const bool hybrid = result.request.execution == "gpu_ane";
+    const bool encoder_hybrid = result.encoder_hybrid.has_value();
     plan[@"execution"] = hybrid ? @"gpu_ane_experimental" : @"gpu";
+    plan[@"encoder_execution"] = encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
+    plan[@"encoder_backend"] = encoder_backend_label(
+        result.request, encoder_hybrid);
+    plan[@"encoder_gpu_graph"] =
+        encoder_gpu_graph_label(result.request, encoder_hybrid);
+    plan[@"encoder_precision"] = encoder_hybrid ? @"bf16_gpu+int8_mlp_fp16_io"
+                                                  : @"bf16";
+    plan[@"encoder_weight_validation"] = encoder_weight_validation_label(
+        result.request, encoder_hybrid, true);
     if (result.request.model == "z-image-turbo-gguf") {
         plan[@"validation"] = hybrid ? @"checkpoint_bound_native_gguf_hybrid_candidate"
                                      : @"native_mlx_gguf_candidate";
@@ -287,10 +364,13 @@ static NSDictionary *runtime_plan(const RunResult &result) {
                 ? @"inference_time_low_rank"
                 : @"in_memory_delta";
         }
-        plan[@"algorithm_approximations"] = hybrid
-            ? @[ @"checkpoint_defined_gguf_weight_quantization",
-                 @"single_block_mlp_int8_per_channel" ]
-            : @[ @"checkpoint_defined_gguf_weight_quantization" ];
+        NSMutableArray *approximations = [NSMutableArray arrayWithObject:
+            @"checkpoint_defined_gguf_weight_quantization"];
+        if (hybrid)
+            [approximations addObject:@"single_block_mlp_int8_per_channel"];
+        if (encoder_hybrid)
+            [approximations addObject:encoder_approximation_label(result.request)];
+        plan[@"algorithm_approximations"] = approximations;
     }
     return plan;
 }
@@ -321,17 +401,35 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @(m.first_runtime_prediction_calls),
         @"subsequent_runtime_prediction_calls_session_total" :
             @(m.subsequent_runtime_prediction_calls),
+        @"runtime_failures_session_total" : @(m.runtime_failures),
+        @"runtime_failed" : @(m.runtime_failed),
+        @"runtime_failure_block" : @(m.runtime_failure_block),
         @"bucket" : @(m.bucket),
+        @"minimum_profitable_rows" : @(m.minimum_profitable_rows),
         @"hidden" : @(m.hidden),
         @"block_count" : @(m.block_count),
         @"mlp_width" : @(m.mlp_width),
         @"ane_mlp_range" : @[ @(m.ane_mlp_start), @(m.ane_mlp_end) ],
         @"output_scale" : @(m.output_scale),
+        @"qualified_flexible_backing" : @(m.qualified_flexible_backing),
         @"compute_units" : @"cpuAndNeuralEngine",
         @"observed_ane_residency" : @"unknown",
         @"output_copy_bytes_session_total" : @(m.copied_bytes),
         @"checkpoint_sha256_verified" : @(m.checkpoint_sha_verified),
         @"lora_identity_verified" : @(m.lora_identity_verified),
+        @"quality_validation_enabled" : @(m.quality_validation_calls > 0),
+        @"quality_validation_calls_session_total" : @(m.quality_validation_calls),
+        @"quality_max_relative_l2_session" : @(m.quality_max_relative_l2),
+        @"quality_min_cosine_session" : @(m.quality_min_cosine),
+        @"quality_max_abs_session" : @(m.quality_max_abs),
+        @"quality_max_relative_abs_session" : @(m.quality_max_relative_abs),
+        @"quality_validation_passed" : @(m.quality_validation_passed),
+        @"prefill_actual_tokens" : @(m.prefill_actual_tokens),
+        @"prefill_selected_bucket" : @(m.prefill_selected_bucket),
+        @"prefill_compute_tokens" : @(m.prefill_compute_tokens),
+        @"prefill_padding_tokens" : @(m.prefill_padding_tokens),
+        @"prefill_fixed_shape" : @(m.prefill_fixed_shape),
+        @"prefill_plan_reason" : @(m.prefill_plan_reason.c_str()),
         @"provenance" : m.checkpoint_sha_verified
             ? @"local checkpoint path, size and SHA-256 verified"
             : @"local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
@@ -395,10 +493,30 @@ NSDictionary *to_dictionary(const RunResult &result) {
             copy[@"lora_strategy"] = @(effective_lora_strategy(result.request).c_str());
         if (result.block_residency)
             copy[@"block_residency"] = to_dictionary(*result.block_residency);
+        if (result.encoder_hybrid) {
+            copy[@"encoder_execution"] = @"gpu_ane_experimental";
+            copy[@"encoder_runtime_backend"] = encoder_backend_label(
+                result.request, true);
+            copy[@"encoder_gpu_graph"] =
+                encoder_gpu_graph_label(result.request, true);
+            copy[@"encoder_runtime_precision"] = @"bf16_gpu+int8_mlp_fp16_io";
+            copy[@"encoder_hybrid"] = to_dictionary(*result.encoder_hybrid);
+            copy[@"plan"] = runtime_plan(result);
+        }
         return copy;
     }
     const auto &r = result.request;
     auto hybrid = result.hybrid ? to_dictionary(*result.hybrid) : @{};
+    auto encoder_hybrid = result.encoder_hybrid
+                              ? to_dictionary(*result.encoder_hybrid)
+                              : @{};
+    auto encoder_execution = result.encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
+    auto encoder_backend = encoder_backend_label(
+        r, result.encoder_hybrid.has_value());
+    auto encoder_gpu_graph =
+        encoder_gpu_graph_label(r, result.encoder_hybrid.has_value());
+    auto encoder_precision = result.encoder_hybrid ? @"bf16_gpu+int8_mlp_fp16_io"
+                                                    : @"bf16";
     if (result.prepared)
         return @{
             @"acceleration_selection" : @(result.selection.c_str()),
@@ -411,6 +529,10 @@ NSDictionary *to_dictionary(const RunResult &result) {
                                                          : @(result.backend.c_str()),
             @"runtime_precision" : result.precision.empty() ? [NSNull null]
                                                              : @(result.precision.c_str()),
+            @"encoder_execution" : encoder_execution,
+            @"encoder_runtime_backend" : encoder_backend,
+            @"encoder_gpu_graph" : encoder_gpu_graph,
+            @"encoder_runtime_precision" : encoder_precision,
             @"checkpoint" : result.checkpoint.empty() ? [NSNull null]
                                                        : @(result.checkpoint.c_str()),
             @"plan" : runtime_plan(result),
@@ -418,7 +540,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"total_tokens" : @(result.total_tokens),
             @"seconds" : @(result.timings.wall),
             @"mlx_active_bytes" : @(result.active_bytes),
-            @"hybrid" : hybrid
+            @"hybrid" : hybrid,
+            @"encoder_hybrid" : encoder_hybrid
         };
     NSDictionary *memory = @{
               @"mlx_peak_bytes" : @(result.peak_bytes),
@@ -443,6 +566,10 @@ NSDictionary *to_dictionary(const RunResult &result) {
                                                      : @(result.backend.c_str()),
         @"runtime_precision" : result.precision.empty() ? [NSNull null]
                                                          : @(result.precision.c_str()),
+        @"encoder_execution" : encoder_execution,
+        @"encoder_runtime_backend" : encoder_backend,
+        @"encoder_gpu_graph" : encoder_gpu_graph,
+        @"encoder_runtime_precision" : encoder_precision,
         @"checkpoint" : result.checkpoint.empty() ? [NSNull null]
                                                    : @(result.checkpoint.c_str()),
         @"actual_denoise_steps" : @(result.actual_steps),
@@ -460,6 +587,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
         },
         @"memory" : memory,
         @"hybrid" : hybrid,
+        @"encoder_hybrid" : encoder_hybrid,
         @"validation" : @"candidate; consult recorded parity suite"
     } mutableCopy];
     if (!r.loras.empty() && result.lora_applied_projections)

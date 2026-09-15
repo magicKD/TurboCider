@@ -7,6 +7,11 @@ if [[ -z "${DEVELOPER_DIR:-}" ]]; then
  fi
 fi
 source tools/native/dependencies.sh
+EXPERIMENTAL_PROBES="${TURBOCIDER_BUILD_EXPERIMENTAL_PROBES:-0}"
+case "$EXPERIMENTAL_PROBES" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_BUILD_EXPERIMENTAL_PROBES must be 0 or 1\n' >&2; exit 2 ;;
+esac
 OUT="$PWD/build/native"
 mkdir -p "$OUT" "$OUT/module-cache"
 export CLANG_MODULE_CACHE_PATH="$OUT/module-cache"
@@ -85,7 +90,7 @@ for src in ltx ltx_conditioning ltx_connector ltx_transformer_io ltx_latent_stat
  "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -DLTX_ENABLE_ANE_MLP -DLTX_ENABLE_ANE_V2A -DLTX_ENABLE_ANE_KV -DLTX_ENABLE_ANE_QKV -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c "$LTX_ROOT/$src.c" -o "$LTX_OUT/$src.o"
  LTX_OBJECTS+=("$LTX_OUT/$src.o")
 done
-for src in ltx_safetensors ltx_weights ltx_gpu ltx_gemma_tokenizer ltx_gemma_encoder ltx_upsampler ltx_video_vae ltx_ane_mlp ltx_ane_v2a ltx_ane_kv ltx_ane_qkv; do
+for src in ltx_safetensors ltx_weights ltx_gpu ltx_gemma_tokenizer ltx_gemma_encoder ltx_gemma_ane_mlp ltx_upsampler ltx_video_vae ltx_ane_mlp ltx_ane_v2a ltx_ane_kv ltx_ane_qkv; do
  "$CC" -std=c11 -O3 -fobjc-arc -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c "$LTX_ROOT/$src.m" -o "$LTX_OUT/$src.o"
  LTX_OBJECTS+=("$LTX_OUT/$src.o")
 done
@@ -96,7 +101,13 @@ done
 "$TOOLCHAIN/ar" rcs "$LTX_OUT/libltx-runtime.a" "${LTX_OBJECTS[@]}"
 install -m 0644 "$LTX_ROOT/ltx_shaders.metal" "$OUT/ltx_shaders.metal"
 "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_gemma_encode.c -o "$LTX_OUT/ltx_gemma_encode_tool.o"
-"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_gemma_encode_tool.o" "$LTX_OUT/libltx-runtime.a" -o "$OUT/ltx-gemma-encode" -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph
+"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_gemma_encode_tool.o" "$LTX_OUT/libltx-runtime.a" -o "$OUT/ltx-gemma-encode" -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML
+if [[ "$EXPERIMENTAL_PROBES" == "1" ]]; then
+ "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_gemma_mlp_probe.c -o "$LTX_OUT/ltx_gemma_mlp_probe_tool.o"
+ "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_gemma_mlp_probe_tool.o" "$LTX_OUT/libltx-runtime.a" -o "$OUT/ltx-gemma-mlp-probe" -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML
+ "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_gemma_ane_mlp_probe.c -o "$LTX_OUT/ltx_gemma_ane_mlp_probe_tool.o"
+ "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_gemma_ane_mlp_probe_tool.o" "$LTX_OUT/libltx-runtime.a" -o "$OUT/ltx-gemma-ane-mlp-probe" -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML
+fi
 "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_audio_vae_decode.c -o "$LTX_OUT/ltx_audio_vae_decode_tool.o"
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_audio_vae_decode_tool.o" "$LTX_OUT/libltx-runtime.a" -o "$OUT/ltx-audio-vae-decode" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,"$MLX_ROOT/lib"
 "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_vocoder_decode.c -o "$LTX_OUT/ltx_vocoder_decode_tool.o"
@@ -118,6 +129,10 @@ install -m 0644 "$LTX_ROOT/ltx_shaders.metal" "$OUT/ltx_shaders.metal"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tensor_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-tensor-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tokenizer_probe.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/h3-mlx-tokenizer-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_conditioner_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-conditioner-probe"
+if [[ "$EXPERIMENTAL_PROBES" == "1" ]]; then
+ "$CXX" "${COMMON[@]}" tools/native/h3_mlx_encoder_benchmark_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-encoder-benchmark-probe"
+ "$CXX" "${COMMON[@]}" tools/native/h3_mlx_mlp_hybrid_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-mlp-hybrid-probe"
+fi
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_prompt_cache_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-prompt-cache-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_pipeline_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-pipeline-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_vsa_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-vsa-probe"

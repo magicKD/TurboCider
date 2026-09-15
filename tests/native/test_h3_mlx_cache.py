@@ -32,6 +32,12 @@ class H3MLXCacheContractTests(unittest.TestCase):
                 self.assertNotIn("#import <Foundation", text)
                 self.assertNotIn("objc/", text)
 
+    def test_hybrid_requests_bypass_gpu_only_prompt_cache(self):
+        session = (ROOT / "native/platform/apple/h3_mlx_session.mm").read_text()
+        self.assertIn("request.encoder_ane_manifest.empty()", session)
+        self.assertIn("conditioner_->encode_prompt(request.prompt", session)
+        self.assertIn("conditioner_->encode_prompt_cached", session)
+
 
 if __name__ == "__main__":
     unittest.main()

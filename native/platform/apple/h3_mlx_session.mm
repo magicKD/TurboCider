@@ -1,5 +1,6 @@
 #include "bridge.hpp"
 
+#include "../../backends/coreml.hpp"
 #include "../../media/audio.hpp"
 #include "../../media/video.hpp"
 #include "../../models/h3_mlx/audio_vae.hpp"
@@ -167,6 +168,17 @@ class H3MLXSession final : public ModelSession {
     std::unique_ptr<Conditioner> conditioner_;
     Pipeline pipeline_;
 
+    void select_conditioner(const Request &request) {
+        const auto manifest = request.encoder_ane_manifest.empty()
+            ? std::filesystem::path{}
+            : std::filesystem::absolute(request.encoder_ane_manifest)
+                  .lexically_normal();
+        if (!conditioner_ || conditioner_->hybrid_manifest() != manifest ||
+            conditioner_->hybrid_warmup_iterations() != request.warmup_iterations)
+            conditioner_ = std::make_unique<Conditioner>(
+                text_encoder_, tokenizer_, manifest, request.warmup_iterations);
+    }
+
     void resolve_components(bool vsa) {
         if (vdn_) {
             if (!text_encoder_.empty()) return;
@@ -213,7 +225,6 @@ class H3MLXSession final : public ModelSession {
             require(!checkpoint_root_.empty(),
                     "VDN H3 INT6 checkpoint is missing; expected VDN-H3-MLX/int6");
             resolved_vsa_ = false;
-            conditioner_ = std::make_unique<Conditioner>(text_encoder_, tokenizer_);
             return;
         }
         if (!text_encoder_.empty() && resolved_vsa_ == vsa) return;
@@ -226,7 +237,6 @@ class H3MLXSession final : public ModelSession {
         audio_vae_root_ = component_path(root_, "audio_vae");
         checkpoint_root_ = checkpoint_path(root_, vsa);
         resolved_vsa_ = vsa;
-        conditioner_ = std::make_unique<Conditioner>(text_encoder_, tokenizer_);
     }
 
   public:
@@ -265,19 +275,30 @@ class H3MLXSession final : public ModelSession {
                 "FastH3 MLX output must be .mp4");
         checkpoint(cancelled);
         resolve_components(use_vsa);
+        select_conditioner(request);
 
         const auto cache_root = prompt_cache_root(root_);
-        const auto cache_identity = h3_mlx::prompt_cache_identity(
-            text_encoder_, tokenizer_, request.prompt);
-        const bool cache_hit =
-            std::filesystem::is_regular_file(cache_root / (cache_identity + ".safetensors")) &&
-            std::filesystem::is_regular_file(cache_root / (cache_identity + ".json"));
+        // The experimental hybrid output is manifest-specific.  Keep it out
+        // of the exact GPU prompt cache until the cache metadata can bind the
+        // full Core ML artifact identity and quality policy.
+        bool cache_hit = false;
+        if (request.encoder_ane_manifest.empty()) {
+            const auto cache_identity = h3_mlx::prompt_cache_identity(
+                text_encoder_, tokenizer_, request.prompt);
+            cache_hit =
+                std::filesystem::is_regular_file(
+                    cache_root / (cache_identity + ".safetensors")) &&
+                std::filesystem::is_regular_file(
+                    cache_root / (cache_identity + ".json"));
+        }
 
         const auto request_started = Clock::now();
         mx::reset_peak_memory();
         const auto condition_started = Clock::now();
-        auto conditioning = conditioner_->encode_prompt_cached(
-            request.prompt, cache_root, event, cancelled);
+        auto conditioning = request.encoder_ane_manifest.empty()
+            ? conditioner_->encode_prompt_cached(
+                  request.prompt, cache_root, event, cancelled)
+            : conditioner_->encode_prompt(request.prompt, event, cancelled);
         const double condition_seconds = seconds_since(condition_started);
         const uint64_t condition_peak_bytes = mx::get_peak_memory();
         checkpoint(cancelled);
@@ -483,6 +504,8 @@ class H3MLXSession final : public ModelSession {
         result.checkpoint = checkpoint_root_.string();
         result.prompt_cache_hit = cache_hit;
         result.actual_steps = request.steps;
+        if (conditioner_->hybrid_session())
+            result.encoder_hybrid = conditioner_->hybrid_session()->metrics();
         return result;
     }
 };

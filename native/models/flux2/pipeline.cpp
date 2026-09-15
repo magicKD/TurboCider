@@ -1,5 +1,6 @@
 #include "../../runtime/acceleration.hpp"
 #include "flux.hpp"
+#include "../../components/text/qwen3.hpp"
 #include "../../platform/apple/platform.hpp"
 #include "../../runtime/residency.hpp"
 #include "../../media/image.hpp"
@@ -52,7 +53,8 @@ void Flux::select_loras(const Request &request) {
     if (identity == cached_lora_identity_) return;
     cached_lora_identity_ = std::move(identity);
     active_loras_ = std::move(normalized);
-    hybrid_.reset(); cached_conditioning_.reset(); cached_prompt_.clear();
+    hybrid_.reset(); encoder_hybrid_.reset(); cached_conditioning_.reset(); cached_prompt_.clear();
+    cached_encoder_manifest_.clear();
     hybrid_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
     transformer_.clear(); vae_.clear(); mx::clear_cache();
@@ -76,17 +78,20 @@ LoadResult Flux::load(const Event &event, std::atomic<bool> &cancelled) {
 }
 void Flux::unload() {
     hybrid_.reset();
+    encoder_hybrid_.reset();
     hybrid_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
     cached_conditioning_.reset();
     cached_prompt_.clear();
+    cached_encoder_manifest_.clear();
     transformer_.clear();
     vae_.clear();
 }
 bool Flux::conditioning(const Request &r, const Tokens &tokens, const Event &event,
                         std::atomic<bool> &cancelled) {
     bool hit = cached_conditioning_.has_value() && cached_prompt_ == r.prompt &&
-               cached_dynamic_ == r.dynamic_text;
+               cached_dynamic_ == r.dynamic_text &&
+               cached_encoder_manifest_ == r.encoder_ane_manifest;
     if (hit) {
         event("text_cache_hit", 1, 1);
         return true;
@@ -102,11 +107,35 @@ bool Flux::conditioning(const Request &r, const Tokens &tokens, const Event &eve
     }
     cached_conditioning_.reset();
     mx::clear_cache();
-    auto encoded = encode(tokens, event, cancelled);
+    if (!r.encoder_ane_manifest.empty()) {
+        const auto prefill = components::qwen3_prefill_plan(
+            r.encoder_ane_manifest, int(tokens.ids.size()));
+        for (const auto &lora : active_loras_)
+            require(lora.role != "text_encoder",
+                    "Qwen3 encoder hybrid does not yet support text-encoder LoRA");
+        if (prefill.use_hybrid) {
+            if (!encoder_hybrid_ || encoder_hybrid_->manifest != r.encoder_ane_manifest)
+                encoder_hybrid_ = std::make_unique<HybridSession>(
+                    r.encoder_ane_manifest, root_ / "text_encoder",
+                    int(tokens.ids.size()), event, cancelled, r.warmup_iterations,
+                    components::qwen3_checkpoint_path(root_ / "text_encoder"),
+                    std::vector<LoRAAsset>{}, 0, 27, true);
+            encoder_hybrid_->set_tokens(int(tokens.ids.size()));
+            require(encoder_hybrid_->rows == prefill.compute_tokens,
+                    "Qwen3 encoder manifest bucket changed during prefill setup");
+        } else {
+            encoder_hybrid_.reset();
+            event("qwen3_encoder_gpu_" + prefill.reason, 1, 1);
+        }
+    } else {
+        encoder_hybrid_.reset();
+    }
+    auto encoded = encode(tokens, event, cancelled, encoder_hybrid_.get());
     checkpoint(cancelled);
     cached_conditioning_ = encoded;
     cached_prompt_ = r.prompt;
     cached_dynamic_ = r.dynamic_text;
+    cached_encoder_manifest_ = r.encoder_ane_manifest;
     mx::clear_cache();
     return false;
 }
@@ -227,6 +256,8 @@ RunResult Flux::prepare(const Request &requested, bool warmup, const Event &even
     result.active_bytes = mx::get_active_memory();
     if (hybrid_)
         result.hybrid = hybrid_->metrics();
+    if (encoder_hybrid_)
+        result.encoder_hybrid = encoder_hybrid_->metrics();
     return result;
 }
 RunResult Flux::generate(const Request &r, const Event &event, std::atomic<bool> &cancelled) {
@@ -387,6 +418,8 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     result.peak_bytes = mx::get_peak_memory();
     result.active_bytes = mx::get_active_memory();
     result.hybrid = hybrid_metrics;
+    if (encoder_hybrid_)
+        result.encoder_hybrid = encoder_hybrid_->metrics();
     return result;
 }
 } // namespace tc

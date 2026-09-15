@@ -24,9 +24,24 @@ struct HybridMetrics {
     uint64_t warmup_calls = 0, runtime_calls = 0;
     uint64_t first_runtime_prediction_calls = 0;
     uint64_t subsequent_runtime_prediction_calls = 0;
+    uint64_t runtime_failures = 0;
+    bool runtime_failed = false;
+    int runtime_failure_block = -1;
+    uint64_t quality_validation_calls = 0;
+    double quality_max_relative_l2 = 0;
+    double quality_min_cosine = 1;
+    double quality_max_abs = 0;
+    double quality_max_relative_abs = 0;
+    bool quality_validation_passed = true;
+    int prefill_actual_tokens = 0, prefill_selected_bucket = 0,
+        prefill_compute_tokens = 0, prefill_padding_tokens = 0;
+    bool prefill_fixed_shape = false;
+    std::string prefill_plan_reason;
     int bucket = 0, hidden = 0, block_count = 0;
+    int minimum_profitable_rows = 0;
     int mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;
     float output_scale = 1.f;
+    bool qualified_flexible_backing = false;
     bool checkpoint_sha_verified = false;
     bool lora_identity_verified = false;
 };
@@ -57,6 +72,7 @@ struct RunResult {
     Timings timings;
     uint64_t active_bytes = 0, peak_bytes = 0;
     std::optional<HybridMetrics> hybrid;
+    std::optional<HybridMetrics> encoder_hybrid;
     std::optional<BlockResidencyMetrics> block_residency;
     std::string native_json;
 };
@@ -86,6 +102,7 @@ struct ModelDescriptor {
     std::string default_residency = "resident";
     bool weight_validation_pending = false;
     bool supports_lora = false, runtime_lora = false, supports_gpu_ane = false;
+    bool supports_encoder_gpu_ane = false;
     bool native_gemma4_candidate = false, native_conditioning_connector = false;
     bool native_i2v_clean_prefix = false, native_gpu_ane_profile = false;
     bool native_audio_output_candidate = false, native_audio_vae_candidate = false;

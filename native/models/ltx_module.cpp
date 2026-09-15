@@ -154,6 +154,7 @@ ModelModule ltx_module() {
                 d.lora_strategies = {"disk_premerge"};
                 d.default_lora_strategy = "disk_premerge";
                 d.request_lora_identity_validation = true; d.supports_gpu_ane = true;
+                d.supports_encoder_gpu_ane = true;
                 d.backend = "metal+mlx_cpp";
                 d.runtime_dependency = "bundled-native-ltx-runtime";
                 d.audio_capability = "latent_to_48khz_aac_candidate";

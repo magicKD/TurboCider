@@ -33,12 +33,18 @@ ltx_gpu_buffer *ltx_gpu_buffer_new(ltx_gpu *gpu, size_t bytes,
 ltx_gpu_buffer *ltx_gpu_buffer_new_copy(ltx_gpu *gpu, const void *data,
                                         size_t bytes,
                                         char *error, size_t error_size);
+/* Retain a shared Metal buffer for a second owner. */
+ltx_gpu_buffer *ltx_gpu_buffer_retain(ltx_gpu_buffer *buffer);
 void ltx_gpu_buffer_free(ltx_gpu_buffer *buffer);
 size_t ltx_gpu_buffer_bytes(const ltx_gpu_buffer *buffer);
 void *ltx_gpu_buffer_contents(ltx_gpu_buffer *buffer);
 int ltx_gpu_buffer_write(ltx_gpu_buffer *buffer, const void *data,
                          size_t bytes, char *error, size_t error_size);
 int ltx_gpu_buffer_read(const ltx_gpu_buffer *buffer, void *data,
+                        size_t bytes, char *error, size_t error_size);
+int ltx_gpu_buffer_copy(ltx_gpu *gpu, ltx_gpu_buffer *output,
+                        size_t output_offset,
+                        const ltx_gpu_buffer *input, size_t input_offset,
                         size_t bytes, char *error, size_t error_size);
 
 int ltx_gpu_add_f32(ltx_gpu *gpu, ltx_gpu_buffer *output,
@@ -219,6 +225,18 @@ int ltx_gpu_rms_norm_weighted_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
                                    const ltx_gpu_buffer *weight,
                                    uint32_t rows, uint32_t columns,
                                    float epsilon,
+                                   char *error, size_t error_size);
+/* Normalize one Gemma hidden-state tap and scatter it directly into the two
+ * device-resident [rows, hidden * tap_count] projection inputs. */
+int ltx_gpu_gemma_projection_tap_bf16(
+                                   ltx_gpu *gpu,
+                                   ltx_gpu_buffer *video_output,
+                                   ltx_gpu_buffer *audio_output,
+                                   const ltx_gpu_buffer *input,
+                                   uint32_t rows, uint32_t hidden,
+                                   uint32_t tap, uint32_t tap_count,
+                                   float video_multiplier,
+                                   float audio_multiplier,
                                    char *error, size_t error_size);
 int ltx_gpu_adaln_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
                        const ltx_gpu_buffer *input,
@@ -593,6 +611,19 @@ int ltx_gpu_mlp_int8_convrot_mps_bf16(
                         const ltx_gpu_buffer *fc2_weight,
                         const ltx_gpu_buffer *fc2_scale,
                         const ltx_gpu_buffer *fc2_bias,
+                        uint32_t rows, uint32_t input_dim,
+                        uint32_t hidden_dim, uint32_t output_dim,
+                        uint32_t convrot_group_size,
+                        char *error, size_t error_size);
+int ltx_gpu_gated_mlp_int8_convrot_mps_bf16(
+                        ltx_gpu *gpu, ltx_gpu_buffer *output,
+                        const ltx_gpu_buffer *input,
+                        const ltx_gpu_buffer *gate_weight,
+                        const ltx_gpu_buffer *gate_scale,
+                        const ltx_gpu_buffer *up_weight,
+                        const ltx_gpu_buffer *up_scale,
+                        const ltx_gpu_buffer *down_weight,
+                        const ltx_gpu_buffer *down_scale,
                         uint32_t rows, uint32_t input_dim,
                         uint32_t hidden_dim, uint32_t output_dim,
                         uint32_t convrot_group_size,

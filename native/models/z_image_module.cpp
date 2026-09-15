@@ -66,6 +66,7 @@ ModelModule z_image_module() {
             d.lora_strategies = {"in_memory_merge", "inference_time"};
             d.default_lora_strategy = "in_memory_merge";
             d.supports_gpu_ane = true;
+            d.supports_encoder_gpu_ane = true;
             d.backend = "mlx_cpp_metal";
             d.runtime_dependency = "bundled-native-mlx-cpp";
             d.parallel_strategy = "GPU computes attention first, then the compiled MLP suffix overlaps the Core ML ANE gated-MLP prefix; base 4096-channel M4 Max route is automatic";

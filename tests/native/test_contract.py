@@ -31,6 +31,7 @@ lib.tc_ltx_audio_preflight_json.argtypes = [
     C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)
 ]
 lib.tc_models_json.restype = C.c_void_p
+lib.tc_system_json.restype = C.c_void_p
 
 def consume(p):
     if not p.value:return None
@@ -691,8 +692,34 @@ class ContractTests(unittest.TestCase):
         self.assertIn('bool ltx_sol_stage2 = false',contracts)
         request=(ROOT/'native/platform/apple/request.mm').read_text()
         self.assertIn('boolean(d, @"allow_approximation", false)',request)
+        self.assertIn('supports_encoder_gpu_ane', request)
         self.assertIn('request.execution == "gpu_ane"',
                       (ROOT/'native/platform/apple/ltx_session.mm').read_text())
+
+    def test_gpu_ane_capabilities_are_optional_and_encoder_scoped(self):
+        pointer=lib.tc_models_json()
+        payload=json.loads(consume(C.c_void_p(pointer)))
+        models={value['id']:value for value in payload['models']}
+        for model in models.values():
+            self.assertEqual(model['default_execution'], 'gpu')
+            expected = ('optional_manifest_gated'
+                        if model['supports_gpu_ane'] else 'unsupported')
+            self.assertEqual(model['gpu_ane_policy'], expected)
+        encoder_models = {
+            'flux2-klein-4b', 'flux2-klein-9b',
+            'z-image-turbo', 'z-image-turbo-gguf',
+            'ltx-2.5-distilled',
+            'minimax-h3-fasth3-mlx-int6',
+            'minimax-h3-fasth3-mlx-int6-vsa',
+            'minimax-h3-vdn',
+        }
+        for model_id, model in models.items():
+            expected = model_id in encoder_models
+            self.assertEqual(model['supports_encoder_gpu_ane'], expected)
+            self.assertEqual(
+                model['encoder_gpu_ane_policy'],
+                'optional_explicit_manifest' if expected else 'unsupported',
+            )
 
     def test_ltx_service_conditioning_cache_is_bound_and_observable(self):
         session=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
@@ -1449,7 +1476,140 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(code,0,error);self.assertTrue(p['executable']);self.assertEqual(p['lora_count'],1)
         self.assertEqual(p['lora_fusion'],'load_time_baked');self.assertGreater(p['memory_estimate_bytes'],24<<30)
         self.assertEqual(p['lora_strategy'],'in_memory_merge')
-        self.assertNotEqual(plan({'model':'flux2-klein-9b','execution':'gpu_ane','ane_manifest':'/tmp/a'})[0],0)
+        encoder_only = {
+            'model': 'flux2-klein-9b', 'width': 512, 'height': 512,
+            'execution': 'gpu', 'allow_approximation': True,
+            'encoder_ane_manifest': '/tmp/qwen3-encoder.json',
+        }
+        code, configured, error = plan(encoder_only)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(configured['execution'], 'gpu')
+        self.assertEqual(configured['gpu_graph'], 'eager_blocks')
+        self.assertEqual(configured['encoder_execution'], 'gpu_ane_experimental')
+        self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
+        self.assertNotEqual(plan({
+            **encoder_only, 'execution': 'gpu_ane',
+            'ane_manifest': '/tmp/flux9-denoiser.json',
+        })[0], 0)
+
+    def test_qwen3_encoder_manifest_is_separate_from_dit_hybrid(self):
+        base = {
+            'model': 'flux2-klein-4b', 'operation': 'image.generate',
+            'prompt': 'A red fox', 'width': 512, 'height': 512,
+            'steps': 4, 'execution': 'gpu',
+            'encoder_ane_manifest': '/tmp/qwen3-encoder.json',
+        }
+        self.assertNotEqual(plan(base)[0], 0)
+        code, configured, error = plan({**base, 'allow_approximation': True})
+        self.assertEqual(code, 0, error)
+        self.assertEqual(configured['backend'], 'mlx_cpp_metal')
+        self.assertEqual(configured['gpu_graph'], 'eager_blocks')
+        self.assertEqual(configured['encoder_execution'], 'gpu_ane_experimental')
+        self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
+        self.assertEqual(configured['encoder_gpu_graph'],
+                         'qwen3_encoder_mlp_complement')
+        self.assertEqual(configured['encoder_precision'],
+                         'bf16_gpu+int8_mlp_fp16_io')
+        self.assertEqual(configured['precision'], 'bf16')
+        self.assertIn('qwen3_encoder_mlp_int8_per_channel',
+                      configured['algorithm_approximations'])
+
+        both = {**base, 'execution': 'gpu_ane', 'ane_manifest': '/tmp/dit.json',
+                'allow_approximation': True}
+        code, configured, error = plan(both)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(configured['backend'], 'mlx_cpp_metal+coreml')
+        self.assertEqual(configured['gpu_graph'], 'compiled_hybrid_complement')
+        self.assertEqual(configured['execution'], 'gpu_ane_experimental')
+        self.assertEqual(configured['encoder_execution'], 'gpu_ane_experimental')
+        self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
+        self.assertEqual(configured['precision'], 'bf16_gpu+int8_mlp_fp16_io')
+
+        gguf = {**base, 'model': 'z-image-turbo-gguf',
+                'model_variant': 'Q8_0', 'width': 512, 'height': 512,
+                'allow_approximation': True}
+        code, configured, error = plan(gguf)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(configured['backend'], 'mlx_cpp_metal_gguf')
+        self.assertEqual(configured['gpu_graph'], 'native_quantized_blocks')
+        self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
+        self.assertEqual(configured['encoder_gpu_graph'],
+                         'qwen3_encoder_mlp_complement')
+        self.assertEqual(configured['precision'], 'checkpoint_defined_gguf')
+
+        schema2 = {
+            'schema_version': 2, 'model': 'z-image-turbo',
+            'operation': 'image.generate',
+            'inputs': [{'kind': 'text', 'role': 'prompt', 'text': 'A red fox'}],
+            'outputs': [{'kind': 'image', 'path': '/tmp/z.png',
+                         'width': 512, 'height': 512, 'frames': 1,
+                         'audio': False}],
+            'sampling': {'seed': 42, 'steps': 9},
+            'execution': {'policy': 'gpu', 'allow_approximation': True,
+                          'encoder_ane_manifest': '/tmp/qwen3-encoder.json'},
+        }
+        code, configured, error = plan(schema2)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(configured['encoder_execution'], 'gpu_ane_experimental')
+        self.assertEqual(configured['backend'], 'mlx_cpp_metal')
+        self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
+
+        for model in ['minimax-h3-turbo', 'llada-image-turbo']:
+            self.assertNotEqual(plan({**base, 'model': model,
+                                      'encoder_ane_manifest': '/tmp/q.json',
+                                      'allow_approximation': True})[0], 0)
+
+        h3_base = {
+            'model': 'minimax-h3-fasth3-mlx-int6',
+            'operation': 'video.generate', 'prompt': 'A red fox',
+            'output': '/tmp/h3.mp4', 'width': 512, 'height': 512,
+            'frames': 22, 'steps': 4, 'audio': False, 'execution': 'gpu',
+            'allow_approximation': True,
+            'encoder_ane_manifest': '/tmp/h3-qwen3-vl.json',
+        }
+        code, configured, error = plan(h3_base)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(configured['backend'], 'mlx_cpp_metal')
+        self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
+        self.assertEqual(configured['encoder_gpu_graph'],
+                         'qwen3_vl_encoder_mlp_complement')
+        self.assertIn('qwen3_vl_encoder_mlp_int8_per_channel',
+                      configured['algorithm_approximations'])
+
+        h3_vsa = {**h3_base, 'model': 'minimax-h3-fasth3-mlx-int6-vsa',
+                  'vsa': True}
+        code, configured, error = plan(h3_vsa)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(configured['encoder_gpu_graph'],
+                         'qwen3_vl_encoder_mlp_complement')
+
+        h3_vdn = {**h3_base, 'model': 'minimax-h3-vdn', 'steps': 6}
+        code, configured, error = plan(h3_vdn)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
+        self.assertNotEqual(plan({**h3_base, 'allow_approximation': False})[0], 0)
+
+        ltx = {
+            'model': 'ltx-2.5-distilled', 'operation': 'video.generate',
+            'prompt': 'A red fox', 'output': '/tmp/ltx.mp4',
+            'width': 704, 'height': 448, 'frames': 97, 'steps': 11,
+            'fps': 24, 'audio': False, 'execution': 'gpu',
+            'allow_approximation': True,
+            'encoder_ane_manifest': '/tmp/ltx-gemma-bank',
+        }
+        code, configured, error = plan(ltx)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(configured['encoder_backend'], 'metal_mps+coreml')
+        self.assertEqual(configured['encoder_gpu_graph'],
+                         'gemma4_encoder_mlp_complement')
+        self.assertIn('gemma4_encoder_mlp_int8_per_channel',
+                      configured['algorithm_approximations'])
+        self.assertNotIn('qwen3_encoder_mlp_int8_per_channel',
+                         configured['algorithm_approximations'])
+
+        profile_source = (ROOT/'native/platform/apple/profile.mm').read_text()
+        self.assertIn('@"encoder_ane_manifest"', profile_source)
+        self.assertIn('r.encoder_ane_manifest', profile_source)
 
     def test_flux_single_projection_has_runtime_layout_guard(self):
         source=(ROOT/'native/models/flux2/flux_transformer.cpp').read_text()
@@ -1483,6 +1643,227 @@ class ContractTests(unittest.TestCase):
         self.assertIn("--ane-mlp-width",exporter)
         self.assertIn("'ane_mlp_end':a.ane_mlp_width",exporter)
         self.assertIn('ane_mlp_width',resources)
+
+    def test_qwen3_hybrid_quality_gate_is_explicit_and_telemetry_is_recorded(self):
+        qwen=(ROOT/'native/components/text/qwen3.cpp').read_text()
+        coreml=(ROOT/'native/backends/coreml.mm').read_text()
+        session=(ROOT/'native/runtime/session.hpp').read_text()
+        results=(ROOT/'native/platform/apple/results.mm').read_text()
+        probe=(ROOT/'tools/native/qwen3_quant_probe.cpp').read_text()
+        plan_probe=(ROOT/'tools/native/qwen3_prefill_plan_probe.cpp').read_text()
+        exporter=(ROOT/'tools/coreml/export_qwen3.py').read_text()
+        for token in [
+            'TURBOCIDER_QWEN3_MAX_RELATIVE_L2',
+            'TURBOCIDER_QWEN3_MIN_COSINE',
+            'TURBOCIDER_QWEN3_MAX_RELATIVE_ABS',
+            'TURBOCIDER_QWEN3_FUSED_SDPA',
+            'TURBOCIDER_QWEN3_FUSED_SDPA_MIN_TOKENS',
+            'TURBOCIDER_QWEN3_MLP_MAX_PADDING_PERCENT',
+            'TURBOCIDER_QWEN3_DISABLE_MLP_TAIL_PADDING',
+            'TURBOCIDER_QWEN3_DISABLE_HYBRID_OVERLAP',
+            'qwen3_prefill_plan',
+            'record_quality(relative_l2, cosine, absolute,',
+            'Qwen3 hybrid MLP quality gate failed',
+        ]:
+            self.assertIn(token, qwen)
+        self.assertIn('void HybridSession::record_quality', coreml)
+        for token in [
+            'quality_validation_calls', 'quality_max_relative_l2',
+            'quality_min_cosine', 'quality_max_abs',
+            'quality_max_relative_abs', 'quality_validation_passed',
+            'prefill_actual_tokens', 'prefill_compute_tokens',
+            'prefill_padding_tokens', 'prefill_fixed_shape',
+            'prefill_plan_reason',
+            'runtime_failures', 'runtime_failed', 'runtime_failure_block',
+        ]:
+            self.assertIn(token, session)
+            self.assertIn(token, coreml)
+
+        sweep=(ROOT/'tools/native/benchmark_qwen3_encoder_sweep.py').read_text()
+        mlx_adapter=(ROOT/'tools/native/qwen3_mlx_encoder_probe.py').read_text()
+        h3_sweep=(ROOT/'tools/native/benchmark_h3_encoder_sweep.py').read_text()
+        for token in [
+            'turbocider-qwen3-encoder-sweep-v1',
+            'must point to a compiled-cache',
+            'warm_median_seconds',
+            'warm_cv',
+            'max_warm_cv',
+            'stability_passed',
+            'min_warm_samples',
+            'min_warm_speedup',
+            'relative_l2',
+            'output_copy_bytes_session_total',
+            'hybrid_executed',
+            'TURBOCIDER_QWEN3_ANE_MIN_TOKENS',
+            'TURBOCIDER_QWEN3_MLP_MAX_PADDING_PERCENT',
+            'mlx_reference_quality_vs_gpu',
+            'hybrid_quality_vs_mlx_reference',
+            'min_mlx_reference_speedup',
+            'mlx_reference_stability_passed',
+            'runtime_failure_block',
+            'qualified_flexible_backing',
+        ]:
+            self.assertIn(token, sweep)
+        for token in [
+            'mlx_lm.models.qwen3', 'deterministic token IDs',
+            'OUTPUT_LAYERS', 'scaled_dot_product_attention',
+            'model.load_weights', 'mlx_peak_bytes',
+            'safetensors directory',
+        ]:
+            self.assertIn(token, mlx_adapter)
+        for token in [
+            'turbocider-h3-encoder-sweep-v1',
+            'gpu_reference', 'gpu_sdpa',
+            'gpu_ane_sdpa', 'warm_median_seconds',
+            'warm_speedup_reference',
+            'warm_speedup_vs_gpu_reference',
+            '"gpu_sdpa" if variant == "gpu_ane_sdpa"',
+            'max_warm_cv', 'min_warm_samples', 'warmup_discard',
+            'discarded_warm_seconds',
+            'warm_cv', 'stability_passed', 'reference_stability_passed',
+            'conservative_warm_speedup',
+            'min(results[speed_reference]["warm_seconds"])',
+            'max(results[variant]["warm_seconds"])',
+            'final 50-layer hidden states compared after timing',
+        ]:
+            self.assertIn(token, h3_sweep)
+        for token in [
+            'ane_first_runtime_seconds_session_total',
+            'ane_subsequent_runtime_seconds_session_total',
+            'output_copy_bytes_session_total',
+            'coreml_output_backing_setup_seconds',
+            'coreml_block_count',
+            'qualified_flexible_backing',
+        ]:
+            self.assertIn(token, probe)
+        for token in [
+            'first_runtime_prediction_seconds_session_total',
+            'subsequent_runtime_prediction_seconds_session_total',
+            'output_copy_bytes_session_total',
+            'output_backing_setup_seconds',
+        ]:
+            self.assertIn(token, results)
+        self.assertIn('Qwen3Conditioning::flux_klein()', probe)
+        self.assertIn('turbocider-qwen3-prefill-plan-v1', plan_probe)
+        self.assertIn('qwen3_prefill_plan(', plan_probe)
+        self.assertIn('qwen3_prefill_plan',
+                      (ROOT/'tools/validation/build_quantization_probes.sh').read_text())
+        self.assertIn('hybrid_bucket_plan', coreml)
+        self.assertIn('qwen3_prefill_plan(',
+                      (ROOT/'native/models/flux2/pipeline.cpp').read_text())
+        self.assertIn('qwen3_prefill_plan(',
+                      (ROOT/'native/models/z_image/z_image.cpp').read_text())
+        self.assertIn('qwen3_checkpoint_path(weight_path)', probe)
+        self.assertIn('.safetensors.index.json', probe)
+        self.assertIn('weight_path.parent_path()', probe)
+        self.assertIn('"output_scale": args.output_scale', exporter)
+        self.assertIn('np.float16(1.0 / args.output_scale)', exporter)
+        self.assertIn('ane = ane * Tensor(active_hybrid->output_scale', qwen)
+        self.assertIn('bool used_hybrid_output = false', qwen)
+        self.assertIn('if (used_hybrid_output ||', qwen)
+        self.assertIn('allow_flexible_backing', coreml)
+        self.assertIn('output_ = (!flexible_ || allow_flexible_backing_) ? output : nil',
+                      coreml)
+        self.assertIn('impl_->allow_flexible_backing = impl_->flexible && qualified_flexible_backing',
+                      coreml)
+        self.assertIn('if (output_)', coreml)
+        self.assertIn('if (!output_ || actual_output.dataPointer != output_.dataPointer)',
+                      coreml)
+        self.assertIn('required_blocks ? required_blocks : manifest_blocks', coreml)
+        self.assertIn('std::vector<LoRAAsset>{}, 0, 27, true',
+                      (ROOT/'native/models/flux2/pipeline.cpp').read_text())
+        self.assertIn('std::vector<LoRAAsset>{}, 0, 35, true',
+                      (ROOT/'native/models/z_image/z_image.cpp').read_text())
+        self.assertIn('mode == "flux_klein" ? 27 : 35, true', probe)
+
+    def test_qwen3_sweep_and_gemma_mlp_probe_are_fail_closed(self):
+        sweep=(ROOT/'tools/native/benchmark_qwen3_encoder_sweep.py').read_text()
+        gemma_header=(ROOT/'native/models/ltx_runtime/ltx_gemma_encoder.h').read_text()
+        gemma_runtime=(ROOT/'native/models/ltx_runtime/ltx_gemma_encoder.m').read_text()
+        gemma_probe=(ROOT/'tools/native/ltx_gemma_mlp_probe.c').read_text()
+        build=(ROOT/'tools/native/build.sh').read_text()
+        for token in [
+            'MODE_GEOMETRY', 'required_blocks', 'INVALID_METRIC',
+            'encoder manifest geometry does not match',
+            'encoder manifest needs blocks',
+            'compiled-cache manifest',
+        ]:
+            self.assertIn(token, sweep)
+        for token in [
+            'LTX_GEMMA_MLP_PROBE_MAX_RUNS',
+            'ltx_gemma_mlp_probe_result',
+            'ltx_gemma_mlp_gpu_probe',
+            'resident_weight_bytes',
+            'workspace_bytes',
+        ]:
+            self.assertIn(token, gemma_header)
+            self.assertIn(token, gemma_runtime)
+        for token in [
+            'turbocider-ltx-gemma-mlp-gpu-probe-v1',
+            'synthetic_input', 'batch_commands', 'input.bf16', 'output.bf16',
+            'output_all_finite',
+        ]:
+            self.assertIn(token, gemma_probe)
+        compare=(ROOT/'tools/native/benchmark_ltx_gemma_mlp_compare.py').read_text()
+        for token in [
+            'turbocider-ltx-gemma-mlp-compare-v1',
+            'staged', 'fused', 'warm_speedup',
+            'relative_l2', 'min_warm_speedup',
+        ]:
+            self.assertIn(token, compare)
+        sweep_path=ROOT/'tools/native/benchmark_ltx_gemma_mlp_sweep.py'
+        sweep_source=sweep_path.read_text()
+        for token in [
+            'DEFAULT_ROWS = (64, 128, 256, 512, 1024)',
+            'turbocider-ltx-gemma-mlp-gpu-sweep-v1',
+            'quality": "not_applicable_isolated_gpu_baseline"',
+            'prior evidence is preserved',
+        ]:
+            self.assertIn(token, sweep_source)
+        self.assertIn('ltx_gemma_mlp_probe_tool.o', build)
+        self.assertIn('ltx-gemma-mlp-probe', build)
+        self.assertIn('TURBOCIDER_BUILD_EXPERIMENTAL_PROBES', build)
+        self.assertIn('if [[ "$EXPERIMENTAL_PROBES" == "1" ]]', build)
+
+    def test_qwen3_exporter_rejects_symlinked_or_escaping_sources(self):
+        import importlib.util
+        exporter_path = ROOT/'tools/coreml/export_qwen3.py'
+        spec = importlib.util.spec_from_file_location('export_qwen3_contract', exporter_path)
+        exporter = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(exporter)
+        z_source = exporter.QwenSource(ROOT/'models/Tongyi-MAI-Z-Image-Turbo/text_encoder')
+        self.assertEqual(z_source.checkpoint.name, 'model.safetensors')
+        self.assertIsNone(z_source.weight_map)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model = root/'model'; model.mkdir()
+            (model/'model.safetensors').write_bytes(b'fixture')
+            source = exporter.QwenSource(model)
+            self.assertEqual(source.checkpoint.name, 'model.safetensors')
+            (model/'model.safetensors').unlink()
+            (model/'model.safetensors').symlink_to(root/'outside.safetensors')
+            (root/'outside.safetensors').write_bytes(b'outside')
+            with self.assertRaises(ValueError):
+                exporter.QwenSource(model)
+
+            index = model/'model.safetensors.index.json'
+            (model/'model.safetensors').unlink()
+            index.write_text(json.dumps({'weight_map': {
+                'model.layers.0.mlp.gate_proj.weight': '../outside.safetensors'}}))
+            with self.assertRaises(ValueError):
+                exporter.QwenSource(model)
+
+            artifact = root/'block.mlpackage'; artifact.mkdir()
+            payload = artifact/'weights.bin'; payload.write_bytes(b'weights')
+            receipt = root/'block.json'
+            receipt.write_text(json.dumps({'../outside.safetensors':
+                                           hashlib.sha256(b'outside').hexdigest()}))
+            with self.assertRaises(ValueError):
+                exporter.artifact_receipt(artifact, receipt)
+            receipt.write_text(json.dumps({'weights.bin':
+                                           hashlib.sha256(b'weights').hexdigest()}))
+            self.assertEqual(exporter.artifact_receipt(artifact, receipt),
+                             json.loads(receipt.read_text()))
 
     def test_flux_m4_max_profile_is_fail_closed_to_validated_prefix(self):
         profile=json.loads((ROOT/'profiles/apple-m4-max-64gb.example.json').read_text())
@@ -1533,6 +1914,141 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(payload['hidden_size'],3840)
         self.assertEqual(payload['projection_input_dim'],188160)
         self.assertEqual(payload['quantization'],'int8_convrot_256')
+        runtime=(ROOT/'native/models/ltx_runtime/ltx_gemma_encoder.m').read_text()
+        gpu=(ROOT/'native/models/ltx_runtime/ltx_gpu.h').read_text()
+        shader=(ROOT/'native/models/ltx_runtime/ltx_shaders.metal').read_text()
+        self.assertIn('TURBOCIDER_LTX_GEMMA_FUSED_MLP', runtime)
+        self.assertIn('TURBOCIDER_LTX_GEMMA_GPU_TAPS', runtime)
+        self.assertIn('ltx_gpu_gemma_projection_tap_bf16', runtime)
+        self.assertIn('ltx_gpu_gated_mlp_int8_convrot_mps_bf16', gpu)
+        self.assertIn('ltx_gpu_gemma_projection_tap_bf16', gpu)
+        self.assertIn('kernel void ltx_gemma_projection_tap_bf16', shader)
+
+    def test_ltx_gemma_weight_streaming_avoids_mmap_page_residency(self):
+        runtime=(ROOT/'native/models/ltx_runtime/ltx_gemma_encoder.m').read_text()
+        gpu=(ROOT/'native/models/ltx_runtime/ltx_gpu.m').read_text()
+        start=runtime.index('static ltx_gpu_buffer *gemma_load_tensor(')
+        tensor_loader=runtime[start:runtime.index(
+            'static int gemma_load_linear(', start)]
+        self.assertIn('ltx_st_read_mapped_data', tensor_loader)
+        self.assertIn('ltx_gpu_buffer_contents(buffer)', tensor_loader)
+        self.assertNotIn('gemma_tensor_bytes', tensor_loader)
+        self.assertIn('ltx_st_map_discard(&encoder->mapping', runtime)
+        self.assertIn('TURBOCIDER_LTX_GEMMA_RESIDENT_WEIGHTS', runtime)
+        self.assertIn('TURBOCIDER_LTX_GEMMA_ANE_LOAD_WORKERS', runtime)
+        self.assertIn('gemma_ane_preload_worker', runtime)
+        self.assertIn('ltx_gemma_encoder_prepare_prompt', runtime)
+        self.assertIn('strcmp(resident_weights, "1") == 0', runtime)
+        self.assertIn('ltx_gpu_buffer_retain(cached)', tensor_loader)
+        self.assertIn('resident_weight_cache_hits', runtime)
+        self.assertIn('resident_weight_cache_misses', runtime)
+        self.assertLess(
+            runtime.index('free(encoder->resident_weight_cache)'),
+            runtime.index('ltx_gpu_free(encoder->gpu)'),
+        )
+        self.assertIn('uint32_t references;', gpu)
+        self.assertIn('ltx_gpu_buffer *ltx_gpu_buffer_retain', gpu)
+
+    def test_ltx_gemma_ane_exporter_is_shape_and_convrot_gated(self):
+        exporter=(ROOT/'tools/coreml/export_ltx_gemma_mlp.py').read_text()
+        for token in [
+            'ltx-gemma-ane-mlp-v1', 'HIDDEN = 3840',
+            'INTERMEDIATE = 15360', 'LAYERS = 48',
+            'convrot_last_axis', 'gelu-tanh-gated',
+            'gpu_gate.weight.i8', 'gpu_up.weight.i8',
+            'gpu_down.weight.i8', 'ane_intermediate',
+            'caller-owned-row-major-fp16-partial',
+        ]:
+            self.assertIn(token, exporter)
+        runtime=(ROOT/'native/models/ltx_runtime/ltx_gemma_ane_mlp.m').read_text()
+        encoder=(ROOT/'native/models/ltx_runtime/ltx_gemma_encoder.m').read_text()
+        gpu=(ROOT/'native/models/ltx_runtime/ltx_gpu.m').read_text()
+        header=(ROOT/'native/models/ltx_runtime/ltx_gemma_ane_mlp.h').read_text()
+        build=(ROOT/'tools/native/build.sh').read_text()
+        probe=(ROOT/'tools/native/ltx_gemma_ane_mlp_probe.c').read_text()
+        benchmark=(ROOT/'tools/native/benchmark_ltx_gemma_ane_mlp.py').read_text()
+        for token in [
+            'ltx-gemma-ane-mlp-v1', 'CPUAndNeuralEngine',
+            'caller-owned output backing', 'ltx_gpu_gated_mlp_int8_convrot_mps_bf16',
+            'gm_constraint_supports_shape', 'sha256',
+            'gm_persistent_worker', 'gm_worker_initialize',
+            'gm_prediction_start', 'gm_prediction_wait',
+            'pthread_cond_wait', 'pthread_cond_broadcast',
+        ]:
+            self.assertIn(token, runtime)
+        evaluate = runtime[runtime.index('int ltx_gemma_ane_mlp_eval('):]
+        self.assertNotIn('pthread_create', evaluate)
+        free = runtime[runtime.index('void ltx_gemma_ane_mlp_free('):
+                       runtime.index(
+                           'const ltx_gemma_ane_mlp_shape *',
+                           runtime.index('void ltx_gemma_ane_mlp_free('),
+                       )]
+        self.assertLess(free.index('gm_prediction_wait'),
+                        free.index('pthread_join'))
+        self.assertLess(free.index('pthread_join'), free.index('mlp->model = nil'))
+        for token in [
+            'ltx_gemma_ane_mlp_create', 'ltx_gemma_ane_mlp_eval',
+            'ltx_gemma_ane_mlp_workspace_bytes',
+        ]:
+            self.assertIn(token, header)
+        self.assertIn('ltx_gemma_ane_mlp', build)
+        self.assertIn('ltx-gemma-ane-mlp-probe', build)
+        self.assertIn('TURBOCIDER_BUILD_EXPERIMENTAL_PROBES', build)
+        self.assertIn('turbocider-ltx-gemma-ane-mlp-probe-v1', probe)
+        self.assertIn('turbocider-ltx-gemma-ane-mlp-qualification-v1', benchmark)
+        self.assertIn('TURBOCIDER_LTX_GEMMA_ANE_MAX_PADDING_PERCENT', encoder)
+        self.assertIn('maximum_padding_percent = 0u', encoder)
+        self.assertIn('ltx_gpu_buffer_copy(encoder->gpu, output', encoder)
+        self.assertNotIn('ltx_gpu_slice_rows_bf16_f16(\n            encoder->gpu, output',
+                         encoder)
+        self.assertIn('copyFromBuffer:ltx_buffer(input)', gpu)
+
+    def test_ltx_gemma_full_encoder_sweep_is_resident_and_quality_gated(self):
+        tool = (ROOT/'tools/native/ltx_gemma_encode.c').read_text()
+        sweep = (ROOT/'tools/native/benchmark_ltx_gemma_encoder_sweep.py').read_text()
+        encoder = (
+            ROOT/'native/models/ltx_runtime/ltx_gemma_encoder.m'
+        ).read_text()
+        for token in [
+            'WARM_RUNS', 'warm_runs', 'create_seconds', 'prepare_seconds',
+            'first_seconds',
+            'warm_seconds', 'fused_mlp', 'gpu_taps',
+            'raw_video_context.bf16',
+            'raw_audio_context.bf16', 'raw_text_mask.bf16',
+        ]:
+            self.assertIn(token, tool)
+        for token in [
+            'turbocider-ltx-gemma-encoder-sweep-v2',
+            'separate staged/fused GPU processes',
+            'full raw video/audio/mask outputs compared',
+            'warm_median_seconds', 'process_peak_rss_bytes',
+            'relative_l2', 'relative_max_abs', 'min_warm_speedup',
+            'not_claimed_single_layer_qualification_only',
+            'fused_gpu_taps', 'TURBOCIDER_LTX_GEMMA_GPU_TAPS',
+            'quality_by_variant', '--variants', 'warm_cv',
+            'MIN_QUALIFYING_WARM_RUNS', 'stability_passed',
+            'gpu_taps_ab_vs_fused',
+            'resident_weight_telemetry',
+            'resident_weight_cache_hits',
+            'resident_weight_cache_misses',
+            'ane_preload_models_session_total',
+            'ane_preload_seconds_session_total',
+        ]:
+            self.assertIn(token, sweep)
+        self.assertIn(
+            'encoder->ane_preload_workers = started + 1u', encoder,
+        )
+        session = (ROOT/'native/platform/apple/ltx_session.mm').read_text()
+        for token in [
+            'encoder_resident_weights_enabled',
+            'encoder_resident_weight_cache_hits',
+            'encoder_resident_weight_cache_misses',
+            'encoder_resident_weight_bytes',
+            'encoder_ane_preload_models_session_total',
+            'encoder_ane_preload_workers',
+            'encoder_ane_preload_seconds_session_total',
+        ]:
+            self.assertIn(token, session)
 
     def test_ltx_video_executor_and_gated_capabilities(self):
         pointer=lib.tc_models_json()

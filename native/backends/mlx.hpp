@@ -55,6 +55,12 @@ class Weights {
     Tensor project(const Tensor &, const std::string &) const;
     std::vector<Tensor> project_many(const Tensor &,
                                      const std::vector<std::string> &) const;
+    // Project one aligned matrix slice. The input contains exactly the
+    // selected column range; this is used by exact tensor-parallel MLP
+    // branches without materializing the full gate/up activation.
+    Tensor project_slice(const Tensor &, const std::string &, int row_start,
+                         int row_end, int col_start, int col_end,
+                         bool add_bias = true) const;
     Tensor project_range(const Tensor &, const std::string &, int row_start, int row_end,
                         int col_start, int col_end) const;
     void clear();
@@ -70,7 +76,8 @@ Tensor norm(const Tensor &);
 Tensor slice_axis(const Tensor &, int axis, int start, int stop);
 Tensor heads(const Tensor &, int count, int dim);
 Tensor attend(const Tensor &, const Tensor &, const Tensor &, bool fp32 = false,
-              const std::optional<Tensor> &mask = {}, bool force_fused = false);
+              const std::optional<Tensor> &mask = {}, bool force_fused = false,
+              const std::string &mask_mode = "");
 Tensor rope_pairs(const Tensor &, const Tensor &, const Tensor &);
 std::vector<Tensor> rope_pairs_pair(const Tensor &, const Tensor &,
                                     const Tensor &, const Tensor &);

@@ -19,12 +19,14 @@ class ZImage final : public ModelSession {
     Weights vae_;
     std::optional<Tensor> cached_conditioning_;
     std::string cached_prompt_;
+    std::string cached_encoder_manifest_;
     bool cached_dynamic_ = true;
     std::vector<LoRAAsset> active_loras_;
     std::string cached_lora_identity_;
     std::string active_lora_strategy_ = "none";
     size_t lora_applied_projections_ = 0;
     std::unique_ptr<HybridSession> hybrid_;
+    std::unique_ptr<HybridSession> encoder_hybrid_;
     std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
     int hybrid_gpu_mlp_start_ = -1;
 

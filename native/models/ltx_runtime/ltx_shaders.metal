@@ -93,6 +93,15 @@ struct ltx_latent_stats_args {
     uint normalize;
 };
 
+struct ltx_gemma_projection_tap_args {
+    uint rows;
+    uint hidden;
+    uint tap;
+    uint tap_count;
+    float video_multiplier;
+    float audio_multiplier;
+};
+
 kernel void ltx_add_f32(device float *output [[buffer(0)]],
                         device const float *left [[buffer(1)]],
                         device const float *right [[buffer(2)]],
@@ -592,6 +601,40 @@ kernel void ltx_rms_norm_weighted_bf16(
         float value = ltx_bf16_to_f32(input[base + column]) * inverse_rms *
             ltx_bf16_to_f32(weight[column]);
         output[base + column] = ltx_f32_to_bf16(value);
+    }
+}
+
+kernel void ltx_gemma_projection_tap_bf16(
+        device ushort *video_output [[buffer(0)]],
+        device ushort *audio_output [[buffer(1)]],
+        device const ushort *input [[buffer(2)]],
+        constant ltx_gemma_projection_tap_args &args [[buffer(3)]],
+        uint row [[threadgroup_position_in_grid]],
+        uint lane [[thread_index_in_threadgroup]]) {
+    if (row >= args.rows) return;
+    threadgroup float sums[256];
+    uint input_base = row * args.hidden;
+    float sum = 0.0f;
+    for (uint column = lane; column < args.hidden; column += 256u) {
+        float value = ltx_bf16_to_f32(input[input_base + column]);
+        sum = fma(value, value, sum);
+    }
+    sums[lane] = sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint offset = 128u; offset > 0u; offset >>= 1u) {
+        if (lane < offset) sums[lane] += sums[lane + offset];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    float inverse_rms = rsqrt(sums[0] / float(args.hidden) + 1e-6f);
+    for (uint column = lane; column < args.hidden; column += 256u) {
+        float normalized =
+            ltx_bf16_to_f32(input[input_base + column]) * inverse_rms;
+        uint output_index =
+            (input_base + column) * args.tap_count + args.tap;
+        video_output[output_index] = ltx_f32_to_bf16(
+            normalized * args.video_multiplier);
+        audio_output[output_index] = ltx_f32_to_bf16(
+            normalized * args.audio_multiplier);
     }
 }
 

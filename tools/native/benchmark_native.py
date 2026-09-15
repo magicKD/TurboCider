@@ -1,7 +1,8 @@
 """Measure a selected public native model from one persistent C ABI process."""
 import argparse,ctypes as c,json,time
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--library',required=True);p.add_argument('--model',required=True);p.add_argument('--model-id',default='flux2-klein-4b');p.add_argument('--request',required=True);p.add_argument('--output',required=True);p.add_argument('--runs',type=int,default=5);p.add_argument('--width',type=int);p.add_argument('--height',type=int);p.add_argument('--steps',type=int);p.add_argument('--seed',type=int);p.add_argument('--prompt',action='append',help='override the text prompt; repeat to benchmark prompt changes in one resident session');p.add_argument('--execution',choices=('gpu','auto','gpu_ane'));p.add_argument('--ane-manifest');p.add_argument('--prepare',choices=('none','load','warmup'),default='none',help='run tc_engine_prepare before measured generations; load is resource-only, warmup runs a full no-output request');p.add_argument('--coreml-warmup-iterations',type=int,choices=range(0,9),default=None,help='override per-branch zero-input Core ML warmup iterations');p.add_argument('--lora');p.add_argument('--lora-strength',type=float,default=1.0);p.add_argument('--dump-tensors',action='store_true',help='write one dump directory per run; disabled for performance measurements');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--library',required=True);p.add_argument('--model',required=True);p.add_argument('--model-id',default='flux2-klein-4b');p.add_argument('--request',required=True);p.add_argument('--output',required=True);p.add_argument('--runs',type=int,default=5);p.add_argument('--width',type=int);p.add_argument('--height',type=int);p.add_argument('--steps',type=int);p.add_argument('--seed',type=int);p.add_argument('--prompt',action='append',help='override the text prompt; repeat to benchmark prompt changes in one resident session');p.add_argument('--prompt-repeat-token',help='append a controlled repeated token to every benchmark prompt');p.add_argument('--prompt-repeat-count',type=int,default=0);p.add_argument('--execution',choices=('gpu','auto','gpu_ane'));p.add_argument('--ane-manifest');p.add_argument('--encoder-ane-manifest',help='Qwen3 encoder-only Core ML manifest, independent of the denoiser manifest');p.add_argument('--prepare',choices=('none','load','warmup'),default='none',help='run tc_engine_prepare before measured generations; load is resource-only, warmup runs a full no-output request');p.add_argument('--coreml-warmup-iterations',type=int,choices=range(0,9),default=None,help='override per-branch zero-input Core ML warmup iterations');p.add_argument('--lora');p.add_argument('--lora-strength',type=float,default=1.0);p.add_argument('--dump-tensors',action='store_true',help='write one dump directory per run; disabled for performance measurements');a=p.parse_args()
+if a.prompt_repeat_count<0 or bool(a.prompt_repeat_token)!=(a.prompt_repeat_count>0):p.error('--prompt-repeat-token and a positive --prompt-repeat-count must be used together')
 lib=c.CDLL(a.library);lib.tc_string_free.argtypes=[c.c_void_p]
 lib.tc_engine_create_model.argtypes=[c.c_char_p,c.c_char_p,c.POINTER(c.c_void_p),c.POINTER(c.c_void_p)]
 lib.tc_engine_generate.argtypes=[c.c_void_p,c.c_char_p,c.c_void_p,c.c_void_p,c.POINTER(c.c_void_p),c.POINTER(c.c_void_p)]
@@ -25,6 +26,9 @@ if r.get('schema_version')==2:
  if a.ane_manifest:
   execution['ane_manifest']=str(Path(a.ane_manifest).resolve())
   execution['allow_approximation']=True
+ if a.encoder_ane_manifest:
+  execution['encoder_ane_manifest']=str(Path(a.encoder_ane_manifest).resolve())
+  execution['allow_approximation']=True
  if a.coreml_warmup_iterations is not None:execution['warmup_iterations']=a.coreml_warmup_iterations
 else:
  if a.width is not None:r['width']=a.width
@@ -34,6 +38,9 @@ else:
  if a.execution is not None:r['execution']=a.execution
  if a.ane_manifest:
   r['ane_manifest']=str(Path(a.ane_manifest).resolve())
+  r['allow_approximation']=True
+ if a.encoder_ane_manifest:
+  r['encoder_ane_manifest']=str(Path(a.encoder_ane_manifest).resolve())
   r['allow_approximation']=True
  if a.coreml_warmup_iterations is not None:r['warmup_iterations']=a.coreml_warmup_iterations
 if a.lora:
@@ -52,6 +59,14 @@ def set_prompt(request,value):
   if prompt is None:raise RuntimeError('schema v2 benchmark request has no prompt input')
   prompt['text']=value
  else:request['prompt']=value
+if a.prompt_repeat_count:
+ if a.prompt:
+  a.prompt=[value+(' '+a.prompt_repeat_token)*a.prompt_repeat_count for value in a.prompt]
+ elif r.get('schema_version')==2:
+  prompt=next((item for item in r.get('inputs',[]) if item.get('kind')=='text' and item.get('role')=='prompt'),None)
+  if prompt is None:raise RuntimeError('schema v2 benchmark request has no prompt input')
+  a.prompt=[prompt['text']+(' '+a.prompt_repeat_token)*a.prompt_repeat_count]
+ else:a.prompt=[r.get('prompt','')+(' '+a.prompt_repeat_token)*a.prompt_repeat_count]
 e,err=c.c_void_p(),c.c_void_p();start=time.perf_counter();status=lib.tc_engine_create_model(a.model_id.encode(),a.model.encode(),c.byref(e),c.byref(err));message=consume(err)
 if status:raise RuntimeError(message)
 constructor=time.perf_counter()-start;runs=[];preparation=None

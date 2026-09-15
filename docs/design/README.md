@@ -15,6 +15,11 @@
 
 当前各模型在 M4 Max/M4 Pro 及其他 Apple Silicon 上的 GPU/ANE fork-join 方案、自动门禁和实测口径见 [GPU/ANE 并行化方案](parallel-acceleration.md) 与 [并行化 SVG 图](parallel-acceleration.svg)。Transformer 的 CPU/GPU/ANE 轴、public/private ANE 对照和 vpipe/H3/LTX 结论见 [Transformer 异构并行技术报告](transformer-heterogeneous-report.md)；Core ML 启动生命周期见 [Core ML / ANE 启动开销](coreml-ane-startup.md)，量化和低内存对照见 [量化与 Streaming 对照](quantized-streaming-vpipe-comparison.md)。
 
+截至 2026-09-15 的 encoder、DiT、VAE、Core ML 生命周期和各模型采用决策统一见
+[ANE 加速现状与分阶段决策](ane-acceleration-status-2026-09-15.md)。该文档区分
+resident encoder-prefill、DiT/denoiser、VAE 和完整请求，不把局部 microbenchmark
+或历史单次结果写成默认产品收益。
+
 跨后端不要求逐像素一致时的 RGB 回归、视频运动和公开 Vision feature-print 分层判定见 [感知质量诊断](vision-quality-diagnostics.md)。
 
 ## App 产品、界面与实现方案

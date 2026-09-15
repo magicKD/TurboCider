@@ -121,7 +121,8 @@ Request request_from_json(NSDictionary *d) {
             @"prompt",       @"output",         @"execution",
             @"width",        @"height",         @"steps",
             @"seed",         @"frames",         @"dynamic_text",
-            @"dump_tensors", @"ane_manifest",   @"allow_approximation",
+            @"dump_tensors", @"ane_manifest", @"encoder_ane_manifest",
+            @"allow_approximation",
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
             @"loras",        @"audio",          @"noise_path",
@@ -142,6 +143,7 @@ Request request_from_json(NSDictionary *d) {
         r.output = string_value(d, @"output");
         r.execution = string_value(d, @"execution", "gpu");
         r.ane_manifest = string_value(d, @"ane_manifest");
+        r.encoder_ane_manifest = string_value(d, @"encoder_ane_manifest");
         r.width = number(d, @"width", model_descriptor.width);
         r.height = number(d, @"height", model_descriptor.height);
         r.frames = number(d, @"frames", model_descriptor.frames);
@@ -212,12 +214,13 @@ Request request_from_json(NSDictionary *d) {
         auto execution = d[@"execution"] ? dictionary(d[@"execution"], "execution") : @{};
         keys_with_ltx_options(
             execution,
-            @[ @"policy", @"profile", @"ane_manifest", @"allow_approximation",
+            @[ @"policy", @"profile", @"ane_manifest", @"encoder_ane_manifest", @"allow_approximation",
                @"residency", @"memory_budget_bytes", @"warmup_iterations",
                @"quantized_cache" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");
+        r.encoder_ane_manifest = string_value(execution, @"encoder_ane_manifest");
         r.allow_approximation = boolean(execution, @"allow_approximation", false);
         r.residency = string_value(execution, @"residency", model_descriptor.default_residency);
         r.memory_budget_bytes = byte_count(execution, @"memory_budget_bytes", 0);
@@ -309,6 +312,13 @@ Request request_from_json(NSDictionary *d) {
         }
     }
     resolve_profile(r);
+    if (!r.encoder_ane_manifest.empty()) {
+        require(r.allow_approximation,
+                "encoder_ane_manifest requires allow_approximation=true");
+        require(module_for(r.model).describe().supports_encoder_gpu_ane,
+                "encoder_ane_manifest is currently supported for FLUX/Z-Image "
+                "Qwen3, LTX Gemma4, and H3 Qwen3-VL encoders only");
+    }
     if (r.execution == "gpu_ane") {
         require(!r.ane_manifest.empty(),
                 "gpu_ane requires an explicit ANE manifest or partition directory");

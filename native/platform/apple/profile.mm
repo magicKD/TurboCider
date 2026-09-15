@@ -43,7 +43,7 @@ void resolve_profile(Request &r) {
     NSDictionary *model = models[@(r.model.c_str())];
     require([model isKindOfClass:NSDictionary.class], "profile does not contain requested model");
     profile_keys(model, @[
-        @"policy", @"residency", @"allow_approximation", @"ane_manifest", @"memory_budget_bytes",
+        @"policy", @"residency", @"allow_approximation", @"ane_manifest", @"encoder_ane_manifest", @"memory_budget_bytes",
         @"allocator_cache_bytes", @"warmup_iterations", @"coreml_export",
         @"streaming_offload", @"quantized_cache"
     ]);
@@ -68,6 +68,10 @@ void resolve_profile(Request &r) {
     auto artifact = string_value(model, @"ane_manifest");
     if (!artifact.empty())
         r.ane_manifest = (path.parent_path() / artifact).lexically_normal().string();
+    auto encoder_artifact = string_value(model, @"encoder_ane_manifest");
+    if (!encoder_artifact.empty())
+        r.encoder_ane_manifest =
+            (path.parent_path() / encoder_artifact).lexically_normal().string();
     auto bounded = [&](NSString *key, uint64_t fallback, uint64_t upper) {
         id value = model[key];
         if (!value)

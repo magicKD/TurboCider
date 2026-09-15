@@ -1842,6 +1842,7 @@ public:
         auto conditioning = load_conditioning(
             root_, selected_checkpoint, request.prompt);
         bool used_dynamic_gemma = false;
+        ltx_gemma_encoder_telemetry gemma_encoder_telemetry{};
         ScopeExit staged_cleanup([this, component_staged, streamed] {
             if (component_staged) {
                 denoiser_.reset();
@@ -1925,6 +1926,8 @@ public:
                 options.tokenizer_json = gemma_tokenizer_path_.c_str();
                 options.shader_source = shader_path_.c_str();
                 options.max_tokens = 1024u;
+                options.ane_manifest = request.encoder_ane_manifest.empty() ?
+                    nullptr : request.encoder_ane_manifest.c_str();
                 gemma_encoder_.reset(ltx_gemma_encoder_create(
                     &options, error, sizeof(error)));
                 require(gemma_encoder_ != nullptr, error);
@@ -1938,6 +1941,9 @@ public:
             uint32_t raw_rows = 0;
             Progress text_progress{event, cancel, {}};
             event("text_encode", 0, 1);
+            require(ltx_gemma_encoder_prepare_prompt(
+                        gemma_encoder_.get(), request.prompt.c_str(),
+                        error, sizeof(error)), error);
             bool encoded = ltx_gemma_encoder_encode(
                 gemma_encoder_.get(), request.prompt.c_str(),
                 raw_video.data(), raw_video.size(), raw_audio.data(),
@@ -1948,6 +1954,9 @@ public:
                 std::rethrow_exception(text_progress.failure);
             checkpoint(cancel);
             require(encoded, error);
+            require(ltx_gemma_encoder_get_telemetry(
+                        gemma_encoder_.get(), &gemma_encoder_telemetry),
+                    "cannot inspect LTX Gemma encoder telemetry");
             event("text_encode", 1, 1);
             require(raw_rows > 0 && raw_rows <= 1024u,
                     "LTX Gemma4 encoder returned an invalid row count");
@@ -2531,6 +2540,40 @@ public:
                       request.ltx_video_attention_batch),
                   @"ane_profile": ane_config.identity.empty() ?
                       (id)[NSNull null] : @(ane_config.identity.c_str()),
+                  @"encoder_ane_manifest": request.encoder_ane_manifest.empty() ?
+                      (id)[NSNull null] : @(request.encoder_ane_manifest.c_str()),
+                  @"encoder_resident_weights_enabled": @(
+                      gemma_encoder_telemetry.resident_weights_enabled),
+                  @"encoder_resident_weight_cache_hits": @(
+                      gemma_encoder_telemetry.resident_weight_cache_hits),
+                  @"encoder_resident_weight_cache_misses": @(
+                      gemma_encoder_telemetry.resident_weight_cache_misses),
+                  @"encoder_resident_weight_bytes": @(
+                      gemma_encoder_telemetry.resident_weight_bytes),
+                  @"encoder_ane_requested": @(gemma_encoder_telemetry.ane_requested),
+                  @"encoder_ane_used": @(gemma_encoder_telemetry.ane_used),
+                  @"encoder_ane_preload_models_session_total": @(
+                      gemma_encoder_telemetry.ane_preload_models_session_total),
+                  @"encoder_ane_preload_workers": @(
+                      gemma_encoder_telemetry.ane_preload_workers),
+                  @"encoder_ane_preload_seconds_session_total": @(
+                      gemma_encoder_telemetry.ane_preload_seconds_session_total),
+                  @"encoder_ane_selected_bucket":
+                      @(gemma_encoder_telemetry.ane_selected_bucket),
+                  @"encoder_ane_padding_rows":
+                      @(gemma_encoder_telemetry.ane_padding_rows),
+                  @"encoder_ane_minimum_profitable_rows":
+                      @(gemma_encoder_telemetry.ane_minimum_profitable_rows),
+                  @"encoder_ane_plan_reason":
+                      @(gemma_encoder_telemetry.ane_plan_reason),
+                  @"encoder_ane_layers_available": @(
+                      gemma_encoder_telemetry.ane_layers_available),
+                  @"encoder_ane_layers_succeeded": @(
+                      gemma_encoder_telemetry.ane_layers_succeeded),
+                  @"encoder_ane_layers_fallback": @(
+                      gemma_encoder_telemetry.ane_layers_fallback),
+                  @"encoder_ane_output_backing_used": @(
+                      gemma_encoder_telemetry.ane_output_backing_used),
                   @"video_vae_isolation": @(video_vae_isolation.c_str()),
                   @"plan": to_dictionary(plan),
                   @"lora_fusion": request.loras.empty() ? @"none" :

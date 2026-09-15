@@ -930,10 +930,12 @@ void ZImage::select_loras(const Request &request) {
     active_loras_ = std::move(normalized);
     active_lora_strategy_ = strategy;
     hybrid_.reset();
+    encoder_hybrid_.reset();
     hybrid_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
     cached_conditioning_.reset();
     cached_prompt_.clear();
+    cached_encoder_manifest_.clear();
     transformer_.clear();
     lora_applied_projections_ = 0;
     mx::clear_cache();
@@ -988,10 +990,12 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
 
 void ZImage::unload() {
     hybrid_.reset();
+    encoder_hybrid_.reset();
     hybrid_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
     cached_conditioning_.reset();
     cached_prompt_.clear();
+    cached_encoder_manifest_.clear();
     text_encoder_.clear();
     transformer_.clear();
     vae_.clear();
@@ -1002,7 +1006,8 @@ Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic
     if (text_encoder_.bytes() == 0)
         load_z_component(text_encoder_, text_path_, event, cancelled);
     auto result = components::qwen3_conditioning(
-        tokens, text_encoder_, components::Qwen3Conditioning::z_image(), event, cancelled);
+        tokens, text_encoder_, components::Qwen3Conditioning::z_image(), event, cancelled,
+        encoder_hybrid_.get());
     result = slice_axis(mx::squeeze(result, 0), 0, 0, tokens.valid);
     text_encoder_.clear();
     mx::clear_cache();
@@ -1010,13 +1015,39 @@ Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic
 }
 
 bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool> &cancelled) {
-    if (cached_conditioning_ && cached_prompt_ == r.prompt && cached_dynamic_ == r.dynamic_text) {
+    if (cached_conditioning_ && cached_prompt_ == r.prompt && cached_dynamic_ == r.dynamic_text &&
+        cached_encoder_manifest_ == r.encoder_ane_manifest) {
         event("z_image_text_cache_hit", 1, 1);
         return true;
     }
-    cached_conditioning_ = encode_text(tokenizer_.z_image_prompt(r.prompt, r.dynamic_text), event, cancelled);
+    auto tokens = tokenizer_.z_image_prompt(r.prompt, r.dynamic_text);
+    if (!r.encoder_ane_manifest.empty()) {
+        const auto prefill = components::qwen3_prefill_plan(
+            r.encoder_ane_manifest, int(tokens.ids.size()));
+        for (const auto &lora : active_loras_)
+            require(lora.role != "text_encoder",
+                    "Qwen3 encoder hybrid does not yet support text-encoder LoRA");
+        if (prefill.use_hybrid) {
+            if (!encoder_hybrid_ || encoder_hybrid_->manifest != r.encoder_ane_manifest)
+                encoder_hybrid_ = std::make_unique<HybridSession>(
+                    r.encoder_ane_manifest, text_path_, int(tokens.ids.size()), event,
+                    cancelled, r.warmup_iterations,
+                    components::qwen3_checkpoint_path(text_path_),
+                    std::vector<LoRAAsset>{}, 0, 35, true);
+            encoder_hybrid_->set_tokens(int(tokens.ids.size()));
+            require(encoder_hybrid_->rows == prefill.compute_tokens,
+                    "Qwen3 encoder manifest bucket changed during prefill setup");
+        } else {
+            encoder_hybrid_.reset();
+            event("qwen3_encoder_gpu_" + prefill.reason, 1, 1);
+        }
+    } else {
+        encoder_hybrid_.reset();
+    }
+    cached_conditioning_ = encode_text(tokens, event, cancelled);
     cached_prompt_ = r.prompt;
     cached_dynamic_ = r.dynamic_text;
+    cached_encoder_manifest_ = r.encoder_ane_manifest;
     return false;
 }
 
@@ -1168,6 +1199,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         }
         if (hybrid_)
             result.hybrid = hybrid_->metrics();
+        if (encoder_hybrid_)
+            result.encoder_hybrid = encoder_hybrid_->metrics();
         result.timings.wall =
             std::chrono::duration<double>(Clock::now() - begin).count();
         result.timings.text = text_seconds;
@@ -1240,6 +1273,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     if (hybrid_)
         result.hybrid = hybrid_->metrics();
+    if (encoder_hybrid_)
+        result.encoder_hybrid = encoder_hybrid_->metrics();
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
     result.timings.text = text_seconds;
     result.timings.denoise = denoise_seconds;

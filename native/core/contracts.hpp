@@ -18,6 +18,9 @@ struct Request {
     std::string model = "flux2-klein-4b";
     std::string operation = "image.generate";
     std::string prompt, output, execution = "gpu", dump, noise_path, ane_manifest;
+    // Optional encoder-only Core ML manifest.  This is intentionally separate
+    // from `ane_manifest`, which selects a denoiser/DiT partition.
+    std::string encoder_ane_manifest;
     std::string profile, residency = "resident", quantized_cache;
     std::string ltx_backend = "auto";
     std::string profile_identity;
