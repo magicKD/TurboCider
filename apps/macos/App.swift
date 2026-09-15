@@ -311,7 +311,12 @@ struct StudioView: View {
             Text("生成参数").font(.headline)
             VStack(alignment: .leading, spacing: 8) {
                 Picker("模型", selection: Binding(get: { studio.draft.modelID }, set: { studio.changeModel($0) })) {
-                    ForEach(studio.creationModels) { Text($0.name).tag($0.id) }
+                    ForEach(studio.creationModels) { item in
+                        let downloaded = !(studio.draft.modelPaths[item.id] ?? "").isEmpty
+                        Label("\(item.name) · \(downloaded ? "已下载" : "未下载")",
+                              systemImage: downloaded ? "checkmark.circle.fill" : "arrow.down.circle")
+                            .tag(item.id)
+                    }
                 }.disabled(store.busy || studio.importing).accessibilityIdentifier("studioModel")
                 Text(studio.draft.accelerationHint).font(.caption).foregroundStyle(.secondary)
                 Button(studio.draft.modelPath.isEmpty ? "选择模型…" : "管理模型") { page = .models }
