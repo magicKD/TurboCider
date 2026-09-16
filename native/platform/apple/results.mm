@@ -540,6 +540,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"total_tokens" : @(result.total_tokens),
             @"seconds" : @(result.timings.wall),
             @"mlx_active_bytes" : @(result.active_bytes),
+            @"block_residency" : result.block_residency ? to_dictionary(*result.block_residency) : (id)[NSNull null],
             @"hybrid" : hybrid,
             @"encoder_hybrid" : encoder_hybrid
         };

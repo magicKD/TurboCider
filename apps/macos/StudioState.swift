@@ -110,6 +110,7 @@ struct StudioDraft: Codable, Sendable {
     var strength = 0.75
     var dynamicText = true
     var residency = "resident"
+    var zImageStreamingBudgetGiB = 10
     var profilePath = ""
     var acceleration: StudioAcceleration?
     var loraStrategy = "auto"
@@ -120,7 +121,7 @@ struct StudioDraft: Codable, Sendable {
     init() {}
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
-        case seedText, randomSeed, strength, dynamicText, residency, profilePath, acceleration
+        case seedText, randomSeed, strength, dynamicText, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs
     }
     init(from decoder: Decoder) throws {
@@ -147,6 +148,7 @@ struct StudioDraft: Codable, Sendable {
         strength = try c.decodeIfPresent(Double.self, forKey: .strength) ?? strength
         dynamicText = try c.decodeIfPresent(Bool.self, forKey: .dynamicText) ?? dynamicText
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
+        zImageStreamingBudgetGiB = try c.decodeIfPresent(Int.self, forKey: .zImageStreamingBudgetGiB) ?? 10
         profilePath = try c.decodeIfPresent(String.self, forKey: .profilePath) ?? profilePath
         acceleration = try c.decodeIfPresent(StudioAcceleration.self, forKey: .acceleration)
         loraStrategy = try c.decodeIfPresent(String.self, forKey: .loraStrategy) ?? loraStrategy
@@ -250,8 +252,17 @@ struct StudioDraft: Codable, Sendable {
         guard (64...2048).contains(width), (64...2048).contains(height), width % 16 == 0, height % 16 == 0 else { throw NativeFailure(message: "宽高需为 64–2048 之间的 16 倍数。") }
         guard (1...50).contains(steps) else { throw NativeFailure(message: "采样步数需为 1–50，当前模型默认 \(model.default_steps) 步。") }
         if ["z-image-turbo", "z-image-turbo-gguf"].contains(modelID) {
-            guard residency == "resident", frames == 1, !audio else {
-                throw NativeFailure(message: "Z-Image-Turbo 使用常驻模型和单张图片，采样步数默认 9 步。")
+            guard (residency == "resident" || (modelID == "z-image-turbo" && residency == "streamed")), frames == 1, !audio else {
+                throw NativeFailure(message: "Z-Image-Turbo 支持常驻或 BF16 流式加载，每次生成单张图片。")
+            }
+            if residency == "streamed" {
+                guard activeLoRAs.isEmpty, !usesANE, profilePath.isEmpty,
+                      acceleration?.policy == nil || acceleration?.policy == "gpu" else {
+                    throw NativeFailure(message: "流式加载目前仅支持 BF16、纯 GPU 和不使用 LoRA 的配置。")
+                }
+                guard [6, 8, 10, 12].contains(zImageStreamingBudgetGiB) else {
+                    throw NativeFailure(message: "请选择 6、8、10 或 12 GiB 的流式内存预算。")
+                }
             }
             guard activeLoRAs.allSatisfy({ $0.role == "transformer" }) else {
                 throw NativeFailure(message: "Z-Image LoRA 仅支持 transformer 角色。")
@@ -322,6 +333,9 @@ struct StudioDraft: Codable, Sendable {
             }
         }
         request.dynamic_text = dynamicText; request.residency = residency
+        if modelID == "z-image-turbo", residency == "streamed" {
+            request.memory_budget_bytes = UInt64(zImageStreamingBudgetGiB) << 30
+        }
         request.lora_strategy = activeLoRAs.isEmpty ? "auto" : loraStrategy
         request.profile = profilePath.isEmpty ? nil : profilePath
         let acceleration = self.acceleration ?? (profilePath.isEmpty ? StudioAcceleration() : StudioAcceleration(policy: "profile"))
@@ -676,6 +690,9 @@ final class StudioState: ObservableObject {
         draft.audio = request.audio ?? false; draft.seedText = String(request.seed); draft.randomSeed = false
         draft.operation = request.operation ?? "image.generate"
         draft.residency = request.residency ?? "resident"; draft.profilePath = request.profile ?? ""
+        if request.model == "z-image-turbo", let budget = request.memory_budget_bytes {
+            draft.zImageStreamingBudgetGiB = Int(min(budget >> 30, 12))
+        }
         draft.acceleration = StudioAcceleration(policy: request.profile == nil ? request.execution : "profile", manifest: request.ane_manifest ?? "", sourceManifest: draft.acceleration?.sourceManifest ?? "", compileGPU: request.compile_gpu)
         draft.dynamicText = request.dynamic_text
         draft.assets = (request.inputs ?? []).map { StudioAsset(path: $0.path, name: URL(fileURLWithPath: $0.path).lastPathComponent, width: 0, height: 0) }
