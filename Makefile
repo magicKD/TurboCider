@@ -36,6 +36,7 @@ test:
 	@"$(PYTHON)" tests/native/test_hash_small_stack.py
 	@"$(PYTHON)" tests/native/test_contract.py
 	@"$(PYTHON)" -B tests/native/test_z_image_sharded_checkpoint.py
+	@"$(PYTHON)" -B tests/native/test_z_image_weight_stream.py
 	@"$(PYTHON)" -B tests/native/test_coreml_lora.py
 	@"$(PYTHON)" -B tests/native/test_llada_reference.py
 	@"$(PYTHON)" -B tests/native/test_quality_gate.py

@@ -4,6 +4,13 @@ import Foundation
     static func main() throws {
         func check(_ ok: Bool, _ text: String) throws { if !ok { throw NativeFailure(message: text) } }
         let empty = RunInsights(json: "{}")
+        let streamed = RunInsights(json: #"{"block_residency":{"streamed_blocks":17,"request_bytes_loaded":1073741824,"request_wait_seconds":1.5}}"#)
+        try check(streamed.streamedBlocks == 17 && streamed.streamReadBytes == 1073741824 && streamed.streamWaitSeconds == 1.5,
+                  "Streaming measurements were lost")
+        for value in ["-1", "1.5", "true", "1e100"] {
+            let invalidStream = RunInsights(json: "{\"block_residency\":{\"streamed_blocks\":\(value)}}")
+            try check(invalidStream.streamedBlocks == nil, "Invalid streaming layer count was accepted")
+        }
         try check(empty.promptCacheHit == nil && empty.activeBytes == nil && empty.coreMLCalls == nil, "Missing metrics became zero usage")
         let gpu = RunInsights(json: #"{"prompt_cache_hit":true,"memory":{"mlx_active_bytes":1073741824},"hybrid":null}"#)
         try check(gpu.promptCacheHit == true && gpu.coreMLCalls == nil, "GPU result implied Core ML use")

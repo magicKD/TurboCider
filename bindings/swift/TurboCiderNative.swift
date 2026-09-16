@@ -41,6 +41,7 @@ public struct NativeRequest: Codable, Sendable {
     public var inputs: [NativeInput]?
     public var profile: String?
     public var residency: String?
+    public var memory_budget_bytes: UInt64?
     public var quantized_cache: String?
     public var fps: Int?
     public var audio: Bool?
