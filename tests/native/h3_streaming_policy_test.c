@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 int main(void) {
     const uint64_t gib = UINT64_C(1024) * 1024 * 1024;
@@ -43,6 +44,37 @@ int main(void) {
     assert(h3_stream_plan_build(
                UINT64_MAX, reserve, UINT64_MAX, 50, 0, &plan) ==
            H3_STREAM_PLAN_OVERFLOW);
+
+    uint8_t mask[50];
+    assert(h3_stream_uniform_active_mask(50, 50, mask, 50));
+    for (unsigned block_id = 0; block_id < 50; block_id++)
+        assert(mask[block_id] == 1);
+    for (unsigned requested = 25; requested <= 50; requested++) {
+        assert(h3_stream_uniform_active_mask(50, requested, mask, 50));
+        assert(mask[0] && mask[49]);
+        unsigned active = 0;
+        for (unsigned block_id = 0; block_id < 50; block_id++)
+            active += mask[block_id] != 0;
+        assert(active == requested);
+
+        uint8_t legacy[50];
+        memset(legacy, 1, sizeof(legacy));
+        unsigned skipped = 50 - requested;
+        for (unsigned index = 0; index < skipped; index++) {
+            unsigned block_id = ((2 * index + 1) * 50) / (2 * skipped);
+            if (block_id == 0) block_id = 1;
+            if (block_id >= 49) block_id = 48;
+            legacy[block_id] = 0;
+        }
+        assert(!memcmp(mask, legacy, sizeof(mask)));
+
+        uint8_t repeat[50];
+        assert(h3_stream_uniform_active_mask(50, requested, repeat, 50));
+        assert(!memcmp(mask, repeat, sizeof(mask)));
+    }
+    assert(!h3_stream_uniform_active_mask(50, 1, mask, 50));
+    assert(!h3_stream_uniform_active_mask(50, 51, mask, 50));
+    assert(!h3_stream_uniform_active_mask(50, 45, mask, 49));
 
     /* The shared runtime policy must preserve the two pre-refactor formulas
      * over every meaningful capacity, not just the benchmarked budgets. */

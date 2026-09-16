@@ -1,6 +1,7 @@
 #ifndef H3_STREAMING_POLICY_H
 #define H3_STREAMING_POLICY_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef enum {
@@ -35,5 +36,14 @@ h3_stream_plan_status h3_stream_plan_build(
     unsigned requested_pinned_blocks, h3_stream_plan *plan);
 
 const char *h3_stream_plan_status_string(h3_stream_plan_status status);
+
+/* Deterministic active-block projection shared by the legacy H3 runtime and
+ * the generic streaming descriptor. The first and final blocks remain active
+ * for every valid H3 candidate. Returns zero for invalid arguments or if the
+ * historical spacing formula would select the same skipped block twice. */
+int h3_stream_uniform_active_mask(unsigned total_blocks,
+                                  unsigned active_blocks,
+                                  uint8_t *mask,
+                                  size_t mask_count);
 
 #endif

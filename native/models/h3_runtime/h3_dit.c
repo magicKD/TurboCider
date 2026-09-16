@@ -3218,15 +3218,11 @@ static int prepare_token_reduction_maps(h3_dit *dit, char *error,
 }
 
 static void configure_active_blocks(h3_dit *dit, unsigned active) {
-    memset(dit->block_active, 1, sizeof(dit->block_active));
+    int ok = h3_stream_uniform_active_mask(
+        H3_DIT_BLOCKS, active, dit->block_active,
+        sizeof(dit->block_active));
+    if (!ok) abort();
     dit->active_block_count = active;
-    unsigned skipped = H3_DIT_BLOCKS - active;
-    for (unsigned index = 0; index < skipped; index++) {
-        unsigned block = ((2 * index + 1) * H3_DIT_BLOCKS) / (2 * skipped);
-        if (block == 0) block = 1;
-        if (block >= H3_DIT_BLOCKS - 1) block = H3_DIT_BLOCKS - 2;
-        dit->block_active[block] = 0;
-    }
 }
 
 static int configure_explicit_gate_skip(h3_dit *dit, char *error,
