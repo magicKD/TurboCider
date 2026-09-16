@@ -1,0 +1,44 @@
+{
+  "document_kind": "proposed_performance_gate_example",
+  "schema_version": 1,
+  "status": "not_an_executable_campaign",
+  "confidence_level": 0.95,
+  "initial_matched_pairs": 20,
+  "minimum_tail_requests_per_variant": 50,
+  "thresholds": {
+    "P0_legacy": {
+      "wall_median_ratio_max": 1.02,
+      "wall_p95_ratio_max": 1.05,
+      "denoise_median_ratio_max": 1.02,
+      "new_framework_hooks": 0,
+      "new_memory_probes": 0,
+      "new_worker_threads": 0,
+      "new_pool_allocations": 0,
+      "new_cache_clear_or_unload_calls": 0
+    },
+    "P1_same_layout": {
+      "wall_median_ratio_max": 1.03,
+      "denoise_median_ratio_max": 1.03,
+      "wall_p95_ratio_max": 1.05,
+      "steady_framework_allocations": 0,
+      "steady_framework_thread_creates": 0
+    },
+    "P2_guard_matched_execution_segment": {
+      "wall_median_ratio_max": 1.05,
+      "wall_p95_ratio_max": 1.10,
+      "whole_request_wall_must_also_be_reported": true
+    }
+  },
+  "pass_rule": "confidence_interval_upper_at_or_below_threshold_and_all_hard_gates_pass",
+  "pressure_test_authorized": false,
+  "required_before_execution": [
+    "workload_and_layout_identities",
+    "baseline_and_candidate_build_identities",
+    "quality_policy",
+    "cache_and_thermal_protocol",
+    "final_sample_size_and_stopping_rule",
+    "bootstrap_and_quantile_estimators",
+    "multiplicity_policy",
+    "exclusion_and_timeout_policy"
+  ]
+}

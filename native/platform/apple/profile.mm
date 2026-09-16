@@ -16,10 +16,12 @@ void resolve_profile(Request &r) {
     if (r.profile.empty())
         return;
     auto path = std::filesystem::absolute(r.profile);
-    auto d = read_json(path);
+    auto d = read_config_json(path);
     profile_keys(d, @[ @"schema_version", @"enabled", @"match", @"models" ]);
-    require(profile_number(d[@"schema_version"]) && [d[@"schema_version"] doubleValue] == 1,
-            "profile schema must be 1");
+    require(profile_number(d[@"schema_version"]) &&
+                ([d[@"schema_version"] doubleValue] == 1 || [d[@"schema_version"] doubleValue] == 2),
+            "profile schema must be 1 or 2");
+    const bool v2 = [d[@"schema_version"] intValue] == 2;
     require(d[@"enabled"] && CFGetTypeID((__bridge CFTypeRef)d[@"enabled"]) == CFBooleanGetTypeID(),
             "profile enabled must be boolean");
     if (![d[@"enabled"] boolValue]) {
@@ -42,11 +44,29 @@ void resolve_profile(Request &r) {
     require([models isKindOfClass:NSDictionary.class], "profile models must be object");
     NSDictionary *model = models[@(r.model.c_str())];
     require([model isKindOfClass:NSDictionary.class], "profile does not contain requested model");
-    profile_keys(model, @[
+    NSMutableArray *allowed = [@[
         @"policy", @"residency", @"allow_approximation", @"ane_manifest", @"encoder_ane_manifest", @"memory_budget_bytes",
         @"allocator_cache_bytes", @"warmup_iterations", @"coreml_export",
-        @"streaming_offload", @"quantized_cache"
-    ]);
+        @"streaming_offload", @"quantized_cache", @"memory_constrained"
+    ] mutableCopy];
+    if (v2) [allowed addObject:@"streaming"];
+    profile_keys(model, allowed);
+    if (v2) {
+        StreamingConfig effective;
+        if (model[@"streaming"])
+            parse_streaming_config(model[@"streaming"], effective, "profile");
+        overlay_streaming_config(effective, r.streaming);
+        r.streaming = std::move(effective);
+    }
+    r.residency_specified |= model[@"residency"] != nil;
+    r.memory_budget_specified |= model[@"memory_budget_bytes"] != nil;
+    r.streaming_offload_specified |= model[@"streaming_offload"] != nil;
+    const MemoryConstrainedConfig request_memory = r.memory_constrained;
+    MemoryConstrainedConfig effective_memory;
+    if (model[@"memory_constrained"])
+        parse_memory_constrained(model[@"memory_constrained"], effective_memory);
+    overlay_memory_config(effective_memory, request_memory);
+    r.memory_constrained = effective_memory;
     r.execution = string_value(model, @"policy", "gpu");
     r.residency = string_value(model, @"residency", r.residency);
     auto quantized_cache = string_value(model, @"quantized_cache");

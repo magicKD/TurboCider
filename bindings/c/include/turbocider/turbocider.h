@@ -32,6 +32,11 @@ int tc_engine_create_model(const char *model_id, const char *model_path,
 int tc_engine_generate(tc_engine *, const char *request_json,
                        tc_event_callback callback, void *context,
                        char **result_json, char **error);
+/* Additive diagnostic ABI. Returns and consumes the most recent terminal
+ * memory report from an enabled constrained request. Default/disabled calls
+ * do not create or overwrite a report. */
+int tc_engine_take_last_memory_report_json(
+    tc_engine *, char **report_json, char **error);
 void tc_engine_cancel(tc_engine *);
 /* Explicit image-weight preparation and resource release; idle engine only.
  * Loading does not perform inference or warm a prompt/shape. */

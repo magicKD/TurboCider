@@ -1,5 +1,7 @@
 #include "bridge.hpp"
 #include "../../runtime/lora_identity.hpp"
+#include "../../runtime/memory_execution.hpp"
+#include "memory_probe.hpp"
 #include "../../runtime/residency.hpp"
 #include "../../backends/mlx.hpp"
 #include "../../media/image.hpp"
@@ -19,6 +21,7 @@
 #include <CommonCrypto/CommonDigest.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
@@ -27,7 +30,9 @@
 #include <exception>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <memory>
+#include <new>
 #include <signal.h>
 #include <spawn.h>
 #include <sys/stat.h>
@@ -44,8 +49,247 @@ constexpr uint32_t kLtxVideoChannels = 128;
 constexpr uint32_t kLtxAudioChannels = 128;
 constexpr uint32_t kLtxVideoDim = 4096;
 constexpr uint32_t kLtxAudioDim = 2048;
+constexpr uint32_t kLtxMaxConditioningRows = 4096;
+constexpr uint64_t kLtxHostAllocationMarginBytes = 64ull << 10;
+constexpr uint64_t kLtxVideoVaeGraphEnvelopeBytes = 2ull << 30;
 constexpr const char* kLtxRevision =
     "bf86adedf518142442575d1ce2e767b7d01c8c76";
+
+/* C callback bridge for the native LTX allocator. The token owns either a
+ * pending MemoryReservation or its committed StorageLease. It deliberately
+ * contains no Objective-C object, so it can safely cross the C allocator ABI. */
+struct LtxMemoryBridge {
+    MemoryAdmission* admission = nullptr;
+    MemoryExecutionContext* context = nullptr;
+    uint64_t generation = 0;
+    std::atomic<bool> completion_failure{false};
+};
+
+struct LtxMemoryToken {
+    std::optional<MemoryReservation> reservation;
+    std::optional<StorageLease> lease;
+    uint64_t allocator_domain = 0;
+    uint64_t generation = 0;
+    uint32_t queue_id = 0;
+    std::optional<MemoryCompletionToken> completion;
+};
+
+static uint64_t ltx_checked_add(uint64_t left, uint64_t right,
+                                const char* label) {
+    require(left <= std::numeric_limits<uint64_t>::max() - right,
+            std::string("memory_estimate_unknown: overflow computing ") +
+                label);
+    return left + right;
+}
+
+static uint64_t ltx_checked_multiply(uint64_t left, uint64_t right,
+                                     const char* label) {
+    require(!left || right <= std::numeric_limits<uint64_t>::max() / left,
+            std::string("memory_estimate_unknown: overflow computing ") +
+                label);
+    return left * right;
+}
+
+template <typename T>
+static uint64_t ltx_host_vector_upper(size_t elements, const char* label) {
+    const uint64_t bytes = ltx_checked_multiply(
+        static_cast<uint64_t>(elements), sizeof(T), label);
+    return ltx_checked_add(bytes, kLtxHostAllocationMarginBytes, label);
+}
+
+template <typename T>
+static uint64_t ltx_host_vector_capacity_bytes(
+        const std::vector<T>& value, const char* label) {
+    return ltx_checked_multiply(
+        static_cast<uint64_t>(value.capacity()), sizeof(T), label);
+}
+
+static std::optional<MemoryReservation> ltx_reserve_memory(
+        MemoryExecutionContext* context, MemoryClass memory_class,
+        uint64_t upper_bytes, const char* tag) {
+    if (!context || !upper_bytes) return std::nullopt;
+    auto reservation = context->try_reserve_site(
+        tag ? tag : "ltx.stage", memory_class, upper_bytes);
+    require(reservation.has_value(),
+            std::string("memory_budget_too_small: LTX reservation denied for ") +
+                (tag ? tag : "stage allocation"));
+    return std::optional<MemoryReservation>(std::move(*reservation));
+}
+
+template <typename T>
+static void ltx_release_vector(std::vector<T>& value) {
+    std::vector<T>().swap(value);
+}
+
+static MemoryClass ltx_memory_class(ltx_gpu_memory_class value) {
+    switch (value) {
+    case LTX_GPU_MEMORY_WEIGHTS: return MemoryClass::Weights;
+    case LTX_GPU_MEMORY_ACTIVATION: return MemoryClass::Activation;
+    case LTX_GPU_MEMORY_CONDITIONING: return MemoryClass::Conditioning;
+    case LTX_GPU_MEMORY_REFILL_SLOT: return MemoryClass::RefillSlot;
+    case LTX_GPU_MEMORY_CONVERSION_SCRATCH:
+        return MemoryClass::ConversionScratch;
+    case LTX_GPU_MEMORY_OUTPUT: return MemoryClass::Output;
+    case LTX_GPU_MEMORY_UNKNOWN: break;
+    }
+    return MemoryClass::UnknownExternal;
+}
+
+static void ltx_write_memory_error(char* error, size_t error_size,
+                                   const std::string& message) {
+    if (error && error_size)
+        std::snprintf(error, error_size, "%s", message.c_str());
+}
+
+static int ltx_memory_reserve(void* opaque, uint32_t memory_class,
+                              uint64_t upper_bytes, const char* tag,
+                              void** token, char* error, size_t error_size) {
+    if (token) *token = nullptr;
+    auto* bridge = static_cast<LtxMemoryBridge*>(opaque);
+    if (!bridge || !bridge->admission || !bridge->context ||
+        &bridge->context->admission() != bridge->admission ||
+        !bridge->generation || !token || !upper_bytes) {
+        ltx_write_memory_error(error, error_size,
+                               "memory_policy_invalid: invalid LTX reservation");
+        return 0;
+    }
+    try {
+        auto reservation = bridge->context->try_reserve_site(
+            tag ? tag : "ltx_gpu_buffer",
+            ltx_memory_class(static_cast<ltx_gpu_memory_class>(memory_class)),
+            upper_bytes);
+        if (!reservation) {
+            ltx_write_memory_error(
+                error, error_size,
+                "memory_budget_too_small: LTX buffer reservation denied");
+            return 0;
+        }
+        auto* value = new (std::nothrow) LtxMemoryToken;
+        if (!value) {
+            reservation->cancel();
+            ltx_write_memory_error(
+                error, error_size,
+                "memory_policy_allocation_failed: LTX reservation token");
+            return 0;
+        }
+        value->reservation.emplace(std::move(*reservation));
+        value->generation = bridge->generation;
+        *token = value;
+        return 1;
+    } catch (const std::exception& exception) {
+        ltx_write_memory_error(error, error_size, exception.what());
+        return 0;
+    } catch (...) {
+        ltx_write_memory_error(error, error_size,
+                               "memory_lifetime_violation: LTX reserve callback");
+        return 0;
+    }
+}
+
+static int ltx_memory_commit(void* opaque, void* opaque_token,
+                             uint64_t allocator_domain, uint64_t handle,
+                             uint64_t actual_bytes, uint64_t generation,
+                             char* error, size_t error_size) {
+    auto* bridge = static_cast<LtxMemoryBridge*>(opaque);
+    auto* token = static_cast<LtxMemoryToken*>(opaque_token);
+    if (!bridge || !bridge->context || !bridge->admission ||
+        &bridge->context->admission() != bridge->admission ||
+        !token || !token->reservation || !allocator_domain || !handle ||
+        !actual_bytes || !generation ||
+        (token->allocator_domain &&
+         allocator_domain != token->allocator_domain) ||
+        generation != token->generation ||
+        generation != bridge->generation) {
+        ltx_write_memory_error(
+            error, error_size,
+            "memory_lifetime_violation: invalid LTX commit token");
+        return 0;
+    }
+    try {
+        token->allocator_domain = allocator_domain;
+        token->lease.emplace(token->reservation->commit(
+            StorageId{allocator_domain, handle, actual_bytes, generation}));
+        token->reservation.reset();
+        return 1;
+    } catch (const std::exception& exception) {
+        ltx_write_memory_error(error, error_size, exception.what());
+        return 0;
+    } catch (...) {
+        ltx_write_memory_error(error, error_size,
+                               "memory_lifetime_violation: LTX commit callback");
+        return 0;
+    }
+}
+
+static void ltx_memory_cancel(void*, void* opaque_token) {
+    auto* token = static_cast<LtxMemoryToken*>(opaque_token);
+    delete token;
+}
+
+static void ltx_memory_release(void*, void* opaque_token) {
+    auto* token = static_cast<LtxMemoryToken*>(opaque_token);
+    if (!token) return;
+    token->lease.reset();
+    delete token;
+}
+
+static int ltx_memory_retire(void* opaque, void* opaque_token,
+                             uint32_t queue_id, uint32_t stage_id,
+                             uint32_t slot_id, char* error,
+                             size_t error_size) {
+    auto* bridge = static_cast<LtxMemoryBridge*>(opaque);
+    auto* token = static_cast<LtxMemoryToken*>(opaque_token);
+    if (!bridge || !bridge->context || !bridge->admission ||
+        &bridge->context->admission() != bridge->admission || !token ||
+        !token->lease || token->completion || !queue_id || !stage_id ||
+        !slot_id || !token->allocator_domain ||
+        token->generation != bridge->generation) {
+        ltx_write_memory_error(
+            error, error_size,
+            "memory_lifetime_violation: invalid LTX retirement token");
+        return 0;
+    }
+    try {
+        token->queue_id = queue_id;
+        token->completion.emplace(
+            bridge->context->scheduler().retire_async(
+                std::move(*token->lease), token->allocator_domain,
+                token->generation, stage_id, slot_id));
+        token->lease.reset();
+        return 1;
+    } catch (const std::exception& exception) {
+        ltx_write_memory_error(error, error_size, exception.what());
+        return 0;
+    } catch (...) {
+        ltx_write_memory_error(
+            error, error_size,
+            "memory_lifetime_violation: LTX retirement callback");
+        return 0;
+    }
+}
+
+static void ltx_memory_complete(void* opaque, void* opaque_token,
+                                uint32_t queue_id, int status) {
+    auto* bridge = static_cast<LtxMemoryBridge*>(opaque);
+    auto* token = static_cast<LtxMemoryToken*>(opaque_token);
+    if (!bridge || !bridge->context || !token || !token->completion ||
+        !queue_id || queue_id != token->queue_id ||
+        token->generation != bridge->generation ||
+        !bridge->context->scheduler().post_completion(
+            *token->completion, status)) {
+        if (bridge)
+            bridge->completion_failure.store(true,
+                                             std::memory_order_release);
+        return;
+    }
+    token->completion.reset();
+}
+
+static uint64_t ltx_allocator_domain(const void* owner, uint64_t salt) {
+    uint64_t value = static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(owner)) ^ salt;
+    return value ? value : salt;
+}
 
 static std::filesystem::path ltx_runtime_resource(
         const std::filesystem::path& model_root, const char* name) {
@@ -829,6 +1073,20 @@ struct Conditioning {
     std::vector<uint16_t> audio;
     std::vector<uint16_t> mask;
 };
+
+static uint64_t ltx_conditioning_capacity_bytes(
+        const Conditioning& conditioning) {
+    uint64_t bytes = ltx_host_vector_capacity_bytes(
+        conditioning.video, "LTX video conditioning capacity");
+    bytes = ltx_checked_add(
+        bytes, ltx_host_vector_capacity_bytes(
+                   conditioning.audio, "LTX audio conditioning capacity"),
+        "LTX conditioning capacity");
+    return ltx_checked_add(
+        bytes, ltx_host_vector_capacity_bytes(
+                   conditioning.mask, "LTX mask conditioning capacity"),
+        "LTX conditioning capacity");
+}
 
 struct ConditioningCacheLocation {
     std::filesystem::path root;
@@ -1707,6 +1965,100 @@ public:
         mlx_denoiser_.reset(); mlx_denoiser_key_.clear();
         video_vae_.reset(); audio_vae_.reset(); base_vocoder_.reset(); bwe_.reset();
     }
+    bool uses_parent_mlx(const Request& request) const override {
+        if (request.memory_constrained.enabled) return false;
+        return ltx_mlx_requested(request);
+    }
+    std::optional<MemoryCapabilityProbe> probe_memory_capability(
+            const ExecutionPlan& plan,
+            const MemoryDeviceIdentity& device) const override {
+        if (!plan.memory_policy || !plan.memory_policy->enabled)
+            return std::nullopt;
+        require(plan.memory_policy->adapter_candidate ==
+                    "ltx_c_metal_streamed_video_v1" &&
+                    plan.request.ltx_backend == "c_metal",
+                "memory_policy_unsupported: LTX probe route mismatch");
+        const auto sidecar = memory_capability_probe_path(
+            root_, plan.memory_policy->adapter_candidate, plan.request,
+            plan.memory_policy->refill_slots);
+        return load_memory_capability_probe(
+            root_, sidecar, plan, device,
+            MemoryModelRootTrust::ExternalMutable,
+            memory_probe_hash_cache_);
+    }
+    void set_memory_admission(MemoryAdmission* admission) override {
+        memory_bridge_.admission = admission;
+        if (admission) {
+            ++memory_generation_;
+            if (!memory_generation_) ++memory_generation_;
+            memory_bridge_.generation = memory_generation_;
+            memory_bridge_.completion_failure.store(
+                false, std::memory_order_release);
+            native_drain_count_ = 0;
+            native_drain_failed_ = false;
+            next_host_memory_handle_ = 0;
+        } else {
+            memory_bridge_.generation = 0;
+        }
+    }
+    void bind_memory_context(MemoryExecutionContext* context) override {
+        require(context != nullptr && memory_context_ == nullptr &&
+                    memory_bridge_.admission == &context->admission(),
+                "memory_lifetime_violation: invalid LTX context binding");
+        memory_context_ = context;
+        memory_bridge_.context = context;
+        memory_schedule_hooks_ = context->make_schedule_hooks();
+    }
+    void unbind_memory_context() noexcept override {
+        memory_schedule_hooks_ = {};
+        memory_bridge_.context = nullptr;
+        memory_context_ = nullptr;
+    }
+    MemoryDrainResult drain_memory_completions(
+            MemoryExecutionContext& context,
+            std::chrono::milliseconds timeout) override {
+        require(memory_context_ == &context &&
+                    memory_bridge_.admission == &context.admission(),
+                "memory_lifetime_violation: invalid LTX completion drain");
+        require(timeout.count() > 0,
+                "memory_policy_invalid: LTX completion drain timeout is zero");
+        uint64_t completions = native_drain_count_;
+        if (denoiser_) {
+            char error[1024] = {};
+            if (!ltx_native_drain(denoiser_.get(), error, sizeof(error))) {
+                native_drain_failed_ = true;
+                return {false, completions,
+                        static_cast<uint64_t>(
+                            context.scheduler().pending_count()),
+                        error[0] ? error : "LTX native GPU drain failed"};
+            }
+            if (memory_bridge_.completion_failure.load(
+                    std::memory_order_acquire)) {
+                native_drain_failed_ = true;
+                return {false, completions,
+                        static_cast<uint64_t>(
+                            context.scheduler().pending_count()),
+                        "LTX memory completion callback failed"};
+            }
+            ++completions;
+        }
+        const auto mailbox = context.drain_completion_mailbox();
+        const auto snapshot = context.admission().snapshot();
+        const auto pending = std::max<uint64_t>(
+            snapshot.pending_release_count, context.scheduler().pending_count());
+        const bool completed = !native_drain_failed_ && mailbox.ok() &&
+            pending == 0;
+        std::string failure;
+        if (native_drain_failed_)
+            failure = "LTX native GPU drain previously failed";
+        else if (!mailbox.ok())
+            failure = mailbox.failure.empty() ?
+                "LTX completion mailbox drain failed" : mailbox.failure;
+        else if (pending)
+            failure = "LTX generate returned with pending GPU memory";
+        return {completed, completions + mailbox.consumed,
+                pending, std::move(failure)};
+    }
 
     RunResult generate(const Request& request,
                            const Event& event,
@@ -1714,6 +2066,15 @@ public:
         const auto request_started = Clock::now();
         require(request.model == "ltx-2.5-distilled",
                 "request model differs from LTX session");
+        if (request.memory_constrained.enabled) {
+            require(memory_bridge_.admission != nullptr &&
+                        memory_context_ != nullptr &&
+                        memory_bridge_.admission ==
+                            &memory_context_->admission() &&
+                        memory_generation_ != 0,
+                    "memory_lifetime_violation: constrained LTX request has "
+                    "no active memory admission");
+        }
         auto plan = make_plan(request);
         require(!request.prompt.empty() && !request.output.empty(),
                 "prompt and output are required");
@@ -1762,6 +2123,16 @@ public:
         const std::string effective_execution =
             request.execution == "auto" ? "gpu" : request.execution;
         const bool use_mlx = ltx_mlx_requested(request);
+        if (request.memory_constrained.enabled) {
+            require(!use_mlx && request.ltx_backend == "c_metal" &&
+                        effective_execution == "gpu" &&
+                        request.operation == "video.generate" &&
+                        !request.audio && request.inputs.empty() &&
+                        request.loras.empty() &&
+                        request.residency == "streamed",
+                    "memory_policy_unsupported: constrained LTX v1 supports "
+                    "only the GPU C/Metal streamed video-only text route");
+        }
         if (use_mlx) {
             require(effective_execution == "gpu",
                     "TURBOCIDER_LTX_MLX=1 requires execution=gpu; ANE is a separate candidate");
@@ -1827,9 +2198,11 @@ public:
         }
         const bool gpu_parallel_av = effective_execution == "gpu" &&
             request.ltx_fast_av &&
+            !request.memory_constrained.enabled &&
             ltx_gpu_parallel_av_requested();
         const bool gpu_batch_audio = effective_execution == "gpu" &&
             request.ltx_fast_av &&
+            !request.memory_constrained.enabled &&
             ltx_gpu_batch_audio_requested();
         if (streamed) {
             require(!image_to_video,
@@ -1839,8 +2212,30 @@ public:
             require(effective_execution == "gpu",
                     "LTX block streaming currently requires GPU execution");
         }
+        const uint64_t conditioning_row_bytes = ltx_checked_multiply(
+            static_cast<uint64_t>(kLtxVideoDim + kLtxAudioDim + 1u),
+            sizeof(uint16_t), "LTX conditioning row bytes");
+        const uint64_t conditioning_one_copy = ltx_checked_multiply(
+            kLtxMaxConditioningRows, conditioning_row_bytes,
+            "LTX conditioning envelope");
+        /* The connector briefly holds raw and connected tensors at once. */
+        const uint64_t conditioning_upper = ltx_checked_add(
+            ltx_checked_multiply(2u, conditioning_one_copy,
+                                 "LTX conditioning overlap"),
+            6u * kLtxHostAllocationMarginBytes,
+            "LTX conditioning overlap");
+        auto conditioning_reservation = reserve_host_memory(
+            MemoryClass::Conditioning, conditioning_upper,
+            "ltx.conditioning.raw_and_connected");
+        StorageLease conditioning_lease;
         auto conditioning = load_conditioning(
             root_, selected_checkpoint, request.prompt);
+        if (conditioning.connected && conditioning_reservation) {
+            conditioning_lease = commit_host_memory(
+                conditioning_reservation,
+                ltx_conditioning_capacity_bytes(conditioning),
+                "conditioning");
+        }
         bool used_dynamic_gemma = false;
         ltx_gemma_encoder_telemetry gemma_encoder_telemetry{};
         ScopeExit staged_cleanup([this, component_staged, streamed] {
@@ -1928,6 +2323,24 @@ public:
                 options.max_tokens = 1024u;
                 options.ane_manifest = request.encoder_ane_manifest.empty() ?
                     nullptr : request.encoder_ane_manifest.c_str();
+                if (request.memory_constrained.enabled) {
+                    require(memory_bridge_.admission != nullptr,
+                            "memory_lifetime_violation: constrained LTX text "
+                            "encoder has no admission bridge");
+                    memory_hooks_.struct_size = sizeof(memory_hooks_);
+                    memory_hooks_.version = 2u;
+                    memory_hooks_.user = &memory_bridge_;
+                    memory_hooks_.reserve = ltx_memory_reserve;
+                    memory_hooks_.commit = ltx_memory_commit;
+                    memory_hooks_.cancel = ltx_memory_cancel;
+                    memory_hooks_.release = ltx_memory_release;
+                    memory_hooks_.retire = ltx_memory_retire;
+                    memory_hooks_.complete = ltx_memory_complete;
+                    options.memory_hooks = &memory_hooks_;
+                    options.memory_allocator_domain = ltx_allocator_domain(
+                        this, UINT64_C(0x4c545847454d4d41));
+                    options.memory_generation = memory_generation_;
+                }
                 gemma_encoder_.reset(ltx_gemma_encoder_create(
                     &options, error, sizeof(error)));
                 require(gemma_encoder_ != nullptr, error);
@@ -2063,6 +2476,29 @@ public:
                 options.batch_audio_commands = gpu_batch_audio ? 1 : 0;
                 options.stream_blocks = streamed ? 1 : 0;
                 options.memory_budget_bytes = request.memory_budget_bytes;
+                options.max_refill_slots =
+                    request.memory_constrained.enabled ?
+                        request.memory_constrained.refill_slots : 0u;
+                if (request.memory_constrained.enabled) {
+                    require(memory_bridge_.admission != nullptr,
+                            "memory_lifetime_violation: constrained LTX session "
+                            "has no admission bridge");
+                    memory_hooks_.struct_size = sizeof(memory_hooks_);
+                    memory_hooks_.version = 2u;
+                    memory_hooks_.user = &memory_bridge_;
+                    memory_hooks_.reserve = ltx_memory_reserve;
+                    memory_hooks_.commit = ltx_memory_commit;
+                    memory_hooks_.cancel = ltx_memory_cancel;
+                    memory_hooks_.release = ltx_memory_release;
+                    memory_hooks_.retire = ltx_memory_retire;
+                    memory_hooks_.complete = ltx_memory_complete;
+                    options.memory_hooks = &memory_hooks_;
+                    options.memory_allocator_domain = ltx_allocator_domain(
+                        this, UINT64_C(0x4c545844454e4f49));
+                    options.memory_generation = memory_generation_;
+                    if (memory_schedule_hooks_.emit)
+                        options.schedule_hooks = &memory_schedule_hooks_;
+                }
                 options.preload_ane_stage2 = ane_config.preload_stage2 ? 1 : 0;
                 options.release_full_gpu_mlp =
                     ane_config.release_full_gpu_mlp ? 1 : 0;
@@ -2130,8 +2566,28 @@ public:
             kLtxVideoChannels;
         size_t audio_count = static_cast<size_t>(workload.audio_tokens) *
             kLtxAudioChannels;
+        auto stage1_video_reservation = reserve_host_memory(
+            MemoryClass::Activation,
+            ltx_host_vector_upper<uint16_t>(
+                stage1_video_count, "LTX Stage-1 video latent"),
+            "ltx.latent.video.stage1");
+        auto audio_latent_reservation = reserve_host_memory(
+            MemoryClass::Activation,
+            ltx_host_vector_upper<uint16_t>(
+                audio_count, "LTX audio latent"),
+            "ltx.latent.audio");
         std::vector<uint16_t> video(stage1_video_count);
         std::vector<uint16_t> audio(audio_count);
+        StorageLease stage1_video_lease = commit_host_memory(
+            stage1_video_reservation,
+            ltx_host_vector_capacity_bytes(
+                video, "LTX Stage-1 video latent capacity"),
+            "Stage-1 video latent");
+        StorageLease audio_latent_lease = commit_host_memory(
+            audio_latent_reservation,
+            ltx_host_vector_capacity_bytes(
+                audio, "LTX audio latent capacity"),
+            "audio latent");
         write_ltx_dump_metadata(request.dump, workload);
         const bool used_native_connector = !conditioning.connected;
         if (!conditioning.connected) {
@@ -2169,6 +2625,12 @@ public:
             write_ltx_conditioning_cache(
                 root_, selected_checkpoint, request.prompt, conditioning);
             event("connector", 1, 1);
+        }
+        if (conditioning_reservation) {
+            conditioning_lease = commit_host_memory(
+                conditioning_reservation,
+                ltx_conditioning_capacity_bytes(conditioning),
+                "conditioning");
         }
         const std::string conditioning_mode = conditioning.cache_hit ?
             "connected_cache" : (used_dynamic_gemma ? "dynamic_gemma" :
@@ -2209,7 +2671,17 @@ public:
         checkpoint(cancel);
         const auto stage1_finished = Clock::now();
         event("latent_upsample", 0, 1);
+        auto stage2_video_reservation = reserve_host_memory(
+            MemoryClass::Activation,
+            ltx_host_vector_upper<uint16_t>(
+                stage2_video_count, "LTX Stage-2 video latent"),
+            "ltx.latent.video.stage2");
         std::vector<uint16_t> upsampled(stage2_video_count);
+        StorageLease stage2_video_lease = commit_host_memory(
+            stage2_video_reservation,
+            ltx_host_vector_capacity_bytes(
+                upsampled, "LTX Stage-2 video latent capacity"),
+            "Stage-2 video latent");
         if (use_mlx) {
             require(ltx_mlx_upsample_stage2(
                 upsampled.data(), upsampled.size(), video.data(), video.size(),
@@ -2224,6 +2696,12 @@ public:
         }
         event("latent_upsample", 1, 1);
         video.swap(upsampled);
+        /* `upsampled` now owns the obsolete Stage-1 backing. Return it before
+         * Stage 2 so the two latent resolutions only overlap during the
+         * explicit upsample transition. */
+        ltx_release_vector(upsampled);
+        stage1_video_lease.release();
+        ltx_release_vector(stage1_clean_prefix);
         dump_ltx_bf16(request.dump, "stage2_input_video", video.data(), video.size());
         const auto upsample_finished = Clock::now();
         bool stage2_ok = use_mlx ?
@@ -2248,6 +2726,7 @@ public:
         dump_ltx_bf16(request.dump, "stage2_audio", audio.data(), audio.size());
         checkpoint(cancel);
         const auto stage2_finished = Clock::now();
+        ltx_release_vector(stage2_clean_prefix);
         ltx_native_streaming_info streaming_after{};
         ltx_mlx_info mlx_info{};
         if (use_mlx) {
@@ -2258,12 +2737,48 @@ public:
                         denoiser_.get(), &streaming_after),
                     "cannot inspect LTX block streaming result");
         }
-        if (component_staged) {
+        if (component_staged || streamed) {
+            if (request.memory_constrained.enabled && denoiser_) {
+                char drain_error[1024] = {};
+                if (!ltx_native_drain(
+                        denoiser_.get(), drain_error,
+                        sizeof(drain_error))) {
+                    native_drain_failed_ = true;
+                    require(false, drain_error[0] ? drain_error :
+                            "LTX native GPU drain failed at stage boundary");
+                }
+                ++native_drain_count_;
+            }
             denoiser_.reset();
             denoiser_key_.clear();
             mlx_denoiser_.reset();
             mlx_denoiser_key_.clear();
+            if (streamed) {
+                // The constrained full-request contract does not allow the
+                // streamed Transformer prefix/slots to overlap the Video VAE.
+                // MLX helpers are disabled below, so drain allocator cache at
+                // this explicit component boundary too.
+                ltx_mlx_video_vae_clear_cache();
+            }
         }
+        if (request.memory_constrained.enabled) {
+            /* Conditioning and the unused audio latent have no last-use
+             * after Stage 2 for the certified video-only route. Return their
+             * host backing before admitting the Video VAE envelope. */
+            ltx_release_vector(conditioning.video);
+            ltx_release_vector(conditioning.audio);
+            ltx_release_vector(conditioning.mask);
+            conditioning_lease.release();
+            if (!request.audio) {
+                ltx_release_vector(audio);
+                audio_latent_lease.release();
+            }
+        }
+        auto video_vae_graph_reservation = reserve_host_memory(
+            MemoryClass::CompileTemporary,
+            request.memory_constrained.enabled ?
+                kLtxVideoVaeGraphEnvelopeBytes : 0,
+            "ltx.video_vae.graph_envelope_v1");
         event("video_vae", 0, 1);
         const char* exec_value = std::getenv("TURBOCIDER_LTX_EXEC_FINALIZER");
         const bool exec_finalizer = component_staged &&
@@ -2299,8 +2814,16 @@ public:
                 effective_execution);
         }
         std::string video_vae_isolation;
+        const size_t pixel_count = static_cast<size_t>(3) * workload.frames *
+            workload.output_height * workload.output_width;
+        auto pixels_reservation = reserve_host_memory(
+            MemoryClass::Output,
+            ltx_host_vector_upper<uint16_t>(
+                pixel_count, "LTX decoded planar pixels"),
+            "ltx.output.planar_bf16");
         std::vector<uint16_t> pixels;
-        if (std::filesystem::is_regular_file(video_vae_helper_path_)) {
+        if (!request.memory_constrained.enabled &&
+            std::filesystem::is_regular_file(video_vae_helper_path_)) {
             /* This spawned-helper path isolates user-space MLX objects, but
              * the Transformer parent remains alive.  Unified-memory pressure
              * from the parent's Metal/MPSGraph allocations can therefore make
@@ -2319,8 +2842,6 @@ public:
                     video_vae_path_.c_str(), error, sizeof(error)));
                 require(video_vae_ != nullptr, error);
             }
-            size_t pixel_count = static_cast<size_t>(3) * workload.frames *
-                workload.output_height * workload.output_width;
             pixels.resize(pixel_count);
             require(ltx_mlx_video_vae_decode_tokens_bf16(
                 video_vae_.get(), pixels.data(), pixels.size(), video.data(),
@@ -2329,13 +2850,41 @@ public:
                 error, sizeof(error)), error);
             video_vae_isolation = "in_process";
         }
+        StorageLease pixels_lease = commit_host_memory(
+            pixels_reservation,
+            ltx_host_vector_capacity_bytes(
+                pixels, "LTX decoded planar pixel capacity"),
+            "decoded planar pixels");
+        if (request.memory_constrained.enabled) {
+            /* The latent is consumed synchronously by decode. Destroy the
+             * decoder and trim its cache before reporting the VAE boundary;
+             * the graph reservation remains held until this cleanup ends. */
+            ltx_release_vector(video);
+            stage2_video_lease.release();
+            video_vae_.reset();
+            ltx_mlx_video_vae_clear_cache();
+            video_vae_graph_reservation.reset();
+        }
         event("video_vae", 1, 1);
         const auto video_vae_finished = Clock::now();
+        auto rgb_reservation = reserve_host_memory(
+            MemoryClass::Output,
+            ltx_host_vector_upper<uint8_t>(
+                pixels.size(), "LTX RGB output"),
+            "ltx.output.rgb24");
         std::vector<uint8_t> rgb(pixels.size());
+        StorageLease rgb_lease = commit_host_memory(
+            rgb_reservation,
+            ltx_host_vector_capacity_bytes(rgb, "LTX RGB output capacity"),
+            "RGB output");
         require(ltx_video_bf16_planar_to_rgb24(
                     rgb.data(), rgb.size(), pixels.data(), pixels.size(),
                     workload.frames, workload.output_height,
                     workload.output_width, error, sizeof(error)), error);
+        if (request.memory_constrained.enabled) {
+            ltx_release_vector(pixels);
+            pixels_lease.release();
+        }
         const auto rgb_finished = Clock::now();
         if (request.audio && component_staged) {
             /* Do not keep the 1.4 GiB Video VAE graph alive while the audio
@@ -2360,6 +2909,10 @@ public:
         write_video_rgb24(video_only, rgb.data(), workload.frames,
                           workload.output_width, workload.output_height,
                           workload.fps);
+        if (request.memory_constrained.enabled && !request.audio) {
+            ltx_release_vector(rgb);
+            rgb_lease.release();
+        }
         event("export", 1, 1);
         const auto video_export_finished = Clock::now();
         auto audio_decode_finished = video_export_finished;
@@ -2627,6 +3180,33 @@ public:
     }
 
 private:
+    MemoryExecutionContext* memory_context_ = nullptr;
+    mutable MemoryCheckpointHashCache memory_probe_hash_cache_;
+    std::optional<MemoryReservation> reserve_host_memory(
+            MemoryClass memory_class, uint64_t upper_bytes,
+            const char* tag) {
+        return ltx_reserve_memory(
+            memory_context_, memory_class, upper_bytes, tag);
+    }
+
+    StorageLease commit_host_memory(
+            std::optional<MemoryReservation>& reservation,
+            uint64_t actual_bytes, const char* tag) {
+        if (!reservation) return {};
+        require(actual_bytes > 0 &&
+                    actual_bytes <= reservation->reserved_bytes(),
+                std::string("memory_lifetime_violation: invalid LTX host ") +
+                    (tag ? tag : "allocation") + " capacity");
+        uint64_t handle = ++next_host_memory_handle_;
+        require(handle != 0,
+                "memory_lifetime_violation: LTX host handle overflow");
+        auto lease = reservation->commit(StorageId{
+            ltx_allocator_domain(this, UINT64_C(0x4c5458484f535400)),
+            handle, actual_bytes, memory_generation_});
+        reservation.reset();
+        return lease;
+    }
+
     std::filesystem::path root_;
     std::filesystem::path checkpoint_path_;
     std::filesystem::path upsampler_path_;
@@ -2642,6 +3222,13 @@ private:
     HashCache base_hash_cache_;
     HashCache lora_hash_cache_;
     HashCache output_hash_cache_;
+    LtxMemoryBridge memory_bridge_;
+    ltx_gpu_memory_hooks memory_hooks_{};
+    tc_memory_schedule_hooks_v1 memory_schedule_hooks_{};
+    uint64_t memory_generation_ = 0;
+    uint64_t next_host_memory_handle_ = 0;
+    uint64_t native_drain_count_ = 0;
+    bool native_drain_failed_ = false;
     std::unique_ptr<ltx_native_denoiser, decltype(&ltx_native_free)> denoiser_{nullptr, ltx_native_free};
     std::unique_ptr<ltx_mlx_denoiser, decltype(&ltx_mlx_free)> mlx_denoiser_{nullptr, ltx_mlx_free};
     std::unique_ptr<ltx_gemma_encoder, decltype(&ltx_gemma_encoder_free)> gemma_encoder_{nullptr, ltx_gemma_encoder_free};

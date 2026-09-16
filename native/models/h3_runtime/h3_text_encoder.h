@@ -36,6 +36,14 @@ int h3_text_encode_bf16(const char *weight_directory,
                         h3_text_progress progress, void *progress_opaque,
                         h3_text_embedding *output,
                         char *error, size_t error_size);
+int h3_text_encode_bf16_with_options(
+                        const char *weight_directory,
+                        const char *shader_source_path,
+                        const h3_gpu_options *gpu_options,
+                        const uint32_t *token_ids, size_t token_count,
+                        h3_text_progress progress, void *progress_opaque,
+                        h3_text_embedding *output,
+                        char *error, size_t error_size);
 
 /* Run the same 50 decoder layers with Qwen3-VL presentation spans. The base
  * token embedding at every span is replaced by vision embeddings; deepstack

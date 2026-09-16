@@ -31,6 +31,10 @@
 @property(nonatomic, strong) MPSGraphTensorData *graphData;
 @property(nonatomic, strong) NSArray<NSNumber *> *graphDataShape;
 @property(nonatomic) MPSDataType graphDataType;
+@property(nonatomic) void *memoryToken;
+@property(nonatomic) h3_gpu_memory_hooks memoryHooks;
+@property(nonatomic) BOOL memoryAccounted;
+@property(nonatomic) BOOL memoryRetired;
 @end
 @implementation H3Tensor
 @end
@@ -142,6 +146,10 @@
 @property(nonatomic) double profileStartWall;
 @property(nonatomic) double profileMarkWall;
 @property(nonatomic) double commandStartWall;
+@property(nonatomic) h3_gpu_memory_hooks memoryHooks;
+@property(nonatomic) uint64_t memoryAllocatorDomain;
+@property(nonatomic) uint64_t memoryGeneration;
+@property(nonatomic) uint64_t nextMemoryHandle;
 @end
 @implementation H3GPU
 @end
@@ -240,6 +248,122 @@ static void h3_gpu_set_error(H3GPU *gpu, NSString *format, ...) {
     va_start(arguments, format);
     gpu.lastError = [[NSString alloc] initWithFormat:format arguments:arguments];
     va_end(arguments);
+}
+
+static int h3_gpu_validate_memory_options(
+        const h3_gpu_options *options, char *error, size_t error_size) {
+    if (!options) return 1;
+    if (options->struct_size < sizeof(*options) || options->version != 1u) {
+        if (error && error_size)
+            snprintf(error, error_size, "invalid H3 GPU options version");
+        return 0;
+    }
+    if (!options->memory_hooks) return 1;
+    const h3_gpu_memory_hooks *hooks = options->memory_hooks;
+    const size_t base_size = offsetof(h3_gpu_memory_hooks, release) +
+        sizeof(hooks->release);
+    if (hooks->struct_size < base_size || hooks->version != 1u ||
+        !hooks->reserve || !hooks->commit || !hooks->cancel ||
+        !hooks->release || !options->memory_allocator_domain ||
+        !options->memory_generation) {
+        if (error && error_size)
+            snprintf(error, error_size,
+                     "invalid H3 constrained-memory hooks");
+        return 0;
+    }
+    const size_t async_size = offsetof(h3_gpu_memory_hooks, complete) +
+        sizeof(hooks->complete);
+    const bool has_async = hooks->struct_size >= async_size;
+    if (has_async && (hooks->retire == NULL) != (hooks->complete == NULL)) {
+        if (error && error_size)
+            snprintf(error, error_size,
+                     "incomplete H3 asynchronous memory hooks");
+        return 0;
+    }
+    return 1;
+}
+
+static int h3_gpu_reserve_memory(H3GPU *gpu,
+                                 h3_gpu_memory_class memory_class,
+                                 uint64_t bytes, const char *tag,
+                                 void **token) {
+    if (token) *token = NULL;
+    if (!gpu || !token || !bytes || !gpu.memoryHooks.reserve) return 1;
+    char error[512] = {0};
+    if (!gpu.memoryHooks.reserve(
+            gpu.memoryHooks.user, (uint32_t)memory_class, bytes,
+            tag ? tag : "h3_gpu_tensor", token, error, sizeof(error))) {
+        h3_gpu_set_error(gpu, @"%s", error[0] ? error :
+                         "H3 memory reservation denied");
+        return 0;
+    }
+    return 1;
+}
+
+static int h3_gpu_commit_memory(H3GPU *gpu, H3Tensor *tensor,
+                                void *token, uint64_t actual_bytes) {
+    if (!gpu || !tensor || !token || !gpu.memoryHooks.commit) return 1;
+    uint64_t handle = ++gpu.nextMemoryHandle;
+    if (!handle) {
+        h3_gpu_set_error(gpu, @"H3 memory handle overflow");
+        gpu.memoryHooks.cancel(gpu.memoryHooks.user, token);
+        return 0;
+    }
+    char error[512] = {0};
+    if (!gpu.memoryHooks.commit(
+            gpu.memoryHooks.user, token, gpu.memoryAllocatorDomain,
+            handle, actual_bytes, gpu.memoryGeneration,
+            error, sizeof(error))) {
+        h3_gpu_set_error(gpu, @"%s", error[0] ? error :
+                         "H3 memory commit failed");
+        gpu.memoryHooks.cancel(gpu.memoryHooks.user, token);
+        return 0;
+    }
+    tensor.memoryToken = token;
+    tensor.memoryHooks = gpu.memoryHooks;
+    tensor.memoryAccounted = YES;
+    return 1;
+}
+
+static void h3_gpu_release_memory(H3Tensor *tensor) {
+    if (!tensor || !tensor.memoryAccounted || !tensor.memoryToken) return;
+    if (tensor.memoryRetired) return;
+    h3_gpu_memory_hooks hooks = tensor.memoryHooks;
+    void *token = tensor.memoryToken;
+    tensor.memoryToken = NULL;
+    tensor.memoryAccounted = NO;
+    if (hooks.release) hooks.release(hooks.user, token);
+}
+
+static int h3_gpu_retire_memory(H3GPU *gpu, H3Tensor *tensor,
+                                uint32_t stage_id, uint32_t slot_id) {
+    if (!tensor || !tensor.memoryAccounted || !tensor.memoryToken ||
+        tensor.memoryRetired) return 1;
+    h3_gpu_memory_hooks hooks = tensor.memoryHooks;
+    if (!hooks.retire) return 1;
+    char error[512] = {0};
+    if (!hooks.retire(hooks.user, tensor.memoryToken, stage_id, slot_id,
+                      error, sizeof(error))) {
+        h3_gpu_set_error(gpu, @"%s", error[0] ? error :
+                         "H3 asynchronous memory retirement failed");
+        return 0;
+    }
+    tensor.memoryRetired = YES;
+    return 1;
+}
+
+static void h3_gpu_complete_memory(H3Tensor *tensor, int status) {
+    if (!tensor || !tensor.memoryAccounted || !tensor.memoryToken ||
+        !tensor.memoryRetired) return;
+    h3_gpu_memory_hooks hooks = tensor.memoryHooks;
+    void *token = tensor.memoryToken;
+    tensor.memoryToken = NULL;
+    tensor.memoryAccounted = NO;
+    tensor.memoryRetired = NO;
+    if (hooks.complete) hooks.complete(hooks.user, token, status);
+    /* complete() publishes a value copy to the owner mailbox; release() owns
+     * destruction of the opaque bridge token after that publication. */
+    if (hooks.release) hooks.release(hooks.user, token);
 }
 
 static int h3_gpu_require_command(H3GPU *gpu) {
@@ -348,8 +472,11 @@ static int h3_gpu_dispatch_rows(H3GPU *gpu, NSString *name, uint32_t rows,
     return 1;
 }
 
-h3_gpu *h3_gpu_create(const char *shader_source_path,
-                      char *error, size_t error_size) {
+h3_gpu *h3_gpu_create_with_options(const char *shader_source_path,
+                                   const h3_gpu_options *options,
+                                   char *error, size_t error_size) {
+    if (!h3_gpu_validate_memory_options(options, error, error_size))
+        return NULL;
     @autoreleasepool {
         H3GPU *gpu = [[H3GPU alloc] init];
         gpu.profileLabel = @"Metal context";
@@ -365,6 +492,17 @@ h3_gpu *h3_gpu_create(const char *shader_source_path,
         gpu.linearCache = [NSMutableDictionary dictionary];
         gpu.mlpCache = [NSMutableDictionary dictionary];
         gpu.convCache = [NSMutableDictionary dictionary];
+        if (options && options->memory_hooks) {
+            h3_gpu_memory_hooks copied_hooks;
+            memset(&copied_hooks, 0, sizeof(copied_hooks));
+            size_t copy_size = options->memory_hooks->struct_size;
+            if (copy_size > sizeof(copied_hooks))
+                copy_size = sizeof(copied_hooks);
+            memcpy(&copied_hooks, options->memory_hooks, copy_size);
+            gpu.memoryHooks = copied_hooks;
+            gpu.memoryAllocatorDomain = options->memory_allocator_domain;
+            gpu.memoryGeneration = options->memory_generation;
+        }
         if (!gpu.device || !gpu.queue) {
             if (error && error_size) snprintf(error, error_size, "cannot initialize Metal");
             return NULL;
@@ -580,10 +718,17 @@ h3_gpu *h3_gpu_create(const char *shader_source_path,
     }
 }
 
+h3_gpu *h3_gpu_create(const char *shader_source_path,
+                      char *error, size_t error_size) {
+    return h3_gpu_create_with_options(shader_source_path, NULL,
+                                       error, error_size);
+}
+
 void h3_gpu_free(h3_gpu *gpu) {
     if (!gpu) return;
     @autoreleasepool {
         H3GPU *object = CFBridgingRelease(gpu);
+        (void)h3_gpu_drain((__bridge h3_gpu *)object);
         h3_gpu_profile_emit(object, @"total", object.profileStartStats,
                             object.profileStartWall);
         id<MTLDevice> device = object.device;
@@ -604,6 +749,34 @@ void h3_gpu_free(h3_gpu *gpu) {
     }
 }
 
+int h3_gpu_drain(h3_gpu *opaque) {
+    H3GPU *gpu = GPU(opaque);
+    if (!gpu) return 0;
+    @autoreleasepool {
+        double wait_started = h3_gpu_now();
+        for (id<MTLCommandBuffer> pending in gpu.inflightCommands)
+            [pending waitUntilCompleted];
+        double completed = h3_gpu_now();
+        h3_gpu_stats stats = gpu.stats;
+        if (gpu.inflightCommands.count)
+            stats.command_wait_seconds += completed - wait_started;
+        for (id<MTLCommandBuffer> pending in gpu.inflightCommands) {
+            if (pending.status == MTLCommandBufferStatusError) {
+                h3_gpu_set_error(gpu, @"Metal command failed: %@",
+                                 pending.error.localizedDescription);
+                [gpu.inflightCommands removeAllObjects];
+                gpu.stats = stats;
+                return 0;
+            }
+            if (pending.GPUEndTime >= pending.GPUStartTime)
+                stats.gpu_seconds += pending.GPUEndTime - pending.GPUStartTime;
+        }
+        [gpu.inflightCommands removeAllObjects];
+        gpu.stats = stats;
+    }
+    return 1;
+}
+
 int h3_gpu_is_m5(const h3_gpu *opaque) {
     if (!opaque) return 0;
     H3GPU *gpu = GPU((h3_gpu *)(void *)opaque);
@@ -622,12 +795,16 @@ int h3_gpu_has_int8_mlp(const h3_gpu *opaque) {
     return gpu.tensorOpsEnabled;
 }
 
-static h3_gpu_tensor *h3_gpu_tensor_new(h3_gpu *opaque, const void *values,
-                                        size_t elements, size_t item_size,
-                                        h3_gpu_dtype dtype) {
+static h3_gpu_tensor *h3_gpu_tensor_new_classified_internal(
+        h3_gpu *opaque, const void *values, size_t elements, size_t item_size,
+        h3_gpu_dtype dtype, h3_gpu_memory_class memory_class,
+        const char *tag) {
     H3GPU *gpu = GPU(opaque);
     if (!gpu || elements > SIZE_MAX / item_size) return NULL;
     size_t bytes = elements * item_size;
+    void *memory_token = NULL;
+    if (!h3_gpu_reserve_memory(gpu, memory_class, bytes, tag,
+                               &memory_token)) return NULL;
     H3Tensor *tensor = [[H3Tensor alloc] init];
     tensor.elements = elements;
     tensor.bytes = bytes;
@@ -635,10 +812,16 @@ static h3_gpu_tensor *h3_gpu_tensor_new(h3_gpu *opaque, const void *values,
     tensor.buffer = [gpu.device newBufferWithLength:MAX(bytes, (size_t)1)
                                             options:MTLResourceStorageModeShared];
     if (!tensor.buffer) {
+        if (memory_token && gpu.memoryHooks.cancel)
+            gpu.memoryHooks.cancel(gpu.memoryHooks.user, memory_token);
         h3_gpu_set_error(gpu, @"cannot allocate %zu-byte Metal buffer", bytes);
         return NULL;
     }
     tensor.owner = gpu;
+    if (!h3_gpu_commit_memory(gpu, tensor, memory_token, bytes)) {
+        tensor.buffer = nil;
+        return NULL;
+    }
     if (values && bytes) memcpy(tensor.buffer.contents, values, bytes);
     h3_gpu_stats stats = gpu.stats;
     stats.allocated_bytes += bytes;
@@ -648,6 +831,14 @@ static h3_gpu_tensor *h3_gpu_tensor_new(h3_gpu *opaque, const void *values,
     stats.tensor_allocations++;
     gpu.stats = stats;
     return (__bridge_retained h3_gpu_tensor *)tensor;
+}
+
+static h3_gpu_tensor *h3_gpu_tensor_new(h3_gpu *opaque, const void *values,
+                                        size_t elements, size_t item_size,
+                                        h3_gpu_dtype dtype) {
+    return h3_gpu_tensor_new_classified_internal(
+        opaque, values, elements, item_size, dtype,
+        H3_GPU_MEMORY_UNKNOWN, "h3_gpu_tensor");
 }
 
 h3_gpu_tensor *h3_gpu_tensor_new_f32(h3_gpu *gpu, size_t elements) {
@@ -666,9 +857,27 @@ h3_gpu_tensor *h3_gpu_tensor_new_i8(h3_gpu *gpu, size_t elements) {
     return h3_gpu_tensor_new(gpu, NULL, elements, sizeof(int8_t), H3_GPU_I8);
 }
 
+h3_gpu_tensor *h3_gpu_tensor_new_classified(
+        h3_gpu *gpu, size_t elements, h3_gpu_dtype dtype,
+        h3_gpu_memory_class memory_class, const char *tag) {
+    size_t item_size =
+        (dtype == H3_GPU_F32 || dtype == H3_GPU_U32) ? sizeof(uint32_t) :
+        dtype == H3_GPU_I8 ? sizeof(int8_t) : sizeof(uint16_t);
+    return h3_gpu_tensor_new_classified_internal(
+        gpu, NULL, elements, item_size, dtype, memory_class, tag);
+}
+
 h3_gpu_tensor *h3_gpu_tensor_from_f32(h3_gpu *gpu, const float *values,
                                       size_t elements) {
     return h3_gpu_tensor_new(gpu, values, elements, sizeof(float), H3_GPU_F32);
+}
+
+h3_gpu_tensor *h3_gpu_tensor_from_f32_classified(
+        h3_gpu *gpu, const float *values, size_t elements,
+        h3_gpu_memory_class memory_class, const char *tag) {
+    return h3_gpu_tensor_new_classified_internal(
+        gpu, values, elements, sizeof(float), H3_GPU_F32,
+        memory_class, tag);
 }
 
 h3_gpu_tensor *h3_gpu_tensor_from_bf16(h3_gpu *gpu, const uint16_t *values,
@@ -676,9 +885,25 @@ h3_gpu_tensor *h3_gpu_tensor_from_bf16(h3_gpu *gpu, const uint16_t *values,
     return h3_gpu_tensor_new(gpu, values, elements, sizeof(uint16_t), H3_GPU_BF16);
 }
 
+h3_gpu_tensor *h3_gpu_tensor_from_bf16_classified(
+        h3_gpu *gpu, const uint16_t *values, size_t elements,
+        h3_gpu_memory_class memory_class, const char *tag) {
+    return h3_gpu_tensor_new_classified_internal(
+        gpu, values, elements, sizeof(uint16_t), H3_GPU_BF16,
+        memory_class, tag);
+}
+
 h3_gpu_tensor *h3_gpu_tensor_from_u32(h3_gpu *gpu, const uint32_t *values,
                                       size_t elements) {
     return h3_gpu_tensor_new(gpu, values, elements, sizeof(uint32_t), H3_GPU_U32);
+}
+
+h3_gpu_tensor *h3_gpu_tensor_from_u32_classified(
+        h3_gpu *gpu, const uint32_t *values, size_t elements,
+        h3_gpu_memory_class memory_class, const char *tag) {
+    return h3_gpu_tensor_new_classified_internal(
+        gpu, values, elements, sizeof(uint32_t), H3_GPU_U32,
+        memory_class, tag);
 }
 
 static h3_gpu_tensor *h3_gpu_tensor_load_file(h3_gpu *opaque, const char *path,
@@ -701,8 +926,14 @@ static h3_gpu_tensor *h3_gpu_tensor_load_file(h3_gpu *opaque, const char *path,
           ((zero_copy && !strcmp(zero_copy, "transformer")) ||
            (!zero_copy && m5))));
     if (map_weight) {
+        void *memory_token = NULL;
+        if (!h3_gpu_reserve_memory(
+                gpu, H3_GPU_MEMORY_WEIGHTS, bytes, label,
+                &memory_token)) return NULL;
         int descriptor = open(path, O_RDONLY | O_CLOEXEC);
         if (descriptor < 0) {
+            if (memory_token && gpu.memoryHooks.cancel)
+                gpu.memoryHooks.cancel(gpu.memoryHooks.user, memory_token);
             h3_gpu_set_error(gpu, @"cannot open %s: %s", path,
                              strerror(errno));
             return NULL;
@@ -712,6 +943,8 @@ static h3_gpu_tensor *h3_gpu_tensor_load_file(h3_gpu *opaque, const char *path,
         size_t delta = (size_t)(file_offset - aligned_offset);
         if (bytes > SIZE_MAX - delta) {
             close(descriptor);
+            if (memory_token && gpu.memoryHooks.cancel)
+                gpu.memoryHooks.cancel(gpu.memoryHooks.user, memory_token);
             return NULL;
         }
         size_t map_bytes = bytes + delta;
@@ -720,6 +953,8 @@ static h3_gpu_tensor *h3_gpu_tensor_load_file(h3_gpu *opaque, const char *path,
         int map_error = errno;
         close(descriptor);
         if (mapping == MAP_FAILED) {
+            if (memory_token && gpu.memoryHooks.cancel)
+                gpu.memoryHooks.cancel(gpu.memoryHooks.user, memory_token);
             h3_gpu_set_error(gpu, @"cannot map %s payload from %s: %s", label,
                              path, strerror(map_error));
             return NULL;
@@ -735,6 +970,8 @@ static h3_gpu_tensor *h3_gpu_tensor_load_file(h3_gpu *opaque, const char *path,
             }];
         if (!buffer) {
             munmap(mapping, map_bytes);
+            if (memory_token && gpu.memoryHooks.cancel)
+                gpu.memoryHooks.cancel(gpu.memoryHooks.user, memory_token);
             h3_gpu_set_error(gpu, @"cannot map %zu-byte Metal buffer", bytes);
             return NULL;
         }
@@ -744,6 +981,10 @@ static h3_gpu_tensor *h3_gpu_tensor_load_file(h3_gpu *opaque, const char *path,
         tensor.dtype = dtype;
         tensor.buffer = buffer;
         tensor.owner = gpu;
+        if (!h3_gpu_commit_memory(gpu, tensor, memory_token, bytes)) {
+            tensor.buffer = nil;
+            return NULL;
+        }
         h3_gpu_stats stats = gpu.stats;
         stats.allocated_bytes += bytes;
         stats.live_bytes += bytes;
@@ -753,8 +994,9 @@ static h3_gpu_tensor *h3_gpu_tensor_load_file(h3_gpu *opaque, const char *path,
         gpu.stats = stats;
         return (__bridge_retained h3_gpu_tensor *)tensor;
     }
-    h3_gpu_tensor *opaque_tensor = h3_gpu_tensor_new(
-        opaque, NULL, elements, item_size, dtype);
+    h3_gpu_tensor *opaque_tensor = h3_gpu_tensor_new_classified_internal(
+        opaque, NULL, elements, item_size, dtype,
+        H3_GPU_MEMORY_WEIGHTS, label);
     if (!opaque_tensor) return NULL;
     H3Tensor *tensor = TENSOR(opaque_tensor);
     int descriptor = open(path, O_RDONLY | O_CLOEXEC);
@@ -807,8 +1049,14 @@ static h3_gpu_tensor *h3_gpu_tensor_map_file_read_only(
                          label);
         return NULL;
     }
+    void *memory_token = NULL;
+    if (!h3_gpu_reserve_memory(
+            gpu, H3_GPU_MEMORY_WEIGHTS, bytes, label,
+            &memory_token)) return NULL;
     int descriptor = open(path, O_RDONLY | O_CLOEXEC);
     if (descriptor < 0) {
+        if (memory_token && gpu.memoryHooks.cancel)
+            gpu.memoryHooks.cancel(gpu.memoryHooks.user, memory_token);
         h3_gpu_set_error(gpu, @"cannot open %s: %s", path, strerror(errno));
         return NULL;
     }
@@ -818,6 +1066,8 @@ static h3_gpu_tensor *h3_gpu_tensor_map_file_read_only(
         (uint64_t)status.st_size < file_offset + (uint64_t)bytes) {
         int detail = stat_result != 0 ? errno : 0;
         close(descriptor);
+        if (memory_token && gpu.memoryHooks.cancel)
+            gpu.memoryHooks.cancel(gpu.memoryHooks.user, memory_token);
         h3_gpu_set_error(gpu, @"cannot map %s payload from %s: %s", label,
                          path, detail ? strerror(detail) :
                                         "unexpected end of file");
@@ -828,6 +1078,8 @@ static h3_gpu_tensor *h3_gpu_tensor_map_file_read_only(
     int map_error = errno;
     close(descriptor);
     if (mapping == MAP_FAILED) {
+        if (memory_token && gpu.memoryHooks.cancel)
+            gpu.memoryHooks.cancel(gpu.memoryHooks.user, memory_token);
         h3_gpu_set_error(gpu, @"cannot map %s payload from %s: %s", label,
                          path, strerror(map_error));
         return NULL;
@@ -842,6 +1094,8 @@ static h3_gpu_tensor *h3_gpu_tensor_map_file_read_only(
         }];
     if (!buffer) {
         munmap(mapping, bytes);
+        if (memory_token && gpu.memoryHooks.cancel)
+            gpu.memoryHooks.cancel(gpu.memoryHooks.user, memory_token);
         h3_gpu_set_error(gpu, @"cannot map %zu-byte Metal buffer", bytes);
         return NULL;
     }
@@ -852,6 +1106,10 @@ static h3_gpu_tensor *h3_gpu_tensor_map_file_read_only(
     tensor.readOnly = YES;
     tensor.buffer = buffer;
     tensor.owner = gpu;
+    if (!h3_gpu_commit_memory(gpu, tensor, memory_token, bytes)) {
+        tensor.buffer = nil;
+        return NULL;
+    }
     h3_gpu_stats stats = gpu.stats;
     stats.allocated_bytes += bytes;
     stats.live_bytes += bytes;
@@ -989,6 +1247,7 @@ void h3_gpu_tensor_free(h3_gpu_tensor *tensor) {
         }
         [object.buffer setPurgeableState:MTLPurgeableStateEmpty];
         object.buffer = nil;
+        h3_gpu_release_memory(object);
     }
 }
 
@@ -1156,16 +1415,41 @@ int h3_gpu_continue_releasing(h3_gpu *opaque,
             release_bytes += tensor.bytes;
             [release addObject:tensor];
         }
+        uint32_t stage_id = (uint32_t)(gpu.stats.submissions + 1u);
+        if (!stage_id) stage_id = 1u;
+        for (NSUInteger index = 0; index < release.count; index++) {
+            H3Tensor *tensor = release[index];
+            uint32_t slot_id = (uint32_t)(index + 1u);
+            if (!h3_gpu_retire_memory(gpu, tensor, stage_id, slot_id)) {
+                for (H3Tensor *pending in release) {
+                    [pending.buffer setPurgeableState:MTLPurgeableStateEmpty];
+                    pending.buffer = nil;
+                    if (pending.memoryRetired)
+                        h3_gpu_complete_memory(pending, -1);
+                    else
+                        h3_gpu_release_memory(pending);
+                }
+                return 0;
+            }
+        }
         NSArray<H3Tensor *> *deferred = [release copy];
         id<MTLCommandBuffer> command = gpu.command;
         gpu.command = nil;
         gpu.mpsCommand = nil;
         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
-            (void)completed;
             @autoreleasepool {
                 for (H3Tensor *tensor in deferred) {
                     [tensor.buffer setPurgeableState:MTLPurgeableStateEmpty];
                     tensor.buffer = nil;
+                    if (tensor.memoryRetired) {
+                        h3_gpu_complete_memory(
+                            tensor,
+                            completed.status ==
+                                    MTLCommandBufferStatusCompleted ?
+                                0 : (int)completed.status);
+                    } else {
+                        h3_gpu_release_memory(tensor);
+                    }
                 }
             }
         }];
@@ -1194,29 +1478,12 @@ int h3_gpu_submit(h3_gpu *opaque) {
         double commit_time = h3_gpu_now();
         [command commit];
         [gpu.inflightCommands addObject:command];
-        for (id<MTLCommandBuffer> pending in gpu.inflightCommands)
-            [pending waitUntilCompleted];
-        double complete_time = h3_gpu_now();
-        for (id<MTLCommandBuffer> pending in gpu.inflightCommands) {
-            if (pending.status == MTLCommandBufferStatusError) {
-                h3_gpu_set_error(gpu, @"Metal command failed: %@",
-                                 pending.error.localizedDescription);
-                [gpu.inflightCommands removeAllObjects];
-                return 0;
-            }
-        }
         h3_gpu_stats stats = gpu.stats;
         stats.submissions++;
         stats.command_encode_seconds += commit_time - gpu.commandStartWall;
-        stats.command_wait_seconds += complete_time - commit_time;
-        for (id<MTLCommandBuffer> pending in gpu.inflightCommands) {
-            if (pending.GPUEndTime >= pending.GPUStartTime)
-                stats.gpu_seconds += pending.GPUEndTime - pending.GPUStartTime;
-        }
         gpu.stats = stats;
-        [gpu.inflightCommands removeAllObjects];
     }
-    return 1;
+    return h3_gpu_drain(opaque);
 }
 
 const char *h3_gpu_error(const h3_gpu *opaque) {

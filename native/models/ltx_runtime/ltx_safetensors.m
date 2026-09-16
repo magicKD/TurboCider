@@ -133,16 +133,9 @@ void ltx_st_free_header(ltx_st_header *header) {
     memset(header, 0, sizeof(*header));
 }
 
-int ltx_st_read_header(const char *path, ltx_st_header *header,
-                       char *error, size_t error_size) {
-    if (!path || !header)
-        return ltx_st_fail(error, error_size, "missing safetensors path/header");
-    memset(header, 0, sizeof(*header));
-
-    int descriptor = open(path, O_RDONLY);
-    if (descriptor < 0)
-        return ltx_st_fail(error, error_size, "open %s: %s", path,
-                           strerror(errno));
+/* Takes ownership of descriptor, including on every error path. */
+static int ltx_st_read_owned_header(int descriptor, const char *path, ltx_st_header *header,
+                                   char *error, size_t error_size) {
     struct stat status;
     if (fstat(descriptor, &status) != 0 || status.st_size < 8) {
         int saved = errno;
@@ -318,7 +311,7 @@ int ltx_st_read_header(const char *path, ltx_st_header *header,
                                          "out of memory retaining metadata");
                     }
                 }
-                if (!ok) {
+                if (!ok && header->tensors != tensors) {
                     for (size_t index = 0; index < tensor_count; index++)
                         free(tensors[index].name);
                     free(tensors);
@@ -329,6 +322,72 @@ int ltx_st_read_header(const char *path, ltx_st_header *header,
     free(header_bytes);
     if (!ok) ltx_st_free_header(header);
     return ok;
+}
+
+int ltx_st_read_header(const char *path, ltx_st_header *header,
+                       char *error, size_t error_size) {
+    if (!path || !header)
+        return ltx_st_fail(error, error_size, "missing safetensors path/header");
+    memset(header, 0, sizeof(*header));
+    int descriptor = open(path, O_RDONLY);
+    if (descriptor < 0)
+        return ltx_st_fail(error, error_size, "open %s: %s", path, strerror(errno));
+    return ltx_st_read_owned_header(descriptor, path, header, error, error_size);
+}
+
+int ltx_st_read_header_fd(int descriptor, const char *path, ltx_st_header *header,
+                         char *error, size_t error_size) {
+    if (descriptor < 0 || !path || !header)
+        return ltx_st_fail(error, error_size, "missing safetensors fd/path/header");
+    memset(header, 0, sizeof(*header));
+    int owned = fcntl(descriptor, F_DUPFD_CLOEXEC, 0);
+    if (owned < 0)
+        return ltx_st_fail(error, error_size, "duplicate safetensors fd: %s", strerror(errno));
+    struct stat before;
+    if (fstat(owned, &before) != 0 || !S_ISREG(before.st_mode) || before.st_size < 8) {
+        close(owned);
+        return ltx_st_fail(error, error_size, "invalid safetensors snapshot file");
+    }
+    if (!ltx_st_read_owned_header(owned, path, header, error, error_size)) return 0;
+    header->snapshot.valid = 1;
+    header->snapshot.device = (uint64_t)before.st_dev;
+    header->snapshot.inode = (uint64_t)before.st_ino;
+    header->snapshot.bytes = (uint64_t)before.st_size;
+    header->snapshot.modified_seconds = before.st_mtimespec.tv_sec;
+    header->snapshot.modified_nanoseconds = (uint32_t)before.st_mtimespec.tv_nsec;
+    header->snapshot.changed_seconds = before.st_ctimespec.tv_sec;
+    header->snapshot.changed_nanoseconds = (uint32_t)before.st_ctimespec.tv_nsec;
+    if (!ltx_st_validate_snapshot_fd(header, descriptor, NULL, error, error_size)) {
+        ltx_st_free_header(header);
+        return 0;
+    }
+    return 1;
+}
+
+static int ltx_st_snapshot_matches(const ltx_st_header *header, const struct stat *status) {
+    return S_ISREG(status->st_mode) && status->st_size >= 8 &&
+        header->file_size == header->snapshot.bytes &&
+        (uint64_t)status->st_dev == header->snapshot.device &&
+        (uint64_t)status->st_ino == header->snapshot.inode &&
+        (uint64_t)status->st_size == header->snapshot.bytes &&
+        status->st_mtimespec.tv_sec == header->snapshot.modified_seconds &&
+        (uint32_t)status->st_mtimespec.tv_nsec == header->snapshot.modified_nanoseconds &&
+        status->st_ctimespec.tv_sec == header->snapshot.changed_seconds &&
+        (uint32_t)status->st_ctimespec.tv_nsec == header->snapshot.changed_nanoseconds;
+}
+
+int ltx_st_validate_snapshot_fd(const ltx_st_header *header, int descriptor,
+                               const char *path, char *error, size_t error_size) {
+    if (!header || header->snapshot.valid != 1u || descriptor < 0 ||
+        !header->path || !header->header_size || header->file_size < 8u ||
+        header->header_size > header->file_size - 8u ||
+        (header->tensor_count && !header->tensors))
+        return ltx_st_fail(error, error_size, "invalid safetensors metadata snapshot");
+    struct stat opened, named;
+    if (fstat(descriptor, &opened) != 0 || !ltx_st_snapshot_matches(header, &opened) ||
+        (path && (stat(path, &named) != 0 || !ltx_st_snapshot_matches(header, &named))))
+        return ltx_st_fail(error, error_size, "checkpoint_changed: safetensors snapshot identity mismatch");
+    return 1;
 }
 
 const ltx_st_tensor *ltx_st_find(const ltx_st_header *header,
@@ -385,6 +444,27 @@ int ltx_st_map_open(const ltx_st_header *header, ltx_st_mapping *mapping,
     mapping->bytes = bytes;
     mapping->descriptor = descriptor;
     mapping->descriptor_open = 1;
+    return 1;
+}
+
+int ltx_st_map_fd(const ltx_st_header *header, int descriptor, ltx_st_mapping *mapping,
+                  char *error, size_t error_size) {
+    if (!header || !mapping || descriptor < 0 || !header->file_size || header->file_size > SIZE_MAX)
+        return ltx_st_fail(error, error_size, "invalid safetensors fd mapping argument");
+    memset(mapping, 0, sizeof(*mapping));
+    int owned = fcntl(descriptor, F_DUPFD_CLOEXEC, 0);
+    if (owned < 0) return ltx_st_fail(error, error_size, "duplicate safetensors fd: %s", strerror(errno));
+    if (!ltx_st_validate_snapshot_fd(header, owned, NULL, error, error_size)) {
+        close(owned);
+        return 0;
+    }
+    void *address = mmap(NULL, (size_t)header->file_size, PROT_READ, MAP_PRIVATE, owned, 0);
+    if (address == MAP_FAILED) {
+        int saved = errno; close(owned);
+        return ltx_st_fail(error, error_size, "mmap safetensors fd: %s", strerror(saved));
+    }
+    mapping->address = address; mapping->bytes = (size_t)header->file_size;
+    mapping->descriptor = owned; mapping->descriptor_open = 1;
     return 1;
 }
 

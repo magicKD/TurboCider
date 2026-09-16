@@ -2519,21 +2519,24 @@ static int prepare_stream_layer(h3_dit *dit, unsigned layer,
 }
 
 static int allocate_stream_slot(h3_dit *dit, h3_dit_block *slot,
+                                unsigned slot_index,
                                 char *error, size_t error_size) {
+    char tag[96];
+#define NEW_SLOT_TENSOR(field, elements, dtype) \
+    do { \
+        snprintf(tag, sizeof(tag), "h3.stream.slot%u.%s", slot_index, #field); \
+        slot->field = h3_gpu_tensor_new_classified( \
+            dit->gpu, (elements), (dtype), H3_GPU_MEMORY_REFILL_SLOT, tag); \
+    } while (0)
     if (dit->ssd_quantized) {
-        slot->qkv_int8 = h3_gpu_tensor_new_i8(
-            dit->gpu, (size_t)INNER * 3 * HIDDEN);
-        slot->qkv_scales = h3_gpu_tensor_new_f32(
-            dit->gpu, INNER * 3);
-        slot->out_int8 = h3_gpu_tensor_new_i8(
-            dit->gpu, (size_t)HIDDEN * INNER);
-        slot->out_scales = h3_gpu_tensor_new_f32(dit->gpu, HIDDEN);
-        slot->fc1_int8 = h3_gpu_tensor_new_i8(
-            dit->gpu, (size_t)FFN * 2 * HIDDEN);
-        slot->fc1_scales = h3_gpu_tensor_new_f32(dit->gpu, FFN * 2);
-        slot->fc2_int8 = h3_gpu_tensor_new_i8(
-            dit->gpu, (size_t)HIDDEN * FFN);
-        slot->fc2_scales = h3_gpu_tensor_new_f32(dit->gpu, HIDDEN);
+        NEW_SLOT_TENSOR(qkv_int8, (size_t)INNER * 3 * HIDDEN, H3_GPU_I8);
+        NEW_SLOT_TENSOR(qkv_scales, INNER * 3, H3_GPU_F32);
+        NEW_SLOT_TENSOR(out_int8, (size_t)HIDDEN * INNER, H3_GPU_I8);
+        NEW_SLOT_TENSOR(out_scales, HIDDEN, H3_GPU_F32);
+        NEW_SLOT_TENSOR(fc1_int8, (size_t)FFN * 2 * HIDDEN, H3_GPU_I8);
+        NEW_SLOT_TENSOR(fc1_scales, FFN * 2, H3_GPU_F32);
+        NEW_SLOT_TENSOR(fc2_int8, (size_t)HIDDEN * FFN, H3_GPU_I8);
+        NEW_SLOT_TENSOR(fc2_scales, HIDDEN, H3_GPU_F32);
         if (!slot->qkv_int8 || !slot->qkv_scales || !slot->out_int8 ||
             !slot->out_scales || !slot->fc1_int8 || !slot->fc1_scales ||
             !slot->fc2_int8 || !slot->fc2_scales) {
@@ -2544,19 +2547,16 @@ static int allocate_stream_slot(h3_dit *dit, h3_dit_block *slot,
         }
         return 1;
     }
-    slot->qkv = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)INNER * 3 * HIDDEN);
-    slot->out = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)HIDDEN * INNER);
-    slot->fc1 = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)FFN * 2 * HIDDEN);
-    slot->fc2 = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)HIDDEN * FFN);
+    NEW_SLOT_TENSOR(qkv, (size_t)INNER * 3 * HIDDEN, H3_GPU_BF16);
+    NEW_SLOT_TENSOR(out, (size_t)HIDDEN * INNER, H3_GPU_BF16);
+    NEW_SLOT_TENSOR(fc1, (size_t)FFN * 2 * HIDDEN, H3_GPU_BF16);
+    NEW_SLOT_TENSOR(fc2, (size_t)HIDDEN * FFN, H3_GPU_BF16);
     if (!slot->qkv || !slot->out || !slot->fc1 || !slot->fc2) {
         fail(error, error_size, "cannot allocate BF16 SSD layer slot: %s",
              h3_gpu_error(dit->gpu));
         return 0;
     }
+#undef NEW_SLOT_TENSOR
     return 1;
 }
 
@@ -2804,8 +2804,9 @@ static int run_refiner_block(h3_dit *dit, const h3_dit_block *weight,
 
 static int refine_text(h3_dit *dit, const h3_text_embedding *text,
                        char *error, size_t error_size) {
-    h3_gpu_tensor *source = h3_gpu_tensor_from_bf16(
-        dit->gpu, text->values, text->tokens * TEXT_DIM);
+    h3_gpu_tensor *source = h3_gpu_tensor_from_bf16_classified(
+        dit->gpu, text->values, text->tokens * TEXT_DIM,
+        H3_GPU_MEMORY_CONDITIONING, "h3.dit.conditioning.text_source");
     h3_gpu_tensor *condition_w = bf2(dit, "condition_proj.weight", HIDDEN,
                                      TEXT_DIM, error, error_size);
     h3_gpu_tensor *condition_b = bf1(dit, "condition_proj.bias", HIDDEN,
@@ -2825,16 +2826,22 @@ static int refine_text(h3_dit *dit, const h3_text_embedding *text,
                              error, error_size);
     size_t rows = dit->text_rows;
     if (ok && final_norm) {
-        dit->refined_text = h3_gpu_tensor_new_bf16(dit->gpu, rows * HIDDEN);
-        norm = h3_gpu_tensor_new_bf16(dit->gpu, rows * HIDDEN);
-        qkv = h3_gpu_tensor_new_bf16(dit->gpu, rows * INNER * 3);
-        query = h3_gpu_tensor_new_bf16(dit->gpu, rows * INNER);
-        key = h3_gpu_tensor_new_bf16(dit->gpu, rows * INNER);
-        value = h3_gpu_tensor_new_bf16(dit->gpu, rows * INNER);
-        heads = h3_gpu_tensor_new_bf16(dit->gpu, rows * INNER);
-        branch = h3_gpu_tensor_new_bf16(dit->gpu, rows * HIDDEN);
-        fc1 = h3_gpu_tensor_new_bf16(dit->gpu, rows * FFN * 2);
-        activated = h3_gpu_tensor_new_bf16(dit->gpu, rows * FFN);
+        dit->refined_text = h3_gpu_tensor_new_classified(
+            dit->gpu, rows * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_CONDITIONING, "h3.dit.conditioning.refined_text");
+#define REFINER_ACT(name, elements) h3_gpu_tensor_new_classified(             \
+            dit->gpu, (elements), H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,      \
+            "h3.dit.refiner.activation." name)
+        norm = REFINER_ACT("norm", rows * HIDDEN);
+        qkv = REFINER_ACT("qkv", rows * INNER * 3);
+        query = REFINER_ACT("query", rows * INNER);
+        key = REFINER_ACT("key", rows * INNER);
+        value = REFINER_ACT("value", rows * INNER);
+        heads = REFINER_ACT("heads", rows * INNER);
+        branch = REFINER_ACT("branch", rows * HIDDEN);
+        fc1 = REFINER_ACT("fc1", rows * FFN * 2);
+        activated = REFINER_ACT("activated", rows * FFN);
+#undef REFINER_ACT
         ok = dit->refined_text && norm && qkv && query && key && value &&
              heads && branch && fc1 && activated;
     }
@@ -2946,23 +2953,41 @@ static int prepare_rope(h3_dit *dit, char *error, size_t error_size) {
             }
         }
     }
-    h3_gpu_tensor *cos_f32 = h3_gpu_tensor_from_f32(dit->gpu, cosines, count);
-    h3_gpu_tensor *sin_f32 = h3_gpu_tensor_from_f32(dit->gpu, sines, count);
+    h3_gpu_tensor *cos_f32 = h3_gpu_tensor_from_f32_classified(
+        dit->gpu, cosines, count, H3_GPU_MEMORY_CONVERSION_SCRATCH,
+        "h3.dit.rope.cos_f32");
+    h3_gpu_tensor *sin_f32 = h3_gpu_tensor_from_f32_classified(
+        dit->gpu, sines, count, H3_GPU_MEMORY_CONVERSION_SCRATCH,
+        "h3.dit.rope.sin_f32");
     h3_gpu_tensor *reduced_cos_f32 = reduced_count ?
-        h3_gpu_tensor_from_f32(dit->gpu, reduced_cosines, reduced_count) : NULL;
+        h3_gpu_tensor_from_f32_classified(
+            dit->gpu, reduced_cosines, reduced_count,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.rope.reduced_cos_f32") : NULL;
     h3_gpu_tensor *reduced_sin_f32 = reduced_count ?
-        h3_gpu_tensor_from_f32(dit->gpu, reduced_sines, reduced_count) : NULL;
+        h3_gpu_tensor_from_f32_classified(
+            dit->gpu, reduced_sines, reduced_count,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.rope.reduced_sin_f32") : NULL;
     free(cosines);
     free(sines);
     free(reduced_cosines);
     free(reduced_sines);
-    dit->rope_cos = h3_gpu_tensor_new_bf16(dit->gpu, count);
-    dit->rope_sin = h3_gpu_tensor_new_bf16(dit->gpu, count);
+    dit->rope_cos = h3_gpu_tensor_new_classified(
+        dit->gpu, count, H3_GPU_BF16, H3_GPU_MEMORY_CONDITIONING,
+        "h3.dit.conditioning.rope_cos");
+    dit->rope_sin = h3_gpu_tensor_new_classified(
+        dit->gpu, count, H3_GPU_BF16, H3_GPU_MEMORY_CONDITIONING,
+        "h3.dit.conditioning.rope_sin");
     if (reduced_count) {
-        dit->reduced_rope_cos = h3_gpu_tensor_new_bf16(
-            dit->gpu, reduced_count);
-        dit->reduced_rope_sin = h3_gpu_tensor_new_bf16(
-            dit->gpu, reduced_count);
+        dit->reduced_rope_cos = h3_gpu_tensor_new_classified(
+            dit->gpu, reduced_count, H3_GPU_BF16,
+            H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.reduced_rope_cos");
+        dit->reduced_rope_sin = h3_gpu_tensor_new_classified(
+            dit->gpu, reduced_count, H3_GPU_BF16,
+            H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.reduced_rope_sin");
     }
     int ok = cos_f32 && sin_f32 && dit->rope_cos && dit->rope_sin &&
         (!reduced_count || (reduced_cos_f32 && reduced_sin_f32 &&
@@ -3039,8 +3064,10 @@ static int prepare_maps(h3_dit *dit, const h3_text_embedding *text,
                 (void)second;
                 reduced[row] = rows[first];
             }
-            dit->reduced_row_maps[step] = h3_gpu_tensor_from_u32(
-                dit->gpu, reduced, dit->reduced_sequence);
+            dit->reduced_row_maps[step] = h3_gpu_tensor_from_u32_classified(
+                dit->gpu, reduced, dit->reduced_sequence,
+                H3_GPU_MEMORY_CONDITIONING,
+                "h3.dit.conditioning.reduced_row_map");
         }
         uint32_t audio_row = h3_dit_schedule_audio_row(dit->schedule, step);
         uint32_t video_row = h3_dit_schedule_video_row(dit->schedule, step);
@@ -3048,12 +3075,15 @@ static int prepare_maps(h3_dit *dit, const h3_text_embedding *text,
             audio[index] = audio_row;
         for (uint32_t index = 0; index < dit->video_rows; index++)
             video[index] = video_row;
-        dit->row_maps[step] = h3_gpu_tensor_from_u32(
-            dit->gpu, rows, dit->sequence);
-        dit->final_audio_maps[step] = h3_gpu_tensor_from_u32(
-            dit->gpu, audio, dit->audio_rows);
-        dit->final_video_maps[step] = h3_gpu_tensor_from_u32(
-            dit->gpu, video, dit->video_rows);
+        dit->row_maps[step] = h3_gpu_tensor_from_u32_classified(
+            dit->gpu, rows, dit->sequence, H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.row_map");
+        dit->final_audio_maps[step] = h3_gpu_tensor_from_u32_classified(
+            dit->gpu, audio, dit->audio_rows, H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.final_audio_map");
+        dit->final_video_maps[step] = h3_gpu_tensor_from_u32_classified(
+            dit->gpu, video, dit->video_rows, H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.final_video_map");
         if (!dit->row_maps[step] ||
             (dit->token_reduction && !dit->reduced_row_maps[step]) ||
             !dit->final_audio_maps[step] ||
@@ -3111,11 +3141,15 @@ static int prepare_projection_maps(h3_dit *dit, char *error,
         return 0;
     }
     if (video)
-        dit->video_projection_map = h3_gpu_tensor_from_u32(
-            dit->gpu, video, dit->video_total_rows);
+        dit->video_projection_map = h3_gpu_tensor_from_u32_classified(
+            dit->gpu, video, dit->video_total_rows,
+            H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.video_projection_map");
     if (audio)
-        dit->audio_projection_map = h3_gpu_tensor_from_u32(
-            dit->gpu, audio, dit->audio_total_rows);
+        dit->audio_projection_map = h3_gpu_tensor_from_u32_classified(
+            dit->gpu, audio, dit->audio_total_rows,
+            H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.audio_projection_map");
     free(video); free(audio);
     if ((video_segments > 1 && !dit->video_projection_map) ||
         (audio_segments > 1 && !dit->audio_projection_map)) {
@@ -3160,12 +3194,16 @@ static int prepare_token_reduction_maps(h3_dit *dit, char *error,
     }
     for (uint32_t row = 0; row < dit->sequence; row++)
         parents[row] = token_reduced_parent(dit, row);
-    dit->token_pool_pairs = h3_gpu_tensor_from_u32(
-        dit->gpu, pairs, pair_count);
-    dit->token_baseline_indices = h3_gpu_tensor_from_u32(
-        dit->gpu, baseline_indices, dit->reduced_sequence);
-    dit->token_expand_parents = h3_gpu_tensor_from_u32(
-        dit->gpu, parents, dit->sequence);
+    dit->token_pool_pairs = h3_gpu_tensor_from_u32_classified(
+        dit->gpu, pairs, pair_count, H3_GPU_MEMORY_CONDITIONING,
+        "h3.dit.conditioning.token_pool_pairs");
+    dit->token_baseline_indices = h3_gpu_tensor_from_u32_classified(
+        dit->gpu, baseline_indices, dit->reduced_sequence,
+        H3_GPU_MEMORY_CONDITIONING,
+        "h3.dit.conditioning.token_baseline_indices");
+    dit->token_expand_parents = h3_gpu_tensor_from_u32_classified(
+        dit->gpu, parents, dit->sequence, H3_GPU_MEMORY_CONDITIONING,
+        "h3.dit.conditioning.token_expand_parents");
     free(pairs);
     free(baseline_indices);
     free(parents);
@@ -4941,9 +4979,9 @@ static int load_core(h3_dit *dit, h3_dit_progress progress, void *opaque,
         }
     }
     if (dit->ssd_streaming) {
-        if (!allocate_stream_slot(dit, &dit->stream_slots[0],
+        if (!allocate_stream_slot(dit, &dit->stream_slots[0], 0,
                                   error, error_size) ||
-            !allocate_stream_slot(dit, &dit->stream_slots[1],
+            !allocate_stream_slot(dit, &dit->stream_slots[1], 1,
                                   error, error_size)) return 0;
         unsigned first = first_streamed_block(dit);
         if (first == H3_DIT_BLOCKS) {
@@ -4994,8 +5032,9 @@ static int load_core(h3_dit *dit, h3_dit_progress progress, void *opaque,
         h3_gpu_tensor *target[4] = {0};
         int ok = 1;
         for (unsigned index = 0; index < 4; index++) {
-            target[index] = h3_gpu_tensor_new_bf16(dit->gpu,
-                                                    elements[index]);
+            target[index] = h3_gpu_tensor_new_classified(
+                dit->gpu, elements[index], H3_GPU_BF16,
+                H3_GPU_MEMORY_WEIGHTS, "h3.dit.weight.final_bf16");
             if (!target[index]) ok = 0;
         }
         if (ok) ok = h3_gpu_begin(dit->gpu);
@@ -5143,8 +5182,14 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         !h3_runtime_getenv("H3_DISABLE_FUSED_PATCH_CAST") && !h3_runtime_getenv("H3_SCALAR_PATCH");
     dit->fused_patch_pack = dit->fused_patch_projection &&
         !h3_runtime_getenv("H3_DISABLE_FUSED_PATCH_PACK");
-#define BF(field, elements) (dit->field = h3_gpu_tensor_new_bf16(dit->gpu, (elements)))
-#define F32(field, elements) (dit->field = h3_gpu_tensor_new_f32(dit->gpu, (elements)))
+#define BF(field, elements)                                                   \
+    (dit->field = h3_gpu_tensor_new_classified(                              \
+        dit->gpu, (elements), H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,         \
+        "h3.dit.activation." #field))
+#define F32(field, elements)                                                  \
+    (dit->field = h3_gpu_tensor_new_classified(                              \
+        dit->gpu, (elements), H3_GPU_F32, H3_GPU_MEMORY_ACTIVATION,          \
+        "h3.dit.activation." #field))
     h3_gpu_tensor *all[] = {
         F32(video_input, video_total * VIDEO_PATCH),
         F32(audio_input, audio_total * AUDIO_CHANNELS),
@@ -5170,10 +5215,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         }
     }
     if (!dit->fused_patch_pack) {
-        dit->video_projected = h3_gpu_tensor_new_bf16(
-            dit->gpu, video_total * HIDDEN);
-        dit->audio_projected = h3_gpu_tensor_new_bf16(
-            dit->gpu, audio_total * HIDDEN);
+        dit->video_projected = h3_gpu_tensor_new_classified(
+            dit->gpu, video_total * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.video_projected");
+        dit->audio_projected = h3_gpu_tensor_new_classified(
+            dit->gpu, audio_total * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.audio_projected");
         if (!dit->video_projected || !dit->audio_projected) {
             fail(error, error_size,
                  "cannot allocate packed patch projections: %s",
@@ -5182,10 +5229,14 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         }
     }
     if (!dit->fused_patch_projection) {
-        dit->video_projected_f32 = h3_gpu_tensor_new_f32(
-            dit->gpu, video_total * HIDDEN);
-        dit->audio_projected_f32 = h3_gpu_tensor_new_f32(
-            dit->gpu, audio_total * HIDDEN);
+        dit->video_projected_f32 = h3_gpu_tensor_new_classified(
+            dit->gpu, video_total * HIDDEN, H3_GPU_F32,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.video_projected_f32");
+        dit->audio_projected_f32 = h3_gpu_tensor_new_classified(
+            dit->gpu, audio_total * HIDDEN, H3_GPU_F32,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.audio_projected_f32");
         if (!dit->video_projected_f32 || !dit->audio_projected_f32) {
             fail(error, error_size,
                  "cannot allocate separate patch projections: %s",
@@ -5198,12 +5249,15 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         dit->mod_mlp = dit->qkv;
         dit->mlp_output = NULL;
     } else {
-        dit->attention_heads = h3_gpu_tensor_new_bf16(
-            dit->gpu, sequence * INNER);
-        dit->mod_mlp = h3_gpu_tensor_new_bf16(
-            dit->gpu, sequence * HIDDEN);
-        dit->mlp_output = h3_gpu_tensor_new_bf16(
-            dit->gpu, sequence * HIDDEN);
+        dit->attention_heads = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * INNER, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.attention_heads");
+        dit->mod_mlp = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.mod_mlp");
+        dit->mlp_output = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.mlp_output");
     }
     if (!dit->attention_heads || !dit->mod_mlp ||
         (!dit->activation_aliases && !dit->mlp_output)) {
@@ -5214,10 +5268,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
     }
     if (dit->coreml_same_loaded_ab) {
         size_t elements = sequence * HIDDEN;
-        dit->coreml_benchmark_mlp_input = h3_gpu_tensor_new_bf16(
-            dit->gpu, elements);
-        dit->coreml_benchmark_mlp_output = h3_gpu_tensor_new_bf16(
-            dit->gpu, elements);
+        dit->coreml_benchmark_mlp_input = h3_gpu_tensor_new_classified(
+            dit->gpu, elements, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+            "h3.dit.activation.coreml_benchmark_input");
+        dit->coreml_benchmark_mlp_output = h3_gpu_tensor_new_classified(
+            dit->gpu, elements, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+            "h3.dit.activation.coreml_benchmark_output");
         if (!dit->coreml_benchmark_mlp_input ||
             !dit->coreml_benchmark_mlp_output) {
             fail(error, error_size,
@@ -5228,10 +5284,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         dit->coreml_benchmark_capture_elements = elements;
     }
     if (h3_runtime_getenv("H3_DISABLE_FUSED_FINAL_SLICE")) {
-        dit->final_audio_input = h3_gpu_tensor_new_bf16(
-            dit->gpu, audio * HIDDEN);
-        dit->final_video_input = h3_gpu_tensor_new_bf16(
-            dit->gpu, video * HIDDEN);
+        dit->final_audio_input = h3_gpu_tensor_new_classified(
+            dit->gpu, audio * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.final_audio_input");
+        dit->final_video_input = h3_gpu_tensor_new_classified(
+            dit->gpu, video * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.final_video_input");
         if (!dit->final_audio_input || !dit->final_video_input) {
             fail(error, error_size,
                  "cannot allocate separate final DiT slices: %s",
@@ -5241,10 +5299,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
     }
     if (!dit->bf16_final || h3_runtime_getenv("H3_DISABLE_FUSED_FINAL_HEAD") ||
         h3_runtime_getenv("H3_DISABLE_FUSED_FINAL_SLICE")) {
-        dit->final_audio_norm = h3_gpu_tensor_new_bf16(
-            dit->gpu, audio * HIDDEN);
-        dit->final_video_norm = h3_gpu_tensor_new_bf16(
-            dit->gpu, video * HIDDEN);
+        dit->final_audio_norm = h3_gpu_tensor_new_classified(
+            dit->gpu, audio * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.final_audio_norm");
+        dit->final_video_norm = h3_gpu_tensor_new_classified(
+            dit->gpu, video * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.final_video_norm");
         if (!dit->final_audio_norm || !dit->final_video_norm) {
             fail(error, error_size,
                  "cannot allocate separate final DiT normalization: %s",
@@ -5253,14 +5313,20 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         }
     }
     if (!dit->bf16_final) {
-        dit->final_audio_f32 = h3_gpu_tensor_new_f32(
-            dit->gpu, audio * HIDDEN);
-        dit->final_video_f32 = h3_gpu_tensor_new_f32(
-            dit->gpu, video * HIDDEN);
-        dit->audio_output = h3_gpu_tensor_new_f32(
-            dit->gpu, audio * AUDIO_CHANNELS);
-        dit->video_output = h3_gpu_tensor_new_f32(
-            dit->gpu, video * VIDEO_PATCH);
+        dit->final_audio_f32 = h3_gpu_tensor_new_classified(
+            dit->gpu, audio * HIDDEN, H3_GPU_F32,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.final_audio_f32");
+        dit->final_video_f32 = h3_gpu_tensor_new_classified(
+            dit->gpu, video * HIDDEN, H3_GPU_F32,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.final_video_f32");
+        dit->audio_output = h3_gpu_tensor_new_classified(
+            dit->gpu, audio * AUDIO_CHANNELS, H3_GPU_F32,
+            H3_GPU_MEMORY_OUTPUT, "h3.dit.output.audio_f32");
+        dit->video_output = h3_gpu_tensor_new_classified(
+            dit->gpu, video * VIDEO_PATCH, H3_GPU_F32,
+            H3_GPU_MEMORY_OUTPUT, "h3.dit.output.video_f32");
         if (!dit->final_audio_f32 || !dit->final_video_f32 ||
             !dit->audio_output || !dit->video_output) {
             fail(error, error_size,
@@ -5270,11 +5336,15 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         }
     }
     if (!dit->fused_mlp) {
-        dit->fc1 = h3_gpu_tensor_new_bf16(dit->gpu, sequence * FFN * 2);
+        dit->fc1 = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * FFN * 2, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.fc1");
     }
     if (!dit->fused_mlp || dit->nax_mlp || dit->int8_mlp ||
         dit->ane_gpu_int8_mlp) {
-        dit->activated = h3_gpu_tensor_new_bf16(dit->gpu, sequence * FFN);
+        dit->activated = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * FFN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.activated");
         if ((!dit->fused_mlp && !dit->fc1) || !dit->activated) {
             fail(error, error_size,
                  "cannot allocate diagnostic DiT MLP tensors: %s",
@@ -5285,10 +5355,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
     if (dit->int8_mlp || dit->ane_gpu_int8_mlp || dit->int8_qkv ||
         dit->int8_attention_out) {
         size_t padded_sequence = (sequence + 127) & ~(size_t)127;
-        dit->int8_activation = h3_gpu_tensor_new_i8(
-            dit->gpu, padded_sequence * FFN);
-        dit->int8_activation_scales = h3_gpu_tensor_new_f32(
-            dit->gpu, padded_sequence * (FFN / 1024));
+        dit->int8_activation = h3_gpu_tensor_new_classified(
+            dit->gpu, padded_sequence * FFN, H3_GPU_I8,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.int8_values");
+        dit->int8_activation_scales = h3_gpu_tensor_new_classified(
+            dit->gpu, padded_sequence * (FFN / 1024), H3_GPU_F32,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.int8_scales");
         if (!dit->int8_activation || !dit->int8_activation_scales) {
             fail(error, error_size,
                  "cannot allocate int8 DiT activation arena: %s",
@@ -5313,8 +5385,10 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         if (dit->token_original_in_qkv)
             dit->token_original_offset = qkv_used;
         else
-            dit->token_original = h3_gpu_tensor_new_bf16(
-                dit->gpu, full_elements);
+            dit->token_original = h3_gpu_tensor_new_classified(
+                dit->gpu, full_elements, H3_GPU_BF16,
+                H3_GPU_MEMORY_ACTIVATION,
+                "h3.dit.activation.token_original");
         dit->token_baseline_offset = attention_used;
         if (attention_used > attention_capacity ||
             baseline_elements > attention_capacity - attention_used ||
@@ -5329,10 +5403,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
     }
     if (dit->core_reuse_interval > 1 || dit->first_block_cache ||
         dit->tea_cache) {
-        dit->core_input = h3_gpu_tensor_new_bf16(
-            dit->gpu, sequence * HIDDEN);
-        dit->core_residual = h3_gpu_tensor_new_bf16(
-            dit->gpu, sequence * HIDDEN);
+        dit->core_input = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.core_input");
+        dit->core_residual = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.core_residual");
         if (!dit->core_input || !dit->core_residual) {
             fail(error, error_size,
                  "cannot allocate DiT core residual cache: %s",
@@ -5349,10 +5425,13 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         }
         dit->first_block_cache_partial_count =
             h3_gpu_relative_l1_partial_count((uint32_t)elements);
-        dit->first_block_cache_previous = h3_gpu_tensor_new_bf16(
-            dit->gpu, elements);
-        dit->first_block_cache_partials = h3_gpu_tensor_new_f32(
-            dit->gpu, (size_t)dit->first_block_cache_partial_count * 2);
+        dit->first_block_cache_previous = h3_gpu_tensor_new_classified(
+            dit->gpu, elements, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+            "h3.dit.activation.first_block_cache_previous");
+        dit->first_block_cache_partials = h3_gpu_tensor_new_classified(
+            dit->gpu, (size_t)dit->first_block_cache_partial_count * 2,
+            H3_GPU_F32, H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.first_block_cache_partials");
         dit->first_block_cache_host_partials = malloc(
             (size_t)dit->first_block_cache_partial_count * 2 * sizeof(float));
         if (!dit->first_block_cache_partial_count ||
@@ -5380,10 +5459,13 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
                 h3_gpu_relative_l1_partial_count((uint32_t)audio_elements);
         size_t partial_groups = (size_t)dit->tea_cache_partial_count +
             dit->tea_cache_audio_partial_count;
-        dit->tea_cache_previous = h3_gpu_tensor_new_bf16(
-            dit->gpu, elements);
-        dit->tea_cache_partials = h3_gpu_tensor_new_f32(
-            dit->gpu, partial_groups * 2);
+        dit->tea_cache_previous = h3_gpu_tensor_new_classified(
+            dit->gpu, elements, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+            "h3.dit.activation.tea_cache_previous");
+        dit->tea_cache_partials = h3_gpu_tensor_new_classified(
+            dit->gpu, partial_groups * 2, H3_GPU_F32,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.tea_cache_partials");
         dit->tea_cache_host_partials = malloc(
             partial_groups * 2 * sizeof(float));
         if (!dit->tea_cache_partial_count || !dit->tea_cache_previous ||
@@ -5399,16 +5481,21 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         size_t threshold_elements = (size_t)HEADS * blocks;
         size_t route_elements = threshold_elements * blocks;
         dit->sol_route_elements = route_elements;
-        dit->sol_query_centroids = h3_gpu_tensor_new_f32(
-            dit->gpu, summary_elements);
-        dit->sol_key_centroids = h3_gpu_tensor_new_bf16(
-            dit->gpu, summary_elements);
-        dit->sol_value_sums = h3_gpu_tensor_new_bf16(
-            dit->gpu, summary_elements);
-        dit->sol_thresholds = h3_gpu_tensor_new_f32(
-            dit->gpu, threshold_elements);
-        dit->sol_routes = h3_gpu_tensor_new_f32(
-            dit->gpu, route_elements);
+        dit->sol_query_centroids = h3_gpu_tensor_new_classified(
+            dit->gpu, summary_elements, H3_GPU_F32,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.sol_query_centroids");
+        dit->sol_key_centroids = h3_gpu_tensor_new_classified(
+            dit->gpu, summary_elements, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.sol_key_centroids");
+        dit->sol_value_sums = h3_gpu_tensor_new_classified(
+            dit->gpu, summary_elements, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.sol_value_sums");
+        dit->sol_thresholds = h3_gpu_tensor_new_classified(
+            dit->gpu, threshold_elements, H3_GPU_F32,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.sol_thresholds");
+        dit->sol_routes = h3_gpu_tensor_new_classified(
+            dit->gpu, route_elements, H3_GPU_F32,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.sol_routes");
         if (!dit->sol_query_centroids || !dit->sol_key_centroids ||
             !dit->sol_value_sums || !dit->sol_thresholds ||
             !dit->sol_routes) {
@@ -5427,10 +5514,14 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
             dit->sol_verify_elements = (uint32_t)elements;
             dit->sol_verify_partial_count =
                 h3_gpu_compare_bf16_partial_count((uint32_t)elements);
-            dit->sol_verify_dense = h3_gpu_tensor_new_bf16(
-                dit->gpu, elements);
-            dit->sol_verify_partials = h3_gpu_tensor_new_f32(
-                dit->gpu, (size_t)dit->sol_verify_partial_count * 4);
+            dit->sol_verify_dense = h3_gpu_tensor_new_classified(
+                dit->gpu, elements, H3_GPU_BF16,
+                H3_GPU_MEMORY_CONVERSION_SCRATCH,
+                "h3.dit.convert.sol_verify_dense");
+            dit->sol_verify_partials = h3_gpu_tensor_new_classified(
+                dit->gpu, (size_t)dit->sol_verify_partial_count * 4,
+                H3_GPU_F32, H3_GPU_MEMORY_CONVERSION_SCRATCH,
+                "h3.dit.convert.sol_verify_partials");
             if (!dit->sol_verify_partial_count || !dit->sol_verify_dense ||
                 !dit->sol_verify_partials) {
                 fail(error, error_size,
@@ -5455,6 +5546,8 @@ static void schedule_report(int completed, int total, void *opaque) {
 
 static h3_dit *load_dit(const char *weight_directory,
                         const char *shader_source_path,
+                        const h3_gpu_options *gpu_options,
+                        const h3_host_memory_options *host_memory,
                         const h3_text_embedding *text,
                         const h3_layout *layout,
                         const h3_sigma_schedule *sigmas,
@@ -5606,7 +5699,8 @@ static h3_dit *load_dit(const char *weight_directory,
     }
     if (prepare_gate_cache_identity(dit, sigmas))
         (void)configure_cached_gate_skip(dit);
-    dit->gpu = h3_gpu_create(shader_source_path, error, error_size);
+    dit->gpu = h3_gpu_create_with_options(
+        shader_source_path, gpu_options, error, error_size);
     if (!dit->gpu) goto failed;
     dit->nax_mlp = dit->fused_mlp && h3_gpu_has_nax_mlp(dit->gpu);
     dit->int8_mlp = (!dit->ssd_streaming || dit->ssd_quantized) &&
@@ -5674,12 +5768,14 @@ static h3_dit *load_dit(const char *weight_directory,
     int fixed_gate_skip = dit->explicit_gate_skip || dit->cached_gate_skip;
     dit->schedule = fixed_gate_skip ?
         h3_dit_schedule_precompute_active(
-            dit->weights, dit->gpu, sigmas, dit->video_condition_rows != 0,
+            dit->weights, dit->gpu, host_memory, sigmas,
+            dit->video_condition_rows != 0,
             dit->audio_condition_rows != 0, dit->block_active,
             H3_DIT_BLOCKS, schedule_report, &schedule_state,
             error, error_size) :
         h3_dit_schedule_precompute(
-            dit->weights, dit->gpu, sigmas, dit->video_condition_rows != 0,
+            dit->weights, dit->gpu, host_memory, sigmas,
+            dit->video_condition_rows != 0,
             dit->audio_condition_rows != 0, schedule_report, &schedule_state,
             error, error_size);
     if (dit->schedule) {
@@ -5733,6 +5829,8 @@ failed:
 
 h3_dit *h3_dit_load_t2va(const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -5757,7 +5855,9 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
                          int use_int8_row_fc2,
                          h3_dit_progress progress, void *progress_opaque,
                          char *error, size_t error_size) {
-    return load_dit(weight_directory, shader_source_path, text, layout, sigmas,
+    return load_dit(weight_directory, shader_source_path, gpu_options,
+                    host_memory,
+                    text, layout, sigmas,
                     active_blocks, core_reuse_interval, token_reduction,
                     ssd_streaming, ssd_pinned_prefix,
                     ssd_memory_budget_bytes,
@@ -5781,6 +5881,8 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
 h3_dit *h3_dit_load_t2va_core(
                          const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -5805,7 +5907,9 @@ h3_dit *h3_dit_load_t2va_core(
                          int use_int8_row_fc2,
                          h3_dit_progress progress, void *progress_opaque,
                          char *error, size_t error_size) {
-    return load_dit(weight_directory, shader_source_path, text, layout, sigmas,
+    return load_dit(weight_directory, shader_source_path, gpu_options,
+                    host_memory,
+                    text, layout, sigmas,
                     active_blocks, core_reuse_interval, token_reduction,
                     ssd_streaming, ssd_pinned_prefix,
                     ssd_memory_budget_bytes,
@@ -5827,6 +5931,8 @@ h3_dit *h3_dit_load_t2va_core(
 h3_dit *h3_dit_load_conditioned(
                          const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -5855,7 +5961,9 @@ h3_dit *h3_dit_load_conditioned(
                          size_t condition_audio_elements,
                          h3_dit_progress progress, void *progress_opaque,
                          char *error, size_t error_size) {
-    return load_dit(weight_directory, shader_source_path, text, layout, sigmas,
+    return load_dit(weight_directory, shader_source_path, gpu_options,
+                    host_memory,
+                    text, layout, sigmas,
                     active_blocks, core_reuse_interval, token_reduction,
                     ssd_streaming, ssd_pinned_prefix,
                     ssd_memory_budget_bytes,
@@ -8185,10 +8293,14 @@ static int ensure_previous_velocities(h3_dit *dit, char *error,
     if (dit->previous_video_velocity && dit->previous_audio_velocity) return 1;
     free_tensor(&dit->previous_video_velocity);
     free_tensor(&dit->previous_audio_velocity);
-    dit->previous_video_velocity = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)dit->video_rows * VIDEO_PATCH);
-    dit->previous_audio_velocity = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)dit->audio_rows * AUDIO_CHANNELS);
+    dit->previous_video_velocity = h3_gpu_tensor_new_classified(
+        dit->gpu, (size_t)dit->video_rows * VIDEO_PATCH, H3_GPU_BF16,
+        H3_GPU_MEMORY_ACTIVATION,
+        "h3.dit.activation.previous_video_velocity");
+    dit->previous_audio_velocity = h3_gpu_tensor_new_classified(
+        dit->gpu, (size_t)dit->audio_rows * AUDIO_CHANNELS, H3_GPU_BF16,
+        H3_GPU_MEMORY_ACTIVATION,
+        "h3.dit.activation.previous_audio_velocity");
     if (dit->previous_video_velocity && dit->previous_audio_velocity) return 1;
     free_tensor(&dit->previous_video_velocity);
     free_tensor(&dit->previous_audio_velocity);
@@ -8611,6 +8723,19 @@ int h3_dit_denoise_euler(h3_dit *dit, float *video_latent,
     return h3_dit_denoise_euler_preview(
         dit, video_latent, audio_latent, reuse_interval,
         progress, progress_opaque, NULL, NULL, error, error_size);
+}
+
+int h3_dit_drain_gpu(h3_dit *dit, char *error, size_t error_size) {
+    if (!dit || !dit->gpu) {
+        fail(error, error_size, "invalid H3 DiT GPU drain");
+        return 0;
+    }
+    if (!h3_gpu_drain(dit->gpu)) {
+        fail(error, error_size, "cannot drain H3 DiT GPU: %s",
+             h3_gpu_error(dit->gpu));
+        return 0;
+    }
+    return 1;
 }
 
 void h3_dit_free(h3_dit *dit) {

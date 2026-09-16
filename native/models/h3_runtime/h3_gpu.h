@@ -4,8 +4,51 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct h3_gpu h3_gpu;
 typedef struct h3_gpu_tensor h3_gpu_tensor;
+
+typedef enum {
+    H3_GPU_MEMORY_UNKNOWN = 0,
+    H3_GPU_MEMORY_WEIGHTS = 1,
+    H3_GPU_MEMORY_ACTIVATION = 2,
+    H3_GPU_MEMORY_CONDITIONING = 3,
+    H3_GPU_MEMORY_REFILL_SLOT = 4,
+    H3_GPU_MEMORY_CONVERSION_SCRATCH = 5,
+    H3_GPU_MEMORY_OUTPUT = 6,
+} h3_gpu_memory_class;
+
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    void *user;
+    int (*reserve)(void *user, uint32_t memory_class,
+                   uint64_t upper_bytes, const char *tag,
+                   void **token, char *error, size_t error_size);
+    int (*commit)(void *user, void *token, uint64_t allocator_domain,
+                  uint64_t handle, uint64_t actual_bytes,
+                  uint64_t generation, char *error, size_t error_size);
+    void (*cancel)(void *user, void *token);
+    void (*release)(void *user, void *token);
+    /* Optional asynchronous lifetime bridge.  retire() moves the active
+     * lease into a pending-release state before the command is committed;
+     * complete() only publishes the completion result to the owner-thread
+     * mailbox.  Neither callback may wait for Metal or mutate model state. */
+    int (*retire)(void *user, void *token, uint32_t stage_id,
+                  uint32_t slot_id, char *error, size_t error_size);
+    void (*complete)(void *user, void *token, int status);
+} h3_gpu_memory_hooks;
+
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    const h3_gpu_memory_hooks *memory_hooks;
+    uint64_t memory_allocator_domain;
+    uint64_t memory_generation;
+} h3_gpu_options;
 
 typedef enum {
     H3_GPU_F32 = 0,
@@ -35,7 +78,13 @@ typedef struct {
 
 h3_gpu *h3_gpu_create(const char *shader_source_path,
                       char *error, size_t error_size);
+h3_gpu *h3_gpu_create_with_options(const char *shader_source_path,
+                                   const h3_gpu_options *options,
+                                   char *error, size_t error_size);
 void h3_gpu_free(h3_gpu *gpu);
+/* Wait for every committed command in the ordered queue and run completion
+ * handlers before allocator hooks are detached.  No new work is submitted. */
+int h3_gpu_drain(h3_gpu *gpu);
 int h3_gpu_is_m5(const h3_gpu *gpu);
 int h3_gpu_has_nax_mlp(const h3_gpu *gpu);
 int h3_gpu_has_int8_mlp(const h3_gpu *gpu);
@@ -44,12 +93,24 @@ h3_gpu_tensor *h3_gpu_tensor_new_f32(h3_gpu *gpu, size_t elements);
 h3_gpu_tensor *h3_gpu_tensor_new_f16(h3_gpu *gpu, size_t elements);
 h3_gpu_tensor *h3_gpu_tensor_new_bf16(h3_gpu *gpu, size_t elements);
 h3_gpu_tensor *h3_gpu_tensor_new_i8(h3_gpu *gpu, size_t elements);
+h3_gpu_tensor *h3_gpu_tensor_new_classified(
+    h3_gpu *gpu, size_t elements, h3_gpu_dtype dtype,
+    h3_gpu_memory_class memory_class, const char *tag);
 h3_gpu_tensor *h3_gpu_tensor_from_f32(h3_gpu *gpu, const float *values,
                                       size_t elements);
+h3_gpu_tensor *h3_gpu_tensor_from_f32_classified(
+    h3_gpu *gpu, const float *values, size_t elements,
+    h3_gpu_memory_class memory_class, const char *tag);
 h3_gpu_tensor *h3_gpu_tensor_from_bf16(h3_gpu *gpu, const uint16_t *values,
                                        size_t elements);
+h3_gpu_tensor *h3_gpu_tensor_from_bf16_classified(
+    h3_gpu *gpu, const uint16_t *values, size_t elements,
+    h3_gpu_memory_class memory_class, const char *tag);
 h3_gpu_tensor *h3_gpu_tensor_from_u32(h3_gpu *gpu, const uint32_t *values,
                                       size_t elements);
+h3_gpu_tensor *h3_gpu_tensor_from_u32_classified(
+    h3_gpu *gpu, const uint32_t *values, size_t elements,
+    h3_gpu_memory_class memory_class, const char *tag);
 /* Allocate shared Metal storage and pread BF16 payload directly into it. */
 h3_gpu_tensor *h3_gpu_tensor_load_bf16(h3_gpu *gpu, const char *path,
                                        uint64_t file_offset, size_t elements);
@@ -942,5 +1003,9 @@ int h3_gpu_euler_bf16(h3_gpu *gpu, h3_gpu_tensor *sample,
 int h3_gpu_silu_mul_bf16(h3_gpu *gpu, h3_gpu_tensor *output,
                          const h3_gpu_tensor *gate,
                          const h3_gpu_tensor *up, uint32_t elements);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

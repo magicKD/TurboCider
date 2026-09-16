@@ -15,6 +15,12 @@ enum {
 
 struct h3_dit_schedule {
     h3_gpu *gpu;
+    h3_host_memory_options host_memory;
+    void *self_memory_token;
+    void *video_rows_memory_token;
+    void *audio_rows_memory_token;
+    void *visual_condition_rows_memory_token;
+    void *audio_condition_rows_memory_token;
     int steps;
     uint32_t time_rows;
     uint32_t *video_rows;
@@ -31,6 +37,76 @@ static void fail(char *error, size_t error_size, const char *format, ...) {
     va_start(arguments, format);
     vsnprintf(error, error_size, format, arguments);
     va_end(arguments);
+}
+
+static int checked_size_product(size_t left, size_t right, size_t *result) {
+    if (result) *result = 0;
+    if (!left || !right || !result || left > SIZE_MAX / right) return 0;
+    *result = left * right;
+    return 1;
+}
+
+static int valid_host_memory_options(
+        const h3_host_memory_options *options) {
+    if (!options) return 1;
+    const h3_host_memory_hooks *hooks = options->hooks;
+    return options->struct_size >= sizeof(*options) &&
+        options->version == 1u && hooks &&
+        hooks->struct_size >= sizeof(*hooks) && hooks->version == 1u &&
+        hooks->reserve && hooks->commit && hooks->cancel && hooks->release &&
+        options->allocator_domain && options->generation;
+}
+
+static void *host_allocate(const h3_host_memory_options *options,
+                           h3_host_memory_class memory_class,
+                           size_t bytes, int clear, const char *tag,
+                           void **memory_token, char *error,
+                           size_t error_size) {
+    if (memory_token) *memory_token = NULL;
+    if (!bytes || !memory_token || !valid_host_memory_options(options)) {
+        fail(error, error_size, "invalid host allocation for %s", tag);
+        return NULL;
+    }
+    if (!options) {
+        void *pointer = clear ? calloc(1, bytes) : malloc(bytes);
+        if (!pointer) fail(error, error_size, "out of memory allocating %s", tag);
+        return pointer;
+    }
+    const h3_host_memory_hooks *hooks = options->hooks;
+    char detail[512] = {0};
+    void *token = NULL;
+    if (!hooks->reserve(hooks->user, (uint32_t)memory_class,
+                        (uint64_t)bytes, tag, &token,
+                        detail, sizeof(detail))) {
+        fail(error, error_size, "%s", detail[0] ? detail :
+             "memory budget denied H3 schedule host allocation");
+        return NULL;
+    }
+    void *pointer = clear ? calloc(1, bytes) : malloc(bytes);
+    if (!pointer) {
+        hooks->cancel(hooks->user, token);
+        fail(error, error_size, "out of memory allocating %s", tag);
+        return NULL;
+    }
+    if (!hooks->commit(hooks->user, token, options->allocator_domain,
+                       (uint64_t)(uintptr_t)pointer, (uint64_t)bytes,
+                       options->generation, detail, sizeof(detail))) {
+        free(pointer);
+        hooks->cancel(hooks->user, token);
+        fail(error, error_size, "%s", detail[0] ? detail :
+             "cannot commit H3 schedule host allocation");
+        return NULL;
+    }
+    *memory_token = token;
+    return pointer;
+}
+
+static void host_release(const h3_host_memory_options *options,
+                         void *pointer, void **memory_token) {
+    free(pointer);
+    if (!options || !memory_token || !*memory_token) return;
+    options->hooks->release(options->hooks->user, *memory_token);
+    *memory_token = NULL;
 }
 
 static int gpu_op(h3_gpu *gpu, int ok, char *error, size_t error_size,
@@ -78,19 +154,40 @@ static void free_tensor(h3_gpu_tensor **tensor) {
 static int prepare_rows(h3_dit_schedule *schedule,
                         const h3_sigma_schedule *sigmas,
                         int visual_condition, int audio_condition,
-                        float **features_out, char *error,
+                        float **features_out, void **features_memory_token,
+                        char *error,
                         size_t error_size) {
     schedule->steps = sigmas->steps;
-    schedule->video_rows = calloc((size_t)sigmas->steps,
-                                  sizeof(*schedule->video_rows));
-    schedule->audio_rows = calloc((size_t)sigmas->steps,
-                                  sizeof(*schedule->audio_rows));
+    schedule->video_rows = host_allocate(
+        schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+        H3_HOST_MEMORY_CONDITIONING,
+        (size_t)sigmas->steps * sizeof(*schedule->video_rows), 1,
+        "h3.schedule.video_rows", &schedule->video_rows_memory_token,
+        error, error_size);
+    schedule->audio_rows = host_allocate(
+        schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+        H3_HOST_MEMORY_CONDITIONING,
+        (size_t)sigmas->steps * sizeof(*schedule->audio_rows), 1,
+        "h3.schedule.audio_rows", &schedule->audio_rows_memory_token,
+        error, error_size);
     if (visual_condition)
-        schedule->visual_condition_rows = calloc(
-            (size_t)sigmas->steps, sizeof(*schedule->visual_condition_rows));
+        schedule->visual_condition_rows = host_allocate(
+            schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+            H3_HOST_MEMORY_CONDITIONING,
+            (size_t)sigmas->steps *
+                sizeof(*schedule->visual_condition_rows), 1,
+            "h3.schedule.visual_condition_rows",
+            &schedule->visual_condition_rows_memory_token,
+            error, error_size);
     if (audio_condition)
-        schedule->audio_condition_rows = calloc(
-            (size_t)sigmas->steps, sizeof(*schedule->audio_condition_rows));
+        schedule->audio_condition_rows = host_allocate(
+            schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+            H3_HOST_MEMORY_CONDITIONING,
+            (size_t)sigmas->steps *
+                sizeof(*schedule->audio_condition_rows), 1,
+            "h3.schedule.audio_condition_rows",
+            &schedule->audio_condition_rows_memory_token,
+            error, error_size);
     if (!schedule->video_rows || !schedule->audio_rows ||
         (visual_condition && !schedule->visual_condition_rows) ||
         (audio_condition && !schedule->audio_condition_rows)) {
@@ -131,11 +228,21 @@ static int prepare_rows(h3_dit_schedule *schedule,
         fail(error, error_size, "invalid number of timestep rows");
         return 0;
     }
-    float *times = calloc(count, sizeof(*times));
-    float *features = malloc((size_t)count * TIME_INPUT * sizeof(*features));
+    void *times_memory_token = NULL;
+    float *times = host_allocate(
+        schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+        H3_HOST_MEMORY_STAGING, (size_t)count * sizeof(*times), 1,
+        "h3.schedule.times", &times_memory_token, error, error_size);
+    float *features = host_allocate(
+        schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+        H3_HOST_MEMORY_STAGING,
+        (size_t)count * TIME_INPUT * sizeof(*features), 0,
+        "h3.schedule.features", features_memory_token, error, error_size);
     if (!times || !features) {
-        free(times);
-        free(features);
+        host_release(schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+                     times, &times_memory_token);
+        host_release(schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+                     features, features_memory_token);
         fail(error, error_size, "out of memory allocating timestep features");
         return 0;
     }
@@ -155,7 +262,8 @@ static int prepare_rows(h3_dit_schedule *schedule,
                 sinf(angle);
         }
     }
-    free(times);
+    host_release(schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+                 times, &times_memory_token);
     *features_out = features;
     return 1;
 }
@@ -164,8 +272,9 @@ static h3_gpu_tensor *time_embeddings(const h3_weight_store *weights,
                                       h3_gpu *gpu, uint32_t rows,
                                       const float *features, char *error,
                                       size_t error_size) {
-    h3_gpu_tensor *input = h3_gpu_tensor_from_f32(
-        gpu, features, (size_t)rows * TIME_INPUT);
+    h3_gpu_tensor *input = h3_gpu_tensor_from_f32_classified(
+        gpu, features, (size_t)rows * TIME_INPUT,
+        H3_GPU_MEMORY_CONVERSION_SCRATCH, "h3.schedule.time_input");
     h3_gpu_tensor *in_w = weight_f32_2d(weights, gpu,
         "time_embedder.proj_in.weight", TIME_HIDDEN, TIME_INPUT,
         error, error_size);
@@ -176,16 +285,21 @@ static h3_gpu_tensor *time_embeddings(const h3_weight_store *weights,
         error, error_size);
     h3_gpu_tensor *out_b = weight_f32_1d(weights, gpu,
         "time_embedder.proj_out.bias", H3_DIT_TIME_DIM, error, error_size);
-    h3_gpu_tensor *hidden = h3_gpu_tensor_new_f32(
-        gpu, (size_t)rows * TIME_HIDDEN);
-    h3_gpu_tensor *activated = h3_gpu_tensor_new_f32(
-        gpu, (size_t)rows * TIME_HIDDEN);
-    h3_gpu_tensor *output = h3_gpu_tensor_new_f32(
-        gpu, (size_t)rows * H3_DIT_TIME_DIM);
-    h3_gpu_tensor *bf16 = h3_gpu_tensor_new_bf16(
-        gpu, (size_t)rows * H3_DIT_TIME_DIM);
-    h3_gpu_tensor *silu = h3_gpu_tensor_new_bf16(
-        gpu, (size_t)rows * H3_DIT_TIME_DIM);
+    h3_gpu_tensor *hidden = h3_gpu_tensor_new_classified(
+        gpu, (size_t)rows * TIME_HIDDEN, H3_GPU_F32,
+        H3_GPU_MEMORY_ACTIVATION, "h3.schedule.time_hidden");
+    h3_gpu_tensor *activated = h3_gpu_tensor_new_classified(
+        gpu, (size_t)rows * TIME_HIDDEN, H3_GPU_F32,
+        H3_GPU_MEMORY_ACTIVATION, "h3.schedule.time_activated");
+    h3_gpu_tensor *output = h3_gpu_tensor_new_classified(
+        gpu, (size_t)rows * H3_DIT_TIME_DIM, H3_GPU_F32,
+        H3_GPU_MEMORY_CONVERSION_SCRATCH, "h3.schedule.time_output");
+    h3_gpu_tensor *bf16 = h3_gpu_tensor_new_classified(
+        gpu, (size_t)rows * H3_DIT_TIME_DIM, H3_GPU_BF16,
+        H3_GPU_MEMORY_CONDITIONING, "h3.schedule.time_bf16");
+    h3_gpu_tensor *silu = h3_gpu_tensor_new_classified(
+        gpu, (size_t)rows * H3_DIT_TIME_DIM, H3_GPU_BF16,
+        H3_GPU_MEMORY_CONDITIONING, "h3.schedule.time_silu");
     h3_gpu_tensor *result = NULL;
     h3_gpu_tensor *all[] = {input, in_w, in_b, out_w, out_b, hidden,
                             activated, output, bf16, silu};
@@ -236,6 +350,7 @@ cleanup:
 
 static h3_dit_schedule *schedule_precompute(
     const h3_weight_store *weights, h3_gpu *gpu,
+    const h3_host_memory_options *host_memory,
     const h3_sigma_schedule *sigmas, int visual_condition,
     int audio_condition, const uint8_t *active_blocks,
     size_t active_mask_count,
@@ -248,18 +363,27 @@ static h3_dit_schedule *schedule_precompute(
         fail(error, error_size, "invalid AdaLN schedule arguments");
         return NULL;
     }
-    h3_dit_schedule *schedule = calloc(1, sizeof(*schedule));
+    void *schedule_memory_token = NULL;
+    h3_dit_schedule *schedule = host_allocate(
+        host_memory, H3_HOST_MEMORY_CONTROL, sizeof(*schedule), 1,
+        "h3.schedule.object", &schedule_memory_token, error, error_size);
     if (!schedule) {
-        fail(error, error_size, "out of memory creating AdaLN schedule");
         return NULL;
     }
+    schedule->self_memory_token = schedule_memory_token;
     schedule->gpu = gpu;
     float *features = NULL;
+    void *features_memory_token = NULL;
+    if (host_memory) {
+        schedule->host_memory = *host_memory;
+    }
     if (!prepare_rows(schedule, sigmas, visual_condition, audio_condition,
-                      &features, error, error_size)) goto failed;
+                      &features, &features_memory_token,
+                      error, error_size)) goto failed;
     h3_gpu_tensor *time = time_embeddings(weights, gpu, schedule->time_rows,
                                            features, error, error_size);
-    free(features);
+    host_release(schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+                 features, &features_memory_token);
     features = NULL;
     if (!time) goto failed;
 
@@ -279,8 +403,9 @@ static h3_dit_schedule *schedule_precompute(
             error, error_size);
         h3_gpu_tensor *bias = weight_bf16_1d(
             weights, gpu, bias_name, BLOCK_OUTPUT, error, error_size);
-        schedule->blocks[block] = h3_gpu_tensor_new_bf16(
-            gpu, (size_t)schedule->time_rows * BLOCK_OUTPUT);
+        schedule->blocks[block] = h3_gpu_tensor_new_classified(
+            gpu, (size_t)schedule->time_rows * BLOCK_OUTPUT, H3_GPU_BF16,
+            H3_GPU_MEMORY_CONDITIONING, "h3.schedule.block_adaln");
         if (!weight || !bias || !schedule->blocks[block]) {
             if (!error || !*error)
                 fail(error, error_size, "cannot allocate AdaLN block %u: %s",
@@ -313,8 +438,9 @@ static h3_dit_schedule *schedule_precompute(
     h3_gpu_tensor *final_b = weight_bf16_1d(
         weights, gpu, "final_layer.adaln_proj.linear.bias",
         FINAL_OUTPUT, error, error_size);
-    schedule->final = h3_gpu_tensor_new_bf16(
-        gpu, (size_t)schedule->time_rows * FINAL_OUTPUT);
+    schedule->final = h3_gpu_tensor_new_classified(
+        gpu, (size_t)schedule->time_rows * FINAL_OUTPUT, H3_GPU_BF16,
+        H3_GPU_MEMORY_CONDITIONING, "h3.schedule.final_adaln");
     if (!final_w || !final_b || !schedule->final ||
         !gpu_op(gpu, h3_gpu_begin(gpu), error, error_size,
                 "begin final AdaLN") ||
@@ -338,45 +464,58 @@ static h3_dit_schedule *schedule_precompute(
     return schedule;
 
 failed:
-    free(features);
+    host_release(schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+                 features, &features_memory_token);
     h3_dit_schedule_free(schedule);
     return NULL;
 }
 
 h3_dit_schedule *h3_dit_schedule_precompute(
     const h3_weight_store *weights, h3_gpu *gpu,
+    const h3_host_memory_options *host_memory,
     const h3_sigma_schedule *sigmas, int visual_condition,
     int audio_condition,
     h3_dit_schedule_progress progress, void *progress_opaque,
     char *error, size_t error_size) {
     return schedule_precompute(
-        weights, gpu, sigmas, visual_condition, audio_condition, NULL, 0,
+        weights, gpu, host_memory, sigmas, visual_condition, audio_condition,
+        NULL, 0,
         progress, progress_opaque, error, error_size);
 }
 
 h3_dit_schedule *h3_dit_schedule_precompute_active(
     const h3_weight_store *weights, h3_gpu *gpu,
+    const h3_host_memory_options *host_memory,
     const h3_sigma_schedule *sigmas, int visual_condition,
     int audio_condition, const uint8_t *active_blocks,
     size_t active_mask_count,
     h3_dit_schedule_progress progress, void *progress_opaque,
     char *error, size_t error_size) {
     return schedule_precompute(
-        weights, gpu, sigmas, visual_condition, audio_condition,
+        weights, gpu, host_memory, sigmas, visual_condition, audio_condition,
         active_blocks, active_mask_count, progress, progress_opaque,
         error, error_size);
 }
 
 void h3_dit_schedule_free(h3_dit_schedule *schedule) {
     if (!schedule) return;
+    const h3_host_memory_options host_memory = schedule->host_memory;
+    void *self_memory_token = schedule->self_memory_token;
     for (unsigned block = 0; block < H3_DIT_BLOCKS; block++)
         h3_gpu_tensor_free(schedule->blocks[block]);
     h3_gpu_tensor_free(schedule->final);
-    free(schedule->video_rows);
-    free(schedule->audio_rows);
-    free(schedule->visual_condition_rows);
-    free(schedule->audio_condition_rows);
-    free(schedule);
+    host_release(host_memory.hooks ? &host_memory : NULL,
+                 schedule->video_rows, &schedule->video_rows_memory_token);
+    host_release(host_memory.hooks ? &host_memory : NULL,
+                 schedule->audio_rows, &schedule->audio_rows_memory_token);
+    host_release(host_memory.hooks ? &host_memory : NULL,
+                 schedule->visual_condition_rows,
+                 &schedule->visual_condition_rows_memory_token);
+    host_release(host_memory.hooks ? &host_memory : NULL,
+                 schedule->audio_condition_rows,
+                 &schedule->audio_condition_rows_memory_token);
+    host_release(host_memory.hooks ? &host_memory : NULL,
+                 schedule, &self_memory_token);
 }
 
 int h3_dit_schedule_steps(const h3_dit_schedule *schedule) {
@@ -416,15 +555,45 @@ const h3_gpu_tensor *h3_dit_schedule_block(const h3_dit_schedule *schedule,
     return schedule && block < H3_DIT_BLOCKS ? schedule->blocks[block] : NULL;
 }
 
+static uint16_t *gate_readback_allocate(
+        const h3_dit_schedule *schedule, size_t *count,
+        void **memory_token) {
+    if (count) *count = 0;
+    if (memory_token) *memory_token = NULL;
+    if (!schedule || !count || !memory_token) return NULL;
+    size_t elements = 0;
+    size_t bytes = 0;
+    if (!checked_size_product((size_t)schedule->time_rows,
+                              (size_t)BLOCK_OUTPUT, &elements) ||
+        !checked_size_product(elements, sizeof(uint16_t), &bytes)) return NULL;
+    uint16_t *values = host_allocate(
+        schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+        H3_HOST_MEMORY_STAGING, bytes, 0,
+        "h3.schedule.gate_readback", memory_token, NULL, 0);
+    if (!values) return NULL;
+    *count = elements;
+    return values;
+}
+
+static void gate_readback_release(
+        const h3_dit_schedule *schedule, uint16_t *values,
+        void **memory_token) {
+    if (!schedule) return;
+    host_release(schedule->host_memory.hooks ? &schedule->host_memory : NULL,
+                 values, memory_token);
+}
+
 double h3_dit_schedule_gate_score(const h3_dit_schedule *schedule,
                                   unsigned block) {
     if (!schedule || block >= H3_DIT_BLOCKS || !schedule->blocks[block])
         return -1.0;
-    size_t count = (size_t)schedule->time_rows * BLOCK_OUTPUT;
-    uint16_t *values = malloc(count * sizeof(*values));
+    size_t count = 0;
+    void *memory_token = NULL;
+    uint16_t *values = gate_readback_allocate(
+        schedule, &count, &memory_token);
     if (!values || !h3_gpu_tensor_read_bf16(schedule->blocks[block], values,
                                              count)) {
-        free(values);
+        gate_readback_release(schedule, values, &memory_token);
         return -1.0;
     }
     double total = 0.0;
@@ -444,7 +613,7 @@ double h3_dit_schedule_gate_score(const h3_dit_schedule *schedule,
                 }
                 samples += H3_DIT_HIDDEN;
             }
-    free(values);
+    gate_readback_release(schedule, values, &memory_token);
     return samples ? total / (double)samples : -1.0;
 }
 
@@ -454,11 +623,13 @@ int h3_dit_schedule_gate_scores(const h3_dit_schedule *schedule,
     if (!schedule || block >= H3_DIT_BLOCKS || !schedule->blocks[block] ||
         !scores || scores_count !=
             (size_t)schedule->steps * H3_DIT_MODALITIES) return 0;
-    size_t count = (size_t)schedule->time_rows * BLOCK_OUTPUT;
-    uint16_t *values = malloc(count * sizeof(*values));
+    size_t count = 0;
+    void *memory_token = NULL;
+    uint16_t *values = gate_readback_allocate(
+        schedule, &count, &memory_token);
     if (!values || !h3_gpu_tensor_read_bf16(schedule->blocks[block], values,
                                              count)) {
-        free(values);
+        gate_readback_release(schedule, values, &memory_token);
         return 0;
     }
     for (int step = 0; step < schedule->steps; step++) {
@@ -485,7 +656,7 @@ int h3_dit_schedule_gate_scores(const h3_dit_schedule *schedule,
                 total / (2.0 * H3_DIT_HIDDEN);
         }
     }
-    free(values);
+    gate_readback_release(schedule, values, &memory_token);
     return 1;
 }
 
@@ -496,11 +667,13 @@ int h3_dit_schedule_gate_branch_scores(const h3_dit_schedule *schedule,
     if (!schedule || block >= H3_DIT_BLOCKS || !schedule->blocks[block] ||
         !scores || scores_count !=
             (size_t)schedule->steps * H3_DIT_MODALITIES * branches) return 0;
-    size_t count = (size_t)schedule->time_rows * BLOCK_OUTPUT;
-    uint16_t *values = malloc(count * sizeof(*values));
+    size_t count = 0;
+    void *memory_token = NULL;
+    uint16_t *values = gate_readback_allocate(
+        schedule, &count, &memory_token);
     if (!values || !h3_gpu_tensor_read_bf16(schedule->blocks[block], values,
                                              count)) {
-        free(values);
+        gate_readback_release(schedule, values, &memory_token);
         return 0;
     }
     static const uint32_t gate_slots[] = {2, 5};
@@ -529,7 +702,7 @@ int h3_dit_schedule_gate_branch_scores(const h3_dit_schedule *schedule,
             }
         }
     }
-    free(values);
+    gate_readback_release(schedule, values, &memory_token);
     return 1;
 }
 

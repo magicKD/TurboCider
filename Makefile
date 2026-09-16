@@ -4,6 +4,7 @@ LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3.11))
 PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),python3.11)
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
+.PHONY: test-streaming-host test-streaming-contract test-streaming-metal
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -16,6 +17,9 @@ help:
 	@echo 'make test-app                     Run App behavior tests (macOS clipboard access)'
 	@echo 'make test-library                 Verify model library using tiny loopback downloads'
 	@echo 'make test                         Verify repository boundaries and request contracts'
+	@echo 'make test-streaming-host           Verify layout/executor/LTX metadata with synthetic fixtures'
+	@echo 'make test-streaming-contract       Verify streaming API/snapshot contracts (requires native build)'
+	@echo 'make test-streaming-metal          Verify synthetic GPU slots (requires Metal access)'
 	@echo 'make test-model MODEL=/path/to/FLUX.2-klein-4B OUTPUT=/tmp/new-tc-validation'
 	@echo 'make doctor                       Inspect this Mac and native dependencies'
 	@echo 'make h3-quant-cache MODEL=/path/to/transformer OUTPUT=/path/to/cache'
@@ -35,6 +39,9 @@ test:
 	@"$(PYTHON)" tests/repository/test_cpp_boundaries.py
 	@"$(PYTHON)" tests/native/test_hash_small_stack.py
 	@"$(PYTHON)" tests/native/test_contract.py
+	@$(MAKE) test-streaming-host
+	@$(MAKE) test-streaming-contract
+	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
 	@"$(PYTHON)" -B tests/native/test_z_image_sharded_checkpoint.py
 	@"$(PYTHON)" -B tests/native/test_coreml_lora.py
 	@"$(PYTHON)" -B tests/native/test_llada_reference.py
@@ -45,6 +52,19 @@ test:
 	@"$(PYTHON)" -B tests/native/test_native_gguf.py
 	@"$(PYTHON)" -B tests/native/test_nvfp4.py
 	@"$(PYTHON)" -B tests/native/test_h3_streaming_policy.py
+	@"$(PYTHON)" -B tests/native/test_memory_accounting.py
+	@"$(PYTHON)" -B tests/native/test_memory_manifest.py
+	@"$(PYTHON)" -B tests/native/test_memory_schedule.py
+	@"$(PYTHON)" -B tests/native/test_memory_schedule_adapter.py
+	@"$(PYTHON)" -B tests/native/test_memory_plan_compiler.py
+	@"$(PYTHON)" -B tests/native/test_memory_scheduler.py
+	@"$(PYTHON)" -B tests/native/test_memory_watchdog.py
+	@"$(PYTHON)" -B tests/native/test_memory_trace.py
+	@"$(PYTHON)" -B tests/native/test_h3_schedule_memory.py
+	@"$(PYTHON)" -B tests/native/test_memory_execution.py
+	@"$(PYTHON)" -B tests/native/test_memory_probe.py
+	@"$(PYTHON)" -B tests/native/test_h3_gpu_memory_hooks.py
+	@"$(PYTHON)" -B tests/native/test_ltx_gpu_memory_hooks.py
 	@"$(PYTHON)" -B tests/native/test_h3_quant_cache.py
 	@"$(PYTHON)" -B tests/native/test_h3_mlx_source_contract.py
 	@"$(PYTHON)" -B tests/native/test_h3_mlx_geometry.py
@@ -54,6 +74,18 @@ test:
 	@"$(PYTHON)" -B tests/native/test_vdn_modelscope.py
 	@"$(PYTHON)" -B tests/native/test_vdn_mlx_solve.py
 	@"$(PYTHON)" tests/native/test_inventory.py
+# No real model weights, full inference, or system memory pressure in these
+# focused targets. GPU tests may report SKIP when Metal access is unavailable.
+test-streaming-host:
+	@"$(PYTHON)" -B tests/native/test_streaming_layout.py
+	@"$(PYTHON)" -B tests/native/test_ltx_streaming_layout.py
+	@"$(PYTHON)" -B tests/native/test_ltx_streaming_descriptor.py
+test-streaming-contract:
+	@"$(PYTHON)" -B tests/native/test_ltx_streaming_snapshot.py
+	@"$(PYTHON)" -B tests/native/test_streaming_contract.py
+test-streaming-metal:
+	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
+	@"$(PYTHON)" -B tests/native/test_ltx_streaming_layout.py --metal
 test-app:
 	@build/native/turbocider-ane-library-tests
 	@build/native/turbocider-studio-tests

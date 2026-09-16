@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "memory_contracts.hpp"
+#include "streaming_contracts.hpp"
 
 namespace tc {
 struct InputAsset {
@@ -65,6 +67,14 @@ struct Request {
     // Reserved legacy GGUF hint. Native backends reject unsupported offload;
     // this never selects or launches an external inference engine.
     bool streaming_offload = false;
+    // Explicit full-request low-memory add-on.  The legacy
+    // memory_budget_bytes field remains a denoiser working-set hint.
+    MemoryConstrainedConfig memory_constrained;
+    StreamingConfig streaming;
+    std::optional<StreamingConfig> streaming_requested;
+    bool residency_specified = false;
+    bool memory_budget_specified = false;
+    bool streaming_offload_specified = false;
 };
 struct Stage {
     std::string id;

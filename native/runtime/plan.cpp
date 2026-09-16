@@ -64,6 +64,27 @@ std::vector<float> flux_sigmas(int tokens, int steps) {
 }
 ExecutionPlan make_plan(const Request &requested) {
     Request r = requested;
+    if (r.streaming.specified()) validate_streaming_config(r.streaming);
+    if (r.streaming.active()) {
+        require(!r.residency_specified && !r.memory_budget_specified &&
+                    !r.streaming_offload_specified && !r.memory_budget_bytes && !r.streaming_offload,
+                "streaming_config_conflict: explicit legacy residency/budget/offload");
+        require(r.execution == "gpu" && r.ane_manifest.empty() && r.encoder_ane_manifest.empty(),
+                "streaming_route_unsupported: manual streaming requires GPU-only execution");
+        require(r.loras.empty(), "streaming_route_unsupported: LoRA is not yet validated");
+        if (r.memory_constrained.enabled && r.memory_constrained.has(MemoryFieldMaxRefillSlots))
+            for (const auto &[id, stage] : r.streaming.stages)
+                require(!stage.slot_count || *stage.slot_count <= r.memory_constrained.max_refill_slots,
+                        "streaming_config_conflict: slot_count exceeds explicit max_refill_slots: " + id);
+    }
+    std::optional<EffectiveMemoryPolicy> memory_policy;
+    if (r.memory_constrained.specified())
+        validate_memory_constrained_request(r, 0);
+    if (r.memory_constrained.enabled) {
+        memory_policy = make_effective_memory_policy(r);
+        if (!r.streaming.active())
+            resolve_memory_constrained_candidate(r, *memory_policy);
+    }
     const auto lora_strategy = effective_lora_strategy(r);
     if (lora_strategy != "none")
         r.lora_strategy = lora_strategy;
@@ -106,7 +127,7 @@ ExecutionPlan make_plan(const Request &requested) {
      * Request-time validation remains fail-closed for missing/invalid audio
      * assets, while the optional MLX denoiser still rejects I2V explicitly. */
     validate_recipe(recipe);
-    ExecutionPlan plan{r, recipe, {}};
+    ExecutionPlan plan{r, recipe, {}, {}};
     if (r.model == "flux2-klein-4b")
         plan.memory_estimate_bytes =
             ((hybrid ? 16ull : 12ull) << 30) + uint64_t(r.width) * r.height * 8192;
@@ -116,7 +137,9 @@ ExecutionPlan make_plan(const Request &requested) {
         const uint64_t geometry =
             uint64_t(r.width) * r.height * r.frames * 128;
         if (r.residency == "streamed")
-            plan.memory_estimate_bytes = (26ull << 30) + geometry;
+            plan.memory_estimate_bytes =
+                (r.memory_constrained.enabled ? (25ull << 29) : (26ull << 30)) +
+                geometry;
         else
             plan.memory_estimate_bytes = (36ull << 30) + geometry;
     }
@@ -128,9 +151,13 @@ ExecutionPlan make_plan(const Request &requested) {
             geometry;
     }
     else if (r.model == "minimax-h3-turbo" ||
-             r.model.starts_with("minimax-h3-fasth3-mlx-int6"))
-        plan.memory_estimate_bytes = (32ull << 30) +
+             r.model.starts_with("minimax-h3-fasth3-mlx-int6")) {
+        const uint64_t geometry =
             uint64_t(r.width) * r.height * r.frames * 64;
+        plan.memory_estimate_bytes =
+            (r.memory_constrained.enabled && r.residency == "streamed"
+                 ? (25ull << 29) : (32ull << 30)) + geometry;
+    }
     else if (r.model == "wan2.1-1.3b-qad")
         // Native full-video peaks exceed the historical Python-worker estimate.
         // Account for staged UMT5 plus DiT/decoder activations, with headroom;
@@ -164,6 +191,22 @@ ExecutionPlan make_plan(const Request &requested) {
         } else {
             plan.memory_estimate_bytes = (52ull << 30) + pixels * 12288;
         }
+    }
+    if (r.streaming.active()) {
+        // The legacy heuristic is not the requirement of an exact layout.
+        // Metadata resolution supplies that separately; unknown is not zero.
+        plan.memory_estimate_bytes.reset();
+    }
+    if (memory_policy) {
+        finalize_memory_policy_estimate(
+            *memory_policy, plan.memory_estimate_bytes.value_or(0),
+            plan.memory_estimate_bytes.has_value());
+        // Never promote a candidate from a heuristic fit to executable here.
+        // Execution support is a capability/manifest decision made by the
+        // runtime adapter after it verifies the exact checkpoint, shape,
+        // device, allocator sites, and evidence digest.  Keeping this false
+        // is the fail-closed behavior for every unverified route.
+        plan.memory_policy = std::move(memory_policy);
     }
     return plan;
 }

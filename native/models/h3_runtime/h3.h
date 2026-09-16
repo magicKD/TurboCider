@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "h3_gpu.h"
+#include "h3_memory.h"
+#include "../../core/memory_schedule_c.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -19,6 +23,10 @@ extern "C" {
 
 typedef struct h3_ctx h3_ctx;
 typedef struct h3_result h3_result;
+
+typedef struct {
+    uint64_t components_drained;
+} h3_drain_info;
 
 typedef struct {
     size_t embedding_entries;
@@ -146,9 +154,20 @@ typedef struct {
      * result instead of discarding them after media delivery. This is intended
      * for same-machine tensor handoff; callers must use h3_result_free(). */
     int retain_decoded;
+    /* Optional constrained-memory allocator hooks. The pointed-to options
+     * remain owned by the caller and must stay valid for h3_generate().
+     * NULL preserves the historical unaccounted allocator path. */
+    const h3_gpu_options *gpu_options;
+    /* In constrained mode both GPU and host hooks must be installed. */
+    const h3_host_memory_hooks *host_memory_hooks;
+    uint64_t memory_allocator_domain;
+    uint64_t memory_generation;
     h3_frame_callback on_frame;
     h3_progress_callback on_progress;
     void *callback_opaque;
+    /* Optional semantic memory schedule callback. The pointed-to POD remains
+     * owned by the caller for the complete h3_generate() call. */
+    const tc_memory_schedule_hooks_v1 *schedule_hooks;
 } h3_params;
 
 #define H3_PARAMS_DEFAULT { \
@@ -170,8 +189,10 @@ typedef struct {
     .use_slower_unfused_qkv_rope = 0, .use_slower_scalar_qkv_rms = 0, \
     .use_slower_uncached_int8_scales = 0, \
     .use_slower_dynamic_fc1_k = 0, .use_slower_grouped_quantizer = 0, \
-    .preview_denoise = 0, .retain_decoded = 0, .on_frame = NULL, \
-    .on_progress = NULL, .callback_opaque = NULL \
+    .preview_denoise = 0, .retain_decoded = 0, .gpu_options = NULL, \
+    .host_memory_hooks = NULL, .memory_allocator_domain = 0, \
+    .memory_generation = 0, .on_frame = NULL, \
+    .on_progress = NULL, .callback_opaque = NULL, .schedule_hooks = NULL \
 }
 
 typedef struct {
@@ -256,6 +277,11 @@ void h3_cache_get_info(const h3_ctx *ctx, h3_cache_info *info);
 /* Generate media, delivering decoded frames incrementally through on_frame. */
 h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
                        const h3_params *params);
+/* Wait for all retained H3 component queues. Short-lived components already
+ * drain during h3_generate()/free; this call closes retained DiT/decoder
+ * queues before the request owner consumes allocator completion messages. */
+int h3_drain(h3_ctx *ctx, h3_drain_info *info,
+             char *error, size_t error_size);
 void h3_result_free(h3_result *result);
 
 #ifdef __cplusplus

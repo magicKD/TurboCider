@@ -3,15 +3,21 @@
 #include "../../runtime/session.hpp"
 #include "../../core/tokenizer.hpp"
 namespace tc {
+struct MemoryExecutionReport;
 std::string json(id);
 NSDictionary *parse_json(const char *);
 NSDictionary *read_json(const std::filesystem::path &);
+NSDictionary *read_config_json(const std::filesystem::path &);
 std::string string_value(NSDictionary *, NSString *, const std::string &fallback = "");
 Request request_from_json(NSDictionary *);
+void parse_memory_constrained(NSDictionary *, MemoryConstrainedConfig &);
+void parse_streaming_config(NSDictionary *, StreamingConfig &, const char *origin);
+NSDictionary *streaming_config_dictionary(const StreamingConfig &);
 void resolve_profile(Request &);
 NSDictionary *to_dictionary(const ExecutionPlan &);
 NSDictionary *to_dictionary(const LoadResult &);
 NSDictionary *to_dictionary(const RunResult &);
+NSDictionary *to_dictionary(const MemoryExecutionReport &);
 RunResult native_run_result(NSDictionary *, const Request &, const ExecutionPlan &);
 NSDictionary *to_dictionary(const HybridMetrics &);
 NSDictionary *to_dictionary(const ModelDescriptor &);

@@ -3,6 +3,7 @@
 
 #include "h3_gpu.h"
 #include "h3_host.h"
+#include "h3_memory.h"
 #include "h3_weights.h"
 
 #include <stddef.h>
@@ -24,6 +25,7 @@ typedef void (*h3_dit_schedule_progress)(int completed_blocks,
  * next is loaded. */
 h3_dit_schedule *h3_dit_schedule_precompute(
     const h3_weight_store *weights, h3_gpu *gpu,
+    const h3_host_memory_options *host_memory,
     const h3_sigma_schedule *sigmas, int visual_condition,
     int audio_condition,
     h3_dit_schedule_progress progress, void *progress_opaque,
@@ -33,6 +35,7 @@ h3_dit_schedule *h3_dit_schedule_precompute(
  * gate-ranking oracle used by h3_dit_schedule_precompute(). */
 h3_dit_schedule *h3_dit_schedule_precompute_active(
     const h3_weight_store *weights, h3_gpu *gpu,
+    const h3_host_memory_options *host_memory,
     const h3_sigma_schedule *sigmas, int visual_condition,
     int audio_condition, const uint8_t *active_blocks,
     size_t active_mask_count,

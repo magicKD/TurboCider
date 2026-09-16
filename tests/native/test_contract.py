@@ -44,6 +44,377 @@ def plan(r):
     return status,json.loads(a) if a else None,b
 
 class ContractTests(unittest.TestCase):
+    def test_memory_constrained_contract_is_explicit_and_fail_closed(self):
+        request = {
+            'model': 'flux2-klein-4b', 'width': 512, 'height': 512,
+            'frames': 1, 'audio': False, 'execution': 'gpu',
+        }
+        status, ordinary, error = plan(request)
+        self.assertEqual(status, 0, error)
+        self.assertNotIn('memory_policy', ordinary)
+
+        constrained = {
+            **request,
+            'memory_constrained': {
+                'enabled': True,
+                'limit_bytes': 16 * (1 << 30),
+                'buffer_percent': 15,
+                'min_free_bytes': 1 << 30,
+                'max_refill_slots': 2,
+                'allow_quality_preserving_tiling': True,
+            },
+        }
+        status, configured, error = plan(constrained)
+        self.assertEqual(status, 0, error)
+        policy = configured['memory_policy']
+        self.assertTrue(policy['enabled'])
+        self.assertEqual(policy['user_limit_bytes'], 16 * (1 << 30))
+        self.assertEqual(policy['effective_budget_bytes'], 14602888806)
+        self.assertEqual(policy['buffer_percent'], 15)
+        self.assertEqual(policy['max_refill_slots'], 2)
+        self.assertEqual(policy['admission_state'], 'rejected')
+        self.assertFalse(policy['execution_supported'])
+        self.assertFalse(policy['estimate_fits'])
+        self.assertEqual(policy['capability_level'], 'declared')
+        self.assertEqual(policy['certification_state'], 'unsupported')
+        self.assertFalse(policy['release_stable'])
+        self.assertTrue(policy['digest'])
+
+        disabled = {**request, 'memory_constrained': {'enabled': False}}
+        status, configured, error = plan(disabled)
+        self.assertEqual(status, 0, error)
+        self.assertNotIn('memory_policy', configured)
+
+        for memory in (
+            {'enabled': True},
+            {'enabled': True, 'limit_bytes': 0},
+            {'enabled': True, 'limit_bytes': 16 * (1 << 30),
+             'buffer_percent': 4},
+            {'enabled': True, 'limit_bytes': 16 * (1 << 30),
+             'buffer_percent': 31},
+            {'enabled': True, 'limit_bytes': 16 * (1 << 30),
+             'max_refill_slots': 0},
+            {'enabled': True, 'limit_bytes': 16 * (1 << 30),
+             'max_refill_slots': 4},
+            {'enabled': True, 'limit_bytes': True},
+            {'enabled': True, 'limit_bytes': 1.5},
+            {'enabled': True, 'limit_bytes': 16 * (1 << 30),
+             'unknown': 1},
+        ):
+            with self.subTest(memory=memory):
+                self.assertNotEqual(plan({**request,
+                                          'memory_constrained': memory})[0], 0)
+
+        self.assertNotEqual(plan({
+            **constrained, 'memory_budget_bytes': 8 * (1 << 30)
+        })[0], 0)
+        self.assertNotEqual(plan({
+            **constrained, 'execution': 'gpu_ane',
+            'allow_approximation': True, 'ane_manifest': '/tmp/fake.json'
+        })[0], 0)
+
+        schema2 = {
+            'schema_version': 2,
+            'model': 'flux2-klein-4b',
+            'operation': 'image.generate',
+            'inputs': [{'kind': 'text', 'role': 'prompt', 'text': 'fox'}],
+            'outputs': [{'kind': 'image', 'path': '/tmp/flux.png',
+                         'width': 512, 'height': 512, 'frames': 1,
+                         'fps': 24, 'audio': False}],
+            'sampling': {'seed': 42, 'steps': 4},
+            'execution': {
+                'policy': 'gpu', 'residency': 'resident',
+                'memory_constrained': constrained['memory_constrained'],
+            },
+        }
+        status, configured, error = plan(schema2)
+        self.assertEqual(status, 0, error)
+        self.assertEqual(configured['memory_policy']['digest'], policy['digest'])
+
+    def test_memory_constrained_routes_remain_plan_only_without_manifest(self):
+        common = {
+            'memory_constrained': {
+                'enabled': True,
+                'limit_bytes': 48 * (1 << 30),
+                'buffer_percent': 15,
+                'min_free_bytes': 1 << 30,
+            },
+            'execution': 'auto',
+            'audio': False,
+        }
+        h3 = {
+            **common,
+            'model': 'minimax-h3-turbo',
+            'operation': 'video.generate',
+            'width': 512,
+            'height': 512,
+            'frames': 22,
+            'fps': 24,
+            'steps': 4,
+            'memory_constrained': {
+                **common['memory_constrained'], 'max_refill_slots': 2,
+            },
+        }
+        status, configured, error = plan(h3)
+        self.assertEqual(status, 0, error)
+        policy = configured['memory_policy']
+        self.assertTrue(policy['route_available'])
+        self.assertFalse(policy['execution_supported'])
+        self.assertTrue(policy['estimate_fits'])
+        self.assertEqual(policy['capability_level'], 'hook_bridged')
+        self.assertEqual(policy['certification_state'], 'plan_only')
+        self.assertEqual(policy['admission_state'], 'plan_only')
+        self.assertFalse(policy['release_stable'])
+        self.assertEqual(policy['manifest_digest'], '')
+        self.assertEqual(policy['evidence_digest'], '')
+        self.assertIn('no verified capability manifest', policy['reason'])
+        self.assertEqual(policy['adapter_candidate'],
+                         'h3_c_metal_streamed_v1')
+        self.assertEqual(policy['effective_residency'], 'streamed')
+        self.assertEqual(policy['refill_slots'], 2)
+        self.assertEqual(configured['execution'], 'gpu')
+        self.assertEqual(configured['residency'], 'streamed')
+        self.assertEqual(policy['denoiser_budget_bytes'],
+                         policy['effective_budget_bytes'] - 4 * (1 << 30))
+
+        h3_unsupported = (
+            {**h3, 'audio': True},
+            {**h3, 'operation': 'video.reference',
+             'inputs': [{'kind': 'image', 'role': 'reference',
+                         'path': '/tmp/reference.png'}]},
+            {**h3, 'loras': [{'role': 'transformer',
+                              'path': '/tmp/h3.safetensors',
+                              'strength': 1.0}]},
+            {**h3, 'quantized_cache': '/tmp/h3-q8',
+             'allow_approximation': True, 'residency': 'streamed'},
+        )
+        for unsupported_h3 in h3_unsupported:
+            with self.subTest(unsupported_h3=unsupported_h3):
+                status, configured, error = plan(unsupported_h3)
+                self.assertEqual(status, 0, error)
+                self.assertFalse(
+                    configured['memory_policy']['route_available'])
+
+        ltx = {
+            **common,
+            'model': 'ltx-2.5-distilled',
+            'operation': 'video.generate',
+            'width': 704,
+            'height': 448,
+            'frames': 97,
+            'fps': 24,
+            'steps': 11,
+            'ltx_backend': 'auto',
+        }
+        status, configured, error = plan(ltx)
+        self.assertEqual(status, 0, error)
+        policy = configured['memory_policy']
+        self.assertTrue(policy['route_available'])
+        self.assertFalse(policy['execution_supported'])
+        self.assertTrue(policy['estimate_fits'])
+        self.assertEqual(policy['capability_level'], 'hook_bridged')
+        self.assertEqual(policy['certification_state'], 'plan_only')
+        self.assertEqual(policy['admission_state'], 'plan_only')
+        self.assertFalse(policy['release_stable'])
+        self.assertIn('no verified capability manifest', policy['reason'])
+        self.assertEqual(policy['adapter_candidate'],
+                         'ltx_c_metal_streamed_video_v1')
+        self.assertEqual(configured['ltx_backend'], 'c_metal')
+        self.assertEqual(configured['residency'], 'streamed')
+
+        unsupported = {**ltx, 'audio': True}
+        status, configured, error = plan(unsupported)
+        self.assertEqual(status, 0, error)
+        self.assertFalse(configured['memory_policy']['route_available'])
+        self.assertEqual(configured['residency'], 'component_staged')
+
+        one_slot_h3 = {
+            **h3,
+            'memory_constrained': {
+                **h3['memory_constrained'], 'max_refill_slots': 1,
+            },
+        }
+        status, configured, error = plan(one_slot_h3)
+        self.assertNotEqual(status, 0)
+        self.assertIn('two certified refill slots', error)
+
+    def test_memory_constrained_execution_entry_is_normalized_and_observed(self):
+        source = (ROOT / 'native/api/c_api.mm').read_text()
+        results = (ROOT / 'native/platform/apple/results.mm').read_text()
+        execution = (
+            ROOT / 'native/runtime/memory_execution.cpp'
+        ).read_text()
+        execution_header = (
+            ROOT / 'native/runtime/memory_execution.hpp'
+        ).read_text()
+        schedule_header = (
+            ROOT / 'native/core/memory_schedule_c.h'
+        ).read_text()
+        ltx = (ROOT / 'native/platform/apple/ltx_session.mm').read_text()
+        h3 = (ROOT / 'native/platform/apple/h3_session.mm').read_text()
+        h3_runtime = (ROOT / 'native/models/h3_runtime/h3.c').read_text()
+        h3_header = (ROOT / 'native/models/h3_runtime/h3.h').read_text()
+        h3_vae_header = (
+            ROOT / 'native/models/h3_runtime/h3_video_vae.h'
+        ).read_text()
+        h3_vae = (
+            ROOT / 'native/models/h3_runtime/h3_video_vae.c'
+        ).read_text()
+        build = (ROOT / 'tools/native/build.sh').read_text()
+        makefile = (ROOT / 'Makefile').read_text()
+        probe_header = (ROOT / 'native/platform/apple/memory_probe.hpp').read_text()
+        probe = (ROOT / 'native/platform/apple/memory_probe.mm').read_text()
+        self.assertIn('request = request_plan.request;', source)
+        self.assertIn('prepare_memory_execution(', source)
+        self.assertIn('memory_execution->checkpoint(phase)', source)
+        self.assertIn('!memory_execution->uses_explicit_schedule()', source)
+        self.assertIn('memory_execution->emit_terminal_schedule_event()',
+                      source)
+        self.assertIn('memory_execution->begin_running()', source)
+        self.assertIn('memory_execution->begin_draining()', source)
+        self.assertIn('memory_execution->finish_success()', source)
+        self.assertIn('drain_memory_execution(', source)
+        self.assertIn('memory_quarantined', source)
+        self.assertIn('MemoryFailureDisposition::Clean', source)
+        self.assertIn('session.unload();', source)
+        self.assertIn('runtime_denoiser_budget', source)
+        self.assertIn('MemoryAdmissionMetrics', results)
+        self.assertIn('@"execution_state"', results)
+        self.assertIn('@"watchdog_sample_count"', results)
+        self.assertIn('@"watchdog_critical"', results)
+        self.assertIn('@"trace_event_count"', results)
+        self.assertIn('@"trace_overflowed"', results)
+        self.assertIn('@"schedule_event_attempted_count"', results)
+        self.assertIn('@"schedule_event_rejected_count"', results)
+        self.assertIn('@"schedule_cursor_state"', results)
+        self.assertIn('@"schedule_first_failure"', results)
+        self.assertIn('@"memory_trace"', results)
+        self.assertIn('tc_memory_schedule_hooks_v1', schedule_header)
+        self.assertIn('TC_MEMORY_EVENT_TERMINAL', schedule_header)
+        self.assertIn('MemoryScheduleCursorState::Poisoned', execution)
+        self.assertIn('emit_terminal_schedule_event()', execution_header)
+        self.assertIn('compile_options.require_explicit_schedule', execution)
+        self.assertIn('compile_options.schedule = resolution.record.schedule',
+                      execution)
+        self.assertIn('component_staged || streamed', ltx)
+        self.assertIn('!request.memory_constrained.enabled &&', ltx)
+        self.assertIn('H3_MEMORY_CONSTRAINED', h3)
+        self.assertIn('H3_MEMORY_CONSTRAINED', h3_runtime)
+        self.assertIn('h3_host_memory_hooks', h3_header)
+        self.assertIn('const tc_memory_schedule_hooks_v1 *schedule_hooks',
+                      h3_header)
+        self.assertIn('parameters.host_memory_hooks', h3)
+        self.assertIn('parameters.schedule_hooks = &memory_schedule_hooks_',
+                      h3)
+        self.assertIn(
+            'memory_schedule_hooks_ = context->make_schedule_hooks()', h3
+        )
+        self.assertIn('h3_accounted_host_malloc(', h3_runtime)
+        self.assertIn('h3.vae.decoded_host_envelope_v1', h3_runtime)
+        self.assertIn('h3_video_vae_decoder_load_with_options',
+                      h3_vae_header)
+        self.assertIn('h3_video_vae_decode_with_options', h3_vae)
+        self.assertIn('h3_gpu_create_with_options(', h3_vae)
+        self.assertIn('h3_gpu_tensor_from_f32_classified', h3_vae)
+        self.assertNotIn('h3_gpu_tensor_from_f32(vae->gpu', h3_vae)
+        self.assertNotIn('h3_gpu_tensor_new_f32(vae->gpu', h3_vae)
+        self.assertIn('uses_parent_mlx(const Request& request)', ltx)
+        self.assertIn('request.memory_constrained.enabled) return false',
+                      ltx)
+        self.assertIn('native/runtime/memory_accounting.cpp', build)
+        self.assertIn('native/platform/apple/memory_probe.mm', build)
+        self.assertIn('tests/native/test_memory_accounting.py', makefile)
+        self.assertIn('tests/native/test_memory_probe.py', makefile)
+        self.assertIn('probe_memory_capability', h3)
+        self.assertIn('probe_memory_capability', ltx)
+        self.assertIn('MemoryCheckpointHashCache', probe_header)
+        self.assertIn('resolve_probe_sidecar', probe)
+        # The probe intentionally uses an fd-level read with a before/after
+        # fstat snapshot.  This keeps sidecar validation independent of
+        # Foundation's mmap policy and makes the TOCTOU check explicit.
+        self.assertIn('read_probe_sidecar', probe)
+        self.assertIn('O_CLOEXEC', probe)
+        self.assertIn('fstat', probe)
+
+    def test_memory_constrained_ltx_allocator_is_admission_guarded(self):
+        gpu_header = (
+            ROOT / 'native/models/ltx_runtime/ltx_gpu.h'
+        ).read_text()
+        gpu = (ROOT / 'native/models/ltx_runtime/ltx_gpu.m').read_text()
+        native_header = (
+            ROOT / 'native/models/ltx_runtime/ltx_native.h'
+        ).read_text()
+        native = (
+            ROOT / 'native/models/ltx_runtime/ltx_blocks.c'
+        ).read_text()
+        session = (
+            ROOT / 'native/platform/apple/ltx_session.mm'
+        ).read_text()
+        api = (ROOT / 'native/api/c_api.mm').read_text()
+        accounting = (
+            ROOT / 'native/runtime/memory_accounting.hpp'
+        ).read_text()
+        execution = (
+            ROOT / 'native/runtime/memory_execution.cpp'
+        ).read_text()
+        results = (
+            ROOT / 'native/platform/apple/results.mm'
+        ).read_text()
+        public_header = (
+            ROOT / 'bindings/c/include/turbocider/turbocider.h'
+        ).read_text()
+        planner = (ROOT / 'native/runtime/plan.cpp').read_text()
+        makefile = (ROOT / 'Makefile').read_text()
+        for symbol in (
+            'ltx_gpu_memory_hooks', 'ltx_gpu_set_memory_hooks',
+            'ltx_gpu_set_memory_hooks_for_queue',
+            'ltx_gpu_buffer_new_classified',
+            'ltx_gpu_buffer_new_copy_classified',
+        ):
+            self.assertIn(symbol, gpu_header)
+        self.assertIn('gpu->memory_hooks.reserve(', gpu)
+        self.assertIn('gpu->memory_hooks.commit(', gpu)
+        self.assertIn('gpu->memory_hooks.complete(', gpu)
+        self.assertIn('buffer->memory_hooks.release(', gpu)
+        self.assertIn('ltx_release_deferred_memory_tokens', gpu)
+        self.assertIn('const ltx_gpu_memory_hooks *memory_hooks', native_header)
+        self.assertIn('const tc_memory_schedule_hooks_v1 *schedule_hooks',
+                      native_header)
+        self.assertIn('ltx_gpu_set_memory_hooks_for_queue(', native)
+        self.assertIn('ltx_native_schedule_emit(', native)
+        self.assertIn('TC_MEMORY_STAGE_DENOISER_LOAD', native)
+        self.assertIn('schedule_step_begin', native)
+        self.assertIn('set_memory_admission(MemoryAdmission* admission)', session)
+        self.assertIn('bind_memory_context(MemoryExecutionContext* context)', session)
+        self.assertIn('options.memory_hooks = &memory_hooks_', session)
+        self.assertIn('options.schedule_hooks = &memory_schedule_hooks_',
+                      session)
+        self.assertIn(
+            'memory_schedule_hooks_ = context->make_schedule_hooks()',
+            session
+        )
+        self.assertIn('memory_hooks_.version = 2u', session)
+        self.assertIn('memory_hooks_.retire = ltx_memory_retire', session)
+        self.assertIn('memory_hooks_.complete = ltx_memory_complete', session)
+        self.assertIn('ScopedMemoryExecutionBinding', api)
+        self.assertIn('tc_engine_take_last_memory_report_json', api)
+        self.assertIn('tc_engine_take_last_memory_report_json', public_header)
+        self.assertIn('last_memory_report', api)
+        self.assertIn('SwapActivityObservation', accounting)
+        self.assertIn('observe_swap_activity()', api)
+        self.assertIn('memory_swap_activity_detected', execution)
+        self.assertIn('explicit epoch transition is required', execution)
+        self.assertIn('require_explicit_epoch', execution)
+        self.assertIn('@"swapouts_delta"', results)
+        self.assertIn('@"swap_counter_invalid"', results)
+        self.assertIn('@"automatic_epoch_transition_count"', results)
+        self.assertNotIn(
+            'route_available && memory_policy->estimate_fits', planner
+        )
+        self.assertNotIn('execution_adapter_ready', planner)
+        self.assertIn('tests/native/test_ltx_gpu_memory_hooks.py', makefile)
+        self.assertIn('tests/native/test_memory_schedule_adapter.py', makefile)
+
     def test_ltx_sparse_patterns_are_explicit_stage2_only(self):
         request = {
             'model': 'ltx-2.5-distilled', 'width': 768, 'height': 448,
@@ -738,13 +1109,16 @@ class ContractTests(unittest.TestCase):
         self.assertIn('TURBOCIDER_LTX_PRE_FINALIZER_SECONDS', session)
         self.assertIn('request_wall_estimate', finalizer)
 
-    def test_service_routes_ltx_external_worker_from_original_request(self):
+    def test_service_routes_ltx_worker_from_effective_plan(self):
         source=(ROOT/'services/turbociderd/service.mm').read_text()
-        self.assertIn('external_ltx_request(inference)',source)
-        self.assertNotIn('external_ltx_request(plan_value)',source)
+        self.assertIn('route_ltx_plan(plan_value)',source)
+        self.assertIn('memory_constrained_native_session',source)
+        self.assertIn('@"service_route":@(route.name.c_str())',source)
+        self.assertIn('job.route_resolved ? job.external_worker',source)
         route=source[source.index('bool external_ltx_request'):
                      source.index('bool resident_ltx_candidate_request')]
         self.assertIn('value.residency == "component_staged"',route)
+        self.assertIn('!value.memory_constrained',route)
         self.assertNotIn('!value.audio',route)
 
     def test_service_reuses_resident_ltx_candidate_session(self):
@@ -911,11 +1285,13 @@ class ContractTests(unittest.TestCase):
         self.assertIn('LTX_MAX_REFILL_SLOTS = 3', blocks)
         self.assertIn('streaming_slots[LTX_MAX_REFILL_SLOTS]', blocks)
         self.assertIn('tc_block_residency_plan_build', blocks)
+        self.assertIn('max_refill_slots, 1, 1, &residency_plan', blocks)
+        session=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
+        self.assertIn('options.max_refill_slots =', session)
         policy=(ROOT/'native/runtime/block_residency.c').read_text()
         self.assertIn('capacity >= active_blocks', policy)
         self.assertIn('return finish_plan(plan, active_blocks, 0u, 1)', policy)
-        self.assertIn('request_slot_refills',
-                      (ROOT/'native/platform/apple/ltx_session.mm').read_text())
+        self.assertIn('request_slot_refills', session)
         self.assertIn('ltx_st_read_mapped_data', blocks)
         self.assertIn('ltx_gpu_buffer_contents', blocks)
         self.assertIn('ltx_pread_exact(mapping->descriptor', safetensors)

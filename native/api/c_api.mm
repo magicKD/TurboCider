@@ -1,18 +1,24 @@
 #include "../platform/apple/bridge.hpp"
+#include "../platform/apple/platform.hpp"
 #include "../backends/mlx.hpp"
 #include "../backends/coreml.hpp"
 #include "turbocider/turbocider.h"
 #include <mutex>
 #include <cstring>
 #include "../runtime/execution.hpp"
+#include "../runtime/memory_accounting.hpp"
+#include "../runtime/memory_execution.hpp"
 #include "../models/ltx_runtime/ltx_gemma_tokenizer.h"
 #include "../models/ltx_runtime/ltx_weights.h"
 #import <Metal/Metal.h>
+#include <algorithm>
 #include <cmath>
 struct tc_engine {
     std::unique_ptr<tc::ModelSession> session;
     std::mutex mutex;
     std::atomic<bool> cancelled{false};
+    std::atomic<bool> memory_quarantined{false};
+    std::optional<tc::MemoryExecutionReport> last_memory_report;
 };
 struct tc_coreml_ffn {
     std::unique_ptr<tc::HybridSession> session;
@@ -32,6 +38,137 @@ int fail(char **error, const std::exception &e) {
         *error = strdup(e.what());
     return dynamic_cast<const tc::Cancelled *>(&e) ? 2 : 1;
 }
+
+std::unique_ptr<tc::MemoryExecutionContext> prepare_memory_execution(
+        tc::ModelSession &session, tc::ExecutionPlan &plan, bool parent_mlx) {
+    if (!plan.memory_policy || !plan.memory_policy->enabled) return nullptr;
+    auto &policy = *plan.memory_policy;
+    tc::MemoryCapabilityResolution capability;
+    const auto device = tc::device_info();
+    tc::MemoryDeviceIdentity identity{
+        device.gpu, tc::memory_runtime_revision()};
+    capability = tc::preflight_memory_capability(
+        session, plan, identity,
+        tc::production_memory_capability_registry());
+    if (parent_mlx) tc::mx::synchronize();
+    // A constrained request cannot inherit an unaccounted resident session.
+    // Start from a clean model/cache boundary; retained constrained sessions
+    // can be reintroduced once their backings participate in the ledger.
+    session.unload();
+    if (parent_mlx) tc::mx::clear_cache();
+    const auto observation = tc::observe_process_memory();
+    tc::require(observation.available,
+                "memory_observation_unreliable: process footprint is unavailable");
+    const auto swap_baseline = tc::observe_swap_activity();
+    tc::require(swap_baseline.available,
+                "memory_observation_unreliable: system swap counters are unavailable");
+    auto compiled = tc::authorize_memory_capability(
+        plan, capability, observation.process_footprint_bytes);
+    tc::require(policy.planned_upper_bytes >
+                    observation.process_footprint_bytes,
+                "memory_budget_too_small: planned request envelope does not "
+                "cover the clean process baseline");
+    tc::require(observation.process_footprint_bytes <=
+                    policy.planned_upper_bytes &&
+                    policy.non_denoiser_reserve_bytes <=
+                        policy.planned_upper_bytes -
+                            observation.process_footprint_bytes,
+                "memory_budget_too_small: process baseline and non-denoiser "
+                "reserve exhaust the effective budget");
+    const uint64_t runtime_denoiser_budget =
+        policy.planned_upper_bytes - observation.process_footprint_bytes -
+        policy.non_denoiser_reserve_bytes;
+    tc::require(runtime_denoiser_budget > 0,
+                "memory_budget_too_small: no denoiser budget remains after "
+                "the process baseline and component reserve");
+    policy.denoiser_budget_bytes = std::min(
+        policy.denoiser_budget_bytes, runtime_denoiser_budget);
+    plan.request.memory_budget_bytes = policy.denoiser_budget_bytes;
+    plan.request.memory_constrained.denoiser_budget_bytes =
+        policy.denoiser_budget_bytes;
+    // Re-run the existing model-specific minimum/route validation against
+    // the runtime-adjusted sub-budget before any checkpoint allocation.
+    tc::module_for(plan.request.model).validate(plan.request);
+    policy.admission_state = "admitted";
+    policy.enforcement_scope =
+        "process_footprint_boundaries+swapout_delta+streamed_denoiser_v1";
+    return std::make_unique<tc::MemoryExecutionContext>(
+        policy, std::move(compiled), observation, tc::ProcessMemoryObserver{},
+        swap_baseline, [] { return tc::observe_swap_activity(); });
+}
+
+void drain_memory_execution(tc::ModelSession &session,
+                            tc::MemoryExecutionContext &execution) {
+    const auto result = session.drain_memory_completions(
+        execution, std::chrono::seconds(30));
+    tc::require(result.completed && result.pending_after == 0,
+                "memory_lifetime_violation: completion drain failed" +
+                    (result.failure.empty() ? std::string{} :
+                     std::string(": ") + result.failure));
+    // First-generation constrained candidates retain no request-external
+    // model or allocator cache.  Teardown happens only after the backend has
+    // proved all submitted GPU work complete, while the context is still
+    // bound so release hooks can close their ledger leases.
+    session.unload();
+    const auto mailbox = execution.drain_completion_mailbox();
+    tc::require(mailbox.ok(),
+                "memory_lifetime_violation: completion mailbox drain failed" +
+                    (mailbox.failure.empty() ? std::string{} :
+                     std::string(": ") + mailbox.failure));
+    const auto snapshot = execution.admission().snapshot();
+    tc::require(snapshot.pending_release_count == 0 &&
+                    execution.scheduler().pending_count() == 0 &&
+                    execution.scheduler().outstanding_completion_count() == 0 &&
+                    snapshot.reservation_count == 0 &&
+                    snapshot.storage_count == 0 &&
+                    snapshot.unknown_bytes == 0,
+                "memory_lifetime_violation: completion drain left accounted resources");
+}
+
+void finalize_memory_failure(tc_engine *engine,
+                             tc::ModelSession *session,
+                             tc::MemoryExecutionContext *execution,
+                             std::string reason) noexcept {
+    if (!execution || execution->finished()) return;
+    auto disposition = execution->finalize_failure(std::move(reason));
+    if (disposition == tc::MemoryFailureDisposition::NeedsGpuDrain) {
+        if (!session) {
+            disposition = execution->complete_failure_cleanup(
+                false, "GPU completion drain is unavailable");
+        } else {
+            try {
+                drain_memory_execution(*session, *execution);
+                disposition = execution->complete_failure_cleanup(true);
+            } catch (const std::exception &cleanup) {
+                disposition = execution->complete_failure_cleanup(
+                    false, cleanup.what());
+                try {
+                    session->unload();
+                } catch (...) {
+                }
+            } catch (...) {
+                disposition = execution->complete_failure_cleanup(
+                    false, "unknown completion drain failure");
+                try {
+                    session->unload();
+                } catch (...) {
+                }
+            }
+        }
+    }
+    if (engine && disposition != tc::MemoryFailureDisposition::Clean)
+        engine->memory_quarantined.store(true, std::memory_order_release);
+    if (engine && execution && execution->finished()) {
+        try {
+            if (!engine->last_memory_report)
+                engine->last_memory_report = execution->take_report();
+        } catch (...) {
+            /* Preserve the primary runtime error and quarantine decision. A
+             * report is diagnostic evidence, never a success condition. */
+        }
+    }
+}
+
 } // namespace
 
 uint32_t tc_abi_version(void) {
@@ -227,9 +364,12 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
         *out = nullptr;
     if (error)
         *error = nullptr;
+    std::unique_ptr<tc::MemoryExecutionContext> memory_execution;
     @autoreleasepool {
         try {
             tc::require(e && out, "missing engine or output");
+            tc::require(!e->memory_quarantined.load(std::memory_order_acquire),
+                        "memory_worker_quarantined: engine must be recreated");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
             // MLX uses process-global device/allocation policy. Serialize all embeddings.
@@ -238,12 +378,30 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
             DeviceLease device_lease;
             e->cancelled.store(false);
             auto request = tc::request_from_json(tc::parse_json(r));
+            auto request_plan = tc::make_plan(request);
+            tc::require(!request.streaming.active(),
+                        "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
+            // make_plan may normalize a constrained request to a certified
+            // streamed C/Metal route and assign the denoiser sub-budget.
+            // Propagate that effective request to every subsequent decision;
+            // passing the raw request here would silently fall back to the
+            // resident path and invalidate the admission result.
+            request = request_plan.request;
+            if (request_plan.memory_policy &&
+                request_plan.memory_policy->enabled)
+                e->last_memory_report.reset();
             const bool parent_mlx = e->session->uses_parent_mlx(request);
             if (parent_mlx) {
                 tc::require(tc::mx::is_available(tc::mx::Device(tc::mx::Device::gpu)),
                             "Metal GPU unavailable");
                 configure_streams();
             }
+            memory_execution = prepare_memory_execution(
+                *e->session, request_plan, parent_mlx);
+            tc::ScopedMemoryExecutionBinding memory_binding(
+                *e->session, memory_execution.get());
+            if (memory_execution)
+                memory_execution->begin_running();
             struct Drain {
                 bool enabled;
                 ~Drain() {
@@ -258,6 +416,10 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
             uint64_t seq = 0;
             auto begin = tc::Clock::now();
             tc::Event event = [&](const std::string &phase, int current, int total) {
+                if (memory_execution &&
+                    !memory_execution->uses_explicit_schedule() &&
+                    (current == 0 || current == total))
+                    memory_execution->checkpoint(phase);
                 if (!(phase == "export" && current == total))
                     tc::checkpoint(e->cancelled);
                 if (cb) {
@@ -275,18 +437,83 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
                     }
                 }
             };
-            auto result = e->session->generate(request, event, e->cancelled);
+            tc::RunResult result;
+            try {
+                result = e->session->generate(request, event, e->cancelled);
+                if (memory_execution) {
+                    if (memory_execution->uses_explicit_schedule()) {
+                        drain_memory_execution(
+                            *e->session, *memory_execution);
+                        memory_execution->emit_terminal_schedule_event();
+                        memory_execution->begin_draining();
+                    } else {
+                        memory_execution->begin_draining();
+                        drain_memory_execution(
+                            *e->session, *memory_execution);
+                        memory_execution->checkpoint("complete");
+                    }
+                    memory_execution->finish_success();
+                    auto report = memory_execution->take_report();
+                    result.memory_admission = report.metrics;
+                    result.memory_trace = report.trace;
+                    e->last_memory_report = std::move(report);
+                    result.plan.memory_policy = request_plan.memory_policy;
+                }
+            } catch (const std::exception &failure) {
+                finalize_memory_failure(
+                    e, e->session.get(), memory_execution.get(),
+                    failure.what());
+                throw;
+            } catch (...) {
+                finalize_memory_failure(
+                    e, e->session.get(), memory_execution.get(),
+                    "unknown native generation failure");
+                throw;
+            }
             *out = copy(tc::json(tc::to_dictionary(result)));
             return 0;
         } catch (const std::exception &ex) {
+            finalize_memory_failure(
+                e, nullptr, memory_execution.get(), ex.what());
             return fail(error, ex);
         } catch (...) {
+            finalize_memory_failure(
+                e, nullptr,
+                memory_execution.get(), "unknown native error");
             if (error)
                 *error = strdup("unknown native error");
             return 1;
         }
     }
 }
+
+int tc_engine_take_last_memory_report_json(
+        tc_engine *e, char **report, char **error) {
+    if (report) *report = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(e && report,
+                        "missing engine or memory report output");
+            std::unique_lock<std::mutex> local(
+                e->mutex, std::try_to_lock);
+            tc::require(local.owns_lock(), "engine busy");
+            tc::require(e->last_memory_report.has_value(),
+                        "memory_report_unavailable: no terminal constrained request report");
+            const auto value = tc::json(
+                tc::to_dictionary(*e->last_memory_report));
+            *report = copy(value);
+            e->last_memory_report.reset();
+            return 0;
+        } catch (const std::exception &ex) {
+            return fail(error, ex);
+        } catch (...) {
+            if (error) *error = strdup("unknown memory report error");
+            return 1;
+        }
+    }
+}
+
 int tc_tokenize_json(const char *path, const char *prompt, char **out, char **error) {
     if (out)
         *out = nullptr;
@@ -600,20 +827,39 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
         *out = nullptr;
     if (error)
         *error = nullptr;
+    std::unique_ptr<tc::MemoryExecutionContext> memory_execution;
     @autoreleasepool {
         try {
             tc::require(e && request && out, "missing preparation input");
+            tc::require(!e->memory_quarantined.load(std::memory_order_acquire),
+                        "memory_worker_quarantined: engine must be recreated");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
             DeviceLease lease;
             std::optional<tc::Request> parsed_request;
-            if (!cache)
+            std::optional<tc::ExecutionPlan> request_plan;
+            if (!cache) {
                 parsed_request = tc::request_from_json(tc::parse_json(request));
+                request_plan = tc::make_plan(*parsed_request);
+                tc::require(!parsed_request->streaming.active(),
+                            "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
+                parsed_request = request_plan->request;
+                if (request_plan->memory_policy &&
+                    request_plan->memory_policy->enabled)
+                    e->last_memory_report.reset();
+            }
             const bool parent_mlx = cache || e->session->uses_parent_mlx(*parsed_request);
             if (parent_mlx)
                 configure_streams();
+            if (request_plan)
+                memory_execution = prepare_memory_execution(
+                    *e->session, *request_plan, parent_mlx);
+            tc::ScopedMemoryExecutionBinding memory_binding(
+                *e->session, memory_execution.get());
+            if (memory_execution)
+                memory_execution->begin_running();
             e->cancelled.store(false);
             struct Drain {
                 bool enabled;
@@ -629,6 +875,10 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
             auto begin = tc::Clock::now();
             uint64_t sequence = 0;
             tc::Event event = [&](const std::string &phase, int current, int total) {
+                if (memory_execution &&
+                    !memory_execution->uses_explicit_schedule() &&
+                    (current == 0 || current == total))
+                    memory_execution->checkpoint(phase);
                 tc::checkpoint(e->cancelled);
                 if (cb) {
                     auto text = tc::json(@{
@@ -655,14 +905,53 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
                 tc::require(warmup == 0 || warmup == 1, "warmup must be 0 or 1");
                 auto r = std::move(*parsed_request);
                 r.dump.clear();
-                result =
-                    tc::to_dictionary(e->session->prepare(r, warmup != 0, event, e->cancelled));
+                tc::RunResult prepared;
+                try {
+                    prepared = e->session->prepare(
+                        r, warmup != 0, event, e->cancelled);
+                    if (memory_execution) {
+                        if (memory_execution->uses_explicit_schedule()) {
+                            drain_memory_execution(
+                                *e->session, *memory_execution);
+                            memory_execution->emit_terminal_schedule_event();
+                            memory_execution->begin_draining();
+                        } else {
+                            memory_execution->begin_draining();
+                            drain_memory_execution(
+                                *e->session, *memory_execution);
+                            memory_execution->checkpoint(
+                                "prepare_complete");
+                        }
+                        memory_execution->finish_success();
+                        auto report = memory_execution->take_report();
+                        prepared.memory_admission = report.metrics;
+                        prepared.memory_trace = report.trace;
+                        e->last_memory_report = std::move(report);
+                        prepared.plan.memory_policy = request_plan->memory_policy;
+                    }
+                } catch (const std::exception &failure) {
+                    finalize_memory_failure(
+                        e, e->session.get(), memory_execution.get(),
+                        failure.what());
+                    throw;
+                } catch (...) {
+                    finalize_memory_failure(
+                        e, e->session.get(), memory_execution.get(),
+                        "unknown native preparation failure");
+                    throw;
+                }
+                result = tc::to_dictionary(prepared);
             }
             *out = copy(tc::json(result));
             return 0;
         } catch (const std::exception &ex) {
+            finalize_memory_failure(
+                e, nullptr, memory_execution.get(), ex.what());
             return fail(error, ex);
         } catch (...) {
+            finalize_memory_failure(
+                e, nullptr,
+                memory_execution.get(), "unknown preparation error");
             if (error)
                 *error = strdup("unknown preparation error");
             return 1;

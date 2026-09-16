@@ -1,12 +1,19 @@
 #pragma once
 #include "common.hpp"
+#include "memory_accounting.hpp"
+#include "memory_manifest.hpp"
+#include "memory_policy.hpp"
+#include "memory_trace.hpp"
+#include <chrono>
 #include <map>
 #include <optional>
 namespace tc {
+class MemoryExecutionContext;
 struct ExecutionPlan {
     Request request;
     Recipe recipe;
     std::optional<uint64_t> memory_estimate_bytes;
+    std::optional<EffectiveMemoryPolicy> memory_policy;
 };
 ExecutionPlan make_plan(const Request &);
 std::string effective_lora_strategy(const Request &);
@@ -74,13 +81,46 @@ struct RunResult {
     std::optional<HybridMetrics> hybrid;
     std::optional<HybridMetrics> encoder_hybrid;
     std::optional<BlockResidencyMetrics> block_residency;
+    std::optional<MemoryAdmissionMetrics> memory_admission;
+    std::vector<MemoryTraceEvent> memory_trace;
     std::string native_json;
+};
+struct MemoryDrainResult {
+    bool completed = true;
+    uint64_t completions = 0;
+    uint64_t pending_after = 0;
+    std::string failure;
 };
 class ModelSession {
   public:
     virtual ~ModelSession() = default;
     virtual bool uses_parent_mlx() const { return true; }
     virtual bool uses_parent_mlx(const Request &) const { return uses_parent_mlx(); }
+    /* Non-owning binding valid only for the duration of one admitted API
+     * call. Backends that install native allocator callbacks must keep their
+     * callback bridge stable and clear the admission at call exit. */
+    virtual void set_memory_admission(MemoryAdmission *) {}
+    /* New constrained-memory adapters bind the complete request context.
+     * The default is deliberately inert so legacy/default execution has no
+     * extra work.  During migration the API layer also installs the older
+     * admission pointer before calling this hook. */
+    virtual void bind_memory_context(MemoryExecutionContext *) {}
+    virtual void unbind_memory_context() noexcept {}
+    /* Constrained adapters must make all GPU uses of accounted backings
+     * complete before finish_success(). Synchronous legacy adapters may use
+     * the inert default; adapters with asynchronous manifest sites override
+     * this hook and report any remaining completions. */
+    virtual MemoryDrainResult drain_memory_completions(
+        MemoryExecutionContext &, std::chrono::milliseconds) {
+        return {};
+    }
+    /* Metadata-only probe. Implementations may inspect checkpoint indexes and
+     * immutable model manifests, but must not materialize weights, compile
+     * graphs, create GPU buffers, or grant capability themselves. */
+    virtual std::optional<MemoryCapabilityProbe> probe_memory_capability(
+        const ExecutionPlan &, const MemoryDeviceIdentity &) const {
+        return std::nullopt;
+    }
     virtual RunResult generate(const Request &, const Event &, std::atomic<bool> &) = 0;
     virtual LoadResult load(const Event &, std::atomic<bool> &) {
         throw std::runtime_error("explicit loading unavailable");

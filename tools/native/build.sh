@@ -29,6 +29,12 @@ COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_
 OBJECTS=()
 SOURCES=(
  native/core/common.cpp
+ native/core/json_keys.cpp
+ native/runtime/streaming/config.cpp native/runtime/streaming/layout.cpp
+ native/runtime/streaming/slot_pool.cpp native/runtime/streaming/io_executor.cpp native/runtime/streaming/context.cpp
+ native/runtime/streaming/c_bridge.cpp
+ native/models/ltx_runtime/ltx_streaming_descriptor.cpp
+ native/platform/apple/streaming_config.mm
  native/components/text/qwen3.cpp
  native/components/text/umt5.cpp
  native/components/weights/affine.cpp native/platform/apple/wan_checkpoint.mm
@@ -39,11 +45,11 @@ SOURCES=(
  native/models/wan/hybrid.cpp native/platform/apple/wan_hybrid.mm
  native/platform/apple/request.mm native/platform/apple/profile.mm native/platform/apple/tokenizer.mm
  native/platform/apple/unigram_tokenizer.mm
- native/platform/apple/device.mm native/platform/apple/results.mm
+ native/platform/apple/device.mm native/platform/apple/results.mm native/platform/apple/memory_probe.mm
  native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/h3_mlx_session.mm native/platform/apple/ltx_session.mm
  native/platform/apple/llada_session.mm
  native/api/c_api.mm
- native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/lora_identity.cpp
+ native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/memory_policy.cpp native/runtime/memory_accounting.cpp native/runtime/memory_manifest.cpp native/runtime/memory_schedule.cpp native/runtime/memory_plan.cpp native/runtime/memory_scheduler.cpp native/runtime/memory_watchdog.cpp native/runtime/memory_trace.cpp native/runtime/memory_execution.cpp native/runtime/lora_identity.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
  native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/h3_mlx_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
 native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_mlx/vdn_mlx.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
@@ -86,7 +92,7 @@ mkdir -p "$LTX_OUT"
 LTX_OBJECTS=()
 "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I native/runtime -c native/runtime/block_residency.c -o "$LTX_OUT/block_residency.o"
 LTX_OBJECTS+=("$LTX_OUT/block_residency.o")
-for src in ltx ltx_conditioning ltx_connector ltx_transformer_io ltx_latent_stats ltx_rng ltx_blocks; do
+for src in ltx ltx_conditioning ltx_connector ltx_transformer_io ltx_latent_stats ltx_rng ltx_streaming_layout ltx_streaming_slot ltx_blocks; do
  "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -DLTX_ENABLE_ANE_MLP -DLTX_ENABLE_ANE_V2A -DLTX_ENABLE_ANE_KV -DLTX_ENABLE_ANE_QKV -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c "$LTX_ROOT/$src.c" -o "$LTX_OUT/$src.o"
  LTX_OBJECTS+=("$LTX_OUT/$src.o")
 done

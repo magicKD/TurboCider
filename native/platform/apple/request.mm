@@ -1,4 +1,5 @@
 #include "bridge.hpp"
+#include "../../core/json_keys.hpp"
 #include <cmath>
 namespace tc {
 std::string json(id object) {
@@ -17,13 +18,22 @@ static NSDictionary *dictionary(id value, const char *context) {
 NSDictionary *parse_json(const char *s) {
     require(s, "missing JSON");
     NSData *data = [NSData dataWithBytes:s length:strlen(s)];
-    return dictionary([NSJSONSerialization JSONObjectWithData:data options:0 error:nil], "JSON");
+    auto result = dictionary([NSJSONSerialization JSONObjectWithData:data options:0 error:nil], "JSON");
+    reject_duplicate_json_keys(std::string_view((const char *)data.bytes, data.length));
+    return result;
 }
 NSDictionary *read_json(const std::filesystem::path &path) {
     NSData *data = [NSData dataWithContentsOfFile:@(path.c_str())];
     require(data != nil, "missing file: " + path.string());
     return dictionary([NSJSONSerialization JSONObjectWithData:data options:0 error:nil],
                       path.c_str());
+}
+NSDictionary *read_config_json(const std::filesystem::path &path) {
+    NSData *data = [NSData dataWithContentsOfFile:@(path.c_str())];
+    require(data != nil, "missing file: " + path.string());
+    auto result = dictionary([NSJSONSerialization JSONObjectWithData:data options:0 error:nil], path.c_str());
+    reject_duplicate_json_keys(std::string_view((const char *)data.bytes, data.length));
+    return result;
 }
 std::string string_value(NSDictionary *d, NSString *k, const std::string &fallback) {
     dictionary(d, "container");
@@ -111,6 +121,41 @@ static void parse_ltx_options(NSDictionary *d, Request &r) {
     r.ltx_sparse_keep_blocks = number(
         d, @"ltx_sparse_keep_blocks", r.ltx_sparse_keep_blocks);
 }
+void parse_memory_constrained(NSDictionary *d, MemoryConstrainedConfig &config) {
+    require([d isKindOfClass:NSDictionary.class],
+            "memory_constrained must be an object");
+    keys(d, @[
+        @"enabled", @"limit_bytes", @"buffer_percent", @"min_free_bytes",
+        @"max_refill_slots", @"allow_quality_preserving_tiling"
+    ]);
+    if (d[@"enabled"]) {
+        config.enabled = boolean(d, @"enabled", false);
+        config.specified_fields |= MemoryFieldEnabled;
+    }
+    if (d[@"limit_bytes"]) {
+        config.limit_bytes = byte_count(d, @"limit_bytes", 0);
+        config.specified_fields |= MemoryFieldLimit;
+    }
+    if (d[@"buffer_percent"]) {
+        config.buffer_percent =
+            static_cast<unsigned>(number(d, @"buffer_percent", 15));
+        config.specified_fields |= MemoryFieldBufferPercent;
+    }
+    if (d[@"min_free_bytes"]) {
+        config.min_free_bytes = byte_count(d, @"min_free_bytes", 1ull << 30);
+        config.specified_fields |= MemoryFieldMinFree;
+    }
+    if (d[@"max_refill_slots"]) {
+        config.max_refill_slots =
+            static_cast<unsigned>(number(d, @"max_refill_slots", 3));
+        config.specified_fields |= MemoryFieldMaxRefillSlots;
+    }
+    if (d[@"allow_quality_preserving_tiling"]) {
+        config.allow_quality_preserving_tiling = boolean(
+            d, @"allow_quality_preserving_tiling", true);
+        config.specified_fields |= MemoryFieldAllowTiling;
+    }
+}
 Request request_from_json(NSDictionary *d) {
     int version = number(d, @"schema_version", 1);
     require(version == 1 || version == 2, "unsupported schema_version");
@@ -130,7 +175,7 @@ Request request_from_json(NSDictionary *d) {
             @"vsa_prefix_mode", @"vsa_dense_first_n_steps",
             @"vsa_dense_layers", @"vsa_impl",
             @"lora_strategy", @"streaming_offload", @"memory_budget_bytes",
-            @"quantized_cache", @"warmup_iterations"
+            @"quantized_cache", @"warmup_iterations", @"memory_constrained"
         ]);
         r.model = string_value(d, @"model", r.model);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
@@ -155,8 +200,14 @@ Request request_from_json(NSDictionary *d) {
         r.allow_approximation = boolean(d, @"allow_approximation", false);
         r.audio = boolean(d, @"audio", model_descriptor.default_audio);
         r.residency = string_value(d, @"residency", model_descriptor.default_residency);
+        r.residency_specified = d[@"residency"] != nil;
+        r.memory_budget_specified = d[@"memory_budget_bytes"] != nil;
+        r.streaming_offload_specified = d[@"streaming_offload"] != nil;
         r.streaming_offload = boolean(d, @"streaming_offload", false);
         r.memory_budget_bytes = byte_count(d, @"memory_budget_bytes", 0);
+        if (d[@"memory_constrained"])
+            parse_memory_constrained(d[@"memory_constrained"],
+                                     r.memory_constrained);
         r.quantized_cache = string_value(d, @"quantized_cache");
         parse_ltx_options(d, r);
         r.warmup_iterations = number(d, @"warmup_iterations", 0);
@@ -216,14 +267,21 @@ Request request_from_json(NSDictionary *d) {
             execution,
             @[ @"policy", @"profile", @"ane_manifest", @"encoder_ane_manifest", @"allow_approximation",
                @"residency", @"memory_budget_bytes", @"warmup_iterations",
-               @"quantized_cache" ]);
+               @"quantized_cache", @"memory_constrained", @"streaming" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");
         r.encoder_ane_manifest = string_value(execution, @"encoder_ane_manifest");
         r.allow_approximation = boolean(execution, @"allow_approximation", false);
         r.residency = string_value(execution, @"residency", model_descriptor.default_residency);
+        r.residency_specified = execution[@"residency"] != nil;
+        r.memory_budget_specified = execution[@"memory_budget_bytes"] != nil;
+        if (execution[@"streaming"])
+            parse_streaming_config(execution[@"streaming"], r.streaming, "request");
         r.memory_budget_bytes = byte_count(execution, @"memory_budget_bytes", 0);
+        if (execution[@"memory_constrained"])
+            parse_memory_constrained(execution[@"memory_constrained"],
+                                     r.memory_constrained);
         r.quantized_cache = string_value(execution, @"quantized_cache");
         parse_ltx_options(execution, r);
         r.warmup_iterations = number(execution, @"warmup_iterations", 0);
@@ -239,6 +297,7 @@ Request request_from_json(NSDictionary *d) {
         r.dynamic_text = boolean(parameters, @"dynamic_text", true);
         r.noise_path = string_value(parameters, @"noise_path");
         r.streaming_offload = boolean(parameters, @"streaming_offload", false);
+        r.streaming_offload_specified = parameters[@"streaming_offload"] != nil;
         r.vsa = boolean(parameters, @"vsa", false);
         r.vsa_sparsity = numeric(parameters, @"vsa_sparsity", r.vsa_sparsity);
         r.vsa_tile_size = number(parameters, @"vsa_tile_size", r.vsa_tile_size);
@@ -311,7 +370,11 @@ Request request_from_json(NSDictionary *d) {
             r.inputs.push_back(std::move(a));
         }
     }
+    if (r.streaming.specified()) r.streaming_requested = r.streaming;
     resolve_profile(r);
+    if (r.streaming.specified()) validate_streaming_config(r.streaming);
+    validate_memory_constrained_request(
+        r, [NSProcessInfo processInfo].physicalMemory);
     if (!r.encoder_ane_manifest.empty()) {
         require(r.allow_approximation,
                 "encoder_ane_manifest requires allow_approximation=true");

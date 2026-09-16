@@ -4,8 +4,58 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct ltx_gpu ltx_gpu;
 typedef struct ltx_gpu_buffer ltx_gpu_buffer;
+
+typedef enum {
+    LTX_GPU_MEMORY_UNKNOWN = 0,
+    LTX_GPU_MEMORY_WEIGHTS = 1,
+    LTX_GPU_MEMORY_ACTIVATION = 2,
+    LTX_GPU_MEMORY_CONDITIONING = 3,
+    LTX_GPU_MEMORY_REFILL_SLOT = 4,
+    LTX_GPU_MEMORY_CONVERSION_SCRATCH = 5,
+    LTX_GPU_MEMORY_OUTPUT = 6,
+} ltx_gpu_memory_class;
+
+typedef enum {
+    LTX_GPU_MEMORY_QUEUE_MAIN = 1,
+    LTX_GPU_MEMORY_QUEUE_VIDEO = 2,
+    LTX_GPU_MEMORY_QUEUE_AUDIO = 3,
+    LTX_GPU_MEMORY_QUEUE_TEXT = 4,
+    LTX_GPU_MEMORY_QUEUE_VAE = 5,
+} ltx_gpu_memory_queue;
+
+/* Optional C ABI used by TurboCider's constrained-memory admission.  The
+ * opaque token is created by reserve(), converted to a committed lease by
+ * commit(), and destroyed by exactly one cancel() or release() call.
+ *
+ * Version 1 ends at release() and is retained for synchronous/default
+ * callers. Version 2 appends retire()/complete(): a buffer whose final owner
+ * is dropped while a command batch is in flight must be retired before its
+ * token is published to the completion path, then completed only after the
+ * owning Metal queue has reached the corresponding drain boundary. */
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    void *user;
+    int (*reserve)(void *user, uint32_t memory_class,
+                   uint64_t upper_bytes, const char *tag,
+                   void **token, char *error, size_t error_size);
+    int (*commit)(void *user, void *token, uint64_t allocator_domain,
+                  uint64_t handle, uint64_t actual_bytes,
+                  uint64_t generation, char *error, size_t error_size);
+    void (*cancel)(void *user, void *token);
+    void (*release)(void *user, void *token);
+    int (*retire)(void *user, void *token, uint32_t queue_id,
+                  uint32_t stage_id, uint32_t slot_id,
+                  char *error, size_t error_size);
+    void (*complete)(void *user, void *token, uint32_t queue_id,
+                     int status);
+} ltx_gpu_memory_hooks;
 
 typedef struct {
     char name[256];
@@ -20,6 +70,21 @@ typedef struct {
 ltx_gpu *ltx_gpu_create(const char *shader_source_path,
                         char *error, size_t error_size);
 void ltx_gpu_free(ltx_gpu *gpu);
+/* Owner-only, after model-side CPU tasks have joined. Existing synchronous
+ * finish helpers wait for submitted work; this verifies there is no deferred
+ * batch left without adding a command, wait, or synchronization to kernels. */
+int ltx_gpu_streaming_boundary_completed(const ltx_gpu *gpu);
+int ltx_gpu_set_memory_hooks(ltx_gpu *gpu,
+                             const ltx_gpu_memory_hooks *hooks,
+                             uint64_t allocator_domain,
+                             uint64_t generation,
+                             char *error, size_t error_size);
+/* Queue-aware form used by constrained adapters. The legacy setter above
+ * remains ABI-compatible and assigns LTX_GPU_MEMORY_QUEUE_MAIN. */
+int ltx_gpu_set_memory_hooks_for_queue(
+    ltx_gpu *gpu, const ltx_gpu_memory_hooks *hooks,
+    uint64_t allocator_domain, uint64_t generation, uint32_t queue_id,
+    char *error, size_t error_size);
 int ltx_gpu_get_info(const ltx_gpu *gpu, ltx_gpu_info *info);
 /* Release cached MPSGraph objects while keeping the Metal device/queue alive. */
 void ltx_gpu_clear_graph_cache(ltx_gpu *gpu);
@@ -27,12 +92,23 @@ void ltx_gpu_clear_graph_cache(ltx_gpu *gpu);
  * end.  A batch is local to one ltx_gpu command queue and is not nestable. */
 int ltx_gpu_batch_begin(ltx_gpu *gpu, char *error, size_t error_size);
 int ltx_gpu_batch_end(ltx_gpu *gpu, char *error, size_t error_size);
+/* Wait for all deferred command buffers on this queue, validate their
+ * completion status, and release memory tokens on the owner thread.  The
+ * call is idempotent when no batch is pending. */
+int ltx_gpu_drain(ltx_gpu *gpu, char *error, size_t error_size);
 
 ltx_gpu_buffer *ltx_gpu_buffer_new(ltx_gpu *gpu, size_t bytes,
                                    char *error, size_t error_size);
+ltx_gpu_buffer *ltx_gpu_buffer_new_classified(
+    ltx_gpu *gpu, size_t bytes, ltx_gpu_memory_class memory_class,
+    const char *tag, char *error, size_t error_size);
 ltx_gpu_buffer *ltx_gpu_buffer_new_copy(ltx_gpu *gpu, const void *data,
                                         size_t bytes,
                                         char *error, size_t error_size);
+ltx_gpu_buffer *ltx_gpu_buffer_new_copy_classified(
+    ltx_gpu *gpu, const void *data, size_t bytes,
+    ltx_gpu_memory_class memory_class, const char *tag,
+    char *error, size_t error_size);
 /* Retain a shared Metal buffer for a second owner. */
 ltx_gpu_buffer *ltx_gpu_buffer_retain(ltx_gpu_buffer *buffer);
 void ltx_gpu_buffer_free(ltx_gpu_buffer *buffer);
@@ -664,5 +740,9 @@ int ltx_gpu_qkv_packed_int8_convrot_mps_bf16(
                         uint32_t inner_dim, uint32_t convrot_group_size,
                         float norm_epsilon,
                         char *error, size_t error_size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

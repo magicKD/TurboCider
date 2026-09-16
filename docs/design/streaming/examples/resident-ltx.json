@@ -1,0 +1,13 @@
+{
+  "execution": {
+    "policy": "gpu",
+    "streaming": {
+      "schema_version": 1,
+      "enabled": true,
+      "selection": "manual",
+      "retention": "request",
+      "stages": {"denoiser": {"residency": "resident"}}
+    },
+    "memory_constrained": {"enabled": false}
+  }
+}

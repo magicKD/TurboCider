@@ -474,8 +474,9 @@ static ltx_gpu_buffer *gemma_load_tensor(
      * Read the bounded tensor range directly into the shared Metal buffer;
      * the mapping remains available for the large embedding lookup. */
     const size_t bytes = (size_t)range;
-    ltx_gpu_buffer *buffer = ltx_gpu_buffer_new(
-        encoder->gpu, bytes, error, error_size);
+    ltx_gpu_buffer *buffer = ltx_gpu_buffer_new_classified(
+        encoder->gpu, bytes, LTX_GPU_MEMORY_WEIGHTS,
+        "ltx_gemma_weight", error, error_size);
     if (!buffer) return NULL;
     if (!ltx_st_read_mapped_data(
             &encoder->mapping, tensor, ltx_gpu_buffer_contents(buffer),
@@ -1005,6 +1006,26 @@ ltx_gemma_encoder *ltx_gemma_encoder_create(
     if (!encoder->tokenizer || !encoder->gpu) {
         ltx_gemma_encoder_free(encoder);
         return NULL;
+    }
+    if (options->memory_hooks) {
+        const size_t async_size = offsetof(ltx_gpu_memory_hooks, complete) +
+            sizeof(options->memory_hooks->complete);
+        if (options->memory_hooks->version < 2u ||
+            options->memory_hooks->struct_size < async_size ||
+            !options->memory_hooks->retire ||
+            !options->memory_hooks->complete ||
+            !ltx_gpu_set_memory_hooks_for_queue(
+                encoder->gpu, options->memory_hooks,
+                options->memory_allocator_domain,
+                options->memory_generation,
+                LTX_GPU_MEMORY_QUEUE_TEXT, error, error_size)) {
+            if (error && error_size && !error[0])
+                gemma_fail(error, error_size,
+                           "constrained LTX Gemma encoder requires version-2 "
+                           "asynchronous memory hooks");
+            ltx_gemma_encoder_free(encoder);
+            return NULL;
+        }
     }
     encoder->max_tokens = options->max_tokens ? options->max_tokens : 1024u;
     const char *resident_weights = getenv(

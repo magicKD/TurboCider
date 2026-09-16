@@ -1,0 +1,176 @@
+#include "streaming/context.hpp"
+#include <cassert>
+#include <condition_variable>
+#include <deque>
+#include <iostream>
+#include <mutex>
+
+using namespace tc::streaming;
+
+template<class F> static void rejects(F fn) {
+    bool failed=false;
+    try { fn(); } catch (const std::exception &) { failed=true; }
+    assert(failed);
+}
+static StageLayout layout(uint32_t k, uint32_t d, uint32_t q) {
+    StageLayout s;
+    s.id="fake"; s.prefix=1; s.group_size=1; s.slot_count=k; s.distance=d; s.workers=q;
+    s.pass_count=3;
+    PoolLayout p; p.id=0; p.layout_class="u64";
+    for (uint32_t i=0; i<k; ++i) p.slots.push_back({{sizeof(uint64_t)},sizeof(uint64_t)});
+    s.pools.push_back(p);
+    for (uint32_t i=0; i<13; ++i) s.groups.push_back({i,0,i%k,{i+1},{8},8});
+    return s;
+}
+
+// Independent readers sample real backing contents before AND after a delay.
+// Two queues must both finish before the CPU is allowed to rewrite a slot.
+class FakeModel final : public ModelSlotAdapter {
+    struct Read { uint32_t slot; uint64_t expected; tc_stream_slot_ticket_v1 ticket;
+                  tc_stream_reader_fence_v1 fence; CompletionMailbox *mailbox; };
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::deque<Read> queues[2];
+    std::thread gpu[2];
+    bool stop=false;
+    uint32_t pending=0;
+    uint64_t sequence=0;
+    void reader(unsigned q) {
+        while (true) {
+            Read r;
+            {
+                std::unique_lock lock(mutex);
+                changed.wait(lock,[&]{return stop || !queues[q].empty();});
+                if (stop && queues[q].empty()) return;
+                r=queues[q].front(); queues[q].pop_front();
+            }
+            assert(values[r.slot] == r.expected);
+            std::this_thread::sleep_for(std::chrono::microseconds(q?150:20));
+            assert(values[r.slot] == r.expected);
+            tc_stream_completion_v1 event{};
+            event.struct_size=sizeof(event); event.version=TC_STREAM_SLOT_ABI_V1;
+            event.kind=TC_STREAM_READER_COMPLETE; event.ticket=r.ticket; event.fence=r.fence;
+            assert(r.mailbox->post(event));
+            { std::lock_guard lock(mutex); --pending; }
+            changed.notify_all();
+        }
+    }
+public:
+    std::vector<uint64_t> values;
+    unsigned creates=0, destroys=0, prefixes=0;
+    std::atomic<int> fills{0};
+    bool fail_fill=false, fail_create=false, fake_bad_drain=false, short_fill=false;
+    std::atomic<bool> *cancel_on_prepare=nullptr;
+    static uint64_t tag(const tc_stream_slot_ticket_v1 &t) {return 1+t.item.pass*1000+t.item.group;}
+    FakeModel() {
+        for(unsigned q=0;q<2;++q) gpu[q]=std::thread([this,q]{reader(q);});
+    }
+    ~FakeModel() {
+        {std::lock_guard lock(mutex); stop=true;}
+        changed.notify_all();
+        for(auto &t:gpu)t.join();
+    }
+    void create_pool(const PoolLayout &p) override {
+        ++creates; values.resize(p.slots.size());
+        if(fail_create)throw std::runtime_error("injected partial create");
+    }
+    FillJob make_fill_job(const Group &, const tc_stream_slot_ticket_v1 &t) override {
+        return {t,this,[](void *opaque,const tc_stream_slot_ticket_v1 *ticket,
+                          const std::atomic<bool> *cancel,uint64_t *bytes) {
+            auto &m=*static_cast<FakeModel *>(opaque);
+            if(m.fail_fill || cancel->load())return -1;
+            std::this_thread::sleep_for(std::chrono::microseconds(ticket->item.group%3*35));
+            m.values[ticket->slot]=tag(*ticket); *bytes=m.short_fill?4:8; ++m.fills;
+            return 0;
+        }};
+    }
+    void encode_prefix(uint32_t) override {++prefixes;}
+    void prepare_group(const Group &,const tc_stream_slot_ticket_v1 &t) override {
+        assert(values[t.slot]==tag(t));
+        if(cancel_on_prepare)cancel_on_prepare->store(true);
+    }
+    ReaderSet encode_group(const Group &,const tc_stream_slot_ticket_v1 &t,
+                            CompletionMailbox &mailbox) override {
+        ReaderSet set; set.count=2;
+        std::lock_guard lock(mutex);
+        for(unsigned q=0;q<2;++q){
+            set.fences[q]={q+1,++sequence};
+            queues[q].push_back({t.slot,tag(t),t,set.fences[q],&mailbox}); ++pending;
+        }
+        changed.notify_all(); return set;
+    }
+    bool drain() noexcept override {
+        std::unique_lock lock(mutex); changed.wait(lock,[&]{return pending==0;});
+        return !fake_bad_drain;
+    }
+    void destroy_pool() noexcept override {
+        std::lock_guard lock(mutex); assert(pending==0); values.clear(); ++destroys;
+    }
+};
+
+int main() {
+    const uint64_t cap=8;
+    {
+        SlotSafetyTracker pool(2,5,{&cap,1});
+        auto t=pool.begin_fill(0,{1,2,3,4},8);
+        pool.accept_ready(t,8); pool.begin_use(t);
+        tc_stream_reader_fence_v1 fs[]={{1,5},{2,6}};
+        pool.seal_readers(t,fs); pool.complete_reader(t,fs[1]);
+        assert(pool.state(0)==ContentState::AwaitingFence);
+        pool.complete_reader(t,fs[0]); assert(pool.quiescent());
+        assert(pool.capacity_bytes()==8); // Contents vacant, backing still live.
+        auto next=pool.begin_fill(0,{1,2,3,5},8);
+        assert(next.content_generation==t.content_generation+1);
+        rejects([&]{pool.accept_ready(t,8);}); assert(pool.poisoned());
+        rejects([&]{pool.accept_ready(next,8);});
+    }
+    {
+        SlotSafetyTracker pool(1,1,{&cap,1});
+        auto t=pool.begin_fill(0,{},8);
+        rejects([&]{pool.begin_fill(0,{},8);}); assert(pool.poisoned());
+        (void)t;
+    }
+    {
+        SlotSafetyTracker pool(1,1,{&cap,1});
+        auto t=pool.begin_fill(0,{},8); pool.accept_ready(t,8); pool.begin_use(t);
+        rejects([&]{pool.complete_reader(t,{1,1});}); // unsealed/early callback
+    }
+    {
+        CompletionMailbox mailbox(1);
+        tc_stream_completion_v1 e{}; assert(mailbox.post(e)); assert(!mailbox.post(e));
+        assert(mailbox.overflowed()); assert(mailbox.pop(e)); assert(mailbox.overflowed());
+    }
+    {
+        SlotSafetyTracker pool(1,1,{&cap,1});
+        std::thread intruder([&]{rejects([&]{pool.begin_fill(0,{},8);});});
+        intruder.join(); assert(pool.quiescent());
+    }
+    unsigned runs=0;
+    for(uint32_t k=1;k<=3;++k)for(uint32_t d=0;d<k;++d)for(uint32_t q=1;q<=k;++q){
+        auto model=std::make_shared<FakeModel>();
+        StageExecutor exec(3,7,model); std::atomic<bool> cancel{false};
+        const auto result=exec.run(layout(k,d,q),cancel);
+        assert(result.pool_creates==1 && result.slot_bundles==k);
+        assert(result.fills==39 && result.groups_submitted==39 && result.bytes_loaded==39*8);
+        assert(model->creates==1 && model->destroys==1 && model->prefixes==3);
+        assert(!exec.quarantined());
+        rejects([&]{exec.run(layout(k,d,q),cancel);});
+        ++runs;
+    }
+    for(unsigned failure=0;failure<5;++failure){
+        auto model=std::make_shared<FakeModel>(); std::atomic<bool> cancel{false};
+        model->fail_create=failure==0; model->fail_fill=failure==1;
+        if(failure==2)model->cancel_on_prepare=&cancel;
+        if(failure==3)model->fake_bad_drain=true;
+        if(failure==4)model->short_fill=true;
+        StageExecutor exec(3,7,model);
+        rejects([&]{exec.run(layout(3,2,2),cancel);});
+        if(failure==3){
+            assert(exec.quarantined() && model->destroys==0);
+            model->fake_bad_drain=false;
+            assert(exec.retry_drain());
+        }
+        assert(model->destroys==1);
+    }
+    std::cout<<"PASS streaming executor: "<<runs<<" K/D/Q combinations, two independent readers, faults and cleanup\n";
+}

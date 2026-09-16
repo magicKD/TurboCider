@@ -13,6 +13,7 @@
 #include "h3_video_encoder.h"
 #include "h3_video_vae.h"
 #include "h3_vision_encoder.h"
+#include "../../core/memory_schedule_adapter.h"
 
 #include <errno.h>
 #include <math.h>
@@ -25,6 +26,129 @@
 #include <time.h>
 
 static char h3_global_error[512];
+
+static void *h3_accounted_host_malloc(
+        h3_ctx *ctx, const h3_params *params, h3_host_memory_class memory_class,
+        size_t bytes, const char *tag, void **memory_token) {
+    if (memory_token) *memory_token = NULL;
+    if (!bytes || !memory_token) {
+        h3_set_error(ctx, "invalid accounted host allocation");
+        return NULL;
+    }
+    const h3_host_memory_hooks *hooks = params->host_memory_hooks;
+    if (!hooks) {
+        void *pointer = malloc(bytes);
+        if (!pointer) h3_set_error(ctx, "out of memory allocating %s", tag);
+        return pointer;
+    }
+    char detail[512] = {0};
+    void *token = NULL;
+    if (!hooks->reserve(hooks->user, (uint32_t)memory_class,
+                        (uint64_t)bytes, tag, &token,
+                        detail, sizeof(detail))) {
+        h3_set_error(ctx, "%s", detail[0] ? detail :
+                     "memory budget denied H3 host allocation");
+        return NULL;
+    }
+    void *pointer = malloc(bytes);
+    if (!pointer) {
+        hooks->cancel(hooks->user, token);
+        h3_set_error(ctx, "out of memory allocating %s", tag);
+        return NULL;
+    }
+    if (!hooks->commit(
+            hooks->user, token, params->memory_allocator_domain,
+            (uint64_t)(uintptr_t)pointer, (uint64_t)bytes,
+            params->memory_generation, detail, sizeof(detail))) {
+        free(pointer);
+        hooks->cancel(hooks->user, token);
+        h3_set_error(ctx, "%s", detail[0] ? detail :
+                     "cannot commit H3 host allocation");
+        return NULL;
+    }
+    *memory_token = token;
+    return pointer;
+}
+
+static void h3_accounted_host_free(const h3_params *params, void *pointer,
+                                   void **memory_token) {
+    free(pointer);
+    if (memory_token && *memory_token && params->host_memory_hooks) {
+        params->host_memory_hooks->release(
+            params->host_memory_hooks->user, *memory_token);
+        *memory_token = NULL;
+    }
+}
+
+static int h3_reserve_host_envelope(
+        h3_ctx *ctx, const h3_params *params, h3_host_memory_class memory_class,
+        uint64_t upper_bytes, const char *tag, void **memory_token) {
+    if (memory_token) *memory_token = NULL;
+    if (!params->host_memory_hooks) return 1;
+    char detail[512] = {0};
+    if (!params->host_memory_hooks->reserve(
+            params->host_memory_hooks->user, (uint32_t)memory_class,
+            upper_bytes, tag, memory_token, detail, sizeof(detail))) {
+        h3_set_error(ctx, "%s", detail[0] ? detail :
+                     "memory budget denied H3 host envelope");
+        return 0;
+    }
+    return 1;
+}
+
+static int h3_commit_host_envelope(
+        h3_ctx *ctx, const h3_params *params, void **memory_token,
+        uint64_t handle, uint64_t actual_bytes, int *committed) {
+    if (committed) *committed = 0;
+    if (!memory_token || !*memory_token || !params->host_memory_hooks)
+        return 1;
+    char detail[512] = {0};
+    const h3_host_memory_hooks *hooks = params->host_memory_hooks;
+    if (!actual_bytes || !handle || !hooks->commit(
+            hooks->user, *memory_token, params->memory_allocator_domain,
+            handle, actual_bytes, params->memory_generation,
+            detail, sizeof(detail))) {
+        if (hooks->cancel) hooks->cancel(hooks->user, *memory_token);
+        *memory_token = NULL;
+        h3_set_error(ctx, "%s", detail[0] ? detail :
+                     "cannot commit H3 host envelope");
+        return 0;
+    }
+    if (committed) *committed = 1;
+    return 1;
+}
+
+static void h3_release_or_cancel_host_envelope(
+        const h3_params *params, void **memory_token, int committed) {
+    if (!memory_token || !*memory_token || !params->host_memory_hooks)
+        return;
+    const h3_host_memory_hooks *hooks = params->host_memory_hooks;
+    if (committed) hooks->release(hooks->user, *memory_token);
+    else hooks->cancel(hooks->user, *memory_token);
+    *memory_token = NULL;
+}
+
+static int h3_checked_frame_bytes(int frames, int width, int height,
+                                  uint64_t channels, uint64_t item_size,
+                                  uint64_t *bytes) {
+    if (bytes) *bytes = 0;
+    if (!bytes || frames <= 0 || width <= 0 || height <= 0 ||
+        !channels || !item_size) return 0;
+    uint64_t value = (uint64_t)(unsigned)frames;
+    const uint64_t factors[] = {
+        (uint64_t)(unsigned)width,
+        (uint64_t)(unsigned)height,
+        channels,
+        item_size,
+    };
+    for (size_t index = 0; index < sizeof(factors) / sizeof(*factors);
+         index++) {
+        if (value > UINT64_MAX / factors[index]) return 0;
+        value *= factors[index];
+    }
+    *bytes = value;
+    return 1;
+}
 
 typedef struct {
     char *text;
@@ -699,6 +823,47 @@ static int h3_valid_params(h3_ctx *ctx, const h3_params *params) {
         h3_set_error(ctx, "generation parameters are required");
         return 0;
     }
+    if (params->gpu_options) {
+        const h3_host_memory_hooks *hooks = params->host_memory_hooks;
+        if (!hooks || hooks->struct_size < sizeof(*hooks) ||
+            hooks->version != 1u || !hooks->reserve || !hooks->commit ||
+            !hooks->cancel || !hooks->release ||
+            !params->memory_allocator_domain || !params->memory_generation ||
+            params->gpu_options->memory_allocator_domain !=
+                params->memory_allocator_domain ||
+            params->gpu_options->memory_generation !=
+                params->memory_generation) {
+            h3_set_error(ctx,
+                "constrained H3 generation requires matching GPU and host "
+                "memory hooks");
+            return 0;
+        }
+    } else if (params->host_memory_hooks || params->memory_allocator_domain ||
+               params->memory_generation) {
+        h3_set_error(ctx,
+            "H3 host memory hooks require constrained GPU options");
+        return 0;
+    }
+    if (params->gpu_options && params->retain_decoded) {
+        h3_set_error(ctx,
+            "constrained H3 generation cannot retain decoded host buffers");
+        return 0;
+    }
+    if (params->schedule_hooks) {
+        if (!params->gpu_options ||
+            !tc_memory_schedule_hooks_valid_v1(
+                params->schedule_hooks)) {
+            h3_set_error(ctx,
+                "memory_schedule_invalid: constrained H3 generation has "
+                "an unsupported schedule hook ABI");
+            return 0;
+        }
+    }
+    if (params->gpu_options && params->preview_denoise) {
+        h3_set_error(ctx,
+            "constrained H3 generation does not yet support preview host buffers");
+        return 0;
+    }
     if (params->width < 32 || params->height < 32 ||
         params->width % H3_CANVAS_MULTIPLE ||
         params->height % H3_CANVAS_MULTIPLE) {
@@ -883,6 +1048,24 @@ static int h3_valid_params(h3_ctx *ctx, const h3_params *params) {
     return 1;
 }
 
+static h3_host_memory_options h3_host_options_from_params(
+        const h3_params *params) {
+    h3_host_memory_options result;
+    memset(&result, 0, sizeof(result));
+    if (!params || !params->host_memory_hooks) return result;
+    result.struct_size = sizeof(result);
+    result.version = 1u;
+    result.hooks = params->host_memory_hooks;
+    result.allocator_domain = params->memory_allocator_domain;
+    result.generation = params->memory_generation;
+    return result;
+}
+
+static const h3_host_memory_options *h3_optional_host_options(
+        const h3_host_memory_options *options) {
+    return options && options->hooks ? options : NULL;
+}
+
 typedef struct {
     h3_ctx *ctx;
     const h3_params *params;
@@ -905,6 +1088,8 @@ typedef struct {
     int ssd_pinned_prefix;
     uint64_t ssd_memory_budget_bytes;
     const char *ssd_quantized_cache_directory;
+    const h3_gpu_options *gpu_options;
+    h3_host_memory_options host_memory;
     float spatial_rope_scale;
     int use_slower_bf16_mlp;
     int use_slower_bf16_qkv;
@@ -945,6 +1130,8 @@ static void *h3_parallel_prepare_main(void *opaque) {
     h3_parallel_prepare *prepare = opaque;
     prepare->dit = h3_dit_load_t2va_core(
         prepare->dit_path, "h3_shaders.metal",
+        prepare->gpu_options,
+        h3_optional_host_options(&prepare->host_memory),
         &prepare->text, &prepare->layout, prepare->sigmas,
         prepare->active_blocks, prepare->core_reuse_interval,
         prepare->token_reduction, prepare->ssd_streaming,
@@ -1000,6 +1187,8 @@ static int h3_parallel_prepare_start(
     prepare->ssd_memory_budget_bytes = params->ssd_memory_budget_bytes;
     prepare->ssd_quantized_cache_directory =
         params->ssd_quantized_cache_directory;
+    prepare->gpu_options = params->gpu_options;
+    prepare->host_memory = h3_host_options_from_params(params);
     prepare->spatial_rope_scale = spatial_rope_scale;
     prepare->use_slower_bf16_mlp = params->use_slower_bf16_mlp;
     prepare->use_slower_bf16_qkv = params->use_slower_bf16_qkv;
@@ -1097,7 +1286,8 @@ static void h3_video_encoder_progress_bridge(int completed, int total,
 
 static h3_video_vae_decoder *h3_acquire_video_decoder(
         h3_ctx *ctx, const char *key, const char *weight_directory,
-        int latent_height, int latent_width, h3_video_vae_progress progress,
+        int latent_height, int latent_width,
+        const h3_gpu_options *gpu_options, h3_video_vae_progress progress,
         void *progress_opaque, int *cached, char *error, size_t error_size) {
     *cached = 0;
     if (h3_decoder_cache_enabled(ctx) && ctx->video_decoder &&
@@ -1112,9 +1302,9 @@ static h3_video_vae_decoder *h3_acquire_video_decoder(
         free(ctx->video_decoder_key);
         ctx->video_decoder_key = NULL;
     }
-    h3_video_vae_decoder *decoder = h3_video_vae_decoder_load(
+    h3_video_vae_decoder *decoder = h3_video_vae_decoder_load_with_options(
         weight_directory, "h3_shaders.metal", latent_height, latent_width,
-        progress, progress_opaque, error, error_size);
+        gpu_options, progress, progress_opaque, error, error_size);
     if (!decoder || !h3_decoder_cache_enabled(ctx)) return decoder;
     char *key_copy = strdup(key);
     if (!key_copy) {
@@ -1132,15 +1322,20 @@ static void h3_vision_progress_bridge(int completed, int total, void *opaque) {
     h3_progress_emit(opaque, "Qwen vision", completed, total);
 }
 
-static uint8_t *h3_rgb_f32_to_u8(const float *rgb, size_t count) {
-    uint8_t *output = malloc(count);
-    if (!output) return NULL;
+static void h3_rgb_f32_to_u8_into(const float *rgb, uint8_t *output,
+                                  size_t count) {
     for (size_t index = 0; index < count; index++) {
         float scaled = rgb[index] * 255.0f;
         if (scaled < 0.0f) scaled = 0.0f;
         if (scaled > 255.0f) scaled = 255.0f;
         output[index] = (uint8_t)lrintf(scaled);
     }
+}
+
+static uint8_t *h3_rgb_f32_to_u8(const float *rgb, size_t count) {
+    uint8_t *output = malloc(count);
+    if (!output) return NULL;
+    h3_rgb_f32_to_u8_into(rgb, output, count);
     return output;
 }
 
@@ -1264,6 +1459,8 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         return NULL;
     }
     if (!h3_valid_params(ctx, params)) return NULL;
+    const h3_host_memory_options host_memory =
+        h3_host_options_from_params(params);
     int render_width = params->render_width ? params->render_width :
                                                params->width;
     int render_height = params->render_height ? params->render_height :
@@ -1320,11 +1517,17 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     h3_live_preview live_preview;
     memset(&live_preview, 0, sizeof(live_preview));
     float *video = NULL, *audio = NULL;
+    void *video_memory_token = NULL;
+    void *audio_memory_token = NULL;
+    void *decoded_host_envelope_token = NULL;
+    int decoded_host_envelope_committed = 0;
+    uint64_t decoded_host_upper_bytes = 0;
     h3_video_frames frames;
     memset(&frames, 0, sizeof(frames));
     h3_audio_waveform waveform;
     memset(&waveform, 0, sizeof(waveform));
     uint8_t *rgb8 = NULL;
+    void *rgb8_memory_token = NULL;
     h3_result *result = NULL;
     h3_dit_streaming_info streaming_info;
     memset(&streaming_info, 0, sizeof(streaming_info));
@@ -1451,6 +1654,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     float spatial_rope_scale = !params->use_reference_rope &&
         render_width == 256 && render_height == 256 ? 0.5f : 1.0f;
     int parallel_prepare_eligible = h3_parallel_prepare_requested() &&
+        !params->gpu_options &&
         !ref2va && !visual_capacity && !conditioning_hit && !ctx->dit &&
         !params->ssd_streaming &&
         ctx->device.physical_memory >= UINT64_C(48) * 1024 * 1024 * 1024;
@@ -1920,8 +2124,9 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             goto cleanup;
         }
         h3_progress_emit(&progress, "text encoder", 0, 50);
-        if (!h3_text_encode_bf16(
-                text_path, "h3_shaders.metal", ids, token_count,
+        if (!h3_text_encode_bf16_with_options(
+                text_path, "h3_shaders.metal", params->gpu_options,
+                ids, token_count,
                 h3_text_progress_bridge, &progress, &text,
                 detail, sizeof(detail))) {
             h3_set_error(ctx, "%s", detail);
@@ -2046,7 +2251,9 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     }
     if (!dit && conditioned) {
         dit = h3_dit_load_conditioned(
-            dit_path, "h3_shaders.metal", &text, &layout, &sigmas,
+            dit_path, "h3_shaders.metal", params->gpu_options,
+            h3_optional_host_options(&host_memory),
+            &text, &layout, &sigmas,
             (unsigned)params->dit_layers, (unsigned)params->core_reuse,
             params->token_reduction,
             params->ssd_streaming,
@@ -2070,7 +2277,9 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             h3_dit_progress_bridge, &progress, detail, sizeof(detail));
     } else if (!dit) {
         dit = h3_dit_load_t2va(
-            dit_path, "h3_shaders.metal", &text, &layout, &sigmas,
+            dit_path, "h3_shaders.metal", params->gpu_options,
+            h3_optional_host_options(&host_memory),
+            &text, &layout, &sigmas,
             (unsigned)params->dit_layers, (unsigned)params->core_reuse,
             params->token_reduction,
             params->ssd_streaming,
@@ -2121,6 +2330,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         h3_progress_emit(&progress, "preview VAE load", 0, 36);
         preview_decoder = h3_acquire_video_decoder(
             ctx, decoder_key, vae_path, latent_h, latent_w,
+            params->gpu_options,
             h3_preview_vae_progress_bridge, &progress,
             &decoder_is_cached, detail, sizeof(detail));
         if (preview_decoder && ctx->video_decoder == preview_decoder)
@@ -2141,10 +2351,22 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     }
     size_t video_count = h3_dit_video_elements(dit);
     size_t audio_count = h3_dit_audio_elements(dit);
-    video = malloc(video_count * sizeof(*video));
-    audio = malloc(audio_count * sizeof(*audio));
+    if (video_count > SIZE_MAX / sizeof(*video) ||
+        audio_count > SIZE_MAX / sizeof(*audio)) {
+        h3_set_error(ctx, "joint H3 noise byte count overflow");
+        goto cleanup;
+    }
+    video = h3_accounted_host_malloc(
+        ctx, params, H3_HOST_MEMORY_LATENT,
+        video_count * sizeof(*video), "h3.latent.video",
+        &video_memory_token);
+    audio = h3_accounted_host_malloc(
+        ctx, params, H3_HOST_MEMORY_LATENT,
+        audio_count * sizeof(*audio), "h3.latent.audio",
+        &audio_memory_token);
     if (!video || !audio) {
-        h3_set_error(ctx, "out of memory allocating joint H3 noise");
+        if (!ctx->error[0])
+            h3_set_error(ctx, "out of memory allocating joint H3 noise");
         goto cleanup;
     }
     /* The released server initializes each modality from a separate generator
@@ -2190,20 +2412,47 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     if (!dit_is_cached) h3_dit_free(dit);
     dit = NULL;
     if (progress.cancelled) goto cleanup;
-    h3_progress_emit(&progress, "audio VAE", 0, 7);
-    if (!h3_audio_vae_decode(audio_vae_path, "h3_shaders.metal", audio,
-                             temporal.audio_t, h3_audio_vae_progress_bridge,
-                             &progress, &waveform, detail, sizeof(detail))) {
-        h3_set_error(ctx, "%s", detail);
-        goto cleanup;
+    if (h3_runtime_getenv("H3_MEMORY_CONSTRAINED") &&
+        h3_runtime_getenv("H3_OUTPUT_SILENT")) {
+        /* Video-only constrained requests do not materialize an unused audio
+         * waveform or Audio VAE. The joint audio latent is still present in
+         * DiT, preserving denoising math; only the discarded decode is elided. */
+        h3_progress_emit(&progress, "audio VAE skipped", 1, 1);
+    } else {
+        h3_progress_emit(&progress, "audio VAE", 0, 7);
+        if (!h3_audio_vae_decode(audio_vae_path, "h3_shaders.metal", audio,
+                                 temporal.audio_t,
+                                 h3_audio_vae_progress_bridge, &progress,
+                                 &waveform, detail, sizeof(detail))) {
+            h3_set_error(ctx, "%s", detail);
+            goto cleanup;
+        }
     }
-    free(audio);
+    h3_accounted_host_free(params, audio, &audio_memory_token);
     audio = NULL;
     if (progress.cancelled) goto cleanup;
+    uint64_t predicted_decoded_output_bytes = 0;
+    if (!h3_checked_frame_bytes(
+            temporal.frame_count, render_width, render_height,
+            UINT64_C(3), (uint64_t)sizeof(float),
+            &predicted_decoded_output_bytes) ||
+        predicted_decoded_output_bytes > UINT64_MAX / UINT64_C(4)) {
+        h3_set_error(ctx,
+                     "h3_host_allocation_overflow: decoded frame envelope");
+        goto cleanup;
+    }
+    decoded_host_upper_bytes = predicted_decoded_output_bytes * UINT64_C(4);
+    if (!h3_reserve_host_envelope(
+            ctx, params, H3_HOST_MEMORY_DECODED_F32,
+            decoded_host_upper_bytes,
+            "h3.vae.decoded_host_envelope_v1",
+            &decoded_host_envelope_token))
+        goto cleanup;
     if (!use_taeh3 && !preview_decoder && h3_decoder_cache_enabled(ctx)) {
         h3_progress_emit(&progress, "video VAE load", 0, 36);
         preview_decoder = h3_acquire_video_decoder(
             ctx, decoder_key, vae_path, latent_h, latent_w,
+            params->gpu_options,
             h3_vae_progress_bridge, &progress,
             &decoder_is_cached, detail, sizeof(detail));
         if (preview_decoder && ctx->video_decoder == preview_decoder)
@@ -2251,9 +2500,9 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             preview_decoder, video, temporal.video_t, &frames,
             detail, sizeof(detail));
     } else {
-        video_ok = h3_video_vae_decode(
+        video_ok = h3_video_vae_decode_with_options(
             vae_path, "h3_shaders.metal", video,
-            temporal.video_t, latent_h, latent_w,
+            temporal.video_t, latent_h, latent_w, params->gpu_options,
             h3_vae_progress_bridge, &progress, &frames,
             detail, sizeof(detail));
     }
@@ -2267,7 +2516,26 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         h3_set_error(ctx, "%s", detail);
         goto cleanup;
     }
-    free(video);
+    uint64_t actual_decoded_output_bytes = 0;
+    if (!h3_checked_frame_bytes(
+            frames.frames, frames.width, frames.height,
+            UINT64_C(3), (uint64_t)sizeof(float),
+            &actual_decoded_output_bytes)) {
+        h3_set_error(ctx,
+                     "h3_host_allocation_overflow: decoded frame output");
+        goto cleanup;
+    }
+    if (actual_decoded_output_bytes > decoded_host_upper_bytes) {
+        h3_set_error(ctx,
+            "memory_envelope_violation: decoded frames exceed reserved upper");
+        goto cleanup;
+    }
+    if (!h3_commit_host_envelope(
+            ctx, params, &decoded_host_envelope_token,
+            (uint64_t)(uintptr_t)frames.rgb, actual_decoded_output_bytes,
+            &decoded_host_envelope_committed))
+        goto cleanup;
+    h3_accounted_host_free(params, video, &video_memory_token);
     video = NULL;
     if (progress.cancelled) goto cleanup;
     int output_width = frames.width;
@@ -2277,12 +2545,22 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     if (need_rgb8) {
         size_t rgb_count = (size_t)frames.frames * (size_t)frames.height *
                            (size_t)frames.width * 3;
-        rgb8 = h3_rgb_f32_to_u8(frames.rgb, rgb_count);
+        rgb8 = h3_accounted_host_malloc(
+            ctx, params, H3_HOST_MEMORY_OUTPUT, rgb_count,
+            "h3.output.rgb8", &rgb8_memory_token);
         if (!rgb8) {
-            h3_set_error(ctx, "out of memory converting generated RGB frames");
+            if (!ctx->error[0])
+                h3_set_error(ctx,
+                             "out of memory converting generated RGB frames");
             goto cleanup;
         }
+        h3_rgb_f32_to_u8_into(frames.rgb, rgb8, rgb_count);
         if (output_width != params->width || output_height != params->height) {
+            if (params->host_memory_hooks) {
+                h3_set_error(ctx,
+                    "constrained H3 output resize is not allocation-guarded");
+                goto cleanup;
+            }
             uint8_t *resized = NULL;
             if (!h3_resize_rgb24_high_quality(
                     rgb8, frames.frames, output_width, output_height,
@@ -2290,7 +2568,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
                 h3_set_error(ctx, "cannot resize generated RGB frames");
                 goto cleanup;
             }
-            free(rgb8);
+            h3_accounted_host_free(params, rgb8, &rgb8_memory_token);
             rgb8 = resized;
             output_width = params->width;
             output_height = params->height;
@@ -2369,11 +2647,52 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     }
 
 cleanup:
+    ;
+    /* Close every GPU queue while its allocator hooks and request context are
+     * still alive.  This is deliberately before any h3_*_free() call so an
+     * asynchronous completion can publish to the owner-thread mailbox rather
+     * than releasing a lease from a late Metal callback. */
+    int cleanup_gpu_drain_ok = 1;
+    char cleanup_gpu_error[512] = {0};
+    if (dit && !h3_dit_drain_gpu(
+            dit, cleanup_gpu_error, sizeof(cleanup_gpu_error)))
+        cleanup_gpu_drain_ok = 0;
+    if (preview_decoder && !h3_video_vae_decoder_drain_gpu(
+            preview_decoder, cleanup_gpu_error, sizeof(cleanup_gpu_error)))
+        cleanup_gpu_drain_ok = 0;
+    if (taeh3_decoder && !h3_taeh3_decoder_drain_gpu(
+            taeh3_decoder, cleanup_gpu_error, sizeof(cleanup_gpu_error)))
+        cleanup_gpu_drain_ok = 0;
+    if (ctx->dit && ctx->dit != dit &&
+        !h3_dit_drain_gpu(ctx->dit, cleanup_gpu_error,
+                          sizeof(cleanup_gpu_error)))
+        cleanup_gpu_drain_ok = 0;
+    if (ctx->video_decoder && ctx->video_decoder != preview_decoder &&
+        !h3_video_vae_decoder_drain_gpu(
+            ctx->video_decoder, cleanup_gpu_error,
+            sizeof(cleanup_gpu_error)))
+        cleanup_gpu_drain_ok = 0;
+    if (ctx->taeh3_decoder && ctx->taeh3_decoder != taeh3_decoder &&
+        !h3_taeh3_decoder_drain_gpu(
+            ctx->taeh3_decoder, cleanup_gpu_error,
+            sizeof(cleanup_gpu_error)))
+        cleanup_gpu_drain_ok = 0;
+    if (!cleanup_gpu_drain_ok && !ctx->error[0])
+        h3_set_error(ctx, "%s", cleanup_gpu_error[0] ? cleanup_gpu_error :
+                     "H3 GPU completion drain failed");
+    if (!cleanup_gpu_drain_ok && result) {
+        h3_result_free(result);
+        result = NULL;
+    }
     if (parallel_prepare.started) {
         h3_dit *prepared = h3_parallel_prepare_join(
             &parallel_prepare, NULL, 0);
+        if (prepared)
+            (void)h3_dit_drain_gpu(prepared, NULL, 0);
         h3_dit_free(prepared);
     }
+    if (parallel_prepare.dit)
+        (void)h3_dit_drain_gpu(parallel_prepare.dit, NULL, 0);
     h3_dit_free(parallel_prepare.dit);
     free(conditioning_key);
     free(prepared_key);
@@ -2409,10 +2728,42 @@ cleanup:
     if (!dit_is_cached) h3_dit_free(dit);
     if (!decoder_is_cached) h3_video_vae_decoder_free(preview_decoder);
     if (!taeh3_is_cached) h3_taeh3_decoder_free(taeh3_decoder);
-    free(video); free(audio); free(rgb8);
+    h3_accounted_host_free(params, video, &video_memory_token);
+    h3_accounted_host_free(params, audio, &audio_memory_token);
+    h3_accounted_host_free(params, rgb8, &rgb8_memory_token);
     h3_video_frames_free(&frames);
+    h3_release_or_cancel_host_envelope(
+        params, &decoded_host_envelope_token,
+        decoded_host_envelope_committed);
     h3_audio_waveform_free(&waveform);
     return result;
+}
+
+int h3_drain(h3_ctx *ctx, h3_drain_info *info,
+             char *error, size_t error_size) {
+    if (info) memset(info, 0, sizeof(*info));
+    if (!ctx) {
+        if (error && error_size)
+            snprintf(error, error_size, "invalid H3 drain context");
+        return 0;
+    }
+    uint64_t drained = 0;
+    if (ctx->dit) {
+        if (!h3_dit_drain_gpu(ctx->dit, error, error_size)) return 0;
+        drained++;
+    }
+    if (ctx->video_decoder) {
+        if (!h3_video_vae_decoder_drain_gpu(
+                ctx->video_decoder, error, error_size)) return 0;
+        drained++;
+    }
+    if (ctx->taeh3_decoder) {
+        if (!h3_taeh3_decoder_drain_gpu(
+                ctx->taeh3_decoder, error, error_size)) return 0;
+        drained++;
+    }
+    if (info) info->components_drained = drained;
+    return 1;
 }
 
 void h3_result_free(h3_result *result) {

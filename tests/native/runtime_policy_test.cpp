@@ -52,7 +52,7 @@ int main() {
         }
         return false;
     };
-    ExecutionPlan plan{request, {}, 16ull << 30};
+    ExecutionPlan plan{request, {}, 16ull << 30, {}};
     ResidencyPolicy::validate_budget(plan, 20ull << 30);
     assert(rejects([&] { ResidencyPolicy::validate_budget(plan, (20ull << 30) - 1); }));
     plan.request.memory_budget_bytes = (16ull << 30) - 1;

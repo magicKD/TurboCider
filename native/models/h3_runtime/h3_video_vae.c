@@ -371,7 +371,9 @@ static int prepare_input_batch(vae_context *vae, const float *const *inputs,
                     }
         }
     }
-    vae->latent = h3_gpu_tensor_from_f32(vae->gpu, rows, patch_elements);
+    vae->latent = h3_gpu_tensor_from_f32_classified(
+        vae->gpu, rows, patch_elements, H3_GPU_MEMORY_ACTIVATION,
+        "h3.vae.decode.input_upload");
     free(rows);
     return vae->latent != NULL;
 }
@@ -428,8 +430,12 @@ static int prepare_rope(vae_context *vae, char *error, size_t error_size) {
             row++;
         }
     }
-    vae->rope_cos = h3_gpu_tensor_from_f32(vae->gpu, cosines, count);
-    vae->rope_sin = h3_gpu_tensor_from_f32(vae->gpu, sines, count);
+    vae->rope_cos = h3_gpu_tensor_from_f32_classified(
+        vae->gpu, cosines, count, H3_GPU_MEMORY_CONDITIONING,
+        "h3.vae.decode.rope_cos");
+    vae->rope_sin = h3_gpu_tensor_from_f32_classified(
+        vae->gpu, sines, count, H3_GPU_MEMORY_CONDITIONING,
+        "h3.vae.decode.rope_sin");
     free(cosines); free(sines);
     if (!vae->rope_cos || !vae->rope_sin) {
         fail(error, error_size, "cannot allocate video VAE RoPE: %s",
@@ -442,7 +448,10 @@ static int prepare_rope(vae_context *vae, char *error, size_t error_size) {
 static int allocate_activations(vae_context *vae, char *error,
                                 size_t error_size) {
     size_t patches = vae->patches, sequence = vae->sequence;
-#define F32(field, elements) (vae->field = h3_gpu_tensor_new_f32(vae->gpu, (elements)))
+#define F32(field, elements)                                                  \
+    (vae->field = h3_gpu_tensor_new_classified(                              \
+        vae->gpu, (elements), H3_GPU_F32, H3_GPU_MEMORY_ACTIVATION,          \
+        "h3.vae.decode.activation." #field))
     h3_gpu_tensor *all[] = {
         F32(post, patches * LATENT_CHANNELS),
         F32(patch_hidden, patches * HIDDEN),
@@ -531,7 +540,9 @@ static int run_decoder(vae_context *vae, h3_video_vae_progress progress,
                        size_t error_size) {
     float zeros[HIDDEN];
     memset(zeros, 0, sizeof(zeros));
-    h3_gpu_tensor *zero = h3_gpu_tensor_from_f32(vae->gpu, zeros, HIDDEN);
+    h3_gpu_tensor *zero = h3_gpu_tensor_from_f32_classified(
+        vae->gpu, zeros, HIDDEN, H3_GPU_MEMORY_CONVERSION_SCRATCH,
+        "h3.vae.decode.suffix_zero");
     if (!zero) {
         fail(error, error_size, "cannot allocate video VAE suffix token");
         return 0;
@@ -599,7 +610,9 @@ static int run_resident_tile(vae_context *vae, char *error,
                              size_t error_size) {
     float zeros[HIDDEN];
     memset(zeros, 0, sizeof(zeros));
-    h3_gpu_tensor *zero = h3_gpu_tensor_from_f32(vae->gpu, zeros, HIDDEN);
+    h3_gpu_tensor *zero = h3_gpu_tensor_from_f32_classified(
+        vae->gpu, zeros, HIDDEN, H3_GPU_MEMORY_CONVERSION_SCRATCH,
+        "h3.vae.tile.suffix_zero");
     if (!zero) {
         fail(error, error_size, "cannot allocate video VAE suffix token");
         return 0;
@@ -1008,10 +1021,11 @@ static int decoder_decode_chunk(h3_video_vae_decoder *decoder,
     return ok;
 }
 
-h3_video_vae_decoder *h3_video_vae_decoder_load(
+h3_video_vae_decoder *h3_video_vae_decoder_load_with_options(
                         const char *weight_directory,
                         const char *shader_source_path,
                         int latent_height, int latent_width,
+                        const h3_gpu_options *gpu_options,
                         h3_video_vae_progress progress, void *progress_opaque,
                         char *error, size_t error_size) {
     if (error && error_size) error[0] = '\0';
@@ -1053,7 +1067,8 @@ h3_video_vae_decoder *h3_video_vae_decoder_load(
             vae->weights = h3_weight_store_open(weight_directory,
                                                 error, error_size);
         if (vae->weights)
-            vae->gpu = h3_gpu_create(shader_source_path, error, error_size);
+            vae->gpu = h3_gpu_create_with_options(
+                shader_source_path, gpu_options, error, error_size);
         if (vae->gpu)
             h3_gpu_profile_set_label(vae->gpu, "resident video VAE decoder");
         ok = vae->weights && vae->gpu &&
@@ -1067,6 +1082,17 @@ h3_video_vae_decoder *h3_video_vae_decoder_load(
         return NULL;
     }
     return decoder;
+}
+
+h3_video_vae_decoder *h3_video_vae_decoder_load(
+                        const char *weight_directory,
+                        const char *shader_source_path,
+                        int latent_height, int latent_width,
+                        h3_video_vae_progress progress, void *progress_opaque,
+                        char *error, size_t error_size) {
+    return h3_video_vae_decoder_load_with_options(
+        weight_directory, shader_source_path, latent_height, latent_width,
+        NULL, progress, progress_opaque, error, error_size);
 }
 
 int h3_video_vae_decoder_preview(h3_video_vae_decoder *decoder,
@@ -1163,10 +1189,25 @@ void h3_video_vae_decoder_free(h3_video_vae_decoder *decoder) {
     free(decoder);
 }
 
+int h3_video_vae_decoder_drain_gpu(h3_video_vae_decoder *decoder,
+                                   char *error, size_t error_size) {
+    if (!decoder || !decoder->vae.gpu) {
+        fail(error, error_size, "invalid H3 Video VAE GPU drain");
+        return 0;
+    }
+    if (!h3_gpu_drain(decoder->vae.gpu)) {
+        fail(error, error_size, "cannot drain H3 Video VAE GPU: %s",
+             h3_gpu_error(decoder->vae.gpu));
+        return 0;
+    }
+    return 1;
+}
+
 static int decode_chunked(const char *weight_directory,
                           const char *shader_source_path,
                           const float *normalized_latent, int latent_time,
                           int latent_height, int latent_width,
+                          const h3_gpu_options *gpu_options,
                           const float *latent_mean, const float *latent_std,
                           int tile_pixels,
                           h3_video_vae_progress progress, void *progress_opaque,
@@ -1201,7 +1242,8 @@ static int decode_chunked(const char *weight_directory,
     if (ok)
         vae.weights = h3_weight_store_open(weight_directory, error, error_size);
     if (vae.weights)
-        vae.gpu = h3_gpu_create(shader_source_path, error, error_size);
+        vae.gpu = h3_gpu_create_with_options(
+            shader_source_path, gpu_options, error, error_size);
     if (vae.gpu)
         h3_gpu_profile_set_label(vae.gpu, "video VAE decoder");
     ok = vae.weights && vae.gpu &&
@@ -1321,10 +1363,12 @@ void h3_video_frames_free(h3_video_frames *frames) {
     memset(frames, 0, sizeof(*frames));
 }
 
-int h3_video_vae_decode(const char *weight_directory,
+int h3_video_vae_decode_with_options(
+                        const char *weight_directory,
                         const char *shader_source_path,
                         const float *normalized_latent, int latent_time,
                         int latent_height, int latent_width,
+                        const h3_gpu_options *gpu_options,
                         h3_video_vae_progress progress, void *progress_opaque,
                         h3_video_frames *output,
                         char *error, size_t error_size) {
@@ -1366,7 +1410,8 @@ int h3_video_vae_decode(const char *weight_directory,
         latent_width > tile_pixels / SPATIAL_RATIO) {
         int ok = decode_chunked(weight_directory, shader_source_path,
                                 normalized_latent, latent_time, latent_height,
-                                latent_width, latent_mean, latent_std,
+                                latent_width, gpu_options,
+                                latent_mean, latent_std,
                                 tile_pixels, progress,
                                 progress_opaque, output, error, error_size);
         if (!ok) h3_video_frames_free(output);
@@ -1374,7 +1419,8 @@ int h3_video_vae_decode(const char *weight_directory,
     }
     vae.weights = h3_weight_store_open(weight_directory, error, error_size);
     if (!vae.weights) return 0;
-    vae.gpu = h3_gpu_create(shader_source_path, error, error_size);
+    vae.gpu = h3_gpu_create_with_options(
+        shader_source_path, gpu_options, error, error_size);
     if (vae.gpu)
         h3_gpu_profile_set_label(vae.gpu, "video VAE decoder");
     int ok = vae.gpu &&
@@ -1388,4 +1434,17 @@ int h3_video_vae_decode(const char *weight_directory,
     if (!ok) h3_video_frames_free(output);
     cleanup(&vae);
     return ok;
+}
+
+int h3_video_vae_decode(const char *weight_directory,
+                        const char *shader_source_path,
+                        const float *normalized_latent, int latent_time,
+                        int latent_height, int latent_width,
+                        h3_video_vae_progress progress, void *progress_opaque,
+                        h3_video_frames *output,
+                        char *error, size_t error_size) {
+    return h3_video_vae_decode_with_options(
+        weight_directory, shader_source_path, normalized_latent, latent_time,
+        latent_height, latent_width, NULL, progress, progress_opaque, output,
+        error, error_size);
 }

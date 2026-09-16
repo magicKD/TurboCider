@@ -44,6 +44,8 @@ typedef int (*h3_dit_preview)(int completed_steps, int total_steps,
  * small block norms and two alternating BF16 matrix slots. */
 h3_dit *h3_dit_load_t2va(const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -77,6 +79,8 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
 h3_dit *h3_dit_load_t2va_core(
                          const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -108,6 +112,8 @@ h3_dit *h3_dit_load_t2va_core(
 h3_dit *h3_dit_load_conditioned(
                          const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -228,6 +234,11 @@ int h3_dit_reuse_schedule(int steps, int reuse_interval, uint8_t *selected,
                           size_t selected_count);
 
 int h3_dit_get_gpu_stats(const h3_dit *dit, h3_gpu_stats *stats);
+/* Wait for all command buffers owned by this DiT and execute their completion
+ * handlers.  The call is synchronous and must run on the request owner
+ * thread; it is used by the Apple adapter before consuming its memory
+ * completion mailbox. */
+int h3_dit_drain_gpu(h3_dit *dit, char *error, size_t error_size);
 int h3_dit_get_streaming_info(const h3_dit *dit,
                               h3_dit_streaming_info *info);
 /* True after an opt-in final-pass progressive eviction consumed resident

@@ -1,4 +1,8 @@
 #pragma once
+#include "ltx_gpu.h"
+#include "../../core/memory_schedule_c.h"
+#include "../../core/stream_slot_c.h"
+#include "ltx_safetensors.h"
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -24,6 +28,15 @@ typedef struct {
      * target; resident execution ignores both fields. */
     int stream_blocks;
     uint64_t memory_budget_bytes;
+    /* Zero preserves the legacy maximum. Constrained callers pass 1..3 and
+     * the runtime must not allocate or prefetch more refill slots. */
+    uint32_t max_refill_slots;
+    /* Optional per-buffer admission installed before any Transformer Metal
+     * buffer is created. Constrained callers must supply all hook callbacks;
+     * default callers leave this NULL and retain the legacy fast path. */
+    const ltx_gpu_memory_hooks *memory_hooks;
+    uint64_t memory_allocator_domain;
+    uint64_t memory_generation;
     /* Lifecycle options are explicit at the library boundary.  The embedded
      * runtime deliberately does not inherit the benchmark CLI's environment
      * variables. */
@@ -64,6 +77,9 @@ typedef struct {
     const char *v2a_directories[2];
     const char *kv_directory;
     const char *qkv_directories[2];
+    /* Optional owner-thread semantic schedule callback. The native runtime
+     * copies this POD during create; workers and Metal callbacks never emit. */
+    const tc_memory_schedule_hooks_v1 *schedule_hooks;
 } ltx_native_options;
 typedef struct {
     int enabled;
@@ -81,7 +97,38 @@ typedef struct {
     double wait_seconds;
 } ltx_native_streaming_info;
 ltx_native_denoiser *ltx_native_create(const ltx_native_options*,ltx_native_progress,void*,char*,size_t);
+/* Internal experimental layout-only entry. Public TurboCider eligibility is
+ * checked separately; this does not certify a layout or a memory upper.
+ * Exact G=1/P>=1/single-class plan, GPU-only, no legacy budget authority.
+ * Plan arrays are copied at create. On failure, a non-null *out is quarantined
+ * and must be retained until streaming_destroy succeeds. */
+typedef struct {
+    uint32_t struct_size, version, resident_prefix_blocks;
+    const tc_stream_stage_plan_v1 *plan;
+} ltx_native_streaming_options_v1;
+int ltx_native_create_streamed_v1(const ltx_native_options *,
+    const ltx_native_streaming_options_v1 *, ltx_native_denoiser **out,
+    ltx_native_progress, void *, char *, size_t);
+int ltx_native_streaming_destroy(ltx_native_denoiser **, char *, size_t);
+int ltx_native_streaming_counters(ltx_native_denoiser *, tc_stream_counters_v1 *, char *, size_t);
+/* v2 exact entry borrows a header parsed by ltx_st_read_header_fd and its fd.
+ * Identity/change checks run before construction and at stage boundaries;
+ * these are NOT a content hash or protection against concurrent modification.
+ * All request artifacts must be immutable during execution.
+ * The caller owns both objects and must keep them alive until destroy returns.
+ * The native context never closes/free's the borrowed descriptor or header. */
+typedef struct {
+    uint32_t struct_size, version;
+    ltx_native_streaming_options_v1 base;
+    const ltx_st_header *metadata_header;
+    const ltx_st_mapping *metadata_mapping;
+} ltx_native_streaming_options_v2;
+int ltx_native_create_streamed_v2(const ltx_native_options *,
+    const ltx_native_streaming_options_v2 *, ltx_native_denoiser **out,
+    ltx_native_progress, void *, char *, size_t);
 void ltx_native_free(ltx_native_denoiser*);
+/* Owner-thread completion barrier for native GPU and auxiliary GPU queues. */
+int ltx_native_drain(ltx_native_denoiser*, char*, size_t);
 int ltx_native_get_streaming_info(
     const ltx_native_denoiser*, ltx_native_streaming_info*);
 /* All inputs are BF16. Stage 1 receives seeded noise, stage 2 receives the

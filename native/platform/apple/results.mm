@@ -1,4 +1,5 @@
 #include "bridge.hpp"
+#include "../../runtime/memory_execution.hpp"
 namespace tc {
 static NSString *gpu_graph_label(const Request &r) {
     if (r.model == "minimax-h3-vdn")
@@ -248,7 +249,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         if (r.ltx_stage2_text_rows)
             [algorithm_approximations addObject:@"ltx_stage2_text_context_pruning"];
     }
-    return @{
+    NSMutableDictionary *result = [@{
         @"selection_pending" : @(r.execution == "auto"),
         @"requested_execution" : @(r.execution.c_str()),
         @"schema_version" : @1,
@@ -330,7 +331,72 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"limitation" : recipe.executable
             ? @"capabilities depend on model artifacts and configured hardware"
             : @"native executor migration incomplete"
-    };
+    } mutableCopy];
+    if (r.streaming.active()) {
+        result[@"executable"] = @NO;
+        result[@"memory_estimate_kind"] = @"requires_layout_metadata";
+        NSMutableDictionary *origins = [NSMutableDictionary dictionary];
+        for (const auto &[key, origin] : r.streaming.provenance)
+            origins[@(key.c_str())] = @(origin.c_str());
+        result[@"streaming"] = @{
+            @"requested_layout": r.streaming_requested
+                ? streaming_config_dictionary(*r.streaming_requested) : (id)NSNull.null,
+            @"merged_intent": streaming_config_dictionary(r.streaming),
+            @"field_provenance": origins,
+            @"eligibility": @"plan_only",
+            @"execution_supported": @NO,
+            @"rejection_code": @"streaming_layout_not_certified",
+            @"resolution_state": @"requires_checkpoint_metadata",
+            @"resolved_layout": NSNull.null,
+            @"actual_layout": NSNull.null,
+            @"enforcement": @"none"
+        };
+    }
+    if (plan.memory_policy) {
+        const auto &policy = *plan.memory_policy;
+        result[@"memory_policy"] = @{
+            @"enabled" : @(policy.enabled),
+            @"user_limit_bytes" : @(policy.user_limit_bytes),
+            @"effective_budget_bytes" : @(policy.effective_budget_bytes),
+            @"system_reserve_bytes" : @(policy.system_reserve_bytes),
+            @"buffer_percent" : @(policy.buffer_percent),
+            @"max_refill_slots" : @(policy.max_refill_slots),
+            @"allow_quality_preserving_tiling" :
+                @(policy.allow_quality_preserving_tiling),
+            @"estimate_fits" : @(policy.estimate_fits),
+            @"route_available" : @(policy.route_available),
+            @"execution_supported" : @(policy.execution_supported),
+            @"capability_level" :
+                @(memory_capability_level_name(policy.capability_level)),
+            @"certification_state" :
+                @(memory_certification_state_name(policy.certification_state)),
+            @"release_stable" : @(policy.release_stable),
+            @"manifest_digest" : @(policy.manifest_digest.c_str()),
+            @"evidence_digest" : @(policy.evidence_digest.c_str()),
+            @"planned_upper_bytes" : @(policy.planned_upper_bytes),
+            @"framework_upper_bytes" : @(policy.framework_upper_bytes),
+            @"non_denoiser_reserve_bytes" :
+                @(policy.non_denoiser_reserve_bytes),
+            @"denoiser_budget_bytes" : @(policy.denoiser_budget_bytes),
+            @"refill_slots" : @(policy.refill_slots),
+            @"adapter_candidate" : @(policy.adapter_candidate.c_str()),
+            @"candidate_backend" : @(policy.candidate_backend.c_str()),
+            @"candidate_dtype" : @(policy.candidate_dtype.c_str()),
+            @"candidate_model_variant" :
+                @(policy.candidate_model_variant.c_str()),
+            @"candidate_sampler_mode" :
+                @(policy.candidate_sampler_mode.c_str()),
+            @"candidate_tiling_mode" :
+                @(policy.candidate_tiling_mode.c_str()),
+            @"effective_residency" : @(policy.effective_residency.c_str()),
+            @"estimate_provenance" : @(policy.estimate_provenance.c_str()),
+            @"admission_state" : @(policy.admission_state.c_str()),
+            @"enforcement_scope" : @(policy.enforcement_scope.c_str()),
+            @"reason" : @(policy.reason.c_str()),
+            @"digest" : @(policy.digest.c_str())
+        };
+    }
+    return result;
 }
 static NSDictionary *runtime_plan(const RunResult &result) {
     NSMutableDictionary *plan = [to_dictionary(result.plan) mutableCopy];
@@ -456,6 +522,144 @@ static NSDictionary *to_dictionary(const BlockResidencyMetrics &m) {
         @"request_wait_seconds" : @(m.request_wait_seconds),
     };
 }
+static NSDictionary *to_dictionary(const MemoryAdmissionMetrics &m) {
+    return @{
+        @"budget_bytes" : @(m.budget_bytes),
+        @"planned_increment_bytes" : @(m.planned_increment_bytes),
+        @"framework_upper_bytes" : @(m.framework_upper_bytes),
+        @"planned_process_upper_bytes" :
+            @(m.planned_process_upper_bytes),
+        @"allocation_ceiling_bytes" : @(m.allocation_ceiling_bytes),
+        @"ledger_budget_bytes" : @(m.ledger_budget_bytes),
+        @"ledger_process_baseline_bytes" :
+            @(m.ledger_process_baseline_bytes),
+        @"ledger_storage_bytes" : @(m.ledger_storage_bytes),
+        @"ledger_known_bytes" : @(m.ledger_known_bytes),
+        @"ledger_committed_bytes" : @(m.ledger_committed_bytes),
+        @"ledger_active_bytes" : @(m.ledger_active_bytes),
+        @"ledger_reserved_bytes" : @(m.ledger_reserved_bytes),
+        @"ledger_pending_release_bytes" :
+            @(m.ledger_pending_release_bytes),
+        @"ledger_cached_bytes" : @(m.ledger_cached_bytes),
+        @"ledger_unknown_bytes" : @(m.ledger_unknown_bytes),
+        @"ledger_peak_unknown_bytes" : @(m.ledger_peak_unknown_bytes),
+        @"initial_process_footprint_bytes" :
+            @(m.initial_process_footprint_bytes),
+        @"peak_process_footprint_bytes" : @(m.peak_process_footprint_bytes),
+        @"final_process_footprint_bytes" : @(m.final_process_footprint_bytes),
+        @"unattributed_process_footprint_bytes" :
+            @(m.unattributed_process_footprint_bytes),
+        @"peak_unattributed_process_footprint_bytes" :
+            @(m.peak_unattributed_process_footprint_bytes),
+        @"peak_observed_over_budget_bytes" :
+            @(m.peak_observed_over_budget_bytes),
+        @"system_available_bytes_at_admission" :
+            @(m.system_available_bytes_at_admission),
+        @"final_system_available_bytes" :
+            @(m.final_system_available_bytes),
+        @"minimum_system_available_bytes" :
+            @(m.minimum_system_available_bytes),
+        @"ledger_peak_committed_bytes" : @(m.ledger_peak_committed_bytes),
+        @"ledger_storage_count" : @(m.ledger_storage_count),
+        @"ledger_site_allocation_count" :
+            @(m.ledger_site_allocation_count),
+        @"ledger_site_reserved_count" : @(m.ledger_site_reserved_count),
+        @"ledger_site_active_count" : @(m.ledger_site_active_count),
+        @"ledger_site_pending_count" : @(m.ledger_site_pending_count),
+        @"ledger_site_cached_count" : @(m.ledger_site_cached_count),
+        @"observation_count" : @(m.observation_count),
+        @"observed_within_budget" : @(m.observed_within_budget),
+        @"tainted" : @(m.tainted),
+        @"worker_quarantined" : @(m.worker_quarantined),
+        @"pressure_transitions" : @(m.pressure_transitions),
+        @"pressure_state" : @(m.pressure_state.c_str()),
+        @"execution_state" : @(m.execution_state.c_str()),
+        @"watchdog_sample_count" : @(m.watchdog_sample_count),
+        @"watchdog_dropped_samples" : @(m.watchdog_dropped_samples),
+        @"watchdog_critical" : @(m.watchdog_critical),
+        @"watchdog_failure_reason" : m.watchdog_failure_reason.empty()
+            ? (id)[NSNull null] : @(m.watchdog_failure_reason.c_str()),
+        @"trace_event_count" : @(m.trace_event_count),
+        @"trace_dropped_events" : @(m.trace_dropped_events),
+        @"trace_overflowed" : @(m.trace_overflowed),
+        @"explicit_epoch_transition_count" :
+            @(m.explicit_epoch_transition_count),
+        @"automatic_epoch_transition_count" :
+            @(m.automatic_epoch_transition_count),
+        @"current_epoch" : @(m.current_epoch),
+        @"planned_peak_epoch" : @(m.planned_peak_epoch),
+        @"schedule_event_count" : @(m.schedule_event_count),
+        @"schedule_event_attempted_count" :
+            @(m.schedule_event_attempted_count),
+        @"schedule_event_rejected_count" :
+            @(m.schedule_event_rejected_count),
+        @"schedule_expected_event_count" :
+            @(m.schedule_expected_event_count),
+        @"schedule_mismatch_count" : @(m.schedule_mismatch_count),
+        @"schedule_next_sequence" : @(m.schedule_next_sequence),
+        @"schedule_cursor_state" : @(m.schedule_cursor_state.c_str()),
+        @"schedule_first_failure" : m.schedule_first_failure.empty()
+            ? (id)[NSNull null] : @(m.schedule_first_failure.c_str()),
+        @"schedule_cursor_complete" : @(m.schedule_cursor_complete),
+        @"swap_observation_available" : @(m.swap_observation_available),
+        @"swap_counter_invalid" : @(m.swap_counter_invalid),
+        @"swap_activity_detected" : @(m.swap_activity_detected),
+        @"swap_sample_count" : @(m.swap_sample_count),
+        @"swapins_begin" : @(m.swapins_begin),
+        @"swapins_end" : @(m.swapins_end),
+        @"swapins_delta" : @(m.swapins_delta),
+        @"swapouts_begin" : @(m.swapouts_begin),
+        @"swapouts_end" : @(m.swapouts_end),
+        @"swapouts_delta" : @(m.swapouts_delta),
+        @"compressed_pages_begin" : @(m.compressed_pages_begin),
+        @"compressed_pages_end" : @(m.compressed_pages_end),
+        @"swap_first_observed_phase" :
+            m.swap_first_observed_phase.empty()
+                ? (id)[NSNull null]
+                : @(m.swap_first_observed_phase.c_str()),
+        @"swap_observation_source" :
+            m.swap_observation_source.empty()
+                ? (id)[NSNull null]
+                : @(m.swap_observation_source.c_str()),
+        @"failure_disposition" : @(m.failure_disposition.c_str()),
+        @"failure_reason" : m.failure_reason.empty()
+            ? (id)[NSNull null] : @(m.failure_reason.c_str()),
+        @"cleanup_failure" : m.cleanup_failure.empty()
+            ? (id)[NSNull null] : @(m.cleanup_failure.c_str()),
+        @"last_phase" : @(m.last_phase.c_str()),
+        @"observation_source" : @(m.observation_source.c_str()),
+    };
+}
+static NSDictionary *to_dictionary(const MemoryTraceEvent &event) {
+    return @{
+        @"sequence" : @(event.sequence),
+        @"monotonic_ns" : @(event.monotonic_ns),
+        @"kind" : @(memory_trace_event_kind_name(event.kind)),
+        @"phase_id" : @(event.phase_id),
+        @"site_id" : @(event.site_id),
+        @"epoch" : @(event.epoch),
+        @"upper_bytes" : @(event.upper_bytes),
+        @"actual_bytes" : @(event.actual_bytes),
+        @"committed_bytes" : @(event.committed_bytes),
+        @"reserved_bytes" : @(event.reserved_bytes),
+        @"pending_bytes" : @(event.pending_bytes),
+        @"stage_id" : @(event.stage_id),
+        @"slot_id" : @(event.slot_id),
+        @"status" : @(event.status),
+    };
+}
+static NSArray *to_array(const std::vector<MemoryTraceEvent> &events) {
+    NSMutableArray *result = [NSMutableArray arrayWithCapacity:events.size()];
+    for (const auto &event : events)
+        [result addObject:to_dictionary(event)];
+    return result;
+}
+NSDictionary *to_dictionary(const MemoryExecutionReport &report) {
+    return @{
+        @"memory_admission" : to_dictionary(report.metrics),
+        @"memory_trace" : to_array(report.trace),
+    };
+}
 RunResult native_run_result(NSDictionary *value, const Request &request,
                             const ExecutionPlan &plan) {
     require([value isKindOfClass:NSDictionary.class], "native session returned an invalid result");
@@ -493,6 +697,12 @@ NSDictionary *to_dictionary(const RunResult &result) {
             copy[@"lora_strategy"] = @(effective_lora_strategy(result.request).c_str());
         if (result.block_residency)
             copy[@"block_residency"] = to_dictionary(*result.block_residency);
+        if (result.memory_admission)
+            copy[@"memory_admission"] = to_dictionary(*result.memory_admission);
+        if (!result.memory_trace.empty())
+            copy[@"memory_trace"] = to_array(result.memory_trace);
+        if (result.memory_admission)
+            copy[@"plan"] = runtime_plan(result);
         if (result.encoder_hybrid) {
             copy[@"encoder_execution"] = @"gpu_ane_experimental";
             copy[@"encoder_runtime_backend"] = encoder_backend_label(
@@ -517,8 +727,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         encoder_gpu_graph_label(r, result.encoder_hybrid.has_value());
     auto encoder_precision = result.encoder_hybrid ? @"bf16_gpu+int8_mlp_fp16_io"
                                                     : @"bf16";
-    if (result.prepared)
-        return @{
+    if (result.prepared) {
+        NSMutableDictionary *prepared = [@{
             @"acceleration_selection" : @(result.selection.c_str()),
             @"prepared" : @YES,
             @"warmup" : @(result.warmup),
@@ -542,12 +752,21 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"mlx_active_bytes" : @(result.active_bytes),
             @"hybrid" : hybrid,
             @"encoder_hybrid" : encoder_hybrid
-        };
-    NSDictionary *memory = @{
+        } mutableCopy];
+        if (result.memory_admission)
+            prepared[@"memory_admission"] =
+                to_dictionary(*result.memory_admission);
+        if (!result.memory_trace.empty())
+            prepared[@"memory_trace"] = to_array(result.memory_trace);
+        return prepared;
+    }
+    NSMutableDictionary *memory = [@{
               @"mlx_peak_bytes" : @(result.peak_bytes),
               @"mlx_active_bytes" : @(result.active_bytes),
               @"scope" : @"MLX allocator; excludes Core ML/OS/file cache"
-          };
+          } mutableCopy];
+    if (result.memory_admission)
+        memory[@"admission"] = to_dictionary(*result.memory_admission);
     NSMutableDictionary *value = [@{
         @"acceleration_selection" : @(result.selection.c_str()),
         @"schema_version" : @1,
@@ -594,6 +813,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"lora_applied_projections"] = @(result.lora_applied_projections);
     if (result.block_residency)
         value[@"block_residency"] = to_dictionary(*result.block_residency);
+    if (!result.memory_trace.empty())
+        value[@"memory_trace"] = to_array(result.memory_trace);
     return value;
 }
 } // namespace tc

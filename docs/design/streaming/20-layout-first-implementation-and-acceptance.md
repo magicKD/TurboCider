@@ -1,0 +1,315 @@
+# 20 · 布局优先实施清单与验收交付
+
+[目录](README.md) · [架构和算法](19-layout-first-architecture.md) · [代码施工矩阵](18-code-change-matrix.md) · [唯一验收规范](12-acceptance-playbook.md)
+
+日期：2026-09-16。本文补充**从当前工作树往前推进**的 PR 内容、依赖、负例和交付证据。
+不另设里程碑编号：F0–F9 沿用11，L0–L3 是12中的验收层级，不拿它们重新命名工作包。
+当前源码事实与重跑结果归档到13第11节。v2补强已实施，完整request owner/session仍待接；不把整个dirty工作树归因于本轮。
+
+## 1. 当前完成到哪里
+
+| 项目 | 源码核对结果 | 不能据此宣称 |
+|---|---|---|
+| config/compiler | 有严格参数、canonical、source/materialization/pass/workload | 全请求 upper 已完整 |
+| slot/executor/C bridge | 有持久 pool/workers、generation、单 class streamed、drain | resident/multi-class 或服务 quarantine 已闭环 |
+| LTX metadata | StreamingMetadata 拥有 fd/header，snapshot identity 与 v2 same-source checks 已实现 | content hash/文件不可变已证明 |
+| LTX 内部 adapter | v2 K1/K2/K3、v1 K3 smoke；connector、cancel、borrow cleanup 已验证 | 已获得完整请求/production 资格 |
+| LTX 正常 session | 仍调用 ltx_native_create，使用旧 void deleter | 公开 exact generate 已接通 |
+| public API | generate/prepare 仍拒绝 active manual | 配置能解析就能执行 |
+| 性能 | 有历史 tiny 时序，无正式 normal-target ABBA | 默认无回归、快于 swap、bounded 发布 |
+
+本轮重新 native-only build、host fault/snapshot 和沙箱外 LTX v1/v2 smoke 通过；这些仍不等同于完整请求或生产资格。
+下一步是 artifact trust、request owner/完整 session 和正式质量/性能门，而不是继续横向复制其他模型。
+
+## 2. 依赖与交付顺序
+
+```text
+F0 route/config 已有底座
+  └─ F1 + F3a: 同 snapshot / construction validation
+       ├─ F9a: inspect + evidence schema + independent verifier（早做）
+       └─ F2 + F3d: request owner / LTX 完整 session / 故障清理
+            └─ F6-layout: normal-target quality + P0/P1
+                 ├─ 精确 tuple 的 LTX production 记录
+                 ├─ F4: H3 K2/G1
+                 └─ F8a: Flux/Z-Image component lifecycle
+
+F5: whole-request closure + same-layout guard
+  └─ F6-bounded: 完整 L2/L3 + P2 → bounded 记录
+F9a P3/P4: 实测决定推荐，不作为安全资格的替代
+```
+
+实验 test build 应在 F6 之前就能跑完整请求用于取得证据，但 release gate 继续关闭。
+不能把“必须认证后才能测试、必须测试后才能认证”做成循环依赖。
+
+## 3. PR：F1/F3a snapshot、ABI 与 construction 补强（最高优先级）
+
+### 3.1 修改文件和职责
+
+- `native/models/ltx_runtime/ltx_native.h`：明确 v2 struct/version、borrow、failure out、destroy 合同。
+- `ltx_blocks.c`：v1/v2 共用 exact options validator，但不改变 v1 ABI 或 legacy options。
+- `ltx_safetensors.h/.m`：fd/header 验证、duplicate/map cleanup；保持 caller fd 所有权。
+- `ltx_streaming_descriptor.*`：snapshot/change-check 与 immutable artifact 注册的边界。
+- `ltx_streaming_adapter.inc`：construction view 对 compiled field/binding 逐项校验。
+- tests：新增 v2 malformed/ownership fixture，扩展真实 model harness。
+
+### 3.2 审计接缝与已实施范围
+
+1. `ltx_native_create_streamed_v2` 的入口检查此前没有与 v1 完全对齐；本轮已提取 shared validator：
+   两者现在都检查 out、plan struct/version、generation、groups/capacity pointers、K/Q/D/P 等；
+   现在先完整校验再做 metadata/GPU构造；测试见`test_ltx_streaming_snapshot.py`。
+2. `ltx_st_map_fd`现在duplicate fd、校验device/inode/size/time snapshot并建立整文件 mmap；
+   这不同于 metadata projection 的 fd-only 行为。不能写“整个运行没有 mmap”，
+   也不能把虚拟 mapping 长度当物理峰值或把 `madvise` 当立即释放证明。
+3. borrowed header 是 shallow copy，mapping 则是 native 自己的 duplicate/mmap；
+   每条成功/失败/quarantine 路径分别证明 native 只释放自己拥有的资源。
+4. 当前 v2 传 header+fd，并未形成 descriptor digest→artifact identity→每个 helper reader 的完整绑定。
+   同大小错误fd、stat snapshot失效已有拒绝测试；trusted hash/registry和其他artifact仍待接。
+5. `tests/native/ltx_streaming_model_test.cpp` 现在支持`--exact-api 2`并传入`StreamingMetadata`的header/fd；
+   v2真实K1/K2/K3与connector smoke已运行，但仍非完整Gemma/VAE/export。
+
+上述已实施部分见13第11节。完整fault/quarantine、field级view、trusted identity与session资格仍不由这些smoke授予。
+
+### 3.3 必增测试（沿用 CMP/FLT/GPU gate）
+
+| 子用例 | 输入/操作 | 期望 |
+|---|---|---|
+| CMP-02/v2-abi | null out/plan、错误 size/version、null arrays、K0、D≥K、Q>K、invalid P | 稳定错误；无 GPU/权重分配；已提供的 out 正确初始化 |
+| CMP-02/v2-source | size 不符、同大小错误 fd/header、range 溢出 | 在构造前拒绝，不能以 total bytes 相等通过 |
+| CMP-02/snapshot | replace/truncate/原地改写 fixture | owner 检测失效；并发写入不在支持范围，不能承诺无竞态检测 |
+| FLT-01/v2-create | 第 n 次 prefix/slot/helper 分配失败 | 逆序清理；caller fd/header 未释放；unsafe 时保留非空 handle |
+| GPU-01/v2 | metadata→generic compiler→v2→两 stage | 同源构造、actual 与 plan 一致、latent parity |
+| FLT-02/v2-destroy | wrong owner/cancel/late reader | 不释放借用者；安全 destroy 后 caller 仍可 check_unchanged/read |
+
+fixture 文件修改只针对本测试创建的临时文件，不修改真实 checkpoint。
+host 部分与 Metal 部分拆开，设备不可访问时标设备未运行，不以 host PASS 替代。
+
+完成门：同源 construction 与版本化输入验证闭环、测试可复现；仍不授予 production。
+请求期间原地修改 artifact 不受支持，资格依赖可信不可变输入假设；不能通过 stat 反例测试就宣布强快照隔离。
+
+## 4. PR：F2/F3d request owner 与公共接线
+
+### 4.1 内部类型（建议，非已存在 API）
+
+```cpp
+// 名称示意：实际沿用已有 Result/error 风格，不引入第二套异常体系。
+struct StreamingPreflight {
+    OwnedMetadataSnapshot snapshot;
+    streaming::Descriptor descriptor;
+    ImmutableConstructionMetadata construction;
+};
+struct StreamingRequestContext {
+    StreamingPreflight preflight;
+    SharedImmutablePlan plan;
+    ModelExactOwner model;
+    OptionalBudgetBridge budget;
+    RequestTerminalState terminal;
+};
+```
+
+ModelSession 新增 metadata/bind/drain 的窄钩子，默认 unsupported。
+legacy 永远不调用这些钩子；不能把“requested exact 但没实现”当 no-op 成功。
+优先让 preflight 和 binding request-scoped，避免 session 全局状态泄漏到下一请求。
+
+### 4.2 逐文件任务
+
+| 文件 | 修改建议 | 不变项 |
+|---|---|---|
+| `native/runtime/session.hpp` | optional preflight/bind/report hook，声明 owner/lifetime | 原 generate 接口/默认实现路径 |
+| 拟增 `streaming/request_context.*` | snapshot、immutable plan、drain/quarantine ownership | 不复制 StageExecutor |
+| 拟增 `streaming/registry.*` | 精确 tuple 的只读资格；test/release 权限分离 | 不让请求 JSON/profile 自签 |
+| `native/api/c_api.mm` | gate 改为 real preflight→资格→bind；统一 generate/prepare 错误处理 | 不直接删除旧 gate，也不改默认 normalization |
+| `native/platform/apple/ltx_session.mm` | 独立 exact handle，connector/run/upsample/report 引用本次对象 | 原 denoiser cache/key/void deleter |
+| `native/platform/apple/results.mm` | requested/resolved/actual/authority 分开 | legacy 成功 JSON 保持兼容 |
+| `services/turbociderd/service.mm` | exact session key、unsafe owner、eviction/engine_free 协议 | 旧 key 与 GPU 单作业策略 |
+
+内部实验权限用专门 test build/harness；release 优化与正式执行代码相同，仅资格来源不同。
+不新增用户 unsafe 字段或可任意环境变量绕过资格。带实验权限的产物不得替换默认服务。
+
+### 4.3 LTX 接线核对清单
+
+1. metadata 描述实际 token/shape/format，两 stage/pass 不从 tiny fixture 常量复制。
+2. conditioning 缺失或命中旧 cache 时，preflight 失败不清模型；通过后才执行本次 lifecycle。
+3. native exact create 使用已验证 v2 view，检查实际字段而非仅总容量。
+4. connector、stage1、upsample、stage2 都使用 request exact handle，并明确各 artifact。
+5. 最后 pass drain 后释放 denoiser 域；latents、输出仍有独立 owner；再进入 VAE/export。
+6. exact 报告取真实 counters，不调用尾部旧 make_block_residency_plan 反推再自证。
+7. unsafe cleanup 保留整个 context，包括 sampler 暂存/metadata/callback；不只保留 MTLBuffer。
+8. prepare 的未支持模式精确拒绝，不把成功 generate 资格自动授予 prepare。
+
+### 4.4 所有权验收
+
+- 成功→成功、shape A→B→A：无旧 generation 内容误命中，pool/worker 不随 pass 增长。
+- 取消→safe terminal→新请求：不发布半成品，不泄漏本次 resources。
+- stage2/VAE/export 失败：primary error 不被 cleanup error 覆盖。
+- quarantine：不接下一请求，engine_free/session eviction 不绕过安全 owner。
+- 非协作 worker：外层测试 runner 限时，记录 TIMEOUT；不在被测进程强杀线程后宣称清理成功。
+- metadata/capability/资格拒绝：旧 resident/cache 不变。
+- default audit：新 descriptor/pool/workers/probe/cache-clear 调用为0。
+
+完成门：真实 prompt/text→两 stage→VAE→可用输出的实验完整请求；正常 workload 质量/lifetime 通过。
+这个门通过仍要跑 F6，不能把实验执行许可写成 production 资格。
+
+## 5. PR：F5 资源闭包与 guard 组合
+
+沿用现有 `memory_manifest/plan/execution/accounting` 等底座，补 adapter bridge；
+不要再建一套只计算 slot 的 memory scheduler。布局已选定，guard 不调用旧预算 heuristic。
+
+逐 site 交付：
+
+```text
+site_id / destination storage_id / allocator owner / resource domain
+creation epoch / first use / last reader / safe release epoch
+known upper or unknown(reason) / alias & envelope membership
+reserve / allocate / cancel-reserve / pending-release / release events
+```
+
+覆盖 text、raw/connected conditioning、prefix、slots、每 K 或每 Q 份 scratch（按真实归属）、
+stage activation、upsample old/new latent 重叠、VAE、输出/编码、control、framework/driver envelope。
+短暂大额分配也必须纳管，不能只看 100 ms 一次的采样。
+
+验收：
+
+- MEM-01：upper=B 允许、upper=B+1 拒绝；lower baseline 改变 admission 不改变 digest。
+- 相同 backing alias 只计一次；独立 derived buffer 各计；reservation→allocation 不双算。
+- 已 submit 但未完成的 release 仍计费；Vacant 不减 slot backing。
+- MEM-02：required unknown、失效观测、swapout 增长按05 fail-closed；不能 silent success。
+- guard off 不创建“无限预算 guard”，但 slot safety 仍完整。
+- 首发 request retention 终态不留未声明 backing；未来 session retention 另走 F9b。
+
+完整 L2/L3、P2 才能授予 bounded。P3 是否击败 swap 是独立性能问题，不是 bounded 安全资格的必要条件。
+Y 上限是05定义的纳管资源+envelope/观测合同，不能对系统全局 swap 作绝对保证。
+
+## 6. 模型扩展 PR 与支持矩阵
+
+### F4：H3
+
+先审计真实 active-block/first-block/step gate/next_streamed_block，再做 K2/G1；
+norm/AdaLN 小权重单列；fusion/外部 next-block reader 进入 last-use 闭包。
+如旧跨 forward 预取与新 pass drain 不同，该对照不能叫 P1；先表达等价模板或按 P4 报告。
+
+专项：非0首块、inactive gaps、末步无多余预取、延迟双 queue、read 错误、cancel。
+K1/去 xor/更多 K 是 F7 独立任务，不在 K2 发布时暗中放开。
+
+### F8a/F8b：Flux 与 Z-Image
+
+先统一 component scope，验证 materialized text/latent 在卸载后仍独立有效，
+检查 compiled graph/weight map/quant shard 的引用与缓存。新 route 的 eval/cache-clear 开销进 wall。
+旧 compiled/eager 内循环不改，不把 component unloading 叫 block slot streaming。
+
+block 阶段另交 ranged reader、heterogeneous class、fixed backing binding、content generation 验证；
+同地址换内容、不同 shape A→B→A、derived scale/解包峰值均是必测。不能证明 last reader 就留 component-only。
+
+每个模型使用相同 six-part adapter contract（见19），分别提交 exact tuple 资格；
+注册到 model 名字级别的无限能力禁止通过 review。
+
+## 7. 工具链与配置交付
+
+沿用16的 T0–T4；工具当前仍为规划，不伪造 CLI 已可运行。
+
+| 先后 | 最小交付 | 独立验收 |
+|---|---|---|
+| T0 | native inspect/plan，Python 只编排 | 不分配 GPU；真实 source/content/capacity；unknown 可见 |
+| T2/T3 基础 | campaign/raw schema + verifier | 缺 build/quality/raw、actual≠resolved、错误 P1 分类都拒绝 PASS |
+| T1 | 离散事件 simulator | 19 的 120/80 ms 算例、K1/多 queue、D0、Q限流、pass barrier |
+| T2 完整 | release ABBA runner | 保留失败/超时；cache/thermal/计时协议；不隐式施压 |
+| T4 | 有界 candidate sweep/preset exporter | 探索/确认集分离，不自动启用，不自签 registry |
+
+schema 分三份，防止混淆：
+
+- request/profile：仅02合法参数，使用 examples；没有 performance policy 或 certified 开关。
+- calibration/campaign：工具输入，绑定 workload/build/measurement protocol，不直接当 request。
+- evidence/registry sidecar：只读审查产物，性能硬件范围与执行/预算资格分别记录。
+
+preset 至少附适用 checkpoint/format/workload/GPU/SSD/RAM 条件和状态。
+unknown 硬件只能显示 experimental 候选，不做 RAM→K 自动映射。修改 K 必须重新校验 D/Q/P/G，
+Y 改变不改 layout digest。拒绝时解释峰值来源；VAE 主导不要只建议减少 denoiser slot。
+
+## 8. F6 性能执行卡：怎样证明“不能差”
+
+### 8.1 严格沿用 P0–P4
+
+| ID | A/B | 时间 gate（95%区间上界） | 附加条件 |
+|---|---|---|---|
+| P0 | 改动前/改动后同 legacy；resident/旧 streamed 分开 | wall/denoise median≤1.02，wall P95≤1.05 | 新 hook/probe/thread/pool/clear=0 |
+| P1 | 旧/新 executor 的等价布局与资源策略 | wall/denoise median≤1.03，wall P95≤1.05 | 同质量/格式/kernel，稳态框架 alloc/thread-create=0 |
+| P2 | 新同 layout guard off/on | 同执行段 median≤1.05，P95≤1.10 | 总 wall 单列；不能为性能删安全检测 |
+| P3 | 匹配条件的 OS-managed/新 streaming | 无预承诺加速百分比 | 需真实 paging 观测才能声称胜过 swap |
+| P4 | 两个显式 K/G/P/D/Q/policy 组合 | 同上 | 策略收益不算框架零开销 |
+
+P3/P4 宣称加速要求 speedup 的95%区间下界>1，同时质量/失败率/安全通过。
+P1 不只 K 一样，必须核对 P/G/D/Q、startup、跨 pass、retention、text/VAE 策略；
+不等价时改实验分类，不能降低 P1 门槛。所有阈值以12为准，后续只在12修订。
+
+### 8.2 执行步骤
+
+1. 冻结 workload 卡：tiny 排错、normal-target、largest-certified、repeated-request 各自用途；
+   seed、prompt、shape、steps、format、所有数值开关填实，敏感 prompt 不公开。
+2. 封存 before/after commit+dirty patch+untracked source 清单/hash、binary、编译器和依赖。
+   没有可信 before build 就不能做 P0 声明；同一新库的 legacy 只适合 P1/P4 等适当实验。
+3. quality/lifetime 先过；trace/audit/sanitizer 与 release timing 分开，两侧 instrumentation 一致。
+4. matched ABBA blocks；20 matched pairs 是首次分析起点，tail 至少50次有效请求仍可能不足。
+   提前约定 sample ceiling、bootstrap/quantile 方法、noise exclusion 和停止规则。
+5. 按 ABBA block 重采样，不能把11个 pass 变成11个独立请求样本。上界≤门槛 PASS；
+   下界>门槛 FAIL；其他 INCONCLUSIVE。不测到偶然通过才停止。
+6. 每个 workload/cache condition 单独签核。process cold 不等于 SSD cold；
+   request warm 不等于 retained weights。初次 compile/load 和必要 terminal cleanup 计入对应完整 wall。
+7. 保存所有失败/超时记录；baseline timeout 是删失时间，不拿 timeout 阈值计算倍速。
+8. 合成 tiny 或仿真只排错/选候选，不作为以上 gate 成绩。
+
+### 8.3 低内存与 swap 专项
+
+优先真实低内存专用机器，P3 两侧匹配外部负载/质量/cache 协议。
+人工 pressure 是可选且需另行明确授权的实验，不是必须对用户本机执行的步骤。
+限定资源、时长、磁盘余量和 thermal/pressure 停止阈值；不关 swap、不清用户 cache、不无界分配。
+
+分开报告 logical reads、physical I/O、faults、compression、swapin/out、managed peak 和 sampled process peak。
+系统计数不自动归因本进程；baseline 未发生可观测 swap 时只能比较当前低内存条件，不能宣传胜过 swap。
+软件 Y 只测试 guard；模拟 pager 不能替代实机。无授权/设备/可信观测分别记 NOT RUN/SKIP/INCONCLUSIVE。
+
+## 9. 每个 PR 的完成与发布检查单
+
+```text
+work_package: F1/F2/F3d/...（沿用11）
+scope: legacy touched? explicit route? bounded?
+contract: owner / borrowed resources / ABI / supported & rejected tuples
+source changes: 每文件职责，是否改变 kernel/batch/cache
+tests: CFG/CMP/RUN/FLT/MEM/GPU/PERF gate 下的具体子用例
+evidence: build/source/checkpoint identity、命令、raw artifacts
+performance: P0/P1/P2/P3/P4 = PASS/FAIL/INCONCLUSIVE/NOT RUN
+release: registry unchanged | reviewed exact record
+rollback: new route/record撤回；shared代码回归的修复/撤回方法
+```
+
+进入下一阶段必须有明确产物：
+
+| 完成门 | 必备产物 | 缺失时 |
+|---|---|---|
+| F1/F3a | v2校验/同源/ownership tests + compiled construction | 不接公开执行 |
+| F3d 实验完整请求 | normal-target 输出、质量、actual、cancel/repeat/cleanup | 不做 production |
+| F6-layout | L0/L1 + L2质量/lifetime + P0/P1 + review | 保留 experimental |
+| F5/F6-bounded | 全 site closure、完整L2/L3、P2、可靠观测 | 仅 layout-only |
+| F9 preset | 限定硬件/工作负载证据、独立确认集、合法 tuple | 只显示候选 |
+
+撤销 registry 只阻止未来新 route；默认 parser/kernel 若回归必须修复或撤回对应代码，
+不能只关新开关。任何“不知道最后谁还在用”“只有总 bytes 没有 field proof”
+“没有可信 baseline”“unknown 按0”都应阻断相应门。
+
+## 10. 本机执行范围与可复现命令
+
+当前已运行构建、host/API回归、v2真实Metal smoke与文档检查，没有正式GPU性能campaign/pressure，不改系统设置。
+完整请求与正式性能按上述计划实施；实际结果、sanitizer范围和构建hash写入13第11节。
+
+已有可执行命令（仓库根；native contract 先 build）：
+
+```sh
+env MLX_ROOT="$PWD/Python/lib/python3.13/site-packages/mlx" TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh
+python3 -B tests/native/test_streaming_layout.py
+python3 -B tests/native/test_ltx_streaming_descriptor.py
+python3 -B tests/native/test_ltx_streaming_snapshot.py
+python3 -B tests/native/test_streaming_contract.py
+python3 -B tests/native/test_contract.py
+python3 -B tests/repository/test_cpp_boundaries.py
+```
+
+descriptor 脚本不带 --checkpoint 时只测合成48-block fixture，不能写成真实 checkpoint 已重跑。
+ASan/UBSan/TSan 与真实 Metal 命令见13；没有本轮执行结果时只保留历史证据，不升级当前资格。
