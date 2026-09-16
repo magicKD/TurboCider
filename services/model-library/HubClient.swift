@@ -28,7 +28,35 @@ struct HubSnapshot: Codable, Sendable {
 /// Never forward hub credentials to a CDN on a cross-origin redirect.
 final class HubTransferDelegate: NSObject, URLSessionTaskDelegate, URLSessionDownloadDelegate, @unchecked Sendable {
     let progress: @Sendable (Int64, Int64) -> Void
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
+    private var task: URLSessionDownloadTask?
+    private var retainedLocation: URL?
+    private var retentionError: Error?
+    private var cancelled = false
     init(progress: @escaping @Sendable (Int64, Int64) -> Void = { _, _ in }) { self.progress = progress }
+
+    func download(_ request: URLRequest, using session: URLSession) async throws -> (URL, URLResponse) {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = session.downloadTask(with: request)
+                lock.lock()
+                self.continuation = continuation
+                self.task = task
+                let shouldCancel = cancelled
+                lock.unlock()
+                task.resume()
+                if shouldCancel { task.cancel() }
+            }
+        } onCancel: {
+            self.lock.lock()
+            self.cancelled = true
+            let task = self.task
+            self.lock.unlock()
+            task?.cancel()
+        }
+    }
+
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         let localTest = response.url?.scheme == "http" && ["127.0.0.1", "localhost"].contains(response.url?.host ?? "") &&
@@ -47,7 +75,34 @@ final class HubTransferDelegate: NSObject, URLSessionTaskDelegate, URLSessionDow
                     totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         progress(totalBytesWritten, totalBytesExpectedToWrite)
     }
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        let retained = FileManager.default.temporaryDirectory.appendingPathComponent("tc-hub-download-\(UUID())")
+        lock.lock()
+        do {
+            try FileManager.default.moveItem(at: location, to: retained)
+            retainedLocation = retained
+        } catch {
+            retentionError = error
+        }
+        lock.unlock()
+    }
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        lock.lock()
+        let continuation = continuation
+        let retained = retainedLocation
+        let failure = error ?? retentionError
+        self.continuation = nil; self.task = nil; retainedLocation = nil; retentionError = nil
+        lock.unlock()
+        guard let continuation else { return }
+        if let failure {
+            if let retained { try? FileManager.default.removeItem(at: retained) }
+            continuation.resume(throwing: failure)
+        } else if let retained, let response = task.response {
+            continuation.resume(returning: (retained, response))
+        } else {
+            continuation.resume(throwing: LibraryFailure(message: "Hub download completed without a file."))
+        }
+    }
 }
 
 struct HubClient: Sendable {
@@ -60,12 +115,12 @@ struct HubClient: Sendable {
         self.provider = provider; endpoint = testEndpoint ?? provider.endpoint; self.token = token
     }
 
-    private func session() -> URLSession {
+    private func session(delegate: HubTransferDelegate = HubTransferDelegate()) -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 24 * 3600
         config.httpCookieStorage = nil; config.urlCache = nil
-        return URLSession(configuration: config, delegate: HubTransferDelegate(), delegateQueue: nil)
+        return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }
 
     private func request(_ url: URL) -> URLRequest {
@@ -191,8 +246,11 @@ struct HubClient: Sendable {
         try LibraryStore.validateIdentifier(file.revision)
         let source = provider == .huggingface ? url("\(repository)/resolve/\(file.revision)/\(file.path)") :
             url("api/v1/models/\(repository)/repo", query: ["Revision": file.revision, "FilePath": file.path])
-        let session = session(); defer { session.invalidateAndCancel() }
-        let (temporary, response) = try await session.download(for: request(source), delegate: HubTransferDelegate(progress: progress))
+        // The async download convenience API does not forward download progress
+        // callbacks. Drive an explicit download task through its session delegate.
+        let delegate = HubTransferDelegate(progress: progress)
+        let session = session(delegate: delegate); defer { session.invalidateAndCancel() }
+        let (temporary, response) = try await delegate.download(request(source), using: session)
         defer { try? FileManager.default.removeItem(at: temporary) }
         _ = try check(response)
         try Task.checkCancellation()

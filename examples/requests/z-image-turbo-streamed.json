@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "model": "z-image-turbo",
+  "operation": "image.generate",
+  "inputs": [{"kind": "text", "role": "prompt", "text": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography."}],
+  "outputs": [{"kind": "image", "path": "/tmp/z-image-streamed.png", "width": 512, "height": 512}],
+  "sampling": {"steps": 8, "seed": 42},
+  "execution": {"policy": "gpu", "residency": "streamed", "memory_budget_bytes": 10737418240}
+}

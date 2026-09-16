@@ -165,8 +165,9 @@ ExecutionPlan make_plan(const Request &requested) {
         plan.memory_estimate_bytes = (12ull << 30) +
             uint64_t(r.width) * r.height * r.frames * (hybrid ? 1024 : 1408);
     else if (r.model == "z-image-turbo")
-        plan.memory_estimate_bytes = (25ull << 30) +
-            uint64_t(r.width) * r.height * 8192;
+        plan.memory_estimate_bytes = r.residency == "streamed"
+            ? std::max<uint64_t>(10ull << 30, r.memory_budget_bytes)
+            : (25ull << 30) + uint64_t(r.width) * r.height * 8192;
     else if (r.model == "z-image-turbo-gguf")
         plan.memory_estimate_bytes = (16ull << 30) +
             uint64_t(r.width) * r.height * 4096;

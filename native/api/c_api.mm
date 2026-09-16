@@ -378,26 +378,32 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
             DeviceLease device_lease;
             e->cancelled.store(false);
             auto request = tc::request_from_json(tc::parse_json(r));
-            auto request_plan = tc::make_plan(request);
             tc::require(!request.streaming.active(),
                         "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
-            // make_plan may normalize a constrained request to a certified
-            // streamed C/Metal route and assign the denoiser sub-budget.
-            // Propagate that effective request to every subsequent decision;
-            // passing the raw request here would silently fall back to the
-            // resident path and invalidate the admission result.
-            request = request_plan.request;
-            if (request_plan.memory_policy &&
-                request_plan.memory_policy->enabled)
+            // Preserve the dev/default hot path: sessions already compile
+            // their own plan, so API preplanning is only for the explicit
+            // constrained-memory add-on.
+            std::optional<tc::ExecutionPlan> request_plan;
+            if (request.memory_constrained.enabled) {
+                request_plan = tc::make_plan(request);
                 e->last_memory_report.reset();
+            }
+            // Candidate resolution may select a different backend/residency.
+            // uses_parent_mlx needs that resolved route, while the final
+            // runtime-adjusted budget is propagated after admission below.
+            if (request_plan)
+                request = request_plan->request;
             const bool parent_mlx = e->session->uses_parent_mlx(request);
             if (parent_mlx) {
                 tc::require(tc::mx::is_available(tc::mx::Device(tc::mx::Device::gpu)),
                             "Metal GPU unavailable");
                 configure_streams();
             }
-            memory_execution = prepare_memory_execution(
-                *e->session, request_plan, parent_mlx);
+            if (request_plan) {
+                memory_execution = prepare_memory_execution(
+                    *e->session, *request_plan, parent_mlx);
+                request = request_plan->request;
+            }
             tc::ScopedMemoryExecutionBinding memory_binding(
                 *e->session, memory_execution.get());
             if (memory_execution)
@@ -457,7 +463,7 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
                     result.memory_admission = report.metrics;
                     result.memory_trace = report.trace;
                     e->last_memory_report = std::move(report);
-                    result.plan.memory_policy = request_plan.memory_policy;
+                    result.plan.memory_policy = request_plan->memory_policy;
                 }
             } catch (const std::exception &failure) {
                 finalize_memory_failure(
@@ -842,13 +848,13 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
             std::optional<tc::ExecutionPlan> request_plan;
             if (!cache) {
                 parsed_request = tc::request_from_json(tc::parse_json(request));
-                request_plan = tc::make_plan(*parsed_request);
                 tc::require(!parsed_request->streaming.active(),
                             "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
-                parsed_request = request_plan->request;
-                if (request_plan->memory_policy &&
-                    request_plan->memory_policy->enabled)
+                if (parsed_request->memory_constrained.enabled) {
+                    request_plan = tc::make_plan(*parsed_request);
+                    parsed_request = request_plan->request;
                     e->last_memory_report.reset();
+                }
             }
             const bool parent_mlx = cache || e->session->uses_parent_mlx(*parsed_request);
             if (parent_mlx)
@@ -856,6 +862,8 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
             if (request_plan)
                 memory_execution = prepare_memory_execution(
                     *e->session, *request_plan, parent_mlx);
+            if (request_plan)
+                parsed_request = request_plan->request;
             tc::ScopedMemoryExecutionBinding memory_binding(
                 *e->session, memory_execution.get());
             if (memory_execution)

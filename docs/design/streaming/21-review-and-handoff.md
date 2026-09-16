@@ -49,7 +49,7 @@
 | `test_memory_execution.py` | PASS |
 | `test_memory_plan_compiler.py` | PASS |
 | memory 11-suite 独立补跑 | PASS：accounting / manifest / schedule / schedule_adapter / plan_compiler / scheduler / watchdog / trace / h3_schedule_memory / execution / probe |
-| `compare_streaming_legacy_plans.py` | 18 项一致；只证明 plan/error 兼容，不证明性能 |
+| `compare_streaming_legacy_plans.py` | 当前 merge candidate 与 `dev@ad343d4` 的 18 项一致；只证明 plan/error 兼容，不证明性能。旧的 pre-Z-Image 基线会因 dev 新增 `z-image-turbo/residency=streamed` 而产生预期差异。 |
 | 当前文档检查 | 23 个 active Markdown、193 个本地文件链接、3 个内嵌 JSON 与 6 个 JSON 示例有效；归档历史正文不参与格式验收 |
 | `make test PYTHON=python3` | **未完整通过**：沙箱内运行到 `test_video_timing.py` 时 writer 启动失败而停止，之后的 suite 不计为已执行；部分其他测试因 numpy/fixture/Metal 不可用 SKIP。 |
 | `test_video_timing.py` 沙箱外重跑 | PASS（1 test），支持沙箱限制判断；未修改视频代码。这不自动使整次 `make test` 变成 PASS。 |
@@ -80,9 +80,9 @@
 | 优先级 | 代码位置 / 现状 | 下一实现必须满足 |
 |---|---|---|
 | 发布阻断 | `native/api/c_api.mm::finalize_memory_failure` 在 drain 异常后仍尝试 `session.unload()`；`memory_execution` 是调用栈 owner，`tc_engine_free` 直接 delete engine | quarantine 必须保留整个 session/context/metadata/callback owner；无安全 drain 证明时不得 unload/free。目前 production memory registry 为空，不能把已有 bool 标志视为完整隔离机制。 |
-| 发布阻断 | 同文件中 `generate/preparation_call` 在 `prepare_memory_execution` **之前**复制 effective request；后者可能按运行时 baseline 再缩小 `request_plan.request.memory_budget_bytes` | admission 后把最终 request 传到 generate/prepare，或改为单一不可歧义的 admitted request owner。增加“clean baseline 导致 sub-budget 缩小”的测试，断言实际 session 与报告使用同一预算。当前空 registry 的 contract 测试不能覆盖成功 admission。 |
 | 发布阻断 | `LtxNativeSession` 仍用 legacy `ltx_native_create` 与 void deleter；内部 v2 plan view 仅在 native harness 使用 | 独立 exact owner，plan 数组的稳定生命周期，status-returning destroy；success/cancel/stage2/VAE/export failure 和 A→B→A 都覆盖，再替换 API gate。 |
-| 性能待验 | API 新增前置 `make_plan`，正常 session 内还会生成 plan；默认路径也多了条件分支 | “默认不建 descriptor/worker/probe”不等于“零新增 CPU 工作”。审计消除不必要的重复 planning，或复用结果；用 P0 测量默认 resident 和旧 streamed，不以源码检查代替时延证据。 |
+| 已在 dev 合并时修正，仍需 P0 | API 层曾对所有请求前置 `make_plan`，正常 session 内还会再规划 | 现在仅显式 `memory_constrained.enabled` 时 API 预规划；默认 resident、dev Z-Image streamed 和既有 streamed 路线不再重复 planning。仍需用 P0 测量，不以源码检查代替时延证据。 |
+| 已在 dev 合并时修正，需成功 admission 测试 | API 曾在 `prepare_memory_execution` 调整 runtime denoiser budget 之前复制 request | 现在 admission 后再次从 `request_plan->request` 传播最终预算到 generate/prepare；production registry 仍为空，后续要增加可执行 fixture 验证实际 session 与 report 使用同一预算。 |
 | 范围限制 | `retry_drain()` 有阻塞 join；snapshot 是 stat 身份，不是不可变文件隔离 | 不宣称硬超时回收或抗并发改写；必要时单独设计进程隔离/受信不可变 artifact，不扩大现有合同。 |
 
 以上均来自当前源码核对；未执行可触发危险释放的真实 GPU 故障实验，也未在本次整理中仓促重构 request/service 生命周期。
@@ -120,3 +120,45 @@ make test PYTHON=python3
 
 提交只包含源码、测试、构建接线、设计与配置示例；不包含 checkpoint、生成媒体、二进制、原始 benchmark
 输出或个人凭证。原始 before binary 仍留本地，其 provenance 限制见 13 第 3 节。提交不等于发布，不 push。
+
+## 6. 合并 dev 的整合记录（2026-09-16）
+
+合并基线为 `dev@ad343d4`。唯一文本冲突位于 `tests/native/test_contract.py`，解决方式是同时保留
+memory-constrained fail-closed 用例和 dev 的 Z-Image streamed 合同用例。Z-Image 权重 streaming 的核心
+文件与 dev 保持逐字节一致：`z_image.cpp/.hpp`、`weight_stream.hpp`、`z_image_weight_stream.mm` 和
+`z_image_module.cpp` 没有为了接入通用框架而改写热路径。
+
+整合时修正了两处 API 接缝：
+
+- `tc_engine_generate/prepare` 只在显式 `memory_constrained.enabled` 时提前 `make_plan`；默认 resident、
+  dev Z-Image streamed 和既有 streamed 请求不再在 API 与 session 重复规划。
+- constrained admission 调整 denoiser budget 后，再将 `request_plan->request` 传播给实际 session，避免
+  执行预算与 terminal report 不一致。
+
+验证结果：
+
+- native-only 和 Swift/App build PASS；82 项 native contract 中 81 PASS、1 个 Wan fixture SKIP；
+  streaming compiler/executor、LTX snapshot、memory 11-suite 和 repository boundaries PASS。
+- 真实 Metal 合成测试 PASS：Z-Image slot reuse/cancel/bad metadata，以及通用 K=1/2/3 reader fence。
+- HubClient localhost fixture、Studio behavior、RunInsights PASS；前两项因 localhost/Trash 权限在沙箱外运行。
+- merge candidate 与 dev 的 18 项 legacy plan/error 完全一致。
+
+### 6.1 与 dev 的短性能对照
+
+同机、本地 Comfy BF16 Z-Image、256×256、2 steps、seed 314159；dev dylib SHA-256
+`1d32961668237a2941bf43ce89beb458fe95c2a87daadf8dbac0fd671b9098b9`，merge candidate
+`f47c0ba1675fc0a92bdf4e54a4563fa681e1c61bebf19f93c5164a976b092807`。每种模式排除首轮后取 7 个
+warm 样本：
+
+| 模式 | dev wall median | candidate wall median | candidate/dev | MLX peak |
+|---|---:|---:|---:|---:|
+| resident | 0.618665 s | 0.618881 s | 1.00035（+0.035%） | 两者均 14,185,782,596 bytes |
+| streamed，6 GiB budget | 1.913177 s | 1.890266 s | 0.98802（-1.20%） | 两者均 4,778,391,876 bytes |
+
+resident denoise median 的 candidate/dev 比值为 1.00031；streamed 为 0.99026。全部 resident/streamed、
+dev/candidate 输出使用同一 PNG SHA-256：
+`a38f7028b441878dc146a316ed1945a104c07b46b36e06292509f97feccd65a9`。
+
+该短 campaign 支持“本次合并未观察到相对 dev 的回退”，但不是 [12](12-acceptance-playbook.md)
+定义的 normal-target P0/P1：样本小、没有置信区间、系统状态未隔离，也不用于宣称 streaming 普遍快于
+resident。正式发布仍需按 P0–P4 运行。

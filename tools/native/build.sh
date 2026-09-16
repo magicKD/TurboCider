@@ -56,6 +56,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
  native/models/z_image/gguf.cpp
  native/models/z_image/z_image.cpp
+ native/platform/apple/z_image_weight_stream.mm
  native/models/llada/llada.cpp native/models/llada/llada_text.cpp
  native/models/llada/llada_transformer.cpp
  native/models/flux2/pipeline.cpp native/models/flux2/flux_text.cpp native/models/flux2/flux_transformer.cpp
