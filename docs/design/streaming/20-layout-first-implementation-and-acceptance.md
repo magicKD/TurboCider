@@ -323,22 +323,24 @@ ASan/UBSan/TSan 与真实 Metal 命令见13；没有本轮执行结果时只保�
 | Compile | `StreamingMetadata` + generic descriptor/layout + `StreamingPlanView` | trusted artifact/content identity；多class/多stage |
 | Bind | plan arrays复制给C executor；header/fd由request owner借用 | service级不可变artifact lease与registry记录 |
 | Execute | candidate-only connector→Stage1→upsample→Stage2；G1/P≥1/K1..3 | audio/I2V/LoRA/ANE/近似、H3/Flux/Z适配 |
-| Release | status destroy；失败保留完整state到session quarantine | cancel/阶段失败/engine teardown系统矩阵，进程隔离策略 |
+| Release | status destroy；失败保留完整state；Stage 1/2取消、VAE边界、export失败后的同engine恢复已实测 | unsafe-drain注入、engine teardown、metadata/first-fill/upsample取消、进程隔离策略 |
 | Observe | digest、resolved/actual layout、slot/fill/logical bytes | physical I/O、fault/compression/swap归因、whole-request upper |
 | Gate | public constructor仍`streaming_layout_not_certified` | normal-target P0/P1、bounded P2/P3、reviewed registry |
 
-### 11.1 接下来先做生命周期，不先扩大tuple
+### 11.1 生命周期当前覆盖与剩余项
 
-下一PR应使用同一candidate入口补以下顺序，并把每次handle generation、owner thread、destroy结果和quarantine终态写入raw evidence：
+显式opt-in真实GPU测试已使用同一candidate engine覆盖：Stage 1取消→成功、success→success、
+A(64×64)→B(128×64)→A、Stage 2取消→成功、VAE边界取消→成功、export失败→成功；
+每次成功均验证actual layout、slot/fill counter和Stage-2 latent hash。当前剩余：
 
-1. success→success：同shape、同layout连续两次，确保request retention不泄漏到session cache。
-2. A→B→A：layout digest和capacity随shape切换，第三次不能错误复用第一或第二次内容generation。
-3. cancel：分别在metadata/first fill/Stage 1/upsample/Stage 2触发；caller latent提交、worker join和重试destroy必须符合合同。
-4. failure：Stage 2、VAE、RGB/export失败；exact handle应在last GPU reader后释放，media失败不能重新触碰已销毁handle。
-5. unsafe destroy：故障注入强制首次drain失败，验证完整`LtxExactRequestState`进入quarantine；owner-thread retry成功前
+1. cancel：补metadata、first fill和upsample精确边界；caller latent提交、worker join和destroy结果必须可观测。
+2. failure：补decoder内部失败、RGB转换失败和engine teardown；media失败不能重新触碰已销毁handle。
+3. unsafe destroy：故障注入强制首次drain失败，验证完整`LtxExactRequestState`进入quarantine；owner-thread retry成功前
    session拒绝新请求，最终仍不安全时不得释放borrowed metadata。
+4. service：验证请求线程迁移时owner mismatch保持fail-closed，受控worker可在原owner线程重试或隔离退出。
 
-这组测试通过前，不把K上限扩到3以上，不开放session retention，也不新增用户可绕过资格的unsafe开关。
+当前`generate()`会在发现quarantine时先调用status destroy重试，成功才继续，失败则保留state并拒绝。
+剩余测试通过前，不把K上限扩到3以上，不开放session retention，也不新增用户可绕过资格的unsafe开关。
 
 ### 11.2 性能验收分层
 

@@ -490,7 +490,7 @@ LTX exact的新增执行能力只授予内部candidate constructor，public mode
 最终重建native dylib SHA-256：
 
 ```text
-9fe0412da08df4f82b352b6c86c6eee3001a1a4b61133079b76ee9ceec43e138
+5d72812ec38af6e6164e7ff318dc362ab7ccbef14091c90ae024bb30107990c2
 ```
 
 最终构建再次完成真实exact请求，`plan.streaming`同时报告requested、resolved和actual layout，
@@ -548,11 +548,45 @@ logical bytes与fill定义也不同，不能只凭本表宣称内存减半或普
 
 ### 12.5 当前未完成项
 
-1. 增加session级生命周期矩阵：success→success、shape A→B→A、cancel→owner retry、
-   Stage 2/VAE/export failure、unsafe destroy/quarantine与engine teardown。
+1. session级success→success、shape A→B→A、Stage 1/Stage 2取消、VAE边界取消和export失败恢复已覆盖；
+   仍需可重复的unsafe destroy/quarantine故障注入、engine teardown和metadata/first-fill/upsample取消。
 2. 把mutable-file snapshot升级为可信artifact/content identity，并处理service级隔离；当前stat snapshot
    不能防并发原地改写，process-exit leak只是避免use-after-free的最后防线。
 3. 完成normal-target/largest/repeated-request release ABBA P0/P1，补P95与置信区间；当前tiny不签资格。
 4. 完成whole-request resource closure、BudgetGuard与可靠swap/pressure观测后才能做P2/P3和bounded承诺。
 5. exact report已有actual layout，但production registry仍为空；不得用candidate authority绕过public gate。
 6. 按同一adapter contract推进H3 K2/G1，再做Flux/Z-Image component-staged或model-specific block adapter。
+
+### 12.6 同一engine生命周期矩阵（2026-09-16）
+
+新增显式opt-in目标：
+
+```sh
+make PYTHON=Python/bin/python3 test-ltx-streaming-lifecycle \
+  MODEL="$PWD/models/LTX-2.5" OUTPUT=/private/tmp/turbocider-ltx-lifecycle
+```
+
+该目标不会进入默认`make test`，不施加人工内存压力；它使用一个candidate engine完成整个序列，
+因此不能用进程退出掩盖request owner泄漏。最终真实GPU结果：
+
+| 顺序/故障 | 结果 |
+|---|---|
+| Stage 1 streamed block取消→下一请求 | PASS |
+| A success→A success | PASS；layout和Stage-2 latent hash相同 |
+| A(64×64)→B(128×64)→A | PASS；digest A/B不同，返回A后恢复原digest和latent hash |
+| Stage 2 streamed block取消→下一请求 | PASS |
+| `video_vae`边界取消→下一请求 | PASS；exact handle已在VAE前安全destroy |
+| output父路径为普通文件导致export失败→下一请求 | PASS |
+| 每次actual/resolved layout与counter | PASS；P8/G1/K3/D2/Q3、40 groups、11 passes、440 fills |
+
+所有A/recovery成功请求的Stage-2 latent SHA-256均为
+`7db71bf03027942b53af69ab914714583fe8f8d4c3ed2faf60f4aa4ed43f28fd`。
+A layout digest为`40b13657a746d27a9a44ec11f53485ac4163f23e92408eb7aef2bca1fdfca38a`，
+B为`9c1b0b90ab16f89541625a7284489a09b24557f1f88bfb38d8c77505a57120c8`。
+热态A/recovery wall约8.30–8.35秒；首个A为10.12秒，不用于正式性能结论。
+
+同时修正session quarantine重试：若异常析构首次无法证明安全，下一次同owner `generate()`先调用
+status-returning destroy重试；成功才继续，仍不安全则保留完整state并返回
+`streaming_worker_quarantined`。不强制释放borrowed metadata，也不新增用户可控的unsafe开关。
+当前尚无确定性session级unsafe-drain注入，因此此分支的release资格仍未完成；native/C bridge层已有
+错误线程与drain失败保留handle测试，不能冒充session级覆盖。

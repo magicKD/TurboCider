@@ -182,7 +182,7 @@ resident。正式发布仍需按 P0–P4 运行。
 最终native dylib SHA-256：
 
 ```text
-9fe0412da08df4f82b352b6c86c6eee3001a1a4b61133079b76ee9ceec43e138
+5d72812ec38af6e6164e7ff318dc362ab7ccbef14091c90ae024bb30107990c2
 ```
 
 最终源码重建后，host/contract专项再次PASS；真实GPU完整exact请求再次成功。结果中的
@@ -202,5 +202,24 @@ actual_layout.digest=40b13657a746d27a9a44ec11f53485ac4163f23e92408eb7aef2bca1fdf
 8.511698秒；denoise分别为7.674939秒和7.489339秒。两路Stage-2 BF16 byte-exact，最终视频逐帧相同。
 完整数字、限制和raw artifact范围见[13第12节](13-implementation-progress.md)。
 
-该检查点支持保存和继续开发，但不授予production资格：生命周期故障矩阵、normal-target P0/P1、
+### 7.1 同一engine生命周期补充
+
+新增`test-ltx-streaming-lifecycle`显式目标并在真实GPU运行通过。一个candidate engine连续覆盖：
+
+- Stage 1取消→成功；success→success；64×64→128×64→64×64。
+- Stage 2取消→成功；VAE边界取消→成功；export失败→成功。
+- 每次成功的actual/resolved layout、P8/G1/K3/D2/Q3 counter和latent hash一致。
+
+所有A/recovery Stage-2 latent SHA-256为
+`7db71bf03027942b53af69ab914714583fe8f8d4c3ed2faf60f4aa4ed43f28fd`；
+A/B layout digest分别为`40b13657a746d27a9a44ec11f53485ac4163f23e92408eb7aef2bca1fdfca38a`
+和`9c1b0b90ab16f89541625a7284489a09b24557f1f88bfb38d8c77505a57120c8`。
+
+session quarantine现在会在下一次同owner `generate()`先重试status destroy：成功才继续，失败则保持完整
+owner并返回quarantined错误。尚缺确定性unsafe-drain故障注入和engine teardown覆盖。
+
+最终默认resident热缓存样本为9.010764秒，denoise 6.950530秒；相对此前dev热样本9.039951秒/
+6.915945秒没有观察到wall回退，denoise差约+0.5%，仍属于tiny单样本，不签P0。
+
+该检查点支持保存和继续开发，但不授予production资格：unsafe quarantine矩阵、normal-target P0/P1、
 whole-request bounded guard、低内存P3和其他模型adapter仍是下一阶段门禁。

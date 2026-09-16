@@ -2204,11 +2204,17 @@ public:
         const auto request_started = Clock::now();
         require(request.model == "ltx-2.5-distilled",
                 "request model differs from LTX session");
-        require(exact_quarantine_ == nullptr,
-                std::string("streaming_worker_quarantined: recreate the LTX ") +
-                    "candidate engine" +
-                    (exact_cleanup_error_[0] ?
-                        std::string(": ") + exact_cleanup_error_.data() : ""));
+        if (exact_quarantine_) {
+            char retry_error[1024] = {};
+            require(destroy_ltx_exact_state(
+                        exact_quarantine_, retry_error, sizeof(retry_error)),
+                    std::string("streaming_worker_quarantined: exact cleanup ") +
+                        "retry is still unsafe; recreate the LTX candidate " +
+                        "engine" +
+                        (retry_error[0] ?
+                            std::string(": ") + retry_error : ""));
+            exact_cleanup_error_.fill(0);
+        }
         if (request.memory_constrained.enabled) {
             require(memory_bridge_.admission != nullptr &&
                         memory_context_ != nullptr &&
