@@ -5,7 +5,8 @@
 日期：2026-09-16。设计深化之后继续执行完整实现目标，本次已新增LTX真实模型adapter原型和实机测试，见第7节。完整目标仍是模型接入、正常运行和性能不回退，
 不是以 plan-only 或合成测试替代最终交付。下表描述当前工作树，不代表已发布版本。
 
-最新v2实现、host/真实GPU证据见第11节；第10节为先前文档核对快照。完整请求和正式性能验收仍未完成。
+最新candidate-only完整请求接线、host/真实GPU证据见第12节；第10、11节为此前实现快照。
+完整production资格、生命周期故障矩阵和正式性能验收仍未完成。
 本次提交前审阅和新增回归见 [21 审阅与交接](21-review-and-handoff.md)；下文历史结果不自动等同于本次重跑结果。
 
 ## 1. 已落地的基础代码
@@ -22,14 +23,15 @@
 | Stage执行器 | `native/runtime/streaming/context.*` | begin/run_pass/finish、单class streamed、池/worker跨pass保留、pass与step分离、lookahead/fence/drain | resident/multiclass、request orchestration、strict memory schedule、service quarantine接线 |
 | LTX metadata/fill/slot | `ltx_streaming_layout.*`、`ltx_streaming_slot.*` | 真实48-block metadata、source/destination/scratch区分、固定shared buffers、chunked pread、无分配fill | session construction与同一snapshot绑定、完整allocator上界/guard |
 | LTX generic projection | `ltx_streaming_descriptor.*` | fd-only snapshot、48-block source/derived bindings、11-pass/workload identity；真实checkpoint host验证 | trusted content identity、公开session接线、同fd构造/运行与完整resource plan |
-| LTX exact adapter | `ltx_streaming_adapter.inc`、`ltx_blocks.c` | versioned create、C executor、prefix/slot/conditioning/kernel binding、两stage池保留、错误清理 | 公共session/API接线、完整请求、正常shape、正式性能资格 |
+| LTX exact adapter | `ltx_streaming_adapter.inc`、`ltx_blocks.c`、`ltx_streaming_plan.*`、`ltx_session.mm` | versioned create、generic layout→C ABI投影、candidate-only request owner、connector→两stage→VAE/export完整请求、status destroy/quarantine | public production资格、完整故障/重复请求矩阵、normal-target性能和bounded guard |
 
 `layout.*`当前输出只是权重布局，不生成完整memory upper，不做任何production授权。
 StageExecutor的backing由adapter拥有，SlotSafetyTracker只维护内容状态，Vacant不会释放backing账。
 执行器目前拒绝resident与multi-class执行，不把编译器支持某种布局误报为执行器已经支持。
 
-公共API的新manual请求当前仍是plan-only；generate/prepare在进入模型计算/卸载前明确返回
-`streaming_layout_not_certified`。这是开发期资格门，不是最终实现终点，后续须由真实adapter+registry preflight取代。
+公共`tc_engine_create_model`的新manual请求仍是plan-only；generate/prepare在进入模型计算/卸载前明确返回
+`streaming_layout_not_certified`。内部`tc_engine_create_model_candidate`现在可以执行首批LTX exact tuple，
+但不构成production授权。这是开发期资格门，不是最终实现终点，后续须由真实证据和registry preflight取代。
 legacy resident/streamed数值kernel与loader继续保留；本次只在外层create/run/cleanup增加新分支，未将旧loader改成通用executor。
 
 ## 2. 此前验证记录与本次证据范围
@@ -322,7 +324,7 @@ python3 -B tests/native/test_ltx_streaming_descriptor.py \
 每次均1套pool、K个slot bundle、517 fills。total不含metadata compile、text、VAE/export；文件缓存、温度、
 顺序和CPU竞争未控制，不能从本表得出无回归或加速结论。snapshot投影已替换测试手写descriptor，但未解决下述同fd接线问题。
 
-### 9.4 仍未完成的端到端工作
+### 9.4 当时仍未完成的端到端工作（当前状态见第12节）
 
 1. `LtxNativeSession`尚未把公共`generate/prepare`接到exact construction view；API仍保持`streaming_layout_not_certified` gate。
 2. descriptor checkpoint identity仍是metadata snapshot；需把可信artifact/hash/registry与session preflight统一，不能仅依赖路径状态。
@@ -332,7 +334,7 @@ python3 -B tests/native/test_ltx_streaming_descriptor.py \
 4. request coordinator、whole-request resource closure、BudgetGuard和quarantine service ownership尚未完成。
 5. 尚无可信before/after normal-target ABBA P0/P1、P2 guard、P3低内存/swap campaign；K3 tiny timing只作排错观察。
 
-下一步优先级仍是 [18](18-code-change-matrix.md) 第4节的LTX session exact接线，然后质量/生命周期、P0/P1，最后才是公共registry和bounded release。
+该阶段提出的session exact接线和tiny完整质量已推进到第12节；生命周期、P0/P1、公共registry和bounded release仍未完成。
 
 ## 10. 布局优先设计续补与构建核对（2026-09-16，历史快照）
 
@@ -444,7 +446,7 @@ python3 -B tests/native/test_ltx_streaming_model.py \
   --slots 3 --exact-api 2 --conditioning connector
 ```
 
-### 11.5 仍未完成：下一步必须进入完整session
+### 11.5 当时未完成项（已由第12节部分推进）
 
 1. `LtxNativeSession`、API/service尚未绑定exact request owner，generate/prepare仍拒绝active manual。
    legacy void deleter不能承担unsafe owner；必须先接status-returning destroy与整体context保留。
@@ -456,5 +458,101 @@ python3 -B tests/native/test_ltx_streaming_model.py \
    本轮不能声明“性能保证不回退”“快于swap”或bounded发布。
 6. H3/Flux/Z-Image接入和完整预算guard仍属于总目标，不能以本节LTX native smoke替代。
 
-下一批实现应把已经验证的v2接进request-scoped owner与完整LTX session，取得真实prompt到成品输出，
-再开展正式质量/性能campaign；生产gate保留至对应证据足够。
+其中request-scoped owner、完整LTX candidate请求和真实prompt到成品输出已在第12节完成；
+production gate、故障矩阵、normal-target与bounded验收仍保留。
+
+## 12. dev合并后的LTX完整candidate接线与复核（2026-09-16）
+
+本节是当前状态。`dev@ad343d4`已通过merge commit `566f7a6`进入`feat/stream`；
+唯一文本冲突在native contract测试，解决时同时保留memory-constrained与Z-Image streamed合同。
+LTX exact的新增执行能力只授予内部candidate constructor，public model constructor继续fail-closed。
+
+### 12.1 代码接线
+
+- `ltx_streaming_plan.hpp/.cpp`新增`StreamingPlanView`：request-scoped拥有metadata/header/fd、generic
+  descriptor、immutable layout、稳定capacity/group数组、`tc_stream_stage_plan_v1`与v2 native options。
+  native create会复制plan数组，但borrowed header/fd必须活到status-returning destroy成功。
+- `LtxNativeSession`新增`LtxExactRequestState`与`LtxExactRequestOwner`。exact handle不进入legacy void deleter；
+  success在Stage 2后显式destroy，再进入VAE/export。异常栈展开时先重试安全destroy，仍无法证明安全则把
+  handle、metadata、layout整体转移到session quarantine，避免borrowed资源先失效。
+- candidate首批tuple限定为C/Metal GPU、dense T2V、无audio/I2V/LoRA/memory guard/Sol/sparse/text pruning、
+  `G=1`、`P>=1`、`K=1..3`；unsupported组合在checkpoint/GPU构造前拒绝。
+- connector、Stage 1、upsampler、Stage 2全部使用同一个request-owned exact handle；legacy resident、
+  component-staged和旧budget streamed仍直接使用原`denoiser_`路径，不构造metadata/layout/executor/worker。
+- `tc_engine_create_model_candidate`设置不可由request/profile控制的内部authority；
+  `tc_engine_create_model`和public prepare仍返回`streaming_layout_not_certified`。
+- actual result现在报告`c_metal_exact_v2`、layout digest、actual counters，并把
+  `plan.streaming.resolved_layout/actual_layout`标记为`executed_exact_v2`；这只是candidate执行事实，
+  不是production registry资格。
+
+### 12.2 最新源码验证
+
+最终重建native dylib SHA-256：
+
+```text
+9fe0412da08df4f82b352b6c86c6eee3001a1a4b61133079b76ee9ceec43e138
+```
+
+最终构建再次完成真实exact请求，`plan.streaming`同时报告requested、resolved和actual layout，
+`resolution_state=executed_exact_v2`、`authority=private_candidate_constructor`；public gate合同仍通过。
+
+| 检查 | 结果 | 备注 |
+|---|---|---|
+| 最新源码native-only build | PASS | 显式使用本机MLX SDK；全量重编译 |
+| `make test-streaming-host` | PASS | 3535 layouts、14 K/D/Q、C bridge、LTX metadata/descriptor/plan view |
+| `make test-streaming-contract` | PASS | snapshot、8 API contracts、candidate/public gate |
+| native contract | 82项：81 PASS + 1 Wan fixture SKIP | fixture缺失；无LTX失败 |
+| memory 13项集合 | PASS；2个Metal hook在沙箱内SKIP | accounting到execution、H3/LTX hooks |
+| repository boundaries及后半模型合同 | PASS | layout/independence/C++ boundaries/inventory等 |
+| `test_video_timing.py` | 沙箱内writer失败；沙箱外1 PASS | 环境限制，未修改视频代码 |
+| exact完整真实请求 | PASS | Gemma cache/connector、两stage、VAE、MP4 export全部完成 |
+| latent/video质量 | PASS | Stage-2 BF16 byte-exact；9帧RGB逐帧相同 |
+
+`make test`在沙箱内运行到AVFoundation writer时停止，因此不把一次命令写成全量PASS；
+被中断后的memory/model/inventory集合已独立补跑通过。沙箱内Metal不可见，真实LTX请求经授权在实体GPU环境运行。
+没有人工memory pressure、swap设置修改或模型文件写入。
+
+### 12.3 默认路径相对dev的短回归证据
+
+同机、真实LTX、64×64×9、11 steps、seed 42、同prompt与conditioning cache；
+dev基线dylib SHA-256为`b5334c0b790c7e727aafd5db842ca3f9746399131109386ade8fe403edec3892`。
+首次dev resident受冷页缓存影响为41.1871秒，不与后续热样本直接比较。缓存热后的交错复测：
+
+| 默认resident | wall秒 | denoise秒 | current/dev |
+|---|---:|---:|---:|
+| dev | 9.039951 | 6.915945 | 1.000000 |
+| current | 9.069556 | 6.918010 | wall 1.003275；denoise 1.000298 |
+
+当前分支的default request没有descriptor/executor/worker/probe，以上单样本差值为+0.33% wall、+0.03% denoise，
+未观察到相对dev的默认路径回退。它只是tiny短回归，不具备20-pair/置信区间/normal-target P0资格。
+已有Z-Image七个warm样本对照见21第6.1节，同样未观察到merge回退。
+
+### 12.4 matched legacy/exact短对照
+
+缓存热状态、相同完整请求；legacy由8 GiB budget解析为`P=8/K=3`，实际使用三loader；
+exact显式`P=8/G=1/K=3/D=2/Q=3`。第二次交错样本：
+
+| 路线 | wall秒 | denoise秒 | estimated weight working set | fills |
+|---|---:|---:|---:|---:|
+| legacy streamed | 8.519114 | 7.674939 | 8,570,908,800 bytes | 437 |
+| exact v2 | 8.511698 | 7.489339 | 4,271,222,912 bytes | 440 |
+
+exact/legacy ratio为wall 0.99913、denoise 0.97582。Stage-2 BF16两侧SHA-256均为
+`7db71bf03027942b53af69ab914714583fe8f8d4c3ed2faf60f4aa4ed43f28fd`；最终视频9帧
+correlation/cosine=1、MAE=0、motion relative error=0。layout digest为
+`40b13657a746d27a9a44ec11f53485ac4163f23e92408eb7aef2bca1fdfca38a`。
+
+process peak约7.10/7.11 GiB，说明weight working-set估计不是whole-process硬上限；
+logical bytes与fill定义也不同，不能只凭本表宣称内存减半或普遍快于swap。该结果属于tiny matched smoke，
+不是正式P1，更不是低内存P3。
+
+### 12.5 当前未完成项
+
+1. 增加session级生命周期矩阵：success→success、shape A→B→A、cancel→owner retry、
+   Stage 2/VAE/export failure、unsafe destroy/quarantine与engine teardown。
+2. 把mutable-file snapshot升级为可信artifact/content identity，并处理service级隔离；当前stat snapshot
+   不能防并发原地改写，process-exit leak只是避免use-after-free的最后防线。
+3. 完成normal-target/largest/repeated-request release ABBA P0/P1，补P95与置信区间；当前tiny不签资格。
+4. 完成whole-request resource closure、BudgetGuard与可靠swap/pressure观测后才能做P2/P3和bounded承诺。
+5. exact report已有actual layout，但production registry仍为空；不得用candidate authority绕过public gate。
+6. 按同一adapter contract推进H3 K2/G1，再做Flux/Z-Image component-staged或model-specific block adapter。

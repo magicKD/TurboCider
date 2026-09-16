@@ -18,6 +18,9 @@ struct tc_engine {
     std::mutex mutex;
     std::atomic<bool> cancelled{false};
     std::atomic<bool> memory_quarantined{false};
+    // Set only by the internal LTX candidate constructor. Production model
+    // creation remains fail-closed for unqualified manual layouts.
+    bool allow_experimental_streaming = false;
     std::optional<tc::MemoryExecutionReport> last_memory_report;
 };
 struct tc_coreml_ffn {
@@ -349,7 +352,10 @@ extern "C" int tc_engine_create_model_candidate(const char *id, const char *path
         if (error) *error = strdup("candidate executor is restricted to LTX");
         return 1;
     }
-    return tc_engine_create_model(id, path, engine, error);
+    const int status = tc_engine_create_model(id, path, engine, error);
+    if (!status && engine && *engine)
+        (*engine)->allow_experimental_streaming = true;
+    return status;
 }
 void tc_engine_cancel(tc_engine *e) {
     if (e)
@@ -378,7 +384,8 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
             DeviceLease device_lease;
             e->cancelled.store(false);
             auto request = tc::request_from_json(tc::parse_json(r));
-            tc::require(!request.streaming.active(),
+            tc::require(!request.streaming.active() ||
+                            e->allow_experimental_streaming,
                         "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
             // Preserve the dev/default hot path: sessions already compile
             // their own plan, so API preplanning is only for the explicit

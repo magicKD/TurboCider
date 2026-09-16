@@ -33,7 +33,7 @@ SOURCES=(
  native/runtime/streaming/config.cpp native/runtime/streaming/layout.cpp
  native/runtime/streaming/slot_pool.cpp native/runtime/streaming/io_executor.cpp native/runtime/streaming/context.cpp
  native/runtime/streaming/c_bridge.cpp
- native/models/ltx_runtime/ltx_streaming_descriptor.cpp
+ native/models/ltx_runtime/ltx_streaming_descriptor.cpp native/models/ltx_runtime/ltx_streaming_plan.cpp
  native/platform/apple/streaming_config.mm
  native/components/text/qwen3.cpp
  native/components/text/umt5.cpp

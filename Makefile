@@ -84,6 +84,7 @@ test-streaming-host:
 test-streaming-contract:
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_snapshot.py
 	@"$(PYTHON)" -B tests/native/test_streaming_contract.py
+	@"$(PYTHON)" -B tests/native/test_ltx_candidate_streaming_gate.py
 test-streaming-metal:
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_layout.py --metal

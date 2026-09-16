@@ -296,8 +296,8 @@ rollback: new route/record撤回；shared代码回归的修复/撤回方法
 
 ## 10. 本机执行范围与可复现命令
 
-当前已运行构建、host/API回归、v2真实Metal smoke与文档检查，没有正式GPU性能campaign/pressure，不改系统设置。
-完整请求与正式性能按上述计划实施；实际结果、sanitizer范围和构建hash写入13第11节。
+当前已运行构建、host/API回归、v2真实Metal smoke、candidate-only完整LTX请求和tiny性能/质量短对照，
+没有正式GPU性能campaign/pressure，不改系统设置。最新实际结果见13第12节；tiny完整请求不替代本文件P0–P4。
 
 已有可执行命令（仓库根；native contract 先 build）：
 
@@ -313,3 +313,41 @@ python3 -B tests/repository/test_cpp_boundaries.py
 
 descriptor 脚本不带 --checkpoint 时只测合成48-block fixture，不能写成真实 checkpoint 已重跑。
 ASan/UBSan/TSan 与真实 Metal 命令见13；没有本轮执行结果时只保留历史证据，不升级当前资格。
+
+## 11. 当前实现落点与下一施工切片
+
+截至2026-09-16，F3d已经从native harness推进到内部candidate完整请求，但production状态仍为experimental：
+
+| 设计对象 | 当前实现 | 仍需实现 |
+|---|---|---|
+| Compile | `StreamingMetadata` + generic descriptor/layout + `StreamingPlanView` | trusted artifact/content identity；多class/多stage |
+| Bind | plan arrays复制给C executor；header/fd由request owner借用 | service级不可变artifact lease与registry记录 |
+| Execute | candidate-only connector→Stage1→upsample→Stage2；G1/P≥1/K1..3 | audio/I2V/LoRA/ANE/近似、H3/Flux/Z适配 |
+| Release | status destroy；失败保留完整state到session quarantine | cancel/阶段失败/engine teardown系统矩阵，进程隔离策略 |
+| Observe | digest、resolved/actual layout、slot/fill/logical bytes | physical I/O、fault/compression/swap归因、whole-request upper |
+| Gate | public constructor仍`streaming_layout_not_certified` | normal-target P0/P1、bounded P2/P3、reviewed registry |
+
+### 11.1 接下来先做生命周期，不先扩大tuple
+
+下一PR应使用同一candidate入口补以下顺序，并把每次handle generation、owner thread、destroy结果和quarantine终态写入raw evidence：
+
+1. success→success：同shape、同layout连续两次，确保request retention不泄漏到session cache。
+2. A→B→A：layout digest和capacity随shape切换，第三次不能错误复用第一或第二次内容generation。
+3. cancel：分别在metadata/first fill/Stage 1/upsample/Stage 2触发；caller latent提交、worker join和重试destroy必须符合合同。
+4. failure：Stage 2、VAE、RGB/export失败；exact handle应在last GPU reader后释放，media失败不能重新触碰已销毁handle。
+5. unsafe destroy：故障注入强制首次drain失败，验证完整`LtxExactRequestState`进入quarantine；owner-thread retry成功前
+   session拒绝新请求，最终仍不安全时不得释放borrowed metadata。
+
+这组测试通过前，不把K上限扩到3以上，不开放session retention，也不新增用户可绕过资格的unsafe开关。
+
+### 11.2 性能验收分层
+
+- P0默认路径：dev与candidate分别测试resident和原legacy streamed；actual counters必须证明candidate关闭时
+  descriptor/executor/worker/probe均为0。已有tiny和Z-Image短对照仅用于发现明显回归。
+- P1布局框架：legacy与exact必须匹配P/G/K/D/Q、startup、loader并发、conditioning、VAE/export和cache状态；
+  `Q=1`结果不能与legacy三loader混为matched P1。
+- P2 guard：在同一exact layout上比较guard off/on；只测执行段和完整wall，不以删除安全检查换速度。
+- P3 swap：只有在baseline发生可观测paging且两侧外部负载匹配时，才能讨论“比swap快”；本机未授权pressure，当前NOT RUN。
+
+actual weight working set只是denoiser weight backing，不是process峰值。最新tiny中exact约4.27 GB、legacy约8.57 GB，
+但两侧process peak都约7.1 GB，因此验收工具必须同时保留model estimate、sampled process footprint和系统级paging证据。

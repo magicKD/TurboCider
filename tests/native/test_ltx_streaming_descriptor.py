@@ -27,7 +27,8 @@ def main():
         flags += ["-O2"]
     sources = ["native/runtime/streaming/config.cpp", "native/runtime/streaming/layout.cpp",
                "native/runtime/memory_manifest.cpp", "native/runtime/memory_policy.cpp",
-               "native/core/common.cpp", "native/models/ltx_runtime/ltx_streaming_descriptor.cpp"]
+               "native/core/common.cpp", "native/models/ltx_runtime/ltx_streaming_descriptor.cpp",
+               "native/models/ltx_runtime/ltx_streaming_plan.cpp"]
     with tempfile.TemporaryDirectory(prefix="tc-ltx-descriptor-") as raw:
         directory = Path(raw)
         checkpoint = directory / "fixture.safetensors"

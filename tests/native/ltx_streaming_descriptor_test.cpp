@@ -1,4 +1,5 @@
 #include "ltx_streaming_descriptor.hpp"
+#include "ltx_streaming_plan.hpp"
 #include <cassert>
 #include <fcntl.h>
 #include <iostream>
@@ -40,7 +41,22 @@ int main(int argc,char **argv) {
             assert(s.prefix_source_read_bytes==metadata.block(0).source_read_bytes);
             assert(s.suffix_content_bytes_per_pass==content_bytes);
             assert(s.peak_pool_bytes==k*(metadata.block(0).gpu_bytes+metadata.block(0).cpu_bytes));
+            tc::ltx::StreamingPlanView view(
+                argv[1], config(k), workload, 100u+k);
+            const auto &native=view.native_options();
+            assert(native.version==2u && native.base.version==1u);
+            assert(native.base.resident_prefix_blocks==1u);
+            assert(native.base.plan==&view.c_plan());
+            assert(native.metadata_header==&view.metadata().header());
+            assert(native.metadata_mapping==&view.metadata().mapping());
+            assert(view.c_plan().request_generation==100u+k);
+            assert(view.c_plan().slot_count==k);
+            assert(view.c_plan().group_count==47u);
+            assert(view.c_plan().pass_count==11u);
+            assert(view.layout().digest==p.digest);
         }
+        rejects([&]{tc::ltx::StreamingPlanView bad(
+            argv[1],config(),workload,0);},"generation");
         assert(tc::streaming::compile_layout(config(),metadata.describe(workload)).digest==plan.digest);
         auto changed=workload;changed.text_rows=32;
         assert(tc::streaming::compile_layout(config(),metadata.describe(changed)).digest!=plan.digest);
