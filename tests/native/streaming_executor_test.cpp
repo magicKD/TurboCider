@@ -23,6 +23,22 @@ static StageLayout layout(uint32_t k, uint32_t d, uint32_t q) {
     for (uint32_t i=0; i<13; ++i) s.groups.push_back({i,0,i%k,{i+1},{8},8});
     return s;
 }
+static StageLayout multi_layout(uint32_t k, uint32_t d, uint32_t q) {
+    StageLayout s;
+    s.id="multi"; s.prefix=1; s.group_size=1; s.slot_count=k; s.distance=d; s.workers=q;
+    s.pass_count=3;
+    for (uint32_t pool_id=0; pool_id<2; ++pool_id) {
+        PoolLayout p; p.id=pool_id; p.layout_class=pool_id ? "q" : "k";
+        for (uint32_t i=0; i<k; ++i)
+            p.slots.push_back({{sizeof(uint64_t)},sizeof(uint64_t)});
+        s.pools.push_back(std::move(p));
+        for (uint32_t i=0; i<3; ++i) {
+            const uint32_t id=static_cast<uint32_t>(s.groups.size());
+            s.groups.push_back({id,pool_id,i%k,{id+1},{8},8});
+        }
+    }
+    return s;
+}
 
 // Independent readers sample real backing contents before AND after a delay.
 // Two queues must both finish before the CPU is allowed to rewrite a slot.
@@ -61,6 +77,7 @@ public:
     unsigned creates=0, destroys=0, prefixes=0;
     std::atomic<int> fills{0};
     bool fail_fill=false, fail_create=false, fake_bad_drain=false, short_fill=false;
+    unsigned fail_create_at=0;
     std::atomic<bool> *cancel_on_prepare=nullptr;
     static uint64_t tag(const tc_stream_slot_ticket_v1 &t) {return 1+t.item.pass*1000+t.item.group;}
     FakeModel() {
@@ -73,7 +90,8 @@ public:
     }
     void create_pool(const PoolLayout &p) override {
         ++creates; values.resize(p.slots.size());
-        if(fail_create)throw std::runtime_error("injected partial create");
+        if(fail_create || (fail_create_at && creates==fail_create_at))
+            throw std::runtime_error("injected partial create");
     }
     FillJob make_fill_job(const Group &, const tc_stream_slot_ticket_v1 &t) override {
         return {t,this,[](void *opaque,const tc_stream_slot_ticket_v1 *ticket,
@@ -158,6 +176,32 @@ int main() {
         rejects([&]{exec.run(layout(k,d,q),cancel);});
         ++runs;
     }
+    for (uint32_t k=1; k<=3; ++k) {
+        auto model=std::make_shared<FakeModel>(); std::atomic<bool> cancel{false};
+        StageExecutor exec(3,7,model);
+        const auto result=exec.run(multi_layout(k,k-1,k),cancel);
+        // Two ordered pools are switched at a barrier.  Each pass visits both
+        // pools exactly once, so pool creation is deterministic and bounded.
+        assert(result.pool_creates==6 && result.slot_bundles==6*k);
+        assert(result.fills==18 && result.groups_submitted==18 && result.bytes_loaded==18*8);
+        assert(model->creates==6 && model->destroys==6 && model->prefixes==3);
+        assert(!exec.quarantined());
+    }
+    {
+        auto model=std::make_shared<FakeModel>(); std::atomic<bool> cancel{false};
+        model->fail_create_at=2;
+        StageExecutor exec(3,7,model);
+        rejects([&]{exec.run(multi_layout(2,1,1),cancel);});
+        assert(model->creates==2 && model->destroys==2 && !exec.quarantined());
+    }
+    {
+        auto model=std::make_shared<FakeModel>();
+        StageExecutor exec(3,7,model);
+        auto invalid=multi_layout(2,1,1);
+        invalid.groups[3].pool=invalid.pools[0].id;
+        rejects([&]{exec.begin(invalid);});
+        assert(model->creates==0 && model->destroys==0);
+    }
     for(unsigned failure=0;failure<5;++failure){
         auto model=std::make_shared<FakeModel>(); std::atomic<bool> cancel{false};
         model->fail_create=failure==0; model->fail_fill=failure==1;
@@ -190,5 +234,6 @@ int main() {
     assert(audit.memory_probes == 0);
     assert(audit.cache_clear_or_unload_calls == 0);
 #endif
-    std::cout<<"PASS streaming executor: "<<runs<<" K/D/Q combinations, two independent readers, faults and cleanup\n";
+    std::cout<<"PASS streaming executor: "<<runs
+             <<" K/D/Q combinations, multi-class barriers, two independent readers, faults and cleanup\n";
 }

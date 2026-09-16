@@ -83,8 +83,9 @@
    normal-target、audio/I2V/LoRA/ANE/近似分支不在首批资格内。
 3. whole-request resource closure 未覆盖所有 MLX/MPSGraph/Metal/host/media/driver allocation，
    不能宣称 Y 是 OS/RSS 硬上限或绝对零 swap。
-4. executor 仍是 single-class streamed；resident、多 class、跨 component DAG、session retention
-   和服务级 quarantine/eviction 还未闭环。
+4. executor 现在支持 single-active-pool streamed 和 ordered multi-class barrier；resident、跨 component
+   DAG、session retention 和服务级 quarantine/eviction 还未闭环。v2 C ABI 只描述有序 pool 列表，不代表
+   任意模型已有真实 adapter 或执行资格。
 5. 只有 tiny 短对照，尚无 normal-target release ABBA P0/P1/P2、真实低内存 P3 或策略 P4，
    不能宣称正式性能认证或快于 swap。
 6. H3、Flux、Z-Image 尚未获得 exact layout registry 资格。
@@ -316,3 +317,46 @@ AVFoundation writer 的 clean build 上重跑并保留日志。
 0.99990（95% bootstrap 上界 1.00337），denoise median ratio 1.00076（上界 1.00511），五类
 audit counter 均为零。该证据支持“不影响默认 resident 热路径”，但不扩大为 normal-target、legacy
 streamed、低内存 bounded-memory 或其他模型的性能承诺。
+
+## 11. multi-class executor 增量复核（2026-09-16）
+
+本次后续增量把 ordered multi-class barrier 从 compiler-only 推进到 `StageExecutor` 和 versioned C bridge：
+v1 ABI 保持兼容，v2 显式描述 pool/group 顺序并把 pool id 传给 adapter 的 allocate/destroy。当前实现仍是
+单活动 pool；跨 class 先 drain，再 destroy，再 create，跨 class 不预取，不同时保留异构 pool。
+
+验证证据：
+
+- host 3535 layout cases、14 个 K/D/Q 组合、multi-class 两 pool/三 pass、乱序双 reader、非法顺序、
+  pool 创建失败和 C bridge failure 全部 PASS；ASan/UBSan、TSan 全部 PASS。
+- release build：`/private/tmp/turbocider-multiclass-release-20260916/libturbocider.dylib`，仅导出
+  `tc_stream_executor_create_v1/v2`，无 audit/test-hook 符号。
+- audit build：`/private/tmp/turbocider-multiclass-audit-20260916/libturbocider.dylib`；默认 LTX resident
+  请求成功，五类新 framework counter 全 0。
+- 当前源码 test-hook 真实 LTX lifecycle：
+  `/private/tmp/turbocider-multiclass-lifecycle-20260916/lifecycle/lifecycle-summary.json`，所有取消、
+  重复请求、A→B→A、阶段失败、unsafe destroy/session/process quarantine 与恢复均通过，latent hash 未变。
+- post-change 沙箱外 tiny 默认 resident 4-pair campaign 8/8 成功、质量 byte-exact，wall median 1.00321、
+  denoise median 1.00118；样本太小且 release audit 为 partial，verifier 保持 `INCONCLUSIVE`，不作为
+  P0 PASS。此前 clean-source 20-pair release PASS 仍是默认路径主要性能证据。
+
+这次增量没有给 H3/Flux/Z-Image 授予 adapter/registry 资格，也没有开启 public exact、bounded memory 或
+swap 对比；后续必须继续按本文件第 4 节的 normal-target/P1/P2/P3 顺序推进。
+
+## 12. 最终合并交付核对（2026-09-16）
+
+`dev@ad343d4e5139c9a5f13e29ff9e926e8eb1ae2f39` 已在 merge commit
+`566f7a6faf07734255cee229ca31ca3af0bc154c` 合入 `feat/stream`；当前工作树无冲突。随后提交前增量已完成：
+
+- `StageExecutor` 支持 ordered multi-class barrier；跨 class 严格执行 drain → consume → quiescent check →
+  destroy → create，且 pool 激活采用已验证 index，避免多 class 扩展产生 O(P²) 查找。
+- C ABI v1 保持兼容，v2 显式描述 pool/group 顺序与 pool-aware allocate/destroy；未引入第二套 pager/scheduler。
+- release/audit/test-hook 三种最终重建、host/ASan/UBSan/TSan、Python contract/audit/verifier/source identity
+  回归全部通过。
+- 最终真实 LTX candidate lifecycle 全部通过，最终 audit default resident 五类 counter 全 0。
+- 最终 4-pair resident smoke 8/8 成功且质量 byte-exact；wall median 0.99334、wall P95 0.99232、denoise
+  median 0.99832。样本量不足以升级为 P0，正式性能结论仍以此前 20-pair tiny P0 PASS（wall median
+  0.99990、denoise median 1.00076）为准。
+
+最终 binary/artifact 位置和 hash 详见 `13-implementation-progress.md` 第13.7节。当前仍明确未完成：
+normal-target/legacy-streamed P0、same-layout P1、guard/whole-request closure、真实低内存或 swap P3、
+public exact production registry，以及 H3/Flux/Z-Image adapter；production registry 必须保持为空。

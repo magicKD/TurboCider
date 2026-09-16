@@ -20,14 +20,16 @@
 | C POD合同与adapter bridge | `native/core/stream_slot_c.h`、`native/runtime/streaming/c_bridge.cpp` | 版本化ticket/fence/completion、adapter回调、create/run_pass/finish/cancel/destroy；同一C++调度器；LTX内部入口已接入 | 完整异常/ABI测试矩阵及service quarantine接线 |
 | Slot安全 | `native/runtime/streaming/slot_pool.*` | owner检查、generation、Ready/InUse/sealed多queue读者、提前复写拒绝、sticky poison | 与真实model backing/ledger的绑定 |
 | 有界I/O | `native/runtime/streaming/io_executor.*` | persistent Q workers、固定job ring、completion mailbox、overflow latch、cooperative cancel+join | 非协作OS I/O的deadline/quarantine管理需补齐 |
-| Stage执行器 | `native/runtime/streaming/context.*` | begin/run_pass/finish、单class streamed、池/worker跨pass保留、pass与step分离、lookahead/fence/drain | resident/multiclass、request orchestration、strict memory schedule、service quarantine接线 |
+| Stage执行器 | `native/runtime/streaming/context.*` | begin/run_pass/finish、单活动pool streamed、同class跨pass保留、ordered multi-class barrier、pass与step分离、lookahead/fence/drain | resident、request orchestration、strict memory schedule、service quarantine接线 |
 | LTX metadata/fill/slot | `ltx_streaming_layout.*`、`ltx_streaming_slot.*` | 真实48-block metadata、source/destination/scratch区分、固定shared buffers、chunked pread、无分配fill | session construction与同一snapshot绑定、完整allocator上界/guard |
 | LTX generic projection | `ltx_streaming_descriptor.*` | fd-only snapshot、48-block source/derived bindings、11-pass/workload identity；真实checkpoint host验证 | trusted content identity、公开session接线、同fd构造/运行与完整resource plan |
 | LTX exact adapter | `ltx_streaming_adapter.inc`、`ltx_blocks.c`、`ltx_streaming_plan.*`、`ltx_session.mm` | versioned create、generic layout→C ABI投影、candidate-only request owner、connector→两stage→VAE/export完整请求、status destroy/quarantine | public production资格、完整故障/重复请求矩阵、normal-target性能和bounded guard |
 
 `layout.*`当前输出只是权重布局，不生成完整memory upper，不做任何production授权。
 StageExecutor的backing由adapter拥有，SlotSafetyTracker只维护内容状态，Vacant不会释放backing账。
-执行器目前拒绝resident与multi-class执行，不把编译器支持某种布局误报为执行器已经支持。
+执行器仍拒绝resident；当前已支持按连续 pool 区间插入 drain barrier、释放旧 pool、建立新 pool 的
+ordered multi-class streamed 执行。它不是同时保留多个 class，也不允许跨 class lookahead；编译器支持的
+resident、多 stage 或任意 DAG 仍不能误报为执行器已支持。
 
 公共`tc_engine_create_model`的新manual请求仍是plan-only；generate/prepare在进入模型计算/卸载前明确返回
 `streaming_layout_not_certified`。内部`tc_engine_create_model_candidate`现在可以执行首批LTX exact tuple，
@@ -732,3 +734,94 @@ clean baseline仍为`dev@ad343d4`，release candidate SHA-256为
 verifier 对该冻结tiny tuple给出`PASS`，audit hard gate五类计数全部为0。该结论证明本次改造未使这个
 默认tiny resident tuple劣化；它仍不是normal-target、largest、legacy-streamed P0，也不授予production
 exact streaming或bounded-memory资格。
+
+### 13.6 Ordered multi-class executor 与 v2 C bridge（2026-09-16）
+
+本轮把 compiler 已表达、但旧 executor 拒绝的异构 `layout_class` 接到统一执行框架：
+
+- `StageExecutor` 仍只允许一个活动 pool，但按连续 pool 区间执行；切换前要求当前 pool 的所有 fill、
+  GPU reader fence 和 adapter `drain()` 完成，随后才 `destroy_pool()` 并创建下一 pool。
+- 同 class 的 pool/backing/worker 在 pass 内按 lookahead/fence 重用；跨 class 不做 lookahead，跨 pass
+  回到首个 class 时重新经历有界 barrier。每个 pool generation 的 `pool_creates`、slot bundle、ticket
+  和 capacity 独立计数，不能把多 class 伪装成一次建池。
+- 原 `tc_stream_executor_create_v1` ABI、回调签名和单 pool 行为保持不变；新增 versioned
+  `tc_stream_executor_create_v2`、`tc_stream_pool_plan_v2`、`tc_stream_group_v2` 与
+  `tc_stream_adapter_v2`，显式传入有序 pool 列表以及带 pool 的 group。v2 adapter 的 allocate/destroy
+  可观察真实 pool id，仍复用同一个 C++ executor，不创建第二套 pager。
+- host executor 测试新增两 pool/三 pass 的乱序双 reader、pool 创建失败、非法 class 顺序和非零 pool id；
+  v2 C11 测试覆盖 pool-aware allocate/destroy、跨 pass barrier、counter 和 ABI。普通单 class 14 个
+  K/D/Q 组合、C bridge fault、ASan/UBSan、TSan 继续通过。
+
+独立 release build：
+
+```text
+/private/tmp/turbocider-multiclass-release-20260916/libturbocider.dylib
+SHA-256: 65d1da711c278d5568c7b6de158984b0ebbdd0d4f687b02f90527edc3f0679d5
+```
+
+release 只导出 `tc_stream_executor_create_v1/v2`，没有 audit 或 lifecycle test-hook 符号。沙箱外提交前
+tiny 默认 resident 2-block/4-pair campaign 8/8 成功、质量 byte-exact：candidate/dev wall median
+ratio `1.00321`，denoise median ratio `1.00118`；由于只有4 pairs且 release 未启用 audit ABI，verifier
+保持 `INCONCLUSIVE`，不能升级为 P0。该结果与此前独立 20-pair release PASS 一致，未发现默认路径的明显
+回退；多 class executor 本身未被 default resident 路径实例化。
+
+独立 audit build SHA-256 为
+`ba3d0c29685a29c8680a8fc2b8d1a03602174287c1fd5a3647ac5ef85d88f705`；真实默认 resident 请求成功，
+`/private/tmp/turbocider-multiclass-audit-run-20260916/audit.json` 中 framework hook、memory probe、worker、
+pool allocation、cache-clear/unload 五类计数全部为0。显式 multi-class host test 则观察并断言每个 barrier 的
+pool generation 计数，避免默认零计数由 instrumentation 未接线造成。
+
+当前源码另行重建 test-hook dylib 后，真实 LTX lifecycle matrix 全部通过：
+
+```text
+/private/tmp/turbocider-multiclass-lifecycle-20260916/lifecycle/lifecycle-summary.json
+```
+
+覆盖 metadata/first-fill、Stage 1、upsample、Stage 2、VAE、export、success→success、A→B→A、
+取消、unsafe destroy/session quarantine、process quarantine 与恢复；Stage-2 latent SHA-256 仍为
+`7db71bf03027942b53af69ab914714583fe8f8d4c3ed2faf60f4aa4ed43f28fd`。该结果证明本次 executor/C ABI
+扩展没有破坏现有 LTX 单 class exact candidate lifecycle，但不改变 public gate、normal-target 或 bounded
+资格状态。
+
+### 13.7 最终源码重建与合并交付复核（2026-09-16）
+
+在将 pool 激活从按 pool-id 线性查找到按已验证的有序 pool index 直接访问后，重新完成三类构建与验证：
+
+| 构建 | dylib SHA-256 | 预期私有符号 |
+|---|---|---|
+| release | `e19cbd797eb19f85e1392cf0b91822ff1fadbb41e32ad8b04adf8b575c7225cb` | 无 audit、无 lifecycle hook |
+| audit | `0d5d9be922703b5225055fc2ec630d9550f5c9c94859d95cf1fb6db86ac44b7b` | 仅 audit reset/snapshot |
+| test-hook | `b925be99d6b6e19bf6a23b71bb9e1b7af4690b8d6f34554579e2a98feeb9defc` | 仅四个 LTX lifecycle hook |
+
+三类构建均成功；release 导出 `tc_stream_executor_create_v1/v2`，没有 audit 或 test-hook 符号；audit 与
+test-hook 符号集合互斥。普通 host、ASan/UBSan、TSan 和 Python contract/audit/verifier/source-identity
+回归均通过。
+
+最终 audit build 的默认 LTX resident 请求成功，artifact：
+
+```text
+/private/tmp/turbocider-audit-default-final-20260916/audit.json
+```
+
+`new_framework_hooks`、`new_memory_probes`、`new_worker_threads`、`new_pool_allocations`、
+`new_cache_clear_or_unload_calls` 全部为 `0`，证明新 executor/C ABI 不进入默认 resident 热路径。
+
+最终 test-hook 生命周期 artifact：
+
+```text
+/private/tmp/turbocider-multiclass-lifecycle-final-20260916/lifecycle/lifecycle-summary.json
+```
+
+metadata/first-fill、Stage 1/2、upsample、VAE、export、success→success、A→B→A、取消、session/process
+quarantine 与恢复全部通过；Stage-2 latent SHA-256 为
+`7db71bf03027942b53af69ab914714583fe8f8d4c3ed2faf60f4aa4ed43f28fd`。
+
+最终 release 对 clean `dev@ad343d4` 的 4-pair ABBA/BAAB smoke artifact：
+
+```text
+/private/tmp/turbocider-multiclass-campaign-final-20260916/bundle-post-index
+```
+
+8/8 请求成功、quality byte-exact、audit 五类计数全为 0；candidate/dev 比值为 wall median `0.99334`、
+wall P95 `0.99232`、denoise median `0.99832`。由于仅 4 matched pairs，verifier 正确保持
+`INCONCLUSIVE`，不能替代既有 20-pair P0 PASS；它仅证明最终重建没有出现明显 resident 回退。

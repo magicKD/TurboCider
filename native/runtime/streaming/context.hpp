@@ -56,6 +56,9 @@ private:
     std::unique_ptr<CompletionMailbox> mailbox_;
     struct State;
     std::unique_ptr<State> state_;
+    void activate_pool(uint32_t pool_index);
+    void drain_active_pool();
+    void destroy_active_pool() noexcept;
     bool consume();
     void check_cancel(const std::atomic<bool> &) const;
     bool pool_live_ = false, quarantined_ = false, used_ = false;

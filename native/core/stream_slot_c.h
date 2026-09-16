@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #define TC_STREAM_SLOT_ABI_V1 1u
+#define TC_STREAM_SLOT_ABI_V2 2u
 #define TC_STREAM_MAX_READER_QUEUES 8u
 
 typedef struct {
@@ -48,6 +49,12 @@ typedef struct {
 } tc_stream_group_v1;
 
 typedef struct {
+    uint32_t group, pool, slot, block_count;
+    const uint32_t *blocks;
+    uint64_t content_bytes;
+} tc_stream_group_v2;
+
+typedef struct {
     uint32_t struct_size, version;
     uint32_t stage, pool, slot_count, prefetch_distance, io_workers, pass_count;
     uint64_t request_generation;
@@ -55,6 +62,24 @@ typedef struct {
     uint32_t group_count;
     const tc_stream_group_v1 *groups;
 } tc_stream_stage_plan_v1;
+
+/* V2 keeps the v1 callback/slot protocol but describes ordered compatible
+ * pools explicitly.  The executor visits one pool at a time and inserts a
+ * drain barrier before switching classes. */
+typedef struct {
+    uint32_t struct_size, version;
+    uint32_t pool, slot_count;
+    const uint64_t *slot_capacity_bytes;
+} tc_stream_pool_plan_v2;
+
+typedef struct {
+    uint32_t struct_size, version;
+    uint32_t stage, pool_count, slot_count, prefetch_distance, io_workers, pass_count;
+    uint64_t request_generation;
+    const tc_stream_pool_plan_v2 *pools;
+    uint32_t group_count;
+    const tc_stream_group_v2 *groups;
+} tc_stream_stage_plan_v2;
 
 typedef struct {
     void *user;
@@ -87,6 +112,22 @@ typedef struct {
 } tc_stream_adapter_v1;
 
 typedef struct {
+    uint32_t struct_size, version;
+    void *user;
+    int (*allocate_slot)(void *, uint32_t pool, uint32_t slot,
+                         uint64_t capacity, char *, size_t);
+    void (*destroy_pool)(void *, uint32_t pool);
+    int (*fill)(void *, const tc_stream_slot_ticket_v1 *, const tc_stream_group_v1 *,
+                tc_stream_cancel_query_v1, const void *cancel_user,
+                uint64_t *content_bytes, char *, size_t);
+    int (*prefix)(void *, uint32_t pass, char *, size_t);
+    int (*prepare)(void *, const tc_stream_slot_ticket_v1 *, const tc_stream_group_v1 *, char *, size_t);
+    int (*encode)(void *, const tc_stream_slot_ticket_v1 *, const tc_stream_group_v1 *,
+                  const tc_stream_completion_sink_v1 *, tc_stream_reader_set_v1 *, char *, size_t);
+    int (*drain)(void *, char *, size_t);
+} tc_stream_adapter_v2;
+
+typedef struct {
     uint64_t pool_creates, slot_bundles, fills, content_bytes_loaded, groups_submitted;
 } tc_stream_counters_v1;
 typedef struct tc_stream_executor tc_stream_executor;
@@ -95,6 +136,8 @@ typedef struct tc_stream_executor tc_stream_executor;
  * handle. On failure a non-null output is quarantined and must NOT be freed
  * until tc_stream_executor_destroy succeeds. All calls except cancel are owner-only. */
 int tc_stream_executor_create_v1(const tc_stream_stage_plan_v1 *, const tc_stream_adapter_v1 *,
+                                 tc_stream_executor **out, char *, size_t);
+int tc_stream_executor_create_v2(const tc_stream_stage_plan_v2 *, const tc_stream_adapter_v2 *,
                                  tc_stream_executor **out, char *, size_t);
 int tc_stream_executor_run_pass(tc_stream_executor *, uint32_t pass, uint32_t step, char *, size_t);
 int tc_stream_executor_finish(tc_stream_executor *, char *, size_t);

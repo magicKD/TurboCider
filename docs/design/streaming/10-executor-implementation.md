@@ -2,7 +2,9 @@
 
 [目录](README.md) · [协议](03-runtime-protocol.md) · [编译器](09-layout-compiler-spec.md) · [验收细则](12-acceptance-playbook.md)
 
-状态：目标规格，单class执行器基础已有host/合成Metal测试，模型/guard接入尚未完成，见 [13](13-implementation-progress.md)。
+状态：目标规格；当前 executor 已支持单活动 pool 的 streamed 执行，以及 ordered multi-class
+barrier（按 class drain、销毁、重建），并有 host/合成测试；resident、模型/guard 接入尚未完成，见
+[13](13-implementation-progress.md)。
 03 定义生命周期合同；本文定义实现选择、进展条件与性能边界。首发单 GPU 作业不等于只能一个 GPU command queue。
 
 ## 1. 组件划分与职责

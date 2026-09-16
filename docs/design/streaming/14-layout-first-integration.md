@@ -45,7 +45,8 @@
 ```
 
 第三条入口不是隐藏自动模式。推荐失败不影响原请求，生成建议也不改 profile。
-新框架 resident 是合法的未来执行形态，但当前 StageExecutor 只执行单 class streamed，不能拿 resident 编译成功当执行成功。
+新框架 resident 是合法的未来执行形态；当前 StageExecutor 执行单活动 pool 的 streamed stage，并支持
+按确定 barrier 切换连续 layout class，不能拿 resident 编译成功当执行成功。
 
 ## 3. 层级、对象与所有权
 
@@ -128,7 +129,9 @@ request start
 ```
 
 pool 一次创建是“同一兼容 resource domain”的承诺，不是所有组件或 layout class 永远只分配一次。
-多 class 先按 09 的 barrier 切换池；首发 executor 暂不支持，必须在路由阶段拒绝。
+多 class 按 09 的 barrier 切换池；当前 executor 已实现这一保守语义：旧 pool drain 完成后才 destroy，
+再建立下一 class pool。它不同时保留多个 class，也不允许跨 barrier lookahead；模型 adapter 仍需证明
+其 class 顺序和每个 pool 的真实 binding。
 中间 pass 完成不调用 finish，不重建 Q 个线程，不把局部 diffusion step 当新的 request generation。
 run_pass 的 pass 从0连续递增；step 是模型语义坐标，可不同于 pass，不能用 `run()` 的默认 pass=step 方便写法接 LTX 全流程。
 
@@ -158,7 +161,7 @@ P 增加可减少每 pass 重读，但增加常驻和首次加载；G 增大可�
 | per-group 控制成本 | mailbox 用 mutex，pump 读时钟并有5ms超时等待 | 先测 wake/lock/CPU，5ms是最长轮询等待而非固定 sleep；不要未测就上 lock-free |
 | C failure 语义 | 错误文本由 adapter/per-slot buffer 和 bridge 汇总 | 测旧错误残留、第二次调用、非 std exception、owner 误用；主错误不可被 cleanup 覆盖 |
 | quarantine 销毁 | C destroy 失败保留 handle；C++不安全析构会 terminate | service 必须保留整个 owner/session，禁回 idle；所有异常出口都有 test |
-| C bridge 能力 | 单 class streamed、固定 callback 表，无真实模型 ranges | 添加 adapter construction view 和 exact resolve；不是另写 scheduler |
+| C bridge 能力 | v1 单 class streamed；v2 显式 ordered pool 列表，共用同一 callback/safety executor | 添加 adapter construction view 和 exact resolve；不是另写 scheduler |
 | 性能证据 | host/C bridge/synthetic GPU 有部分证据 | 当前 lifecycle 变更需重新跑 sanitizer/Metal；真实模型 P0/P1 仍缺 |
 
 ## 8. 配置文件和机器档位

@@ -4,22 +4,24 @@
 
 日期：2026-09-16。本文补充**从当前工作树往前推进**的 PR 内容、依赖、负例和交付证据。
 不另设里程碑编号：F0–F9 沿用11，L0–L3 是12中的验收层级，不拿它们重新命名工作包。
-当前源码事实与重跑结果归档到13第11节。v2补强已实施，完整request owner/session仍待接；不把整个dirty工作树归因于本轮。
+当前源码事实与重跑结果归档到13第11–13节。v2、candidate request owner、生命周期 fault/audit 与
+multi-class barrier 已实施；public production 资格和 bounded guard 仍待接，不把整个工作树归因于单一批次。
 
 ## 1. 当前完成到哪里
 
 | 项目 | 源码核对结果 | 不能据此宣称 |
 |---|---|---|
 | config/compiler | 有严格参数、canonical、source/materialization/pass/workload | 全请求 upper 已完整 |
-| slot/executor/C bridge | 有持久 pool/workers、generation、单 class streamed、drain | resident/multi-class 或服务 quarantine 已闭环 |
+| slot/executor/C bridge | 有持久 pool/workers、generation、单活动pool streamed、ordered multi-class barrier、drain | resident/request orchestration 或服务 quarantine 已闭环 |
 | LTX metadata | StreamingMetadata 拥有 fd/header，snapshot identity 与 v2 same-source checks 已实现 | content hash/文件不可变已证明 |
-| LTX 内部 adapter | v2 K1/K2/K3、v1 K3 smoke；connector、cancel、borrow cleanup 已验证 | 已获得完整请求/production 资格 |
-| LTX 正常 session | 仍调用 ltx_native_create，使用旧 void deleter | 公开 exact generate 已接通 |
-| public API | generate/prepare 仍拒绝 active manual | 配置能解析就能执行 |
-| 性能 | 有历史 tiny 时序，无正式 normal-target ABBA | 默认无回归、快于 swap、bounded 发布 |
+| LTX 内部 adapter | v2 K1/K2/K3；candidate connector→两stage→VAE/export、cancel/borrow/quarantine 已验证 | 仍未获得production资格 |
+| LTX session | candidate 有独立exact request owner/status destroy；legacy仍保留旧handle/deleter | public exact 或bounded已放行 |
+| public API | public generate/prepare仍拒绝active manual；私有candidate authority可执行首批tuple | 配置能解析不等于production执行 |
+| 性能 | tiny默认resident 20-pair P0 PASS；post-multiclass 4-pair无明显回退 | normal-target、legacy-streamed、P1/P2/P3已通过 |
 
-本轮重新 native-only build、host fault/snapshot 和沙箱外 LTX v1/v2 smoke 通过；这些仍不等同于完整请求或生产资格。
-下一步是 artifact trust、request owner/完整 session 和正式质量/性能门，而不是继续横向复制其他模型。
+当前已有独立 release/audit/test-hook build、host/sanitizer、真实LTX完整candidate生命周期和tiny性能证据；
+这些仍不等同于production资格。下一步是normal-target与legacy-streamed P0/P1、whole-request guard、artifact
+trust和模型adapter，而不是删除public gate。
 
 ## 2. 依赖与交付顺序
 

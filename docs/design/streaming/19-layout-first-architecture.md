@@ -57,7 +57,8 @@ ModelSession.describe ──> OwnedPreflight(snapshot + descriptor + constructio
 
 **不另造一个完整模型执行器。** 现有 sampler/数值 kernel 保留；coordinator 管资源边界，
 StageExecutor 管单一兼容权重域；模型 adapter 管字段语义。组件生命周期也能共用 request context，
-但当前 StageExecutor 不支持 resident/multi-class，不能硬套进去。
+但当前 StageExecutor 不支持 resident；multi-class 只支持 ordered barrier 切换单活动 pool，不能硬套成
+同时驻留多个 class 或跨 component DAG。
 
 | 层 | 允许依赖 | 禁止依赖/行为 |
 |---|---|---|
@@ -250,9 +251,10 @@ upsample 只在 pass drain 后交接 activation/workspace，不重建 weight poo
 新 timestep 必须更新 derived conditioning；同地址不代表同内容。当前 P=1/G=1 的 48-block、11-pass
 用例应是 (48−1)×11=517 次 suffix fills；prefix 读取与 helper 读取另计，不能把 517 当任意布局常数。
 
-多 class 目前仅 compiler 能表达。首版扩展按 barrier 先释放旧 pool 再建新 pool；
-每个 generation 独立计数，不谎报 whole-request 只建池一次。跨 pass 预取、同时保留多 class 池、
-session cache 都需改访问/资源合同并重新验收，而不是 adapter 私自优化。
+多 class 已按 barrier 先释放旧 pool 再建新 pool；每个 pool generation 独立 ticket、容量和计数。
+当前实现只推进连续 class 区间，仍不支持跨 class lookahead、同时保留多 class pool 或 session cache；
+不能谎报 whole-request 只建池一次。跨 pass 预取、同时保留多 class 池、session cache 都需改访问/资源
+合同并重新验收，而不是 adapter 私自优化。
 
 ## 6. 内存核算、overlap 与 swap
 

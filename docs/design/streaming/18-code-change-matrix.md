@@ -42,7 +42,7 @@ F9a simulate/sweep/preset：辅助选候选；不能跳过以上任何资格门
 | `native/api/c_api.mm` | generate/prepare统一拒绝manual | explicit branch做preflight/资格/bind/终态；共用辅助函数 | 不直接移除gate放行旧heuristic |
 | `native/platform/apple/results.mm` | 新配置固定plan-only结果 | 分开serialize intent/resolved/actual/authority | legacy结果不改；未执行actual=null |
 | `native/core/stream_slot_c.h`、`streaming/c_bridge.cpp` | 同一C++执行器的v1 C桥 | 必要时新增版本化construction/report view，补ABI反例 | 不静默改变已有v1 struct布局 |
-| `streaming/context.*`、`io_executor.*`、`slot_pool.*` | 单class streamed可执行 | 先补cancel/fault/owner审计；后做resident/class能力 | 不为新模型自建第二套I/O池 |
+| `streaming/context.*`、`io_executor.*`、`slot_pool.*` | 单活动pool streamed、ordered multi-class barrier可执行 | 先补cancel/fault/owner审计；后做resident/request guard能力 | 不为新模型自建第二套I/O池 |
 | `native/models/ltx_runtime/ltx_streaming_layout.*` | 真实metadata/fixed-span fill已存在 | 投影generic descriptor；明确源/内容/容量，复用owned snapshot | 不在fill重复parse/hash |
 | `ltx_streaming_slot.*`、`ltx_streaming_adapter.inc` | 内部exact K1..3/G1双stage原型 | 与compiled construction view一致；补source实际计数和故障点 | 不复制run_block数值代码 |
 | `native/platform/apple/ltx_session.mm` | 正常路径仍legacy handle | 单独request exact owner、两stage接线、报告和cleanup | 不改旧denoiser cache/key/deleter |
