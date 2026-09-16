@@ -9,6 +9,22 @@
 
 int main() {
     using namespace tc;
+    const auto &optimized = device_optimizations("Apple M5 Pro", 24ull << 30);
+    assert(std::string_view(optimized.id) == "m5pro24-v1");
+    assert(optimized.z_image_suffix_streaming && optimized.z_image_hybrid_segments &&
+           optimized.z_image_memory_lifecycle && optimized.z_image_smallest_partition &&
+           optimized.external_automatic_partitions && optimized.coreml_output_copy);
+    for (const auto &device : std::vector<DeviceInfo>{
+             {"Apple M4 Pro", 24ull << 30}, {"Apple M4 Pro", 48ull << 30},
+             {"Apple M4 Max", 64ull << 30}, {"Apple M5", 24ull << 30},
+             {"Apple M5 Max", 24ull << 30}, {"Apple M5 Pro", 48ull << 30},
+             {"Apple M5 Pro", (24ull << 30) - 1}, {"unavailable", 0}}) {
+        const auto &legacy = device.optimizations();
+        assert(std::string_view(legacy.id) == "legacy");
+        assert(!legacy.z_image_suffix_streaming && !legacy.z_image_hybrid_segments &&
+               !legacy.z_image_memory_lifecycle && !legacy.z_image_smallest_partition &&
+               !legacy.external_automatic_partitions && !legacy.coreml_output_copy);
+    }
     Request request;
     assert(hybrid_case(request, 1044, "Apple M4 Pro", 48ull << 30));
     assert(hybrid_case(request, 1044, "Apple M4 Max", 64ull << 30));

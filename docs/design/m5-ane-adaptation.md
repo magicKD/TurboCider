@@ -2,6 +2,10 @@
 
 2026-09-16；M5 Pro、16 核 GPU、24 GiB、macOS 26.4.1、MLX 0.32.0。
 
+本轮运行时优化仅在 **Apple M5 Pro + 24 GiB** 启用。统一内置配置见 [`device_optimizations.hpp`](../../native/runtime/device_optimizations.hpp)，其他机型返回 `legacy`，保留原执行路径。原生引擎检查真实硬件，Swift 读取引擎返回的 `optimization_profile`；显式 ANE、手填 manifest 或 profile JSON 均不能绕过机型限制。
+
+`profiles/*.example.json` 是需显式选择的执行参数模板，默认禁用，不会自动扫描加载；它们配置 GPU/ANE 策略、分区和预算。本轮优化的机型开关由上述内置表控制，与是否选择外部 profile 分开。M4 原有自动混合策略继续保留，M5/M5 Max 及其他容量未放行。
+
 ## 优化点
 
 - **只读 GPU 后缀**：Z-Image streaming 中，ANE 计算 MLP 前 4096 通道，GPU 只加载后 6144 通道。w1/w3 跳过前缀，w2 在会话首次准备时整理为临时后缀文件，减少重复读取并保留更多层。
@@ -33,7 +37,8 @@ Z-Image 为 Comfy BF16、无 LoRA，streaming 的 GPU 预算均为 10 GiB。
 - FLUX 24 对、Z-Image resident 18 对图片通过原有近似质量门槛；后缀优化 10 对、融合验证 26 次生成及 512 复核 40 次生成中，同一混合路线的优化前后 PNG 逐字节一致。这不表示 INT8 混合与 BF16 GPU 输出相同。
 - 原生后缀读取、缓冲区复用、取消/重试、路由切换测试通过；Swift 回归及真实分词器的 512 → 1024 → 512 分区选择通过。`make test` 的 VDN 精度测试在修改前库也失败，未放宽阈值。
 - PR 同步 `dev@ad343d4` 后，原生/Swift 构建、78 项契约测试（3 项跳过）及客户端回归通过；额外 6 次 512 生成验证新旧图和输出拷贝修复前后 PNG 一致。记录附在 512 验证 JSON 的 `pr_integration_validation` 中。
-- Z-Image M5 的 `auto` 仍选 GPU；显式 ANE streaming 支持 Comfy BF16、无 LoRA。FLUX 自动案例仅限 M5 Pro 24 GiB、512²、4 步、resident、无 LoRA/输入图、1025–1088 tokens、a6144/b1088，且需允许近似及有效本机分区。
+- 机型范围收窄后，79 项契约测试（3 项跳过）、8 组未获准设备的策略测试、Swift 回归及真实分区切换通过；M5 的 3 张输出与收窄前一致。详见同一 JSON 的 `device_scope_validation`，未宣称进行了 M4 实机复测。
+- Z-Image M5 的 `auto` 仍选 GPU；显式 ANE streaming 仅支持 M5 Pro 24 GiB、Comfy BF16、无 LoRA。FLUX 自动案例仅限 M5 Pro 24 GiB、512²、4 步、resident、无 LoRA/输入图、1025–1088 tokens、a6144/b1088，且需允许近似及有效本机分区。
 - 首张包含模型加载、编译及后缀整理；后缀临时文件约 1.41 GiB，两次准备为 0.385 / 0.236 s，随会话释放。10 GiB 是 GPU 采样规划预算，不含 Core ML，也不是整进程内存上限。
 - 未清空系统缓存，存在桌面负载及换页波动；打点是含同步的主机耗时，不能当作纯内核时间。1024 测试的 VAE 后 MLX 峰值约 17.35 GiB。结论不推广至其他 M5 配置，也不承诺零 swap。
 

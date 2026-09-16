@@ -1,5 +1,6 @@
 #include "../runtime/session.hpp"
 #include "z_image/z_image.hpp"
+#include "../platform/apple/platform.hpp"
 
 namespace tc {
 
@@ -39,6 +40,8 @@ ModelModule z_image_module() {
             if (r.residency == "streamed") {
                 require(r.execution == "gpu" || r.execution == "gpu_ane",
                         "Z-Image streaming requires explicit GPU or GPU+ANE execution");
+                require(r.execution != "gpu_ane" || device_info().optimizations().z_image_suffix_streaming,
+                        "Z-Image GPU+ANE streaming is only enabled for the measured M5 Pro 24 GiB device profile");
                 require(r.loras.empty(), "Z-Image streaming with LoRA is not yet supported");
                 require(r.memory_budget_bytes == 0 || r.memory_budget_bytes >= (6ull << 30),
                         "Z-Image streaming budget must be at least 6 GiB");
@@ -80,7 +83,7 @@ ModelModule z_image_module() {
             d.parallel_strategy = "GPU computes attention first, then the compiled MLP suffix overlaps the Core ML ANE gated-MLP prefix; base 4096-channel M4 Max route is automatic";
             d.candidate_limitations = {
                 "text-to-image only",
-                "streamed residency is experimental: Comfy BF16, explicit GPU or GPU+ANE, no LoRA; bounded double-buffer prefetch and compact GPU MLP suffixes",
+                "streamed residency is experimental: Comfy BF16, explicit GPU, no LoRA; GPU+ANE compact suffix streaming is enabled only on the measured M5 Pro 24 GiB device",
                 "inference_time LoRA is an explicit GPU path and is not yet performance-qualified",
                 "automatic GPU+ANE is limited to the base model on Apple M4 Max 64 GB with the measured 4096-channel 32-block manifest",
                 "the repeated warm 1024x1024 base workload measured about 1.21x end-to-end versus the optimized GPU path",

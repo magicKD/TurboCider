@@ -1,4 +1,4 @@
-"""Real-weight regression probe for Z-Image on a Mac with less than 32 GiB.
+"""Real-weight regression probe for the qualified Z-Image M5 memory policy.
 
 Checks resident cache scoping, prompt-stage memory, cancellation/retry and PNG
 parity. Run explicitly with a local Comfy BF16 model; no downloads are performed.
@@ -37,6 +37,8 @@ def main():
         return value
 
     system = json.loads(take(lib.tc_system_json()))
+    assert system.get("optimization_profile", {}).get("z_image_memory_lifecycle"), \
+        "this regression probe requires the measured M5 Pro 24 GiB device policy"
     assert 0 < system["physical_memory_bytes"] < 32 << 30, system
     if args.manifest:
         assert system["gpu"] == "Apple M5 Pro", "fallback check targets M5 Pro"

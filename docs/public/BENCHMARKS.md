@@ -31,6 +31,8 @@ excludes Core ML and is not a process memory cap; paging was observed. 1024²
 hybrid remains slower than GPU in this run, with substantial control drift.
 M5 Z-Image automatic execution remains GPU. Earlier resident and full-weight
 streaming experiments without a hybrid benefit are also retained.
+The new runtime optimizations are enabled only by the built-in M5 Pro 24 GiB
+device policy; M4 and other unmeasured devices keep their existing paths.
 
 [Implementation, quality checks, limitations and seven complete evidence records](../design/m5-ane-adaptation.md).
 

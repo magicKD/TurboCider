@@ -152,6 +152,8 @@ final class NativeJobStore: ObservableObject {
         var config = draft.acceleration ?? StudioAcceleration()
         let cache = config.coreMLCache.map { URL(fileURLWithPath: $0) } ?? compilationDirectory
         let preferred = config.manifest, known = config.knownManifests ?? []
+        let preferSmallestRows = draft.modelID == "z-image-turbo" &&
+            AccelerationDiscovery.optimizationEnabled("z_image_smallest_partition")
         accelerationStatus = "正在检查 ANE 编译缓存…"
         let textTokens = draft.modelID == "z-image-turbo"
             ? try await Task.detached {
@@ -165,7 +167,7 @@ final class NativeJobStore: ObservableObject {
         let match = await Task.detached {
             AccelerationDiscovery.find(modelPath: draft.modelPath, preferred: preferred, cache: cache,
                 minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs, knownManifests: known,
-                preferSmallestRows: draft.modelID == "z-image-turbo")
+                preferSmallestRows: preferSmallestRows)
         }.value
         try Task.checkCancellation()
         if let match {
@@ -184,7 +186,7 @@ final class NativeJobStore: ObservableObject {
                 return AccelerationDiscovery.find(modelPath: draft.modelPath, preferred: sources.first ?? "", cache: cache,
                     minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs,
                     knownManifests: Array(sources.dropFirst()), requireCompiled: false,
-                    preferSmallestRows: draft.modelID == "z-image-turbo")
+                    preferSmallestRows: preferSmallestRows)
             }.value
             guard let sourceMatch else {
                 accelerationStatus = "没有匹配当前模型、LoRA、强度与文本长度的 ANE 缓存"

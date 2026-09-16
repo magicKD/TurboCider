@@ -397,5 +397,118 @@
       "full_make_test": "stops at existing VDN max absolute error > 5e-4; reproduced on pre-change library in flux2-m5pro-2026-09-16.json"
     },
     "local_artifacts": "${PROJECT_ROOT}/outputs/m5-pr-validation-20260916/"
+  },
+  "device_scope_validation": {
+    "scope": "Runtime optimizations are selected from the built-in device policy; external execution profile JSON cannot override hardware eligibility. No M4 hardware benchmark was run; the exclusion matrix is a native policy test.",
+    "policy_source": "native/runtime/device_optimizations.hpp",
+    "matched_hardware": {
+      "gpu": "Apple M5 Pro",
+      "physical_memory_bytes": 25769803776
+    },
+    "optimization_profile": {
+      "coreml_output_copy": true,
+      "external_automatic_partitions": true,
+      "id": "m5pro24-v1",
+      "z_image_hybrid_segments": true,
+      "z_image_memory_lifecycle": true,
+      "z_image_smallest_partition": true,
+      "z_image_suffix_streaming": true
+    },
+    "unqualified_policy_cases": [
+      {
+        "gpu": "Apple M4 Pro",
+        "memory_bytes": 25769803776,
+        "optimization_profile": "legacy",
+        "all_new_optimizations_disabled": true
+      },
+      {
+        "gpu": "Apple M4 Pro",
+        "memory_bytes": 51539607552,
+        "optimization_profile": "legacy",
+        "all_new_optimizations_disabled": true
+      },
+      {
+        "gpu": "Apple M4 Max",
+        "memory_bytes": 68719476736,
+        "optimization_profile": "legacy",
+        "all_new_optimizations_disabled": true
+      },
+      {
+        "gpu": "Apple M5",
+        "memory_bytes": 25769803776,
+        "optimization_profile": "legacy",
+        "all_new_optimizations_disabled": true
+      },
+      {
+        "gpu": "Apple M5 Max",
+        "memory_bytes": 25769803776,
+        "optimization_profile": "legacy",
+        "all_new_optimizations_disabled": true
+      },
+      {
+        "gpu": "Apple M5 Pro",
+        "memory_bytes": 51539607552,
+        "optimization_profile": "legacy",
+        "all_new_optimizations_disabled": true
+      },
+      {
+        "gpu": "Apple M5 Pro",
+        "memory_bytes": 25769803775,
+        "optimization_profile": "legacy",
+        "all_new_optimizations_disabled": true
+      },
+      {
+        "gpu": "unavailable",
+        "memory_bytes": 0,
+        "optimization_profile": "legacy",
+        "all_new_optimizations_disabled": true
+      }
+    ],
+    "checks": {
+      "native_build": "passed",
+      "swift_app_build": "passed",
+      "native_device_policy": "qualified M5 and 8 unqualified cases passed; existing M4 automatic cases still pass",
+      "contract": "79 tests, 3 skipped, passed; includes external-profile execution route",
+      "gpu_weight_stream": "7 tests passed",
+      "swift_studio": "passed",
+      "real_client_routing": "512 -> 1024 -> 512 selected small -> large -> small partitions",
+      "m5_smoke": "3 PNGs byte-identical to the build before device scoping; 4096 ANE prefix channels in streaming metrics"
+    },
+    "smoke_scope": "Functional verification only; not a repeated performance benchmark.",
+    "smoke_samples": [
+      {
+        "case": "hybrid_eager",
+        "warmup": true,
+        "wall_seconds": 18.513527749979403,
+        "png_sha256": "4536044bb734869fdab789a0bc288fc5a1ccad080bf7c2f2307edf0dbbad97b5",
+        "mlp_prefix_channels": 4096
+      },
+      {
+        "case": "hybrid_fused",
+        "warmup": true,
+        "wall_seconds": 7.817282458010595,
+        "png_sha256": "4536044bb734869fdab789a0bc288fc5a1ccad080bf7c2f2307edf0dbbad97b5",
+        "mlp_prefix_channels": 4096
+      },
+      {
+        "case": "hybrid_eager_retry",
+        "warmup": false,
+        "wall_seconds": 7.532512709032744,
+        "png_sha256": "4536044bb734869fdab789a0bc288fc5a1ccad080bf7c2f2307edf0dbbad97b5",
+        "mlp_prefix_channels": 4096
+      }
+    ],
+    "native_library_sha256": "f7c35970a781e17b0cfea9408bf3d2ca43f23c02a9681652f1656c3bc45e0518",
+    "source_sha256": {
+      "native/runtime/device_optimizations.hpp": "eaec962e9178bb1de7435f8591c8aea1ef371f9f187dc8d9aa8b6a65ed2eb9a4",
+      "native/platform/apple/device.mm": "a4a830d47fcb77f0dbda3edded8e087a478613856f0505d306c95d22758ca6fd",
+      "native/models/z_image/z_image.cpp": "158cbfbca191092eb01ac139b38a06640e7e7580da1a2202221920bac5022d42",
+      "native/models/z_image_module.cpp": "b856067ee74526408288d22b06fdf8172ec93678ee52a3121771343bffd7b775",
+      "native/backends/coreml.mm": "66587bebc7d2db64b6182d99611d6d983e1703d4caed578b5e456075e8f6181e",
+      "apps/macos/AccelerationDiscovery.swift": "f4630a5c30f15633049071dc338db585f5799168d090985ea10dcb79ad5b8817",
+      "apps/macos/JobStore.swift": "1711ef75dc5b844179f3ce81f6ef1bd3925129c34ec8edb8cddb104640e3b022",
+      "apps/macos/StudioState.swift": "20b134d6c0e867d033dca6b7211e3faf5244de634fbefdadafabd51c34d96873"
+    },
+    "local_artifacts": "${PROJECT_ROOT}/outputs/m5-device-scope-20260916/"
   }
 }

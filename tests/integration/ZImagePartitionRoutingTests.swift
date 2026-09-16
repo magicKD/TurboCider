@@ -7,6 +7,9 @@ import Foundation
         guard args.count == 5 else {
             throw NativeFailure(message: "z-image-partition-routing-tests MODEL SMALL_MANIFEST LARGE_MANIFEST OUTPUT")
         }
+        guard AccelerationDiscovery.optimizationEnabled("z_image_smallest_partition") else {
+            throw NativeFailure(message: "This routing probe requires the measured M5 Pro 24 GiB device policy")
+        }
         func check(_ condition: Bool, _ message: String) throws {
             if !condition { throw NativeFailure(message: message) }
         }

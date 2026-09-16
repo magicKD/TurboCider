@@ -3,6 +3,15 @@ import Darwin
 
 /// Bounded local discovery. Never walks a home directory or downloads artifacts.
 struct AccelerationDiscovery {
+    // Consume the native device policy so App and CLI share one optimization
+    // whitelist. Old engines or unknown flags conservatively keep legacy behavior.
+    static func optimizationEnabled(_ name: String, systemJSON: String = NativeEngine.system()) -> Bool {
+        guard let data = systemJSON.data(using: .utf8),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let profile = value["optimization_profile"] as? [String: Any]
+        else { return false }
+        return profile[name] as? Bool ?? false
+    }
     private static func fileIdentity(_ url: URL) -> (bytes: UInt64, inode: UInt64, device: Int32)? {
         // Foundation attributesOfItem also queries extended attributes. Cache
         // discovery only needs stat fields; a file-provider getxattr can stall.
@@ -139,12 +148,17 @@ struct AccelerationDiscovery {
         // Registered/offline-compiled partitions can live outside the App cache.
         // Automatic eligibility still requires the hardware, geometry, checkpoint,
         // LoRA and compilation checks below; a registration alone is insufficient.
-        if !preferred.isEmpty { candidates.append(URL(fileURLWithPath: preferred)) }
-        candidates += knownManifests.map { URL(fileURLWithPath: $0) }
-        for item in LibraryANEPartition.registered(modelID: modelID) {
-            candidates.append(URL(fileURLWithPath: item.path))
-            if !requireCompiled, let source = item.sourceManifest, !source.isEmpty {
-                candidates.append(URL(fileURLWithPath: source))
+        let allowExternal = !enforceAutomaticPolicy || optimizationEnabled("external_automatic_partitions")
+        if !preferred.isEmpty, allowExternal || URL(fileURLWithPath: preferred).resolvingSymlinksInPath().path.hasPrefix(appCache.resolvingSymlinksInPath().path + "/") {
+            candidates.append(URL(fileURLWithPath: preferred))
+        }
+        if allowExternal {
+            candidates += knownManifests.map { URL(fileURLWithPath: $0) }
+            for item in LibraryANEPartition.registered(modelID: modelID) {
+                candidates.append(URL(fileURLWithPath: item.path))
+                if !requireCompiled, let source = item.sourceManifest, !source.isEmpty {
+                    candidates.append(URL(fileURLWithPath: source))
+                }
             }
         }
         if let configured = ProcessInfo.processInfo.environment["TURBOCIDER_ANE_MANIFEST"] { candidates.append(URL(fileURLWithPath: configured)) }

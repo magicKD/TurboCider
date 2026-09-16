@@ -67,12 +67,22 @@ struct StudioBehaviorTests {
         zStream.acceleration = StudioAcceleration(policy: "gpu_ane")
         try rejects { _ = try zStream.request(output: output) }
         zStream.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/z-image/compiled.json")
-        let zHybridStreamRequest = try zStream.request(output: output)
-        try check(zHybridStreamRequest.execution == "gpu_ane" &&
+        if AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming") {
+            let zHybridStreamRequest = try zStream.request(output: output)
+            try check(zHybridStreamRequest.execution == "gpu_ane" &&
                     zHybridStreamRequest.ane_manifest == "/test/z-image/compiled.json" &&
                     zHybridStreamRequest.allow_approximation == true &&
                     zHybridStreamRequest.memory_budget_bytes == 8 << 30,
-                  "Explicit Z-Image suffix streaming configuration was not forwarded")
+                      "Explicit Z-Image suffix streaming configuration was not forwarded")
+        } else {
+            try rejects { _ = try zStream.request(output: output) }
+        }
+        try check(!AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming", systemJSON: "{}"),
+                  "Old engine without device policy enabled M5 optimization")
+        try check(!AccelerationDiscovery.optimizationEnabled("unknown"), "Unknown optimization was enabled")
+        try check(!AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming",
+            systemJSON: "{\"optimization_profile\":{\"id\":\"legacy\",\"z_image_suffix_streaming\":false}}"),
+                  "Legacy device policy enabled hybrid streaming")
         zStream.acceleration = StudioAcceleration(policy: "auto")
         try rejects { _ = try zStream.request(output: output) }
         zStream.acceleration = nil
@@ -217,7 +227,8 @@ struct StudioBehaviorTests {
         let hardware = try JSONSerialization.jsonObject(with: Data(NativeEngine.system().utf8)) as! [String: Any]
         let automaticExpected = AccelerationDiscovery.automaticPolicyMatches(
             gpu: hardware["gpu"] as? String ?? "", memory: (hardware["physical_memory_bytes"] as? NSNumber)?.uint64Value ?? 0,
-            mlpWidth: 9216, start: 0, end: 6144, bucket: 1088)
+            mlpWidth: 9216, start: 0, end: 6144, bucket: 1088) &&
+            AccelerationDiscovery.optimizationEnabled("external_automatic_partitions")
         let emptyCache = root.appendingPathComponent("external-auto-cache")
         let externalAuto = AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path,
             cache: emptyCache, minimumRows: 1044, requiredRows: 1088, enforceAutomaticPolicy: true)
