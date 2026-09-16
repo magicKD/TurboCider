@@ -45,6 +45,11 @@ struct ltx_ane_mlp {
     MLPredictionOptions *options;
     NSURL *temporary_compiled;
     pthread_t thread;
+    pthread_mutex_t worker_mutex;
+    pthread_cond_t worker_condition;
+    int worker_started;
+    int worker_pending;
+    int worker_stop;
     int inflight;
     int async_ok;
     int output_backing_used;
@@ -288,6 +293,41 @@ static void *ane_prediction_thread(void *opaque) {
     return NULL;
 }
 
+/* Opt-in scheduling ablation. One lazily-created worker per used model;
+ * the caller still owns submission/shape changes and permits one inflight job.
+ * Prediction results are published through the mutex/condition pair. */
+static void *ane_persistent_thread(void *opaque) {
+    ltx_ane_mlp *mlp = opaque;
+    pthread_mutex_lock(&mlp->worker_mutex);
+    for (;;) {
+        while (!mlp->worker_pending && !mlp->worker_stop)
+            pthread_cond_wait(&mlp->worker_condition, &mlp->worker_mutex);
+        if (mlp->worker_stop) break;
+        pthread_mutex_unlock(&mlp->worker_mutex);
+        ane_prediction_thread(mlp);
+        pthread_mutex_lock(&mlp->worker_mutex);
+        mlp->worker_pending = 0;
+        pthread_cond_broadcast(&mlp->worker_condition);
+    }
+    pthread_mutex_unlock(&mlp->worker_mutex);
+    return NULL;
+}
+
+static int ane_worker_initialize(ltx_ane_mlp *mlp) {
+    if (pthread_mutex_init(&mlp->worker_mutex, NULL) != 0) return 0;
+    if (pthread_cond_init(&mlp->worker_condition, NULL) != 0) {
+        pthread_mutex_destroy(&mlp->worker_mutex);
+        return 0;
+    }
+    if (pthread_create(&mlp->thread, NULL, ane_persistent_thread, mlp) != 0) {
+        pthread_cond_destroy(&mlp->worker_condition);
+        pthread_mutex_destroy(&mlp->worker_mutex);
+        return 0;
+    }
+    mlp->worker_started = 1;
+    return 1;
+}
+
 static int ane_start(ltx_ane_mlp *mlp, char *error, size_t error_size) {
     if (!mlp || mlp->inflight) {
         ane_fail(error, error_size, "ANE MLP is missing or already active");
@@ -295,7 +335,20 @@ static int ane_start(ltx_ane_mlp *mlp, char *error, size_t error_size) {
     }
     mlp->async_ok = 0;
     mlp->async_ms = 0.0;
+    const char *persistent = getenv("TURBOCIDER_LTX_ANE_PERSISTENT_WORKER");
+    if (!mlp->worker_started && persistent && strcmp(persistent, "1") == 0 &&
+        !ane_worker_initialize(mlp)) {
+        ane_fail(error, error_size, "cannot create persistent ANE worker");
+        return 0;
+    }
     mlp->inflight = 1;
+    if (mlp->worker_started) {
+        pthread_mutex_lock(&mlp->worker_mutex);
+        mlp->worker_pending = 1;
+        pthread_cond_signal(&mlp->worker_condition);
+        pthread_mutex_unlock(&mlp->worker_mutex);
+        return 1;
+    }
     if (pthread_create(&mlp->thread, NULL, ane_prediction_thread, mlp) != 0) {
         mlp->inflight = 0;
         ane_fail(error, error_size, "cannot create ANE prediction thread");
@@ -309,7 +362,14 @@ static int ane_wait(ltx_ane_mlp *mlp, char *error, size_t error_size) {
         ane_fail(error, error_size, "ANE MLP was not started");
         return 0;
     }
-    pthread_join(mlp->thread, NULL);
+    if (mlp->worker_started) {
+        pthread_mutex_lock(&mlp->worker_mutex);
+        while (mlp->worker_pending)
+            pthread_cond_wait(&mlp->worker_condition, &mlp->worker_mutex);
+        pthread_mutex_unlock(&mlp->worker_mutex);
+    } else {
+        pthread_join(mlp->thread, NULL);
+    }
     mlp->inflight = 0;
     if (!mlp->async_ok) {
         ane_fail(error, error_size, "%s", mlp->async_error[0] ?
@@ -487,7 +547,16 @@ ltx_ane_mlp *ltx_ane_mlp_create(ltx_gpu *gpu, const char *manifest_path,
 
 void ltx_ane_mlp_free(ltx_ane_mlp *mlp) {
     if (!mlp) return;
-    if (mlp->inflight) pthread_join(mlp->thread, NULL);
+    if (mlp->inflight) ane_wait(mlp, NULL, 0);
+    if (mlp->worker_started) {
+        pthread_mutex_lock(&mlp->worker_mutex);
+        mlp->worker_stop = 1;
+        pthread_cond_signal(&mlp->worker_condition);
+        pthread_mutex_unlock(&mlp->worker_mutex);
+        pthread_join(mlp->thread, NULL);
+        pthread_cond_destroy(&mlp->worker_condition);
+        pthread_mutex_destroy(&mlp->worker_mutex);
+    }
     @autoreleasepool {
         mlp->model = nil;
         mlp->provider = nil;

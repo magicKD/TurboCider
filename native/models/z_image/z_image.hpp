@@ -4,6 +4,7 @@
 #include "../../core/tokenizer.hpp"
 #include "../../runtime/session.hpp"
 #include "../../backends/coreml.hpp"
+#include "weight_stream.hpp"
 
 namespace tc {
 
@@ -17,6 +18,8 @@ class ZImage final : public ModelSession {
     Weights text_encoder_;
     Weights transformer_;
     Weights vae_;
+    std::unique_ptr<ZImageWeightStream> weight_stream_;
+    std::string stream_configuration_;
     std::optional<Tensor> cached_conditioning_;
     std::string cached_prompt_;
     bool cached_dynamic_ = true;

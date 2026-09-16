@@ -1,7 +1,13 @@
 all: build/transformer build/transformer-heads build/transformer-private build/transformer-private-gpu build/transformer-startup
 
-CXX := /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
-SDK := /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+CXX := $(shell xcrun --find clang++)
+SDK := $(shell xcrun --sdk macosx --show-sdk-path)
+# Optional real-checkpoint diagnostic; requires an existing native engine build.
+CC := $(shell xcrun --find clang)
+LTX_DEPLOYMENT_TARGET ?= 26.2
+build/ltx-stage2-replay: src/ltx_stage2_replay.c ../../native/models/ltx_runtime/ltx_native.h ../../native/models/ltx_runtime/ltx_rng.h ../../build/native/libturbocider.dylib Makefile
+	mkdir -p build
+	$(CC) -x objective-c -std=c11 -D_DARWIN_C_SOURCE -O2 -Wall -Wextra -Werror -isysroot $(SDK) -mmacosx-version-min=$(LTX_DEPLOYMENT_TARGET) $< -L ../../build/native -lturbocider -Wl,-rpath,@loader_path/../../../build/native -framework Foundation -o $@
 build/transformer: src/runner.mm
 	mkdir -p build
 	$(CXX) -std=c++20 -O3 -DNDEBUG -fobjc-arc -isysroot $(SDK) -mmacosx-version-min=15.0 $< -o $@ -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework Accelerate -framework CoreML

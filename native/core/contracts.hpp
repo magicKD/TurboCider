@@ -51,6 +51,11 @@ struct Request {
     bool ltx_sol_stage1 = false;
     bool ltx_sol_stage2 = false;
     double ltx_sol_tau = 0.5;
+    int ltx_sparse_mode = 0;
+    int ltx_sparse_radius = 1;
+    int ltx_sparse_anchor_stride = 0;
+    int ltx_sparse_tokens_per_frame = 0;
+    int ltx_sparse_keep_blocks = 0;
     int ltx_sol_dense_edge_blocks = 1;
     int ltx_sol_dense_edge_steps = 1;
     int ltx_stage2_text_rows = 0;

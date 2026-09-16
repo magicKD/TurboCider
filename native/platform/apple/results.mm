@@ -243,6 +243,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"ltx_sol_stage1" : @(r.ltx_sol_stage1),
         @"ltx_sol_stage2" : @(r.ltx_sol_stage2),
         @"ltx_sol_tau" : @(r.ltx_sol_tau),
+        @"ltx_sparse_mode" : @(r.ltx_sparse_mode),
+        @"ltx_sparse_radius" : @(r.ltx_sparse_radius),
+        @"ltx_sparse_anchor_stride" : @(r.ltx_sparse_anchor_stride),
+        @"ltx_sparse_tokens_per_frame" : @(r.ltx_sparse_tokens_per_frame),
+        @"ltx_sparse_keep_blocks" : @(r.ltx_sparse_keep_blocks),
         @"ltx_sol_dense_edge_blocks" : @(r.ltx_sol_dense_edge_blocks),
         @"ltx_sol_dense_edge_steps" : @(r.ltx_sol_dense_edge_steps),
         @"ltx_stage2_text_rows" : @(r.ltx_stage2_text_rows),
@@ -413,6 +418,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"total_tokens" : @(result.total_tokens),
             @"seconds" : @(result.timings.wall),
             @"mlx_active_bytes" : @(result.active_bytes),
+            @"block_residency" : result.block_residency ? to_dictionary(*result.block_residency) : (id)[NSNull null],
             @"hybrid" : hybrid
         };
     NSDictionary *memory = @{
