@@ -448,8 +448,20 @@ struct StudioView: View {
                         Text("近似模式只修改 Stage-2；需要多 prompt/seed 质量回归，720p 自动限制为画质优先。")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
-                    if ["z-image-turbo", "z-image-turbo-gguf"].contains(studio.draft.modelID) {
-                        LabeledContent("模型驻留", value: "常驻（分阶段模式待实现）")
+                    if studio.draft.modelID == "z-image-turbo" {
+                        Picker("模型驻留", selection: $studio.draft.residency) {
+                            Text("常驻").tag("resident")
+                            Text("流式加载（实验）").tag("streamed")
+                        }.disabled(store.busy || submitting).accessibilityIdentifier("zImageResidency")
+                        if studio.draft.residency == "streamed" {
+                            Picker("采样内存预算", selection: $studio.draft.zImageStreamingBudgetGiB) {
+                                ForEach([6, 8, 10, 12], id: \.self) { Text("\($0) GiB").tag($0) }
+                            }.disabled(store.busy || submitting)
+                            Text("仅支持 Comfy BF16、纯 GPU、不使用 LoRA。提前读取下一层以降低内存占用；速度取决于磁盘。预算用于采样阶段规划，并非整个应用的内存硬上限。")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    } else if studio.draft.modelID == "z-image-turbo-gguf" {
+                        LabeledContent("模型驻留", value: "常驻")
                             .font(.caption)
                     } else {
                         Picker("模型驻留", selection: $studio.draft.residency) { Text("保留图像权重").tag("resident"); Text("分阶段释放").tag("component_staged") }

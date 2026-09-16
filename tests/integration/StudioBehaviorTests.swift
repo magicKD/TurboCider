@@ -53,6 +53,22 @@ struct StudioBehaviorTests {
                     decodedWan.prompt == "keep my prompt", "Wan draft round trip lost user data")
         studio.draft.modelPaths["flux2-klein-4b"] = "/test/model"
         let output = root.appendingPathComponent("output.png")
+        var zStream = StudioDraft()
+        zStream.modelID = "z-image-turbo"
+        zStream.modelPaths["z-image-turbo"] = "/test/z-image"
+        zStream.residency = "streamed"
+        zStream.zImageStreamingBudgetGiB = 8
+        let zStreamRequest = try zStream.request(output: output)
+        try check(zStreamRequest.residency == "streamed" && zStreamRequest.memory_budget_bytes == 8 << 30,
+                  "Z-Image streaming budget was not forwarded")
+        let restoredStream = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(zStream))
+        try check(restoredStream.residency == "streamed" && restoredStream.zImageStreamingBudgetGiB == 8,
+                  "Z-Image streaming draft did not persist")
+        zStream.acceleration = StudioAcceleration(policy: "gpu_ane")
+        try rejects { _ = try zStream.request(output: output) }
+        zStream.acceleration = nil
+        zStream.zImageStreamingBudgetGiB = -1
+        try rejects { _ = try zStream.request(output: output) }
         let textOnly = StudioModel(id: "flux2-klein-4b", name: "Text only fixture", executor: true, output: "image", operations: ["image.generate"], default_steps: 4, default_frames: 1, default_width: 512, default_height: 512)
         try studio.draft.validate(models: [textOnly])
         let restricted = StudioState(directory: root.appendingPathComponent("restricted"), models: [textOnly])

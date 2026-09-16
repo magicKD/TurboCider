@@ -19,6 +19,24 @@ constexpr int kHeads = 30;
 constexpr float kVaeScale = 0.3611f;
 constexpr float kVaeShift = 0.1159f;
 
+// Bound unused MLX allocations only during an explicit streaming request.
+// Restore the process-wide setting before another model or resident run starts.
+struct StreamCacheLimit {
+    std::optional<size_t> previous;
+    StreamCacheLimit(bool enabled, size_t limit) {
+        if (enabled) {
+            previous = mx::set_cache_limit(limit);
+            mx::clear_cache();
+        }
+    }
+    ~StreamCacheLimit() {
+        if (previous) {
+            mx::clear_cache();
+            mx::set_cache_limit(*previous);
+        }
+    }
+};
+
 std::string z_diffusers_transformer_key(std::string key) {
     for (const auto *prefix : {"transformer.", "diffusion_model."})
         if (key.starts_with(prefix)) {
@@ -705,7 +723,9 @@ ZPatch z_patchify(const Tensor &latent, const Tensor &caption) {
 Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, int width,
                      int height, const Weights &w, const Event &event,
                      std::atomic<bool> &cancelled, HybridSession *hybrid,
-                     const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph) {
+                     const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph,
+                     ZImageWeightStream *weight_stream) {
+    if (weight_stream) weight_stream->begin_pass();
     auto patch = z_patchify(latent, caption);
     auto image = linear_compat(patch.image, w, "x_embedder");
     auto caption_emb = linear_compat(
@@ -747,7 +767,8 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     for (int i = 0; i < 30; ++i) {
         checkpoint(cancelled);
         event("z_image_denoise_block", i, 30);
-        unified = z_block(unified, w, "layers." + std::to_string(i), unified_freqs, temb,
+        auto streamed = weight_stream ? weight_stream->acquire(i) : Weights{};
+        unified = z_block(unified, weight_stream ? streamed : w, "layers." + std::to_string(i), unified_freqs, temb,
                           hybrid, 2 + i, gpu_graph);
         // Compiled blocks retain the allocator dependency chain, so pure GPU
         // execution does not need a host synchronization after every one of
@@ -756,7 +777,9 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
         // point. Hybrid execution must synchronize around its Core ML calls;
         // the eager compatibility path keeps its former per-block behavior.
         const bool eager = std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
-        if (eager || hybrid) {
+        if (eager || hybrid || weight_stream) {
+            // Completion is required before the prefetch worker may overwrite
+            // this layer's slot two blocks later. eval also drops graph refs.
             mx::eval(unified);
             checkpoint(cancelled);
         }
@@ -987,6 +1010,8 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
 }
 
 void ZImage::unload() {
+    weight_stream_.reset();
+    stream_configuration_.clear();
     hybrid_.reset();
     hybrid_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
@@ -1113,7 +1138,7 @@ RunResult ZImage::generate(const Request &r, const Event &event, std::atomic<boo
 }
 
 RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
-                      bool warmup, bool load_only) {
+                      bool warmup, bool load_only) try {
     auto r = requested;
     auto begin = Clock::now();
     require(r.model == model_id_, "Z-Image session received a different model id");
@@ -1124,6 +1149,24 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             "Z-Image output must be .png");
     require(r.inputs.empty(), "Z-Image-Turbo currently supports text-to-image only");
     require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
+    const bool streamed = r.residency == "streamed";
+    const auto budget = r.memory_budget_bytes ? r.memory_budget_bytes :
+        std::min<uint64_t>(10ull << 30, device_info().physical_memory / 2);
+    // Reserve VAE, temporary activations and allocator cache. This is a planning
+    // estimate for the denoiser, not an OS-enforced process memory limit.
+    const uint64_t reserve = (3ull << 30) + uint64_t(r.width) * r.height * 2048;
+    const auto configuration = streamed ? std::to_string(budget) + ":" + std::to_string(reserve) : "";
+    const bool prompt_changed = !cached_conditioning_ || cached_prompt_ != r.prompt || cached_dynamic_ != r.dynamic_text;
+    if (configuration != stream_configuration_ || (streamed && prompt_changed)) {
+        mx::synchronize();
+        weight_stream_.reset();
+        transformer_.clear();
+        vae_.clear();
+        mx::clear_cache();
+        stream_configuration_ = configuration;
+    }
+    StreamCacheLimit cache_limit(streamed, r.allocator_cache_bytes);
+    mx::reset_peak_memory();
     select_loras(r);
     auto text_start = Clock::now();
     bool prompt_hit = conditioning(r, event, cancelled);
@@ -1137,6 +1180,14 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
     if (plan.request.execution != r.execution || plan.request.compile_gpu != r.compile_gpu)
         plan = make_plan(r);
+    if (streamed) {
+        require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !diffusers_layout_,
+                "Z-Image streaming currently requires the Comfy BF16 checkpoint");
+        if (!weight_stream_)
+            weight_stream_ = std::make_unique<ZImageWeightStream>(
+                transformer_path_, budget, reserve, transformer_, event, cancelled);
+        else weight_stream_->reset_metrics();
+    }
     load(event, cancelled);
     if (load_only) {
         RunResult result;
@@ -1173,6 +1224,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         result.timings.text = text_seconds;
         result.peak_bytes = mx::get_peak_memory();
         result.active_bytes = mx::get_active_memory();
+        if (weight_stream_) result.block_residency = weight_stream_->metrics();
         return result;
     }
     const int latent_h = r.height / 8, latent_w = r.width / 8;
@@ -1246,7 +1298,20 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.timings.decode = decode_seconds;
     result.peak_bytes = mx::get_peak_memory();
     result.active_bytes = mx::get_active_memory();
+    if (weight_stream_) result.block_residency = weight_stream_->metrics();
     return result;
+} catch (...) {
+    if (weight_stream_ || !stream_configuration_.empty()) {
+        // Cancellation can leave a prefetch outstanding. Join it before a retry
+        // resets the cancellation flag or reuses any of its destination buffers.
+        try { mx::synchronize(); } catch (...) {}
+        weight_stream_.reset();
+        transformer_.clear();
+        vae_.clear();
+        stream_configuration_.clear();
+        mx::clear_cache();
+    }
+    throw;
 }
 
 Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma, float width,
@@ -1254,7 +1319,7 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
     auto model_input = mx::astype(latent, mx::bfloat16);
     return mx::astype(
         z_transformer(model_input, caption, sigma, int(width), height, transformer_, event,
-                      cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr),
+                      cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr, weight_stream_.get()),
         mx::float32);
 }
 

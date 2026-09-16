@@ -33,8 +33,15 @@ ModelModule z_image_module() {
                     require(r.lora_strategy == "in_memory_merge",
                             "Z-Image GPU+ANE LoRA requires lora_strategy=in_memory_merge");
             }
-            require(r.residency == "resident",
-                    "Z-Image component-staged residency is not implemented");
+            require(r.residency == "resident" || r.residency == "streamed",
+                    "Z-Image supports resident or streamed residency");
+            require(!r.streaming_offload, "use residency=streamed for native Z-Image streaming");
+            if (r.residency == "streamed") {
+                require(r.execution == "gpu", "Z-Image streaming currently requires explicit GPU execution");
+                require(r.loras.empty(), "Z-Image streaming with LoRA is not yet supported");
+                require(r.memory_budget_bytes == 0 || r.memory_budget_bytes >= (6ull << 30),
+                        "Z-Image streaming budget must be at least 6 GiB");
+            }
             require(r.loras.size() <= 8, "at most eight Z-Image LoRA adapters may be active");
             for (const auto &lora : r.loras) {
                 require(lora.role == "transformer",
@@ -71,6 +78,7 @@ ModelModule z_image_module() {
             d.parallel_strategy = "GPU computes attention first, then the compiled MLP suffix overlaps the Core ML ANE gated-MLP prefix; base 4096-channel M4 Max route is automatic";
             d.candidate_limitations = {
                 "text-to-image only",
+                "streamed residency is experimental: Comfy BF16, GPU only, no LoRA; bounded double-buffer prefetch",
                 "inference_time LoRA is an explicit GPU path and is not yet performance-qualified",
                 "automatic GPU+ANE is limited to the base model on Apple M4 Max 64 GB with the measured 4096-channel 32-block manifest",
                 "the repeated warm 1024x1024 base workload measured about 1.21x end-to-end versus the optimized GPU path",

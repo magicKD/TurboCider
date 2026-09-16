@@ -43,6 +43,29 @@ def plan(r):
     return status,json.loads(a) if a else None,b
 
 class ContractTests(unittest.TestCase):
+    def test_z_image_streaming_contract(self):
+        request = dict(model='z-image-turbo', operation='image.generate',
+                       prompt='A red fox', width=512, height=512, frames=1,
+                       steps=8, audio=False, execution='gpu', residency='streamed',
+                       memory_budget_bytes=10 << 30)
+        code, result, error = plan(request)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(result['residency'], 'streamed')
+        self.assertEqual(result['memory_budget_bytes'], 10 << 30)
+        for change in [dict(execution='auto'), dict(memory_budget_bytes=1 << 30),
+                       dict(streaming_offload=True), dict(residency='component_staged'),
+                       dict(loras=[dict(path='/tmp/style.safetensors', strength=1, role='transformer')])]:
+            self.assertNotEqual(plan({**request, **change})[0], 0, change)
+        schema2 = dict(schema_version=2, model='z-image-turbo', operation='image.generate',
+                       inputs=[dict(kind='text', role='prompt', text='A red fox')],
+                       outputs=[dict(kind='image', path='/tmp/z-stream.png', width=512, height=512)],
+                       sampling=dict(steps=8, seed=42),
+                       execution=dict(policy='gpu', residency='streamed', memory_budget_bytes=8 << 30))
+        code, result, error = plan(schema2)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(result['residency'], 'streamed')
+        self.assertEqual(result['memory_budget_bytes'], 8 << 30)
+
     def test_ltx_sparse_patterns_are_explicit_stage2_only(self):
         request = {
             'model': 'ltx-2.5-distilled', 'width': 768, 'height': 448,
