@@ -1,4 +1,5 @@
 #include "context.hpp"
+#include "audit.hpp"
 #include <exception>
 #include <stdexcept>
 
@@ -55,6 +56,7 @@ void StageExecutor::begin(const StageLayout &layout) {
     mailbox_=std::make_unique<CompletionMailbox>(layout.slot_count*(1+TC_STREAM_MAX_READER_QUEUES));
     try {
         pool_live_=true; adapter_->create_pool(pool);
+        audit_increment(AuditCounter::PoolAllocations);
         ++state_->counters.pool_creates; state_->counters.slot_bundles=pool.slots.size();
         state_->io=std::make_unique<IoExecutor>(layout.workers,layout.slot_count,*mailbox_);
     } catch (...) { state_->failed=true; retry_drain(); throw; }

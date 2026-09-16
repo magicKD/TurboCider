@@ -4,7 +4,7 @@ LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3.11))
 PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),python3.11)
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
-.PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-ltx-streaming-lifecycle
+.PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-source-identity test-streaming-audit test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -20,7 +20,11 @@ help:
 	@echo 'make test-streaming-host           Verify layout/executor/LTX metadata with synthetic fixtures'
 	@echo 'make test-streaming-contract       Verify streaming API/snapshot contracts (requires native build)'
 	@echo 'make test-streaming-metal          Verify synthetic GPU slots (requires Metal access)'
+	@echo 'make test-streaming-campaign       Verify CPU-only ABBA campaign runner/verifier'
+	@echo 'make test-streaming-source-identity Verify source/build provenance capture'
+	@echo 'make test-streaming-audit          Verify audit-only counters and release symbol isolation'
 	@echo 'make test-ltx-streaming-lifecycle MODEL=/path OUTPUT=/path  Opt-in real LTX exact lifecycle test'
+	@echo 'make test-ltx-streaming-lifecycle-faults MODEL=/path OUTPUT=/path  Require a test-hook build and unsafe-cleanup matrix'
 	@echo 'make test-model MODEL=/path/to/FLUX.2-klein-4B OUTPUT=/tmp/new-tc-validation'
 	@echo 'make doctor                       Inspect this Mac and native dependencies'
 	@echo 'make h3-quant-cache MODEL=/path/to/transformer OUTPUT=/path/to/cache'
@@ -42,6 +46,9 @@ test:
 	@"$(PYTHON)" tests/native/test_contract.py
 	@$(MAKE) test-streaming-host
 	@$(MAKE) test-streaming-contract
+	@$(MAKE) test-streaming-campaign
+	@$(MAKE) test-streaming-source-identity
+	@$(MAKE) test-streaming-audit
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
 	@"$(PYTHON)" -B tests/native/test_z_image_sharded_checkpoint.py
 	@"$(PYTHON)" -B tests/native/test_z_image_weight_stream.py
@@ -89,11 +96,23 @@ test-streaming-contract:
 test-streaming-metal:
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_layout.py --metal
+test-streaming-campaign:
+	@"$(PYTHON)" -B tests/native/test_streaming_campaign_verifier.py
+test-streaming-source-identity:
+	@"$(PYTHON)" -B tests/native/test_streaming_source_identity.py
+test-streaming-audit:
+	@"$(PYTHON)" -B tests/native/test_streaming_audit.py
 test-ltx-streaming-lifecycle:
 	@test -n "$(MODEL)" -a -n "$(OUTPUT)" || (echo 'MODEL=/path/to/LTX-2.5 and OUTPUT=/path/to/results are required'; exit 1)
 	@"$(PYTHON)" -B tests/native/test_ltx_candidate_streaming_lifecycle.py \
 		--library build/native/libturbocider.dylib --model "$(MODEL)" \
 		--cache "$(OUTPUT)/cache" --output "$(OUTPUT)/lifecycle"
+test-ltx-streaming-lifecycle-faults:
+	@test -n "$(MODEL)" -a -n "$(OUTPUT)" || (echo 'MODEL=/path/to/LTX-2.5 and OUTPUT=/path/to/results are required'; exit 1)
+	@"$(PYTHON)" -B tests/native/test_ltx_candidate_streaming_lifecycle.py \
+		--library build/native/libturbocider.dylib --model "$(MODEL)" \
+		--cache "$(OUTPUT)/cache" --output "$(OUTPUT)/lifecycle" \
+		--require-test-hooks
 test-app:
 	@build/native/turbocider-ane-library-tests
 	@build/native/turbocider-studio-tests

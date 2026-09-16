@@ -590,3 +590,145 @@ status-returning destroy重试；成功才继续，仍不安全则保留完整st
 `streaming_worker_quarantined`。不强制释放borrowed metadata，也不新增用户可控的unsafe开关。
 当前尚无确定性session级unsafe-drain注入，因此此分支的release资格仍未完成；native/C bridge层已有
 错误线程与drain失败保留handle测试，不能冒充session级覆盖。
+
+## 13. 生命周期闭环与 campaign 工具落地
+
+### 13.1 exact session 生命周期
+
+test-hook build 已补确定性 unsafe destroy 和 first-fill 注入；release build 不定义
+`TURBOCIDER_ENABLE_TEST_HOOKS`，也不导出任何 `tc_engine_test_ltx_*` 符号。真实 GPU 生命周期矩阵新增：
+
+- metadata、first fill、Stage 1、upsample、Stage 2、VAE 边界取消后恢复；
+- unsafe destroy 首次失败后 session quarantine、下一请求拒绝、owner-thread 后续重试恢复；
+- engine teardown 仍不安全时转交 process quarantine，test-only owner retry 后安全 drain；
+- process quarantine 使用 request state 内 intrusive link，不在低内存失败路径额外分配 bookkeeping node。
+
+完整 fault artifact：
+`/private/tmp/turbocider-ltx-lifecycle-intrusive-quarantine-20260916/lifecycle/lifecycle-summary.json`。
+release 生命周期 artifact：
+`/private/tmp/turbocider-ltx-lifecycle-release-20260916/lifecycle/lifecycle-summary.json`。
+两者的 Stage-2 latent SHA-256 均保持
+`7db71bf03027942b53af69ab914714583fe8f8d4c3ed2faf60f4aa4ed43f28fd`。
+
+### 13.2 T2/T3 可执行工具
+
+新增：
+
+- `tools/native/run_streaming_campaign.py`：两个独立持久 worker、ABBA/BAAB、增量 raw JSONL、
+  timeout/abort 完整保留、quality/fault/environment/audit/manifest bundle；
+- `tools/native/verify_streaming_campaign.py`：manifest/identity/quality/audit 硬门、按 block bootstrap、
+  P0/P1 阈值和 PASS/FAIL/INCONCLUSIVE；
+- `tools/native/capture_streaming_source_identity.py`：clean export 或 dirty worktree 的可复现源码身份；
+- `tests/native/test_streaming_campaign_verifier.py`：持久 worker、block 顺序、失败、timeout、partial audit、
+  P0 provenance 反例；
+- `tests/native/test_streaming_source_identity.py`：导出树稳定 hash、非法 commit、当前 dirty/untracked 捕获。
+
+这些工具不施加 pressure，不改 swap，不把 synthetic PASS 当真实 GPU 资格。
+
+### 13.3 真实 LTX tiny campaign smoke
+
+沙箱内首次运行在 baseline warmup 明确返回 `Metal GPU unavailable`；runner 修正为仍生成完整
+aborted bundle，verifier 给 `INCONCLUSIVE`，不把设备不可用当性能 FAIL 或 PASS。
+
+沙箱外运行 artifact：
+`/private/tmp/turbocider-streaming-campaign-smoke-metal-20260916`。配置为真实 LTX
+64×64×9、11 steps、两个独立 public resident worker、2 个 ABBA/BAAB block、4 matched pairs。
+结果：8/8 measured requests 成功，所有 matched Stage-2 latent byte-exact，无失败/timeout；candidate
+每次均报告 `block_streaming.enabled=false`、slot allocations/refills 为0。
+
+| tiny 指标 | dev baseline | current candidate | candidate/dev |
+|---|---:|---:|---:|
+| request wall median | 42.083178 s | 23.183768 s | 0.55090 |
+| request wall P95 | 43.949082 s | 24.122947 s | 0.54888 |
+| denoise median | 8.426679 s | 8.692648 s | 1.03156 |
+| denoise P95 | 8.724369 s | 9.741839 s | 1.11662 |
+
+wall 被两侧不同的 pre-model/model-load 行为主导，不能拿 0.55 比值宣称框架加速；denoise 的4-pair
+小样本则提示 current 约 +3.16% median，95%区间仍宽。verifier 最终为 `INCONCLUSIVE`，原因包括：
+样本远少于正式 normal-target 要求、environment/audit 为 partial、dev saved binary 没有完整 source
+manifest、candidate 是 dirty build。该信号必须在可信 clean before/after、更多 block 和隔离环境下复测；
+在复测前不能声称正式 P0 已通过，也不能用 wall load 差异掩盖 denoise 信号。
+
+随后从 `dev@ad343d4` 的 clean `git archive` 重新构建 baseline，绑定 source manifest
+`20958d6f2cfe1ac8b49e67ef4c790650d55714d2b20c97e49f4e2afb28dc2b77`；baseline dylib
+SHA-256 为 `6a95b7f6b87961a1b0aafb5d300b80e8499a8572897e7add05136f6c50c0a977`。
+同一工具链复测 artifact：
+`/private/tmp/turbocider-streaming-campaign-clean-source-metal-20260916`。
+
+| clean-source tiny 指标 | clean dev | current candidate | candidate/dev | block-bootstrap 95% interval |
+|---|---:|---:|---:|---:|
+| request wall median | 23.344833 s | 23.361947 s | 1.00073 | 0.96806–1.04052 |
+| request wall P95 | 23.613862 s | 23.700510 s | 1.00367 | 0.98884–1.01599 |
+| denoise median | 8.413172 s | 8.435187 s | 1.00262 | 0.99721–1.00432 |
+| denoise P95（诊断项） | 8.462887 s | 8.450525 s | 0.99854 | 0.99472–1.00439 |
+
+这次 clean-source 复测未复现旧 saved dylib 的 +3.16% denoise 信号，支持该信号主要来自不可比
+binary/build 状态；同时也证明 source provenance 是 P0 的必要条件。denoise median/P95 诊断区间均在门槛内，
+但 wall median 区间上界1.04052仍高于1.02，且只有4 pairs、tiny workload、audit/environment为partial，
+因此 verifier 保持 `INCONCLUSIVE`，不能升级为 P0 PASS。
+
+### 13.4 当前下一门
+
+1. 冻结 normal-target resident 与原 legacy streamed 两张 P0 卡，至少20 matched pairs并按预注册 ceiling执行；
+2. P1 先证明 legacy/exact 的 P/G/K/D/Q、loader并发、retention、conditioning/VAE/export 同义；
+3. 完成 whole-request closure 后再运行 P2；P3 pressure/swap 仍需单独授权；
+4. normal-target P0/P1 未通过前 production registry 继续为空，H3/Flux/Z 扩展不越过该门。
+
+### 13.5 独立 audit build 与 20-pair tiny P0
+
+新增 `TURBOCIDER_BUILD_AUDIT_COUNTERS=1` 和可选 `TURBOCIDER_BUILD_OUTPUT_DIR`。release 下
+`audit_increment()` 为 inline no-op，dylib 不导出 audit ABI；audit build 才编译原子计数并私有导出：
+
+- `tc_streaming_audit_reset`；
+- `tc_streaming_audit_snapshot_json`。
+
+计数覆盖 constrained admission hook、checkpoint capability probe、`IoExecutor` worker 创建、
+`StageExecutor` pool 创建以及 constrained route 触发的 cache-clear/unload；普通 engine free 和用户显式
+unload 不计入新框架 audit。`run_streaming_audit.py` 可单独生成 verifier 接受的 `audit.json`；campaign worker
+若检测到 audit ABI，则在每个请求前 reset、请求后 snapshot。release worker 缺少该 ABI 时仍保持 partial，
+不会伪造完整 audit。测试入口为：
+
+```sh
+make PYTHON=python3 test-streaming-audit
+```
+
+三种隔离构建已验证：release 无 audit/test-hook 符号；audit 只有 audit 符号；test-hook 只有四个
+`tc_engine_test_ltx_*` 生命周期符号。真实默认 LTX tiny 请求在 audit build 中成功，五类计数均为0。
+显式 fake `StageExecutor` audit 则精确观察到1次pool allocation和2个worker thread，证明计数不是恒零。
+
+重新运行 test-hook 真实 GPU 生命周期矩阵，artifact 为：
+
+```text
+/private/tmp/turbocider-ltx-lifecycle-audit-integration-20260916/lifecycle/lifecycle-summary.json
+```
+
+metadata/first-fill/Stage1/upsample/Stage2/VAE/export、session/process quarantine和恢复全部通过；所有
+成功恢复请求的 Stage-2 latent SHA-256仍为
+`7db71bf03027942b53af69ab914714583fe8f8d4c3ed2faf60f4aa4ed43f28fd`。
+
+随后对真实LTX 64×64×9、11 steps、默认resident运行10个ABBA/BAAB block、20 matched pairs。
+clean baseline仍为`dev@ad343d4`，release candidate SHA-256为
+`c2f9c98a55c4554080a08585a5cc9829aa9f71f5be4696e5e9aa8358038e03d8`。release性能bundle：
+
+```text
+/private/tmp/turbocider-streaming-campaign-audit-20260916/bundle-release10
+```
+
+独立audit bundle：
+
+```text
+/private/tmp/turbocider-streaming-campaign-audit-20260916/bundle-audit10
+```
+
+两者均为40/40 measured成功、20/20 pair质量byte-exact、完整环境/source provenance、无fault。release结果：
+
+| tiny default P0指标 | clean dev | release candidate | ratio | block-bootstrap 95% interval |
+|---|---:|---:|---:|---:|
+| request wall median | 23.933185 s | 23.930811 s | 0.99990 | 0.99241–1.00337 |
+| request wall P95 | 24.174613 s | 24.140116 s | 0.99857 | 0.98740–1.01005 |
+| denoise median | 8.421231 s | 8.427595 s | 1.00076 | 0.99634–1.00511 |
+| denoise P95（诊断） | 8.681186 s | 8.547064 s | 0.98455 | 0.95866–1.02423 |
+
+verifier 对该冻结tiny tuple给出`PASS`，audit hard gate五类计数全部为0。该结论证明本次改造未使这个
+默认tiny resident tuple劣化；它仍不是normal-target、largest、legacy-streamed P0，也不授予production
+exact streaming或bounded-memory资格。

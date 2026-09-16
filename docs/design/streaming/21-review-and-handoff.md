@@ -216,10 +216,103 @@ A/B layout digest分别为`40b13657a746d27a9a44ec11f53485ac4163f23e92408eb7aef2b
 和`9c1b0b90ab16f89541625a7284489a09b24557f1f88bfb38d8c77505a57120c8`。
 
 session quarantine现在会在下一次同owner `generate()`先重试status destroy：成功才继续，失败则保持完整
-owner并返回quarantined错误。尚缺确定性unsafe-drain故障注入和engine teardown覆盖。
+owner并返回quarantined错误。确定性unsafe-drain和engine teardown覆盖随后已在本文件第8/9节闭环。
 
 最终默认resident热缓存样本为9.010764秒，denoise 6.950530秒；相对此前dev热样本9.039951秒/
 6.915945秒没有观察到wall回退，denoise差约+0.5%，仍属于tiny单样本，不签P0。
 
-该检查点支持保存和继续开发，但不授予production资格：unsafe quarantine矩阵、normal-target P0/P1、
+该检查点支持保存和继续开发；后续已完成unsafe quarantine矩阵和tiny default P0，但normal-target P0/P1、
 whole-request bounded guard、低内存P3和其他模型adapter仍是下一阶段门禁。
+
+## 8. 后续实现：生命周期 fault 与性能 campaign 工具
+
+当前 dirty 工作树又完成两项此前明确未完成的能力，但尚未提交：
+
+1. LTX exact 生命周期 fault 闭环：test-hook build 可注入 first-fill cancel 和多次 unsafe destroy；
+   session quarantine、engine teardown process quarantine 及安全 retry 已由真实 GPU 矩阵覆盖。release dylib
+   不导出 test-hook 符号，request/schema/public header 没有新增绕过开关。
+2. T2/T3 性能工具：两个独立持久 worker、ABBA/BAAB raw campaign、source/build identity、quality/fault/
+   environment/audit evidence、按 block bootstrap verifier 和 CPU-only 反例测试。
+
+新增可执行入口：
+
+```sh
+make PYTHON=python3 test-streaming-campaign
+make PYTHON=python3 test-streaming-source-identity
+```
+
+真实 LTX tiny tool smoke 位于：
+
+```text
+/private/tmp/turbocider-streaming-campaign-smoke-metal-20260916
+```
+
+该 smoke 的4个 matched pair全部成功，Stage-2 latent逐pair byte-exact，candidate 默认 resident
+`block_streaming.enabled=false`且slot allocations/refills为0。verifier仍正确返回`INCONCLUSIVE`：
+environment/audit/source provenance不完整，且只有tiny 4-pair。diagnostic中 candidate/dev denoise median
+约1.03156、P95约1.11662，样本区间很宽；这是需要复测的回归信号，不是可忽略噪声，也不能被wall中
+baseline较慢的load阶段掩盖。
+
+交接时应先完成clean dev source export/build和独立default audit，再扩充normal-target P0 block；如果
+denoise区间仍越过1.02，先定位stage1/Metal/thermal/编译差异并修复，不以低内存收益抵消默认回归。
+production registry仍保持为空，P3 pressure仍未授权、未运行。
+
+补充：随后使用 `dev@ad343d4` clean source export 重新构建 baseline，并由 source identity 工具绑定
+完整 source manifest；同一工具链4-pair复测的 candidate/dev 比值为 wall median 1.00073、denoise median
+1.00262。旧 saved dylib 的 +3.16% denoise 信号未复现。新 artifact 为
+`/private/tmp/turbocider-streaming-campaign-clean-source-metal-20260916`。由于 wall median 的小样本区间
+上界仍为1.04052、audit/environment仍为partial，最终结论继续是`INCONCLUSIVE`，不是P0 PASS。
+
+## 9. Audit闭环与20-pair default P0补充
+
+后续已完成独立audit build、私有snapshot/reset ABI、campaign自动采集和release符号隔离。三种构建：
+
+| 变体 | audit符号 | lifecycle test-hook符号 |
+|---|---:|---:|
+| release | 0 | 0 |
+| audit | 2 | 0 |
+| test-hook | 0 | 4 |
+
+真实LTX默认resident audit请求成功且五类counter全0；显式executor测试观察到pool/worker非0。新test-hook构建的
+完整GPU生命周期矩阵再次通过，artifact：
+`/private/tmp/turbocider-ltx-lifecycle-audit-integration-20260916/lifecycle/lifecycle-summary.json`。
+
+20-pair audit bundle：
+`/private/tmp/turbocider-streaming-campaign-audit-20260916/bundle-audit10`；20-pair release bundle：
+`/private/tmp/turbocider-streaming-campaign-audit-20260916/bundle-release10`。两者均40/40成功、quality完整、
+fault=0、environment/source/audit完整。release verifier为`PASS`：wall median ratio 0.99990（95%上界
+1.00337）、wall P95 ratio 0.99857（上界1.01005）、denoise median ratio 1.00076（上界1.00511）。
+
+因此当前证据可以签“LTX 64×64×9、11-step、默认resident tiny tuple相对clean dev无回退”，不能扩大为
+normal-target、legacy-streamed、P1/P2/P3或production资格。下一优先级变为normal-target resident和既有
+streamed P0、同义P1、whole-request closure/P2；pressure/swap仍未授权。
+
+## 10. dev 合并与回归复核（2026-09-16）
+
+`dev@ad343d4e5139c9a5f13e29ff9e926e8eb1ae2f39` 已通过 merge commit
+`566f7a6faf07734255cee229ca31ca3af0bc154c` 合入 `feat/stream`；随后保留并继续完成了
+LTX candidate lifecycle、fault/quarantine、audit counter 和 campaign 工具改动。当前分支确认满足
+`git merge-base --is-ancestor dev HEAD`，没有未解决的 merge index 或冲突标记。
+
+合并后的 streaming 专项回归结果：
+
+- repository、ABI/contract 82 项、host layout/descriptor/executor、LTX snapshot、campaign verifier、
+  source identity、audit counter 全部通过；Metal 不可用时按既有规则 SKIP。
+- `test_ltx_streaming_snapshot.py`、`test_ltx_streaming_descriptor.py` 和 opt-in
+  `test_ltx_streaming_model.py` 的临时 Apple 编译命令统一显式传入 `xcrun --sdk macosx --show-sdk-path`
+  得到的 `-isysroot`，避免在不同 Xcode/macOS SDK 默认路径下误报 Foundation header 缺失。
+- 合并后的内存、H3、LTX、Z-image、Flux/Wan 相关 Python contract 回归以及 inventory 回归通过；无
+  streaming 改动引起的新失败。
+
+完整 `make PYTHON=Python/bin/python3 test` 在当前机器唯一失败的是既有的
+`tests/native/test_video_timing.py`：`video_timing_probe` 在 AVFoundation writer 启动阶段返回
+`video writer start failed`，尚未进入帧率/时长断言。该测试与本次 merge 的 streaming 文件无 diff，且
+失败发生在无 Metal 依赖的媒体 writer 环节；使用同一台机器上 clean `dev@ad343d4` dylib 的独立
+probe 也复现同样错误，因此暂记为环境/媒体栈阻塞，不将其误判为 streaming 回退。交付前应在可用
+AVFoundation writer 的 clean build 上重跑并保留日志。
+
+性能保护仍以独立 20-pair ABBA/BAAB campaign 为准：release candidate 与 clean dev 的 LTX
+64×64×9、11-step 默认 resident tiny tuple 为 40/40 成功、质量 byte-exact，wall median ratio
+0.99990（95% bootstrap 上界 1.00337），denoise median ratio 1.00076（上界 1.00511），五类
+audit counter 均为零。该证据支持“不影响默认 resident 热路径”，但不扩大为 normal-target、legacy
+streamed、低内存 bounded-memory 或其他模型的性能承诺。

@@ -111,6 +111,14 @@ int ltx_native_create_streamed_v1(const ltx_native_options *,
     ltx_native_progress, void *, char *, size_t);
 int ltx_native_streaming_destroy(ltx_native_denoiser **, char *, size_t);
 int ltx_native_streaming_counters(ltx_native_denoiser *, tc_stream_counters_v1 *, char *, size_t);
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+/* Private deterministic fault injection for lifecycle tests. Release builds
+ * do not contain this symbol and no request/environment setting can reach it. */
+int ltx_native_streaming_test_set_destroy_failures(
+    ltx_native_denoiser *, uint32_t, char *, size_t);
+int ltx_native_streaming_test_cancel_first_fill(
+    ltx_native_denoiser *, char *, size_t);
+#endif
 /* v2 exact entry borrows a header parsed by ltx_st_read_header_fd and its fd.
  * Identity/change checks run before construction and at stage boundaries;
  * these are NOT a content hash or protection against concurrent modification.

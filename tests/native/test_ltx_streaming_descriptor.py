@@ -17,7 +17,11 @@ def main():
     args = parser.parse_args()
     cc = subprocess.check_output(["xcrun", "--find", "clang"], text=True).strip()
     cxx = subprocess.check_output(["xcrun", "--find", "clang++"], text=True).strip()
-    flags = ["-Wall", "-Wextra", "-Werror", "-I", str(LTX)]
+    sdk = subprocess.check_output(
+        ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True
+    ).strip()
+    flags = ["-Wall", "-Wextra", "-Werror", "-isysroot", sdk,
+             "-I", str(LTX)]
     sanitizer = os.environ.get("TC_STREAMING_SANITIZER", "")
     if sanitizer:
         if sanitizer not in ("address,undefined", "thread"):

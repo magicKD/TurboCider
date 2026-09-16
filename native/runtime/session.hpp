@@ -129,6 +129,16 @@ class ModelSession {
     virtual RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) {
         throw std::runtime_error("preparation unavailable");
     }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    /* Test-build-only lifecycle control. It is intentionally absent from
+     * release binaries and from the public C header/request schema. */
+    virtual void test_set_ltx_exact_destroy_failures(uint32_t) {
+        throw std::runtime_error("LTX exact lifecycle test hook unavailable");
+    }
+    virtual void test_cancel_ltx_exact_first_fill() {
+        throw std::runtime_error("LTX exact first-fill test hook unavailable");
+    }
+#endif
 };
 struct ModelDescriptor {
     std::string id, name;

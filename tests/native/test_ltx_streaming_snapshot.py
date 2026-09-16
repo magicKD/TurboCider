@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def main():
     compiler = subprocess.check_output(["xcrun", "--find", "clang++"], text=True).strip()
+    sdk = subprocess.check_output(
+        ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True
+    ).strip()
     with tempfile.TemporaryDirectory(prefix="tc-ltx-snapshot-") as raw:
         directory = Path(raw)
         tiny = directory / "header-failures.safetensors"
@@ -29,7 +32,8 @@ def main():
             raise ValueError("parser fault suite supports only address,undefined")
         flags = ["-O1", "-g", "-fno-omit-frame-pointer", "-fsanitize=" + sanitizer] if sanitizer else ["-O2"]
         parser_test = directory / "parser-failures"
-        subprocess.run([clang, "-std=c11", "-fobjc-arc", "-Wall", "-Wextra", "-Werror", *flags,
+        subprocess.run([clang, "-std=c11", "-fobjc-arc", "-Wall", "-Wextra", "-Werror",
+                        "-isysroot", sdk, *flags,
                         str(ROOT / "tests/native/ltx_safetensors_failure_test.m"),
                         "-framework", "Foundation", "-o", str(parser_test)], check=True)
         subprocess.run([str(parser_test), str(tiny)], check=True, timeout=30)
@@ -39,6 +43,7 @@ def main():
         shutil.copyfile(checkpoint, other)
         binary = directory / "snapshot-test"
         subprocess.run([compiler, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
+                        "-isysroot", sdk,
                         "-I", str(ROOT / "native/models/ltx_runtime"),
                         str(ROOT / "tests/native/ltx_streaming_snapshot_test.cpp"),
                         "-L", str(ROOT / "build/native"), "-lturbocider",

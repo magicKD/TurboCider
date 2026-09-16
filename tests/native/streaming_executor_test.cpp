@@ -1,4 +1,5 @@
 #include "streaming/context.hpp"
+#include "streaming/audit.hpp"
 #include <cassert>
 #include <condition_variable>
 #include <deque>
@@ -172,5 +173,22 @@ int main() {
         }
         assert(model->destroys==1);
     }
+#ifdef TURBOCIDER_ENABLE_AUDIT_COUNTERS
+    // The audit build must observe the framework only when this explicit
+    // streaming executor is entered.  Keep the assertion independent of the
+    // larger matrix above so it remains stable if that matrix grows.
+    audit_reset();
+    {
+        auto model=std::make_shared<FakeModel>(); std::atomic<bool> cancel{false};
+        StageExecutor exec(3,7,model);
+        exec.run(layout(3,2,2),cancel);
+    }
+    const auto audit = audit_snapshot();
+    assert(audit.pool_allocations == 1);
+    assert(audit.worker_threads == 2);
+    assert(audit.framework_hooks == 0);
+    assert(audit.memory_probes == 0);
+    assert(audit.cache_clear_or_unload_calls == 0);
+#endif
     std::cout<<"PASS streaming executor: "<<runs<<" K/D/Q combinations, two independent readers, faults and cleanup\n";
 }

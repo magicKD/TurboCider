@@ -33,6 +33,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <signal.h>
 #include <spawn.h>
@@ -1874,6 +1875,10 @@ struct LtxExactRequestState {
 
     ltx::StreamingPlanView plan;
     ltx_native_denoiser* denoiser = nullptr;
+    // Intrusive link used only after session teardown cannot prove safety.
+    // Keeping the link inside the already-live owner avoids a second
+    // allocation in the failure path.
+    LtxExactRequestState* process_quarantine_next = nullptr;
 };
 
 static bool destroy_ltx_exact_state(LtxExactRequestState*& state,
@@ -1886,6 +1891,61 @@ static bool destroy_ltx_exact_state(LtxExactRequestState*& state,
     state = nullptr;
     return true;
 }
+
+struct LtxExactProcessQuarantineRegistry {
+    std::mutex mutex;
+    LtxExactRequestState* head = nullptr;
+    size_t count = 0;
+};
+
+static LtxExactProcessQuarantineRegistry& ltx_exact_process_quarantine() {
+    // Unsafe states are deliberately not destroyed at process exit:
+    // an unproven GPU reader is safer retained than released by static teardown.
+    static LtxExactProcessQuarantineRegistry registry;
+    return registry;
+}
+
+static void retain_ltx_exact_process_quarantine(
+        LtxExactRequestState*& state) noexcept {
+    if (!state) return;
+    auto& registry = ltx_exact_process_quarantine();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    state->process_quarantine_next = registry.head;
+    registry.head = state;
+    ++registry.count;
+    state = nullptr;
+}
+
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+static size_t ltx_exact_process_quarantine_count() noexcept {
+    auto& registry = ltx_exact_process_quarantine();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    return registry.count;
+}
+
+static bool retry_ltx_exact_process_quarantine(std::string& failure) noexcept {
+    auto& registry = ltx_exact_process_quarantine();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    bool complete = true;
+    auto** link = &registry.head;
+    while (*link) {
+        auto* state = *link;
+        auto* next = state->process_quarantine_next;
+        char error[1024] = {};
+        if (destroy_ltx_exact_state(state, error, sizeof(error))) {
+            *link = next;
+            --registry.count;
+            continue;
+        }
+        complete = false;
+        if (failure.empty())
+            failure = error[0] ? error :
+                "LTX exact process quarantine retry remains unsafe";
+        link = &state->process_quarantine_next;
+    }
+    return complete;
+}
+#endif
 
 class LtxExactRequestOwner {
 public:
@@ -2069,8 +2129,9 @@ public:
         // Best-effort owner-thread retry. If safety is still unproven, retain
         // the complete raw state until process exit rather than invalidating
         // borrowed metadata or freeing storage with live GPU readers.
-        (void)destroy_ltx_exact_state(
-            exact_quarantine_, error, sizeof(error));
+        if (!destroy_ltx_exact_state(
+                exact_quarantine_, error, sizeof(error)))
+            retain_ltx_exact_process_quarantine(exact_quarantine_);
     }
     void unload() override {
         if (exact_quarantine_) {
@@ -2090,6 +2151,20 @@ public:
         if (request.memory_constrained.enabled) return false;
         return ltx_mlx_requested(request);
     }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    void test_set_ltx_exact_destroy_failures(uint32_t failures) override {
+        require(failures <= 16u,
+                "LTX exact destroy failure count exceeds test limit");
+        require(!exact_quarantine_,
+                "cannot arm an LTX exact fault while the session is quarantined");
+        exact_test_destroy_failures_ = failures;
+    }
+    void test_cancel_ltx_exact_first_fill() override {
+        require(!exact_quarantine_,
+                "cannot arm an LTX exact fault while the session is quarantined");
+        exact_test_cancel_first_fill_ = true;
+    }
+#endif
     std::optional<MemoryCapabilityProbe> probe_memory_capability(
             const ExecutionPlan& plan,
             const MemoryDeviceIdentity& device) const override {
@@ -2763,6 +2838,21 @@ public:
                     if (progress.failure)
                         std::rethrow_exception(progress.failure);
                     require(created && exact_owner.get() != nullptr, error);
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+                    if (exact_test_destroy_failures_) {
+                        require(ltx_native_streaming_test_set_destroy_failures(
+                                    exact_owner.get(),
+                                    exact_test_destroy_failures_, error,
+                                    sizeof(error)), error);
+                        exact_test_destroy_failures_ = 0;
+                    }
+                    if (exact_test_cancel_first_fill_) {
+                        require(ltx_native_streaming_test_cancel_first_fill(
+                                    exact_owner.get(), error, sizeof(error)),
+                                error);
+                        exact_test_cancel_first_fill_ = false;
+                    }
+#endif
                 } else {
                     auto* created = ltx_native_create(
                         &options, Progress::receive, &progress, error,
@@ -2908,6 +2998,7 @@ public:
         checkpoint(cancel);
         const auto stage1_finished = Clock::now();
         event("latent_upsample", 0, 1);
+        checkpoint(cancel);
         auto stage2_video_reservation = reserve_host_memory(
             MemoryClass::Activation,
             ltx_host_vector_upper<uint16_t>(
@@ -2932,6 +3023,7 @@ public:
                 error, sizeof(error)), error);
         }
         event("latent_upsample", 1, 1);
+        checkpoint(cancel);
         video.swap(upsampled);
         /* `upsampled` now owns the obsolete Stage-1 backing. Return it before
          * Stage 2 so the two latent resolutions only overlap during the
@@ -3566,6 +3658,10 @@ private:
     bool native_drain_failed_ = false;
     LtxExactRequestState* exact_quarantine_ = nullptr;
     std::array<char, 1024> exact_cleanup_error_{};
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    uint32_t exact_test_destroy_failures_ = 0;
+    bool exact_test_cancel_first_fill_ = false;
+#endif
     std::unique_ptr<ltx_native_denoiser, decltype(&ltx_native_free)> denoiser_{nullptr, ltx_native_free};
     std::unique_ptr<ltx_mlx_denoiser, decltype(&ltx_mlx_free)> mlx_denoiser_{nullptr, ltx_mlx_free};
     std::unique_ptr<ltx_gemma_encoder, decltype(&ltx_gemma_encoder_free)> gemma_encoder_{nullptr, ltx_gemma_encoder_free};
@@ -3576,6 +3672,17 @@ private:
 };
 
 }  // namespace
+
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+size_t ltx_exact_process_quarantine_count_for_test() noexcept {
+    return ltx_exact_process_quarantine_count();
+}
+
+bool ltx_exact_retry_process_quarantine_for_test(
+        std::string& error) noexcept {
+    return retry_ltx_exact_process_quarantine(error);
+}
+#endif
 
 std::unique_ptr<ModelSession> create_ltx_native_candidate(
         const std::filesystem::path& root) {

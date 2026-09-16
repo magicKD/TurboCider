@@ -12,6 +12,10 @@ typedef struct ltx_exact_stream {
     uint32_t prefix_count, slot_count, pass, expected_passes;
     uint64_t queue_sequence, source_bytes[LTX_MAX_REFILL_SLOTS];
     int finished, poisoned;
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    uint32_t test_destroy_failures_remaining;
+    uint32_t test_cancel_first_fill;
+#endif
     /* Error-only retention until a later owner drain proves storage safe. */
     ltx_gpu_buffer *quarantine_buffers[24];
     void *quarantine_hosts[4];
@@ -113,6 +117,15 @@ static int ltx_exact_fill(void *user, const tc_stream_slot_ticket_v1 *ticket,
     if (ticket->slot >= s->slot_count || group->block_count != 1 || group->blocks[0] >= LTX_STREAM_BLOCKS) {
         snprintf(error, size, "invalid LTX exact fill ticket"); return 0;
     }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    if (s->test_cancel_first_fill && ticket->item.pass == 0u &&
+        group->group == 0u) {
+        s->test_cancel_first_fill = 0u;
+        snprintf(error, size,
+                 "generation cancelled at injected LTX exact first fill");
+        return 0;
+    }
+#endif
     ltx_stream_slot *slot = &s->slots[ticket->slot];
     uint64_t read = 0;
     int ok = ltx_stream_fill_block(&s->layouts[group->blocks[0]], s->mapping,

@@ -109,8 +109,19 @@ def main():
         assert "bool allow_experimental_streaming = false;" in source
         assert "(*engine)->allow_experimental_streaming = true;" in source
         assert "!request.streaming.active() ||\n                            e->allow_experimental_streaming" in source
+        for symbol in (
+            "tc_engine_test_ltx_exact_destroy_failures",
+            "tc_engine_test_ltx_exact_cancel_first_fill",
+            "tc_engine_test_ltx_process_quarantine_count",
+            "tc_engine_test_ltx_retry_process_quarantine",
+        ):
+            try:
+                getattr(LIB, symbol)
+            except AttributeError:
+                continue
+            raise AssertionError(f"release library exports private test hook: {symbol}")
 
-    print("PASS LTX public gate remains fail-closed; private candidate constructor owns experimental authority")
+    print("PASS LTX public gate remains fail-closed; private candidate authority; release has no lifecycle test hooks")
 
 
 if __name__ == "__main__":

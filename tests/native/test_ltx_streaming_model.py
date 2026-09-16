@@ -21,9 +21,13 @@ def main():
         if not path.is_file():
             parser.error(f"missing checkpoint: {path}")
     compiler = subprocess.check_output(["xcrun", "--find", "clang++"], text=True).strip()
+    sdk = subprocess.check_output(
+        ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True
+    ).strip()
     with tempfile.TemporaryDirectory(prefix="tc-ltx-model-") as raw:
         binary = Path(raw) / "test"
         subprocess.run([compiler, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
+                        "-isysroot", sdk,
                         "-I", str(ROOT / "native/runtime"), "-I", str(ROOT / "native/models/ltx_runtime"),
                         str(ROOT / "tests/native/ltx_streaming_model_test.cpp"),
                         "-L", str(ROOT / "build/native"), "-lturbocider", "-Wl,-rpath," + str(ROOT / "build/native"),

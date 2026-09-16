@@ -296,8 +296,9 @@ rollback: new route/record撤回；shared代码回归的修复/撤回方法
 
 ## 10. 本机执行范围与可复现命令
 
-当前已运行构建、host/API回归、v2真实Metal smoke、candidate-only完整LTX请求和tiny性能/质量短对照，
-没有正式GPU性能campaign/pressure，不改系统设置。最新实际结果见13第12节；tiny完整请求不替代本文件P0–P4。
+当前已运行release/audit/test-hook隔离构建、host/API回归、v2真实Metal smoke、candidate-only完整LTX请求、
+生命周期fault矩阵和20-pair tiny default P0；没有normal-target/large、legacy-streamed P0/P1或pressure，且不改
+系统设置。最新实际结果见13第13.5节；tiny tuple PASS不替代其余P0–P4。
 
 已有可执行命令（仓库根；native contract 先 build）：
 
@@ -323,29 +324,27 @@ ASan/UBSan/TSan 与真实 Metal 命令见13；没有本轮执行结果时只保�
 | Compile | `StreamingMetadata` + generic descriptor/layout + `StreamingPlanView` | trusted artifact/content identity；多class/多stage |
 | Bind | plan arrays复制给C executor；header/fd由request owner借用 | service级不可变artifact lease与registry记录 |
 | Execute | candidate-only connector→Stage1→upsample→Stage2；G1/P≥1/K1..3 | audio/I2V/LoRA/ANE/近似、H3/Flux/Z适配 |
-| Release | status destroy；失败保留完整state；Stage 1/2取消、VAE边界、export失败后的同engine恢复已实测 | unsafe-drain注入、engine teardown、metadata/first-fill/upsample取消、进程隔离策略 |
+| Release | status destroy；metadata/first-fill/Stage1/upsample/Stage2/VAE/export故障恢复；session/process quarantine与owner retry已实测 | decoder内部/RGB转换故障；service线程迁移策略 |
 | Observe | digest、resolved/actual layout、slot/fill/logical bytes | physical I/O、fault/compression/swap归因、whole-request upper |
 | Gate | public constructor仍`streaming_layout_not_certified` | normal-target P0/P1、bounded P2/P3、reviewed registry |
 
 ### 11.1 生命周期当前覆盖与剩余项
 
-显式opt-in真实GPU测试已使用同一candidate engine覆盖：Stage 1取消→成功、success→success、
-A(64×64)→B(128×64)→A、Stage 2取消→成功、VAE边界取消→成功、export失败→成功；
-每次成功均验证actual layout、slot/fill counter和Stage-2 latent hash。当前剩余：
+显式opt-in真实GPU测试已使用同一candidate engine覆盖：metadata、first fill、Stage 1、upsample、Stage 2、
+VAE、export failure、success→success、A(64×64)→B(128×64)→A、unsafe destroy session quarantine、engine
+teardown process quarantine及owner retry。每次成功均验证actual layout、slot/fill counter和Stage-2 latent hash。
+当前剩余：
 
-1. cancel：补metadata、first fill和upsample精确边界；caller latent提交、worker join和destroy结果必须可观测。
-2. failure：补decoder内部失败、RGB转换失败和engine teardown；media失败不能重新触碰已销毁handle。
-3. unsafe destroy：故障注入强制首次drain失败，验证完整`LtxExactRequestState`进入quarantine；owner-thread retry成功前
-   session拒绝新请求，最终仍不安全时不得释放borrowed metadata。
-4. service：验证请求线程迁移时owner mismatch保持fail-closed，受控worker可在原owner线程重试或隔离退出。
+1. failure：补decoder内部失败、RGB转换失败；media失败不能重新触碰已销毁handle。
+2. service：验证请求线程迁移时owner mismatch保持fail-closed，受控worker可在原owner线程重试或隔离退出。
 
 当前`generate()`会在发现quarantine时先调用status destroy重试，成功才继续，失败则保留state并拒绝。
 剩余测试通过前，不把K上限扩到3以上，不开放session retention，也不新增用户可绕过资格的unsafe开关。
 
 ### 11.2 性能验收分层
 
-- P0默认路径：dev与candidate分别测试resident和原legacy streamed；actual counters必须证明candidate关闭时
-  descriptor/executor/worker/probe均为0。已有tiny和Z-Image短对照仅用于发现明显回归。
+- P0默认路径：tiny resident 20-pair已经通过并证明五类新counter为0；仍须对normal-target resident和原legacy
+  streamed分别执行同样门禁，不能把tiny tuple扩大解释。
 - P1布局框架：legacy与exact必须匹配P/G/K/D/Q、startup、loader并发、conditioning、VAE/export和cache状态；
   `Q=1`结果不能与legacy三loader混为matched P1。
 - P2 guard：在同一exact layout上比较guard off/on；只测执行段和完整wall，不以删除安全检查换速度。
@@ -353,3 +352,36 @@ A(64×64)→B(128×64)→A、Stage 2取消→成功、VAE边界取消→成功�
 
 actual weight working set只是denoiser weight backing，不是process峰值。最新tiny中exact约4.27 GB、legacy约8.57 GB，
 但两侧process peak都约7.1 GB，因此验收工具必须同时保留model estimate、sampled process footprint和系统级paging证据。
+
+## 12. Campaign runner 与证据闭包（已实现）
+
+为了让上述 P0/P1 规则能够被实际执行，新增了三个工具层文件：
+
+1. `tools/native/run_streaming_campaign.py`：协调器只调度，不加载 native；baseline/candidate 各自拥有独立
+   worker process 和 retained engine，按 ABBA/BAAB block 顺序执行，并在每个位置结束后追加并 fsync raw JSONL。
+2. `tools/native/verify_streaming_campaign.py`：独立读取 bundle，不依赖 runtime 内部状态；验证 block 结构、pair
+   对齐、quality/fault/environment/audit、source provenance、layout identity，并以完整 block 做 bootstrap。
+3. `tools/native/capture_streaming_source_identity.py`：记录 commit、source manifest、dirty diff、untracked
+   source，避免仅凭 dylib 路径宣称 before/after 可比。
+
+runner 的输出必须至少包含 `campaign-policy.json`、`manifest.json`、`build-identity.json`、`raw-samples.jsonl`、
+`warmups.jsonl`、`quality.json`、`faults.json`、`environment.json`、`audit.json` 和 `summary.json`；P1 另需
+`semantic-equivalence.json`。warmup 失败、请求超时或 worker abort 不删除位置，而是记录状态并让 verifier
+给出 FAIL/INCONCLUSIVE。runner 不启动 pressure、不修改 swap、不清 OS cache。
+
+CPU-only synthetic backend 的独立测试覆盖持久 worker、ABBA/BAAB 顺序、timeout 后完整计划保留、partial audit
+不误判 PASS、P0 provenance 缺失和 malformed block。clean source、独立audit和20-pair tiny real GPU已完成；
+normal-target/large、legacy-streamed、P1/P2/P3仍缺，因此工具与tiny PASS不等于production资格完成。
+
+## 13. Default audit 与当前性能证据
+
+default audit已经从源码检查推进为可执行证据：独立audit build对framework hook、memory probe、worker、pool、
+cache-clear/unload计数；release build完全不导出audit ABI。真实LTX默认resident请求及20-pair audit campaign均
+观察到五类计数为0；显式fake streaming executor观察到pool=1、workers=2，防止“计数器未接线”假阳性。
+
+同一冻结tiny tuple的release campaign使用clean `dev@ad343d4` baseline、10个ABBA/BAAB block和20 matched
+pairs，wall median/P95及denoise median均通过12定义的P0上限，输出和Stage-2 latent逐pair byte-exact。证据路径
+及精确数值见[13第13.5节](13-implementation-progress.md)。
+
+这只关闭DEF-01和tiny default tuple的P0缺口。normal-target/large、原legacy-streamed、同义P1、whole-request
+P2、低内存P3以及H3/Flux/Z adapter仍未完成；production registry继续为空。

@@ -26,6 +26,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--cache", required=True, type=Path)
     parser.add_argument("--prompt", default="A red fox running through snow")
+    parser.add_argument("--require-test-hooks", action="store_true")
     args = parser.parse_args()
     if not args.library.is_file():
         parser.error(f"missing library: {args.library}")
@@ -34,7 +35,7 @@ def arguments() -> argparse.Namespace:
     return args
 
 
-def load_library(path: Path):
+def load_library(path: Path, require_test_hooks: bool):
     library = C.CDLL(str(path.resolve()))
     library.tc_engine_create_model_candidate.argtypes = [
         C.c_char_p,
@@ -55,6 +56,33 @@ def load_library(path: Path):
     library.tc_engine_cancel.argtypes = [C.c_void_p]
     library.tc_engine_free.argtypes = [C.c_void_p]
     library.tc_string_free.argtypes = [C.c_void_p]
+    hook_names = (
+        "tc_engine_test_ltx_exact_destroy_failures",
+        "tc_engine_test_ltx_exact_cancel_first_fill",
+        "tc_engine_test_ltx_process_quarantine_count",
+        "tc_engine_test_ltx_retry_process_quarantine",
+    )
+    has_test_hooks = all(hasattr(library, name) for name in hook_names)
+    if require_test_hooks and not has_test_hooks:
+        raise RuntimeError(
+            "library lacks lifecycle test hooks; rebuild with "
+            "TURBOCIDER_BUILD_TEST_HOOKS=1"
+        )
+    if has_test_hooks:
+        library.tc_engine_test_ltx_exact_destroy_failures.argtypes = [
+            C.c_void_p, C.c_uint32, C.POINTER(C.c_void_p)
+        ]
+        library.tc_engine_test_ltx_exact_destroy_failures.restype = C.c_int
+        library.tc_engine_test_ltx_exact_cancel_first_fill.argtypes = [
+            C.c_void_p, C.POINTER(C.c_void_p)
+        ]
+        library.tc_engine_test_ltx_exact_cancel_first_fill.restype = C.c_int
+        library.tc_engine_test_ltx_process_quarantine_count.restype = C.c_uint64
+        library.tc_engine_test_ltx_retry_process_quarantine.argtypes = [
+            C.POINTER(C.c_void_p)
+        ]
+        library.tc_engine_test_ltx_retry_process_quarantine.restype = C.c_int
+    library.has_lifecycle_test_hooks = has_test_hooks
     return library
 
 
@@ -138,9 +166,14 @@ def generate(library, engine, request: dict, cancel_phase: str | None = None):
         if phase == "latent_upsample" and event.get("completed") == event.get("total"):
             state["upsampled"] = True
         should_cancel = (
+            cancel_phase == "metadata" and phase == "ltx_describe_block"
+        ) or (
             cancel_phase == "stage1" and phase == "ltx_block"
         ) or (
             cancel_phase == "stage2" and state["upsampled"] and phase == "ltx_block"
+        ) or (
+            cancel_phase == "upsample" and phase == "latent_upsample" and
+            event.get("completed") == 0
         ) or (
             cancel_phase == "video_vae" and phase == "video_vae" and
             event.get("completed") == 0
@@ -200,6 +233,53 @@ def cancelled(library, engine, request: dict, phase: str):
     assert "cancel" in failure.lower(), failure
 
 
+def create_engine(library, model: Path):
+    engine, error = C.c_void_p(), C.c_void_p()
+    status = library.tc_engine_create_model_candidate(
+        b"ltx-2.5-distilled",
+        str(model.resolve()).encode(),
+        C.byref(engine),
+        C.byref(error),
+    )
+    failure = consume(library, error)
+    assert status == 0 and engine.value, failure
+    return engine
+
+
+def arm_destroy_failures(library, engine, failures: int):
+    error = C.c_void_p()
+    status = library.tc_engine_test_ltx_exact_destroy_failures(
+        engine, failures, C.byref(error)
+    )
+    failure = consume(library, error)
+    assert status == 0, failure
+
+
+def arm_first_fill_cancel(library, engine):
+    error = C.c_void_p()
+    status = library.tc_engine_test_ltx_exact_cancel_first_fill(
+        engine, C.byref(error)
+    )
+    failure = consume(library, error)
+    assert status == 0, failure
+
+
+def expect_failure(library, engine, request: dict, needle: str | None = None):
+    status, result, failure, _ = generate(library, engine, request)
+    assert status != 0 and result is None, result
+    assert failure, "failed request returned no diagnostic"
+    if needle:
+        assert needle.lower() in failure.lower(), failure
+    return failure
+
+
+def retry_process_quarantine(library):
+    error = C.c_void_p()
+    status = library.tc_engine_test_ltx_retry_process_quarantine(C.byref(error))
+    failure = consume(library, error)
+    assert status == 0, failure
+
+
 def main() -> int:
     args = arguments()
     args.output = args.output.resolve()
@@ -212,19 +292,23 @@ def main() -> int:
     import os
     os.environ["TURBOCIDER_LTX_CONDITIONING_CACHE_DIR"] = str(args.cache)
 
-    library = load_library(args.library)
-    engine, error = C.c_void_p(), C.c_void_p()
-    status = library.tc_engine_create_model_candidate(
-        b"ltx-2.5-distilled",
-        str(args.model.resolve()).encode(),
-        C.byref(engine),
-        C.byref(error),
-    )
-    failure = consume(library, error)
-    assert status == 0 and engine.value, failure
+    library = load_library(args.library, args.require_test_hooks)
+    engine = create_engine(library, args.model)
 
     records = []
     try:
+        cancel_metadata, _, _ = request_value(
+            args, "cancel-metadata", 64, 64
+        )
+        cancelled(library, engine, cancel_metadata, "metadata")
+
+        if library.has_lifecycle_test_hooks:
+            arm_first_fill_cancel(library, engine)
+            cancel_first_fill, _, _ = request_value(
+                args, "cancel-first-fill", 64, 64
+            )
+            expect_failure(library, engine, cancel_first_fill, "first fill")
+
         cancel1, _, _ = request_value(args, "cancel-stage1", 64, 64)
         cancelled(library, engine, cancel1, "stage1")
 
@@ -271,6 +355,20 @@ def main() -> int:
         records.append({"case": "recover-stage2", "layout": layout_r2,
                         "wall": result_r2["timings_seconds"]["request_wall"]})
 
+        cancel_upsample, _, _ = request_value(
+            args, "cancel-upsample", 64, 64
+        )
+        cancelled(library, engine, cancel_upsample, "upsample")
+        recovery_upsample, output_ru, latent_ru = request_value(
+            args, "recover-upsample", 64, 64
+        )
+        result_ru, layout_ru, hash_ru = successful(
+            library, engine, recovery_upsample, output_ru, latent_ru
+        )
+        assert layout_ru == layout_a0 and hash_ru == latent_hash
+        records.append({"case": "recover-upsample", "layout": layout_ru,
+                        "wall": result_ru["timings_seconds"]["request_wall"]})
+
         cancel_vae, _, _ = request_value(args, "cancel-video-vae", 64, 64)
         cancelled(library, engine, cancel_vae, "video_vae")
         recovery_vae, output_rv, latent_rv = request_value(
@@ -299,8 +397,64 @@ def main() -> int:
         assert layout_re == layout_a0 and hash_re == latent_hash
         records.append({"case": "recover-export", "layout": layout_re,
                         "wall": result_re["timings_seconds"]["request_wall"]})
+
+        if library.has_lifecycle_test_hooks:
+            arm_destroy_failures(library, engine, 2)
+            unsafe_retry, _, _ = request_value(
+                args, "unsafe-destroy-retry", 64, 64
+            )
+            expect_failure(library, engine, unsafe_retry, "injected")
+            recovery_destroy, output_rd, latent_rd = request_value(
+                args, "recover-unsafe-destroy", 64, 64
+            )
+            result_rd, layout_rd, hash_rd = successful(
+                library, engine, recovery_destroy, output_rd, latent_rd
+            )
+            assert layout_rd == layout_a0 and hash_rd == latent_hash
+            records.append({"case": "recover-unsafe-destroy",
+                            "layout": layout_rd,
+                            "wall": result_rd["timings_seconds"]["request_wall"]})
+
+            arm_destroy_failures(library, engine, 3)
+            unsafe_reject, _, _ = request_value(
+                args, "unsafe-destroy-reject", 64, 64
+            )
+            expect_failure(library, engine, unsafe_reject, "injected")
+            rejected_retry, _, _ = request_value(
+                args, "quarantine-rejected", 64, 64
+            )
+            expect_failure(library, engine, rejected_retry, "quarantined")
+            recovery_reject, output_rr, latent_rr = request_value(
+                args, "recover-quarantine-reject", 64, 64
+            )
+            result_rr, layout_rr, hash_rr = successful(
+                library, engine, recovery_reject, output_rr, latent_rr
+            )
+            assert layout_rr == layout_a0 and hash_rr == latent_hash
+            records.append({"case": "recover-quarantine-reject",
+                            "layout": layout_rr,
+                            "wall": result_rr["timings_seconds"]["request_wall"]})
     finally:
         library.tc_engine_free(engine)
+
+    if library.has_lifecycle_test_hooks:
+        before = library.tc_engine_test_ltx_process_quarantine_count()
+        teardown_engine = create_engine(library, args.model)
+        teardown_freed = False
+        try:
+            arm_destroy_failures(library, teardown_engine, 3)
+            teardown_request, _, _ = request_value(
+                args, "unsafe-engine-teardown", 64, 64
+            )
+            expect_failure(library, teardown_engine, teardown_request, "injected")
+            library.tc_engine_free(teardown_engine)
+            teardown_freed = True
+            assert library.tc_engine_test_ltx_process_quarantine_count() == before + 1
+            retry_process_quarantine(library)
+            assert library.tc_engine_test_ltx_process_quarantine_count() == before
+        finally:
+            if not teardown_freed:
+                library.tc_engine_free(teardown_engine)
 
     summary = {
         "format": "turbocider-ltx-exact-lifecycle-v1",
@@ -310,14 +464,23 @@ def main() -> int:
         "layout_b": layout_b,
         "checks": [
             "cancel-stage1-then-success",
+            "cancel-metadata-then-success",
             "success-then-success",
             "shape-a-b-a",
             "cancel-stage2-then-success",
+            "cancel-upsample-then-success",
             "cancel-video-vae-then-success",
             "export-failure-then-success",
             "actual-layout-and-counters",
         ],
     }
+    if library.has_lifecycle_test_hooks:
+        summary["checks"].extend([
+            "cancel-first-fill-then-success",
+            "unsafe-destroy-quarantine-then-retry",
+            "quarantine-reject-then-recover",
+            "engine-teardown-process-quarantine-then-drain",
+        ])
     (args.output / "lifecycle-summary.json").write_text(
         json.dumps(summary, indent=2) + "\n"
     )

@@ -1,4 +1,5 @@
 #include "io_executor.hpp"
+#include "audit.hpp"
 #include "layout.hpp"
 #include <stdexcept>
 
@@ -35,7 +36,10 @@ IoExecutor::IoExecutor(uint32_t workers, uint32_t capacity, CompletionMailbox &m
         throw std::invalid_argument("invalid streaming I/O worker/queue count");
     jobs_.resize(capacity); threads_.reserve(workers);
     try {
-        for (uint32_t i=0; i<workers; ++i) threads_.emplace_back([this]{run();});
+        for (uint32_t i=0; i<workers; ++i) {
+            threads_.emplace_back([this]{run();});
+            audit_increment(AuditCounter::WorkerThreads);
+        }
     } catch (...) {
         shutdown_and_join();
         throw;

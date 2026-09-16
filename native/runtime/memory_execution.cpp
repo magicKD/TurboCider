@@ -1,6 +1,7 @@
 #include "memory_execution.hpp"
 
 #include "../core/common.hpp"
+#include "streaming/audit.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -809,6 +810,7 @@ MemoryCapabilityResolution preflight_memory_capability(
     require(!device.device_family.empty() && !device.runtime_revision.empty(),
             "memory_policy_unsupported: memory device identity is unavailable");
 
+    streaming::audit_increment(streaming::AuditCounter::MemoryProbes);
     auto probe = session.probe_memory_capability(plan, device);
     require(probe.has_value(),
             "memory_policy_unsupported: exact checkpoint capability probe is unavailable for " +

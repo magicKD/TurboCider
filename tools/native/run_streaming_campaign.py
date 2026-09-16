@@ -1,0 +1,1159 @@
+#!/usr/bin/env python3
+"""Run a frozen TurboCider streaming performance campaign.
+
+The coordinator never loads a native library.  Baseline and candidate run in
+two independent, persistent worker processes, each of which owns one retained
+engine for the duration of the campaign.  Measured requests are serialized in
+alternating ABBA/BAAB blocks and appended to raw-samples.jsonl before the next
+request is dispatched.
+
+This tool intentionally does not create memory pressure, clear OS caches, or
+change swap settings.  Those operations require a separate, explicitly
+authorized P3 protocol.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ctypes as c
+import hashlib
+import json
+import os
+import platform
+import resource
+import shutil
+import socket
+import struct
+import subprocess
+import sys
+import time
+from copy import deepcopy
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from verify_streaming_campaign import EvidenceError, verify
+from capture_streaming_source_identity import IdentityError, capture
+
+
+SCHEMA_VERSION = 1
+VARIANTS = ("baseline", "candidate")
+SEQUENCES = {
+    "ABBA": ("baseline", "candidate", "candidate", "baseline"),
+    "BAAB": ("candidate", "baseline", "baseline", "candidate"),
+}
+
+
+class CampaignError(RuntimeError):
+    pass
+
+
+def canonical_json(value: Any) -> bytes:
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
+
+
+def sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CampaignError(f"cannot read {label} {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise CampaignError(f"{label} must be a JSON object")
+    return value
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
+
+
+def append_jsonl(path: Path, value: dict[str, Any]) -> None:
+    encoded = json.dumps(value, sort_keys=True, ensure_ascii=False) + "\n"
+    with path.open("a") as stream:
+        stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def deep_merge(base: Any, patch: Any) -> Any:
+    if not isinstance(base, dict) or not isinstance(patch, dict):
+        return deepcopy(patch)
+    result = deepcopy(base)
+    for key, value in patch.items():
+        if value is None:
+            result.pop(key, None)
+        elif key in result:
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = deepcopy(value)
+    return result
+
+
+def set_dotted(value: dict[str, Any], dotted: str, replacement: Any) -> None:
+    parts = dotted.split(".")
+    current: Any = value
+    for part in parts[:-1]:
+        if not isinstance(current, dict) or part not in current:
+            raise CampaignError(f"seed path does not exist: {dotted}")
+        current = current[part]
+    if not isinstance(current, dict) or parts[-1] not in current:
+        raise CampaignError(f"seed path does not exist: {dotted}")
+    current[parts[-1]] = replacement
+
+
+def expand(value: Any, replacements: dict[str, str]) -> Any:
+    if isinstance(value, str):
+        for key, replacement in replacements.items():
+            value = value.replace("${" + key + "}", replacement)
+        return value
+    if isinstance(value, list):
+        return [expand(item, replacements) for item in value]
+    if isinstance(value, dict):
+        return {key: expand(item, replacements) for key, item in value.items()}
+    return value
+
+
+def validate_policy(policy: dict[str, Any]) -> None:
+    if policy.get("schema_version") != SCHEMA_VERSION:
+        raise CampaignError("campaign policy schema_version must be 1")
+    if policy.get("status") != "frozen":
+        raise CampaignError("campaign policy must be frozen before execution")
+    if policy.get("comparison_kind") not in ("P0", "P1", "P2", "P3", "P4"):
+        raise CampaignError("comparison_kind must be P0, P1, P2, P3 or P4")
+    variants = policy.get("variants")
+    if not isinstance(variants, dict) or set(variants) != set(VARIANTS):
+        raise CampaignError("variants must contain exactly baseline and candidate")
+    workload = policy.get("workload")
+    if not isinstance(workload, dict) or not isinstance(workload.get("request"), dict):
+        raise CampaignError("workload.request must be a JSON object")
+    protocol = policy.get("protocol")
+    if not isinstance(protocol, dict):
+        raise CampaignError("protocol must be a JSON object")
+    blocks = protocol.get("measured_blocks")
+    if isinstance(blocks, bool) or not isinstance(blocks, int) or blocks <= 0:
+        raise CampaignError("protocol.measured_blocks must be positive")
+    warmups = protocol.get("warmup_requests_per_variant", 1)
+    if isinstance(warmups, bool) or not isinstance(warmups, int) or warmups < 0:
+        raise CampaignError("warmup_requests_per_variant must be non-negative")
+    timeout = protocol.get("request_timeout_seconds")
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise CampaignError("request_timeout_seconds must be positive")
+    start_timeout = protocol.get("worker_start_timeout_seconds", 30)
+    if (
+        isinstance(start_timeout, bool) or
+        not isinstance(start_timeout, (int, float)) or start_timeout <= 0
+    ):
+        raise CampaignError("worker_start_timeout_seconds must be positive")
+    if protocol.get("launch_pressure"):
+        raise CampaignError("this runner never launches memory pressure")
+    quality = policy.get("quality")
+    if not isinstance(quality, dict) or quality.get("mode") != "artifact_sha256_equal":
+        raise CampaignError("quality.mode must be artifact_sha256_equal")
+    artifacts = quality.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise CampaignError("quality.artifacts must be a non-empty list")
+    names: set[str] = set()
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise CampaignError("each quality artifact must be an object")
+        name = artifact.get("name")
+        path = artifact.get("path")
+        if not isinstance(name, str) or not name or name in names:
+            raise CampaignError("quality artifact names must be unique strings")
+        if not isinstance(path, str) or not path:
+            raise CampaignError(f"quality artifact {name} needs a path template")
+        names.add(name)
+    for variant in VARIANTS:
+        config = variants[variant]
+        if not isinstance(config, dict):
+            raise CampaignError(f"variant {variant} must be an object")
+        backend = config.get("backend", "native")
+        if backend not in ("native", "synthetic"):
+            raise CampaignError(f"variant {variant} has unsupported backend")
+        if backend == "native":
+            for key in ("library", "model_id", "model_path"):
+                if not isinstance(config.get(key), str) or not config[key]:
+                    raise CampaignError(f"native variant {variant} requires {key}")
+            if config.get("constructor", "public") not in ("public", "candidate"):
+                raise CampaignError(f"variant {variant} has invalid constructor")
+            environment = config.get("environment", {})
+            if not isinstance(environment, dict):
+                raise CampaignError(f"variant {variant} environment must be an object")
+            for name, value in environment.items():
+                if (
+                    not isinstance(name, str) or
+                    not name.startswith("TURBOCIDER_") or
+                    not isinstance(value, str)
+                ):
+                    raise CampaignError(
+                        f"variant {variant} environment only accepts "
+                        "string TURBOCIDER_* variables"
+                    )
+        elif not isinstance(config.get("synthetic"), dict):
+            raise CampaignError(f"synthetic variant {variant} needs synthetic config")
+
+
+def build_identity(policy: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for variant in VARIANTS:
+        config = policy["variants"][variant]
+        backend = config.get("backend", "native")
+        if backend == "native":
+            library = Path(config["library"]).expanduser().resolve()
+            if not library.is_file():
+                raise CampaignError(f"missing {variant} library: {library}")
+            identity = {
+                "backend": "native",
+                "binary_path": str(library),
+                "binary_sha256": sha256_file(library),
+                "binary_size_bytes": library.stat().st_size,
+                "constructor": config.get("constructor", "public"),
+            }
+        else:
+            identity = {
+                "backend": "synthetic",
+                "binary_path": None,
+                "binary_sha256": sha256_bytes(canonical_json(config["synthetic"])),
+                "binary_size_bytes": 0,
+                "constructor": "synthetic",
+            }
+        if isinstance(config.get("source_root"), str):
+            try:
+                identity["source_identity"] = capture(
+                    Path(config["source_root"]), config.get("source_commit")
+                )
+            except IdentityError as exc:
+                raise CampaignError(
+                    f"cannot capture {variant} source identity: {exc}"
+                ) from exc
+        elif isinstance(config.get("source_identity"), dict):
+            identity["source_identity"] = deepcopy(config["source_identity"])
+        identity["variant_config_sha256"] = sha256_bytes(canonical_json(config))
+        result[variant] = identity
+    return result
+
+
+def reject_output_inside_sources(policy: dict[str, Any], output: Path) -> None:
+    output = output.resolve()
+    for variant in VARIANTS:
+        raw_root = policy["variants"][variant].get("source_root")
+        if not isinstance(raw_root, str):
+            continue
+        source_root = Path(raw_root).expanduser().resolve()
+        try:
+            common = Path(os.path.commonpath((str(output), str(source_root))))
+        except ValueError:
+            continue
+        if common == source_root:
+            raise CampaignError(
+                f"output cannot be inside {variant} source_root: {output}"
+            )
+
+
+def send_message(connection: socket.socket, value: dict[str, Any]) -> None:
+    payload = canonical_json(value)
+    connection.sendall(struct.pack("!Q", len(payload)) + payload)
+
+
+def receive_exact(connection: socket.socket, size: int) -> bytes:
+    chunks: list[bytes] = []
+    remaining = size
+    while remaining:
+        chunk = connection.recv(remaining)
+        if not chunk:
+            raise EOFError("worker connection closed")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def receive_message(connection: socket.socket, timeout: float) -> dict[str, Any]:
+    connection.settimeout(timeout)
+    header = receive_exact(connection, 8)
+    length = struct.unpack("!Q", header)[0]
+    if length > 128 * (1 << 20):
+        raise CampaignError("worker response exceeds protocol limit")
+    value = json.loads(receive_exact(connection, length))
+    if not isinstance(value, dict):
+        raise CampaignError("worker response is not an object")
+    return value
+
+
+def consume(library: Any, pointer: c.c_void_p) -> str | None:
+    if not pointer.value:
+        return None
+    value = c.string_at(pointer).decode()
+    library.tc_string_free(pointer)
+    return value
+
+
+def peak_rss_bytes() -> int:
+    value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    return value if platform.system() == "Darwin" else value * 1024
+
+
+def nested(value: Any, *path: str) -> Any:
+    for key in path:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+
+def extract_layouts(result: dict[str, Any]) -> tuple[str | None, str | None]:
+    resolved = nested(result, "plan", "streaming", "resolved_layout", "digest")
+    actual = nested(result, "plan", "streaming", "actual_layout", "digest")
+    block = result.get("block_streaming") or result.get("block_residency") or {}
+    block_digest = block.get("layout_digest") if isinstance(block, dict) else None
+    if not resolved:
+        resolved = block_digest
+    if not actual:
+        actual = block_digest
+    return resolved or None, actual or None
+
+
+def load_native_worker(config: dict[str, Any]) -> tuple[Any, c.c_void_p]:
+    for name, value in config.get("environment", {}).items():
+        os.environ[name] = value
+    library_path = Path(config["library"]).expanduser().resolve()
+    model_path = Path(config["model_path"]).expanduser().resolve()
+    library = c.CDLL(str(library_path))
+    library.tc_string_free.argtypes = [c.c_void_p]
+    constructor_name = (
+        "tc_engine_create_model_candidate"
+        if config.get("constructor", "public") == "candidate"
+        else "tc_engine_create_model"
+    )
+    try:
+        constructor = getattr(library, constructor_name)
+    except AttributeError as exc:
+        raise CampaignError(
+            f"{library_path} does not export {constructor_name}"
+        ) from exc
+    constructor.argtypes = [
+        c.c_char_p, c.c_char_p, c.POINTER(c.c_void_p), c.POINTER(c.c_void_p)
+    ]
+    library.tc_engine_generate.argtypes = [
+        c.c_void_p, c.c_char_p, c.c_void_p, c.c_void_p,
+        c.POINTER(c.c_void_p), c.POINTER(c.c_void_p),
+    ]
+    library.tc_engine_free.argtypes = [c.c_void_p]
+    # Audit symbols are private and exist only in an audit build.  Keep the
+    # function pointers on the CDLL object so the worker can reset/snapshot
+    # counters around each request without changing the public ABI.
+    try:
+        audit_reset = library.tc_streaming_audit_reset
+        audit_snapshot = library.tc_streaming_audit_snapshot_json
+    except AttributeError:
+        library._tc_streaming_audit_reset = None
+        library._tc_streaming_audit_snapshot = None
+    else:
+        audit_reset.argtypes = []
+        audit_reset.restype = None
+        audit_snapshot.argtypes = [
+            c.POINTER(c.c_void_p), c.POINTER(c.c_void_p)
+        ]
+        audit_snapshot.restype = c.c_int
+        library._tc_streaming_audit_reset = audit_reset
+        library._tc_streaming_audit_snapshot = audit_snapshot
+    engine = c.c_void_p()
+    error = c.c_void_p()
+    status = constructor(
+        config["model_id"].encode(), str(model_path).encode(),
+        c.byref(engine), c.byref(error),
+    )
+    failure = consume(library, error)
+    if status or not engine.value:
+        raise CampaignError(failure or "native engine creation failed")
+    return library, engine
+
+
+def reset_native_audit(library: Any) -> bool:
+    reset = getattr(library, "_tc_streaming_audit_reset", None)
+    if reset is None:
+        return False
+    reset()
+    return True
+
+
+def snapshot_native_audit(library: Any) -> dict[str, Any] | None:
+    snapshot_call = getattr(library, "_tc_streaming_audit_snapshot", None)
+    if snapshot_call is None:
+        return None
+    result_pointer = c.c_void_p()
+    error_pointer = c.c_void_p()
+    status = snapshot_call(c.byref(result_pointer), c.byref(error_pointer))
+    result_text = consume(library, result_pointer)
+    failure = consume(library, error_pointer)
+    if status or not result_text:
+        raise CampaignError(failure or "native audit snapshot failed")
+    try:
+        value = json.loads(result_text)
+    except json.JSONDecodeError as exc:
+        raise CampaignError(f"native audit snapshot is invalid JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise CampaignError("native audit snapshot must be a JSON object")
+    return value
+
+
+def hash_artifacts(paths: dict[str, str]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for name, raw_path in paths.items():
+        path = Path(raw_path)
+        if path.is_file():
+            result[name] = {
+                "path": str(path),
+                "bytes": path.stat().st_size,
+                "sha256": sha256_file(path),
+            }
+        else:
+            result[name] = {
+                "path": str(path), "bytes": None, "sha256": None,
+                "error": "artifact is missing or not a regular file",
+            }
+    return result
+
+
+def run_native_sample(
+    library: Any, engine: c.c_void_p, command: dict[str, Any]
+) -> dict[str, Any]:
+    audit_available = reset_native_audit(library)
+    result_pointer = c.c_void_p()
+    error_pointer = c.c_void_p()
+    started = time.perf_counter()
+    status = library.tc_engine_generate(
+        engine, canonical_json(command["request"]), None, None,
+        c.byref(result_pointer), c.byref(error_pointer),
+    )
+    client_wall = time.perf_counter() - started
+    result_text = consume(library, result_pointer)
+    failure = consume(library, error_pointer)
+    runtime_audit = snapshot_native_audit(library) if audit_available else None
+    if status:
+        row = {
+            "status": "failure",
+            "native_status": int(status),
+            "error": failure or "native request failed without a diagnostic",
+            "client_wall_seconds": client_wall,
+            "process_peak_rss_bytes": peak_rss_bytes(),
+        }
+        if runtime_audit is not None:
+            row["runtime_audit"] = runtime_audit
+        return row
+    if not result_text:
+        row = {
+            "status": "failure", "native_status": 0,
+            "error": "native request succeeded without a result",
+            "client_wall_seconds": client_wall,
+            "process_peak_rss_bytes": peak_rss_bytes(),
+        }
+        if runtime_audit is not None:
+            row["runtime_audit"] = runtime_audit
+        return row
+    result = json.loads(result_text)
+    timings = result.get("timings_seconds") or {}
+    stage1 = float(timings.get("stage1", 0.0))
+    stage2 = float(timings.get("stage2", 0.0))
+    denoise = timings.get("denoise")
+    if denoise is None:
+        denoise = stage1 + stage2
+    resolved, actual = extract_layouts(result)
+    block = result.get("block_streaming") or result.get("block_residency")
+    row = {
+        "status": "success",
+        "native_status": 0,
+        "client_wall_seconds": client_wall,
+        "request_wall_seconds": float(timings.get("request_wall", client_wall)),
+        "denoise_seconds": float(denoise),
+        "stage_timings_seconds": timings,
+        "resolved_layout_digest": resolved,
+        "actual_layout_digest": actual,
+        "block_counters": block,
+        "artifacts": hash_artifacts(command["artifact_paths"]),
+        "process_peak_rss_bytes": peak_rss_bytes(),
+        "runtime_audit": {
+            "audit_available": audit_available,
+            "block_streaming_enabled": (
+                bool(block.get("enabled")) if isinstance(block, dict) else False
+            ),
+            "request_slot_allocations": (
+                block.get("request_slot_allocations")
+                if isinstance(block, dict) else None
+            ),
+            "request_slot_refills": (
+                block.get("request_slot_refills")
+                if isinstance(block, dict) else None
+            ),
+        },
+    }
+    if runtime_audit is not None:
+        row["runtime_audit"].update(runtime_audit)
+    return row
+
+
+def run_synthetic_sample(
+    config: dict[str, Any], command: dict[str, Any]
+) -> dict[str, Any]:
+    synthetic = config["synthetic"]
+    identity = command["run_id"]
+    sleep_seconds = float(synthetic.get("sleep_seconds", 0.0))
+    if sleep_seconds:
+        time.sleep(sleep_seconds)
+    if identity in synthetic.get("fail_runs", []):
+        return {
+            "status": "failure",
+            "native_status": 1,
+            "error": f"injected synthetic failure for {identity}",
+            "client_wall_seconds": sleep_seconds,
+            "process_peak_rss_bytes": peak_rss_bytes(),
+        }
+    payloads = synthetic.get("artifact_payloads", {})
+    for name, raw_path in command["artifact_paths"].items():
+        path = Path(raw_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = str(payloads.get(name, "shared-quality"))
+        path.write_bytes((payload + ":" + command["pair_id"]).encode())
+    wall = float(synthetic.get("request_wall_seconds", 1.0))
+    denoise = float(synthetic.get("denoise_seconds", wall * 0.8))
+    layout = synthetic.get("layout_digest")
+    return {
+        "status": "success",
+        "native_status": 0,
+        "client_wall_seconds": wall,
+        "request_wall_seconds": wall,
+        "denoise_seconds": denoise,
+        "stage_timings_seconds": {"request_wall": wall, "denoise": denoise},
+        "resolved_layout_digest": layout,
+        "actual_layout_digest": layout,
+        "block_counters": synthetic.get("block_counters", {"enabled": False}),
+        "artifacts": hash_artifacts(command["artifact_paths"]),
+        "process_peak_rss_bytes": peak_rss_bytes(),
+        "runtime_audit": deepcopy(synthetic.get("runtime_audit", {
+            "audit_available": True,
+            "block_streaming_enabled": False,
+            "request_slot_allocations": 0,
+            "request_slot_refills": 0,
+        })),
+    }
+
+
+def worker_main(config_path: Path, descriptor: int) -> int:
+    config = read_object(config_path, "worker config")
+    connection = socket.socket(fileno=descriptor)
+    library = None
+    engine = None
+    try:
+        if config.get("backend", "native") == "native":
+            library, engine = load_native_worker(config)
+        send_message(connection, {
+            "type": "ready", "pid": os.getpid(),
+            "backend": config.get("backend", "native"),
+        })
+        while True:
+            command = receive_message(connection, 365 * 24 * 60 * 60)
+            if command.get("type") == "stop":
+                send_message(connection, {"type": "stopped", "pid": os.getpid()})
+                return 0
+            if command.get("type") != "run":
+                raise CampaignError("unknown worker command")
+            try:
+                if config.get("backend", "native") == "native":
+                    response = run_native_sample(library, engine, command)
+                else:
+                    response = run_synthetic_sample(config, command)
+            except Exception as exc:  # Preserve worker for the next sample.
+                response = {
+                    "status": "worker_error", "error": str(exc),
+                    "client_wall_seconds": 0.0,
+                    "process_peak_rss_bytes": peak_rss_bytes(),
+                }
+            response.update({
+                "type": "result", "run_id": command["run_id"],
+                "worker_pid": os.getpid(),
+            })
+            send_message(connection, response)
+    except Exception as exc:
+        try:
+            send_message(connection, {
+                "type": "fatal", "error": str(exc), "pid": os.getpid(),
+            })
+        except Exception:
+            pass
+        return 2
+    finally:
+        if library is not None and engine is not None:
+            library.tc_engine_free(engine)
+        connection.close()
+
+
+class Worker:
+    def __init__(
+        self,
+        variant: str,
+        config_path: Path,
+        log_path: Path,
+        request_timeout: float,
+        start_timeout: float,
+    ) -> None:
+        self.variant = variant
+        self.timeout = request_timeout
+        parent, child = socket.socketpair()
+        child.set_inheritable(True)
+        self.connection = parent
+        self.log = log_path.open("wb")
+        command = [
+            sys.executable, "-B", str(Path(__file__).resolve()), "--worker",
+            "--worker-config", str(config_path), "--worker-fd", str(child.fileno()),
+        ]
+        self.process = subprocess.Popen(
+            command, pass_fds=(child.fileno(),), stdout=self.log, stderr=self.log,
+            close_fds=True,
+        )
+        child.close()
+        try:
+            ready = receive_message(self.connection, start_timeout)
+        except Exception:
+            self.terminate()
+            raise
+        if ready.get("type") != "ready":
+            self.terminate()
+            raise CampaignError(
+                f"{variant} worker failed to start: {ready.get('error', ready)}"
+            )
+        self.pid = int(ready["pid"])
+
+    def run(self, command: dict[str, Any]) -> dict[str, Any]:
+        send_message(self.connection, command)
+        response = receive_message(self.connection, self.timeout)
+        if response.get("type") not in ("result", "fatal"):
+            raise CampaignError(f"invalid {self.variant} worker response")
+        if response.get("type") == "fatal":
+            raise CampaignError(response.get("error", "worker failed"))
+        return response
+
+    def close(self) -> None:
+        if self.process.poll() is None:
+            try:
+                send_message(self.connection, {"type": "stop"})
+                receive_message(self.connection, min(self.timeout, 10.0))
+            except Exception:
+                pass
+        try:
+            self.process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.terminate()
+        self.connection.close()
+        self.log.close()
+
+    def terminate(self) -> None:
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=5)
+        try:
+            self.connection.close()
+        except OSError:
+            pass
+        if not self.log.closed:
+            self.log.close()
+
+
+def planned_samples(blocks: int) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for block_index in range(blocks):
+        sequence_name = "ABBA" if block_index % 2 == 0 else "BAAB"
+        sequence = SEQUENCES[sequence_name]
+        block_id = f"block-{block_index:03d}"
+        pair_ids = (f"{block_id}-pair-0", f"{block_id}-pair-1")
+        pair_for_position = (pair_ids[0], pair_ids[0], pair_ids[1], pair_ids[1])
+        for position, variant in enumerate(sequence):
+            result.append({
+                "block_id": block_id,
+                "block_index": block_index,
+                "sequence": sequence_name,
+                "position": position,
+                "variant": variant,
+                "pair_id": pair_for_position[position],
+                "pair_index": block_index * 2 + (position // 2),
+                "run_id": f"{block_id}-position-{position}-{variant}",
+            })
+    return result
+
+
+def request_for(
+    policy: dict[str, Any], sample: dict[str, Any], output: Path,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    variant = sample["variant"]
+    config = policy["variants"][variant]
+    base = config.get("request", policy["workload"]["request"])
+    request = deep_merge(base, config.get("request_patch", {}))
+    seed_path = policy["workload"].get("seed_path")
+    seed_stride = int(policy["workload"].get("seed_stride", 0))
+    if seed_path and seed_stride:
+        original = request
+        for part in seed_path.split("."):
+            original = original[part]
+        if isinstance(original, bool) or not isinstance(original, int):
+            raise CampaignError("workload seed must be an integer")
+        set_dotted(request, seed_path, original + sample["pair_index"] * seed_stride)
+    run_directory = output / "runs" / sample["run_id"]
+    output_suffix = policy["workload"].get("output_suffix", ".bin")
+    if not isinstance(output_suffix, str) or not output_suffix.startswith("."):
+        raise CampaignError("workload.output_suffix must start with a dot")
+    destination = run_directory / f"output{output_suffix}"
+    dump = run_directory / "tensors"
+    replacements = {
+        "OUTPUT": str(destination),
+        "DUMP": str(dump),
+        "PAIR_ID": sample["pair_id"],
+        "BLOCK_ID": sample["block_id"],
+        "VARIANT": variant,
+        "RUN_ID": sample["run_id"],
+    }
+    request = expand(request, replacements)
+    artifacts = {
+        item["name"]: expand(item["path"], replacements)
+        for item in policy["quality"]["artifacts"]
+    }
+    return request, artifacts
+
+
+def make_quality(raw: list[dict[str, Any]]) -> dict[str, Any]:
+    pairs: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in raw:
+        pairs.setdefault(row["pair_id"], {})[row["variant"]] = row
+    samples = []
+    for pair_id, variants in sorted(pairs.items()):
+        statuses = {
+            variant: variants.get(variant, {}).get("status", "missing")
+            for variant in VARIANTS
+        }
+        artifacts: dict[str, Any] = {}
+        measured = all(status == "success" for status in statuses.values())
+        passed: bool | None = True if measured else None
+        names: set[str] = set()
+        for row in variants.values():
+            names.update((row.get("artifacts") or {}).keys())
+        for name in sorted(names):
+            baseline = nested(variants.get("baseline", {}), "artifacts", name, "sha256")
+            candidate = nested(variants.get("candidate", {}), "artifacts", name, "sha256")
+            equal = bool(baseline and candidate and baseline == candidate)
+            artifacts[name] = {
+                "baseline_sha256": baseline,
+                "candidate_sha256": candidate,
+                "equal": equal,
+            }
+            if passed is not None:
+                passed = passed and equal
+        if not names:
+            passed = False if measured else None
+        samples.append({
+            "pair_id": pair_id,
+            "passed": passed,
+            "measured": measured,
+            "statuses": statuses,
+            "artifacts": artifacts,
+        })
+    return {
+        "format": "turbocider-streaming-quality-v1",
+        "mode": "artifact_sha256_equal",
+        "status": "complete",
+        "samples": samples,
+    }
+
+
+def make_semantic_equivalence(
+    policy: dict[str, Any], raw: list[dict[str, Any]]
+) -> dict[str, Any]:
+    declaration = policy.get("semantic_equivalence")
+    if not isinstance(declaration, dict):
+        declaration = {}
+    successful = [row for row in raw if row.get("status") == "success"]
+    by_pair: dict[str, dict[str, str | None]] = {}
+    for row in successful:
+        by_pair.setdefault(row["pair_id"], {})[row["variant"]] = row.get(
+            "actual_layout_digest"
+        )
+    complete = {
+        pair_id: values for pair_id, values in by_pair.items()
+        if set(values) == set(VARIANTS)
+    }
+    observed = bool(complete) and all(
+        values["baseline"] and values["baseline"] == values["candidate"]
+        for values in complete.values()
+    )
+    declared = declaration.get("declared_equivalent") is True
+    return {
+        "format": "turbocider-streaming-semantic-equivalence-v1",
+        "equivalent": bool(declared and observed),
+        "declared_equivalent": declared,
+        "declaration": declaration,
+        "observed_same_actual_layout": observed,
+        "pair_layouts": by_pair,
+    }
+
+
+def default_audit(raw: list[dict[str, Any]], policy: dict[str, Any]) -> dict[str, Any]:
+    candidate = [row for row in raw if row["variant"] == "candidate"]
+    successful = [row for row in candidate if row.get("status") == "success"]
+    enabled = [row.get("runtime_audit", {}).get("block_streaming_enabled")
+               for row in successful]
+    observations: dict[str, Any] = {
+        "candidate_successful_requests": len(successful),
+        "candidate_total_requests": len(candidate),
+        "block_streaming_enabled_values": enabled,
+    }
+    required = (
+        "new_framework_hooks", "new_memory_probes", "new_worker_threads",
+        "new_pool_allocations", "new_cache_clear_or_unload_calls",
+    )
+    complete = bool(successful) and all(
+        row.get("runtime_audit", {}).get("audit_available") is True and
+        all(isinstance(row.get("runtime_audit", {}).get(name), int) and
+            not isinstance(row.get("runtime_audit", {}).get(name), bool) and
+            row.get("runtime_audit", {}).get(name) >= 0 for name in required)
+        for row in successful
+    )
+    if complete:
+        totals = {
+            name: sum(row["runtime_audit"][name] for row in successful)
+            for name in required
+        }
+        observations["per_request"] = [
+            {"run_id": row.get("run_id"), **{
+                name: row["runtime_audit"][name] for name in required
+            }} for row in successful
+        ]
+        observations["counter_totals"] = totals
+        observations["audit_build"] = True
+        if policy.get("comparison_kind") == "P0":
+            passed = not any(totals.values()) and len(successful) == len(candidate)
+            return {
+                "format": "turbocider-streaming-audit-v1",
+                "status": "passed" if passed else "failed",
+                "passed": passed,
+                "reason": (
+                    "default candidate requests did not enter the new framework"
+                    if passed else
+                    "default candidate requests failed or entered a new framework callsite"
+                ),
+                **totals,
+                "runtime_observations": observations,
+            }
+    observations["audit_build"] = False
+    return {
+        "format": "turbocider-streaming-audit-v1",
+        "status": "partial",
+        "passed": None,
+        "reason": (
+            "runtime observations are present, but hook/probe/thread/pool and "
+            "cache-clear counters require an independent audit build"
+        ),
+        "runtime_observations": observations,
+    }
+
+
+def default_environment() -> dict[str, Any]:
+    return {
+        "format": "turbocider-streaming-environment-v1",
+        "status": "partial",
+        "reason": (
+            "automatic capture records the process platform only; GPU, RAM, "
+            "SSD, power, thermal, SDK and pressure protocol require an "
+            "operator-supplied environment record"
+        ),
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "version": platform.version(),
+            "machine": platform.machine(),
+            "python": platform.python_version(),
+        },
+    }
+
+
+def make_faults(
+    raw: list[dict[str, Any]], warmups: list[dict[str, Any]]
+) -> dict[str, Any]:
+    failures = [
+        {
+            "phase": phase,
+            "run_id": row.get("run_id"),
+            "block_id": row.get("block_id"),
+            "pair_id": row.get("pair_id"),
+            "variant": row.get("variant"),
+            "status": row.get("status"),
+            "error": row.get("error"),
+        }
+        for phase, rows in (("warmup", warmups), ("measured", raw))
+        for row in rows if row.get("status") != "success"
+    ]
+    return {
+        "format": "turbocider-streaming-faults-v1",
+        "status": "complete",
+        "failure_count": len(failures),
+        "samples": failures,
+    }
+
+
+def manifest_files(output: Path, names: list[str]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for name in names:
+        path = output / name
+        if path.is_file():
+            result[name] = {
+                "sha256": sha256_file(path), "bytes": path.stat().st_size,
+            }
+    return result
+
+
+def run_campaign(
+    policy_path: Path,
+    output: Path,
+    audit_path: Path | None = None,
+    environment_path: Path | None = None,
+) -> dict[str, Any]:
+    policy_path = policy_path.resolve()
+    policy_bytes = policy_path.read_bytes()
+    policy = read_object(policy_path, "campaign policy")
+    validate_policy(policy)
+    reject_output_inside_sources(policy, output)
+    if output.exists():
+        raise CampaignError(f"output must not already exist: {output}")
+    output.mkdir(parents=True)
+    (output / "workers").mkdir()
+    shutil.copyfile(policy_path, output / "campaign-policy.json")
+    raw_path = output / "raw-samples.jsonl"
+    warmup_path = output / "warmups.jsonl"
+    raw_path.touch()
+    warmup_path.touch()
+    identities = build_identity(policy)
+    write_json(output / "build-identity.json", identities)
+    timeout = float(policy["protocol"]["request_timeout_seconds"])
+    start_timeout = float(
+        policy["protocol"].get("worker_start_timeout_seconds", 30)
+    )
+    worker_configs: dict[str, Path] = {}
+    for variant in VARIANTS:
+        path = output / "workers" / f"{variant}.json"
+        write_json(path, policy["variants"][variant])
+        worker_configs[variant] = path
+    manifest = {
+        "format": "turbocider-streaming-campaign-manifest-v1",
+        "schema_version": SCHEMA_VERSION,
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "policy_sha256": sha256_bytes(policy_bytes),
+        "pressure_launched_by_runner": False,
+    }
+    write_json(output / "manifest.json", manifest)
+    workers: dict[str, Worker] = {}
+    raw: list[dict[str, Any]] = []
+    warmups: list[dict[str, Any]] = []
+    aborted = False
+    abort_reason = None
+    plan = planned_samples(int(policy["protocol"]["measured_blocks"]))
+    try:
+        for variant in VARIANTS:
+            workers[variant] = Worker(
+                variant, worker_configs[variant],
+                output / "workers" / f"{variant}.log", timeout, start_timeout,
+            )
+        warmup_count = int(policy["protocol"].get("warmup_requests_per_variant", 1))
+        warmup_failed = False
+        for warmup_index in range(warmup_count):
+            order = VARIANTS if warmup_index % 2 == 0 else tuple(reversed(VARIANTS))
+            for variant in order:
+                sample = {
+                    "block_id": f"warmup-{warmup_index:03d}",
+                    "block_index": -1,
+                    "pair_id": f"warmup-{warmup_index:03d}",
+                    "pair_index": warmup_index,
+                    "position": 0,
+                    "variant": variant,
+                    "run_id": f"warmup-{warmup_index:03d}-{variant}",
+                }
+                request, artifacts = request_for(policy, sample, output)
+                command = {
+                    "type": "run", **sample, "request": request,
+                    "artifact_paths": artifacts,
+                }
+                try:
+                    response = workers[variant].run(command)
+                except socket.timeout:
+                    response = {
+                        "status": "timeout", "error": "warmup timed out",
+                        "worker_pid": workers[variant].pid,
+                    }
+                    workers[variant].terminate()
+                row = {**sample, **response}
+                warmups.append(row)
+                append_jsonl(warmup_path, row)
+                if row.get("status") != "success":
+                    warmup_failed = True
+                    aborted = True
+                    abort_reason = (
+                        f"{variant} warmup failed: "
+                        f"{row.get('error', row['status'])}"
+                    )
+                    break
+            if warmup_failed:
+                break
+        for sample_index, sample in enumerate(plan):
+            if aborted:
+                row = {
+                    **sample,
+                    "sample_index": sample_index,
+                    "status": "not_run_after_abort",
+                    "error": abort_reason,
+                    "worker_pid": workers.get(sample["variant"], None).pid
+                    if sample["variant"] in workers else None,
+                }
+            else:
+                request, artifacts = request_for(policy, sample, output)
+                command = {
+                    "type": "run", **sample, "sample_index": sample_index,
+                    "request": request, "artifact_paths": artifacts,
+                }
+                try:
+                    response = workers[sample["variant"]].run(command)
+                    row = {**sample, "sample_index": sample_index, **response}
+                    if row.get("run_id") != sample["run_id"]:
+                        raise CampaignError("worker returned a different run_id")
+                    if row.get("status") == "worker_error":
+                        aborted = True
+                        abort_reason = row.get("error", "worker error")
+                except socket.timeout:
+                    row = {
+                        **sample,
+                        "sample_index": sample_index,
+                        "status": "timeout",
+                        "error": f"request exceeded {timeout} seconds",
+                        "worker_pid": workers[sample["variant"]].pid,
+                    }
+                    workers[sample["variant"]].terminate()
+                    aborted = True
+                    abort_reason = row["error"]
+                except (EOFError, OSError, CampaignError) as exc:
+                    row = {
+                        **sample,
+                        "sample_index": sample_index,
+                        "status": "worker_error",
+                        "error": str(exc),
+                        "worker_pid": workers[sample["variant"]].pid,
+                    }
+                    aborted = True
+                    abort_reason = str(exc)
+            raw.append(row)
+            append_jsonl(raw_path, row)
+    finally:
+        for worker in workers.values():
+            try:
+                worker.close()
+            except Exception:
+                pass
+    quality = make_quality(raw)
+    write_json(output / "quality.json", quality)
+    if audit_path:
+        audit = read_object(audit_path.resolve(), "audit evidence")
+    else:
+        audit = default_audit(raw, policy)
+    write_json(output / "audit.json", audit)
+    if environment_path:
+        environment = read_object(
+            environment_path.resolve(), "environment evidence"
+        )
+    else:
+        environment = default_environment()
+    write_json(output / "environment.json", environment)
+    write_json(output / "faults.json", make_faults(raw, warmups))
+    if policy["comparison_kind"] == "P1":
+        write_json(
+            output / "semantic-equivalence.json",
+            make_semantic_equivalence(policy, raw),
+        )
+    manifest.update({
+        "status": "aborted" if aborted else "complete",
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "planned_requests": len(plan),
+        "recorded_requests": len(raw),
+        "planned_pairs": len(plan) // 2,
+        "aborted": aborted,
+        "abort_reason": abort_reason,
+    })
+    names = [
+        "campaign-policy.json", "build-identity.json", "raw-samples.jsonl",
+        "warmups.jsonl", "quality.json", "audit.json", "environment.json",
+        "faults.json",
+    ]
+    if policy["comparison_kind"] == "P1":
+        names.append("semantic-equivalence.json")
+    manifest["files"] = manifest_files(output, names)
+    write_json(output / "manifest.json", manifest)
+    try:
+        summary = verify(output)
+    except EvidenceError as exc:
+        summary = {
+            "format": "turbocider-streaming-campaign-verification-v1",
+            "overall": "INVALID",
+            "error": str(exc),
+        }
+    write_json(output / "summary.json", summary)
+    return summary
+
+
+def arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--policy", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--audit", type=Path)
+    parser.add_argument("--environment", type=Path)
+    parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--worker-config", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--worker-fd", type=int, help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    if args.worker:
+        if args.worker_config is None or args.worker_fd is None:
+            parser.error("worker mode requires config and descriptor")
+    elif args.policy is None or args.output is None:
+        parser.error("--policy and --output are required")
+    return args
+
+
+def main() -> int:
+    args = arguments()
+    if args.worker:
+        return worker_main(args.worker_config.resolve(), args.worker_fd)
+    try:
+        summary = run_campaign(
+            args.policy.resolve(), args.output.resolve(),
+            args.audit.resolve() if args.audit else None,
+            args.environment.resolve() if args.environment else None,
+        )
+    except (CampaignError, OSError, json.JSONDecodeError) as exc:
+        print(json.dumps({"overall": "INVALID", "error": str(exc)}, indent=2))
+        return 2
+    print(json.dumps(summary, indent=2))
+    if summary.get("overall") == "PASS":
+        return 0
+    return 2 if summary.get("overall") == "INVALID" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

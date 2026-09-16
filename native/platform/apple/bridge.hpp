@@ -32,4 +32,8 @@ NSDictionary *preflight_ltx_audio(const std::filesystem::path &);
 std::string validate_ltx_ane_profile(const std::filesystem::path &,
                                      uint32_t, uint32_t, uint32_t, uint32_t);
 std::string validate_wan_ane_manifest(const std::filesystem::path &);
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+size_t ltx_exact_process_quarantine_count_for_test() noexcept;
+bool ltx_exact_retry_process_quarantine_for_test(std::string &error) noexcept;
+#endif
 } // namespace tc

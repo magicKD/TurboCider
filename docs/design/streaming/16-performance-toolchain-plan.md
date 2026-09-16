@@ -3,7 +3,9 @@
 [目录](README.md) · [实验原则](07-tooling-and-validation.md) · [发布阈值](12-acceptance-playbook.md) · [整合方案](14-layout-first-integration.md)
 
 日期：2026-09-16。本文细化工具接口、仿真模型、诊断和测试映射；不改变12的P0–P4阈值。
-文中的新工具文件/子命令尚未实现；已有脚本另列。没有真实模型ABBA数据，不能声明本框架已达成无回退或快于swap。
+T2/T3 的最小可执行实现已经落地为 `tools/native/run_streaming_campaign.py`、
+`tools/native/verify_streaming_campaign.py` 和 `tools/native/capture_streaming_source_identity.py`；
+T0/T1/T4 仍未完成。没有真实模型 ABBA 数据和完整 audit/environment provenance，不能声明本框架已达成无回退或快于 swap。
 
 ## 1. 性能目标不是一句“不能差”
 
@@ -218,3 +220,90 @@ env TC_STREAMING_SANITIZER=thread python3 -B tests/native/test_streaming_layout.
 - 未认证模型/shape/格式如何明确拒绝，如何撤回资格且不伤害legacy？
 
 这些问题全部有artifact支撑，才算“框架清晰、可实现、可验收”，而不是只有可调的slot参数。
+
+## 11. 已实现的 T2/T3 campaign 工具
+
+### 11.1 runner 的执行边界
+
+`run_streaming_campaign.py` 是协调器，不在主进程加载 native dylib。它为 baseline、candidate
+各启动一个独立且持久的 worker；worker 在启动时构造一个 retained engine，随后接受长度前缀的
+本地 socket 命令。每次 measured request 返回后，runner 立即将一条 JSON 写入并 `fsync` 到
+`raw-samples.jsonl`，因此超时、worker 错误和后续未运行位置都不会从证据中消失。
+
+固定执行序列为交替 `ABBA` / `BAAB` 四位置 block：位置 0/1 组成 pair-0，位置 2/3 组成
+pair-1。runner 不并发提交两个 variant，也不在 block 内重排；这样 verifier 可以按整个 block
+而非单个 denoise step 做 bootstrap。
+
+runner 明确不会关闭 swap、清 OS cache、启动 pressure、修改电源/thermal 设置或自动改变
+request 的 slot/budget。warmup 失败会保留 `warmups.jsonl`，并把完整计划位置写为
+`not_run_after_abort`；GPU 不可用时不会伪造零样本 PASS。
+
+### 11.2 evidence bundle
+
+一次执行输出以下文件：
+
+```text
+campaign-policy.json       # runner 实际使用的冻结 policy 副本
+manifest.json              # policy hash、状态、文件 hash、计划/实际数量
+build-identity.json        # binary hash、构造器、source identity
+raw-samples.jsonl          # 每个 measured position 一条，包含失败/timeout
+warmups.jsonl              # warmup 原始记录，不计入性能统计
+quality.json               # pair 级 artifact/latent 质量结果
+faults.json                # raw 与 warmup 的失败镜像
+environment.json           # 自动平台记录或 operator-supplied 完整环境
+audit.json                 # release默认partial；独立audit build可按请求reset/snapshot后覆盖
+semantic-equivalence.json  # P1 必须声明且观察到同布局
+summary.json               # 独立 verifier 的最终状态
+workers/*.log              # 两个 worker 的 stdout/stderr
+```
+
+`capture_streaming_source_identity.py` 对 Git worktree 记录 commit、tracked manifest、dirty diff
+和 untracked source hash；对无 `.git` 的导出树要求显式 40-hex commit，并计算稳定 source
+manifest。verifier 对 P0 拒绝缺失 source manifest 的 bundle，即使时间比值很好也只能
+`INCONCLUSIVE`。
+
+### 11.3 verifier 的硬规则
+
+- policy hash、manifest 文件 hash、baseline/candidate binary identity 必须一致；P0 binary 必须不同。
+- raw 必须含完整四位置 ABBA/BAAB block，pair 不能跨 block；resolved/actual layout 不一致直接拒绝。
+- P1 必须有 `semantic-equivalence.json`，并观察到每个成功 pair 的 actual layout 相同。
+- bootstrap 以完整 block 为重采样单元；不是按 pair 或 denoise step 独立重采样。
+- `audit.status=partial`、`environment.status=partial`、source provenance 不完整、样本不足或
+  campaign 未完整结束时，最多 `INCONCLUSIVE`；不自动降级为 PASS。
+- 失败/timeout/cancelled 且仍有成功样本时为硬失败；若整个设备在 warmup 即不可用，bundle
+  保留但可归为 `INCONCLUSIVE`，并显示 completion rate=0。
+- P0/P1 统计阈值仍严格受第12章 1.02/1.05 和 1.03/1.05 上限约束。
+
+CPU-only synthetic backend 与 verifier 反例测试位于
+`tests/native/test_streaming_campaign_verifier.py`；source identity 测试位于
+`tests/native/test_streaming_source_identity.py`。入口是：
+
+```sh
+make PYTHON=python3 test-streaming-campaign
+make PYTHON=python3 test-streaming-source-identity
+```
+
+这两个目标验证工具合同，不授予任何真实模型或硬件的性能资格。
+
+### 11.4 audit build 与 release campaign 分离
+
+`TURBOCIDER_BUILD_AUDIT_COUNTERS=1` 只用于路由隔离证据。它启用五类原子计数和私有
+`tc_streaming_audit_*` ABI；release build不导出这些符号，所有counter callsite编译为空操作。不要用audit
+build替代最终release timing：正确流程是先用audit build运行相同请求并生成`audit.json`，再让release
+campaign通过`--audit`引用该文件。
+
+也可让audit build直接作为campaign candidate：worker会在每个请求前reset、完成后snapshot，并自动聚合
+P0 counter；这用于检查计数覆盖和稳定性，不替代release binary的性能签核。独立入口：
+
+```sh
+TURBOCIDER_BUILD_AUDIT_COUNTERS=1 TURBOCIDER_NATIVE_ONLY=1 \
+  TURBOCIDER_BUILD_OUTPUT_DIR=/private/tmp/tc-audit tools/native/build.sh
+python3 -B tools/native/run_streaming_audit.py \
+  --library /private/tmp/tc-audit/libturbocider.dylib \
+  --model-id ltx-2.5-distilled --model /path/to/LTX-2.5 \
+  --request /path/to/default-request.json --output /tmp/audit.json \
+  --expect default-zero
+```
+
+`test_streaming_audit.py`同时验证disabled no-op、enabled原子计数、真实executor pool/worker callsite、三种
+构建的符号隔离以及public C header未暴露私有ABI。

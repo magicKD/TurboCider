@@ -8,6 +8,7 @@
 #include "../runtime/execution.hpp"
 #include "../runtime/memory_accounting.hpp"
 #include "../runtime/memory_execution.hpp"
+#include "../runtime/streaming/audit.hpp"
 #include "../models/ltx_runtime/ltx_gemma_tokenizer.h"
 #include "../models/ltx_runtime/ltx_weights.h"
 #import <Metal/Metal.h>
@@ -45,6 +46,8 @@ int fail(char **error, const std::exception &e) {
 std::unique_ptr<tc::MemoryExecutionContext> prepare_memory_execution(
         tc::ModelSession &session, tc::ExecutionPlan &plan, bool parent_mlx) {
     if (!plan.memory_policy || !plan.memory_policy->enabled) return nullptr;
+    tc::streaming::audit_increment(
+        tc::streaming::AuditCounter::FrameworkHooks);
     auto &policy = *plan.memory_policy;
     tc::MemoryCapabilityResolution capability;
     const auto device = tc::device_info();
@@ -57,8 +60,14 @@ std::unique_ptr<tc::MemoryExecutionContext> prepare_memory_execution(
     // A constrained request cannot inherit an unaccounted resident session.
     // Start from a clean model/cache boundary; retained constrained sessions
     // can be reintroduced once their backings participate in the ledger.
+    tc::streaming::audit_increment(
+        tc::streaming::AuditCounter::CacheClearOrUnloadCalls);
     session.unload();
-    if (parent_mlx) tc::mx::clear_cache();
+    if (parent_mlx) {
+        tc::streaming::audit_increment(
+            tc::streaming::AuditCounter::CacheClearOrUnloadCalls);
+        tc::mx::clear_cache();
+    }
     const auto observation = tc::observe_process_memory();
     tc::require(observation.available,
                 "memory_observation_unreliable: process footprint is unavailable");
@@ -112,6 +121,8 @@ void drain_memory_execution(tc::ModelSession &session,
     // model or allocator cache.  Teardown happens only after the backend has
     // proved all submitted GPU work complete, while the context is still
     // bound so release hooks can close their ledger leases.
+    tc::streaming::audit_increment(
+        tc::streaming::AuditCounter::CacheClearOrUnloadCalls);
     session.unload();
     const auto mailbox = execution.drain_completion_mailbox();
     tc::require(mailbox.ok(),
@@ -146,6 +157,8 @@ void finalize_memory_failure(tc_engine *engine,
                 disposition = execution->complete_failure_cleanup(
                     false, cleanup.what());
                 try {
+                    tc::streaming::audit_increment(
+                        tc::streaming::AuditCounter::CacheClearOrUnloadCalls);
                     session->unload();
                 } catch (...) {
                 }
@@ -153,6 +166,8 @@ void finalize_memory_failure(tc_engine *engine,
                 disposition = execution->complete_failure_cleanup(
                     false, "unknown completion drain failure");
                 try {
+                    tc::streaming::audit_increment(
+                        tc::streaming::AuditCounter::CacheClearOrUnloadCalls);
                     session->unload();
                 } catch (...) {
                 }
@@ -177,6 +192,38 @@ void finalize_memory_failure(tc_engine *engine,
 uint32_t tc_abi_version(void) {
     return 1;
 }
+#ifdef TURBOCIDER_ENABLE_AUDIT_COUNTERS
+extern "C" void tc_streaming_audit_reset(void) {
+    tc::streaming::audit_reset();
+}
+
+extern "C" int tc_streaming_audit_snapshot_json(
+        char **result, char **error) {
+    if (result) *result = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(result, "missing streaming audit result pointer");
+            const auto snapshot = tc::streaming::audit_snapshot();
+            *result = copy(tc::json(@{
+                @"format": @"turbocider-streaming-audit-snapshot-v1",
+                @"new_framework_hooks": @(snapshot.framework_hooks),
+                @"new_memory_probes": @(snapshot.memory_probes),
+                @"new_worker_threads": @(snapshot.worker_threads),
+                @"new_pool_allocations": @(snapshot.pool_allocations),
+                @"new_cache_clear_or_unload_calls":
+                    @(snapshot.cache_clear_or_unload_calls)
+            }));
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error) *error = strdup("unknown streaming audit error");
+            return 1;
+        }
+    }
+}
+#endif
 void tc_string_free(char *s) {
     free(s);
 }
@@ -357,6 +404,62 @@ extern "C" int tc_engine_create_model_candidate(const char *id, const char *path
         (*engine)->allow_experimental_streaming = true;
     return status;
 }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+extern "C" int tc_engine_test_ltx_exact_destroy_failures(
+        tc_engine *engine, uint32_t failures, char **error) {
+    if (error) *error = nullptr;
+    try {
+        tc::require(engine && engine->session,
+                    "missing candidate engine for LTX lifecycle fault");
+        tc::require(engine->allow_experimental_streaming,
+                    "LTX lifecycle fault requires the private candidate engine");
+        std::unique_lock<std::mutex> local(engine->mutex, std::try_to_lock);
+        tc::require(local.owns_lock(), "engine busy");
+        engine->session->test_set_ltx_exact_destroy_failures(failures);
+        return 0;
+    } catch (const std::exception &exception) {
+        return fail(error, exception);
+    } catch (...) {
+        if (error) *error = strdup("unknown LTX lifecycle test-hook error");
+        return 1;
+    }
+}
+
+extern "C" int tc_engine_test_ltx_exact_cancel_first_fill(
+        tc_engine *engine, char **error) {
+    if (error) *error = nullptr;
+    try {
+        tc::require(engine && engine->session,
+                    "missing candidate engine for LTX lifecycle fault");
+        tc::require(engine->allow_experimental_streaming,
+                    "LTX lifecycle fault requires the private candidate engine");
+        std::unique_lock<std::mutex> local(engine->mutex, std::try_to_lock);
+        tc::require(local.owns_lock(), "engine busy");
+        engine->session->test_cancel_ltx_exact_first_fill();
+        return 0;
+    } catch (const std::exception &exception) {
+        return fail(error, exception);
+    } catch (...) {
+        if (error) *error = strdup("unknown LTX lifecycle test-hook error");
+        return 1;
+    }
+}
+
+extern "C" uint64_t tc_engine_test_ltx_process_quarantine_count(void) {
+    return static_cast<uint64_t>(
+        tc::ltx_exact_process_quarantine_count_for_test());
+}
+
+extern "C" int tc_engine_test_ltx_retry_process_quarantine(char **error) {
+    if (error) *error = nullptr;
+    std::string failure;
+    if (tc::ltx_exact_retry_process_quarantine_for_test(failure)) return 0;
+    if (error)
+        *error = strdup(failure.empty() ?
+            "LTX process quarantine retry remains unsafe" : failure.c_str());
+    return 1;
+}
+#endif
 void tc_engine_cancel(tc_engine *e) {
     if (e)
         e->cancelled.store(true);

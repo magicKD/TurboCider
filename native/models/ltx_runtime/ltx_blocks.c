@@ -6304,6 +6304,15 @@ int ltx_native_streaming_destroy(ltx_native_denoiser **ctx, char *error, size_t 
     if (!ctx || !*ctx) return 1;
     if (!(*ctx)->exact_stream) { snprintf(error, size, "not an LTX exact streaming context"); return 0; }
     if (!ltx_exact_owner((*ctx)->exact_stream, error, size)) return 0;
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    if ((*ctx)->exact_stream->test_destroy_failures_remaining) {
+        --(*ctx)->exact_stream->test_destroy_failures_remaining;
+        snprintf(error, size,
+                 "injected LTX exact destroy drain failure (%u remaining)",
+                 (*ctx)->exact_stream->test_destroy_failures_remaining);
+        return 0;
+    }
+#endif
     if (!ltx_exact_drain((*ctx)->exact_stream, error, size)) return 0;
     if (!tc_stream_executor_destroy(&(*ctx)->exact_stream->executor, error, size)) return 0;
     ltx_exact_release_quarantine((*ctx)->exact_stream);
@@ -6312,6 +6321,34 @@ int ltx_native_streaming_destroy(ltx_native_denoiser **ctx, char *error, size_t 
     ltx_native_free(*ctx); *ctx = NULL;
     return 1;
 }
+
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+int ltx_native_streaming_test_set_destroy_failures(
+    ltx_native_denoiser *ctx, uint32_t failures, char *error, size_t size) {
+    if (!ctx || !ctx->exact_stream) {
+        snprintf(error, size, "not an LTX exact streaming context");
+        return 0;
+    }
+    if (!ltx_exact_owner(ctx->exact_stream, error, size)) return 0;
+    if (failures > 16u) {
+        snprintf(error, size, "LTX exact destroy failure count exceeds test limit");
+        return 0;
+    }
+    ctx->exact_stream->test_destroy_failures_remaining = failures;
+    return 1;
+}
+
+int ltx_native_streaming_test_cancel_first_fill(
+    ltx_native_denoiser *ctx, char *error, size_t size) {
+    if (!ctx || !ctx->exact_stream) {
+        snprintf(error, size, "not an LTX exact streaming context");
+        return 0;
+    }
+    if (!ltx_exact_owner(ctx->exact_stream, error, size)) return 0;
+    ctx->exact_stream->test_cancel_first_fill = 1u;
+    return 1;
+}
+#endif
 
 int ltx_native_streaming_counters(ltx_native_denoiser *ctx, tc_stream_counters_v1 *out, char *error, size_t size) {
     if (!ctx || !ctx->exact_stream) { snprintf(error, size, "not an LTX exact streaming context"); return 0; }

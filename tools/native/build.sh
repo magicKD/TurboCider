@@ -12,7 +12,25 @@ case "$EXPERIMENTAL_PROBES" in
  0|1) ;;
  *) printf 'TURBOCIDER_BUILD_EXPERIMENTAL_PROBES must be 0 or 1\n' >&2; exit 2 ;;
 esac
-OUT="$PWD/build/native"
+TEST_HOOKS="${TURBOCIDER_BUILD_TEST_HOOKS:-0}"
+case "$TEST_HOOKS" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_BUILD_TEST_HOOKS must be 0 or 1\n' >&2; exit 2 ;;
+esac
+TEST_HOOK_FLAG=""
+if [[ "$TEST_HOOKS" == "1" ]]; then
+ TEST_HOOK_FLAG="-DTURBOCIDER_ENABLE_TEST_HOOKS=1"
+fi
+AUDIT_COUNTERS="${TURBOCIDER_BUILD_AUDIT_COUNTERS:-0}"
+case "$AUDIT_COUNTERS" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_BUILD_AUDIT_COUNTERS must be 0 or 1\n' >&2; exit 2 ;;
+esac
+AUDIT_COUNTER_FLAG=""
+if [[ "$AUDIT_COUNTERS" == "1" ]]; then
+ AUDIT_COUNTER_FLAG="-DTURBOCIDER_ENABLE_AUDIT_COUNTERS=1"
+fi
+OUT="${TURBOCIDER_BUILD_OUTPUT_DIR:-$PWD/build/native}"
 mkdir -p "$OUT" "$OUT/module-cache"
 export CLANG_MODULE_CACHE_PATH="$OUT/module-cache"
 SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
@@ -26,13 +44,15 @@ MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
 DEPLOYMENT_TARGET="${TURBOCIDER_DEPLOYMENT_TARGET:-${MLX_MIN_MACOS:-15.0}}"
 MACOS_FLAGS=(-mmacosx-version-min="$DEPLOYMENT_TARGET")
 COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I bindings/c/include -I native/core -isystem "$MLX_ROOT/include" -Wall -Wextra -Wno-unused-parameter)
+if [[ -n "$TEST_HOOK_FLAG" ]]; then COMMON+=("$TEST_HOOK_FLAG"); fi
+if [[ -n "$AUDIT_COUNTER_FLAG" ]]; then COMMON+=("$AUDIT_COUNTER_FLAG"); fi
 OBJECTS=()
 SOURCES=(
  native/core/common.cpp
  native/core/json_keys.cpp
  native/runtime/streaming/config.cpp native/runtime/streaming/layout.cpp
  native/runtime/streaming/slot_pool.cpp native/runtime/streaming/io_executor.cpp native/runtime/streaming/context.cpp
- native/runtime/streaming/c_bridge.cpp
+ native/runtime/streaming/c_bridge.cpp native/runtime/streaming/audit.cpp
  native/models/ltx_runtime/ltx_streaming_descriptor.cpp native/models/ltx_runtime/ltx_streaming_plan.cpp
  native/platform/apple/streaming_config.mm
  native/components/text/qwen3.cpp
@@ -91,10 +111,12 @@ LTX_ROOT="$PWD/native/models/ltx_runtime"
 LTX_OUT="$OUT/ltx-runtime"
 mkdir -p "$LTX_OUT"
 LTX_OBJECTS=()
+LTX_FEATURE_FLAGS=(-DLTX_ENABLE_ANE_MLP -DLTX_ENABLE_ANE_V2A -DLTX_ENABLE_ANE_KV -DLTX_ENABLE_ANE_QKV)
+if [[ -n "$TEST_HOOK_FLAG" ]]; then LTX_FEATURE_FLAGS+=("$TEST_HOOK_FLAG"); fi
 "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I native/runtime -c native/runtime/block_residency.c -o "$LTX_OUT/block_residency.o"
 LTX_OBJECTS+=("$LTX_OUT/block_residency.o")
 for src in ltx ltx_conditioning ltx_connector ltx_transformer_io ltx_latent_stats ltx_rng ltx_streaming_layout ltx_streaming_slot ltx_blocks; do
- "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -DLTX_ENABLE_ANE_MLP -DLTX_ENABLE_ANE_V2A -DLTX_ENABLE_ANE_KV -DLTX_ENABLE_ANE_QKV -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c "$LTX_ROOT/$src.c" -o "$LTX_OUT/$src.o"
+ "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE "${LTX_FEATURE_FLAGS[@]}" -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c "$LTX_ROOT/$src.c" -o "$LTX_OUT/$src.o"
  LTX_OBJECTS+=("$LTX_OUT/$src.o")
 done
 for src in ltx_safetensors ltx_weights ltx_gpu ltx_gemma_tokenizer ltx_gemma_encoder ltx_gemma_ane_mlp ltx_upsampler ltx_video_vae ltx_ane_mlp ltx_ane_v2a ltx_ane_kv ltx_ane_qkv; do
