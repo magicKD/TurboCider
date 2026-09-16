@@ -5,12 +5,34 @@
 This is a public, self-contained export of existing project measurements.
 The [machine-readable timing samples](benchmarks/measurements.json) preserve
 the selected records without depending on private development documents.
-No new benchmark or generation was run for this publication pass.
+The original publication pass exported existing measurements. The September 16
+M5 entry below adds new local measurements and retains its own evidence file.
 
 Weights, raw images and full execution logs are not bundled. Consequently this
 is inspectable reported evidence, not a claim that every original experiment
 can be reproduced from documentation alone. Record IDs identify dated retained
 measurements; they are not live links to unpublished files.
+
+## M5 Pro — September 16, 2026
+
+M5 Pro, 16-core GPU, 24 GiB, macOS 26.4.1, MLX 0.32.0. Medians include
+PNG export and exclude each explicitly marked warmup; rows are separate experiments.
+
+| Workload | Before → after | Warm samples per route |
+| --- | --- | ---: |
+| FLUX.2 Klein 4B, 512², 4 steps, resident | GPU 1.784 → hybrid 1.524 s (−14.6%) | 18 |
+| Z-Image, 512², 9 steps, streaming, GPU suffix loading | Original hybrid 10.773 → 7.217 s (−33.0%); GPU control 10.747 s | 8 |
+| Z-Image, 1024², 8 steps, streaming, GPU segment compilation | Original hybrid 34.666 → 33.476 s (−3.4%); GPU control 28.895 s | 4 |
+| Z-Image, 512², 8 steps, streaming, GPU segment compilation | Original hybrid 7.338 → 7.119 s (−3.0%); GPU control 10.578 s | 4 |
+| Z-Image, 512², 8 steps, streaming, correct row selection | Oversized 4128-row hybrid 12.387 → 1120-row hybrid 7.119 s (−42.5%) | 4 |
+
+Z-Image uses Comfy BF16, no LoRA and a 10 GiB GPU sampling budget. The budget
+excludes Core ML and is not a process memory cap; paging was observed. 1024²
+hybrid remains slower than GPU in this run, with substantial control drift.
+M5 Z-Image automatic execution remains GPU. Earlier resident and full-weight
+streaming experiments without a hybrid benefit are also retained.
+
+[Implementation, quality checks, limitations and seven complete evidence records](../design/m5-ane-adaptation.md).
 
 ## FLUX on M4 Pro — September 5, 2026
 

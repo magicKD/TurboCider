@@ -1,0 +1,255 @@
+{
+  "date": "2026-09-16",
+  "device": {
+    "chip": "Apple M5 Pro",
+    "gpu_cores": 16,
+    "physical_memory_gib": 24,
+    "macos": "26.4.1",
+    "mlx": "0.32.0"
+  },
+  "request": {
+    "model": "z-image-turbo",
+    "checkpoint": "Comfy BF16",
+    "size": 1024,
+    "steps": 8,
+    "seed": 42,
+    "prompt_tokens": 78,
+    "residency": "streamed",
+    "budget_gib": 10,
+    "ane_channels": 4096,
+    "gpu_channels": 6144,
+    "actual_rows": 4192
+  },
+  "source_hashes": {
+    "native/models/z_image/z_image.cpp": "8f20e3cdde574e638e38b9103b04af42a4bf53a62863d1baf5e5ae776ed8bca5",
+    "native/models/z_image/block_profile.hpp": "54f5d0fefd1e4318bb7920648e4491c41f88436b3837345a51a33afeec55b3f4",
+    "tools/native/profile_z_image.py": "f2dc5417131ee350afda71e2405e0652868832dbf989f1b733ec3296221121a6",
+    "tools/native/summarize_z_image_profile.py": "821aee9014ff110cb5236fce44f775da924486b72d9ec36608913e9ed912e600",
+    "candidate_library_sha256": "cb64fd20655aeb190478221725bf9841875f9a5001a9fa797b7f168a6e8573e1"
+  },
+  "request_count": 20,
+  "warmup_count": 4,
+  "sample_count": 16,
+  "profile_request_count": 4,
+  "profile_block_count": 1024,
+  "output_parity": true,
+  "groups": {
+    "gpu": {
+      "names": [
+        "01-gpu_control_start",
+        "02-gpu_control_start",
+        "18-gpu_control_end",
+        "19-gpu_control_end"
+      ],
+      "wall_seconds": [
+        26.753086624958087,
+        27.282061957987025,
+        30.50889429199742,
+        33.73420733300736
+      ],
+      "denoise_seconds": [
+        23.434423875,
+        24.064377333,
+        27.315814792,
+        30.613779167
+      ],
+      "median_wall_seconds": 28.895478124992223,
+      "median_denoise_seconds": 25.6900960625,
+      "median_read_wait_seconds": 0.0011044960000000008,
+      "png_sha256": "2c0d1d1bc878485790ffb39c7a5aee87fdcb0130411136ae7acf05c5e135a837",
+      "phase_system_vm_median_bytes": {
+        "denoise": {
+          "Swapins": 257335296.0,
+          "Swapouts": 0.0
+        },
+        "decode_and_postprocess": {
+          "Swapins": 15884288.0,
+          "Swapouts": 158793728.0
+        }
+      }
+    },
+    "hybrid_eager": {
+      "names": [
+        "05-hybrid_eager_a",
+        "06-hybrid_eager_a",
+        "11-hybrid_eager_b",
+        "12-hybrid_eager_b"
+      ],
+      "wall_seconds": [
+        34.37201112502953,
+        34.95965837495169,
+        33.40783049998572,
+        36.206076250004116
+      ],
+      "denoise_seconds": [
+        30.065924958,
+        30.610129083,
+        29.334564334,
+        32.1180765
+      ],
+      "median_wall_seconds": 34.66583474999061,
+      "median_denoise_seconds": 30.3380270205,
+      "median_read_wait_seconds": 0.00019252,
+      "png_sha256": "256e8942bb633f18c77d66766547e97671fec221135e7b6fb18f64d99b3b0bc3",
+      "phase_system_vm_median_bytes": {
+        "denoise": {
+          "Swapins": 2825814016.0,
+          "Swapouts": 127074304.0
+        },
+        "decode_and_postprocess": {
+          "Swapins": 160260096.0,
+          "Swapouts": 3010199552.0
+        }
+      }
+    },
+    "hybrid_fused": {
+      "names": [
+        "07-hybrid_fused_a",
+        "08-hybrid_fused_a",
+        "09-hybrid_fused_b",
+        "10-hybrid_fused_b"
+      ],
+      "wall_seconds": [
+        33.59795295901131,
+        34.23171820800053,
+        33.354526875016745,
+        32.89111750002485
+      ],
+      "denoise_seconds": [
+        29.583863292,
+        30.115777166,
+        29.226402583,
+        28.997793875
+      ],
+      "median_wall_seconds": 33.47623991701403,
+      "median_denoise_seconds": 29.4051329375,
+      "median_read_wait_seconds": 0.00017978599999999992,
+      "png_sha256": "256e8942bb633f18c77d66766547e97671fec221135e7b6fb18f64d99b3b0bc3",
+      "phase_system_vm_median_bytes": {
+        "denoise": {
+          "Swapins": 2460319744.0,
+          "Swapouts": 87654400.0
+        },
+        "decode_and_postprocess": {
+          "Swapins": 132308992.0,
+          "Swapouts": 2490425344.0
+        }
+      }
+    }
+  },
+  "notes": [
+    "Warmups are explicitly excluded; no slow samples removed.",
+    "Hybrid controls alternate old, new, new, old with two requests in each group, reusing the same loaded hybrid session.",
+    "Stage times are host completion wall time with added boundaries, not hardware kernel timings.",
+    "System VM deltas are global; phase association does not establish process attribution.",
+    "GPU control drift and system swapping limit causal and statistical conclusions."
+  ],
+  "improvement_percent": {
+    "wall_seconds": 3.4316059069568583,
+    "denoise_seconds": 3.074999182938387
+  },
+  "fused_vs_gpu_wall_percent": 15.852867262507143,
+  "profile_main_block_median_ms": {
+    "hybrid_eager": {
+      "pre_mlp": 60.478368925,
+      "gpu_submit": 0.1115277875,
+      "coreml": 39.52688486666666,
+      "gpu_tail_wait": 1.0146096458333334,
+      "branch_window": 40.653084883333335,
+      "merge": 3.2661119249999997,
+      "total": 104.39759849583334
+    },
+    "hybrid_fused": {
+      "pre_mlp": 55.02829854375,
+      "gpu_submit": 0.09859799375,
+      "coreml": 38.9128434875,
+      "gpu_tail_wait": 1.1595794229166665,
+      "branch_window": 40.171086447916664,
+      "merge": 2.0901464270833334,
+      "total": 97.28956703958333
+    }
+  },
+  "profile_phase_memory": {
+    "13-hybrid_eager_profile": {
+      "denoise_begin": {
+        "mlx_active_bytes": 5647152468,
+        "mlx_peak_bytes": 5647152468
+      },
+      "denoise_end": {
+        "mlx_active_bytes": 5647152436,
+        "mlx_peak_bytes": 6488804808
+      },
+      "decode_end": {
+        "mlx_active_bytes": 6184023360,
+        "mlx_peak_bytes": 18634700368
+      }
+    },
+    "14-hybrid_eager_profile": {
+      "denoise_begin": {
+        "mlx_active_bytes": 5647152468,
+        "mlx_peak_bytes": 5647152468
+      },
+      "denoise_end": {
+        "mlx_active_bytes": 5647152436,
+        "mlx_peak_bytes": 6488804808
+      },
+      "decode_end": {
+        "mlx_active_bytes": 6184023360,
+        "mlx_peak_bytes": 18634700368
+      }
+    },
+    "15-hybrid_fused_profile": {
+      "denoise_begin": {
+        "mlx_active_bytes": 5647152468,
+        "mlx_peak_bytes": 5647152468
+      },
+      "denoise_end": {
+        "mlx_active_bytes": 5647152436,
+        "mlx_peak_bytes": 6488786876
+      },
+      "decode_end": {
+        "mlx_active_bytes": 6184023360,
+        "mlx_peak_bytes": 18634700368
+      }
+    },
+    "16-hybrid_fused_profile": {
+      "denoise_begin": {
+        "mlx_active_bytes": 5647152468,
+        "mlx_peak_bytes": 5647152468
+      },
+      "denoise_end": {
+        "mlx_active_bytes": 5647152436,
+        "mlx_peak_bytes": 6488786876
+      },
+      "decode_end": {
+        "mlx_active_bytes": 6184023360,
+        "mlx_peak_bytes": 18634700368
+      }
+    }
+  },
+  "smoke_tests": {
+    "smoke-1024": {
+      "request_count": 3,
+      "size": 1024,
+      "seed": 42,
+      "old_new_old_output_parity": true,
+      "png_sha256": "256e8942bb633f18c77d66766547e97671fec221135e7b6fb18f64d99b3b0bc3"
+    },
+    "smoke-512": {
+      "request_count": 3,
+      "size": 512,
+      "seed": 123,
+      "old_new_old_output_parity": true,
+      "png_sha256": "200080a65e5f4c2d718096996a5df2ac36e91525c05a81eca0a279367e8d96af"
+    }
+  },
+  "parity_with_previous_diagnostic_library": true,
+  "client": {
+    "app": "dist/TurboCider.app",
+    "native_library_updated": true,
+    "codesign_deep_strict_verified": true,
+    "packaged_plan_execution": "gpu_ane_experimental",
+    "packaged_plan_residency": "streamed",
+    "opened_and_studio_window_verified": true
+  }
+}

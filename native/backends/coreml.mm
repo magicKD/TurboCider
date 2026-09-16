@@ -5,6 +5,7 @@
 #import <CoreML/CoreML.h>
 #include <set>
 #include <algorithm>
+#include <cstring>
 namespace tc {
 class CoreMLBranch {
     MLModel *model_;
@@ -257,13 +258,21 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
     if (!output_ || actual_output.dataPointer != output_.dataPointer) {
         copied_bytes += uint64_t(rows_) * uint64_t(hidden_) * 2;
         // Strides can differ when the framework declines the caller output backing.
-        for (int row = 0; row < rows_; ++row)
-            for (int c = 0; c < hidden_; ++c) {
-                size_t offset = row * [actual_output.strides[3] unsignedLongLongValue] +
-                                c * [actual_output.strides[1] unsignedLongLongValue];
-                ((uint16_t *)output_storage_.data<mx::float16_t>())[size_t(row) * hidden_ + c] =
-                    ((uint16_t *)actual_output.dataPointer)[offset];
-            }
+        // Resolve Objective-C properties once per prediction, not once per
+        // element. Flexible models normally take this owned-output path.
+        const auto *source = static_cast<const uint16_t *>(actual_output.dataPointer);
+        auto *destination = reinterpret_cast<uint16_t *>(output_storage_.data<mx::float16_t>());
+        const size_t row_stride = [actual_output.strides[3] unsignedLongLongValue];
+        const size_t channel_stride = [actual_output.strides[1] unsignedLongLongValue];
+        for (int row = 0; row < rows_; ++row) {
+            auto *target_row = destination + size_t(row) * hidden_;
+            const auto *source_row = source + size_t(row) * row_stride;
+            if (channel_stride == 1)
+                std::memcpy(target_row, source_row, size_t(hidden_) * sizeof(uint16_t));
+            else
+                for (int c = 0; c < hidden_; ++c)
+                    target_row[c] = source_row[size_t(c) * channel_stride];
+        }
     }
     // The model coordinator and per-block eval guarantee that the prior
     // consumer has completed before this branch writes its next output. Core ML

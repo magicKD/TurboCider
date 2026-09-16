@@ -83,6 +83,11 @@ struct AccelerationDiscovery {
                 mlpWidth == 9216 && start == 0 && end == 9216 &&
                 (bucket == nil || bucket == 1088 || bucket == 4160)
         }
+        if gpu == "Apple M5 Pro" && memory == 24 * 1024 * 1024 * 1024 {
+            return modelID == "flux2-klein-4b" &&
+                mlpWidth == 9216 && start == 0 && end == 6144 &&
+                (bucket == nil || bucket == 1088)
+        }
         return false
     }
     static func automaticBucket(modelID: String, operation: String,
@@ -105,7 +110,8 @@ struct AccelerationDiscovery {
                      enforceAutomaticPolicy: Bool = false,
                      modelID: String = "flux2-klein-4b",
                      loras: [StudioLoRA] = [], knownManifests: [String] = [],
-                     requireCompiled: Bool = true) -> Match? {
+                     requireCompiled: Bool = true,
+                     preferSmallestRows: Bool = false) -> Match? {
         guard !modelPath.isEmpty else { return nil }
         // Adapter-bound partitions remain explicit until each LoRA geometry
         // has its own repeated warm end-to-end validation.
@@ -130,14 +136,15 @@ struct AccelerationDiscovery {
         let fm = FileManager.default
         let appCache = cache ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("TurboCiderNative/cache/coreml")
         var candidates: [URL] = []
-        if !preferred.isEmpty, !enforceAutomaticPolicy || URL(fileURLWithPath: preferred).resolvingSymlinksInPath().path.hasPrefix(appCache.resolvingSymlinksInPath().path + "/") { candidates.append(URL(fileURLWithPath: preferred)) }
-        if !enforceAutomaticPolicy {
-            candidates += knownManifests.map { URL(fileURLWithPath: $0) }
-            for item in LibraryANEPartition.registered(modelID: modelID) {
-                candidates.append(URL(fileURLWithPath: item.path))
-                if !requireCompiled, let source = item.sourceManifest, !source.isEmpty {
-                    candidates.append(URL(fileURLWithPath: source))
-                }
+        // Registered/offline-compiled partitions can live outside the App cache.
+        // Automatic eligibility still requires the hardware, geometry, checkpoint,
+        // LoRA and compilation checks below; a registration alone is insufficient.
+        if !preferred.isEmpty { candidates.append(URL(fileURLWithPath: preferred)) }
+        candidates += knownManifests.map { URL(fileURLWithPath: $0) }
+        for item in LibraryANEPartition.registered(modelID: modelID) {
+            candidates.append(URL(fileURLWithPath: item.path))
+            if !requireCompiled, let source = item.sourceManifest, !source.isEmpty {
+                candidates.append(URL(fileURLWithPath: source))
             }
         }
         if let configured = ProcessInfo.processInfo.environment["TURBOCIDER_ANE_MANIFEST"] { candidates.append(URL(fileURLWithPath: configured)) }
@@ -204,6 +211,26 @@ struct AccelerationDiscovery {
                                  rows: selectedRows, mlpWidth: mlpWidth,
                                  aneMLPStart: aneMLPStart, aneMLPEnd: aneMLPEnd))
         }
-        return matches.first { $0.manifest == preferred } ?? matches.min { $0.rows < $1.rows }
+        let preferredMatch = matches.first { $0.manifest == preferred }
+        guard preferSmallestRows else {
+            return preferredMatch ?? matches.min { $0.rows < $1.rows }
+        }
+        // A previous 1024 image must not force a 512 request to pad to 4128
+        // rows when an equivalent 1120-row partition is available. Preserve
+        // the selected MLP channel split; changing image size should not also
+        // change the user's GPU/ANE division of work.
+        let compatible = preferredMatch.map { selected in
+            matches.filter {
+                $0.mlpWidth == selected.mlpWidth &&
+                $0.aneMLPStart == selected.aneMLPStart && $0.aneMLPEnd == selected.aneMLPEnd
+            }
+        } ?? matches
+        return compatible.min {
+            if $0.rows != $1.rows { return $0.rows < $1.rows }
+            if ($0.manifest == preferred) != ($1.manifest == preferred) {
+                return $0.manifest == preferred
+            }
+            return $0.manifest < $1.manifest
+        }
     }
 }

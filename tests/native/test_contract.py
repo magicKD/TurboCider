@@ -53,6 +53,14 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(code, 0, error)
         self.assertEqual(result['residency'], 'streamed')
         self.assertEqual(result['memory_budget_bytes'], 10 << 30)
+        hybrid = {**request, 'execution': 'gpu_ane', 'allow_approximation': True,
+                  'ane_manifest': '/tmp/z-image-compiled.json'}
+        code, result, error = plan(hybrid)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(result['execution'], 'gpu_ane_experimental')
+        self.assertNotEqual(plan({**hybrid, 'allow_approximation': False})[0], 0)
+        self.assertNotEqual(plan({**hybrid, 'loras': [dict(
+            path='/tmp/style.safetensors', strength=1, role='transformer')]})[0], 0)
         for change in [dict(execution='auto'), dict(memory_budget_bytes=1 << 30),
                        dict(streaming_offload=True), dict(residency='component_staged'),
                        dict(loras=[dict(path='/tmp/style.safetensors', strength=1, role='transformer')])]:
@@ -1854,15 +1862,13 @@ class ContractTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('export_qwen3_contract', exporter_path)
         exporter = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(exporter)
-        z_source = exporter.QwenSource(ROOT/'models/Tongyi-MAI-Z-Image-Turbo/text_encoder')
-        self.assertEqual(z_source.checkpoint.name, 'model.safetensors')
-        self.assertIsNone(z_source.weight_map)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             model = root/'model'; model.mkdir()
             (model/'model.safetensors').write_bytes(b'fixture')
             source = exporter.QwenSource(model)
             self.assertEqual(source.checkpoint.name, 'model.safetensors')
+            self.assertIsNone(source.weight_map)
             (model/'model.safetensors').unlink()
             (model/'model.safetensors').symlink_to(root/'outside.safetensors')
             (root/'outside.safetensors').write_bytes(b'outside')

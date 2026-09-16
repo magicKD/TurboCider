@@ -164,13 +164,14 @@ final class NativeJobStore: ObservableObject {
             + (textTokens + 31) / 32 * 32
         let match = await Task.detached {
             AccelerationDiscovery.find(modelPath: draft.modelPath, preferred: preferred, cache: cache,
-                minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs, knownManifests: known)
+                minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs, knownManifests: known,
+                preferSmallestRows: draft.modelID == "z-image-turbo")
         }.value
         try Task.checkCancellation()
         if let match {
             config.manifest = match.manifest
             config.sourceManifest = match.source
-            accelerationStatus = "已复用 ANE 编译缓存 · 未重新编译"
+            accelerationStatus = "已复用 ANE 编译缓存 · \(match.rows) 行 · 未重新编译"
         } else {
             let source = config.sourceManifest
             let sourceMatch = await Task.detached {
@@ -182,7 +183,8 @@ final class NativeJobStore: ObservableObject {
                 let sources = ([source] + linkedSources).filter { !$0.isEmpty }
                 return AccelerationDiscovery.find(modelPath: draft.modelPath, preferred: sources.first ?? "", cache: cache,
                     minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs,
-                    knownManifests: Array(sources.dropFirst()), requireCompiled: false)
+                    knownManifests: Array(sources.dropFirst()), requireCompiled: false,
+                    preferSmallestRows: draft.modelID == "z-image-turbo")
             }.value
             guard let sourceMatch else {
                 accelerationStatus = "没有匹配当前模型、LoRA、强度与文本长度的 ANE 缓存"

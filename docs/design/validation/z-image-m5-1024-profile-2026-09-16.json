@@ -1,0 +1,355 @@
+{
+  "date": "2026-09-16",
+  "device": "Apple M5 Pro, 16-core GPU, 24 GiB",
+  "model": "Z-Image Turbo Comfy BF16",
+  "dimensions": [
+    1024,
+    1024
+  ],
+  "text_tokens": 78,
+  "bucket": 4192,
+  "ane_channels": 4096,
+  "gpu_channels": 6144,
+  "seed": 42,
+  "steps": 8,
+  "memory_budget_bytes": 10737418240,
+  "residency": "streamed",
+  "runs": 19,
+  "warmups": 3,
+  "samples": 16,
+  "controls": {
+    "gpu": {
+      "n": 4,
+      "wall_seconds": [
+        27.859917082998436,
+        28.16721691697603,
+        30.48794529197039,
+        30.933727583964355
+      ],
+      "denoise_seconds": [
+        24.535307625,
+        24.881123666,
+        27.406476333,
+        27.6961965
+      ],
+      "wall_median_seconds": 29.32758110447321,
+      "denoise_median_seconds": 26.1437999995,
+      "read_wait_median_seconds": 0.004520101500000001,
+      "system_swapout_bytes": [
+        996474880,
+        685309952,
+        145162240,
+        371589120
+      ]
+    },
+    "gpu_ane": {
+      "n": 4,
+      "wall_seconds": [
+        33.41321320895804,
+        33.11038775002817,
+        39.30543420795584,
+        33.88934862497263
+      ],
+      "denoise_seconds": [
+        29.714542083,
+        28.614082375,
+        35.020067375,
+        29.921007958
+      ],
+      "wall_median_seconds": 33.651280916965334,
+      "denoise_median_seconds": 29.8177750205,
+      "read_wait_median_seconds": 0.00018354150000000002,
+      "system_swapout_bytes": [
+        3677880320,
+        3956015104,
+        4129996800,
+        2743664640
+      ]
+    }
+  },
+  "stage_ms": {
+    "hybrid_overlap": {
+      "pre_mlp": 67.35109783125,
+      "gpu_submit": 0.11210781041666668,
+      "coreml": 44.481739045833336,
+      "gpu_tail_wait": 1.1080595458333333,
+      "branch_window": 45.70196978958333,
+      "merge": 3.7345181729166668,
+      "total": 116.78760243125
+    },
+    "hybrid_serial": {
+      "pre_mlp": 63.44185715833333,
+      "pack": 0.586119025,
+      "gpu_submit": 0.08265519999999998,
+      "gpu_isolated": 39.212710656249996,
+      "coreml": 39.63225816666667,
+      "gpu_tail_wait": 0.0005774312500000001,
+      "branch_window": 78.84561793958333,
+      "merge": 3.9632752729166665,
+      "total": 146.83691071666667
+    },
+    "gpu_split": {
+      "pre_mlp": 55.33347405833334,
+      "gpu_isolated": 57.531477368750004,
+      "merge": 2.296738120833333,
+      "total": 115.16174010625
+    },
+    "gpu_fused_profile": {
+      "total": 108.20904452083333
+    }
+  },
+  "stage_aggregation": "Mean of 240 main-layer calls per request, then median across 2 sample requests; noise refiners excluded from stage table.",
+  "phase_memory": {
+    "hybrid_overlap": {
+      "denoise_begin": {
+        "mlx_active_bytes": 5647152448,
+        "mlx_peak_bytes": 5647152448
+      },
+      "denoise_end": {
+        "mlx_active_bytes": 5647152416,
+        "mlx_peak_bytes": 6488804788
+      },
+      "decode_end": {
+        "mlx_active_bytes": 6184023340,
+        "mlx_peak_bytes": 18634700348
+      }
+    },
+    "hybrid_serial": {
+      "denoise_begin": {
+        "mlx_active_bytes": 5647152448,
+        "mlx_peak_bytes": 5647152448
+      },
+      "denoise_end": {
+        "mlx_active_bytes": 5647152416,
+        "mlx_peak_bytes": 6456633268
+      },
+      "decode_end": {
+        "mlx_active_bytes": 6184023340,
+        "mlx_peak_bytes": 18634700348
+      }
+    },
+    "gpu_split": {
+      "denoise_begin": {
+        "mlx_active_bytes": 5410165568,
+        "mlx_peak_bytes": 5410165568
+      },
+      "denoise_end": {
+        "mlx_active_bytes": 5410165536,
+        "mlx_peak_bytes": 6219630004
+      },
+      "decode_end": {
+        "mlx_active_bytes": 5947036460,
+        "mlx_peak_bytes": 18397713468
+      }
+    },
+    "gpu_fused_profile": {
+      "denoise_begin": {
+        "mlx_active_bytes": 5410165568,
+        "mlx_peak_bytes": 5410165568
+      },
+      "denoise_end": {
+        "mlx_active_bytes": 5410165536,
+        "mlx_peak_bytes": 6489312672
+      },
+      "decode_end": {
+        "mlx_active_bytes": 5947036460,
+        "mlx_peak_bytes": 18397713468
+      }
+    }
+  },
+  "cases": {
+    "gpu_control_start": {
+      "sample_count": 2,
+      "run_names": [
+        "01-gpu_control_start",
+        "02-gpu_control_start"
+      ],
+      "wall_seconds": 28.013566999987233,
+      "denoise_seconds": 24.7082156455,
+      "decode_seconds": 3.1791800835,
+      "read_bytes": 63680438272.0,
+      "read_wait_seconds": 0.009899911,
+      "process_footprint_bytes": 6095311456.0,
+      "swapin_bytes": 234438656,
+      "swapout_bytes": 1681784832
+    },
+    "hybrid_control_start": {
+      "sample_count": 2,
+      "run_names": [
+        "04-hybrid_control_start",
+        "05-hybrid_control_start"
+      ],
+      "wall_seconds": 33.261800479493104,
+      "denoise_seconds": 29.164312229,
+      "decode_seconds": 3.891297979,
+      "read_bytes": 36373041152.0,
+      "read_wait_seconds": 0.00016541450000000002,
+      "process_footprint_bytes": 8413362536.0,
+      "swapin_bytes": 7475658752,
+      "swapout_bytes": 7633895424
+    },
+    "hybrid_overlap": {
+      "sample_count": 2,
+      "run_names": [
+        "06-hybrid_overlap",
+        "07-hybrid_overlap"
+      ],
+      "wall_seconds": 35.54232870799024,
+      "denoise_seconds": 31.310437770999997,
+      "decode_seconds": 4.0356837705,
+      "read_bytes": 36373041152.0,
+      "read_wait_seconds": 0.0001737659999999999,
+      "process_footprint_bytes": 8413616536.0,
+      "swapin_bytes": 6965641216,
+      "swapout_bytes": 6584434688,
+      "main_block_mean_ms": {
+        "pre_mlp": 67.35109783125,
+        "pack": 0.0,
+        "gpu_submit": 0.11210781041666668,
+        "gpu_isolated": 0.0,
+        "coreml": 44.481739045833336,
+        "gpu_tail_wait": 1.1080595458333333,
+        "branch_window": 45.70196978958333,
+        "merge": 3.7345181729166668,
+        "total": 116.78760243125
+      }
+    },
+    "hybrid_serial": {
+      "sample_count": 2,
+      "run_names": [
+        "08-hybrid_serial",
+        "09-hybrid_serial"
+      ],
+      "wall_seconds": 42.910287729493575,
+      "denoise_seconds": 38.683167458,
+      "decode_seconds": 4.0400477915,
+      "read_bytes": 36373041152.0,
+      "read_wait_seconds": 0.00016538099999999998,
+      "process_footprint_bytes": 8413747584.0,
+      "swapin_bytes": 6545063936,
+      "swapout_bytes": 6258196480,
+      "main_block_mean_ms": {
+        "pre_mlp": 63.44185715833333,
+        "pack": 0.586119025,
+        "gpu_submit": 0.08265519999999998,
+        "gpu_isolated": 39.212710656249996,
+        "coreml": 39.63225816666667,
+        "gpu_tail_wait": 0.0005774312500000001,
+        "branch_window": 78.84561793958333,
+        "merge": 3.9632752729166665,
+        "total": 146.83691071666667
+      }
+    },
+    "hybrid_control_end": {
+      "sample_count": 2,
+      "run_names": [
+        "10-hybrid_control_end",
+        "11-hybrid_control_end"
+      ],
+      "wall_seconds": 36.597391416464234,
+      "denoise_seconds": 32.4705376665,
+      "decode_seconds": 3.957272521,
+      "read_bytes": 36373041152.0,
+      "read_wait_seconds": 0.0002052284999999999,
+      "process_footprint_bytes": 8393169280.0,
+      "swapin_bytes": 6269763584,
+      "swapout_bytes": 6873661440
+    },
+    "gpu_split": {
+      "sample_count": 2,
+      "run_names": [
+        "13-gpu_split",
+        "14-gpu_split"
+      ],
+      "wall_seconds": 32.81164991701371,
+      "denoise_seconds": 29.598468708,
+      "decode_seconds": 3.086577479,
+      "read_bytes": 63680438272.0,
+      "read_wait_seconds": 0.00025501949999999995,
+      "process_footprint_bytes": 6114972352.0,
+      "swapin_bytes": 779698176,
+      "swapout_bytes": 335347712,
+      "main_block_mean_ms": {
+        "pre_mlp": 55.33347405833334,
+        "pack": 0.0,
+        "gpu_submit": 0.0,
+        "gpu_isolated": 57.531477368750004,
+        "coreml": 0.0,
+        "gpu_tail_wait": 0.0,
+        "branch_window": 0.0,
+        "merge": 2.296738120833333,
+        "total": 115.16174010625
+      }
+    },
+    "gpu_fused_profile": {
+      "sample_count": 2,
+      "run_names": [
+        "15-gpu_fused_profile",
+        "16-gpu_fused_profile"
+      ],
+      "wall_seconds": 31.109503291954752,
+      "denoise_seconds": 27.800809271,
+      "decode_seconds": 3.1840728755,
+      "read_bytes": 63680438272.0,
+      "read_wait_seconds": 0.0012846444999999995,
+      "process_footprint_bytes": 6111777484.0,
+      "swapin_bytes": 700825600,
+      "swapout_bytes": 890486784,
+      "main_block_mean_ms": {
+        "pre_mlp": 0.0,
+        "pack": 0.0,
+        "gpu_submit": 0.0,
+        "gpu_isolated": 0.0,
+        "coreml": 0.0,
+        "gpu_tail_wait": 0.0,
+        "branch_window": 0.0,
+        "merge": 0.0,
+        "total": 108.20904452083333
+      }
+    },
+    "gpu_control_end": {
+      "sample_count": 2,
+      "run_names": [
+        "17-gpu_control_end",
+        "18-gpu_control_end"
+      ],
+      "wall_seconds": 30.710836437967373,
+      "denoise_seconds": 27.5513364165,
+      "decode_seconds": 3.0377020630000002,
+      "read_bytes": 63680438272.0,
+      "read_wait_seconds": 0.00018919299999999996,
+      "process_footprint_bytes": 6109115072.0,
+      "swapin_bytes": 644431872,
+      "swapout_bytes": 516751360
+    }
+  },
+  "validation": {
+    "all_requests_succeeded": true,
+    "all_same_route_outputs_byte_identical_including_gpu_split": true,
+    "trace_requests": 9,
+    "blocks_per_trace_request": 256,
+    "total_block_records": 2304,
+    "build": "Recompiled the affected Z-Image translation unit and linked a separate diagnostic library against existing native objects, using the installed MLX deployment target.",
+    "git_diff_check": true
+  },
+  "interpretation": [
+    "The MLP overlap window is shorter than the separately compiled full GPU MLP in this diagnostic comparison.",
+    "The GPU suffix and Core ML branch both take about 39-40 ms when isolated; their concurrent window is about 46 ms instead of the ideal independent maximum.",
+    "Whole-block GPU profiling is faster than split-GPU profiling. Hybrid pre-MLP time also exceeds the split-GPU pre-MLP time; this additional difference cannot be assigned solely to fusion because both use the same pre-MLP code.",
+    "Core ML input pack and post-MLP merge measurements do not explain the entire end-to-end gap.",
+    "The large MLX memory peak occurs during VAE decode, after the denoiser; Core ML memory is excluded from that allocator metric."
+  ],
+  "limitations": [
+    "Explicit evaluation boundaries change scheduling; these are host completion times, not GPU/ANE kernel-only timestamps.",
+    "The Core ML branch permits CPU and ANE; hardware placement is not separately traced.",
+    "There was substantial system-wide swap and start/end control drift. Do not interpret differences between cases as exact causal shares or fixed performance guarantees.",
+    "Zero fields outside a mode's scope in the raw traces mean not measured. Compact stage_ms omits those fields.",
+    "No changes were made to the client installation or model registrations. Profiling is disabled without the environment switch."
+  ],
+  "artifacts": {
+    "report": "outputs/z-image-m5-1024-profile-20260916/measurements/report.json",
+    "trace": "outputs/z-image-m5-1024-profile-20260916/measurements/blocks.jsonl",
+    "summary": "outputs/z-image-m5-1024-profile-20260916/measurements/summary.json",
+    "diagnostic_library_sha256": "81feef01d09c77b8d2b6fd690dbea806739fb52807d5f5fa4f59580b687c3cd9"
+  }
+}

@@ -12,6 +12,7 @@
 |---|---|---|---|
 | Apple M4 Max / 64 GB | FLUX.2 Klein 4B：ANE `[0,6144)` + GPU attention/后缀；Z-Image Turbo 基础模型：ANE `[0,4096)` + GPU attention/后缀 | 已验证模型走 `auto`；其余走 GPU | FLUX 4B 最终 GPU warm 中位数 2.2663 s、GPU+ANE 1.6279 s（1.392×）；Z-Image GPU warm 中位数 36.3685 s、stock ComfyUI GPU warm 中位数 40.11 s；a4096 GPU+ANE warm 中位数 30.0014 s（1.212×）。 |
 | Apple M4 Pro / 48 GB | FLUX.2 Klein 4B 的完整 9216-channel ANE MLP profile | FLUX 4B 可按 profile/自动策略使用；其他模型 GPU | 该路线通过旧的 5% 回归门槛，但不能把它描述成普遍加速；FLUX 4B 的历史 warm 混合中位数约比原始框架慢 0.89%。 |
+| Apple M5 Pro / 24 GiB | FLUX.2 Klein 4B：ANE `[0,6144)` + GPU attention/后缀，1088 桶 | 512² / 4 步 / resident / 基础模型可用 `auto` | 本机 16 核 GPU；候选分区对照与重复质量验证见 [M5 适配记录](m5-ane-adaptation.md)。其他 M5 配置未推广。 |
 | 其他 Apple Silicon 或内存不匹配 | 不自动启用 | GPU | 不把芯片名称相近当作同一性能 profile；缺 manifest、shape、checkpoint 或内存预算时回退 GPU。 |
 
 ## 各模型的执行图与状态
@@ -23,6 +24,10 @@
 2026-09-07 的最终同入口持久会话复测（512×512、4 steps、seed 42）为：TurboCider GPU warm `2.2663 s`，当前 direct MLX engine warm `2.2642 s`，差约 `0.09%`；TurboCider GPU+ANE a6144 warm `1.6279 s`，相对 TurboCider GPU 为 `1.392×`。GPU+ANE 的 PNG correlation 为 `0.999262`、cosine 为 `0.999840`，Core ML output copy 为 0。纯 GPU 默认启用 compiled single-block、单 dispatch Q/K RoPE 和 step 级同步；MLX SDPA 保持默认 heuristic，强制 fused 与 heuristic 的差异约 0.2%，因此只保留为 profiling 开关。与 ComfyUI 的新鲜 FLUX 4B 对照本轮未宣称：本机 ComfyUI 0.32.0 没有同一 4B 权重/工作流可复现；因此 FLUX 的门禁采用同一请求 direct engine 对照，Z-Image 则有 stock ComfyUI 对照。
 
 ### Z-Image Turbo
+
+2026-09-16 在 M5 Pro 24 GiB 上补充了小内存缓存与换提示词时的资源释放，
+并复测 a4096 / a6144。ANE 的收益随换页明显波动，自动模式继续使用 GPU；
+详见 [M5 的 Z-Image 记录](m5-ane-adaptation.md)。下面的 M4 数据不代表 M5。
 
 32 个 S3-DiT block 保持串行 block 顺序。每个 block 先在 GPU 完成 modulation、attention 和 attention residual，物化共同的 FFN 输入后才分叉：gated FFN `[0,4096)` 前缀交给 ANE，GPU 异步计算 `[4096,10240)` 后缀，然后 join 回 residual。当前并行范围是 FFN intermediate-channel split，不是 GPU attention 与 ANE FFN 的重叠。纯 GPU 侧使用 MLX fused RMSNorm、单 dispatch Q/K RoPE、fused SDPA 与编译 block 图；混合路径的 GPU MLP 后缀也使用缓存的 `mx::compile` complement 图。Core ML 输出使用 session-wide shared backing，当前实测没有 output copy。
 
@@ -52,7 +57,7 @@ FastMetal 保留受控 Python/MLX worker，30 个 INT8 FFN block 固定按 4096/
 
 ### FLUX.2 Klein 9B 与未验证机器
 
-9B 当前只开放 native Metal/MLX GPU；没有经过完整 ANE partition、质量和性能门禁的 profile。所有未匹配 M4 Max/M4 Pro 的设备也使用同一 fail-closed GPU fallback。这样可以保证 GPU 版本不会因为误选不适合的 Core ML shape 而变慢或改变模型语义。
+9B 当前只开放 native Metal/MLX GPU；没有经过完整 ANE partition、质量和性能门禁的 profile。所有未匹配实测 M4 Max / M4 Pro / M5 Pro 案例的请求也使用同一 fail-closed GPU fallback。这样可以保证 GPU 版本不会因为误选不适合的 Core ML shape 而变慢或改变模型语义。
 
 ## 统一判定规则
 

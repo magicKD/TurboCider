@@ -1,5 +1,16 @@
 # Z-Image Turbo BF16 explicit streaming experiment
 
+**GPU suffix follow-up:** explicit GPU+ANE streaming is now supported by the
+[compact suffix implementation](../design/m5-ane-adaptation.md).
+The GPU-only restriction below describes the original implementation.
+
+**September 16 M5 follow-up:** the measurements and cache policy below describe
+the original streaming change. The later [M5 memory adaptation](../design/m5-ane-adaptation.md)
+also bounds the allocator cache for resident requests on machines with less than
+32 GiB or an explicit budget below 24 GiB, and releases the image working set
+before changed-prompt text encoding. Large-memory resident requests retain the
+previous cache policy. Both paths restore the caller's cache limit on exit.
+
 Implemented an opt-in `residency: "streamed"` path for the Comfy BF16 checkpoint.
 The client exposes it in **高级参数 → 模型驻留 → 流式加载（实验）**, with
 6/8/10/12 GiB denoiser planning budgets. The default remains `resident`.
