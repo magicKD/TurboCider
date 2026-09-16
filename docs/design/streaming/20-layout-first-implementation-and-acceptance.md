@@ -387,3 +387,24 @@ pairs，wall median/P95及denoise median均通过12定义的P0上限，输出和
 
 这只关闭DEF-01和tiny default tuple的P0缺口。normal-target/large、原legacy-streamed、同义P1、whole-request
 P2、低内存P3以及H3/Flux/Z adapter仍未完成；production registry继续为空。
+
+## 14. 本轮 H3 descriptor 实施记录（2026-09-16）
+
+本轮新增的 H3 descriptor 属于 F4 的 metadata/plan 子门，不改变 F4 的 production 完成定义。
+它验证了通用 compiler 可以消费真实 H3 多 shard header，并将非连续 active block ID 按 active
+ordinal 投影到 prefix/group/slot；它没有把 inactive block 当作可以任意跳过的 generic executor
+工作项，也没有把 norms/AdaLN/text/activation/VAE 计入 streamed slot capacity。
+
+实现文件与验收：
+
+```text
+native/models/h3_runtime/h3_streaming_descriptor.hpp
+native/models/h3_runtime/h3_streaming_descriptor.cpp
+tests/native/h3_streaming_descriptor_test.cpp
+tests/native/test_h3_streaming_descriptor.py
+```
+
+测试用 sparse file 保留真实 H3 四矩阵 shape/byte range，因此可以验证 25 active blocks、四
+shard 和大于 38 GiB 的逻辑文件，而不会读取或分配权重 payload。普通/ASan/UBSan/TSan 与
+release native build 均通过。该测试不能替代真实 Metal H3 output parity、跨 forward prefetch
+语义或 P0/P1；这些仍是 F4 后续门。

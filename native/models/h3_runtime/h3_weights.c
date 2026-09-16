@@ -127,6 +127,11 @@ size_t h3_weight_store_shards(const h3_weight_store *store) {
     return store ? store->count : 0;
 }
 
+const h3_st_header *h3_weight_store_header(const h3_weight_store *store,
+                                           size_t index) {
+    return store && index < store->count ? &store->headers[index] : NULL;
+}
+
 static void identity_bytes(uint64_t *hash, const void *data, size_t bytes) {
     const uint8_t *octets = data;
     for (size_t index = 0; index < bytes; index++) {

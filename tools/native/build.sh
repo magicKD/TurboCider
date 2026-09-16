@@ -54,6 +54,7 @@ SOURCES=(
  native/runtime/streaming/slot_pool.cpp native/runtime/streaming/io_executor.cpp native/runtime/streaming/context.cpp
  native/runtime/streaming/c_bridge.cpp native/runtime/streaming/audit.cpp
  native/models/ltx_runtime/ltx_streaming_descriptor.cpp native/models/ltx_runtime/ltx_streaming_plan.cpp
+ native/models/h3_runtime/h3_streaming_descriptor.cpp
  native/platform/apple/streaming_config.mm
  native/components/text/qwen3.cpp
  native/components/text/umt5.cpp

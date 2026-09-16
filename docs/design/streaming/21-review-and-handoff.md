@@ -360,3 +360,30 @@ swap 对比；后续必须继续按本文件第 4 节的 normal-target/P1/P2/P3 
 最终 binary/artifact 位置和 hash 详见 `13-implementation-progress.md` 第13.7节。当前仍明确未完成：
 normal-target/legacy-streamed P0、same-layout P1、guard/whole-request closure、真实低内存或 swap P3、
 public exact production registry，以及 H3/Flux/Z-Image adapter；production registry 必须保持为空。
+
+## 13. H3 descriptor 增量交接（2026-09-16）
+
+提交 `28d351c` 之后，本次整理范围又包含一批 H3 metadata-only descriptor 改动：
+`h3_streaming_descriptor.*`、H3 shard header view、shape 常量、build/Makefile 接线和
+descriptor 测试。普通、ASan/UBSan、TSan、streaming host/contract、native contract、C++
+boundary 与 release build 已通过。
+
+审阅结论：
+
+1. 默认 H3 runtime 的 `configure_active_blocks()` 仍只在 load 阶段调用共享 mask，descriptor
+   不会被默认 request 创建；没有新增 worker、pool、probe、cache-clear 或同步点。
+2. descriptor 只做真实 shard/header/range/shape 预检，snapshot 变化、重复 tensor、缺字段、
+   错 dtype/shape 均 fail closed；sparse fixture 不读取大 payload。
+3. `StreamingPlanView` 明确拒绝尚未表达的动态 shortcut 和非 K=2/G=1 布局；不能把该 plan
+   误写成 public exact 资格或 whole-request memory upper。
+4. 下一步仍是 H3 candidate execution bridge、真实 Metal fence/last-reader、完整资源 ledger、
+   session lifecycle 和 normal-target P0/P1。production registry、bounded-memory 和 swap
+   对比继续保持未完成。
+
+最终 release SHA-256 为
+`c18197a6a25fda3e389b2b6b90e7646d2ea909c29485599785301c53be67b3a8`。与 clean
+`dev@ad343d4` 的 4-pair tiny resident ABBA/BAAB smoke 中，8/8 请求成功、Stage-2 BF16
+byte-exact、audit 五类计数均为 0；candidate/dev 的 wall median/P95 为 `0.99506`/`1.00518`，
+denoise median/P95 为 `1.00063`/`1.00289`。点估计没有显示相对 dev 的性能回退；由于只有
+两个 ABBA block，wall median bootstrap 上界为 `1.03423`，总判定仍是 `INCONCLUSIVE`，不得
+将它写成 normal-target P0 通过。

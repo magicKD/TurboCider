@@ -825,3 +825,45 @@ quarantine 与恢复全部通过；Stage-2 latent SHA-256 为
 8/8 请求成功、quality byte-exact、audit 五类计数全为 0；candidate/dev 比值为 wall median `0.99334`、
 wall P95 `0.99232`、denoise median `0.99832`。由于仅 4 matched pairs，verifier 正确保持
 `INCONCLUSIVE`，不能替代既有 20-pair P0 PASS；它仅证明最终重建没有出现明显 resident 回退。
+
+## 13.8 H3 metadata-only descriptor 增量（2026-09-16）
+
+本轮在不改变 H3 legacy/resident/SSD streaming 热循环的前提下，完成了第一版 H3
+通用 descriptor 与 K=2/G=1 plan 投影：
+
+- 新增 `native/models/h3_runtime/h3_streaming_descriptor.hpp/.cpp`，只打开并解析
+  transformer 目录中的 safetensors header，不 mmap、不读取 payload、不创建 Metal buffer、
+  不创建 executor/worker。
+- descriptor 覆盖多 shard snapshot identity、所有 shard artifact、uniform active-block
+  policy 产生的显式 active block ID 序列、四个 BF16 streamed matrix
+  (`qkv/out/fc1/fc2`) 的 shape、source range、destination storage identity 和容量。
+- `h3_weight_store_header()` 提供只读 header view，descriptor 会检查 shard 排序、重复 tensor、
+  缺失 tensor、dtype/shape/byte-range 以及目录增删和 stat 变化；snapshot 失效时在进入 compiler
+  前 fail closed。
+- `StreamingPlanView` 只接受当前候选边界：单 `denoiser` stage、streamed、G=1、K=2、至少一个
+  streamed suffix；token reduction、first-block cache 等尚未显式建模的动态 shortcut 会拒绝，
+  不会静默改变访问序列。
+- `h3_dit_schedule.h` 公开 H3 shape 常量，legacy `h3_dit.c` 复用同一常量；active mask 公共
+  C ABI 增加 `extern "C"` 保护，避免 C++ descriptor 链接到 C 实现时发生符号改名。
+- `tools/native/build.sh` 与 `make test-streaming-host` 已接入该 descriptor 测试。
+
+新增测试 `tests/native/test_h3_streaming_descriptor.py` 使用四个 sparse safetensors shard，
+覆盖 50-block metadata 的多 shard 投影而不分配实际权重 payload；测试包含 active ordinal
+prefix、no-prefix、digest 稳定性、步骤/active-block变化、缺 tensor、错 shape、重复 tensor、
+非法 K/G/prefix、动态 shortcut 拒绝及文件截断 TOCTOU。当前结果：普通、ASan/UBSan、TSan
+均 PASS；release native build、streaming host/contract、native contract 和 C++ boundary
+回归均 PASS（native contract 82 项中 81 PASS、1 个 Wan fixture SKIP）。
+
+这批代码仍然是 metadata/plan-only，不授予 H3 public exact 或 production registry 资格。
+H3 现有 `stream_ready_slot ^ 1u`、跨 forward prefetch、跨 block fusion、step gate、norm/AdaLN
+和完整 text/latent/VAE 资源仍未映射为 generic executor 的显式 last-reader 合同；下一步必须在
+不替换 legacy 热路径的前提下实现 candidate execution bridge 与真实生命周期/性能验收。
+
+当前源码重建的 release dylib SHA-256 为
+`c18197a6a25fda3e389b2b6b90e7646d2ea909c29485599785301c53be67b3a8`。
+默认 LTX resident audit 的五类新框架计数继续全部为 0；相对 clean `dev@ad343d4` 的
+4-pair ABBA/BAAB 回归 smoke 为 8/8 请求成功且 Stage-2 BF16 逐对 byte-exact，candidate/dev
+比值为 wall median `0.99506`、wall P95 `1.00518`、denoise median `1.00063`、denoise P95
+`1.00289`。这些点估计均在 P0 阈值内，且未观察到 H3 未使用 descriptor 对默认 LTX 热路径的
+实质回退；但 wall median 的 block-bootstrap 95% 区间为 `[0.96021, 1.03423]`，因此 verifier
+正确保持 `INCONCLUSIVE`。该短 smoke 不能替代既有 20-pair tiny P0 或后续 normal-target P0。

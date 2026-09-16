@@ -129,6 +129,23 @@ tiny-smoke只打通路径；normal-target通过后才能签该tuple。尚未覆�
 
 ## 3. H3：复用双槽经验，不继承隐藏调度
 
+截至 2026-09-16，F4 已完成 metadata-only 的第一步：
+`h3_streaming_descriptor.hpp/.cpp` 通过 `h3_weight_store` 的只读 header 视图生成统一
+descriptor，复用 `h3_stream_uniform_active_mask()`，并以 `StreamingPlanView` 做 K=2/G=1
+的严格 projection。该实现只负责 snapshot、shape、range、capacity、active ID 和 pass
+identity，不创建 GPU backing，也不进入 public execution。
+
+当前明确边界：只接受原始 BF16 matrix；quantized cache、token reduction、first-block cache、
+跨 forward prefetch、跨 block fusion、动态 gate skip 尚未获得 generic executor 表达。PlanView
+对这些 shortcut fail closed，防止把 layout-only metadata 误当成数值等价执行模板。对应测试是
+`tests/native/h3_streaming_descriptor_test.cpp` / `test_h3_streaming_descriptor.py`，并已进入
+`make test-streaming-host` 和 release build。
+
+下一 PR 的最小施工单仍是：把 `first_streamed_block()`、`next_streamed_block()`、实际 slot
+generation、GPU 最后 reader fence 和跨 forward carry 编译成显式 candidate pass contract；
+先做 fake backend 等价验证，再接真实 H3 session。没有该 contract 之前不得删除 public gate，
+也不能以 descriptor 的 source bytes 或 slot capacity 证明 whole-request bounded。
+
 主要位置：`h3_dit.c` 的 `allocate_stream_slot()`、`read_stream_layer()`、`next_streamed_block()`、`stream_ready_slot ^ 1u`，以及 `h3_gpu.m`、`h3.c`、`h3_session.mm`。
 
 1. 保留legacy双槽pager；新exact入口描述常驻prefix、norm/AdaLN、双槽字段和reader格式。

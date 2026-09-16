@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum {
     H3_STREAM_PLAN_OK = 0,
     H3_STREAM_PLAN_INVALID_ARGUMENT,
@@ -45,5 +49,9 @@ int h3_stream_uniform_active_mask(unsigned total_blocks,
                                   unsigned active_blocks,
                                   uint8_t *mask,
                                   size_t mask_count);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
