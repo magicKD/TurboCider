@@ -17,8 +17,10 @@
 
 通用 block/slot streaming、App 五档内存目标、四模型 public adapter、完整进程树校准、swap 对照和发布验收的当前入口见
 [Streaming 设计目录](streaming/README.md)。直接实施代码先读
-[Public Adapter 代码规格](streaming/36-public-adapter-code-implementation-spec.md)，执行档位探索与发布验收读
-[校准、性能与验收规格](streaming/37-public-streaming-calibration-performance-acceptance.md)。
+[Public Adapter 代码规格](streaming/36-public-adapter-code-implementation-spec.md)，再读
+[Streaming Framework 代码工作台](streaming/38-framework-code-contracts-and-implementation-workbench.md)；执行档位探索与发布验收读
+[校准、性能与验收规格](streaming/37-public-streaming-calibration-performance-acceptance.md) 和
+[验证与发布工作簿](streaming/39-validation-benchmark-and-release-workbook.md)。
 
 截至 2026-09-15 的 encoder、DiT、VAE、Core ML 生命周期和各模型采用决策统一见
 [ANE 加速现状与分阶段决策](ane-acceleration-status-2026-09-15.md)。该文档区分

@@ -1,8 +1,8 @@
 # 36 · Public Streaming Runtime 与四模型 Adapter 代码实施规格
 
-[目录](README.md) · [实施蓝图](35-public-streaming-implementation-blueprint-v2.md) · [性能与发布验收](37-public-streaming-calibration-performance-acceptance.md) · [当前进度](13-implementation-progress.md)
+[目录](README.md) · [实施蓝图](35-public-streaming-implementation-blueprint-v2.md) · [代码合同工作台](38-framework-code-contracts-and-implementation-workbench.md) · [性能与发布验收](37-public-streaming-calibration-performance-acceptance.md) · [验收工作簿](39-validation-benchmark-and-release-workbook.md) · [当前进度](13-implementation-progress.md)
 
-修订日期：2026-09-17。代码基线：feat/stream@fa1ecd0；对照分支：dev@02148b7。状态：**可执行的下一阶段代码规格，尚未开放 production public streaming。**
+修订日期：2026-09-17。代码基线：feat/stream@60de338；对照分支：dev@02148b7。状态：**可执行的下一阶段代码规格，尚未开放 production public streaming。**
 
 本文只回答一件事：基于当前已经提交的 selector、resolver、authority、coordinator 和 actual-plan verifier，接下来具体怎样修改代码，才能让 Z-Image Turbo、Flux.2 Klein 9B、MiniMax H3 Turbo 和 LTX 2.5 安全地进入 public streaming。
 

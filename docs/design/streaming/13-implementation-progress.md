@@ -1461,3 +1461,26 @@ git diff --check                                           PASS
 C0 提交不代表 public 已开放。production catalog 仍为空；四个模型尚未 override public probe/snapshot/generate，
 source lease 和 receipt v2 仍待实现，完整 8/10/12/16/20 GiB calibration、swap 对照、App selector 和 ANE
 兼容也未完成。下一阶段进入 36 的 C1 source lease/value probe，首个模型仍推荐 Z-Image Turbo。
+
+### 13.22 Framework 代码合同与验收工作簿补充（2026-09-17）
+
+在 `60de338` C0 基线之上，本轮继续审阅了当前 `runtime/streaming`、`StageExecutor`、C ABI v1/v2/v3、
+`MlxWeightPager`、四模型 descriptor/reader 和 `ModelSession` public hook 接缝，并新增两份实施文档：
+
+- [38 Framework Code Contracts](38-framework-code-contracts-and-implementation-workbench.md)：将 C1/C2 的
+  `SourceLease`、Value Probe/Snapshot、receipt v2、owner pump、K2 carry、multi-pool、C ABI、JobEnvelope、
+  四模型逐文件改造、锁/取消/quarantine 和逐阶段停止条件写成代码合同；
+- [39 Validation / Benchmark Workbook](39-validation-benchmark-and-release-workbook.md)：将 Host/API/runtime/model/
+  memory/performance 六层证据、source/receipt 故障注入、四模型真实验收卡、process-tree target 判定、
+  resident/streaming/bounded/swap 四臂、P0–P4、evidence bundle 和 release 签字整理为可执行工作簿。
+
+本轮是设计完善，不是 C1 代码实现。以下事实保持不变：
+
+1. `source_lease.*`、`value_probe.*`、`actual_receipt.*` 尚不存在；
+2. 四模型仍未 override `probe_public_streaming`、`compile_public_streaming`、`generate_resolved`；
+3. 当前 actual verifier 仍为汇总 v1，没有逐 pass/group/fence/source-generation receipt；
+4. production catalog 仍为空，五档均不可 public 执行；
+5. 没有新的完整请求 target、swap P3 或 ANE streaming 性能证据。
+
+下一步仍按 36/38 的 C1 执行：先复用现有 pager/descriptor 的 open/fstat/path-replace 逻辑实现通用 fd lease
+和 synthetic source mutation tests，再做 receipt v2；不能跳过这两步直接接真实 production record。

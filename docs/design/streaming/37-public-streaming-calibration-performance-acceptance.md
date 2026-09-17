@@ -1,6 +1,6 @@
 # 37 · Public Streaming 校准、性能保护与发布验收实施规格
 
-[目录](README.md) · [代码实施规格](36-public-adapter-code-implementation-spec.md) · [档位基础规格](34-model-tier-calibration-and-release-spec.md) · [当前进度](13-implementation-progress.md)
+[目录](README.md) · [代码实施规格](36-public-adapter-code-implementation-spec.md) · [代码合同工作台](38-framework-code-contracts-and-implementation-workbench.md) · [验收工作簿](39-validation-benchmark-and-release-workbook.md) · [档位基础规格](34-model-tier-calibration-and-release-spec.md) · [当前进度](13-implementation-progress.md)
 
 修订日期：2026-09-17。状态：**校准与发布操作规格；production catalog 为空，所有档位均需真实证据后才能开放。**
 
