@@ -214,7 +214,7 @@ https://developer.apple.com/documentation/metal/mtlcommandbuffer/addcompletedhan
 https://developer.apple.com/documentation/metal/synchronizing-cpu-and-gpu-work
 ```
 
-## 13. 已实现的 cross-pass carry 数据面（2026-09-16）
+## 13. 已实现的 cross-pass carry 数据面（2026-09-17）
 
 `StageExecutor` 现在把 pass boundary 从隐式“总是清空”提升为 immutable plan 字段。实现仍复用同一套
 `SlotSafetyTracker`、`IoExecutor`、completion mailbox 和 failure/quarantine 状态机，没有创建第二套 pager。

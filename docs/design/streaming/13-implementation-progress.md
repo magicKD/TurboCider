@@ -868,12 +868,13 @@ H3 现有 `stream_ready_slot ^ 1u`、跨 forward prefetch、跨 block fusion、s
 实质回退；但 wall median 的 block-bootstrap 95% 区间为 `[0.96021, 1.03423]`，因此 verifier
 正确保持 `INCONCLUSIVE`。该短 smoke 不能替代既有 20-pair tiny P0 或后续 normal-target P0。
 
-### 13.9 Cross-pass carry、ABI v3 与 dev 再同步（2026-09-16）
+### 13.9 Cross-pass carry、ABI v3 与 dev 再同步（2026-09-17）
 
 远端 `origin/dev`、本地 `dev` 与 fetch 得到的 `FETCH_HEAD` 均为
 `ad343d4e5139c9a5f13e29ff9e926e8eb1ae2f39`；该提交已由 merge commit
 `566f7a6faf07734255cee229ca31ca3af0bc154c` 合入当前分支。再次执行 `git merge dev` 返回
-`Already up to date`，当前为相对 dev 领先 8、落后 0，没有新增文本冲突或未解决 merge index。
+`Already up to date`；实现提交 `b975b29a8407275532b44078d90bdd4388974c86` 后，当前相对 dev
+领先 9、落后 0，没有新增文本冲突或未解决 merge index。
 
 本轮继续实现了此前 H3 legacy 双槽调度缺少的显式 pass transition：
 
@@ -901,5 +902,35 @@ real h3_dit/h3_gpu -> block fill -> Metal encode -> command-buffer fence
 
 本轮 focused 回归：3535 个 layout case、14 个 K/D/Q executor 组合、multi-class barrier、v1/v2/v3 C bridge、
 H3 sparse descriptor/fake execution、streaming contract、82 项 native contract（81 PASS、1 个既有 Wan fixture
-SKIP）、repository boundaries、memory execution/compiler、H3 policy/schedule 全部通过。性能 campaign 必须在
-本轮 clean commit 的 release binary 上重新运行后再记录；在此之前不得沿用旧 binary hash 作为本轮结论。
+SKIP）、repository boundaries、memory execution/compiler、H3 policy/schedule 全部通过；ASan/UBSan 与 TSan
+也通过。
+
+clean commit release：
+
+```text
+/private/tmp/turbocider-cross-pass-carry-release-20260916/libturbocider.dylib
+SHA-256: 672efa3b41932ee3299eefdaa51d135f9fba2091dc5ada232545734d17f09c56
+```
+
+release 导出 v1/v2/v3 executor create，不导出 audit 或 lifecycle test-hook。对应 audit build SHA-256 为
+`b5dd56e6bc0a221f8031bdc1dd2100aefc70dc9e177d93f660538817ac3fb05c`；真实默认 LTX resident
+请求成功，framework hook、memory probe、worker、pool allocation、cache-clear/unload 五类计数全部为 0。
+
+相对 clean `dev@ad343d4` 的 10-block/20-pair tiny default-resident P0 bundle：
+
+```text
+/private/tmp/turbocider-cross-pass-carry-campaign-20260917/bundle-20pairs
+```
+
+40/40 measured 请求成功，20/20 pair 的 Stage-2 BF16 SHA-256 逐对一致，fault=0，environment/source/audit
+完整，verifier 结果为 `PASS`：
+
+| 指标 | clean dev | `b975b29` candidate | candidate/dev | block-bootstrap 95% interval |
+|---|---:|---:|---:|---:|
+| wall median | 23.725008 s | 23.916378 s | 1.00807 | 1.00296–1.01152 |
+| wall P95 | 24.210594 s | 24.253766 s | 1.00178 | 0.98701–1.04857 |
+| denoise median | 8.355715 s | 8.372832 s | 1.00205 | 0.99567–1.00967 |
+| denoise P95（诊断） | 8.496699 s | 8.550533 s | 1.00634 | 0.99376–1.05122 |
+
+这证明本轮 carry/ABI v3 增量没有使冻结的 LTX 64×64×9、11-step 默认 resident tiny tuple 越过既有
+P0 门槛；它不等于 normal-target、legacy-streamed、真实 H3 carry、bounded-memory 或 swap P3 资格。

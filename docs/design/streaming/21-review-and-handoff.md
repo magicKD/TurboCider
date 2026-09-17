@@ -388,7 +388,7 @@ denoise median/P95 为 `1.00063`/`1.00289`。点估计没有显示相对 dev 的
 两个 ABBA block，wall median bootstrap 上界为 `1.03423`，总判定仍是 `INCONCLUSIVE`，不得
 将它写成 normal-target P0 通过。
 
-## 14. 2026-09-16 续接：dev 已同步，cross-pass carry 检查点
+## 14. 2026-09-17 续接：dev 已同步，cross-pass carry 检查点
 
 远端同步后 `origin/dev`、本地 `dev` 和 `FETCH_HEAD` 均为 `ad343d4`；该提交已在
 `566f7a6` 合入，显式 `git merge dev --no-edit` 返回 `Already up to date`。因此本轮没有新的 merge
@@ -404,9 +404,24 @@ denoise median/P95 为 `1.00063`/`1.00289`。点估计没有显示相对 dev 的
 
 当前 focused 测试均通过：streaming host/contract、3535 layout case、14 K/D/Q、multi-class、C ABI v3、
 H3 descriptor fake execution、82 native contract（1 个既有 fixture SKIP）、repository、memory 和 H3 schedule；
-ASan/UBSan 与 TSan 也通过。性能数字只允许来自 clean commit 的 release rebuild 与相对 clean dev 的
-post-change ABBA/BAAB，不沿用此前 dirty binary hash。
+ASan/UBSan 与 TSan 也通过。实现与设计提交为
+`b975b29a8407275532b44078d90bdd4388974c86`。
+
+该 clean commit 的 release dylib SHA-256 为
+`672efa3b41932ee3299eefdaa51d135f9fba2091dc5ada232545734d17f09c56`；独立 audit build 默认
+LTX resident 请求成功，五类新框架计数全部为 0。相对 clean `dev@ad343d4` 的 10-block/20-pair
+ABBA/BAAB bundle 位于：
+
+```text
+/private/tmp/turbocider-cross-pass-carry-campaign-20260917/bundle-20pairs
+```
+
+结果为 40/40 成功、20/20 Stage-2 BF16 pair byte-exact、fault=0、environment/source/audit 完整，verifier
+`PASS`。candidate/dev 的 wall median/P95 为 `1.00807`/`1.00178`，denoise median/P95 为
+`1.00205`/`1.00634`；wall median 和 denoise median 的 block-bootstrap 95% 上界分别为 `1.01152`
+和 `1.00967`，均低于 1.02 门槛。该结论仅覆盖冻结 tiny 默认 resident tuple。
 
 交接时不得把该状态描述为真实 H3 execution：production registry 仍为空，真实 H3 block fill、Metal encode、
 last-reader fence、request/session lifecycle、normal-target P0/P1 均未完成。默认 LTX resident/legacy 路径没有
-调用 H3 descriptor 或 v3 executor，这一事实仍需由 post-change audit/performance evidence 继续验证。
+调用 H3 descriptor 或 v3 executor；post-change audit/P0 已验证这一点，但真实 H3 candidate execution 与
+normal-target/legacy-streamed/低内存性能仍需后续闭环。

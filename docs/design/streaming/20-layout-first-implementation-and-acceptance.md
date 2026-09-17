@@ -409,7 +409,7 @@ shard 和大于 38 GiB 的逻辑文件，而不会读取或分配权重 payload�
 release native build 均通过。该测试不能替代真实 Metal H3 output parity、跨 forward prefetch
 语义或 P0/P1；这些仍是 F4 后续门。
 
-## 15. ABI v3 / carry 实施与验收增量（2026-09-16）
+## 15. ABI v3 / carry 实施与验收增量（2026-09-17）
 
 本轮把 H3 plan-only 与 generic executor 之间的一个关键空洞补成可测试协议：pass transition 不再藏在模型
 内部。新增 v3 plan 后，layout-first 数据面可以在不改 v1/v2 adapter callback 的前提下表达“下一 pass 首组

@@ -202,7 +202,7 @@ service对新路径加入layout identity，旧session key不变；quarantine不�
 新增测试ID与命令、未覆盖分支、实际P0/P1状态。测试未跑写NOT RUN，设备不可用写SKIP，不能用“设计上不影响”代替证据。
 签核前至少有另一轮独立verifier检查，不由adapter自报“certified”。
 
-## 7. H3 v3 execution bridge 的下一批施工单（2026-09-16）
+## 7. H3 v3 execution bridge 的下一批施工单（2026-09-17）
 
 通用框架已经能表达 H3 K=2/G=1 的跨 pass 首组 carry，但生产 H3 adapter 尚未实现。下一批必须按以下顺序推进，
 每一步都保持 legacy `h3_dit` 默认路径原样：

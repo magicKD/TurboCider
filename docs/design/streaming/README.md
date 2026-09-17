@@ -1,6 +1,6 @@
 # TurboCider 通用 Streaming 框架
 
-修订日期：2026-09-16。状态：设计规格及实施中，尚未发布。最新代码/测试证据见 [13 实施进度](13-implementation-progress.md)。
+修订日期：2026-09-17。状态：设计规格及实施中，尚未发布。最新代码/测试证据见 [13 实施进度](13-implementation-progress.md)。
 
 提交前审阅、当前发布阻断项和本次重跑范围见 [21 审阅与交接](21-review-and-handoff.md)。
 
@@ -100,7 +100,7 @@
 示例文件存在不意味着模型已经获得执行授权。
 另有 [compiler golden fixture](examples/compiler-golden.json) 与 [性能 gate 示例](examples/performance-policy.json)，不是生成请求或可执行 campaign。
 
-## 当前代码检查点（2026-09-16）
+## 当前代码检查点（2026-09-17）
 
 统一 executor 已支持 ordered multi-class barrier，以及单 pool K=2/G=1 的显式 cross-pass
 `carry_first_group`（C ABI v3）。H3 已完成 metadata → layout → v3 plan → fake executor 证据，但尚未接真实

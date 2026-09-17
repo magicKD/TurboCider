@@ -169,7 +169,7 @@ Tight 可暂停未启动的未来 I/O，只要不改变已编译 key 顺序、li
 Critical 或 guard 越界立即停止新派发，在安全边界清理并失败。不能短时回落后把失败改为成功。
 要减少 K/G/P 或选择 resident，必须新请求重新 resolve/admit。
 
-## 11. 显式跨 pass carry 协议（ABI v3，2026-09-16）
+## 11. 显式跨 pass carry 协议（ABI v3，2026-09-17）
 
 当前实现新增 `PassTransition`，只有两种值：
 
