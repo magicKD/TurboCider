@@ -52,11 +52,30 @@ void resolve_profile(Request &r) {
     if (v2) [allowed addObject:@"streaming"];
     profile_keys(model, allowed);
     if (v2) {
-        StreamingConfig effective;
+        StreamingConfig profile_manual;
+        std::optional<StreamingSelector> profile_selector;
         if (model[@"streaming"])
-            parse_streaming_config(model[@"streaming"], effective, "profile");
-        overlay_streaming_config(effective, r.streaming);
-        r.streaming = std::move(effective);
+            parse_streaming_input(model[@"streaming"], profile_manual,
+                                  profile_selector, "profile");
+        if (r.streaming_selector_requested) {
+            r.streaming = {};
+            r.streaming_selector = r.streaming_selector_requested;
+        } else if (r.streaming_requested) {
+            r.streaming_selector.reset();
+            if (profile_selector) {
+                r.streaming = *r.streaming_requested;
+            } else {
+                overlay_streaming_config(profile_manual,
+                                         *r.streaming_requested);
+                r.streaming = std::move(profile_manual);
+            }
+        } else if (profile_selector) {
+            r.streaming = {};
+            r.streaming_selector = std::move(profile_selector);
+        } else {
+            r.streaming_selector.reset();
+            r.streaming = std::move(profile_manual);
+        }
     }
     r.residency_specified |= model[@"residency"] != nil;
     r.memory_budget_specified |= model[@"memory_budget_bytes"] != nil;

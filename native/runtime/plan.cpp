@@ -64,7 +64,11 @@ std::vector<float> flux_sigmas(int tokens, int steps) {
 }
 ExecutionPlan make_plan(const Request &requested) {
     Request r = requested;
+    const bool selector_active = r.streaming_selector &&
+        r.streaming_selector->active();
     if (r.streaming.specified()) validate_streaming_config(r.streaming);
+    if (r.streaming_selector)
+        validate_streaming_selector(*r.streaming_selector);
     if (r.streaming.active()) {
         require(!r.residency_specified && !r.memory_budget_specified &&
                     !r.streaming_offload_specified && !r.memory_budget_bytes && !r.streaming_offload,
@@ -77,12 +81,27 @@ ExecutionPlan make_plan(const Request &requested) {
                 require(!stage.slot_count || *stage.slot_count <= r.memory_constrained.max_refill_slots,
                         "streaming_config_conflict: slot_count exceeds explicit max_refill_slots: " + id);
     }
+    if (selector_active) {
+        require(!r.residency_specified && !r.memory_budget_specified &&
+                    !r.streaming_offload_specified && !r.memory_budget_bytes &&
+                    !r.streaming_offload,
+                "streaming_config_conflict: public selector conflicts with explicit legacy residency/budget/offload");
+        require((r.execution == "gpu" || r.execution == "gpu_ane") &&
+                    r.ane_manifest.empty() == (r.execution == "gpu"),
+                "streaming_route_unsupported: selector execution policy and ANE manifest differ");
+        require(r.encoder_ane_manifest.empty() || r.execution == "gpu_ane",
+                "streaming_route_unsupported: encoder ANE manifest requires gpu_ane selector policy");
+        require(r.loras.empty(),
+                "streaming_route_unsupported: LoRA is not yet validated for public presets");
+        require(!r.memory_constrained.enabled,
+                "streaming_config_conflict: public presets are not bounded-memory certified");
+    }
     std::optional<EffectiveMemoryPolicy> memory_policy;
     if (r.memory_constrained.specified())
         validate_memory_constrained_request(r, 0);
     if (r.memory_constrained.enabled) {
         memory_policy = make_effective_memory_policy(r);
-        if (!r.streaming.active())
+        if (!r.streaming.active() && !selector_active)
             resolve_memory_constrained_candidate(r, *memory_policy);
     }
     const auto lora_strategy = effective_lora_strategy(r);
@@ -193,7 +212,7 @@ ExecutionPlan make_plan(const Request &requested) {
             plan.memory_estimate_bytes = (52ull << 30) + pixels * 12288;
         }
     }
-    if (r.streaming.active()) {
+    if (r.streaming.active() || selector_active) {
         // The legacy heuristic is not the requirement of an exact layout.
         // Metadata resolution supplies that separately; unknown is not zero.
         plan.memory_estimate_bytes.reset();

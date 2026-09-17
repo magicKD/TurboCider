@@ -25,6 +25,11 @@ uint32_t tc_abi_version(void);
 char *tc_system_json(void);
 char *tc_models_json(void);
 int tc_plan_json(const char *request_json, char **plan_json, char **error);
+/* Read-only public streaming preset query for the embedded App container.
+ * This validates request intent and inspects the native catalog/device only;
+ * it never loads model weights, creates GPU pools or starts I/O workers. */
+int tc_streaming_options_json(const char *request_json,
+                              char **result_json, char **error);
 int tc_engine_create(const char *model_path, tc_engine **engine, char **error);
 /* Additive ABI: select a registered model module. Model paths are local only. */
 int tc_engine_create_model(const char *model_id, const char *model_path,

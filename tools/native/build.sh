@@ -50,7 +50,7 @@ OBJECTS=()
 SOURCES=(
  native/core/common.cpp
  native/core/json_keys.cpp
- native/runtime/streaming/config.cpp native/runtime/streaming/layout.cpp
+ native/runtime/streaming/config.cpp native/runtime/streaming/layout.cpp native/runtime/streaming/preset_catalog.cpp
  native/runtime/streaming/slot_pool.cpp native/runtime/streaming/io_executor.cpp native/runtime/streaming/context.cpp
  native/runtime/streaming/mlx_weight_pager.cpp
  native/runtime/streaming/c_bridge.cpp native/runtime/streaming/audit.cpp

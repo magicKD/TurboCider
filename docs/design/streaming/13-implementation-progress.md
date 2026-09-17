@@ -1241,3 +1241,36 @@ fault=0、semantic/layout/implementation/environment/audit/manifest均完整，�
 因此Flux.2 Klein 9B BF16 eager GPU的冻结`P0/G1/K2/D1/Q2/reload` tuple正式关闭P1：通用
 `StageExecutor`未观察到超过2%的框架开销。该资格不扩展到Flux 4B compiled graph、LoRA、GPU+ANE、
 prepare-only、其他shape/checkpoint或production public route。
+
+### 13.16 Public memory-tier 控制面基础（2026-09-17，未提交工作树）
+
+在文档23–26的基础上，当前 `feat/stream` 工作树已加入 public selector 的第一批控制面代码，但没有放开任何
+模型 public execution：
+
+- `StreamingSelector` schema v2，支持 disabled、`memory_tier`、exact `preset` 和8/10/12/16/20 GiB target；
+- request/profile 对 selector 与 manual streaming 进行原子替换，保留 provenance 并拒绝legacy residency/budget/offload冲突；
+- plan-only 对 active selector 返回 `streaming_preset_resolution_required`，不把target写成旧memory budget；
+- 新增 host-only `preset_catalog.*` skeleton，使用整数 `max(512MiB,ceil(10%×T))` margin，并按
+  performance rank、calibrated bytes、logical reads、ID/revision确定排序；
+- production catalog 故意为空，revision为`tc-streaming-catalog-empty-v1`；
+- 新增 metadata-only `tc_streaming_options_json`，当前只返回tentative五档和明确unavailable；
+- Swift新增v2 selector/request/options类型与plan/options/generate overload，但App尚未接入。
+
+本轮实际验证：
+
+```text
+tools/native/build.sh          PASS：native及Swift/App全部编译
+make test-streaming-contract   PASS：12项request contract；四模型public gate仍fail-closed
+make test-streaming-host       PASS：3535 layouts、14 K/D/Q、multi-class/fault/cleanup、
+                                preset resolver、LTX/H3/Z/Flux descriptors
+```
+
+这些结果只证明控制面基础可编译及host回归，不是新的GPU/内存/性能成绩。production catalog仍为空，
+`tc_engine_resolve_streaming_json`、authority、immutable resolved request、`generate_resolved`、App开关/job迁移、
+calibration工具和reviewed records均未实现。
+
+代码审阅发现的 unresolved-selector 门禁已经修复：`tc_engine_generate` 和 prepare 在全局GPU锁、DeviceLease、
+session调用之前拒绝 active selector；普通 public engine 与 private candidate 的 generate/prepare 均已回归
+`streaming_preset_resolution_required`。这只消除了静默 resident 回退，engine exact resolver尚未实现，
+因此当前状态仍为**不可public执行**。完整施工顺序与验收追踪见
+[27](27-public-streaming-delivery-blueprint.md)。

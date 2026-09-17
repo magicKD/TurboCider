@@ -56,6 +56,7 @@
 | [24 Memory-Tier Exploration](24-memory-tier-exploration-and-acceptance.md) | 四模型候选布局、整请求内存测量、离线探索/独立确认、分批实施与验收（待实施） |
 | [25 Public Preset Implementation Spec](25-public-preset-implementation-spec.md) | 将 selector、catalog、authority、snapshot、C ABI、Swift、resolver、pager 和四模型 adapter 接到当前代码的实施规格 |
 | [26 Public Preset Acceptance and Release](26-public-preset-acceptance-and-release.md) | memory calibration 工具链、swap 对照、PUB/CAL/model 测试矩阵、发布/撤回/回滚验收 |
+| [27 Public Streaming Delivery Blueprint](27-public-streaming-delivery-blueprint.md) | 基于当前工作树的端到端施工顺序、所有权、App/engine/四模型接线、GPU/ANE边界、PR拆分与验收追踪矩阵 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -69,6 +70,8 @@
 目标档位不是物理显存容量或 hard cap，未测数据不得填成已支持。
 希望直接实施代码接线时，阅读25；希望安排实验、验收和发布时，阅读26。25/26中的新增文件/API/测试编号均为拟议项，
 没有实现与 evidence 之前不能称为已支持或已公开。
+需要从当前未提交控制面基础继续施工时，优先阅读27：它记录 selector/catalog/options/Swift 已有部分、
+unresolved selector 的立即安全闸门、query→resolve→generate 的所有权链、App任务迁移以及逐PR完成门。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
 
@@ -146,3 +149,11 @@ MLX peak从`18,303,578,036`降至`11,693,804,356` bytes，PNG byte-exact；真�
 `2/2`、steady allocation/thread-create `0/0`，默认resident五类计数全零。最新实现事实见
 [13 第13.14–13.15节](13-implementation-progress.md)，协议见 [03 第11节](03-runtime-protocol.md)，执行细节见
 [10 第13–14节](10-executor-implementation.md)。
+
+Public preset 控制面已有一批未提交基础：schema-v2 selector、request/profile 合并、plan-only 报告、空 production
+catalog、host resolver、metadata-only options C ABI 和 Swift v2/options 类型。当前工作树已完成 native 与 Swift/App
+编译，`make test-streaming-contract` 和 `make test-streaming-host` 通过；production catalog 仍为空，App 尚未接入，
+engine resolver/authority/`generate_resolved` 和整请求档位证据均未实现。尤其普通 generate/prepare 还必须先增加
+active selector 未解析时的 fail-closed gate。该 gate 已在当前工作树实现并通过普通/candidate engine 的
+generate/prepare contract 回归；下一步才可开始 exact resolver 和 App 执行接线。详见
+[27 第2–3节](27-public-streaming-delivery-blueprint.md)。

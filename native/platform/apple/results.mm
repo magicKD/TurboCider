@@ -352,6 +352,28 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             @"enforcement": @"none"
         };
     }
+    if (r.streaming_selector && r.streaming_selector->active()) {
+        result[@"executable"] = @NO;
+        result[@"memory_estimate_kind"] = @"requires_preset_resolution";
+        NSMutableDictionary *origins = [NSMutableDictionary dictionary];
+        for (const auto &[key, origin] : r.streaming_selector->provenance)
+            origins[@(key.c_str())] = @(origin.c_str());
+        result[@"streaming"] = @{
+            @"requested_selector": r.streaming_selector_requested
+                ? streaming_selector_dictionary(*r.streaming_selector_requested)
+                : (id)NSNull.null,
+            @"merged_selector": streaming_selector_dictionary(
+                *r.streaming_selector),
+            @"field_provenance": origins,
+            @"eligibility": @"plan_only",
+            @"execution_supported": @NO,
+            @"rejection_code": @"streaming_preset_resolution_required",
+            @"resolution_state": @"requires_engine_artifact_and_catalog",
+            @"resolved_layout": NSNull.null,
+            @"actual_layout": NSNull.null,
+            @"enforcement": @"none"
+        };
+    }
     if (plan.memory_policy) {
         const auto &policy = *plan.memory_policy;
         result[@"memory_policy"] = @{

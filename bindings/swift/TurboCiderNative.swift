@@ -58,6 +58,137 @@ public struct NativeRequest: Codable, Sendable {
     public var lora_strategy: String?
     public init(prompt: String, output: String) { self.prompt = prompt; self.output = output }
 }
+public struct NativeStreamingSelectorV2: Codable, Sendable, Equatable {
+    public var schema_version = 2
+    public var enabled = true
+    public var selection = "memory_tier"
+    public var retention = "request"
+    public var target_request_memory_bytes: UInt64
+    public var preset_id: String?
+    public var preset_revision: UInt32?
+    public var catalog_revision: String?
+    public var expected_resolution_digest: String?
+    public init(targetBytes: UInt64) { target_request_memory_bytes = targetBytes }
+}
+public struct NativeInputV2: Codable, Sendable {
+    public var kind: String
+    public var role: String
+    public var path: String?
+    public var text: String?
+    public var strength: Double?
+}
+public struct NativeOutputV2: Codable, Sendable {
+    public var kind: String
+    public var path: String
+    public var width: Int
+    public var height: Int
+    public var frames: Int
+    public var fps: Int
+    public var audio: Bool
+}
+public struct NativeSamplingV2: Codable, Sendable {
+    public var seed: Int
+    public var steps: Int
+}
+public struct NativeExecutionV2: Codable, Sendable {
+    public var policy: String
+    public var profile: String?
+    public var ane_manifest: String?
+    public var encoder_ane_manifest: String?
+    public var allow_approximation: Bool?
+    public var quantized_cache: String?
+    public var warmup_iterations: Int?
+    public var ltx_backend: String?
+    public var ltx_fast_av: Bool?
+    public var ltx_video_attention_batch: Bool?
+    public var ltx_sol_stage1: Bool?
+    public var ltx_sol_stage2: Bool?
+    public var ltx_sol_tau: Double?
+    public var ltx_sol_dense_edge_blocks: Int?
+    public var ltx_sol_dense_edge_steps: Int?
+    public var ltx_stage2_text_rows: Int?
+    public var streaming: NativeStreamingSelectorV2
+}
+public struct NativeParametersV2: Codable, Sendable {
+    public var dynamic_text: Bool
+    public var compile_gpu: Bool?
+    public var noise_path: String?
+}
+public struct NativeRequestV2: Codable, Sendable {
+    public var schema_version = 2
+    public var model: String
+    public var operation: String
+    public var inputs: [NativeInputV2]
+    public var outputs: [NativeOutputV2]
+    public var sampling: NativeSamplingV2
+    public var execution: NativeExecutionV2
+    public var parameters: NativeParametersV2
+    public var dump_tensors: String?
+    public var loras: [NativeLoRA]?
+    public var lora_strategy: String?
+
+    public init(legacy request: NativeRequest, targetBytes: UInt64) {
+        model = request.model
+        operation = request.operation ?? (request.frames > 1 ? "video.generate" : "image.generate")
+        inputs = [NativeInputV2(kind: "text", role: "prompt", path: nil,
+                                text: request.prompt, strength: nil)]
+        inputs += (request.inputs ?? []).map {
+            NativeInputV2(kind: $0.kind, role: $0.role, path: $0.path,
+                          text: nil, strength: $0.strength)
+        }
+        let outputKind = operation.hasPrefix("video.") ? "video" : "image"
+        outputs = [NativeOutputV2(kind: outputKind, path: request.output,
+                                  width: request.width, height: request.height,
+                                  frames: request.frames, fps: request.fps ?? 24,
+                                  audio: request.audio ?? false)]
+        sampling = NativeSamplingV2(seed: request.seed, steps: request.steps)
+        execution = NativeExecutionV2(
+            policy: request.execution, profile: request.profile,
+            ane_manifest: request.ane_manifest, encoder_ane_manifest: nil,
+            allow_approximation: request.allow_approximation,
+            quantized_cache: request.quantized_cache, warmup_iterations: nil,
+            ltx_backend: request.ltx_backend,
+            ltx_fast_av: request.ltx_fast_av,
+            ltx_video_attention_batch: request.ltx_video_attention_batch,
+            ltx_sol_stage1: request.ltx_sol_stage1,
+            ltx_sol_stage2: request.ltx_sol_stage2,
+            ltx_sol_tau: request.ltx_sol_tau,
+            ltx_sol_dense_edge_blocks: request.ltx_sol_dense_edge_blocks,
+            ltx_sol_dense_edge_steps: request.ltx_sol_dense_edge_steps,
+            ltx_stage2_text_rows: request.ltx_stage2_text_rows,
+            streaming: NativeStreamingSelectorV2(targetBytes: targetBytes))
+        parameters = NativeParametersV2(
+            dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
+            noise_path: request.noise_path)
+        dump_tensors = request.dump_tensors
+        loras = request.loras
+        lora_strategy = request.lora_strategy
+    }
+}
+public struct NativeStreamingTargetOption: Codable, Sendable, Identifiable {
+    public var id: UInt64 { target_request_memory_bytes }
+    public let target_request_memory_bytes: UInt64
+    public let status: String
+    public let reason_code: String?
+    public let preset_id: String?
+    public let preset_revision: UInt32?
+    public let calibrated_request_bytes: UInt64?
+    public let memory_scope: String?
+    public let release_channel: String?
+}
+public struct NativeStreamingDevice: Codable, Sendable {
+    public let gpu: String
+    public let physical_memory_bytes: UInt64
+    public let device_class: String
+}
+public struct NativeStreamingOptions: Codable, Sendable {
+    public let schema_version: Int
+    public let catalog_revision: String
+    public let query_status: String
+    public let execution_container: String
+    public let device: NativeStreamingDevice
+    public let targets: [NativeStreamingTargetOption]
+}
 public struct NativeEvent: Codable, Sendable {
     public let sequence: Int
     public let phase: String
@@ -185,8 +316,33 @@ public final class NativeEngine: @unchecked Sendable {
         guard status == 0 else { throw NativeFailure(message: message) }
         return Data(output.utf8)
     }
-    public func generate(_ request: NativeRequest, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+    public static func plan(_ request: NativeRequestV2) throws -> Data {
         let data = try JSONEncoder().encode(request)
+        var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+        let status = String(decoding: data, as: UTF8.self).withCString {
+            tc_plan_json($0, &result, &error)
+        }
+        let message = consume(error), output = consume(result)
+        guard status == 0 else { throw NativeFailure(message: message) }
+        return Data(output.utf8)
+    }
+    public static func streamingOptions(_ request: NativeRequestV2) throws -> NativeStreamingOptions {
+        let data = try JSONEncoder().encode(request)
+        var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+        let status = String(decoding: data, as: UTF8.self).withCString {
+            tc_streaming_options_json($0, &result, &error)
+        }
+        let message = consume(error), output = consume(result)
+        guard status == 0 else { throw NativeFailure(message: message) }
+        return try JSONDecoder().decode(NativeStreamingOptions.self, from: Data(output.utf8))
+    }
+    public func generate(_ request: NativeRequest, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        try await generate(payload: JSONEncoder().encode(request), onEvent: onEvent)
+    }
+    public func generate(_ request: NativeRequestV2, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        try await generate(payload: JSONEncoder().encode(request), onEvent: onEvent)
+    }
+    private func generate(payload data: Data, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
         return try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
                 let box = EventBox(onEvent)

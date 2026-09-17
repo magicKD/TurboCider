@@ -72,6 +72,8 @@ struct Request {
     MemoryConstrainedConfig memory_constrained;
     StreamingConfig streaming;
     std::optional<StreamingConfig> streaming_requested;
+    std::optional<StreamingSelector> streaming_selector;
+    std::optional<StreamingSelector> streaming_selector_requested;
     bool residency_specified = false;
     bool memory_budget_specified = false;
     bool streaming_offload_specified = false;

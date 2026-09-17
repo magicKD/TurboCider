@@ -277,7 +277,8 @@ Request request_from_json(NSDictionary *d) {
         r.residency_specified = execution[@"residency"] != nil;
         r.memory_budget_specified = execution[@"memory_budget_bytes"] != nil;
         if (execution[@"streaming"])
-            parse_streaming_config(execution[@"streaming"], r.streaming, "request");
+            parse_streaming_input(execution[@"streaming"], r.streaming,
+                                  r.streaming_selector, "request");
         r.memory_budget_bytes = byte_count(execution, @"memory_budget_bytes", 0);
         if (execution[@"memory_constrained"])
             parse_memory_constrained(execution[@"memory_constrained"],
@@ -371,8 +372,14 @@ Request request_from_json(NSDictionary *d) {
         }
     }
     if (r.streaming.specified()) r.streaming_requested = r.streaming;
+    if (r.streaming_selector)
+        r.streaming_selector_requested = r.streaming_selector;
     resolve_profile(r);
+    require(!(r.streaming.specified() && r.streaming_selector.has_value()),
+            "streaming_config_conflict: manual and selector are mutually exclusive");
     if (r.streaming.specified()) validate_streaming_config(r.streaming);
+    if (r.streaming_selector)
+        validate_streaming_selector(*r.streaming_selector);
     validate_memory_constrained_request(
         r, [NSProcessInfo processInfo].physicalMemory);
     if (!r.encoder_ane_manifest.empty()) {

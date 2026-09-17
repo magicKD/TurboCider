@@ -1,8 +1,9 @@
 # 26 · 内存档位工具链、实施与发布验收
 
-[目录](README.md) · [候选和实验原则](24-memory-tier-exploration-and-acceptance.md) · [代码规格](25-public-preset-implementation-spec.md) · [性能统计规范](12-acceptance-playbook.md)
+[目录](README.md) · [候选和实验原则](24-memory-tier-exploration-and-acceptance.md) · [代码规格](25-public-preset-implementation-spec.md) · [施工蓝图](27-public-streaming-delivery-blueprint.md) · [性能统计规范](12-acceptance-playbook.md)
 
-日期：2026-09-17。状态：**待实施验收规格**。新增测试名、文件名、工具参数均为建议；本轮未运行 GPU、压力或档位 sweep。
+日期：2026-09-17。状态：**验收规格；部分控制面host测试已存在，public执行和实机档位仍待实施**。
+新增测试名、文件名、工具参数除明确标注“当前已存在”外均为建议；本轮未运行 GPU、压力或档位 sweep。
 文档 12 是 P0–P4/L0–L3 的唯一规范；本文使用 `PUB-*` 子测试 ID，不重定义这些级别。
 
 ## 1. 完成标准：不只“生成成功”
@@ -607,14 +608,25 @@ P0/P1/P4/P3 结论和下一步，不用一个“PASS”字段掩盖 INCONCLUSIVE
 
 ## 13. 可追踪的实施顺序与完成门
 
-S0–S10是24中MT批次的代码子任务，不是新的资格级别；目前全部是待实施设计。可按表独立拆PR，不能在基础PR偷偷附带public record。
+S0–S10是24中MT批次的代码子任务，不是新的资格级别。当前工作树已经形成 S0、S1 和 S3 的一部分基础，
+但尚未形成可执行 public route；可按表独立拆PR，不能在基础PR偷偷附带public record。
+
+当前实现状态覆盖：
+
+- S0 partial：selector/parser/profile/plan report、raw duplicate-key scanner及unresolved-selector generate/prepare早拒绝已有；仍缺target lexical integer约束和完整v1/v2 golden；
+- S1 partial：host catalog/resolver skeleton 已有，production catalog为空，完整 record identity/builder/review链未实现；
+- S3 partial：options C ABI 和 Swift v2/options 类型可编译，但 exact engine resolve、typed error 和完整 semantic parity 未实现；
+- S2/S4–S10：不得因上述 skeleton 存在而标完成。
+
+当前已运行 `tools/native/build.sh`、`make test-streaming-contract` 和 `make test-streaming-host`；详见
+[25 第0节](25-public-preset-implementation-spec.md)和[27 第2–3节](27-public-streaming-delivery-blueprint.md)。
 
 | 子任务 / 对应MT | 依赖 | 代码交付 | 完成门与可合并范围 |
 |---|---|---|---|
-| S0 / MT-05 | 无 | selector contracts；`request.mm/profile.mm/streaming_config.mm`严格解析 | PUB-CFG；v1 golden不变；public仍拒绝 |
-| S1 / MT-05 | S0类型 | catalog schema/index、builder、test fixtures | PUB-RES的catalog部分/CAL-14/15；production空表 |
+| S0 / MT-05 | 无 | selector contracts；`request.mm/profile.mm/streaming_config.mm`严格解析 | **partial**：基础parser/merge/plan和执行早拒绝通过；补lexical integer、v1/v2 golden后完成 |
+| S1 / MT-05 | S0类型 | catalog schema/index、builder、test fixtures | **partial**：host resolver通过、production空表；完整identity/builder/CAL-14/15待补 |
 | S2 / MT-05 | S0/S1 | resolver、snapshot、metadata token/source接口、plan-only | PUB-RES/PLAN/ID；无GPU分配；不改旧make_plan权限 |
-| S3 / MT-05/06 | S2 | C header/API、Swift typed payload/query/error消费 | PUB-ABI；老symbol/serializer不变 |
+| S3 / MT-05/06 | S2 | C header/API、Swift typed payload/query/error消费 | **partial**：options/v2类型可编译；exact resolve/error envelope/parity/ABI反例待补 |
 | S4 / MT-06 | S3；mock query可先行 | draft开关、Job Codable迁移、JobStore、Insights、UI | PUB-APP/REP；default off；test records不随App发布 |
 | S5 / MT-05 | S2/S3 | `generate_resolved`、authority、session owner、撤回检查 | PUB-PLAN/ID/FLT/REL；实际释放与quarantine验证 |
 | S6 / MT-01/02 | 可与S0并行；复用当前private route | calibration worker/schema/verifier、candidate inspect | CAL全套；fake先过；默认路径零观察器 |

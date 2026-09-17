@@ -2,8 +2,66 @@
 
 [目录](README.md) · [产品与配置](23-public-memory-tier-presets.md) · [候选探索](24-memory-tier-exploration-and-acceptance.md) · [实施验收](26-public-preset-acceptance-and-release.md)
 
-日期：2026-09-17。源码基线：`7308db3`，runtime 基线 `052265f`。
-状态：**待实施接口和算法，不是已完成代码或新性能成绩**。本文仅展开文档 23/24，不改变 manual v1、slot 安全协议或 P0–P4 定义。
+日期：2026-09-17。原始设计源码基线：`7308db3`，runtime 基线 `052265f`；当前文档基线提交：`a76c414`。
+状态：**部分控制面已进入未提交工作树，engine/App/模型执行与档位认证仍待实施**。本文不改变 manual v1、slot 安全协议或 P0–P4 定义。
+当前代码检查、逐PR施工和验收追踪见[27](27-public-streaming-delivery-blueprint.md)。
+
+## 0. 当前工作树检查点和立即阻断项
+
+### 0.1 已进入工作树并已完成编译/host 回归的部分
+
+| 实现 | 真实文件 | 当前能力 |
+|---|---|---|
+| selector contract | `native/core/streaming_contracts.hpp` | schema v2、memory_tier/preset、五个target、disabled语义 |
+| request/profile | `contracts.hpp`、`request.mm`、`profile.mm`、`streaming_config.mm` | manual/selector互斥、完整selector替换、provenance和legacy冲突 |
+| plan report | `plan.cpp`、`results.mm` | active selector只返回plan-only和resolution-required |
+| catalog skeleton | `runtime/streaming/preset_catalog.*` | target margin、release/revoke/device/workload/calibration过滤和确定排序 |
+| production registry | 同上 | 故意为空，revision=`tc-streaming-catalog-empty-v1` |
+| public options ABI | `turbocider.h`、`c_api.mm` | metadata-only列出五档；当前没有artifact exact identity |
+| Swift skeleton | `TurboCiderNative.swift` | v2 selector/request/options类型、plan/options/generate overload |
+| host tests | `test_streaming_contract.py`、`streaming_preset_resolver_test.cpp` | parser/plan/options空表/resolver基础 |
+
+本次审阅实际运行：
+
+```sh
+tools/native/build.sh
+make test-streaming-contract
+make test-streaming-host
+```
+
+native 与 Swift/App 全量编译成功；contract 12项和四模型public fail-closed gate通过；host的3535 layouts、14组
+K/D/Q、multi-class/fault/cleanup、resolver及四模型descriptor通过。这些结果不包含GPU public执行、App UI、整请求内存或新性能数据。
+
+### 0.2 已修复的第一道安全闸门
+
+原实现的 `tc_engine_generate` 只检查 manual `request.streaming.active()`，`preparation_call` 也只拒绝 manual
+streaming。当前工作树已在 resolver/authority 尚未接入期间补上 active selector 的统一早拒绝，避免继续落入普通
+`session->generate/prepare`。
+
+当前实现等价于：
+
+```cpp
+require(!(request.streaming_selector && request.streaming_selector->active()),
+        "streaming_preset_resolution_required: unresolved public selector");
+```
+
+该 gate 位于全局GPU execution lock、跨进程DeviceLease、GPU configure、session prepare/generate和pool/worker创建之前。
+contract 已覆盖普通 public engine 与 private candidate 的 generate/prepare。实现真正 resolver 后，只能把它替换成显式
+`resolve → authority → generate_resolved` 分支，绝不能直接删除。
+
+### 0.3 当前 skeleton 不能直接升级为 production 的原因
+
+1. `StreamingPresetRecord` 还没有完整 artifact/variant/token/kernel/reader/component/build/evidence identity。
+2. `tc_streaming_options_json` 目前只使用 request 和 device，返回 tentative；没有 engine root、verified source 或 token exact match。
+3. production catalog 为空，没有任何 full-request calibration 或 reviewed record。
+4. 没有 `tc_engine_resolve_streaming_json`、`StreamingAuthority`、`ResolvedRequestExecution`、`generate_resolved`。
+5. Swift v2 是可编译骨架，尚未完成 v1 所有语义的 round-trip/golden，也未接 `NativeJob` versioned envelope。
+6. App 没有 `StreamingChoice`、异步 options 状态、picker、unavailable reason 或 result 展示。
+7. request/profile 已有 raw duplicate-key scanner；但 target 仍通过 NSNumber/double 后验判断，数值精确的指数形式会被接受，
+   尚未满足冻结的“无指数十进制整数”lexical contract。catalog builder 也还没有同等级 scanner。
+8. current selector syntax允许一致的GPU+ANE请求，但public v1按用户范围应只发布GPU-only record；无record时需早拒绝。
+
+因此当前正确产品行为是：off/default保持原样，options显示无public记录，active selector执行fail-closed。
 
 ## 1. 先固定架构：一条控制面、一套执行器
 
@@ -157,9 +215,15 @@ manual v1→v2 或 v2→manual 时整体替换 streaming 分支；两个 manual 
 
 ### 3.3 重复 key 与输入限制
 
-当前 NSDictionary 解析后的 known-key 检查无法恢复已经被 JSON parser 合并的重复 key。新增 selector 的严格 raw JSON
-validation 必须在信任其值之前检查 duplicate keys；覆盖请求与引用 profile，不写“NSDictionary 自然会拒绝”。
-建议对 opt-in v2 路径增加 bounded token scanner，先验证原始 JSON，再交现有 parser；不为所有 v1/default 请求强制多扫一次。
+NSDictionary 解析后的 known-key 检查无法恢复已合并的重复 key。当前 request/profile 入口已经在解析前调用
+`reject_duplicate_json_keys`，并覆盖普通重复键与 Unicode 转义后的同名键；新增 selector 必须继续复用这条入口，
+不能退回只依赖 NSDictionary。catalog source/builder 仍需实现同等级检查。
+
+另一项未完成规则是 lexical integer：当前 `exact_byte_count` 经 NSNumber/double 判断数值是否为整数，
+`1.2884901888e10` 会被归一为合法 12 GiB。若冻结协议要求拒绝指数写法，raw scanner需同时记录目标字段的token类别，
+只接受无符号十进制 digits，并在转换前做长度/范围检查。
+建议扩展现有 `KeyScanner` 或在同一次 raw 扫描中记录 selector target 的 token 形态，不新增第二遍全JSON扫描。
+输入长度/nesting上限在JSON解析前统一检查；off/default请求不应因为 lexical selector 规则增加额外遍历。
 
 冻结初值：新 query/resolve 请求 ≤1 MiB、nesting≤32、preset/catalog ID≤128 UTF-8 bytes、digest≤128 bytes；reject NUL、
 非法 UTF-8 和非对象根。catalog 构建器也拒绝 duplicate keys、重复 ID/revision、循环引用、未知 required 字段。

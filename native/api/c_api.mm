@@ -9,6 +9,7 @@
 #include "../runtime/memory_accounting.hpp"
 #include "../runtime/memory_execution.hpp"
 #include "../runtime/streaming/audit.hpp"
+#include "../runtime/streaming/preset_catalog.hpp"
 #include "../models/ltx_runtime/ltx_gemma_tokenizer.h"
 #include "../models/ltx_runtime/ltx_weights.h"
 #import <Metal/Metal.h>
@@ -374,6 +375,84 @@ int tc_plan_json(const char *r, char **out, char **error) {
         }
     }
 }
+int tc_streaming_options_json(const char *r, char **out, char **error) {
+    if (out)
+        *out = nullptr;
+    if (error)
+        *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(out, "missing output pointer");
+            const auto request = tc::request_from_json(tc::parse_json(r));
+            tc::require(request.streaming_selector &&
+                            request.streaming_selector->active(),
+                        "streaming_selector_required: active schema v2 selector expected");
+            const auto &selector = *request.streaming_selector;
+            const auto device = tc::device_info();
+            const std::string device_class = device.gpu + "/" +
+                std::to_string(device.physical_memory);
+            const auto &catalog =
+                tc::streaming::production_streaming_preset_catalog();
+            NSMutableArray *targets = [NSMutableArray array];
+            for (const uint64_t target : tc::public_streaming_targets) {
+                tc::streaming::PresetResolveQuery query;
+                query.workload = {
+                    request.model, request.operation, request.execution,
+                    device_class, "embedded_app",
+                    static_cast<uint32_t>(request.width),
+                    static_cast<uint32_t>(request.height),
+                    static_cast<uint32_t>(request.frames),
+                    static_cast<uint32_t>(request.steps), request.audio};
+                query.target_request_memory_bytes = target;
+                query.physical_memory_bytes = device.physical_memory;
+                if (selector.selection && *selector.selection == "preset" &&
+                    selector.target_request_memory_bytes &&
+                    target == *selector.target_request_memory_bytes) {
+                    query.preset_id = selector.preset_id;
+                    query.preset_revision = selector.preset_revision;
+                    query.catalog_revision = selector.catalog_revision;
+                }
+                const auto resolution =
+                    tc::streaming::resolve_streaming_preset(query, catalog);
+                NSMutableDictionary *entry = [@{
+                    @"target_request_memory_bytes" : @(target),
+                    @"status" : resolution.selected ? @"available" : @"unavailable",
+                    @"reason_code" : resolution.selected
+                        ? (id)NSNull.null : @(resolution.rejection_code.c_str())
+                } mutableCopy];
+                if (resolution.selected) {
+                    const auto &record = *resolution.selected;
+                    entry[@"preset_id"] = @(record.id.c_str());
+                    entry[@"preset_revision"] = @(record.revision);
+                    entry[@"calibrated_request_bytes"] =
+                        @(record.calibration.calibrated_request_bytes);
+                    entry[@"memory_scope"] = @(record.calibration.scope.c_str());
+                    entry[@"release_channel"] = @(record.release_channel.c_str());
+                }
+                [targets addObject:entry];
+            }
+            *out = copy(tc::json(@{
+                @"schema_version" : @1,
+                @"catalog_revision" : @(catalog.revision.c_str()),
+                @"query_status" : @"tentative_without_artifact_identity",
+                @"execution_container" : @"embedded_app",
+                @"device" : @{
+                    @"gpu" : @(device.gpu.c_str()),
+                    @"physical_memory_bytes" : @(device.physical_memory),
+                    @"device_class" : @(device_class.c_str())
+                },
+                @"targets" : targets
+            }));
+            return 0;
+        } catch (const std::exception &e) {
+            return fail(error, e);
+        } catch (...) {
+            if (error)
+                *error = strdup("unknown streaming options error");
+            return 1;
+        }
+    }
+}
 int tc_engine_create_model(const char *id, const char *path, tc_engine **engine, char **error) {
     if (engine)
         *engine = nullptr;
@@ -508,12 +587,16 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
                         "memory_worker_quarantined: engine must be recreated");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            auto request = tc::request_from_json(tc::parse_json(r));
+            tc::require(!(request.streaming_selector &&
+                            request.streaming_selector->active()),
+                        "streaming_preset_resolution_required: public selector "
+                        "must be resolved by the engine before generation");
             // MLX uses process-global device/allocation policy. Serialize all embeddings.
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
             DeviceLease device_lease;
             e->cancelled.store(false);
-            auto request = tc::request_from_json(tc::parse_json(r));
             tc::require(!request.streaming.active() ||
                             e->allow_experimental_streaming,
                         "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
@@ -978,15 +1061,21 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
                         "memory_worker_quarantined: engine must be recreated");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            std::optional<tc::Request> parsed_request;
+            if (!cache) {
+                parsed_request = tc::request_from_json(tc::parse_json(request));
+                tc::require(!(parsed_request->streaming_selector &&
+                                parsed_request->streaming_selector->active()),
+                            "streaming_preset_resolution_required: public selector "
+                            "must be resolved by the engine before preparation");
+                tc::require(!parsed_request->streaming.active(),
+                            "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
+            }
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
             DeviceLease lease;
-            std::optional<tc::Request> parsed_request;
             std::optional<tc::ExecutionPlan> request_plan;
             if (!cache) {
-                parsed_request = tc::request_from_json(tc::parse_json(request));
-                tc::require(!parsed_request->streaming.active(),
-                            "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
                 if (parsed_request->memory_constrained.enabled) {
                     request_plan = tc::make_plan(*parsed_request);
                     parsed_request = request_plan->request;

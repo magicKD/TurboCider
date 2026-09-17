@@ -1,10 +1,10 @@
 # 23 · App 内存档位与 Public Streaming Preset 设计
 
-[目录](README.md) · [当前框架](22-current-framework-guide.md) · [分模型探索](24-memory-tier-exploration-and-acceptance.md) · [代码规格](25-public-preset-implementation-spec.md) · [验收与发布](26-public-preset-acceptance-and-release.md)
+[目录](README.md) · [当前框架](22-current-framework-guide.md) · [分模型探索](24-memory-tier-exploration-and-acceptance.md) · [代码规格](25-public-preset-implementation-spec.md) · [验收与发布](26-public-preset-acceptance-and-release.md) · [施工蓝图](27-public-streaming-delivery-blueprint.md)
 
 日期：2026-09-17。源码基线：`7308db3`，其 runtime 来自 `052265f`。
-状态：**待实施的产品/API/架构规格，不是现有 public 功能，也不是新性能成绩。**
-本轮只编写方案，没有放开 public gate、改变默认路径、进行 GPU sweep 或启动系统 memory pressure。
+状态：**产品/API/架构规格；selector/catalog/options/Swift已有未提交基础，但不是现有 public 功能，也不是新性能成绩。**
+当前仍未放开 public gate、改变默认路径、进行 GPU sweep 或启动系统 memory pressure。已实现/未实现边界和立即安全闸门见27第2–3节。
 
 ## 1. 决策摘要
 
@@ -358,6 +358,8 @@ UI preview 可以是 `tentative`（token 行数未知），真正运行前必须
 
 需要新的 uint64 bytes 校验（当前 slot 数解析为 uint32）；首版wire限定正十进制整数≤`2^53−1`，内部仍为uint64。
 拒绝负数、bool、小数、指数写法、溢出、未知字段和重复 key；重复key需要raw JSON检查，不能依赖NSDictionary事后发现。
+当前 request/profile 解析已经复用 `reject_duplicate_json_keys` 并有 Unicode 转义重复键测试；该能力必须保留。
+尚缺的是 target 的 lexical integer 检查：当前 `NSNumber/double` 后验路径仍会接受数值精确的指数写法。
 不接受 arbitrary executable path 或任意 JSON 替换运行时 callback。
 
 ## 9. Catalog 数据模型
@@ -512,5 +514,6 @@ P3 只有在宣传“比系统 swap 更快”时必须有相应速度证据；�
 用户的选择可以很简单，但后台数据必须完整。推荐顺序是：**先测真实候选 → 校准整请求峰值 → 筛选稳定档位 →
 审阅注册 → App 暴露目标选项**。不要先写“8 GiB 对应 K2”的映射，再用测试去补一个预先假定的结论。
 四模型具体候选、Flux 所需扩展、测量工具、样本与资源限额、验收测试见下一篇。
-进一步施工请使用[25 代码规格](25-public-preset-implementation-spec.md)和[26 实施验收](26-public-preset-acceptance-and-release.md)：
-它们补充了当前v1任务迁移、一次规划、source lease、Flux per-pass prefix算法和独立校准verifier；这些仍是待实施设计。
+进一步施工请使用[25 代码规格](25-public-preset-implementation-spec.md)、[26 实施验收](26-public-preset-acceptance-and-release.md)
+和[27 施工蓝图](27-public-streaming-delivery-blueprint.md)。selector/catalog/options/Swift skeleton已有工作树基础；
+v1任务迁移、一次规划、source lease、Flux per-pass prefix、独立校准verifier和public records仍待实施。

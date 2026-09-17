@@ -16,6 +16,10 @@ LIB.tc_engine_generate.argtypes = [
     C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p,
     C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
 ]
+LIB.tc_engine_prepare.argtypes = [
+    C.c_void_p, C.c_char_p, C.c_int, C.c_void_p, C.c_void_p,
+    C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
+]
 LIB.tc_engine_free.argtypes = [C.c_void_p]
 LIB.tc_string_free.argtypes = [C.c_void_p]
 
@@ -43,6 +47,16 @@ def generate(engine, request):
     result, error = C.c_void_p(), C.c_void_p()
     status = LIB.tc_engine_generate(
         engine, json.dumps(request).encode(), None, None,
+        C.byref(result), C.byref(error),
+    )
+    value, failure = consume(result), consume(error)
+    return status, value, failure
+
+
+def prepare(engine, request):
+    result, error = C.c_void_p(), C.c_void_p()
+    status = LIB.tc_engine_prepare(
+        engine, json.dumps(request).encode(), 0, None, None,
         C.byref(result), C.byref(error),
     )
     value, failure = consume(result), consume(error)
@@ -80,6 +94,14 @@ def main():
             },
         },
     }
+    selector_request = json.loads(json.dumps(request))
+    selector_request["execution"]["streaming"] = {
+        "schema_version": 2,
+        "enabled": True,
+        "selection": "memory_tier",
+        "retention": "request",
+        "target_request_memory_bytes": 12 << 30,
+    }
     with tempfile.TemporaryDirectory(prefix="tc-ltx-candidate-gate-") as raw:
         root = Path(raw)
         for relative in (
@@ -96,11 +118,25 @@ def main():
             status, _, error = generate(public, request)
             assert status != 0
             assert "streaming_layout_not_certified" in error, error
+            status, _, error = generate(public, selector_request)
+            assert status != 0
+            assert "streaming_preset_resolution_required" in error, error
+            status, _, error = prepare(public, selector_request)
+            assert status != 0
+            assert "streaming_preset_resolution_required" in error, error
         finally:
             LIB.tc_engine_free(public)
 
         candidate = create(LIB.tc_engine_create_model_candidate, root)
-        LIB.tc_engine_free(candidate)
+        try:
+            status, _, error = generate(candidate, selector_request)
+            assert status != 0
+            assert "streaming_preset_resolution_required" in error, error
+            status, _, error = prepare(candidate, selector_request)
+            assert status != 0
+            assert "streaming_preset_resolution_required" in error, error
+        finally:
+            LIB.tc_engine_free(candidate)
 
         # Candidate execution itself is covered by the opt-in real-Metal
         # harness. Keep this default contract host-only while proving the
@@ -121,7 +157,7 @@ def main():
                 continue
             raise AssertionError(f"release library exports private test hook: {symbol}")
 
-    print("PASS LTX public gate remains fail-closed; private candidate authority; release has no lifecycle test hooks")
+    print("PASS LTX public gate remains fail-closed; unresolved selectors never reach generate/prepare; private candidate authority; release has no lifecycle test hooks")
 
 
 if __name__ == "__main__":

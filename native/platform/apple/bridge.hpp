@@ -12,7 +12,10 @@ std::string string_value(NSDictionary *, NSString *, const std::string &fallback
 Request request_from_json(NSDictionary *);
 void parse_memory_constrained(NSDictionary *, MemoryConstrainedConfig &);
 void parse_streaming_config(NSDictionary *, StreamingConfig &, const char *origin);
+void parse_streaming_input(NSDictionary *, StreamingConfig &,
+                           std::optional<StreamingSelector> &, const char *origin);
 NSDictionary *streaming_config_dictionary(const StreamingConfig &);
+NSDictionary *streaming_selector_dictionary(const StreamingSelector &);
 void resolve_profile(Request &);
 NSDictionary *to_dictionary(const ExecutionPlan &);
 NSDictionary *to_dictionary(const LoadResult &);

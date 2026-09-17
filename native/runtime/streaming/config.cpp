@@ -1,6 +1,7 @@
 #include "../../core/streaming_contracts.hpp"
 
 #include <stdexcept>
+#include <algorithm>
 
 namespace tc {
 namespace {
@@ -67,6 +68,52 @@ void validate_streaming_config(const StreamingConfig &c) {
             check(*s.io_workers > 0 && *s.io_workers <= *s.slot_count,
                   id + ": io_workers must be 1...slot_count");
         }
+    }
+}
+
+void validate_streaming_selector(const StreamingSelector &s) {
+    check(s.schema_version.has_value() && *s.schema_version == 2,
+          "selector schema_version must be 2");
+    check(s.enabled.has_value(), "selector enabled is required");
+    if (!*s.enabled) {
+        check(!s.selection && !s.retention &&
+                  !s.target_request_memory_bytes && !s.preset_id &&
+                  !s.preset_revision && !s.catalog_revision &&
+                  !s.expected_resolution_digest,
+              "disabled selector accepts only schema_version and enabled");
+        return;
+    }
+    check(s.selection.has_value(), "selector selection is required");
+    check(s.retention.has_value() && *s.retention == "request",
+          "selector retention must be request");
+    check(s.target_request_memory_bytes.has_value() &&
+              *s.target_request_memory_bytes > 0 &&
+              *s.target_request_memory_bytes <= ((1ull << 53) - 1),
+          "selector target_request_memory_bytes is outside the supported range");
+    check(std::find(public_streaming_targets.begin(),
+                    public_streaming_targets.end(),
+                    *s.target_request_memory_bytes) !=
+              public_streaming_targets.end(),
+          "selector target_request_memory_bytes is not a published target");
+    if (*s.selection == "memory_tier") {
+        check(!s.preset_id && !s.preset_revision && !s.catalog_revision &&
+                  !s.expected_resolution_digest,
+              "memory_tier selector does not accept preset fields");
+    } else {
+        check(*s.selection == "preset", "selector selection is unknown");
+        check(s.preset_id.has_value() && !s.preset_id->empty() &&
+                  s.preset_id->size() <= 128,
+              "preset_id is required and must be at most 128 bytes");
+        check(s.preset_revision.has_value() && *s.preset_revision > 0,
+              "preset_revision must be positive");
+        check(s.catalog_revision.has_value() &&
+                  !s.catalog_revision->empty() &&
+                  s.catalog_revision->size() <= 128,
+              "catalog_revision is required and must be at most 128 bytes");
+        if (s.expected_resolution_digest)
+            check(!s.expected_resolution_digest->empty() &&
+                      s.expected_resolution_digest->size() <= 128,
+                  "expected_resolution_digest must be 1...128 bytes");
     }
 }
 } // namespace tc

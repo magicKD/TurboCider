@@ -2,7 +2,8 @@
 
 [目录](README.md) · [Public preset 产品/API 方案](23-public-memory-tier-presets.md) · [现有证据](13-implementation-progress.md)
 
-实施细节：[25 代码/API/模型施工](25-public-preset-implementation-spec.md) · [26 采样协议/测试/发布](26-public-preset-acceptance-and-release.md)。
+实施细节：[25 代码/API/模型施工](25-public-preset-implementation-spec.md) · [26 采样协议/测试/发布](26-public-preset-acceptance-and-release.md) ·
+[27 当前工作树到public发布的施工蓝图](27-public-streaming-delivery-blueprint.md)。
 本文保留候选策略和 MT 批次；25/26进一步展开接口与验收，不代表新增测试已经通过。
 
 日期：2026-09-17。状态：**待实施实验与工程方案**。候选集合不是已通过测试的参数推荐，目标档位不是实测峰值。
