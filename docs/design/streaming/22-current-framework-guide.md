@@ -5,6 +5,11 @@
 
 修订日期：2026-09-17。
 
+App 按内存目标选择后台 preset 的下一步设计见 [23 产品与 Public 接线](23-public-memory-tier-presets.md) 和
+[24 分模型探索与验收](24-memory-tier-exploration-and-acceptance.md)；进一步代码接缝与模型算法见
+[25 实施规格](25-public-preset-implementation-spec.md)，采样工具/测试矩阵/发布见
+[26 验收与发布](26-public-preset-acceptance-and-release.md)。这些是待实施方案，不改变本文当前 private/candidate 状态。
+
 本文集中介绍 TurboCider 当前已经实现的通用 block/slot streaming 框架，包括使用方式、配置语义、
 布局编译、slot 调度、模型 adapter、错误处理、性能证据和发布边界。本文是当前实现的总览；字段冲突以
 [02](02-configuration.md) 为准，底层状态机以 [03](03-runtime-protocol.md) 和
@@ -934,7 +939,7 @@ identity、build identity、输出质量和环境信息，避免 baseline/candid
 | C bridge | `native/runtime/streaming/c_bridge.cpp`、`native/core/stream_slot_c.h` | 原生 C/Metal adapter ABI |
 | Audit | `native/runtime/streaming/audit.*` | setup/steady allocation 和线程计数 |
 | 模型 adapter | 各模型 runtime 目录 | descriptor、pool、fill、bind、encode、drain |
-| Campaign | `tools/streaming_campaign.py` 等 | ABBA runner、evidence、verifier |
+| Campaign | `tools/native/run_streaming_campaign.py`、`verify_streaming_campaign.py` | ABBA runner、evidence、verifier |
 
 通用层不能依赖具体模型 tensor 名称；模型 adapter 不能复制一套私有调度状态机。共享的应是生命周期和安全协议，
 保留在模型侧的应是 tensor 解释、binding 和 kernel 语义。
@@ -978,9 +983,9 @@ inspect descriptor
     -> real model smoke
     -> quality parity
     -> same-layout P1
-    -> memory P2
-    -> low-memory/swap P3
-    -> publish versioned preset
+    -> 独立内存校准和策略 P4 确认
+    -> publish reviewed layout-only preset（不承诺 hard cap）
+    -> 独立后续：guard P2 / L3、需要加速声明时的 swap P3
 ```
 
 ## 19. 新模型接入清单
@@ -1008,7 +1013,7 @@ inspect descriptor
 |---|---|---|
 | P0 | 默认路径非回退 | 不开启新功能时是否与现有版本等价 |
 | P1 | 同布局框架开销 | generic executor 是否不劣于 direct/legacy scheduler |
-| P2 | 内存计划与实测 | slot/pool/resource estimate 是否与真实峰值一致 |
+| P2 | 同布局 guard 开销 | guard off/on 的增量成本；内存覆盖/峰值校准另列 L2/L3 证据 |
 | P3 | 低内存/swap | explicit streaming 是否优于 resident+swap/失败 |
 | P4 | 策略搜索 | 不同 P/G/K/D/Q 和 retention 的 Pareto 前沿 |
 
@@ -1040,12 +1045,13 @@ inspect descriptor
 
 ```text
 保持默认路径 P0
-    -> 完整 resource ledger / bounded guard
-    -> P2 内存估计校准
-    -> 真实 pressure + swap P3
-    -> 冻结模型 preset 和 registry
-    -> 再考虑自动推荐和 P4 搜索
+    -> layout-only preset 的实测内存校准 / 策略 P4 / public registry
+    -> App 显式内存目标选择（不承诺 hard cap）
+    -> 独立后续：完整 resource ledger / bounded guard / L2-L3 / guard P2
+    -> 对“优于 swap”的宣传另做真实 pressure + swap P3
 ```
+
+Public layout-only 不以所有 bounded/P3 工作完成为前置；23/24 定义这条独立产品化路线。
 
 ## 22. 最终判断
 
@@ -1061,4 +1067,4 @@ inspect descriptor
 但 slot 数不是完整内存上限，streaming 也不是无条件加速。当前合理定位是：
 
 > 一个显式、可验证、可复用的权重驻留与调度框架，用固定 slot backing 和受控 I/O 替代不可预测的权重常驻或系统换页；
-> 模型通过 adapter 接入，具体布局通过版本化 tuple/preset 认证，内存 hard cap 和低内存收益通过独立 P2/P3 证据放行。
+> 模型通过 adapter 接入，具体布局通过版本化 tuple/preset 认证；内存 hard cap 需完整资源闭包与 L2/L3，guard 开销由 P2 验证，优于系统 paging 的收益由 P3 独立验证。

@@ -52,6 +52,10 @@
 | [20 Implementation and Acceptance](20-layout-first-implementation-and-acceptance.md) | 当前 v2 接缝、下一批 PR、失败/所有权测试、模型接入与 P0–P4 交付单 |
 | [21 Review and Handoff](21-review-and-handoff.md) | 提交范围、审阅发现、当前验证与按优先级排列的未完成项 |
 | [22 Current Framework Guide](22-current-framework-guide.md) | 当前 slot/streaming 框架的完整使用、配置、调度、模型接入、性能与限制说明 |
+| [23 Public Memory-Tier Presets](23-public-memory-tier-presets.md) | App 高级开关、8/10/12/16/20 GiB 目标、只读 catalog、public 准入与配置/代码改造（待实施） |
+| [24 Memory-Tier Exploration](24-memory-tier-exploration-and-acceptance.md) | 四模型候选布局、整请求内存测量、离线探索/独立确认、分批实施与验收（待实施） |
+| [25 Public Preset Implementation Spec](25-public-preset-implementation-spec.md) | 将 selector、catalog、authority、snapshot、C ABI、Swift、resolver、pager 和四模型 adapter 接到当前代码的实施规格 |
+| [26 Public Preset Acceptance and Release](26-public-preset-acceptance-and-release.md) | memory calibration 工具链、swap 对照、PUB/CAL/model 测试矩阵、发布/撤回/回滚验收 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -61,6 +65,10 @@
 
 不必顺序阅读全部文档：架构评审看19，实施负责人看20第3–7节，测试负责人看20第8–10节和12。
 希望从使用方式一路理解到当前四模型表现时，直接阅读22；它是面向使用者和实现者的当前总览，不替代各主题规范。
+希望在 App 中仅选择内存目标、不暴露槽位参数时，阅读23 → 24。这是新的产品化设计，尚未运行档位探索或放开 public gate；
+目标档位不是物理显存容量或 hard cap，未测数据不得填成已支持。
+希望直接实施代码接线时，阅读25；希望安排实验、验收和发布时，阅读26。25/26中的新增文件/API/测试编号均为拟议项，
+没有实现与 evidence 之前不能称为已支持或已公开。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
 
