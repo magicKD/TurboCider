@@ -177,8 +177,11 @@ resolution/error 类型，以及共享 request-only validator 和错误优先级
 resolve/generate 均在 session/GPU 执行前返回`catalog_has_no_public_records`，active prepare 返回
 `streaming_prepare_unsupported`。
 
-actual-plan 汇总 verifier 已在 c6cba54 提交，coordinator/provider 已在 fa1ecd0 提交并完成 host/contract/App 回归；但四模型仍未生成真实 public receipt。
-当前 verifier 仍是汇总 v1：具体模型尚未 override source lease，尚无 per-pass/group fill、logical bytes、reader fence、source generation 和 canonical receipt。
+actual-plan 汇总 verifier 已在 c6cba54 提交，coordinator/provider 已在 fa1ecd0 提交并完成 host/contract/App 回归。
+随后 C0 已完成单次 preflight/catalog snapshot 收口：API 只在 preflight ticket 上调用一次 request-only validator 和一次 catalog snapshot，
+make_plan 使用专用的 prevalidated 入口，resolve 校验 request digest，revalidate 重新读取最新 catalog。
+但四模型仍未生成真实 public receipt，当前 verifier 仍是汇总 v1：具体模型尚未 override source lease，尚无 per-pass/group fill、
+logical bytes、reader fence、source generation 和 canonical receipt。
 
-下一步按[36](36-public-adapter-code-implementation-spec.md)先消除重复 preflight，建立 fd-based source lease、receipt v2 和 Z-Image → Flux 9B → H3 Turbo → LTX public adapter；再按
+下一步按[36](36-public-adapter-code-implementation-spec.md)建立 fd-based source lease、receipt v2 和 Z-Image → Flux 9B → H3 Turbo → LTX public adapter；再按
 [37](37-public-streaming-calibration-performance-acceptance.md)建设完整 process-tree calibration、swap 四路对照、App/JobStore 事务和 reviewed records。production catalog 仍为空，当前仍不可 public 执行。

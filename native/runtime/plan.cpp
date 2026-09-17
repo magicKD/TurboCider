@@ -63,12 +63,14 @@ std::vector<float> flux_sigmas(int tokens, int steps) {
     s.push_back(0);
     return s;
 }
-ExecutionPlan make_plan(const Request &requested) {
+static ExecutionPlan make_plan_impl(
+        const Request &requested,
+        bool public_streaming_prevalidated) {
     Request r = requested;
     const bool selector_active = r.streaming_selector &&
         r.streaming_selector->active();
     if (r.streaming.specified()) validate_streaming_config(r.streaming);
-    if (r.streaming_selector)
+    if (r.streaming_selector && !public_streaming_prevalidated)
         validate_streaming_selector(*r.streaming_selector);
     if (r.streaming.active()) {
         require(!r.residency_specified && !r.memory_budget_specified &&
@@ -83,7 +85,8 @@ ExecutionPlan make_plan(const Request &requested) {
                         "streaming_config_conflict: slot_count exceeds explicit max_refill_slots: " + id);
     }
     if (selector_active) {
-        streaming::validate_public_streaming_request(r);
+        if (!public_streaming_prevalidated)
+            streaming::validate_public_streaming_request(r);
     }
     std::optional<EffectiveMemoryPolicy> memory_policy;
     if (r.memory_constrained.specified())
@@ -218,5 +221,17 @@ ExecutionPlan make_plan(const Request &requested) {
         plan.memory_policy = std::move(memory_policy);
     }
     return plan;
+}
+
+ExecutionPlan make_plan(const Request &request) {
+    return make_plan_impl(request, false);
+}
+
+ExecutionPlan make_plan_after_public_streaming_preflight(
+        const Request &request) {
+    require(request.streaming_selector &&
+                request.streaming_selector->active(),
+            "streaming_preflight_mismatch");
+    return make_plan_impl(request, true);
 }
 } // namespace tc

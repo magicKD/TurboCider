@@ -843,9 +843,9 @@ public-evidence     only on reviewed test catalog or physical model runner
 
 结果：`c6cba54` 已提交 actual plan verifier success/failure、public result serialization 和完整 native host/contract/App build 回归；production catalog 仍为空、无 public record。
 
-### R1 · Pure coordinator/provider（主体已完成，仍需收口）
+### R1 · Pure coordinator/provider（C0 已完成）
 
-文件：`public_runtime.*`、`catalog_provider.*`、C ABI 下沉。`fa1ecd0` 已完成 pure coordinator、provider、fake session resolve/revalidate 和 production provider；仍需消除重复 preflight、补完整 C ABI ownership/busy/cancel/result serialization，并决定 immutable catalog snapshot/test injection 的最终形态。
+文件：`public_runtime.*`、`catalog_provider.*`、C ABI 下沉。`fa1ecd0` 已完成 pure coordinator、provider、fake session resolve/revalidate 和 production provider；C0 又完成 one-shot `PublicStreamingPreflight`、immutable catalog snapshot、request digest 和 prevalidated planner 入口。仍需补完整 C ABI ownership/busy/cancel/result serialization，并进入 source lease/receipt v2。
 
 ### R2 · Source lease + receipt v2
 
@@ -962,9 +962,8 @@ App/worker 必须释放旧 engine 并创建新实例，不能通过 `unload` 强
 
 ## 18. 当前下一步执行清单（按优先级）
 
-1. 消除 `c_api.mm` → `resolve_normalized()` 的重复 preflight，冻结单次 catalog snapshot；
-2. 补 C ABI ownership/busy/cancel 和 public result serialization 测试；
-3. 按 36 实现 ValueModelStreamingProbe/Snapshot、fd-based source lease 和 receipt v2；
+1. 补 C ABI ownership/busy/cancel 和 public result serialization 测试；
+2. 按 36 实现 ValueModelStreamingProbe/Snapshot、fd-based source lease 和 receipt v2；
 4. 先接 Z-Image public hooks，使用 test-only reviewed catalog 做完整 replay；
 5. 按相同模板接 Flux 9B、H3 Turbo、LTX worker；
 6. 按 37 完成 process-tree sampler、simulator、campaign/verifier 和 catalog builder；

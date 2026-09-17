@@ -80,10 +80,13 @@ ResolvedStreamingExecution resolve_public_streaming_locked(
     tc::streaming::PublicStreamingCoordinator coordinator(
         *engine.session, engine.model_id, engine.execution_container,
         tc::streaming::production_streaming_catalog_provider());
-    coordinator.preflight(request);
-    auto plan = tc::make_plan(request);
+    auto preflight = coordinator.preflight(request);
+    auto plan =
+        tc::make_plan_after_public_streaming_preflight(request);
     request = std::move(plan.request);
-    return coordinator.resolve_normalized(request, streaming_device_identity());
+    return coordinator.resolve_normalized(
+        std::move(request), streaming_device_identity(),
+        std::move(preflight));
 }
 
 void revalidate_public_streaming_locked(

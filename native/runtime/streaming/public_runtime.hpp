@@ -12,6 +12,30 @@ class ModelSession;
 
 namespace tc::streaming {
 
+// One-shot proof that request-only validation and the empty-catalog gate
+// completed against one immutable catalog snapshot. It is internal runtime
+// state: callers cannot construct, copy or serialize it.
+class PublicStreamingPreflight final {
+  public:
+    PublicStreamingPreflight(PublicStreamingPreflight &&) noexcept = default;
+    PublicStreamingPreflight &operator=(
+        PublicStreamingPreflight &&) noexcept = default;
+    PublicStreamingPreflight(const PublicStreamingPreflight &) = delete;
+    PublicStreamingPreflight &operator=(
+        const PublicStreamingPreflight &) = delete;
+
+  private:
+    friend class PublicStreamingCoordinator;
+    PublicStreamingPreflight(
+        std::shared_ptr<const StreamingPresetCatalog> catalog,
+        std::string request_digest)
+        : catalog_(std::move(catalog)),
+          request_digest_(std::move(request_digest)) {}
+
+    std::shared_ptr<const StreamingPresetCatalog> catalog_;
+    std::string request_digest_;
+};
+
 // Pure C++ orchestration for the public preset authority path. Locking,
 // request parsing, platform device discovery and result serialization remain
 // at the API boundary. The coordinator itself never acquires the global GPU
@@ -26,13 +50,13 @@ class PublicStreamingCoordinator final {
     // Cheap request/engine/catalog checks. API callers invoke this before
     // make_plan so an empty production catalog remains fail-closed before
     // model validation or metadata probing.
-    void preflight(const Request &) const;
+    PublicStreamingPreflight preflight(const Request &) const;
 
-    // The request must already contain the normalized result of make_plan.
-    // This performs metadata-only probe, deterministic selection, immutable
-    // snapshot compilation and internal authority creation.
+    // The request must contain make_plan's normalized result and must match
+    // the request-only identity sealed in the one-shot preflight ticket.
     std::shared_ptr<const ResolvedRequestExecution> resolve_normalized(
-        Request, const StreamingDeviceIdentity &) const;
+        Request, const StreamingDeviceIdentity &,
+        PublicStreamingPreflight) const;
 
     // Called after the global GPU lock is held and immediately before model
     // execution. It replays the exact selector, verifies the source lease and

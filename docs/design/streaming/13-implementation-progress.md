@@ -1433,3 +1433,31 @@ fa1ecd0 streaming: extract public runtime coordinator
 - [37 Calibration, Performance and Acceptance](37-public-streaming-calibration-performance-acceptance.md)：五档候选探索、完整进程树采样、simulator、resident/streaming/bounded/swap 四路实验、P0–P4、App 事务、evidence/catalog/release。
 
 当前下一步不是重新实现 executor，而是按 36 的 C0→C6 收口真实 public adapter，再按 37 为单个模型/单个 target 生成 reviewed evidence。production catalog 继续保持空，直到 source lease、receipt v2、默认零开销、完整校准和 review 全部通过。
+
+### 13.21 C0 coordinator/catalog snapshot 收口（2026-09-17）
+
+本轮完成并验证 C0 代码阶段：
+
+- `StreamingCatalogProvider` 改为返回 `shared_ptr<const StreamingPresetCatalog>`，production provider 返回进程生命周期的 immutable snapshot；
+- 新增不可复制的 `PublicStreamingPreflight`，内部绑定 request digest 和单次 catalog snapshot；
+- `c_api.mm` 的 public resolve 顺序固定为 preflight → `make_plan_after_public_streaming_preflight` → `resolve_normalized`；
+- planner 新增内部 prevalidated 入口，只跳过已经完成的 public request/selector validation，不跳过完整 model/shape/recipe validation；
+- resolve 在 probe 前验证 request digest，防止 preflight 后 request 被替换；
+- revalidate 使用新的 provider snapshot，能观察 catalog empty/revision/revoke；
+- host fake provider 覆盖 snapshot 稳定性、请求篡改、empty catalog、revalidate stale 和 production snapshot identity。
+
+验证结果：
+
+~~~text
+python3 -B tests/native/test_streaming_preset_resolver.py  PASS
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh        PASS
+make test-streaming-host                                  PASS
+make test-streaming-contract                              PASS
+make test-streaming-audit                                 PASS（1项无 audit dylib 环境 skip）
+tools/native/build_app.sh                                 PASS
+git diff --check                                           PASS
+~~~
+
+C0 提交不代表 public 已开放。production catalog 仍为空；四个模型尚未 override public probe/snapshot/generate，
+source lease 和 receipt v2 仍待实现，完整 8/10/12/16/20 GiB calibration、swap 对照、App selector 和 ANE
+兼容也未完成。下一阶段进入 36 的 C1 source lease/value probe，首个模型仍推荐 Z-Image Turbo。

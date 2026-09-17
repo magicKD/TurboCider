@@ -6,8 +6,12 @@ namespace {
 class ProductionStreamingCatalogProvider final
     : public StreamingCatalogProvider {
   public:
-    const StreamingPresetCatalog &catalog() const noexcept override {
-        return production_streaming_preset_catalog();
+    std::shared_ptr<const StreamingPresetCatalog>
+    snapshot() const override {
+        static const auto catalog =
+            std::make_shared<const StreamingPresetCatalog>(
+                production_streaming_preset_catalog());
+        return catalog;
     }
 };
 

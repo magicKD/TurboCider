@@ -24,6 +24,10 @@ struct ExecutionPlan {
     std::optional<EffectiveMemoryPolicy> memory_policy;
 };
 ExecutionPlan make_plan(const Request &);
+// Internal public-streaming path: request-only public validation has already
+// succeeded and is sealed by PublicStreamingPreflight. Default callers must
+// continue to use make_plan().
+ExecutionPlan make_plan_after_public_streaming_preflight(const Request &);
 std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
     double load_seconds = 0;

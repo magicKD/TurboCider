@@ -207,11 +207,14 @@ class Snapshot final : public ModelStreamingSnapshot {
 class FixedCatalogProvider final : public StreamingCatalogProvider {
   public:
     StreamingPresetCatalog value;
+    mutable uint32_t snapshots = 0;
 
     explicit FixedCatalogProvider(StreamingPresetCatalog catalog)
         : value(std::move(catalog)) {}
-    const StreamingPresetCatalog &catalog() const noexcept override {
-        return value;
+    std::shared_ptr<const StreamingPresetCatalog>
+    snapshot() const override {
+        ++snapshots;
+        return std::make_shared<const StreamingPresetCatalog>(value);
     }
 };
 
@@ -423,14 +426,18 @@ int main() {
     PublicSession public_session;
     PublicStreamingCoordinator coordinator(
         public_session, "z-image-turbo", "embedded_app", provider);
+    auto public_input = public_request();
+    auto preflight = coordinator.preflight(public_input);
     auto coordinated = coordinator.resolve_normalized(
-        public_request(), device());
+        std::move(public_input), device(), std::move(preflight));
     assert(coordinated && public_session.probe_calls == 1 &&
            public_session.compile_calls == 1);
+    assert(provider.snapshots == 1);
     assert(!coordinated->request.streaming_selector &&
            coordinated->request.streaming.active());
     assert(coordinated->selection.exact_selector.preset_id == "fast-fit");
     coordinator.revalidate(*coordinated, device());
+    assert(provider.snapshots == 2);
     assert(public_session.snapshot &&
            public_session.snapshot->source_revalidations == 1);
 
@@ -439,12 +446,63 @@ int main() {
             "artifact_changed");
     public_session.snapshot->source_valid = true;
 
+    FixedCatalogProvider pinned_provider(catalog);
+    PublicSession pinned_session;
+    PublicStreamingCoordinator pinned_coordinator(
+        pinned_session, "z-image-turbo", "embedded_app", pinned_provider);
+    auto pinned_request = public_request();
+    auto pinned_preflight = pinned_coordinator.preflight(pinned_request);
+    pinned_provider.value.records.clear();
+    auto pinned_execution = pinned_coordinator.resolve_normalized(
+        std::move(pinned_request), device(), std::move(pinned_preflight));
+    assert(pinned_execution &&
+           pinned_execution->selection.record.id == "fast-fit" &&
+           pinned_provider.snapshots == 1);
+    rejects([&] {
+        pinned_coordinator.revalidate(*pinned_execution, device());
+    }, "catalog_has_no_public_records");
+    assert(pinned_provider.snapshots == 2);
+
+    FixedCatalogProvider mismatch_provider(catalog);
+    PublicSession mismatch_session;
+    PublicStreamingCoordinator mismatch_coordinator(
+        mismatch_session, "z-image-turbo", "embedded_app",
+        mismatch_provider);
+    auto changed_request = public_request();
+    auto changed_preflight =
+        mismatch_coordinator.preflight(changed_request);
+    ++changed_request.steps;
+    rejects([&] {
+        mismatch_coordinator.resolve_normalized(
+            std::move(changed_request), device(),
+            std::move(changed_preflight));
+    }, "streaming_preflight_mismatch");
+    assert(mismatch_provider.snapshots == 1 &&
+           mismatch_session.probe_calls == 0 &&
+           mismatch_session.compile_calls == 0);
+
+    FixedCatalogProvider prompt_provider(catalog);
+    PublicSession prompt_session;
+    PublicStreamingCoordinator prompt_coordinator(
+        prompt_session, "z-image-turbo", "embedded_app", prompt_provider);
+    auto prompt_request = public_request();
+    auto prompt_preflight = prompt_coordinator.preflight(prompt_request);
+    prompt_request.prompt = "changed after preflight";
+    rejects([&] {
+        prompt_coordinator.resolve_normalized(
+            std::move(prompt_request), device(),
+            std::move(prompt_preflight));
+    }, "streaming_preflight_mismatch");
+    assert(prompt_session.probe_calls == 0 &&
+           prompt_session.compile_calls == 0);
+
     FixedCatalogProvider empty_provider({"empty-test", {}});
     PublicSession unopened_session;
     PublicStreamingCoordinator empty_coordinator(
         unopened_session, "z-image-turbo", "embedded_app", empty_provider);
     rejects([&] { empty_coordinator.preflight(public_request()); },
             "catalog_has_no_public_records");
+    assert(empty_provider.snapshots == 1);
     assert(unopened_session.probe_calls == 0 &&
            unopened_session.compile_calls == 0);
 
@@ -453,6 +511,12 @@ int main() {
     rejects([&] { coordinator.preflight(wrong_model_request); },
             "streaming_engine_model_mismatch");
 
+    const auto production_snapshot_a =
+        production_streaming_catalog_provider().snapshot();
+    const auto production_snapshot_b =
+        production_streaming_catalog_provider().snapshot();
+    assert(production_snapshot_a && production_snapshot_b &&
+           production_snapshot_a == production_snapshot_b);
     assert(production_streaming_preset_catalog().records.empty());
     assert(resolve_streaming_preset(
         query(10 * gib), production_streaming_preset_catalog()).rejection_code ==

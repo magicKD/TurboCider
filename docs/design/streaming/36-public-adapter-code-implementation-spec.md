@@ -54,6 +54,20 @@ App 还没有 public StreamingChoice、engine-scoped exact options、JobStore v2
 6. selector absent/disabled 的默认路径不创建任何新增对象、不查询 catalog、不做 source hash；
 7. production catalog 继续为空，直到 37 的真实校准和 review 完成。
 
+### 1.4 C0 已完成项
+
+C0 已将本规格第 3 节的 coordinator 收口落到代码：
+
+- `StreamingCatalogProvider` 改为返回 shared immutable snapshot；
+- 新增不可复制的 `PublicStreamingPreflight` ticket，绑定 request digest 和 catalog snapshot；
+- `c_api.mm` 在 make_plan 前只执行一次 preflight；planner 使用 `make_plan_after_public_streaming_preflight`，避免重复 public validator/selector 校验；
+- `resolve_normalized` 消费 ticket 并在 probe 前检查 request digest；
+- `revalidate` 每次读取最新 provider snapshot，用于检测 catalog revision/revoke；
+- host test 覆盖 provider snapshot 稳定性、请求篡改、empty catalog 和 revalidate stale；
+- default/Off 路径仍不创建 coordinator、snapshot、probe 或 receipt。
+
+C0 没有改变 public catalog 为空、四模型 adapter 未完成和 production public 不可执行的边界。
+
 ## 2. 目标依赖结构
 
 依赖只能单向：
