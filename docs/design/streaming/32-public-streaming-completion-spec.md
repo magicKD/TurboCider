@@ -1,6 +1,6 @@
 # 32 · Public Streaming 收口实现、模型接入与验收规格
 
-[目录](README.md) · [Runtime 代码设计](28-public-runtime-code-design.md) · [详细集成](30-public-streaming-detailed-integration.md) · [配置与校准](31-public-streaming-config-calibration-runbook.md) · [Runtime/App 工程规格](33-public-runtime-app-engineering-spec.md) · [模型档位与发布](34-model-tier-calibration-and-release-spec.md) · [当前进度](13-implementation-progress.md)
+[目录](README.md) · [Runtime 代码设计](28-public-runtime-code-design.md) · [详细集成](30-public-streaming-detailed-integration.md) · [配置与校准](31-public-streaming-config-calibration-runbook.md) · [Runtime/App 工程规格](33-public-runtime-app-engineering-spec.md) · [模型档位与发布](34-model-tier-calibration-and-release-spec.md) · [实施蓝图 v2](35-public-streaming-implementation-blueprint-v2.md) · [当前进度](13-implementation-progress.md)
 
 日期：2026-09-17。分支：<code>feat/stream</code>。状态：**以当前工作树为基线的收口实施规格；尚无 public record，App 尚未开放。**
 
@@ -10,6 +10,8 @@
 共享 validator、C ABI、source lease、actual-plan、Swift/App/JobStore 和 LTX worker 的逐任务合同见
 [33](33-public-runtime-app-engineering-spec.md)；四模型候选族、完整请求采样、swap 对照、evidence、reviewed record、
 发布与撤回见[34](34-model-tier-calibration-and-release-spec.md)。32 保留总体验收边界，33/34负责可执行细节。
+[35](35-public-streaming-implementation-blueprint-v2.md)进一步给出当前文件/类型级施工顺序、test-only catalog、actual receipt、
+故障注入、R0–R8 提交边界和统一验收 ID。
 
 ## 1. 最终结论
 

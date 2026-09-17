@@ -1351,3 +1351,49 @@ tools/native/build_app.sh                            PASS：Swift App 和 integr
 完整 C ABI null/busy/ownership/cancel 测试、source lease execution revalidation、RunResult actual-plan verifier、App transaction、
 四模型 public hooks、完整请求档位 calibration、swap P3、ANE public 兼容和 reviewed production records。下一步按 33 的 R0→R6、
 再按 34 的单 record 校准/发布顺序推进；在这些完成前不要把任何档位标为 available，也不要声称比系统 swap 更快。
+
+### 13.19 Public actual-plan 回执工作树与实施蓝图 v2（2026-09-17）
+
+`46a3e97` 已提交 exact public resolution、共享 validator、C ABI/Swift resolution、错误优先级测试和 32–34 号规格。
+该提交之后，当前工作树继续实现 public result/actual-plan verifier，但尚未形成新 commit：
+
+- `RunResult` 增加 `PublicStreamingSelectionMetrics`；
+- `StreamingRuntimeMetrics` 增加 component policy、multi-pool、pool/slot bundle/worker、source lease 和 drain 字段；
+- 新增 `native/runtime/streaming/public_result.hpp/.cpp`；
+- `tc_engine_generate` 在 `generate_resolved` 返回后、结果序列化前调用 common hard verifier；
+- verifier 核对 layout digest、P/G/K/D/Q、group/pass、pass transition、multi-pool、component policy、pool/slot/worker、
+  request retention、source lease 和 completed drain；不一致返回 `streaming_actual_plan_mismatch`；
+- `results.mm` 开始序列化 public preset/catalog/record/resolution/source/workload/runtime/device/layout/memory scope；
+- resolver host test 增加 success、slot mismatch、source lease false、drain false 的覆盖。
+
+本段记录的是当前工作树事实，不等于模型已经能产生这些字段。四个普通模型 session 仍使用基类默认拒绝 public hook，
+production catalog 仍为空；因此现阶段只能在 fake resolver/snapshot 测试中验证 common verifier。
+
+actual-plan 增量之后重新执行了完整回归：
+
+```text
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh         PASS
+make test-streaming-host                                   PASS
+make test-streaming-contract                               PASS
+tools/native/build_app.sh                                  PASS
+git diff --check                                            PASS
+```
+
+contract 构建仍报告已有的 macOS 26.0/26.2 dylib deployment-target warning，但 12 项 Python contract、C ABI/source identity、
+四模型 public fail-closed gate 均通过。以上仍只是当前工作树的构建、host/contract 和 fake resolver/result 证据，不是
+public model adapter、完整请求 target calibration、swap P3 或 reviewed record 资格证据。
+
+新增[35 Public Streaming 框架实施蓝图 v2](35-public-streaming-implementation-blueprint-v2.md)，进一步明确：
+
+- 从 `c_api.mm` 下沉 pure C++ `PublicStreamingCoordinator` 的建议边界；
+- production/test catalog provider 隔离，test injection 不进入 release header；
+- source lease 三次校验和结构化 actual receipt 的渐进兼容方案；
+- StageExecutor/multi-slot/multi-pool 不变量和 K2 overlap；
+- Z-Image → Flux 9B → H3 Turbo → LTX worker 的逐文件 public adapter 施工单；
+- App `StreamingChoice`、options stale guard、JobStore v2、resolve→persist→generate 原子事务；
+- process-tree sampler、simulator、campaign、independent verifier、catalog builder 的职责；
+- resident/streaming/bounded/swap 四路实验、P0–P4 和完整请求内存门；
+- PUB-HOST/ABI/RT/APP/MODEL/CAL/REL 测试矩阵、R0–R8 提交边界和 failure injection/revoke/quarantine。
+
+下一步的严格顺序是：先补全并提交 R0 actual result；再实现 coordinator/test catalog/source lease；然后按单模型接
+public hook；之后才运行完整 target calibration 和 swap P3；最后加入 reviewed record、开放 App target 并合并最新 dev 回归。

@@ -1,10 +1,12 @@
 # 34 · 四模型档位校准、性能对照与 Public Release 规格
 
-[目录](README.md) · [Runtime/App 工程规格](33-public-runtime-app-engineering-spec.md) · [配置与校准手册](31-public-streaming-config-calibration-runbook.md) · [收口规格](32-public-streaming-completion-spec.md) · [当前进度](13-implementation-progress.md)
+[目录](README.md) · [Runtime/App 工程规格](33-public-runtime-app-engineering-spec.md) · [配置与校准手册](31-public-streaming-config-calibration-runbook.md) · [收口规格](32-public-streaming-completion-spec.md) · [实施蓝图 v2](35-public-streaming-implementation-blueprint-v2.md) · [当前进度](13-implementation-progress.md)
 
 日期：2026-09-17。状态：**校准与发布规格；尚未生成 reviewed production record。**
 
 本文回答“用户只选择 8/10/12/16/20 GiB，后台如何为不同模型选择 layout/preset”这一问题，并把候选探索、完整请求内存测量、swap 对照、review、catalog 发布和撤回细化为可执行流程。
+具体到当前代码文件、模型 hook、test-only catalog、actual receipt、App 事务和提交边界的施工顺序见
+[35](35-public-streaming-implementation-blueprint-v2.md)。
 
 ## 1. 产品抽象：用户选目标，后台选计划
 

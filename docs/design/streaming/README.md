@@ -64,11 +64,12 @@
 | [32 Public Streaming Completion Spec](32-public-streaming-completion-spec.md) | 以当前 exact C ABI 工作树为基线的收口规格：共享校验、错误优先级、source revalidation、RunResult、App事务、四模型接入、swap实验与 release checklist |
 | [33 Public Runtime/App Engineering](33-public-runtime-app-engineering-spec.md) | 将共享 validator、exact resolve、source lease、actual-plan、C ABI、Swift、App/JobStore、LTX worker 和默认性能保护拆成可直接编码的工程合同 |
 | [34 Model Tier Calibration and Release](34-model-tier-calibration-and-release-spec.md) | 四模型候选族、8/10/12/16/20 GiB 完整请求校准、resident/streaming/swap 对照、evidence、catalog review、发布与撤回 |
+| [35 Public Streaming Implementation Blueprint v2](35-public-streaming-implementation-blueprint-v2.md) | 将当前代码接缝、coordinator、test-only catalog、source lease、actual receipt、四模型 adapter、App 事务、工具链、故障注入、验收矩阵和提交边界串成可直接施工的蓝图 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
 布局优先整合评审先读 **14 → 15 → 16**：先定边界和持久生命周期，再按真实模型切入，最后用可复现证据决定发布。
-本轮布局优先评审建议先读 **19 → 20**；总体合同查17，逐文件查18，正式性能签核查12。
+本轮布局优先评审建议先读 **19 → 20**；总体合同查17，逐文件查18，正式性能签核查12。准备按当前工作树直接施工时，继续读 **35**。
 13是当前实施事实来源；08第1–8节是历史设计快照，不能当作当前尚无代码的结论。
 
 不必顺序阅读全部文档：架构评审看19，实施负责人看20第3–7节，测试负责人看20第8–10节和12。
@@ -85,6 +86,7 @@ unresolved selector 的立即安全闸门、query→resolve→generate 的所有
 其中冻结了空 catalog 前的共享请求校验、错误优先级、source lease revalidation、public result、App事务和模型接入顺序。
 准备直接拆解 runtime/App 工单时继续读33；准备执行四模型候选探索、完整请求内存校准、swap对照和 record 发布时读34。
 33/34把既有结论变成任务和验收合同，不改变 production catalog 为空、public streaming 当前不可执行的事实。
+35进一步把 32–34 的合同落到当前文件、类型、状态机、测试 ID 和 R0–R8 提交边界；它仍是实施蓝图，不代表任何 public record 已发布。
 28/30不新增第二套executor，29/30不重新定义文档12的P0–P4阈值。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
@@ -164,16 +166,16 @@ MLX peak从`18,303,578,036`降至`11,693,804,356` bytes，PNG byte-exact；真�
 [13 第13.14–13.15节](13-implementation-progress.md)，exact public control-plane 工作树接线与本轮 validator/设计验证见 [13 第13.17–13.18节](13-implementation-progress.md)，协议见 [03 第11节](03-runtime-protocol.md)，执行细节见
 [10 第13–14节](10-executor-implementation.md)。
 
-Public preset 控制面基础已提交到`63b73d9`：schema-v2 selector、request/profile 合并、plan-only 报告、空 production
-catalog、metadata-only options C ABI、Swift v2/options 类型，以及 active selector 的早期 fail-closed gate。
-当前工作树已进一步加入 typed canonical encoder、完整 record identity、deterministic resolver、internal-only authority、
-immutable resolved request、默认拒绝的 session public hooks、engine model/root/container identity、
-`tc_engine_resolve_streaming_json`、active generate 的 resolve→GPU-lock→revalidate→`generate_resolved` 分支，
-以及 Swift resolution/error 类型。空 production catalog 下，四模型普通/候选 resolve 和 generate 均在 session/GPU 执行前返回
-`catalog_has_no_public_records`，active prepare 返回 `streaming_prepare_unsupported`。
+Public preset 控制面基础从`63b73d9`继续推进，并已在`46a3e97`收口 exact resolution 基础：schema-v2 selector、
+request/profile 合并、空 production catalog、typed canonical encoder、完整 record identity、deterministic resolver、
+internal-only authority、immutable resolved request、默认拒绝的 session public hooks、engine model/root/container identity、
+`tc_engine_resolve_streaming_json`、active generate 的 resolve→GPU-lock→revalidate→`generate_resolved` 分支、Swift
+resolution/error 类型，以及共享 request-only validator 和错误优先级测试。空 production catalog 下，四模型普通/候选
+resolve/generate 均在 session/GPU 执行前返回`catalog_has_no_public_records`，active prepare 返回
+`streaming_prepare_unsupported`。
 
-这些 exact runtime 增量尚未形成阶段提交；共享请求校验与错误优先级、完整 C ABI 所有权测试、source execution revalidation、
-RunResult public metrics、App事务、四模型 public override、校准工具和 reviewed records仍未完成。
-下一步以[32](32-public-streaming-completion-spec.md)为收口清单，按[33](33-public-runtime-app-engineering-spec.md)完成 runtime/App 工程合同，
-再按[34](34-model-tier-calibration-and-release-spec.md)和[31](31-public-streaming-config-calibration-runbook.md)建设工具、模型证据和 reviewed records。production catalog 仍为空，
-当前仍不可 public 执行。
+当前未提交工作树正在增加 RunResult public metrics 和 actual-plan/source-lease/drain hard verification；这部分只通过了
+native build 与 resolver 专项测试，完整 host/contract/App 回归仍需重跑。source lease 的模型执行期实现、完整 C ABI
+ownership/cancel 测试、App事务、四模型 public override、校准工具和 reviewed records仍未完成。下一步按
+[35](35-public-streaming-implementation-blueprint-v2.md)的 R0–R8 收口，再按[34](34-model-tier-calibration-and-release-spec.md)
+和[31](31-public-streaming-config-calibration-runbook.md)建设真实模型证据。production catalog 仍为空，当前仍不可 public 执行。

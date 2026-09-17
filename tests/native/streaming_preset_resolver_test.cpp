@@ -1,4 +1,5 @@
 #include "../../native/runtime/streaming/preset_resolver.hpp"
+#include "../../native/runtime/streaming/public_result.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -157,6 +158,23 @@ class Snapshot final : public ModelStreamingSnapshot {
         descriptor_value.model = "z-image-turbo";
         layout_value.digest = std::move(layout_digest);
         layout_value.materializations_complete = true;
+        StageLayout stage;
+        stage.id = "denoiser";
+        stage.prefix = 14;
+        stage.group_size = 1;
+        stage.slot_count = 2;
+        stage.distance = 0;
+        stage.workers = 1;
+        stage.pass_count = 9;
+        stage.pass_transition = PassTransition::reload;
+        stage.multi_pool_policy = MultiPoolPolicy::serial;
+        stage.groups.resize(16);
+        PoolLayout pool;
+        pool.id = 0;
+        pool.layout_class = "z-image-bf16-main-block-v1";
+        pool.slots.resize(2);
+        stage.pools.push_back(std::move(pool));
+        layout_value.stages.push_back(std::move(stage));
     }
     std::string_view model_id() const noexcept override {
         return descriptor_value.model;
@@ -279,11 +297,73 @@ int main() {
         PublicPresetResolver::authorize(selected, probe, mismatched, device());
     }, "streaming_actual_plan_mismatch");
 
+    auto result_probe = std::make_shared<Probe>();
+    auto result_selected = PublicPresetResolver::select(
+        selector(10 * gib), *result_probe, device(), catalog);
+    auto result_snapshot = std::make_shared<Snapshot>(
+        result_selected.record.plan.layout_digest);
+    auto result_authorized = PublicPresetResolver::authorize(
+        result_selected, *result_probe, *result_snapshot, device());
+    Request result_request;
+    result_request.model = "z-image-turbo";
+    result_request.streaming = result_selected.record.plan.canonical_config;
+    ResolvedRequestExecution execution{
+        std::move(result_request), std::move(result_authorized),
+        result_probe, result_snapshot, digest('2')};
+    RunResult run;
+    StreamingRuntimeMetrics actual;
+    actual.implementation = "generic_stage_executor_v1";
+    actual.layout_digest = result_selected.record.plan.layout_digest;
+    actual.stage = "denoiser";
+    actual.resident_prefix_blocks = 14;
+    actual.block_group_size = 1;
+    actual.slot_count = 2;
+    actual.prefetch_distance = 0;
+    actual.io_workers = 1;
+    actual.group_count = 16;
+    actual.pass_count = 9;
+    actual.pass_transition = "reload";
+    actual.retention = "request";
+    actual.component_policy_revision = "zimage-components-v1";
+    actual.multi_pool_policy = "serial";
+    actual.pool_count = 1;
+    actual.slot_bundle_count = 2;
+    actual.refill_worker_count = 1;
+    actual.source_lease_verified = true;
+    actual.drained = true;
+    run.streaming_runtime = actual;
+    verify_and_attach_public_streaming_result(execution, run);
+    assert(run.public_streaming &&
+           run.public_streaming->actual_plan_verified);
+    assert(run.public_streaming->preset_id == "fast-fit");
+    assert(run.public_streaming->authorized_layout_digest ==
+           run.public_streaming->actual_layout_digest);
+
+    auto wrong_actual = run;
+    wrong_actual.public_streaming.reset();
+    wrong_actual.streaming_runtime->slot_count = 3;
+    rejects([&] {
+        verify_and_attach_public_streaming_result(execution, wrong_actual);
+    }, "streaming_actual_plan_mismatch");
+    wrong_actual = run;
+    wrong_actual.public_streaming.reset();
+    wrong_actual.streaming_runtime->source_lease_verified = false;
+    rejects([&] {
+        verify_and_attach_public_streaming_result(execution, wrong_actual);
+    }, "streaming_actual_plan_mismatch");
+    wrong_actual = run;
+    wrong_actual.public_streaming.reset();
+    wrong_actual.streaming_runtime->drained = false;
+    rejects([&] {
+        verify_and_attach_public_streaming_result(execution, wrong_actual);
+    }, "streaming_actual_plan_mismatch");
+
     assert(production_streaming_preset_catalog().records.empty());
     assert(resolve_streaming_preset(
         query(10 * gib), production_streaming_preset_catalog()).rejection_code ==
         "catalog_has_no_public_records");
-    std::cout << "PASS public preset resolver: canonical record/source/runtime "
-                 "identity, deterministic rank, internal authority, replay, "
+    std::cout << "PASS public preset resolver/result: canonical identity, "
+                 "deterministic rank, internal authority, replay, "
+                 "actual-plan/source-lease/drain verification and "
                  "device/calibration/revocation fail-closed\n";
 }

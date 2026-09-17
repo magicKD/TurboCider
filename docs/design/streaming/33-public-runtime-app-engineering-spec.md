@@ -1,10 +1,12 @@
 # 33 · Public Streaming Runtime 与 App 工程实施规格
 
-[目录](README.md) · [收口规格](32-public-streaming-completion-spec.md) · [代码设计](28-public-runtime-code-design.md) · [模型与档位验收](34-model-tier-calibration-and-release-spec.md) · [当前进度](13-implementation-progress.md)
+[目录](README.md) · [收口规格](32-public-streaming-completion-spec.md) · [代码设计](28-public-runtime-code-design.md) · [模型与档位验收](34-model-tier-calibration-and-release-spec.md) · [实施蓝图 v2](35-public-streaming-implementation-blueprint-v2.md) · [当前进度](13-implementation-progress.md)
 
 日期：2026-09-17。状态：**工程施工规格；production catalog 为空，App 尚未开放 public streaming。**
 
 本文把 28–32 中的架构结论进一步收敛为可直接分配、编码和验收的 runtime/App 工作包。本文不会把 private candidate、设计中的候选档位或一次真实请求写成 public 支持。
+当前工作树对应的 coordinator/source lease/actual receipt/test catalog 进一步拆分和 R0–R8 顺序见
+[35](35-public-streaming-implementation-blueprint-v2.md)。
 
 ## 1. 目标与完成边界
 

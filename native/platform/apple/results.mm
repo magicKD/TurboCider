@@ -439,10 +439,44 @@ static NSDictionary *actual_streaming_layout(
         @"kernel_revision" : @(m.kernel_revision.c_str()),
         @"conditioning_recipe" : @(m.conditioning_recipe.c_str()),
         @"upsample_boundary" : @(m.upsample_boundary.c_str()),
+        @"component_policy_revision" :
+            @(m.component_policy_revision.c_str()),
+        @"multi_pool_policy" : @(m.multi_pool_policy.c_str()),
+        @"pool_count" : @(m.pool_count),
+        @"slot_bundle_count" : @(m.slot_bundle_count),
+        @"refill_worker_count" : @(m.refill_worker_count),
+        @"source_lease_verified" : @(m.source_lease_verified),
+        @"drained" : @(m.drained),
     } mutableCopy];
     if (!m.layout_digest.empty())
         value[@"digest"] = @(m.layout_digest.c_str());
     return value;
+}
+static NSDictionary *public_streaming_result(
+        const PublicStreamingSelectionMetrics &m) {
+    return @{
+        @"schema_version" : @1,
+        @"target_request_memory_bytes" :
+            @(m.target_request_memory_bytes),
+        @"calibrated_request_bytes" : @(m.calibrated_request_bytes),
+        @"preset_id" : @(m.preset_id.c_str()),
+        @"preset_revision" : @(m.preset_revision),
+        @"catalog_revision" : @(m.catalog_revision.c_str()),
+        @"record_digest" : @(m.record_digest.c_str()),
+        @"resolution_digest" : @(m.resolution_digest.c_str()),
+        @"source_digest" : @(m.source_digest.c_str()),
+        @"workload_digest" : @(m.workload_digest.c_str()),
+        @"runtime_digest" : @(m.runtime_digest.c_str()),
+        @"device_digest" : @(m.device_digest.c_str()),
+        @"authorized_layout_digest" :
+            @(m.authorized_layout_digest.c_str()),
+        @"actual_layout_digest" : @(m.actual_layout_digest.c_str()),
+        @"component_policy_revision" :
+            @(m.component_policy_revision.c_str()),
+        @"execution_container" : @(m.execution_container.c_str()),
+        @"memory_scope" : @(m.memory_scope.c_str()),
+        @"actual_plan_verified" : @(m.actual_plan_verified),
+    };
 }
 static NSDictionary *runtime_plan(const RunResult &result) {
     NSMutableDictionary *plan = [to_dictionary(result.plan) mutableCopy];
@@ -491,14 +525,18 @@ static NSDictionary *runtime_plan(const RunResult &result) {
             [plan[@"streaming"] isKindOfClass:NSDictionary.class]
                 ? [plan[@"streaming"] mutableCopy]
                 : [NSMutableDictionary dictionary];
-        streaming[@"eligibility"] = @"experimental_candidate";
+        const bool public_execution = result.public_streaming.has_value();
+        streaming[@"eligibility"] = public_execution
+            ? @"public_reviewed_preset" : @"experimental_candidate";
         streaming[@"execution_supported"] = @YES;
         streaming[@"rejection_code"] = NSNull.null;
         streaming[@"resolution_state"] = @"executed_exact_layout";
         streaming[@"resolved_layout"] = actual;
         streaming[@"actual_layout"] = actual;
         streaming[@"enforcement"] = @"exact_layout";
-        streaming[@"authority"] = @"private_candidate_constructor";
+        streaming[@"authority"] = public_execution
+            ? @"public_preset_authority"
+            : @"private_candidate_constructor";
         plan[@"streaming"] = streaming;
         plan[@"executable"] = @YES;
     }
@@ -793,6 +831,9 @@ NSDictionary *to_dictionary(const RunResult &result) {
             block[@"actual_layout"] = actual_streaming_layout(runtime);
             copy[@"block_streaming"] = block;
         }
+        if (result.public_streaming)
+            copy[@"public_streaming"] = public_streaming_result(
+                *result.public_streaming);
         return copy;
     }
     const auto &r = result.request;
@@ -839,6 +880,9 @@ NSDictionary *to_dictionary(const RunResult &result) {
                 to_dictionary(*result.memory_admission);
         if (!result.memory_trace.empty())
             prepared[@"memory_trace"] = to_array(result.memory_trace);
+        if (result.public_streaming)
+            prepared[@"public_streaming"] = public_streaming_result(
+                *result.public_streaming);
         return prepared;
     }
     NSMutableDictionary *memory = [@{
@@ -905,6 +949,9 @@ NSDictionary *to_dictionary(const RunResult &result) {
         block[@"actual_layout"] = actual_streaming_layout(runtime);
         value[@"block_streaming"] = block;
     }
+    if (result.public_streaming)
+        value[@"public_streaming"] = public_streaming_result(
+            *result.public_streaming);
     if (!result.memory_trace.empty())
         value[@"memory_trace"] = to_array(result.memory_trace);
     return value;

@@ -88,6 +88,22 @@ struct StreamingRuntimeMetrics {
     uint32_t reader_revision = 0;
     std::string weight_format, kernel_revision, conditioning_recipe;
     std::string upsample_boundary;
+    std::string component_policy_revision, multi_pool_policy;
+    uint32_t pool_count = 0, slot_bundle_count = 0;
+    uint32_t refill_worker_count = 0;
+    bool source_lease_verified = false, drained = false;
+};
+struct PublicStreamingSelectionMetrics {
+    uint64_t target_request_memory_bytes = 0;
+    uint64_t calibrated_request_bytes = 0;
+    uint32_t preset_revision = 0;
+    std::string preset_id, catalog_revision, record_digest;
+    std::string resolution_digest, source_digest, workload_digest;
+    std::string runtime_digest, device_digest;
+    std::string authorized_layout_digest, actual_layout_digest;
+    std::string component_policy_revision, execution_container;
+    std::string memory_scope;
+    bool actual_plan_verified = false;
 };
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
@@ -103,6 +119,7 @@ struct RunResult {
     std::optional<HybridMetrics> encoder_hybrid;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;
+    std::optional<PublicStreamingSelectionMetrics> public_streaming;
     std::optional<MemoryAdmissionMetrics> memory_admission;
     std::vector<MemoryTraceEvent> memory_trace;
     std::string native_json;

@@ -11,6 +11,7 @@
 #include "../runtime/streaming/audit.hpp"
 #include "../runtime/streaming/preset_catalog.hpp"
 #include "../runtime/streaming/preset_resolver.hpp"
+#include "../runtime/streaming/public_result.hpp"
 #include "../runtime/streaming/public_request_validation.hpp"
 #include "../runtime/streaming/resolved_request.hpp"
 #include "../models/ltx_runtime/ltx_gemma_tokenizer.h"
@@ -870,6 +871,9 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
                     ? e->session->generate_resolved(
                         public_execution, event, e->cancelled)
                     : e->session->generate(request, event, e->cancelled);
+                if (public_execution)
+                    tc::streaming::verify_and_attach_public_streaming_result(
+                        *public_execution, result);
                 if (memory_execution) {
                     if (memory_execution->uses_explicit_schedule()) {
                         drain_memory_execution(
