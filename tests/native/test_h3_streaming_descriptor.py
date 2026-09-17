@@ -120,11 +120,16 @@ def compile_and_run() -> None:
             ROOT / "native/models/h3_runtime/h3_streaming_descriptor.cpp",
             ROOT / "native/runtime/streaming/config.cpp",
             ROOT / "native/runtime/streaming/layout.cpp",
+            ROOT / "native/runtime/streaming/slot_pool.cpp",
+            ROOT / "native/runtime/streaming/io_executor.cpp",
+            ROOT / "native/runtime/streaming/context.cpp",
+            ROOT / "native/runtime/streaming/c_bridge.cpp",
+            ROOT / "native/runtime/streaming/audit.cpp",
             ROOT / "native/runtime/memory_manifest.cpp",
             ROOT / "native/runtime/memory_policy.cpp",
             ROOT / "native/core/common.cpp",
         )
-        subprocess.run([cxx, "-std=c++20", *common,
+        subprocess.run([cxx, "-std=c++20", *common, "-pthread",
                         *map(str, cpp_sources), *objects,
                         "-framework", "Foundation", "-framework", "Accelerate",
                         "-o", str(binary)], check=True)

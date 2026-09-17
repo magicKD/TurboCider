@@ -2,6 +2,7 @@
 #include "io_executor.hpp"
 #include "slot_pool.hpp"
 #include <memory>
+#include <optional>
 
 namespace tc::streaming {
 
@@ -57,7 +58,7 @@ private:
     struct State;
     std::unique_ptr<State> state_;
     void activate_pool(uint32_t pool_index);
-    void drain_active_pool();
+    void drain_active_pool(const std::optional<tc_stream_slot_ticket_v1> &carry);
     void destroy_active_pool() noexcept;
     bool consume();
     void check_cancel(const std::atomic<bool> &) const;

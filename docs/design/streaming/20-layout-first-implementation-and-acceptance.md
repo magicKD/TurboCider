@@ -408,3 +408,33 @@ tests/native/test_h3_streaming_descriptor.py
 shard 和大于 38 GiB 的逻辑文件，而不会读取或分配权重 payload。普通/ASan/UBSan/TSan 与
 release native build 均通过。该测试不能替代真实 Metal H3 output parity、跨 forward prefetch
 语义或 P0/P1；这些仍是 F4 后续门。
+
+## 15. ABI v3 / carry 实施与验收增量（2026-09-16）
+
+本轮把 H3 plan-only 与 generic executor 之间的一个关键空洞补成可测试协议：pass transition 不再藏在模型
+内部。新增 v3 plan 后，layout-first 数据面可以在不改 v1/v2 adapter callback 的前提下表达“下一 pass 首组
+提前填充并跨 boundary 保留”。
+
+代码修改矩阵：
+
+| 层 | 文件 | 修改 |
+|---|---|---|
+| plan | `streaming/layout.hpp/.cpp` | `PassTransition`、digest、K2/G1 compile guard、rotation capacity guard |
+| safety | `streaming/slot_pool.*` | Ready ticket 查询、除指定 Ready 外全池 quiescent |
+| executor | `streaming/context.*` | carry dispatch/incoming validation、pass rotation、boundary drain、step identity |
+| C ABI | `stream_slot_c.h`、`streaming/c_bridge.cpp` | v3 plan/create；v1 callback 复用；async job 自持 blocks |
+| H3 | `h3_streaming_descriptor.*` | request generation、v3 group/capacity projection、carry transition |
+| tests | executor/C bridge/H3 descriptor | 顺序、奇偶 rotation、exactly-once、cancel/fill failure、ABI rejection |
+
+新增验收要求：
+
+- `reload` 的 3535 layout case、v1/v2 ABI 和默认 resident audit 必须保持不变；
+- carry boundary 只能留下一个已验证 Ready ticket，其他 slot 必须 Vacant；
+- 下一 `run_pass` 的 pass/step/group/slot 必须与预取 ticket 完全一致；
+- K>2、多 pool、多 block group 在当前 revision fail closed；
+- fake backend 只完成 F2/F4-plan 子门，不授予真实 GPU、H3 candidate 或 production 资格；
+- clean commit 后重新构建 release，以独立 dev baseline 做质量、wall、denoise、audit 和 source identity 对照。
+
+性能设计上，默认路径不创建 v3 plan/executor/worker；新增分支只在显式 H3 plan projection/candidate 路径发生。
+carry 稳态不复制 group vectors，不创建线程，不扩 pool；其潜在收益来自把下一 pass 的首个 I/O 与当前 pass 尾部
+GPU 工作重叠，而不是减少 source bytes。是否实际提速必须由真实 H3 P1 campaign 证明。

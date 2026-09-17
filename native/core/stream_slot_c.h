@@ -9,6 +9,7 @@ extern "C" {
 
 #define TC_STREAM_SLOT_ABI_V1 1u
 #define TC_STREAM_SLOT_ABI_V2 2u
+#define TC_STREAM_SLOT_ABI_V3 3u
 #define TC_STREAM_MAX_READER_QUEUES 8u
 
 typedef struct {
@@ -81,6 +82,24 @@ typedef struct {
     const tc_stream_group_v2 *groups;
 } tc_stream_stage_plan_v2;
 
+typedef enum {
+    TC_STREAM_PASS_RELOAD_V3 = 0,
+    TC_STREAM_PASS_CARRY_FIRST_GROUP_V3 = 1,
+} tc_stream_pass_transition_v3;
+
+/* V3 retains the V1 single-pool group/callback ABI and adds an explicit pass
+ * transition.  CARRY_FIRST_GROUP means the next pass's first fill is issued
+ * before the current pass's final encode and remains Ready at the boundary. */
+typedef struct {
+    uint32_t struct_size, version;
+    uint32_t stage, pool, slot_count, prefetch_distance, io_workers, pass_count;
+    uint32_t pass_transition;
+    uint64_t request_generation;
+    const uint64_t *slot_capacity_bytes;
+    uint32_t group_count;
+    const tc_stream_group_v1 *groups;
+} tc_stream_stage_plan_v3;
+
 typedef struct {
     void *user;
     /* Copy this sink if used asynchronously; never retain the stack address. */
@@ -138,6 +157,9 @@ typedef struct tc_stream_executor tc_stream_executor;
 int tc_stream_executor_create_v1(const tc_stream_stage_plan_v1 *, const tc_stream_adapter_v1 *,
                                  tc_stream_executor **out, char *, size_t);
 int tc_stream_executor_create_v2(const tc_stream_stage_plan_v2 *, const tc_stream_adapter_v2 *,
+                                 tc_stream_executor **out, char *, size_t);
+/* The callback protocol is unchanged from V1; only the immutable plan is V3. */
+int tc_stream_executor_create_v3(const tc_stream_stage_plan_v3 *, const tc_stream_adapter_v1 *,
                                  tc_stream_executor **out, char *, size_t);
 int tc_stream_executor_run_pass(tc_stream_executor *, uint32_t pass, uint32_t step, char *, size_t);
 int tc_stream_executor_finish(tc_stream_executor *, char *, size_t);

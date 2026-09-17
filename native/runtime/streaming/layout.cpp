@@ -116,7 +116,7 @@ Layout compile_layout(const StreamingConfig &c, const Descriptor &d) {
         field(canonical, sd.id); field(canonical, sd.adapter_revision);
         canonical << stage.resident << ',' << stage.prefix << ',' << stage.group_size << ','
                   << stage.slot_count << ',' << stage.distance << ',' << stage.workers << ','
-                  << stage.pass_count << '|';
+                  << stage.pass_count << ',' << static_cast<int>(sd.pass_transition) << '|';
         canonical << sd.passes.size() << '|';
         for (const auto &p : sd.passes) {
             identity(p.phase); field(canonical, p.phase); canonical << p.step << '|';
@@ -270,6 +270,18 @@ Layout compile_layout(const StreamingConfig &c, const Descriptor &d) {
         check(!stage.source_read_bytes_per_pass ||
               *stage.source_read_bytes_per_pass <= UINT64_MAX / sd.pass_count,
               "source pass byte count overflow");
+        stage.pass_transition = sd.pass_transition;
+        if (stage.pass_transition == PassTransition::carry_first_group) {
+            check(!stage.resident && stage.pools.size() == 1 &&
+                  stage.slot_count == 2 && stage.group_size == 1 &&
+                  stage.pass_count > 1 && stage.groups.size() >= 2 &&
+                  stage.groups.front().slot == 0,
+                  sd.id + ": carry_first_group requires a K2/G1 suffix");
+            for (const auto &group : stage.groups)
+                for (const auto &slot : stage.pools.front().slots)
+                    check(group.bytes <= slot.capacity_bytes,
+                          sd.id + ": carry rotation exceeds slot capacity");
+        }
         out.stages.push_back(std::move(stage));
     }
     for (const auto &[id, ignored] : c.stages) check(stages.contains(id), "unknown stage " + id);

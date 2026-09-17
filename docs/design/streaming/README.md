@@ -99,3 +99,11 @@
 配置示例现已接入schema2 request的plan-only解析；模型adapter与执行资格尚未完成，generate/prepare仍明确拒绝新manual路线。
 示例文件存在不意味着模型已经获得执行授权。
 另有 [compiler golden fixture](examples/compiler-golden.json) 与 [性能 gate 示例](examples/performance-policy.json)，不是生成请求或可执行 campaign。
+
+## 当前代码检查点（2026-09-16）
+
+统一 executor 已支持 ordered multi-class barrier，以及单 pool K=2/G=1 的显式 cross-pass
+`carry_first_group`（C ABI v3）。H3 已完成 metadata → layout → v3 plan → fake executor 证据，但尚未接真实
+Metal block adapter；LTX exact 仍是内部 candidate，production registry 为空。最新实现事实见
+[13 第13.9节](13-implementation-progress.md)，协议见 [03 第11节](03-runtime-protocol.md)，执行细节见
+[10 第13节](10-executor-implementation.md)。

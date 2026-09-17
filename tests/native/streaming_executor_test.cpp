@@ -1,5 +1,6 @@
 #include "streaming/context.hpp"
 #include "streaming/audit.hpp"
+#include <algorithm>
 #include <cassert>
 #include <condition_variable>
 #include <deque>
@@ -40,6 +41,29 @@ static StageLayout multi_layout(uint32_t k, uint32_t d, uint32_t q) {
     return s;
 }
 
+static StageLayout carry_layout(uint32_t d = 1, uint32_t q = 2) {
+    StageLayout s;
+    s.id = "carry";
+    s.prefix = 1;
+    s.group_size = 1;
+    s.slot_count = 2;
+    s.distance = d;
+    s.workers = q;
+    s.pass_count = 3;
+    s.pass_transition = PassTransition::carry_first_group;
+    PoolLayout p;
+    p.id = 0;
+    p.layout_class = "u64";
+    p.slots.push_back({{sizeof(uint64_t)}, sizeof(uint64_t)});
+    p.slots.push_back({{sizeof(uint64_t)}, sizeof(uint64_t)});
+    s.pools.push_back(std::move(p));
+    // An odd suffix forces the physical slot mapping to rotate between passes:
+    // pass 0 group 0 uses slot 0, while pass 1 group 0 is carried in slot 1.
+    for (uint32_t i = 0; i < 13; ++i)
+        s.groups.push_back({i, 0, i % 2, {i + 1}, {8}, 8});
+    return s;
+}
+
 // Independent readers sample real backing contents before AND after a delay.
 // Two queues must both finish before the CPU is allowed to rewrite a slot.
 class FakeModel final : public ModelSlotAdapter {
@@ -76,6 +100,8 @@ public:
     std::vector<uint64_t> values;
     unsigned creates=0, destroys=0, prefixes=0;
     std::atomic<int> fills{0};
+    std::mutex event_mutex;
+    std::vector<std::string> events;
     bool fail_fill=false, fail_create=false, fake_bad_drain=false, short_fill=false;
     unsigned fail_create_at=0;
     std::atomic<bool> *cancel_on_prepare=nullptr;
@@ -94,12 +120,22 @@ public:
             throw std::runtime_error("injected partial create");
     }
     FillJob make_fill_job(const Group &, const tc_stream_slot_ticket_v1 &t) override {
+        {
+            std::lock_guard lock(event_mutex);
+            events.push_back("dispatch:" + std::to_string(t.item.pass) +
+                             ":" + std::to_string(t.item.group));
+        }
         return {t,this,[](void *opaque,const tc_stream_slot_ticket_v1 *ticket,
                           const std::atomic<bool> *cancel,uint64_t *bytes) {
             auto &m=*static_cast<FakeModel *>(opaque);
             if(m.fail_fill || cancel->load())return -1;
             std::this_thread::sleep_for(std::chrono::microseconds(ticket->item.group%3*35));
             m.values[ticket->slot]=tag(*ticket); *bytes=m.short_fill?4:8; ++m.fills;
+            {
+                std::lock_guard lock(m.event_mutex);
+                m.events.push_back("fill:" + std::to_string(ticket->item.pass) +
+                                   ":" + std::to_string(ticket->item.group));
+            }
             return 0;
         }};
     }
@@ -111,6 +147,11 @@ public:
     ReaderSet encode_group(const Group &,const tc_stream_slot_ticket_v1 &t,
                             CompletionMailbox &mailbox) override {
         ReaderSet set; set.count=2;
+        {
+            std::lock_guard lock(event_mutex);
+            events.push_back("encode:" + std::to_string(t.item.pass) +
+                             ":" + std::to_string(t.item.group));
+        }
         std::lock_guard lock(mutex);
         for(unsigned q=0;q<2;++q){
             set.fences[q]={q+1,++sequence};
@@ -216,6 +257,43 @@ int main() {
             assert(exec.retry_drain());
         }
         assert(model->destroys==1);
+    }
+    {
+        auto model=std::make_shared<FakeModel>(); std::atomic<bool> cancel{false};
+        StageExecutor exec(3,7,model);
+        const auto result=exec.run(carry_layout(),cancel);
+        assert(result.pool_creates==1 && result.slot_bundles==2);
+        assert(result.fills==39 && result.groups_submitted==39 &&
+               result.bytes_loaded==39*8);
+        assert(model->creates==1 && model->destroys==1 && model->prefixes==3);
+        auto carry_fill = std::find(model->events.begin(), model->events.end(),
+                                    "dispatch:1:0");
+        auto previous_last = std::find(model->events.begin(), model->events.end(),
+                                       "encode:0:12");
+        assert(carry_fill != model->events.end() &&
+               previous_last != model->events.end() &&
+               carry_fill < previous_last);
+        assert(!exec.quarantined());
+    }
+    {
+        auto model=std::make_shared<FakeModel>(); std::atomic<bool> cancel{false};
+        StageExecutor exec(3,7,model);
+        exec.begin(carry_layout());
+        exec.run_pass(0,10,cancel);
+        // Carry tickets are created before the caller supplies the next pass.
+        // Requiring consecutive steps keeps the prefetched ticket identity
+        // equal to the actual pass identity instead of silently accepting a
+        // different scheduler step.
+        rejects([&]{exec.run_pass(1,12,cancel);});
+        assert(model->destroys==1 && !exec.quarantined());
+    }
+    {
+        auto model=std::make_shared<FakeModel>();
+        StageExecutor exec(3,7,model);
+        auto invalid=carry_layout();
+        invalid.groups[0].blocks.push_back(99);
+        rejects([&]{exec.begin(invalid);});
+        assert(model->creates==0 && model->destroys==0);
     }
 #ifdef TURBOCIDER_ENABLE_AUDIT_COUNTERS
     // The audit build must observe the framework only when this explicit

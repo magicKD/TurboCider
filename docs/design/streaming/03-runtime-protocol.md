@@ -168,3 +168,38 @@ VAE tiling 管 activation/output，decoder weights 通常在 VAE 阶段复用，
 Tight 可暂停未启动的未来 I/O，只要不改变已编译 key 顺序、live intervals 和 slot mapping；否则候选不支持这种 suppression。
 Critical 或 guard 越界立即停止新派发，在安全边界清理并失败。不能短时回落后把失败改为成功。
 要减少 K/G/P 或选择 resident，必须新请求重新 resolve/admit。
+
+## 11. 显式跨 pass carry 协议（ABI v3，2026-09-16）
+
+当前实现新增 `PassTransition`，只有两种值：
+
+- `reload`：原有语义。每个 pass 在自己的窗口内填充、消费并完全回到 Vacant；v1/v2 C ABI 保持该行为。
+- `carry_first_group`：在 pass N 的最后一个 group 编码前，提前填充 pass N+1 的第一个 group，并允许该
+  Ready content 跨 pass boundary 保留；通过 `tc_stream_stage_plan_v3` 显式选择。
+
+carry 不是 cache hit。每个 pass 的每个 suffix group 仍必须恰好发生一次 source fill、一次 prepare 和一次
+encode；优化只把下一 pass 的首个 fill 移到上一 pass 尾部，与最后一个 group 的 GPU 工作重叠。当前认证范围
+严格限制为单 pool、K=2、G=1、至少两个 pass；K>2、多 pool 或多 block group 必须由后续 revision 和独立
+验收扩展，不能复用 v3 名义静默放行。
+
+边界时序为：
+
+```text
+pass N: ... -> last-1 readers complete -> dispatch fill(N+1, group0)
+        -> fill(N+1, group0) Ready -> encode last(N) -> drain readers
+boundary: exactly one Ready carry slot; every other slot Vacant
+pass N+1: validate ticket(pass, step, group, slot, generation)
+          -> consume carried group0 -> continue normal cyclic window
+```
+
+因为 pass N+1 的 ticket 在调用方提交下一次 `run_pass()` 之前已生成，v3 要求相邻 scheduler step 连续：
+carry ticket 的 `step` 必须等于下一次 `run_pass` 的 step。step overflow、跳号、错误 pass/group/slot、stale
+generation 或非 Ready 状态均为 hard failure，进入原有 stop-dispatch、join、drain/quarantine 路径。
+
+奇数 suffix 会让下一 pass 的逻辑 group0 映射到另一物理 slot；偶数 suffix 则回到同一 group0 slot。
+executor 按 `(pass * group_count + group_index) mod K` 旋转映射，并在 compile/begin 时证明每个 group 可放入
+任意可能承载它的 slot。不能只校验 pass 0 的静态容量。
+
+`drain()` 在 carry boundary 的成功条件也随之细化：允许一个指定 ticket 保持 Ready，但其他 slot 必须 Vacant；
+最后一个 pass 或 `reload` 仍要求全池 quiescent。取消、fill failure、reader failure 和 destroy retry 不获得
+任何提前释放特权。

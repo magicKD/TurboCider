@@ -23,6 +23,8 @@ public:
                       std::span<const tc_stream_reader_fence_v1>);
     void complete_reader(const tc_stream_slot_ticket_v1 &, tc_stream_reader_fence_v1);
     ContentState state(uint32_t slot) const;
+    bool ready(const tc_stream_slot_ticket_v1 &) const;
+    bool quiescent_except_ready(const tc_stream_slot_ticket_v1 &) const;
     uint64_t capacity_bytes() const noexcept { return capacity_bytes_; }
     bool quiescent() const;
     bool poisoned() const noexcept { return poisoned_; }

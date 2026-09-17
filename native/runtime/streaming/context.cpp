@@ -10,10 +10,12 @@ struct StageExecutor::State {
     std::unique_ptr<SlotSafetyTracker> safety;
     std::unique_ptr<IoExecutor> io;
     std::vector<tc_stream_slot_ticket_v1> tickets;
+    Group carry_group;
     ExecutionCounters counters;
     uint32_t passes = 0;
     uint32_t active_pool_index = std::numeric_limits<uint32_t>::max();
     bool pool_drained = false;
+    std::optional<tc_stream_slot_ticket_v1> carry_ticket;
     bool failed = false, finished = false;
     std::thread::id owner = std::this_thread::get_id();
 };
@@ -34,6 +36,7 @@ void StageExecutor::destroy_active_pool() noexcept {
         state_->tickets.clear();
         state_->active_pool_index = std::numeric_limits<uint32_t>::max();
         state_->pool_drained = false;
+        state_->carry_ticket.reset();
     }
 }
 bool StageExecutor::retry_drain() noexcept {
@@ -88,7 +91,28 @@ void StageExecutor::begin(const StageLayout &layout) {
     for (auto count : group_counts)
         if (count<layout.slot_count)
             throw std::invalid_argument("streaming pool has fewer groups than slots");
+    if (layout.pass_transition != PassTransition::reload &&
+        layout.pass_transition != PassTransition::carry_first_group)
+        throw std::invalid_argument("streaming invalid pass transition");
+    if (layout.pass_transition == PassTransition::carry_first_group &&
+        (layout.pools.size() != 1 || layout.slot_count != 2 ||
+         layout.pass_count < 2 ||
+         layout.groups.front().slot != 0))
+        throw std::invalid_argument(
+            "streaming carry requires a stable cyclic single-pool K2 mapping");
+    if (layout.pass_transition == PassTransition::carry_first_group)
+        for (const auto &group : layout.groups) {
+            if (group.blocks.size() != 1)
+                throw std::invalid_argument(
+                    "streaming carry requires one block per group");
+            for (const auto &slot : layout.pools.front().slots)
+                if (group.bytes > slot.capacity_bytes)
+                    throw std::invalid_argument(
+                        "streaming carry rotation exceeds slot capacity");
+        }
     state_=std::make_unique<State>(); state_->layout=layout;
+    if (layout.pass_transition == PassTransition::carry_first_group)
+        state_->carry_group = state_->layout.groups.front();
     mailbox_=std::make_unique<CompletionMailbox>(layout.slot_count*(1+TC_STREAM_MAX_READER_QUEUES));
     try {
         activate_pool(0);
@@ -147,13 +171,22 @@ bool StageExecutor::consume() {
     }
     return progress;
 }
-void StageExecutor::drain_active_pool() {
+void StageExecutor::drain_active_pool(
+        const std::optional<tc_stream_slot_ticket_v1> &carry) {
     if (!pool_live_ || !state_ || !state_->safety)
         throw std::logic_error("streaming missing active pool");
     if (!adapter_->drain()) throw std::runtime_error("streaming_pass_drain_failed");
     consume();
-    if (!state_->safety->quiescent())
-        throw std::runtime_error("streaming drain left active slot content");
+    if (carry) {
+        if (!state_->safety->quiescent_except_ready(*carry))
+            throw std::runtime_error(
+                "streaming carry drain left active slot content");
+        state_->carry_ticket = carry;
+    } else {
+        if (!state_->safety->quiescent())
+            throw std::runtime_error("streaming drain left active slot content");
+        state_->carry_ticket.reset();
+    }
     state_->pool_drained=true;
 }
 void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &cancel,
@@ -164,7 +197,14 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
         if (state_->failed || state_->finished || !pool_live_ ||
             pass!=state_->passes || pass>=state_->layout.pass_count || timeout.count()<=0)
             throw std::logic_error("streaming invalid pass/lifecycle");
-        const auto &layout=state_->layout;
+        auto &layout=state_->layout;
+        if (layout.pass_transition == PassTransition::carry_first_group) {
+            const uint64_t offset =
+                (uint64_t{pass} * layout.groups.size()) % layout.slot_count;
+            for (size_t index = 0; index < layout.groups.size(); ++index)
+                layout.groups[index].slot = static_cast<uint32_t>(
+                    (index % layout.slot_count + offset) % layout.slot_count);
+        }
         bool prefix=false;
         size_t segment_begin=0;
         uint32_t pool_index=0;
@@ -177,8 +217,34 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
             state_->pool_drained=false;
             auto &safety=*state_->safety;
             size_t next=segment_begin, dispatch=segment_begin;
+            std::optional<tc_stream_slot_ticket_v1> incoming;
+            if (state_->carry_ticket) {
+                if (layout.pass_transition != PassTransition::carry_first_group ||
+                    segment_begin != 0 || pool_index != 0)
+                    throw std::logic_error("streaming carry at invalid segment");
+                incoming = state_->carry_ticket;
+                state_->carry_ticket.reset();
+                const auto &first = layout.groups[segment_begin];
+                if (incoming->item.pass != pass ||
+                    incoming->item.step != step ||
+                    incoming->item.group != first.id ||
+                    incoming->slot != first.slot ||
+                    !safety.ready(*incoming))
+                    throw std::logic_error("streaming invalid incoming carry");
+                state_->tickets[first.slot] = *incoming;
+                dispatch = segment_begin + 1;
+            }
+            std::optional<tc_stream_slot_ticket_v1> outgoing;
+            const bool carry_next =
+                layout.pass_transition == PassTransition::carry_first_group &&
+                pass + 1 < layout.pass_count;
             auto last_progress=std::chrono::steady_clock::now();
-            while (next<segment_end || !safety.quiescent()) {
+            auto boundary_complete = [&] {
+                if (next < segment_end) return false;
+                return outgoing ? safety.quiescent_except_ready(*outgoing) :
+                                  safety.quiescent();
+            };
+            while (!boundary_complete()) {
                 check_cancel(cancel);
                 bool progress=consume();
                 while (next<segment_end && dispatch<segment_end &&
@@ -192,9 +258,35 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                     state_->tickets[g.slot]=t; ++dispatch; progress=true;
                 }
                 if (!prefix) { adapter_->encode_prefix(pass); prefix=true; progress=true; }
+                if (carry_next && !outgoing && next + 1 == segment_end &&
+                    dispatch == segment_end) {
+                    if (step == UINT32_MAX)
+                        throw std::overflow_error("streaming carry step overflow");
+                    auto &first = state_->carry_group;
+                    const uint64_t next_offset =
+                        (uint64_t{pass + 1} * layout.groups.size()) %
+                        layout.slot_count;
+                    first.slot = static_cast<uint32_t>(next_offset);
+                    if (safety.state(first.slot) == ContentState::Vacant) {
+                        auto ticket = safety.begin_fill(
+                            first.slot, {stage_, pass + 1, step + 1, first.id},
+                            first.bytes);
+                        auto job = adapter_->make_fill_job(first, ticket);
+                        job.ticket = ticket;
+                        if (!state_->io->enqueue(job))
+                            throw std::logic_error(
+                                "streaming carry and I/O credits diverged");
+                        state_->tickets[first.slot] = ticket;
+                        outgoing = ticket;
+                        progress = true;
+                    }
+                }
                 if (next<segment_end) {
                     const auto &g=layout.groups[next];
-                    if (safety.state(g.slot)==ContentState::Ready) {
+                    const bool last_waits_for_carry =
+                        carry_next && next + 1 == segment_end && !outgoing;
+                    if (!last_waits_for_carry &&
+                        safety.state(g.slot)==ContentState::Ready) {
                         check_cancel(cancel);
                         const auto &t=state_->tickets[g.slot];
                         adapter_->prepare_group(g,t);
@@ -214,7 +306,7 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                     mailbox_->wait_for(std::chrono::milliseconds(5));
                 }
             }
-            drain_active_pool();
+            drain_active_pool(outgoing);
             segment_begin=segment_end;
             ++pool_index;
         }

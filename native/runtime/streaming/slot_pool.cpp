@@ -94,6 +94,24 @@ ContentState SlotSafetyTracker::state(uint32_t slot) const {
     if (slot >= slots_.size()) throw std::out_of_range("streaming slot index");
     return slots_[slot].state;
 }
+bool SlotSafetyTracker::ready(const tc_stream_slot_ticket_v1 &ticket) const {
+    owner();
+    if (ticket.struct_size != sizeof(ticket) ||
+        ticket.version != TC_STREAM_SLOT_ABI_V1 ||
+        ticket.slot >= slots_.size())
+        throw std::logic_error("streaming_slot_violation: invalid ready ticket");
+    const auto &slot = slots_[ticket.slot];
+    return same(slot.ticket, ticket) && slot.state == ContentState::Ready;
+}
+bool SlotSafetyTracker::quiescent_except_ready(
+        const tc_stream_slot_ticket_v1 &ticket) const {
+    if (!ready(ticket)) return false;
+    for (size_t index = 0; index < slots_.size(); ++index) {
+        if (index == ticket.slot) continue;
+        if (slots_[index].state != ContentState::Vacant) return false;
+    }
+    return true;
+}
 bool SlotSafetyTracker::quiescent() const {
     owner();
     for (const auto &s : slots_) if (s.state != ContentState::Vacant) return false;

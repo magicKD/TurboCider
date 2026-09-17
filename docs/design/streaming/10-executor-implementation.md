@@ -213,3 +213,30 @@ Running -> StopDispatch -> CancelIo -> JoinWorkers -> DrainGpu
 https://developer.apple.com/documentation/metal/mtlcommandbuffer/addcompletedhandler(_:)
 https://developer.apple.com/documentation/metal/synchronizing-cpu-and-gpu-work
 ```
+
+## 13. 已实现的 cross-pass carry 数据面（2026-09-16）
+
+`StageExecutor` 现在把 pass boundary 从隐式“总是清空”提升为 immutable plan 字段。实现仍复用同一套
+`SlotSafetyTracker`、`IoExecutor`、completion mailbox 和 failure/quarantine 状态机，没有创建第二套 pager。
+
+关键实现点：
+
+1. `State::carry_group` 在 `begin()` 时复制一次 group metadata；热循环只修改 slot 标量，避免每 pass 复制
+   `std::vector` 或重新构造 source span。
+2. `State::carry_ticket` 只允许保存一个 Ready ticket。`quiescent_except_ready()` 同时验证 ticket identity、
+   content state 和其余 slot 全部 Vacant。
+3. pass 开始按 cyclic offset 旋转 group→slot 映射；incoming ticket 必须匹配新的 pass、step、group、slot 和
+   content generation，随后才可进入 prepare/use。
+4. pass 结尾只有在下一 pass 首组目标 slot Vacant 时才 dispatch carry；最后一组在 carry ticket 建立前不会
+   encode，避免最后读者占用同一 slot 时提前覆盖。
+5. `CAdapter::Job` 自持 blocks vector；异步 fill callback 不再引用临时 `Group` 的 blocks 指针。每个 slot 的
+   job storage 预先存在，稳定态同尺寸 assignment 复用 capacity。
+6. C ABI v3 只扩展 plan 的 `pass_transition`；adapter callback ABI 继续使用 v1。v1/v2 的 struct size、入口和
+   reload 行为不变。
+
+当前 begin-time fail-closed 条件为单 pool、K=2、每 group 一个 block、pass_count≥2、首组静态 slot=0，且
+所有 group 都能放入两个 slot capacity。该限制是当前证据边界，不是框架长期上限。
+
+已覆盖的 host/fake-backend 证据包括奇偶 suffix rotation、carry dispatch 早于上一 pass 最后一组 encode、
+source fill/encode exactly once、取消、carry fill failure、错误 step、C ABI v3 和 pool 精确释放。fake callback
+使用 reader fence，但仍不等于真实 H3 Metal command-buffer completion；真实 adapter 必须另外证明最后读者。

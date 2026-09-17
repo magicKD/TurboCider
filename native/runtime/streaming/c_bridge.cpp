@@ -16,7 +16,12 @@ public:
     tc_stream_adapter_v2 ops_v2{};
     bool version_2 = false;
     uint32_t active_pool = 0;
-    struct Job { CAdapter *self; tc_stream_group_v1 group; char error[1024]{}; };
+    struct Job {
+        CAdapter *self = nullptr;
+        std::vector<uint32_t> blocks;
+        tc_stream_group_v1 group{};
+        char error[1024]{};
+    };
     std::vector<Job> jobs;
     char error[1024]{};
     explicit CAdapter(const tc_stream_adapter_v1 &o,uint32_t slots):ops(o),jobs(slots){}
@@ -37,7 +42,9 @@ public:
         }
     }
     FillJob make_fill_job(const Group &g,const tc_stream_slot_ticket_v1 &t) override {
-        auto &job=jobs.at(t.slot);job.self=this;job.group=view(g);job.error[0]=0;
+        auto &job=jobs.at(t.slot);job.self=this;job.blocks=g.blocks;
+        job.group={g.id,g.slot,uint32_t(job.blocks.size()),job.blocks.data(),g.bytes};
+        job.error[0]=0;
         return {t,&job,[](void *raw,const tc_stream_slot_ticket_v1 *ticket,
                          const std::atomic<bool> *cancel,uint64_t *bytes){
             auto &j=*static_cast<Job *>(raw);
@@ -143,6 +150,67 @@ extern "C" int tc_stream_executor_create_v1(const tc_stream_stage_plan_v1 *p,con
         if (h && h->executor && h->executor->quarantined())
             *out = h.release();
         return fail(error, size, "streaming unknown create error");
+    }
+}
+extern "C" int tc_stream_executor_create_v3(
+        const tc_stream_stage_plan_v3 *p, const tc_stream_adapter_v1 *a,
+        tc_stream_executor **out, char *error, size_t size) {
+    if (out) *out = nullptr;
+    if (!out || !p || !a || p->struct_size != sizeof(*p) ||
+        p->version != TC_STREAM_SLOT_ABI_V3 ||
+        a->struct_size != sizeof(*a) || a->version != TC_STREAM_SLOT_ABI_V1 ||
+        !p->request_generation || !p->slot_count ||
+        p->slot_count > max_slots || !p->group_count ||
+        p->group_count > max_blocks || !p->slot_capacity_bytes || !p->groups ||
+        (p->pass_transition != TC_STREAM_PASS_RELOAD_V3 &&
+         p->pass_transition != TC_STREAM_PASS_CARRY_FIRST_GROUP_V3) ||
+        !a->allocate_slot || !a->destroy_pool || !a->fill || !a->prefix ||
+        !a->prepare || !a->encode || !a->drain)
+        return fail(error, size, "streaming invalid v3 plan/adapter ABI");
+    std::unique_ptr<tc_stream_executor> h;
+    try {
+        StageLayout layout;
+        layout.slot_count = p->slot_count;
+        layout.distance = p->prefetch_distance;
+        layout.workers = p->io_workers;
+        layout.pass_count = p->pass_count;
+        layout.pass_transition =
+            p->pass_transition == TC_STREAM_PASS_CARRY_FIRST_GROUP_V3 ?
+                PassTransition::carry_first_group : PassTransition::reload;
+        PoolLayout pool;
+        pool.id = p->pool;
+        for (uint32_t index = 0; index < p->slot_count; ++index)
+            pool.slots.push_back({{}, p->slot_capacity_bytes[index]});
+        layout.pools.push_back(std::move(pool));
+        uint64_t blocks = 0;
+        for (uint32_t index = 0; index < p->group_count; ++index) {
+            const auto &source = p->groups[index];
+            blocks += source.block_count;
+            if (!source.blocks || !source.block_count || blocks > max_blocks)
+                throw std::invalid_argument("streaming invalid v3 group blocks");
+            Group group;
+            group.id = source.group;
+            group.slot = source.slot;
+            group.pool = p->pool;
+            group.bytes = source.content_bytes;
+            group.blocks.assign(source.blocks,
+                                source.blocks + source.block_count);
+            layout.groups.push_back(std::move(group));
+        }
+        h = std::make_unique<tc_stream_executor>();
+        h->adapter = std::make_shared<CAdapter>(*a, p->slot_count);
+        h->executor = std::make_unique<StageExecutor>(
+            p->stage, p->request_generation, h->adapter);
+        h->executor->begin(layout);
+        *out = h.release();
+        return 1;
+    } catch (const std::exception &e) {
+        const int result = failure(h.get(), error, size, e);
+        if (h && h->executor && h->executor->quarantined()) *out = h.release();
+        return result;
+    } catch (...) {
+        if (h && h->executor && h->executor->quarantined()) *out = h.release();
+        return fail(error, size, "streaming unknown v3 create error");
     }
 }
 extern "C" int tc_stream_executor_create_v2(const tc_stream_stage_plan_v2 *p,

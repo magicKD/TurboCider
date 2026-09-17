@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../core/stream_slot_c.h"
 #include "../../runtime/streaming/layout.hpp"
 
 extern "C" {
@@ -13,6 +14,7 @@ extern "C" {
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace tc::h3 {
 
@@ -73,7 +75,8 @@ class StreamingPlanView {
   public:
     StreamingPlanView(const std::string &transformer_directory,
                       const StreamingConfig &config,
-                      const StreamingWorkload &workload);
+                      const StreamingWorkload &workload,
+                      uint64_t request_generation);
     ~StreamingPlanView() = default;
 
     StreamingPlanView(const StreamingPlanView &) = delete;
@@ -84,11 +87,15 @@ class StreamingPlanView {
     }
     const streaming::Layout &layout() const noexcept { return layout_; }
     const StreamingMetadata &metadata() const noexcept { return metadata_; }
+    const tc_stream_stage_plan_v3 &c_plan() const noexcept { return c_plan_; }
 
   private:
     StreamingMetadata metadata_;
     streaming::Descriptor descriptor_;
     streaming::Layout layout_;
+    std::vector<uint64_t> slot_capacities_;
+    std::vector<tc_stream_group_v1> groups_;
+    tc_stream_stage_plan_v3 c_plan_{};
 };
 
 } // namespace tc::h3

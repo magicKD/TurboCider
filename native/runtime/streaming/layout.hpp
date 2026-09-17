@@ -54,12 +54,21 @@ struct BlockSpec {
     bool streamable = true;
     bool safe_boundary_after = true;
 };
+enum class PassTransition {
+    reload,
+    // The first group of pass N+1 is filled before the last group of pass N
+    // is encoded and remains Ready across the pass boundary.  This is an
+    // execution contract, not an implicit cache hit: every pass still has one
+    // source fill for every suffix group.
+    carry_first_group,
+};
 struct StageDescriptor {
     std::string id;
     std::vector<BlockSpec> blocks;
     std::optional<StreamingStageConfig> fixed_policy;
     uint32_t min_slots = 1, max_slots = 3, max_group_size = 1, min_prefix = 0;
     uint32_t pass_count = 1;
+    PassTransition pass_transition = PassTransition::reload;
     // A content/shape/format/reader identity supplied by the model adapter.
     // An empty identity cannot be used for execution certification.
     std::string adapter_revision;
@@ -93,6 +102,7 @@ struct StageLayout {
     bool resident = false, inherited = false;
     uint32_t prefix = 0, group_size = 0, slot_count = 0, distance = 0, workers = 0;
     uint32_t pass_count = 1;
+    PassTransition pass_transition = PassTransition::reload;
     std::vector<Group> groups;
     std::vector<PoolLayout> pools;
     uint64_t prefix_bytes = 0, peak_pool_bytes = 0;

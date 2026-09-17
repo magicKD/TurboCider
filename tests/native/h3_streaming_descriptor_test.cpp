@@ -1,8 +1,11 @@
 #include "h3_streaming_descriptor.hpp"
 #include "h3_streaming_policy.h"
 
+#include <array>
+#include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <cstdio>
 #include <fcntl.h>
 #include <iostream>
 #include <stdexcept>
@@ -69,6 +72,164 @@ uint64_t matrix_bytes() {
            sizeof(uint16_t);
 }
 
+struct FakeExecution {
+    static constexpr uint32_t groups = 24;
+    static constexpr uint32_t passes = 4;
+    std::array<std::atomic<uint32_t>, 2> slots{};
+    std::array<std::atomic<uint32_t>, groups * passes> fills{};
+    std::array<std::atomic<uint32_t>, groups * passes> encodes{};
+    std::atomic<uint32_t> prefix{0}, allocations{0}, destroys{0};
+    std::atomic<uint64_t> sequence{0};
+    int fail_pass = -1, fail_group = -1;
+};
+
+int fake_allocate(void *user, uint32_t slot, uint64_t capacity,
+                  char *, size_t) {
+    auto &fake = *static_cast<FakeExecution *>(user);
+    assert(slot < fake.slots.size() && capacity == matrix_bytes());
+    fake.slots[slot].store(UINT32_MAX, std::memory_order_relaxed);
+    fake.allocations.fetch_add(1, std::memory_order_relaxed);
+    return 1;
+}
+
+void fake_destroy(void *user) {
+    static_cast<FakeExecution *>(user)->destroys.fetch_add(
+        1, std::memory_order_relaxed);
+}
+
+int fake_fill(void *user, const tc_stream_slot_ticket_v1 *ticket,
+              const tc_stream_group_v1 *group,
+              tc_stream_cancel_query_v1 cancelled, const void *cancel_user,
+              uint64_t *bytes, char *error, size_t error_size) {
+    auto &fake = *static_cast<FakeExecution *>(user);
+    if (cancelled(cancel_user)) return 0;
+    assert(ticket && group && group->block_count == 1 &&
+           ticket->item.pass < FakeExecution::passes &&
+           ticket->item.group < FakeExecution::groups);
+    if (static_cast<int>(ticket->item.pass) == fake.fail_pass &&
+        static_cast<int>(ticket->item.group) == fake.fail_group) {
+        std::snprintf(error, error_size, "injected H3 carry fill failure");
+        return 0;
+    }
+    const size_t index = ticket->item.pass * FakeExecution::groups +
+                         ticket->item.group;
+    assert(fake.fills[index].fetch_add(1, std::memory_order_relaxed) == 0);
+    fake.slots[ticket->slot].store(group->blocks[0],
+                                   std::memory_order_release);
+    *bytes = group->content_bytes;
+    return 1;
+}
+
+int fake_prefix(void *user, uint32_t pass, char *, size_t) {
+    auto &fake = *static_cast<FakeExecution *>(user);
+    assert(fake.prefix.fetch_add(1, std::memory_order_relaxed) == pass);
+    return 1;
+}
+
+int fake_prepare(void *user, const tc_stream_slot_ticket_v1 *ticket,
+                 const tc_stream_group_v1 *group, char *, size_t) {
+    auto &fake = *static_cast<FakeExecution *>(user);
+    return fake.slots[ticket->slot].load(std::memory_order_acquire) ==
+           group->blocks[0];
+}
+
+int fake_encode(void *user, const tc_stream_slot_ticket_v1 *ticket,
+                const tc_stream_group_v1 *group,
+                const tc_stream_completion_sink_v1 *sink,
+                tc_stream_reader_set_v1 *readers, char *error,
+                size_t error_size) {
+    auto &fake = *static_cast<FakeExecution *>(user);
+    if (!fake_prepare(user, ticket, group, error, error_size)) return 0;
+    const size_t index = ticket->item.pass * FakeExecution::groups +
+                         ticket->item.group;
+    assert(fake.encodes[index].fetch_add(1, std::memory_order_relaxed) == 0);
+    readers->count = 1;
+    readers->fences[0] = {
+        1, fake.sequence.fetch_add(1, std::memory_order_relaxed) + 1};
+    return sink->post(sink->user, ticket, readers->fences[0], 0);
+}
+
+int fake_drain(void *, char *, size_t) { return 1; }
+
+tc_stream_adapter_v1 fake_adapter(FakeExecution &fake) {
+    return {sizeof(tc_stream_adapter_v1), TC_STREAM_SLOT_ABI_V1, &fake,
+            fake_allocate, fake_destroy, fake_fill, fake_prefix,
+            fake_prepare, fake_encode, fake_drain};
+}
+
+void execute_fake_plan(const tc_stream_stage_plan_v3 &plan) {
+    FakeExecution fake;
+    auto adapter = fake_adapter(fake);
+    char error[1024] = {};
+    tc_stream_executor *executor = nullptr;
+    assert(tc_stream_executor_create_v3(
+        &plan, &adapter, &executor, error, sizeof(error)));
+    for (uint32_t pass = 0; pass < FakeExecution::passes; ++pass) {
+        assert(tc_stream_executor_run_pass(
+            executor, pass, pass, error, sizeof(error)));
+        const uint32_t expected = (pass + 1) * FakeExecution::groups +
+            (pass + 1 < FakeExecution::passes ? 1u : 0u);
+        uint32_t fills = 0;
+        for (const auto &count : fake.fills)
+            fills += count.load(std::memory_order_relaxed);
+        assert(fills == expected);
+    }
+    assert(tc_stream_executor_finish(executor, error, sizeof(error)));
+    tc_stream_counters_v1 counters{};
+    assert(tc_stream_executor_counters(
+        executor, &counters, error, sizeof(error)));
+    assert(counters.pool_creates == 1 && counters.slot_bundles == 2 &&
+           counters.fills == FakeExecution::groups * FakeExecution::passes &&
+           counters.groups_submitted == counters.fills &&
+           counters.content_bytes_loaded == counters.fills * matrix_bytes());
+    for (size_t index = 0; index < fake.fills.size(); ++index) {
+        assert(fake.fills[index].load(std::memory_order_relaxed) == 1);
+        assert(fake.encodes[index].load(std::memory_order_relaxed) == 1);
+    }
+    assert(fake.prefix.load(std::memory_order_relaxed) == FakeExecution::passes);
+    assert(tc_stream_executor_destroy(&executor, error, sizeof(error)) &&
+           !executor);
+    assert(fake.allocations.load(std::memory_order_relaxed) == 2 &&
+           fake.destroys.load(std::memory_order_relaxed) == 1);
+}
+
+void exercise_fake_failures(const tc_stream_stage_plan_v3 &plan) {
+    char error[1024] = {};
+    {
+        FakeExecution fake;
+        auto adapter = fake_adapter(fake);
+        tc_stream_executor *executor = nullptr;
+        assert(tc_stream_executor_create_v3(
+            &plan, &adapter, &executor, error, sizeof(error)));
+        assert(tc_stream_executor_run_pass(
+            executor, 0, 0, error, sizeof(error)));
+        tc_stream_executor_cancel(executor);
+        assert(!tc_stream_executor_run_pass(
+            executor, 1, 1, error, sizeof(error)));
+        assert(std::string(error).find("cancelled") != std::string::npos);
+        assert(tc_stream_executor_destroy(
+            &executor, error, sizeof(error)) && !executor);
+        assert(fake.destroys.load(std::memory_order_relaxed) == 1);
+    }
+    {
+        FakeExecution fake;
+        fake.fail_pass = 1;
+        fake.fail_group = 0;
+        auto adapter = fake_adapter(fake);
+        tc_stream_executor *executor = nullptr;
+        error[0] = '\0';
+        assert(tc_stream_executor_create_v3(
+            &plan, &adapter, &executor, error, sizeof(error)));
+        assert(!tc_stream_executor_run_pass(
+            executor, 0, 0, error, sizeof(error)));
+        assert(std::string(error).find("injected H3 carry fill failure") !=
+               std::string::npos);
+        assert(tc_stream_executor_destroy(
+            &executor, error, sizeof(error)) && !executor);
+        assert(fake.destroys.load(std::memory_order_relaxed) == 1);
+    }
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -99,7 +260,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        const tc::h3::StreamingPlanView plan(valid, config(), work);
+        const tc::h3::StreamingPlanView plan(valid, config(), work, 77);
         const auto &stage = plan.layout().stages.at(0);
         const uint64_t block_bytes = matrix_bytes();
         assert(plan.layout().materializations_complete);
@@ -114,42 +275,61 @@ int main(int argc, char **argv) {
         assert(stage.prefix_source_read_bytes == block_bytes);
         assert(stage.source_read_bytes_per_pass == 24 * block_bytes);
         assert(stage.suffix_content_bytes_per_pass == 24 * block_bytes);
+        const auto &c_plan = plan.c_plan();
+        assert(c_plan.struct_size == sizeof(c_plan));
+        assert(c_plan.version == TC_STREAM_SLOT_ABI_V3);
+        assert(c_plan.request_generation == 77);
+        assert(c_plan.pass_transition ==
+               TC_STREAM_PASS_CARRY_FIRST_GROUP_V3);
+        assert(c_plan.slot_count == 2 && c_plan.group_count == 24);
+        assert(c_plan.slot_capacity_bytes[0] == block_bytes &&
+               c_plan.slot_capacity_bytes[1] == block_bytes);
+        assert(c_plan.groups[0].group == 0 && c_plan.groups[0].slot == 0);
+        assert(c_plan.groups[23].group == 23 && c_plan.groups[23].slot == 1);
+        execute_fake_plan(c_plan);
+        exercise_fake_failures(c_plan);
+        rejects([&] { tc::h3::StreamingPlanView value(
+                          valid, config(), work, 0); },
+                "generation");
 
-        const tc::h3::StreamingPlanView no_prefix(valid, config(0), work);
+        const tc::h3::StreamingPlanView no_prefix(
+            valid, config(0), work, 78);
         assert(no_prefix.layout().stages[0].groups.size() == 25);
         assert(no_prefix.layout().stages[0].groups.front().blocks.front() == 0);
         assert(no_prefix.layout().digest != plan.layout().digest);
+        assert(no_prefix.c_plan().pass_transition ==
+               TC_STREAM_PASS_CARRY_FIRST_GROUP_V3);
 
-        const tc::h3::StreamingPlanView repeat(valid, config(), work);
+        const tc::h3::StreamingPlanView repeat(valid, config(), work, 77);
         assert(repeat.layout().canonical == plan.layout().canonical);
         assert(repeat.layout().digest == plan.layout().digest);
         auto changed = work;
         changed.steps = 5;
         const tc::h3::StreamingPlanView changed_steps(
-            valid, config(), changed);
+            valid, config(), changed, 79);
         assert(changed_steps.layout().digest != plan.layout().digest);
         changed = work;
         changed.active_blocks = 45;
         const tc::h3::StreamingPlanView changed_blocks(
-            valid, config(), changed);
+            valid, config(), changed, 80);
         assert(changed_blocks.layout().digest != plan.layout().digest);
 
         rejects([&] { tc::h3::StreamingPlanView value(
-                          valid, config(1, 1), work); },
+                          valid, config(1, 1), work, 1); },
                 "slot count");
         rejects([&] { tc::h3::StreamingPlanView value(
-                          valid, config(1, 3), work); },
+                          valid, config(1, 3), work, 1); },
                 "slot count");
         rejects([&] { tc::h3::StreamingPlanView value(
-                          valid, config(1, 2, 2), work); },
+                          valid, config(1, 2, 2), work, 1); },
                 "group size");
         rejects([&] { tc::h3::StreamingPlanView value(
-                          valid, config(24), work); },
+                          valid, config(24), work, 1); },
                 "slot_count_exceeds_groups");
         auto resident = config();
         resident.stages["denoiser"] = {"resident", {}, {}, {}, {}, {}};
         rejects([&] { tc::h3::StreamingPlanView value(
-                          valid, resident, work); },
+                          valid, resident, work, 1); },
                 "K=2/G=1");
         changed = work;
         changed.active_blocks = 24;
@@ -163,12 +343,12 @@ int main(int argc, char **argv) {
         changed = work;
         changed.token_reduction = true;
         rejects([&] { tc::h3::StreamingPlanView value(
-                          valid, config(), changed); },
+                          valid, config(), changed, 1); },
                 "dynamic/fused shortcut");
         changed = work;
         changed.first_block_cache = true;
         rejects([&] { tc::h3::StreamingPlanView value(
-                          valid, config(), changed); },
+                          valid, config(), changed, 1); },
                 "dynamic/fused shortcut");
 
         rejects([&] { tc::h3::StreamingMetadata value(argv[2]);

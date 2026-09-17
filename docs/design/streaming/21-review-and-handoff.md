@@ -387,3 +387,26 @@ byte-exact、audit 五类计数均为 0；candidate/dev 的 wall median/P95 为 
 denoise median/P95 为 `1.00063`/`1.00289`。点估计没有显示相对 dev 的性能回退；由于只有
 两个 ABBA block，wall median bootstrap 上界为 `1.03423`，总判定仍是 `INCONCLUSIVE`，不得
 将它写成 normal-target P0 通过。
+
+## 14. 2026-09-16 续接：dev 已同步，cross-pass carry 检查点
+
+远端同步后 `origin/dev`、本地 `dev` 和 `FETCH_HEAD` 均为 `ad343d4`；该提交已在
+`566f7a6` 合入，显式 `git merge dev --no-edit` 返回 `Already up to date`。因此本轮没有新的 merge
+冲突；此前唯一的 contract 文本冲突仍按第6节的 additive 方式解决。
+
+本轮增量已完成：
+
+- ABI v3 显式 `reload/carry_first_group`；v1/v2 ABI 与默认行为不变；
+- 单 pool K2/G1 跨 pass carry、奇偶 suffix slot rotation 和唯一 Ready boundary；
+- carry ticket 的 pass/step/group/slot/generation 核验，错误 step fail closed；
+- C adapter 异步 job 自持 blocks，避免临时 group 指针悬空；
+- H3 descriptor 投影 v3 plan，并通过 fake fill/encode/reader fence 与 failure matrix。
+
+当前 focused 测试均通过：streaming host/contract、3535 layout case、14 K/D/Q、multi-class、C ABI v3、
+H3 descriptor fake execution、82 native contract（1 个既有 fixture SKIP）、repository、memory 和 H3 schedule；
+ASan/UBSan 与 TSan 也通过。性能数字只允许来自 clean commit 的 release rebuild 与相对 clean dev 的
+post-change ABBA/BAAB，不沿用此前 dirty binary hash。
+
+交接时不得把该状态描述为真实 H3 execution：production registry 仍为空，真实 H3 block fill、Metal encode、
+last-reader fence、request/session lifecycle、normal-target P0/P1 均未完成。默认 LTX resident/legacy 路径没有
+调用 H3 descriptor 或 v3 executor，这一事实仍需由 post-change audit/performance evidence 继续验证。

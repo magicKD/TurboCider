@@ -867,3 +867,39 @@ H3 现有 `stream_ready_slot ^ 1u`、跨 forward prefetch、跨 block fusion、s
 `1.00289`。这些点估计均在 P0 阈值内，且未观察到 H3 未使用 descriptor 对默认 LTX 热路径的
 实质回退；但 wall median 的 block-bootstrap 95% 区间为 `[0.96021, 1.03423]`，因此 verifier
 正确保持 `INCONCLUSIVE`。该短 smoke 不能替代既有 20-pair tiny P0 或后续 normal-target P0。
+
+### 13.9 Cross-pass carry、ABI v3 与 dev 再同步（2026-09-16）
+
+远端 `origin/dev`、本地 `dev` 与 fetch 得到的 `FETCH_HEAD` 均为
+`ad343d4e5139c9a5f13e29ff9e926e8eb1ae2f39`；该提交已由 merge commit
+`566f7a6faf07734255cee229ca31ca3af0bc154c` 合入当前分支。再次执行 `git merge dev` 返回
+`Already up to date`，当前为相对 dev 领先 8、落后 0，没有新增文本冲突或未解决 merge index。
+
+本轮继续实现了此前 H3 legacy 双槽调度缺少的显式 pass transition：
+
+- `PassTransition::{reload, carry_first_group}` 进入 descriptor/layout digest 和 `StageLayout`；
+- 新增 `tc_stream_stage_plan_v3` / `tc_stream_executor_create_v3`，v1/v2 ABI 不变；
+- executor 可在 pass N 尾部预填 pass N+1 首组，并在 boundary 保留唯一 Ready ticket；
+- 奇偶 suffix 均通过 pass-relative slot rotation 保持最后组与下一首组不冲突；
+- incoming carry 核验 pass/step/group/slot/generation，要求 scheduler step 连续；
+- 当前只认证单 pool、K=2、G=1；未经验证的 K>2、多 pool、多 block carry fail closed；
+- H3 `StreamingPlanView` 要求非零 request generation，并投影可直接交给 fake adapter 的 v3 plan。
+
+当前证据链仍是：
+
+```text
+H3 safetensors metadata -> generic layout -> ABI v3 plan
+-> generic executor -> fake source fill/reader fence
+```
+
+它还不是：
+
+```text
+real h3_dit/h3_gpu -> block fill -> Metal encode -> command-buffer fence
+-> complete denoise request/session lifecycle
+```
+
+本轮 focused 回归：3535 个 layout case、14 个 K/D/Q executor 组合、multi-class barrier、v1/v2/v3 C bridge、
+H3 sparse descriptor/fake execution、streaming contract、82 项 native contract（81 PASS、1 个既有 Wan fixture
+SKIP）、repository boundaries、memory execution/compiler、H3 policy/schedule 全部通过。性能 campaign 必须在
+本轮 clean commit 的 release binary 上重新运行后再记录；在此之前不得沿用旧 binary hash 作为本轮结论。

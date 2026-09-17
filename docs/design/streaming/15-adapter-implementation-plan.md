@@ -201,3 +201,27 @@ service对新路径加入layout identity，旧session key不变；quarantine不�
 提交者必须附：修改符号清单、默认分支diff说明、源/容量/读入字节三份账、owner和borrowed lifetime表、
 新增测试ID与命令、未覆盖分支、实际P0/P1状态。测试未跑写NOT RUN，设备不可用写SKIP，不能用“设计上不影响”代替证据。
 签核前至少有另一轮独立verifier检查，不由adapter自报“certified”。
+
+## 7. H3 v3 execution bridge 的下一批施工单（2026-09-16）
+
+通用框架已经能表达 H3 K=2/G=1 的跨 pass 首组 carry，但生产 H3 adapter 尚未实现。下一批必须按以下顺序推进，
+每一步都保持 legacy `h3_dit` 默认路径原样：
+
+1. **真实 source fill**：从 `h3_dit.c`/weight store 暴露窄接口，按 descriptor materialization 的四个 BF16
+   matrix range 填入既有 Metal shared slot；校验 snapshot、short read、取消和 exact byte counter。
+2. **slot view/bind**：为一个 block 构造只借用 slot backing 的 qkv/out/fc1/fc2 view；norm、AdaLN、text、
+   conditioning 和 workspace 继续由 request owner 持有，不塞进 weight slot。
+3. **single-block encode**：抽出不改变数值顺序的 prepare/run helper，先禁用 generic carry，仅证明逐 block
+   output 与 legacy 同输入 byte/容差一致。
+4. **真实 last-reader**：为 block 的所有 Metal queue 注册 command-buffer completion；跨 block fusion 若读前块
+   weight，必须把该 reader 纳入同一 `ReaderSet`，不能用 CPU helper return 代替 fence。
+5. **启用 v3 carry**：先验证偶数 suffix，再验证 uniform sparse policy 产生的奇数 suffix rotation；对每 pass
+   断言 fill/encode exactly once、step identity 连续、最后 pass 无遗留 carry。
+6. **session/candidate owner**：仅接内部 candidate constructor，覆盖 cancel、repeat、shape change、metadata
+   mutation、drain failure 和 quarantine retry；public registry 继续为空。
+7. **P0/P1**：先证明默认 resident 相对 clean dev 非劣，再做 legacy H3 streamed 与 generic same-layout 对照；
+   normal-target 未通过前不开放 production。
+
+建议新增 `H3SlotAdapter` 只实现通用 `ModelSlotAdapter`，不复制 scheduler。模型层负责 materialization 与真实
+Metal fence，框架层负责 ticket/window/carry/cleanup。adapter 不得自行维护另一套 slot state 或把 legacy
+`stream_ready_slot` 与 generic slot 同时设为 authority。
