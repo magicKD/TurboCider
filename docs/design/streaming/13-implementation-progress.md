@@ -1278,3 +1278,76 @@ session调用之前拒绝 active selector；普通 public engine 与 private can
 后续可编码类型、engine/API/App接线见[28](28-public-runtime-code-design.md)；逐PR、工具链、四模型候选矩阵、
 内存/swap实验和发布门见[29](29-public-implementation-and-acceptance-plan.md)。这两份文档不改变当前“catalog为空、
 public执行不可用”的完成边界。
+
+### 13.17 Exact public resolution authority 工作树接线（2026-09-17，尚未提交）
+
+在 13.16 的控制面基础上，当前工作树已继续完成 exact engine resolution 的框架接线，但仍未给任何模型 public 资格：
+
+- 新增 `canonical_encoding.hpp/.cpp`，使用 typed、length-prefixed canonical encoding；
+- 扩展 production record 的 source/workload/runtime/device/plan/calibration/performance/release identity；
+- 新增 `preset_resolver.hpp/.cpp`、`resolved_request.hpp/.cpp`，实现 deterministic select、exact replay、
+  internal-only non-copyable authority 和 immutable resolved execution；
+- `ModelSession` 新增 public probe/compile/generate_resolved 默认拒绝 hooks；
+- `tc_engine` 保存 model ID、normalized model root、execution container 和 streaming quarantine；
+- 新增 C ABI `tc_engine_resolve_streaming_json`；
+- active selector generate 在 global GPU lock 前 resolve，取得锁后 revalidate，并且只调用 `generate_resolved`；
+- active selector prepare 返回 `streaming_prepare_unsupported`；
+- Swift 新增 resolution/selection/identity/error envelope 类型与 `NativeEngine.resolveStreaming`；
+- 四模型普通与 candidate gate 均证明空 catalog 时 exact resolve/generate 不进入 ordinary session/GPU execution；
+- release dylib 不导出 LTX lifecycle test hooks。
+
+当前 production catalog 仍为 `tc-streaming-catalog-empty-v1`，因此 public selector 仍不可执行。四模型已有 private exact adapter
+不会因为新 C ABI 自动获得 public authority。
+
+当前收口审阅发现一个明确待修项：`resolve_public_streaming_locked` 在调用完整 `make_plan` 之前先检查空 catalog，
+因此 selector 与 legacy budget、GPU+ANE 或 compiled route 的冲突可能被
+`catalog_has_no_public_records` 遮蔽。不能简单把完整 planner 前移，因为这会把模型 recipe/shape validation 和 synthetic fixture
+耦合到 catalog availability。下一步应抽取纯 host、无 catalog/GPU/model probe 的共享 public request validator，由 planner 与 C API
+共同调用，并冻结“selector/config/route → empty catalog → full model validation → probe/select/authorize”的错误顺序。
+
+本阶段已通过：
+
+~~~text
+python3 -B tests/native/test_streaming_preset_resolver.py       PASS
+python3 -B tests/native/test_streaming_contract.py              PASS，12项
+四模型 candidate public gate                                  PASS
+TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh                  PASS
+make test-streaming-contract                                   PASS
+tools/native/build_app.sh                                      PASS
+git diff --check                                                PASS
+~~~
+
+这些结果证明 exact control/runtime 接缝可编译并保持空 catalog fail-closed，不证明 App 已开放、模型 public override 已完成、
+任一 8/10/12/16/20 GiB 档位满足完整请求内存，也不增加新的 GPU 性能成绩。
+
+进一步的代码设计、App事务、source execution revalidation、RunResult actual-plan 核对、四模型接入、swap实验和 release checklist
+已整理到[32](32-public-streaming-completion-spec.md)。下一阶段应先完成共享 validator、C ABI 所有权/错误合同和 public result，
+再做 App 与模型 adapter；production record 必须继续最后加入。
+
+### 13.18 Shared validator 修正与工程规格补充（2026-09-17）
+
+本轮完成了一个编译阻断修正和两份面向实施的设计规格：
+
+- `native/runtime/streaming/public_request_validation.cpp` 不再引用不存在的 `config.hpp`，改为依赖实际存在的
+  `core/streaming_contracts.hpp`；validator 仍保持 request-only、无 catalog/GPU/model module/filesystem 副作用的边界。
+- 新增[33 Runtime/App 工程实施规格](33-public-runtime-app-engineering-spec.md)：冻结共享 validator、exact resolve
+  helper、source lease、actual-plan hard verification、C ABI 所有权、Swift semantic parity、App 高级设置、
+  JobStore schema v2、LTX worker-local authority、默认路径零开销审计、逐批 PR 和测试 ID。
+- 新增[34 四模型档位校准与发布规格](34-model-tier-calibration-and-release-spec.md)：冻结用户只选择 target、后台选择
+  reviewed layout 的产品边界，细化 LTX/H3 Turbo/Z-Image/Flux 9B 候选族、8/10/12/16/20 GiB 完整请求校准、
+  resident/streaming/swap 四路实验、simulator/toolchain、evidence、catalog review、撤回和 release gate。
+- README 已加入 33/34 文档地图；32 增加到新规格的交叉链接。文档不改变 production catalog 为空和 public 当前不可执行的事实。
+
+本轮重新验证：
+
+~~~text
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh   PASS
+make test-streaming-host                            PASS：3535 layouts、14 K/D/Q、multi-class/fault/cleanup、四模型 descriptor/resolver
+make test-streaming-contract                         PASS：ABI/plan/selector、12项 Python contract、四模型 public fail-closed gate
+tools/native/build_app.sh                            PASS：Swift App 和 integration tests 构建完成
+~~~
+
+这些是编译、host/contract 和 App build 证据，不是 public model/target 资格证据。仍未完成：PUB-VAL-001…010 的专门错误顺序断言、
+完整 C ABI null/busy/ownership/cancel 测试、source lease execution revalidation、RunResult actual-plan verifier、App transaction、
+四模型 public hooks、完整请求档位 calibration、swap P3、ANE public 兼容和 reviewed production records。下一步按 33 的 R0→R6、
+再按 34 的单 record 校准/发布顺序推进；在这些完成前不要把任何档位标为 available，也不要声称比系统 swap 更快。

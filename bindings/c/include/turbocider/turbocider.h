@@ -34,6 +34,11 @@ int tc_engine_create(const char *model_path, tc_engine **engine, char **error);
 /* Additive ABI: select a registered model module. Model paths are local only. */
 int tc_engine_create_model(const char *model_id, const char *model_path,
                            tc_engine **engine, char **error);
+/* Exact, metadata-only public streaming resolution for this engine's model
+ * source and execution container. It does not acquire the process GPU lock,
+ * allocate GPU backing, load weights, prepare or generate. */
+int tc_engine_resolve_streaming_json(tc_engine *, const char *request_json,
+                                     char **result_json, char **error);
 int tc_engine_generate(tc_engine *, const char *request_json,
                        tc_event_callback callback, void *context,
                        char **result_json, char **error);

@@ -20,6 +20,9 @@ LIB.tc_engine_prepare.argtypes = [
     C.c_void_p, C.c_char_p, C.c_int, C.c_void_p, C.c_void_p,
     C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
 ]
+LIB.tc_engine_resolve_streaming_json.argtypes = [
+    C.c_void_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
+]
 LIB.tc_engine_free.argtypes = [C.c_void_p]
 LIB.tc_string_free.argtypes = [C.c_void_p]
 
@@ -57,6 +60,16 @@ def prepare(engine, request):
     result, error = C.c_void_p(), C.c_void_p()
     status = LIB.tc_engine_prepare(
         engine, json.dumps(request).encode(), 0, None, None,
+        C.byref(result), C.byref(error),
+    )
+    value, failure = consume(result), consume(error)
+    return status, value, failure
+
+
+def resolve(engine, request):
+    result, error = C.c_void_p(), C.c_void_p()
+    status = LIB.tc_engine_resolve_streaming_json(
+        engine, json.dumps(request).encode(),
         C.byref(result), C.byref(error),
     )
     value, failure = consume(result), consume(error)
@@ -120,10 +133,13 @@ def main():
             assert "streaming_layout_not_certified" in error, error
             status, _, error = generate(public, selector_request)
             assert status != 0
-            assert "streaming_preset_resolution_required" in error, error
+            assert "catalog_has_no_public_records" in error, error
             status, _, error = prepare(public, selector_request)
             assert status != 0
-            assert "streaming_preset_resolution_required" in error, error
+            assert "streaming_prepare_unsupported" in error, error
+            status, _, error = resolve(public, selector_request)
+            assert status != 0
+            assert "catalog_has_no_public_records" in error, error
         finally:
             LIB.tc_engine_free(public)
 
@@ -131,10 +147,13 @@ def main():
         try:
             status, _, error = generate(candidate, selector_request)
             assert status != 0
-            assert "streaming_preset_resolution_required" in error, error
+            assert "catalog_has_no_public_records" in error, error
             status, _, error = prepare(candidate, selector_request)
             assert status != 0
-            assert "streaming_preset_resolution_required" in error, error
+            assert "streaming_prepare_unsupported" in error, error
+            status, _, error = resolve(candidate, selector_request)
+            assert status != 0
+            assert "catalog_has_no_public_records" in error, error
         finally:
             LIB.tc_engine_free(candidate)
 
@@ -143,6 +162,8 @@ def main():
         # authorization bit can only be set by the private constructor.
         source = (ROOT / "native/api/c_api.mm").read_text()
         assert "bool allow_experimental_streaming = false;" in source
+        assert "std::string model_id;" in source
+        assert "tc_engine_resolve_streaming_json" in source
         assert "(*engine)->allow_experimental_streaming = true;" in source
         assert "!request.streaming.active() ||\n                            e->allow_experimental_streaming" in source
         for symbol in (
@@ -157,7 +178,7 @@ def main():
                 continue
             raise AssertionError(f"release library exports private test hook: {symbol}")
 
-    print("PASS LTX public gate remains fail-closed; unresolved selectors never reach generate/prepare; private candidate authority; release has no lifecycle test hooks")
+    print("PASS LTX public gate remains fail-closed; exact resolve/generate stop at the empty catalog before GPU/session execution; prepare is unsupported; private candidate authority; release has no lifecycle test hooks")
 
 
 if __name__ == "__main__":

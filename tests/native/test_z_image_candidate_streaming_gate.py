@@ -19,6 +19,13 @@ LIB.tc_engine_generate.argtypes = [
     C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p,
     C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
 ]
+LIB.tc_engine_prepare.argtypes = [
+    C.c_void_p, C.c_char_p, C.c_int, C.c_void_p, C.c_void_p,
+    C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
+]
+LIB.tc_engine_resolve_streaming_json.argtypes = [
+    C.c_void_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
+]
 LIB.tc_engine_free.argtypes = [C.c_void_p]
 LIB.tc_string_free.argtypes = [C.c_void_p]
 
@@ -52,6 +59,39 @@ def generate(engine: C.c_void_p, request: dict) -> tuple[int, str]:
     return status, consume(error)
 
 
+def prepare(engine: C.c_void_p, request: dict) -> tuple[int, str]:
+    result, error = C.c_void_p(), C.c_void_p()
+    status = LIB.tc_engine_prepare(
+        engine, json.dumps(request).encode(), 0, None, None,
+        C.byref(result), C.byref(error),
+    )
+    consume(result)
+    return status, consume(error)
+
+
+def resolve(engine: C.c_void_p, request: dict) -> tuple[int, str]:
+    result, error = C.c_void_p(), C.c_void_p()
+    status = LIB.tc_engine_resolve_streaming_json(
+        engine, json.dumps(request).encode(),
+        C.byref(result), C.byref(error),
+    )
+    value, failure = consume(result), consume(error)
+    if status == 0:
+        assert value and not failure, (value, failure)
+    else:
+        assert not value and failure, (value, failure)
+    return status, failure
+
+
+def resolve_raw(engine, request_json, result_output=True) -> tuple[int, str, str]:
+    result, error = C.c_void_p(), C.c_void_p()
+    result_pointer = C.byref(result) if result_output else None
+    status = LIB.tc_engine_resolve_streaming_json(
+        engine, request_json, result_pointer, C.byref(error),
+    )
+    return status, consume(result), consume(error)
+
+
 def request() -> dict:
     return {
         "schema_version": 2,
@@ -83,6 +123,18 @@ def request() -> dict:
     }
 
 
+def selector_request() -> dict:
+    value = request()
+    value["execution"]["streaming"] = {
+        "schema_version": 2,
+        "enabled": True,
+        "selection": "memory_tier",
+        "retention": "request",
+        "target_request_memory_bytes": 12 << 30,
+    }
+    return value
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="tc-z-image-candidate-gate-") as raw:
         root = Path(raw)
@@ -109,6 +161,74 @@ def main() -> None:
             status, error = generate(public, request())
             assert status != 0
             assert "streaming_layout_not_certified" in error, error
+            status, error = generate(public, selector_request())
+            assert status != 0
+            assert "catalog_has_no_public_records" in error, error
+            status, error = resolve(public, selector_request())
+            assert status != 0
+            assert "catalog_has_no_public_records" in error, error
+
+            # Request-only validation and engine identity precede the empty
+            # production catalog. These fixtures must not reach model probing,
+            # tokenizer construction, GPU state, or session execution.
+            conflict = selector_request()
+            conflict["execution"]["memory_budget_bytes"] = 0
+            status, error = resolve(public, conflict)
+            assert status != 0
+            assert "streaming_config_conflict" in error, error
+            assert "catalog_has_no_public_records" not in error, error
+
+            hybrid = selector_request()
+            hybrid["execution"].update({
+                "policy": "gpu_ane",
+                "allow_approximation": True,
+                "ane_manifest": "/tmp/not-opened-z-image-ane.json",
+            })
+            status, error = resolve(public, hybrid)
+            assert status != 0
+            assert "streaming_route_unsupported" in error, error
+            assert "catalog_has_no_public_records" not in error, error
+
+            compiled = selector_request()
+            compiled["parameters"] = {"compile_gpu": True}
+            status, error = resolve(public, compiled)
+            assert status != 0
+            assert "streaming_route_unsupported" in error, error
+            assert "compiled GPU graphs" in error, error
+
+            wrong_model = selector_request()
+            wrong_model["model"] = "flux2-klein-9b"
+            status, error = resolve(public, wrong_model)
+            assert status != 0
+            assert "streaming_engine_model_mismatch" in error, error
+            assert "catalog_has_no_public_records" not in error, error
+
+            malformed = selector_request()
+            malformed["execution"]["streaming"][
+                "target_request_memory_bytes"] = 14 << 30
+            status, error = resolve(public, malformed)
+            assert status != 0
+            assert "not a published target" in error, error
+
+            # C ABI failure ownership: no result on failure, exactly one error.
+            status, value, failure = resolve_raw(
+                public, json.dumps(selector_request()).encode())
+            assert status != 0 and not value
+            assert "catalog_has_no_public_records" in failure, failure
+
+            # Null inputs are rejected without dereferencing output storage.
+            status, value, failure = resolve_raw(
+                None, json.dumps(selector_request()).encode())
+            assert status != 0 and not value
+            assert "missing streaming resolve input/output" in failure, failure
+            status, value, failure = resolve_raw(public, None)
+            assert status != 0 and not value
+            assert "missing streaming resolve input/output" in failure, failure
+            status, _, failure = resolve_raw(
+                public, json.dumps(selector_request()).encode(),
+                result_output=False)
+            assert status != 0
+            assert "missing streaming resolve input/output" in failure, failure
         finally:
             LIB.tc_engine_free(public)
 
@@ -117,6 +237,12 @@ def main() -> None:
             status, error = generate(candidate, request())
             assert status != 0
             assert "streaming_layout_not_certified" not in error, error
+            status, error = prepare(candidate, selector_request())
+            assert status != 0
+            assert "streaming_prepare_unsupported" in error, error
+            status, error = resolve(candidate, selector_request())
+            assert status != 0
+            assert "catalog_has_no_public_records" in error, error
         finally:
             LIB.tc_engine_free(candidate)
 
@@ -127,7 +253,7 @@ def main() -> None:
     assert "ZImageExactStream" in implementation
     assert "else if (legacy_streamed)" in implementation
 
-    print("PASS Z-Image public gate remains fail-closed; private candidate reaches the generic route")
+    print("PASS Z-Image public gate remains fail-closed; exact resolve stops at empty catalog; private candidate reaches the generic route")
 
 
 if __name__ == "__main__":

@@ -19,6 +19,13 @@ LIB.tc_engine_generate.argtypes = [
     C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p,
     C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
 ]
+LIB.tc_engine_prepare.argtypes = [
+    C.c_void_p, C.c_char_p, C.c_int, C.c_void_p, C.c_void_p,
+    C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
+]
+LIB.tc_engine_resolve_streaming_json.argtypes = [
+    C.c_void_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
+]
 LIB.tc_engine_free.argtypes = [C.c_void_p]
 LIB.tc_string_free.argtypes = [C.c_void_p]
 
@@ -46,6 +53,26 @@ def generate(engine: C.c_void_p, request: dict) -> tuple[int, str]:
     result, error = C.c_void_p(), C.c_void_p()
     status = LIB.tc_engine_generate(
         engine, json.dumps(request).encode(), None, None,
+        C.byref(result), C.byref(error),
+    )
+    consume(result)
+    return status, consume(error)
+
+
+def prepare(engine: C.c_void_p, request: dict) -> tuple[int, str]:
+    result, error = C.c_void_p(), C.c_void_p()
+    status = LIB.tc_engine_prepare(
+        engine, json.dumps(request).encode(), 0, None, None,
+        C.byref(result), C.byref(error),
+    )
+    consume(result)
+    return status, consume(error)
+
+
+def resolve(engine: C.c_void_p, request: dict) -> tuple[int, str]:
+    result, error = C.c_void_p(), C.c_void_p()
+    status = LIB.tc_engine_resolve_streaming_json(
+        engine, json.dumps(request).encode(),
         C.byref(result), C.byref(error),
     )
     consume(result)
@@ -81,6 +108,18 @@ def request() -> dict:
             },
         },
     }
+
+
+def selector_request() -> dict:
+    value = request()
+    value["execution"]["streaming"] = {
+        "schema_version": 2,
+        "enabled": True,
+        "selection": "memory_tier",
+        "retention": "request",
+        "target_request_memory_bytes": 12 << 30,
+    }
+    return value
 
 
 def fixture(root: Path) -> None:
@@ -120,6 +159,12 @@ def main() -> None:
             status, error = generate(public, request())
             assert status != 0
             assert "streaming_layout_not_certified" in error, error
+            status, error = generate(public, selector_request())
+            assert status != 0
+            assert "catalog_has_no_public_records" in error, error
+            status, error = resolve(public, selector_request())
+            assert status != 0
+            assert "catalog_has_no_public_records" in error, error
         finally:
             LIB.tc_engine_free(public)
 
@@ -128,6 +173,12 @@ def main() -> None:
             status, error = generate(candidate, request())
             assert status != 0
             assert "streaming_layout_not_certified" not in error, error
+            status, error = prepare(candidate, selector_request())
+            assert status != 0
+            assert "streaming_prepare_unsupported" in error, error
+            status, error = resolve(candidate, selector_request())
+            assert status != 0
+            assert "catalog_has_no_public_records" in error, error
         finally:
             LIB.tc_engine_free(candidate)
 
@@ -139,7 +190,7 @@ def main() -> None:
     assert "FluxExactStream" in pipeline
     assert "MultiPoolPolicy::retain_all" in transformer
 
-    print("PASS FLUX 9B public gate remains fail-closed; private candidate reaches the generic route")
+    print("PASS FLUX 9B public gate remains fail-closed; exact resolve stops at empty catalog; private candidate reaches the generic route")
 
 
 if __name__ == "__main__":

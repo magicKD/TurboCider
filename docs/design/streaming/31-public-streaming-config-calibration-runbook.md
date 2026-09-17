@@ -1,6 +1,6 @@
 # 31 · Public Streaming 配置、校准与验收操作手册
 
-[目录](README.md) · [详细集成规格](30-public-streaming-detailed-integration.md) · [档位探索计划](24-memory-tier-exploration-and-acceptance.md) · [发布验收](26-public-preset-acceptance-and-release.md)
+[目录](README.md) · [详细集成规格](30-public-streaming-detailed-integration.md) · [Runtime/App 工程规格](33-public-runtime-app-engineering-spec.md) · [模型档位与发布](34-model-tier-calibration-and-release-spec.md) · [档位探索计划](24-memory-tier-exploration-and-acceptance.md) · [发布验收](26-public-preset-acceptance-and-release.md)
 
 日期：2026-09-17。状态：**实施前操作规格，尚无 public record**。
 

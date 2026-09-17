@@ -1,6 +1,6 @@
 # 30 · Public Streaming 详细集成、代码实现与验收规格
 
-[目录](README.md) · [Runtime 代码设计](28-public-runtime-code-design.md) · [实施与实验计划](29-public-implementation-and-acceptance-plan.md) · [配置与校准手册](31-public-streaming-config-calibration-runbook.md) · [当前框架说明](22-current-framework-guide.md)
+[目录](README.md) · [Runtime 代码设计](28-public-runtime-code-design.md) · [实施与实验计划](29-public-implementation-and-acceptance-plan.md) · [Runtime/App 工程规格](33-public-runtime-app-engineering-spec.md) · [配置与校准手册](31-public-streaming-config-calibration-runbook.md) · [当前框架说明](22-current-framework-guide.md)
 
 日期：2026-09-17。分支：feat/stream。
 
@@ -44,22 +44,24 @@ FastH3、量化变体或其他 checkpoint。
 
 ## 2. 当前代码检查点和真实缺口
 
-当前工作树已经开始 R1/R2，但仍处于未发布阶段：
+当前工作树已经完成 R1/R2 基础并接入 exact engine C ABI，但仍处于未发布阶段：
 
 | 层 | 当前已有 | 尚缺 |
 |---|---|---|
 | Wire | schema-v2 selector、五个 target、profile/request 合并、冲突检查 | App choice、job envelope、完整 v1/v2 semantic parity |
 | Catalog | 结构化 source/workload/runtime/device/plan/calibration/performance/release record；production 为空 | builder、reviewed record、revocation 发布流程 |
-| Identity | typed length-prefixed canonical encoder；record/source/runtime/resolution digest | 跨语言 golden、request/device/component 完整 digest 边界确认 |
-| Resolver | select、authorize、internal-only authority、snapshot identity 检查 | engine exact resolve C ABI、执行前 revoke/source revalidation |
+| Identity | typed length-prefixed canonical encoder；record/source/workload/runtime/device/resolution digest | 跨语言 golden、request/component 完整 digest 边界确认 |
+| Resolver | select、authorize、internal-only authority、snapshot identity 检查，已接 engine exact resolve | 执行前 source lease revalidation、错误优先级收口 |
 | Session | probe/compile/generate_resolved 默认拒绝 hook | 四模型 override 和共享 helper |
-| C API | options query；active selector 在 generate/prepare 中早拒绝 | tc_engine identity、resolve API、public generate 分支、结构化错误 |
-| Swift | selector/options/v2 request 骨架 | resolution、错误 envelope、App transaction、旧 job 迁移 |
+| C API | options query；engine model/root/container identity；resolve API；public generate 分支；prepare unsupported | null/busy/ownership/cancel测试、stable结构化错误、RunResult public metrics |
+| Swift | selector/options/v2 request、resolution/error类型、resolve API | semantic parity、App transaction、旧 job 迁移 |
 | Data plane | compiler、StageExecutor、slot safety、multi-pool、MLX pager | public authority 接线；不新增第二套 executor |
 | Model | 四模型 private descriptor/PlanView/candidate adapter | public probe/snapshot/generate_resolved 和 full-request record |
 | Evidence | private P1 anchors、若干 memory peak | full-request tree peak、五档筛选、swap 对照、独立 review |
 
 生产状态必须继续表述为：框架施工中，production catalog 为空，没有公开可执行档位。
+当前 exact C ABI 之后的收口设计、共享轻量校验和错误优先级以
+[32](32-public-streaming-completion-spec.md)为准。
 
 ## 3. 不可破坏的实现不变量
 

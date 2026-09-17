@@ -60,10 +60,16 @@ class KeyScanner {
             }
         }
     }
-    void value(unsigned depth) {
+    void value(unsigned depth, std::string_view key = {}) {
         if (depth > 128) throw std::invalid_argument("JSON nesting exceeds 128");
         ws(); if (at == text.size()) bad();
         char c = text[at];
+        const bool exact_streaming_target =
+            key == "target_request_memory_bytes";
+        if (exact_streaming_target && (c < '0' || c > '9'))
+            throw std::invalid_argument(
+                "streaming.target_request_memory_bytes must use unsigned "
+                "decimal integer syntax");
         if (c == '"') { string(false); return; }
         if (c == '{' || c == '[') {
             ++at; ws(); const char end = c == '{' ? '}' : ']';
@@ -71,13 +77,16 @@ class KeyScanner {
             if (at < text.size() && text[at] == end) { ++at; return; }
             while (true) {
                 ws();
+                std::string child_key;
                 if (c == '{') {
-                    auto key = string(true);
-                    if (!keys.insert(key).second)
-                        throw std::invalid_argument("duplicate JSON field: " + key);
+                    child_key = string(true);
+                    if (!keys.insert(child_key).second)
+                        throw std::invalid_argument(
+                            "duplicate JSON field: " + child_key);
                     ws(); if (take() != ':') bad();
                 }
-                value(depth+1); ws();
+                value(depth+1, c == '{' ? std::string_view(child_key) :
+                                          std::string_view{}); ws();
                 const char delimiter = take();
                 if (delimiter == end) return;
                 if (delimiter != ',') bad();
@@ -87,6 +96,14 @@ class KeyScanner {
         while (at < text.size() && text[at]!=',' && text[at]!='}' && text[at]!=']' &&
                text[at]!=' ' && text[at]!='\r' && text[at]!='\n' && text[at]!='\t') ++at;
         if (begin == at) bad();
+        if (exact_streaming_target) {
+            const auto token = text.substr(begin, at - begin);
+            if (token.empty() || token.find_first_not_of("0123456789") !=
+                                     std::string_view::npos)
+                throw std::invalid_argument(
+                    "streaming.target_request_memory_bytes must use unsigned "
+                    "decimal integer syntax");
+        }
     }
 public:
     explicit KeyScanner(std::string_view input) : text(input) {}

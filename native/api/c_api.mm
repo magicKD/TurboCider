@@ -10,6 +10,9 @@
 #include "../runtime/memory_execution.hpp"
 #include "../runtime/streaming/audit.hpp"
 #include "../runtime/streaming/preset_catalog.hpp"
+#include "../runtime/streaming/preset_resolver.hpp"
+#include "../runtime/streaming/public_request_validation.hpp"
+#include "../runtime/streaming/resolved_request.hpp"
 #include "../models/ltx_runtime/ltx_gemma_tokenizer.h"
 #include "../models/ltx_runtime/ltx_weights.h"
 #import <Metal/Metal.h>
@@ -20,10 +23,14 @@ std::unique_ptr<ModelSession> create_h3_candidate(
     const std::filesystem::path &);
 }
 struct tc_engine {
+    std::string model_id;
+    std::filesystem::path model_root;
+    std::string execution_container = "embedded_app";
     std::unique_ptr<tc::ModelSession> session;
     std::mutex mutex;
     std::atomic<bool> cancelled{false};
     std::atomic<bool> memory_quarantined{false};
+    std::atomic<bool> streaming_quarantined{false};
     // Set only by the internal exact-layout candidate constructor. Production model
     // creation remains fail-closed for unqualified manual layouts.
     bool allow_experimental_streaming = false;
@@ -46,6 +53,148 @@ int fail(char **error, const std::exception &e) {
     if (error)
         *error = strdup(e.what());
     return dynamic_cast<const tc::Cancelled *>(&e) ? 2 : 1;
+}
+
+tc::streaming::StreamingDeviceIdentity streaming_device_identity() {
+    const auto device = tc::device_info();
+    const auto version = NSProcessInfo.processInfo.operatingSystemVersion;
+    const std::string os_family = "macOS-" +
+        std::to_string(version.majorVersion) + "." +
+        std::to_string(version.minorVersion);
+    return {
+        device.gpu,
+        device.gpu + "/" + std::to_string(device.physical_memory),
+        os_family,
+        device.physical_memory,
+    };
+}
+
+using ResolvedStreamingExecution =
+    std::shared_ptr<const tc::streaming::ResolvedRequestExecution>;
+
+ResolvedStreamingExecution resolve_public_streaming_locked(
+        tc_engine &engine, tc::Request request) {
+    tc::require(engine.session != nullptr,
+                "streaming_engine_unavailable");
+    tc::require(request.streaming_selector &&
+                    request.streaming_selector->active(),
+                "streaming_selector_required");
+    tc::require(request.model == engine.model_id,
+                "streaming_engine_model_mismatch");
+    tc::streaming::validate_public_streaming_request(request);
+
+    const auto &catalog =
+        tc::streaming::production_streaming_preset_catalog();
+    // Empty production catalogs are deliberately rejected before model
+    // metadata, tokenizer, source hashing, the global GPU mutex or session
+    // execution. This is the safe state while public records are unavailable.
+    tc::require(!catalog.records.empty(),
+                "catalog_has_no_public_records");
+
+    auto plan = tc::make_plan(request);
+    request = std::move(plan.request);
+
+    const auto device = streaming_device_identity();
+    tc::streaming::PublicResolveInput input{
+        request, device, engine.execution_container};
+    auto probe = engine.session->probe_public_streaming(input);
+    tc::require(probe != nullptr,
+                "streaming_public_probe_unavailable");
+    tc::require(probe->model_id() == engine.model_id &&
+                    probe->workload_identity().model == engine.model_id &&
+                    probe->workload_identity().execution_container ==
+                        engine.execution_container,
+                "streaming_probe_identity_mismatch");
+
+    auto selected = tc::streaming::PublicPresetResolver::select(
+        *request.streaming_selector, *probe, device, catalog);
+    auto snapshot = engine.session->compile_public_streaming(
+        probe, selected.record);
+    tc::require(snapshot != nullptr,
+                "streaming_public_snapshot_unavailable");
+    auto selection = tc::streaming::PublicPresetResolver::authorize(
+        selected, *probe, *snapshot, device);
+
+    tc::Request internal = std::move(request);
+    internal.streaming_selector.reset();
+    internal.streaming_selector_requested.reset();
+    internal.streaming = selection.record.plan.canonical_config;
+    internal.streaming_requested = internal.streaming;
+    const auto request_digest =
+        tc::streaming::streaming_workload_identity_digest(
+            probe->workload_identity());
+    return std::make_shared<const tc::streaming::ResolvedRequestExecution>(
+        tc::streaming::ResolvedRequestExecution{
+            std::move(internal), std::move(selection), std::move(probe),
+            std::move(snapshot), request_digest});
+}
+
+void revalidate_public_streaming_locked(
+        const tc::streaming::ResolvedRequestExecution &execution) {
+    const auto current_device = streaming_device_identity();
+    const auto &catalog =
+        tc::streaming::production_streaming_preset_catalog();
+    const auto replay = tc::streaming::PublicPresetResolver::select(
+        execution.selection.exact_selector, *execution.probe,
+        current_device, catalog);
+    tc::require(replay.record.canonical_record_digest ==
+                    execution.selection.record.canonical_record_digest,
+                "streaming_resolution_stale");
+    tc::require(execution.selection.authority &&
+                    execution.selection.authority->matches(
+                        execution.selection.record,
+                        *execution.model_snapshot, current_device),
+                "streaming_authority_mismatch");
+    tc::require(execution.selection.exact_selector
+                        .expected_resolution_digest &&
+                    *execution.selection.exact_selector
+                         .expected_resolution_digest ==
+                        execution.selection.resolution_digest,
+                "streaming_resolution_stale");
+}
+
+NSDictionary *streaming_resolution_dictionary(
+        const tc::streaming::ResolvedRequestExecution &execution) {
+    const auto &selection = execution.selection;
+    const auto &record = selection.record;
+    return @{
+        @"schema_version" : @1,
+        @"status" : @"resolved",
+        @"request_digest" : @(execution.request_digest.c_str()),
+        @"resolution_digest" : @(selection.resolution_digest.c_str()),
+        @"catalog_revision" : @(record.catalog_revision.c_str()),
+        @"requested_selector" :
+            tc::streaming_selector_dictionary(selection.requested_selector),
+        @"exact_selector" :
+            tc::streaming_selector_dictionary(selection.exact_selector),
+        @"selection" : @{
+            @"preset_id" : @(record.id.c_str()),
+            @"preset_revision" : @(record.revision),
+            @"record_digest" : @(record.canonical_record_digest.c_str()),
+            @"release_channel" : @(record.release.channel.c_str()),
+            @"target_request_memory_bytes" :
+                @(*selection.exact_selector.target_request_memory_bytes),
+            @"calibrated_request_bytes" :
+                @(record.calibration.calibrated_request_bytes),
+            @"memory_scope" : @(record.calibration.scope.c_str()),
+            @"layout_digest" : @(record.plan.layout_digest.c_str()),
+            @"component_policy_revision" :
+                @(record.plan.component_policy_revision.c_str()),
+            @"execution_container" :
+                @(record.workload.execution_container.c_str()),
+        },
+        @"identity" : @{
+            @"source_digest" : @(
+                tc::streaming::streaming_source_identity_digest(
+                    execution.probe->source_identity()).c_str()),
+            @"runtime_digest" : @(
+                tc::streaming::streaming_runtime_identity_digest(
+                    execution.probe->runtime_identity()).c_str()),
+            @"device_digest" : @(
+                tc::streaming::streaming_device_identity_digest(
+                    selection.device).c_str()),
+        },
+    };
 }
 
 std::unique_ptr<tc::MemoryExecutionContext> prepare_memory_execution(
@@ -384,9 +533,7 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
         try {
             tc::require(out, "missing output pointer");
             const auto request = tc::request_from_json(tc::parse_json(r));
-            tc::require(request.streaming_selector &&
-                            request.streaming_selector->active(),
-                        "streaming_selector_required: active schema v2 selector expected");
+            tc::streaming::validate_public_streaming_request(request);
             const auto &selector = *request.streaming_selector;
             const auto device = tc::device_info();
             const std::string device_class = device.gpu + "/" +
@@ -396,13 +543,20 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
             NSMutableArray *targets = [NSMutableArray array];
             for (const uint64_t target : tc::public_streaming_targets) {
                 tc::streaming::PresetResolveQuery query;
-                query.workload = {
-                    request.model, request.operation, request.execution,
-                    device_class, "embedded_app",
-                    static_cast<uint32_t>(request.width),
-                    static_cast<uint32_t>(request.height),
-                    static_cast<uint32_t>(request.frames),
-                    static_cast<uint32_t>(request.steps), request.audio};
+                query.workload.model = request.model;
+                query.workload.operation = request.operation;
+                query.workload.execution = request.execution;
+                query.workload.device_class = device_class;
+                query.workload.execution_container = "embedded_app";
+                query.workload.width = static_cast<uint32_t>(request.width);
+                query.workload.height = static_cast<uint32_t>(request.height);
+                query.workload.frames = static_cast<uint32_t>(request.frames);
+                query.workload.fps = static_cast<uint32_t>(request.fps);
+                query.workload.steps = static_cast<uint32_t>(request.steps);
+                query.workload.batch = 1;
+                query.workload.audio = request.audio;
+                query.workload.dynamic_text = request.dynamic_text;
+                query.workload.approximation = request.allow_approximation;
                 query.target_request_memory_bytes = target;
                 query.physical_memory_bytes = device.physical_memory;
                 if (selector.selection && *selector.selection == "preset" &&
@@ -427,7 +581,7 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
                     entry[@"calibrated_request_bytes"] =
                         @(record.calibration.calibrated_request_bytes);
                     entry[@"memory_scope"] = @(record.calibration.scope.c_str());
-                    entry[@"release_channel"] = @(record.release_channel.c_str());
+                    entry[@"release_channel"] = @(record.release.channel.c_str());
                 }
                 [targets addObject:entry];
             }
@@ -465,6 +619,9 @@ int tc_engine_create_model(const char *id, const char *path, tc_engine **engine,
             tc::require(bool(module.create), "model executor unavailable");
             auto e = std::make_unique<tc_engine>();
             e->session = module.create(path);
+            e->model_id = id;
+            e->model_root =
+                std::filesystem::absolute(path).lexically_normal();
             *engine = e.release();
             return 0;
         } catch (const std::exception &e) {
@@ -479,6 +636,39 @@ int tc_engine_create_model(const char *id, const char *path, tc_engine **engine,
 int tc_engine_create(const char *path, tc_engine **engine, char **error) {
     return tc_engine_create_model("flux2-klein-4b", path, engine, error);
 }
+
+int tc_engine_resolve_streaming_json(
+        tc_engine *e, const char *request_json,
+        char **result_json, char **error) {
+    if (result_json) *result_json = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(e && request_json && result_json,
+                        "missing streaming resolve input/output");
+            tc::require(!e->streaming_quarantined.load(
+                            std::memory_order_acquire),
+                        "streaming_quarantined: engine must be recreated");
+            std::unique_lock<std::mutex> local(
+                e->mutex, std::try_to_lock);
+            tc::require(local.owns_lock(), "engine busy");
+            auto request = tc::request_from_json(
+                tc::parse_json(request_json));
+            auto resolved = resolve_public_streaming_locked(
+                *e, std::move(request));
+            *result_json = copy(tc::json(
+                streaming_resolution_dictionary(*resolved)));
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error)
+                *error = strdup("unknown public streaming resolution error");
+            return 1;
+        }
+    }
+}
+
 extern "C" int tc_engine_create_model_candidate(const char *id, const char *path,
                                                 tc_engine **engine, char **error) {
     if (!id || (std::strcmp(id, "ltx-2.5-distilled") != 0 &&
@@ -495,6 +685,9 @@ extern "C" int tc_engine_create_model_candidate(const char *id, const char *path
         try {
             auto e = std::make_unique<tc_engine>();
             e->session = tc::create_h3_candidate(path);
+            e->model_id = id;
+            e->model_root =
+                std::filesystem::absolute(path).lexically_normal();
             e->allow_experimental_streaming = true;
             *engine = e.release();
         } catch (const std::exception &exception) {
@@ -588,16 +781,22 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
             auto request = tc::request_from_json(tc::parse_json(r));
-            tc::require(!(request.streaming_selector &&
-                            request.streaming_selector->active()),
-                        "streaming_preset_resolution_required: public selector "
-                        "must be resolved by the engine before generation");
+            ResolvedStreamingExecution public_execution;
+            if (request.streaming_selector &&
+                request.streaming_selector->active()) {
+                tc::require(!e->streaming_quarantined.load(
+                                std::memory_order_acquire),
+                            "streaming_quarantined: engine must be recreated");
+                public_execution = resolve_public_streaming_locked(
+                    *e, std::move(request));
+                request = public_execution->request;
+            }
             // MLX uses process-global device/allocation policy. Serialize all embeddings.
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
             DeviceLease device_lease;
             e->cancelled.store(false);
-            tc::require(!request.streaming.active() ||
+            tc::require(public_execution || !request.streaming.active() ||
                             e->allow_experimental_streaming,
                         "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
             // Preserve the dev/default hot path: sessions already compile
@@ -619,6 +818,8 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
                             "Metal GPU unavailable");
                 configure_streams();
             }
+            if (public_execution)
+                revalidate_public_streaming_locked(*public_execution);
             if (request_plan) {
                 memory_execution = prepare_memory_execution(
                     *e->session, *request_plan, parent_mlx);
@@ -665,7 +866,10 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
             };
             tc::RunResult result;
             try {
-                result = e->session->generate(request, event, e->cancelled);
+                result = public_execution
+                    ? e->session->generate_resolved(
+                        public_execution, event, e->cancelled)
+                    : e->session->generate(request, event, e->cancelled);
                 if (memory_execution) {
                     if (memory_execution->uses_explicit_schedule()) {
                         drain_memory_execution(
@@ -1066,8 +1270,8 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
                 parsed_request = tc::request_from_json(tc::parse_json(request));
                 tc::require(!(parsed_request->streaming_selector &&
                                 parsed_request->streaming_selector->active()),
-                            "streaming_preset_resolution_required: public selector "
-                            "must be resolved by the engine before preparation");
+                            "streaming_prepare_unsupported: public streaming "
+                            "is resolved and executed only by generate");
                 tc::require(!parsed_request->streaming.active(),
                             "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
             }

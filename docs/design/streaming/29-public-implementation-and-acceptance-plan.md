@@ -1,6 +1,6 @@
 # 29 · Public Streaming 实施、实验与验收计划
 
-[目录](README.md) · [Runtime 代码设计](28-public-runtime-code-design.md) · [详细集成规格](30-public-streaming-detailed-integration.md) · [配置与校准手册](31-public-streaming-config-calibration-runbook.md) · [档位产品语义](23-public-memory-tier-presets.md) · [候选探索](24-memory-tier-exploration-and-acceptance.md) · [发布验收](26-public-preset-acceptance-and-release.md)
+[目录](README.md) · [Runtime 代码设计](28-public-runtime-code-design.md) · [详细集成规格](30-public-streaming-detailed-integration.md) · [Runtime/App 工程规格](33-public-runtime-app-engineering-spec.md) · [配置与校准手册](31-public-streaming-config-calibration-runbook.md) · [档位产品语义](23-public-memory-tier-presets.md) · [候选探索](24-memory-tier-exploration-and-acceptance.md) · [发布验收](26-public-preset-acceptance-and-release.md)
 
 日期：2026-09-17。分支：`feat/stream`。当前控制面提交：`63b73d9`。
 
@@ -15,24 +15,27 @@
 
 ## 1. 当前真实状态（必须先对齐）
 
-已提交基线仍是 `63b73d9`；当前工作树另有 R1/R2 增量，尚未形成阶段提交：
+已提交 public 控制面基线仍是 `63b73d9`；当前工作树另有 R1/R2 与 exact C ABI 增量，尚未形成阶段提交：
 
 | 项目 | 状态 | 证据/限制 |
 |---|---|---|
 | selector schema v2 | 已提交 | parser、profile merge、五档 target、disabled/preset 语义 |
 | production catalog | 结构扩展中且 production 仍为空 | 工作树已加入完整 source/workload/runtime/device/plan/calibration/performance/release 字段；仍故意 fail-closed |
-| canonical identity | 工作树实现中 | typed length-prefix encoder、record/source/runtime/resolution digest；跨语言 golden 尚缺 |
-| host resolver/authority | 工作树实现中 | select/authorize、internal-only authority、stale/source/layout/device 检查；engine 尚未接入 |
+| canonical identity | 工作树已实现基础 | typed length-prefix encoder、record/source/workload/runtime/device/resolution digest；跨语言 golden 尚缺 |
+| host resolver/authority | 工作树已接 engine | select/authorize、internal-only authority、stale/source/layout/device 检查；execution-time source lease revalidation 尚缺 |
 | session public hooks | 工作树实现中 | probe/compile/generate_resolved 默认拒绝；四模型尚未 override |
 | options C ABI | 已提交 | metadata-only、tentative、无 artifact exact identity |
-| Swift v2 类型 | 已提交 | 可编译骨架，未完成 semantic parity/job envelope |
-| unresolved selector gate | 已提交 | generate/prepare 在 GPU 锁、DeviceLease、session 前拒绝 |
-| exact engine resolve | 未实现 | 无 `tc_engine_resolve_streaming_json`，tc_engine 尚无 model/root identity |
-| public generate route | 未实现 | engine 尚未调用 `generate_resolved`；四模型仍 private/candidate |
+| Swift v2 类型 | 工作树扩展中 | resolution/error 类型和 resolve API 已接；semantic parity/job envelope 尚缺 |
+| unresolved selector gate | 已扩展为 exact fail-closed | resolve/generate 空 catalog 在 GPU/session 前拒绝；prepare 明确 unsupported |
+| exact engine resolve | 工作树已实现 | `tc_engine_resolve_streaming_json`、engine model/root/container identity；null/busy/ownership/cancel/error envelope 测试尚缺 |
+| public generate route | 工作树已接通框架分支 | resolve→global GPU lock→revalidate→`generate_resolved`；四模型默认 hook 仍拒绝 |
 | App 高级开关 | 未实现 | 无 `StreamingChoice`/OptionsStore/picker |
 | calibration 工具链 | 未实现 | 无 fresh-process tree sampler/catalog builder |
 | reviewed records | 未实现 | 没有任何模型/target 可公开 |
 | default P0 | 仅有基础回归 | 必须在每个 runtime PR 后重跑；控制面提交不等于性能签核 |
+
+下一步 exact runtime 收口的最新错误优先级、source revalidation、RunResult、App 和模型接入合同见
+[32](32-public-streaming-completion-spec.md)。下文 PR-R1/R2/R3 仍作为可回滚任务分解使用，但“尚未实现”状态以本节和32为准。
 
 ### 1.1 已有性能锚点的正确用法
 

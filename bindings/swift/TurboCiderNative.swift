@@ -189,6 +189,34 @@ public struct NativeStreamingOptions: Codable, Sendable {
     public let device: NativeStreamingDevice
     public let targets: [NativeStreamingTargetOption]
 }
+public struct NativeStreamingResolutionSelection: Codable, Sendable {
+    public let preset_id: String
+    public let preset_revision: UInt32
+    public let record_digest: String
+    public let release_channel: String
+    public let target_request_memory_bytes: UInt64
+    public let calibrated_request_bytes: UInt64
+    public let memory_scope: String
+    public let layout_digest: String
+    public let component_policy_revision: String
+    public let execution_container: String
+}
+public struct NativeStreamingResolutionIdentity: Codable, Sendable {
+    public let source_digest: String
+    public let runtime_digest: String
+    public let device_digest: String
+}
+public struct NativeStreamingResolution: Codable, Sendable {
+    public let schema_version: Int
+    public let status: String
+    public let request_digest: String
+    public let resolution_digest: String
+    public let catalog_revision: String
+    public let requested_selector: NativeStreamingSelectorV2
+    public let exact_selector: NativeStreamingSelectorV2
+    public let selection: NativeStreamingResolutionSelection
+    public let identity: NativeStreamingResolutionIdentity
+}
 public struct NativeEvent: Codable, Sendable {
     public let sequence: Int
     public let phase: String
@@ -196,9 +224,36 @@ public struct NativeEvent: Codable, Sendable {
     public let total: Int
     public let elapsed_seconds: Double
 }
+public struct NativeAPIErrorEnvelope: Codable, Sendable {
+    public let schema_version: Int
+    public let code: String
+    public let message: String
+    public let retryable: Bool
+    public let action: String?
+}
 public struct NativeFailure: Error, LocalizedError, Sendable {
     public let message: String
+    public let code: String?
+    public let retryable: Bool
+    public let action: String?
+    public init(message: String, code: String? = nil,
+                retryable: Bool = false, action: String? = nil) {
+        self.message = message
+        self.code = code
+        self.retryable = retryable
+        self.action = action
+    }
     public var errorDescription: String? { message }
+}
+private func nativeFailure(_ message: String) -> NativeFailure {
+    if let data = message.data(using: .utf8),
+       let envelope = try? JSONDecoder().decode(
+           NativeAPIErrorEnvelope.self, from: data) {
+        return NativeFailure(
+            message: envelope.message, code: envelope.code,
+            retryable: envelope.retryable, action: envelope.action)
+    }
+    return NativeFailure(message: message)
 }
 private func consume(_ pointer: UnsafeMutablePointer<CChar>?) -> String {
     guard let pointer else { return "" }
@@ -335,6 +390,31 @@ public final class NativeEngine: @unchecked Sendable {
         let message = consume(error), output = consume(result)
         guard status == 0 else { throw NativeFailure(message: message) }
         return try JSONDecoder().decode(NativeStreamingOptions.self, from: Data(output.utf8))
+    }
+    public func resolveStreaming(_ request: NativeRequestV2) async throws -> NativeStreamingResolution {
+        let payload = try JSONEncoder().encode(request)
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                var result: UnsafeMutablePointer<CChar>?
+                var error: UnsafeMutablePointer<CChar>?
+                let status = String(decoding: payload, as: UTF8.self).withCString {
+                    tc_engine_resolve_streaming_json(
+                        handle, $0, &result, &error)
+                }
+                let message = consume(error), output = consume(result)
+                guard status == 0 else {
+                    continuation.resume(throwing: nativeFailure(message))
+                    return
+                }
+                do {
+                    continuation.resume(returning: try JSONDecoder().decode(
+                        NativeStreamingResolution.self,
+                        from: Data(output.utf8)))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
     public func generate(_ request: NativeRequest, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
         try await generate(payload: JSONEncoder().encode(request), onEvent: onEvent)

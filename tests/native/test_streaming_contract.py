@@ -96,6 +96,9 @@ class StreamingContract(unittest.TestCase):
             "enabled": True, "limit_bytes": 16 << 30,
         }
         self.assertIn("streaming_config_conflict", plan(r)[2])
+        raw = json.dumps(selector_request()).replace(
+            str(12 << 30), "1.2884901888e10", 1)
+        self.assertIn("unsigned decimal integer syntax", plan(raw)[2])
 
     def test_public_options_are_metadata_only_and_fail_closed(self):
         status, result, error = options(selector_request())
@@ -104,7 +107,7 @@ class StreamingContract(unittest.TestCase):
         self.assertEqual(result["query_status"], "tentative_without_artifact_identity")
         self.assertEqual(len(result["targets"]), 5)
         self.assertTrue(all(item["status"] == "unavailable" for item in result["targets"]))
-        self.assertTrue(all(item["reason_code"] == "unsupported_model_or_format"
+        self.assertTrue(all(item["reason_code"] == "catalog_has_no_public_records"
                             for item in result["targets"]))
 
     def test_manual_is_explicit_plan_only(self):

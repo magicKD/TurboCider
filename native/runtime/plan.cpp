@@ -1,4 +1,5 @@
 #include "session.hpp"
+#include "streaming/public_request_validation.hpp"
 #include <set>
 #include <cmath>
 #include <algorithm>
@@ -82,19 +83,7 @@ ExecutionPlan make_plan(const Request &requested) {
                         "streaming_config_conflict: slot_count exceeds explicit max_refill_slots: " + id);
     }
     if (selector_active) {
-        require(!r.residency_specified && !r.memory_budget_specified &&
-                    !r.streaming_offload_specified && !r.memory_budget_bytes &&
-                    !r.streaming_offload,
-                "streaming_config_conflict: public selector conflicts with explicit legacy residency/budget/offload");
-        require((r.execution == "gpu" || r.execution == "gpu_ane") &&
-                    r.ane_manifest.empty() == (r.execution == "gpu"),
-                "streaming_route_unsupported: selector execution policy and ANE manifest differ");
-        require(r.encoder_ane_manifest.empty() || r.execution == "gpu_ane",
-                "streaming_route_unsupported: encoder ANE manifest requires gpu_ane selector policy");
-        require(r.loras.empty(),
-                "streaming_route_unsupported: LoRA is not yet validated for public presets");
-        require(!r.memory_constrained.enabled,
-                "streaming_config_conflict: public presets are not bounded-memory certified");
+        streaming::validate_public_streaming_request(r);
     }
     std::optional<EffectiveMemoryPolicy> memory_policy;
     if (r.memory_constrained.specified())

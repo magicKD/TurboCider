@@ -8,6 +8,14 @@
 #include <map>
 #include <optional>
 namespace tc {
+namespace streaming {
+struct PublicResolveInput;
+struct StreamingPresetRecord;
+class ModelStreamingProbe;
+class ModelStreamingSnapshot;
+struct ResolvedRequestExecution;
+} // namespace streaming
+
 class MemoryExecutionContext;
 struct ExecutionPlan {
     Request request;
@@ -134,6 +142,25 @@ class ModelSession {
     virtual std::optional<MemoryCapabilityProbe> probe_memory_capability(
         const ExecutionPlan &, const MemoryDeviceIdentity &) const {
         return std::nullopt;
+    }
+    /* Public streaming is a separate authority path from private/manual exact
+     * layouts.  Metadata probes and snapshot compilation must not allocate GPU
+     * buffers or start refill workers.  Models gain no public eligibility until
+     * all three methods are explicitly overridden. */
+    virtual std::shared_ptr<const streaming::ModelStreamingProbe>
+    probe_public_streaming(const streaming::PublicResolveInput &) const {
+        throw std::runtime_error("streaming_public_adapter_unsupported");
+    }
+    virtual std::shared_ptr<const streaming::ModelStreamingSnapshot>
+    compile_public_streaming(
+        std::shared_ptr<const streaming::ModelStreamingProbe>,
+        const streaming::StreamingPresetRecord &) const {
+        throw std::runtime_error("streaming_public_adapter_unsupported");
+    }
+    virtual RunResult generate_resolved(
+        std::shared_ptr<const streaming::ResolvedRequestExecution>,
+        const Event &, std::atomic<bool> &) {
+        throw std::runtime_error("streaming_public_adapter_unsupported");
     }
     virtual RunResult generate(const Request &, const Event &, std::atomic<bool> &) = 0;
     virtual LoadResult load(const Event &, std::atomic<bool> &) {
