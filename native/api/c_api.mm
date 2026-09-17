@@ -11,6 +11,7 @@
 #include "../runtime/streaming/audit.hpp"
 #include "../runtime/streaming/preset_catalog.hpp"
 #include "../runtime/streaming/preset_resolver.hpp"
+#include "../runtime/streaming/public_runtime.hpp"
 #include "../runtime/streaming/public_result.hpp"
 #include "../runtime/streaming/public_request_validation.hpp"
 #include "../runtime/streaming/resolved_request.hpp"
@@ -75,83 +76,24 @@ using ResolvedStreamingExecution =
 
 ResolvedStreamingExecution resolve_public_streaming_locked(
         tc_engine &engine, tc::Request request) {
-    tc::require(engine.session != nullptr,
-                "streaming_engine_unavailable");
-    tc::require(request.streaming_selector &&
-                    request.streaming_selector->active(),
-                "streaming_selector_required");
-    tc::require(request.model == engine.model_id,
-                "streaming_engine_model_mismatch");
-    tc::streaming::validate_public_streaming_request(request);
-
-    const auto &catalog =
-        tc::streaming::production_streaming_preset_catalog();
-    // Empty production catalogs are deliberately rejected before model
-    // metadata, tokenizer, source hashing, the global GPU mutex or session
-    // execution. This is the safe state while public records are unavailable.
-    tc::require(!catalog.records.empty(),
-                "catalog_has_no_public_records");
-
+    tc::require(engine.session != nullptr, "streaming_engine_unavailable");
+    tc::streaming::PublicStreamingCoordinator coordinator(
+        *engine.session, engine.model_id, engine.execution_container,
+        tc::streaming::production_streaming_catalog_provider());
+    coordinator.preflight(request);
     auto plan = tc::make_plan(request);
     request = std::move(plan.request);
-
-    const auto device = streaming_device_identity();
-    tc::streaming::PublicResolveInput input{
-        request, device, engine.execution_container};
-    auto probe = engine.session->probe_public_streaming(input);
-    tc::require(probe != nullptr,
-                "streaming_public_probe_unavailable");
-    tc::require(probe->model_id() == engine.model_id &&
-                    probe->workload_identity().model == engine.model_id &&
-                    probe->workload_identity().execution_container ==
-                        engine.execution_container,
-                "streaming_probe_identity_mismatch");
-
-    auto selected = tc::streaming::PublicPresetResolver::select(
-        *request.streaming_selector, *probe, device, catalog);
-    auto snapshot = engine.session->compile_public_streaming(
-        probe, selected.record);
-    tc::require(snapshot != nullptr,
-                "streaming_public_snapshot_unavailable");
-    auto selection = tc::streaming::PublicPresetResolver::authorize(
-        selected, *probe, *snapshot, device);
-
-    tc::Request internal = std::move(request);
-    internal.streaming_selector.reset();
-    internal.streaming_selector_requested.reset();
-    internal.streaming = selection.record.plan.canonical_config;
-    internal.streaming_requested = internal.streaming;
-    const auto request_digest =
-        tc::streaming::streaming_workload_identity_digest(
-            probe->workload_identity());
-    return std::make_shared<const tc::streaming::ResolvedRequestExecution>(
-        tc::streaming::ResolvedRequestExecution{
-            std::move(internal), std::move(selection), std::move(probe),
-            std::move(snapshot), request_digest});
+    return coordinator.resolve_normalized(request, streaming_device_identity());
 }
 
 void revalidate_public_streaming_locked(
+        tc_engine &engine,
         const tc::streaming::ResolvedRequestExecution &execution) {
-    const auto current_device = streaming_device_identity();
-    const auto &catalog =
-        tc::streaming::production_streaming_preset_catalog();
-    const auto replay = tc::streaming::PublicPresetResolver::select(
-        execution.selection.exact_selector, *execution.probe,
-        current_device, catalog);
-    tc::require(replay.record.canonical_record_digest ==
-                    execution.selection.record.canonical_record_digest,
-                "streaming_resolution_stale");
-    tc::require(execution.selection.authority &&
-                    execution.selection.authority->matches(
-                        execution.selection.record,
-                        *execution.model_snapshot, current_device),
-                "streaming_authority_mismatch");
-    tc::require(execution.selection.exact_selector
-                        .expected_resolution_digest &&
-                    *execution.selection.exact_selector
-                         .expected_resolution_digest ==
-                        execution.selection.resolution_digest,
-                "streaming_resolution_stale");
+    tc::require(engine.session != nullptr, "streaming_engine_unavailable");
+    tc::streaming::PublicStreamingCoordinator coordinator(
+        *engine.session, engine.model_id, engine.execution_container,
+        tc::streaming::production_streaming_catalog_provider());
+    coordinator.revalidate(execution, streaming_device_identity());
 }
 
 NSDictionary *streaming_resolution_dictionary(
@@ -820,7 +762,8 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
                 configure_streams();
             }
             if (public_execution)
-                revalidate_public_streaming_locked(*public_execution);
+                revalidate_public_streaming_locked(
+                    *e, *public_execution);
             if (request_plan) {
                 memory_execution = prepare_memory_execution(
                     *e->session, *request_plan, parent_mlx);

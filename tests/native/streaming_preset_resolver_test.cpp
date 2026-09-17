@@ -1,4 +1,5 @@
 #include "../../native/runtime/streaming/preset_resolver.hpp"
+#include "../../native/runtime/streaming/public_runtime.hpp"
 #include "../../native/runtime/streaming/public_result.hpp"
 
 #include <cassert>
@@ -153,6 +154,8 @@ class Snapshot final : public ModelStreamingSnapshot {
     Descriptor descriptor_value;
     Layout layout_value;
     std::string component = "zimage-components-v1";
+    mutable uint32_t source_revalidations = 0;
+    mutable bool source_valid = true;
 
     explicit Snapshot(std::string layout_digest) {
         descriptor_value.model = "z-image-turbo";
@@ -194,7 +197,65 @@ class Snapshot final : public ModelStreamingSnapshot {
     std::string_view component_policy_revision() const noexcept override {
         return component;
     }
+    void revalidate_source() const override {
+        ++source_revalidations;
+        if (!source_valid)
+            throw std::runtime_error("artifact_changed");
+    }
 };
+
+class FixedCatalogProvider final : public StreamingCatalogProvider {
+  public:
+    StreamingPresetCatalog value;
+
+    explicit FixedCatalogProvider(StreamingPresetCatalog catalog)
+        : value(std::move(catalog)) {}
+    const StreamingPresetCatalog &catalog() const noexcept override {
+        return value;
+    }
+};
+
+class PublicSession final : public ModelSession {
+  public:
+    mutable uint32_t probe_calls = 0;
+    mutable uint32_t compile_calls = 0;
+    mutable std::shared_ptr<Snapshot> snapshot;
+
+    std::shared_ptr<const ModelStreamingProbe> probe_public_streaming(
+            const PublicResolveInput &) const override {
+        ++probe_calls;
+        return std::make_shared<Probe>();
+    }
+    std::shared_ptr<const ModelStreamingSnapshot> compile_public_streaming(
+            std::shared_ptr<const ModelStreamingProbe>,
+            const StreamingPresetRecord &selected) const override {
+        ++compile_calls;
+        snapshot = std::make_shared<Snapshot>(
+            selected.plan.layout_digest);
+        return snapshot;
+    }
+    RunResult generate(const Request &, const Event &,
+                       std::atomic<bool> &) override {
+        throw std::runtime_error("fake session does not generate");
+    }
+    void unload() override {}
+};
+
+Request public_request(uint64_t target = 10 * gib) {
+    Request value;
+    value.model = "z-image-turbo";
+    value.operation = "image.generate";
+    value.execution = "gpu";
+    value.width = 512;
+    value.height = 512;
+    value.frames = 1;
+    value.steps = 9;
+    value.audio = false;
+    value.dynamic_text = true;
+    value.streaming_selector = selector(target);
+    value.streaming_selector_requested = value.streaming_selector;
+    return value;
+}
 
 template <class Function>
 void rejects(Function &&function, const char *message) {
@@ -358,12 +419,46 @@ int main() {
         verify_and_attach_public_streaming_result(execution, wrong_actual);
     }, "streaming_actual_plan_mismatch");
 
+    FixedCatalogProvider provider(catalog);
+    PublicSession public_session;
+    PublicStreamingCoordinator coordinator(
+        public_session, "z-image-turbo", "embedded_app", provider);
+    auto coordinated = coordinator.resolve_normalized(
+        public_request(), device());
+    assert(coordinated && public_session.probe_calls == 1 &&
+           public_session.compile_calls == 1);
+    assert(!coordinated->request.streaming_selector &&
+           coordinated->request.streaming.active());
+    assert(coordinated->selection.exact_selector.preset_id == "fast-fit");
+    coordinator.revalidate(*coordinated, device());
+    assert(public_session.snapshot &&
+           public_session.snapshot->source_revalidations == 1);
+
+    public_session.snapshot->source_valid = false;
+    rejects([&] { coordinator.revalidate(*coordinated, device()); },
+            "artifact_changed");
+    public_session.snapshot->source_valid = true;
+
+    FixedCatalogProvider empty_provider({"empty-test", {}});
+    PublicSession unopened_session;
+    PublicStreamingCoordinator empty_coordinator(
+        unopened_session, "z-image-turbo", "embedded_app", empty_provider);
+    rejects([&] { empty_coordinator.preflight(public_request()); },
+            "catalog_has_no_public_records");
+    assert(unopened_session.probe_calls == 0 &&
+           unopened_session.compile_calls == 0);
+
+    auto wrong_model_request = public_request();
+    wrong_model_request.model = "flux2-klein-9b";
+    rejects([&] { coordinator.preflight(wrong_model_request); },
+            "streaming_engine_model_mismatch");
+
     assert(production_streaming_preset_catalog().records.empty());
     assert(resolve_streaming_preset(
         query(10 * gib), production_streaming_preset_catalog()).rejection_code ==
         "catalog_has_no_public_records");
-    std::cout << "PASS public preset resolver/result: canonical identity, "
-                 "deterministic rank, internal authority, replay, "
-                 "actual-plan/source-lease/drain verification and "
+    std::cout << "PASS public preset runtime/result: canonical identity, "
+                 "deterministic rank, coordinator/provider, internal "
+                 "authority, source revalidation, actual-plan/drain and "
                  "device/calibration/revocation fail-closed\n";
 }

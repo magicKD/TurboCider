@@ -50,6 +50,10 @@ class ModelStreamingSnapshot {
     virtual const Descriptor &descriptor() const noexcept = 0;
     virtual const Layout &layout() const noexcept = 0;
     virtual std::string_view component_policy_revision() const noexcept = 0;
+    // Metadata/source lease check performed under the engine/global execution
+    // locks immediately before the adapter is allowed to open readers or
+    // submit GPU work. Implementations must not allocate GPU payloads here.
+    virtual void revalidate_source() const {}
 };
 
 struct SelectedStreamingPreset {
