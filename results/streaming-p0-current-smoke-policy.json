@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "comparison_kind": "P0",
+  "initial_matched_pairs": 4,
+  "minimum_tail_requests_per_variant": 0,
+  "bootstrap_iterations": 1200,
+  "bootstrap_seed": 17,
+  "thresholds": {
+    "P0_legacy": {
+      "wall_median_ratio_max": 1.02,
+      "wall_p95_ratio_max": 1.05,
+      "denoise_median_ratio_max": 1.02,
+      "new_framework_hooks": 0,
+      "new_memory_probes": 0,
+      "new_worker_threads": 0,
+      "new_pool_allocations": 0,
+      "new_cache_clear_or_unload_calls": 0
+    }
+  },
+  "workload": {
+    "request": {
+      "schema_version": 1,
+      "model": "ltx-2.5-distilled",
+      "operation": "video.generate",
+      "prompt": "A red fox running through snow",
+      "width": 64,
+      "height": 64,
+      "frames": 9,
+      "fps": 24,
+      "steps": 11,
+      "seed": 42,
+      "execution": "gpu",
+      "residency": "resident",
+      "memory_budget_bytes": 0,
+      "audio": false,
+      "ltx_backend": "c_metal",
+      "ltx_fast_av": true,
+      "dump_tensors": "${DUMP}",
+      "output": "${OUTPUT}"
+    },
+    "seed_path": "seed",
+    "seed_stride": 1,
+    "output_suffix": ".mp4"
+  },
+  "protocol": {
+    "measured_blocks": 2,
+    "warmup_requests_per_variant": 1,
+    "worker_start_timeout_seconds": 30,
+    "request_timeout_seconds": 180,
+    "cache_condition": "retained-engine-request-warm",
+    "stopping_rule": "fixed-two-block-post-h3-integration-smoke",
+    "quantile_estimator": "linear-interpolated-p95",
+    "bootstrap_unit": "abba_block",
+    "multiplicity_policy": "single-tiny-workload-smoke",
+    "exclusion_policy": "no-exclusions-after-freeze",
+    "timing_scope": "request-wall-and-denoise",
+    "launch_pressure": false
+  },
+  "quality": {
+    "mode": "artifact_sha256_equal",
+    "artifacts": [
+      {
+        "name": "stage2_video",
+        "path": "${DUMP}/stage2_video.bf16"
+      }
+    ]
+  },
+  "variants": {
+    "baseline": {
+      "backend": "native",
+      "library": "/private/tmp/turbocider-dev-ad343d4-source/build/native/libturbocider.dylib",
+      "model_id": "ltx-2.5-distilled",
+      "model_path": "/Users/james/cch/video-generation/TurboCider/models/LTX-2.5",
+      "constructor": "public",
+      "source_root": "/private/tmp/turbocider-dev-ad343d4-source",
+      "source_commit": "ad343d4e5139c9a5f13e29ff9e926e8eb1ae2f39"
+    },
+    "candidate": {
+      "backend": "native",
+      "library": "/Users/james/cch/video-generation/TurboCider/build/native/libturbocider.dylib",
+      "model_id": "ltx-2.5-distilled",
+      "model_path": "/Users/james/cch/video-generation/TurboCider/models/LTX-2.5",
+      "constructor": "public",
+      "source_root": "/Users/james/cch/video-generation/TurboCider"
+    }
+  }
+}

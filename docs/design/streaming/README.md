@@ -51,6 +51,7 @@
 | [19 Layout-first Architecture](19-layout-first-architecture.md) | 对象/依赖、确定性分组与容量算法、owner pump、双槽时序和峰值算例 |
 | [20 Implementation and Acceptance](20-layout-first-implementation-and-acceptance.md) | 当前 v2 接缝、下一批 PR、失败/所有权测试、模型接入与 P0–P4 交付单 |
 | [21 Review and Handoff](21-review-and-handoff.md) | 提交范围、审阅发现、当前验证与按优先级排列的未完成项 |
+| [22 Current Framework Guide](22-current-framework-guide.md) | 当前 slot/streaming 框架的完整使用、配置、调度、模型接入、性能与限制说明 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -59,6 +60,7 @@
 13是当前实施事实来源；08第1–8节是历史设计快照，不能当作当前尚无代码的结论。
 
 不必顺序阅读全部文档：架构评审看19，实施负责人看20第3–7节，测试负责人看20第8–10节和12。
+希望从使用方式一路理解到当前四模型表现时，直接阅读22；它是面向使用者和实现者的当前总览，不替代各主题规范。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
 
