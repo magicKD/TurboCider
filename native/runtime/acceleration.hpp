@@ -23,7 +23,7 @@ inline constexpr AccelerationCase measured_hybrid_cases[] = {
      512, 512, 4, 1025, 1088, 1088, "Apple M4 Max", 64ull << 30, 9216, 6144},
     {"m4max64-zimage-t2i-1024-a4096-v1", "z-image-turbo", "image.generate",
      1024, 1024, 9, 4128, 4128, 4128, "Apple M4 Max", 64ull << 30, 10240, 4096},
-    // Paired M5 Pro measurements: docs/design/validation/flux2-m5pro-2026-09-16.json.
+    // Paired M5 Pro measurements: docs/design/m5-ane-adaptation.md.
     {"m5pro24-flux4b-t2i-512-a6144-v1", "flux2-klein-4b", "image.generate",
      512, 512, 4, 1025, 1088, 1088, "Apple M5 Pro", 24ull << 30, 9216, 6144}
 };

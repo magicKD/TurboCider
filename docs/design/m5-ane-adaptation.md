@@ -18,26 +18,27 @@
 
 以下均为完整生成含 PNG 导出的热态中位数；各行是独立实验，不能跨行拼接比较。
 Z-Image 为 Comfy BF16、无 LoRA，streaming 的 GPU 预算均为 10 GiB。
-性能数值对应各 JSON 中记录的历史构建；合并上游后的额外验证单独记录，不混入原采样。
+性能数值对应实验时的历史构建；合并上游后的额外验证单独记录，不混入原采样。
+完整采样、构建身份和失败记录保存在本机 `local-experiments/m5/2026-09-16/records/`，该目录由 Git 忽略；仓库保留本页结论与复现方法。
 
-| 实验 | 条件 / 每路线热态样本数 | 优化前 → 后 | 结果与证据 |
+| 实验 | 条件 / 每路线热态样本数 | 优化前 → 后 | 结果 |
 | --- | --- | ---: | --- |
-| FLUX 自动混合 | 512²、4 步、resident / 18 | GPU 1.784 → 混合 1.524 s | 耗时 −14.6%；[数据](validation/flux2-m5pro-2026-09-16.json) |
-| Z-Image resident 调研 | 512²、9 步 / 12 | GPU 6.948 → 混合 7.576 s | 混合慢 9.0%；[数据](validation/z-image-m5pro-2026-09-16.json) |
-| 后缀优化前的 streaming | 512²、9 步 / 8 | GPU 10.953 → 混合 11.936 s | 未见收益；a6144 未过质量门槛；[数据](validation/z-image-m5-streaming-2026-09-16.json) |
-| GPU 后缀加载 | 512²、9 步 / 8 | 原混合 10.773 → 7.217 s | 耗时 −33.0%，应用权重读取量 55.36 → 26.48 GB；同轮 GPU 10.747 s；[数据](validation/z-image-m5-gpu-suffix-2026-09-16.json) |
-| GPU 前后段编译 | 1024²、8 步 / 4 | 原混合 34.666 → 33.476 s | 耗时 −3.4%；同轮 GPU 28.895 s，混合仍较慢；[数据](validation/z-image-m5-hybrid-fusion-2026-09-16.json) |
-| 512 融合复核 | 512²、8 步、1120 行 / 4 | 原混合 7.338 → 7.119 s | 耗时 −3.0%；同轮 GPU 10.578 s；[数据](validation/z-image-m5-512-partition-routing-2026-09-16.json) |
-| 512 分区选择修复 | 同上、新融合路径 / 4 | 误用 4128 行 12.387 → 1120 行 7.119 s | 耗时 −42.5%；两个分区实验分别预热；[数据](validation/z-image-m5-512-partition-routing-2026-09-16.json) |
+| FLUX 自动混合 | 512²、4 步、resident / 18 | GPU 1.784 → 混合 1.524 s | 耗时 −14.6% |
+| Z-Image resident 调研 | 512²、9 步 / 12 | GPU 6.948 → 混合 7.576 s | 混合慢 9.0% |
+| 后缀优化前的 streaming | 512²、9 步 / 8 | GPU 10.953 → 混合 11.936 s | 未见收益；a6144 未过质量门槛 |
+| GPU 后缀加载 | 512²、9 步 / 8 | 原混合 10.773 → 7.217 s | 耗时 −33.0%，应用权重读取量 55.36 → 26.48 GB；同轮 GPU 10.747 s |
+| GPU 前后段编译 | 1024²、8 步 / 4 | 原混合 34.666 → 33.476 s | 耗时 −3.4%；同轮 GPU 28.895 s，混合仍较慢 |
+| 512 融合复核 | 512²、8 步、1120 行 / 4 | 原混合 7.338 → 7.119 s | 耗时 −3.0%；同轮 GPU 10.578 s |
+| 512 分区选择修复 | 同上、新融合路径 / 4 | 误用 4128 行 12.387 → 1120 行 7.119 s | 耗时 −42.5%；两个分区实验分别预热 |
 
-[1024 分段计时](validation/z-image-m5-1024-profile-2026-09-16.json) 表明 MLP 并行有收益，但整图仍受交接前后处理和内存压力影响。后续编译优化将主层前段 60.478 → 55.028 ms、后段 3.266 → 2.090 ms，并行窗口基本不变。512 误用大分区时 Core ML 调用由 8.147 增至 30.001 ms，是明显慢速的主要原因。
+1024 分段计时表明 MLP 并行有收益，但整图仍受交接前后处理和内存压力影响。后续编译优化将主层前段 60.478 → 55.028 ms、后段 3.266 → 2.090 ms，并行窗口基本不变。512 误用大分区时 Core ML 调用由 8.147 增至 30.001 ms，是明显慢速的主要原因。
 
 ## 验证与边界
 
 - FLUX 24 对、Z-Image resident 18 对图片通过原有近似质量门槛；后缀优化 10 对、融合验证 26 次生成及 512 复核 40 次生成中，同一混合路线的优化前后 PNG 逐字节一致。这不表示 INT8 混合与 BF16 GPU 输出相同。
 - 原生后缀读取、缓冲区复用、取消/重试、路由切换测试通过；Swift 回归及真实分词器的 512 → 1024 → 512 分区选择通过。`make test` 的 VDN 精度测试在修改前库也失败，未放宽阈值。
-- PR 同步 `dev@ad343d4` 后，原生/Swift 构建、78 项契约测试（3 项跳过）及客户端回归通过；额外 6 次 512 生成验证新旧图和输出拷贝修复前后 PNG 一致。记录附在 512 验证 JSON 的 `pr_integration_validation` 中。
-- 机型范围收窄后，79 项契约测试（3 项跳过）、8 组未获准设备的策略测试、Swift 回归及真实分区切换通过；M5 的 3 张输出与收窄前一致。详见同一 JSON 的 `device_scope_validation`，未宣称进行了 M4 实机复测。
+- PR 同步 `dev@ad343d4` 后，原生/Swift 构建、78 项契约测试（3 项跳过）及客户端回归通过；额外 6 次 512 生成验证新旧图和输出拷贝修复前后 PNG 一致。记录保存在本地 512 分区实验的 `pr_integration_validation` 中。
+- 机型范围收窄后，79 项契约测试（3 项跳过）、8 组未获准设备的策略测试、Swift 回归及真实分区切换通过；M5 的 3 张输出与收窄前一致。记录保存在该本地实验的 `device_scope_validation` 中，未宣称进行了 M4 实机复测。
 - Z-Image M5 的 `auto` 仍选 GPU；显式 ANE streaming 仅支持 M5 Pro 24 GiB、Comfy BF16、无 LoRA。FLUX 自动案例仅限 M5 Pro 24 GiB、512²、4 步、resident、无 LoRA/输入图、1025–1088 tokens、a6144/b1088，且需允许近似及有效本机分区。
 - 首张包含模型加载、编译及后缀整理；后缀临时文件约 1.41 GiB，两次准备为 0.385 / 0.236 s，随会话释放。10 GiB 是 GPU 采样规划预算，不含 Core ML，也不是整进程内存上限。
 - 未清空系统缓存，存在桌面负载及换页波动；打点是含同步的主机耗时，不能当作纯内核时间。1024 测试的 VAE 后 MLX 峰值约 17.35 GiB。结论不推广至其他 M5 配置，也不承诺零 swap。
@@ -47,9 +48,11 @@ Z-Image 为 Comfy BF16、无 LoRA，streaming 的 GPU 预算均为 10 GiB。
 使用 `tools/native/benchmark_z_image_streaming.py` 比较驻留方式，使用下面的驱动复测融合或分段计时；路径替换为本机配置，每次使用新输出目录：
 
 ```sh
-.venv/bin/python tools/native/profile_z_image.py --library build/native/libturbocider.dylib --model "$TC_MODEL" --manifest "$TC_MANIFEST" --prompt-file "$TC_PROMPT_FILE" --size 512 --steps 8 --budget-gib 10 --experiment fusion --output outputs/m5-recheck
+.venv/bin/python tools/native/profile_z_image.py --library build/native/libturbocider.dylib --model "$TC_MODEL" --manifest "$TC_MANIFEST" --prompt-file "$TC_PROMPT_FILE" --size 512 --steps 8 --budget-gib 10 --experiment fusion --output local-experiments/m5/recheck
 ```
 
 `--experiment stages` 复测分段计时；`TURBOCIDER_Z_HYBRID_EAGER_SEGMENTS=1` 切回原混合图。打点默认关闭。FLUX 准备步骤见[指南](../public/FLUX_PREPARATION.md)。
 
-7 份验证 JSON 保留全部采样、版本/哈希、失败记录和限制，路径已归一化。本机 `outputs/*m5*20260916/` 保留原始计时、日志及图片；重复图片共用存储。未采用/已替代的分区权重和临时构建已清理，清单及退役分区元数据位于 `outputs/m5-experiment-cleanup-20260916/`；客户端登记的三个分区保留。
+本地实验入口为 `local-experiments/m5/2026-09-16/README.md`，索引记录 7 份 JSON 的原路径、来源提交和 SHA-256，便于继续实验与校验。后续实验按主题、日期和案例写入 `local-experiments/`，完整记录不纳入版本控制。
+
+既有原始计时、日志及图片保留在本机 `outputs/*m5*20260916/`；重复图片共用存储。未采用/已替代的分区权重和临时构建已清理，清单及退役分区元数据位于 `outputs/m5-experiment-cleanup-20260916/`；客户端登记的三个分区保留。

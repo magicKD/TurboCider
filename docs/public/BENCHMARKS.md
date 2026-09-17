@@ -6,7 +6,8 @@ This is a public, self-contained export of existing project measurements.
 The [machine-readable timing samples](benchmarks/measurements.json) preserve
 the selected records without depending on private development documents.
 The original publication pass exported existing measurements. The September 16
-M5 entry below adds new local measurements and retains its own evidence file.
+M5 entry below summarizes new local measurements; its complete experiment records
+remain in a Git-ignored local directory.
 
 Weights, raw images and full execution logs are not bundled. Consequently this
 is inspectable reported evidence, not a claim that every original experiment
@@ -34,7 +35,7 @@ streaming experiments without a hybrid benefit are also retained.
 The new runtime optimizations are enabled only by the built-in M5 Pro 24 GiB
 device policy; M4 and other unmeasured devices keep their existing paths.
 
-[Implementation, quality checks, limitations and seven complete evidence records](../design/m5-ane-adaptation.md).
+[Implementation, quality checks, limitations and reproduction instructions](../design/m5-ane-adaptation.md).
 
 ## FLUX on M4 Pro — September 5, 2026
 
