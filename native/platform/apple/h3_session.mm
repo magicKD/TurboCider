@@ -302,8 +302,49 @@ struct Progress {
         }catch(...){p.failure=std::current_exception();return 1;}
     }
 };
+
+static int h3_exact_cancel_query(const void* opaque) {
+    const auto* cancelled = static_cast<const std::atomic<bool>*>(opaque);
+    return cancelled && cancelled->load(std::memory_order_acquire) ? 1 : 0;
+}
+
+static const tc::StreamingStageConfig* h3_exact_streaming_stage(
+        const tc::Request& request) {
+    if (!request.streaming.active()) return nullptr;
+    const auto stage = request.streaming.stages.find("denoiser");
+    return stage == request.streaming.stages.end() ? nullptr : &stage->second;
+}
+
+static tc::StreamingRuntimeMetrics h3_streaming_runtime_metrics(
+        const h3_result& result, const tc::Request& request,
+        bool exact_streaming) {
+    tc::StreamingRuntimeMetrics metrics;
+    metrics.implementation = exact_streaming ?
+        "generic-stage-executor-v3" : "h3-legacy-pthread-stream-v1";
+    metrics.stage = "denoiser";
+    metrics.resident_prefix_blocks = static_cast<uint32_t>(
+        result.ssd_pinned_blocks);
+    metrics.block_group_size = 1;
+    metrics.slot_count = 2;
+    metrics.prefetch_distance = 1;
+    metrics.io_workers = 1;
+    metrics.group_count = static_cast<uint32_t>(
+        result.ssd_streamed_blocks);
+    metrics.pass_count = static_cast<uint32_t>(request.steps);
+    metrics.startup_policy = "prefetch_window_before_prefix";
+    metrics.pass_transition = "carry_first_group";
+    metrics.retention = "request";
+    metrics.reader_revision = 1;
+    metrics.weight_format = "bf16-safetensors";
+    metrics.kernel_revision = "h3-metal-dense-block-v1";
+    metrics.conditioning_recipe = "h3-refined-text-adaln-v1";
+    metrics.upsample_boundary = "dit-output-before-video-vae";
+    return metrics;
+}
+
 class H3Session final:public tc::ModelSession {
     std::filesystem::path root_;
+    bool allow_experimental_streaming_ = false;
     std::filesystem::path loaded_root_;
     std::string loaded_context_identity_;
     std::unique_ptr<h3_ctx,decltype(&h3_free)> context_{nullptr,h3_free};
@@ -316,10 +357,13 @@ class H3Session final:public tc::ModelSession {
     h3_host_memory_hooks host_memory_hooks_{};
     tc_memory_schedule_hooks_v1 memory_schedule_hooks_{};
     uint64_t memory_generation_=0;
+    uint64_t exact_generation_=0;
     tc::MemoryExecutionContext* memory_context_=nullptr;
     mutable tc::MemoryCheckpointHashCache memory_probe_hash_cache_;
 public:
-    explicit H3Session(const std::filesystem::path& root):root_(root) {
+    explicit H3Session(const std::filesystem::path& root,
+                       bool allow_experimental_streaming = false)
+        : root_(root), allow_experimental_streaming_(allow_experimental_streaming) {
         tc::require(std::filesystem::is_directory(root),"H3 model directory missing: "+root.string());
     }
     bool uses_parent_mlx() const override { return false; }
@@ -420,7 +464,33 @@ public:
                     "only GPU streamed text-to-video without audio, inputs, "
                     "runtime LoRA, or quantized cache");
         }
-        auto plan=make_plan(r);require(!r.prompt.empty()&&!r.output.empty(),"prompt and output are required");
+        auto plan=make_plan(r);
+        const auto* exact_stage = h3_exact_streaming_stage(r);
+        const bool exact_streaming = exact_stage &&
+            exact_stage->residency &&
+            *exact_stage->residency == "streamed";
+        if (r.streaming.active()) {
+            require(allow_experimental_streaming_,
+                    "streaming_layout_not_certified: H3 exact adapter is "
+                    "restricted to the private candidate constructor");
+            require(exact_streaming && r.streaming.stages.size() == 1 &&
+                        exact_stage->block_group_size == 1u &&
+                        exact_stage->slot_count == 2u &&
+                        exact_stage->resident_prefix_blocks &&
+                        *exact_stage->resident_prefix_blocks <= 48u &&
+                        exact_stage->prefetch_distance == 1u &&
+                        exact_stage->io_workers == 1u &&
+                        r.streaming.retention == "request" &&
+                        r.operation == "video.generate" && !r.audio &&
+                        r.inputs.empty() && r.loras.empty() &&
+                        r.quantized_cache.empty() && r.execution == "gpu" &&
+                        !r.allow_approximation &&
+                        !r.memory_constrained.enabled,
+                    "streaming_route_unsupported: H3 exact candidate requires "
+                    "GPU text-to-video, original BF16, G1/K2/D1/Q1, request "
+                    "retention, no approximation, and no bounded-memory guard");
+        }
+        require(!r.prompt.empty()&&!r.output.empty(),"prompt and output are required");
         require(std::filesystem::path(r.output).extension()==".mp4","H3 output must be .mp4");
         ConfigurationLease config(r);checkpoint(cancel);auto start=Clock::now();
         // The four-step schedule must belong to the actual selected component.
@@ -525,6 +595,7 @@ public:
          * Keeping this cache enabled is what makes the measured retained-
          * session benefit observable through the TurboCider Session API. */
         h3_cache_set_enabled(context_.get(),
+                             !exact_streaming &&
                              !r.memory_constrained.enabled &&
                              (r.residency == "resident" ||
                               r.residency == "streamed"));
@@ -534,17 +605,31 @@ public:
         h3_gpu_options gpu_options{};
         parameters.width=r.width;parameters.height=r.height;parameters.frames=r.frames;parameters.steps=r.steps;parameters.seed=r.seed;
         parameters.video_flow_shift=video_shift;parameters.audio_flow_shift=3;
-        parameters.ssd_streaming=r.residency=="streamed";
+        parameters.ssd_streaming=exact_streaming||r.residency=="streamed";
         /* A nonzero request budget lets the H3 runtime choose the largest
          * safe resident prefix after accounting for its actual activation
          * geometry and two BF16 stream slots. With no explicit budget keep the
          * original two-slot streaming behavior unchanged. */
-        parameters.ssd_pinned_prefix=0;
+        parameters.ssd_pinned_prefix=exact_streaming ?
+            static_cast<int>(*exact_stage->resident_prefix_blocks) : 0;
         parameters.ssd_memory_budget_bytes =
-            (r.residency == "streamed" && r.memory_budget_bytes) ?
+            (!exact_streaming && r.residency == "streamed" &&
+             r.memory_budget_bytes) ?
                 r.memory_budget_bytes : 0;
         parameters.ssd_quantized_cache_directory =
             r.quantized_cache.empty() ? nullptr : r.quantized_cache.c_str();
+        if (exact_streaming) {
+            ++exact_generation_;
+            if (!exact_generation_) ++exact_generation_;
+            parameters.exact_streaming = 1;
+            parameters.exact_streaming_generation = exact_generation_;
+            parameters.exact_prefetch_distance =
+                *exact_stage->prefetch_distance;
+            parameters.exact_io_workers = *exact_stage->io_workers;
+            parameters.exact_carry_first_group = 1;
+            parameters.exact_cancel = h3_exact_cancel_query;
+            parameters.exact_cancel_user = &cancel;
+        }
         if (r.memory_constrained.enabled) {
             memory_hooks_.struct_size = sizeof(memory_hooks_);
             memory_hooks_.version = 1u;
@@ -595,6 +680,26 @@ public:
         if(!result){checkpoint(cancel);throw std::runtime_error(h3_last_error(context_.get()));}
         h3_cache_info cache_info{};
         h3_cache_get_info(context_.get(), &cache_info);
+        id plan_value = to_dictionary(plan);
+        if (exact_streaming) {
+            const uint32_t streamed_blocks = static_cast<uint32_t>(
+                result->ssd_streamed_blocks);
+            const uint64_t expected_groups =
+                static_cast<uint64_t>(streamed_blocks) *
+                static_cast<uint64_t>(r.steps);
+            require(result->exact_streaming &&
+                        result->exact_streaming_finished &&
+                        !result->exact_streaming_poisoned &&
+                        result->exact_completed_passes ==
+                            static_cast<uint32_t>(r.steps) &&
+                        result->exact_pool_creates == 1u &&
+                        result->exact_slot_bundles == 2u &&
+                        result->exact_fills == expected_groups &&
+                        result->exact_groups_submitted == expected_groups,
+                    "H3 exact execution counters differ from the sealed layout");
+        }
+        const double request_seconds =
+            std::chrono::duration<double>(Clock::now()-start).count();
         auto value = @{ @"schema_version":@1,@"model":@(r.model.c_str()),
                   @"operation":@(r.operation.c_str()),@"output":@(r.output.c_str()),
                   @"width":@(result->width),@"height":@(result->height),
@@ -612,16 +717,72 @@ public:
                   @"ssd_request_bytes_read":@(result->ssd_request_bytes_read),
                   @"ssd_request_read_seconds":@(result->ssd_request_read_seconds),
                   @"ssd_request_wait_seconds":@(result->ssd_request_wait_seconds),
+                  @"exact_streaming":@(result->exact_streaming),
+                  @"exact_streaming_finished":@(result->exact_streaming_finished),
+                  @"exact_streaming_poisoned":@(result->exact_streaming_poisoned),
+                  @"exact_completed_passes":@(result->exact_completed_passes),
+                  @"exact_pool_creates":@(result->exact_pool_creates),
+                  @"exact_slot_bundles":@(result->exact_slot_bundles),
+                  @"exact_fills":@(result->exact_fills),
+                  @"exact_content_bytes_loaded":@(result->exact_content_bytes_loaded),
+                  @"exact_groups_submitted":@(result->exact_groups_submitted),
+                  @"exact_refill_load_seconds":@(result->exact_refill_load_seconds),
+                  @"exact_max_refill_seconds":@(result->exact_max_refill_seconds),
+                  @"exact_max_refill_block":@(result->exact_max_refill_block),
+                  @"exact_wait_seconds":@(result->exact_wait_seconds),
                   @"cache_prepared_dit":@(cache_info.prepared_dit),
                   @"cache_video_decoder":@(cache_info.video_decoder),
                   @"cache_embedding_entries":@(cache_info.embedding_entries),
-                  @"plan":to_dictionary(plan),
-                  @"seconds":@(std::chrono::duration<double>(Clock::now()-start).count()),
+                  @"plan":plan_value,
+                  @"seconds":@(request_seconds),
+                  @"timings_seconds":@{
+                      @"request_wall":@(request_seconds),
+                      @"denoise":@(result->denoise_seconds),
+                  },
                   @"validation": @"native_executor_manifest_verified",
                   @"lora_fusion": r.loras.empty() ? @"none" :
                       @"sidecar_manifest_verified" };
         auto run = native_run_result(value, r, plan);
-        if (result->ssd_streaming) {
+        if (result->ssd_streaming && exact_streaming) {
+            const unsigned active_blocks = static_cast<unsigned>(
+                result->ssd_pinned_blocks + result->ssd_streamed_blocks);
+            const uint64_t resident_blocks = static_cast<uint64_t>(
+                result->ssd_pinned_blocks) + 2u;
+            require(!result->ssd_block_bytes ||
+                        resident_blocks <=
+                            (std::numeric_limits<uint64_t>::max() -
+                             result->ssd_activation_reserve_bytes) /
+                                result->ssd_block_bytes,
+                    "H3 exact working-set estimate overflow");
+            BlockResidencyMetrics metrics;
+            metrics.enabled = true;
+            metrics.active_blocks = active_blocks;
+            metrics.pinned_blocks = static_cast<unsigned>(
+                result->ssd_pinned_blocks);
+            metrics.streamed_blocks = static_cast<unsigned>(
+                result->ssd_streamed_blocks);
+            metrics.refill_slots = 2;
+            metrics.activation_reserve_bytes =
+                result->ssd_activation_reserve_bytes;
+            metrics.block_bytes = result->ssd_block_bytes;
+            metrics.estimated_working_set_bytes =
+                result->ssd_activation_reserve_bytes +
+                resident_blocks * result->ssd_block_bytes;
+            metrics.request_bytes_loaded =
+                result->exact_content_bytes_loaded;
+            metrics.request_slot_allocations = result->exact_slot_bundles;
+            metrics.request_slot_refills = result->exact_fills;
+            metrics.request_slot_fills = result->exact_fills;
+            metrics.request_load_seconds = result->exact_refill_load_seconds;
+            metrics.request_wait_seconds = result->exact_wait_seconds;
+            metrics.request_refill_load_seconds =
+                result->exact_refill_load_seconds;
+            metrics.request_max_refill_seconds =
+                result->exact_max_refill_seconds;
+            metrics.request_max_refill_block =
+                result->exact_max_refill_block;
+            run.block_residency = metrics;
+        } else if (result->ssd_streaming) {
             const unsigned active_blocks = static_cast<unsigned>(
                 result->ssd_pinned_blocks + result->ssd_streamed_blocks);
             const auto residency = make_block_residency_plan(
@@ -633,25 +794,39 @@ public:
                     residency.streamed_blocks ==
                         static_cast<unsigned>(result->ssd_streamed_blocks),
                     "H3 native and framework block residency plans differ");
-            run.block_residency = BlockResidencyMetrics{
-                true,
-                false,
-                result->ssd_quantized != 0,
-                active_blocks,
-                residency.pinned_blocks,
-                residency.streamed_blocks,
-                residency.refill_slots,
-                residency.memory_budget_bytes,
-                residency.activation_reserve_bytes,
-                residency.block_bytes,
-                residency.estimated_working_set_bytes,
-                result->ssd_request_bytes_read,
-                0,
-                0,
-                result->ssd_request_read_seconds,
-                result->ssd_request_wait_seconds,
-            };
+            require(!r.steps || residency.streamed_blocks <=
+                        std::numeric_limits<uint64_t>::max() /
+                            static_cast<uint64_t>(r.steps),
+                    "H3 legacy logical fill count overflow");
+            const uint64_t logical_fills =
+                static_cast<uint64_t>(residency.streamed_blocks) *
+                static_cast<uint64_t>(r.steps);
+            BlockResidencyMetrics metrics;
+            metrics.enabled = true;
+            metrics.quantized = result->ssd_quantized != 0;
+            metrics.active_blocks = active_blocks;
+            metrics.pinned_blocks = residency.pinned_blocks;
+            metrics.streamed_blocks = residency.streamed_blocks;
+            metrics.refill_slots = residency.refill_slots;
+            metrics.memory_budget_bytes = residency.memory_budget_bytes;
+            metrics.activation_reserve_bytes =
+                residency.activation_reserve_bytes;
+            metrics.block_bytes = residency.block_bytes;
+            metrics.estimated_working_set_bytes =
+                residency.estimated_working_set_bytes;
+            metrics.request_bytes_loaded = result->ssd_request_bytes_read;
+            metrics.request_slot_allocations = residency.refill_slots;
+            metrics.request_slot_refills = logical_fills;
+            metrics.request_slot_fills = logical_fills;
+            metrics.request_load_seconds = result->ssd_request_read_seconds;
+            metrics.request_wait_seconds = result->ssd_request_wait_seconds;
+            metrics.request_refill_load_seconds =
+                result->ssd_request_read_seconds;
+            run.block_residency = metrics;
         }
+        if (result->ssd_streaming)
+            run.streaming_runtime = h3_streaming_runtime_metrics(
+                *result, r, exact_streaming);
         return run;
     }
 };
@@ -660,4 +835,12 @@ extern "C" const char *h3_runtime_getenv(const char *key) {
     auto found = h3_configuration.find(key);
     return found == h3_configuration.end() ? nullptr : found->second.c_str();
 }
-namespace tc {std::unique_ptr<ModelSession> create_h3(const std::filesystem::path& root){return std::make_unique<H3Session>(root);}}
+namespace tc {
+std::unique_ptr<ModelSession> create_h3(const std::filesystem::path& root) {
+    return std::make_unique<H3Session>(root, false);
+}
+std::unique_ptr<ModelSession> create_h3_candidate(
+        const std::filesystem::path& root) {
+    return std::make_unique<H3Session>(root, true);
+}
+}

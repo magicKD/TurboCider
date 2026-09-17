@@ -225,3 +225,59 @@ service对新路径加入layout identity，旧session key不变；quarantine不�
 建议新增 `H3SlotAdapter` 只实现通用 `ModelSlotAdapter`，不复制 scheduler。模型层负责 materialization 与真实
 Metal fence，框架层负责 ticket/window/carry/cleanup。adapter 不得自行维护另一套 slot state 或把 legacy
 `stream_ready_slot` 与 generic slot 同时设为 authority。
+
+## 8. Z-Image P1关闭后的 H3 起点（2026-09-17）
+
+Z-Image 已完成 private generic adapter 和冻结 P1，证明同步 MLX backend 可使用通用
+`already_complete` reader 快路径。该结论不能直接复制给 H3：H3 必须依据真实 Metal command-buffer 的最后
+reader 决定同步/异步 completion；若跨 block fusion 继续读取上一 block 权重，必须保留 callback mailbox。
+
+H3 下一轮先审阅当前工作树已有的 candidate bridge，逐项对照第7节：真实四矩阵 fill、slot view、active
+block ordinal、carry、fusion reader、session owner和metrics。任何 helper 已存在但缺真实 fence或失败清理的，
+状态仍记部分完成。首个性能 policy 固定 legacy/generic K2/G1、相同 active mask、相同跨 forward carry和
+per-request engine；不通过2%门槛时先按 refill/wait/encode telemetry定位，不改P/K掩盖开销。
+
+## 9. H3 Turbo 收口与 Flux 起点（2026-09-17）
+
+第7–8节的 H3 candidate 施工项已经完成到真实四矩阵 fill、slot view、Metal command-buffer reader、
+cross-block fusion、cross-pass carry、cancel/drain/quarantine 和 per-request lifecycle。冻结范围只包含
+MiniMax H3 Turbo 原始 BF16 `P0/G1/K2/D1/Q1`；不要继续把普通 H3、量化缓存或其他布局追加到该资格。
+
+20-pair H3 release campaign 的 wall/denoise median point estimate 为 `1.01066/1.01185`，P95 为
+`0.99511/0.99268`；输出逐对一致，audit steady allocation/thread-create 为0/0。物理 SSD block 方差使
+strict bootstrap verifier 保持 `INCONCLUSIVE`，因此不能写成 production P1 PASS。按用户确认的范围与
+性能口径，当前冻结 H3 Turbo tuple 已完成工程验收，合理 I/O 波动不再触发重复 TB 级 campaign；bootstrap
+结果作为诊断证据保留。public gate、production registry和bounded-memory承诺均不因该结果开放。
+
+H3 施工项至此关闭：只维护 MiniMax H3 Turbo 当前冻结 tuple，不继续接普通 H3、其他 checkpoint、量化缓存
+或任意 K/G 布局。除非发现 correctness、生命周期或默认路径性能回归，后续资源转入 Flux 与通用 multi-class
+runtime。
+
+Flux 下一步不复制 H3 adapter，而按以下顺序执行：
+
+1. 列出 text、double-stream transformer、single-stream transformer、VAE 的真实对象和 live interval。
+2. 对 compiled graph 做 A→B→C slot 内容轮换，证明 graph 使用当前 generation，而不是捕获旧 array。
+3. 将 double/single stream 定义成两个显式 layout class；先验证 class barrier，再决定 shared max-capacity
+   arena 或 serial pool，不在 adapter 内实现私有 class scheduler。
+4. 先做 component-staged 释放证明，再接 block/group fill；默认 compiled 路径不新增 `eval`、cache clear、
+   descriptor scan或线程。
+5. 冻结一个 legacy/generic 同布局 tuple，按与 LTX/Z-Image/H3 相同的质量、lifecycle、audit 和2%门槛验收。
+
+### 9.1 Flux 9B 当前落地状态
+
+上述1–4项已经以 **Flux.2 Klein 9B BF16 eager GPU** 的受控形式完成：9个fixed tensor常驻，8个dual block和
+24个single block进入统一descriptor/compiler；两个layout class采用`retain_all`，setup创建dual/single各
+K2 backing，class barrier及下一pass只切换pool authority，不重新分配。通用`MlxWeightPager`在owner线程
+创建MLX shared arrays，worker只做多artifact `pread`；每个同步`mx::eval`是最后reader完成点。
+
+冻结工程tuple为`P0/G1/K2/D1/Q2/reload`。两步真实请求完成64 fills，跨pass仍只有2个pool、4个slot bundle；
+resident与streaming PNG SHA-256相同，streaming MLX peak降低约6.15 GiB。真实audit为setup worker/pool
+`2/2`、steady allocation/thread-create `0/0`，默认resident请求全部streaming audit counter为0。
+
+第5项现已补上可审计的private direct replay：它与generic共用同一P/K/G/D/Q、pager、双pool retention、
+reader和同步边界，只绕过通用owner调度循环。正式10-block/20-pair P1中generic/direct wall median、wall
+P95和denoise median ratio分别为`0.99971/1.00325/0.99816`，bootstrap上界全部低于门槛；输出、layout、
+peak和fill计数一致。campaign policy通过
+`expected_implementations`逐请求区分`flux_direct_same_layout_v1`与`generic_stage_executor_v1`，防止两侧
+误走同一路径。resident与streaming仍是不同内存策略，二者耗时比不能冒充P1 framework overhead。
+Flux 4B compiled graph、LoRA、GPU+ANE、prepare-only、bounded-memory和public route继续fail-closed。

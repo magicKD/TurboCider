@@ -97,6 +97,10 @@ Layout compile_layout(const StreamingConfig &c, const Descriptor &d) {
         validate_streaming_config(single);
         StageLayout stage;
         stage.id = sd.id; stage.pass_count = sd.pass_count;
+        check(sd.multi_pool_policy == MultiPoolPolicy::serial ||
+                  sd.multi_pool_policy == MultiPoolPolicy::retain_all,
+              "invalid multi-pool policy");
+        stage.multi_pool_policy = sd.multi_pool_policy;
         stage.inherited = it == c.stages.end();
         stage.resident = *sc.residency == "resident";
         stage.prefix = stage.resident ? static_cast<uint32_t>(sd.blocks.size()) : *sc.resident_prefix_blocks;
@@ -117,6 +121,11 @@ Layout compile_layout(const StreamingConfig &c, const Descriptor &d) {
         canonical << stage.resident << ',' << stage.prefix << ',' << stage.group_size << ','
                   << stage.slot_count << ',' << stage.distance << ',' << stage.workers << ','
                   << stage.pass_count << ',' << static_cast<int>(sd.pass_transition) << '|';
+        // Preserve the canonical identity of every existing serial layout.
+        // The non-default retained policy is additive and therefore receives
+        // an explicit identity marker.
+        if (stage.multi_pool_policy == MultiPoolPolicy::retain_all)
+            canonical << "multi_pool=retain_all|";
         canonical << sd.passes.size() << '|';
         for (const auto &p : sd.passes) {
             identity(p.phase); field(canonical, p.phase); canonical << p.step << '|';
@@ -128,6 +137,94 @@ Layout compile_layout(const StreamingConfig &c, const Descriptor &d) {
         std::map<std::string, std::optional<Materialization>> storage_materializations;
         std::map<std::string, std::string> class_materializations;
         std::set<std::string> resident_storages, streamed_storages;
+        if (!sd.resident_fields.empty()) {
+            canonical << "resident_fields=" << sd.resident_fields.size() << '|';
+            std::set<std::string> names;
+            std::map<std::string, const FieldSpec *> earlier_fields;
+            stage.resident_source_read_bytes = uint64_t{0};
+            for (const auto &f : sd.resident_fields) {
+                identity(f.name); identity(f.storage_id);
+                check(names.insert(f.name).second,
+                      "duplicate resident field name");
+                check(f.bytes > 0, "empty resident field");
+                const auto size = aligned(f.bytes, f.alignment);
+                const auto [si, fresh] = storages.emplace(
+                    f.storage_id, std::pair(f.bytes, f.alignment));
+                check(fresh || si->second == std::pair(f.bytes, f.alignment),
+                      "resident alias layout mismatch");
+                const auto [mi, new_materialization] =
+                    storage_materializations.emplace(f.storage_id,
+                                                     f.materialization);
+                check(new_materialization || mi->second == f.materialization,
+                      "resident alias materialization mismatch");
+                if (resident_storages.insert(f.storage_id).second)
+                    stage.resident_bytes = add(stage.resident_bytes, size);
+                total_fields = add(total_fields, 1);
+                check(total_fields <= max_descriptor_fields, "plan_too_large");
+                field(canonical, f.name); field(canonical, f.storage_id);
+                canonical << f.bytes << ',' << f.alignment << ','
+                          << bool(f.materialization) << '|';
+                uint64_t read_bytes = 0;
+                if (f.materialization) {
+                    const auto &m = *f.materialization;
+                    identity(m.format); identity(m.storage_mode);
+                    identity(m.conversion);
+                    check(m.reads.size() <= 64,
+                          "resident field source count limit");
+                    total_source_ranges = add(total_source_ranges,
+                                              m.reads.size());
+                    check(total_source_ranges <= max_descriptor_fields,
+                          "plan_too_large: source ranges");
+                    check(m.derived_from.empty() != m.reads.empty(),
+                          "resident field requires reads OR derivation");
+                    field(canonical, m.format);
+                    field(canonical, m.storage_mode);
+                    field(canonical, m.conversion);
+                    shape(canonical, m.shape);
+                    field(canonical, m.derived_from);
+                    canonical << m.derived_offset << '|';
+                    if (!m.derived_from.empty()) {
+                        identity(m.derived_from);
+                        const auto dependency = earlier_fields.find(
+                            m.derived_from);
+                        check(dependency != earlier_fields.end() &&
+                                  dependency->second->materialization.has_value(),
+                              "derived resident field must reference an earlier field");
+                        check(m.derived_offset <= dependency->second->bytes &&
+                                  f.bytes <= dependency->second->bytes -
+                                      m.derived_offset,
+                              "derived resident range overflow");
+                    } else {
+                        check(m.derived_offset == 0,
+                              "resident source field has derived offset");
+                    }
+                    canonical << m.reads.size() << '|';
+                    for (const auto &r : m.reads) {
+                        check(r.artifact < d.artifacts.size(),
+                              "unknown resident source artifact");
+                        const auto &artifact = d.artifacts[r.artifact];
+                        check(r.bytes && r.offset <= artifact.bytes &&
+                                  r.bytes <= artifact.bytes - r.offset,
+                              "resident source range overflow");
+                        identity(r.tensor); identity(r.dtype);
+                        canonical << r.artifact << ',' << r.offset << ','
+                                  << r.bytes << '|';
+                        field(canonical, r.tensor); field(canonical, r.dtype);
+                        shape(canonical, r.shape);
+                        read_bytes = add(read_bytes, r.bytes);
+                    }
+                    if (stage.resident_source_read_bytes)
+                        *stage.resident_source_read_bytes = add(
+                            *stage.resident_source_read_bytes, read_bytes);
+                } else {
+                    stage.resident_source_read_bytes.reset();
+                    out.materializations_complete = false;
+                }
+                earlier_fields.emplace(f.name, &f);
+            }
+        } else {
+            stage.resident_source_read_bytes = uint64_t{0};
+        }
         std::vector<std::optional<uint64_t>> source_bytes(sd.blocks.size(), uint64_t{0});
         bool prefix_sources_known = true;
         uint64_t prefix_source_bytes = 0;
@@ -260,7 +357,12 @@ Layout compile_layout(const StreamingConfig &c, const Descriptor &d) {
                 for (auto bytes : slot.field_capacity) slot.capacity_bytes = add(slot.capacity_bytes, bytes);
                 pool.capacity_bytes = add(pool.capacity_bytes, slot.capacity_bytes);
             }
-            stage.peak_pool_bytes = std::max(stage.peak_pool_bytes, pool.capacity_bytes);
+            if (stage.multi_pool_policy == MultiPoolPolicy::retain_all)
+                stage.peak_pool_bytes = add(stage.peak_pool_bytes,
+                                            pool.capacity_bytes);
+            else
+                stage.peak_pool_bytes = std::max(stage.peak_pool_bytes,
+                                                 pool.capacity_bytes);
             stage.pools.push_back(std::move(pool));
             begin = end;
         }
@@ -271,6 +373,9 @@ Layout compile_layout(const StreamingConfig &c, const Descriptor &d) {
               *stage.source_read_bytes_per_pass <= UINT64_MAX / sd.pass_count,
               "source pass byte count overflow");
         stage.pass_transition = sd.pass_transition;
+        if (stage.resident)
+            check(stage.multi_pool_policy == MultiPoolPolicy::serial,
+                  sd.id + ": resident stage cannot retain streaming pools");
         if (stage.pass_transition == PassTransition::carry_first_group) {
             check(!stage.resident && stage.pools.size() == 1 &&
                   stage.slot_count == 2 && stage.group_size == 1 &&

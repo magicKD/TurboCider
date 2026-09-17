@@ -178,6 +178,12 @@ prepare、encode/commit、多queue完成、mailbox overflow、owner线程误用�
 - 增加“同地址不同generation内容”、A→B→A shape、cache复用错权重、quant shard解包峰值测试。
 - 不能证明引用释放或GPU最后reader时，不授予block-streamed能力，不借用LTX资格。
 
+当前实现状态（2026-09-17）：Z-Image BF16已完成冻结P1；Flux.2 Klein 9B BF16已完成private eager execution，
+使用通用`MlxWeightPager`、dual/single两个`retain_all` pool和同步last-reader。Flux默认resident旧/新dylib
+warm median未观察到回退，真实Q2 audit稳态分配/建线程为0/0。Flux 4B compiled graph仍保持原路径，未做
+地址捕获假设，也未通过插入逐block `eval`来换取表面上的框架统一。Flux正式same-layout P1、P2/P3及public
+资格仍待独立证据。
+
 ## 7. F5预算组合与机器配置交付
 
 optional guard消费相同plan，不修改布局。required-site closure覆盖17/05的所有非slot资源、控制内存和framework envelope。
@@ -280,7 +286,7 @@ P1除K相同外还要同Q/D/P、startup、pass、retention和reader语义；不�
 LTX旧K1首块同步读与新prefix期间预取不同，已有tiny时序不能证明纯框架收益。
 
 12是阈值与统计方法唯一来源：P0 end-to-end/denoise median比值95%区间上界≤1.02、P95≤1.05；
-P1 median≤1.03、P95≤1.05。目标仍是无可检测回退，不把阈值当可随意消耗预算。
+P1 median≤1.02、P95≤1.05。目标仍是无可检测回退，不把阈值当可随意消耗预算。
 按ABBA block重采样；20 matched pairs只是起点，tail至少50次有效请求仍可能不够。
 每个条件单独判断PASS/FAIL/INCONCLUSIVE，禁止取跨workload平均掩盖失败，禁止反复取样直到偶然PASS。
 

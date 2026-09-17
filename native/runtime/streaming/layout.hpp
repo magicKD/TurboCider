@@ -62,13 +62,28 @@ enum class PassTransition {
     // source fill for every suffix group.
     carry_first_group,
 };
+// Physical backing policy for stages containing more than one ordered layout
+// class.  serial keeps only the active class live and recreates backing at a
+// class barrier.  retain_all creates every class during setup and keeps the
+// backing until request drain, eliminating steady-state allocation at the
+// cost of the sum of all pool capacities.  This is part of the compiled
+// layout identity; an adapter cannot silently select a different policy.
+enum class MultiPoolPolicy {
+    serial,
+    retain_all,
+};
 struct StageDescriptor {
     std::string id;
     std::vector<BlockSpec> blocks;
+    // Stage-scoped tensors that remain resident while block pools stream.
+    // They participate in source closure, layout identity and memory
+    // accounting but are never assigned a refill ticket.
+    std::vector<FieldSpec> resident_fields;
     std::optional<StreamingStageConfig> fixed_policy;
     uint32_t min_slots = 1, max_slots = 3, max_group_size = 1, min_prefix = 0;
     uint32_t pass_count = 1;
     PassTransition pass_transition = PassTransition::reload;
+    MultiPoolPolicy multi_pool_policy = MultiPoolPolicy::serial;
     // A content/shape/format/reader identity supplied by the model adapter.
     // An empty identity cannot be used for execution certification.
     std::string adapter_revision;
@@ -103,13 +118,15 @@ struct StageLayout {
     uint32_t prefix = 0, group_size = 0, slot_count = 0, distance = 0, workers = 0;
     uint32_t pass_count = 1;
     PassTransition pass_transition = PassTransition::reload;
+    MultiPoolPolicy multi_pool_policy = MultiPoolPolicy::serial;
     std::vector<Group> groups;
     std::vector<PoolLayout> pools;
-    uint64_t prefix_bytes = 0, peak_pool_bytes = 0;
+    uint64_t resident_bytes = 0, prefix_bytes = 0, peak_pool_bytes = 0;
     uint64_t suffix_content_bytes_per_pass = 0;
     // Null means unknown, not zero. Reads are logical file bytes, NOT physical
     // disk traffic (which depends on the OS page cache).
     std::optional<uint64_t> source_read_bytes_per_pass = {};
+    std::optional<uint64_t> resident_source_read_bytes = {};
     std::optional<uint64_t> prefix_source_read_bytes = {};
 };
 struct Layout {

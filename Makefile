@@ -4,7 +4,7 @@ LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3.11))
 PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),python3.11)
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
-.PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-source-identity test-streaming-audit test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults
+.PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-source-identity test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -23,6 +23,7 @@ help:
 	@echo 'make test-streaming-campaign       Verify CPU-only ABBA campaign runner/verifier'
 	@echo 'make test-streaming-source-identity Verify source/build provenance capture'
 	@echo 'make test-streaming-audit          Verify audit-only counters and release symbol isolation'
+	@echo 'make test-streaming-pager          Verify sparse MLX resident/slot pager failure contracts'
 	@echo 'make test-ltx-streaming-lifecycle MODEL=/path OUTPUT=/path  Opt-in real LTX exact lifecycle test'
 	@echo 'make test-ltx-streaming-lifecycle-faults MODEL=/path OUTPUT=/path  Require a test-hook build and unsafe-cleanup matrix'
 	@echo 'make test-model MODEL=/path/to/FLUX.2-klein-4B OUTPUT=/tmp/new-tc-validation'
@@ -49,6 +50,7 @@ test:
 	@$(MAKE) test-streaming-campaign
 	@$(MAKE) test-streaming-source-identity
 	@$(MAKE) test-streaming-audit
+	@$(MAKE) test-streaming-pager
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
 	@"$(PYTHON)" -B tests/native/test_z_image_sharded_checkpoint.py
 	@"$(PYTHON)" -B tests/native/test_z_image_weight_stream.py
@@ -90,11 +92,19 @@ test-streaming-host:
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_layout.py
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_descriptor.py
 	@"$(PYTHON)" -B tests/native/test_h3_streaming_descriptor.py
+	@"$(PYTHON)" -B tests/native/test_z_image_streaming_descriptor.py
+	@"$(PYTHON)" -B tests/native/test_flux_streaming_descriptor.py
 test-streaming-contract:
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_snapshot.py
 	@"$(PYTHON)" -B tests/native/test_streaming_contract.py
 	@"$(PYTHON)" -B tests/native/test_ltx_candidate_streaming_gate.py
+	@"$(PYTHON)" -B tests/native/test_h3_candidate_streaming_gate.py
+	@"$(PYTHON)" -B tests/native/test_z_image_candidate_streaming_gate.py
+	@"$(PYTHON)" -B tests/native/test_flux_candidate_streaming_gate.py
+test-streaming-pager:
+	@"$(PYTHON)" -B tests/native/test_mlx_weight_pager.py
 test-streaming-metal:
+	@$(MAKE) test-streaming-pager
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_layout.py --metal
 test-streaming-campaign:

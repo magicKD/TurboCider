@@ -934,3 +934,310 @@ release 导出 v1/v2/v3 executor create，不导出 audit 或 lifecycle test-hoo
 
 这证明本轮 carry/ABI v3 增量没有使冻结的 LTX 64×64×9、11-step 默认 resident tiny tuple 越过既有
 P0 门槛；它不等于 normal-target、legacy-streamed、真实 H3 carry、bounded-memory 或 swap P3 资格。
+
+## 13.10 LTX P1 语义与生命周期验收工具链（2026-09-17）
+
+本轮先处理 LTX 正式 P1 的可信度，而不是直接把更多模型登记进 production。此前 runner 的两个问题已修正：
+
+- verifier 要求 legacy/exact 的 generic layout digest 相同，但 legacy 没有 generic digest；
+- 每个 worker 长期持有 engine，使 legacy denoiser 可以跨请求保留，而 exact owner 每次请求重建，retention
+  不同却可能被误报成 framework overhead。
+
+当前实现增加：
+
+1. campaign 顶层 engine_lifecycle，支持 persistent 和 per_request；未显式配置仍保持原 persistent 行为。
+2. per_request 保留长期 worker 进程以维持 ABBA 调度，但每个 warmup/measured request 独立 create/free
+   engine；request wall 覆盖 engine create、generate 和安全 destroy，native request wall 另行保留。
+3. LTX legacy 与 exact 都报告 actual semantic layout：P/G/K/D/Q、group/pass、startup、pass transition、
+   retention、reader/weight/kernel revision、conditioning recipe、upsample boundary。
+4. LTX 结果新增 request_slot_fills。legacy 为 allocation + refill；exact 直接使用 executor fills，避免把
+   exact 首次 fill 再重复加上 slot bundle 数。
+5. runner 归一 schema v1/v2 的 workload identity，比较 model/operation/prompt/shape/seed/steps/backend、
+   approximation knobs，而不把 output path 或 executor-specific residency 混入。
+6. semantic-equivalence evidence 升级为 v2；verifier 逐 pair 比较完整 normalized semantic layout，
+   重算 digest，并拒绝缺字段、生命周期不符或仅 generic digest 相同的伪等价；policy 必须冻结
+   expected_actual，防止 baseline/candidate 一起偏离 P8/G1/K3/D2/Q3 仍被误判通过。
+7. P1 median 门槛统一收紧到 1.02，P95 保持 1.05。
+
+验证结果：
+
+- release native build PASS；
+- streaming host PASS：3535 layouts、14 K/D/Q、multi-class、C bridge、LTX/H3 descriptor；
+- streaming contract PASS；
+- campaign verifier 18 项 PASS，包含 native per-request create/free、schema v1/v2 identity、
+  legacy/exact fill 口径、双方相同但偏离 frozen expected、semantic mismatch、
+  missing startup 和非法 lifecycle 反例；
+- git diff whitespace check PASS。
+- 沙箱内 test-streaming-metal 未获得 Metal device：通用 Metal 用例报告 SKIP，LTX 显式 Metal 子测试以
+  no Metal device 退出；这不是 GPU PASS，也不是实现失败，真实 GPU 证据仍需沙箱外执行。
+
+真实 Metal one-block P1 smoke policy 已冻结为 per-request、P8/G1/K3/D2/Q3、median 1.02；本次执行所需的
+沙箱外 GPU 授权被自动审批链路中断，因此没有生成可签名的 raw bundle，不能声明 P1 PASS/FAIL。下一次取得
+Metal 运行权限后，应先完成 one-block 排错，再冻结 2-block smoke，最后执行至少 10-block/20-pair 正式 P1。
+production registry 继续为空。
+
+当前工作树还保留一批 H3 真实 K2/G1 candidate adapter 增量；其存在不改变顺序：先完成 LTX P1，再迁移
+Z-Image generic adapter，随后对 H3 做正式同义 P1，最后进入 Flux fusion/address-stability 审计。
+
+## 13.11 LTX 冻结同布局 P1 通过与稳态分配修正（2026-09-17）
+
+本轮取得实体 Metal 权限后，按第13.10节冻结协议完成 one-block、2-block 和 10-block/20-pair 三阶段验收。
+首次 one-block 在 warmup 前被合同拒绝：policy 中 legacy `memory_budget_bytes=8570908800` 略低于运行时要求的
+精确 8 GiB（`8589934592`）。这不是性能或语义失败；正式示例和 smoke policy 已修正为精确 8 GiB，未放宽
+P8/G1/K3/D2/Q3 或性能阈值。
+
+one-block 修正后 4/4 measured 请求成功，semantic-equivalence v2 确认双方实际布局、request retention、
+conditioning/VAE 边界与每请求 440 fills 完全一致，Stage-2 BF16 pair byte-exact。审阅同时发现原 C bridge
+`make_fill_job()` 会在某个 slot 首次 refill 时复制 `group.blocks`，可能在稳态触发 `std::vector` 分配；现改为
+借用 `StageExecutor::State::layout` 中生命周期覆盖 worker join 的稳定 block span。
+
+audit ABI 新增 `steady_framework_allocations` 和 `steady_framework_thread_creates`：一次性 executor setup 的
+worker/pool 仍由原 counter 统计，setup 完成后的 pool 切换分配单独计入 steady counter。LTX 单 pool audit-only
+实模型请求观察到 3 个 setup worker、1 个 setup pool、steady allocation/thread-create 均为0；ordered
+multi-class host test 则会对运行期 pool 切换报告非零 steady allocation，防止把当前 multi-pool 实现误签成
+零分配热路径。
+
+2-block release smoke 位于：
+
+```text
+/private/tmp/turbocider-ltx-p1-two-block-20260917-v1
+```
+
+8/8 measured 请求成功、4/4 pair byte-exact，verifier `PASS`；wall median ratio为`0.97735`，其
+block-bootstrap 95%上界为`1.00747`。
+
+冻结 10-block/20-pair bundle 位于：
+
+```text
+/private/tmp/turbocider-ltx-p1-10block-20260917-v1
+```
+
+release dylib SHA-256为
+`a5294019b6bf460733e25121425849ee77098630a27fadcc8556837dd46ba8f7`；独立 audit dylib SHA-256为
+`f1759d2d20d20e8c6d69406b228d4fba909dd57cafa18d62c0d104f7edecab31`。40/40 measured 请求成功，
+20/20 pair Stage-2 BF16逐对一致，fault=0，environment/audit/manifest/semantic证据完整，独立 verifier
+复核为`PASS`：
+
+| 指标 | legacy streamed | generic exact | exact/legacy | block-bootstrap 95% interval |
+|---|---:|---:|---:|---:|
+| wall median | 15.318877 s | 15.136558 s | 0.98810 | 0.97655–0.99570 |
+| wall P95 | 15.469798 s | 15.307886 s | 0.98953 | 0.98482–0.99268 |
+| denoise median | 7.652459 s | 7.441930 s | 0.97249 | 0.97113–0.97367 |
+| denoise P95（诊断） | 7.681396 s | 7.480353 s | 0.97383 | 0.97224–0.97649 |
+
+因此冻结的 LTX 64×64×9、11-step、per-request、P8/G1/K3/D2/Q3 初始 tuple 已通过 P1 ≤2%门槛；
+该结论不自动覆盖 normal-target、largest/repeated-request、whole-request P2、低内存/swap P3 或 public
+production资格。production registry仍为空。下一实施项是 Z-Image metadata-only descriptor shadow；原
+`ZImageWeightStream` 默认/专用路径必须保持不创建 descriptor、executor、worker或额外同步。
+
+### 13.12 Z-Image generic adapter 与冻结 P1 通过（2026-09-17）
+
+本轮完成 private Z-Image generic execution：descriptor/compiler 生成 P14/G1/K2/D0/Q1，统一
+`StageExecutor` 管理 ticket、slot、fill、last-reader 和 cleanup；adapter 复用原 safetensors ranged
+`pread`、两个 MLX shared slot、fixed/prefix weights、`Weights::bind_arrays`、原 `z_block` 和同步
+`mx::eval`。public constructor 仍由 `streaming_layout_not_certified` 拦截，专用
+`ZImageWeightStream::begin_pass/acquire/std::async` 路径保留。
+
+为恢复专用 K2/D0 overlap，adapter 使用默认关闭的 `overlap_next_fill_after_claim()`：首个 suffix 仍只
+dispatch 一次；当前 group claim 后、同步 encode 前启动下一空闲 slot fill。随后发现同步 `mx::eval` 完成后
+再把 reader completion 写入 mailbox 是冗余调度，框架增加 `ReaderSet::already_complete`；executor 仍执行
+seal 和 identity 校验，只省去同步 backend 的 post/pop 往返，异步 adapter 行为不变。
+
+性能诊断按原始失败保留：
+
+| bundle/阶段 | wall median ratio | denoise median ratio | 结论 |
+|---|---:|---:|---|
+| v4 claim-overlap one-block | 1.02124 | 1.00889 | wall略超2%，smoke |
+| v5去除重复cache clear one-block | 1.01496 | 1.00201 | 点估计进入门槛 |
+| v1 10-block/20-pair | 1.02100 | 1.04039 | 正式拒绝 |
+| v2 user-initiated QoS | 1.01926 | 1.02026 | denoise/区间仍未通过 |
+| v3同步reader快路径 | **0.99986** | **1.00313** | **PASS** |
+
+最终 release bundle：
+
+```text
+/private/tmp/turbocider-z-image-p1-10block-20260917-v3-immediate-reader
+```
+
+冻结 policy 为
+[`examples/z-image-p1-same-layout-policy.json`](examples/z-image-p1-same-layout-policy.json)，SHA-256
+`19c6ced46a0aac73082df74630f4fc173d6542a37c816709f0be2e6a64657949`。release dylib SHA-256 为
+`5805045c1904fd94d889911015d4186520c289524f88f6489c94d7416e4a6ba4`；独立 audit dylib 为
+`7ef26e5e509120fb32273603be6ef9238d41b063c955a34b915b3bd21be941f9`。
+
+40/40 measured 请求成功，20/20 pair PNG SHA-256 一致，fault=0，semantic/environment/source/audit
+完整，独立 verifier 再次返回 `PASS`。wall median/P95 ratio 为 `0.99986/0.99913`，95%上界为
+`1.00249/1.00431`；denoise median ratio 为 `1.00313`，95%区间 `1.00099–1.00613`。denoise P95
+`1.01266`是诊断项。每请求16 fills，setup worker/pool为1/1，steady framework allocation/thread-create
+为0/0。
+
+新增 telemetry 报告 suffix refill total、最慢 refill block/time 和 executor wait；它只用于解释尾延迟，
+不影响 verifier 样本选择。该资格只覆盖64×64、1 step、Comfy BF16、per-request、P14/G1/K2/D0/Q1；
+normal-target、量化/GGUF/Diffusers、P2/P3和public production仍未完成。下一项转入H3真实K2/G1 adapter。
+
+### 13.13 H3 Turbo generic K2/G1 adapter 与工程验收（2026-09-17）
+
+本轮将 H3 范围明确冻结为 **MiniMax H3 Turbo、原始 BF16、50 个 streamed blocks、4-pass DiT**；
+不把普通 H3、量化缓存、动态 block skip、其他 checkpoint 变体或任意 K/G 布局纳入本次资格。
+真实 candidate 已复用统一 `StageExecutor`：四个大矩阵 qkv/out/fc1/fc2 ranged fill 到两个既有 Metal
+shared slot，norm、AdaLN、conditioning 和 workspace 继续 resident；generic exact 启用后 legacy
+`stream_ready_layer/slot` 被失效，slot authority 不重叠。异步 reader completion 来自真实 Metal
+command-buffer callback，跨 block fusion 与跨 pass `carry_first_group` 均进入同一 reader/ticket 合同。
+
+功能证据：真实 13-shard 模型的单 block fill 为 `770703360` bytes，source/content 完全一致；取消回归得到
+`cancel_queries=2`、`poisoned=true`、`destroyed=true`；legacy/exact 联合 latent FNV-1a 均为
+`bcfc8bb6686e0388`。大块读取后的完整 exact 请求完成 4 passes、200 fills、200 submitted groups、一个 pool、
+两个 slot bundle，无 poison，输出有限且一致。
+
+首个正式 v2 bundle 保留于：
+
+```text
+/private/tmp/turbocider-h3-p1-10block-20260917-v2
+```
+
+它 40/40 成功、20/20 artifact 相等，但因 generic cancellable reader 把每个矩阵强制切成 8 MiB `pread`，
+wall median/P95 ratio 为 `1.14662/1.14263`，denoise median 为 `1.22061`，正式拒绝。GPU median
+`1.5725 s` 与 legacy 基本相同，退化定位为 I/O syscall/read path，而不是 Metal kernel。
+
+修正后 exact reader 与 legacy 一致，每个矩阵执行一次大 `pread`，仍在四个矩阵边界检查取消。冻结
+10-block/20-pair release bundle 为：
+
+```text
+/private/tmp/turbocider-h3-p1-10block-20260917-v3-large-read
+```
+
+policy 为 [`examples/h3-p1-same-layout-policy.json`](examples/h3-p1-same-layout-policy.json)，SHA-256
+`923914aaa7807346746468d810d9d10419215dda8ec9c5a784bbcb8d306229cb`。40/40 measured 请求成功，
+20/20 pair artifact SHA-256 相同，fault=0，source/protocol/semantic layout 完整：
+
+| 指标 | legacy streamed | generic exact | exact/legacy | block-bootstrap 95% interval |
+|---|---:|---:|---:|---:|
+| wall median | 22.023271 s | 22.258101 s | 1.01066 | 0.97035–1.03850 |
+| wall P95 | 24.718173 s | 24.597181 s | 0.99511 | 0.95166–1.07179 |
+| denoise median | 15.284899 s | 15.466089 s | 1.01185 | 0.98438–1.02665 |
+| denoise P95（诊断） | 16.225285 s | 16.106575 s | 0.99268 | 0.90709–1.03896 |
+
+点估计全部位于既定 median 2%/P95 5%工程范围内，P95 未观察到退化。10 个 ABBA block 的物理 SSD
+refill 方差较大，strict verifier 因置信上界跨线及初次 bundle 未内嵌独立 audit/environment 而保持
+`INCONCLUSIVE`，不能改写为统计 PASS。用户已明确将 H3 范围收敛为 H3 Turbo，并接受点估计处于工程范围时
+存在合理 I/O 波动，因此本轮状态记为 **冻结 H3 Turbo tuple 的工程验收完成**。bootstrap 区间继续如实保留为
+诊断证据，但不再作为本轮继续施工或重复跑盘的阻断项；也不通过增加重复 TB 级 SSD 读取来筛选有利结果。
+该决定只关闭 H3 Turbo 当前冻结 tuple 的工程任务，不把 `INCONCLUSIVE` 改写为统计 PASS，也不授予更广发布资格。
+
+独立 audit build SHA-256 为
+`0f08b55e57b087ac87cb1ebdf2f4c7ace2f3a8a90125361363ef82e153d8a51a`，真实 exact 请求观察到 setup
+worker/pool `1/1`、steady framework allocation/thread-create `0/0`、cache-clear/unload `0`。脱敏的 audit
+和环境记录位于 `results/streaming/h3/2026-09-17/`。v2→v3 的 legacy baseline wall median
+`22.056429→22.023271 s`、denoise `15.231326→15.284899 s`、GPU `1.572522→1.572361 s`，没有显示
+exact-only 大块读取修正影响默认 legacy 路线。
+
+收口回归通过：3535 layouts、14 K/D/Q、multi-class、C bridge v3 carry、LTX/H3/Z-Image descriptor、
+三条 public fail-closed gate及21项 campaign verifier测试。H3 public gate和production registry继续关闭；
+本节不授予 full video session、normal-target、bounded-memory P2、swap P3或其他 H3 变体资格。除非后续出现
+明确 correctness/lifecycle 回归，H3 不再扩展普通版本、量化版本或新布局；下一实施项进入 Flux fusion、
+compiled graph address stability 与 multi-class arena 审计。
+
+### 13.14 Flux.2 Klein 9B retained multi-class execution（2026-09-17）
+
+本轮只接 **Flux.2 Klein 9B、Diffusers两分片BF16、eager GPU、无LoRA**。Flux 4B现有compiled graph、
+GPU+ANE、prepare-only和其他checkpoint继续fail-closed，避免为了统一接口给默认compiled block loop增加
+逐block同步或改变地址生命周期。
+
+实现包括：
+
+- descriptor从真实config/index及两个safetensors header投影9个resident fixed tensor、8×16-field dual block
+  和24×4-field single block，source range、shape、dtype、snapshot及resident bytes均进入layout identity；
+- `MultiPoolPolicy::retain_all`在setup创建dual/single两类K2 pool，跨class和跨pass只做drain与pool selection；
+- 新增通用`MlxWeightPager`：owner创建所有MLX shared array，worker只做`pread`，支持多artifact、resident load、
+  pool fill/bind、取消、短读、路径替换和snapshot检查；当前严格限制direct BF16、G1、每field单source range；
+- dual和single block复用原eager数学，single首块前执行context/image concatenate；每block `mx::eval`是同步
+  last-reader completion，`ReaderSet::already_complete`避免多余mailbox往返；
+- public constructor仍返回`streaming_layout_not_certified`，private candidate只允许
+  `P0/G1/K2/D0..1/Q1..2/reload`；当前推荐tuple为`P0/G1/K2/D1/Q2/reload`。
+
+新增sparse pager fixture以生产同款256-byte slot alignment覆盖resident load、dual/single retained pool、
+fill/bind、预取消、short read、stale path、wrong artifact/range/shape、pool destroy/recreate；沙箱外Metal执行PASS。
+同一fixture的ASan/UBSan与TSan构建也在实体Metal上PASS。
+完整native build以及`test-streaming-host test-streaming-contract test-streaming-audit`通过：3535 layouts、
+14组K/D/Q、retained multi-class、四模型descriptor和四条candidate gate均通过。
+
+两步真实结果：
+
+| 路径 | wall | denoise | MLX peak | fills / logical request bytes |
+|---|---:|---:|---:|---:|
+| resident | 1.338198 s | 0.859606 s | 18,303,578,036 | 不适用 |
+| generic Q2 | 1.951123 s | 1.383473 s | 11,693,804,356 | 64 / 35,605,487,616 |
+
+两条路径PNG SHA-256均为
+`5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108`。Q2 refill worker累计load
+`2.395479 s`，executor wait `1.082449 s`；load时间是两个worker时间之和，不可直接与wall相加。peak降低
+`6,609,773,680` bytes（约6.15 GiB）。这证明低内存策略可执行并降低MLX allocator峰值；streaming比resident
+慢是SSD搬运策略代价，不能写成framework overhead。
+
+audit build真实Q2请求结果：setup worker/pool `2/2`，steady framework allocation/thread-create `0/0`；
+请求setup和denoise→VAE交接各有一次weights clear与MLX cache clear，因此
+`new_cache_clear_or_unload_calls=4`，block/class/pass稳态内为0。默认resident请求全部streaming audit counter
+为0。两步请求证明
+dual→single→dual跨pass不会重建pool。
+最终release dylib SHA-256为
+`d9acb31adaef4d389fa9211ea364078ebcd35119758c7527606f551cb8f4abb9`；对应audit dylib为
+`901eb689782a368931bf618efa682249e69ad8c25bf66f71a4f9d0e77524a250`。
+
+默认resident保护采用保存的旧dylib与当前dylib，顺序A1–B1–B2–A2；每个persistent engine运行5次并丢弃
+首次加载，得到每variant 8个warm样本。当前/旧版warm median ratio为wall `0.99748`、request wall
+`0.99748`、denoise `0.99607`，所有1-step PNG hash均为
+`0be91f956cd83457052b70d797bfc4ca81f88e70a77829e94aa1f8d3772393e3`。该小型ABBA工程对照未观察到默认
+回退，但只有两个外层block，不能替代预注册20-pair正式P0。
+最终audit可观测性修正后的release又执行一组A→B、每variant 5次并丢弃首次加载；wall/denoise warm median
+ratio为`0.99665/0.99963`，输出hash仍一致，再次未观察到默认路径回退。
+
+Flux private same-layout direct replay已经完成正式20-pair P1并通过≤2% framework overhead门槛。该结论只
+比较相同streaming布局，不能用来声称streaming与resident等速。public registry、whole-request hard cap、
+P2、真实低内存/swap P3及Flux 4B仍未完成。
+
+### 13.15 Flux 9B 同布局 direct replay 与 implementation 身份门禁（2026-09-17）
+
+为回答第13.14节尚未回答的纯框架开销问题，private exact candidate新增
+`TURBOCIDER_FLUX_DIRECT_STREAMING_BASELINE=1`。该开关仅在已受限的Klein 9B candidate内生效；public和
+resident路线不读取它。direct replay复用generic完全相同的descriptor/layout、`MlxWeightPager`、
+`SlotSafetyTracker`、两个retained K2 pool、两个持久I/O worker、D1 dispatch window、每block同步
+`mx::eval`、reader完成与request retention，只绕过`StageExecutor`通用owner调度循环。
+
+首次两步same-layout smoke结果：
+
+| 实现 | request wall | denoise | MLX peak | implementation |
+|---|---:|---:|---:|---|
+| direct replay | 1.909523 s | 1.371629 s | 11,693,804,356 | `flux_direct_same_layout_v1` |
+| generic executor | 1.896156 s | 1.361718 s | 11,693,804,356 | `generic_stage_executor_v1` |
+
+generic/direct ratio为wall `0.99300`、denoise `0.99277`。两侧layout digest均为
+`4d51e19e6560a6c90d5488729ceba58810f46d2390c5c83ecec03b4f68a5ffae`，均为64 fills、2 pool creates、
+4 slot bundles、`35,605,487,616` logical request bytes，PNG SHA-256均为
+`5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108`。该单次结果说明路径、质量、内存和
+身份接线正确，且未观察到框架回退；它不是统计P1 PASS。
+
+campaign raw sample现新增`streaming_implementation`，可选policy字段`expected_implementations`会由runner
+校验schema、由verifier逐成功请求硬校验。新增冻结policy
+`examples/flux9-p1-same-layout-policy.json`固定baseline=`flux_direct_same_layout_v1`、
+candidate=`generic_stage_executor_v1`，避免环境变量遗漏时两侧误走同一实现仍得到伪P1。
+
+独立audit dylib SHA-256为
+`d597f8dba18cfac33129bc55db2231230f62e9292833c0d4a3ebeeef3fb62327`。direct与generic各一次真实请求均观察到
+setup worker/pool `2/2`、request-boundary clear/unload `4`、steady framework allocation/thread-create
+`0/0`。release dylib SHA-256为
+`2d99b9889cdfd9abf85c2a0a98b4addb8c130bc3aa6a82341b196e387f671878`。
+
+先后执行的1-block和2-block smoke均通过；随后使用冻结policy完成正式10-block/20-pair campaign。证据位于
+`results/streaming/flux/2026-09-17/p1-same-layout/`：40/40 measured请求成功、20/20 pair PNG byte-exact、
+fault=0、semantic/layout/implementation/environment/audit/manifest均完整，独立verifier重跑为`PASS`。
+
+| 指标 | direct baseline | generic candidate | generic/direct | block-bootstrap 95% interval |
+|---|---:|---:|---:|---:|
+| wall median | 1.946221 s | 1.945657 s | 0.99971 | 0.99620–1.00414 |
+| wall P95 | 1.964082 s | 1.970458 s | 1.00325 | 0.97271–1.00623 |
+| denoise median | 1.336996 s | 1.334537 s | 0.99816 | 0.99526–1.00262 |
+| denoise P95（诊断） | 1.354063 s | 1.353592 s | 0.99965 | 0.98273–1.00629 |
+
+因此Flux.2 Klein 9B BF16 eager GPU的冻结`P0/G1/K2/D1/Q2/reload` tuple正式关闭P1：通用
+`StageExecutor`未观察到超过2%的框架开销。该资格不扩展到Flux 4B compiled graph、LoRA、GPU+ANE、
+prepare-only、其他shape/checkpoint或production public route。

@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "comparison_kind": "P1",
+  "engine_lifecycle": "per_request",
+  "initial_matched_pairs": 20,
+  "minimum_tail_requests_per_variant": 0,
+  "bootstrap_iterations": 4000,
+  "bootstrap_seed": 43,
+  "thresholds": {
+    "P1_same_layout": {
+      "wall_median_ratio_max": 1.02,
+      "wall_p95_ratio_max": 1.05,
+      "denoise_median_ratio_max": 1.02,
+      "steady_framework_allocations": 0,
+      "steady_framework_thread_creates": 0
+    }
+  },
+  "workload": {
+    "request": {
+      "schema_version": 1,
+      "model": "minimax-h3-turbo",
+      "operation": "dit.denoise",
+      "prompt": "Synthetic deterministic H3 denoiser validation",
+      "width": 512,
+      "height": 512,
+      "frames": 22,
+      "fps": 24,
+      "steps": 4,
+      "seed": 42,
+      "execution": "gpu",
+      "residency": "streamed",
+      "audio": true,
+      "output": "${OUTPUT}"
+    },
+    "seed_stride": 0,
+    "output_suffix": ".f32"
+  },
+  "protocol": {
+    "measured_blocks": 10,
+    "warmup_requests_per_variant": 1,
+    "worker_start_timeout_seconds": 30,
+    "worker_launch_order": ["candidate", "baseline"],
+    "request_timeout_seconds": 120,
+    "cache_condition": "one-per-variant-warmup-then-per-request-probe-os-cache-warm",
+    "stopping_rule": "fixed-10-block-h3-denoiser-confirmation",
+    "quantile_estimator": "linear-interpolated-p95",
+    "bootstrap_unit": "abba_block",
+    "multiplicity_policy": "single-frozen-original-bf16-tuple",
+    "exclusion_policy": "no-exclusions-after-freeze",
+    "timing_scope": "probe-process-start-through-model-destroy-and-denoise",
+    "launch_pressure": false
+  },
+  "quality": {
+    "mode": "artifact_sha256_equal",
+    "artifacts": [
+      {"name": "joint_latents", "path": "${OUTPUT}"}
+    ]
+  },
+  "semantic_equivalence": {
+    "declared_equivalent": true,
+    "expected_actual": {
+      "stage": "denoiser",
+      "resident_prefix_blocks": 0,
+      "block_group_size": 1,
+      "slot_count": 2,
+      "prefetch_distance": 1,
+      "io_workers": 1,
+      "group_count": 50,
+      "pass_count": 4,
+      "startup_policy": "prefetch_window_before_prefix",
+      "pass_transition": "carry_first_group",
+      "retention": "request",
+      "reader_revision": 1,
+      "weight_format": "bf16-safetensors",
+      "kernel_revision": "h3-metal-dense-block-v1",
+      "conditioning_recipe": "h3-synthetic-text-adaln-v1",
+      "upsample_boundary": "dit-latent-output",
+      "engine_lifecycle": "per_request",
+      "total_fills": 200
+    },
+    "fields": [
+      "normalized_request_identity",
+      "resident_prefix_blocks",
+      "block_group_size",
+      "slot_count",
+      "prefetch_distance",
+      "io_workers",
+      "group_count",
+      "pass_count",
+      "startup_policy",
+      "pass_transition",
+      "retention",
+      "engine_lifecycle",
+      "reader_revision",
+      "weight_format",
+      "kernel_revision",
+      "conditioning_recipe",
+      "upsample_boundary",
+      "total_fills"
+    ]
+  },
+  "variants": {
+    "baseline": {
+      "backend": "probe",
+      "executable": "build/native/h3-dit-streaming-probe",
+      "linked_library": "build/native/libturbocider.dylib",
+      "model_path": "models/MiniMax-H3-ModelScope/FL2VA/transformer",
+      "working_directory": "build/native",
+      "output_artifact": "joint_latents",
+      "arguments": ["${MODEL}", "0", "${OUTPUT}"],
+      "result_schema": "turbocider-h3-dit-streaming-probe-v3",
+      "source_root": "."
+    },
+    "candidate": {
+      "backend": "probe",
+      "executable": "build/native/h3-dit-streaming-probe",
+      "linked_library": "build/native/libturbocider.dylib",
+      "model_path": "models/MiniMax-H3-ModelScope/FL2VA/transformer",
+      "working_directory": "build/native",
+      "output_artifact": "joint_latents",
+      "arguments": ["${MODEL}", "0", "${OUTPUT}"],
+      "result_schema": "turbocider-h3-dit-streaming-probe-v3",
+      "environment": {"TURBOCIDER_H3_EXACT_STREAM": "1"},
+      "source_root": "."
+    }
+  }
+}

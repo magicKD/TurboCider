@@ -5,6 +5,7 @@
 #include <unordered_map>
 namespace tc {
 class HybridSession;
+class FluxExactStream;
 class Flux : public ModelSession {
     std::filesystem::path root_;
     std::string model_id_;
@@ -12,6 +13,8 @@ class Flux : public ModelSession {
     Tokenizer tokenizer_;
     std::unique_ptr<HybridSession> hybrid_;
     std::unique_ptr<HybridSession> encoder_hybrid_;
+    std::unique_ptr<FluxExactStream> exact_stream_;
+    uint64_t exact_stream_generation_ = 0;
     Weights transformer_, vae_;
     std::string cached_prompt_;
     std::string cached_encoder_manifest_;
@@ -41,7 +44,9 @@ class Flux : public ModelSession {
     Tensor encode(const Tokens &, const Event &, std::atomic<bool> &, HybridSession * = nullptr);
     Tensor denoise(const Tensor &, const Tensor &, float, int, int, const Event &,
                    std::atomic<bool> &, const std::vector<float> &reference_ids = {},
-                   bool compile_blocks = false);
+                   bool compile_blocks = false,
+                   FluxExactStream *exact_stream = nullptr,
+                   uint32_t stream_pass = 0);
     Tensor encode_image(const Tensor &, const Event &, std::atomic<bool> &);
     Tensor decode(const Tensor &, int, int, const Event &, std::atomic<bool> &,
                   const std::string &);

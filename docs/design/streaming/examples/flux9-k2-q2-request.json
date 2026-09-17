@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "model": "flux2-klein-9b",
+  "operation": "image.generate",
+  "inputs": [
+    {
+      "kind": "text",
+      "role": "prompt",
+      "text": "A red fox in snow"
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "image",
+      "path": "/tmp/turbocider-flux9-k2-q2.png",
+      "width": 64,
+      "height": 64
+    }
+  ],
+  "sampling": {
+    "seed": 42,
+    "steps": 2
+  },
+  "execution": {
+    "policy": "gpu",
+    "streaming": {
+      "schema_version": 1,
+      "enabled": true,
+      "selection": "manual",
+      "retention": "request",
+      "stages": {
+        "denoiser": {
+          "residency": "streamed",
+          "block_group_size": 1,
+          "slot_count": 2,
+          "resident_prefix_blocks": 0,
+          "prefetch_distance": 1,
+          "io_workers": 2
+        }
+      }
+    }
+  },
+  "parameters": {
+    "dynamic_text": true
+  }
+}

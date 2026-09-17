@@ -32,6 +32,47 @@ typedef struct {
     double wait_seconds;
 } h3_dit_streaming_info;
 
+#define H3_DIT_STREAM_FILL_ABI_V1 1u
+
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    uint32_t block;
+    uint32_t slot;
+    uint64_t source_bytes;
+    uint64_t content_bytes;
+    double seconds;
+} h3_dit_stream_fill_result_v1;
+
+#define H3_DIT_EXACT_STREAM_ABI_V1 1u
+
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    uint64_t request_generation;
+    uint32_t prefetch_distance;
+    uint32_t io_workers;
+    int carry_first_group;
+    h3_gpu_cancel_query_v1 cancel;
+    const void *cancel_user;
+} h3_dit_exact_stream_options_v1;
+
+typedef struct {
+    int enabled;
+    int finished;
+    int poisoned;
+    uint32_t completed_passes;
+    uint64_t pool_creates;
+    uint64_t slot_bundles;
+    uint64_t fills;
+    uint64_t content_bytes_loaded;
+    uint64_t groups_submitted;
+    double refill_load_seconds;
+    double max_refill_seconds;
+    int32_t max_refill_block;
+    double wait_seconds;
+} h3_dit_exact_streaming_info;
+
 typedef void (*h3_dit_progress)(const char *phase, int completed, int total,
                                 void *opaque);
 
@@ -241,6 +282,32 @@ int h3_dit_get_gpu_stats(const h3_dit *dit, h3_gpu_stats *stats);
 int h3_dit_drain_gpu(h3_dit *dit, char *error, size_t error_size);
 int h3_dit_get_streaming_info(const h3_dit *dit,
                               h3_dit_streaming_info *info);
+/* Candidate-only bridge used by the generic slot executor.  The snapshot
+ * check performs metadata I/O but no payload read or GPU work.  A successful
+ * check is required before fill; fill writes only a slot already proven
+ * writable by the framework and never publishes legacy stream_ready state. */
+int h3_dit_stream_check_source_snapshot(h3_dit *dit,
+                                        char *error, size_t error_size);
+/* Returns UINT_MAX when no streamed block is available. */
+unsigned h3_dit_stream_first_block_id(const h3_dit *dit);
+int h3_dit_stream_fill_slot_v1(
+    h3_dit *dit, unsigned block, unsigned slot, size_t chunk_bytes,
+    h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+    h3_dit_stream_fill_result_v1 *result,
+    char *error, size_t error_size);
+/* Internal experimental execution authority. It accepts only the frozen
+ * original-BF16 K=2/G=1 H3 candidate and never changes the legacy route unless
+ * explicitly enabled after load. */
+int h3_dit_enable_exact_streaming_v1(
+    h3_dit *dit, const h3_dit_exact_stream_options_v1 *options,
+    char *error, size_t error_size);
+int h3_dit_get_exact_streaming_info(
+    const h3_dit *dit, h3_dit_exact_streaming_info *info);
+/* Thread-safe cancellation request for the candidate executor. */
+void h3_dit_cancel_exact_streaming(h3_dit *dit);
+/* Status-returning owner teardown.  On failure *dit remains unchanged and
+ * must be quarantined with every callback/slot/model dependency intact. */
+int h3_dit_destroy(h3_dit **dit, char *error, size_t error_size);
 /* True after an opt-in final-pass progressive eviction consumed resident
  * block weights. Such a DiT is intentionally one-shot and cannot be cached or
  * reprepared for another request. */

@@ -11,12 +11,16 @@ int main() {
     assert(initial.worker_threads == 0);
     assert(initial.pool_allocations == 0);
     assert(initial.cache_clear_or_unload_calls == 0);
+    assert(initial.steady_framework_allocations == 0);
+    assert(initial.steady_framework_thread_creates == 0);
 
     audit_increment(AuditCounter::FrameworkHooks, 2);
     audit_increment(AuditCounter::MemoryProbes, 3);
     audit_increment(AuditCounter::WorkerThreads, 4);
     audit_increment(AuditCounter::PoolAllocations, 5);
     audit_increment(AuditCounter::CacheClearOrUnloadCalls, 6);
+    audit_increment(AuditCounter::SteadyFrameworkAllocations, 7);
+    audit_increment(AuditCounter::SteadyFrameworkThreadCreates, 8);
     const auto observed = audit_snapshot();
 #ifdef TURBOCIDER_ENABLE_AUDIT_COUNTERS
     assert(observed.framework_hooks == 2);
@@ -24,12 +28,16 @@ int main() {
     assert(observed.worker_threads == 4);
     assert(observed.pool_allocations == 5);
     assert(observed.cache_clear_or_unload_calls == 6);
+    assert(observed.steady_framework_allocations == 7);
+    assert(observed.steady_framework_thread_creates == 8);
 #else
     assert(observed.framework_hooks == 0);
     assert(observed.memory_probes == 0);
     assert(observed.worker_threads == 0);
     assert(observed.pool_allocations == 0);
     assert(observed.cache_clear_or_unload_calls == 0);
+    assert(observed.steady_framework_allocations == 0);
+    assert(observed.steady_framework_thread_creates == 0);
 #endif
     audit_reset();
     assert(audit_snapshot().framework_hooks == 0);

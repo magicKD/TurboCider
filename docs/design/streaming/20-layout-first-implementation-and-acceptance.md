@@ -233,7 +233,7 @@ Y 改变不改 layout digest。拒绝时解释峰值来源；VAE 主导不要只
 | ID | A/B | 时间 gate（95%区间上界） | 附加条件 |
 |---|---|---|---|
 | P0 | 改动前/改动后同 legacy；resident/旧 streamed 分开 | wall/denoise median≤1.02，wall P95≤1.05 | 新 hook/probe/thread/pool/clear=0 |
-| P1 | 旧/新 executor 的等价布局与资源策略 | wall/denoise median≤1.03，wall P95≤1.05 | 同质量/格式/kernel，稳态框架 alloc/thread-create=0 |
+| P1 | 旧/新 executor 的等价布局与资源策略 | wall/denoise median≤1.02，wall P95≤1.05 | 同质量/格式/kernel，稳态框架 alloc/thread-create=0 |
 | P2 | 新同 layout guard off/on | 同执行段 median≤1.05，P95≤1.10 | 总 wall 单列；不能为性能删安全检测 |
 | P3 | 匹配条件的 OS-managed/新 streaming | 无预承诺加速百分比 | 需真实 paging 观测才能声称胜过 swap |
 | P4 | 两个显式 K/G/P/D/Q/policy 组合 | 同上 | 策略收益不算框架零开销 |

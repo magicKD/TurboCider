@@ -64,11 +64,19 @@
 
 ## 最小落地路线与性能原则
 
-先完成配置/纯 compiler（plan-only），再完成 fake slot/fence，随后接一条 LTX exact layout，验证后接 H3 双槽；
-预算 guard 在完整资源闭包后独立放行。Flux/Z-Image 从 component staged 开始，不一次替换所有模型内循环。
+先完成配置/纯 compiler（plan-only），再完成 fake slot/fence，随后按 LTX、Z-Image、H3、Flux 推进真实 adapter；
+预算 guard 在完整资源闭包后独立放行。LTX 与 Z-Image 已各关闭一个冻结初始 tuple 的严格 P1；H3 只覆盖
+MiniMax H3 Turbo，K2/G1 冻结 tuple 的工程验收已经完成。H3 支持范围到此为止，不计划接普通 H3、其他
+checkpoint或量化变体。严格 bootstrap 统计仍为 `INCONCLUSIVE`，作为 I/O 方差
+诊断保留但不再阻断本轮收口，也不等同于 production P1 PASS。Flux.2 Klein 9B 已完成 private BF16
+execution adapter：8个dual block、24个single block、两个retained K2 pool和Q2 refill；默认resident审计为零，
+两步输出与resident一致。Flux private同布局direct replay已完成正式10-block/20-pair P1：generic/direct wall
+median ratio `0.99971`、wall P95 ratio `1.00325`、denoise median ratio `0.99816`，对应bootstrap上界均低于
+2%/5%门槛；40/40请求成功、20/20输出一致，framework overhead已在该冻结tuple上签核。
 
 “性能不能差”拆成三件事：默认路径零新增热路径工作、同布局框架开销通过非劣验收、低内存策略收益单独实测。
-12 给出默认 median 2%/P95 5% 的非劣发布阻断线和置信区间规则；这是验收目标，不是本轮已取得的数据。
+12 给出默认 median 2%/P95 5% 的非劣发布阻断线和置信区间规则；LTX P8/G1/K3/D2/Q3 和 Z-Image
+P14/G1/K2/D0/Q1 的冻结tiny初始tuple已取得P1证据，其他shape、模型和bounded-memory仍必须独立验收。
 改变 P/Q/retention 的加速不能冒充纯 framework 收益，也不能补偿默认回归。
 
 ## 本次冻结的决定
@@ -81,7 +89,8 @@
 6. 新 layout-only release 和 bounded-memory release 需要不同的证据；不能把关闭 guard 当成绕过未完成实现的捷径。
 7. 首版单 GPU、单作业、单活动 streaming slot pool，component 间保守串行；不实现任意 DAG 跨 component 预取。已纳入计划与预算的 resident/helper 权重可同时存在，“单池”不代表整次请求只能有这一份权重。
 8. 内存充足时默认路径保留全部既有优化；用户若精确选 streamed，不自动改 resident。可显式选 resident 或使用未来 opt-in recommendation。
-9. H3/LTX 先做原生 Metal adapter；Flux/Z-Image 先 component-staged，再独立验证 block/group streaming。
+9. H3/LTX 使用原生 Metal adapter；Z-Image及Flux 9B已分别完成MLX block/group candidate，Flux 4B compiled
+   graph保持原默认路径且明确不进入当前资格。
 10. 新资格只在真实模型/性能/资源验收通过后加入production；当前基础实现不等于资格放行。
 
 ## 文档维护规则
@@ -99,11 +108,31 @@
 配置示例现已接入schema2 request的plan-only解析；模型adapter与执行资格尚未完成，generate/prepare仍明确拒绝新manual路线。
 示例文件存在不意味着模型已经获得执行授权。
 另有 [compiler golden fixture](examples/compiler-golden.json) 与 [性能 gate 示例](examples/performance-policy.json)，不是生成请求或可执行 campaign。
+LTX 正式同布局 P1 使用 [可执行 opt-in policy](examples/ltx-p1-same-layout-policy.json)；它需要仓库根目录下的
+release dylib、LTX 模型和实体 Metal 权限，不进入默认测试，也不会主动创建内存压力。
+Z-Image 对应 policy 为
+[z-image-p1-same-layout-policy.json](examples/z-image-p1-same-layout-policy.json)，同样只用于显式私有验收。
+H3 Turbo 对应 policy 为
+[h3-p1-same-layout-policy.json](examples/h3-p1-same-layout-policy.json)；它只覆盖原始 BF16 P0/G1/K2/D1/Q1
+denoiser tuple，不代表其他 H3 变体或 public production 资格。
+Flux 9B 的可复现 private candidate 请求见
+[flux9-k2-q2-request.json](examples/flux9-k2-q2-request.json)；同布局direct/generic正式P1 policy见
+[flux9-p1-same-layout-policy.json](examples/flux9-p1-same-layout-policy.json)。后者会硬校验baseline必须为
+`flux_direct_same_layout_v1`、candidate必须为`generic_stage_executor_v1`。
 
 ## 当前代码检查点（2026-09-17）
 
-统一 executor 已支持 ordered multi-class barrier，以及单 pool K=2/G=1 的显式 cross-pass
-`carry_first_group`（C ABI v3）。H3 已完成 metadata → layout → v3 plan → fake executor 证据，但尚未接真实
-Metal block adapter；LTX exact 仍是内部 candidate，production registry 为空。最新实现事实见
-[13 第13.9节](13-implementation-progress.md)，协议见 [03 第11节](03-runtime-protocol.md)，执行细节见
-[10 第13节](10-executor-implementation.md)。
+统一 executor 已支持 ordered multi-class barrier、单 pool K=2/G=1 的显式 cross-pass
+`carry_first_group`（C ABI v3）、claim后fill overlap和同步reader completion快路径。H3 Turbo K2/G1真实
+Metal candidate adapter 已完成20-pair工程验收；wall/denoise median ratio为`1.01066/1.01185`，独立 audit
+steady allocation/thread-create为0/0。strict bootstrap verifier仍为INCONCLUSIVE，但按已确认的合理 I/O
+波动口径不再要求继续跑盘；public gate未开放，其他 H3 变体也不在计划内。
+LTX/Z-Image/Flux 9B exact也仍是内部candidate，production registry为空。
+LTX campaign 已改用规范化 actual semantic layout 和显式 per-request engine lifecycle，避免拿 legacy
+retained cache 与 request-scoped exact 直接比较。冻结10-block/20-pair initial tuple已通过P1；同时移除
+C bridge refill的block-vector复制，并增加setup后稳态allocation/thread audit。Z-Image冻结20-pair P1也已
+通过，wall median `0.99986`、denoise median `1.00313`。Flux 9B K2/G1/D1/Q2两步请求相对resident将
+MLX peak从`18,303,578,036`降至`11,693,804,356` bytes，PNG byte-exact；真实audit为setup worker/pool
+`2/2`、steady allocation/thread-create `0/0`，默认resident五类计数全零。最新实现事实见
+[13 第13.14–13.15节](13-implementation-progress.md)，协议见 [03 第11节](03-runtime-protocol.md)，执行细节见
+[10 第13–14节](10-executor-implementation.md)。

@@ -18,7 +18,6 @@ public:
     uint32_t active_pool = 0;
     struct Job {
         CAdapter *self = nullptr;
-        std::vector<uint32_t> blocks;
         tc_stream_group_v1 group{};
         char error[1024]{};
     };
@@ -42,8 +41,11 @@ public:
         }
     }
     FillJob make_fill_job(const Group &g,const tc_stream_slot_ticket_v1 &t) override {
-        auto &job=jobs.at(t.slot);job.self=this;job.blocks=g.blocks;
-        job.group={g.id,g.slot,uint32_t(job.blocks.size()),job.blocks.data(),g.bytes};
+        auto &job=jobs.at(t.slot);job.self=this;
+        // Group block spans are owned by StageExecutor::State::layout and stay
+        // stable until every fill worker is joined.  Borrow them directly so
+        // the steady refill path never copies or grows a vector.
+        job.group={g.id,g.slot,uint32_t(g.blocks.size()),g.blocks.data(),g.bytes};
         job.error[0]=0;
         return {t,&job,[](void *raw,const tc_stream_slot_ticket_v1 *ticket,
                          const std::atomic<bool> *cancel,uint64_t *bytes){
@@ -292,7 +294,8 @@ extern "C" int tc_stream_executor_finish(tc_stream_executor *h,char *error,size_
 }
 extern "C" int tc_stream_executor_counters(tc_stream_executor *h,tc_stream_counters_v1 *out,char *error,size_t size){
     try {owner(h);if(!out)throw std::invalid_argument("missing counters output");auto c=h->executor->counters();
-        *out={c.pool_creates,c.slot_bundles,c.fills,c.bytes_loaded,c.groups_submitted};return 1;}
+        *out={c.pool_creates,c.slot_bundles,c.fills,c.bytes_loaded,
+             c.groups_submitted,c.wait_seconds};return 1;}
     catch(const std::exception &e){return fail(error,size,e.what());}
 }
 extern "C" void tc_stream_executor_cancel(tc_stream_executor *h){if(h)h->cancel.store(true);}

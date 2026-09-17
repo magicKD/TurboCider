@@ -8,6 +8,8 @@
 
 namespace tc {
 
+class ZImageExactStream;
+
 class ZImage final : public ModelSession {
     std::filesystem::path root_;
     std::filesystem::path text_path_, transformer_path_, transformer_checkpoint_, vae_path_;
@@ -19,7 +21,9 @@ class ZImage final : public ModelSession {
     Weights transformer_;
     Weights vae_;
     std::unique_ptr<ZImageWeightStream> weight_stream_;
+    std::unique_ptr<ZImageExactStream> exact_stream_;
     std::string stream_configuration_;
+    uint64_t exact_stream_generation_ = 0;
     std::optional<Tensor> cached_conditioning_;
     std::string cached_prompt_;
     std::string cached_encoder_manifest_;
@@ -47,7 +51,7 @@ class ZImage final : public ModelSession {
     explicit ZImage(const std::filesystem::path &);
     ZImage(const std::filesystem::path &, std::string,
            const std::filesystem::path &transformer_checkpoint);
-    ~ZImage() override = default;
+    ~ZImage() override;
     LoadResult load(const Event &, std::atomic<bool> &) override;
     void unload() override;
     RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) override;

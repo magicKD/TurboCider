@@ -19,6 +19,28 @@ VALID_BLOCK_SEQUENCES = {
     ("baseline", "candidate", "candidate", "baseline"),
     ("candidate", "baseline", "baseline", "candidate"),
 }
+REQUIRED_P1_SEMANTIC_FIELDS = (
+    "stage",
+    "resident_prefix_blocks",
+    "block_group_size",
+    "slot_count",
+    "prefetch_distance",
+    "io_workers",
+    "group_count",
+    "pass_count",
+    "startup_policy",
+    "pass_transition",
+    "retention",
+    "reader_revision",
+    "weight_format",
+    "kernel_revision",
+    "conditioning_recipe",
+    "upsample_boundary",
+    "engine_lifecycle",
+    "total_fills",
+    "request",
+)
+EXPECTED_P1_DECLARATION_FIELDS = REQUIRED_P1_SEMANTIC_FIELDS[:-1]
 KIND_TO_THRESHOLD = {"P0": "P0_legacy", "P1": "P1_same_layout"}
 SPEC_MAXIMUMS = {
     "P0": {
@@ -27,9 +49,9 @@ SPEC_MAXIMUMS = {
         "denoise_median_ratio_max": 1.02,
     },
     "P1": {
-        "wall_median_ratio_max": 1.03,
+        "wall_median_ratio_max": 1.02,
         "wall_p95_ratio_max": 1.05,
-        "denoise_median_ratio_max": 1.03,
+        "denoise_median_ratio_max": 1.02,
     },
 }
 
@@ -75,6 +97,13 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def semantic_digest(value: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def finite_number(value: Any, label: str, *, positive: bool = False) -> float:
@@ -288,6 +317,20 @@ def parse_samples(
     pairs: dict[str, dict[str, dict[str, Any]]] = {}
     failures: list[dict[str, Any]] = []
     positions: set[tuple[str, int]] = set()
+    expected_implementations = policy.get("expected_implementations")
+    if expected_implementations is not None and (
+        not isinstance(expected_implementations, dict) or
+        set(expected_implementations) != set(VARIANTS) or
+        any(
+            not isinstance(expected_implementations[name], str) or
+            not expected_implementations[name]
+            for name in VARIANTS
+        )
+    ):
+        raise EvidenceError(
+            "expected_implementations must contain non-empty baseline and "
+            "candidate strings"
+        )
     for index, row in enumerate(raw):
         block_id = row.get("block_id")
         pair_id = row.get("pair_id")
@@ -315,6 +358,16 @@ def parse_samples(
         status = row.get("status", "success")
         parsed = {"row": row, "status": status, "index": index}
         if status == "success":
+            expected_lifecycle = policy.get(
+                "engine_lifecycle", "persistent"
+            )
+            observed_lifecycle = row.get(
+                "engine_lifecycle", "persistent"
+            )
+            if observed_lifecycle != expected_lifecycle:
+                raise EvidenceError(
+                    f"sample {index} engine lifecycle differs from policy"
+                )
             parsed.update({
                 "wall": finite_number(
                     row.get("request_wall_seconds"),
@@ -326,7 +379,51 @@ def parse_samples(
                 ),
                 "resolved_layout": row.get("resolved_layout_digest"),
                 "actual_layout": row.get("actual_layout_digest"),
+                "actual_semantic_layout": row.get(
+                    "actual_semantic_layout"
+                ),
+                "actual_semantic_layout_digest": row.get(
+                    "actual_semantic_layout_digest"
+                ),
+                "actual_semantic_layout_missing_fields": row.get(
+                    "actual_semantic_layout_missing_fields", []
+                ),
+                "streaming_implementation": row.get(
+                    "streaming_implementation"
+                ),
             })
+            if expected_implementations is not None:
+                expected_implementation = expected_implementations[variant]
+                if (
+                    parsed["streaming_implementation"] !=
+                    expected_implementation
+                ):
+                    raise EvidenceError(
+                        f"sample {index} {variant} streaming implementation "
+                        f"differs: expected {expected_implementation!r}, got "
+                        f"{parsed['streaming_implementation']!r}"
+                    )
+            semantic = parsed["actual_semantic_layout"]
+            semantic_sha256 = parsed["actual_semantic_layout_digest"]
+            if isinstance(semantic, dict):
+                if semantic_digest(semantic) != semantic_sha256:
+                    raise EvidenceError(
+                        f"sample {index} semantic layout digest mismatch"
+                    )
+                if policy.get("comparison_kind") == "P1":
+                    missing = [
+                        field for field in REQUIRED_P1_SEMANTIC_FIELDS
+                        if field not in semantic
+                    ]
+                    if missing:
+                        raise EvidenceError(
+                            f"sample {index} semantic layout is incomplete: "
+                            + ", ".join(missing)
+                        )
+            elif semantic_sha256 is not None:
+                raise EvidenceError(
+                    f"sample {index} has a semantic digest without a layout"
+                )
             if (
                 parsed["resolved_layout"] is not None and
                 parsed["actual_layout"] is not None and
@@ -428,6 +525,31 @@ def verify(bundle: Path) -> dict[str, Any]:
     ) if comparison_kind == "P0" else True
     if comparison_kind == "P1":
         semantic = read_json(bundle / "semantic-equivalence.json")
+        if semantic.get("format") != (
+            "turbocider-streaming-semantic-equivalence-v2"
+        ):
+            raise EvidenceError(
+                "P1 requires normalized semantic-equivalence v2 evidence"
+            )
+        declaration = policy.get("semantic_equivalence")
+        expected = (
+            declaration.get("expected_actual")
+            if isinstance(declaration, dict) else None
+        )
+        if not isinstance(expected, dict) or any(
+            field not in expected
+            for field in EXPECTED_P1_DECLARATION_FIELDS
+        ):
+            raise EvidenceError(
+                "P1 policy lacks a complete expected actual layout"
+            )
+        if (
+            semantic.get("expected_actual") != expected or
+            semantic.get("observed_matches_expected") is not True
+        ):
+            raise EvidenceError(
+                "P1 observed semantics differ from the frozen expected layout"
+            )
         if semantic.get("equivalent") is not True:
             raise EvidenceError(
                 "P1 requires observed and declared semantic-equivalence evidence"
@@ -493,11 +615,31 @@ def verify(bundle: Path) -> dict[str, Any]:
                 baseline = variants["baseline"]
                 candidate = variants["candidate"]
                 if comparison_kind == "P1":
-                    left = baseline.get("actual_layout")
-                    right = candidate.get("actual_layout")
-                    if not left or left != right:
+                    left = baseline.get("actual_semantic_layout")
+                    right = candidate.get("actual_semantic_layout")
+                    left_digest = baseline.get(
+                        "actual_semantic_layout_digest"
+                    )
+                    right_digest = candidate.get(
+                        "actual_semantic_layout_digest"
+                    )
+                    left_missing = baseline.get(
+                        "actual_semantic_layout_missing_fields"
+                    )
+                    right_missing = candidate.get(
+                        "actual_semantic_layout_missing_fields"
+                    )
+                    if (
+                        not isinstance(left, dict) or
+                        not isinstance(right, dict) or
+                        left != right or
+                        not left_digest or
+                        left_digest != right_digest or
+                        left_missing or right_missing
+                    ):
                         raise EvidenceError(
-                            f"P1 pair {pair_id} lacks an identical actual layout"
+                            f"P1 pair {pair_id} lacks an identical complete "
+                            "actual semantic layout"
                         )
                 block_pairs.append((baseline, candidate))
         if len(block_pairs) == 2:

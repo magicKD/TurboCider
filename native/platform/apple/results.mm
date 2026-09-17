@@ -398,6 +398,30 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     }
     return result;
 }
+static NSDictionary *actual_streaming_layout(
+        const StreamingRuntimeMetrics &m) {
+    NSMutableDictionary *value = [@{
+        @"stage" : @(m.stage.c_str()),
+        @"resident_prefix_blocks" : @(m.resident_prefix_blocks),
+        @"block_group_size" : @(m.block_group_size),
+        @"slot_count" : @(m.slot_count),
+        @"prefetch_distance" : @(m.prefetch_distance),
+        @"io_workers" : @(m.io_workers),
+        @"group_count" : @(m.group_count),
+        @"pass_count" : @(m.pass_count),
+        @"startup_policy" : @(m.startup_policy.c_str()),
+        @"pass_transition" : @(m.pass_transition.c_str()),
+        @"retention" : @(m.retention.c_str()),
+        @"reader_revision" : @(m.reader_revision),
+        @"weight_format" : @(m.weight_format.c_str()),
+        @"kernel_revision" : @(m.kernel_revision.c_str()),
+        @"conditioning_recipe" : @(m.conditioning_recipe.c_str()),
+        @"upsample_boundary" : @(m.upsample_boundary.c_str()),
+    } mutableCopy];
+    if (!m.layout_digest.empty())
+        value[@"digest"] = @(m.layout_digest.c_str());
+    return value;
+}
 static NSDictionary *runtime_plan(const RunResult &result) {
     NSMutableDictionary *plan = [to_dictionary(result.plan) mutableCopy];
     if (!result.backend.empty())
@@ -437,6 +461,24 @@ static NSDictionary *runtime_plan(const RunResult &result) {
         if (encoder_hybrid)
             [approximations addObject:encoder_approximation_label(result.request)];
         plan[@"algorithm_approximations"] = approximations;
+    }
+    if (result.streaming_runtime) {
+        NSDictionary *actual = actual_streaming_layout(
+            *result.streaming_runtime);
+        NSMutableDictionary *streaming =
+            [plan[@"streaming"] isKindOfClass:NSDictionary.class]
+                ? [plan[@"streaming"] mutableCopy]
+                : [NSMutableDictionary dictionary];
+        streaming[@"eligibility"] = @"experimental_candidate";
+        streaming[@"execution_supported"] = @YES;
+        streaming[@"rejection_code"] = NSNull.null;
+        streaming[@"resolution_state"] = @"executed_exact_layout";
+        streaming[@"resolved_layout"] = actual;
+        streaming[@"actual_layout"] = actual;
+        streaming[@"enforcement"] = @"exact_layout";
+        streaming[@"authority"] = @"private_candidate_constructor";
+        plan[@"streaming"] = streaming;
+        plan[@"executable"] = @YES;
     }
     return plan;
 }
@@ -518,8 +560,12 @@ static NSDictionary *to_dictionary(const BlockResidencyMetrics &m) {
         @"request_bytes_loaded" : @(m.request_bytes_loaded),
         @"request_slot_allocations" : @(m.request_slot_allocations),
         @"request_slot_refills" : @(m.request_slot_refills),
+        @"request_slot_fills" : @(m.request_slot_fills),
         @"request_load_seconds" : @(m.request_load_seconds),
         @"request_wait_seconds" : @(m.request_wait_seconds),
+        @"request_refill_load_seconds" : @(m.request_refill_load_seconds),
+        @"request_max_refill_seconds" : @(m.request_max_refill_seconds),
+        @"request_max_refill_block" : @(m.request_max_refill_block),
     };
 }
 static NSDictionary *to_dictionary(const MemoryAdmissionMetrics &m) {
@@ -713,6 +759,18 @@ NSDictionary *to_dictionary(const RunResult &result) {
             copy[@"encoder_hybrid"] = to_dictionary(*result.encoder_hybrid);
             copy[@"plan"] = runtime_plan(result);
         }
+        if (result.streaming_runtime) {
+            copy[@"plan"] = runtime_plan(result);
+            const auto &runtime = *result.streaming_runtime;
+            NSMutableDictionary *block = result.block_residency
+                ? [to_dictionary(*result.block_residency) mutableCopy]
+                : [NSMutableDictionary dictionary];
+            block[@"implementation"] = @(runtime.implementation.c_str());
+            block[@"layout_digest"] = runtime.layout_digest.empty()
+                ? (id)NSNull.null : (id)@(runtime.layout_digest.c_str());
+            block[@"actual_layout"] = actual_streaming_layout(runtime);
+            copy[@"block_streaming"] = block;
+        }
         return copy;
     }
     const auto &r = result.request;
@@ -814,6 +872,17 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"lora_applied_projections"] = @(result.lora_applied_projections);
     if (result.block_residency)
         value[@"block_residency"] = to_dictionary(*result.block_residency);
+    if (result.streaming_runtime) {
+        const auto &runtime = *result.streaming_runtime;
+        NSMutableDictionary *block = result.block_residency
+            ? [to_dictionary(*result.block_residency) mutableCopy]
+            : [NSMutableDictionary dictionary];
+        block[@"implementation"] = @(runtime.implementation.c_str());
+        block[@"layout_digest"] = runtime.layout_digest.empty()
+            ? (id)NSNull.null : (id)@(runtime.layout_digest.c_str());
+        block[@"actual_layout"] = actual_streaming_layout(runtime);
+        value[@"block_streaming"] = block;
+    }
     if (!result.memory_trace.empty())
         value[@"memory_trace"] = to_array(result.memory_trace);
     return value;

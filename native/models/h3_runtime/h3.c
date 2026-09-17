@@ -802,6 +802,14 @@ h3_ctx *h3_load_dir(const char *model_dir) {
 void h3_free(h3_ctx *ctx) {
     if (!ctx) return;
     h3_cache_clear(ctx);
+    if (ctx->exact_dit_quarantine) {
+        char detail[1024] = {0};
+        if (!h3_dit_destroy(
+                &ctx->exact_dit_quarantine, detail, sizeof(detail)))
+            fprintf(stderr,
+                    "h3: retaining unsafe exact request at context teardown: %s\n",
+                    detail[0] ? detail : "drain incomplete");
+    }
     free(ctx->model_dir);
     free(ctx);
 }
@@ -967,6 +975,36 @@ static int h3_valid_params(h3_ctx *ctx, const h3_params *params) {
         h3_set_error(ctx, "H3 quantized SSD streaming requires an M5-class Metal 4 GPU");
         return 0;
     }
+    if (params->exact_streaming != 0 && params->exact_streaming != 1) {
+        h3_set_error(ctx, "exact streaming must be zero or one");
+        return 0;
+    }
+    if (params->exact_streaming &&
+        (!params->ssd_streaming || params->ssd_quantized_cache_directory ||
+         params->ssd_memory_budget_bytes ||
+         params->ssd_pinned_prefix > H3_DEFAULT_DIT_LAYERS - 2 ||
+         params->dit_layers != H3_DEFAULT_DIT_LAYERS ||
+         params->core_reuse != 1 || params->denoise_reuse != 1 ||
+         params->token_reduction || params->use_int8_row_fc2 ||
+         !params->exact_streaming_generation ||
+         params->exact_prefetch_distance != 1 ||
+         params->exact_io_workers != 1 ||
+         params->exact_carry_first_group != 1 ||
+         (!params->exact_cancel && params->exact_cancel_user))) {
+        h3_set_error(ctx,
+            "H3 exact candidate requires original BF16 K2/G1, all 50 "
+            "blocks, request retention, carry, and no dynamic shortcuts");
+        return 0;
+    }
+    if (!params->exact_streaming &&
+        (params->exact_streaming_generation ||
+         params->exact_prefetch_distance || params->exact_io_workers ||
+         params->exact_carry_first_group || params->exact_cancel ||
+         params->exact_cancel_user)) {
+        h3_set_error(ctx,
+            "exact streaming options require exact_streaming=1");
+        return 0;
+    }
     if (params->use_int8_row_fc2 && params->use_slower_bf16_mlp) {
         h3_set_error(ctx, "int8 row FC2 cannot be combined with the BF16 MLP");
         return 0;
@@ -1070,6 +1108,7 @@ typedef struct {
     h3_ctx *ctx;
     const h3_params *params;
     int cancelled;
+    h3_dit *dit;
 } h3_generation_progress;
 
 enum { H3_PARALLEL_PREPARE_TOKENS = 64 };
@@ -1247,6 +1286,7 @@ static void h3_progress_emit(h3_generation_progress *state, const char *phase,
     if (state->params->on_progress(phase, completed, total,
                                    state->params->callback_opaque)) {
         state->cancelled = 1;
+        h3_dit_cancel_exact_streaming(state->dit);
         h3_set_error(state->ctx, "generation cancelled during %s", phase);
     }
 }
@@ -1459,6 +1499,21 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         return NULL;
     }
     if (!h3_valid_params(ctx, params)) return NULL;
+    if (ctx->exact_dit_quarantine) {
+        char detail[1024] = {0};
+        if (!h3_dit_destroy(
+                &ctx->exact_dit_quarantine, detail, sizeof(detail))) {
+            h3_set_error(ctx,
+                "streaming_worker_quarantined: H3 exact cleanup retry is "
+                "still unsafe%s%s",
+                detail[0] ? ": " : "", detail);
+            return NULL;
+        }
+    }
+    /* Exact execution is request-scoped. It must not alias a legacy prepared
+     * DiT or leave one resident under the same h3_ctx. */
+    if (params->exact_streaming && ctx->cache_enabled)
+        h3_cache_set_enabled(ctx, 0);
     const h3_host_memory_options host_memory =
         h3_host_options_from_params(params);
     int render_width = params->render_width ? params->render_width :
@@ -1475,7 +1530,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         h3_set_error(ctx, "ordered references require the Ref2VA checkpoint");
         return NULL;
     }
-    h3_generation_progress progress = {ctx, params, 0};
+    h3_generation_progress progress = {ctx, params, 0, NULL};
     h3_temporal_shape temporal = h3_temporal(params->frames);
     int latent_w, latent_h;
     h3_latent_canvas(render_width, render_height, &latent_w, &latent_h);
@@ -1533,6 +1588,9 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     memset(&streaming_info, 0, sizeof(streaming_info));
     h3_dit_streaming_info streaming_before;
     memset(&streaming_before, 0, sizeof(streaming_before));
+    h3_dit_exact_streaming_info exact_streaming_info;
+    memset(&exact_streaming_info, 0, sizeof(exact_streaming_info));
+    double denoise_seconds = 0.0;
     char *conditioning_key = NULL;
     char *prepared_key = NULL;
     char *resident_key = NULL;
@@ -2304,6 +2362,23 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         h3_set_error(ctx, "%s", detail);
         goto cleanup;
     }
+    if (params->exact_streaming) {
+        h3_dit_exact_stream_options_v1 options = {
+            sizeof(options), H3_DIT_EXACT_STREAM_ABI_V1,
+            params->exact_streaming_generation,
+            params->exact_prefetch_distance,
+            params->exact_io_workers,
+            params->exact_carry_first_group,
+            params->exact_cancel,
+            params->exact_cancel_user
+        };
+        if (!h3_dit_enable_exact_streaming_v1(
+                dit, &options, detail, sizeof(detail))) {
+            h3_set_error(ctx, "%s", detail);
+            goto cleanup;
+        }
+        progress.dit = dit;
+    }
     if (ctx->cache_enabled && !dit_is_cached) {
         char *key_copy = strdup(prepared_key);
         char *resident_copy = strdup(resident_key);
@@ -2377,6 +2452,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     h3_rng_fill_normal(&video_rng, video, video_count);
     h3_rng_fill_normal(&audio_rng, audio, audio_count);
     (void)h3_dit_get_streaming_info(dit, &streaming_before);
+    const double denoise_started = h3_monotonic_seconds();
     if (!h3_dit_denoise_euler_preview(
             dit, video, audio, params->denoise_reuse,
             h3_dit_progress_bridge, &progress,
@@ -2394,7 +2470,18 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         }
         goto cleanup;
     }
+    denoise_seconds = h3_monotonic_seconds() - denoise_started;
     (void)h3_dit_get_streaming_info(dit, &streaming_info);
+    if (params->exact_streaming &&
+        (!h3_dit_get_exact_streaming_info(dit, &exact_streaming_info) ||
+         !exact_streaming_info.enabled ||
+         !exact_streaming_info.finished ||
+         exact_streaming_info.poisoned ||
+         exact_streaming_info.completed_passes != (uint32_t)params->steps)) {
+        h3_set_error(ctx,
+            "H3 exact streaming did not reach a clean terminal state");
+        goto cleanup;
+    }
     if (!h3_dump_video_latent(ctx, video, video_count, temporal.video_t,
                               latent_h, latent_w))
         goto cleanup;
@@ -2409,7 +2496,19 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             fprintf(stderr,
                     "h3: final-pass eviction invalidated resident DiT cache\n");
     }
-    if (!dit_is_cached) h3_dit_free(dit);
+    if (!dit_is_cached) {
+        if (!h3_dit_destroy(&dit, detail, sizeof(detail))) {
+            if (ctx->exact_dit_quarantine) abort();
+            ctx->exact_dit_quarantine = dit;
+            dit = NULL;
+            progress.dit = NULL;
+            h3_set_error(ctx,
+                "memory_lifetime_violation: H3 exact teardown is unsafe%s%s",
+                detail[0] ? ": " : "", detail);
+            goto cleanup;
+        }
+    }
+    progress.dit = NULL;
     dit = NULL;
     if (progress.cancelled) goto cleanup;
     if (h3_runtime_getenv("H3_MEMORY_CONSTRAINED") &&
@@ -2634,6 +2733,24 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             streaming_before.wait_seconds ?
         streaming_info.wait_seconds - streaming_before.wait_seconds :
         streaming_info.wait_seconds;
+    result->exact_streaming = exact_streaming_info.enabled;
+    result->exact_streaming_finished = exact_streaming_info.finished;
+    result->exact_streaming_poisoned = exact_streaming_info.poisoned;
+    result->exact_completed_passes = exact_streaming_info.completed_passes;
+    result->exact_pool_creates = exact_streaming_info.pool_creates;
+    result->exact_slot_bundles = exact_streaming_info.slot_bundles;
+    result->exact_fills = exact_streaming_info.fills;
+    result->exact_content_bytes_loaded =
+        exact_streaming_info.content_bytes_loaded;
+    result->exact_groups_submitted = exact_streaming_info.groups_submitted;
+    result->exact_refill_load_seconds =
+        exact_streaming_info.refill_load_seconds;
+    result->exact_max_refill_seconds =
+        exact_streaming_info.max_refill_seconds;
+    result->exact_max_refill_block =
+        exact_streaming_info.max_refill_block;
+    result->exact_wait_seconds = exact_streaming_info.wait_seconds;
+    result->denoise_seconds = denoise_seconds;
     if (params->retain_decoded) {
         result->decoded_width = frames.width;
         result->decoded_height = frames.height;
@@ -2725,7 +2842,23 @@ cleanup:
     free(condition_audio_rows);
     h3_text_embedding_free(&text);
     h3_layout_free(&layout);
-    if (!dit_is_cached) h3_dit_free(dit);
+    if (!dit_is_cached && dit) {
+        char destroy_error[1024] = {0};
+        if (!h3_dit_destroy(&dit, destroy_error, sizeof(destroy_error))) {
+            if (ctx->exact_dit_quarantine) abort();
+            ctx->exact_dit_quarantine = dit;
+            dit = NULL;
+            if (!ctx->error[0])
+                h3_set_error(ctx,
+                    "memory_lifetime_violation: H3 exact cleanup is unsafe%s%s",
+                    destroy_error[0] ? ": " : "", destroy_error);
+            if (result) {
+                h3_result_free(result);
+                result = NULL;
+            }
+        }
+    }
+    progress.dit = NULL;
     if (!decoder_is_cached) h3_video_vae_decoder_free(preview_decoder);
     if (!taeh3_is_cached) h3_taeh3_decoder_free(taeh3_decoder);
     h3_accounted_host_free(params, video, &video_memory_token);
@@ -2750,6 +2883,11 @@ int h3_drain(h3_ctx *ctx, h3_drain_info *info,
     uint64_t drained = 0;
     if (ctx->dit) {
         if (!h3_dit_drain_gpu(ctx->dit, error, error_size)) return 0;
+        drained++;
+    }
+    if (ctx->exact_dit_quarantine) {
+        if (!h3_dit_drain_gpu(
+                ctx->exact_dit_quarantine, error, error_size)) return 0;
         drained++;
     }
     if (ctx->video_decoder) {

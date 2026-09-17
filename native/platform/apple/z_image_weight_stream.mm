@@ -21,12 +21,16 @@ uint64_t integer(id value) {
 }
 } // namespace
 
-ZImageWeightStream::ReadResult ZImageWeightStream::read(const std::vector<Read> &reads) const {
+ZImageWeightStream::ReadResult ZImageWeightStream::read(
+        const std::vector<Read> &reads,
+        const std::atomic<bool> *worker_cancel) const {
     auto start = Clock::now();
     ReadResult result;
     for (const auto &r : reads) {
         uint64_t done = 0;
         while (done < r.bytes) {
+            if (worker_cancel && worker_cancel->load(std::memory_order_acquire))
+                throw std::runtime_error("streaming_cancelled");
             checkpoint(cancelled_);
             auto n = ::pread(fd_, r.destination + done,
                              size_t(std::min<uint64_t>(4ull << 20, r.bytes - done)),
@@ -147,11 +151,14 @@ void ZImageWeightStream::allocate(Slot &slot, const std::vector<Record> &records
         slot.pointers.push_back(slot.arrays.back().data<char>());
     }
 }
-ZImageWeightStream::ReadResult ZImageWeightStream::fill(Slot &slot, const std::vector<Record> &records) const {
+ZImageWeightStream::ReadResult ZImageWeightStream::fill(
+        Slot &slot, const std::vector<Record> &records,
+        const std::atomic<bool> *worker_cancel) const {
     std::vector<Read> reads;
+    reads.reserve(records.size());
     for (size_t i = 0; i < records.size(); ++i)
         reads.push_back({records[i].offset, records[i].bytes, slot.pointers[i]});
-    return read(reads);
+    return read(reads, worker_cancel);
 }
 void ZImageWeightStream::record(ReadResult result) {
     metrics_.request_bytes_loaded += result.bytes;
@@ -163,6 +170,26 @@ Weights ZImageWeightStream::bind(const Slot &slot, int block) const {
     Weights weights;
     weights.bind_arrays(names, slot.arrays);
     return weights;
+}
+
+void ZImageWeightStream::load_fixed_and_prefix(
+        unsigned pinned_blocks, Weights &fixed, const Event &event) {
+    Slot shared;
+    allocate(shared, fixed_records_);
+    record(fill(shared, fixed_records_));
+    std::vector<std::string> names;
+    names.reserve(fixed_records_.size());
+    for (const auto &r : fixed_records_) names.push_back(r.name);
+    fixed.bind_arrays(names, shared.arrays);
+    pinned_.reserve(pinned_blocks);
+    for (unsigned i = 0; i < pinned_blocks; ++i) {
+        event("load_z_image_stream", int(i), int(pinned_blocks));
+        Slot slot;
+        allocate(slot, blocks_[i]);
+        record(fill(slot, blocks_[i]));
+        pinned_.push_back(bind(slot, int(i)));
+    }
+    event("load_z_image_stream", int(pinned_blocks), int(pinned_blocks));
 }
 
 ZImageWeightStream::ZImageWeightStream(const std::filesystem::path &path, uint64_t budget,
@@ -185,22 +212,49 @@ ZImageWeightStream::ZImageWeightStream(const std::filesystem::path &path, uint64
         metrics_.activation_reserve_bytes = activation_reserve + fixed_bytes;
         metrics_.block_bytes = block_bytes;
         metrics_.estimated_working_set_bytes = plan.estimated_working_set_bytes;
-        Slot shared;
-        allocate(shared, fixed_records_);
-        record(fill(shared, fixed_records_));
-        std::vector<std::string> names;
-        for (const auto &r : fixed_records_) names.push_back(r.name);
-        fixed.bind_arrays(names, shared.arrays);
-        for (unsigned i = 0; i < plan.pinned_blocks; ++i) {
-            event("load_z_image_stream", int(i), int(plan.pinned_blocks));
-            Slot slot;
-            allocate(slot, blocks_[i]);
-            record(fill(slot, blocks_[i]));
-            pinned_.push_back(bind(slot, int(i)));
-        }
+        load_fixed_and_prefix(plan.pinned_blocks, fixed, event);
         for (auto &slot : slots_) allocate(slot, blocks_[0]);
         metrics_.request_slot_allocations = 2;
-        event("load_z_image_stream", int(plan.pinned_blocks), int(plan.pinned_blocks));
+    } catch (...) {
+        if (fd_ >= 0) ::close(fd_);
+        fd_ = -1;
+        fixed.clear();
+        throw;
+    }
+}
+
+ZImageWeightStream::ZImageWeightStream(
+        const std::filesystem::path &path, unsigned pinned_blocks,
+        uint64_t budget, uint64_t activation_reserve, Weights &fixed,
+        const Event &event, std::atomic<bool> &cancelled)
+    : cancelled_(cancelled), exact_layout_(true) {
+    try {
+        index(path);
+        uint64_t block_bytes = 0, fixed_bytes = 0;
+        for (const auto &r : blocks_[0]) block_bytes += r.bytes;
+        for (const auto &r : fixed_records_) fixed_bytes += r.bytes;
+        require(pinned_blocks <= 28,
+                "Z-Image exact streaming requires at least two suffix blocks");
+        require(fixed_bytes <= UINT64_MAX - activation_reserve,
+                "Z-Image exact streaming reserve overflow");
+        const uint64_t reserved = activation_reserve + fixed_bytes;
+        require(uint64_t(pinned_blocks + 2u) <=
+                    (UINT64_MAX - reserved) / block_bytes,
+                "Z-Image exact streaming working set overflow");
+        const uint64_t working_set =
+            reserved + uint64_t(pinned_blocks + 2u) * block_bytes;
+        require(!budget || working_set <= budget,
+                "Z-Image exact layout exceeds the selected memory budget");
+        metrics_.enabled = true;
+        metrics_.active_blocks = 30;
+        metrics_.pinned_blocks = pinned_blocks;
+        metrics_.streamed_blocks = 30 - pinned_blocks;
+        metrics_.refill_slots = 2;
+        metrics_.memory_budget_bytes = budget;
+        metrics_.activation_reserve_bytes = reserved;
+        metrics_.block_bytes = block_bytes;
+        metrics_.estimated_working_set_bytes = working_set;
+        load_fixed_and_prefix(pinned_blocks, fixed, event);
     } catch (...) {
         if (fd_ >= 0) ::close(fd_);
         fd_ = -1;
@@ -214,10 +268,15 @@ ZImageWeightStream::~ZImageWeightStream() {
     if (fd_ >= 0) ::close(fd_);
 }
 void ZImageWeightStream::reset_metrics() {
-    metrics_.request_bytes_loaded = metrics_.request_slot_allocations = metrics_.request_slot_refills = 0;
+    metrics_.request_bytes_loaded = metrics_.request_slot_allocations =
+        metrics_.request_slot_refills = metrics_.request_slot_fills = 0;
     metrics_.request_load_seconds = metrics_.request_wait_seconds = 0;
+    metrics_.request_refill_load_seconds =
+        metrics_.request_max_refill_seconds = 0;
+    metrics_.request_max_refill_block = -1;
 }
 void ZImageWeightStream::prefetch(int block) {
+    require(!exact_layout_, "legacy Z-Image prefetch used by exact executor");
     auto &slot = slots_[(block - metrics_.pinned_blocks) % 2];
     require(!slot.pending.valid(), "Z-Image stream slot still has a pending read");
     slot.block = block;
@@ -225,16 +284,23 @@ void ZImageWeightStream::prefetch(int block) {
         return fill(slot, blocks_[block]);
     });
     ++metrics_.request_slot_refills;
+    ++metrics_.request_slot_fills;
 }
-void ZImageWeightStream::begin_pass() {
+void ZImageWeightStream::check_unchanged() const {
     struct stat status{};
     require(::fstat(fd_, &status) == 0 && uint64_t(status.st_size) == file_bytes_ &&
-                status.st_mtimespec.tv_sec == modified_seconds_ && status.st_mtimespec.tv_nsec == modified_nanos_,
+                status.st_mtimespec.tv_sec == modified_seconds_ &&
+                status.st_mtimespec.tv_nsec == modified_nanos_,
             "Z-Image streamed checkpoint changed during the session");
+}
+void ZImageWeightStream::begin_pass() {
+    require(!exact_layout_, "legacy Z-Image pass used by exact executor");
+    check_unchanged();
     expected_block_ = 0;
     prefetch(int(metrics_.pinned_blocks));
 }
 Weights ZImageWeightStream::acquire(int block) {
+    require(!exact_layout_, "legacy Z-Image acquire used by exact executor");
     checkpoint(cancelled_);
     require(block == expected_block_++ && block < 30, "Z-Image stream blocks must execute in order");
     if (unsigned(block) < metrics_.pinned_blocks) return pinned_[block];
@@ -243,9 +309,73 @@ Weights ZImageWeightStream::acquire(int block) {
     auto start = Clock::now();
     auto loaded = slot.pending.get();
     metrics_.request_wait_seconds += std::chrono::duration<double>(Clock::now() - start).count();
+    metrics_.request_refill_load_seconds += loaded.seconds;
+    if (loaded.seconds > metrics_.request_max_refill_seconds) {
+        metrics_.request_max_refill_seconds = loaded.seconds;
+        metrics_.request_max_refill_block = block;
+    }
     record(loaded);
     if (block + 1 < 30) prefetch(block + 1);
     return bind(slot, block);
+}
+
+void ZImageWeightStream::create_exact_pool(
+        uint32_t slots, uint64_t capacity_bytes) {
+    require(exact_layout_ && !exact_pool_live_ && slots == slots_.size() &&
+                capacity_bytes == metrics_.block_bytes,
+            "Z-Image exact pool differs from the compiled K2 layout");
+    for (auto &slot : slots_) {
+        require(slot.arrays.empty() && !slot.pending.valid(),
+                "Z-Image exact slot already owns backing");
+        allocate(slot, blocks_[0]);
+    }
+    exact_pool_live_ = true;
+    metrics_.request_slot_allocations += slots;
+}
+
+void ZImageWeightStream::destroy_exact_pool() noexcept {
+    if (!exact_pool_live_) return;
+    for (auto &slot : slots_) {
+        if (slot.pending.valid()) slot.pending.wait();
+        slot.arrays.clear();
+        slot.pointers.clear();
+        slot.block = -1;
+    }
+    exact_pool_live_ = false;
+}
+
+uint64_t ZImageWeightStream::fill_exact(
+        uint32_t slot_index, uint32_t block,
+        const std::atomic<bool> *worker_cancel) {
+    require(exact_layout_ && exact_pool_live_ && slot_index < slots_.size() &&
+                block >= metrics_.pinned_blocks && block < blocks_.size(),
+            "invalid Z-Image exact fill target");
+    auto &slot = slots_[slot_index];
+    slot.block = int(block);
+    auto result = fill(slot, blocks_[block], worker_cancel);
+    metrics_.request_refill_load_seconds += result.seconds;
+    if (result.seconds > metrics_.request_max_refill_seconds) {
+        metrics_.request_max_refill_seconds = result.seconds;
+        metrics_.request_max_refill_block = int(block);
+    }
+    record(result);
+    ++metrics_.request_slot_refills;
+    ++metrics_.request_slot_fills;
+    return result.bytes;
+}
+
+Weights ZImageWeightStream::bind_exact(
+        uint32_t slot_index, uint32_t block) const {
+    require(exact_layout_ && exact_pool_live_ && slot_index < slots_.size() &&
+                slots_[slot_index].block == int(block),
+            "Z-Image exact slot content identity mismatch");
+    return bind(slots_[slot_index], int(block));
+}
+
+const Weights &ZImageWeightStream::prefix_weights(uint32_t block) const {
+    require(exact_layout_ && block < pinned_.size(),
+            "Z-Image exact prefix block is unavailable");
+    return pinned_[block];
 }
 
 } // namespace tc

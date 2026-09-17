@@ -7,6 +7,7 @@
 #include "h3_dit_schedule.h"
 #include "h3_streaming_policy.h"
 #include "h3_weights.h"
+#include "../../core/stream_slot_c.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -140,6 +141,8 @@ static int quantize_block_mlp_width(h3_dit *dit, h3_dit_block *block,
                                     char *error, size_t error_size);
 static int quantize_block_qkv(h3_dit *dit, h3_dit_block *block,
                               char *error, size_t error_size);
+static int stream_block_pinned(const h3_dit *dit, unsigned block);
+static unsigned first_streamed_block(const h3_dit *dit);
 
 enum {
     STREAM_QKV,
@@ -170,9 +173,41 @@ typedef struct {
     unsigned source_count;
 } h3_dit_stream_layer;
 
+typedef struct {
+    tc_stream_completion_sink_v1 sink;
+    tc_stream_slot_ticket_v1 ticket;
+} h3_dit_exact_completion;
+
+typedef struct {
+    tc_stream_cancel_query_v1 executor;
+    const void *executor_user;
+    h3_gpu_cancel_query_v1 request;
+    const void *request_user;
+} h3_dit_exact_cancel;
+
+typedef struct {
+    tc_stream_executor *executor;
+    h3_dit_exact_stream_options_v1 options;
+    h3_dit_exact_completion completions[2];
+    uint32_t pass;
+    uint32_t step;
+    uint32_t allocated_slots;
+    uint64_t queue_sequence;
+    double refill_load_seconds;
+    double max_refill_seconds;
+    int32_t max_refill_block;
+    int enabled;
+    int bound;
+    int finished;
+    int poisoned;
+    int carried_attention_adaln;
+    int carried_attention_input_quantized;
+} h3_dit_exact_stream;
+
 struct h3_dit {
     h3_gpu *gpu;
     h3_weight_store *weights;
+    uint64_t stream_source_identity;
     char *weight_directory;
     h3_dit_schedule *schedule;
     int fused_mlp;
@@ -343,6 +378,7 @@ struct h3_dit {
     h3_dit_block blocks[H3_DIT_BLOCKS];
     h3_dit_block stream_slots[2];
     h3_dit_stream_layer stream_layers[H3_DIT_BLOCKS];
+    h3_dit_exact_stream exact_stream;
     unsigned stream_ready_layer;
     unsigned stream_ready_slot;
     uint64_t stream_bytes;
@@ -2670,6 +2706,99 @@ static int read_stream_layer(h3_dit_stream_job *job) {
     }
     job->seconds = stream_now() - started;
     return job->ok;
+}
+
+int h3_dit_stream_check_source_snapshot(h3_dit *dit,
+                                        char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!dit || !dit->weights || !dit->ssd_streaming ||
+        dit->ssd_quantized) {
+        fail(error, error_size,
+             "H3 candidate source check requires BF16 SSD streaming");
+        return 0;
+    }
+    uint64_t identity = 0;
+    if (!h3_weight_store_identity(
+            dit->weights, &identity, error, error_size)) return 0;
+    if (!dit->stream_source_identity) {
+        dit->stream_source_identity = identity;
+        return 1;
+    }
+    if (identity != dit->stream_source_identity) {
+        fail(error, error_size,
+             "checkpoint_changed: H3 streaming source snapshot is stale");
+        return 0;
+    }
+    return 1;
+}
+
+unsigned h3_dit_stream_first_block_id(const h3_dit *dit) {
+    if (!dit || !dit->ssd_streaming) return UINT_MAX;
+    const unsigned first = first_streamed_block(dit);
+    return first < H3_DIT_BLOCKS ? first : UINT_MAX;
+}
+
+int h3_dit_stream_fill_slot_v1(
+        h3_dit *dit, unsigned block, unsigned slot, size_t chunk_bytes,
+        h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+        h3_dit_stream_fill_result_v1 *result,
+        char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (result) memset(result, 0, sizeof(*result));
+    if (!dit || !result || !chunk_bytes || !dit->ssd_streaming ||
+        dit->ssd_quantized || !dit->stream_source_identity || slot >= 2 ||
+        block >= H3_DIT_BLOCKS || !dit->block_active[block] ||
+        stream_block_pinned(dit, block)) {
+        fail(error, error_size, "invalid H3 candidate stream fill request");
+        return 0;
+    }
+    h3_dit_stream_layer *layer = &dit->stream_layers[block];
+    if (layer->source_count != 4) {
+        fail(error, error_size,
+             "H3 candidate requires four BF16 matrix sources");
+        return 0;
+    }
+    result->struct_size = sizeof(*result);
+    result->version = H3_DIT_STREAM_FILL_ABI_V1;
+    result->block = block;
+    result->slot = slot;
+    const double started = stream_now();
+    h3_dit_block *destination = &dit->stream_slots[slot];
+    for (unsigned index = 0; index < layer->source_count; ++index) {
+        const h3_dit_stream_source *source = &layer->sources[index];
+        h3_gpu_tensor *target = stream_slot_target(destination, source->field);
+        if (source->dtype != H3_GPU_BF16 || !target ||
+            h3_gpu_tensor_dtype(target) != H3_GPU_BF16 ||
+            h3_gpu_tensor_elements(target) != source->elements ||
+            source->elements > UINT64_MAX / sizeof(uint16_t)) {
+            fail(error, error_size,
+                 "H3 candidate stream destination differs from metadata");
+            result->seconds = stream_now() - started;
+            return 0;
+        }
+        uint64_t field_bytes = 0;
+        if (!h3_gpu_tensor_stream_file_bf16_cancellable(
+                target, source->path, source->file_offset, source->elements,
+                chunk_bytes, cancel, cancel_user, &field_bytes,
+                error, error_size)) {
+            if (field_bytes <= UINT64_MAX - result->source_bytes)
+                result->source_bytes += field_bytes;
+            else
+                result->source_bytes = UINT64_MAX;
+            result->seconds = stream_now() - started;
+            return 0;
+        }
+        if (field_bytes > UINT64_MAX - result->source_bytes) {
+            fail(error, error_size,
+                 "H3 candidate source byte counter overflow");
+            result->seconds = stream_now() - started;
+            return 0;
+        }
+        result->source_bytes += field_bytes;
+    }
+    result->content_bytes = result->source_bytes;
+    result->seconds = stream_now() - started;
+    return 1;
 }
 
 static void *read_stream_layer_thread(void *opaque) {
@@ -6868,6 +6997,407 @@ static int run_block(h3_dit *dit, unsigned index, int step,
     return 1;
 }
 
+enum {
+    H3_DIT_EXACT_QUEUE = 1u,
+};
+
+/* Match the qualified legacy H3 reader: one pread per matrix, with
+ * cancellation checked between the four independently described fields.
+ * Splitting every matrix into 8 MiB reads added measurable syscall overhead
+ * without creating additional I/O/GPU overlap because K2/G1 already overlaps
+ * the whole next-block fill with the current block's readers. */
+static const size_t H3_DIT_EXACT_CHUNK_BYTES = SIZE_MAX;
+
+static uint64_t h3_dit_exact_layer_bytes(const h3_dit *dit,
+                                         unsigned block) {
+    if (!dit || block >= H3_DIT_BLOCKS) return 0;
+    const h3_dit_stream_layer *layer = &dit->stream_layers[block];
+    if (layer->source_count != 4) return 0;
+    uint64_t bytes = 0;
+    for (unsigned index = 0; index < layer->source_count; ++index) {
+        const h3_dit_stream_source *source = &layer->sources[index];
+        if (source->dtype != H3_GPU_BF16 ||
+            source->elements > UINT64_MAX / sizeof(uint16_t)) return 0;
+        uint64_t field = (uint64_t)source->elements * sizeof(uint16_t);
+        if (field > UINT64_MAX - bytes) return 0;
+        bytes += field;
+    }
+    return bytes;
+}
+
+static uint64_t h3_dit_exact_slot_bytes(const h3_dit_block *slot) {
+    if (!slot || !slot->qkv || !slot->out || !slot->fc1 || !slot->fc2 ||
+        h3_gpu_tensor_dtype(slot->qkv) != H3_GPU_BF16 ||
+        h3_gpu_tensor_dtype(slot->out) != H3_GPU_BF16 ||
+        h3_gpu_tensor_dtype(slot->fc1) != H3_GPU_BF16 ||
+        h3_gpu_tensor_dtype(slot->fc2) != H3_GPU_BF16) return 0;
+    h3_gpu_tensor *fields[] = {
+        slot->qkv, slot->out, slot->fc1, slot->fc2
+    };
+    uint64_t bytes = 0;
+    for (unsigned index = 0; index < 4; ++index) {
+        size_t elements = h3_gpu_tensor_elements(fields[index]);
+        if (elements > UINT64_MAX / sizeof(uint16_t)) return 0;
+        uint64_t field = (uint64_t)elements * sizeof(uint16_t);
+        if (field > UINT64_MAX - bytes) return 0;
+        bytes += field;
+    }
+    return bytes;
+}
+
+static void h3_dit_exact_reader_complete(void *opaque, uint32_t queue,
+                                         uint64_t sequence, int status) {
+    h3_dit_exact_completion *completion = opaque;
+    if (!completion || !completion->sink.post) return;
+    /* Copy every field before publishing.  The owner may recycle this
+     * per-slot context as soon as the mailbox establishes completion. */
+    const tc_stream_completion_sink_v1 sink = completion->sink;
+    const tc_stream_slot_ticket_v1 ticket = completion->ticket;
+    const tc_stream_reader_fence_v1 fence = {queue, sequence};
+    (void)sink.post(sink.user, &ticket, fence, status);
+}
+
+static int h3_dit_exact_allocate(void *opaque, uint32_t slot,
+                                 uint64_t capacity, char *error,
+                                 size_t error_size) {
+    h3_dit *dit = opaque;
+    if (!dit || slot >= 2 || slot != dit->exact_stream.allocated_slots ||
+        !capacity || h3_dit_exact_slot_bytes(&dit->stream_slots[slot]) !=
+            capacity) {
+        fail(error, error_size,
+             "H3 exact slot capacity differs from loaded backing");
+        return 0;
+    }
+    dit->exact_stream.allocated_slots++;
+    return 1;
+}
+
+static void h3_dit_exact_destroy_pool(void *opaque) {
+    h3_dit *dit = opaque;
+    if (dit) dit->exact_stream.allocated_slots = 0;
+    /* The two slot backings belong to h3_dit and are released only after the
+     * executor has proved drain safety in h3_dit_free(). */
+}
+
+static int h3_dit_exact_cancelled(const void *opaque) {
+    const h3_dit_exact_cancel *cancel = opaque;
+    return cancel &&
+        ((cancel->executor && cancel->executor(cancel->executor_user)) ||
+         (cancel->request && cancel->request(cancel->request_user)));
+}
+
+static int h3_dit_exact_fill(void *opaque,
+                             const tc_stream_slot_ticket_v1 *ticket,
+                             const tc_stream_group_v1 *group,
+                             tc_stream_cancel_query_v1 cancel,
+                             const void *cancel_user, uint64_t *content_bytes,
+                             char *error, size_t error_size) {
+    h3_dit *dit = opaque;
+    if (content_bytes) *content_bytes = 0;
+    if (!dit || !ticket || !group || !content_bytes ||
+        ticket->slot >= 2 || group->slot != ticket->slot ||
+        group->block_count != 1 || !group->blocks ||
+        group->blocks[0] >= H3_DIT_BLOCKS) {
+        fail(error, error_size, "invalid H3 exact fill ticket");
+        return 0;
+    }
+    h3_dit_stream_fill_result_v1 result = {0};
+    const h3_dit_exact_cancel combined_cancel = {
+        cancel, cancel_user,
+        dit->exact_stream.options.cancel,
+        dit->exact_stream.options.cancel_user
+    };
+    if (!h3_dit_stream_fill_slot_v1(
+            dit, group->blocks[0], ticket->slot,
+            H3_DIT_EXACT_CHUNK_BYTES, h3_dit_exact_cancelled,
+            &combined_cancel, &result,
+            error, error_size)) return 0;
+    if (result.content_bytes != group->content_bytes) {
+        fail(error, error_size,
+             "H3 exact fill byte count differs from compiled group");
+        return 0;
+    }
+    h3_dit_exact_stream *stream = &dit->exact_stream;
+    stream->refill_load_seconds += result.seconds;
+    if (result.seconds > stream->max_refill_seconds) {
+        stream->max_refill_seconds = result.seconds;
+        stream->max_refill_block = (int32_t)group->blocks[0];
+    }
+    *content_bytes = result.content_bytes;
+    return 1;
+}
+
+static int h3_dit_exact_next_fusion(const h3_dit *dit, unsigned block,
+                                    unsigned *next) {
+    if (!dit || !next || block + 1 >= H3_DIT_BLOCKS ||
+        !dit->block_active[block + 1] ||
+        h3_runtime_getenv("H3_DISABLE_FUSED_CROSS_BLOCK_ADALN")) return 0;
+    *next = block + 1;
+    return 1;
+}
+
+static int h3_dit_exact_compute(h3_dit *dit, unsigned block,
+                                h3_dit_block *weight,
+                                char *error, size_t error_size) {
+    h3_dit_exact_stream *stream = &dit->exact_stream;
+    int attention_adaln_ready = stream->carried_attention_adaln;
+    int attention_input_quantized =
+        stream->carried_attention_input_quantized;
+    stream->carried_attention_adaln = 0;
+    stream->carried_attention_input_quantized = 0;
+    unsigned next = H3_DIT_BLOCKS;
+    int fuse_next = h3_dit_exact_next_fusion(dit, block, &next);
+    return run_block(
+        dit, block, (int)stream->step, weight,
+        attention_adaln_ready, attention_input_quantized,
+        fuse_next, next, &stream->carried_attention_adaln,
+        &stream->carried_attention_input_quantized, error, error_size);
+}
+
+static int h3_dit_exact_prefix(void *opaque, uint32_t pass,
+                               char *error, size_t error_size) {
+    h3_dit *dit = opaque;
+    if (!dit || !dit->exact_stream.bound ||
+        pass != dit->exact_stream.pass) {
+        fail(error, error_size, "unbound H3 exact prefix pass");
+        return 0;
+    }
+    dit->exact_stream.carried_attention_adaln = 0;
+    dit->exact_stream.carried_attention_input_quantized = 0;
+    for (unsigned block = 0; block < H3_DIT_BLOCKS; ++block) {
+        if (!dit->block_active[block] || !stream_block_pinned(dit, block))
+            continue;
+        if (!h3_dit_exact_compute(dit, block, &dit->blocks[block],
+                                  error, error_size)) return 0;
+    }
+    return 1;
+}
+
+static int h3_dit_exact_prepare(void *opaque,
+                                const tc_stream_slot_ticket_v1 *ticket,
+                                const tc_stream_group_v1 *group,
+                                char *error, size_t error_size) {
+    h3_dit *dit = opaque;
+    if (!dit || !ticket || !group || !dit->exact_stream.bound ||
+        ticket->item.pass != dit->exact_stream.pass ||
+        ticket->item.step != dit->exact_stream.step || ticket->slot >= 2 ||
+        group->slot != ticket->slot || group->block_count != 1 ||
+        !group->blocks || group->blocks[0] >= H3_DIT_BLOCKS ||
+        !dit->block_active[group->blocks[0]] ||
+        stream_block_pinned(dit, group->blocks[0])) {
+        fail(error, error_size, "invalid H3 exact prepare ticket");
+        return 0;
+    }
+    return 1;
+}
+
+static int h3_dit_exact_encode(void *opaque,
+                               const tc_stream_slot_ticket_v1 *ticket,
+                               const tc_stream_group_v1 *group,
+                               const tc_stream_completion_sink_v1 *sink,
+                               tc_stream_reader_set_v1 *readers,
+                               char *error, size_t error_size) {
+    h3_dit *dit = opaque;
+    if (!sink || !sink->post || !readers ||
+        !h3_dit_exact_prepare(opaque, ticket, group,
+                              error, error_size)) return 0;
+    const unsigned block = group->blocks[0];
+    h3_dit_block weight = dit->blocks[block];
+    h3_dit_block *slot = &dit->stream_slots[ticket->slot];
+    weight.qkv = slot->qkv;
+    weight.out = slot->out;
+    weight.fc1 = slot->fc1;
+    weight.fc2 = slot->fc2;
+    if (!h3_dit_exact_compute(dit, block, &weight, error, error_size))
+        return 0;
+    h3_dit_exact_stream *stream = &dit->exact_stream;
+    if (stream->queue_sequence == UINT64_MAX) {
+        fail(error, error_size, "H3 exact reader sequence overflow");
+        return 0;
+    }
+    const uint64_t sequence = ++stream->queue_sequence;
+    h3_dit_exact_completion *completion =
+        &stream->completions[ticket->slot];
+    completion->sink = *sink;
+    completion->ticket = *ticket;
+    h3_gpu_completion_v1 gpu_completion = {
+        sizeof(gpu_completion), H3_GPU_COMPLETION_ABI_V1,
+        completion, H3_DIT_EXACT_QUEUE, sequence,
+        h3_dit_exact_reader_complete
+    };
+    if (!h3_gpu_continue_with_completion(dit->gpu, &gpu_completion)) {
+        fail(error, error_size, "cannot close H3 exact reader boundary: %s",
+             h3_gpu_error(dit->gpu));
+        return 0;
+    }
+    readers->count = 1;
+    readers->fences[0] = (tc_stream_reader_fence_v1){
+        H3_DIT_EXACT_QUEUE, sequence
+    };
+    return 1;
+}
+
+static int h3_dit_exact_drain(void *opaque, char *error,
+                              size_t error_size) {
+    h3_dit *dit = opaque;
+    if (!dit || !h3_gpu_flush_and_drain(dit->gpu)) {
+        fail(error, error_size, "cannot drain H3 exact GPU work: %s",
+             dit && dit->gpu ? h3_gpu_error(dit->gpu) : "GPU is absent");
+        return 0;
+    }
+    return 1;
+}
+
+int h3_dit_enable_exact_streaming_v1(
+        h3_dit *dit, const h3_dit_exact_stream_options_v1 *options,
+        char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!dit || !options || options->struct_size != sizeof(*options) ||
+        options->version != H3_DIT_EXACT_STREAM_ABI_V1 ||
+        !options->request_generation || options->prefetch_distance != 1 ||
+        options->io_workers != 1 || options->carry_first_group != 1 ||
+        dit->exact_stream.executor || !dit->request_ready ||
+        !dit->ssd_streaming || dit->ssd_quantized ||
+        dit->active_block_count != H3_DIT_BLOCKS ||
+        dit->core_reuse_interval != 1 || dit->token_reduction ||
+        dit->first_block_cache || dit->tea_cache || dit->step_gate_skip) {
+        fail(error, error_size,
+             "H3 exact candidate requires original-BF16 K2/G1, all blocks, "
+             "one worker, carry, and no dynamic shortcuts");
+        return 0;
+    }
+    const unsigned streamed = dit->active_block_count -
+        (unsigned)dit->ssd_pinned_prefix;
+    if (streamed < 2 || streamed > H3_DIT_BLOCKS ||
+        !h3_dit_stream_check_source_snapshot(dit, error, error_size))
+        return 0;
+
+    uint32_t blocks[H3_DIT_BLOCKS] = {0};
+    tc_stream_group_v1 groups[H3_DIT_BLOCKS] = {0};
+    uint64_t capacity = 0;
+    unsigned group_count = 0;
+    for (unsigned block = 0; block < H3_DIT_BLOCKS; ++block) {
+        if (!dit->block_active[block] || stream_block_pinned(dit, block))
+            continue;
+        uint64_t bytes = h3_dit_exact_layer_bytes(dit, block);
+        if (!bytes || (capacity && bytes != capacity)) {
+            fail(error, error_size,
+                 "H3 exact candidate requires homogeneous BF16 blocks");
+            return 0;
+        }
+        capacity = bytes;
+        blocks[group_count] = block;
+        groups[group_count] = (tc_stream_group_v1){
+            group_count, group_count % 2u, 1u, &blocks[group_count], bytes
+        };
+        group_count++;
+    }
+    if (group_count != streamed || !capacity) {
+        fail(error, error_size, "H3 exact streamed suffix is incomplete");
+        return 0;
+    }
+    uint64_t capacities[2] = {capacity, capacity};
+    tc_stream_stage_plan_v3 plan = {
+        sizeof(plan), TC_STREAM_SLOT_ABI_V3,
+        0u, 0u, 2u, options->prefetch_distance, options->io_workers,
+        (uint32_t)h3_dit_schedule_steps(dit->schedule),
+        TC_STREAM_PASS_CARRY_FIRST_GROUP_V3,
+        options->request_generation, capacities, group_count, groups
+    };
+    h3_dit_exact_stream *stream = &dit->exact_stream;
+    memset(stream, 0, sizeof(*stream));
+    stream->max_refill_block = -1;
+    stream->options = *options;
+    tc_stream_adapter_v1 adapter = {
+        sizeof(adapter), TC_STREAM_SLOT_ABI_V1, dit,
+        h3_dit_exact_allocate, h3_dit_exact_destroy_pool,
+        h3_dit_exact_fill, h3_dit_exact_prefix, h3_dit_exact_prepare,
+        h3_dit_exact_encode, h3_dit_exact_drain
+    };
+    tc_stream_executor *executor = NULL;
+    if (!tc_stream_executor_create_v3(
+            &plan, &adapter, &executor, error, error_size)) {
+        stream->executor = executor;
+        stream->poisoned = executor != NULL;
+        return 0;
+    }
+    stream->executor = executor;
+    stream->enabled = 1;
+    /* From this point onward only generic tickets publish slot contents. */
+    dit->stream_ready_layer = UINT_MAX;
+    dit->stream_ready_slot = UINT_MAX;
+    return 1;
+}
+
+int h3_dit_get_exact_streaming_info(
+        const h3_dit *dit, h3_dit_exact_streaming_info *info) {
+    if (!dit || !info) return 0;
+    memset(info, 0, sizeof(*info));
+    const h3_dit_exact_stream *stream = &dit->exact_stream;
+    info->enabled = stream->enabled;
+    info->finished = stream->finished;
+    info->poisoned = stream->poisoned;
+    info->completed_passes = stream->pass;
+    if (!stream->executor) return 1;
+    tc_stream_counters_v1 counters = {0};
+    char ignored[128] = {0};
+    if (!tc_stream_executor_counters(
+            stream->executor, &counters, ignored, sizeof(ignored))) return 0;
+    info->pool_creates = counters.pool_creates;
+    info->slot_bundles = counters.slot_bundles;
+    info->fills = counters.fills;
+    info->content_bytes_loaded = counters.content_bytes_loaded;
+    info->groups_submitted = counters.groups_submitted;
+    info->refill_load_seconds = stream->refill_load_seconds;
+    info->max_refill_seconds = stream->max_refill_seconds;
+    info->max_refill_block = stream->max_refill_block;
+    info->wait_seconds = counters.wait_seconds;
+    return 1;
+}
+
+void h3_dit_cancel_exact_streaming(h3_dit *dit) {
+    if (dit && dit->exact_stream.executor)
+        tc_stream_executor_cancel(dit->exact_stream.executor);
+}
+
+static int h3_dit_run_exact_pass(h3_dit *dit, int step,
+                                 char *error, size_t error_size) {
+    h3_dit_exact_stream *stream = &dit->exact_stream;
+    if (!stream->enabled || !stream->executor || stream->finished ||
+        stream->poisoned || step < 0 || (uint32_t)step != stream->pass ||
+        !h3_dit_stream_check_source_snapshot(dit, error, error_size)) {
+        if (!error || !error[0])
+            fail(error, error_size, "invalid H3 exact pass/lifecycle");
+        return 0;
+    }
+    stream->step = (uint32_t)step;
+    stream->bound = 1;
+    int ok = tc_stream_executor_run_pass(
+        stream->executor, stream->pass, stream->step, error, error_size);
+    stream->bound = 0;
+    if (!ok) {
+        stream->poisoned = 1;
+        return 0;
+    }
+    stream->pass++;
+    if (stream->pass == (uint32_t)h3_dit_schedule_steps(dit->schedule)) {
+        if (!tc_stream_executor_finish(
+                stream->executor, error, error_size)) {
+            stream->poisoned = 1;
+            return 0;
+        }
+        stream->finished = 1;
+    }
+    if (!h3_gpu_begin(dit->gpu)) {
+        stream->poisoned = 1;
+        fail(error, error_size,
+             "cannot resume H3 command chain after exact pass: %s",
+             h3_gpu_error(dit->gpu));
+        return 0;
+    }
+    return 1;
+}
+
 static int first_block_cache_probe(h3_dit *dit, uint32_t elements,
                                    float *score, char *error,
                                    size_t error_size) {
@@ -7246,6 +7776,18 @@ static int encode_forward(h3_dit *dit, int step, int begin, int submit,
             }
         }
         if (!tea_cache_reused) {
+        if (dit->exact_stream.enabled) {
+            if (use_token_reduction || use_first_block_cache ||
+                use_tea_cache || use_step_gate_skip ||
+                dit->core_reuse_interval != 1) {
+                dit->exact_stream.poisoned = 1;
+                fail(error, error_size,
+                     "H3 exact runtime encountered an unsupported shortcut");
+                return 0;
+            }
+            if (!h3_dit_run_exact_pass(
+                    dit, step, error, error_size)) return 0;
+        } else {
         unsigned command_blocks = disable_command_split
             ? 0 : command_block_interval(dit);
         if (dit->ssd_streaming) command_blocks = 0;
@@ -7480,6 +8022,7 @@ static int encode_forward(h3_dit *dit, int step, int begin, int submit,
         if (use_token_reduction &&
             token_reduction_end == H3_DIT_BLOCKS &&
             !leave_token_reduction(dit, error, error_size)) return 0;
+        }
         }
         if (use_tea_cache && !tea_cache_reused) {
             OP(h3_gpu_sub_bf16(dit->gpu, dit->core_residual, dit->hidden,
@@ -7719,6 +8262,10 @@ static int same_sigmas(const h3_sigma_schedule *left,
 
 void h3_dit_release_request(h3_dit *dit) {
     if (!dit) return;
+    /* The first H3 exact candidate is request-scoped and one-shot.  Keeping
+     * its request state until model teardown preserves every callback and GPU
+     * dependency if a caller attempts the legacy retained-session API. */
+    if (dit->exact_stream.executor) return;
     free_request_state(dit);
     reset_run_state(dit);
 }
@@ -7778,6 +8325,11 @@ int h3_dit_reprepare(h3_dit *dit,
                      h3_dit_progress progress, void *progress_opaque,
                      char *error, size_t error_size) {
     if (error && error_size) error[0] = '\0';
+    if (dit && dit->exact_stream.executor) {
+        fail(error, error_size,
+             "H3 exact candidate is one-shot and cannot be reprepared");
+        return 0;
+    }
     if (!dit || dit->final_evicted_blocks || !text || !layout || !sigmas ||
         !isfinite(spatial_rope_scale) || spatial_rope_scale <= 0.0f) {
         fail(error, error_size, "invalid resident DiT reprepare arguments");
@@ -7890,6 +8442,11 @@ int h3_dit_reset_run(h3_dit *dit,
                      size_t condition_audio_elements,
                      char *error, size_t error_size) {
     if (error && error_size) error[0] = '\0';
+    if (dit && dit->exact_stream.executor) {
+        fail(error, error_size,
+             "H3 exact candidate is one-shot and cannot be reset");
+        return 0;
+    }
     if (!dit || !dit->request_ready || dit->final_evicted_blocks) {
         fail(error, error_size, "prepared DiT is absent");
         return 0;
@@ -8591,6 +9148,11 @@ int h3_dit_denoise_euler_preview(
              "adaptive cache cannot be combined with denoiser reuse");
         return 0;
     }
+    if (dit->exact_stream.executor && reuse_interval != 1) {
+        fail(error, error_size,
+             "H3 exact candidate requires one evaluation per denoise step");
+        return 0;
+    }
     if (gpu_sampler_requested(dit))
         return denoise_euler_gpu(dit, video_latent, audio_latent,
                                  reuse_interval, progress, progress_opaque,
@@ -8734,7 +9296,7 @@ int h3_dit_drain_gpu(h3_dit *dit, char *error, size_t error_size) {
     return 1;
 }
 
-void h3_dit_free(h3_dit *dit) {
+static void h3_dit_free_resources(h3_dit *dit) {
     if (!dit) return;
     if (dit->first_block_cache && h3_runtime_getenv("H3_PROFILE")) {
         fprintf(stderr,
@@ -8920,6 +9482,32 @@ void h3_dit_free(h3_dit *dit) {
     h3_quant_cache_close(&dit->quant_cache);
     free(dit->weight_directory);
     free(dit);
+}
+
+int h3_dit_destroy(h3_dit **owner, char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!owner || !*owner) return 1;
+    h3_dit *dit = *owner;
+    if (dit->exact_stream.executor) {
+        if (!dit->exact_stream.finished)
+            tc_stream_executor_cancel(dit->exact_stream.executor);
+        if (!tc_stream_executor_destroy(
+                &dit->exact_stream.executor, error, error_size)) return 0;
+        dit->exact_stream.enabled = 0;
+    }
+    *owner = NULL;
+    h3_dit_free_resources(dit);
+    return 1;
+}
+
+void h3_dit_free(h3_dit *dit) {
+    if (!dit) return;
+    char detail[1024] = {0};
+    h3_dit *owner = dit;
+    if (!h3_dit_destroy(&owner, detail, sizeof(detail)))
+        fprintf(stderr,
+                "h3: exact streaming model quarantined at teardown: %s\n",
+                detail[0] ? detail : "drain incomplete");
 }
 
 static int video_shape(int channels, int time, int height, int width,

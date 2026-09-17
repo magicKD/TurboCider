@@ -340,7 +340,7 @@ preset 是配置，不是授权；性能/资格记录在只读 sidecar/registry�
 保持 kernel、提交批次和已有 cache 策略，优化仅在入口新路由。用 audit build 验证这些为零，再用 release build 测 P0。
 
 统计与发布完全遵循 12：P0 默认 median 比值区间上界≤1.02/P95≤1.05，
-P1 同布局 median≤1.03/P95≤1.05；P2 为 guard 开销，P3 为 OS-managed 对照，P4 为布局策略变化。
+P1 同布局 median≤1.02/P95≤1.05；P2 为 guard 开销，P3 为 OS-managed 对照，P4 为布局策略变化。
 不是“测 5 次就通过”，也不允许通过 P3 抵消 P0。每个正式 workload 独立判断。
 
 目前 compiler/executor/LTX 内部原型存在，但 session/资源闭包/production 资格未完成，详见13/20。

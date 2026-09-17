@@ -1097,6 +1097,7 @@ struct ConditioningCacheLocation {
 };
 
 constexpr uint32_t kLtxTransformerBlockCount = 48u;
+constexpr uint32_t kLtxDenoisePassCount = 11u;
 constexpr uint32_t kLtxStage1Mask = 1u;
 constexpr uint32_t kLtxStage2Mask = 2u;
 constexpr uint32_t kLtxAllStageMask = kLtxStage1Mask | kLtxStage2Mask;
@@ -3347,9 +3348,24 @@ public:
                 "LTX exporter did not preserve the requested frame count");
         const auto request_wall_seconds = std::chrono::duration<double>(
             Clock::now() - request_started).count();
+        const uint64_t request_slot_allocations = use_mlx ?
+            mlx_info.slot_allocations :
+            (exact_streaming ? exact_counters.slot_bundles :
+             streaming_after.slot_allocations -
+                 streaming_before.slot_allocations);
+        const uint64_t request_slot_refills = use_mlx ?
+            mlx_info.slot_refills :
+            (exact_streaming ? exact_counters.fills :
+             streaming_after.slot_refills -
+                 streaming_before.slot_refills);
+        const uint64_t request_slot_fills = exact_streaming ?
+            exact_counters.fills :
+            ltx_checked_add(request_slot_allocations, request_slot_refills,
+                            "LTX request slot fills");
         id plan_value = to_dictionary(plan);
+        NSDictionary *actual_block_layout = nil;
         if (exact_streaming) {
-            auto actual_layout = @{
+            actual_block_layout = @{
                 @"digest": @(exact_layout_digest.c_str()),
                 @"stage": @"denoiser",
                 @"resident_prefix_blocks": @(exact_prefix_blocks),
@@ -3360,6 +3376,14 @@ public:
                 @"group_count": @(exact_group_count),
                 @"pass_count": @(exact_pass_count),
                 @"retention": @"request",
+                @"startup_policy": @"prefetch_window_before_prefix",
+                @"pass_transition": @"reload",
+                @"reader_revision": @(LTX_STREAM_READER_REVISION),
+                @"weight_format": @"convrot-int8-g256",
+                @"kernel_revision":
+                    [NSString stringWithUTF8String:kLtxRevision],
+                @"conditioning_recipe": @"scalar-conditioning-v1",
+                @"upsample_boundary": @"after-stage1-pool-retained",
             };
             NSMutableDictionary *actual_plan = [plan_value mutableCopy];
             NSMutableDictionary *streaming_plan =
@@ -3368,13 +3392,34 @@ public:
             streaming_plan[@"execution_supported"] = @YES;
             streaming_plan[@"rejection_code"] = NSNull.null;
             streaming_plan[@"resolution_state"] = @"executed_exact_v2";
-            streaming_plan[@"resolved_layout"] = actual_layout;
-            streaming_plan[@"actual_layout"] = actual_layout;
+            streaming_plan[@"resolved_layout"] = actual_block_layout;
+            streaming_plan[@"actual_layout"] = actual_block_layout;
             streaming_plan[@"enforcement"] = @"exact_layout_v2";
             streaming_plan[@"authority"] = @"private_candidate_constructor";
             actual_plan[@"executable"] = @YES;
             actual_plan[@"streaming"] = streaming_plan;
             plan_value = actual_plan;
+        } else if (!use_mlx && streaming_after.enabled) {
+            const uint32_t slots = streaming_after.refill_slots;
+            actual_block_layout = @{
+                @"stage": @"denoiser",
+                @"resident_prefix_blocks": @(streaming_after.pinned_blocks),
+                @"block_group_size": @1,
+                @"slot_count": @(slots),
+                @"prefetch_distance": @(slots ? slots - 1u : 0u),
+                @"io_workers": @(slots),
+                @"group_count": @(streaming_after.streamed_blocks),
+                @"pass_count": @(kLtxDenoisePassCount),
+                @"retention": @"engine",
+                @"startup_policy": @"prefetch_window_before_prefix",
+                @"pass_transition": @"reload",
+                @"reader_revision": @(LTX_STREAM_READER_REVISION),
+                @"weight_format": @"convrot-int8-g256",
+                @"kernel_revision":
+                    [NSString stringWithUTF8String:kLtxRevision],
+                @"conditioning_recipe": @"scalar-conditioning-v1",
+                @"upsample_boundary": @"after-stage1-pool-retained",
+            };
         }
         auto value = @{ @"schema_version": @1,
                   @"model": @(request.model.c_str()),
@@ -3429,16 +3474,9 @@ public:
                           (exact_streaming ? streaming_after.bytes_loaded :
                            streaming_after.bytes_loaded -
                                streaming_before.bytes_loaded)),
-                      @"request_slot_allocations": @(use_mlx ?
-                          mlx_info.slot_allocations :
-                          (exact_streaming ? exact_counters.slot_bundles :
-                           streaming_after.slot_allocations -
-                               streaming_before.slot_allocations)),
-                      @"request_slot_refills": @(use_mlx ?
-                          mlx_info.slot_refills :
-                          (exact_streaming ? exact_counters.fills :
-                           streaming_after.slot_refills -
-                               streaming_before.slot_refills)),
+                      @"request_slot_allocations": @(request_slot_allocations),
+                      @"request_slot_refills": @(request_slot_refills),
+                      @"request_slot_fills": @(request_slot_fills),
                       @"request_load_seconds": @(use_mlx ?
                           mlx_info.cache_load_seconds :
                           streaming_after.load_seconds - streaming_before.load_seconds),
@@ -3448,6 +3486,8 @@ public:
                           (exact_streaming ? @"c_metal_exact_v2" : @"c_metal"),
                       @"layout_digest": exact_streaming ?
                           (id)@(exact_layout_digest.c_str()) : (id)[NSNull null],
+                      @"actual_layout": actual_block_layout ?
+                          (id)actual_block_layout : (id)[NSNull null],
                       @"cache_loads": @(use_mlx ? mlx_info.cache_loads : 0ull),
                       @"cache_hits": @(use_mlx ? mlx_info.cache_hits : 0ull),
                       @"cache_evictions": @(use_mlx ? mlx_info.cache_evictions : 0ull),
@@ -3566,6 +3606,7 @@ public:
                 streaming_after.bytes_loaded,
                 exact_counters.slot_bundles,
                 exact_counters.fills,
+                exact_counters.fills,
                 0.0,
                 0.0,
             };
@@ -3598,6 +3639,10 @@ public:
                 streaming_after.slot_allocations -
                     streaming_before.slot_allocations,
                 streaming_after.slot_refills - streaming_before.slot_refills,
+                (streaming_after.slot_allocations -
+                    streaming_before.slot_allocations) +
+                    (streaming_after.slot_refills -
+                        streaming_before.slot_refills),
                 streaming_after.load_seconds - streaming_before.load_seconds,
                 streaming_after.wait_seconds - streaming_before.wait_seconds,
             };

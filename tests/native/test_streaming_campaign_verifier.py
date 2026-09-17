@@ -5,33 +5,65 @@ from __future__ import annotations
 
 import json
 import hashlib
+import socket
 import sys
 import tempfile
+import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/native"))
 
-from run_streaming_campaign import CampaignError, run_campaign  # noqa: E402
-from run_streaming_campaign import default_audit  # noqa: E402
+import run_streaming_campaign as campaign_runner  # noqa: E402
+from run_streaming_campaign import (  # noqa: E402
+    CampaignError,
+    actual_semantic_layout,
+    default_audit,
+    receive_message,
+    request_semantic_identity,
+    run_campaign,
+    send_message,
+    worker_main,
+)
 from verify_streaming_campaign import EvidenceError, verify  # noqa: E402
 
 
 def policy(*, blocks: int = 10, fail_runs: list[str] | None = None) -> dict:
+    semantic_layout = {
+        "stage": "denoiser",
+        "resident_prefix_blocks": 8,
+        "block_group_size": 1,
+        "slot_count": 3,
+        "prefetch_distance": 2,
+        "io_workers": 3,
+        "group_count": 40,
+        "pass_count": 11,
+        "startup_policy": "prefetch_window_before_prefix",
+        "pass_transition": "reload",
+        "retention": "request",
+        "reader_revision": 1,
+        "weight_format": "convrot-int8-g256",
+        "kernel_revision": "synthetic-kernel-v1",
+        "conditioning_recipe": "scalar-conditioning-v1",
+        "upsample_boundary": "after-stage1-pool-retained",
+        "total_fills": 440,
+    }
     return {
         "schema_version": 1,
         "status": "frozen",
         "comparison_kind": "P1",
+        "engine_lifecycle": "per_request",
         "initial_matched_pairs": blocks * 2,
         "minimum_tail_requests_per_variant": 0,
         "bootstrap_iterations": 1200,
         "bootstrap_seed": 17,
         "thresholds": {
             "P1_same_layout": {
-                "wall_median_ratio_max": 1.03,
+                "wall_median_ratio_max": 1.02,
                 "wall_p95_ratio_max": 1.05,
-                "denoise_median_ratio_max": 1.03,
+                "denoise_median_ratio_max": 1.02,
                 "steady_framework_allocations": 0,
                 "steady_framework_thread_creates": 0,
             }
@@ -62,6 +94,10 @@ def policy(*, blocks: int = 10, fail_runs: list[str] | None = None) -> dict:
         "semantic_equivalence": {
             "declared_equivalent": True,
             "fields": ["layout", "seed", "artifact"],
+            "expected_actual": {
+                **semantic_layout,
+                "engine_lifecycle": "per_request",
+            },
         },
         "variants": {
             "baseline": {
@@ -70,6 +106,7 @@ def policy(*, blocks: int = 10, fail_runs: list[str] | None = None) -> dict:
                     "request_wall_seconds": 100.0,
                     "denoise_seconds": 80.0,
                     "layout_digest": "same-layout",
+                    "actual_semantic_layout": dict(semantic_layout),
                     "artifact_payloads": {"latent": "same-latent"},
                     "fail_runs": fail_runs or [],
                 },
@@ -80,6 +117,7 @@ def policy(*, blocks: int = 10, fail_runs: list[str] | None = None) -> dict:
                     "request_wall_seconds": 101.0,
                     "denoise_seconds": 80.5,
                     "layout_digest": "same-layout",
+                    "actual_semantic_layout": dict(semantic_layout),
                     "artifact_payloads": {"latent": "same-latent"},
                     "fail_runs": [],
                 },
@@ -104,6 +142,310 @@ def passed_audit() -> dict:
 
 
 class CampaignTests(unittest.TestCase):
+    def test_probe_backend_reuses_semantic_and_quality_verifier(self):
+        root = Path(tempfile.mkdtemp(prefix="tc-probe-campaign-"))
+        script = root / "probe.py"
+        semantic = policy(blocks=1)["semantic_equivalence"]["expected_actual"]
+        actual = {
+            key: value for key, value in semantic.items()
+            if key not in ("engine_lifecycle", "total_fills")
+        }
+        script.write_text(
+            "import json, pathlib, sys\n"
+            "output, pair_id, variant = sys.argv[1:4]\n"
+            "pathlib.Path(output).parent.mkdir(parents=True, exist_ok=True)\n"
+            "pathlib.Path(output).write_bytes(pair_id.encode())\n"
+            f"actual = {actual!r}\n"
+            "wall = 1.01 if variant == 'candidate' else 1.0\n"
+            "denoise = 0.805 if variant == 'candidate' else 0.8\n"
+            "print(json.dumps({"
+            "'schema':'test-streaming-probe-v1',"
+            "'timings_seconds':{'request_wall':wall,'denoise':denoise},"
+            "'block_streaming':{'enabled':True,"
+            "'request_slot_allocations':3,'request_slot_refills':440,"
+            "'request_slot_fills':440,'actual_layout':actual}}))\n"
+        )
+        campaign = policy(blocks=1)
+        campaign["protocol"]["warmup_requests_per_variant"] = 0
+        for variant in ("baseline", "candidate"):
+            campaign["variants"][variant] = {
+                "backend": "probe",
+                "executable": sys.executable,
+                "model_path": str(root),
+                "output_artifact": "latent",
+                "arguments": [
+                    str(script), "${OUTPUT}", "${PAIR_ID}", variant,
+                ],
+                "result_schema": "test-streaming-probe-v1",
+            }
+        bundle = self.run_bundle(campaign)
+        rows = [
+            json.loads(line)
+            for line in (bundle / "raw-samples.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(len(rows), 4)
+        self.assertTrue(all(row["status"] == "success" for row in rows))
+        self.assertTrue(all(
+            not row["actual_semantic_layout_missing_fields"] for row in rows
+        ))
+        quality = json.loads((bundle / "quality.json").read_text())
+        self.assertTrue(all(sample["passed"] for sample in quality["samples"]))
+        semantic_result = json.loads(
+            (bundle / "semantic-equivalence.json").read_text()
+        )
+        self.assertTrue(semantic_result["equivalent"])
+
+    def test_native_worker_per_request_recreates_and_frees_engine(self):
+        root = Path(tempfile.mkdtemp(prefix="tc-native-worker-lifecycle-"))
+        config = root / "worker.json"
+        config.write_text(json.dumps({
+            "backend": "native",
+            "engine_lifecycle": "per_request",
+            "library": str(root / "fixture.dylib"),
+            "model_id": "fixture",
+            "model_path": str(root),
+        }))
+        parent, child = socket.socketpair()
+        child_fd = child.detach()
+        created: list[object] = []
+        freed: list[object] = []
+
+        class FakeLibrary:
+            @staticmethod
+            def tc_engine_free(engine):
+                freed.append(engine)
+
+        fake_library = FakeLibrary()
+
+        def create_engine(_library, _config):
+            engine = object()
+            created.append(engine)
+            return engine
+
+        def run_sample(_library, _engine, command, lifecycle):
+            return {
+                "status": "success",
+                "request_wall_seconds": 0.001,
+                "denoise_seconds": 0.0005,
+                "engine_lifecycle": lifecycle,
+                "run_id_seen": command["run_id"],
+            }
+
+        with (
+            mock.patch.object(
+                campaign_runner, "load_native_library",
+                return_value=fake_library,
+            ),
+            mock.patch.object(
+                campaign_runner, "create_native_engine",
+                side_effect=create_engine,
+            ),
+            mock.patch.object(
+                campaign_runner, "run_native_sample",
+                side_effect=run_sample,
+            ),
+        ):
+            thread = threading.Thread(
+                target=worker_main, args=(config, child_fd)
+            )
+            thread.start()
+            try:
+                ready = receive_message(parent, 2)
+                self.assertEqual(ready["type"], "ready")
+                self.assertEqual(
+                    ready["engine_lifecycle"], "per_request"
+                )
+                responses = []
+                for index in range(2):
+                    send_message(parent, {
+                        "type": "run",
+                        "run_id": f"run-{index}",
+                        "request": {},
+                        "artifact_paths": {},
+                    })
+                    responses.append(receive_message(parent, 2))
+                send_message(parent, {"type": "stop"})
+                stopped = receive_message(parent, 2)
+                self.assertEqual(stopped["type"], "stopped")
+            finally:
+                parent.close()
+                thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(len(created), 2)
+        self.assertEqual(freed, created)
+        self.assertEqual(
+            [response["engine_generation"] for response in responses],
+            [1, 2],
+        )
+        self.assertEqual(
+            len({response["worker_pid"] for response in responses}), 1
+        )
+
+    def test_schema_v1_v2_requests_share_one_semantic_identity(self):
+        v1 = {
+            "schema_version": 1,
+            "model": "ltx-2.5-distilled",
+            "operation": "video.generate",
+            "prompt": "fox",
+            "width": 64,
+            "height": 64,
+            "frames": 9,
+            "fps": 24,
+            "audio": False,
+            "seed": 42,
+            "steps": 11,
+            "execution": "gpu",
+            "ltx_backend": "c_metal",
+            "ltx_fast_av": True,
+            "residency": "streamed",
+            "memory_budget_bytes": 123,
+            "output": "/tmp/legacy.mp4",
+        }
+        v2 = {
+            "schema_version": 2,
+            "model": "ltx-2.5-distilled",
+            "operation": "video.generate",
+            "inputs": [
+                {"kind": "text", "role": "prompt", "text": "fox"},
+            ],
+            "outputs": [{
+                "kind": "video",
+                "path": "/tmp/exact.mp4",
+                "width": 64,
+                "height": 64,
+                "frames": 9,
+                "fps": 24,
+                "audio": False,
+            }],
+            "sampling": {"seed": 42, "steps": 11},
+            "execution": {
+                "policy": "gpu",
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": True,
+                "streaming": {"enabled": True},
+            },
+        }
+        self.assertEqual(
+            request_semantic_identity(v1),
+            request_semantic_identity(v2),
+        )
+
+    def test_schema_v1_v2_image_requests_default_to_one_frame(self):
+        v1 = {
+            "schema_version": 1,
+            "model": "z-image-turbo",
+            "operation": "image.generate",
+            "prompt": "fox",
+            "width": 64,
+            "height": 64,
+            "seed": 42,
+            "steps": 1,
+            "execution": "gpu",
+            "output": "/tmp/legacy.png",
+        }
+        v2 = {
+            "schema_version": 2,
+            "model": "z-image-turbo",
+            "operation": "image.generate",
+            "inputs": [
+                {"kind": "text", "role": "prompt", "text": "fox"},
+            ],
+            "outputs": [{
+                "kind": "image",
+                "path": "/tmp/exact.png",
+                "width": 64,
+                "height": 64,
+            }],
+            "sampling": {"seed": 42, "steps": 1},
+            "execution": {"policy": "gpu", "streaming": {"enabled": True}},
+        }
+        self.assertEqual(
+            request_semantic_identity(v1),
+            request_semantic_identity(v2),
+        )
+
+    def test_ltx_fill_counters_and_request_retention_normalize(self):
+        common = {
+            "stage": "denoiser",
+            "resident_prefix_blocks": 8,
+            "block_group_size": 1,
+            "slot_count": 3,
+            "prefetch_distance": 2,
+            "io_workers": 3,
+            "group_count": 40,
+            "pass_count": 11,
+            "startup_policy": "prefetch_window_before_prefix",
+            "pass_transition": "reload",
+            "reader_revision": 1,
+            "weight_format": "convrot-int8-g256",
+            "kernel_revision": "ltx-kernel-v1",
+            "conditioning_recipe": "scalar-conditioning-v1",
+            "upsample_boundary": "after-stage1-pool-retained",
+        }
+        legacy = {
+            "block_streaming": {
+                "actual_layout": {**common, "retention": "engine"},
+                "request_slot_allocations": 3,
+                "request_slot_refills": 437,
+            }
+        }
+        exact = {
+            "plan": {
+                "streaming": {
+                    "actual_layout": {**common, "retention": "request"},
+                }
+            },
+            "block_streaming": {
+                "request_slot_allocations": 3,
+                "request_slot_refills": 440,
+                "request_slot_fills": 440,
+            },
+        }
+        legacy_semantic, legacy_missing = actual_semantic_layout(
+            legacy, "per_request"
+        )
+        exact_semantic, exact_missing = actual_semantic_layout(
+            exact, "per_request"
+        )
+        self.assertEqual(legacy_missing, [])
+        self.assertEqual(exact_missing, [])
+        self.assertEqual(legacy_semantic, exact_semantic)
+        self.assertEqual(legacy_semantic["total_fills"], 440)
+        persistent_legacy, _ = actual_semantic_layout(
+            legacy, "persistent"
+        )
+        self.assertNotEqual(persistent_legacy, exact_semantic)
+
+    def test_per_request_preserves_explicit_multi_pool_retention(self):
+        result = {
+            "plan": {
+                "streaming": {
+                    "actual_layout": {
+                        "stage": "denoiser",
+                        "resident_prefix_blocks": 0,
+                        "block_group_size": 1,
+                        "slot_count": 2,
+                        "prefetch_distance": 1,
+                        "io_workers": 2,
+                        "group_count": 32,
+                        "pass_count": 2,
+                        "startup_policy": "prefetch_window_before_prefix",
+                        "pass_transition": "reload",
+                        "retention": "request;multi_pool=retain_all",
+                        "reader_revision": 1,
+                        "weight_format": "diffusers-bf16-sharded",
+                        "kernel_revision": "flux-kernel-v1",
+                        "conditioning_recipe": "flux-conditioning-v1",
+                        "upsample_boundary": "no-upsample",
+                    }
+                }
+            },
+            "block_streaming": {"request_slot_fills": 64},
+        }
+        semantic, missing = actual_semantic_layout(result, "per_request")
+        self.assertEqual(missing, [])
+        self.assertEqual(semantic["retention"], "request;multi_pool=retain_all")
+
     def test_default_audit_requires_independent_audit_build(self):
         rows = [{
             "variant": "candidate", "status": "success",
@@ -168,7 +510,7 @@ class CampaignTests(unittest.TestCase):
         self.assertTrue((root / "bundle" / "summary.json").is_file())
         return root / "bundle"
 
-    def test_synthetic_abba_campaign_passes_with_persistent_workers(self):
+    def test_synthetic_abba_campaign_passes_with_persistent_worker_processes(self):
         bundle = self.run_bundle(policy())
         result = verify(bundle)
         self.assertEqual(result["overall"], "PASS")
@@ -193,10 +535,114 @@ class CampaignTests(unittest.TestCase):
                      if row["variant"] == variant}),
                 1,
             )
+            generations = [
+                row["engine_generation"] for row in rows
+                if row["variant"] == variant
+            ]
+            self.assertEqual(len(set(generations)), len(generations))
         self.assertEqual(
             [row["variant"] for row in rows[:4]],
             ["baseline", "candidate", "candidate", "baseline"],
         )
+
+    def test_p1_rejects_semantically_different_layouts_with_same_digest(self):
+        campaign = policy(blocks=1)
+        campaign["variants"]["candidate"]["synthetic"][
+            "actual_semantic_layout"
+        ]["io_workers"] = 1
+        bundle = self.run_bundle(campaign)
+        semantic = json.loads(
+            (bundle / "semantic-equivalence.json").read_text()
+        )
+        self.assertFalse(semantic["equivalent"])
+        with self.assertRaises(EvidenceError):
+            verify(bundle)
+
+    def test_p1_rejects_equal_layouts_that_differ_from_frozen_expected(self):
+        campaign = policy(blocks=1)
+        for variant in ("baseline", "candidate"):
+            campaign["variants"][variant]["synthetic"][
+                "actual_semantic_layout"
+            ]["resident_prefix_blocks"] = 9
+        bundle = self.run_bundle(campaign)
+        semantic = json.loads(
+            (bundle / "semantic-equivalence.json").read_text()
+        )
+        self.assertTrue(semantic["observed_same_semantic_layout"])
+        self.assertFalse(semantic["observed_matches_expected"])
+        with self.assertRaises(EvidenceError):
+            verify(bundle)
+
+    def test_p1_rejects_incomplete_actual_semantics(self):
+        campaign = policy(blocks=1)
+        del campaign["variants"]["candidate"]["synthetic"][
+            "actual_semantic_layout"
+        ]["startup_policy"]
+        bundle = self.run_bundle(campaign)
+        with self.assertRaises(EvidenceError):
+            verify(bundle)
+
+    def test_expected_implementations_are_checked_per_request(self):
+        campaign = policy(blocks=1)
+        campaign["expected_implementations"] = {
+            "baseline": "direct-v1",
+            "candidate": "generic-v1",
+        }
+        campaign["variants"]["baseline"]["synthetic"][
+            "streaming_implementation"
+        ] = "direct-v1"
+        campaign["variants"]["candidate"]["synthetic"][
+            "streaming_implementation"
+        ] = "generic-v1"
+        bundle = self.run_bundle(campaign)
+        result = verify(bundle)
+        self.assertEqual(result["overall"], "PASS")
+        rows = [
+            json.loads(line)
+            for line in (bundle / "raw-samples.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(
+            {row["streaming_implementation"] for row in rows},
+            {"direct-v1", "generic-v1"},
+        )
+
+        rows[0]["streaming_implementation"] = "generic-v1"
+        raw_path = bundle / "raw-samples.jsonl"
+        raw_path.write_text(
+            "\n".join(json.dumps(row) for row in rows) + "\n"
+        )
+        manifest = json.loads((bundle / "manifest.json").read_text())
+        manifest["files"]["raw-samples.jsonl"]["sha256"] = hashlib.sha256(
+            raw_path.read_bytes()
+        ).hexdigest()
+        manifest["files"]["raw-samples.jsonl"]["bytes"] = (
+            raw_path.stat().st_size
+        )
+        (bundle / "manifest.json").write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(
+            EvidenceError, "streaming implementation differs"
+        ):
+            verify(bundle)
+
+    def test_policy_rejects_incomplete_expected_implementations(self):
+        campaign = policy(blocks=1)
+        campaign["expected_implementations"] = {
+            "candidate": "generic-v1",
+        }
+        root = Path(tempfile.mkdtemp(prefix="tc-campaign-implementation-"))
+        path = root / "policy.json"
+        path.write_text(json.dumps(campaign))
+        with self.assertRaisesRegex(CampaignError, "expected_implementations"):
+            run_campaign(path, root / "bundle")
+
+    def test_p1_rejects_threshold_looser_than_two_percent(self):
+        campaign = policy(blocks=1)
+        campaign["thresholds"]["P1_same_layout"][
+            "wall_median_ratio_max"
+        ] = 1.03
+        bundle = self.run_bundle(campaign)
+        with self.assertRaises(EvidenceError):
+            verify(bundle)
 
     def test_partial_audit_is_inconclusive_not_pass(self):
         bundle = self.run_bundle(policy(), audit={
@@ -290,6 +736,44 @@ class CampaignTests(unittest.TestCase):
         campaign = policy(blocks=1)
         campaign["protocol"]["launch_pressure"] = True
         root = Path(tempfile.mkdtemp(prefix="tc-campaign-policy-"))
+        path = root / "policy.json"
+        path.write_text(json.dumps(campaign))
+        with self.assertRaises(CampaignError):
+            run_campaign(path, root / "bundle")
+
+    def test_worker_launch_order_is_frozen_and_recorded(self):
+        campaign = policy(blocks=1)
+        campaign["protocol"]["worker_launch_order"] = [
+            "candidate", "baseline",
+        ]
+        bundle = self.run_bundle(campaign)
+        manifest = json.loads((bundle / "manifest.json").read_text())
+        self.assertEqual(
+            manifest["worker_launch_order"], ["candidate", "baseline"]
+        )
+
+        campaign["protocol"]["worker_launch_order"] = [
+            "candidate", "candidate",
+        ]
+        root = Path(tempfile.mkdtemp(prefix="tc-campaign-policy-"))
+        path = root / "policy.json"
+        path.write_text(json.dumps(campaign))
+        with self.assertRaisesRegex(CampaignError, "worker_launch_order"):
+            run_campaign(path, root / "bundle")
+
+    def test_policy_rejects_unknown_engine_lifecycle(self):
+        campaign = policy(blocks=1)
+        campaign["engine_lifecycle"] = "sometimes"
+        root = Path(tempfile.mkdtemp(prefix="tc-campaign-lifecycle-"))
+        path = root / "policy.json"
+        path.write_text(json.dumps(campaign))
+        with self.assertRaises(CampaignError):
+            run_campaign(path, root / "bundle")
+
+    def test_p1_policy_requires_frozen_expected_actual(self):
+        campaign = policy(blocks=1)
+        del campaign["semantic_equivalence"]["expected_actual"]
+        root = Path(tempfile.mkdtemp(prefix="tc-campaign-expected-"))
         path = root / "policy.json"
         path.write_text(json.dumps(campaign))
         with self.assertRaises(CampaignError):

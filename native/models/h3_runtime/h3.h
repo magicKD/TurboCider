@@ -123,6 +123,16 @@ typedef struct {
      * cache is produced offline and must contain all active block matrices;
      * NULL keeps the original BF16 streaming route. */
     const char *ssd_quantized_cache_directory;
+    /* Internal exact-layout candidate. Public model construction must keep
+     * this disabled until a registry record is qualified. The request owns
+     * cancel_user for the complete h3_generate() call. */
+    int exact_streaming;
+    uint64_t exact_streaming_generation;
+    uint32_t exact_prefetch_distance;
+    uint32_t exact_io_workers;
+    int exact_carry_first_group;
+    h3_gpu_cancel_query_v1 exact_cancel;
+    const void *exact_cancel_user;
     /* Optional lower internal model canvas. Both must be zero (exact output
      * canvas) or valid same-aspect dimensions no larger than width/height. */
     int render_width;
@@ -181,7 +191,11 @@ typedef struct {
     .core_reuse = 1, .token_reduction = 0, .use_int8_row_fc2 = 0, \
     .use_reference_rope = 0, .ssd_streaming = 0, \
     .ssd_pinned_prefix = 0, .ssd_memory_budget_bytes = 0, \
-    .ssd_quantized_cache_directory = NULL, .render_width = 0, \
+    .ssd_quantized_cache_directory = NULL, \
+    .exact_streaming = 0, .exact_streaming_generation = 0, \
+    .exact_prefetch_distance = 0, .exact_io_workers = 0, \
+    .exact_carry_first_group = 0, .exact_cancel = NULL, \
+    .exact_cancel_user = NULL, .render_width = 0, \
     .render_height = 0, .use_slower_bf16_mlp = 0, \
     .use_slower_bf16_qkv = 0, .use_slower_bf16_attention_output = 0, \
     .use_slower_row_major_attention_output = 0, \
@@ -243,6 +257,20 @@ struct h3_result {
     uint64_t ssd_request_bytes_read;
     double ssd_request_read_seconds;
     double ssd_request_wait_seconds;
+    int exact_streaming;
+    int exact_streaming_finished;
+    int exact_streaming_poisoned;
+    uint32_t exact_completed_passes;
+    uint64_t exact_pool_creates;
+    uint64_t exact_slot_bundles;
+    uint64_t exact_fills;
+    uint64_t exact_content_bytes_loaded;
+    uint64_t exact_groups_submitted;
+    double exact_refill_load_seconds;
+    double exact_max_refill_seconds;
+    int32_t exact_max_refill_block;
+    double exact_wait_seconds;
+    double denoise_seconds;
     int decoded_width;
     int decoded_height;
     int decoded_frames;

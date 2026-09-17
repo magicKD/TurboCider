@@ -65,8 +65,21 @@ struct BlockResidencyMetrics {
     uint64_t memory_budget_bytes = 0, activation_reserve_bytes = 0;
     uint64_t block_bytes = 0, estimated_working_set_bytes = 0;
     uint64_t request_bytes_loaded = 0, request_slot_allocations = 0;
-    uint64_t request_slot_refills = 0;
+    uint64_t request_slot_refills = 0, request_slot_fills = 0;
     double request_load_seconds = 0, request_wait_seconds = 0;
+    double request_refill_load_seconds = 0, request_max_refill_seconds = 0;
+    int request_max_refill_block = -1;
+};
+struct StreamingRuntimeMetrics {
+    std::string implementation, layout_digest;
+    std::string stage = "denoiser";
+    uint32_t resident_prefix_blocks = 0, block_group_size = 0;
+    uint32_t slot_count = 0, prefetch_distance = 0, io_workers = 0;
+    uint32_t group_count = 0, pass_count = 0;
+    std::string startup_policy, pass_transition, retention;
+    uint32_t reader_revision = 0;
+    std::string weight_format, kernel_revision, conditioning_recipe;
+    std::string upsample_boundary;
 };
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
@@ -81,6 +94,7 @@ struct RunResult {
     std::optional<HybridMetrics> hybrid;
     std::optional<HybridMetrics> encoder_hybrid;
     std::optional<BlockResidencyMetrics> block_residency;
+    std::optional<StreamingRuntimeMetrics> streaming_runtime;
     std::optional<MemoryAdmissionMetrics> memory_admission;
     std::vector<MemoryTraceEvent> memory_trace;
     std::string native_json;

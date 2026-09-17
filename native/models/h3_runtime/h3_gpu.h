@@ -76,6 +76,23 @@ typedef struct {
     double gpu_seconds;
 } h3_gpu_stats;
 
+#define H3_GPU_COMPLETION_ABI_V1 1u
+
+/* A copied, asynchronous completion record for the command buffer that is
+ * current when h3_gpu_continue_with_completion() is called.  The callback
+ * runs on Metal's completion thread and must only publish bounded POD state;
+ * it must not mutate model/slot state, wait for the owner, or free GPU
+ * resources.  user must remain valid until h3_gpu_drain()/submit succeeds. */
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    void *user;
+    uint32_t queue;
+    uint64_t sequence;
+    void (*complete)(void *user, uint32_t queue, uint64_t sequence,
+                     int status);
+} h3_gpu_completion_v1;
+
 h3_gpu *h3_gpu_create(const char *shader_source_path,
                       char *error, size_t error_size);
 h3_gpu *h3_gpu_create_with_options(const char *shader_source_path,
@@ -135,6 +152,16 @@ int h3_gpu_tensor_read_file_bf16(h3_gpu_tensor *tensor, const char *path,
 int h3_gpu_tensor_stream_file_bf16(h3_gpu_tensor *tensor, const char *path,
                                    uint64_t file_offset, size_t elements,
                                    char *error, size_t error_size);
+typedef int (*h3_gpu_cancel_query_v1)(const void *user);
+/* Candidate streaming reader. Unlike the legacy whole-tensor helper, this
+ * reads in a fixed bounded chunk, observes cancellation between chunks, and
+ * reports exact bytes copied. A failed/cancelled destination is partial and
+ * must never be published Ready. */
+int h3_gpu_tensor_stream_file_bf16_cancellable(
+    h3_gpu_tensor *tensor, const char *path, uint64_t file_offset,
+    size_t elements, size_t chunk_bytes,
+    h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+    uint64_t *bytes_read, char *error, size_t error_size);
 int h3_gpu_tensor_stream_file_i8(h3_gpu_tensor *tensor, const char *path,
                                  uint64_t file_offset, size_t elements,
                                  char *error, size_t error_size);
@@ -214,6 +241,16 @@ int h3_gpu_begin(h3_gpu *gpu);
 /* Commit the current command buffer without waiting, then continue encoding on
  * the same ordered queue. h3_gpu_submit() waits and validates the whole chain. */
 int h3_gpu_continue(h3_gpu *gpu);
+/* As h3_gpu_continue(), but register a copied callback on the command buffer
+ * that contains the actual preceding readers.  This is the narrow primitive
+ * used by a streaming adapter to prove that a refill slot is safe to reuse;
+ * CPU encode return is deliberately not a completion signal. */
+int h3_gpu_continue_with_completion(
+    h3_gpu *gpu, const h3_gpu_completion_v1 *completion);
+/* Candidate streaming boundary: commit the current command buffer when one
+ * exists, then wait for the full ordered queue.  Unlike h3_gpu_drain(), this
+ * also closes partially encoded work on an adapter error path. */
+int h3_gpu_flush_and_drain(h3_gpu *gpu);
 /* Asynchronously release tensor ownership after the current command buffer
  * completes, then continue encoding on the same ordered queue. On success this
  * consumes every non-NULL tensor reference in the array; callers must clear

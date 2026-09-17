@@ -240,3 +240,20 @@ https://developer.apple.com/documentation/metal/synchronizing-cpu-and-gpu-work
 已覆盖的 host/fake-backend 证据包括奇偶 suffix rotation、carry dispatch 早于上一 pass 最后一组 encode、
 source fill/encode exactly once、取消、carry fill failure、错误 step、C ABI v3 和 pool 精确释放。fake callback
 使用 reader fence，但仍不等于真实 H3 Metal command-buffer completion；真实 adapter 必须另外证明最后读者。
+
+## 14. 同步 reader completion 快路径（2026-09-17）
+
+`ReaderSet` 新增默认关闭的 `already_complete`。它只适用于 adapter 在 `encode_group()` 返回前已经通过真实
+backend 同步点证明所有声明 reader 完成的情况，例如 Z-Image 在每个 streamed block 后执行同步
+`mx::eval()`。executor 仍先调用 `seal_readers()` 建立 reader identity，再由 owner 直接逐个
+`complete_reader()`；不会跳过 ticket、generation 或 slot 状态检查。
+
+旧实现对同步 backend 仍执行一次冗余往返：adapter 向 mailbox 发布 completion，返回后 executor seal，
+下一轮 owner 再 pop 同一 completion。新快路径只省去该 post/pop；异步 Metal command-buffer、多 queue 或
+callback 可能晚于 helper 返回的 adapter 必须保持 `already_complete=false`，不能把 submit/`async_eval`
+返回伪装成完成。
+
+Z-Image 正式 P1 保持 P/G/K/D/Q、fill 数和 reader revision 不变，20-pair PNG byte-exact；wall
+median/P95 ratio 为 `0.99986/0.99913`，denoise median 为 `1.00313`。host fake adapter 同时覆盖 immediate
+reader 和原延迟双 reader。Apple generic I/O worker固定为 `QOS_CLASS_USER_INITIATED`；实验过的更高 QoS
+和显式 disk policy 没有改善尾延迟，未保留。

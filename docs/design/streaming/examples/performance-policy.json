@@ -2,6 +2,7 @@
   "document_kind": "proposed_performance_gate_example",
   "schema_version": 1,
   "status": "not_an_executable_campaign",
+  "engine_lifecycle": "per_request",
   "confidence_level": 0.95,
   "initial_matched_pairs": 20,
   "minimum_tail_requests_per_variant": 50,
@@ -17,8 +18,8 @@
       "new_cache_clear_or_unload_calls": 0
     },
     "P1_same_layout": {
-      "wall_median_ratio_max": 1.03,
-      "denoise_median_ratio_max": 1.03,
+      "wall_median_ratio_max": 1.02,
+      "denoise_median_ratio_max": 1.02,
       "wall_p95_ratio_max": 1.05,
       "steady_framework_allocations": 0,
       "steady_framework_thread_creates": 0

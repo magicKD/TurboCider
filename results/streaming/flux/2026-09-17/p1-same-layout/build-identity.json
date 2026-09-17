@@ -1,0 +1,18 @@
+{
+  "baseline": {
+    "backend": "native",
+    "binary_path": "/Users/james/cch/video-generation/TurboCider/build/native/libturbocider.dylib",
+    "binary_sha256": "2d99b9889cdfd9abf85c2a0a98b4addb8c130bc3aa6a82341b196e387f671878",
+    "binary_size_bytes": 5004848,
+    "constructor": "candidate",
+    "variant_config_sha256": "1b454060a6971dfe351cded697c944b1e1de3a86cef24bb95eb9916078d74a11"
+  },
+  "candidate": {
+    "backend": "native",
+    "binary_path": "/Users/james/cch/video-generation/TurboCider/build/native/libturbocider.dylib",
+    "binary_sha256": "2d99b9889cdfd9abf85c2a0a98b4addb8c130bc3aa6a82341b196e387f671878",
+    "binary_size_bytes": 5004848,
+    "constructor": "candidate",
+    "variant_config_sha256": "84cf9c6d8b9c4d432ea1cad94ba2e30d94622ca026fa3971d9eba948269360fa"
+  }
+}

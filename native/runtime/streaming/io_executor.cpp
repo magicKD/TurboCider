@@ -1,6 +1,9 @@
 #include "io_executor.hpp"
 #include "audit.hpp"
 #include "layout.hpp"
+#if defined(__APPLE__)
+#include <pthread.h>
+#endif
 #include <stdexcept>
 
 namespace tc::streaming {
@@ -56,6 +59,15 @@ bool IoExecutor::enqueue(const FillJob &job) {
     changed_.notify_one(); return true;
 }
 void IoExecutor::run() {
+#if defined(__APPLE__)
+    // Weight refill is on the request's latency-critical path. A persistent
+    // std::thread does not reliably retain the caller's QoS after it blocks on
+    // the queue, unlike the model-specific std::async loaders this executor
+    // replaces. Pin the generic worker to the same user-initiated class so
+    // refill latency does not depend on scheduler placement. This thread only
+    // exists for an explicitly selected streaming layout.
+    (void)pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+#endif
     while (true) {
         FillJob job;
         {

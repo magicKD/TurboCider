@@ -188,7 +188,7 @@ env TC_STREAMING_SANITIZER=thread python3 -B tests/native/test_streaming_layout.
 | bridge ABI与所有权 | FLT-01/02 | 坏version/size、partial alloc、错误线程、空/重复destroy、异步sink复制 |
 | 非协作fill/drain | FLT-02 | 不能因超时释放活资源；worker隔离不复用 |
 | reader/source descriptor | CMP-02 | 多source副本、alias、转换scratch、range越界、文件更换 |
-| steady-state allocator audit | PERF-01 | pool/workers一次创建；新framework热路径allocation=0 |
+| steady-state allocator audit | PERF-01 | 已有setup后allocation/thread counter；LTX单pool实模型为0/0，multi-pool切换当前会非零并阻断签核 |
 | LTX/H3真实adapter | GPU-01 | latent/output parity、最后reader、正常shape/cleanup |
 | 默认instrumentation audit | DEF-01 | 新hook/probe/clear/unload全部0，legacy结果不变 |
 | simulator references | L0 | 手算K1/2/3、乱序fence、D0、长尾、class/pass边界 |
@@ -272,7 +272,7 @@ manifest。verifier 对 P0 拒绝缺失 source manifest 的 bundle，即使时�
   campaign 未完整结束时，最多 `INCONCLUSIVE`；不自动降级为 PASS。
 - 失败/timeout/cancelled 且仍有成功样本时为硬失败；若整个设备在 warmup 即不可用，bundle
   保留但可归为 `INCONCLUSIVE`，并显示 completion rate=0。
-- P0/P1 统计阈值仍严格受第12章 1.02/1.05 和 1.03/1.05 上限约束。
+- P0/P1 统计阈值均严格受第12章 median 1.02、P95 1.05 上限约束。
 
 CPU-only synthetic backend 与 verifier 反例测试位于
 `tests/native/test_streaming_campaign_verifier.py`；source identity 测试位于

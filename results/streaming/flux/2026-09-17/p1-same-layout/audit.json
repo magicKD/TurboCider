@@ -1,0 +1,20 @@
+{
+  "format": "turbocider-streaming-audit-v1",
+  "status": "passed",
+  "passed": true,
+  "reason": "opt-in request entered at least one audited framework callsite",
+  "new_framework_hooks": 0,
+  "new_memory_probes": 0,
+  "new_worker_threads": 2,
+  "new_pool_allocations": 2,
+  "new_cache_clear_or_unload_calls": 4,
+  "steady_framework_allocations": 0,
+  "steady_framework_thread_creates": 0,
+  "library": "/private/tmp/libturbocider-flux-p1-audit.dylib",
+  "constructor": "candidate",
+  "model_id": "flux2-klein-9b",
+  "request_status": 0,
+  "request_succeeded": true,
+  "request_error": null,
+  "result_present": true
+}

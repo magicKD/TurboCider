@@ -1,13 +1,30 @@
 #include "../../runtime/acceleration.hpp"
 #include "flux.hpp"
+#include "flux_streaming.hpp"
 #include "../../components/text/qwen3.hpp"
 #include "../../platform/apple/platform.hpp"
 #include "../../runtime/residency.hpp"
+#include "../../runtime/streaming/audit.hpp"
 #include "../../media/image.hpp"
 #include "../../backends/coreml.hpp"
 #include <bit>
 #include <cmath>
 namespace tc {
+namespace {
+
+bool flux_exact_streaming_requested(const Request &request) {
+    if (!request.streaming.active()) return false;
+    const auto stage = request.streaming.stages.find("denoiser");
+    return stage != request.streaming.stages.end() &&
+        stage->second.residency &&
+        *stage->second.residency == "streamed";
+}
+
+constexpr const char *kFluxExactKernelRevision =
+    "flux2-klein-9b-mlx-eager-block-v1";
+
+} // namespace
+
 Flux::Flux(const std::filesystem::path &root, std::string model_id)
     : root_(root), model_id_(std::move(model_id)), tokenizer_(root / "tokenizer") {
     auto configuration = flux_configuration(root, model_id_);
@@ -53,6 +70,7 @@ void Flux::select_loras(const Request &request) {
     if (identity == cached_lora_identity_) return;
     cached_lora_identity_ = std::move(identity);
     active_loras_ = std::move(normalized);
+    exact_stream_.reset();
     hybrid_.reset(); encoder_hybrid_.reset(); cached_conditioning_.reset(); cached_prompt_.clear();
     cached_encoder_manifest_.clear();
     hybrid_gpu_graph_ = {};
@@ -77,6 +95,7 @@ LoadResult Flux::load(const Event &event, std::atomic<bool> &cancelled) {
     return {transformer_.bytes() + vae_.bytes(), mx::get_active_memory()};
 }
 void Flux::unload() {
+    exact_stream_.reset();
     hybrid_.reset();
     encoder_hybrid_.reset();
     hybrid_gpu_graph_ = {};
@@ -218,6 +237,9 @@ RunResult Flux::prepare(const Request &requested, bool warmup, const Event &even
                         std::atomic<bool> &cancelled) {
     if (warmup)
         return run(requested, event, cancelled, true);
+    require(!flux_exact_streaming_requested(requested),
+            "streaming_route_unsupported: FLUX exact streaming does not "
+            "support prepare-only requests");
     auto r = requested;
     auto begin = Clock::now();
     auto plan = make_plan(r);
@@ -266,6 +288,7 @@ RunResult Flux::generate(const Request &r, const Event &event, std::atomic<bool>
 RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
                     bool warmup) {
     auto r = requested;
+    const bool exact_streaming = flux_exact_streaming_requested(r);
     auto begin = Clock::now();
     auto plan = make_plan(r);
     require(r.model == model_id_, "model executor unavailable; see static acceptance plan");
@@ -273,11 +296,30 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     require(warmup || std::filesystem::path(r.output).extension() == ".png",
             "native image output must be .png");
     auto physical = device_info().physical_memory;
-    ResidencyPolicy::validate_budget(plan, physical);
+    if (!exact_streaming)
+        ResidencyPolicy::validate_budget(plan, physical);
     auto residency = ResidencyPolicy::for_request(r, physical);
     mx::reset_peak_memory();
     mx::set_cache_limit(r.allocator_cache_bytes);
     select_loras(r);
+    if (exact_streaming) {
+        require(model_id_ == "flux2-klein-9b" && active_loras_.empty(),
+                "streaming_route_unsupported: FLUX exact streaming supports "
+                "Klein 9B BF16 without LoRA");
+        // Exact retention is request-scoped. Never let a preceding resident
+        // request or failed exact executor coexist with the compiled slots.
+        mx::synchronize();
+        exact_stream_.reset();
+        // Request-boundary release before constructing slot backing. These
+        // calls are intentionally outside the block/class/pass steady path.
+        streaming::audit_increment(
+            streaming::AuditCounter::CacheClearOrUnloadCalls, 2);
+        transformer_.clear();
+        hybrid_.reset();
+        hybrid_gpu_graph_ = {};
+        hybrid_gpu_mlp_start_ = -1;
+        mx::clear_cache();
+    }
     auto tokens = tokenizer_.prompt(r.prompt, r.dynamic_text);
     if (r.execution != "gpu_ane" && r.execution != "auto")
         hybrid_.reset();
@@ -338,10 +380,13 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     auto text = *cached_conditioning_;
     dump("conditioning", text);
     checkpoint(cancelled);
-    bool transformer_cold = transformer_.bytes() == 0;
-    transformer_.load(root_ / "transformer", event, cancelled);
-    if (transformer_cold && !active_loras_.empty())
-        transformer_.apply_loras(active_loras_, "transformer", event, cancelled);
+    if (!exact_streaming) {
+        bool transformer_cold = transformer_.bytes() == 0;
+        transformer_.load(root_ / "transformer", event, cancelled);
+        if (transformer_cold && !active_loras_.empty())
+            transformer_.apply_loras(active_loras_, "transformer", event,
+                                     cancelled);
+    }
     auto z = mx::astype(mx::random::normal({1, 128, r.height / 16, r.width / 16}, mx::float32, 0, 1,
                                            mx::random::key(r.seed)),
                         mx::bfloat16);
@@ -357,13 +402,31 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         mx::eval(z);
         dump("conditioned_initial_latent", z);
     }
+    if (exact_streaming) {
+        require(r.execution == "gpu" && !hybrid_ && !r.compile_gpu &&
+                    start_step == 0,
+                "streaming_route_unsupported: FLUX exact streaming requires "
+                "the eager GPU route and a full denoise schedule");
+        require(exact_stream_generation_ != UINT64_MAX,
+                "FLUX exact request generation overflow");
+        ++exact_stream_generation_;
+        const flux2::StreamingWorkload workload{
+            uint32_t(r.width), uint32_t(r.height),
+            uint32_t(text.shape(1)),
+            uint32_t(reference_latents ? reference_latents->shape(1) : 0),
+            uint32_t(r.steps - start_step)};
+        exact_stream_ = std::make_unique<FluxExactStream>(
+            root_ / "transformer", model_id_, r.streaming, workload,
+            transformer_, event, cancelled, exact_stream_generation_);
+    }
     auto dit_start = Clock::now();
     for (int i = start_step; i < r.steps; ++i) {
         checkpoint(cancelled);
         event("denoise", i, r.steps);
         auto model_input = reference_latents ? mx::concatenate({z, *reference_latents}, 1) : z;
         auto noise = denoise(model_input, text, sigmas[i], r.height, r.width, event, cancelled,
-                             reference_ids, r.compile_gpu);
+                             reference_ids, r.compile_gpu,
+                             exact_stream_.get(), uint32_t(i - start_step));
         if (reference_latents)
             noise = slice_axis(noise, 1, 0, z.shape(1));
         mx::eval(noise);
@@ -375,11 +438,82 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         event("denoise", i + 1, r.steps);
     }
     double dit_s = std::chrono::duration<double>(Clock::now() - dit_start).count();
+    std::optional<BlockResidencyMetrics> exact_residency;
+    std::optional<StreamingRuntimeMetrics> exact_runtime;
+    if (exact_streaming) {
+        exact_stream_->finish();
+        const auto counters = exact_stream_->counters();
+        const auto pager = exact_stream_->pager_metrics();
+        const auto &compiled = exact_stream_->plan().layout();
+        const auto &stage = compiled.stages.front();
+        require(counters.pool_creates == 2 && counters.slot_bundles == 4 &&
+                    counters.fills == uint64_t(stage.groups.size()) *
+                        uint64_t(r.steps - start_step) &&
+                    counters.groups_submitted == counters.fills &&
+                    pager.slot_fills == counters.fills,
+                "FLUX exact counters differ from the retained two-class layout");
+
+        BlockResidencyMetrics residency_metrics;
+        residency_metrics.enabled = true;
+        residency_metrics.active_blocks = uint32_t(stage.groups.size());
+        residency_metrics.streamed_blocks = uint32_t(stage.groups.size());
+        residency_metrics.refill_slots = uint32_t(counters.slot_bundles);
+        residency_metrics.memory_budget_bytes = r.memory_budget_bytes;
+        residency_metrics.block_bytes = std::max(
+            exact_stream_->plan().metadata().dual_block_bytes(),
+            exact_stream_->plan().metadata().single_block_bytes());
+        residency_metrics.estimated_working_set_bytes =
+            stage.resident_bytes + stage.peak_pool_bytes;
+        residency_metrics.request_bytes_loaded =
+            pager.resident_bytes_loaded + pager.streamed_bytes_loaded;
+        residency_metrics.request_slot_allocations = counters.slot_bundles;
+        residency_metrics.request_slot_refills = counters.fills;
+        residency_metrics.request_slot_fills = counters.fills;
+        residency_metrics.request_load_seconds =
+            pager.resident_load_seconds + pager.streamed_load_seconds;
+        residency_metrics.request_wait_seconds = counters.wait_seconds;
+        residency_metrics.request_refill_load_seconds =
+            pager.streamed_load_seconds;
+        residency_metrics.request_max_refill_seconds =
+            pager.maximum_fill_seconds;
+        residency_metrics.request_max_refill_block =
+            int(pager.maximum_fill_group);
+        exact_residency = std::move(residency_metrics);
+
+        StreamingRuntimeMetrics runtime;
+        runtime.implementation = exact_stream_->implementation();
+        runtime.layout_digest = compiled.digest;
+        runtime.resident_prefix_blocks = stage.prefix;
+        runtime.block_group_size = stage.group_size;
+        runtime.slot_count = stage.slot_count;
+        runtime.prefetch_distance = stage.distance;
+        runtime.io_workers = stage.workers;
+        runtime.group_count = uint32_t(stage.groups.size());
+        runtime.pass_count = stage.pass_count;
+        runtime.startup_policy = "prefetch_window_before_prefix";
+        runtime.pass_transition = "reload";
+        runtime.retention = "request;multi_pool=retain_all";
+        runtime.reader_revision = 1;
+        runtime.weight_format = "diffusers-bf16-sharded";
+        runtime.kernel_revision = kFluxExactKernelRevision;
+        runtime.conditioning_recipe = "qwen3-flux2-klein-v1";
+        runtime.upsample_boundary = "no-upsample;release-before-vae";
+        exact_runtime = std::move(runtime);
+
+        // The executor has drained and destroyed both slot pools. Resident
+        // fixed tensors are request-scoped as well and must be released before
+        // loading the VAE.
+        streaming::audit_increment(
+            streaming::AuditCounter::CacheClearOrUnloadCalls, 2);
+        transformer_.clear();
+        exact_stream_.reset();
+        mx::clear_cache();
+    }
     std::optional<HybridMetrics> hybrid_metrics;
     if (hybrid_)
         hybrid_metrics = hybrid_->metrics();
     checkpoint(cancelled);
-    if (residency.release_after_denoise) {
+    if (!exact_streaming && residency.release_after_denoise) {
         transformer_.clear();
         hybrid_.reset();
         mx::clear_cache();
@@ -418,6 +552,8 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     result.peak_bytes = mx::get_peak_memory();
     result.active_bytes = mx::get_active_memory();
     result.hybrid = hybrid_metrics;
+    result.block_residency = std::move(exact_residency);
+    result.streaming_runtime = std::move(exact_runtime);
     if (encoder_hybrid_)
         result.encoder_hybrid = encoder_hybrid_->metrics();
     return result;

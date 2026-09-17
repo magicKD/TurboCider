@@ -4,20 +4,52 @@
 #include "../../platform/apple/platform.hpp"
 #include "../../runtime/acceleration.hpp"
 #include "../../runtime/residency.hpp"
+#include "../../runtime/streaming/context.hpp"
+#include "streaming_descriptor.hpp"
 #include "../../components/text/qwen3.hpp"
 
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <regex>
 
 namespace tc {
+
+class ZImageExactStream {
+  public:
+    ZImageExactStream(const std::filesystem::path &checkpoint,
+                      const StreamingConfig &config,
+                      const z_image::StreamingWorkload &workload,
+                      uint64_t budget, uint64_t activation_reserve,
+                      Weights &fixed, const Event &event,
+                      std::atomic<bool> &cancelled,
+                      uint64_t request_generation);
+    ~ZImageExactStream();
+    ZImageExactStream(const ZImageExactStream &) = delete;
+    ZImageExactStream &operator=(const ZImageExactStream &) = delete;
+
+    void run_pass(uint32_t pass, uint32_t step, Tensor &unified,
+                  const Tensor &freqs, const Tensor &temb);
+    void finish();
+    const z_image::StreamingPlanView &plan() const;
+    const BlockResidencyMetrics &metrics() const;
+    streaming::ExecutionCounters counters() const;
+
+  private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
 namespace {
 
 constexpr int kHeadDim = 128;
 constexpr int kHeads = 30;
 constexpr float kVaeScale = 0.3611f;
 constexpr float kVaeShift = 0.1159f;
+constexpr const char *kZImageKernelRevision =
+    "z-image-mlx-compiled-dense-block-v1";
 
 // Bound unused MLX allocations only during an explicit streaming request.
 // Restore the process-wide setting before another model or resident run starts.
@@ -36,6 +68,14 @@ struct StreamCacheLimit {
         }
     }
 };
+
+bool z_image_exact_streaming_requested(const Request &request) {
+    if (!request.streaming.active()) return false;
+    const auto stage = request.streaming.stages.find("denoiser");
+    return stage != request.streaming.stages.end() &&
+        stage->second.residency &&
+        *stage->second.residency == "streamed";
+}
 
 std::string z_diffusers_transformer_key(std::string key) {
     for (const auto *prefix : {"transformer.", "diffusion_model."})
@@ -724,7 +764,10 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
                      int height, const Weights &w, const Event &event,
                      std::atomic<bool> &cancelled, HybridSession *hybrid,
                      const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph,
-                     ZImageWeightStream *weight_stream) {
+                     ZImageWeightStream *weight_stream,
+                     ZImageExactStream *exact_stream, uint32_t pass) {
+    require(!(weight_stream && exact_stream),
+            "Z-Image legacy and exact streaming cannot run together");
     if (weight_stream) weight_stream->begin_pass();
     auto patch = z_patchify(latent, caption);
     auto image = linear_compat(patch.image, w, "x_embedder");
@@ -764,24 +807,29 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     }
     auto unified = mx::concatenate({image, caption_emb}, 1);
     auto unified_freqs = mx::concatenate({image_freqs, caption_freqs}, 0);
-    for (int i = 0; i < 30; ++i) {
-        checkpoint(cancelled);
-        event("z_image_denoise_block", i, 30);
-        auto streamed = weight_stream ? weight_stream->acquire(i) : Weights{};
-        unified = z_block(unified, weight_stream ? streamed : w, "layers." + std::to_string(i), unified_freqs, temb,
-                          hybrid, 2 + i, gpu_graph);
-        // Compiled blocks retain the allocator dependency chain, so pure GPU
-        // execution does not need a host synchronization after every one of
-        // the 270 main blocks in a 9-step request. The sampler synchronizes at
-        // the end of every denoise step, which remains a bounded cancellation
-        // point. Hybrid execution must synchronize around its Core ML calls;
-        // the eager compatibility path keeps its former per-block behavior.
-        const bool eager = std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
-        if (eager || hybrid || weight_stream) {
-            // Completion is required before the prefetch worker may overwrite
-            // this layer's slot two blocks later. eval also drops graph refs.
-            mx::eval(unified);
+    if (exact_stream) {
+        exact_stream->run_pass(pass, pass, unified, unified_freqs, temb);
+    } else {
+        for (int i = 0; i < 30; ++i) {
             checkpoint(cancelled);
+            event("z_image_denoise_block", i, 30);
+            auto streamed = weight_stream ? weight_stream->acquire(i) : Weights{};
+            unified = z_block(unified, weight_stream ? streamed : w,
+                              "layers." + std::to_string(i), unified_freqs, temb,
+                              hybrid, 2 + i, gpu_graph);
+            // Compiled blocks retain the allocator dependency chain, so pure GPU
+            // execution does not need a host synchronization after every one of
+            // the 270 main blocks in a 9-step request. The sampler synchronizes at
+            // the end of every denoise step, which remains a bounded cancellation
+            // point. Hybrid execution must synchronize around its Core ML calls;
+            // the eager compatibility path keeps its former per-block behavior.
+            const bool eager = std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
+            if (eager || hybrid || weight_stream) {
+                // Completion is required before the prefetch worker may overwrite
+                // this layer's slot two blocks later. eval also drops graph refs.
+                mx::eval(unified);
+                checkpoint(cancelled);
+            }
         }
     }
     auto final_scale = Tensor(1.f, temb.dtype()) +
@@ -852,6 +900,267 @@ Tensor z_initial_noise(const Request &r, int height, int width) {
 }
 
 } // namespace
+
+namespace {
+
+class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
+    struct Job {
+        ZImageExactAdapter *owner = nullptr;
+        uint32_t slot = 0;
+        uint32_t block = 0;
+        std::array<char, 512> error{};
+    };
+
+    ZImageWeightStream &source_;
+    uint32_t prefix_ = 0;
+    const Event &event_;
+    std::atomic<bool> &cancelled_;
+    std::array<Job, 2> jobs_{};
+    Weights current_;
+    Tensor *unified_ = nullptr;
+    const Tensor *freqs_ = nullptr;
+    const Tensor *temb_ = nullptr;
+    uint32_t pass_ = 0;
+    uint32_t step_ = 0;
+    uint64_t reader_sequence_ = 0;
+
+    void require_context() const {
+        require(unified_ && freqs_ && temb_,
+                "Z-Image exact adapter has no active pass context");
+    }
+
+  public:
+    ZImageExactAdapter(ZImageWeightStream &source, uint32_t prefix,
+                       const Event &event, std::atomic<bool> &cancelled)
+        : source_(source), prefix_(prefix), event_(event),
+          cancelled_(cancelled) {
+        for (uint32_t slot = 0; slot < jobs_.size(); ++slot) {
+            jobs_[slot].owner = this;
+            jobs_[slot].slot = slot;
+        }
+    }
+
+    void bind_pass(uint32_t pass, uint32_t step, Tensor &unified,
+                   const Tensor &freqs, const Tensor &temb) {
+        require(!unified_, "Z-Image exact pass context is already bound");
+        pass_ = pass;
+        step_ = step;
+        unified_ = &unified;
+        freqs_ = &freqs;
+        temb_ = &temb;
+    }
+
+    void unbind_pass() noexcept {
+        current_.clear();
+        unified_ = nullptr;
+        freqs_ = nullptr;
+        temb_ = nullptr;
+    }
+
+    std::string fill_error() const {
+        for (const auto &job : jobs_)
+            if (job.error[0]) return job.error.data();
+        return {};
+    }
+
+    void create_pool(const streaming::PoolLayout &pool) override {
+        require(pool.id == 0 && pool.slots.size() == jobs_.size(),
+                "Z-Image exact adapter requires one K2 pool");
+        const uint64_t capacity = pool.slots.front().capacity_bytes;
+        for (const auto &slot : pool.slots)
+            require(slot.capacity_bytes == capacity,
+                    "Z-Image exact slot capacities differ");
+        source_.create_exact_pool(uint32_t(pool.slots.size()), capacity);
+    }
+
+    streaming::FillJob make_fill_job(
+            const streaming::Group &group,
+            const tc_stream_slot_ticket_v1 &ticket) override {
+        require(group.blocks.size() == 1 && ticket.slot < jobs_.size(),
+                "Z-Image exact fill requires one block and a valid slot");
+        auto &job = jobs_[ticket.slot];
+        job.block = group.blocks.front();
+        job.error[0] = 0;
+        return {ticket, &job,
+                [](void *raw, const tc_stream_slot_ticket_v1 *,
+                   const std::atomic<bool> *worker_cancel,
+                   uint64_t *bytes) -> int {
+                    auto &job = *static_cast<Job *>(raw);
+                    try {
+                        *bytes = job.owner->source_.fill_exact(
+                            job.slot, job.block, worker_cancel);
+                        return 0;
+                    } catch (const std::exception &error) {
+                        std::snprintf(job.error.data(), job.error.size(),
+                                      "%s", error.what());
+                        return -1;
+                    } catch (...) {
+                        std::snprintf(job.error.data(), job.error.size(),
+                                      "%s", "unknown Z-Image fill failure");
+                        return -1;
+                    }
+                }};
+    }
+
+    void encode_prefix(uint32_t pass) override {
+        require_context();
+        require(pass == pass_, "Z-Image exact prefix pass mismatch");
+        source_.check_unchanged();
+        for (uint32_t block = 0; block < prefix_; ++block) {
+            checkpoint(cancelled_);
+            event_("z_image_denoise_block", int(block), 30);
+            *unified_ = z_block(
+                *unified_, source_.prefix_weights(block),
+                "layers." + std::to_string(block), *freqs_, *temb_,
+                nullptr, int(2 + block), nullptr);
+            mx::eval(*unified_);
+            checkpoint(cancelled_);
+        }
+    }
+
+    void prepare_group(const streaming::Group &group,
+                       const tc_stream_slot_ticket_v1 &ticket) override {
+        require_context();
+        require(group.blocks.size() == 1 && ticket.item.pass == pass_ &&
+                    ticket.item.step == step_ &&
+                    ticket.item.group == group.id &&
+                    ticket.slot == group.slot,
+                "Z-Image exact prepare ticket mismatch");
+        current_ = source_.bind_exact(ticket.slot, group.blocks.front());
+    }
+
+    bool overlap_next_fill_after_claim() const noexcept override {
+        return true;
+    }
+
+    streaming::ReaderSet encode_group(
+            const streaming::Group &group,
+            const tc_stream_slot_ticket_v1 &ticket,
+            streaming::CompletionMailbox &) override {
+        require_context();
+        require(group.blocks.size() == 1 && ticket.item.pass == pass_ &&
+                    ticket.item.step == step_,
+                "Z-Image exact encode ticket mismatch");
+        const uint32_t block = group.blocks.front();
+        checkpoint(cancelled_);
+        event_("z_image_denoise_block", int(block), 30);
+        *unified_ = z_block(
+            *unified_, current_, "layers." + std::to_string(block),
+            *freqs_, *temb_, nullptr, int(2 + block), nullptr);
+        // The executor has already started the following vacant slot's fill
+        // after claiming this content. This synchronous completion therefore
+        // matches the specialized pager's ordering without an extra
+        // async_eval call per block.
+        mx::eval(*unified_);
+        checkpoint(cancelled_);
+        require(reader_sequence_ != std::numeric_limits<uint64_t>::max(),
+                "Z-Image exact reader sequence overflow");
+        const tc_stream_reader_fence_v1 fence{1, ++reader_sequence_};
+        streaming::ReaderSet readers;
+        readers.count = 1;
+        readers.fences[0] = fence;
+        readers.already_complete = true;
+        current_.clear();
+        return readers;
+    }
+
+    bool drain() noexcept override {
+        try {
+            mx::synchronize();
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    void destroy_pool() noexcept override {
+        current_.clear();
+        source_.destroy_exact_pool();
+    }
+};
+
+} // namespace
+
+struct ZImageExactStream::Impl {
+    z_image::StreamingPlanView plan;
+    ZImageWeightStream source;
+    std::shared_ptr<ZImageExactAdapter> adapter;
+    std::unique_ptr<streaming::StageExecutor> executor;
+    std::atomic<bool> &cancelled;
+    streaming::ExecutionCounters final_counters{};
+    bool finished = false;
+
+    Impl(const std::filesystem::path &checkpoint,
+         const StreamingConfig &config,
+         const z_image::StreamingWorkload &workload,
+         uint64_t budget, uint64_t activation_reserve, Weights &fixed,
+         const Event &event, std::atomic<bool> &cancelled,
+         uint64_t request_generation)
+        : plan(checkpoint.string(), config, workload),
+          source(checkpoint, plan.layout().stages.front().prefix, budget,
+                 activation_reserve, fixed, event, cancelled),
+          adapter(std::make_shared<ZImageExactAdapter>(
+              source, plan.layout().stages.front().prefix, event, cancelled)),
+          executor(std::make_unique<streaming::StageExecutor>(
+              0, request_generation, adapter)),
+          cancelled(cancelled) {
+        plan.metadata().check_unchanged();
+        executor->begin(plan.layout().stages.front());
+    }
+};
+
+ZImageExactStream::ZImageExactStream(
+        const std::filesystem::path &checkpoint,
+        const StreamingConfig &config,
+        const z_image::StreamingWorkload &workload,
+        uint64_t budget, uint64_t activation_reserve, Weights &fixed,
+        const Event &event, std::atomic<bool> &cancelled,
+        uint64_t request_generation)
+    : impl_(std::make_unique<Impl>(
+          checkpoint, config, workload, budget, activation_reserve, fixed,
+          event, cancelled, request_generation)) {}
+
+ZImageExactStream::~ZImageExactStream() = default;
+
+void ZImageExactStream::run_pass(
+        uint32_t pass, uint32_t step, Tensor &unified,
+        const Tensor &freqs, const Tensor &temb) {
+    require(impl_ && !impl_->finished,
+            "Z-Image exact executor is unavailable");
+    impl_->adapter->bind_pass(pass, step, unified, freqs, temb);
+    try {
+        impl_->executor->run_pass(pass, step, impl_->cancelled);
+    } catch (...) {
+        impl_->adapter->unbind_pass();
+        const auto detail = impl_->adapter->fill_error();
+        if (!detail.empty())
+            throw std::runtime_error("Z-Image exact fill failed: " + detail);
+        throw;
+    }
+    impl_->adapter->unbind_pass();
+}
+
+void ZImageExactStream::finish() {
+    require(impl_ && !impl_->finished,
+            "Z-Image exact executor is already finished");
+    impl_->final_counters = impl_->executor->finish();
+    impl_->finished = true;
+}
+
+const z_image::StreamingPlanView &ZImageExactStream::plan() const {
+    require(impl_ != nullptr, "Z-Image exact plan is unavailable");
+    return impl_->plan;
+}
+
+const BlockResidencyMetrics &ZImageExactStream::metrics() const {
+    require(impl_ != nullptr, "Z-Image exact metrics are unavailable");
+    return impl_->source.metrics();
+}
+
+streaming::ExecutionCounters ZImageExactStream::counters() const {
+    require(impl_ != nullptr, "Z-Image exact counters are unavailable");
+    return impl_->finished ? impl_->final_counters : impl_->executor->counters();
+}
 
 ZImage::ZImage(const std::filesystem::path &root)
     : ZImage(root, "z-image-turbo", {}) {}
@@ -927,6 +1236,8 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
             "missing Z-Image DiT safetensors in transformer/");
     require(has_safetensors(vae_path_), "missing Z-Image VAE safetensors in vae/");
 }
+
+ZImage::~ZImage() = default;
 
 void ZImage::select_loras(const Request &request) {
     const auto strategy = effective_lora_strategy(request);
@@ -1012,6 +1323,7 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
 }
 
 void ZImage::unload() {
+    exact_stream_.reset();
     weight_stream_.reset();
     stream_configuration_.clear();
     hybrid_.reset();
@@ -1180,15 +1492,28 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             "Z-Image output must be .png");
     require(r.inputs.empty(), "Z-Image-Turbo currently supports text-to-image only");
     require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
-    const bool streamed = r.residency == "streamed";
+    const bool exact_streaming = z_image_exact_streaming_requested(r);
+    const bool legacy_streamed = r.residency == "streamed";
+    const bool streamed = exact_streaming || legacy_streamed;
     const auto budget = r.memory_budget_bytes ? r.memory_budget_bytes :
         std::min<uint64_t>(10ull << 30, device_info().physical_memory / 2);
     // Reserve VAE, temporary activations and allocator cache. This is a planning
     // estimate for the denoiser, not an OS-enforced process memory limit.
     const uint64_t reserve = (3ull << 30) + uint64_t(r.width) * r.height * 2048;
-    const auto configuration = streamed ? std::to_string(budget) + ":" + std::to_string(reserve) : "";
+    const auto configuration = legacy_streamed ?
+        std::to_string(budget) + ":" + std::to_string(reserve) : "";
     const bool prompt_changed = !cached_conditioning_ || cached_prompt_ != r.prompt || cached_dynamic_ != r.dynamic_text;
-    if (configuration != stream_configuration_ || (streamed && prompt_changed)) {
+    if (exact_streaming) {
+        // Exact retention is request-scoped. Never inherit resident weights,
+        // a legacy prefetcher, or a previous exact executor into this request.
+        mx::synchronize();
+        exact_stream_.reset();
+        weight_stream_.reset();
+        transformer_.clear();
+        mx::clear_cache();
+        stream_configuration_.clear();
+    } else if (configuration != stream_configuration_ ||
+               (legacy_streamed && prompt_changed)) {
         mx::synchronize();
         weight_stream_.reset();
         transformer_.clear();
@@ -1211,7 +1536,24 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
     if (plan.request.execution != r.execution || plan.request.compile_gpu != r.compile_gpu)
         plan = make_plan(r);
-    if (streamed) {
+    if (exact_streaming) {
+        require(!load_only && r.execution == "gpu" && !hybrid_ &&
+                    active_loras_.empty() && !gguf_transformer_ &&
+                    !convrot_transformer_ && !nvfp4_transformer_ &&
+                    !diffusers_layout_,
+                "streaming_route_unsupported: the Z-Image exact candidate "
+                "supports generated Comfy BF16 GPU requests without LoRA, "
+                "ANE, quantization, Diffusers shards, or prepare-only mode");
+        require(exact_stream_generation_ != UINT64_MAX,
+                "Z-Image exact request generation overflow");
+        ++exact_stream_generation_;
+        const z_image::StreamingWorkload workload{
+            uint32_t(r.width), uint32_t(r.height), uint32_t(caption_rows),
+            uint32_t(r.steps)};
+        exact_stream_ = std::make_unique<ZImageExactStream>(
+            transformer_path_, r.streaming, workload, budget, reserve,
+            transformer_, event, cancelled, exact_stream_generation_);
+    } else if (legacy_streamed) {
         require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !diffusers_layout_,
                 "Z-Image streaming currently requires the Comfy BF16 checkpoint");
         if (!weight_stream_)
@@ -1299,6 +1641,49 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         save_png(pixels, r.output);
         event("export", 1, 1);
     }
+    std::optional<BlockResidencyMetrics> exact_metrics;
+    std::optional<StreamingRuntimeMetrics> exact_runtime;
+    streaming::ExecutionCounters exact_counters{};
+    if (exact_streaming) {
+        exact_stream_->finish();
+        exact_metrics = exact_stream_->metrics();
+        exact_counters = exact_stream_->counters();
+        exact_metrics->request_wait_seconds = exact_counters.wait_seconds;
+        const auto &layout = exact_stream_->plan().layout();
+        const auto &stage = layout.stages.front();
+        StreamingRuntimeMetrics runtime;
+        runtime.implementation = "generic_stage_executor_v1";
+        runtime.layout_digest = layout.digest;
+        runtime.resident_prefix_blocks = stage.prefix;
+        runtime.block_group_size = stage.group_size;
+        runtime.slot_count = stage.slot_count;
+        runtime.prefetch_distance = stage.distance;
+        runtime.io_workers = stage.workers;
+        runtime.group_count = uint32_t(stage.groups.size());
+        runtime.pass_count = stage.pass_count;
+        runtime.startup_policy = "prefetch_window_before_prefix";
+        runtime.pass_transition = "reload";
+        runtime.retention = "request";
+        runtime.reader_revision = 1;
+        runtime.weight_format = "comfy-bf16-single-file";
+        runtime.kernel_revision = kZImageKernelRevision;
+        runtime.conditioning_recipe = "qwen3-simple-flow-shift3-v1";
+        runtime.upsample_boundary =
+            "no-upsample;denoiser-pool-retained-through-vae";
+        exact_runtime = std::move(runtime);
+        require(exact_counters.slot_bundles == 2 &&
+                    exact_counters.fills ==
+                        uint64_t(exact_metrics->streamed_blocks) *
+                            uint64_t(r.steps) &&
+                    exact_counters.groups_submitted == exact_counters.fills &&
+                    exact_metrics->request_slot_fills ==
+                        exact_counters.fills,
+                "Z-Image exact counters differ from the compiled layout");
+        // The exact slot pool was released by finish(). Prefix/fixed weights
+        // also have request retention and must not leak into a later request.
+        exact_stream_.reset();
+        transformer_.clear();
+    }
     RunResult result;
     result.request = r;
     result.plan = std::move(plan);
@@ -1333,13 +1718,39 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.timings.decode = decode_seconds;
     result.peak_bytes = mx::get_peak_memory();
     result.active_bytes = mx::get_active_memory();
-    if (weight_stream_) result.block_residency = weight_stream_->metrics();
+    if (exact_metrics) {
+        result.block_residency = *exact_metrics;
+        result.streaming_runtime = *exact_runtime;
+    } else if (weight_stream_) {
+        const auto metrics = weight_stream_->metrics();
+        result.block_residency = metrics;
+        StreamingRuntimeMetrics runtime;
+        runtime.implementation = "mlx_specialized_double_buffer_v1";
+        runtime.resident_prefix_blocks = metrics.pinned_blocks;
+        runtime.block_group_size = 1;
+        runtime.slot_count = metrics.refill_slots;
+        runtime.prefetch_distance = 0;
+        runtime.io_workers = 1;
+        runtime.group_count = metrics.streamed_blocks;
+        runtime.pass_count = uint32_t(r.steps);
+        runtime.startup_policy = "prefetch_window_before_prefix";
+        runtime.pass_transition = "reload";
+        runtime.retention = "engine";
+        runtime.reader_revision = 1;
+        runtime.weight_format = "comfy-bf16-single-file";
+        runtime.kernel_revision = kZImageKernelRevision;
+        runtime.conditioning_recipe = "qwen3-simple-flow-shift3-v1";
+        runtime.upsample_boundary =
+            "no-upsample;denoiser-pool-retained-through-vae";
+        result.streaming_runtime = std::move(runtime);
+    }
     return result;
 } catch (...) {
-    if (weight_stream_ || !stream_configuration_.empty()) {
+    if (exact_stream_ || weight_stream_ || !stream_configuration_.empty()) {
         // Cancellation can leave a prefetch outstanding. Join it before a retry
         // resets the cancellation flag or reuses any of its destination buffers.
         try { mx::synchronize(); } catch (...) {}
+        exact_stream_.reset();
         weight_stream_.reset();
         transformer_.clear();
         vae_.clear();
@@ -1350,11 +1761,13 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
 }
 
 Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma, float width,
-                       int height, int, const Event &event, std::atomic<bool> &cancelled) {
+                       int height, int step, const Event &event,
+                       std::atomic<bool> &cancelled) {
     auto model_input = mx::astype(latent, mx::bfloat16);
     return mx::astype(
         z_transformer(model_input, caption, sigma, int(width), height, transformer_, event,
-                      cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr, weight_stream_.get()),
+                      cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr,
+                      weight_stream_.get(), exact_stream_.get(), uint32_t(step)),
         mx::float32);
 }
 

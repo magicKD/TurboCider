@@ -95,8 +95,13 @@ class StreamingAuditTests(unittest.TestCase):
             self.assertNotIn(symbol, public)
         self.assertIn("AuditCounter::FrameworkHooks", api)
         self.assertIn("AuditCounter::CacheClearOrUnloadCalls", api)
+        flux = (ROOT / "native/models/flux2/pipeline.cpp").read_text()
+        self.assertEqual(
+            flux.count("AuditCounter::CacheClearOrUnloadCalls"), 2
+        )
         self.assertIn("AuditCounter::MemoryProbes", execution)
         self.assertIn("AuditCounter::PoolAllocations", context)
+        self.assertIn("AuditCounter::SteadyFrameworkAllocations", context)
         self.assertIn("AuditCounter::WorkerThreads", io)
 
     def test_snapshot_evaluation_is_fail_closed(self):
@@ -107,6 +112,8 @@ class StreamingAuditTests(unittest.TestCase):
             "new_worker_threads": 0,
             "new_pool_allocations": 0,
             "new_cache_clear_or_unload_calls": 0,
+            "steady_framework_allocations": 0,
+            "steady_framework_thread_creates": 0,
         }
         self.assertTrue(
             evaluate_snapshot(snapshot, "default-zero", True)["passed"]

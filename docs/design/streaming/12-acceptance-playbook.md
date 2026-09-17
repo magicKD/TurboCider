@@ -24,11 +24,13 @@ P2 中 guard 所需的额外 clean boundary 属于用户可见成本，既报告
 | Gate | 时间指标的非劣界（候选/基线） | 附加硬门 |
 |---|---|---|
 | P0 默认 | end-to-end median ≤1.02；P95 ≤1.05；denoise median ≤1.02 | 新增 hook/probe/thread/pool/clear/unload=0 |
-| P1 同布局 | end-to-end 与 denoise median ≤1.03；P95 ≤1.05 | kernel/format一致，steady framework alloc/thread-create=0 |
+| P1 同布局 | end-to-end 与 denoise median ≤1.02；P95 ≤1.05 | kernel/format一致，steady framework alloc/thread-create=0 |
 | P2 guard | 同执行段 median ≤1.05；P95 ≤1.10 | 守卫覆盖不可删减；总 wall 单列，不能只公布执行段 |
 | P3/P4 优化 | 不统一承诺百分比；加速声明要求 wall speedup 的95%区间下界>1 | 同质量、失败率不增加、预算/安全通过 |
 
 这些上限是发布阻断线，不是鼓励用满的额外开销预算。默认仍以无可检测回退为目标。
+P1 的 steady 计数必须来自独立 audit build：executor/pool/worker 的一次性 setup 单列，只有 setup 完成后
+发生的通用框架分配或线程创建计入 steady 字段。release timing引用该audit artifact，不能用audit build计时。
 单个发布 workload 超限不得用其他更快 workload 的平均值掩盖；按 model/shape/cache condition 分层签核。
 有明确业务更严格要求时可在 campaign 前降低上限，不能测完后调宽。
 
@@ -41,6 +43,12 @@ P2 中 guard 所需的额外 clean boundary 属于用户可见成本，既报告
 - 20 matched pairs 是首次分析起点，不保证足够；tail 至少50次有效请求仍可能不够。P99 不给小样本结论。
 - 不反复看结果直到偶然 PASS；预注册一次最终分析，或使用明确的序贯检验方法和停止边界。
 - 多 tuple 搜索先用探索集；选定后用独立确认集。需要同时推断多个性能指标时预注册 multiplicity 处理。
+
+H3 Turbo 的 2026-09-17 冻结 tuple 是一个明确的工程收口决定：artifact/lifecycle/audit 均通过，wall 与
+denoise median 点估计位于 2% 工程范围，P95 未观察到退化；物理 SSD 方差导致 bootstrap 结果为
+`INCONCLUSIVE`。该结果不能改写成 production P1 PASS，但按已确认的产品范围，合理 I/O 波动也不要求通过
+追加 TB 级读取反复抽样。此决定只适用于 MiniMax H3 Turbo 当前冻结 tuple，不改变其他模型和未来发布资格的
+上述统计规则。
 
 若 runtime 优化值得发布但 P1 未通过，只能保留 experimental，修复瓶颈后再测；不能改称“内存省了所以性能通过”。
 
@@ -68,6 +76,16 @@ audio/I2V/LoRA/不同量化格式分别列 supported/unsupported；未运行不�
 5. P0/P1 的两侧 instrumentation 一致；另跑 audit build 检查新增行为=0，避免 audit 自身扭曲正式 timing。
 6. 参数不从可用内存动态变化；保存 requested/resolved/actual 和所有 digest，actual 不一致直接失败。
 
+P1 的 actual 证据比较规范化语义身份，不要求 legacy executor 伪造 generic layout digest。至少逐请求记录并
+比较 P/G/K/D/Q、group/pass 数、startup、pass transition、retention、engine lifecycle、reader/kernel/format
+revision、conditioning/upsample 策略和总 fill 数。LTX legacy 的总 fill 为首次 slot allocation 与后续 refill
+之和；generic exact 的 executor fills 已包含首次 fill，必须通过统一的 request_slot_fills 口径比较，不能直接
+比较两个原始 counter。P1 policy 还必须冻结 expected_actual；只证明 baseline/candidate 彼此相同不够，
+两侧 actual 都必须等于预注册的 P/G/K/D/Q、revision、lifecycle 和 fill 数。
+若同一binary通过内部开关提供direct baseline与generic candidate，policy还必须冻结
+`expected_implementations`，runner逐请求记录`streaming_implementation`，verifier逐请求核对两侧身份。
+实现身份不符或缺失必须直接拒绝证据，不能仅凭相同layout digest认定真的比较了两个executor。
+
 没有可信 before build，只能报告当前候选之间对比，不能宣称“对改动前零回归”。
 
 ## 5. 冷热与时间范围
@@ -75,6 +93,9 @@ audio/I2V/LoRA/不同量化格式分别列 supported/unsupported；未运行不�
 - `process_cold`：新进程；记录 OS cache 为 unknown/warm/protocol-cold，不把冷进程叫冷 SSD。
 - `request_warm`：复用进程，但首版新框架 request pools 仍释放；prefix/slot 重载计时。
 - `retained_model`：独立条件。不能拿旧 retained baseline 对新 request retention 后声称纯 framework 开销。
+- per_request：P1 首选条件。baseline/candidate 的 worker 进程可以长期存在，但每个 measured request
+  必须各自创建并销毁 engine；wall 从 engine create 计到安全 destroy，避免 legacy 跨请求缓存与 exact
+  request owner 的 retention 差异污染框架开销。
 - wall 从服务接受执行/排队后执行起点按预注册定义计到可用输出+必要 terminal cleanup；queue latency 独立记录。
 - 同时报告 preflight/load/text/denoise/upsample/VAE/export/drain；合计与 wall 重叠关系注明，不能简单相加并行区间。
 - 冷启动 first load、失败 cleanup、未成功的超时请求均保留，不只算 denoise 或删慢样本。
@@ -168,3 +189,15 @@ verifier 检查：manifest hash→schema→identity对齐→event/lifetime→qua
 本次布局优先深化新增的施工与工具方案见 [14](14-layout-first-integration.md)、[15](15-adapter-implementation-plan.md)、[16](16-performance-toolchain-plan.md)，不是新性能成绩。
 后续每个PR应把测试ID映射到真实测试文件/命令及artifact；在映射之前不能声称该gate已自动化。
 框架级整合的当前施工矩阵与新增测试映射见 [18](18-code-change-matrix.md) 第9–10节；本文件仍是性能阈值与统计规则的唯一规范。
+
+## 13. 同步 completion 与 worker 偏差的验收规则（2026-09-17）
+
+- adapter 声明 reader 已同步完成时，证据必须是 `encode_group()` 返回前的真实设备完成点；CPU helper return、
+  graph submit 或 `async_eval` 返回均不够。同步和异步 adapter 仍共享 ticket/seal/complete 状态机。
+- policy 可冻结 `protocol.worker_launch_order`，其值必须恰好包含 baseline/candidate 各一次；默认仍为
+  baseline 后 candidate。该字段只用于诊断长期 worker 启动偏差，不能替代 ABBA/BAAB 或覆盖失败结果。
+- refill 诊断至少区分 total load、suffix refill load、最慢 refill block/time 和 executor wait。telemetry
+  只能解释结果，不能删除正式样本中的慢请求。
+- Z-Image 的首轮 10-block 和 QoS 复测分别暴露约 `4.04%` 和临界 `2.03%` denoise median；两份失败证据
+  保留。最终同步 completion 快路径达到 `1.00313`，说明正式 gate 会拒绝 smoke 未暴露的长尾，而不是靠重跑
+  或放宽阈值获得通过。

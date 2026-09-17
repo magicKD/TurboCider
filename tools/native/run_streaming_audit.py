@@ -22,6 +22,8 @@ COUNTERS = (
     "new_worker_threads",
     "new_pool_allocations",
     "new_cache_clear_or_unload_calls",
+    "steady_framework_allocations",
+    "steady_framework_thread_creates",
 )
 
 

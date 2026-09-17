@@ -10,6 +10,8 @@ enum class AuditCounter : uint32_t {
     WorkerThreads = 2,
     PoolAllocations = 3,
     CacheClearOrUnloadCalls = 4,
+    SteadyFrameworkAllocations = 5,
+    SteadyFrameworkThreadCreates = 6,
 };
 
 struct AuditSnapshot {
@@ -18,6 +20,8 @@ struct AuditSnapshot {
     uint64_t worker_threads = 0;
     uint64_t pool_allocations = 0;
     uint64_t cache_clear_or_unload_calls = 0;
+    uint64_t steady_framework_allocations = 0;
+    uint64_t steady_framework_thread_creates = 0;
 };
 
 #ifdef TURBOCIDER_ENABLE_AUDIT_COUNTERS

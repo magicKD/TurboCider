@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <deque>
 #include <iostream>
+#include <map>
 #include <mutex>
 
 using namespace tc::streaming;
@@ -39,6 +40,12 @@ static StageLayout multi_layout(uint32_t k, uint32_t d, uint32_t q) {
         }
     }
     return s;
+}
+
+static StageLayout retained_multi_layout(uint32_t k, uint32_t d, uint32_t q) {
+    auto result = multi_layout(k, d, q);
+    result.multi_pool_policy = MultiPoolPolicy::retain_all;
+    return result;
 }
 
 static StageLayout carry_layout(uint32_t d = 1, uint32_t q = 2) {
@@ -85,9 +92,9 @@ class FakeModel final : public ModelSlotAdapter {
                 if (stop && queues[q].empty()) return;
                 r=queues[q].front(); queues[q].pop_front();
             }
-            assert(values[r.slot] == r.expected);
+            assert(value(r.ticket.pool, r.slot) == r.expected);
             std::this_thread::sleep_for(std::chrono::microseconds(q?150:20));
-            assert(values[r.slot] == r.expected);
+            assert(value(r.ticket.pool, r.slot) == r.expected);
             tc_stream_completion_v1 event{};
             event.struct_size=sizeof(event); event.version=TC_STREAM_SLOT_ABI_V1;
             event.kind=TC_STREAM_READER_COMPLETE; event.ticket=r.ticket; event.fence=r.fence;
@@ -98,11 +105,14 @@ class FakeModel final : public ModelSlotAdapter {
     }
 public:
     std::vector<uint64_t> values;
+    std::map<uint32_t, std::vector<uint64_t>> retained_values;
     unsigned creates=0, destroys=0, prefixes=0;
     std::atomic<int> fills{0};
     std::mutex event_mutex;
     std::vector<std::string> events;
     bool fail_fill=false, fail_create=false, fake_bad_drain=false, short_fill=false;
+    bool claim_overlap=false, immediate_readers=false;
+    bool retain_pools=false;
     unsigned fail_create_at=0;
     std::atomic<bool> *cancel_on_prepare=nullptr;
     static uint64_t tag(const tc_stream_slot_ticket_v1 &t) {return 1+t.item.pass*1000+t.item.group;}
@@ -114,8 +124,19 @@ public:
         changed.notify_all();
         for(auto &t:gpu)t.join();
     }
+    uint64_t &value(uint32_t pool, uint32_t slot) {
+        return retain_pools ? retained_values.at(pool).at(slot) : values.at(slot);
+    }
+    bool supports_multi_pool_policy(MultiPoolPolicy policy) const noexcept override {
+        return policy == MultiPoolPolicy::serial ||
+            (retain_pools && policy == MultiPoolPolicy::retain_all);
+    }
     void create_pool(const PoolLayout &p) override {
-        ++creates; values.resize(p.slots.size());
+        ++creates;
+        if (retain_pools)
+            retained_values[p.id].resize(p.slots.size());
+        else
+            values.resize(p.slots.size());
         if(fail_create || (fail_create_at && creates==fail_create_at))
             throw std::runtime_error("injected partial create");
     }
@@ -130,7 +151,7 @@ public:
             auto &m=*static_cast<FakeModel *>(opaque);
             if(m.fail_fill || cancel->load())return -1;
             std::this_thread::sleep_for(std::chrono::microseconds(ticket->item.group%3*35));
-            m.values[ticket->slot]=tag(*ticket); *bytes=m.short_fill?4:8; ++m.fills;
+            m.value(ticket->pool,ticket->slot)=tag(*ticket); *bytes=m.short_fill?4:8; ++m.fills;
             {
                 std::lock_guard lock(m.event_mutex);
                 m.events.push_back("fill:" + std::to_string(ticket->item.pass) +
@@ -141,17 +162,27 @@ public:
     }
     void encode_prefix(uint32_t) override {++prefixes;}
     void prepare_group(const Group &,const tc_stream_slot_ticket_v1 &t) override {
-        assert(values[t.slot]==tag(t));
+        assert(value(t.pool,t.slot)==tag(t));
         if(cancel_on_prepare)cancel_on_prepare->store(true);
+    }
+    bool overlap_next_fill_after_claim() const noexcept override {
+        return claim_overlap;
     }
     ReaderSet encode_group(const Group &,const tc_stream_slot_ticket_v1 &t,
                             CompletionMailbox &mailbox) override {
-        ReaderSet set; set.count=2;
+        ReaderSet set;
         {
             std::lock_guard lock(event_mutex);
             events.push_back("encode:" + std::to_string(t.item.pass) +
                              ":" + std::to_string(t.item.group));
         }
+        if (immediate_readers) {
+            set.count=1;
+            set.fences[0]={1,++sequence};
+            set.already_complete=true;
+            return set;
+        }
+        set.count=2;
         std::lock_guard lock(mutex);
         for(unsigned q=0;q<2;++q){
             set.fences[q]={q+1,++sequence};
@@ -165,6 +196,12 @@ public:
     }
     void destroy_pool() noexcept override {
         std::lock_guard lock(mutex); assert(pending==0); values.clear(); ++destroys;
+    }
+    void destroy_pool(uint32_t pool) noexcept override {
+        std::lock_guard lock(mutex);
+        assert(pending==0);
+        retained_values.erase(pool);
+        ++destroys;
     }
 };
 
@@ -227,6 +264,33 @@ int main() {
         assert(result.fills==18 && result.groups_submitted==18 && result.bytes_loaded==18*8);
         assert(model->creates==6 && model->destroys==6 && model->prefixes==3);
         assert(!exec.quarantined());
+    }
+    for (uint32_t k=1; k<=3; ++k) {
+        auto model=std::make_shared<FakeModel>();
+        model->retain_pools=true;
+        std::atomic<bool> cancel{false};
+        StageExecutor exec(3,7,model);
+        const auto result=exec.run(retained_multi_layout(k,k-1,k),cancel);
+        assert(result.pool_creates==2 && result.slot_bundles==2*k);
+        assert(result.fills==18 && result.groups_submitted==18 && result.bytes_loaded==18*8);
+        assert(model->creates==2 && model->destroys==2 && model->prefixes==3);
+        assert(model->retained_values.empty() && !exec.quarantined());
+    }
+    {
+        auto model=std::make_shared<FakeModel>();
+        model->claim_overlap=true;
+        model->immediate_readers=true;
+        std::atomic<bool> cancel{false};
+        StageExecutor exec(3,7,model);
+        const auto result=exec.run(layout(2,0,1),cancel);
+        assert(result.fills==39 && result.groups_submitted==39);
+        const auto next_dispatch=std::find(
+            model->events.begin(),model->events.end(),"dispatch:0:1");
+        const auto current_encode=std::find(
+            model->events.begin(),model->events.end(),"encode:0:0");
+        assert(next_dispatch!=model->events.end() &&
+               current_encode!=model->events.end() &&
+               next_dispatch<current_encode);
     }
     {
         auto model=std::make_shared<FakeModel>(); std::atomic<bool> cancel{false};
@@ -308,9 +372,32 @@ int main() {
     const auto audit = audit_snapshot();
     assert(audit.pool_allocations == 1);
     assert(audit.worker_threads == 2);
+    assert(audit.steady_framework_allocations == 0);
+    assert(audit.steady_framework_thread_creates == 0);
     assert(audit.framework_hooks == 0);
     assert(audit.memory_probes == 0);
     assert(audit.cache_clear_or_unload_calls == 0);
+    audit_reset();
+    {
+        auto model=std::make_shared<FakeModel>(); std::atomic<bool> cancel{false};
+        StageExecutor exec(3,7,model);
+        exec.run(multi_layout(2,1,1),cancel);
+    }
+    const auto multi_audit = audit_snapshot();
+    assert(multi_audit.steady_framework_allocations > 0);
+    assert(multi_audit.steady_framework_thread_creates == 0);
+    audit_reset();
+    {
+        auto model=std::make_shared<FakeModel>();
+        model->retain_pools=true;
+        std::atomic<bool> cancel{false};
+        StageExecutor exec(3,7,model);
+        exec.run(retained_multi_layout(2,1,1),cancel);
+    }
+    const auto retained_multi_audit = audit_snapshot();
+    assert(retained_multi_audit.pool_allocations == 2);
+    assert(retained_multi_audit.steady_framework_allocations == 0);
+    assert(retained_multi_audit.steady_framework_thread_creates == 0);
 #endif
     std::cout<<"PASS streaming executor: "<<runs
              <<" K/D/Q combinations, multi-class barriers, two independent readers, faults and cleanup\n";

@@ -95,6 +95,17 @@ int main() {
     assert(multi.stages[0].pools.size() == 2);
     assert(multi.stages[0].groups[2].slot == 0 && multi.stages[0].groups[2].pool == 1);
     assert(multi.stages[0].peak_pool_bytes == 512*mib);
+    dup.stages[0].multi_pool_policy = MultiPoolPolicy::retain_all;
+    auto retained_multi = compile_layout(config(2,2,2), dup);
+    assert(retained_multi.stages[0].multi_pool_policy ==
+           MultiPoolPolicy::retain_all);
+    assert(retained_multi.stages[0].peak_pool_bytes == 1024*mib);
+    assert(retained_multi.digest != multi.digest);
+    assert(multi.digest == compile_layout(config(2,2,2), [&] {
+        auto serial = dup;
+        serial.stages[0].multi_pool_policy = MultiPoolPolicy::serial;
+        return serial;
+    }()).digest);
 
     // Resident is a distinct layout, with no slot fields.
     StreamingStageConfig resident; resident.residency = "resident";

@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "comparison_kind": "P1",
+  "engine_lifecycle": "per_request",
+  "expected_implementations": {
+    "baseline": "flux_direct_same_layout_v1",
+    "candidate": "generic_stage_executor_v1"
+  },
+  "initial_matched_pairs": 20,
+  "minimum_tail_requests_per_variant": 0,
+  "bootstrap_iterations": 4000,
+  "bootstrap_seed": 59,
+  "thresholds": {
+    "P1_same_layout": {
+      "wall_median_ratio_max": 1.02,
+      "wall_p95_ratio_max": 1.05,
+      "denoise_median_ratio_max": 1.02,
+      "steady_framework_allocations": 0,
+      "steady_framework_thread_creates": 0
+    }
+  },
+  "workload": {
+    "request": {
+      "schema_version": 2,
+      "model": "flux2-klein-9b",
+      "operation": "image.generate",
+      "inputs": [
+        {"kind": "text", "role": "prompt", "text": "A red fox in snow"}
+      ],
+      "outputs": [
+        {"kind": "image", "path": "${OUTPUT}", "width": 64, "height": 64}
+      ],
+      "sampling": {"seed": 42, "steps": 2},
+      "execution": {
+        "policy": "gpu",
+        "streaming": {
+          "schema_version": 1,
+          "enabled": true,
+          "selection": "manual",
+          "retention": "request",
+          "stages": {
+            "denoiser": {
+              "residency": "streamed",
+              "block_group_size": 1,
+              "slot_count": 2,
+              "resident_prefix_blocks": 0,
+              "prefetch_distance": 1,
+              "io_workers": 2
+            }
+          }
+        }
+      },
+      "parameters": {"dynamic_text": true}
+    },
+    "seed_stride": 0,
+    "output_suffix": ".png"
+  },
+  "protocol": {
+    "measured_blocks": 10,
+    "warmup_requests_per_variant": 1,
+    "worker_start_timeout_seconds": 30,
+    "worker_launch_order": ["candidate", "baseline"],
+    "request_timeout_seconds": 300,
+    "cache_condition": "one-per-variant-warmup-then-per-request-engine-os-cache-warm",
+    "stopping_rule": "fixed-10-block-flux9-same-layout-confirmation",
+    "quantile_estimator": "linear-interpolated-p95",
+    "bootstrap_unit": "abba_block",
+    "multiplicity_policy": "single-frozen-klein-9b-bf16-tuple",
+    "exclusion_policy": "no-exclusions-after-freeze",
+    "timing_scope": "engine-create-through-engine-destroy-image-export-and-safe-stream-drain",
+    "launch_pressure": false
+  },
+  "quality": {
+    "mode": "artifact_sha256_equal",
+    "artifacts": [{"name": "image", "path": "${OUTPUT}"}]
+  },
+  "semantic_equivalence": {
+    "declared_equivalent": true,
+    "expected_actual": {
+      "stage": "denoiser",
+      "resident_prefix_blocks": 0,
+      "block_group_size": 1,
+      "slot_count": 2,
+      "prefetch_distance": 1,
+      "io_workers": 2,
+      "group_count": 32,
+      "pass_count": 2,
+      "startup_policy": "prefetch_window_before_prefix",
+      "pass_transition": "reload",
+      "retention": "request;multi_pool=retain_all",
+      "reader_revision": 1,
+      "weight_format": "diffusers-bf16-sharded",
+      "kernel_revision": "flux2-klein-9b-mlx-eager-block-v1",
+      "conditioning_recipe": "qwen3-flux2-klein-v1",
+      "upsample_boundary": "no-upsample;release-before-vae",
+      "engine_lifecycle": "per_request",
+      "total_fills": 64
+    },
+    "fields": [
+      "normalized_request_identity",
+      "resident_prefix_blocks",
+      "block_group_size",
+      "slot_count",
+      "prefetch_distance",
+      "io_workers",
+      "group_count",
+      "pass_count",
+      "startup_policy",
+      "pass_transition",
+      "retention",
+      "engine_lifecycle",
+      "reader_revision",
+      "weight_format",
+      "kernel_revision",
+      "conditioning_recipe",
+      "upsample_boundary",
+      "total_fills"
+    ]
+  },
+  "variants": {
+    "baseline": {
+      "backend": "native",
+      "library": "build/native/libturbocider.dylib",
+      "model_id": "flux2-klein-9b",
+      "model_path": "models/FLUX.2-klein-9B",
+      "constructor": "candidate",
+      "environment": {"TURBOCIDER_FLUX_DIRECT_STREAMING_BASELINE": "1"}
+    },
+    "candidate": {
+      "backend": "native",
+      "library": "build/native/libturbocider.dylib",
+      "model_id": "flux2-klein-9b",
+      "model_path": "models/FLUX.2-klein-9B",
+      "constructor": "candidate"
+    }
+  }
+}

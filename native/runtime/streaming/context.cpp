@@ -6,17 +6,21 @@
 
 namespace tc::streaming {
 struct StageExecutor::State {
+    struct PoolState {
+        std::unique_ptr<SlotSafetyTracker> safety;
+        std::vector<tc_stream_slot_ticket_v1> tickets;
+        bool live = false;
+        bool drained = true;
+    };
     StageLayout layout;
-    std::unique_ptr<SlotSafetyTracker> safety;
+    std::vector<PoolState> pools;
     std::unique_ptr<IoExecutor> io;
-    std::vector<tc_stream_slot_ticket_v1> tickets;
     Group carry_group;
     ExecutionCounters counters;
     uint32_t passes = 0;
     uint32_t active_pool_index = std::numeric_limits<uint32_t>::max();
-    bool pool_drained = false;
     std::optional<tc_stream_slot_ticket_v1> carry_ticket;
-    bool failed = false, finished = false;
+    bool setup_complete = false, failed = false, finished = false;
     std::thread::id owner = std::this_thread::get_id();
 };
 StageExecutor::StageExecutor(uint32_t stage, uint64_t request,
@@ -25,29 +29,48 @@ StageExecutor::StageExecutor(uint32_t stage, uint64_t request,
     if (!request_ || !adapter_) throw std::invalid_argument("invalid streaming executor identity");
 }
 StageExecutor::~StageExecutor() {
-    if (pool_live_ && !retry_drain()) std::terminate();
+    if (pools_live_ && !retry_drain()) std::terminate();
 }
-void StageExecutor::destroy_active_pool() noexcept {
-    if (!pool_live_) return;
-    adapter_->destroy_pool();
-    pool_live_ = false;
-    if (state_) {
-        state_->safety.reset();
-        state_->tickets.clear();
-        state_->active_pool_index = std::numeric_limits<uint32_t>::max();
-        state_->pool_drained = false;
-        state_->carry_ticket.reset();
+void StageExecutor::destroy_pools() noexcept {
+    if (!pools_live_ || !state_) return;
+    const bool retained = state_->layout.multi_pool_policy ==
+        MultiPoolPolicy::retain_all;
+    if (retained) {
+        for (size_t index = state_->pools.size(); index-- > 0;) {
+            auto &runtime = state_->pools[index];
+            if (!runtime.live) continue;
+            adapter_->destroy_pool(state_->layout.pools[index].id);
+            runtime.safety.reset();
+            runtime.tickets.clear();
+            runtime.live = false;
+            runtime.drained = true;
+        }
+    } else if (state_->active_pool_index < state_->pools.size()) {
+        auto &runtime = state_->pools[state_->active_pool_index];
+        if (runtime.live) {
+            adapter_->destroy_pool();
+            runtime.safety.reset();
+            runtime.tickets.clear();
+            runtime.live = false;
+            runtime.drained = true;
+        }
     }
+    pools_live_ = false;
+    state_->active_pool_index = std::numeric_limits<uint32_t>::max();
+    state_->carry_ticket.reset();
 }
 bool StageExecutor::retry_drain() noexcept {
     if (state_ && state_->owner!=std::this_thread::get_id()) return false;
     if (state_ && state_->io) state_->io->shutdown_and_join();
-    if (pool_live_) {
-        if ((!state_ || !state_->pool_drained) && !adapter_->drain()) {
+    if (pools_live_) {
+        bool active_drained = false;
+        if (state_ && state_->active_pool_index < state_->pools.size())
+            active_drained = state_->pools[state_->active_pool_index].drained;
+        if (!active_drained && !adapter_->drain()) {
             quarantined_ = true;
             return false;
         }
-        destroy_active_pool();
+        destroy_pools();
     }
     quarantined_ = false;
     return true;
@@ -58,6 +81,9 @@ void StageExecutor::begin(const StageLayout &layout) {
         layout.pools.size()>layout.groups.size() || layout.groups.size()>max_blocks ||
         !layout.workers || layout.workers>layout.slot_count || layout.distance>=layout.slot_count)
         throw std::invalid_argument("streaming executor requires a fresh streamed stage");
+    if (!adapter_->supports_multi_pool_policy(layout.multi_pool_policy))
+        throw std::invalid_argument(
+            "streaming adapter does not support the compiled multi-pool policy");
     used_ = true;
     std::vector<uint32_t> group_counts(layout.pools.size());
     std::vector<uint32_t> ordinals(layout.pools.size());
@@ -111,38 +137,73 @@ void StageExecutor::begin(const StageLayout &layout) {
                         "streaming carry rotation exceeds slot capacity");
         }
     state_=std::make_unique<State>(); state_->layout=layout;
+    state_->pools.resize(layout.pools.size());
     if (layout.pass_transition == PassTransition::carry_first_group)
         state_->carry_group = state_->layout.groups.front();
     mailbox_=std::make_unique<CompletionMailbox>(layout.slot_count*(1+TC_STREAM_MAX_READER_QUEUES));
     try {
-        activate_pool(0);
+        if (layout.multi_pool_policy == MultiPoolPolicy::retain_all) {
+            for (uint32_t pool = 0; pool < layout.pools.size(); ++pool)
+                create_pool(pool);
+            activate_pool(0);
+        } else {
+            activate_pool(0);
+        }
         state_->io=std::make_unique<IoExecutor>(layout.workers,layout.slot_count,*mailbox_);
+        state_->setup_complete=true;
     } catch (...) { state_->failed=true; retry_drain(); throw; }
+}
+void StageExecutor::create_pool(uint32_t pool_index) {
+    if (!state_ || pool_index >= state_->layout.pools.size() ||
+        pool_index >= state_->pools.size())
+        throw std::logic_error("streaming invalid pool construction");
+    auto &runtime = state_->pools[pool_index];
+    if (runtime.live)
+        throw std::logic_error("streaming duplicate pool construction");
+    const auto &pool = state_->layout.pools[pool_index];
+    std::vector<uint64_t> capacities;
+    capacities.reserve(pool.slots.size());
+    for (const auto &slot : pool.slots)
+        capacities.push_back(slot.capacity_bytes);
+    runtime.safety = std::make_unique<SlotSafetyTracker>(
+        pool.id, request_, capacities);
+    runtime.tickets.assign(pool.slots.size(), {});
+    runtime.live = true;
+    runtime.drained = false;
+    state_->active_pool_index = pool_index;
+    pools_live_ = true;
+    adapter_->create_pool(pool);
+    runtime.drained = true;
+    audit_increment(AuditCounter::PoolAllocations);
+    ++state_->counters.pool_creates;
+    state_->counters.slot_bundles += pool.slots.size();
 }
 void StageExecutor::activate_pool(uint32_t pool_index) {
     if (!state_)
         throw std::logic_error("streaming invalid pool activation");
     if (pool_index>=state_->layout.pools.size())
         throw std::logic_error("streaming invalid pool activation");
-    if (pool_live_ && state_->active_pool_index==pool_index) return;
-    if (pool_live_) {
-        if (!state_->pool_drained)
-            throw std::logic_error("streaming pool switch before drain");
-        destroy_active_pool();
+    if (state_->active_pool_index == pool_index &&
+        state_->pools[pool_index].live) {
+        adapter_->select_pool(state_->layout.pools[pool_index]);
+        return;
     }
-    const auto &pool=state_->layout.pools[pool_index];
-    std::vector<uint64_t> capacities;
-    capacities.reserve(pool.slots.size());
-    for (const auto &slot : pool.slots) capacities.push_back(slot.capacity_bytes);
-    state_->safety=std::make_unique<SlotSafetyTracker>(pool.id,request_,capacities);
-    state_->tickets.assign(pool.slots.size(),{});
-    state_->active_pool_index=pool_index;
-    state_->pool_drained=false;
-    pool_live_=true;
-    adapter_->create_pool(pool);
-    audit_increment(AuditCounter::PoolAllocations);
-    ++state_->counters.pool_creates;
-    state_->counters.slot_bundles+=pool.slots.size();
+    const bool retained = state_->layout.multi_pool_policy ==
+        MultiPoolPolicy::retain_all;
+    if (state_->active_pool_index < state_->pools.size() &&
+        state_->pools[state_->active_pool_index].live) {
+        if (!state_->pools[state_->active_pool_index].drained)
+            throw std::logic_error("streaming pool switch before drain");
+        if (!retained)
+            destroy_pools();
+    }
+    if (!state_->pools[pool_index].live) {
+        if (state_->setup_complete)
+            audit_increment(AuditCounter::SteadyFrameworkAllocations);
+        create_pool(pool_index);
+    }
+    state_->active_pool_index = pool_index;
+    adapter_->select_pool(state_->layout.pools[pool_index]);
 }
 void StageExecutor::check_cancel(const std::atomic<bool> &cancel) const {
     if (!state_ || state_->owner!=std::this_thread::get_id())
@@ -156,16 +217,19 @@ bool StageExecutor::consume() {
     while (mailbox_->pop(record)) {
         if (record.struct_size!=sizeof(record) || record.version!=TC_STREAM_SLOT_ABI_V1 || record.status)
             throw std::runtime_error("streaming_completion_failed");
-        if (!pool_live_ || !state_->safety ||
+        if (!pools_live_ || !state_ ||
+            state_->active_pool_index >= state_->pools.size() ||
+            !state_->pools[state_->active_pool_index].safety ||
             record.ticket.pool!=state_->layout.pools[state_->active_pool_index].id)
             throw std::runtime_error("streaming completion for inactive pool");
+        auto &safety = *state_->pools[state_->active_pool_index].safety;
         if (record.kind==TC_STREAM_FILL_COMPLETE) {
-            state_->safety->accept_ready(record.ticket,record.bytes);
+            safety.accept_ready(record.ticket,record.bytes);
             if (record.bytes>UINT64_MAX-state_->counters.bytes_loaded)
                 throw std::overflow_error("streaming byte counter overflow");
             state_->counters.bytes_loaded+=record.bytes; ++state_->counters.fills;
         } else if (record.kind==TC_STREAM_READER_COMPLETE)
-            state_->safety->complete_reader(record.ticket,record.fence);
+            safety.complete_reader(record.ticket,record.fence);
         else throw std::runtime_error("streaming unknown completion kind");
         progress=true;
     }
@@ -173,28 +237,32 @@ bool StageExecutor::consume() {
 }
 void StageExecutor::drain_active_pool(
         const std::optional<tc_stream_slot_ticket_v1> &carry) {
-    if (!pool_live_ || !state_ || !state_->safety)
+    if (!pools_live_ || !state_ ||
+        state_->active_pool_index >= state_->pools.size() ||
+        !state_->pools[state_->active_pool_index].safety)
         throw std::logic_error("streaming missing active pool");
+    auto &runtime = state_->pools[state_->active_pool_index];
+    auto &safety = *runtime.safety;
     if (!adapter_->drain()) throw std::runtime_error("streaming_pass_drain_failed");
     consume();
     if (carry) {
-        if (!state_->safety->quiescent_except_ready(*carry))
+        if (!safety.quiescent_except_ready(*carry))
             throw std::runtime_error(
                 "streaming carry drain left active slot content");
         state_->carry_ticket = carry;
     } else {
-        if (!state_->safety->quiescent())
+        if (!safety.quiescent())
             throw std::runtime_error("streaming drain left active slot content");
         state_->carry_ticket.reset();
     }
-    state_->pool_drained=true;
+    runtime.drained=true;
 }
 void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &cancel,
                             std::chrono::milliseconds timeout) {
     if (!state_ || state_->owner!=std::this_thread::get_id())
         throw std::logic_error("streaming_owner_violation");
     try {
-        if (state_->failed || state_->finished || !pool_live_ ||
+        if (state_->failed || state_->finished || !pools_live_ ||
             pass!=state_->passes || pass>=state_->layout.pass_count || timeout.count()<=0)
             throw std::logic_error("streaming invalid pass/lifecycle");
         auto &layout=state_->layout;
@@ -214,8 +282,10 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
             while (segment_end<layout.groups.size() && layout.groups[segment_end].pool==pool_id)
                 ++segment_end;
             activate_pool(pool_index);
-            state_->pool_drained=false;
-            auto &safety=*state_->safety;
+            auto &pool_runtime = state_->pools[pool_index];
+            pool_runtime.drained=false;
+            auto &safety=*pool_runtime.safety;
+            auto &tickets=pool_runtime.tickets;
             size_t next=segment_begin, dispatch=segment_begin;
             std::optional<tc_stream_slot_ticket_v1> incoming;
             if (state_->carry_ticket) {
@@ -231,7 +301,7 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                     incoming->slot != first.slot ||
                     !safety.ready(*incoming))
                     throw std::logic_error("streaming invalid incoming carry");
-                state_->tickets[first.slot] = *incoming;
+                tickets[first.slot] = *incoming;
                 dispatch = segment_begin + 1;
             }
             std::optional<tc_stream_slot_ticket_v1> outgoing;
@@ -255,7 +325,7 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                     auto job=adapter_->make_fill_job(g,t); job.ticket=t;
                     if (!state_->io->enqueue(job))
                         throw std::logic_error("streaming slot and I/O credits diverged");
-                    state_->tickets[g.slot]=t; ++dispatch; progress=true;
+                    tickets[g.slot]=t; ++dispatch; progress=true;
                 }
                 if (!prefix) { adapter_->encode_prefix(pass); prefix=true; progress=true; }
                 if (carry_next && !outgoing && next + 1 == segment_end &&
@@ -276,7 +346,7 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                         if (!state_->io->enqueue(job))
                             throw std::logic_error(
                                 "streaming carry and I/O credits diverged");
-                        state_->tickets[first.slot] = ticket;
+                        tickets[first.slot] = ticket;
                         outgoing = ticket;
                         progress = true;
                     }
@@ -288,14 +358,41 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                     if (!last_waits_for_carry &&
                         safety.state(g.slot)==ContentState::Ready) {
                         check_cancel(cancel);
-                        const auto &t=state_->tickets[g.slot];
+                        const auto &t=tickets[g.slot];
                         adapter_->prepare_group(g,t);
                         check_cancel(cancel);
                         safety.begin_use(t);
+                        if (adapter_->overlap_next_fill_after_claim() &&
+                            layout.distance == 0 && !carry_next &&
+                            dispatch < segment_end && dispatch == next + 1) {
+                            const auto &following = layout.groups[dispatch];
+                            if (safety.state(following.slot) ==
+                                    ContentState::Vacant) {
+                                auto following_ticket = safety.begin_fill(
+                                    following.slot,
+                                    {stage_, pass, step, following.id},
+                                    following.bytes);
+                                auto following_job = adapter_->make_fill_job(
+                                    following, following_ticket);
+                                following_job.ticket = following_ticket;
+                                if (!state_->io->enqueue(following_job))
+                                    throw std::logic_error(
+                                        "streaming claim-overlap and I/O "
+                                        "credits diverged");
+                                tickets[following.slot] =
+                                    following_ticket;
+                                ++dispatch;
+                            }
+                        }
                         const auto readers=adapter_->encode_group(g,t,*mailbox_);
                         if (readers.count>readers.fences.size())
                             throw std::runtime_error("streaming reader count exceeds capacity");
                         safety.seal_readers(t,{readers.fences.data(),readers.count});
+                        if (readers.already_complete)
+                            for (uint32_t reader = 0;
+                                 reader < readers.count; ++reader)
+                                safety.complete_reader(
+                                    t, readers.fences[reader]);
                         ++next; ++state_->counters.groups_submitted; progress=true;
                     }
                 }
@@ -303,7 +400,12 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                 else {
                     if (std::chrono::steady_clock::now()-last_progress>timeout)
                         throw std::runtime_error("streaming_stall_timeout");
+                    const auto wait_start = std::chrono::steady_clock::now();
                     mailbox_->wait_for(std::chrono::milliseconds(5));
+                    state_->counters.wait_seconds +=
+                        std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - wait_start)
+                            .count();
                 }
             }
             drain_active_pool(outgoing);

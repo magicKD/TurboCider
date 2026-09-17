@@ -1218,6 +1218,72 @@ int h3_gpu_tensor_stream_file_bf16(h3_gpu_tensor *opaque, const char *path,
         "BF16", 1, error, error_size);
 }
 
+int h3_gpu_tensor_stream_file_bf16_cancellable(
+        h3_gpu_tensor *opaque, const char *path, uint64_t file_offset,
+        size_t elements, size_t chunk_bytes,
+        h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+        uint64_t *bytes_read, char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (bytes_read) *bytes_read = 0;
+    if (!opaque || !path || !*path || !bytes_read || !chunk_bytes ||
+        TENSOR(opaque).readOnly ||
+        TENSOR(opaque).dtype != H3_GPU_BF16 ||
+        elements != TENSOR(opaque).elements ||
+        elements > SIZE_MAX / sizeof(uint16_t) || file_offset > INT64_MAX) {
+        if (error && error_size)
+            snprintf(error, error_size,
+                     "invalid cancellable BF16 file read request");
+        return 0;
+    }
+    const size_t bytes = elements * sizeof(uint16_t);
+    if ((uint64_t)bytes > (uint64_t)INT64_MAX - file_offset) {
+        if (error && error_size)
+            snprintf(error, error_size,
+                     "cancellable BF16 file read range overflows");
+        return 0;
+    }
+    int descriptor = open(path, O_RDONLY | O_CLOEXEC);
+    if (descriptor < 0) {
+        if (error && error_size)
+            snprintf(error, error_size, "cannot open %s: %s", path,
+                     strerror(errno));
+        return 0;
+    }
+#ifdef F_NOCACHE
+    (void)fcntl(descriptor, F_NOCACHE, 1);
+#endif
+    unsigned char *destination = TENSOR(opaque).buffer.contents;
+    size_t completed = 0;
+    while (completed < bytes) {
+        if (cancel && cancel(cancel_user)) {
+            if (error && error_size)
+                snprintf(error, error_size,
+                         "cancellable BF16 file read was cancelled");
+            close(descriptor);
+            return 0;
+        }
+        size_t request = MIN(bytes - completed, chunk_bytes);
+        request = MIN(request, (size_t)SSIZE_MAX);
+        ssize_t count = pread(descriptor, destination + completed, request,
+                              (off_t)(file_offset + completed));
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) {
+            const int detail = count < 0 ? errno : 0;
+            if (error && error_size)
+                snprintf(error, error_size,
+                         "cannot read BF16 payload from %s: %s", path,
+                         detail ? strerror(detail) :
+                                  "unexpected end of file");
+            close(descriptor);
+            return 0;
+        }
+        completed += (size_t)count;
+        *bytes_read = (uint64_t)completed;
+    }
+    close(descriptor);
+    return 1;
+}
+
 int h3_gpu_tensor_stream_file_i8(h3_gpu_tensor *opaque, const char *path,
                                  uint64_t file_offset, size_t elements,
                                  char *error, size_t error_size) {
@@ -1392,6 +1458,50 @@ int h3_gpu_continue(h3_gpu *opaque) {
     }
     gpu.commandStartWall = h3_gpu_now();
     return 1;
+}
+
+int h3_gpu_continue_with_completion(
+        h3_gpu *opaque, const h3_gpu_completion_v1 *completion) {
+    H3GPU *gpu = GPU(opaque);
+    if (!gpu || !gpu.command || !completion ||
+        completion->struct_size != sizeof(*completion) ||
+        completion->version != H3_GPU_COMPLETION_ABI_V1 ||
+        !completion->complete || !completion->sequence) return 0;
+    @autoreleasepool {
+        id<MTLCommandBuffer> next = [gpu.queue commandBuffer];
+        if (!next) {
+            h3_gpu_set_error(gpu,
+                             @"cannot continue Metal completion chain");
+            return 0;
+        }
+        const h3_gpu_completion_v1 record = *completion;
+        id<MTLCommandBuffer> command = gpu.command;
+        gpu.command = nil;
+        gpu.mpsCommand = nil;
+        [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            record.complete(
+                record.user, record.queue, record.sequence,
+                completed.status == MTLCommandBufferStatusCompleted ?
+                    0 : (int)completed.status);
+        }];
+        double commit_time = h3_gpu_now();
+        [command commit];
+        [gpu.inflightCommands addObject:command];
+        h3_gpu_stats stats = gpu.stats;
+        stats.submissions++;
+        stats.command_encode_seconds += commit_time - gpu.commandStartWall;
+        gpu.stats = stats;
+        gpu.command = next;
+    }
+    gpu.commandStartWall = h3_gpu_now();
+    return 1;
+}
+
+int h3_gpu_flush_and_drain(h3_gpu *opaque) {
+    H3GPU *gpu = GPU(opaque);
+    if (!gpu) return 0;
+    if (!gpu.command) return h3_gpu_drain(opaque);
+    return h3_gpu_submit(opaque);
 }
 
 int h3_gpu_continue_releasing(h3_gpu *opaque,

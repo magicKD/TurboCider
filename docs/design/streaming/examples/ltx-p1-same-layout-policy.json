@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "comparison_kind": "P1",
+  "engine_lifecycle": "per_request",
+  "initial_matched_pairs": 20,
+  "minimum_tail_requests_per_variant": 0,
+  "bootstrap_iterations": 4000,
+  "bootstrap_seed": 17,
+  "thresholds": {
+    "P1_same_layout": {
+      "wall_median_ratio_max": 1.02,
+      "wall_p95_ratio_max": 1.05,
+      "denoise_median_ratio_max": 1.02,
+      "steady_framework_allocations": 0,
+      "steady_framework_thread_creates": 0
+    }
+  },
+  "workload": {
+    "request": {},
+    "seed_stride": 0,
+    "output_suffix": ".mp4"
+  },
+  "protocol": {
+    "measured_blocks": 10,
+    "warmup_requests_per_variant": 1,
+    "worker_start_timeout_seconds": 30,
+    "request_timeout_seconds": 240,
+    "cache_condition": "per-request-engine-os-cache-warm",
+    "stopping_rule": "fixed-10-block-confirmation",
+    "quantile_estimator": "linear-interpolated-p95",
+    "bootstrap_unit": "abba_block",
+    "multiplicity_policy": "single-workload-confirmation",
+    "exclusion_policy": "no-exclusions-after-freeze",
+    "timing_scope": "engine-create-through-engine-destroy-and-denoise",
+    "launch_pressure": false
+  },
+  "quality": {
+    "mode": "artifact_sha256_equal",
+    "artifacts": [
+      {
+        "name": "stage2_video",
+        "path": "${DUMP}/stage2_video.bf16"
+      }
+    ]
+  },
+  "semantic_equivalence": {
+    "declared_equivalent": true,
+    "expected_actual": {
+      "stage": "denoiser",
+      "resident_prefix_blocks": 8,
+      "block_group_size": 1,
+      "slot_count": 3,
+      "prefetch_distance": 2,
+      "io_workers": 3,
+      "group_count": 40,
+      "pass_count": 11,
+      "startup_policy": "prefetch_window_before_prefix",
+      "pass_transition": "reload",
+      "retention": "request",
+      "reader_revision": 1,
+      "weight_format": "convrot-int8-g256",
+      "kernel_revision": "bf86adedf518142442575d1ce2e767b7d01c8c76",
+      "conditioning_recipe": "scalar-conditioning-v1",
+      "upsample_boundary": "after-stage1-pool-retained",
+      "engine_lifecycle": "per_request",
+      "total_fills": 440
+    },
+    "fields": [
+      "normalized_request_identity",
+      "resident_prefix_blocks",
+      "block_group_size",
+      "slot_count",
+      "prefetch_distance",
+      "io_workers",
+      "group_count",
+      "pass_count",
+      "startup_policy",
+      "pass_transition",
+      "retention",
+      "engine_lifecycle",
+      "reader_revision",
+      "weight_format",
+      "kernel_revision",
+      "conditioning_recipe",
+      "upsample_boundary",
+      "total_fills"
+    ]
+  },
+  "variants": {
+    "baseline": {
+      "backend": "native",
+      "library": "build/native/libturbocider.dylib",
+      "model_id": "ltx-2.5-distilled",
+      "model_path": "models/LTX-2.5",
+      "constructor": "public",
+      "request": {
+        "schema_version": 1,
+        "model": "ltx-2.5-distilled",
+        "operation": "video.generate",
+        "prompt": "A cinematic red fox running through a snowy forest",
+        "width": 64,
+        "height": 64,
+        "frames": 9,
+        "fps": 24,
+        "steps": 11,
+        "seed": 42,
+        "execution": "gpu",
+        "residency": "streamed",
+        "memory_budget_bytes": 8589934592,
+        "audio": false,
+        "ltx_backend": "c_metal",
+        "ltx_fast_av": true,
+        "dump_tensors": "${DUMP}",
+        "output": "${OUTPUT}"
+      }
+    },
+    "candidate": {
+      "backend": "native",
+      "library": "build/native/libturbocider.dylib",
+      "model_id": "ltx-2.5-distilled",
+      "model_path": "models/LTX-2.5",
+      "constructor": "candidate",
+      "request": {
+        "schema_version": 2,
+        "model": "ltx-2.5-distilled",
+        "operation": "video.generate",
+        "inputs": [
+          {
+            "kind": "text",
+            "role": "prompt",
+            "text": "A cinematic red fox running through a snowy forest"
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "video",
+            "path": "${OUTPUT}",
+            "width": 64,
+            "height": 64,
+            "frames": 9,
+            "fps": 24,
+            "audio": false
+          }
+        ],
+        "sampling": {
+          "seed": 42,
+          "steps": 11
+        },
+        "execution": {
+          "policy": "gpu",
+          "ltx_backend": "c_metal",
+          "ltx_fast_av": true,
+          "streaming": {
+            "schema_version": 1,
+            "enabled": true,
+            "selection": "manual",
+            "retention": "request",
+            "stages": {
+              "denoiser": {
+                "residency": "streamed",
+                "block_group_size": 1,
+                "slot_count": 3,
+                "resident_prefix_blocks": 8,
+                "prefetch_distance": 2,
+                "io_workers": 3
+              }
+            }
+          }
+        },
+        "dump_tensors": "${DUMP}"
+      }
+    }
+  }
+}

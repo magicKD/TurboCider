@@ -7,7 +7,7 @@
 
 namespace tc::streaming {
 namespace {
-constexpr size_t counter_count = 5;
+constexpr size_t counter_count = 7;
 std::array<std::atomic<uint64_t>, counter_count> counters{};
 
 size_t index(AuditCounter counter) noexcept {
@@ -35,6 +35,10 @@ AuditSnapshot audit_snapshot() noexcept {
         counters[index(AuditCounter::PoolAllocations)].load(
             std::memory_order_relaxed),
         counters[index(AuditCounter::CacheClearOrUnloadCalls)].load(
+            std::memory_order_relaxed),
+        counters[index(AuditCounter::SteadyFrameworkAllocations)].load(
+            std::memory_order_relaxed),
+        counters[index(AuditCounter::SteadyFrameworkThreadCreates)].load(
             std::memory_order_relaxed),
     };
 }

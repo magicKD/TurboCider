@@ -14,12 +14,16 @@
 #import <Metal/Metal.h>
 #include <algorithm>
 #include <cmath>
+namespace tc {
+std::unique_ptr<ModelSession> create_h3_candidate(
+    const std::filesystem::path &);
+}
 struct tc_engine {
     std::unique_ptr<tc::ModelSession> session;
     std::mutex mutex;
     std::atomic<bool> cancelled{false};
     std::atomic<bool> memory_quarantined{false};
-    // Set only by the internal LTX candidate constructor. Production model
+    // Set only by the internal exact-layout candidate constructor. Production model
     // creation remains fail-closed for unqualified manual layouts.
     bool allow_experimental_streaming = false;
     std::optional<tc::MemoryExecutionReport> last_memory_report;
@@ -212,7 +216,11 @@ extern "C" int tc_streaming_audit_snapshot_json(
                 @"new_worker_threads": @(snapshot.worker_threads),
                 @"new_pool_allocations": @(snapshot.pool_allocations),
                 @"new_cache_clear_or_unload_calls":
-                    @(snapshot.cache_clear_or_unload_calls)
+                    @(snapshot.cache_clear_or_unload_calls),
+                @"steady_framework_allocations":
+                    @(snapshot.steady_framework_allocations),
+                @"steady_framework_thread_creates":
+                    @(snapshot.steady_framework_thread_creates)
             }));
             return 0;
         } catch (const std::exception &exception) {
@@ -394,12 +402,31 @@ int tc_engine_create(const char *path, tc_engine **engine, char **error) {
 }
 extern "C" int tc_engine_create_model_candidate(const char *id, const char *path,
                                                 tc_engine **engine, char **error) {
-    if (!id || std::strcmp(id, "ltx-2.5-distilled") != 0) {
+    if (!id || (std::strcmp(id, "ltx-2.5-distilled") != 0 &&
+                std::strcmp(id, "minimax-h3-turbo") != 0 &&
+                std::strcmp(id, "z-image-turbo") != 0 &&
+                std::strcmp(id, "flux2-klein-9b") != 0)) {
         if (engine) *engine = nullptr;
-        if (error) *error = strdup("candidate executor is restricted to LTX");
+        if (error) *error = strdup(
+            "candidate executor is restricted to qualified LTX/H3/Z-Image/FLUX 9B development routes");
         return 1;
     }
-    const int status = tc_engine_create_model(id, path, engine, error);
+    int status = 0;
+    if (std::strcmp(id, "minimax-h3-turbo") == 0) {
+        try {
+            auto e = std::make_unique<tc_engine>();
+            e->session = tc::create_h3_candidate(path);
+            e->allow_experimental_streaming = true;
+            *engine = e.release();
+        } catch (const std::exception &exception) {
+            status = fail(error, exception);
+        } catch (...) {
+            if (error) *error = strdup("unknown H3 candidate creation error");
+            status = 1;
+        }
+    } else {
+        status = tc_engine_create_model(id, path, engine, error);
+    }
     if (!status && engine && *engine)
         (*engine)->allow_experimental_streaming = true;
     return status;

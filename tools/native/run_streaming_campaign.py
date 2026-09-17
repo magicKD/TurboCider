@@ -2,10 +2,10 @@
 """Run a frozen TurboCider streaming performance campaign.
 
 The coordinator never loads a native library.  Baseline and candidate run in
-two independent, persistent worker processes, each of which owns one retained
-engine for the duration of the campaign.  Measured requests are serialized in
-alternating ABBA/BAAB blocks and appended to raw-samples.jsonl before the next
-request is dispatched.
+two independent, persistent worker processes.  A frozen campaign explicitly
+chooses whether each worker retains one engine or creates one engine per
+request.  Measured requests are serialized in alternating ABBA/BAAB blocks and
+appended to raw-samples.jsonl before the next request is dispatched.
 
 This tool intentionally does not create memory pressure, clear OS caches, or
 change swap settings.  Those operations require a separate, explicitly
@@ -38,6 +38,30 @@ from capture_streaming_source_identity import IdentityError, capture
 
 SCHEMA_VERSION = 1
 VARIANTS = ("baseline", "candidate")
+ENGINE_LIFECYCLES = ("persistent", "per_request")
+SEMANTIC_LAYOUT_FIELDS = (
+    "stage",
+    "resident_prefix_blocks",
+    "block_group_size",
+    "slot_count",
+    "prefetch_distance",
+    "io_workers",
+    "group_count",
+    "pass_count",
+    "startup_policy",
+    "pass_transition",
+    "retention",
+    "reader_revision",
+    "weight_format",
+    "kernel_revision",
+    "conditioning_recipe",
+    "upsample_boundary",
+)
+P1_EXPECTED_FIELDS = (
+    *SEMANTIC_LAYOUT_FIELDS,
+    "engine_lifecycle",
+    "total_fills",
+)
 SEQUENCES = {
     "ABBA": ("baseline", "candidate", "candidate", "baseline"),
     "BAAB": ("candidate", "baseline", "baseline", "candidate"),
@@ -133,9 +157,50 @@ def validate_policy(policy: dict[str, Any]) -> None:
         raise CampaignError("campaign policy must be frozen before execution")
     if policy.get("comparison_kind") not in ("P0", "P1", "P2", "P3", "P4"):
         raise CampaignError("comparison_kind must be P0, P1, P2, P3 or P4")
+    lifecycle = policy.get("engine_lifecycle", "persistent")
+    if lifecycle not in ENGINE_LIFECYCLES:
+        raise CampaignError(
+            "engine_lifecycle must be persistent or per_request"
+        )
+    if policy.get("comparison_kind") == "P1":
+        declaration = policy.get("semantic_equivalence")
+        if (
+            not isinstance(declaration, dict) or
+            declaration.get("declared_equivalent") is not True
+        ):
+            raise CampaignError(
+                "P1 requires a declared semantic equivalence"
+            )
+        expected = declaration.get("expected_actual")
+        if not isinstance(expected, dict):
+            raise CampaignError(
+                "P1 semantic_equivalence.expected_actual must be an object"
+            )
+        missing = [
+            field for field in P1_EXPECTED_FIELDS
+            if field not in expected
+        ]
+        if missing:
+            raise CampaignError(
+                "P1 expected_actual is incomplete: " + ", ".join(missing)
+            )
     variants = policy.get("variants")
     if not isinstance(variants, dict) or set(variants) != set(VARIANTS):
         raise CampaignError("variants must contain exactly baseline and candidate")
+    expected_implementations = policy.get("expected_implementations")
+    if expected_implementations is not None and (
+        not isinstance(expected_implementations, dict) or
+        set(expected_implementations) != set(VARIANTS) or
+        any(
+            not isinstance(expected_implementations[name], str) or
+            not expected_implementations[name]
+            for name in VARIANTS
+        )
+    ):
+        raise CampaignError(
+            "expected_implementations must contain non-empty baseline and "
+            "candidate strings"
+        )
     workload = policy.get("workload")
     if not isinstance(workload, dict) or not isinstance(workload.get("request"), dict):
         raise CampaignError("workload.request must be a JSON object")
@@ -157,6 +222,15 @@ def validate_policy(policy: dict[str, Any]) -> None:
         not isinstance(start_timeout, (int, float)) or start_timeout <= 0
     ):
         raise CampaignError("worker_start_timeout_seconds must be positive")
+    launch_order = protocol.get("worker_launch_order", list(VARIANTS))
+    if (
+        not isinstance(launch_order, list) or
+        len(launch_order) != len(VARIANTS) or
+        set(launch_order) != set(VARIANTS)
+    ):
+        raise CampaignError(
+            "worker_launch_order must list baseline and candidate exactly once"
+        )
     if protocol.get("launch_pressure"):
         raise CampaignError("this runner never launches memory pressure")
     quality = policy.get("quality")
@@ -181,7 +255,7 @@ def validate_policy(policy: dict[str, Any]) -> None:
         if not isinstance(config, dict):
             raise CampaignError(f"variant {variant} must be an object")
         backend = config.get("backend", "native")
-        if backend not in ("native", "synthetic"):
+        if backend not in ("native", "probe", "synthetic"):
             raise CampaignError(f"variant {variant} has unsupported backend")
         if backend == "native":
             for key in ("library", "model_id", "model_path"):
@@ -200,6 +274,39 @@ def validate_policy(policy: dict[str, Any]) -> None:
                 ):
                     raise CampaignError(
                         f"variant {variant} environment only accepts "
+                        "string TURBOCIDER_* variables"
+                    )
+        elif backend == "probe":
+            if lifecycle != "per_request":
+                raise CampaignError(
+                    "probe variants require engine_lifecycle=per_request"
+                )
+            for key in ("executable", "model_path", "output_artifact"):
+                if not isinstance(config.get(key), str) or not config[key]:
+                    raise CampaignError(
+                        f"probe variant {variant} requires {key}"
+                    )
+            arguments = config.get("arguments")
+            if (
+                not isinstance(arguments, list) or not arguments or
+                any(not isinstance(value, str) for value in arguments)
+            ):
+                raise CampaignError(
+                    f"probe variant {variant} requires string arguments"
+                )
+            environment = config.get("environment", {})
+            if not isinstance(environment, dict):
+                raise CampaignError(
+                    f"probe variant {variant} environment must be an object"
+                )
+            for name, value in environment.items():
+                if (
+                    not isinstance(name, str) or
+                    not name.startswith("TURBOCIDER_") or
+                    not isinstance(value, str)
+                ):
+                    raise CampaignError(
+                        f"probe variant {variant} environment only accepts "
                         "string TURBOCIDER_* variables"
                     )
         elif not isinstance(config.get("synthetic"), dict):
@@ -222,6 +329,29 @@ def build_identity(policy: dict[str, Any]) -> dict[str, Any]:
                 "binary_size_bytes": library.stat().st_size,
                 "constructor": config.get("constructor", "public"),
             }
+        elif backend == "probe":
+            executable = Path(config["executable"]).expanduser().resolve()
+            if not executable.is_file():
+                raise CampaignError(
+                    f"missing {variant} probe executable: {executable}"
+                )
+            identity = {
+                "backend": "probe",
+                "binary_path": str(executable),
+                "binary_sha256": sha256_file(executable),
+                "binary_size_bytes": executable.stat().st_size,
+                "constructor": "probe_process",
+            }
+            linked_library = config.get("linked_library")
+            if isinstance(linked_library, str) and linked_library:
+                library = Path(linked_library).expanduser().resolve()
+                if not library.is_file():
+                    raise CampaignError(
+                        f"missing {variant} probe library: {library}"
+                    )
+                identity["linked_library_path"] = str(library)
+                identity["linked_library_sha256"] = sha256_file(library)
+                identity["linked_library_size_bytes"] = library.stat().st_size
         else:
             identity = {
                 "backend": "synthetic",
@@ -325,11 +455,179 @@ def extract_layouts(result: dict[str, Any]) -> tuple[str | None, str | None]:
     return resolved or None, actual or None
 
 
-def load_native_worker(config: dict[str, Any]) -> tuple[Any, c.c_void_p]:
+def extract_streaming_implementation(result: dict[str, Any]) -> str | None:
+    block = result.get("block_streaming") or result.get("block_residency")
+    implementation = (
+        block.get("implementation") if isinstance(block, dict) else None
+    )
+    return implementation if isinstance(implementation, str) else None
+
+
+def actual_semantic_layout(
+    result: dict[str, Any], engine_lifecycle: str
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Normalize observed layout/runtime semantics for a P1 comparison.
+
+    A generic plan digest is an implementation identity.  The legacy LTX
+    implementation intentionally has no generic digest, so P1 compares this
+    normalized semantic identity instead.
+    """
+    block = result.get("block_streaming") or result.get("block_residency")
+    raw = nested(result, "plan", "streaming", "actual_layout")
+    if not isinstance(raw, dict) and isinstance(block, dict):
+        raw = block.get("actual_layout")
+    if not isinstance(raw, dict):
+        return None, [*SEMANTIC_LAYOUT_FIELDS, "engine_lifecycle", "total_fills"]
+
+    semantic = {
+        field: deepcopy(raw[field])
+        for field in SEMANTIC_LAYOUT_FIELDS
+        if field in raw and raw[field] is not None
+    }
+    semantic["engine_lifecycle"] = engine_lifecycle
+    # The native result calls this retention.  P1's request lifecycle must be
+    # explicit so a retained engine cannot be compared with a request owner.
+    if engine_lifecycle == "per_request":
+        # Legacy adapters may report their engine-owned cache retention even
+        # when the campaign recreates the engine per request; normalize that
+        # case to the request lifecycle.  Preserve an explicit request-scoped
+        # multi-pool qualifier (for example Flux retain_all), since it is part
+        # of the layout identity and must be compared by P1.
+        retention = semantic.get("retention")
+        if not (
+            isinstance(retention, str) and
+            (retention == "request" or retention.startswith("request;"))
+        ):
+            semantic["retention"] = "request"
+    if isinstance(block, dict):
+        fills = block.get("request_slot_fills")
+        allocations = block.get("request_slot_allocations")
+        refills = block.get("request_slot_refills")
+        if isinstance(fills, int) and not isinstance(fills, bool) and fills >= 0:
+            semantic["total_fills"] = fills
+        elif (
+            isinstance(allocations, int) and not isinstance(allocations, bool)
+            and allocations >= 0
+            and isinstance(refills, int) and not isinstance(refills, bool)
+            and refills >= 0
+        ):
+            semantic["total_fills"] = allocations + refills
+    for key in (
+        "conditioning_mode",
+        "conditioning_cache_hit",
+        "denoiser_cache_hit",
+        "video_vae_isolation",
+    ):
+        if key in result and result[key] is not None:
+            semantic[key] = deepcopy(result[key])
+    required = [*SEMANTIC_LAYOUT_FIELDS, "engine_lifecycle", "total_fills"]
+    return semantic, [field for field in required if field not in semantic]
+
+
+def semantic_digest(value: dict[str, Any] | None) -> str | None:
+    return sha256_bytes(canonical_json(value)) if value is not None else None
+
+
+def request_semantic_identity(request: dict[str, Any]) -> dict[str, Any]:
+    """Normalize schema-v1/v2 workload fields while excluding output paths.
+
+    Executor-specific residency/layout fields are deliberately excluded: P1
+    compares those from the observed semantic layout.  Everything that can
+    change model work or numerical policy remains part of this identity.
+    """
+    schema = request.get("schema_version", 1)
+    if schema == 2:
+        inputs = request.get("inputs") or []
+        prompts = [
+            item.get("text")
+            for item in inputs
+            if isinstance(item, dict) and item.get("kind") == "text"
+            and item.get("role") == "prompt"
+        ]
+        nontext_inputs = [
+            {
+                key: item.get(key)
+                for key in ("kind", "role", "strength")
+                if item.get(key) is not None
+            }
+            for item in inputs
+            if isinstance(item, dict) and item.get("kind") != "text"
+        ]
+        outputs = request.get("outputs") or []
+        output = next(
+            (
+                item for item in outputs
+                if isinstance(item, dict) and
+                item.get("kind") in ("video", "image")
+            ),
+            {},
+        )
+        sampling = request.get("sampling") or {}
+        execution = request.get("execution") or {}
+        return {
+            "model": request.get("model"),
+            "operation": request.get("operation"),
+            "prompts": prompts,
+            "nontext_inputs": nontext_inputs,
+            "width": output.get("width"),
+            "height": output.get("height"),
+            "frames": output.get("frames", 1),
+            "fps": output.get("fps"),
+            "audio": output.get("audio", False),
+            "seed": sampling.get("seed"),
+            "steps": sampling.get("steps"),
+            "execution": execution.get("policy"),
+            "ltx_backend": execution.get("ltx_backend"),
+            "ltx_fast_av": execution.get("ltx_fast_av"),
+            "ltx_video_attention_batch": execution.get(
+                "ltx_video_attention_batch", False
+            ),
+            "allow_approximation": request.get(
+                "allow_approximation", False
+            ),
+            "ltx_sol_stage2": request.get("ltx_sol_stage2", False),
+            "ltx_sol_tau": request.get("ltx_sol_tau"),
+            "ltx_sol_dense_edge_blocks": request.get(
+                "ltx_sol_dense_edge_blocks"
+            ),
+            "ltx_sol_dense_edge_steps": request.get(
+                "ltx_sol_dense_edge_steps"
+            ),
+        }
+    return {
+        "model": request.get("model"),
+        "operation": request.get("operation"),
+        "prompts": [request.get("prompt")],
+        "nontext_inputs": [],
+        "width": request.get("width"),
+        "height": request.get("height"),
+        "frames": request.get("frames", 1),
+        "fps": request.get("fps"),
+        "audio": request.get("audio", False),
+        "seed": request.get("seed"),
+        "steps": request.get("steps"),
+        "execution": request.get("execution"),
+        "ltx_backend": request.get("ltx_backend"),
+        "ltx_fast_av": request.get("ltx_fast_av"),
+        "ltx_video_attention_batch": request.get(
+            "ltx_video_attention_batch", False
+        ),
+        "allow_approximation": request.get("allow_approximation", False),
+        "ltx_sol_stage2": request.get("ltx_sol_stage2", False),
+        "ltx_sol_tau": request.get("ltx_sol_tau"),
+        "ltx_sol_dense_edge_blocks": request.get(
+            "ltx_sol_dense_edge_blocks"
+        ),
+        "ltx_sol_dense_edge_steps": request.get(
+            "ltx_sol_dense_edge_steps"
+        ),
+    }
+
+
+def load_native_library(config: dict[str, Any]) -> Any:
     for name, value in config.get("environment", {}).items():
         os.environ[name] = value
     library_path = Path(config["library"]).expanduser().resolve()
-    model_path = Path(config["model_path"]).expanduser().resolve()
     library = c.CDLL(str(library_path))
     library.tc_string_free.argtypes = [c.c_void_p]
     constructor_name = (
@@ -369,6 +667,17 @@ def load_native_worker(config: dict[str, Any]) -> tuple[Any, c.c_void_p]:
         audit_snapshot.restype = c.c_int
         library._tc_streaming_audit_reset = audit_reset
         library._tc_streaming_audit_snapshot = audit_snapshot
+    return library
+
+
+def create_native_engine(library: Any, config: dict[str, Any]) -> c.c_void_p:
+    model_path = Path(config["model_path"]).expanduser().resolve()
+    constructor_name = (
+        "tc_engine_create_model_candidate"
+        if config.get("constructor", "public") == "candidate"
+        else "tc_engine_create_model"
+    )
+    constructor = getattr(library, constructor_name)
     engine = c.c_void_p()
     error = c.c_void_p()
     status = constructor(
@@ -378,7 +687,12 @@ def load_native_worker(config: dict[str, Any]) -> tuple[Any, c.c_void_p]:
     failure = consume(library, error)
     if status or not engine.value:
         raise CampaignError(failure or "native engine creation failed")
-    return library, engine
+    return engine
+
+
+def load_native_worker(config: dict[str, Any]) -> tuple[Any, c.c_void_p]:
+    library = load_native_library(config)
+    return library, create_native_engine(library, config)
 
 
 def reset_native_audit(library: Any) -> bool:
@@ -428,7 +742,8 @@ def hash_artifacts(paths: dict[str, str]) -> dict[str, Any]:
 
 
 def run_native_sample(
-    library: Any, engine: c.c_void_p, command: dict[str, Any]
+    library: Any, engine: c.c_void_p, command: dict[str, Any],
+    engine_lifecycle: str,
 ) -> dict[str, Any]:
     audit_available = reset_native_audit(library)
     result_pointer = c.c_void_p()
@@ -472,6 +787,11 @@ def run_native_sample(
         denoise = stage1 + stage2
     resolved, actual = extract_layouts(result)
     block = result.get("block_streaming") or result.get("block_residency")
+    semantic, semantic_missing = actual_semantic_layout(
+        result, engine_lifecycle
+    )
+    if semantic is not None:
+        semantic["request"] = request_semantic_identity(command["request"])
     row = {
         "status": "success",
         "native_status": 0,
@@ -481,6 +801,11 @@ def run_native_sample(
         "stage_timings_seconds": timings,
         "resolved_layout_digest": resolved,
         "actual_layout_digest": actual,
+        "actual_semantic_layout": semantic,
+        "actual_semantic_layout_digest": semantic_digest(semantic),
+        "actual_semantic_layout_missing_fields": semantic_missing,
+        "streaming_implementation": extract_streaming_implementation(result),
+        "engine_lifecycle": engine_lifecycle,
         "block_counters": block,
         "artifacts": hash_artifacts(command["artifact_paths"]),
         "process_peak_rss_bytes": peak_rss_bytes(),
@@ -505,7 +830,7 @@ def run_native_sample(
 
 
 def run_synthetic_sample(
-    config: dict[str, Any], command: dict[str, Any]
+    config: dict[str, Any], command: dict[str, Any], engine_lifecycle: str
 ) -> dict[str, Any]:
     synthetic = config["synthetic"]
     identity = command["run_id"]
@@ -529,6 +854,20 @@ def run_synthetic_sample(
     wall = float(synthetic.get("request_wall_seconds", 1.0))
     denoise = float(synthetic.get("denoise_seconds", wall * 0.8))
     layout = synthetic.get("layout_digest")
+    semantic = deepcopy(synthetic.get("actual_semantic_layout"))
+    if isinstance(semantic, dict):
+        semantic["engine_lifecycle"] = engine_lifecycle
+        semantic["request"] = request_semantic_identity(command["request"])
+        semantic_missing = [
+            field for field in
+            [*SEMANTIC_LAYOUT_FIELDS, "engine_lifecycle", "total_fills"]
+            if field not in semantic
+        ]
+    else:
+        semantic = None
+        semantic_missing = [
+            *SEMANTIC_LAYOUT_FIELDS, "engine_lifecycle", "total_fills"
+        ]
     return {
         "status": "success",
         "native_status": 0,
@@ -538,6 +877,13 @@ def run_synthetic_sample(
         "stage_timings_seconds": {"request_wall": wall, "denoise": denoise},
         "resolved_layout_digest": layout,
         "actual_layout_digest": layout,
+        "actual_semantic_layout": semantic,
+        "actual_semantic_layout_digest": semantic_digest(semantic),
+        "actual_semantic_layout_missing_fields": semantic_missing,
+        "streaming_implementation": synthetic.get(
+            "streaming_implementation"
+        ),
+        "engine_lifecycle": engine_lifecycle,
         "block_counters": synthetic.get("block_counters", {"enabled": False}),
         "artifacts": hash_artifacts(command["artifact_paths"]),
         "process_peak_rss_bytes": peak_rss_bytes(),
@@ -550,17 +896,148 @@ def run_synthetic_sample(
     }
 
 
+def run_probe_sample(
+    config: dict[str, Any], command: dict[str, Any], engine_lifecycle: str
+) -> dict[str, Any]:
+    executable = Path(config["executable"]).expanduser().resolve()
+    model = Path(config["model_path"]).expanduser().resolve()
+    artifact_name = config["output_artifact"]
+    output = command["artifact_paths"].get(artifact_name)
+    if not isinstance(output, str) or not output:
+        raise CampaignError(
+            f"probe output artifact is absent: {artifact_name}"
+        )
+    for raw_path in command["artifact_paths"].values():
+        Path(raw_path).parent.mkdir(parents=True, exist_ok=True)
+    replacements = {
+        "MODEL": str(model),
+        "OUTPUT": output,
+        "PAIR_ID": command["pair_id"],
+        "BLOCK_ID": command["block_id"],
+        "VARIANT": command["variant"],
+        "RUN_ID": command["run_id"],
+    }
+    arguments = expand(config["arguments"], replacements)
+    environment = os.environ.copy()
+    environment.update(config.get("environment", {}))
+    working_directory = Path(
+        config.get("working_directory", executable.parent)
+    ).expanduser().resolve()
+    timeout = float(config.get("request_timeout_seconds", 3600.0))
+    started = time.perf_counter()
+    try:
+        completed = subprocess.run(
+            [str(executable), *arguments], cwd=working_directory,
+            env=environment, capture_output=True, text=True,
+            timeout=max(1.0, timeout * 0.95), check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "status": "timeout",
+            "native_status": None,
+            "error": f"probe exceeded {timeout * 0.95:.3f} seconds",
+            "client_wall_seconds": time.perf_counter() - started,
+            "probe_stdout": (exc.stdout or "")[-4096:],
+            "probe_stderr": (exc.stderr or "")[-4096:],
+            "process_peak_rss_bytes": peak_rss_bytes(),
+        }
+    client_wall = time.perf_counter() - started
+    if completed.returncode:
+        return {
+            "status": "failure",
+            "native_status": int(completed.returncode),
+            "error": completed.stderr.strip() or
+                completed.stdout.strip() or "probe failed without a diagnostic",
+            "client_wall_seconds": client_wall,
+            "probe_stdout": completed.stdout[-4096:],
+            "probe_stderr": completed.stderr[-4096:],
+            "process_peak_rss_bytes": peak_rss_bytes(),
+        }
+    lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    if not lines:
+        raise CampaignError("probe succeeded without a JSON result")
+    try:
+        result = json.loads(lines[-1])
+    except json.JSONDecodeError as exc:
+        raise CampaignError(f"probe result is invalid JSON: {exc}") from exc
+    if not isinstance(result, dict):
+        raise CampaignError("probe result must be a JSON object")
+    expected_schema = config.get("result_schema")
+    if expected_schema and result.get("schema") != expected_schema:
+        raise CampaignError(
+            f"probe result schema differs: {result.get('schema')!r}"
+        )
+    timings = result.get("timings_seconds") or {}
+    block = result.get("block_streaming") or result.get("block_residency")
+    semantic, semantic_missing = actual_semantic_layout(
+        result, engine_lifecycle
+    )
+    if semantic is not None:
+        semantic["request"] = request_semantic_identity(command["request"])
+    audit_snapshot = result.get("audit_snapshot")
+    runtime_audit = {
+        "audit_available": isinstance(audit_snapshot, dict),
+        "block_streaming_enabled": (
+            bool(block.get("enabled")) if isinstance(block, dict) else False
+        ),
+        "request_slot_allocations": (
+            block.get("request_slot_allocations")
+            if isinstance(block, dict) else None
+        ),
+        "request_slot_refills": (
+            block.get("request_slot_refills")
+            if isinstance(block, dict) else None
+        ),
+    }
+    if isinstance(audit_snapshot, dict):
+        runtime_audit.update(audit_snapshot)
+    request_wall = float(timings.get("request_wall", client_wall))
+    denoise = float(timings.get("denoise", result.get("denoise_seconds", 0.0)))
+    resolved, actual = extract_layouts(result)
+    return {
+        "status": "success",
+        "native_status": 0,
+        "client_wall_seconds": client_wall,
+        "request_wall_seconds": request_wall,
+        "denoise_seconds": denoise,
+        "stage_timings_seconds": timings,
+        "resolved_layout_digest": resolved,
+        "actual_layout_digest": actual,
+        "actual_semantic_layout": semantic,
+        "actual_semantic_layout_digest": semantic_digest(semantic),
+        "actual_semantic_layout_missing_fields": semantic_missing,
+        "streaming_implementation": extract_streaming_implementation(result),
+        "engine_lifecycle": engine_lifecycle,
+        "block_counters": block,
+        "artifacts": hash_artifacts(command["artifact_paths"]),
+        "process_peak_rss_bytes": peak_rss_bytes(),
+        "runtime_audit": runtime_audit,
+        "probe_result": result,
+    }
+
+
 def worker_main(config_path: Path, descriptor: int) -> int:
     config = read_object(config_path, "worker config")
+    engine_lifecycle = config.get("engine_lifecycle", "persistent")
+    if engine_lifecycle not in ENGINE_LIFECYCLES:
+        raise CampaignError("worker received an invalid engine lifecycle")
     connection = socket.socket(fileno=descriptor)
     library = None
     engine = None
+    engine_generation = 0
     try:
-        if config.get("backend", "native") == "native":
-            library, engine = load_native_worker(config)
+        backend = config.get("backend", "native")
+        if backend == "native":
+            library = load_native_library(config)
+            if engine_lifecycle == "persistent":
+                engine = create_native_engine(library, config)
+                engine_generation = 1
+        elif engine_lifecycle == "persistent":
+            engine_generation = 1
         send_message(connection, {
             "type": "ready", "pid": os.getpid(),
             "backend": config.get("backend", "native"),
+            "engine_lifecycle": engine_lifecycle,
         })
         while True:
             command = receive_message(connection, 365 * 24 * 60 * 60)
@@ -570,10 +1047,48 @@ def worker_main(config_path: Path, descriptor: int) -> int:
             if command.get("type") != "run":
                 raise CampaignError("unknown worker command")
             try:
-                if config.get("backend", "native") == "native":
-                    response = run_native_sample(library, engine, command)
+                if backend == "native":
+                    if engine_lifecycle == "persistent":
+                        response = run_native_sample(
+                            library, engine, command, engine_lifecycle
+                        )
+                    else:
+                        lifecycle_started = time.perf_counter()
+                        request_engine = create_native_engine(library, config)
+                        engine_generation += 1
+                        create_finished = time.perf_counter()
+                        try:
+                            response = run_native_sample(
+                                library, request_engine, command,
+                                engine_lifecycle,
+                            )
+                        finally:
+                            destroy_started = time.perf_counter()
+                            library.tc_engine_free(request_engine)
+                            destroy_finished = time.perf_counter()
+                        lifecycle_wall = destroy_finished - lifecycle_started
+                        response["native_request_wall_seconds"] = response.get(
+                            "request_wall_seconds"
+                        )
+                        response["request_wall_seconds"] = lifecycle_wall
+                        response["client_wall_seconds"] = lifecycle_wall
+                        response["engine_create_seconds"] = (
+                            create_finished - lifecycle_started
+                        )
+                        response["engine_destroy_seconds"] = (
+                            destroy_finished - destroy_started
+                        )
+                elif backend == "probe":
+                    engine_generation += 1
+                    response = run_probe_sample(
+                        config, command, engine_lifecycle
+                    )
                 else:
-                    response = run_synthetic_sample(config, command)
+                    if engine_lifecycle == "per_request":
+                        engine_generation += 1
+                    response = run_synthetic_sample(
+                        config, command, engine_lifecycle
+                    )
             except Exception as exc:  # Preserve worker for the next sample.
                 response = {
                     "status": "worker_error", "error": str(exc),
@@ -583,6 +1098,8 @@ def worker_main(config_path: Path, descriptor: int) -> int:
             response.update({
                 "type": "result", "run_id": command["run_id"],
                 "worker_pid": os.getpid(),
+                "engine_lifecycle": engine_lifecycle,
+                "engine_generation": engine_generation,
             })
             send_message(connection, response)
     except Exception as exc:
@@ -785,27 +1302,63 @@ def make_semantic_equivalence(
     if not isinstance(declaration, dict):
         declaration = {}
     successful = [row for row in raw if row.get("status") == "success"]
-    by_pair: dict[str, dict[str, str | None]] = {}
+    by_pair: dict[str, dict[str, dict[str, Any]]] = {}
     for row in successful:
-        by_pair.setdefault(row["pair_id"], {})[row["variant"]] = row.get(
-            "actual_layout_digest"
-        )
+        by_pair.setdefault(row["pair_id"], {})[row["variant"]] = {
+            "layout_digest": row.get("actual_layout_digest"),
+            "semantic_digest": row.get("actual_semantic_layout_digest"),
+            "semantic_layout": row.get("actual_semantic_layout"),
+            "missing_fields": row.get(
+                "actual_semantic_layout_missing_fields", []
+            ),
+            "engine_lifecycle": row.get("engine_lifecycle"),
+            "streaming_implementation": row.get(
+                "streaming_implementation"
+            ),
+        }
     complete = {
         pair_id: values for pair_id, values in by_pair.items()
         if set(values) == set(VARIANTS)
     }
-    observed = bool(complete) and all(
-        values["baseline"] and values["baseline"] == values["candidate"]
+    observed_same = bool(complete) and all(
+        values["baseline"]["semantic_digest"]
+        and not values["baseline"]["missing_fields"]
+        and not values["candidate"]["missing_fields"]
+        and values["baseline"]["semantic_digest"] ==
+            values["candidate"]["semantic_digest"]
         for values in complete.values()
     )
+    expected = declaration.get("expected_actual")
+    observed_expected = bool(complete) and isinstance(expected, dict)
+    if observed_expected:
+        for values in complete.values():
+            for variant in VARIANTS:
+                layout = values[variant].get("semantic_layout")
+                if (
+                    not isinstance(layout, dict)
+                    or any(
+                        layout.get(field) != expected_value
+                        for field, expected_value in expected.items()
+                    )
+                ):
+                    observed_expected = False
+                    break
+            if not observed_expected:
+                break
     declared = declaration.get("declared_equivalent") is True
     return {
-        "format": "turbocider-streaming-semantic-equivalence-v1",
-        "equivalent": bool(declared and observed),
+        "format": "turbocider-streaming-semantic-equivalence-v2",
+        "equivalent": bool(
+            declared and observed_same and observed_expected
+        ),
         "declared_equivalent": declared,
         "declaration": declaration,
-        "observed_same_actual_layout": observed,
+        "observed_same_actual_layout": observed_same,
+        "observed_same_semantic_layout": observed_same,
+        "observed_matches_expected": observed_expected,
+        "expected_actual": expected,
         "pair_layouts": by_pair,
+        "comparison": "normalized_actual_semantic_layout",
     }
 
 
@@ -823,6 +1376,11 @@ def default_audit(raw: list[dict[str, Any]], policy: dict[str, Any]) -> dict[str
         "new_framework_hooks", "new_memory_probes", "new_worker_threads",
         "new_pool_allocations", "new_cache_clear_or_unload_calls",
     )
+    if policy.get("comparison_kind") == "P1":
+        required += (
+            "steady_framework_allocations",
+            "steady_framework_thread_creates",
+        )
     complete = bool(successful) and all(
         row.get("runtime_audit", {}).get("audit_available") is True and
         all(isinstance(row.get("runtime_audit", {}).get(name), int) and
@@ -852,6 +1410,27 @@ def default_audit(raw: list[dict[str, Any]], policy: dict[str, Any]) -> dict[str
                     "default candidate requests did not enter the new framework"
                     if passed else
                     "default candidate requests failed or entered a new framework callsite"
+                ),
+                **totals,
+                "runtime_observations": observations,
+            }
+        if policy.get("comparison_kind") == "P1":
+            passed = (
+                len(successful) == len(candidate) and
+                all(enabled) and
+                totals["steady_framework_allocations"] == 0 and
+                totals["steady_framework_thread_creates"] == 0
+            )
+            return {
+                "format": "turbocider-streaming-audit-v1",
+                "status": "passed" if passed else "failed",
+                "passed": passed,
+                "reason": (
+                    "opt-in requests used the framework without steady "
+                    "allocation or thread creation"
+                    if passed else
+                    "opt-in requests failed, bypassed the framework, or "
+                    "allocated/created threads in the steady path"
                 ),
                 **totals,
                 "runtime_observations": observations,
@@ -950,9 +1529,13 @@ def run_campaign(
         policy["protocol"].get("worker_start_timeout_seconds", 30)
     )
     worker_configs: dict[str, Path] = {}
+    engine_lifecycle = policy.get("engine_lifecycle", "persistent")
     for variant in VARIANTS:
         path = output / "workers" / f"{variant}.json"
-        write_json(path, policy["variants"][variant])
+        worker_config = deepcopy(policy["variants"][variant])
+        worker_config["engine_lifecycle"] = engine_lifecycle
+        worker_config["request_timeout_seconds"] = timeout
+        write_json(path, worker_config)
         worker_configs[variant] = path
     manifest = {
         "format": "turbocider-streaming-campaign-manifest-v1",
@@ -961,6 +1544,10 @@ def run_campaign(
         "started_at": datetime.now(timezone.utc).isoformat(),
         "policy_sha256": sha256_bytes(policy_bytes),
         "pressure_launched_by_runner": False,
+        "engine_lifecycle": engine_lifecycle,
+        "worker_launch_order": policy["protocol"].get(
+            "worker_launch_order", list(VARIANTS)
+        ),
     }
     write_json(output / "manifest.json", manifest)
     workers: dict[str, Worker] = {}
@@ -970,7 +1557,10 @@ def run_campaign(
     abort_reason = None
     plan = planned_samples(int(policy["protocol"]["measured_blocks"]))
     try:
-        for variant in VARIANTS:
+        launch_order = tuple(
+            policy["protocol"].get("worker_launch_order", list(VARIANTS))
+        )
+        for variant in launch_order:
             workers[variant] = Worker(
                 variant, worker_configs[variant],
                 output / "workers" / f"{variant}.log", timeout, start_timeout,

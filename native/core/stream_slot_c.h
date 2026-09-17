@@ -148,6 +148,7 @@ typedef struct {
 
 typedef struct {
     uint64_t pool_creates, slot_bundles, fills, content_bytes_loaded, groups_submitted;
+    double wait_seconds;
 } tc_stream_counters_v1;
 typedef struct tc_stream_executor tc_stream_executor;
 
