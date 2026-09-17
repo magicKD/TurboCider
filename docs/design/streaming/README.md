@@ -59,6 +59,8 @@
 | [27 Public Streaming Delivery Blueprint](27-public-streaming-delivery-blueprint.md) | 基于已提交控制面的端到端施工顺序、所有权、App/engine/四模型接线、GPU/ANE边界、PR拆分与验收追踪矩阵 |
 | [28 Public Runtime Code Design](28-public-runtime-code-design.md) | resolver/probe/snapshot/authority、engine/C ABI、Swift/App事务、LTX worker与四模型逐文件代码设计 |
 | [29 Public Implementation and Acceptance](29-public-implementation-and-acceptance-plan.md) | 可回滚PR计划、工具链、候选矩阵、内存/swap实验、性能门、evidence/review和发布回滚 |
+| [30 Public Detailed Integration](30-public-streaming-detailed-integration.md) | 基于当前代码的精确调用链、锁/所有权、adapter模板、multi-slot时序、逐PR代码任务和自动化验收矩阵 |
+| [31 Public Config and Calibration Runbook](31-public-streaming-config-calibration-runbook.md) | selector/device/workload配置、四模型候选矩阵、完整内存校准、swap对照、命令模板与签字验收单 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -75,7 +77,8 @@
 需要从当前已提交控制面基础继续施工时，优先阅读27：它记录 selector/catalog/options/Swift 已有部分、
 unresolved selector 的立即安全闸门、query→resolve→generate 的所有权链、App任务迁移以及逐PR完成门。
 控制面基础现已提交到`63b73d9`。准备直接编码 resolver/authority/App transaction 时阅读28；安排工具开发、
-四模型档位实验、swap对照和逐record发布时阅读29。28不新增第二套executor，29不重新定义文档12的P0–P4阈值。
+四模型档位实验、swap对照和逐record发布时阅读29；需要按当前文件和函数逐项施工、检查锁/生命周期、编写 test ID 时阅读30。
+28/30不新增第二套executor，29/30不重新定义文档12的P0–P4阈值。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
 
@@ -156,8 +159,9 @@ MLX peak从`18,303,578,036`降至`11,693,804,356` bytes，PNG byte-exact；真�
 
 Public preset 控制面基础已提交到`63b73d9`：schema-v2 selector、request/profile 合并、plan-only 报告、空 production
 catalog、host resolver、metadata-only options C ABI、Swift v2/options 类型，以及 active selector 在普通/candidate
-generate/prepare 中的早期 fail-closed gate。该提交已完成 native 与 Swift/App 编译，
-`make test-streaming-contract` 和 `make test-streaming-host` 通过；production catalog 仍为空，App 尚未接入，
-engine resolver/authority/`generate_resolved` 和整请求档位证据均未实现。下一步按
-[28](28-public-runtime-code-design.md)完成 exact runtime，再按[29](29-public-implementation-and-acceptance-plan.md)
-建设工具、模型证据和 reviewed records；当前仍不可 public 执行。
+generate/prepare 中的早期 fail-closed gate。当前工作树又加入 typed canonical encoder、完整 record identity、
+resolver/authority/resolved request 和默认拒绝的 session public hooks；resolver host test 与 native-only build 已通过。
+这些 R1/R2 增量尚未形成阶段提交，exact engine C ABI、public generate、Swift/App 事务、四模型 override、校准工具和 reviewed records
+仍未完成。下一步按[28](28-public-runtime-code-design.md)和[30](30-public-streaming-detailed-integration.md)完成 exact runtime，
+再按[29](29-public-implementation-and-acceptance-plan.md)与[31](31-public-streaming-config-calibration-runbook.md)建设工具、
+模型证据和 reviewed records；production catalog 仍为空，当前不可 public 执行。

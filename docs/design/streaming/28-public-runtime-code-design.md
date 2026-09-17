@@ -1,12 +1,14 @@
 # 28 · Public Streaming Runtime 代码落地设计
 
-[目录](README.md) · [端到端蓝图](27-public-streaming-delivery-blueprint.md) · [代码原则](25-public-preset-implementation-spec.md) · [实施与发布验收](29-public-implementation-and-acceptance-plan.md)
+[目录](README.md) · [端到端蓝图](27-public-streaming-delivery-blueprint.md) · [代码原则](25-public-preset-implementation-spec.md) · [实施与发布验收](29-public-implementation-and-acceptance-plan.md) · [详细集成规格](30-public-streaming-detailed-integration.md)
 
-日期：2026-09-17。分支：`feat/stream`。已提交控制面基线：`63b73d9`；设计基线：`a76c414`。
+日期：2026-09-17。分支：`feat/stream`。已提交控制面基线：`63b73d9`；设计基线：`f7bf60f`。
 
-状态：**下一阶段可编码规格**。本文把文档 25/27 中的原则收敛为类型、调用顺序、文件修改点、所有权和错误合同。
-它不表示这些接口已经实现，也不授予任何模型 public 执行资格。当前 production catalog 仍是
-`tc-streaming-catalog-empty-v1`，active selector 的 generate/prepare 仍会在 GPU 锁和 session 调用前拒绝。
+状态：**R1/R2 实现中，R3 及模型发布尚未完成**。本文把文档 25/27 中的原则收敛为类型、调用顺序、文件修改点、
+所有权和错误合同。当前工作树已经出现 canonical encoder、扩展 catalog、resolver、authority、resolved request 和默认拒绝的
+session hooks，但 exact engine C ABI、public generate、Swift/App 事务、四模型 public override 和 reviewed records 仍未实现。
+本文不授予任何模型 public 执行资格。production catalog 继续为空，active selector 的 generate/prepare 仍会在 GPU 锁和 session
+调用前拒绝。
 
 本文冻结的核心实现选择是：
 

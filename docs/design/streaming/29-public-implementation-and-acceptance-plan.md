@@ -1,6 +1,6 @@
 # 29 · Public Streaming 实施、实验与验收计划
 
-[目录](README.md) · [Runtime 代码设计](28-public-runtime-code-design.md) · [档位产品语义](23-public-memory-tier-presets.md) · [候选探索](24-memory-tier-exploration-and-acceptance.md) · [发布验收](26-public-preset-acceptance-and-release.md)
+[目录](README.md) · [Runtime 代码设计](28-public-runtime-code-design.md) · [详细集成规格](30-public-streaming-detailed-integration.md) · [配置与校准手册](31-public-streaming-config-calibration-runbook.md) · [档位产品语义](23-public-memory-tier-presets.md) · [候选探索](24-memory-tier-exploration-and-acceptance.md) · [发布验收](26-public-preset-acceptance-and-release.md)
 
 日期：2026-09-17。分支：`feat/stream`。当前控制面提交：`63b73d9`。
 
@@ -15,18 +15,20 @@
 
 ## 1. 当前真实状态（必须先对齐）
 
-截至 `63b73d9`：
+已提交基线仍是 `63b73d9`；当前工作树另有 R1/R2 增量，尚未形成阶段提交：
 
 | 项目 | 状态 | 证据/限制 |
 |---|---|---|
 | selector schema v2 | 已提交 | parser、profile merge、五档 target、disabled/preset 语义 |
-| production catalog | 已提交但为空 | `tc-streaming-catalog-empty-v1`，故意 fail-closed |
-| host resolver skeleton | 已提交 | margin、过滤、确定排序、fixture 测试 |
+| production catalog | 结构扩展中且 production 仍为空 | 工作树已加入完整 source/workload/runtime/device/plan/calibration/performance/release 字段；仍故意 fail-closed |
+| canonical identity | 工作树实现中 | typed length-prefix encoder、record/source/runtime/resolution digest；跨语言 golden 尚缺 |
+| host resolver/authority | 工作树实现中 | select/authorize、internal-only authority、stale/source/layout/device 检查；engine 尚未接入 |
+| session public hooks | 工作树实现中 | probe/compile/generate_resolved 默认拒绝；四模型尚未 override |
 | options C ABI | 已提交 | metadata-only、tentative、无 artifact exact identity |
 | Swift v2 类型 | 已提交 | 可编译骨架，未完成 semantic parity/job envelope |
 | unresolved selector gate | 已提交 | generate/prepare 在 GPU 锁、DeviceLease、session 前拒绝 |
-| exact engine resolve | 未实现 | 无 `tc_engine_resolve_streaming_json`、authority、snapshot |
-| public generate route | 未实现 | 无 `generate_resolved`；四模型仍 private/candidate |
+| exact engine resolve | 未实现 | 无 `tc_engine_resolve_streaming_json`，tc_engine 尚无 model/root identity |
+| public generate route | 未实现 | engine 尚未调用 `generate_resolved`；四模型仍 private/candidate |
 | App 高级开关 | 未实现 | 无 `StreamingChoice`/OptionsStore/picker |
 | calibration 工具链 | 未实现 | 无 fresh-process tree sampler/catalog builder |
 | reviewed records | 未实现 | 没有任何模型/target 可公开 |
