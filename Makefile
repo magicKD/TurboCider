@@ -4,7 +4,7 @@ LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3.11))
 PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),python3.11)
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
-.PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-source-identity test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults
+.PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-source-identity test-streaming-source-lease test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -22,6 +22,7 @@ help:
 	@echo 'make test-streaming-metal          Verify synthetic GPU slots (requires Metal access)'
 	@echo 'make test-streaming-campaign       Verify CPU-only ABBA campaign runner/verifier'
 	@echo 'make test-streaming-source-identity Verify source/build provenance capture'
+	@echo 'make test-streaming-source-lease    Verify fd lease, mutation and value snapshot contracts'
 	@echo 'make test-streaming-audit          Verify audit-only counters and release symbol isolation'
 	@echo 'make test-streaming-pager          Verify sparse MLX resident/slot pager failure contracts'
 	@echo 'make test-ltx-streaming-lifecycle MODEL=/path OUTPUT=/path  Opt-in real LTX exact lifecycle test'
@@ -89,6 +90,7 @@ test:
 # focused targets. GPU tests may report SKIP when Metal access is unavailable.
 test-streaming-host:
 	@"$(PYTHON)" -B tests/native/test_streaming_layout.py
+	@$(MAKE) test-streaming-source-lease
 	@"$(PYTHON)" -B tests/native/test_streaming_preset_resolver.py
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_layout.py
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_descriptor.py
@@ -112,6 +114,8 @@ test-streaming-campaign:
 	@"$(PYTHON)" -B tests/native/test_streaming_campaign_verifier.py
 test-streaming-source-identity:
 	@"$(PYTHON)" -B tests/native/test_streaming_source_identity.py
+test-streaming-source-lease:
+	@"$(PYTHON)" -B tests/native/test_streaming_source_lease.py
 test-streaming-audit:
 	@"$(PYTHON)" -B tests/native/test_streaming_audit.py
 test-ltx-streaming-lifecycle:

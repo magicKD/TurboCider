@@ -3,13 +3,17 @@
 #include "../../native/runtime/streaming/public_result.hpp"
 
 #include <cassert>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <unistd.h>
 
 using namespace tc;
 using namespace tc::streaming;
 
 namespace {
+
+std::shared_ptr<const SourceLease> test_lease;
 
 std::string digest(char value) {
     return std::string(64, value);
@@ -33,7 +37,9 @@ StreamingConfig config(uint32_t prefix = 14) {
 }
 
 PresetSourceIdentity source() {
-    return {"original-bf16", "safetensors-bf16", digest('a'), digest('b')};
+    assert(test_lease);
+    return {"original-bf16", "safetensors-bf16", digest('a'),
+            std::string(test_lease->digest())};
 }
 
 PresetRuntimeIdentity runtime() {
@@ -129,6 +135,7 @@ class Probe final : public ModelStreamingProbe {
     PresetSourceIdentity source_value = source();
     PresetWorkload workload_value = workload();
     PresetRuntimeIdentity runtime_value = runtime();
+    std::shared_ptr<const SourceLease> lease_value = test_lease;
 
     std::string_view model_id() const noexcept override {
         return workload_value.model;
@@ -145,6 +152,9 @@ class Probe final : public ModelStreamingProbe {
     std::string_view component_policy_revision() const noexcept override {
         return "zimage-components-v1";
     }
+    const SourceLease *source_lease() const noexcept override {
+        return lease_value.get();
+    }
 };
 
 class Snapshot final : public ModelStreamingSnapshot {
@@ -154,6 +164,7 @@ class Snapshot final : public ModelStreamingSnapshot {
     Descriptor descriptor_value;
     Layout layout_value;
     std::string component = "zimage-components-v1";
+    std::shared_ptr<const SourceLease> lease_value = test_lease;
     mutable uint32_t source_revalidations = 0;
     mutable bool source_valid = true;
 
@@ -196,6 +207,9 @@ class Snapshot final : public ModelStreamingSnapshot {
     }
     std::string_view component_policy_revision() const noexcept override {
         return component;
+    }
+    const SourceLease *source_lease() const noexcept override {
+        return lease_value.get();
     }
     void revalidate_source() const override {
         ++source_revalidations;
@@ -274,6 +288,20 @@ void rejects(Function &&function, const char *message) {
 } // namespace
 
 int main() {
+    const auto fixture_root = std::filesystem::temp_directory_path() /
+        ("tc-streaming-preset-resolver-" + std::to_string(::getpid()));
+    std::filesystem::create_directories(fixture_root);
+    const auto fixture_path = fixture_root / "model.safetensors";
+    {
+        std::ofstream out(fixture_path, std::ios::binary);
+        out << "resolver-source-fixture";
+    }
+    SourceFileIdentity fixture_source;
+    fixture_source.logical_id = "model";
+    fixture_source.path = fixture_path;
+    test_lease = SourceLease::capture(
+        std::vector<SourceFileIdentity>{std::move(fixture_source)});
+
     assert(streaming_target_margin_bytes(8 * gib) == 858993460ull);
     assert(streaming_target_margin_bytes(10 * gib) == gib);
     assert(supported_streaming_target(12 * gib));
@@ -348,6 +376,24 @@ int main() {
     assert(authorized.resolution_digest.size() == 64);
     assert(authorized.authority->matches(
         authorized.record, snapshot, authorized.device));
+
+    Probe missing_lease_probe;
+    missing_lease_probe.lease_value.reset();
+    rejects([&] {
+        (void)PublicPresetResolver::select(
+            selector(10 * gib), missing_lease_probe, device(), catalog);
+    }, "streaming_source_lease_required");
+
+    auto different_generation = SourceLease::open_and_verify(
+        test_lease->descriptor());
+    assert(different_generation->digest() == test_lease->digest());
+    assert(different_generation->generation() != test_lease->generation());
+    Snapshot split_lease_snapshot(selected.record.plan.layout_digest);
+    split_lease_snapshot.lease_value = different_generation;
+    rejects([&] {
+        (void)PublicPresetResolver::authorize(
+            selected, probe, split_lease_snapshot, device());
+    }, "streaming_source_lease_mismatch");
 
     auto replay = authorized.exact_selector;
     replay.expected_resolution_digest = digest('0');
@@ -525,4 +571,5 @@ int main() {
                  "deterministic rank, coordinator/provider, internal "
                  "authority, source revalidation, actual-plan/drain and "
                  "device/calibration/revocation fail-closed\n";
+    std::filesystem::remove_all(fixture_root);
 }

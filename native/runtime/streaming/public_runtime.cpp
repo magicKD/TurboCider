@@ -276,6 +276,21 @@ void PublicStreamingCoordinator::revalidate(
     require(execution.probe != nullptr &&
                 execution.model_snapshot != nullptr,
             "streaming_authority_mismatch");
+    const auto *probe_lease = execution.probe->source_lease();
+    const auto *snapshot_lease = execution.model_snapshot->source_lease();
+    require(probe_lease != nullptr && snapshot_lease != nullptr,
+            "streaming_source_lease_required");
+    require(probe_lease == snapshot_lease &&
+                probe_lease->generation() != 0 &&
+                probe_lease->digest() ==
+                    execution.probe->source_identity()
+                        .source_snapshot_digest &&
+                snapshot_lease->digest() ==
+                    execution.model_snapshot->source_identity()
+                        .source_snapshot_digest,
+            "streaming_source_lease_mismatch");
+    snapshot_lease->revalidate_paths();
+    snapshot_lease->revalidate_open_files();
     execution.model_snapshot->revalidate_source();
     auto catalog = catalog_provider_.snapshot();
     require(catalog != nullptr, "streaming_catalog_unavailable");

@@ -55,7 +55,8 @@ SOURCES=(
  native/runtime/streaming/canonical_encoding.cpp native/runtime/streaming/preset_catalog.cpp
  native/runtime/streaming/catalog_provider.cpp native/runtime/streaming/resolved_request.cpp
  native/runtime/streaming/preset_resolver.cpp native/runtime/streaming/public_runtime.cpp
- native/runtime/streaming/public_result.cpp
+ native/runtime/streaming/public_result.cpp native/runtime/streaming/source_lease.cpp
+ native/runtime/streaming/value_probe.cpp
  native/runtime/streaming/slot_pool.cpp native/runtime/streaming/io_executor.cpp native/runtime/streaming/context.cpp
  native/runtime/streaming/mlx_weight_pager.cpp
  native/runtime/streaming/c_bridge.cpp native/runtime/streaming/audit.cpp

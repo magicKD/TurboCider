@@ -94,9 +94,17 @@ void verify_and_attach_public_streaming_result(
                  "slot bundle count differs");
     actual_check(actual.refill_worker_count == stage.workers,
                  "refill worker count differs");
-    actual_check(actual.source_lease_verified,
-                 "source lease was not revalidated");
     actual_check(actual.drained, "adapter did not report a completed drain");
+    const auto *probe_lease = execution.probe->source_lease();
+    const auto *snapshot_lease = execution.model_snapshot->source_lease();
+    actual_check(probe_lease != nullptr && snapshot_lease != nullptr,
+                 "missing source lease");
+    actual_check(probe_lease == snapshot_lease &&
+                     probe_lease->generation() != 0,
+                 "source lease generation differs");
+    snapshot_lease->revalidate_after_drain();
+    actual_check(actual.source_lease_verified,
+                 "adapter did not use the revalidated source lease");
 
     PublicStreamingSelectionMetrics metrics;
     metrics.target_request_memory_bytes =

@@ -15,6 +15,42 @@ void require_resolution(bool value, const std::string &code) {
     if (!value) resolution_error(code);
 }
 
+const SourceLease &validated_probe_lease(
+        const ModelStreamingProbe &probe) {
+    const auto *lease = probe.source_lease();
+    require_resolution(lease != nullptr,
+                       "streaming_source_lease_required");
+    require_resolution(lease->generation() != 0 &&
+                           lease->file_count() != 0 &&
+                           !lease->digest().empty(),
+                       "streaming_source_lease_invalid");
+    require_resolution(
+        lease->digest() == probe.source_identity().source_snapshot_digest,
+        "artifact_changed");
+    return *lease;
+}
+
+const SourceLease &validated_source_chain(
+        const ModelStreamingProbe &probe,
+        const ModelStreamingSnapshot &snapshot) {
+    const auto &probe_lease = validated_probe_lease(probe);
+    const auto *snapshot_lease = snapshot.source_lease();
+    require_resolution(snapshot_lease != nullptr,
+                       "streaming_source_lease_required");
+    require_resolution(snapshot_lease == &probe_lease,
+                       "streaming_source_lease_mismatch");
+    require_resolution(snapshot_lease->generation() ==
+                           probe_lease.generation() &&
+                           snapshot_lease->generation() != 0,
+                       "streaming_source_lease_mismatch");
+    require_resolution(snapshot_lease->digest() == probe_lease.digest() &&
+                           snapshot_lease->digest() ==
+                               snapshot.source_identity()
+                                   .source_snapshot_digest,
+                       "artifact_changed");
+    return *snapshot_lease;
+}
+
 } // namespace
 
 std::string streaming_source_identity_digest(
@@ -128,6 +164,7 @@ SelectedStreamingPreset PublicPresetResolver::select(
     require_resolution(
         probe.workload_identity().device_class == device.device_class,
         "unvalidated_device");
+    (void)validated_probe_lease(probe);
 
     PresetResolveQuery query;
     query.source = probe.source_identity();
@@ -175,6 +212,7 @@ ResolvedStreamingSelection PublicPresetResolver::authorize(
                        "streaming_actual_plan_mismatch");
     require_resolution(snapshot.layout().materializations_complete,
                        "streaming_source_identity_incomplete");
+    const auto &source_lease = validated_source_chain(probe, snapshot);
 
     const auto digest = resolution_digest(record, probe, snapshot, device);
     if (selected.requested_selector.expected_resolution_digest)
@@ -202,7 +240,8 @@ ResolvedStreamingSelection PublicPresetResolver::authorize(
             streaming_runtime_identity_digest(snapshot.runtime_identity()),
             snapshot.layout().digest,
             std::string(snapshot.component_policy_revision()),
-            streaming_device_identity_digest(device), digest));
+            streaming_device_identity_digest(device),
+            source_lease.generation(), digest));
     return {record, selected.requested_selector, exact, device, digest,
             std::move(authority)};
 }

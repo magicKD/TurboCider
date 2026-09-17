@@ -35,6 +35,7 @@ def main():
                 str(ROOT / "native/runtime/streaming/preset_catalog.cpp"),
                 str(ROOT / "native/runtime/streaming/catalog_provider.cpp"),
                 str(ROOT / "native/runtime/streaming/resolved_request.cpp"),
+                str(ROOT / "native/runtime/streaming/source_lease.cpp"),
                 str(ROOT / "native/runtime/streaming/preset_resolver.cpp"),
                 str(ROOT / "native/runtime/streaming/public_request_validation.cpp"),
                 str(ROOT / "native/runtime/streaming/public_runtime.cpp"),
