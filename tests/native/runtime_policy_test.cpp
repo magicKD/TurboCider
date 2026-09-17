@@ -9,29 +9,65 @@
 
 int main() {
     using namespace tc;
+    const auto &optimized = device_optimizations("Apple M5 Pro", 24ull << 30);
+    assert(std::string_view(optimized.id) == "m5pro24-v1");
+    assert(optimized.z_image_suffix_streaming && optimized.z_image_hybrid_segments &&
+           optimized.z_image_memory_lifecycle && optimized.z_image_smallest_partition &&
+           optimized.external_automatic_partitions && optimized.coreml_output_copy);
+    for (const auto &device : std::vector<DeviceInfo>{
+             {"Apple M4 Pro", 24ull << 30}, {"Apple M4 Pro", 48ull << 30},
+             {"Apple M4 Max", 64ull << 30}, {"Apple M5", 24ull << 30},
+             {"Apple M5 Max", 24ull << 30}, {"Apple M5 Pro", 48ull << 30},
+             {"Apple M5 Pro", (24ull << 30) - 1}, {"unavailable", 0}}) {
+        const auto &legacy = device.optimizations();
+        assert(std::string_view(legacy.id) == "legacy");
+        assert(!legacy.z_image_suffix_streaming && !legacy.z_image_hybrid_segments &&
+               !legacy.z_image_memory_lifecycle && !legacy.z_image_smallest_partition &&
+               !legacy.external_automatic_partitions && !legacy.coreml_output_copy);
+    }
     Request request;
     assert(hybrid_case(request, 1044, "Apple M4 Pro", 48ull << 30));
     assert(hybrid_case(request, 1044, "Apple M4 Max", 64ull << 30));
+    const auto *m5 = hybrid_case(request, 1044, "Apple M5 Pro", 24ull << 30);
+    assert(m5 && m5->bucket == 1088);
+    assert(has_hybrid_measurement(request.model, "Apple M5 Pro", 24ull << 30));
+    assert(hybrid_partition_matches(*m5, 9216, 0, 6144));
+    assert(!hybrid_partition_matches(*m5, 9216, 0, 3072));
+    assert(!hybrid_partition_matches(*m5, 9216, 0, 9216));
+    assert(!hybrid_partition_matches(*m5, 9216, 1, 6144));
+    assert(!hybrid_partition_matches(*m5, 10240, 0, 6144));
+    assert(!hybrid_case(request, 1024, "Apple M5 Pro", 24ull << 30));
+    assert(!hybrid_case(request, 1089, "Apple M5 Pro", 24ull << 30));
+    assert(!hybrid_case(request, 1044, "Apple M5 Pro", 48ull << 30));
+    assert(!hybrid_case(request, 1044, "Apple M5", 24ull << 30));
+    assert(!hybrid_case(request, 1044, "Apple M5 Max", 64ull << 30));
     assert(!hybrid_case(request, 1089, "Apple M4 Pro", 48ull << 30));
     assert(!hybrid_case(request, 1044, "Apple M3", 48ull << 30));
     assert(!hybrid_case(request, 1044, "Apple M4 Pro", 24ull << 30));
     request.width = request.height = 1024;
+    assert(!hybrid_case(request, 4116, "Apple M5 Pro", 24ull << 30));
     assert(hybrid_case(request, 4116, "Apple M4 Pro", 48ull << 30)->bucket == 4160);
     assert(!hybrid_case(request, 4161, "Apple M4 Pro", 48ull << 30));
     request.width = request.height = 256;
     assert(!hybrid_case(request, 276, "Apple M4 Pro", 48ull << 30));
     request.width = request.height = 512;
     request.operation = "image.transform";
+    assert(!hybrid_case(request, 1044, "Apple M5 Pro", 24ull << 30));
     assert(!hybrid_case(request, 1044, "Apple M4 Pro", 48ull << 30));
     request.operation = "image.generate"; request.steps = 1;
+    assert(!hybrid_case(request, 1044, "Apple M5 Pro", 24ull << 30));
     assert(!hybrid_case(request, 1044, "Apple M4 Pro", 48ull << 30));
     request.steps = 4; request.residency = "component_staged";
+    assert(!hybrid_case(request, 1044, "Apple M5 Pro", 24ull << 30));
     assert(!hybrid_case(request, 1044, "Apple M4 Pro", 48ull << 30));
     request.residency = "resident";
     request.loras.push_back({"adapter.safetensors", 1.f, "transformer"});
+    assert(!hybrid_case(request, 1044, "Apple M5 Pro", 24ull << 30));
     assert(!hybrid_case(request, 1044, "Apple M4 Max", 64ull << 30));
     request.loras.clear();
     request.model = "z-image-turbo"; request.width = request.height = 1024; request.steps = 9;
+    assert(!has_hybrid_measurement(request.model, "Apple M5 Pro", 24ull << 30));
+    assert(!hybrid_case(request, 4128, "Apple M5 Pro", 24ull << 30));
     assert(hybrid_case(request, 4128, "Apple M4 Max", 64ull << 30));
     assert(!hybrid_case(request, 4160, "Apple M4 Max", 64ull << 30));
     request.model = "flux2-klein-4b"; request.width = request.height = 512; request.steps = 4;

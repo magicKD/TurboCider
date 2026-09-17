@@ -3,6 +3,15 @@ import Darwin
 
 /// Bounded local discovery. Never walks a home directory or downloads artifacts.
 struct AccelerationDiscovery {
+    // Consume the native device policy so App and CLI share one optimization
+    // whitelist. Old engines or unknown flags conservatively keep legacy behavior.
+    static func optimizationEnabled(_ name: String, systemJSON: String = NativeEngine.system()) -> Bool {
+        guard let data = systemJSON.data(using: .utf8),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let profile = value["optimization_profile"] as? [String: Any]
+        else { return false }
+        return profile[name] as? Bool ?? false
+    }
     private static func fileIdentity(_ url: URL) -> (bytes: UInt64, inode: UInt64, device: Int32)? {
         // Foundation attributesOfItem also queries extended attributes. Cache
         // discovery only needs stat fields; a file-provider getxattr can stall.
@@ -83,6 +92,11 @@ struct AccelerationDiscovery {
                 mlpWidth == 9216 && start == 0 && end == 9216 &&
                 (bucket == nil || bucket == 1088 || bucket == 4160)
         }
+        if gpu == "Apple M5 Pro" && memory == 24 * 1024 * 1024 * 1024 {
+            return modelID == "flux2-klein-4b" &&
+                mlpWidth == 9216 && start == 0 && end == 6144 &&
+                (bucket == nil || bucket == 1088)
+        }
         return false
     }
     static func automaticBucket(modelID: String, operation: String,
@@ -105,7 +119,8 @@ struct AccelerationDiscovery {
                      enforceAutomaticPolicy: Bool = false,
                      modelID: String = "flux2-klein-4b",
                      loras: [StudioLoRA] = [], knownManifests: [String] = [],
-                     requireCompiled: Bool = true) -> Match? {
+                     requireCompiled: Bool = true,
+                     preferSmallestRows: Bool = false) -> Match? {
         guard !modelPath.isEmpty else { return nil }
         // Adapter-bound partitions remain explicit until each LoRA geometry
         // has its own repeated warm end-to-end validation.
@@ -130,8 +145,14 @@ struct AccelerationDiscovery {
         let fm = FileManager.default
         let appCache = cache ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("TurboCiderNative/cache/coreml")
         var candidates: [URL] = []
-        if !preferred.isEmpty, !enforceAutomaticPolicy || URL(fileURLWithPath: preferred).resolvingSymlinksInPath().path.hasPrefix(appCache.resolvingSymlinksInPath().path + "/") { candidates.append(URL(fileURLWithPath: preferred)) }
-        if !enforceAutomaticPolicy {
+        // Registered/offline-compiled partitions can live outside the App cache.
+        // Automatic eligibility still requires the hardware, geometry, checkpoint,
+        // LoRA and compilation checks below; a registration alone is insufficient.
+        let allowExternal = !enforceAutomaticPolicy || optimizationEnabled("external_automatic_partitions")
+        if !preferred.isEmpty, allowExternal || URL(fileURLWithPath: preferred).resolvingSymlinksInPath().path.hasPrefix(appCache.resolvingSymlinksInPath().path + "/") {
+            candidates.append(URL(fileURLWithPath: preferred))
+        }
+        if allowExternal {
             candidates += knownManifests.map { URL(fileURLWithPath: $0) }
             for item in LibraryANEPartition.registered(modelID: modelID) {
                 candidates.append(URL(fileURLWithPath: item.path))
@@ -204,6 +225,26 @@ struct AccelerationDiscovery {
                                  rows: selectedRows, mlpWidth: mlpWidth,
                                  aneMLPStart: aneMLPStart, aneMLPEnd: aneMLPEnd))
         }
-        return matches.first { $0.manifest == preferred } ?? matches.min { $0.rows < $1.rows }
+        let preferredMatch = matches.first { $0.manifest == preferred }
+        guard preferSmallestRows else {
+            return preferredMatch ?? matches.min { $0.rows < $1.rows }
+        }
+        // A previous 1024 image must not force a 512 request to pad to 4128
+        // rows when an equivalent 1120-row partition is available. Preserve
+        // the selected MLP channel split; changing image size should not also
+        // change the user's GPU/ANE division of work.
+        let compatible = preferredMatch.map { selected in
+            matches.filter {
+                $0.mlpWidth == selected.mlpWidth &&
+                $0.aneMLPStart == selected.aneMLPStart && $0.aneMLPEnd == selected.aneMLPEnd
+            }
+        } ?? matches
+        return compatible.min {
+            if $0.rows != $1.rows { return $0.rows < $1.rows }
+            if ($0.manifest == preferred) != ($1.manifest == preferred) {
+                return $0.manifest == preferred
+            }
+            return $0.manifest < $1.manifest
+        }
     }
 }

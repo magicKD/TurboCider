@@ -60,6 +60,11 @@ struct BlockResidencyMetrics {
     uint64_t request_bytes_loaded = 0, request_slot_allocations = 0;
     uint64_t request_slot_refills = 0;
     double request_load_seconds = 0, request_wait_seconds = 0;
+    // Z-Image hybrid streaming: compact GPU suffix, prepared once per stream.
+    int mlp_prefix_channels = 0;
+    uint64_t suffix_pack_bytes = 0;
+    uint64_t request_pack_read_bytes = 0, request_pack_write_bytes = 0;
+    double request_pack_seconds = 0;
 };
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;

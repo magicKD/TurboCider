@@ -454,6 +454,11 @@ static NSDictionary *to_dictionary(const BlockResidencyMetrics &m) {
         @"request_slot_refills" : @(m.request_slot_refills),
         @"request_load_seconds" : @(m.request_load_seconds),
         @"request_wait_seconds" : @(m.request_wait_seconds),
+        @"mlp_prefix_channels" : @(m.mlp_prefix_channels),
+        @"suffix_pack_bytes" : @(m.suffix_pack_bytes),
+        @"request_pack_read_bytes" : @(m.request_pack_read_bytes),
+        @"request_pack_write_bytes" : @(m.request_pack_write_bytes),
+        @"request_pack_seconds" : @(m.request_pack_seconds),
     };
 }
 RunResult native_run_result(NSDictionary *value, const Request &request,

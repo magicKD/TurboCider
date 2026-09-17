@@ -44,6 +44,16 @@ def plan(r):
     return status,json.loads(a) if a else None,b
 
 class ContractTests(unittest.TestCase):
+    def test_device_optimization_profile(self):
+        system = json.loads(consume(C.c_void_p(lib.tc_system_json())))
+        expected = system['gpu'] == 'Apple M5 Pro' and system['physical_memory_bytes'] == 24 << 30
+        profile = system['optimization_profile']
+        self.assertEqual(profile['id'], 'm5pro24-v1' if expected else 'legacy')
+        for flag in ['z_image_suffix_streaming', 'z_image_hybrid_segments',
+                     'z_image_memory_lifecycle', 'z_image_smallest_partition',
+                     'external_automatic_partitions', 'coreml_output_copy']:
+            self.assertIs(profile[flag], expected)
+
     def test_z_image_streaming_contract(self):
         request = dict(model='z-image-turbo', operation='image.generate',
                        prompt='A red fox', width=512, height=512, frames=1,
@@ -53,6 +63,33 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(code, 0, error)
         self.assertEqual(result['residency'], 'streamed')
         self.assertEqual(result['memory_budget_bytes'], 10 << 30)
+        hybrid = {**request, 'execution': 'gpu_ane', 'allow_approximation': True,
+                  'ane_manifest': '/tmp/z-image-compiled.json'}
+        code, result, error = plan(hybrid)
+        system = json.loads(consume(C.c_void_p(lib.tc_system_json())))
+        if system['optimization_profile']['z_image_suffix_streaming']:
+            self.assertEqual(code, 0, error)
+            self.assertEqual(result['execution'], 'gpu_ane_experimental')
+        else:
+            self.assertNotEqual(code, 0)
+            self.assertIn('M5 Pro 24 GiB', error)
+        # A matching user profile selects execution parameters but cannot
+        # enable device optimizations that the native whitelist rejects.
+        with tempfile.TemporaryDirectory() as folder:
+            profile = Path(folder) / 'profile.json'
+            profile.write_text(json.dumps({
+                'schema_version': 1, 'enabled': True,
+                'match': {'gpu_name': system['gpu'], 'memory_bytes': system['physical_memory_bytes']},
+                'models': {'z-image-turbo': {
+                    'policy': 'gpu_ane', 'residency': 'streamed', 'allow_approximation': True,
+                    'ane_manifest': '/tmp/z-image-compiled.json', 'memory_budget_bytes': 10 << 30}}
+            }))
+            profile_code, _, profile_error = plan({**request, 'profile': str(profile)})
+            self.assertEqual(profile_code == 0,
+                             system['optimization_profile']['z_image_suffix_streaming'], profile_error)
+        self.assertNotEqual(plan({**hybrid, 'allow_approximation': False})[0], 0)
+        self.assertNotEqual(plan({**hybrid, 'loras': [dict(
+            path='/tmp/style.safetensors', strength=1, role='transformer')]})[0], 0)
         for change in [dict(execution='auto'), dict(memory_budget_bytes=1 << 30),
                        dict(streaming_offload=True), dict(residency='component_staged'),
                        dict(loras=[dict(path='/tmp/style.safetensors', strength=1, role='transformer')])]:
@@ -1854,15 +1891,13 @@ class ContractTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('export_qwen3_contract', exporter_path)
         exporter = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(exporter)
-        z_source = exporter.QwenSource(ROOT/'models/Tongyi-MAI-Z-Image-Turbo/text_encoder')
-        self.assertEqual(z_source.checkpoint.name, 'model.safetensors')
-        self.assertIsNone(z_source.weight_map)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             model = root/'model'; model.mkdir()
             (model/'model.safetensors').write_bytes(b'fixture')
             source = exporter.QwenSource(model)
             self.assertEqual(source.checkpoint.name, 'model.safetensors')
+            self.assertIsNone(source.weight_map)
             (model/'model.safetensors').unlink()
             (model/'model.safetensors').symlink_to(root/'outside.safetensors')
             (root/'outside.safetensors').write_bytes(b'outside')

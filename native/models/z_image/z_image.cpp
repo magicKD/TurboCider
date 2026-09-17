@@ -1,4 +1,5 @@
 #include "z_image.hpp"
+#include "block_profile.hpp"
 
 #include "../../media/image.hpp"
 #include "../../platform/apple/platform.hpp"
@@ -19,17 +20,17 @@ constexpr int kHeads = 30;
 constexpr float kVaeScale = 0.3611f;
 constexpr float kVaeShift = 0.1159f;
 
-// Bound unused MLX allocations only during an explicit streaming request.
-// Restore the process-wide setting before another model or resident run starts.
-struct StreamCacheLimit {
+// Small unified-memory machines also need a bounded cache in resident mode.
+// Restore the process-wide setting before another request or model starts.
+struct RequestCacheLimit {
     std::optional<size_t> previous;
-    StreamCacheLimit(bool enabled, size_t limit) {
+    RequestCacheLimit(bool enabled, size_t limit) {
         if (enabled) {
             previous = mx::set_cache_limit(limit);
             mx::clear_cache();
         }
     }
-    ~StreamCacheLimit() {
+    ~RequestCacheLimit() {
         if (previous) {
             mx::clear_cache();
             mx::set_cache_limit(*previous);
@@ -365,9 +366,18 @@ make_z_hybrid_gpu_graph(int hidden, int mlp_width, int gpu_mlp_start) {
             "unsupported Z-Image hybrid FFN geometry");
     return mx::compile(
         [hidden, mlp_width, gpu_mlp_start](const std::vector<Tensor> &args) {
-            auto w1 = slice_axis(args[1], 0, gpu_mlp_start, mlp_width);
-            auto w3 = slice_axis(args[2], 0, gpu_mlp_start, mlp_width);
-            auto w2 = slice_axis(args[3], 1, gpu_mlp_start, mlp_width);
+            // Resident weights include the ANE prefix; streamed weights can
+            // already be compact suffixes. Never slice the latter twice.
+            const auto width = args[1].shape(0);
+            require((width == mlp_width || width == mlp_width - gpu_mlp_start) &&
+                        args[1].shape() == mx::Shape{width, hidden} &&
+                        args[2].shape() == mx::Shape{width, hidden} &&
+                        args[3].shape() == mx::Shape{hidden, width},
+                    "Z-Image GPU suffix weight geometry mismatch");
+            const int start = width == mlp_width ? gpu_mlp_start : 0;
+            auto w1 = slice_axis(args[1], 0, start, width);
+            auto w3 = slice_axis(args[2], 0, start, width);
+            auto w2 = slice_axis(args[3], 1, start, width);
             auto gate = mx::matmul(args[0], mx::transpose(w1));
             auto up = mx::matmul(args[0], mx::transpose(w3));
             auto value = mx::matmul(silu(gate) * up, mx::transpose(w2));
@@ -509,6 +519,80 @@ Tensor z_compiled_gpu_block(const Tensor &x, const Weights &w, const std::string
          w.at(prefix + ".ffn_norm2.weight")})[0];
 }
 
+std::function<std::vector<Tensor>(const std::vector<Tensor> &)> &z_hybrid_pre_graph() {
+    // Core ML is a graph boundary. Compile the GPU work up to that boundary
+    // together, retaining the BF16 input for the suffix and FP16 for Core ML.
+    // Every weight is an argument, so cached graphs cannot retain another layer
+    // or a previous stream slot's weights.
+    static auto graph = mx::compile([](const std::vector<Tensor> &a) {
+        require(a.size() == 12, "invalid Z-Image hybrid pre-MLP inputs");
+        auto fast_rms = [](const Tensor &x, const Tensor &weight) {
+            return mx::astype(mx::fast::rms_norm(mx::astype(x, mx::float32),
+                                                mx::astype(weight, mx::float32), 1e-5f),
+                              x.dtype());
+        };
+        auto mod = mx::split(mx::expand_dims(mx::matmul(a[2], mx::transpose(a[3])) + a[4], 1), 4, -1);
+        auto input = fast_rms(a[0], a[5]) * (Tensor(1.f, mod[0].dtype()) + mod[0]);
+        auto qkv = mx::split(mx::matmul(input, mx::transpose(a[6])), 3, -1);
+        auto q = fast_rms(heads(qkv[0], kHeads, kHeadDim), a[7]);
+        auto k = fast_rms(heads(qkv[1], kHeads, kHeadDim), a[8]);
+        auto rotated = z_apply_rope_pair(q, k, a[1]);
+        auto attention = mx::matmul(
+            attend(rotated[0], rotated[1], heads(qkv[2], kHeads, kHeadDim), false, {},
+                   !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA")), mx::transpose(a[9]));
+        auto value = a[0] + mx::tanh(mod[1]) * fast_rms(attention, a[10]);
+        auto feed = fast_rms(value, a[11]) * (Tensor(1.f, mod[2].dtype()) + mod[2]);
+        return std::vector<Tensor>{value, feed, mx::tanh(mod[3]), mx::astype(feed, mx::float16)};
+    });
+    return graph;
+}
+
+std::function<std::vector<Tensor>(const std::vector<Tensor> &)> &z_hybrid_post_graph() {
+    static auto graph = mx::compile([](const std::vector<Tensor> &a) {
+        require(a.size() == 6, "invalid Z-Image hybrid post-MLP inputs");
+        // Match the existing order and dtypes, including BF16 rounding before
+        // normalization. The Core ML output remains in its shared FP16 backing.
+        auto feed = a[0] + mx::astype(a[1], a[0].dtype()) * a[5];
+        auto normalized = mx::astype(
+            mx::fast::rms_norm(mx::astype(feed, mx::float32),
+                               mx::astype(a[4], mx::float32), 1e-5f), feed.dtype());
+        return std::vector<Tensor>{a[2] + a[3] * normalized};
+    });
+    return graph;
+}
+
+Tensor z_compiled_hybrid_block(const Tensor &x, const Weights &w, const std::string &prefix,
+                               const Tensor &freqs, const Tensor &temb, HybridSession *hybrid,
+                               int block,
+                               const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> &gpu_graph,
+                               ZBlockProfile &profile) {
+    auto pre = z_hybrid_pre_graph()({x, freqs, temb,
+        w.at(prefix + ".adaLN_modulation.0.weight"), w.at(prefix + ".adaLN_modulation.0.bias"),
+        w.at(prefix + ".attention_norm1.weight"), w.at(prefix + ".attention.qkv.weight"),
+        w.at(prefix + ".attention.q_norm.weight"), w.at(prefix + ".attention.k_norm.weight"),
+        w.at(prefix + ".attention.out.weight"), w.at(prefix + ".attention_norm2.weight"),
+        w.at(prefix + ".ffn_norm1.weight")});
+    if (profile) profile.pre_done({pre[0], pre[2], pre[1]});
+    const int actual_rows = x.shape(1);
+    auto packed = pre[3];
+    if (actual_rows < hybrid->rows)
+        packed = mx::concatenate(
+            {packed, mx::zeros({1, hybrid->rows - actual_rows, 3840}, mx::float16)}, 1);
+    mx::eval({pre[0], pre[1], pre[2], packed});
+    profile.packed();
+    const auto ffn = prefix + ".feed_forward";
+    auto gpu = gpu_graph({pre[1], w.at(ffn + ".w1.weight"),
+                         w.at(ffn + ".w3.weight"), w.at(ffn + ".w2.weight")})[0];
+    mx::async_eval({gpu});
+    profile.submitted(gpu);
+    auto ane = slice_axis(hybrid->predict(block, packed), 1, 0, actual_rows);
+    profile.predicted(gpu);
+    auto result = z_hybrid_post_graph()({gpu, ane, pre[0], pre[2],
+        w.at(prefix + ".ffn_norm2.weight"), Tensor(z_hybrid_output_scale(hybrid), gpu.dtype())})[0];
+    profile.finish(result);
+    return result;
+}
+
 Tensor z_context_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs) {
     auto attention = z_attention(rms(x, w.at(prefix + ".attention_norm1.weight"), 1e-5f),
@@ -522,7 +606,9 @@ Tensor z_context_block(const Tensor &x, const Weights &w, const std::string &pre
 Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                const Tensor &freqs, const Tensor &temb, HybridSession *hybrid,
                int hybrid_block,
-               const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph) {
+                const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph,
+                bool compile_hybrid_segments) {
+    ZBlockProfile profile(prefix, hybrid != nullptr);
     // A LoRA can dequantize only the projections it touches.  Do not infer
     // that the whole block is dense from QKV/w1 alone: Q8 GGUF modulation or
     // the remaining attention/FFN weights may still be packed affine tensors.
@@ -547,9 +633,24 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
         !w.convrot(prefix + ".feed_forward.w2") &&
         !w.quantized(prefix + ".feed_forward.w3") &&
         !w.convrot(prefix + ".feed_forward.w3");
+    if (profile.split_gpu())
+        require(fully_dense && !w.has_runtime_loras(),
+                "Z-Image gpu_split profiling requires dense BF16 weights without runtime LoRA");
+    if (compile_hybrid_segments && hybrid && gpu_graph && fully_dense && x.dtype() == mx::bfloat16 &&
+        !w.has_runtime_loras() && w.has(prefix + ".adaLN_modulation.0.bias") &&
+        !std::getenv("TURBOCIDER_Z_HYBRID_EAGER_SEGMENTS") &&
+        !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") &&
+        !std::getenv("TURBOCIDER_DISABLE_FUSED_RMSNORM") &&
+        !std::getenv("TURBOCIDER_Z_CONVROT_DEBUG") &&
+        !std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE"))
+        return z_compiled_hybrid_block(x, w, prefix, freqs, temb, hybrid, hybrid_block,
+                                      *gpu_graph, profile);
     if (!hybrid && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && fully_dense &&
-        !w.has_runtime_loras())
-        return z_compiled_gpu_block(x, w, prefix, freqs, temb);
+        !w.has_runtime_loras() && !profile.split_gpu()) {
+        auto result = z_compiled_gpu_block(x, w, prefix, freqs, temb);
+        profile.finish(result, true);
+        return result;
+    }
     auto modulation = mx::expand_dims(linear_compat(temb, w, prefix + ".adaLN_modulation.0"), 1);
     if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
         mx::eval({temb, modulation});
@@ -570,6 +671,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                                  w, prefix, freqs);
     auto value = x + gate_msa * rms(attention, w.at(prefix + ".attention_norm2.weight"), 1e-5f);
     auto feed_input = rms(value, w.at(prefix + ".ffn_norm1.weight"), 1e-5f) * scale_mlp;
+    if (profile) profile.pre_done({value, gate_mlp, feed_input});
     if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
         mx::eval({attention, value, feed_input});
         std::fprintf(stderr,
@@ -588,6 +690,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
             packed = mx::concatenate(
                 {packed, mx::zeros({1, hybrid->rows - actual_rows, 3840}, mx::float16)}, 1);
         mx::eval({feed_input, packed});
+        profile.packed();
         const auto ffn = prefix + ".feed_forward";
         const bool dense = !w.quantized(ffn + ".w1") && !w.convrot(ffn + ".w1") &&
                            !w.quantized(ffn + ".w2") && !w.convrot(ffn + ".w2") &&
@@ -598,7 +701,9 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
             : z_hybrid_gpu_suffix(feed_input, w, ffn, hybrid->ane_mlp_end,
                                   hybrid->mlp_width);
         mx::async_eval({gpu});
+        profile.submitted(gpu);
         auto ane = slice_axis(hybrid->predict(hybrid_block, packed), 1, 0, actual_rows);
+        profile.predicted(gpu);
         auto ane_scaled = mx::astype(ane, gpu.dtype()) * Tensor(z_hybrid_output_scale(hybrid), gpu.dtype());
         feed = gpu + ane_scaled;
         if (std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE")) {
@@ -629,6 +734,18 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
             require(gpu_finite && ane_finite && ane_scaled_finite && feed_finite,
                     "nonfinite Z-Image hybrid FFN at block " + std::to_string(hybrid_block));
         }
+    } else if (profile.split_gpu()) {
+        // Diagnostic counterpart to the compiled hybrid suffix, with all MLP
+        // channels. This intentionally bypasses the production full-block graph.
+        static auto full_mlp = mx::compile([](const std::vector<Tensor> &a) {
+            auto gate = mx::matmul(a[0], mx::transpose(a[1]));
+            auto up = mx::matmul(a[0], mx::transpose(a[2]));
+            return std::vector<Tensor>{mx::matmul(silu(gate) * up, mx::transpose(a[3]))};
+        });
+        const auto ffn = prefix + ".feed_forward";
+        feed = full_mlp({feed_input, w.at(ffn + ".w1.weight"),
+                        w.at(ffn + ".w3.weight"), w.at(ffn + ".w2.weight")})[0];
+        profile.full_mlp(feed);
     } else {
         feed = z_ffn(feed_input, w, prefix + ".feed_forward");
     }
@@ -639,6 +756,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                      mx::max(mx::abs(feed)).item<float>());
     }
     auto result = value + gate_mlp * rms(feed, w.at(prefix + ".ffn_norm2.weight"), 1e-5f);
+    profile.finish(result);
     if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
         mx::eval({result});
         const bool finite = mx::all(mx::isfinite(result)).item<bool>();
@@ -724,7 +842,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
                      int height, const Weights &w, const Event &event,
                      std::atomic<bool> &cancelled, HybridSession *hybrid,
                      const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph,
-                     ZImageWeightStream *weight_stream) {
+                     ZImageWeightStream *weight_stream, bool compile_hybrid_segments) {
     if (weight_stream) weight_stream->begin_pass();
     auto patch = z_patchify(latent, caption);
     auto image = linear_compat(patch.image, w, "x_embedder");
@@ -758,7 +876,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     for (int i = 0; i < 2; ++i) {
         checkpoint(cancelled);
         image = z_block(image, w, "noise_refiner." + std::to_string(i), image_freqs, temb,
-                        hybrid, i, gpu_graph);
+                        hybrid, i, gpu_graph, compile_hybrid_segments);
         caption_emb = z_context_block(caption_emb, w,
                                       "context_refiner." + std::to_string(i), caption_freqs);
     }
@@ -769,7 +887,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
         event("z_image_denoise_block", i, 30);
         auto streamed = weight_stream ? weight_stream->acquire(i) : Weights{};
         unified = z_block(unified, weight_stream ? streamed : w, "layers." + std::to_string(i), unified_freqs, temb,
-                          hybrid, 2 + i, gpu_graph);
+                          hybrid, 2 + i, gpu_graph, compile_hybrid_segments);
         // Compiled blocks retain the allocator dependency chain, so pure GPU
         // execution does not need a host synchronization after every one of
         // the 270 main blocks in a 9-step request. The sampler synchronizes at
@@ -859,6 +977,7 @@ ZImage::ZImage(const std::filesystem::path &root)
 ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
                const std::filesystem::path &transformer_checkpoint)
     : root_(root), model_id_(std::move(model_id)), tokenizer_(root / "tokenizer") {
+    optimizations_ = device_info().optimizations();
     auto comfy_text = root / "split_files/text_encoders/qwen_3_4b.safetensors";
     auto comfy_transformer =
         root / "split_files/diffusion_models/z_image_turbo_bf16.safetensors";
@@ -1027,7 +1146,7 @@ void ZImage::unload() {
     mx::clear_cache();
 }
 
-Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic<bool> &cancelled) {
+Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic<bool> &cancelled) try {
     if (text_encoder_.bytes() == 0)
         load_z_component(text_encoder_, text_path_, event, cancelled);
     auto result = components::qwen3_conditioning(
@@ -1037,6 +1156,13 @@ Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic
     text_encoder_.clear();
     mx::clear_cache();
     return result;
+} catch (...) {
+    // An interrupted prompt must not retain Qwen3 alongside the next denoiser.
+    if (optimizations_.z_image_memory_lifecycle) {
+        text_encoder_.clear();
+        mx::clear_cache();
+    }
+    throw;
 }
 
 bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool> &cancelled) {
@@ -1171,6 +1297,7 @@ RunResult ZImage::generate(const Request &r, const Event &event, std::atomic<boo
 RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
                       bool warmup, bool load_only) try {
     auto r = requested;
+    ZProfileRequest profile(r);
     auto begin = Clock::now();
     require(r.model == model_id_, "Z-Image session received a different model id");
     auto plan = make_plan(r);
@@ -1181,22 +1308,36 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     require(r.inputs.empty(), "Z-Image-Turbo currently supports text-to-image only");
     require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
     const bool streamed = r.residency == "streamed";
+    const bool constrained_memory =
+        optimizations_.z_image_memory_lifecycle &&
+        !ResidencyPolicy::for_request(r, device_info().physical_memory).retain_images_during_text;
     const auto budget = r.memory_budget_bytes ? r.memory_budget_bytes :
         std::min<uint64_t>(10ull << 30, device_info().physical_memory / 2);
     // Reserve VAE, temporary activations and allocator cache. This is a planning
     // estimate for the denoiser, not an OS-enforced process memory limit.
     const uint64_t reserve = (3ull << 30) + uint64_t(r.width) * r.height * 2048;
-    const auto configuration = streamed ? std::to_string(budget) + ":" + std::to_string(reserve) : "";
-    const bool prompt_changed = !cached_conditioning_ || cached_prompt_ != r.prompt || cached_dynamic_ != r.dynamic_text;
-    if (configuration != stream_configuration_ || (streamed && prompt_changed)) {
+    // Full GPU weights and compact hybrid weights cannot share stream slots.
+    // Include the manifest so switching partitions also rebuilds the suffix.
+    const auto configuration = streamed ? std::to_string(budget) + ":" + std::to_string(reserve) +
+        (optimizations_.z_image_suffix_streaming ? ":" + r.execution + ":" + r.ane_manifest : "") : "";
+    const bool prompt_changed = !cached_conditioning_ || cached_prompt_ != r.prompt ||
+        cached_dynamic_ != r.dynamic_text || cached_encoder_manifest_ != r.encoder_ane_manifest;
+    if (configuration != stream_configuration_ || ((streamed || constrained_memory) && prompt_changed)) {
         mx::synchronize();
         weight_stream_.reset();
+        // Do not overlap a previous denoiser/Core ML working set with Qwen3
+        // when recomputing conditioning on a small unified-memory machine.
+        if (optimizations_.z_image_memory_lifecycle) {
+            hybrid_.reset();
+            hybrid_gpu_graph_ = {};
+            hybrid_gpu_mlp_start_ = -1;
+        }
         transformer_.clear();
         vae_.clear();
         mx::clear_cache();
         stream_configuration_ = configuration;
     }
-    StreamCacheLimit cache_limit(streamed, r.allocator_cache_bytes);
+    RequestCacheLimit cache_limit(streamed || constrained_memory, r.allocator_cache_bytes);
     mx::reset_peak_memory();
     select_loras(r);
     auto text_start = Clock::now();
@@ -1214,9 +1355,12 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     if (streamed) {
         require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !diffusers_layout_,
                 "Z-Image streaming currently requires the Comfy BF16 checkpoint");
+        require(!hybrid_ || !std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE"),
+                "full-MLP hybrid validation requires resident weights");
         if (!weight_stream_)
             weight_stream_ = std::make_unique<ZImageWeightStream>(
-                transformer_path_, budget, reserve, transformer_, event, cancelled);
+                transformer_path_, budget, reserve, transformer_, event, cancelled,
+                hybrid_ && optimizations_.z_image_suffix_streaming ? hybrid_->ane_mlp_end : 0);
         else weight_stream_->reset_metrics();
     }
     load(event, cancelled);
@@ -1274,6 +1418,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     auto sigmas = z_sigmas(r.width, r.height, r.steps);
     const auto caption = *cached_conditioning_;
     auto dit_start = Clock::now();
+    profile.phase("denoise_begin");
     for (int i = 0; i < r.steps; ++i) {
         checkpoint(cancelled);
         event("denoise", i, r.steps);
@@ -1285,12 +1430,14 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         event("denoise", i + 1, r.steps);
     }
     const double denoise_seconds = std::chrono::duration<double>(Clock::now() - dit_start).count();
+    profile.phase("denoise_end");
     checkpoint(cancelled);
     auto decode_start = Clock::now();
     auto decoded = decode(z, r.width, r.height, event, cancelled);
     dump("z_latent_final", z);
     dump("z_decoded", decoded);
     const double decode_seconds = std::chrono::duration<double>(Clock::now() - decode_start).count();
+    profile.phase("decode_end");
     require(mx::all(mx::isfinite(decoded)).item<bool>(), "nonfinite Z-Image pixels");
     auto pixels = mx::transpose(decoded, {0, 2, 3, 1});
     if (!warmup) {
@@ -1354,7 +1501,8 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
     auto model_input = mx::astype(latent, mx::bfloat16);
     return mx::astype(
         z_transformer(model_input, caption, sigma, int(width), height, transformer_, event,
-                      cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr, weight_stream_.get()),
+                      cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr, weight_stream_.get(),
+                      optimizations_.z_image_hybrid_segments),
         mx::float32);
 }
 

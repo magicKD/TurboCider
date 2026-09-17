@@ -150,14 +150,9 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
             return "gpu: no opted-in compatible local partition";
         }
         auto system = device_info();
-        // Automatic selection is limited to the exact device profile on which
-        // this partition policy was measured. M4 Max uses the 6,144-channel
-        // prefix artifact; the older M4 Pro profile remains valid separately.
-        const bool m4_pro_profile =
-            system.gpu == "Apple M4 Pro" && system.physical_memory == (48ull << 30);
-        const bool m4_max_profile =
-            system.gpu == "Apple M4 Max" && system.physical_memory == (64ull << 30);
-        if (!m4_pro_profile && !m4_max_profile) {
+        // Device and partition geometry come from the same measured case;
+        // adding hardware must not bypass its validated MLP split.
+        if (!has_hybrid_measurement(r.model, system.gpu, system.physical_memory)) {
             hybrid_.reset();
             return "gpu: automatic hybrid policy not validated on this hardware";
         }
@@ -190,15 +185,10 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
                                                       matched ? matched->bucket : 0);
         require(count <= hybrid_->rows, "Core ML token bucket cannot serve this request");
         if (automatic) {
-            auto system = device_info();
-            if (system.gpu == "Apple M4 Max")
-                require(hybrid_->mlp_width == 9216 && hybrid_->ane_mlp_start == 0 &&
-                            hybrid_->ane_mlp_end == 6144,
-                        "M4 Max automatic profile requires the validated 6144-channel ANE prefix");
-            else if (system.gpu == "Apple M4 Pro")
-                require(hybrid_->mlp_width == 9216 && hybrid_->ane_mlp_start == 0 &&
-                            hybrid_->ane_mlp_end == 9216,
-                        "M4 Pro automatic profile requires the validated full ANE MLP partition");
+            require(hybrid_partition_matches(*matched, hybrid_->mlp_width,
+                                              hybrid_->ane_mlp_start, hybrid_->ane_mlp_end),
+                    std::string(matched->id) + " requires the validated " +
+                        std::to_string(matched->ane_mlp_end) + "-channel ANE prefix");
         }
         return automatic ? std::string("gpu_ane: measured case ") + matched->id
                          : "gpu_ane: explicitly selected";

@@ -1,9 +1,13 @@
 #pragma once
 #include "common.hpp"
+#include "../../runtime/device_optimizations.hpp"
 namespace tc {
 struct DeviceInfo {
     std::string gpu;
     uint64_t physical_memory = 0;
+    const DeviceOptimizations &optimizations() const {
+        return device_optimizations(gpu, physical_memory);
+    }
 };
 DeviceInfo device_info();
 struct FluxConfiguration {

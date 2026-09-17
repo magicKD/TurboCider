@@ -125,9 +125,11 @@ struct AccelerationView: View {
         let system = (try? JSONSerialization.jsonObject(with: Data(NativeEngine.system().utf8))) as? [String: Any]
         let gpu = system?["gpu"] as? String
         let memory = (system?["physical_memory_bytes"] as? NSNumber)?.uint64Value
-        let supported = (gpu == "Apple M4 Pro" && memory == 48 * 1024 * 1024 * 1024) ||
-            (gpu == "Apple M4 Max" && memory == 64 * 1024 * 1024 * 1024)
         if let result {
+            let supported = AccelerationDiscovery.automaticPolicyMatches(
+                gpu: gpu ?? "unknown", memory: memory ?? 0,
+                mlpWidth: result.mlpWidth, start: result.aneMLPStart, end: result.aneMLPEnd,
+                modelID: modelID, bucket: result.rows)
             discoveryMessage = supported ? "已发现本机可用分区 · \(result.rows) token · ANE MLP \(result.aneMLPEnd - result.aneMLPStart)/\(result.mlpWidth)；生成时按实际输入复核。" : "已发现本地分区；此机型尚无自动混合策略验证，自动模式使用 GPU。"
             if config.policy == "auto" || config.manifest.isEmpty { update { $0.manifest = result.manifest; $0.sourceManifest = result.source } }
         } else { discoveryMessage = "未发现匹配当前权重的完整编译分区，自动模式使用 GPU。可先预编译或指定本地分区。" }
