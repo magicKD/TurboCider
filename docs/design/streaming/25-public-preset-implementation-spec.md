@@ -2,13 +2,14 @@
 
 [目录](README.md) · [产品与配置](23-public-memory-tier-presets.md) · [候选探索](24-memory-tier-exploration-and-acceptance.md) · [实施验收](26-public-preset-acceptance-and-release.md)
 
-日期：2026-09-17。原始设计源码基线：`7308db3`，runtime 基线 `052265f`；当前文档基线提交：`a76c414`。
-状态：**部分控制面已进入未提交工作树，engine/App/模型执行与档位认证仍待实施**。本文不改变 manual v1、slot 安全协议或 P0–P4 定义。
-当前代码检查、逐PR施工和验收追踪见[27](27-public-streaming-delivery-blueprint.md)。
+日期：2026-09-17。原始设计源码基线：`7308db3`，runtime 基线 `052265f`；控制面提交：`63b73d9`。
+状态：**部分控制面已提交，engine/App/模型执行与档位认证仍待实施**。本文不改变 manual v1、slot 安全协议或 P0–P4 定义。
+当前代码检查和总体追踪见[27](27-public-streaming-delivery-blueprint.md)；实施级对象/API设计见
+[28](28-public-runtime-code-design.md)，逐PR和实机验收计划见[29](29-public-implementation-and-acceptance-plan.md)。
 
 ## 0. 当前工作树检查点和立即阻断项
 
-### 0.1 已进入工作树并已完成编译/host 回归的部分
+### 0.1 已提交并完成编译/host 回归的部分
 
 | 实现 | 真实文件 | 当前能力 |
 |---|---|---|

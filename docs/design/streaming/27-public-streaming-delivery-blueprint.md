@@ -1,10 +1,10 @@
 # 27 · Public Streaming 端到端施工蓝图与验收追踪
 
-[目录](README.md) · [产品语义](23-public-memory-tier-presets.md) · [候选探索](24-memory-tier-exploration-and-acceptance.md) · [代码规格](25-public-preset-implementation-spec.md) · [发布验收](26-public-preset-acceptance-and-release.md)
+[目录](README.md) · [产品语义](23-public-memory-tier-presets.md) · [候选探索](24-memory-tier-exploration-and-acceptance.md) · [代码规格](25-public-preset-implementation-spec.md) · [发布验收](26-public-preset-acceptance-and-release.md) · [代码落地](28-public-runtime-code-design.md) · [实施计划](29-public-implementation-and-acceptance-plan.md)
 
-日期：2026-09-17。分支：`feat/stream`。文档基线提交：`a76c414`。
+日期：2026-09-17。分支：`feat/stream`。设计前置提交：`a76c414`；控制面及本文提交：`63b73d9`。
 
-状态：**实施蓝图及当前工作树审阅记录**。本文不新增另一套配置、scheduler 或验收等级；23 定义产品语义，24/26
+状态：**实施蓝图及已提交控制面审阅记录**。本文不新增另一套配置、scheduler 或验收等级；23 定义产品语义，24/26
 定义实验和发布资格，25 定义接口原则。本文负责把这些要求落实成可按 PR 执行的代码改造、所有权、状态机、测试与交接清单。
 
 当前 production preset catalog 仍为空，App 尚未公开该开关，普通 engine 尚不能执行 public selector。
@@ -39,7 +39,7 @@ Public streaming 的最终形态不是“把 P/G/K/D/Q 暴露给用户”，而�
 
 ## 2. 当前代码事实与完成边界
 
-截至本文审阅时，工作树已有以下未提交实现。它们已通过 `tools/native/build.sh` 的 native 与 Swift/App 编译，
+截至本文审阅时，`63b73d9` 已包含以下实现。它们已通过 `tools/native/build.sh` 的 native 与 Swift/App 编译，
 并通过 `make test-streaming-contract`、`make test-streaming-host`；这只能证明控制面基础和既有框架回归，不能证明 public
 模型可执行、内存档位成立或 App 已可用。
 
@@ -1057,9 +1057,9 @@ fixture builder/verifier；metadata options reason taxonomy。
 
 | 交付 | 代码完成 | Host | App | GPU full | Memory | Performance | Public |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| selector/parser/plan report | 工作树基础 | PASS基础 | NOT_RUN | N/A | N/A | off需P0 | 否 |
-| catalog/resolver skeleton | 工作树基础 | PASS基础 | NOT_RUN | N/A | fixture | N/A | 否 |
-| options C ABI/Swift types | 工作树基础 | 编译/PASS基础 | 未接UI | N/A | N/A | query未测 | 否 |
+| selector/parser/plan report | `63b73d9` | PASS基础 | NOT_RUN | N/A | N/A | off需P0 | 否 |
+| catalog/resolver skeleton | `63b73d9` | PASS基础 | NOT_RUN | N/A | fixture | N/A | 否 |
+| options C ABI/Swift types | `63b73d9` | 编译/PASS基础 | 未接UI | N/A | N/A | query未测 | 否 |
 | unresolved selector fail-closed | 已实现 | PASS contract | N/A | 普通/candidate均早拒绝 | N/A | off仍需P0 | 否 |
 | exact engine resolve/authority | 未实施 | NOT_RUN | NOT_RUN | NOT_RUN | NOT_RUN | NOT_RUN | 否 |
 | App开关/job迁移 | 未实施 | N/A | NOT_RUN | NOT_RUN | N/A | off需P0 | 否 |
@@ -1069,7 +1069,9 @@ fixture builder/verifier；metadata options reason taxonomy。
 | H3 Turbo public records | 未实施 | private descriptor PASS | NOT_RUN | NOT_RUN | NOT_RUN | 旧工程锚点 | 否 |
 | Flux 9B public records | 未实施 | private descriptor PASS | NOT_RUN | NOT_RUN | NOT_RUN | 旧P0/P1锚点 | 否 |
 
-表中“工作树基础”不等于提交、发布或模型资格。每次实现 PR 更新真实路径/命令/结果，不用完成百分比替代证据。
+表中`63b73d9`只表示控制面代码已经提交，不等于发布或模型资格。每次实现 PR 更新真实路径/命令/结果，
+不用完成百分比替代证据。下一阶段的类型和逐文件设计以[28](28-public-runtime-code-design.md)为准，实验和发布执行以
+[29](29-public-implementation-and-acceptance-plan.md)为准。
 
 ## 20. Definition of Done
 

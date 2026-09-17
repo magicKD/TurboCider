@@ -1242,9 +1242,9 @@ fault=0、semantic/layout/implementation/environment/audit/manifest均完整，�
 `StageExecutor`未观察到超过2%的框架开销。该资格不扩展到Flux 4B compiled graph、LoRA、GPU+ANE、
 prepare-only、其他shape/checkpoint或production public route。
 
-### 13.16 Public memory-tier 控制面基础（2026-09-17，未提交工作树）
+### 13.16 Public memory-tier 控制面基础（2026-09-17，已提交 `63b73d9`）
 
-在文档23–26的基础上，当前 `feat/stream` 工作树已加入 public selector 的第一批控制面代码，但没有放开任何
+在文档23–26的基础上，`feat/stream` 已提交 public selector 的第一批控制面代码，但没有放开任何
 模型 public execution：
 
 - `StreamingSelector` schema v2，支持 disabled、`memory_tier`、exact `preset` 和8/10/12/16/20 GiB target；
@@ -1269,8 +1269,12 @@ make test-streaming-host       PASS：3535 layouts、14 K/D/Q、multi-class/faul
 `tc_engine_resolve_streaming_json`、authority、immutable resolved request、`generate_resolved`、App开关/job迁移、
 calibration工具和reviewed records均未实现。
 
-代码审阅发现的 unresolved-selector 门禁已经修复：`tc_engine_generate` 和 prepare 在全局GPU锁、DeviceLease、
+代码审阅发现的 unresolved-selector 门禁已经修复并随`63b73d9`提交：`tc_engine_generate` 和 prepare 在全局GPU锁、DeviceLease、
 session调用之前拒绝 active selector；普通 public engine 与 private candidate 的 generate/prepare 均已回归
 `streaming_preset_resolution_required`。这只消除了静默 resident 回退，engine exact resolver尚未实现，
 因此当前状态仍为**不可public执行**。完整施工顺序与验收追踪见
 [27](27-public-streaming-delivery-blueprint.md)。
+
+后续可编码类型、engine/API/App接线见[28](28-public-runtime-code-design.md)；逐PR、工具链、四模型候选矩阵、
+内存/swap实验和发布门见[29](29-public-implementation-and-acceptance-plan.md)。这两份文档不改变当前“catalog为空、
+public执行不可用”的完成边界。
