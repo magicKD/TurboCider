@@ -65,6 +65,8 @@
 | [33 Public Runtime/App Engineering](33-public-runtime-app-engineering-spec.md) | 将共享 validator、exact resolve、source lease、actual-plan、C ABI、Swift、App/JobStore、LTX worker 和默认性能保护拆成可直接编码的工程合同 |
 | [34 Model Tier Calibration and Release](34-model-tier-calibration-and-release-spec.md) | 四模型候选族、8/10/12/16/20 GiB 完整请求校准、resident/streaming/swap 对照、evidence、catalog review、发布与撤回 |
 | [35 Public Streaming Implementation Blueprint v2](35-public-streaming-implementation-blueprint-v2.md) | 将当前代码接缝、coordinator、test-only catalog、source lease、actual receipt、四模型 adapter、App 事务、工具链、故障注入、验收矩阵和提交边界串成可直接施工的蓝图 |
+| [36 Public Adapter Code Implementation](36-public-adapter-code-implementation-spec.md) | 基于当前代码的 coordinator 收口、value probe/snapshot、fd source lease、receipt v2、四模型逐文件 public adapter、LTX worker 协议和代码级测试 |
+| [37 Calibration, Performance and Acceptance](37-public-streaming-calibration-performance-acceptance.md) | 五档候选探索、完整 process-tree 采样、resident/streaming/bounded/swap 四路对照、P0–P4、App/JobStore、evidence/catalog/release 验收 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -87,6 +89,7 @@ unresolved selector 的立即安全闸门、query→resolve→generate 的所有
 准备直接拆解 runtime/App 工单时继续读33；准备执行四模型候选探索、完整请求内存校准、swap对照和 record 发布时读34。
 33/34把既有结论变成任务和验收合同，不改变 production catalog 为空、public streaming 当前不可执行的事实。
 35进一步把 32–34 的合同落到当前文件、类型、状态机、测试 ID 和 R0–R8 提交边界；它仍是实施蓝图，不代表任何 public record 已发布。
+从当前 fa1ecd0 继续直接实现时，优先阅读 36 → 37：36 以最新 coordinator/actual-plan 代码为基线，冻结 source lease、receipt v2 和四模型逐文件改造；37 冻结真实档位校准、swap 对照、App 事务、证据和 release gate。
 28/30不新增第二套executor，29/30不重新定义文档12的P0–P4阈值。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
@@ -174,8 +177,8 @@ resolution/error 类型，以及共享 request-only validator 和错误优先级
 resolve/generate 均在 session/GPU 执行前返回`catalog_has_no_public_records`，active prepare 返回
 `streaming_prepare_unsupported`。
 
-当前未提交工作树正在增加 RunResult public metrics 和 actual-plan/source-lease/drain hard verification；这部分只通过了
-native build 与 resolver 专项测试，完整 host/contract/App 回归仍需重跑。source lease 的模型执行期实现、完整 C ABI
-ownership/cancel 测试、App事务、四模型 public override、校准工具和 reviewed records仍未完成。下一步按
-[35](35-public-streaming-implementation-blueprint-v2.md)的 R0–R8 收口，再按[34](34-model-tier-calibration-and-release-spec.md)
-和[31](31-public-streaming-config-calibration-runbook.md)建设真实模型证据。production catalog 仍为空，当前仍不可 public 执行。
+actual-plan 汇总 verifier 已在 c6cba54 提交，coordinator/provider 已在 fa1ecd0 提交并完成 host/contract/App 回归；但四模型仍未生成真实 public receipt。
+当前 verifier 仍是汇总 v1：具体模型尚未 override source lease，尚无 per-pass/group fill、logical bytes、reader fence、source generation 和 canonical receipt。
+
+下一步按[36](36-public-adapter-code-implementation-spec.md)先消除重复 preflight，建立 fd-based source lease、receipt v2 和 Z-Image → Flux 9B → H3 Turbo → LTX public adapter；再按
+[37](37-public-streaming-calibration-performance-acceptance.md)建设完整 process-tree calibration、swap 四路对照、App/JobStore 事务和 reviewed records。production catalog 仍为空，当前仍不可 public 执行。

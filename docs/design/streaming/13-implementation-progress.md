@@ -1397,3 +1397,39 @@ public model adapter、完整请求 target calibration、swap P3 或 reviewed re
 
 下一步的严格顺序是：先补全并提交 R0 actual result；再实现 coordinator/test catalog/source lease；然后按单模型接
 public hook；之后才运行完整 target calibration 和 swap P3；最后加入 reviewed record、开放 App target 并合并最新 dev 回归。
+
+### 13.20 Public coordinator 与 actual-plan 提交后的最新基线（2026-09-17）
+
+本节覆盖 13.19 的“工作树尚未提交”表述。当前分支 feat/stream 已将相关代码提交为：
+
+~~~text
+c6cba54 streaming: add public actual-plan result verification
+fa1ecd0 streaming: extract public runtime coordinator
+~~~
+
+当前已提交的事实：
+
+- PublicStreamingCoordinator 位于 native/runtime/streaming/public_runtime.*，负责纯 C++ preflight、metadata probe、catalog select、snapshot compile、authority 创建和 execution-time revalidation；
+- StreamingCatalogProvider 位于 native/runtime/streaming/catalog_provider.*，production provider 读取进程生命周期的 reviewed catalog 快照；
+- c_api.mm 只负责 engine lock、GPU lock、C ABI 错误/所有权、Objective-C result dictionary 和 generate 分流；
+- RunResult 已包含 PublicStreamingSelectionMetrics；
+- common verifier 已核对 layout digest、stage、P/G/K/D/Q、group/pass、pass transition、multi-pool、component policy、pool/slot/worker、request retention、source lease flag 和 drain flag；
+- result mismatch 在 JSON 序列化前返回 streaming_actual_plan_mismatch；
+- host/contract/App build 和 resolver/fake snapshot/source revalidation 测试已通过。
+
+本次提交仍不代表 public 可用。已知代码缺口：
+
+1. resolve_public_streaming_locked 目前先调用 coordinator.preflight，再调用 resolve_normalized，而后者内部再次 preflight；下一步要冻结一次性 preflight/catalog snapshot；
+2. ModelStreamingSnapshot::revalidate_source() 仍是默认 no-op，四个真实模型尚未接入 source lease；
+3. actual verifier 当前主要验证汇总 metrics，尚未验证 per-pass/group fill matrix、logical read bytes、reader fence、source generation 和 canonical receipt digest；
+4. LTX、H3 Turbo、Z-Image、Flux.2 Klein 9B 均尚未 override probe_public_streaming、compile_public_streaming、generate_resolved；
+5. production catalog 仍为空，tc_streaming_options_json 只能返回 tentative/unavailable；
+6. App engine-scoped options、StreamingChoice、JobStore v2 和 LTX worker 两阶段握手未实现；
+7. 完整请求 process-tree calibration、8/10/12/16/20 GiB record、resident/streaming/bounded/swap 对照和 ANE 独立认证未完成。
+
+本轮新增设计文档：
+
+- [36 Public Adapter Code Implementation](36-public-adapter-code-implementation-spec.md)：逐文件说明 coordinator 收口、ValueModelStreamingProbe/Snapshot、fd-based SourceLease、receipt v2、四模型 public adapter、H3 authority gate 和 LTX worker-local authority；
+- [37 Calibration, Performance and Acceptance](37-public-streaming-calibration-performance-acceptance.md)：五档候选探索、完整进程树采样、simulator、resident/streaming/bounded/swap 四路实验、P0–P4、App 事务、evidence/catalog/release。
+
+当前下一步不是重新实现 executor，而是按 36 的 C0→C6 收口真实 public adapter，再按 37 为单个模型/单个 target 生成 reviewed evidence。production catalog 继续保持空，直到 source lease、receipt v2、默认零开销、完整校准和 review 全部通过。

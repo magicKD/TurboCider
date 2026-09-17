@@ -15,6 +15,11 @@
 
 当前各模型在 M4 Max/M4 Pro 及其他 Apple Silicon 上的 GPU/ANE fork-join 方案、自动门禁和实测口径见 [GPU/ANE 并行化方案](parallel-acceleration.md) 与 [并行化 SVG 图](parallel-acceleration.svg)。Transformer 的 CPU/GPU/ANE 轴、public/private ANE 对照和 vpipe/H3/LTX 结论见 [Transformer 异构并行技术报告](transformer-heterogeneous-report.md)；Core ML 启动生命周期见 [Core ML / ANE 启动开销](coreml-ane-startup.md)，量化和低内存对照见 [量化与 Streaming 对照](quantized-streaming-vpipe-comparison.md)。
 
+通用 block/slot streaming、App 五档内存目标、四模型 public adapter、完整进程树校准、swap 对照和发布验收的当前入口见
+[Streaming 设计目录](streaming/README.md)。直接实施代码先读
+[Public Adapter 代码规格](streaming/36-public-adapter-code-implementation-spec.md)，执行档位探索与发布验收读
+[校准、性能与验收规格](streaming/37-public-streaming-calibration-performance-acceptance.md)。
+
 截至 2026-09-15 的 encoder、DiT、VAE、Core ML 生命周期和各模型采用决策统一见
 [ANE 加速现状与分阶段决策](ane-acceleration-status-2026-09-15.md)。该文档区分
 resident encoder-prefill、DiT/denoiser、VAE 和完整请求，不把局部 microbenchmark
@@ -50,7 +55,7 @@ resident encoder-prefill、DiT/denoiser、VAE 和完整请求，不把局部 mic
 2. [本机实施设计](native-implementation-plan.md)：代码结构、共同抽象、依赖、真实 FLUX 路径，以及从纵切到完整 runtime 的迁移顺序。
 3. [本机验证记录](native-validation-report.md)：实际完成项、逐张量证据、性能、App 与独立包测试，明确未完成范围。
 4. [H3/LTX 迁移与验收](video-model-acceptance.md)：源文件迁移归属、无模型静态检查、权重到位后的数学和媒体退出条件。
-5. [原生代码使用说明](../USAGE.md)：构建、打包、CLI/SDK 与离线验收复现命令。
+5. [原生代码使用说明](../public/USAGE.md)：构建、打包、CLI/SDK 与离线验收复现命令。
 
 H3 在 Apple Silicon 上迁移到 FastH3 C++/MLX、固定四步 affine INT6/g64，并对齐 FastVideo 性能/质量的具体实施合同见 [H3 C++/MLX INT6 加速方案与验收计划](h3-mlx-int6-fastvideo-parity-plan.md)。该文档包含当前原型边界、分阶段工作包、checkpoint/量化合同、同条件 ABBA benchmark 和发布门禁；在真实模型验收完成前不代表已交付能力。
 

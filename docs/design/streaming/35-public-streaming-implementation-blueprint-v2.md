@@ -2,7 +2,7 @@
 
 [目录](README.md) · [收口规格](32-public-streaming-completion-spec.md) · [Runtime/App 工程规格](33-public-runtime-app-engineering-spec.md) · [模型档位与发布](34-model-tier-calibration-and-release-spec.md) · [当前进度](13-implementation-progress.md)
 
-修订日期：2026-09-17。分支：`feat/stream`。状态：**实施蓝图；production catalog 为空，public streaming 尚未开放。**
+修订日期：2026-09-17。分支：`feat/stream`。代码基线：`fa1ecd0`。状态：**实施蓝图；production catalog 为空，public streaming 尚未开放。**
 
 本文是对 32、33、34 号文档的工程化补充，目标是让 runtime、模型 adapter、App、工具链、性能和 release owner 可以按照同一份施工图实现和验收。本文不改变已经冻结的用户语义、默认路径和 public v1 边界：用户只选择 Off 或内存档位；后台根据 reviewed catalog 选择完整布局；没有 reviewed record 时 fail-closed。
 
@@ -20,6 +20,8 @@
 | 33 | Runtime、C ABI、Swift、App、JobStore 的逐接口工程合同 |
 | 34 | 四模型档位校准、swap 对照、evidence、catalog review 和 release gate |
 | **35** | **把上述内容串成可分配的代码任务、状态机、数据结构、测试矩阵和 DoD** |
+| 36 | 最新代码基线上的 source lease、receipt v2、四模型逐文件 public adapter 实施规格 |
+| 37 | 五档真实校准、性能/Swap 对照、App 事务、evidence/catalog/release 验收规格 |
 
 如果本文与底层协议冲突，以 02、03、09、10 为准；如果本文与当前事实记录冲突，以 13 的最新日期段落为准。本文的“计划”“应实现”“拟议”不能被解释为“已经支持”。
 
@@ -27,7 +29,7 @@
 
 - production catalog 仍为空，App 没有可用的 public target；
 - 四模型已有 private exact/candidate，但尚未完成 public probe/compile/generate_resolved；
-- actual-plan verifier 已开始接线，但当前工作树改动尚未形成阶段提交，完整 host/contract/App 回归仍需重跑；
+- actual-plan 汇总 verifier 已在 `c6cba54` 提交，coordinator/provider 已在 `fa1ecd0` 提交并完成 host/contract/App 回归；但四模型仍未生成真实 public receipt；
 - 没有完整请求 process-tree calibration，就不能宣称 8/10/12/16/20 GiB 任一档位可用；
 - 没有 P3 pressure/swap 对照，就不能宣称显式 streaming 比系统 swap 更快；
 - GPU-only public v1 不自动扩展到 GPU+ANE、LoRA、量化缓存、compiled graph 或任意尺寸。
@@ -81,29 +83,32 @@
 | App | `StudioState.swift`、`JobStore.swift`、`LTXWorker.swift`、`RunInsights.swift` | 草稿、任务事务、worker、结果展示 |
 | evidence | `run_streaming_campaign.py`、`verify_streaming_campaign.py`、`run_streaming_audit.py` | P0/P1/audit evidence 和独立 verifier |
 
-### 2.2 建议新增或拆分模块
+### 2.2 已完成拆分与下一步新增模块
 
-建议从 `c_api.mm` 中逐步下沉 orchestration，避免 Objective-C dictionary、锁和 resolver 混在一个函数：
+`fa1ecd0` 已从 `c_api.mm` 下沉：
 
-```text
+~~~text
 native/runtime/streaming/public_runtime.hpp/.cpp
   PublicStreamingCoordinator
-  PublicResolveContext
-  public resolve/revalidate orchestration
-
-native/runtime/streaming/source_lease.hpp/.cpp
-  SourceLeaseToken
-  SourceLeaseVerifier
-
 native/runtime/streaming/catalog_provider.hpp/.cpp
-  ProductionCatalogProvider
-  test-build-only TestCatalogProvider
+  StreamingCatalogProvider
+  production provider
+~~~
+
+下一阶段按 36 新增或扩展：
+
+~~~text
+native/runtime/streaming/source_lease.hpp/.cpp
+  fd-based SourceLeaseDescriptor / SourceLease
+
+native/runtime/streaming/value_probe.hpp/.cpp
+  common immutable probe/snapshot
 
 native/runtime/streaming/actual_receipt.hpp/.cpp
   ActualStageReceipt
   ActualExecutionReceipt
   receipt canonicalization/digest
-```
+~~~
 
 `c_api.mm` 只保留 C ABI 参数转换、engine lock、错误转换和结果 JSON 拷贝；实际流程由纯 C++ helper 承担，以便 host test 在没有 Metal/App 的环境中覆盖。
 
@@ -832,19 +837,19 @@ public-evidence     only on reviewed test catalog or physical model runner
 
 ## 15. 分阶段实现与提交边界
 
-### R0 · 当前工作树收口
+### R0 · Actual result 收口（已完成）
 
 文件：`public_result.*`、`session.hpp`、`results.mm`、`c_api.mm`、build/test wiring。
 
-完成标准：actual plan verifier success/failure、public result serialization、full native host/contract/App build 回归；独立 commit 明确仍为空 catalog、无 public record。
+结果：`c6cba54` 已提交 actual plan verifier success/failure、public result serialization 和完整 native host/contract/App build 回归；production catalog 仍为空、无 public record。
 
-### R1 · Pure coordinator + test catalog
+### R1 · Pure coordinator/provider（主体已完成，仍需收口）
 
-文件：`public_runtime.*`、`catalog_provider.*`、C ABI 下沉。完成标准：fake session 覆盖 resolve/generate、错误优先级、catalog injection、authority revalidation；production catalog 仍为空。
+文件：`public_runtime.*`、`catalog_provider.*`、C ABI 下沉。`fa1ecd0` 已完成 pure coordinator、provider、fake session resolve/revalidate 和 production provider；仍需消除重复 preflight、补完整 C ABI ownership/busy/cancel/result serialization，并决定 immutable catalog snapshot/test injection 的最终形态。
 
-### R2 · Source lease + receipt v1
+### R2 · Source lease + receipt v2
 
-文件：`source_lease.*`、`actual_receipt.*`、四模型 metrics bridge。完成标准：source changed、runtime/device changed、actual mismatch、drain timeout 全部 fail-closed；result 无半成功状态。
+文件：`source_lease.*`、`value_probe.*`、`actual_receipt.*`、四模型 metrics/receipt bridge。完成标准：source changed、runtime/device changed、per-pass/group actual mismatch、drain timeout 全部 fail-closed；result 无半成功状态。
 
 ### R3 · Z-Image public adapter
 
@@ -957,15 +962,15 @@ App/worker 必须释放旧 engine 并创建新实例，不能通过 `unload` 强
 
 ## 18. 当前下一步执行清单（按优先级）
 
-1. 重跑 current actual-plan/result verifier 相关的完整 native host、contract 和 App build 回归，并记录命令/结果；
-2. 将 actual result 代码形成独立 commit，更新 13 的事实段落；
-3. 下沉 `PublicStreamingCoordinator` 和 test-only catalog provider；
-4. 补 C ABI ownership/busy/cancel 和 public result serialization 测试；
-5. 先接 Z-Image public hooks，使用 fake reviewed record 做 test catalog replay；
-6. 按相同模板接 Flux 9B、H3 Turbo、LTX worker；
-7. 完成 process-tree sampler、campaign/verifier 和 catalog builder；
-8. 对每个模型按 workload card 扫描 8/10/12/16/20 GiB 候选，先记录 unavailable 也可以，不得伪造 available；
-9. 做 resident/streaming/swap pressure 对照，结果不足时只报告“待验证”；
+1. 消除 `c_api.mm` → `resolve_normalized()` 的重复 preflight，冻结单次 catalog snapshot；
+2. 补 C ABI ownership/busy/cancel 和 public result serialization 测试；
+3. 按 36 实现 ValueModelStreamingProbe/Snapshot、fd-based source lease 和 receipt v2；
+4. 先接 Z-Image public hooks，使用 test-only reviewed catalog 做完整 replay；
+5. 按相同模板接 Flux 9B、H3 Turbo、LTX worker；
+6. 按 37 完成 process-tree sampler、simulator、campaign/verifier 和 catalog builder；
+7. 对每个模型按 workload card 扫描 8/10/12/16/20 GiB 候选，先记录 unavailable 也可以，不得伪造 available；
+8. 做 resident/streaming/bounded/swap pressure 四路对照，结果不足时只报告“待验证”；
+9. 完成 App StreamingChoice、engine-scoped options、JobStore v2 和 LTX worker-local authority；
 10. runtime/App/model 稳定后合并 `dev@02148b7`，再做完整回归；
 11. 通过 reviewed record release gate 后，才在 App 中显示第一个 available target。
 
