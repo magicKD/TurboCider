@@ -1484,3 +1484,31 @@ source lease 和 receipt v2 仍待实现，完整 8/10/12/16/20 GiB calibration�
 
 下一步仍按 36/38 的 C1 执行：先复用现有 pager/descriptor 的 open/fstat/path-replace 逻辑实现通用 fd lease
 和 synthetic source mutation tests，再做 receipt v2；不能跳过这两步直接接真实 production record。
+
+### 13.23 C1 工作树审阅与产品化设计深化（2026-09-17）
+
+当前工作树已经完成 C1 common-runtime 实现，但尚未形成阶段提交。本次审阅确认已有：
+
+- `native/runtime/streaming/source_lease.hpp/.cpp`：`OwnedSourceFd`、descriptor capture、`open_and_verify`、request generation、fd duplicate、path/open-fd/post-drain revalidate；
+- `native/runtime/streaming/value_probe.cpp` 与 `resolved_request.hpp` value probe/snapshot 接缝；
+- `tests/native/streaming_source_lease_test.cpp` 与 Python wrapper，覆盖 canonical ordering、generation、fd duplication、same-size mutation、path replacement、digest mismatch、duplicate logical id 和 snapshot revalidation；
+- `SourceLease::capture()` 已实现单一 fd lineage；named path 与 canonical target 双身份校验；empty artifact 拒绝；
+- `PublicPresetResolver::select/authorize`、`PublicStreamingCoordinator::revalidate` 和 public result verifier 已要求共享 lease、digest、generation，并在 pre-GPU/post-drain 执行校验；
+- 当前单独执行 `python3 -B tests/native/test_streaming_source_lease.py`、resolver、host、contract、audit、native-only build 和 App build 均通过。
+
+该结果仍不代表 public adapter 或 production record 完成。C1 common-runtime 已完成，但进入真实模型前仍必须：
+
+1. 至少一个真实 public adapter 要使用 `SourceLease::capture()`，而不是继续按 path reader；
+2. 真实 adapter 的 post-drain receipt 必须在 lease revalidate 成功后再置 `source_lease_verified=true`；
+3. receipt v2 仍需补齐 per-pass/group fill、logical bytes、reader fence 和 canonical receipt digest；
+4. 四模型 public hooks、完整 request closure、8/10/12/16/20 GiB calibration、App selector 和 production catalog 仍未完成。
+
+本轮新增/扩充的设计文档：
+
+- [40 Public Productization and App Contract](40-public-productization-and-app-contract.md)：冻结 App 只显示 Off/8/10/12/16/20 GiB、options/resolve、JobEnvelope、public/private/legacy 路由和默认路径零工作；
+- [41 Scheduler / Multi-slot / Multi-pool](41-scheduler-multi-slot-and-multi-pool-implementation.md)：给出 owner pump、slot state、K/D/Q overlap、carry、serial/retain-all pool、取消和 quarantine 的实现算法；
+- [42 Model Adapter Playbooks](42-model-adapter-playbooks.md)：给出 Z-Image、Flux 9B、H3 Turbo、LTX 的 source/component closure、候选族、逐文件接入和错误验收；
+- [43 Toolchain / Simulation / Release Gates](43-toolchain-simulation-and-release-gates.md)：定义 inspect→compile→simulate→campaign→verify→builder、process-tree sampler、resident/streaming/bounded/swap 四臂和 P0–P4 门禁；
+- [38 Framework Code Contracts](38-framework-code-contracts-and-implementation-workbench.md) 第14节：将当前 C1 工作树缺口设为进入真实 public adapter 前的强制修正。
+
+截至本节，production catalog 仍为空，四模型仍没有真实 public hook，App 仍未开放五档，receipt v2、完整 target calibration、swap P3 和 ANE streaming 认证仍未完成。下一步严格顺序是：C2 receipt v2 → Z-Image → Flux 9B → H3 Turbo → LTX worker → App/工具链 → reviewed record。

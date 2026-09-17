@@ -1,6 +1,6 @@
 # 38 · Streaming Framework 代码合同、实现工作台与逐文件施工设计
 
-[目录](README.md) · [Adapter 代码规格](36-public-adapter-code-implementation-spec.md) · [校准与发布验收](37-public-streaming-calibration-performance-acceptance.md) · [验收工作簿](39-validation-benchmark-and-release-workbook.md)
+[目录](README.md) · [Adapter 代码规格](36-public-adapter-code-implementation-spec.md) · [调度器实现](41-scheduler-multi-slot-and-multi-pool-implementation.md) · [模型施工单](42-model-adapter-playbooks.md) · [验收工作簿](39-validation-benchmark-and-release-workbook.md)
 
 修订日期：2026-09-17。状态：**实现工作台；其中“拟议”内容不代表已经存在的代码或 public 资格。**
 
@@ -19,9 +19,19 @@
 - `RunResult` 的 public selection metrics 和汇总型 actual-plan verifier；
 - LTX、Z-Image、H3 Turbo、Flux 9B 的 private descriptor/streaming 实现和相应的 test/benchmark 证据。
 
-当前**尚未完成**：
+当前工作树已完成 C1 common-runtime，尚未形成阶段提交：
 
-- 通用 fd-based source lease、value probe/snapshot 和 receipt v2；
+- 已新增 `source_lease.hpp/.cpp`、`value_probe.cpp` 和 synthetic fixture；
+- 已有 move-only `OwnedSourceFd`、单一 fd lineage `SourceLease::capture()`、fixture/replay `open_and_verify`、fd duplication、generation、named/canonical path、open-fd/post-drain revalidate；
+- same-size mutation、path/symlink replacement、empty/digest mismatch、duplicate logical id、value probe/snapshot revalidate 的普通/ASan/UBSan/TSan 测试已通过；
+- `ModelStreamingProbe/Snapshot` 已有 `source_lease()` 接缝，public resolver/authority 强制同一 lease/digest/generation；
+- coordinator 在 pre-GPU 校验 path/open fd，public result verifier 在 drain 后再次校验。
+
+上述结果只完成 common-runtime；四模型真实 adapter 仍未使用该 lease，receipt v2 尚无 source generation/fence/fill matrix，因此不能据此宣称任一模型已获得 public source 资格。
+
+当前**尚未完成或尚未收口**：
+
+- receipt v2，以及四模型对通用 source lease 的真实 reader/post-drain 接线；
 - 四个真实 `ModelSession` 的 `probe_public_streaming`、`compile_public_streaming`、`generate_resolved` override；
 - per-pass/group fill、logical bytes、reader fence、source generation 的硬校验；
 - App engine-scoped options、`JobStore` v2、LTX worker 两阶段握手；
@@ -74,8 +84,8 @@ native/runtime/streaming/
   catalog_provider.*          # 已有，immutable snapshot provider
   public_runtime.*            # 已有，preflight/resolve/revalidate
   public_result.*              # 已有，汇总 verifier；待扩 receipt v2
-  source_lease.hpp/.cpp        # C1 新增，fd + generation + TOCTOU
-  value_probe.hpp/.cpp         # C1 新增，通用 metadata-only probe/snapshot
+  source_lease.hpp/.cpp        # C1 工作树已有，待收口 capture/alias/authority
+  value_probe.cpp              # C1 工作树已有；声明暂位于 resolved_request.hpp
   actual_receipt.hpp/.cpp      # C2 新增，逐事件 receipt/expected verifier
   memory_scope.hpp/.cpp        # C4 新增，完整请求 process-tree scope
   trace.hpp/.cpp               # C4 新增，低开销事件采样（不进入 Off）
@@ -498,13 +508,13 @@ Z-Image/Flux 的 C++ adapter 直接绑定 recorder；H3/LTX 的 C runtime 通过
 slot 状态转移必须满足：
 
 ```text
-Vacant -> Filling -> Ready -> InUse -> Retiring -> Vacant
+Vacant -> Loading -> Ready -> InUse -> AwaitingFence -> Vacant
                               \\-> Ready(carry only at pass boundary)
 ```
 
 禁止：
 
-- Filling slot 被再次 claim；
+- Loading slot 被再次 claim；
 - reader 未完成时复写 slot；
 - pool 未 drain 就切换 class；
 - cancel 后继续 enqueue 新 fill；
@@ -799,3 +809,91 @@ engine/session lock
 - App 已把 Streaming target 对用户开放。
 
 以上四项必须分别由 39 的执行证据和 37 的 release gate 证明。
+
+## 14. C1 工作树审计与下一步强制修正
+
+本节记录 2026-09-17 对当前未提交 C1 工作树的代码审阅结果，优先级高于早期草图。它是施工阻断项，不是 public 资格证据。
+
+### 14.1 必须先改为单一 fd lineage
+
+当前过渡实现是：
+
+```text
+capture_source_lease_descriptor(stat)
+-> close temporary fd
+-> SourceLease::open_and_verify(path)
+```
+
+这个版本能检测大部分 path replacement 和 metadata mutation，但 probe 与 snapshot 之间仍存在一次按 path reopen 的 TOCTOU 缝隙，也会重复 open/fstat/header work。production adapter 必须改为：
+
+```text
+SourceLease::capture(files)
+  -> open(O_RDONLY|O_CLOEXEC) + fstat
+  -> metadata/header parser 从同一 fd/pread 读取
+  -> immutable lease 持有原始 fd
+  -> probe/snapshot 共享 lease
+  -> reader 只 duplicate_fd()
+  -> drain 后 revalidate_open_files + revalidate_paths
+```
+
+`capture_source_lease_descriptor()` 可以保留给 fixture/replay，但不能是 public adapter 的最终入口。新增 `SourceLease::capture(std::vector<SourceFileIdentity>)` 时，应让返回值同时包含 descriptor、opened files 和 generation，避免再次通过 path 构造第二代 lease。
+
+### 14.2 noexcept 与错误路径
+
+`SourceLease::descriptor() noexcept` 不能在内部调用可能抛出异常的 `lease_require()`；state 无效时应返回不可用状态并由非 noexcept caller 报错，或在构造后冻结 invariant 直接返回 `state_->descriptor`。禁止在 `noexcept` 内触发 `std::terminate` 来表示普通输入错误。
+
+`SourceFileIdentity.bytes == 0` 当前意味着“expected bytes 未指定”。public source artifact 应要求非空 regular file，fixture 若需要空文件必须使用显式 `allow_empty_fixture` 选项，不能让 0 同时表示“未校验”和“合法零字节”。
+
+### 14.3 symlink 双身份
+
+当前 canonicalization 保存最终 target path。模型仓库常用 symlink 时，替换 symlink alias 可能不会被最终 target 的 stat 捕获。production identity 应同时保存：
+
+```text
+named_path        用户/manifest 指定的 alias
+canonical_target  capture 时解析到的 target
+device/inode/...  两者对应的 stat identity
+```
+
+pre-GPU revalidate 同时确认 alias 仍解析到原 target inode；reader 仍从已打开 fd 读取。若平台策略不允许 alias 变化，应将 alias mutation 作为 source changed，而不是悄悄继续。
+
+### 14.4 Public authority 的硬条件
+
+`PublicPresetResolver::authorize()` 和 `PublicStreamingCoordinator::revalidate()` 必须拒绝以下情况：
+
+```text
+probe.source_lease() == nullptr
+snapshot.source_lease() == nullptr
+probe/snapshot lease pointer 不同
+lease.digest != source_identity.source_snapshot_digest
+lease.generation == 0
+receipt.source_generation != lease.generation
+pre-GPU 或 post-drain revalidate 未成功
+```
+
+fake resolver test 也必须构造真实临时文件和 `SourceLease`；不能继续用没有 lease 的 fake Probe/Snapshot 测试“授权成功”。
+
+### 14.5 Post-drain 接缝
+
+`revalidate_after_drain()` 的调用责任属于 C2/public adapter：
+
+```text
+StageExecutor.finish()
+-> IoExecutor.shutdown_and_join()
+-> adapter drain GPU readers/fences
+-> snapshot.lease().revalidate_after_drain()
+-> receipt verifier
+-> source_lease_verified = true
+```
+
+只有这条链全部成功，`RunResult.streaming_runtime.source_lease_verified` 才能为 true。resolve 时做过一次 stat 不足以设置该字段。
+
+### 14.6 C1 退出条件
+
+C1 不能只以“source lease test PASS”结束，必须同时满足：
+
+- 单一 fd lineage API 已被一个真实 adapter 使用；
+- path、alias、open-fd、same-size mutation、truncate、short-read、duplicate logical id 全部有测试；
+- resolver/authority 强制要求 lease/generation；
+- post-drain revalidate 有真实执行接缝；
+- Off/default audit 证明不会创建 lease；
+- native build、host、contract、sanitizer 和 `git diff --check` 全绿。

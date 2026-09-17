@@ -1,6 +1,6 @@
 # 39 · Streaming 验证、性能对照与发布工作簿
 
-[目录](README.md) · [代码合同与施工设计](38-framework-code-contracts-and-implementation-workbench.md) · [校准与发布验收](37-public-streaming-calibration-performance-acceptance.md) · [当前进度](13-implementation-progress.md)
+[目录](README.md) · [代码合同与施工设计](38-framework-code-contracts-and-implementation-workbench.md) · [产品化合同](40-public-productization-and-app-contract.md) · [调度器](41-scheduler-multi-slot-and-multi-pool-implementation.md) · [模型施工单](42-model-adapter-playbooks.md) · [校准与发布验收](37-public-streaming-calibration-performance-acceptance.md) · [当前进度](13-implementation-progress.md)
 
 修订日期：2026-09-17。状态：**可执行的测试与证据工作簿；所有阈值是验收门，不是当前成绩。**
 
