@@ -1,7 +1,8 @@
 """Real-weight regression probe for the qualified Z-Image M5 memory policy.
 
-Checks resident cache scoping, prompt-stage memory, cancellation/retry and PNG
-parity. Run explicitly with a local Comfy BF16 model; no downloads are performed.
+Checks resident cache scoping, encoder-manifest changes, prompt-stage memory,
+cancellation/retry and PNG parity. Run explicitly with a local Comfy BF16 model;
+no downloads are performed.
 """
 import argparse
 import ctypes as C
@@ -113,6 +114,23 @@ def main():
         assert "z_image_text_cache_hit" in repeated["phases"]
         assert "load_z_image_transformer" not in repeated["phases"]
         run("prepared", prepare=True)
+        # Short prompts fall back to GPU for this oversized encoder bucket,
+        # so cache invalidation can be exercised without compiled ANE assets.
+        encoder_manifests = []
+        for name in ("encoder-a", "encoder-b"):
+            manifest = args.output / f"{name}.json"
+            manifest.write_text(json.dumps({"schema_version": 2, "shape": {"buckets": [8192]}}))
+            encoder_manifests.append((name, str(manifest.resolve())))
+        for name, manifest in [*encoder_manifests, ("encoder-disabled", "")]:
+            changes = dict(encoder_ane_manifest=manifest, allow_approximation=True)
+            changed = run(name, prepare=True, **changes)
+            assert "z_image_text_encode" in changed["phases"]
+            assert "z_image_text_cache_hit" not in changed["phases"]
+            assert "load_z_image_transformer" in changed["phases"]
+            repeated_encoder = run(f"{name}-repeated", prepare=True, **changes)
+            assert "z_image_text_cache_hit" in repeated_encoder["phases"]
+            assert "z_image_text_encode" not in repeated_encoder["phases"]
+            assert "load_z_image_transformer" not in repeated_encoder["phases"]
         if args.manifest:
             automatic = run("automatic", execution="auto", allow_approximation=True,
                             ane_manifest=str(args.manifest.resolve()))

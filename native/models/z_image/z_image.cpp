@@ -1320,12 +1320,13 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     // Include the manifest so switching partitions also rebuilds the suffix.
     const auto configuration = streamed ? std::to_string(budget) + ":" + std::to_string(reserve) +
         (optimizations_.z_image_suffix_streaming ? ":" + r.execution + ":" + r.ane_manifest : "") : "";
-    const bool prompt_changed = !cached_conditioning_ || cached_prompt_ != r.prompt || cached_dynamic_ != r.dynamic_text;
+    const bool prompt_changed = !cached_conditioning_ || cached_prompt_ != r.prompt ||
+        cached_dynamic_ != r.dynamic_text || cached_encoder_manifest_ != r.encoder_ane_manifest;
     if (configuration != stream_configuration_ || ((streamed || constrained_memory) && prompt_changed)) {
         mx::synchronize();
         weight_stream_.reset();
         // Do not overlap a previous denoiser/Core ML working set with Qwen3
-        // when changing prompts on a small unified-memory machine.
+        // when recomputing conditioning on a small unified-memory machine.
         if (optimizations_.z_image_memory_lifecycle) {
             hybrid_.reset();
             hybrid_gpu_graph_ = {};
