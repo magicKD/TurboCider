@@ -2,7 +2,7 @@
 
 修订日期：2026-09-18。状态：**实施总手册；不是 public 能力声明**。
 
-本文把 [44 下一阶段实现收口规格](44-next-implementation-code-and-integration-spec.md)、[45 验收追踪与 Evidence](45-acceptance-traceability-and-evidence-spec.md)、[41 调度器实现](41-scheduler-multi-slot-and-multi-pool-implementation.md) 和 [42 四模型施工手册](42-model-adapter-playbooks.md) 收敛为一份可以直接分配给实现、App、性能和 release 负责人的执行手册。
+本文把 [44 下一阶段实现收口规格](44-next-implementation-code-and-integration-spec.md)、[45 验收追踪与 Evidence](45-acceptance-traceability-and-evidence-spec.md)、[41 调度器实现](41-scheduler-multi-slot-and-multi-pool-implementation.md) 和 [42 四模型施工手册](42-model-adapter-playbooks.md) 收敛为一份可以直接分配给实现、App、性能和 release 负责人的执行手册。需要直接编写模型 adapter、App/JobStore、工具链和测试时，继续阅读 [47 代码实施与验收细化规格](47-public-streaming-code-implementation-and-acceptance-detail.md)；47 冻结 request-scoped ownership、逐文件修改、五档候选搜索、故障矩阵和分层门禁，不重复本手册的产品与架构结论。
 
 本文特别区分三种状态：
 

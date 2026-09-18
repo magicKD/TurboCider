@@ -76,6 +76,7 @@
 | [44 Next Implementation / Integration](44-next-implementation-code-and-integration-spec.md) | 记录 C2 receipt v2 已实现基线，并规定 public generate、四模型 hooks、App/JobStore、profile 与分阶段回滚的逐文件接线 |
 | [45 Acceptance Traceability / Evidence](45-acceptance-traceability-and-evidence-spec.md) | 将 host/synthetic/real-model、source/receipt、process-tree、swap 四臂、P0–P4、evidence/catalog/revoke 映射为可执行测试 ID 和签核项 |
 | [46 Public Streaming Implementation Handbook](46-public-streaming-implementation-handbook.md) | 基于 C2 已完成基线，收敛用户五档、控制面/数据面/证据面、调度算法、四模型逐文件改造、工具链、App、性能与发布验收的实施总手册 |
+| [47 Public Streaming Code / Acceptance Detail](47-public-streaming-code-implementation-and-acceptance-detail.md) | 46 的代码级附录：request-scoped所有权、common runtime接口、multi-slot状态机、四模型逐文件施工、五档搜索、App事务、工具链、swap实验和分层验收 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -98,7 +99,7 @@ unresolved selector 的立即安全闸门、query→resolve→generate 的所有
 准备直接拆解 runtime/App 工单时继续读33；准备执行四模型候选探索、完整请求内存校准、swap对照和 record 发布时读34。
 33/34把既有结论变成任务和验收合同，不改变 production catalog 为空、public streaming 当前不可执行的事实。
 35进一步把 32–34 的合同落到当前文件、类型、状态机、测试 ID 和 R0–R8 提交边界；它仍是实施蓝图，不代表任何 public record 已发布。
-从当前 `33bd9ea` C2 基线继续直接实现时，优先阅读 46 → 42 → 44 → 45：46 给出收敛后的实施总手册，42/44 给出四模型 adapter 和逐文件接线，45 提供真实档位校准、swap 对照、App 事务、证据和 release gate；需要追溯 common runtime 设计时再查 36/38/41。
+从当前 `33bd9ea` C2 基线继续直接实现时，优先阅读 46 → 47 → 42 → 44 → 45：46 给出收敛后的实施总手册，47 冻结 request-scoped 生命周期、代码接口、模型施工和逐层验收，42/44 给出四模型 adapter 和逐文件接线，45 提供真实档位校准、swap 对照、App 事务、证据和 release gate；需要追溯 common runtime 设计时再查 36/38/41。
 如果从产品/App 视角评审，先读 40；如果从工具和发布视角评审，先读 43。40–43 均是设计与实施合同，不表示 production catalog 已非空或任何 target 已 public。
 当前 C2 Actual Receipt v2 已在 `33bd9ea` 提交并通过 host/sanitizer/build 验收，详见 13.25。继续编码时先读
 **46 第6–8节与第14–17节**，再按 **44 第5节（四模型）→ 第6节（App）** 施工；实现后按 **45** 的测试 ID、
