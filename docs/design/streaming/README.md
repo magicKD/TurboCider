@@ -83,6 +83,7 @@
 | [51 Remaining Runtime Closure](51-public-streaming-remaining-runtime-closure.md) | 当前剩余 runtime 闭环：request-scoped context、multi-stage/boundary receipt、H3 C receipt/public hooks、LTX worker-local authority、错误/quarantine 与验收 |
 | [52 App / Config / Model Tiers](52-public-streaming-app-config-and-model-tier-spec.md) | App 五档与迁移、物理内存推荐、model×target record、内存 ledger/sampler、工具链、四臂实验、JobStore 和发布验收 |
 | [53 Final Implementation Closure](53-public-streaming-final-implementation-closure.md) | 将当前代码接缝收敛为可直接施工的文件级方案：R3 receipt/context、scheduler、四模型 adapter、App/JobStore、catalog、工具链、提交边界和 Definition of Done |
+| [54 Deep Implementation Spec](54-public-streaming-deep-implementation-spec.md) | 代码级补充：对象所有权、精确调用顺序、compiler/ledger、owner pump、H3 C receipt、LTX worker 协议、工具链、四臂实验、PR 停止条件和 release checklist |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -127,6 +128,9 @@ catalog 已非空，也不替代 50 的真实 evidence 要求。
 状态机，标出 `DONE/WIP/NEXT/BLOCKED/NOT_PUBLIC`，给出 `results.mm`、H3、LTX、Z-Image、Flux、
 Swift/JobStore、catalog builder 和 R3–R6 的逐文件施工顺序。53 仍是实施稿，不改变 production
 catalog 为空的事实。
+如果需要进一步下钻到“这一行代码由谁拥有、哪个线程可以修改、怎样生成真实 receipt、怎样把 H3/LTX
+接到 common runtime、怎样执行四臂实验和逐 PR 停止”，阅读 **54**。54 是 53 的代码级附录，不新增
+第二套 scheduler、预算定义或性能门槛；其中所有未标记 `DONE` 的接口和 record 都仍是待实施合同。
 28/30不新增第二套executor，29/30不重新定义文档12的P0–P4阈值。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。

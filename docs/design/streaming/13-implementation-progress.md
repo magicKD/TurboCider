@@ -1836,3 +1836,17 @@ git diff --check                                                       PASS
 这些证据证明 common lifecycle/receipt/result 接缝完成，不证明 H3/LTX 已经 public，也不替代真实
 process-tree、P0–P3 或 catalog evidence。下一实现阶段是 H3 Turbo public C receipt/hooks，然后是
 LTX worker-local multi-stage；production catalog 仍为 `tc-streaming-catalog-empty-v1`。
+
+### 13.35 Public streaming 代码级实施附录（2026-09-18，仅设计深化）
+
+本轮没有修改 runtime、App、catalog 或模型 adapter；新增 [54 Public Streaming Deep Implementation Spec](54-public-streaming-deep-implementation-spec.md)，用于把 53 的最终收口稿继续下钻为可直接编码和验收的实施合同。新增内容包括：
+
+- 当前 `ModelSession` / `ModelStreamingProbe` / `ModelStreamingSnapshot` / `ResolvedRequestExecution` / `PublicStreamingRunContext` 的对象所有权、生命周期和跨线程边界；
+- `tc_engine_generate`、Swift/JobStore 的精确 public transaction 顺序，以及 Off/default 路径的零开销保护；
+- `compile_layout()` 的确定性分组算法、source/content/capacity/whole-request ledger 的字段语义和物理内存推荐边界；
+- owner pump、slot 状态机、reader fence、serial/retain-all multi-pool、cancel/drain/quarantine 的代码级伪代码与禁止事项；
+- H3 Turbo C receipt ABI、`probe/compile/generate_resolved` 接线要求，LTX worker-local authority、多 stage boundary 和原子结果协议；
+- Z-Image/Flux 当前接线与首版 public 限制、model card/catalog record 约束、inspect/compile/simulate/campaign/sampler/verifier/builder 工具链；
+- resident/streaming/bounded/natural-swap 四臂 ABBA、process-tree peak、quality、P0–P3 统计和逐 PR 停止条件。
+
+本轮文档没有新增性能数据、真实 full-request、P2/P3 或 public catalog record；`tc-streaming-catalog-empty-v1` 仍为空，不能据此宣称任何模型 target 已 public。文档只证明设计可追溯到当前代码接口，后续实现仍须按 54 的 `DONE/WIP/NEXT/NOT_PUBLIC` 和 reviewer checklist 逐项完成。
