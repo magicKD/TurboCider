@@ -58,6 +58,7 @@ SOURCES=(
  native/runtime/streaming/public_result.cpp native/runtime/streaming/source_lease.cpp
  native/runtime/streaming/value_probe.cpp native/runtime/streaming/actual_receipt.cpp
  native/runtime/streaming/slot_pool.cpp native/runtime/streaming/io_executor.cpp native/runtime/streaming/context.cpp
+ native/runtime/streaming/run_context.cpp
  native/runtime/streaming/mlx_weight_pager.cpp
  native/runtime/streaming/c_bridge.cpp native/runtime/streaming/audit.cpp
  native/models/ltx_runtime/ltx_streaming_descriptor.cpp native/models/ltx_runtime/ltx_streaming_plan.cpp

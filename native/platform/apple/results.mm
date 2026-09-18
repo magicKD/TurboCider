@@ -1,5 +1,6 @@
 #include "bridge.hpp"
 #include "../../runtime/memory_execution.hpp"
+#include "../../runtime/streaming/actual_receipt.hpp"
 namespace tc {
 static NSString *gpu_graph_label(const Request &r) {
     if (r.model == "minimax-h3-vdn")
@@ -469,6 +470,123 @@ static NSDictionary *actual_streaming_layout(
     }
     return value;
 }
+
+static NSDictionary *actual_streaming_stage(
+        const StreamingStageRuntimeMetrics &stage) {
+    return @{
+        @"stage_index" : @(stage.stage_index),
+        @"runtime" : actual_streaming_layout(stage.runtime),
+    };
+}
+
+static NSDictionary *actual_streaming_boundary(
+        const StreamingBoundaryRuntimeMetrics &boundary) {
+    return @{
+        @"boundary_index" : @(boundary.boundary_index),
+        @"id" : @(boundary.id.c_str()),
+        @"from_stage" : @(boundary.from_stage.c_str()),
+        @"to_stage" : @(boundary.to_stage.c_str()),
+        @"source_stage_drained" : @(boundary.source_stage_drained),
+        @"source_stage_backing_released" :
+            @(boundary.source_stage_backing_released),
+        @"live_slot_bytes_before" : @(boundary.live_slot_bytes_before),
+        @"live_slot_bytes_after" : @(boundary.live_slot_bytes_after),
+        @"pending_readers_before" : @(boundary.pending_readers_before),
+        @"pending_readers_after" : @(boundary.pending_readers_after),
+        @"released_slot_bytes" : @(boundary.released_slot_bytes),
+        @"event_digest" : @(boundary.event_digest.c_str()),
+    };
+}
+
+static NSDictionary *actual_stage_receipt(
+        const streaming::ActualStageReceipt &stage) {
+    return @{
+        @"stage_index" : @(stage.stage_index),
+        @"stage_id" : @(stage.stage_id.c_str()),
+        @"schema_version" : @(stage.schema_version),
+        @"implementation" : @(stage.implementation.c_str()),
+        @"layout_digest" : @(stage.layout_digest.c_str()),
+        @"completed_passes" : @(stage.completed_passes),
+        @"completed_groups" : @(stage.completed_groups),
+        @"fills" : @(stage.fills),
+        @"groups_submitted" : @(stage.groups_submitted),
+        @"logical_read_bytes" : @(stage.logical_read_bytes),
+        @"reader_fences_issued" : @(stage.reader_fences_issued),
+        @"reader_fences_completed" : @(stage.reader_fences_completed),
+        @"source_generation" : @(stage.source_generation),
+        @"drain_completed" : @(stage.drain_completed),
+        @"event_digest" : @(stage.event_digest.c_str()),
+        @"canonical_digest" : @(stage.canonical_digest.c_str()),
+    };
+}
+
+static NSDictionary *actual_boundary_receipt(
+        const streaming::ActualBoundaryReceipt &boundary) {
+    return @{
+        @"boundary_index" : @(boundary.boundary_index),
+        @"id" : @(boundary.id.c_str()),
+        @"from_stage_index" : @(boundary.from_stage_index),
+        @"to_stage_index" : @(boundary.to_stage_index),
+        @"source_generation" : @(boundary.source_generation),
+        @"last_reader_sequence" : @(boundary.last_reader_sequence),
+        @"completed_reader_sequence" : @(boundary.completed_reader_sequence),
+        @"live_slot_bytes_before" : @(boundary.live_slot_bytes_before),
+        @"live_slot_bytes_after" : @(boundary.live_slot_bytes_after),
+        @"released_slot_bytes" : @(boundary.released_slot_bytes),
+        @"pending_readers_before" : @(boundary.pending_readers_before),
+        @"pending_readers_after" : @(boundary.pending_readers_after),
+        @"source_stage_drained" : @(boundary.source_stage_drained),
+        @"source_stage_backing_released" :
+            @(boundary.source_stage_backing_released),
+        @"next_stage_started" : @(boundary.next_stage_started),
+        @"event_digest" : @(boundary.event_digest.c_str()),
+        @"canonical_digest" : @(boundary.canonical_digest.c_str()),
+    };
+}
+
+static NSDictionary *actual_streaming_receipt(
+        const streaming::ActualExecutionReceipt &receipt) {
+    NSMutableArray *stages =
+        [NSMutableArray arrayWithCapacity:receipt.stages.size()];
+    for (const auto &stage : receipt.stages)
+        [stages addObject:actual_stage_receipt(stage)];
+    NSMutableArray *boundaries =
+        [NSMutableArray arrayWithCapacity:receipt.boundaries.size()];
+    for (const auto &boundary : receipt.boundaries)
+        [boundaries addObject:actual_boundary_receipt(boundary)];
+    return @{
+        @"schema_version" : @(receipt.schema_version),
+        @"implementation" : @(receipt.implementation.c_str()),
+        @"layout_digest" : @(receipt.layout_digest.c_str()),
+        @"component_policy_revision" :
+            @(receipt.component_policy_revision.c_str()),
+        @"stages" : stages,
+        @"boundaries" : boundaries,
+        @"canonical_digest" : @(receipt.canonical_digest.c_str()),
+    };
+}
+
+static void attach_streaming_details(
+        NSMutableDictionary *value, const RunResult &result) {
+    if (!result.streaming_stages.empty()) {
+        NSMutableArray *stages = [NSMutableArray
+            arrayWithCapacity:result.streaming_stages.size()];
+        for (const auto &stage : result.streaming_stages)
+            [stages addObject:actual_streaming_stage(stage)];
+        value[@"streaming_stages"] = stages;
+    }
+    if (!result.streaming_boundaries.empty()) {
+        NSMutableArray *boundaries = [NSMutableArray
+            arrayWithCapacity:result.streaming_boundaries.size()];
+        for (const auto &boundary : result.streaming_boundaries)
+            [boundaries addObject:actual_streaming_boundary(boundary)];
+        value[@"streaming_boundaries"] = boundaries;
+    }
+    if (result.streaming_receipt)
+        value[@"streaming_receipt"] = actual_streaming_receipt(
+            *result.streaming_receipt);
+}
+
 static NSDictionary *public_streaming_result(
         const PublicStreamingSelectionMetrics &m) {
     return @{
@@ -857,6 +975,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
         if (result.public_streaming)
             copy[@"public_streaming"] = public_streaming_result(
                 *result.public_streaming);
+        attach_streaming_details(copy, result);
         return copy;
     }
     const auto &r = result.request;
@@ -906,6 +1025,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
         if (result.public_streaming)
             prepared[@"public_streaming"] = public_streaming_result(
                 *result.public_streaming);
+        attach_streaming_details(prepared, result);
         return prepared;
     }
     NSMutableDictionary *memory = [@{
@@ -975,6 +1095,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
     if (result.public_streaming)
         value[@"public_streaming"] = public_streaming_result(
             *result.public_streaming);
+    attach_streaming_details(value, result);
     if (!result.memory_trace.empty())
         value[@"memory_trace"] = to_array(result.memory_trace);
     return value;

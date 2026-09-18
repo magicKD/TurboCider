@@ -107,6 +107,24 @@ struct StreamingRuntimeMetrics {
     std::string receipt_event_digest, receipt_digest;
     std::string receipt_verifier_revision;
 };
+struct StreamingStageRuntimeMetrics {
+    uint32_t stage_index = 0;
+    StreamingRuntimeMetrics runtime;
+};
+struct StreamingBoundaryRuntimeMetrics {
+    uint32_t boundary_index = 0;
+    std::string id;
+    std::string from_stage;
+    std::string to_stage;
+    bool source_stage_drained = false;
+    bool source_stage_backing_released = false;
+    uint64_t live_slot_bytes_before = 0;
+    uint64_t live_slot_bytes_after = 0;
+    uint64_t pending_readers_before = 0;
+    uint64_t pending_readers_after = 0;
+    uint64_t released_slot_bytes = 0;
+    std::string event_digest;
+};
 struct PublicStreamingSelectionMetrics {
     uint64_t target_request_memory_bytes = 0;
     uint64_t calibrated_request_bytes = 0;
@@ -136,6 +154,8 @@ struct RunResult {
     std::optional<HybridMetrics> encoder_hybrid;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;
+    std::vector<StreamingStageRuntimeMetrics> streaming_stages;
+    std::vector<StreamingBoundaryRuntimeMetrics> streaming_boundaries;
     std::shared_ptr<const streaming::ActualExecutionReceipt>
         streaming_receipt;
     std::optional<PublicStreamingSelectionMetrics> public_streaming;

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Host-only public preset catalog/resolver tests; no GPU or model weights."""
+"""Host-only public preset/catalog/context tests; no GPU or model weights."""
 
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -15,16 +16,30 @@ def main():
     ).strip()
     with tempfile.TemporaryDirectory(prefix="tc-streaming-preset-") as raw:
         binary = Path(raw) / "streaming-preset-resolver-test"
-        subprocess.run(
-            [
+        flags = [
                 compiler,
                 "-std=c++20",
                 "-O2",
                 "-Wall",
                 "-Wextra",
                 "-Werror",
+                "-pthread",
                 "-isysroot",
                 sdk,
+        ]
+        sanitizer = os.environ.get("TC_STREAMING_SANITIZER", "")
+        if sanitizer:
+            if sanitizer not in ("address,undefined", "thread"):
+                raise ValueError("unsupported sanitizer")
+            flags += [
+                "-O1",
+                "-g",
+                "-fno-omit-frame-pointer",
+                "-fsanitize=" + sanitizer,
+            ]
+        subprocess.run(
+            [
+                *flags,
                 "-I",
                 str(ROOT / "native/core"),
                 str(ROOT / "tests/native/streaming_preset_resolver_test.cpp"),
@@ -41,6 +56,11 @@ def main():
                 str(ROOT / "native/runtime/streaming/public_request_validation.cpp"),
                 str(ROOT / "native/runtime/streaming/public_runtime.cpp"),
                 str(ROOT / "native/runtime/streaming/public_result.cpp"),
+                str(ROOT / "native/runtime/streaming/run_context.cpp"),
+                str(ROOT / "native/runtime/streaming/context.cpp"),
+                str(ROOT / "native/runtime/streaming/io_executor.cpp"),
+                str(ROOT / "native/runtime/streaming/slot_pool.cpp"),
+                str(ROOT / "native/runtime/streaming/audit.cpp"),
                 "-o",
                 str(binary),
             ],

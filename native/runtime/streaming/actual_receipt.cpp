@@ -40,7 +40,9 @@ std::vector<uint32_t> pool_sequence(const StageLayout &layout) {
 
 std::string execution_canonical_digest(
         const ActualExecutionReceipt &receipt) {
-    CanonicalEncoder out("tc-streaming-actual-execution-receipt-v2");
+    CanonicalEncoder out(receipt.schema_version >= actual_receipt_schema_v3
+                             ? "tc-streaming-actual-execution-receipt-v3"
+                             : "tc-streaming-actual-execution-receipt-v2");
     out.unsigned_field("schema_version", receipt.schema_version);
     out.string_field("implementation", receipt.implementation);
     out.string_field("layout_digest", receipt.layout_digest);
@@ -51,6 +53,39 @@ std::string execution_canonical_digest(
         out.unsigned_field("stage.index", stage.stage_index);
         out.string_field("stage.id", stage.stage_id);
         out.string_field("stage.digest", stage.canonical_digest);
+    }
+    if (receipt.schema_version >= actual_receipt_schema_v3) {
+        out.begin_list("boundaries", receipt.boundaries.size());
+        for (const auto &boundary : receipt.boundaries) {
+            out.unsigned_field("boundary.index", boundary.boundary_index);
+            out.string_field("boundary.id", boundary.id);
+            out.unsigned_field("boundary.from", boundary.from_stage_index);
+            out.unsigned_field("boundary.to", boundary.to_stage_index);
+            out.unsigned_field("boundary.source_generation",
+                               boundary.source_generation);
+            out.unsigned_field("boundary.last_reader_sequence",
+                               boundary.last_reader_sequence);
+            out.unsigned_field("boundary.completed_reader_sequence",
+                               boundary.completed_reader_sequence);
+            out.unsigned_field("boundary.live_before",
+                               boundary.live_slot_bytes_before);
+            out.unsigned_field("boundary.live_after",
+                               boundary.live_slot_bytes_after);
+            out.unsigned_field("boundary.released",
+                               boundary.released_slot_bytes);
+            out.unsigned_field("boundary.pending_before",
+                               boundary.pending_readers_before);
+            out.unsigned_field("boundary.pending_after",
+                               boundary.pending_readers_after);
+            out.boolean_field("boundary.drained",
+                              boundary.source_stage_drained);
+            out.boolean_field("boundary.released_ok",
+                              boundary.source_stage_backing_released);
+            out.boolean_field("boundary.next_started",
+                              boundary.next_stage_started);
+            out.string_field("boundary.event_digest",
+                             boundary.event_digest);
+        }
     }
     return out.sha256();
 }
@@ -557,12 +592,125 @@ ActualExecutionReceipt make_actual_execution_receipt(
     return result;
 }
 
+ActualExecutionReceipt make_actual_execution_receipt_v3(
+        std::string implementation, std::string layout_digest,
+        std::string component_policy_revision,
+        std::vector<ActualStageReceipt> stages,
+        std::vector<ActualBoundaryReceipt> boundaries) {
+    receipt_check(!implementation.empty(), "implementation_missing");
+    receipt_check(!layout_digest.empty(), "layout_digest_missing");
+    receipt_check(!component_policy_revision.empty(),
+                  "component_policy_missing");
+    receipt_check(!stages.empty(), "stage_missing");
+    receipt_check(boundaries.size() + 1 == stages.size(),
+                  "boundary_count_mismatch");
+    ActualExecutionReceipt result;
+    result.schema_version = actual_receipt_schema_v3;
+    result.implementation = std::move(implementation);
+    result.layout_digest = std::move(layout_digest);
+    result.component_policy_revision =
+        std::move(component_policy_revision);
+    result.stages = std::move(stages);
+    result.boundaries = std::move(boundaries);
+    for (const auto &stage : result.stages)
+        receipt_check(stage.implementation == result.implementation &&
+                          stage.layout_digest == result.layout_digest,
+                      "stage_identity_mismatch");
+    for (uint32_t index = 0; index < result.boundaries.size(); ++index) {
+        const auto &boundary = result.boundaries[index];
+        receipt_check(boundary.boundary_index == index &&
+                          boundary.from_stage_index == index &&
+                          boundary.to_stage_index == index + 1,
+                      "boundary_order_mismatch");
+        receipt_check(!boundary.id.empty(), "boundary_id_missing");
+        receipt_check(boundary.event_digest ==
+                          actual_boundary_event_digest(boundary),
+                      "boundary_event_digest_mismatch");
+        receipt_check(boundary.canonical_digest ==
+                          actual_boundary_canonical_digest(boundary),
+                      "boundary_canonical_digest_mismatch");
+    }
+    result.canonical_digest = execution_canonical_digest(result);
+    return result;
+}
+
+std::string actual_boundary_event_digest(
+        const ActualBoundaryReceipt &boundary) {
+    CanonicalEncoder out("tc-streaming-actual-boundary-events-v1");
+    out.unsigned_field("index", boundary.boundary_index);
+    out.string_field("id", boundary.id);
+    out.unsigned_field("from", boundary.from_stage_index);
+    out.unsigned_field("to", boundary.to_stage_index);
+    out.unsigned_field("source_generation", boundary.source_generation);
+    out.unsigned_field("last_reader_sequence",
+                       boundary.last_reader_sequence);
+    out.unsigned_field("completed_reader_sequence",
+                       boundary.completed_reader_sequence);
+    out.unsigned_field("live_before", boundary.live_slot_bytes_before);
+    out.unsigned_field("live_after", boundary.live_slot_bytes_after);
+    out.unsigned_field("released", boundary.released_slot_bytes);
+    out.unsigned_field("pending_before", boundary.pending_readers_before);
+    out.unsigned_field("pending_after", boundary.pending_readers_after);
+    out.boolean_field("drained", boundary.source_stage_drained);
+    out.boolean_field("released_ok", boundary.source_stage_backing_released);
+    out.boolean_field("next_started", boundary.next_stage_started);
+    return out.sha256();
+}
+
+std::string actual_boundary_canonical_digest(
+        const ActualBoundaryReceipt &boundary) {
+    CanonicalEncoder out("tc-streaming-actual-boundary-receipt-v1");
+    out.string_field("event_digest", boundary.event_digest);
+    out.unsigned_field("index", boundary.boundary_index);
+    out.unsigned_field("from", boundary.from_stage_index);
+    out.unsigned_field("to", boundary.to_stage_index);
+    out.unsigned_field("source_generation", boundary.source_generation);
+    return out.sha256();
+}
+
+void verify_actual_boundary_receipt(
+        const ActualBoundaryReceipt &boundary, uint32_t expected_index,
+        uint32_t expected_from_stage, uint32_t expected_to_stage,
+        uint64_t source_generation) {
+    receipt_check(boundary.boundary_index == expected_index &&
+                      boundary.from_stage_index == expected_from_stage &&
+                      boundary.to_stage_index == expected_to_stage,
+                  "boundary_order_mismatch");
+    receipt_check(!boundary.id.empty(), "boundary_id_missing");
+    receipt_check(boundary.source_generation == source_generation &&
+                      source_generation != 0,
+                  "boundary_source_generation_mismatch");
+    receipt_check(boundary.source_stage_drained,
+                  "boundary_drain_incomplete");
+    receipt_check(boundary.source_stage_backing_released,
+                  "boundary_release_incomplete");
+    receipt_check(!boundary.next_stage_started,
+                  "boundary_next_stage_already_started");
+    receipt_check(boundary.pending_readers_after == 0,
+                  "boundary_pending_readers");
+    receipt_check(boundary.completed_reader_sequence >=
+                      boundary.last_reader_sequence,
+                  "boundary_reader_sequence_mismatch");
+    receipt_check(boundary.live_slot_bytes_after == 0,
+                  "boundary_live_bytes_remaining");
+    receipt_check(boundary.released_slot_bytes ==
+                      boundary.live_slot_bytes_before,
+                  "boundary_released_bytes_mismatch");
+    receipt_check(boundary.event_digest ==
+                      actual_boundary_event_digest(boundary),
+                  "boundary_event_digest_mismatch");
+    receipt_check(boundary.canonical_digest ==
+                      actual_boundary_canonical_digest(boundary),
+                  "boundary_canonical_digest_mismatch");
+}
+
 void verify_actual_execution_receipt(
         const Layout &layout, std::string_view implementation,
         std::string_view component_policy_revision,
         uint64_t source_generation,
         const ActualExecutionReceipt &receipt) {
-    receipt_check(receipt.schema_version == actual_receipt_schema_v2,
+    receipt_check(receipt.schema_version == actual_receipt_schema_v2 ||
+                      receipt.schema_version == actual_receipt_schema_v3,
                   "schema_mismatch");
     receipt_check(receipt.implementation == implementation,
                   "implementation_mismatch");
@@ -583,6 +731,19 @@ void verify_actual_execution_receipt(
         verify_actual_stage_receipt(
             layout.stages[stage], stage, request_generation, options,
             actual);
+    }
+    if (receipt.schema_version == actual_receipt_schema_v2) {
+        receipt_check(layout.stages.size() == 1 &&
+                          receipt.boundaries.empty(),
+                      "legacy_receipt_requires_single_stage");
+    } else {
+        receipt_check(receipt.boundaries.size() + 1 ==
+                          layout.stages.size(),
+                      "boundary_count_mismatch");
+        for (uint32_t index = 0; index < receipt.boundaries.size(); ++index)
+            verify_actual_boundary_receipt(
+                receipt.boundaries[index], index, index, index + 1,
+                source_generation);
     }
     receipt_check(receipt.canonical_digest ==
                       execution_canonical_digest(receipt),

@@ -92,8 +92,8 @@ void complete_group(
 }
 
 std::shared_ptr<const ActualStageReceipt> make_receipt(
-        const StageLayout &layout, uint64_t source_generation = 17) {
-    constexpr uint32_t stage_index = 0;
+        const StageLayout &layout, uint64_t source_generation = 17,
+        uint32_t stage_index = 0) {
     constexpr uint64_t request_generation = 9;
     ActualReceiptRecorder recorder(
         layout, stage_index, request_generation,
@@ -225,6 +225,111 @@ int main() {
     duplicate.fill_submitted(first);
     rejects([&] { duplicate.fill_submitted(first); }, "group_duplicate");
 
+    auto second_stage = stage_layout();
+    second_stage.id = "upsampler";
+    const auto first_stage_receipt = make_receipt(layout, 17, 0);
+    const auto second_stage_receipt = make_receipt(second_stage, 17, 1);
+    Layout multi_stage_layout;
+    multi_stage_layout.digest = std::string(64, 'a');
+    multi_stage_layout.stages.push_back(layout);
+    multi_stage_layout.stages.push_back(second_stage);
+    ActualBoundaryReceipt boundary;
+    boundary.boundary_index = 0;
+    boundary.id = "denoiser-to-upsampler";
+    boundary.from_stage_index = 0;
+    boundary.to_stage_index = 1;
+    boundary.source_generation = 17;
+    boundary.last_reader_sequence = 4;
+    boundary.completed_reader_sequence = 4;
+    boundary.live_slot_bytes_before = 32;
+    boundary.live_slot_bytes_after = 0;
+    boundary.released_slot_bytes = 32;
+    boundary.pending_readers_before = 1;
+    boundary.pending_readers_after = 0;
+    boundary.source_stage_drained = true;
+    boundary.source_stage_backing_released = true;
+    boundary.next_stage_started = false;
+    boundary.event_digest = actual_boundary_event_digest(boundary);
+    boundary.canonical_digest = actual_boundary_canonical_digest(boundary);
+    auto multi_stage = make_actual_execution_receipt_v3(
+        "generic_stage_executor_v2", multi_stage_layout.digest,
+        "components-v1", {*first_stage_receipt, *second_stage_receipt},
+        {boundary});
+    verify_actual_execution_receipt(
+        multi_stage_layout, "generic_stage_executor_v2", "components-v1",
+        17, multi_stage);
+    assert(multi_stage.schema_version == actual_receipt_schema_v3);
+    assert(multi_stage.boundaries.size() == 1);
+    rejects([&] {
+        (void)make_actual_execution_receipt_v3(
+            "generic_stage_executor_v2", multi_stage_layout.digest,
+            "components-v1",
+            {*first_stage_receipt, *second_stage_receipt}, {});
+    }, "boundary_count_mismatch");
+    auto broken_boundary = boundary;
+    broken_boundary.to_stage_index = 2;
+    broken_boundary.event_digest =
+        actual_boundary_event_digest(broken_boundary);
+    broken_boundary.canonical_digest =
+        actual_boundary_canonical_digest(broken_boundary);
+    rejects([&] {
+        (void)make_actual_execution_receipt_v3(
+            "generic_stage_executor_v2", multi_stage_layout.digest,
+            "components-v1",
+            {*first_stage_receipt, *second_stage_receipt},
+            {broken_boundary});
+    }, "boundary_order_mismatch");
+    broken_boundary = boundary;
+    broken_boundary.pending_readers_after = 1;
+    broken_boundary.event_digest =
+        actual_boundary_event_digest(broken_boundary);
+    broken_boundary.canonical_digest =
+        actual_boundary_canonical_digest(broken_boundary);
+    rejects([&] {
+        verify_actual_boundary_receipt(broken_boundary, 0, 0, 1, 17);
+    }, "boundary_pending_readers");
+    broken_boundary = boundary;
+    broken_boundary.source_stage_backing_released = false;
+    broken_boundary.event_digest =
+        actual_boundary_event_digest(broken_boundary);
+    broken_boundary.canonical_digest =
+        actual_boundary_canonical_digest(broken_boundary);
+    rejects([&] {
+        verify_actual_boundary_receipt(broken_boundary, 0, 0, 1, 17);
+    }, "boundary_release_incomplete");
+    broken_boundary = boundary;
+    broken_boundary.next_stage_started = true;
+    broken_boundary.event_digest =
+        actual_boundary_event_digest(broken_boundary);
+    broken_boundary.canonical_digest =
+        actual_boundary_canonical_digest(broken_boundary);
+    rejects([&] {
+        verify_actual_boundary_receipt(broken_boundary, 0, 0, 1, 17);
+    }, "boundary_next_stage_already_started");
+    broken_boundary = boundary;
+    broken_boundary.live_slot_bytes_after = 1;
+    broken_boundary.released_slot_bytes = 31;
+    broken_boundary.event_digest =
+        actual_boundary_event_digest(broken_boundary);
+    broken_boundary.canonical_digest =
+        actual_boundary_canonical_digest(broken_boundary);
+    rejects([&] {
+        verify_actual_boundary_receipt(broken_boundary, 0, 0, 1, 17);
+    }, "boundary_live_bytes_remaining");
+    broken_boundary = boundary;
+    broken_boundary.event_digest = std::string(64, 'f');
+    rejects([&] {
+        verify_actual_boundary_receipt(broken_boundary, 0, 0, 1, 17);
+    }, "boundary_event_digest_mismatch");
+    auto legacy_multi = make_actual_execution_receipt(
+        "generic_stage_executor_v2", multi_stage_layout.digest,
+        "components-v1", {*first_stage_receipt, *second_stage_receipt});
+    rejects([&] {
+        verify_actual_execution_receipt(
+            multi_stage_layout, "generic_stage_executor_v2",
+            "components-v1", 17, legacy_multi);
+    }, "legacy_receipt_requires_single_stage");
+
     std::cout << "PASS actual receipt v2: single/multi/carry, canonical "
-                 "digests and mismatch fail-closed\n";
+                 "digests and mismatch fail-closed; v3 multi-stage boundary\n";
 }

@@ -2,6 +2,7 @@
 #include "../../native/runtime/streaming/public_runtime.hpp"
 #include "../../native/runtime/streaming/public_result.hpp"
 #include "../../native/runtime/streaming/actual_receipt.hpp"
+#include "../../native/runtime/streaming/run_context.hpp"
 
 #include <cassert>
 #include <fstream>
@@ -158,6 +159,8 @@ class Probe final : public ModelStreamingProbe {
     }
 };
 
+StageLayout context_stage(std::string id);
+
 class Snapshot final : public ModelStreamingSnapshot {
   public:
     PresetSourceIdentity source_value = source();
@@ -169,7 +172,7 @@ class Snapshot final : public ModelStreamingSnapshot {
     mutable uint32_t source_revalidations = 0;
     mutable bool source_valid = true;
 
-    explicit Snapshot(std::string layout_digest) {
+    explicit Snapshot(std::string layout_digest, bool multi_stage = false) {
         descriptor_value.model = "z-image-turbo";
         layout_value.digest = std::move(layout_digest);
         layout_value.materializations_complete = true;
@@ -193,6 +196,8 @@ class Snapshot final : public ModelStreamingSnapshot {
             stage.groups.push_back(
                 {group, 0, group % 2, {group}, {8}, 8});
         layout_value.stages.push_back(std::move(stage));
+        if (multi_stage)
+            layout_value.stages.push_back(context_stage("upsampler"));
     }
     std::string_view model_id() const noexcept override {
         return descriptor_value.model;
@@ -221,6 +226,82 @@ class Snapshot final : public ModelStreamingSnapshot {
             throw std::runtime_error("artifact_changed");
     }
 };
+
+class ImmediateContextAdapter final : public ModelSlotAdapter {
+  public:
+    uint64_t sequence = 0;
+
+    void create_pool(const PoolLayout &) override {}
+
+    static int fill(void *, const tc_stream_slot_ticket_v1 *,
+                    const std::atomic<bool> *cancel, uint64_t *bytes) {
+        if (cancel->load(std::memory_order_acquire)) return -1;
+        *bytes = 8;
+        return 0;
+    }
+
+    FillJob make_fill_job(
+            const Group &, const tc_stream_slot_ticket_v1 &ticket) override {
+        return {ticket, this, &fill};
+    }
+
+    void encode_prefix(uint32_t) override {}
+    void prepare_group(const Group &, const tc_stream_slot_ticket_v1 &) override {}
+
+    ReaderSet encode_group(
+            const Group &, const tc_stream_slot_ticket_v1 &,
+            CompletionMailbox &) override {
+        ReaderSet result;
+        result.count = 1;
+        result.fences[0] = {1, ++sequence};
+        result.already_complete = true;
+        return result;
+    }
+
+    bool drain() noexcept override { return true; }
+    void destroy_pool() noexcept override {}
+};
+
+StageLayout context_stage(std::string id) {
+    StageLayout stage;
+    stage.id = std::move(id);
+    stage.group_size = 1;
+    stage.slot_count = 1;
+    stage.workers = 1;
+    stage.pass_count = 1;
+    PoolLayout pool;
+    pool.id = 0;
+    pool.layout_class = stage.id + "-class";
+    pool.slots.push_back({{8}, 8});
+    stage.pools.push_back(std::move(pool));
+    stage.groups.push_back({0, 0, 0, {0}, {8}, 8});
+    return stage;
+}
+
+StreamingRuntimeMetrics context_runtime(
+        const StageLayout &stage, std::string_view layout_digest) {
+    StreamingRuntimeMetrics runtime;
+    runtime.implementation = "generic_stage_executor_v2";
+    runtime.layout_digest = std::string(layout_digest);
+    runtime.stage = stage.id;
+    runtime.resident_prefix_blocks = stage.prefix;
+    runtime.block_group_size = stage.group_size;
+    runtime.slot_count = stage.slot_count;
+    runtime.prefetch_distance = stage.distance;
+    runtime.io_workers = stage.workers;
+    runtime.group_count = static_cast<uint32_t>(stage.groups.size());
+    runtime.pass_count = stage.pass_count;
+    runtime.pass_transition = "reload";
+    runtime.retention = "request";
+    runtime.component_policy_revision = "zimage-components-v1";
+    runtime.multi_pool_policy = "serial";
+    runtime.pool_count = static_cast<uint32_t>(stage.pools.size());
+    runtime.slot_bundle_count =
+        stage.slot_count * static_cast<uint32_t>(stage.pools.size());
+    runtime.refill_worker_count = stage.workers;
+    runtime.drained = true;
+    return runtime;
+}
 
 class FixedCatalogProvider final : public StreamingCatalogProvider {
   public:
@@ -534,6 +615,131 @@ int main() {
     rejects([&] {
         verify_and_attach_public_streaming_result(execution, wrong_actual);
     }, "streaming_actual_plan_mismatch");
+
+    auto context_execution =
+        std::make_shared<const ResolvedRequestExecution>(execution);
+    std::atomic<bool> context_cancel{false};
+    {
+        PublicStreamingRunContext context(
+            context_execution, context_cancel);
+        rejects([&] {
+            context.attach_stage(
+                0, std::make_shared<ImmediateContextAdapter>(),
+                "generic_stage_executor_v2");
+        }, "streaming_context_not_attachable");
+        assert(context.phase() == PublicRunPhase::created);
+    }
+    {
+        PublicStreamingRunContext context(
+            context_execution, context_cancel);
+        context.mark_gpu_revalidated();
+        auto adapter = std::make_shared<ImmediateContextAdapter>();
+        auto &stage = context.attach_stage(
+            0, adapter, "generic_stage_executor_v2");
+        rejects([&] {
+            context.attach_stage(
+                0, std::make_shared<ImmediateContextAdapter>(),
+                "generic_stage_executor_v2");
+        }, "streaming_context_duplicate_stage");
+        const auto &planned = context.execution().model_snapshot->layout()
+                                  .stages.front();
+        for (uint32_t pass = 0; pass < planned.pass_count; ++pass)
+            stage.run_pass(pass, pass, context_cancel);
+        context.finish_stage(0);
+        const auto receipt = context.seal_receipt(
+            "generic_stage_executor_v2", "zimage-components-v1");
+        assert(receipt && receipt->schema_version == actual_receipt_schema_v2);
+        context.revalidate_source_after_drain();
+        context.complete();
+        assert(context.phase() == PublicRunPhase::completed);
+    }
+    {
+        auto multi_snapshot = std::make_shared<Snapshot>(
+            result_selected.record.plan.layout_digest, true);
+        auto multi_authorized = PublicPresetResolver::authorize(
+            result_selected, *result_probe, *multi_snapshot, device());
+        Request multi_request;
+        multi_request.model = "z-image-turbo";
+        multi_request.streaming =
+            result_selected.record.plan.canonical_config;
+        auto multi_execution =
+            std::make_shared<const ResolvedRequestExecution>(
+                ResolvedRequestExecution{
+                    std::move(multi_request), std::move(multi_authorized),
+                    result_probe, multi_snapshot, digest('2')});
+        PublicStreamingRunContext context(multi_execution, context_cancel);
+        context.mark_gpu_revalidated();
+        auto first_adapter = std::make_shared<ImmediateContextAdapter>();
+        auto &first = context.attach_stage(
+            0, first_adapter, "generic_stage_executor_v2");
+        const auto &first_layout = multi_snapshot->layout_value.stages[0];
+        for (uint32_t pass = 0; pass < first_layout.pass_count; ++pass)
+            first.run_pass(pass, pass, context_cancel);
+        rejects([&] {
+            ActualBoundaryReceipt premature;
+            context.record_boundary(std::move(premature));
+        }, "streaming_context_boundary_phase");
+        context.finish_stage(0);
+        rejects([&] {
+            context.attach_stage(
+                1, std::make_shared<ImmediateContextAdapter>(),
+                "generic_stage_executor_v2");
+        }, "streaming_context_not_attachable");
+        ActualBoundaryReceipt boundary;
+        boundary.boundary_index = 0;
+        boundary.id = "denoiser-to-upsampler";
+        boundary.from_stage_index = 0;
+        boundary.to_stage_index = 1;
+        boundary.source_generation = test_lease->generation();
+        boundary.last_reader_sequence = first_adapter->sequence;
+        boundary.completed_reader_sequence = first_adapter->sequence;
+        boundary.live_slot_bytes_before = 16;
+        boundary.released_slot_bytes = 16;
+        boundary.source_stage_drained = true;
+        boundary.source_stage_backing_released = true;
+        boundary.event_digest = actual_boundary_event_digest(boundary);
+        boundary.canonical_digest =
+            actual_boundary_canonical_digest(boundary);
+        auto pending_boundary = boundary;
+        pending_boundary.pending_readers_after = 1;
+        pending_boundary.event_digest =
+            actual_boundary_event_digest(pending_boundary);
+        pending_boundary.canonical_digest =
+            actual_boundary_canonical_digest(pending_boundary);
+        rejects([&] {
+            context.record_boundary(std::move(pending_boundary));
+        }, "boundary_pending_readers");
+        context.record_boundary(boundary);
+        auto second_adapter = std::make_shared<ImmediateContextAdapter>();
+        auto &second = context.attach_stage(
+            1, second_adapter, "generic_stage_executor_v2");
+        const auto &second_layout = multi_snapshot->layout_value.stages[1];
+        second.run_pass(0, 0, context_cancel);
+        context.finish_stage(1);
+        context.drain_all();
+        const auto receipt = context.seal_receipt(
+            "generic_stage_executor_v2", "zimage-components-v1");
+        assert(receipt && receipt->schema_version == actual_receipt_schema_v3 &&
+               receipt->stages.size() == 2 &&
+               receipt->boundaries.size() == 1);
+        context.revalidate_source_after_drain();
+        context.complete();
+
+        RunResult multi_run;
+        multi_run.streaming_stages.push_back(
+            {0, context_runtime(first_layout, multi_snapshot->layout_value.digest)});
+        multi_run.streaming_stages.push_back(
+            {1, context_runtime(second_layout, multi_snapshot->layout_value.digest)});
+        multi_run.streaming_receipt = receipt;
+        verify_and_attach_public_streaming_result(
+            *multi_execution, multi_run);
+        assert(!multi_run.streaming_runtime &&
+               multi_run.streaming_stages.size() == 2 &&
+               multi_run.streaming_boundaries.size() == 1 &&
+               multi_run.streaming_boundaries.front().pending_readers_after == 0 &&
+               multi_run.public_streaming &&
+               multi_run.public_streaming->actual_plan_verified);
+    }
 
     FixedCatalogProvider provider(catalog);
     PublicSession public_session;
