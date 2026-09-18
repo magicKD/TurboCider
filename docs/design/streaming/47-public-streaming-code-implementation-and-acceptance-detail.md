@@ -13,6 +13,13 @@
 
 当前实现事实只以 [13 实施进度](13-implementation-progress.md) 为准。本文中的新增类型、文件、测试和命令如果尚不存在，均属于设计合同，不能据此宣称已经支持。
 
+面向下一批直接编码、PR 拆分和 release review 的补充细节见
+[48 Public Streaming 工程实施附录](48-public-streaming-engineering-addendum.md)。48 进一步冻结了 target→record→exact layout
+求解、buffer policy、multi-stage LTX 前置扩展、文件级改造矩阵和统一失败状态；两份文档都不改变 production catalog 为空的事实。
+直接编码和 PR review 的接口/线程/错误合同见 [49](49-public-streaming-code-contracts-and-execution-blueprint.md)，
+五档实机搜索、process-tree/swap 四臂、evidence 和 catalog 发布运行手册见
+[50](50-public-streaming-calibration-and-release-evidence.md)。49/50 是 48 的分册，不新增第二套框架。
+
 ---
 
 ## 1. 冻结决策

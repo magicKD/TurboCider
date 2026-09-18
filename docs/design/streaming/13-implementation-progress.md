@@ -1629,9 +1629,9 @@ Z-Image exact stream、Swift options/resolve 和 App `JobStore`/`LTXWorker` 接�
 同时更新 44 的当前事实：C2 receipt v2 已完成，后续模型必须复用 common receipt，不能在 result 层合成。
 production catalog 继续为空；四模型 public hooks、完整 target calibration、App 高级设置和 swap P3 仍未完成。
 
-### 13.27 C3 Z-Image public adapter 工作树闭环（2026-09-18，待提交）
+### 13.27 C3 Z-Image public adapter 第一阶段闭环（2026-09-18，已提交 `9b806f3`）
 
-本轮在 C2 receipt v2 基线上完成 Z-Image Turbo 的第一阶段 public adapter 接线。该阶段仍不产生 production catalog record，
+本轮在 C2 receipt v2 基线上完成并提交 Z-Image Turbo 的第一阶段 public adapter 接线。该阶段仍不产生 production catalog record，
 但已经把真实模型 session 接到 common public control/data/receipt 合同：
 
 - `StreamingMetadata`、`StreamingPlanView` 和 `ZImageWeightStream` 支持共享 request-scoped `SourceLease`；
@@ -1668,5 +1668,36 @@ git diff --check                                                     PASS
 ```
 
 本阶段仍有明确边界：测试使用 metadata/synthetic fixture，尚未完成真实 512×512 GPU full-request、P0/P1/P2 档位校准、
-ANE+streaming 认证或 production catalog record。下一步应先提交 C3，再按相同合同接 Flux 9B；不能把本阶段 host PASS
+ANE+streaming 认证或 production catalog record。下一步按相同合同完成 Flux 9B C4；不能把本阶段 host PASS
 写成 Z-Image public 已发布。
+
+### 13.28 Public Streaming 工程实施附录（2026-09-18，仅设计深化）
+
+本轮没有修改 runtime 或放开 production catalog，只继续把实施合同收敛到一份可直接交给开发、测试和 release reviewer 的附录：
+
+- [48 Public Streaming Engineering Addendum](48-public-streaming-engineering-addendum.md) 冻结 App 只显示 `Off / 8 / 10 / 12 / 16 / 20 GiB`，内部由 catalog record 确定 `P/G/K/D/Q`、pool policy 和 pass transition；
+- 明确 target 是完整进程树预算目标，而不是物理显存或系统 hard cap；`tree_peak + max(512 MiB, 10% target)` 必须由真实 sampler 验证；
+- 将 selector、immutable catalog snapshot、SourceLease、ModelStreamingSnapshot、authority、request-scoped context、StageExecutor 和 actual receipt v2 串成一条 public transaction，并写出 cleanup/drain/quarantine 顺序；
+- 把 owner pump、slot 状态机、D/K/Q overlap、serial/retain-all、reload/carry、no-progress timeout 和 reader fence 不变量写成代码级合同；
+- 按当前文件列出 Z-Image、Flux 9B、H3 Turbo、LTX worker 的 source closure、public route、接线要求、停止条件；Flux 工作树已完成本轮 native build/descriptor/public host 检查，但 lease-backed pager 仍缺真实 Metal PASS，H3/LTX public hook 尚未完成；
+- 完善 App/Swift/JobStore stale/revoke/atomic commit 规则，以及 inspect→compile→simulate→campaign→sampler→verifier→catalog builder 工具链；
+- 固定 resident/streaming/bounded/natural-swap 四臂实验协议，明确 streaming 是否更快必须通过实测，不能从设计假设推出；
+- 给出 L0–L6 分层验收、P0/P1/P2/P3 门槛、代码审阅清单、C3–C9 施工顺序和整体完成定义。
+- 将过长的实施细节拆为两个分册：[49](49-public-streaming-code-contracts-and-execution-blueprint.md) 固定 common runtime/model adapter 的接口、依赖、线程、事件、错误、Flux lease loader 和 PR 停止条件；[50](50-public-streaming-calibration-and-release-evidence.md) 固定五档候选生成、四模型搜索、process-tree/swap 四臂、统计、evidence、独立 verifier 和 catalog release/revoke。
+
+本节仍然是设计/实施状态，不增加新的性能证据，不改变 `tc-streaming-catalog-empty-v1`，也不把 Z-Image host/synthetic 或 Flux private P1 记录提升为 public 支持。当前下一步是：完成 Flux lease-backed pager 的真实 Metal/full-request 验证，再接 H3 Turbo、LTX worker，最后进行真实档位校准、四臂对照、App 接入和 reviewed catalog 发布。
+
+### 13.29 Flux lease 工作树定向验证（2026-09-18，未提交）
+
+在补充 49/50 设计分册后，对当前包含 `Weights::load_lease()`、Flux text/VAE lease lineage 和 public adapter 的未提交工作树进行了定向验证：
+
+```text
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh                 PASS
+python3 -B tests/native/test_flux_streaming_descriptor.py         PASS
+python3 -B tests/native/test_flux_public_streaming.py             PASS
+env MLX_ROOT="$PWD/.venv/lib/python3.11/site-packages/mlx" \
+  python3 -B tests/native/test_mlx_weight_pager.py                 SKIP（当前执行环境无 Metal）
+git diff --check                                                   PASS
+```
+
+这将 Flux 当前事实从“尚未编译”更新为“编译、descriptor 和 public host contract 通过”。它仍不能证明 `/dev/fd` safetensors loader 在真实 Metal 下的 lazy/mmap fd 生命周期，也不能证明真实 Flux 9B full request、actual receipt、P0/P1/P2 或五档 memory fit；这些继续作为 [49 第5.2节](49-public-streaming-code-contracts-and-execution-blueprint.md) 和 [50 第10节](50-public-streaming-calibration-and-release-evidence.md) 的发布阻断项。

@@ -77,6 +77,9 @@
 | [45 Acceptance Traceability / Evidence](45-acceptance-traceability-and-evidence-spec.md) | 将 host/synthetic/real-model、source/receipt、process-tree、swap 四臂、P0–P4、evidence/catalog/revoke 映射为可执行测试 ID 和签核项 |
 | [46 Public Streaming Implementation Handbook](46-public-streaming-implementation-handbook.md) | 基于 C2 已完成基线，收敛用户五档、控制面/数据面/证据面、调度算法、四模型逐文件改造、工具链、App、性能与发布验收的实施总手册 |
 | [47 Public Streaming Code / Acceptance Detail](47-public-streaming-code-implementation-and-acceptance-detail.md) | 46 的代码级附录：request-scoped所有权、common runtime接口、multi-slot状态机、四模型逐文件施工、五档搜索、App事务、工具链、swap实验和分层验收 |
+| [48 Public Streaming Engineering Addendum](48-public-streaming-engineering-addendum.md) | 以当前代码为基准的工程实施附录：selector→catalog→exact layout 求解、StageExecutor 状态机、source closure、四模型代码接线、App/JobStore、工具链、四臂 swap 对照和逐层验收 |
+| [49 Public Streaming Code Contracts](49-public-streaming-code-contracts-and-execution-blueprint.md) | 将 48 下钻为可编码合同：依赖方向、接口职责、线程/事件/错误协议、Flux lease lineage、逐模型文件施工、ledger、测试 ID 与 PR 停止条件 |
+| [50 Calibration / Release Evidence](50-public-streaming-calibration-and-release-evidence.md) | 五档候选生成、四模型搜索策略、process-tree/swap 四臂、P0–P3 统计、evidence bundle、独立 verifier、catalog builder/revoke 和发布签字手册 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -104,6 +107,14 @@ unresolved selector 的立即安全闸门、query→resolve→generate 的所有
 当前 C2 Actual Receipt v2 已在 `33bd9ea` 提交并通过 host/sanitizer/build 验收，详见 13.25。继续编码时先读
 **46 第6–8节与第14–17节**，再按 **44 第5节（四模型）→ 第6节（App）** 施工；实现后按 **45** 的测试 ID、
 采样字段、P0–P4 门槛和 evidence bundle 逐项验收。44–46 仍是规格，不改变 production catalog 为空的事实。
+
+如果需要把当前设计直接拆成代码工单和评审 checklist，继续阅读 **48**：它冻结了用户只选目标档位、内部
+record 确定性选择、`P/G/K/D/Q` 候选约束、request-scoped 生命周期、StageExecutor owner pump、四模型 source
+closure、App/JobStore 事务、inspect/compile/simulate/campaign/verifier/builder 工具链以及停止条件。48 是
+实施合同，不代表 Flux/H3/LTX public 已完成，也不代表任何 production record 已发布。
+需要直接修改 common runtime、Flux lease loader、H3/LTX adapter 或组织 PR review 时，阅读 **49**；需要执行
+8/10/12/16/20 GiB 实机探索、process-tree 采样、swap 四臂、证据签核和 catalog 发布时，阅读 **50**。
+49/50 是 48 的分册，不另起一套 executor、内存定义或性能门槛；冲突时仍以 02/05/09/10/12 的主题规范为准。
 28/30不新增第二套executor，29/30不重新定义文档12的P0–P4阈值。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
