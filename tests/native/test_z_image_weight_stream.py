@@ -49,8 +49,57 @@ class WeightStreamTests(unittest.TestCase):
         path.write_bytes(struct.pack("<Q", len(encoded)) + encoded + payload)
         return path
 
-    def run_probe(self, path):
-        return subprocess.run([str(self.binary), str(path)], capture_output=True, text=True, timeout=60)
+    def suffix_fixture(self, change=None):
+        header, payload = {}, bytearray()
+        tensors = [("x_embedder.weight", [2, 2], 1)]
+        for prefix in ("noise_refiner", "context_refiner"):
+            for block in range(2):
+                for w in (1, 2, 3):
+                    tensors.append((f"{prefix}.{block}.feed_forward.w{w}.weight",
+                                    [4, 6] if w == 2 else [6, 4], block + 1))
+        for block in range(30):
+            tensors.extend((f"layers.{block}.tensor{j:02d}.weight", [2, 2], block + 1)
+                           for j in range(10))
+            for w in (1, 2, 3):
+                tensors.append((f"layers.{block}.feed_forward.w{w}.weight",
+                                [4, 6] if w == 2 else [6, 4], block + 1))
+        for key, shape, base in tensors:
+            data = b"".join(struct.pack("<f", float(base + i))[2:]
+                            for i in range(shape[0] * shape[1]))
+            header[key] = {"dtype": "BF16", "shape": shape,
+                           "data_offsets": [len(payload), len(payload) + len(data)]}
+            payload.extend(data)
+        if change:
+            change(header)
+        encoded = json.dumps(header).encode()
+        encoded += b" " * (-len(encoded) % 8)
+        path = self.root / "suffix.safetensors"
+        path.write_bytes(struct.pack("<Q", len(encoded)) + encoded + payload)
+        return path
+
+    def run_probe(self, path, *args):
+        return subprocess.run([str(self.binary), str(path), *args], capture_output=True, text=True, timeout=60)
+
+    def test_compact_suffix_values_bytes_reuse_and_cancel(self):
+        result = self.run_probe(self.suffix_fixture(), "--suffix")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PASS: compact suffix", result.stdout)
+
+    def test_cancel_during_suffix_preparation_then_retry(self):
+        result = self.run_probe(self.suffix_fixture(), "--cancel-pack")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PASS: compact suffix", result.stdout)
+
+    def test_suffix_rejects_incompatible_geometry(self):
+        path = self.suffix_fixture(lambda h: h["noise_refiner.0.feed_forward.w2.weight"].update(shape=[3, 8]))
+        result = self.run_probe(path, "--suffix")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("suffix geometry", result.stderr)
+
+    def test_suffix_requires_all_hybrid_weights(self):
+        result = self.run_probe(self.fixture(), "--suffix")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing Z-Image hybrid MLP", result.stderr)
 
     def test_repeated_gpu_execution_and_cancel(self):
         result = self.run_probe(self.fixture())

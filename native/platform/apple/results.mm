@@ -767,6 +767,11 @@ static NSDictionary *to_dictionary(const BlockResidencyMetrics &m) {
         @"request_refill_load_seconds" : @(m.request_refill_load_seconds),
         @"request_max_refill_seconds" : @(m.request_max_refill_seconds),
         @"request_max_refill_block" : @(m.request_max_refill_block),
+        @"mlp_prefix_channels" : @(m.mlp_prefix_channels),
+        @"suffix_pack_bytes" : @(m.suffix_pack_bytes),
+        @"request_pack_read_bytes" : @(m.request_pack_read_bytes),
+        @"request_pack_write_bytes" : @(m.request_pack_write_bytes),
+        @"request_pack_seconds" : @(m.request_pack_seconds),
     };
 }
 static NSDictionary *to_dictionary(const MemoryAdmissionMetrics &m) {

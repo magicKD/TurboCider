@@ -66,6 +66,25 @@ struct StudioBehaviorTests {
                   "Z-Image streaming draft did not persist")
         zStream.acceleration = StudioAcceleration(policy: "gpu_ane")
         try rejects { _ = try zStream.request(output: output) }
+        zStream.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/z-image/compiled.json")
+        if AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming") {
+            let zHybridStreamRequest = try zStream.request(output: output)
+            try check(zHybridStreamRequest.execution == "gpu_ane" &&
+                    zHybridStreamRequest.ane_manifest == "/test/z-image/compiled.json" &&
+                    zHybridStreamRequest.allow_approximation == true &&
+                    zHybridStreamRequest.memory_budget_bytes == 8 << 30,
+                      "Explicit Z-Image suffix streaming configuration was not forwarded")
+        } else {
+            try rejects { _ = try zStream.request(output: output) }
+        }
+        try check(!AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming", systemJSON: "{}"),
+                  "Old engine without device policy enabled M5 optimization")
+        try check(!AccelerationDiscovery.optimizationEnabled("unknown"), "Unknown optimization was enabled")
+        try check(!AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming",
+            systemJSON: "{\"optimization_profile\":{\"id\":\"legacy\",\"z_image_suffix_streaming\":false}}"),
+                  "Legacy device policy enabled hybrid streaming")
+        zStream.acceleration = StudioAcceleration(policy: "auto")
+        try rejects { _ = try zStream.request(output: output) }
         zStream.acceleration = nil
         zStream.zImageStreamingBudgetGiB = -1
         try rejects { _ = try zStream.request(output: output) }
@@ -129,6 +148,45 @@ struct StudioBehaviorTests {
         try check(resolvedCache.acceleration?.manifest == manifestFile.path && inventoryStore.accelerationStatus?.contains("未重新编译") == true,
                   "An explicitly selected compiled partition outside the App cache was not reused")
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled, minimumRows: 4097) == nil, "1024 task accepted undersized partition")
+        var zArtifacts: [String: [String: String]] = [:]
+        for i in 0..<32 {
+            let name = "z-block\(i).mlmodelc"
+            try FileManager.default.createDirectory(at: compiled.appendingPathComponent(name), withIntermediateDirectories: true)
+            zArtifacts[String(i)] = ["int8_pc": name]
+        }
+        func zPartition(_ name: String, _ buckets: [Int], end: Int = 4096) throws -> String {
+            let file = compiled.appendingPathComponent(name + ".json")
+            let value: [String: Any] = [
+                "schema_version": 2,
+                "shape": ["K": 3840, "N": 3840, "buckets": buckets, "input_mode": "enumerated",
+                          "mlp_width": 10240, "ane_mlp_start": 0, "ane_mlp_end": end],
+                "source": ["checkpoint": weight.path, "checkpoint_bytes": 3], "artifacts": zArtifacts
+            ]
+            try JSONSerialization.data(withJSONObject: value).write(to: file)
+            return file.path
+        }
+        let zSmall = try zPartition("z-small", [1056, 1120, 1536])
+        let zLarge = try zPartition("z-large", [4128, 4192, 5120])
+        let zSameRows = try zPartition("z-same-rows", [1120])
+        let zOtherSplit = try zPartition("z-other-split", [1088, 1120], end: 6144)
+        func zMatch(_ preferred: String, _ rows: Int, _ known: [String]) -> AccelerationDiscovery.Match? {
+            AccelerationDiscovery.find(modelPath: fixture.path, preferred: preferred, cache: compiled,
+                minimumRows: rows, modelID: "z-image-turbo", knownManifests: known,
+                preferSmallestRows: true)
+        }
+        try check(zMatch(zLarge, 1120, [zSmall])?.manifest == zSmall,
+                  "Switching from 1024 to 512 retained the oversized ANE partition")
+        try check(zMatch(zSmall, 4192, [zLarge])?.manifest == zLarge,
+                  "Switching from 512 to 1024 failed to select sufficient ANE capacity")
+        try check(zMatch(zSameRows, 1120, [zSmall])?.manifest == zSameRows,
+                  "Equal-row selection needlessly replaced the preferred partition")
+        try check(zMatch(zLarge, 1088, [zSmall, zOtherSplit])?.manifest == zSmall,
+                  "Row minimization changed the selected MLP channel split")
+        try check(zMatch(zLarge, 1120, [])?.manifest == zLarge,
+                  "An oversized partition must remain usable when no smaller equivalent exists")
+        try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: zLarge, cache: compiled,
+                    minimumRows: 1120, modelID: "z-image-turbo", knownManifests: [zSmall])?.manifest == zLarge,
+                  "Explicit discovery preference changed without opting into row minimization")
         let discoveryLoRAFile = root.appendingPathComponent("discovery-lora.safetensors")
         try Data([7, 8]).write(to: discoveryLoRAFile)
         let discoveryLoRA = StudioLoRA(path: discoveryLoRAFile.path, strength: 0.6)
@@ -151,6 +209,41 @@ struct StudioBehaviorTests {
         try check(AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 10240, start: 0, end: 4096, modelID: "z-image-turbo"), "Validated Z-Image M4 Max prefix was rejected")
         try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Max", memory: 64 * 1024 * 1024 * 1024, mlpWidth: 10240, start: 0, end: 5120, modelID: "z-image-turbo"), "Unvalidated Z-Image prefix bypassed the automatic policy")
         try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M4 Pro", memory: 48 * 1024 * 1024 * 1024, mlpWidth: 10240, start: 0, end: 4096, modelID: "z-image-turbo"), "M4 Max Z-Image policy leaked to M4 Pro")
+        try check(AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M5 Pro", memory: 24 << 30, mlpWidth: 9216, start: 0, end: 6144, bucket: 1088), "Measured M5 Pro partition was rejected")
+        for end in [3072, 9216] {
+            try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M5 Pro", memory: 24 << 30, mlpWidth: 9216, start: 0, end: end, bucket: 1088), "Unqualified M5 partition became automatic")
+        }
+        for gpu in ["Apple M5", "Apple M5 Max"] {
+            try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: gpu, memory: 24 << 30, mlpWidth: 9216, start: 0, end: 6144, bucket: 1088), "M5 Pro policy leaked to another chip")
+        }
+        try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M5 Pro", memory: 48 << 30, mlpWidth: 9216, start: 0, end: 6144), "M5 Pro policy leaked to another memory configuration")
+        try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M5 Pro", memory: 24 << 30, mlpWidth: 9216, start: 0, end: 6144, bucket: 4160), "Unmeasured M5 1024 bucket was accepted")
+        try check(!AccelerationDiscovery.automaticPolicyMatches(gpu: "Apple M5 Pro", memory: 24 << 30, mlpWidth: 10240, start: 0, end: 4096, modelID: "z-image-turbo"), "M5 FLUX policy leaked to Z-Image")
+        // Offline compilation and the model library need not use the App cache.
+        manifest["source"] = ["checkpoint": weight.path, "checkpoint_bytes": 3]
+        manifest["shape"] = ["K": 3072, "N": 3072, "buckets": [1088],
+                             "mlp_width": 9216, "ane_mlp_start": 0, "ane_mlp_end": 6144]
+        try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
+        let hardware = try JSONSerialization.jsonObject(with: Data(NativeEngine.system().utf8)) as! [String: Any]
+        let automaticExpected = AccelerationDiscovery.automaticPolicyMatches(
+            gpu: hardware["gpu"] as? String ?? "", memory: (hardware["physical_memory_bytes"] as? NSNumber)?.uint64Value ?? 0,
+            mlpWidth: 9216, start: 0, end: 6144, bucket: 1088) &&
+            AccelerationDiscovery.optimizationEnabled("external_automatic_partitions")
+        let emptyCache = root.appendingPathComponent("external-auto-cache")
+        let externalAuto = AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path,
+            cache: emptyCache, minimumRows: 1044, requiredRows: 1088, enforceAutomaticPolicy: true)
+        try check((externalAuto?.manifest == manifestFile.path) == automaticExpected,
+                  "External preferred partition did not follow the automatic hardware gate")
+        let registry = try LibraryStore()
+        let registered = try registry.registerANE(modelID: "flux2-klein-4b", manifest: manifestFile)
+        let registeredAuto = AccelerationDiscovery.find(modelPath: fixture.path,
+            cache: emptyCache, minimumRows: 1044, requiredRows: 1088, enforceAutomaticPolicy: true)
+        try check((registeredAuto?.manifest == manifestFile.path) == automaticExpected,
+                  "Registered external partition was not checked for automatic discovery")
+        try check(AccelerationDiscovery.find(modelPath: fixture.path, cache: emptyCache,
+            minimumRows: 1044, requiredRows: 1088, enforceAutomaticPolicy: true,
+            loras: [discoveryLoRA]) == nil, "Registry bypassed the automatic LoRA gate")
+        try registry.unregisterANE(id: registered.id)
         manifest["source"] = ["checkpoint": weight.path, "checkpoint_bytes": 4]
         try JSONSerialization.data(withJSONObject: manifest).write(to: manifestFile)
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: manifestFile.path, cache: compiled) == nil, "Wrong checkpoint accepted")

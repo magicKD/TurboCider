@@ -256,9 +256,13 @@ struct StudioDraft: Codable, Sendable {
                 throw NativeFailure(message: "Z-Image-Turbo 支持常驻或 BF16 流式加载，每次生成单张图片。")
             }
             if residency == "streamed" {
-                guard activeLoRAs.isEmpty, !usesANE, profilePath.isEmpty,
-                      acceleration?.policy == nil || acceleration?.policy == "gpu" else {
-                    throw NativeFailure(message: "流式加载目前仅支持 BF16、纯 GPU 和不使用 LoRA 的配置。")
+                guard activeLoRAs.isEmpty, profilePath.isEmpty,
+                      ["gpu", "gpu_ane"].contains(acceleration?.policy ?? "gpu") else {
+                    throw NativeFailure(message: "流式加载支持 BF16 和不使用 LoRA 的配置，请明确选择 GPU 或 GPU+ANE。")
+                }
+                guard acceleration?.policy != "gpu_ane" ||
+                      AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming") else {
+                    throw NativeFailure(message: "ANE 流式优化目前仅在已验证的 M5 Pro 24 GiB 上启用；此设备请使用纯 GPU 流式加载。")
                 }
                 guard [6, 8, 10, 12].contains(zImageStreamingBudgetGiB) else {
                     throw NativeFailure(message: "请选择 6、8、10 或 12 GiB 的流式内存预算。")

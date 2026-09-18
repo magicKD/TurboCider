@@ -68,6 +68,7 @@ private func stateName(_ value: String) -> String {
     ["preparing": "准备中", "running": "生成中", "cancelling": "正在安全停止", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断"][value] ?? value
 }
 private func phaseName(_ value: String) -> String {
+    if value == "pack_z_image_suffix" { return "整理 GPU 权重" }
     if value == "denoise" { return "采样" }
     if value.contains("text_cache_hit") { return "复用文本编码" }
     if value.contains("vae") || value.contains("decode") { return "图像编解码" }
@@ -462,7 +463,9 @@ struct StudioView: View {
                             Picker("采样内存预算", selection: $studio.draft.zImageStreamingBudgetGiB) {
                                 ForEach([6, 8, 10, 12], id: \.self) { Text("\($0) GiB").tag($0) }
                             }.disabled(store.busy || submitting)
-                            Text("仅支持 Comfy BF16、纯 GPU、不使用 LoRA。提前读取下一层以降低内存占用；速度取决于磁盘。预算用于采样阶段规划，并非整个应用的内存硬上限。")
+                            Text(AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming")
+                                 ? "支持 Comfy BF16，不支持 LoRA。本机已启用 M5 ANE 流式优化：只加载 GPU 负责的 MLP 权重，首次准备需要整理权重。预算不包含 ANE，也不是整个应用的内存硬上限。"
+                                 : "仅支持 Comfy BF16、纯 GPU、不使用 LoRA。提前读取下一层以降低内存占用；速度取决于磁盘。预算用于采样阶段规划，并非整个应用的内存硬上限。")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     } else if studio.draft.modelID == "z-image-turbo-gguf" {

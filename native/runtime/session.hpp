@@ -83,6 +83,11 @@ struct BlockResidencyMetrics {
     double request_load_seconds = 0, request_wait_seconds = 0;
     double request_refill_load_seconds = 0, request_max_refill_seconds = 0;
     int request_max_refill_block = -1;
+    // Z-Image hybrid streaming: compact GPU suffix, prepared once per stream.
+    int mlp_prefix_channels = 0;
+    uint64_t suffix_pack_bytes = 0;
+    uint64_t request_pack_read_bytes = 0, request_pack_write_bytes = 0;
+    double request_pack_seconds = 0;
 };
 struct StreamingRuntimeMetrics {
     std::string implementation, layout_digest;

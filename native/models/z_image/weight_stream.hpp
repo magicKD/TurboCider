@@ -15,10 +15,12 @@ class ZImageWeightStream {
         std::string name;
         mx::Shape shape;
         uint64_t offset = 0, bytes = 0;
+        bool packed = false;
     };
     struct Read {
         uint64_t offset, bytes;
         char *destination;
+        int fd = -1;
     };
     struct ReadResult { uint64_t bytes = 0; double seconds = 0; };
     struct Slot {
@@ -28,6 +30,7 @@ class ZImageWeightStream {
         int block = -1;
     };
     int fd_ = -1;
+    int packed_fd_ = -1;
     std::shared_ptr<const streaming::SourceLease> lease_;
     uint64_t file_bytes_ = 0;
     int64_t modified_seconds_ = 0, modified_nanos_ = 0;
@@ -44,6 +47,8 @@ class ZImageWeightStream {
     void index(const std::filesystem::path &,
                streaming::OwnedSourceFd source_fd =
                    streaming::OwnedSourceFd());
+    void pack_suffix(int prefix_channels, const Event &);
+    void check_source() const;
     void allocate(Slot &, const std::vector<Record> &);
     ReadResult read(const std::vector<Read> &,
                     const std::atomic<bool> *worker_cancel = nullptr) const;
@@ -60,7 +65,8 @@ class ZImageWeightStream {
   public:
     ZImageWeightStream(const std::filesystem::path &, uint64_t budget,
                        uint64_t activation_reserve, Weights &fixed,
-                       const Event &, std::atomic<bool> &);
+                       const Event &, std::atomic<bool> &,
+                       int prefix_channels = 0);
     // Exact-layout construction preserves the user-selected prefix. It loads
     // only fixed/prefix weights; the generic StageExecutor remains the sole
     // owner of worker creation, suffix fill dispatch and slot state.

@@ -68,11 +68,22 @@ std::string sha256_file(const std::filesystem::path &path) {
 namespace tc {
 NSDictionary *system_info() {
     id<MTLDevice> d = MTLCreateSystemDefaultDevice();
+    const auto &optimizations = device_optimizations(
+        d ? d.name.UTF8String : "unavailable", [NSProcessInfo processInfo].physicalMemory);
     return @{
         @"abi" : @1,
         @"engine_version" : @"0.2.0-native-dev",
         @"gpu_available" : @(d != nil),
         @"gpu" : d.name ?: @"unavailable",
+        @"optimization_profile" : @{
+            @"id" : @(optimizations.id),
+            @"z_image_suffix_streaming" : @(optimizations.z_image_suffix_streaming),
+            @"z_image_hybrid_segments" : @(optimizations.z_image_hybrid_segments),
+            @"z_image_memory_lifecycle" : @(optimizations.z_image_memory_lifecycle),
+            @"z_image_smallest_partition" : @(optimizations.z_image_smallest_partition),
+            @"external_automatic_partitions" : @(optimizations.external_automatic_partitions),
+            @"coreml_output_copy" : @(optimizations.coreml_output_copy)
+        },
         @"physical_memory_bytes" : @([NSProcessInfo processInfo].physicalMemory),
         @"recommended_working_set_bytes" : @(d ? d.recommendedMaxWorkingSetSize : 0),
         @"os" : [NSProcessInfo processInfo].operatingSystemVersionString,

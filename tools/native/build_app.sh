@@ -45,6 +45,7 @@ printf 'Built Swift App and integration tests\n'
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ZImageAppTests.swift -o "$OUT/turbocider-z-image-app-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/StudioControlsTests.swift -o "$OUT/turbocider-studio-controls-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ZImageShapeTests.swift -o "$OUT/turbocider-z-image-shape-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ZImagePartitionRoutingTests.swift -o "$OUT/turbocider-z-image-partition-routing-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ModelLibraryTests.swift -o "$OUT/turbocider-model-library-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/LibraryToolTests.swift -o "$OUT/turbocider-library-tool-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/LocalAPITests.swift -o "$OUT/turbocider-local-api-tests"

@@ -5,6 +5,7 @@
 #include "../../runtime/session.hpp"
 #include "../../backends/coreml.hpp"
 #include "weight_stream.hpp"
+#include "../../runtime/device_optimizations.hpp"
 
 namespace tc {
 
@@ -16,6 +17,7 @@ class ZImage final : public ModelSession {
     std::string model_id_ = "z-image-turbo";
     bool diffusers_layout_ = false, gguf_transformer_ = false, convrot_transformer_ = false;
     bool nvfp4_transformer_ = false;
+    DeviceOptimizations optimizations_;
     mutable Tokenizer tokenizer_;
     Weights text_encoder_;
     Weights transformer_;

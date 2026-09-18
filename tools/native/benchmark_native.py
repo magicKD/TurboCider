@@ -1,8 +1,14 @@
 """Measure a selected public native model from one persistent C ABI process."""
 import argparse,ctypes as c,json,time
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--library',required=True);p.add_argument('--model',required=True);p.add_argument('--model-id',default='flux2-klein-4b');p.add_argument('--request',required=True);p.add_argument('--output',required=True);p.add_argument('--runs',type=int,default=5);p.add_argument('--width',type=int);p.add_argument('--height',type=int);p.add_argument('--steps',type=int);p.add_argument('--seed',type=int);p.add_argument('--prompt',action='append',help='override the text prompt; repeat to benchmark prompt changes in one resident session');p.add_argument('--prompt-repeat-token',help='append a controlled repeated token to every benchmark prompt');p.add_argument('--prompt-repeat-count',type=int,default=0);p.add_argument('--execution',choices=('gpu','auto','gpu_ane'));p.add_argument('--ane-manifest');p.add_argument('--encoder-ane-manifest',help='Qwen3 encoder-only Core ML manifest, independent of the denoiser manifest');p.add_argument('--prepare',choices=('none','load','warmup'),default='none',help='run tc_engine_prepare before measured generations; load is resource-only, warmup runs a full no-output request');p.add_argument('--coreml-warmup-iterations',type=int,choices=range(0,9),default=None,help='override per-branch zero-input Core ML warmup iterations');p.add_argument('--lora');p.add_argument('--lora-strength',type=float,default=1.0);p.add_argument('--dump-tensors',action='store_true',help='write one dump directory per run; disabled for performance measurements');p.add_argument('--candidate',action='store_true',help='use the private candidate constructor for explicit streaming validation');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--library',required=True);p.add_argument('--model',required=True);p.add_argument('--model-id',default='flux2-klein-4b');p.add_argument('--request',required=True);p.add_argument('--output',required=True);p.add_argument('--runs',type=int,default=5);p.add_argument('--width',type=int);p.add_argument('--height',type=int);p.add_argument('--steps',type=int);p.add_argument('--seed',type=int);p.add_argument('--prompt',action='append',help='override the text prompt; repeat to benchmark prompt changes in one resident session');p.add_argument('--prompt-repeat-token',help='append a controlled repeated token to every benchmark prompt');p.add_argument('--prompt-repeat-count',type=int,default=0);p.add_argument('--execution',choices=('gpu','auto','gpu_ane'));p.add_argument('--ane-manifest');p.add_argument('--encoder-ane-manifest',help='Qwen3 encoder-only Core ML manifest, independent of the denoiser manifest');p.add_argument('--prepare',choices=('none','load','warmup'),default='none',help='run tc_engine_prepare before measured generations; load is resource-only, warmup runs a full no-output request');p.add_argument('--coreml-warmup-iterations',type=int,choices=range(0,9),default=None,help='override per-branch zero-input Core ML warmup iterations');p.add_argument('--lora');p.add_argument('--lora-strength',type=float,default=1.0);p.add_argument('--dump-tensors',action='store_true',help='write one dump directory per run; disabled for performance measurements')
+ p.add_argument('--candidate',action='store_true',help='use the private candidate constructor for explicit streaming validation')
+p.add_argument("--record-vm", action="store_true", help="record system-wide paging deltas outside request timing; not per-process attribution")
+a=p.parse_args()
 if a.prompt_repeat_count<0 or bool(a.prompt_repeat_token)!=(a.prompt_repeat_count>0):p.error('--prompt-repeat-token and a positive --prompt-repeat-count must be used together')
+if a.record_vm:
+ import resource
+ from benchmark_z_image_streaming import vm_counters
 lib=c.CDLL(a.library);lib.tc_string_free.argtypes=[c.c_void_p]
 lib.tc_engine_create_model.argtypes=[c.c_char_p,c.c_char_p,c.POINTER(c.c_void_p),c.POINTER(c.c_void_p)]
 lib.tc_engine_create_model_candidate.argtypes=lib.tc_engine_create_model.argtypes
@@ -83,9 +89,16 @@ try:
   if a.prompt:set_prompt(r,a.prompt[i%len(a.prompt)])
   if a.dump_tensors:r['dump_tensors']=str((out/f'{i}-tensors').resolve())
   set_output(r,(out/f'{i}.png').resolve());payload=json.dumps(r).encode();result,err=c.c_void_p(),c.c_void_p()
+  before_vm=vm_counters() if a.record_vm else None
   start=time.perf_counter();status=lib.tc_engine_generate(e,payload,None,None,c.byref(result),c.byref(err));wall=time.perf_counter()-start
   text,error=consume(result),consume(err)
   if status:raise RuntimeError(error)
-  runs.append({'run':i,'request_wall_including_export':wall,'metrics':json.loads(text)})
+  row={'run':i,'request_wall_including_export':wall,'metrics':json.loads(text)}
+  if a.record_vm:
+   after_vm=vm_counters()
+   row['system_vm_delta_bytes']={key:after_vm[key]-before_vm[key] for key in before_vm}
+   row['process_lifetime_maxrss_bytes']=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+   row['vm_scope']='system-wide counters; not attribution to this process'
+  runs.append(row)
   (out/'report.json').write_text(json.dumps({'engine':'TurboCider native C ABI','model_id':a.model_id,'constructor_seconds':constructor,'preparation':preparation,'request':r,'runs':runs},indent=2))
 finally:lib.tc_engine_free(e)

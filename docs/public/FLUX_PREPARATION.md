@@ -16,6 +16,12 @@ planning completed. **No real model generation or performance comparison was
 run.** The 512×512, dynamic-text, 1088-row, 6144-channel configuration below is
 the manually prepared experiment, not a measured or recommended M5 policy.
 
+**September 16 update:** M5 Pro 24 GiB now has a measured automatic case for
+512×512 / 4 steps / resident / no LoRA / 1088 rows / 6144 ANE channels. See the
+[M5 adaptation report](../design/m5-ane-adaptation.md) for repeated GPU/hybrid
+measurements, quality checks and the exact scope. The historical preparation
+record below remains useful for exporting and compiling the artifacts.
+
 ## 1. Choose a library and obtain the complete model
 
 Use a repository-local library, shared by subsequent CLI commands:
@@ -281,10 +287,12 @@ the current heuristics report 14 GiB for GPU and 18 GiB for hybrid; these are
 not measured peaks or hard memory limits. The recorded 24 GiB machine passed
 these planning checks, but actual runtime memory and speed remain unverified.
 
-M5 Pro is outside the current FLUX automatic hybrid qualification list. `auto`
-therefore falls back to GPU even with opted-in artifacts. The explicit
-`gpu_ane` request above selects a manual experiment; a successful plan labeled
-`gpu_ane_experimental` is not an M5 performance qualification.
+M5 Pro **24 GiB** can now select automatic hybrid for the measured 512×512,
+4-step, resident, base-model request with 1025–1088 total tokens and a6144
+partitions. Change `execution` to `auto` to use that policy with opted-in
+artifacts. Other hardware/configurations still fall back to GPU. The explicit
+`gpu_ane` request above bypasses automatic performance selection; a successful
+plan alone does not establish runtime performance.
 
 ## 6. Proceed to generation and measurement separately
 
