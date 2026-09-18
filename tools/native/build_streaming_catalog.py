@@ -710,6 +710,68 @@ def _validate_p2_summary(
     return memory, target, sha256_file(bundle / "summary.json")
 
 
+def _validate_p3_summary(
+    summary: dict[str, Any], policy: dict[str, Any]
+) -> dict[str, Any]:
+    memory = summary.get("memory_evidence")
+    result = summary.get("p3_result")
+    if not isinstance(memory, dict) or memory.get("qualification") != "PASS":
+        raise CatalogBuildError("P3 memory evidence is not a verified PASS")
+    if not isinstance(result, dict) or result.get("qualification") != "PASS":
+        raise CatalogBuildError("P3 natural-swap result is not a verified PASS")
+    if result.get("classification") not in (
+        "faster_and_lower_swap", "lower_swap_tradeoff",
+    ):
+        raise CatalogBuildError("P3 natural-swap classification is invalid")
+    config = policy.get("memory_sampling")
+    if not isinstance(config, dict) or config.get("required_variants") != [
+        "baseline", "candidate"
+    ]:
+        raise CatalogBuildError(
+            "P3 must measure baseline and candidate process trees"
+        )
+    if config.get("allow_swap_out") is not True:
+        raise CatalogBuildError("P3 policy does not allow observed natural swap")
+    counts = memory.get("required_count_by_variant")
+    if not isinstance(counts, dict) or any(
+        isinstance(counts.get(variant), bool) or
+        not isinstance(counts.get(variant), int) or
+        counts[variant] < 20
+        for variant in ("baseline", "candidate")
+    ):
+        raise CatalogBuildError(
+            "P3 requires at least 20 measured runs per variant"
+        )
+    totals = memory.get("swap_out_total_bytes")
+    if not isinstance(totals, dict) or any(
+        isinstance(totals.get(variant), bool) or
+        not isinstance(totals.get(variant), int) or totals[variant] < 0
+        for variant in ("baseline", "candidate")
+    ):
+        raise CatalogBuildError("P3 swap-out totals are invalid")
+    if totals["baseline"] <= 0:
+        raise CatalogBuildError("P3 baseline did not exhibit observable swap-out")
+    ratio = memory.get("candidate_swap_out_total_ratio")
+    if (
+        isinstance(ratio, bool) or not isinstance(ratio, (int, float)) or
+        not math.isfinite(float(ratio)) or ratio < 0
+    ):
+        raise CatalogBuildError("P3 candidate swap-out ratio is invalid")
+    comparison = policy.get("swap_comparison")
+    maximum = (
+        comparison.get("candidate_swap_out_total_ratio_max")
+        if isinstance(comparison, dict) else None
+    )
+    if (
+        isinstance(maximum, bool) or not isinstance(maximum, (int, float)) or
+        not math.isfinite(float(maximum)) or not 0 <= maximum <= 1
+    ):
+        raise CatalogBuildError("P3 policy swap-out ratio maximum is invalid")
+    if ratio > maximum:
+        raise CatalogBuildError("P3 candidate swap-out ratio exceeds policy")
+    return result
+
+
 def _candidate_layout_digest(bundle: Path) -> str:
     rows = read_jsonl(bundle / "raw-samples.jsonl", "campaign raw samples")
     layouts = {
@@ -867,6 +929,10 @@ def build_record(
     memory, target, summary_digest = _validate_p2_summary(
         bundle_paths["P2"], summaries["P2"], policies["P2"]
     )
+    p3_result = (
+        _validate_p3_summary(summaries["P3"], policies["P3"])
+        if is_public else None
+    )
     if record["calibration"]["calibrated_request_bytes"] > memory["allowed_peak_bytes"]:
         raise CatalogBuildError("record calibrated bytes exceed allowed peak")
     expected_peak = math.ceil(float(memory["peak_p95_bytes"]["candidate"]))
@@ -923,6 +989,7 @@ def build_record(
             "allowed_max_gap_ns": memory["allowed_max_gap_ns"],
             "candidate_peak_p95_bytes": expected_peak,
             "fresh_process_generations": memory.get("fresh_process_generations", {}),
+            "p3": p3_result,
         },
     }
 

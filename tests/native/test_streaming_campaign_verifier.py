@@ -486,14 +486,17 @@ class CampaignTests(unittest.TestCase):
             "new_cache_clear_or_unload_calls": 0,
         })
 
-    def run_bundle(self, campaign: dict, audit: dict | None = None) -> Path:
+    def run_bundle(
+        self, campaign: dict, audit: dict | None = None,
+        environment: dict | None = None,
+    ) -> Path:
         root = Path(tempfile.mkdtemp(prefix="tc-campaign-test-"))
         policy_path = root / "policy.json"
         policy_path.write_text(json.dumps(campaign))
         audit_path = root / "audit.json"
         audit_path.write_text(json.dumps(audit or passed_audit()))
         environment_path = root / "environment.json"
-        environment_path.write_text(json.dumps({
+        environment_path.write_text(json.dumps(environment or {
             "format": "turbocider-streaming-environment-v1",
             "status": "complete",
             "gpu": "synthetic",
@@ -509,6 +512,58 @@ class CampaignTests(unittest.TestCase):
         self.assertTrue((root / "bundle" / "raw-samples.jsonl").is_file())
         self.assertTrue((root / "bundle" / "summary.json").is_file())
         return root / "bundle"
+
+    @unittest.skipUnless(sys.platform == "darwin", "requires Darwin libproc")
+    def test_p3_without_observed_swap_is_inconclusive(self):
+        campaign = policy(blocks=10)
+        campaign["comparison_kind"] = "P3"
+        campaign["protocol"]["restart_workers_between_blocks"] = True
+        campaign["memory_sampling"] = {
+            "enabled": True,
+            "interval_ms": 5,
+            "max_gap_ms": 100,
+            "required_variants": ["baseline", "candidate"],
+            "allow_swap_out": True,
+        }
+        campaign["swap_comparison"] = {
+            "revision": "tc-p3-natural-swap-v1",
+            "pressure_source": "natural_low_memory_device",
+            "baseline_role": "resident_or_default",
+            "candidate_role": "public_streaming_exact",
+            "minimum_baseline_swap_runs": 1,
+            "candidate_swap_out_total_ratio_max": 1.0,
+            "reporting_mode": "tradeoff_or_speedup",
+        }
+        for variant in ("baseline", "candidate"):
+            campaign["variants"][variant]["source_identity"] = {
+                "commit": "a" * 40,
+                "source_manifest_sha256": "b" * 64,
+                "clean": True,
+            }
+        environment = {
+            "format": "turbocider-streaming-environment-v1",
+            "status": "complete",
+            "gpu": "synthetic",
+            "ram_bytes": 64 << 30,
+            "ssd": "synthetic",
+            "power": "fixed",
+            "thermal": "fixed",
+            "pressure": {
+                "protocol_revision": "tc-p3-natural-swap-v1",
+                "source": "natural_low_memory_device",
+                "state": "stable",
+                "launched_by_runner": False,
+                "cleanup_verified": True,
+                "counter_scope": "host_global",
+            },
+        }
+        bundle = self.run_bundle(campaign, environment=environment)
+        result = verify(bundle)
+        self.assertEqual(result["overall"], "INCONCLUSIVE")
+        self.assertEqual(
+            result["memory_evidence"]["p3_swap_status"], "INCONCLUSIVE"
+        )
+        self.assertEqual(result["p3_result"]["classification"], "not_qualified")
 
     def test_synthetic_abba_campaign_passes_with_persistent_worker_processes(self):
         bundle = self.run_bundle(policy())
@@ -817,6 +872,44 @@ class CampaignTests(unittest.TestCase):
             campaign_runner.validate_policy(campaign)
         campaign["memory_sampling"]["target_bytes"] = 8 << 30
         campaign_runner.validate_policy(campaign)
+
+    def test_p3_requires_natural_swap_contract_and_both_variants(self):
+        campaign = policy(blocks=10)
+        campaign["comparison_kind"] = "P3"
+        campaign["protocol"]["restart_workers_between_blocks"] = True
+        campaign["memory_sampling"] = {
+            "enabled": True,
+            "interval_ms": 20,
+            "max_gap_ms": 100,
+            "required_variants": ["baseline", "candidate"],
+            "allow_swap_out": True,
+        }
+        campaign["swap_comparison"] = {
+            "revision": "tc-p3-natural-swap-v1",
+            "pressure_source": "externally_managed_fixed_pressure",
+            "baseline_role": "resident_or_default",
+            "candidate_role": "public_streaming_exact",
+            "minimum_baseline_swap_runs": 1,
+            "candidate_swap_out_total_ratio_max": 1.0,
+            "reporting_mode": "tradeoff_or_speedup",
+        }
+        for variant in ("baseline", "candidate"):
+            campaign["variants"][variant]["source_identity"] = {
+                "commit": "a" * 40,
+                "source_manifest_sha256": "b" * 64,
+                "clean": True,
+            }
+        campaign_runner.validate_policy(campaign)
+
+        invalid = json.loads(json.dumps(campaign))
+        invalid["memory_sampling"]["required_variants"] = ["candidate"]
+        with self.assertRaises(CampaignError):
+            campaign_runner.validate_policy(invalid)
+
+        invalid = json.loads(json.dumps(campaign))
+        invalid["swap_comparison"]["pressure_source"] = "developer_laptop_pressure"
+        with self.assertRaises(CampaignError):
+            campaign_runner.validate_policy(invalid)
 
     def test_worker_launch_order_is_frozen_and_recorded(self):
         campaign = policy(blocks=1)

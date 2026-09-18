@@ -33,7 +33,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from verify_streaming_campaign import EvidenceError, verify
+from verify_streaming_campaign import (
+    EvidenceError,
+    p3_contract,
+    verify,
+)
 from capture_streaming_source_identity import IdentityError, capture
 from process_tree_sampler import (
     DarwinBackend,
@@ -248,12 +252,17 @@ def validate_policy(policy: dict[str, Any]) -> None:
         raise CampaignError(
             "protocol.restart_workers_between_blocks must be boolean"
         )
-    if policy.get("comparison_kind") == "P2" and (
+    if policy.get("comparison_kind") in ("P2", "P3") and (
         not restart_workers or lifecycle != "per_request"
     ):
         raise CampaignError(
-            "P2 requires per_request engines and worker restart between blocks"
+            "P2/P3 require per_request engines and worker restart between blocks"
         )
+    if policy.get("comparison_kind") == "P3":
+        try:
+            p3_contract(policy)
+        except EvidenceError as exc:
+            raise CampaignError(str(exc)) from exc
     memory_sampling = policy.get("memory_sampling")
     if policy.get("comparison_kind") in ("P2", "P3") and not isinstance(
         memory_sampling, dict
@@ -326,6 +335,24 @@ def validate_policy(policy: dict[str, Any]) -> None:
                 )
             if "candidate" not in required_variants:
                 raise CampaignError("P2 must require candidate memory evidence")
+        if policy.get("comparison_kind") == "P3":
+            if required_variants != ["baseline", "candidate"]:
+                raise CampaignError(
+                    "P3 memory_sampling.required_variants must be "
+                    "['baseline', 'candidate']"
+                )
+            if memory_sampling.get("allow_swap_out") is not True:
+                raise CampaignError(
+                    "P3 memory_sampling.allow_swap_out must be true"
+                )
+            if memory_sampling.get("include_warmups") is True:
+                raise CampaignError(
+                    "P3 memory_sampling.include_warmups must be false"
+                )
+            if memory_sampling.get("target_bytes") is not None:
+                raise CampaignError(
+                    "P3 memory_sampling must not specify target_bytes"
+                )
     quality = policy.get("quality")
     if not isinstance(quality, dict) or quality.get("mode") != "artifact_sha256_equal":
         raise CampaignError("quality.mode must be artifact_sha256_equal")

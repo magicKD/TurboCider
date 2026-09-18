@@ -124,6 +124,7 @@ test-streaming-campaign:
 	@"$(PYTHON)" -B tests/native/test_streaming_campaign_verifier.py
 test-streaming-catalog-builder:
 	@"$(PYTHON)" -B tests/native/test_streaming_catalog_builder.py
+	@"$(PYTHON)" -B tests/native/test_prepare_streaming_release_policies.py
 test-streaming-source-identity:
 	@"$(PYTHON)" -B tests/native/test_streaming_source_identity.py
 test-streaming-source-lease:

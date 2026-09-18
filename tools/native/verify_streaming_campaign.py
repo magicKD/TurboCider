@@ -47,6 +47,11 @@ REQUIRED_P1_SEMANTIC_FIELDS = (
 )
 EXPECTED_P1_DECLARATION_FIELDS = REQUIRED_P1_SEMANTIC_FIELDS[:-1]
 KIND_TO_THRESHOLD = {"P0": "P0_legacy", "P1": "P1_same_layout"}
+P3_PROTOCOL_REVISION = "tc-p3-natural-swap-v1"
+P3_PRESSURE_SOURCES = {
+    "natural_low_memory_device",
+    "externally_managed_fixed_pressure",
+}
 SPEC_MAXIMUMS = {
     "P0": {
         "wall_median_ratio_max": 1.02,
@@ -235,6 +240,97 @@ def protocol_complete(policy: dict[str, Any]) -> bool:
     return bool(
         policy.get("bootstrap_iterations") and
         policy.get("bootstrap_seed") is not None
+    )
+
+
+def p3_contract(policy: dict[str, Any]) -> dict[str, Any]:
+    value = policy.get("swap_comparison")
+    required = {
+        "revision", "pressure_source", "baseline_role", "candidate_role",
+        "minimum_baseline_swap_runs", "candidate_swap_out_total_ratio_max",
+        "reporting_mode",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise EvidenceError(
+            "P3 swap_comparison must contain the exact natural-swap contract"
+        )
+    if value.get("revision") != P3_PROTOCOL_REVISION:
+        raise EvidenceError("P3 swap comparison revision is unsupported")
+    if value.get("pressure_source") not in P3_PRESSURE_SOURCES:
+        raise EvidenceError("P3 pressure source is unsupported")
+    if value.get("baseline_role") != "resident_or_default":
+        raise EvidenceError("P3 baseline role must be resident_or_default")
+    if value.get("candidate_role") != "public_streaming_exact":
+        raise EvidenceError("P3 candidate role must be public_streaming_exact")
+    minimum_runs = value.get("minimum_baseline_swap_runs")
+    if (
+        isinstance(minimum_runs, bool) or not isinstance(minimum_runs, int) or
+        not 1 <= minimum_runs <= 20
+    ):
+        raise EvidenceError(
+            "P3 minimum_baseline_swap_runs must be an integer in 1...20"
+        )
+    maximum_ratio = finite_number(
+        value.get("candidate_swap_out_total_ratio_max"),
+        "P3 candidate swap-out ratio maximum",
+    )
+    if maximum_ratio > 1:
+        raise EvidenceError(
+            "P3 candidate swap-out ratio maximum cannot exceed 1"
+        )
+    if value.get("reporting_mode") != "tradeoff_or_speedup":
+        raise EvidenceError("P3 reporting_mode must be tradeoff_or_speedup")
+    return value
+
+
+def validate_p3_environment(
+    policy: dict[str, Any], environment: dict[str, Any], manifest: dict[str, Any]
+) -> dict[str, Any]:
+    contract = p3_contract(policy)
+    pressure = environment.get("pressure")
+    required = {
+        "protocol_revision", "source", "state", "launched_by_runner",
+        "cleanup_verified", "counter_scope",
+    }
+    if not isinstance(pressure, dict) or set(pressure) != required:
+        raise EvidenceError(
+            "P3 environment.pressure must contain the exact pressure record"
+        )
+    if pressure.get("protocol_revision") != P3_PROTOCOL_REVISION:
+        raise EvidenceError("P3 environment pressure revision differs")
+    if pressure.get("source") != contract["pressure_source"]:
+        raise EvidenceError("P3 environment pressure source differs from policy")
+    if pressure.get("state") != "stable":
+        raise EvidenceError("P3 pressure state was not stable")
+    if pressure.get("launched_by_runner") is not False:
+        raise EvidenceError("P3 runner must not launch memory pressure")
+    if manifest.get("pressure_launched_by_runner") is not False:
+        raise EvidenceError("P3 manifest reports runner-launched pressure")
+    if pressure.get("cleanup_verified") is not True:
+        raise EvidenceError("P3 pressure cleanup was not verified")
+    if pressure.get("counter_scope") != "host_global":
+        raise EvidenceError("P3 pressure counters must declare host_global scope")
+    return contract
+
+
+def evaluate_p3_swap(
+    contract: dict[str, Any],
+    swap_out_total_bytes: dict[str, int],
+    swap_out_run_count: dict[str, int],
+) -> tuple[str, float | None]:
+    baseline_total = swap_out_total_bytes.get("baseline", 0)
+    candidate_total = swap_out_total_bytes.get("candidate", 0)
+    baseline_runs = swap_out_run_count.get("baseline", 0)
+    if baseline_total <= 0 or baseline_runs < contract[
+        "minimum_baseline_swap_runs"
+    ]:
+        return "INCONCLUSIVE", None
+    ratio = candidate_total / baseline_total
+    return (
+        "PASS" if ratio <= contract[
+            "candidate_swap_out_total_ratio_max"
+        ] else "FAIL",
+        ratio,
     )
 
 
@@ -520,7 +616,8 @@ def verify_memory_bundle(
         any(value not in VARIANTS for value in required_variants)
     ):
         raise EvidenceError("memory_sampling.required_variants is invalid")
-    if policy.get("comparison_kind") == "P2":
+    comparison_kind = policy.get("comparison_kind")
+    if comparison_kind == "P2":
         public_targets = {value << 30 for value in (8, 10, 12, 16, 20)}
         if config.get("target_bytes") not in public_targets:
             raise EvidenceError("P2 target is not a public memory tier")
@@ -528,6 +625,20 @@ def verify_memory_bundle(
             raise EvidenceError("P2 headroom policy revision is invalid")
         if "candidate" not in required_variants:
             raise EvidenceError("P2 candidate memory evidence is not required")
+    if comparison_kind == "P3":
+        p3_contract(policy)
+        if required_variants != ["baseline", "candidate"]:
+            raise EvidenceError(
+                "P3 memory evidence must require baseline and candidate in order"
+            )
+        if config.get("allow_swap_out") is not True:
+            raise EvidenceError("P3 memory sampling must allow observed swap-out")
+        if config.get("include_warmups") is True:
+            raise EvidenceError(
+                "P3 memory evidence must exclude warmups from swap comparison"
+            )
+        if config.get("target_bytes") is not None:
+            raise EvidenceError("P3 natural-swap evidence must not apply a P2 target")
     path = bundle / "memory-summaries.jsonl"
     try:
         rows = read_jsonl(path)
@@ -680,11 +791,11 @@ def verify_memory_bundle(
     }
     insufficient_variants = sorted(
         variant for variant, values in required_peaks.items()
-        if policy.get("comparison_kind") == "P2" and len(values) < 20
+        if comparison_kind in ("P2", "P3") and len(values) < 20
     )
     fresh_process_failures: list[str] = []
     fresh_process_generations: dict[str, int] = {}
-    if policy.get("comparison_kind") == "P2":
+    if comparison_kind in ("P2", "P3"):
         expected_blocks = int(policy.get("protocol", {}).get("measured_blocks", 0))
         for variant in required_variants:
             identities_by_block: dict[int, set[tuple[int, int, int]]] = {}
@@ -724,6 +835,56 @@ def verify_memory_bundle(
     disallowed_swap = (
         unexpected_swap if config.get("allow_swap_out") is not True else []
     )
+    required_count_by_variant = {
+        variant: len(values) for variant, values in required_peaks.items()
+    }
+    swap_out_total_bytes = {
+        variant: sum(
+            by_run[row["run_id"]]["swap_out_bytes"]
+            for row in expected_rows
+            if row.get("variant") == variant and row["run_id"] in required_run_ids
+        )
+        for variant in required_variants
+    }
+    swap_in_total_bytes = {
+        variant: sum(
+            by_run[row["run_id"]]["swap_in_bytes"]
+            for row in expected_rows
+            if row.get("variant") == variant and row["run_id"] in required_run_ids
+        )
+        for variant in required_variants
+    }
+    compression_total_bytes = {
+        variant: sum(
+            by_run[row["run_id"]]["compression_bytes"]
+            for row in expected_rows
+            if row.get("variant") == variant and row["run_id"] in required_run_ids
+        )
+        for variant in required_variants
+    }
+    decompression_total_bytes = {
+        variant: sum(
+            by_run[row["run_id"]]["decompression_bytes"]
+            for row in expected_rows
+            if row.get("variant") == variant and row["run_id"] in required_run_ids
+        )
+        for variant in required_variants
+    }
+    swap_out_run_count = {
+        variant: sum(
+            by_run[row["run_id"]]["swap_out_bytes"] > 0
+            for row in expected_rows
+            if row.get("variant") == variant and row["run_id"] in required_run_ids
+        )
+        for variant in required_variants
+    }
+    p3_swap_status = "NOT_APPLICABLE"
+    candidate_swap_out_total_ratio = None
+    if comparison_kind == "P3":
+        contract = p3_contract(policy)
+        p3_swap_status, candidate_swap_out_total_ratio = evaluate_p3_swap(
+            contract, swap_out_total_bytes, swap_out_run_count
+        )
     maximum_sample_gap_ns = max(
         (by_run[run_id]["max_gap_ns"] for run_id in required_run_ids),
         default=0,
@@ -732,9 +893,12 @@ def verify_memory_bundle(
         (by_run[run_id]["allowed_max_gap_ns"] for run_id in required_run_ids),
         default=0,
     )
-    if over_target or disallowed_swap:
+    if over_target or disallowed_swap or p3_swap_status == "FAIL":
         qualification = "FAIL"
-    elif incomplete or insufficient_variants or fresh_process_failures:
+    elif (
+        incomplete or insufficient_variants or fresh_process_failures or
+        p3_swap_status == "INCONCLUSIVE"
+    ):
         qualification = "INCONCLUSIVE"
     else:
         qualification = "PASS"
@@ -743,6 +907,7 @@ def verify_memory_bundle(
         "qualification": qualification,
         "summary_count": len(by_run),
         "required_count": len(required_run_ids),
+        "required_count_by_variant": required_count_by_variant,
         "required_variants": required_variants,
         "target_bytes": target,
         "allowed_peak_bytes": allowed_peak,
@@ -751,6 +916,13 @@ def verify_memory_bundle(
         "allowed_max_gap_ns": allowed_max_gap_ns,
         "over_target": over_target,
         "unexpected_swap": unexpected_swap,
+        "swap_out_total_bytes": swap_out_total_bytes,
+        "swap_in_total_bytes": swap_in_total_bytes,
+        "compression_total_bytes": compression_total_bytes,
+        "decompression_total_bytes": decompression_total_bytes,
+        "swap_out_run_count": swap_out_run_count,
+        "p3_swap_status": p3_swap_status,
+        "candidate_swap_out_total_ratio": candidate_swap_out_total_ratio,
         "incomplete": incomplete,
         "insufficient_variants": insufficient_variants,
         "fresh_process_generations": fresh_process_generations,
@@ -797,6 +969,9 @@ def verify(bundle: Path) -> dict[str, Any]:
         )
     policy_sha256 = sha256_file(policy_path)
     validate_manifest(bundle, manifest, policy_sha256, comparison_kind)
+    p3_environment = None
+    if comparison_kind == "P3":
+        p3_environment = validate_p3_environment(policy, environment, manifest)
     memory_evidence = verify_memory_bundle(
         bundle, policy, raw, warmups, manifest
     )
@@ -814,7 +989,7 @@ def verify(bundle: Path) -> dict[str, Any]:
     provenance_ok = (
         source_provenance_complete(baseline_identity) and
         source_provenance_complete(candidate_identity)
-    ) if comparison_kind in ("P0", "P2") else True
+    ) if comparison_kind in ("P0", "P2", "P3") else True
     if comparison_kind == "P1":
         semantic = read_json(bundle / "semantic-equivalence.json")
         if semantic.get("format") != (
@@ -1002,10 +1177,13 @@ def verify(bundle: Path) -> dict[str, Any]:
         memory_evidence is not None and
         memory_evidence.get("qualification") == "FAIL"
     )
+    p3_environment_complete = (
+        comparison_kind != "P3" or p3_environment is not None
+    )
     prerequisites_complete = (
         audit_status == "passed" and quality_complete and provenance_ok and
         environment_complete and campaign_complete and protocol_ok and
-        sample_sufficient and memory_complete and not failures and
+        p3_environment_complete and sample_sufficient and memory_complete and not failures and
         not quality_failures
     )
     wall_threshold = threshold_for(policy, "wall_median_ratio_max")
@@ -1044,7 +1222,7 @@ def verify(bundle: Path) -> dict[str, Any]:
         hard_failure_samples or quality_failures or audit_status == "failed" or
         memory_failed
     )
-    unsupported_kind = comparison_kind not in (*KIND_TO_THRESHOLD, "P2")
+    unsupported_kind = comparison_kind not in (*KIND_TO_THRESHOLD, "P2", "P3")
     if hard_failure or any(value == "FAIL" for value in decisions.values()):
         overall = "FAIL"
     elif unsupported_kind or not prerequisites_complete:
@@ -1056,6 +1234,44 @@ def verify(bundle: Path) -> dict[str, Any]:
                 for value in decisions.values()
             ) else "INCONCLUSIVE"
         )
+    p3_result = None
+    if comparison_kind == "P3" and memory_evidence is not None:
+        wall = metrics.get("wall", {})
+        denoise = metrics.get("denoise", {})
+        wall_ci = wall.get("bootstrap_95", {})
+        denoise_ci = denoise.get("bootstrap_95", {})
+        faster = bool(
+            prerequisites_complete and
+            wall_ci.get("median_ratio", {}).get("upper", math.inf) <= 1 and
+            wall_ci.get("p95_ratio", {}).get("upper", math.inf) <= 1 and
+            denoise_ci.get("median_ratio", {}).get("upper", math.inf) <= 1
+        )
+        p3_result = {
+            "qualification": memory_evidence.get("qualification"),
+            "classification": (
+                "faster_and_lower_swap" if faster else
+                "lower_swap_tradeoff" if memory_evidence.get(
+                    "qualification"
+                ) == "PASS" else "not_qualified"
+            ),
+            "speedup_claim_qualified": faster,
+            "swap_status": memory_evidence.get("p3_swap_status"),
+            "candidate_swap_out_total_ratio": memory_evidence.get(
+                "candidate_swap_out_total_ratio"
+            ),
+            "swap_out_total_bytes": memory_evidence.get(
+                "swap_out_total_bytes"
+            ),
+            "swap_in_total_bytes": memory_evidence.get(
+                "swap_in_total_bytes"
+            ),
+            "compression_total_bytes": memory_evidence.get(
+                "compression_total_bytes"
+            ),
+            "decompression_total_bytes": memory_evidence.get(
+                "decompression_total_bytes"
+            ),
+        }
     return {
         "format": "turbocider-streaming-campaign-verification-v1",
         "schema_version": SCHEMA_VERSION,
@@ -1084,6 +1300,8 @@ def verify(bundle: Path) -> dict[str, Any]:
             memory_evidence.get("qualification")
             if memory_evidence is not None else "NOT_REQUESTED"
         ),
+        "p3_environment": p3_environment,
+        "p3_result": p3_result,
         "sample_size_sufficient": sample_sufficient,
         "minimum_matched_pairs": minimum_pairs,
         "minimum_tail_requests_per_variant": tail_minimum,

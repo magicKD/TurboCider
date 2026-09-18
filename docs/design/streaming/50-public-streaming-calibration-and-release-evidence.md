@@ -523,6 +523,66 @@ slot policy、P2 headroom/sample floor、layout mismatch、review mismatch、dup
 inconclusive/peak/swap 拒绝以及 staging deterministic output。production catalog 仍保持为空，
 builder 通过并不代表已有模型获得 public 资格；还必须先完成真实 full-request evidence 和 review。
 
+### 8.1.1 确定性生成四类 campaign policy
+
+不要手写四份 `catalog_binding`。当前工具：
+
+```sh
+python3 -B tools/native/prepare_streaming_release_policies.py \
+  --record-input <record-draft.json> \
+  --p0-template <p0-template.json> \
+  --p1-template <p1-template.json> \
+  --p2-template <p2-template.json> \
+  --p3-template <p3-template.json> \
+  --target-gib 8 \
+  --output <new-policy-directory>
+```
+
+工具只做三件事：验证 record/template、向四份 policy 写入完全相同的
+`source/workload/runtime/device/plan/performance_profile` binding、冻结 P2 public target。它不会修改
+P/G/K/D/Q，不会把 tiny workload 改写成 full card，也不会覆盖已有输出目录。输出 manifest 记录 record、
+template、每份 policy 和 binding 的 SHA-256，后续 campaign 必须直接使用这些冻结文件。
+
+### 8.1.2 P3 natural-swap 的可执行合同
+
+P3 policy 必须包含：
+
+```json
+{
+  "comparison_kind": "P3",
+  "engine_lifecycle": "per_request",
+  "protocol": {
+    "restart_workers_between_blocks": true,
+    "launch_pressure": false
+  },
+  "memory_sampling": {
+    "enabled": true,
+    "include_warmups": false,
+    "required_variants": ["baseline", "candidate"],
+    "allow_swap_out": true
+  },
+  "swap_comparison": {
+    "revision": "tc-p3-natural-swap-v1",
+    "pressure_source": "natural_low_memory_device",
+    "baseline_role": "resident_or_default",
+    "candidate_role": "public_streaming_exact",
+    "minimum_baseline_swap_runs": 1,
+    "candidate_swap_out_total_ratio_max": 1.0,
+    "reporting_mode": "tradeoff_or_speedup"
+  }
+}
+```
+
+`pressure_source` 也可为 `externally_managed_fixed_pressure`，但 runner 本身永远不启动压力。完整
+environment record 必须包含相同 revision/source、`state=stable`、`launched_by_runner=false`、
+`cleanup_verified=true` 和 `counter_scope=host_global`。
+
+P3 `PASS` 表示：两侧各至少 20 个 measured request、process-tree/gap/identity 完整、baseline 确实观察到
+自然 swap-out，并且 candidate swap-out 总量不超过冻结比例门限。它不表示 candidate 必然更快：只有 wall
+median、wall P95、denoise median 的 block-bootstrap 95% 上界都不超过 1，summary 才分类为
+`faster_and_lower_swap`；否则分类为 `lower_swap_tradeoff`。baseline 没有实际 swap 时必须是
+`INCONCLUSIVE`，不能把“同压力但未 paging”写成战胜 swap。
+
 ### 8.2 review checklist
 
 reviewer 至少签核：

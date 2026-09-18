@@ -2201,3 +2201,38 @@ git diff --check                                    PASS
 Flux 9B 的真实 P2/P3 bundle，production catalog 必须继续保持 `tc-streaming-catalog-empty-v1`。下一阶段是
 为四模型生成带 `catalog_binding` 的 full-request P0/P1/P2 policy，先逐模型完成 8 GiB candidate campaign，
 再扩展到 10/12/16/20 GiB；P3 verifier 尚未能产生 PASS，因此 public channel builder 会继续拒绝发布。
+
+### 13.44 P3 natural-swap verifier 与确定性 policy binding（2026-09-18，工作树）
+
+本轮把前一节留下的两个工具链阻断项收口为可执行合同，但仍未运行真实压力实验，也没有修改 production
+catalog：
+
+- `verify_streaming_campaign.py` 现在正式识别 `P3`，要求冻结的
+  `tc-p3-natural-swap-v1` 合同、`resident_or_default` baseline、`public_streaming_exact`
+  candidate，以及明确的外部压力来源；runner 永远不创建压力，也不修改 swap/sysctl。
+- P3 必须对 baseline 和 candidate 都进行 process-tree 采样，使用 per-request engine，并在每个 ABBA/BAAB
+  block 前重启 worker；warmup 不计入 swap 比较。baseline 必须实际观察到足够次数的 swap-out，candidate 的
+  swap-out 总量按冻结比例门限比较；若 baseline 没有可观察 swap，结果是 `INCONCLUSIVE`，不能伪称 streaming
+  胜出。
+- P3 summary 增加 per-variant sample count、swap-in/out、compression/decompression totals、candidate
+  swap-out ratio 和 `faster_and_lower_swap` / `lower_swap_tradeoff` 分类。只有在交换量门禁通过时才可
+  `PASS`；速度即使变慢，也只记录为降低系统压力的 trade-off，不自动声称更快。
+- `build_streaming_catalog.py` 对 public channel 额外校验 P3 summary、双 variant 20+ measured runs、
+  baseline 可观察 swap 和 candidate ratio，不接受只有 P2 的 record。
+- 新增 `prepare_streaming_release_policies.py`，从 record draft 和四个 operator template 确定性生成
+  P0/P1/P2/P3 policy，并把精确 `catalog_binding` 写入每份 policy；P2 target 只能是 8/10/12/16/20 GiB。
+  该工具不会猜测或修改 P/G/K/D/Q，也不会执行模型。
+- 新增 policy generator contract tests；catalog builder 测试增加 public trade-off P3 record fixture。
+
+验证：
+
+```text
+make test-streaming-catalog-builder       PASS（15 builder + 4 policy-generator tests）
+make test-streaming-campaign              PASS（29 tests；含 P3 contract / no-swap inconclusive）
+PYTHONDONTWRITEBYTECODE=1 python3 -c ... PASS（verifier/runner/generator import）
+git diff --check                          PASS
+```
+
+这一节只关闭了“P3 永远 unsupported”和“手写 binding 容易漂移”的代码级阻断；当前仍没有任何真实
+natural-swap pressure evidence，四模型也仍没有 P2/P3 production bundle。下一步是使用 generator 为
+Z-Image Turbo 冻结首张 full-request card，并在专用低内存设备上实际运行 P0/P1/P2/P3。

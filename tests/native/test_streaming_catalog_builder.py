@@ -181,12 +181,44 @@ class CatalogBuilderTests(unittest.TestCase):
                     "allowed_max_gap_ns": 100_000_000,
                     "peak_p95_bytes": {"candidate": 7 * GIB},
                 }
+            elif kind == "P3":
+                memory = {
+                    "qualification": "PASS",
+                    "required_count": 40,
+                    "required_count_by_variant": {
+                        "baseline": 20, "candidate": 20,
+                    },
+                    "required_variants": ["baseline", "candidate"],
+                    "swap_out_total_bytes": {
+                        "baseline": 10_000, "candidate": 1_000,
+                    },
+                    "swap_in_total_bytes": {
+                        "baseline": 20_000, "candidate": 2_000,
+                    },
+                    "compression_total_bytes": {
+                        "baseline": 30_000, "candidate": 3_000,
+                    },
+                    "decompression_total_bytes": {
+                        "baseline": 40_000, "candidate": 4_000,
+                    },
+                    "candidate_swap_out_total_ratio": 0.1,
+                    "p3_swap_status": "PASS",
+                }
             summaries[kind] = {
                 "format": "turbocider-streaming-campaign-verification-v1",
                 "schema_version": 1,
                 "overall": "PASS",
                 "comparison_kind": kind,
                 "memory_evidence": memory,
+                "p3_result": (
+                    {
+                        "qualification": "PASS",
+                        "classification": "lower_swap_tradeoff",
+                        "swap_status": "PASS",
+                        "candidate_swap_out_total_ratio": 0.1,
+                    }
+                    if kind == "P3" else None
+                ),
                 "build_identity": {
                     "candidate": {
                         "source_identity": {
@@ -219,6 +251,21 @@ class CatalogBuilderTests(unittest.TestCase):
                     "required_variants": ["candidate"],
                     "target_bytes": 8 * GIB,
                     "headroom_policy_revision": builder.HEADROOM_REVISION,
+                }
+            if kind == "P3":
+                policy["memory_sampling"] = {
+                    "enabled": True,
+                    "required_variants": ["baseline", "candidate"],
+                    "allow_swap_out": True,
+                }
+                policy["swap_comparison"] = {
+                    "revision": "tc-p3-natural-swap-v1",
+                    "pressure_source": "externally_managed_fixed_pressure",
+                    "baseline_role": "resident_or_default",
+                    "candidate_role": "public_streaming_exact",
+                    "minimum_baseline_swap_runs": 1,
+                    "candidate_swap_out_total_ratio_max": 1.0,
+                    "reporting_mode": "tradeoff_or_speedup",
                 }
             (bundle_paths[kind] / "campaign-policy.json").write_text(
                 json.dumps(policy, indent=2) + "\n"
@@ -420,6 +467,15 @@ class CatalogBuilderTests(unittest.TestCase):
         fixture = self.make_fixture(channel="public-experimental")
         with self.assertRaisesRegex(builder.CatalogBuildError, "P3 swap"):
             self.build(fixture)
+
+    def test_verified_public_record_accepts_p3_tradeoff(self):
+        fixture = self.make_fixture(channel="public-experimental")
+        built = self.build(fixture, swap_bundle=fixture["bundles"]["P3"])
+        self.assertEqual(built["status"], "verified")
+        self.assertEqual(
+            built["evidence"]["p3"]["classification"],
+            "lower_swap_tradeoff",
+        )
 
 
 if __name__ == "__main__":
