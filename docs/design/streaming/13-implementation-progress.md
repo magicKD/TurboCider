@@ -2063,3 +2063,44 @@ failure、joined cleanup 和 invalid intent 均通过。split/legacy 的 tiny wa
 catalog 必须继续保持 `tc-streaming-catalog-empty-v1`，直到 full request、独立 verifier 和 reviewed
 memory-tier records 完成。H3 Turbo、Z-Image Turbo、Flux 9B 的 public record 和 streaming+ANE
 校准仍未完成；public streaming v1 继续 GPU-only fail-closed。
+
+### 13.41 Process-tree memory sampler 第一版（2026-09-18，工作树）
+
+为开始五档 memory-tier 校准，本轮新增三个独立工具和 deterministic contract tests：
+
+```text
+tools/native/process_tree_sampler.py
+tools/native/collect_streaming_memory.py
+tools/native/verify_process_tree_samples.py
+tests/native/test_process_tree_sampler.py
+```
+
+实现合同：
+
+- Darwin backend 使用 `libproc` 读取每个 PID 的 RSS、`phys_footprint`、wired、page-in 和磁盘 I/O，使用
+  `host_statistics64` 读取 system compression、swap-in/out 以及 compressor/swapped pages；GPU/Metal
+  driver bytes 未测量时保持能力字段为 false，不填零冒充已测量。
+- 递归发现 child，记录 process identity（PID + start time）、spawn/exit、role、parent、每个 sample 的
+  tree RSS/phys footprint、runtime phase snapshot、system counters，并在 root 消失后追加 terminal sample。
+- JSONL 是 append-only、每条记录 `fsync`，包含 sequence、previous digest 和 record digest；summary 只从
+  terminal record 生成，不能绕过 sampler 的 gap/unknown-child 判断。独立 verifier 会重新计算 hash chain、
+  sample totals、root identity、system counter 单调性、terminal 状态和 command exit 语义。
+- 默认间隔 20 ms，最大 gap 100 ms；任意 gap 超限、未知 child、命令非零退出、sampler 异常或没有 sample
+  都输出 `inconclusive`，工具返回码为 3；命令失败不会把原始退出码伪装成 calibration 失败类型，也不创建
+  pressure、不修改 swap/sysctl。collector 拒绝覆盖已有 evidence/summary，避免静默替换证据。
+- `collect_streaming_memory.py` 只负责启动 sampler、读取 terminal 和写 summary，不参与模型逻辑，方便
+  后续 LTX/H3/Z-Image/Flux campaign 统一复用。
+
+验证：
+
+```text
+make test-process-tree-sampler                         PASS（3 tests）
+python3 -B tools/native/collect_streaming_memory.py ... PASS（本机 Darwin smoke）
+python3 -B tools/native/verify_process_tree_samples.py \
+  /private/tmp/tc-process-tree-sampler-smoke-a87c69f.jsonl PASS
+```
+
+本机 smoke 递归捕获 root + Python child，13 个 sample，最大间隔约 29.9 ms，tree peak
+`phys_footprint=36,307,496` bytes，swap/compression delta 为 0；sampler 与独立 verifier 均通过。这只是
+工具链功能证据，不是任何模型的 memory-tier qualification。下一步仍需把 sampler 接入完整 request
+campaign，并让 independent verifier 检查 process-tree peak、采样完整性、P2 hard-cap 和 P3 swap 四臂结果。
