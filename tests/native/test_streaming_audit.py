@@ -61,6 +61,8 @@ class StreamingAuditTests(unittest.TestCase):
             "native/runtime/memory_manifest.cpp",
             "native/runtime/streaming/config.cpp",
             "native/runtime/streaming/layout.cpp",
+            "native/runtime/streaming/canonical_encoding.cpp",
+            "native/runtime/streaming/actual_receipt.cpp",
             "native/runtime/streaming/slot_pool.cpp",
             "native/runtime/streaming/io_executor.cpp",
             "native/runtime/streaming/context.cpp",

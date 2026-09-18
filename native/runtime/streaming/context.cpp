@@ -225,12 +225,16 @@ bool StageExecutor::consume() {
         auto &safety = *state_->pools[state_->active_pool_index].safety;
         if (record.kind==TC_STREAM_FILL_COMPLETE) {
             safety.accept_ready(record.ticket,record.bytes);
+            if (receipt_recorder_)
+                receipt_recorder_->fill_completed(record);
             if (record.bytes>UINT64_MAX-state_->counters.bytes_loaded)
                 throw std::overflow_error("streaming byte counter overflow");
             state_->counters.bytes_loaded+=record.bytes; ++state_->counters.fills;
-        } else if (record.kind==TC_STREAM_READER_COMPLETE)
+        } else if (record.kind==TC_STREAM_READER_COMPLETE) {
             safety.complete_reader(record.ticket,record.fence);
-        else throw std::runtime_error("streaming unknown completion kind");
+            if (receipt_recorder_)
+                receipt_recorder_->reader_completed(record);
+        } else throw std::runtime_error("streaming unknown completion kind");
         progress=true;
     }
     return progress;
@@ -282,6 +286,8 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
             while (segment_end<layout.groups.size() && layout.groups[segment_end].pool==pool_id)
                 ++segment_end;
             activate_pool(pool_index);
+            if (receipt_recorder_)
+                receipt_recorder_->pool_selected(pass, pool_id);
             auto &pool_runtime = state_->pools[pool_index];
             pool_runtime.drained=false;
             auto &safety=*pool_runtime.safety;
@@ -325,6 +331,8 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                     auto job=adapter_->make_fill_job(g,t); job.ticket=t;
                     if (!state_->io->enqueue(job))
                         throw std::logic_error("streaming slot and I/O credits diverged");
+                    if (receipt_recorder_)
+                        receipt_recorder_->fill_submitted(t);
                     tickets[g.slot]=t; ++dispatch; progress=true;
                 }
                 if (!prefix) { adapter_->encode_prefix(pass); prefix=true; progress=true; }
@@ -346,6 +354,8 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                         if (!state_->io->enqueue(job))
                             throw std::logic_error(
                                 "streaming carry and I/O credits diverged");
+                        if (receipt_recorder_)
+                            receipt_recorder_->fill_submitted(ticket);
                         tickets[first.slot] = ticket;
                         outgoing = ticket;
                         progress = true;
@@ -379,6 +389,9 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                                     throw std::logic_error(
                                         "streaming claim-overlap and I/O "
                                         "credits diverged");
+                                if (receipt_recorder_)
+                                    receipt_recorder_->fill_submitted(
+                                        following_ticket);
                                 tickets[following.slot] =
                                     following_ticket;
                                 ++dispatch;
@@ -388,11 +401,26 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
                         if (readers.count>readers.fences.size())
                             throw std::runtime_error("streaming reader count exceeds capacity");
                         safety.seal_readers(t,{readers.fences.data(),readers.count});
-                        if (readers.already_complete)
+                        if (receipt_recorder_)
+                            receipt_recorder_->readers_issued(
+                                t, {readers.fences.data(), readers.count});
+                        if (readers.already_complete) {
                             for (uint32_t reader = 0;
-                                 reader < readers.count; ++reader)
+                                 reader < readers.count; ++reader) {
                                 safety.complete_reader(
                                     t, readers.fences[reader]);
+                                if (receipt_recorder_) {
+                                    tc_stream_completion_v1 completion{};
+                                    completion.struct_size = sizeof(completion);
+                                    completion.version = TC_STREAM_SLOT_ABI_V1;
+                                    completion.kind = TC_STREAM_READER_COMPLETE;
+                                    completion.ticket = t;
+                                    completion.fence = readers.fences[reader];
+                                    receipt_recorder_->reader_completed(
+                                        completion);
+                                }
+                            }
+                        }
                         ++next; ++state_->counters.groups_submitted; progress=true;
                     }
                 }
@@ -412,7 +440,10 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
             segment_begin=segment_end;
             ++pool_index;
         }
-        check_cancel(cancel); ++state_->passes;
+        check_cancel(cancel);
+        if (receipt_recorder_)
+            receipt_recorder_->pass_completed(pass, state_->carry_ticket);
+        ++state_->passes;
     } catch (...) { state_->failed=true; retry_drain(); throw; }
 }
 ExecutionCounters StageExecutor::finish() {
@@ -424,13 +455,33 @@ ExecutionCounters StageExecutor::finish() {
         state_->io->shutdown_and_join(); consume();
         if (mailbox_->overflowed()) throw std::runtime_error("streaming_mailbox_overflow");
         if (!retry_drain()) throw std::runtime_error("streaming_drain_failed");
+        if (receipt_recorder_) {
+            receipt_recorder_->drained();
+            receipt_ = receipt_recorder_->finish();
+        }
         state_->finished=true; return state_->counters;
     } catch (...) { state_->failed=true; retry_drain(); throw; }
+}
+void StageExecutor::enable_receipt(ExecutionReceiptOptions options) {
+    if (!state_ || state_->owner != std::this_thread::get_id())
+        throw std::logic_error("streaming_owner_violation");
+    if (!state_->setup_complete || state_->failed || state_->finished ||
+        state_->passes != 0 || receipt_recorder_ || receipt_)
+        throw std::logic_error("streaming invalid receipt lifecycle");
+    receipt_recorder_ = std::make_unique<ActualReceiptRecorder>(
+        state_->layout, stage_, request_, std::move(options));
 }
 ExecutionCounters StageExecutor::counters() const {
     if (!state_ || state_->owner!=std::this_thread::get_id())
         throw std::logic_error("streaming_owner_violation");
     return state_->counters;
+}
+std::shared_ptr<const ActualStageReceipt> StageExecutor::receipt() const {
+    if (!state_ || state_->owner != std::this_thread::get_id())
+        throw std::logic_error("streaming_owner_violation");
+    if (!state_->finished || !receipt_)
+        throw std::logic_error("streaming receipt unavailable");
+    return receipt_;
 }
 ExecutionCounters StageExecutor::run(const StageLayout &layout, std::atomic<bool> &cancel,
                                      std::chrono::milliseconds timeout) {

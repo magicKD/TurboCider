@@ -120,6 +120,8 @@ def compile_and_run() -> None:
             ROOT / "native/models/h3_runtime/h3_streaming_descriptor.cpp",
             ROOT / "native/runtime/streaming/config.cpp",
             ROOT / "native/runtime/streaming/layout.cpp",
+            ROOT / "native/runtime/streaming/canonical_encoding.cpp",
+            ROOT / "native/runtime/streaming/actual_receipt.cpp",
             ROOT / "native/runtime/streaming/slot_pool.cpp",
             ROOT / "native/runtime/streaming/io_executor.cpp",
             ROOT / "native/runtime/streaming/context.cpp",

@@ -6,6 +6,7 @@
 #include "memory_trace.hpp"
 #include <chrono>
 #include <map>
+#include <memory>
 #include <optional>
 namespace tc {
 namespace streaming {
@@ -14,6 +15,7 @@ struct StreamingPresetRecord;
 class ModelStreamingProbe;
 class ModelStreamingSnapshot;
 struct ResolvedRequestExecution;
+struct ActualExecutionReceipt;
 } // namespace streaming
 
 class MemoryExecutionContext;
@@ -96,6 +98,14 @@ struct StreamingRuntimeMetrics {
     uint32_t pool_count = 0, slot_bundle_count = 0;
     uint32_t refill_worker_count = 0;
     bool source_lease_verified = false, drained = false;
+    uint32_t receipt_schema_version = 0;
+    uint64_t receipt_fills = 0, receipt_groups_submitted = 0;
+    uint64_t receipt_logical_read_bytes = 0;
+    uint64_t receipt_reader_fences_issued = 0;
+    uint64_t receipt_reader_fences_completed = 0;
+    uint64_t receipt_source_generation = 0;
+    std::string receipt_event_digest, receipt_digest;
+    std::string receipt_verifier_revision;
 };
 struct PublicStreamingSelectionMetrics {
     uint64_t target_request_memory_bytes = 0;
@@ -107,6 +117,9 @@ struct PublicStreamingSelectionMetrics {
     std::string authorized_layout_digest, actual_layout_digest;
     std::string component_policy_revision, execution_container;
     std::string memory_scope;
+    uint32_t receipt_schema_version = 0;
+    uint64_t receipt_source_generation = 0;
+    std::string receipt_digest, receipt_verifier_revision;
     bool actual_plan_verified = false;
 };
 struct RunResult {
@@ -123,6 +136,8 @@ struct RunResult {
     std::optional<HybridMetrics> encoder_hybrid;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;
+    std::shared_ptr<const streaming::ActualExecutionReceipt>
+        streaming_receipt;
     std::optional<PublicStreamingSelectionMetrics> public_streaming;
     std::optional<MemoryAdmissionMetrics> memory_admission;
     std::vector<MemoryTraceEvent> memory_trace;

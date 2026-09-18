@@ -1557,3 +1557,56 @@ C2 actual receipt v2
 ```
 
 不能跳过 receipt v2 和真实 source/worker 接线，把现有 private candidate 或 tiny P1 直接转换为 production record。
+
+### 13.25 C2 Actual Receipt v2 实现与验收（2026-09-18）
+
+本轮已在 C1 source lease 基线上完成 C2 common-runtime 实现。production catalog 继续为空，四模型尚未因此自动获得 public 资格。
+
+代码增量：
+
+- 新增 `native/runtime/streaming/actual_receipt.hpp/.cpp`：
+  - 逐 pass/group 的 pool、slot、step、request/content generation、expected/actual bytes；
+  - 固定上限 reader fence 数组、pool selection、carry event；
+  - stage event/canonical digest 和 execution canonical digest；
+  - single-pool、multi-pool、reload、`carry_first_group` 的独立 verifier；
+  - 稳定的 `streaming_actual_receipt_mismatch` 错误族。
+- `StageExecutor` 新增 opt-in `enable_receipt()` 与 `receipt()`：
+  - recorder 只在显式启用后创建；Off/default/private 原路径不创建；
+  - fill/GPU worker 仍只发布 POD completion；vector/digest 只由 owner thread 管理；
+  - fill submit/complete、reader issue/complete、pool selection、pass/carry、final drain 均进入 receipt。
+- `stream_slot_c.h`/`c_bridge.cpp` 增加 additive receipt ABI：
+  - 不修改已有 V1/V2/V3 plan/callback struct；
+  - receipt 只能在 create 后、首个 pass 前启用；只能在 successful finish 后读取；
+  - C result 输出 verified summary、source generation 和 event/canonical digest。
+- `RunResult` 可持有内部 `ActualExecutionReceipt`；public result verifier 在序列化前执行完整 matrix、fence、source generation 和 digest 校验。
+- `source_lease_verified` 不再仅依赖 adapter 自报：post-drain lease revalidate 与 receipt verifier 均成功后由 common verifier 置真。
+- Objective-C result 只输出安全 receipt 摘要，不序列化 fd、path、ticket matrix 或 GPU pointer。
+
+新增/扩展测试：
+
+```text
+streaming_actual_receipt_test.cpp
+test_streaming_actual_receipt.py
+streaming_executor_test.cpp       receipt owner-pump integration
+streaming_c_bridge_test.c         enable/read lifecycle and ABI
+streaming_preset_resolver_test.cpp public receipt hard gate
+```
+
+当前实际验证：
+
+```text
+python3 -B tests/native/test_streaming_actual_receipt.py                 PASS
+TC_STREAMING_SANITIZER=address,undefined ... actual receipt             PASS
+TC_STREAMING_SANITIZER=thread ... actual receipt                        PASS
+python3 -B tests/native/test_streaming_layout.py                         PASS
+TC_STREAMING_SANITIZER=address,undefined ... streaming layout           PASS
+TC_STREAMING_SANITIZER=thread ... streaming layout                      PASS
+python3 -B tests/native/test_streaming_preset_resolver.py                PASS
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh                       PASS
+make test-streaming-host                                                 PASS
+make test-streaming-contract                                             PASS
+make test-streaming-audit                                                PASS（1项无 audit dylib 环境 skip）
+git diff --check                                                         PASS
+```
+
+上述验证证明 common receipt/executor/C ABI/public verifier 接缝完成，不证明任一真实模型已经使用 request-scoped lease 和 receipt。下一阶段进入 C3 Z-Image Turbo public adapter；必须由真实 session 产生 receipt，不能在 public result 层合成 receipt。

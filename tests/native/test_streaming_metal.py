@@ -12,8 +12,13 @@ def main():
     sdk = subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip()
     with tempfile.TemporaryDirectory(prefix="tc-streaming-metal-") as raw:
         binary = Path(raw) / "test"
-        sources = ["tests/native/streaming_metal_test.mm", "native/runtime/streaming/context.cpp",
-                   "native/runtime/streaming/slot_pool.cpp", "native/runtime/streaming/io_executor.cpp"]
+        sources = ["tests/native/streaming_metal_test.mm",
+                   "native/core/common.cpp", "native/runtime/memory_manifest.cpp",
+                   "native/runtime/streaming/canonical_encoding.cpp",
+                   "native/runtime/streaming/actual_receipt.cpp",
+                   "native/runtime/streaming/context.cpp",
+                   "native/runtime/streaming/slot_pool.cpp",
+                   "native/runtime/streaming/io_executor.cpp"]
         subprocess.run([compiler, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror", "-fobjc-arc",
                         "-isysroot", sdk, "-I", str(ROOT / "native/runtime"),
                         *[str(ROOT / s) for s in sources], "-framework", "Foundation",

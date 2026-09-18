@@ -24,6 +24,8 @@ def main():
         c_flags += ["-O2"]
     sources = [
         "native/runtime/streaming/config.cpp", "native/runtime/streaming/layout.cpp",
+        "native/runtime/streaming/canonical_encoding.cpp",
+        "native/runtime/streaming/actual_receipt.cpp",
         "native/runtime/streaming/slot_pool.cpp", "native/runtime/streaming/io_executor.cpp",
         "native/runtime/streaming/context.cpp",
         "native/runtime/streaming/c_bridge.cpp",
@@ -32,7 +34,8 @@ def main():
     ]
     with tempfile.TemporaryDirectory(prefix="tc-streaming-layout-") as raw:
         for name in ("streaming_layout_test", "streaming_descriptor_test",
-                     "streaming_executor_test", "streaming_c_bridge_failure_test"):
+                     "streaming_executor_test", "streaming_c_bridge_failure_test",
+                     "streaming_actual_receipt_test"):
             binary = Path(raw) / name
             subprocess.run([compiler, *flags, "-pthread", "-I", str(ROOT / "native/runtime"),
                             str(ROOT / "tests/native" / (name + ".cpp")),

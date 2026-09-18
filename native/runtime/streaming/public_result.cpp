@@ -1,6 +1,7 @@
 #include "public_result.hpp"
 
 #include "../../core/common.hpp"
+#include "actual_receipt.hpp"
 
 namespace tc::streaming {
 namespace {
@@ -39,7 +40,7 @@ void verify_and_attach_public_streaming_result(
 
     const auto &record = execution.selection.record;
     const auto &layout = execution.model_snapshot->layout();
-    const auto &actual = *result.streaming_runtime;
+    auto &actual = *result.streaming_runtime;
     actual_check(layout.materializations_complete,
                  "authorized layout has incomplete source metadata");
     actual_check(layout.digest == record.plan.layout_digest,
@@ -103,8 +104,42 @@ void verify_and_attach_public_streaming_result(
                      probe_lease->generation() != 0,
                  "source lease generation differs");
     snapshot_lease->revalidate_after_drain();
-    actual_check(actual.source_lease_verified,
-                 "adapter did not use the revalidated source lease");
+    actual_check(result.streaming_receipt != nullptr,
+                 "adapter did not return an actual execution receipt");
+    verify_actual_execution_receipt(
+        layout, actual.implementation,
+        record.plan.component_policy_revision,
+        snapshot_lease->generation(), *result.streaming_receipt);
+    actual_check(result.streaming_receipt->stages.size() == 1,
+                 "public v1 receipt stage count differs");
+    const auto &stage_receipt = result.streaming_receipt->stages.front();
+    actual_check(stage_receipt.completed_passes == stage.pass_count &&
+                     stage_receipt.completed_groups ==
+                         stage.pass_count * stage.groups.size() &&
+                     stage_receipt.fills == actual.group_count *
+                         actual.pass_count &&
+                     stage_receipt.groups_submitted ==
+                         actual.group_count * actual.pass_count &&
+                     stage_receipt.reader_fences_issued ==
+                         stage_receipt.reader_fences_completed &&
+                     stage_receipt.drain_completed,
+                 "receipt summary differs");
+    actual.source_lease_verified = true;
+    actual.receipt_schema_version =
+        result.streaming_receipt->schema_version;
+    actual.receipt_fills = stage_receipt.fills;
+    actual.receipt_groups_submitted = stage_receipt.groups_submitted;
+    actual.receipt_logical_read_bytes =
+        stage_receipt.logical_read_bytes;
+    actual.receipt_reader_fences_issued =
+        stage_receipt.reader_fences_issued;
+    actual.receipt_reader_fences_completed =
+        stage_receipt.reader_fences_completed;
+    actual.receipt_source_generation = stage_receipt.source_generation;
+    actual.receipt_event_digest = stage_receipt.event_digest;
+    actual.receipt_digest = result.streaming_receipt->canonical_digest;
+    actual.receipt_verifier_revision =
+        std::string(actual_receipt_verifier_revision);
 
     PublicStreamingSelectionMetrics metrics;
     metrics.target_request_memory_bytes =
@@ -130,6 +165,12 @@ void verify_and_attach_public_streaming_result(
         record.plan.component_policy_revision;
     metrics.execution_container = record.workload.execution_container;
     metrics.memory_scope = record.calibration.scope;
+    metrics.receipt_schema_version =
+        result.streaming_receipt->schema_version;
+    metrics.receipt_source_generation = stage_receipt.source_generation;
+    metrics.receipt_digest = result.streaming_receipt->canonical_digest;
+    metrics.receipt_verifier_revision =
+        std::string(actual_receipt_verifier_revision);
     metrics.actual_plan_verified = true;
     result.public_streaming = std::move(metrics);
 }

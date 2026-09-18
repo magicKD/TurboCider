@@ -99,7 +99,7 @@ unresolved selector 的立即安全闸门、query→resolve→generate 的所有
 35进一步把 32–34 的合同落到当前文件、类型、状态机、测试 ID 和 R0–R8 提交边界；它仍是实施蓝图，不代表任何 public record 已发布。
 从当前 `2878d21` C1 基线继续直接实现时，优先阅读 36 → 38 → 41 → 42 → 44 → 37 → 39 → 45：36/38 给出 coordinator、source lease、receipt 和逐文件合同，41 冻结调度器与 multi-slot/multi-pool 语义，42/44 给出四模型 adapter 和下一阶段收口施工单，37/39/45 提供真实档位校准、swap 对照、App 事务、证据和 release gate。
 如果从产品/App 视角评审，先读 40；如果从工具和发布视角评审，先读 43。40–43 均是设计与实施合同，不表示 production catalog 已非空或任何 target 已 public。
-准备从当前已提交的 C1 source lease 继续编码时，按 **44 第3节（C2 receipt）→ 第5节（四模型）→ 第6节（App）** 施工；
+当前 C2 Actual Receipt v2 已在工作树完成并通过 host/sanitizer/build 验收，详见 13.25。继续编码时按 **44 第5节（四模型）→ 第6节（App）** 施工；
 实现后按 **45** 的测试 ID、采样字段、P0–P4 门槛和 evidence bundle 逐项验收。44/45 仍是规格，不改变 production catalog 为空的事实。
 28/30不新增第二套executor，29/30不重新定义文档12的P0–P4阈值。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；

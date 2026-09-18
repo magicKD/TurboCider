@@ -32,6 +32,7 @@ def main():
                 str(ROOT / "native/runtime/memory_manifest.cpp"),
                 str(ROOT / "native/runtime/streaming/config.cpp"),
                 str(ROOT / "native/runtime/streaming/canonical_encoding.cpp"),
+                str(ROOT / "native/runtime/streaming/actual_receipt.cpp"),
                 str(ROOT / "native/runtime/streaming/preset_catalog.cpp"),
                 str(ROOT / "native/runtime/streaming/catalog_provider.cpp"),
                 str(ROOT / "native/runtime/streaming/resolved_request.cpp"),

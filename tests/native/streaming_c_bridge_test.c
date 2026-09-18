@@ -51,6 +51,25 @@ int main(void){
     tc_stream_adapter_v1 ops={sizeof(ops),TC_STREAM_SLOT_ABI_V1,&m,allocate,destroy,fill,prefix,prepare,encode,drain};
     tc_stream_executor *executor=NULL;
     assert(tc_stream_executor_create_v1(&plan,&ops,&executor,error,sizeof(error)));
+    tc_stream_receipt_v1 receipt={0};
+    receipt.struct_size=sizeof(receipt);
+    receipt.version=TC_STREAM_RECEIPT_ABI_V1;
+    assert(!tc_stream_executor_receipt_v1(
+        executor,&receipt,error,sizeof(error)));
+    assert(strstr(error,"streaming receipt unavailable"));
+    memset(error,0,sizeof(error));
+    tc_stream_receipt_config_v1 receipt_config={0};
+    receipt_config.struct_size=sizeof(receipt_config);
+    receipt_config.version=TC_STREAM_RECEIPT_ABI_V1;
+    receipt_config.source_generation=41;
+    memset(receipt_config.layout_digest,'a',64);
+    strcpy(receipt_config.implementation,"c_bridge_generic_v2");
+    assert(tc_stream_executor_enable_receipt_v1(
+        executor,&receipt_config,error,sizeof(error)));
+    assert(!tc_stream_executor_enable_receipt_v1(
+        executor,&receipt_config,error,sizeof(error)));
+    assert(strstr(error,"invalid receipt lifecycle"));
+    memset(error,0,sizeof(error));
     assert(m.allocations==3 && m.destroys==0);
     assert(tc_stream_executor_run_pass(executor,0,10,error,sizeof(error)));
     assert(m.allocations==3 && m.destroys==0);
@@ -59,6 +78,18 @@ int main(void){
     assert(tc_stream_executor_counters(executor,&counters,error,sizeof(error)));
     assert(counters.fills==8 && counters.slot_bundles==3);
     assert(tc_stream_executor_finish(executor,error,sizeof(error)));
+    receipt.struct_size=sizeof(receipt);
+    receipt.version=TC_STREAM_RECEIPT_ABI_V1;
+    assert(tc_stream_executor_receipt_v1(
+        executor,&receipt,error,sizeof(error)));
+    assert(receipt.stage_index==1 && receipt.completed_passes==2 &&
+           receipt.completed_groups==8 && receipt.fills==8 &&
+           receipt.groups_submitted==8 && receipt.logical_read_bytes==64 &&
+           receipt.reader_fences_issued==8 &&
+           receipt.reader_fences_completed==8 &&
+           receipt.source_generation==41 && receipt.drained &&
+           receipt.verified && strlen(receipt.event_digest)==64 &&
+           strlen(receipt.canonical_digest)==64);
     assert(m.destroys==1);
     assert(tc_stream_executor_destroy(&executor,error,sizeof(error)) && !executor);
     assert(m.destroys==1);

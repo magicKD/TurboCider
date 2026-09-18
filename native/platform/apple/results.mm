@@ -450,6 +450,23 @@ static NSDictionary *actual_streaming_layout(
     } mutableCopy];
     if (!m.layout_digest.empty())
         value[@"digest"] = @(m.layout_digest.c_str());
+    if (m.receipt_schema_version) {
+        value[@"receipt"] = @{
+            @"schema_version" : @(m.receipt_schema_version),
+            @"fills" : @(m.receipt_fills),
+            @"groups_submitted" : @(m.receipt_groups_submitted),
+            @"logical_read_bytes" : @(m.receipt_logical_read_bytes),
+            @"reader_fences_issued" :
+                @(m.receipt_reader_fences_issued),
+            @"reader_fences_completed" :
+                @(m.receipt_reader_fences_completed),
+            @"source_generation" : @(m.receipt_source_generation),
+            @"event_digest" : @(m.receipt_event_digest.c_str()),
+            @"canonical_digest" : @(m.receipt_digest.c_str()),
+            @"verifier_revision" :
+                @(m.receipt_verifier_revision.c_str()),
+        };
+    }
     return value;
 }
 static NSDictionary *public_streaming_result(
@@ -475,6 +492,12 @@ static NSDictionary *public_streaming_result(
             @(m.component_policy_revision.c_str()),
         @"execution_container" : @(m.execution_container.c_str()),
         @"memory_scope" : @(m.memory_scope.c_str()),
+        @"receipt_schema_version" : @(m.receipt_schema_version),
+        @"receipt_source_generation" :
+            @(m.receipt_source_generation),
+        @"receipt_digest" : @(m.receipt_digest.c_str()),
+        @"receipt_verifier_revision" :
+            @(m.receipt_verifier_revision.c_str()),
         @"actual_plan_verified" : @(m.actual_plan_verified),
     };
 }

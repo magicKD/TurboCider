@@ -1,4 +1,5 @@
 #pragma once
+#include "actual_receipt.hpp"
 #include "io_executor.hpp"
 #include "slot_pool.hpp"
 #include <memory>
@@ -67,8 +68,12 @@ public:
     void begin(const StageLayout &);
     void run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &cancel,
                   std::chrono::milliseconds stall_timeout = std::chrono::seconds(60));
+    // Opt-in only. Must be called by the owner after begin() and before the
+    // first pass. The default/private executor path leaves this disabled.
+    void enable_receipt(ExecutionReceiptOptions);
     ExecutionCounters finish();
     ExecutionCounters counters() const;
+    std::shared_ptr<const ActualStageReceipt> receipt() const;
     ExecutionCounters run(const StageLayout &, std::atomic<bool> &cancel,
                           std::chrono::milliseconds stall_timeout = std::chrono::seconds(60));
     bool quarantined() const noexcept { return quarantined_; }
@@ -78,6 +83,8 @@ private:
     uint64_t request_;
     std::shared_ptr<ModelSlotAdapter> adapter_;
     std::unique_ptr<CompletionMailbox> mailbox_;
+    std::unique_ptr<ActualReceiptRecorder> receipt_recorder_;
+    std::shared_ptr<const ActualStageReceipt> receipt_;
     struct State;
     std::unique_ptr<State> state_;
     void create_pool(uint32_t pool_index);

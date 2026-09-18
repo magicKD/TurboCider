@@ -10,6 +10,13 @@ int fail(char *error, size_t size, const char *reason) {
     if (error && size) std::snprintf(error,size,"%s",reason);
     return 0;
 }
+std::string fixed_string(const char *value, size_t capacity,
+                         const char *detail) {
+    const size_t length = ::strnlen(value, capacity);
+    if (!length || length == capacity)
+        throw std::invalid_argument(detail);
+    return std::string(value, length);
+}
 class CAdapter final : public ModelSlotAdapter {
 public:
     tc_stream_adapter_v1 ops{};
@@ -297,6 +304,66 @@ extern "C" int tc_stream_executor_counters(tc_stream_executor *h,tc_stream_count
         *out={c.pool_creates,c.slot_bundles,c.fills,c.bytes_loaded,
              c.groups_submitted,c.wait_seconds};return 1;}
     catch(const std::exception &e){return fail(error,size,e.what());}
+}
+extern "C" int tc_stream_executor_enable_receipt_v1(
+        tc_stream_executor *h, const tc_stream_receipt_config_v1 *config,
+        char *error, size_t size) {
+    try {
+        owner(h);
+        if (!config || config->struct_size != sizeof(*config) ||
+            config->version != TC_STREAM_RECEIPT_ABI_V1 ||
+            !config->source_generation)
+            throw std::invalid_argument("streaming invalid receipt ABI");
+        auto layout_digest = fixed_string(
+            config->layout_digest, sizeof(config->layout_digest),
+            "streaming invalid receipt layout digest");
+        auto implementation = fixed_string(
+            config->implementation, sizeof(config->implementation),
+            "streaming invalid receipt implementation");
+        if (layout_digest.size() != 64)
+            throw std::invalid_argument(
+                "streaming invalid receipt layout digest");
+        h->executor->enable_receipt({
+            std::move(layout_digest), std::move(implementation),
+            config->source_generation});
+        return 1;
+    } catch (const std::exception &e) {
+        return fail(error, size, e.what());
+    }
+}
+extern "C" int tc_stream_executor_receipt_v1(
+        tc_stream_executor *h, tc_stream_receipt_v1 *out,
+        char *error, size_t size) {
+    try {
+        owner(h);
+        if (!out || out->struct_size != sizeof(*out) ||
+            out->version != TC_STREAM_RECEIPT_ABI_V1)
+            throw std::invalid_argument("streaming invalid receipt output ABI");
+        const auto receipt = h->executor->receipt();
+        tc_stream_receipt_v1 value{};
+        value.struct_size = sizeof(value);
+        value.version = TC_STREAM_RECEIPT_ABI_V1;
+        value.stage_index = receipt->stage_index;
+        value.completed_passes = receipt->completed_passes;
+        value.completed_groups = receipt->completed_groups;
+        value.fills = receipt->fills;
+        value.groups_submitted = receipt->groups_submitted;
+        value.logical_read_bytes = receipt->logical_read_bytes;
+        value.reader_fences_issued = receipt->reader_fences_issued;
+        value.reader_fences_completed = receipt->reader_fences_completed;
+        value.source_generation = receipt->source_generation;
+        value.drained = receipt->drain_completed ? 1 : 0;
+        value.verified = 1;
+        std::snprintf(value.event_digest, sizeof(value.event_digest), "%s",
+                      receipt->event_digest.c_str());
+        std::snprintf(value.canonical_digest,
+                      sizeof(value.canonical_digest), "%s",
+                      receipt->canonical_digest.c_str());
+        *out = value;
+        return 1;
+    } catch (const std::exception &e) {
+        return fail(error, size, e.what());
+    }
 }
 extern "C" void tc_stream_executor_cancel(tc_stream_executor *h){if(h)h->cancel.store(true);}
 extern "C" int tc_stream_executor_destroy(tc_stream_executor **h,char *error,size_t size){

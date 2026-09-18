@@ -254,6 +254,31 @@ int main() {
         rejects([&]{exec.run(layout(k,d,q),cancel);});
         ++runs;
     }
+    {
+        auto model=std::make_shared<FakeModel>();
+        std::atomic<bool> cancel{false};
+        StageExecutor exec(3,7,model);
+        const auto planned=layout(2,1,2);
+        exec.begin(planned);
+        exec.enable_receipt({std::string(64,'a'),
+                             "generic_stage_executor_v2",11});
+        for(uint32_t pass=0;pass<planned.pass_count;++pass)
+            exec.run_pass(pass,pass+20,cancel);
+        const auto result=exec.finish();
+        const auto receipt=exec.receipt();
+        assert(result.fills==39 && receipt->fills==39 &&
+               receipt->groups_submitted==39 &&
+               receipt->completed_groups==39 &&
+               receipt->reader_fences_issued==78 &&
+               receipt->reader_fences_completed==78 &&
+               receipt->source_generation==11 &&
+               receipt->drain_completed &&
+               receipt->event_digest.size()==64 &&
+               receipt->canonical_digest.size()==64);
+        verify_actual_stage_receipt(
+            planned,3,7,{std::string(64,'a'),
+                         "generic_stage_executor_v2",11},*receipt);
+    }
     for (uint32_t k=1; k<=3; ++k) {
         auto model=std::make_shared<FakeModel>(); std::atomic<bool> cancel{false};
         StageExecutor exec(3,7,model);

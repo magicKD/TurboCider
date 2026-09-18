@@ -1,6 +1,7 @@
 #include "../../native/runtime/streaming/preset_resolver.hpp"
 #include "../../native/runtime/streaming/public_runtime.hpp"
 #include "../../native/runtime/streaming/public_result.hpp"
+#include "../../native/runtime/streaming/actual_receipt.hpp"
 
 #include <cassert>
 #include <fstream>
@@ -182,12 +183,15 @@ class Snapshot final : public ModelStreamingSnapshot {
         stage.pass_count = 9;
         stage.pass_transition = PassTransition::reload;
         stage.multi_pool_policy = MultiPoolPolicy::serial;
-        stage.groups.resize(16);
         PoolLayout pool;
         pool.id = 0;
         pool.layout_class = "z-image-bf16-main-block-v1";
         pool.slots.resize(2);
+        for (auto &slot : pool.slots) slot.capacity_bytes = 8;
         stage.pools.push_back(std::move(pool));
+        for (uint32_t group = 0; group < 16; ++group)
+            stage.groups.push_back(
+                {group, 0, group % 2, {group}, {8}, 8});
         layout_value.stages.push_back(std::move(stage));
     }
     std::string_view model_id() const noexcept override {
@@ -272,6 +276,54 @@ Request public_request(uint64_t target = 10 * gib) {
     value.streaming_selector = selector(target);
     value.streaming_selector_requested = value.streaming_selector;
     return value;
+}
+
+std::shared_ptr<const ActualExecutionReceipt> actual_receipt(
+        const Layout &layout, uint64_t source_generation) {
+    assert(layout.stages.size() == 1);
+    const auto &stage = layout.stages.front();
+    constexpr uint64_t request_generation = 71;
+    constexpr const char *implementation = "generic_stage_executor_v2";
+    ActualReceiptRecorder recorder(
+        stage, 0, request_generation,
+        {layout.digest, implementation, source_generation});
+    uint64_t content_generation = 0;
+    uint64_t fence_sequence = 0;
+    for (uint32_t pass = 0; pass < stage.pass_count; ++pass) {
+        recorder.pool_selected(pass, 0);
+        for (uint32_t group = 0; group < stage.groups.size(); ++group) {
+            const auto &planned = stage.groups[group];
+            tc_stream_slot_ticket_v1 ticket{
+                sizeof(ticket), TC_STREAM_SLOT_ABI_V1,
+                planned.pool, planned.slot, request_generation,
+                ++content_generation, {0, pass, pass, group}};
+            recorder.fill_submitted(ticket);
+            tc_stream_completion_v1 fill{};
+            fill.struct_size = sizeof(fill);
+            fill.version = TC_STREAM_SLOT_ABI_V1;
+            fill.kind = TC_STREAM_FILL_COMPLETE;
+            fill.ticket = ticket;
+            fill.bytes = planned.bytes;
+            recorder.fill_completed(fill);
+            const tc_stream_reader_fence_v1 fence{
+                1, ++fence_sequence};
+            recorder.readers_issued(ticket, {&fence, 1});
+            tc_stream_completion_v1 reader{};
+            reader.struct_size = sizeof(reader);
+            reader.version = TC_STREAM_SLOT_ABI_V1;
+            reader.kind = TC_STREAM_READER_COMPLETE;
+            reader.ticket = ticket;
+            reader.fence = fence;
+            recorder.reader_completed(reader);
+        }
+        recorder.pass_completed(pass, std::nullopt);
+    }
+    recorder.drained();
+    const auto stage_receipt = recorder.finish();
+    return std::make_shared<const ActualExecutionReceipt>(
+        make_actual_execution_receipt(
+            implementation, layout.digest, "zimage-components-v1",
+            std::vector<ActualStageReceipt>{*stage_receipt}));
 }
 
 template <class Function>
@@ -422,7 +474,7 @@ int main() {
         result_probe, result_snapshot, digest('2')};
     RunResult run;
     StreamingRuntimeMetrics actual;
-    actual.implementation = "generic_stage_executor_v1";
+    actual.implementation = "generic_stage_executor_v2";
     actual.layout_digest = result_selected.record.plan.layout_digest;
     actual.stage = "denoiser";
     actual.resident_prefix_blocks = 14;
@@ -439,12 +491,18 @@ int main() {
     actual.pool_count = 1;
     actual.slot_bundle_count = 2;
     actual.refill_worker_count = 1;
-    actual.source_lease_verified = true;
+    actual.source_lease_verified = false;
     actual.drained = true;
     run.streaming_runtime = actual;
+    run.streaming_receipt = actual_receipt(
+        result_snapshot->layout_value, test_lease->generation());
     verify_and_attach_public_streaming_result(execution, run);
     assert(run.public_streaming &&
            run.public_streaming->actual_plan_verified);
+    assert(run.streaming_runtime->source_lease_verified &&
+           run.streaming_runtime->receipt_schema_version == 2 &&
+           run.streaming_runtime->receipt_fills == 144 &&
+           run.public_streaming->receipt_digest.size() == 64);
     assert(run.public_streaming->preset_id == "fast-fit");
     assert(run.public_streaming->authorized_layout_digest ==
            run.public_streaming->actual_layout_digest);
@@ -457,10 +515,19 @@ int main() {
     }, "streaming_actual_plan_mismatch");
     wrong_actual = run;
     wrong_actual.public_streaming.reset();
-    wrong_actual.streaming_runtime->source_lease_verified = false;
+    wrong_actual.streaming_receipt.reset();
     rejects([&] {
         verify_and_attach_public_streaming_result(execution, wrong_actual);
     }, "streaming_actual_plan_mismatch");
+    wrong_actual = run;
+    wrong_actual.public_streaming.reset();
+    auto damaged_receipt = std::make_shared<ActualExecutionReceipt>(
+        *run.streaming_receipt);
+    damaged_receipt->stages.front().groups.front().fill_count = 0;
+    wrong_actual.streaming_receipt = std::move(damaged_receipt);
+    rejects([&] {
+        verify_and_attach_public_streaming_result(execution, wrong_actual);
+    }, "streaming_actual_receipt_mismatch");
     wrong_actual = run;
     wrong_actual.public_streaming.reset();
     wrong_actual.streaming_runtime->drained = false;

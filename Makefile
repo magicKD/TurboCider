@@ -90,6 +90,7 @@ test:
 # focused targets. GPU tests may report SKIP when Metal access is unavailable.
 test-streaming-host:
 	@"$(PYTHON)" -B tests/native/test_streaming_layout.py
+	@"$(PYTHON)" -B tests/native/test_streaming_actual_receipt.py
 	@$(MAKE) test-streaming-source-lease
 	@"$(PYTHON)" -B tests/native/test_streaming_preset_resolver.py
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_layout.py

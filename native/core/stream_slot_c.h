@@ -10,6 +10,7 @@ extern "C" {
 #define TC_STREAM_SLOT_ABI_V1 1u
 #define TC_STREAM_SLOT_ABI_V2 2u
 #define TC_STREAM_SLOT_ABI_V3 3u
+#define TC_STREAM_RECEIPT_ABI_V1 1u
 #define TC_STREAM_MAX_READER_QUEUES 8u
 
 typedef struct {
@@ -150,6 +151,29 @@ typedef struct {
     uint64_t pool_creates, slot_bundles, fills, content_bytes_loaded, groups_submitted;
     double wait_seconds;
 } tc_stream_counters_v1;
+
+/* Additive receipt control. Existing V1/V2/V3 plan and callback layouts are
+ * unchanged. Enable is owner-only and valid after create but before run_pass;
+ * receipt is available only after a successful finish. */
+typedef struct {
+    uint32_t struct_size, version;
+    uint64_t source_generation;
+    char layout_digest[65];
+    char implementation[64];
+} tc_stream_receipt_config_v1;
+
+typedef struct {
+    uint32_t struct_size, version;
+    uint32_t stage_index, completed_passes, completed_groups;
+    uint64_t fills, groups_submitted, logical_read_bytes;
+    uint64_t reader_fences_issued, reader_fences_completed;
+    uint64_t source_generation;
+    uint8_t drained, verified;
+    uint8_t reserved[6];
+    char event_digest[65];
+    char canonical_digest[65];
+} tc_stream_receipt_v1;
+
 typedef struct tc_stream_executor tc_stream_executor;
 
 /* Metadata arrays and callback table are copied; adapter.user must outlive the
@@ -165,6 +189,10 @@ int tc_stream_executor_create_v3(const tc_stream_stage_plan_v3 *, const tc_strea
 int tc_stream_executor_run_pass(tc_stream_executor *, uint32_t pass, uint32_t step, char *, size_t);
 int tc_stream_executor_finish(tc_stream_executor *, char *, size_t);
 int tc_stream_executor_counters(tc_stream_executor *, tc_stream_counters_v1 *, char *, size_t);
+int tc_stream_executor_enable_receipt_v1(
+    tc_stream_executor *, const tc_stream_receipt_config_v1 *, char *, size_t);
+int tc_stream_executor_receipt_v1(
+    tc_stream_executor *, tc_stream_receipt_v1 *, char *, size_t);
 void tc_stream_executor_cancel(tc_stream_executor *);
 /* Stops workers and drains before freeing. Returns 0 and retains *handle if
  * safety cannot be proved; caller must quarantine the owning model session. */
