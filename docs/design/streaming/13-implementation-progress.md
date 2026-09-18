@@ -1700,4 +1700,33 @@ env MLX_ROOT="$PWD/.venv/lib/python3.11/site-packages/mlx" \
 git diff --check                                                   PASS
 ```
 
-这将 Flux 当前事实从“尚未编译”更新为“编译、descriptor 和 public host contract 通过”。它仍不能证明 `/dev/fd` safetensors loader 在真实 Metal 下的 lazy/mmap fd 生命周期，也不能证明真实 Flux 9B full request、actual receipt、P0/P1/P2 或五档 memory fit；这些继续作为 [49 第5.2节](49-public-streaming-code-contracts-and-execution-blueprint.md) 和 [50 第10节](50-public-streaming-calibration-and-release-evidence.md) 的发布阻断项。
+这将 Flux 当前事实从“尚未编译”更新为“编译、descriptor 和 public host contract 通过”。随后 13.30 已用 fd-backed MLX reader 替换 `/dev/fd` 路径并取得真实 Metal PASS；真实 Flux 9B full request、actual receipt、P0/P1/P2 或五档 memory fit 仍是 [49 第5.2节](49-public-streaming-code-contracts-and-execution-blueprint.md) 和 [50 第10节](50-public-streaming-calibration-and-release-evidence.md) 的发布阻断项。
+
+### 13.30 Flux fd-backed lease reader 与 public adapter 收口（2026-09-18，待提交）
+
+在 13.29 的编译/host 基线上，进一步消除了 text encoder/VAE safetensors lazy load 的 fd 生命周期风险：
+
+- `Weights::load_lease()` 不再把临时 `/dev/fd/<n>` 字符串交给 MLX；新增只读 `LeaseFdReader`，顺序读取使用加锁 cursor，offset 读取使用 checked `pread`；
+- `Weights` 持有所有 lease reader，lazy array 同时引用 reader，`clear()` 先释放 array/LoRA 再释放 reader；失败路径清空 arrays/readers，可再次安全加载；
+- 新增真实 Metal fixture：加载后替换同名 safetensors path，再 materialize lazy array，数据仍来自原 lease fd；post-drain path revalidation 正确 fail-closed；
+- Flux public adapter 明确清除可能来自旧 source generation 的 conditioning、encoder hybrid 和 VAE，确保 transformer/text/VAE 都来自当前 request lease；
+- `generate_resolved()` 增加 request exact plan、snapshot source/runtime/layout/component policy 的防御性检查；
+- Flux host test 断言完整九项 logical closure、wrong component policy、supported-target 绑定后连续失败 cleanup、缺失 VAE closure 和 path replacement；
+- pager Metal test 修正 APFS rename 更新 inode ctime 时的合法 fail-closed 断言，不再错误限定必须返回 path-only 错误。
+
+本轮新增/更新验证：
+
+```text
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh                    PASS
+python3 -B tests/native/test_flux_streaming_descriptor.py            PASS
+python3 -B tests/native/test_flux_public_streaming.py                PASS
+env MLX_ROOT="$PWD/.venv/lib/python3.11/site-packages/mlx" \
+  python3 -B tests/native/test_mlx_weight_pager.py                    PASS（真实 Metal）
+env MLX_ROOT="$PWD/.venv/lib/python3.11/site-packages/mlx" \
+  python3 -B tests/native/test_mlx_weights_lease.py                   PASS（真实 Metal）
+make test-streaming-host                                              PASS
+make test-streaming-contract                                          PASS
+make test-streaming-audit                                             PASS（1项无 audit dylib 环境 skip）
+```
+
+这证明 Flux public adapter 的 source closure、host authority 接线和 MLX lease reader 生命周期已收口，但仍不是 production 资格：尚无真实 Flux 9B checkpoint full request、common result verifier 的真实 receipt、五档 process-tree P2、P0/P1 配对或 catalog record。

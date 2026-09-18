@@ -91,6 +91,7 @@ struct MlxWeightPager::State {
     const Descriptor *descriptor = nullptr;
     const StageDescriptor *stage = nullptr;
     const StageLayout *layout = nullptr;
+    std::shared_ptr<const SourceLease> lease;
     std::vector<Artifact> artifacts;
     std::map<uint32_t, const BlockSpec *> blocks;
     std::map<uint32_t, Pool> pools;
@@ -204,10 +205,112 @@ MlxWeightPager::MlxWeightPager(
     check_open_files();
 }
 
+MlxWeightPager::MlxWeightPager(
+    std::shared_ptr<const SourceLease> lease,
+    const Descriptor &descriptor, const StageDescriptor &stage,
+    const StageLayout &layout)
+    : state_(std::make_unique<State>()) {
+    pager_require(lease != nullptr, "source lease is unavailable");
+    pager_require(stage.id == layout.id && !layout.resident &&
+                      !layout.pools.empty() && !layout.groups.empty(),
+                  "descriptor and layout stage differ");
+    pager_require(descriptor.artifacts.size() <= max_stages,
+                  "artifact count exceeds runtime limit");
+    state_->descriptor = &descriptor;
+    state_->stage = &stage;
+    state_->layout = &layout;
+    state_->lease = std::move(lease);
+
+    state_->artifacts.reserve(descriptor.artifacts.size());
+    for (const auto &source : descriptor.artifacts) {
+        const std::filesystem::path id(source.id);
+        pager_require(id == id.filename() && id.extension() == ".safetensors",
+                      "artifact id is not a safetensors filename");
+        State::Artifact artifact;
+        artifact.path = state_->lease->file(source.id).path;
+        artifact.descriptor =
+            state_->lease->duplicate_fd(source.id).release();
+        struct stat status{};
+        pager_require(::fstat(artifact.descriptor, &status) == 0 &&
+                          S_ISREG(status.st_mode) &&
+                          static_cast<uint64_t>(status.st_size) == source.bytes,
+                      "leased artifact size or type changed");
+        artifact.bytes = source.bytes;
+        artifact.device = status.st_dev;
+        artifact.inode = status.st_ino;
+        artifact.modified_seconds = status.st_mtimespec.tv_sec;
+        artifact.modified_nanos = status.st_mtimespec.tv_nsec;
+#ifdef F_NOCACHE
+        pager_require(::fcntl(artifact.descriptor, F_NOCACHE, 1) == 0,
+                      "cannot disable leased artifact file caching");
+#endif
+        state_->artifacts.push_back(std::move(artifact));
+    }
+    pager_require(!state_->artifacts.empty(), "descriptor has no artifacts");
+    for (const auto &block : stage.blocks) {
+        pager_require(state_->blocks.emplace(block.id, &block).second,
+                      "duplicate block id");
+        for (const auto &field : block.fields) {
+            (void)mlx_shape(field);
+            const auto &source = direct_source(field);
+            pager_require(source.artifact < state_->artifacts.size(),
+                          "block source artifact is unavailable");
+            const auto &artifact = state_->artifacts[source.artifact];
+            pager_require(source.offset <= artifact.bytes &&
+                              source.bytes <= artifact.bytes - source.offset,
+                          "block source range exceeds artifact");
+        }
+    }
+    for (const auto &field : stage.resident_fields) {
+        (void)mlx_shape(field);
+        const auto &source = direct_source(field);
+        pager_require(source.artifact < state_->artifacts.size(),
+                      "resident source artifact is unavailable");
+        const auto &artifact = state_->artifacts[source.artifact];
+        pager_require(source.offset <= artifact.bytes &&
+                          source.bytes <= artifact.bytes - source.offset,
+                      "resident source range exceeds artifact");
+    }
+    for (const auto &group : layout.groups) {
+        pager_require(group.blocks.size() == 1,
+                      "pager currently requires one block per group");
+        const auto found = state_->blocks.find(group.blocks.front());
+        pager_require(found != state_->blocks.end(),
+                      "layout group references an unknown block");
+        pager_require(found->second->fields.size() == group.field_bytes.size(),
+                      "layout group field count differs from descriptor");
+        uint64_t group_bytes = 0;
+        for (size_t index = 0; index < found->second->fields.size(); ++index) {
+            const auto &field = found->second->fields[index];
+            pager_require(field.alignment &&
+                              (field.alignment & (field.alignment - 1)) == 0,
+                          "descriptor field alignment is invalid");
+            const uint64_t padding = field.alignment - 1;
+            pager_require(field.bytes <= UINT64_MAX - padding,
+                          "descriptor aligned field size overflows");
+            const uint64_t aligned_bytes =
+                (field.bytes + padding) & ~padding;
+            pager_require(aligned_bytes == group.field_bytes[index],
+                          "layout group field geometry differs from descriptor");
+            pager_require(field.bytes <= UINT64_MAX - group_bytes,
+                          "layout group byte count overflows");
+            group_bytes += field.bytes;
+        }
+        pager_require(group.bytes == group_bytes,
+                      "layout group byte count differs from descriptor");
+    }
+    check_open_files();
+}
+
 MlxWeightPager::~MlxWeightPager() = default;
 
 void MlxWeightPager::check_open_files() const {
     pager_require(state_ != nullptr, "pager state is unavailable");
+    if (state_->lease) {
+        state_->lease->revalidate_open_files();
+        state_->lease->revalidate_paths();
+        return;
+    }
     for (const auto &artifact : state_->artifacts) {
         struct stat opened{};
         struct stat named{};

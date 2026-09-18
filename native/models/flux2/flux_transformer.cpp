@@ -669,6 +669,7 @@ struct FluxExactStream::Impl {
     std::atomic<bool> &cancelled;
     streaming::ExecutionCounters final_counters{};
     bool direct = false;
+    bool public_execution = false;
     bool finished = false;
 
     Impl(const std::filesystem::path &transformer_directory,
@@ -699,6 +700,27 @@ struct FluxExactStream::Impl {
             executor->begin(plan.layout().stages.front());
         }
     }
+
+    Impl(std::shared_ptr<const streaming::SourceLease> lease,
+         const std::string &model_id, const StreamingConfig &config,
+         const flux2::StreamingWorkload &workload, Weights &resident,
+         const Event &event, std::atomic<bool> &cancelled,
+         uint64_t request_generation)
+        : plan(std::move(lease), model_id, config, workload),
+          source(plan.lease_ptr(), plan.descriptor(),
+                 plan.descriptor().stages.front(),
+                 plan.layout().stages.front()),
+          adapter(std::make_shared<FluxExactAdapter>(
+              plan, source, event, cancelled)),
+          executor(std::make_unique<streaming::StageExecutor>(
+              0, request_generation, adapter)),
+          cancelled(cancelled), public_execution(true) {
+        require(!std::getenv("TURBOCIDER_FLUX_DIRECT_STREAMING_BASELINE"),
+                "FLUX public streaming does not allow the benchmark direct executor");
+        plan.metadata().check_unchanged();
+        source.load_resident(resident, &cancelled);
+        executor->begin(plan.layout().stages.front());
+    }
 };
 
 FluxExactStream::FluxExactStream(
@@ -709,6 +731,16 @@ FluxExactStream::FluxExactStream(
         uint64_t request_generation)
     : impl_(std::make_unique<Impl>(
           transformer_directory, model_id, config, workload, resident,
+          event, cancelled, request_generation)) {}
+
+FluxExactStream::FluxExactStream(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        const std::string &model_id, const StreamingConfig &config,
+        const flux2::StreamingWorkload &workload, Weights &resident,
+        const Event &event, std::atomic<bool> &cancelled,
+        uint64_t request_generation)
+    : impl_(std::make_unique<Impl>(
+          std::move(lease), model_id, config, workload, resident,
           event, cancelled, request_generation)) {}
 
 FluxExactStream::~FluxExactStream() = default;
@@ -749,6 +781,22 @@ void FluxExactStream::finish() {
     impl_->finished = true;
 }
 
+void FluxExactStream::enable_receipt(
+        streaming::ExecutionReceiptOptions options) {
+    require(impl_ && !impl_->finished && !impl_->direct &&
+                impl_->executor != nullptr,
+            "FLUX exact receipt is unavailable");
+    impl_->executor->enable_receipt(std::move(options));
+}
+
+std::shared_ptr<const streaming::ActualStageReceipt>
+FluxExactStream::receipt() const {
+    require(impl_ && impl_->finished && !impl_->direct &&
+                impl_->executor != nullptr,
+            "FLUX exact receipt is not finalized");
+    return impl_->executor->receipt();
+}
+
 const flux2::StreamingPlanView &FluxExactStream::plan() const {
     require(impl_ != nullptr, "FLUX exact plan is unavailable");
     return impl_->plan;
@@ -767,8 +815,10 @@ streaming::ExecutionCounters FluxExactStream::counters() const {
 }
 
 const char *FluxExactStream::implementation() const noexcept {
-    return impl_ && impl_->direct ? "flux_direct_same_layout_v1" :
-                                   "generic_stage_executor_v1";
+    if (!impl_) return "generic_stage_executor_v1";
+    if (impl_->public_execution) return "generic_stage_executor_v2";
+    return impl_->direct ? "flux_direct_same_layout_v1" :
+                           "generic_stage_executor_v1";
 }
 
 Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int height, int width,

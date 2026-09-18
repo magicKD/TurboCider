@@ -52,6 +52,7 @@ using tc::streaming::MlxWeightPager;
 using tc::streaming::PoolLayout;
 using tc::streaming::SlotLayout;
 using tc::streaming::SourceArtifact;
+using tc::streaming::SourceFileIdentity;
 using tc::streaming::SourceIdentityKind;
 using tc::streaming::SourceRange;
 using tc::streaming::StageDescriptor;
@@ -327,6 +328,39 @@ void test_short_read(const std::filesystem::path &root) {
     }, "slot content identity");
 }
 
+void test_lease_backed(const std::filesystem::path &root) {
+    auto fixture = make_fixture(root);
+    std::vector<SourceFileIdentity> files;
+    for (const auto *name : {kArtifact0, kArtifact1}) {
+        SourceFileIdentity file;
+        file.logical_id = name;
+        file.path = root / name;
+        files.push_back(std::move(file));
+    }
+    auto lease = tc::streaming::SourceLease::capture(std::move(files));
+    auto &stage = fixture.descriptor.stages.front();
+    MlxWeightPager pager(lease, fixture.descriptor, stage, fixture.layout);
+    assert(lease->file_count() == 2);
+    tc::Weights resident;
+    std::atomic<bool> cancel{false};
+    pager.load_resident(resident, &cancel);
+    expect_bytes(resident.at("fixed.weight"), fixture.first, 0, 4);
+    pager.create_pool(fixture.layout.pools[1]);
+    auto value_ticket = ticket(fixture.layout.groups[2]);
+    assert(pager.fill(fixture.layout.groups[2], value_ticket, &cancel) == 12);
+    auto weights = pager.bind(fixture.layout.groups[2], value_ticket);
+    expect_bytes(weights.at("single.0.matrix"), fixture.second, 0, 12);
+    pager.check_open_files();
+
+    const auto original = root / kArtifact1;
+    std::filesystem::rename(original, root / "fixture-00002.original");
+    write_bytes(original, fixture.second);
+    // APFS updates the retained inode ctime during rename, so the conservative
+    // lease may report either the opened generation or the named path stale.
+    // Both are valid fail-closed outcomes; never require a path-only error.
+    rejects([&] { pager.check_open_files(); }, "source");
+}
+
 void test_invalid_setup(const std::filesystem::path &root) {
     auto fixture = make_fixture(root);
     auto invalid_artifact = fixture.descriptor;
@@ -371,16 +405,19 @@ int main(int argc, char **argv) {
         const std::filesystem::path root(argv[1]);
         const auto valid = root / "valid";
         const auto short_read = root / "short-read";
+        const auto lease_backed = root / "lease-backed";
         const auto invalid = root / "invalid";
         std::filesystem::create_directories(valid);
         std::filesystem::create_directories(short_read);
+        std::filesystem::create_directories(lease_backed);
         std::filesystem::create_directories(invalid);
         test_valid(valid);
         test_short_read(short_read);
+        test_lease_backed(lease_backed);
         test_invalid_setup(invalid);
         std::cout << "PASS MLX weight pager: resident load, retained dual/single "
                      "pool fill/bind, cancellation, short read, stale path, "
-                     "source validation, and pool recreate\n";
+                     "lease-backed source validation, and pool recreate\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

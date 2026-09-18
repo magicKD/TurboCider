@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and run the sparse multi-artifact MLX weight pager fixture."""
+"""Build and run the fd-backed MLX Weights lease fixture."""
 
 from __future__ import annotations
 
@@ -27,15 +27,15 @@ def main() -> None:
             "MLX C++ headers/libraries are unavailable; run make setup or "
             "set MLX_ROOT"
         )
+    dylib = ROOT / "build/native/libturbocider.dylib"
+    if not dylib.is_file():
+        raise FileNotFoundError("native dylib is unavailable; run make build")
     compiler = subprocess.check_output(
         ["xcrun", "--find", "clang++"], text=True
     ).strip()
     sdk = subprocess.check_output(
         ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True
     ).strip()
-    sanitizer = os.environ.get("TC_STREAMING_SANITIZER", "")
-    if sanitizer not in ("", "address,undefined", "thread"):
-        raise ValueError("unsupported sanitizer")
     load_commands = subprocess.check_output(
         ["otool", "-l", str(library / "libmlx.dylib")], text=True
     )
@@ -44,33 +44,22 @@ def main() -> None:
         load_commands,
     )
     deployment = minimum.group(1) if minimum else "15.0"
-    flags = [
-        "-std=c++20", "-Wall", "-Wextra", "-Werror",
-        "-isysroot", sdk, "-mmacosx-version-min=" + deployment,
-        "-I", str(ROOT / "native"),
-        "-I", str(ROOT / "native/core"),
-        "-isystem", str(include),
-    ]
-    if sanitizer:
-        flags += ["-O1", "-g", "-fno-omit-frame-pointer",
-                  "-fsanitize=" + sanitizer]
-    else:
-        flags += ["-O2"]
-    with tempfile.TemporaryDirectory(prefix="tc-mlx-pager-") as raw:
+    with tempfile.TemporaryDirectory(prefix="tc-mlx-lease-weights-") as raw:
         temporary = Path(raw)
-        binary = temporary / "mlx-weight-pager-test"
+        binary = temporary / "mlx-lease-weights-test"
         subprocess.run([
-            compiler, *flags,
-            str(ROOT / "tests/native/mlx_weight_pager_test.cpp"),
-            str(ROOT / "native/runtime/streaming/mlx_weight_pager.cpp"),
-            str(ROOT / "native/runtime/streaming/canonical_encoding.cpp"),
-            str(ROOT / "native/runtime/streaming/source_lease.cpp"),
-            str(ROOT / "native/runtime/memory_manifest.cpp"),
-            str(ROOT / "native/runtime/memory_policy.cpp"),
-            str(ROOT / "native/core/common.cpp"),
+            compiler, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
+            "-isysroot", sdk, "-mmacosx-version-min=" + deployment,
+            "-I", str(ROOT / "native"),
+            "-I", str(ROOT / "native/core"),
+            "-isystem", str(include),
+            str(ROOT / "tests/native/mlx_weights_lease_test.cpp"),
+            "-L", str(ROOT / "build/native"), "-lturbocider",
             "-L", str(library), "-lmlx", "-ljaccl", "-licucore",
             "-framework", "Foundation", "-framework", "Metal",
-            "-Wl,-rpath," + str(library), "-o", str(binary),
+            "-Wl,-rpath," + str(ROOT / "build/native"),
+            "-Wl,-rpath," + str(library),
+            "-o", str(binary),
         ], check=True)
         result = subprocess.run(
             [str(binary), str(temporary / "fixture")],
@@ -84,17 +73,17 @@ def main() -> None:
             "Metal is not supported",
         ))
         if unavailable:
-            print("SKIP: MLX weight pager fixture requires Metal access")
+            print("SKIP: MLX lease weights fixture requires Metal access")
             return
         if result.returncode:
             print(result.stdout, end="")
             print(result.stderr, end="", file=os.sys.stderr)
             raise SystemExit(result.returncode)
-        if not result.stdout.startswith("PASS MLX weight pager:"):
+        if not result.stdout.startswith("PASS MLX lease weights:"):
             print(result.stdout, end="")
             print(result.stderr, end="", file=os.sys.stderr)
             raise RuntimeError(
-                "MLX weight pager test exited without its PASS marker"
+                "MLX lease weights test exited without its PASS marker"
             )
         print(result.stdout, end="")
 

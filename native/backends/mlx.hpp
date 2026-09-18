@@ -3,12 +3,16 @@
 #include <mlx/mlx.h>
 #include <mlx/fast.h>
 #include <mlx/io.h>
+#include <mlx/io/load.h>
 #include <mlx/memory.h>
 #include <optional>
 #include <unordered_map>
 #include <regex>
 #include <functional>
+#include <memory>
+#include <vector>
 namespace tc {
+namespace streaming { class SourceLease; }
 void configure_streams();
 namespace mx = mlx::core;
 using Tensor = mx::array;
@@ -22,10 +26,19 @@ class Weights {
     };
     std::unordered_map<std::string, Tensor> values_;
     std::unordered_map<std::string, std::vector<RuntimeLoRA>> runtime_loras_;
+    // Lease-backed MLX load primitives may read lazily. Keep their duplicate
+    // descriptors alive until every array owned by this weight set is gone.
+    std::vector<std::shared_ptr<mlx::core::io::Reader>> lease_readers_;
     bool metal_convrot_ = false;
 
   public:
     void load(const std::filesystem::path &, const Event &, std::atomic<bool> &);
+    // Load safetensors through duplicate descriptors owned by one
+    // request-scoped SourceLease. The fd-backed MLX readers remain alive with
+    // this object, so lazy arrays cannot reopen a mutable model pathname.
+    void load_lease(const std::shared_ptr<const streaming::SourceLease> &,
+                    const std::vector<std::string> &, const Event &,
+                    std::atomic<bool> &);
     void load_file(const std::filesystem::path &, const std::string &prefix = "");
     void load_gguf_file(const std::filesystem::path &);
     void remap_keys(const std::function<std::string(const std::string &)> &);

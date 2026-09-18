@@ -166,6 +166,8 @@ def main() -> None:
         ROOT / "native/platform/apple/flux_streaming_descriptor.mm",
         ROOT / "native/runtime/streaming/config.cpp",
         ROOT / "native/runtime/streaming/layout.cpp",
+        ROOT / "native/runtime/streaming/canonical_encoding.cpp",
+        ROOT / "native/runtime/streaming/source_lease.cpp",
         ROOT / "native/runtime/memory_manifest.cpp",
         ROOT / "native/runtime/memory_policy.cpp",
         ROOT / "native/core/common.cpp",

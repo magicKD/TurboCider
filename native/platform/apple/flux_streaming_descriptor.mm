@@ -92,6 +92,25 @@ NSDictionary *json_object(const std::string &path, const char *label) {
     return (NSDictionary *)parsed;
 }
 
+NSDictionary *json_object(int descriptor, uint64_t bytes,
+                          const char *label) {
+    require_metadata(descriptor >= 0 && bytes > 0 &&
+                         bytes <= kMaxHeaderBytes,
+                     std::string("invalid ") + label + " size");
+    std::vector<unsigned char> encoded(static_cast<size_t>(bytes));
+    pread_exact(descriptor, encoded.data(), encoded.size(), 0);
+    NSData *data = [NSData dataWithBytes:encoded.data()
+                                  length:encoded.size()];
+    NSError *failure = nil;
+    id parsed = [NSJSONSerialization JSONObjectWithData:data
+                                                options:0
+                                                  error:&failure];
+    require_metadata([parsed isKindOfClass:NSDictionary.class],
+                     failure ? failure.localizedDescription.UTF8String :
+                               std::string("invalid ") + label);
+    return (NSDictionary *)parsed;
+}
+
 uint64_t integer(id value, const char *label) {
     require_metadata([value isKindOfClass:NSNumber.class] &&
                          CFGetTypeID((__bridge CFTypeRef)value) !=
@@ -229,6 +248,7 @@ uint64_t records_bytes(const std::vector<TensorRecord> &records) {
 } // namespace
 
 struct StreamingMetadata::State {
+    std::shared_ptr<const streaming::SourceLease> lease;
     std::string directory;
     std::string model_id;
     std::string config_path;
@@ -257,29 +277,65 @@ struct StreamingMetadata::State {
 
 StreamingMetadata::StreamingMetadata(
     const std::string &transformer_directory, const std::string &model_id)
+    : StreamingMetadata(nullptr, transformer_directory, model_id) {}
+
+StreamingMetadata::StreamingMetadata(
+    std::shared_ptr<const streaming::SourceLease> lease,
+    const std::string &model_id)
+    : StreamingMetadata(std::move(lease), std::string{}, model_id) {}
+
+StreamingMetadata::StreamingMetadata(
+    std::shared_ptr<const streaming::SourceLease> lease,
+    const std::string &transformer_directory, const std::string &model_id)
     : state_(std::make_unique<State>()) {
     require_metadata(model_id == "flux2-klein-9b",
                      "only FLUX.2 Klein 9B has a block-safe shadow");
-    std::error_code path_error;
-    const auto absolute = std::filesystem::absolute(
-        transformer_directory, path_error);
-    require_metadata(!path_error && std::filesystem::is_directory(absolute),
-                     "transformer directory is missing");
-    state_->directory = absolute.lexically_normal().string();
+    state_->lease = std::move(lease);
+    std::filesystem::path absolute;
+    if (state_->lease) {
+        state_->directory = state_->lease->file("config.json")
+                                .path.parent_path().string();
+        absolute = state_->directory;
+    } else {
+        std::error_code path_error;
+        absolute = std::filesystem::absolute(
+            transformer_directory, path_error);
+        require_metadata(!path_error && std::filesystem::is_directory(absolute),
+                         "transformer directory is missing");
+        state_->directory = absolute.lexically_normal().string();
+    }
     state_->model_id = model_id;
     state_->config_path =
         (absolute / "config.json").lexically_normal().string();
     state_->index_path = (absolute /
         "diffusion_pytorch_model.safetensors.index.json").lexically_normal().string();
 
-    const struct stat config_status = checked_status(state_->config_path);
-    const struct stat index_status = checked_status(state_->index_path);
+    streaming::OwnedSourceFd config_fd;
+    streaming::OwnedSourceFd index_fd;
+    struct stat config_status{};
+    struct stat index_status{};
+    if (state_->lease) {
+        config_fd = state_->lease->duplicate_fd("config.json");
+        index_fd = state_->lease->duplicate_fd(
+            "diffusion_pytorch_model.safetensors.index.json");
+        require_metadata(::fstat(config_fd.get(), &config_status) == 0 &&
+                             S_ISREG(config_status.st_mode) &&
+                             ::fstat(index_fd.get(), &index_status) == 0 &&
+                             S_ISREG(index_status.st_mode),
+                         "leased FLUX config or index is invalid");
+    } else {
+        config_status = checked_status(state_->config_path);
+        index_status = checked_status(state_->index_path);
+    }
     state_->config_identity = fingerprint(config_status);
     state_->index_identity = fingerprint(index_status);
 
     @autoreleasepool {
-        NSDictionary *config = json_object(state_->config_path,
-                                            "FLUX transformer config");
+        NSDictionary *config = state_->lease
+            ? json_object(config_fd.get(),
+                          static_cast<uint64_t>(config_status.st_size),
+                          "FLUX transformer config")
+            : json_object(state_->config_path, "FLUX transformer config");
         state_->heads = config_integer(config, @"num_attention_heads",
                                        "attention head count");
         const uint32_t head_dimension = config_integer(
@@ -303,8 +359,11 @@ StreamingMetadata::StreamingMetadata(
         state_->dual.resize(state_->dual_count);
         state_->single.resize(state_->single_count);
 
-        NSDictionary *index = json_object(state_->index_path,
-                                           "FLUX safetensors index");
+        NSDictionary *index = state_->lease
+            ? json_object(index_fd.get(),
+                          static_cast<uint64_t>(index_status.st_size),
+                          "FLUX safetensors index")
+            : json_object(state_->index_path, "FLUX safetensors index");
         NSDictionary *weight_map = index[@"weight_map"];
         NSDictionary *metadata = index[@"metadata"];
         require_metadata([weight_map isKindOfClass:NSDictionary.class] &&
@@ -339,9 +398,12 @@ StreamingMetadata::StreamingMetadata(
         for (const auto &name : shard_names) {
             ArtifactRecord artifact;
             artifact.name = name;
-            artifact.path = (absolute / name).lexically_normal().string();
-            artifact.descriptor = ::open(
-                artifact.path.c_str(), O_RDONLY | O_CLOEXEC);
+            artifact.path = state_->lease
+                ? state_->lease->file(name).path.string()
+                : (absolute / name).lexically_normal().string();
+            artifact.descriptor = state_->lease
+                ? state_->lease->duplicate_fd(name).release()
+                : ::open(artifact.path.c_str(), O_RDONLY | O_CLOEXEC);
             require_metadata(artifact.descriptor >= 0,
                              "cannot open indexed safetensors shard");
             struct stat opened{};
@@ -544,8 +606,23 @@ const std::string &StreamingMetadata::snapshot_identity() const noexcept {
     return state_->identity;
 }
 
+const streaming::SourceLease *
+StreamingMetadata::source_lease() const noexcept {
+    return state_ ? state_->lease.get() : nullptr;
+}
+
+std::shared_ptr<const streaming::SourceLease>
+StreamingMetadata::lease_ptr() const noexcept {
+    return state_ ? state_->lease : nullptr;
+}
+
 void StreamingMetadata::check_unchanged() const {
     require_metadata(state_ != nullptr, "metadata state is unavailable");
+    if (state_->lease) {
+        state_->lease->revalidate_open_files();
+        state_->lease->revalidate_paths();
+        return;
+    }
     require_metadata(fingerprint(checked_status(state_->config_path)) ==
                          state_->config_identity &&
                          fingerprint(checked_status(state_->index_path)) ==
@@ -674,6 +751,45 @@ StreamingPlanView::StreamingPlanView(
     const std::string &transformer_directory, const std::string &model_id,
     const StreamingConfig &config, const StreamingWorkload &workload)
     : metadata_(transformer_directory, model_id),
+      descriptor_(metadata_.describe(workload)),
+      layout_(streaming::compile_layout(config, descriptor_)) {
+    require_metadata(layout_.materializations_complete,
+                     "FLUX descriptor metadata is incomplete");
+    require_metadata(layout_.stages.size() == 1,
+                     "FLUX shadow requires one stage");
+    const auto &stage = layout_.stages.front();
+    require_metadata(stage.id == "denoiser" && !stage.resident &&
+                         stage.prefix == 0 && stage.group_size == 1 &&
+                         stage.slot_count == 2 && stage.distance <= 1 &&
+                         stage.workers >= 1 && stage.workers <= 2 &&
+                         stage.multi_pool_policy ==
+                             streaming::MultiPoolPolicy::retain_all &&
+                         stage.pass_transition ==
+                             streaming::PassTransition::reload &&
+                         stage.pools.size() == 2,
+                     "FLUX 9B shadow requires P0/K2/G1/D0..1/Q1..2 reload");
+    const uint32_t dual = metadata_.dual_block_count();
+    const uint32_t total = dual + metadata_.single_block_count();
+    require_metadata(stage.groups.size() == total,
+                     "FLUX compiled suffix differs from the descriptor");
+    for (uint32_t index = 0; index < stage.groups.size(); ++index) {
+        const auto &group = stage.groups[index];
+        const uint32_t expected_pool = index < dual ? 0 : 1;
+        const uint64_t expected_bytes = index < dual ?
+            metadata_.dual_block_bytes() : metadata_.single_block_bytes();
+        require_metadata(group.blocks.size() == 1 &&
+                             group.blocks.front() == index &&
+                             group.pool == expected_pool &&
+                             group.bytes == expected_bytes,
+                         "FLUX group/class projection differs from metadata");
+    }
+}
+
+StreamingPlanView::StreamingPlanView(
+    std::shared_ptr<const streaming::SourceLease> lease,
+    const std::string &model_id, const StreamingConfig &config,
+    const StreamingWorkload &workload)
+    : metadata_(std::move(lease), model_id),
       descriptor_(metadata_.describe(workload)),
       layout_(streaming::compile_layout(config, descriptor_)) {
     require_metadata(layout_.materializations_complete,

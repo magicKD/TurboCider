@@ -331,18 +331,18 @@ Weights::load_lease(lease, logical_ids, event, cancel);
 
 1. logical id 必须在 probe closure 中存在；
 2. 通过 `SourceLease::duplicate_fd()` 得到 owned fd；
-3. 只把 `/dev/fd/<fd>` 交给 MLX safetensors loader；
-4. loader 返回后明确验证其是否 lazy/mmap；若仍有延迟读，fd 生命周期必须延长到所有 array 消费结束；
-5. 不得把 path reopen 作为 `/dev/fd` 失败时的静默 fallback；
-6. default `Weights::load(path)` 不应创建 lease 或执行额外 probe。
+3. 将 owned fd 包装成实现 MLX `io::Reader` 的只读 reader，顺序读取使用受锁 cursor，随机读取使用 `pread`；
+4. `Weights` 持有 reader，MLX lazy array 也持有同一 reader，使 fd 生命周期覆盖所有 array 消费；
+5. 不得把 fd reader 失败静默 fallback 到 path reopen；
+6. default `Weights::load(path)` 不应创建 lease、reader 或执行额外 probe。
 
 Flux public route 的 source closure 至少包含 transformer config/index/shards、text encoder config/weights、VAE config/weights 和 tokenizer JSON。denoiser drain 后释放 transformer backing，再进入 VAE；receipt 必须包含两个 component boundary 的真实顺序。
 
 建议新增测试：
 
 ```text
-FLUX-LEASE-001  text encoder /dev/fd safetensors load
-FLUX-LEASE-002  VAE /dev/fd safetensors load
+FLUX-LEASE-001  text encoder fd-reader safetensors load
+FLUX-LEASE-002  VAE fd-reader safetensors load
 FLUX-LEASE-003  same-size source mutation rejected
 FLUX-LEASE-004  missing tokenizer/text/VAE closure rejected
 FLUX-LEASE-005  loader lazy-read fd lifetime
@@ -537,7 +537,7 @@ P0/P1 必须使用 ABBA 或随机交错顺序、至少 20 个 paired request、�
 
 ### PR-B：Flux public lease
 
-包含 Flux transformer/text/VAE/pager 的同一 lease lineage。停止条件：任意 `/dev/fd` 失败后静默 path fallback、lazy fd 生命周期不明、VAE 边界未 drain。
+包含 Flux transformer/text/VAE/pager 的同一 lease lineage。停止条件：任意 fd-reader 失败后静默 path fallback、reader 生命周期短于 lazy array、VAE 边界未 drain。
 
 ### PR-C：H3 Turbo
 

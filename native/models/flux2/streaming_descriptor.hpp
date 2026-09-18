@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../runtime/streaming/layout.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -23,6 +24,8 @@ class StreamingMetadata {
   public:
     StreamingMetadata(const std::string &transformer_directory,
                       const std::string &model_id);
+    StreamingMetadata(std::shared_ptr<const streaming::SourceLease>,
+                      const std::string &model_id);
     ~StreamingMetadata();
 
     StreamingMetadata(const StreamingMetadata &) = delete;
@@ -39,10 +42,14 @@ class StreamingMetadata {
     uint64_t single_block_bytes() const noexcept;
     uint64_t fixed_bytes() const noexcept;
     const std::string &snapshot_identity() const noexcept;
+    const streaming::SourceLease *source_lease() const noexcept;
+    std::shared_ptr<const streaming::SourceLease> lease_ptr() const noexcept;
 
   private:
     struct State;
     std::unique_ptr<State> state_;
+    StreamingMetadata(std::shared_ptr<const streaming::SourceLease>,
+                      const std::string &, const std::string &);
 };
 
 // First execution-shaped projection is intentionally restricted to Klein 9B:
@@ -56,6 +63,10 @@ class StreamingPlanView {
                       const std::string &model_id,
                       const StreamingConfig &config,
                       const StreamingWorkload &workload);
+    StreamingPlanView(std::shared_ptr<const streaming::SourceLease>,
+                      const std::string &model_id,
+                      const StreamingConfig &config,
+                      const StreamingWorkload &workload);
 
     StreamingPlanView(const StreamingPlanView &) = delete;
     StreamingPlanView &operator=(const StreamingPlanView &) = delete;
@@ -65,6 +76,9 @@ class StreamingPlanView {
         return descriptor_;
     }
     const streaming::Layout &layout() const noexcept { return layout_; }
+    std::shared_ptr<const streaming::SourceLease> lease_ptr() const noexcept {
+        return metadata_.lease_ptr();
+    }
 
   private:
     StreamingMetadata metadata_;

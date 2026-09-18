@@ -237,7 +237,7 @@ single_pool: P/G/K/D/Q/policy
 - dual/single 两池 retain-all；
 - denoiser 结束时 transformer backing drain/release；
 - text encoder/VAE 是否与 denoiser overlap；
-- `/dev/fd` lease loader 是否产生 lazy read。
+- fd-backed lease reader 是否覆盖全部 lazy read 生命周期。
 
 Flux 的 9B public record 不能套用 4B compiled graph record；runtime identity、source closure 和 route 都必须不同。
 
@@ -531,8 +531,8 @@ resolver 读取新 catalog snapshot 后立即拒绝 revoked record。正在运�
 ### T1 · Flux lease loader
 
 - 完成 `Weights::load_lease()` 编译和 host fixture；
-- 验证 `/dev/fd` 对 safetensors loader 的真实行为；
-- 明确 lazy mmap 的 fd 生命周期；
+- 验证 fd-backed `io::Reader` 对 safetensors lazy load 的真实行为；
+- 明确 reader/fd 生命周期覆盖所有 lazy array；
 - 把 text/VAE logical IDs 写入 Flux public test；
 - default `Weights::load()` 路径计数器保持零 streaming work。
 

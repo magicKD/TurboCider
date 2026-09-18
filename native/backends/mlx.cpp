@@ -1,12 +1,101 @@
 #include "mlx.hpp"
 #include "../core/gguf.hpp"
+#include "../runtime/streaming/source_lease.hpp"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <cerrno>
+#include <limits>
 #include <map>
+#include <fcntl.h>
+#include <mutex>
+#include <stdexcept>
 #include <type_traits>
+#include <unistd.h>
 namespace tc {
 namespace {
+class LeaseFdReader final : public mx::io::Reader {
+    streaming::OwnedSourceFd fd_;
+    std::string label_;
+    mutable std::mutex cursor_mutex_;
+
+    [[noreturn]] void fail(const char *operation) const {
+        throw std::runtime_error(
+            std::string("streaming source ") + operation + " failed for " +
+            label_ + ": " + std::strerror(errno));
+    }
+
+    static int whence(std::ios_base::seekdir direction) {
+        if (direction == std::ios_base::beg) return SEEK_SET;
+        if (direction == std::ios_base::end) return SEEK_END;
+        return SEEK_CUR;
+    }
+
+  public:
+    LeaseFdReader(streaming::OwnedSourceFd fd, std::string label)
+        : fd_(std::move(fd)), label_(std::move(label)) {
+        require(static_cast<bool>(fd_),
+                "streaming source reader descriptor is unavailable");
+    }
+
+    bool is_open() const override { return static_cast<bool>(fd_); }
+    bool good() const override { return is_open(); }
+
+    size_t tell() override {
+        std::lock_guard lock(cursor_mutex_);
+        const off_t value = ::lseek(fd_.get(), 0, SEEK_CUR);
+        if (value < 0) fail("tell");
+        return static_cast<size_t>(value);
+    }
+
+    void seek(int64_t offset,
+              std::ios_base::seekdir direction = std::ios_base::beg) override {
+        std::lock_guard lock(cursor_mutex_);
+        if (::lseek(fd_.get(), static_cast<off_t>(offset),
+                    whence(direction)) < 0)
+            fail("seek");
+    }
+
+    void read(char *destination, size_t bytes) override {
+        std::lock_guard lock(cursor_mutex_);
+        size_t done = 0;
+        while (done < bytes) {
+            const size_t chunk = std::min(
+                bytes - done,
+                static_cast<size_t>(std::numeric_limits<ssize_t>::max()));
+            const ssize_t count = ::read(fd_.get(), destination + done, chunk);
+            if (count < 0 && errno == EINTR) continue;
+            if (count <= 0) fail(count == 0 ? "short read" : "read");
+            done += static_cast<size_t>(count);
+        }
+    }
+
+    void read(char *destination, size_t bytes, size_t offset) override {
+        require(offset <= static_cast<size_t>(
+                    std::numeric_limits<off_t>::max()),
+                "streaming source read offset overflows");
+        size_t done = 0;
+        while (done < bytes) {
+            require(offset <= static_cast<size_t>(
+                        std::numeric_limits<off_t>::max()) - done,
+                    "streaming source read range overflows");
+            const size_t chunk = std::min(
+                bytes - done,
+                static_cast<size_t>(std::numeric_limits<ssize_t>::max()));
+            const ssize_t count = ::pread(
+                fd_.get(), destination + done, chunk,
+                static_cast<off_t>(offset + done));
+            if (count < 0 && errno == EINTR) continue;
+            if (count <= 0) fail(count == 0 ? "short pread" : "pread");
+            done += static_cast<size_t>(count);
+        }
+    }
+
+    std::string label() const override {
+        return "leased file " + label_;
+    }
+};
+
 // MLX 0.32.0 (our pinned runtime) selects fused attention internally. Newer
 // runtimes additionally let the caller force it. Keep both public signatures
 // usable without dropping the explicit preference when it is available.
@@ -165,6 +254,35 @@ void Weights::load(const std::filesystem::path &p, const Event &event,
             }
             ++i;
         }
+    } catch (...) {
+        clear();
+        throw;
+    }
+}
+void Weights::load_lease(
+        const std::shared_ptr<const streaming::SourceLease> &lease,
+        const std::vector<std::string> &logical_ids, const Event &event,
+        std::atomic<bool> &cancelled) {
+    require(lease != nullptr, "missing streaming source lease");
+    require(values_.empty(), "weights are already loaded");
+    require(!logical_ids.empty(), "streaming lease has no weight artifacts");
+    try {
+        int index = 0;
+        for (const auto &logical_id : logical_ids) {
+            checkpoint(cancelled);
+            auto reader = std::make_shared<LeaseFdReader>(
+                lease->duplicate_fd(logical_id), logical_id);
+            event("load_" + logical_id, index,
+                  static_cast<int>(logical_ids.size()));
+            auto data = mx::load_safetensors(reader);
+            for (auto &[key, value] : data.first) {
+                require(!values_.count(key), "duplicate tensor: " + key);
+                values_.emplace(key, std::move(value));
+            }
+            lease_readers_.push_back(std::move(reader));
+            ++index;
+        }
+        require(!values_.empty(), "streaming lease contains no tensors");
     } catch (...) {
         clear();
         throw;
@@ -731,6 +849,7 @@ void Weights::erase_prefix(const std::string &prefix) {
 void Weights::clear() {
     values_.clear();
     runtime_loras_.clear();
+    lease_readers_.clear();
 }
 
 size_t Weights::bytes() const {

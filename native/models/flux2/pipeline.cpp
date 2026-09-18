@@ -5,8 +5,13 @@
 #include "../../platform/apple/platform.hpp"
 #include "../../runtime/residency.hpp"
 #include "../../runtime/streaming/audit.hpp"
+#include "../../runtime/streaming/canonical_encoding.hpp"
+#include "../../runtime/streaming/resolved_request.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
+#include "../../runtime/streaming/actual_receipt.hpp"
 #include "../../media/image.hpp"
 #include "../../backends/coreml.hpp"
+#include <algorithm>
 #include <bit>
 #include <cmath>
 namespace tc {
@@ -22,6 +27,65 @@ bool flux_exact_streaming_requested(const Request &request) {
 
 constexpr const char *kFluxExactKernelRevision =
     "flux2-klein-9b-mlx-eager-block-v1";
+constexpr const char *kFluxPublicComponentPolicy =
+    "flux2-klein-9b-components-v1";
+
+void append_public_artifacts(
+        const std::filesystem::path &root, std::string_view prefix,
+        std::vector<streaming::SourceFileIdentity> &files) {
+    std::error_code error;
+    if (!std::filesystem::is_directory(root, error)) return;
+    std::vector<std::filesystem::path> paths;
+    std::filesystem::directory_iterator iterator(
+        root, std::filesystem::directory_options::skip_permission_denied,
+        error);
+    require(!error, "streaming_source_identity: cannot enumerate FLUX artifacts");
+    const std::filesystem::directory_iterator end;
+    for (; iterator != end; iterator.increment(error)) {
+        require(!error,
+                "streaming_source_identity: cannot enumerate FLUX artifacts");
+        std::error_code status_error;
+        const auto &entry = *iterator;
+        const bool symlink = entry.is_symlink(status_error);
+        require(!status_error,
+                "streaming_source_identity: cannot inspect FLUX artifact");
+        const bool regular = entry.is_regular_file(status_error);
+        require(!status_error,
+                "streaming_source_identity: cannot inspect FLUX artifact");
+        if (!symlink && regular &&
+            entry.path().extension() == ".safetensors")
+            paths.push_back(entry.path());
+    }
+    require(!error, "streaming_source_identity: cannot enumerate FLUX artifacts");
+    std::sort(paths.begin(), paths.end());
+    for (const auto &path : paths) {
+        streaming::SourceFileIdentity file;
+        const auto relative = std::filesystem::relative(path, root, error)
+                                  .generic_string();
+        file.logical_id = prefix.empty() ? relative :
+            std::string(prefix) + "/" + relative;
+        require(!error && !file.logical_id.empty(),
+                "streaming_source_identity: invalid FLUX artifact path");
+        file.path = path;
+        files.push_back(std::move(file));
+    }
+}
+
+streaming::PresetSourceIdentity flux_public_source_identity(
+        const streaming::SourceLease &lease) {
+    streaming::CanonicalEncoder encoder("flux2-public-source-v1");
+    encoder.string_field("lease_digest", lease.digest());
+    encoder.unsigned_field("artifact_count", lease.file_count());
+    return {"flux2-klein-9b-bf16", "diffusers-bf16-sharded", encoder.sha256(),
+            std::string(lease.digest())};
+}
+
+streaming::PresetRuntimeIdentity flux_public_runtime_identity() {
+    return {"turbocider-streaming-2026-09-18", "public-streaming-runtime-v2",
+            "flux2-klein-9b-public-adapter-v1",
+            "flux2-sharded-pread-bf16-lease-v1", kFluxExactKernelRevision,
+            "mlx-request-cache-policy-v1"};
+}
 
 } // namespace
 
@@ -32,6 +96,161 @@ Flux::Flux(const std::filesystem::path &root, std::string model_id)
     dual_layers_ = configuration.dual_layers; single_layers_ = configuration.single_layers;
 }
 Flux::~Flux() = default;
+
+std::shared_ptr<const streaming::ModelStreamingProbe>
+Flux::probe_public_streaming(
+        const streaming::PublicResolveInput &input) const {
+    const auto &request = input.request;
+    require(model_id_ == "flux2-klein-9b" && request.model == model_id_,
+            "streaming_engine_model_mismatch");
+    require(request.operation == "image.generate" && request.inputs.empty() &&
+                request.frames == 1 && !request.audio &&
+                request.execution == "gpu" && request.ane_manifest.empty() &&
+                request.encoder_ane_manifest.empty() &&
+                !request.allow_approximation && !request.compile_gpu &&
+                request.loras.empty(),
+            "streaming_route_unsupported: FLUX public card requires BF16 eager GPU text-to-image without LoRA/ANE/compiled graph");
+    require(request.width >= 16 && request.height >= 16 &&
+                request.width % 16 == 0 && request.height % 16 == 0,
+            "streaming_workload_invalid: FLUX dimensions must be multiples of 16");
+    std::vector<streaming::SourceFileIdentity> files;
+    auto add = [&](std::string logical, std::filesystem::path path) {
+        streaming::SourceFileIdentity file;
+        file.logical_id = std::move(logical);
+        file.path = std::move(path);
+        files.push_back(std::move(file));
+    };
+    const auto transformer_root = root_ / "transformer";
+    add("config.json", transformer_root / "config.json");
+    add("diffusion_pytorch_model.safetensors.index.json",
+        transformer_root / "diffusion_pytorch_model.safetensors.index.json");
+    std::error_code error;
+    const auto index = files.back().path;
+    require(std::filesystem::is_regular_file(index, error) && !error,
+            "streaming_route_unsupported: FLUX index is missing");
+    require(std::filesystem::is_directory(transformer_root, error) && !error,
+            "streaming_route_unsupported: FLUX transformer directory is missing");
+    // Capture every transformer shard before constructing metadata.  The
+    // lease-backed metadata parser then treats the index as authoritative and
+    // rejects missing, duplicate, or unexpected shard identities.
+    append_public_artifacts(transformer_root, "", files);
+    require(files.size() >= 4,
+            "streaming_route_unsupported: FLUX indexed shards are missing");
+    add("text_encoder/config.json", root_ / "text_encoder/config.json");
+    append_public_artifacts(root_ / "text_encoder", "text_encoder", files);
+    add("vae/config.json", root_ / "vae/config.json");
+    append_public_artifacts(root_ / "vae", "vae", files);
+    add("tokenizer/tokenizer.json", root_ / "tokenizer/tokenizer.json");
+    auto lease = streaming::SourceLease::capture(std::move(files));
+    flux2::StreamingMetadata metadata(lease, model_id_);
+    metadata.check_unchanged();
+
+    const auto tokens = tokenizer_.prompt(request.prompt, request.dynamic_text);
+    streaming::PresetWorkload workload;
+    workload.model = model_id_;
+    workload.operation = request.operation;
+    workload.execution = request.execution;
+    workload.device_class = input.device.device_class;
+    workload.execution_container = input.execution_container;
+    workload.width = static_cast<uint32_t>(request.width);
+    workload.height = static_cast<uint32_t>(request.height);
+    workload.frames = 1;
+    workload.steps = static_cast<uint32_t>(request.steps);
+    workload.batch = 1;
+    workload.audio = false;
+    workload.dynamic_text = request.dynamic_text;
+    workload.approximation = false;
+    workload.conditioning_revision = "qwen3-flux2-klein-v1";
+    workload.vae_policy_revision = "flux2-vae-v1";
+    workload.feature_digest = std::string("reference_tokens:0");
+    workload.token_shapes.push_back({
+        "qwen3", "qwen3-flux2-v1", "flux2-template-v1",
+        static_cast<uint32_t>(tokens.valid),
+        static_cast<uint32_t>(tokens.ids.size()),
+        static_cast<uint32_t>(tokens.ids.size())});
+    return std::make_shared<streaming::ValueModelStreamingProbe>(
+        streaming::ValueModelStreamingProbe::Values{
+            model_id_, flux_public_source_identity(*lease),
+            std::move(workload), flux_public_runtime_identity(),
+            kFluxPublicComponentPolicy, std::move(lease)});
+}
+
+std::shared_ptr<const streaming::ModelStreamingSnapshot>
+Flux::compile_public_streaming(
+        std::shared_ptr<const streaming::ModelStreamingProbe> probe,
+        const streaming::StreamingPresetRecord &record) const {
+    auto value_probe = std::dynamic_pointer_cast<
+        const streaming::ValueModelStreamingProbe>(probe);
+    require(value_probe != nullptr, "streaming_public_probe_type_mismatch");
+    require(value_probe->model_id() == model_id_ &&
+                value_probe->component_policy_revision() ==
+                    record.plan.component_policy_revision &&
+                record.source == value_probe->source_identity() &&
+                record.workload == value_probe->workload_identity() &&
+                record.runtime == value_probe->runtime_identity(),
+            "streaming_record_identity_mismatch");
+    const auto &workload = value_probe->workload_identity();
+    require(workload.token_shapes.size() == 1,
+            "streaming_workload_invalid: FLUX token shape count");
+    flux2::StreamingWorkload descriptor_workload{
+        workload.width, workload.height,
+        workload.token_shapes.front().padded_rows, 0, workload.steps};
+    auto plan = std::make_shared<flux2::StreamingPlanView>(
+        value_probe->lease_ptr(), model_id_, record.plan.canonical_config,
+        descriptor_workload);
+    require(plan->layout().digest == record.plan.layout_digest,
+            "streaming_layout_digest_mismatch");
+    return std::make_shared<streaming::ValueModelStreamingSnapshot>(
+        streaming::ValueModelStreamingSnapshot::Values{
+            model_id_, value_probe->source_identity(),
+            value_probe->runtime_identity(), plan->descriptor(),
+            plan->layout(), std::string(value_probe->component_policy_revision()),
+            value_probe->lease_ptr()});
+}
+
+RunResult Flux::generate_resolved(
+        std::shared_ptr<const streaming::ResolvedRequestExecution> execution,
+        const Event &event, std::atomic<bool> &cancelled) {
+    require(execution && execution->probe && execution->model_snapshot,
+            "streaming_authority_mismatch");
+    require(execution->request.streaming.active(),
+            "streaming_actual_plan_mismatch");
+    auto value_probe = std::dynamic_pointer_cast<
+        const streaming::ValueModelStreamingProbe>(execution->probe);
+    require(value_probe != nullptr, "streaming_public_probe_type_mismatch");
+    auto lease = value_probe->lease_ptr();
+    require(lease && execution->probe->source_lease() == lease.get() &&
+                execution->model_snapshot->source_lease() == lease.get(),
+            "streaming_source_lease_mismatch");
+    require(execution->model_snapshot->model_id() == model_id_ &&
+                execution->selection.record.source ==
+                    execution->model_snapshot->source_identity() &&
+                execution->selection.record.runtime ==
+                    execution->model_snapshot->runtime_identity() &&
+                execution->selection.record.plan.layout_digest ==
+                    execution->model_snapshot->layout().digest &&
+                execution->selection.record.plan.component_policy_revision ==
+                    execution->model_snapshot->component_policy_revision(),
+            "streaming_authority_mismatch");
+    const auto target = execution->selection.exact_selector
+                            .target_request_memory_bytes;
+    require(target && streaming::supported_streaming_target(*target),
+            "streaming_target_unsupported");
+    require(!public_stream_lease_, "streaming_public_request_reentrant");
+    public_stream_lease_ = std::move(lease);
+    const auto previous_target = public_stream_target_bytes_;
+    public_stream_target_bytes_ = *target;
+    try {
+        auto result = run(execution->request, event, cancelled, false);
+        public_stream_target_bytes_ = previous_target;
+        public_stream_lease_.reset();
+        return result;
+    } catch (...) {
+        public_stream_target_bytes_ = previous_target;
+        public_stream_lease_.reset();
+        throw;
+    }
+}
 void Flux::select_loras(const Request &request) {
     std::string identity;
     std::vector<LoRAAsset> normalized;
@@ -289,6 +508,10 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
                     bool warmup) {
     auto r = requested;
     const bool exact_streaming = flux_exact_streaming_requested(r);
+    const bool public_streaming = public_stream_lease_ != nullptr;
+    require(!public_streaming ||
+                (exact_streaming && public_stream_target_bytes_ != 0),
+            "streaming_public_binding_mismatch");
     auto begin = Clock::now();
     auto plan = make_plan(r);
     require(r.model == model_id_, "model executor unavailable; see static acceptance plan");
@@ -318,6 +541,16 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         hybrid_.reset();
         hybrid_gpu_graph_ = {};
         hybrid_gpu_mlp_start_ = -1;
+        if (public_streaming) {
+            // A public request cannot reuse conditioning or VAE arrays created
+            // from an earlier path-based source generation. Rebuild every
+            // source-dependent component through the request-scoped lease.
+            encoder_hybrid_.reset();
+            cached_conditioning_.reset();
+            cached_prompt_.clear();
+            cached_encoder_manifest_.clear();
+            vae_.clear();
+        }
         mx::clear_cache();
     }
     auto tokens = tokenizer_.prompt(r.prompt, r.dynamic_text);
@@ -415,9 +648,19 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
             uint32_t(text.shape(1)),
             uint32_t(reference_latents ? reference_latents->shape(1) : 0),
             uint32_t(r.steps - start_step)};
-        exact_stream_ = std::make_unique<FluxExactStream>(
-            root_ / "transformer", model_id_, r.streaming, workload,
-            transformer_, event, cancelled, exact_stream_generation_);
+        if (public_stream_lease_) {
+            exact_stream_ = std::make_unique<FluxExactStream>(
+                public_stream_lease_, model_id_, r.streaming, workload,
+                transformer_, event, cancelled, exact_stream_generation_);
+            exact_stream_->enable_receipt({
+                exact_stream_->plan().layout().digest,
+                exact_stream_->implementation(),
+                public_stream_lease_->generation()});
+        } else {
+            exact_stream_ = std::make_unique<FluxExactStream>(
+                root_ / "transformer", model_id_, r.streaming, workload,
+                transformer_, event, cancelled, exact_stream_generation_);
+        }
     }
     auto dit_start = Clock::now();
     for (int i = start_step; i < r.steps; ++i) {
@@ -440,6 +683,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     double dit_s = std::chrono::duration<double>(Clock::now() - dit_start).count();
     std::optional<BlockResidencyMetrics> exact_residency;
     std::optional<StreamingRuntimeMetrics> exact_runtime;
+    std::shared_ptr<const streaming::ActualExecutionReceipt> exact_receipt;
     if (exact_streaming) {
         exact_stream_->finish();
         const auto counters = exact_stream_->counters();
@@ -458,7 +702,8 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         residency_metrics.active_blocks = uint32_t(stage.groups.size());
         residency_metrics.streamed_blocks = uint32_t(stage.groups.size());
         residency_metrics.refill_slots = uint32_t(counters.slot_bundles);
-        residency_metrics.memory_budget_bytes = r.memory_budget_bytes;
+        residency_metrics.memory_budget_bytes = public_streaming ?
+            public_stream_target_bytes_ : r.memory_budget_bytes;
         residency_metrics.block_bytes = std::max(
             exact_stream_->plan().metadata().dual_block_bytes(),
             exact_stream_->plan().metadata().single_block_bytes());
@@ -492,12 +737,32 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         runtime.pass_count = stage.pass_count;
         runtime.startup_policy = "prefetch_window_before_prefix";
         runtime.pass_transition = "reload";
-        runtime.retention = "request;multi_pool=retain_all";
+        runtime.retention = public_streaming ?
+            "request" : "request;multi_pool=retain_all";
         runtime.reader_revision = 1;
         runtime.weight_format = "diffusers-bf16-sharded";
         runtime.kernel_revision = kFluxExactKernelRevision;
         runtime.conditioning_recipe = "qwen3-flux2-klein-v1";
         runtime.upsample_boundary = "no-upsample;release-before-vae";
+        runtime.component_policy_revision = public_stream_lease_ ?
+            kFluxPublicComponentPolicy : "flux2-private-components-v1";
+        runtime.multi_pool_policy = "retain_all";
+        runtime.pool_count = static_cast<uint32_t>(stage.pools.size());
+        runtime.slot_bundle_count = counters.slot_bundles;
+        runtime.refill_worker_count = stage.workers;
+        runtime.drained = true;
+        if (public_stream_lease_) {
+            const auto stage_receipt = exact_stream_->receipt();
+            require(stage_receipt != nullptr,
+                    "streaming_actual_receipt_missing");
+            exact_receipt = std::make_shared<
+                const streaming::ActualExecutionReceipt>(
+                    streaming::make_actual_execution_receipt(
+                        exact_stream_->implementation(), compiled.digest,
+                        kFluxPublicComponentPolicy,
+                        std::vector<streaming::ActualStageReceipt>{
+                            *stage_receipt}));
+        }
         exact_runtime = std::move(runtime);
 
         // The executor has drained and destroyed both slot pools. Resident
@@ -518,7 +783,17 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         hybrid_.reset();
         mx::clear_cache();
     }
-    vae_.load(root_ / "vae", event, cancelled);
+    if (public_stream_lease_) {
+        std::vector<std::string> artifacts;
+        for (const auto &file : public_stream_lease_->descriptor().files)
+            if (file.logical_id.starts_with("vae/") &&
+                file.logical_id.ends_with(".safetensors"))
+                artifacts.push_back(file.logical_id);
+        std::sort(artifacts.begin(), artifacts.end());
+        vae_.load_lease(public_stream_lease_, artifacts, event, cancelled);
+    } else {
+        vae_.load(root_ / "vae", event, cancelled);
+    }
     auto decode_start = Clock::now();
     auto pixels = decode(z, r.height, r.width, event, cancelled, r.dump);
     dump("pixels_nhwc", pixels);
@@ -554,6 +829,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     result.hybrid = hybrid_metrics;
     result.block_residency = std::move(exact_residency);
     result.streaming_runtime = std::move(exact_runtime);
+    result.streaming_receipt = std::move(exact_receipt);
     if (encoder_hybrid_)
         result.encoder_hybrid = encoder_hybrid_->metrics();
     return result;

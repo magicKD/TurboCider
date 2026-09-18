@@ -3,6 +3,7 @@
 #include "../../runtime/session.hpp"
 #include "../../runtime/streaming/context.hpp"
 #include "../../runtime/streaming/mlx_weight_pager.hpp"
+#include "../../runtime/streaming/actual_receipt.hpp"
 #include "streaming_descriptor.hpp"
 
 #include <memory>
@@ -12,6 +13,13 @@ namespace tc {
 class FluxExactStream {
   public:
     FluxExactStream(const std::filesystem::path &transformer_directory,
+                    const std::string &model_id,
+                    const StreamingConfig &config,
+                    const flux2::StreamingWorkload &workload,
+                    Weights &resident, const Event &event,
+                    std::atomic<bool> &cancelled,
+                    uint64_t request_generation);
+    FluxExactStream(std::shared_ptr<const streaming::SourceLease>,
                     const std::string &model_id,
                     const StreamingConfig &config,
                     const flux2::StreamingWorkload &workload,
@@ -30,6 +38,8 @@ class FluxExactStream {
                   const Tensor &cosine, const Tensor &sine,
                   int text_tokens, int total_tokens);
     void finish();
+    void enable_receipt(streaming::ExecutionReceiptOptions);
+    std::shared_ptr<const streaming::ActualStageReceipt> receipt() const;
 
     const flux2::StreamingPlanView &plan() const;
     const streaming::MlxWeightPagerMetrics &pager_metrics() const;

@@ -3,6 +3,7 @@
 #include "../../backends/mlx.hpp"
 #include "../../core/stream_slot_c.h"
 #include "layout.hpp"
+#include "source_lease.hpp"
 
 #include <atomic>
 #include <filesystem>
@@ -32,6 +33,9 @@ class MlxWeightPager {
     struct State;
 
     MlxWeightPager(const std::filesystem::path &artifact_root,
+                   const Descriptor &, const StageDescriptor &,
+                   const StageLayout &);
+    MlxWeightPager(std::shared_ptr<const SourceLease>,
                    const Descriptor &, const StageDescriptor &,
                    const StageLayout &);
     ~MlxWeightPager();

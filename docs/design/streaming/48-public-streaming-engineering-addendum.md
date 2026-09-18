@@ -1296,7 +1296,7 @@ LTX worker SIGKILL/EOF
 | fd-backed SourceLease | 已提交并测试 |
 | actual receipt v2 | 已提交并测试 |
 | Z-Image public lease adapter | 第一阶段已提交 `9b806f3`，host/synthetic 通过，待真实校准 |
-| Flux 9B public adapter | 工作树已通过 native build、descriptor/public host contract；pager 真实 Metal、full request、receipt/evidence 和校准未完成 |
+| Flux 9B public adapter | 工作树已通过 native build、descriptor/public host contract、lease pager 与 fd-reader 真实 Metal；full request、receipt/evidence 和校准未完成 |
 | H3 Turbo public adapter | 未完成 |
 | LTX worker-local public adapter | 未完成 |
 | App 五档 UI / JobStore v2 | 未完成 |
