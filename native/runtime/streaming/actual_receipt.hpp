@@ -173,6 +173,12 @@ void verify_actual_stage_receipt(
     uint64_t request_generation, const ExecutionReceiptOptions &,
     const ActualStageReceipt &);
 
+// Deep-copy a sealed C ABI receipt produced by the same common executor. This
+// preserves the real event matrix for C model runtimes such as H3; callers
+// must still verify the result against the authorized Layout.
+ActualStageReceipt actual_stage_receipt_from_c_v2(
+    const tc_stream_receipt_v2 &);
+
 ActualExecutionReceipt make_actual_execution_receipt(
     std::string implementation, std::string layout_digest,
     std::string component_policy_revision,

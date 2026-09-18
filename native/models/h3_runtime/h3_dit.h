@@ -5,6 +5,7 @@
 #include "h3_host.h"
 #include "h3_quant_cache.h"
 #include "h3_text_encoder.h"
+#include "../../core/stream_slot_c.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -301,8 +302,19 @@ int h3_dit_stream_fill_slot_v1(
 int h3_dit_enable_exact_streaming_v1(
     h3_dit *dit, const h3_dit_exact_stream_options_v1 *options,
     char *error, size_t error_size);
+int h3_dit_enable_exact_receipt_v1(
+    h3_dit *dit, uint64_t source_generation,
+    const char *layout_digest, const char *implementation,
+    char *error, size_t error_size);
 int h3_dit_get_exact_streaming_info(
     const h3_dit *dit, h3_dit_exact_streaming_info *info);
+/* Copy the sealed common executor receipt.  The caller may first pass a V2
+ * struct with zero capacities and null arrays to obtain the required counts,
+ * then provide caller-owned arrays for the second call.  This is only valid
+ * on the owner thread after the exact executor has finished. */
+int h3_dit_copy_exact_receipt_v2(
+    const h3_dit *dit, tc_stream_receipt_v2 *receipt,
+    char *error, size_t error_size);
 /* Thread-safe cancellation request for the candidate executor. */
 void h3_dit_cancel_exact_streaming(h3_dit *dit);
 /* Status-returning owner teardown.  On failure *dit remains unchanged and

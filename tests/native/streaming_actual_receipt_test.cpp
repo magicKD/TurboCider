@@ -155,6 +155,82 @@ int main() {
     assert(receipt->event_digest.size() == 64 &&
            receipt->canonical_digest.size() == 64);
 
+    std::vector<tc_stream_group_receipt_v2> c_groups(
+        receipt->groups.size());
+    for (size_t index = 0; index < receipt->groups.size(); ++index) {
+        const auto &source = receipt->groups[index];
+        auto &target = c_groups[index];
+        target.pass = source.pass;
+        target.group = source.group;
+        target.pool = source.pool;
+        target.slot = source.slot;
+        target.step = source.step;
+        target.fill_count = source.fill_count;
+        target.reader_count = source.reader_count;
+        target.flags = (source.fill_completed ?
+                            TC_STREAM_GROUP_FILL_COMPLETED_V2 : 0u) |
+                       (source.group_submitted ?
+                            TC_STREAM_GROUP_SUBMITTED_V2 : 0u);
+        target.request_generation = source.request_generation;
+        target.content_generation = source.content_generation;
+        target.expected_bytes = source.expected_bytes;
+        target.actual_bytes = source.actual_bytes;
+        target.source_generation = source.source_generation;
+        for (uint32_t reader = 0; reader < source.reader_count; ++reader) {
+            target.readers[reader].fence = source.readers[reader].fence;
+            target.readers[reader].completed =
+                source.readers[reader].completed ? 1 : 0;
+        }
+    }
+    std::vector<tc_stream_pool_selection_receipt_v2> c_pools;
+    for (const auto &source : receipt->pool_selections)
+        c_pools.push_back({source.pass, source.ordinal, source.pool});
+    std::vector<tc_stream_carry_receipt_v2> c_carries;
+    for (const auto &source : receipt->carries)
+        c_carries.push_back({source.from_pass, source.to_pass, source.group,
+                             source.pool, source.slot,
+                             source.content_generation});
+    tc_stream_receipt_v2 c_receipt{};
+    c_receipt.struct_size = sizeof(c_receipt);
+    c_receipt.version = TC_STREAM_RECEIPT_ABI_V2;
+    c_receipt.stage_index = receipt->stage_index;
+    c_receipt.completed_passes = receipt->completed_passes;
+    c_receipt.completed_groups = receipt->completed_groups;
+    c_receipt.fills = receipt->fills;
+    c_receipt.groups_submitted = receipt->groups_submitted;
+    c_receipt.logical_read_bytes = receipt->logical_read_bytes;
+    c_receipt.reader_fences_issued = receipt->reader_fences_issued;
+    c_receipt.reader_fences_completed = receipt->reader_fences_completed;
+    c_receipt.source_generation = receipt->source_generation;
+    c_receipt.drained = 1;
+    c_receipt.verified = 1;
+    std::snprintf(c_receipt.stage_id, sizeof(c_receipt.stage_id), "%s",
+                  receipt->stage_id.c_str());
+    std::snprintf(c_receipt.layout_digest,
+                  sizeof(c_receipt.layout_digest), "%s",
+                  receipt->layout_digest.c_str());
+    std::snprintf(c_receipt.implementation,
+                  sizeof(c_receipt.implementation), "%s",
+                  receipt->implementation.c_str());
+    std::snprintf(c_receipt.event_digest,
+                  sizeof(c_receipt.event_digest), "%s",
+                  receipt->event_digest.c_str());
+    std::snprintf(c_receipt.canonical_digest,
+                  sizeof(c_receipt.canonical_digest), "%s",
+                  receipt->canonical_digest.c_str());
+    c_receipt.group_capacity = c_receipt.group_count =
+        static_cast<uint32_t>(c_groups.size());
+    c_receipt.groups = c_groups.data();
+    c_receipt.pool_selection_capacity = c_receipt.pool_selection_count =
+        static_cast<uint32_t>(c_pools.size());
+    c_receipt.pool_selections = c_pools.data();
+    c_receipt.carry_capacity = c_receipt.carry_count =
+        static_cast<uint32_t>(c_carries.size());
+    c_receipt.carries = c_carries.data();
+    const auto copied = actual_stage_receipt_from_c_v2(c_receipt);
+    verify_actual_stage_receipt(layout, 0, 9, options, copied);
+    assert(copied.canonical_digest == receipt->canonical_digest);
+
     Layout execution_layout;
     execution_layout.digest = std::string(64, 'a');
     execution_layout.stages.push_back(layout);

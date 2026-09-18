@@ -17,6 +17,14 @@ std::string fixed_string(const char *value, size_t capacity,
         throw std::invalid_argument(detail);
     return std::string(value, length);
 }
+template <size_t N>
+void copy_fixed(char (&target)[N], const std::string &source,
+                const char *detail) {
+    if (source.empty() || source.size() >= N)
+        throw std::invalid_argument(detail);
+    std::memcpy(target, source.data(), source.size());
+    target[source.size()] = '\0';
+}
 class CAdapter final : public ModelSlotAdapter {
 public:
     tc_stream_adapter_v1 ops{};
@@ -359,6 +367,127 @@ extern "C" int tc_stream_executor_receipt_v1(
         std::snprintf(value.canonical_digest,
                       sizeof(value.canonical_digest), "%s",
                       receipt->canonical_digest.c_str());
+        *out = value;
+        return 1;
+    } catch (const std::exception &e) {
+        return fail(error, size, e.what());
+    }
+}
+extern "C" int tc_stream_executor_receipt_v2(
+        tc_stream_executor *h, tc_stream_receipt_v2 *out,
+        char *error, size_t size) {
+    try {
+        owner(h);
+        if (!out || out->struct_size != sizeof(*out) ||
+            out->version != TC_STREAM_RECEIPT_ABI_V2)
+            throw std::invalid_argument("streaming invalid receipt output ABI");
+        const auto receipt = h->executor->receipt();
+        const bool query_only =
+            out->group_capacity == 0 && !out->groups &&
+            out->pool_selection_capacity == 0 && !out->pool_selections &&
+            out->carry_capacity == 0 && !out->carries;
+        if (!query_only) {
+            if (receipt->groups.size() > out->group_capacity ||
+                (receipt->groups.size() && !out->groups) ||
+                receipt->pool_selections.size() >
+                    out->pool_selection_capacity ||
+                (receipt->pool_selections.size() &&
+                 !out->pool_selections) ||
+                receipt->carries.size() > out->carry_capacity ||
+                (receipt->carries.size() && !out->carries))
+                throw std::invalid_argument(
+                    "streaming receipt output capacity is insufficient");
+        }
+
+        const uint32_t group_capacity = out->group_capacity;
+        tc_stream_group_receipt_v2 *groups = out->groups;
+        const uint32_t pool_capacity = out->pool_selection_capacity;
+        tc_stream_pool_selection_receipt_v2 *pools = out->pool_selections;
+        const uint32_t carry_capacity = out->carry_capacity;
+        tc_stream_carry_receipt_v2 *carries = out->carries;
+
+        tc_stream_receipt_v2 value{};
+        value.struct_size = sizeof(value);
+        value.version = TC_STREAM_RECEIPT_ABI_V2;
+        value.stage_index = receipt->stage_index;
+        value.completed_passes = receipt->completed_passes;
+        value.completed_groups = receipt->completed_groups;
+        value.fills = receipt->fills;
+        value.groups_submitted = receipt->groups_submitted;
+        value.logical_read_bytes = receipt->logical_read_bytes;
+        value.reader_fences_issued = receipt->reader_fences_issued;
+        value.reader_fences_completed = receipt->reader_fences_completed;
+        value.source_generation = receipt->source_generation;
+        value.drained = receipt->drain_completed ? 1 : 0;
+        value.verified = 1;
+        copy_fixed(value.stage_id, receipt->stage_id,
+                   "streaming invalid receipt stage id");
+        copy_fixed(value.layout_digest, receipt->layout_digest,
+                   "streaming invalid receipt layout digest");
+        copy_fixed(value.implementation, receipt->implementation,
+                   "streaming invalid receipt implementation");
+        copy_fixed(value.event_digest, receipt->event_digest,
+                   "streaming invalid receipt event digest");
+        copy_fixed(value.canonical_digest, receipt->canonical_digest,
+                   "streaming invalid receipt canonical digest");
+        if (receipt->groups.size() > UINT32_MAX ||
+            receipt->pool_selections.size() > UINT32_MAX ||
+            receipt->carries.size() > UINT32_MAX)
+            throw std::overflow_error("streaming receipt output is too large");
+        value.group_capacity = group_capacity;
+        value.group_count = static_cast<uint32_t>(receipt->groups.size());
+        value.groups = groups;
+        value.pool_selection_capacity = pool_capacity;
+        value.pool_selection_count = static_cast<uint32_t>(
+            receipt->pool_selections.size());
+        value.pool_selections = pools;
+        value.carry_capacity = carry_capacity;
+        value.carry_count = static_cast<uint32_t>(receipt->carries.size());
+        value.carries = carries;
+
+        if (!query_only) {
+            for (size_t index = 0; index < receipt->groups.size(); ++index) {
+                const auto &source = receipt->groups[index];
+                tc_stream_group_receipt_v2 target{};
+                target.pass = source.pass;
+                target.group = source.group;
+                target.pool = source.pool;
+                target.slot = source.slot;
+                target.step = source.step;
+                target.fill_count = source.fill_count;
+                target.reader_count = source.reader_count;
+                target.flags =
+                    (source.fill_completed ?
+                         TC_STREAM_GROUP_FILL_COMPLETED_V2 : 0u) |
+                    (source.group_submitted ?
+                         TC_STREAM_GROUP_SUBMITTED_V2 : 0u);
+                target.request_generation = source.request_generation;
+                target.content_generation = source.content_generation;
+                target.expected_bytes = source.expected_bytes;
+                target.actual_bytes = source.actual_bytes;
+                target.source_generation = source.source_generation;
+                for (uint32_t reader = 0;
+                     reader < source.reader_count; ++reader) {
+                    target.readers[reader].fence =
+                        source.readers[reader].fence;
+                    target.readers[reader].completed =
+                        source.readers[reader].completed ? 1 : 0;
+                }
+                groups[index] = target;
+            }
+            for (size_t index = 0;
+                 index < receipt->pool_selections.size(); ++index) {
+                const auto &source = receipt->pool_selections[index];
+                pools[index] = {source.pass, source.ordinal, source.pool};
+            }
+            for (size_t index = 0;
+                 index < receipt->carries.size(); ++index) {
+                const auto &source = receipt->carries[index];
+                carries[index] = {
+                    source.from_pass, source.to_pass, source.group,
+                    source.pool, source.slot, source.content_generation};
+            }
+        }
         *out = value;
         return 1;
     } catch (const std::exception &e) {

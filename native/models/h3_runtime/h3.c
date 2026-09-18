@@ -979,6 +979,23 @@ static int h3_valid_params(h3_ctx *ctx, const h3_params *params) {
         h3_set_error(ctx, "exact streaming must be zero or one");
         return 0;
     }
+    const int exact_receipt_requested =
+        params->exact_receipt_source_generation != 0 ||
+        params->exact_receipt_layout_digest != NULL ||
+        params->exact_receipt_implementation != NULL;
+    if (exact_receipt_requested &&
+        (!params->exact_streaming ||
+         !params->exact_receipt_source_generation ||
+         !params->exact_receipt_layout_digest ||
+         strlen(params->exact_receipt_layout_digest) != 64 ||
+         !params->exact_receipt_implementation ||
+         !*params->exact_receipt_implementation ||
+         strlen(params->exact_receipt_implementation) >= 64)) {
+        h3_set_error(ctx,
+            "H3 exact receipt requires exact streaming, a source generation, "
+            "a 64-character layout digest, and a bounded implementation id");
+        return 0;
+    }
     if (params->exact_streaming &&
         (!params->ssd_streaming || params->ssd_quantized_cache_directory ||
          params->ssd_memory_budget_bytes ||
@@ -1000,7 +1017,7 @@ static int h3_valid_params(h3_ctx *ctx, const h3_params *params) {
         (params->exact_streaming_generation ||
          params->exact_prefetch_distance || params->exact_io_workers ||
          params->exact_carry_first_group || params->exact_cancel ||
-         params->exact_cancel_user)) {
+         params->exact_cancel_user || exact_receipt_requested)) {
         h3_set_error(ctx,
             "exact streaming options require exact_streaming=1");
         return 0;
@@ -1499,6 +1516,8 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         return NULL;
     }
     if (!h3_valid_params(ctx, params)) return NULL;
+    const int exact_receipt_requested =
+        params->exact_receipt_source_generation != 0;
     if (ctx->exact_dit_quarantine) {
         char detail[1024] = {0};
         if (!h3_dit_destroy(
@@ -1590,6 +1609,7 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     memset(&streaming_before, 0, sizeof(streaming_before));
     h3_dit_exact_streaming_info exact_streaming_info;
     memset(&exact_streaming_info, 0, sizeof(exact_streaming_info));
+    tc_stream_receipt_v2 *exact_receipt = NULL;
     double denoise_seconds = 0.0;
     char *conditioning_key = NULL;
     char *prepared_key = NULL;
@@ -2377,6 +2397,15 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
             h3_set_error(ctx, "%s", detail);
             goto cleanup;
         }
+        if (exact_receipt_requested &&
+            !h3_dit_enable_exact_receipt_v1(
+                dit, params->exact_receipt_source_generation,
+                params->exact_receipt_layout_digest,
+                params->exact_receipt_implementation,
+                detail, sizeof(detail))) {
+            h3_set_error(ctx, "%s", detail);
+            goto cleanup;
+        }
         progress.dit = dit;
     }
     if (ctx->cache_enabled && !dit_is_cached) {
@@ -2481,6 +2510,47 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         h3_set_error(ctx,
             "H3 exact streaming did not reach a clean terminal state");
         goto cleanup;
+    }
+    if (exact_receipt_requested) {
+        exact_receipt = calloc(1, sizeof(*exact_receipt));
+        if (!exact_receipt) {
+            h3_set_error(ctx, "out of memory allocating H3 exact receipt");
+            goto cleanup;
+        }
+        exact_receipt->struct_size = sizeof(*exact_receipt);
+        exact_receipt->version = TC_STREAM_RECEIPT_ABI_V2;
+        if (!h3_dit_copy_exact_receipt_v2(
+                dit, exact_receipt, detail, sizeof(detail))) {
+            h3_set_error(ctx, "%s", detail);
+            goto cleanup;
+        }
+        exact_receipt->group_capacity = exact_receipt->group_count;
+        exact_receipt->pool_selection_capacity =
+            exact_receipt->pool_selection_count;
+        exact_receipt->carry_capacity = exact_receipt->carry_count;
+        if (exact_receipt->group_count)
+            exact_receipt->groups = calloc(
+                exact_receipt->group_count, sizeof(*exact_receipt->groups));
+        if (exact_receipt->pool_selection_count)
+            exact_receipt->pool_selections = calloc(
+                exact_receipt->pool_selection_count,
+                sizeof(*exact_receipt->pool_selections));
+        if (exact_receipt->carry_count)
+            exact_receipt->carries = calloc(
+                exact_receipt->carry_count,
+                sizeof(*exact_receipt->carries));
+        if ((exact_receipt->group_count && !exact_receipt->groups) ||
+            (exact_receipt->pool_selection_count &&
+             !exact_receipt->pool_selections) ||
+            (exact_receipt->carry_count && !exact_receipt->carries)) {
+            h3_set_error(ctx, "out of memory copying H3 exact receipt");
+            goto cleanup;
+        }
+        if (!h3_dit_copy_exact_receipt_v2(
+                dit, exact_receipt, detail, sizeof(detail))) {
+            h3_set_error(ctx, "%s", detail);
+            goto cleanup;
+        }
     }
     if (!h3_dump_video_latent(ctx, video, video_count, temporal.video_t,
                               latent_h, latent_w))
@@ -2750,6 +2820,8 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     result->exact_max_refill_block =
         exact_streaming_info.max_refill_block;
     result->exact_wait_seconds = exact_streaming_info.wait_seconds;
+    result->exact_receipt = exact_receipt;
+    exact_receipt = NULL;
     result->denoise_seconds = denoise_seconds;
     if (params->retain_decoded) {
         result->decoded_width = frames.width;
@@ -2800,6 +2872,13 @@ cleanup:
     if (!cleanup_gpu_drain_ok && result) {
         h3_result_free(result);
         result = NULL;
+    }
+    if (exact_receipt) {
+        free(exact_receipt->groups);
+        free(exact_receipt->pool_selections);
+        free(exact_receipt->carries);
+        free(exact_receipt);
+        exact_receipt = NULL;
     }
     if (parallel_prepare.started) {
         h3_dit *prepared = h3_parallel_prepare_join(
@@ -2906,6 +2985,12 @@ int h3_drain(h3_ctx *ctx, h3_drain_info *info,
 
 void h3_result_free(h3_result *result) {
     if (!result) return;
+    if (result->exact_receipt) {
+        free(result->exact_receipt->groups);
+        free(result->exact_receipt->pool_selections);
+        free(result->exact_receipt->carries);
+        free(result->exact_receipt);
+    }
     free(result->decoded_rgb);
     free(result->audio_pcm);
     free(result);

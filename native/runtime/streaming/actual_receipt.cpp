@@ -2,6 +2,7 @@
 
 #include "canonical_encoding.hpp"
 
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -26,6 +27,14 @@ void checked_add(uint64_t &target, uint64_t value) {
 
 std::string stage_identity(const StageLayout &layout, uint32_t stage) {
     return layout.id.empty() ? "stage-" + std::to_string(stage) : layout.id;
+}
+
+template <size_t N>
+std::string receipt_c_string(const char (&value)[N],
+                             std::string_view detail) {
+    const size_t length = ::strnlen(value, N);
+    receipt_check(length != 0 && length < N, detail);
+    return std::string(value, length);
 }
 
 std::vector<uint32_t> pool_sequence(const StageLayout &layout) {
@@ -567,6 +576,101 @@ void verify_actual_stage_receipt(
     receipt_check(receipt.canonical_digest ==
                       actual_stage_canonical_digest(receipt),
                   "canonical_digest_mismatch");
+}
+
+ActualStageReceipt actual_stage_receipt_from_c_v2(
+        const tc_stream_receipt_v2 &source) {
+    receipt_check(source.struct_size == sizeof(source) &&
+                      source.version == TC_STREAM_RECEIPT_ABI_V2,
+                  "c_receipt_abi_mismatch");
+    receipt_check(source.verified && source.drained,
+                  "c_receipt_not_sealed");
+    receipt_check(source.group_count != 0 && source.groups != nullptr,
+                  "c_receipt_group_matrix_missing");
+    receipt_check(source.group_count <= source.group_capacity,
+                  "c_receipt_group_capacity_mismatch");
+    receipt_check(source.pool_selection_count != 0 &&
+                      source.pool_selections != nullptr &&
+                      source.pool_selection_count <=
+                          source.pool_selection_capacity,
+                  "c_receipt_pool_matrix_missing");
+    receipt_check(source.carry_count <= source.carry_capacity &&
+                      (!source.carry_count || source.carries != nullptr),
+                  "c_receipt_carry_matrix_missing");
+
+    ActualStageReceipt result;
+    result.stage_index = source.stage_index;
+    result.stage_id = receipt_c_string(
+        source.stage_id, "c_receipt_stage_id_invalid");
+    result.layout_digest = receipt_c_string(
+        source.layout_digest, "c_receipt_layout_digest_invalid");
+    result.implementation = receipt_c_string(
+        source.implementation, "c_receipt_implementation_invalid");
+    result.completed_passes = source.completed_passes;
+    result.completed_groups = source.completed_groups;
+    result.fills = source.fills;
+    result.groups_submitted = source.groups_submitted;
+    result.logical_read_bytes = source.logical_read_bytes;
+    result.reader_fences_issued = source.reader_fences_issued;
+    result.reader_fences_completed = source.reader_fences_completed;
+    result.source_generation = source.source_generation;
+    result.drain_completed = source.drained != 0;
+    result.groups.reserve(source.group_count);
+    for (uint32_t index = 0; index < source.group_count; ++index) {
+        const auto &input = source.groups[index];
+        receipt_check(input.reader_count <= TC_STREAM_MAX_READER_QUEUES,
+                      "c_receipt_reader_count_invalid");
+        receipt_check((input.flags &
+                      ~(TC_STREAM_GROUP_FILL_COMPLETED_V2 |
+                        TC_STREAM_GROUP_SUBMITTED_V2)) == 0,
+                      "c_receipt_group_flags_invalid");
+        ActualGroupReceipt group;
+        group.pass = input.pass;
+        group.group = input.group;
+        group.pool = input.pool;
+        group.slot = input.slot;
+        group.step = input.step;
+        group.fill_count = input.fill_count;
+        group.request_generation = input.request_generation;
+        group.content_generation = input.content_generation;
+        group.expected_bytes = input.expected_bytes;
+        group.actual_bytes = input.actual_bytes;
+        group.source_generation = input.source_generation;
+        group.fill_completed =
+            (input.flags & TC_STREAM_GROUP_FILL_COMPLETED_V2) != 0;
+        group.group_submitted =
+            (input.flags & TC_STREAM_GROUP_SUBMITTED_V2) != 0;
+        group.reader_count = input.reader_count;
+        for (uint32_t reader = 0; reader < input.reader_count; ++reader) {
+            group.readers[reader].fence = input.readers[reader].fence;
+            group.readers[reader].completed =
+                input.readers[reader].completed != 0;
+        }
+        result.groups.push_back(std::move(group));
+    }
+    result.pool_selections.reserve(source.pool_selection_count);
+    for (uint32_t index = 0; index < source.pool_selection_count; ++index) {
+        const auto &input = source.pool_selections[index];
+        result.pool_selections.push_back(
+            {input.pass, input.ordinal, input.pool});
+    }
+    result.carries.reserve(source.carry_count);
+    for (uint32_t index = 0; index < source.carry_count; ++index) {
+        const auto &input = source.carries[index];
+        result.carries.push_back({
+            input.from_pass, input.to_pass, input.group, input.pool,
+            input.slot, input.content_generation});
+    }
+    result.event_digest = receipt_c_string(
+        source.event_digest, "c_receipt_event_digest_invalid");
+    result.canonical_digest = receipt_c_string(
+        source.canonical_digest, "c_receipt_canonical_digest_invalid");
+    receipt_check(result.event_digest == actual_stage_event_digest(result),
+                  "c_receipt_event_digest_mismatch");
+    receipt_check(result.canonical_digest ==
+                      actual_stage_canonical_digest(result),
+                  "c_receipt_canonical_digest_mismatch");
+    return result;
 }
 
 ActualExecutionReceipt make_actual_execution_receipt(

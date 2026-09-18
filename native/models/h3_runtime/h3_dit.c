@@ -7329,6 +7329,36 @@ int h3_dit_enable_exact_streaming_v1(
     return 1;
 }
 
+int h3_dit_enable_exact_receipt_v1(
+        h3_dit *dit, uint64_t source_generation,
+        const char *layout_digest, const char *implementation,
+        char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!dit || !dit->exact_stream.executor ||
+        !dit->exact_stream.enabled || dit->exact_stream.finished ||
+        !source_generation || !layout_digest || strlen(layout_digest) != 64 ||
+        !implementation || !*implementation || strlen(implementation) >= 64) {
+        fail(error, error_size, "invalid H3 exact receipt configuration");
+        return 0;
+    }
+    tc_stream_receipt_config_v1 config = {0};
+    config.struct_size = sizeof(config);
+    config.version = TC_STREAM_RECEIPT_ABI_V1;
+    config.source_generation = source_generation;
+    memcpy(config.layout_digest, layout_digest, 64);
+    config.layout_digest[64] = '\0';
+    snprintf(config.implementation, sizeof(config.implementation), "%s",
+             implementation);
+    char detail[512] = {0};
+    if (!tc_stream_executor_enable_receipt_v1(
+            dit->exact_stream.executor, &config, detail, sizeof(detail))) {
+        fail(error, error_size, "%s", detail[0] ? detail :
+             "cannot enable H3 exact receipt");
+        return 0;
+    }
+    return 1;
+}
+
 int h3_dit_get_exact_streaming_info(
         const h3_dit *dit, h3_dit_exact_streaming_info *info) {
     if (!dit || !info) return 0;
@@ -7352,6 +7382,27 @@ int h3_dit_get_exact_streaming_info(
     info->max_refill_seconds = stream->max_refill_seconds;
     info->max_refill_block = stream->max_refill_block;
     info->wait_seconds = counters.wait_seconds;
+    return 1;
+}
+
+int h3_dit_copy_exact_receipt_v2(
+        const h3_dit *dit, tc_stream_receipt_v2 *receipt,
+        char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!dit || !receipt || receipt->struct_size != sizeof(*receipt) ||
+        receipt->version != TC_STREAM_RECEIPT_ABI_V2 ||
+        !dit->exact_stream.executor || !dit->exact_stream.finished) {
+        fail(error, error_size,
+             "H3 exact receipt is unavailable before a clean finish");
+        return 0;
+    }
+    char detail[512] = {0};
+    if (!tc_stream_executor_receipt_v2(
+            dit->exact_stream.executor, receipt, detail, sizeof(detail))) {
+        fail(error, error_size, "%s", detail[0] ? detail :
+             "cannot copy H3 exact receipt");
+        return 0;
+    }
     return 1;
 }
 

@@ -11,6 +11,7 @@ extern "C" {
 #define TC_STREAM_SLOT_ABI_V2 2u
 #define TC_STREAM_SLOT_ABI_V3 3u
 #define TC_STREAM_RECEIPT_ABI_V1 1u
+#define TC_STREAM_RECEIPT_ABI_V2 2u
 #define TC_STREAM_MAX_READER_QUEUES 8u
 
 typedef struct {
@@ -174,6 +175,60 @@ typedef struct {
     char canonical_digest[65];
 } tc_stream_receipt_v1;
 
+/* V2 is an additive, owner-thread-only clone of the recorder's real event
+ * matrix.  It is deliberately caller-allocated so C model runtimes can copy
+ * a sealed receipt without taking ownership of C++ vectors.  Calling the V2
+ * getter with all array pointers NULL and capacities zero is a size query; a
+ * second call supplies arrays of at least the returned counts. */
+typedef struct {
+    tc_stream_reader_fence_v1 fence;
+    uint8_t completed;
+    uint8_t reserved[7];
+} tc_stream_reader_receipt_v2;
+
+enum {
+    TC_STREAM_GROUP_FILL_COMPLETED_V2 = 1u << 0,
+    TC_STREAM_GROUP_SUBMITTED_V2 = 1u << 1,
+};
+
+typedef struct {
+    uint32_t pass, group, pool, slot;
+    uint32_t step, fill_count, reader_count, flags;
+    uint64_t request_generation, content_generation;
+    uint64_t expected_bytes, actual_bytes, source_generation;
+    tc_stream_reader_receipt_v2 readers[TC_STREAM_MAX_READER_QUEUES];
+} tc_stream_group_receipt_v2;
+
+typedef struct {
+    uint32_t pass, ordinal, pool;
+} tc_stream_pool_selection_receipt_v2;
+
+typedef struct {
+    uint32_t from_pass, to_pass, group, pool, slot;
+    uint64_t content_generation;
+} tc_stream_carry_receipt_v2;
+
+typedef struct {
+    uint32_t struct_size, version;
+    uint32_t stage_index, completed_passes, completed_groups;
+    uint64_t fills, groups_submitted, logical_read_bytes;
+    uint64_t reader_fences_issued, reader_fences_completed;
+    uint64_t source_generation;
+    uint8_t drained, verified;
+    uint8_t reserved[6];
+    char stage_id[64];
+    char layout_digest[65];
+    char implementation[64];
+    char event_digest[65];
+    char canonical_digest[65];
+    uint32_t group_capacity, group_count;
+    tc_stream_group_receipt_v2 *groups;
+    uint32_t pool_selection_capacity, pool_selection_count;
+    tc_stream_pool_selection_receipt_v2 *pool_selections;
+    uint32_t carry_capacity, carry_count;
+    tc_stream_carry_receipt_v2 *carries;
+} tc_stream_receipt_v2;
+
 typedef struct tc_stream_executor tc_stream_executor;
 
 /* Metadata arrays and callback table are copied; adapter.user must outlive the
@@ -193,6 +248,8 @@ int tc_stream_executor_enable_receipt_v1(
     tc_stream_executor *, const tc_stream_receipt_config_v1 *, char *, size_t);
 int tc_stream_executor_receipt_v1(
     tc_stream_executor *, tc_stream_receipt_v1 *, char *, size_t);
+int tc_stream_executor_receipt_v2(
+    tc_stream_executor *, tc_stream_receipt_v2 *, char *, size_t);
 void tc_stream_executor_cancel(tc_stream_executor *);
 /* Stops workers and drains before freeing. Returns 0 and retains *handle if
  * safety cannot be proved; caller must quarantine the owning model session. */

@@ -8,6 +8,7 @@
 #include "h3_gpu.h"
 #include "h3_memory.h"
 #include "../../core/memory_schedule_c.h"
+#include "../../core/stream_slot_c.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -133,6 +134,12 @@ typedef struct {
     int exact_carry_first_group;
     h3_gpu_cancel_query_v1 exact_cancel;
     const void *exact_cancel_user;
+    /* Optional public-proof recorder. All three fields are required together.
+     * Private exact requests leave them zero/null and preserve the historical
+     * counters-only result. */
+    uint64_t exact_receipt_source_generation;
+    const char *exact_receipt_layout_digest;
+    const char *exact_receipt_implementation;
     /* Optional lower internal model canvas. Both must be zero (exact output
      * canvas) or valid same-aspect dimensions no larger than width/height. */
     int render_width;
@@ -195,7 +202,9 @@ typedef struct {
     .exact_streaming = 0, .exact_streaming_generation = 0, \
     .exact_prefetch_distance = 0, .exact_io_workers = 0, \
     .exact_carry_first_group = 0, .exact_cancel = NULL, \
-    .exact_cancel_user = NULL, .render_width = 0, \
+    .exact_cancel_user = NULL, .exact_receipt_source_generation = 0, \
+    .exact_receipt_layout_digest = NULL, \
+    .exact_receipt_implementation = NULL, .render_width = 0, \
     .render_height = 0, .use_slower_bf16_mlp = 0, \
     .use_slower_bf16_qkv = 0, .use_slower_bf16_attention_output = 0, \
     .use_slower_row_major_attention_output = 0, \
@@ -270,6 +279,8 @@ struct h3_result {
     double exact_max_refill_seconds;
     int32_t exact_max_refill_block;
     double exact_wait_seconds;
+    /* Owned sealed event matrix. NULL for legacy/private requests. */
+    tc_stream_receipt_v2 *exact_receipt;
     double denoise_seconds;
     int decoded_width;
     int decoded_height;

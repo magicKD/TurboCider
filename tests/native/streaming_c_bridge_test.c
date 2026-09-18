@@ -90,6 +90,44 @@ int main(void){
            receipt.source_generation==41 && receipt.drained &&
            receipt.verified && strlen(receipt.event_digest)==64 &&
            strlen(receipt.canonical_digest)==64);
+    tc_stream_receipt_v2 receipt_v2={0};
+    receipt_v2.struct_size=sizeof(receipt_v2);
+    receipt_v2.version=TC_STREAM_RECEIPT_ABI_V2;
+    assert(tc_stream_executor_receipt_v2(
+        executor,&receipt_v2,error,sizeof(error)));
+    assert(receipt_v2.group_count==8 &&
+           receipt_v2.pool_selection_count==2 &&
+           receipt_v2.carry_count==0 &&
+           !receipt_v2.groups && !receipt_v2.pool_selections &&
+           !receipt_v2.carries);
+    tc_stream_group_receipt_v2 receipt_groups[8]={0};
+    tc_stream_pool_selection_receipt_v2 receipt_pools[2]={0};
+    receipt_v2.group_capacity=8;
+    receipt_v2.groups=receipt_groups;
+    receipt_v2.pool_selection_capacity=2;
+    receipt_v2.pool_selections=receipt_pools;
+    assert(tc_stream_executor_receipt_v2(
+        executor,&receipt_v2,error,sizeof(error)));
+    assert(!strcmp(receipt_v2.stage_id,"stage-1") &&
+           !strcmp(receipt_v2.implementation,"c_bridge_generic_v2") &&
+           receipt_v2.group_count==8 && receipt_v2.drained &&
+           receipt_v2.verified);
+    for(uint32_t i=0;i<8;++i) {
+        const tc_stream_group_receipt_v2 *g=&receipt_groups[i];
+        assert(g->pass==i/4 && g->group==i%4 && g->pool==7 &&
+               g->slot==(i%4)%3 && g->step==10+i/4 &&
+               g->fill_count==1 && g->reader_count==1 &&
+               g->flags==(TC_STREAM_GROUP_FILL_COMPLETED_V2|
+                           TC_STREAM_GROUP_SUBMITTED_V2) &&
+               g->request_generation==1 && g->content_generation!=0 &&
+               g->expected_bytes==8 && g->actual_bytes==8 &&
+               g->source_generation==41 &&
+               g->readers[0].fence.queue==1 &&
+               g->readers[0].completed);
+    }
+    assert(receipt_pools[0].pass==0 && receipt_pools[0].ordinal==0 &&
+           receipt_pools[0].pool==7 && receipt_pools[1].pass==1 &&
+           receipt_pools[1].ordinal==0 && receipt_pools[1].pool==7);
     assert(m.destroys==1);
     assert(tc_stream_executor_destroy(&executor,error,sizeof(error)) && !executor);
     assert(m.destroys==1);
@@ -132,6 +170,14 @@ int main(void){
         &carry,allocate,destroy,fill,prefix,prepare,encode,drain};
     assert(tc_stream_executor_create_v3(
         &plan_v3,&carry_ops,&executor,error,sizeof(error)));
+    memset(&receipt_config,0,sizeof(receipt_config));
+    receipt_config.struct_size=sizeof(receipt_config);
+    receipt_config.version=TC_STREAM_RECEIPT_ABI_V1;
+    receipt_config.source_generation=91;
+    memset(receipt_config.layout_digest,'b',64);
+    strcpy(receipt_config.implementation,"c_bridge_carry_v3");
+    assert(tc_stream_executor_enable_receipt_v1(
+        executor,&receipt_config,error,sizeof(error)));
     assert(tc_stream_executor_run_pass(executor,0,0,error,sizeof(error)));
     assert(atomic_load(&carry.fills)==5 && atomic_load(&carry.encodes)==4);
     assert(tc_stream_executor_run_pass(executor,1,1,error,sizeof(error)));
@@ -144,6 +190,35 @@ int main(void){
            v3_counters.pool_creates==1 && v3_counters.slot_bundles==2);
     assert(atomic_load(&carry.fills)==12 && atomic_load(&carry.encodes)==12 &&
            carry.prefix==3);
+    memset(&receipt_v2,0,sizeof(receipt_v2));
+    receipt_v2.struct_size=sizeof(receipt_v2);
+    receipt_v2.version=TC_STREAM_RECEIPT_ABI_V2;
+    assert(tc_stream_executor_receipt_v2(
+        executor,&receipt_v2,error,sizeof(error)));
+    assert(receipt_v2.group_count==12 &&
+           receipt_v2.pool_selection_count==3 &&
+           receipt_v2.carry_count==2);
+    tc_stream_group_receipt_v2 carry_receipt_groups[12]={0};
+    tc_stream_pool_selection_receipt_v2 carry_receipt_pools[3]={0};
+    tc_stream_carry_receipt_v2 carry_receipts[2]={0};
+    receipt_v2.group_capacity=12;
+    receipt_v2.groups=carry_receipt_groups;
+    receipt_v2.pool_selection_capacity=3;
+    receipt_v2.pool_selections=carry_receipt_pools;
+    receipt_v2.carry_capacity=2;
+    receipt_v2.carries=carry_receipts;
+    assert(tc_stream_executor_receipt_v2(
+        executor,&receipt_v2,error,sizeof(error)));
+    assert(!strcmp(receipt_v2.implementation,"c_bridge_carry_v3") &&
+           receipt_v2.source_generation==91 &&
+           carry_receipts[0].from_pass==0 &&
+           carry_receipts[0].to_pass==1 &&
+           carry_receipts[0].group==0 &&
+           carry_receipts[1].from_pass==1 &&
+           carry_receipts[1].to_pass==2 &&
+           carry_receipts[1].group==0 &&
+           carry_receipts[0].content_generation!=0 &&
+           carry_receipts[1].content_generation!=0);
     assert(tc_stream_executor_destroy(&executor,error,sizeof(error)) && !executor);
     assert(carry.allocations==2 && carry.destroys==1);
 
