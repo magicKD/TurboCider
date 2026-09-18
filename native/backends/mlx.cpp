@@ -1,101 +1,15 @@
 #include "mlx.hpp"
+#include "mlx_fd_reader.hpp"
 #include "../core/gguf.hpp"
 #include "../runtime/streaming/source_lease.hpp"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <cerrno>
-#include <limits>
 #include <map>
-#include <fcntl.h>
-#include <mutex>
 #include <stdexcept>
 #include <type_traits>
-#include <unistd.h>
 namespace tc {
 namespace {
-class LeaseFdReader final : public mx::io::Reader {
-    streaming::OwnedSourceFd fd_;
-    std::string label_;
-    mutable std::mutex cursor_mutex_;
-
-    [[noreturn]] void fail(const char *operation) const {
-        throw std::runtime_error(
-            std::string("streaming source ") + operation + " failed for " +
-            label_ + ": " + std::strerror(errno));
-    }
-
-    static int whence(std::ios_base::seekdir direction) {
-        if (direction == std::ios_base::beg) return SEEK_SET;
-        if (direction == std::ios_base::end) return SEEK_END;
-        return SEEK_CUR;
-    }
-
-  public:
-    LeaseFdReader(streaming::OwnedSourceFd fd, std::string label)
-        : fd_(std::move(fd)), label_(std::move(label)) {
-        require(static_cast<bool>(fd_),
-                "streaming source reader descriptor is unavailable");
-    }
-
-    bool is_open() const override { return static_cast<bool>(fd_); }
-    bool good() const override { return is_open(); }
-
-    size_t tell() override {
-        std::lock_guard lock(cursor_mutex_);
-        const off_t value = ::lseek(fd_.get(), 0, SEEK_CUR);
-        if (value < 0) fail("tell");
-        return static_cast<size_t>(value);
-    }
-
-    void seek(int64_t offset,
-              std::ios_base::seekdir direction = std::ios_base::beg) override {
-        std::lock_guard lock(cursor_mutex_);
-        if (::lseek(fd_.get(), static_cast<off_t>(offset),
-                    whence(direction)) < 0)
-            fail("seek");
-    }
-
-    void read(char *destination, size_t bytes) override {
-        std::lock_guard lock(cursor_mutex_);
-        size_t done = 0;
-        while (done < bytes) {
-            const size_t chunk = std::min(
-                bytes - done,
-                static_cast<size_t>(std::numeric_limits<ssize_t>::max()));
-            const ssize_t count = ::read(fd_.get(), destination + done, chunk);
-            if (count < 0 && errno == EINTR) continue;
-            if (count <= 0) fail(count == 0 ? "short read" : "read");
-            done += static_cast<size_t>(count);
-        }
-    }
-
-    void read(char *destination, size_t bytes, size_t offset) override {
-        require(offset <= static_cast<size_t>(
-                    std::numeric_limits<off_t>::max()),
-                "streaming source read offset overflows");
-        size_t done = 0;
-        while (done < bytes) {
-            require(offset <= static_cast<size_t>(
-                        std::numeric_limits<off_t>::max()) - done,
-                    "streaming source read range overflows");
-            const size_t chunk = std::min(
-                bytes - done,
-                static_cast<size_t>(std::numeric_limits<ssize_t>::max()));
-            const ssize_t count = ::pread(
-                fd_.get(), destination + done, chunk,
-                static_cast<off_t>(offset + done));
-            if (count < 0 && errno == EINTR) continue;
-            if (count <= 0) fail(count == 0 ? "short pread" : "pread");
-            done += static_cast<size_t>(count);
-        }
-    }
-
-    std::string label() const override {
-        return "leased file " + label_;
-    }
-};
-
 // MLX 0.32.0 (our pinned runtime) selects fused attention internally. Newer
 // runtimes additionally let the caller force it. Keep both public signatures
 // usable without dropping the explicit preference when it is available.
@@ -270,8 +184,9 @@ void Weights::load_lease(
         int index = 0;
         for (const auto &logical_id : logical_ids) {
             checkpoint(cancelled);
-            auto reader = std::make_shared<LeaseFdReader>(
-                lease->duplicate_fd(logical_id), logical_id);
+            auto duplicate = lease->duplicate_fd(logical_id);
+            auto reader = std::make_shared<MlxLeaseFdReader>(
+                MlxOwnedFd(duplicate.release()), logical_id);
             event("load_" + logical_id, index,
                   static_cast<int>(logical_ids.size()));
             auto data = mx::load_safetensors(reader);

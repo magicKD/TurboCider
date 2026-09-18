@@ -17,6 +17,11 @@ typedef struct {
 
 ltx_mlx_video_vae *ltx_mlx_video_vae_create(
     const char *checkpoint_path, char *error, size_t error_size);
+/* Public streaming decoder path. The descriptor is duplicated and the named
+ * path is diagnostic only; no model artifact is reopened by pathname. */
+ltx_mlx_video_vae *ltx_mlx_video_vae_create_fd(
+    int descriptor, const char *diagnostic_path,
+    char *error, size_t error_size);
 /* Create an encoder-only instance. Keeping encoder and decoder weights in
  * separate short-lived processes avoids holding both halves of the large VAE
  * checkpoint in unified memory during generation. */

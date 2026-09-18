@@ -52,6 +52,8 @@ std::string sigmas(const float *values, size_t count) {
 
 struct StreamingMetadata::State {
     std::string path, identity;
+    std::shared_ptr<const streaming::SourceLease> lease;
+    streaming::OwnedSourceFd source_fd;
     ltx_st_header header{};
     ltx_st_mapping mapping{};
     std::array<ltx_stream_block_layout,LTX_STREAM_BLOCKS> blocks{};
@@ -85,9 +87,60 @@ StreamingMetadata::StreamingMetadata(const std::string &checkpoint) : state_(std
     }
     check_unchanged();
 }
+StreamingMetadata::StreamingMetadata(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        std::string logical_id)
+    : state_(std::make_unique<State>()) {
+    auto &s = *state_;
+    require_metadata(lease != nullptr, "source lease is missing");
+    require_metadata(!logical_id.empty(), "checkpoint logical id is empty");
+    const auto &file = lease->file(logical_id);
+    s.lease = std::move(lease);
+    s.path = file.path.string();
+    s.source_fd = s.lease->duplicate_fd(logical_id);
+    char error[1024] = {};
+    struct stat before{};
+    require_metadata(::fstat(s.source_fd.get(), &before) == 0 &&
+                         S_ISREG(before.st_mode) && before.st_size >= 8,
+                     "invalid opened checkpoint lease");
+    s.identity = fingerprint(before);
+    checked(ltx_st_read_header_fd(s.source_fd.get(), s.path.c_str(),
+                                  &s.header, error, sizeof(error)), error);
+    require_metadata(s.header.file_size == static_cast<uint64_t>(before.st_size),
+                     "header/file identity mismatch");
+    auto mapping_fd = s.lease->duplicate_fd(logical_id);
+    s.mapping.descriptor = mapping_fd.release();
+    s.mapping.descriptor_open = 1;
+    s.mapping.bytes = static_cast<size_t>(s.header.file_size);
+    require_metadata(ltx_st_validate_snapshot_fd(
+                         &s.header, s.mapping.descriptor, s.path.c_str(),
+                         error, sizeof(error)), error);
+    for (uint32_t b = 0; b < LTX_STREAM_BLOCKS; ++b) {
+        checked(ltx_stream_describe_block(&s.header, &s.mapping, b,
+                                          &s.blocks[b], error, sizeof(error)),
+                error);
+        require_metadata(ltx_stream_blocks_compatible(&s.blocks[0],
+                                                       &s.blocks[b]) != 0,
+                         "heterogeneous LTX blocks are not supported by the current adapter");
+        require_metadata(s.blocks[b].metadata_read_bytes <=
+                             UINT64_MAX - s.quant_bytes,
+                         "metadata byte overflow");
+        s.quant_bytes += s.blocks[b].metadata_read_bytes;
+    }
+    check_unchanged();
+}
 StreamingMetadata::~StreamingMetadata() = default;
 void StreamingMetadata::check_unchanged() const {
     const auto &s=*state_;
+    if (s.lease) {
+        s.lease->revalidate_after_drain();
+        char error[1024] = {};
+        require_metadata(ltx_st_validate_snapshot_fd(
+                             &s.header, s.mapping.descriptor, s.path.c_str(),
+                             error, sizeof(error)),
+                         error[0] ? error : "checkpoint snapshot is stale");
+        return;
+    }
     struct stat opened{};
     require_metadata(s.mapping.descriptor_open && ::fstat(s.mapping.descriptor,&opened)==0,
                      "checkpoint descriptor unavailable");
@@ -100,6 +153,10 @@ const ltx_stream_block_layout &StreamingMetadata::block(uint32_t b) const {
     require_metadata(b<LTX_STREAM_BLOCKS,"invalid block index"); return state_->blocks[b];
 }
 uint64_t StreamingMetadata::quant_metadata_read_bytes() const { return state_->quant_bytes; }
+const std::shared_ptr<const streaming::SourceLease> &
+StreamingMetadata::source_lease() const noexcept {
+    return state_->lease;
+}
 
 streaming::Descriptor StreamingMetadata::describe(const StreamingWorkload &w) const {
     check_unchanged();

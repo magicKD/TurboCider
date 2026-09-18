@@ -102,6 +102,7 @@ test-streaming-contract:
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_snapshot.py
 	@"$(PYTHON)" -B tests/native/test_streaming_contract.py
 	@"$(PYTHON)" -B tests/native/test_ltx_candidate_streaming_gate.py
+	@"$(PYTHON)" -B tests/native/test_ltx_public_streaming.py
 	@"$(PYTHON)" -B tests/native/test_h3_candidate_streaming_gate.py
 	@"$(PYTHON)" -B tests/native/test_h3_public_streaming.py
 	@"$(PYTHON)" -B tests/native/test_z_image_candidate_streaming_gate.py

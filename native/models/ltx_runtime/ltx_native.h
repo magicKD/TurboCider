@@ -111,6 +111,14 @@ int ltx_native_create_streamed_v1(const ltx_native_options *,
     ltx_native_progress, void *, char *, size_t);
 int ltx_native_streaming_destroy(ltx_native_denoiser **, char *, size_t);
 int ltx_native_streaming_counters(ltx_native_denoiser *, tc_stream_counters_v1 *, char *, size_t);
+/* Public adapters may enable and copy the common executor's real receipt
+ * after exact creation and before the first stage.  The V2 getter follows the
+ * common size-query/two-call ABI from stream_slot_c.h. */
+int ltx_native_streaming_enable_receipt(
+    ltx_native_denoiser *, const tc_stream_receipt_config_v1 *,
+    char *, size_t);
+int ltx_native_streaming_receipt_v2(
+    ltx_native_denoiser *, tc_stream_receipt_v2 *, char *, size_t);
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
 /* Private deterministic fault injection for lifecycle tests. Release builds
  * do not contain this symbol and no request/environment setting can reach it. */
@@ -152,6 +160,15 @@ int ltx_native_run(ltx_native_denoiser*,int stage,uint64_t seed,
 int ltx_native_upsample_stage2(
     ltx_native_denoiser*, const char *upsampler_checkpoint,
     const char *video_vae_checkpoint,
+    uint16_t *output, size_t output_elements,
+    const uint16_t *input, size_t input_elements,
+    char *error, size_t error_size);
+/* Request-lease variant. Both descriptors are borrowed for the call and
+ * duplicated by the component loaders; diagnostic paths are never reopened. */
+int ltx_native_upsample_stage2_fd(
+    ltx_native_denoiser*, int upsampler_fd,
+    const char *upsampler_diagnostic_path, int video_vae_fd,
+    const char *video_vae_diagnostic_path,
     uint16_t *output, size_t output_elements,
     const uint16_t *input, size_t input_elements,
     char *error, size_t error_size);

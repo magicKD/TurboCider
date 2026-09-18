@@ -6354,6 +6354,28 @@ int ltx_native_streaming_counters(ltx_native_denoiser *ctx, tc_stream_counters_v
     if (!ctx || !ctx->exact_stream) { snprintf(error, size, "not an LTX exact streaming context"); return 0; }
     return tc_stream_executor_counters(ctx->exact_stream->executor, out, error, size);
 }
+int ltx_native_streaming_enable_receipt(
+        ltx_native_denoiser *ctx, const tc_stream_receipt_config_v1 *config,
+        char *error, size_t size) {
+    if (!ctx || !ctx->exact_stream || !config) {
+        snprintf(error, size, "not an LTX exact streaming context");
+        return 0;
+    }
+    if (!ltx_exact_owner(ctx->exact_stream, error, size)) return 0;
+    return tc_stream_executor_enable_receipt_v1(
+        ctx->exact_stream->executor, config, error, size);
+}
+int ltx_native_streaming_receipt_v2(
+        ltx_native_denoiser *ctx, tc_stream_receipt_v2 *out,
+        char *error, size_t size) {
+    if (!ctx || !ctx->exact_stream || !out) {
+        snprintf(error, size, "not an LTX exact streaming context");
+        return 0;
+    }
+    if (!ltx_exact_owner(ctx->exact_stream, error, size)) return 0;
+    return tc_stream_executor_receipt_v2(
+        ctx->exact_stream->executor, out, error, size);
+}
 int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
     uint16_t *video,size_t video_elements,uint16_t *audio,size_t audio_elements,
     const uint16_t *video_text_host,const uint16_t *audio_text_host,const uint16_t *mask_host,
@@ -6608,9 +6630,9 @@ cleanup:
     return ok;
 }
 
-int ltx_native_upsample_stage2(
+static int ltx_native_upsample_stage2_impl(
     ltx_native_denoiser *ctx,const char *upsampler_checkpoint,
-    const char *video_vae_checkpoint,
+    int upsampler_fd,const char *video_vae_checkpoint,int video_vae_fd,
     uint16_t *output,size_t output_elements,
     const uint16_t *input,size_t input_elements,
     char *error,size_t error_size) {
@@ -6619,7 +6641,11 @@ int ltx_native_upsample_stage2(
     const size_t expected_input=(size_t)ctx->workload.stage1_video_tokens*LTX_VIDEO_CHANNELS;
     const size_t expected_output=(size_t)ctx->workload.stage2_video_tokens*LTX_VIDEO_CHANNELS;
     if(input_elements!=expected_input||output_elements!=expected_output){snprintf(error,error_size,"LTX stage boundary tensor size mismatch");return 0;}
-    ltx_latent_stats *stats=ltx_latent_stats_load(ctx->gpu,video_vae_checkpoint,error,error_size);
+    const int fd_authority=upsampler_fd>=0||video_vae_fd>=0;
+    if(fd_authority&&(upsampler_fd<0||video_vae_fd<0)){snprintf(error,error_size,"incomplete LTX stage boundary fd authority");return 0;}
+    ltx_latent_stats *stats=fd_authority?
+        ltx_latent_stats_load_fd(ctx->gpu,video_vae_fd,video_vae_checkpoint,error,error_size):
+        ltx_latent_stats_load(ctx->gpu,video_vae_checkpoint,error,error_size);
     ltx_mlx_upsampler *upsampler=NULL;
     ltx_gpu_buffer *stage1=NULL,*stage2=NULL;
     uint16_t *denormalized=NULL;int ok=0;
@@ -6630,7 +6656,9 @@ int ltx_native_upsample_stage2(
     if(!stage1||!stage2||!denormalized){if(error&&error_size&&!error[0])snprintf(error,error_size,"out of memory at LTX stage boundary");goto cleanup;}
     if(!ltx_latent_denormalize_tokens_bf16(stats,stage1,stage1,(uint32_t)ctx->workload.stage1_video_tokens,error,error_size)||
        !ltx_gpu_buffer_read(stage1,denormalized,input_elements*sizeof(uint16_t),error,error_size))goto cleanup;
-    upsampler=ltx_mlx_upsampler_create(upsampler_checkpoint,error,error_size);if(!upsampler)goto cleanup;
+    upsampler=fd_authority?
+        ltx_mlx_upsampler_create_fd(upsampler_fd,upsampler_checkpoint,error,error_size):
+        ltx_mlx_upsampler_create(upsampler_checkpoint,error,error_size);if(!upsampler)goto cleanup;
     if(!ltx_mlx_upsampler_run_tokens_bf16(upsampler,output,output_elements,denormalized,input_elements,1u,ctx->workload.latent_frames,ctx->workload.stage1_latent_height,ctx->workload.stage1_latent_width,error,error_size)||
        !ltx_gpu_buffer_write(stage2,output,output_elements*sizeof(uint16_t),error,error_size)||
        !ltx_latent_normalize_tokens_bf16(stats,stage2,stage2,(uint32_t)ctx->workload.stage2_video_tokens,error,error_size)||
@@ -6638,6 +6666,30 @@ int ltx_native_upsample_stage2(
     ok=1;
 cleanup:
     ltx_mlx_upsampler_free(upsampler);ltx_gpu_buffer_free(stage2);ltx_gpu_buffer_free(stage1);ltx_latent_stats_free(stats);free(denormalized);ltx_mlx_clear_cache();return ok;
+}
+
+int ltx_native_upsample_stage2(
+    ltx_native_denoiser *ctx,const char *upsampler_checkpoint,
+    const char *video_vae_checkpoint,
+    uint16_t *output,size_t output_elements,
+    const uint16_t *input,size_t input_elements,
+    char *error,size_t error_size) {
+    return ltx_native_upsample_stage2_impl(
+        ctx,upsampler_checkpoint,-1,video_vae_checkpoint,-1,
+        output,output_elements,input,input_elements,error,error_size);
+}
+
+int ltx_native_upsample_stage2_fd(
+    ltx_native_denoiser *ctx,int upsampler_fd,
+    const char *upsampler_checkpoint,int video_vae_fd,
+    const char *video_vae_checkpoint,
+    uint16_t *output,size_t output_elements,
+    const uint16_t *input,size_t input_elements,
+    char *error,size_t error_size) {
+    return ltx_native_upsample_stage2_impl(
+        ctx,upsampler_checkpoint,upsampler_fd,
+        video_vae_checkpoint,video_vae_fd,
+        output,output_elements,input,input_elements,error,error_size);
 }
 
 int ltx_native_connect_conditioning(

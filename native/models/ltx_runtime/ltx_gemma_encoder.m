@@ -980,9 +980,26 @@ ltx_gemma_encoder *ltx_gemma_encoder_create(
             gemma_fail(error, error_size, "missing Gemma encoder options");
             return NULL;
         }
+    if (options->source_fd_version > 1u) {
+        gemma_fail(error, error_size,
+                   "unsupported Gemma source fd authority version");
+        return NULL;
+    }
+    const int fd_authority = options->source_fd_version == 1u;
+    if (fd_authority &&
+        (options->checkpoint_fd < 0 || options->tokenizer_fd < 0)) {
+        gemma_fail(error, error_size,
+                   "Gemma source fd authority requires checkpoint and tokenizer fds");
+        return NULL;
+    }
     ltx_gemma_checkpoint_info info;
-    if (!ltx_gemma_checkpoint_inspect(options->checkpoint, &info,
-                                      error, error_size) ||
+    int inspected = fd_authority ?
+        ltx_gemma_checkpoint_inspect_fd(
+            options->checkpoint_fd, options->checkpoint, &info,
+            error, error_size) :
+        ltx_gemma_checkpoint_inspect(options->checkpoint, &info,
+                                     error, error_size);
+    if (!inspected ||
         !ltx_gemma_checkpoint_validate(&info, error, error_size))
         return NULL;
     ltx_gemma_encoder *encoder = calloc(1, sizeof(*encoder));
@@ -990,17 +1007,29 @@ ltx_gemma_encoder *ltx_gemma_encoder_create(
         gemma_fail(error, error_size, "out of memory creating Gemma encoder");
         return NULL;
     }
-    if (!ltx_st_read_header(options->checkpoint, &encoder->header,
-                            error, error_size) ||
-        !ltx_st_map_open(&encoder->header, &encoder->mapping,
-                         error, error_size)) {
+    int loaded = fd_authority ?
+        ltx_st_read_header_fd(options->checkpoint_fd, options->checkpoint,
+                              &encoder->header, error, error_size) :
+        ltx_st_read_header(options->checkpoint, &encoder->header,
+                           error, error_size);
+    if (loaded) {
+        loaded = fd_authority ?
+            ltx_st_map_fd(&encoder->header, options->checkpoint_fd,
+                          &encoder->mapping, error, error_size) :
+            ltx_st_map_open(&encoder->header, &encoder->mapping,
+                            error, error_size);
+    }
+    if (!loaded) {
         ltx_st_free_header(&encoder->header);
         free(encoder);
         return NULL;
     }
     encoder->mapping_open = 1;
-    encoder->tokenizer = ltx_gemma_tokenizer_load(
-        options->tokenizer_json, error, error_size);
+    encoder->tokenizer = fd_authority ?
+        ltx_gemma_tokenizer_load_fd(options->tokenizer_fd,
+                                    options->tokenizer_json,
+                                    error, error_size) :
+        ltx_gemma_tokenizer_load(options->tokenizer_json, error, error_size);
     encoder->gpu = ltx_gpu_create(options->shader_source,
                                   error, error_size);
     if (!encoder->tokenizer || !encoder->gpu) {

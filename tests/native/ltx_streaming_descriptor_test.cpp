@@ -22,9 +22,21 @@ int main(int argc,char **argv) {
     try {
         tc::ltx::StreamingMetadata metadata(argv[1]);
         assert(!metadata.mapping().address && metadata.mapping().descriptor_open);
+        tc::streaming::SourceFileIdentity source;
+        source.logical_id = "transformer.safetensors";
+        source.path = argv[1];
+        auto lease = tc::streaming::SourceLease::capture({std::move(source)});
+        tc::ltx::StreamingMetadata lease_metadata(
+            lease, "transformer.safetensors");
+        assert(lease_metadata.source_lease() == lease);
+        assert(!lease_metadata.mapping().address &&
+               lease_metadata.mapping().descriptor_open);
         const tc::ltx::StreamingWorkload workload{64,64,9,24,16,true,true,false,"synthetic"};
         auto d=metadata.describe(workload);
         const auto plan=tc::streaming::compile_layout(config(),d);
+        const auto lease_plan = tc::streaming::compile_layout(
+            config(), lease_metadata.describe(workload));
+        assert(lease_plan.digest == plan.digest);
         assert(plan.materializations_complete);
         assert(d.artifacts.size()==1 && d.artifacts[0].identity_kind==tc::streaming::SourceIdentityKind::snapshot);
         assert(d.stages[0].passes.size()==11 && d.stages[0].passes[8].step==8);
@@ -43,6 +55,9 @@ int main(int argc,char **argv) {
             assert(s.peak_pool_bytes==k*(metadata.block(0).gpu_bytes+metadata.block(0).cpu_bytes));
             tc::ltx::StreamingPlanView view(
                 argv[1], config(k), workload, 100u+k);
+            tc::ltx::StreamingPlanView lease_view(
+                lease, "transformer.safetensors", config(k), workload,
+                200u+k);
             const auto &native=view.native_options();
             assert(native.version==2u && native.base.version==1u);
             assert(native.base.resident_prefix_blocks==1u);
@@ -54,6 +69,10 @@ int main(int argc,char **argv) {
             assert(view.c_plan().group_count==47u);
             assert(view.c_plan().pass_count==11u);
             assert(view.layout().digest==p.digest);
+            assert(lease_view.c_plan().request_generation==200u+k);
+            assert(lease_view.c_plan().slot_count==k);
+            assert(lease_view.layout().digest==p.digest);
+            assert(lease_view.metadata().source_lease()==lease);
         }
         rejects([&]{tc::ltx::StreamingPlanView bad(
             argv[1],config(),workload,0);},"generation");
@@ -83,6 +102,7 @@ int main(int argc,char **argv) {
             assert(ftruncate(fd,status.st_size-1)==0);close(fd);
             rejects([&]{metadata.check_unchanged();},"checkpoint_changed");
             rejects([&]{metadata.describe(workload);},"checkpoint_changed");
+            rejects([&]{lease_metadata.check_unchanged();},"source");
             std::cout<<"PASS truncated checkpoint invalidates live snapshot before reuse\n";
         }
     } catch(const std::exception &e) {std::cerr<<e.what()<<'\n';return 1;}

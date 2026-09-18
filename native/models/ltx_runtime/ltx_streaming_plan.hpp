@@ -19,6 +19,12 @@ class StreamingPlanView {
                       const StreamingConfig &config,
                       const StreamingWorkload &workload,
                       uint64_t request_generation);
+    StreamingPlanView(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        std::string checkpoint_logical_id,
+        const StreamingConfig &config,
+        const StreamingWorkload &workload,
+        uint64_t request_generation);
     ~StreamingPlanView() = default;
 
     StreamingPlanView(const StreamingPlanView &) = delete;
@@ -28,6 +34,9 @@ class StreamingPlanView {
 
     const ltx_native_streaming_options_v2 &native_options() const noexcept {
         return native_options_;
+    }
+    const streaming::Descriptor &descriptor() const noexcept {
+        return descriptor_;
     }
     const streaming::Layout &layout() const noexcept { return layout_; }
     const StreamingMetadata &metadata() const noexcept { return metadata_; }

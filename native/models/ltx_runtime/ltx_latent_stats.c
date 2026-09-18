@@ -99,6 +99,79 @@ ltx_latent_stats *ltx_latent_stats_load(ltx_gpu *gpu,
     return stats;
 }
 
+ltx_latent_stats *ltx_latent_stats_load_fd(
+        ltx_gpu *gpu, int descriptor, const char *diagnostic_path,
+        char *error, size_t error_size) {
+    static const char *const mean_names[] = {
+        "per_channel_statistics.mean-of-means",
+        "per_channel_statistics._mean_of_means",
+        "vae_encoder.per_channel_statistics._mean_of_means",
+    };
+    static const char *const std_names[] = {
+        "per_channel_statistics.std-of-means",
+        "per_channel_statistics._std_of_means",
+        "vae_encoder.per_channel_statistics._std_of_means",
+    };
+    if (error && error_size) error[0] = '\0';
+    if (!gpu || descriptor < 0 || !diagnostic_path || !diagnostic_path[0]) {
+        if (error && error_size)
+            snprintf(error, error_size,
+                     "missing GPU context/video VAE fd");
+        return NULL;
+    }
+    ltx_st_header header = {0};
+    ltx_st_mapping mapping = {0};
+    if (!ltx_st_read_header_fd(descriptor, diagnostic_path, &header,
+                               error, error_size))
+        return NULL;
+    const ltx_st_tensor *mean = find_first(
+        &header, mean_names, sizeof(mean_names) / sizeof(mean_names[0]));
+    const ltx_st_tensor *std = find_first(
+        &header, std_names, sizeof(std_names) / sizeof(std_names[0]));
+    if (!mean || !std || mean->dtype != LTX_DTYPE_BF16 ||
+        std->dtype != LTX_DTYPE_BF16 || mean->ndim != 1u ||
+        std->ndim != 1u || !mean->shape[0] || mean->shape[0] > UINT32_MAX ||
+        std->shape[0] != mean->shape[0]) {
+        if (error && error_size)
+            snprintf(error, error_size,
+                     "video VAE has invalid/missing latent statistics");
+        ltx_st_free_header(&header);
+        return NULL;
+    }
+    if (!ltx_st_map_fd(&header, descriptor, &mapping, error, error_size)) {
+        ltx_st_free_header(&header);
+        return NULL;
+    }
+    size_t mean_bytes = 0;
+    size_t std_bytes = 0;
+    const void *mean_data = ltx_st_map_tensor(
+        &mapping, mean, &mean_bytes, error, error_size);
+    const void *std_data = ltx_st_map_tensor(
+        &mapping, std, &std_bytes, error, error_size);
+    ltx_latent_stats *stats = NULL;
+    if (mean_data && std_data) {
+        stats = calloc(1, sizeof(*stats));
+        if (!stats && error && error_size)
+            snprintf(error, error_size,
+                     "out of memory creating latent statistics");
+    }
+    if (stats) {
+        stats->gpu = gpu;
+        stats->channels = (uint32_t)mean->shape[0];
+        stats->mean = ltx_gpu_buffer_new_copy(
+            gpu, mean_data, mean_bytes, error, error_size);
+        stats->standard_deviation = ltx_gpu_buffer_new_copy(
+            gpu, std_data, std_bytes, error, error_size);
+        if (!stats->mean || !stats->standard_deviation) {
+            ltx_latent_stats_free(stats);
+            stats = NULL;
+        }
+    }
+    ltx_st_map_close(&mapping);
+    ltx_st_free_header(&header);
+    return stats;
+}
+
 void ltx_latent_stats_free(ltx_latent_stats *stats) {
     if (!stats) return;
     ltx_gpu_buffer_free(stats->mean);

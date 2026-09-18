@@ -1,5 +1,6 @@
 #pragma once
 #include "../../runtime/streaming/layout.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 extern "C" {
 #include "ltx_streaming_layout.h"
 }
@@ -22,6 +23,9 @@ struct StreamingWorkload {
 class StreamingMetadata {
 public:
     explicit StreamingMetadata(const std::string &checkpoint);
+    StreamingMetadata(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        std::string logical_id);
     ~StreamingMetadata();
     StreamingMetadata(const StreamingMetadata &) = delete;
     StreamingMetadata &operator=(const StreamingMetadata &) = delete;
@@ -31,6 +35,7 @@ public:
     const ltx_st_mapping &mapping() const;
     const ltx_stream_block_layout &block(uint32_t) const;
     uint64_t quant_metadata_read_bytes() const;
+    const std::shared_ptr<const streaming::SourceLease> &source_lease() const noexcept;
 private:
     struct State;
     std::unique_ptr<State> state_;

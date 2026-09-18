@@ -11,6 +11,9 @@ typedef struct ltx_latent_stats ltx_latent_stats;
 ltx_latent_stats *ltx_latent_stats_load(ltx_gpu *gpu,
                                         const char *video_vae_path,
                                         char *error, size_t error_size);
+ltx_latent_stats *ltx_latent_stats_load_fd(
+        ltx_gpu *gpu, int descriptor, const char *diagnostic_path,
+        char *error, size_t error_size);
 void ltx_latent_stats_free(ltx_latent_stats *stats);
 uint32_t ltx_latent_stats_channels(const ltx_latent_stats *stats);
 

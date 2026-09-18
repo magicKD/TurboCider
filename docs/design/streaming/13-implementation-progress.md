@@ -1883,3 +1883,32 @@ make test-streaming-contract                          PASS
 请求、8/10/12/16/20 GiB whole-process calibration、P2/P3 或 production record 已完成。production catalog
 仍必须保持 `tc-streaming-catalog-empty-v1`；下一阶段是 LTX worker-local/multi-stage public adapter，随后才是
 四模型档位校准与 catalog review。
+
+### 13.37 LTX public source closure：Gemma 与媒体组件 fd authority（2026-09-18，工作树）
+
+本轮把 LTX public 请求的 source closure 从 Transformer/Gemma tokenizer 扩展到动态文本编码和媒体边界，
+仍未放开 production catalog：
+
+- `ltx_gemma_encoder_options` 增加兼容式 `source_fd_version=1`、`checkpoint_fd`、`tokenizer_fd`；旧调用
+  的零初始化语义不变，public 调用只使用 request-scoped lease 的 duplicate fd；
+- `ltx_gemma_checkpoint_inspect_fd()` 从借用 fd 解析完整 Gemma4 metadata、48 层 tensor geometry 和
+  ConvRot/INT8 合同，`ltx_st_map_fd()` 保持同一文件 lineage，避免 probe 后按路径重开 checkpoint；
+- LTX public session 在动态 Gemma 分支传入 Gemma checkpoint/tokenizer lease fd，并禁止 public 请求读取
+  预计算 path conditioning cache；connector 仍从 exact Transformer lease 的 metadata/mapping 执行；
+- 抽出 Flux/LTX 共用的 `MlxLeaseFdReader`，给 MLX safetensors 提供受控 `read/seek/pread`，不会生成
+  `/dev/fd/*` 路径，也不会在 lazy materialization 时重新打开模型路径；reader 自持有 fd，且不把
+  common `SourceLease` 链接依赖带入独立 `libltx-runtime.a`；
+- `ltx_mlx_upsampler_create_fd()`、`ltx_mlx_video_vae_create_fd()` 和
+  `ltx_latent_stats_load_fd()` 接到 public Stage-1→upsampler→VAE 边界；旧 path API 保持不变；
+- `ltx_native_upsample_stage2_fd()` 将 upsampler 与 VAE statistics 的两个 lease fd 绑定到同一阶段边界；
+  public Video VAE decoder 通过 lease fd 创建，legacy/helper/finalizer 路径不改变；
+- LTX public host fixture 增加 Gemma fd authority/path replacement 检查；当前完整 native/host/contract
+  回归通过：`test-streaming-contract`、`test-streaming-host`、`test_ltx_public_streaming.py`、native-only
+  build 和 `git diff --check`。
+
+这一阶段关闭的是 source authority 缺口，不等于 LTX public release。真实请求仍有两个发布阻断项：
+
+1. 当前 native exact executor 仍把 11-pass denoiser 作为一个 stage 回执；需要把 Stage 1 与 Stage 2
+   拆成两个真实可 seal 的 executor，并在 upsampler 前完成 drain/release，再产生 schema-v3 boundary；
+2. 需要实体 LTX checkpoint 的 full request、输出 parity、P0/P1/P2/P3 和五档 memory calibration，之后
+   才能生成 reviewed production catalog record。

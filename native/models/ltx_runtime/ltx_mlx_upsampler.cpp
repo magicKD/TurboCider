@@ -1,4 +1,5 @@
 #include "ltx_mlx_upsampler.h"
+#include "../../backends/mlx_fd_reader.hpp"
 
 #include <mlx/mlx.h>
 #include <mlx/memory.h>
@@ -6,6 +7,8 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <cerrno>
+#include <fcntl.h>
 #include <exception>
 #include <memory>
 #include <new>
@@ -72,18 +75,28 @@ std::vector<std::string> expected_weight_names(void) {
 
 class Upsampler {
  public:
-    explicit Upsampler(const char *checkpoint_path) {
-        if (!checkpoint_path || !checkpoint_path[0]) {
+    explicit Upsampler(const char *checkpoint_path)
+        : Upsampler(load_path(checkpoint_path)) {}
+
+    explicit Upsampler(std::shared_ptr<mx::io::Reader> reader)
+        : Upsampler(mx::load_safetensors(std::move(reader)).first) {}
+
+  private:
+    static std::unordered_map<std::string, mx::array> load_path(
+            const char *checkpoint_path) {
+        if (!checkpoint_path || !checkpoint_path[0])
             throw std::invalid_argument("missing upsampler checkpoint path");
-        }
+        return mx::load_safetensors(checkpoint_path).first;
+    }
+
+    explicit Upsampler(
+            std::unordered_map<std::string, mx::array> source_weights) {
         const mx::Device gpu(mx::Device::gpu);
         if (!mx::is_available(gpu)) {
             throw std::runtime_error("MLX Metal GPU is not available");
         }
         mx::set_default_device(gpu);
 
-        auto loaded = mx::load_safetensors(checkpoint_path);
-        auto &source_weights = loaded.first;
         std::vector<mx::array> materialize;
         const std::vector<std::string> names = expected_weight_names();
         materialize.reserve(names.size());
@@ -123,6 +136,8 @@ class Upsampler {
         }
         weight_tensors_ = static_cast<uint32_t>(weights_.size());
     }
+
+  public:
 
     uint32_t input_channels(void) const { return input_channels_; }
     uint32_t hidden_channels(void) const { return hidden_channels_; }
@@ -292,6 +307,32 @@ extern "C" ltx_mlx_upsampler *ltx_mlx_upsampler_create(
         return result.release();
     } catch (const std::exception &exception) {
         set_error(error, error_size, "create MLX upsampler: %s",
+                  exception.what());
+        return nullptr;
+    }
+}
+
+extern "C" ltx_mlx_upsampler *ltx_mlx_upsampler_create_fd(
+    int descriptor, const char *diagnostic_path,
+    char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    try {
+        if (descriptor < 0)
+            throw std::invalid_argument("missing upsampler checkpoint fd");
+        const int duplicate = ::fcntl(descriptor, F_DUPFD_CLOEXEC, 0);
+        if (duplicate < 0)
+            throw std::runtime_error(
+                std::string("duplicate upsampler checkpoint fd: ") +
+                std::strerror(errno));
+        auto reader = std::make_shared<tc::MlxLeaseFdReader>(
+            tc::MlxOwnedFd(duplicate),
+            diagnostic_path ? diagnostic_path : "<fd>");
+        std::shared_ptr<mx::io::Reader> base_reader = reader;
+        auto result = std::make_unique<ltx_mlx_upsampler>();
+        result->implementation = std::make_unique<Upsampler>(base_reader);
+        return result.release();
+    } catch (const std::exception &exception) {
+        set_error(error, error_size, "create fd-backed MLX upsampler: %s",
                   exception.what());
         return nullptr;
     }

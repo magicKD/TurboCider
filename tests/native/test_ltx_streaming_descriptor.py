@@ -30,6 +30,8 @@ def main():
     else:
         flags += ["-O2"]
     sources = ["native/runtime/streaming/config.cpp", "native/runtime/streaming/layout.cpp",
+               "native/runtime/streaming/canonical_encoding.cpp",
+               "native/runtime/streaming/source_lease.cpp",
                "native/runtime/memory_manifest.cpp", "native/runtime/memory_policy.cpp",
                "native/core/common.cpp", "native/models/ltx_runtime/ltx_streaming_descriptor.cpp",
                "native/models/ltx_runtime/ltx_streaming_plan.cpp"]

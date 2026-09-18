@@ -9,6 +9,7 @@
 #include "../../media/video.hpp"
 #include "../../models/ltx_runtime/ltx.h"
 #include "../../models/ltx_runtime/ltx_gemma_encoder.h"
+#include "../../models/ltx_runtime/ltx_gemma_tokenizer.h"
 #include "../../models/ltx_runtime/ltx_mlx_audio_vae.h"
 #include "../../models/ltx_runtime/ltx_mlx_bwe.h"
 #include "../../models/ltx_runtime/ltx_mlx_vocoder.h"
@@ -18,6 +19,10 @@
 #include "../../models/ltx_runtime/ltx_streaming_plan.hpp"
 #include "../../models/ltx_runtime/ltx_video_convert.h"
 #include "../../models/ltx_mlx/native.hpp"
+#include "../../runtime/streaming/actual_receipt.hpp"
+#include "../../runtime/streaming/canonical_encoding.hpp"
+#include "../../runtime/streaming/resolved_request.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 
 #include <CommonCrypto/CommonDigest.h>
 #include <algorithm>
@@ -56,6 +61,71 @@ constexpr uint64_t kLtxHostAllocationMarginBytes = 64ull << 10;
 constexpr uint64_t kLtxVideoVaeGraphEnvelopeBytes = 2ull << 30;
 constexpr const char* kLtxRevision =
     "bf86adedf518142442575d1ce2e767b7d01c8c76";
+constexpr const char* kLtxPublicImplementation =
+    "generic_stage_executor_v3";
+constexpr const char* kLtxPublicComponentPolicy =
+    "ltx-components-v1";
+constexpr const char* kLtxPublicKernelRevision =
+    "ltx-metal-convrot-exact-v2";
+constexpr const char* kLtxPublicTransformerLogicalId =
+    "diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors";
+constexpr const char* kLtxPublicGemmaLogicalId =
+    "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors";
+constexpr const char* kLtxPublicTokenizerLogicalId =
+    "gemma4-12b-ltx-v1/tokenizer.json";
+constexpr const char* kLtxPublicUpsamplerLogicalId =
+    "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors";
+constexpr const char* kLtxPublicVideoVaeLogicalId =
+    "vae/ltx-2.5-video-vae-conv-bf16.safetensors";
+
+static void ltx_append_public_file(
+        const std::filesystem::path& root,
+        const std::filesystem::path& relative,
+        std::vector<streaming::SourceFileIdentity>& files) {
+    const auto path = root / relative;
+    std::error_code error;
+    require(std::filesystem::is_regular_file(path, error) && !error,
+            "streaming_route_unsupported: LTX public artifact is missing: " +
+                relative.generic_string());
+    streaming::SourceFileIdentity file;
+    file.logical_id = relative.generic_string();
+    file.path = path;
+    files.push_back(std::move(file));
+}
+
+static streaming::PresetSourceIdentity ltx_public_source_identity(
+        const streaming::SourceLease& lease) {
+    streaming::CanonicalEncoder encoder("ltx-public-artifact-manifest-v1");
+    encoder.string_field("lease_digest", lease.digest());
+    encoder.unsigned_field("artifact_count", lease.file_count());
+    encoder.string_field("transformer_format", "convrot-int8-g256");
+    encoder.string_field("runtime_revision", kLtxRevision);
+    return {"ltx-2.5-distilled-public", "convrot-int8-g256",
+            encoder.sha256(), std::string(lease.digest())};
+}
+
+static streaming::PresetRuntimeIdentity ltx_public_runtime_identity() {
+    return {"turbocider-streaming-2026-09-18", "public-streaming-runtime-v2",
+            "ltx-public-adapter-v1", "ltx-pread-convrot-lease-v1",
+            kLtxPublicKernelRevision, "ltx-request-cache-disabled-v1"};
+}
+
+static std::string ltx_public_feature_digest(
+        const Request& request, uint32_t text_rows) {
+    streaming::CanonicalEncoder encoder("ltx-public-workload-features-v1");
+    encoder.boolean_field("inputs_empty", request.inputs.empty());
+    encoder.boolean_field("audio_disabled", !request.audio);
+    encoder.boolean_field("loras_empty", request.loras.empty());
+    encoder.boolean_field("ane_disabled", request.ane_manifest.empty());
+    encoder.boolean_field("encoder_ane_disabled",
+                         request.encoder_ane_manifest.empty());
+    encoder.boolean_field("fast_av", request.ltx_fast_av);
+    encoder.boolean_field("video_attention_batch",
+                         request.ltx_video_attention_batch);
+    encoder.boolean_field("dynamic_text", request.dynamic_text);
+    encoder.unsigned_field("text_rows", text_rows);
+    return encoder.sha256();
+}
 
 /* C callback bridge for the native LTX allocator. The token owns either a
  * pending MemoryReservation or its committed StorageLease. It deliberately
@@ -1868,6 +1938,14 @@ struct LtxExactRequestState {
                          const ltx::StreamingWorkload& workload,
                          uint64_t generation)
         : plan(checkpoint, config, workload, generation) {}
+    LtxExactRequestState(
+            std::shared_ptr<const streaming::SourceLease> lease,
+            std::string checkpoint_logical_id,
+            const StreamingConfig& config,
+            const ltx::StreamingWorkload& workload,
+            uint64_t generation)
+        : plan(std::move(lease), std::move(checkpoint_logical_id), config,
+               workload, generation) {}
     ~LtxExactRequestState() {
         // Reaching the destructor with a live borrowed native handle would
         // invalidate its header/fd. Treat that as an internal ownership bug.
@@ -1978,6 +2056,18 @@ public:
                 "streaming_worker_quarantined: recreate the LTX candidate engine");
         state_ = std::make_unique<LtxExactRequestState>(
             checkpoint, config, workload, generation);
+    }
+    void prepare_lease(
+            std::shared_ptr<const streaming::SourceLease> lease,
+            std::string checkpoint_logical_id,
+            const StreamingConfig& config,
+            const ltx::StreamingWorkload& workload,
+            uint64_t generation) {
+        require(!state_ && !quarantine_,
+                "streaming_worker_quarantined: recreate the LTX candidate engine");
+        state_ = std::make_unique<LtxExactRequestState>(
+            std::move(lease), std::move(checkpoint_logical_id), config,
+            workload, generation);
     }
     ltx_native_denoiser** output() {
         require(state_ != nullptr, "LTX exact plan is unavailable");
@@ -2151,6 +2241,202 @@ public:
     bool uses_parent_mlx(const Request& request) const override {
         if (request.memory_constrained.enabled) return false;
         return ltx_mlx_requested(request);
+    }
+    std::shared_ptr<const streaming::ModelStreamingProbe>
+    probe_public_streaming(
+            const streaming::PublicResolveInput& input) const override {
+        const auto& request = input.request;
+        require(request.model == "ltx-2.5-distilled",
+                "streaming_engine_model_mismatch");
+        require(request.operation == "video.generate" &&
+                    request.inputs.empty() && !request.audio,
+                "streaming_route_unsupported: LTX public card is text-to-video only");
+        require(request.execution == "gpu" &&
+                    request.ane_manifest.empty() &&
+                    request.encoder_ane_manifest.empty() &&
+                    (request.ltx_backend == "auto" ||
+                     request.ltx_backend == "c_metal"),
+                "streaming_route_unsupported: LTX public card requires the GPU C/Metal route without ANE");
+        require(!request.allow_approximation && !request.compile_gpu &&
+                    request.loras.empty() &&
+                    !request.memory_constrained.enabled &&
+                    !request.ltx_sol_stage1 && !request.ltx_sol_stage2 &&
+                    request.ltx_sparse_mode == 0 &&
+                    request.ltx_stage2_text_rows == 0 &&
+                    !request.ltx_video_attention_batch,
+                "streaming_route_unsupported: LTX public card requires the dense exact route without LoRA, approximation, memory guard, text pruning, or video-attention batching");
+        require(request.width >= 64 && request.height >= 64 &&
+                    request.width % 64 == 0 && request.height % 64 == 0 &&
+                    request.frames > 0 && request.frames % 8 == 1 &&
+                    request.fps == 24 && request.steps == 11,
+                "streaming_workload_invalid: LTX public card requires normalized multiples-of-64 geometry, frames=8n+1, 24 fps, and 11 steps");
+
+        std::vector<streaming::SourceFileIdentity> files;
+        ltx_append_public_file(root_, kLtxPublicTransformerLogicalId, files);
+        ltx_append_public_file(
+            root_,
+            "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+            files);
+        ltx_append_public_file(
+            root_, "vae/ltx-2.5-video-vae-conv-bf16.safetensors", files);
+        ltx_append_public_file(
+            root_,
+            "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+            files);
+        ltx_append_public_file(
+            root_, "gemma4-12b-ltx-v1/tokenizer.json", files);
+        ltx_append_public_file(root_, "connector.safetensors", files);
+        ltx_append_public_file(root_, "config.json", files);
+        ltx_append_public_file(root_, "embedded_config.json", files);
+        auto lease = streaming::SourceLease::capture(std::move(files));
+
+        auto tokenizer_fd = lease->duplicate_fd(
+            "gemma4-12b-ltx-v1/tokenizer.json");
+        char error[1024] = {};
+        std::unique_ptr<ltx_gemma_tokenizer,
+                        decltype(&ltx_gemma_tokenizer_free)> tokenizer(
+            ltx_gemma_tokenizer_load_fd(
+                tokenizer_fd.get(), gemma_tokenizer_path_.c_str(),
+                error, sizeof(error)),
+            ltx_gemma_tokenizer_free);
+        require(tokenizer != nullptr, error[0] ? error :
+                "streaming_source_identity: cannot load LTX tokenizer lease");
+        uint32_t* token_ids = nullptr;
+        uint8_t* token_mask = nullptr;
+        size_t token_count = 0;
+        require(ltx_gemma_tokenizer_encode(
+                    tokenizer.get(), request.prompt.c_str(), 1024,
+                    &token_ids, &token_mask, &token_count,
+                    error, sizeof(error)),
+                error);
+        ScopeExit token_cleanup([&] {
+            ltx_gemma_tokenizer_ids_free(token_ids, token_mask);
+        });
+        size_t first_valid = 0;
+        while (first_valid < token_count && !token_mask[first_valid])
+            ++first_valid;
+        require(first_valid < token_count && token_count == 1024,
+                "streaming_workload_invalid: LTX prompt contains no valid tokens");
+        const auto valid_rows = static_cast<uint32_t>(
+            token_count - first_valid);
+
+        streaming::PresetWorkload workload;
+        workload.model = request.model;
+        workload.operation = request.operation;
+        workload.execution = request.execution;
+        workload.device_class = input.device.device_class;
+        workload.execution_container = input.execution_container;
+        workload.width = static_cast<uint32_t>(request.width);
+        workload.height = static_cast<uint32_t>(request.height);
+        workload.frames = static_cast<uint32_t>(request.frames);
+        workload.fps = static_cast<uint32_t>(request.fps);
+        workload.steps = static_cast<uint32_t>(request.steps);
+        workload.batch = 1;
+        workload.audio = false;
+        workload.dynamic_text = request.dynamic_text;
+        workload.approximation = false;
+        workload.conditioning_revision = "gemma4-ltx-connector-v1";
+        workload.vae_policy_revision = "ltx-video-vae-conv-v1";
+        workload.feature_digest = ltx_public_feature_digest(
+            request, valid_rows);
+        workload.token_shapes.push_back({
+            "gemma4", "gemma4-12b-ltx-v1", "ltx-prompt-v1",
+            valid_rows, 1024, 1024});
+        return std::make_shared<streaming::ValueModelStreamingProbe>(
+            streaming::ValueModelStreamingProbe::Values{
+                request.model, ltx_public_source_identity(*lease),
+                std::move(workload), ltx_public_runtime_identity(),
+                kLtxPublicComponentPolicy, std::move(lease)});
+    }
+
+    std::shared_ptr<const streaming::ModelStreamingSnapshot>
+    compile_public_streaming(
+            std::shared_ptr<const streaming::ModelStreamingProbe> probe,
+            const streaming::StreamingPresetRecord& record) const override {
+        auto value_probe = std::dynamic_pointer_cast<
+            const streaming::ValueModelStreamingProbe>(probe);
+        require(value_probe != nullptr,
+                "streaming_public_probe_type_mismatch");
+        require(value_probe->model_id() == "ltx-2.5-distilled" &&
+                    value_probe->component_policy_revision() ==
+                        record.plan.component_policy_revision &&
+                    record.source == value_probe->source_identity() &&
+                    record.workload == value_probe->workload_identity() &&
+                    record.runtime == value_probe->runtime_identity(),
+                "streaming_record_identity_mismatch");
+        const auto& workload = value_probe->workload_identity();
+        require(workload.token_shapes.size() == 1,
+                "streaming_workload_invalid: LTX token shape count");
+        ltx::StreamingWorkload descriptor_workload{
+            workload.width, workload.height, workload.frames, workload.fps,
+            workload.token_shapes.front().compute_rows,
+            false, false, false, "connected"};
+        auto plan = std::make_shared<ltx::StreamingPlanView>(
+            value_probe->lease_ptr(), kLtxPublicTransformerLogicalId,
+            record.plan.canonical_config, descriptor_workload,
+            value_probe->lease().generation());
+        require(plan->layout().digest == record.plan.layout_digest,
+                "streaming_layout_digest_mismatch");
+        return std::make_shared<streaming::ValueModelStreamingSnapshot>(
+            streaming::ValueModelStreamingSnapshot::Values{
+                "ltx-2.5-distilled", value_probe->source_identity(),
+                value_probe->runtime_identity(), plan->descriptor(),
+                plan->layout(),
+                std::string(value_probe->component_policy_revision()),
+                value_probe->lease_ptr()});
+    }
+
+    RunResult generate_resolved(
+            std::shared_ptr<const streaming::ResolvedRequestExecution> execution,
+            const Event& event, std::atomic<bool>& cancel) override {
+        require(execution && execution->probe && execution->model_snapshot,
+                "streaming_authority_mismatch");
+        require(execution->request.streaming.active(),
+                "streaming_actual_plan_mismatch");
+        auto value_probe = std::dynamic_pointer_cast<
+            const streaming::ValueModelStreamingProbe>(execution->probe);
+        require(value_probe != nullptr,
+                "streaming_public_probe_type_mismatch");
+        auto lease = value_probe->lease_ptr();
+        require(lease && execution->probe->source_lease() == lease.get() &&
+                    execution->model_snapshot->source_lease() == lease.get(),
+                "streaming_source_lease_mismatch");
+        require(execution->model_snapshot->model_id() ==
+                    "ltx-2.5-distilled" &&
+                    execution->selection.record.source ==
+                        execution->model_snapshot->source_identity() &&
+                    execution->selection.record.runtime ==
+                        execution->model_snapshot->runtime_identity() &&
+                    execution->selection.record.plan.layout_digest ==
+                        execution->model_snapshot->layout().digest &&
+                    execution->selection.record.plan.component_policy_revision ==
+                        execution->model_snapshot->component_policy_revision(),
+                "streaming_authority_mismatch");
+        const auto target = execution->selection.exact_selector
+                                .target_request_memory_bytes;
+        require(target && streaming::supported_streaming_target(*target),
+                "streaming_target_unsupported");
+        require(!public_streaming_active_,
+                "streaming_public_request_reentrant");
+        public_stream_lease_ = std::move(lease);
+        public_stream_layout_digest_ =
+            execution->model_snapshot->layout().digest;
+        public_stream_target_bytes_ = *target;
+        public_streaming_active_ = true;
+        try {
+            auto result = generate(execution->request, event, cancel);
+            public_streaming_active_ = false;
+            public_stream_target_bytes_ = 0;
+            public_stream_layout_digest_.clear();
+            public_stream_lease_.reset();
+            return result;
+        } catch (...) {
+            public_streaming_active_ = false;
+            public_stream_target_bytes_ = 0;
+            public_stream_layout_digest_.clear();
+            public_stream_lease_.reset();
+            throw;
+        }
     }
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
     void test_set_ltx_exact_destroy_failures(uint32_t failures) override {
@@ -2473,8 +2759,11 @@ public:
             MemoryClass::Conditioning, conditioning_upper,
             "ltx.conditioning.raw_and_connected");
         StorageLease conditioning_lease;
-        auto conditioning = load_conditioning(
-            root_, selected_checkpoint, request.prompt);
+        // A public request must derive conditioning from its request-scoped
+        // Gemma/transformer lease. A precomputed path cache is useful for the
+        // legacy route, but it is not part of the authorized source closure.
+        auto conditioning = public_stream_lease_ ? Conditioning{} :
+            load_conditioning(root_, selected_checkpoint, request.prompt);
         if (conditioning.connected && conditioning_reservation) {
             conditioning_lease = commit_host_memory(
                 conditioning_reservation,
@@ -2566,6 +2855,17 @@ public:
                 options.tokenizer_json = gemma_tokenizer_path_.c_str();
                 options.shader_source = shader_path_.c_str();
                 options.max_tokens = 1024u;
+                streaming::OwnedSourceFd public_gemma_fd;
+                streaming::OwnedSourceFd public_tokenizer_fd;
+                if (public_stream_lease_) {
+                    public_gemma_fd = public_stream_lease_->duplicate_fd(
+                        kLtxPublicGemmaLogicalId);
+                    public_tokenizer_fd = public_stream_lease_->duplicate_fd(
+                        kLtxPublicTokenizerLogicalId);
+                    options.source_fd_version = 1u;
+                    options.checkpoint_fd = public_gemma_fd.get();
+                    options.tokenizer_fd = public_tokenizer_fd.get();
+                }
                 options.ane_manifest = request.encoder_ane_manifest.empty() ?
                     nullptr : request.encoder_ane_manifest.c_str();
                 if (request.memory_constrained.enabled) {
@@ -2651,17 +2951,26 @@ public:
         if (exact_streaming) {
             ++exact_generation_;
             if (!exact_generation_) ++exact_generation_;
-            exact_owner.prepare(
-                selected_checkpoint.string(), request.streaming,
-                ltx::StreamingWorkload{
-                    static_cast<uint32_t>(request.width),
-                    static_cast<uint32_t>(request.height),
-                    static_cast<uint32_t>(request.frames),
-                    static_cast<uint32_t>(request.fps), conditioning.rows,
-                    gpu_parallel_av, gpu_batch_audio,
-                    request.ltx_video_attention_batch, "connected"},
-                exact_generation_);
+            const ltx::StreamingWorkload exact_workload{
+                static_cast<uint32_t>(request.width),
+                static_cast<uint32_t>(request.height),
+                static_cast<uint32_t>(request.frames),
+                static_cast<uint32_t>(request.fps), conditioning.rows,
+                gpu_parallel_av, gpu_batch_audio,
+                request.ltx_video_attention_batch, "connected"};
+            if (public_stream_lease_) {
+                exact_owner.prepare_lease(
+                    public_stream_lease_, kLtxPublicTransformerLogicalId,
+                    request.streaming, exact_workload, exact_generation_);
+            } else {
+                exact_owner.prepare(
+                    selected_checkpoint.string(), request.streaming,
+                    exact_workload, exact_generation_);
+            }
             const auto& exact_layout = exact_owner.plan().layout();
+            if (public_stream_lease_)
+                require(exact_layout.digest == public_stream_layout_digest_,
+                        "streaming_actual_plan_mismatch: LTX compiled layout differs from authority");
             const auto& exact_stage = exact_layout.stages.front();
             exact_layout_digest = exact_layout.digest;
             exact_prefix_blocks = exact_stage.prefix;
@@ -2839,6 +3148,25 @@ public:
                     if (progress.failure)
                         std::rethrow_exception(progress.failure);
                     require(created && exact_owner.get() != nullptr, error);
+                    if (public_stream_lease_) {
+                        tc_stream_receipt_config_v1 receipt_config{};
+                        receipt_config.struct_size = sizeof(receipt_config);
+                        receipt_config.version = TC_STREAM_RECEIPT_ABI_V1;
+                        receipt_config.source_generation =
+                            public_stream_lease_->generation();
+                        std::snprintf(
+                            receipt_config.layout_digest,
+                            sizeof(receipt_config.layout_digest), "%s",
+                            public_stream_layout_digest_.c_str());
+                        std::snprintf(
+                            receipt_config.implementation,
+                            sizeof(receipt_config.implementation), "%s",
+                            kLtxPublicImplementation);
+                        require(ltx_native_streaming_enable_receipt(
+                                    exact_owner.get(), &receipt_config,
+                                    error, sizeof(error)),
+                                error);
+                    }
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
                     if (exact_test_destroy_failures_) {
                         require(ltx_native_streaming_test_set_destroy_failures(
@@ -3018,10 +3346,24 @@ public:
                 workload.latent_frames, workload.stage1_latent_height,
                 workload.stage1_latent_width, error, sizeof(error)), error);
         } else {
-            require(ltx_native_upsample_stage2(
-                native_denoiser, upsampler_path_.c_str(), video_vae_path_.c_str(),
-                upsampled.data(), upsampled.size(), video.data(), video.size(),
-                error, sizeof(error)), error);
+            if (public_stream_lease_) {
+                auto upsampler_fd = public_stream_lease_->duplicate_fd(
+                    kLtxPublicUpsamplerLogicalId);
+                auto video_vae_fd = public_stream_lease_->duplicate_fd(
+                    kLtxPublicVideoVaeLogicalId);
+                require(ltx_native_upsample_stage2_fd(
+                    native_denoiser, upsampler_fd.get(),
+                    upsampler_path_.c_str(), video_vae_fd.get(),
+                    video_vae_path_.c_str(), upsampled.data(),
+                    upsampled.size(), video.data(), video.size(),
+                    error, sizeof(error)), error);
+            } else {
+                require(ltx_native_upsample_stage2(
+                    native_denoiser, upsampler_path_.c_str(),
+                    video_vae_path_.c_str(), upsampled.data(),
+                    upsampled.size(), video.data(), video.size(),
+                    error, sizeof(error)), error);
+            }
         }
         event("latent_upsample", 1, 1);
         checkpoint(cancel);
@@ -3070,6 +3412,8 @@ public:
         ltx_release_vector(stage2_clean_prefix);
         ltx_native_streaming_info streaming_after{};
         tc_stream_counters_v1 exact_counters{};
+        std::shared_ptr<const streaming::ActualExecutionReceipt>
+            public_exact_receipt;
         ltx_mlx_info mlx_info{};
         if (use_mlx) {
             require(ltx_mlx_get_info(mlx_denoiser_.get(), &mlx_info),
@@ -3082,6 +3426,42 @@ public:
                 require(ltx_native_streaming_counters(
                             native_denoiser, &exact_counters,
                             error, sizeof(error)), error);
+        }
+        if (exact_streaming && public_stream_lease_) {
+            tc_stream_receipt_v2 receipt{};
+            receipt.struct_size = sizeof(receipt);
+            receipt.version = TC_STREAM_RECEIPT_ABI_V2;
+            require(ltx_native_streaming_receipt_v2(
+                        native_denoiser, &receipt, error, sizeof(error)),
+                    error);
+            std::vector<tc_stream_group_receipt_v2> groups(
+                receipt.group_count);
+            std::vector<tc_stream_pool_selection_receipt_v2> pools(
+                receipt.pool_selection_count);
+            std::vector<tc_stream_carry_receipt_v2> carries(
+                receipt.carry_count);
+            receipt.group_capacity = receipt.group_count;
+            receipt.groups = groups.empty() ? nullptr : groups.data();
+            receipt.pool_selection_capacity =
+                receipt.pool_selection_count;
+            receipt.pool_selections = pools.empty() ? nullptr : pools.data();
+            receipt.carry_capacity = receipt.carry_count;
+            receipt.carries = carries.empty() ? nullptr : carries.data();
+            require(ltx_native_streaming_receipt_v2(
+                        native_denoiser, &receipt, error, sizeof(error)),
+                    error);
+            auto stage = streaming::actual_stage_receipt_from_c_v2(receipt);
+            require(stage.layout_digest == public_stream_layout_digest_ &&
+                        stage.implementation == kLtxPublicImplementation &&
+                        stage.source_generation ==
+                            public_stream_lease_->generation(),
+                    "streaming_actual_plan_mismatch: LTX receipt identity differs");
+            public_exact_receipt = std::make_shared<
+                const streaming::ActualExecutionReceipt>(
+                    streaming::make_actual_execution_receipt(
+                        kLtxPublicImplementation,
+                        public_stream_layout_digest_,
+                        kLtxPublicComponentPolicy, {std::move(stage)}));
         }
         if (exact_streaming) {
             streaming_after.enabled = 1;
@@ -3188,7 +3568,7 @@ public:
                 pixel_count, "LTX decoded planar pixels"),
             "ltx.output.planar_bf16");
         std::vector<uint16_t> pixels;
-        if (!request.memory_constrained.enabled &&
+        if (!public_stream_lease_ && !request.memory_constrained.enabled &&
             std::filesystem::is_regular_file(video_vae_helper_path_)) {
             /* This spawned-helper path isolates user-space MLX objects, but
              * the Transformer parent remains alive.  Unified-memory pressure
@@ -3204,8 +3584,16 @@ public:
             video_vae_isolation = "process";
         } else {
             if (!video_vae_) {
-                video_vae_.reset(ltx_mlx_video_vae_create(
-                    video_vae_path_.c_str(), error, sizeof(error)));
+                if (public_stream_lease_) {
+                    auto video_vae_fd = public_stream_lease_->duplicate_fd(
+                        kLtxPublicVideoVaeLogicalId);
+                    video_vae_.reset(ltx_mlx_video_vae_create_fd(
+                        video_vae_fd.get(), video_vae_path_.c_str(),
+                        error, sizeof(error)));
+                } else {
+                    video_vae_.reset(ltx_mlx_video_vae_create(
+                        video_vae_path_.c_str(), error, sizeof(error)));
+                }
                 require(video_vae_ != nullptr, error);
             }
             pixels.resize(pixel_count);
@@ -3598,7 +3986,7 @@ public:
                 exact_prefix_blocks,
                 kLtxTransformerBlockCount - exact_prefix_blocks,
                 exact_refill_slots,
-                0,
+                public_stream_lease_ ? public_stream_target_bytes_ : 0,
                 0,
                 exact_block_bytes,
                 ltx_checked_add(exact_prefix_bytes, exact_pool_bytes,
@@ -3610,6 +3998,42 @@ public:
                 0.0,
                 0.0,
             };
+            StreamingRuntimeMetrics runtime;
+            runtime.implementation = public_stream_lease_ ?
+                kLtxPublicImplementation : "generic_stage_executor_v1";
+            runtime.layout_digest = exact_layout_digest;
+            runtime.stage = "denoiser";
+            runtime.resident_prefix_blocks = exact_prefix_blocks;
+            runtime.block_group_size = 1;
+            runtime.slot_count = exact_refill_slots;
+            runtime.prefetch_distance = exact_prefetch_distance;
+            runtime.io_workers = exact_io_workers;
+            runtime.group_count = exact_group_count;
+            runtime.pass_count = exact_pass_count;
+            runtime.startup_policy = "prefetch_window_before_prefix";
+            runtime.pass_transition = "reload";
+            runtime.retention = "request";
+            runtime.reader_revision = LTX_STREAM_READER_REVISION;
+            runtime.weight_format = "convrot-int8-g256";
+            runtime.kernel_revision = kLtxPublicKernelRevision;
+            runtime.conditioning_recipe = "gemma4-ltx-connector-v1";
+            runtime.upsample_boundary =
+                "after-stage1-pool-retained;release-before-video-vae";
+            runtime.component_policy_revision = public_stream_lease_ ?
+                kLtxPublicComponentPolicy : "ltx-private-components-v1";
+            runtime.multi_pool_policy = "serial";
+            runtime.pool_count = 1;
+            runtime.slot_bundle_count = exact_counters.slot_bundles;
+            runtime.refill_worker_count = exact_io_workers;
+            runtime.source_lease_verified = public_stream_lease_ != nullptr;
+            runtime.drained = true;
+            run.streaming_runtime = runtime;
+            if (public_stream_lease_) {
+                require(public_exact_receipt != nullptr,
+                        "streaming_actual_receipt_missing");
+                run.streaming_receipt = std::move(public_exact_receipt);
+                run.streaming_stages = {{0, runtime}};
+            }
         } else if (streaming_after.enabled) {
             const auto residency = make_block_residency_plan(
                 streaming_after.memory_budget_bytes,
@@ -3651,6 +4075,10 @@ public:
     }
 
 private:
+    std::shared_ptr<const streaming::SourceLease> public_stream_lease_;
+    std::string public_stream_layout_digest_;
+    uint64_t public_stream_target_bytes_ = 0;
+    bool public_streaming_active_ = false;
     MemoryExecutionContext* memory_context_ = nullptr;
     mutable MemoryCheckpointHashCache memory_probe_hash_cache_;
     std::optional<MemoryReservation> reserve_host_memory(

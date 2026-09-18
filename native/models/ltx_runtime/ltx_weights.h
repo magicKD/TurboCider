@@ -81,6 +81,12 @@ int ltx_linear_weight_resolve(const ltx_st_header *header,
 int ltx_gemma_checkpoint_inspect(const char *path,
                                  ltx_gemma_checkpoint_info *info,
                                  char *error, size_t error_size);
+/* Inspect the exact already-open artifact without reopening its named path.
+ * The descriptor is borrowed for the duration of the call; path is retained
+ * only as a diagnostic label and for stable identity reporting. */
+int ltx_gemma_checkpoint_inspect_fd(int descriptor, const char *path,
+                                    ltx_gemma_checkpoint_info *info,
+                                    char *error, size_t error_size);
 int ltx_gemma_checkpoint_validate(const ltx_gemma_checkpoint_info *info,
                                   char *error, size_t error_size);
 

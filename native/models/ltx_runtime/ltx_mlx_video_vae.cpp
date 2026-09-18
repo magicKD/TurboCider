@@ -1,5 +1,6 @@
 #include "ltx_runtime_config.h"
 #include "ltx_mlx_video_vae.h"
+#include "../../backends/mlx_fd_reader.hpp"
 
 #include <mlx/mlx.h>
 
@@ -9,7 +10,9 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <cerrno>
 #include <exception>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -204,19 +207,28 @@ std::vector<std::string> encoder_weight_names(void) {
 
 class VideoVAE {
  public:
-    explicit VideoVAE(const char *checkpoint_path, bool encoder) :
-        encoder_(encoder) {
-        if (!checkpoint_path || !checkpoint_path[0]) {
+    explicit VideoVAE(const char *checkpoint_path, bool encoder)
+        : VideoVAE(load_path(checkpoint_path), encoder) {}
+
+    VideoVAE(std::shared_ptr<mx::io::Reader> reader, bool encoder)
+        : VideoVAE(mx::load_safetensors(std::move(reader)).first, encoder) {}
+
+  private:
+    static std::unordered_map<std::string, mx::array> load_path(
+            const char *checkpoint_path) {
+        if (!checkpoint_path || !checkpoint_path[0])
             throw std::invalid_argument("missing video VAE checkpoint path");
-        }
+        return mx::load_safetensors(checkpoint_path).first;
+    }
+
+    VideoVAE(std::unordered_map<std::string, mx::array> source_weights,
+             bool encoder) : encoder_(encoder) {
         const mx::Device gpu(mx::Device::gpu);
         if (!mx::is_available(gpu)) {
             throw std::runtime_error("MLX Metal GPU is not available");
         }
         mx::set_default_device(gpu);
 
-        auto loaded = mx::load_safetensors(checkpoint_path);
-        auto &source_weights = loaded.first;
         std::vector<mx::array> materialize;
         const std::vector<std::string> names = encoder ?
             encoder_weight_names() : decoder_weight_names();
@@ -251,6 +263,8 @@ class VideoVAE {
         }
         weight_tensors_ = static_cast<uint32_t>(weights_.size());
     }
+
+  public:
 
     uint32_t weight_tensors(void) const { return weight_tensors_; }
     uint64_t weight_bytes(void) const { return weight_bytes_; }
@@ -820,6 +834,32 @@ extern "C" ltx_mlx_video_vae *ltx_mlx_video_vae_create(
         return result.release();
     } catch (const std::exception &exception) {
         set_error(error, error_size, "create MLX video VAE: %s",
+                  exception.what());
+        return nullptr;
+    }
+}
+
+extern "C" ltx_mlx_video_vae *ltx_mlx_video_vae_create_fd(
+    int descriptor, const char *diagnostic_path,
+    char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    try {
+        if (descriptor < 0)
+            throw std::invalid_argument("missing video VAE checkpoint fd");
+        const int duplicate = ::fcntl(descriptor, F_DUPFD_CLOEXEC, 0);
+        if (duplicate < 0)
+            throw std::runtime_error(
+                std::string("duplicate video VAE checkpoint fd: ") +
+                std::strerror(errno));
+        auto reader = std::make_shared<tc::MlxLeaseFdReader>(
+            tc::MlxOwnedFd(duplicate),
+            diagnostic_path ? diagnostic_path : "<fd>");
+        std::shared_ptr<mx::io::Reader> base_reader = reader;
+        auto result = std::make_unique<ltx_mlx_video_vae>();
+        result->implementation = std::make_unique<VideoVAE>(base_reader, false);
+        return result.release();
+    } catch (const std::exception &exception) {
+        set_error(error, error_size, "create fd-backed MLX video VAE: %s",
                   exception.what());
         return nullptr;
     }
