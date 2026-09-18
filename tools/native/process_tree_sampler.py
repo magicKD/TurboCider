@@ -686,13 +686,13 @@ class ProcessTreeSampler:
         ready_event: threading.Event | None = None,
     ) -> dict[str, Any]:
         self.start()
-        if ready_event is not None:
-            ready_event.set()
         next_sample_ns = self.clock.monotonic_ns()
         stop_reason = "root_exit"
         try:
+            alive = self.sample()
+            if ready_event is not None:
+                ready_event.set()
             while True:
-                alive = self.sample()
                 command_done = command is not None and command.poll() is not None
                 if stop_event is not None and stop_event.is_set():
                     stop_reason = "external_stop"
@@ -703,11 +703,14 @@ class ProcessTreeSampler:
                 now = self.clock.monotonic_ns()
                 if next_sample_ns <= now:
                     next_sample_ns = now
-                    continue
-                self.clock.sleep((next_sample_ns - now) / 1_000_000_000)
+                else:
+                    self.clock.sleep((next_sample_ns - now) / 1_000_000_000)
+                alive = self.sample()
         except (OSError, SamplerError) as exc:
             self.errors.append(str(exc))
             stop_reason = "sampler_error"
+            if ready_event is not None:
+                ready_event.set()
             if command is not None and command.poll() is None:
                 command.terminate()
                 try:

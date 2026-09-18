@@ -12,6 +12,11 @@ import statistics
 from pathlib import Path
 from typing import Any
 
+from verify_process_tree_samples import (
+    EvidenceError as MemoryEvidenceError,
+    verify as verify_memory_evidence,
+)
+
 
 SCHEMA_VERSION = 1
 VARIANTS = ("baseline", "candidate")
@@ -297,13 +302,35 @@ def validate_manifest(
     ]
     if comparison_kind == "P1":
         required.append("semantic-equivalence.json")
+    memory_sampling = read_json(bundle / "campaign-policy.json").get(
+        "memory_sampling"
+    )
+    if isinstance(memory_sampling, dict) and memory_sampling.get("enabled") is True:
+        required.append("memory-summaries.jsonl")
     for name in required:
-        record = files.get(name)
-        if not isinstance(record, dict) or not record.get("sha256"):
-            raise EvidenceError(f"manifest lacks hash for {name}")
-        path = bundle / name
-        if not path.is_file() or sha256_file(path) != record["sha256"]:
-            raise EvidenceError(f"manifest hash mismatch for {name}")
+        validate_manifest_file(bundle, files, name)
+
+
+def bundle_file(bundle: Path, value: Any, label: str) -> tuple[Path, str]:
+    if not isinstance(value, str) or not value or Path(value).is_absolute():
+        raise EvidenceError(f"{label} must be a relative bundle path")
+    path = (bundle / value).resolve()
+    try:
+        relative = str(path.relative_to(bundle))
+    except ValueError as exc:
+        raise EvidenceError(f"{label} escapes the evidence bundle") from exc
+    return path, relative
+
+
+def validate_manifest_file(
+    bundle: Path, files: dict[str, Any], name: str
+) -> None:
+    record = files.get(name)
+    if not isinstance(record, dict) or not record.get("sha256"):
+        raise EvidenceError(f"manifest lacks hash for {name}")
+    path, relative = bundle_file(bundle, name, f"manifest file {name}")
+    if relative != name or not path.is_file() or sha256_file(path) != record["sha256"]:
+        raise EvidenceError(f"manifest hash mismatch for {name}")
 
 
 def parse_samples(
@@ -476,6 +503,202 @@ def parse_samples(
     return blocks, pairs, failures
 
 
+def verify_memory_bundle(
+    bundle: Path,
+    policy: dict[str, Any],
+    raw: list[dict[str, Any]],
+    warmups: list[dict[str, Any]],
+    manifest: dict[str, Any],
+) -> dict[str, Any] | None:
+    config = policy.get("memory_sampling")
+    if not isinstance(config, dict) or config.get("enabled") is not True:
+        return None
+    required_variants = config.get("required_variants", ["candidate"])
+    if (
+        not isinstance(required_variants, list) or not required_variants or
+        len(set(required_variants)) != len(required_variants) or
+        any(value not in VARIANTS for value in required_variants)
+    ):
+        raise EvidenceError("memory_sampling.required_variants is invalid")
+    if policy.get("comparison_kind") == "P2":
+        public_targets = {value << 30 for value in (8, 10, 12, 16, 20)}
+        if config.get("target_bytes") not in public_targets:
+            raise EvidenceError("P2 target is not a public memory tier")
+        if config.get("headroom_policy_revision") != "tc-public-headroom-v1":
+            raise EvidenceError("P2 headroom policy revision is invalid")
+        if "candidate" not in required_variants:
+            raise EvidenceError("P2 candidate memory evidence is not required")
+    path = bundle / "memory-summaries.jsonl"
+    try:
+        rows = read_jsonl(path)
+    except EvidenceError as exc:
+        raise EvidenceError(f"cannot read memory-summaries.jsonl: {exc}") from exc
+    if not rows:
+        raise EvidenceError("memory-summaries.jsonl is empty")
+    manifest_files = manifest.get("files")
+    if not isinstance(manifest_files, dict):
+        raise EvidenceError("memory evidence requires manifest file hashes")
+    by_run: dict[str, dict[str, Any]] = {}
+    for index, row in enumerate(rows):
+        if row.get("schema") != "turbocider-streaming-memory-summary-v1":
+            raise EvidenceError(f"memory summary {index} has invalid schema")
+        run_id = row.get("run_id")
+        if not isinstance(run_id, str) or not run_id or run_id in by_run:
+            raise EvidenceError(
+                f"memory summary {index} has a duplicate or invalid run_id"
+            )
+        phase = row.get("phase")
+        if phase not in ("warmup", "measured"):
+            raise EvidenceError(f"memory summary {index} has invalid phase")
+        variant = row.get("variant")
+        if variant not in VARIANTS:
+            raise EvidenceError(f"memory summary {index} has invalid variant")
+        evidence_path, relative = bundle_file(
+            bundle, row.get("evidence_path"),
+            f"memory summary {index}.evidence_path",
+        )
+        if relative != row.get("evidence_path"):
+            raise EvidenceError("memory evidence path is not canonical")
+        validate_manifest_file(bundle, manifest_files, relative)
+        summary_path, summary_relative = bundle_file(
+            bundle, row.get("summary_path"),
+            f"memory summary {index}.summary_path",
+        )
+        if summary_relative != row.get("summary_path"):
+            raise EvidenceError("memory summary path is not canonical")
+        validate_manifest_file(bundle, manifest_files, summary_relative)
+        persisted_summary = read_json(summary_path)
+        if persisted_summary != row:
+            raise EvidenceError(
+                f"persisted memory summary differs for {run_id}"
+            )
+        try:
+            evidence = verify_memory_evidence(evidence_path)
+        except MemoryEvidenceError as exc:
+            raise EvidenceError(
+                f"memory evidence for {run_id} is invalid: {exc}"
+            ) from exc
+        if row.get("evidence_digest") != evidence["final_evidence_digest"]:
+            raise EvidenceError(f"memory evidence digest differs for {run_id}")
+        for field in (
+            "sampler_revision", "correlation_id", "status", "complete",
+            "sample_count", "max_gap_ns",
+            "allowed_max_gap_ns", "tree_peak_rss_bytes",
+            "tree_peak_phys_footprint_bytes", "swap_in_bytes", "swap_out_bytes",
+            "compression_bytes", "decompression_bytes", "reasons",
+            "command_exit_code",
+        ):
+            if row.get(field) != evidence.get(field):
+                raise EvidenceError(
+                    f"memory summary {run_id} differs from independent verifier"
+                )
+        by_run[run_id] = row
+
+    expected_rows = [
+        *(
+            row for row in warmups
+            if config.get("include_warmups") is True
+        ),
+        *raw,
+    ]
+    required_run_ids = {
+        row["run_id"] for row in expected_rows
+        if row.get("variant") in required_variants
+    }
+    missing = sorted(required_run_ids - set(by_run))
+    if missing:
+        raise EvidenceError(
+            "missing process-tree memory summaries: " + ", ".join(missing)
+        )
+    unexpected = sorted(set(by_run) - {row["run_id"] for row in expected_rows})
+    if unexpected:
+        raise EvidenceError(
+            "unexpected process-tree memory summaries: " + ", ".join(unexpected)
+        )
+    expected_by_run = {
+        row["run_id"]: (phase, row)
+        for phase, phase_rows in (
+            ("warmup", warmups if config.get("include_warmups") is True else []),
+            ("measured", raw),
+        )
+        for row in phase_rows
+    }
+    for run_id in sorted(by_run):
+        expected_phase, expected_row = expected_by_run[run_id]
+        summary = by_run[run_id]
+        if (
+            summary.get("phase") != expected_phase or
+            summary.get("variant") != expected_row.get("variant") or
+            summary.get("correlation_id") != run_id or
+            expected_row.get("memory_summary") != summary
+        ):
+            raise EvidenceError(
+                f"memory summary identity differs for {run_id}"
+            )
+    incomplete = sorted(
+        run_id for run_id in required_run_ids
+        if by_run[run_id].get("complete") is not True or
+        by_run[run_id].get("status") != "complete"
+    )
+    target = config.get("target_bytes")
+    allowed_peak = None
+    over_target: list[str] = []
+    required_peaks = {
+        variant: [
+            by_run[row["run_id"]]["tree_peak_phys_footprint_bytes"]
+            for row in expected_rows
+            if row.get("variant") == variant and row["run_id"] in required_run_ids
+        ]
+        for variant in required_variants
+    }
+    peak_p95 = {
+        variant: percentile([float(value) for value in values], 0.95)
+        for variant, values in required_peaks.items() if values
+    }
+    insufficient_variants = sorted(
+        variant for variant, values in required_peaks.items()
+        if policy.get("comparison_kind") == "P2" and len(values) < 20
+    )
+    if target is not None:
+        if isinstance(target, bool) or not isinstance(target, int) or target <= 0:
+            raise EvidenceError("memory_sampling.target_bytes is invalid")
+        margin = max(512 << 20, (target * 10 + 99) // 100)
+        allowed_peak = target - margin
+        if allowed_peak <= 0:
+            raise EvidenceError("memory_sampling target leaves no allowed peak")
+        over_target = sorted(
+            run_id for run_id in required_run_ids
+            if by_run[run_id]["tree_peak_phys_footprint_bytes"] > allowed_peak
+        )
+    unexpected_swap = sorted(
+        run_id for run_id in required_run_ids
+        if by_run[run_id]["swap_out_bytes"] != 0
+    )
+    disallowed_swap = (
+        unexpected_swap if config.get("allow_swap_out") is not True else []
+    )
+    if over_target or disallowed_swap:
+        qualification = "FAIL"
+    elif incomplete or insufficient_variants:
+        qualification = "INCONCLUSIVE"
+    else:
+        qualification = "PASS"
+    return {
+        "enabled": True,
+        "qualification": qualification,
+        "summary_count": len(by_run),
+        "required_count": len(required_run_ids),
+        "required_variants": required_variants,
+        "target_bytes": target,
+        "allowed_peak_bytes": allowed_peak,
+        "peak_p95_bytes": peak_p95,
+        "over_target": over_target,
+        "unexpected_swap": unexpected_swap,
+        "incomplete": incomplete,
+        "insufficient_variants": insufficient_variants,
+    }
+
+
 def verify(bundle: Path) -> dict[str, Any]:
     bundle = bundle.resolve()
     policy_path = bundle / "campaign-policy.json"
@@ -508,6 +731,9 @@ def verify(bundle: Path) -> dict[str, Any]:
         )
     policy_sha256 = sha256_file(policy_path)
     validate_manifest(bundle, manifest, policy_sha256, comparison_kind)
+    memory_evidence = verify_memory_bundle(
+        bundle, policy, raw, warmups, manifest
+    )
     baseline_identity = build["baseline"]
     candidate_identity = build["candidate"]
     if comparison_kind == "P0" and (
@@ -702,10 +928,18 @@ def verify(bundle: Path) -> dict[str, Any]:
     environment_complete = environment.get("status") == "complete"
     campaign_complete = manifest.get("status") == "complete"
     protocol_ok = protocol_complete(policy)
+    memory_complete = (
+        memory_evidence is None or
+        memory_evidence.get("qualification") == "PASS"
+    )
+    memory_failed = (
+        memory_evidence is not None and
+        memory_evidence.get("qualification") == "FAIL"
+    )
     prerequisites_complete = (
         audit_status == "passed" and quality_complete and provenance_ok and
         environment_complete and campaign_complete and protocol_ok and
-        sample_sufficient and not failures and
+        sample_sufficient and memory_complete and not failures and
         not quality_failures
     )
     wall_threshold = threshold_for(policy, "wall_median_ratio_max")
@@ -741,7 +975,8 @@ def verify(bundle: Path) -> dict[str, Any]:
         item for item in failures if item["status"] in hard_failure_statuses
     ]
     hard_failure = bool(
-        hard_failure_samples or quality_failures or audit_status == "failed"
+        hard_failure_samples or quality_failures or audit_status == "failed" or
+        memory_failed
     )
     unsupported_kind = comparison_kind not in KIND_TO_THRESHOLD
     if hard_failure or any(value == "FAIL" for value in decisions.values()):
@@ -778,6 +1013,11 @@ def verify(bundle: Path) -> dict[str, Any]:
         "audit_observations": audit_observations,
         "source_provenance_complete": provenance_ok,
         "protocol_complete": protocol_ok,
+        "memory_evidence": memory_evidence,
+        "memory_qualification": (
+            memory_evidence.get("qualification")
+            if memory_evidence is not None else "NOT_REQUESTED"
+        ),
         "sample_size_sufficient": sample_sufficient,
         "minimum_matched_pairs": minimum_pairs,
         "minimum_tail_requests_per_variant": tail_minimum,

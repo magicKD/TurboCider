@@ -2104,3 +2104,52 @@ python3 -B tools/native/verify_process_tree_samples.py \
 `phys_footprint=36,307,496` bytes，swap/compression delta 为 0；sampler 与独立 verifier 均通过。这只是
 工具链功能证据，不是任何模型的 memory-tier qualification。下一步仍需把 sampler 接入完整 request
 campaign，并让 independent verifier 检查 process-tree peak、采样完整性、P2 hard-cap 和 P3 swap 四臂结果。
+
+### 13.42 Process-tree 证据接入 ABBA/BAAB campaign（2026-09-18，工作树）
+
+`run_streaming_campaign.py` 现已支持可选的 policy 段：
+
+```json
+{
+  "memory_sampling": {
+    "enabled": true,
+    "include_warmups": false,
+    "interval_ms": 20,
+    "max_gap_ms": 100,
+    "root_role": "streaming-worker",
+    "roles": [],
+    "required_variants": ["candidate"]
+  }
+}
+```
+
+启用后，coordinator 在每个 request dispatch 前 attach 到对应 persistent worker PID，request response
+返回后发送 external stop；每个 run 生成：
+
+```text
+memory/<run-id>.jsonl                 # hash-chained raw process-tree evidence
+memory/<run-id>.summary.json           # persisted independently checked summary
+memory-summaries.jsonl                 # campaign index
+```
+
+`manifest.json` 同时记录上述文件的 SHA-256。现有 policy 未设置 `memory_sampling` 时不创建 sampler、线程、
+额外文件或 runtime hook，因此普通 P0/P1 campaign 的执行路径保持不变。P2/P3 policy 必须显式开启该段；
+P2 还必须指定公开的 8/10/12/16/20 GiB `target_bytes` 和 `tc-public-headroom-v1`，但 sampler 不会替代
+模型 runtime 的 layout resolver。
+
+独立 campaign verifier 会再次读取每个 evidence，检查 hash chain、sample/terminal 汇总、root identity、
+采样 gap、未知 child、swap counter、summary digest、manifest hash 和 raw row identity。P2 的判定公式为：
+
+```text
+allowed_peak = target_bytes - max(512 MiB, ceil(target_bytes * 10%))
+```
+
+峰值超过 `allowed_peak` 或出现非计划 swap-out 会是 `FAIL`；证据不完整会是 `INCONCLUSIVE`；不能用 wall
+median 或少量样本覆盖 memory failure。当前新增的是校准基础设施，尚未产生任何模型的 P2 production record。
+
+测试：
+
+```text
+python3 -B tests/native/test_streaming_campaign_verifier.py  # 27 tests PASS
+python3 -B tests/native/test_process_tree_sampler.py          # 3 tests PASS
+```

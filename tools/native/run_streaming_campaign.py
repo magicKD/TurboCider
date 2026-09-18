@@ -26,6 +26,7 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -34,6 +35,15 @@ from typing import Any
 
 from verify_streaming_campaign import EvidenceError, verify
 from capture_streaming_source_identity import IdentityError, capture
+from process_tree_sampler import (
+    DarwinBackend,
+    HashChainJsonlWriter,
+    ProcessTreeSampler,
+    RealClock,
+    RoleRule,
+)
+from verify_process_tree_samples import EvidenceError as MemoryEvidenceError
+from verify_process_tree_samples import verify as verify_memory_evidence
 
 
 SCHEMA_VERSION = 1
@@ -233,6 +243,78 @@ def validate_policy(policy: dict[str, Any]) -> None:
         )
     if protocol.get("launch_pressure"):
         raise CampaignError("this runner never launches memory pressure")
+    memory_sampling = policy.get("memory_sampling")
+    if policy.get("comparison_kind") in ("P2", "P3") and not isinstance(
+        memory_sampling, dict
+    ):
+        raise CampaignError("P2/P3 campaigns require memory_sampling")
+    if memory_sampling is not None:
+        if not isinstance(memory_sampling, dict):
+            raise CampaignError("memory_sampling must be an object")
+        if memory_sampling.get("enabled") is not True:
+            raise CampaignError(
+                "memory_sampling, when present, must set enabled=true"
+            )
+        interval = memory_sampling.get("interval_ms", 20)
+        max_gap = memory_sampling.get("max_gap_ms", 100)
+        if (
+            isinstance(interval, bool) or not isinstance(interval, int) or
+            interval <= 0
+        ):
+            raise CampaignError("memory_sampling.interval_ms must be positive")
+        if (
+            isinstance(max_gap, bool) or not isinstance(max_gap, int) or
+            max_gap < interval
+        ):
+            raise CampaignError(
+                "memory_sampling.max_gap_ms must be >= interval_ms"
+            )
+        roles = memory_sampling.get("roles", [])
+        if not isinstance(roles, list) or any(
+            not isinstance(value, str) or "=" not in value or
+            not value.split("=", 1)[0] or not value.split("=", 1)[1]
+            for value in roles
+        ):
+            raise CampaignError(
+                "memory_sampling.roles must contain ROLE=GLOB strings"
+            )
+        root_role = memory_sampling.get("root_role", "streaming-worker")
+        if not isinstance(root_role, str) or not root_role:
+            raise CampaignError("memory_sampling.root_role must be non-empty")
+        include_warmups = memory_sampling.get("include_warmups", False)
+        if not isinstance(include_warmups, bool):
+            raise CampaignError("memory_sampling.include_warmups must be boolean")
+        required_variants = memory_sampling.get(
+            "required_variants", ["candidate"]
+        )
+        if (
+            not isinstance(required_variants, list) or
+            not required_variants or
+            len(set(required_variants)) != len(required_variants) or
+            any(value not in VARIANTS for value in required_variants)
+        ):
+            raise CampaignError(
+                "memory_sampling.required_variants must be a unique, non-empty "
+                "subset of baseline/candidate"
+            )
+        if policy.get("comparison_kind") == "P2":
+            target = memory_sampling.get("target_bytes")
+            public_targets = {value << 30 for value in (8, 10, 12, 16, 20)}
+            if (
+                isinstance(target, bool) or not isinstance(target, int) or
+                target not in public_targets
+            ):
+                raise CampaignError(
+                    "P2 memory_sampling.target_bytes must be a public 8/10/12/16/20 GiB tier"
+                )
+            if memory_sampling.get("headroom_policy_revision") != (
+                "tc-public-headroom-v1"
+            ):
+                raise CampaignError(
+                    "P2 requires headroom_policy_revision=tc-public-headroom-v1"
+                )
+            if "candidate" not in required_variants:
+                raise CampaignError("P2 must require candidate memory evidence")
     quality = policy.get("quality")
     if not isinstance(quality, dict) or quality.get("mode") != "artifact_sha256_equal":
         raise CampaignError("quality.mode must be artifact_sha256_equal")
@@ -311,6 +393,167 @@ def validate_policy(policy: dict[str, Any]) -> None:
                     )
         elif not isinstance(config.get("synthetic"), dict):
             raise CampaignError(f"synthetic variant {variant} needs synthetic config")
+
+
+class RequestMemorySampler:
+    """Attach a process-tree sampler to one persistent campaign worker.
+
+    The sampler is deliberately opt-in.  It runs outside the worker and does
+    not touch the model/runtime, so disabled campaigns retain the old hot path.
+    """
+
+    def __init__(
+        self,
+        worker_pid: int,
+        evidence_path: Path,
+        correlation_id: str,
+        config: dict[str, Any],
+    ) -> None:
+        self.worker_pid = worker_pid
+        self.evidence_path = evidence_path
+        self.correlation_id = correlation_id
+        self.config = config
+        self.stop_event = threading.Event()
+        self.ready_event = threading.Event()
+        self.thread: threading.Thread | None = None
+        self.writer: HashChainJsonlWriter | None = None
+        self.sampler: ProcessTreeSampler | None = None
+        self.result: dict[str, Any] | None = None
+        self.error: BaseException | None = None
+
+    def _run(self) -> None:
+        try:
+            backend = DarwinBackend()
+            self.writer = HashChainJsonlWriter(self.evidence_path)
+            role_rules = [
+                RoleRule(value.split("=", 1)[0], value.split("=", 1)[1])
+                for value in self.config.get("roles", [])
+            ]
+            self.sampler = ProcessTreeSampler(
+                backend, RealClock(), self.writer, self.worker_pid,
+                root_role=self.config.get("root_role", "streaming-worker"),
+                role_rules=role_rules,
+                interval_ns=int(self.config.get("interval_ms", 20)) * 1_000_000,
+                max_gap_ns=int(self.config.get("max_gap_ms", 100)) * 1_000_000,
+                correlation_id=self.correlation_id,
+            )
+            self.result = self.sampler.run(
+                stop_event=self.stop_event,
+                ready_event=self.ready_event,
+            )
+        except BaseException as exc:  # preserve a diagnosable sampler failure
+            self.error = exc
+            self.ready_event.set()
+        finally:
+            if self.writer is not None:
+                self.writer.close()
+
+    def start(self) -> None:
+        self.evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        self.thread = threading.Thread(
+            target=self._run,
+            name=f"tc-memory-sampler-{self.correlation_id}",
+            daemon=True,
+        )
+        self.thread.start()
+        wait_seconds = max(5.0, float(self.config.get("max_gap_ms", 100)) / 1000.0 * 10)
+        if not self.ready_event.wait(wait_seconds):
+            self.stop_event.set()
+            self.thread.join(wait_seconds)
+            raise CampaignError("process-tree sampler did not become ready")
+        if self.error is not None:
+            self.thread.join(wait_seconds)
+            raise CampaignError(f"process-tree sampler failed: {self.error}")
+
+    def stop(self) -> dict[str, Any]:
+        self.stop_event.set()
+        if self.thread is not None:
+            self.thread.join(
+                max(5.0, float(self.config.get("max_gap_ms", 100)) / 1000.0 * 10)
+            )
+            if self.thread.is_alive():
+                raise CampaignError("process-tree sampler did not stop")
+        if self.error is not None:
+            raise CampaignError(f"process-tree sampler failed: {self.error}")
+        if self.result is None:
+            raise CampaignError("process-tree sampler produced no terminal record")
+        try:
+            verified = verify_memory_evidence(self.evidence_path)
+        except MemoryEvidenceError as exc:
+            raise CampaignError(f"invalid process-tree evidence: {exc}") from exc
+        if verified["correlation_id"] != self.correlation_id:
+            raise CampaignError("process-tree evidence correlation differs")
+        return {
+            "schema": "turbocider-streaming-memory-summary-v1",
+            "sampler_revision": verified["sampler_revision"],
+            "correlation_id": self.correlation_id,
+            "status": verified["status"],
+            "complete": verified["complete"],
+            "reasons": verified["reasons"],
+            "sample_count": verified["sample_count"],
+            "max_gap_ns": verified["max_gap_ns"],
+            "allowed_max_gap_ns": verified["allowed_max_gap_ns"],
+            "tree_peak_rss_bytes": verified["tree_peak_rss_bytes"],
+            "tree_peak_phys_footprint_bytes": verified[
+                "tree_peak_phys_footprint_bytes"
+            ],
+            "swap_in_bytes": verified["swap_in_bytes"],
+            "swap_out_bytes": verified["swap_out_bytes"],
+            "compression_bytes": verified["compression_bytes"],
+            "decompression_bytes": verified["decompression_bytes"],
+            "command_exit_code": verified["command_exit_code"],
+            "evidence_digest": verified["final_evidence_digest"],
+            "evidence_path": str(self.evidence_path),
+        }
+
+
+def run_worker_request(
+    worker: "Worker",
+    command: dict[str, Any],
+    output: Path,
+    policy: dict[str, Any],
+    phase: str,
+) -> dict[str, Any]:
+    memory_config = policy.get("memory_sampling")
+    sampler: RequestMemorySampler | None = None
+    should_sample = (
+        isinstance(memory_config, dict) and
+        memory_config.get("enabled") is True and
+        (phase == "measured" or memory_config.get("include_warmups") is True)
+    )
+    evidence_path: Path | None = None
+    if should_sample:
+        evidence_path = output / "memory" / f"{command['run_id']}.jsonl"
+        sampler = RequestMemorySampler(
+            worker.pid, evidence_path, command["run_id"], memory_config
+        )
+        sampler.start()
+    response: dict[str, Any] | None = None
+    request_error: BaseException | None = None
+    try:
+        response = worker.run(command)
+    except BaseException as exc:
+        request_error = exc
+    finally:
+        if sampler is not None:
+            summary = sampler.stop()
+            assert evidence_path is not None
+            summary["phase"] = phase
+            summary["variant"] = command["variant"]
+            summary["run_id"] = command["run_id"]
+            summary["evidence_path"] = str(evidence_path.relative_to(output))
+            summary_path = output / "memory" / f"{command['run_id']}.summary.json"
+            summary["summary_path"] = str(summary_path.relative_to(output))
+            with summary_path.open("x", encoding="utf-8") as stream:
+                json.dump(summary, stream, indent=2)
+                stream.write("\n")
+            if response is not None:
+                response["memory_summary"] = summary
+    if request_error is not None:
+        raise request_error
+    if response is None:
+        raise CampaignError("worker returned no response")
+    return response
 
 
 def build_identity(policy: dict[str, Any]) -> dict[str, Any]:
@@ -1522,6 +1765,13 @@ def run_campaign(
     warmup_path = output / "warmups.jsonl"
     raw_path.touch()
     warmup_path.touch()
+    memory_enabled = (
+        isinstance(policy.get("memory_sampling"), dict) and
+        policy["memory_sampling"].get("enabled") is True
+    )
+    memory_summary_path = output / "memory-summaries.jsonl"
+    if memory_enabled:
+        memory_summary_path.touch()
     identities = build_identity(policy)
     write_json(output / "build-identity.json", identities)
     timeout = float(policy["protocol"]["request_timeout_seconds"])
@@ -1585,7 +1835,9 @@ def run_campaign(
                     "artifact_paths": artifacts,
                 }
                 try:
-                    response = workers[variant].run(command)
+                    response = run_worker_request(
+                        workers[variant], command, output, policy, "warmup"
+                    )
                 except socket.timeout:
                     response = {
                         "status": "timeout", "error": "warmup timed out",
@@ -1595,6 +1847,8 @@ def run_campaign(
                 row = {**sample, **response}
                 warmups.append(row)
                 append_jsonl(warmup_path, row)
+                if row.get("memory_summary") is not None:
+                    append_jsonl(memory_summary_path, row["memory_summary"])
                 if row.get("status") != "success":
                     warmup_failed = True
                     aborted = True
@@ -1622,7 +1876,10 @@ def run_campaign(
                     "request": request, "artifact_paths": artifacts,
                 }
                 try:
-                    response = workers[sample["variant"]].run(command)
+                    response = run_worker_request(
+                        workers[sample["variant"]], command, output, policy,
+                        "measured",
+                    )
                     row = {**sample, "sample_index": sample_index, **response}
                     if row.get("run_id") != sample["run_id"]:
                         raise CampaignError("worker returned a different run_id")
@@ -1652,6 +1909,8 @@ def run_campaign(
                     abort_reason = str(exc)
             raw.append(row)
             append_jsonl(raw_path, row)
+            if row.get("memory_summary") is not None:
+                append_jsonl(memory_summary_path, row["memory_summary"])
     finally:
         for worker in workers.values():
             try:
@@ -1692,6 +1951,15 @@ def run_campaign(
         "warmups.jsonl", "quality.json", "audit.json", "environment.json",
         "faults.json",
     ]
+    if memory_enabled:
+        names.append("memory-summaries.jsonl")
+        memory_directory = output / "memory"
+        if memory_directory.is_dir():
+            names.extend(
+                str(path.relative_to(output))
+                for path in sorted(memory_directory.iterdir())
+                if path.is_file()
+            )
     if policy["comparison_kind"] == "P1":
         names.append("semantic-equivalence.json")
     manifest["files"] = manifest_files(output, names)

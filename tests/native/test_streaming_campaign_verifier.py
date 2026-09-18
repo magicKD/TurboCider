@@ -545,6 +545,58 @@ class CampaignTests(unittest.TestCase):
             ["baseline", "candidate", "candidate", "baseline"],
         )
 
+    @unittest.skipUnless(sys.platform == "darwin", "requires Darwin libproc")
+    def test_process_tree_memory_sampling_is_attached_to_each_request(self):
+        campaign = policy(blocks=1)
+        campaign["memory_sampling"] = {
+            "enabled": True,
+            "include_warmups": True,
+            "interval_ms": 5,
+            "max_gap_ms": 100,
+            "root_role": "streaming-worker",
+            "required_variants": ["baseline", "candidate"],
+        }
+        bundle = self.run_bundle(campaign)
+        result = verify(bundle)
+        self.assertEqual(result["overall"], "PASS")
+        self.assertEqual(result["memory_evidence"]["qualification"], "PASS")
+        rows = [
+            json.loads(line)
+            for line in (bundle / "memory-summaries.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(len(rows), 6)
+        self.assertTrue(all(row["complete"] for row in rows))
+        self.assertTrue(all(row["evidence_path"].startswith("memory/") for row in rows))
+
+    @unittest.skipUnless(sys.platform == "darwin", "requires Darwin libproc")
+    def test_p2_memory_evidence_applies_public_headroom_and_sample_floor(self):
+        campaign = policy(blocks=10)
+        campaign["comparison_kind"] = "P2"
+        campaign["memory_sampling"] = {
+            "enabled": True,
+            "interval_ms": 5,
+            "max_gap_ms": 100,
+            "required_variants": ["candidate"],
+            "target_bytes": 8 << 30,
+            "headroom_policy_revision": "tc-public-headroom-v1",
+        }
+        bundle = self.run_bundle(campaign)
+        result = verify(bundle)
+        memory = result["memory_evidence"]
+        self.assertEqual(result["overall"], "INCONCLUSIVE")
+        self.assertEqual(memory["qualification"], "PASS")
+        self.assertEqual(memory["required_count"], 20)
+        target = 8 << 30
+        self.assertEqual(
+            memory["allowed_peak_bytes"],
+            target - max(512 << 20, (target * 10 + 99) // 100),
+        )
+        self.assertEqual(memory["insufficient_variants"], [])
+        self.assertLessEqual(
+            memory["peak_p95_bytes"]["candidate"],
+            memory["allowed_peak_bytes"],
+        )
+
     def test_p1_rejects_semantically_different_layouts_with_same_digest(self):
         campaign = policy(blocks=1)
         campaign["variants"]["candidate"]["synthetic"][
@@ -740,6 +792,21 @@ class CampaignTests(unittest.TestCase):
         path.write_text(json.dumps(campaign))
         with self.assertRaises(CampaignError):
             run_campaign(path, root / "bundle")
+
+    def test_p2_requires_public_memory_sampling_contract(self):
+        campaign = policy(blocks=1)
+        campaign["comparison_kind"] = "P2"
+        with self.assertRaises(CampaignError):
+            campaign_runner.validate_policy(campaign)
+        campaign["memory_sampling"] = {
+            "enabled": True,
+            "target_bytes": 7 << 30,
+            "headroom_policy_revision": "tc-public-headroom-v1",
+        }
+        with self.assertRaises(CampaignError):
+            campaign_runner.validate_policy(campaign)
+        campaign["memory_sampling"]["target_bytes"] = 8 << 30
+        campaign_runner.validate_policy(campaign)
 
     def test_worker_launch_order_is_frozen_and_recorded(self):
         campaign = policy(blocks=1)
