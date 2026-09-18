@@ -30,7 +30,9 @@ tc::StreamingConfig config() {
     value.schema_version = 1;
     value.selection = "manual";
     value.retention = "request";
-    value.stages["denoiser"] = {
+    value.stages["ltx-stage1-denoiser"] = {
+        "streamed", 1, 2, 8, 1, 2};
+    value.stages["ltx-stage2-denoiser"] = {
         "streamed", 1, 2, 8, 1, 2};
     return value;
 }
@@ -50,7 +52,7 @@ tc::Request request() {
     value.steps = 11;
     value.audio = false;
     value.dynamic_text = true;
-    value.ltx_fast_av = false;
+    value.ltx_fast_av = true;
     return value;
 }
 
@@ -141,11 +143,23 @@ int main(int argc, char **argv) {
         assert(value_probe && value_probe->lease_ptr().get() ==
                                   probe->source_lease());
         const tc::ltx::StreamingWorkload workload{
-            64, 64, 9, 24, 1024, false, false, false, "connected"};
+            64, 64, 9, 24, 1024, true, true, false, "connected", true};
         const tc::ltx::StreamingPlanView expected(
             value_probe->lease_ptr(),
             "diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
             config(), workload, value_probe->lease().generation());
+        assert(expected.layout().stages.size() == 2);
+        assert(expected.layout().stages[0].id == "ltx-stage1-denoiser");
+        assert(expected.layout().stages[0].pass_count == 8);
+        assert(expected.layout().stages[1].id == "ltx-stage2-denoiser");
+        assert(expected.layout().stages[1].pass_count == 3);
+        assert(expected.native_stage_options().schedule_pass_begin == 0);
+        const tc::ltx::StreamingPlanView expected_stage2(
+            value_probe->lease_ptr(),
+            "diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+            config(), workload, value_probe->lease().generation(), 1);
+        assert(expected_stage2.layout().digest == expected.layout().digest);
+        assert(expected_stage2.native_stage_options().schedule_pass_begin == 8);
 
         tc::streaming::StreamingPresetRecord record;
         record.id = "ltx-public-host-test";

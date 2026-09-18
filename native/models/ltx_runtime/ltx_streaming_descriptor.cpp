@@ -183,23 +183,18 @@ streaming::Descriptor StreamingMetadata::describe(const StreamingWorkload &w) co
         {"parallel_av",std::to_string(w.parallel_av)},
         {"batch_audio_commands",std::to_string(w.batch_audio_commands)},
         {"video_attention_batch",std::to_string(w.video_attention_batch)},
+        {"split_stages",std::to_string(w.split_stages)},
         {"conditioning_recipe","scalar-conditioning-v1"},
         {"reader_revision",std::to_string(LTX_STREAM_READER_REVISION)},
-        {"upsample_boundary","after-stage1-pool-retained"}};
-    streaming::StageDescriptor stage;
-    stage.id="denoiser"; stage.adapter_revision="ltx-native-exact-v1";
-    stage.min_prefix=1; stage.max_slots=3; stage.max_group_size=1;
+        {"upsample_boundary",w.split_stages?
+            "after-stage1-pool-released":"after-stage1-pool-retained"}};
     size_t count1=0,count2=0;
     const float *s1=ltx_distilled_stage1_sigmas(&count1), *s2=ltx_distilled_stage2_sigmas(&count2);
     require_metadata(count1>=2 && count2>=2 && count1+count2-2<=streaming::max_passes,"invalid sigma schedule");
-    stage.pass_count=static_cast<uint32_t>(count1+count2-2);
     out.workload["stage1_sigma_bits"]=sigmas(s1,count1);
     out.workload["stage2_sigma_bits"]=sigmas(s2,count2);
-    for (uint32_t p=0; p<stage.pass_count; ++p) {
-        const bool first=p<count1-1;
-        stage.passes.push_back({p,first?"av_stage1":"av_stage2",
-            {first?geometry.stage1_video_tokens:geometry.stage2_video_tokens,geometry.audio_tokens,w.text_rows}});
-    }
+    std::vector<streaming::BlockSpec> blocks;
+    blocks.reserve(LTX_STREAM_BLOCKS);
     for (uint32_t b=0; b<LTX_STREAM_BLOCKS; ++b) {
         const auto &meta=state_->blocks[b];
         streaming::BlockSpec block; block.id=b; block.layout_class="ltx-convrot-g256-fixed";
@@ -224,9 +219,47 @@ streaming::Descriptor StreamingMetadata::describe(const StreamingWorkload &w) co
             const auto name=key(f.kind,f.object,f.part);
             block.fields.push_back({name,std::to_string(b)+":"+name,f.bytes,1,std::move(m)});
         }
-        stage.blocks.push_back(std::move(block));
+        blocks.push_back(std::move(block));
     }
-    out.stages.push_back(std::move(stage));
+    auto make_stage = [&](std::string id, std::string pass_kind,
+                          uint32_t pass_count, uint32_t video_tokens,
+                          std::vector<streaming::BlockSpec> stage_blocks) {
+        streaming::StageDescriptor stage;
+        stage.id=std::move(id);
+        stage.adapter_revision=w.split_stages?
+            "ltx-native-exact-stage-v2":"ltx-native-exact-v1";
+        stage.min_prefix=1; stage.max_slots=3; stage.max_group_size=1;
+        stage.pass_count=pass_count;
+        for (uint32_t pass=0; pass<pass_count; ++pass)
+            stage.passes.push_back({pass,pass_kind,
+                {video_tokens,geometry.audio_tokens,w.text_rows}});
+        stage.blocks=std::move(stage_blocks);
+        out.stages.push_back(std::move(stage));
+    };
+    if (w.split_stages) {
+        auto stage2_blocks = blocks;
+        make_stage("ltx-stage1-denoiser","av_stage1",
+            static_cast<uint32_t>(count1-1),
+            static_cast<uint32_t>(geometry.stage1_video_tokens),
+            std::move(blocks));
+        make_stage("ltx-stage2-denoiser","av_stage2",
+            static_cast<uint32_t>(count2-1),
+            static_cast<uint32_t>(geometry.stage2_video_tokens),
+            std::move(stage2_blocks));
+    } else {
+        streaming::StageDescriptor stage;
+        stage.id="denoiser"; stage.adapter_revision="ltx-native-exact-v1";
+        stage.min_prefix=1; stage.max_slots=3; stage.max_group_size=1;
+        stage.pass_count=static_cast<uint32_t>(count1+count2-2);
+        for (uint32_t pass=0; pass<stage.pass_count; ++pass) {
+            const bool first=pass<count1-1;
+            stage.passes.push_back({pass,first?"av_stage1":"av_stage2",
+                {first?geometry.stage1_video_tokens:geometry.stage2_video_tokens,
+                 geometry.audio_tokens,w.text_rows}});
+        }
+        stage.blocks=std::move(blocks);
+        out.stages.push_back(std::move(stage));
+    }
     return out;
 }
 } // namespace tc::ltx

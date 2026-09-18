@@ -14,6 +14,9 @@ def main():
     parser.add_argument("--upsampler", required=True, type=Path)
     parser.add_argument("--video-vae", required=True, type=Path)
     parser.add_argument("--slots", type=int, choices=(1, 2, 3), default=3)
+    # The legacy comparison path intentionally exercises V1/V2.  The split
+    # Stage-1/Stage-2 V3 ABI is exercised by run_split below and does not
+    # replace the historical single-stage comparison selector.
     parser.add_argument("--exact-api", type=int, choices=(1, 2), default=2)
     parser.add_argument("--conditioning", choices=("synthetic", "connector"), default="synthetic")
     args = parser.parse_args()

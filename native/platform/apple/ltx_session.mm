@@ -105,8 +105,8 @@ static streaming::PresetSourceIdentity ltx_public_source_identity(
 }
 
 static streaming::PresetRuntimeIdentity ltx_public_runtime_identity() {
-    return {"turbocider-streaming-2026-09-18", "public-streaming-runtime-v2",
-            "ltx-public-adapter-v1", "ltx-pread-convrot-lease-v1",
+    return {"turbocider-streaming-2026-09-18", "public-streaming-runtime-v3",
+            "ltx-public-adapter-v2", "ltx-pread-convrot-lease-v1",
             kLtxPublicKernelRevision, "ltx-request-cache-disabled-v1"};
 }
 
@@ -1936,16 +1936,18 @@ struct LtxExactRequestState {
     LtxExactRequestState(const std::string& checkpoint,
                          const StreamingConfig& config,
                          const ltx::StreamingWorkload& workload,
-                         uint64_t generation)
-        : plan(checkpoint, config, workload, generation) {}
+                         uint64_t generation,
+                         uint32_t stage_index = 0)
+        : plan(checkpoint, config, workload, generation, stage_index) {}
     LtxExactRequestState(
             std::shared_ptr<const streaming::SourceLease> lease,
             std::string checkpoint_logical_id,
             const StreamingConfig& config,
             const ltx::StreamingWorkload& workload,
-            uint64_t generation)
+            uint64_t generation,
+            uint32_t stage_index = 0)
         : plan(std::move(lease), std::move(checkpoint_logical_id), config,
-               workload, generation) {}
+               workload, generation, stage_index) {}
     ~LtxExactRequestState() {
         // Reaching the destructor with a live borrowed native handle would
         // invalidate its header/fd. Treat that as an internal ownership bug.
@@ -2051,23 +2053,25 @@ public:
     void prepare(const std::string& checkpoint,
                  const StreamingConfig& config,
                  const ltx::StreamingWorkload& workload,
-                 uint64_t generation) {
+                 uint64_t generation,
+                 uint32_t stage_index = 0) {
         require(!state_ && !quarantine_,
                 "streaming_worker_quarantined: recreate the LTX candidate engine");
         state_ = std::make_unique<LtxExactRequestState>(
-            checkpoint, config, workload, generation);
+            checkpoint, config, workload, generation, stage_index);
     }
     void prepare_lease(
             std::shared_ptr<const streaming::SourceLease> lease,
             std::string checkpoint_logical_id,
             const StreamingConfig& config,
             const ltx::StreamingWorkload& workload,
-            uint64_t generation) {
+            uint64_t generation,
+            uint32_t stage_index = 0) {
         require(!state_ && !quarantine_,
                 "streaming_worker_quarantined: recreate the LTX candidate engine");
         state_ = std::make_unique<LtxExactRequestState>(
             std::move(lease), std::move(checkpoint_logical_id), config,
-            workload, generation);
+            workload, generation, stage_index);
     }
     ltx_native_denoiser** output() {
         require(state_ != nullptr, "LTX exact plan is unavailable");
@@ -2111,9 +2115,32 @@ static bool ltx_mlx_requested(const Request& request) {
 static bool ltx_exact_streaming_requested(const Request& request) {
     if (!request.streaming.active()) return false;
     const auto stage = request.streaming.stages.find("denoiser");
-    return stage != request.streaming.stages.end() &&
+    if (stage != request.streaming.stages.end() &&
         stage->second.residency &&
-        *stage->second.residency == "streamed";
+        *stage->second.residency == "streamed")
+        return true;
+    const auto stage1 = request.streaming.stages.find(
+        "ltx-stage1-denoiser");
+    const auto stage2 = request.streaming.stages.find(
+        "ltx-stage2-denoiser");
+    return stage1 != request.streaming.stages.end() &&
+        stage2 != request.streaming.stages.end() &&
+        stage1->second.residency && stage2->second.residency &&
+        *stage1->second.residency == "streamed" &&
+        *stage2->second.residency == "streamed";
+}
+
+static bool ltx_split_exact_streaming_requested(const Request& request) {
+    if (!request.streaming.active()) return false;
+    const auto stage1 = request.streaming.stages.find(
+        "ltx-stage1-denoiser");
+    const auto stage2 = request.streaming.stages.find(
+        "ltx-stage2-denoiser");
+    return stage1 != request.streaming.stages.end() &&
+        stage2 != request.streaming.stages.end() &&
+        stage1->second.residency && stage2->second.residency &&
+        *stage1->second.residency == "streamed" &&
+        *stage2->second.residency == "streamed";
 }
 
 static bool ltx_gpu_parallel_av_requested() {
@@ -2260,11 +2287,12 @@ public:
         require(!request.allow_approximation && !request.compile_gpu &&
                     request.loras.empty() &&
                     !request.memory_constrained.enabled &&
+                    request.ltx_fast_av &&
                     !request.ltx_sol_stage1 && !request.ltx_sol_stage2 &&
                     request.ltx_sparse_mode == 0 &&
                     request.ltx_stage2_text_rows == 0 &&
                     !request.ltx_video_attention_batch,
-                "streaming_route_unsupported: LTX public card requires the dense exact route without LoRA, approximation, memory guard, text pruning, or video-attention batching");
+                "streaming_route_unsupported: LTX public card requires the dense exact fast-A/V route without LoRA, approximation, memory guard, text pruning, or video-attention batching");
         require(request.width >= 64 && request.height >= 64 &&
                     request.width % 64 == 0 && request.height % 64 == 0 &&
                     request.frames > 0 && request.frames % 8 == 1 &&
@@ -2367,10 +2395,18 @@ public:
         const auto& workload = value_probe->workload_identity();
         require(workload.token_shapes.size() == 1,
                 "streaming_workload_invalid: LTX token shape count");
+        const bool split_stages =
+            record.plan.canonical_config.stages.contains(
+                "ltx-stage1-denoiser") &&
+            record.plan.canonical_config.stages.contains(
+                "ltx-stage2-denoiser");
+        require(split_stages &&
+                    !record.plan.canonical_config.stages.contains("denoiser"),
+                "streaming_record_identity_mismatch: LTX public preset must use the split Stage-1/Stage-2 layout");
         ltx::StreamingWorkload descriptor_workload{
             workload.width, workload.height, workload.frames, workload.fps,
             workload.token_shapes.front().compute_rows,
-            false, false, false, "connected"};
+            true, true, false, "connected", split_stages};
         auto plan = std::make_shared<ltx::StreamingPlanView>(
             value_probe->lease_ptr(), kLtxPublicTransformerLogicalId,
             record.plan.canonical_config, descriptor_workload,
@@ -2416,6 +2452,8 @@ public:
                                 .target_request_memory_bytes;
         require(target && streaming::supported_streaming_target(*target),
                 "streaming_target_unsupported");
+        require(ltx_split_exact_streaming_requested(execution->request),
+                "streaming_actual_plan_mismatch: LTX public execution requires the split Stage-1/Stage-2 layout");
         require(!public_streaming_active_,
                 "streaming_public_request_reentrant");
         public_stream_lease_ = std::move(lease);
@@ -2730,11 +2768,13 @@ public:
         const bool gpu_parallel_av = effective_execution == "gpu" &&
             request.ltx_fast_av &&
             !request.memory_constrained.enabled &&
-            ltx_gpu_parallel_av_requested();
+            (public_stream_lease_ != nullptr ||
+             ltx_gpu_parallel_av_requested());
         const bool gpu_batch_audio = effective_execution == "gpu" &&
             request.ltx_fast_av &&
             !request.memory_constrained.enabled &&
-            ltx_gpu_batch_audio_requested();
+            (public_stream_lease_ != nullptr ||
+             ltx_gpu_batch_audio_requested());
         if (block_streaming) {
             require(!image_to_video,
                     "LTX block streaming currently supports text-to-video only");
@@ -2943,21 +2983,37 @@ public:
         uint32_t exact_refill_slots = 0;
         uint32_t exact_prefetch_distance = 0;
         uint32_t exact_io_workers = 0;
-        uint32_t exact_group_count = 0;
-        uint32_t exact_pass_count = 0;
+        uint64_t exact_group_count = 0;
+        uint64_t exact_pass_count = 0;
         uint64_t exact_prefix_bytes = 0;
         uint64_t exact_pool_bytes = 0;
         uint64_t exact_block_bytes = 0;
+        auto add_exact_counter = [&](uint64_t& target, uint64_t value,
+                                     const char* label) {
+            target = ltx_checked_add(target, value, label);
+        };
+        auto exact_u32 = [](uint64_t value, const char* label) -> uint32_t {
+            require(value <= std::numeric_limits<uint32_t>::max(),
+                    std::string("memory_estimate_unknown: overflow computing ") +
+                        label);
+            return static_cast<uint32_t>(value);
+        };
+        ltx::StreamingWorkload exact_workload{};
+        std::vector<streaming::StageLayout> exact_stage_layouts;
+        const bool exact_split_stages = exact_streaming &&
+            public_stream_lease_ &&
+            ltx_split_exact_streaming_requested(request);
         if (exact_streaming) {
             ++exact_generation_;
             if (!exact_generation_) ++exact_generation_;
-            const ltx::StreamingWorkload exact_workload{
+            exact_workload = ltx::StreamingWorkload{
                 static_cast<uint32_t>(request.width),
                 static_cast<uint32_t>(request.height),
                 static_cast<uint32_t>(request.frames),
                 static_cast<uint32_t>(request.fps), conditioning.rows,
                 gpu_parallel_av, gpu_batch_audio,
-                request.ltx_video_attention_batch, "connected"};
+                request.ltx_video_attention_batch, "connected",
+                exact_split_stages};
             if (public_stream_lease_) {
                 exact_owner.prepare_lease(
                     public_stream_lease_, kLtxPublicTransformerLogicalId,
@@ -2971,14 +3027,15 @@ public:
             if (public_stream_lease_)
                 require(exact_layout.digest == public_stream_layout_digest_,
                         "streaming_actual_plan_mismatch: LTX compiled layout differs from authority");
-            const auto& exact_stage = exact_layout.stages.front();
+            const auto& exact_stage = exact_layout.stages[
+                exact_owner.plan().stage_index()];
+            exact_stage_layouts = exact_layout.stages;
             exact_layout_digest = exact_layout.digest;
             exact_prefix_blocks = exact_stage.prefix;
             exact_refill_slots = exact_stage.slot_count;
             exact_prefetch_distance = exact_stage.distance;
             exact_io_workers = exact_stage.workers;
-            exact_group_count = static_cast<uint32_t>(
-                exact_stage.groups.size());
+            exact_group_count = exact_stage.groups.size();
             exact_pass_count = exact_stage.pass_count;
             exact_prefix_bytes = exact_stage.prefix_bytes;
             exact_pool_bytes = exact_stage.peak_pool_bytes;
@@ -3024,6 +3081,61 @@ public:
         const bool denoiser_cache_hit = exact_streaming ? false : (use_mlx ?
             (mlx_denoiser_ != nullptr && denoiser_key == mlx_denoiser_key_) :
             (denoiser_ != nullptr && denoiser_key == denoiser_key_));
+        ltx_native_options exact_native_options{};
+        bool exact_native_options_ready = false;
+        auto create_exact_stage = [&](uint32_t stage_index,
+                                      Progress& progress) {
+            require(exact_streaming && exact_native_options_ready,
+                    "LTX exact stage options are unavailable");
+            if (stage_index != 0) {
+                exact_owner.prepare_lease(
+                    public_stream_lease_, kLtxPublicTransformerLogicalId,
+                    request.streaming, exact_workload, exact_generation_,
+                    stage_index);
+            }
+            const bool created = exact_split_stages ?
+                ltx_native_create_streamed_v3(
+                    &exact_native_options,
+                    &exact_owner.plan().native_stage_options(),
+                    exact_owner.output(), Progress::receive, &progress,
+                    error, sizeof(error)) :
+                ltx_native_create_streamed_v2(
+                    &exact_native_options,
+                    &exact_owner.plan().native_options(),
+                    exact_owner.output(), Progress::receive, &progress,
+                    error, sizeof(error));
+            if (progress.failure) std::rethrow_exception(progress.failure);
+            require(created && exact_owner.get() != nullptr, error);
+            if (public_stream_lease_) {
+                tc_stream_receipt_config_v1 receipt_config{};
+                receipt_config.struct_size = sizeof(receipt_config);
+                receipt_config.version = TC_STREAM_RECEIPT_ABI_V1;
+                receipt_config.source_generation =
+                    public_stream_lease_->generation();
+                std::snprintf(receipt_config.layout_digest,
+                              sizeof(receipt_config.layout_digest), "%s",
+                              public_stream_layout_digest_.c_str());
+                std::snprintf(receipt_config.implementation,
+                              sizeof(receipt_config.implementation), "%s",
+                              kLtxPublicImplementation);
+                require(ltx_native_streaming_enable_receipt(
+                            exact_owner.get(), &receipt_config,
+                            error, sizeof(error)), error);
+            }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+            if (stage_index == 0 && exact_test_destroy_failures_) {
+                require(ltx_native_streaming_test_set_destroy_failures(
+                            exact_owner.get(), exact_test_destroy_failures_,
+                            error, sizeof(error)), error);
+                exact_test_destroy_failures_ = 0;
+            }
+            if (stage_index == 0 && exact_test_cancel_first_fill_) {
+                require(ltx_native_streaming_test_cancel_first_fill(
+                            exact_owner.get(), error, sizeof(error)), error);
+                exact_test_cancel_first_fill_ = false;
+            }
+#endif
+        };
         const auto model_load_started = Clock::now();
         if (!denoiser_cache_hit) {
             denoiser_.reset();
@@ -3140,48 +3252,10 @@ public:
                     nullptr : ane_config.qkv_stage1.c_str();
                 options.qkv_directories[1] = ane_config.qkv_stage2.empty() ?
                     nullptr : ane_config.qkv_stage2.c_str();
+                exact_native_options = options;
+                exact_native_options_ready = true;
                 if (exact_streaming) {
-                    const bool created = ltx_native_create_streamed_v2(
-                        &options, &exact_owner.plan().native_options(),
-                        exact_owner.output(), Progress::receive, &progress,
-                        error, sizeof(error));
-                    if (progress.failure)
-                        std::rethrow_exception(progress.failure);
-                    require(created && exact_owner.get() != nullptr, error);
-                    if (public_stream_lease_) {
-                        tc_stream_receipt_config_v1 receipt_config{};
-                        receipt_config.struct_size = sizeof(receipt_config);
-                        receipt_config.version = TC_STREAM_RECEIPT_ABI_V1;
-                        receipt_config.source_generation =
-                            public_stream_lease_->generation();
-                        std::snprintf(
-                            receipt_config.layout_digest,
-                            sizeof(receipt_config.layout_digest), "%s",
-                            public_stream_layout_digest_.c_str());
-                        std::snprintf(
-                            receipt_config.implementation,
-                            sizeof(receipt_config.implementation), "%s",
-                            kLtxPublicImplementation);
-                        require(ltx_native_streaming_enable_receipt(
-                                    exact_owner.get(), &receipt_config,
-                                    error, sizeof(error)),
-                                error);
-                    }
-#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
-                    if (exact_test_destroy_failures_) {
-                        require(ltx_native_streaming_test_set_destroy_failures(
-                                    exact_owner.get(),
-                                    exact_test_destroy_failures_, error,
-                                    sizeof(error)), error);
-                        exact_test_destroy_failures_ = 0;
-                    }
-                    if (exact_test_cancel_first_fill_) {
-                        require(ltx_native_streaming_test_cancel_first_fill(
-                                    exact_owner.get(), error, sizeof(error)),
-                                error);
-                        exact_test_cancel_first_fill_ = false;
-                    }
-#endif
+                    create_exact_stage(0, progress);
                 } else {
                     auto* created = ltx_native_create(
                         &options, Progress::receive, &progress, error,
@@ -3292,6 +3366,57 @@ public:
         ltx_rng_fill_normal_bf16(&video_rng, video.data(), video.size());
         ltx_rng_fill_normal_bf16(&audio_rng, audio.data(), audio.size());
         Progress progress{event, cancel, {}};
+        tc_stream_counters_v1 exact_counters{};
+        tc_stream_counters_v1 exact_stage1_counters{};
+        tc_stream_counters_v1 exact_stage2_counters{};
+        std::vector<streaming::ActualStageReceipt> public_stage_receipts;
+        std::optional<streaming::ActualBoundaryReceipt> public_boundary;
+        auto capture_exact_stage_receipt = [&]() {
+            require(exact_streaming && public_stream_lease_,
+                    "streaming_actual_receipt_missing");
+            tc_stream_receipt_v2 receipt{};
+            receipt.struct_size = sizeof(receipt);
+            receipt.version = TC_STREAM_RECEIPT_ABI_V2;
+            require(ltx_native_streaming_receipt_v2(
+                        exact_owner.get(), &receipt, error, sizeof(error)),
+                    error);
+            std::vector<tc_stream_group_receipt_v2> groups(
+                receipt.group_count);
+            std::vector<tc_stream_pool_selection_receipt_v2> pools(
+                receipt.pool_selection_count);
+            std::vector<tc_stream_carry_receipt_v2> carries(
+                receipt.carry_count);
+            receipt.group_capacity = receipt.group_count;
+            receipt.groups = groups.empty() ? nullptr : groups.data();
+            receipt.pool_selection_capacity = receipt.pool_selection_count;
+            receipt.pool_selections = pools.empty() ? nullptr : pools.data();
+            receipt.carry_capacity = receipt.carry_count;
+            receipt.carries = carries.empty() ? nullptr : carries.data();
+            require(ltx_native_streaming_receipt_v2(
+                        exact_owner.get(), &receipt, error, sizeof(error)),
+                    error);
+            auto stage = streaming::actual_stage_receipt_from_c_v2(receipt);
+            require(stage.layout_digest == public_stream_layout_digest_ &&
+                        stage.implementation == kLtxPublicImplementation &&
+                        stage.source_generation ==
+                            public_stream_lease_->generation() &&
+                        stage.stage_index ==
+                            exact_owner.plan().stage_index() &&
+                        stage.drain_completed,
+                    "streaming_actual_plan_mismatch: LTX stage receipt identity differs");
+            const auto stage_index = exact_owner.plan().stage_index();
+            const auto &authorized_stage =
+                exact_owner.plan().layout().stages[stage_index];
+            stage.stage_id = authorized_stage.id;
+            stage.event_digest = streaming::actual_stage_event_digest(stage);
+            stage.canonical_digest =
+                streaming::actual_stage_canonical_digest(stage);
+            streaming::verify_actual_stage_receipt(
+                authorized_stage, stage_index, exact_generation_,
+                {public_stream_layout_digest_, kLtxPublicImplementation,
+                 public_stream_lease_->generation()}, stage);
+            public_stage_receipts.push_back(std::move(stage));
+        };
         const auto stage1_started = Clock::now();
         bool stage1_ok = false;
         if (use_mlx) {
@@ -3326,6 +3451,47 @@ public:
         dump_ltx_bf16(request.dump, "stage1_audio", audio.data(), audio.size());
         checkpoint(cancel);
         const auto stage1_finished = Clock::now();
+        if (exact_split_stages) {
+            require(ltx_native_streaming_counters(
+                        exact_owner.get(), &exact_counters,
+                        error, sizeof(error)), error);
+            exact_stage1_counters = exact_counters;
+            capture_exact_stage_receipt();
+            exact_owner.close();
+            native_denoiser = nullptr;
+            const auto &stage_receipt = public_stage_receipts.back();
+            streaming::ActualBoundaryReceipt boundary;
+            boundary.boundary_index = 0;
+            boundary.id = "ltx-stage1-to-stage2-upsampler";
+            boundary.from_stage_index = 0;
+            boundary.to_stage_index = 1;
+            boundary.source_generation = public_stream_lease_->generation();
+            for (const auto &group : stage_receipt.groups) {
+                for (uint32_t reader = 0; reader < group.reader_count;
+                     ++reader) {
+                    boundary.last_reader_sequence = std::max(
+                        boundary.last_reader_sequence,
+                        group.readers[reader].fence.sequence);
+                    if (group.readers[reader].completed)
+                        boundary.completed_reader_sequence = std::max(
+                            boundary.completed_reader_sequence,
+                            group.readers[reader].fence.sequence);
+                }
+            }
+            boundary.live_slot_bytes_before = exact_pool_bytes;
+            boundary.live_slot_bytes_after = 0;
+            boundary.released_slot_bytes = exact_pool_bytes;
+            boundary.pending_readers_before = 0;
+            boundary.pending_readers_after = 0;
+            boundary.source_stage_drained = true;
+            boundary.source_stage_backing_released = true;
+            boundary.next_stage_started = false;
+            boundary.event_digest = streaming::actual_boundary_event_digest(
+                boundary);
+            boundary.canonical_digest =
+                streaming::actual_boundary_canonical_digest(boundary);
+            public_boundary = std::move(boundary);
+        }
         event("latent_upsample", 0, 1);
         checkpoint(cancel);
         auto stage2_video_reservation = reserve_host_memory(
@@ -3351,12 +3517,22 @@ public:
                     kLtxPublicUpsamplerLogicalId);
                 auto video_vae_fd = public_stream_lease_->duplicate_fd(
                     kLtxPublicVideoVaeLogicalId);
-                require(ltx_native_upsample_stage2_fd(
-                    native_denoiser, upsampler_fd.get(),
-                    upsampler_path_.c_str(), video_vae_fd.get(),
-                    video_vae_path_.c_str(), upsampled.data(),
-                    upsampled.size(), video.data(), video.size(),
-                    error, sizeof(error)), error);
+                if (exact_split_stages) {
+                    require(ltx_native_upsample_stage2_standalone_fd(
+                        shader_path_.c_str(), request.width, request.height,
+                        request.frames, request.fps, upsampler_fd.get(),
+                        upsampler_path_.c_str(), video_vae_fd.get(),
+                        video_vae_path_.c_str(), upsampled.data(),
+                        upsampled.size(), video.data(), video.size(),
+                        error, sizeof(error)), error);
+                } else {
+                    require(ltx_native_upsample_stage2_fd(
+                        native_denoiser, upsampler_fd.get(),
+                        upsampler_path_.c_str(), video_vae_fd.get(),
+                        video_vae_path_.c_str(), upsampled.data(),
+                        upsampled.size(), video.data(), video.size(),
+                        error, sizeof(error)), error);
+                }
             } else {
                 require(ltx_native_upsample_stage2(
                     native_denoiser, upsampler_path_.c_str(),
@@ -3376,6 +3552,31 @@ public:
         ltx_release_vector(stage1_clean_prefix);
         dump_ltx_bf16(request.dump, "stage2_input_video", video.data(), video.size());
         const auto upsample_finished = Clock::now();
+        if (exact_split_stages) {
+            create_exact_stage(1, progress);
+            native_denoiser = exact_owner.get();
+            const auto &stage2_layout = exact_owner.plan().layout().stages[1];
+            exact_prefix_blocks = std::max(
+                exact_prefix_blocks, stage2_layout.prefix);
+            exact_refill_slots = std::max(
+                exact_refill_slots, stage2_layout.slot_count);
+            exact_prefetch_distance = std::max(
+                exact_prefetch_distance, stage2_layout.distance);
+            exact_io_workers = std::max(
+                exact_io_workers, stage2_layout.workers);
+            add_exact_counter(exact_group_count,
+                              stage2_layout.groups.size(),
+                              "LTX exact multi-stage group count");
+            add_exact_counter(exact_pass_count, stage2_layout.pass_count,
+                              "LTX exact multi-stage pass count");
+            exact_prefix_bytes = std::max(
+                exact_prefix_bytes, stage2_layout.prefix_bytes);
+            exact_pool_bytes = std::max(
+                exact_pool_bytes, stage2_layout.peak_pool_bytes);
+            exact_block_bytes = std::max(
+                exact_block_bytes,
+                stage2_layout.pools.front().slots.front().capacity_bytes);
+        }
         bool stage2_ok = false;
         if (use_mlx) {
             stage2_ok = ltx_mlx_run(
@@ -3411,7 +3612,6 @@ public:
         const auto stage2_finished = Clock::now();
         ltx_release_vector(stage2_clean_prefix);
         ltx_native_streaming_info streaming_after{};
-        tc_stream_counters_v1 exact_counters{};
         std::shared_ptr<const streaming::ActualExecutionReceipt>
             public_exact_receipt;
         ltx_mlx_info mlx_info{};
@@ -3428,40 +3628,38 @@ public:
                             error, sizeof(error)), error);
         }
         if (exact_streaming && public_stream_lease_) {
-            tc_stream_receipt_v2 receipt{};
-            receipt.struct_size = sizeof(receipt);
-            receipt.version = TC_STREAM_RECEIPT_ABI_V2;
-            require(ltx_native_streaming_receipt_v2(
-                        native_denoiser, &receipt, error, sizeof(error)),
-                    error);
-            std::vector<tc_stream_group_receipt_v2> groups(
-                receipt.group_count);
-            std::vector<tc_stream_pool_selection_receipt_v2> pools(
-                receipt.pool_selection_count);
-            std::vector<tc_stream_carry_receipt_v2> carries(
-                receipt.carry_count);
-            receipt.group_capacity = receipt.group_count;
-            receipt.groups = groups.empty() ? nullptr : groups.data();
-            receipt.pool_selection_capacity =
-                receipt.pool_selection_count;
-            receipt.pool_selections = pools.empty() ? nullptr : pools.data();
-            receipt.carry_capacity = receipt.carry_count;
-            receipt.carries = carries.empty() ? nullptr : carries.data();
-            require(ltx_native_streaming_receipt_v2(
-                        native_denoiser, &receipt, error, sizeof(error)),
-                    error);
-            auto stage = streaming::actual_stage_receipt_from_c_v2(receipt);
-            require(stage.layout_digest == public_stream_layout_digest_ &&
-                        stage.implementation == kLtxPublicImplementation &&
-                        stage.source_generation ==
-                            public_stream_lease_->generation(),
-                    "streaming_actual_plan_mismatch: LTX receipt identity differs");
-            public_exact_receipt = std::make_shared<
-                const streaming::ActualExecutionReceipt>(
-                    streaming::make_actual_execution_receipt(
-                        kLtxPublicImplementation,
-                        public_stream_layout_digest_,
-                        kLtxPublicComponentPolicy, {std::move(stage)}));
+            if (exact_split_stages) {
+                require(ltx_native_streaming_counters(
+                            exact_owner.get(), &exact_stage2_counters,
+                            error, sizeof(error)), error);
+                exact_counters = exact_stage2_counters;
+                add_exact_counter(exact_counters.pool_creates,
+                                  exact_stage1_counters.pool_creates,
+                                  "LTX exact pool counter");
+                add_exact_counter(exact_counters.slot_bundles,
+                                  exact_stage1_counters.slot_bundles,
+                                  "LTX exact slot counter");
+                add_exact_counter(exact_counters.fills,
+                                  exact_stage1_counters.fills,
+                                  "LTX exact fill counter");
+                add_exact_counter(exact_counters.content_bytes_loaded,
+                                  exact_stage1_counters.content_bytes_loaded,
+                                  "LTX exact content counter");
+                add_exact_counter(exact_counters.groups_submitted,
+                                  exact_stage1_counters.groups_submitted,
+                                  "LTX exact group counter");
+                require(std::isfinite(exact_counters.wait_seconds) &&
+                            std::isfinite(exact_stage1_counters.wait_seconds) &&
+                            exact_counters.wait_seconds <=
+                                std::numeric_limits<double>::max() -
+                                    exact_stage1_counters.wait_seconds,
+                        "memory_estimate_unknown: LTX wait counter overflow");
+                exact_counters.wait_seconds +=
+                    exact_stage1_counters.wait_seconds;
+                capture_exact_stage_receipt();
+            } else {
+                capture_exact_stage_receipt();
+            }
         }
         if (exact_streaming) {
             streaming_after.enabled = 1;
@@ -3482,6 +3680,31 @@ public:
         if (exact_streaming) {
             exact_owner.close();
             native_denoiser = nullptr;
+        }
+        if (exact_streaming && public_stream_lease_) {
+            if (exact_split_stages) {
+                require(public_stage_receipts.size() == 2 &&
+                            public_boundary.has_value(),
+                        "streaming_actual_receipt_missing");
+                public_exact_receipt = std::make_shared<
+                    const streaming::ActualExecutionReceipt>(
+                        streaming::make_actual_execution_receipt_v3(
+                            kLtxPublicImplementation,
+                            public_stream_layout_digest_,
+                            kLtxPublicComponentPolicy,
+                            std::move(public_stage_receipts),
+                            {std::move(*public_boundary)}));
+            } else {
+                require(public_stage_receipts.size() == 1,
+                        "streaming_actual_receipt_missing");
+                public_exact_receipt = std::make_shared<
+                    const streaming::ActualExecutionReceipt>(
+                        streaming::make_actual_execution_receipt(
+                            kLtxPublicImplementation,
+                            public_stream_layout_digest_,
+                            kLtxPublicComponentPolicy,
+                            std::move(public_stage_receipts)));
+            }
         }
         if (component_staged || streamed) {
             if (request.memory_constrained.enabled && denoiser_) {
@@ -3753,37 +3976,82 @@ public:
         id plan_value = to_dictionary(plan);
         NSDictionary *actual_block_layout = nil;
         if (exact_streaming) {
-            actual_block_layout = @{
-                @"digest": @(exact_layout_digest.c_str()),
-                @"stage": @"denoiser",
-                @"resident_prefix_blocks": @(exact_prefix_blocks),
-                @"block_group_size": @1,
-                @"slot_count": @(exact_refill_slots),
-                @"prefetch_distance": @(exact_prefetch_distance),
-                @"io_workers": @(exact_io_workers),
-                @"group_count": @(exact_group_count),
-                @"pass_count": @(exact_pass_count),
-                @"retention": @"request",
-                @"startup_policy": @"prefetch_window_before_prefix",
-                @"pass_transition": @"reload",
-                @"reader_revision": @(LTX_STREAM_READER_REVISION),
-                @"weight_format": @"convrot-int8-g256",
-                @"kernel_revision":
-                    [NSString stringWithUTF8String:kLtxRevision],
-                @"conditioning_recipe": @"scalar-conditioning-v1",
-                @"upsample_boundary": @"after-stage1-pool-retained",
+            auto stage_layout_dictionary = [&](const streaming::StageLayout& stage,
+                                               uint32_t stage_index) {
+                uint64_t slot_bundles = 0;
+                for (const auto& pool : stage.pools)
+                    slot_bundles = ltx_checked_add(
+                        slot_bundles, pool.slots.size(),
+                        "LTX exact stage slot bundles");
+                return @{
+                    @"stage_index": @(stage_index),
+                    @"stage": @(stage.id.c_str()),
+                    @"resident_prefix_blocks": @(stage.prefix),
+                    @"block_group_size": @(stage.group_size),
+                    @"slot_count": @(stage.slot_count),
+                    @"prefetch_distance": @(stage.distance),
+                    @"io_workers": @(stage.workers),
+                    @"group_count": @(stage.groups.size()),
+                    @"pass_count": @(stage.pass_count),
+                    @"pool_count": @(stage.pools.size()),
+                    @"slot_bundle_count": @(slot_bundles),
+                    @"retention": @"request",
+                    @"startup_policy": @"prefetch_window_before_prefix",
+                    @"pass_transition": @"reload",
+                    @"reader_revision": @(LTX_STREAM_READER_REVISION),
+                    @"weight_format": @"convrot-int8-g256",
+                    @"kernel_revision":
+                        [NSString stringWithUTF8String:kLtxRevision],
+                    @"conditioning_recipe": @"scalar-conditioning-v1",
+                    @"upsample_boundary": stage_index == 0 ?
+                        @"release-before-stage1-to-stage2-upsampler" :
+                        @"release-before-video-vae",
+                };
             };
+            if (exact_split_stages) {
+                require(exact_stage_layouts.size() == 2,
+                        "streaming_actual_plan_mismatch: LTX split layout is missing a stage");
+                NSMutableArray *stages = [NSMutableArray
+                    arrayWithCapacity:exact_stage_layouts.size()];
+                for (uint32_t index = 0;
+                     index < exact_stage_layouts.size(); ++index) {
+                    [stages addObject:stage_layout_dictionary(
+                        exact_stage_layouts[index], index)];
+                }
+                actual_block_layout = @{
+                    @"schema_version": @3,
+                    @"digest": @(exact_layout_digest.c_str()),
+                    @"stage_count": @(exact_stage_layouts.size()),
+                    @"stages": stages,
+                    @"aggregate_group_count": @(exact_group_count),
+                    @"aggregate_pass_count": @(exact_pass_count),
+                    @"retention": @"request",
+                };
+            } else {
+                require(exact_stage_layouts.size() == 1,
+                        "streaming_actual_plan_mismatch: LTX single-stage layout is missing");
+                const auto& stage = exact_stage_layouts.front();
+                actual_block_layout = stage_layout_dictionary(stage, 0);
+                NSMutableDictionary *single = [actual_block_layout mutableCopy];
+                single[@"digest"] = @(exact_layout_digest.c_str());
+                actual_block_layout = single;
+            }
             NSMutableDictionary *actual_plan = [plan_value mutableCopy];
             NSMutableDictionary *streaming_plan =
                 [actual_plan[@"streaming"] mutableCopy];
-            streaming_plan[@"eligibility"] = @"experimental_candidate";
+            streaming_plan[@"eligibility"] = public_stream_lease_ ?
+                @"public_reviewed_preset" : @"experimental_candidate";
             streaming_plan[@"execution_supported"] = @YES;
             streaming_plan[@"rejection_code"] = NSNull.null;
-            streaming_plan[@"resolution_state"] = @"executed_exact_v2";
+            streaming_plan[@"resolution_state"] = exact_split_stages ?
+                @"executed_exact_v3" : @"executed_exact_v2";
             streaming_plan[@"resolved_layout"] = actual_block_layout;
             streaming_plan[@"actual_layout"] = actual_block_layout;
-            streaming_plan[@"enforcement"] = @"exact_layout_v2";
-            streaming_plan[@"authority"] = @"private_candidate_constructor";
+            streaming_plan[@"enforcement"] = exact_split_stages ?
+                @"exact_layout_v3" : @"exact_layout_v2";
+            streaming_plan[@"authority"] = public_stream_lease_ ?
+                @"public_preset_authority" :
+                @"private_candidate_constructor";
             actual_plan[@"executable"] = @YES;
             actual_plan[@"streaming"] = streaming_plan;
             plan_value = actual_plan;
@@ -3809,6 +4077,12 @@ public:
                 @"upsample_boundary": @"after-stage1-pool-retained",
             };
         }
+        NSString *exact_implementation = exact_split_stages ?
+            [NSString stringWithUTF8String:kLtxPublicImplementation] :
+            @"c_metal_exact_v2";
+        NSString *exact_validation = exact_split_stages ?
+            @"public_exact_split_layout_v3" :
+            @"experimental_candidate_exact_layout_v2";
         auto value = @{ @"schema_version": @1,
                   @"model": @(request.model.c_str()),
                   @"operation": @(request.operation.c_str()),
@@ -3871,7 +4145,7 @@ public:
                       @"request_wait_seconds": @(use_mlx ? 0.0 :
                           streaming_after.wait_seconds - streaming_before.wait_seconds),
                       @"implementation": use_mlx ? @"cpp_mlx" :
-                          (exact_streaming ? @"c_metal_exact_v2" : @"c_metal"),
+                          (exact_streaming ? exact_implementation : @"c_metal"),
                       @"layout_digest": exact_streaming ?
                           (id)@(exact_layout_digest.c_str()) : (id)[NSNull null],
                       @"actual_layout": actual_block_layout ?
@@ -3918,7 +4192,7 @@ public:
                   },
                   @"execution": @(effective_execution.c_str()),
                   @"denoiser_implementation": use_mlx ? @"cpp_mlx" :
-                      (exact_streaming ? @"c_metal_exact_v2" : @"c_metal"),
+                      (exact_streaming ? exact_implementation : @"c_metal"),
                   @"gpu_parallel_av": @(gpu_parallel_av),
                   @"gpu_batch_audio_commands": @(gpu_batch_audio),
                   @"gpu_video_attention_batch": @(
@@ -3965,8 +4239,7 @@ public:
                       @"sidecar_manifest_verified",
                   @"checkpoint_sha256": selection.checkpoint_sha256.empty() ?
                       (id)[NSNull null] : @(selection.checkpoint_sha256.c_str()),
-                  @"validation": exact_streaming ?
-                      @"experimental_candidate_exact_layout_v2" :
+                  @"validation": exact_streaming ? exact_validation :
                       (request.audio ?
                       @"native_gpu_audio_video_aac_candidate" :
                       (image_to_video ?
@@ -4008,8 +4281,10 @@ public:
             runtime.slot_count = exact_refill_slots;
             runtime.prefetch_distance = exact_prefetch_distance;
             runtime.io_workers = exact_io_workers;
-            runtime.group_count = exact_group_count;
-            runtime.pass_count = exact_pass_count;
+            runtime.group_count = exact_u32(
+                exact_group_count, "LTX exact runtime group count");
+            runtime.pass_count = exact_u32(
+                exact_pass_count, "LTX exact runtime pass count");
             runtime.startup_policy = "prefetch_window_before_prefix";
             runtime.pass_transition = "reload";
             runtime.retention = "request";
@@ -4023,16 +4298,79 @@ public:
                 kLtxPublicComponentPolicy : "ltx-private-components-v1";
             runtime.multi_pool_policy = "serial";
             runtime.pool_count = 1;
-            runtime.slot_bundle_count = exact_counters.slot_bundles;
+            runtime.slot_bundle_count = exact_u32(
+                exact_counters.slot_bundles,
+                "LTX exact runtime slot bundles");
             runtime.refill_worker_count = exact_io_workers;
             runtime.source_lease_verified = public_stream_lease_ != nullptr;
             runtime.drained = true;
-            run.streaming_runtime = runtime;
             if (public_stream_lease_) {
                 require(public_exact_receipt != nullptr,
                         "streaming_actual_receipt_missing");
+                if (exact_split_stages) {
+                    require(exact_stage_layouts.size() == 2 &&
+                                public_exact_receipt->stages.size() == 2,
+                            "streaming_actual_receipt_missing");
+                    for (uint32_t index = 0;
+                         index < exact_stage_layouts.size(); ++index) {
+                        const auto &stage = exact_stage_layouts[index];
+                        StreamingRuntimeMetrics stage_runtime;
+                        stage_runtime.implementation =
+                            kLtxPublicImplementation;
+                        stage_runtime.layout_digest = exact_layout_digest;
+                        stage_runtime.stage = stage.id;
+                        stage_runtime.resident_prefix_blocks = stage.prefix;
+                        stage_runtime.block_group_size = stage.group_size;
+                        stage_runtime.slot_count = stage.slot_count;
+                        stage_runtime.prefetch_distance = stage.distance;
+                        stage_runtime.io_workers = stage.workers;
+                        stage_runtime.group_count = exact_u32(
+                            stage.groups.size(),
+                            "LTX exact stage group count");
+                        stage_runtime.pass_count = stage.pass_count;
+                        stage_runtime.startup_policy =
+                            "prefetch_window_before_prefix";
+                        stage_runtime.pass_transition = "reload";
+                        stage_runtime.retention = "request";
+                        stage_runtime.reader_revision =
+                            LTX_STREAM_READER_REVISION;
+                        stage_runtime.weight_format = "convrot-int8-g256";
+                        stage_runtime.kernel_revision =
+                            kLtxPublicKernelRevision;
+                        stage_runtime.conditioning_recipe =
+                            "gemma4-ltx-connector-v1";
+                        stage_runtime.upsample_boundary = index == 0 ?
+                            "release-before-stage1-to-stage2-upsampler" :
+                            "release-before-video-vae";
+                        stage_runtime.component_policy_revision =
+                            kLtxPublicComponentPolicy;
+                        stage_runtime.multi_pool_policy = "serial";
+                        stage_runtime.pool_count = exact_u32(
+                            stage.pools.size(),
+                            "LTX exact stage pool count");
+                        uint64_t stage_slot_bundles = 0;
+                        for (const auto &pool : stage.pools)
+                            stage_slot_bundles = ltx_checked_add(
+                                stage_slot_bundles, pool.slots.size(),
+                                "LTX exact stage slot bundles");
+                        stage_runtime.slot_bundle_count = exact_u32(
+                            stage_slot_bundles,
+                            "LTX exact stage slot bundles");
+                        stage_runtime.refill_worker_count = stage.workers;
+                        stage_runtime.source_lease_verified = true;
+                        stage_runtime.drained =
+                            public_exact_receipt->stages[index]
+                                .drain_completed;
+                        run.streaming_stages.push_back(
+                            {index, std::move(stage_runtime)});
+                    }
+                } else {
+                    run.streaming_runtime = runtime;
+                    run.streaming_stages = {{0, runtime}};
+                }
                 run.streaming_receipt = std::move(public_exact_receipt);
-                run.streaming_stages = {{0, runtime}};
+            } else {
+                run.streaming_runtime = runtime;
             }
         } else if (streaming_after.enabled) {
             const auto residency = make_block_residency_plan(

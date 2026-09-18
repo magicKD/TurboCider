@@ -18,13 +18,15 @@ class StreamingPlanView {
     StreamingPlanView(const std::string &checkpoint,
                       const StreamingConfig &config,
                       const StreamingWorkload &workload,
-                      uint64_t request_generation);
+                      uint64_t request_generation,
+                      uint32_t stage_index = 0);
     StreamingPlanView(
         std::shared_ptr<const streaming::SourceLease> lease,
         std::string checkpoint_logical_id,
         const StreamingConfig &config,
         const StreamingWorkload &workload,
-        uint64_t request_generation);
+        uint64_t request_generation,
+        uint32_t stage_index = 0);
     ~StreamingPlanView() = default;
 
     StreamingPlanView(const StreamingPlanView &) = delete;
@@ -35,6 +37,9 @@ class StreamingPlanView {
     const ltx_native_streaming_options_v2 &native_options() const noexcept {
         return native_options_;
     }
+    const ltx_native_streaming_options_v3 &native_stage_options() const noexcept {
+        return native_stage_options_;
+    }
     const streaming::Descriptor &descriptor() const noexcept {
         return descriptor_;
     }
@@ -44,8 +49,16 @@ class StreamingPlanView {
     uint32_t resident_prefix_blocks() const noexcept {
         return native_options_.base.resident_prefix_blocks;
     }
+    uint32_t stage_index() const noexcept { return stage_index_; }
+    uint32_t schedule_pass_begin() const noexcept {
+        return native_stage_options_.schedule_pass_begin;
+    }
+    bool split_stages() const noexcept { return layout_.stages.size() > 1; }
 
   private:
+    void initialize(const StreamingConfig &, const StreamingWorkload &,
+                    uint64_t request_generation, uint32_t stage_index);
+
     StreamingMetadata metadata_;
     streaming::Descriptor descriptor_;
     streaming::Layout layout_;
@@ -53,6 +66,8 @@ class StreamingPlanView {
     std::vector<tc_stream_group_v1> groups_;
     tc_stream_stage_plan_v1 c_plan_{};
     ltx_native_streaming_options_v2 native_options_{};
+    ltx_native_streaming_options_v3 native_stage_options_{};
+    uint32_t stage_index_ = 0;
 };
 
 } // namespace tc::ltx

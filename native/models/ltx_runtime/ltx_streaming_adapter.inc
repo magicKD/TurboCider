@@ -9,7 +9,7 @@ typedef struct ltx_exact_stream {
     ltx_gpu *gpu, *audio_gpu;
     const ltx_st_mapping *mapping;
     block_weights *prefix;
-    uint32_t prefix_count, slot_count, pass, expected_passes;
+    uint32_t prefix_count, slot_count, pass, expected_passes, pass_begin;
     uint64_t queue_sequence, source_bytes[LTX_MAX_REFILL_SLOTS];
     int finished, poisoned;
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
@@ -237,6 +237,8 @@ static void ltx_exact_release_quarantine(ltx_exact_stream *s) {
  * construction. It never treats an invalid ABI as a best-effort legacy plan. */
 static int ltx_exact_validate_options(const ltx_native_options *options,
                                       const ltx_native_streaming_options_v1 *o,
+                                      uint32_t pass_begin,
+                                      int allow_split_stage,
                                       char *error, size_t size) {
     if (!options || !o || o->struct_size != sizeof(*o) || o->version != 1u) {
         snprintf(error, size, "invalid LTX exact options ABI"); return 0;
@@ -263,7 +265,19 @@ static int ltx_exact_validate_options(const ltx_native_options *options,
     }
     size_t stage1, stage2;
     (void)ltx_distilled_stage1_sigmas(&stage1); (void)ltx_distilled_stage2_sigmas(&stage2);
-    if (stage1 < 2 || stage2 < 2 || p->pass_count != stage1 + stage2 - 2u) {
+    const uint32_t stage1_passes = stage1 >= 2 ?
+        (uint32_t)(stage1 - 1u) : 0u;
+    const uint32_t stage2_passes = stage2 >= 2 ?
+        (uint32_t)(stage2 - 1u) : 0u;
+    const int legacy_plan = !allow_split_stage && pass_begin == 0u &&
+        p->pass_count == stage1_passes + stage2_passes && p->stage == 0u;
+    const int split_stage1 = allow_split_stage && pass_begin == 0u &&
+        p->pass_count == stage1_passes && p->stage == 0u;
+    const int split_stage2 = allow_split_stage &&
+        pass_begin == stage1_passes &&
+        p->pass_count == stage2_passes && p->stage == 1u;
+    if (stage1 < 2 || stage2 < 2 ||
+        (!legacy_plan && !split_stage1 && !split_stage2)) {
         snprintf(error, size, "LTX exact plan has wrong pass count"); return 0;
     }
     uint64_t pool_bytes = 0, pass_bytes = 0;

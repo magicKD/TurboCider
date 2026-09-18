@@ -5922,6 +5922,7 @@ int ltx_native_get_streaming_info(
 static ltx_native_denoiser *ltx_native_create_internal(const ltx_native_options *options,
     const ltx_native_streaming_options_v1 *exact_options,
     const ltx_st_header *borrowed_header, const ltx_st_mapping *borrowed_mapping,
+    uint32_t exact_pass_begin,
     ltx_native_denoiser **quarantine,
     ltx_native_progress progress,void *opaque,char *error,size_t error_size) {
     if(!options||!options->checkpoint||options->fps!=24){snprintf(error,error_size,"LTX requires checkpoint and 24 fps");return NULL;}
@@ -6223,6 +6224,7 @@ static ltx_native_denoiser *ltx_native_create_internal(const ltx_native_options 
         s->mapping = &ctx->streaming_mapping; s->prefix = ctx->weights;
         s->prefix_count = ctx->pinned_blocks; s->slot_count = ctx->refill_slots;
         s->expected_passes = exact_options->plan->pass_count;
+        s->pass_begin = exact_pass_begin;
         if (!ltx_native_exact_source_current(ctx, error, error_size)) goto failed;
         if (!ltx_exact_begin(s, exact_options->plan, error, error_size)) goto failed;
     }
@@ -6255,7 +6257,8 @@ failed:
 
 ltx_native_denoiser *ltx_native_create(const ltx_native_options *options,
     ltx_native_progress progress, void *opaque, char *error, size_t error_size) {
-    return ltx_native_create_internal(options, NULL, NULL, NULL, NULL, progress, opaque, error, error_size);
+    return ltx_native_create_internal(options, NULL, NULL, NULL, 0u, NULL,
+                                      progress, opaque, error, error_size);
 }
 
 int ltx_native_create_streamed_v1(const ltx_native_options *options,
@@ -6265,9 +6268,10 @@ int ltx_native_create_streamed_v1(const ltx_native_options *options,
     if (!error || !size) { error = ignored_error; size = sizeof(ignored_error); }
     if (!out) { snprintf(error, size, "missing LTX exact output handle"); return 0; }
     *out = NULL;
-    if (!ltx_exact_validate_options(options, exact, error, size)) return 0;
+    if (!ltx_exact_validate_options(options, exact, 0u, 0, error, size)) return 0;
     ltx_native_options copy = *options; copy.stream_blocks = 1;
-    ltx_native_denoiser *ctx = ltx_native_create_internal(&copy, exact, NULL, NULL, out, progress, opaque, error, size);
+    ltx_native_denoiser *ctx = ltx_native_create_internal(
+        &copy, exact, NULL, NULL, 0u, out, progress, opaque, error, size);
     if (!ctx) return 0;
     *out = ctx;
     return 1;
@@ -6286,7 +6290,8 @@ int ltx_native_create_streamed_v2(const ltx_native_options *options,
         !exact->metadata_mapping->descriptor_open || exact->metadata_mapping->descriptor < 0) {
         snprintf(error, size, "invalid LTX exact metadata snapshot ABI"); return 0;
     }
-    if (!ltx_exact_validate_options(options, &exact->base, error, size)) return 0;
+    if (!ltx_exact_validate_options(
+            options, &exact->base, 0u, 0, error, size)) return 0;
     if (exact->metadata_mapping->bytes != exact->metadata_header->file_size) {
         snprintf(error, size, "LTX exact metadata mapping size mismatch"); return 0;
     }
@@ -6295,9 +6300,43 @@ int ltx_native_create_streamed_v2(const ltx_native_options *options,
     ltx_native_options copy=*options; copy.stream_blocks=1;
     ltx_native_denoiser *ctx = ltx_native_create_internal(
         &copy, &exact->base, exact->metadata_header, exact->metadata_mapping,
-        out, progress, opaque, error, size);
+        0u, out, progress, opaque, error, size);
     if (!ctx) return 0;
     *out=ctx; return 1;
+}
+
+int ltx_native_create_streamed_v3(const ltx_native_options *options,
+    const ltx_native_streaming_options_v3 *exact, ltx_native_denoiser **out,
+    ltx_native_progress progress, void *opaque, char *error, size_t size) {
+    char ignored_error[1024] = {0};
+    if (!error || !size) { error = ignored_error; size = sizeof(ignored_error); }
+    if (!out) { snprintf(error, size, "missing LTX exact output handle"); return 0; }
+    *out = NULL;
+    if (!exact || exact->struct_size != sizeof(*exact) || exact->version != 3u ||
+        exact->reserved != 0u ||
+        exact->base.struct_size != sizeof(exact->base) || exact->base.version != 1u ||
+        !exact->metadata_header || !exact->metadata_mapping ||
+        !exact->metadata_mapping->descriptor_open ||
+        exact->metadata_mapping->descriptor < 0) {
+        snprintf(error, size, "invalid LTX exact stage metadata ABI"); return 0;
+    }
+    if (!ltx_exact_validate_options(options, &exact->base,
+                                    exact->schedule_pass_begin, 1,
+                                    error, size)) return 0;
+    if (exact->metadata_mapping->bytes != exact->metadata_header->file_size) {
+        snprintf(error, size, "LTX exact metadata mapping size mismatch"); return 0;
+    }
+    if (!ltx_st_validate_snapshot_fd(exact->metadata_header,
+            exact->metadata_mapping->descriptor, options->checkpoint,
+            error, size)) return 0;
+    ltx_native_options copy = *options; copy.stream_blocks = 1;
+    ltx_native_denoiser *ctx = ltx_native_create_internal(
+        &copy, &exact->base, exact->metadata_header,
+        exact->metadata_mapping, exact->schedule_pass_begin,
+        out, progress, opaque, error, size);
+    if (!ctx) return 0;
+    *out = ctx;
+    return 1;
 }
 
 int ltx_native_streaming_destroy(ltx_native_denoiser **ctx, char *error, size_t size) {
@@ -6422,7 +6461,7 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
         (uint32_t)schedule_step_begin64;
     const uint32_t schedule_step_end = (uint32_t)schedule_step_end64;
     if (ctx->exact_stream && (first_frame || ctx->exact_stream->finished || ctx->exact_stream->poisoned ||
-        ctx->exact_stream->pass != schedule_step_begin)) {
+        ctx->exact_stream->pass_begin + ctx->exact_stream->pass != schedule_step_begin)) {
         snprintf(error, error_size, "LTX exact streaming requires sequential text-only stages"); return 0;
     }
     if (!ltx_native_schedule_emit(
@@ -6588,7 +6627,8 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
         ctx->options.stream_blocks && ctx->pinned_blocks < 48u ?
             &stream_source : NULL,
         &rope,&workspace,ctx->io,ctx->conditioning,buffers[2],buffers[3],buffers[4],buffers[0],buffers[1],clean,prefix,strength,buffers[5],buffers[6],buffers[7],buffers[8],rows,audio_rows,text_rows,vp,ap,sigmas,count,stage==1,&video_rng,stage==1?&video_rng:&audio_rng,stage==2&&ctx->options.release_blocks_final_step,error,error_size);
-    if (ok && ctx->exact_stream && stage == 2) {
+    if (ok && ctx->exact_stream &&
+        ctx->exact_stream->pass == ctx->exact_stream->expected_passes) {
         ok = tc_stream_executor_finish(ctx->exact_stream->executor, error, error_size);
         if (ok) ctx->exact_stream->finished = 1;
     }
@@ -6690,6 +6730,52 @@ int ltx_native_upsample_stage2_fd(
         ctx,upsampler_checkpoint,upsampler_fd,
         video_vae_checkpoint,video_vae_fd,
         output,output_elements,input,input_elements,error,error_size);
+}
+
+int ltx_native_upsample_stage2_standalone_fd(
+    const char *shader_source, uint32_t width, uint32_t height,
+    uint32_t frames, uint32_t fps,
+    int upsampler_fd, const char *upsampler_checkpoint,
+    int video_vae_fd, const char *video_vae_checkpoint,
+    uint16_t *output, size_t output_elements,
+    const uint16_t *input, size_t input_elements,
+    char *error, size_t error_size) {
+    if (!shader_source || !shader_source[0] || fps != 24u ||
+        upsampler_fd < 0 || video_vae_fd < 0) {
+        snprintf(error, error_size,
+                 "invalid standalone LTX stage boundary input");
+        return 0;
+    }
+    ltx_native_denoiser boundary = {0};
+    if (!ltx_workload_init(&boundary.workload, width, height, frames, fps,
+                           error, error_size) ||
+        boundary.workload.output_width != width ||
+        boundary.workload.output_height != height ||
+        boundary.workload.frames != frames) {
+        if (error && error_size && !error[0])
+            snprintf(error, error_size,
+                     "LTX stage boundary geometry is not normalized");
+        return 0;
+    }
+    boundary.gpu = ltx_gpu_create(shader_source, error, error_size);
+    if (!boundary.gpu) return 0;
+    const int result = ltx_native_upsample_stage2_impl(
+        &boundary, upsampler_checkpoint, upsampler_fd,
+        video_vae_checkpoint, video_vae_fd,
+        output, output_elements, input, input_elements,
+        error, error_size);
+    char drain_error[1024] = {0};
+    const int drained = ltx_gpu_drain(
+        boundary.gpu, drain_error, sizeof(drain_error));
+    ltx_gpu_free(boundary.gpu);
+    if (!result) return 0;
+    if (!drained) {
+        snprintf(error, error_size, "%s",
+                 drain_error[0] ? drain_error :
+                     "LTX standalone stage boundary drain failed");
+        return 0;
+    }
+    return 1;
 }
 
 int ltx_native_connect_conditioning(

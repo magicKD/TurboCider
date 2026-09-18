@@ -1959,3 +1959,107 @@ pasteboard service 时保留原有 pasteboard SKIP；系统废纸篓测试需在
 2. 四模型 8/10/12/16/20 GiB 的 full-request process-tree calibration、质量和 P0/P1/P2/P3；
 3. independent verifier、reviewed records 和非空 production catalog；
 4. active public streaming 与 ANE/hybrid 的独立 adapter/evidence；首版 GPU-only gate 继续保留。
+
+### 13.39 LTX split-stage executor 与真实 Metal 验证（工作树，尚未提交）
+
+本轮继续推进第 13.38 节列出的第一个阻断项，改动保持 additive，legacy/private 单 stage
+路径不变：
+
+- ltx_streaming_descriptor 支持 split_stages=true，将 distilled 11-step denoiser
+  投影为 ltx-stage1-denoiser（8 pass）和 ltx-stage2-denoiser（3 pass）；
+- ltx_streaming_plan 为每个 stage 生成独立的 native plan，并把 Stage 2 的
+  schedule_pass_begin=8 映射到全局 sigma schedule；
+- 新增 ltx_native_streaming_options_v3 和 ltx_native_create_streamed_v3，旧
+  V1/V2 ABI 不变；
+- LTX public execution 在 Stage 1 完成后读取真实 stage receipt，调用
+  ltx_native_streaming_destroy 释放 Stage 1 pool，再通过短生命周期
+  ltx_native_upsample_stage2_standalone_fd 执行 upsample，之后创建 Stage 2 executor；
+- public receipt 使用两个真实 stage receipt 和一个 ltx-stage1-to-stage2-upsampler
+  boundary；boundary 明确记录 drain、backing release、live bytes after=0 和 pending
+  readers after=0；
+- RunResult.streaming_stages 对 multi-stage public path 按 stage 返回，避免把两个
+  stage 压成含义不清的 legacy streaming_runtime summary；
+- public LTX probe 将 ltx_fast_av 纳入 exact route 合同；public descriptor 与 native
+  workload 使用相同的 parallel-A/V 和 batch-audio 选项，避免 probe/layout digest 漂移。
+
+本轮 host/native 验证：
+
+    env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh  PASS
+    make test-streaming-host                            PASS
+    make test-streaming-contract                        PASS
+    python3 -B tests/native/test_ltx_public_streaming.py PASS
+    git diff --check                                    PASS
+
+实体 Metal smoke（只读真实 checkpoint，64×64×9，3 slots，非 public calibration）：
+
+    legacy total       6.69124 s
+    single-stage exact 6.42736 s
+    split-stage exact  6.69745 s
+
+split-stage 结果与 legacy/single-stage 的 Stage-1、upsample、Stage-2 video/audio
+输出 byte-exact，并验证 Stage 1 executor 在 upsample 前销毁、Stage 2 在 boundary 后重新
+创建。该测试仍是 fabricated conditioning / tiny workload，不能替代完整 Gemma、VAE、
+process-tree peak、P0/P1/P2/P3 或 production catalog 证据。
+
+当前剩余项：
+
+1. 本轮修改尚未提交；
+2. public production catalog 仍为 tc-streaming-catalog-empty-v1；
+3. LTX split-stage 需要完整请求和正式 process-tree 校准后才能生成 public record；
+4. H3、Z-Image、Flux 仍需各自五档 target 的真实记录；
+5. ANE + public streaming 仍保持 GPU-only fail-closed，必须单独校准后才可扩展。
+
+### 13.40 LTX split-stage 回执收口、V3 ABI 回归与真实 Metal 复跑（2026-09-18，工作树）
+
+本轮对 13.39 的工作树实现做了发布级代码审阅和一轮收口，仍没有修改 production catalog，也没有把
+LTX 标记为 public：
+
+- 多 stage LTX 的聚合 `group_count`、`pass_count` 和 C counters 改为 checked add；转换回旧的
+  `uint32_t` 运行时字段前再做范围检查，避免极大 workload 在回执或 metrics 生成时静默回绕。
+- `ltx_native_create_streamed_v3()` 现在严格区分 legacy 11-pass 单 executor 与 Stage-1/Stage-2
+  （8+3 pass）两个 executor；stage-local pass count、`schedule_pass_begin`、stage index 和
+  `tc_stream_stage_plan_v1.stage` 必须相互一致。V1/V2 ABI 保持不变。
+- LTX public 的 `actual_layout` 在 split 模式下改为 schema-v3 多 stage 表达，包含 stage 列表、每个
+  stage 的 prefix/slot/pool/group/pass/worker、以及 aggregate group/pass 计数；单 stage private
+  路径仍保留历史 layout 形状，避免影响旧消费者。
+- public split route 的 runtime identity 升级为 `public-streaming-runtime-v3`，结果摘要使用
+  `generic_stage_executor_v3`/`public_exact_split_layout_v3`；public preset 必须显式使用
+  `ltx-stage1-denoiser` 和 `ltx-stage2-denoiser`，不能把旧单 stage record 伪装成新的 boundary 语义。
+- 测试修正了 real-model wrapper 对 `--exact-api` 的错误暴露：V1/V2 仍用于 legacy 对照，V3 由
+  `run_split` 专门覆盖；新增 host V3 ABI/offset/pass rejection，包括无效 metadata、错误 stage、错误
+  global offset、两阶段取消路径。
+
+本轮验证：
+
+```text
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh       PASS
+make test-streaming-host                                  PASS
+make test-streaming-contract                              PASS
+make test-streaming-audit                                 PASS（无 audit dylib 时 1 项环境 SKIP）
+python3 -B tests/native/test_ltx_streaming_snapshot.py    PASS（含 V3 rejection）
+git diff --check                                          PASS
+```
+
+在沙箱外实体 Metal 上用真实 LTX 2.5 Transformer、upsampler、Video VAE 做了显式 tiny smoke：
+
+```text
+64×64×9，3 slots，11-step distilled schedule，fabricated 16-row conditioning
+```
+
+结果（包含 create、denoise、upsample、destroy；不是 full request 或 P1 campaign）：
+
+| 路径 | total | 输出一致性 |
+|---|---:|---|
+| legacy | 6.68053 s | baseline |
+| single-stage exact V2 | 6.43867 s | video/audio/upsample byte-exact |
+| split-stage exact V3 | 6.68401 s | Stage-1/upsample/Stage-2 video/audio byte-exact |
+
+split-stage 还验证了 Stage 1 backing 在 upsample 前已销毁，Stage 2 在 boundary 后重新创建；取消、sticky
+failure、joined cleanup 和 invalid intent 均通过。split/legacy 的 tiny wall 比例约为 1.0005，不能把它
+写成正式性能通过：conditioning、Gemma、Video VAE、MP4/export、process-tree peak、8/10/12/16/20 GiB
+校准、swap P3 和重复请求仍未覆盖。
+
+当前结论仍为：LTX split-stage 已达到可进入 full-request public candidate 验收的代码基线，但 production
+catalog 必须继续保持 `tc-streaming-catalog-empty-v1`，直到 full request、独立 verifier 和 reviewed
+memory-tier records 完成。H3 Turbo、Z-Image Turbo、Flux 9B 的 public record 和 streaming+ANE
+校准仍未完成；public streaming v1 继续 GPU-only fail-closed。

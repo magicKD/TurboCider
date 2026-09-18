@@ -142,6 +142,21 @@ typedef struct {
 int ltx_native_create_streamed_v2(const ltx_native_options *,
     const ltx_native_streaming_options_v2 *, ltx_native_denoiser **out,
     ltx_native_progress, void *, char *, size_t);
+/* Public two-stage LTX uses one exact executor per denoising stage.  Passes in
+ * the common executor remain stage-local while schedule_pass_begin binds them
+ * to the global distilled 8+3 step sequence.  V1/V2 keep their historical
+ * single-executor 11-pass contract. */
+typedef struct {
+    uint32_t struct_size, version;
+    ltx_native_streaming_options_v1 base;
+    const ltx_st_header *metadata_header;
+    const ltx_st_mapping *metadata_mapping;
+    uint32_t schedule_pass_begin;
+    uint32_t reserved;
+} ltx_native_streaming_options_v3;
+int ltx_native_create_streamed_v3(const ltx_native_options *,
+    const ltx_native_streaming_options_v3 *, ltx_native_denoiser **out,
+    ltx_native_progress, void *, char *, size_t);
 void ltx_native_free(ltx_native_denoiser*);
 /* Owner-thread completion barrier for native GPU and auxiliary GPU queues. */
 int ltx_native_drain(ltx_native_denoiser*, char*, size_t);
@@ -169,6 +184,17 @@ int ltx_native_upsample_stage2_fd(
     ltx_native_denoiser*, int upsampler_fd,
     const char *upsampler_diagnostic_path, int video_vae_fd,
     const char *video_vae_diagnostic_path,
+    uint16_t *output, size_t output_elements,
+    const uint16_t *input, size_t input_elements,
+    char *error, size_t error_size);
+/* Request-scoped public boundary helper.  It creates only a short-lived GPU
+ * utility context after the Stage-1 transformer executor/backing has been
+ * destroyed, so upsampling cannot overlap the released Stage-1 pool. */
+int ltx_native_upsample_stage2_standalone_fd(
+    const char *shader_source, uint32_t width, uint32_t height,
+    uint32_t frames, uint32_t fps,
+    int upsampler_fd, const char *upsampler_diagnostic_path,
+    int video_vae_fd, const char *video_vae_diagnostic_path,
     uint16_t *output, size_t output_elements,
     const uint16_t *input, size_t input_elements,
     char *error, size_t error_size);

@@ -54,6 +54,7 @@ struct Fixture {
     tc_stream_stage_plan_v1 plan{};
     ltx_native_streaming_options_v1 base{};
     ltx_native_streaming_options_v2 exact{};
+    ltx_native_streaming_options_v3 stage{};
     unsigned calls = 0;
     char error[1024]{};
 
@@ -72,6 +73,8 @@ struct Fixture {
                 capacities.data(), uint32_t(groups.size()), groups.data()};
         base = {sizeof(base), 1, 1, &plan};
         exact = {sizeof(exact), 2, base, &metadata.header(), &metadata.mapping()};
+        stage = {sizeof(stage), 3, base, &metadata.header(),
+                 &metadata.mapping(), 0, 0};
     }
     void reject(unsigned version, const char *message, unsigned expected_calls = 0) {
         calls = 0; error[0] = 0;
@@ -82,6 +85,21 @@ struct Fixture {
             : ltx_native_create_streamed_v2(&options, &exact, &ctx, cancel_description, &calls, error, sizeof(error));
         if (ok || ctx || calls != expected_calls || !std::strstr(error, message)) {
             std::cerr << "v" << version << " expected=" << message << " actual=" << error
+                      << " callbacks=" << calls << '\n';
+            assert(false);
+        }
+        assert(fcntl(metadata.mapping().descriptor, F_GETFD) >= 0);
+    }
+    void reject_v3(const char *message, unsigned expected_calls = 0) {
+        calls = 0; error[0] = 0;
+        auto *ctx = reinterpret_cast<ltx_native_denoiser *>(uintptr_t(1));
+        stage.base = base;
+        const int ok = ltx_native_create_streamed_v3(
+            &options, &stage, &ctx, cancel_description, &calls,
+            error, sizeof(error));
+        if (ok || ctx || calls != expected_calls ||
+            !std::strstr(error, message)) {
+            std::cerr << "v3 expected=" << message << " actual=" << error
                       << " callbacks=" << calls << '\n';
             assert(false);
         }
@@ -129,9 +147,38 @@ int main(int argc, char **argv) {
         f.invalid_both([&] { f.options.mlp_directories[0] = "unused"; });
         f.invalid_both([&] { f.options.release_blocks_final_step = 1; });
 
+        // V3 is reserved for one exact executor per denoising stage.  It must
+        // not accept the historical 11-pass single-stage plan, nor allow the
+        // local stage index and global schedule offset to drift apart.
+        f.reset();
+        f.reject_v3("wrong pass count");
+        f.reset(); f.stage.struct_size--;
+        f.reject_v3("stage metadata ABI");
+        f.reset(); f.stage.version++;
+        f.reject_v3("stage metadata ABI");
+        f.reset(); f.stage.reserved = 1;
+        f.reject_v3("stage metadata ABI");
+        f.reset(); f.stage.metadata_header = nullptr;
+        f.reject_v3("stage metadata ABI");
+        f.reset(); f.plan.pass_count = 8; f.plan.stage = 1;
+        f.reject_v3("wrong pass count");
+        f.reset(); f.plan.pass_count = 3; f.plan.stage = 1;
+        f.reject_v3("wrong pass count");
+        f.reset(); f.plan.pass_count = 3; f.plan.stage = 1;
+        f.stage.schedule_pass_begin = 7;
+        f.reject_v3("wrong pass count");
+        f.reset(); f.plan.pass_count = 8;
+        f.reject_v3("cancelled", 1);
+        f.reset(); f.plan.pass_count = 3; f.plan.stage = 1;
+        f.stage.schedule_pass_begin = 8;
+        f.reject_v3("cancelled", 1);
+        f.reset();
+
         assert(!ltx_native_create_streamed_v1(&f.options, &f.base, nullptr,
                                              cancel_description, &f.calls, nullptr, 0));
         assert(!ltx_native_create_streamed_v2(&f.options, &f.exact, nullptr,
+                                             cancel_description, &f.calls, nullptr, 1024));
+        assert(!ltx_native_create_streamed_v3(&f.options, &f.stage, nullptr,
                                              cancel_description, &f.calls, nullptr, 1024));
         auto *ctx = reinterpret_cast<ltx_native_denoiser *>(uintptr_t(1));
         assert(!ltx_native_create_streamed_v2(nullptr, &f.exact, &ctx,
@@ -190,7 +237,7 @@ int main(int argc, char **argv) {
         for (unsigned i = 0; i < 16; ++i) f.reject(2, "cancelled", 1);
         assert(fd_count() == before);
         metadata.check_unchanged();
-        std::cout << "PASS v1/v2 ABI/plan rejection; full metadata validation/capacity mismatch; borrowed fd/header, same-size identity, repeated cancellation cleanup\n";
+        std::cout << "PASS v1/v2 legacy and v3 split-stage ABI/plan rejection; full metadata validation/capacity mismatch; borrowed fd/header, same-size identity, repeated cancellation cleanup\n";
 
         // Same inode/size, different payload and explicit mtime (no timing sleeps).
         int writable = open(argv[1], O_RDWR | O_CLOEXEC); assert(writable >= 0);

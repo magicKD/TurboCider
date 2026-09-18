@@ -14,6 +14,12 @@ struct StreamingWorkload {
     // Explicitly distinguish the native test's fabricated inputs from a real
     // connected context. Neither choice grants public execution qualification.
     std::string conditioning = "connected";
+    // Public request-scoped execution releases the complete Stage-1
+    // transformer backing before the spatial upsampler and materializes a
+    // fresh Stage-2 executor afterwards.  Private/legacy exact streaming keeps
+    // the historical single 11-pass stage so its ABI and performance remain
+    // unchanged.
+    bool split_stages = false;
 };
 
 // Owns the header, fd and all borrowed C field metadata. No GPU allocations,
