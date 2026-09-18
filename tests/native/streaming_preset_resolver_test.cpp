@@ -445,6 +445,10 @@ int main() {
     const auto stable_digest = slow.canonical_record_digest;
     assert(stable_digest.size() == 64);
     assert(streaming_preset_record_digest(slow) == stable_digest);
+    auto canonical_fixture = record("canonical-fixture", 2, 7 * gib, 100);
+    canonical_fixture.source.source_snapshot_digest = digest('b');
+    assert(streaming_preset_record_digest(canonical_fixture) ==
+           "13b5797176d713924b9c16857acbf0f7a35313d2426a22fdca38c488b3ea3df1");
     auto changed = slow;
     changed.plan.canonical_config = config(12);
     assert(streaming_preset_record_digest(changed) != stable_digest);

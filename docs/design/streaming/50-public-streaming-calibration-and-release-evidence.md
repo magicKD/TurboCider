@@ -479,6 +479,50 @@ record_id = sha256(canonical(record_without_release_fields))
 - calibration peak 使用同一 sampler/headroom policy；
 - verifier revision 与 catalog schema 兼容。
 
+当前实现的 `tools/native/build_streaming_catalog.py` 已将上述规则落成
+fail-closed 的 staging builder。它不会修改 C++ production catalog，只输出一个可审阅的
+record artifact。调用时必须分别提供：
+
+```sh
+python3 -B tools/native/build_streaming_catalog.py \
+  --default-bundle <P0-bundle> \
+  --performance-bundle <P1-bundle> \
+  --bundle <P2-bundle> \
+  --record-input <record-input.json> \
+  --review <review.json> \
+  --output <record-output.json>
+```
+
+对于 `public-experimental`/`public-stable`，还必须增加：
+
+```sh
+  --swap-bundle <P3-natural-swap-bundle>
+```
+
+builder 当前执行以下不可绕过的校验：
+
+1. 每个 bundle 都重新运行 independent campaign verifier，并且 persisted `summary.json`
+   必须与重新计算的 summary 完全一致；`INCONCLUSIVE`、`FAIL` 或 summary hash 不一致均拒绝。
+2. staging 至少绑定 P0/P1/P2；public channel 额外要求 P3。每个 campaign policy 必须含有与
+   record source/workload/runtime/device/plan/performance profile 完全相同的 `catalog_binding`。
+3. P2 必须是五档之一，要求 candidate-only、fresh process、至少 20 个 measured requests、
+   无 over-target、无 unexpected swap、无 incomplete、无采样 gap 超限；record 的
+   `calibrated_request_bytes` 必须等于 candidate process-tree peak P95 的向上取整，不能手工填更小值。
+4. P1 的 `performance.evidence_digest` 必须指向 P1 summary；P2 的 calibration digest 必须指向
+   P2 summary；candidate receipt 的 layout digest 必须与 record 一致。
+5. review 文件使用 `tc-streaming-catalog-review-v1`，必须列出 runtime/model/performance/release
+   四类 reviewer、所需 gate 的 summary digest、reviewed commit、record identity digest，并校验
+   review 自身的 canonical digest。
+6. native canonical record 使用与 `preset_catalog.cpp` 相同的二层 binary encoder：
+   `tc-streaming-preset-record-v1` 生成 canonical bytes，再由
+   `tc-streaming-preset-record-digest-v1` 包装后 SHA-256；不能使用 JSON 或裸 canonical bytes 的
+   SHA-256 替代。
+
+当前对应测试为 `tests/native/test_streaming_catalog_builder.py`，覆盖 canonical digest parity、
+slot policy、P2 headroom/sample floor、layout mismatch、review mismatch、duplicate identity、
+inconclusive/peak/swap 拒绝以及 staging deterministic output。production catalog 仍保持为空，
+builder 通过并不代表已有模型获得 public 资格；还必须先完成真实 full-request evidence 和 review。
+
 ### 8.2 review checklist
 
 reviewer 至少签核：

@@ -724,6 +724,14 @@ def verify_memory_bundle(
     disallowed_swap = (
         unexpected_swap if config.get("allow_swap_out") is not True else []
     )
+    maximum_sample_gap_ns = max(
+        (by_run[run_id]["max_gap_ns"] for run_id in required_run_ids),
+        default=0,
+    )
+    allowed_max_gap_ns = min(
+        (by_run[run_id]["allowed_max_gap_ns"] for run_id in required_run_ids),
+        default=0,
+    )
     if over_target or disallowed_swap:
         qualification = "FAIL"
     elif incomplete or insufficient_variants or fresh_process_failures:
@@ -739,6 +747,8 @@ def verify_memory_bundle(
         "target_bytes": target,
         "allowed_peak_bytes": allowed_peak,
         "peak_p95_bytes": peak_p95,
+        "maximum_sample_gap_ns": maximum_sample_gap_ns,
+        "allowed_max_gap_ns": allowed_max_gap_ns,
         "over_target": over_target,
         "unexpected_swap": unexpected_swap,
         "incomplete": incomplete,

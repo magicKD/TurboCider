@@ -4,7 +4,7 @@ LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3.11))
 PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),python3.11)
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
-.PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-source-identity test-streaming-source-lease test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults test-process-tree-sampler
+.PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-catalog-builder test-streaming-source-identity test-streaming-source-lease test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults test-process-tree-sampler
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -21,6 +21,7 @@ help:
 	@echo 'make test-streaming-contract       Verify streaming API/snapshot contracts (requires native build)'
 	@echo 'make test-streaming-metal          Verify synthetic GPU slots (requires Metal access)'
 	@echo 'make test-streaming-campaign       Verify CPU-only ABBA campaign runner/verifier'
+	@echo 'make test-streaming-catalog-builder Verify immutable catalog builder contracts'
 	@echo 'make test-streaming-source-identity Verify source/build provenance capture'
 	@echo 'make test-streaming-source-lease    Verify fd lease, mutation and value snapshot contracts'
 	@echo 'make test-streaming-audit          Verify audit-only counters and release symbol isolation'
@@ -49,6 +50,7 @@ test:
 	@$(MAKE) test-streaming-host
 	@$(MAKE) test-streaming-contract
 	@$(MAKE) test-streaming-campaign
+	@$(MAKE) test-streaming-catalog-builder
 	@$(MAKE) test-streaming-source-identity
 	@$(MAKE) test-streaming-audit
 	@$(MAKE) test-streaming-pager
@@ -120,6 +122,8 @@ test-streaming-metal:
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_layout.py --metal
 test-streaming-campaign:
 	@"$(PYTHON)" -B tests/native/test_streaming_campaign_verifier.py
+test-streaming-catalog-builder:
+	@"$(PYTHON)" -B tests/native/test_streaming_catalog_builder.py
 test-streaming-source-identity:
 	@"$(PYTHON)" -B tests/native/test_streaming_source_identity.py
 test-streaming-source-lease:

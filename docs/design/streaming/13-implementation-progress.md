@@ -2160,3 +2160,44 @@ target-fit evidence，不要求 streaming 与 resident 等速；性能策略优�
 python3 -B tests/native/test_streaming_campaign_verifier.py  # 27 tests PASS
 python3 -B tests/native/test_process_tree_sampler.py          # 3 tests PASS
 ```
+
+### 13.43 Deterministic catalog builder 与 native digest parity（2026-09-18，工作树）
+
+本轮完成了从 verified campaign evidence 到 reviewable staging record 的 builder 基线，但没有向
+production catalog 写入任何模型 record：
+
+- 新增 `tools/native/build_streaming_catalog.py`，staging record 强制要求相互独立的 P0/P1/P2 bundle；
+  `public-experimental`/`public-stable` 额外要求 P3 natural-swap bundle。任一 verifier 结果为
+  `FAIL`/`INCONCLUSIVE`、persisted summary 与独立重算不一致或 review 不完整时均 fail-closed。
+- campaign policy 必须冻结 `catalog_binding`，将 source、workload、runtime、device、exact plan 和
+  performance profile 与 record 逐字段绑定；P1/P2/P3 candidate raw receipt 的 layout digest 必须与
+  record 相同，不能只凭手写 record input 获得资格。
+- P2 record 只接受五个 public target，要求 candidate-only process-tree evidence、至少 20 个 measured
+  requests、fresh process、无 over-target、无 unexpected swap、无 incomplete/gap；record peak 必须等于
+  candidate `phys_footprint` P95 向上取整，confirmation count 和最大采样 gap 也必须与 evidence 精确一致。
+- verifier summary 新增 `maximum_sample_gap_ns` 和 `allowed_max_gap_ns`，builder 不再把 peak bytes 错当成
+  gap policy；review 绑定 P0/P1/P2（public 再加 P3）的 summary SHA-256、reviewed commit、record identity
+  和 runtime/model/performance/release 四类 reviewer。
+- Python canonical encoder 已按 `preset_catalog.cpp` 修正字段顺序，并复现 native 的二层 digest：先编码
+  `tc-streaming-preset-record-v1`，再把 canonical bytes 作为 string field 写入
+  `tc-streaming-preset-record-digest-v1`。Python/C++ 共用 locked fixture digest
+  `13b5797176d713924b9c16857acbf0f7a35313d2426a22fdca38c488b3ea3df1`，防止后续一侧漂移。
+- 新增 `tests/native/test_streaming_catalog_builder.py` 和 `make test-streaming-catalog-builder`；覆盖 deterministic
+  staging output、裸 SHA 与 native digest 区分、unencoded field、slot policy、少于 20 个 P2 样本、
+  INCONCLUSIVE、over-target、swap、layout/review mismatch、duplicate identity 和 public 缺少 P3 等反例。
+
+本轮验证：
+
+```text
+make test-streaming-catalog-builder                 PASS（14 tests）
+python3 -B tests/native/test_streaming_preset_resolver.py PASS（含 Python/C++ digest parity）
+make test-streaming-campaign                        PASS（27 tests）
+make test-streaming-host                            PASS
+make test-streaming-contract                        PASS
+git diff --check                                    PASS
+```
+
+这关闭的是 builder 伪造/漂移风险，不是模型发布资格。当前仍没有任何 LTX、H3 Turbo、Z-Image Turbo 或
+Flux 9B 的真实 P2/P3 bundle，production catalog 必须继续保持 `tc-streaming-catalog-empty-v1`。下一阶段是
+为四模型生成带 `catalog_binding` 的 full-request P0/P1/P2 policy，先逐模型完成 8 GiB candidate campaign，
+再扩展到 10/12/16/20 GiB；P3 verifier 尚未能产生 PASS，因此 public channel builder 会继续拒绝发布。
