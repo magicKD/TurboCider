@@ -82,6 +82,7 @@
 | [50 Calibration / Release Evidence](50-public-streaming-calibration-and-release-evidence.md) | 五档候选生成、四模型搜索策略、process-tree/swap 四臂、P0–P3 统计、evidence bundle、独立 verifier、catalog builder/revoke 和发布签字手册 |
 | [51 Remaining Runtime Closure](51-public-streaming-remaining-runtime-closure.md) | 当前剩余 runtime 闭环：request-scoped context、multi-stage/boundary receipt、H3 C receipt/public hooks、LTX worker-local authority、错误/quarantine 与验收 |
 | [52 App / Config / Model Tiers](52-public-streaming-app-config-and-model-tier-spec.md) | App 五档与迁移、物理内存推荐、model×target record、内存 ledger/sampler、工具链、四臂实验、JobStore 和发布验收 |
+| [53 Final Implementation Closure](53-public-streaming-final-implementation-closure.md) | 将当前代码接缝收敛为可直接施工的文件级方案：R3 receipt/context、scheduler、四模型 adapter、App/JobStore、catalog、工具链、提交边界和 Definition of Done |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -121,6 +122,11 @@ closure、App/JobStore 事务、inspect/compile/simulate/campaign/verifier/build
 LTX multi-stage/boundary、worker-local authority 和 request cleanup 的具体接口与测试；52 给出 release App 的 Off/五档状态、
 旧草稿迁移、模型 card、process-tree sampler、四臂实验和 catalog 发布合同。51/52 仍是设计规格，不表示 production
 catalog 已非空，也不替代 50 的真实 evidence 要求。
+
+如果需要按当前工作树直接排工单和做代码评审，再阅读 **53**：它把 51/52 的合同串成一个 request
+状态机，标出 `DONE/WIP/NEXT/BLOCKED/NOT_PUBLIC`，给出 `results.mm`、H3、LTX、Z-Image、Flux、
+Swift/JobStore、catalog builder 和 R3–R6 的逐文件施工顺序。53 仍是实施稿，不改变 production
+catalog 为空的事实。
 28/30不新增第二套executor，29/30不重新定义文档12的P0–P4阈值。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
@@ -213,9 +219,12 @@ actual-plan 汇总 verifier 已在 c6cba54 提交，coordinator/provider 已在 
 make_plan 使用专用的 prevalidated 入口，resolve 校验 request digest，revalidate 重新读取最新 catalog。
 随后 C1 fd-backed `SourceLease` 已在 `2878d21` 提交，C2 `ActualExecutionReceipt` v2 已在 `33bd9ea` 提交；common
 verifier 现已核对 per-pass/group fill、logical bytes、reader fence、source generation、carry/pool 选择和 canonical digest。
-但四模型仍未生成真实 public receipt：具体模型尚未 override 完整 public probe/snapshot/generate hooks，Z-Image metadata/reader
-等真实 adapter 仍需使用同一个 request-scoped lease，不能在 result 层合成 receipt。
+R3 multi-stage common runtime 已在 `aea2cf2` 提交，并由 `30fefe4` 补齐生命周期/失败测试：receipt v3、ordered
+boundary、request-scoped `PublicStreamingRunContext`、multi-stage result verifier 和 Objective-C 安全摘要均已接线，
+host/contract/audit 与 targeted ASan/UBSan/TSan 通过。Z-Image、Flux 9B 已有 lease-backed public adapter 基础；
+H3 Turbo 和 LTX 尚未接入新的 public run context，四模型仍都缺少完整五档 process-tree/release evidence。
 
-下一步按 [46](46-public-streaming-implementation-handbook.md) 和 [42](42-model-adapter-playbooks.md) 实现
-Z-Image → Flux 9B → H3 Turbo → LTX 的真实 public adapter；再按 [37](37-public-streaming-calibration-performance-acceptance.md)
-建设完整 process-tree calibration、swap 四路对照、App/JobStore 事务和 reviewed records。production catalog 仍为空，当前仍不可 public 执行。
+下一步按 [53](53-public-streaming-final-implementation-closure.md) 和 [42](42-model-adapter-playbooks.md) 实现
+H3 Turbo public C receipt/hooks，再完成 LTX worker-local multi-stage；同时对 Z-Image/Flux 9B 做真实 full-request
+复核。随后按 [37](37-public-streaming-calibration-performance-acceptance.md) 建设完整 process-tree calibration、
+swap 四路对照、App/JobStore 事务和 reviewed records。production catalog 仍为空，当前仍不可 public 执行。

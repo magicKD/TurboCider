@@ -1753,3 +1753,86 @@ make test-streaming-audit                                             PASS（1�
 同时同步更新 README 文档地图、49 的 Flux 当前事实和 50 的下一批任务：Flux fd reader 阻断项已关闭，但真实
 Flux 9B full request、H3/LTX public adapter、App 五档、process-tree P2、swap P3 和 production record 均仍未完成。
 production catalog 继续保持 `tc-streaming-catalog-empty-v1`；本节只深化设计，不新增运行性能数据或 public 资格。
+
+### 13.32 最终收口实施稿（2026-09-18，仅设计深化）
+
+本轮在未改变 runtime、未放开 production catalog 的前提下，新增
+[53 Final Implementation Closure](53-public-streaming-final-implementation-closure.md)。该文档不是第二套框架，
+而是把 51/52 的剩余工作按当前代码接口串成可直接施工和审阅的单一执行稿，新增/明确了：
+
+- `Off -> legacy` 与 `target -> preflight/resolve/revalidate/context/receipt/result` 的完整调用图，以及
+  `ModelSession::probe_public_streaming`、`compile_public_streaming`、`generate_resolved` 的职责边界；
+- `PublicStreamingRunContext` 的单向状态机、析构 drain、cancel/quarantine、request-scoped ownership 和不能跨请求共享的对象；
+- actual receipt v2/v3 兼容、multi-stage boundary 的真实触发点、`RunResult.streaming_stages[]`/
+  `streaming_boundaries[]` 与 `results.mm` 的序列化规则；
+- scheduler 的 slot/pool/owner-pump 不变量、P/G/K/D/Q 字段含义、可允许的 overlap 与禁止的 speculative fallback；
+- Z-Image、Flux 9B、H3 Turbo、LTX 的逐文件接线、首版 public 限制、LTX worker-local authority 和 stage boundary graph；
+- App 五档迁移、query/availability、JobStore 事务、model card/catalog record、process-tree ledger、四臂 swap 实验和 evidence bundle；
+- R3a/R3b/R3c、R4、R5、R6 的提交边界、host/synthetic/GPU/App 测试 ID、命令模板、release reviewer checklist 和 Definition of Done。
+
+本节新增内容仍然是 `WIP/NEXT` 施工合同，不是性能证据：当前 R3 代码仍需先完成编译/host 回归和提交；
+H3/LTX public generate、完整五档校准、App 迁移、P2/P3、catalog builder/review 均未完成；
+production catalog 继续为 `tc-streaming-catalog-empty-v1`，不能宣称 public streaming 已发布。
+
+### 13.33 R3b legacy summary 一致性修正（2026-09-18，已提交 `aea2cf2`）
+
+首次重跑当前 R3 工作树时，`test_streaming_preset_resolver.py` 暴露了一个真实回归：
+单 stage 结果同时带有旧 `streaming_runtime` 和新 `streaming_stages[0]` 时，
+`public_result.cpp` 只比较了两个 summary 的 stage/layout，修改旧 summary 的 `slot_count` 仍可能被接受。
+这会让 Objective-C/Swift 侧看到的兼容 summary 与已验证 stage receipt 不一致，属于 R3b 阻断项。
+
+已在 `aea2cf2` 中增加 `same_streaming_runtime()`，逐字段比较 implementation、layout、P/G/K/D/Q、
+pass/pool、worker、source/drain 和 receipt 摘要；legacy summary 与 stage summary 任一字段不一致都会
+返回 `streaming_actual_plan_mismatch`。修正后验证：
+
+```text
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh   PASS
+make test-streaming-host                            PASS
+make test-streaming-contract                        PASS
+make test-streaming-audit                           PASS（1项无 audit dylib 环境 skip）
+git diff --check                                     PASS
+```
+
+这次修正只加强 public result 的一致性校验，不改变 Off/default 路径。`30fefe4` 随后补充
+multi-stage legacy summary、missing stage receipt、重复 source revalidation 和 drain failure/quarantine
+回归，避免未来只比较 stage/layout 或依赖 adapter 自觉遵守生命周期。
+
+### 13.34 R3 multi-stage public runtime 收口（2026-09-18，已提交 `aea2cf2`、`30fefe4`）
+
+R3 common runtime 已从设计进入可供 H3/LTX 复用的提交基线：
+
+- `ActualExecutionReceipt` additive 支持 schema v3 和 ordered boundary receipt；v2 仍严格限制为单 stage；
+- boundary verifier 校验 source generation、drain、backing 完整释放、reader sequence、pending readers、
+  live/released bytes、next-stage 尚未启动以及 event/canonical digest；
+- `RunResult` 新增 `streaming_stages[]`、`streaming_boundaries[]`，legacy `streaming_runtime` 只允许单 stage
+  且必须逐字段完全一致；
+- 新增 request-scoped `PublicStreamingRunContext`，持有 immutable execution/lease 和 mutable executors、
+  receipts、boundaries；实现 GPU revalidate→attach→finish→boundary→drain→seal→source revalidate→complete
+  单向生命周期以及 quarantine；
+- `results.mm` 输出 stage、boundary、execution receipt 的安全摘要，不输出 fd、pointer、authority 或 ticket matrix；
+- default/Off 路径不构造 context，不改变原 executor 路径。
+
+代码提交：
+
+```text
+aea2cf2 streaming: add multi-stage public run context
+30fefe4 test(streaming): cover public run context failures
+```
+
+本轮真实验证：
+
+```text
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh                    PASS
+make test-streaming-host                                              PASS
+make test-streaming-contract                                          PASS
+make test-streaming-audit                                             PASS（1项无 audit dylib 环境 skip）
+TC_STREAMING_SANITIZER=address,undefined test_streaming_actual_receipt PASS
+TC_STREAMING_SANITIZER=thread test_streaming_actual_receipt            PASS
+TC_STREAMING_SANITIZER=address,undefined test_streaming_preset_resolver PASS
+TC_STREAMING_SANITIZER=thread test_streaming_preset_resolver            PASS
+git diff --check                                                       PASS
+```
+
+这些证据证明 common lifecycle/receipt/result 接缝完成，不证明 H3/LTX 已经 public，也不替代真实
+process-tree、P0–P3 或 catalog evidence。下一实现阶段是 H3 Turbo public C receipt/hooks，然后是
+LTX worker-local multi-stage；production catalog 仍为 `tc-streaming-catalog-empty-v1`。
