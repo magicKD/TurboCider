@@ -10,6 +10,26 @@ enum LTXWorker {
 
     static func generate(model: URL, request: NativeRequest, executable: URL? = nil,
                          onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        try await generatePayload(model: model, request: request,
+                                  outputPath: request.output,
+                                  executable: executable, onEvent: onEvent)
+    }
+
+    /// Public streaming intent is resolved inside the disposable worker. The
+    /// desktop process never opens the model, creates a SourceLease, or passes
+    /// an authority/fd/pointer across the process boundary.
+    static func generate(model: URL, request: NativeRequestV2, outputPath: String,
+                         executable: URL? = nil,
+                         onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        try await generatePayload(model: model, request: request,
+                                  outputPath: outputPath,
+                                  executable: executable, onEvent: onEvent)
+    }
+
+    private static func generatePayload<Request: Encodable & Sendable>(
+            model: URL, request: Request, outputPath: String,
+            executable: URL?,
+            onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
         let worker = Task.detached(priority: .userInitiated) { () throws -> Data in
             let fm = FileManager.default
             let directory = fm.temporaryDirectory.appendingPathComponent("tc-ltx-app-\(UUID())")
@@ -64,7 +84,7 @@ enum LTXWorker {
             guard child.terminationStatus == 0 else { throw NativeFailure(message: failure) }
             let result = try Data(contentsOf: output)
             guard (try? JSONSerialization.jsonObject(with: result)) is [String: Any],
-                  fm.fileExists(atPath: request.output) else {
+                  fm.fileExists(atPath: outputPath) else {
                 throw NativeFailure(message: "LTX 未返回完整的视频结果，请检查模型和 App 安装。")
             }
             return result

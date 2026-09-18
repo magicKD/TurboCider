@@ -486,6 +486,7 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
                 std::to_string(device.physical_memory);
             const auto &catalog =
                 tc::streaming::production_streaming_preset_catalog();
+            const bool catalog_empty = catalog.records.empty();
             NSMutableArray *targets = [NSMutableArray array];
             for (const uint64_t target : tc::public_streaming_targets) {
                 tc::streaming::PresetResolveQuery query;
@@ -516,7 +517,8 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
                     tc::streaming::resolve_streaming_preset(query, catalog);
                 NSMutableDictionary *entry = [@{
                     @"target_request_memory_bytes" : @(target),
-                    @"status" : resolution.selected ? @"available" : @"unavailable",
+                    @"status" : resolution.selected ? @"available" :
+                        (catalog_empty ? @"catalog_empty" : @"unavailable"),
                     @"reason_code" : resolution.selected
                         ? (id)NSNull.null : @(resolution.rejection_code.c_str())
                 } mutableCopy];
@@ -532,9 +534,10 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
                 [targets addObject:entry];
             }
             *out = copy(tc::json(@{
-                @"schema_version" : @1,
+                @"schema_version" : @2,
                 @"catalog_revision" : @(catalog.revision.c_str()),
-                @"query_status" : @"tentative_without_artifact_identity",
+                @"query_status" : catalog_empty
+                    ? @"catalog_empty" : @"tentative_without_artifact_identity",
                 @"execution_container" : @"embedded_app",
                 @"device" : @{
                     @"gpu" : @(device.gpu.c_str()),

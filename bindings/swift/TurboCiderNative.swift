@@ -107,7 +107,7 @@ public struct NativeExecutionV2: Codable, Sendable {
     public var ltx_sol_dense_edge_blocks: Int?
     public var ltx_sol_dense_edge_steps: Int?
     public var ltx_stage2_text_rows: Int?
-    public var streaming: NativeStreamingSelectorV2
+    public var streaming: NativeStreamingSelectorV2?
 }
 public struct NativeParametersV2: Codable, Sendable {
     public var dynamic_text: Bool
@@ -127,7 +127,7 @@ public struct NativeRequestV2: Codable, Sendable {
     public var loras: [NativeLoRA]?
     public var lora_strategy: String?
 
-    public init(legacy request: NativeRequest, targetBytes: UInt64) {
+    public init(legacy request: NativeRequest, targetBytes: UInt64? = nil) {
         model = request.model
         operation = request.operation ?? (request.frames > 1 ? "video.generate" : "image.generate")
         inputs = [NativeInputV2(kind: "text", role: "prompt", path: nil,
@@ -156,7 +156,7 @@ public struct NativeRequestV2: Codable, Sendable {
             ltx_sol_dense_edge_blocks: request.ltx_sol_dense_edge_blocks,
             ltx_sol_dense_edge_steps: request.ltx_sol_dense_edge_steps,
             ltx_stage2_text_rows: request.ltx_stage2_text_rows,
-            streaming: NativeStreamingSelectorV2(targetBytes: targetBytes))
+            streaming: targetBytes.map { NativeStreamingSelectorV2(targetBytes: $0) })
         parameters = NativeParametersV2(
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
             noise_path: request.noise_path)

@@ -77,6 +77,69 @@ struct StudioAsset: Codable, Identifiable, Equatable, Sendable {
     var width: Int
     var height: Int
 }
+
+/// Product-facing streaming choices.  The native runtime owns the layout
+/// (blocks, slots, retention and I/O); the App only sends a memory target.
+enum StudioStreamingSelection: String, Codable, Sendable, CaseIterable, Identifiable {
+    case off
+    case tier8
+    case tier10
+    case tier12
+    case tier16
+    case tier20
+
+    var id: String { rawValue }
+    var targetBytes: UInt64? {
+        switch self {
+        case .off: return nil
+        case .tier8: return 8 << 30
+        case .tier10: return 10 << 30
+        case .tier12: return 12 << 30
+        case .tier16: return 16 << 30
+        case .tier20: return 20 << 30
+        }
+    }
+    var gib: Int? {
+        switch self {
+        case .off: return nil
+        case .tier8: return 8
+        case .tier10: return 10
+        case .tier12: return 12
+        case .tier16: return 16
+        case .tier20: return 20
+        }
+    }
+    var label: String { gib.map { "\($0) GiB" } ?? "关闭（默认）" }
+    static func from(targetBytes: UInt64) -> Self? {
+        allCases.first { $0.targetBytes == targetBytes }
+    }
+}
+
+struct StudioStreamingState: Codable, Sendable, Equatable {
+    var selection: StudioStreamingSelection = .off
+    var catalogRevision: String?
+    var requestDigest: String?
+    var status: String = "unknown"
+    var userSelected = false
+
+    private enum CodingKeys: String, CodingKey {
+        case selection, catalogRevision, requestDigest, status, userSelected
+    }
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        selection = try c.decodeIfPresent(StudioStreamingSelection.self,
+                                          forKey: .selection) ?? .off
+        catalogRevision = try c.decodeIfPresent(String.self,
+                                                forKey: .catalogRevision)
+        requestDigest = try c.decodeIfPresent(String.self,
+                                              forKey: .requestDigest)
+        status = try c.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        userSelected = try c.decodeIfPresent(Bool.self,
+                                             forKey: .userSelected) ?? false
+    }
+}
+
 struct StudioAcceleration: Codable, Sendable {
     var policy = "gpu"
     var automaticVersion: Int? = 1
@@ -109,6 +172,9 @@ struct StudioDraft: Codable, Sendable {
     var randomSeed = false
     var strength = 0.75
     var dynamicText = true
+    // Public add-on selector.  Legacy residency/budget fields below remain
+    // Codable for old drafts and private/experimental routes.
+    var streaming = StudioStreamingState()
     var residency = "resident"
     var zImageStreamingBudgetGiB = 10
     var profilePath = ""
@@ -121,7 +187,7 @@ struct StudioDraft: Codable, Sendable {
     init() {}
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
-        case seedText, randomSeed, strength, dynamicText, residency, zImageStreamingBudgetGiB, profilePath, acceleration
+        case seedText, randomSeed, strength, dynamicText, streaming, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs
     }
     init(from decoder: Decoder) throws {
@@ -147,6 +213,9 @@ struct StudioDraft: Codable, Sendable {
         randomSeed = try c.decodeIfPresent(Bool.self, forKey: .randomSeed) ?? randomSeed
         strength = try c.decodeIfPresent(Double.self, forKey: .strength) ?? strength
         dynamicText = try c.decodeIfPresent(Bool.self, forKey: .dynamicText) ?? dynamicText
+        if let value = try c.decodeIfPresent(StudioStreamingState.self, forKey: .streaming) {
+            streaming = value
+        }
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
         zImageStreamingBudgetGiB = try c.decodeIfPresent(Int.self, forKey: .zImageStreamingBudgetGiB) ?? 10
         profilePath = try c.decodeIfPresent(String.self, forKey: .profilePath) ?? profilePath
@@ -156,9 +225,23 @@ struct StudioDraft: Codable, Sendable {
         loras = try c.decodeIfPresent([StudioLoRA].self, forKey: .loras) ?? loras
         modelLoRAs = try c.decodeIfPresent([String: [StudioLoRA]].self, forKey: .modelLoRAs) ?? [:]
         initImageID = try c.decodeIfPresent(UUID.self, forKey: .initImageID)
+        // Migrate the old Z-Image-only selector.  Six GiB was never a public
+        // tier; map it to the nearest supported product bucket but leave the
+        // native catalog to decide whether that bucket is actually available.
+        if !c.contains(.streaming), residency == "streamed" {
+            switch zImageStreamingBudgetGiB {
+            case 8: streaming.selection = .tier8
+            case 10: streaming.selection = .tier10
+            case 12: streaming.selection = .tier12
+            default: streaming.selection = .tier8
+            }
+            streaming.status = "migrated_legacy_streaming"
+            streaming.userSelected = true
+        }
     }
     var activeLoRAs: [StudioLoRA] { loras.filter(\.enabled) }
     var usesANE: Bool { acceleration?.policy == "gpu_ane" }
+    var usesPublicStreaming: Bool { streaming.selection.targetBytes != nil }
     var modelPath: String { modelPaths[modelID] ?? "" }
     var accelerationHint: String {
         let policy = acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")
@@ -177,6 +260,53 @@ struct StudioDraft: Codable, Sendable {
             return "1024 文生图 · M4 Max 64 GB 候选 a4096 / 4128-token GPU + Core ML 路线"
         }
         return "当前任务 · GPU；尚无匹配此尺寸、操作与步数的混合收益验证"
+    }
+    var publicStreamingModel: Bool {
+        ["ltx-2.5-distilled", "minimax-h3-turbo", "z-image-turbo", "flux2-klein-9b"].contains(modelID)
+    }
+    func publicStreamingRequest(output: URL,
+                                random: () -> Int = { Int.random(in: 0...2147483647) }) throws -> (legacy: NativeRequest, v2: NativeRequestV2?) {
+        guard let target = streaming.selection.targetBytes else {
+            return (try request(output: output, random: random), nil)
+        }
+        guard publicStreamingModel else {
+            throw NativeFailure(message: "当前模型尚未加入 public 流式加载目录，请选择 Off。")
+        }
+        try validate()
+        // Public v1 is GPU-only and request-scoped.  Normalize legacy fields
+        // on the copy used to build the V2 intent so old residency settings
+        // cannot leak into the selector path.
+        var normalized = self
+        normalized.residency = "resident"
+        normalized.zImageStreamingBudgetGiB = 10
+        normalized.profilePath = ""
+        normalized.acceleration = StudioAcceleration(policy: "gpu")
+        let legacy = try normalized.request(output: output, random: random)
+        var v2 = NativeRequestV2(legacy: legacy, targetBytes: target)
+        v2.execution.policy = "gpu"
+        v2.execution.profile = nil
+        v2.execution.ane_manifest = nil
+        v2.execution.encoder_ane_manifest = nil
+        v2.execution.allow_approximation = false
+        v2.execution.quantized_cache = nil
+        return (legacy, v2)
+    }
+    func streamingQueryRequest() throws -> NativeRequestV2 {
+        guard publicStreamingModel else {
+            throw NativeFailure(message: "当前模型没有 public 流式加载档位。")
+        }
+        // Options are metadata-only and do not require an open model session.
+        // Use a valid public target even when the UI is currently Off so the
+        // native query can return all five target statuses.
+        var base = NativeRequest(prompt: prompt, output: "/tmp/turbocider-streaming-options.png")
+        base.model = modelID
+        base.operation = operation
+        base.width = width; base.height = height; base.steps = steps
+        base.frames = frames; base.fps = fps; base.audio = audio
+        base.execution = "gpu"
+        base.dynamic_text = dynamicText
+        return NativeRequestV2(legacy: base,
+                               targetBytes: streaming.selection.targetBytes ?? (8 << 30))
     }
     func coreMLResourceRequest(_ action: String, kind: String? = nil) -> [String: Any] {
         let config = acceleration ?? StudioAcceleration()
@@ -209,6 +339,24 @@ struct StudioDraft: Codable, Sendable {
         guard !modelPath.isEmpty else { throw NativeFailure(message: "请先在模型中心选择模型文件夹。") }
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
         guard model.supports(operation) else { throw NativeFailure(message: "当前模型不支持“\(operation)”操作。") }
+        if usesPublicStreaming {
+            guard publicStreamingModel else {
+                throw NativeFailure(message: "当前模型尚未加入 public 流式加载目录，请选择 Off。")
+            }
+            guard activeLoRAs.isEmpty else {
+                throw NativeFailure(message: "public 流式加载首版暂不支持 LoRA，请选择 Off 或移除 LoRA。")
+            }
+            guard (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) == "gpu",
+                  acceleration?.compileGPU != true, profilePath.isEmpty else {
+                throw NativeFailure(message: "public 流式加载首版仅支持纯 GPU；ANE 请先选择 Off。")
+            }
+            guard ltxBackend != "cpp_mlx", ltxAccelerationMode == "quality" else {
+                throw NativeFailure(message: "public 流式加载首版不支持 LTX MLX/近似模式。")
+            }
+            guard activeAssets.isEmpty, !audio else {
+                throw NativeFailure(message: "public 流式加载首版仅支持无输入、无音频的固定文生图/文生视频工作负载。")
+            }
+        }
         if modelID == "ltx-2.5-distilled" {
             guard ["auto", "c_metal", "cpp_mlx"].contains(ltxBackend) else {
                 throw NativeFailure(message: "LTX 后端选择无效。")
@@ -445,6 +593,9 @@ actor StudioAssetImporter {
 final class StudioState: ObservableObject {
     @Published var draft = StudioDraft() { didSet { scheduleSave() } }
     @Published var message: String?
+    @Published private(set) var streamingOptions: NativeStreamingOptions?
+    @Published private(set) var streamingOptionsLoading = false
+    @Published private(set) var streamingOptionsError: String?
     @Published var importing = false
     @Published var saved = true
     @Published var lastSeed: Int?
@@ -469,6 +620,79 @@ final class StudioState: ObservableObject {
             draft.modelPaths["flux2-klein-4b"] = ProcessInfo.processInfo.environment["TURBOCIDER_FLUX_MODEL"]
                 ?? UserDefaults.standard.string(forKey: "modelPath.flux2-klein-4b")
                 ?? UserDefaults.standard.string(forKey: "TurboCiderNativeModelPath") ?? ""
+        }
+    }
+    var streamingQueryKey: String {
+        [draft.modelID, draft.operation, String(draft.width), String(draft.height),
+         String(draft.frames), String(draft.steps), String(draft.fps),
+         String(draft.audio)].joined(separator: "|")
+    }
+    var physicalMemoryBytes: UInt64 { ProcessInfo.processInfo.physicalMemory }
+    var recommendedStreamingSelection: StudioStreamingSelection {
+        let physical = streamingOptions?.device.physical_memory_bytes ?? physicalMemoryBytes
+        let raw: StudioStreamingSelection
+        switch physical / (1 << 30) {
+        case ..<8: raw = .off
+        case ..<10: raw = .tier8
+        case ..<12: raw = .tier10
+        case ..<16: raw = .tier12
+        case ..<20: raw = .tier16
+        default: raw = .tier20
+        }
+        guard let options = streamingOptions else { return raw }
+        let eligible = options.targets.compactMap { item -> StudioStreamingSelection? in
+            guard item.status == "available",
+                  item.target_request_memory_bytes <= raw.targetBytes ?? 0 else { return nil }
+            return StudioStreamingSelection.from(targetBytes: item.target_request_memory_bytes)
+        }
+        return eligible.max { ($0.targetBytes ?? 0) < ($1.targetBytes ?? 0) } ?? .off
+    }
+    func streamingOption(for selection: StudioStreamingSelection) -> NativeStreamingTargetOption? {
+        guard let bytes = selection.targetBytes else { return nil }
+        return streamingOptions?.targets.first { $0.target_request_memory_bytes == bytes }
+    }
+    var selectedStreamingTargetAvailable: Bool {
+        guard draft.streaming.selection != .off else { return true }
+        return streamingOption(for: draft.streaming.selection)?.status == "available"
+    }
+    func refreshStreamingOptions() async {
+        guard draft.publicStreamingModel else {
+            streamingOptions = nil
+            streamingOptionsError = nil
+            return
+        }
+        do {
+            let request = try draft.streamingQueryRequest()
+            streamingOptionsLoading = true
+            streamingOptionsError = nil
+            let options = try await Task.detached(priority: .utility) {
+                try NativeEngine.streamingOptions(request)
+            }.value
+            try Task.checkCancellation()
+            streamingOptions = options
+            draft.streaming.catalogRevision = options.catalog_revision
+            draft.streaming.status = options.query_status
+            if !draft.streaming.userSelected {
+                draft.streaming.selection = recommendedStreamingSelection
+            }
+        } catch is CancellationError {
+            // Keep the last stable options snapshot when the workload changes.
+        } catch {
+            streamingOptionsError = error.localizedDescription
+        }
+        streamingOptionsLoading = false
+    }
+    func setStreamingSelection(_ selection: StudioStreamingSelection) {
+        draft.streaming.selection = selection
+        draft.streaming.userSelected = true
+        draft.streaming.catalogRevision = streamingOptions?.catalog_revision
+        if selection == .off {
+            draft.streaming.status = "off"
+        } else if let option = streamingOption(for: selection) {
+            draft.streaming.status = option.status == "available"
+                ? "available" : (option.reason_code ?? option.status)
+        } else {
+            draft.streaming.status = "unknown"
         }
     }
     private func scheduleSave() {
@@ -588,6 +812,7 @@ final class StudioState: ObservableObject {
         draft.ltxBackend = "auto"; draft.ltxFastAV = true
         draft.ltxVideoAttentionBatch = false
         draft.ltxAccelerationMode = "quality"
+        draft.streaming = StudioStreamingState()
         draft.residency = model.default_residency ?? "resident"
         draft.profilePath = ""
         draft.acceleration = StudioAcceleration(policy: "gpu")

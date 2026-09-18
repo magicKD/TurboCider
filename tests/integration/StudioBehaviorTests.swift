@@ -64,6 +64,74 @@ struct StudioBehaviorTests {
         let restoredStream = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(zStream))
         try check(restoredStream.residency == "streamed" && restoredStream.zImageStreamingBudgetGiB == 8,
                   "Z-Image streaming draft did not persist")
+        var publicZ = StudioDraft()
+        publicZ.modelID = "z-image-turbo"
+        publicZ.modelPaths["z-image-turbo"] = "/test/z-image"
+        publicZ.steps = 9
+        publicZ.streaming.selection = .tier8
+        publicZ.streaming.userSelected = true
+        let publicPair = try publicZ.publicStreamingRequest(output: output)
+        try check(publicPair.legacy.residency == "resident" &&
+                  publicPair.legacy.memory_budget_bytes == nil &&
+                  publicPair.v2?.execution.streaming?.target_request_memory_bytes == 8 << 30,
+                  "Public selector leaked legacy streamed residency/budget")
+        let publicJSON = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(publicPair.v2)) as! [String: Any]
+        let publicExecution = publicJSON["execution"] as! [String: Any]
+        try check(publicExecution["streaming"] != nil &&
+                  publicExecution["residency"] == nil &&
+                  publicExecution["memory_budget_bytes"] == nil,
+                  "Public V2 intent encoded legacy residency fields")
+        let publicOptions = try NativeEngine.streamingOptions(publicPair.v2!)
+        try check(publicOptions.query_status == "catalog_empty" &&
+                  publicOptions.targets.count == 5 &&
+                  publicOptions.targets.allSatisfy { $0.status == "catalog_empty" },
+                  "Empty production catalog was not exposed as five unavailable tiers")
+        publicZ.streaming.selection = .off
+        let offPair = try publicZ.publicStreamingRequest(output: output)
+        try check(offPair.v2 == nil, "Off unexpectedly constructed a V2 selector")
+        let offV2 = NativeRequestV2(legacy: offPair.legacy)
+        let offJSON = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(offV2)) as! [String: Any]
+        try check((offJSON["execution"] as? [String: Any])?["streaming"] == nil,
+                  "Off encoded an enabled or zero-byte selector")
+        let migratedLegacy = try JSONDecoder().decode(StudioDraft.self, from: Data(
+            #"{"modelID":"z-image-turbo","modelPaths":{"z-image-turbo":"/test/z-image"},"residency":"streamed","zImageStreamingBudgetGiB":6}"#.utf8))
+        try check(migratedLegacy.streaming.selection == .tier8 &&
+                  migratedLegacy.streaming.userSelected &&
+                  migratedLegacy.streaming.status == "migrated_legacy_streaming",
+                  "Legacy six-GiB Z-Image draft did not migrate to a re-resolved public tier")
+        var publicLTX = StudioDraft()
+        publicLTX.modelID = "ltx-2.5-distilled"
+        publicLTX.modelPaths[publicLTX.modelID] = "/test/ltx"
+        publicLTX.operation = "video.generate"
+        publicLTX.width = 768; publicLTX.height = 448
+        publicLTX.steps = 11; publicLTX.frames = 97; publicLTX.fps = 24
+        publicLTX.audio = false
+        publicLTX.streaming.selection = .tier12
+        publicLTX.streaming.userSelected = true
+        let ltxOutput = root.appendingPathComponent("public-ltx.mp4")
+        let ltxPair = try publicLTX.publicStreamingRequest(output: ltxOutput)
+        let capturedLTX = root.appendingPathComponent("public-ltx-request.json")
+        let fakeLTX = root.appendingPathComponent("fake-ltx-worker")
+        try Data().write(to: ltxOutput)
+        try "#!/bin/sh\n/bin/cp \"$3\" \"\(capturedLTX.path)\"\nprintf '{}'\n"
+            .write(to: fakeLTX, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                              ofItemAtPath: fakeLTX.path)
+        _ = try await LTXWorker.generate(
+            model: URL(fileURLWithPath: publicLTX.modelPath),
+            request: ltxPair.v2!, outputPath: ltxOutput.path,
+            executable: fakeLTX, onEvent: { _ in })
+        let capturedLTXJSON = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: capturedLTX)) as! [String: Any]
+        let capturedExecution = capturedLTXJSON["execution"] as! [String: Any]
+        let capturedSelector = capturedExecution["streaming"] as! [String: Any]
+        let capturedTarget = (capturedSelector["target_request_memory_bytes"] as? NSNumber)?.uint64Value
+        try check(capturedLTXJSON["schema_version"] as? Int == 2 &&
+                  capturedTarget == 12 << 30 &&
+                  capturedExecution["residency"] == nil,
+                  "LTX worker did not receive a worker-local V2 public intent")
         zStream.acceleration = StudioAcceleration(policy: "gpu_ane")
         try rejects { _ = try zStream.request(output: output) }
         zStream.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/z-image/compiled.json")

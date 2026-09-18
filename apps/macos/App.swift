@@ -163,6 +163,9 @@ struct StudioView: View {
         }
         .onDisappear { studio.save() }
         .task { library.refresh(studio: studio, migrate: true) }
+        .task(id: studio.streamingQueryKey) {
+            await studio.refreshStreamingOptions()
+        }
         .task {
             while !Task.isCancelled {
                 await tensorCache.automaticSweep(store: store)
@@ -276,7 +279,8 @@ struct StudioView: View {
                 Button(action: generate) { Label(store.busy ? "正在运行" : (model?.isVideo == true ? "生成视频" : "生成图像"), systemImage: "sparkles").padding(.horizontal, 8).padding(.vertical, 4) }
                     .buttonStyle(.borderedProminent).foregroundStyle(Color(red: 0.13, green: 0.09, blue: 0.04))
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(store.busy || api.running || api.changing || submitting || studio.importing || model?.executor != true)
+                    .disabled(store.busy || api.running || api.changing || submitting || studio.importing ||
+                              model?.executor != true || !studio.selectedStreamingTargetAvailable)
                     .accessibilityIdentifier("generate")
             }
         }.padding(14).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -429,6 +433,46 @@ struct StudioView: View {
             DisclosureGroup("高级参数") {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("动态文本长度", isOn: $studio.draft.dynamicText).controlSize(.small)
+                    if studio.draft.publicStreamingModel {
+                        Picker("流式加载", selection: Binding(
+                            get: { studio.draft.streaming.selection },
+                            set: { studio.setStreamingSelection($0) })) {
+                            ForEach(StudioStreamingSelection.allCases) { value in
+                                let option = studio.streamingOption(for: value)
+                                let unavailable = value != .off && option?.status != "available"
+                                Text(value.label + (unavailable ? "（不可用）" : ""))
+                                    .tag(value)
+                                    .disabled(unavailable)
+                            }
+                        }
+                        .disabled(store.busy || submitting)
+                        .accessibilityIdentifier("publicStreamingSelection")
+                        if studio.streamingOptionsLoading {
+                            Text("正在检查当前模型与本机物理内存的可用档位…")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        } else if studio.draft.streaming.selection != .off,
+                                  let option = studio.streamingOption(for: studio.draft.streaming.selection) {
+                            let selection = studio.draft.streaming.selection
+                            let detail = option.status == "available"
+                                ? "存在候选；生成前仍会校验本地模型与 runtime identity"
+                                : "当前不可用：\(option.reason_code ?? option.status)"
+                            Text("\(selection.label)：\(detail)")
+                                .font(.caption2)
+                                .foregroundStyle(option.status == "available" ? .green : .orange)
+                        } else if studio.draft.streaming.selection == .off {
+                            let recommendation = studio.recommendedStreamingSelection
+                            if recommendation != .off {
+                                Text("本机物理内存推荐：\(recommendation.label)；选择 Off 时保持默认常驻路径。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            } else {
+                                Text("Off 不创建 public streaming 对象，也不会影响现有默认路径。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        if let error = studio.streamingOptionsError {
+                            Text(error).font(.caption2).foregroundStyle(.orange)
+                        }
+                    }
                     if studio.draft.modelID == "ltx-2.5-distilled" {
                         Picker("LTX 后端", selection: $studio.draft.ltxBackend) {
                             Text("自动（C/Metal）").tag("auto")
@@ -454,7 +498,7 @@ struct StudioView: View {
                         Text("近似模式只修改 Stage-2；需要多 prompt/seed 质量回归，720p 自动限制为画质优先。")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
-                    if studio.draft.modelID == "z-image-turbo" {
+                    if studio.draft.modelID == "z-image-turbo" && !studio.draft.usesPublicStreaming {
                         Picker("模型驻留", selection: $studio.draft.residency) {
                             Text("常驻").tag("resident")
                             Text("流式加载（实验）").tag("streamed")
@@ -471,7 +515,7 @@ struct StudioView: View {
                     } else if studio.draft.modelID == "z-image-turbo-gguf" {
                         LabeledContent("模型驻留", value: "常驻")
                             .font(.caption)
-                    } else {
+                    } else if !studio.draft.usesPublicStreaming {
                         Picker("模型驻留", selection: $studio.draft.residency) { Text("保留图像权重").tag("resident"); Text("分阶段释放").tag("component_staged") }
                     }
                     Button(studio.draft.profilePath.isEmpty ? "选择加速配置…" : "更换加速配置…", action: chooseProfile)
@@ -633,6 +677,9 @@ struct StudioView: View {
         Task { do {
             let resolved = try await store.resolveAcceleration(snapshot)
             studio.rememberAcceleration(resolved)
+            if resolved.usesPublicStreaming {
+                throw NativeFailure(message: "public 流式加载会在生成时解析并锁定档位；请直接点击生成。")
+            }
             let output = store.directory.appendingPathComponent("unused-prepare.png")
             let request = try await Task.detached { try resolved.request(output: output) }.value
             try await store.prepare(modelURL: URL(fileURLWithPath: path), request: request, warmup: false)
@@ -653,9 +700,14 @@ struct StudioView: View {
             do {
                 let resolved = try await store.resolveAcceleration(snapshot)
                 studio.rememberAcceleration(resolved)
-                let request = try await Task.detached { try resolved.request(output: output) }.value
-                studio.lastSeed = request.seed; studio.save()
-                let job = try await store.generate(modelURL: URL(fileURLWithPath: resolved.modelPath), request: request)
+                let pair = try await Task.detached {
+                    try resolved.publicStreamingRequest(output: output)
+                }.value
+                studio.lastSeed = pair.legacy.seed; studio.save()
+                let job = try await store.generate(
+                    modelURL: URL(fileURLWithPath: resolved.modelPath),
+                    request: pair.legacy,
+                    streamingRequest: pair.v2)
                 selected = job.id; compareOriginal = false
             } catch { studio.message = error is CancellationError ? "生成已取消，草稿与原图已保留。" : error.localizedDescription }
         }

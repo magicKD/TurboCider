@@ -15,6 +15,10 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var secondsPerStep: Double?
     var modelPath: String?
     var outputDeleted: Bool?
+    /// Public selector metadata is persisted for display/reuse only. Native
+    /// authority, fd and exact layout are never persisted here.
+    var publicStreamingTargetBytes: UInt64? = nil
+    var publicStreamingResolutionJSON: String? = nil
     var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
     var routeSummary: String? {
         guard let resultJSON, let data = resultJSON.data(using: .utf8),
@@ -144,6 +148,9 @@ final class NativeJobStore: ObservableObject {
     }
     /// Resolve on each request so changing an adapter/strength cannot reuse a stale partition.
     func resolveAcceleration(_ draft: StudioDraft) async throws -> StudioDraft {
+        // Public streaming v1 is GPU-only. Do not perform ANE discovery or
+        // mutate the request before the public validator reports a conflict.
+        guard !draft.usesPublicStreaming else { return draft }
         guard draft.usesANE, ["flux2-klein-4b", "z-image-turbo"].contains(draft.modelID) else { return draft }
         guard !busy, !resolvingAcceleration else { throw NativeFailure(message: "请等待当前任务完成。") }
         resolvingAcceleration = true
@@ -357,16 +364,32 @@ final class NativeJobStore: ObservableObject {
             return data
         } catch { sessionState = "缓存操作未完成 · 可重试"; throw error }
     }
-    func generate(modelURL: URL, request: NativeRequest) async throws -> NativeJob {
+    func generate(modelURL: URL, request: NativeRequest,
+                  streamingRequest: NativeRequestV2? = nil) async throws -> NativeJob {
         guard !busy else { throw NativeFailure(message: "一次只能生成一张图或一个视频。") }
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
         // Close the reentrancy window before any async plan/session operation.
         busy = true; cancelRequested = false; actualRoute = nil
         defer { busy = false; activeID = nil; ltxTask = nil }
-        do { _ = try await Task.detached { try NativeEngine.plan(request) }.value }
-        catch { throw error }
+        if streamingRequest == nil {
+            do { _ = try await Task.detached { try NativeEngine.plan(request) }.value }
+            catch { throw error }
+        }
+        var openedForPublicStreaming: NativeEngine?
+        var publicResolutionJSON: String?
+        if let streamingRequest, request.model != "ltx-2.5-distilled" {
+            let opened = try await acquire(modelURL, modelID: request.model)
+            if cancelRequested { throw CancellationError() }
+            let resolution = try await opened.resolveStreaming(streamingRequest)
+            publicResolutionJSON = String(
+                decoding: try JSONEncoder().encode(resolution), as: UTF8.self)
+            openedForPublicStreaming = opened
+            sessionState = "已验证 public 流式档位 · \(resolution.selection.target_request_memory_bytes / (1 << 30)) GiB"
+        }
         let id = UUID(); activeID = id; telemetry = StepTelemetry(); lastSequence = -1; denoiseStart = nil; lastDetailUpdate = 0
-        jobs.insert(NativeJob(id: id, createdAt: Date(), request: request, state: "preparing", phase: "prepare", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path), at: 0)
+        jobs.insert(NativeJob(id: id, createdAt: Date(), request: request, state: "preparing", phase: "prepare", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path,
+                              publicStreamingTargetBytes: streamingRequest?.execution.streaming?.target_request_memory_bytes,
+                              publicStreamingResolutionJSON: publicResolutionJSON), at: 0)
         let start = ContinuousClock.now
         do {
             try persist()
@@ -374,7 +397,21 @@ final class NativeJobStore: ObservableObject {
                 DispatchQueue.main.async { [weak self] in self?.receive(event, id: id) }
             }
             let result: Data
-            if LTXWorker.accepts(request) {
+            let usesLTXWorker = request.model == "ltx-2.5-distilled" &&
+                (streamingRequest != nil || LTXWorker.accepts(request))
+            if let streamingRequest, request.model == "ltx-2.5-distilled" {
+                guard !externalServiceActive else { throw NativeFailure(message: "本地 API 正在运行，请先在 API 页面停止服务。") }
+                if let old = engine { _ = try await old.unload() }
+                engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil
+                if cancelRequested { throw CancellationError() }
+                sessionState = "LTX public 流式进程运行中"
+                let work = Task {
+                    try await LTXWorker.generate(model: modelURL, request: streamingRequest,
+                                                 outputPath: request.output, onEvent: callback)
+                }
+                ltxTask = work
+                result = try await work.value
+            } else if streamingRequest == nil && LTXWorker.accepts(request) {
                 guard !externalServiceActive else { throw NativeFailure(message: "本地 API 正在运行，请先在 API 页面停止服务。") }
                 if let old = engine { _ = try await old.unload() }
                 engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil
@@ -384,17 +421,26 @@ final class NativeJobStore: ObservableObject {
                 ltxTask = work
                 result = try await work.value
             } else {
-                let opened = try await acquire(modelURL, modelID: request.model)
+                let opened: NativeEngine
+                if let cached = openedForPublicStreaming {
+                    opened = cached
+                } else {
+                    opened = try await acquire(modelURL, modelID: request.model)
+                }
                 if cancelRequested { throw CancellationError() }
                 sessionState = "使用中"
-                result = try await opened.generate(request, onEvent: callback)
+                if let streamingRequest {
+                    result = try await opened.generate(streamingRequest, onEvent: callback)
+                } else {
+                    result = try await opened.generate(request, onEvent: callback)
+                }
             }
             guard let i = jobs.firstIndex(where: { $0.id == id }) else { throw NativeFailure(message: "Missing job") }
             jobs[i].state = "succeeded"; jobs[i].phase = "complete"
             jobs[i].resultJSON = String(decoding: result, as: UTF8.self)
             sessionReport = jobs[i].resultJSON
             jobs[i].elapsed = Self.seconds(start.duration(to: .now))
-            sessionState = LTXWorker.accepts(request) ? "视频完成 · 独立进程已释放" : request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
+            sessionState = usesLTXWorker ? "视频完成 · 独立进程已释放" : request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
             try persist()
             return jobs[i]
         } catch {

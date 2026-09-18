@@ -1912,3 +1912,50 @@ make test-streaming-contract                          PASS
    拆成两个真实可 seal 的 executor，并在 upsampler 前完成 drain/release，再产生 schema-v3 boundary；
 2. 需要实体 LTX checkpoint 的 full request、输出 parity、P0/P1/P2/P3 和五档 memory calibration，之后
    才能生成 reviewed production catalog record。
+
+### 13.38 dev 合并与 App public 五档事务（2026-09-18）
+
+`dev@02148b7` 已合并到 `feat/stream`，merge commit 为 `6f5c649`。冲突处同时保留了 public
+source lease/exact executor 与 dev 的 M5 Pro 24 GiB、Z-Image compact GPU suffix、Core ML output-copy、
+partition selection 和 memory lifecycle 优化。合并后的 native build、streaming contract、streaming host
+和完整 native contract 已通过；完整 contract 为 83 项中 82 PASS、1 项因缺少 Wan fixture SKIP。真实
+Metal/模型 probe 没有在无对应模型资产和 GPU 权限的环境中伪记为 PASS。
+
+App public selector 第一阶段已经接线，production catalog 仍保持空：
+
+- `StudioDraft` 新增 `StudioStreamingSelection` 与 `StudioStreamingState`，release UI 只显示
+  `Off / 8 / 10 / 12 / 16 / 20 GiB`，不暴露 `P/G/K/D/Q`；
+- 旧 Z-Image `residency=streamed` 草稿迁移到对应 public target；旧 6 GiB 迁到 8 GiB intent，但必须
+  重新经过 catalog resolve，不能获得隐式资格；
+- `NativeExecutionV2.streaming` 改为 optional；Off 不编码 selector，On 只编码 memory-tier intent；
+- App 使用物理内存 band 生成推荐候选，并只从 native options 返回的 available target 中选择；当前空
+  catalog 下推荐结果为 Off，五档均显示不可用；
+- active selector 只允许 GPU、无 profile/compiled/LoRA/input/audio/approximation 的首版 card；ANE 或其他
+  冲突不会被 App 静默改成 GPU；
+- embedded 模型在创建 pending job 前执行 engine-scoped exact resolve，随后 generate 再由 native
+  resolve/revalidate；JobStore 只持久化 target 和 resolution 安全摘要，不持久化 fd/authority/pointer；
+- LTX public V2 intent 直接写入 disposable worker envelope，worker 内部打开模型并 resolve；desktop 不创建
+  LTX `SourceLease`，也不把 exact selector/authority 传给子进程；
+- `tc_streaming_options_json` 在 production catalog 为空时返回 `query_status=catalog_empty`，五个 target
+  状态均为 `catalog_empty`，不再把空 registry 伪装成 tentative availability。
+
+本阶段验证：
+
+```text
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh    PASS
+make test-streaming-contract                          PASS
+tools/native/build_app.sh                             PASS
+build/native/turbocider-studio-tests                  PASS
+git diff --check                                      PASS
+```
+
+Studio 行为测试新增：Off 不编码 selector、public V2 不携带 legacy residency/budget、空 catalog 五档
+fail-closed、旧 6 GiB 草稿迁移，以及 LTX worker 收到 schema-v2 worker-local intent。测试环境没有可用
+pasteboard service 时保留原有 pasteboard SKIP；系统废纸篓测试需在 sandbox 外运行。
+
+该阶段完成的是 A1/A2 与 A3 的 App/transaction 基础，不代表任何 target 已 public。仍需完成：
+
+1. LTX Stage 1/Stage 2 独立 executor、真实 release boundary 和 schema-v3 receipt；
+2. 四模型 8/10/12/16/20 GiB 的 full-request process-tree calibration、质量和 P0/P1/P2/P3；
+3. independent verifier、reviewed records 和非空 production catalog；
+4. active public streaming 与 ANE/hybrid 的独立 adapter/evidence；首版 GPU-only gate 继续保留。

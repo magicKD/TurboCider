@@ -104,9 +104,9 @@ class StreamingContract(unittest.TestCase):
         status, result, error = options(selector_request())
         self.assertEqual(status, 0, error)
         self.assertEqual(result["catalog_revision"], "tc-streaming-catalog-empty-v1")
-        self.assertEqual(result["query_status"], "tentative_without_artifact_identity")
+        self.assertEqual(result["query_status"], "catalog_empty")
         self.assertEqual(len(result["targets"]), 5)
-        self.assertTrue(all(item["status"] == "unavailable" for item in result["targets"]))
+        self.assertTrue(all(item["status"] == "catalog_empty" for item in result["targets"]))
         self.assertTrue(all(item["reason_code"] == "catalog_has_no_public_records"
                             for item in result["targets"]))
 
