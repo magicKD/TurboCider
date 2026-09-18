@@ -230,6 +230,7 @@ class Snapshot final : public ModelStreamingSnapshot {
 class ImmediateContextAdapter final : public ModelSlotAdapter {
   public:
     uint64_t sequence = 0;
+    bool fail_drain = false;
 
     void create_pool(const PoolLayout &) override {}
 
@@ -258,7 +259,7 @@ class ImmediateContextAdapter final : public ModelSlotAdapter {
         return result;
     }
 
-    bool drain() noexcept override { return true; }
+    bool drain() noexcept override { return !fail_drain; }
     void destroy_pool() noexcept override {}
 };
 
@@ -650,8 +651,24 @@ int main() {
             "generic_stage_executor_v2", "zimage-components-v1");
         assert(receipt && receipt->schema_version == actual_receipt_schema_v2);
         context.revalidate_source_after_drain();
+        rejects([&] { context.revalidate_source_after_drain(); },
+                "streaming_context_source_phase");
         context.complete();
         assert(context.phase() == PublicRunPhase::completed);
+    }
+    {
+        PublicStreamingRunContext context(
+            context_execution, context_cancel);
+        context.mark_gpu_revalidated();
+        auto adapter = std::make_shared<ImmediateContextAdapter>();
+        adapter->fail_drain = true;
+        auto &stage = context.attach_stage(
+            0, adapter, "generic_stage_executor_v2");
+        rejects([&] { stage.run_pass(0, 0, context_cancel); },
+                "streaming_pass_drain_failed");
+        context.quarantine("injected-drain-failure");
+        assert(context.quarantined() &&
+               context.quarantine_reason() == "injected-drain-failure");
     }
     {
         auto multi_snapshot = std::make_shared<Snapshot>(
@@ -739,6 +756,36 @@ int main() {
                multi_run.streaming_boundaries.front().pending_readers_after == 0 &&
                multi_run.public_streaming &&
                multi_run.public_streaming->actual_plan_verified);
+        auto ambiguous_multi = multi_run;
+        ambiguous_multi.public_streaming.reset();
+        ambiguous_multi.streaming_runtime =
+            ambiguous_multi.streaming_stages.front().runtime;
+        rejects([&] {
+            verify_and_attach_public_streaming_result(
+                *multi_execution, ambiguous_multi);
+        }, "legacy streaming summary is ambiguous for multi-stage");
+
+        PublicStreamingRunContext incomplete(
+            multi_execution, context_cancel);
+        incomplete.mark_gpu_revalidated();
+        auto incomplete_first_adapter =
+            std::make_shared<ImmediateContextAdapter>();
+        auto &incomplete_first = incomplete.attach_stage(
+            0, incomplete_first_adapter, "generic_stage_executor_v2");
+        for (uint32_t pass = 0; pass < first_layout.pass_count; ++pass)
+            incomplete_first.run_pass(pass, pass, context_cancel);
+        incomplete.finish_stage(0);
+        incomplete.record_boundary(boundary);
+        incomplete.attach_stage(
+            1, std::make_shared<ImmediateContextAdapter>(),
+            "generic_stage_executor_v2");
+        incomplete.drain_all();
+        rejects([&] {
+            (void)incomplete.seal_receipt(
+                "generic_stage_executor_v2", "zimage-components-v1");
+        }, "streaming_context_stage_receipt_missing");
+        incomplete.quarantine("missing-stage-receipt");
+        assert(incomplete.quarantined());
     }
 
     FixedCatalogProvider provider(catalog);

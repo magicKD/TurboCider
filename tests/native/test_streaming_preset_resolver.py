@@ -19,7 +19,6 @@ def main():
         flags = [
                 compiler,
                 "-std=c++20",
-                "-O2",
                 "-Wall",
                 "-Wextra",
                 "-Werror",
@@ -37,6 +36,8 @@ def main():
                 "-fno-omit-frame-pointer",
                 "-fsanitize=" + sanitizer,
             ]
+        else:
+            flags += ["-O2"]
         subprocess.run(
             [
                 *flags,
