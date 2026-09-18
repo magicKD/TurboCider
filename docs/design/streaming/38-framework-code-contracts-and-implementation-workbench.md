@@ -19,7 +19,7 @@
 - `RunResult` 的 public selection metrics 和汇总型 actual-plan verifier；
 - LTX、Z-Image、H3 Turbo、Flux 9B 的 private descriptor/streaming 实现和相应的 test/benchmark 证据。
 
-当前工作树已完成 C1 common-runtime，尚未形成阶段提交：
+当前分支已完成并提交 C1 common-runtime（`2878d21`）：
 
 - 已新增 `source_lease.hpp/.cpp`、`value_probe.cpp` 和 synthetic fixture；
 - 已有 move-only `OwnedSourceFd`、单一 fd lineage `SourceLease::capture()`、fixture/replay `open_and_verify`、fd duplication、generation、named/canonical path、open-fd/post-drain revalidate；
@@ -84,8 +84,8 @@ native/runtime/streaming/
   catalog_provider.*          # 已有，immutable snapshot provider
   public_runtime.*            # 已有，preflight/resolve/revalidate
   public_result.*              # 已有，汇总 verifier；待扩 receipt v2
-  source_lease.hpp/.cpp        # C1 工作树已有，待收口 capture/alias/authority
-  value_probe.cpp              # C1 工作树已有；声明暂位于 resolved_request.hpp
+  source_lease.hpp/.cpp        # C1 已提交，capture/alias/authority 强校验
+  value_probe.cpp              # C1 已提交；声明暂位于 resolved_request.hpp
   actual_receipt.hpp/.cpp      # C2 新增，逐事件 receipt/expected verifier
   memory_scope.hpp/.cpp        # C4 新增，完整请求 process-tree scope
   trace.hpp/.cpp               # C4 新增，低开销事件采样（不进入 Off）
@@ -810,90 +810,104 @@ engine/session lock
 
 以上四项必须分别由 39 的执行证据和 37 的 release gate 证明。
 
-## 14. C1 工作树审计与下一步强制修正
+## 14. C1 已提交基线与 C2 强制接缝
 
-本节记录 2026-09-17 对当前未提交 C1 工作树的代码审阅结果，优先级高于早期草图。它是施工阻断项，不是 public 资格证据。
+本节更新 2026-09-17 的 C1 审阅结论。单一 fd lineage 和 public authority 强校验已经由
+`2878d21 streaming: enforce fd lease authority for public resolution` 提交；下述事实是 common-runtime
+基线，不等于任何模型已获得 public 资格。
 
-### 14.1 必须先改为单一 fd lineage
+### 14.1 已完成的单一 fd lineage
 
-当前过渡实现是：
-
-```text
-capture_source_lease_descriptor(stat)
--> close temporary fd
--> SourceLease::open_and_verify(path)
-```
-
-这个版本能检测大部分 path replacement 和 metadata mutation，但 probe 与 snapshot 之间仍存在一次按 path reopen 的 TOCTOU 缝隙，也会重复 open/fstat/header work。production adapter 必须改为：
+当前生产 API 已采用：
 
 ```text
 SourceLease::capture(files)
   -> open(O_RDONLY|O_CLOEXEC) + fstat
-  -> metadata/header parser 从同一 fd/pread 读取
+  -> descriptor 从同一组 held fd 生成
   -> immutable lease 持有原始 fd
-  -> probe/snapshot 共享 lease
-  -> reader 只 duplicate_fd()
-  -> drain 后 revalidate_open_files + revalidate_paths
+  -> probe/snapshot 共享同一个 lease
+  -> reader 只通过 duplicate_fd() 取得 request-scoped fd
+  -> pre-GPU 和 post-drain revalidate paths/open files
 ```
 
-`capture_source_lease_descriptor()` 可以保留给 fixture/replay，但不能是 public adapter 的最终入口。新增 `SourceLease::capture(std::vector<SourceFileIdentity>)` 时，应让返回值同时包含 descriptor、opened files 和 generation，避免再次通过 path 构造第二代 lease。
+`capture_source_lease_descriptor()` 与 `open_and_verify()` 只保留给 fixture/replay；真实 public adapter
+必须使用 `capture()`，不能回退为“先 stat、关闭、再按 path reopen”的两代 lease。
 
-### 14.2 noexcept 与错误路径
+### 14.2 已完成的身份和错误边界
 
-`SourceLease::descriptor() noexcept` 不能在内部调用可能抛出异常的 `lease_require()`；state 无效时应返回不可用状态并由非 noexcept caller 报错，或在构造后冻结 invariant 直接返回 `state_->descriptor`。禁止在 `noexcept` 内触发 `std::terminate` 来表示普通输入错误。
+`SourceFileIdentity` 已保存 named path、canonical target、device/inode/size/mtime/ctime 和可选 header/manifest/content digest；
+空 artifact 被拒绝，`OwnedSourceFd` 使用 move-only RAII，`descriptor() noexcept` 直接返回构造后冻结的状态。
 
-`SourceFileIdentity.bytes == 0` 当前意味着“expected bytes 未指定”。public source artifact 应要求非空 regular file，fixture 若需要空文件必须使用显式 `allow_empty_fixture` 选项，不能让 0 同时表示“未校验”和“合法零字节”。
+现有 host 测试已经覆盖 symlink alias 重定向、path replacement、same-size 内容修改、空文件、digest mismatch 和
+probe/snapshot lease mismatch。模型 adapter 仍需补齐自己的 shard/index/header identity 和 short-read 路径；common lease
+通过不表示模型 source closure 已完整。
 
-### 14.3 symlink 双身份
+### 14.3 已完成的 Public authority 硬条件
 
-当前 canonicalization 保存最终 target path。模型仓库常用 symlink 时，替换 symlink alias 可能不会被最终 target 的 stat 捕获。production identity 应同时保存：
+`PublicPresetResolver::authorize()`、`PublicStreamingCoordinator::revalidate()` 和 public result verifier 当前要求：
 
 ```text
-named_path        用户/manifest 指定的 alias
-canonical_target  capture 时解析到的 target
-device/inode/...  两者对应的 stat identity
+probe.source_lease() != nullptr
+snapshot.source_lease() != nullptr
+probe/snapshot 指向同一个 lease
+lease.digest == probe/snapshot source snapshot digest
+lease.generation != 0
+pre-GPU path/open-fd revalidate 成功
+post-drain revalidate 成功
 ```
 
-pre-GPU revalidate 同时确认 alias 仍解析到原 target inode；reader 仍从已打开 fd 读取。若平台策略不允许 alias 变化，应将 alias mutation 作为 source changed，而不是悄悄继续。
+fake resolver 测试使用真实临时文件和真实 lease，不再允许无 lease 的 fake probe 获得 authority。
 
-### 14.4 Public authority 的硬条件
+### 14.4 C2 必须补齐的 source/receipt 顺序
 
-`PublicPresetResolver::authorize()` 和 `PublicStreamingCoordinator::revalidate()` 必须拒绝以下情况：
-
-```text
-probe.source_lease() == nullptr
-snapshot.source_lease() == nullptr
-probe/snapshot lease pointer 不同
-lease.digest != source_identity.source_snapshot_digest
-lease.generation == 0
-receipt.source_generation != lease.generation
-pre-GPU 或 post-drain revalidate 未成功
-```
-
-fake resolver test 也必须构造真实临时文件和 `SourceLease`；不能继续用没有 lease 的 fake Probe/Snapshot 测试“授权成功”。
-
-### 14.5 Post-drain 接缝
-
-`revalidate_after_drain()` 的调用责任属于 C2/public adapter：
+当前 `public_result.cpp` 能执行 post-drain lease revalidation并检查 adapter 的 `source_lease_verified` 摘要，
+但还没有逐 pass/group/fence/source-generation receipt。C2 必须冻结为：
 
 ```text
 StageExecutor.finish()
--> IoExecutor.shutdown_and_join()
--> adapter drain GPU readers/fences
--> snapshot.lease().revalidate_after_drain()
--> receipt verifier
--> source_lease_verified = true
+  -> stop enqueue
+  -> IoExecutor.shutdown_and_join()
+  -> adapter drain GPU readers/fences
+  -> snapshot.lease().revalidate_after_drain()
+  -> receipt.source_generation == lease.generation
+  -> actual receipt v2 verifier PASS
+  -> source_lease_verified = true
+  -> attach public result
 ```
 
-只有这条链全部成功，`RunResult.streaming_runtime.source_lease_verified` 才能为 true。resolve 时做过一次 stat 不足以设置该字段。
+任何步骤失败都不能序列化 public success。GPU/reader backing 安全无法证明时必须 quarantine，不能用 `unload()`
+或析构猜测安全。
 
-### 14.6 C1 退出条件
+### 14.5 C1 验证记录
 
-C1 不能只以“source lease test PASS”结束，必须同时满足：
+已通过的 common-runtime 范围：
 
-- 单一 fd lineage API 已被一个真实 adapter 使用；
-- path、alias、open-fd、same-size mutation、truncate、short-read、duplicate logical id 全部有测试；
-- resolver/authority 强制要求 lease/generation；
-- post-drain revalidate 有真实执行接缝；
-- Off/default audit 证明不会创建 lease；
-- native build、host、contract、sanitizer 和 `git diff --check` 全绿。
+```text
+python3 -B tests/native/test_streaming_source_lease.py
+TC_STREAMING_SANITIZER=address,undefined ... source lease test
+TC_STREAMING_SANITIZER=thread ... source lease test
+python3 -B tests/native/test_streaming_preset_resolver.py
+TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh
+make test-streaming-host
+make test-streaming-contract
+make test-streaming-audit
+tools/native/build_app.sh
+git diff --check
+```
+
+这些验证不包含四模型真实 public hook、完整请求 target calibration、swap P3、ANE streaming 或 production record。
+
+### 14.6 C2 退出条件
+
+C2 receipt 阶段必须同时满足：
+
+- `actual_receipt.hpp/.cpp` 已实现 expected/actual matrix、event/canonical digest 和稳定错误码；
+- `StageExecutor` 仅在 public exact 路径创建 recorder，worker 仍只发送 POD completion；
+- C bridge additive receipt API 不破坏 v1/v2/v3 plan ABI；
+- zero/duplicate/wrong pool-slot/short bytes/fence/source generation/carry/drain/mailbox fault 全部 fail-closed；
+- mismatch 后没有 public success JSON；无法安全 drain 时 engine quarantine；
+- Off/default receipt allocation、catalog/probe/lease/worker/pool audit 全为零；
+- native build、host、contract、ASan/UBSan/TSan 和 `git diff --check` 全绿。
+
+详细代码结构见 [44](44-next-implementation-code-and-integration-spec.md) 第3节；可执行验收 ID 见
+[45](45-acceptance-traceability-and-evidence-spec.md) 第3–4节。

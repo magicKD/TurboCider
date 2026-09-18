@@ -2,7 +2,7 @@
 
 [目录](README.md) · [实施任务](11-work-packages.md) · [验收合同](12-acceptance-playbook.md)
 
-日期：2026-09-16。设计深化之后继续执行完整实现目标，本次已新增LTX真实模型adapter原型和实机测试，见第7节。完整目标仍是模型接入、正常运行和性能不回退，
+日期：2026-09-17。设计深化之后继续执行完整实现目标，本次已新增LTX真实模型adapter原型和实机测试，见第7节。完整目标仍是模型接入、正常运行和性能不回退，
 不是以 plan-only 或合成测试替代最终交付。下表描述当前工作树，不代表已发布版本。
 
 最新candidate-only完整请求接线、host/真实GPU证据见第12节；第10、11节为此前实现快照。
@@ -1512,3 +1512,48 @@ source lease 和 receipt v2 仍待实现，完整 8/10/12/16/20 GiB calibration�
 - [38 Framework Code Contracts](38-framework-code-contracts-and-implementation-workbench.md) 第14节：将当前 C1 工作树缺口设为进入真实 public adapter 前的强制修正。
 
 截至本节，production catalog 仍为空，四模型仍没有真实 public hook，App 仍未开放五档，receipt v2、完整 target calibration、swap P3 和 ANE streaming 认证仍未完成。下一步严格顺序是：C2 receipt v2 → Z-Image → Flux 9B → H3 Turbo → LTX worker → App/工具链 → reviewed record。
+
+### 13.24 C1 提交后的下一阶段实施与验收规格（2026-09-17）
+
+13.23 中“尚未形成阶段提交”的状态已经被后续提交覆盖。当前 `feat/stream` 的 C1 基线为：
+
+```text
+2878d21 streaming: enforce fd lease authority for public resolution
+```
+
+该提交已经包含并验证：
+
+- `SourceLease::capture()` 单一 fd lineage、named path/canonical target 双身份和 request generation；
+- probe/snapshot 必须共享同一非空 lease，lease digest/generation 纳入 public authority；
+- pre-GPU path/open-fd revalidate 和 post-drain revalidate；
+- source mutation、symlink redirect、same-size rewrite、empty artifact、path replacement、digest mismatch 测试；
+- native-only build、host、contract、audit、App build，以及 source/resolver 的 ASan/UBSan/TSan 检查。
+
+上述代码仍没有改变以下发布边界：
+
+1. `actual_receipt.*` 尚未实现，common verifier 仍以 summary 为主，不能逐 pass/group/fence 证明实际执行；
+2. Z-Image、Flux 9B、H3 Turbo、LTX 尚未实现完整 public probe/snapshot/generate hooks；
+3. production catalog 仍为 `tc-streaming-catalog-empty-v1`；
+4. App 高级设置、JobStore v2 和 LTX worker-local authority 尚未完成；
+5. 尚无完整 8/10/12/16/20 GiB process-tree calibration、swap P3 或 ANE+streaming release 证据。
+
+本轮新增两份面向下一实现阶段的详细设计，不包含 runtime 代码变更，也不产生新的性能结论：
+
+- [44 下一阶段实现收口规格](44-next-implementation-code-and-integration-spec.md)：冻结 C2 receipt v2 数据结构、expected matrix、owner-thread recorder、digest、错误优先级、additive C ABI、public generate 事务、四模型 hooks、App/JobStore、profile 和 C2–C8 回滚点；
+- [45 验收追踪与 Evidence 规格](45-acceptance-traceability-and-evidence-spec.md)：把 host/synthetic/real-model、source/receipt、process-tree、四臂实验、P0–P4、evidence/catalog/revoke 映射为测试 ID、样本字段、命令模板和签核条件。
+
+下一步继续严格按以下顺序执行：
+
+```text
+C2 actual receipt v2
+-> Z-Image Turbo public adapter
+-> Flux.2 Klein 9B public adapter
+-> MiniMax H3 Turbo public adapter
+-> LTX worker-local public adapter
+-> App options/JobStore transaction
+-> process-tree calibration + four-arm comparison
+-> reviewed catalog record
+-> staging/release/revoke drill
+```
+
+不能跳过 receipt v2 和真实 source/worker 接线，把现有 private candidate 或 tiny P1 直接转换为 production record。

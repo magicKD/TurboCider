@@ -73,6 +73,8 @@
 | [41 Scheduler / Multi-slot / Multi-pool](41-scheduler-multi-slot-and-multi-pool-implementation.md) | owner pump、slot 状态机、K/D/Q overlap、carry、serial/retain-all pool、内存模型与取消/quarantine |
 | [42 Model Adapter Playbooks](42-model-adapter-playbooks.md) | Z-Image、Flux 9B、H3 Turbo、LTX 的 source closure、候选族、代码落点、错误矩阵与统一 adapter 模板 |
 | [43 Toolchain / Simulation / Release Gates](43-toolchain-simulation-and-release-gates.md) | inspect/compile/simulate/campaign/verify/builder 工具链、process-tree 采样、swap 四臂、P0–P4 门禁与撤回 |
+| [44 Next Implementation / Integration](44-next-implementation-code-and-integration-spec.md) | 以当前 C1 基线继续实施 receipt v2、public generate 事务、四模型 hooks、App/JobStore、profile 与分阶段回滚的逐文件规格 |
+| [45 Acceptance Traceability / Evidence](45-acceptance-traceability-and-evidence-spec.md) | 将 host/synthetic/real-model、source/receipt、process-tree、swap 四臂、P0–P4、evidence/catalog/revoke 映射为可执行测试 ID 和签核项 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -95,8 +97,10 @@ unresolved selector 的立即安全闸门、query→resolve→generate 的所有
 准备直接拆解 runtime/App 工单时继续读33；准备执行四模型候选探索、完整请求内存校准、swap对照和 record 发布时读34。
 33/34把既有结论变成任务和验收合同，不改变 production catalog 为空、public streaming 当前不可执行的事实。
 35进一步把 32–34 的合同落到当前文件、类型、状态机、测试 ID 和 R0–R8 提交边界；它仍是实施蓝图，不代表任何 public record 已发布。
-从当前 60de338 继续直接实现时，优先阅读 36 → 38 → 41 → 42 → 37 → 39：36 以最新 coordinator/actual-plan/preflight 代码为基线，38 将 source lease、receipt v2 和逐文件改造写成代码合同，41 冻结调度器与 multi-slot/multi-pool 语义，42 给出四模型 adapter 施工单，37/39 提供真实档位校准、swap 对照、App 事务、证据和 release gate。
+从当前 `2878d21` C1 基线继续直接实现时，优先阅读 36 → 38 → 41 → 42 → 44 → 37 → 39 → 45：36/38 给出 coordinator、source lease、receipt 和逐文件合同，41 冻结调度器与 multi-slot/multi-pool 语义，42/44 给出四模型 adapter 和下一阶段收口施工单，37/39/45 提供真实档位校准、swap 对照、App 事务、证据和 release gate。
 如果从产品/App 视角评审，先读 40；如果从工具和发布视角评审，先读 43。40–43 均是设计与实施合同，不表示 production catalog 已非空或任何 target 已 public。
+准备从当前已提交的 C1 source lease 继续编码时，按 **44 第3节（C2 receipt）→ 第5节（四模型）→ 第6节（App）** 施工；
+实现后按 **45** 的测试 ID、采样字段、P0–P4 门槛和 evidence bundle 逐项验收。44/45 仍是规格，不改变 production catalog 为空的事实。
 28/30不新增第二套executor，29/30不重新定义文档12的P0–P4阈值。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
