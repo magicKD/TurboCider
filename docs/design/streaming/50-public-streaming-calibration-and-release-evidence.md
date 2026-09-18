@@ -528,13 +528,13 @@ resolver 读取新 catalog snapshot 后立即拒绝 revoked record。正在运�
 
 ## 10. 当前仓库的下一批实施任务
 
-### T1 · Flux lease loader
+### T1 · Flux lease loader（已完成代码与真实 Metal reader 验证）
 
-- 完成 `Weights::load_lease()` 编译和 host fixture；
-- 验证 fd-backed `io::Reader` 对 safetensors lazy load 的真实行为；
-- 明确 reader/fd 生命周期覆盖所有 lazy array；
-- 把 text/VAE logical IDs 写入 Flux public test；
-- default `Weights::load()` 路径计数器保持零 streaming work。
+- `Weights::load_lease()`、host fixture 和九项 closure 已在 `9a351c9` 提交；
+- fd-backed `io::Reader` 对 safetensors lazy load 已通过真实 Metal fixture；
+- reader/fd 生命周期已覆盖 lazy array，并验证 path replacement 后仍读取原 lease generation；
+- default `Weights::load()` 路径仍与 public lease path 分离；
+- 尚未完成真实 Flux 9B full request、P0/P1/P2 和 target campaign，因此不能发布 record。
 
 ### T2 · common multi-stage receipt
 
@@ -543,12 +543,16 @@ resolver 读取新 catalog snapshot 后立即拒绝 revoked record。正在运�
 - stage order/count mismatch；
 - boundary drain/release verifier。
 
+具体 additive 数据结构、boundary recorder、single-stage 兼容和 code review 见 [51 第3节](51-public-streaming-remaining-runtime-closure.md)。
+
 ### T3 · H3 Turbo public hook
 
 - source lease + probe/snapshot/authority；
 - reload/K1 full request；
 - carry/K2 receipt；
 - default P0。
+
+完整 source closure、lease-backed H3 weight source、opaque C receipt clone/copy ABI、session hook 和测试 ID 见 [51 第4节](51-public-streaming-remaining-runtime-closure.md)。
 
 ### T4 · LTX worker
 
@@ -557,12 +561,16 @@ resolver 读取新 catalog snapshot 后立即拒绝 revoked record。正在运�
 - stage1→upsampler→stage2 transaction；
 - multi-stage evidence。
 
+worker-local authority、stage boundary receipt、原子输出和 EOF/SIGKILL/quarantine 合同见 [51 第5节](51-public-streaming-remaining-runtime-closure.md)。
+
 ### T5 · App and catalog
 
 - options query + physical-memory recommendation；
 - 五档 UI 与 unavailable state；
 - JobStore stale/revoke/atomic output；
 - staging catalog 的单 record rollback。
+
+Swift 数据模型迁移、Off/五档 selector、model card、process-tree sampler、JobStore 和发布矩阵见 [52](52-public-streaming-app-config-and-model-tier-spec.md)。
 
 ## 11. 发布前最终签字表
 

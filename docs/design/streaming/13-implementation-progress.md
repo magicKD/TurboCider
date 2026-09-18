@@ -1679,13 +1679,13 @@ ANE+streaming 认证或 production catalog record。下一步按相同合同完�
 - 明确 target 是完整进程树预算目标，而不是物理显存或系统 hard cap；`tree_peak + max(512 MiB, 10% target)` 必须由真实 sampler 验证；
 - 将 selector、immutable catalog snapshot、SourceLease、ModelStreamingSnapshot、authority、request-scoped context、StageExecutor 和 actual receipt v2 串成一条 public transaction，并写出 cleanup/drain/quarantine 顺序；
 - 把 owner pump、slot 状态机、D/K/Q overlap、serial/retain-all、reload/carry、no-progress timeout 和 reader fence 不变量写成代码级合同；
-- 按当前文件列出 Z-Image、Flux 9B、H3 Turbo、LTX worker 的 source closure、public route、接线要求、停止条件；Flux 工作树已完成本轮 native build/descriptor/public host 检查，但 lease-backed pager 仍缺真实 Metal PASS，H3/LTX public hook 尚未完成；
+- 按当前文件列出 Z-Image、Flux 9B、H3 Turbo、LTX worker 的 source closure、public route、接线要求、停止条件；当时 Flux 工作树已完成 native build/descriptor/public host 检查，随后 13.30 已补上真实 Metal lease/pager PASS；H3/LTX public hook 仍未完成；
 - 完善 App/Swift/JobStore stale/revoke/atomic commit 规则，以及 inspect→compile→simulate→campaign→sampler→verifier→catalog builder 工具链；
 - 固定 resident/streaming/bounded/natural-swap 四臂实验协议，明确 streaming 是否更快必须通过实测，不能从设计假设推出；
 - 给出 L0–L6 分层验收、P0/P1/P2/P3 门槛、代码审阅清单、C3–C9 施工顺序和整体完成定义。
 - 将过长的实施细节拆为两个分册：[49](49-public-streaming-code-contracts-and-execution-blueprint.md) 固定 common runtime/model adapter 的接口、依赖、线程、事件、错误、Flux lease loader 和 PR 停止条件；[50](50-public-streaming-calibration-and-release-evidence.md) 固定五档候选生成、四模型搜索、process-tree/swap 四臂、统计、evidence、独立 verifier 和 catalog release/revoke。
 
-本节仍然是设计/实施状态，不增加新的性能证据，不改变 `tc-streaming-catalog-empty-v1`，也不把 Z-Image host/synthetic 或 Flux private P1 记录提升为 public 支持。当前下一步是：完成 Flux lease-backed pager 的真实 Metal/full-request 验证，再接 H3 Turbo、LTX worker，最后进行真实档位校准、四臂对照、App 接入和 reviewed catalog 发布。
+本节仍然是设计/实施状态，不增加新的性能证据，不改变 `tc-streaming-catalog-empty-v1`，也不把 Z-Image host/synthetic 或 Flux private P1 记录提升为 public 支持。Flux lease-backed pager 的真实 Metal reader 验证随后已完成；仍待真实 Flux 9B full request，再接 H3 Turbo、LTX worker、真实档位校准、四臂对照、App 和 reviewed catalog。
 
 ### 13.29 Flux lease 工作树定向验证（2026-09-18，未提交）
 
@@ -1702,7 +1702,7 @@ git diff --check                                                   PASS
 
 这将 Flux 当前事实从“尚未编译”更新为“编译、descriptor 和 public host contract 通过”。随后 13.30 已用 fd-backed MLX reader 替换 `/dev/fd` 路径并取得真实 Metal PASS；真实 Flux 9B full request、actual receipt、P0/P1/P2 或五档 memory fit 仍是 [49 第5.2节](49-public-streaming-code-contracts-and-execution-blueprint.md) 和 [50 第10节](50-public-streaming-calibration-and-release-evidence.md) 的发布阻断项。
 
-### 13.30 Flux fd-backed lease reader 与 public adapter 收口（2026-09-18，待提交）
+### 13.30 Flux fd-backed lease reader 与 public adapter 收口（2026-09-18，已提交 `9a351c9`）
 
 在 13.29 的编译/host 基线上，进一步消除了 text encoder/VAE safetensors lazy load 的 fd 生命周期风险：
 
@@ -1730,3 +1730,26 @@ make test-streaming-audit                                             PASS（1�
 ```
 
 这证明 Flux public adapter 的 source closure、host authority 接线和 MLX lease reader 生命周期已收口，但仍不是 production 资格：尚无真实 Flux 9B checkpoint full request、common result verifier 的真实 receipt、五档 process-tree P2、P0/P1 配对或 catalog record。
+
+### 13.31 剩余 Runtime/App/校准闭环实施规格（2026-09-18，仅设计深化）
+
+在 `9a351c9` Flux public lease adapter 已提交的基线上，本轮继续核对了 `RunResult`、`ActualExecutionReceipt`、
+`public_result.cpp`、H3 C exact executor、LTX per-request worker、Swift V2 binding、StudioDraft/JobStore 和现有 campaign
+工具，新增两份不重复既有总体设计、专门面向剩余阻断项的施工分册：
+
+- [51 Remaining Runtime Closure](51-public-streaming-remaining-runtime-closure.md)：
+  - 设计 request-scoped `PublicStreamingRunContext`，固定成功/异常的 drain、receipt、source revalidate、release、quarantine 顺序；
+  - additive 扩展 `RunResult.streaming_stages[]`、`streaming_boundaries[]` 和 actual boundary receipt，使 LTX 不再被单 stage verifier 阻断；
+  - 为 H3 设计 execution closure/streamed closure、lease-backed C weight source、`probe/compile/generate_resolved` 和 opaque C receipt clone/copy ABI，明确禁止从 counters 合成 receipt；
+  - 为 LTX 设计 worker-local authority、stage1→upsampler→stage2→VAE boundary、原子 output commit、EOF/SIGKILL/quarantine 合同；
+  - 列出 H3/LTX 测试 ID、默认零开销审计、真实 GPU smoke、P0/P1 和 R3–R6 停止条件。
+- [52 App / Config / Model Tiers](52-public-streaming-app-config-and-model-tier-spec.md)：
+  - 把 App 高级设置冻结为 `Off / 8 / 10 / 12 / 16 / 20 GiB`，不暴露 `P/G/K/D/Q`；
+  - 设计 `StudioDraft` 迁移、optional V2 selector、options/unavailable/revoke 状态和基于物理内存的只读推荐；
+  - 冻结 Z-Image、Flux 9B、H3 Turbo、LTX 首批 GPU-only model card 和 target→record 的确定性选择；
+  - 给出 memory ledger、20 ms process-tree sampler、runtime guard、inspect/compile/simulate/campaign/verifier/catalog 工具接口；
+  - 补齐 resident/streaming/bounded/natural-swap 四臂指标、JobStore 事务、A1–A5 实施顺序和 release checklist。
+
+同时同步更新 README 文档地图、49 的 Flux 当前事实和 50 的下一批任务：Flux fd reader 阻断项已关闭，但真实
+Flux 9B full request、H3/LTX public adapter、App 五档、process-tree P2、swap P3 和 production record 均仍未完成。
+production catalog 继续保持 `tc-streaming-catalog-empty-v1`；本节只深化设计，不新增运行性能数据或 public 资格。

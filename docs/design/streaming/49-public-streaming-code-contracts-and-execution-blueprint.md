@@ -4,7 +4,7 @@
 
 本文把 [48 工程实施附录](48-public-streaming-engineering-addendum.md) 再向下展开到“开发者可以按文件施工、reviewer 可以按函数审阅、测试可以按 ID 验收”的层级。本文只定义代码合同和实现顺序，不把已有 host fixture、private candidate 或 tiny GPU smoke 误写成生产支持。
 
-当前事实仍以 [13 实施进度](13-implementation-progress.md) 为准：production catalog 为空；Z-Image 只有第一阶段 lease adapter；Flux 的 text/VAE lease lineage 已通过本轮 native build 和 host contract，但真实 Metal pager/full request 仍待验证；H3 Turbo、LTX worker、App 五档 UI、完整档位校准和 swap 四臂仍未完成。
+当前事实仍以 [13 实施进度](13-implementation-progress.md) 为准：production catalog 为空；Z-Image 只有第一阶段 lease adapter；Flux 的 transformer/text/VAE lease lineage 已在 `9a351c9` 提交，fd-backed lazy safetensors reader 与 pager 已取得真实 Metal PASS，但真实 Flux 9B full request、P0/P1/P2 和五档校准仍待完成；H3 Turbo、LTX worker、App 五档 UI、完整档位校准和 swap 四臂仍未完成。剩余 runtime 闭环的更新规格见 [51](51-public-streaming-remaining-runtime-closure.md)。
 
 ## 1. 实现原则
 
@@ -317,7 +317,7 @@ enum class StreamingErrorCode {
 
 ### 5.2 Flux 9B lease lineage
 
-当前工作树已开始把 text encoder/VAE 也改成 lease fd lineage。实施时必须明确区分两条路径：
+当前已提交实现已经把 text encoder/VAE 改成 lease fd lineage。后续改动必须继续明确区分两条路径：
 
 ```cpp
 // default/private path
@@ -338,7 +338,7 @@ Weights::load_lease(lease, logical_ids, event, cancel);
 
 Flux public route 的 source closure 至少包含 transformer config/index/shards、text encoder config/weights、VAE config/weights 和 tokenizer JSON。denoiser drain 后释放 transformer backing，再进入 VAE；receipt 必须包含两个 component boundary 的真实顺序。
 
-建议新增测试：
+现有测试已经覆盖下列 lease 生命周期；后续 full-request 和回归改动仍必须保留这些 ID：
 
 ```text
 FLUX-LEASE-001  text encoder fd-reader safetensors load
@@ -349,7 +349,7 @@ FLUX-LEASE-005  loader lazy-read fd lifetime
 FLUX-LEASE-006  default path does not call load_lease
 ```
 
-在 `FLUX-LEASE-005` 不能证明 fd 生命周期前，不得把 lease-backed text/VAE 标记为 public ready。
+`FLUX-LEASE-005` 已由真实 Metal fixture 证明 fd 生命周期覆盖 lazy materialization，但这只关闭 source reader 阻断项；真实 Flux 9B full request、actual receipt、P0/P1/P2、五档 evidence 和 production record 仍未完成。
 
 ### 5.3 Z-Image
 

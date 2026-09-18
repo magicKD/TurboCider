@@ -80,6 +80,8 @@
 | [48 Public Streaming Engineering Addendum](48-public-streaming-engineering-addendum.md) | 以当前代码为基准的工程实施附录：selector→catalog→exact layout 求解、StageExecutor 状态机、source closure、四模型代码接线、App/JobStore、工具链、四臂 swap 对照和逐层验收 |
 | [49 Public Streaming Code Contracts](49-public-streaming-code-contracts-and-execution-blueprint.md) | 将 48 下钻为可编码合同：依赖方向、接口职责、线程/事件/错误协议、Flux lease lineage、逐模型文件施工、ledger、测试 ID 与 PR 停止条件 |
 | [50 Calibration / Release Evidence](50-public-streaming-calibration-and-release-evidence.md) | 五档候选生成、四模型搜索策略、process-tree/swap 四臂、P0–P3 统计、evidence bundle、独立 verifier、catalog builder/revoke 和发布签字手册 |
+| [51 Remaining Runtime Closure](51-public-streaming-remaining-runtime-closure.md) | 当前剩余 runtime 闭环：request-scoped context、multi-stage/boundary receipt、H3 C receipt/public hooks、LTX worker-local authority、错误/quarantine 与验收 |
+| [52 App / Config / Model Tiers](52-public-streaming-app-config-and-model-tier-spec.md) | App 五档与迁移、物理内存推荐、model×target record、内存 ledger/sampler、工具链、四臂实验、JobStore 和发布验收 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -115,6 +117,10 @@ closure、App/JobStore 事务、inspect/compile/simulate/campaign/verifier/build
 需要直接修改 common runtime、Flux lease loader、H3/LTX adapter 或组织 PR review 时，阅读 **49**；需要执行
 8/10/12/16/20 GiB 实机探索、process-tree 采样、swap 四臂、证据签核和 catalog 发布时，阅读 **50**。
 49/50 是 48 的分册，不另起一套 executor、内存定义或性能门槛；冲突时仍以 02/05/09/10/12 的主题规范为准。
+在 Flux public lease adapter `9a351c9` 之后继续收口代码时，优先阅读 **51 → 52**：51 给出 H3 完整 C receipt、
+LTX multi-stage/boundary、worker-local authority 和 request cleanup 的具体接口与测试；52 给出 release App 的 Off/五档状态、
+旧草稿迁移、模型 card、process-tree sampler、四臂实验和 catalog 发布合同。51/52 仍是设计规格，不表示 production
+catalog 已非空，也不替代 50 的真实 evidence 要求。
 28/30不新增第二套executor，29/30不重新定义文档12的P0–P4阈值。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
