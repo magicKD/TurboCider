@@ -1,6 +1,6 @@
 # 44 · 下一阶段实现收口规格：Receipt v2、四模型接入、App 事务与低内存发布
 
-修订日期：2026-09-17。状态：可直接施工的设计规格，尚未表示代码已完成或 production catalog 已开放。
+修订日期：2026-09-18。状态：可直接施工的设计规格；C2 receipt v2 已完成，四模型/App/校准仍待实施，production catalog 未开放。
 
 本文是对 [38 代码合同](38-framework-code-contracts-and-implementation-workbench.md)、[40 产品化合同](40-public-productization-and-app-contract.md)、[41 调度器实现](41-scheduler-multi-slot-and-multi-pool-implementation.md)、[42 模型施工手册](42-model-adapter-playbooks.md) 的下一阶段收口；逐项验收、数据字段和证据打包见 [45 验收追踪](45-acceptance-traceability-and-evidence-spec.md)。它解决一个具体问题：在不改变 resident/default 热路径的前提下，如何把当前已经提交的 source lease、public resolver、coordinator 和 generic executor 收口成可审计、可验证、可回滚的 public streaming 产品。
 
@@ -15,8 +15,8 @@
 | 请求 | `StreamingSelector`、五档 target、schema v2 校验 | 只表达用户意图，不授予布局权限 |
 | 解析 | `PublicStreamingCoordinator`、`PublicPresetResolver` | production catalog 仍为空时 fail-closed |
 | 身份 | `SourceLease`、probe/snapshot lease 强校验 | 已有 fd lineage；内容 hash 和完整 artifact registry 仍需补齐 |
-| 执行 | `StageExecutor`、`SlotSafetyTracker`、`IoExecutor`、C ABI v1/v2/v3 | private/generic executor 可运行，receipt v2 尚未完成 |
-| 结果 | `StreamingRuntimeMetrics`、`PublicStreamingSelectionMetrics` | 只有摘要字段；不能证明每个 pass/group/fence 的实际执行 |
+| 执行 | `StageExecutor`、`SlotSafetyTracker`、`IoExecutor`、C ABI v1/v2/v3 | private/generic executor 可运行；receipt v2 已 opt-in 接线，真实 public adapter 尚未启用 |
+| 结果 | `StreamingRuntimeMetrics`、`PublicStreamingSelectionMetrics`、`ActualExecutionReceipt` v2 | common verifier 已能证明 pass/group/fence/source generation；四模型尚未产生真实 public receipt |
 | 模型 | LTX exact private 垂直切片、Flux private candidate、H3/Z-Image descriptor/candidate | 还没有四模型 public hook 完整闭包 |
 | App | C API options/resolve 的基础输出 | JobStore 原子事务、正式 Swift/App public 入口尚未完成 |
 
@@ -74,7 +74,10 @@ reviewed evidence bundle and signed catalog record
 
 任一项缺失时，状态只能是 `candidate`、`unavailable` 或 `INCONCLUSIVE`。
 
-## 3. C2：Actual Receipt v2 的代码设计
+## 3. C2：Actual Receipt v2 的已实现基线与模型接线合同
+
+本节的数据结构、owner-thread recorder、digest、C ABI 和 verifier 已在 `33bd9ea` 实现并通过 host/sanitizer/build
+回归。后续 adapter 必须复用该实现，不能再建模型私有 receipt，也不能在 `RunResult` 层按 counters 合成 receipt。
 
 ### 3.1 文件与依赖
 
@@ -624,7 +627,7 @@ process_baseline + component_reserve + denoiser_budget <= usable_ceiling
 
 | 阶段 | 代码范围 | 必须通过 | 回滚点 |
 |---|---|---|---|
-| C2 | receipt v2、C ABI、verifier | RCP-001…012、sanitizer、Off audit | 恢复 recorder=null 的 executor |
+| C2 | receipt v2、C ABI、verifier | **已完成**；host、sanitizer、Off audit 通过，见 13.25 | recorder 继续保持 opt-in/null 默认 |
 | C3 | Z-Image public hook | source/receipt/full output/P0/P1 | catalog 仍为空，保留 candidate |
 | C4 | Flux 9B dual/single | pool barrier、retain-all memory、VAE | 只撤销 Flux record |
 | C5 | H3 Turbo carry | carry receipt、普通 H3 regression | 只撤销 H3 record |

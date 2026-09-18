@@ -1,6 +1,6 @@
 # TurboCider 通用 Streaming 框架
 
-修订日期：2026-09-17。状态：设计规格及实施中，尚未发布。最新代码/测试证据见 [13 实施进度](13-implementation-progress.md)。
+修订日期：2026-09-18。状态：设计规格及实施中，尚未发布。最新代码/测试证据见 [13 实施进度](13-implementation-progress.md)。
 
 提交前审阅、当前发布阻断项和本次重跑范围见 [21 审阅与交接](21-review-and-handoff.md)。
 
@@ -73,8 +73,9 @@
 | [41 Scheduler / Multi-slot / Multi-pool](41-scheduler-multi-slot-and-multi-pool-implementation.md) | owner pump、slot 状态机、K/D/Q overlap、carry、serial/retain-all pool、内存模型与取消/quarantine |
 | [42 Model Adapter Playbooks](42-model-adapter-playbooks.md) | Z-Image、Flux 9B、H3 Turbo、LTX 的 source closure、候选族、代码落点、错误矩阵与统一 adapter 模板 |
 | [43 Toolchain / Simulation / Release Gates](43-toolchain-simulation-and-release-gates.md) | inspect/compile/simulate/campaign/verify/builder 工具链、process-tree 采样、swap 四臂、P0–P4 门禁与撤回 |
-| [44 Next Implementation / Integration](44-next-implementation-code-and-integration-spec.md) | 以当前 C1 基线继续实施 receipt v2、public generate 事务、四模型 hooks、App/JobStore、profile 与分阶段回滚的逐文件规格 |
+| [44 Next Implementation / Integration](44-next-implementation-code-and-integration-spec.md) | 记录 C2 receipt v2 已实现基线，并规定 public generate、四模型 hooks、App/JobStore、profile 与分阶段回滚的逐文件接线 |
 | [45 Acceptance Traceability / Evidence](45-acceptance-traceability-and-evidence-spec.md) | 将 host/synthetic/real-model、source/receipt、process-tree、swap 四臂、P0–P4、evidence/catalog/revoke 映射为可执行测试 ID 和签核项 |
+| [46 Public Streaming Implementation Handbook](46-public-streaming-implementation-handbook.md) | 基于 C2 已完成基线，收敛用户五档、控制面/数据面/证据面、调度算法、四模型逐文件改造、工具链、App、性能与发布验收的实施总手册 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -97,10 +98,11 @@ unresolved selector 的立即安全闸门、query→resolve→generate 的所有
 准备直接拆解 runtime/App 工单时继续读33；准备执行四模型候选探索、完整请求内存校准、swap对照和 record 发布时读34。
 33/34把既有结论变成任务和验收合同，不改变 production catalog 为空、public streaming 当前不可执行的事实。
 35进一步把 32–34 的合同落到当前文件、类型、状态机、测试 ID 和 R0–R8 提交边界；它仍是实施蓝图，不代表任何 public record 已发布。
-从当前 `2878d21` C1 基线继续直接实现时，优先阅读 36 → 38 → 41 → 42 → 44 → 37 → 39 → 45：36/38 给出 coordinator、source lease、receipt 和逐文件合同，41 冻结调度器与 multi-slot/multi-pool 语义，42/44 给出四模型 adapter 和下一阶段收口施工单，37/39/45 提供真实档位校准、swap 对照、App 事务、证据和 release gate。
+从当前 `33bd9ea` C2 基线继续直接实现时，优先阅读 46 → 42 → 44 → 45：46 给出收敛后的实施总手册，42/44 给出四模型 adapter 和逐文件接线，45 提供真实档位校准、swap 对照、App 事务、证据和 release gate；需要追溯 common runtime 设计时再查 36/38/41。
 如果从产品/App 视角评审，先读 40；如果从工具和发布视角评审，先读 43。40–43 均是设计与实施合同，不表示 production catalog 已非空或任何 target 已 public。
-当前 C2 Actual Receipt v2 已在工作树完成并通过 host/sanitizer/build 验收，详见 13.25。继续编码时按 **44 第5节（四模型）→ 第6节（App）** 施工；
-实现后按 **45** 的测试 ID、采样字段、P0–P4 门槛和 evidence bundle 逐项验收。44/45 仍是规格，不改变 production catalog 为空的事实。
+当前 C2 Actual Receipt v2 已在 `33bd9ea` 提交并通过 host/sanitizer/build 验收，详见 13.25。继续编码时先读
+**46 第6–8节与第14–17节**，再按 **44 第5节（四模型）→ 第6节（App）** 施工；实现后按 **45** 的测试 ID、
+采样字段、P0–P4 门槛和 evidence bundle 逐项验收。44–46 仍是规格，不改变 production catalog 为空的事实。
 28/30不新增第二套executor，29/30不重新定义文档12的P0–P4阈值。
 参数冲突以02为准，预算以05为准，compiler/executor以09/10为准，性能阈值以12为准；
 19/20是实施展开，不新增 retention 值、配置别名、F/L/P 编号或另一套调度器。
@@ -163,7 +165,7 @@ Flux 9B 的可复现 private candidate 请求见
 [flux9-p1-same-layout-policy.json](examples/flux9-p1-same-layout-policy.json)。后者会硬校验baseline必须为
 `flux_direct_same_layout_v1`、candidate必须为`generic_stage_executor_v1`。
 
-## 当前代码检查点（2026-09-17）
+## 当前代码检查点（2026-09-18）
 
 统一 executor 已支持 ordered multi-class barrier、单 pool K=2/G=1 的显式 cross-pass
 `carry_first_group`（C ABI v3）、claim后fill overlap和同步reader completion快路径。H3 Turbo K2/G1真实
@@ -191,8 +193,11 @@ resolve/generate 均在 session/GPU 执行前返回`catalog_has_no_public_record
 actual-plan 汇总 verifier 已在 c6cba54 提交，coordinator/provider 已在 fa1ecd0 提交并完成 host/contract/App 回归。
 随后 C0 已完成单次 preflight/catalog snapshot 收口：API 只在 preflight ticket 上调用一次 request-only validator 和一次 catalog snapshot，
 make_plan 使用专用的 prevalidated 入口，resolve 校验 request digest，revalidate 重新读取最新 catalog。
-但四模型仍未生成真实 public receipt，当前 verifier 仍是汇总 v1：具体模型尚未 override source lease，尚无 per-pass/group fill、
-logical bytes、reader fence、source generation 和 canonical receipt。
+随后 C1 fd-backed `SourceLease` 已在 `2878d21` 提交，C2 `ActualExecutionReceipt` v2 已在 `33bd9ea` 提交；common
+verifier 现已核对 per-pass/group fill、logical bytes、reader fence、source generation、carry/pool 选择和 canonical digest。
+但四模型仍未生成真实 public receipt：具体模型尚未 override 完整 public probe/snapshot/generate hooks，Z-Image metadata/reader
+等真实 adapter 仍需使用同一个 request-scoped lease，不能在 result 层合成 receipt。
 
-下一步按[36](36-public-adapter-code-implementation-spec.md)建立 fd-based source lease、receipt v2 和 Z-Image → Flux 9B → H3 Turbo → LTX public adapter；再按
-[37](37-public-streaming-calibration-performance-acceptance.md)建设完整 process-tree calibration、swap 四路对照、App/JobStore 事务和 reviewed records。production catalog 仍为空，当前仍不可 public 执行。
+下一步按 [46](46-public-streaming-implementation-handbook.md) 和 [42](42-model-adapter-playbooks.md) 实现
+Z-Image → Flux 9B → H3 Turbo → LTX 的真实 public adapter；再按 [37](37-public-streaming-calibration-performance-acceptance.md)
+建设完整 process-tree calibration、swap 四路对照、App/JobStore 事务和 reviewed records。production catalog 仍为空，当前仍不可 public 执行。

@@ -1610,3 +1610,21 @@ git diff --check                                                         PASS
 ```
 
 上述验证证明 common receipt/executor/C ABI/public verifier 接缝完成，不证明任一真实模型已经使用 request-scoped lease 和 receipt。下一阶段进入 C3 Z-Image Turbo public adapter；必须由真实 session 产生 receipt，不能在 public result 层合成 receipt。
+
+### 13.26 Public Streaming 实施总手册补充（2026-09-18）
+
+在 C2 `33bd9ea` 已提交基线上，本轮继续审阅了当前 public coordinator、selector/catalog、SourceLease、receipt v2、
+Z-Image exact stream、Swift options/resolve 和 App `JobStore`/`LTXWorker` 接缝，并新增
+[46 Public Streaming 实施总手册](46-public-streaming-implementation-handbook.md)。该手册不是新的实现或性能证据，
+而是把现有分散设计收敛为可执行的工程合同，补充了：
+
+- 用户五档与内部 exact layout 的双层 API，以及物理内存只做推荐、不静默改变默认路径的规则；
+- 控制面、数据面、证据面的职责边界和 owner-pump 伪代码；
+- slot 状态机、multi-pool、carry、source lease、authority、receipt、quarantine 的代码级不变量；
+- Z-Image、Flux 9B、H3 Turbo、LTX 的冻结卡片、逐文件修改建议和模型专项完成条件；
+- profile/catalog versioning、process-tree 预算公式、候选搜索顺序、simulator/campaign/builder 工具链；
+- resident/streaming/bounded/swap 四臂实验、P0–P4、App/JobStore、evidence 和 release/revoke checklist；
+- C3–C9 的阶段顺序、回滚点、代码审阅清单和完整完成定义。
+
+同时更新 44 的当前事实：C2 receipt v2 已完成，后续模型必须复用 common receipt，不能在 result 层合成。
+production catalog 继续为空；四模型 public hooks、完整 target calibration、App 高级设置和 swap P3 仍未完成。
