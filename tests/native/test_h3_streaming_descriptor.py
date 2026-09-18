@@ -127,6 +127,7 @@ def compile_and_run() -> None:
             ROOT / "native/runtime/streaming/context.cpp",
             ROOT / "native/runtime/streaming/c_bridge.cpp",
             ROOT / "native/runtime/streaming/audit.cpp",
+            ROOT / "native/runtime/streaming/source_lease.cpp",
             ROOT / "native/runtime/memory_manifest.cpp",
             ROOT / "native/runtime/memory_policy.cpp",
             ROOT / "native/core/common.cpp",

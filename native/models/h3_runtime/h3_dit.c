@@ -162,6 +162,7 @@ enum {
 
 typedef struct {
     const char *path;
+    int descriptor;
     uint64_t file_offset;
     size_t elements;
     unsigned field;
@@ -2496,6 +2497,7 @@ static int prepare_stream_source(h3_dit *dit,
         return 0;
     }
     source->path = header->path;
+    source->descriptor = header->descriptor;
     source->file_offset = tensor->file_offset;
     source->elements = (size_t)(rows * columns);
     source->field = field;
@@ -2519,6 +2521,7 @@ static int prepare_stream_layer(h3_dit *dit, unsigned layer,
             const h3_quant_cache_source *source = &cached->sources[index];
             stream->sources[index] = (h3_dit_stream_source){
                 .path = source->path,
+                .descriptor = -1,
                 .file_offset = source->file_offset,
                 .elements = source->elements,
                 .field = source->field == H3_QUANT_QKV_WEIGHT ?
@@ -2777,10 +2780,16 @@ int h3_dit_stream_fill_slot_v1(
             return 0;
         }
         uint64_t field_bytes = 0;
-        if (!h3_gpu_tensor_stream_file_bf16_cancellable(
+        const int read_ok = source->descriptor >= 0 ?
+            h3_gpu_tensor_stream_fd_bf16_cancellable(
+                target, source->descriptor, source->path,
+                source->file_offset, source->elements, chunk_bytes,
+                cancel, cancel_user, &field_bytes, error, error_size) :
+            h3_gpu_tensor_stream_file_bf16_cancellable(
                 target, source->path, source->file_offset, source->elements,
                 chunk_bytes, cancel, cancel_user, &field_bytes,
-                error, error_size)) {
+                error, error_size);
+        if (!read_ok) {
             if (field_bytes <= UINT64_MAX - result->source_bytes)
                 result->source_bytes += field_bytes;
             else
@@ -7357,6 +7366,46 @@ int h3_dit_enable_exact_receipt_v1(
         return 0;
     }
     return 1;
+}
+
+int h3_dit_bind_exact_sources_v1(
+        h3_dit *dit, const h3_weight_source_v1 *sources,
+        size_t source_count, char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!dit || !dit->weights || !dit->ssd_streaming ||
+        dit->ssd_quantized || dit->exact_stream.enabled ||
+        dit->exact_stream.executor || !sources || !source_count) {
+        fail(error, error_size, "invalid H3 exact source binding");
+        return 0;
+    }
+    if (!h3_weight_store_bind_sources(
+            dit->weights, sources, source_count, error, error_size))
+        return 0;
+    for (unsigned block = 0; block < H3_DIT_BLOCKS; ++block) {
+        h3_dit_stream_layer *layer = &dit->stream_layers[block];
+        for (unsigned field = 0; field < layer->source_count; ++field) {
+            h3_dit_stream_source *source = &layer->sources[field];
+            source->descriptor = -1;
+            for (size_t shard = 0;
+                 shard < h3_weight_store_shards(dit->weights); ++shard) {
+                const h3_st_header *header = h3_weight_store_header(
+                    dit->weights, shard);
+                if (header && header->path && source->path &&
+                    !strcmp(header->path, source->path)) {
+                    source->descriptor = header->descriptor;
+                    break;
+                }
+            }
+            if (source->dtype == H3_GPU_BF16 && source->descriptor < 0) {
+                fail(error, error_size,
+                     "H3 exact source binding omitted block %u field %u",
+                     block, field);
+                return 0;
+            }
+        }
+    }
+    dit->stream_source_identity = 0;
+    return h3_dit_stream_check_source_snapshot(dit, error, error_size);
 }
 
 int h3_dit_get_exact_streaming_info(

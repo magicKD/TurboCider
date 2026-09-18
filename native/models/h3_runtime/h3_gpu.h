@@ -162,6 +162,13 @@ int h3_gpu_tensor_stream_file_bf16_cancellable(
     size_t elements, size_t chunk_bytes,
     h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
     uint64_t *bytes_read, char *error, size_t error_size);
+/* Request-scoped lease variant. The descriptor remains owned by the caller;
+ * this function never closes it and performs only checked positional reads. */
+int h3_gpu_tensor_stream_fd_bf16_cancellable(
+    h3_gpu_tensor *tensor, int descriptor, const char *label,
+    uint64_t file_offset, size_t elements, size_t chunk_bytes,
+    h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+    uint64_t *bytes_read, char *error, size_t error_size);
 int h3_gpu_tensor_stream_file_i8(h3_gpu_tensor *tensor, const char *path,
                                  uint64_t file_offset, size_t elements,
                                  char *error, size_t error_size);

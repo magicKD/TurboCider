@@ -1850,3 +1850,36 @@ LTX worker-local multi-stage；production catalog 仍为 `tc-streaming-catalog-e
 - resident/streaming/bounded/natural-swap 四臂 ABBA、process-tree peak、quality、P0–P3 统计和逐 PR 停止条件。
 
 本轮文档没有新增性能数据、真实 full-request、P2/P3 或 public catalog record；`tc-streaming-catalog-empty-v1` 仍为空，不能据此宣称任何模型 target 已 public。文档只证明设计可追溯到当前代码接口，后续实现仍须按 54 的 `DONE/WIP/NEXT/NOT_PUBLIC` 和 reviewer checklist 逐项完成。
+
+### 13.36 H3 Turbo public source lease 与 adapter 基线（2026-09-18，工作树待提交）
+
+H3 Turbo 首版 public GPU adapter 已完成 metadata/source/receipt 的代码闭环，范围继续严格冻结为
+MiniMax H3 Turbo original BF16、text-to-video、4 steps、24 fps、无 audio/input/LoRA/ANE/quant cache/compiled GPU：
+
+- `SourceLease` 覆盖 13 个 transformer shard、text encoder、video/audio VAE、tokenizer 和 provenance manifest；
+- safetensors header、weight store 和 tokenizer 均可从 request-scoped duplicate fd 读取，payload reader 不再依赖
+  probe 后按 path 重开 transformer shard；
+- `probe_public_streaming()` 生成 source/workload/runtime identity，`compile_public_streaming()` 从同一 lease
+  重放 descriptor/layout，`generate_resolved()` 绑定同一 source generation；
+- H3 C/Metal exact executor 导出真实 receipt v2，C++ bridge 使用真实 fill/group/fence/pass/drain 事件生成
+  `ActualExecutionReceipt`，不从 summary counter 合成；
+- path replacement、open-fd mutation、缺少 source binding、异常清理和重复失败均 fail-closed。
+
+host fixture 必须遵守 coordinator 的 normalized-request 合同。square H3 API 输入在 `make_plan` 后是
+`768×768`；测试不通过放宽 descriptor 接受未归一化 `512×512` 来规避该合同。
+
+本轮真实验证：
+
+```text
+git diff --check                                      PASS
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh    PASS
+python3 -B tests/native/test_h3_streaming_descriptor.py PASS
+python3 -B tests/native/test_h3_public_streaming.py     PASS
+make test-streaming-host                              PASS
+make test-streaming-contract                          PASS
+```
+
+这组证据证明 H3 public adapter 的 host/source/layout/failure contract 已建立，不证明真实 full-video public
+请求、8/10/12/16/20 GiB whole-process calibration、P2/P3 或 production record 已完成。production catalog
+仍必须保持 `tc-streaming-catalog-empty-v1`；下一阶段是 LTX worker-local/multi-stage public adapter，随后才是
+四模型档位校准与 catalog review。

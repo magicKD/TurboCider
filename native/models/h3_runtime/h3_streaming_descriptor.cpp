@@ -41,6 +41,14 @@ std::string snapshot_fingerprint(const struct stat &status) {
     return tc::memory_sha256_hex(canonical.str());
 }
 
+std::string snapshot_fingerprint_fd(int descriptor) {
+    struct stat status{};
+    require_metadata(descriptor >= 0 && ::fstat(descriptor, &status) == 0 &&
+                         S_ISREG(status.st_mode) && status.st_size >= 8,
+                     "cannot stat leased H3 shard");
+    return snapshot_fingerprint(status);
+}
+
 struct ShardInfo {
     std::string path;
     std::string name;
@@ -101,6 +109,7 @@ struct StreamingMetadata::State {
     std::unique_ptr<h3_weight_store, StoreDeleter> store;
     std::vector<ShardInfo> shards;
     uint64_t identity = 0;
+    std::shared_ptr<const streaming::SourceLease> lease;
 };
 
 StreamingMetadata::StreamingMetadata(const std::string &transformer_directory)
@@ -176,6 +185,52 @@ StreamingMetadata::StreamingMetadata(const std::string &transformer_directory)
 
 StreamingMetadata::~StreamingMetadata() = default;
 
+StreamingMetadata::StreamingMetadata(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        const std::vector<std::string> &transformer_logical_ids)
+    : state_(std::make_unique<State>()) {
+    require_metadata(lease != nullptr && !transformer_logical_ids.empty(),
+                     "invalid H3 source lease metadata request");
+    state_->lease = std::move(lease);
+    std::vector<streaming::OwnedSourceFd> descriptors;
+    std::vector<h3_weight_source_v1> sources;
+    descriptors.reserve(transformer_logical_ids.size());
+    sources.reserve(transformer_logical_ids.size());
+    for (const auto &id : transformer_logical_ids) {
+        const auto &file = state_->lease->file(id);
+        descriptors.push_back(state_->lease->duplicate_fd(id));
+        sources.push_back({file.path.c_str(), descriptors.back().get()});
+        state_->shards.push_back({file.path.string(),
+                                  std::filesystem::path(file.path).filename().string(),
+                                  file.bytes,
+                                  snapshot_fingerprint_fd(
+                                      descriptors.back().get())});
+    }
+    std::sort(state_->shards.begin(), state_->shards.end(),
+              [](const ShardInfo &left, const ShardInfo &right) {
+                  return left.path < right.path;
+              });
+    require_metadata(!state_->shards.empty(), "H3 source lease has no shards");
+    const auto directory = std::filesystem::path(state_->shards.front().path).parent_path();
+    for (const auto &shard : state_->shards)
+        require_metadata(std::filesystem::path(shard.path).parent_path() == directory,
+                         "H3 source lease spans multiple transformer directories");
+    state_->directory = directory.string();
+    char error[512] = {};
+    state_->store.reset(h3_weight_store_open_sources(
+        sources.data(), sources.size(), error, sizeof(error)));
+    require_metadata(state_->store != nullptr,
+                     error[0] ? error : "cannot open H3 weight store");
+    require_metadata(h3_weight_store_shards(state_->store.get()) ==
+                         state_->shards.size(),
+                     "H3 source lease shard inventory changed during open");
+    require_metadata(h3_weight_store_identity(
+                         state_->store.get(), &state_->identity, error,
+                         sizeof(error)) != 0,
+                     error[0] ? error : "cannot create H3 lease identity");
+    check_unchanged();
+}
+
 size_t StreamingMetadata::shard_count() const noexcept {
     return state_ ? state_->shards.size() : 0;
 }
@@ -184,9 +239,26 @@ uint64_t StreamingMetadata::snapshot_identity() const noexcept {
     return state_ ? state_->identity : 0;
 }
 
+const std::shared_ptr<const streaming::SourceLease> &
+StreamingMetadata::source_lease() const noexcept {
+    static const std::shared_ptr<const streaming::SourceLease> empty;
+    return state_ ? state_->lease : empty;
+}
+
 void StreamingMetadata::check_unchanged() const {
     require_metadata(state_ && state_->store,
                      "weight store is not available");
+    if (state_->lease) {
+        state_->lease->revalidate_paths();
+        state_->lease->revalidate_open_files();
+        char error[512] = {};
+        uint64_t current = 0;
+        require_metadata(h3_weight_store_identity(
+                             state_->store.get(), &current, error,
+                             sizeof(error)) != 0 && current == state_->identity,
+                         "checkpoint_changed: H3 shard inventory is stale");
+        return;
+    }
     for (const auto &shard : state_->shards) {
         struct stat status{};
         require_metadata(::stat(shard.path.c_str(), &status) == 0 &&
@@ -447,6 +519,59 @@ StreamingPlanView::StreamingPlanView(
                stage.pass_transition == streaming::PassTransition::carry_first_group ?
                    TC_STREAM_PASS_CARRY_FIRST_GROUP_V3 :
                    TC_STREAM_PASS_RELOAD_V3,
+               request_generation, slot_capacities_.data(),
+               static_cast<uint32_t>(groups_.size()), groups_.data()};
+}
+
+StreamingPlanView::StreamingPlanView(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        const std::vector<std::string> &transformer_logical_ids,
+        const StreamingConfig &config, const StreamingWorkload &workload,
+        uint64_t request_generation)
+    : metadata_(std::move(lease), transformer_logical_ids),
+      descriptor_(metadata_.describe(workload)),
+      layout_([&] {
+          auto it = config.stages.find("denoiser");
+          if (it != config.stages.end() && it->second.residency &&
+              *it->second.residency == "streamed" &&
+              it->second.resident_prefix_blocks && it->second.slot_count &&
+              *it->second.slot_count == 2u && it->second.block_group_size &&
+              *it->second.block_group_size == 1u)
+              descriptor_.stages.front().pass_transition =
+                  streaming::PassTransition::carry_first_group;
+          return streaming::compile_layout(config, descriptor_);
+      }()) {
+    require_metadata(request_generation != 0,
+                     "H3 request generation must be nonzero");
+    require_metadata(layout_.materializations_complete,
+                     "H3 descriptor metadata is incomplete");
+    require_metadata(layout_.stages.size() == 1,
+                     "H3 exact candidate requires one stage");
+    const auto &stage = layout_.stages.front();
+    require_metadata(stage.id == "denoiser" && !stage.resident &&
+                         stage.group_size == 1 && stage.slot_count == 2 &&
+                         stage.pools.size() == 1,
+                     "H3 exact candidate requires one K=2/G=1 streamed pool");
+    require_metadata(stage.prefix < descriptor_.stages.front().blocks.size(),
+                     "H3 exact candidate requires a streamed suffix");
+    require_metadata(stage.groups.size() ==
+                         descriptor_.stages.front().blocks.size() - stage.prefix,
+                     "H3 compiled suffix group count mismatch");
+    slot_capacities_.reserve(stage.pools.front().slots.size());
+    for (const auto &slot : stage.pools.front().slots)
+        slot_capacities_.push_back(slot.capacity_bytes);
+    groups_.reserve(stage.groups.size());
+    for (const auto &group : stage.groups)
+        groups_.push_back({group.id, group.slot,
+                           static_cast<uint32_t>(group.blocks.size()),
+                           group.blocks.data(), group.bytes});
+    require_metadata(stage.groups.size() <= UINT32_MAX,
+                     "H3 C plan has too many groups");
+    c_plan_ = {sizeof(c_plan_), TC_STREAM_SLOT_ABI_V3, 0u,
+               stage.pools.front().id, stage.slot_count, stage.distance,
+               stage.workers, stage.pass_count,
+               stage.pass_transition == streaming::PassTransition::carry_first_group ?
+                   TC_STREAM_PASS_CARRY_FIRST_GROUP_V3 : TC_STREAM_PASS_RELOAD_V3,
                request_generation, slot_capacities_.data(),
                static_cast<uint32_t>(groups_.size()), groups_.data()};
 }

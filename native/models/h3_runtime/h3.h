@@ -25,6 +25,13 @@ extern "C" {
 typedef struct h3_ctx h3_ctx;
 typedef struct h3_result h3_result;
 
+/* Borrowed request-scoped weight source. The runtime duplicates descriptors
+ * before returning to the caller and never closes caller-owned descriptors. */
+typedef struct {
+    const char *path;
+    int descriptor;
+} h3_weight_source_v1;
+
 typedef struct {
     uint64_t components_drained;
 } h3_drain_info;
@@ -140,6 +147,10 @@ typedef struct {
     uint64_t exact_receipt_source_generation;
     const char *exact_receipt_layout_digest;
     const char *exact_receipt_implementation;
+    /* Optional request-scoped transformer shard lease. Required by public
+     * exact streaming and ignored by legacy/default requests. */
+    const h3_weight_source_v1 *exact_weight_sources;
+    size_t exact_weight_source_count;
     /* Optional lower internal model canvas. Both must be zero (exact output
      * canvas) or valid same-aspect dimensions no larger than width/height. */
     int render_width;
@@ -204,7 +215,8 @@ typedef struct {
     .exact_carry_first_group = 0, .exact_cancel = NULL, \
     .exact_cancel_user = NULL, .exact_receipt_source_generation = 0, \
     .exact_receipt_layout_digest = NULL, \
-    .exact_receipt_implementation = NULL, .render_width = 0, \
+    .exact_receipt_implementation = NULL, .exact_weight_sources = NULL, \
+    .exact_weight_source_count = 0, .render_width = 0, \
     .render_height = 0, .use_slower_bf16_mlp = 0, \
     .use_slower_bf16_qkv = 0, .use_slower_bf16_attention_output = 0, \
     .use_slower_row_major_attention_output = 0, \

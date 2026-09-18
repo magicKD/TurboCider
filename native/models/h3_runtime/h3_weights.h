@@ -13,6 +13,11 @@ typedef struct h3_weight_store h3_weight_store;
  * tensor payloads. */
 h3_weight_store *h3_weight_store_open(const char *directory,
                                       char *error, size_t error_size);
+/* Build a store directly from request-scoped sources. Each header retains its
+ * own duplicate descriptor, and no directory enumeration/path reopen occurs. */
+h3_weight_store *h3_weight_store_open_sources(
+    const h3_weight_source_v1 *sources, size_t source_count,
+    char *error, size_t error_size);
 void h3_weight_store_free(h3_weight_store *store);
 size_t h3_weight_store_shards(const h3_weight_store *store);
 /* Borrowed header view in the same sorted order used by the store. */
@@ -23,6 +28,11 @@ const h3_st_header *h3_weight_store_header(const h3_weight_store *store,
  * agree while derived caches fail closed when a checkpoint is replaced. */
 int h3_weight_store_identity(const h3_weight_store *store, uint64_t *identity,
                              char *error, size_t error_size);
+/* Bind duplicate descriptors from a request-scoped SourceLease to every
+ * matching shard. The store retains its own dup() and closes it on free. */
+int h3_weight_store_bind_sources(
+    h3_weight_store *store, const h3_weight_source_v1 *sources,
+    size_t source_count, char *error, size_t error_size);
 
 const h3_st_tensor *h3_weight_find(const h3_weight_store *store,
                                    const char *name,

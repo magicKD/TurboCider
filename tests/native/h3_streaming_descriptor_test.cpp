@@ -6,12 +6,16 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <fcntl.h>
+#include <fstream>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 extern "C" h3_gpu_tensor *h3_gpu_tensor_load_bf16(
     h3_gpu *, const char *, uint64_t, size_t) {
@@ -70,6 +74,24 @@ uint64_t matrix_bytes() {
             uint64_t{H3_DIT_FFN} * 2u * H3_DIT_HIDDEN +
             uint64_t{H3_DIT_HIDDEN} * H3_DIT_FFN) *
            sizeof(uint16_t);
+}
+
+std::pair<std::shared_ptr<const tc::streaming::SourceLease>,
+          std::vector<std::string>>
+lease_for(const std::string &directory) {
+    std::vector<tc::streaming::SourceFileIdentity> files;
+    std::vector<std::string> logical_ids;
+    for (unsigned index = 1; index <= 4; ++index) {
+        char name[64] = {};
+        std::snprintf(name, sizeof(name), "model-%05u.safetensors", index);
+        tc::streaming::SourceFileIdentity file;
+        file.logical_id = std::string("transformer/") + name;
+        file.path = std::filesystem::path(directory) / name;
+        logical_ids.push_back(file.logical_id);
+        files.push_back(std::move(file));
+    }
+    return {tc::streaming::SourceLease::capture(std::move(files)),
+            std::move(logical_ids)};
 }
 
 struct FakeExecution {
@@ -288,6 +310,75 @@ int main(int argc, char **argv) {
         assert(c_plan.groups[23].group == 23 && c_plan.groups[23].slot == 1);
         execute_fake_plan(c_plan);
         exercise_fake_failures(c_plan);
+
+        auto [lease, logical_ids] = lease_for(valid);
+        tc::h3::StreamingMetadata lease_metadata(lease, logical_ids);
+        assert(lease_metadata.source_lease().get() == lease.get());
+        assert(lease_metadata.snapshot_identity() ==
+               metadata.snapshot_identity());
+        const tc::h3::StreamingPlanView lease_plan(
+            lease, logical_ids, config(), work, 77);
+        assert(lease_plan.metadata().source_lease().get() == lease.get());
+        assert(lease_plan.descriptor().checkpoint_identity ==
+               plan.descriptor().checkpoint_identity);
+        assert(lease_plan.layout().canonical == plan.layout().canonical);
+        assert(lease_plan.layout().digest == plan.layout().digest);
+        assert(lease_plan.c_plan().request_generation == 77);
+
+        char source_error[512] = {};
+        {
+            auto caller_fd = lease->duplicate_fd(logical_ids.front());
+            h3_st_header leased_header{};
+            assert(h3_st_read_header_fd(
+                lease->file(logical_ids.front()).path.c_str(),
+                caller_fd.get(), &leased_header, source_error,
+                sizeof(source_error)));
+            assert(leased_header.descriptor >= 0 &&
+                   leased_header.tensor_count > 0);
+            caller_fd = tc::streaming::OwnedSourceFd{};
+            struct stat retained_status{};
+            assert(fstat(leased_header.descriptor, &retained_status) == 0 &&
+                   retained_status.st_size > 8);
+            h3_st_free_header(&leased_header);
+        }
+        {
+            std::unique_ptr<h3_weight_store,
+                            decltype(&h3_weight_store_free)> store(
+                h3_weight_store_open(valid.c_str(), source_error,
+                                     sizeof(source_error)),
+                h3_weight_store_free);
+            assert(store);
+            std::vector<tc::streaming::OwnedSourceFd> descriptors;
+            std::vector<h3_weight_source_v1> sources;
+            descriptors.reserve(logical_ids.size());
+            sources.reserve(logical_ids.size());
+            for (const auto &id : logical_ids) {
+                const auto &file = lease->file(id);
+                descriptors.push_back(lease->duplicate_fd(id));
+                sources.push_back({file.path.c_str(),
+                                   descriptors.back().get()});
+            }
+            assert(!h3_weight_store_bind_sources(
+                store.get(), sources.data(), sources.size() - 1,
+                source_error, sizeof(source_error)));
+            for (size_t index = 0;
+                 index < h3_weight_store_shards(store.get()); ++index)
+                assert(h3_weight_store_header(store.get(), index)->descriptor < 0);
+            source_error[0] = '\0';
+            assert(h3_weight_store_bind_sources(
+                store.get(), sources.data(), sources.size(),
+                source_error, sizeof(source_error)));
+            descriptors.clear();
+            for (size_t index = 0;
+                 index < h3_weight_store_shards(store.get()); ++index) {
+                const auto *header = h3_weight_store_header(store.get(), index);
+                assert(header && header->descriptor >= 0);
+                struct stat retained_status{};
+                assert(fstat(header->descriptor, &retained_status) == 0 &&
+                       static_cast<uint64_t>(retained_status.st_size) ==
+                           header->file_size);
+            }
+        }
         rejects([&] { tc::h3::StreamingPlanView value(
                           valid, config(), work, 0); },
                 "generation");
@@ -362,19 +453,42 @@ int main(int argc, char **argv) {
                 "duplicate H3 matrix");
 
         metadata.check_unchanged();
+        lease_metadata.check_unchanged();
         const std::string first_shard = valid + "/model-00001.safetensors";
-        const int descriptor_fd = open(first_shard.c_str(), O_WRONLY | O_CLOEXEC);
+        auto held_fd = lease->duplicate_fd(logical_ids.front());
+        std::array<unsigned char, 8> original_prefix{};
+        assert(pread(held_fd.get(), original_prefix.data(),
+                     original_prefix.size(), 0) ==
+               static_cast<ssize_t>(original_prefix.size()));
+        const std::string moved_shard = first_shard + ".moved";
+        assert(rename(first_shard.c_str(), moved_shard.c_str()) == 0);
+        {
+            std::ofstream replacement(first_shard, std::ios::binary);
+            replacement << "replacement";
+        }
+        std::array<unsigned char, 8> retained_prefix{};
+        assert(pread(held_fd.get(), retained_prefix.data(),
+                     retained_prefix.size(), 0) ==
+                   static_cast<ssize_t>(retained_prefix.size()) &&
+               retained_prefix == original_prefix);
+        rejects([&] { lease->revalidate_paths(); }, "source");
+        rejects([&] { lease->revalidate_open_files(); }, "source");
+        rejects([&] { lease_metadata.check_unchanged(); }, "source");
+        rejects([&] { metadata.check_unchanged(); }, "checkpoint_changed");
+        rejects([&] { metadata.describe(work); }, "checkpoint_changed");
+
+        const int descriptor_fd = open(
+            moved_shard.c_str(), O_WRONLY | O_CLOEXEC);
         assert(descriptor_fd >= 0);
         struct stat status{};
         assert(fstat(descriptor_fd, &status) == 0 && status.st_size > 8);
         assert(ftruncate(descriptor_fd, status.st_size - 1) == 0);
         close(descriptor_fd);
-        rejects([&] { metadata.check_unchanged(); }, "checkpoint_changed");
-        rejects([&] { metadata.describe(work); }, "checkpoint_changed");
+        rejects([&] { lease->revalidate_open_files(); }, "source");
 
         std::cout << "PASS H3 descriptor: 4 shards, uniform active IDs, "
-                     "BF16 source ranges, K2/G1 plan and stale snapshot "
-                     "rejection; layout="
+                     "BF16 source ranges, path/lease layout parity, atomic "
+                     "descriptor binding and stale snapshot rejection; layout="
                   << plan.layout().digest << '\n';
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

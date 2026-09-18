@@ -6,7 +6,14 @@
 #include "../../runtime/residency.hpp"
 #include "../../models/h3_runtime/h3.h"
 #include "../../models/h3_runtime/h3_runtime_config.h"
+#include "../../models/h3_runtime/h3_streaming_descriptor.hpp"
+#include "../../models/h3_runtime/h3_tokenizer.h"
+#include "../../runtime/streaming/actual_receipt.hpp"
+#include "../../runtime/streaming/canonical_encoding.hpp"
+#include "../../runtime/streaming/resolved_request.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 #include <CommonCrypto/CommonDigest.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -14,7 +21,9 @@
 #include <exception>
 #include <fstream>
 #include <limits>
+#include <memory>
 #include <new>
+#include <vector>
 
 namespace {
 struct H3MemoryBridge {
@@ -268,6 +277,103 @@ static std::string sha256_file(const std::filesystem::path& path) {
     return output;
 }
 
+constexpr const char *kH3PublicImplementation =
+    "generic_stage_executor_v3";
+constexpr const char *kH3PublicComponentPolicy =
+    "h3-components-v1";
+constexpr const char *kH3PublicKernelRevision =
+    "h3-metal-dense-block-v1";
+
+static void h3_append_public_tree(
+        const std::filesystem::path& model_root,
+        const std::filesystem::path& relative_root,
+        std::vector<tc::streaming::SourceFileIdentity>& files) {
+    const auto directory = model_root / relative_root;
+    std::error_code error;
+    tc::require(std::filesystem::is_directory(directory, error) && !error,
+                "streaming_route_unsupported: H3 source directory is missing: " +
+                    relative_root.generic_string());
+    std::vector<std::filesystem::path> paths;
+    std::filesystem::recursive_directory_iterator iterator(
+        directory,
+        std::filesystem::directory_options::skip_permission_denied, error);
+    const std::filesystem::recursive_directory_iterator end;
+    for (; !error && iterator != end; iterator.increment(error)) {
+        std::error_code status_error;
+        if (iterator->is_regular_file(status_error) && !status_error)
+            paths.push_back(iterator->path());
+        else
+            tc::require(!status_error,
+                        "streaming_source_identity: cannot inspect H3 artifact");
+    }
+    tc::require(!error && !paths.empty(),
+                "streaming_source_identity: H3 artifact closure is empty");
+    std::sort(paths.begin(), paths.end());
+    for (const auto& path : paths) {
+        const auto relative = std::filesystem::relative(
+            path, model_root, error);
+        tc::require(!error && !relative.empty(),
+                    "streaming_source_identity: invalid H3 artifact path");
+        tc::streaming::SourceFileIdentity file;
+        file.logical_id = relative.generic_string();
+        file.path = path;
+        files.push_back(std::move(file));
+    }
+}
+
+static std::vector<std::string> h3_public_transformer_logical_ids(
+        const tc::streaming::SourceLease& lease) {
+    std::vector<std::string> result;
+    for (const auto& file : lease.descriptor().files) {
+        if (file.logical_id.starts_with("FL2VA/transformer/") &&
+            file.logical_id.ends_with(".safetensors"))
+            result.push_back(file.logical_id);
+    }
+    tc::require(result.size() == 13,
+                "streaming_route_unsupported: H3 Turbo requires 13 transformer shards");
+    return result;
+}
+
+static tc::streaming::PresetSourceIdentity h3_public_source_identity(
+        const tc::streaming::SourceLease& lease,
+        const std::string& manifest_digest) {
+    tc::streaming::CanonicalEncoder encoder(
+        "h3-public-artifact-manifest-v1");
+    encoder.string_field("merge_manifest_sha256", manifest_digest);
+    encoder.string_field("lease_digest", lease.digest());
+    encoder.unsigned_field("artifact_count", lease.file_count());
+    return {"minimax-h3-turbo-original-bf16",
+            "modelscope-bf16-sharded", encoder.sha256(),
+            std::string(lease.digest())};
+}
+
+static tc::streaming::PresetRuntimeIdentity h3_public_runtime_identity() {
+    return {"turbocider-streaming-2026-09-18",
+            "public-streaming-runtime-v2",
+            "h3-turbo-public-adapter-v1",
+            "h3-pread-bf16-source-lease-v2",
+            kH3PublicKernelRevision,
+            "h3-request-cache-disabled-v1"};
+}
+
+static std::string h3_public_feature_digest(
+        const tc::Request& request, uint32_t text_rows,
+        std::string_view manifest_digest) {
+    tc::streaming::CanonicalEncoder encoder(
+        "h3-public-workload-features-v1");
+    encoder.boolean_field("inputs_empty", request.inputs.empty());
+    encoder.boolean_field("loras_empty", request.loras.empty());
+    encoder.boolean_field("audio_disabled", !request.audio);
+    encoder.boolean_field("ane_disabled", request.ane_manifest.empty());
+    encoder.boolean_field(
+        "encoder_ane_disabled", request.encoder_ane_manifest.empty());
+    encoder.boolean_field("compile_gpu", request.compile_gpu);
+    encoder.boolean_field("dynamic_text", request.dynamic_text);
+    encoder.unsigned_field("text_rows", text_rows);
+    encoder.string_field("merge_manifest_sha256", manifest_digest);
+    return encoder.sha256();
+}
+
 // Published only inside the process-wide inference lease. Worker threads may
 // read this immutable table; neither private ANE flags nor shell environment
 // can silently alter a request's math or placement.
@@ -360,6 +466,12 @@ class H3Session final:public tc::ModelSession {
     uint64_t exact_generation_=0;
     tc::MemoryExecutionContext* memory_context_=nullptr;
     mutable tc::MemoryCheckpointHashCache memory_probe_hash_cache_;
+    std::shared_ptr<const tc::streaming::SourceLease> public_stream_lease_;
+    std::vector<tc::streaming::OwnedSourceFd> public_stream_descriptors_;
+    std::vector<h3_weight_source_v1> public_stream_sources_;
+    std::string public_stream_layout_digest_;
+    uint64_t public_stream_target_bytes_ = 0;
+    bool public_streaming_active_ = false;
 public:
     explicit H3Session(const std::filesystem::path& root,
                        bool allow_experimental_streaming = false)
@@ -385,6 +497,217 @@ public:
             memory_probe_hash_cache_);
     }
     void unload() override { context_.reset(); loaded_root_.clear(); loaded_context_identity_.clear(); }
+    std::shared_ptr<const tc::streaming::ModelStreamingProbe>
+    probe_public_streaming(
+            const tc::streaming::PublicResolveInput& input) const override {
+        const auto& request = input.request;
+        tc::require(request.model == "minimax-h3-turbo",
+                    "streaming_engine_model_mismatch");
+        tc::require(request.operation == "video.generate" &&
+                        request.execution == "gpu" && request.inputs.empty() &&
+                        request.frames >= 22 && request.frames <= 362 &&
+                        (request.frames - 5) % 17 == 0 && request.fps == 24 &&
+                        !request.audio && request.ane_manifest.empty() &&
+                        request.encoder_ane_manifest.empty() &&
+                        request.loras.empty() && request.quantized_cache.empty() &&
+                        !request.allow_approximation && !request.compile_gpu,
+                    "streaming_route_unsupported: H3 public card requires "
+                    "original BF16 GPU text-to-video without audio/input/LoRA/ANE");
+        tc::require(request.width >= 32 && request.height >= 32 &&
+                        request.width % 32 == 0 && request.height % 32 == 0 &&
+                        static_cast<int64_t>(request.width) * request.height <=
+                            768ll * 1344ll && request.steps == 4,
+                    "streaming_workload_invalid: H3 public canvas/steps are unsupported");
+
+        const auto component = root_ / "FL2VA";
+        const auto transformer = component / "transformer";
+        const auto manifest = transformer / "h3-turbo-merge-manifest.json";
+        std::error_code error;
+        tc::require(std::filesystem::is_regular_file(manifest, error) && !error,
+                    "streaming_route_unsupported: H3 provenance manifest is missing");
+        const auto manifest_digest = sha256_file(manifest);
+        tc::require(!manifest_digest.empty(),
+                    "streaming_source_identity: cannot hash H3 provenance manifest");
+        std::vector<tc::streaming::SourceFileIdentity> files;
+        h3_append_public_tree(root_, "FL2VA/transformer", files);
+        h3_append_public_tree(root_, "FL2VA/text_encoder", files);
+        h3_append_public_tree(root_, "FL2VA/video_vae/source", files);
+        h3_append_public_tree(root_, "FL2VA/audio_vae", files);
+        tc::streaming::SourceFileIdentity tokenizer;
+        tokenizer.logical_id = "FL2VA/tokenizer/tokenizer.json";
+        tokenizer.path = component / "tokenizer/tokenizer.json";
+        files.push_back(std::move(tokenizer));
+        auto lease = tc::streaming::SourceLease::capture(std::move(files));
+        const auto transformer_ids = h3_public_transformer_logical_ids(*lease);
+
+        const auto& tokenizer_file = lease->file("FL2VA/tokenizer/tokenizer.json");
+        auto tokenizer_fd = lease->duplicate_fd(tokenizer_file.logical_id);
+        char detail[512] = {};
+        std::unique_ptr<h3_tokenizer, decltype(&h3_tokenizer_free)> tokenizer_value(
+            h3_tokenizer_load_fd(tokenizer_file.path.c_str(), tokenizer_fd.get(),
+                                 detail, sizeof(detail)), h3_tokenizer_free);
+        tc::require(tokenizer_value != nullptr,
+                    detail[0] ? detail : "cannot load H3 tokenizer from lease");
+        uint32_t* token_ids = nullptr;
+        size_t token_count = 0;
+        tc::require(h3_tokenizer_encode(tokenizer_value.get(), request.prompt.c_str(),
+                                        1, &token_ids, &token_count,
+                                        detail, sizeof(detail)) != 0 &&
+                        token_count > 0 && token_count <= UINT32_MAX,
+                    detail[0] ? detail : "cannot tokenize H3 public prompt");
+        h3_tokenizer_ids_free(token_ids);
+
+        tc::h3::StreamingMetadata metadata(lease, transformer_ids);
+        tc::h3::StreamingWorkload workload;
+        workload.width = static_cast<uint32_t>(request.width);
+        workload.height = static_cast<uint32_t>(request.height);
+        workload.frames = static_cast<uint32_t>(request.frames);
+        workload.fps = static_cast<uint32_t>(request.fps);
+        workload.text_rows = static_cast<uint32_t>(token_count);
+        workload.steps = static_cast<uint32_t>(request.steps);
+        workload.active_blocks = H3_DIT_BLOCKS;
+        workload.audio = false;
+        auto descriptor = metadata.describe(workload);
+        tc::streaming::PresetWorkload identity;
+        identity.model = request.model;
+        identity.operation = request.operation;
+        identity.execution = request.execution;
+        identity.device_class = input.device.device_class;
+        identity.execution_container = input.execution_container;
+        identity.width = static_cast<uint32_t>(request.width);
+        identity.height = static_cast<uint32_t>(request.height);
+        identity.frames = static_cast<uint32_t>(request.frames);
+        identity.fps = static_cast<uint32_t>(request.fps);
+        identity.steps = static_cast<uint32_t>(request.steps);
+        identity.batch = 1;
+        identity.audio = false;
+        identity.dynamic_text = request.dynamic_text;
+        identity.approximation = false;
+        identity.conditioning_revision = "h3-turbo-text-adaln-v1";
+        identity.vae_policy_revision = "h3-video-vae-v1";
+        identity.feature_digest = h3_public_feature_digest(
+            request, static_cast<uint32_t>(token_count), manifest_digest);
+        identity.token_shapes.push_back({
+            "h3-bpe", "h3-tokenizer-v1", "h3-template-v1",
+            static_cast<uint32_t>(token_count),
+            static_cast<uint32_t>(token_count),
+            static_cast<uint32_t>(token_count)});
+        (void)descriptor;
+        return std::make_shared<tc::streaming::ValueModelStreamingProbe>(
+            tc::streaming::ValueModelStreamingProbe::Values{
+                request.model,
+                h3_public_source_identity(*lease, manifest_digest),
+                std::move(identity), h3_public_runtime_identity(),
+                kH3PublicComponentPolicy, std::move(lease)});
+    }
+
+    std::shared_ptr<const tc::streaming::ModelStreamingSnapshot>
+    compile_public_streaming(
+            std::shared_ptr<const tc::streaming::ModelStreamingProbe> probe,
+            const tc::streaming::StreamingPresetRecord& record) const override {
+        auto value_probe = std::dynamic_pointer_cast<
+            const tc::streaming::ValueModelStreamingProbe>(probe);
+        tc::require(value_probe != nullptr,
+                    "streaming_public_probe_type_mismatch");
+        tc::require(value_probe->model_id() == "minimax-h3-turbo" &&
+                        value_probe->component_policy_revision() ==
+                            record.plan.component_policy_revision &&
+                        record.source == value_probe->source_identity() &&
+                        record.workload == value_probe->workload_identity() &&
+                        record.runtime == value_probe->runtime_identity(),
+                    "streaming_record_identity_mismatch");
+        const auto& workload = value_probe->workload_identity();
+        tc::require(workload.token_shapes.size() == 1,
+                    "streaming_workload_invalid: H3 token shape count");
+        std::vector<std::string> transformer_ids;
+        for (const auto& file : value_probe->lease().descriptor().files)
+            if (file.logical_id.starts_with("FL2VA/transformer/") &&
+                file.logical_id.ends_with(".safetensors"))
+                transformer_ids.push_back(file.logical_id);
+        tc::h3::StreamingWorkload descriptor_workload;
+        descriptor_workload.width = workload.width;
+        descriptor_workload.height = workload.height;
+        descriptor_workload.frames = workload.frames;
+        descriptor_workload.fps = workload.fps;
+        descriptor_workload.text_rows = workload.token_shapes.front().padded_rows;
+        descriptor_workload.steps = workload.steps;
+        descriptor_workload.active_blocks = H3_DIT_BLOCKS;
+        descriptor_workload.audio = false;
+        auto plan = std::make_shared<tc::h3::StreamingPlanView>(
+            value_probe->lease_ptr(), transformer_ids,
+            record.plan.canonical_config, descriptor_workload, 1);
+        tc::require(plan->layout().digest == record.plan.layout_digest,
+                    "streaming_layout_digest_mismatch");
+        return std::make_shared<tc::streaming::ValueModelStreamingSnapshot>(
+            tc::streaming::ValueModelStreamingSnapshot::Values{
+                "minimax-h3-turbo", value_probe->source_identity(),
+                value_probe->runtime_identity(), plan->descriptor(),
+                plan->layout(),
+                std::string(value_probe->component_policy_revision()),
+                value_probe->lease_ptr()});
+    }
+
+    tc::RunResult generate_resolved(
+            std::shared_ptr<const tc::streaming::ResolvedRequestExecution> execution,
+            const tc::Event& event, std::atomic<bool>& cancelled) override {
+        tc::require(execution && execution->probe && execution->model_snapshot,
+                    "streaming_authority_mismatch");
+        tc::require(execution->request.streaming.active(),
+                    "streaming_actual_plan_mismatch");
+        auto value_probe = std::dynamic_pointer_cast<
+            const tc::streaming::ValueModelStreamingProbe>(execution->probe);
+        tc::require(value_probe != nullptr,
+                    "streaming_public_probe_type_mismatch");
+        auto lease = value_probe->lease_ptr();
+        tc::require(lease && execution->probe->source_lease() == lease.get() &&
+                        execution->model_snapshot->source_lease() == lease.get(),
+                    "streaming_source_lease_mismatch");
+        tc::require(execution->selection.record.plan.layout_digest ==
+                        execution->model_snapshot->layout().digest &&
+                        execution->selection.record.source ==
+                            execution->model_snapshot->source_identity(),
+                    "streaming_authority_mismatch");
+        const auto target = execution->selection.exact_selector
+                                .target_request_memory_bytes;
+        tc::require(target && tc::streaming::supported_streaming_target(*target),
+                    "streaming_target_unsupported");
+        tc::require(!public_streaming_active_,
+                    "streaming_public_request_reentrant");
+        public_stream_lease_ = std::move(lease);
+        public_stream_target_bytes_ = *target;
+        public_stream_layout_digest_ =
+            execution->model_snapshot->layout().digest;
+        public_stream_descriptors_.clear();
+        public_stream_sources_.clear();
+        for (const auto& file : public_stream_lease_->descriptor().files) {
+            if (!file.logical_id.starts_with("FL2VA/transformer/") ||
+                !file.logical_id.ends_with(".safetensors"))
+                continue;
+            public_stream_descriptors_.push_back(
+                public_stream_lease_->duplicate_fd(file.logical_id));
+            public_stream_sources_.push_back({
+                file.path.c_str(), public_stream_descriptors_.back().get()});
+        }
+        public_streaming_active_ = true;
+        try {
+            auto result = generate(execution->request, event, cancelled);
+            public_streaming_active_ = false;
+            public_stream_target_bytes_ = 0;
+            public_stream_layout_digest_.clear();
+            public_stream_sources_.clear();
+            public_stream_descriptors_.clear();
+            public_stream_lease_.reset();
+            return result;
+        } catch (...) {
+            public_streaming_active_ = false;
+            public_stream_target_bytes_ = 0;
+            public_stream_layout_digest_.clear();
+            public_stream_sources_.clear();
+            public_stream_descriptors_.clear();
+            public_stream_lease_.reset();
+            throw;
+        }
+    }
     void set_memory_admission(tc::MemoryAdmission* admission) override {
         memory_bridge_.admission = admission;
         if (!admission) return;
@@ -470,7 +793,7 @@ public:
             exact_stage->residency &&
             *exact_stage->residency == "streamed";
         if (r.streaming.active()) {
-            require(allow_experimental_streaming_,
+            require(allow_experimental_streaming_ || public_streaming_active_,
                     "streaming_layout_not_certified: H3 exact adapter is "
                     "restricted to the private candidate constructor");
             require(exact_streaming && r.streaming.stages.size() == 1 &&
@@ -579,7 +902,7 @@ public:
         }
         const auto *info=h3_model(context_.get());const auto *device=h3_device(context_.get());
         uint64_t transformer_bytes=r.operation=="video.reference"?info->ref2va_transformer.tensor_bytes:info->fl2va_transformer.tensor_bytes;
-        require(r.residency=="streamed"||transformer_bytes<device->recommended_working_set,"H3 weights exceed this GPU working set; select streamed residency");
+        require(exact_streaming||r.residency=="streamed"||transformer_bytes<device->recommended_working_set,"H3 weights exceed this GPU working set; select streamed residency");
         require(!r.memory_budget_bytes || r.memory_budget_bytes <= device->physical_memory,
                 "H3 memory budget exceeds physical memory");
         require(r.residency=="streamed" || !r.memory_budget_bytes,
@@ -629,6 +952,23 @@ public:
             parameters.exact_carry_first_group = 1;
             parameters.exact_cancel = h3_exact_cancel_query;
             parameters.exact_cancel_user = &cancel;
+            if (public_streaming_active_) {
+                require(public_stream_lease_ &&
+                            public_stream_sources_.size() == 13 &&
+                            public_stream_descriptors_.size() == 13 &&
+                            public_stream_layout_digest_.size() == 64,
+                        "streaming_source_lease_mismatch");
+                parameters.exact_weight_sources =
+                    public_stream_sources_.data();
+                parameters.exact_weight_source_count =
+                    public_stream_sources_.size();
+                parameters.exact_receipt_source_generation =
+                    public_stream_lease_->generation();
+                parameters.exact_receipt_layout_digest =
+                    public_stream_layout_digest_.c_str();
+                parameters.exact_receipt_implementation =
+                    kH3PublicImplementation;
+            }
         }
         if (r.memory_constrained.enabled) {
             memory_hooks_.struct_size = sizeof(memory_hooks_);
@@ -762,6 +1102,8 @@ public:
             metrics.streamed_blocks = static_cast<unsigned>(
                 result->ssd_streamed_blocks);
             metrics.refill_slots = 2;
+            metrics.memory_budget_bytes = public_streaming_active_ ?
+                public_stream_target_bytes_ : 0;
             metrics.activation_reserve_bytes =
                 result->ssd_activation_reserve_bytes;
             metrics.block_bytes = result->ssd_block_bytes;
@@ -827,6 +1169,36 @@ public:
         if (result->ssd_streaming)
             run.streaming_runtime = h3_streaming_runtime_metrics(
                 *result, r, exact_streaming);
+        if (public_streaming_active_) {
+            require(result->exact_receipt != nullptr,
+                    "streaming_actual_plan_mismatch: H3 receipt is missing");
+            auto stage = tc::streaming::actual_stage_receipt_from_c_v2(
+                *result->exact_receipt);
+            require(stage.layout_digest == public_stream_layout_digest_ &&
+                        stage.implementation == kH3PublicImplementation &&
+                        stage.source_generation ==
+                            public_stream_lease_->generation(),
+                    "streaming_actual_plan_mismatch: H3 receipt identity differs");
+            auto receipt = tc::streaming::make_actual_execution_receipt(
+                kH3PublicImplementation, public_stream_layout_digest_,
+                kH3PublicComponentPolicy, {std::move(stage)});
+            run.streaming_receipt = std::make_shared<
+                const tc::streaming::ActualExecutionReceipt>(
+                    std::move(receipt));
+            require(run.streaming_runtime.has_value(),
+                    "streaming_actual_plan_mismatch: H3 runtime metrics missing");
+            auto& runtime = *run.streaming_runtime;
+            runtime.implementation = kH3PublicImplementation;
+            runtime.layout_digest = public_stream_layout_digest_;
+            runtime.component_policy_revision = kH3PublicComponentPolicy;
+            runtime.multi_pool_policy = "serial";
+            runtime.pool_count = 1;
+            runtime.slot_bundle_count = 2;
+            runtime.refill_worker_count = 1;
+            runtime.source_lease_verified = true;
+            runtime.drained = result->exact_streaming_finished != 0;
+            run.streaming_stages = {{0, runtime}};
+        }
         return run;
     }
 };

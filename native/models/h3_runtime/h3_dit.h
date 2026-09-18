@@ -302,6 +302,11 @@ int h3_dit_stream_fill_slot_v1(
 int h3_dit_enable_exact_streaming_v1(
     h3_dit *dit, const h3_dit_exact_stream_options_v1 *options,
     char *error, size_t error_size);
+/* Bind request-scoped duplicate descriptors before the exact executor starts.
+ * Private/default callers leave the source array null and retain path I/O. */
+int h3_dit_bind_exact_sources_v1(
+    h3_dit *dit, const h3_weight_source_v1 *sources, size_t source_count,
+    char *error, size_t error_size);
 int h3_dit_enable_exact_receipt_v1(
     h3_dit *dit, uint64_t source_generation,
     const char *layout_digest, const char *implementation,

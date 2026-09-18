@@ -996,6 +996,15 @@ static int h3_valid_params(h3_ctx *ctx, const h3_params *params) {
             "a 64-character layout digest, and a bounded implementation id");
         return 0;
     }
+    const int exact_sources_requested =
+        params->exact_weight_sources != NULL ||
+        params->exact_weight_source_count != 0;
+    if (exact_sources_requested &&
+        (!params->exact_streaming || !params->exact_weight_sources ||
+         !params->exact_weight_source_count)) {
+        h3_set_error(ctx, "invalid exact streaming source lease");
+        return 0;
+    }
     if (params->exact_streaming &&
         (!params->ssd_streaming || params->ssd_quantized_cache_directory ||
          params->ssd_memory_budget_bytes ||
@@ -1518,6 +1527,9 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
     if (!h3_valid_params(ctx, params)) return NULL;
     const int exact_receipt_requested =
         params->exact_receipt_source_generation != 0;
+    const int exact_sources_requested =
+        params->exact_weight_sources != NULL &&
+        params->exact_weight_source_count != 0;
     if (ctx->exact_dit_quarantine) {
         char detail[1024] = {0};
         if (!h3_dit_destroy(
@@ -2383,6 +2395,14 @@ h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
         goto cleanup;
     }
     if (params->exact_streaming) {
+        if (exact_sources_requested &&
+            !h3_dit_bind_exact_sources_v1(
+                dit, params->exact_weight_sources,
+                params->exact_weight_source_count,
+                detail, sizeof(detail))) {
+            h3_set_error(ctx, "%s", detail);
+            goto cleanup;
+        }
         h3_dit_exact_stream_options_v1 options = {
             sizeof(options), H3_DIT_EXACT_STREAM_ABI_V1,
             params->exact_streaming_generation,

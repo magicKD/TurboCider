@@ -1218,14 +1218,16 @@ int h3_gpu_tensor_stream_file_bf16(h3_gpu_tensor *opaque, const char *path,
         "BF16", 1, error, error_size);
 }
 
-int h3_gpu_tensor_stream_file_bf16_cancellable(
-        h3_gpu_tensor *opaque, const char *path, uint64_t file_offset,
+static int h3_gpu_tensor_stream_fd_bf16_cancellable_impl(
+        h3_gpu_tensor *opaque, int descriptor, const char *label,
+        uint64_t file_offset,
         size_t elements, size_t chunk_bytes,
         h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
         uint64_t *bytes_read, char *error, size_t error_size) {
     if (error && error_size) error[0] = '\0';
     if (bytes_read) *bytes_read = 0;
-    if (!opaque || !path || !*path || !bytes_read || !chunk_bytes ||
+    if (!opaque || descriptor < 0 || !label || !*label || !bytes_read ||
+        !chunk_bytes ||
         TENSOR(opaque).readOnly ||
         TENSOR(opaque).dtype != H3_GPU_BF16 ||
         elements != TENSOR(opaque).elements ||
@@ -1242,13 +1244,6 @@ int h3_gpu_tensor_stream_file_bf16_cancellable(
                      "cancellable BF16 file read range overflows");
         return 0;
     }
-    int descriptor = open(path, O_RDONLY | O_CLOEXEC);
-    if (descriptor < 0) {
-        if (error && error_size)
-            snprintf(error, error_size, "cannot open %s: %s", path,
-                     strerror(errno));
-        return 0;
-    }
 #ifdef F_NOCACHE
     (void)fcntl(descriptor, F_NOCACHE, 1);
 #endif
@@ -1259,7 +1254,6 @@ int h3_gpu_tensor_stream_file_bf16_cancellable(
             if (error && error_size)
                 snprintf(error, error_size,
                          "cancellable BF16 file read was cancelled");
-            close(descriptor);
             return 0;
         }
         size_t request = MIN(bytes - completed, chunk_bytes);
@@ -1271,17 +1265,52 @@ int h3_gpu_tensor_stream_file_bf16_cancellable(
             const int detail = count < 0 ? errno : 0;
             if (error && error_size)
                 snprintf(error, error_size,
-                         "cannot read BF16 payload from %s: %s", path,
+                         "cannot read BF16 payload from %s: %s", label,
                          detail ? strerror(detail) :
                                   "unexpected end of file");
-            close(descriptor);
             return 0;
         }
         completed += (size_t)count;
         *bytes_read = (uint64_t)completed;
     }
-    close(descriptor);
     return 1;
+}
+
+int h3_gpu_tensor_stream_fd_bf16_cancellable(
+        h3_gpu_tensor *opaque, int descriptor, const char *label,
+        uint64_t file_offset, size_t elements, size_t chunk_bytes,
+        h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+        uint64_t *bytes_read, char *error, size_t error_size) {
+    return h3_gpu_tensor_stream_fd_bf16_cancellable_impl(
+        opaque, descriptor, label, file_offset, elements, chunk_bytes,
+        cancel, cancel_user, bytes_read, error, error_size);
+}
+
+int h3_gpu_tensor_stream_file_bf16_cancellable(
+        h3_gpu_tensor *opaque, const char *path, uint64_t file_offset,
+        size_t elements, size_t chunk_bytes,
+        h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+        uint64_t *bytes_read, char *error, size_t error_size) {
+    if (!path || !*path) {
+        if (error && error_size)
+            snprintf(error, error_size,
+                     "invalid cancellable BF16 file read request");
+        if (bytes_read) *bytes_read = 0;
+        return 0;
+    }
+    int descriptor = open(path, O_RDONLY | O_CLOEXEC);
+    if (descriptor < 0) {
+        if (error && error_size)
+            snprintf(error, error_size, "cannot open %s: %s", path,
+                     strerror(errno));
+        if (bytes_read) *bytes_read = 0;
+        return 0;
+    }
+    const int ok = h3_gpu_tensor_stream_fd_bf16_cancellable_impl(
+        opaque, descriptor, path, file_offset, elements, chunk_bytes,
+        cancel, cancel_user, bytes_read, error, error_size);
+    close(descriptor);
+    return ok;
 }
 
 int h3_gpu_tensor_stream_file_i8(h3_gpu_tensor *opaque, const char *path,

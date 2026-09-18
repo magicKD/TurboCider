@@ -2,6 +2,7 @@
 
 #include "../../core/stream_slot_c.h"
 #include "../../runtime/streaming/layout.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 
 extern "C" {
 #include "h3_dit_schedule.h"
@@ -47,6 +48,9 @@ struct StreamingWorkload {
 class StreamingMetadata {
   public:
     explicit StreamingMetadata(const std::string &transformer_directory);
+    StreamingMetadata(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        const std::vector<std::string> &transformer_logical_ids);
     ~StreamingMetadata();
 
     StreamingMetadata(const StreamingMetadata &) = delete;
@@ -58,6 +62,7 @@ class StreamingMetadata {
     uint32_t block_count() const noexcept { return H3_DIT_BLOCKS; }
     size_t shard_count() const noexcept;
     uint64_t snapshot_identity() const noexcept;
+    const std::shared_ptr<const streaming::SourceLease> &source_lease() const noexcept;
 
   private:
     struct State;
@@ -74,6 +79,11 @@ class StreamingMetadata {
 class StreamingPlanView {
   public:
     StreamingPlanView(const std::string &transformer_directory,
+                      const StreamingConfig &config,
+                      const StreamingWorkload &workload,
+                      uint64_t request_generation);
+    StreamingPlanView(std::shared_ptr<const streaming::SourceLease> lease,
+                      const std::vector<std::string> &transformer_logical_ids,
                       const StreamingConfig &config,
                       const StreamingWorkload &workload,
                       uint64_t request_generation);

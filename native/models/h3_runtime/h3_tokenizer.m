@@ -2,9 +2,12 @@
 
 #include "h3_tokenizer.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <unicode/uchar.h>
 
 typedef struct {
@@ -286,19 +289,13 @@ static int h3_added_match(H3Tokenizer *tokenizer, NSString *text,
     return found;
 }
 
-h3_tokenizer *h3_tokenizer_load(const char *path, char *error,
-                                size_t error_size) {
+static h3_tokenizer *h3_tokenizer_load_data(NSData *data,
+                                            char *error,
+                                            size_t error_size) {
     @autoreleasepool {
         if (error && error_size) error[0] = '\0';
-        if (!path) {
-            h3_tok_error(error, error_size, @"tokenizer path is required");
-            return NULL;
-        }
-        NSData *data = [NSData dataWithContentsOfFile:
-            [NSString stringWithUTF8String:path]];
         if (!data) {
-            h3_tok_error(error, error_size, [NSString stringWithFormat:
-                         @"cannot read tokenizer: %s", path]);
+            h3_tok_error(error, error_size, @"cannot read tokenizer data");
             return NULL;
         }
         NSError *json_error = nil;
@@ -404,6 +401,70 @@ h3_tokenizer *h3_tokenizer_load(const char *path, char *error,
         tokenizer.byteEncoder = byte_encoder;
         memcpy(tokenizer->byteDecoder, decoder, sizeof(decoder));
         return (__bridge_retained h3_tokenizer *)tokenizer;
+    }
+}
+
+h3_tokenizer *h3_tokenizer_load(const char *path, char *error,
+                                size_t error_size) {
+    @autoreleasepool {
+        if (error && error_size) error[0] = '\0';
+        if (!path) {
+            h3_tok_error(error, error_size, @"tokenizer path is required");
+            return NULL;
+        }
+        NSData *data = [NSData dataWithContentsOfFile:
+            [NSString stringWithUTF8String:path]];
+        if (!data) {
+            h3_tok_error(error, error_size, [NSString stringWithFormat:
+                         @"cannot read tokenizer: %s", path]);
+            return NULL;
+        }
+        return h3_tokenizer_load_data(data, error, error_size);
+    }
+}
+
+h3_tokenizer *h3_tokenizer_load_fd(const char *display_path, int descriptor,
+                                   char *error, size_t error_size) {
+    @autoreleasepool {
+        if (error && error_size) error[0] = '\0';
+        const char *label = display_path ? display_path : "tokenizer";
+        struct stat status;
+        memset(&status, 0, sizeof(status));
+        if (descriptor < 0 || fstat(descriptor, &status) != 0 ||
+            !S_ISREG(status.st_mode) || status.st_size <= 0 ||
+            (uint64_t)status.st_size > SIZE_MAX) {
+            if (error && error_size)
+                snprintf(error, error_size,
+                         "%s: invalid tokenizer descriptor", label);
+            return NULL;
+        }
+        const size_t bytes = (size_t)status.st_size;
+        void *buffer = malloc(bytes);
+        if (!buffer) {
+            if (error && error_size)
+                snprintf(error, error_size,
+                         "%s: out of memory reading tokenizer", label);
+            return NULL;
+        }
+        size_t done = 0;
+        while (done < bytes) {
+            const ssize_t count = pread(
+                descriptor, (unsigned char *)buffer + done,
+                bytes - done, (off_t)done);
+            if (count <= 0) {
+                if (error && error_size)
+                    snprintf(error, error_size, "%s: cannot read tokenizer: %s",
+                             label, count < 0 ? strerror(errno) :
+                                                "unexpected end of file");
+                free(buffer);
+                return NULL;
+            }
+            done += (size_t)count;
+        }
+        NSData *data = [NSData dataWithBytesNoCopy:buffer
+                                            length:bytes
+                                      freeWhenDone:YES];
+        return h3_tokenizer_load_data(data, error, error_size);
     }
 }
 

@@ -35,6 +35,8 @@ typedef struct {
 
 typedef struct {
     char *path;
+    /* Optional request-scoped lease fd. -1 means use path-only legacy I/O. */
+    int descriptor;
     uint64_t file_size;
     uint64_t header_size;
     h3_st_tensor *tensors;
@@ -43,6 +45,12 @@ typedef struct {
 
 int h3_st_read_header(const char *path, h3_st_header *header,
                       char *error, size_t error_size);
+/* Parse from a caller-owned descriptor. The header retains its own dup() and
+ * closes it in h3_st_free_header(); the caller remains responsible for the
+ * descriptor passed here. */
+int h3_st_read_header_fd(const char *path, int descriptor,
+                         h3_st_header *header,
+                         char *error, size_t error_size);
 void h3_st_free_header(h3_st_header *header);
 const h3_st_tensor *h3_st_find(const h3_st_header *header, const char *name);
 uint64_t h3_st_tensor_elements(const h3_st_tensor *tensor);
