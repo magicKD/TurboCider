@@ -243,6 +243,17 @@ def validate_policy(policy: dict[str, Any]) -> None:
         )
     if protocol.get("launch_pressure"):
         raise CampaignError("this runner never launches memory pressure")
+    restart_workers = protocol.get("restart_workers_between_blocks", False)
+    if not isinstance(restart_workers, bool):
+        raise CampaignError(
+            "protocol.restart_workers_between_blocks must be boolean"
+        )
+    if policy.get("comparison_kind") == "P2" and (
+        not restart_workers or lifecycle != "per_request"
+    ):
+        raise CampaignError(
+            "P2 requires per_request engines and worker restart between blocks"
+        )
     memory_sampling = policy.get("memory_sampling")
     if policy.get("comparison_kind") in ("P2", "P3") and not isinstance(
         memory_sampling, dict
@@ -486,6 +497,7 @@ class RequestMemorySampler:
         return {
             "schema": "turbocider-streaming-memory-summary-v1",
             "sampler_revision": verified["sampler_revision"],
+            "root_identity": verified["root_identity"],
             "correlation_id": self.correlation_id,
             "status": verified["status"],
             "complete": verified["complete"],
@@ -541,6 +553,9 @@ def run_worker_request(
             summary["phase"] = phase
             summary["variant"] = command["variant"]
             summary["run_id"] = command["run_id"]
+            for key in ("block_id", "block_index", "pair_id", "pair_index", "position"):
+                if key in command:
+                    summary[key] = command[key]
             summary["evidence_path"] = str(evidence_path.relative_to(output))
             summary_path = output / "memory" / f"{command['run_id']}.summary.json"
             summary["summary_path"] = str(summary_path.relative_to(output))
@@ -1813,7 +1828,8 @@ def run_campaign(
         for variant in launch_order:
             workers[variant] = Worker(
                 variant, worker_configs[variant],
-                output / "workers" / f"{variant}.log", timeout, start_timeout,
+                output / "workers" / f"{variant}-generation-000.log",
+                timeout, start_timeout,
             )
         warmup_count = int(policy["protocol"].get("warmup_requests_per_variant", 1))
         warmup_failed = False
@@ -1870,6 +1886,21 @@ def run_campaign(
                     if sample["variant"] in workers else None,
                 }
             else:
+                if (
+                    sample["position"] == 0 and sample["block_index"] > 0 and
+                    policy["protocol"].get("restart_workers_between_blocks", False)
+                ):
+                    for worker in workers.values():
+                        worker.close()
+                    workers = {}
+                    generation = sample["block_index"]
+                    for variant in launch_order:
+                        workers[variant] = Worker(
+                            variant, worker_configs[variant],
+                            output / "workers" /
+                            f"{variant}-generation-{generation:03d}.log",
+                            timeout, start_timeout,
+                        )
                 request, artifacts = request_for(policy, sample, output)
                 command = {
                     "type": "run", **sample, "sample_index": sample_index,

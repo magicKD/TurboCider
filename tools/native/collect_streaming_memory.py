@@ -68,6 +68,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = {
         "schema": "turbocider-streaming-memory-summary-v1",
         "sampler_revision": verified.get("sampler_revision"),
+        "root_identity": verified["root_identity"],
         "correlation_id": args.correlation_id,
         "status": verified["status"],
         "complete": verified["complete"],

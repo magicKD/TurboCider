@@ -256,6 +256,11 @@ def verify(path: Path) -> dict[str, Any]:
         "complete": terminal["complete"],
         "correlation_id": correlation,
         "sampler_revision": revision,
+        "root_identity": {
+            "pid": root_identity[0],
+            "start_seconds": root_identity[1],
+            "start_microseconds": root_identity[2],
+        },
         "record_count": len(rows),
         "sample_count": len(samples),
         "final_evidence_digest": terminal["record_digest"],

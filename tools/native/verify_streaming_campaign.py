@@ -539,6 +539,18 @@ def verify_memory_bundle(
     if not isinstance(manifest_files, dict):
         raise EvidenceError("memory evidence requires manifest file hashes")
     by_run: dict[str, dict[str, Any]] = {}
+
+    def root_identity(value: Any, label: str) -> tuple[int, int, int]:
+        if not isinstance(value, dict):
+            raise EvidenceError(f"{label} root identity is missing")
+        result = []
+        for field in ("pid", "start_seconds", "start_microseconds"):
+            item = value.get(field)
+            if isinstance(item, bool) or not isinstance(item, int) or item < 0:
+                raise EvidenceError(f"{label}.{field} is invalid")
+            result.append(item)
+        return result[0], result[1], result[2]
+
     for index, row in enumerate(rows):
         if row.get("schema") != "turbocider-streaming-memory-summary-v1":
             raise EvidenceError(f"memory summary {index} has invalid schema")
@@ -553,6 +565,7 @@ def verify_memory_bundle(
         variant = row.get("variant")
         if variant not in VARIANTS:
             raise EvidenceError(f"memory summary {index} has invalid variant")
+        root_identity(row.get("root_identity"), f"memory summary {index}")
         evidence_path, relative = bundle_file(
             bundle, row.get("evidence_path"),
             f"memory summary {index}.evidence_path",
@@ -582,6 +595,7 @@ def verify_memory_bundle(
             raise EvidenceError(f"memory evidence digest differs for {run_id}")
         for field in (
             "sampler_revision", "correlation_id", "status", "complete",
+            "root_identity",
             "sample_count", "max_gap_ns",
             "allowed_max_gap_ns", "tree_peak_rss_bytes",
             "tree_peak_phys_footprint_bytes", "swap_in_bytes", "swap_out_bytes",
@@ -635,6 +649,15 @@ def verify_memory_bundle(
             raise EvidenceError(
                 f"memory summary identity differs for {run_id}"
             )
+        if expected_phase == "measured" and any(
+            summary.get(field) != expected_row.get(field)
+            for field in (
+                "block_id", "block_index", "pair_id", "pair_index", "position"
+            )
+        ):
+            raise EvidenceError(
+                f"memory summary block identity differs for {run_id}"
+            )
     incomplete = sorted(
         run_id for run_id in required_run_ids
         if by_run[run_id].get("complete") is not True or
@@ -659,6 +682,30 @@ def verify_memory_bundle(
         variant for variant, values in required_peaks.items()
         if policy.get("comparison_kind") == "P2" and len(values) < 20
     )
+    fresh_process_failures: list[str] = []
+    fresh_process_generations: dict[str, int] = {}
+    if policy.get("comparison_kind") == "P2":
+        expected_blocks = int(policy.get("protocol", {}).get("measured_blocks", 0))
+        for variant in required_variants:
+            identities_by_block: dict[int, set[tuple[int, int, int]]] = {}
+            for row in raw:
+                if row.get("variant") != variant:
+                    continue
+                summary = by_run[row["run_id"]]
+                identities_by_block.setdefault(row["block_index"], set()).add(
+                    root_identity(summary.get("root_identity"), row["run_id"])
+                )
+            identities = {
+                identity for values in identities_by_block.values()
+                for identity in values
+            }
+            fresh_process_generations[variant] = len(identities)
+            if (
+                len(identities_by_block) != expected_blocks or
+                any(len(values) != 1 for values in identities_by_block.values()) or
+                len(identities) != expected_blocks or len(identities) < 2
+            ):
+                fresh_process_failures.append(variant)
     if target is not None:
         if isinstance(target, bool) or not isinstance(target, int) or target <= 0:
             raise EvidenceError("memory_sampling.target_bytes is invalid")
@@ -679,7 +726,7 @@ def verify_memory_bundle(
     )
     if over_target or disallowed_swap:
         qualification = "FAIL"
-    elif incomplete or insufficient_variants:
+    elif incomplete or insufficient_variants or fresh_process_failures:
         qualification = "INCONCLUSIVE"
     else:
         qualification = "PASS"
@@ -696,6 +743,8 @@ def verify_memory_bundle(
         "unexpected_swap": unexpected_swap,
         "incomplete": incomplete,
         "insufficient_variants": insufficient_variants,
+        "fresh_process_generations": fresh_process_generations,
+        "fresh_process_failures": fresh_process_failures,
     }
 
 
@@ -710,6 +759,13 @@ def verify(bundle: Path) -> dict[str, Any]:
     comparison_kind = policy.get("comparison_kind")
     if comparison_kind not in ("P0", "P1", "P2", "P3", "P4"):
         raise EvidenceError("comparison_kind must be P0, P1, P2, P3 or P4")
+    if comparison_kind == "P2" and (
+        policy.get("engine_lifecycle", "persistent") != "per_request" or
+        policy.get("protocol", {}).get("restart_workers_between_blocks") is not True
+    ):
+        raise EvidenceError(
+            "P2 requires per_request engines and worker restart between blocks"
+        )
     raw = read_jsonl(bundle / "raw-samples.jsonl")
     warmups = read_jsonl(bundle / "warmups.jsonl")
     quality = read_json(bundle / "quality.json")
@@ -748,7 +804,7 @@ def verify(bundle: Path) -> dict[str, Any]:
     provenance_ok = (
         source_provenance_complete(baseline_identity) and
         source_provenance_complete(candidate_identity)
-    ) if comparison_kind == "P0" else True
+    ) if comparison_kind in ("P0", "P2") else True
     if comparison_kind == "P1":
         semantic = read_json(bundle / "semantic-equivalence.json")
         if semantic.get("format") != (
@@ -978,7 +1034,7 @@ def verify(bundle: Path) -> dict[str, Any]:
         hard_failure_samples or quality_failures or audit_status == "failed" or
         memory_failed
     )
-    unsupported_kind = comparison_kind not in KIND_TO_THRESHOLD
+    unsupported_kind = comparison_kind not in (*KIND_TO_THRESHOLD, "P2")
     if hard_failure or any(value == "FAIL" for value in decisions.values()):
         overall = "FAIL"
     elif unsupported_kind or not prerequisites_complete:

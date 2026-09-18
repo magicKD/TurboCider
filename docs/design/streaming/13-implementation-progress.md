@@ -2147,6 +2147,13 @@ allowed_peak = target_bytes - max(512 MiB, ceil(target_bytes * 10%))
 峰值超过 `allowed_peak` 或出现非计划 swap-out 会是 `FAIL`；证据不完整会是 `INCONCLUSIVE`；不能用 wall
 median 或少量样本覆盖 memory failure。当前新增的是校准基础设施，尚未产生任何模型的 P2 production record。
 
+P2 campaign 还要求 `engine_lifecycle=per_request` 与
+`protocol.restart_workers_between_blocks=true`。runner 会在每个 ABBA/BAAB block 前重建 baseline/candidate
+worker；summary 保存 PID + process start time，verifier 要求每个 block 内身份稳定、不同 block 的 process
+identity 不同，且 required variant 至少有 20 个 measured request。满足 source provenance、quality、audit、
+environment、fresh-process、peak/headroom 和 no-swap 后，P2 verifier 才能返回 `PASS`。该 PASS 只代表
+target-fit evidence，不要求 streaming 与 resident 等速；性能策略优选仍由 P1/P4 和独立对照负责。
+
 测试：
 
 ```text

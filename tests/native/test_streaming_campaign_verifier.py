@@ -572,6 +572,7 @@ class CampaignTests(unittest.TestCase):
     def test_p2_memory_evidence_applies_public_headroom_and_sample_floor(self):
         campaign = policy(blocks=10)
         campaign["comparison_kind"] = "P2"
+        campaign["protocol"]["restart_workers_between_blocks"] = True
         campaign["memory_sampling"] = {
             "enabled": True,
             "interval_ms": 5,
@@ -580,10 +581,16 @@ class CampaignTests(unittest.TestCase):
             "target_bytes": 8 << 30,
             "headroom_policy_revision": "tc-public-headroom-v1",
         }
+        for variant in ("baseline", "candidate"):
+            campaign["variants"][variant]["source_identity"] = {
+                "commit": "a" * 40,
+                "source_manifest_sha256": "b" * 64,
+                "clean": True,
+            }
         bundle = self.run_bundle(campaign)
         result = verify(bundle)
         memory = result["memory_evidence"]
-        self.assertEqual(result["overall"], "INCONCLUSIVE")
+        self.assertEqual(result["overall"], "PASS")
         self.assertEqual(memory["qualification"], "PASS")
         self.assertEqual(memory["required_count"], 20)
         target = 8 << 30
@@ -592,6 +599,8 @@ class CampaignTests(unittest.TestCase):
             target - max(512 << 20, (target * 10 + 99) // 100),
         )
         self.assertEqual(memory["insufficient_variants"], [])
+        self.assertEqual(memory["fresh_process_generations"]["candidate"], 10)
+        self.assertEqual(memory["fresh_process_failures"], [])
         self.assertLessEqual(
             memory["peak_p95_bytes"]["candidate"],
             memory["allowed_peak_bytes"],
@@ -796,6 +805,7 @@ class CampaignTests(unittest.TestCase):
     def test_p2_requires_public_memory_sampling_contract(self):
         campaign = policy(blocks=1)
         campaign["comparison_kind"] = "P2"
+        campaign["protocol"]["restart_workers_between_blocks"] = True
         with self.assertRaises(CampaignError):
             campaign_runner.validate_policy(campaign)
         campaign["memory_sampling"] = {
