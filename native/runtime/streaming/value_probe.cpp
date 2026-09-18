@@ -80,6 +80,11 @@ const SourceLease &ValueModelStreamingProbe::lease() const {
     return *values_.lease;
 }
 
+std::shared_ptr<const SourceLease>
+ValueModelStreamingProbe::lease_ptr() const noexcept {
+    return values_.lease;
+}
+
 ValueModelStreamingSnapshot::ValueModelStreamingSnapshot(Values values)
     : values_(std::move(values)) {
     value_require(values_.descriptor.model == values_.model_id,
@@ -128,6 +133,11 @@ const SourceLease *ValueModelStreamingSnapshot::source_lease() const noexcept {
 const SourceLease &ValueModelStreamingSnapshot::lease() const {
     value_require(values_.lease != nullptr, "source lease is missing");
     return *values_.lease;
+}
+
+std::shared_ptr<const SourceLease>
+ValueModelStreamingSnapshot::lease_ptr() const noexcept {
+    return values_.lease;
 }
 
 } // namespace tc::streaming

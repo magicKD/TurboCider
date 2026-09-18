@@ -1,17 +1,13 @@
 #import <Foundation/Foundation.h>
 
 #include "../../models/z_image/streaming_descriptor.hpp"
-#include "../../runtime/memory_manifest.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cmath>
-#include <fcntl.h>
 #include <filesystem>
 #include <limits>
-#include <locale>
-#include <sstream>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -36,23 +32,22 @@ uint64_t checked_add(uint64_t left, uint64_t right,
     return left + right;
 }
 
-std::string fingerprint(const struct stat &status) {
-    std::ostringstream canonical;
-    canonical.imbue(std::locale::classic());
-    canonical << status.st_dev << ':' << status.st_ino << ':'
-              << status.st_size << ':' << status.st_mtimespec.tv_sec << ':'
-              << status.st_mtimespec.tv_nsec << ':'
-              << status.st_ctimespec.tv_sec << ':'
-              << status.st_ctimespec.tv_nsec;
-    return memory_sha256_hex(canonical.str());
-}
-
-struct stat checked_status(const std::string &path) {
-    struct stat status{};
-    require_metadata(::stat(path.c_str(), &status) == 0 &&
-                         S_ISREG(status.st_mode) && status.st_size >= 8,
-                     "checkpoint is not a valid regular file");
-    return status;
+std::shared_ptr<const streaming::SourceLease> capture_checkpoint_lease(
+        const std::string &checkpoint) {
+    require_metadata(!checkpoint.empty() &&
+                         checkpoint.find('\0') == std::string::npos,
+                     "invalid checkpoint path");
+    std::error_code path_error;
+    const auto absolute = std::filesystem::absolute(checkpoint, path_error);
+    require_metadata(!path_error, "cannot resolve checkpoint path");
+    const auto path = absolute.lexically_normal();
+    require_metadata(path.extension() == ".safetensors",
+                     "Z-Image shadow requires a safetensors checkpoint");
+    streaming::SourceFileIdentity file;
+    file.logical_id = "transformer";
+    file.path = path;
+    return streaming::SourceLease::capture(
+        std::vector<streaming::SourceFileIdentity>{std::move(file)});
 }
 
 void pread_exact(int descriptor, void *destination, size_t bytes,
@@ -132,43 +127,50 @@ uint64_t padded_rows(uint64_t value) {
 struct StreamingMetadata::State {
     std::string path;
     std::string identity;
-    int descriptor = -1;
+    std::string logical_id;
+    std::shared_ptr<const streaming::SourceLease> lease;
+    streaming::OwnedSourceFd descriptor;
     uint64_t file_bytes = 0;
     uint64_t fixed_total = 0;
     uint64_t block_total = 0;
     std::vector<TensorRecord> fixed;
     std::array<std::vector<TensorRecord>, 30> blocks;
 
-    ~State() {
-        if (descriptor >= 0)
-            ::close(descriptor);
-    }
 };
 
 StreamingMetadata::StreamingMetadata(const std::string &checkpoint)
-    : state_(std::make_unique<State>()) {
-    require_metadata(!checkpoint.empty() &&
-                         checkpoint.find('\0') == std::string::npos,
-                     "invalid checkpoint path");
-    std::error_code path_error;
-    const auto absolute = std::filesystem::absolute(checkpoint, path_error);
-    require_metadata(!path_error, "cannot resolve checkpoint path");
-    state_->path = absolute.lexically_normal().string();
-    require_metadata(std::filesystem::path(state_->path).extension() ==
-                         ".safetensors",
-                     "Z-Image shadow requires a safetensors checkpoint");
+    : StreamingMetadata(capture_checkpoint_lease(checkpoint),
+                        "transformer") {}
 
-    state_->descriptor = ::open(state_->path.c_str(), O_RDONLY | O_CLOEXEC);
-    require_metadata(state_->descriptor >= 0, "checkpoint open failed");
+StreamingMetadata::StreamingMetadata(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        std::string logical_id)
+    : state_(std::make_unique<State>()) {
+    require_metadata(lease != nullptr, "source lease is unavailable");
+    require_metadata(!logical_id.empty(), "source logical id is empty");
+    const auto &file = lease->file(logical_id);
+    require_metadata(file.path.extension() == ".safetensors",
+                     "Z-Image shadow requires a safetensors checkpoint");
+    state_->path = file.path.string();
+    state_->logical_id = std::move(logical_id);
+    state_->lease = std::move(lease);
+    state_->descriptor = state_->lease->duplicate_fd(state_->logical_id);
+    require_metadata(bool(state_->descriptor), "checkpoint fd is unavailable");
     struct stat opened{};
-    require_metadata(::fstat(state_->descriptor, &opened) == 0 &&
+    require_metadata(::fstat(state_->descriptor.get(), &opened) == 0 &&
                          S_ISREG(opened.st_mode) && opened.st_size >= 8,
                      "opened checkpoint is invalid");
     state_->file_bytes = static_cast<uint64_t>(opened.st_size);
-    state_->identity = fingerprint(opened);
+    state_->identity = std::string(state_->lease->digest());
+    parse_checkpoint();
+}
+
+void StreamingMetadata::parse_checkpoint() {
+    require_metadata(state_ && state_->descriptor,
+                     "checkpoint descriptor is unavailable");
 
     std::array<unsigned char, 8> prefix{};
-    pread_exact(state_->descriptor, prefix.data(), prefix.size(), 0);
+    pread_exact(state_->descriptor.get(), prefix.data(), prefix.size(), 0);
     uint64_t header_bytes = 0;
     for (uint32_t index = 0; index < prefix.size(); ++index)
         header_bytes |= static_cast<uint64_t>(prefix[index]) << (8 * index);
@@ -176,7 +178,7 @@ StreamingMetadata::StreamingMetadata(const std::string &checkpoint)
                          header_bytes <= state_->file_bytes - 8,
                      "invalid safetensors header length");
     std::vector<unsigned char> encoded(static_cast<size_t>(header_bytes));
-    pread_exact(state_->descriptor, encoded.data(), encoded.size(), 8);
+    pread_exact(state_->descriptor.get(), encoded.data(), encoded.size(), 8);
 
     @autoreleasepool {
         NSData *data = [NSData dataWithBytes:encoded.data()
@@ -317,17 +319,29 @@ const std::string &StreamingMetadata::snapshot_identity() const noexcept {
 }
 
 void StreamingMetadata::check_unchanged() const {
-    require_metadata(state_ && state_->descriptor >= 0,
+    require_metadata(state_ && state_->descriptor && state_->lease,
                      "checkpoint descriptor is unavailable");
-    struct stat opened{};
-    require_metadata(::fstat(state_->descriptor, &opened) == 0 &&
-                         S_ISREG(opened.st_mode) &&
-                         static_cast<uint64_t>(opened.st_size) ==
-                             state_->file_bytes &&
-                         fingerprint(opened) == state_->identity &&
-                         fingerprint(checked_status(state_->path)) ==
-                             state_->identity,
-                     "checkpoint_changed: Z-Image metadata snapshot is stale");
+    try {
+        state_->lease->revalidate_open_files();
+        state_->lease->revalidate_paths();
+    } catch (const std::exception &error) {
+        throw std::invalid_argument(
+            std::string("z_image_streaming_metadata: checkpoint_changed: ") +
+            error.what());
+    }
+}
+
+const streaming::SourceLease &StreamingMetadata::lease() const {
+    require_metadata(state_ && state_->lease,
+                     "source lease is unavailable");
+    return *state_->lease;
+}
+
+std::shared_ptr<const streaming::SourceLease>
+StreamingMetadata::lease_ptr() const {
+    require_metadata(state_ && state_->lease,
+                     "source lease is unavailable");
+    return state_->lease;
 }
 
 streaming::Descriptor StreamingMetadata::describe(
@@ -415,6 +429,18 @@ StreamingPlanView::StreamingPlanView(
     const StreamingWorkload &workload)
     : metadata_(checkpoint), descriptor_(metadata_.describe(workload)),
       layout_(streaming::compile_layout(config, descriptor_)) {
+    validate();
+}
+
+StreamingPlanView::StreamingPlanView(
+    std::shared_ptr<const streaming::SourceLease> lease,
+    const StreamingConfig &config, const StreamingWorkload &workload)
+    : metadata_(std::move(lease)), descriptor_(metadata_.describe(workload)),
+      layout_(streaming::compile_layout(config, descriptor_)) {
+    validate();
+}
+
+void StreamingPlanView::validate() const {
     require_metadata(layout_.materializations_complete,
                      "Z-Image descriptor metadata is incomplete");
     require_metadata(layout_.stages.size() == 1,

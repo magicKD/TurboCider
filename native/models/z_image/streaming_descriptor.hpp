@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../runtime/streaming/layout.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -22,6 +23,11 @@ struct StreamingWorkload {
 class StreamingMetadata {
   public:
     explicit StreamingMetadata(const std::string &checkpoint);
+    // Public adapters pass the request-scoped lease captured during probe.
+    // This constructor never reopens the named path.
+    explicit StreamingMetadata(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        std::string logical_id = "transformer");
     ~StreamingMetadata();
 
     StreamingMetadata(const StreamingMetadata &) = delete;
@@ -29,6 +35,8 @@ class StreamingMetadata {
 
     streaming::Descriptor describe(const StreamingWorkload &) const;
     void check_unchanged() const;
+    const streaming::SourceLease &lease() const;
+    std::shared_ptr<const streaming::SourceLease> lease_ptr() const;
 
     uint32_t block_count() const noexcept { return 30; }
     uint32_t tensors_per_block() const noexcept { return 13; }
@@ -39,6 +47,7 @@ class StreamingMetadata {
   private:
     struct State;
     std::unique_ptr<State> state_;
+    void parse_checkpoint();
 };
 
 // Private metadata/plan shadow for the existing ZImageWeightStream contract.
@@ -46,6 +55,9 @@ class StreamingMetadata {
 class StreamingPlanView {
   public:
     StreamingPlanView(const std::string &checkpoint,
+                      const StreamingConfig &config,
+                      const StreamingWorkload &workload);
+    StreamingPlanView(std::shared_ptr<const streaming::SourceLease> lease,
                       const StreamingConfig &config,
                       const StreamingWorkload &workload);
 
@@ -57,11 +69,16 @@ class StreamingPlanView {
         return descriptor_;
     }
     const streaming::Layout &layout() const noexcept { return layout_; }
+    const streaming::SourceLease &lease() const { return metadata_.lease(); }
+    std::shared_ptr<const streaming::SourceLease> lease_ptr() const {
+        return metadata_.lease_ptr();
+    }
 
   private:
     StreamingMetadata metadata_;
     streaming::Descriptor descriptor_;
     streaming::Layout layout_;
+    void validate() const;
 };
 
 } // namespace tc::z_image

@@ -16,7 +16,7 @@ class ZImage final : public ModelSession {
     std::string model_id_ = "z-image-turbo";
     bool diffusers_layout_ = false, gguf_transformer_ = false, convrot_transformer_ = false;
     bool nvfp4_transformer_ = false;
-    Tokenizer tokenizer_;
+    mutable Tokenizer tokenizer_;
     Weights text_encoder_;
     Weights transformer_;
     Weights vae_;
@@ -36,6 +36,10 @@ class ZImage final : public ModelSession {
     std::unique_ptr<HybridSession> encoder_hybrid_;
     std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
     int hybrid_gpu_mlp_start_ = -1;
+    // Bound only for one public exact generate call. Legacy/private paths keep
+    // the empty value and retain their existing path-based construction.
+    std::shared_ptr<const streaming::SourceLease> public_stream_lease_;
+    uint64_t public_stream_target_bytes_ = 0;
 
     void select_loras(const Request &);
     Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);
@@ -56,6 +60,16 @@ class ZImage final : public ModelSession {
     void unload() override;
     RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) override;
     RunResult generate(const Request &, const Event &, std::atomic<bool> &) override;
+    std::shared_ptr<const streaming::ModelStreamingProbe>
+    probe_public_streaming(
+        const streaming::PublicResolveInput &) const override;
+    std::shared_ptr<const streaming::ModelStreamingSnapshot>
+    compile_public_streaming(
+        std::shared_ptr<const streaming::ModelStreamingProbe>,
+        const streaming::StreamingPresetRecord &) const override;
+    RunResult generate_resolved(
+        std::shared_ptr<const streaming::ResolvedRequestExecution>,
+        const Event &, std::atomic<bool> &) override;
 };
 
 } // namespace tc

@@ -86,6 +86,7 @@ class ValueModelStreamingProbe : public ModelStreamingProbe {
     std::string_view component_policy_revision() const noexcept override;
     const SourceLease *source_lease() const noexcept override;
     const SourceLease &lease() const;
+    std::shared_ptr<const SourceLease> lease_ptr() const noexcept;
 
   private:
     Values values_;
@@ -114,6 +115,7 @@ class ValueModelStreamingSnapshot : public ModelStreamingSnapshot {
     void revalidate_source() const override;
     const SourceLease *source_lease() const noexcept override;
     const SourceLease &lease() const;
+    std::shared_ptr<const SourceLease> lease_ptr() const noexcept;
 
   private:
     Values values_;

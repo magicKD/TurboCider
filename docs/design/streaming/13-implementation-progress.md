@@ -1628,3 +1628,45 @@ Z-Image exact stream、Swift options/resolve 和 App `JobStore`/`LTXWorker` 接�
 
 同时更新 44 的当前事实：C2 receipt v2 已完成，后续模型必须复用 common receipt，不能在 result 层合成。
 production catalog 继续为空；四模型 public hooks、完整 target calibration、App 高级设置和 swap P3 仍未完成。
+
+### 13.27 C3 Z-Image public adapter 工作树闭环（2026-09-18，待提交）
+
+本轮在 C2 receipt v2 基线上完成 Z-Image Turbo 的第一阶段 public adapter 接线。该阶段仍不产生 production catalog record，
+但已经把真实模型 session 接到 common public control/data/receipt 合同：
+
+- `StreamingMetadata`、`StreamingPlanView` 和 `ZImageWeightStream` 支持共享 request-scoped `SourceLease`；
+- public probe 捕获 transformer、text encoder、VAE 三个 artifact 的同一 lease，metadata/reader 使用 duplicate fd；
+- public snapshot 从同一 lease 编译 descriptor/layout，并要求 source/workload/runtime/component policy/layout digest exact match；
+- `ZImage::generate_resolved()` 使用 public exact route、真实 `StageExecutor` receipt，不允许 fallback 到普通 `generate()`；
+- 修正 target/authority 校验顺序，避免失败请求将 lease/target 临时状态遗留到下一请求；
+- public denoise 结束后先完成 exact executor finish/drain、封存 receipt、释放 transformer slot/prefix backing，再进入 VAE decode，
+  以降低完整请求峰值；private candidate 和 resident/default 路径保持原有时序；
+- public result 仍由 common verifier执行 post-drain lease revalidation、receipt v2、layout、fence、source generation 和 digest 校验。
+
+新增测试：
+
+```text
+tests/native/z_image_public_streaming_test.cpp
+tests/native/test_z_image_public_streaming.py
+```
+
+覆盖 shared lease 指针、三 artifact source closure、identity/layout mismatch、GPU/ANE/compiled/quant route 拒绝、
+非法 target 不污染下一请求、source path replacement，以及 descriptor lease-backed stale 检查。
+
+实际验证：
+
+```text
+python3 -B tests/native/test_z_image_streaming_descriptor.py        PASS
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh                  PASS
+python3 -B tests/native/test_z_image_public_streaming.py            PASS
+python3 -B tests/native/test_z_image_candidate_streaming_gate.py    PASS
+make test-streaming-host                                            PASS
+make test-streaming-contract                                        PASS
+make test-streaming-audit                                           PASS（1项无 audit dylib 环境 skip）
+tools/native/build_app.sh                                           PASS
+git diff --check                                                     PASS
+```
+
+本阶段仍有明确边界：测试使用 metadata/synthetic fixture，尚未完成真实 512×512 GPU full-request、P0/P1/P2 档位校准、
+ANE+streaming 认证或 production catalog record。下一步应先提交 C3，再按相同合同接 Flux 9B；不能把本阶段 host PASS
+写成 Z-Image public 已发布。

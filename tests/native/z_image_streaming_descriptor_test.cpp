@@ -3,6 +3,7 @@
 #include <cassert>
 #include <fcntl.h>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
@@ -106,6 +107,19 @@ int main(int argc, char **argv) {
         const tc::z_image::StreamingPlanView repeat(valid, config(), work);
         assert(repeat.layout().canonical == plan.layout().canonical);
         assert(repeat.layout().digest == plan.layout().digest);
+        tc::streaming::SourceFileIdentity leased_file;
+        leased_file.logical_id = "transformer";
+        leased_file.path = valid;
+        const auto lease = tc::streaming::SourceLease::capture(
+            {std::move(leased_file)});
+        const tc::z_image::StreamingMetadata leased_metadata(
+            lease, "transformer");
+        const tc::z_image::StreamingPlanView leased_plan(
+            lease, config(), work);
+        assert(leased_metadata.lease_ptr() == lease);
+        assert(leased_plan.lease_ptr() == lease);
+        assert(leased_plan.layout().canonical == plan.layout().canonical);
+        assert(leased_plan.layout().digest == plan.layout().digest);
         auto changed = work;
         changed.steps = 4;
         const tc::z_image::StreamingPlanView changed_steps(
@@ -157,10 +171,12 @@ int main(int argc, char **argv) {
         ::close(checkpoint_fd);
         rejects([&] { metadata.check_unchanged(); }, "checkpoint_changed");
         rejects([&] { metadata.describe(work); }, "checkpoint_changed");
+        rejects([&] { leased_metadata.check_unchanged(); },
+                "source fd changed");
 
         std::cout << "PASS Z-Image descriptor: header-only 30x13 BF16 "
-                     "projection, K2/G1/D0/Q1 layout, malformed metadata and "
-                     "stale snapshot rejection; layout="
+                     "projection, shared SourceLease, K2/G1/D0/Q1 layout, "
+                     "malformed metadata and stale snapshot rejection; layout="
                   << plan.layout().digest << '\n';
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

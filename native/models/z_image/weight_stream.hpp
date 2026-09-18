@@ -2,6 +2,7 @@
 
 #include "../../backends/mlx.hpp"
 #include "../../runtime/session.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 #include <array>
 #include <future>
 
@@ -27,6 +28,7 @@ class ZImageWeightStream {
         int block = -1;
     };
     int fd_ = -1;
+    std::shared_ptr<const streaming::SourceLease> lease_;
     uint64_t file_bytes_ = 0;
     int64_t modified_seconds_ = 0, modified_nanos_ = 0;
     std::vector<Record> fixed_records_;
@@ -39,7 +41,9 @@ class ZImageWeightStream {
     bool exact_layout_ = false;
     bool exact_pool_live_ = false;
 
-    void index(const std::filesystem::path &);
+    void index(const std::filesystem::path &,
+               streaming::OwnedSourceFd source_fd =
+                   streaming::OwnedSourceFd());
     void allocate(Slot &, const std::vector<Record> &);
     ReadResult read(const std::vector<Read> &,
                     const std::atomic<bool> *worker_cancel = nullptr) const;
@@ -49,6 +53,9 @@ class ZImageWeightStream {
     Weights bind(const Slot &, int) const;
     void prefetch(int);
     void load_fixed_and_prefix(unsigned, Weights &, const Event &);
+    void configure_exact(unsigned pinned_blocks, uint64_t budget,
+                         uint64_t activation_reserve, Weights &fixed,
+                         const Event &event);
 
   public:
     ZImageWeightStream(const std::filesystem::path &, uint64_t budget,
@@ -60,6 +67,10 @@ class ZImageWeightStream {
     ZImageWeightStream(const std::filesystem::path &, unsigned pinned_blocks,
                        uint64_t budget, uint64_t activation_reserve,
                        Weights &fixed, const Event &, std::atomic<bool> &);
+    ZImageWeightStream(std::shared_ptr<const streaming::SourceLease>,
+                       unsigned pinned_blocks, uint64_t budget,
+                       uint64_t activation_reserve, Weights &fixed,
+                       const Event &, std::atomic<bool> &);
     ~ZImageWeightStream();
     ZImageWeightStream(const ZImageWeightStream &) = delete;
     void reset_metrics();

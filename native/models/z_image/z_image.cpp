@@ -4,7 +4,9 @@
 #include "../../platform/apple/platform.hpp"
 #include "../../runtime/acceleration.hpp"
 #include "../../runtime/residency.hpp"
+#include "../../runtime/streaming/canonical_encoding.hpp"
 #include "../../runtime/streaming/context.hpp"
+#include "../../runtime/streaming/resolved_request.hpp"
 #include "streaming_descriptor.hpp"
 #include "../../components/text/qwen3.hpp"
 
@@ -26,6 +28,13 @@ class ZImageExactStream {
                       Weights &fixed, const Event &event,
                       std::atomic<bool> &cancelled,
                       uint64_t request_generation);
+    ZImageExactStream(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        const StreamingConfig &config,
+        const z_image::StreamingWorkload &workload,
+        uint64_t budget, uint64_t activation_reserve,
+        Weights &fixed, const Event &event,
+        std::atomic<bool> &cancelled, uint64_t request_generation);
     ~ZImageExactStream();
     ZImageExactStream(const ZImageExactStream &) = delete;
     ZImageExactStream &operator=(const ZImageExactStream &) = delete;
@@ -33,6 +42,8 @@ class ZImageExactStream {
     void run_pass(uint32_t pass, uint32_t step, Tensor &unified,
                   const Tensor &freqs, const Tensor &temb);
     void finish();
+    void enable_receipt(streaming::ExecutionReceiptOptions);
+    std::shared_ptr<const streaming::ActualStageReceipt> receipt() const;
     const z_image::StreamingPlanView &plan() const;
     const BlockResidencyMetrics &metrics() const;
     streaming::ExecutionCounters counters() const;
@@ -50,6 +61,56 @@ constexpr float kVaeScale = 0.3611f;
 constexpr float kVaeShift = 0.1159f;
 constexpr const char *kZImageKernelRevision =
     "z-image-mlx-compiled-dense-block-v1";
+constexpr const char *kZImagePublicImplementation =
+    "generic_stage_executor_v2";
+constexpr const char *kZImagePublicComponentPolicy =
+    "zimage-components-v1";
+
+uint32_t padded_z_image_rows(uint32_t rows) {
+    require(rows && rows <= UINT32_MAX - 31,
+            "streaming_workload_invalid: Z-Image token rows overflow");
+    return (rows + 31) / 32 * 32;
+}
+
+streaming::PresetSourceIdentity z_image_public_source_identity(
+        const streaming::SourceLease &lease) {
+    streaming::CanonicalEncoder manifest(
+        "z-image-public-artifact-manifest-v1");
+    manifest.string_field("transformer_snapshot", lease.digest());
+    manifest.unsigned_field("artifact_count", lease.file_count());
+    return {
+        "z-image-turbo-comfy-bf16",
+        "comfy-bf16-single-file",
+        manifest.sha256(),
+        std::string(lease.digest()),
+    };
+}
+
+streaming::PresetRuntimeIdentity z_image_public_runtime_identity() {
+    return {
+        "turbocider-streaming-2026-09-18",
+        "public-streaming-runtime-v2",
+        "z-image-public-adapter-v1",
+        "z-image-pread-bf16-v2-fd-lease",
+        kZImageKernelRevision,
+        "mlx-request-cache-policy-v1",
+    };
+}
+
+std::string z_image_public_feature_digest(
+        const Request &request, uint32_t caption_rows) {
+    streaming::CanonicalEncoder feature(
+        "z-image-public-workload-features-v1");
+    feature.boolean_field("inputs_empty", request.inputs.empty());
+    feature.boolean_field("loras_empty", request.loras.empty());
+    feature.boolean_field("ane_disabled", request.ane_manifest.empty());
+    feature.boolean_field(
+        "encoder_ane_disabled", request.encoder_ane_manifest.empty());
+    feature.boolean_field("compile_gpu", request.compile_gpu);
+    feature.boolean_field("dynamic_text", request.dynamic_text);
+    feature.unsigned_field("caption_rows", caption_rows);
+    return feature.sha256();
+}
 
 // Bound unused MLX allocations only during an explicit streaming request.
 // Restore the process-wide setting before another model or resident run starts.
@@ -1107,6 +1168,24 @@ struct ZImageExactStream::Impl {
         plan.metadata().check_unchanged();
         executor->begin(plan.layout().stages.front());
     }
+
+    Impl(std::shared_ptr<const streaming::SourceLease> lease,
+         const StreamingConfig &config,
+         const z_image::StreamingWorkload &workload,
+         uint64_t budget, uint64_t activation_reserve, Weights &fixed,
+         const Event &event, std::atomic<bool> &cancelled,
+         uint64_t request_generation)
+        : plan(std::move(lease), config, workload),
+          source(plan.lease_ptr(), plan.layout().stages.front().prefix, budget,
+                 activation_reserve, fixed, event, cancelled),
+          adapter(std::make_shared<ZImageExactAdapter>(
+              source, plan.layout().stages.front().prefix, event, cancelled)),
+          executor(std::make_unique<streaming::StageExecutor>(
+              0, request_generation, adapter)),
+          cancelled(cancelled) {
+        plan.metadata().check_unchanged();
+        executor->begin(plan.layout().stages.front());
+    }
 };
 
 ZImageExactStream::ZImageExactStream(
@@ -1119,6 +1198,17 @@ ZImageExactStream::ZImageExactStream(
     : impl_(std::make_unique<Impl>(
           checkpoint, config, workload, budget, activation_reserve, fixed,
           event, cancelled, request_generation)) {}
+
+ZImageExactStream::ZImageExactStream(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        const StreamingConfig &config,
+        const z_image::StreamingWorkload &workload,
+        uint64_t budget, uint64_t activation_reserve, Weights &fixed,
+        const Event &event, std::atomic<bool> &cancelled,
+        uint64_t request_generation)
+    : impl_(std::make_unique<Impl>(
+          std::move(lease), config, workload, budget, activation_reserve,
+          fixed, event, cancelled, request_generation)) {}
 
 ZImageExactStream::~ZImageExactStream() = default;
 
@@ -1145,6 +1235,20 @@ void ZImageExactStream::finish() {
             "Z-Image exact executor is already finished");
     impl_->final_counters = impl_->executor->finish();
     impl_->finished = true;
+}
+
+void ZImageExactStream::enable_receipt(
+        streaming::ExecutionReceiptOptions options) {
+    require(impl_ && !impl_->finished,
+            "Z-Image exact receipt is unavailable");
+    impl_->executor->enable_receipt(std::move(options));
+}
+
+std::shared_ptr<const streaming::ActualStageReceipt>
+ZImageExactStream::receipt() const {
+    require(impl_ && impl_->finished,
+            "Z-Image exact receipt is not finalized");
+    return impl_->executor->receipt();
 }
 
 const z_image::StreamingPlanView &ZImageExactStream::plan() const {
@@ -1238,6 +1342,170 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
 }
 
 ZImage::~ZImage() = default;
+
+std::shared_ptr<const streaming::ModelStreamingProbe>
+ZImage::probe_public_streaming(
+        const streaming::PublicResolveInput &input) const {
+    const auto &request = input.request;
+    require(request.model == model_id_,
+            "streaming_engine_model_mismatch");
+    require(request.operation == "image.generate" && request.frames == 1 &&
+                request.inputs.empty() && !request.audio,
+            "streaming_route_unsupported: Z-Image public card is text-to-image only");
+    require(request.execution == "gpu" && request.ane_manifest.empty() &&
+                request.encoder_ane_manifest.empty(),
+            "streaming_route_unsupported: Z-Image public card is GPU-only");
+    require(!request.allow_approximation && !request.compile_gpu &&
+                request.loras.empty() && !diffusers_layout_ &&
+                !gguf_transformer_ && !convrot_transformer_ &&
+                !nvfp4_transformer_,
+            "streaming_route_unsupported: Z-Image public card requires Comfy BF16 eager GPU without LoRA/quantization");
+    require(std::filesystem::is_regular_file(transformer_path_) &&
+                transformer_path_.extension() == ".safetensors" &&
+                std::filesystem::is_regular_file(text_path_) &&
+                text_path_.extension() == ".safetensors" &&
+                std::filesystem::is_regular_file(vae_path_) &&
+                vae_path_.extension() == ".safetensors",
+            "streaming_route_unsupported: Z-Image public card requires single-file transformer/text/VAE artifacts");
+
+    const auto tokens = tokenizer_.z_image_prompt(
+        request.prompt, request.dynamic_text);
+    const uint32_t caption_rows = padded_z_image_rows(
+        static_cast<uint32_t>(tokens.ids.size()));
+    streaming::SourceFileIdentity transformer_file;
+    transformer_file.logical_id = "transformer";
+    transformer_file.path = transformer_path_;
+    streaming::SourceFileIdentity text_file;
+    text_file.logical_id = "text_encoder";
+    text_file.path = text_path_;
+    streaming::SourceFileIdentity vae_file;
+    vae_file.logical_id = "vae";
+    vae_file.path = vae_path_;
+    auto lease = streaming::SourceLease::capture({
+        std::move(transformer_file), std::move(text_file),
+        std::move(vae_file)});
+
+    streaming::PresetWorkload workload;
+    workload.model = model_id_;
+    workload.operation = request.operation;
+    workload.execution = request.execution;
+    workload.device_class = input.device.device_class;
+    workload.execution_container = input.execution_container;
+    workload.width = static_cast<uint32_t>(request.width);
+    workload.height = static_cast<uint32_t>(request.height);
+    workload.frames = 1;
+    workload.fps = 0;
+    workload.steps = static_cast<uint32_t>(request.steps);
+    workload.batch = 1;
+    workload.audio = false;
+    workload.dynamic_text = request.dynamic_text;
+    workload.approximation = false;
+    workload.conditioning_revision = "qwen3-simple-flow-shift3-v1";
+    workload.vae_policy_revision = "z-image-vae-v1";
+    workload.feature_digest = z_image_public_feature_digest(
+        request, caption_rows);
+    workload.token_shapes.push_back({
+        "qwen3", "qwen3-z-image-v1", "z-image-template-v1",
+        static_cast<uint32_t>(tokens.valid), caption_rows, caption_rows});
+
+    return std::make_shared<streaming::ValueModelStreamingProbe>(
+        streaming::ValueModelStreamingProbe::Values{
+            model_id_, z_image_public_source_identity(*lease),
+            std::move(workload), z_image_public_runtime_identity(),
+            kZImagePublicComponentPolicy, std::move(lease)});
+}
+
+std::shared_ptr<const streaming::ModelStreamingSnapshot>
+ZImage::compile_public_streaming(
+        std::shared_ptr<const streaming::ModelStreamingProbe> probe,
+        const streaming::StreamingPresetRecord &record) const {
+    auto value_probe =
+        std::dynamic_pointer_cast<const streaming::ValueModelStreamingProbe>(
+            probe);
+    require(value_probe != nullptr,
+            "streaming_public_probe_type_mismatch");
+    require(value_probe->model_id() == model_id_,
+            "streaming_probe_identity_mismatch");
+    require(value_probe->component_policy_revision() ==
+                record.plan.component_policy_revision,
+            "streaming_probe_identity_mismatch");
+    require(record.source == value_probe->source_identity() &&
+                record.workload == value_probe->workload_identity() &&
+                record.runtime == value_probe->runtime_identity(),
+            "streaming_record_identity_mismatch");
+    const auto &workload = value_probe->workload_identity();
+    require(workload.token_shapes.size() == 1,
+            "streaming_workload_invalid: Z-Image token shape count");
+    z_image::StreamingWorkload descriptor_workload{
+        workload.width, workload.height,
+        workload.token_shapes.front().padded_rows,
+        workload.steps};
+    auto plan = std::make_shared<z_image::StreamingPlanView>(
+        value_probe->lease_ptr(), record.plan.canonical_config,
+        descriptor_workload);
+    require(plan->layout().digest == record.plan.layout_digest,
+            "streaming_layout_digest_mismatch");
+    return std::make_shared<streaming::ValueModelStreamingSnapshot>(
+        streaming::ValueModelStreamingSnapshot::Values{
+            model_id_, value_probe->source_identity(),
+            value_probe->runtime_identity(), plan->descriptor(),
+            plan->layout(), std::string(value_probe->component_policy_revision()),
+            value_probe->lease_ptr()});
+}
+
+RunResult ZImage::generate_resolved(
+        std::shared_ptr<const streaming::ResolvedRequestExecution> execution,
+        const Event &event, std::atomic<bool> &cancelled) {
+    require(execution != nullptr,
+            "streaming_authority_mismatch");
+    require(execution->model_snapshot != nullptr &&
+                execution->probe != nullptr,
+            "streaming_authority_mismatch");
+    require(execution->model_snapshot->source_lease() != nullptr,
+            "streaming_source_lease_required");
+    require(execution->request.streaming.active(),
+            "streaming_actual_plan_mismatch");
+    require(!public_stream_lease_,
+            "streaming_public_request_reentrant");
+    auto value_probe =
+        std::dynamic_pointer_cast<const streaming::ValueModelStreamingProbe>(
+            execution->probe);
+    require(value_probe != nullptr,
+            "streaming_public_probe_type_mismatch");
+    auto lease = value_probe->lease_ptr();
+    require(lease != nullptr &&
+                execution->model_snapshot->source_lease() == lease.get() &&
+                execution->probe->source_lease() == lease.get(),
+            "streaming_source_lease_mismatch");
+    require(execution->model_snapshot->model_id() == model_id_ &&
+                execution->selection.record.source ==
+                    execution->model_snapshot->source_identity() &&
+                execution->selection.record.runtime ==
+                    execution->model_snapshot->runtime_identity() &&
+                execution->selection.record.plan.layout_digest ==
+                    execution->model_snapshot->layout().digest &&
+                execution->selection.record.plan.component_policy_revision ==
+                    execution->model_snapshot
+                        ->component_policy_revision(),
+            "streaming_authority_mismatch");
+    const auto target = execution->selection.exact_selector
+                            .target_request_memory_bytes;
+    require(target && streaming::supported_streaming_target(*target),
+            "streaming_target_unsupported");
+    const auto previous_target = public_stream_target_bytes_;
+    public_stream_lease_ = std::move(lease);
+    public_stream_target_bytes_ = *target;
+    try {
+        auto result = run(execution->request, event, cancelled, false, false);
+        public_stream_target_bytes_ = previous_target;
+        public_stream_lease_.reset();
+        return result;
+    } catch (...) {
+        public_stream_target_bytes_ = previous_target;
+        public_stream_lease_.reset();
+        throw;
+    }
+}
 
 void ZImage::select_loras(const Request &request) {
     const auto strategy = effective_lora_strategy(request);
@@ -1495,8 +1763,12 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const bool exact_streaming = z_image_exact_streaming_requested(r);
     const bool legacy_streamed = r.residency == "streamed";
     const bool streamed = exact_streaming || legacy_streamed;
-    const auto budget = r.memory_budget_bytes ? r.memory_budget_bytes :
-        std::min<uint64_t>(10ull << 30, device_info().physical_memory / 2);
+    const auto budget = public_stream_target_bytes_
+        ? public_stream_target_bytes_
+        : (r.memory_budget_bytes
+               ? r.memory_budget_bytes
+               : std::min<uint64_t>(10ull << 30,
+                                     device_info().physical_memory / 2));
     // Reserve VAE, temporary activations and allocator cache. This is a planning
     // estimate for the denoiser, not an OS-enforced process memory limit.
     const uint64_t reserve = (3ull << 30) + uint64_t(r.width) * r.height * 2048;
@@ -1531,7 +1803,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const int caption_rows = (cached_conditioning_->shape(0) + 31) / 32 * 32;
     auto selection = select_acceleration(r, image_rows + caption_rows, event, cancelled);
     event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
-    r.compile_gpu = r.execution == "gpu" && !gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ &&
+    r.compile_gpu = !exact_streaming && r.execution == "gpu" &&
+                    !gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ &&
                     active_lora_strategy_ != "inference_time" &&
                     !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
     if (plan.request.execution != r.execution || plan.request.compile_gpu != r.compile_gpu)
@@ -1550,9 +1823,19 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         const z_image::StreamingWorkload workload{
             uint32_t(r.width), uint32_t(r.height), uint32_t(caption_rows),
             uint32_t(r.steps)};
-        exact_stream_ = std::make_unique<ZImageExactStream>(
-            transformer_path_, r.streaming, workload, budget, reserve,
-            transformer_, event, cancelled, exact_stream_generation_);
+        if (public_stream_lease_) {
+            exact_stream_ = std::make_unique<ZImageExactStream>(
+                public_stream_lease_, r.streaming, workload, budget, reserve,
+                transformer_, event, cancelled, exact_stream_generation_);
+            exact_stream_->enable_receipt({
+                exact_stream_->plan().layout().digest,
+                kZImagePublicImplementation,
+                public_stream_lease_->generation()});
+        } else {
+            exact_stream_ = std::make_unique<ZImageExactStream>(
+                transformer_path_, r.streaming, workload, budget, reserve,
+                transformer_, event, cancelled, exact_stream_generation_);
+        }
     } else if (legacy_streamed) {
         require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !diffusers_layout_,
                 "Z-Image streaming currently requires the Comfy BF16 checkpoint");
@@ -1627,24 +1910,13 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         event("denoise", i + 1, r.steps);
     }
     const double denoise_seconds = std::chrono::duration<double>(Clock::now() - dit_start).count();
-    checkpoint(cancelled);
-    auto decode_start = Clock::now();
-    auto decoded = decode(z, r.width, r.height, event, cancelled);
-    dump("z_latent_final", z);
-    dump("z_decoded", decoded);
-    const double decode_seconds = std::chrono::duration<double>(Clock::now() - decode_start).count();
-    require(mx::all(mx::isfinite(decoded)).item<bool>(), "nonfinite Z-Image pixels");
-    auto pixels = mx::transpose(decoded, {0, 2, 3, 1});
-    if (!warmup) {
-        event("export", 0, 1);
-        checkpoint(cancelled);
-        save_png(pixels, r.output);
-        event("export", 1, 1);
-    }
     std::optional<BlockResidencyMetrics> exact_metrics;
     std::optional<StreamingRuntimeMetrics> exact_runtime;
+    std::shared_ptr<const streaming::ActualExecutionReceipt> exact_receipt;
     streaming::ExecutionCounters exact_counters{};
-    if (exact_streaming) {
+    auto finish_exact_stream = [&] {
+        require(exact_streaming && exact_stream_ != nullptr,
+                "Z-Image exact executor is unavailable at drain");
         exact_stream_->finish();
         exact_metrics = exact_stream_->metrics();
         exact_counters = exact_stream_->counters();
@@ -1652,7 +1924,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         const auto &layout = exact_stream_->plan().layout();
         const auto &stage = layout.stages.front();
         StreamingRuntimeMetrics runtime;
-        runtime.implementation = "generic_stage_executor_v1";
+        runtime.implementation = public_stream_lease_
+            ? kZImagePublicImplementation : "generic_stage_executor_v1";
         runtime.layout_digest = layout.digest;
         runtime.resident_prefix_blocks = stage.prefix;
         runtime.block_group_size = stage.group_size;
@@ -1668,8 +1941,30 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         runtime.weight_format = "comfy-bf16-single-file";
         runtime.kernel_revision = kZImageKernelRevision;
         runtime.conditioning_recipe = "qwen3-simple-flow-shift3-v1";
-        runtime.upsample_boundary =
-            "no-upsample;denoiser-pool-retained-through-vae";
+        runtime.upsample_boundary = public_stream_lease_
+            ? "no-upsample;denoiser-pool-drained-before-vae"
+            : "no-upsample;denoiser-pool-retained-through-vae";
+        runtime.component_policy_revision = public_stream_lease_
+            ? kZImagePublicComponentPolicy : "";
+        runtime.multi_pool_policy =
+            stage.multi_pool_policy == streaming::MultiPoolPolicy::serial
+                ? "serial" : "retain_all";
+        runtime.pool_count = uint32_t(stage.pools.size());
+        runtime.slot_bundle_count = exact_counters.slot_bundles;
+        runtime.refill_worker_count = stage.workers;
+        runtime.drained = true;
+        if (public_stream_lease_) {
+            const auto stage_receipt = exact_stream_->receipt();
+            require(stage_receipt != nullptr,
+                    "streaming_actual_receipt_missing");
+            exact_receipt = std::make_shared<
+                const streaming::ActualExecutionReceipt>(
+                    streaming::make_actual_execution_receipt(
+                        kZImagePublicImplementation, layout.digest,
+                        kZImagePublicComponentPolicy,
+                        std::vector<streaming::ActualStageReceipt>{
+                            *stage_receipt}));
+        }
         exact_runtime = std::move(runtime);
         require(exact_counters.slot_bundles == 2 &&
                     exact_counters.fills ==
@@ -1680,10 +1975,32 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                         exact_counters.fills,
                 "Z-Image exact counters differ from the compiled layout");
         // The exact slot pool was released by finish(). Prefix/fixed weights
-        // also have request retention and must not leak into a later request.
+        // also have request retention and must not leak into VAE or a later
+        // request. Public execution drains here to reduce the full-request
+        // peak; the private candidate retains its historical post-VAE drain.
         exact_stream_.reset();
         transformer_.clear();
+    };
+    if (exact_streaming && public_stream_lease_) {
+        finish_exact_stream();
+        mx::clear_cache();
     }
+    checkpoint(cancelled);
+    auto decode_start = Clock::now();
+    auto decoded = decode(z, r.width, r.height, event, cancelled);
+    dump("z_latent_final", z);
+    dump("z_decoded", decoded);
+    const double decode_seconds = std::chrono::duration<double>(Clock::now() - decode_start).count();
+    require(mx::all(mx::isfinite(decoded)).item<bool>(), "nonfinite Z-Image pixels");
+    auto pixels = mx::transpose(decoded, {0, 2, 3, 1});
+    if (!warmup) {
+        event("export", 0, 1);
+        checkpoint(cancelled);
+        save_png(pixels, r.output);
+        event("export", 1, 1);
+    }
+    if (exact_streaming && exact_stream_)
+        finish_exact_stream();
     RunResult result;
     result.request = r;
     result.plan = std::move(plan);
@@ -1721,6 +2038,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     if (exact_metrics) {
         result.block_residency = *exact_metrics;
         result.streaming_runtime = *exact_runtime;
+        result.streaming_receipt = std::move(exact_receipt);
     } else if (weight_stream_) {
         const auto metrics = weight_stream_->metrics();
         result.block_residency = metrics;

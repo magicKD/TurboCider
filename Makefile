@@ -104,6 +104,7 @@ test-streaming-contract:
 	@"$(PYTHON)" -B tests/native/test_ltx_candidate_streaming_gate.py
 	@"$(PYTHON)" -B tests/native/test_h3_candidate_streaming_gate.py
 	@"$(PYTHON)" -B tests/native/test_z_image_candidate_streaming_gate.py
+	@"$(PYTHON)" -B tests/native/test_z_image_public_streaming.py
 	@"$(PYTHON)" -B tests/native/test_flux_candidate_streaming_gate.py
 test-streaming-pager:
 	@"$(PYTHON)" -B tests/native/test_mlx_weight_pager.py

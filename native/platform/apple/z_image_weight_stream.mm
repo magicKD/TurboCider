@@ -45,10 +45,14 @@ ZImageWeightStream::ReadResult ZImageWeightStream::read(
     return result;
 }
 
-void ZImageWeightStream::index(const std::filesystem::path &path) {
-    require(std::filesystem::is_regular_file(path) && path.extension() == ".safetensors",
+void ZImageWeightStream::index(
+        const std::filesystem::path &path,
+        streaming::OwnedSourceFd source_fd) {
+    require(path.extension() == ".safetensors" &&
+                (source_fd || std::filesystem::is_regular_file(path)),
             "Z-Image streaming requires a single Comfy BF16 safetensors checkpoint");
-    fd_ = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    fd_ = source_fd ? source_fd.release() :
+        ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
     require(fd_ >= 0, "cannot open Z-Image streamed checkpoint");
     struct stat status{};
     require(::fstat(fd_, &status) == 0 && status.st_size >= 8,
@@ -192,6 +196,37 @@ void ZImageWeightStream::load_fixed_and_prefix(
     event("load_z_image_stream", int(pinned_blocks), int(pinned_blocks));
 }
 
+void ZImageWeightStream::configure_exact(
+        unsigned pinned_blocks, uint64_t budget,
+        uint64_t activation_reserve, Weights &fixed,
+        const Event &event) {
+    uint64_t block_bytes = 0, fixed_bytes = 0;
+    for (const auto &r : blocks_[0]) block_bytes += r.bytes;
+    for (const auto &r : fixed_records_) fixed_bytes += r.bytes;
+    require(pinned_blocks <= 28,
+            "Z-Image exact streaming requires at least two suffix blocks");
+    require(fixed_bytes <= UINT64_MAX - activation_reserve,
+            "Z-Image exact streaming reserve overflow");
+    const uint64_t reserved = activation_reserve + fixed_bytes;
+    require(uint64_t(pinned_blocks + 2u) <=
+                (UINT64_MAX - reserved) / block_bytes,
+            "Z-Image exact streaming working set overflow");
+    const uint64_t working_set =
+        reserved + uint64_t(pinned_blocks + 2u) * block_bytes;
+    require(!budget || working_set <= budget,
+            "Z-Image exact layout exceeds the selected memory budget");
+    metrics_.enabled = true;
+    metrics_.active_blocks = 30;
+    metrics_.pinned_blocks = pinned_blocks;
+    metrics_.streamed_blocks = 30 - pinned_blocks;
+    metrics_.refill_slots = 2;
+    metrics_.memory_budget_bytes = budget;
+    metrics_.activation_reserve_bytes = reserved;
+    metrics_.block_bytes = block_bytes;
+    metrics_.estimated_working_set_bytes = working_set;
+    load_fixed_and_prefix(pinned_blocks, fixed, event);
+}
+
 ZImageWeightStream::ZImageWeightStream(const std::filesystem::path &path, uint64_t budget,
                                        uint64_t activation_reserve, Weights &fixed,
                                        const Event &event, std::atomic<bool> &cancelled)
@@ -230,31 +265,29 @@ ZImageWeightStream::ZImageWeightStream(
     : cancelled_(cancelled), exact_layout_(true) {
     try {
         index(path);
-        uint64_t block_bytes = 0, fixed_bytes = 0;
-        for (const auto &r : blocks_[0]) block_bytes += r.bytes;
-        for (const auto &r : fixed_records_) fixed_bytes += r.bytes;
-        require(pinned_blocks <= 28,
-                "Z-Image exact streaming requires at least two suffix blocks");
-        require(fixed_bytes <= UINT64_MAX - activation_reserve,
-                "Z-Image exact streaming reserve overflow");
-        const uint64_t reserved = activation_reserve + fixed_bytes;
-        require(uint64_t(pinned_blocks + 2u) <=
-                    (UINT64_MAX - reserved) / block_bytes,
-                "Z-Image exact streaming working set overflow");
-        const uint64_t working_set =
-            reserved + uint64_t(pinned_blocks + 2u) * block_bytes;
-        require(!budget || working_set <= budget,
-                "Z-Image exact layout exceeds the selected memory budget");
-        metrics_.enabled = true;
-        metrics_.active_blocks = 30;
-        metrics_.pinned_blocks = pinned_blocks;
-        metrics_.streamed_blocks = 30 - pinned_blocks;
-        metrics_.refill_slots = 2;
-        metrics_.memory_budget_bytes = budget;
-        metrics_.activation_reserve_bytes = reserved;
-        metrics_.block_bytes = block_bytes;
-        metrics_.estimated_working_set_bytes = working_set;
-        load_fixed_and_prefix(pinned_blocks, fixed, event);
+        configure_exact(
+            pinned_blocks, budget, activation_reserve, fixed, event);
+    } catch (...) {
+        if (fd_ >= 0) ::close(fd_);
+        fd_ = -1;
+        fixed.clear();
+        throw;
+    }
+}
+
+ZImageWeightStream::ZImageWeightStream(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        unsigned pinned_blocks, uint64_t budget,
+        uint64_t activation_reserve, Weights &fixed,
+        const Event &event, std::atomic<bool> &cancelled)
+    : lease_(std::move(lease)), cancelled_(cancelled), exact_layout_(true) {
+    try {
+        require(lease_ != nullptr,
+                "Z-Image public streaming source lease is unavailable");
+        const auto &file = lease_->file("transformer");
+        index(file.path, lease_->duplicate_fd("transformer"));
+        configure_exact(
+            pinned_blocks, budget, activation_reserve, fixed, event);
     } catch (...) {
         if (fd_ >= 0) ::close(fd_);
         fd_ = -1;
@@ -287,6 +320,11 @@ void ZImageWeightStream::prefetch(int block) {
     ++metrics_.request_slot_fills;
 }
 void ZImageWeightStream::check_unchanged() const {
+    if (lease_) {
+        lease_->revalidate_open_files();
+        lease_->revalidate_paths();
+        return;
+    }
     struct stat status{};
     require(::fstat(fd_, &status) == 0 && uint64_t(status.st_size) == file_bytes_ &&
                 status.st_mtimespec.tv_sec == modified_seconds_ &&
