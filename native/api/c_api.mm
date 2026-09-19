@@ -36,6 +36,13 @@ struct tc_engine {
     // Set only by the internal exact-layout candidate constructor. Production model
     // creation remains fail-closed for unqualified manual layouts.
     bool allow_experimental_streaming = false;
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    // Test/calibration builds may attach an immutable catalog provider to one
+    // engine. Release builds have no setter and always use the production
+    // provider below.
+    std::shared_ptr<tc::streaming::TestStreamingCatalogProvider>
+        test_streaming_catalog_provider;
+#endif
     std::optional<tc::MemoryExecutionReport> last_memory_report;
 };
 struct tc_coreml_ffn {
@@ -77,9 +84,18 @@ using ResolvedStreamingExecution =
 ResolvedStreamingExecution resolve_public_streaming_locked(
         tc_engine &engine, tc::Request request) {
     tc::require(engine.session != nullptr, "streaming_engine_unavailable");
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    const auto &catalog_provider = engine.test_streaming_catalog_provider
+        ? static_cast<const tc::streaming::StreamingCatalogProvider &>(
+              *engine.test_streaming_catalog_provider)
+        : tc::streaming::production_streaming_catalog_provider();
+#else
+    const auto &catalog_provider =
+        tc::streaming::production_streaming_catalog_provider();
+#endif
     tc::streaming::PublicStreamingCoordinator coordinator(
         *engine.session, engine.model_id, engine.execution_container,
-        tc::streaming::production_streaming_catalog_provider());
+        catalog_provider);
     auto preflight = coordinator.preflight(request);
     auto plan =
         tc::make_plan_after_public_streaming_preflight(request);
@@ -93,9 +109,18 @@ void revalidate_public_streaming_locked(
         tc_engine &engine,
         const tc::streaming::ResolvedRequestExecution &execution) {
     tc::require(engine.session != nullptr, "streaming_engine_unavailable");
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    const auto &catalog_provider = engine.test_streaming_catalog_provider
+        ? static_cast<const tc::streaming::StreamingCatalogProvider &>(
+              *engine.test_streaming_catalog_provider)
+        : tc::streaming::production_streaming_catalog_provider();
+#else
+    const auto &catalog_provider =
+        tc::streaming::production_streaming_catalog_provider();
+#endif
     tc::streaming::PublicStreamingCoordinator coordinator(
         *engine.session, engine.model_id, engine.execution_container,
-        tc::streaming::production_streaming_catalog_provider());
+        catalog_provider);
     coordinator.revalidate(execution, streaming_device_identity());
 }
 
@@ -653,6 +678,236 @@ extern "C" int tc_engine_create_model_candidate(const char *id, const char *path
     return status;
 }
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+tc::streaming::PresetPlan test_streaming_plan_from_json(
+        const char *plan_json) {
+    NSDictionary *root = tc::parse_json(plan_json);
+    NSSet *allowed = [NSSet setWithArray:@[
+        @"canonical_config", @"pass_transition", @"multi_pool_policy"
+    ]];
+    tc::require(root.count == allowed.count,
+                "test_streaming_plan_has_missing_or_unknown_fields");
+    for (NSString *key in root)
+        tc::require([allowed containsObject:key],
+                    "test_streaming_plan_unknown_field");
+    tc::require(root[@"canonical_config"] != nil,
+                "test_streaming_plan_missing_canonical_config");
+    tc::require(root[@"pass_transition"] != nil &&
+                    root[@"multi_pool_policy"] != nil,
+                "test_streaming_plan_missing_pool_policy");
+    tc::StreamingConfig config;
+    tc::parse_streaming_config(
+        root[@"canonical_config"], config, "test_record");
+    tc::validate_streaming_config(config);
+    tc::streaming::PresetPlan result;
+    result.canonical_config = std::move(config);
+    result.pass_transition = tc::string_value(
+        root, @"pass_transition");
+    result.multi_pool_policy = tc::string_value(
+        root, @"multi_pool_policy");
+    tc::require(!result.pass_transition.empty() &&
+                    !result.multi_pool_policy.empty(),
+                "test_streaming_plan_missing_pool_policy");
+    return result;
+}
+
+std::string test_streaming_catalog_json_for_request(
+        tc_engine &engine, tc::Request request, const char *plan_json,
+        uint64_t target_request_memory_bytes, const char *catalog_revision) {
+    tc::require(engine.session != nullptr, "streaming_engine_unavailable");
+    tc::require(!engine.allow_experimental_streaming,
+                "test_record_requires_a_public_engine");
+    tc::require(catalog_revision && *catalog_revision,
+                "test_record_catalog_revision_required");
+    tc::require(tc::streaming::supported_streaming_target(
+                    target_request_memory_bytes),
+                "test_record_target_unsupported");
+    tc::require(request.streaming_selector &&
+                    request.streaming_selector->active(),
+                "test_record_selector_required");
+    tc::require(request.streaming_selector->target_request_memory_bytes &&
+                    *request.streaming_selector->target_request_memory_bytes ==
+                        target_request_memory_bytes,
+                "test_record_target_mismatch");
+
+    tc::streaming::validate_public_streaming_request(request);
+    auto normalized = tc::make_plan_after_public_streaming_preflight(request);
+    request = std::move(normalized.request);
+    const auto device = streaming_device_identity();
+    tc::streaming::PublicResolveInput input{
+        request, device, engine.execution_container};
+    auto probe = engine.session->probe_public_streaming(input);
+    tc::require(probe != nullptr, "streaming_public_probe_unavailable");
+    tc::require(probe->model_id() == engine.model_id &&
+                    probe->workload_identity().model == engine.model_id &&
+                    probe->workload_identity().execution_container ==
+                        engine.execution_container,
+                "streaming_probe_identity_mismatch");
+
+    auto plan = test_streaming_plan_from_json(plan_json);
+    tc::streaming::StreamingPresetRecord record;
+    record.revision = 1;
+    record.catalog_revision = catalog_revision;
+    record.source = probe->source_identity();
+    record.workload = probe->workload_identity();
+    record.runtime = probe->runtime_identity();
+    record.device.minimum_physical_memory_bytes =
+        device.physical_memory_bytes;
+    record.device.maximum_physical_memory_bytes = 0;
+    record.plan = std::move(plan);
+    record.plan.component_policy_revision =
+        std::string(probe->component_policy_revision());
+    // The test-only adapter hook accepts an empty layout digest solely to
+    // discover the canonical digest. The final record is compiled again below
+    // with the discovered digest, so no execution path can use the template.
+    record.plan.layout_digest.clear();
+    const uint64_t allowed_peak = target_request_memory_bytes -
+        tc::streaming::streaming_target_margin_bytes(
+            target_request_memory_bytes);
+    record.calibration.complete = true;
+    record.calibration.calibrated_request_bytes = allowed_peak;
+    record.calibration.scope = "execution_process_tree_v1";
+    record.calibration.estimator_revision =
+        "tree-phys-footprint-linear-p95-v1";
+    record.calibration.calibration_id = "test-record-template-v1";
+    record.calibration.execution_container = engine.execution_container;
+    record.calibration.evidence_digest = std::string(64, '0');
+    record.calibration.confirmation_sample_count = 1;
+    record.calibration.maximum_sample_gap_ns = 1;
+    record.performance.rank = 1;
+    record.performance.logical_read_bytes = 0;
+    record.performance.profile_id = "test-record-template-v1";
+    record.performance.comparison_kind = "P1_same_layout";
+    record.performance.confidence_status = "TEMPLATE";
+    record.performance.evidence_digest = std::string(64, '0');
+    record.release.channel = "public-experimental";
+    record.release.revoked = false;
+    record.release.reviewed_commit = "test-record-template";
+    record.release.review_digest = std::string(64, '0');
+
+    auto snapshot = engine.session->compile_public_streaming(probe, record);
+    tc::require(snapshot != nullptr,
+                "streaming_public_snapshot_unavailable");
+    tc::require(!snapshot->layout().stages.empty(),
+                "test_record_layout_has_no_stages");
+    for (const auto &stage : snapshot->layout().stages) {
+        const char *transition = stage.pass_transition ==
+                tc::streaming::PassTransition::reload
+            ? "reload" : "carry_first_group";
+        const char *pool_policy = stage.multi_pool_policy ==
+                tc::streaming::MultiPoolPolicy::serial
+            ? "serial" : "retain_all";
+        tc::require(record.plan.pass_transition == transition,
+                    "test_record_pass_transition_mismatch");
+        tc::require(record.plan.multi_pool_policy == pool_policy,
+                    "test_record_multi_pool_policy_mismatch");
+    }
+    record.plan.layout_digest = snapshot->layout().digest;
+    const std::string target_name = std::to_string(
+        target_request_memory_bytes / tc::streaming_gib);
+    record.id = "test-" + engine.model_id + "-" + target_name + "g-" +
+        record.plan.layout_digest.substr(0, 12);
+    record = tc::streaming::finalize_streaming_preset_record(
+        std::move(record));
+    tc::streaming::validate_streaming_preset_record(
+        record, catalog_revision);
+    // Recompile with the complete identity. This catches a model adapter that
+    // only accepts the empty-digest discovery path but cannot authorize the
+    // resulting exact record.
+    snapshot = engine.session->compile_public_streaming(probe, record);
+    tc::require(snapshot != nullptr &&
+                    snapshot->layout().digest == record.plan.layout_digest,
+                "test_record_layout_recompile_mismatch");
+
+    return tc::json(@{
+        @"schema": @"turbocider-streaming-test-catalog-v1",
+        @"revision": @(catalog_revision),
+        @"records": @[tc::test_streaming_catalog_record_dictionary(record)]
+    });
+}
+
+extern "C" int tc_engine_test_set_streaming_catalog_json(
+        tc_engine *engine, const char *catalog_json, char **error) {
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(engine && engine->session && catalog_json,
+                        "missing engine or test streaming catalog");
+            tc::require(!engine->allow_experimental_streaming,
+                        "test streaming catalog requires a public engine");
+            auto catalog = tc::parse_test_streaming_catalog_json(catalog_json);
+            std::unique_lock<std::mutex> local(
+                engine->mutex, std::try_to_lock);
+            tc::require(local.owns_lock(), "engine busy");
+            if (!engine->test_streaming_catalog_provider)
+                engine->test_streaming_catalog_provider =
+                    std::make_shared<
+                        tc::streaming::TestStreamingCatalogProvider>();
+            engine->test_streaming_catalog_provider->install(
+                std::move(catalog));
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error)
+                *error = strdup(
+                    "unknown test streaming catalog installation error");
+            return 1;
+        }
+    }
+}
+
+extern "C" int tc_engine_test_build_streaming_catalog_json(
+        tc_engine *engine, const char *request_json, const char *plan_json,
+        uint64_t target_request_memory_bytes, const char *catalog_revision,
+        char **catalog_json, char **error) {
+    if (catalog_json) *catalog_json = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(engine && request_json && plan_json &&
+                            catalog_revision && catalog_json,
+                        "missing test streaming record input/output");
+            std::unique_lock<std::mutex> local(
+                engine->mutex, std::try_to_lock);
+            tc::require(local.owns_lock(), "engine busy");
+            auto request = tc::request_from_json(
+                tc::parse_json(request_json));
+            *catalog_json = copy(test_streaming_catalog_json_for_request(
+                *engine, std::move(request), plan_json,
+                target_request_memory_bytes, catalog_revision));
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error)
+                *error = strdup(
+                    "unknown test streaming catalog record error");
+            return 1;
+        }
+    }
+}
+
+extern "C" int tc_engine_test_clear_streaming_catalog(
+        tc_engine *engine, char **error) {
+    if (error) *error = nullptr;
+    try {
+        tc::require(engine && engine->session,
+                    "missing engine for test streaming catalog clear");
+        std::unique_lock<std::mutex> local(
+            engine->mutex, std::try_to_lock);
+        tc::require(local.owns_lock(), "engine busy");
+        engine->test_streaming_catalog_provider.reset();
+        return 0;
+    } catch (const std::exception &exception) {
+        return fail(error, exception);
+    } catch (...) {
+        if (error)
+            *error = strdup(
+                "unknown test streaming catalog clear error");
+        return 1;
+    }
+}
+
 extern "C" int tc_engine_test_ltx_exact_destroy_failures(
         tc_engine *engine, uint32_t failures, char **error) {
     if (error) *error = nullptr;

@@ -198,8 +198,11 @@ Flux::compile_public_streaming(
     auto plan = std::make_shared<flux2::StreamingPlanView>(
         value_probe->lease_ptr(), model_id_, record.plan.canonical_config,
         descriptor_workload);
-    require(plan->layout().digest == record.plan.layout_digest,
-            "streaming_layout_digest_mismatch");
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    if (!record.plan.layout_digest.empty())
+#endif
+        require(plan->layout().digest == record.plan.layout_digest,
+                "streaming_layout_digest_mismatch");
     return std::make_shared<streaming::ValueModelStreamingSnapshot>(
         streaming::ValueModelStreamingSnapshot::Values{
             model_id_, value_probe->source_identity(),

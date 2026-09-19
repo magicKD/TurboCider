@@ -2,6 +2,7 @@
 
 #include "preset_catalog.hpp"
 
+#include <atomic>
 #include <memory>
 
 namespace tc::streaming {
@@ -21,5 +22,25 @@ class StreamingCatalogProvider {
 };
 
 const StreamingCatalogProvider &production_streaming_catalog_provider();
+
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+// Test/calibration-only provider.  The installed snapshot is replaced as one
+// immutable shared_ptr; readers that already captured a snapshot continue to
+// see the old catalog until their resolve/revalidate call completes.  This
+// class is intentionally unavailable from release builds.
+class TestStreamingCatalogProvider final : public StreamingCatalogProvider {
+  public:
+    TestStreamingCatalogProvider();
+
+    std::shared_ptr<const StreamingPresetCatalog>
+    snapshot() const override;
+
+    void install(std::shared_ptr<const StreamingPresetCatalog>);
+    void clear();
+
+  private:
+    mutable std::shared_ptr<const StreamingPresetCatalog> catalog_;
+};
+#endif
 
 } // namespace tc::streaming

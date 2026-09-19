@@ -636,8 +636,11 @@ public:
         auto plan = std::make_shared<tc::h3::StreamingPlanView>(
             value_probe->lease_ptr(), transformer_ids,
             record.plan.canonical_config, descriptor_workload, 1);
-        tc::require(plan->layout().digest == record.plan.layout_digest,
-                    "streaming_layout_digest_mismatch");
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+        if (!record.plan.layout_digest.empty())
+#endif
+            tc::require(plan->layout().digest == record.plan.layout_digest,
+                        "streaming_layout_digest_mismatch");
         return std::make_shared<tc::streaming::ValueModelStreamingSnapshot>(
             tc::streaming::ValueModelStreamingSnapshot::Values{
                 "minimax-h3-turbo", value_probe->source_identity(),

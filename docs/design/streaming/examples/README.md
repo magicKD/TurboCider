@@ -25,3 +25,77 @@ Flux 示例只能通过 private candidate constructor 执行，public route 仍 
 质量、内存和audit证据；P1 policy的baseline使用仅供benchmark的同布局direct replay，candidate使用通用
 `StageExecutor`。两侧必须保持完全相同的P0/G1/K2/D1/Q2、双pool retention、reader同步边界和pager；仍不能
 拿resident与streaming的耗时差直接签成framework P1 overhead。
+
+## Test-only public catalog campaign
+
+带 `TURBOCIDER_BUILD_TEST_HOOKS=1` 构建的 dylib 可以在 native campaign variant 中显式安装一个
+engine-scoped immutable catalog：
+
+```json
+{
+  "backend": "native",
+  "library": "/absolute/path/to/test-hooks/libturbocider.dylib",
+  "model_id": "z-image-turbo",
+  "model_path": "/absolute/path/to/model",
+  "constructor": "public",
+  "test_streaming_catalog": "/absolute/path/to/reviewed-test-catalog.json"
+}
+```
+
+catalog 外层合同为：
+
+```json
+{
+  "schema": "turbocider-streaming-test-catalog-v1",
+  "revision": "与每条 record.catalog_revision 完全一致",
+  "records": ["完整 canonical StreamingPresetRecord"]
+}
+```
+
+runner 会把 catalog 的路径、SHA-256 和大小写入 `build-identity.json`，并在每次 engine 创建后、生成请求前
+调用 test-only installer。该字段只允许 `constructor=public`；release dylib 没有 installer symbol，因此无法
+通过配置或环境变量获得测试 authority。此机制只用于 public-semantics calibration/evidence，不会修改
+production catalog，也不能替代 catalog builder、review、P0/P1/P2/P3 或 release gate。
+
+test catalog 必须由真实 public probe 和模型 adapter 生成，不允许手写 source/runtime/layout digest。示例命令：
+
+```sh
+python3 -B tools/native/build_test_streaming_catalog.py \
+  --library /absolute/path/to/test-hooks/libturbocider.dylib \
+  --model-id z-image-turbo \
+  --model-path /absolute/path/to/Comfy-Org-z_image_turbo \
+  --request /absolute/path/to/zimage-10g-request.json \
+  --plan /absolute/path/to/zimage-p7-k2-plan.json \
+  --target-gib 10 \
+  --catalog-revision tc-zimage-10g-public-calibration-r1 \
+  --output /absolute/path/to/zimage-10g-test-catalog.json
+```
+
+`request` 必须是 schema-v2 `selection=memory_tier` public selector；`plan` 只包含
+`canonical_config`、`pass_transition`、`multi_pool_policy`。输出中的 calibration/performance/review 是明确的
+test template，只负责使同一真实 adapter 能走完整 public resolve/generate transaction，不具备 production
+发布资格，也不能跳过 evidence builder。
+
+Z-Image 10 GiB 的完整请求与 P7/K2 计划样例分别见
+[`zimage-10g-memory-tier-request.json`](zimage-10g-memory-tier-request.json) 和
+[`zimage-p7-k2-plan.json`](zimage-p7-k2-plan.json)。示例中的 `${OUTPUT}` 只用于 campaign 模板替换，不能
+直接作为 App 的最终输出路径。
+
+public-semantics audit 需要同时启用 audit counters 与 test hooks 的独立 dylib，并安装完全相同的 catalog：
+
+```sh
+TURBOCIDER_BUILD_OUTPUT_DIR=/private/tmp/tc-public-audit \
+TURBOCIDER_BUILD_AUDIT_COUNTERS=1 \
+TURBOCIDER_BUILD_TEST_HOOKS=1 \
+TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh
+
+python3 -B tools/native/run_streaming_audit.py \
+  --library /private/tmp/tc-public-audit/libturbocider.dylib \
+  --model-id z-image-turbo \
+  --model /absolute/path/to/Comfy-Org-z_image_turbo \
+  --request /absolute/path/to/resolved-public-request.json \
+  --constructor public \
+  --test-streaming-catalog /absolute/path/to/zimage-10g-test-catalog.json \
+  --expect framework-active \
+  --output /absolute/path/to/zimage-10g-public-audit.json
+```

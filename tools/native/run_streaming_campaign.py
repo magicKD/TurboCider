@@ -383,6 +383,20 @@ def validate_policy(policy: dict[str, Any]) -> None:
                     raise CampaignError(f"native variant {variant} requires {key}")
             if config.get("constructor", "public") not in ("public", "candidate"):
                 raise CampaignError(f"variant {variant} has invalid constructor")
+            test_catalog = config.get("test_streaming_catalog")
+            if test_catalog is not None:
+                if (
+                    config.get("constructor", "public") != "public" or
+                    not isinstance(test_catalog, str) or not test_catalog
+                ):
+                    raise CampaignError(
+                        f"variant {variant} test_streaming_catalog requires "
+                        "the public constructor and a non-empty path"
+                    )
+                if not Path(test_catalog).expanduser().resolve().is_file():
+                    raise CampaignError(
+                        f"variant {variant} test streaming catalog is missing"
+                    )
             environment = config.get("environment", {})
             if not isinstance(environment, dict):
                 raise CampaignError(f"variant {variant} environment must be an object")
@@ -614,6 +628,21 @@ def build_identity(policy: dict[str, Any]) -> dict[str, Any]:
                 "binary_size_bytes": library.stat().st_size,
                 "constructor": config.get("constructor", "public"),
             }
+            test_catalog = config.get("test_streaming_catalog")
+            if isinstance(test_catalog, str):
+                catalog_path = Path(test_catalog).expanduser().resolve()
+                if not catalog_path.is_file():
+                    raise CampaignError(
+                        f"missing {variant} test streaming catalog: "
+                        f"{catalog_path}"
+                    )
+                identity["test_streaming_catalog_path"] = str(catalog_path)
+                identity["test_streaming_catalog_sha256"] = sha256_file(
+                    catalog_path
+                )
+                identity["test_streaming_catalog_size_bytes"] = (
+                    catalog_path.stat().st_size
+                )
         elif backend == "probe":
             executable = Path(config["executable"]).expanduser().resolve()
             if not executable.is_file():
@@ -934,6 +963,22 @@ def load_native_library(config: dict[str, Any]) -> Any:
         c.POINTER(c.c_void_p), c.POINTER(c.c_void_p),
     ]
     library.tc_engine_free.argtypes = [c.c_void_p]
+    test_catalog_path = config.get("test_streaming_catalog")
+    if isinstance(test_catalog_path, str):
+        try:
+            install_catalog = library.tc_engine_test_set_streaming_catalog_json
+        except AttributeError as exc:
+            raise CampaignError(
+                f"{library_path} does not export the test-only streaming "
+                "catalog installer"
+            ) from exc
+        install_catalog.argtypes = [
+            c.c_void_p, c.c_char_p, c.POINTER(c.c_void_p)
+        ]
+        install_catalog.restype = c.c_int
+        library._tc_engine_test_set_streaming_catalog = install_catalog
+    else:
+        library._tc_engine_test_set_streaming_catalog = None
     # Audit symbols are private and exist only in an audit build.  Keep the
     # function pointers on the CDLL object so the worker can reset/snapshot
     # counters around each request without changing the public ABI.
@@ -972,6 +1017,30 @@ def create_native_engine(library: Any, config: dict[str, Any]) -> c.c_void_p:
     failure = consume(library, error)
     if status or not engine.value:
         raise CampaignError(failure or "native engine creation failed")
+    install_catalog = getattr(
+        library, "_tc_engine_test_set_streaming_catalog", None
+    )
+    if install_catalog is not None:
+        catalog_path = Path(
+            config["test_streaming_catalog"]
+        ).expanduser().resolve()
+        try:
+            catalog_bytes = catalog_path.read_bytes()
+        except OSError as exc:
+            library.tc_engine_free(engine)
+            raise CampaignError(
+                f"cannot read test streaming catalog: {exc}"
+            ) from exc
+        catalog_error = c.c_void_p()
+        catalog_status = install_catalog(
+            engine, catalog_bytes, c.byref(catalog_error)
+        )
+        catalog_failure = consume(library, catalog_error)
+        if catalog_status:
+            library.tc_engine_free(engine)
+            raise CampaignError(
+                catalog_failure or "test streaming catalog installation failed"
+            )
     return engine
 
 

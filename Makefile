@@ -105,6 +105,7 @@ test-process-tree-sampler:
 test-streaming-contract:
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_snapshot.py
 	@"$(PYTHON)" -B tests/native/test_streaming_contract.py
+	@"$(PYTHON)" -B tests/native/test_streaming_test_catalog.py
 	@"$(PYTHON)" -B tests/native/test_ltx_candidate_streaming_gate.py
 	@"$(PYTHON)" -B tests/native/test_ltx_public_streaming.py
 	@"$(PYTHON)" -B tests/native/test_h3_candidate_streaming_gate.py

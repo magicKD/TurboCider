@@ -20,6 +20,8 @@ import run_streaming_campaign as campaign_runner  # noqa: E402
 from run_streaming_campaign import (  # noqa: E402
     CampaignError,
     actual_semantic_layout,
+    build_identity,
+    create_native_engine,
     default_audit,
     receive_message,
     request_semantic_identity,
@@ -142,6 +144,84 @@ def passed_audit() -> dict:
 
 
 class CampaignTests(unittest.TestCase):
+    def test_native_test_catalog_is_public_only_and_hashed(self):
+        root = Path(tempfile.mkdtemp(prefix="tc-campaign-test-catalog-"))
+        library = root / "fixture.dylib"
+        library.write_bytes(b"fixture-library")
+        catalog = root / "catalog.json"
+        catalog.write_text('{"fixture":true}\n')
+        model = root / "model"
+        model.mkdir()
+        campaign = policy(blocks=1)
+        for variant in ("baseline", "candidate"):
+            campaign["variants"][variant] = {
+                "backend": "native",
+                "library": str(library),
+                "model_id": "fixture-model",
+                "model_path": str(model),
+                "constructor": "public",
+                "test_streaming_catalog": str(catalog),
+            }
+        campaign_runner.validate_policy(campaign)
+        identity = build_identity(campaign)
+        expected = hashlib.sha256(catalog.read_bytes()).hexdigest()
+        for variant in ("baseline", "candidate"):
+            self.assertEqual(
+                identity[variant]["test_streaming_catalog_sha256"], expected
+            )
+            self.assertEqual(
+                identity[variant]["test_streaming_catalog_size_bytes"],
+                catalog.stat().st_size,
+            )
+
+        invalid = json.loads(json.dumps(campaign))
+        invalid["variants"]["candidate"]["constructor"] = "candidate"
+        with self.assertRaisesRegex(CampaignError, "public constructor"):
+            campaign_runner.validate_policy(invalid)
+
+        invalid = json.loads(json.dumps(campaign))
+        invalid["variants"]["candidate"]["test_streaming_catalog"] = str(
+            root / "missing.json"
+        )
+        with self.assertRaisesRegex(CampaignError, "catalog is missing"):
+            campaign_runner.validate_policy(invalid)
+
+    def test_create_native_engine_installs_test_catalog_before_use(self):
+        root = Path(tempfile.mkdtemp(prefix="tc-engine-test-catalog-"))
+        catalog = root / "catalog.json"
+        catalog.write_bytes(b'{"schema":"fixture"}')
+        calls: list[tuple[int, bytes]] = []
+        freed: list[int] = []
+
+        class FakeLibrary:
+            _tc_engine_test_set_streaming_catalog = None
+
+            @staticmethod
+            def tc_engine_create_model(_model, _path, engine, _error):
+                engine._obj.value = 123
+                return 0
+
+            @staticmethod
+            def tc_engine_free(engine):
+                freed.append(int(engine.value))
+
+        library = FakeLibrary()
+
+        def install(engine, payload, _error):
+            calls.append((int(engine.value), payload))
+            return 0
+
+        library._tc_engine_test_set_streaming_catalog = install
+        engine = create_native_engine(library, {
+            "model_id": "fixture-model",
+            "model_path": str(root),
+            "constructor": "public",
+            "test_streaming_catalog": str(catalog),
+        })
+        self.assertEqual(engine.value, 123)
+        self.assertEqual(calls, [(123, catalog.read_bytes())])
+        self.assertEqual(freed, [])
+
     def test_probe_backend_reuses_semantic_and_quality_verifier(self):
         root = Path(tempfile.mkdtemp(prefix="tc-probe-campaign-"))
         script = root / "probe.py"

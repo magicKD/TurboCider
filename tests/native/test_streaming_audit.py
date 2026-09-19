@@ -82,6 +82,7 @@ class StreamingAuditTests(unittest.TestCase):
 
     def test_build_callsite_and_private_abi_contract(self):
         build = (ROOT / "tools/native/build.sh").read_text()
+        runner = (ROOT / "tools/native/run_streaming_audit.py").read_text()
         api = (ROOT / "native/api/c_api.mm").read_text()
         execution = (ROOT / "native/runtime/memory_execution.cpp").read_text()
         context = (ROOT / "native/runtime/streaming/context.cpp").read_text()
@@ -92,6 +93,8 @@ class StreamingAuditTests(unittest.TestCase):
         self.assertIn("TURBOCIDER_BUILD_AUDIT_COUNTERS", build)
         self.assertIn("native/runtime/streaming/audit.cpp", build)
         self.assertIn("TURBOCIDER_ENABLE_AUDIT_COUNTERS", api)
+        self.assertIn("tc_engine_test_set_streaming_catalog_json", runner)
+        self.assertIn("test_streaming_catalog_sha256", runner)
         for symbol in SYMBOLS:
             self.assertIn(symbol, api)
             self.assertNotIn(symbol, public)

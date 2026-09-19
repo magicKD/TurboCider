@@ -2,6 +2,9 @@
 #import <Foundation/Foundation.h>
 #include "../../runtime/session.hpp"
 #include "../../core/tokenizer.hpp"
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+#include "../../runtime/streaming/preset_catalog.hpp"
+#endif
 namespace tc {
 struct MemoryExecutionReport;
 std::string json(id);
@@ -38,5 +41,9 @@ std::string validate_wan_ane_manifest(const std::filesystem::path &);
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
 size_t ltx_exact_process_quarantine_count_for_test() noexcept;
 bool ltx_exact_retry_process_quarantine_for_test(std::string &error) noexcept;
+std::shared_ptr<const streaming::StreamingPresetCatalog>
+parse_test_streaming_catalog_json(const char *);
+NSDictionary *test_streaming_catalog_record_dictionary(
+    const streaming::StreamingPresetRecord &);
 #endif
 } // namespace tc

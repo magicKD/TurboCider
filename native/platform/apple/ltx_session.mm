@@ -2411,8 +2411,11 @@ public:
             value_probe->lease_ptr(), kLtxPublicTransformerLogicalId,
             record.plan.canonical_config, descriptor_workload,
             value_probe->lease().generation());
-        require(plan->layout().digest == record.plan.layout_digest,
-                "streaming_layout_digest_mismatch");
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+        if (!record.plan.layout_digest.empty())
+#endif
+            require(plan->layout().digest == record.plan.layout_digest,
+                    "streaming_layout_digest_mismatch");
         return std::make_shared<streaming::ValueModelStreamingSnapshot>(
             streaming::ValueModelStreamingSnapshot::Values{
                 "ltx-2.5-distilled", value_probe->source_identity(),

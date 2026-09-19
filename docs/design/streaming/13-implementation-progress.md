@@ -2284,3 +2284,145 @@ process、process-tree、quality、audit 和 no-swap 条件通过后，才可启
 
 本节不改变以下事实：Z-Image 8 GiB K1 探索此前超出 allowed headroom，四模型 production catalog
 仍为空，ANE+streaming 仍未认证，且 P3 natural-swap 尚未执行。
+
+### 13.46 Z-Image P7/K2 10 GiB 正式 candidate P2（2026-09-19）
+
+13.45 之后已在真实 Metal 环境完成冻结的 P7/G1/K2/D0/Q1 10 GiB campaign。该实验使用 10 个
+ABBA/BAAB block、20 个 matched pairs、40 个 measured requests、每 block 重启 worker、每请求重建
+engine，并为 candidate 每个请求采集完整 process tree。独立 verifier 重跑结果仍为 `PASS`：
+
+```text
+comparison_kind:       P2
+layout:                P7/G1/K2/D0/Q1
+target:                10,737,418,240 bytes (10 GiB)
+allowed peak:          9,663,676,416 bytes
+candidate peak P95:    9,083,876,838 bytes
+allowed-headroom left: 579,799,578 bytes（约 553 MiB）
+successful requests:   40/40
+matched pairs:         20/20
+fresh generations:     10
+maximum sample gap:    29,968,958 ns
+swap out/in:           0/0
+quality:               byte-exact
+overall:               PASS
+```
+
+诊断性能数据如下；P2 的正式判定只负责完整请求内存、采样完整性、质量和 no-swap，不把这些诊断 ratio
+冒充同布局 P1：
+
+```text
+wall baseline median:    9.190984 s
+wall candidate median:   9.513362 s
+wall median ratio:       1.035075
+wall P95 ratio:          1.037464
+denoise baseline median: 8.252658 s
+denoise candidate median:8.344778 s
+denoise median ratio:    1.011162
+```
+
+该结果比早期 P9/K2 探索的约 9.52 GB peak 明显增加了安全余量，证明 **candidate 构造器下的** Z-Image
+P7/K2 能满足当前 10 GiB P2 headroom 合同。但是 evidence 中 candidate 仍为
+`constructor=candidate`、`implementation=generic_stage_executor_v1`；它没有经过 production catalog、
+public SourceLease authority、public component policy 和 `generate_resolved` transaction。因此本节不能生成
+production record，也不能把 App 的 10 GiB 选项标记为 available。
+
+### 13.47 Engine-scoped test catalog 与 public-evidence runner 接线（2026-09-19，工作树）
+
+为避免继续用 private candidate 代替 public 语义，本轮实现严格隔离的 test/calibration catalog 路径：
+
+- `TestStreamingCatalogProvider` 只在 `TURBOCIDER_ENABLE_TEST_HOOKS` 下编译；catalog 通过原子
+  `shared_ptr<const StreamingPresetCatalog>` 替换，已经取得 snapshot 的 resolve/revalidate 保持原视图；
+- `tc_engine_test_set_streaming_catalog_json`、`tc_engine_test_clear_streaming_catalog` 和
+  `tc_engine_test_build_streaming_catalog_json` 只存在于 test-hooks dylib，不进入 public C header，release
+  dylib 经 `nm -gU` 确认不导出；
+- catalog 是 engine-scoped，必须使用普通 public constructor；private candidate engine 明确拒绝安装，
+  从而不能混合两类 authority；
+- 输入合同固定为 `turbocider-streaming-test-catalog-v1`，严格拒绝缺字段、未知字段、重复 preset/digest、
+  非 canonical digest、非法 release/calibration/config；每条 record 仍经过 native
+  `validate_streaming_preset_record()`；
+- `resolve_public_streaming_locked()` 和 execution-time revalidate 使用同一个 engine provider；未安装时的
+  release/default 代码仍直接使用 production provider，release `tc_engine` 不增加字段或分支；
+- campaign native variant 新增可选 `test_streaming_catalog`。runner 要求 public constructor、catalog 文件
+  存在、dylib 导出 test hook；每次创建 engine 后、请求执行前安装 snapshot，并把 catalog path、SHA-256
+  和 size 写入 build identity，避免 evidence 脱离实际 authority；
+- 非法 replacement 在解析/校验成功前不会替换已有 snapshot；clear 后恢复 production empty-catalog gate。
+- test-only record builder 接受真实 schema-v2 memory-tier request 和显式 canonical P/G/K/D/Q plan，调用真实
+  `probe_public_streaming()` 捕获 source/workload/runtime/SourceLease，再由模型 adapter 编译 canonical layout
+  digest；它随后用完整 digest 再编译一次，防止只能通过 discovery、不能通过 exact authorization 的记录。
+  builder 生成的 calibration/performance/review 字段明确为 template，只能用于 public-semantics campaign，
+  不能输入 production catalog builder。
+- `tools/native/build_test_streaming_catalog.py` 为上述 test-only C ABI 提供可重复 CLI；它只接受五个公开 target，
+  只使用普通 public engine，拒绝 release dylib、缺失模型、非法 JSON 和隐式覆盖输出。
+
+当前验证：
+
+```text
+test-hooks native build                                      PASS
+release native build                                         PASS
+test hook dylib exports set/clear/build symbols               PASS
+release dylib exports none of the test catalog symbols        PASS
+test_streaming_test_catalog.py                                PASS（3 tests）
+test_streaming_campaign_verifier.py                           PASS（31 tests）
+test_streaming_audit.py                                       PASS（5 pass, 1 expected skip）
+make test-streaming-host test-streaming-contract              PASS
+make test-streaming-campaign test-streaming-catalog-builder   PASS
+git diff --check                                              PASS
+```
+
+合成 Z-Image safetensors fixture 已验证完整流程：真实 public probe → metadata compile → exact record → engine-scoped
+安装 → `tc_engine_resolve_streaming_json`，resolved layout digest 与 record 一致。下一步是对真实 Z-Image checkpoint
+运行 CLI，冻结 P7/K2 test catalog，把 13.46 的 candidate policy 改为 schema-v2 memory-tier selector，并通过普通
+public constructor 重跑 P1/P2。production catalog 继续保持 `tc-streaming-catalog-empty-v1`；test template 不得
+进入 production builder，P3、独立 review 和 publish 完成前不得开放 App。
+
+### 13.48 Z-Image 10 GiB public-constructor P2 PASS（2026-09-19）
+
+在 13.47 的 test-only authority 基线上，已对真实 `models/Comfy-Org-z_image_turbo` 生成 P7/G1/K2/D0/Q1
+catalog。catalog 必须在与 campaign 相同的真实 Metal 环境中生成：首次在受限环境生成时
+`device_class=unavailable/68719476736`，真实 worker 因 exact workload identity 不一致返回
+`unvalidated_workload`；重新在实体设备 probe 后冻结为 `Apple M4 Max/68719476736`，没有放宽 resolver。
+
+冻结 identity：
+
+```text
+catalog revision: tc-zimage-10g-public-calibration-r1
+catalog SHA-256:  ed3d3d88838ace4d31ae7668a588c418a018e238bbb2be4f1f86f0cb002ce455
+record id:        test-z-image-turbo-10g-c2fcf8d18451
+record digest:    648a3120a43227dfdf94e2085aaedb9107b2a6da39288f96000993fc20125ed6
+layout digest:    c2fcf8d1845126717b31f72fbef9e174cb2c326f2157a43ad279076c03cd25dd
+implementation:   generic_stage_executor_v2
+constructor:      public
+selector:         schema-v2 memory_tier, 10 GiB
+```
+
+独立 public audit 使用同时启用 `TURBOCIDER_BUILD_AUDIT_COUNTERS=1` 与
+`TURBOCIDER_BUILD_TEST_HOOKS=1` 的 dylib，并通过同一 catalog 安装器进入真实 public route：请求成功，setup
+worker/pool 为 1/1，steady allocation/thread-create 为 0/0。`run_streaming_audit.py` 因此新增可选
+`--test-streaming-catalog`，并冻结 catalog path/SHA-256/size；candidate constructor 明确禁止使用该参数。
+
+最终 bundle `/private/tmp/tc-zimage-public-10g-p2-final` 绑定完整 environment、独立 audit、test catalog hash、
+source provenance、10 个 fresh worker generation、20 个 candidate process-tree sample 和 20 matched pairs。
+runner 与独立 verifier 均返回 `PASS`：
+
+```text
+successful requests:      40/40
+matched pairs:            20/20
+quality:                  byte-exact
+candidate peak P95:       9,068,743,206.8 bytes
+allowed peak:             9,663,676,416 bytes
+remaining headroom:       594,933,209.2 bytes（约 567 MiB）
+maximum sample gap:       29,944,541 ns
+swap out/in:              0/0
+wall median ratio:        1.032574
+wall P95 ratio:           1.032120
+denoise median ratio:     1.011080
+summary SHA-256:          41efe96e928081d26e908685535c34ac6ae2b237d573607ef3e4ce4fbc12181a
+manifest SHA-256:         37f78341da27e735e7bf238ccab4cfb96a72d07c1040a2018638e9bc7f37b23d
+overall:                  PASS
+```
+
+这将 Z-Image 10 GiB 从“private candidate P2”提升为“真实 public transaction 下的 calibration P2 PASS”，
+证明普通 public constructor、schema-v2 selector、catalog resolution、SourceLease、exact layout、actual receipt、
+generate_resolved、VAE boundary 和 process-tree headroom 可以一起工作。它仍不是 production release record：
+当前 evidence 来自未提交工作树和 test-template record；P0/P1 需要在同一 public authority/clean commit 上重跑，
+P3 natural-swap、四类独立 review 和 production catalog publish 仍未完成。App 的 10 GiB 选项继续 fail-closed。

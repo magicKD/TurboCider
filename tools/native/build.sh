@@ -75,6 +75,7 @@ SOURCES=(
  native/models/wan/wan_pipeline.cpp
  native/models/wan/hybrid.cpp native/platform/apple/wan_hybrid.mm
  native/platform/apple/request.mm native/platform/apple/profile.mm native/platform/apple/tokenizer.mm
+ native/platform/apple/streaming_catalog_test.mm
  native/platform/apple/unigram_tokenizer.mm
  native/platform/apple/device.mm native/platform/apple/results.mm native/platform/apple/memory_probe.mm
  native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/h3_mlx_session.mm native/platform/apple/ltx_session.mm
