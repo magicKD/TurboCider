@@ -23,6 +23,7 @@ from run_streaming_campaign import (  # noqa: E402
     build_identity,
     create_native_engine,
     default_audit,
+    hash_artifacts,
     receive_message,
     request_semantic_identity,
     run_campaign,
@@ -144,6 +145,124 @@ def passed_audit() -> dict:
 
 
 class CampaignTests(unittest.TestCase):
+    def test_quality_artifact_canonicalizer_validation_and_hashing(self):
+        campaign = policy(blocks=1)
+        campaign["quality"]["artifacts"][0]["canonicalizer"] = (
+            "ffmpeg-rgb24-v1"
+        )
+        campaign_runner.validate_policy(campaign)
+
+        invalid = json.loads(json.dumps(campaign))
+        invalid["quality"]["artifacts"][0]["canonicalizer"] = "unknown"
+        with self.assertRaisesRegex(CampaignError, "unsupported canonicalizer"):
+            campaign_runner.validate_policy(invalid)
+
+        root = Path(tempfile.mkdtemp(prefix="tc-canonical-artifact-"))
+        source = root / "video.mp4"
+        source.write_bytes(b"container")
+        completed = mock.Mock(returncode=0, stdout=b"decoded-rgb", stderr=b"")
+        version = mock.Mock(
+            returncode=0, stdout="ffmpeg version fixture\n", stderr=""
+        )
+        executable = root / "ffmpeg"
+        executable.write_bytes(b"fixture-ffmpeg")
+        with (
+            mock.patch.object(
+                campaign_runner.shutil, "which", return_value=str(executable)
+            ),
+            mock.patch.object(
+                campaign_runner.subprocess, "run",
+                side_effect=[completed, version],
+            ),
+        ):
+            result = hash_artifacts(
+                {"video": str(source)},
+                {"video": "ffmpeg-rgb24-v1"},
+            )["video"]
+        self.assertEqual(
+            result["sha256"], hashlib.sha256(b"decoded-rgb").hexdigest()
+        )
+        self.assertEqual(result["source_sha256"], hashlib.sha256(
+            b"container"
+        ).hexdigest())
+        self.assertEqual(result["canonicalizer"], "ffmpeg-rgb24-v1")
+        self.assertEqual(result["canonical_bytes"], len(b"decoded-rgb"))
+
+    def test_memory_sampling_stops_before_artifact_canonicalization(self):
+        root = Path(tempfile.mkdtemp(prefix="tc-deferred-artifact-hash-"))
+        artifact = root / "video.mp4"
+        artifact.write_bytes(b"container")
+        events: list[str] = []
+
+        class FakeWorker:
+            pid = 123
+
+            def run(self, command):
+                events.append("worker")
+                self.assert_deferred(command)
+                return {"status": "success", "artifacts": {}}
+
+            @staticmethod
+            def assert_deferred(command):
+                if command.get("defer_artifact_hashing") is not True:
+                    raise AssertionError("worker hashing was not deferred")
+
+        class FakeSampler:
+            def __init__(
+                self, worker_pid, evidence_path, correlation_id, config
+            ):
+                self.evidence_path = evidence_path
+
+            def start(self):
+                events.append("sampler_start")
+                self.evidence_path.parent.mkdir(parents=True, exist_ok=True)
+
+            def stop(self):
+                events.append("sampler_stop")
+                return {
+                    "schema": "turbocider-streaming-memory-summary-v1",
+                    "status": "complete",
+                    "complete": True,
+                }
+
+        command = {
+            "type": "run",
+            "run_id": "sample-0",
+            "variant": "candidate",
+            "artifact_paths": {"video": str(artifact)},
+            "artifact_canonicalizers": {"video": "ffmpeg-rgb24-v1"},
+        }
+        campaign = {
+            "memory_sampling": {
+                "enabled": True,
+                "include_warmups": True,
+            }
+        }
+
+        def deferred_hash(paths, canonicalizers):
+            events.append("hash")
+            return {"video": {"sha256": "canonical"}}
+
+        with (
+            mock.patch.object(
+                campaign_runner, "RequestMemorySampler", FakeSampler
+            ),
+            mock.patch.object(
+                campaign_runner, "hash_artifacts", side_effect=deferred_hash
+            ),
+        ):
+            response = campaign_runner.run_worker_request(
+                FakeWorker(), command, root, campaign, "measured"
+            )
+
+        self.assertEqual(
+            events, ["sampler_start", "worker", "sampler_stop", "hash"]
+        )
+        self.assertEqual(
+            response["artifacts"], {"video": {"sha256": "canonical"}}
+        )
+        self.assertNotIn("defer_artifact_hashing", command)
+
     def test_native_test_catalog_is_public_only_and_hashed(self):
         root = Path(tempfile.mkdtemp(prefix="tc-campaign-test-catalog-"))
         library = root / "fixture.dylib"

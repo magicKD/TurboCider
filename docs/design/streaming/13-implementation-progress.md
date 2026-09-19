@@ -2490,3 +2490,126 @@ ANE 边界保持不变：public streaming catalog 仍为 GPU-only；Z-Image、Fl
 均拒绝 `gpu_ane`/ANE manifest。现有 resident/experimental ANE 仍可独立使用；streaming+ANE 必须以独立
 artifact identity、Core ML backing、process-tree peak、质量和 P0–P3 evidence 重新认证，不能把 GPU-only
 record 复用到 ANE。
+
+### 13.50 Campaign 质量 canonicalization 与 process-tree 采样边界修正（2026-09-19）
+
+本轮修正了 memory-tier campaign 中一个会污染 P2 进程树证据的生命周期问题。此前 worker 在 native request
+完成后立即运行 `ffmpeg-rgb24-v1` canonicalizer；coordinator 只有在收到 response 后才停止
+`RequestMemorySampler`。因此 ffmpeg 子进程会被 sampler 递归发现为 worker process tree 的 unknown child，
+使模型本身的内存证据被错误标记为 `inconclusive`。该问题与 LTX VAE helper 无关，属于 campaign 质量工具
+和模型内存证据边界混合。
+
+当前修正：
+
+```text
+sampler.start()
+  -> worker native request（defer_artifact_hashing=true）
+  -> sampler.stop()，写入并独立校验 terminal evidence
+  -> coordinator 执行 hash_artifacts()/ffmpeg-rgb24-v1
+  -> response 附加 artifacts
+```
+
+- 只有启用 request memory sampling 的 measured/warmup request 才设置
+  `defer_artifact_hashing`；普通 P0/P1 campaign 路径不增加新 sampler、线程或分支工作；
+- worker 内的 native、synthetic、probe 三种 backend 都通过 `artifacts_for_worker()` 返回空 artifact
+  占位，避免 canonicalizer 进入被采样的 process tree；
+- coordinator 在 sampler 成功停止后重新调用同一 `hash_artifacts()`，保留 source SHA-256、canonical SHA-256、
+  canonicalizer executable digest/version 等质量字段；
+- sampler 失败或 request 失败时不伪造质量成功；campaign 原有 failure/inconclusive 语义保持不变；
+- 新增测试 `test_memory_sampling_stops_before_artifact_canonicalization`，严格验证事件顺序为
+  `sampler_start -> worker -> sampler_stop -> hash`。
+
+本轮验证：
+
+```text
+python3 -B tests/native/test_streaming_campaign_verifier.py   PASS（33 tests）
+git diff --check                                             PASS
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh             PASS
+```
+
+该修正只关闭 evidence contamination，不改变模型 layout、slot 数、pool retention 或内存预算公式。LTX
+20 GiB full-request P2 仍然不能据此视为通过：当前父进程 Metal/MLX/Gemma cache 与 VAE child 并存的
+process-tree peak 仍需通过真正的 process replacement/disposable worker 解决后重新校准。production catalog
+继续保持 `tc-streaming-catalog-empty-v1`；ANE + public streaming 继续 GPU-only fail-closed。
+
+### 13.51 LTX fd-backed VAE、20 GiB 峰值诊断与 exact telemetry 收口（2026-09-19）
+
+在 13.50 的 campaign evidence 边界修正之外，本轮完成了 LTX public SourceLease 到独立 Video VAE helper
+的 fd authority 接线：
+
+- `decode_ltx_video_isolated()` 可通过 `posix_spawn_file_actions_adddup2()` 把 request-scoped checkpoint fd
+  固定继承为 child fd 199；环境只传递 fd 编号，不把 path 重新提升为 authority；
+- helper 读取 `TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD`，有 fd 时调用
+  `ltx_mlx_video_vae_create_fd()`，无 fd 时只保留原 legacy path-based 工具行为；
+- parent 增加 spawn file-actions RAII 和 child cleanup，spawn 后发生异常或取消时会 SIGTERM 并 wait，避免遗留
+  VAE child；正常 wait 后标记已回收，避免 double wait；
+- public SourceLease route 在进入 helper 前释放 session 内的 `video_vae_` 并清理 MLX VAE cache，结果字段为
+  `video_vae_isolation=process_fd`；helper 成功后不会再次进入空 `video_vae_` 的 in-process decode；
+- legacy helper 仍报告 `process`，helper 不可用时仍可按原合同进入 in-process decode，未开启 public selector 的
+  默认 route 不创建新的 lease 或 resolver 工作。
+
+基于该实现执行了一个探索性 LTX 20 GiB P8/G1/K2/D1/Q2 split-stage campaign。该 bundle 只有 1 个
+ABBA block、2 个 matched pairs，源码为 dirty working tree，不能作为 production evidence；但其峰值诊断足以
+否定“只把 VAE spawn 成 child 即可满足 20 GiB”的假设：
+
+```text
+target:                         20 GiB
+allowed peak (10%/512 MiB):     18 GiB
+candidate process-tree P95:     31,346,607,019.2 bytes（约 29.19 GiB）
+parent before VAE child:        约 25.68 GB phys footprint
+VAE child peak:                 约 5.63 GB
+swap in/out:                    0/0
+successful requests:            4/4
+matched pairs:                  2/2
+decoded RGB quality:            complete/matched
+video_vae_isolation:            process_fd
+wall candidate/baseline ratio:  0.78942（仅探索诊断）
+denoise ratio:                  0.98163（仅探索诊断）
+P2:                             FAIL
+```
+
+结论是 parent 中已经存在的 Metal/MPS/MLX/Gemma/denoiser process cache 不会因为 spawn 一个 VAE child 而被
+操作系统回收；parent 与 child 同时存活时，进程树峰值反而接近两者相加。继续只减少 slot/prefix 不能关闭
+这个结构性缺口：此前 K1 探索的 P95 仍约 25.08 GB，同时 wall/denoise 明显变慢。LTX 20 GiB 下一实现边界
+必须是以下之一：
+
+1. disposable LTX worker 在 denoiser 完成后使用 fd-backed `exec` finalizer，以 process replacement 真正回收
+   parent 的 Metal/MPS/MLX cache；
+2. 将 Gemma、denoiser、VAE/finalizer 拆成 component process pipeline，阶段间只传递 conditioning/latent，
+   每个重组件退出后由操作系统回收全部 process cache。
+
+当前 `tools/native/ltx_video_finalizer.mm` 和 `exec_ltx_video_finalizer()` 已提供第二阶段基础，但仍需完成
+SourceLease fd 继承、exec 前 source revalidation、worker protocol/最终 JSON 接管和 App disposable-worker
+事务。不能在当前 persistent Python campaign worker 中直接 exec，否则会破坏 socket protocol；正式 P2
+应在与 App production worker 相同的 process boundary 上执行。
+
+本轮同时修正 split-stage telemetry：旧逻辑使用 Stage-2 `streaming_after.load_seconds` 减 Stage-1
+`streaming_before.load_seconds`，在两个 executor 生命周期不相同时会输出负值。当前逐 stage 读取真实
+`ltx_native_streaming_info.load_seconds` 并 checked-add；wait 使用两个 StageExecutor 的聚合 counter。
+真实 Metal、64×64×9、K2、fabricated conditioning 回归结果：
+
+```text
+legacy total:                  9.48345 s
+single exact total:            8.65024 s
+split exact total:             8.97586 s
+split Stage-1 load:            0.256833 s
+split Stage-2 load:            0.258109 s
+quality:                       Stage-1/upsample/Stage-2 video+audio byte-exact
+lifecycle:                     boundary release/cancel/sticky failure/join PASS
+```
+
+这些时间只是单次 tiny smoke，不是 P0/P1 性能声明。验证矩阵：
+
+```text
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh             PASS
+make test-streaming-host test-streaming-contract               PASS
+make test-streaming-audit                                      PASS（1 expected skip）
+python3 -B tests/native/test_ltx_public_streaming.py            PASS
+python3 -B tests/native/test_ltx_streaming_snapshot.py          PASS
+python3 -B tests/native/test_streaming_campaign_verifier.py     PASS（33 tests）
+python3 -B tests/native/test_ltx_streaming_model.py ... K2      PASS（真实 Metal）
+git diff --check                                                PASS
+```
+
+发布边界不变：LTX 20 GiB P2 仍为 FAIL；production catalog 仍为空；下一 LTX runtime 工作是 fd-backed
+process replacement/disposable worker，而不是继续把 spawn helper 误当作 hard-cap 方案。

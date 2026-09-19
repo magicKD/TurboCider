@@ -992,12 +992,31 @@ struct TemporaryDirectoryCleanup {
     }
 };
 
+struct SpawnFileActionsCleanup {
+    posix_spawn_file_actions_t* actions = nullptr;
+    ~SpawnFileActionsCleanup() noexcept {
+        if (actions) ::posix_spawn_file_actions_destroy(actions);
+    }
+};
+
+struct SpawnedChildCleanup {
+    pid_t child = -1;
+    bool reaped = false;
+    ~SpawnedChildCleanup() noexcept {
+        if (child <= 0 || reaped) return;
+        ::kill(child, SIGTERM);
+        int status = 0;
+        while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {}
+    }
+};
+
 static std::vector<uint16_t> decode_ltx_video_isolated(
         const std::filesystem::path& helper,
         const std::filesystem::path& checkpoint,
         const std::vector<uint16_t>& latent,
         const ltx_workload& workload,
-        std::atomic<bool>& cancel) {
+        std::atomic<bool>& cancel,
+        int checkpoint_fd = -1) {
     require(std::filesystem::is_regular_file(helper),
             "LTX Video VAE helper is missing: " + helper.string());
     auto template_path = std::filesystem::temp_directory_path() /
@@ -1027,16 +1046,48 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
     std::array<char*, 9> argv{};
     for (size_t index = 0; index < arguments.size(); ++index)
         argv[index] = arguments[index].data();
+    constexpr int kChildCheckpointFd = 199;
+    posix_spawn_file_actions_t actions;
+    int actions_status = ::posix_spawn_file_actions_init(&actions);
+    require(actions_status == 0,
+            "cannot initialize LTX Video VAE helper spawn actions");
+    SpawnFileActionsCleanup actions_cleanup{&actions};
+    std::vector<std::string> environment_storage;
+    std::vector<char*> environment;
+    for (char* const* entry = ::environ; entry && *entry; ++entry) {
+        std::string value(*entry);
+        if (value.rfind("TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD=", 0) == 0)
+            continue;
+        environment_storage.push_back(std::move(value));
+    }
+    if (checkpoint_fd >= 0) {
+        const int duplicate_status = ::posix_spawn_file_actions_adddup2(
+            &actions, checkpoint_fd, kChildCheckpointFd);
+        require(duplicate_status == 0,
+                "cannot bind LTX Video VAE checkpoint fd for helper");
+        environment_storage.push_back(
+            "TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD=" +
+            std::to_string(kChildCheckpointFd));
+    }
+    environment.reserve(environment_storage.size() + 1u);
+    for (auto& entry : environment_storage)
+        environment.push_back(entry.data());
+    environment.push_back(nullptr);
     pid_t child = -1;
     int spawn_status = ::posix_spawn(
-        &child, helper.c_str(), nullptr, nullptr, argv.data(), ::environ);
+        &child, helper.c_str(), &actions, nullptr, argv.data(),
+        environment.data());
     require(spawn_status == 0 && child > 0,
             "cannot spawn LTX Video VAE helper: " +
                 std::string(std::strerror(spawn_status)));
+    SpawnedChildCleanup child_cleanup{child};
     int status = 0;
     for (;;) {
         pid_t waited = ::waitpid(child, &status, WNOHANG);
-        if (waited == child) break;
+        if (waited == child) {
+            child_cleanup.reaped = true;
+            break;
+        }
         if (waited < 0 && errno == EINTR) continue;
         if (waited < 0)
             throw std::runtime_error(
@@ -1045,6 +1096,7 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
         if (cancel.load()) {
             ::kill(child, SIGTERM);
             while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {}
+            child_cleanup.reaped = true;
             throw Cancelled();
         }
         ::usleep(10000);
@@ -2991,9 +3043,19 @@ public:
         uint64_t exact_prefix_bytes = 0;
         uint64_t exact_pool_bytes = 0;
         uint64_t exact_block_bytes = 0;
+        double exact_request_load_seconds = 0.0;
         auto add_exact_counter = [&](uint64_t& target, uint64_t value,
                                      const char* label) {
             target = ltx_checked_add(target, value, label);
+        };
+        auto add_exact_seconds = [&](double& target, double value,
+                                     const char* label) {
+            require(std::isfinite(target) && target >= 0.0 &&
+                        std::isfinite(value) && value >= 0.0 &&
+                        target <= std::numeric_limits<double>::max() - value,
+                    std::string("memory_estimate_unknown: invalid LTX ") +
+                        label + " telemetry");
+            target += value;
         };
         auto exact_u32 = [](uint64_t value, const char* label) -> uint32_t {
             require(value <= std::numeric_limits<uint32_t>::max(),
@@ -3455,6 +3517,14 @@ public:
         checkpoint(cancel);
         const auto stage1_finished = Clock::now();
         if (exact_split_stages) {
+            ltx_native_streaming_info exact_stage1_streaming{};
+            require(ltx_native_get_streaming_info(
+                        exact_owner.get(), &exact_stage1_streaming),
+                    "cannot inspect LTX Stage-1 streaming telemetry");
+            add_exact_seconds(
+                exact_request_load_seconds,
+                exact_stage1_streaming.load_seconds,
+                "exact load");
             require(ltx_native_streaming_counters(
                         exact_owner.get(), &exact_counters,
                         error, sizeof(error)), error);
@@ -3625,6 +3695,14 @@ public:
             require(ltx_native_get_streaming_info(
                         native_denoiser, &streaming_after),
                     "cannot inspect LTX block streaming result");
+            if (exact_streaming) {
+                if (!exact_split_stages)
+                    exact_request_load_seconds = 0.0;
+                add_exact_seconds(
+                    exact_request_load_seconds,
+                    streaming_after.load_seconds,
+                    "exact load");
+            }
             if (exact_streaming)
                 require(ltx_native_streaming_counters(
                             native_denoiser, &exact_counters,
@@ -3794,6 +3872,7 @@ public:
                 pixel_count, "LTX decoded planar pixels"),
             "ltx.output.planar_bf16");
         std::vector<uint16_t> pixels;
+        bool decoded_in_isolated_process = false;
         if (!public_stream_lease_ && !request.memory_constrained.enabled &&
             std::filesystem::is_regular_file(video_vae_helper_path_)) {
             /* This spawned-helper path isolates user-space MLX objects, but
@@ -3808,7 +3887,20 @@ public:
                 video_vae_helper_path_, video_vae_path_, video, workload,
                 cancel);
             video_vae_isolation = "process";
-        } else {
+            decoded_in_isolated_process = true;
+        } else if (public_stream_lease_ &&
+                   std::filesystem::is_regular_file(video_vae_helper_path_)) {
+            auto video_vae_fd = public_stream_lease_->duplicate_fd(
+                kLtxPublicVideoVaeLogicalId);
+            video_vae_.reset();
+            ltx_mlx_video_vae_clear_cache();
+            pixels = decode_ltx_video_isolated(
+                video_vae_helper_path_, video_vae_path_, video, workload,
+                cancel, video_vae_fd.get());
+            video_vae_isolation = "process_fd";
+            decoded_in_isolated_process = true;
+        }
+        if (!decoded_in_isolated_process) {
             if (!video_vae_) {
                 if (public_stream_lease_) {
                     auto video_vae_fd = public_stream_lease_->duplicate_fd(
@@ -4144,9 +4236,11 @@ public:
                       @"request_slot_fills": @(request_slot_fills),
                       @"request_load_seconds": @(use_mlx ?
                           mlx_info.cache_load_seconds :
-                          streaming_after.load_seconds - streaming_before.load_seconds),
+                          (exact_streaming ? exact_request_load_seconds :
+                           streaming_after.load_seconds - streaming_before.load_seconds)),
                       @"request_wait_seconds": @(use_mlx ? 0.0 :
-                          streaming_after.wait_seconds - streaming_before.wait_seconds),
+                          (exact_streaming ? exact_counters.wait_seconds :
+                           streaming_after.wait_seconds - streaming_before.wait_seconds)),
                       @"implementation": use_mlx ? @"cpp_mlx" :
                           (exact_streaming ? exact_implementation : @"c_metal"),
                       @"layout_digest": exact_streaming ?
@@ -4271,8 +4365,8 @@ public:
                 exact_counters.slot_bundles,
                 exact_counters.fills,
                 exact_counters.fills,
-                0.0,
-                0.0,
+                exact_request_load_seconds,
+                exact_counters.wait_seconds,
             };
             StreamingRuntimeMetrics runtime;
             runtime.implementation = public_stream_lease_ ?

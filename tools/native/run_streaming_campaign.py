@@ -80,6 +80,10 @@ SEQUENCES = {
     "ABBA": ("baseline", "candidate", "candidate", "baseline"),
     "BAAB": ("candidate", "baseline", "baseline", "candidate"),
 }
+ARTIFACT_CANONICALIZERS = {
+    "raw-sha256-v1",
+    "ffmpeg-rgb24-v1",
+}
 
 
 class CampaignError(RuntimeError):
@@ -369,6 +373,11 @@ def validate_policy(policy: dict[str, Any]) -> None:
             raise CampaignError("quality artifact names must be unique strings")
         if not isinstance(path, str) or not path:
             raise CampaignError(f"quality artifact {name} needs a path template")
+        canonicalizer = artifact.get("canonicalizer", "raw-sha256-v1")
+        if canonicalizer not in ARTIFACT_CANONICALIZERS:
+            raise CampaignError(
+                f"quality artifact {name} has unsupported canonicalizer"
+            )
         names.add(name)
     for variant in VARIANTS:
         config = variants[variant]
@@ -581,10 +590,13 @@ def run_worker_request(
             worker.pid, evidence_path, command["run_id"], memory_config
         )
         sampler.start()
+    worker_command = command
+    if should_sample:
+        worker_command = {**command, "defer_artifact_hashing": True}
     response: dict[str, Any] | None = None
     request_error: BaseException | None = None
     try:
-        response = worker.run(command)
+        response = worker.run(worker_command)
     except BaseException as exc:
         request_error = exc
     finally:
@@ -609,6 +621,14 @@ def run_worker_request(
         raise request_error
     if response is None:
         raise CampaignError("worker returned no response")
+    if (
+        should_sample and response.get("status") == "success" and
+        worker_command.get("defer_artifact_hashing") is True
+    ):
+        response["artifacts"] = hash_artifacts(
+            command["artifact_paths"],
+            command.get("artifact_canonicalizers"),
+        )
     return response
 
 
@@ -1077,22 +1097,105 @@ def snapshot_native_audit(library: Any) -> dict[str, Any] | None:
     return value
 
 
-def hash_artifacts(paths: dict[str, str]) -> dict[str, Any]:
+def canonical_artifact_digest(
+    path: Path, canonicalizer: str
+) -> tuple[str, int, dict[str, Any]]:
+    if canonicalizer == "raw-sha256-v1":
+        return sha256_file(path), path.stat().st_size, {}
+    if canonicalizer != "ffmpeg-rgb24-v1":
+        raise CampaignError(
+            f"unsupported quality artifact canonicalizer: {canonicalizer}"
+        )
+    executable = shutil.which("ffmpeg")
+    if not executable:
+        raise CampaignError(
+            "ffmpeg-rgb24-v1 requires ffmpeg on PATH"
+        )
+    completed = subprocess.run(
+        [
+            executable, "-nostdin", "-v", "error", "-i", str(path),
+            "-map", "0:v:0", "-fps_mode", "passthrough", "-f",
+            "rawvideo", "-pix_fmt", "rgb24", "-",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode:
+        diagnostic = completed.stderr.decode(errors="replace").strip()
+        raise CampaignError(
+            "ffmpeg-rgb24-v1 failed" +
+            (f": {diagnostic[-2000:]}" if diagnostic else "")
+        )
+    version = subprocess.run(
+        [executable, "-version"], capture_output=True, text=True,
+        check=False,
+    )
+    version_line = next(
+        (line for line in version.stdout.splitlines() if line.strip()), ""
+    )
+    return (
+        sha256_bytes(completed.stdout), len(completed.stdout),
+        {
+            "canonicalizer_executable": str(Path(executable).resolve()),
+            "canonicalizer_executable_sha256": sha256_file(
+                Path(executable).resolve()
+            ),
+            "canonicalizer_version": version_line,
+        },
+    )
+
+
+def hash_artifacts(
+    paths: dict[str, str], canonicalizers: dict[str, str] | None = None
+) -> dict[str, Any]:
     result: dict[str, Any] = {}
+    canonicalizers = canonicalizers or {}
     for name, raw_path in paths.items():
         path = Path(raw_path)
         if path.is_file():
+            canonicalizer = canonicalizers.get(name, "raw-sha256-v1")
+            source_digest = sha256_file(path)
+            try:
+                digest, canonical_bytes, metadata = canonical_artifact_digest(
+                    path, canonicalizer
+                )
+            except CampaignError as exc:
+                result[name] = {
+                    "path": str(path),
+                    "bytes": path.stat().st_size,
+                    "source_sha256": source_digest,
+                    "sha256": None,
+                    "canonicalizer": canonicalizer,
+                    "error": str(exc),
+                }
+                continue
             result[name] = {
                 "path": str(path),
                 "bytes": path.stat().st_size,
-                "sha256": sha256_file(path),
+                "source_sha256": source_digest,
+                "sha256": digest,
+                "canonical_bytes": canonical_bytes,
+                "canonicalizer": canonicalizer,
+                **metadata,
             }
         else:
             result[name] = {
                 "path": str(path), "bytes": None, "sha256": None,
+                "canonicalizer": canonicalizers.get(
+                    name, "raw-sha256-v1"
+                ),
                 "error": "artifact is missing or not a regular file",
             }
     return result
+
+
+def artifacts_for_worker(command: dict[str, Any]) -> dict[str, Any]:
+    if command.get("defer_artifact_hashing") is True:
+        return {}
+    return hash_artifacts(
+        command["artifact_paths"],
+        command.get("artifact_canonicalizers"),
+    )
 
 
 def run_native_sample(
@@ -1161,7 +1264,7 @@ def run_native_sample(
         "streaming_implementation": extract_streaming_implementation(result),
         "engine_lifecycle": engine_lifecycle,
         "block_counters": block,
-        "artifacts": hash_artifacts(command["artifact_paths"]),
+        "artifacts": artifacts_for_worker(command),
         "process_peak_rss_bytes": peak_rss_bytes(),
         "runtime_audit": {
             "audit_available": audit_available,
@@ -1239,7 +1342,7 @@ def run_synthetic_sample(
         ),
         "engine_lifecycle": engine_lifecycle,
         "block_counters": synthetic.get("block_counters", {"enabled": False}),
-        "artifacts": hash_artifacts(command["artifact_paths"]),
+        "artifacts": artifacts_for_worker(command),
         "process_peak_rss_bytes": peak_rss_bytes(),
         "runtime_audit": deepcopy(synthetic.get("runtime_audit", {
             "audit_available": True,
@@ -1363,7 +1466,7 @@ def run_probe_sample(
         "streaming_implementation": extract_streaming_implementation(result),
         "engine_lifecycle": engine_lifecycle,
         "block_counters": block,
-        "artifacts": hash_artifacts(command["artifact_paths"]),
+        "artifacts": artifacts_for_worker(command),
         "process_peak_rss_bytes": peak_rss_bytes(),
         "runtime_audit": runtime_audit,
         "probe_result": result,
@@ -1569,7 +1672,7 @@ def planned_samples(blocks: int) -> list[dict[str, Any]]:
 
 def request_for(
     policy: dict[str, Any], sample: dict[str, Any], output: Path,
-) -> tuple[dict[str, Any], dict[str, str]]:
+) -> tuple[dict[str, Any], dict[str, str], dict[str, str]]:
     variant = sample["variant"]
     config = policy["variants"][variant]
     base = config.get("request", policy["workload"]["request"])
@@ -1602,7 +1705,11 @@ def request_for(
         item["name"]: expand(item["path"], replacements)
         for item in policy["quality"]["artifacts"]
     }
-    return request, artifacts
+    canonicalizers = {
+        item["name"]: item.get("canonicalizer", "raw-sha256-v1")
+        for item in policy["quality"]["artifacts"]
+    }
+    return request, artifacts, canonicalizers
 
 
 def make_quality(raw: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1941,10 +2048,13 @@ def run_campaign(
                     "variant": variant,
                     "run_id": f"warmup-{warmup_index:03d}-{variant}",
                 }
-                request, artifacts = request_for(policy, sample, output)
+                request, artifacts, canonicalizers = request_for(
+                    policy, sample, output
+                )
                 command = {
                     "type": "run", **sample, "request": request,
                     "artifact_paths": artifacts,
+                    "artifact_canonicalizers": canonicalizers,
                 }
                 try:
                     response = run_worker_request(
@@ -1997,10 +2107,13 @@ def run_campaign(
                             f"{variant}-generation-{generation:03d}.log",
                             timeout, start_timeout,
                         )
-                request, artifacts = request_for(policy, sample, output)
+                request, artifacts, canonicalizers = request_for(
+                    policy, sample, output
+                )
                 command = {
                     "type": "run", **sample, "sample_index": sample_index,
                     "request": request, "artifact_paths": artifacts,
+                    "artifact_canonicalizers": canonicalizers,
                 }
                 try:
                     response = run_worker_request(

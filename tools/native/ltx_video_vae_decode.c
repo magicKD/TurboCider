@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <limits.h>
 
 static void fail(const char *message) {
     fprintf(stderr, "ltx-video-vae-decode: %s\n", message);
@@ -23,6 +24,17 @@ static uint32_t parse_u32(const char *text, const char *label) {
         exit(2);
     }
     return (uint32_t)value;
+}
+
+static int checkpoint_fd_from_environment(void) {
+    const char *text = getenv("TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD");
+    if (!text || !text[0]) return -1;
+    char *end = NULL;
+    errno = 0;
+    long value = strtol(text, &end, 10);
+    if (errno || end == text || *end || value < 0 || value > INT_MAX)
+        fail("invalid TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD");
+    return (int)value;
 }
 
 static void *read_exact(const char *path, size_t bytes) {
@@ -113,8 +125,11 @@ int main(int argc, char **argv) {
     if (!output) fail("out of memory allocating decoded pixels");
 
     char error[2048] = {0};
-    ltx_mlx_video_vae *vae = ltx_mlx_video_vae_create(
-        argv[1], error, sizeof(error));
+    const int checkpoint_fd = checkpoint_fd_from_environment();
+    ltx_mlx_video_vae *vae = checkpoint_fd >= 0 ?
+        ltx_mlx_video_vae_create_fd(checkpoint_fd, argv[1], error,
+                                    sizeof(error)) :
+        ltx_mlx_video_vae_create(argv[1], error, sizeof(error));
     if (!vae) fail(error[0] ? error : "cannot load Video VAE");
     clock_gettime(CLOCK_MONOTONIC, &weight_load_finished);
     int ok = ltx_mlx_video_vae_decode_tokens_bf16(
