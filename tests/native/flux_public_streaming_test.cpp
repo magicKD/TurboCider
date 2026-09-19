@@ -88,6 +88,9 @@ int main(int argc, char **argv) {
         assert(probe->workload_identity().height == 256);
         assert(probe->workload_identity().steps == 3);
         assert(probe->workload_identity().token_shapes.size() == 1);
+        assert(probe->workload_identity().feature_digest.size() == 64);
+        assert(probe->workload_identity().feature_digest.find_first_not_of(
+                   "0123456789abcdef") == std::string::npos);
 
         const auto value_probe = std::dynamic_pointer_cast<
             const tc::streaming::ValueModelStreamingProbe>(probe);

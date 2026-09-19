@@ -82,9 +82,23 @@ streaming::PresetSourceIdentity flux_public_source_identity(
 
 streaming::PresetRuntimeIdentity flux_public_runtime_identity() {
     return {"turbocider-streaming-2026-09-18", "public-streaming-runtime-v2",
-            "flux2-klein-9b-public-adapter-v1",
+            "flux2-klein-9b-public-adapter-v2-feature-digest",
             "flux2-sharded-pread-bf16-lease-v1", kFluxExactKernelRevision,
             "mlx-request-cache-policy-v1"};
+}
+
+std::string flux_public_feature_digest(const Request &request) {
+    streaming::CanonicalEncoder encoder(
+        "flux2-klein-9b-public-workload-features-v1");
+    encoder.boolean_field("inputs_empty", request.inputs.empty());
+    encoder.boolean_field("loras_empty", request.loras.empty());
+    encoder.boolean_field("ane_disabled", request.ane_manifest.empty());
+    encoder.boolean_field(
+        "encoder_ane_disabled", request.encoder_ane_manifest.empty());
+    encoder.boolean_field("compile_gpu", request.compile_gpu);
+    encoder.boolean_field("dynamic_text", request.dynamic_text);
+    encoder.unsigned_field("reference_token_rows", 0);
+    return encoder.sha256();
 }
 
 } // namespace
@@ -162,7 +176,7 @@ Flux::probe_public_streaming(
     workload.approximation = false;
     workload.conditioning_revision = "qwen3-flux2-klein-v1";
     workload.vae_policy_revision = "flux2-vae-v1";
-    workload.feature_digest = std::string("reference_tokens:0");
+    workload.feature_digest = flux_public_feature_digest(request);
     workload.token_shapes.push_back({
         "qwen3", "qwen3-flux2-v1", "flux2-template-v1",
         static_cast<uint32_t>(tokens.valid),
