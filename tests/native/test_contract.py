@@ -1218,6 +1218,11 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(converter.is_file())
         self.assertIn('ltx_mlx_video_vae_decode_tokens_bf16',
                       finalizer.read_text())
+        self.assertIn('TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD',
+                      finalizer.read_text())
+        self.assertIn('ltx_mlx_video_vae_create_fd',finalizer.read_text())
+        self.assertIn('F_DUPFD',session)
+        self.assertIn('public_stream_lease_->revalidate_after_drain()',session)
         self.assertIn('ltx_video_bf16_planar_to_rgb24',
                       finalizer.read_text())
         self.assertIn('ltx_mlx_audio_vae_decode_bf16',

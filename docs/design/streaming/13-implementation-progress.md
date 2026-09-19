@@ -2613,3 +2613,30 @@ git diff --check                                                PASS
 
 发布边界不变：LTX 20 GiB P2 仍为 FAIL；production catalog 仍为空；下一 LTX runtime 工作是 fd-backed
 process replacement/disposable worker，而不是继续把 spawn helper 误当作 hard-cap 方案。
+
+### 13.52 Exec finalizer 的 SourceLease fd closure（2026-09-19）
+
+本轮把已有的 disposable `exec_ltx_video_finalizer()` 从 path-only helper 收口到可选 fd authority：
+
+- parent 在 exec 前调用 `public_stream_lease_->revalidate_after_drain()`，随后 duplicate
+  `kLtxPublicVideoVaeLogicalId`；
+- `exec_ltx_video_finalizer()` 使用 `F_DUPFD` 保留一个不会带 `FD_CLOEXEC` 的继承 fd，并通过
+  `TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD` 传给 replacement process；exec 失败时显式关闭 inherited fd；
+- `tools/native/ltx_video_finalizer.mm` 有 fd 时调用 `ltx_mlx_video_vae_create_fd()`，没有 fd 时保持原 path
+  fallback；path 只用于 diagnostic/identity，不重新获得 public source authority；
+- 当前只接入已存在的 `TURBOCIDER_LTX_EXEC_FINALIZER` disposable/private worker 入口，尚未把 public
+  selector 自动设置成 exec finalizer。原因是 finalizer JSON 仍需补充并验证父进程的 multi-stage public receipt，
+  不能让 child 直接绕过 `tc_engine_generate()` 的 common public result verifier。
+
+使用现有 512×320×33、Stage-2 latent 做 path/fd paired smoke：
+
+```text
+path Video VAE decode: 约 1.102 s
+fd   Video VAE decode: 约 1.080 s
+path decoded RGB SHA-256: 337eded06cb5f32d0bc982ebadbe86775a1f07cd302421809198ccdcb5392ba2
+fd   decoded RGB SHA-256: 337eded06cb5f32d0bc982ebadbe86775a1f07cd302421809198ccdcb5392ba2
+```
+
+验证命令还通过了完整 `test_contract.py`（83 tests，1 个缺 fixture 的预期 skip）、streaming host/contract/audit
+和 LTX public adapter 回归。该阶段只证明 source authority 和数值 parity；LTX 20 GiB process-tree peak、
+multi-stage public result envelope、P0/P1/P2/P3 和 production catalog 仍未完成。

@@ -18,6 +18,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -45,6 +46,18 @@ uint32_t parse_u32(const char* text, const char* label) {
         throw std::runtime_error(std::string("invalid ") + label);
     }
     return static_cast<uint32_t>(value);
+}
+
+int environment_fd(const char* name) {
+    const char* text = std::getenv(name);
+    if (!text || !text[0]) return -1;
+    char* end = nullptr;
+    errno = 0;
+    long value = std::strtol(text, &end, 10);
+    if (errno || end == text || *end || value < 0 ||
+        value > std::numeric_limits<int>::max())
+        throw std::runtime_error(std::string("invalid ") + name);
+    return static_cast<int>(value);
 }
 
 std::vector<uint16_t> read_exact(const std::filesystem::path& path,
@@ -184,8 +197,12 @@ int main(int argc, char** argv) {
         const auto video_input_read = Clock::now();
         std::vector<uint16_t> pixels(pixel_elements);
         char error[2048] = {};
-        ltx_mlx_video_vae* vae = ltx_mlx_video_vae_create(
-            argv[1], error, sizeof(error));
+        const int video_vae_fd = environment_fd(
+            "TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD");
+        ltx_mlx_video_vae* vae = video_vae_fd >= 0 ?
+            ltx_mlx_video_vae_create_fd(
+                video_vae_fd, argv[1], error, sizeof(error)) :
+            ltx_mlx_video_vae_create(argv[1], error, sizeof(error));
         if (!vae) throw std::runtime_error(error[0] ? error : "cannot load Video VAE");
         const auto video_weight_loaded = Clock::now();
         const int ok = ltx_mlx_video_vae_decode_tokens_bf16(

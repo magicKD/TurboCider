@@ -34,6 +34,7 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <exception>
+#include <fcntl.h>
 #include <fstream>
 #include <functional>
 #include <limits>
@@ -1132,7 +1133,8 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
         const std::vector<uint16_t>& audio_latent,
         const ltx_workload& workload,
         const Request& request,
-        const std::string& execution) {
+        const std::string& execution,
+        int checkpoint_fd = -1) {
     require(std::filesystem::is_regular_file(helper),
             "LTX Video VAE exec finalizer is missing: " + helper.string());
     auto template_path = std::filesystem::temp_directory_path() /
@@ -1181,10 +1183,33 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
     for (size_t index = 0; index < arguments.size(); ++index)
         argv.push_back(arguments[index].data());
     argv.push_back(nullptr);
+    int inherited_checkpoint_fd = -1;
+    std::vector<std::string> environment_storage;
+    std::vector<char*> environment;
+    for (char* const* entry = ::environ; entry && *entry; ++entry) {
+        std::string value(*entry);
+        if (value.rfind("TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD=", 0) == 0)
+            continue;
+        environment_storage.push_back(std::move(value));
+    }
+    if (checkpoint_fd >= 0) {
+        inherited_checkpoint_fd = ::fcntl(checkpoint_fd, F_DUPFD, 198);
+        require(inherited_checkpoint_fd >= 0,
+                "cannot inherit LTX Video VAE checkpoint fd for finalizer");
+        environment_storage.push_back(
+            "TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD=" +
+            std::to_string(inherited_checkpoint_fd));
+    }
+    environment.reserve(environment_storage.size() + 1u);
+    for (auto& entry : environment_storage)
+        environment.push_back(entry.data());
+    environment.push_back(nullptr);
     fflush(nullptr);
-    ::execve(helper.c_str(), argv.data(), ::environ);
+    ::execve(helper.c_str(), argv.data(), environment.data());
+    const int exec_error = errno;
+    if (inherited_checkpoint_fd >= 0) ::close(inherited_checkpoint_fd);
     throw std::runtime_error("exec LTX Video VAE finalizer: " +
-                             std::string(std::strerror(errno)));
+                             std::string(std::strerror(exec_error)));
 }
 
 struct Conditioning {
@@ -3858,10 +3883,16 @@ public:
                      conditioning.cache_hit ? "1" : "0", 1);
             ::setenv("TURBOCIDER_LTX_CONDITIONING_MODE",
                      conditioning_mode.c_str(), 1);
+            streaming::OwnedSourceFd public_video_vae_fd;
+            if (public_stream_lease_) {
+                public_stream_lease_->revalidate_after_drain();
+                public_video_vae_fd = public_stream_lease_->duplicate_fd(
+                    kLtxPublicVideoVaeLogicalId);
+            }
             exec_ltx_video_finalizer(
                 video_vae_finalizer_path_, video_vae_path_, video,
                 audio_checkpoint_path_, audio, workload, request,
-                effective_execution);
+                effective_execution, public_video_vae_fd.get());
         }
         std::string video_vae_isolation;
         const size_t pixel_count = static_cast<size_t>(3) * workload.frames *
