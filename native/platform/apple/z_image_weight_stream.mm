@@ -282,29 +282,32 @@ void ZImageWeightStream::load_fixed_and_prefix(
 }
 
 void ZImageWeightStream::configure_exact(
-        unsigned pinned_blocks, uint64_t budget,
+        unsigned pinned_blocks, uint32_t slot_count, uint64_t budget,
         uint64_t activation_reserve, Weights &fixed,
         const Event &event) {
     uint64_t block_bytes = 0, fixed_bytes = 0;
     for (const auto &r : blocks_[0]) block_bytes += r.bytes;
     for (const auto &r : fixed_records_) fixed_bytes += r.bytes;
-    require(pinned_blocks <= 28,
-            "Z-Image exact streaming requires at least two suffix blocks");
+    require(slot_count >= 1 && slot_count <= slots_.size(),
+            "Z-Image exact streaming requires one or two refill slots");
+    require(pinned_blocks <= blocks_.size() - slot_count,
+            "Z-Image exact streaming requires at least one suffix block per slot");
     require(fixed_bytes <= UINT64_MAX - activation_reserve,
             "Z-Image exact streaming reserve overflow");
     const uint64_t reserved = activation_reserve + fixed_bytes;
-    require(uint64_t(pinned_blocks + 2u) <=
+    require(uint64_t(pinned_blocks) + slot_count <=
                 (UINT64_MAX - reserved) / block_bytes,
             "Z-Image exact streaming working set overflow");
     const uint64_t working_set =
-        reserved + uint64_t(pinned_blocks + 2u) * block_bytes;
+        reserved + (uint64_t(pinned_blocks) + slot_count) * block_bytes;
     require(!budget || working_set <= budget,
             "Z-Image exact layout exceeds the selected memory budget");
+    exact_slot_count_ = slot_count;
     metrics_.enabled = true;
     metrics_.active_blocks = 30;
     metrics_.pinned_blocks = pinned_blocks;
     metrics_.streamed_blocks = 30 - pinned_blocks;
-    metrics_.refill_slots = 2;
+    metrics_.refill_slots = slot_count;
     metrics_.memory_budget_bytes = budget;
     metrics_.activation_reserve_bytes = reserved;
     metrics_.block_bytes = block_bytes;
@@ -352,11 +355,19 @@ ZImageWeightStream::ZImageWeightStream(
         const std::filesystem::path &path, unsigned pinned_blocks,
         uint64_t budget, uint64_t activation_reserve, Weights &fixed,
         const Event &event, std::atomic<bool> &cancelled)
+    : ZImageWeightStream(path, pinned_blocks, 2, budget,
+                         activation_reserve, fixed, event, cancelled) {}
+
+ZImageWeightStream::ZImageWeightStream(
+        const std::filesystem::path &path, unsigned pinned_blocks,
+        uint32_t slot_count, uint64_t budget, uint64_t activation_reserve,
+        Weights &fixed, const Event &event, std::atomic<bool> &cancelled)
     : cancelled_(cancelled), exact_layout_(true) {
     try {
         index(path);
         configure_exact(
-            pinned_blocks, budget, activation_reserve, fixed, event);
+            pinned_blocks, slot_count, budget, activation_reserve, fixed,
+            event);
     } catch (...) {
         if (packed_fd_ >= 0) ::close(packed_fd_);
         packed_fd_ = -1;
@@ -372,6 +383,14 @@ ZImageWeightStream::ZImageWeightStream(
         unsigned pinned_blocks, uint64_t budget,
         uint64_t activation_reserve, Weights &fixed,
         const Event &event, std::atomic<bool> &cancelled)
+    : ZImageWeightStream(std::move(lease), pinned_blocks, 2, budget,
+                         activation_reserve, fixed, event, cancelled) {}
+
+ZImageWeightStream::ZImageWeightStream(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        unsigned pinned_blocks, uint32_t slot_count, uint64_t budget,
+        uint64_t activation_reserve, Weights &fixed,
+        const Event &event, std::atomic<bool> &cancelled)
     : lease_(std::move(lease)), cancelled_(cancelled), exact_layout_(true) {
     try {
         require(lease_ != nullptr,
@@ -379,7 +398,8 @@ ZImageWeightStream::ZImageWeightStream(
         const auto &file = lease_->file("transformer");
         index(file.path, lease_->duplicate_fd("transformer"));
         configure_exact(
-            pinned_blocks, budget, activation_reserve, fixed, event);
+            pinned_blocks, slot_count, budget, activation_reserve, fixed,
+            event);
     } catch (...) {
         if (packed_fd_ >= 0) ::close(packed_fd_);
         packed_fd_ = -1;
@@ -459,10 +479,12 @@ Weights ZImageWeightStream::acquire(int block) {
 
 void ZImageWeightStream::create_exact_pool(
         uint32_t slots, uint64_t capacity_bytes) {
-    require(exact_layout_ && !exact_pool_live_ && slots == slots_.size() &&
+    require(exact_layout_ && !exact_pool_live_ &&
+                slots == exact_slot_count_ &&
                 capacity_bytes == metrics_.block_bytes,
-            "Z-Image exact pool differs from the compiled K2 layout");
-    for (auto &slot : slots_) {
+            "Z-Image exact pool differs from the compiled K1/K2 layout");
+    for (uint32_t index = 0; index < exact_slot_count_; ++index) {
+        auto &slot = slots_[index];
         require(slot.arrays.empty() && !slot.pending.valid(),
                 "Z-Image exact slot already owns backing");
         allocate(slot, blocks_[0]);
@@ -485,7 +507,8 @@ void ZImageWeightStream::destroy_exact_pool() noexcept {
 uint64_t ZImageWeightStream::fill_exact(
         uint32_t slot_index, uint32_t block,
         const std::atomic<bool> *worker_cancel) {
-    require(exact_layout_ && exact_pool_live_ && slot_index < slots_.size() &&
+    require(exact_layout_ && exact_pool_live_ &&
+                slot_index < exact_slot_count_ &&
                 block >= metrics_.pinned_blocks && block < blocks_.size(),
             "invalid Z-Image exact fill target");
     auto &slot = slots_[slot_index];
@@ -504,7 +527,8 @@ uint64_t ZImageWeightStream::fill_exact(
 
 Weights ZImageWeightStream::bind_exact(
         uint32_t slot_index, uint32_t block) const {
-    require(exact_layout_ && exact_pool_live_ && slot_index < slots_.size() &&
+    require(exact_layout_ && exact_pool_live_ &&
+                slot_index < exact_slot_count_ &&
                 slots_[slot_index].block == int(block),
             "Z-Image exact slot content identity mismatch");
     return bind(slots_[slot_index], int(block));

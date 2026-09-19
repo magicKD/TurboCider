@@ -38,6 +38,11 @@ class ZImageWeightStream {
     std::array<std::vector<Record>, 30> blocks_;
     std::vector<Weights> pinned_;
     std::array<Slot, 2> slots_;
+    // Exact public layouts may use one slot for the lowest memory tier or two
+    // slots for the normal double-buffered path.  Keep the backing container
+    // fixed-size so the legacy path remains allocation-free, but only expose
+    // the compiled number of exact slots to the executor.
+    uint32_t exact_slot_count_ = 2;
     std::atomic<bool> &cancelled_;
     BlockResidencyMetrics metrics_;
     int expected_block_ = 0;
@@ -58,7 +63,8 @@ class ZImageWeightStream {
     Weights bind(const Slot &, int) const;
     void prefetch(int);
     void load_fixed_and_prefix(unsigned, Weights &, const Event &);
-    void configure_exact(unsigned pinned_blocks, uint64_t budget,
+    void configure_exact(unsigned pinned_blocks, uint32_t slot_count,
+                         uint64_t budget,
                          uint64_t activation_reserve, Weights &fixed,
                          const Event &event);
 
@@ -73,8 +79,17 @@ class ZImageWeightStream {
     ZImageWeightStream(const std::filesystem::path &, unsigned pinned_blocks,
                        uint64_t budget, uint64_t activation_reserve,
                        Weights &fixed, const Event &, std::atomic<bool> &);
+    ZImageWeightStream(const std::filesystem::path &, unsigned pinned_blocks,
+                       uint32_t slot_count, uint64_t budget,
+                       uint64_t activation_reserve,
+                       Weights &fixed, const Event &, std::atomic<bool> &);
     ZImageWeightStream(std::shared_ptr<const streaming::SourceLease>,
                        unsigned pinned_blocks, uint64_t budget,
+                       uint64_t activation_reserve, Weights &fixed,
+                       const Event &, std::atomic<bool> &);
+    ZImageWeightStream(std::shared_ptr<const streaming::SourceLease>,
+                       unsigned pinned_blocks, uint32_t slot_count,
+                       uint64_t budget,
                        uint64_t activation_reserve, Weights &fixed,
                        const Event &, std::atomic<bool> &);
     ~ZImageWeightStream();

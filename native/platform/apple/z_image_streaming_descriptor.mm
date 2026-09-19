@@ -386,8 +386,8 @@ streaming::Descriptor StreamingMetadata::describe(
 
     streaming::StageDescriptor stage;
     stage.id = "denoiser";
-    stage.adapter_revision = "z-image-bf16-double-buffer-v1-metadata";
-    stage.min_slots = 2;
+    stage.adapter_revision = "z-image-bf16-refill-pool-v2-metadata";
+    stage.min_slots = 1;
     stage.max_slots = 2;
     stage.max_group_size = 1;
     stage.min_prefix = 0;
@@ -447,12 +447,13 @@ void StreamingPlanView::validate() const {
                      "Z-Image shadow requires one stage");
     const auto &stage = layout_.stages.front();
     require_metadata(stage.id == "denoiser" && !stage.resident &&
-                         stage.group_size == 1 && stage.slot_count == 2 &&
+                         stage.group_size == 1 && stage.slot_count >= 1 &&
+                         stage.slot_count <= 2 &&
                          stage.distance == 0 && stage.workers == 1 &&
                          stage.pass_transition ==
                              streaming::PassTransition::reload &&
                          stage.pools.size() == 1,
-                     "Z-Image shadow requires K=2/G=1/D=0/Q=1 reload");
+                     "Z-Image shadow requires K=1 or K=2/G=1/D=0/Q=1 reload");
     require_metadata(stage.prefix < descriptor_.stages.front().blocks.size() &&
                          stage.groups.size() ==
                              descriptor_.stages.front().blocks.size() -

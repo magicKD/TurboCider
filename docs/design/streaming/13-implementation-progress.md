@@ -2236,3 +2236,51 @@ git diff --check                          PASS
 这一节只关闭了“P3 永远 unsupported”和“手写 binding 容易漂移”的代码级阻断；当前仍没有任何真实
 natural-swap pressure evidence，四模型也仍没有 P2/P3 production bundle。下一步是使用 generator 为
 Z-Image Turbo 冻结首张 full-request card，并在专用低内存设备上实际运行 P0/P1/P2/P3。
+
+### 13.45 Z-Image exact K1/K2 layout 与 10 GiB 探索状态（2026-09-19）
+
+本轮将 Z-Image exact adapter 从固定双槽扩展为明确的 K1/K2 两种布局，同时保持 legacy/resident 路径不变：
+
+- `ZImageWeightStream` 根据编译后的 `slot_count` 创建、填充、绑定和计数实际槽位；固定大小的 backing
+  容器只用于保持旧路径的无额外分配语义；
+- K1 只允许一个 refill slot，并关闭 `overlap_next_fill_after_claim()`，因此其调度是串行
+  load/compute，K2 保留原有双槽 overlap；
+- descriptor 现在允许 `slot_count=1|2`、`G1/D0/Q1/reload`，layout digest 随 K 改变；
+- K1 exact 请求延迟到 denoise 完成后才加载 VAE，并将 MLX allocator cache 设置为零；denoiser pool
+  在进入 VAE 前 drain/release。K2、legacy streamed、resident 和 Off 路径不采用该生命周期改变；
+- public runtime identity 升级为 `z-image-public-adapter-v2-k1-k2`，allocator policy 为
+  `mlx-request-cache-policy-v2-k1-zero-cache`，避免旧 record 误匹配新布局。
+
+本轮验证：
+
+```text
+env TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh             PASS
+test_z_image_streaming_descriptor.py                          PASS
+test_z_image_candidate_streaming_gate.py                       PASS
+test_z_image_public_streaming.py                               PASS
+test_streaming_contract.py                                     PASS (12 tests)
+```
+
+public gate 仍然在空 production catalog 前 fail-closed；private candidate 可以进入 generic exact
+route。本阶段实现没有生成 production record。
+
+已完成的 Z-Image 10 GiB 探索性 K2/P9 结果仍只能作为 layout 选择参考：
+
+```text
+target:             10 GiB
+layout:             P9/G1/K2/D0/Q1
+candidate peak P95: 9,520,771,123.6 bytes
+allowed peak:       9,663,676,416 bytes
+wall median ratio:  1.04753
+denoise ratio:      1.01301
+swap out:           0
+```
+
+该 campaign 只有 2 个 matched pairs，fresh-process/audit 条件也未达到正式 P2 要求，因此结果为
+`INCONCLUSIVE`，余量只有约 143 MiB，不能进入 catalog。随后已准备 P7/G1/K2/D0/Q1 policy 以增加
+10 GiB 安全余量；本轮实体 Metal campaign 未获得执行授权，故没有写入任何 P7 峰值或性能结论。
+正式下一步仍是：在可访问真实 Metal 的专用环境运行 P7 campaign；只有在完整 20-request、fresh
+process、process-tree、quality、audit 和 no-swap 条件通过后，才可启动正式 P2。
+
+本节不改变以下事实：Z-Image 8 GiB K1 探索此前超出 allowed headroom，四模型 production catalog
+仍为空，ANE+streaming 仍未认证，且 P3 natural-swap 尚未执行。

@@ -44,6 +44,7 @@ class ZImage final : public ModelSession {
     uint64_t public_stream_target_bytes_ = 0;
 
     void select_loras(const Request &);
+    void load_vae(const Event &, std::atomic<bool> &);
     Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);
     Tensor denoise(const Tensor &, const Tensor &, float, float, int, int,
                    const Event &, std::atomic<bool> &);

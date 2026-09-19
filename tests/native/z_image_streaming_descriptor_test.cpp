@@ -104,6 +104,17 @@ int main(int argc, char **argv) {
             assert(stage.groups[index].slot == index % 2);
         }
 
+        const tc::z_image::StreamingPlanView single_slot(
+            valid, config(0, 1), work);
+        const auto &single_stage = single_slot.layout().stages.at(0);
+        assert(single_stage.prefix == 0 && single_stage.slot_count == 1 &&
+               single_stage.groups.size() == 30 &&
+               single_stage.peak_pool_bytes == metadata.block_bytes());
+        for (const auto &group : single_stage.groups)
+            assert(group.slot == 0 && group.pool == 0 &&
+                   group.blocks.size() == 1);
+        assert(single_slot.layout().digest != plan.layout().digest);
+
         const tc::z_image::StreamingPlanView repeat(valid, config(), work);
         assert(repeat.layout().canonical == plan.layout().canonical);
         assert(repeat.layout().digest == plan.layout().digest);
@@ -126,9 +137,6 @@ int main(int argc, char **argv) {
             valid, config(), changed);
         assert(changed_steps.layout().digest != plan.layout().digest);
 
-        rejects([&] { tc::z_image::StreamingPlanView value(
-                          valid, config(3, 1), work); },
-                "slot count");
         rejects([&] { tc::z_image::StreamingPlanView value(
                           valid, config(3, 3), work); },
                 "slot count");
@@ -175,7 +183,7 @@ int main(int argc, char **argv) {
                 "source fd changed");
 
         std::cout << "PASS Z-Image descriptor: header-only 30x13 BF16 "
-                     "projection, shared SourceLease, K2/G1/D0/Q1 layout, "
+                     "projection, shared SourceLease, K1/K2 G1/D0/Q1 layouts, "
                      "malformed metadata and stale snapshot rejection; layout="
                   << plan.layout().digest << '\n';
     } catch (const std::exception &error) {

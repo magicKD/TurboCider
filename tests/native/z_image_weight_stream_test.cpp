@@ -86,8 +86,38 @@ int main(int argc, char **argv) {
             return 0;
         }
         std::atomic<bool> cancel{false};
-        tc::Weights fixed;
         auto event = [](const std::string &, int, int) {};
+        {
+            tc::Weights exact_fixed;
+            // One refill slot is the low-memory exact layout.  It deliberately
+            // serializes read/compute, but must allocate and account for only
+            // one block-sized backing bundle.
+            tc::ZImageWeightStream exact(
+                argv[1], 3, 1, 8 + 4 * 13 * 8, 0, exact_fixed,
+                event, cancel);
+            const auto initial = exact.metrics();
+            tc::require(initial.pinned_blocks == 3 &&
+                            initial.refill_slots == 1 &&
+                            initial.estimated_working_set_bytes ==
+                                8 + 4 * 13 * 8,
+                        "single-slot exact working set is incorrect");
+            exact.create_exact_pool(1, initial.block_bytes);
+            tc::require(exact.fill_exact(0, 3, nullptr) == 13 * 8,
+                        "single-slot exact fill byte count is incorrect");
+            auto weights = exact.bind_exact(0, 3);
+            auto sum = tc::Tensor(0.f);
+            for (const auto &name : weights.sorted_keys())
+                sum = sum + tc::mx::sum(tc::mx::astype(
+                    weights.at(name), tc::mx::float32));
+            tc::require(sum.item<float>() == 4.f * 4.f,
+                        "single-slot exact fill produced incorrect values");
+            weights.clear();
+            exact.destroy_exact_pool();
+            tc::require(exact.metrics().request_slot_allocations == 1,
+                        "single-slot exact pool allocated extra backing");
+        }
+
+        tc::Weights fixed;
         // 5 block-sized allocations: 3 retained layers and two refill slots.
         tc::ZImageWeightStream stream(argv[1], 8 + 5 * 13 * 8, 0, fixed, event, cancel);
         tc::require(stream.metrics().pinned_blocks == 3, "wrong pinned count");

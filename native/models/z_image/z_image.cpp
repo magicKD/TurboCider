@@ -91,10 +91,10 @@ streaming::PresetRuntimeIdentity z_image_public_runtime_identity() {
     return {
         "turbocider-streaming-2026-09-18",
         "public-streaming-runtime-v2",
-        "z-image-public-adapter-v1",
+        "z-image-public-adapter-v2-k1-k2",
         "z-image-pread-bf16-v2-fd-lease",
         kZImageKernelRevision,
-        "mlx-request-cache-policy-v1",
+        "mlx-request-cache-policy-v2-k1-zero-cache",
     };
 }
 
@@ -137,6 +137,14 @@ bool z_image_exact_streaming_requested(const Request &request) {
     return stage != request.streaming.stages.end() &&
         stage->second.residency &&
         *stage->second.residency == "streamed";
+}
+
+uint32_t z_image_exact_slot_count(const Request &request) {
+    const auto stage = request.streaming.stages.find("denoiser");
+    if (stage == request.streaming.stages.end() ||
+        !stage->second.slot_count)
+        return 0;
+    return *stage->second.slot_count;
 }
 
 std::string z_diffusers_transformer_key(std::string key) {
@@ -1085,6 +1093,7 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
 
     ZImageWeightStream &source_;
     uint32_t prefix_ = 0;
+    uint32_t slot_count_ = 0;
     const Event &event_;
     std::atomic<bool> &cancelled_;
     std::array<Job, 2> jobs_{};
@@ -1103,9 +1112,13 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
 
   public:
     ZImageExactAdapter(ZImageWeightStream &source, uint32_t prefix,
+                       uint32_t slot_count,
                        const Event &event, std::atomic<bool> &cancelled)
-        : source_(source), prefix_(prefix), event_(event),
+        : source_(source), prefix_(prefix), slot_count_(slot_count),
+          event_(event),
           cancelled_(cancelled) {
+        require(slot_count_ >= 1 && slot_count_ <= jobs_.size(),
+                "Z-Image exact adapter requires one or two slots");
         for (uint32_t slot = 0; slot < jobs_.size(); ++slot) {
             jobs_[slot].owner = this;
             jobs_[slot].slot = slot;
@@ -1136,8 +1149,8 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
     }
 
     void create_pool(const streaming::PoolLayout &pool) override {
-        require(pool.id == 0 && pool.slots.size() == jobs_.size(),
-                "Z-Image exact adapter requires one K2 pool");
+        require(pool.id == 0 && pool.slots.size() == slot_count_,
+                "Z-Image exact adapter requires one compiled K1/K2 pool");
         const uint64_t capacity = pool.slots.front().capacity_bytes;
         for (const auto &slot : pool.slots)
             require(slot.capacity_bytes == capacity,
@@ -1148,7 +1161,7 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
     streaming::FillJob make_fill_job(
             const streaming::Group &group,
             const tc_stream_slot_ticket_v1 &ticket) override {
-        require(group.blocks.size() == 1 && ticket.slot < jobs_.size(),
+        require(group.blocks.size() == 1 && ticket.slot < slot_count_,
                 "Z-Image exact fill requires one block and a valid slot");
         auto &job = jobs_[ticket.slot];
         job.block = group.blocks.front();
@@ -1202,7 +1215,7 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
     }
 
     bool overlap_next_fill_after_claim() const noexcept override {
-        return true;
+        return slot_count_ > 1;
     }
 
     streaming::ReaderSet encode_group(
@@ -1269,10 +1282,12 @@ struct ZImageExactStream::Impl {
          const Event &event, std::atomic<bool> &cancelled,
          uint64_t request_generation)
         : plan(checkpoint.string(), config, workload),
-          source(checkpoint, plan.layout().stages.front().prefix, budget,
+          source(checkpoint, plan.layout().stages.front().prefix,
+                 plan.layout().stages.front().slot_count, budget,
                  activation_reserve, fixed, event, cancelled),
           adapter(std::make_shared<ZImageExactAdapter>(
-              source, plan.layout().stages.front().prefix, event, cancelled)),
+              source, plan.layout().stages.front().prefix,
+              plan.layout().stages.front().slot_count, event, cancelled)),
           executor(std::make_unique<streaming::StageExecutor>(
               0, request_generation, adapter)),
           cancelled(cancelled) {
@@ -1287,10 +1302,12 @@ struct ZImageExactStream::Impl {
          const Event &event, std::atomic<bool> &cancelled,
          uint64_t request_generation)
         : plan(std::move(lease), config, workload),
-          source(plan.lease_ptr(), plan.layout().stages.front().prefix, budget,
+          source(plan.lease_ptr(), plan.layout().stages.front().prefix,
+                 plan.layout().stages.front().slot_count, budget,
                  activation_reserve, fixed, event, cancelled),
           adapter(std::make_shared<ZImageExactAdapter>(
-              source, plan.layout().stages.front().prefix, event, cancelled)),
+              source, plan.layout().stages.front().prefix,
+              plan.layout().stages.front().slot_count, event, cancelled)),
           executor(std::make_unique<streaming::StageExecutor>(
               0, request_generation, adapter)),
           cancelled(cancelled) {
@@ -1676,14 +1693,7 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
             transformer_.cast_unquantized_float32(mx::bfloat16);
         event("load_z_image_transformer", 1, 1);
     }
-    if (vae_.bytes() == 0) {
-        checkpoint(cancelled);
-        event("load_z_image_vae", 0, 1);
-        load_z_component(vae_, vae_path_, event, cancelled);
-        if (diffusers_layout_)
-            normalize_z_diffusers_vae(vae_);
-        event("load_z_image_vae", 1, 1);
-    }
+    load_vae(event, cancelled);
     if (transformer_cold && !active_loras_.empty())
         lora_applied_projections_ =
             transformer_.apply_loras(active_loras_, "transformer", event, cancelled,
@@ -1700,6 +1710,18 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
     transformer_.materialize();
     vae_.materialize();
     return {uint64_t(transformer_.bytes() + vae_.bytes()), mx::get_active_memory()};
+}
+
+void ZImage::load_vae(
+        const Event &event, std::atomic<bool> &cancelled) {
+    if (vae_.bytes() != 0)
+        return;
+    checkpoint(cancelled);
+    event("load_z_image_vae", 0, 1);
+    load_z_component(vae_, vae_path_, event, cancelled);
+    if (diffusers_layout_)
+        normalize_z_diffusers_vae(vae_);
+    event("load_z_image_vae", 1, 1);
 }
 
 void ZImage::unload() {
@@ -1881,6 +1903,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     require(r.inputs.empty(), "Z-Image-Turbo currently supports text-to-image only");
     require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
     const bool exact_streaming = z_image_exact_streaming_requested(r);
+    const uint32_t exact_slot_count = exact_streaming
+        ? z_image_exact_slot_count(r) : 0;
+    const bool tight_exact = exact_streaming && exact_slot_count == 1;
     const bool legacy_streamed = r.residency == "streamed";
     const bool streamed = exact_streaming || legacy_streamed;
     const bool constrained_memory =
@@ -1910,6 +1935,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         exact_stream_.reset();
         weight_stream_.reset();
         transformer_.clear();
+        if (tight_exact)
+            vae_.clear();
         mx::clear_cache();
         stream_configuration_.clear();
     } else if (configuration != stream_configuration_ ||
@@ -1928,8 +1955,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         mx::clear_cache();
         stream_configuration_ = configuration;
     }
-    RequestCacheLimit cache_limit(streamed || constrained_memory,
-                                  r.allocator_cache_bytes);
+    RequestCacheLimit cache_limit(
+        streamed || constrained_memory,
+        tight_exact ? 0 : r.allocator_cache_bytes);
     mx::reset_peak_memory();
     select_loras(r);
     auto text_start = Clock::now();
@@ -1983,7 +2011,14 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 hybrid_ && optimizations_.z_image_suffix_streaming ? hybrid_->ane_mlp_end : 0);
         else weight_stream_->reset_metrics();
     }
-    load(event, cancelled);
+    if (tight_exact) {
+        // K1 is the minimum-memory exact layout.  Its fixed/prefix tensors are
+        // already materialized by ZImageWeightStream; loading the VAE here
+        // would keep another 320+ MiB resident throughout all denoise passes.
+        transformer_.materialize();
+    } else {
+        load(event, cancelled);
+    }
     if (load_only) {
         RunResult result;
         result.prepared = true;
@@ -2081,7 +2116,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         runtime.weight_format = "comfy-bf16-single-file";
         runtime.kernel_revision = kZImageKernelRevision;
         runtime.conditioning_recipe = "qwen3-simple-flow-shift3-v1";
-        runtime.upsample_boundary = public_stream_lease_
+        runtime.upsample_boundary = (public_stream_lease_ || tight_exact)
             ? "no-upsample;denoiser-pool-drained-before-vae"
             : "no-upsample;denoiser-pool-retained-through-vae";
         runtime.component_policy_revision = public_stream_lease_
@@ -2106,7 +2141,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                             *stage_receipt}));
         }
         exact_runtime = std::move(runtime);
-        require(exact_counters.slot_bundles == 2 &&
+        require(exact_counters.slot_bundles == stage.slot_count &&
                     exact_counters.fills ==
                         uint64_t(exact_metrics->streamed_blocks) *
                             uint64_t(r.steps) &&
@@ -2121,12 +2156,16 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         exact_stream_.reset();
         transformer_.clear();
     };
-    if (exact_streaming && public_stream_lease_) {
+    if (exact_streaming && (public_stream_lease_ || tight_exact)) {
         finish_exact_stream();
         mx::clear_cache();
     }
     profile.phase("denoise_end");
     checkpoint(cancelled);
+    if (tight_exact) {
+        load_vae(event, cancelled);
+        vae_.materialize();
+    }
     auto decode_start = Clock::now();
     auto decoded = decode(z, r.width, r.height, event, cancelled);
     dump("z_latent_final", z);
