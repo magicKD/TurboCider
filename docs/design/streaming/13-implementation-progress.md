@@ -2426,3 +2426,67 @@ overall:                  PASS
 generate_resolved、VAE boundary 和 process-tree headroom 可以一起工作。它仍不是 production release record：
 当前 evidence 来自未提交工作树和 test-template record；P0/P1 需要在同一 public authority/clean commit 上重跑，
 P3 natural-swap、四类独立 review 和 production catalog publish 仍未完成。App 的 10 GiB 选项继续 fail-closed。
+
+### 13.49 Clean-commit Z-Image P2 重跑、Flux/LTX calibration catalog 与 Flux digest 修正（2026-09-19）
+
+本轮首先在干净的 `2a21cf3` 上重建 test-hook runtime，并在实体 Apple M4 Max Metal 环境重新生成 Z-Image
+10 GiB public-semantics catalog。旧 bundle 的 source identity 为 dirty `a2fb360`，不能沿用；本轮的
+campaign 与独立 verifier 均绑定 `commit=2a21cf3`、`clean=true`、无 dirty/untracked source。
+
+Z-Image clean P2：
+
+```text
+catalog revision: tc-zimage-10g-public-calibration-2a21cf3-r1
+catalog SHA-256:  7fafd028d882aedf0d18f07ddf3fca6773d295b2849960acfd5b3252f9584813
+layout:           P7/G1/K2/D0/Q1
+successful:       40/40
+matched pairs:    20/20
+quality:          byte-exact
+candidate peak P95: 8,967,879,115.6 bytes
+allowed peak:       9,663,676,416 bytes
+maximum sample gap: 29,950,333 ns
+swap out/in:        0/0
+wall median ratio:  1.0323369
+wall P95 ratio:     1.0347464
+denoise median:     1.0114494
+overall:            PASS
+```
+
+该证据只关闭了 clean public-constructor P2 calibration，不改变 production catalog 为空、P3 未完成和
+review 未完成的发布边界。它可以作为后续 production record 的 immutable evidence 输入，不能直接复制
+test-template calibration 字段。
+
+为给其余模型建立同一 public-semantics discovery 入口，新增了以下 request/plan 示例：
+
+| 模型 | 首个探索档位 | layout 起点 | 真实 discovery 结果 |
+|---|---:|---|---|
+| Flux.2 Klein 9B | 16 GiB | P0/G1/K2/D1/Q2/retain-all | PASS，生成 exact catalog；修复前 feature digest 非 canonical |
+| LTX 2.5 Distilled | 20 GiB | Stage 1/2：P8/G1/K2/D1/Q2/serial | PASS，生成 exact split-stage catalog |
+| MiniMax H3 Turbo | 20 GiB | P0/G1/K2/D1/Q1/carry-first-group | 当前本机拒绝：checkpoint 是普通 FL2VA base，缺少可信 H3 Turbo merge manifest |
+
+Flux public probe 原先写入 `reference_tokens:0`，虽然 host adapter test 能运行，但 native catalog builder
+严格要求 64 位 canonical feature digest，导致真实 discovery 失败。本轮改为 typed
+`flux2-klein-9b-public-workload-features-v1` digest，并将 adapter revision 升级为
+`flux2-klein-9b-public-adapter-v2-feature-digest`，新增测试确保 digest 为小写 64 hex。该修复不改变
+resident/default 路径，也不放宽 ANE/LoRA/compiled route。
+
+H3 的拒绝是有意的 source-closure gate，而不是跳过：当前 `models/MiniMax-H3-ModelScope` 的下载元数据明确
+标记为普通 `MiniMax/MiniMax-H3` FL2VA base，且没有 `FL2VA/transformer/h3-turbo-merge-manifest.json`。
+public H3 Turbo 只接受 trusted `lightx2v/Minimax-h3-Turbo` 4-step provenance；不能为普通 checkpoint 手写
+manifest 或复用 H3 Turbo record。获得正确 merged artifact 后应直接重跑新增的 20 GiB request/plan。
+
+本轮验证：
+
+```text
+TURBOCIDER_NATIVE_ONLY=1 tools/native/build.sh                 PASS
+make test-streaming-host test-streaming-contract               PASS
+make test-streaming-catalog-builder test-streaming-campaign    PASS
+make test-streaming-audit                                      PASS（无 audit dylib 时 1 项预期 SKIP）
+Flux/LTX/Z-Image exact catalog discovery                         PASS
+H3 Turbo discovery                                               FAIL-CLOSED（untrusted/missing provenance）
+```
+
+ANE 边界保持不变：public streaming catalog 仍为 GPU-only；Z-Image、Flux 9B、H3 Turbo、LTX 的 public probe
+均拒绝 `gpu_ane`/ANE manifest。现有 resident/experimental ANE 仍可独立使用；streaming+ANE 必须以独立
+artifact identity、Core ML backing、process-tree peak、质量和 P0–P3 evidence 重新认证，不能把 GPU-only
+record 复用到 ANE。

@@ -16,6 +16,9 @@
 | [h3-p1-same-layout-policy.json](h3-p1-same-layout-policy.json) | H3 Turbo 原始 BF16 P0/G1/K2/D1/Q1 campaign |
 | [flux9-k2-q2-request.json](flux9-k2-q2-request.json) | Flux.2 Klein 9B private candidate 的 retained 双 class K2/G1/D1/Q2 两步请求；不是P1 policy |
 | [flux9-p1-same-layout-policy.json](flux9-p1-same-layout-policy.json) | Flux.2 Klein 9B 同布局 direct/generic P1 campaign；正式20-pair已PASS，逐请求校验implementation身份 |
+| [flux9-16g-memory-tier-request.json](flux9-16g-memory-tier-request.json) / [flux9-p0-k2-q2-plan.json](flux9-p0-k2-q2-plan.json) | Flux 9B 512²/4-step public-semantics 16 GiB calibration 输入；P0/G1/K2/D1/Q2、retain-all |
+| [h3-turbo-20g-memory-tier-request.json](h3-turbo-20g-memory-tier-request.json) / [h3-turbo-p0-k2-plan.json](h3-turbo-p0-k2-plan.json) | H3 Turbo 512²/22-frame/4-step public-semantics 20 GiB calibration 输入；P0/G1/K2/D1/Q1、carry-first-group |
+| [ltx-20g-memory-tier-request.json](ltx-20g-memory-tier-request.json) / [ltx-p8-k2-split-plan.json](ltx-p8-k2-split-plan.json) | LTX 512×320×33/11-step public-semantics 20 GiB calibration 输入；Stage 1/2 独立 P8/G1/K2/D1/Q2 |
 
 request 片段需与模型、输入、输出、sampling 合并才是完整请求。示例 P=1 用于清楚表达参数，不是性能推荐。
 profile 名称/机器匹配值是演示，不允许通过更改字符串给别的机器授予认证。
@@ -80,6 +83,12 @@ Z-Image 10 GiB 的完整请求与 P7/K2 计划样例分别见
 [`zimage-10g-memory-tier-request.json`](zimage-10g-memory-tier-request.json) 和
 [`zimage-p7-k2-plan.json`](zimage-p7-k2-plan.json)。示例中的 `${OUTPUT}` 只用于 campaign 模板替换，不能
 直接作为 App 的最终输出路径。
+
+Flux/H3/LTX 的新增 request/plan 对也遵循同一规则：它们是 exact public adapter discovery 和 calibration
+入口，不是 production preset。首次选择 16/20 GiB 只用于建立能够执行的高档基线；只有真实 P2 测得完整
+process-tree peak 后才能向更低档位搜索 prefix/K/Q，不能因为 test catalog 能编译就把对应档位显示为
+available。H3 输入中的 512×512 会经过现有 H3 planner 的规范化；catalog 记录以 probe 返回的实际 workload
+identity 为准。LTX 必须使用两个精确 stage id，不能退回旧的单 `denoiser` stage。
 
 public-semantics audit 需要同时启用 audit counters 与 test hooks 的独立 dylib，并安装完全相同的 catalog：
 
