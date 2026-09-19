@@ -23,6 +23,11 @@ void resolve_profile(Request &);
 NSDictionary *to_dictionary(const ExecutionPlan &);
 NSDictionary *to_dictionary(const LoadResult &);
 NSDictionary *to_dictionary(const RunResult &);
+/* A disposable LTX finalizer replaces the denoiser process before the
+ * ordinary tc_engine_generate() return path.  Keep the already verified
+ * public result envelope available to that replacement process without
+ * making the finalizer reconstruct authority from paths. */
+NSDictionary *streaming_result_envelope(const RunResult &);
 NSDictionary *to_dictionary(const MemoryExecutionReport &);
 RunResult native_run_result(NSDictionary *, const Request &, const ExecutionPlan &);
 NSDictionary *to_dictionary(const HybridMetrics &);

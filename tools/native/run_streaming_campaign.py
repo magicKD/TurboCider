@@ -1366,9 +1366,19 @@ def run_probe_sample(
         )
     for raw_path in command["artifact_paths"].values():
         Path(raw_path).parent.mkdir(parents=True, exist_ok=True)
+    # Disposable command probes (notably LTX's exec finalizer) cannot receive
+    # the in-memory campaign request through the ctypes worker protocol.  Give
+    # them a request-scoped JSON snapshot instead. Keeping the
+    # placeholder in the generic probe interface also lets the process-tree
+    # sampler observe the real executable, exec replacement and helper children.
+    request_path = Path(output).parent / "request.json"
+    request_path.write_text(
+        json.dumps(command["request"], sort_keys=True, ensure_ascii=False) + "\n"
+    )
     replacements = {
         "MODEL": str(model),
         "OUTPUT": output,
+        "REQUEST": str(request_path),
         "PAIR_ID": command["pair_id"],
         "BLOCK_ID": command["block_id"],
         "VARIANT": command["variant"],

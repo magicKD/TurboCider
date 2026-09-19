@@ -12,6 +12,10 @@
 #include <unistd.h>
 int tc_service_main(const char*,const char*,const char*);
 int tc_rpc_main(const char*,const char*);
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+extern "C" int tc_engine_test_set_streaming_catalog_json(
+    tc_engine*,const char*,char**);
+#endif
 static std::string executable_path(const char *fallback);
 static NSString *registered_model_path(const char *alias,NSString *expected_model) {
  auto helper=std::filesystem::path(executable_path("turbocider")).parent_path()/"turbocider-library";
@@ -78,6 +82,17 @@ static void configure_ltx_cli_environment(NSString *request) {
   if(path.length)setenv("TURBOCIDER_LTX_CONDITIONING_CACHE_DIR",path.UTF8String,0);
  }
 }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+static int install_test_streaming_catalog(tc_engine *engine,char **error) {
+ const char *path=std::getenv("TURBOCIDER_TEST_STREAMING_CATALOG");
+ if(!path||!path[0])return 0;
+ NSString *catalog=[NSString stringWithContentsOfFile:@(path)
+   encoding:NSUTF8StringEncoding error:nil];
+ if(!catalog){if(error)*error=strdup("cannot read test streaming catalog");return 1;}
+ return tc_engine_test_set_streaming_catalog_json(
+   engine,catalog.UTF8String,error);
+}
+#endif
 static int library_main(int argc,char **argv) {
  auto helper=std::filesystem::path(executable_path(argv[0])).parent_path()/"turbocider-library";
  if(!std::filesystem::is_regular_file(helper)){
@@ -135,6 +150,9 @@ int main(int argc,char**argv){@autoreleasepool{
    if(cmd=="generate"||cmd=="ltx-worker")
     configure_ltx_cli_environment(request);
    code=create_for(argv[2],[NSString stringWithContentsOfFile:@(argv[3]) encoding:NSUTF8StringEncoding error:nil],&active,&err);
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+   if(!code)code=install_test_streaming_catalog(active,&err);
+#endif
    if(!code){std::signal(SIGINT,stop);std::signal(SIGTERM,stop);code=tc_engine_generate(active,request.UTF8String,event,nullptr,&out,&err);std::signal(SIGINT,SIG_DFL);std::signal(SIGTERM,SIG_DFL);}
    tc_engine_free(active);
   }

@@ -19,12 +19,14 @@
 | [flux9-16g-memory-tier-request.json](flux9-16g-memory-tier-request.json) / [flux9-p0-k2-q2-plan.json](flux9-p0-k2-q2-plan.json) | Flux 9B 512²/4-step public-semantics 16 GiB calibration 输入；P0/G1/K2/D1/Q2、retain-all |
 | [h3-turbo-20g-memory-tier-request.json](h3-turbo-20g-memory-tier-request.json) / [h3-turbo-p0-k2-plan.json](h3-turbo-p0-k2-plan.json) | H3 Turbo 512²/22-frame/4-step public-semantics 20 GiB calibration 输入；P0/G1/K2/D1/Q1、carry-first-group |
 | [ltx-20g-memory-tier-request.json](ltx-20g-memory-tier-request.json) / [ltx-p8-k2-split-plan.json](ltx-p8-k2-split-plan.json) | LTX 512×320×33/11-step public-semantics 20 GiB calibration 输入；Stage 1/2 独立 P8/G1/K2/D1/Q2 |
+| [ltx-p1-k1-split-plan.json](ltx-p1-k1-split-plan.json) | LTX 低峰值探索布局；Stage 1/2 独立 P1/G1/K1/D0/Q1，优先验证 hard-cap，不代表性能推荐 |
 
 request 片段需与模型、输入、输出、sampling 合并才是完整请求。示例 P=1 用于清楚表达参数，不是性能推荐。
 profile 名称/机器匹配值是演示，不允许通过更改字符串给别的机器授予认证。
 字段含义、优先级及冲突见 [配置规范](../02-configuration.md)。
 
-Flux 示例只能通过 private candidate constructor 执行，public route 仍 fail-closed。单请求文件用于重现功能、
+Flux private layout 示例只能通过 private candidate constructor 执行；memory-tier 示例另可使用下述 test-only
+public catalog 执行校准，production route 仍 fail-closed。单请求文件用于重现功能、
 质量、内存和audit证据；P1 policy的baseline使用仅供benchmark的同布局direct replay，candidate使用通用
 `StageExecutor`。两侧必须保持完全相同的P0/G1/K2/D1/Q2、双pool retention、reader同步边界和pager；仍不能
 拿resident与streaming的耗时差直接签成framework P1 overhead。

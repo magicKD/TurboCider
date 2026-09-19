@@ -1209,6 +1209,8 @@ class ContractTests(unittest.TestCase):
         self.assertIn('TURBOCIDER_LTX_EXEC_FINALIZER',cli)
         self.assertIn('ltx_exec_finalizer_plan',cli)
         self.assertIn('TURBOCIDER_LTX_CONDITIONING_CACHE_DIR',cli)
+        self.assertIn('TURBOCIDER_TEST_STREAMING_CATALOG',cli)
+        self.assertIn('#ifdef TURBOCIDER_ENABLE_TEST_HOOKS',cli)
         self.assertNotIn('TURBOCIDER_LTX_SMOKE_EXECUTOR',cli)
         self.assertIn('run_ltx_worker',service)
         self.assertIn('active_child_',service)
@@ -1220,6 +1222,12 @@ class ContractTests(unittest.TestCase):
                       finalizer.read_text())
         self.assertIn('TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD',
                       finalizer.read_text())
+        self.assertIn('TURBOCIDER_LTX_PUBLIC_ENVELOPE_FD',
+                      finalizer.read_text())
+        self.assertIn('streaming_result_envelope',session)
+        self.assertIn('verify_and_attach_public_streaming_result',session)
+        self.assertIn('component_staged ||',session)
+        self.assertIn('exact_streaming && public_stream_lease_',session)
         self.assertIn('ltx_mlx_video_vae_create_fd',finalizer.read_text())
         self.assertIn('F_DUPFD',session)
         self.assertIn('public_stream_lease_->revalidate_after_drain()',session)

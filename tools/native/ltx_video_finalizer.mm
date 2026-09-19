@@ -21,6 +21,8 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -58,6 +60,67 @@ int environment_fd(const char* name) {
         value > std::numeric_limits<int>::max())
         throw std::runtime_error(std::string("invalid ") + name);
     return static_cast<int>(value);
+}
+
+NSDictionary* read_public_streaming_envelope() {
+    const int fd = environment_fd("TURBOCIDER_LTX_PUBLIC_ENVELOPE_FD");
+    if (fd < 0) return nil;
+    struct stat metadata {};
+    if (::fstat(fd, &metadata) != 0 || !S_ISREG(metadata.st_mode) ||
+        metadata.st_size <= 0 || metadata.st_size > (8ll << 20)) {
+        ::close(fd);
+        throw std::runtime_error(
+            "invalid LTX public streaming finalizer envelope file");
+    }
+    if (::lseek(fd, 0, SEEK_SET) < 0) {
+        ::close(fd);
+        throw std::runtime_error(
+            "cannot seek LTX public streaming finalizer envelope");
+    }
+    std::vector<uint8_t> bytes(static_cast<size_t>(metadata.st_size));
+    size_t offset = 0;
+    while (offset < bytes.size()) {
+        const ssize_t count = ::read(fd, bytes.data() + offset,
+                                     bytes.size() - offset);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) {
+            ::close(fd);
+            throw std::runtime_error(
+                "cannot read LTX public streaming finalizer envelope");
+        }
+        offset += static_cast<size_t>(count);
+    }
+    ::close(fd);
+    NSData* data = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+    NSError* error = nil;
+    id parsed = [NSJSONSerialization JSONObjectWithData:data
+                                                options:0
+                                                  error:&error];
+    if (![parsed isKindOfClass:NSDictionary.class])
+        throw std::runtime_error(error ? error.localizedDescription.UTF8String :
+                                 "invalid LTX public streaming finalizer envelope JSON");
+    NSDictionary* value = parsed;
+    id schema = value[@"schema_version"];
+    id public_result = value[@"public_streaming"];
+    id verified = [public_result isKindOfClass:NSDictionary.class] ?
+        public_result[@"actual_plan_verified"] : nil;
+    if (![value[@"format"] isEqual:
+            @"turbocider-ltx-public-finalizer-envelope-v1"] ||
+        ![schema isKindOfClass:NSNumber.class] ||
+        CFGetTypeID((__bridge CFTypeRef)schema) == CFBooleanGetTypeID() ||
+        ![schema isEqualToNumber:@1] ||
+        ![public_result isKindOfClass:NSDictionary.class] ||
+        ![value[@"streaming_stages"] isKindOfClass:NSArray.class] ||
+        ![value[@"streaming_boundaries"] isKindOfClass:NSArray.class] ||
+        ![value[@"streaming_receipt"] isKindOfClass:NSDictionary.class] ||
+        ![value[@"block_streaming"] isKindOfClass:NSDictionary.class] ||
+        ![value[@"block_residency"] isKindOfClass:NSDictionary.class] ||
+        ![verified isKindOfClass:NSNumber.class] ||
+        CFGetTypeID((__bridge CFTypeRef)verified) != CFBooleanGetTypeID() ||
+        ![verified boolValue])
+        throw std::runtime_error(
+            "incomplete LTX public streaming finalizer envelope");
+    return value;
 }
 
 std::vector<uint16_t> read_exact(const std::filesystem::path& path,
@@ -109,7 +172,8 @@ std::string json_result(const std::filesystem::path& output,
                         double export_seconds,
                         double audio_decode_seconds,
                         double audio_mux_seconds,
-                        double finalizer_wall_seconds) {
+                        double finalizer_wall_seconds,
+                        NSDictionary* public_streaming_envelope) {
     @autoreleasepool {
         const char* cache_value = std::getenv(
             "TURBOCIDER_LTX_CONDITIONING_CACHE_HIT");
@@ -117,7 +181,7 @@ std::string json_result(const std::filesystem::path& output,
         const char* mode_value = std::getenv("TURBOCIDER_LTX_CONDITIONING_MODE");
         const std::string conditioning_mode = mode_value && mode_value[0] ?
             mode_value : "unknown";
-        NSDictionary* value = @{
+        NSMutableDictionary* value = [@{
             @"schema_version": @1,
             @"model": @"ltx-2.5-distilled",
             @"operation": @(operation.c_str()),
@@ -153,7 +217,16 @@ std::string json_result(const std::filesystem::path& output,
             @"validation": audio ?
                 @"native_gpu_audio_video_exec_finalizer" :
                 @"native_gpu_video_only_exec_finalizer",
-        };
+        } mutableCopy];
+        if (public_streaming_envelope) {
+            for (NSString* key in @[
+                    @"public_streaming", @"block_residency",
+                    @"block_streaming", @"streaming_stages",
+                    @"streaming_boundaries", @"streaming_receipt"])
+                value[key] = public_streaming_envelope[key];
+            value[@"validation"] =
+                @"native_gpu_video_only_exec_finalizer_public_verified";
+        }
         NSError* error = nil;
         NSData* data = [NSJSONSerialization dataWithJSONObject:value
                                                         options:0
@@ -178,6 +251,8 @@ int main(int argc, char** argv) {
     try {
         const auto finalizer_started = Clock::now();
         const bool audio = argc == 12;
+        NSDictionary* public_streaming_envelope =
+            read_public_streaming_envelope();
         const double pre_finalizer_seconds = environment_seconds(
             "TURBOCIDER_LTX_PRE_FINALIZER_SECONDS");
         const uint32_t latent_frames = parse_u32(argv[3], "latent frames");
@@ -334,7 +409,7 @@ int main(int argc, char** argv) {
             video_weight_load_seconds, video_decode_compute_seconds,
             vae_decode_seconds, rgb_convert_seconds,
             export_seconds, audio_decode_seconds, audio_mux_seconds,
-            finalizer_wall_seconds).c_str());
+            finalizer_wall_seconds, public_streaming_envelope).c_str());
         std::fflush(stdout);
         const std::filesystem::path latent_path = argv[2];
         remove_managed_staging_directory(latent_path);

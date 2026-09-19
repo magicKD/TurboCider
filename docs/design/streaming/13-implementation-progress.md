@@ -2640,3 +2640,95 @@ fd   decoded RGB SHA-256: 337eded06cb5f32d0bc982ebadbe86775a1f07cd302421809198cc
 验证命令还通过了完整 `test_contract.py`（83 tests，1 个缺 fixture 的预期 skip）、streaming host/contract/audit
 和 LTX public adapter 回归。该阶段只证明 source authority 和数值 parity；LTX 20 GiB process-tree peak、
 multi-stage public result envelope、P0/P1/P2/P3 和 production catalog 仍未完成。
+
+### 13.53 Public exec finalizer envelope 与 20 GiB P1/K1 峰值（2026-09-19，工作树）
+
+本轮完成了 13.52 尚未闭合的 public result authority：public exact LTX 在 Stage 1、Stage 2、boundary、
+drain 和 SourceLease revalidation 全部完成后，先在原 denoiser 进程中构造 `RunResult`，调用 common
+`verify_and_attach_public_streaming_result()`，再把已经验证的 envelope 通过继承 fd 交给 replacement
+finalizer。finalizer 只接受：
+
+```text
+format = turbocider-ltx-public-finalizer-envelope-v1
+public_streaming.actual_plan_verified = true
+```
+
+并把 `public_streaming`、`block_residency`、`block_streaming`、`streaming_stages`、
+`streaming_boundaries` 和 schema-v3 `streaming_receipt` 合并进最终 JSON。child 不根据 path 重建
+catalog、layout 或 source authority；Video VAE checkpoint 继续使用 SourceLease duplicate fd。提供 envelope 时，
+缺失字段、错误格式或未验证标记会在打开 latent/VAE 前 fail-closed；没有 envelope 的 legacy 调用仍保留。
+这是 parent/child 内部传输合同，不是 child 独立重验全部 receipt 或抵抗同用户恶意伪造的安全证明。
+public C header 不新增 envelope 构造入口，test installer 仅在 test-hooks 构建中提供。
+
+真实 Metal 的 P8/G1/K2/D1/Q2 public exact 请求已成功完成 process replacement、Video VAE 和 MP4 输出：
+
+```text
+validation:                         native_gpu_video_only_exec_finalizer_public_verified
+video_vae_isolation:                exec
+public_streaming.actual_plan_verified: true
+streaming receipt schema:           3
+streaming stages / boundaries:      2 / 1
+request wall:                       约 22.44 s
+Stage 1 / Stage 2:                  约 9.48 / 7.95 s
+Video VAE / finalizer wall:         约 1.20 / 1.32 s
+```
+
+20 ms process-tree sampler 完整观察到 root 退出，没有 unknown child、sample gap 超限或 swap：
+
+```text
+P8/K2 tree peak phys footprint:     25,746,590,632 bytes（约 23.978 GiB）
+sample count / maximum gap:         1127 / 29.87 ms
+swap in/out:                        0/0
+20 GiB target allowed peak:         18 GiB
+result:                             FAIL
+```
+
+随后新增 Stage 1/2 均为 P1/G1/K1/D0/Q1 的探索计划。相同 public exact/exec/finalizer 路径完整成功，
+process-tree 结果为：
+
+```text
+P1/K1 tree peak phys footprint:     19,592,788,536 bytes（约 18.247 GiB）
+sample count / maximum gap:         1562 / 29.89 ms
+swap in/out:                        0/0
+allowed peak:                       18.000 GiB
+overage:                            约 0.247 GiB（约 253 MiB）
+result:                             FAIL
+```
+
+因此 exec replacement 已经消除了 parent denoiser 与 VAE child 的叠加峰值，P1/K1 又把 denoiser 峰值从
+P8/K2 降低约 5.73 GiB，但仍不能签署 20 GiB record。下一步不是放宽 10% buffer，而是让 LTX exact
+executor 合法支持 P0/G1/K1：block 0 也由 slot 0 refill，prefix callback 零次计算，48 个 group 覆盖
+block 0..47。必须同时验证 native ABI、metadata geometry、Stage 1/2 receipt、source revalidation、取消与
+cleanup、真实 Metal 数值 parity、完整请求 process-tree 和默认路径 P0；若 P0/K1 仍高于 18 GiB，再进入
+Stage 1/Stage 2 独立 disposable-process pipeline，而不能发布超限 record。
+
+整理前已有的工作树验证记录（不代表本轮重新运行）：
+
+```text
+python3 -B tests/native/test_contract.py                     PASS（83，1 expected skip）
+python3 -B tests/native/test_streaming_campaign_verifier.py  PASS（33）
+python3 -B tests/native/test_ltx_finalizer_envelope.py        PASS
+make test-streaming-host                                     PASS（3535 layouts）
+make test-streaming-contract                                 PASS
+make test-streaming-audit                                    PASS（1 expected skip）
+git diff --check                                             PASS
+```
+
+production catalog 继续保持 `tc-streaming-catalog-empty-v1`；本节只完成 public exec authority 和下一布局
+选择的实测依据，不把 P1/K1 的零 swap 或接近阈值误写成 P2 PASS。
+
+### 13.54 暂停实验后的代码整理与交接（2026-09-19）
+
+按用户要求暂停真实 Metal、模型生成、性能和 swap 实验。本轮只整理现有增量：提取共享 result
+装配逻辑、用 `OwnedSourceFd` 覆盖 exec 前异常清理、envelope producer 检查已验证标记、child 严格
+检查 schema/boolean 类型（不接受字符串或数字假冒 true）、测试清理继承环境并支持显式指定 finalizer
+二进制。未改变模型 kernel、slot 数、ANE 路由、默认性能参数或 production catalog。
+
+新交接摘要见 [55 当前状态与下一阶段](55-current-state-and-next-phase.md)。静态审阅确认两项未完成内容：
+
+1. LTX P0 还需要修改 conditioning 对 `weights[0]` 的维度依赖、rope/workspace 的几何来源及 schedule
+   prefix 校验，不能只删 validator；本轮不实施 zero-prefix。
+2. App 已实现物理内存推荐，但缺少“resident 足够则 Off”的模型/工作负载判定；空 catalog 暂时掩盖了
+   非空 catalog 时大内存机器可能被推荐 streaming 的问题。公开前必须补充此项及 App/worker 验收。
+
+本地 dev 已在分支历史中，本轮不执行新的远端 merge。具体提交状态和本轮轻量检查结果见 55 的交接记录。

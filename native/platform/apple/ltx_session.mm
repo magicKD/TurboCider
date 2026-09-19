@@ -21,6 +21,7 @@
 #include "../../models/ltx_mlx/native.hpp"
 #include "../../runtime/streaming/actual_receipt.hpp"
 #include "../../runtime/streaming/canonical_encoding.hpp"
+#include "../../runtime/streaming/public_result.hpp"
 #include "../../runtime/streaming/resolved_request.hpp"
 #include "../../runtime/streaming/source_lease.hpp"
 
@@ -1134,6 +1135,7 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
         const ltx_workload& workload,
         const Request& request,
         const std::string& execution,
+        const std::string& verified_public_envelope,
         int checkpoint_fd = -1) {
     require(std::filesystem::is_regular_file(helper),
             "LTX Video VAE exec finalizer is missing: " + helper.string());
@@ -1183,22 +1185,46 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
     for (size_t index = 0; index < arguments.size(); ++index)
         argv.push_back(arguments[index].data());
     argv.push_back(nullptr);
-    int inherited_checkpoint_fd = -1;
+    // Retain ownership until exec succeeds: any staging/allocation failure,
+    // not just execve failure, must close both inherited descriptors.
+    streaming::OwnedSourceFd inherited_checkpoint_fd;
+    streaming::OwnedSourceFd inherited_envelope_fd;
     std::vector<std::string> environment_storage;
     std::vector<char*> environment;
     for (char* const* entry = ::environ; entry && *entry; ++entry) {
         std::string value(*entry);
-        if (value.rfind("TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD=", 0) == 0)
+        if (value.rfind("TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD=", 0) == 0 ||
+            value.rfind("TURBOCIDER_LTX_PUBLIC_ENVELOPE_FD=", 0) == 0)
             continue;
         environment_storage.push_back(std::move(value));
     }
     if (checkpoint_fd >= 0) {
-        inherited_checkpoint_fd = ::fcntl(checkpoint_fd, F_DUPFD, 198);
-        require(inherited_checkpoint_fd >= 0,
+        inherited_checkpoint_fd = streaming::OwnedSourceFd(
+            ::fcntl(checkpoint_fd, F_DUPFD, 198));
+        require(inherited_checkpoint_fd.get() >= 0,
                 "cannot inherit LTX Video VAE checkpoint fd for finalizer");
         environment_storage.push_back(
             "TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD=" +
-            std::to_string(inherited_checkpoint_fd));
+            std::to_string(inherited_checkpoint_fd.get()));
+    }
+    if (!verified_public_envelope.empty()) {
+        const auto envelope_path = directory / "public_streaming.json";
+        write_exact(envelope_path, verified_public_envelope.data(),
+                    verified_public_envelope.size(),
+                    "LTX public streaming finalizer envelope");
+        const streaming::OwnedSourceFd envelope_fd(::open(
+            envelope_path.c_str(), O_RDONLY | O_CLOEXEC));
+        require(envelope_fd.get() >= 0,
+                "cannot open LTX public streaming finalizer envelope");
+        inherited_envelope_fd = streaming::OwnedSourceFd(
+            ::fcntl(envelope_fd.get(), F_DUPFD, 200));
+        const int duplicate_error = errno;
+        require(inherited_envelope_fd.get() >= 0,
+                "cannot inherit LTX public streaming finalizer envelope: " +
+                    std::string(std::strerror(duplicate_error)));
+        environment_storage.push_back(
+            "TURBOCIDER_LTX_PUBLIC_ENVELOPE_FD=" +
+            std::to_string(inherited_envelope_fd.get()));
     }
     environment.reserve(environment_storage.size() + 1u);
     for (auto& entry : environment_storage)
@@ -1207,7 +1233,6 @@ static std::vector<uint16_t> decode_ltx_video_isolated(
     fflush(nullptr);
     ::execve(helper.c_str(), argv.data(), environment.data());
     const int exec_error = errno;
-    if (inherited_checkpoint_fd >= 0) ::close(inherited_checkpoint_fd);
     throw std::runtime_error("exec LTX Video VAE finalizer: " +
                              std::string(std::strerror(exec_error)));
 }
@@ -2540,18 +2565,21 @@ public:
         public_stream_layout_digest_ =
             execution->model_snapshot->layout().digest;
         public_stream_target_bytes_ = *target;
+        public_stream_execution_ = execution;
         public_streaming_active_ = true;
         try {
             auto result = generate(execution->request, event, cancel);
             public_streaming_active_ = false;
             public_stream_target_bytes_ = 0;
             public_stream_layout_digest_.clear();
+            public_stream_execution_.reset();
             public_stream_lease_.reset();
             return result;
         } catch (...) {
             public_streaming_active_ = false;
             public_stream_target_bytes_ = 0;
             public_stream_layout_digest_.clear();
+            public_stream_execution_.reset();
             public_stream_lease_.reset();
             throw;
         }
@@ -3812,6 +3840,131 @@ public:
                             std::move(public_stage_receipts)));
             }
         }
+        auto attach_exact_streaming_result = [&](RunResult& run) {
+            require(exact_streaming,
+                    "streaming_actual_plan_mismatch: LTX exact result is inactive");
+            run.block_residency = BlockResidencyMetrics{
+                true,
+                false,
+                false,
+                kLtxTransformerBlockCount,
+                exact_prefix_blocks,
+                kLtxTransformerBlockCount - exact_prefix_blocks,
+                exact_refill_slots,
+                public_stream_lease_ ? public_stream_target_bytes_ : 0,
+                0,
+                exact_block_bytes,
+                ltx_checked_add(exact_prefix_bytes, exact_pool_bytes,
+                                "LTX exact weight working set"),
+                streaming_after.bytes_loaded,
+                exact_counters.slot_bundles,
+                exact_counters.fills,
+                exact_counters.fills,
+                exact_request_load_seconds,
+                exact_counters.wait_seconds,
+            };
+            StreamingRuntimeMetrics runtime;
+            runtime.implementation = public_stream_lease_ ?
+                kLtxPublicImplementation : "generic_stage_executor_v1";
+            runtime.layout_digest = exact_layout_digest;
+            runtime.stage = "denoiser";
+            runtime.resident_prefix_blocks = exact_prefix_blocks;
+            runtime.block_group_size = 1;
+            runtime.slot_count = exact_refill_slots;
+            runtime.prefetch_distance = exact_prefetch_distance;
+            runtime.io_workers = exact_io_workers;
+            runtime.group_count = exact_u32(
+                exact_group_count, "LTX exact runtime group count");
+            runtime.pass_count = exact_u32(
+                exact_pass_count, "LTX exact runtime pass count");
+            runtime.startup_policy = "prefetch_window_before_prefix";
+            runtime.pass_transition = "reload";
+            runtime.retention = "request";
+            runtime.reader_revision = LTX_STREAM_READER_REVISION;
+            runtime.weight_format = "convrot-int8-g256";
+            runtime.kernel_revision = kLtxPublicKernelRevision;
+            runtime.conditioning_recipe = "gemma4-ltx-connector-v1";
+            runtime.upsample_boundary =
+                "after-stage1-pool-retained;release-before-video-vae";
+            runtime.component_policy_revision = public_stream_lease_ ?
+                kLtxPublicComponentPolicy : "ltx-private-components-v1";
+            runtime.multi_pool_policy = "serial";
+            runtime.pool_count = 1;
+            runtime.slot_bundle_count = exact_u32(
+                exact_counters.slot_bundles,
+                "LTX exact runtime slot bundles");
+            runtime.refill_worker_count = exact_io_workers;
+            runtime.source_lease_verified = public_stream_lease_ != nullptr;
+            runtime.drained = true;
+            if (public_stream_lease_) {
+                require(public_exact_receipt != nullptr,
+                        "streaming_actual_receipt_missing");
+                if (exact_split_stages) {
+                    require(exact_stage_layouts.size() == 2 &&
+                                public_exact_receipt->stages.size() == 2,
+                            "streaming_actual_receipt_missing");
+                    for (uint32_t index = 0;
+                         index < exact_stage_layouts.size(); ++index) {
+                        const auto& stage = exact_stage_layouts[index];
+                        StreamingRuntimeMetrics stage_runtime;
+                        stage_runtime.implementation =
+                            kLtxPublicImplementation;
+                        stage_runtime.layout_digest = exact_layout_digest;
+                        stage_runtime.stage = stage.id;
+                        stage_runtime.resident_prefix_blocks = stage.prefix;
+                        stage_runtime.block_group_size = stage.group_size;
+                        stage_runtime.slot_count = stage.slot_count;
+                        stage_runtime.prefetch_distance = stage.distance;
+                        stage_runtime.io_workers = stage.workers;
+                        stage_runtime.group_count = exact_u32(
+                            stage.groups.size(),
+                            "LTX exact stage group count");
+                        stage_runtime.pass_count = stage.pass_count;
+                        stage_runtime.startup_policy =
+                            "prefetch_window_before_prefix";
+                        stage_runtime.pass_transition = "reload";
+                        stage_runtime.retention = "request";
+                        stage_runtime.reader_revision =
+                            LTX_STREAM_READER_REVISION;
+                        stage_runtime.weight_format = "convrot-int8-g256";
+                        stage_runtime.kernel_revision =
+                            kLtxPublicKernelRevision;
+                        stage_runtime.conditioning_recipe =
+                            "gemma4-ltx-connector-v1";
+                        stage_runtime.upsample_boundary = index == 0 ?
+                            "release-before-stage1-to-stage2-upsampler" :
+                            "release-before-video-vae";
+                        stage_runtime.component_policy_revision =
+                            kLtxPublicComponentPolicy;
+                        stage_runtime.multi_pool_policy = "serial";
+                        stage_runtime.pool_count = exact_u32(
+                            stage.pools.size(),
+                            "LTX exact stage pool count");
+                        uint64_t stage_slot_bundles = 0;
+                        for (const auto& pool : stage.pools)
+                            stage_slot_bundles = ltx_checked_add(
+                                stage_slot_bundles, pool.slots.size(),
+                                "LTX exact stage slot bundles");
+                        stage_runtime.slot_bundle_count = exact_u32(
+                            stage_slot_bundles,
+                            "LTX exact stage slot bundles");
+                        stage_runtime.refill_worker_count = stage.workers;
+                        stage_runtime.source_lease_verified = true;
+                        stage_runtime.drained =
+                            public_exact_receipt->stages[index]
+                                .drain_completed;
+                        run.streaming_stages.push_back(
+                            {index, std::move(stage_runtime)});
+                    }
+                } else {
+                    run.streaming_runtime = runtime;
+                    run.streaming_stages = {{0, runtime}};
+                }
+                run.streaming_receipt = public_exact_receipt;
+            } else {
+                run.streaming_runtime = runtime;
+            }
+        };
         if (component_staged || streamed) {
             if (request.memory_constrained.enabled && denoiser_) {
                 char drain_error[1024] = {};
@@ -3856,7 +4009,14 @@ public:
             "ltx.video_vae.graph_envelope_v1");
         event("video_vae", 0, 1);
         const char* exec_value = std::getenv("TURBOCIDER_LTX_EXEC_FINALIZER");
-        const bool exec_finalizer = component_staged &&
+        /* Public exact streaming has the same component boundary as the
+         * disposable component-staged route.  Once both denoiser stages have
+         * drained and their backing has been released, replacing this process
+         * is what actually removes Metal/MPS/MLX caches before Video VAE.  Do
+         * keep exec explicitly opt-in for disposable processes. A child
+         * helper keeps the parent alive and requires separate peak evidence. */
+        const bool exec_finalizer = (component_staged ||
+            (exact_streaming && public_stream_lease_)) &&
             exec_value && std::strcmp(exec_value, "1") == 0;
         if (exec_finalizer) {
             /* Only a single-shot CLI or disposable service worker may set
@@ -3883,8 +4043,17 @@ public:
                      conditioning.cache_hit ? "1" : "0", 1);
             ::setenv("TURBOCIDER_LTX_CONDITIONING_MODE",
                      conditioning_mode.c_str(), 1);
+            std::string verified_public_envelope;
             streaming::OwnedSourceFd public_video_vae_fd;
             if (public_stream_lease_) {
+                require(public_stream_execution_ != nullptr,
+                        "streaming_authority_mismatch: LTX public execution is missing");
+                RunResult verified;
+                attach_exact_streaming_result(verified);
+                streaming::verify_and_attach_public_streaming_result(
+                    *public_stream_execution_, verified);
+                verified_public_envelope = json(
+                    streaming_result_envelope(verified));
                 public_stream_lease_->revalidate_after_drain();
                 public_video_vae_fd = public_stream_lease_->duplicate_fd(
                     kLtxPublicVideoVaeLogicalId);
@@ -3892,7 +4061,8 @@ public:
             exec_ltx_video_finalizer(
                 video_vae_finalizer_path_, video_vae_path_, video,
                 audio_checkpoint_path_, audio, workload, request,
-                effective_execution, public_video_vae_fd.get());
+                effective_execution, verified_public_envelope,
+                public_video_vae_fd.get());
         }
         std::string video_vae_isolation;
         const size_t pixel_count = static_cast<size_t>(3) * workload.frames *
@@ -4379,127 +4549,7 @@ public:
                       @"native_gpu_video_only_conditioning_verified")))) };
         auto run = native_run_result(value, request, plan);
         if (exact_streaming) {
-            run.block_residency = BlockResidencyMetrics{
-                true,
-                false,
-                false,
-                kLtxTransformerBlockCount,
-                exact_prefix_blocks,
-                kLtxTransformerBlockCount - exact_prefix_blocks,
-                exact_refill_slots,
-                public_stream_lease_ ? public_stream_target_bytes_ : 0,
-                0,
-                exact_block_bytes,
-                ltx_checked_add(exact_prefix_bytes, exact_pool_bytes,
-                                "LTX exact weight working set"),
-                streaming_after.bytes_loaded,
-                exact_counters.slot_bundles,
-                exact_counters.fills,
-                exact_counters.fills,
-                exact_request_load_seconds,
-                exact_counters.wait_seconds,
-            };
-            StreamingRuntimeMetrics runtime;
-            runtime.implementation = public_stream_lease_ ?
-                kLtxPublicImplementation : "generic_stage_executor_v1";
-            runtime.layout_digest = exact_layout_digest;
-            runtime.stage = "denoiser";
-            runtime.resident_prefix_blocks = exact_prefix_blocks;
-            runtime.block_group_size = 1;
-            runtime.slot_count = exact_refill_slots;
-            runtime.prefetch_distance = exact_prefetch_distance;
-            runtime.io_workers = exact_io_workers;
-            runtime.group_count = exact_u32(
-                exact_group_count, "LTX exact runtime group count");
-            runtime.pass_count = exact_u32(
-                exact_pass_count, "LTX exact runtime pass count");
-            runtime.startup_policy = "prefetch_window_before_prefix";
-            runtime.pass_transition = "reload";
-            runtime.retention = "request";
-            runtime.reader_revision = LTX_STREAM_READER_REVISION;
-            runtime.weight_format = "convrot-int8-g256";
-            runtime.kernel_revision = kLtxPublicKernelRevision;
-            runtime.conditioning_recipe = "gemma4-ltx-connector-v1";
-            runtime.upsample_boundary =
-                "after-stage1-pool-retained;release-before-video-vae";
-            runtime.component_policy_revision = public_stream_lease_ ?
-                kLtxPublicComponentPolicy : "ltx-private-components-v1";
-            runtime.multi_pool_policy = "serial";
-            runtime.pool_count = 1;
-            runtime.slot_bundle_count = exact_u32(
-                exact_counters.slot_bundles,
-                "LTX exact runtime slot bundles");
-            runtime.refill_worker_count = exact_io_workers;
-            runtime.source_lease_verified = public_stream_lease_ != nullptr;
-            runtime.drained = true;
-            if (public_stream_lease_) {
-                require(public_exact_receipt != nullptr,
-                        "streaming_actual_receipt_missing");
-                if (exact_split_stages) {
-                    require(exact_stage_layouts.size() == 2 &&
-                                public_exact_receipt->stages.size() == 2,
-                            "streaming_actual_receipt_missing");
-                    for (uint32_t index = 0;
-                         index < exact_stage_layouts.size(); ++index) {
-                        const auto &stage = exact_stage_layouts[index];
-                        StreamingRuntimeMetrics stage_runtime;
-                        stage_runtime.implementation =
-                            kLtxPublicImplementation;
-                        stage_runtime.layout_digest = exact_layout_digest;
-                        stage_runtime.stage = stage.id;
-                        stage_runtime.resident_prefix_blocks = stage.prefix;
-                        stage_runtime.block_group_size = stage.group_size;
-                        stage_runtime.slot_count = stage.slot_count;
-                        stage_runtime.prefetch_distance = stage.distance;
-                        stage_runtime.io_workers = stage.workers;
-                        stage_runtime.group_count = exact_u32(
-                            stage.groups.size(),
-                            "LTX exact stage group count");
-                        stage_runtime.pass_count = stage.pass_count;
-                        stage_runtime.startup_policy =
-                            "prefetch_window_before_prefix";
-                        stage_runtime.pass_transition = "reload";
-                        stage_runtime.retention = "request";
-                        stage_runtime.reader_revision =
-                            LTX_STREAM_READER_REVISION;
-                        stage_runtime.weight_format = "convrot-int8-g256";
-                        stage_runtime.kernel_revision =
-                            kLtxPublicKernelRevision;
-                        stage_runtime.conditioning_recipe =
-                            "gemma4-ltx-connector-v1";
-                        stage_runtime.upsample_boundary = index == 0 ?
-                            "release-before-stage1-to-stage2-upsampler" :
-                            "release-before-video-vae";
-                        stage_runtime.component_policy_revision =
-                            kLtxPublicComponentPolicy;
-                        stage_runtime.multi_pool_policy = "serial";
-                        stage_runtime.pool_count = exact_u32(
-                            stage.pools.size(),
-                            "LTX exact stage pool count");
-                        uint64_t stage_slot_bundles = 0;
-                        for (const auto &pool : stage.pools)
-                            stage_slot_bundles = ltx_checked_add(
-                                stage_slot_bundles, pool.slots.size(),
-                                "LTX exact stage slot bundles");
-                        stage_runtime.slot_bundle_count = exact_u32(
-                            stage_slot_bundles,
-                            "LTX exact stage slot bundles");
-                        stage_runtime.refill_worker_count = stage.workers;
-                        stage_runtime.source_lease_verified = true;
-                        stage_runtime.drained =
-                            public_exact_receipt->stages[index]
-                                .drain_completed;
-                        run.streaming_stages.push_back(
-                            {index, std::move(stage_runtime)});
-                    }
-                } else {
-                    run.streaming_runtime = runtime;
-                    run.streaming_stages = {{0, runtime}};
-                }
-                run.streaming_receipt = std::move(public_exact_receipt);
-            } else {
-                run.streaming_runtime = runtime;
-            }
+            attach_exact_streaming_result(run);
         } else if (streaming_after.enabled) {
             const auto residency = make_block_residency_plan(
                 streaming_after.memory_budget_bytes,
@@ -4542,6 +4592,8 @@ public:
 
 private:
     std::shared_ptr<const streaming::SourceLease> public_stream_lease_;
+    std::shared_ptr<const streaming::ResolvedRequestExecution>
+        public_stream_execution_;
     std::string public_stream_layout_digest_;
     uint64_t public_stream_target_bytes_ = 0;
     bool public_streaming_active_ = false;

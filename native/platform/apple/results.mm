@@ -619,6 +619,44 @@ static NSDictionary *public_streaming_result(
         @"actual_plan_verified" : @(m.actual_plan_verified),
     };
 }
+
+static NSDictionary *to_dictionary(const BlockResidencyMetrics &);
+
+NSDictionary *streaming_result_envelope(const RunResult &result) {
+    require(result.public_streaming.has_value() &&
+                result.public_streaming->actual_plan_verified,
+            "public streaming finalizer envelope is unverified");
+    require(result.streaming_receipt != nullptr &&
+                !result.streaming_stages.empty(),
+            "public streaming finalizer envelope is incomplete");
+    NSMutableDictionary *value = [@{
+        @"format" : @"turbocider-ltx-public-finalizer-envelope-v1",
+        @"schema_version" : @1,
+    } mutableCopy];
+    value[@"public_streaming"] = public_streaming_result(
+        *result.public_streaming);
+    if (result.block_residency) {
+        NSDictionary *residency = to_dictionary(*result.block_residency);
+        value[@"block_residency"] = residency;
+        NSMutableDictionary *block = [residency mutableCopy];
+        const auto &first = result.streaming_stages.front().runtime;
+        block[@"implementation"] = @(first.implementation.c_str());
+        block[@"layout_digest"] = @(first.layout_digest.c_str());
+        NSMutableArray *stages = [NSMutableArray
+            arrayWithCapacity:result.streaming_stages.size()];
+        for (const auto &stage : result.streaming_stages)
+            [stages addObject:actual_streaming_stage(stage)];
+        block[@"actual_layout"] = @{
+            @"schema_version" : @3,
+            @"digest" : @(first.layout_digest.c_str()),
+            @"stage_count" : @(result.streaming_stages.size()),
+            @"stages" : stages,
+        };
+        value[@"block_streaming"] = block;
+    }
+    attach_streaming_details(value, result);
+    return value;
+}
 static NSDictionary *runtime_plan(const RunResult &result) {
     NSMutableDictionary *plan = [to_dictionary(result.plan) mutableCopy];
     if (!result.backend.empty())

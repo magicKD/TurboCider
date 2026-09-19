@@ -351,9 +351,11 @@ class CampaignTests(unittest.TestCase):
         }
         script.write_text(
             "import json, pathlib, sys\n"
-            "output, pair_id, variant = sys.argv[1:4]\n"
+            "output, pair_id, variant, request_path = sys.argv[1:5]\n"
             "pathlib.Path(output).parent.mkdir(parents=True, exist_ok=True)\n"
             "pathlib.Path(output).write_bytes(pair_id.encode())\n"
+            "assert pathlib.Path(request_path).is_file()\n"
+            "assert json.loads(pathlib.Path(request_path).read_text())['seed'] >= 42\n"
             f"actual = {actual!r}\n"
             "wall = 1.01 if variant == 'candidate' else 1.0\n"
             "denoise = 0.805 if variant == 'candidate' else 0.8\n"
@@ -374,6 +376,7 @@ class CampaignTests(unittest.TestCase):
                 "output_artifact": "latent",
                 "arguments": [
                     str(script), "${OUTPUT}", "${PAIR_ID}", variant,
+                    "${REQUEST}",
                 ],
                 "result_schema": "test-streaming-probe-v1",
             }

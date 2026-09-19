@@ -1,6 +1,7 @@
 # TurboCider 通用 Streaming 框架
 
-修订日期：2026-09-18。状态：设计规格及实施中，尚未发布。最新代码/测试证据见 [13 实施进度](13-implementation-progress.md)。
+修订日期：2026-09-19。状态：设计规格及实施中，尚未发布。当前收口摘要和下一步优先看
+[55 当前状态与下一阶段](55-current-state-and-next-phase.md)，逐轮代码/测试证据见 [13 实施进度](13-implementation-progress.md)。
 
 提交前审阅、当前发布阻断项和本次重跑范围见 [21 审阅与交接](21-review-and-handoff.md)。
 
@@ -84,6 +85,7 @@
 | [52 App / Config / Model Tiers](52-public-streaming-app-config-and-model-tier-spec.md) | App 五档与迁移、物理内存推荐、model×target record、内存 ledger/sampler、工具链、四臂实验、JobStore 和发布验收 |
 | [53 Final Implementation Closure](53-public-streaming-final-implementation-closure.md) | 将当前代码接缝收敛为可直接施工的文件级方案：R3 receipt/context、scheduler、四模型 adapter、App/JobStore、catalog、工具链、提交边界和 Definition of Done |
 | [54 Deep Implementation Spec](54-public-streaming-deep-implementation-spec.md) | 代码级补充：对象所有权、精确调用顺序、compiler/ledger、owner pump、H3 C receipt、LTX worker 协议、工具链、四臂实验、PR 停止条件和 release checklist |
+| [55 Current State / Next Phase](55-current-state-and-next-phase.md) | 当前工作树整理结果、四模型完成度、public 阻断项和下一阶段实施顺序 |
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
