@@ -1,6 +1,6 @@
 # Z-Image Turbo INT8：通用 streaming 接入与对照
 
-实现基于 `feat/stream@8e2e97e`，位于 `codex/z-image-generic-int8-streaming`。旧方案基线为 `25b6d08` 的冻结 native library。原始工作区的用户改动未修改。
+实现基于 `feat/stream@8e2e97e`，位于 `feature/z-image-generic-int8-streaming`。旧方案基线为 `25b6d08` 的冻结 native library。原始工作区的用户改动未修改。
 
 ## 架构边界
 
