@@ -330,3 +330,10 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 4. **第二天：做最早的真实集成。** GPU 先打一条完整输出/取消链；hybrid H1 与 H4a 可并行，H2 先在 fake branch 验资源协议。当天报告按代码实现、host 测试、真实 smoke、发布资格四列分别标状态。
 
 后续每次合并只增加一个可验证能力；每个 milestone 都保留可运行基线和独立 record 撤回能力。本文不创建任务、不运行 campaign；实施开始后在 13 记录代码与证据，在 56 更新总体阻断，在本附录更新对应 H 包完成状态。
+
+
+## 12. 2026-09-21 编码器完整请求探索更新
+
+[实验第三十五、三十六轮](../../experiments/2026-09-20-m1-streaming.md)补充了 legacy Z-Image encoder 分流的完整图片证据。75%/50%/25% INT8 FFN 在各两对冷 worker 样本中，完整请求分流/GPU wall 中位数比为 1.164/1.241/1.240，均无收益；三个比例 final latent relative-L2 均超过预先冻结的 0.05。此前局部暖态 encoder 加速不能用作完整请求性能资格，也不能由此确定一般最优比例。
+
+代码已在 legacy streaming 的 encoder/denoiser 边界同步并释放 encoder 会话，缓存 conditioning 保留来源指标；同 engine 首次分流→缓存命中→切回 GPU 的真实模型回归通过。这只证明正常完成路径的 native owner 释放，不证明 Core ML 服务缓存驱逐，也未关闭故障/取消 drain。该实验未实施本文 HY-M0 denoiser 接入：typed bundle/source partition、suffix materialization、共享 backing join、实际 component receipt、质量准入和 public routing 仍待完成。两个目标模型 explicit streaming + encoder ANE 的拒绝保持不变；Flux legacy streamed 路径不支持，本轮没有 Flux 完整分流图片。

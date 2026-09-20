@@ -66,6 +66,9 @@ struct HybridMetrics {
     bool qualified_flexible_backing = false;
     bool checkpoint_sha_verified = false;
     bool lora_identity_verified = false;
+    // Native session handles were released at the encoder/denoiser boundary.
+    // Does not assert that Core ML's out-of-process caches were evicted.
+    bool session_released_after_encoding = false;
 };
 struct LoadResult {
     uint64_t weight_bytes = 0, active_bytes = 0;

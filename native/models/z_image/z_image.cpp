@@ -1764,6 +1764,7 @@ void ZImage::select_loras(const Request &request) {
     hybrid_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
     cached_conditioning_.reset();
+    cached_encoder_hybrid_metrics_.reset();
     cached_prompt_.clear();
     cached_encoder_manifest_.clear();
     transformer_.clear();
@@ -1835,6 +1836,7 @@ void ZImage::unload() {
     hybrid_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
     cached_conditioning_.reset();
+    cached_encoder_hybrid_metrics_.reset();
     cached_prompt_.clear();
     cached_encoder_manifest_.clear();
     text_encoder_.clear();
@@ -1898,7 +1900,11 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
     } else {
         encoder_hybrid_.reset();
     }
-    cached_conditioning_ = encode_text(tokens, event, cancelled);
+    auto encoded = encode_text(tokens, event, cancelled);
+    auto encoder_metrics = encoder_hybrid_
+        ? std::optional<HybridMetrics>(encoder_hybrid_->metrics()) : std::nullopt;
+    cached_conditioning_ = std::move(encoded);
+    cached_encoder_hybrid_metrics_ = std::move(encoder_metrics);
     cached_prompt_ = r.prompt;
     cached_dynamic_ = r.dynamic_text;
     cached_encoder_manifest_ = r.encoder_ane_manifest;
@@ -2044,6 +2050,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         // safely synchronizes; do not release possibly live arrays in a catch.
         mx::synchronize();
         cached_conditioning_.reset();
+        cached_encoder_hybrid_metrics_.reset();
         cached_prompt_.clear();
         cached_encoder_manifest_.clear();
         text_encoder_.clear();
@@ -2088,6 +2095,18 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     select_loras(r);
     auto text_start = Clock::now();
     bool prompt_hit = conditioning(r, event, cancelled);
+    if (legacy_streamed && encoder_hybrid_) {
+        // Finish every consumer of the shared Core ML output backing before
+        // releasing the encoder. Preserve provenance on cached conditioning,
+        // so a later cache hit is still reported as hybrid conditioning.
+        mx::eval(*cached_conditioning_);
+        mx::synchronize();
+        encoder_hybrid_.reset();
+        if (cached_encoder_hybrid_metrics_)
+            cached_encoder_hybrid_metrics_->session_released_after_encoding = true;
+        mx::clear_cache();
+        event("qwen3_encoder_session_released", 1, 1);
+    }
     const double text_seconds = std::chrono::duration<double>(Clock::now() - text_start).count();
     const int image_rows = ((r.height / 16) * (r.width / 16) + 31) / 32 * 32;
     const int caption_rows = (cached_conditioning_->shape(0) + 31) / 32 * 32;
@@ -2181,8 +2200,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         }
         if (hybrid_)
             result.hybrid = hybrid_->metrics();
-        if (encoder_hybrid_)
-            result.encoder_hybrid = encoder_hybrid_->metrics();
+        result.encoder_hybrid = cached_encoder_hybrid_metrics_;
         result.timings.wall =
             std::chrono::duration<double>(Clock::now() - begin).count();
         result.timings.text = text_seconds;
@@ -2346,8 +2364,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     if (hybrid_)
         result.hybrid = hybrid_->metrics();
-    if (encoder_hybrid_)
-        result.encoder_hybrid = encoder_hybrid_->metrics();
+    result.encoder_hybrid = cached_encoder_hybrid_metrics_;
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
     result.timings.text = text_seconds;
     result.timings.denoise = denoise_seconds;

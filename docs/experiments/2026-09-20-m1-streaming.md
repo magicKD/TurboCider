@@ -640,3 +640,44 @@ Swift NativeEngine 增加异步 verifyStreamingSources，继续在自身串行�
 runtime identity suite 6 项、原 evidence builder suite 16 项、preset resolver host 回归均通过；native contract 83 项运行、3 项原有跳过，其余通过。新库的 test-catalog API 3 项及 Flux 4B/9B、Z-Image public adapter host 回归通过。release hook 缺席检查仍使用保留的 m1-release 库；本轮没有新 release/App 构建、GPU generate 或性能测量。host 链接的 macOS 26.0/26.2 目标提示保留，本机 26.4.1 运行通过。
 
 此轮关闭的是 catalog 数据导致 build key 自引用的问题；非空生产记录的完整资格实验、最终 package manifest/安装验收、持久化 import proof、GPU/ANE 多阶段接入仍未完成，不能据此标记整体 production ready。
+
+
+## 第三十五轮：编码器局部收益与完整图片请求（2026-09-21）
+
+此前 Qwen3 probe 的 Z-Image 75% FFN 分流在暖态约有 2.03x 编码器收益，但不能外推完整图片。本轮在现有 legacy `residency=streamed` 路径运行完整 Z-Image 请求，没有放宽 explicit/public streaming 的 GPU-only guard。[实际路由检查](2026-09-21-m1-encoder-streaming-route-checks.json)确认两个目标模型的 explicit streaming + encoder ANE 均返回 streaming_route_unsupported；Flux 的 legacy streamed residency 也返回 FLUX block streaming is not supported。因此本轮完整分流图片只覆盖 Z-Image，不代表新框架 HY-M0/HY-M1 已接通。
+
+[冻结计划](2026-09-21-m1-z-encoder-full-image-plan.json)、[完整结果](2026-09-21-m1-z-encoder-full-image-results.json)、[质量分析](2026-09-21-m1-z-encoder-full-image-analysis.json)：256²、9 steps、seed 42、native tokenizer 恰好 64 个有效 token，使用已导出的 b64、INT8、ANE FFN [0,7296)/9728（75%）encoder。每次新建 worker/engine，固定 GPU→分流→分流→GPU，零 warmup；两个路线使用相同 tensor dump。8 GiB 是 legacy denoiser 规划预算，不是整请求/process-tree 上限；OS/Core ML service cache 没有重置。Core ML 配置 cpuAndNeuralEngine，不证明实际 ANE residency。
+
+| 顺序 | 路线 | 请求 wall | text encode | denoise |
+|---|---|---:|---:|---:|
+| 0 | GPU | 37.908 s | 3.279 s | 31.764 s |
+| 1 | 75% encoder 分流 | 59.672 s | 18.954 s | 39.003 s |
+| 2 | 75% encoder 分流 | 48.834 s | 9.119 s | 37.989 s |
+| 3 | GPU | 33.237 s | 2.494 s | 29.036 s |
+
+完整 wall 中位数比值为 1.525（分流更慢约 52.5%），仅是两对探索性样本，不是性能置信区间。首次分流的 native load_seconds=15.912 s，其中 manifest 验证 5.101 s、model load 10.788 s；实际完成 35 次 Core ML branch prediction、零 runtime failure，未发生 GPU fallback。两个路线的 legacy denoiser 均为 pinned=8、streamed=22、refill slots=2，prompt cache 均未命中。
+
+两次 GPU 图片彼此字节一致，两次分流图片也彼此一致；初始 latent 一致、所有诊断 tensor 有限。RGB correlation=0.995445、cosine=0.999229、MAE=2.49195，但 final latent relative-L2=0.099705，高于预先冻结的 0.05，故整体探索质量门槛不通过。没有放宽阈值，也不能用局部 encoder relative-L2 或 RGB 接近掩盖该失败。单一 prompt/seed 本身也不构成一般质量资格。
+
+新增可复现 driver `benchmark_z_image_encoder_streaming.py` 与 CPU 分析器 `analyze_z_image_encoder_streaming.py`，保留每个新 worker 的请求、事件、结果、图像和 tensor；worker 超时会对本次创建的进程组 TERM/KILL/reap，保留诊断并停止，不重跑到通过。分析器检查图片哈希、请求形状、branch 完整性和相同 denoiser 布局。4 项质量 oracle 测试覆盖非有限数、形状/初始噪声不匹配、完美 cosine 不能掩盖 latent L2 失败、BF16 解码/截断。第一次分析因环境缺少 Pillow 失败，安装 Pillow 12.3.0 后完成；Pillow 仅用于事后 PNG 解码，不参与 native 计时。
+
+
+## 第三十六轮：编码器会话释放与三种比例的完整请求复测（2026-09-21）
+
+发现 legacy Z-Image streaming 完成 text encode 后仍持有 encoder HybridSession，直到下一次编码或 engine 销毁。现在先 materialize conditioning 并同步 GPU，再在 denoiser 加载前释放 encoder 会话、清理 MLX cache。CoreMLBranch 构造和 predict 增加局部 autorelease pool，及时释放临时 feature provider 等对象；强引用 model 和 MLX output backing 的所有权仍由 session 保持。缓存 conditioning 单独保存 HybridMetrics，避免会话释放后把缓存结果误标为纯 GPU；只有成功重编码才替换缓存来源。新增 `session_released_after_encoding` 表示 native 会话已释放，不声称 Core ML 服务缓存或物理内存立即归还。
+
+新库 `build/m1-encoder-release/libturbocider.dylib` SHA-256 为 `5f27260e93d7a9b9ca75963cbc9601ab3f9859d127ea0d3822fb2c356fe2484b`，runtime key 为 `tc-runtime-build-v1-76236c9d5a6bba55cf66fd32b521ccd8e95327d631e5f33127232bcd4060dd44`。native 构建及 runtime/catalog 编译后核对通过。真实模型生命周期测试在同一 engine 连续运行首次分流、同 prompt 缓存命中、切回 GPU 三个请求，通过释放事件顺序、缓存 provenance、无重复预测及图片一致性检查；见[原始结果](2026-09-21-m1-z-encoder-lifecycle.json)。64²/1 step 仅用于功能回归，不参与性能结论。native contract 83 项运行、3 项原有跳过；test-catalog API 3 项、Flux 4B/9B 与 Z public adapter host、质量 oracle 4 项均通过。host 链接仍提示 macOS 26.0/26.2 目标差异，本机 26.4.1 运行通过。release hook 缺席检查使用原有 m1-release 库；本轮没有新 release/App 构建。
+
+在首次结果后、任何复测前冻结[三比例 sweep 计划](2026-09-21-m1-z-encoder-release-sweep-plan.json)，依次测试 75%、50%、25%，各自固定 GPU→分流→分流→GPU，共 12 个新 worker。沿用上一轮 prompt、256²、9 steps、seed 42、64 tokens、INT8、相同 denoiser 布局及诊断输出，不追加样本、不修改质量阈值。[汇总](2026-09-21-m1-z-encoder-release-sweep-results.json)如下；表中 wall 为两次完整 native 请求的中位数，ratio 是两组中位数之比，不是统计置信区间。
+
+| Encoder ANE FFN 比例 | GPU wall | 分流 wall | 分流/GPU | RGB MAE | Final latent relative-L2 | 冻结质量门槛 |
+|---|---:|---:|---:|---:|---:|---|
+| 75%（7296） | 33.368 s | 38.844 s | 1.164 | 2.49195 | 0.099705 | 未通过 |
+| 50%（4864） | 34.467 s | 42.777 s | 1.241 | 1.98086 | 0.083553 | 未通过 |
+| 25%（2432） | 34.284 s | 42.499 s | 1.240 | 2.21099 | 0.086658 | 未通过 |
+
+每个比例均完成 35 次 Core ML prediction、零失败，且 release 事件早于 denoiser 加载；初始 latent 完全相同、所有 tensor 有限、各路线重复图片字节相同。三个比例的 RGB 指标均通过，但 final latent relative-L2 均超过冻结的 0.05，因此质量总体不通过。原始计划、结果、逐 tensor 分析分别保存在 `2026-09-21-m1-z-encoder-released-w{7296,4864,2432}-{plan,results,analysis}.json`；本地完整图片和 tensor 路径由这些计划索引。
+
+75% 修复前后对应 GPU/分流图片均字节相同。修复后 denoise 中位数为 GPU 29.019 s、分流 28.255 s，但分流 text 阶段仍需 8.871 s（GPU 2.588 s），完整请求仍慢约 16.4%。前后实验是顺序执行、OS/Core ML 缓存未重置且每组只有两对样本，不能把前后全部延迟变化归因于释放修复。三个比例的 worker 等待时间比值同样大于 1；该口径从 Popen 返回到进程退出，不包含 Popen 调用本身。
+
+结论限定为这台 M1 Pro、此 prompt/seed/shape 的冷 worker 完整请求：编码器局部暖态加速未转化为完整请求收益，这三种分流均不能据此晋升；纯 GPU 仍是本组实验支持的选择。这里没有 process-tree 全程内存采样，MLX peak 不包括全部 Core ML/OS 内存，CPU+NE 配置也不证明实际 ANE residency。该修复只验证正常完成路径，尚未关闭 encoder/VAE 的故障、取消和阻塞恢复问题。新框架 hybrid guard 保持原状，HY-M0 denoiser 分流、正式质量/性能资格及 App 安装验收仍待完成。

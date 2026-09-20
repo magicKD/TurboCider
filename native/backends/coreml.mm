@@ -168,6 +168,9 @@ CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidd
                            bool flexible, bool allow_flexible_backing)
     : output_storage_(output_storage), output_(output_backing), rows_(rows), hidden_(hidden),
       flexible_(flexible), allow_flexible_backing_(allow_flexible_backing) {
+    // Keep strong model/backing ownership, but do not retain setup temporaries
+    // until an enclosing full-image request's autorelease pool drains.
+    @autoreleasepool {
     optimize_output_copy_ = device_info().optimizations().coreml_output_copy;
     auto setup_begin = Clock::now();
     require(path.extension() == ".mlmodelc" && std::filesystem::is_directory(path),
@@ -198,6 +201,7 @@ CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidd
     bind(rows, output_storage, output_backing);
     interface_setup_seconds =
         std::chrono::duration<double>(Clock::now() - setup_begin).count() - model_load_seconds;
+    }
 }
 void CoreMLBranch::bind(int rows, const Tensor &storage, MLMultiArray *output) {
     auto bind_begin = Clock::now();
@@ -232,6 +236,9 @@ void CoreMLBranch::bind(int rows, const Tensor &storage, MLMultiArray *output) {
     interface_setup_seconds += std::chrono::duration<double>(Clock::now() - bind_begin).count();
 }
 Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
+    // The returned tensor references MLX-owned backing; temporary feature
+    // providers/results can be released before the next GPU stage.
+    @autoreleasepool {
     // Input has been materialized before GPU attention submission. No writable alias
     // is exposed to callers; output storage is leased until the block completes.
     auto begin = Clock::now();
@@ -307,6 +314,7 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
         }
     }
     return slice_axis(output_storage_, 1, 0, actual);
+    }
 }
 HybridSession::HybridSession(const std::filesystem::path &file, const std::filesystem::path &model,
                              int tokens, const Event &event, std::atomic<bool> &cancelled,

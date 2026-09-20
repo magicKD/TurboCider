@@ -1,0 +1,135 @@
+{
+  "scope": "Frozen exploratory legacy full-image encoder split follow-up after native session release fix; not framework hybrid or release qualification",
+  "library_sha256": "5f27260e93d7a9b9ca75963cbc9601ab3f9859d127ea0d3822fb2c356fe2484b",
+  "analyzer_sha256": "7f1b4c31b1fcdc8905a94e714d4232f00b6dc1aff1ff71287bef7a862055c7d7",
+  "analysis_dependencies": {
+    "numpy": "2.0.2",
+    "pillow": "12.3.0"
+  },
+  "cases": [
+    {
+      "width": 7296,
+      "fraction": 0.75,
+      "gpu_wall_median_seconds": 33.36838560400065,
+      "hybrid_wall_median_seconds": 38.844307208491955,
+      "request_wall_ratio": 1.1641050804637902,
+      "worker_wait_ratio": 1.1638437769400685,
+      "rgb": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9992287316744403,
+        "correlation": 0.9954448058558812,
+        "mae": 2.491948445638021,
+        "max_abs": 177.0,
+        "relative_l2": 0.03934157538185443
+      },
+      "final_latent": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9950299363644758,
+        "correlation": 0.9950279628830168,
+        "mae": 0.04018714596898576,
+        "max_abs": 1.2952339947223663,
+        "relative_l2": 0.09970539470750062
+      },
+      "quality_passed_all_pairs": false,
+      "gpu_repeat_identical": true,
+      "hybrid_repeat_identical": true,
+      "session_released_before_denoiser": true,
+      "text_medians": {
+        "gpu": 2.5878488754999998,
+        "hybrid": 8.871496979
+      },
+      "denoise_medians": {
+        "gpu": 29.019124458500002,
+        "hybrid": 28.254825396
+      }
+    },
+    {
+      "width": 4864,
+      "fraction": 0.5,
+      "gpu_wall_median_seconds": 34.46706629201071,
+      "hybrid_wall_median_seconds": 42.77733806252945,
+      "request_wall_ratio": 1.2411076039983424,
+      "worker_wait_ratio": 1.238210518812789,
+      "rgb": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9995065070119609,
+        "correlation": 0.9970876856029085,
+        "mae": 1.9808603922526042,
+        "max_abs": 142.0,
+        "relative_l2": 0.03143284277733814
+      },
+      "final_latent": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9965121752113345,
+        "correlation": 0.9965104328106427,
+        "mae": 0.03172892541535788,
+        "max_abs": 1.1686170399188995,
+        "relative_l2": 0.08355323998770695
+      },
+      "quality_passed_all_pairs": false,
+      "gpu_repeat_identical": true,
+      "hybrid_repeat_identical": true,
+      "session_released_before_denoiser": true,
+      "text_medians": {
+        "gpu": 3.2058633335,
+        "hybrid": 13.133799312499999
+      },
+      "denoise_medians": {
+        "gpu": 29.500838625,
+        "hybrid": 27.906781791500002
+      }
+    },
+    {
+      "width": 2432,
+      "fraction": 0.25,
+      "gpu_wall_median_seconds": 34.283572416519746,
+      "hybrid_wall_median_seconds": 42.49919649946969,
+      "request_wall_ratio": 1.2396373395145717,
+      "worker_wait_ratio": 1.2336768696967015,
+      "rgb": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9993770730493169,
+        "correlation": 0.9963253402163724,
+        "mae": 2.2109883626302085,
+        "max_abs": 148.0,
+        "relative_l2": 0.035360401348443274
+      },
+      "final_latent": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9962476883912228,
+        "correlation": 0.9962466012096859,
+        "mae": 0.03507891976317978,
+        "max_abs": 1.1720918416976929,
+        "relative_l2": 0.08665827282075016
+      },
+      "quality_passed_all_pairs": false,
+      "gpu_repeat_identical": true,
+      "hybrid_repeat_identical": true,
+      "session_released_before_denoiser": true,
+      "text_medians": {
+        "gpu": 3.1098489375,
+        "hybrid": 11.9308177495
+      },
+      "denoise_medians": {
+        "gpu": 29.465636167,
+        "hybrid": 28.840432646
+      }
+    }
+  ],
+  "before_after_75_images_identical": true,
+  "release_qualification": "NOT_PERFORMED",
+  "limitations": [
+    "Two pairs per split; one prompt/seed/shape only",
+    "Fresh processes but uncontrolled OS/Core ML service caches",
+    "Identical tensor dumps on both routes; not uninstrumented timing",
+    "MLX peak does not cover Core ML or full process tree",
+    "CPU+NE configuration is not actual ANE residency proof",
+    "Legacy Z-Image streaming only; framework encoder-hybrid admission remains closed"
+  ]
+}

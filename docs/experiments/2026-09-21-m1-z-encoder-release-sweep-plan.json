@@ -1,0 +1,34 @@
+{
+  "scope": "Frozen exploratory legacy full-image encoder split follow-up after native session release fix; not framework hybrid or release qualification",
+  "library": "/Users/chencanhui/code/TurboCider/build/m1-encoder-release/libturbocider.dylib",
+  "library_sha256": "5f27260e93d7a9b9ca75963cbc9601ab3f9859d127ea0d3822fb2c356fe2484b",
+  "driver_sha256": "23174dbd9b6aca8b738c252e939cc4f62b5203a6a9dfca8a683a25fde117dca9",
+  "cases": [
+    {
+      "width": 7296,
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w7296-int8/compiled-cache/manifest-0a1b0e2d6c17cd4c70051e4882d74a367a4c91dcfd2f68067435fcc383723b7d.json",
+      "manifest_sha256": "0a1b0e2d6c17cd4c70051e4882d74a367a4c91dcfd2f68067435fcc383723b7d",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-z-encoder-released-w7296-abba"
+    },
+    {
+      "width": 4864,
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w4864-int8/compiled-cache/manifest-b813c4215fa379fd459487f70d55e9bb86e3f9d9ed722d361631aba2914cf1e2.json",
+      "manifest_sha256": "b813c4215fa379fd459487f70d55e9bb86e3f9d9ed722d361631aba2914cf1e2",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-z-encoder-released-w4864-abba"
+    },
+    {
+      "width": 2432,
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w2432-int8/compiled-cache/manifest-dc33ba33b86e6d3b5f6db522e097b0243f17236644dd94eae3b322f92f879715.json",
+      "manifest_sha256": "dc33ba33b86e6d3b5f6db522e097b0243f17236644dd94eae3b322f92f879715",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-z-encoder-released-w2432-abba"
+    }
+  ],
+  "order_within_case": [
+    "gpu",
+    "hybrid",
+    "hybrid",
+    "gpu"
+  ],
+  "stopping_rule": "Exactly four fresh workers per width; stop on failure, no success-driven extra runs",
+  "comparison": "256-square, 9 steps, 64 native tokens, seed42, legacy 8GiB denoiser budget, identical tensor dumps; no OS cache reset or artificial pressure"
+}

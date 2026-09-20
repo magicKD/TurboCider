@@ -33,6 +33,7 @@ class ZImage final : public ModelSession {
     bool test_fail_drain_ = false;
 #endif
     std::optional<Tensor> cached_conditioning_;
+    std::optional<HybridMetrics> cached_encoder_hybrid_metrics_;
     std::string cached_prompt_;
     std::string cached_encoder_manifest_;
     bool cached_dynamic_ = true;

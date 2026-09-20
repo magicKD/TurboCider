@@ -1,0 +1,24 @@
+{
+  "scope": "Metadata-only admission checks on preserved pre-fix library; no GPU execution",
+  "library_sha256": "3f7835ca1b7d5a60d104e47309cf59432e73b8380016bb0b475545fcd36aba73",
+  "cases": [
+    {
+      "model": "z-image-turbo",
+      "route": "explicit_manual_streaming_with_encoder_ANE",
+      "status": 1,
+      "error": "streaming_route_unsupported: manual streaming requires GPU-only execution"
+    },
+    {
+      "model": "flux2-klein-4b",
+      "route": "explicit_manual_streaming_with_encoder_ANE",
+      "status": 1,
+      "error": "streaming_route_unsupported: manual streaming requires GPU-only execution"
+    },
+    {
+      "model": "flux2-klein-4b",
+      "route": "legacy_streamed_with_encoder_ANE",
+      "status": 1,
+      "error": "FLUX block streaming is not supported"
+    }
+  ]
+}

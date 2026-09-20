@@ -764,6 +764,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"output_copy_bytes_session_total" : @(m.copied_bytes),
         @"checkpoint_sha256_verified" : @(m.checkpoint_sha_verified),
         @"lora_identity_verified" : @(m.lora_identity_verified),
+        @"session_released_after_encoding" : @(m.session_released_after_encoding),
         @"quality_validation_enabled" : @(m.quality_validation_calls > 0),
         @"quality_validation_calls_session_total" : @(m.quality_validation_calls),
         @"quality_max_relative_l2_session" : @(m.quality_max_relative_l2),
