@@ -957,3 +957,13 @@ host preset/runtime 测试、builder 17 项、bundled catalog 6 项、policy gen
 ![FP16 hybrid candidate](2026-09-21-m1-z-fp16-hybrid-image-candidate.png)
 
 本轮为分阶段研究运行，不是 ModelEngine 的完整 hybrid 请求，不提供性能、内存或 public 发布资格。未改变 production catalog、strict P3 门或原失败记录。再次 fetch origin/dev 成功，远端仍为 `61c0849` 且已是当前分支祖先，没有新的待合并改动。
+
+## 第五十六轮：同分区 legacy 参考入口与冻结对照（2026-09-21，运行中）
+
+新增 `run_z_image_hybrid_legacy_reference.py`，复用 native worker、源验证和原始事件/result 保存流程，使用相同真实 prompt、初始噪声、512²/9 steps 与完整 FP16 bank。第一次选择 legacy streamed 时，原生准入在推理前明确拒绝 M1：GPU+ANE streaming 仅允许已测 M5 Pro 24 GiB profile。[请求计划](2026-09-21-m1-z-fp16-legacy-streamed-rejection-plan.json)和[拒绝结果](2026-09-21-m1-z-fp16-legacy-streamed-rejection-result.json)保留，没有修改或绕过设备准入。
+
+改为现有允许的 resident hybrid 请求，保持相同 ANE 分区，使用完整 GPU 权重作为诊断参考。[首个 resident 计划](2026-09-21-m1-z-fp16-legacy-resident-1-plan.json)在推理前保存；[对照计划](2026-09-21-m1-z-fp16-legacy-comparison-plan.json)要求两次独立进程先检查所有已导出的 step/final/decoded 张量逐字节重复，再检查 typed stage 最终 latent 的逐字节一致性。失败不改门槛。新增比较工具校验 manifest、runtime、初始噪声、prompt、执行配置与实际 shape/steps，保存误差及原始计划/结果哈希。
+
+本段写入时首个 resident 进程仍在运行，已进入第四步；尚无完整结果或 repeatability/migration verdict。新工具目前仅完成语法检查，不能称完整对照通过。原始运行目录为 `models/TurboCider/experiments/m1-z-fp16-legacy-migration`，必须继续观察同一运行，不因观察超时重启。
+
+Resident legacy 与 typed streaming 的 P/G/K/D/Q、权重布局和 retention 不同，因此即使数值相同也不是 57 §7.1 的 same-plan P1；legacy 还会重算 Qwen conditioning，没有直接导出 caption。它用于缩小迁移差异范围，后续仍需同 source/spec/kernel 的顺序 private reference harness。没有性能或低内存声明。静态检查另发现结果展示层仍有固定的 `bf16_gpu+int8_mlp_fp16_io` 标签；本次精度以 FP16 export identity 为准，该展示问题尚未修复。

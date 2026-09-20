@@ -1,0 +1,17 @@
+{
+  "scope": "Two resident legacy references for one FP16 partition; diagnostic, not same-plan P1",
+  "rule": "Require byte-identical repeated legacy tensors before assessing byte-identical typed stage final latent; preserve failures without loosening tolerance",
+  "runs": [
+    "resident-1",
+    "resident-2"
+  ],
+  "first_plan_sha256": "1d22031291f7fd83863902f0abe9f1ee3faedc17d311e9e3644624c0bbfae1d9",
+  "comparison_driver_sha256": "ee44c4a6a80def215cd333e9bfea50453431024ffcd6f15ca64439487cd33b05",
+  "stage": "/Users/chencanhui/models/TurboCider/experiments/m1-z-real-prompt-fp16-all/stage",
+  "limitations": [
+    "Resident weights and retention differ from typed streaming",
+    "Legacy recomputes Qwen conditioning; caption tensor not directly dumped",
+    "No performance or low-memory claim",
+    "Prior streamed legacy request rejected on M1; device gate unchanged"
+  ]
+}
