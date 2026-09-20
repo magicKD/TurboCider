@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "scope": "Single Qwen3 block 0, INT8 half-MLP, random FP16 input; native/Core ML bridge parity only. No full encoder, GPU baseline, BF16 quality qualification, end-to-end speedup or observed ANE residency proof. Swift compilation and model download were active during diagnostics.",
+  "hardware": {
+    "abi": 1,
+    "engine_version": "0.2.0-native-dev",
+    "gpu": "Apple M1 Pro",
+    "gpu_available": true,
+    "mlx_version": "0.32.0",
+    "optimization_profile": {
+      "coreml_output_copy": false,
+      "external_automatic_partitions": false,
+      "id": "legacy",
+      "z_image_hybrid_segments": false,
+      "z_image_int8_streaming": false,
+      "z_image_memory_lifecycle": false,
+      "z_image_smallest_partition": false,
+      "z_image_suffix_streaming": false
+    },
+    "os": "Version 26.4.1 (Build 25E253)",
+    "physical_memory_bytes": 17179869184,
+    "python_runtime_required": false,
+    "recommended_working_set_bytes": 12713115648,
+    "runtime_dependencies": [
+      "libmlx",
+      "Metal",
+      "Foundation",
+      "ImageIO"
+    ]
+  },
+  "native_source_commit": "d12e584",
+  "native_library_sha256": "403e4b557f0bbbf3c3a6ef37e6e3cf2c27a6328edc3bd1e87f046a7399cb5a95",
+  "exporter_sha256": "a2c8beeb5da9068c0d0e30dcaf18427effaa2edbb79d0ead5b85a76ec7233356",
+  "export_identity": {
+    "ane_mlp_end": 4864,
+    "ane_mlp_start": 0,
+    "buckets": [
+      64
+    ],
+    "checkpoint": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder/model.safetensors.index.json",
+    "checkpoint_bytes": 32855,
+    "checkpoint_sha256": "06b3d5319b6d76d1a4a2433419180016cfd54ed62d086a5e6567a809f8c82634",
+    "checkpoint_shards": {
+      "model-00001-of-00002.safetensors": {
+        "bytes": 4967215360,
+        "sha256": "8c0506e7f4936fa7e26183a4fd8da4e2bdbc5990ba64ae441f965d51228f36ea"
+      },
+      "model-00002-of-00002.safetensors": {
+        "bytes": 3077766632,
+        "sha256": "82f2bd839378541b0557bfabaf37c7d3d637071fdcb73302dedd7cf61162ce07"
+      }
+    },
+    "coremltools": "8.3.0",
+    "hidden": 2560,
+    "mlp_width": 9728,
+    "numpy": "2.0.2",
+    "output_scale": 1.0,
+    "owner": "turbocider.qwen3.encoder.coreml.v1",
+    "recipe": 2,
+    "tensor_prefix": "model",
+    "variant": "int8_pc"
+  },
+  "compiled_manifest": {
+    "action": "compile_manifest",
+    "cache": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-block0-b64-w4864-int8/compiled-cache",
+    "cache_hits": 0,
+    "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-block0-b64-w4864-int8/compiled-cache/manifest-cd96071cca66ad6ed3d7f336c63ac11f66c434f21a78e6326b620e58841f1a17.json",
+    "partitions": 1
+  },
+  "bridge": {
+    "block": 0,
+    "checkpoint": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder/model.safetensors.index.json",
+    "create_seconds": 6.04493987490423,
+    "hidden": 2560,
+    "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-block0-b64-w4864-int8/compiled-cache/manifest-cd96071cca66ad6ed3d7f336c63ac11f66c434f21a78e6326b620e58841f1a17.json",
+    "native_metrics": {
+      "ane_mlp_range": [
+        0,
+        4864
+      ],
+      "block_count": 1,
+      "bucket": 64,
+      "calls_session_total": 6,
+      "checkpoint_sha256_verified": true,
+      "compute_units": "cpuAndNeuralEngine",
+      "first_runtime_prediction_calls_session_total": 1,
+      "first_runtime_prediction_seconds_session_total": 0.004635791,
+      "hidden": 2560,
+      "load_seconds": 5.996677375,
+      "lora_identity_verified": false,
+      "manifest_validation_seconds": 5.407098875,
+      "minimum_profitable_rows": 64,
+      "mlp_width": 9728,
+      "model_interface_setup_seconds": 3.374999999999906e-05,
+      "model_load_seconds": 0.496900167,
+      "observed_ane_residency": "unknown",
+      "output_backing_setup_seconds": 0.06489725,
+      "output_copy_bytes_session_total": 0,
+      "output_scale": 1,
+      "prediction_seconds_session_total": 0.02611254,
+      "prefill_actual_tokens": 0,
+      "prefill_compute_tokens": 0,
+      "prefill_fixed_shape": false,
+      "prefill_padding_tokens": 0,
+      "prefill_plan_reason": "",
+      "prefill_selected_bucket": 0,
+      "provenance": "local checkpoint path, size and SHA-256 verified",
+      "qualified_flexible_backing": false,
+      "quality_max_abs_session": 0,
+      "quality_max_relative_abs_session": 0,
+      "quality_max_relative_l2_session": 0,
+      "quality_min_cosine_session": 1,
+      "quality_validation_calls_session_total": 0,
+      "quality_validation_enabled": false,
+      "quality_validation_passed": true,
+      "runtime_calls_session_total": 5,
+      "runtime_failed": false,
+      "runtime_failure_block": -1,
+      "runtime_failures_session_total": 0,
+      "subsequent_runtime_prediction_calls_session_total": 4,
+      "subsequent_runtime_prediction_seconds_session_total": 0.011701666,
+      "warmup_calls_session_total": 1,
+      "zero_input_warmup_seconds": 0.011133375
+    },
+    "oracle": {
+      "bitwise_equal": true,
+      "correlation": 0.9999999403953552,
+      "cosine": 1.0000001192092896,
+      "mae": 0.0,
+      "max_abs_error": 0.0,
+      "package": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-block0-b64-w4864-int8/block0_mlp_branch.int8_pc.mlpackage"
+    },
+    "output": {
+      "all_finite": true,
+      "max_abs": 2.8359375,
+      "mean": 0.00010989701695507392,
+      "sha256": "e2f61a75b093b6c709dc0aa1e3f0b7aa182e3867883ad3c5b805538813139ed9"
+    },
+    "prediction_median_seconds": 0.0027800420066341758,
+    "prediction_seconds": [
+      0.004868375021032989,
+      0.003781332983635366,
+      0.0027800420066341758,
+      0.002718708012253046,
+      0.0026889999862760305
+    ],
+    "rows": 64,
+    "schema_version": 1
+  },
+  "compute_plan": [
+    {
+      "operator": "ios18.constexpr_blockwise_shift_scale",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "ios18.conv",
+      "preferred": "MLNeuralEngineComputeDevice"
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "split",
+      "preferred": "MLNeuralEngineComputeDevice"
+    },
+    {
+      "operator": "ios18.silu",
+      "preferred": "MLNeuralEngineComputeDevice"
+    },
+    {
+      "operator": "ios18.mul",
+      "preferred": "MLNeuralEngineComputeDevice"
+    },
+    {
+      "operator": "ios18.constexpr_blockwise_shift_scale",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "const",
+      "preferred": null
+    },
+    {
+      "operator": "ios18.conv",
+      "preferred": "MLNeuralEngineComputeDevice"
+    }
+  ]
+}

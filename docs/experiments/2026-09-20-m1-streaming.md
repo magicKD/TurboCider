@@ -176,3 +176,34 @@ Z-Image tokenizer 单独来自 `Tongyi-MAI/Z-Image-Turbo`，下载时将其具�
 新 native 库与 CLI 已构建到 `build/m1-flux-components`，Flux 4B/9B public adapter 测试均 PASS（`/tmp/tc-flux-components-public-tests.log`），API contracts 80 PASS/3 缺 fixture SKIP（`/tmp/tc-flux-components-contract-tests.log`），本机 GPU self-test PASS（`/tmp/tc-flux-components-selftest.json`）。当前 build session `22293` 已进入后续完整 Swift 构建，尚未宣称整个 build exit 0。真实权重的 A→B→A 出图、失败恢复 owner 与缓存峰值仍待验，host fixture 不替代它们。
 
 上一轮完整 `build/m1-flux4/TurboCiderNativeApp` 也已在桌面启动，90 秒保持存活，stdout/stderr 无报错，然后终止本次启动的进程。`/tmp/tc-flux4-app-launch.log`、`/tmp/tc-flux4-app-stderr.log` 为证据；这是 launch smoke，不是 UI 全流程验收，也不包含本节新 Flux native 修改。
+
+## 第七轮：真实 Qwen3 权重的单 block ANE 工具链与桥接
+
+Flux text encoder 已完整校验，因此无需等待 transformer 下载即可先验证 encoder artifact 工具链。首次在 App 的 Core ML Python 环境运行 `export_qwen3.py` 失败：无条件 `import mlx.core`，而该环境按 `coreml.lock.txt` 安装并不含 MLX。BF16/F16 路径只需要 NumPy；现将 MLX 导入移至实际 affine 量化解码分支。使用同一干净 Core ML 环境重跑，真实 BF16 的导出成功。量化源仍需要带 MLX 的构建环境，本次没有宣称覆盖它。
+
+本次实验固定为 **Qwen3 layer 0、hidden=2560、MLP width=9728、ANE prefix=4864、64-token bucket、INT8 per-channel artifact、FP16 I/O、output_scale=1**。只导出一个 block，不将不完整 manifest 当作完整 encoder 路由。
+
+导出命令（Python 为 `~/Library/Application Support/TurboCiderNative/toolchains/coreml/bin/python3`）：
+
+```sh
+python tools/coreml/export_qwen3.py \
+  --model /Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder \
+  --output /Users/chencanhui/models/TurboCider/experiments/m1-qwen3-block0-b64-w4864-int8 \
+  --bucket 64 --ane-mlp-width 4864 --layer-count 1 --variant int8_pc
+```
+
+随后使用 native `coreml` 的 `compile` action 生成 managed-cache manifest（1 partition、0 cache hits），并通过 `tools/native/benchmark_coreml_ffn_bridge.py` 调用真实 C ABI：64 rows、seed=42、input_scale=0.25、1 次 warmup、5 次预测，额外以源 `.mlpackage` 的直接 Core ML predict 作桥接 oracle。export、compile、bridge 均 exit 0。
+
+| 诊断项 | 结果 | 能证明的范围 |
+|---|---:|---|
+| native 与直接 Core ML 输出 | **bitwise equal**，max error=0，全部 finite | C ABI/FP16 backing/布局桥接正确；两侧是同一 INT8 artifact，不能证明相对原 BF16 的质量 |
+| 5 次 native predict 中位数 | 2.780 ms | 单 block 诊断值；当时有 Swift 构建和下载，不作正式性能对照 |
+| native create | 6.045 s | 包含来源校验与 model setup |
+| manifest validation | 5.407 s | 冷启动成本显著，后续完整请求比较必须计入 |
+| Core ML model load | 0.497 s | 与 manifest validation 分开报告 |
+| compute plan preferred device | 两个 conv、split、silu、mul 共 5 个计算 op 偏好 Neural Engine | 静态 compute plan；不能替代运行时驻留/dispatch 观测 |
+| observed ANE residency | **unknown** | 未取得运行时硬件证据，不宣称已证明所有计算驻留 ANE |
+
+逐项原始结果、compute plan、导出来源、native library/exporter SHA-256 已封存到 [2026-09-20-m1-qwen3-block0-bridge.json](2026-09-20-m1-qwen3-block0-bridge.json)。本节没有 GPU baseline、原 BF16 数值对照、完整 encoder 或模型端到端收益，因此不能据此选择最佳 GPU/ANE 划分。下一步需要在空闲测量窗口完成数值 oracle、分宽度对照和完整请求验证。
+
+当前权重目录约 11 GiB，下载 session `70822` 与新 App build session `22293` 继续运行；后者日志 `/tmp/tc-flux-components-build.log`。原目标仍未完成：两模型真实 streaming 出图/性能、ANE 最佳划分、R1 后续身份迁移、R2/R4/R5/R6 及产品认证仍须继续。
