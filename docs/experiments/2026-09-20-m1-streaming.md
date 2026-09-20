@@ -779,3 +779,14 @@ host fixture 验证多 chunk 内容复制与字节数、跨安装内容身份、
 另对上一轮 block 29 的真实 FP16 `model.mlmodelc` 执行导入、目标内容验证、revalidate 和 owner 释放。复制 117,968,870 bytes，native portable file-list 内容 digest 为 `f98a425fd17d2c11f4d369598d0dde7c510b82e44390d50d250554e9346f7538`；其编码与第四十一轮 legacy tree hash 不同，不能混用。临时 generation 已删除。本轮没有从该新目录执行 Core ML prediction。
 
 新源文件已加入 native build source list；本轮只编译并执行 standalone host 测试，没有重建完整 dylib/App。见[验证记录](2026-09-21-m1-z-coreml-generation-validation.json)。该类没有解析 manifest、验证父 checkpoint/分区/precision、签发执行 authority 或提供安装 ID 注册表；它不能替代完整 VerifiedCoreMLBundleLease。H0/H1 仍需语义绑定与 session 接入，H2/H3 完整 join/receipt、真实出图质量和性能验证继续待完成。
+
+
+## 第四十三轮：generation 导入故障清理与实际 Core ML 加载（2026-09-21）
+
+为上一轮 CoreMLGeneration 补充确定性 syscall 故障测试。只对单独编译的测试对象重命名 pread/write/fchmod，生产代码、SourceLease 内容哈希和 runtime 均无新增测试开关。12 类覆盖：EINTR/短读写、部分读取后 EOF/EIO、部分写入后 ENOSPC、零进展写、读后/写后/seal 时取消、seal 失败、复制字节损坏、复制期间源路径替换和原地修改。每例分别检查是否返回对象与异常类型，失败后 fd 数恢复、私有目录为空，再进行干净重试并逐字节比较独立 oracle。复制损坏必须由目标 native content digest 校验拒绝。普通运行和 ASan/UBSan 均通过；这些测试没有发现需要修改生产实现的新错误。
+
+另新增 opt-in Objective-C++ 集成测试，将第四十一轮真实 block 29 FP16 compiled model 导入只读 generation，直接以该私有目录路径调用 MLModel 加载。验证 x/y 均为 FP16 [1,3840,1,1088]，CPU_AND_NE 配置下执行 1 次、0 warmups 的全零输入预测；该分支无 bias，独立 oracle 为所有输出精确零。实际输出逐元素通过，加载前后、预测后、Core ML autorelease pool 退出后的 generation revalidate 全部通过，最后 owner 释放后目录被删除。
+
+复制字节和 portable 内容 digest 与上一轮相同：117,968,870 bytes、`f98a425fd17d2c11f4d369598d0dde7c510b82e44390d50d250554e9346f7538`。见[原始验证与源码身份记录](2026-09-21-m1-z-coreml-generation-execution-validation.json)。该测试证明 sealed generation 能被实际 Core ML 路径加载并预测，弥补上一轮仅文件操作的证据范围；它没有执行 GPU suffix join，也不替代原 32 分支非零输入数值筛查或完整出图。CPU+NE 不证明实际 ANE 驻留，未做性能比较。
+
+本轮只新增测试与文档，没有修改生产 native 实现或重建完整 dylib/App。VerifiedCoreMLBundleLease 的 manifest/父 checkpoint/partition/precision 语义绑定、安装 ID 注册和 HybridSession 接入仍未完成；Core ML 预测本身的取消/阻塞 owner/drain 也没有由导入 syscall 测试覆盖。

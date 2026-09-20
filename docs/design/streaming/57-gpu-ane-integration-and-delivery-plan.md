@@ -383,3 +383,10 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 已新增内部 CoreMLGeneration：枚举并验证完整 regular-file tree，经 held source fd 复制到独立私有目录，再独立验证目标内容，关闭写句柄并设只读权限，owner 持有目标 SourceLease/目录 snapshot 到最后使用者结束。revalidate 拒绝文件/目录替换与 entry set 变化；源安装更新不影响旧 generation。host 生命周期/变更拒绝测试、ASan/UBSan 和真实单分支 compiled tree 导入通过，见[第四十二轮](../../experiments/2026-09-20-m1-streaming.md)。
 
 这是受管理 generation 的内部存储基础，尚无 validated installation-ID 注册、manifest/父 checkpoint/partition/precision 语义验证或 HybridSession 接入；不能称为 VerifiedCoreMLBundleLease 完成，更不能授予 public hybrid authority。真实模型验证只涉及文件复制/内容与生命周期，没有在新 generation 上预测，取消中途和 I/O 故障测试仍需补齐。
+
+
+## 19. H1 generation 故障与模型加载验证（2026-09-21）
+
+第四十三轮补齐导入过程的确定性短 I/O、EOF/EIO/ENOSPC、零进展、读/写/seal 边界取消、seal 失败、目标内容损坏与源 generation 变化测试；每例验证失败不发布、fd/目录清理和干净重试，普通/ASan/UBSan 通过。真实 block 29 FP16 compiled model 已从只读私有 generation 路径加载并完成一次全零预测，feature ABI、全零 oracle、前后 revalidate 与最终目录清理通过。见[实验记录](../../experiments/2026-09-20-m1-streaming.md)。
+
+这关闭的是文件导入故障和实际 Core ML 路径加载的验证缺口；不证明已接入 HybridSession，不替代 typed bundle 的语义/父来源绑定，也没有覆盖预测阻塞/取消或完整 owner/join/receipt。H0/H1 和 HY-M0 仍不能整体标记完成。
