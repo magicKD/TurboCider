@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Opt-in, real-weight Flux/Z-Image streaming lifecycle check in a disposable process.
 
-Requires a native test-hook build. An injected false drain result models unknown
+Quarantine mode requires a native test-hook build; success/cancel modes also
+work with ordinary builds. An injected false drain result models unknown
 completion; it does not hang the GPU. The unsafe case intentionally retains its
 engine until this process exits. Run each mode in a separate process.
 """
@@ -36,8 +37,14 @@ def main():
     lib.tc_engine_load.argtypes = [C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
     lib.tc_engine_unload.argtypes = [C.c_void_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
     lib.tc_engine_prepare.argtypes = [C.c_void_p, C.c_char_p, C.c_int, C.c_void_p, C.c_void_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
-    lib.tc_engine_test_streaming_drain_failure.argtypes = [C.c_void_p, C.c_int, C.POINTER(C.c_void_p)]
-    lib.tc_engine_test_streaming_retained_engines.restype = C.c_uint64
+    fault = getattr(lib, 'tc_engine_test_streaming_drain_failure', None)
+    retained = getattr(lib, 'tc_engine_test_streaming_retained_engines', None)
+    if args.mode == 'quarantine' and (fault is None or retained is None):
+        raise RuntimeError('Quarantine mode requires a native test-hook build')
+    if fault is not None:
+        fault.argtypes = [C.c_void_p, C.c_int, C.POINTER(C.c_void_p)]
+    if retained is not None:
+        retained.restype = C.c_uint64
     engine = create_native_engine(lib, config)
     callback_type = C.CFUNCTYPE(None, C.c_char_p, C.c_void_p)
     events = []
@@ -58,7 +65,7 @@ def main():
         return dict(status=status, result=consume(lib, result), error=consume(lib, error),
                     wall_seconds=time.perf_counter() - start)
 
-    report = dict(model=args.model_id, mode=args.mode, library_sha256=hashlib.sha256(Path(args.library).read_bytes()).hexdigest())
+    report = dict(model=args.model_id, mode=args.mode, test_hooks_present=fault is not None, library_sha256=hashlib.sha256(Path(args.library).read_bytes()).hexdigest())
     if args.mode == 'quarantine':
         error = C.c_void_p()
         status = lib.tc_engine_test_streaming_drain_failure(engine, 1, C.byref(error))
@@ -108,7 +115,8 @@ def main():
             assert digest == args.expected_sha256, digest
         lib.tc_engine_free(engine)
         engine = None
-        assert lib.tc_engine_test_streaming_retained_engines() == 0
+        if retained is not None:
+            assert retained() == 0
     report['status'] = 'PASS'
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))

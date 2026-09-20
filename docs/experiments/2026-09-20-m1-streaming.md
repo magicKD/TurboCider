@@ -416,3 +416,11 @@ App 新二进制再次直接启动并保持 30 秒，无提前退出、stdout/st
 [六项真实权重检查](2026-09-21-m1-streaming-owner-lifecycle.json)全部通过：每模型分别正常成功、首 block 取消后同 engine 成功重试、注入 false drain 后拒绝 generate/load/prepare/unload 且 free 不 terminate、新 engine 不能恢复 GPU 使用。Z-Image 首轮错误分类测试的失败被保留在 `/tmp/tc-z-quarantine-cancel-retry.log`；修复后的独立结果目录为 `/Users/chencanhui/models/TurboCider/experiments/m1-final-owner-tests`。两模型成功和重试图像都与各自先前 PNG 的 SHA-256 完全一致。
 
 这推进了两模型 exact denoiser 的 R4 验收，但不关闭全部 R4：没有把假 drain failure 当成真实硬件 hang，也未覆盖 encoder/VAE 的 GPU 故障、全部 I/O/分配/取消边界、worker 有界恢复。legacy Z-Image streaming 的异常清理也不是本轮完整 owner 保留证明的范围。
+
+## 第十九轮：无故障注入钩子的构建复跑
+
+完整 native 构建输出 `build/m1-release`，未启用 test hooks/audit instrumentation；检查确认无 `tc_engine_test_streaming_drain_failure` 或 test catalog setter 导出。随后修复一个结果字段 bug：Z-Image 的普通 BF16 GPU generate 分支未设置 backend/precision，导致返回 null；现在明确返回 `mlx_cpp_metal` / `bf16`，不改动数值计算。更新该对象后重新链接成功。
+
+[两模型复跑记录](2026-09-21-m1-streaming-release-smokes.json)：Flux 8.22962 s、Z-Image 33.82261 s，二者 PNG 均与先前 SHA 一致。库 SHA-256 为 `0d24ae5f29307b461a03d00b855f0f51f0f0d469c1641f8f3fdc60e88f0ca3df`。Z-Image backend/precision 断言通过，metadata-only public adapter 合约测试通过（四组件 lease、身份/layout snapshot、路由拒绝、目标失败清理与源替换检测）。这些是本机 smoke 时间，不是新的受控 P1 统计。
+
+`check_streaming_owner_lifecycle.py` 的 success/cancel-retry 模式也可用于无测试钩子构建；quarantine 模式明确要求 test-hook 构建。上述运行仍通过研究用 candidate constructor，不把无测试钩子误称为 public preset 已发布。正式 streaming catalog、R1/R6 身份链及完整 R4/R5 验收仍未完成。

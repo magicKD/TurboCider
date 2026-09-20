@@ -2321,6 +2321,11 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         result.precision = "int8_tensorwise_convrot_g256";
         result.checkpoint = transformer_checkpoint_.filename().string();
     }
+    if (!gguf_transformer_ && !nvfp4_transformer_ &&
+        !convrot_transformer_ && !hybrid_) {
+        result.backend = "mlx_cpp_metal";
+        result.precision = "bf16";
+    }
     if (hybrid_)
         result.hybrid = hybrid_->metrics();
     if (encoder_hybrid_)
