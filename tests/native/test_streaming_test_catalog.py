@@ -385,6 +385,12 @@ class TestCatalogTests(unittest.TestCase):
                     "turbocider-streaming-test-catalog-v1",
                 )
                 generated_record = generated["records"][0]
+                manifest_path = Path(raw).resolve().parent / "runtime-build/runtime-build-manifest.json"
+                if manifest_path.is_file():
+                    build_manifest = json.loads(manifest_path.read_text())
+                    self.assertEqual(generated_record["runtime"]["turbocider_build_id"],
+                                     build_manifest["runtime_build_id"])
+                    self.assertRegex(build_manifest["runtime_build_id"], r"^tc-runtime-build-v1-[0-9a-f]{64}$")
                 self.assertEqual(
                     generated_record["plan"]["canonical_config"]
                     ["stages"]["denoiser"]["resident_prefix_blocks"],
@@ -403,6 +409,17 @@ class TestCatalogTests(unittest.TestCase):
                     resolved_value["selection"]["layout_digest"],
                     generated_record["plan"]["layout_digest"],
                 )
+                stale_runtime = copy.deepcopy(generated)
+                stale_runtime_record = stale_runtime["records"][0]
+                stale_runtime_record["runtime"]["turbocider_build_id"] = "different-native-build"
+                stale_runtime_record["canonical_record_digest"] = builder.canonical_record_digest(stale_runtime_record)
+                status, failure = install(public, stale_runtime)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("streaming_resolution_stale", failure)
+                status, failure = install(public, generated)
+                self.assertEqual(status, 0, failure)
                 cli_generated = build_exact_catalog_with_cli()
                 self.assertEqual(cli_generated["records"][0]["workload"]["execution_container"], "cli_worker")
                 self.assertEqual(

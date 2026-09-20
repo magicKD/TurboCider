@@ -1,3 +1,4 @@
+#include "../../runtime/build_identity.hpp"
 #include "bridge.hpp"
 #include "../../runtime/lora_identity.hpp"
 #include "../../runtime/memory_execution.hpp"
@@ -107,7 +108,7 @@ static streaming::PresetSourceIdentity ltx_public_source_identity(
 }
 
 static streaming::PresetRuntimeIdentity ltx_public_runtime_identity() {
-    return {"turbocider-streaming-2026-09-18", "public-streaming-runtime-v3",
+    return {tc::runtime_build_identity(), "public-streaming-runtime-v3",
             "ltx-public-adapter-v2", "ltx-pread-convrot-lease-v1",
             kLtxPublicKernelRevision, "ltx-request-cache-disabled-v1"};
 }

@@ -1,0 +1,173 @@
+{
+  "scope": "Native hook build identity and functional GPU smoke; synthetic catalogs, no release qualification or statistical performance comparison",
+  "runtime_build_id": "tc-runtime-build-v1-fe428f00113044c377ed3f4c91839dcaac4688c4aecd7bb89c5bbf1d8e418b3a",
+  "build_artifacts": {
+    "libturbocider.dylib": "f43620285adce3bdd692ec5776cad0b5b54478fb6ea9e403e7a1ccc46a086c25",
+    "turbocider": "f0a177c5433ba1e46dada03e4145f24fc9d3db6662b5a3dc49da681220c97e91",
+    "h3_shaders.metal": "dd3c23b172604cd98f763d26b2696f01f8e73fa5d956bac2dff3e311543bbc31",
+    "ltx_shaders.metal": "568aabe51d00e53637fdf62eb9d12ff9a24f6368e9970d062240911526ac7e48",
+    "runtime-build/runtime-build-manifest.json": "4781e51050f37e22e5b059b7d3fe53e3eba56e57801a0e8c222cc8db636e15ce"
+  },
+  "tests": {
+    "generator": {
+      "run": 6,
+      "failed": 0
+    },
+    "native_contract": {
+      "run": 83,
+      "skipped": 3,
+      "failed": 0
+    },
+    "public_adapter_host": [
+      "flux4",
+      "flux9",
+      "z-image",
+      "h3",
+      "ltx"
+    ],
+    "test_catalog_api": {
+      "run": 3,
+      "failed": 0
+    }
+  },
+  "gpu_smokes": {
+    "flux4": {
+      "wall_seconds": 8.062327708932571,
+      "timings_seconds": {
+        "denoise": 6.28086475,
+        "hybrid_setup": 9.5667e-05,
+        "image_encode": 0,
+        "request_wall": 7.67042975,
+        "text_encode": 1.064706,
+        "vae_decode": 0.224022083
+      },
+      "memory": {
+        "mlx_active_bytes": 100224070,
+        "mlx_peak_bytes": 6269857144,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "image_sha256": "505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02",
+      "public_streaming": {
+        "actual_layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+        "actual_plan_verified": true,
+        "authorized_layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+        "calibrated_request_bytes": 11596411699,
+        "catalog_revision": "verified-source-smoke-v2",
+        "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+        "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+        "execution_container": "cli_worker",
+        "memory_scope": "execution_process_tree_v1",
+        "preset_id": "test-flux2-klein-4b-12g-aa7271f33abc",
+        "preset_revision": 1,
+        "receipt_digest": "c825a5b7462cc12dbcd187ffc6ac0190863612e621bca5ad105fca83cb3ff949",
+        "receipt_schema_version": 2,
+        "receipt_source_generation": 4,
+        "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+        "record_digest": "1a7c37cf6560d07b5ecb8f04482261f7b03dd4f126867084d85fe7de3b504baa",
+        "resolution_digest": "ead95be58030a7128e8c4a5e9cbfde7ac38e633388c2824af1951e6eae2848b5",
+        "runtime_digest": "5a3dadf77e59e50c73048e7a173a5e9892936ca8e4110afe85a598b12fc1b618",
+        "schema_version": 1,
+        "source_digest": "b0d8f57c7301054278a1920d2fda5e032a0b2b9fadd4f947d818db8841c95452",
+        "target_request_memory_bytes": 12884901888,
+        "workload_digest": "e467409473274ad11f9697a9a1fb875b6221309e935e4cf853713cd71d6f38ba"
+      },
+      "receipt": {
+        "boundaries": [],
+        "canonical_digest": "c825a5b7462cc12dbcd187ffc6ac0190863612e621bca5ad105fca83cb3ff949",
+        "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+        "implementation": "generic_stage_executor_v2",
+        "layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+        "schema_version": 2,
+        "stages": [
+          {
+            "canonical_digest": "035665d7f5b1bb38165bbb29a4e3329a2a7ee0dbd070deed903db5a4820e1bba",
+            "completed_groups": 100,
+            "completed_passes": 4,
+            "drain_completed": true,
+            "event_digest": "97792d3d1d2f3f42a97b7dd2225229a5e614d3a2c690077b23695e38a4563196",
+            "fills": 100,
+            "groups_submitted": 100,
+            "implementation": "generic_stage_executor_v2",
+            "layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+            "logical_read_bytes": 29444075520,
+            "reader_fences_completed": 100,
+            "reader_fences_issued": 100,
+            "schema_version": 2,
+            "source_generation": 4,
+            "stage_id": "denoiser",
+            "stage_index": 0
+          }
+        ]
+      }
+    },
+    "z": {
+      "wall_seconds": 33.493434290983714,
+      "timings_seconds": {
+        "denoise": 29.15006475,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 33.104829709,
+        "text_encode": 3.102778916,
+        "vae_decode": 0.377680583
+      },
+      "memory": {
+        "mlx_active_bytes": 336278176,
+        "mlx_peak_bytes": 8978303336,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "image_sha256": "8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3",
+      "public_streaming": {
+        "actual_layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+        "actual_plan_verified": true,
+        "authorized_layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+        "calibrated_request_bytes": 11596411699,
+        "catalog_revision": "verified-source-smoke-v2",
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+        "execution_container": "cli_worker",
+        "memory_scope": "execution_process_tree_v1",
+        "preset_id": "test-z-image-turbo-12g-6bf3f271ad9b",
+        "preset_revision": 1,
+        "receipt_digest": "aaa27152f67946bdc3b92d4d650176daf0ef38235ef072814b11fc57a74633df",
+        "receipt_schema_version": 2,
+        "receipt_source_generation": 4,
+        "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+        "record_digest": "f517e2d65543bd032ac234932821241b1d20afb17effbdee490cff7ccb1de977",
+        "resolution_digest": "91b227d31c1b8bedd6bbb59cf2e2be0257d4bc8a0fe1da7fe19f6a4bb224b86f",
+        "runtime_digest": "e05021f181c0e4c8e953b76235e311b1cee5fc8765b2ac6a69599584e5e52581",
+        "schema_version": 1,
+        "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+        "target_request_memory_bytes": 12884901888,
+        "workload_digest": "f9554f8bb73beeb0453bb9e4aea7e542599f195400e8f98326d64eb8cc302cc4"
+      },
+      "receipt": {
+        "boundaries": [],
+        "canonical_digest": "aaa27152f67946bdc3b92d4d650176daf0ef38235ef072814b11fc57a74633df",
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "implementation": "generic_stage_executor_v2",
+        "layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+        "schema_version": 2,
+        "stages": [
+          {
+            "canonical_digest": "f680824acb5b9dfd9871f004d586cee37e7aac0f453cd31b0f7f8e7962b6359d",
+            "completed_groups": 270,
+            "completed_passes": 9,
+            "drain_completed": true,
+            "event_digest": "1917c97e2b4c3c75780107730f206e1c7f09b36da96d60fccc67deae9c404940",
+            "fills": 270,
+            "groups_submitted": 270,
+            "implementation": "generic_stage_executor_v2",
+            "layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+            "logical_read_bytes": 97691581440,
+            "reader_fences_completed": 270,
+            "reader_fences_issued": 270,
+            "schema_version": 2,
+            "source_generation": 4,
+            "stage_id": "denoiser",
+            "stage_index": 0
+          }
+        ]
+      }
+    }
+  }
+}

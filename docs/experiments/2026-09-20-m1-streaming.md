@@ -605,3 +605,23 @@ Swift NativeEngine 增加异步 verifyStreamingSources，继续在自身串行�
 [真实 Flux 4B 跨会话记录](2026-09-21-m1-fresh-engine-source-proof.json)：首次显式校验 15,975,638,166 bytes 用 7.993 s；销毁首个 engine，再新建 worker，安装第三十轮合成测试 catalog，在第二个 engine 尚未调用验证 API 时 resolve 成功，wall 0.239556 s。随后缓存复验读取 0 bytes、8 hits。该行为支撑 Swift options 中新开 engine 的解析流程，但本轮未重新构建 App 或进行 GUI 点击验收。
 
 本轮未执行 GPU generate 或新增性能比较；使用的 catalog 仍是 TEMPLATE 测试输入。证明只在当前 native 进程中有效，重启后需要显式校验；persistent import proof、生产 catalog、自动 runtime fingerprint、GPU/ANE 多阶段与完整 App/worker 验收仍待完成。
+
+
+## 第三十三轮：构建输入自动绑定 runtime 身份（2026-09-21）
+
+新增 `generate_runtime_build_identity.py`，标准 native build 在编译前生成内部常量和可审查的输入清单，构建结束时重新计算并拒绝变化的输入。Flux/Z-Image/H3/LTX 的 public runtime identity 改用该常量，取代固定日期标签。该路径没有手写 fallback，也不从请求或 catalog 接受 build id。
+
+[本轮构建清单](2026-09-21-m1-runtime-build-manifest.json)含 330 项源码/构建文件和 386 项 MLX dependency 文件。native 代码、C binding、native CLI/service glue、构建脚本、MLX headers/dylib/metallib、clang/clang++/ld/ar、compiler version、SDKSettings、架构、部署目标及编译/测试/审计配置共同决定 key；安装根路径归一化，文档和 build 输出不参与。完整 hook 构建 build/m1-runtime-identity 成功并通过结束时的清单复核，runtime id 为 `tc-runtime-build-v1-fe428f00113044c377ed3f4c91839dcaac4688c4aecd7bb89c5bbf1d8e418b3a`；dylib SHA-256 为 `f43620285adce3bdd692ec5776cad0b5b54478fb6ea9e403e7a1ccc46a086c25`。
+
+生成器 6 项测试通过：相同内容迁移目录保持 key；源码/构建脚本/MLX shader/headers/library、编译工具/SDK 身份和策略变化使 key 改变；编译期间输入变化以及未纳管的 compiler search 环境拒绝。native contract suite 83 项运行、3 项原有跳过，其余通过。四模型 public adapter host suite（Flux 同时覆盖 4B/9B）通过；H3/LTX 测试增加 TURBOCIDER_TEST_NATIVE_DIR，确保运行本轮库。test-catalog API suite 3 项通过，检查生成记录的 build id 与清单一致，并验证仅换 runtime id、重算合法 record digest 后仍返回 streaming_resolution_stale。host 链接的 macOS 26.0/26.2 目标提示保留，本机 26.4.1 通过，不扩展为较旧 OS 验收。
+
+这是 native compatibility key，不是签名或最终 App/package manifest。Apple SDK 只记录 SDKSettings 身份，未 hash 整个 SDK；Swift frontend、外部 helper 可执行文件、动态依赖运行时完整性和最终安装验收仍待补齐。当前 bundled catalog 仍为空且内嵌于 native 源码，未来分离 catalog 数据时须避免 build key 自引用；这项自动指纹不使生产 catalog 自动具备发布资格。测试 hook/审计开关不同产生不同 key，不能重标旧实验或 hook 记录作为 release 证据。
+
+[本轮功能验证及构建产物哈希](2026-09-21-m1-runtime-identity-validation.json)：显式验证官方模型、确认生成的 v2 record 使用本轮 runtime id 后，在同一 worker 中执行完整图片请求。两个模型均为 256²、seed 42、P0/G1/K2、目标 12 GiB；Flux 使用 D1/Q2、4 steps，Z-Image 使用 D0/Q1、9 steps。
+
+| 模型 | 请求 wall | native denoise | MLX peak bytes | 图片 SHA-256 |
+|---|---:|---:|---:|---|
+| Flux 4B | 8.062 s | 6.281 s | 6,269,857,144 | `505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02` |
+| Z-Image | 33.493 s | 29.150 s | 8,978,303,336 | `8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3` |
+
+两张图片与原 golden 字节一致，actual_plan_verified=true、authorized/actual layout 相等，receipt 分别完成 100/270 fills 和 reader fences，并完成 drain。[Flux 原始报告](2026-09-21-m1-flux4-runtime-identity-smoke.json)、[catalog](2026-09-21-m1-flux4-runtime-identity-catalog.json)、[request](2026-09-21-m1-flux4-runtime-identity-request.json)及 [Z-Image 原始报告](2026-09-21-m1-z-runtime-identity-smoke.json)、[catalog](2026-09-21-m1-z-runtime-identity-catalog.json)、[request](2026-09-21-m1-z-runtime-identity-request.json)均保留。calibration/TEMPLATE performance 字段仍是测试 hook 合成输入；本轮未采完整进程树 footprint、未比较性能置信区间，也未重建/验收新 App，不能作为 12 GiB 发布或全链路 GPU/ANE 性能结论。

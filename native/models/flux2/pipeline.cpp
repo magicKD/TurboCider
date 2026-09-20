@@ -1,3 +1,4 @@
+#include "../../runtime/build_identity.hpp"
 #include "../../runtime/acceleration.hpp"
 #include "flux.hpp"
 #include "flux_streaming.hpp"
@@ -99,7 +100,7 @@ streaming::PresetSourceIdentity flux_public_source_identity(
 }
 
 streaming::PresetRuntimeIdentity flux_public_runtime_identity(const std::string &model) {
-    return {"turbocider-streaming-2026-09-18", "public-streaming-runtime-v2",
+    return {tc::runtime_build_identity(), "public-streaming-runtime-v2",
             model + "-public-adapter-v3-all-component-lease",
             model == "flux2-klein-4b" ? "flux2-single-pread-bf16-lease-v1" : "flux2-sharded-pread-bf16-lease-v1",
             flux_exact_kernel_revision(model),

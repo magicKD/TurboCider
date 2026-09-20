@@ -1,0 +1,106 @@
+{
+  "records": [
+    {
+      "calibration": {
+        "calibrated_request_bytes": 11596411699,
+        "calibration_id": "test-record-template-v1",
+        "complete": true,
+        "confirmation_sample_count": 1,
+        "estimator_revision": "tree-phys-footprint-linear-p95-v1",
+        "evidence_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+        "execution_container": "cli_worker",
+        "maximum_sample_gap_ns": 1,
+        "scope": "execution_process_tree_v1"
+      },
+      "canonical_record_digest": "1a7c37cf6560d07b5ecb8f04482261f7b03dd4f126867084d85fe7de3b504baa",
+      "catalog_revision": "verified-source-smoke-v2",
+      "device": {
+        "maximum_physical_memory_bytes": 0,
+        "minimum_physical_memory_bytes": 17179869184
+      },
+      "id": "test-flux2-klein-4b-12g-aa7271f33abc",
+      "performance": {
+        "comparison_kind": "P1_same_layout",
+        "confidence_status": "TEMPLATE",
+        "evidence_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+        "logical_read_bytes": 0,
+        "profile_id": "test-record-template-v1",
+        "rank": 1
+      },
+      "plan": {
+        "canonical_config": {
+          "enabled": true,
+          "retention": "request",
+          "schema_version": 1,
+          "selection": "manual",
+          "stages": {
+            "denoiser": {
+              "block_group_size": 1,
+              "io_workers": 2,
+              "prefetch_distance": 1,
+              "residency": "streamed",
+              "resident_prefix_blocks": 0,
+              "slot_count": 2
+            }
+          }
+        },
+        "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+        "layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+        "multi_pool_policy": "retain_all",
+        "pass_transition": "reload"
+      },
+      "release": {
+        "channel": "public-experimental",
+        "review_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+        "reviewed_commit": "test-record-template",
+        "revoked": false
+      },
+      "revision": 1,
+      "runtime": {
+        "adapter_revision": "flux2-klein-4b-public-adapter-v3-all-component-lease",
+        "allocator_policy_revision": "mlx-request-cache-policy-v1",
+        "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+        "reader_revision": "flux2-single-pread-bf16-lease-v1",
+        "runtime_revision": "public-streaming-runtime-v2",
+        "turbocider_build_id": "tc-runtime-build-v1-fe428f00113044c377ed3f4c91839dcaac4688c4aecd7bb89c5bbf1d8e418b3a"
+      },
+      "source": {
+        "artifact_manifest_digest": "fdba1a4019cf925357b30afbc27390450b287dcf8d2d10f0d39c07ea08030fca",
+        "identity_version": 2,
+        "model_variant": "flux2-klein-4b-bf16",
+        "weight_format": "diffusers-bf16-single-file"
+      },
+      "workload": {
+        "approximation": false,
+        "audio": false,
+        "batch": 1,
+        "conditioning_revision": "qwen3-flux2-klein-v1",
+        "device_class": "Apple M1 Pro/17179869184",
+        "dynamic_text": true,
+        "execution": "gpu",
+        "execution_container": "cli_worker",
+        "feature_digest": "6f10d61a3f70612d366ebec99dfce433bc8478bf253e604f184a26614d777c92",
+        "fps": 0,
+        "frames": 1,
+        "height": 256,
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "steps": 4,
+        "token_shapes": [
+          {
+            "compute_rows": 30,
+            "encoder": "qwen3",
+            "padded_rows": 30,
+            "template_revision": "flux2-template-v1",
+            "tokenizer_revision": "qwen3-flux2-v1",
+            "valid_rows": 30
+          }
+        ],
+        "vae_policy_revision": "flux2-vae-v1",
+        "width": 256
+      }
+    }
+  ],
+  "revision": "verified-source-smoke-v2",
+  "schema": "turbocider-streaming-test-catalog-v1"
+}

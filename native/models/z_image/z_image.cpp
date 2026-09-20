@@ -1,3 +1,4 @@
+#include "../../runtime/build_identity.hpp"
 #include "z_image.hpp"
 #include "block_profile.hpp"
 
@@ -97,7 +98,7 @@ streaming::PresetSourceIdentity z_image_public_source_identity(
 
 streaming::PresetRuntimeIdentity z_image_public_runtime_identity() {
     return {
-        "turbocider-streaming-2026-09-18",
+        tc::runtime_build_identity(),
         "public-streaming-runtime-v2",
         "z-image-public-adapter-v3-all-component-lease",
         "z-image-pread-bf16-v2-fd-lease",

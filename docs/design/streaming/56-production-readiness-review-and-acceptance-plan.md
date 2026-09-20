@@ -149,6 +149,10 @@ Z-Image/Flux 的 `turbocider_build_id` 当前是固定版本字符串；更新 r
 P2 使用发布入口同样的 root/child boundary、冷暖缓存和生命周期。要说明 App 是否被纳入采样，不能把 worker-only 峰值叫整个桌面 App 峰值。
 发布后的撤回策略首版可以是新 bundled catalog + App 更新；现有 production provider 为静态 snapshot，不应声称已经实现远程即时撤回。
 
+2026-09-21 runtime 身份增量：标准 native build 在编译前生成 `runtime-build/runtime-build-manifest.json` 和内部常量 `tc-runtime-build-v1-<sha256>`，Flux/Z-Image/H3/LTX 的 public runtime identity 使用该常量。输入覆盖 native 源码/头文件/shader、C binding、native CLI/service glue、构建脚本、MLX headers/dylib/metallib、clang/clang++/ld/ar 内容、compiler version、SDKSettings.json、架构、部署目标和测试/审计/实验开关及编译选项；源码目录、SDK 和 MLX 安装目录经过位置归一化。构建完成前再次计算并比较清单，输入变更则报错；没有生成 header 的非标准构建会失败，不使用手写默认身份。
+
+这是保守的 native compatibility key，不是签名、模型来源证明或实际 binary hash。SDK 只固定 SDKSettings 身份，未 hash 整个 Apple SDK；Swift frontend、外部 helper 可执行文件与最终 bundle/动态依赖运行时完整性仍需单独的 package manifest/安装验收。catalog 的独立 revision 字段保留，但当前 bundled catalog 仍内嵌于 native 源码且为空，未来分离数据生成时还需避免 catalog 内容与 build key 自引用。测试 hook/审计配置不同会产生不同 key，旧实验或 hook 记录不能直接改标签作为新 release 资格。R6 仍未整体关闭。
+
 ## 3. 四模型应如何排序
 
 以下是文档中的历史证据，**不代表本轮或最终 release commit**：

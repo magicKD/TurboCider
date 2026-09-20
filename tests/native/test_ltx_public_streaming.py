@@ -2,6 +2,7 @@
 """Build and run the host-only LTX public streaming adapter fixture."""
 
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 from test_ltx_streaming_layout import fixture
 
 ROOT = Path(__file__).resolve().parents[2]
+NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
 
 
 def tokenizer_fixture() -> dict:
@@ -68,8 +70,8 @@ def main() -> None:
             "-isysroot", sdk, "-I", str(ROOT / "native"),
             "-I", str(ROOT / "native/core"),
             str(ROOT / "tests/native/ltx_public_streaming_test.cpp"),
-            "-L", str(ROOT / "build/native"), "-lturbocider",
-            "-Wl,-rpath," + str(ROOT / "build/native"),
+            "-L", str(NATIVE), "-lturbocider",
+            "-Wl,-rpath," + str(NATIVE),
             "-o", str(binary),
         ], check=True)
         result = subprocess.run(

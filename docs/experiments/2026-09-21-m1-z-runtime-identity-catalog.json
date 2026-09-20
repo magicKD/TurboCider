@@ -1,0 +1,106 @@
+{
+  "records": [
+    {
+      "calibration": {
+        "calibrated_request_bytes": 11596411699,
+        "calibration_id": "test-record-template-v1",
+        "complete": true,
+        "confirmation_sample_count": 1,
+        "estimator_revision": "tree-phys-footprint-linear-p95-v1",
+        "evidence_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+        "execution_container": "cli_worker",
+        "maximum_sample_gap_ns": 1,
+        "scope": "execution_process_tree_v1"
+      },
+      "canonical_record_digest": "f517e2d65543bd032ac234932821241b1d20afb17effbdee490cff7ccb1de977",
+      "catalog_revision": "verified-source-smoke-v2",
+      "device": {
+        "maximum_physical_memory_bytes": 0,
+        "minimum_physical_memory_bytes": 17179869184
+      },
+      "id": "test-z-image-turbo-12g-6bf3f271ad9b",
+      "performance": {
+        "comparison_kind": "P1_same_layout",
+        "confidence_status": "TEMPLATE",
+        "evidence_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+        "logical_read_bytes": 0,
+        "profile_id": "test-record-template-v1",
+        "rank": 1
+      },
+      "plan": {
+        "canonical_config": {
+          "enabled": true,
+          "retention": "request",
+          "schema_version": 1,
+          "selection": "manual",
+          "stages": {
+            "denoiser": {
+              "block_group_size": 1,
+              "io_workers": 1,
+              "prefetch_distance": 0,
+              "residency": "streamed",
+              "resident_prefix_blocks": 0,
+              "slot_count": 2
+            }
+          }
+        },
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+        "multi_pool_policy": "serial",
+        "pass_transition": "reload"
+      },
+      "release": {
+        "channel": "public-experimental",
+        "review_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+        "reviewed_commit": "test-record-template",
+        "revoked": false
+      },
+      "revision": 1,
+      "runtime": {
+        "adapter_revision": "z-image-public-adapter-v3-all-component-lease",
+        "allocator_policy_revision": "mlx-request-cache-policy-v2-k1-zero-cache",
+        "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+        "reader_revision": "z-image-pread-bf16-v2-fd-lease",
+        "runtime_revision": "public-streaming-runtime-v2",
+        "turbocider_build_id": "tc-runtime-build-v1-fe428f00113044c377ed3f4c91839dcaac4688c4aecd7bb89c5bbf1d8e418b3a"
+      },
+      "source": {
+        "artifact_manifest_digest": "6668c65bf99c32a7c16a73396b611abf39f2eee4f9325a0180f7e5d7a3bfe759",
+        "identity_version": 2,
+        "model_variant": "z-image-turbo-comfy-bf16",
+        "weight_format": "comfy-bf16-single-file"
+      },
+      "workload": {
+        "approximation": false,
+        "audio": false,
+        "batch": 1,
+        "conditioning_revision": "qwen3-simple-flow-shift3-v1",
+        "device_class": "Apple M1 Pro/17179869184",
+        "dynamic_text": true,
+        "execution": "gpu",
+        "execution_container": "cli_worker",
+        "feature_digest": "3a0bc5c2455d965d23d3e9ce61617a4a372bf65127cfcefe7978e69ba458cc9d",
+        "fps": 0,
+        "frames": 1,
+        "height": 256,
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "steps": 9,
+        "token_shapes": [
+          {
+            "compute_rows": 32,
+            "encoder": "qwen3",
+            "padded_rows": 32,
+            "template_revision": "z-image-template-v1",
+            "tokenizer_revision": "qwen3-z-image-v1",
+            "valid_rows": 26
+          }
+        ],
+        "vae_policy_revision": "z-image-vae-v1",
+        "width": 256
+      }
+    }
+  ],
+  "revision": "verified-source-smoke-v2",
+  "schema": "turbocider-streaming-test-catalog-v1"
+}

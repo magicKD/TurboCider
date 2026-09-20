@@ -1,3 +1,4 @@
+#include "../../runtime/build_identity.hpp"
 #include "bridge.hpp"
 #include "platform.hpp"
 #include "../../runtime/lora_identity.hpp"
@@ -348,7 +349,7 @@ static tc::streaming::PresetSourceIdentity h3_public_source_identity(
 }
 
 static tc::streaming::PresetRuntimeIdentity h3_public_runtime_identity() {
-    return {"turbocider-streaming-2026-09-18",
+    return {tc::runtime_build_identity(),
             "public-streaming-runtime-v2",
             "h3-turbo-public-adapter-v1",
             "h3-pread-bf16-source-lease-v2",
