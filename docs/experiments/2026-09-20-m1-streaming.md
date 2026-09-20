@@ -510,3 +510,12 @@ MLX peak 为约 8.88–8.98 GB，最大 8,975,747,452 bytes；该计数不含 Co
 这完成 core resolver 的身份/权限接缝，不代表模型 public adapter 已迁移。Z-Image/Flux probe 仍捕获 legacy snapshot，导入验证入口和 persistent proof、portable layout 的实际模型执行接入、生产 catalog 和真实端到端验收仍待完成。本轮不变更 GPU/ANE 路由，不据 host 测试宣称 GPU 性能或 App 验收通过。
 
 验证：`.venv/bin/python tests/native/test_streaming_preset_resolver.py` 与 `.venv/bin/python tests/native/test_streaming_source_lease.py` 均编译并通过（host-only，无 GPU）；覆盖既有 v1 authority、coordinator、receipt/drain 回归及上述新增 v2 案例。
+
+
+## 第二十五轮：Z-Image 编译与执行重建保留内容身份（2026-09-21）
+
+检查发现 `describe_verified()` 虽已存在，实际 `StreamingPlanView(lease, ...)` 仍固定调用 legacy describe，会在传入 native verified lease 时丢失 portable layout identity。现已让该构造器根据 native 内容证明选择 verified descriptor；metadata-only lease 与路径构造保留旧布局。public compile 与 exact execution 的 lease 构造均复用此接口，因此后续接入已验证 probe 时，两处重建遵守同一规则。`z_image_public_source_identity()` 对 verified lease 同步产生 v2 全内容身份，不再写 snapshot。
+
+`.venv/bin/python tests/native/test_z_image_streaming_descriptor.py` 编译并通过：新增实际 plan 构造断言，其摘要与 verified descriptor 编译结果一致；复制安装和 capture_preverified 后的 plan 摘要相同，lease 实例/generation 仍分离。现有 metadata、布局边界和 stale source 拒绝测试继续通过。该轮尚未新增 public import/verify 入口，当前模型 probe 仍 capture metadata-only lease；没有宣称公开 v2 模型已可运行，也没有新 GPU 性能或 App 验收结果。
+
+另使用当前托管 MLX headers 对 `native/models/z_image/z_image.cpp` 执行 clang++ C++20 `-fsyntax-only` 检查，返回 0；此项不等同于重新链接完整 native 库。

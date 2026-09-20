@@ -64,6 +64,9 @@ class StreamingPlanView {
     StreamingPlanView(std::shared_ptr<const streaming::SourceLease> lease,
                       const StreamingConfig &config,
                       const StreamingWorkload &workload);
+    // A native verified lease selects portable content identity; metadata-only
+    // leases preserve legacy snapshot identity. Compile and execution rebuild
+    // must use the same request lease, never reopen by path to infer identity.
 
     StreamingPlanView(const StreamingPlanView &) = delete;
     StreamingPlanView &operator=(const StreamingPlanView &) = delete;

@@ -83,6 +83,9 @@ int main(int argc, char **argv) {
             const tc::z_image::StreamingMetadata original_metadata(original);
             const auto portable = original_metadata.describe_verified(work);
             const auto original_layout = tc::streaming::compile_layout(config(), portable);
+            const tc::z_image::StreamingPlanView verified_plan(original, config(), work);
+            assert(verified_plan.layout().digest == original_layout.digest);
+            assert(verified_plan.lease_ptr() == original);
             assert(portable.artifacts.front().identity_kind ==
                    tc::streaming::SourceIdentityKind::content_sha256);
             const std::string copy = valid + ".copy.safetensors";
@@ -94,6 +97,9 @@ int main(int argc, char **argv) {
             assert(original->artifact_digest() == copied->artifact_digest());
             assert(original_layout.digest == tc::streaming::compile_layout(
                 config(), copied_metadata.describe_verified(work)).digest);
+            const tc::z_image::StreamingPlanView copied_plan(copied, config(), work);
+            assert(copied_plan.layout().digest == verified_plan.layout().digest);
+            assert(copied_plan.lease().generation() != verified_plan.lease().generation());
             assert(original_layout.digest != tc::streaming::compile_layout(
                 config(), original_metadata.describe(work)).digest);
             auto changed_work = work;
@@ -105,6 +111,8 @@ int main(int argc, char **argv) {
             const auto ready = SourceLease::capture_preverified({file(copy)});
             assert(ready->verification_bytes_read() == 0);
             assert(ready->artifact_digest() == original->artifact_digest());
+            const tc::z_image::StreamingPlanView ready_plan(ready, config(), work);
+            assert(ready_plan.layout().digest == verified_plan.layout().digest);
             // Serialized caller hashes do not grant a content proof.
             auto claimed = file(copy);
             claimed.content_digest = copied->file("transformer").content_digest;

@@ -451,7 +451,9 @@ StreamingPlanView::StreamingPlanView(
 StreamingPlanView::StreamingPlanView(
     std::shared_ptr<const streaming::SourceLease> lease,
     const StreamingConfig &config, const StreamingWorkload &workload)
-    : metadata_(std::move(lease)), descriptor_(metadata_.describe(workload)),
+    : metadata_(std::move(lease)),
+      descriptor_(metadata_.lease().has_verified_content()
+          ? metadata_.describe_verified(workload) : metadata_.describe(workload)),
       layout_(streaming::compile_layout(config, descriptor_)) {
     validate();
 }

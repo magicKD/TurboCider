@@ -80,6 +80,9 @@ uint32_t padded_z_image_rows(uint32_t rows) {
 
 streaming::PresetSourceIdentity z_image_public_source_identity(
         const streaming::SourceLease &lease) {
+    if (lease.has_verified_content())
+        return {"z-image-turbo-comfy-bf16", "comfy-bf16-single-file",
+                std::string(lease.artifact_digest()), "", 2};
     streaming::CanonicalEncoder manifest(
         "z-image-public-artifact-manifest-v1");
     manifest.string_field("transformer_snapshot", lease.digest());
