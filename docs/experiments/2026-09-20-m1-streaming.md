@@ -897,3 +897,14 @@ Swift App 和全部 integration test executables 完整构建退出 0，链接�
 通过当前 JobStore 的 Z-Image catalog 默认请求（1024²/9/resident GPU）完成出图、媒体验证、最终发布和重新打开历史；独立复核 PNG 1024² 与结果 SHA 一致。记录 MLX peak **21,607,357,244 bytes**，request wall **418.34 s**，同时有后台编译，因此只作功能观察，且明显不是本机低内存配置。Flux4 的 catalog 默认 resident 请求在推理前被 `insufficient physical memory for the conservative BF16 plan` 拒绝；没有伪称 Flux App 出图成功。当前 public catalog 仍为空，App 还不能通过已批准的 streaming 档位弥补该缺口；native private streaming 已有的出图证据不等于 App 路由可用。详见[App 实测记录](2026-09-21-m1-current-app-observations.json)。
 
 后续仍需完成 hybrid 请求 owner/engine poison/component receipt、同 partition 迁移与更完整质量评估；App 的 Flux streaming 准入与真实端到端生命周期也是明确未完成项。本轮没有新增性能或 public hybrid 资格。
+
+
+## 第五十一轮：App 图片发布的目标覆盖竞态（2026-09-21）
+
+继续核对 Flux 的 App streaming 准入时，确认 production catalog 仍为空，builder 的 public channel 仍要求 P0/P1/P2/P3；56 中 `public-calibrated` 仅是拟议策略，不能直接把现有 research 记录当作 App 授权。发布链检查同时发现一个实际产物问题：图片经过 prepare 校验后，普通 rename 会覆盖最终路径新出现的文件，与唯一输出名合同不符。
+
+将发布改为 Darwin `renamex_np(..., RENAME_EXCL)`，原子地要求目标不存在；不使用存在性预检查代替原子操作，也不在失败时回退覆盖。成功路径仍是同目录 staging 的 rename；目标冲突时失败、保留原目标，staging 由本次 owner 清理。旧目标是普通文件、有效符号链接或悬空符号链接均不能被替换。
+
+回归测试在 prepare 后创建冲突目标，验证原目标/符号链接及其指向文件不变、失败不消费 staging。使用修改前 production 源编译同一测试，确实以 `Publication replaced a concurrent destination: regular` 失败；新实现运行通过，同时保留 request correlation、PNG CRC/解码、SHA receipt、取消、双发布拒绝和清理等测试。见[红灯与修复验证](2026-09-21-m1-image-publication-collision.json)。本次针对 App 源重建已退出 0，新 App SHA 记录在验证文件中；不将定向测试称为整个 App 生命周期验收。
+
+此修复没有解决发布后 jobs.json 持久化失败或 crash 的 finalizing 恢复窗口，也没有补足 Flux public catalog 的资格。两者仍是后续工作，目标覆盖保护不替代完整产物事务。

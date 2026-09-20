@@ -190,8 +190,10 @@ final class ImageOutputTransaction: @unchecked Sendable {
               try identity(fd: verifiedFile.fileDescriptor) == verifiedIdentity else {
             throw NativeFailure(message: "image_artifact_changed: 图片未经验证或已发生变化。")
         }
-        guard rename(stagedURL.path, destination.path) == 0 else {
-            throw NativeFailure(message: "image_publish_failed: 无法发布已验证的图片。")
+        // The destination may appear after prepare(). Check and rename must be
+        // one operation, so another job/user file is never silently replaced.
+        guard renamex_np(stagedURL.path, destination.path, UInt32(RENAME_EXCL)) == 0 else {
+            throw NativeFailure(message: "image_publish_failed: 无法发布图片，目标可能已存在；请选择新的输出路径。")
         }
         published = true
     }

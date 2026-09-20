@@ -68,11 +68,33 @@ import CryptoKit
             } catch { rejected = true }
             try check(rejected && (try Data(contentsOf: output)) == original, "Accepted invalid output: \(mode)")
         }
+        // A destination created after validation must win atomically, even
+        // when it is a dangling symlink rather than an existing regular file.
+        try fm.removeItem(at: output)
+        for kind in ["regular", "symlink", "dangling_symlink"] {
+            let transaction = try ImageOutputTransaction(request: request)
+            try png.write(to: transaction.stagedURL)
+            _ = try transaction.prepare(result(transaction))
+            if kind == "regular" { try original.write(to: output) }
+            else {
+                let target = kind == "symlink" ? fixture : root.appendingPathComponent("missing-target")
+                try fm.createSymbolicLink(at: output, withDestinationURL: target)
+            }
+            var rejected = false
+            do { try transaction.publish() }
+            catch { rejected = error.localizedDescription.contains("image_publish_failed") }
+            try check(rejected, "Publication replaced a concurrent destination: \(kind)")
+            if kind == "regular" { try check(try Data(contentsOf: output) == original, "Existing destination changed") }
+            else { _ = try fm.destinationOfSymbolicLink(atPath: output.path) }
+            try check(try Data(contentsOf: fixture) == png, "Symlink target changed")
+            try check(try Data(contentsOf: transaction.stagedURL) == png, "Rejected publication consumed staging")
+            try fm.removeItem(at: output)
+        }
         do {
             let transaction = try ImageOutputTransaction(request: request)
             try png.write(to: transaction.stagedURL)
             let receipt = try transaction.prepare(result(transaction))
-            try check(try Data(contentsOf: output) == original, "Validation published before commit")
+            try check(!fm.fileExists(atPath: output.path), "Validation published before commit")
             try transaction.publish()
             let value = try JSONSerialization.jsonObject(with: receipt) as! [String: Any]
             let artifact = value["image_artifact"] as! [String: Any]
