@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #include "../../models/z_image/weight_stream.hpp"
 #include "../../runtime/residency.hpp"
+#include "platform.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <cmath>
@@ -43,7 +44,7 @@ ZImageWeightStream::ReadResult ZImageWeightStream::read(const std::vector<Read> 
 
 void ZImageWeightStream::index(const std::filesystem::path &path) {
     require(std::filesystem::is_regular_file(path) && path.extension() == ".safetensors",
-            "Z-Image streaming requires a single Comfy BF16 safetensors checkpoint");
+            "Z-Image streaming requires a single Comfy BF16 or INT8 ConvRot safetensors checkpoint");
     fd_ = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
     require(fd_ >= 0, "cannot open Z-Image streamed checkpoint");
     struct stat status{};
@@ -67,14 +68,19 @@ void ZImageWeightStream::index(const std::filesystem::path &path) {
         auto data = [NSData dataWithBytes:header.data() length:header.size()];
         id object = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
         require([object isKindOfClass:NSDictionary.class], "invalid streamed safetensors JSON");
+        id qkv = object[@"layers.0.attention.qkv.weight"];
+        convrot_ = [qkv isKindOfClass:NSDictionary.class] && [qkv[@"dtype"] isEqual:@"I8"] &&
+                   object[@"layers.0.attention.qkv.comfy_quant"] != nil;
         std::vector<std::pair<uint64_t, uint64_t>> intervals;
         for (NSString *key in (NSDictionary *)object) {
             if ([key isEqualToString:@"__metadata__"]) continue;
             id value = object[key];
             require([value isKindOfClass:NSDictionary.class], "invalid streamed tensor record");
-            require([value[@"dtype"] isKindOfClass:NSString.class] &&
-                        [value[@"dtype"] isEqualToString:@"BF16"],
-                    "Z-Image streaming currently supports BF16 weights only; select resident for quantized models");
+            NSString *dtype = value[@"dtype"];
+            require([dtype isKindOfClass:NSString.class], "invalid streamed tensor dtype");
+            require([dtype isEqual:@"BF16"] || (convrot_ &&
+                        ([dtype isEqual:@"F32"] || [dtype isEqual:@"I8"] || [dtype isEqual:@"U8"])),
+                    "Z-Image streaming supports Comfy BF16 or INT8 ConvRot weights only");
             NSArray *shape = value[@"shape"], *offsets = value[@"data_offsets"];
             require([shape isKindOfClass:NSArray.class] && shape.count <= 8 &&
                         [offsets isKindOfClass:NSArray.class] && offsets.count == 2,
@@ -83,7 +89,9 @@ void ZImageWeightStream::index(const std::filesystem::path &path) {
             require(key.UTF8String && strlen(key.UTF8String) == [key lengthOfBytesUsingEncoding:NSUTF8StringEncoding],
                     "invalid streamed tensor name");
             r.name = key.UTF8String;
-            uint64_t bytes = 2;
+            r.dtype = [dtype isEqual:@"F32"] ? mx::float32 : [dtype isEqual:@"I8"] ? mx::int8 :
+                      [dtype isEqual:@"U8"] ? mx::uint8 : mx::bfloat16;
+            uint64_t bytes = r.dtype.size();
             for (id item in shape) {
                 auto dim = integer(item);
                 require(dim > 0 && dim <= INT32_MAX && bytes <= file_bytes_ / dim,
@@ -126,12 +134,14 @@ void ZImageWeightStream::index(const std::filesystem::path &path) {
     }
     for (auto &block : blocks_) {
         std::sort(block.begin(), block.end(), [](const Record &a, const Record &b) { return a.name < b.name; });
-        require(block.size() == 13, "streaming requires 30 dense Z-Image layers with fused QKV");
+        require(block.size() == (convrot_ ? 25 : 13),
+                "streaming requires 30 matching Comfy Z-Image layers with fused QKV");
     }
     for (int i = 1; i < 30; ++i)
         for (size_t j = 0; j < blocks_[0].size(); ++j) {
             const auto &a = blocks_[0][j], &b = blocks_[i][j];
-            require(a.name.substr(9) == b.name.substr(8 + std::to_string(i).size()) && a.shape == b.shape,
+            require(a.name.substr(9) == b.name.substr(8 + std::to_string(i).size()) &&
+                        a.shape == b.shape && a.dtype == b.dtype,
                     "Z-Image streamed layers must have matching tensor layouts");
         }
     require(std::any_of(fixed_records_.begin(), fixed_records_.end(), [](const Record &r) {
@@ -141,6 +151,8 @@ void ZImageWeightStream::index(const std::filesystem::path &path) {
 
 void ZImageWeightStream::pack_suffix(int prefix_channels, const Event &event) {
     require(prefix_channels > 0, "invalid Z-Image ANE prefix width");
+    require(!convrot_ || prefix_channels % 256 == 0,
+            "ConvRot GPU suffix must align to the 256-channel rotation group");
     auto start = Clock::now();
     // Validate all 32 hybrid MLPs before changing any records. Context refiners
     // have no ANE branch and must retain their full weights.
@@ -180,14 +192,27 @@ void ZImageWeightStream::pack_suffix(int prefix_channels, const Event &event) {
         auto &group = groups[i];
         for (int j : {0, 2}) {
             auto &r = *group[j];
-            const auto skipped = uint64_t(prefix_channels) * r.shape[1] * 2;
+            const auto skipped = uint64_t(prefix_channels) * r.shape[1] * r.dtype.size();
             r.offset += skipped;
             r.bytes -= skipped;
             r.shape[0] -= prefix_channels;
+            if (convrot_) {
+                auto &records = i < 2 ? fixed_records_ : blocks_[i - 2];
+                const auto scale_name = r.name.substr(0, r.name.size() - 7) + ".weight_scale";
+                auto scale = std::find_if(records.begin(), records.end(), [&](const Record &v) {
+                    return v.name == scale_name;
+                });
+                require(scale != records.end() && scale->dtype == mx::float32 &&
+                            scale->shape == mx::Shape{r.shape[0] + prefix_channels, 1},
+                        "invalid ConvRot suffix row scales");
+                scale->offset += uint64_t(prefix_channels) * 4;
+                scale->bytes -= uint64_t(prefix_channels) * 4;
+                scale->shape[0] -= prefix_channels;
+            }
         }
         auto &r = *group[1];
-        const uint64_t row_bytes = uint64_t(r.shape[1]) * 2;
-        const uint64_t skip_bytes = uint64_t(prefix_channels) * 2;
+        const uint64_t row_bytes = uint64_t(r.shape[1]) * r.dtype.size();
+        const uint64_t skip_bytes = uint64_t(prefix_channels) * r.dtype.size();
         const uint64_t suffix_bytes = row_bytes - skip_bytes;
         require(row_bytes <= (4ull << 20), "Z-Image MLP row exceeds suffix packing limit");
         const uint64_t batch_rows = std::max<uint64_t>(1, (4ull << 20) / row_bytes);
@@ -223,20 +248,110 @@ void ZImageWeightStream::pack_suffix(int prefix_channels, const Event &event) {
     event("pack_z_image_suffix", int(groups.size()), int(groups.size()));
 }
 
+void ZImageWeightStream::prepare_convrot(std::vector<Record> &records) {
+    std::vector<Record> converted;
+    auto find = [&](const std::string &name) -> const Record & {
+        auto it = std::find_if(records.begin(), records.end(), [&](const Record &r) { return r.name == name; });
+        require(it != records.end(), "missing ConvRot companion tensor: " + name);
+        return *it;
+    };
+    for (auto r : records) {
+        r.source_bytes = r.bytes;
+        if (r.name.ends_with(".weight_scale")) {
+            require(find(r.name.substr(0, r.name.size() - 13) + ".weight").dtype == mx::int8,
+                    "ConvRot row scale has no signed INT8 weight");
+            continue; // replaced by affine scales + biases
+        }
+        if (r.dtype == mx::int8) {
+            require(r.name.ends_with(".weight") && r.shape.size() == 2 && r.shape[1] % 256 == 0,
+                    "invalid streamed ConvRot Q8 geometry");
+            const auto prefix = r.name.substr(0, r.name.size() - 7);
+            const auto &metadata = find(prefix + ".comfy_quant");
+            const auto &source_scale = find(prefix + ".weight_scale");
+            require(metadata.dtype == mx::uint8 && source_scale.dtype == mx::float32 &&
+                        source_scale.shape == mx::Shape{r.shape[0], 1},
+                    "invalid streamed ConvRot scale geometry");
+            Record scale = source_scale;
+            scale.name = prefix + ".scales";
+            scale.source_bytes = scale.bytes;
+            scale.shape[1] = r.shape[1] / 32;
+            scale.dtype = std::getenv("TURBOCIDER_Z_CONVROT_FP32_SCALES") ? mx::float32 : mx::bfloat16;
+            scale.bytes = uint64_t(scale.shape[0]) * scale.shape[1] * scale.dtype.size();
+            scale.conversion = Conversion::scales;
+            converted.push_back(scale);
+            scale.name = prefix + ".biases";
+            scale.conversion = Conversion::biases;
+            converted.push_back(std::move(scale));
+            r.shape[1] /= 4;
+            r.dtype = mx::uint32;
+            r.conversion = Conversion::signed_q8;
+        } else if (r.dtype == mx::float32) {
+            r.dtype = mx::bfloat16;
+            r.bytes /= 2;
+            r.conversion = Conversion::bf16;
+        } else if (r.dtype == mx::uint8) {
+            require(r.name.ends_with(".comfy_quant"), "unexpected streamed ConvRot byte tensor");
+            require(find(r.name.substr(0, r.name.size() - 12) + ".weight").dtype == mx::int8,
+                    "ConvRot metadata has no signed INT8 weight");
+        }
+        converted.push_back(std::move(r));
+    }
+    std::sort(converted.begin(), converted.end(), [](const Record &a, const Record &b) { return a.name < b.name; });
+    records = std::move(converted);
+}
+
 void ZImageWeightStream::allocate(Slot &slot, const std::vector<Record> &records) {
+    if (convrot_) slot.scratch.resize(16384);
     for (const auto &r : records) {
         // Allocate MLX-owned shared buffers once; pread overwrites only slots
         // whose preceding GPU use has completed. No per-refill tensor copies.
-        slot.arrays.emplace_back(mx::allocator::malloc(r.bytes), r.shape, mx::bfloat16);
+        slot.arrays.emplace_back(mx::allocator::malloc(r.bytes), r.shape, r.dtype);
         slot.pointers.push_back(slot.arrays.back().data<char>());
     }
 }
 ZImageWeightStream::ReadResult ZImageWeightStream::fill(Slot &slot, const std::vector<Record> &records) const {
-    std::vector<Read> reads;
-    for (size_t i = 0; i < records.size(); ++i)
-        reads.push_back({records[i].offset, records[i].bytes, slot.pointers[i],
-                         records[i].packed ? packed_fd_ : fd_});
-    return read(reads);
+    const auto start = Clock::now();
+    ReadResult result;
+    for (size_t i = 0; i < records.size(); ++i) {
+        const auto &r = records[i];
+        auto *destination = slot.pointers[i];
+        const int fd = r.packed ? packed_fd_ : fd_;
+        if (r.conversion == Conversion::none || r.conversion == Conversion::signed_q8) {
+            result.bytes += read({{r.offset, r.bytes, destination, fd}}).bytes;
+            if (r.conversion == Conversion::signed_q8) {
+                // q + 128, without dequantizing or allocating a tensor.
+                for (uint64_t offset = 0; offset < r.bytes; offset += 4) {
+                    uint32_t value;
+                    std::memcpy(&value, destination + offset, 4);
+                    value ^= 0x80808080u;
+                    std::memcpy(destination + offset, &value, 4);
+                }
+            }
+            continue;
+        }
+        const bool row_scale = r.conversion == Conversion::scales || r.conversion == Conversion::biases;
+        const uint64_t repeat = row_scale ? r.shape[1] : 1;
+        for (uint64_t offset = 0; offset < r.source_bytes / 4; offset += slot.scratch.size()) {
+            const auto count = std::min<uint64_t>(slot.scratch.size(), r.source_bytes / 4 - offset);
+            result.bytes += read({{r.offset + offset * 4, count * 4,
+                                   reinterpret_cast<char *>(slot.scratch.data()), fd}}).bytes;
+            for (uint64_t j = 0; j < count; ++j) {
+                const float value = slot.scratch[j];
+                if (r.dtype == mx::bfloat16) {
+                    auto converted = mx::bfloat16_t(value);
+                    if (r.conversion == Conversion::biases)
+                        converted = mx::bfloat16_t(float(converted) * -128.f);
+                    std::fill_n(reinterpret_cast<mx::bfloat16_t *>(destination) + (offset + j) * repeat,
+                                repeat, converted);
+                } else {
+                    std::fill_n(reinterpret_cast<float *>(destination) + (offset + j) * repeat,
+                                repeat, r.conversion == Conversion::biases ? value * -128.f : value);
+                }
+            }
+        }
+    }
+    result.seconds = std::chrono::duration<double>(Clock::now() - start).count();
+    return result;
 }
 void ZImageWeightStream::record(ReadResult result) {
     metrics_.request_bytes_loaded += result.bytes;
@@ -253,24 +368,45 @@ Weights ZImageWeightStream::bind(const Slot &slot, int block) const {
 ZImageWeightStream::ZImageWeightStream(const std::filesystem::path &path, uint64_t budget,
                                        uint64_t activation_reserve, Weights &fixed,
                                        const Event &event, std::atomic<bool> &cancelled,
-                                       int prefix_channels)
-    : cancelled_(cancelled) {
+                                       int prefix_channels, unsigned prefetch_layers)
+    : prefetch_layers_(prefetch_layers), cancelled_(cancelled) {
     try {
+        require(prefetch_layers >= 1 && prefetch_layers <= 8, "Z-Image prefetch must be 1 through 8 layers");
+        const auto &optimizations = device_info().optimizations();
+        require(prefetch_layers == 1 || optimizations.z_image_suffix_streaming,
+                "Z-Image multi-layer prefetch is only enabled for Apple M5 Pro 24 GiB");
+        require(prefix_channels == 0 || optimizations.z_image_suffix_streaming,
+                "Z-Image suffix streaming is only enabled for Apple M5 Pro 24 GiB");
         index(path);
+        require(optimizations.supports_z_image_streaming(convrot_),
+                "Z-Image INT8 streaming is only enabled for Apple M5 Pro 24 GiB; use resident weights on this device");
         require(prefix_channels >= 0, "invalid Z-Image ANE prefix width");
         if (prefix_channels) pack_suffix(prefix_channels, event);
+        if (convrot_) {
+            prepare_convrot(fixed_records_);
+            for (auto &records : blocks_) prepare_convrot(records);
+        }
         uint64_t block_bytes = 0, fixed_bytes = 0;
         for (const auto &r : blocks_[0]) block_bytes += r.bytes;
         for (const auto &r : fixed_records_) fixed_bytes += r.bytes;
-        auto plan = make_block_residency_plan(budget, activation_reserve + fixed_bytes,
-                                               block_bytes, 30, 0, 2, false, false);
+        const auto scratch_bytes = convrot_ ? uint64_t(prefetch_layers + 1) * 65536 : 0;
+        const auto reserved = activation_reserve + fixed_bytes + scratch_bytes;
+        const auto capacity = budget > reserved ? (budget - reserved) / block_bytes : 0;
+        const auto slots = budget ? std::min<uint64_t>(prefetch_layers + 1, std::max<uint64_t>(2, capacity))
+                                  : prefetch_layers + 1;
+        auto plan = make_block_residency_plan(budget, reserved, block_bytes, 30, 0,
+                                               unsigned(slots), false, convrot_);
+        slots_.resize(plan.refill_slots);
+        if (!slots_.empty()) prefetch_layers_ = std::min<unsigned>(prefetch_layers_, slots_.size() - 1);
         metrics_.enabled = true;
         metrics_.active_blocks = 30;
         metrics_.pinned_blocks = plan.pinned_blocks;
         metrics_.streamed_blocks = plan.streamed_blocks;
-        metrics_.refill_slots = 2;
+        metrics_.refill_slots = plan.refill_slots;
+        metrics_.fully_resident = plan.fully_resident;
+        metrics_.quantized = convrot_;
         metrics_.memory_budget_bytes = budget;
-        metrics_.activation_reserve_bytes = activation_reserve + fixed_bytes;
+        metrics_.activation_reserve_bytes = reserved;
         metrics_.block_bytes = block_bytes;
         metrics_.estimated_working_set_bytes = plan.estimated_working_set_bytes;
         Slot shared;
@@ -287,7 +423,7 @@ ZImageWeightStream::ZImageWeightStream(const std::filesystem::path &path, uint64
             pinned_.push_back(bind(slot, int(i)));
         }
         for (auto &slot : slots_) allocate(slot, blocks_[0]);
-        metrics_.request_slot_allocations = 2;
+        metrics_.request_slot_allocations = slots_.size();
         event("load_z_image_stream", int(plan.pinned_blocks), int(plan.pinned_blocks));
     } catch (...) {
         if (packed_fd_ >= 0) ::close(packed_fd_);
@@ -311,7 +447,7 @@ void ZImageWeightStream::reset_metrics() {
     metrics_.request_pack_seconds = 0;
 }
 void ZImageWeightStream::prefetch(int block) {
-    auto &slot = slots_[(block - metrics_.pinned_blocks) % 2];
+    auto &slot = slots_[(block - metrics_.pinned_blocks) % slots_.size()];
     require(!slot.pending.valid(), "Z-Image stream slot still has a pending read");
     slot.block = block;
     slot.pending = std::async(std::launch::async, [this, &slot, block] {
@@ -328,19 +464,20 @@ void ZImageWeightStream::check_source() const {
 void ZImageWeightStream::begin_pass() {
     check_source();
     expected_block_ = 0;
-    prefetch(int(metrics_.pinned_blocks));
+    for (unsigned i = 0; i < prefetch_layers_ && metrics_.pinned_blocks + i < 30; ++i)
+        prefetch(int(metrics_.pinned_blocks + i));
 }
 Weights ZImageWeightStream::acquire(int block) {
     checkpoint(cancelled_);
     require(block == expected_block_++ && block < 30, "Z-Image stream blocks must execute in order");
     if (unsigned(block) < metrics_.pinned_blocks) return pinned_[block];
-    auto &slot = slots_[(block - metrics_.pinned_blocks) % 2];
+    auto &slot = slots_[(block - metrics_.pinned_blocks) % slots_.size()];
     require(slot.block == block && slot.pending.valid(), "missing Z-Image prefetched layer");
     auto start = Clock::now();
     auto loaded = slot.pending.get();
     metrics_.request_wait_seconds += std::chrono::duration<double>(Clock::now() - start).count();
     record(loaded);
-    if (block + 1 < 30) prefetch(block + 1);
+    if (block + int(prefetch_layers_) < 30) prefetch(block + int(prefetch_layers_));
     return bind(slot, block);
 }
 

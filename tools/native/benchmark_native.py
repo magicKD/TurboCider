@@ -7,7 +7,7 @@ a=p.parse_args()
 if a.prompt_repeat_count<0 or bool(a.prompt_repeat_token)!=(a.prompt_repeat_count>0):p.error('--prompt-repeat-token and a positive --prompt-repeat-count must be used together')
 if a.record_vm:
  import resource
- from benchmark_z_image_streaming import vm_counters
+ from benchmark_z_image_streaming import vm_counters, process_memory
 lib=c.CDLL(a.library);lib.tc_string_free.argtypes=[c.c_void_p]
 lib.tc_engine_create_model.argtypes=[c.c_char_p,c.c_char_p,c.POINTER(c.c_void_p),c.POINTER(c.c_void_p)]
 lib.tc_engine_generate.argtypes=[c.c_void_p,c.c_char_p,c.c_void_p,c.c_void_p,c.POINTER(c.c_void_p),c.POINTER(c.c_void_p)]
@@ -87,6 +87,7 @@ try:
   if a.dump_tensors:r['dump_tensors']=str((out/f'{i}-tensors').resolve())
   set_output(r,(out/f'{i}.png').resolve());payload=json.dumps(r).encode();result,err=c.c_void_p(),c.c_void_p()
   before_vm=vm_counters() if a.record_vm else None
+  before_process=process_memory() if a.record_vm else None
   start=time.perf_counter();status=lib.tc_engine_generate(e,payload,None,None,c.byref(result),c.byref(err));wall=time.perf_counter()-start
   text,error=consume(result),consume(err)
   if status:raise RuntimeError(error)
@@ -95,6 +96,9 @@ try:
    after_vm=vm_counters()
    row['system_vm_delta_bytes']={key:after_vm[key]-before_vm[key] for key in before_vm}
    row['process_lifetime_maxrss_bytes']=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+   after_process=process_memory()
+   row['process_memory']=after_process
+   row['process_disk_delta_bytes']={key:after_process[key+'_bytes']-before_process[key+'_bytes'] for key in ('diskio_bytesread','diskio_byteswritten')}
    row['vm_scope']='system-wide counters; not attribution to this process'
   runs.append(row)
   (out/'report.json').write_text(json.dumps({'engine':'TurboCider native C ABI','model_id':a.model_id,'constructor_seconds':constructor,'preparation':preparation,'request':r,'runs':runs},indent=2))

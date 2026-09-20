@@ -57,6 +57,7 @@ test:
 	@"$(PYTHON)" tests/native/test_inventory.py
 test-app:
 	@build/native/turbocider-ane-library-tests
+	@build/native/turbocider-studio-variant-tests
 	@build/native/turbocider-studio-tests
 	@build/native/turbocider-model-library-tests
 	@build/native/turbocider-library-store-tests

@@ -7,14 +7,18 @@
 
 namespace tc {
 
-// Explicit BF16 layer streaming. The worker only preads into buffers allocated
-// on the inference thread; it never calls MLX's thread-unsafe default stream.
+// Explicit BF16 / ConvRot Q8 streaming. Workers read and convert into reusable
+// buffers allocated on the inference thread; they never call MLX operations.
 class ZImageWeightStream {
+    enum class Conversion { none, signed_q8, bf16, scales, biases };
     struct Record {
         std::string name;
         mx::Shape shape;
         uint64_t offset = 0, bytes = 0;
         bool packed = false;
+        mx::Dtype dtype = mx::bfloat16;
+        uint64_t source_bytes = 0;
+        Conversion conversion = Conversion::none;
     };
     struct Read {
         uint64_t offset, bytes;
@@ -25,6 +29,7 @@ class ZImageWeightStream {
     struct Slot {
         std::vector<Tensor> arrays;
         std::vector<char *> pointers;
+        std::vector<float> scratch;
         std::future<ReadResult> pending;
         int block = -1;
     };
@@ -35,13 +40,16 @@ class ZImageWeightStream {
     std::vector<Record> fixed_records_;
     std::array<std::vector<Record>, 30> blocks_;
     std::vector<Weights> pinned_;
-    std::array<Slot, 2> slots_;
+    std::vector<Slot> slots_;
+    bool convrot_ = false;
+    unsigned prefetch_layers_ = 1;
     std::atomic<bool> &cancelled_;
     BlockResidencyMetrics metrics_;
     int expected_block_ = 0;
 
     void index(const std::filesystem::path &);
     void pack_suffix(int prefix_channels, const Event &);
+    void prepare_convrot(std::vector<Record> &);
     void check_source() const;
     void allocate(Slot &, const std::vector<Record> &);
     ReadResult read(const std::vector<Read> &) const;
@@ -53,7 +61,8 @@ class ZImageWeightStream {
   public:
     ZImageWeightStream(const std::filesystem::path &, uint64_t budget,
                        uint64_t activation_reserve, Weights &fixed,
-                       const Event &, std::atomic<bool> &, int prefix_channels = 0);
+                       const Event &, std::atomic<bool> &, int prefix_channels = 0,
+                       unsigned prefetch_layers = 1);
     ~ZImageWeightStream();
     ZImageWeightStream(const ZImageWeightStream &) = delete;
     void reset_metrics();
