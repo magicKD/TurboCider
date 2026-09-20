@@ -30,7 +30,16 @@ struct NativeJob: Codable, Identifiable, Sendable {
             return execution.hasPrefix("gpu_ane")
                 ? "GPU + Core ML · \(precision) · ANE 驻留未知" : "GPU · \(precision)"
         }
-        if execution.hasPrefix("gpu_ane") { return "GPU + Core ML · INT8 · ANE 驻留未知" }
+        if execution.hasPrefix("gpu_ane") {
+            let variant = (result["hybrid"] as? [String: Any])?["weight_variant"] as? String
+            let precision: String
+            switch variant {
+            case "fp16": precision = "MLP FP16"
+            case "int8_pc": precision = "MLP INT8"
+            default: precision = "MLP 精度未确认"
+            }
+            return "GPU + Core ML · \(precision) · ANE 驻留未知"
+        }
         return result["gpu_graph"] as? String == "compiled_single_blocks" ? "GPU · BF16 · 融合计算块" : "GPU · BF16"
     }
     var isTerminal: Bool { ["succeeded", "failed", "cancelled", "interrupted"].contains(state) }

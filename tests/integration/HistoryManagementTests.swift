@@ -12,6 +12,20 @@ struct HistoryManagementTests {
             throw NativeFailure(message: "Expected validation failure")
         }
 
+        // Metadata-only plan labels in older results guessed INT8. Only a
+        // loaded session's declared variant can supply the MLP precision.
+        for (variant, expected) in [("fp16", "MLP FP16"), ("int8_pc", "MLP INT8"),
+                                    ("unknown", "MLP 精度未确认"), ("", "MLP 精度未确认")] {
+            var hybridJob = NativeJob(id: UUID(), createdAt: Date(), request: NativeRequest(prompt: "precision fixture", output: "/tmp/metadata-only.png"),
+                state: "succeeded", phase: "complete", completed: 1, total: 1, elapsed: 1)
+            var payload: [String: Any] = ["plan": ["execution": "gpu_ane_experimental",
+                "precision": "bf16_gpu+int8_mlp_fp16_io"]]
+            if !variant.isEmpty { payload["hybrid"] = ["weight_variant": variant] }
+            hybridJob.resultJSON = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
+            try check(hybridJob.routeSummary == "GPU + Core ML · \(expected) · ANE 驻留未知",
+                      "History guessed or lost hybrid precision: \(variant)")
+        }
+
         let order = (0..<6).map { _ in UUID() }
         var selection = HistorySelection()
         selection.select(order[1], orderedIDs: order)
