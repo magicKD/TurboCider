@@ -63,7 +63,7 @@ final class NativeJobStore: ObservableObject {
     @Published private(set) var sessionReport: String?
     @Published private(set) var accelerationStatus: String?
     @Published private(set) var resolvingAcceleration = false
-    @Published private(set) var deletedJob: NativeJob?
+    @Published private(set) var deletedJobs: [NativeJob] = []
     let directory: URL
     private var engine: NativeEngine?
     private var activeID: UUID?
@@ -78,6 +78,7 @@ final class NativeJobStore: ObservableObject {
     private var lastDetailUpdate = 0.0
     var activeJob: NativeJob? { jobs.first { $0.id == activeID } }
     var canUnload: Bool { engine != nil && !busy }
+    var deletableJobIDs: Set<UUID> { Set(jobs.filter { $0.isTerminal && $0.id != activeID }.map(\.id)) }
 
     init(directory: URL) {
         self.directory = directory
@@ -99,22 +100,28 @@ final class NativeJobStore: ObservableObject {
         lastPersist = Date()
     }
     func deleteJob(_ id: UUID) throws {
-        guard let job = jobs.first(where: { $0.id == id }), job.isTerminal, activeID != id else {
+        try deleteJobs([id])
+    }
+    func deleteJobs(_ ids: Set<UUID>) throws {
+        guard !ids.isEmpty else { return }
+        guard ids.isSubset(of: deletableJobIDs) else {
             throw NativeFailure(message: "请先取消或等待任务完成，再删除记录。")
         }
         let previous = jobs
-        jobs.removeAll { $0.id == id }
-        do { try persist(); deletedJob = job }
+        let removed = jobs.filter { ids.contains($0.id) }
+        jobs.removeAll { ids.contains($0.id) }
+        do { try persist(); deletedJobs = removed }
         catch { jobs = previous; throw error }
     }
+    func clearHistory() throws { try deleteJobs(deletableJobIDs) }
     func undoDeleteJob() throws {
-        guard let job = deletedJob else { return }
+        guard !deletedJobs.isEmpty else { return }
         let previous = jobs
-        jobs.append(job); jobs.sort { $0.createdAt > $1.createdAt }
-        do { try persist(); deletedJob = nil }
+        jobs.append(contentsOf: deletedJobs); jobs.sort { $0.createdAt > $1.createdAt }
+        do { try persist(); deletedJobs = [] }
         catch { jobs = previous; throw error }
     }
-    @discardableResult func trashOutput(_ id: UUID) throws -> URL? {
+    private func outputURLForDeletion(_ id: UUID) throws -> URL {
         guard !busy, let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].hasOutput,
               jobs[index].isTerminal, activeID != id else {
             throw NativeFailure(message: "只能删除已完成任务的结果。")
@@ -129,18 +136,49 @@ final class NativeJobStore: ObservableObject {
         guard !(activeJob?.request.inputs ?? []).contains(where: { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath() == canonical }) else {
             throw NativeFailure(message: "当前任务正在使用此图片，请等待完成。")
         }
-        var trashed: NSURL?
-        if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.trashItem(at: url, resultingItemURL: &trashed)
+        return url
+    }
+    @discardableResult func trashOutput(_ id: UUID) throws -> URL? {
+        try trashOutputs([id]).first
+    }
+    /// Validate the entire selection before moving any files. Save once, and
+    /// restore moved files if a move or the history write fails.
+    @discardableResult func trashOutputs(_ ids: Set<UUID>) throws -> [URL] {
+        guard !ids.isEmpty else { return [] }
+        let urls = try ids.map { try outputURLForDeletion($0).resolvingSymlinksInPath() }
+        let paths = Set(urls)
+        let previous = jobs
+        var moved: [(original: URL, trashed: URL)] = []
+        do {
+            for url in paths.sorted(by: { $0.path < $1.path }) where FileManager.default.fileExists(atPath: url.path) {
+                var trashed: NSURL?
+                try FileManager.default.trashItem(at: url, resultingItemURL: &trashed)
+                if let trashed { moved.append((url, trashed as URL)) }
+            }
+            // Multiple records can refer to the same result file.
+            for index in jobs.indices where jobs[index].hasOutput && paths.contains(URL(fileURLWithPath: jobs[index].request.output).resolvingSymlinksInPath()) {
+                jobs[index].outputDeleted = true
+            }
+            try persist()
         }
-        jobs[index].outputDeleted = true
-        do { try persist() }
         catch {
-            jobs[index].outputDeleted = nil
-            if let trashed { try? FileManager.default.moveItem(at: trashed as URL, to: url) }
+            let deletionError = error
+            var unrestored: [URL] = []
+            for move in moved.reversed() {
+                do { try FileManager.default.moveItem(at: move.trashed, to: move.original) }
+                catch { unrestored.append(move.original) }
+            }
+            jobs = previous
+            if !unrestored.isEmpty {
+                for index in jobs.indices where unrestored.contains(URL(fileURLWithPath: jobs[index].request.output).resolvingSymlinksInPath()) {
+                    jobs[index].outputDeleted = true
+                }
+                do { try persist() } catch { storageError = error.localizedDescription }
+                throw NativeFailure(message: "删除未完成：\(deletionError.localizedDescription)。\(unrestored.count) 个文件未能自动恢复，请在废纸篓中找回。")
+            }
             throw error
         }
-        return trashed as URL?
+        return moved.map(\.trashed)
     }
     /// Resolve on each request so changing an adapter/strength cannot reuse a stale partition.
     func resolveAcceleration(_ draft: StudioDraft) async throws -> StudioDraft {

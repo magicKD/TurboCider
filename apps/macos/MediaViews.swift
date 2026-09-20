@@ -2,6 +2,30 @@ import SwiftUI
 import AppKit
 import ImageIO
 
+/// Handle Control-click as selection instead of macOS's usual secondary click.
+/// A physical right-click can still open the surrounding context menu.
+struct ResultSelectionTarget: NSViewRepresentable {
+    let label: String
+    let selected: Bool
+    let action: (NSEvent.ModifierFlags, Int) -> Void
+
+    func makeNSView(context: Context) -> ResultSelectionView { ResultSelectionView() }
+    func updateNSView(_ view: ResultSelectionView, context: Context) {
+        view.action = action
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.button)
+        view.setAccessibilityLabel(label)
+        view.setAccessibilityValue(selected ? "已选择" : "未选择")
+    }
+}
+
+final class ResultSelectionView: NSView {
+    var action: ((NSEvent.ModifierFlags, Int) -> Void)?
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { action?(event.modifierFlags, event.clickCount) }
+    override func accessibilityPerformPress() -> Bool { action?([], 1); return true }
+}
+
 /// Decoding happens once per path/size, never on telemetry updates.
 struct MediaPreview: View {
     let path: String
