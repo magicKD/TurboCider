@@ -489,3 +489,13 @@ MLX peak 为约 8.88–8.98 GB，最大 8,975,747,452 bytes；该计数不含 Co
 这是后续 RecordV2 迁移所需接口与反例测试，尚未切换 public probe/compile、Python catalog builder 或 receipt schema，也没有 persistent import proof。现有 private/public legacy 路由保持其版本语义；不能据此宣称跨安装 public resolve 已通过。该轮未改变数值执行路径，没有复用旧图片性能数据作为新发布证据。
 
 本轮 `git fetch origin dev` 成功，随后 `git merge-base --is-ancestor origin/dev HEAD` 返回 0，当前分支已包含最新 dev，无新增合并内容。
+
+
+## 第二十三轮：Catalog 内容身份 v2 格式（2026-09-21）
+
+新增显式 `source.identity_version=2`，只编码 model_variant、weight_format、artifact_manifest_digest，禁止把 source_snapshot_digest 放入 portable record。省略版本或显式 1 保留 legacy 字段与既有摘要；未知版本拒绝。native canonical record/digest/source identity 与 Python record/record-id/digest 使用独立 v2 domain；Python builder revision 更新为 v2，native test-catalog JSON 导入和导出同步处理版本。
+
+原 v1 固定摘要 `13b5797176d713924b9c16857acbf0f7a35313d2426a22fdca38c488b3ea3df1` 保持不变，v2 native/Python 固定样例均为 `c322e18cabc2ed4756a8cbbc468c24989ba175dda64745902014a1971aca0bb0`。这验证的是序列化合同，不证明某个输入 JSON 的内容来源可信。v2 probe 在尚未迁移的 public resolver 中被明确拒绝；现有 Z-Image probe 仍为 v1，不能用 v2 record 授予执行权限。persistent import、verified lease 接入、request binding/authority/receipt 分离及正式证据重采集仍待完成。
+
+
+验证结果：`test_streaming_preset_resolver.py` host suite 通过；`test_streaming_catalog_builder.py` 16 项通过；完整 native hook 构建成功，`test_streaming_test_catalog.py` 3 项通过，其中新库实际接受 Python 编码的 v2 record，但当前 Z-Image adapter resolve 返回 `artifact_verification_required`；带 snapshot 的 v2 JSON 被拒绝。既有 v1 catalog 生成、CLI 导出、安装、resolve、失败替换保留原快照仍通过。hook 库路径 `build/m1-catalog-v2/libturbocider.dylib`，SHA-256 `9c6b5f7bbf3bb0f18c2ada534db3f12b1df2643dc4d62c492993464cb6650684`；release hook 缺席检查使用前述保留的 m1-release 库，不宣称本轮重建了 release App。没有进行 GPU 性能复测或提升 public catalog。

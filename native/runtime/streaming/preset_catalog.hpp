@@ -33,6 +33,9 @@ struct PresetWorkload {
 struct PresetSourceIdentity {
     std::string model_variant, weight_format;
     std::string artifact_manifest_digest, source_snapshot_digest;
+    // v1 binds a local snapshot. v2 contains verified portable content identity
+    // only; source_snapshot_digest must be empty. Request bindings stay in leases.
+    uint32_t identity_version = 1;
     bool operator==(const PresetSourceIdentity &) const = default;
 };
 

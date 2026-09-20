@@ -449,6 +449,23 @@ int main() {
     canonical_fixture.source.source_snapshot_digest = digest('b');
     assert(streaming_preset_record_digest(canonical_fixture) ==
            "13b5797176d713924b9c16857acbf0f7a35313d2426a22fdca38c488b3ea3df1");
+    auto portable_fixture = canonical_fixture;
+    portable_fixture.source.identity_version = 2;
+    portable_fixture.source.source_snapshot_digest.clear();
+    portable_fixture = finalize_streaming_preset_record(portable_fixture);
+    validate_streaming_preset_record(portable_fixture, portable_fixture.catalog_revision);
+    assert(portable_fixture.canonical_record_digest ==
+           "c322e18cabc2ed4756a8cbbc468c24989ba175dda64745902014a1971aca0bb0");
+    assert(streaming_source_identity_digest(portable_fixture.source) !=
+           streaming_source_identity_digest(canonical_fixture.source));
+    auto invalid_portable = portable_fixture;
+    invalid_portable.source.source_snapshot_digest = digest('b');
+    rejects([&] { (void) streaming_preset_record_digest(invalid_portable); },
+            "must not contain a snapshot");
+    invalid_portable = portable_fixture;
+    invalid_portable.source.identity_version = 3;
+    rejects([&] { (void) streaming_preset_record_digest(invalid_portable); },
+            "unsupported source identity version");
     auto changed = slow;
     changed.plan.canonical_config = config(12);
     assert(streaming_preset_record_digest(changed) != stable_digest);

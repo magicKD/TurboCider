@@ -350,6 +350,36 @@ class CatalogBuilderTests(unittest.TestCase):
         digest_after = builder.canonical_record_digest(value)
         self.assertNotEqual(digest_before, digest_after)
 
+    def test_portable_v2_native_digest_and_strict_identity_schema(self):
+        value = native_fixture_record()
+        value["source"]["identity_version"] = 2
+        del value["source"]["source_snapshot_digest"]
+        self.assertEqual(builder.canonical_record_digest(value),
+                         "c322e18cabc2ed4756a8cbbc468c24989ba175dda64745902014a1971aca0bb0")
+        value = record()
+        value["source"]["identity_version"] = 2
+        del value["source"]["source_snapshot_digest"]
+        builder.validate_record_shape(value)
+        for version in (0, 3, True, "2"):
+            invalid = copy.deepcopy(value)
+            invalid["source"]["identity_version"] = version
+            with self.assertRaises(builder.CatalogBuildError):
+                builder.validate_record_shape(invalid)
+            with self.assertRaises(builder.CatalogBuildError):
+                builder.canonical_record_digest(invalid)
+        invalid = copy.deepcopy(value)
+        invalid["source"]["source_snapshot_digest"] = "b" * 64
+        with self.assertRaises(builder.CatalogBuildError):
+            builder.validate_record_shape(invalid)
+        with self.assertRaises(builder.CatalogBuildError):
+            builder.canonical_record_digest(invalid)
+        legacy = record()
+        explicit = copy.deepcopy(legacy)
+        explicit["source"]["identity_version"] = 1
+        builder.validate_record_shape(explicit)
+        self.assertEqual(builder.canonical_record_digest(legacy),
+                         builder.canonical_record_digest(explicit))
+
     def test_record_shape_rejects_unencoded_fields(self):
         value = record()
         value["performance"]["median_ratio"] = 1.0

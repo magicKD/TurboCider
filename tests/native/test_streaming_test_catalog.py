@@ -404,6 +404,23 @@ class TestCatalogTests(unittest.TestCase):
                     generated_record["plan"]["layout_digest"],
                 )
 
+                portable = copy.deepcopy(generated)
+                portable_record = portable["records"][0]
+                portable_record["source"]["identity_version"] = 2
+                del portable_record["source"]["source_snapshot_digest"]
+                portable_record["canonical_record_digest"] = builder.canonical_record_digest(portable_record)
+                status, failure = install(public, portable)
+                self.assertEqual(status, 0, failure)
+                # Portable records cannot authorize the still-legacy adapter.
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("artifact_verification_required", failure)
+                invalid_portable = copy.deepcopy(portable)
+                invalid_portable["records"][0]["source"]["source_snapshot_digest"] = "b" * 64
+                status, failure = install(public, invalid_portable)
+                self.assertNotEqual(status, 0)
+                self.assertIn("missing or unknown fields", failure)
+
                 error = c.c_void_p()
                 status = library.tc_engine_test_clear_streaming_catalog(
                     public, c.byref(error)

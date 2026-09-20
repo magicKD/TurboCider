@@ -17,6 +17,10 @@ void require_resolution(bool value, const std::string &code) {
 
 const SourceLease &validated_probe_lease(
         const ModelStreamingProbe &probe) {
+    // RecordV2 serialization lands before the adapter/authority migration.
+    // Do not interpret a portable record as a legacy request binding.
+    require_resolution(probe.source_identity().identity_version == 1,
+                       "streaming_source_identity_version_unsupported");
     const auto *lease = probe.source_lease();
     require_resolution(lease != nullptr,
                        "streaming_source_lease_required");
@@ -55,12 +59,18 @@ const SourceLease &validated_source_chain(
 
 std::string streaming_source_identity_digest(
         const PresetSourceIdentity &source) {
-    CanonicalEncoder out("tc-streaming-source-identity-v1");
+    require_resolution(source.identity_version == 1 || source.identity_version == 2,
+                       "streaming_source_identity_version_unsupported");
+    require_resolution(source.identity_version != 2 || source.source_snapshot_digest.empty(),
+                       "streaming_portable_identity_contains_snapshot");
+    CanonicalEncoder out(source.identity_version == 2
+        ? "tc-streaming-source-identity-v2" : "tc-streaming-source-identity-v1");
     out.string_field("model_variant", source.model_variant);
     out.string_field("weight_format", source.weight_format);
     out.string_field(
         "artifact_manifest_digest", source.artifact_manifest_digest);
-    out.string_field("source_snapshot_digest", source.source_snapshot_digest);
+    if (source.identity_version == 1)
+        out.string_field("source_snapshot_digest", source.source_snapshot_digest);
     return out.sha256();
 }
 

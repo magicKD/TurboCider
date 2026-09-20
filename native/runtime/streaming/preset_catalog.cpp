@@ -80,12 +80,15 @@ void encode_config(CanonicalEncoder &out, const StreamingConfig &config) {
 }
 
 void encode_source(CanonicalEncoder &out, const PresetSourceIdentity &source) {
+    if (source.identity_version == 2)
+        out.unsigned_field("source.identity_version", 2);
     out.string_field("source.model_variant", source.model_variant);
     out.string_field("source.weight_format", source.weight_format);
     out.string_field(
         "source.artifact_manifest_digest", source.artifact_manifest_digest);
-    out.string_field(
-        "source.source_snapshot_digest", source.source_snapshot_digest);
+    if (source.identity_version == 1)
+        out.string_field(
+            "source.source_snapshot_digest", source.source_snapshot_digest);
 }
 
 void encode_runtime(CanonicalEncoder &out, const PresetRuntimeIdentity &runtime) {
@@ -133,14 +136,20 @@ void encode_workload(CanonicalEncoder &out, const PresetWorkload &workload) {
 }
 
 void validate_identity(const PresetSourceIdentity &source) {
+    catalog_check(source.identity_version == 1 || source.identity_version == 2,
+                  "unsupported source identity version");
     catalog_check(valid_identifier(source.model_variant),
                   "missing/invalid model variant");
     catalog_check(valid_identifier(source.weight_format),
                   "missing/invalid weight format");
     catalog_check(valid_digest(source.artifact_manifest_digest),
                   "invalid artifact manifest digest");
-    catalog_check(valid_digest(source.source_snapshot_digest),
-                  "invalid source snapshot digest");
+    if (source.identity_version == 1)
+        catalog_check(valid_digest(source.source_snapshot_digest),
+                      "invalid source snapshot digest");
+    else
+        catalog_check(source.source_snapshot_digest.empty(),
+                      "portable source identity must not contain a snapshot");
 }
 
 void validate_identity(const PresetRuntimeIdentity &runtime) {
@@ -209,7 +218,9 @@ bool supported_streaming_target(uint64_t target) noexcept {
 
 std::string canonical_streaming_preset_record(
         const StreamingPresetRecord &record) {
-    CanonicalEncoder out("tc-streaming-preset-record-v1");
+    validate_identity(record.source);
+    CanonicalEncoder out(record.source.identity_version == 2
+        ? "tc-streaming-preset-record-v2" : "tc-streaming-preset-record-v1");
     out.string_field("id", record.id);
     out.unsigned_field("revision", record.revision);
     out.string_field("catalog_revision", record.catalog_revision);
@@ -272,7 +283,8 @@ std::string canonical_streaming_preset_record(
 
 std::string streaming_preset_record_digest(
         const StreamingPresetRecord &record) {
-    CanonicalEncoder out("tc-streaming-preset-record-digest-v1");
+    CanonicalEncoder out(record.source.identity_version == 2
+        ? "tc-streaming-preset-record-digest-v2" : "tc-streaming-preset-record-digest-v1");
     out.string_field(
         "canonical_record", canonical_streaming_preset_record(record));
     return out.sha256();

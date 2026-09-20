@@ -23,7 +23,7 @@ from verify_streaming_campaign import EvidenceError, verify as verify_campaign
 
 
 SCHEMA = "turbocider-streaming-catalog-build-v1"
-BUILDER_REVISION = "tc-streaming-catalog-builder-v1"
+BUILDER_REVISION = "tc-streaming-catalog-builder-v2"
 PUBLIC_TARGETS = {value << 30 for value in (8, 10, 12, 16, 20)}
 HEADROOM_REVISION = "tc-public-headroom-v1"
 RECORD_SCHEMA = "tc-streaming-preset-record-v1"
@@ -228,19 +228,20 @@ def validate_record_shape(record: dict[str, Any]) -> None:
         if not isinstance(record[section], dict):
             raise CatalogBuildError(f"record.{section} must be an object")
     source = record["source"]
-    require_exact_keys(
-        source,
-        {
-            "model_variant", "weight_format", "artifact_manifest_digest",
-            "source_snapshot_digest",
-        },
-        set(),
-        "record.source",
-    )
+    version = source.get("identity_version", 1)
+    if type(version) is not int or version not in (1, 2):
+        raise CatalogBuildError("unsupported source identity version")
+    required = {"model_variant", "weight_format", "artifact_manifest_digest"}
+    required |= {"source_snapshot_digest"} if version == 1 else {"identity_version"}
+    require_exact_keys(source, required, {"identity_version"} if version == 1 else set(),
+                       "record.source")
     for key in ("model_variant", "weight_format"):
         require_string(source.get(key), f"record.source.{key}")
-    for key in ("artifact_manifest_digest", "source_snapshot_digest"):
-        require_string(source.get(key), f"record.source.{key}", digest=True)
+    require_string(source.get("artifact_manifest_digest"),
+                   "record.source.artifact_manifest_digest", digest=True)
+    if version == 1:
+        require_string(source.get("source_snapshot_digest"),
+                       "record.source.source_snapshot_digest", digest=True)
     workload = record["workload"]
     require_exact_keys(
         workload,
@@ -502,8 +503,13 @@ def encode_record_fields(
     out.unsigned_field("revision", record["revision"])
     out.string_field("catalog_revision", record["catalog_revision"])
     source = record["source"]
-    for key in ("model_variant", "weight_format", "artifact_manifest_digest", "source_snapshot_digest"):
+    version = source.get("identity_version", 1)
+    if version == 2:
+        out.unsigned_field("source.identity_version", 2)
+    for key in ("model_variant", "weight_format", "artifact_manifest_digest"):
         out.string_field(f"source.{key}", source[key])
+    if version == 1:
+        out.string_field("source.source_snapshot_digest", source["source_snapshot_digest"])
     workload = record["workload"]
     for key in ("model", "operation", "execution", "device_class", "execution_container"):
         out.string_field(f"workload.{key}", workload[key])
@@ -562,8 +568,17 @@ def encode_record_fields(
             out.string_field(f"release.{key}", release[key])
 
 
+def record_schema(record: dict[str, Any], legacy: str) -> str:
+    version = record["source"].get("identity_version", 1)
+    if type(version) is not int or version not in (1, 2):
+        raise CatalogBuildError("unsupported source identity version")
+    if version == 2 and "source_snapshot_digest" in record["source"]:
+        raise CatalogBuildError("portable source identity must not contain a snapshot")
+    return legacy if version == 1 else legacy.removesuffix("v1") + "v2"
+
+
 def canonical_record_bytes(record: dict[str, Any]) -> bytes:
-    out = CanonicalEncoder(RECORD_SCHEMA)
+    out = CanonicalEncoder(record_schema(record, RECORD_SCHEMA))
     encode_record_fields(out, record, include_id=True, include_release=True)
     return out.bytes()
 
@@ -574,13 +589,13 @@ def canonical_record(record: dict[str, Any]) -> bytes:
 
 
 def canonical_record_digest(record: dict[str, Any]) -> str:
-    out = CanonicalEncoder(RECORD_DIGEST_SCHEMA)
+    out = CanonicalEncoder(record_schema(record, RECORD_DIGEST_SCHEMA))
     out.string_field("canonical_record", canonical_record_bytes(record))
     return out.digest()
 
 
 def record_identity_digest(record: dict[str, Any]) -> str:
-    out = CanonicalEncoder(RECORD_IDENTITY_SCHEMA)
+    out = CanonicalEncoder(record_schema(record, RECORD_IDENTITY_SCHEMA))
     encode_record_fields(out, record, include_id=False, include_release=False)
     return out.digest()
 
