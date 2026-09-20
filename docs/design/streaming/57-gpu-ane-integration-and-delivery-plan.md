@@ -404,3 +404,10 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 HybridSession 已新增消费 VerifiedCoreMLBundleLease 的内部构造路径，使用验证后的固定 partition/模型路径，加载前后校验来源，持有 bundle 到 branches 和 autorelease pool 清理结束。typed prediction 检查完整 padded FP16 输入与分支范围；错误输入不会进入 Core ML 或污染 runtime failure 状态。真实 32 分支全零预测、共享 backing GPU 消费/复用、部分构造取消、事件异常、外部引用释放后的保留及最终目录清理均通过；旧 bridge 和 public GPU adapter 回归通过，见[第四十五轮](../../experiments/2026-09-20-m1-streaming.md)。
 
 这提供了实际 typed 会话执行接缝，尚未将 suffix reader/新 StageExecutor、完整 request owner、GPU join 和实际 receipt 连成 denoiser；未验证 prediction hang/drain quarantine，也没有产品安装注册或独立质量资格。原 INT8 非零数值筛查仍失败，零输入测试不能覆盖这一结论。HY-M0 继续未完成。
+
+
+## 22. H2 共享 FFN 算术与真实 joint 分支验证（2026-09-21）
+
+既有 GPU suffix 图和普通/compiled-post join 已提取为共享 hybrid_math。Metal 的 full/compact 等价、稀疏独立 oracle、BF16 转换/scale 顺序和完成后输出独立性测试通过。真实 verified source/reader/session 以 P1/K1 手动运行 2 fixed noise + 1 resident main + 29 streamed main，32 个零输入 join 与 29 次 fill 通过，派生 SHA 与既有实际打包记录一致。详见[第四十六轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+这验证组件在真实权重上联合执行，不是完整 HY-M0：仍未接新 StageExecutor/完整 request owner 或生成真实 component receipt，没有 9 steps/288 branches 的 denoiser 和完整输出。join 自身是 lazy 运算，不提供 drain authority；本次 driver 显式完成 GPU consumer 后才复用。原 INT8 非零质量失败保留，完整质量/性能准入与硬件驻留证据仍缺。

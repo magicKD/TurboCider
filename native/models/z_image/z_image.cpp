@@ -1,6 +1,7 @@
 #include "../../runtime/build_identity.hpp"
 #include "z_image.hpp"
 #include "block_profile.hpp"
+#include "hybrid_math.hpp"
 
 #include "../../media/image.hpp"
 #include "../../platform/apple/platform.hpp"
@@ -477,32 +478,6 @@ float z_hybrid_output_scale(const HybridSession *hybrid) {
     return hybrid ? hybrid->output_scale : 1.f;
 }
 
-std::function<std::vector<Tensor>(const std::vector<Tensor> &)>
-make_z_hybrid_gpu_graph(int hidden, int mlp_width, int gpu_mlp_start) {
-    require(hidden == 3840 && mlp_width == 10240 && gpu_mlp_start > 0 &&
-                gpu_mlp_start < mlp_width,
-            "unsupported Z-Image hybrid FFN geometry");
-    return mx::compile(
-        [hidden, mlp_width, gpu_mlp_start](const std::vector<Tensor> &args) {
-            // Resident weights include the ANE prefix; streamed weights can
-            // already be compact suffixes. Never slice the latter twice.
-            const auto width = args[1].shape(0);
-            require((width == mlp_width || width == mlp_width - gpu_mlp_start) &&
-                        args[1].shape() == mx::Shape{width, hidden} &&
-                        args[2].shape() == mx::Shape{width, hidden} &&
-                        args[3].shape() == mx::Shape{hidden, width},
-                    "Z-Image GPU suffix weight geometry mismatch");
-            const int start = width == mlp_width ? gpu_mlp_start : 0;
-            auto w1 = slice_axis(args[1], 0, start, width);
-            auto w3 = slice_axis(args[2], 0, start, width);
-            auto w2 = slice_axis(args[3], 1, start, width);
-            auto gate = mx::matmul(args[0], mx::transpose(w1));
-            auto up = mx::matmul(args[0], mx::transpose(w3));
-            auto value = mx::matmul(silu(gate) * up, mx::transpose(w2));
-            require(value.shape(-1) == hidden, "Z-Image hybrid FFN output mismatch");
-            return std::vector<Tensor>{value};
-    });
-}
 
 struct ZQuantizedGeometry {
     int group_size = 0;
@@ -676,7 +651,7 @@ std::function<std::vector<Tensor>(const std::vector<Tensor> &)> &z_hybrid_post_g
         require(a.size() == 6, "invalid Z-Image hybrid post-MLP inputs");
         // Match the existing order and dtypes, including BF16 rounding before
         // normalization. The Core ML output remains in its shared FP16 backing.
-        auto feed = a[0] + mx::astype(a[1], a[0].dtype()) * a[5];
+        auto feed = z_image::join_hybrid_ffn(a[0], a[1], a[5]);
         auto normalized = mx::astype(
             mx::fast::rms_norm(mx::astype(feed, mx::float32),
                                mx::astype(a[4], mx::float32), 1e-5f), feed.dtype());
@@ -828,9 +803,9 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
         profile.submitted(gpu);
         auto ane = slice_axis(hybrid->predict(hybrid_block, packed), 1, 0, actual_rows);
         profile.predicted(gpu);
-        auto ane_scaled = mx::astype(ane, gpu.dtype()) * Tensor(z_hybrid_output_scale(hybrid), gpu.dtype());
-        feed = gpu + ane_scaled;
+        feed = z_image::join_hybrid_ffn(gpu, ane, Tensor(z_hybrid_output_scale(hybrid), gpu.dtype()));
         if (std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE")) {
+            auto ane_scaled = mx::astype(ane, gpu.dtype()) * Tensor(z_hybrid_output_scale(hybrid), gpu.dtype());
             auto reference = z_ffn(feed_input, w, prefix + ".feed_forward");
             mx::eval({gpu, ane, feed, reference});
             const bool gpu_finite = mx::all(mx::isfinite(gpu)).item<bool>();
@@ -1971,7 +1946,7 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
             require(hybrid_->ane_mlp_end == 4096,
                     "M4 Max automatic Z-Image profile requires the validated 4096-channel ANE prefix");
         if (!hybrid_gpu_graph_ || hybrid_gpu_mlp_start_ != hybrid_->ane_mlp_end) {
-            hybrid_gpu_graph_ = make_z_hybrid_gpu_graph(
+            hybrid_gpu_graph_ = z_image::make_hybrid_gpu_graph(
                 hybrid_->hidden, hybrid_->mlp_width, hybrid_->ane_mlp_end);
             hybrid_gpu_mlp_start_ = hybrid_->ane_mlp_end;
         }

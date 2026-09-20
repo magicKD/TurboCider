@@ -1,0 +1,65 @@
+{
+  "scope": "Shared Z hybrid math and manual real-weight verified FFN joins; no full image/performance qualification",
+  "plan_sha256": "cc97b233bc102820d1d0e787b00624fe11a22f051c624779ec31b3b8a6401019",
+  "native_library": "build/m1-hybrid-math/libturbocider.dylib",
+  "native_library_sha256": "88d2a7925b55cc3ab47693e2bb1505d67cacd54484c7143417649eba47603065",
+  "runtime_build_id": "tc-runtime-build-v1-6b4148d20c99784f5bdcddf5e21462ffab732566dd50c40608a706c68e9df474",
+  "build_and_runtime_catalog_verify": "PASS",
+  "metal_math": {
+    "result": "PASS",
+    "geometry": [
+      3840,
+      10240
+    ],
+    "ane_end": 5120,
+    "rows": 2,
+    "full_vs_compact_suffix": "exact equal",
+    "independent_sparse_oracle_max_abs_limit": 0.03,
+    "eager_vs_compiled_join": "exact equal",
+    "rounding_stress": "FP16 32752 cast to BF16 before scale 32 gives finite 1048576, including BF16 addition of 1",
+    "completed_output_independent_of_reused_ane_input": true,
+    "invalid_geometry_and_dtype_rejection": true
+  },
+  "real_join": {
+    "result": "PASS",
+    "passes": 1,
+    "branches": 32,
+    "resident_main_blocks": 1,
+    "slots": 1,
+    "fills": 29,
+    "fill_bytes": 7071820288,
+    "derived_sha256": "59b03803a9dac69d0fe89a79ef318056260b77d48cdc588744aef6bee89fcb47",
+    "parent_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+    "rows": {
+      "noise": 1024,
+      "main": 1088,
+      "coreml_bucket": 1088
+    },
+    "runtime_coreml_calls": 32,
+    "runtime_failures": 0,
+    "reader_repacking_bytes": 0,
+    "oracle": "all joined BF16 outputs exactly zero",
+    "reuse": "GPU all-elements consumer completed before next slot refill/Core ML backing reuse",
+    "coreml_generation_cleanup": "PASS",
+    "observed_ane_residency": "unknown"
+  },
+  "regressions": {
+    "native_contract": {
+      "run": 83,
+      "skipped": 3,
+      "result": "PASS"
+    },
+    "z_public_adapter": "PASS",
+    "py_compile": "PASS",
+    "diff_check": "PASS"
+  },
+  "limitations": [
+    "Manual driver, no StageExecutor receipts",
+    "No full request owner/hang-drain validation",
+    "No attention/latent/full image execution",
+    "INT8 nonzero quality failure unchanged",
+    "No performance or hardware-overlap claim",
+    "No release/App build",
+    "Host test deployment target 26.0 vs dylib 26.2 warning retained; machine 26.4.1"
+  ]
+}

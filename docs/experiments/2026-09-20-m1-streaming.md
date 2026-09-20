@@ -820,3 +820,20 @@ HybridSession 新增内部 typed 构造器，直接消费 VerifiedCoreMLBundleLe
 旧 manifest/C API bridge 亦用新库完成 block 29 的一次全零预测，checkpoint SHA 验证通过、零 runtime failures、close 正常。native contract 83 项运行、3 项原有跳过，其余通过；Z public adapter 的 shared lease/identity、route rejection、失败清理和 source replacement 回归通过。host 链接 macOS 26.0/26.2 提示保留，本机 26.4.1 运行通过。见[验证记录](2026-09-21-m1-z-verified-session-validation.json)。
 
 本轮证明 typed source 能进入真实会话并预测，零输入只验证 bias-free FFN 的基本 ABI/执行与所有权，不改变第四十一轮 INT8 非零输入质量失败结论，也不证明 ANE 驻留或速度收益。未接通新 StageExecutor 的 GPU suffix join、noise/main 完整 owner 与 9 steps/288 branch receipts，没有新完整出图或 release/App 构建；public hybrid 准入保持关闭。
+
+
+## 第四十六轮：共享 GPU 后缀算术与真实分支 join（2026-09-21）
+
+将既有 Z GPU suffix 编译图提取到 `z_image/hybrid_math.hpp/.cpp`，保持 full weights 与 compact suffix 两种输入的切片规则，并补齐参数数量/输入形状检查。新增共享 join：先将 Core ML FP16 输出转成 GPU dtype，再乘同 dtype scale，最后与 GPU suffix 相加；检查 shape/dtype/标量 scale ABI。普通和 compiled-post 两条 Z 路径均消费该实现。旧诊断分支仍单独计算 ane_scaled 以保留前缀独立统计；复核时修复了提取后该局部变量的引用，随后才开始完整构建。
+
+join 返回 lazy tensor，不声称自身完成同步或拥有所有来源；调用方必须保留权重/ANE backing，并在复用前完成所有 consumer。full/compact 图使用的公式与旧实现相同，没有改变 BF16 转换顺序、分区或 scale policy。
+
+Metal 测试采用真实 FFN 几何 3840×10240、a=5120、两个输入 rows，在三个分散的有效后缀通道填入可独立计算的稀疏权重。full 与 compact suffix 输出逐元素相同，独立浮点 sigmoid/乘加 oracle 的 max-abs < 0.03。额外检查 eager/compiled join 相同；FP16 32752 先转 BF16 再乘 32、加 BF16 的 1 得到有限 1048576，避免把低精度乘法挪到转换前。消费完成后复用 ANE 输入，已完成 join 输出保持独立。错误输入数量/形状/通道边界及 join 输入/scale dtype 被拒绝。最初单独编译 helper 进行测试，完整构建后又直接链接新 dylib 验证同一测试通过。
+
+按[冻结计划](2026-09-21-m1-z-verified-join-plan.json)进一步连接实际 verified parent、GpuSuffixSource、ZImageWeightStream、typed HybridSession 与共享 GPU 图/join。该手动 driver 使用 P1/K1：2 个 fixed noise branches、1 个常驻 main layer、29 个 streamed main layers；noise 有效 rows 1024，main 1088，Core ML 输入统一补齐到 bucket 1088。每个 branch 先提交 GPU suffix，再调用 Core ML prefix，裁回有效行并合并；GPU 全元素比较完成后才允许复用 slot 和 Core ML output backing。
+
+真实联合测试完成 32 个 join、32 次 Core ML runtime prediction、零 runtime failures；29 次 fill 实际读取 7,071,820,288 bytes（包含 reader 加载的全部 block fields，不只是 FFN），reader 未再次 packing。派生 SHA 与第三十九轮一致：`59b03803a9dac69d0fe89a79ef318056260b77d48cdc588744aef6bee89fcb47`；父 checkpoint SHA `2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6`。所有 joined BF16 输出符合零输入的精确零 oracle，来源前后校验与最终 Core ML generation 目录清理通过。这里是单 pass 的手动分支 driver；metadata 使用 512²/9 steps 的布局参数不代表运行了 9 个 denoise steps。
+
+完整 native hook 构建及 runtime/catalog 编译后核对通过，库 SHA-256 `88d2a7925b55cc3ab47693e2bb1505d67cacd54484c7143417649eba47603065`，runtime key `tc-runtime-build-v1-6b4148d20c99784f5bdcddf5e21462ffab732566dd50c40608a706c68e9df474`。native contract 83 项运行、3 项原有跳过，其余通过；Z public adapter 回归通过。host macOS 26.0/26.2 链接提示保留，本机 26.4.1 执行通过。见[验证记录](2026-09-21-m1-z-verified-join-validation.json)。
+
+这证明已验证 reader 和 Core ML 会话能共同完成真实权重的 FFN join，尚未接入新 StageExecutor 的完整 request owner、noise/main receipts、attention/latent 轨迹和输出发布。零输入不能评价非零数值质量，原 INT8 失败仍保留；未验证预测阻塞/取消 drain，也没有完整图片、速度比较或新 release/App 构建。GPU async submission 与 CPU+NE 配置不证明实际硬件重叠或 ANE 驻留。
