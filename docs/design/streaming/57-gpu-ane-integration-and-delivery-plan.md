@@ -369,3 +369,10 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 已将 `GpuSuffixSource` 接入内部 ZImageWeightStream 构造器，复用 fixed/prefix/slot 加载与 exact fill 接口，保持 source owner 到 reader 结束。新路径的 capacity 取 common compiler 对齐结果，逻辑 I/O 独立计量。稀疏真实几何 fixture 的 Metal 数值检查、P2/K1/K2 双 pass、并发 fill、buffer 复用、取消重试与来源替换拒绝通过；128-byte 字段的 256-byte capacity 和预算边界亦通过。见[第四十轮](../../experiments/2026-09-20-m1-streaming.md)。
 
 尚未将新 reader 接入 hybrid StageExecutor/z_block 的完整流程，没有加载 ANE artifact、提交 GPU/ANE join 或生成 hybrid receipt。此进度是 HY-MAT 的读取子项，不是 HY-M0 完成或 public hybrid 资格。
+
+
+## 17. H0 artifact 与局部数值验证进度（2026-09-21）
+
+已导出并 native compile 真实 Z-Image 32 个 denoiser 前缀 FFN（[0,5120)/10240，bucket 1088，INT8 per-channel），完成固定合成输入的 32 次 native prediction，源 checkpoint 内容验证通过。冻结的 relative-L2 ≤ 0.025 等阈值下，31 个分支通过、block 29（layers.27）以 0.02562 失败，整个候选仍不通过。另行预先冻结的单分支 FP16 对照以 0.00468 通过；原 INT8 结论保留，没有把单分支成功当作混合精度 bank 或完整图片资格。计划偏差、编译接口误用、所有结果及限制见[第四十一轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+这提供了 artifact 准备和局部算术证据，尚未提供 native VerifiedCoreMLBundleLease/managed immutable generation、typed partition 或实际硬件驻留证明。H0 不能整体关闭，H2 hybrid executor/完整 owner/join、H3 真实步骤 receipt 和 H4 完整质量/性能准入仍待完成；public hybrid guard 保持关闭。

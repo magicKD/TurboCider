@@ -1,0 +1,10 @@
+{
+  "scope": "Offline arithmetic diagnostics for failed Z prefix smoke cases.\n\nDoes not rerun Core ML, change thresholds, or replace the original BF16 oracle.\nThe FP16 GPU graph is a counterfactual, not a Core ML artifact validation.\n",
+  "cases": [
+    29
+  ],
+  "original_plan_sha256": "6f502eae4f095ab99840dd1882a48dbd3018cc609432f3b41772975e31a2af90",
+  "original_results_sha256": "1d8264058de99cb58f58d329b7fe5952c62adae1fba61918910bcb49180d2f76",
+  "driver_sha256": "a5cbdfc99b22c139fd8280f2cda3fe045bfe17c50425a56e90364f52ad71bdc7",
+  "input_sha256": "637b3fca219b346e91b47c152e4c30d3aaa22c13acfcc636d545e55d8b4a242e"
+}

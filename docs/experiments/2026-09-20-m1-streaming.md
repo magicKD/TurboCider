@@ -745,3 +745,24 @@ fixture 加入 128-byte 固定字段：预留 256 bytes、实际只读 128 bytes
 最终 native hook 构建、runtime/catalog 编译后核对、GPU buffer suite、来源 ASan/UBSan 回归及 Z public adapter 均通过。原 weight stream 10 项运行、6 项因 M1 未支持 legacy suffix/ConvRot 跳过，其余通过；native contract 83 项运行、3 项原有跳过，其余通过。库 SHA-256 `d86d32cacf14e5f2914c193ddc5527d1c1f1422f25acc4b509c45ee5a76b31f8`，runtime key `tc-runtime-build-v1-4d4b6fe89ffe1c1525aa6fb41467e938735ce5f70aa3124659845a26831d846e`。host 的 macOS 26.0/26.2 链接提示保留，本机 26.4.1 执行通过。见[验证记录](2026-09-21-m1-z-suffix-reader-validation.json)。
 
 这证明新 reader 能在实际 GPU buffer 上消费已验证来源，尚未证明 denoiser FFN 分流、Core ML/GPU join 或完整输出。a=10239 是边界 fixture，不代表存在该 ANE artifact；没有新真实模型出图、性能 campaign、release/App 构建。下一步仍需 typed Core ML bundle/partition、hybrid adapter/完整 owner、实际 receipt 与质量准入。
+
+
+## 第四十一轮：32 个 denoiser Core ML 分支与数值筛查（2026-09-21）
+
+为 H0 准备真实 Z-Image 的 32 个前缀 FFN artifact：2 noise + 30 main，hidden 3840、总 MLP 10240、ANE 通道 [0,5120)、bucket 1088、activation/output scale 8/32，初始候选为 INT8 per-channel。该 bucket 对应规划的 512² 图像加 64 caption rows；本轮没有完整图片执行。32 个导出与 native manifest compile 完成，32 次 compile cache miss，96 个源 package 文件的 SHA 校验通过，compiled manifest 保留源 checkpoint SHA、分区、shape 和全部 branch 映射。模型/package/大数组保存在 `/Users/chencanhui/models/TurboCider/experiments/`，仓库只收录小型计划与结果。
+
+保留两处流程偏差：[artifact plan](2026-09-21-m1-z-denoiser-artifact-plan.json) 的首次写入因系统 Python 缺 coremltools metadata 失败，而 shell 继续启动已明确参数的 exporter；该 JSON 实际在启动后补写，不能称为预注册。参数未改变、导出未重启。首次把 manifest 传给单 artifact 的 compile-coreml CLI，被扩展名检查拒绝，尚未编译；随后使用 `coreml` 的 `action: compile` manifest 接口，完成全部编译。[INT8 compile 原始结果](2026-09-21-m1-z-denoiser-int8-compile.json) 保留实际缓存与路径。
+
+`compare_z_image_partitions.py` 在预测前写独立计划，以 seed 42、scale 0.25 的合成 hidden states 做固定 32 分支筛查。输入先 BF16 舍入再无损经 FP16 transport；GPU oracle 从原始 BF16 checkpoint 取前 5120 通道。noise 使用 1024 rows、main 使用 1088 rows；native Core ML 输出按实际顺序先转 BF16 再乘 32。每分支 1 次预测、0 warmups，冻结阈值 relative-L2 ≤ 0.025、cosine ≥ 0.999、relative-max-abs ≤ 0.05，不因失败重试或放宽阈值。
+
+32 次 native prediction 均完成，runtime failures 为 0、checkpoint SHA 验证通过；数值筛查 **31 通过、1 失败，整个 INT8 候选不通过**。失败为 block 29（layers.27），relative-L2 0.0256199662、cosine 0.9996722038、relative-max-abs 0.0093261719。见[冻结计划](2026-09-21-m1-z-denoiser-prefix-smoke-plan.json)与[全部结果](2026-09-21-m1-z-denoiser-prefix-smoke-results.json)。native metrics 中内置 quality validator 未启用，不能用其默认 passed 字段覆盖外部失败。
+
+对唯一失败分支进行离线算术诊断：原 BF16 oracle 重放逐字节相同；BF16 与 FP32 的 relative-L2 为 0.00380200，而原 INT8 candidate 与 FP32 为 0.02532920，说明仅 BF16 舍入不足以解释误差。模拟 FP16 GPU 图与 BF16 的 relative-L2 为 0.00415740；它不是 Core ML 验证。见[离线计划](2026-09-21-m1-z-denoiser-precision-plan.json)与[离线结果](2026-09-21-m1-z-denoiser-precision-results.json)。
+
+随后在导出前冻结[单分支 FP16 对照计划](2026-09-21-m1-z-denoiser-fp16-diagnostic-plan.json)，仅导出 block 29，保留同一输入、oracle、分区、scales 和阈值。单 artifact native compile 后，用 Core ML CompiledMLModel 的 CPU_AND_NE 执行 1 次、0 warmups；source package 树哈希绑定 compile receipt，compiled tree 在预测前后保持同一哈希。此 partial manifest 不能作为连续 32 分支 native session 加载，因此没有伪造 block index。exporter 的固定文件名/artifact key 仍含 int8_pc，实际 export_identity.variant 为 fp16，不能按文件名推断精度。
+
+该 FP16 对照 relative-L2 **0.0046775426**、cosine **0.9999890993**、relative-max-abs **0.00625**，通过原阈值。见[compile 记录](2026-09-21-m1-z-denoiser-fp16-compile.json)与[对照结果](2026-09-21-m1-z-denoiser-fp16-check-results.json)。这支持继续研究该分支的精度选择，不证明全部误差均由量化导致，也不把已有 INT8 候选改判通过。尚未建立或验证混合精度 bank。
+
+全部结果仅覆盖合成输入上的前缀 FFN；没有 GPU suffix join、真实 latent 轨迹、完整出图或速度对照。CPU+NE 配置不证明 ANE 驻留。源/compiled 哈希和研究脚本亦不等于新的 VerifiedCoreMLBundleLease：immutable generation、typed partition、执行 owner/join、288 次真实 step/branch receipt 与产品质量/性能准入仍待实现。本轮没有 native 代码变更或新 native/App 构建，使用第四十轮的 hook dylib；未开放 public hybrid guard。
+
+三个新脚本均已实际执行，py_compile 通过；误差分析回归 4 项通过。归档后再次核对三个 driver 的 SHA 与运行计划/结果一致，FP16 对照计划 SHA 一致，32 个结果均有限，唯一 INT8 失败为 block 29，FP16 对照独立通过。git diff --check 通过。

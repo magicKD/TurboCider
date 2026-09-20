@@ -1,0 +1,36 @@
+{
+  "scope": "Fixed 32-branch Z-Image prefix smoke against original BF16 GPU weights.\n\nSynthetic hidden states only. No full-image quality, ANE residency, memory or\nperformance qualification. Writes the plan before loading/predicting models.\n",
+  "checkpoint": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+  "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-int8/compiled-cache/manifest-3609feb6e38e3ea1216507b14b8b919dc2e7864713dda0373481161e2b0649e4.json",
+  "manifest_sha256": "3609feb6e38e3ea1216507b14b8b919dc2e7864713dda0373481161e2b0649e4",
+  "library_sha256": "d86d32cacf14e5f2914c193ddc5527d1c1f1422f25acc4b509c45ee5a76b31f8",
+  "driver_sha256": "c9582d92946f86fc82e92a7db85536965e0cd383542723f19e068d90ce71e17a",
+  "shape": {
+    "K": 3840,
+    "N": 3840,
+    "mlp_width": 10240,
+    "ane_mlp_start": 0,
+    "ane_mlp_end": 5120,
+    "buckets": [
+      1088
+    ],
+    "activation_scale": 8,
+    "output_scale": 32
+  },
+  "seed": 42,
+  "input_scale": 0.25,
+  "warmups": 0,
+  "predictions_per_branch": 1,
+  "rows": {
+    "noise_refiner": 1024,
+    "main": 1088
+  },
+  "thresholds": {
+    "relative_l2_max": 0.025,
+    "cosine_min": 0.999,
+    "relative_max_abs_max": 0.05
+  },
+  "reference": "Original BF16 weights and prefix MLP on MLX GPU; shared BF16-rounded input transported as FP16",
+  "candidate": "Native Core ML bridge CPU+NE configuration; FP16 output cast to BF16 before restoring output scale",
+  "failure_policy": "Keep every fixed numeric result; no retries or threshold changes. Runtime errors stop the run."
+}
