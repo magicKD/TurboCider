@@ -456,3 +456,25 @@ App 新二进制再次直接启动并保持 30 秒，无提前退出、stdout/st
 - 目前 private manual streaming 与 encoder ANE 的组合仍被计划器拒绝；尚未建立该组合的 typed identity、stage ownership/receipt 和端到端图像质量、内存、延迟证据。因此没有宣称“图片快 1.2×/2×”，也未写入自动加速策略或 public catalog。
 
 下一步优化重点仍包括 Z-Image GPU refill 等待（首次完整图像报告约 17.26 s），以及把可重复的编码器候选接入正确的多阶段生命周期，再测完整请求；不能只删除 GPU-only guard。
+
+
+## 第二十一轮：Z-Image exact refill 的 D/Q 并行探索（2026-09-21）
+
+原先 Z-Image exact descriptor 只允许 D0/Q1，限制了双槽布局的预取重叠。本轮允许 K2/G1 下 D0/D1、Q1/Q2 的四种组合，仍拒绝 D≥K 或 Q>K；K1 保持 D0/Q1。两个 worker 各自写入独立槽，pread 保持并行，只在完成后对共享字节/次数/耗时计数加锁。F_NOCACHE、4 MiB 读取分块、数值 kernel 和池容量没有改变。
+
+新增 [benchmark_z_image_exact_prefetch.py](../../tools/native/benchmark_z_image_exact_prefetch.py)，运行前冻结计划，先一次 D0/Q1 warmup，再按镜像顺序测量四种组合各两次。使用同一进程、每次新建 engine；wall 从 engine 创建计至安全销毁，包含 PNG 导出，不含事后文件哈希和审计序列化。模型、提示词、seed 42、256²、9 步、P0/G1/K2 与前述 Z-Image smoke 相同，均走 private candidate constructor。
+
+证据：[预先记录的计划](2026-09-21-m1-z-image-exact-prefetch-plan.json)、[全部样本与汇总](2026-09-21-m1-z-image-exact-prefetch-summary.json)、[逐请求审计和内存](2026-09-21-m1-z-image-exact-prefetch-audit.json)、[D1/Q2 生命周期测试](2026-09-21-m1-z-image-exact-prefetch-lifecycle.json)。完整原始输出位于本机 models/TurboCider/experiments/m1-z-image-exact-prefetch。
+
+| 布局 | 两次请求 wall（秒） | wall 中位数（秒） |
+| --- | --- | ---: |
+| D0/Q1 | 32.999、32.022 | 32.510 |
+| D1/Q2 | 28.436、26.889 | 27.663 |
+| D1/Q1 | 32.050、33.062 | 32.556 |
+| D0/Q2 | 32.499、32.518 | 32.508 |
+
+D1/Q2 的请求中位数比 D0/Q1 减少约 14.9%（约 1.175×），refill 等待中位数约从 17.188 s 降至 12.503 s。单独增加 D 或 Q 没有观察到相近收益。所有 8 个测量请求及 warmup 都成功，PNG SHA-256 均为 `8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3`。每个测量请求均为 270 次 slot fills、一个双槽池、drained=true；steady framework allocations/thread creates 均为零，初始化 worker 数与 Q 一致。并行 worker 的读取耗时相加可以超过 wall，不能将它当作串行关键路径；逻辑加载字节也不是物理 SSD 读取量。
+
+MLX peak 为约 8.88–8.98 GB，最大 8,975,747,452 bytes；该计数不含 Core ML、OS 和文件缓存。请求中的旧 8 GiB denoiser budget 不能解释为完整请求内存上限，本轮不构成 8 GiB 发布资格。每组只有两个样本，且未完成正式环境资格核验，因此以上只是探索结果，不是 P1/P2 PASS，也未写入 public catalog 或自动默认策略。
+
+构建为带测试 hook/audit 的 `build/m1-z-prefetch/libturbocider.dylib`，SHA-256 为 `ff97422078dbc791812bbdcc8d97a69246eee903454d420f93e5e83a4a7e7538`。descriptor 的四组合及越界拒绝测试通过；GPU weight-stream suite 共 10 项，4 项通过、6 项因 ConvRot/suffix 设备资格跳过。其中双线程各 1000 次独立槽 refill 验证了精确计数、字节数及 GPU 读取值。D1/Q2 首块取消返回 cancelled，原 engine 重试成功且图片一致；注入 unsafe drain 后保留 owner，并拒绝旧/新 engine 后续 GPU 使用。最新 App 的既有启动结果见前文，本轮没有重新构建或宣称验证 GUI 的 D1/Q2 操作流程。

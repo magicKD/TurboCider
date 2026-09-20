@@ -5,6 +5,7 @@
 #include "../../runtime/streaming/source_lease.hpp"
 #include <array>
 #include <future>
+#include <mutex>
 
 namespace tc {
 
@@ -48,6 +49,8 @@ class ZImageWeightStream {
     unsigned prefetch_layers_ = 1;
     std::atomic<bool> &cancelled_;
     BlockResidencyMetrics metrics_;
+    // Exact workers own separate slots; only completion accounting is shared.
+    std::mutex exact_metrics_mutex_;
     int expected_block_ = 0;
     bool exact_layout_ = false;
     bool exact_pool_live_ = false;
@@ -110,6 +113,7 @@ class ZImageWeightStream {
                         const std::atomic<bool> *worker_cancel);
     Weights bind_exact(uint32_t slot, uint32_t block) const;
     const Weights &prefix_weights(uint32_t block) const;
+    // Owner-thread observation only, after outstanding exact fills are joined.
     const BlockResidencyMetrics &metrics() const { return metrics_; }
 };
 

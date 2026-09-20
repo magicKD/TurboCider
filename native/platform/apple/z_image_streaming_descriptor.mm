@@ -449,11 +449,12 @@ void StreamingPlanView::validate() const {
     require_metadata(stage.id == "denoiser" && !stage.resident &&
                          stage.group_size == 1 && stage.slot_count >= 1 &&
                          stage.slot_count <= 2 &&
-                         stage.distance == 0 && stage.workers == 1 &&
+                         stage.distance < stage.slot_count &&
+                         stage.workers >= 1 && stage.workers <= stage.slot_count &&
                          stage.pass_transition ==
                              streaming::PassTransition::reload &&
                          stage.pools.size() == 1,
-                     "Z-Image shadow requires K=1 or K=2/G=1/D=0/Q=1 reload");
+                     "Z-Image shadow requires K=1 or K=2/G=1/D<K/1<=Q<=K reload");
     require_metadata(stage.prefix < descriptor_.stages.front().blocks.size() &&
                          stage.groups.size() ==
                              descriptor_.stages.front().blocks.size() -

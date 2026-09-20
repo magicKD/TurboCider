@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "scope": "Exploratory small-sample tuple comparison; no release qualification",
+  "library_sha256": "ff97422078dbc791812bbdcc8d97a69246eee903454d420f93e5e83a4a7e7538",
+  "image_sha256": "8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3",
+  "measured_requests": 8,
+  "variants": [
+    {
+      "distance": 0,
+      "workers": 1,
+      "count": 2,
+      "wall_seconds": [
+        32.998830417054705,
+        32.022089791018516
+      ],
+      "wall_median": 32.51046010403661,
+      "denoise_seconds": [
+        29.134821625,
+        28.450593708
+      ],
+      "wait_seconds": [
+        17.571552881000017,
+        16.805043985
+      ]
+    },
+    {
+      "distance": 1,
+      "workers": 2,
+      "count": 2,
+      "wall_seconds": [
+        28.435929582919925,
+        26.88949450000655
+      ],
+      "wall_median": 27.662712041463237,
+      "denoise_seconds": [
+        24.234694792,
+        23.291570042
+      ],
+      "wait_seconds": [
+        12.871922268000004,
+        12.134355170000006
+      ]
+    },
+    {
+      "distance": 1,
+      "workers": 1,
+      "count": 2,
+      "wall_seconds": [
+        32.05032008292619,
+        33.062111125094816
+      ],
+      "wall_median": 32.556215604010504,
+      "denoise_seconds": [
+        28.132648333,
+        28.7770865
+      ],
+      "wait_seconds": [
+        16.612990585000027,
+        16.995856885
+      ]
+    },
+    {
+      "distance": 0,
+      "workers": 2,
+      "count": 2,
+      "wall_seconds": [
+        32.49943004199304,
+        32.5175130830612
+      ],
+      "wall_median": 32.50847156252712,
+      "denoise_seconds": [
+        28.727386958,
+        28.69729475
+      ],
+      "wait_seconds": [
+        16.978536693000002,
+        17.115786391999972
+      ]
+    }
+  ]
+}

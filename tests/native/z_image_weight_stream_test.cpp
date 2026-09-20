@@ -2,6 +2,7 @@
 #include <iostream>
 #include <set>
 #include <fstream>
+#include <thread>
 
 void convrot_test(const char *path, unsigned depth, bool suffix) {
     std::atomic<bool> cancel{false};
@@ -195,6 +196,39 @@ int main(int argc, char **argv) {
                         weights.at(name), tc::mx::float32));
                 tc::require(sum.item<float>() == float(4 + slot) * 4.f * 13.f,
                             "exact fill produced incorrect values");
+            }
+            if (slots == 2) {
+                constexpr uint32_t rounds = 1000;
+                std::atomic<unsigned> ready{0};
+                std::array<std::thread, 2> readers;
+                std::array<std::exception_ptr, 2> failures{};
+                for (uint32_t slot = 0; slot < 2; ++slot) {
+                    readers[slot] = std::thread([&, slot] {
+                        ready.fetch_add(1);
+                        while (ready.load() != 2) std::this_thread::yield();
+                        try {
+                            for (uint32_t i = 0; i < rounds; ++i)
+                                exact.fill_exact(slot, 3 + (i + slot) % 27, nullptr);
+                        } catch (...) { failures[slot] = std::current_exception(); }
+                    });
+                }
+                for (auto &reader : readers) reader.join();
+                for (auto &failure : failures) if (failure) std::rethrow_exception(failure);
+                tc::require(exact.metrics().request_slot_fills == 2 + 2 * rounds &&
+                            exact.metrics().request_slot_refills == 2 + 2 * rounds,
+                            "parallel exact refill accounting lost updates");
+                tc::require(exact.metrics().request_bytes_loaded ==
+                            initial.request_bytes_loaded + (2 + 2 * rounds) * 13 * 8,
+                            "parallel exact byte accounting mismatch");
+                for (uint32_t slot = 0; slot < 2; ++slot) {
+                    const uint32_t block = 3 + (rounds - 1 + slot) % 27;
+                    auto weights = exact.bind_exact(slot, block);
+                    auto sum = tc::Tensor(0.f);
+                    for (const auto &name : weights.sorted_keys())
+                        sum = sum + tc::mx::sum(tc::mx::astype(weights.at(name), tc::mx::float32));
+                    tc::require(sum.item<float>() == float(block + 1) * 4.f * 13.f,
+                                "parallel exact readers corrupted independent slots");
+                }
             }
             std::atomic<bool> worker_cancel{true};
             bool rejected = false;

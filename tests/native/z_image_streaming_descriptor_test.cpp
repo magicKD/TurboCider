@@ -143,12 +143,28 @@ int main(int argc, char **argv) {
         rejects([&] { tc::z_image::StreamingPlanView value(
                           valid, config(3, 2, 2), work); },
                 "group size");
+        for (uint32_t distance : {0u, 1u}) {
+            for (uint32_t workers : {1u, 2u}) {
+                const tc::z_image::StreamingPlanView parallel(
+                    valid, config(3, 2, 1, distance, workers), work);
+                const auto &actual = parallel.layout().stages.front();
+                assert(actual.distance == distance && actual.workers == workers);
+                assert(actual.slot_count == 2 && actual.pools.size() == 1);
+                assert(actual.groups.size() == stage.groups.size());
+            }
+        }
         rejects([&] { tc::z_image::StreamingPlanView value(
-                          valid, config(3, 2, 1, 1), work); },
-                "D=0");
+                          valid, config(3, 1, 1, 1, 1), work); },
+                "prefetch_distance");
         rejects([&] { tc::z_image::StreamingPlanView value(
-                          valid, config(3, 2, 1, 0, 2), work); },
-                "Q=1");
+                          valid, config(3, 1, 1, 0, 2), work); },
+                "io_workers");
+        rejects([&] { tc::z_image::StreamingPlanView value(
+                          valid, config(3, 2, 1, 2, 1), work); },
+                "prefetch_distance");
+        rejects([&] { tc::z_image::StreamingPlanView value(
+                          valid, config(3, 2, 1, 1, 3), work); },
+                "io_workers");
         auto resident = config();
         resident.stages["denoiser"] = {"resident", {}, {}, {}, {}, {}};
         rejects([&] { tc::z_image::StreamingPlanView value(
@@ -183,7 +199,7 @@ int main(int argc, char **argv) {
                 "source fd changed");
 
         std::cout << "PASS Z-Image descriptor: header-only 30x13 BF16 "
-                     "projection, shared SourceLease, K1/K2 G1/D0/Q1 layouts, "
+                     "projection, shared SourceLease, K1/K2 G1 layouts and K2 D0/D1 Q1/Q2, "
                      "malformed metadata and stale snapshot rejection; layout="
                   << plan.layout().digest << '\n';
     } catch (const std::exception &error) {

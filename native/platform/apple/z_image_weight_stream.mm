@@ -659,6 +659,8 @@ uint64_t ZImageWeightStream::fill_exact(
     auto &slot = slots_[slot_index];
     slot.block = int(block);
     auto result = fill(slot, blocks_[block], worker_cancel);
+    // Do not serialize pread: distinct slot buffers are independently owned.
+    std::lock_guard<std::mutex> accounting(exact_metrics_mutex_);
     metrics_.request_refill_load_seconds += result.seconds;
     if (result.seconds > metrics_.request_max_refill_seconds) {
         metrics_.request_max_refill_seconds = result.seconds;
