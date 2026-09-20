@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in, real-weight Flux streaming lifecycle check in a disposable process.
+"""Opt-in, real-weight Flux/Z-Image streaming lifecycle check in a disposable process.
 
 Requires a native test-hook build. An injected false drain result models unknown
 completion; it does not hang the GPU. The unsafe case intentionally retains its
@@ -19,6 +19,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--library', required=True)
     parser.add_argument('--model', required=True)
+    parser.add_argument('--model-id', choices=['flux2-klein-4b','z-image-turbo'], default='flux2-klein-4b')
     parser.add_argument('--request', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--mode', choices=['success', 'cancel-retry', 'quarantine'], required=True)
@@ -29,7 +30,7 @@ def main():
     request = json.loads(Path(args.request).read_text())
     request['outputs'][0]['path'] = str((output / 'image.png').resolve())
     config = dict(library=args.library, constructor='candidate', model_path=args.model,
-                  model_id='flux2-klein-4b')
+                  model_id=args.model_id)
     lib = load_native_library(config)
     lib.tc_engine_cancel.argtypes = [C.c_void_p]
     lib.tc_engine_load.argtypes = [C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
@@ -41,12 +42,13 @@ def main():
     callback_type = C.CFUNCTYPE(None, C.c_char_p, C.c_void_p)
     events = []
     cancel = args.mode != 'success'
+    block_phase = 'transformer_block' if args.model_id.startswith('flux') else 'z_image_denoise_block'
 
     @callback_type
     def event(raw, unused):
         value = json.loads(raw)
         events.append(value)
-        if cancel and value['phase'] == 'transformer_block':
+        if cancel and value['phase'] == block_phase:
             lib.tc_engine_cancel(engine)
 
     def call(function, *parameters):
@@ -56,7 +58,7 @@ def main():
         return dict(status=status, result=consume(lib, result), error=consume(lib, error),
                     wall_seconds=time.perf_counter() - start)
 
-    report = dict(mode=args.mode, library_sha256=hashlib.sha256(Path(args.library).read_bytes()).hexdigest())
+    report = dict(model=args.model_id, mode=args.mode, library_sha256=hashlib.sha256(Path(args.library).read_bytes()).hexdigest())
     if args.mode == 'quarantine':
         error = C.c_void_p()
         status = lib.tc_engine_test_streaming_drain_failure(engine, 1, C.byref(error))
@@ -65,7 +67,7 @@ def main():
     payload = json.dumps(request).encode()
     first = call(lib.tc_engine_generate, engine, payload, event, None)
     report['first'] = first
-    assert any(item['phase'] == 'transformer_block' for item in events), first
+    assert any(item['phase'] == block_phase for item in events), first
     if args.mode == 'quarantine':
         assert first['status'] == 1 and 'streaming_process_quarantined:' in first['error'], first
         assert 'cancel' in first['error'].lower() and 'GPU drain incomplete' in first['error'], first

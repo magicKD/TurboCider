@@ -825,11 +825,21 @@ void FluxExactStream::run_pass(
                 pass, step, impl_->cancelled);
         else
             impl_->executor->run_pass(pass, step, impl_->cancelled);
-    } catch (...) {
+    } catch (const Cancelled &) {
+        // A cooperative refill cancellation is cleanup detail, not a new
+        // primary runtime failure. Keep the API's typed cancellation result.
         drain_safely();
+        throw;
+    } catch (const std::exception &primary) {
+        drain_safely();
+        if (std::strcmp(primary.what(), "streaming_cancelled") == 0)
+            throw Cancelled();
         const auto detail = impl_->adapter->fill_error();
         if (!detail.empty())
-            throw std::runtime_error("FLUX exact fill failed: " + detail);
+            throw std::runtime_error(std::string(primary.what()) + " ; FLUX exact fill: " + detail);
+        throw;
+    } catch (...) {
+        drain_safely();
         throw;
     }
     impl_->adapter->copy_pass_result(image, context);

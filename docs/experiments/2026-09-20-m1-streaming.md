@@ -381,7 +381,7 @@ audit build 的 10 blocks / 20 matched pairs 已完整结束：40/40 请求成�
 
 ## 第十六轮：Flux exact owner 的失败隔离
 
-新增 [真实权重生命周期记录](2026-09-20-m1-flux4-quarantine.json) 和可复跑的 `tools/native/check_flux_streaming_quarantine.py`。这是 Flux Klein 4B BF16 的私有 candidate/test-hook 路径，尚不构成 public catalog 发布资格。
+新增 [真实权重生命周期记录](2026-09-20-m1-flux4-quarantine.json) 和可复跑的 `tools/native/check_streaming_owner_lifecycle.py`。这是 Flux Klein 4B BF16 的私有 candidate/test-hook 路径，尚不构成 public catalog 发布资格。
 
 - adapter 持有当前 pass 的 Tensor/调制向量和 Event 副本，避免异常离开 denoise 栈后只保留 executor、却丢失其引用对象。失败 drain 会断开 API 栈回调，保留 pass/current weights；I/O 仍先 shutdown/join，未 detach。
 - pool 初始化移到完整 exact owner 建立后的 start，覆盖 begin 部分失败的保留路径。安全 drain 后释放 owner；无法确认完成时 session 标记 quarantine，API 将其提升为进程级状态。`tc_engine_free` 使用无分配的链表保留整个 engine；后续 GPU generate/load/prepare/unload 拒绝运行，同进程新建 engine 也不能恢复 GPU 使用。
@@ -394,3 +394,25 @@ audit build 的 10 blocks / 20 matched pairs 已完整结束：40/40 请求成�
 限制：本轮只验证 Flux exact denoiser。Z-Image owner、encoder/VAE 阶段 GPU 失败、更多取消边界及真实后端 hang 仍未关闭；同步 backend 和 join 仍可能无界阻塞，不承诺故障后 60 秒内回收。测试钩子只模拟 drain 返回失败，没有制造 GPU hang。完整 R4 和 streaming 总目标仍未完成。最新 `origin/dev` 再次 fetch 后确认已是当前 HEAD 的祖先，无新增待合并提交。
 
 隔离改动后又完成一轮冻结 P1（[policy](2026-09-20-m1-flux4-quarantine-p1-policy.json)、[summary](2026-09-20-m1-flux4-quarantine-p1-summary.json)、[audit](2026-09-20-m1-flux4-quarantine-p1-audit.json)、[quality](2026-09-20-m1-flux4-quarantine-p1-quality.json)、[semantics](2026-09-20-m1-flux4-quarantine-p1-semantics.json)）：40/40 成功、20 matched pairs PNG 相同、steady framework allocations/thread creates 均为 0。原 direct 基线库不变，新 generic 库 SHA 为 `e06dc49a0b8c6770857c70e2c2f96e2d50ca5ef1b0fb5dcefd8f51d6582c1c03`。wall median 8.52517 → 8.42341 s，ratio 0.988063、95% CI upper 1.005300；wall P95 ratio 0.983265、upper 1.008404；denoise median ratio 0.993680、upper 1.009260。数值位于冻结的 1.02/1.05/1.02 阈值内，但环境仍 partial（下载及启动阶段 App Swift 构建），正式结论 **INCONCLUSIVE**，不提升成 PASS 或生产资格。原始 bundle 为 `/Users/chencanhui/models/TurboCider/experiments/m1-flux4-quarantine-p1`。
+
+## 第十七轮：Z-Image 官方权重真实 streaming 首次完成（9 月 21 日）
+
+Z-Image 三份 Comfy-Org 权重全部下载完成并逐文件 SHA-256 校验，固定 revision `08d04455279082882deaabc8d0d09fc914c071e1`：transformer 12,309,866,400 bytes、Qwen3 8,044,982,048 bytes、VAE 335,304,388 bytes。另从 Tongyi-MAI/Z-Image-Turbo 固定 revision `f332072aa78be7aecdf3ee76d5c247082da564a6` 获取 tokenizer；tokenizer.json 按 LFS SHA-256 校验，tokenizer_config.json 按 Git blob SHA-1 校验。校验值、请求和完整 native 结果见 [记录](2026-09-21-m1-z-image-streaming-smoke.json)。没有发布或复用之前 SHA 不匹配的重建文件。
+
+[输出 PNG](2026-09-21-m1-z-image-streaming-smoke.png) 为可辨认的雪地红狐、松树场景；SHA-256 `8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3`。本地候选库为 `build/m1-quarantine/libturbocider.dylib`，该次 Z-Image 尚未包含其自身的后续 R4 owner 修复。
+
+配置为 256×256、9 steps、seed 42、26 个实际文本 tokens，GPU BF16 exact P0/G1/K2/D0/Q1，30 groups × 9 passes = 270 fills，1 个 pool、2 个 slot bundles、1 个 refill worker。actual layout drained=true；私有 candidate 的 source_lease_verified=false，不作为 public preset 资格。逻辑 request_bytes_loaded 为 99,146,778,752 bytes，含 fixed weights 和每步 block 重读；不能当成物理 SSD 读量。
+
+native request wall 32.8608 s，text encode 1.82564 s、denoise 29.90850 s、VAE decode 0.59175 s。MLX peak 为 8,978,303,336 bytes，结束 active 为 336,278,176 bytes；该指标不含 OS、file cache 或 Core ML。请求中的 8 GiB 是旧 denoiser budget 域，非已验证 request footprint 上限：不能声称该次运行通过 8 GiB 公共档位。后台 native 构建可能影响时延，本次是成功运行 smoke，未完成性能资格或数值 oracle。
+
+App 新二进制再次直接启动并保持 30 秒，无提前退出、stdout/stderr 均为 0；随后仅终止测试自己启动的进程。这个观察证明可启动，不等于图形界面全部工作流都已验收。Z-Image owner 故障隔离和 GPU/Core ML encoder 对照仍在继续。
+
+## 第十八轮：Z-Image exact owner 与取消异常传播
+
+将 Flux 的完整 owner 保留方式接入 Z-Image exact denoiser：adapter 拥有 pass 的 unified/freqs/temb 和 Event 副本；完整 owner 建立后才 begin pool；unsafe drain 保留 owner/固定权重/lease 和 engine，断开回调并触发同一进程 quarantine。
+
+真实首 block 取消测试发现：后台 refill 在 cleanup 中记录的 `generation cancelled` 覆盖了 primary `Cancelled`，导致 C API 返回 1 而非取消状态 2。Flux 同样存在该竞态。因此两 adapter 现在优先保留 typed cancellation，将 executor 的显式 `streaming_cancelled` 转为同一类型；非取消异常保留 primary 信息，再附加 fill detail，不让 cleanup 重命名原始错误。
+
+[六项真实权重检查](2026-09-21-m1-streaming-owner-lifecycle.json)全部通过：每模型分别正常成功、首 block 取消后同 engine 成功重试、注入 false drain 后拒绝 generate/load/prepare/unload 且 free 不 terminate、新 engine 不能恢复 GPU 使用。Z-Image 首轮错误分类测试的失败被保留在 `/tmp/tc-z-quarantine-cancel-retry.log`；修复后的独立结果目录为 `/Users/chencanhui/models/TurboCider/experiments/m1-final-owner-tests`。两模型成功和重试图像都与各自先前 PNG 的 SHA-256 完全一致。
+
+这推进了两模型 exact denoiser 的 R4 验收，但不关闭全部 R4：没有把假 drain failure 当成真实硬件 hang，也未覆盖 encoder/VAE 的 GPU 故障、全部 I/O/分配/取消边界、worker 有界恢复。legacy Z-Image streaming 的异常清理也不是本轮完整 owner 保留证明的范围。

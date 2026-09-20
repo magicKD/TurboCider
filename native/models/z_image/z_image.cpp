@@ -40,6 +40,11 @@ class ZImageExactStream {
     ZImageExactStream(const ZImageExactStream &) = delete;
     ZImageExactStream &operator=(const ZImageExactStream &) = delete;
 
+    void start();
+    bool drain_safely() noexcept;
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    void test_set_drain_failure(bool);
+#endif
     void run_pass(uint32_t pass, uint32_t step, Tensor &unified,
                   const Tensor &freqs, const Tensor &temb);
     void finish();
@@ -1100,10 +1105,12 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
     ZImageWeightStream &source_;
     uint32_t prefix_ = 0;
     uint32_t slot_count_ = 0;
-    const Event &event_;
+    Event event_;
     std::atomic<bool> &cancelled_;
     std::array<Job, 2> jobs_{};
     Weights current_;
+    struct PassStorage { Tensor unified, freqs, temb; };
+    std::optional<PassStorage> pass_storage_;
     Tensor *unified_ = nullptr;
     const Tensor *freqs_ = nullptr;
     const Tensor *temb_ = nullptr;
@@ -1136,13 +1143,25 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
         require(!unified_, "Z-Image exact pass context is already bound");
         pass_ = pass;
         step_ = step;
-        unified_ = &unified;
-        freqs_ = &freqs;
-        temb_ = &temb;
+        pass_storage_.emplace(PassStorage{unified, freqs, temb});
+        unified_ = &pass_storage_->unified;
+        freqs_ = &pass_storage_->freqs;
+        temb_ = &pass_storage_->temb;
     }
 
-    void unbind_pass() noexcept {
-        current_.clear();
+    void copy_pass_result(Tensor &unified) const {
+        require_context();
+        unified = *unified_;
+    }
+
+    void unbind_pass(bool safe = true) noexcept {
+        if (safe) {
+            current_.clear();
+            pass_storage_.reset();
+        } else {
+            // Joined I/O cannot call back into a returned API stack.
+            event_ = {};
+        }
         unified_ = nullptr;
         freqs_ = nullptr;
         temb_ = nullptr;
@@ -1255,7 +1274,13 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
         return readers;
     }
 
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    bool test_fail_drain = false;
+#endif
     bool drain() noexcept override {
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+        if (test_fail_drain) return false;
+#endif
         try {
             mx::synchronize();
             return true;
@@ -1280,6 +1305,7 @@ struct ZImageExactStream::Impl {
     std::atomic<bool> &cancelled;
     streaming::ExecutionCounters final_counters{};
     bool finished = false;
+    bool started = false;
 
     Impl(const std::filesystem::path &checkpoint,
          const StreamingConfig &config,
@@ -1298,7 +1324,6 @@ struct ZImageExactStream::Impl {
               0, request_generation, adapter)),
           cancelled(cancelled) {
         plan.metadata().check_unchanged();
-        executor->begin(plan.layout().stages.front());
     }
 
     Impl(std::shared_ptr<const streaming::SourceLease> lease,
@@ -1318,7 +1343,6 @@ struct ZImageExactStream::Impl {
               0, request_generation, adapter)),
           cancelled(cancelled) {
         plan.metadata().check_unchanged();
-        executor->begin(plan.layout().stages.front());
     }
 };
 
@@ -1344,7 +1368,29 @@ ZImageExactStream::ZImageExactStream(
           std::move(lease), config, workload, budget, activation_reserve,
           fixed, event, cancelled, request_generation)) {}
 
-ZImageExactStream::~ZImageExactStream() = default;
+ZImageExactStream::~ZImageExactStream() {
+    if (impl_ && !drain_safely()) (void)impl_.release();
+}
+
+void ZImageExactStream::start() {
+    require(impl_ && !impl_->finished, "Z-Image exact executor unavailable");
+    if (impl_->started) return;
+    impl_->started = true;
+    impl_->executor->begin(impl_->plan.layout().stages.front());
+}
+
+bool ZImageExactStream::drain_safely() noexcept {
+    if (!impl_) return true;
+    const bool safe = impl_->executor->retry_drain();
+    impl_->adapter->unbind_pass(safe);
+    return safe;
+}
+
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+void ZImageExactStream::test_set_drain_failure(bool value) {
+    impl_->adapter->test_fail_drain = value;
+}
+#endif
 
 void ZImageExactStream::run_pass(
         uint32_t pass, uint32_t step, Tensor &unified,
@@ -1353,14 +1399,26 @@ void ZImageExactStream::run_pass(
             "Z-Image exact executor is unavailable");
     impl_->adapter->bind_pass(pass, step, unified, freqs, temb);
     try {
+        start();
         impl_->executor->run_pass(pass, step, impl_->cancelled);
-    } catch (...) {
-        impl_->adapter->unbind_pass();
+    } catch (const Cancelled &) {
+        // A cooperative refill cancellation is cleanup detail, not a new
+        // primary runtime failure. Keep the API's typed cancellation result.
+        drain_safely();
+        throw;
+    } catch (const std::exception &primary) {
+        drain_safely();
+        if (std::strcmp(primary.what(), "streaming_cancelled") == 0)
+            throw Cancelled();
         const auto detail = impl_->adapter->fill_error();
         if (!detail.empty())
-            throw std::runtime_error("Z-Image exact fill failed: " + detail);
+            throw std::runtime_error(std::string(primary.what()) + " ; Z-Image exact fill: " + detail);
+        throw;
+    } catch (...) {
+        drain_safely();
         throw;
     }
+    impl_->adapter->copy_pass_result(unified);
     impl_->adapter->unbind_pass();
 }
 
@@ -1375,6 +1433,7 @@ void ZImageExactStream::enable_receipt(
         streaming::ExecutionReceiptOptions options) {
     require(impl_ && !impl_->finished,
             "Z-Image exact receipt is unavailable");
+    start();
     impl_->executor->enable_receipt(std::move(options));
 }
 
@@ -1922,6 +1981,7 @@ RunResult ZImage::generate(const Request &r, const Event &event, std::atomic<boo
 
 RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
                       bool warmup, bool load_only) try {
+    require(!streaming_quarantined_, "streaming_process_quarantined: restart the process");
     auto r = requested;
     ZProfileRequest profile(r);
     auto begin = Clock::now();
@@ -2048,6 +2108,10 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 transformer_path_, r.streaming, workload, budget, reserve,
                 transformer_, event, cancelled, exact_stream_generation_);
         }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+        exact_stream_->test_set_drain_failure(test_fail_drain_);
+#endif
+        exact_stream_->start();
     } else if (legacy_streamed) {
         require(!gguf_transformer_ && !nvfp4_transformer_ && !diffusers_layout_,
                 "Z-Image streaming requires Comfy BF16 or INT8 ConvRot weights");
@@ -2296,6 +2360,10 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     return result;
 } catch (...) {
+    if (exact_stream_ && !exact_stream_->drain_safely()) {
+        streaming_quarantined_ = true;
+        throw;
+    }
     if (exact_stream_ || weight_stream_ || !stream_configuration_.empty()) {
         // Cancellation can leave a prefetch outstanding. Join it before a retry
         // resets the cancellation flag or reuses any of its destination buffers.

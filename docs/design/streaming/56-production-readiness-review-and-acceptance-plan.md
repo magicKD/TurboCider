@@ -88,7 +88,7 @@ exact request 开头清 transformer，但仅 K1 清 VAE，也没有像 Flux publ
 
 ### R4 · 安全析构有协议，但模型失败恢复尚未统一接上
 
-2026-09-21 进展：Flux exact denoiser 已接上完整 engine 保留、进程 quarantine 与 App 重启提示，真实 4B 权重正常/取消重试/注入 unsafe drain 检查通过，见 [实验第十六轮](../../experiments/2026-09-20-m1-streaming.md#第十六轮flux-exact-owner-的失败隔离)。以下为审查时证据；Z-Image、encoder/VAE 与有界 worker 恢复仍待关闭，R4 未整体完成。
+2026-09-21 进展：Flux/Z-Image exact denoiser 已接上完整 engine 保留、进程 quarantine 与 App 重启提示；两模型真实权重正常/取消重试/注入 unsafe drain 的六项检查通过，见 [实验第十八轮](../../experiments/2026-09-20-m1-streaming.md#第十八轮z-image-exact-owner-与取消异常传播)。以下为审查时证据；encoder/VAE、其余故障边界与有界 worker 恢复仍待关闭，R4 未整体完成。
 
 证据：`PublicStreamingRunContext` 在 native 中的调用点目前限于自身实现，实际构造主要在 resolver host test；四模型 public 方法仍使用各自 owner/receipt 路径。
 `tc_engine::streaming_quarantined` 有初始化和读取，当前无置 true 的路径。

@@ -26,6 +26,10 @@ class ZImage final : public ModelSession {
     std::unique_ptr<ZImageExactStream> exact_stream_;
     std::string stream_configuration_;
     uint64_t exact_stream_generation_ = 0;
+    bool streaming_quarantined_ = false;
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    bool test_fail_drain_ = false;
+#endif
     std::optional<Tensor> cached_conditioning_;
     std::string cached_prompt_;
     std::string cached_encoder_manifest_;
@@ -61,6 +65,10 @@ class ZImage final : public ModelSession {
     ZImage(const std::filesystem::path &, std::string,
            const std::filesystem::path &transformer_checkpoint);
     ~ZImage() override;
+    bool streaming_quarantined() const noexcept override { return streaming_quarantined_; }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    void test_set_streaming_drain_failure(bool value) override { test_fail_drain_ = value; }
+#endif
     LoadResult load(const Event &, std::atomic<bool> &) override;
     void unload() override;
     RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) override;
