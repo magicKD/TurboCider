@@ -326,3 +326,20 @@ Flux transformer 下载完成，完整大小 7,751,109,744 字节，SHA-256 与 
 10 样本复测已结束：[第二份完整 encoder report](2026-09-20-m1-qwen3-full-encoder-sweep-2.json)。完整调用数为 297 = 27×11，hybrid_executed=true，fixed backing 资格检查通过；conditioning 数值与上轮一致。GPU 暖态中位数 0.139203 秒，hybrid 0.117130 秒，比值 1.188×；hybrid 第一暖态 0.335283 秒导致 CV 0.4710，仍超过 0.25，retain=false。未删除尖峰或提高阈值。Core ML load 从 14.607 秒降至 6.871 秒，说明系统编译/模型缓存影响 setup；不能把第二轮当作独立冷启动加速证明。
 
 为继续探索划分，已启动 `/tmp/tc-qwen-width-sweep.py`，依次导出/编译/测量 2432（25%）与 7296（75%）前缀，均 27 blocks、64 tokens、INT8、10 暖态样本；日志 `/tmp/tc-qwen-width-sweep.log`。这些仍是完整 encoder 的探索性对照，未宣称 Flux denoiser hybrid 或完整图像请求收益。Z 官方模型仍在下载，目标整体保持未完成。
+
+
+## 第十三轮：64-token 完整 encoder 的分宽度探索
+
+25% 和 75% 分区均已完整导出/编译，并完成 27 blocks、一次首轮＋10 次暖态的 GPU 对照。没有删除暖态尖峰，沿用相同质量/速度/CV 阈值。
+
+| ANE prefix / 9728 | GPU 暖态中位数 | hybrid 暖态中位数 | GPU / hybrid | hybrid CV | conditioning 相对 L2 | retain |
+|---|---:|---:|---:|---:|---:|---|
+| 2432（25%） | 0.139081 s | 0.136343 s | 1.020× | 0.3754 | 0.0078693 | false：速度及稳定性 |
+| 4864（50%，10 样本复测） | 0.139203 s | 0.117130 s | 1.188× | 0.4710 | 0.0087282 | false：稳定性 |
+| 7296（75%） | 0.145837 s | 0.303986 s | 0.480× | 0.0812 | 0.0038033 | false：速度 |
+
+原始结果：[25%](2026-09-20-m1-qwen3-w2432-encoder-sweep.json)、[75%](2026-09-20-m1-qwen3-w7296-encoder-sweep.json)。各轮全部 297 次 Core ML 调用均成功，conditioning finite/cosine/相对最大误差也都通过既定阈值。观察范围内 50% 的暖态中位数最好，但尚无合格推荐；75% 更慢也说明不能按 ANE 占比推导收益。25%/75% 的 hybrid load 分别 13.593/18.897 秒，冷启动仍不利。
+
+这些是 64-token encoder 探索，GPU/ANE 芯片实际驻留仍未观测，不代表完整图像收益，更不代表所有 token 长度的最佳划分。75% 后段与 native audit 构建有 CPU 并发，背景下载持续；精确性能结论须在后续固定条件复测。
+
+已冻结真实 Flux 4B 同布局 P1 对照 [policy](2026-09-20-m1-flux4-p1-policy.json)：256²/4 步、P0/G1/K2/D1/Q2、每请求新 engine、直接调度 vs 通用执行器、10 个 ABBA/BAAB blocks 共 20 matched pairs、无结果后剔除、原阈值不变。带 audit counters 的全量 native-only build 正在 `build/m1-audit` 进行（`/tmp/tc-m1-audit-build.log`，session `82430`）；构建与 encoder 实验结束后才启动计时。本段不构成 P1 通过证明。
