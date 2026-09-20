@@ -766,3 +766,16 @@ fixture 加入 128-byte 固定字段：预留 256 bytes、实际只读 128 bytes
 全部结果仅覆盖合成输入上的前缀 FFN；没有 GPU suffix join、真实 latent 轨迹、完整出图或速度对照。CPU+NE 配置不证明 ANE 驻留。源/compiled 哈希和研究脚本亦不等于新的 VerifiedCoreMLBundleLease：immutable generation、typed partition、执行 owner/join、288 次真实 step/branch receipt 与产品质量/性能准入仍待实现。本轮没有 native 代码变更或新 native/App 构建，使用第四十轮的 hook dylib；未开放 public hybrid guard。
 
 三个新脚本均已实际执行，py_compile 通过；误差分析回归 4 项通过。归档后再次核对三个 driver 的 SHA 与运行计划/结果一致，FP16 对照计划 SHA 一致，32 个结果均有限，唯一 INT8 失败为 block 29，FP16 对照独立通过。git diff --check 通过。
+
+
+## 第四十二轮：Core ML 私有 generation 导入与所有权（2026-09-21）
+
+新增内部 `z_image::CoreMLGeneration`，作为后续 VerifiedCoreMLBundleLease 的文件来源基础。导入要求 self-contained regular-file tree，拒绝 symlink（包括祖先路径）、非普通文件和空文件树。先枚举目录/文件并通过 native SourceLease 对 held fd 做内容验证，再从这些 fd 复制到 mkdtemp 的独立私有目录；使用有限 1 MiB scratch，处理短读写/EINTR/取消。复制完成后再次验证源 generation 和完整 entry set，关闭所有写 fd，独立验证目标内容 SHA，确认跨目录的 logical-id/size/content 身份相同，最后将文件/目录设为 owner 只读/可遍历并发布 owner。
+
+每个导入使用新的目录，源更新不会原地覆盖现有请求的 generation。owner 保留目标 SourceLease 与目录 stat/entry snapshot，提供围绕 Core ML 路径加载和 drain 的 revalidate；完整 owner 释放后清理目录。若根路径已被替换，析构拒绝删除替换目录，此类外部篡改可能留下被移走的旧目录，不宣称自动恢复。权限约束和 generation 检查面向受管理更新，不构成对同权限恶意写入者的绝对隔离。
+
+host fixture 验证多 chunk 内容复制与字节数、跨安装内容身份、独立目录、源更新隔离、多 owner 生命周期和清理、入口取消保留 Cancelled、symlink/非普通文件/空树拒绝、同尺寸目标修改、新增文件与根目录替换拒绝，以及析构不删除替换目录。普通运行与 ASan/UBSan 通过。首轮测试因 macOS `/var` 为 symlink 祖先被拒绝；fixture 改用解析后的 `/private/var` 路径，生产拒绝规则不变。当前取消测试覆盖入口，不声称覆盖全部中途取消和 I/O 故障注入。
+
+另对上一轮 block 29 的真实 FP16 `model.mlmodelc` 执行导入、目标内容验证、revalidate 和 owner 释放。复制 117,968,870 bytes，native portable file-list 内容 digest 为 `f98a425fd17d2c11f4d369598d0dde7c510b82e44390d50d250554e9346f7538`；其编码与第四十一轮 legacy tree hash 不同，不能混用。临时 generation 已删除。本轮没有从该新目录执行 Core ML prediction。
+
+新源文件已加入 native build source list；本轮只编译并执行 standalone host 测试，没有重建完整 dylib/App。见[验证记录](2026-09-21-m1-z-coreml-generation-validation.json)。该类没有解析 manifest、验证父 checkpoint/分区/precision、签发执行 authority 或提供安装 ID 注册表；它不能替代完整 VerifiedCoreMLBundleLease。H0/H1 仍需语义绑定与 session 接入，H2/H3 完整 join/receipt、真实出图质量和性能验证继续待完成。

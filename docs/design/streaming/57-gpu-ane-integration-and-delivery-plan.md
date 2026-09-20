@@ -376,3 +376,10 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 已导出并 native compile 真实 Z-Image 32 个 denoiser 前缀 FFN（[0,5120)/10240，bucket 1088，INT8 per-channel），完成固定合成输入的 32 次 native prediction，源 checkpoint 内容验证通过。冻结的 relative-L2 ≤ 0.025 等阈值下，31 个分支通过、block 29（layers.27）以 0.02562 失败，整个候选仍不通过。另行预先冻结的单分支 FP16 对照以 0.00468 通过；原 INT8 结论保留，没有把单分支成功当作混合精度 bank 或完整图片资格。计划偏差、编译接口误用、所有结果及限制见[第四十一轮](../../experiments/2026-09-20-m1-streaming.md)。
 
 这提供了 artifact 准备和局部算术证据，尚未提供 native VerifiedCoreMLBundleLease/managed immutable generation、typed partition 或实际硬件驻留证明。H0 不能整体关闭，H2 hybrid executor/完整 owner/join、H3 真实步骤 receipt 和 H4 完整质量/性能准入仍待完成；public hybrid guard 保持关闭。
+
+
+## 18. H1 私有 Core ML generation 基础（2026-09-21）
+
+已新增内部 CoreMLGeneration：枚举并验证完整 regular-file tree，经 held source fd 复制到独立私有目录，再独立验证目标内容，关闭写句柄并设只读权限，owner 持有目标 SourceLease/目录 snapshot 到最后使用者结束。revalidate 拒绝文件/目录替换与 entry set 变化；源安装更新不影响旧 generation。host 生命周期/变更拒绝测试、ASan/UBSan 和真实单分支 compiled tree 导入通过，见[第四十二轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+这是受管理 generation 的内部存储基础，尚无 validated installation-ID 注册、manifest/父 checkpoint/partition/precision 语义验证或 HybridSession 接入；不能称为 VerifiedCoreMLBundleLease 完成，更不能授予 public hybrid authority。真实模型验证只涉及文件复制/内容与生命周期，没有在新 generation 上预测，取消中途和 I/O 故障测试仍需补齐。
