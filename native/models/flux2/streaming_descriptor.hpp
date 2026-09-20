@@ -32,6 +32,7 @@ class StreamingMetadata {
     StreamingMetadata &operator=(const StreamingMetadata &) = delete;
 
     streaming::Descriptor describe(const StreamingWorkload &) const;
+    streaming::Descriptor describe_verified(const StreamingWorkload &) const;
     void check_unchanged() const;
 
     uint32_t hidden_size() const noexcept;

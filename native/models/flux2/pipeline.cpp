@@ -87,6 +87,10 @@ void append_public_artifacts(
 
 streaming::PresetSourceIdentity flux_public_source_identity(
         const streaming::SourceLease &lease, const std::string &model) {
+    if (lease.has_verified_content())
+        return {model + "-bf16", model == "flux2-klein-4b"
+                    ? "diffusers-bf16-single-file" : "diffusers-bf16-sharded",
+                std::string(lease.artifact_digest()), "", 2};
     streaming::CanonicalEncoder encoder("flux2-public-source-v1");
     encoder.string_field("lease_digest", lease.digest());
     encoder.unsigned_field("artifact_count", lease.file_count());

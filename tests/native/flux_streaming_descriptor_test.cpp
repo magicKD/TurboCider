@@ -3,6 +3,7 @@
 #include <cassert>
 #include <fcntl.h>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -87,8 +88,38 @@ int main(int argc, char **argv) {
             tc::flux2::StreamingPlanView leased(lease, "flux2-klein-4b", config(), workload());
             tc::flux2::StreamingPlanView direct(root, "flux2-klein-4b", config(), workload());
             assert(leased.layout().digest == direct.layout().digest);
+            rejects([&] { (void) metadata.describe_verified(workload()); },
+                    "artifact_verification_required");
+            auto verified = tc::streaming::SourceLease::capture_verified(lease->descriptor().files);
+            tc::flux2::StreamingPlanView portable(verified, "flux2-klein-4b", config(), workload());
+            assert(portable.layout().digest != leased.layout().digest);
+            assert(portable.descriptor().artifacts.front().identity_kind ==
+                   tc::streaming::SourceIdentityKind::content_sha256);
+            const auto relocated = std::filesystem::path(root) / "relocated";
+            std::filesystem::create_directory(relocated);
+            std::filesystem::copy_file(std::filesystem::path(root) / "config.json", relocated / "config.json");
+            // Relocate the sparse payload via hard link to avoid writing 7 GB
+            // of fixture zeros; the config is an independent copied file.
+            std::filesystem::create_hard_link(
+                std::filesystem::path(root) / "diffusion_pytorch_model.safetensors",
+                relocated / "diffusion_pytorch_model.safetensors");
+            auto relocated_files = lease->descriptor().files;
+            for (auto &file : relocated_files) file.path = relocated / file.logical_id;
+            auto relocated_lease = tc::streaming::SourceLease::capture_verified(relocated_files);
+            tc::flux2::StreamingPlanView relocated_plan(relocated_lease, "flux2-klein-4b", config(), workload());
+            assert(relocated_lease->digest() != verified->digest());
+            assert(relocated_plan.layout().digest == portable.layout().digest);
+            auto ready = tc::streaming::SourceLease::capture_preverified(relocated_files);
+            assert(ready->verification_bytes_read() == 0);
+            tc::flux2::StreamingPlanView ready_plan(ready, "flux2-klein-4b", config(), workload());
+            assert(ready_plan.layout().digest == portable.layout().digest);
+            { std::ofstream changed(relocated / "config.json", std::ios::app); changed << ' '; }
+            rejects([&] { ready_plan.metadata().check_unchanged(); }, "source");
+            auto updated = tc::streaming::SourceLease::capture_verified(relocated_files);
+            tc::flux2::StreamingPlanView updated_plan(updated, "flux2-klein-4b", config(), workload());
+            assert(updated_plan.layout().digest != portable.layout().digest);
             rejects([&] { tc::flux2::StreamingPlanView bad(root, "flux2-klein-4b", config(1), workload()); }, "requires P0");
-            std::cout << "PASS FLUX 4B single-file descriptor: 5+20 blocks, 3072/7680 geometry, two pools, D/Q layouts, lease parity\n";
+            std::cout << "PASS FLUX 4B single-file descriptor: 5+20 blocks, 3072/7680 geometry, two pools, D/Q layouts, legacy lease parity and verified portable plans\n";
             return 0;
         }
         if (argc == 2) {

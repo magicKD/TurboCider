@@ -653,6 +653,20 @@ void StreamingMetadata::check_unchanged() const {
     }
 }
 
+streaming::Descriptor StreamingMetadata::describe_verified(
+    const StreamingWorkload &workload) const {
+    require_metadata(state_->lease && state_->lease->has_verified_content(),
+                     "artifact_verification_required");
+    auto descriptor = describe(workload);
+    descriptor.checkpoint_identity =
+        "artifact-content-v1:" + std::string(state_->lease->artifact_digest());
+    for (auto &artifact : descriptor.artifacts) {
+        artifact.identity = state_->lease->file(artifact.id).content_digest;
+        artifact.identity_kind = streaming::SourceIdentityKind::content_sha256;
+    }
+    return descriptor;
+}
+
 streaming::Descriptor StreamingMetadata::describe(
     const StreamingWorkload &workload) const {
     check_unchanged();
@@ -801,7 +815,8 @@ StreamingPlanView::StreamingPlanView(
     const std::string &model_id, const StreamingConfig &config,
     const StreamingWorkload &workload)
     : metadata_(std::move(lease), model_id),
-      descriptor_(metadata_.describe(workload)),
+      descriptor_(metadata_.source_lease() && metadata_.source_lease()->has_verified_content()
+          ? metadata_.describe_verified(workload) : metadata_.describe(workload)),
       layout_(streaming::compile_layout(config, descriptor_)) {
     require_metadata(layout_.materializations_complete,
                      "FLUX descriptor metadata is incomplete");

@@ -562,3 +562,12 @@ campaign build identity 记录该配置；raw sample 的 `source_verification` �
 验证：campaign suite 34 项通过，新增验证先于 catalog 安装、验证失败只释放一次 engine、创建失败不会附带上一 engine 证明的检查；test-catalog API suite 3 项通过，新增 CLI 显式验证生成 v2/cli_worker record 的实际调用。使用已构建的 m1-worker-identity 库，没有重建 native 或 App。
 
 [标准 campaign setup 的真实验证记录](2026-09-21-m1-z-campaign-source-verification.json)：load_native_worker 通过配置显式验证真实 Z-Image 四文件，共 20,701,575,490 bytes、10.628 s，然后安装上一轮 v2 测试 record 并成功 public resolve。本次未执行 GPU generate 或完整 P1/P2 campaign，因此不声称新增性能资格。内容证明仍仅在当前 native 进程有效：独立的 catalog CLI 与 campaign worker 都需各自验证，catalog JSON 不携带可恢复的信任。persistent import proof 和 App 集成仍待完成。
+
+
+## 第二十九轮：Flux verified descriptor 与实际 plan（2026-09-21）
+
+Flux metadata 新增 `describe_verified()`，要求 native verified lease。checkpoint identity 使用全 lease 内容摘要，各 transformer artifact 使用对应 logical id 的真实 SHA-256；config/index、文本编码器等已包含在 lease 中的辅助文件也参与全身份。lease 版 StreamingPlanView 按 native proof 选择 portable descriptor；路径/metadata-only 路径保留旧摘要。模型侧 source identity 对 verified lease 同步选择 v2，保持 source 与 plan 一致。
+
+`.venv/bin/python tests/native/test_flux_streaming_descriptor.py` 编译并通过 9B legacy sharded 回归及 4B 新案例：未验证 metadata 拒绝 portable describe；实际 verified plan 与旧 snapshot plan 不同；迁移路径后 verified layout 相同；capture_preverified 零 payload 读取仍产生同一 plan；仅向 config.json 追加 JSON 空白（几何不变）会使旧 lease 失效、重新验证后的全内容/layout identity 改变。迁移 fixture 独立复制 config、对约 7 GB sparse payload 创建硬链接以避免实写零数据；这是路径迁移测试，不冒充独立完整副本测试。底层 SourceLease 的独立复制/改写覆盖见前述测试。
+
+使用托管 MLX headers 对 Flux pipeline.cpp 执行 C++20 clang++ `-fsyntax-only`，返回 0。未重新链接完整 native 库或运行真实 Flux GPU。本轮尚未 override Flux 的 verify_streaming_sources，公开 probe 仍捕获 metadata-only lease；显式验证 API 接入、真实 v2 公开生成和 persistent proof 仍待完成。
