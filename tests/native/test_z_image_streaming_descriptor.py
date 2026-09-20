@@ -76,6 +76,7 @@ def main() -> None:
     sources = (
         ROOT / "tests/native/z_image_streaming_descriptor_test.cpp",
         ROOT / "native/platform/apple/z_image_streaming_descriptor.mm",
+        ROOT / "native/models/z_image/suffix_materialization.cpp",
         ROOT / "native/runtime/streaming/config.cpp",
         ROOT / "native/runtime/streaming/canonical_encoding.cpp",
         ROOT / "native/runtime/streaming/layout.cpp",

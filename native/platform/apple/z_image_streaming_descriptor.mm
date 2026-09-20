@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 
 #include "../../models/z_image/streaming_descriptor.hpp"
+#include "../../models/z_image/suffix_materialization.hpp"
+#include "../../runtime/streaming/canonical_encoding.hpp"
 
 #include <algorithm>
 #include <array>
@@ -438,6 +440,114 @@ streaming::Descriptor StreamingMetadata::describe(
     }
     descriptor.stages.push_back(std::move(stage));
     return descriptor;
+}
+
+GpuSuffixPlan StreamingMetadata::describe_gpu_suffix(
+    const StreamingWorkload &workload, uint32_t first_gpu_channel) const {
+    require_metadata(first_gpu_channel > 0 && first_gpu_channel < 10240,
+                     "invalid hybrid GPU suffix channel");
+    GpuSuffixPlan plan;
+    plan.descriptor = lease().has_verified_content()
+        ? describe_verified(workload) : describe(workload);
+    const auto geometry = suffix_geometry(kHidden, 10240, first_gpu_channel, 2);
+    // Validate the complete branch map before producing any partial plan.
+    // Noise refiners are fixed, main blocks may be prefix or streamed, and
+    // context refiners deliberately never enter this map.
+    std::map<std::string, unsigned> projections;
+    for (unsigned branch = 0; branch < 32; ++branch) {
+        const auto prefix = branch < 2
+            ? "noise_refiner." + std::to_string(branch)
+            : "layers." + std::to_string(branch - 2);
+        const auto &records = branch < 2 ? state_->fixed : state_->blocks[branch - 2];
+        for (unsigned projection = 1; projection <= 3; ++projection) {
+            const auto name = prefix + ".feed_forward.w" + std::to_string(projection) + ".weight";
+            const auto it = std::find_if(records.begin(), records.end(),
+                [&](const TensorRecord &r) { return r.name == name; });
+            const std::vector<uint64_t> expected = projection == 2
+                ? std::vector<uint64_t>{kHidden, 10240}
+                : std::vector<uint64_t>{10240, kHidden};
+            require_metadata(it != records.end() && it->shape == expected,
+                             "missing or invalid hybrid FFN tensor");
+            projections.emplace(name, projection);
+        }
+    }
+    streaming::CanonicalEncoder recipe("tc-z-image-bf16-suffix-recipe-v1");
+    recipe.string_field("parent_identity", plan.descriptor.artifacts.front().identity);
+    recipe.string_field("parent_identity_kind", lease().has_verified_content() ? "content_sha256" : "snapshot");
+    recipe.unsigned_field("parent_bytes", state_->file_bytes);
+    recipe.unsigned_field("first_gpu_channel", first_gpu_channel);
+    recipe.string_field("conversion", "bf16-row-suffix-v1");
+    recipe.begin_list("tensors", projections.size());
+    auto field = [&](const TensorRecord &r, const std::string &name,
+                     const std::string &storage_id) {
+        streaming::Materialization m;
+        m.format = "BF16";
+        m.storage_mode = "mlx-metal-shared";
+        m.conversion = "copy-bf16-v1";
+        m.shape = r.shape;
+        streaming::SourceRange read{0, r.file_offset, r.bytes, r.name, "BF16", r.shape};
+        uint64_t bytes = r.bytes;
+        if (const auto it = projections.find(r.name); it != projections.end()) {
+            recipe.string_field("tensor", r.name);
+            recipe.unsigned_field("source_offset", r.file_offset);
+            recipe.unsigned_field("source_bytes", r.bytes);
+            recipe.unsigned_field("projection", it->second);
+            if (it->second == 2) {
+                m.shape[1] -= first_gpu_channel;
+                bytes = geometry.down_suffix_bytes;
+                plan.packing.push_back({read, plan.setup_write_bytes, bytes, first_gpu_channel});
+                read.artifact = 1;
+                read.offset = plan.setup_write_bytes;
+                read.bytes = bytes;
+                read.shape = m.shape;
+                plan.setup_read_bytes = checked_add(plan.setup_read_bytes, r.bytes, "packing read overflow");
+                plan.setup_write_bytes = checked_add(plan.setup_write_bytes, bytes, "packing write overflow");
+            } else {
+                m.shape[0] -= first_gpu_channel;
+                bytes = geometry.up_suffix_bytes;
+                read.offset = checked_add(r.file_offset, geometry.up_skip_bytes, "suffix offset overflow");
+                read.bytes = bytes;
+                read.shape = m.shape;
+            }
+        }
+        m.reads.push_back(std::move(read));
+        return streaming::FieldSpec{name, storage_id, bytes, 256, std::move(m)};
+    };
+    auto &stage = plan.descriptor.stages.front();
+    stage.adapter_revision = "z-image-bf16-gpu-suffix-v1-metadata-only";
+    // Foundation dictionary enumeration is not a canonical order.
+    auto fixed = state_->fixed;
+    std::sort(fixed.begin(), fixed.end(), [](const auto &a, const auto &b) { return a.name < b.name; });
+    uint64_t fixed_bytes = 0;
+    for (const auto &r : fixed) {
+        auto f = field(r, r.name, "z-image.fixed." + r.name);
+        fixed_bytes = checked_add(fixed_bytes, f.bytes, "suffix fixed bytes overflow");
+        stage.resident_fields.push_back(std::move(f));
+    }
+    for (auto &block : stage.blocks) {
+        block.layout_class = "z-image-bf16-suffix-main-block-v1";
+        block.fields.clear();
+        for (const auto &r : state_->blocks[block.id])
+            block.fields.push_back(field(r, r.suffix,
+                "z-image.block." + std::to_string(block.id) + "." + r.suffix));
+    }
+    require_metadata(plan.packing.size() == 32, "incomplete suffix packing map");
+    plan.recipe_digest = recipe.sha256();
+    // This is a metadata recipe, not the SHA-256 of materialized bytes. The
+    // future execution source must bind and verify the private derived fd.
+    plan.descriptor.artifacts.push_back({"transformer-gpu-suffix",
+        "recipe:" + plan.recipe_digest, plan.setup_write_bytes,
+        streaming::SourceIdentityKind::snapshot});
+    plan.descriptor.backend_revision = "z-image-bf16-gpu-suffix-v1-metadata-only";
+    auto &identity = plan.descriptor.workload;
+    identity["fixed_bytes"] = std::to_string(fixed_bytes);
+    identity["first_gpu_channel"] = std::to_string(first_gpu_channel);
+    identity["suffix_recipe"] = plan.recipe_digest;
+    identity["suffix_setup_read_bytes"] = std::to_string(plan.setup_read_bytes);
+    identity["suffix_setup_write_bytes"] = std::to_string(plan.setup_write_bytes);
+    identity["reader_revision"] = "z-image-derived-fd-bf16-v1-metadata-only";
+    check_unchanged();
+    return plan;
 }
 
 StreamingPlanView::StreamingPlanView(

@@ -17,6 +17,20 @@ struct StreamingWorkload {
     uint32_t steps = 0;
 };
 
+// Planning data only: the derived artifact is a recipe identity, not verified
+// file contents or a Core ML partition authority. No fd or payload is created.
+struct SuffixPackingRecord {
+    streaming::SourceRange source;
+    uint64_t destination_offset = 0, destination_bytes = 0;
+    uint32_t first_gpu_channel = 0;
+};
+struct GpuSuffixPlan {
+    streaming::Descriptor descriptor;
+    std::vector<SuffixPackingRecord> packing;
+    std::string recipe_digest;
+    uint64_t setup_read_bytes = 0, setup_write_bytes = 0;
+};
+
 // Header-only view of the single-file Comfy BF16 transformer.  Construction
 // reads the safetensors prefix and JSON header only.  It never reads tensor
 // payloads, creates MLX arrays, allocates Metal buffers, or starts workers.
@@ -38,6 +52,11 @@ class StreamingMetadata {
     // already captured by the native verifier; never hashes payloads here.
     // The request lease/snapshot remains separate and must still be revalidated.
     streaming::Descriptor describe_verified(const StreamingWorkload &) const;
+    // Internal H1 layout preview. Covers fixed noise refiners and all main
+    // layers; context refiners remain whole. Execution requires a separately
+    // verified hybrid source/owner and cannot use the exact GPU adapter.
+    GpuSuffixPlan describe_gpu_suffix(const StreamingWorkload &,
+                                     uint32_t first_gpu_channel) const;
     void check_unchanged() const;
     const streaming::SourceLease &lease() const;
     std::shared_ptr<const streaming::SourceLease> lease_ptr() const;

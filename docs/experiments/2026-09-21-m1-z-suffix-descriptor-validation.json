@@ -1,0 +1,76 @@
+{
+  "scope": "Metadata-only H1 GPU suffix planning; no derived payload or hybrid execution",
+  "source_sha256": {
+    "native/models/z_image/streaming_descriptor.hpp": "4532ccea28d8ace3038835811777fe68321ca4e877580da033609df10962f731",
+    "native/platform/apple/z_image_streaming_descriptor.mm": "90d96168298d98165cfb5f7ea2aba0364bbc2dfca8c79c2fe3ac3fd30806e428",
+    "tests/native/test_z_image_streaming_descriptor.py": "26fec9db6141067fd9714e11e2257cb69aedcddca158200b08855ddc6ef4ee93",
+    "tests/native/test_z_image_suffix_descriptor.py": "e846869bd0b3ec22ee0384426dbdbc591f9f8c722c8225f2b5e1ac945502b14c",
+    "tests/native/z_image_suffix_descriptor_test.cpp": "7178188f9eddb1b5ac3ea84fbba3187fe5c0bcc3a7dfd72cb2135eda1a76bd53"
+  },
+  "host": {
+    "os": "26.4.1",
+    "architecture": "arm64"
+  },
+  "workload": {
+    "width": 512,
+    "height": 512,
+    "caption_rows": 64,
+    "steps": 9,
+    "resident_prefix": 7,
+    "group_size": 1,
+    "slots": 2,
+    "prefetch_distance": 0,
+    "io_workers": 1
+  },
+  "real_checkpoint": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+  "capacity_bytes": [
+    {
+      "a": 1,
+      "fixed": 1455151360,
+      "prefix": 2532583424,
+      "pool": 723595264,
+      "pack_read": 2516582400,
+      "pack_write": 2516336640
+    },
+    {
+      "a": 2560,
+      "fixed": 1337232640,
+      "prefix": 2119867904,
+      "pool": 605676544,
+      "pack_read": 2516582400,
+      "pack_write": 1887436800
+    },
+    {
+      "a": 5120,
+      "fixed": 1219267840,
+      "prefix": 1706991104,
+      "pool": 487711744,
+      "pack_read": 2516582400,
+      "pack_write": 1258291200
+    },
+    {
+      "a": 10239,
+      "fixed": 983384320,
+      "prefix": 881398784,
+      "pool": 251828224,
+      "pack_read": 2516582400,
+      "pack_write": 245760
+    }
+  ],
+  "tests": {
+    "suffix_sparse_and_real_asan_ubsan": "PASS suffix metadata: 32 mappings, fixed/context/prefix/slots, setup/refill accounting, identities and exact isolation\nreal a=1 fixed=1455151360 prefix=2532583424 pool=723595264 pack_read=2516582400 pack_write=2516336640\nreal a=2560 fixed=1337232640 prefix=2119867904 pool=605676544 pack_read=2516582400 pack_write=1887436800\nreal a=5120 fixed=1219267840 prefix=1706991104 pool=487711744 pack_read=2516582400 pack_write=1258291200\nreal a=10239 fixed=983384320 prefix=881398784 pool=251828224 pack_read=2516582400 pack_write=245760\nPASS suffix metadata: 32 mappings, fixed/context/prefix/slots, setup/refill accounting, identities and exact isolation\n",
+    "exact_descriptor": "PASS Z-Image descriptor: header-only 30x13 BF16 projection, shared SourceLease, K1/K2 G1 layouts and K2 D0/D1 Q1/Q2, portable verified layouts, malformed metadata and stale snapshot rejection; layout=d3b6a0dc4b6eec52f90cd2ba0f4684c42da1110b13473f018ca552446aff5ca4\n",
+    "native_contract": {
+      "run": 83,
+      "skipped": 3,
+      "failed": 0
+    }
+  },
+  "limitations": [
+    "Snapshot recipe identity is not derived-file SHA-256 or Core ML authority",
+    "Real checkpoint payload not hashed or packed by this test",
+    "a=1 and a=10239 are geometry boundaries, not supported ANE artifacts",
+    "No new native library/App build or performance campaign",
+    "Verified derived source, hybrid owner/join, receipt and public admission remain incomplete"
+  ]
+}

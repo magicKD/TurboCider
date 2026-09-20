@@ -346,3 +346,10 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 现有 `ZImageWeightStream::pack_suffix()` 已复用同一组件，保留 2 个 noise refiners + 30 个主 layers 的映射、context refiners 不裁剪，以及 ConvRot 对齐/scale 规则；dtype/几何在创建临时文件前检查。此变更未开放 M1 上 legacy denoiser suffix 的设备限制，也未为新框架添加 public hybrid authority。
 
 `test_z_image_suffix_materialization.py` 的独立字节 oracle 验证 BF16/I8、首通道/中间/末通道、非零文件偏移、多 scratch 批次，以及确定性的 EINTR、短读写、EOF、ENOSPC、取消和重试；故障注入只通过 host 测试对象的 syscall 符号重命名实现，不加入生产 hook。ASan/UBSan 通过。对应 HY-MAT-01/02 的转换子项有证据，但 fixed/prefix/slot descriptor 的完整 hybrid 接入、derived-source identity、Ready 发布与完整 owner 仍未完成，所以不能将这两个测试 ID 整体标记通过。
+
+
+## 14. H1 metadata 布局实施进度（2026-09-21）
+
+`describe_gpu_suffix()` 已连接共享几何组件与 common layout compiler：显式列出 fixed/noise、完整 context、所有主层的后缀字段和 32 个 w2 packing records；计量 setup 与 refill 分离。独立 recipe identity 不伪装派生内容哈希，metadata-only adapter revision 不提供执行准入。稀疏 fixture 的偏移/容量 oracle、真实模型 header 与 ASan/UBSan 通过，原 exact descriptor 回归保持通过。见[第三十八轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+当前仍未将配方发布为经验证的 derived source，未接 Core ML bundle/partition 权限、执行 owner、join/receipt；HY-MAT-01/02 仍只有子项证据。真实 full-image 性能与完整内存不能从 metadata 权重容量推断，新 suffix 配方的跨安装 verified-content 重放亦待单独验证。

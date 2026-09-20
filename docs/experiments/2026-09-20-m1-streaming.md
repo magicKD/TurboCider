@@ -694,3 +694,21 @@ host 独立字节 oracle 覆盖 BF16/I8、a=0/1/M-1、非零源/目标偏移、�
 `git fetch origin dev` 成功，远端为 `61c08495815d645bb54d75ae9dbea466f0648b2d`；`git merge-base --is-ancestor origin/dev HEAD` 返回 0，当前分支已包含最新 dev，无新合并内容。本轮不运行新的性能 campaign，不改变上一轮编码器分流结论；HY-MAT-01/02 只完成转换子项，hybrid descriptor/source identity、Core ML bundle lease、完整 owner、receipt 和 public qualification 仍未完成。
 
 最终 native hook 构建及 runtime/catalog 编译后核对通过，库 SHA-256 `7c05d57714cb5d43b445c01829fdcce5034984d6055a4187005aac20f2930e9e`，runtime key `tc-runtime-build-v1-94f33a9c5126ac9c9ce34780e384f7f6ba5fb09084afaf37943005d7b9d404c4`。native contract 83 项运行、3 项原有跳过，其余通过；runtime identity 6 项通过；新库 Z weight stream 10 项运行、6 项因 M1 不支持 legacy suffix/ConvRot 跳过，其余 4 项通过（包含实际 GPU 重复执行与取消）；Z public adapter host 回归通过。host 链接 macOS 26.0/26.2 提示保留，本机 26.4.1 运行通过。见[构建与回归记录](2026-09-21-m1-z-suffix-materialization-validation.json)。没有新 release/App 构建，也没有以跳过的设备测试支持 hybrid 验收结论。
+
+
+## 第三十八轮：GPU 后缀 metadata 与布局计量（2026-09-21）
+
+新增内部 `StreamingMetadata::describe_gpu_suffix()` 返回 `GpuSuffixPlan`：原 checkpoint 上 w1/w3 连续后缀读取范围、32 个 w2 打包记录、派生文件偏移/大小、完整 fixed fields 与 30 层 fields。noise refiner 的固定权重参与裁剪，context refiner 保持完整，常驻 prefix 与 streamed slot 使用同一字段定义。沿用 common layout compiler 计算对齐、P/G/K 布局、每 pass 读取量；没有修改 exact descriptor 或放宽 public/设备 guard。
+
+转换配方以独立 canonical domain 绑定 parent 内容身份（有 native proof 时）或 snapshot（未验证时）、源文件大小、first_gpu_channel、转换版本和 96 个 FFN tensor 的名称/范围/投影。派生 artifact 明确使用 `recipe:` 的 metadata identity，不冒充派生字节 SHA-256；新 adapter/backend revision 标记 metadata-only。该对象不创建临时文件、不打包、不分配 GPU，也不能直接交给 exact adapter 执行。一次性 setup read/write 与后续 refill read 分开记录。
+
+稀疏 BF16 fixture 的独立公式覆盖 a=1/2560/5120/10239、P=0/7/29，核对 fixed、prefix、slot、每 pass I/O、w1/w3 原文件偏移、w2 派生偏移、所有未裁剪字段保持一致、32 branch 映射、错误 shape/缺 tensor/通道边界拒绝及 exact 布局不变。首轮 P29/K2 测试被 common compiler 正确拒绝 slot_count_exceeds_groups，修正测试为 P29/K1，未改变 runtime 规则。ASan/UBSan 下 sparse fixture 和真实模型 header 均通过；原 exact descriptor suite（含 verified portable layouts）通过。新 suffix 配方的跨安装内容身份尚未单独做双副本验证，不以原 exact 测试替代该项。
+
+真实 Z-Image header、512²/9 steps/caption rows 64、P7/G1/K2/D0/Q1 的 metadata 容量如下（十进制 bytes）；此处没有 Core ML bundle，也没有执行 denoiser：
+
+| ANE FFN 通道占比 | 固定 GPU 字段 | 常驻 GPU prefix | GPU slot 池 | setup 原文件读 | setup 派生写 |
+|---|---:|---:|---:|---:|---:|
+| 25%（a=2560） | 1,337,232,640 | 2,119,867,904 | 605,676,544 | 2,516,582,400 | 1,887,436,800 |
+| 50%（a=5120） | 1,219,267,840 | 1,706,991,104 | 487,711,744 | 2,516,582,400 | 1,258,291,200 |
+
+这些数字仅是规划的 GPU 权重容量与逻辑 I/O，不能当作完整请求内存或性能收益；ANE models、activation、encoder/VAE、OS/Core ML 服务开销没有包含。a=1/10239 仅是几何边界测试，不是已存在的 ANE artifact。见[源码与测试记录](2026-09-21-m1-z-suffix-descriptor-validation.json)。native contract 83 项运行、3 项原有跳过，其余通过。本轮编译并运行了 standalone native metadata 测试，没有重建完整 dylib/App；下一执行接入还需 verified derived source、typed Core ML bundle、完整 owner/join、receipt 与资格验证。
