@@ -3,6 +3,85 @@
 #include <set>
 #include <fstream>
 
+void convrot_test(const char *path, unsigned depth, bool suffix) {
+    std::atomic<bool> cancel{false};
+    auto event = [](const std::string &, int, int) {};
+    tc::Weights reference, fixed;
+    // First obtain the exact compact layout; budget 0 deliberately streams all.
+    uint64_t block_bytes, reserved;
+    {
+        tc::ZImageWeightStream sizing(path, 0, 0, fixed, event, cancel, suffix ? 256 : 0, depth);
+        block_bytes = sizing.metrics().block_bytes;
+        reserved = sizing.metrics().activation_reserve_bytes;
+    }
+    reference.load_file(path);
+    reference.cast_unquantized_float32(tc::mx::bfloat16);
+    reference.pack_convrot_q8();
+    reference.materialize();
+    fixed.clear();
+    const auto budget = reserved + block_bytes * (depth + 4);
+    tc::ZImageWeightStream stream(path, budget, 0, fixed, event, cancel, suffix ? 256 : 0, depth);
+    tc::require(stream.metrics().pinned_blocks == 3 && stream.metrics().refill_slots == depth + 1,
+                "ConvRot prefetch budget did not include all slots");
+    auto verify = [&](const tc::Weights &weights) {
+        for (const auto &name : weights.sorted_keys()) {
+            const auto &actual = weights.at(name);
+            auto expected = reference.at(name);
+            const bool compact = suffix && !name.starts_with("context_refiner.") &&
+                                 name.find(".feed_forward.") != std::string::npos &&
+                                 !name.ends_with(".comfy_quant");
+            if (compact && (name.find(".w1.") != std::string::npos || name.find(".w3.") != std::string::npos))
+                expected = tc::slice_axis(expected, 0, 256, 512);
+            else if (compact) {
+                const int first = name.ends_with(".weight") ? 64 : 8;
+                expected = tc::slice_axis(expected, 1, first, first * 2);
+            }
+            tc::mx::eval(expected);
+            tc::require(actual.shape() == expected.shape() && actual.dtype() == expected.dtype(),
+                        "ConvRot stream layout mismatch: " + name);
+            tc::require(tc::mx::array_equal(actual, expected).item<bool>(),
+                        "ConvRot CPU packing differs from resident MLX packing: " + name);
+        }
+    };
+    verify(fixed);
+    std::set<const void *> buffers;
+    for (int pass = 0; pass < 3; ++pass) {
+        stream.reset_metrics();
+        stream.begin_pass();
+        for (int layer = 0; layer < 30; ++layer) {
+            auto weights = stream.acquire(layer);
+            verify(weights); // evaluated on the GPU before slot reuse
+            if (layer >= 3)
+                for (const auto &name : weights.sorted_keys()) buffers.insert(weights.at(name).data<char>());
+        }
+        tc::require(stream.metrics().request_slot_refills == 27 && stream.metrics().request_slot_allocations == 0,
+                    "ConvRot refill/allocation count mismatch");
+    }
+    tc::require(buffers.size() == (depth + 1) * 31, "ConvRot buffers grew across passes");
+    tc::Weights all_fixed;
+    tc::ZImageWeightStream resident(path, reserved + 31 * block_bytes, 0, all_fixed, event, cancel,
+                                    suffix ? 256 : 0, depth);
+    tc::require(resident.metrics().fully_resident && resident.metrics().refill_slots == 0,
+                "sufficient budget did not retain all INT8 blocks");
+    resident.reset_metrics();
+    resident.begin_pass();
+    for (int layer = 0; layer < 30; ++layer) verify(resident.acquire(layer));
+    tc::require(resident.metrics().request_bytes_loaded == 0, "fully resident INT8 reloaded weights");
+    tc::Weights small_fixed;
+    tc::ZImageWeightStream clamped(path, reserved + 2 * block_bytes, 0, small_fixed, event, cancel,
+                                   suffix ? 256 : 0, depth);
+    tc::require(clamped.metrics().refill_slots == 2 && clamped.metrics().pinned_blocks == 0,
+                "tight budget failed to reduce lookahead to two reusable slots");
+    clamped.begin_pass();
+    for (int layer = 0; layer < 30; ++layer) verify(clamped.acquire(layer));
+    stream.begin_pass();
+    cancel = true;
+    bool cancelled = false;
+    try { stream.acquire(0); } catch (const tc::Cancelled &) { cancelled = true; }
+    tc::require(cancelled, "cancelled ConvRot stream kept executing");
+    std::cout << "PASS: ConvRot exact GPU values, bounded lookahead, suffix, residency and cancellation\n";
+}
+
 void suffix_test(const char *path, bool cancel_pack) {
     std::atomic<bool> cancel{false};
     tc::Weights fixed;
@@ -82,6 +161,11 @@ int main(int argc, char **argv) {
         tc::require(argc == 2 || argc == 3, "expected checkpoint [--suffix|--cancel-pack]");
         tc::configure_streams();
         if (argc == 3) {
+            const std::string mode = argv[2];
+            if (mode.starts_with("--convrot-")) {
+                convrot_test(argv[1], unsigned(mode.at(10) - '0'), mode.ends_with("-suffix"));
+                return 0;
+            }
             suffix_test(argv[1], std::string(argv[2]) == "--cancel-pack");
             return 0;
         }

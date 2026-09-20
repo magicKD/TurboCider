@@ -20,6 +20,12 @@ struct NativeJob: Codable, Identifiable, Sendable {
         guard let resultJSON, let data = resultJSON.data(using: .utf8),
               let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let plan = result["plan"] as? [String: Any], let execution = plan["execution"] as? String else { return nil }
+        if request.model == "z-image-turbo", let checkpoint = result["checkpoint"] as? String,
+           let variant = ZImageVariant.all.first(where: { $0.filename == URL(fileURLWithPath: checkpoint).lastPathComponent }) {
+            let precision = variant.title.components(separatedBy: " · ")[0]
+            return execution.hasPrefix("gpu_ane")
+                ? "GPU + Core ML · \(precision) · ANE 驻留未知" : "GPU · \(precision)"
+        }
         if execution.hasPrefix("gpu_ane") { return "GPU + Core ML · INT8 · ANE 驻留未知" }
         return result["gpu_graph"] as? String == "compiled_single_blocks" ? "GPU · BF16 · 融合计算块" : "GPU · BF16"
     }

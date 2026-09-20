@@ -327,6 +327,20 @@ struct StudioView: View {
                             .tag(item.id)
                     }
                 }.disabled(store.busy || studio.importing).accessibilityIdentifier("studioModel")
+                if studio.draft.modelID == "z-image-turbo" {
+                    let versions = ZImageInstallation.choices(library.installations, currentPath: studio.draft.modelPath)
+                    if !versions.isEmpty {
+                        Picker("权重版本", selection: Binding(get: { studio.draft.modelPath }, set: {
+                            studio.selectInstallation(modelID: "z-image-turbo", path: $0)
+                        })) {
+                            ForEach(versions) { version in Text(version.title).tag(version.path) }
+                        }
+                        .disabled(store.busy || submitting || studio.importing || library.busy || api.running || api.changing)
+                        .accessibilityIdentifier("zImageWeightVersion")
+                        Text("选择已安装的版本；可在模型中心下载其他版本。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
                 Text(studio.draft.accelerationHint).font(.caption).foregroundStyle(.secondary)
                 Button(studio.draft.modelPath.isEmpty ? "选择模型…" : "管理模型") { page = .models }
             }
@@ -389,7 +403,7 @@ struct StudioView: View {
                 Text("计算设备").font(.caption)
                 Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
                 Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE }, set: { studio.setANEEnabled($0) }))
-                    .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true).accessibilityIdentifier("enableANE")
+                    .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true || studio.draft.zImageVariant?.id == "nvfp4").accessibilityIdentifier("enableANE")
                 Text(studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。").font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.usesANE { Button("管理 ANE 分区与缓存") { page = .models } }
                 if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption2).foregroundStyle(.secondary) }
@@ -462,7 +476,13 @@ struct StudioView: View {
                         Text("近似模式只修改 Stage-2；需要多 prompt/seed 质量回归，720p 自动限制为画质优先。")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
-                    if studio.draft.modelID == "z-image-turbo" {
+                    if studio.draft.modelID == "z-image-turbo", studio.draft.zImageRequiresResident {
+                        LabeledContent("模型驻留", value: "常驻")
+                        Text(studio.draft.zImageVariant?.id == "int8-convrot"
+                             ? "INT8 流式加载仅在 Apple M5 Pro、24 GiB 内存的机器上启用；当前设备使用常驻加载。"
+                             : "此权重版本使用常驻加载。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else if studio.draft.modelID == "z-image-turbo" {
                         Picker("模型驻留", selection: $studio.draft.residency) {
                             Text("常驻").tag("resident")
                             Text("流式加载（实验）").tag("streamed")
@@ -472,9 +492,13 @@ struct StudioView: View {
                                 ForEach([6, 8, 10, 12], id: \.self) { Text("\($0) GiB").tag($0) }
                             }.disabled(store.busy || submitting)
                             Text(AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming")
-                                 ? "支持 Comfy BF16，不支持 LoRA。本机已启用 M5 ANE 流式优化：只加载 GPU 负责的 MLP 权重，首次准备需要整理权重。预算不包含 ANE，也不是整个应用的内存硬上限。"
-                                 : "仅支持 Comfy BF16、纯 GPU、不使用 LoRA。提前读取下一层以降低内存占用；速度取决于磁盘。预算用于采样阶段规划，并非整个应用的内存硬上限。")
+                                 ? "支持 Comfy BF16 / INT8 ConvRot，不支持 LoRA。本机已启用 M5 ANE 流式优化：只加载 GPU 负责的 MLP 权重，首次准备需要整理权重。预算不包含 ANE，也不是整个应用的内存硬上限。"
+                                 : "支持 Comfy BF16、纯 GPU、不使用 LoRA。提前读取下一层以降低内存占用；速度取决于磁盘。预算用于采样阶段规划，并非整个应用的内存硬上限。")
                                 .font(.caption2).foregroundStyle(.secondary)
+                            if studio.draft.zImageVariant?.id == "int8-convrot" {
+                                Text("INT8 权重能全部放入预算时会自动保留，避免重复读取。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
                         }
                     } else if studio.draft.modelID == "z-image-turbo-gguf" {
                         LabeledContent("模型驻留", value: "常驻")
