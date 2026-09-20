@@ -27,7 +27,7 @@ class ZImage final : public ModelSession {
     std::string stream_configuration_;
     uint64_t exact_stream_generation_ = 0;
     bool streaming_quarantined_ = false;
-    bool streaming_content_identity_ = false;
+    mutable bool streaming_content_identity_ = false;
     std::vector<streaming::SourceFileIdentity> streaming_source_files() const;
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
     bool test_fail_drain_ = false;

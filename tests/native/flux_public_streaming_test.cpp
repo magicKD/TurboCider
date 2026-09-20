@@ -245,6 +245,11 @@ int main(int argc, char **argv) {
             assert(verified_probe->source_identity().source_snapshot_digest.empty());
             assert(verified_probe->source_identity().artifact_manifest_digest == proof->artifact_digest());
             assert(verified_probe->source_lease()->verification_bytes_read() == 0);
+            tc::Flux fresh_session(argv[1], model);
+            const auto fresh_probe = fresh_session.probe_public_streaming({base_request, device(), "cli_worker"});
+            assert(fresh_probe->source_identity() == verified_probe->source_identity());
+            assert(fresh_probe->source_lease()->verification_bytes_read() == 0);
+
             auto verified_record = record;
             verified_record.source = verified_probe->source_identity();
             verified_record.workload = verified_probe->workload_identity();
@@ -257,6 +262,8 @@ int main(int argc, char **argv) {
             assert(verified_snapshot->layout().digest == verified_plan.layout().digest);
             { std::ofstream changed(std::filesystem::path(argv[1]) / "text_encoder/config.json", std::ios::app); changed << ' '; }
             rejects([&] { session.probe_public_streaming(
+                {base_request, device(), "cli_worker"}); }, "artifact_verification_required");
+            rejects([&] { fresh_session.probe_public_streaming(
                 {base_request, device(), "cli_worker"}); }, "artifact_verification_required");
             auto updated = session.verify_streaming_sources(cancelled);
             assert(updated->artifact_digest() != proof->artifact_digest());

@@ -498,6 +498,14 @@ class TestCatalogTests(unittest.TestCase):
                 self.assertEqual(status, 0, failure)
                 status, failure = resolve(public)
                 self.assertEqual(status, 0, failure)
+                fresh = create(library.tc_engine_create_model)
+                try:
+                    status, failure = install(fresh, verified_catalog)
+                    self.assertEqual(status, 0, failure)
+                    status, failure = resolve(fresh)
+                    self.assertEqual(status, 0, failure)
+                finally:
+                    library.tc_engine_free(fresh)
                 text_file = root / "split_files/text_encoders/qwen_3_4b.safetensors"
                 with text_file.open("r+b") as stream:
                     stream.write(b"X")

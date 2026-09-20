@@ -192,9 +192,8 @@ Flux::probe_public_streaming(
                 request.width % 16 == 0 && request.height % 16 == 0,
             "streaming_workload_invalid: FLUX dimensions must be multiples of 16");
     auto files = streaming_source_files();
-    auto lease = streaming_content_identity_
-        ? streaming::SourceLease::capture_preverified(std::move(files))
-        : streaming::SourceLease::capture(std::move(files));
+    auto lease = streaming::SourceLease::capture_for_query(
+        std::move(files), streaming_content_identity_);
     flux2::StreamingMetadata metadata(lease, model_id_);
     metadata.check_unchanged();
 

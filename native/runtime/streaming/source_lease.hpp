@@ -4,11 +4,18 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace tc::streaming {
+
+class ArtifactVerificationRequired final : public std::invalid_argument {
+  public:
+    ArtifactVerificationRequired()
+        : std::invalid_argument("streaming_source_lease: artifact_verification_required") {}
+};
 
 // Metadata identity for one logical model artifact.  The stat fields identify
 // the file generation that was opened for this request; they are not a
@@ -94,6 +101,12 @@ class SourceLease final {
     static std::shared_ptr<const SourceLease> capture_preverified(
         std::vector<SourceFileIdentity> files,
         const std::atomic<bool> *cancelled = nullptr);
+
+    // Metadata-only query admission. Adopt complete native process proofs when
+    // available. Once adopted/requested, never fall back to legacy snapshots.
+    // The engine owns and serializes require_verified; no payload is hashed.
+    static std::shared_ptr<const SourceLease> capture_for_query(
+        std::vector<SourceFileIdentity> files, bool &require_verified);
 
     // Fixture/replay path. Reopens a previously captured descriptor and
     // verifies it exactly. Real public adapters use capture().

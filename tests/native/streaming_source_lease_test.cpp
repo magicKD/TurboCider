@@ -62,6 +62,11 @@ int main(int argc, char **argv) {
     assert(rejects([&] {
         SourceLease::capture_preverified({source_file("weights", content_path)});
     }, "artifact_verification_required"));
+    bool query_requires_content = false;
+    const auto legacy_query = SourceLease::capture_for_query(
+        {source_file("weights", content_path)}, query_requires_content);
+    assert(!query_requires_content && !legacy_query->has_verified_content());
+    assert(legacy_query->verification_bytes_read() == 0);
     const auto verified = SourceLease::capture_verified(
         {source_file("weights", content_path)});
     assert(verified->has_verified_content());
@@ -72,6 +77,16 @@ int main(int argc, char **argv) {
     assert(verified->file("weights").content_digest == abc_sha);
     assert(verified->verification_bytes_read() == 3);
     assert(verified->verification_cache_hits() == 0);
+    const auto adopted = SourceLease::capture_for_query(
+        {source_file("weights", content_path)}, query_requires_content);
+    assert(query_requires_content && adopted->has_verified_content());
+    assert(adopted->artifact_digest() == verified->artifact_digest());
+    assert(adopted->verification_bytes_read() == 0);
+    bool partial_requires_content = false;
+    const auto partial = SourceLease::capture_for_query(
+        {source_file("weights", content_path), source_file("zz_unverified", copy_path)},
+        partial_requires_content);
+    assert(!partial_requires_content && !partial->has_verified_content());
     const auto cached = SourceLease::capture_verified(
         {source_file("weights", content_path)});
     assert(cached->artifact_digest() == verified->artifact_digest());
@@ -99,6 +114,9 @@ int main(int argc, char **argv) {
     assert(rejects([&] { (void) replay->artifact_digest(); }, "not verified"));
     auto expected = source_file("weights", content_path);
     expected.content_digest = digest('0');
+    bool mismatched_requires_content = false;
+    assert(rejects([&] { SourceLease::capture_for_query({expected}, mismatched_requires_content); },
+                   "content digest mismatch"));
     const auto untrusted = SourceLease::capture({expected});
     assert(!untrusted->has_verified_content());
     assert(rejects([&] { (void) untrusted->artifact_digest(); }, "not verified"));
@@ -131,6 +149,10 @@ int main(int argc, char **argv) {
     assert(rejects([&] {
         SourceLease::capture_preverified({source_file("weights", content_path)});
     }, "artifact_verification_required"));
+    assert(rejects([&] {
+        SourceLease::capture_for_query({source_file("weights", content_path)}, query_requires_content);
+    }, "artifact_verification_required"));
+    assert(query_requires_content);
     const auto mutated = SourceLease::capture_verified(
         {source_file("weights", content_path)});
     assert(mutated->artifact_digest() != verified->artifact_digest());

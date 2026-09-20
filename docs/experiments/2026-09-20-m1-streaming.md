@@ -594,3 +594,14 @@ Swift NativeEngine 增加异步 verifyStreamingSources，继续在自身串行�
 [构建、功能测试和启动记录](2026-09-21-m1-app-source-verification.json)：App 以最新 Swift 源码链接 m1-flux-source-verify native hook 库构建成功。既有 image transaction、streaming resolution、Studio behavior 回归通过。新增 `StreamingSourceVerificationTests.swift` 在真实 Flux 4B 上通过 Swift SDK 校验 8 个文件并确认缓存复验 payload=0。新增 `ModelSourceVerificationTests.swift` 使用隔离临时历史目录和真实模型，验证外部服务忙时拒绝、取消后恢复空闲、重试成功、报告状态清理和卸载。测试最初误写 JobStore 类型名导致编译失败，修正为 NativeJobStore 后通过；不隐去该失败。模型会话测试使用 -Onone，验证功能而非时延。
 
 新 App 直接启动并观察 15 秒仍存活，stdout/stderr 为零字节，随后只终止本次启动的进程（退出 -15）。这是启动 smoke 与组件测试，不是自动点击按钮的完整 GUI 验收。校验由用户显式触发，不在 options 中增加隐藏哈希；当前仍没有 persistent import proof，也没有生产 catalog。新会话的 options/内容证明复用、正式预设选择、GPU/ANE 全链路及 App/worker 完整安装验收仍待完成。
+
+
+## 第三十二轮：新会话复用 native 内容证明（2026-09-21）
+
+修复 App 模型校验与 options 查询使用不同 engine 的接入缺口。Flux/Z-Image probe 现在调用 SourceLease::capture_for_query：新会话在全部来源均有有效 native 进程缓存证明时采用 v2 内容身份，查询不 hash payload；证明不完整时保留未校验的 legacy 身份。会话一旦采用或显式请求内容身份，文件改变、证明失效后只能拒绝，不能退回 legacy。仅捕获专用 ArtifactVerificationRequired 异常作为初次未验证路径，文件访问错误和 caller digest 不匹配等错误继续传播。缓存仍绑定打开文件的 generation，不接受 JSON 自授证明。
+
+完整 native hook 构建 build/m1-query-proof 成功，dylib SHA-256 为 `726e4e84775b6c6cd784f9b0d616f1802e5012fab40e40ce092243bfa5731952`。SourceLease host 测试覆盖未验证查询、完整/部分缓存、零 payload 查询、错误 digest、同大小改写后拒绝且不降级；Flux public adapter 的 4B/9B 回归通过，4B 增加新会话 v2 probe 和变更后拒绝；test-catalog API suite 3 项通过，新增 Z-Image fresh public engine 在没有再次显式验证的情况下解析原 v2 catalog。release hook 缺席检查继续使用保留的 m1-release 库。Flux host 链接仍提示 macOS 26.0 测试目标与 26.2 库目标不同，本机 26.4.1 运行通过。
+
+[真实 Flux 4B 跨会话记录](2026-09-21-m1-fresh-engine-source-proof.json)：首次显式校验 15,975,638,166 bytes 用 7.993 s；销毁首个 engine，再新建 worker，安装第三十轮合成测试 catalog，在第二个 engine 尚未调用验证 API 时 resolve 成功，wall 0.239556 s。随后缓存复验读取 0 bytes、8 hits。该行为支撑 Swift options 中新开 engine 的解析流程，但本轮未重新构建 App 或进行 GUI 点击验收。
+
+本轮未执行 GPU generate 或新增性能比较；使用的 catalog 仍是 TEMPLATE 测试输入。证明只在当前 native 进程中有效，重启后需要显式校验；persistent import proof、生产 catalog、自动 runtime fingerprint、GPU/ANE 多阶段与完整 App/worker 验收仍待完成。

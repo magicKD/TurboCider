@@ -1592,9 +1592,8 @@ ZImage::probe_public_streaming(
             "streaming_route_unsupported: Z-Image public card requires single-file transformer/text/VAE artifacts");
 
     auto files = streaming_source_files();
-    auto lease = streaming_content_identity_
-        ? streaming::SourceLease::capture_preverified(std::move(files))
-        : streaming::SourceLease::capture(std::move(files));
+    auto lease = streaming::SourceLease::capture_for_query(
+        std::move(files), streaming_content_identity_);
     auto tokenizer_fd = lease->duplicate_fd("tokenizer");
     Tokenizer tokenizer(tokenizer_fd.get(), lease->file("tokenizer").bytes);
     const auto tokens = tokenizer.z_image_prompt(request.prompt, request.dynamic_text);

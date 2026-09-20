@@ -219,6 +219,18 @@ std::shared_ptr<const SourceLease> SourceLease::capture_preverified(
     return capture_impl(std::move(files), true, false, cancelled);
 }
 
+std::shared_ptr<const SourceLease> SourceLease::capture_for_query(
+        std::vector<SourceFileIdentity> files, bool &require_verified) {
+    if (require_verified) return capture_preverified(std::move(files));
+    try {
+        auto lease = capture_preverified(files);
+        require_verified = true;
+        return lease;
+    } catch (const ArtifactVerificationRequired &) {
+        return capture(std::move(files));
+    }
+}
+
 std::shared_ptr<const SourceLease> SourceLease::capture_impl(
         std::vector<SourceFileIdentity> files, bool verify_content, bool allow_hash,
         const std::atomic<bool> *cancelled) {
@@ -281,7 +293,7 @@ std::shared_ptr<const SourceLease> SourceLease::capture_impl(
                 if (cached != content_cache.end()) verified = cached->second;
             }
             if (verified.empty()) {
-                lease_require(allow_hash, "artifact_verification_required");
+                if (!allow_hash) throw ArtifactVerificationRequired();
                 verified = memory_sha256_fd(entry.fd.get(), entry.identity.bytes,
                                              cancelled);
                 state->verification_bytes_read += entry.identity.bytes;

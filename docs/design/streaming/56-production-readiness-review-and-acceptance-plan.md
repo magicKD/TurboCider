@@ -66,6 +66,8 @@ RecordV2 格式增量：`source.identity_version=2` 要求 `model_variant`、`we
 
 2026-09-21 App 增量：模型库增加显式文件校验入口、状态和取消，Swift SDK/真实模型会话功能测试及启动 smoke 通过，详见实验第三十一轮。新会话的证明复用、persistent import、生产资格和完整 GUI 验收仍未关闭。
 
+2026-09-21 新会话增量：Flux/Z-Image query 可复用完整 native 进程内容证明，采用后保持内容模式，变更失效不降级；未验证查询不 hash payload。SourceLease、两模型 public adapter/API 回归及真实 Flux 销毁旧 engine 后的新 engine v2 resolve 通过，详见实验第三十二轮。这修复 App options 新开 engine 的证明接入，尚不提供持久化证明或生产 catalog。
+
 ### R2 · Options 查询不能匹配真实完整 record
 
 证据：`native/api/c_api.mm::tc_streaming_options_json()` 只填 model、shape 等基础 workload；没有填 conditioning revision、VAE policy、feature digest 和 token shapes。
