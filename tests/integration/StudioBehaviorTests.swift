@@ -149,14 +149,22 @@ struct StudioBehaviorTests {
             .write(to: fakeLTX, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700],
                                               ofItemAtPath: fakeLTX.path)
-        _ = try await LTXWorker.generate(
-            model: URL(fileURLWithPath: publicLTX.modelPath),
-            request: ltxPair.v2!, outputPath: ltxOutput.path,
-            executable: fakeLTX, onEvent: { _ in })
+        var rejectedEmptyWorker = false
+        do {
+            _ = try await LTXWorker.generate(
+                model: URL(fileURLWithPath: publicLTX.modelPath),
+                request: ltxPair.v2!, outputPath: ltxOutput.path,
+                executable: fakeLTX, onEvent: { _ in })
+        } catch { rejectedEmptyWorker = true }
+        try check(rejectedEmptyWorker && (try Data(contentsOf: ltxOutput)).isEmpty,
+                  "Empty worker result must fail and preserve the existing output")
         let capturedLTXJSON = try JSONSerialization.jsonObject(
             with: Data(contentsOf: capturedLTX)) as! [String: Any]
         let capturedExecution = capturedLTXJSON["execution"] as! [String: Any]
         let capturedSelector = capturedExecution["streaming"] as! [String: Any]
+        let stagedOutput = (capturedLTXJSON["outputs"] as! [[String: Any]])[0]["path"] as! String
+        try check(stagedOutput != ltxOutput.path && stagedOutput.contains(".tc-ltx-staging-"),
+                  "Worker must write into a fresh request-scoped staging directory")
         let capturedTarget = (capturedSelector["target_request_memory_bytes"] as? NSNumber)?.uint64Value
         try check(capturedLTXJSON["schema_version"] as? Int == 2 &&
                   capturedTarget == 12 << 30 &&

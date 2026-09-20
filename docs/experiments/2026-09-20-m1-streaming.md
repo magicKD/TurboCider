@@ -235,3 +235,40 @@ App query key 纳入模型路径、prompt、动态文本、输入和加速策略
 通过 pinned Comfy revision 的 HTTP Range 读取 Z Qwen3 原始 safetensors header，确认它与已校验 Flux text encoder 的 398 个 tensor 名称/shape/dtype 一致。尝试按该原始 header 拼接 Flux tensor 数据，得到完整 8,044,982,048 字节临时文件，但 SHA-256 为 `e37269b7ca1301ad72a92627ce95432ab5aad5f89143a06055886aad3419d12f`，**不匹配** Z 官方 `6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a`。
 
 因此未发布到 Z 模型路径，已删除本次临时重组文件，继续原官方下载。首段 216,288 字节 payload 相同也不能推导整文件相同；不将这次尝试记为下载节省或成功复用。失败记录 `/tmp/tc-z-qwen-reconstruction.json`。下载 session `70822` 仍在运行，完整两模型尚未齐备。
+
+
+## 第九轮：LTX worker 结果验证与原子发布
+
+原 worker 将 exit 0 和输出文件存在视为成功，可能接收空 JSON、旧文件或不可解码视频。现在每次创建同目录私有 staging，子进程只写 staging；父进程严格检查结果类型、model/operation/seed/steps/尺寸/输出路径。公共 streaming 还要求完整 verified summary、合法摘要、授权与实际 layout 一致，以及请求固定的 selector 字段匹配。
+
+发布前检查普通非空文件、视频尺寸/时长/音频轨道，逐帧解码并核对帧数；流式计算 SHA-256，在读取前后核对文件身份。构造带 SHA/字节数的 worker_artifact receipt 后以同文件系统 rename 发布。错误或取消保留原产物并清理 staging。stdout 上限 8 MiB、events 上限 16 MiB，避免结果与诊断无限增长。
+
+测试期间定位并修复一个真实退出等待问题：子进程已结束，协程仍阻塞于同步 waitUntilExit()；改用 terminationHandler 和异步 continuation 通知退出。取消保留 SIGTERM 后 5 秒 SIGKILL 的行为，异常清理也等待本次子进程退出后再删除临时目录。
+
+新增 `tests/integration/LTXWorkerTests.swift`，用真正编码的 9 帧 H.264 视频和受控 worker 覆盖：成功发布、legacy 路径、空/错误 JSON、错误 seed/path/target/layout/preset、verified 类型错误、缺 summary、空/缺失/损坏文件、symlink、尺寸/帧数/音频不符、日志超限、发布失败、原文件保留及取消清理。它已接入 build_app.sh 和 test-app。
+
+验证结果：固定源码的 worker 编译和测试 exit 0（`/tmp/tc-worker-build.log`、`/tmp/tc-worker-tests.log`）；StreamingResolution 与 Studio 回归 PASS（`/tmp/tc-worker-resolution-tests.log`、`/tmp/tc-worker-studio-tests.log`）；完整 App 编译 exit 0，产物 `build/m1-options/TurboCiderNativeApp`（`/tmp/tc-worker-regressions-build.log`）。本轮使用受控 worker，未宣称真实 LTX 推理成功。
+
+这仍不是完整 R5 关闭：尚缺独立 worker resolution envelope、job/request hash 协议与持久化有界诊断；当前 summary 容器身份仍待 R6 修正。非 LTX 产物事务、进程树超时及 R4 GPU 失败隔离也仍待处理。
+
+## 第十轮：真实 Qwen3 前缀与 BF16 GPU 数值对照
+
+新增 `tools/native/compare_qwen3_partition.py`，读取原 checkpoint 的 gate/up/down，在显式 MLX GPU 上计算 BF16 MLP 前缀，并与 native Core ML C ABI 输出比较。两侧接收同一 BF16 舍入后的输入，Core ML 以 FP16 传输；按 native Qwen 调用方规则恢复 output_scale。使用 layer 0、64 rows、prefix 4864、seed 42、input_scale 0.25，与第七轮配置一致。额外导出并编译同形状 FP16 artifact 作控制组。
+
+| artifact | 相对 L2 | cosine | 最大绝对误差 | 全部有限 |
+|---|---:|---:|---:|---|
+| INT8 per-channel | 0.029056662 | 0.999578075 | 0.044921875 | 是 |
+| FP16 | 0.026692391 | 0.999644048 | 0.035156250 | 是 |
+
+原始结果见 [INT8 oracle](2026-09-20-m1-qwen3-prefix-oracle.json) 和 [FP16 oracle](2026-09-20-m1-qwen3-fp16-prefix-oracle.json)。两个 native session 均验证 checkpoint SHA-256；运行时 ANE 驻留仍 unknown。FP16 本身相对 BF16 也有差异，不能把 INT8 的全部偏差归因于量化，亦不能把两项 L2 直接相减当作量化误差。
+
+复现命令如下，MANIFEST 为各 JSON 中记录的已编译 manifest，REPORT 为新的结果路径：
+
+```sh
+.venv/bin/python tools/native/compare_qwen3_partition.py \
+  --model /Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder \
+  --manifest "$MANIFEST" --library build/m1-options/libturbocider.dylib \
+  --output "$REPORT" --block 0 --rows 64 --seed 42 --input-scale 0.25
+```
+
+这是随机 hidden states 上单个真实权重前缀的误差测量，没有设置事后通过阈值，也不代表完整 encoder/image 质量通过。报告中的内部 quality_validation_passed=true 伴随 quality_validation_enabled=false，不是本次数值比较的通过证明。测量期间仍有构建与下载，不以这些调用耗时评判收益或最佳 GPU/ANE 划分。官方 transformer 下载仍在进行，两模型端到端 streaming、完整 encoder 对照及空闲窗口性能实验仍待完成。

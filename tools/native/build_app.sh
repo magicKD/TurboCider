@@ -60,3 +60,4 @@ printf 'Built Swift App and integration tests\n'
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O apps/macos/VideoPreview.swift tests/integration/VideoPreviewTests.swift -o "$OUT/turbocider-video-preview-tests"
 
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" tests/integration/StreamingResolutionTests.swift -o "$OUT/turbocider-streaming-resolution-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/LTXWorkerTests.swift -o "$OUT/turbocider-ltx-worker-tests"

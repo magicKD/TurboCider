@@ -252,6 +252,31 @@ public struct NativeStreamingResolutionIdentity: Codable, Sendable {
     public let runtime_digest: String
     public let device_digest: String
 }
+struct NativeStreamingResultSummary: Decodable {
+    let schema_version: Int
+    let target_request_memory_bytes: UInt64
+    let calibrated_request_bytes: UInt64
+    let preset_id: String
+    let preset_revision: UInt32
+    let catalog_revision: String
+    let record_digest: String
+    let resolution_digest: String
+    let source_digest: String
+    let workload_digest: String
+    let runtime_digest: String
+    let device_digest: String
+    let authorized_layout_digest: String
+    let actual_layout_digest: String
+    let component_policy_revision: String
+    let execution_container: String
+    let memory_scope: String
+    let receipt_schema_version: UInt32
+    let receipt_source_generation: UInt64
+    let receipt_digest: String
+    let receipt_verifier_revision: String
+    let actual_plan_verified: Bool
+}
+
 public struct NativeStreamingResolution: Codable, Sendable {
     public let schema_version: Int
     public let status: String
@@ -288,30 +313,6 @@ public struct NativeStreamingResolution: Codable, Sendable {
     /// marks a job successful. This consumes native verification; it does not
     /// reconstruct native authority or independently verify GPU receipts.
     public func validateResult(_ data: Data, request: NativeRequestV2) throws {
-        struct Summary: Decodable {
-            let schema_version: Int
-            let target_request_memory_bytes: UInt64
-            let calibrated_request_bytes: UInt64
-            let preset_id: String
-            let preset_revision: UInt32
-            let catalog_revision: String
-            let record_digest: String
-            let resolution_digest: String
-            let source_digest: String
-            let workload_digest: String
-            let runtime_digest: String
-            let device_digest: String
-            let authorized_layout_digest: String
-            let actual_layout_digest: String
-            let component_policy_revision: String
-            let execution_container: String
-            let memory_scope: String
-            let receipt_schema_version: UInt32
-            let receipt_source_generation: UInt64
-            let receipt_digest: String
-            let receipt_verifier_revision: String
-            let actual_plan_verified: Bool
-        }
         struct Result: Decodable {
             let schema_version: Int
             let model: String
@@ -322,7 +323,7 @@ public struct NativeStreamingResolution: Codable, Sendable {
             let seed: Int
             let steps: Int
             let warmup: Bool
-            let public_streaming: Summary
+            let public_streaming: NativeStreamingResultSummary
         }
         let result: Result
         do { result = try JSONDecoder().decode(Result.self, from: data) }

@@ -148,6 +148,7 @@ test-ltx-streaming-lifecycle-faults:
 		--cache "$(OUTPUT)/cache" --output "$(OUTPUT)/lifecycle" \
 		--require-test-hooks
 test-app:
+	@build/native/turbocider-ltx-worker-tests
 	@build/native/turbocider-streaming-resolution-tests
 	@build/native/turbocider-ane-library-tests
 	@build/native/turbocider-studio-variant-tests
