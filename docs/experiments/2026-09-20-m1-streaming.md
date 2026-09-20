@@ -681,3 +681,16 @@ runtime identity suite 6 项、原 evidence builder suite 16 项、preset resolv
 75% 修复前后对应 GPU/分流图片均字节相同。修复后 denoise 中位数为 GPU 29.019 s、分流 28.255 s，但分流 text 阶段仍需 8.871 s（GPU 2.588 s），完整请求仍慢约 16.4%。前后实验是顺序执行、OS/Core ML 缓存未重置且每组只有两对样本，不能把前后全部延迟变化归因于释放修复。三个比例的 worker 等待时间比值同样大于 1；该口径从 Popen 返回到进程退出，不包含 Popen 调用本身。
 
 结论限定为这台 M1 Pro、此 prompt/seed/shape 的冷 worker 完整请求：编码器局部暖态加速未转化为完整请求收益，这三种分流均不能据此晋升；纯 GPU 仍是本组实验支持的选择。这里没有 process-tree 全程内存采样，MLX peak 不包括全部 Core ML/OS 内存，CPU+NE 配置也不证明实际 ANE residency。该修复只验证正常完成路径，尚未关闭 encoder/VAE 的故障、取消和阻塞恢复问题。新框架 hybrid guard 保持原状，HY-M0 denoiser 分流、正式质量/性能资格及 App 安装验收仍待完成。
+
+
+## 第三十七轮：H1 后缀权重转换的共享实现（2026-09-21）
+
+为推进 denoiser GPU/ANE 新框架，新增 `native/models/z_image/suffix_materialization.hpp/.cpp` 并接入现有 `ZImageWeightStream::pack_suffix()`。metadata-only 几何函数计算 w1/w3 连续后缀范围及 w2 逐行后缀尺寸；执行函数只使用持有的 fd，最大 4 MiB scratch，检查 off_t/计数溢出、源文件范围和不同 regular file。保留 legacy 32 个 branch（2 noise + 30 main）及 context refiners 全 GPU、ConvRot scale/对齐规则，未放宽设备与 public route guard。
+
+host 独立字节 oracle 覆盖 BF16/I8、a=0/1/M-1、非零源/目标偏移、多批次，检查所有输出字节；确定性 syscall 注入覆盖 EINTR、短读/短写、读中途 EOF、写入 ENOSPC、零进展、读后取消和最后写入后取消。失败前实际传输字节仍被累计；调用方只在成功后绑定派生记录，异常由 loader 构造器关闭临时 fd。源 lease/revalidation、private fd 生命周期和 Ready 发布责任仍在调用方，不把一个 packing 函数解释为已完成来源安全合同。
+
+复核时发现初版共享函数使用普通 runtime_error 表达取消，会丢失原 `tc::Cancelled` 分类；修正为原异常类型并新增类型断言。最终 host 测试及 AddressSanitizer/UndefinedBehaviorSanitizer 通过。注入通过单独测试对象的 pread/pwrite 符号重命名实现，生产代码没有新增测试后门。
+
+`git fetch origin dev` 成功，远端为 `61c08495815d645bb54d75ae9dbea466f0648b2d`；`git merge-base --is-ancestor origin/dev HEAD` 返回 0，当前分支已包含最新 dev，无新合并内容。本轮不运行新的性能 campaign，不改变上一轮编码器分流结论；HY-MAT-01/02 只完成转换子项，hybrid descriptor/source identity、Core ML bundle lease、完整 owner、receipt 和 public qualification 仍未完成。
+
+最终 native hook 构建及 runtime/catalog 编译后核对通过，库 SHA-256 `7c05d57714cb5d43b445c01829fdcce5034984d6055a4187005aac20f2930e9e`，runtime key `tc-runtime-build-v1-94f33a9c5126ac9c9ce34780e384f7f6ba5fb09084afaf37943005d7b9d404c4`。native contract 83 项运行、3 项原有跳过，其余通过；runtime identity 6 项通过；新库 Z weight stream 10 项运行、6 项因 M1 不支持 legacy suffix/ConvRot 跳过，其余 4 项通过（包含实际 GPU 重复执行与取消）；Z public adapter host 回归通过。host 链接 macOS 26.0/26.2 提示保留，本机 26.4.1 运行通过。见[构建与回归记录](2026-09-21-m1-z-suffix-materialization-validation.json)。没有新 release/App 构建，也没有以跳过的设备测试支持 hybrid 验收结论。

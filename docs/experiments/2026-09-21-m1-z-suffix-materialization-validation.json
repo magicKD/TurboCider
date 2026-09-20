@@ -1,0 +1,52 @@
+{
+  "scope": "H1 suffix conversion primitive and legacy loader reuse; not framework hybrid execution or release qualification",
+  "library": "/Users/chencanhui/code/TurboCider/build/m1-suffix-materialization/libturbocider.dylib",
+  "library_sha256": "7c05d57714cb5d43b445c01829fdcce5034984d6055a4187005aac20f2930e9e",
+  "runtime_build_id": "tc-runtime-build-v1-94f33a9c5126ac9c9ce34780e384f7f6ba5fb09084afaf37943005d7b9d404c4",
+  "source_sha256": {
+    "native/models/z_image/suffix_materialization.hpp": "0b6df4b2e5047c5fd4bfe3ad618276431c16f49350a49e48b1f7805bbda19121",
+    "native/models/z_image/suffix_materialization.cpp": "3c7aedfaa0685f23c4e5b8f2e6052cb708fb51261dd8e441189f132a48c47450",
+    "native/platform/apple/z_image_weight_stream.mm": "64211f482e33e86b2089d3712346a30d2d188023773fd196dba863c039e9dd97",
+    "tools/native/build.sh": "916ad9e3e62e9d2a6e9f15480ded58bd9bb812d084c1d24bd0b84a740ffa1cb0",
+    "tests/native/z_image_suffix_materialization_test.cpp": "a25e1fc8f080597608dea13b4ca9d0dd4b010dea896e8941426ba7aac750d9c7",
+    "tests/native/test_z_image_suffix_materialization.py": "73215aec4e6b72e377d1b81eb592460365cd2c981d8f90089d98b11fa972eb27"
+  },
+  "native_build": "PASS; final build after preserving tc::Cancelled; runtime/catalog post-build verification passed",
+  "tests": {
+    "host_suffix": {
+      "status": "PASS",
+      "log": "PASS suffix byte oracle, bounds, batching, EINTR/short I/O, EOF, ENOSPC, cancellation and retry\n"
+    },
+    "host_suffix_address_undefined_sanitizers": "PASS, including tc::Cancelled type assertion",
+    "native_contract": {
+      "run": 83,
+      "skipped": 3,
+      "failed": 0
+    },
+    "runtime_build_identity": {
+      "run": 6,
+      "failed": 0
+    },
+    "z_weight_stream": {
+      "run": 10,
+      "skipped": 6,
+      "failed": 0,
+      "log": "test_cancel_during_suffix_preparation_then_retry (__main__.WeightStreamTests.test_cancel_during_suffix_preparation_then_retry) ... skipped 'suffix streaming requires the measured device profile'\ntest_compact_suffix_values_bytes_reuse_and_cancel (__main__.WeightStreamTests.test_compact_suffix_values_bytes_reuse_and_cancel) ... skipped 'suffix streaming requires the measured device profile'\ntest_convrot_gpu_values_prefetch_depths_and_full_residency (__main__.WeightStreamTests.test_convrot_gpu_values_prefetch_depths_and_full_residency) ... skipped 'INT8 streaming requires the measured M5 Pro 24 GiB profile'\ntest_convrot_rejects_incompatible_scale_layout (__main__.WeightStreamTests.test_convrot_rejects_incompatible_scale_layout) ... skipped 'INT8 streaming requires the measured M5 Pro 24 GiB profile'\ntest_convrot_unmeasured_device_is_rejected (__main__.WeightStreamTests.test_convrot_unmeasured_device_is_rejected) ... ok\ntest_rejects_bad_metadata (__main__.WeightStreamTests.test_rejects_bad_metadata) ... ok\ntest_rejects_truncated_payload (__main__.WeightStreamTests.test_rejects_truncated_payload) ... ok\ntest_repeated_gpu_execution_and_cancel (__main__.WeightStreamTests.test_repeated_gpu_execution_and_cancel) ... ok\ntest_suffix_rejects_incompatible_geometry (__main__.WeightStreamTests.test_suffix_rejects_incompatible_geometry) ... skipped 'suffix streaming requires the measured device profile'\ntest_suffix_requires_all_hybrid_weights (__main__.WeightStreamTests.test_suffix_requires_all_hybrid_weights) ... skipped 'suffix streaming requires the measured device profile'\n\n----------------------------------------------------------------------\nRan 10 tests in 3.448s\n\nOK (skipped=6)\n"
+    },
+    "z_public_adapter": {
+      "status": "PASS",
+      "log": "ld: warning: building for macOS-26.0, but linking with dylib '@rpath/libturbocider.dylib' which was built for newer version 26.2\nPASS Z-Image public adapter: shared four-artifact lease, exact identity/layout snapshot, route rejection, target failure cleanup and source replacement detection\n"
+    }
+  },
+  "dev": {
+    "remote_commit": "61c08495815d645bb54d75ae9dbea466f0648b2d",
+    "fetch": "success",
+    "is_ancestor_of_head": true
+  },
+  "limitations": [
+    "Legacy suffix/ConvRot device gate unchanged; six unsupported-device tests skipped on M1 Pro",
+    "No new full-model hybrid images or performance measurements",
+    "Hybrid descriptor, source/bundle authority, owner/join and receipt integration incomplete",
+    "No new release/App build; native test-hook build only"
+  ]
+}

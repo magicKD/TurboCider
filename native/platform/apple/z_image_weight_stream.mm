@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #include "../../models/z_image/weight_stream.hpp"
+#include "../../models/z_image/suffix_materialization.hpp"
 #include "../../runtime/residency.hpp"
 #include "platform.hpp"
 #include <algorithm>
@@ -174,8 +175,10 @@ void ZImageWeightStream::pack_suffix(int prefix_channels, const Event &event) {
         require(group[0] && group[1] && group[2], "missing Z-Image hybrid MLP weights");
         const auto &a = group[0]->shape, &b = group[1]->shape, &c = group[2]->shape;
         require(a.size() == 2 && b.size() == 2 && a == c &&
-                    a[0] == b[1] && a[1] == b[0] && prefix_channels < a[0],
+                    a[0] == b[1] && a[1] == b[0] && prefix_channels < a[0] &&
+                    group[0]->dtype == group[1]->dtype && group[1]->dtype == group[2]->dtype,
                 "invalid Z-Image hybrid MLP suffix geometry");
+        (void)z_image::suffix_geometry(a[1], a[0], prefix_channels, group[0]->dtype.size());
         groups.push_back(group);
     };
     for (int i = 0; i < 2; ++i) add(fixed_records_, "noise_refiner." + std::to_string(i));
@@ -198,11 +201,12 @@ void ZImageWeightStream::pack_suffix(int prefix_channels, const Event &event) {
         checkpoint(cancelled_);
         event("pack_z_image_suffix", int(i), int(groups.size()));
         auto &group = groups[i];
+        const auto geometry = z_image::suffix_geometry(
+            group[1]->shape[0], group[1]->shape[1], prefix_channels, group[1]->dtype.size());
         for (int j : {0, 2}) {
             auto &r = *group[j];
-            const auto skipped = uint64_t(prefix_channels) * r.shape[1] * r.dtype.size();
-            r.offset += skipped;
-            r.bytes -= skipped;
+            r.offset += geometry.up_skip_bytes;
+            r.bytes = geometry.up_suffix_bytes;
             r.shape[0] -= prefix_channels;
             if (convrot_) {
                 auto &records = i < 2 ? fixed_records_ : blocks_[i - 2];
@@ -219,33 +223,22 @@ void ZImageWeightStream::pack_suffix(int prefix_channels, const Event &event) {
             }
         }
         auto &r = *group[1];
-        const uint64_t row_bytes = uint64_t(r.shape[1]) * r.dtype.size();
-        const uint64_t skip_bytes = uint64_t(prefix_channels) * r.dtype.size();
-        const uint64_t suffix_bytes = row_bytes - skip_bytes;
-        require(row_bytes <= (4ull << 20), "Z-Image MLP row exceeds suffix packing limit");
-        const uint64_t batch_rows = std::max<uint64_t>(1, (4ull << 20) / row_bytes);
-        std::vector<char> buffer(std::min<uint64_t>(r.shape[0], batch_rows) * row_bytes);
-        for (uint64_t row = 0; row < uint64_t(r.shape[0]); row += batch_rows) {
-            const auto count = std::min<uint64_t>(batch_rows, r.shape[0] - row);
-            auto loaded = read({{r.offset + row * row_bytes, count * row_bytes, buffer.data()}});
-            metrics_.request_pack_read_bytes += loaded.bytes;
-            for (uint64_t j = 0; j < count; ++j)
-                std::memmove(buffer.data() + j * suffix_bytes,
-                             buffer.data() + j * row_bytes + skip_bytes, suffix_bytes);
-            uint64_t done = 0, bytes = count * suffix_bytes;
-            while (done < bytes) {
-                checkpoint(cancelled_);
-                auto n = ::pwrite(packed_fd_, buffer.data() + done, size_t(bytes - done),
-                                  off_t(packed_offset + row * suffix_bytes + done));
-                if (n < 0 && errno == EINTR) continue;
-                require(n > 0, "cannot write Z-Image GPU suffix temporary file (check free disk space)");
-                done += uint64_t(n);
-            }
-            metrics_.request_pack_write_bytes += done;
+        z_image::SuffixPackMetrics packed;
+        auto account = [&] {
+            metrics_.request_pack_read_bytes += packed.read_bytes;
+            metrics_.request_pack_write_bytes += packed.write_bytes;
+        };
+        try {
+            z_image::pack_suffix_rows(fd_, r.offset, packed_fd_, packed_offset,
+                                     geometry, cancelled_, packed);
+        } catch (...) {
+            account();
+            throw;
         }
+        account();
         r.offset = packed_offset;
         r.shape[1] -= prefix_channels;
-        r.bytes = uint64_t(r.shape[0]) * suffix_bytes;
+        r.bytes = geometry.down_suffix_bytes;
         r.packed = true;
         packed_offset += r.bytes;
     }

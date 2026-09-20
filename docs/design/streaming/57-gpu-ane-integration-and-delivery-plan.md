@@ -337,3 +337,12 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 [实验第三十五、三十六轮](../../experiments/2026-09-20-m1-streaming.md)补充了 legacy Z-Image encoder 分流的完整图片证据。75%/50%/25% INT8 FFN 在各两对冷 worker 样本中，完整请求分流/GPU wall 中位数比为 1.164/1.241/1.240，均无收益；三个比例 final latent relative-L2 均超过预先冻结的 0.05。此前局部暖态 encoder 加速不能用作完整请求性能资格，也不能由此确定一般最优比例。
 
 代码已在 legacy streaming 的 encoder/denoiser 边界同步并释放 encoder 会话，缓存 conditioning 保留来源指标；同 engine 首次分流→缓存命中→切回 GPU 的真实模型回归通过。这只证明正常完成路径的 native owner 释放，不证明 Core ML 服务缓存驱逐，也未关闭故障/取消 drain。该实验未实施本文 HY-M0 denoiser 接入：typed bundle/source partition、suffix materialization、共享 backing join、实际 component receipt、质量准入和 public routing 仍待完成。两个目标模型 explicit streaming + encoder ANE 的拒绝保持不变；Flux legacy streamed 路径不支持，本轮没有 Flux 完整分流图片。
+
+
+## 13. H1 权重后缀转换实施进度（2026-09-21）
+
+已新增内部 `z_image/suffix_materialization.hpp/.cpp`，将 legacy packer 的几何计算和 down-projection 按行打包提取为无 MLX/Core ML 依赖的共享组件。`suffix_geometry()` 只计算 metadata；`pack_suffix_rows()` 只使用调用方持有的 source/destination fd，采用至多 4 MiB scratch，验证文件范围、整数上限和不同 regular file，处理 EINTR/短读写/EOF/零进展/取消，并累计实际 I/O（含失败前已完成部分）。调用方仍负责 private destination 生命周期、source lease revalidation 和失败时禁止发布。
+
+现有 `ZImageWeightStream::pack_suffix()` 已复用同一组件，保留 2 个 noise refiners + 30 个主 layers 的映射、context refiners 不裁剪，以及 ConvRot 对齐/scale 规则；dtype/几何在创建临时文件前检查。此变更未开放 M1 上 legacy denoiser suffix 的设备限制，也未为新框架添加 public hybrid authority。
+
+`test_z_image_suffix_materialization.py` 的独立字节 oracle 验证 BF16/I8、首通道/中间/末通道、非零文件偏移、多 scratch 批次，以及确定性的 EINTR、短读写、EOF、ENOSPC、取消和重试；故障注入只通过 host 测试对象的 syscall 符号重命名实现，不加入生产 hook。ASan/UBSan 通过。对应 HY-MAT-01/02 的转换子项有证据，但 fixed/prefix/slot descriptor 的完整 hybrid 接入、derived-source identity、Ready 发布与完整 owner 仍未完成，所以不能将这两个测试 ID 整体标记通过。
