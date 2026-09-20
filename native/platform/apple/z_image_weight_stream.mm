@@ -232,22 +232,77 @@ void ZImageWeightStream::pack_suffix(int prefix_channels, const Event &event) {
 }
 
 void ZImageWeightStream::allocate(Slot &slot, const std::vector<Record> &records) {
+    if (convrot_) slot.scratch.resize(16384);
     for (const auto &r : records) {
         // Allocate MLX-owned shared buffers once; pread overwrites only slots
         // whose preceding GPU use has completed. No per-refill tensor copies.
-        slot.arrays.emplace_back(mx::allocator::malloc(r.bytes), r.shape, mx::bfloat16);
+        slot.arrays.emplace_back(mx::allocator::malloc(r.capacity_bytes ? r.capacity_bytes : r.bytes),
+                                 r.shape, r.dtype);
         slot.pointers.push_back(slot.arrays.back().data<char>());
     }
 }
 ZImageWeightStream::ReadResult ZImageWeightStream::fill(
         Slot &slot, const std::vector<Record> &records,
         const std::atomic<bool> *worker_cancel) const {
-    std::vector<Read> reads;
-    reads.reserve(records.size());
-    for (size_t i = 0; i < records.size(); ++i)
-        reads.push_back({records[i].offset, records[i].bytes, slot.pointers[i],
-                         records[i].packed ? packed_fd_ : fd_});
-    return read(reads, worker_cancel);
+    if (!convrot_) {
+        std::vector<Read> reads;
+        reads.reserve(records.size());
+        for (size_t i = 0; i < records.size(); ++i)
+            reads.push_back({records[i].offset, records[i].bytes, slot.pointers[i],
+                             records[i].packed ? packed_fd_ : fd_});
+        return read(reads, worker_cancel);
+    }
+    const auto start = Clock::now();
+    ReadResult result;
+    for (size_t i = 0; i < records.size(); ++i) {
+        if (worker_cancel && worker_cancel->load(std::memory_order_acquire))
+            throw std::runtime_error("streaming_cancelled");
+        checkpoint(cancelled_);
+        const auto &r = records[i];
+        auto *destination = slot.pointers[i];
+        const int fd = r.packed ? packed_fd_ : fd_;
+        if (r.conversion == Conversion::copy || r.conversion == Conversion::signed_q8) {
+            result.bytes += read({{r.offset, r.bytes, destination, fd}}, worker_cancel).bytes;
+            if (r.conversion == Conversion::signed_q8) {
+                // q + 128, without dequantizing or allocating a tensor.
+                for (uint64_t chunk = 0; chunk < r.bytes; chunk += 4ull << 20) {
+                    if (worker_cancel && worker_cancel->load(std::memory_order_acquire))
+                        throw std::runtime_error("streaming_cancelled");
+                    checkpoint(cancelled_);
+                    const auto end = std::min(r.bytes, chunk + (4ull << 20));
+                    for (uint64_t offset = chunk; offset < end; offset += 4) {
+                        uint32_t value;
+                        std::memcpy(&value, destination + offset, 4);
+                        value ^= 0x80808080u;
+                        std::memcpy(destination + offset, &value, 4);
+                    }
+                }
+            }
+            continue;
+        }
+        const bool row_scale = r.conversion == Conversion::scales || r.conversion == Conversion::biases;
+        const uint64_t repeat = row_scale ? r.shape[1] : 1;
+        for (uint64_t offset = 0; offset < r.source_bytes / 4; offset += slot.scratch.size()) {
+            const auto count = std::min<uint64_t>(slot.scratch.size(), r.source_bytes / 4 - offset);
+            result.bytes += read({{r.offset + offset * 4, count * 4,
+                                   reinterpret_cast<char *>(slot.scratch.data()), fd}}, worker_cancel).bytes;
+            for (uint64_t j = 0; j < count; ++j) {
+                const float value = slot.scratch[j];
+                if (r.dtype == mx::bfloat16) {
+                    auto converted = mx::bfloat16_t(value);
+                    if (r.conversion == Conversion::biases)
+                        converted = mx::bfloat16_t(float(converted) * -128.f);
+                    std::fill_n(reinterpret_cast<mx::bfloat16_t *>(destination) + (offset + j) * repeat,
+                                repeat, converted);
+                } else {
+                    std::fill_n(reinterpret_cast<float *>(destination) + (offset + j) * repeat,
+                                repeat, r.conversion == Conversion::biases ? value * -128.f : value);
+                }
+            }
+        }
+    }
+    result.seconds = std::chrono::duration<double>(Clock::now() - start).count();
+    return result;
 }
 void ZImageWeightStream::record(ReadResult result) {
     metrics_.request_bytes_loaded += result.bytes;
@@ -285,24 +340,34 @@ void ZImageWeightStream::configure_exact(
         unsigned pinned_blocks, uint32_t slot_count, uint64_t budget,
         uint64_t activation_reserve, Weights &fixed,
         const Event &event) {
-    uint64_t block_bytes = 0, fixed_bytes = 0;
-    for (const auto &r : blocks_[0]) block_bytes += r.bytes;
-    for (const auto &r : fixed_records_) fixed_bytes += r.bytes;
-    require(slot_count >= 1 && slot_count <= slots_.size(),
-            "Z-Image exact streaming requires one or two refill slots");
+    uint64_t block_bytes = 0, block_capacity = 0, fixed_bytes = 0;
+    for (const auto &r : blocks_[0]) {
+        block_bytes += r.bytes;
+        block_capacity += r.capacity_bytes ? r.capacity_bytes : r.bytes;
+    }
+    for (const auto &r : fixed_records_)
+        fixed_bytes += r.capacity_bytes ? r.capacity_bytes : r.bytes;
+    require(slot_count >= 1 && slot_count <= (convrot_ ? 3u : 2u),
+            "Z-Image exact streaming refill slot count is unsupported");
+    slots_.resize(slot_count);
     require(pinned_blocks <= blocks_.size() - slot_count,
             "Z-Image exact streaming requires at least one suffix block per slot");
     require(fixed_bytes <= UINT64_MAX - activation_reserve,
             "Z-Image exact streaming reserve overflow");
-    const uint64_t reserved = activation_reserve + fixed_bytes;
+    // Include the temporary fixed/prefix conversion slot as well as the pool.
+    const uint64_t scratch = convrot_ ? (uint64_t(slot_count) + 1) * 65536 : 0;
+    require(activation_reserve + fixed_bytes <= UINT64_MAX - scratch,
+            "Z-Image conversion reserve overflow");
+    const uint64_t reserved = activation_reserve + fixed_bytes + scratch;
     require(uint64_t(pinned_blocks) + slot_count <=
-                (UINT64_MAX - reserved) / block_bytes,
+                (UINT64_MAX - reserved) / block_capacity,
             "Z-Image exact streaming working set overflow");
     const uint64_t working_set =
-        reserved + (uint64_t(pinned_blocks) + slot_count) * block_bytes;
+        reserved + (uint64_t(pinned_blocks) + slot_count) * block_capacity;
     require(!budget || working_set <= budget,
             "Z-Image exact layout exceeds the selected memory budget");
     exact_slot_count_ = slot_count;
+    metrics_.quantized = convrot_;
     metrics_.enabled = true;
     metrics_.active_blocks = 30;
     metrics_.pinned_blocks = pinned_blocks;
@@ -313,6 +378,104 @@ void ZImageWeightStream::configure_exact(
     metrics_.block_bytes = block_bytes;
     metrics_.estimated_working_set_bytes = working_set;
     load_fixed_and_prefix(pinned_blocks, fixed, event);
+}
+
+void ZImageWeightStream::pack_exact_suffix(
+        const z_image::StreamingMetadata &metadata, const Event &event) {
+    if (metadata.suffix_packs().empty()) return;
+    const auto start = Clock::now();
+    auto pattern = (std::filesystem::path(NSTemporaryDirectory().UTF8String) /
+                    "turbocider-z-exact-suffix-XXXXXX").string();
+    packed_fd_ = ::mkstemp(pattern.data());
+    require(packed_fd_ >= 0, "cannot create exact GPU suffix temporary file");
+    require(::unlink(pattern.c_str()) == 0 &&
+                ::fcntl(packed_fd_, F_SETFD, FD_CLOEXEC) == 0 &&
+                ::fcntl(packed_fd_, F_NOCACHE, 1) == 0,
+            "cannot configure exact GPU suffix temporary file");
+    // Derived bytes are private to this source lease and partition. They are
+    // never reopened by path or reused across source identities.
+    const auto &packs = metadata.suffix_packs();
+    for (size_t i = 0; i < packs.size(); ++i) {
+        checkpoint(cancelled_);
+        event("pack_z_image_suffix", int(i), int(packs.size()));
+        const auto &pack = packs[i];
+        require(pack.row_bytes > pack.skip_bytes && pack.row_bytes <= (4ull << 20),
+                "invalid exact GPU suffix row geometry");
+        const uint64_t suffix = pack.row_bytes - pack.skip_bytes;
+        const uint64_t batch = std::max<uint64_t>(1, (4ull << 20) / pack.row_bytes);
+        std::vector<char> buffer(std::min(pack.rows, batch) * pack.row_bytes);
+        for (uint64_t row = 0; row < pack.rows; row += batch) {
+            const auto count = std::min(batch, pack.rows - row);
+            metrics_.request_pack_read_bytes += read({{
+                pack.source_offset + row * pack.row_bytes,
+                count * pack.row_bytes, buffer.data()}}).bytes;
+            for (uint64_t j = 0; j < count; ++j)
+                std::memmove(buffer.data() + j * suffix,
+                             buffer.data() + j * pack.row_bytes + pack.skip_bytes, suffix);
+            uint64_t done = 0;
+            while (done < count * suffix) {
+                checkpoint(cancelled_);
+                const auto n = ::pwrite(packed_fd_, buffer.data() + done,
+                    size_t(count * suffix - done),
+                    off_t(pack.destination_offset + row * suffix + done));
+                if (n < 0 && errno == EINTR) continue;
+                require(n > 0, "cannot write exact GPU suffix temporary file");
+                done += uint64_t(n);
+            }
+            metrics_.request_pack_write_bytes += done;
+        }
+    }
+    metadata.check_unchanged();
+    metrics_.mlp_prefix_channels = metadata.options().mlp_prefix_channels;
+    metrics_.suffix_pack_bytes = metadata.packed_bytes();
+    metrics_.request_pack_seconds = std::chrono::duration<double>(Clock::now() - start).count();
+    event("pack_z_image_suffix", int(packs.size()), int(packs.size()));
+}
+
+ZImageWeightStream::ZImageWeightStream(
+        const z_image::StreamingMetadata &metadata, unsigned pinned_blocks,
+        uint32_t slot_count, uint64_t budget, uint64_t activation_reserve,
+        Weights &fixed, const Event &event, std::atomic<bool> &cancelled)
+    : lease_(metadata.lease_ptr()), convrot_(metadata.convrot()),
+      cancelled_(cancelled), exact_layout_(true) {
+    try {
+        metadata.check_unchanged();
+        fd_ = lease_->duplicate_fd("transformer").release();
+        require(fd_ >= 0 && ::fcntl(fd_, F_NOCACHE, 1) == 0,
+                "cannot configure exact Z-Image checkpoint fd");
+        auto copy_records = [](const auto &records, auto &destination) {
+            for (const auto &r : records) {
+                Record out;
+                out.name = r.name;
+                for (auto dim : r.shape) {
+                    require(dim <= INT32_MAX, "exact Z-Image dimension overflow");
+                    out.shape.push_back(int(dim));
+                }
+                out.dtype = r.dtype == "U32" ? mx::uint32 : r.dtype == "U8" ? mx::uint8 :
+                            r.dtype == "F32" ? mx::float32 : mx::bfloat16;
+                out.offset = r.source.offset;
+                out.bytes = r.bytes;
+                out.capacity_bytes = (r.bytes + 255) / 256 * 256;
+                out.source_bytes = r.source.bytes;
+                out.packed = r.source.artifact == 1;
+                out.conversion = r.conversion;
+                destination.push_back(std::move(out));
+            }
+        };
+        copy_records(metadata.fixed_records(), fixed_records_);
+        for (uint32_t i = 0; i < blocks_.size(); ++i)
+            copy_records(metadata.block_records(i), blocks_[i]);
+        pack_exact_suffix(metadata, event);
+        configure_exact(pinned_blocks, slot_count, budget, activation_reserve, fixed, event);
+        metadata.check_unchanged();
+    } catch (...) {
+        if (packed_fd_ >= 0) ::close(packed_fd_);
+        packed_fd_ = -1;
+        if (fd_ >= 0) ::close(fd_);
+        fd_ = -1;
+        fixed.clear();
+        throw;
+    }
 }
 
 ZImageWeightStream::ZImageWeightStream(const std::filesystem::path &path, uint64_t budget,
@@ -479,10 +642,13 @@ Weights ZImageWeightStream::acquire(int block) {
 
 void ZImageWeightStream::create_exact_pool(
         uint32_t slots, uint64_t capacity_bytes) {
+    uint64_t expected_capacity = 0;
+    for (const auto &r : blocks_[0])
+        expected_capacity += r.capacity_bytes ? r.capacity_bytes : r.bytes;
     require(exact_layout_ && !exact_pool_live_ &&
                 slots == exact_slot_count_ &&
-                capacity_bytes == metrics_.block_bytes,
-            "Z-Image exact pool differs from the compiled K1/K2 layout");
+                capacity_bytes == expected_capacity,
+            "Z-Image exact pool differs from the compiled layout");
     for (uint32_t index = 0; index < exact_slot_count_; ++index) {
         auto &slot = slots_[index];
         require(slot.arrays.empty() && !slot.pending.valid(),
@@ -514,6 +680,8 @@ uint64_t ZImageWeightStream::fill_exact(
     auto &slot = slots_[slot_index];
     slot.block = int(block);
     auto result = fill(slot, blocks_[block], worker_cancel);
+    // Different slots may be filled concurrently by the generic I/O workers.
+    std::lock_guard lock(refill_metrics_mutex_);
     metrics_.request_refill_load_seconds += result.seconds;
     if (result.seconds > metrics_.request_max_refill_seconds) {
         metrics_.request_max_refill_seconds = result.seconds;
@@ -522,7 +690,10 @@ uint64_t ZImageWeightStream::fill_exact(
     record(result);
     ++metrics_.request_slot_refills;
     ++metrics_.request_slot_fills;
-    return result.bytes;
+    // Slot completion acknowledges materialized content, not source I/O.
+    // Conversion can expand scales or shrink F32 auxiliary tensors; logical
+    // source reads remain in request_bytes_loaded above.
+    return metrics_.block_bytes;
 }
 
 Weights ZImageWeightStream::bind_exact(

@@ -109,7 +109,7 @@ int main(int argc, char **argv) {
             for (const auto &name : weights.sorted_keys())
                 sum = sum + tc::mx::sum(tc::mx::astype(
                     weights.at(name), tc::mx::float32));
-            tc::require(sum.item<float>() == 4.f * 4.f,
+            tc::require(sum.item<float>() == 13.f * 4.f * 4.f,
                         "single-slot exact fill produced incorrect values");
             weights.clear();
             exact.destroy_exact_pool();

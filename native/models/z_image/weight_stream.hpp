@@ -3,19 +3,26 @@
 #include "../../backends/mlx.hpp"
 #include "../../runtime/session.hpp"
 #include "../../runtime/streaming/source_lease.hpp"
+#include "streaming_descriptor.hpp"
 #include <array>
 #include <future>
+#include <mutex>
 
 namespace tc {
 
-// Explicit BF16 layer streaming. The worker only preads into buffers allocated
+// Explicit layer streaming. The worker reads/converts into buffers allocated
 // on the inference thread; it never calls MLX's thread-unsafe default stream.
 class ZImageWeightStream {
+    using Conversion = z_image::StreamingConversion;
     struct Record {
         std::string name;
         mx::Shape shape;
         uint64_t offset = 0, bytes = 0;
         bool packed = false;
+        mx::Dtype dtype = mx::bfloat16;
+        uint64_t source_bytes = 0;
+        uint64_t capacity_bytes = 0;
+        Conversion conversion = Conversion::copy;
     };
     struct Read {
         uint64_t offset, bytes;
@@ -26,6 +33,7 @@ class ZImageWeightStream {
     struct Slot {
         std::vector<Tensor> arrays;
         std::vector<char *> pointers;
+        std::vector<float> scratch;
         std::future<ReadResult> pending;
         int block = -1;
     };
@@ -37,22 +45,21 @@ class ZImageWeightStream {
     std::vector<Record> fixed_records_;
     std::array<std::vector<Record>, 30> blocks_;
     std::vector<Weights> pinned_;
-    std::array<Slot, 2> slots_;
-    // Exact public layouts may use one slot for the lowest memory tier or two
-    // slots for the normal double-buffered path.  Keep the backing container
-    // fixed-size so the legacy path remains allocation-free, but only expose
-    // the compiled number of exact slots to the executor.
+    std::vector<Slot> slots_{2};
+    bool convrot_ = false;
     uint32_t exact_slot_count_ = 2;
     std::atomic<bool> &cancelled_;
     BlockResidencyMetrics metrics_;
     int expected_block_ = 0;
     bool exact_layout_ = false;
     bool exact_pool_live_ = false;
+    std::mutex refill_metrics_mutex_;
 
     void index(const std::filesystem::path &,
                streaming::OwnedSourceFd source_fd =
                    streaming::OwnedSourceFd());
     void pack_suffix(int prefix_channels, const Event &);
+    void pack_exact_suffix(const z_image::StreamingMetadata &, const Event &);
     void check_source() const;
     void allocate(Slot &, const std::vector<Record> &);
     ReadResult read(const std::vector<Read> &,
@@ -69,6 +76,10 @@ class ZImageWeightStream {
                          const Event &event);
 
   public:
+    ZImageWeightStream(const z_image::StreamingMetadata &, unsigned pinned_blocks,
+                       uint32_t slot_count, uint64_t budget,
+                       uint64_t activation_reserve, Weights &fixed,
+                       const Event &, std::atomic<bool> &);
     ZImageWeightStream(const std::filesystem::path &, uint64_t budget,
                        uint64_t activation_reserve, Weights &fixed,
                        const Event &, std::atomic<bool> &,
@@ -102,6 +113,7 @@ class ZImageWeightStream {
     void check_unchanged() const;
     void create_exact_pool(uint32_t slots, uint64_t capacity_bytes);
     void destroy_exact_pool() noexcept;
+    // Returns materialized content bytes. Source reads are recorded in metrics.
     uint64_t fill_exact(uint32_t slot, uint32_t block,
                         const std::atomic<bool> *worker_cancel);
     Weights bind_exact(uint32_t slot, uint32_t block) const;

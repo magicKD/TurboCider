@@ -17,6 +17,8 @@ struct ReaderSet {
 };
 struct ExecutionCounters {
     uint64_t pool_creates = 0, slot_bundles = 0, fills = 0;
+    // Materialized content, matching tc_stream_counters_v1. Not physical or
+    // logical file I/O for adapters that convert source representations.
     uint64_t bytes_loaded = 0, groups_submitted = 0;
     double wait_seconds = 0;
 };

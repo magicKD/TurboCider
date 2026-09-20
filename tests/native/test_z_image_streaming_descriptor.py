@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def write_fixture(path: Path, *, missing: bool = False,
                   wrong_dtype: bool = False, wrong_shape: bool = False,
-                  overlap: bool = False) -> None:
+                  overlap: bool = False, convrot: bool = False) -> None:
     records: list[tuple[str, str, list[int]]] = [
         ("x_embedder.weight", "BF16", [2, 2])
     ]
@@ -27,12 +27,18 @@ def write_fixture(path: Path, *, missing: bool = False,
                 continue
             dtype = "F32" if wrong_dtype and block == 0 and field == 0 else "BF16"
             shape = [512, 2048] if wrong_shape and block == 1 and field == 0 else [1024, 1024]
-            records.append((f"layers.{block}.tensor{field:02d}.weight", dtype, shape))
+            prefix = f"layers.{block}.tensor{field:02d}"
+            if convrot and field < 6:
+                records.extend([(prefix + ".weight", "I8", shape),
+                                (prefix + ".weight_scale", "F32", [shape[0], 1]),
+                                (prefix + ".comfy_quant", "U8", [29])])
+            else:
+                records.append((prefix + ".weight", dtype, shape))
 
     header: dict[str, object] = {}
     cursor = 0
     for index, (name, dtype, shape) in enumerate(records):
-        item_bytes = 4 if dtype == "F32" else 2
+        item_bytes = 4 if dtype == "F32" else 2 if dtype == "BF16" else 1
         size = item_bytes
         for dimension in shape:
             size *= dimension

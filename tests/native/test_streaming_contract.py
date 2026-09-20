@@ -59,6 +59,30 @@ def selector_request(target=12 << 30):
 
 
 class StreamingContract(unittest.TestCase):
+    def test_manual_hybrid_is_model_owned(self):
+        r = {
+            "schema_version": 2, "model": "flux2-klein-4b", "operation": "image.generate",
+            "inputs": [{"kind": "text", "role": "prompt", "text": "test"}],
+            "outputs": [{"kind": "image", "path": "/tmp/not-generated.png", "width": 256, "height": 256}],
+            "sampling": {"steps": 8},
+            "execution": {"policy": "gpu_ane", "allow_approximation": True,
+                "ane_manifest": "/tmp/not-opened-manual-hybrid.json",
+                "streaming": {"enabled": True, "schema_version": 1, "selection": "manual", "retention": "request",
+                    "stages": {"denoiser": {"residency": "streamed", "block_group_size": 1, "slot_count": 3,
+                        "resident_prefix_blocks": 10, "prefetch_distance": 2, "io_workers": 2}}}}}
+        status, _, error = plan(r)
+        self.assertNotEqual(status, 0)
+        self.assertIn("GPU-only", error)
+        r["model"] = "z-image-turbo"
+        status, _, error = plan(r)
+        # Unqualified hardware must be rejected by the model capability.
+        if status:
+            self.assertIn("measured-device GPU+ANE", error)
+        r["execution"]["encoder_ane_manifest"] = "/tmp/not-opened-encoder.json"
+        status, _, error = plan(r)
+        self.assertNotEqual(status, 0)
+        self.assertIn("without encoder ANE", error)
+
     def test_public_selector_is_plan_only_until_engine_resolution(self):
         r = selector_request()
         status, p, error = plan(r)

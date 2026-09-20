@@ -15,19 +15,46 @@ struct StreamingWorkload {
     uint32_t height = 0;
     uint32_t caption_rows = 0;
     uint32_t steps = 0;
+    uint32_t ane_mlp_prefix_channels = 0;
+    bool fp32_scales = false;
 };
 
-// Header-only view of the single-file Comfy BF16 transformer.  Construction
+enum class StreamingConversion { copy, signed_q8, bf16, scales, biases };
+
+struct StreamingWeightOptions {
+    uint32_t mlp_prefix_channels = 0;
+    bool fp32_scales = false;
+};
+
+// Model-owned materialization plan shared by the descriptor and reader.
+// The generic executor sees only source ranges, destination bytes and tickets.
+struct StreamingTensor {
+    std::string name, suffix, dtype;
+    std::vector<uint64_t> shape;
+    uint64_t data_begin = 0, data_end = 0, file_offset = 0, bytes = 0;
+    uint32_t artifact = 0;
+    StreamingConversion conversion = StreamingConversion::copy;
+    streaming::SourceRange source;
+};
+
+struct StreamingSuffixPack {
+    uint64_t source_offset = 0, destination_offset = 0;
+    uint64_t rows = 0, row_bytes = 0, skip_bytes = 0;
+};
+
+// Header-only view of the single-file Comfy BF16/INT8 transformer. Construction
 // reads the safetensors prefix and JSON header only.  It never reads tensor
 // payloads, creates MLX arrays, allocates Metal buffers, or starts workers.
 class StreamingMetadata {
   public:
-    explicit StreamingMetadata(const std::string &checkpoint);
+    explicit StreamingMetadata(const std::string &checkpoint,
+                               StreamingWeightOptions options = {});
     // Public adapters pass the request-scoped lease captured during probe.
     // This constructor never reopens the named path.
     explicit StreamingMetadata(
         std::shared_ptr<const streaming::SourceLease> lease,
-        std::string logical_id = "transformer");
+        std::string logical_id = "transformer",
+        StreamingWeightOptions options = {});
     ~StreamingMetadata();
 
     StreamingMetadata(const StreamingMetadata &) = delete;
@@ -39,7 +66,14 @@ class StreamingMetadata {
     std::shared_ptr<const streaming::SourceLease> lease_ptr() const;
 
     uint32_t block_count() const noexcept { return 30; }
-    uint32_t tensors_per_block() const noexcept { return 13; }
+    uint32_t tensors_per_block() const noexcept;
+    bool convrot() const noexcept;
+    uint64_t scratch_bytes_per_slot() const noexcept;
+    uint64_t packed_bytes() const noexcept;
+    const StreamingWeightOptions &options() const noexcept;
+    const std::vector<StreamingTensor> &fixed_records() const;
+    const std::vector<StreamingTensor> &block_records(uint32_t block) const;
+    const std::vector<StreamingSuffixPack> &suffix_packs() const;
     uint64_t block_bytes() const noexcept;
     uint64_t fixed_bytes() const noexcept;
     const std::string &snapshot_identity() const noexcept;
@@ -48,6 +82,7 @@ class StreamingMetadata {
     struct State;
     std::unique_ptr<State> state_;
     void parse_checkpoint();
+    void prepare_materializations();
 };
 
 // Private metadata/plan shadow for the existing ZImageWeightStream contract.

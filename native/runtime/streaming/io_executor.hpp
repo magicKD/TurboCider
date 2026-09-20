@@ -32,6 +32,8 @@ struct FillJob {
     // Must catch its errors and check cancel at chunk boundaries. Owns no
     // model context allocation rights. The job's referenced spans stay alive
     // until completion or shutdown_and_join().
+    // The output count is MATERIALIZED CONTENT bytes (excluding allocation
+    // padding), not source bytes read. Converting readers account I/O separately.
     int (*fill)(void *, const tc_stream_slot_ticket_v1 *, const std::atomic<bool> *, uint64_t *) = nullptr;
 };
 
