@@ -350,3 +350,18 @@ Flux transformer 下载完成，完整大小 7,751,109,744 字节，SHA-256 与 
 用 native tokenizer 构造了恰好 64 token 的自然提示，给同一 Flux candidate exact 请求增加已编译的 50% encoder manifest 与 allow_approximation=true。`build/m1-cache/turbocider plan /tmp/tc-flux-e2e-hybrid-request.json` 明确拒绝：`streaming_route_unsupported: manual streaming requires GPU-only execution`，来源 `native/runtime/plan.cpp`。因此没有运行这份完整 hybrid 请求；encoder sweep 不能被描述为完整 streaming hybrid 已支持。后续必须接入受约束的 hybrid route/身份/资源所有权，不能只移除门禁。
 
 全量 audit native-only 构建 session `82430` 已 exit 0，日志 `/tmp/tc-m1-audit-build.log`，确认导出 audit reset/snapshot C API。已启动真实同布局 P1 campaign session `29177`，目录 `/Users/chencanhui/models/TurboCider/experiments/m1-flux4-p1`，日志 `/tmp/tc-flux4-p1.log`。记录本段时尚未完成；默认 environment 记录仍为 partial，背景 Z 下载持续，即使输出与计数器通过也不能忽略环境资格。27-block 分宽度导出/测量已全部结束，不与 P1 GPU 请求并发。
+
+
+## 第十四轮：真实 Flux P1 同布局结果
+
+audit build 的 10 blocks / 20 matched pairs 已完整结束：40/40 请求成功，无 fault，20 对 PNG SHA-256 全部相同；逐请求实际语义与冻结的 4B/256²/4-step/K2/D1/Q2 布局一致。计数器确认稳态 framework allocations=0、thread creates=0。来源、样本数、协议和 audit 证据通过。
+
+| 量测 | 直接调度 baseline | 通用执行器 candidate | candidate / baseline | bootstrap 95% 比值上界 |
+|---|---:|---:|---:|---:|
+| 完整请求中位数 | 8.456937 s | 8.372259 s | 0.989987 | 1.004772 |
+| 完整请求 P95 | 8.629044 s | 8.643324 s | 1.001655 | 1.004794 |
+| denoise 中位数 | 6.200536 s | 6.130822 s | 0.988757 | 1.004509 |
+
+数值区间落在冻结的 1.02/1.05/1.02 上限内，但**总体结果仍为 INCONCLUSIVE**：environment.json 是 partial，背景模型下载持续，未取得完整电源/热状态/SSD 环境记录。没有修改 environment 状态来取得 PASS，也不据此发布认证卡。它提供了真实 4B 上逐图一致、完整布局执行和框架开销的证据，不能替代完整发布门。
+
+封存：[summary](2026-09-20-m1-flux4-p1-summary.json)、[audit](2026-09-20-m1-flux4-p1-audit.json)、[quality](2026-09-20-m1-flux4-p1-quality.json)、[semantics](2026-09-20-m1-flux4-p1-semantics.json)。完整原始 bundle 位于 `/Users/chencanhui/models/TurboCider/experiments/m1-flux4-p1`，两侧 native SHA-256 为 `1d6761714a05f18a0c31c0185a5db32851f8c013b7af4d5225ab9f6f4533e90f`。session `29177` exit 1 对应验证器 INCONCLUSIVE，并非请求失败。
