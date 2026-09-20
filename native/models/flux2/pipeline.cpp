@@ -17,6 +17,18 @@
 namespace tc {
 namespace {
 
+// MLX allocator policy is process-wide. A request must not leave its cache
+// budget installed for the next model, including when encoding throws.
+class FluxRequestCacheLimit {
+    size_t previous_;
+  public:
+    explicit FluxRequestCacheLimit(size_t limit)
+        : previous_(mx::set_cache_limit(limit)) {}
+    ~FluxRequestCacheLimit() { mx::set_cache_limit(previous_); }
+    FluxRequestCacheLimit(const FluxRequestCacheLimit &) = delete;
+    FluxRequestCacheLimit &operator=(const FluxRequestCacheLimit &) = delete;
+};
+
 bool flux_exact_streaming_requested(const Request &request) {
     if (!request.streaming.active()) return false;
     const auto stage = request.streaming.stages.find("denoiser");
@@ -506,7 +518,7 @@ RunResult Flux::prepare(const Request &requested, bool warmup, const Event &even
     auto plan = make_plan(r);
     require(r.model == model_id_ && !r.prompt.empty(), "FLUX preparation requires a prompt");
     ResidencyPolicy::validate_budget(plan, device_info().physical_memory);
-    mx::set_cache_limit(r.allocator_cache_bytes);
+    FluxRequestCacheLimit cache_limit(r.allocator_cache_bytes);
     reset_public_component_cache();
     select_loras(r);
     auto tokens = tokenizer_.prompt(r.prompt, r.dynamic_text);
@@ -566,7 +578,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         ResidencyPolicy::validate_budget(plan, physical);
     auto residency = ResidencyPolicy::for_request(r, physical);
     mx::reset_peak_memory();
-    mx::set_cache_limit(r.allocator_cache_bytes);
+    FluxRequestCacheLimit cache_limit(r.allocator_cache_bytes);
     reset_public_component_cache();
     select_loras(r);
     if (exact_streaming) {

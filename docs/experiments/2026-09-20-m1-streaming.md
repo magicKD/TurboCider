@@ -272,3 +272,14 @@ App query key 纳入模型路径、prompt、动态文本、输入和加速策略
 ```
 
 这是随机 hidden states 上单个真实权重前缀的误差测量，没有设置事后通过阈值，也不代表完整 encoder/image 质量通过。报告中的内部 quality_validation_passed=true 伴随 quality_validation_enabled=false，不是本次数值比较的通过证明。测量期间仍有构建与下载，不以这些调用耗时评判收益或最佳 GPU/ANE 划分。官方 transformer 下载仍在进行，两模型端到端 streaming、完整 encoder 对照及空闲窗口性能实验仍待完成。
+
+
+## 第十一轮：Flux 请求恢复进程级 MLX 缓存上限
+
+检查真实运行入口时发现 Flux prepare/run 直接设置进程级 allocator cache limit，请求结束后未恢复，会影响嵌入者或下一个模型。现在使用作用域对象保存并恢复原值，异常路径也恢复；不额外改变清缓存时机。
+
+新增 C API 回归 `tests/native/test_flux_cache_scope.py`：先把嵌入者 cache limit 设为 19 MiB，再用真实 candidate exact 请求进入 Flux，故意在 encoder 权重缺失处失败。旧库返回后变为 512 MiB（`/tmp/tc-cache-before.log`），修复后的库恢复 19 MiB（`/tmp/tc-cache-after.log`）。本机 prepare 被较早的保守 BF16 内存准入拒绝；它验证原设置不变，不能冒充已覆盖 prepare setter 后的异常。成功路径须结合接下来真实出图验证。
+
+本轮只重编译变化的 pipeline 对象，并与上一轮固定 native 对象重链接为 `build/m1-cache/libturbocider.dylib`；`/tmp/tc-build-cache.sh`、`/tmp/tc-cache-build.log` 记录命令和 exit 0，未把它称为全量重构建。新增测试已接入 Makefile。
+
+R4 检查再次确认 Flux/Z exact owner 仍有完整生命周期缺口：StageExecutor 在 drain 失败后析构会 terminate；adapter 引用外部 plan/source/event/cancellation/pass tensors，不能只泄漏 executor 或取消 terminate。需要完整 owner 保留、断开调用方回调、构造失败保护和所有 engine 入口的 poison 检查。此项本轮尚未修复，不宣称失败隔离已经安全。
