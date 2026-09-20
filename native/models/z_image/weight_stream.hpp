@@ -8,6 +8,7 @@
 #include <mutex>
 
 namespace tc {
+namespace z_image { class GpuSuffixSource; }
 
 // Explicit BF16 / ConvRot Q8 streaming. Workers read and convert into reusable
 // buffers allocated on the inference thread; they never call MLX operations.
@@ -38,6 +39,7 @@ class ZImageWeightStream {
     int fd_ = -1;
     int packed_fd_ = -1;
     std::shared_ptr<const streaming::SourceLease> lease_;
+    std::shared_ptr<const z_image::GpuSuffixSource> suffix_source_;
     uint64_t file_bytes_ = 0;
     int64_t modified_seconds_ = 0, modified_nanos_ = 0;
     std::vector<Record> fixed_records_;
@@ -99,6 +101,12 @@ class ZImageWeightStream {
                        uint64_t budget,
                        uint64_t activation_reserve, Weights &fixed,
                        const Event &, std::atomic<bool> &);
+    // Internal hybrid reader only. Requires a completed native derived source,
+    // preserves P/K, and does not authorize a public or exact-GPU route.
+    ZImageWeightStream(std::shared_ptr<const z_image::GpuSuffixSource>,
+                       unsigned pinned_blocks, uint32_t slot_count,
+                       uint64_t budget, uint64_t activation_reserve,
+                       Weights &fixed, const Event &, std::atomic<bool> &);
     ~ZImageWeightStream();
     ZImageWeightStream(const ZImageWeightStream &) = delete;
     void reset_metrics();

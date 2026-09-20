@@ -1,0 +1,54 @@
+{
+  "scope": "Internal GPU reader for verified suffix source; no ANE prediction or full-image hybrid route",
+  "library_sha256": "d86d32cacf14e5f2914c193ddc5527d1c1f1422f25acc4b509c45ee5a76b31f8",
+  "runtime_build_id": "tc-runtime-build-v1-4d4b6fe89ffe1c1525aa6fb41467e938735ce5f70aa3124659845a26831d846e",
+  "source_sha256": {
+    "native/models/z_image/weight_stream.hpp": "e3eb42dd6bf609a41d9c87c13c473091f247e2c7c4e417fa92e92ec1a0476095",
+    "native/platform/apple/z_image_weight_stream.mm": "0dffa279accd83779960e0342a96abd637ec99ef123d5cf45faef14a41cf077a",
+    "native/models/z_image/streaming_descriptor.hpp": "a9c4c086335e15fa4a975cc19ed229a77512db5702c6b20810f8503de0da81fd",
+    "native/platform/apple/z_image_streaming_descriptor.mm": "f00c8a741b824bfa0ee357822561769dfbea5ca7c39e7505cfeb6d8ce4987780",
+    "tests/native/z_image_suffix_reader_test.cpp": "89f2443326cd5fc0804400af66bc971064aacf66debca5cf22cd359926daf442",
+    "tests/native/test_z_image_suffix_reader.py": "b49d90748abd82d5dcee70f4b220a9c4a3e38ea17542dcb131ea493a9fe88db1",
+    "tests/native/test_z_image_suffix_descriptor.py": "48e04af6159dd32a03ff656698ac219ae84dda83059eaef023255eea8c598d7c"
+  },
+  "build": "PASS final native hook build and runtime/catalog postchecks; initial build deliberately stopped after alignment-accounting review",
+  "gpu_fixture": {
+    "hidden": 3840,
+    "mlp_width": 10240,
+    "first_gpu_channel": 10239,
+    "prefix_blocks": 2,
+    "slots": [
+      1,
+      2
+    ],
+    "passes_per_case": 2,
+    "blocks_per_pass": 28,
+    "fields_per_block": 13,
+    "unaligned_fixed_tensor_bytes": 128,
+    "aligned_fixed_tensor_capacity": 256
+  },
+  "tests": {
+    "gpu_reader": "ld: warning: building for macOS-26.0, but linking with dylib '@rpath/libturbocider.dylib' which was built for newer version 26.2\nld: warning: building for macOS-26.0, but linking with dylib '@rpath/libmlx.dylib' which was built for newer version 26.2\nPASS verified GPU suffix reader: fixed/context/prefix values, K1/K2 concurrent fills, 2 passes, buffer reuse, I/O counts, cancel/retry and source ownership\n",
+    "source_asan_ubsan": "PASS verified suffix source: byte oracle, readonly/unlinked fd, hash, cancellation/event cleanup, cross-install identity, parent mutation/replacement\n",
+    "z_public_adapter": "ld: warning: building for macOS-26.0, but linking with dylib '@rpath/libturbocider.dylib' which was built for newer version 26.2\nPASS Z-Image public adapter: shared four-artifact lease, exact identity/layout snapshot, route rejection, target failure cleanup and source replacement detection\n",
+    "legacy_weight_stream": {
+      "run": 10,
+      "skipped": 6,
+      "failed": 0,
+      "log": "test_cancel_during_suffix_preparation_then_retry (__main__.WeightStreamTests.test_cancel_during_suffix_preparation_then_retry) ... skipped 'suffix streaming requires the measured device profile'\ntest_compact_suffix_values_bytes_reuse_and_cancel (__main__.WeightStreamTests.test_compact_suffix_values_bytes_reuse_and_cancel) ... skipped 'suffix streaming requires the measured device profile'\ntest_convrot_gpu_values_prefetch_depths_and_full_residency (__main__.WeightStreamTests.test_convrot_gpu_values_prefetch_depths_and_full_residency) ... skipped 'INT8 streaming requires the measured M5 Pro 24 GiB profile'\ntest_convrot_rejects_incompatible_scale_layout (__main__.WeightStreamTests.test_convrot_rejects_incompatible_scale_layout) ... skipped 'INT8 streaming requires the measured M5 Pro 24 GiB profile'\ntest_convrot_unmeasured_device_is_rejected (__main__.WeightStreamTests.test_convrot_unmeasured_device_is_rejected) ... ok\ntest_rejects_bad_metadata (__main__.WeightStreamTests.test_rejects_bad_metadata) ... ok\ntest_rejects_truncated_payload (__main__.WeightStreamTests.test_rejects_truncated_payload) ... ok\ntest_repeated_gpu_execution_and_cancel (__main__.WeightStreamTests.test_repeated_gpu_execution_and_cancel) ... ok\ntest_suffix_rejects_incompatible_geometry (__main__.WeightStreamTests.test_suffix_rejects_incompatible_geometry) ... skipped 'suffix streaming requires the measured device profile'\ntest_suffix_requires_all_hybrid_weights (__main__.WeightStreamTests.test_suffix_requires_all_hybrid_weights) ... skipped 'suffix streaming requires the measured device profile'\n\n----------------------------------------------------------------------\nRan 10 tests in 2.998s\n\nOK (skipped=6)\n"
+    },
+    "native_contract": {
+      "run": 83,
+      "skipped": 3,
+      "failed": 0
+    }
+  },
+  "limitations": [
+    "GPU values use a sparse geometry fixture; this is not full-model denoising",
+    "Boundary split a=10239 is not a qualified ANE artifact",
+    "Common StageExecutor/hybrid join/receipt integration remains incomplete",
+    "No Core ML bundle loaded or executed",
+    "Memory capacities are weight-plan reservations, not whole-process bounds",
+    "No new release/App build or performance campaign"
+  ]
+}

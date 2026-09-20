@@ -568,6 +568,9 @@ const std::string &GpuSuffixSource::content_digest() const noexcept { return sta
 uint64_t GpuSuffixSource::verification_read_bytes() const noexcept {
     return state_->plan.setup_write_bytes;
 }
+const streaming::SourceFileIdentity &GpuSuffixSource::parent_file() const {
+    return state_->parent->file(state_->logical_id);
+}
 void GpuSuffixSource::check_unchanged() const {
     state_->parent->revalidate_after_drain();
     struct stat actual{};
@@ -610,12 +613,12 @@ std::unique_ptr<GpuSuffixSource> StreamingMetadata::materialize_gpu_suffix(
     auto pattern = (std::filesystem::path(NSTemporaryDirectory().UTF8String) /
                     "turbocider-z-derived-XXXXXX").string();
     streaming::OwnedSourceFd writable(::mkstemp(pattern.data()));
-    require_metadata(bool(writable), "cannot create derived suffix file");
     struct Unlink {
         const std::string &path;
         bool pending = true;
         ~Unlink() { if (pending) ::unlink(path.c_str()); }
-    } cleanup{pattern};
+    } cleanup{pattern, bool(writable)};
+    require_metadata(bool(writable), "cannot create derived suffix file");
     ready->derived = streaming::OwnedSourceFd(::open(pattern.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
     require_metadata(bool(ready->derived), "cannot open derived suffix reader");
     struct stat writer_stat{}, reader_stat{};

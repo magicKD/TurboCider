@@ -10,8 +10,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 
-def fixture(path, change=None):
-    records = [("x_embedder.weight", [128])]
+def fixture(path, change=None, embedder_elements=128):
+    records = [("x_embedder.weight", [embedder_elements])]
     for prefix in ["noise_refiner.0", "noise_refiner.1", "context_refiner.0", "context_refiner.1"]:
         for w in (1, 2, 3):
             records.append((f"{prefix}.feed_forward.w{w}.weight", [3840, 10240] if w == 2 else [10240, 3840]))

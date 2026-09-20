@@ -730,3 +730,18 @@ host 测试使用两个独立生成、内容相同但 inode/path 不同的稀疏
 补充真实模型文件验证：对已下载 Z-Image checkpoint 的 12,309,866,400 bytes 做 native 内容验证，得到 SHA-256 `2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6`，与模型下载记录一致。以 a=5120（50%）打包 32 个分支，实际原文件读 2,516,582,400 bytes、派生写 1,258,291,200 bytes、派生哈希再读 1,258,291,200 bytes。派生 SHA-256 为 `59b03803a9dac69d0fe89a79ef318056260b77d48cdc588744aef6bee89fcb47`；逐分支抽查第 0/1234/3839 行，共 96 行，与原文件列后缀逐字节相同。owner 释放后 fd 数恢复，private 派生文件未持久保存。见[原始结果](2026-09-21-m1-z-suffix-source-real.json)。完整字节 oracle 来自稀疏 fixture，真实模型采用抽样，不把抽样表述为完整张量数值校验。本次没有 GPU/Core ML 预测或速度比较。
 
 完整 native hook 构建及 runtime/catalog 编译后核对通过：库 SHA-256 `26e3accd085636deee1e1c2accf4164f4737caa984dad1333d6428f360877fc3`，runtime key `tc-runtime-build-v1-bb953df620c174a36ee5407afee90e82b0109e164c42d1dcc58bd9d8d0e4b783`。直接链接新 dylib 的同一 source 生命周期/内容测试通过；Z public adapter 回归通过；suffix metadata、原 exact descriptor suite 通过；native contract 83 项运行、3 项原有跳过，其余通过。host 链接 macOS 26.0/26.2 提示保留，本机 26.4.1 运行通过。见[验证记录](2026-09-21-m1-z-suffix-source-validation.json)。本轮没有 release/App 构建。
+
+
+## 第四十轮：已验证后缀来源接入 GPU 权重读取器（2026-09-21）
+
+新增 `ZImageWeightStream(shared_ptr<const GpuSuffixSource>, …)` 内部构造路径。它持有完成验证的 source owner，从原始/派生只读 fd 读取 metadata 对应字段，覆盖 fixed noise、完整 context、resident prefix 与 streamed blocks；不重新打开 checkpoint 数据路径，不重复 packing，不自动改变 P/K。构造完成及每个后缀 fill 前后检查来源 generation。既有 legacy 与 public GPU-only 准入保持不变，新构造器本身不授予 hybrid route 或 Core ML 权限。
+
+同时修正新路径的容量口径：真实 checkpoint 的 `final_layer.linear.bias` 为 128 bytes，但 descriptor 按 256-byte 字段对齐预留。新 reader 调用 common layout compiler 获取 aligned fixed/slot capacity，预算与布局一致，实际 I/O 仍按未填充的 tensor bytes 计数。最初构建在发现该问题后明确停止，修正后重新完整构建；不是因观察超时而重启。派生文件的 unlink guard 也提前登记，避免创建后校验抛出异常时遗漏路径清理。
+
+`test_z_image_suffix_reader.py` 显式选择 Metal device。使用真实 FFN 几何 3840×10240、a=10239 的稀疏 fixture，对每个 branch 的 w1/w2/w3 后缀写入独立哨兵，再在 GPU 上验证全部后缀值和未裁剪字段；context 保持完整形状且内容为零。P2/K1 与 P2/K2 各运行 2 个 pass，每 pass 28 个 suffix blocks；K2 使用两个独立 host worker 填充两个 slots，所有 GPU 比较完成后才复用 backing。两轮内仅有 K×13 个 backing 指针，refill/I/O 计数符合 oracle，未在 refill 中分配新 slots。
+
+fixture 加入 128-byte 固定字段：预留 256 bytes、实际只读 128 bytes；恰好达到 aligned 预算可构造，少 1 byte 则拒绝。另覆盖 fixed 加载后取消的构造清理、worker 取消与重试、caller 释放 source 后 reader 继续持有、父路径移走后 fill 拒绝，以及 reader fd 回收。打包发生在 source owner，reader 的 request_pack_read/write 为 0，避免重复计量。
+
+最终 native hook 构建、runtime/catalog 编译后核对、GPU buffer suite、来源 ASan/UBSan 回归及 Z public adapter 均通过。原 weight stream 10 项运行、6 项因 M1 未支持 legacy suffix/ConvRot 跳过，其余通过；native contract 83 项运行、3 项原有跳过，其余通过。库 SHA-256 `d86d32cacf14e5f2914c193ddc5527d1c1f1422f25acc4b509c45ee5a76b31f8`，runtime key `tc-runtime-build-v1-4d4b6fe89ffe1c1525aa6fb41467e938735ce5f70aa3124659845a26831d846e`。host 的 macOS 26.0/26.2 链接提示保留，本机 26.4.1 执行通过。见[验证记录](2026-09-21-m1-z-suffix-reader-validation.json)。
+
+这证明新 reader 能在实际 GPU buffer 上消费已验证来源，尚未证明 denoiser FFN 分流、Core ML/GPU join 或完整输出。a=10239 是边界 fixture，不代表存在该 ANE artifact；没有新真实模型出图、性能 campaign、release/App 构建。下一步仍需 typed Core ML bundle/partition、hybrid adapter/完整 owner、实际 receipt 与质量准入。

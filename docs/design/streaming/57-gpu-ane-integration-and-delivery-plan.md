@@ -362,3 +362,10 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 返回对象保留父 lease；只允许 artifact 0/1 的只读 CLOEXEC fd 复制，并在复制和结束核对时检查父文件替换/修改。metadata recipe descriptor 保持不变，实际派生 SHA-256 单独提供给后续执行证据，避免 setup 后悄悄改变已经编译的 layout 身份。验证读取量与 packing I/O 分开报告。
 
 稀疏真实几何 fixture 已验证完整派生字节、只读/unlinked 属性、内容 SHA、四个取消边界和事件异常 fd 清理、owner 独立保留父 lease、两份独立副本的配方/内容身份重放，以及打包中父文件修改和完成后路径替换拒绝；ASan/UBSan 通过。这里没有 Core ML session、GPU consumer 或 public hybrid authority；adapter 对该 source 的执行消费、完整 owner/join 和 receipt 仍待实施，HY-MAT/HY-LIFE 不能整体标记完成。
+
+
+## 16. H1 GPU 读取接缝实施进度（2026-09-21）
+
+已将 `GpuSuffixSource` 接入内部 ZImageWeightStream 构造器，复用 fixed/prefix/slot 加载与 exact fill 接口，保持 source owner 到 reader 结束。新路径的 capacity 取 common compiler 对齐结果，逻辑 I/O 独立计量。稀疏真实几何 fixture 的 Metal 数值检查、P2/K1/K2 双 pass、并发 fill、buffer 复用、取消重试与来源替换拒绝通过；128-byte 字段的 256-byte capacity 和预算边界亦通过。见[第四十轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+尚未将新 reader 接入 hybrid StageExecutor/z_block 的完整流程，没有加载 ANE artifact、提交 GPU/ANE join 或生成 hybrid receipt。此进度是 HY-MAT 的读取子项，不是 HY-M0 完成或 public hybrid 资格。

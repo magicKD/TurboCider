@@ -93,6 +93,7 @@ class GpuSuffixSource final {
     const GpuSuffixPlan &plan() const noexcept;
     const std::string &content_digest() const noexcept;
     uint64_t verification_read_bytes() const noexcept;
+    const streaming::SourceFileIdentity &parent_file() const;
     streaming::OwnedSourceFd duplicate_fd(uint32_t artifact) const;
     void check_unchanged() const;
 

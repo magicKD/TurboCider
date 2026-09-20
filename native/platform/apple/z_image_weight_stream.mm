@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #include "../../models/z_image/weight_stream.hpp"
 #include "../../models/z_image/suffix_materialization.hpp"
+#include "../../models/z_image/streaming_descriptor.hpp"
 #include "../../runtime/residency.hpp"
 #include "platform.hpp"
 #include <algorithm>
@@ -407,6 +408,22 @@ void ZImageWeightStream::configure_exact(
             "Z-Image exact streaming requires one or two refill slots");
     require(pinned_blocks <= blocks_.size() - slot_count,
             "Z-Image exact streaming requires at least one suffix block per slot");
+    if (suffix_source_) {
+        // Use the common compiler's aligned capacities. Source/fill metrics
+        // still count logical bytes, e.g. a 128-byte bias in a 256-byte field.
+        StreamingConfig config;
+        config.enabled = true;
+        config.schema_version = 1;
+        config.selection = "manual";
+        config.retention = "request";
+        config.stages["denoiser"] = {"streamed", 1, slot_count, pinned_blocks, 0, 1};
+        const auto layout = streaming::compile_layout(config, suffix_source_->plan().descriptor);
+        const auto &stage = layout.stages.at(0);
+        require(stage.pools.size() == 1 && stage.pools[0].slots.size() == slot_count,
+                "Z-Image suffix source has incompatible pool geometry");
+        block_bytes = stage.pools[0].slots[0].capacity_bytes;
+        fixed_bytes = stage.resident_bytes;
+    }
     require(fixed_bytes <= UINT64_MAX - activation_reserve,
             "Z-Image exact streaming reserve overflow");
     const uint64_t reserved = activation_reserve + fixed_bytes;
@@ -546,6 +563,76 @@ ZImageWeightStream::ZImageWeightStream(
         throw;
     }
 }
+ZImageWeightStream::ZImageWeightStream(
+        std::shared_ptr<const z_image::GpuSuffixSource> source,
+        unsigned pinned_blocks, uint32_t slot_count, uint64_t budget,
+        uint64_t activation_reserve, Weights &fixed,
+        const Event &event, std::atomic<bool> &cancelled)
+    : suffix_source_(std::move(source)), cancelled_(cancelled), exact_layout_(true) {
+    try {
+        require(suffix_source_ != nullptr, "Z-Image verified suffix source is unavailable");
+        suffix_source_->check_unchanged();
+        index(suffix_source_->parent_file().path, suffix_source_->duplicate_fd(0));
+        require(!convrot_, "Z-Image verified suffix reader requires BF16 weights");
+        packed_fd_ = suffix_source_->duplicate_fd(1).release();
+        const auto &plan = suffix_source_->plan();
+        const auto &stage = plan.descriptor.stages.at(0);
+        require(stage.blocks.size() == blocks_.size() && plan.packing.size() == 32,
+                "Z-Image suffix reader has incomplete source mapping");
+        auto apply = [&](std::vector<Record> &records,
+                         const std::vector<streaming::FieldSpec> &fields) {
+            require(records.size() == fields.size(), "Z-Image suffix field count differs from source");
+            std::map<std::string, const streaming::FieldSpec *> by_tensor;
+            for (const auto &field : fields) {
+                require(field.materialization && field.materialization->reads.size() == 1,
+                        "Z-Image suffix field requires one source range");
+                const auto &read = field.materialization->reads[0];
+                require(by_tensor.emplace(read.tensor, &field).second,
+                        "Z-Image suffix source has duplicate tensor mapping");
+            }
+            for (auto &r : records) {
+                const auto found = by_tensor.find(r.name);
+                require(found != by_tensor.end(), "Z-Image suffix tensor mapping missing");
+                const auto &field = *found->second;
+                const auto &m = *field.materialization;
+                const auto &read = m.reads[0];
+                require(read.artifact < 2 && m.format == "BF16" && read.dtype == "BF16" &&
+                        m.conversion == "copy-bf16-v1" && m.derived_from.empty() &&
+                        m.shape == read.shape && field.bytes == read.bytes,
+                        "Z-Image suffix field differs from reader contract");
+                mx::Shape shape;
+                uint64_t bytes = 2;
+                for (const auto dimension : m.shape) {
+                    require(dimension > 0 && dimension <= INT32_MAX && bytes <= UINT64_MAX / dimension,
+                            "Z-Image suffix shape overflow");
+                    bytes *= dimension;
+                    shape.push_back(int(dimension));
+                }
+                require(bytes == field.bytes, "Z-Image suffix shape byte count differs");
+                r.shape = std::move(shape);
+                r.offset = read.offset;
+                r.bytes = bytes;
+                r.packed = read.artifact == 1;
+            }
+        };
+        apply(fixed_records_, stage.resident_fields);
+        for (size_t block = 0; block < blocks_.size(); ++block)
+            apply(blocks_[block], stage.blocks[block].fields);
+        metrics_.mlp_prefix_channels = plan.packing.front().first_gpu_channel;
+        metrics_.suffix_pack_bytes = plan.setup_write_bytes;
+        // Packing occurred in the source owner, not in this reader. Do not
+        // double count it as reader I/O; normal fill metrics count actual reads.
+        configure_exact(pinned_blocks, slot_count, budget, activation_reserve, fixed, event);
+        suffix_source_->check_unchanged();
+    } catch (...) {
+        if (packed_fd_ >= 0) ::close(packed_fd_);
+        packed_fd_ = -1;
+        if (fd_ >= 0) ::close(fd_);
+        fd_ = -1;
+        fixed.clear();
+        throw;
+    }
+}
 ZImageWeightStream::~ZImageWeightStream() {
     for (auto &slot : slots_)
         if (slot.pending.valid()) slot.pending.wait();
@@ -581,6 +668,10 @@ void ZImageWeightStream::check_source() const {
             "Z-Image streamed checkpoint changed during the session");
 }
 void ZImageWeightStream::check_unchanged() const {
+    if (suffix_source_) {
+        suffix_source_->check_unchanged();
+        return;
+    }
     if (lease_) {
         lease_->revalidate_open_files();
         lease_->revalidate_paths();
@@ -649,9 +740,11 @@ uint64_t ZImageWeightStream::fill_exact(
                 slot_index < exact_slot_count_ &&
                 block >= metrics_.pinned_blocks && block < blocks_.size(),
             "invalid Z-Image exact fill target");
+    if (suffix_source_) suffix_source_->check_unchanged();
     auto &slot = slots_[slot_index];
     slot.block = int(block);
     auto result = fill(slot, blocks_[block], worker_cancel);
+    if (suffix_source_) suffix_source_->check_unchanged();
     // Do not serialize pread: distinct slot buffers are independently owned.
     std::lock_guard<std::mutex> accounting(exact_metrics_mutex_);
     metrics_.request_refill_load_seconds += result.seconds;
