@@ -1979,9 +1979,9 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['encoder_gpu_graph'],
                          'qwen3_encoder_mlp_complement')
         self.assertEqual(configured['encoder_precision'],
-                         'bf16_gpu+int8_mlp_fp16_io')
+                         'bf16_gpu+coreml_mlp_fp16_io')
         self.assertEqual(configured['precision'], 'bf16')
-        self.assertIn('qwen3_encoder_mlp_int8_per_channel',
+        self.assertIn('qwen3_encoder_mlp_coreml_approximation',
                       configured['algorithm_approximations'])
 
         both = {**base, 'execution': 'gpu_ane', 'ane_manifest': '/tmp/dit.json',
@@ -1993,7 +1993,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['execution'], 'gpu_ane_experimental')
         self.assertEqual(configured['encoder_execution'], 'gpu_ane_experimental')
         self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
-        self.assertEqual(configured['precision'], 'bf16_gpu+int8_mlp_fp16_io')
+        self.assertEqual(configured['precision'], 'bf16_gpu+coreml_mlp_fp16_io')
 
         gguf = {**base, 'model': 'z-image-turbo-gguf',
                 'model_variant': 'Q8_0', 'width': 512, 'height': 512,
@@ -2043,7 +2043,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
         self.assertEqual(configured['encoder_gpu_graph'],
                          'qwen3_vl_encoder_mlp_complement')
-        self.assertIn('qwen3_vl_encoder_mlp_int8_per_channel',
+        self.assertIn('qwen3_vl_encoder_mlp_coreml_approximation',
                       configured['algorithm_approximations'])
 
         h3_vsa = {**h3_base, 'model': 'minimax-h3-fasth3-mlx-int6-vsa',
@@ -2072,9 +2072,9 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['encoder_backend'], 'metal_mps+coreml')
         self.assertEqual(configured['encoder_gpu_graph'],
                          'gemma4_encoder_mlp_complement')
-        self.assertIn('gemma4_encoder_mlp_int8_per_channel',
+        self.assertIn('gemma4_encoder_mlp_coreml_approximation',
                       configured['algorithm_approximations'])
-        self.assertNotIn('qwen3_encoder_mlp_int8_per_channel',
+        self.assertNotIn('qwen3_encoder_mlp_coreml_approximation',
                          configured['algorithm_approximations'])
 
         profile_source = (ROOT/'native/platform/apple/profile.mm').read_text()

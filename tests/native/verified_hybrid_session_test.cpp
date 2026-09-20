@@ -24,6 +24,8 @@ int main(int argc, char **argv) {
     catch(const std::runtime_error &e) {event_failed=std::string(e.what())=="injected load event";}
     require(event_failed,"load event failure not propagated"); bundle->revalidate();
     auto session=std::make_unique<HybridSession>(bundle,[](const std::string &,int,int){},stop);
+    require(session->metrics().weight_variant == bundle->partition().precision_revision,
+            "typed precision reporting lost verified export variant");
     generation.reset(); parent.reset(); bundle.reset();
     require(fs::exists(root),"session did not retain generation");
     require(session->rows==1088 && session->hidden==3840 && session->block_count==32 &&

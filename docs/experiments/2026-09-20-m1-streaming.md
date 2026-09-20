@@ -971,3 +971,15 @@ Resident legacy 与 typed streaming 的 P/G/K/D/Q、权重布局和 retention �
 后续观测：首个 resident 运行已退出 0，完成 9 steps、288 次 Core ML 调用、零 runtime failures，47 个有效 token。初始噪声、最终 latent、decoded tensor 与第五十五轮 typed streaming **逐字节一致**，最终 latent relative-L2 **0**；PNG SHA 同为 `7337f90b64e27c498318494c5d5b6d8e0873ae030fe763ed2ead184b56ca1580`。见[完整结果](2026-09-21-m1-z-fp16-legacy-resident-1-result.json)、[源验证](2026-09-21-m1-z-fp16-legacy-resident-1-source-verification.json)和[单次对照/张量哈希](2026-09-21-m1-z-fp16-legacy-resident-1-comparison.json)。这缩小了该 fixture 的迁移差异范围，但尚不能替代参考自身可重复性或多样本确认。确认首个进程退出后，已按冻结规则启动[第二次独立参考](2026-09-21-m1-z-fp16-legacy-resident-2-plan.json)，尚待结果。实际结果还暴露 `runtime_backend`、`runtime_precision` 为 null 的报告缺口，与 plan 的固定 INT8 标签一起保留待修复。
 
 完成观测：第二个 resident 进程已退出 0，[完整结果](2026-09-21-m1-z-fp16-legacy-resident-2-result.json)保留。比较工具及首个计划的 SHA 与冻结值一致；两次 native 验证的源文件身份一致。初始 latent、9 个 step latent、最终 latent、decoded 共 **12 个张量全部逐字节重复**，两张 PNG SHA 也相同；typed stage 最终 latent 与 legacy 相比 relative-L2/max-abs 均为 **0**。见[冻结规则对照结果](2026-09-21-m1-z-fp16-legacy-comparison.json)及[独立复核](2026-09-21-m1-z-fp16-legacy-completed-validation.json)。该 fixture 的整图近似差异并非由新 streaming 迁移引入，但不推广到其他 prompt/seed 或 same-plan P1。第二次运行与报告修复的 native 编译有重叠，因此不采用计时作性能比较。
+
+## 第五十七轮：修复 hybrid 后端和精度报告（2026-09-21）
+
+第五十六轮真实结果暴露两个报告问题：Z-Image BF16 hybrid 正式生成分支未填写 backend/precision，JSON 为 null；尚未检查 artifact 的计划和部分运行报告则固定宣称 INT8，即使实际 bank 是 FP16。本轮补齐 Z-Image 的 `mlx_cpp_metal+coreml` 后端和 runtime precision，并将 Core ML session 的 exporter-declared `weight_variant` 传入 metrics。旧 manifest 缺少或未识别变体时报告 unknown；typed session 从已验证 partition 获取变体。FP16、INT8 分别报告 `bf16_gpu+fp16_mlp_fp16_io`、`bf16_gpu+int8_mlp_fp16_io`。
+
+Metadata-only 计划不加载 artifact，改为通用 Core ML MLP/FP16 IO 描述，不再推断 INT8 per-channel；实际结果计划和 encoder runtime 则使用 session 变体。已有明确的 GGUF/其他权重格式报告保持独立。此字段描述导出声明，不作为数学正确性、硬件 ANE 驻留或发布资格证明。
+
+完整 native 构建及内置核对通过，contract 83 项中 80 项通过、3 项原有跳过。新增 ObjC++ 序列化测试覆盖未加载计划、unknown/FP16/INT8 metrics、普通及 prepared 结果；首次测试请求继承 audio=true，被 Z-Image 正确拒绝，修正测试 fixture 的 audio=false 后通过，保留失败日志，未修改生产准入。现有 typed session 实测新增 variant 对照并通过全部 32 次预测、共享 backing、错误输入、部分加载取消/event failure 与清理检查。
+
+使用新库及真实 FP16 bank，先执行 prepare，验证 backend、runtime/plan precision、weight_variant 及零 runtime prediction；随后同 engine 完成一条独立的 512²/1-step 报告回归请求，确认正式生成字段和 32 次 Core ML 调用。PNG 经完整解码及尺寸检查。见[执行计划](2026-09-21-m1-hybrid-reporting-plan.json)、[prepare 结果](2026-09-21-m1-hybrid-reporting-result.json)、[单步生成结果](2026-09-21-m1-hybrid-reporting-one-step-result.json)和[测试/库身份汇总](2026-09-21-m1-hybrid-reporting-validation.json)。单步图片不用于质量或性能结论；第五十六轮迁移结果仍绑定原冻结库。
+
+链接新库的 App 和 history test 已开始重建，本段写入时仍在运行；尚不能称 App 重建或新 GUI 验收通过。public catalog、calibrated policy、完整 hybrid 请求/发布闭环均未因本次报告修复而开放。

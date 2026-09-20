@@ -33,6 +33,8 @@ ExecutionPlan make_plan(const Request &);
 ExecutionPlan make_plan_after_public_streaming_preflight(const Request &);
 std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
+    // Exporter-declared weight variant; unknown for legacy manifests without it.
+    std::string weight_variant = "unknown";
     double load_seconds = 0;
     double manifest_validation_seconds = 0;
     double output_backing_setup_seconds = 0;
@@ -70,6 +72,11 @@ struct HybridMetrics {
     // Does not assert that Core ML's out-of-process caches were evicted.
     bool session_released_after_encoding = false;
 };
+inline std::string hybrid_precision_label(const HybridMetrics &metrics) {
+    if (metrics.weight_variant == "fp16") return "bf16_gpu+fp16_mlp_fp16_io";
+    if (metrics.weight_variant == "int8_pc") return "bf16_gpu+int8_mlp_fp16_io";
+    return "bf16_gpu+coreml_mlp_fp16_io";
+}
 struct LoadResult {
     uint64_t weight_bytes = 0, active_bytes = 0;
 };

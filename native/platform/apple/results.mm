@@ -90,10 +90,10 @@ static NSString *encoder_weight_validation_label(const Request &request,
 }
 static NSString *encoder_approximation_label(const Request &request) {
     if (ltx_gemma4_encoder(request))
-        return @"gemma4_encoder_mlp_int8_per_channel";
+        return @"gemma4_encoder_mlp_coreml_approximation";
     return h3_qwen3_vl_encoder(request)
-        ? @"qwen3_vl_encoder_mlp_int8_per_channel"
-        : @"qwen3_encoder_mlp_int8_per_channel";
+        ? @"qwen3_vl_encoder_mlp_coreml_approximation"
+        : @"qwen3_encoder_mlp_coreml_approximation";
 }
 static NSArray *strings(const std::vector<std::string> &values) {
     NSMutableArray *array = [NSMutableArray array];
@@ -239,7 +239,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             @"row_symmetric_int8_weight_quantization"];
     else if (hybrid)
         [algorithm_approximations addObject:
-            @"single_block_mlp_int8_per_channel"];
+            @"single_block_mlp_coreml_approximation"];
     if (encoder_hybrid)
         [algorithm_approximations addObject:encoder_approximation_label(r)];
     if (r.model == "ltx-2.5-distilled") {
@@ -262,7 +262,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"encoder_execution" : encoder_hybrid ? @"gpu_ane_experimental" : @"gpu",
         @"encoder_backend" : encoder_backend_label(r, encoder_hybrid),
         @"encoder_gpu_graph" : encoder_gpu_graph_label(r, encoder_hybrid),
-        @"encoder_precision" : encoder_hybrid ? @"bf16_gpu+int8_mlp_fp16_io"
+        @"encoder_precision" : encoder_hybrid ? @"bf16_gpu+coreml_mlp_fp16_io"
                                                 : @"bf16",
         @"encoder_weight_validation" :
             encoder_weight_validation_label(r, encoder_hybrid, false),
@@ -272,7 +272,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                       r.model == "wan2.1-1.3b-qad" ? @"fp16-int8-affine-dit+bf16-umt5+fp32-taehv" :
                       r.model == "z-image-turbo-gguf" ? @"checkpoint_defined_gguf" :
             (!r.quantized_cache.empty() ? @"int8_weight_bf16_activation_streamed" :
-             (hybrid ? @"bf16_gpu+int8_mlp_fp16_io" : @"bf16")),
+             (hybrid ? @"bf16_gpu+coreml_mlp_fp16_io" : @"bf16")),
         @"algorithm_approximations" : algorithm_approximations,
         @"requested_shape" : @[ @(r.width), @(r.height), @(r.frames) ],
         @"decoded_shape" : @[ @(dw), @(dh), @(r.frames) ],
@@ -672,8 +672,11 @@ static NSDictionary *runtime_plan(const RunResult &result) {
         result.request, encoder_hybrid);
     plan[@"encoder_gpu_graph"] =
         encoder_gpu_graph_label(result.request, encoder_hybrid);
-    plan[@"encoder_precision"] = encoder_hybrid ? @"bf16_gpu+int8_mlp_fp16_io"
+    plan[@"encoder_precision"] = encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
                                                   : @"bf16";
+    if (result.hybrid && result.request.model != "z-image-turbo-gguf")
+        plan[@"precision"] = @((result.precision.empty()
+            ? hybrid_precision_label(*result.hybrid) : result.precision).c_str());
     plan[@"encoder_weight_validation"] = encoder_weight_validation_label(
         result.request, encoder_hybrid, true);
     if (result.request.model == "z-image-turbo-gguf") {
@@ -692,7 +695,7 @@ static NSDictionary *runtime_plan(const RunResult &result) {
         NSMutableArray *approximations = [NSMutableArray arrayWithObject:
             @"checkpoint_defined_gguf_weight_quantization"];
         if (hybrid)
-            [approximations addObject:@"single_block_mlp_int8_per_channel"];
+            [approximations addObject:@"single_block_mlp_coreml_approximation"];
         if (encoder_hybrid)
             [approximations addObject:encoder_approximation_label(result.request)];
         plan[@"algorithm_approximations"] = approximations;
@@ -730,6 +733,7 @@ NSDictionary *to_dictionary(const LoadResult &r) {
 }
 NSDictionary *to_dictionary(const HybridMetrics &m) {
     return @{
+        @"weight_variant" : @(m.weight_variant.c_str()),
         @"load_seconds" : @(m.load_seconds),
         @"manifest_validation_seconds" : @(m.manifest_validation_seconds),
         @"output_backing_setup_seconds" : @(m.output_backing_setup_seconds),
@@ -1000,7 +1004,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
                 result.request, true);
             copy[@"encoder_gpu_graph"] =
                 encoder_gpu_graph_label(result.request, true);
-            copy[@"encoder_runtime_precision"] = @"bf16_gpu+int8_mlp_fp16_io";
+            copy[@"encoder_runtime_precision"] = @(hybrid_precision_label(*result.encoder_hybrid).c_str());
             copy[@"encoder_hybrid"] = to_dictionary(*result.encoder_hybrid);
             copy[@"plan"] = runtime_plan(result);
         }
@@ -1032,7 +1036,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
         r, result.encoder_hybrid.has_value());
     auto encoder_gpu_graph =
         encoder_gpu_graph_label(r, result.encoder_hybrid.has_value());
-    auto encoder_precision = result.encoder_hybrid ? @"bf16_gpu+int8_mlp_fp16_io"
+    auto encoder_precision = result.encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
                                                     : @"bf16";
     if (result.prepared) {
         NSMutableDictionary *prepared = [@{

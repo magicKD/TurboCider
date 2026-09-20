@@ -342,6 +342,11 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                 [d[@"source"][@"checkpoint_bytes"] isKindOfClass:NSNumber.class],
             "invalid hybrid manifest numbers");
     require([d[@"schema_version"] intValue] == 2, "hybrid requires manifest schema 2");
+    id export_identity = d[@"export_identity"];
+    if ([export_identity isKindOfClass:NSDictionary.class]) {
+        const auto variant = string_value(export_identity, @"variant");
+        if (variant == "fp16" || variant == "int8_pc") weight_variant = variant;
+    }
     hidden = [d[@"shape"][@"K"] intValue];
     require(hidden > 0 && hidden <= 8192 && [d[@"shape"][@"N"] intValue] == hidden,
             "hybrid hidden dimension mismatch");
@@ -564,6 +569,7 @@ HybridSession::HybridSession(std::shared_ptr<const z_image::VerifiedCoreMLBundle
         rows = int(spec.bucket_rows); hidden = int(spec.hidden);
         mlp_width = int(spec.mlp_width); ane_mlp_start = int(spec.ane_begin); ane_mlp_end = int(spec.ane_end);
         output_scale = spec.output_scale;
+        weight_variant = spec.precision_revision;
         block_count = int(impl_->bundle->models().size());
         require(block_count == 32 && rows == 1088 && hidden == 3840, "invalid verified Z partition");
         impl_->buckets = {rows}; impl_->minimum_profitable_rows = {rows};
@@ -681,6 +687,7 @@ void HybridSession::record_prefill_plan(int actual_tokens, int selected_bucket,
 }
 HybridMetrics HybridSession::metrics() const {
     HybridMetrics metrics;
+    metrics.weight_variant = weight_variant;
     metrics.load_seconds = load_seconds;
     metrics.manifest_validation_seconds = manifest_validation_seconds;
     metrics.output_backing_setup_seconds = output_backing_setup_seconds;

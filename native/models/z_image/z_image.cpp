@@ -2381,7 +2381,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             result.checkpoint = transformer_checkpoint_.filename().string();
         } else {
             result.backend = hybrid_ ? "mlx_cpp_metal+coreml" : "mlx_cpp_metal";
-            result.precision = hybrid_ ? "bf16_gpu+int8_mlp_fp16_io" : "bf16";
+            result.precision = hybrid_ ? hybrid_precision_label(hybrid_->metrics()) : "bf16";
         }
         if (hybrid_)
             result.hybrid = hybrid_->metrics();
@@ -2547,8 +2547,13 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         result.backend = "mlx_cpp_metal";
         result.precision = "bf16";
     }
-    if (hybrid_)
+    if (hybrid_) {
         result.hybrid = hybrid_->metrics();
+        if (!gguf_transformer_ && !nvfp4_transformer_ && !convrot_transformer_) {
+            result.backend = "mlx_cpp_metal+coreml";
+            result.precision = hybrid_precision_label(*result.hybrid);
+        }
+    }
     result.encoder_hybrid = cached_encoder_hybrid_metrics_;
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
     result.timings.text = text_seconds;
