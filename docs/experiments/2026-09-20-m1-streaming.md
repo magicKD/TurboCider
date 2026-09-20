@@ -288,3 +288,12 @@ R4 检查再次确认 Flux/Z exact owner 仍有完整生命周期缺口：StageE
 新库的 Flux 4B candidate gate 与 4B/9B public adapter host 回归均 PASS（`/tmp/tc-cache-gate.log`、`/tmp/tc-cache-public.log`）；public catalog 仍为空并保持拒绝。host 编译有目标 macOS 26.0 与 native 库最低 26.2 的链接警告，本机 26.4.1 执行通过，不外推到更早系统。
 
 已启动 `/tmp/tc-run-flux-smoke.py`（session `79830`），等待官方 transformer 原子下载完成后，先按 pinned revision 对全部已下载 Flux 文件做 SHA-256/Git blob 校验，再调用真实 candidate constructor：256×256、4 步、seed 42、GPU eager、denoiser prefix 0/group 1/K2/D1/Q2。实验目录为 `/Users/chencanhui/models/TurboCider/experiments/m1-flux4-streaming-smoke`，stdout 为 `/tmp/tc-flux-real-smoke.log`。记录本段时它仍在等待权重，不构成推理成功证据；后续需检查实际 result、runtime layout、完整 PNG 解码和图像内容。该脚本不安装测试 catalog，也不把 candidate 路径称为已发布 public 功能。
+
+
+## 第十二轮：完整 Flux 4B encoder 对照准备
+
+`benchmark_qwen3_encoder_sweep.py` 原来将 flux_klein 固定为 hidden 4096 / MLP 12288，会拒绝 Klein 4B 的 hidden 2560 / MLP 9728。现在允许这两组配对几何，仍拒绝交叉混用；K/N 必须一致、prefix 范围正确、Flux 必须包含 0–26 全部 blocks，Z 必须保留 2560/9728 和 0–34 blocks。新增 `test_qwen3_sweep_geometry.py` 覆盖上述接受/拒绝分支，本机 unittest 通过（`/tmp/tc-qwen-sweep-geometry.log`）。不以单 block manifest 冒充完整 encoder。
+
+已用官方 Flux text encoder 启动完整 27-block、64-row、4864-prefix、INT8 per-channel 导出（`/tmp/tc-qwen-full-export.log`，session `59965`），路径 `/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-int8`。native qwen3-quant-probe 已针对新库编译到 `build/m1-cache`（`/tmp/tc-qwen-probe-build.log`）。记录时导出尚未结束，完整 encoder 的输出质量和收益均未判定。
+
+Flux smoke 进程 PID 36144 已在开始推理前接入 process-tree sampler，50 ms 间隔/250 ms gap 上限，correlation `m1-flux4-official-smoke-20260920`，证据写入该实验目录的 `process-memory.jsonl`（session `78685`）。采样从等待下载阶段开始，仍需独立 verifier 验证完整性；不能把下载与导出并行期间的结果用作正式冷/暖性能资格。

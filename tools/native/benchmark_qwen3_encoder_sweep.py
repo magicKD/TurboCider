@@ -27,8 +27,8 @@ from pathlib import Path
 DEFAULT_TOKENS = (64, 128, 256, 512, 1024, 2048)
 INVALID_METRIC = 1e30
 MODE_GEOMETRY = {
-    "z_image": {"hidden": 2560, "mlp_width": 9728, "required_blocks": 35},
-    "flux_klein": {"hidden": 4096, "mlp_width": 12288, "required_blocks": 27},
+    "z_image": {"shapes": ((2560, 9728),), "required_blocks": 35},
+    "flux_klein": {"shapes": ((2560, 9728), (4096, 12288)), "required_blocks": 27},
 }
 OUTPUT_LAYERS = {
     "z_image": (34,),
@@ -133,12 +133,11 @@ def load_compiled_manifest(path: Path, mode: str) -> dict:
             buckets != sorted(set(buckets))):
         raise ValueError("encoder manifest has no sequence buckets")
     geometry = MODE_GEOMETRY[mode]
-    if (shape.get("K") != geometry["hidden"] or
-            shape.get("N") != geometry["hidden"] or
-            shape.get("mlp_width") != geometry["mlp_width"] or
+    if ((shape.get("K"), shape.get("mlp_width")) not in geometry["shapes"] or
+            shape.get("N") != shape.get("K") or
             shape.get("ane_mlp_start") != 0 or
             type(shape.get("ane_mlp_end")) is not int or
-            not 0 < shape["ane_mlp_end"] <= geometry["mlp_width"]):
+            not 0 < shape["ane_mlp_end"] <= shape["mlp_width"]):
         raise ValueError(f"encoder manifest geometry does not match {mode}")
     block_indices = set()
     for block, variants in artifacts.items():
