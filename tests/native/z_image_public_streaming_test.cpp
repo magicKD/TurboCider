@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
         const auto probe = session.probe_public_streaming(input);
         assert(probe && probe->model_id() == "z-image-turbo");
         assert(probe->source_lease() != nullptr);
-        assert(probe->source_lease()->file_count() == 3);
+        assert(probe->source_lease()->file_count() == 4);
         assert(probe->workload_identity().width == 256);
         assert(probe->workload_identity().height == 256);
         assert(probe->workload_identity().steps == 3);
@@ -149,6 +149,40 @@ int main(int argc, char **argv) {
             session.generate_resolved(execution, event, cancelled);
         }, "streaming_target_unsupported");
 
+        // A live session's constructor tokenizer must not determine a new
+        // public probe after the installed tokenizer generation changes.
+        const auto tokenizer_path = std::filesystem::path(argv[1]) / "tokenizer/tokenizer.json";
+        auto tokenizer_fd = value_probe->lease_ptr()->duplicate_fd("tokenizer");
+        const auto tokenizer_bytes = value_probe->lease_ptr()->file("tokenizer").bytes;
+        tc::Tokenizer original_tokenizer(tokenizer_fd.get(), tokenizer_bytes);
+        assert(original_tokenizer.raw("g").ids == std::vector<int>{103});
+        const auto moved_tokenizer = tokenizer_path.string() + ".moved";
+        std::filesystem::rename(tokenizer_path, moved_tokenizer);
+        std::ifstream original_file(moved_tokenizer);
+        std::string tokenizer_json((std::istreambuf_iterator<char>(original_file)), {});
+        const auto token_offset = tokenizer_json.find("\"g\": 103");
+        assert(token_offset != std::string::npos);
+        tokenizer_json.replace(token_offset, 8, "\"g\": 104");
+        { std::ofstream replacement(tokenizer_path); replacement << tokenizer_json; }
+        tc::Tokenizer held_tokenizer(tokenizer_fd.get(), tokenizer_bytes);
+        assert(held_tokenizer.raw("g").ids == std::vector<int>{103});
+        tc::Tokenizer replacement_tokenizer(tokenizer_path.parent_path());
+        assert(replacement_tokenizer.raw("g").ids == std::vector<int>{104});
+        rejects([&] { snapshot->revalidate_source(); }, "source path");
+        const auto replacement_probe = session.probe_public_streaming(input);
+        assert(replacement_probe->source_identity() != probe->source_identity());
+        const auto replacement_snapshot = [&] {
+            auto replacement_record = record;
+            replacement_record.source = replacement_probe->source_identity();
+            auto replacement_value = std::dynamic_pointer_cast<
+                const tc::streaming::ValueModelStreamingProbe>(replacement_probe);
+            tc::z_image::StreamingPlanView plan(replacement_value->lease_ptr(), config(), workload);
+            replacement_record.plan.layout_digest = plan.layout().digest;
+            return session.compile_public_streaming(replacement_probe, replacement_record);
+        }();
+        rejects([&] { tc::Tokenizer invalid(-1, tokenizer_bytes); }, "invalid tokenizer source size");
+        rejects([&] { tc::Tokenizer truncated(tokenizer_fd.get(), tokenizer_bytes + 1); }, "truncated");
+
         const auto transformer = std::filesystem::path(argv[1]) /
             "split_files/diffusion_models/z_image_turbo_bf16.safetensors";
         const auto moved = transformer.string() + ".moved";
@@ -157,10 +191,10 @@ int main(int argc, char **argv) {
             std::ofstream replacement(transformer, std::ios::binary);
             replacement << "replacement";
         }
-        rejects([&] { snapshot->revalidate_source(); },
+        rejects([&] { replacement_snapshot->revalidate_source(); },
                 "source path");
 
-        std::cout << "PASS Z-Image public adapter: shared three-artifact lease, "
+        std::cout << "PASS Z-Image public adapter: shared four-artifact lease, "
                      "exact identity/layout snapshot, route rejection, target "
                      "failure cleanup and source replacement detection\n";
     } catch (const std::exception &error) {

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,6 +13,7 @@ from test_z_image_streaming_descriptor import write_fixture
 
 
 ROOT = Path(__file__).resolve().parents[2]
+NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
 
 
 def byte_vocab() -> dict[str, int]:
@@ -69,8 +71,8 @@ def main() -> None:
             "-I", str(ROOT / "native/core"),
             "-isystem", str(mlx_root / "include"),
             str(ROOT / "tests/native/z_image_public_streaming_test.cpp"),
-            "-L", str(ROOT / "build/native"), "-lturbocider",
-            "-Wl,-rpath," + str(ROOT / "build/native"),
+            "-L", str(NATIVE), "-lturbocider",
+            "-Wl,-rpath," + str(NATIVE),
             "-o", str(binary),
         ], check=True)
         result = subprocess.run(

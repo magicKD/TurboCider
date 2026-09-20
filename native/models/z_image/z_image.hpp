@@ -41,6 +41,8 @@ class ZImage final : public ModelSession {
     // Bound only for one public exact generate call. Legacy/private paths keep
     // the empty value and retain their existing path-based construction.
     std::shared_ptr<const streaming::SourceLease> public_stream_lease_;
+    std::unique_ptr<Tokenizer> public_stream_tokenizer_;
+    bool public_component_cache_ = false;
     uint64_t public_stream_target_bytes_ = 0;
 
     void select_loras(const Request &);

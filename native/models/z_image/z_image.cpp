@@ -65,7 +65,7 @@ constexpr const char *kZImageKernelRevision =
 constexpr const char *kZImagePublicImplementation =
     "generic_stage_executor_v2";
 constexpr const char *kZImagePublicComponentPolicy =
-    "zimage-components-v1";
+    "zimage-components-v2-all-sources-request-cache";
 
 uint32_t padded_z_image_rows(uint32_t rows) {
     require(rows && rows <= UINT32_MAX - 31,
@@ -91,7 +91,7 @@ streaming::PresetRuntimeIdentity z_image_public_runtime_identity() {
     return {
         "turbocider-streaming-2026-09-18",
         "public-streaming-runtime-v2",
-        "z-image-public-adapter-v2-k1-k2",
+        "z-image-public-adapter-v3-all-component-lease",
         "z-image-pread-bf16-v2-fd-lease",
         kZImageKernelRevision,
         "mlx-request-cache-policy-v2-k1-zero-cache",
@@ -1503,10 +1503,6 @@ ZImage::probe_public_streaming(
                 vae_path_.extension() == ".safetensors",
             "streaming_route_unsupported: Z-Image public card requires single-file transformer/text/VAE artifacts");
 
-    const auto tokens = tokenizer_.z_image_prompt(
-        request.prompt, request.dynamic_text);
-    const uint32_t caption_rows = padded_z_image_rows(
-        static_cast<uint32_t>(tokens.ids.size()));
     streaming::SourceFileIdentity transformer_file;
     transformer_file.logical_id = "transformer";
     transformer_file.path = transformer_path_;
@@ -1516,9 +1512,19 @@ ZImage::probe_public_streaming(
     streaming::SourceFileIdentity vae_file;
     vae_file.logical_id = "vae";
     vae_file.path = vae_path_;
+    streaming::SourceFileIdentity tokenizer_file;
+    tokenizer_file.logical_id = "tokenizer";
+    tokenizer_file.path = root_ / "tokenizer/tokenizer.json";
     auto lease = streaming::SourceLease::capture({
         std::move(transformer_file), std::move(text_file),
-        std::move(vae_file)});
+        std::move(vae_file), std::move(tokenizer_file)});
+    auto tokenizer_fd = lease->duplicate_fd("tokenizer");
+    Tokenizer tokenizer(tokenizer_fd.get(), lease->file("tokenizer").bytes);
+    const auto tokens = tokenizer.z_image_prompt(request.prompt, request.dynamic_text);
+    lease->revalidate_open_files();
+    lease->revalidate_paths();
+    const uint32_t caption_rows = padded_z_image_rows(
+        static_cast<uint32_t>(tokens.ids.size()));
 
     streaming::PresetWorkload workload;
     workload.model = model_id_;
@@ -1634,12 +1640,19 @@ RunResult ZImage::generate_resolved(
     public_stream_lease_ = std::move(lease);
     public_stream_target_bytes_ = *target;
     try {
+        auto tokenizer_fd = public_stream_lease_->duplicate_fd("tokenizer");
+        public_stream_tokenizer_ = std::make_unique<Tokenizer>(
+            tokenizer_fd.get(), public_stream_lease_->file("tokenizer").bytes);
+        public_stream_lease_->revalidate_open_files();
+        public_stream_lease_->revalidate_paths();
         auto result = run(execution->request, event, cancelled, false, false);
         public_stream_target_bytes_ = previous_target;
+        public_stream_tokenizer_.reset();
         public_stream_lease_.reset();
         return result;
     } catch (...) {
         public_stream_target_bytes_ = previous_target;
+        public_stream_tokenizer_.reset();
         public_stream_lease_.reset();
         throw;
     }
@@ -1727,7 +1740,10 @@ void ZImage::load_vae(
         return;
     checkpoint(cancelled);
     event("load_z_image_vae", 0, 1);
-    load_z_component(vae_, vae_path_, event, cancelled);
+    if (public_stream_lease_)
+        vae_.load_lease(public_stream_lease_, {"vae"}, event, cancelled);
+    else
+        load_z_component(vae_, vae_path_, event, cancelled);
     if (diffusers_layout_)
         normalize_z_diffusers_vae(vae_);
     event("load_z_image_vae", 1, 1);
@@ -1747,12 +1763,17 @@ void ZImage::unload() {
     text_encoder_.clear();
     transformer_.clear();
     vae_.clear();
+    public_component_cache_ = false;
     mx::clear_cache();
 }
 
 Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic<bool> &cancelled) try {
-    if (text_encoder_.bytes() == 0)
-        load_z_component(text_encoder_, text_path_, event, cancelled);
+    if (text_encoder_.bytes() == 0) {
+        if (public_stream_lease_)
+            text_encoder_.load_lease(public_stream_lease_, {"text_encoder"}, event, cancelled);
+        else
+            load_z_component(text_encoder_, text_path_, event, cancelled);
+    }
     auto result = components::qwen3_conditioning(
         tokens, text_encoder_, components::Qwen3Conditioning::z_image(), event, cancelled,
         encoder_hybrid_.get());
@@ -1775,7 +1796,8 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
         event("z_image_text_cache_hit", 1, 1);
         return true;
     }
-    auto tokens = tokenizer_.z_image_prompt(r.prompt, r.dynamic_text);
+    auto tokens = (public_stream_tokenizer_ ? *public_stream_tokenizer_ : tokenizer_)
+                      .z_image_prompt(r.prompt, r.dynamic_text);
     if (!r.encoder_ane_manifest.empty()) {
         const auto prefill = components::qwen3_prefill_plan(
             r.encoder_ane_manifest, int(tokens.ids.size()));
@@ -1938,6 +1960,19 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         ":prefetch=" + std::to_string(prefetch_layers) +
         (optimizations_.z_image_suffix_streaming
              ? ":" + r.execution + ":" + r.ane_manifest : "") : "";
+    if (public_stream_lease_ || public_component_cache_) {
+        // Neither incoming nor outgoing public requests may inherit unkeyed
+        // component caches. Keep the marker on failure until the next request
+        // safely synchronizes; do not release possibly live arrays in a catch.
+        mx::synchronize();
+        cached_conditioning_.reset();
+        cached_prompt_.clear();
+        cached_encoder_manifest_.clear();
+        text_encoder_.clear();
+        vae_.clear();
+        public_component_cache_ = bool(public_stream_lease_);
+        mx::clear_cache();
+    }
     const bool prompt_changed = !cached_conditioning_ ||
         cached_prompt_ != r.prompt || cached_dynamic_ != r.dynamic_text ||
         cached_encoder_manifest_ != r.encoder_ane_manifest;
@@ -2040,7 +2075,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         result.plan = std::move(plan);
         result.selection = selection;
         result.prompt_cache_hit = prompt_hit;
-        auto reported_tokens = tokenizer_.z_image_prompt(r.prompt, r.dynamic_text);
+        auto reported_tokens = (public_stream_tokenizer_ ? *public_stream_tokenizer_ : tokenizer_)
+                                   .z_image_prompt(r.prompt, r.dynamic_text);
         result.text_tokens = int(reported_tokens.ids.size());
         result.valid_text_tokens = reported_tokens.valid;
         result.total_tokens = image_rows + caption_rows;
@@ -2202,7 +2238,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.selection = selection;
     result.warmup = warmup;
     result.prompt_cache_hit = prompt_hit;
-    auto reported_tokens = tokenizer_.z_image_prompt(r.prompt, r.dynamic_text);
+    auto reported_tokens = (public_stream_tokenizer_ ? *public_stream_tokenizer_ : tokenizer_)
+                                   .z_image_prompt(r.prompt, r.dynamic_text);
     result.text_tokens = int(reported_tokens.ids.size());
     result.valid_text_tokens = reported_tokens.valid;
     result.actual_steps = r.steps;

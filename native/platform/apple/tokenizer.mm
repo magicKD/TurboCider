@@ -2,6 +2,8 @@
 #include <limits>
 #include <map>
 #include <unordered_map>
+#include <cerrno>
+#include <unistd.h>
 namespace tc {
 struct Tokenizer::Impl {
     NSDictionary *vocab_;
@@ -11,9 +13,11 @@ struct Tokenizer::Impl {
     std::map<std::string, int> special_;
     std::vector<int> encode(const std::string &);
     explicit Impl(const std::filesystem::path &);
+    explicit Impl(NSDictionary *);
 };
-Tokenizer::Impl::Impl(const std::filesystem::path &root) {
-    auto config = read_json(root / "tokenizer.json");
+Tokenizer::Impl::Impl(const std::filesystem::path &root)
+    : Impl(read_json(root / "tokenizer.json")) {}
+Tokenizer::Impl::Impl(NSDictionary *config) {
     require([config[@"model"][@"type"] isEqual:@"BPE"], "tokenizer must be BPE");
     vocab_ = config[@"model"][@"vocab"];
     NSArray *merges = config[@"model"][@"merges"];
@@ -113,6 +117,24 @@ std::vector<int> Tokenizer::Impl::encode(const std::string &raw) {
     return result;
 }
 Tokenizer::Tokenizer(const std::filesystem::path &root) : impl_(std::make_unique<Impl>(root)) {}
+Tokenizer::Tokenizer(int fd, uint64_t bytes) {
+    require(fd >= 0 && bytes > 0 && bytes <= (256ull << 20),
+            "invalid tokenizer source size");
+    NSMutableData *data = [NSMutableData dataWithLength:static_cast<NSUInteger>(bytes)];
+    require(data != nil, "cannot allocate tokenizer source buffer");
+    uint64_t offset = 0;
+    while (offset < bytes) {
+        auto count = ::pread(fd, static_cast<char *>(data.mutableBytes) + offset,
+                             static_cast<size_t>(bytes - offset), static_cast<off_t>(offset));
+        if (count < 0 && errno == EINTR) continue;
+        require(count > 0, "tokenizer source read failed or file was truncated");
+        offset += static_cast<uint64_t>(count);
+    }
+    NSError *error = nil;
+    id config = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+    require([config isKindOfClass:NSDictionary.class], "invalid tokenizer JSON");
+    impl_ = std::make_unique<Impl>(static_cast<NSDictionary *>(config));
+}
 Tokenizer::~Tokenizer() = default;
 Tokens Tokenizer::raw(const std::string &s) const {
     require(!s.empty(), "prompt must not be empty");

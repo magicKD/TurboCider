@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-lib = C.CDLL(str(ROOT / 'build/native/libturbocider.dylib'))
+NATIVE = Path(os.environ.get('TURBOCIDER_TEST_NATIVE_DIR', ROOT / 'build/native')).resolve()
+lib = C.CDLL(str(NATIVE / 'libturbocider.dylib'))
 lib.tc_plan_json.argtypes = [C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
 lib.tc_string_free.argtypes = [C.c_void_p]
 lib.tc_engine_create.argtypes = [C.c_char_p,C.POINTER(C.c_void_p),C.POINTER(C.c_void_p)]
