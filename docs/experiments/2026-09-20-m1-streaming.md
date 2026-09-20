@@ -625,3 +625,18 @@ Swift NativeEngine 增加异步 verifyStreamingSources，继续在自身串行�
 | Z-Image | 33.493 s | 29.150 s | 8,978,303,336 | `8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3` |
 
 两张图片与原 golden 字节一致，actual_plan_verified=true、authorized/actual layout 相等，receipt 分别完成 100/270 fills 和 reader fences，并完成 drain。[Flux 原始报告](2026-09-21-m1-flux4-runtime-identity-smoke.json)、[catalog](2026-09-21-m1-flux4-runtime-identity-catalog.json)、[request](2026-09-21-m1-flux4-runtime-identity-request.json)及 [Z-Image 原始报告](2026-09-21-m1-z-runtime-identity-smoke.json)、[catalog](2026-09-21-m1-z-runtime-identity-catalog.json)、[request](2026-09-21-m1-z-runtime-identity-request.json)均保留。calibration/TEMPLATE performance 字段仍是测试 hook 合成输入；本轮未采完整进程树 footprint、未比较性能置信区间，也未重建/验收新 App，不能作为 12 GiB 发布或全链路 GPU/ANE 性能结论。
+
+
+## 第三十四轮：catalog 数据与 runtime 指纹解耦（2026-09-21）
+
+上一轮的指纹会覆盖 native 源码，因此继续把正式 record 直接写入 preset_catalog.cpp 会产生自引用：record 内包含 build id，填入后源码变化又改变 build id。本轮将生产输入移到独立 `native/runtime/streaming/bundled_catalog.json`，标准构建先生成 runtime id，再生成只读 catalog header 和独立 catalog manifest。数据 JSON 不参与源码指纹，生成器代码参与；结束时分别复核两份清单，不能在编译途中换 catalog 数据或生成 header。
+
+非空 inventory 条目必须给出原始 P2 bundle、record input、review、P1/P0/P3 bundles 及预期 record digest。生成器实际重跑现有 build_record 和 evidence verifier，而非读取某份 JSON 的 verified 标签；只接受 public-stable/public-experimental，保持所有既有资格门槛，再检查当前 runtime、catalog revision、digest 和重复 id。生成的 C++ 只有结构化字段赋值，字符串按 UTF-8 字节转义、整数按 native 字段宽度检查；native 初始化再次校验 canonical record。默认 inventory 仍为空，不发布新预设，也不提供远程或请求可写入口。
+
+[本轮验证记录](2026-09-21-m1-bundled-catalog-validation.json)及[完整 runtime 输入清单](2026-09-21-m1-bundled-catalog-runtime-manifest.json)：完整 hook 构建 build/m1-bundled-catalog 和结束时两份清单复核通过。runtime id 为 `tc-runtime-build-v1-f9110a48b068719c8bccb67c826b50c12c5cc4aae44cbfc583bc78b8d4ed4f1b`，dylib SHA-256 为 `3f7835ca1b7d5a60d104e47309cf59432e73b8380016bb0b475545fcd36aba73`。
+
+新增 catalog suite 6 项通过，覆盖独立数据 revision、原始证据缺失拒绝、调用 builder 的完整输入、错误 runtime/digest/channel 和重复 id、字段注入/整数溢出拒绝、CLI 编译后 header/inventory 变化拒绝，以及生成 v1/v2 数据实际编译并通过 native canonical validation。首轮测试的 /var 与 /private/var 路径比较，以及遗漏 SDK/native-core include 的编译参数导致失败；修正测试后通过。生成器证明的只是数据接入，不把 mock builder 的 fixture 称作发布资格。
+
+runtime identity suite 6 项、原 evidence builder suite 16 项、preset resolver host 回归均通过；native contract 83 项运行、3 项原有跳过，其余通过。新库的 test-catalog API 3 项及 Flux 4B/9B、Z-Image public adapter host 回归通过。release hook 缺席检查仍使用保留的 m1-release 库；本轮没有新 release/App 构建、GPU generate 或性能测量。host 链接的 macOS 26.0/26.2 目标提示保留，本机 26.4.1 运行通过。
+
+此轮关闭的是 catalog 数据导致 build key 自引用的问题；非空生产记录的完整资格实验、最终 package manifest/安装验收、持久化 import proof、GPU/ANE 多阶段接入仍未完成，不能据此标记整体 production ready。

@@ -91,6 +91,9 @@ class RuntimeBuildIdentityTests(unittest.TestCase):
     def test_documentation_and_build_outputs_are_not_runtime_inputs(self):
         before = self.manifest()
         (self.root / "native/README.md").write_text("documentation")
+        catalog = self.root / "native/runtime/streaming/bundled_catalog.json"
+        catalog.parent.mkdir(parents=True)
+        catalog.write_text('{"revision":"independently-versioned-data","records":[]}')
         self.args.output.mkdir(parents=True)
         (self.args.output / "generated.hpp").write_text("not source")
         self.assertEqual(before, self.manifest())

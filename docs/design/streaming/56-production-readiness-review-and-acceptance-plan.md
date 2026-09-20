@@ -153,6 +153,10 @@ P2 使用发布入口同样的 root/child boundary、冷暖缓存和生命周期
 
 这是保守的 native compatibility key，不是签名、模型来源证明或实际 binary hash。SDK 只固定 SDKSettings 身份，未 hash 整个 Apple SDK；Swift frontend、外部 helper 可执行文件与最终 bundle/动态依赖运行时完整性仍需单独的 package manifest/安装验收。catalog 的独立 revision 字段保留，但当前 bundled catalog 仍内嵌于 native 源码且为空，未来分离数据生成时还需避免 catalog 内容与 build key 自引用。测试 hook/审计配置不同会产生不同 key，旧实验或 hook 记录不能直接改标签作为新 release 资格。R6 仍未整体关闭。
 
+2026-09-21 catalog 数据分离增量：`native/runtime/streaming/bundled_catalog.json` 现在作为独立的 reviewed input inventory，不参与 runtime 源码 fingerprint。标准构建先生成 runtime key，再由 `generate_bundled_streaming_catalog.py` 生成只读 C++ 数据和 `bundled-catalog-manifest.json`；构建结束同时复核 runtime 和 catalog 两份清单，关闭上述 key 自引用。inventory 中每个条目必须提供相对于该文件的 `bundle / record_input / review / performance_bundle / default_bundle / swap_bundle` 路径与 `expected_record_digest`。生成器重新调用既有 evidence builder，保留 public 的 P0/P1/P2/P3、review 和原始证据检查；随后要求记录与当前 runtime key、catalog revision、预期 digest 一致，只允许 public-stable/public-experimental，禁止重复 id。只有结构化字段赋值进入生成 header，字符串逐字节转义、整数字段按 native 宽度检查，native 初始化再次验证 canonical digest。
+
+默认 inventory 仍为空；此变更不是发布任何记录，也不降低既有 qualification gates。独立 host 编译仍可使用空 catalog，而标准构建通过宏强制依赖生成 header。撤回首版仍通过更新 bundled inventory 和 App/package 分发；没有远程可写 catalog 或运行时 JSON 自授入口。最终 binary/bundle 哈希与签收仍需独立处理。
+
 ## 3. 四模型应如何排序
 
 以下是文档中的历史证据，**不代表本轮或最终 release commit**：

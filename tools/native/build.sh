@@ -46,6 +46,7 @@ MACOS_FLAGS=(-mmacosx-version-min="$DEPLOYMENT_TARGET")
 COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I bindings/c/include -I native/core -isystem "$MLX_ROOT/include" -Wall -Wextra -Wno-unused-parameter)
 if [[ -n "$TEST_HOOK_FLAG" ]]; then COMMON+=("$TEST_HOOK_FLAG"); fi
 if [[ -n "$AUDIT_COUNTER_FLAG" ]]; then COMMON+=("$AUDIT_COUNTER_FLAG"); fi
+COMMON+=(-DTURBOCIDER_HAS_BUNDLED_CATALOG=1)
 BUILD_IDENTITY_DIR="$OUT/runtime-build"
 BUILD_IDENTITY_PYTHON="${TURBOCIDER_BUILD_PYTHON:-python3}"
 BUILD_IDENTITY_FLAGS=("${COMMON[@]}")
@@ -57,8 +58,15 @@ runtime_build_identity() {
   --experimental-probes "$EXPERIMENTAL_PROBES" "$@" -- "${BUILD_IDENTITY_FLAGS[@]}"
 }
 runtime_build_identity
-# Only the identity implementation includes this generated header. A build
-# without generation fails instead of silently sharing a manual fallback ID.
+bundled_streaming_catalog() {
+ "$BUILD_IDENTITY_PYTHON" tools/native/generate_bundled_streaming_catalog.py \
+  --inventory native/runtime/streaming/bundled_catalog.json \
+  --runtime-manifest "$BUILD_IDENTITY_DIR/runtime-build-manifest.json" \
+  --output "$BUILD_IDENTITY_DIR" "$@"
+}
+bundled_streaming_catalog
+# Native identity and catalog implementations require these generated headers.
+# Missing generation fails instead of sharing a manual fallback ID/catalog.
 COMMON+=(-I "$BUILD_IDENTITY_DIR")
 OBJECTS=()
 SOURCES=(
@@ -203,6 +211,7 @@ fi
 "$CXX" "${COMMON[@]}" tools/native/ltx_mlx_block_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/ltx-mlx-block-probe"
 "$CXX" "${COMMON[@]}" tools/native/ltx_mlx_model_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/ltx-mlx-model-probe"
 runtime_build_identity --verify
+bundled_streaming_catalog --verify
 printf 'Built %s\n' "$OUT/turbocider"
 if [[ "${TURBOCIDER_NATIVE_ONLY:-0}" == "1" ]]; then
  exit 0

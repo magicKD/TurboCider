@@ -21,6 +21,9 @@ SOURCE_SUFFIXES = {".h", ".hpp", ".c", ".cpp", ".m", ".mm", ".metal", ".inc"}
 BUILD_SCRIPTS = (
     "tools/native/build.sh", "tools/native/dependencies.sh",
     "tools/native/generate_runtime_build_identity.py",
+    "tools/native/generate_bundled_streaming_catalog.py",
+    "tools/native/build_streaming_catalog.py",
+    "tools/native/verify_streaming_campaign.py",
 )
 SEARCH_ENV = (
     "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH",

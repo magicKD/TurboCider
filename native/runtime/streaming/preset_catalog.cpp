@@ -495,11 +495,21 @@ PresetCandidateResolution find_streaming_preset_candidate(
     return {std::move(result.selected), std::move(result.rejection_code)};
 }
 
+#ifdef TURBOCIDER_HAS_BUNDLED_CATALOG
+#include "turbocider_bundled_catalog_generated.hpp"
+#endif
+
 const StreamingPresetCatalog &production_streaming_preset_catalog() {
+#ifdef TURBOCIDER_HAS_BUNDLED_CATALOG
+    static const StreamingPresetCatalog catalog = make_bundled_streaming_catalog();
+#else
+    // Standalone host tests have no release catalog. The standard build defines
+    // TURBOCIDER_HAS_BUNDLED_CATALOG and requires the generated data header.
     // Deliberately empty until a model/workload/device record has passed the
     // full public acceptance protocol. Tests inject their own fixture catalog.
     static const StreamingPresetCatalog catalog{
         "tc-streaming-catalog-empty-v1", {}};
+#endif
     return catalog;
 }
 

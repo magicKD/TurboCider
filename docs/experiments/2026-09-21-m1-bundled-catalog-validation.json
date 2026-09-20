@@ -1,0 +1,55 @@
+{
+  "scope": "Catalog data separation and native hook-build verification; production inventory remains empty; no GPU performance or App qualification in this round",
+  "runtime_build_id": "tc-runtime-build-v1-f9110a48b068719c8bccb67c826b50c12c5cc4aae44cbfc583bc78b8d4ed4f1b",
+  "catalog_manifest": {
+    "schema": "tc-bundled-streaming-catalog-manifest-v1",
+    "revision": "tc-streaming-catalog-empty-v1",
+    "runtime_build_id": "tc-runtime-build-v1-f9110a48b068719c8bccb67c826b50c12c5cc4aae44cbfc583bc78b8d4ed4f1b",
+    "input_sha256": "6b4af18c3c7ce4c55eae37167cfe0aed52f3b3817924ee0896ffef06868323ee",
+    "header_sha256": "cda91ed764a96c950509c413fa999e4b85c8ebf3656297732f5371d537cff92b",
+    "record_digests": []
+  },
+  "catalog_data_excluded_from_runtime_fingerprint": true,
+  "generator_included_in_runtime_fingerprint": true,
+  "artifacts": {
+    "libturbocider.dylib": "3f7835ca1b7d5a60d104e47309cf59432e73b8380016bb0b475545fcd36aba73",
+    "turbocider": "f0a177c5433ba1e46dada03e4145f24fc9d3db6662b5a3dc49da681220c97e91",
+    "runtime-build/runtime-build-manifest.json": "0da37e9bd5b40ea197dc5971f3d9b44e16f6357addc2abcf69bb3ce0cc11fc57",
+    "runtime-build/turbocider_bundled_catalog_generated.hpp": "cda91ed764a96c950509c413fa999e4b85c8ebf3656297732f5371d537cff92b"
+  },
+  "tests": {
+    "bundled_catalog": {
+      "run": 6,
+      "failed": 0,
+      "includes": "CLI post-build input/header changes; missing original evidence; v1/v2 generated native roundtrip"
+    },
+    "runtime_identity": {
+      "run": 6,
+      "failed": 0
+    },
+    "evidence_builder": {
+      "run": 16,
+      "failed": 0
+    },
+    "native_contract": {
+      "run": 83,
+      "skipped": 3,
+      "failed": 0
+    },
+    "preset_resolver": "PASS",
+    "test_catalog_api": {
+      "run": 3,
+      "failed": 0
+    },
+    "public_adapter_host": [
+      "Flux 4B",
+      "Flux 9B",
+      "Z-Image"
+    ]
+  },
+  "initial_test_failures": [
+    "macOS /var -> /private/var symlink comparison in test expectation",
+    "roundtrip test omitted SDK and native/core include paths; corrected before rerun"
+  ],
+  "release_hook_absence_scope": "Preserved build/m1-release library, not a new release build"
+}
