@@ -13,6 +13,7 @@ parser.add_argument('--native-dir',type=Path,required=True)
 parser.add_argument('--checkpoint',type=Path,required=True)
 parser.add_argument('--manifest',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
+parser.add_argument('--inputs',type=Path,help='Prepared real prompt fixture; runs complete mode only')
 args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=False)
 ROOT=Path(__file__).resolve().parents[2];native=args.native_dir.resolve();mlx=Path(sysconfig.get_paths()['purelib'])/'mlx'
 plan={'scope':__doc__,'modes':['complete','cancel','unsafe'],'shape':[512,512],'caption':'64 zero BF16 rows of width 2560; synthetic, not a prompt encoding',
@@ -20,6 +21,13 @@ plan={'scope':__doc__,'modes':['complete','cancel','unsafe'],'shape':[512,512],'
       'qualification':'NONE: synthetic conditioning, no GPU-only quality/performance reference or VAE','library_sha256':hashlib.sha256((native/'libturbocider.dylib').read_bytes()).hexdigest(),
       'driver_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'test_sha256':hashlib.sha256((ROOT/'tests/native/z_image_hybrid_stage_test.cpp').read_bytes()).hexdigest(),
       'manifest_sha256':hashlib.sha256(args.manifest.read_bytes()).hexdigest()}
+if args.inputs:
+    args.inputs=args.inputs.resolve()
+    plan['modes']=['complete']
+    plan['caption']='external prepared Qwen caption; see inputs.json'
+    plan['latent']='external prepared initial.npy'
+    plan['qualification']='NONE: no reference comparison or VAE in this stage driver'
+    plan['inputs']={name:hashlib.sha256((args.inputs/name).read_bytes()).hexdigest() for name in ['initial.npy','caption.npy','inputs.json']}
 (args.output/'plan.json').write_text(json.dumps(plan,indent=2)+'\n')
 with tempfile.TemporaryDirectory(prefix='tc-hybrid-stage-') as raw:
     root=Path(raw).resolve();bank=root/'bank';bank.mkdir();managed=root/'managed';managed.mkdir()
@@ -37,6 +45,6 @@ with tempfile.TemporaryDirectory(prefix='tc-hybrid-stage-') as raw:
         '-Wl,-rpath,'+str(native),'-Wl,-rpath,'+str(mlx/'lib'),'-o',str(binary)],check=True)
     for mode in plan['modes']:
         with (args.output/(mode+'.log')).open('w') as log:
-            subprocess.run([str(binary),str(args.checkpoint.resolve()),str(bank/manifest.name),str(managed),str(args.output/mode),mode],
+            subprocess.run([str(binary),str(args.checkpoint.resolve()),str(bank/manifest.name),str(managed),str(args.output/mode),mode]+([str(args.inputs)] if args.inputs else []),
                            stdout=log,stderr=subprocess.STDOUT,check=True,timeout=900)
         print(mode,'PASS',flush=True)

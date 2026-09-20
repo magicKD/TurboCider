@@ -1,0 +1,168 @@
+{
+  "preparation": {
+    "seed": 42,
+    "valid_tokens": 47,
+    "text_compute_tokens": 47,
+    "source_artifact_digest": "4384deac170445b6c56a25900d9f37a166c3cd20464c75aa09b35e2f88f5c189",
+    "caption_dtype": "float32 transport of native conditioning"
+  },
+  "stage": {
+    "mode": "complete",
+    "passed": true,
+    "completed_passes": 9,
+    "coreml_calls": 288,
+    "stage_groups": 261,
+    "stage_read_bytes": 63646382592,
+    "layout_digest": "83001699e3186c4b0e03f5e83e974afe71db222ba6f1805beb6cfcffe921d622",
+    "stage_event_digest": "29721c9251e74b1f8c9f0238cbf803244ea84f79f8e786e4aa97cefe0b0ccd9c",
+    "stage_canonical_digest": "379511274515a4219b6a4f87b830606c06f031ec90eb46e5d54d33c165335add"
+  },
+  "scope": "Real prompt 9-step hybrid denoiser, no VAE/image/reference/performance qualification",
+  "output_root": "/Users/chencanhui/models/TurboCider/experiments/m1-z-real-prompt-stage",
+  "input_hashes_match_plan": true,
+  "stage_inputs_equal_prepared": true,
+  "arrays": {
+    "caption.npy": {
+      "shape": [
+        47,
+        2560
+      ],
+      "dtype": "float32",
+      "sha256": "80a81db7c0c1f26e8969e495660bae52392427554c1d1a6c8fc1b8779ca360ac",
+      "max_abs": 13760.0
+    },
+    "final.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "081ce8708c04d05c087a19f57bf0b8a95622b12d12fde0836aa99f687bfe1216",
+      "max_abs": 4.07655143737793
+    },
+    "initial.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "6191bf549febe18ddf05814e8e5ef7b339053e99afc39b4334f0bf1f7d9aba88",
+      "max_abs": 4.467134952545166
+    },
+    "velocity-0.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "5036c57911cb1377856f36a8da519c7d1c2d537d4fb35e73ab2ce20f9f3ce295",
+      "max_abs": 6.84375
+    },
+    "velocity-1.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "c7a944843c66bd0f73f1d7e279907076083e01fe41151719b366df95aeff6404",
+      "max_abs": 5.6875
+    },
+    "velocity-2.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "f55dcab18d2bb5d1beee8a81842fe1f541031a178bce7761a225c338c3a63f86",
+      "max_abs": 5.84375
+    },
+    "velocity-3.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "fb0d281ae8479db443c222888a9f5e7476ca80bcb21642c1f39b05ba2f306552",
+      "max_abs": 5.15625
+    },
+    "velocity-4.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "63cc19222f5950e103560f11426edb171a291a2ade39ef011b5f2748a293fa6b",
+      "max_abs": 5.1875
+    },
+    "velocity-5.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "aa4200e2dcb5a53b8fc16b89ff54287e3ed71fb40a179f5335add5487e0fb351",
+      "max_abs": 4.96875
+    },
+    "velocity-6.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "1d31882c832b6e51d06a6b2bbe8ce89ed4e4c9d13bea7c25e146bedd055ef285",
+      "max_abs": 4.8125
+    },
+    "velocity-7.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "78d0d2c60829101acf1f0e92071b8fff4b5529ffa72b8140c25b6861a1cc01aa",
+      "max_abs": 4.65625
+    },
+    "velocity-8.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "sha256": "a32b0dbd0752625253e999f01dd9de32b3412a56748ec31edcf0775b115879ef",
+      "max_abs": 4.65625
+    }
+  },
+  "dev_sync": {
+    "fetched": "61c08495815d645bb54d75ae9dbea466f0648b2d",
+    "head_at_merge": "3e12d28693841f5b07df631a212a346de30ec2ae",
+    "merge_result": "Already up to date"
+  },
+  "swift_build": "in progress, session 86775, /tmp/tc-m1-current-app-build.log",
+  "swift_tests_passed": [
+    "library-store",
+    "studio-behavior",
+    "installation-inspection",
+    "tensor-cache"
+  ]
+}

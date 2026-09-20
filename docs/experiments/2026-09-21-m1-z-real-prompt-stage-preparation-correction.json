@@ -1,0 +1,4 @@
+{
+  "reason": "Dynamic tokenizer retains actual token count; transformer pads caption to 32-row boundary. Removed incorrect requirement for Qwen input to have 64 tokens. Prompt, seed, bucket and model unchanged.",
+  "source_sha256": "3c8b50365b4b9f01f6c4254dc4d91f6eb5877bc1462e291f889529070fda880f"
+}

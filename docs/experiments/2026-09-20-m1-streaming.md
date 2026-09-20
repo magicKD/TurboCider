@@ -865,3 +865,16 @@ Metal 测试采用真实 FFN 几何 3840×10240、a=5120、两个输入 rows，�
 完整 native 构建、runtime/catalog 核对通过。库 SHA `2820120234420a2cc88d944eadf041a78c9cae9f890c52262f45e63bdbb5a72a`，runtime key `tc-runtime-build-v1-1f0d08ef12a3036b47dde60ab88976a3a2975ccde2152d0e5fa2902cb01dc7b5`。contract 83 项（3 项原有跳过）、public adapter、reader 10 项（6 项设备限制跳过）及更新后的 metadata layout 测试通过。首次构建因补齐 BF16/F32 边界主动中止，修正后重新构建；没有因超时重启实际实验。链接 macOS 26.0/26.2 提示保留，本机 26.4.1 执行通过。见[结果与 tensor 哈希](2026-09-21-m1-z-hybrid-stage-validation.json)。
 
 这是内部完整 transformer 的非零轨迹与 owner 验证，尚未连接 ModelEngine/public hybrid 路由，没有 Qwen prompt/VAE/完整图片，也未进行纯 GPU 数值或速度对照。原 INT8 block 29 质量失败保持，有限输出不能替代质量门槛。Core ML CPU+NE 配置不证明 ANE 驻留或硬件重叠；没有整体请求内存准入、完整 component receipt、产品安装注册或新 App E2E 资格，HY-M0 尚不能整体完成。
+
+
+## 第四十九轮：真实 prompt 输入与 App 当前构建（2026-09-21）
+
+已 fetch origin/dev，并执行 merge；远端 `61c08495815d645bb54d75ae9dbea466f0648b2d` 已是当前 `3e12d28` 的祖先，返回 Already up to date，无冲突或待合入提交。
+
+新增研究输入准备工具 `tools/native/prepare_z_image_hybrid_inputs.cpp`，从 native verified text/tokenizer SourceLease 读取，复用 Tokenizer::z_image_prompt 与 qwen3_conditioning 的 Z-Image 配置。冻结[真实 prompt/seed 42/512²/9 steps 计划](2026-09-21-m1-z-real-prompt-stage-plan.json)，得到 47 个有效 token。Qwen dynamic 输入保留实际 47 行，transformer 在 caption embedding 中补齐至 64；准备工具第一次错误要求 Qwen 输入本身有 64 行，在加载权重前拒绝，修正检查后按同一 prompt/seed 重跑，保留[修正记录](2026-09-21-m1-z-real-prompt-stage-preparation-correction.json)。没有调整样本或质量门槛。
+
+stage 测试新增 `--inputs`，加载并记录外部 initial.npy/caption.npy/inputs.json 的 SHA，限定完整执行模式；原合成输入与取消/unsafe 模式保留。新运行使用真实 Qwen caption、现有随机 key(42) 初始噪声和原 Euler 调度，完成 9 passes、288 次 Core ML 调用、261 个 groups 与最终 owner 清理。全部输出有限；落盘输入与准备结果逐元素一致、SHA 与[执行计划](2026-09-21-m1-z-real-prompt-stage-execution-plan.json)一致。模型/bundle/partition 与第四十八轮相同，仍为原先有一个分支质量失败的 INT8 bank。见[结果和 tensor 哈希](2026-09-21-m1-z-real-prompt-stage-validation.json)。
+
+最新 native 库的 Swift App/集成测试已启动完整构建；本轮完成并运行通过 library-store、studio-behavior、installation-inspection、tensor-cache 四组。其余构建进程仍在运行，日志 `/tmp/tc-m1-current-app-build.log`，不能把这四组通过视为完整 App/E2E 通过。本轮研究 stage 与 Swift 编译同时运行，不采纳 wall time 为性能样本。
+
+真实 prompt denoiser 路径现在有执行证据，但还没有 VAE 解码、完整图片、同 partition 迁移对照或纯 GPU 质量/性能比较；未开放 public hybrid，也未完成 ModelEngine poison/component receipt 接入。下一步保留这些输入供完整输出与对照复用，原 INT8 局部失败不被有限值测试覆盖。

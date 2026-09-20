@@ -1,0 +1,20 @@
+{
+  "scope": "real Qwen conditioning and seeded hybrid transformer; later VAE/GPU comparison pending",
+  "prompt": "A red fox standing in a snowy pine forest at sunrise, soft golden light falling across its orange fur, delicate snowflakes, realistic wildlife photography, detailed natural textures and a calm winter atmosphere.",
+  "seed": 42,
+  "shape": [
+    512,
+    512
+  ],
+  "steps": 9,
+  "bucket": 64,
+  "valid_token_range": [
+    33,
+    64
+  ],
+  "gpu_policy": "P1/G1/K2/D1/Q2",
+  "hybrid_partition": "existing INT8 prefix [0,5120)/10240, bucket 1088",
+  "quality": "original candidate branch 29 gate remains failed; finite trajectory is not quality qualification",
+  "prepare_source_sha256": "cf9d86f5b7505dfe0caddc16e4d0409ee0a3fd57034055ccaf946215b87634dc",
+  "library_sha256": "2820120234420a2cc88d944eadf041a78c9cae9f890c52262f45e63bdbb5a72a"
+}

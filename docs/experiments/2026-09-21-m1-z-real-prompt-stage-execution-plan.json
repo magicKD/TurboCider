@@ -1,0 +1,25 @@
+{
+  "scope": "Opt-in 9-step transformer execution and owner fault tests; no image qualification.",
+  "modes": [
+    "complete"
+  ],
+  "shape": [
+    512,
+    512
+  ],
+  "caption": "external prepared Qwen caption; see inputs.json",
+  "latent": "external prepared initial.npy",
+  "steps": 9,
+  "schedule": "existing z_sigmas and Euler update",
+  "policy": "P1/G1/K2/D1/Q2",
+  "qualification": "NONE: no reference comparison or VAE in this stage driver",
+  "library_sha256": "2820120234420a2cc88d944eadf041a78c9cae9f890c52262f45e63bdbb5a72a",
+  "driver_sha256": "2abf49da6be02e42864c981a06036122624c3ee4a78c011758e82ce6bd641e8e",
+  "test_sha256": "8d2032a3dd852e1e3506be6e3b72e8e96578cf04577f164cede04cb9a4c2636b",
+  "manifest_sha256": "3609feb6e38e3ea1216507b14b8b919dc2e7864713dda0373481161e2b0649e4",
+  "inputs": {
+    "initial.npy": "6191bf549febe18ddf05814e8e5ef7b339053e99afc39b4334f0bf1f7d9aba88",
+    "caption.npy": "80a81db7c0c1f26e8969e495660bae52392427554c1d1a6c8fc1b8779ca360ac",
+    "inputs.json": "8ea4b13c1cdcd2ed57c7dc804faaddd7b120d1e142b7b2c8520024e4a95590f7"
+  }
+}

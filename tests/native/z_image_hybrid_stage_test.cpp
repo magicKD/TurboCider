@@ -11,7 +11,7 @@ StreamingConfig config() {
 template<class F> void rejects(F f) {bool rejected=false;try{f();}catch(const std::invalid_argument&){rejected=true;}require(rejected,"expected preflight rejection");}
 int main(int argc,char **argv) {
   try {
-    require(argc==6,"expected checkpoint, manifest, managed, output, mode");
+    require(argc==6 || argc==7,"expected checkpoint, manifest, managed, output, mode, optional inputs directory");
     const std::string mode=argv[5];require(mode=="complete"||mode=="cancel"||mode=="unsafe","unknown mode");
     fs::path output=argv[4];fs::create_directories(output);
     mx::set_default_device(mx::Device(mx::Device::gpu,0));
@@ -32,7 +32,15 @@ int main(int argc,char **argv) {
     parent.reset();bundle.reset();generation.reset();signal.reset();event={};
     require(fs::exists(root),"owner lost generation");
     auto latent=mx::reshape(mx::sin(mx::arange(0,65536,mx::float32)*Tensor(.01f)),{16,1,64,64});
-    auto caption=mx::zeros({64,2560},mx::bfloat16);mx::eval({latent,caption});
+    auto caption=mx::zeros({64,2560},mx::bfloat16);
+    if(argc==7) {
+        require(mode=="complete", "external inputs require complete mode");
+        latent=mx::load((fs::path(argv[6])/"initial.npy").string());
+        caption=mx::astype(mx::load((fs::path(argv[6])/"caption.npy").string()),mx::bfloat16);
+        require(latent.dtype()==mx::float32 && latent.shape()==mx::Shape({16,1,64,64}),"invalid fixture latent");
+        require(caption.ndim()==2 && caption.shape(0)>32 && caption.shape(0)<=64 && caption.shape(1)==2560,"invalid fixture caption");
+    }
+    mx::eval({latent,caption});
     auto schedule=owner->sigmas();require(schedule.size()==10 && schedule.back()==0,"wrong sigma schedule");
     rejects([&]{owner->transform(latent,caption,schedule[0],1);});
     rejects([&]{owner->transform(mx::zeros({16,1,32,32}),caption,schedule[0],0);});
