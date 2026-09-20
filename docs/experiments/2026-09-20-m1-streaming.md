@@ -283,3 +283,8 @@ App query key 纳入模型路径、prompt、动态文本、输入和加速策略
 本轮只重编译变化的 pipeline 对象，并与上一轮固定 native 对象重链接为 `build/m1-cache/libturbocider.dylib`；`/tmp/tc-build-cache.sh`、`/tmp/tc-cache-build.log` 记录命令和 exit 0，未把它称为全量重构建。新增测试已接入 Makefile。
 
 R4 检查再次确认 Flux/Z exact owner 仍有完整生命周期缺口：StageExecutor 在 drain 失败后析构会 terminate；adapter 引用外部 plan/source/event/cancellation/pass tensors，不能只泄漏 executor 或取消 terminate。需要完整 owner 保留、断开调用方回调、构造失败保护和所有 engine 入口的 poison 检查。此项本轮尚未修复，不宣称失败隔离已经安全。
+
+
+新库的 Flux 4B candidate gate 与 4B/9B public adapter host 回归均 PASS（`/tmp/tc-cache-gate.log`、`/tmp/tc-cache-public.log`）；public catalog 仍为空并保持拒绝。host 编译有目标 macOS 26.0 与 native 库最低 26.2 的链接警告，本机 26.4.1 执行通过，不外推到更早系统。
+
+已启动 `/tmp/tc-run-flux-smoke.py`（session `79830`），等待官方 transformer 原子下载完成后，先按 pinned revision 对全部已下载 Flux 文件做 SHA-256/Git blob 校验，再调用真实 candidate constructor：256×256、4 步、seed 42、GPU eager、denoiser prefix 0/group 1/K2/D1/Q2。实验目录为 `/Users/chencanhui/models/TurboCider/experiments/m1-flux4-streaming-smoke`，stdout 为 `/tmp/tc-flux-real-smoke.log`。记录本段时它仍在等待权重，不构成推理成功证据；后续需检查实际 result、runtime layout、完整 PNG 解码和图像内容。该脚本不安装测试 catalog，也不把 candidate 路径称为已发布 public 功能。
