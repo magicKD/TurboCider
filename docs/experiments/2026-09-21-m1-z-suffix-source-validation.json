@@ -1,0 +1,34 @@
+{
+  "scope": "H1 verified derived source and lifetime; not hybrid prediction, public authority, or release qualification",
+  "library_sha256": "26e3accd085636deee1e1c2accf4164f4737caa984dad1333d6428f360877fc3",
+  "runtime_build_id": "tc-runtime-build-v1-bb953df620c174a36ee5407afee90e82b0109e164c42d1dcc58bd9d8d0e4b783",
+  "source_sha256": {
+    "native/models/z_image/streaming_descriptor.hpp": "5f0c3cd55b638a6dcb15e1f66586df4a6fb2ba09887dd946bbe3ba21965d50ba",
+    "native/platform/apple/z_image_streaming_descriptor.mm": "836310d85b0afec6b59543c2a438ea85df7ac5ddb7c2719b7436a6f52c7af1e2",
+    "tests/native/test_z_image_suffix_descriptor.py": "d9837e44ad4c306521b09e9aa61d643b4ab90d1df6166a913551aade8cfbf2ca",
+    "tests/native/z_image_suffix_source_test.cpp": "e6911fe31d892004d973e05517c8820cbffb7f9225751758a9a311b44d109fc2",
+    "tests/native/test_z_image_suffix_source.py": "a931da13bcdf783694e1c85346c14a52ff6292aadf1efb42d108afaf51006cc3"
+  },
+  "native_build": "PASS; runtime and catalog post-build verification passed",
+  "tests": {
+    "standalone": "PASS verified suffix source: byte oracle, readonly/unlinked fd, hash, cancellation/event cleanup, cross-install identity, parent mutation/replacement\n",
+    "asan_ubsan": "PASS verified suffix source: byte oracle, readonly/unlinked fd, hash, cancellation/event cleanup, cross-install identity, parent mutation/replacement\n",
+    "linked_runtime": "ld: warning: building for macOS-26.0, but linking with dylib '@rpath/libturbocider.dylib' which was built for newer version 26.2\nPASS verified suffix source: byte oracle, readonly/unlinked fd, hash, cancellation/event cleanup, cross-install identity, parent mutation/replacement\n",
+    "suffix_descriptor": "PASS suffix metadata: 32 mappings, fixed/context/prefix/slots, setup/refill accounting, identities and exact isolation\n",
+    "exact_descriptor": "PASS Z-Image descriptor: header-only 30x13 BF16 projection, shared SourceLease, K1/K2 G1 layouts and K2 D0/D1 Q1/Q2, portable verified layouts, malformed metadata and stale snapshot rejection; layout=65b82bea9b73543e2007eacb5ce1b4b4465b7b6f22e27d3c12a785973a308b83\n",
+    "z_public_adapter": "ld: warning: building for macOS-26.0, but linking with dylib '@rpath/libturbocider.dylib' which was built for newer version 26.2\nPASS Z-Image public adapter: shared four-artifact lease, exact identity/layout snapshot, route rejection, target failure cleanup and source replacement detection\n",
+    "native_contract": {
+      "run": 83,
+      "skipped": 3,
+      "failed": 0
+    }
+  },
+  "real_checkpoint_result": "2026-09-21-m1-z-suffix-source-real.json",
+  "limitations": [
+    "No GPU/Core ML consumer exercised",
+    "Sparse geometry a=10239 is a test boundary, not ANE artifact qualification",
+    "Actual model a=5120 sampled 96 rows; exhaustive byte oracle uses sparse fixtures",
+    "Derived source remains separate from execution adapter and hybrid receipt",
+    "No release/App build or performance campaign"
+  ]
+}

@@ -34,24 +34,30 @@ def fixture(path, change=None):
     with path.open("wb") as stream:
         stream.write(struct.pack("<Q", len(encoded)) + encoded)
         stream.truncate(8 + len(encoded) + cursor)
+    return header, 8 + len(encoded)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--checkpoint", type=Path)
-args = parser.parse_args()
-sources = ["tests/native/z_image_suffix_descriptor_test.cpp", "native/platform/apple/z_image_streaming_descriptor.mm",
-           "native/models/z_image/suffix_materialization.cpp", "native/runtime/streaming/config.cpp",
-           "native/runtime/streaming/canonical_encoding.cpp", "native/runtime/streaming/layout.cpp",
-           "native/runtime/streaming/source_lease.cpp", "native/runtime/memory_manifest.cpp",
-           "native/runtime/memory_policy.cpp", "native/core/common.cpp"]
-flags = ["-std=c++20", "-Wall", "-Wextra", "-Werror", "-fobjc-arc", "-I", str(ROOT / "native"), "-I", str(ROOT / "native/core")]
-if os.environ.get("TC_STREAMING_SANITIZER"):
-    flags += ["-fsanitize=" + os.environ["TC_STREAMING_SANITIZER"], "-fno-omit-frame-pointer"]
-with tempfile.TemporaryDirectory(prefix="tc-suffix-descriptor-") as raw:
-    root = Path(raw)
-    paths = [root / f"{name}.safetensors" for name in ("valid", "missing", "geometry")]
-    for path, change in zip(paths, (None, "missing", "geometry")): fixture(path, change)
-    binary = root / "test"
-    subprocess.run(["clang++", *flags, *(str(ROOT / s) for s in sources), "-framework", "Foundation", "-o", str(binary)], check=True)
-    subprocess.run([str(binary), str(paths[0]), "fixture", *map(str, paths[1:])], check=True, timeout=60)
-    if args.checkpoint:
-        subprocess.run([str(binary), str(args.checkpoint.resolve()), "real"], check=True, timeout=60)
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--checkpoint", type=Path)
+    args = parser.parse_args()
+    sources = ["tests/native/z_image_suffix_descriptor_test.cpp", "native/platform/apple/z_image_streaming_descriptor.mm",
+               "native/models/z_image/suffix_materialization.cpp", "native/runtime/streaming/config.cpp",
+               "native/runtime/streaming/canonical_encoding.cpp", "native/runtime/streaming/layout.cpp",
+               "native/runtime/streaming/source_lease.cpp", "native/runtime/memory_manifest.cpp",
+               "native/runtime/memory_policy.cpp", "native/core/common.cpp"]
+    flags = ["-std=c++20", "-Wall", "-Wextra", "-Werror", "-fobjc-arc", "-I", str(ROOT / "native"), "-I", str(ROOT / "native/core")]
+    if os.environ.get("TC_STREAMING_SANITIZER"):
+        flags += ["-fsanitize=" + os.environ["TC_STREAMING_SANITIZER"], "-fno-omit-frame-pointer"]
+    with tempfile.TemporaryDirectory(prefix="tc-suffix-descriptor-") as raw:
+        root = Path(raw)
+        paths = [root / f"{name}.safetensors" for name in ("valid", "missing", "geometry")]
+        for path, change in zip(paths, (None, "missing", "geometry")): fixture(path, change)
+        binary = root / "test"
+        subprocess.run(["clang++", *flags, *(str(ROOT / s) for s in sources), "-framework", "Foundation", "-o", str(binary)], check=True)
+        subprocess.run([str(binary), str(paths[0]), "fixture", *map(str, paths[1:])], check=True, timeout=60)
+        if args.checkpoint:
+            subprocess.run([str(binary), str(args.checkpoint.resolve()), "real"], check=True, timeout=60)
+
+
+if __name__ == "__main__":
+    main()

@@ -353,3 +353,12 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 `describe_gpu_suffix()` 已连接共享几何组件与 common layout compiler：显式列出 fixed/noise、完整 context、所有主层的后缀字段和 32 个 w2 packing records；计量 setup 与 refill 分离。独立 recipe identity 不伪装派生内容哈希，metadata-only adapter revision 不提供执行准入。稀疏 fixture 的偏移/容量 oracle、真实模型 header 与 ASan/UBSan 通过，原 exact descriptor 回归保持通过。见[第三十八轮](../../experiments/2026-09-20-m1-streaming.md)。
 
 当前仍未将配方发布为经验证的 derived source，未接 Core ML bundle/partition 权限、执行 owner、join/receipt；HY-MAT-01/02 仍只有子项证据。真实 full-image 性能与完整内存不能从 metadata 权重容量推断，新 suffix 配方的跨安装 verified-content 重放亦待单独验证。
+
+
+## 15. H1 派生文件 owner 实施进度（2026-09-21）
+
+新增内部 `materialize_gpu_suffix()` / `GpuSuffixSource`。工厂只接受已由 native 验证内容的父 lease，内部重建配方，不接受调用方提供的 plan 作为权限。持有的 source fd 经现有 packer 生成完整派生文件；临时文件在首次 payload 写入前 unlink，完成后关闭唯一写句柄，对只读 fd 计算 SHA-256 并复核父/派生文件 generation，最后才返回 owner。取消/回调异常会析构未发布的 owner 和 fd。
+
+返回对象保留父 lease；只允许 artifact 0/1 的只读 CLOEXEC fd 复制，并在复制和结束核对时检查父文件替换/修改。metadata recipe descriptor 保持不变，实际派生 SHA-256 单独提供给后续执行证据，避免 setup 后悄悄改变已经编译的 layout 身份。验证读取量与 packing I/O 分开报告。
+
+稀疏真实几何 fixture 已验证完整派生字节、只读/unlinked 属性、内容 SHA、四个取消边界和事件异常 fd 清理、owner 独立保留父 lease、两份独立副本的配方/内容身份重放，以及打包中父文件修改和完成后路径替换拒绝；ASan/UBSan 通过。这里没有 Core ML session、GPU consumer 或 public hybrid authority；adapter 对该 source 的执行消费、完整 owner/join 和 receipt 仍待实施，HY-MAT/HY-LIFE 不能整体标记完成。

@@ -2,6 +2,7 @@
 
 #include "../../runtime/streaming/layout.hpp"
 #include "../../runtime/streaming/source_lease.hpp"
+#include "../../core/common.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -31,6 +32,8 @@ struct GpuSuffixPlan {
     uint64_t setup_read_bytes = 0, setup_write_bytes = 0;
 };
 
+class GpuSuffixSource;
+
 // Header-only view of the single-file Comfy BF16 transformer.  Construction
 // reads the safetensors prefix and JSON header only.  It never reads tensor
 // payloads, creates MLX arrays, allocates Metal buffers, or starts workers.
@@ -57,6 +60,11 @@ class StreamingMetadata {
     // verified hybrid source/owner and cannot use the exact GPU adapter.
     GpuSuffixPlan describe_gpu_suffix(const StreamingWorkload &,
                                      uint32_t first_gpu_channel) const;
+    // Requires native verified parent contents. Rebuilds its own recipe;
+    // caller-supplied plans never grant source authority. No GPU/Core ML work.
+    std::unique_ptr<GpuSuffixSource> materialize_gpu_suffix(
+        const StreamingWorkload &, uint32_t first_gpu_channel,
+        std::atomic<bool> &cancelled, const Event &event = {}) const;
     void check_unchanged() const;
     const streaming::SourceLease &lease() const;
     std::shared_ptr<const streaming::SourceLease> lease_ptr() const;
@@ -71,6 +79,28 @@ class StreamingMetadata {
     struct State;
     std::unique_ptr<State> state_;
     void parse_checkpoint();
+};
+
+// A completed, request-owned derived file, accessible only through read-only
+// duplicates. The recipe descriptor stays unchanged after materialization;
+// content_digest is separate execution evidence binding actual packed bytes.
+// This does not provide Core ML or public hybrid execution authority.
+class GpuSuffixSource final {
+  public:
+    ~GpuSuffixSource();
+    GpuSuffixSource(const GpuSuffixSource &) = delete;
+    GpuSuffixSource &operator=(const GpuSuffixSource &) = delete;
+    const GpuSuffixPlan &plan() const noexcept;
+    const std::string &content_digest() const noexcept;
+    uint64_t verification_read_bytes() const noexcept;
+    streaming::OwnedSourceFd duplicate_fd(uint32_t artifact) const;
+    void check_unchanged() const;
+
+  private:
+    friend class StreamingMetadata;
+    struct State;
+    explicit GpuSuffixSource(std::unique_ptr<State>);
+    std::unique_ptr<State> state_;
 };
 
 // Private metadata/plan shadow for the existing ZImageWeightStream contract.

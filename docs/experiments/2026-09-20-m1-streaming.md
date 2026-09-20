@@ -712,3 +712,21 @@ host 独立字节 oracle 覆盖 BF16/I8、a=0/1/M-1、非零源/目标偏移、�
 | 50%（a=5120） | 1,219,267,840 | 1,706,991,104 | 487,711,744 | 2,516,582,400 | 1,258,291,200 |
 
 这些数字仅是规划的 GPU 权重容量与逻辑 I/O，不能当作完整请求内存或性能收益；ANE models、activation、encoder/VAE、OS/Core ML 服务开销没有包含。a=1/10239 仅是几何边界测试，不是已存在的 ANE artifact。见[源码与测试记录](2026-09-21-m1-z-suffix-descriptor-validation.json)。native contract 83 项运行、3 项原有跳过，其余通过。本轮编译并运行了 standalone native metadata 测试，没有重建完整 dylib/App；下一执行接入还需 verified derived source、typed Core ML bundle、完整 owner/join、receipt 与资格验证。
+
+
+## 第三十九轮：后缀派生文件的验证与请求所有权（2026-09-21）
+
+H1 从 metadata 继续推进到实际文件：`materialize_gpu_suffix()` 要求父 SourceLease 已通过 native 内容验证，再内部生成配方；从 held source fd 打包 32 个 w2 后缀，创建的 private 文件在写 payload 前 unlink。打包完成核对实际读写量和尺寸，关闭写句柄，对只读句柄计算派生 SHA-256，复核父/派生 generation 后才返回 `GpuSuffixSource`。返回对象保留父 lease，只能复制 artifact 0/1 的只读 CLOEXEC fd；未知 artifact、父文件修改/替换均拒绝。
+
+配方 descriptor 不因文件生成而改写：稳定 recipe 仍用于编译布局，实际派生 SHA-256 作为独立运行证据，不能把两者混成同一个内容哈希。`verification_read_bytes` 单列二次哈希读取，setup pack read/write 已由实际 I/O 对照计划核验；没有把校验成本遗漏为零。
+
+host 测试使用两个独立生成、内容相同但 inode/path 不同的稀疏 BF16 checkpoint（3840×10240 的真实 FFN 几何）。每个 w2 的指定行/末通道写入不同哨兵，a=10239 使派生文件为 245,760 bytes，逐元素检查所有 32×3840 个结果，并独立重算 SHA-256。a=10239 仅用于边界/生命周期测试，不代表支持该 ANE artifact。父文件仍完整经过 native 哈希，不把 sparse header 或传入 digest 当作内容证明。
+
+验证覆盖：无内容证明拒绝；打包前、完成一个 branch 后、哈希前、哈希后四处取消保留 `Cancelled` 类型且 fd 数恢复；事件异常关闭临时 fd；返回 fd 为只读/CLOEXEC/unlinked，pwrite 失败；metadata/外部 lease 退出后 owner 仍能验证；独立副本获得相同 recipe、派生 SHA 与 checkpoint identity；打包中父文件内容修改、完成后父路径被移走均拒绝。普通运行与 ASan/UBSan 通过，原 exact descriptor 回归通过。
+
+这关闭的是 H1 派生源的基础所有权与内容验证子项；仍需把它接入实际 weight reader/hybrid adapter、Core ML bundle/partition、GPU join、receipt 和产品准入。没有以 fd 生命周期测试替代 GPU pending 时的完整 owner 隔离，也没有新 full-image 性能结果。
+
+
+补充真实模型文件验证：对已下载 Z-Image checkpoint 的 12,309,866,400 bytes 做 native 内容验证，得到 SHA-256 `2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6`，与模型下载记录一致。以 a=5120（50%）打包 32 个分支，实际原文件读 2,516,582,400 bytes、派生写 1,258,291,200 bytes、派生哈希再读 1,258,291,200 bytes。派生 SHA-256 为 `59b03803a9dac69d0fe89a79ef318056260b77d48cdc588744aef6bee89fcb47`；逐分支抽查第 0/1234/3839 行，共 96 行，与原文件列后缀逐字节相同。owner 释放后 fd 数恢复，private 派生文件未持久保存。见[原始结果](2026-09-21-m1-z-suffix-source-real.json)。完整字节 oracle 来自稀疏 fixture，真实模型采用抽样，不把抽样表述为完整张量数值校验。本次没有 GPU/Core ML 预测或速度比较。
+
+完整 native hook 构建及 runtime/catalog 编译后核对通过：库 SHA-256 `26e3accd085636deee1e1c2accf4164f4737caa984dad1333d6428f360877fc3`，runtime key `tc-runtime-build-v1-bb953df620c174a36ee5407afee90e82b0109e164c42d1dcc58bd9d8d0e4b783`。直接链接新 dylib 的同一 source 生命周期/内容测试通过；Z public adapter 回归通过；suffix metadata、原 exact descriptor suite 通过；native contract 83 项运行、3 项原有跳过，其余通过。host 链接 macOS 26.0/26.2 提示保留，本机 26.4.1 运行通过。见[验证记录](2026-09-21-m1-z-suffix-source-validation.json)。本轮没有 release/App 构建。

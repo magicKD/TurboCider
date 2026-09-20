@@ -3,6 +3,8 @@
 #include "../../models/z_image/streaming_descriptor.hpp"
 #include "../../models/z_image/suffix_materialization.hpp"
 #include "../../runtime/streaming/canonical_encoding.hpp"
+#include "../../runtime/memory_manifest.hpp"
+#include <fcntl.h>
 
 #include <algorithm>
 #include <array>
@@ -548,6 +550,111 @@ GpuSuffixPlan StreamingMetadata::describe_gpu_suffix(
     identity["reader_revision"] = "z-image-derived-fd-bf16-v1-metadata-only";
     check_unchanged();
     return plan;
+}
+
+struct GpuSuffixSource::State {
+    GpuSuffixPlan plan;
+    std::shared_ptr<const streaming::SourceLease> parent;
+    std::string logical_id, content_digest;
+    streaming::OwnedSourceFd derived;
+    struct stat identity{};
+};
+
+GpuSuffixSource::GpuSuffixSource(std::unique_ptr<State> state)
+    : state_(std::move(state)) {}
+GpuSuffixSource::~GpuSuffixSource() = default;
+const GpuSuffixPlan &GpuSuffixSource::plan() const noexcept { return state_->plan; }
+const std::string &GpuSuffixSource::content_digest() const noexcept { return state_->content_digest; }
+uint64_t GpuSuffixSource::verification_read_bytes() const noexcept {
+    return state_->plan.setup_write_bytes;
+}
+void GpuSuffixSource::check_unchanged() const {
+    state_->parent->revalidate_after_drain();
+    struct stat actual{};
+    require_metadata(::fstat(state_->derived.get(), &actual) == 0,
+                     "derived suffix fd unavailable");
+    const auto &expected = state_->identity;
+    require_metadata(S_ISREG(actual.st_mode) && actual.st_nlink == 0 &&
+        actual.st_dev == expected.st_dev && actual.st_ino == expected.st_ino &&
+        actual.st_size == expected.st_size &&
+        actual.st_mtimespec.tv_sec == expected.st_mtimespec.tv_sec &&
+        actual.st_mtimespec.tv_nsec == expected.st_mtimespec.tv_nsec &&
+        actual.st_ctimespec.tv_sec == expected.st_ctimespec.tv_sec &&
+        actual.st_ctimespec.tv_nsec == expected.st_ctimespec.tv_nsec,
+        "derived suffix changed");
+}
+streaming::OwnedSourceFd GpuSuffixSource::duplicate_fd(uint32_t artifact) const {
+    require_metadata(artifact < 2, "unknown suffix artifact");
+    check_unchanged();
+    if (artifact == 0) return state_->parent->duplicate_fd(state_->logical_id);
+    const int fd = ::fcntl(state_->derived.get(), F_DUPFD_CLOEXEC, 0);
+    require_metadata(fd >= 0, "cannot duplicate derived suffix fd");
+    return streaming::OwnedSourceFd(fd);
+}
+
+std::unique_ptr<GpuSuffixSource> StreamingMetadata::materialize_gpu_suffix(
+    const StreamingWorkload &workload, uint32_t first_gpu_channel,
+    std::atomic<bool> &cancelled, const Event &event) const {
+    checkpoint(cancelled);
+    require_metadata(lease().has_verified_content(), "artifact_verification_required");
+    auto ready = std::make_unique<GpuSuffixSource::State>();
+    ready->plan = describe_gpu_suffix(workload, first_gpu_channel);
+    ready->parent = lease_ptr();
+    ready->logical_id = state_->logical_id;
+    auto source = ready->parent->duplicate_fd(ready->logical_id);
+    require_metadata(::fcntl(source.get(), F_NOCACHE, 1) == 0,
+                     "cannot configure suffix source reader");
+    // Open both handles while the exclusively-created file is named, verify
+    // that they refer to the same inode, then unlink before writing payload.
+    // Only the read-only handle is allowed to escape after final verification.
+    auto pattern = (std::filesystem::path(NSTemporaryDirectory().UTF8String) /
+                    "turbocider-z-derived-XXXXXX").string();
+    streaming::OwnedSourceFd writable(::mkstemp(pattern.data()));
+    require_metadata(bool(writable), "cannot create derived suffix file");
+    struct Unlink {
+        const std::string &path;
+        bool pending = true;
+        ~Unlink() { if (pending) ::unlink(path.c_str()); }
+    } cleanup{pattern};
+    ready->derived = streaming::OwnedSourceFd(::open(pattern.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+    require_metadata(bool(ready->derived), "cannot open derived suffix reader");
+    struct stat writer_stat{}, reader_stat{};
+    require_metadata(::fstat(writable.get(), &writer_stat) == 0 &&
+                     ::fstat(ready->derived.get(), &reader_stat) == 0 &&
+                     writer_stat.st_dev == reader_stat.st_dev && writer_stat.st_ino == reader_stat.st_ino,
+                     "derived suffix binding changed");
+    require_metadata(::unlink(pattern.c_str()) == 0, "cannot unlink derived suffix file");
+    cleanup.pending = false;
+    require_metadata(::fcntl(writable.get(), F_SETFD, FD_CLOEXEC) == 0 &&
+                     ::fcntl(writable.get(), F_NOCACHE, 1) == 0 &&
+                     ::fcntl(ready->derived.get(), F_NOCACHE, 1) == 0,
+                     "cannot configure derived suffix file");
+    SuffixPackMetrics actual;
+    for (size_t i = 0; i < ready->plan.packing.size(); ++i) {
+        checkpoint(cancelled);
+        if (event) event("pack_z_image_suffix", int(i), int(ready->plan.packing.size()));
+        const auto &record = ready->plan.packing[i];
+        const auto geometry = suffix_geometry(record.source.shape[0], record.source.shape[1],
+                                              record.first_gpu_channel, 2);
+        pack_suffix_rows(source.get(), record.source.offset, writable.get(), record.destination_offset,
+                         geometry, cancelled, actual);
+    }
+    require_metadata(actual.read_bytes == ready->plan.setup_read_bytes &&
+                     actual.write_bytes == ready->plan.setup_write_bytes,
+                     "derived suffix I/O differs from plan");
+    // Close the last writable handle before computing the actual content hash.
+    writable = streaming::OwnedSourceFd();
+    require_metadata(::fstat(ready->derived.get(), &ready->identity) == 0 &&
+                     ready->identity.st_nlink == 0 && ready->identity.st_size >= 0 &&
+                     uint64_t(ready->identity.st_size) == ready->plan.setup_write_bytes,
+                     "derived suffix size differs from plan");
+    if (event) event("verify_z_image_suffix", 0, 1);
+    ready->content_digest = memory_sha256_fd(ready->derived.get(), ready->plan.setup_write_bytes, &cancelled);
+    if (event) event("verify_z_image_suffix", 1, 1);
+    checkpoint(cancelled);
+    auto result = std::unique_ptr<GpuSuffixSource>(new GpuSuffixSource(std::move(ready)));
+    result->check_unchanged();
+    return result;
 }
 
 StreamingPlanView::StreamingPlanView(
