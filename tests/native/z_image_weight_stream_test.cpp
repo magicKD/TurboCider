@@ -187,11 +187,13 @@ int main(int argc, char **argv) {
                 tc::require(exact.fill_exact(slot, 3 + slot, nullptr) == 13 * 8,
                             "exact fill byte count is incorrect");
                 auto weights = exact.bind_exact(slot, 3 + slot);
+                tc::require(weights.sorted_keys().size() == 13,
+                            "exact fill lost block tensors");
                 auto sum = tc::Tensor(0.f);
                 for (const auto &name : weights.sorted_keys())
                     sum = sum + tc::mx::sum(tc::mx::astype(
                         weights.at(name), tc::mx::float32));
-                tc::require(sum.item<float>() == float(4 + slot) * 4.f,
+                tc::require(sum.item<float>() == float(4 + slot) * 4.f * 13.f,
                             "exact fill produced incorrect values");
             }
             std::atomic<bool> worker_cancel{true};

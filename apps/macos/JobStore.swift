@@ -421,10 +421,14 @@ final class NativeJobStore: ObservableObject {
         }
         var openedForPublicStreaming: NativeEngine?
         var publicResolutionJSON: String?
+        var frozenStreamingRequest = streamingRequest
+        var publicResolution: NativeStreamingResolution?
         if let streamingRequest, request.model != "ltx-2.5-distilled" {
             let opened = try await acquire(modelURL, modelID: request.model)
             if cancelRequested { throw CancellationError() }
             let resolution = try await opened.resolveStreaming(streamingRequest)
+            frozenStreamingRequest = try resolution.binding(streamingRequest)
+            publicResolution = resolution
             publicResolutionJSON = String(
                 decoding: try JSONEncoder().encode(resolution), as: UTF8.self)
             openedForPublicStreaming = opened
@@ -473,11 +477,14 @@ final class NativeJobStore: ObservableObject {
                 }
                 if cancelRequested { throw CancellationError() }
                 sessionState = "使用中"
-                if let streamingRequest {
+                if let streamingRequest = frozenStreamingRequest {
                     result = try await opened.generate(streamingRequest, onEvent: callback)
                 } else {
                     result = try await opened.generate(request, onEvent: callback)
                 }
+            }
+            if let publicResolution, let frozenStreamingRequest {
+                try publicResolution.validateResult(result, request: frozenStreamingRequest)
             }
             guard let i = jobs.firstIndex(where: { $0.id == id }) else { throw NativeFailure(message: "Missing job") }
             jobs[i].state = "succeeded"; jobs[i].phase = "complete"

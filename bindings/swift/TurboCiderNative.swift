@@ -216,6 +216,102 @@ public struct NativeStreamingResolution: Codable, Sendable {
     public let exact_selector: NativeStreamingSelectorV2
     public let selection: NativeStreamingResolutionSelection
     public let identity: NativeStreamingResolutionIdentity
+
+    /// Freeze the selector returned by native resolution. Native generate still
+    /// revalidates the catalog, installation and authority for this request.
+    public func binding(_ request: NativeRequestV2) throws -> NativeRequestV2 {
+        guard schema_version == 1, status == "resolved",
+              request.execution.streaming == requested_selector,
+              exact_selector.schema_version == 2, exact_selector.enabled,
+              exact_selector.selection == "preset", exact_selector.retention == "request",
+              exact_selector.preset_id == selection.preset_id,
+              exact_selector.preset_revision == selection.preset_revision,
+              exact_selector.catalog_revision == catalog_revision,
+              exact_selector.expected_resolution_digest == resolution_digest,
+              exact_selector.target_request_memory_bytes == selection.target_request_memory_bytes,
+              requested_selector.target_request_memory_bytes == selection.target_request_memory_bytes,
+              !resolution_digest.isEmpty, !selection.record_digest.isEmpty else {
+            throw NativeFailure(message: "streaming_resolution_mismatch: 解析结果与请求不匹配。")
+        }
+        var bound = request
+        bound.execution.streaming = exact_selector
+        return bound
+    }
+
+    /// Check the result summary against the preflight identity before the App
+    /// marks a job successful. This consumes native verification; it does not
+    /// reconstruct native authority or independently verify GPU receipts.
+    public func validateResult(_ data: Data, request: NativeRequestV2) throws {
+        struct Summary: Decodable {
+            let schema_version: Int
+            let target_request_memory_bytes: UInt64
+            let calibrated_request_bytes: UInt64
+            let preset_id: String
+            let preset_revision: UInt32
+            let catalog_revision: String
+            let record_digest: String
+            let resolution_digest: String
+            let source_digest: String
+            let workload_digest: String
+            let runtime_digest: String
+            let device_digest: String
+            let authorized_layout_digest: String
+            let actual_layout_digest: String
+            let component_policy_revision: String
+            let execution_container: String
+            let memory_scope: String
+            let receipt_schema_version: UInt32
+            let receipt_source_generation: UInt64
+            let receipt_digest: String
+            let receipt_verifier_revision: String
+            let actual_plan_verified: Bool
+        }
+        struct Result: Decodable {
+            let schema_version: Int
+            let model: String
+            let operation: String
+            let output: String
+            let width: Int
+            let height: Int
+            let seed: Int
+            let steps: Int
+            let warmup: Bool
+            let public_streaming: Summary
+        }
+        let result: Result
+        do { result = try JSONDecoder().decode(Result.self, from: data) }
+        catch { throw NativeFailure(message: "streaming_result_invalid: 返回结果缺少有效的执行证明。") }
+        let actual = result.public_streaming
+        guard request.outputs.count == 1, let output = request.outputs.first,
+              request.execution.streaming == exact_selector,
+              result.schema_version == 1, !result.warmup,
+              result.model == request.model, result.operation == request.operation,
+              result.output == output.path, result.width == output.width,
+              result.height == output.height, result.seed == request.sampling.seed,
+              result.steps == request.sampling.steps,
+              actual.schema_version == 1, actual.actual_plan_verified,
+              actual.target_request_memory_bytes == selection.target_request_memory_bytes,
+              actual.calibrated_request_bytes == selection.calibrated_request_bytes,
+              actual.preset_id == selection.preset_id,
+              actual.preset_revision == selection.preset_revision,
+              actual.catalog_revision == catalog_revision,
+              actual.record_digest == selection.record_digest,
+              actual.resolution_digest == resolution_digest,
+              actual.source_digest == identity.source_digest,
+              actual.workload_digest == request_digest,
+              actual.runtime_digest == identity.runtime_digest,
+              actual.device_digest == identity.device_digest,
+              actual.authorized_layout_digest == selection.layout_digest,
+              actual.actual_layout_digest == selection.layout_digest,
+              actual.component_policy_revision == selection.component_policy_revision,
+              actual.execution_container == selection.execution_container,
+              actual.memory_scope == selection.memory_scope,
+              (2...3).contains(actual.receipt_schema_version),
+              actual.receipt_source_generation > 0,
+              !actual.receipt_digest.isEmpty, !actual.receipt_verifier_revision.isEmpty else {
+            throw NativeFailure(message: "streaming_result_mismatch: 执行结果与已确认方案不匹配。")
+        }
+    }
 }
 public struct NativeEvent: Codable, Sendable {
     public let sequence: Int

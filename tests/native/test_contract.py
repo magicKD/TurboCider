@@ -132,10 +132,11 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['memory_policy']['digest'], policy['digest'])
 
     def test_memory_constrained_routes_remain_plan_only_without_manifest(self):
+        physical = json.loads(consume(C.c_void_p(lib.tc_system_json())))["physical_memory_bytes"]
         common = {
             'memory_constrained': {
                 'enabled': True,
-                'limit_bytes': 48 * (1 << 30),
+                'limit_bytes': min(48 * (1 << 30), physical),
                 'buffer_percent': 15,
                 'min_free_bytes': 1 << 30,
             },
@@ -160,14 +161,15 @@ class ContractTests(unittest.TestCase):
         policy = configured['memory_policy']
         self.assertTrue(policy['route_available'])
         self.assertFalse(policy['execution_supported'])
-        self.assertTrue(policy['estimate_fits'])
         self.assertEqual(policy['capability_level'], 'hook_bridged')
         self.assertEqual(policy['certification_state'], 'plan_only')
-        self.assertEqual(policy['admission_state'], 'plan_only')
+        self.assertEqual(policy['admission_state'],
+                         'plan_only' if policy['estimate_fits'] else 'rejected')
         self.assertFalse(policy['release_stable'])
         self.assertEqual(policy['manifest_digest'], '')
         self.assertEqual(policy['evidence_digest'], '')
-        self.assertIn('no verified capability manifest', policy['reason'])
+        self.assertIn('no verified capability manifest' if policy['estimate_fits']
+                      else 'exceeds effective budget', policy['reason'])
         self.assertEqual(policy['adapter_candidate'],
                          'h3_c_metal_streamed_v1')
         self.assertEqual(policy['effective_residency'], 'streamed')
@@ -176,6 +178,12 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['residency'], 'streamed')
         self.assertEqual(policy['denoiser_budget_bytes'],
                          policy['effective_budget_bytes'] - 4 * (1 << 30))
+
+        # The native API must reject an oversized user limit on every machine.
+        status, _, error = plan({**h3, 'memory_constrained': {
+            **h3['memory_constrained'], 'limit_bytes': physical + (1 << 30)}})
+        self.assertNotEqual(status, 0)
+        self.assertIn('exceeds physical memory', error)
 
         h3_unsupported = (
             {**h3, 'audio': True},
@@ -211,12 +219,13 @@ class ContractTests(unittest.TestCase):
         policy = configured['memory_policy']
         self.assertTrue(policy['route_available'])
         self.assertFalse(policy['execution_supported'])
-        self.assertTrue(policy['estimate_fits'])
         self.assertEqual(policy['capability_level'], 'hook_bridged')
         self.assertEqual(policy['certification_state'], 'plan_only')
-        self.assertEqual(policy['admission_state'], 'plan_only')
+        self.assertEqual(policy['admission_state'],
+                         'plan_only' if policy['estimate_fits'] else 'rejected')
         self.assertFalse(policy['release_stable'])
-        self.assertIn('no verified capability manifest', policy['reason'])
+        self.assertIn('no verified capability manifest' if policy['estimate_fits']
+                      else 'exceeds effective budget', policy['reason'])
         self.assertEqual(policy['adapter_candidate'],
                          'ltx_c_metal_streamed_video_v1')
         self.assertEqual(configured['ltx_backend'], 'c_metal')
