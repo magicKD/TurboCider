@@ -57,6 +57,7 @@ test:
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
 	@"$(PYTHON)" -B tests/native/test_z_image_sharded_checkpoint.py
 	@"$(PYTHON)" -B tests/native/test_z_image_weight_stream.py
+	@"$(PYTHON)" -B tests/native/test_z_image_int8_exact.py
 	@"$(PYTHON)" -B tests/native/test_coreml_lora.py
 	@"$(PYTHON)" -B tests/native/test_llada_reference.py
 	@"$(PYTHON)" -B tests/native/test_quality_gate.py
