@@ -983,3 +983,5 @@ Metadata-only 计划不加载 artifact，改为通用 Core ML MLP/FP16 IO 描述
 使用新库及真实 FP16 bank，先执行 prepare，验证 backend、runtime/plan precision、weight_variant 及零 runtime prediction；随后同 engine 完成一条独立的 512²/1-step 报告回归请求，确认正式生成字段和 32 次 Core ML 调用。PNG 经完整解码及尺寸检查。见[执行计划](2026-09-21-m1-hybrid-reporting-plan.json)、[prepare 结果](2026-09-21-m1-hybrid-reporting-result.json)、[单步生成结果](2026-09-21-m1-hybrid-reporting-one-step-result.json)和[测试/库身份汇总](2026-09-21-m1-hybrid-reporting-validation.json)。单步图片不用于质量或性能结论；第五十六轮迁移结果仍绑定原冻结库。
 
 链接新库的 App 和 history test 已开始重建，本段写入时仍在运行；尚不能称 App 重建或新 GUI 验收通过。public catalog、calibrated policy、完整 hybrid 请求/发布闭环均未因本次报告修复而开放。
+
+App 后续：重建已退出 0，链接 `m1-hybrid-reporting` 新库的 history tests 通过，包含 finalizing 重启恢复。使用独立状态目录启动 App，按本次 PID 确认屏幕窗口存在，随后只终止本次进程并确认退出；没有视觉截图或新的 App 模型生成，不称完整 GUI/E2E 通过。见[App 构建、窗口与回归证据](2026-09-21-m1-hybrid-reporting-app-validation.json)。继续核查时发现 NativeJob.routeSummary 仍硬编码 INT8；已添加按 loaded-session weight_variant 显示 FP16/INT8、旧记录显示精度未确认的代码及回归，第二次 App/history 构建正在进行。另确认 Z/Flux public resolve 仍在嵌入式 engine 中，且发生在 job 持久化之前；通用一次性 worker/envelope 与先持久化 pending intent 的事务接入仍需完成。

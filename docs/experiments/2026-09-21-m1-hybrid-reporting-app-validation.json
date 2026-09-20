@@ -1,0 +1,36 @@
+{
+  "scope": "App relink against corrected native reporting; before subsequent history label fix",
+  "app_sha256": "ae9425d53670cb5fc10480916ec8af0c5b518bf20a0fa444ef35b878c721f8e7",
+  "library_sha256": "244f57358444264cfd44a55b588904c3c5cb9ba398fd4403a5d376c7113c81ab",
+  "source_commit": "27f0fd6",
+  "native_build_directory": "build/m1-hybrid-reporting",
+  "rpath": "@executable_path",
+  "build_exit": 0,
+  "history_tests": "PASS including finalizing restart recovery",
+  "history_log_sha256": "b4c4d860bf5689d4f68a9e634af9fc2c2e339dba12641d32d74efecd73fa540c",
+  "isolated_state": "/Users/chencanhui/models/TurboCider/experiments/m1-z-hybrid-reporting/app-state",
+  "own_pid": 5569,
+  "onscreen_windows": [
+    {
+      "kCGWindowAlpha": 1,
+      "kCGWindowBounds": {
+        "Height": 738,
+        "Width": 960,
+        "X": 276,
+        "Y": 105
+      },
+      "kCGWindowIsOnscreen": true,
+      "kCGWindowLayer": 0,
+      "kCGWindowMemoryUsage": 2368,
+      "kCGWindowNumber": 101042,
+      "kCGWindowOwnerName": "TurboCiderNativeApp",
+      "kCGWindowOwnerPID": 5569,
+      "kCGWindowSharingState": 0,
+      "kCGWindowStoreType": 1
+    }
+  ],
+  "shutdown": "SIGTERM sent only to own PID; parent wait confirmed exit -15",
+  "visual_gui_acceptance": false,
+  "new_model_generation_in_app": false,
+  "followup": "Found hardcoded INT8 in NativeJob.routeSummary; code and regression added, separate rebuild currently running"
+}
