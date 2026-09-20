@@ -6,7 +6,11 @@
     "cross_language": "PASS Swift Foundation/CryptoKit envelope accepted by native Foundation/CommonCrypto",
     "file_input": "PASS symlink/empty/oversize/FIFO rejected with expected errors within 5-second test deadline",
     "initial_full_native_build": "PASS before FIFO correction; not final candidate",
-    "corrected_full_native_build": "running"
+    "corrected_full_native_build": "PASS exit 0, includes FIFO correction",
+    "native_contract": "PASS 83 tests: 80 passed, 3 skipped",
+    "isolated_query_control_flow": "PASS success/create_error/source_error/resolve_error/wrong_container/cancel; C API doubles, not native model qualification",
+    "real_cli": "PASS bad digest, missing model, real Z empty-catalog rejection",
+    "real_SIGTERM": "PASS correlated cancelled terminal, exit 2, no timeout/artifact"
   },
   "input_fifo_regression": {
     "case": "FIFO input",
@@ -24,15 +28,66 @@
     "tests/native/test_worker_protocol.py": "ec51d378cc0b1f56f347de4feb398c1bd02647cfb4ed12d0b614a0a81cbb8714",
     "tests/native/worker_protocol_test.mm": "dec3b0cccf497138dd13112d94657cb130de3e819794cf7cf032ecc5a06c218a",
     "tests/integration/WorkerRequestEnvelopeTests.swift": "94a1b39feffd02743bbdcebac0bb99e763f489a282eed14903b74cc7bcfd553e",
-    "tests/fixtures/streaming/worker-request-v1.json": "578f2914a04ef18324df461f13cdb7b50793b695b806f6c8d9445ed0564bcfda"
+    "tests/fixtures/streaming/worker-request-v1.json": "578f2914a04ef18324df461f13cdb7b50793b695b806f6c8d9445ed0564bcfda",
+    "tests/native/test_worker_query_contract.py": "bc87e9cccd0c913f80ef02cdf854f8a829630cd3b21ce7a34aa51e2e0fc413ed",
+    "tests/native/worker_query_contract_test.mm": "72de8dec881d26b9af6e8b31930381b307242a6ec291219615b3cc188aa0d8ec",
+    "build/m1-worker-query/turbocider": "83d3a0b3f025e9a192e88b256494c6c29b78ad43a65377ba74a0e253fa0bfedb",
+    "build/m1-worker-query/libturbocider.dylib": "1c73faee71b4c520d60427aed34b619b0e93030841e756179f97414b5b3c9f12"
   },
   "protocol_log_sha256": "93e0f69f5140b91b299438803e2e114636dfc2403c0eb3fa15c145992faa04b6",
   "limitations": [
-    "No corrected CLI runtime test yet",
     "No worker-generate or NativeProcessRunner/App wiring",
     "No process-group/reaping deadline or restart identity contract yet",
     "Absolute installation path is not persistent content proof; query verifies native sources in its own process",
     "Request digest is correlation, not execution authority",
-    "Catalog remains empty; no successful public model qualification"
-  ]
+    "Catalog remains empty; no successful public model qualification",
+    "Successful resolution exercised only with isolated C API doubles; real model rejects empty production catalog",
+    "Error terminal does not expose source verification proof; reaching resolver after successful verification is inferred from wrapper control flow",
+    "Single SIGTERM run is not proof of bounded termination for all native operations; test harness would kill/reap after timeout"
+  ],
+  "runtime_fingerprint": "tc-runtime-build-v1-e298bc46f1f620dc013974e9558a1e3e0c7a32cde0858957efd092f6cfff5105",
+  "initial_cli_assertion_failure": {
+    "expected": "unvalidated_workload",
+    "actual": "catalog_has_no_public_records",
+    "cause": "Test asserted wrong empty-catalog rejection name",
+    "preserved_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-worker-query/cli-tests",
+    "corrected_repeat_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-worker-query/cli-tests-corrected",
+    "production_change": false
+  },
+  "real_cli_results": {
+    "bad_digest": {
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "worker_request_digest_mismatch\n",
+      "wall_seconds_diagnostic": 0.03401658299844712
+    },
+    "missing_model": {
+      "exit_code": 1,
+      "stdout": "{\"actual_container\":\"cli_worker\",\"artifact\":null,\"error\":{\"code\":\"worker_query_failed\",\"message\":\"missing file: /Users/chencanhui/models/TurboCider/experiments/m1-worker-query/cli-tests-corrected/missing-model/tokenizer/tokenizer.json\"},\"job_id\":\"45de0708-d5d4-448d-9acb-8839dc891d4a\",\"layout_digest\":null,\"protocol_version\":1,\"public_streaming_summary\":null,\"record_digest\":null,\"request_digest\":\"d1d69e3ea336a619ad7b06d443cb15249b1f5884a3c76e9eb3b72a94de1ede13\",\"request_id\":\"732d3251-df24-4327-a324-18e3269530a1\",\"resolution_digest\":null,\"runtime_fingerprint\":\"tc-runtime-build-v1-e298bc46f1f620dc013974e9558a1e3e0c7a32cde0858957efd092f6cfff5105\",\"status\":\"error\"}\n",
+      "stderr": "",
+      "wall_seconds_diagnostic": 0.016755749937146902
+    },
+    "real_model": {
+      "exit_code": 1,
+      "stdout": "{\"actual_container\":\"cli_worker\",\"artifact\":null,\"error\":{\"code\":\"worker_query_failed\",\"message\":\"catalog_has_no_public_records\"},\"job_id\":\"0019becb-3a2f-4574-b049-ef799cf075a9\",\"layout_digest\":null,\"protocol_version\":1,\"public_streaming_summary\":null,\"record_digest\":null,\"request_digest\":\"d1d69e3ea336a619ad7b06d443cb15249b1f5884a3c76e9eb3b72a94de1ede13\",\"request_id\":\"6b0ceb47-2b6f-4c2e-a8be-daa5793fe2af\",\"resolution_digest\":null,\"runtime_fingerprint\":\"tc-runtime-build-v1-e298bc46f1f620dc013974e9558a1e3e0c7a32cde0858957efd092f6cfff5105\",\"status\":\"error\"}\n",
+      "stderr": "",
+      "wall_seconds_diagnostic": 10.980413957964629
+    }
+  },
+  "real_cancel_result": {
+    "exit_code": 2,
+    "alive_at_signal": true,
+    "timed_out": false,
+    "stdout": "{\"actual_container\":\"cli_worker\",\"artifact\":null,\"error\":{\"code\":\"worker_cancelled\",\"message\":\"generation cancelled\"},\"job_id\":\"0019becb-3a2f-4574-b049-ef799cf075a9\",\"layout_digest\":null,\"protocol_version\":1,\"public_streaming_summary\":null,\"record_digest\":null,\"request_digest\":\"d1d69e3ea336a619ad7b06d443cb15249b1f5884a3c76e9eb3b72a94de1ede13\",\"request_id\":\"6b0ceb47-2b6f-4c2e-a8be-daa5793fe2af\",\"resolution_digest\":null,\"runtime_fingerprint\":\"tc-runtime-build-v1-e298bc46f1f620dc013974e9558a1e3e0c7a32cde0858957efd092f6cfff5105\",\"status\":\"cancelled\"}\n",
+    "stderr": "",
+    "wall_seconds_diagnostic": 1.0890654999529943
+  },
+  "evidence_log_sha256": {
+    "corrected-build.log": "b1230ad48bf7a325a4d5944e81b54b52c8f9c916031f88890f33c9888f09d188",
+    "native-contract.log": "6e1209eadac6843c2cee69f928f320a42e565d5409512adf207efab643567d60",
+    "query-contract.log": "ab87190510f99afeb5c9ac12670ec7666f48ce7a0ba5c21620c8175795407c7c",
+    "corrected-cli-check.log": "9b0a745133ff54074641c68dea4f08b4ec80a3cde2d76c35ec5e96940ec0539d",
+    "cancel-check.log": "a6159d3a6c6a0c7c16af4a770b1c99836a4fdf7185010088f2353db6a5adf531",
+    "initial-cli-check.log": "6fe25f57ce0f5993468ede43866b4050c52d849c7d939685864f1799c2ad3860"
+  }
 }

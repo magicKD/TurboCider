@@ -998,7 +998,7 @@ App 后续：重建已退出 0，链接 `m1-hybrid-reporting` 新库的 history 
 
 构建后续：原 App 重建进程已确认退出 0，可执行文件与所链接 native 库 SHA 已补入本轮验证记录；未追加 GUI 生成或真实 public 模型请求。
 
-## 第五十九轮：worker 请求封装与原生一次性 query（2026-09-21，构建中）
+## 第五十九轮：worker 请求封装与原生一次性 query（2026-09-21）
 
 新增内部 `worker-query INPUT.json` CLI 入口及 Swift 请求封装 helper。输入严格限定 protocol/job/request ID、request digest、model installation ref 和 NativeRequestV2 六个字段；首版仅接受 Z-Image/Flux4 的 image.generate 意图与 schema-2 public selector。model_installation_ref 当前为标准化本地绝对目录，不是 alias 或持久化安装证明。query 在自己的 `cli_worker` engine 中调用原生 source verification 与 resolve，保留 native 精确 selector/身份，不另建 resolver 或传递 authority/fd。此阶段没有 worker-generate，也未接入 App 执行。
 
@@ -1007,3 +1007,9 @@ App 后续：重建已退出 0，链接 `m1-hybrid-reporting` 新库的 history 
 严格字段/版本/UUID/model/path/digest 负例及输入文件 symlink、空文件、超限拒绝通过。补充测试发现普通 blocking open 会在 FIFO 的 regular-file 检查之前阻塞；最初 probe 误指向不消费 argv 的旧测试 binary，纠正后以当前程序复现 1 秒超时，子进程已由测试回收。改为 O_NONBLOCK 后，FIFO 在检查阶段立即拒绝，5 秒期限内得到预期错误。最初严格 clang 检查还拒绝 auto 推导 Objective-C id；改用明确 NSDictionary 类型后通过。原始日志及[验证记录](2026-09-21-m1-worker-query-validation.json)保留。
 
 首次完整 native 构建通过，但发生在 FIFO 修正之前，不能算最终版本验证；包含修正的构建正在运行。取消信号只设置 lock-free 标记，由普通线程调用 C API cancel；这尚不构成父进程有界终止/回收合同。后续仍需实际 CLI 成功/拒绝/取消测试、generate terminal 与产物绑定、进程监督和 App 接入；production catalog 和发布门未改变。
+
+构建及实测后续：包含 FIFO 修正的完整 native 构建退出 0，runtime identity 为 `tc-runtime-build-v1-e298bc46f1f620dc013974e9558a1e3e0c7a32cde0858957efd092f6cfff5105`。native contract 83 项中 80 项通过、3 项跳过。新增隔离 C API double 测试直接运行 query wrapper，覆盖成功、创建/来源/resolve 失败、错误 execution container 和信号取消；这些仅证明封装控制流，不代表真实模型 resolve 成功。
+
+真实 CLI 拒绝坏 digest（无 terminal）、缺失模型（关联 error terminal），并对本地完整 Z-Image 模型返回 `catalog_has_no_public_records`，未产生 resolution 或图片。首个脚本误将空目录拒绝名称写为 `unvalidated_workload`，断言失败；原计划/结果/脚本/日志保留，修正测试预期后在独立目录重跑全部三项通过，未修改生产代码或目录准入。按 wrapper 控制流，真实查询先通过来源验证再进入 resolver；错误 terminal 当前不携带来源 proof，不能单靠该 terminal 独立复核 source verification。
+
+另一次独立真实模型 query 启动 1 秒后接收 SIGTERM，返回绑定原 job/request/digest 的 cancelled terminal、`worker_cancelled` 和退出码 2；全程约 1.09 秒，无超时、resolution 或产物。测试预先设置 30 秒观察期限及超时 kill/reap，实际未触发。该单次结果不是所有 native 操作的有界取消证明，也不替代尚未实现的父进程组监督/重启身份合同。日志、可执行文件/库及源码 SHA、真实 terminal 与首次断言失败均补入本轮验证记录；production catalog 仍为空。
