@@ -343,3 +343,10 @@ Flux transformer 下载完成，完整大小 7,751,109,744 字节，SHA-256 与 
 这些是 64-token encoder 探索，GPU/ANE 芯片实际驻留仍未观测，不代表完整图像收益，更不代表所有 token 长度的最佳划分。75% 后段与 native audit 构建有 CPU 并发，背景下载持续；精确性能结论须在后续固定条件复测。
 
 已冻结真实 Flux 4B 同布局 P1 对照 [policy](2026-09-20-m1-flux4-p1-policy.json)：256²/4 步、P0/G1/K2/D1/Q2、每请求新 engine、直接调度 vs 通用执行器、10 个 ABBA/BAAB blocks 共 20 matched pairs、无结果后剔除、原阈值不变。带 audit counters 的全量 native-only build 正在 `build/m1-audit` 进行（`/tmp/tc-m1-audit-build.log`，session `82430`）；构建与 encoder 实验结束后才启动计时。本段不构成 P1 通过证明。
+
+
+### 当前 hybrid 完整请求仍被 runtime 拒绝
+
+用 native tokenizer 构造了恰好 64 token 的自然提示，给同一 Flux candidate exact 请求增加已编译的 50% encoder manifest 与 allow_approximation=true。`build/m1-cache/turbocider plan /tmp/tc-flux-e2e-hybrid-request.json` 明确拒绝：`streaming_route_unsupported: manual streaming requires GPU-only execution`，来源 `native/runtime/plan.cpp`。因此没有运行这份完整 hybrid 请求；encoder sweep 不能被描述为完整 streaming hybrid 已支持。后续必须接入受约束的 hybrid route/身份/资源所有权，不能只移除门禁。
+
+全量 audit native-only 构建 session `82430` 已 exit 0，日志 `/tmp/tc-m1-audit-build.log`，确认导出 audit reset/snapshot C API。已启动真实同布局 P1 campaign session `29177`，目录 `/Users/chencanhui/models/TurboCider/experiments/m1-flux4-p1`，日志 `/tmp/tc-flux4-p1.log`。记录本段时尚未完成；默认 environment 记录仍为 partial，背景 Z 下载持续，即使输出与计数器通过也不能忽略环境资格。27-block 分宽度导出/测量已全部结束，不与 P1 GPU 请求并发。
