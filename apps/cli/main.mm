@@ -39,9 +39,9 @@ static int create_for(const char *path,NSString *request,tc_engine **engine,char
  if(path&&path[0]=='@'){
   NSString *resolved=registered_model_path(path,model);
   if(!resolved){*error=strdup("cannot resolve registered model or alias does not match request.model; use turbocider library list");return 1;}
-  return tc_engine_create_model([model UTF8String],resolved.UTF8String,engine,error);
+  return tc_engine_create_model_worker([model UTF8String],resolved.UTF8String,engine,error);
  }
- return tc_engine_create_model([model UTF8String],path,engine,error);
+ return tc_engine_create_model_worker([model UTF8String],path,engine,error);
 }
 static tc_engine *active=nullptr;
 static bool resource_mode=false;

@@ -618,6 +618,12 @@ int tc_engine_create_model(const char *id, const char *path, tc_engine **engine,
         }
     }
 }
+int tc_engine_create_model_worker(const char *id, const char *path,
+                                  tc_engine **engine, char **error) {
+    const int status = tc_engine_create_model(id, path, engine, error);
+    if (!status) (*engine)->execution_container = "cli_worker";
+    return status;
+}
 int tc_engine_create(const char *path, tc_engine **engine, char **error) {
     return tc_engine_create_model("flux2-klein-4b", path, engine, error);
 }
@@ -724,6 +730,12 @@ extern "C" int tc_engine_create_model_candidate(const char *id, const char *path
     }
     if (!status && engine && *engine)
         (*engine)->allow_experimental_streaming = true;
+    return status;
+}
+extern "C" int tc_engine_create_model_candidate_worker(
+        const char *id, const char *path, tc_engine **engine, char **error) {
+    const int status = tc_engine_create_model_candidate(id, path, engine, error);
+    if (!status) (*engine)->execution_container = "cli_worker";
     return status;
 }
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS

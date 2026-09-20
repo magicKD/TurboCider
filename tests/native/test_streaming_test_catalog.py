@@ -225,6 +225,8 @@ class TestCatalogTests(unittest.TestCase):
         library.tc_engine_create_model_candidate.argtypes = (
             library.tc_engine_create_model.argtypes
         )
+        library.tc_engine_create_model_worker.argtypes = library.tc_engine_create_model.argtypes
+
         library.tc_engine_resolve_streaming_json.argtypes = [
             c.c_void_p, c.c_char_p, c.POINTER(c.c_void_p),
             c.POINTER(c.c_void_p),
@@ -401,6 +403,7 @@ class TestCatalogTests(unittest.TestCase):
                     generated_record["plan"]["layout_digest"],
                 )
                 cli_generated = build_exact_catalog_with_cli()
+                self.assertEqual(cli_generated["records"][0]["workload"]["execution_container"], "cli_worker")
                 self.assertEqual(
                     cli_generated["records"][0]["plan"]["layout_digest"],
                     generated_record["plan"]["layout_digest"],
@@ -503,6 +506,29 @@ class TestCatalogTests(unittest.TestCase):
                 self.assertIn("artifact_verification_required", failure)
             finally:
                 library.tc_engine_free(public)
+
+            worker = create(library.tc_engine_create_model_worker)
+            try:
+                worker_catalog = build_exact_catalog(worker)
+                worker_record = worker_catalog["records"][0]
+                self.assertEqual(worker_record["workload"]["execution_container"], "cli_worker")
+                self.assertEqual(worker_record["calibration"]["execution_container"], "cli_worker")
+                status, failure = install(worker, worker_catalog)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(worker)
+                self.assertEqual(status, 0, failure)
+                app_catalog = copy.deepcopy(worker_catalog)
+                app_record = app_catalog["records"][0]
+                app_record["workload"]["execution_container"] = "embedded_app"
+                app_record["calibration"]["execution_container"] = "embedded_app"
+                app_record["canonical_record_digest"] = builder.canonical_record_digest(app_record)
+                status, failure = install(worker, app_catalog)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(worker)
+                self.assertNotEqual(status, 0)
+                self.assertIn("unvalidated_workload", failure)
+            finally:
+                library.tc_engine_free(worker)
 
             candidate = create(library.tc_engine_create_model_candidate)
             try:

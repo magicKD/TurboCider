@@ -144,6 +144,17 @@ def passed_audit() -> dict:
     }
 
 
+class ContainerConstructorTests(unittest.TestCase):
+    def test_controlled_entry_selection(self):
+        self.assertEqual(campaign_runner.native_constructor_name({}), "tc_engine_create_model_worker")
+        self.assertEqual(campaign_runner.native_constructor_name({"constructor": "candidate"}),
+                         "tc_engine_create_model_candidate_worker")
+        self.assertEqual(campaign_runner.native_constructor_name({"execution_container": "embedded_app"}),
+                         "tc_engine_create_model")
+        with self.assertRaises(CampaignError):
+            campaign_runner.native_constructor_name({"execution_container": "arbitrary"})
+
+
 class CampaignTests(unittest.TestCase):
     def test_quality_artifact_canonicalizer_validation_and_hashing(self):
         campaign = policy(blocks=1)
@@ -316,7 +327,7 @@ class CampaignTests(unittest.TestCase):
             _tc_engine_test_set_streaming_catalog = None
 
             @staticmethod
-            def tc_engine_create_model(_model, _path, engine, _error):
+            def tc_engine_create_model_worker(_model, _path, engine, _error):
                 engine._obj.value = 123
                 return 0
 

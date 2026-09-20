@@ -297,6 +297,8 @@ B 可以在现有 local test-catalog 下先验证全组件，不等 A2；C 用 f
 
 每个工作包提交：代码、针对合同的正/负测试、实际命令与结果、影响的 identity/revision、剩余边界。不得只提交“已完成”说明。
 
+2026-09-21 R6 容器增量：新增受控 worker constructor，native CLI/test-catalog CLI/campaign 使用 cli_worker；App 入口保留 embedded_app，普通请求不能切换容器。Host/API 测试验证仅容器不同的记录不可互用，真实 Z-Image v2 worker 图片/receipt 通过且正确报告 cli_worker，见实验第二十七轮。旧报告保留原始值；自动 build fingerprint 和最终包验收尚未完成，R6 未整体关闭。
+
 ## 7. 最小技术方案：保留框架，收口三个合同
 
 ### 7.1 身份与版本：修接缝，不另建模型注册平台

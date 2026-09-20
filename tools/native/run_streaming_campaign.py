@@ -392,6 +392,7 @@ def validate_policy(policy: dict[str, Any]) -> None:
                     raise CampaignError(f"native variant {variant} requires {key}")
             if config.get("constructor", "public") not in ("public", "candidate"):
                 raise CampaignError(f"variant {variant} has invalid constructor")
+            native_constructor_name(config)
             test_catalog = config.get("test_streaming_catalog")
             if test_catalog is not None:
                 if (
@@ -647,6 +648,7 @@ def build_identity(policy: dict[str, Any]) -> dict[str, Any]:
                 "binary_sha256": sha256_file(library),
                 "binary_size_bytes": library.stat().st_size,
                 "constructor": config.get("constructor", "public"),
+                "execution_container": config.get("execution_container", "cli_worker"),
             }
             test_catalog = config.get("test_streaming_catalog")
             if isinstance(test_catalog, str):
@@ -958,17 +960,24 @@ def request_semantic_identity(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def native_constructor_name(config: dict[str, Any]) -> str:
+    container = config.get("execution_container", "cli_worker")
+    if container not in ("cli_worker", "embedded_app"):
+        raise CampaignError("unsupported execution_container")
+    constructor = config.get("constructor", "public")
+    if constructor not in ("public", "candidate"):
+        raise CampaignError("unsupported constructor")
+    name = "tc_engine_create_model" + ("_candidate" if constructor == "candidate" else "")
+    return name + ("_worker" if container == "cli_worker" else "")
+
+
 def load_native_library(config: dict[str, Any]) -> Any:
     for name, value in config.get("environment", {}).items():
         os.environ[name] = value
     library_path = Path(config["library"]).expanduser().resolve()
     library = c.CDLL(str(library_path))
     library.tc_string_free.argtypes = [c.c_void_p]
-    constructor_name = (
-        "tc_engine_create_model_candidate"
-        if config.get("constructor", "public") == "candidate"
-        else "tc_engine_create_model"
-    )
+    constructor_name = native_constructor_name(config)
     try:
         constructor = getattr(library, constructor_name)
     except AttributeError as exc:
@@ -1022,11 +1031,7 @@ def load_native_library(config: dict[str, Any]) -> Any:
 
 def create_native_engine(library: Any, config: dict[str, Any]) -> c.c_void_p:
     model_path = Path(config["model_path"]).expanduser().resolve()
-    constructor_name = (
-        "tc_engine_create_model_candidate"
-        if config.get("constructor", "public") == "candidate"
-        else "tc_engine_create_model"
-    )
+    constructor_name = native_constructor_name(config)
     constructor = getattr(library, constructor_name)
     engine = c.c_void_p()
     error = c.c_void_p()

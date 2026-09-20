@@ -34,6 +34,11 @@ int tc_engine_create(const char *model_path, tc_engine **engine, char **error);
 /* Additive ABI: select a registered model module. Model paths are local only. */
 int tc_engine_create_model(const char *model_id, const char *model_path,
                            tc_engine **engine, char **error);
+/* Controlled one-shot CLI worker entry. The container is immutable for the
+ * engine lifetime and is never selected from request JSON. App clients retain
+ * tc_engine_create_model; catalogs cannot cross these execution containers. */
+int tc_engine_create_model_worker(const char *model_id, const char *model_path,
+                                 tc_engine **engine, char **error);
 /* Explicit cancellable CPU/file-I/O content verification for supported models.
  * Returns verified SHA-256 identities and process-local generation proof metrics.
  * Does not grant a preset, allocate GPU weights, or persist proof across processes.

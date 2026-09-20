@@ -535,3 +535,19 @@ MLX peak 为约 8.88–8.98 GB，最大 8,975,747,452 bytes；该计数不含 Co
 同一 public engine 随后通过[合成测试 catalog](2026-09-21-m1-z-verified-public-catalog.json)运行[真实请求](2026-09-21-m1-z-verified-public-request.json)：256²、9 步、seed 42、P0/G1/K2/D0/Q1、目标 12 GiB。请求 wall 为 33.304 s，native denoise 28.684 s，PNG SHA-256 为 `8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3`，与既有 private smoke 字节一致。authorized/actual layout digest 相同，actual_plan_verified=true、source_lease_verified=true、drained=true，270 fills 与 270 reader fences 均完成。MLX peak 为 8,975,747,432 bytes，不是完整 process-tree footprint。
 
 测试 catalog 的 calibration 数字和 TEMPLATE performance 是 hook 生成的合成输入，**不是实测资格或发布证据**；生产 catalog 仍为空。该结果证明 native 验证→v2 record→公开 adapter→实际 receipt/图片这条链跑通，不能据此发布 12 GiB 预设。报告 execution_container 仍沿用 embedded_app，而本次实际由 Python host 调用；这也是 R6 待修的问题。App 尚未接入显式验证 UI，持久化 import proof、Flux 验证迁移、真实环境 calibration 和 GPU/ANE 多阶段集成仍未完成。
+
+
+## 第二十七轮：CLI worker 的受控容器身份（2026-09-21）
+
+修正此前 Python/CLI host 被记录为 embedded_app 的接入问题：新增 `tc_engine_create_model_worker`（以及内部 candidate worker 入口），在 engine 发布给调用方之前固定 `cli_worker`；原 App 构造入口保持 embedded_app。普通 request JSON 不能更改 engine 的容器。native CLI、test-catalog CLI 和 campaign 改用 worker 入口；campaign 的 build identity 同时记录容器。
+
+campaign 默认 cli_worker，缺少新 symbol 的旧库会明确报错，不自动退回 App 身份。复现旧报告可在可信 campaign 配置中显式指定 execution_container=embedded_app；这不把旧 Python 测量变成 App 安装验收，也不升级旧证据的资格。此前冻结报告和 digest 不回写。全局无 engine 的 options API 仍保持 App discovery 语义，其他直接调用旧构造器的 host 也未被自动重新分类。
+
+`test_streaming_campaign_verifier.py` 共 34 项通过，包括 public/candidate worker 入口、显式 legacy 入口、无效容器拒绝及原 campaign 失败/超时证据保留回归。本轮 `git fetch origin dev` 成功，`git merge-base --is-ancestor origin/dev HEAD` 返回 0，无新增 dev 合并内容。
+
+
+完整 native hook 构建 `build/m1-worker-identity` 成功，dylib SHA-256 为 `6e1635d7de13599ebfa115ece5f62e534551be22c66c12a6cd75eb61a817176e`。`test_streaming_test_catalog.py` 3 项通过：CLI 导出的 workload/calibration 均为 cli_worker；worker engine 可解析同容器记录；仅将 workload/calibration 容器改成 embedded_app、重新计算合法 digest，其余身份不变，worker resolve 返回 unvalidated_workload。原 App/v1、verified v2 和变更失效回归继续通过。release hook 缺席检查仍使用保留的 m1-release 库。
+
+[真实 worker 验证与生成结果](2026-09-21-m1-z-worker-source-verification.json)、[合成测试 catalog](2026-09-21-m1-z-verified-worker-catalog.json)、[请求](2026-09-21-m1-z-verified-worker-request.json)：取消返回 2（本次 wall 1.030 s），20,701,575,490 bytes 的复核 10.572 s，缓存复验 0.000514 s、零 payload bytes、4 hits。随后真实 Z-Image 256²/9 步/P0/G1/K2/D0/Q1 请求成功，报告 execution_container=cli_worker、actual_plan_verified=true、drained=true，PNG SHA-256 仍为 `8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3`。请求 wall 33.619 s，MLX peak 8,975,747,432 bytes；未测完整进程树 footprint，也未进行时延统计比较。
+
+此轮仍使用合成 TEMPLATE catalog 的 12 GiB 目标与 calibration 字段，不能据它声称 12 GiB 资格或发布预设。R6 的 CLI 容器入口已修正，但自动 runtime build fingerprint、最终包清单和完整 App/worker 安装验收仍待完成。

@@ -39,7 +39,7 @@ def load_library(path: Path) -> c.CDLL:
         raise CatalogBuildError(f"cannot load native library: {exc}") from exc
     required = (
         "tc_string_free",
-        "tc_engine_create_model",
+        "tc_engine_create_model_worker",
         "tc_engine_free",
         "tc_engine_test_build_streaming_catalog_json",
     )
@@ -49,10 +49,10 @@ def load_library(path: Path) -> c.CDLL:
                 f"{path} does not export required test-only symbol {symbol}"
             )
     library.tc_string_free.argtypes = [c.c_void_p]
-    library.tc_engine_create_model.argtypes = [
+    library.tc_engine_create_model_worker.argtypes = [
         c.c_char_p, c.c_char_p, c.POINTER(c.c_void_p), c.POINTER(c.c_void_p)
     ]
-    library.tc_engine_create_model.restype = c.c_int
+    library.tc_engine_create_model_worker.restype = c.c_int
     library.tc_engine_free.argtypes = [c.c_void_p]
     library.tc_engine_test_build_streaming_catalog_json.argtypes = [
         c.c_void_p, c.c_char_p, c.c_char_p, c.c_uint64, c.c_char_p,
@@ -92,7 +92,7 @@ def build_catalog(args: argparse.Namespace) -> dict:
     library = load_library(library_path)
     engine = c.c_void_p()
     error = c.c_void_p()
-    status = library.tc_engine_create_model(
+    status = library.tc_engine_create_model_worker(
         args.model_id.encode(), str(model_path).encode(),
         c.byref(engine), c.byref(error)
     )
