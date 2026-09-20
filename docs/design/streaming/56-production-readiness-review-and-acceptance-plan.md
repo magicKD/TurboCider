@@ -62,6 +62,8 @@ RecordV2 格式增量：`source.identity_version=2` 要求 `model_variant`、`we
 
 2026-09-21 后续：已增加 `tc_engine_verify_streaming_sources_json`，Z-Image 显式验证后 probe 使用 capture_preverified，plan/source identity 与 core resolver/authority 接通 v2。真实本机四文件摘要复核、取消重试、零 payload 复验及合成 test-catalog 下的公开 adapter 图片/receipt 均通过，详见实验记录第二十六轮。默认未验证 engine 的 legacy 路径暂留；persistent import proof、App 验证 UI、Flux 迁移和生产 record 正式证据仍缺失，R1 不能标为关闭。
 
+2026-09-21 Flux 后续：显式 source verification 已接入 Flux，4B host 变更失效测试及真实 worker v2 图片/receipt 通过；8 个官方 artifact 摘要验证与原 PNG 字节一致，详见实验第三十轮。两个目标模型均已有显式进程内验证路径，尚未完成 persistent import proof、App 接入和生产记录资格，R1 仍未整体关闭。
+
 ### R2 · Options 查询不能匹配真实完整 record
 
 证据：`native/api/c_api.mm::tc_streaming_options_json()` 只填 model、shape 等基础 workload；没有填 conditioning revision、VAE policy、feature digest 和 token shapes。

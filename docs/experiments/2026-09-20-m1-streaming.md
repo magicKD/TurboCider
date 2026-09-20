@@ -571,3 +571,17 @@ Flux metadata 新增 `describe_verified()`，要求 native verified lease。chec
 `.venv/bin/python tests/native/test_flux_streaming_descriptor.py` 编译并通过 9B legacy sharded 回归及 4B 新案例：未验证 metadata 拒绝 portable describe；实际 verified plan 与旧 snapshot plan 不同；迁移路径后 verified layout 相同；capture_preverified 零 payload 读取仍产生同一 plan；仅向 config.json 追加 JSON 空白（几何不变）会使旧 lease 失效、重新验证后的全内容/layout identity 改变。迁移 fixture 独立复制 config、对约 7 GB sparse payload 创建硬链接以避免实写零数据；这是路径迁移测试，不冒充独立完整副本测试。底层 SourceLease 的独立复制/改写覆盖见前述测试。
 
 使用托管 MLX headers 对 Flux pipeline.cpp 执行 C++20 clang++ `-fsyntax-only`，返回 0。未重新链接完整 native 库或运行真实 Flux GPU。本轮尚未 override Flux 的 verify_streaming_sources，公开 probe 仍捕获 metadata-only lease；显式验证 API 接入、真实 v2 公开生成和 persistent proof 仍待完成。
+
+
+## 第三十轮：Flux 显式内容验证接入（2026-09-21）
+
+Flux 覆盖 ModelSession::verify_streaming_sources，复用已有 C API 和 campaign 显式验证选项。验证与 public probe 共用 artifact 清单（transformer/config/index、transformer shards、text encoder/config/weights、VAE/config/weights、tokenizer）；验证后 engine 保持内容身份模式，probe 使用 capture_preverified，不在查询阶段自动重读权重。文件变化或缺少 native proof 会失败，不能退回 legacy snapshot。该实现适用于既有 4B/9B Diffusers 布局，真实设备验收本轮只针对已下载的 4B。
+
+
+完整 native hook 构建 `build/m1-flux-source-verify` 成功，库 SHA-256 为 `48c8be973b06e6e909bdc1925644498eb7aa760f3d81e51b90b24e0952ae68cf`。`TURBOCIDER_TEST_NATIVE_DIR=build/m1-flux-source-verify .venv/bin/python tests/native/test_flux_public_streaming.py` 的 9B/4B host adapter 回归通过；4B 新增 native 验证→v2 probe→portable plan 编译、零 payload probe、配置变化失效及旧 record 拒绝检查。链接器提示测试目标 macOS 26.0、库目标 26.2，本机 26.4.1 上运行通过；没有据此验证较旧 OS。
+
+[真实验证/生成结果](2026-09-21-m1-flux4-worker-source-verification.json)：取消返回状态 2（本次 wall 0.111 s），随后 8 个文件共 15,975,638,166 bytes 的校验耗时 7.850 s。大文件 SHA-256 匹配固定官方 revision `e7b7dc27f91deacad38e78976d1f2b499d76a294` 的 LFS manifest，小文件先比对官方 Git blob SHA-1 再与 native SHA-256 对照；全部通过。全内容摘要为 `fdba1a4019cf925357b30afbc27390450b287dcf8d2d10f0d39c07ea08030fca`。再次验证用 0.001075 s，payload bytes=0，cache_hits=8。
+
+同一 worker 通过[合成测试 catalog](2026-09-21-m1-flux4-verified-worker-catalog.json)运行[真实请求](2026-09-21-m1-flux4-verified-worker-request.json)：256²、4 步、seed 42、P0/G1/K2/D1/Q2、retain_all、目标 12 GiB。wall 8.184 s，native denoise 6.391 s，MLX peak 6,269,857,144 bytes。PNG SHA-256 `505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02` 与原 private smoke 完全一致。报告为 cli_worker、actual_plan_verified=true、source_lease_verified=true、drained=true；100 fills、100 reader fences 均完成，authorized/actual layout digest 相同。
+
+这与 Z-Image 一起证明两个目标模型的 native 内容验证→v2 worker record→公开 adapter→实际图片/receipt 链可运行。catalog calibration/TEMPLATE performance 仍为测试 hook 合成输入，不是 12 GiB 发布资格；本次未采完整进程树 footprint 或统计性能置信区间。persistent import proof、App 验证接入、生产 catalog、自动 runtime fingerprint、GPU/ANE 多阶段集成及其完整请求验收仍未完成。

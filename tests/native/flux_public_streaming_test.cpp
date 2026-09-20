@@ -236,6 +236,35 @@ int main(int argc, char **argv) {
             session.generate_resolved(bound_execution, event, cancelled);
         }, "source");
 
+        if (klein4) {
+            auto proof = session.verify_streaming_sources(cancelled);
+            assert(proof->has_verified_content());
+            auto verified_probe = session.probe_public_streaming(
+                {base_request, device(), "cli_worker"});
+            assert(verified_probe->source_identity().identity_version == 2);
+            assert(verified_probe->source_identity().source_snapshot_digest.empty());
+            assert(verified_probe->source_identity().artifact_manifest_digest == proof->artifact_digest());
+            assert(verified_probe->source_lease()->verification_bytes_read() == 0);
+            auto verified_record = record;
+            verified_record.source = verified_probe->source_identity();
+            verified_record.workload = verified_probe->workload_identity();
+            const auto &work = verified_record.workload;
+            auto value_probe = std::dynamic_pointer_cast<const tc::streaming::ValueModelStreamingProbe>(verified_probe);
+            tc::flux2::StreamingPlanView verified_plan(value_probe->lease_ptr(), model, config(),
+                {work.width, work.height, work.token_shapes.front().padded_rows, 0, work.steps});
+            verified_record.plan.layout_digest = verified_plan.layout().digest;
+            auto verified_snapshot = session.compile_public_streaming(verified_probe, verified_record);
+            assert(verified_snapshot->layout().digest == verified_plan.layout().digest);
+            { std::ofstream changed(std::filesystem::path(argv[1]) / "text_encoder/config.json", std::ios::app); changed << ' '; }
+            rejects([&] { session.probe_public_streaming(
+                {base_request, device(), "cli_worker"}); }, "artifact_verification_required");
+            auto updated = session.verify_streaming_sources(cancelled);
+            assert(updated->artifact_digest() != proof->artifact_digest());
+            auto updated_probe = session.probe_public_streaming({base_request, device(), "cli_worker"});
+            rejects([&] { session.compile_public_streaming(updated_probe, verified_record); },
+                    "streaming_record_identity_mismatch");
+        }
+
         const auto shard = std::filesystem::path(argv[1]) /
             (klein4 ? "transformer/diffusion_pytorch_model.safetensors" :
                       "transformer/diffusion_pytorch_model-00002-of-00002.safetensors");

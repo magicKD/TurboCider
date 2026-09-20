@@ -1,0 +1,579 @@
+{
+  "library_sha256": "48c8be973b06e6e909bdc1925644498eb7aa760f3d81e51b90b24e0952ae68cf",
+  "scope": "Explicit native source verification and synthetic-catalog public GPU smoke; no preset qualification",
+  "cases": [
+    {
+      "status": 2,
+      "wall_seconds": 0.11106041702441871,
+      "result": null,
+      "error": "generation cancelled"
+    },
+    {
+      "status": 0,
+      "wall_seconds": 7.8501687499228865,
+      "result": {
+        "artifact_manifest_digest": "fdba1a4019cf925357b30afbc27390450b287dcf8d2d10f0d39c07ea08030fca",
+        "files": [
+          {
+            "bytes": 541,
+            "logical_id": "config.json",
+            "sha256": "09733c74a3da6d17dd0a0472a091a8950c7c6935889c32c16cc800ede05029de"
+          },
+          {
+            "bytes": 7751109744,
+            "logical_id": "diffusion_pytorch_model.safetensors",
+            "sha256": "9f29f9edcfdae452a653ffb51a534ca4decd389952c225724ff3b94042612a6e"
+          },
+          {
+            "bytes": 1536,
+            "logical_id": "text_encoder/config.json",
+            "sha256": "214b4c29a0d975e9fddf9994a5673f22cb2c4c5750352f9227c2c3251ebeab40"
+          },
+          {
+            "bytes": 4967215360,
+            "logical_id": "text_encoder/model-00001-of-00002.safetensors",
+            "sha256": "8c0506e7f4936fa7e26183a4fd8da4e2bdbc5990ba64ae441f965d51228f36ea"
+          },
+          {
+            "bytes": 3077766632,
+            "logical_id": "text_encoder/model-00002-of-00002.safetensors",
+            "sha256": "82f2bd839378541b0557bfabaf37c7d3d637071fdcb73302dedd7cf61162ce07"
+          },
+          {
+            "bytes": 11422654,
+            "logical_id": "tokenizer/tokenizer.json",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+          },
+          {
+            "bytes": 821,
+            "logical_id": "vae/config.json",
+            "sha256": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948"
+          },
+          {
+            "bytes": 168120878,
+            "logical_id": "vae/diffusion_pytorch_model.safetensors",
+            "sha256": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"
+          }
+        ],
+        "model": "flux2-klein-4b",
+        "proof_scope": "native_process_generation",
+        "schema_version": 1,
+        "status": "verified",
+        "verification_bytes_read": 15975638166,
+        "verification_cache_hits": 0
+      },
+      "error": null
+    },
+    {
+      "status": 0,
+      "wall_seconds": 0.0010752080706879497,
+      "result": {
+        "artifact_manifest_digest": "fdba1a4019cf925357b30afbc27390450b287dcf8d2d10f0d39c07ea08030fca",
+        "files": [
+          {
+            "bytes": 541,
+            "logical_id": "config.json",
+            "sha256": "09733c74a3da6d17dd0a0472a091a8950c7c6935889c32c16cc800ede05029de"
+          },
+          {
+            "bytes": 7751109744,
+            "logical_id": "diffusion_pytorch_model.safetensors",
+            "sha256": "9f29f9edcfdae452a653ffb51a534ca4decd389952c225724ff3b94042612a6e"
+          },
+          {
+            "bytes": 1536,
+            "logical_id": "text_encoder/config.json",
+            "sha256": "214b4c29a0d975e9fddf9994a5673f22cb2c4c5750352f9227c2c3251ebeab40"
+          },
+          {
+            "bytes": 4967215360,
+            "logical_id": "text_encoder/model-00001-of-00002.safetensors",
+            "sha256": "8c0506e7f4936fa7e26183a4fd8da4e2bdbc5990ba64ae441f965d51228f36ea"
+          },
+          {
+            "bytes": 3077766632,
+            "logical_id": "text_encoder/model-00002-of-00002.safetensors",
+            "sha256": "82f2bd839378541b0557bfabaf37c7d3d637071fdcb73302dedd7cf61162ce07"
+          },
+          {
+            "bytes": 11422654,
+            "logical_id": "tokenizer/tokenizer.json",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+          },
+          {
+            "bytes": 821,
+            "logical_id": "vae/config.json",
+            "sha256": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948"
+          },
+          {
+            "bytes": 168120878,
+            "logical_id": "vae/diffusion_pytorch_model.safetensors",
+            "sha256": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"
+          }
+        ],
+        "model": "flux2-klein-4b",
+        "proof_scope": "native_process_generation",
+        "schema_version": 1,
+        "status": "verified",
+        "verification_bytes_read": 0,
+        "verification_cache_hits": 8
+      },
+      "error": null
+    },
+    {
+      "scope": "Public verified adapter smoke with synthetic test catalog; NOT release calibration",
+      "status": 0,
+      "wall_seconds": 8.184089665999636,
+      "error": null,
+      "result": {
+        "acceleration_selection": "gpu: explicitly selected",
+        "actual_denoise_steps": 4,
+        "block_residency": {
+          "activation_reserve_bytes": 0,
+          "active_blocks": 25,
+          "block_bytes": 490734592,
+          "enabled": true,
+          "estimated_working_set_bytes": 1862274048,
+          "fully_resident": false,
+          "memory_budget_bytes": 12884901888,
+          "mlp_prefix_channels": 0,
+          "pinned_blocks": 0,
+          "policy": "shared_block_residency_v1",
+          "quantized": false,
+          "refill_slots": 4,
+          "request_bytes_loaded": 29834145792,
+          "request_load_seconds": 9.031328710000004,
+          "request_max_refill_block": 1,
+          "request_max_refill_seconds": 0.203309083,
+          "request_pack_read_bytes": 0,
+          "request_pack_seconds": 0,
+          "request_pack_write_bytes": 0,
+          "request_refill_load_seconds": 8.965780752000004,
+          "request_slot_allocations": 4,
+          "request_slot_fills": 100,
+          "request_slot_refills": 100,
+          "request_wait_seconds": 3.5480070839999995,
+          "streamed_blocks": 25,
+          "suffix_pack_bytes": 0
+        },
+        "block_streaming": {
+          "activation_reserve_bytes": 0,
+          "active_blocks": 25,
+          "actual_layout": {
+            "block_group_size": 1,
+            "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+            "conditioning_recipe": "qwen3-flux2-klein-v1",
+            "digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+            "drained": true,
+            "group_count": 25,
+            "io_workers": 2,
+            "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+            "multi_pool_policy": "retain_all",
+            "pass_count": 4,
+            "pass_transition": "reload",
+            "pool_count": 2,
+            "prefetch_distance": 1,
+            "reader_revision": 1,
+            "receipt": {
+              "canonical_digest": "c825a5b7462cc12dbcd187ffc6ac0190863612e621bca5ad105fca83cb3ff949",
+              "event_digest": "97792d3d1d2f3f42a97b7dd2225229a5e614d3a2c690077b23695e38a4563196",
+              "fills": 100,
+              "groups_submitted": 100,
+              "logical_read_bytes": 29444075520,
+              "reader_fences_completed": 100,
+              "reader_fences_issued": 100,
+              "schema_version": 2,
+              "source_generation": 4,
+              "verifier_revision": "tc-streaming-receipt-verifier-v2"
+            },
+            "refill_worker_count": 2,
+            "resident_prefix_blocks": 0,
+            "retention": "request",
+            "slot_bundle_count": 4,
+            "slot_count": 2,
+            "source_lease_verified": true,
+            "stage": "denoiser",
+            "startup_policy": "prefetch_window_before_prefix",
+            "upsample_boundary": "no-upsample;release-before-vae",
+            "weight_format": "diffusers-bf16-single-file"
+          },
+          "block_bytes": 490734592,
+          "enabled": true,
+          "estimated_working_set_bytes": 1862274048,
+          "fully_resident": false,
+          "implementation": "generic_stage_executor_v2",
+          "layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+          "memory_budget_bytes": 12884901888,
+          "mlp_prefix_channels": 0,
+          "pinned_blocks": 0,
+          "policy": "shared_block_residency_v1",
+          "quantized": false,
+          "refill_slots": 4,
+          "request_bytes_loaded": 29834145792,
+          "request_load_seconds": 9.031328710000004,
+          "request_max_refill_block": 1,
+          "request_max_refill_seconds": 0.203309083,
+          "request_pack_read_bytes": 0,
+          "request_pack_seconds": 0,
+          "request_pack_write_bytes": 0,
+          "request_refill_load_seconds": 8.965780752000004,
+          "request_slot_allocations": 4,
+          "request_slot_fills": 100,
+          "request_slot_refills": 100,
+          "request_wait_seconds": 3.5480070839999995,
+          "streamed_blocks": 25,
+          "suffix_pack_bytes": 0
+        },
+        "checkpoint": null,
+        "encoder_execution": "gpu",
+        "encoder_gpu_graph": "qwen3_gpu_only",
+        "encoder_hybrid": {},
+        "encoder_runtime_backend": "mlx_cpp_metal",
+        "encoder_runtime_precision": "bf16",
+        "gpu_graph": "eager_blocks",
+        "height": 256,
+        "hybrid": {},
+        "lora_strategy": "none",
+        "memory": {
+          "mlx_active_bytes": 100224070,
+          "mlx_peak_bytes": 6269857144,
+          "scope": "MLX allocator; excludes Core ML/OS/file cache"
+        },
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "output": "/Users/chencanhui/models/TurboCider/experiments/m1-flux4-verified-worker-smoke/image.png",
+        "plan": {
+          "algorithm_approximations": [],
+          "audio": false,
+          "audio_capability": "not_applicable",
+          "backend": "mlx_cpp_metal",
+          "decoded_shape": [
+            256,
+            256,
+            1
+          ],
+          "encoder_backend": "mlx_cpp_metal",
+          "encoder_execution": "gpu",
+          "encoder_gpu_graph": "qwen3_gpu_only",
+          "encoder_precision": "bf16",
+          "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+          "executable": true,
+          "execution": "gpu",
+          "executor_operations": null,
+          "gpu_graph": "eager_blocks",
+          "limitation": "capabilities depend on model artifacts and configured hardware",
+          "lora_count": 0,
+          "lora_fusion": "none",
+          "lora_strategy": "none",
+          "ltx_backend": "auto",
+          "ltx_fast_av": true,
+          "ltx_sol_dense_edge_blocks": 1,
+          "ltx_sol_dense_edge_steps": 1,
+          "ltx_sol_stage1": false,
+          "ltx_sol_stage2": false,
+          "ltx_sol_tau": 0.5,
+          "ltx_sparse_anchor_stride": 0,
+          "ltx_sparse_keep_blocks": 0,
+          "ltx_sparse_mode": 0,
+          "ltx_sparse_radius": 1,
+          "ltx_sparse_tokens_per_frame": 0,
+          "ltx_stage2_text_rows": 0,
+          "ltx_video_attention_batch": false,
+          "memory_budget_bytes": null,
+          "memory_budget_scope": "unset",
+          "memory_estimate_bytes": null,
+          "memory_estimate_kind": "requires_layout_metadata",
+          "model": "flux2-klein-4b",
+          "operation": "image.generate",
+          "precision": "bf16",
+          "profile_identity": "",
+          "quantized_cache": null,
+          "requested_execution": "gpu",
+          "requested_shape": [
+            256,
+            256,
+            1
+          ],
+          "residency": "resident",
+          "schema_version": 1,
+          "selection_pending": false,
+          "stages": [
+            {
+              "dependencies": [],
+              "id": "text_encode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "text_encode"
+              ],
+              "id": "denoise",
+              "iterations": 4
+            },
+            {
+              "dependencies": [
+                "denoise"
+              ],
+              "id": "vae_decode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "vae_decode"
+              ],
+              "id": "export",
+              "iterations": 1
+            }
+          ],
+          "streaming": {
+            "actual_layout": {
+              "block_group_size": 1,
+              "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+              "conditioning_recipe": "qwen3-flux2-klein-v1",
+              "digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+              "drained": true,
+              "group_count": 25,
+              "io_workers": 2,
+              "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+              "multi_pool_policy": "retain_all",
+              "pass_count": 4,
+              "pass_transition": "reload",
+              "pool_count": 2,
+              "prefetch_distance": 1,
+              "reader_revision": 1,
+              "receipt": {
+                "canonical_digest": "c825a5b7462cc12dbcd187ffc6ac0190863612e621bca5ad105fca83cb3ff949",
+                "event_digest": "97792d3d1d2f3f42a97b7dd2225229a5e614d3a2c690077b23695e38a4563196",
+                "fills": 100,
+                "groups_submitted": 100,
+                "logical_read_bytes": 29444075520,
+                "reader_fences_completed": 100,
+                "reader_fences_issued": 100,
+                "schema_version": 2,
+                "source_generation": 4,
+                "verifier_revision": "tc-streaming-receipt-verifier-v2"
+              },
+              "refill_worker_count": 2,
+              "resident_prefix_blocks": 0,
+              "retention": "request",
+              "slot_bundle_count": 4,
+              "slot_count": 2,
+              "source_lease_verified": true,
+              "stage": "denoiser",
+              "startup_policy": "prefetch_window_before_prefix",
+              "upsample_boundary": "no-upsample;release-before-vae",
+              "weight_format": "diffusers-bf16-single-file"
+            },
+            "authority": "public_preset_authority",
+            "eligibility": "public_reviewed_preset",
+            "enforcement": "exact_layout",
+            "execution_supported": true,
+            "field_provenance": {
+              "enabled": "test_catalog",
+              "retention": "test_catalog",
+              "schema_version": "test_catalog",
+              "selection": "test_catalog",
+              "stages.denoiser.block_group_size": "test_catalog",
+              "stages.denoiser.io_workers": "test_catalog",
+              "stages.denoiser.prefetch_distance": "test_catalog",
+              "stages.denoiser.residency": "test_catalog",
+              "stages.denoiser.resident_prefix_blocks": "test_catalog",
+              "stages.denoiser.slot_count": "test_catalog"
+            },
+            "merged_intent": {
+              "enabled": true,
+              "retention": "request",
+              "schema_version": 1,
+              "selection": "manual",
+              "stages": {
+                "denoiser": {
+                  "block_group_size": 1,
+                  "io_workers": 2,
+                  "prefetch_distance": 1,
+                  "residency": "streamed",
+                  "resident_prefix_blocks": 0,
+                  "slot_count": 2
+                }
+              }
+            },
+            "rejection_code": null,
+            "requested_layout": {
+              "enabled": true,
+              "retention": "request",
+              "schema_version": 1,
+              "selection": "manual",
+              "stages": {
+                "denoiser": {
+                  "block_group_size": 1,
+                  "io_workers": 2,
+                  "prefetch_distance": 1,
+                  "residency": "streamed",
+                  "resident_prefix_blocks": 0,
+                  "slot_count": 2
+                }
+              }
+            },
+            "resolution_state": "executed_exact_layout",
+            "resolved_layout": {
+              "block_group_size": 1,
+              "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+              "conditioning_recipe": "qwen3-flux2-klein-v1",
+              "digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+              "drained": true,
+              "group_count": 25,
+              "io_workers": 2,
+              "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+              "multi_pool_policy": "retain_all",
+              "pass_count": 4,
+              "pass_transition": "reload",
+              "pool_count": 2,
+              "prefetch_distance": 1,
+              "reader_revision": 1,
+              "receipt": {
+                "canonical_digest": "c825a5b7462cc12dbcd187ffc6ac0190863612e621bca5ad105fca83cb3ff949",
+                "event_digest": "97792d3d1d2f3f42a97b7dd2225229a5e614d3a2c690077b23695e38a4563196",
+                "fills": 100,
+                "groups_submitted": 100,
+                "logical_read_bytes": 29444075520,
+                "reader_fences_completed": 100,
+                "reader_fences_issued": 100,
+                "schema_version": 2,
+                "source_generation": 4,
+                "verifier_revision": "tc-streaming-receipt-verifier-v2"
+              },
+              "refill_worker_count": 2,
+              "resident_prefix_blocks": 0,
+              "retention": "request",
+              "slot_bundle_count": 4,
+              "slot_count": 2,
+              "source_lease_verified": true,
+              "stage": "denoiser",
+              "startup_policy": "prefetch_window_before_prefix",
+              "upsample_boundary": "no-upsample;release-before-vae",
+              "weight_format": "diffusers-bf16-single-file"
+            }
+          },
+          "streaming_offload": false,
+          "validation": "native_candidate",
+          "weight_validation": "see parity evidence"
+        },
+        "prompt_cache_hit": false,
+        "public_streaming": {
+          "actual_layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+          "actual_plan_verified": true,
+          "authorized_layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+          "calibrated_request_bytes": 11596411699,
+          "catalog_revision": "verified-source-smoke-v2",
+          "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+          "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+          "execution_container": "cli_worker",
+          "memory_scope": "execution_process_tree_v1",
+          "preset_id": "test-flux2-klein-4b-12g-aa7271f33abc",
+          "preset_revision": 1,
+          "receipt_digest": "c825a5b7462cc12dbcd187ffc6ac0190863612e621bca5ad105fca83cb3ff949",
+          "receipt_schema_version": 2,
+          "receipt_source_generation": 4,
+          "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+          "record_digest": "2a51ed1e1b2bed78d320a916435dd9d79e9fc2e6325e5dc86db7eb749580574a",
+          "resolution_digest": "dcd8e12e014da29b62ad85bbdaafadbb28d20682c1275ba9efb7a693932c12b0",
+          "runtime_digest": "4e09e6854ad933a199d82819994e2d7b5b786b5e8e95e33ad459ead684ac7659",
+          "schema_version": 1,
+          "source_digest": "b0d8f57c7301054278a1920d2fda5e032a0b2b9fadd4f947d818db8841c95452",
+          "target_request_memory_bytes": 12884901888,
+          "workload_digest": "e467409473274ad11f9697a9a1fb875b6221309e935e4cf853713cd71d6f38ba"
+        },
+        "reference_tokens": 0,
+        "runtime_backend": null,
+        "runtime_precision": null,
+        "schema_version": 1,
+        "seed": 42,
+        "steps": 4,
+        "streaming_receipt": {
+          "boundaries": [],
+          "canonical_digest": "c825a5b7462cc12dbcd187ffc6ac0190863612e621bca5ad105fca83cb3ff949",
+          "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+          "implementation": "generic_stage_executor_v2",
+          "layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+          "schema_version": 2,
+          "stages": [
+            {
+              "canonical_digest": "035665d7f5b1bb38165bbb29a4e3329a2a7ee0dbd070deed903db5a4820e1bba",
+              "completed_groups": 100,
+              "completed_passes": 4,
+              "drain_completed": true,
+              "event_digest": "97792d3d1d2f3f42a97b7dd2225229a5e614d3a2c690077b23695e38a4563196",
+              "fills": 100,
+              "groups_submitted": 100,
+              "implementation": "generic_stage_executor_v2",
+              "layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+              "logical_read_bytes": 29444075520,
+              "reader_fences_completed": 100,
+              "reader_fences_issued": 100,
+              "schema_version": 2,
+              "source_generation": 4,
+              "stage_id": "denoiser",
+              "stage_index": 0
+            }
+          ]
+        },
+        "streaming_stages": [
+          {
+            "runtime": {
+              "block_group_size": 1,
+              "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+              "conditioning_recipe": "qwen3-flux2-klein-v1",
+              "digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+              "drained": true,
+              "group_count": 25,
+              "io_workers": 2,
+              "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+              "multi_pool_policy": "retain_all",
+              "pass_count": 4,
+              "pass_transition": "reload",
+              "pool_count": 2,
+              "prefetch_distance": 1,
+              "reader_revision": 1,
+              "receipt": {
+                "canonical_digest": "c825a5b7462cc12dbcd187ffc6ac0190863612e621bca5ad105fca83cb3ff949",
+                "event_digest": "97792d3d1d2f3f42a97b7dd2225229a5e614d3a2c690077b23695e38a4563196",
+                "fills": 100,
+                "groups_submitted": 100,
+                "logical_read_bytes": 29444075520,
+                "reader_fences_completed": 100,
+                "reader_fences_issued": 100,
+                "schema_version": 2,
+                "source_generation": 4,
+                "verifier_revision": "tc-streaming-receipt-verifier-v2"
+              },
+              "refill_worker_count": 2,
+              "resident_prefix_blocks": 0,
+              "retention": "request",
+              "slot_bundle_count": 4,
+              "slot_count": 2,
+              "source_lease_verified": true,
+              "stage": "denoiser",
+              "startup_policy": "prefetch_window_before_prefix",
+              "upsample_boundary": "no-upsample;release-before-vae",
+              "weight_format": "diffusers-bf16-single-file"
+            },
+            "stage_index": 0
+          }
+        ],
+        "text_tokens": 30,
+        "timings_seconds": {
+          "denoise": 6.390757583,
+          "hybrid_setup": 9.15e-05,
+          "image_encode": 8.4e-08,
+          "request_wall": 7.78701025,
+          "text_encode": 1.054833583,
+          "vae_decode": 0.229092542
+        },
+        "valid_text_tokens": 30,
+        "validation": "candidate; consult recorded parity suite",
+        "warmup": false,
+        "width": 256
+      },
+      "image_sha256": "505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02"
+    }
+  ]
+}

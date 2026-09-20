@@ -130,22 +130,9 @@ Flux::Flux(const std::filesystem::path &root, std::string model_id)
 }
 Flux::~Flux() = default;
 
-std::shared_ptr<const streaming::ModelStreamingProbe>
-Flux::probe_public_streaming(
-        const streaming::PublicResolveInput &input) const {
-    const auto &request = input.request;
-    require((model_id_ == "flux2-klein-9b" || model_id_ == "flux2-klein-4b") && request.model == model_id_,
-            "streaming_engine_model_mismatch");
-    require(request.operation == "image.generate" && request.inputs.empty() &&
-                request.frames == 1 && !request.audio &&
-                request.execution == "gpu" && request.ane_manifest.empty() &&
-                request.encoder_ane_manifest.empty() &&
-                !request.allow_approximation && !request.compile_gpu &&
-                request.loras.empty(),
-            "streaming_route_unsupported: FLUX public card requires BF16 eager GPU text-to-image without LoRA/ANE/compiled graph");
-    require(request.width >= 16 && request.height >= 16 &&
-                request.width % 16 == 0 && request.height % 16 == 0,
-            "streaming_workload_invalid: FLUX dimensions must be multiples of 16");
+std::vector<streaming::SourceFileIdentity> Flux::streaming_source_files() const {
+    require(model_id_ == "flux2-klein-4b" || model_id_ == "flux2-klein-9b",
+            "streaming_artifact_verification_unsupported");
     std::vector<streaming::SourceFileIdentity> files;
     auto add = [&](std::string logical, std::filesystem::path path) {
         streaming::SourceFileIdentity file;
@@ -179,7 +166,35 @@ Flux::probe_public_streaming(
     add("vae/config.json", root_ / "vae/config.json");
     append_public_artifacts(root_ / "vae", "vae", files);
     add("tokenizer/tokenizer.json", root_ / "tokenizer/tokenizer.json");
-    auto lease = streaming::SourceLease::capture(std::move(files));
+    return files;
+}
+
+std::shared_ptr<const streaming::SourceLease>
+Flux::verify_streaming_sources(std::atomic<bool> &cancelled) {
+    streaming_content_identity_ = true;
+    return streaming::SourceLease::capture_verified(streaming_source_files(), &cancelled);
+}
+
+std::shared_ptr<const streaming::ModelStreamingProbe>
+Flux::probe_public_streaming(
+        const streaming::PublicResolveInput &input) const {
+    const auto &request = input.request;
+    require((model_id_ == "flux2-klein-9b" || model_id_ == "flux2-klein-4b") && request.model == model_id_,
+            "streaming_engine_model_mismatch");
+    require(request.operation == "image.generate" && request.inputs.empty() &&
+                request.frames == 1 && !request.audio &&
+                request.execution == "gpu" && request.ane_manifest.empty() &&
+                request.encoder_ane_manifest.empty() &&
+                !request.allow_approximation && !request.compile_gpu &&
+                request.loras.empty(),
+            "streaming_route_unsupported: FLUX public card requires BF16 eager GPU text-to-image without LoRA/ANE/compiled graph");
+    require(request.width >= 16 && request.height >= 16 &&
+                request.width % 16 == 0 && request.height % 16 == 0,
+            "streaming_workload_invalid: FLUX dimensions must be multiples of 16");
+    auto files = streaming_source_files();
+    auto lease = streaming_content_identity_
+        ? streaming::SourceLease::capture_preverified(std::move(files))
+        : streaming::SourceLease::capture(std::move(files));
     flux2::StreamingMetadata metadata(lease, model_id_);
     metadata.check_unchanged();
 
