@@ -519,3 +519,19 @@ MLX peak 为约 8.88–8.98 GB，最大 8,975,747,452 bytes；该计数不含 Co
 `.venv/bin/python tests/native/test_z_image_streaming_descriptor.py` 编译并通过：新增实际 plan 构造断言，其摘要与 verified descriptor 编译结果一致；复制安装和 capture_preverified 后的 plan 摘要相同，lease 实例/generation 仍分离。现有 metadata、布局边界和 stale source 拒绝测试继续通过。该轮尚未新增 public import/verify 入口，当前模型 probe 仍 capture metadata-only lease；没有宣称公开 v2 模型已可运行，也没有新 GPU 性能或 App 验收结果。
 
 另使用当前托管 MLX headers 对 `native/models/z_image/z_image.cpp` 执行 clang++ C++20 `-fsyntax-only` 检查，返回 0；此项不等同于重新链接完整 native 库。
+
+
+## 第二十六轮：显式 native 模型内容验证入口（2026-09-21）
+
+新增 additive C API `tc_engine_verify_streaming_sources_json`。Z-Image 实现通过同一 held fd 验证 transformer、text encoder、VAE、tokenizer 的完整 SHA-256，返回全内容身份、文件摘要、读取字节和缓存命中数；支持 `tc_engine_cancel`，成功/取消/失败分别返回 0/2/1。该操作持有 engine mutex、不使用 GPU lock、不加载 GPU weights，其他尚未实现的模型返回 unsupported。
+
+验证请求使该 Z-Image engine 进入内容身份模式；之后 public probe 只调用 capture_preverified，不在 options/resolve 中隐式哈希大文件。文件变化或证明缺失会返回 artifact_verification_required；不会静默退回 legacy。验证缓存目前仅在 native 进程内有效，API 返回的 JSON 不能自行恢复信任，也不是 persistent import proof。公开 catalog 仍为空；验证内容并不授予生成资格。
+
+
+完整 native hook 构建 `build/m1-source-verify` 成功，库 SHA-256 为 `b2537bf2d532b9035cd4ec0b0c0ef812fb4170434eced06070cd016d309b8e10`。`test_streaming_test_catalog.py` 3 项通过，包含新 API 的首次验证/缓存命中、native/Python v2 digest 一致、验证后 public resolve 成功、文件改写后证明失效，以及重新验证后旧 record 仍拒绝新内容。release hook 缺席项使用保留的 m1-release 库，不代表本轮重建 release App。
+
+[真实模型验证及生成记录](2026-09-21-m1-z-native-source-verification.json)：首次发出取消后，API 在本次调用 1.040 s 返回状态 2；这是单次观测，不是所有文件系统下的取消时限保证。随后重试用 10.652 s 验证 20,701,575,490 bytes，四份摘要均匹配此前固定 revision 下载的 SHA-256；再次调用耗时 0.001880 s，verification_bytes_read=0、cache_hits=4。全内容摘要为 `6668c65bf99c32a7c16a73396b611abf39f2eee4f9325a0180f7e5d7a3bfe759`。
+
+同一 public engine 随后通过[合成测试 catalog](2026-09-21-m1-z-verified-public-catalog.json)运行[真实请求](2026-09-21-m1-z-verified-public-request.json)：256²、9 步、seed 42、P0/G1/K2/D0/Q1、目标 12 GiB。请求 wall 为 33.304 s，native denoise 28.684 s，PNG SHA-256 为 `8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3`，与既有 private smoke 字节一致。authorized/actual layout digest 相同，actual_plan_verified=true、source_lease_verified=true、drained=true，270 fills 与 270 reader fences 均完成。MLX peak 为 8,975,747,432 bytes，不是完整 process-tree footprint。
+
+测试 catalog 的 calibration 数字和 TEMPLATE performance 是 hook 生成的合成输入，**不是实测资格或发布证据**；生产 catalog 仍为空。该结果证明 native 验证→v2 record→公开 adapter→实际 receipt/图片这条链跑通，不能据此发布 12 GiB 预设。报告 execution_container 仍沿用 embedded_app，而本次实际由 Python host 调用；这也是 R6 待修的问题。App 尚未接入显式验证 UI，持久化 import proof、Flux 验证迁移、真实环境 calibration 和 GPU/ANE 多阶段集成仍未完成。

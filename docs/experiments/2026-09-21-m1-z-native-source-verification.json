@@ -1,0 +1,539 @@
+{
+  "library_sha256": "b2537bf2d532b9035cd4ec0b0c0ef812fb4170434eced06070cd016d309b8e10",
+  "scope": "Explicit native source verification and synthetic-catalog public GPU smoke; no preset qualification",
+  "cases": [
+    {
+      "status": 2,
+      "wall_seconds": 1.0401268750429153,
+      "result": null,
+      "error": "generation cancelled"
+    },
+    {
+      "status": 0,
+      "wall_seconds": 10.651860959012993,
+      "result": {
+        "artifact_manifest_digest": "6668c65bf99c32a7c16a73396b611abf39f2eee4f9325a0180f7e5d7a3bfe759",
+        "files": [
+          {
+            "bytes": 8044982048,
+            "logical_id": "text_encoder",
+            "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a"
+          },
+          {
+            "bytes": 11422654,
+            "logical_id": "tokenizer",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+          },
+          {
+            "bytes": 12309866400,
+            "logical_id": "transformer",
+            "sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6"
+          },
+          {
+            "bytes": 335304388,
+            "logical_id": "vae",
+            "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+          }
+        ],
+        "model": "z-image-turbo",
+        "proof_scope": "native_process_generation",
+        "schema_version": 1,
+        "status": "verified",
+        "verification_bytes_read": 20701575490,
+        "verification_cache_hits": 0
+      },
+      "error": null
+    },
+    {
+      "status": 0,
+      "wall_seconds": 0.001879541901871562,
+      "result": {
+        "artifact_manifest_digest": "6668c65bf99c32a7c16a73396b611abf39f2eee4f9325a0180f7e5d7a3bfe759",
+        "files": [
+          {
+            "bytes": 8044982048,
+            "logical_id": "text_encoder",
+            "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a"
+          },
+          {
+            "bytes": 11422654,
+            "logical_id": "tokenizer",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+          },
+          {
+            "bytes": 12309866400,
+            "logical_id": "transformer",
+            "sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6"
+          },
+          {
+            "bytes": 335304388,
+            "logical_id": "vae",
+            "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+          }
+        ],
+        "model": "z-image-turbo",
+        "proof_scope": "native_process_generation",
+        "schema_version": 1,
+        "status": "verified",
+        "verification_bytes_read": 0,
+        "verification_cache_hits": 4
+      },
+      "error": null
+    },
+    {
+      "scope": "Public verified adapter smoke with synthetic test catalog; NOT release calibration",
+      "status": 0,
+      "wall_seconds": 33.30422599997837,
+      "error": null,
+      "result": {
+        "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+        "actual_denoise_steps": 9,
+        "block_residency": {
+          "activation_reserve_bytes": 4810640512,
+          "active_blocks": 30,
+          "block_bytes": 361820672,
+          "enabled": true,
+          "estimated_working_set_bytes": 5534281856,
+          "fully_resident": false,
+          "memory_budget_bytes": 12884901888,
+          "mlp_prefix_channels": 0,
+          "pinned_blocks": 0,
+          "policy": "shared_block_residency_v1",
+          "quantized": false,
+          "refill_slots": 2,
+          "request_bytes_loaded": 99146778752,
+          "request_load_seconds": 28.20801288099999,
+          "request_max_refill_block": 18,
+          "request_max_refill_seconds": 0.21545275,
+          "request_pack_read_bytes": 0,
+          "request_pack_seconds": 0,
+          "request_pack_write_bytes": 0,
+          "request_refill_load_seconds": 27.83950604699999,
+          "request_slot_allocations": 2,
+          "request_slot_fills": 270,
+          "request_slot_refills": 270,
+          "request_wait_seconds": 16.944114430000003,
+          "streamed_blocks": 30,
+          "suffix_pack_bytes": 0
+        },
+        "block_streaming": {
+          "activation_reserve_bytes": 4810640512,
+          "active_blocks": 30,
+          "actual_layout": {
+            "block_group_size": 1,
+            "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+            "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+            "digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+            "drained": true,
+            "group_count": 30,
+            "io_workers": 1,
+            "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+            "multi_pool_policy": "serial",
+            "pass_count": 9,
+            "pass_transition": "reload",
+            "pool_count": 1,
+            "prefetch_distance": 0,
+            "reader_revision": 1,
+            "receipt": {
+              "canonical_digest": "aaa27152f67946bdc3b92d4d650176daf0ef38235ef072814b11fc57a74633df",
+              "event_digest": "1917c97e2b4c3c75780107730f206e1c7f09b36da96d60fccc67deae9c404940",
+              "fills": 270,
+              "groups_submitted": 270,
+              "logical_read_bytes": 97691581440,
+              "reader_fences_completed": 270,
+              "reader_fences_issued": 270,
+              "schema_version": 2,
+              "source_generation": 4,
+              "verifier_revision": "tc-streaming-receipt-verifier-v2"
+            },
+            "refill_worker_count": 1,
+            "resident_prefix_blocks": 0,
+            "retention": "request",
+            "slot_bundle_count": 2,
+            "slot_count": 2,
+            "source_lease_verified": true,
+            "stage": "denoiser",
+            "startup_policy": "prefetch_window_before_prefix",
+            "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+            "weight_format": "comfy-bf16-single-file"
+          },
+          "block_bytes": 361820672,
+          "enabled": true,
+          "estimated_working_set_bytes": 5534281856,
+          "fully_resident": false,
+          "implementation": "generic_stage_executor_v2",
+          "layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+          "memory_budget_bytes": 12884901888,
+          "mlp_prefix_channels": 0,
+          "pinned_blocks": 0,
+          "policy": "shared_block_residency_v1",
+          "quantized": false,
+          "refill_slots": 2,
+          "request_bytes_loaded": 99146778752,
+          "request_load_seconds": 28.20801288099999,
+          "request_max_refill_block": 18,
+          "request_max_refill_seconds": 0.21545275,
+          "request_pack_read_bytes": 0,
+          "request_pack_seconds": 0,
+          "request_pack_write_bytes": 0,
+          "request_refill_load_seconds": 27.83950604699999,
+          "request_slot_allocations": 2,
+          "request_slot_fills": 270,
+          "request_slot_refills": 270,
+          "request_wait_seconds": 16.944114430000003,
+          "streamed_blocks": 30,
+          "suffix_pack_bytes": 0
+        },
+        "checkpoint": null,
+        "encoder_execution": "gpu",
+        "encoder_gpu_graph": "qwen3_gpu_only",
+        "encoder_hybrid": {},
+        "encoder_runtime_backend": "mlx_cpp_metal",
+        "encoder_runtime_precision": "bf16",
+        "gpu_graph": "eager_blocks",
+        "height": 256,
+        "hybrid": {},
+        "lora_strategy": "none",
+        "memory": {
+          "mlx_active_bytes": 336278176,
+          "mlx_peak_bytes": 8975747432,
+          "scope": "MLX allocator; excludes Core ML/OS/file cache"
+        },
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "output": "/Users/chencanhui/models/TurboCider/experiments/m1-z-verified-public-smoke/image.png",
+        "plan": {
+          "algorithm_approximations": [],
+          "audio": false,
+          "audio_capability": "not_applicable",
+          "backend": "mlx_cpp_metal",
+          "decoded_shape": [
+            256,
+            256,
+            1
+          ],
+          "encoder_backend": "mlx_cpp_metal",
+          "encoder_execution": "gpu",
+          "encoder_gpu_graph": "qwen3_gpu_only",
+          "encoder_precision": "bf16",
+          "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+          "executable": true,
+          "execution": "gpu",
+          "executor_operations": null,
+          "gpu_graph": "eager_blocks",
+          "limitation": "capabilities depend on model artifacts and configured hardware",
+          "lora_count": 0,
+          "lora_fusion": "none",
+          "lora_strategy": "none",
+          "ltx_backend": "auto",
+          "ltx_fast_av": true,
+          "ltx_sol_dense_edge_blocks": 1,
+          "ltx_sol_dense_edge_steps": 1,
+          "ltx_sol_stage1": false,
+          "ltx_sol_stage2": false,
+          "ltx_sol_tau": 0.5,
+          "ltx_sparse_anchor_stride": 0,
+          "ltx_sparse_keep_blocks": 0,
+          "ltx_sparse_mode": 0,
+          "ltx_sparse_radius": 1,
+          "ltx_sparse_tokens_per_frame": 0,
+          "ltx_stage2_text_rows": 0,
+          "ltx_video_attention_batch": false,
+          "memory_budget_bytes": null,
+          "memory_budget_scope": "unset",
+          "memory_estimate_bytes": null,
+          "memory_estimate_kind": "requires_layout_metadata",
+          "model": "z-image-turbo",
+          "operation": "image.generate",
+          "precision": "bf16",
+          "profile_identity": "",
+          "quantized_cache": null,
+          "requested_execution": "gpu",
+          "requested_shape": [
+            256,
+            256,
+            1
+          ],
+          "residency": "resident",
+          "schema_version": 1,
+          "selection_pending": false,
+          "stages": [
+            {
+              "dependencies": [],
+              "id": "text_encode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "text_encode"
+              ],
+              "id": "denoise",
+              "iterations": 9
+            },
+            {
+              "dependencies": [
+                "denoise"
+              ],
+              "id": "vae_decode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "vae_decode"
+              ],
+              "id": "export",
+              "iterations": 1
+            }
+          ],
+          "streaming": {
+            "actual_layout": {
+              "block_group_size": 1,
+              "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+              "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+              "digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+              "drained": true,
+              "group_count": 30,
+              "io_workers": 1,
+              "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+              "multi_pool_policy": "serial",
+              "pass_count": 9,
+              "pass_transition": "reload",
+              "pool_count": 1,
+              "prefetch_distance": 0,
+              "reader_revision": 1,
+              "receipt": {
+                "canonical_digest": "aaa27152f67946bdc3b92d4d650176daf0ef38235ef072814b11fc57a74633df",
+                "event_digest": "1917c97e2b4c3c75780107730f206e1c7f09b36da96d60fccc67deae9c404940",
+                "fills": 270,
+                "groups_submitted": 270,
+                "logical_read_bytes": 97691581440,
+                "reader_fences_completed": 270,
+                "reader_fences_issued": 270,
+                "schema_version": 2,
+                "source_generation": 4,
+                "verifier_revision": "tc-streaming-receipt-verifier-v2"
+              },
+              "refill_worker_count": 1,
+              "resident_prefix_blocks": 0,
+              "retention": "request",
+              "slot_bundle_count": 2,
+              "slot_count": 2,
+              "source_lease_verified": true,
+              "stage": "denoiser",
+              "startup_policy": "prefetch_window_before_prefix",
+              "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+              "weight_format": "comfy-bf16-single-file"
+            },
+            "authority": "public_preset_authority",
+            "eligibility": "public_reviewed_preset",
+            "enforcement": "exact_layout",
+            "execution_supported": true,
+            "field_provenance": {
+              "enabled": "test_catalog",
+              "retention": "test_catalog",
+              "schema_version": "test_catalog",
+              "selection": "test_catalog",
+              "stages.denoiser.block_group_size": "test_catalog",
+              "stages.denoiser.io_workers": "test_catalog",
+              "stages.denoiser.prefetch_distance": "test_catalog",
+              "stages.denoiser.residency": "test_catalog",
+              "stages.denoiser.resident_prefix_blocks": "test_catalog",
+              "stages.denoiser.slot_count": "test_catalog"
+            },
+            "merged_intent": {
+              "enabled": true,
+              "retention": "request",
+              "schema_version": 1,
+              "selection": "manual",
+              "stages": {
+                "denoiser": {
+                  "block_group_size": 1,
+                  "io_workers": 1,
+                  "prefetch_distance": 0,
+                  "residency": "streamed",
+                  "resident_prefix_blocks": 0,
+                  "slot_count": 2
+                }
+              }
+            },
+            "rejection_code": null,
+            "requested_layout": {
+              "enabled": true,
+              "retention": "request",
+              "schema_version": 1,
+              "selection": "manual",
+              "stages": {
+                "denoiser": {
+                  "block_group_size": 1,
+                  "io_workers": 1,
+                  "prefetch_distance": 0,
+                  "residency": "streamed",
+                  "resident_prefix_blocks": 0,
+                  "slot_count": 2
+                }
+              }
+            },
+            "resolution_state": "executed_exact_layout",
+            "resolved_layout": {
+              "block_group_size": 1,
+              "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+              "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+              "digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+              "drained": true,
+              "group_count": 30,
+              "io_workers": 1,
+              "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+              "multi_pool_policy": "serial",
+              "pass_count": 9,
+              "pass_transition": "reload",
+              "pool_count": 1,
+              "prefetch_distance": 0,
+              "reader_revision": 1,
+              "receipt": {
+                "canonical_digest": "aaa27152f67946bdc3b92d4d650176daf0ef38235ef072814b11fc57a74633df",
+                "event_digest": "1917c97e2b4c3c75780107730f206e1c7f09b36da96d60fccc67deae9c404940",
+                "fills": 270,
+                "groups_submitted": 270,
+                "logical_read_bytes": 97691581440,
+                "reader_fences_completed": 270,
+                "reader_fences_issued": 270,
+                "schema_version": 2,
+                "source_generation": 4,
+                "verifier_revision": "tc-streaming-receipt-verifier-v2"
+              },
+              "refill_worker_count": 1,
+              "resident_prefix_blocks": 0,
+              "retention": "request",
+              "slot_bundle_count": 2,
+              "slot_count": 2,
+              "source_lease_verified": true,
+              "stage": "denoiser",
+              "startup_policy": "prefetch_window_before_prefix",
+              "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+              "weight_format": "comfy-bf16-single-file"
+            }
+          },
+          "streaming_offload": false,
+          "validation": "native_candidate",
+          "weight_validation": "comfy-oracle-validated; m4max-a4096-hybrid-qualified"
+        },
+        "prompt_cache_hit": false,
+        "public_streaming": {
+          "actual_layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+          "actual_plan_verified": true,
+          "authorized_layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+          "calibrated_request_bytes": 11596411699,
+          "catalog_revision": "verified-source-smoke-v2",
+          "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+          "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+          "execution_container": "embedded_app",
+          "memory_scope": "execution_process_tree_v1",
+          "preset_id": "test-z-image-turbo-12g-6bf3f271ad9b",
+          "preset_revision": 1,
+          "receipt_digest": "aaa27152f67946bdc3b92d4d650176daf0ef38235ef072814b11fc57a74633df",
+          "receipt_schema_version": 2,
+          "receipt_source_generation": 4,
+          "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+          "record_digest": "4a1845b24b9c4b25252b159fa372f99ac34ddd949d9253e4ede72d01c6f07463",
+          "resolution_digest": "28f88e8145fa5c2ce2acf6d267f15c52bd43d39d5249ff3d7f05b64dbde8d0ea",
+          "runtime_digest": "6ee1d77dbba1e8a842b3304a26bc4c2502ed9e1bedb2bfcf3a4ffcb57044da76",
+          "schema_version": 1,
+          "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+          "target_request_memory_bytes": 12884901888,
+          "workload_digest": "65774b17dc69ff330c87061c0c0a922bdb0ce19f47e8326817fd535d027cf10b"
+        },
+        "reference_tokens": 0,
+        "runtime_backend": "mlx_cpp_metal",
+        "runtime_precision": "bf16",
+        "schema_version": 1,
+        "seed": 42,
+        "steps": 9,
+        "streaming_receipt": {
+          "boundaries": [],
+          "canonical_digest": "aaa27152f67946bdc3b92d4d650176daf0ef38235ef072814b11fc57a74633df",
+          "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+          "implementation": "generic_stage_executor_v2",
+          "layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+          "schema_version": 2,
+          "stages": [
+            {
+              "canonical_digest": "f680824acb5b9dfd9871f004d586cee37e7aac0f453cd31b0f7f8e7962b6359d",
+              "completed_groups": 270,
+              "completed_passes": 9,
+              "drain_completed": true,
+              "event_digest": "1917c97e2b4c3c75780107730f206e1c7f09b36da96d60fccc67deae9c404940",
+              "fills": 270,
+              "groups_submitted": 270,
+              "implementation": "generic_stage_executor_v2",
+              "layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+              "logical_read_bytes": 97691581440,
+              "reader_fences_completed": 270,
+              "reader_fences_issued": 270,
+              "schema_version": 2,
+              "source_generation": 4,
+              "stage_id": "denoiser",
+              "stage_index": 0
+            }
+          ]
+        },
+        "streaming_stages": [
+          {
+            "runtime": {
+              "block_group_size": 1,
+              "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+              "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+              "digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+              "drained": true,
+              "group_count": 30,
+              "io_workers": 1,
+              "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+              "multi_pool_policy": "serial",
+              "pass_count": 9,
+              "pass_transition": "reload",
+              "pool_count": 1,
+              "prefetch_distance": 0,
+              "reader_revision": 1,
+              "receipt": {
+                "canonical_digest": "aaa27152f67946bdc3b92d4d650176daf0ef38235ef072814b11fc57a74633df",
+                "event_digest": "1917c97e2b4c3c75780107730f206e1c7f09b36da96d60fccc67deae9c404940",
+                "fills": 270,
+                "groups_submitted": 270,
+                "logical_read_bytes": 97691581440,
+                "reader_fences_completed": 270,
+                "reader_fences_issued": 270,
+                "schema_version": 2,
+                "source_generation": 4,
+                "verifier_revision": "tc-streaming-receipt-verifier-v2"
+              },
+              "refill_worker_count": 1,
+              "resident_prefix_blocks": 0,
+              "retention": "request",
+              "slot_bundle_count": 2,
+              "slot_count": 2,
+              "source_lease_verified": true,
+              "stage": "denoiser",
+              "startup_policy": "prefetch_window_before_prefix",
+              "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+              "weight_format": "comfy-bf16-single-file"
+            },
+            "stage_index": 0
+          }
+        ],
+        "text_tokens": 26,
+        "timings_seconds": {
+          "denoise": 28.684231291,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 32.898762833,
+          "text_encode": 3.365992917,
+          "vae_decode": 0.367802042
+        },
+        "valid_text_tokens": 26,
+        "validation": "candidate; consult recorded parity suite",
+        "warmup": false,
+        "width": 256
+      },
+      "image_sha256": "8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3"
+    }
+  ]
+}

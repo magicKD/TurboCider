@@ -27,6 +27,8 @@ class ZImage final : public ModelSession {
     std::string stream_configuration_;
     uint64_t exact_stream_generation_ = 0;
     bool streaming_quarantined_ = false;
+    bool streaming_content_identity_ = false;
+    std::vector<streaming::SourceFileIdentity> streaming_source_files() const;
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
     bool test_fail_drain_ = false;
 #endif
@@ -73,6 +75,8 @@ class ZImage final : public ModelSession {
     void unload() override;
     RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) override;
     RunResult generate(const Request &, const Event &, std::atomic<bool> &) override;
+    std::shared_ptr<const streaming::SourceLease>
+    verify_streaming_sources(std::atomic<bool> &) override;
     std::shared_ptr<const streaming::ModelStreamingProbe>
     probe_public_streaming(
         const streaming::PublicResolveInput &) const override;

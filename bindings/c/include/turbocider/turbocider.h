@@ -34,6 +34,13 @@ int tc_engine_create(const char *model_path, tc_engine **engine, char **error);
 /* Additive ABI: select a registered model module. Model paths are local only. */
 int tc_engine_create_model(const char *model_id, const char *model_path,
                            tc_engine **engine, char **error);
+/* Explicit cancellable CPU/file-I/O content verification for supported models.
+ * Returns verified SHA-256 identities and process-local generation proof metrics.
+ * Does not grant a preset, allocate GPU weights, or persist proof across processes.
+ * Subsequent streaming queries on this engine require unchanged verified sources.
+ * Call tc_engine_cancel to cancel; status is 0 success, 2 cancelled, 1 failure. */
+int tc_engine_verify_streaming_sources_json(tc_engine *, char **result_json, char **error);
+
 /* Exact, metadata-only public streaming resolution for this engine's model
  * source and execution container. It does not acquire the process GPU lock,
  * allocate GPU backing, load weights, prepare or generate. */

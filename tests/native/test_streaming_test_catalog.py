@@ -240,6 +240,8 @@ class TestCatalogTests(unittest.TestCase):
             c.POINTER(c.c_void_p), c.POINTER(c.c_void_p),
         ]
         library.tc_engine_free.argtypes = [c.c_void_p]
+        library.tc_engine_verify_streaming_sources_json.argtypes = [
+            c.c_void_p, c.POINTER(c.c_void_p), c.POINTER(c.c_void_p)]
 
         with tempfile.TemporaryDirectory(prefix="tc-test-catalog-") as raw_root:
             root = Path(raw_root)
@@ -461,6 +463,44 @@ class TestCatalogTests(unittest.TestCase):
                 status, failure = resolve(public)
                 self.assertNotEqual(status, 0)
                 self.assertIn("catalog_has_no_public_records", failure)
+                def verify():
+                    result, error = c.c_void_p(), c.c_void_p()
+                    status = library.tc_engine_verify_streaming_sources_json(
+                        public, c.byref(result), c.byref(error))
+                    failure = consume(library, error)
+                    self.assertEqual(status, 0, failure)
+                    return json.loads(consume(library, result))
+
+                proof = verify()
+                self.assertEqual(proof["status"], "verified")
+                self.assertEqual(len(proof["files"]), 4)
+                self.assertGreater(proof["verification_bytes_read"], 0)
+                cached = verify()
+                self.assertEqual(cached["verification_bytes_read"], 0)
+                self.assertEqual(cached["verification_cache_hits"], 4)
+                verified_catalog = build_exact_catalog(public)
+                verified_record = verified_catalog["records"][0]
+                self.assertEqual(verified_record["source"]["identity_version"], 2)
+                self.assertNotIn("source_snapshot_digest", verified_record["source"])
+                self.assertEqual(verified_record["source"]["artifact_manifest_digest"],
+                                 proof["artifact_manifest_digest"])
+                self.assertEqual(verified_record["canonical_record_digest"],
+                                 builder.canonical_record_digest(verified_record))
+                status, failure = install(public, verified_catalog)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(public)
+                self.assertEqual(status, 0, failure)
+                text_file = root / "split_files/text_encoders/qwen_3_4b.safetensors"
+                with text_file.open("r+b") as stream:
+                    stream.write(b"X")
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("artifact_verification_required", failure)
+                updated = verify()
+                self.assertNotEqual(updated["artifact_manifest_digest"], proof["artifact_manifest_digest"])
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("artifact_verification_required", failure)
             finally:
                 library.tc_engine_free(public)
 

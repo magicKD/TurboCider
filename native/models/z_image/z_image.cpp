@@ -1540,6 +1540,32 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
 
 ZImage::~ZImage() = default;
 
+std::vector<streaming::SourceFileIdentity> ZImage::streaming_source_files() const {
+    require(!diffusers_layout_ && !gguf_transformer_ && !convrot_transformer_ &&
+                !nvfp4_transformer_, "streaming_artifact_verification_unsupported");
+    streaming::SourceFileIdentity transformer_file;
+    transformer_file.logical_id = "transformer";
+    transformer_file.path = transformer_path_;
+    streaming::SourceFileIdentity text_file;
+    text_file.logical_id = "text_encoder";
+    text_file.path = text_path_;
+    streaming::SourceFileIdentity vae_file;
+    vae_file.logical_id = "vae";
+    vae_file.path = vae_path_;
+    streaming::SourceFileIdentity tokenizer_file;
+    tokenizer_file.logical_id = "tokenizer";
+    tokenizer_file.path = root_ / "tokenizer/tokenizer.json";
+    return {std::move(transformer_file), std::move(text_file),
+            std::move(vae_file), std::move(tokenizer_file)};
+}
+
+std::shared_ptr<const streaming::SourceLease>
+ZImage::verify_streaming_sources(std::atomic<bool> &cancelled) {
+    // Once requested, a failed/changed proof must not silently return to v1.
+    streaming_content_identity_ = true;
+    return streaming::SourceLease::capture_verified(streaming_source_files(), &cancelled);
+}
+
 std::shared_ptr<const streaming::ModelStreamingProbe>
 ZImage::probe_public_streaming(
         const streaming::PublicResolveInput &input) const {
@@ -1565,21 +1591,10 @@ ZImage::probe_public_streaming(
                 vae_path_.extension() == ".safetensors",
             "streaming_route_unsupported: Z-Image public card requires single-file transformer/text/VAE artifacts");
 
-    streaming::SourceFileIdentity transformer_file;
-    transformer_file.logical_id = "transformer";
-    transformer_file.path = transformer_path_;
-    streaming::SourceFileIdentity text_file;
-    text_file.logical_id = "text_encoder";
-    text_file.path = text_path_;
-    streaming::SourceFileIdentity vae_file;
-    vae_file.logical_id = "vae";
-    vae_file.path = vae_path_;
-    streaming::SourceFileIdentity tokenizer_file;
-    tokenizer_file.logical_id = "tokenizer";
-    tokenizer_file.path = root_ / "tokenizer/tokenizer.json";
-    auto lease = streaming::SourceLease::capture({
-        std::move(transformer_file), std::move(text_file),
-        std::move(vae_file), std::move(tokenizer_file)});
+    auto files = streaming_source_files();
+    auto lease = streaming_content_identity_
+        ? streaming::SourceLease::capture_preverified(std::move(files))
+        : streaming::SourceLease::capture(std::move(files));
     auto tokenizer_fd = lease->duplicate_fd("tokenizer");
     Tokenizer tokenizer(tokenizer_fd.get(), lease->file("tokenizer").bytes);
     const auto tokens = tokenizer.z_image_prompt(request.prompt, request.dynamic_text);

@@ -13,6 +13,7 @@ namespace streaming {
 struct PublicResolveInput;
 struct StreamingPresetRecord;
 class ModelStreamingProbe;
+class SourceLease;
 class ModelStreamingSnapshot;
 struct ResolvedRequestExecution;
 struct ActualExecutionReceipt;
@@ -211,6 +212,11 @@ class ModelSession {
      * layouts.  Metadata probes and snapshot compilation must not allocate GPU
      * buffers or start refill workers.  Models gain no public eligibility until
      * all three methods are explicitly overridden. */
+    // Explicit CPU/file-I/O verification; never performed implicitly by options.
+    virtual std::shared_ptr<const streaming::SourceLease>
+    verify_streaming_sources(std::atomic<bool> &) {
+        throw std::runtime_error("streaming_artifact_verification_unsupported");
+    }
     virtual std::shared_ptr<const streaming::ModelStreamingProbe>
     probe_public_streaming(const streaming::PublicResolveInput &) const {
         throw std::runtime_error("streaming_public_adapter_unsupported");

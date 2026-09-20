@@ -60,6 +60,8 @@ Z-Image/Flux 的 capture 输入未提供权重内容 digest。哈希 stat 元数
 
 RecordV2 格式增量：`source.identity_version=2` 要求 `model_variant`、`weight_format`、`artifact_manifest_digest`，禁止序列化 `source_snapshot_digest`。省略版本或显式 1 使用原 v1 字段与原 canonical bytes；其他版本拒绝。v2 的 record、record digest、record identity 和 source identity 分别使用独立 `*-v2` domain，native/Python 字段顺序一致，test-catalog JSON 同步支持。固定 native/Python record 样例 SHA-256 为 `c322e18cabc2ed4756a8cbbc468c24989ba175dda64745902014a1971aca0bb0`，v1 原样例仍为 `13b5797176d713924b9c16857acbf0f7a35313d2426a22fdca38c488b3ea3df1`。这一步只完成格式合同，内容证明不能由 JSON 自授；core resolver/value probe/authority 已支持 v2 native verified lease，并将 request generation 与 snapshot digest 单独绑定 authority；host 复制测试验证同 record 可选而不同请求不能共用 authority。实际模型 public probe 仍为 legacy。后续必须将模型导入验证、portable descriptor 与 receipt 的真实执行一起接通，不能删除版本保护后直接发布旧 calibration。
 
+2026-09-21 后续：已增加 `tc_engine_verify_streaming_sources_json`，Z-Image 显式验证后 probe 使用 capture_preverified，plan/source identity 与 core resolver/authority 接通 v2。真实本机四文件摘要复核、取消重试、零 payload 复验及合成 test-catalog 下的公开 adapter 图片/receipt 均通过，详见实验记录第二十六轮。默认未验证 engine 的 legacy 路径暂留；persistent import proof、App 验证 UI、Flux 迁移和生产 record 正式证据仍缺失，R1 不能标为关闭。
+
 ### R2 · Options 查询不能匹配真实完整 record
 
 证据：`native/api/c_api.mm::tc_streaming_options_json()` 只填 model、shape 等基础 workload；没有填 conditioning revision、VAE policy、feature digest 和 token shapes。

@@ -622,6 +622,42 @@ int tc_engine_create(const char *path, tc_engine **engine, char **error) {
     return tc_engine_create_model("flux2-klein-4b", path, engine, error);
 }
 
+int tc_engine_verify_streaming_sources_json(tc_engine *e, char **result_json, char **error) {
+    if (result_json) *result_json = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(e && e->session && result_json, "missing artifact verification input/output");
+            std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
+            tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
+            tc::require(!e->streaming_quarantined.load(), "streaming_quarantined");
+            e->cancelled.store(false);
+            auto lease = e->session->verify_streaming_sources(e->cancelled);
+            tc::require(lease && lease->has_verified_content(), "artifact_verification_required");
+            lease->revalidate_after_drain();
+            tc::checkpoint(e->cancelled);
+            NSMutableArray *files = [NSMutableArray array];
+            for (const auto &file : lease->descriptor().files)
+                [files addObject:@{@"logical_id": @(file.logical_id.c_str()),
+                                   @"bytes": @(file.bytes),
+                                   @"sha256": @(file.content_digest.c_str())}];
+            *result_json = copy(tc::json(@{
+                @"schema_version": @1, @"model": @(e->model_id.c_str()),
+                @"status": @"verified", @"proof_scope": @"native_process_generation",
+                @"artifact_manifest_digest": @(std::string(lease->artifact_digest()).c_str()),
+                @"verification_bytes_read": @(lease->verification_bytes_read()),
+                @"verification_cache_hits": @(lease->verification_cache_hits()),
+                @"files": files}));
+            return 0;
+        } catch (const std::exception &exception) { return fail(error, exception); }
+        catch (...) {
+            if (error) *error = strdup("unknown artifact verification error");
+            return 1;
+        }
+    }
+}
+
 int tc_engine_resolve_streaming_json(
         tc_engine *e, const char *request_json,
         char **result_json, char **error) {
