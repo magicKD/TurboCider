@@ -1,0 +1,38 @@
+{
+  "scope": "Worker request binding and one-shot native query implementation; no App generation integration",
+  "golden_request_digest": "802fd8d904d4e5421f73382626dc03c5bb20b433c16aa82c9816bb559b927292",
+  "tests": {
+    "strict_native_input": "PASS version/UUID/field set/model/path/digest mutations",
+    "cross_language": "PASS Swift Foundation/CryptoKit envelope accepted by native Foundation/CommonCrypto",
+    "file_input": "PASS symlink/empty/oversize/FIFO rejected with expected errors within 5-second test deadline",
+    "initial_full_native_build": "PASS before FIFO correction; not final candidate",
+    "corrected_full_native_build": "running"
+  },
+  "input_fifo_regression": {
+    "case": "FIFO input",
+    "timed_out": true,
+    "reason": "blocking open occurs before regular-file check",
+    "subprocess_killed_and_reaped_by_run_timeout": true,
+    "prior_probe_error": "First probe invoked older argument-ignoring unit binary; not valid FIFO evidence"
+  },
+  "initial_compile_issues": "Strict clang syntax checks rejected auto deducing Objective-C id in production query and test; replaced with explicit NSDictionary types; checks passed",
+  "source_sha256": {
+    "apps/cli/main.mm": "3bdf203b5d2c6ae2956fa165cd34f4ccd15b6d72e3aa82904b22c10065b6f659",
+    "apps/cli/query_worker.hpp": "df1d3656b513cf3fb7b00d9fe9155fa61ac0a23342c5acc235c76f322a05aa03",
+    "apps/cli/worker_protocol.hpp": "ae1335408db892ba3c978a5660574cf68dd766292ba4b1a5960848d05d174711",
+    "apps/macos/WorkerRequestEnvelope.swift": "a62fa065f75349ad277e08ef47070b6f0ddde3a672b68bcc44707e19a63d37f7",
+    "tests/native/test_worker_protocol.py": "ec51d378cc0b1f56f347de4feb398c1bd02647cfb4ed12d0b614a0a81cbb8714",
+    "tests/native/worker_protocol_test.mm": "dec3b0cccf497138dd13112d94657cb130de3e819794cf7cf032ecc5a06c218a",
+    "tests/integration/WorkerRequestEnvelopeTests.swift": "94a1b39feffd02743bbdcebac0bb99e763f489a282eed14903b74cc7bcfd553e",
+    "tests/fixtures/streaming/worker-request-v1.json": "578f2914a04ef18324df461f13cdb7b50793b695b806f6c8d9445ed0564bcfda"
+  },
+  "protocol_log_sha256": "93e0f69f5140b91b299438803e2e114636dfc2403c0eb3fa15c145992faa04b6",
+  "limitations": [
+    "No corrected CLI runtime test yet",
+    "No worker-generate or NativeProcessRunner/App wiring",
+    "No process-group/reaping deadline or restart identity contract yet",
+    "Absolute installation path is not persistent content proof; query verifies native sources in its own process",
+    "Request digest is correlation, not execution authority",
+    "Catalog remains empty; no successful public model qualification"
+  ]
+}

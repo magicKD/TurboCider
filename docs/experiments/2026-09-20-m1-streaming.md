@@ -997,3 +997,13 @@ App 后续：重建已退出 0，链接 `m1-hybrid-reporting` 新库的 history 
 这一步关闭的是 acquire/resolve 早于任务保存的窗口；Z/Flux 仍使用嵌入式 engine。通用 worker envelope、进程身份/回收 deadline、跨重启存活检查、正式 public campaign 与 production catalog 尚未接通，没有新增模型、内存或发布资格。
 
 构建后续：原 App 重建进程已确认退出 0，可执行文件与所链接 native 库 SHA 已补入本轮验证记录；未追加 GUI 生成或真实 public 模型请求。
+
+## 第五十九轮：worker 请求封装与原生一次性 query（2026-09-21，构建中）
+
+新增内部 `worker-query INPUT.json` CLI 入口及 Swift 请求封装 helper。输入严格限定 protocol/job/request ID、request digest、model installation ref 和 NativeRequestV2 六个字段；首版仅接受 Z-Image/Flux4 的 image.generate 意图与 schema-2 public selector。model_installation_ref 当前为标准化本地绝对目录，不是 alias 或持久化安装证明。query 在自己的 `cli_worker` engine 中调用原生 source verification 与 resolve，保留 native 精确 selector/身份，不另建 resolver 或传递 authority/fd。此阶段没有 worker-generate，也未接入 App 执行。
+
+外层 request_digest 对 `tc-worker-request-v1\n` 加 Foundation sorted-key、非 slash escaping 的 request JSON UTF-8 bytes 做 SHA-256，包含本次 staging 输出路径。它用于关联消息，不等于 native resolution 内层的 workload/request digest。Swift/CryptoKit 与 ObjC++/CommonCrypto 的固定含中文、引号、路径样例同为 `802fd8d904d4e5421f73382626dc03c5bb20b433c16aa82c9816bb559b927292`，Swift 输出实际被 native parser 接受。query terminal 绑定 job/request/digest、编译 runtime fingerprint 和 cli_worker 容器；默认 error/null artifact，成功 query 为 resolved 并携带原生 resolution，不能当作生成成功或产物发布证明。
+
+严格字段/版本/UUID/model/path/digest 负例及输入文件 symlink、空文件、超限拒绝通过。补充测试发现普通 blocking open 会在 FIFO 的 regular-file 检查之前阻塞；最初 probe 误指向不消费 argv 的旧测试 binary，纠正后以当前程序复现 1 秒超时，子进程已由测试回收。改为 O_NONBLOCK 后，FIFO 在检查阶段立即拒绝，5 秒期限内得到预期错误。最初严格 clang 检查还拒绝 auto 推导 Objective-C id；改用明确 NSDictionary 类型后通过。原始日志及[验证记录](2026-09-21-m1-worker-query-validation.json)保留。
+
+首次完整 native 构建通过，但发生在 FIFO 修正之前，不能算最终版本验证；包含修正的构建正在运行。取消信号只设置 lock-free 标记，由普通线程调用 C API cancel；这尚不构成父进程有界终止/回收合同。后续仍需实际 CLI 成功/拒绝/取消测试、generate terminal 与产物绑定、进程监督和 App 接入；production catalog 和发布门未改变。
