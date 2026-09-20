@@ -1,0 +1,63 @@
+{
+  "scope": "One exact GPU reference for a prepared Z hybrid prompt; not a speed campaign.",
+  "config": {
+    "library": "/Users/chencanhui/code/TurboCider/build/m1-hybrid-image/libturbocider.dylib",
+    "model_path": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo",
+    "model_id": "z-image-turbo",
+    "constructor": "candidate",
+    "verify_streaming_sources": true
+  },
+  "request": {
+    "schema_version": 2,
+    "model": "z-image-turbo",
+    "operation": "image.generate",
+    "inputs": [
+      {
+        "kind": "text",
+        "role": "prompt",
+        "text": "A red fox standing in a snowy pine forest at sunrise, soft golden light falling across its orange fur, delicate snowflakes, realistic wildlife photography, detailed natural textures and a calm winter atmosphere."
+      }
+    ],
+    "outputs": [
+      {
+        "kind": "image",
+        "path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-real-prompt-stage/gpu-reference/image.png",
+        "width": 512,
+        "height": 512
+      }
+    ],
+    "sampling": {
+      "seed": 42,
+      "steps": 9
+    },
+    "parameters": {
+      "dynamic_text": true,
+      "compile_gpu": false,
+      "noise_path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-real-prompt-stage/gpu-reference/noise.safetensors"
+    },
+    "dump_tensors": "/Users/chencanhui/models/TurboCider/experiments/m1-z-real-prompt-stage/gpu-reference/tensors",
+    "execution": {
+      "policy": "gpu",
+      "streaming": {
+        "schema_version": 1,
+        "enabled": true,
+        "selection": "manual",
+        "retention": "request",
+        "stages": {
+          "denoiser": {
+            "residency": "streamed",
+            "block_group_size": 1,
+            "slot_count": 2,
+            "resident_prefix_blocks": 1,
+            "prefetch_distance": 1,
+            "io_workers": 2
+          }
+        }
+      }
+    }
+  },
+  "library_sha256": "38641fb9bdb40430075726f5bf3cab7a0e93881718ea150de116c51ca1307fa3",
+  "script_sha256": "fca441a9bc2e068ccb15101b05a99797d4f198581abb18af0877a998a8049ea1",
+  "initial_sha256": "6191bf549febe18ddf05814e8e5ef7b339053e99afc39b4334f0bf1f7d9aba88",
+  "comparison": "Exploratory final latent/RGB error only; no release qualification or performance claim"
+}

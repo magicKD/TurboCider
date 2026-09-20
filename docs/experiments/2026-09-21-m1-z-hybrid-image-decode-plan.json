@@ -1,0 +1,14 @@
+{
+  "scope": "Decode completed real-prompt hybrid latent using shared production native Comfy VAE function; no quality/performance qualification",
+  "latent_path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-real-prompt-stage/stage/complete/final.npy",
+  "latent_sha256": "081ce8708c04d05c087a19f57bf0b8a95622b12d12fde0836aa99f687bfe1216",
+  "vae_path": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/vae/ae.safetensors",
+  "vae_expected_sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+  "geometry": [
+    512,
+    512
+  ],
+  "dtype_policy": "same native BF16 latent cast and VAE math as ZImage::decode",
+  "decoder_source_sha256": "b1800cc10cb060c70937f4446b0d225f52dbf73e7322101b8908928d2aae06f1",
+  "output": "/Users/chencanhui/models/TurboCider/experiments/m1-z-real-prompt-stage/decoded"
+}

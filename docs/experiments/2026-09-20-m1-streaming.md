@@ -878,3 +878,22 @@ stage 测试新增 `--inputs`，加载并记录外部 initial.npy/caption.npy/in
 最新 native 库的 Swift App/集成测试已启动完整构建；本轮完成并运行通过 library-store、studio-behavior、installation-inspection、tensor-cache 四组。其余构建进程仍在运行，日志 `/tmp/tc-m1-current-app-build.log`，不能把这四组通过视为完整 App/E2E 通过。本轮研究 stage 与 Swift 编译同时运行，不采纳 wall time 为性能样本。
 
 真实 prompt denoiser 路径现在有执行证据，但还没有 VAE 解码、完整图片、同 partition 迁移对照或纯 GPU 质量/性能比较；未开放 public hybrid，也未完成 ModelEngine poison/component receipt 接入。下一步保留这些输入供完整输出与对照复用，原 INT8 局部失败不被有限值测试覆盖。
+
+
+## 第五十轮：hybrid 完整图像、GPU 数值对照与 App 实测（2026-09-21）
+
+将原 ZImage::decode 使用的 BF16 输入边界及 Comfy VAE 函数通过内部 `z_image::decode_vae` 共享，原生成路径也调用它，计算体未改动。研究工具从 native verified VAE lease 读取权重，检查上一轮真实 prompt 的最终 latent，完成原生 VAE 解码、有限值检查和 PNG 导出；这次通过独立进程拼接各研究阶段，不是 ModelEngine 的完整 hybrid 请求或 public receipt。执行前[解码计划](2026-09-21-m1-z-hybrid-image-decode-plan.json)固定 latent SHA、VAE SHA 与 512² 几何；[新库身份](2026-09-21-m1-z-hybrid-image-runtime.json)和[解码结果](2026-09-21-m1-z-hybrid-image-decode-result.json)保留。完整 native 构建及内置 runtime/catalog 核对通过，contract 83 项运行、3 项原有跳过，其余通过。
+
+另外使用相同 prompt、逐元素相同的初始噪声、seed 42、9 steps 和 P1/G1/K2/D1/Q2 跑完整 pure GPU candidate request。四个官方源均再次 native 验证，内容 artifact digest 与既有记录一致；该请求输出所有 step latent、最终 latent 和 decoded tensor。[GPU 计划](2026-09-21-m1-z-hybrid-image-gpu-plan.json)在执行前落盘，[完整结果](2026-09-21-m1-z-hybrid-image-gpu-result.json)保留。新工具可复跑参考生成和误差统计。
+
+单样本对照的最终 latent relative-L2 为 **0.1076367**、cosine **0.9942141**；原始 decoded relative-L2 **0.0898619**；PNG RGB 的 0–1 RMSE **0.0220601**、cosine **0.9990394**。两张图片均可辨认出雪地狐狸，构图相近，但不能据此称数值等价或质量合格。[误差与完整来源验证](2026-09-21-m1-z-hybrid-image-comparison.json)保留；原 INT8 block 29 局部质量失败保持，没有用这一次探索性图像设定新准入门槛。没有同 partition legacy 迁移对照或多 prompt/seeds confirmation，不能把全部差异直接归因于 INT8。研究步骤拆开执行且有后台构建，不做速度收益声明。
+
+![Hybrid candidate](2026-09-21-m1-z-hybrid-image-candidate.png)
+
+![Pure GPU reference](2026-09-21-m1-z-hybrid-image-gpu.png)
+
+Swift App 和全部 integration test executables 完整构建退出 0，链接第四十八轮 `m1-hybrid-stage` 库。本轮连同第四十九轮实际通过 12 组：模型库持久化、Studio 状态、安装检查、tensor cache、历史管理、模型选择、helper transport、本地 API、运行指标、ANE 模型库、图片产物事务和 streaming resolution。独立状态目录启动 App 并观察到窗口，随后只关闭本次测试进程；窗口截图命令失败，不能声称已完成视觉 UI 验收。StudioControls 曾因缺少必需的 LoRA 配置参数错误调用，记录为调用错误，不算功能失败或通过。
+
+通过当前 JobStore 的 Z-Image catalog 默认请求（1024²/9/resident GPU）完成出图、媒体验证、最终发布和重新打开历史；独立复核 PNG 1024² 与结果 SHA 一致。记录 MLX peak **21,607,357,244 bytes**，request wall **418.34 s**，同时有后台编译，因此只作功能观察，且明显不是本机低内存配置。Flux4 的 catalog 默认 resident 请求在推理前被 `insufficient physical memory for the conservative BF16 plan` 拒绝；没有伪称 Flux App 出图成功。当前 public catalog 仍为空，App 还不能通过已批准的 streaming 档位弥补该缺口；native private streaming 已有的出图证据不等于 App 路由可用。详见[App 实测记录](2026-09-21-m1-current-app-observations.json)。
+
+后续仍需完成 hybrid 请求 owner/engine poison/component receipt、同 partition 迁移与更完整质量评估；App 的 Flux streaming 准入与真实端到端生命周期也是明确未完成项。本轮没有新增性能或 public hybrid 资格。

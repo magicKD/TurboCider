@@ -425,3 +425,8 @@ HybridSession 已新增消费 VerifiedCoreMLBundleLease 的内部构造路径，
 内部 ZImageHybridStream 已连接 verified sources、typed Core ML、GPU suffix/join、原 transformer attention/投影及 common StageExecutor；持有输入和 pending tensor，失败保持不可重用，无法确认 drain 时保留整个 owner。真实 512²/P1/K2/D1/Q2、非零 latent/合成 caption 的 9 步 Euler 运行完成 288 branches、261 groups，实际 stage receipt verifier 与最终清理通过。独立取消及不安全 drain 注入通过；具体数值、轨迹、回归及限制见[第四十八轮](../../experiments/2026-09-20-m1-streaming.md)。
 
 仍缺 ModelEngine/public route 接入与整引擎 poison、完整 H3 component receipt、Qwen prompt/VAE 出图、GPU 对照/质量/性能准入。补充 branch completion 不能替代 component receipt；原 INT8 非零质量失败保留，未证明 ANE 驻留或实际 hang 恢复。HY-M0 继续未完成。
+
+
+## 25. H4 真实 prompt 图像与探索性 GPU 对照（2026-09-21）
+
+47 有效 token/64 caption bucket 的真实 Qwen 输入、9-step hybrid stage 和共享原生 VAE 已分别完成，形成 512² 图像；同初始噪声/同 prompt 的完整 GPU streaming reference 也已运行。单样本最终 latent relative-L2 0.10764、RGB RMSE 0.02206，原 INT8 局部门槛失败保留；单样本、拆分进程和后台编译不提供质量或速度资格。详见[第五十轮](../../experiments/2026-09-20-m1-streaming.md)。仍需同 partition 迁移对照、完整请求 owner/component receipt、多样本质量和请求内存/生命周期准入。

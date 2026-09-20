@@ -3,6 +3,7 @@
 #include "block_profile.hpp"
 #include "hybrid_math.hpp"
 #include "hybrid_stream.hpp"
+#include "vae.hpp"
 
 #include "../../media/image.hpp"
 #include "../../platform/apple/platform.hpp"
@@ -1079,6 +1080,10 @@ Tensor z_initial_noise(const Request &r, int height, int width) {
 }
 
 } // namespace
+
+Tensor z_image::decode_vae(const Tensor &latent, const Weights &weights) {
+    return z_vae_decode(mx::astype(latent, mx::bfloat16), weights);
+}
 
 namespace {
 
@@ -2611,7 +2616,7 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
 }
 
 Tensor ZImage::decode(const Tensor &latent, int, int, const Event &, std::atomic<bool> &) {
-    return z_vae_decode(mx::astype(latent, mx::bfloat16), vae_);
+    return z_image::decode_vae(latent, vae_);
 }
 
 } // namespace tc
