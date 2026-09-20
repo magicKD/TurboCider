@@ -247,7 +247,7 @@ App query key 纳入模型路径、prompt、动态文本、输入和加速策略
 
 新增 `tests/integration/LTXWorkerTests.swift`，用真正编码的 9 帧 H.264 视频和受控 worker 覆盖：成功发布、legacy 路径、空/错误 JSON、错误 seed/path/target/layout/preset、verified 类型错误、缺 summary、空/缺失/损坏文件、symlink、尺寸/帧数/音频不符、日志超限、发布失败、原文件保留及取消清理。它已接入 build_app.sh 和 test-app。
 
-验证结果：固定源码的 worker 编译和测试 exit 0（`/tmp/tc-worker-build.log`、`/tmp/tc-worker-tests.log`）；StreamingResolution 与 Studio 回归 PASS（`/tmp/tc-worker-resolution-tests.log`、`/tmp/tc-worker-studio-tests.log`）；完整 App 编译 exit 0，产物 `build/m1-options/TurboCiderNativeApp`（`/tmp/tc-worker-regressions-build.log`）。本轮使用受控 worker，未宣称真实 LTX 推理成功。
+验证结果：固定源码的 worker 编译和测试 exit 0（`/tmp/tc-worker-build.log`、`/tmp/tc-worker-tests.log`）；StreamingResolution 与 Studio 回归 PASS（`/tmp/tc-worker-resolution-tests.log`、`/tmp/tc-worker-studio-tests.log`）；完整 App 编译 exit 0，产物 `build/m1-options/TurboCiderNativeApp`（`/tmp/tc-worker-regressions-build.log`）。新 App 另启动 45 秒保持存活，stderr 为 0 字节，随后由测试终止本次进程（`/tmp/tc-worker-app-smoke.json`）；这只覆盖启动。worker 测试使用受控子进程，未宣称真实 LTX 推理成功。
 
 这仍不是完整 R5 关闭：尚缺独立 worker resolution envelope、job/request hash 协议与持久化有界诊断；当前 summary 容器身份仍待 R6 修正。非 LTX 产物事务、进程树超时及 R4 GPU 失败隔离也仍待处理。
 
