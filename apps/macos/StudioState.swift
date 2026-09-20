@@ -312,7 +312,13 @@ struct StudioDraft: Codable, Sendable {
         guard publicStreamingModel else {
             throw NativeFailure(message: "当前模型没有 public 流式加载档位。")
         }
-        // Options are metadata-only and do not require an open model session.
+        guard activeAssets.isEmpty, activeLoRAs.isEmpty, !audio,
+              (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) == "gpu",
+              acceleration?.compileGPU != true, profilePath.isEmpty,
+              ltxBackend != "cpp_mlx", ltxAccelerationMode == "quality" else {
+            throw NativeFailure(message: "当前输入、LoRA 或加速模式不支持公共流式档位。")
+        }
+        // Discovery is cheap; installed-model resolution validates metadata.
         // Use a valid public target even when the UI is currently Off so the
         // native query can return all five target statuses.
         var base = NativeRequest(prompt: prompt, output: "/tmp/turbocider-streaming-options.png")
@@ -322,6 +328,11 @@ struct StudioDraft: Codable, Sendable {
         base.frames = frames; base.fps = fps; base.audio = audio
         base.execution = "gpu"
         base.dynamic_text = dynamicText
+        if modelID == "ltx-2.5-distilled" {
+            base.ltx_backend = ltxBackend
+            base.ltx_fast_av = ltxFastAV
+            base.ltx_video_attention_batch = ltxVideoAttentionBatch
+        }
         return NativeRequestV2(legacy: base,
                                targetBytes: streaming.selection.targetBytes ?? (8 << 30))
     }
@@ -618,6 +629,7 @@ final class StudioState: ObservableObject {
     @Published private(set) var streamingOptions: NativeStreamingOptions?
     @Published private(set) var streamingOptionsLoading = false
     @Published private(set) var streamingOptionsError: String?
+    private var streamingQueryGeneration: UInt64 = 0
     @Published var importing = false
     @Published var saved = true
     @Published var lastSeed: Int?
@@ -649,9 +661,14 @@ final class StudioState: ObservableObject {
         }
     }
     var streamingQueryKey: String {
-        [draft.modelID, draft.operation, String(draft.width), String(draft.height),
-         String(draft.frames), String(draft.steps), String(draft.fps),
-         String(draft.audio)].joined(separator: "|")
+        // Include installation, prompt/token policy and every route input.
+        // Exclude returned streaming state so publishing options cannot retrigger
+        // the query indefinitely. This key remains local and is never logged.
+        var value = draft
+        value.streaming = StudioStreamingState()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "invalid"
     }
     var physicalMemoryBytes: UInt64 { ProcessInfo.processInfo.physicalMemory }
     var recommendedStreamingSelection: StudioStreamingSelection {
@@ -665,7 +682,7 @@ final class StudioState: ObservableObject {
         case ..<20: raw = .tier16
         default: raw = .tier20
         }
-        guard let options = streamingOptions else { return raw }
+        guard let options = streamingOptions else { return .off }
         let eligible = options.targets.compactMap { item -> StudioStreamingSelection? in
             guard item.status == "available",
                   item.target_request_memory_bytes <= raw.targetBytes ?? 0 else { return nil }
@@ -682,6 +699,15 @@ final class StudioState: ObservableObject {
         return streamingOption(for: draft.streaming.selection)?.status == "available"
     }
     func refreshStreamingOptions() async {
+        streamingQueryGeneration &+= 1
+        let generation = streamingQueryGeneration
+        let key = streamingQueryKey
+        streamingOptions = nil
+        streamingOptionsError = nil
+        streamingOptionsLoading = false
+        defer {
+            if generation == streamingQueryGeneration { streamingOptionsLoading = false }
+        }
         guard draft.publicStreamingModel else {
             streamingOptions = nil
             streamingOptionsError = nil
@@ -691,22 +717,24 @@ final class StudioState: ObservableObject {
             let request = try draft.streamingQueryRequest()
             streamingOptionsLoading = true
             streamingOptionsError = nil
-            let options = try await Task.detached(priority: .utility) {
-                try NativeEngine.streamingOptions(request)
-            }.value
+            let modelURL = draft.modelPath.isEmpty ? nil : URL(fileURLWithPath: draft.modelPath)
+            let options = try await NativeEngine.streamingOptions(request, modelURL: modelURL)
             try Task.checkCancellation()
+            guard generation == streamingQueryGeneration, key == streamingQueryKey else { return }
             streamingOptions = options
             draft.streaming.catalogRevision = options.catalog_revision
             draft.streaming.status = options.query_status
             if !draft.streaming.userSelected {
-                draft.streaming.selection = recommendedStreamingSelection
+                // An available streaming card is not evidence that resident
+                // execution needs streaming. Keep first use explicitly Off.
+                draft.streaming.selection = .off
             }
         } catch is CancellationError {
-            // Keep the last stable options snapshot when the workload changes.
+            // A cancelled query must not publish availability for an old draft.
         } catch {
+            guard generation == streamingQueryGeneration, key == streamingQueryKey else { return }
             streamingOptionsError = error.localizedDescription
         }
-        streamingOptionsLoading = false
     }
     func setStreamingSelection(_ selection: StudioStreamingSelection) {
         draft.streaming.selection = selection

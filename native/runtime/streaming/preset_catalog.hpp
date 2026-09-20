@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+namespace tc { struct Request; }
 namespace tc::streaming {
 
 inline constexpr uint64_t gib = 1ull << 30;
@@ -111,6 +112,16 @@ struct PresetResolution {
     std::vector<std::string> rejected_preset_ids;
 };
 
+// Discovery only. A candidate is not execution authority and must pass the
+// installed-model resolver before a caller may present it as available.
+struct PresetCandidateResolution {
+    std::optional<StreamingPresetRecord> candidate;
+    std::string rejection_code;
+};
+
+PresetWorkload basic_streaming_workload(const Request &,
+    std::string device_class, std::string execution_container);
+
 uint64_t streaming_target_margin_bytes(uint64_t target);
 bool supported_streaming_target(uint64_t target) noexcept;
 
@@ -124,6 +135,8 @@ void validate_streaming_preset_record(
     const StreamingPresetRecord &, std::string_view catalog_revision);
 
 PresetResolution resolve_streaming_preset(
+    const PresetResolveQuery &, const StreamingPresetCatalog &);
+PresetCandidateResolution find_streaming_preset_candidate(
     const PresetResolveQuery &, const StreamingPresetCatalog &);
 const StreamingPresetCatalog &production_streaming_preset_catalog();
 

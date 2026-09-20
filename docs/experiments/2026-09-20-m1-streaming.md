@@ -207,3 +207,31 @@ python tools/coreml/export_qwen3.py \
 逐项原始结果、compute plan、导出来源、native library/exporter SHA-256 已封存到 [2026-09-20-m1-qwen3-block0-bridge.json](2026-09-20-m1-qwen3-block0-bridge.json)。本节没有 GPU baseline、原 BF16 数值对照、完整 encoder 或模型端到端收益，因此不能据此选择最佳 GPU/ANE 划分。下一步需要在空闲测量窗口完成数值 oracle、分宽度对照和完整请求验证。
 
 当前权重目录约 11 GiB，下载 session `70822` 与新 App build session `22293` 继续运行；后者日志 `/tmp/tc-flux-components-build.log`。原目标仍未完成：两模型真实 streaming 出图/性能、ANE 最佳划分、R1 后续身份迁移、R2/R4/R5/R6 及产品认证仍须继续。
+
+## 第八轮：R2 options 候选筛选与安装绑定验证
+
+修复未安装查询拿不完整 workload 做完整相等比较的问题：新增独立 `PresetCandidateResolution` / `find_streaming_preset_candidate()`，仅按基础模型、操作、尺寸、步数、设备、容器等字段发现候选；继续检查 catalog、release、内存适配与校准。`resolve_streaming_preset()` 保留原完整 workload/source/runtime 比较，候选不构成执行权限。
+
+同时发现实际请求的另一个失配：图片请求默认 fps=24，而 Z/Flux probe 的图片身份为 fps=0。公共基础 workload 构造现在将 image fps 归零；video 保留实际帧率。非空 catalog fixture 覆盖候选发现、缺组件/token 身份时 exact 仍拒绝、不同 token 数仍拒绝 exact、错误尺寸/容器/设备拒绝候选，以及图片/视频 fps 规则。
+
+`tc_streaming_options_json` 对未绑定安装的匹配项返回 `candidate + artifact_verification_required`，不再返回误导性的 `available`。Swift 在提供模型目录且存在候选时才打开 metadata session，逐档调用原严格 resolver，核对返回 selector、catalog 与 container；只有成功项显示 available，所显示 record/校准/release 信息取自严格解析结果。空 catalog 不打开模型、不分配 GPU 权重。生成仍重新解析、冻结 exact selector 并验证实际结果。
+
+App query key 纳入模型路径、prompt、动态文本、输入和加速策略等 draft 信息，排除返回的 streaming 状态以避免刷新循环。请求版本号与 key 防止旧结果覆盖新 draft，查询开始时清除旧可用快照。尚无已验证 options 时不按物理 RAM 推荐；首次使用保持 Off，即使有可用 streaming card 也不据此自动开启。显式用户选择保持。UI 区分“待验证”和“已校验本地模型”，不将技术错误码当成正常操作说明。
+
+验证与范围：
+
+- native host resolver suite PASS，`/tmp/tc-options-resolver-tests.log`；非空 catalog/不同 token 测试在纯 C++ 层执行。
+- Swift resolution/options fixture PASS，覆盖严格结果替换候选信息、解析失败、catalog 变化、取消与既有结果校验；`/tmp/tc-options-resolution-new-native.log`。此处的非空 options 使用可控 resolver fixture，不冒充真实生产 catalog 验收。
+- Studio behavior PASS，新增 prompt/path/token policy query identity、发布状态不触发循环、无记录不打开不存在的模型目录；`/tmp/tc-options-studio-new-native.log`。
+- 新 native-only build 到 `build/m1-options`，session `55680` exit 0；83 API contracts 中 80 PASS/3 缺 fixture SKIP，GPU self-test PASS。日志 `/tmp/tc-options-native-build.log`、`/tmp/tc-options-contract-tests.log`、`/tmp/tc-options-selftest.json`。
+- 最新 App 源码独立编译成功，binary 为 `build/m1-options/TurboCiderOptionsApp`；`/tmp/tc-options-app-build.log`。针对 Studio/options 的二进制在新库下重跑；本轮没有宣称重跑所有 App integration binaries。
+
+前节后台完整 Swift build `22293` 实际以 exit 1 结束，原因是本轮更新源文件时编译器检测到 `TurboCiderNative.swift` 被修改。它不计为通过；上述新 native-only 构建与固定源码的 App/Studio 编译验证取代其本轮证据。临时把 Studio binary 放在 `/tmp` 的首次执行也因找不到同目录 `turbocider` helper 失败；移至 native 构建目录后通过，未把该测试布置错误当作产品通过。
+
+生产 catalog 仍为空，portable identity/schema、真实非空发布包与 container 身份仍待完成。R5 的完整 worker 成功事务/原子产物发布和 R4 失败隔离仍未关闭。
+
+### 下载复用尝试被内容校验拒绝
+
+通过 pinned Comfy revision 的 HTTP Range 读取 Z Qwen3 原始 safetensors header，确认它与已校验 Flux text encoder 的 398 个 tensor 名称/shape/dtype 一致。尝试按该原始 header 拼接 Flux tensor 数据，得到完整 8,044,982,048 字节临时文件，但 SHA-256 为 `e37269b7ca1301ad72a92627ce95432ab5aad5f89143a06055886aad3419d12f`，**不匹配** Z 官方 `6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a`。
+
+因此未发布到 Z 模型路径，已删除本次临时重组文件，继续原官方下载。首段 216,288 字节 payload 相同也不能推导整文件相同；不将这次尝试记为下载节省或成功复用。失败记录 `/tmp/tc-z-qwen-reconstruction.json`。下载 session `70822` 仍在运行，完整两模型尚未齐备。

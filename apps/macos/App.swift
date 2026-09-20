@@ -462,7 +462,7 @@ struct StudioView: View {
                             ForEach(StudioStreamingSelection.allCases) { value in
                                 let option = studio.streamingOption(for: value)
                                 let unavailable = value != .off && option?.status != "available"
-                                Text(value.label + (unavailable ? "（不可用）" : ""))
+                                Text(value.label + (option?.status == "candidate" ? "（待验证）" : unavailable ? "（不可用）" : ""))
                                     .tag(value)
                                     .disabled(unavailable)
                             }
@@ -476,18 +476,22 @@ struct StudioView: View {
                                   let option = studio.streamingOption(for: studio.draft.streaming.selection) {
                             let selection = studio.draft.streaming.selection
                             let detail = option.status == "available"
-                                ? "存在候选；生成前仍会校验本地模型与 runtime identity"
-                                : "当前不可用：\(option.reason_code ?? option.status)"
+                                ? "已校验本地模型，生成前会再次确认。"
+                                : option.status == "candidate"
+                                    ? "请先选择本地模型，完成档位验证。"
+                                    : "当前模型或任务尚无匹配的已验证档位。"
                             Text("\(selection.label)：\(detail)")
                                 .font(.caption2)
                                 .foregroundStyle(option.status == "available" ? .green : .orange)
                         } else if studio.draft.streaming.selection == .off {
                             let recommendation = studio.recommendedStreamingSelection
                             if recommendation != .off {
-                                Text("本机物理内存推荐：\(recommendation.label)；选择 Off 时保持默认常驻路径。")
+                                Text("当前可用档位：\(recommendation.label)；Off 使用默认加载方式。")
                                     .font(.caption2).foregroundStyle(.secondary)
                             } else {
-                                Text("Off 不创建 public streaming 对象，也不会影响现有默认路径。")
+                                Text(studio.streamingOptions?.targets.contains(where: { $0.status == "candidate" }) == true
+                                     ? "已有候选档位，请先选择本地模型完成验证。"
+                                     : "暂无经过验证的流式档位。Off 使用默认加载方式。")
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
                         }

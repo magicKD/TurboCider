@@ -1,4 +1,5 @@
 #include "preset_catalog.hpp"
+#include "../../core/contracts.hpp"
 
 #include "canonical_encoding.hpp"
 
@@ -351,9 +352,41 @@ void validate_streaming_preset_record(
                   "canonical record digest mismatch");
 }
 
-PresetResolution resolve_streaming_preset(
+static bool basic_workload_matches(const PresetWorkload &a,
+                                   const PresetWorkload &b) {
+    return std::tie(a.model, a.operation, a.execution, a.device_class,
+                    a.execution_container, a.width, a.height, a.frames, a.fps,
+                    a.steps, a.batch, a.audio, a.dynamic_text, a.approximation) ==
+           std::tie(b.model, b.operation, b.execution, b.device_class,
+                    b.execution_container, b.width, b.height, b.frames, b.fps,
+                    b.steps, b.batch, b.audio, b.dynamic_text, b.approximation);
+}
+
+PresetWorkload basic_streaming_workload(const Request &request,
+        std::string device_class, std::string execution_container) {
+    PresetWorkload result;
+    result.model = request.model;
+    result.operation = request.operation;
+    result.execution = request.execution;
+    result.device_class = std::move(device_class);
+    result.execution_container = std::move(execution_container);
+    result.width = static_cast<uint32_t>(request.width);
+    result.height = static_cast<uint32_t>(request.height);
+    result.frames = static_cast<uint32_t>(request.frames);
+    // Image adapters have no frame rate; the legacy request defaults to 24.
+    result.fps = request.operation.starts_with("image.") ? 0 :
+        static_cast<uint32_t>(request.fps);
+    result.steps = static_cast<uint32_t>(request.steps);
+    result.batch = 1;
+    result.audio = request.audio;
+    result.dynamic_text = request.dynamic_text;
+    result.approximation = request.allow_approximation;
+    return result;
+}
+
+static PresetResolution resolve_preset_impl(
         const PresetResolveQuery &query,
-        const StreamingPresetCatalog &catalog) {
+        const StreamingPresetCatalog &catalog, bool discovery) {
     PresetResolution result;
     if (!supported_streaming_target(query.target_request_memory_bytes)) {
         result.rejection_code = "unsupported_memory_target";
@@ -377,13 +410,14 @@ PresetResolution resolve_streaming_preset(
         if (record.workload.model != query.workload.model)
             continue;
         model_seen = true;
-        if (!(record.workload == query.workload))
+        if (discovery ? !basic_workload_matches(record.workload, query.workload)
+                      : !(record.workload == query.workload))
             continue;
         workload_seen = true;
-        if (query.require_exact_identity && !(record.source == query.source))
+        if (!discovery && query.require_exact_identity && !(record.source == query.source))
             continue;
         source_seen = true;
-        if (query.require_exact_identity && !(record.runtime == query.runtime))
+        if (!discovery && query.require_exact_identity && !(record.runtime == query.runtime))
             continue;
         runtime_seen = true;
         if (!device_memory_matches(record, query.physical_memory_bytes))
@@ -436,6 +470,17 @@ PresetResolution resolve_streaming_preset(
     });
     result.selected = *candidates.front();
     return result;
+}
+
+PresetResolution resolve_streaming_preset(
+        const PresetResolveQuery &query, const StreamingPresetCatalog &catalog) {
+    return resolve_preset_impl(query, catalog, false);
+}
+
+PresetCandidateResolution find_streaming_preset_candidate(
+        const PresetResolveQuery &query, const StreamingPresetCatalog &catalog) {
+    auto result = resolve_preset_impl(query, catalog, true);
+    return {std::move(result.selected), std::move(result.rejection_code)};
 }
 
 const StreamingPresetCatalog &production_streaming_preset_catalog() {

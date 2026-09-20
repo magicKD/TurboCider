@@ -2,7 +2,7 @@ import Foundation
 
 @main
 struct StreamingResolutionTests {
-    static func main() throws {
+    static func main() async throws {
         func require(_ value: Bool, _ message: String) throws {
             if !value { throw NativeFailure(message: message) }
         }
@@ -26,6 +26,37 @@ struct StreamingResolutionTests {
             resolution_digest: "resolution-1", catalog_revision: "catalog-1",
             requested_selector: requested, exact_selector: exact, selection: selection,
             identity: NativeStreamingResolutionIdentity(source_digest: "source-1", runtime_digest: "runtime-1", device_digest: "device-1"))
+        let candidate = NativeStreamingTargetOption(
+            target_request_memory_bytes: 10 << 30, status: "candidate",
+            reason_code: "artifact_verification_required", preset_id: "different-candidate",
+            preset_revision: 1, calibrated_request_bytes: 7 << 30,
+            memory_scope: "request", release_channel: "experimental")
+        let options = NativeStreamingOptions(schema_version: 2, catalog_revision: "catalog-1",
+            query_status: "tentative_without_artifact_identity", execution_container: "embedded_app",
+            device: NativeStreamingDevice(gpu: "test", physical_memory_bytes: 16 << 30, device_class: "test"),
+            targets: [candidate])
+        let verified = try await options.resolvingCandidates(for: original) { _ in resolution }
+        try require(verified.targets[0].status == "available" &&
+                    verified.targets[0].preset_id == selection.preset_id &&
+                    verified.targets[0].calibrated_request_bytes == selection.calibrated_request_bytes &&
+                    verified.targets[0].release_channel == "public",
+                    "Availability must use exact resolution, not the tentative candidate")
+        let mismatched = try await options.resolvingCandidates(for: original) { _ in
+            throw NativeFailure(message: "changed tokens", code: "unvalidated_workload")
+        }
+        try require(mismatched.targets[0].status == "unavailable" &&
+                    mismatched.targets[0].reason_code == "unvalidated_workload" &&
+                    mismatched.targets[0].preset_id == nil, "Failed probe must not retain candidate authority")
+        let staleOptions = NativeStreamingOptions(schema_version: 2, catalog_revision: "old-catalog",
+            query_status: options.query_status, execution_container: options.execution_container,
+            device: options.device, targets: [candidate])
+        let stale = try await staleOptions.resolvingCandidates(for: original) { _ in resolution }
+        try require(stale.targets[0].status == "unavailable" &&
+                    stale.targets[0].reason_code == "streaming_resolution_stale", "Catalog change must invalidate query")
+        do {
+            _ = try await options.resolvingCandidates(for: original) { _ in throw CancellationError() }
+            throw NativeFailure(message: "Cancelled query must not publish availability")
+        } catch is CancellationError {}
         let bound = try resolution.binding(original)
         try require(bound.execution.streaming == exact && original.execution.streaming == requested,
                     "Binding must freeze a copy and preserve the original intent")

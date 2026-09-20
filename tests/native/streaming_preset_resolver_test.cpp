@@ -458,6 +458,38 @@ int main() {
         record("fast-fit", 1, 8 * gib, 200),
         record("fast-too-large", 0, 10 * gib, 50),
     }};
+    // Discovery cannot authorize incomplete or differently tokenized requests.
+    auto basic = query(10 * gib, true);
+    auto options_request = public_request();
+    options_request.fps = 24;
+    basic.workload = basic_streaming_workload(options_request,
+        basic.workload.device_class, basic.workload.execution_container);
+    assert(basic.workload.fps == 0);
+    options_request.operation = "video.generate";
+    assert(basic_streaming_workload(options_request, "device", "embedded_app").fps == 24);
+    basic.source = {};
+    basic.runtime = {};
+    basic.workload.conditioning_revision.clear();
+    basic.workload.vae_policy_revision.clear();
+    basic.workload.feature_digest.clear();
+    basic.workload.token_shapes.clear();
+    const auto candidate = find_streaming_preset_candidate(basic, catalog);
+    assert(candidate.candidate && candidate.candidate->id == "fast-fit");
+    assert(resolve_streaming_preset(basic, catalog).rejection_code ==
+           "unvalidated_workload");
+    auto wrong_tokens = query(10 * gib, true);
+    ++wrong_tokens.workload.token_shapes.front().valid_rows;
+    assert(find_streaming_preset_candidate(wrong_tokens, catalog).candidate);
+    assert(resolve_streaming_preset(wrong_tokens, catalog).rejection_code ==
+           "unvalidated_workload");
+    basic.workload.width += 16;
+    assert(!find_streaming_preset_candidate(basic, catalog).candidate);
+    basic.workload.width -= 16;
+    basic.workload.execution_container = "cli_worker";
+    assert(!find_streaming_preset_candidate(basic, catalog).candidate);
+    basic.workload.execution_container = "embedded_app";
+    basic.physical_memory_bytes = 4 * gib;
+    assert(!find_streaming_preset_candidate(basic, catalog).candidate);
     auto ten = resolve_streaming_preset(query(10 * gib), catalog);
     assert(ten.selected && ten.selected->id == "fast-fit");
     auto twelve = resolve_streaming_preset(query(12 * gib), catalog);

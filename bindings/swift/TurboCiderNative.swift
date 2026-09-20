@@ -188,6 +188,52 @@ public struct NativeStreamingOptions: Codable, Sendable {
     public let execution_container: String
     public let device: NativeStreamingDevice
     public let targets: [NativeStreamingTargetOption]
+
+    /// Discovery records remain candidates until the installed-model resolver
+    /// validates their complete workload, source, runtime, device and layout.
+    public func resolvingCandidates(
+        for request: NativeRequestV2,
+        resolve: (NativeRequestV2) async throws -> NativeStreamingResolution
+    ) async throws -> NativeStreamingOptions {
+        var checked: [NativeStreamingTargetOption] = []
+        for option in targets {
+            try Task.checkCancellation()
+            guard option.status == "candidate" else {
+                checked.append(option); continue
+            }
+            var query = request
+            if query.execution.streaming?.target_request_memory_bytes != option.target_request_memory_bytes {
+                query.execution.streaming = NativeStreamingSelectorV2(targetBytes: option.target_request_memory_bytes)
+            }
+            do {
+                let resolution = try await resolve(query)
+                _ = try resolution.binding(query)
+                guard resolution.catalog_revision == catalog_revision,
+                      resolution.selection.execution_container == execution_container else {
+                    throw NativeFailure(message: "streaming_resolution_stale", code: "streaming_resolution_stale")
+                }
+                let value = resolution.selection
+                checked.append(NativeStreamingTargetOption(
+                    target_request_memory_bytes: option.target_request_memory_bytes,
+                    status: "available", reason_code: nil, preset_id: value.preset_id,
+                    preset_revision: value.preset_revision,
+                    calibrated_request_bytes: value.calibrated_request_bytes,
+                    memory_scope: value.memory_scope, release_channel: value.release_channel))
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                checked.append(NativeStreamingTargetOption(
+                    target_request_memory_bytes: option.target_request_memory_bytes,
+                    status: "unavailable", reason_code: (error as? NativeFailure)?.code ?? "artifact_verification_failed",
+                    preset_id: nil, preset_revision: nil, calibrated_request_bytes: nil,
+                    memory_scope: nil, release_channel: nil))
+            }
+        }
+        try Task.checkCancellation()
+        return NativeStreamingOptions(schema_version: schema_version,
+            catalog_revision: catalog_revision, query_status: "artifact_checked",
+            execution_container: execution_container, device: device, targets: checked)
+    }
 }
 public struct NativeStreamingResolutionSelection: Codable, Sendable {
     public let preset_id: String
@@ -486,6 +532,18 @@ public final class NativeEngine: @unchecked Sendable {
         let message = consume(error), output = consume(result)
         guard status == 0 else { throw NativeFailure(message: message) }
         return try JSONDecoder().decode(NativeStreamingOptions.self, from: Data(output.utf8))
+    }
+    public static func streamingOptions(_ request: NativeRequestV2, modelURL: URL?) async throws -> NativeStreamingOptions {
+        let candidates = try await Task.detached(priority: .utility) {
+            try streamingOptions(request)
+        }.value
+        try Task.checkCancellation()
+        guard candidates.targets.contains(where: { $0.status == "candidate" }),
+              let modelURL else { return candidates }
+        let engine = try await open(modelURL: modelURL, modelID: request.model)
+        return try await candidates.resolvingCandidates(for: request) {
+            try await engine.resolveStreaming($0)
+        }
     }
     public func resolveStreaming(_ request: NativeRequestV2) async throws -> NativeStreamingResolution {
         let payload = try JSONEncoder().encode(request)

@@ -515,20 +515,8 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
             NSMutableArray *targets = [NSMutableArray array];
             for (const uint64_t target : tc::public_streaming_targets) {
                 tc::streaming::PresetResolveQuery query;
-                query.workload.model = request.model;
-                query.workload.operation = request.operation;
-                query.workload.execution = request.execution;
-                query.workload.device_class = device_class;
-                query.workload.execution_container = "embedded_app";
-                query.workload.width = static_cast<uint32_t>(request.width);
-                query.workload.height = static_cast<uint32_t>(request.height);
-                query.workload.frames = static_cast<uint32_t>(request.frames);
-                query.workload.fps = static_cast<uint32_t>(request.fps);
-                query.workload.steps = static_cast<uint32_t>(request.steps);
-                query.workload.batch = 1;
-                query.workload.audio = request.audio;
-                query.workload.dynamic_text = request.dynamic_text;
-                query.workload.approximation = request.allow_approximation;
+                query.workload = tc::streaming::basic_streaming_workload(
+                    request, device_class, "embedded_app");
                 query.target_request_memory_bytes = target;
                 query.physical_memory_bytes = device.physical_memory;
                 if (selector.selection && *selector.selection == "preset" &&
@@ -539,16 +527,16 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
                     query.catalog_revision = selector.catalog_revision;
                 }
                 const auto resolution =
-                    tc::streaming::resolve_streaming_preset(query, catalog);
+                    tc::streaming::find_streaming_preset_candidate(query, catalog);
                 NSMutableDictionary *entry = [@{
                     @"target_request_memory_bytes" : @(target),
-                    @"status" : resolution.selected ? @"available" :
+                    @"status" : resolution.candidate ? @"candidate" :
                         (catalog_empty ? @"catalog_empty" : @"unavailable"),
-                    @"reason_code" : resolution.selected
-                        ? (id)NSNull.null : @(resolution.rejection_code.c_str())
+                    @"reason_code" : resolution.candidate
+                        ? @"artifact_verification_required" : @(resolution.rejection_code.c_str())
                 } mutableCopy];
-                if (resolution.selected) {
-                    const auto &record = *resolution.selected;
+                if (resolution.candidate) {
+                    const auto &record = *resolution.candidate;
                     entry[@"preset_id"] = @(record.id.c_str());
                     entry[@"preset_revision"] = @(record.revision);
                     entry[@"calibrated_request_bytes"] =
