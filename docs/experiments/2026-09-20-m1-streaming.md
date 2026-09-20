@@ -585,3 +585,12 @@ Flux 覆盖 ModelSession::verify_streaming_sources，复用已有 C API 和 camp
 同一 worker 通过[合成测试 catalog](2026-09-21-m1-flux4-verified-worker-catalog.json)运行[真实请求](2026-09-21-m1-flux4-verified-worker-request.json)：256²、4 步、seed 42、P0/G1/K2/D1/Q2、retain_all、目标 12 GiB。wall 8.184 s，native denoise 6.391 s，MLX peak 6,269,857,144 bytes。PNG SHA-256 `505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02` 与原 private smoke 完全一致。报告为 cli_worker、actual_plan_verified=true、source_lease_verified=true、drained=true；100 fills、100 reader fences 均完成，authorized/actual layout digest 相同。
 
 这与 Z-Image 一起证明两个目标模型的 native 内容验证→v2 worker record→公开 adapter→实际图片/receipt 链可运行。catalog calibration/TEMPLATE performance 仍为测试 hook 合成输入，不是 12 GiB 发布资格；本次未采完整进程树 footprint 或统计性能置信区间。persistent import proof、App 验证接入、生产 catalog、自动 runtime fingerprint、GPU/ANE 多阶段集成及其完整请求验收仍未完成。
+
+
+## 第三十一轮：App 显式文件校验入口（2026-09-21）
+
+Swift NativeEngine 增加异步 verifyStreamingSources，继续在自身串行队列调用 C API，按 0/2/1 映射成功/取消/失败。模型库已登记安装对 Z-Image、Flux 4B/9B 提供“校验文件”；通过当前会话打开指定安装，显示校验中/已校验文件数/取消/失败状态，完成后提示重启需重新校验。校验报告不交给推理统计视图，避免显示无意义的推理指标。会话栏新增取消任务按钮，模型/API 忙、加速解析中或需要重启时禁用校验；失败处理保留进程隔离的重启状态。
+
+[构建、功能测试和启动记录](2026-09-21-m1-app-source-verification.json)：App 以最新 Swift 源码链接 m1-flux-source-verify native hook 库构建成功。既有 image transaction、streaming resolution、Studio behavior 回归通过。新增 `StreamingSourceVerificationTests.swift` 在真实 Flux 4B 上通过 Swift SDK 校验 8 个文件并确认缓存复验 payload=0。新增 `ModelSourceVerificationTests.swift` 使用隔离临时历史目录和真实模型，验证外部服务忙时拒绝、取消后恢复空闲、重试成功、报告状态清理和卸载。测试最初误写 JobStore 类型名导致编译失败，修正为 NativeJobStore 后通过；不隐去该失败。模型会话测试使用 -Onone，验证功能而非时延。
+
+新 App 直接启动并观察 15 秒仍存活，stdout/stderr 为零字节，随后只终止本次启动的进程（退出 -15）。这是启动 smoke 与组件测试，不是自动点击按钮的完整 GUI 验收。校验由用户显式触发，不在 options 中增加隐藏哈希；当前仍没有 persistent import proof，也没有生产 catalog。新会话的 options/内容证明复用、正式预设选择、GPU/ANE 全链路及 App/worker 完整安装验收仍待完成。

@@ -546,6 +546,18 @@ public final class NativeEngine: @unchecked Sendable {
             try await engine.resolveStreaming($0)
         }
     }
+    public func verifyStreamingSources() async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+                let status = tc_engine_verify_streaming_sources_json(handle, &result, &error)
+                let message = consume(error), output = consume(result)
+                if status == 0 { continuation.resume(returning: Data(output.utf8)) }
+                else if status == 2 { continuation.resume(throwing: CancellationError()) }
+                else { continuation.resume(throwing: nativeFailure(message)) }
+            }
+        }
+    }
     public func resolveStreaming(_ request: NativeRequestV2) async throws -> NativeStreamingResolution {
         let payload = try JSONEncoder().encode(request)
         return try await withCheckedThrowingContinuation { continuation in

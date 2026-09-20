@@ -64,6 +64,8 @@ RecordV2 格式增量：`source.identity_version=2` 要求 `model_variant`、`we
 
 2026-09-21 Flux 后续：显式 source verification 已接入 Flux，4B host 变更失效测试及真实 worker v2 图片/receipt 通过；8 个官方 artifact 摘要验证与原 PNG 字节一致，详见实验第三十轮。两个目标模型均已有显式进程内验证路径，尚未完成 persistent import proof、App 接入和生产记录资格，R1 仍未整体关闭。
 
+2026-09-21 App 增量：模型库增加显式文件校验入口、状态和取消，Swift SDK/真实模型会话功能测试及启动 smoke 通过，详见实验第三十一轮。新会话的证明复用、persistent import、生产资格和完整 GUI 验收仍未关闭。
+
 ### R2 · Options 查询不能匹配真实完整 record
 
 证据：`native/api/c_api.mm::tc_streaming_options_json()` 只填 model、shape 等基础 workload；没有填 conditioning revision、VAE policy、feature digest 和 token shapes。

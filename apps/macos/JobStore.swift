@@ -308,6 +308,33 @@ final class NativeJobStore: ObservableObject {
         sessionState = "会话就绪 · 权重按需加载"
         return opened
     }
+    func verifyModelSources(modelURL: URL, modelID: String) async throws {
+        guard !busy, !externalServiceActive, !resolvingAcceleration else {
+            throw NativeFailure(message: "请在模型与 API 空闲时校验文件。")
+        }
+        busy = true; cancelRequested = false
+        defer { busy = false }
+        do {
+            let opened = try await acquire(modelURL, modelID: modelID)
+            if cancelRequested { throw CancellationError() }
+            sessionState = "正在校验模型文件…"
+            let data = try await opened.verifyStreamingSources()
+            if cancelRequested { throw CancellationError() }
+            guard let report = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  report["status"] as? String == "verified",
+                  let files = report["files"] as? [[String: Any]], !files.isEmpty else {
+                throw NativeFailure(message: "模型文件校验结果无效。")
+            }
+            sessionReport = nil
+            sessionState = "已校验 \(files.count) 个文件 · 重启后需重新校验"
+        } catch {
+            if !recordProcessQuarantine(error) && !requiresProcessRestart {
+                sessionState = (error is CancellationError || cancelRequested)
+                    ? "文件校验已取消" : "文件校验失败"
+            }
+            throw error
+        }
+    }
     func load(modelURL: URL, modelID: String = "flux2-klein-4b") async throws {
         guard !busy else { throw NativeFailure(message: "任务进行中，请等待完成后加载模型。") }
         busy = true; cancelRequested = false
