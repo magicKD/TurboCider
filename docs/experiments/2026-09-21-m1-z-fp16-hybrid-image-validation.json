@@ -1,0 +1,33 @@
+{
+  "scope": "FP16 typed hybrid real-prompt 512-square 9-step stage and shared VAE; single sample",
+  "stage_result": {
+    "mode": "complete",
+    "passed": true,
+    "completed_passes": 9,
+    "coreml_calls": 288,
+    "stage_groups": 261,
+    "stage_read_bytes": 63646382592,
+    "layout_digest": "c4cacd9a8b89b381f6d715727ee9674ba74a9b8d52c8960be7c14f6baceb76d3",
+    "stage_event_digest": "2135d94842ac70fc8e9ee12ff82845b9f4dc008c0b3accdc6a505bdaa3ba1301",
+    "stage_canonical_digest": "eea9032431d37d80171f57d04d98191efb6e3dfd79c01f430b7b58f723ab8d04"
+  },
+  "branch_trace_checked": true,
+  "group_trace_checked": true,
+  "hashes": {
+    "stage/complete/branches.csv": "0cddd9017e0cb73ee7b68e4a40ec73ad7526daa37577b2f782b6b8aedbc709e1",
+    "stage/complete/groups.csv": "e3e0e83596e89c57eac1443e1c2927048e54b9f351abed5c611ae6ee5f1e6280",
+    "stage/complete/final.npy": "f77d94c4ee2767db175d5b22c31562250aa96eeb2a52d6bc32465e20f58a255f",
+    "stage/complete/initial.npy": "6191bf549febe18ddf05814e8e5ef7b339053e99afc39b4334f0bf1f7d9aba88",
+    "stage/complete/caption.npy": "80a81db7c0c1f26e8969e495660bae52392427554c1d1a6c8fc1b8779ca360ac",
+    "decoded/decoded.npy": "c6cc8fb567e4eb1fad7a4df959859c89978e071118e8c0f008e9e3d4e9270c53",
+    "decoded/image.png": "7337f90b64e27c498318494c5d5b6d8e0873ae030fe763ed2ead184b56ca1580"
+  },
+  "comparison_regression": "Existing INT8 fixture metrics and image hashes unchanged with updated tool; frozen input/caption checks pass",
+  "qualification": "None: staged research execution, not full-request ModelEngine/public receipt or multi-prompt quality gate",
+  "missing": [
+    "same-partition legacy migration reference",
+    "complete request lifecycle and component receipt",
+    "performance and memory comparison",
+    "release campaign and public catalog"
+  ]
+}

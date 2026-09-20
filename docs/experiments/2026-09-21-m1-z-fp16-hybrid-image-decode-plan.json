@@ -1,0 +1,17 @@
+{
+  "scope": "shared native VAE decode of completed FP16 hybrid real-prompt stage; exploratory",
+  "latent": "/Users/chencanhui/models/TurboCider/experiments/m1-z-real-prompt-fp16-all/stage/complete/final.npy",
+  "latent_sha256": "f77d94c4ee2767db175d5b22c31562250aa96eeb2a52d6bc32465e20f58a255f",
+  "vae": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/vae/ae.safetensors",
+  "vae_sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+  "binary_sha256": "5ae188accb4af2acd4e7935e5bf07e87260360e84a93cf9c7d32a2d626cfdcf7",
+  "library_sha256": "70bafadc0fc26bde63cbd0bddcf92072a75ecdad663c00aa52b6979178afed51",
+  "shape": [
+    512,
+    512
+  ],
+  "reference_fixture": "/Users/chencanhui/models/TurboCider/experiments/m1-z-real-prompt-stage",
+  "comparison_driver_sha256": "466ce9da3c66b6981e3a81b2d05dd720283fd4383c635dabc17ae24c94cf3397",
+  "quality": "Exploratory single sample; no release pass verdict; original INT8 failure preserved",
+  "performance": "Separate stages, no performance claim"
+}

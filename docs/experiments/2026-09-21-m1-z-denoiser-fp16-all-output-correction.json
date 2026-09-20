@@ -1,0 +1,5 @@
+{
+  "reason": "Exporter correctly refuses a nonempty unowned output directory; plan.json must live outside its artifact directory. No model branches exported by the rejected invocation.",
+  "output": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-all/artifacts",
+  "unchanged": "model, all 32 blocks, FP16, bucket1088, width5120, scales8/32 and branch thresholds"
+}

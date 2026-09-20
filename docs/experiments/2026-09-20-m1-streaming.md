@@ -943,3 +943,17 @@ Swift App 和全部 integration test executables 完整构建退出 0，链接�
 host preset/runtime 测试、builder 17 项、bundled catalog 6 项、policy generator 4 项及 ObjC++ 语法检查通过。第一次新 builder 测试误用仅供 native canonical 对照、并不符合 builder estimator 约束的 fixture，出现 estimator unsupported；改为独立校验 canonical golden 与有效 builder fixture 后通过，没有放宽校准检查。完整 native 构建及 runtime/catalog 编译后核对通过；新库 C API 测试 3 项中 2 项通过、1 项因未提供 release-without-hooks 库跳过，实际验证 v3 strict record 装载、未验证来源仍拒绝 resolve、未知策略拒绝。首次 C API 调用环境变量错误导致 hook 测试跳过，纠正后才计为通过。contract 83 项、3 项原有跳过，其余通过。详见[验证记录](2026-09-21-m1-release-policy-v3-validation.json)。
 
 这一步是显式策略编码的基础，不是 calibrated 发布实现完成。P3 必需性尚未改变；未来新增 calibrated channel 前仍需冻结并实现 builder/verifier 的 gate 集合、保留 P3 verdict、全局正确性/生命周期阻断和 App 展示，并取得实际所需证据。不得把当前 strict v3 身份当作已授予 public-calibrated 资格。
+
+## 第五十五轮：完整 FP16 denoiser bank 与真实图片对照（2026-09-21）
+
+冻结新的 32 分区 FP16 candidate，保持原 checkpoint、bucket 1088、ANE width 5120、activation/output scale 8/32 和局部门槛不变。第一次导出因输出目录已有计划文件而被 exporter 拒绝；保留失败日志，将 artifacts 放到独立子目录后完整导出，未改变模型参数。见[计划](2026-09-21-m1-z-denoiser-fp16-all-plan.json)和[输出目录修正](2026-09-21-m1-z-denoiser-fp16-all-output-correction.json)。通过 native manifest 编译接口完成全部 32 分区，cache hits=0；[编译计划](2026-09-21-m1-z-denoiser-fp16-all-compile-plan.json)、[结果](2026-09-21-m1-z-denoiser-fp16-all-compile-result.json)保留。
+
+复用原 BF16 GPU oracle 和固定合成输入，实际输入及全部 32 个 reference.npy 与原 INT8 实验逐字节相同。FP16 **32/32** 通过原门槛 relative-L2≤0.025、cosine≥0.999、relative-max-abs≤0.05；最大 relative-L2 **0.00470822**，最低 cosine **0.99998896**。原失败 branch 29 本次 relative-L2 **0.00467754**。这是独立 precision candidate，不修改原 INT8 的失败结果。见[逐分区结果](2026-09-21-m1-z-denoiser-fp16-all-smoke-results.json)及[验证摘要](2026-09-21-m1-z-denoiser-fp16-all-validation.json)。CPU_AND_NE 是请求配置，不代表已测得硬件 ANE 驻留。
+
+随后使用第五十轮相同的 47-token 真实 prompt、seed 42 初始噪声、512²、9 steps 与 P1/G1/K2/D1/Q2，通过 typed hybrid owner 完成全部 288 branches、261 groups 和资源清理。branch 顺序、group 读取字节、reader completion 再次检查，随后共享 native VAE 解码输出图片。[执行计划](2026-09-21-m1-z-fp16-hybrid-image-stage-plan.json)、[执行结果](2026-09-21-m1-z-fp16-hybrid-image-stage-result.json)、[解码计划](2026-09-21-m1-z-fp16-hybrid-image-decode-plan.json)和[完整验证记录](2026-09-21-m1-z-fp16-hybrid-image-validation.json)保留。
+
+比较工具增加独立 frozen reference fixture 参数，并校验 stage plan 中输入哈希、实际 initial/caption 张量。旧 INT8 fixture 的 latent/decoded/RGB 数值和图片哈希回归不变。FP16 相对原纯 GPU 参考的最终 latent relative-L2 为 **0.09715543**（INT8 0.10763672），decoded relative-L2 **0.07757605**（0.08986189），RGB 0–1 RMSE **0.01906227**（0.02206008）。完整数据见[图像对照](2026-09-21-m1-z-fp16-hybrid-image-comparison.json)。图片可辨认出雪地狐狸，但局部误差显著下降没有带来同等幅度的完整轨迹改善；仍需同 partition legacy 对照，不能把剩余误差全归因于量化，或据此称迁移等价/质量合格。
+
+![FP16 hybrid candidate](2026-09-21-m1-z-fp16-hybrid-image-candidate.png)
+
+本轮为分阶段研究运行，不是 ModelEngine 的完整 hybrid 请求，不提供性能、内存或 public 发布资格。未改变 production catalog、strict P3 门或原失败记录。再次 fetch origin/dev 成功，远端仍为 `61c0849` 且已是当前分支祖先，没有新的待合并改动。

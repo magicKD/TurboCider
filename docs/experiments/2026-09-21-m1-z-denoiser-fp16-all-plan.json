@@ -1,0 +1,23 @@
+{
+  "scope": "All 32 FP16 denoiser prefix branches, a new candidate; original INT8 failure preserved",
+  "created_utc": "2026-09-20T22:39:54.091632+00:00",
+  "model": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo",
+  "output": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-all",
+  "bucket": 1088,
+  "ane_mlp_width": 5120,
+  "activation_scale": 8,
+  "output_scale": 32,
+  "variant": "fp16",
+  "blocks": "all",
+  "source_checkpoint_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+  "exporter_sha256": "babd12461d571f8fc6cbecbf02733f03c60371786ded46464698000ac1137fee",
+  "local_branch_gate": {
+    "relative_l2_max": 0.025,
+    "cosine_min": 0.999,
+    "relative_max_abs_max": 0.05
+  },
+  "input_fixture": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-prefix-smoke-w5120/input.npy",
+  "full_image": "Repeat frozen real-prompt fixture as exploratory comparison after branch validation; not public qualification",
+  "stop": "Preserve export/compile/prediction failures; no automatic retry or threshold changes",
+  "performance": "Export/compile not inference timing; no performance claim"
+}
