@@ -1,0 +1,184 @@
+{
+  "status": 0,
+  "error": null,
+  "result": {
+    "acceleration_selection": "gpu_ane: explicitly selected Z-Image FFN partition",
+    "actual_denoise_steps": 9,
+    "checkpoint": null,
+    "encoder_execution": "gpu",
+    "encoder_gpu_graph": "qwen3_gpu_only",
+    "encoder_hybrid": {},
+    "encoder_runtime_backend": "mlx_cpp_metal",
+    "encoder_runtime_precision": "bf16",
+    "gpu_graph": "compiled_mlp_complement",
+    "height": 512,
+    "hybrid": {
+      "ane_mlp_range": [
+        0,
+        5120
+      ],
+      "block_count": 32,
+      "bucket": 1088,
+      "calls_session_total": 288,
+      "checkpoint_sha256_verified": true,
+      "compute_units": "cpuAndNeuralEngine",
+      "first_runtime_prediction_calls_session_total": 32,
+      "first_runtime_prediction_seconds_session_total": 1.7216081629999997,
+      "hidden": 3840,
+      "load_seconds": 8.9124715,
+      "lora_identity_verified": false,
+      "manifest_validation_seconds": 7.805795792,
+      "minimum_profitable_rows": 1088,
+      "mlp_width": 10240,
+      "model_interface_setup_seconds": 0.0004391669999999903,
+      "model_load_seconds": 1.0918374990000004,
+      "observed_ane_residency": "unknown",
+      "output_backing_setup_seconds": 0.00286925,
+      "output_copy_bytes_session_total": 0,
+      "output_scale": 32,
+      "prediction_seconds_session_total": 59.314286110000005,
+      "prefill_actual_tokens": 0,
+      "prefill_compute_tokens": 0,
+      "prefill_fixed_shape": false,
+      "prefill_padding_tokens": 0,
+      "prefill_plan_reason": "",
+      "prefill_selected_bucket": 0,
+      "provenance": "local checkpoint path, size and SHA-256 verified",
+      "qualified_flexible_backing": false,
+      "quality_max_abs_session": 0,
+      "quality_max_relative_abs_session": 0,
+      "quality_max_relative_l2_session": 0,
+      "quality_min_cosine_session": 1,
+      "quality_validation_calls_session_total": 0,
+      "quality_validation_enabled": false,
+      "quality_validation_passed": true,
+      "runtime_calls_session_total": 288,
+      "runtime_failed": false,
+      "runtime_failure_block": -1,
+      "runtime_failures_session_total": 0,
+      "session_released_after_encoding": false,
+      "subsequent_runtime_prediction_calls_session_total": 256,
+      "subsequent_runtime_prediction_seconds_session_total": 57.59267794699999,
+      "warmup_calls_session_total": 0,
+      "zero_input_warmup_seconds": 0
+    },
+    "lora_strategy": "none",
+    "memory": {
+      "mlx_active_bytes": 12657433356,
+      "mlx_peak_bytes": 16037534752,
+      "scope": "MLX allocator; excludes Core ML/OS/file cache"
+    },
+    "model": "z-image-turbo",
+    "operation": "image.generate",
+    "output": "/Users/chencanhui/models/TurboCider/experiments/m1-z-fp16-legacy-migration/resident-2/image.png",
+    "plan": {
+      "algorithm_approximations": [
+        "single_block_mlp_int8_per_channel"
+      ],
+      "audio": false,
+      "audio_capability": "not_applicable",
+      "backend": "mlx_cpp_metal+coreml",
+      "decoded_shape": [
+        512,
+        512,
+        1
+      ],
+      "encoder_backend": "mlx_cpp_metal",
+      "encoder_execution": "gpu",
+      "encoder_gpu_graph": "qwen3_gpu_only",
+      "encoder_precision": "bf16",
+      "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+      "executable": true,
+      "execution": "gpu_ane_experimental",
+      "executor_operations": null,
+      "gpu_graph": "compiled_mlp_complement",
+      "limitation": "capabilities depend on model artifacts and configured hardware",
+      "lora_count": 0,
+      "lora_fusion": "none",
+      "lora_strategy": "none",
+      "ltx_backend": "auto",
+      "ltx_fast_av": true,
+      "ltx_sol_dense_edge_blocks": 1,
+      "ltx_sol_dense_edge_steps": 1,
+      "ltx_sol_stage1": false,
+      "ltx_sol_stage2": false,
+      "ltx_sol_tau": 0.5,
+      "ltx_sparse_anchor_stride": 0,
+      "ltx_sparse_keep_blocks": 0,
+      "ltx_sparse_mode": 0,
+      "ltx_sparse_radius": 1,
+      "ltx_sparse_tokens_per_frame": 0,
+      "ltx_stage2_text_rows": 0,
+      "ltx_video_attention_batch": false,
+      "memory_budget_bytes": 8589934592,
+      "memory_budget_scope": "runtime_request_budget",
+      "memory_estimate_bytes": 28991029248,
+      "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+      "model": "z-image-turbo",
+      "operation": "image.generate",
+      "precision": "bf16_gpu+int8_mlp_fp16_io",
+      "profile_identity": "",
+      "quantized_cache": null,
+      "requested_execution": "gpu_ane",
+      "requested_shape": [
+        512,
+        512,
+        1
+      ],
+      "residency": "resident",
+      "schema_version": 1,
+      "selection_pending": false,
+      "stages": [
+        {
+          "dependencies": [],
+          "id": "text_encode",
+          "iterations": 1
+        },
+        {
+          "dependencies": [
+            "text_encode"
+          ],
+          "id": "denoise",
+          "iterations": 9
+        },
+        {
+          "dependencies": [
+            "denoise"
+          ],
+          "id": "vae_decode",
+          "iterations": 1
+        },
+        {
+          "dependencies": [
+            "vae_decode"
+          ],
+          "id": "export",
+          "iterations": 1
+        }
+      ],
+      "streaming_offload": false,
+      "validation": "native_candidate",
+      "weight_validation": "comfy-oracle-validated; m4max-a4096-hybrid-qualified"
+    },
+    "prompt_cache_hit": false,
+    "reference_tokens": 0,
+    "runtime_backend": null,
+    "runtime_precision": null,
+    "schema_version": 1,
+    "seed": 42,
+    "steps": 9,
+    "text_tokens": 47,
+    "timings_seconds": {
+      "denoise": 463.905346875,
+      "hybrid_setup": 0,
+      "image_encode": 0,
+      "request_wall": 483.8147315,
+      "text_encode": 1.806838292,
+      "vae_decode": 3.389437417
+    },
+    "valid_text_tokens": 47,
+    "validation": "candidate; consult recorded parity suite",
+    "warmup": false,
+    "width": 512
+  }
+}

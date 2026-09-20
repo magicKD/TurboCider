@@ -1,0 +1,26 @@
+{
+  "scope": "Completed frozen resident legacy repeatability diagnostic; not same-plan P1",
+  "comparison_driver_matches_frozen_plan": true,
+  "first_plan_unchanged": true,
+  "native_sources_identical": true,
+  "images_byte_identical": true,
+  "image_sha256": "7337f90b64e27c498318494c5d5b6d8e0873ae030fe763ed2ead184b56ca1580",
+  "tensor_counts": [
+    12,
+    12
+  ],
+  "result_hashes": [
+    "8a374e3a60a391087b6b1df47d262a4e859277511417a7febe989218152b6b59",
+    "e3788c5b6b5c1757aa3b75ab41a1648647c5bf128a6c2041daab20e5c8bed398"
+  ],
+  "event_hashes": [
+    "1ac2ae0100f47c7a2e31fbbea38487ea3bff06e1f0d6c8e2b57680312850b98e",
+    "e2612fdb629b2ce2cc370c14d4980807ef3f78bfa1b3d52c6db460939c4cabd9"
+  ],
+  "limitations": [
+    "single prompt and seed",
+    "resident reference differs in layout/retention",
+    "legacy caption not directly dumped",
+    "second run overlapped native compilation; no performance comparison"
+  ]
+}

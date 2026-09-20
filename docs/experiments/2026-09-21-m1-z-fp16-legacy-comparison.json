@@ -1,0 +1,88 @@
+{
+  "scope": "Frozen byte-exact legacy repeatability and typed-stage migration diagnostic.\n\nNo tolerance relaxation, release qualification, or performance comparison.\n",
+  "rule": "byte-exact, frozen before reference runs",
+  "legacy_repeatable": true,
+  "repeatability": {
+    "z_latent_initial": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_latent_step_1": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_latent_step_2": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_latent_step_3": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_latent_step_4": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_latent_step_5": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_latent_step_6": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_latent_step_7": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_latent_step_8": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_latent_step_9": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_latent_final": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    },
+    "z_decoded": {
+      "byte_equal": true,
+      "relative_l2": 0.0,
+      "max_abs": 0.0
+    }
+  },
+  "final_latent_migration": {
+    "byte_equal": true,
+    "relative_l2": 0.0,
+    "max_abs": 0.0
+  },
+  "migration_passed": true,
+  "qualification": "NONE; one fixture, no complete-request lifecycle or release/performance evidence",
+  "limitations": [
+    "Resident legacy and typed streaming do not share P/G/K/D/Q or retention; not same-plan P1",
+    "Legacy recomputes conditioning from the frozen prompt; its caption tensor is not directly observed"
+  ],
+  "driver_sha256": "ee44c4a6a80def215cd333e9bfea50453431024ffcd6f15ca64439487cd33b05",
+  "plans": {
+    "/Users/chencanhui/models/TurboCider/experiments/m1-z-fp16-legacy-migration/resident-1/plan.json": "1d22031291f7fd83863902f0abe9f1ee3faedc17d311e9e3644624c0bbfae1d9",
+    "/Users/chencanhui/models/TurboCider/experiments/m1-z-fp16-legacy-migration/resident-2/plan.json": "87d597707fba1d1c4636077ddef35e93f4d11cef3505c38c450ebf6f7dd18872",
+    "/Users/chencanhui/models/TurboCider/experiments/m1-z-real-prompt-fp16-all/stage/plan.json": "abc5669970d5d1cfdb8d272dada5c4d7953d70185945ae6c41858a6db1e90fbf"
+  },
+  "legacy_results": {
+    "/Users/chencanhui/models/TurboCider/experiments/m1-z-fp16-legacy-migration/resident-1/result.json": "8a374e3a60a391087b6b1df47d262a4e859277511417a7febe989218152b6b59",
+    "/Users/chencanhui/models/TurboCider/experiments/m1-z-fp16-legacy-migration/resident-2/result.json": "e3788c5b6b5c1757aa3b75ab41a1648647c5bf128a6c2041daab20e5c8bed398"
+  }
+}

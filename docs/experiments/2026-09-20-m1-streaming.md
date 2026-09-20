@@ -958,7 +958,7 @@ host preset/runtime 测试、builder 17 项、bundled catalog 6 项、policy gen
 
 本轮为分阶段研究运行，不是 ModelEngine 的完整 hybrid 请求，不提供性能、内存或 public 发布资格。未改变 production catalog、strict P3 门或原失败记录。再次 fetch origin/dev 成功，远端仍为 `61c0849` 且已是当前分支祖先，没有新的待合并改动。
 
-## 第五十六轮：同分区 legacy 参考入口与冻结对照（2026-09-21，运行中）
+## 第五十六轮：同分区 legacy 参考入口与冻结对照（2026-09-21）
 
 新增 `run_z_image_hybrid_legacy_reference.py`，复用 native worker、源验证和原始事件/result 保存流程，使用相同真实 prompt、初始噪声、512²/9 steps 与完整 FP16 bank。第一次选择 legacy streamed 时，原生准入在推理前明确拒绝 M1：GPU+ANE streaming 仅允许已测 M5 Pro 24 GiB profile。[请求计划](2026-09-21-m1-z-fp16-legacy-streamed-rejection-plan.json)和[拒绝结果](2026-09-21-m1-z-fp16-legacy-streamed-rejection-result.json)保留，没有修改或绕过设备准入。
 
@@ -969,3 +969,5 @@ host preset/runtime 测试、builder 17 项、bundled catalog 6 项、policy gen
 Resident legacy 与 typed streaming 的 P/G/K/D/Q、权重布局和 retention 不同，因此即使数值相同也不是 57 §7.1 的 same-plan P1；legacy 还会重算 Qwen conditioning，没有直接导出 caption。它用于缩小迁移差异范围，后续仍需同 source/spec/kernel 的顺序 private reference harness。没有性能或低内存声明。静态检查另发现结果展示层仍有固定的 `bf16_gpu+int8_mlp_fp16_io` 标签；本次精度以 FP16 export identity 为准，该展示问题尚未修复。
 
 后续观测：首个 resident 运行已退出 0，完成 9 steps、288 次 Core ML 调用、零 runtime failures，47 个有效 token。初始噪声、最终 latent、decoded tensor 与第五十五轮 typed streaming **逐字节一致**，最终 latent relative-L2 **0**；PNG SHA 同为 `7337f90b64e27c498318494c5d5b6d8e0873ae030fe763ed2ead184b56ca1580`。见[完整结果](2026-09-21-m1-z-fp16-legacy-resident-1-result.json)、[源验证](2026-09-21-m1-z-fp16-legacy-resident-1-source-verification.json)和[单次对照/张量哈希](2026-09-21-m1-z-fp16-legacy-resident-1-comparison.json)。这缩小了该 fixture 的迁移差异范围，但尚不能替代参考自身可重复性或多样本确认。确认首个进程退出后，已按冻结规则启动[第二次独立参考](2026-09-21-m1-z-fp16-legacy-resident-2-plan.json)，尚待结果。实际结果还暴露 `runtime_backend`、`runtime_precision` 为 null 的报告缺口，与 plan 的固定 INT8 标签一起保留待修复。
+
+完成观测：第二个 resident 进程已退出 0，[完整结果](2026-09-21-m1-z-fp16-legacy-resident-2-result.json)保留。比较工具及首个计划的 SHA 与冻结值一致；两次 native 验证的源文件身份一致。初始 latent、9 个 step latent、最终 latent、decoded 共 **12 个张量全部逐字节重复**，两张 PNG SHA 也相同；typed stage 最终 latent 与 legacy 相比 relative-L2/max-abs 均为 **0**。见[冻结规则对照结果](2026-09-21-m1-z-fp16-legacy-comparison.json)及[独立复核](2026-09-21-m1-z-fp16-legacy-completed-validation.json)。该 fixture 的整图近似差异并非由新 streaming 迁移引入，但不推广到其他 prompt/seed 或 same-plan P1。第二次运行与报告修复的 native 编译有重叠，因此不采用计时作性能比较。
