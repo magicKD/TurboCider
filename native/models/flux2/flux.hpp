@@ -32,7 +32,10 @@ class Flux : public ModelSession {
     };
     std::unordered_map<std::string, LoRAFileHash> lora_hash_cache_;
     std::shared_ptr<const streaming::SourceLease> public_stream_lease_;
+    std::unique_ptr<Tokenizer> public_stream_tokenizer_;
+    bool public_component_cache_ = false;
     uint64_t public_stream_target_bytes_ = 0;
+    void reset_public_component_cache();
 
   public:
     std::string select_acceleration(Request &, int, const Event &, std::atomic<bool> &);

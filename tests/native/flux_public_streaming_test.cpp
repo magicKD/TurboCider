@@ -199,6 +199,43 @@ int main(int argc, char **argv) {
             session.generate_resolved(execution, event, cancelled);
         }, "streaming_target_unsupported");
 
+        // The existing engine must tokenize a new probe from its newly held
+        // source, rather than from the Tokenizer constructed with the engine.
+        const auto tokenizer_path = std::filesystem::path(argv[1]) /
+            "tokenizer/tokenizer.json";
+        std::ifstream tokenizer_input(tokenizer_path);
+        std::string tokenizer_json((std::istreambuf_iterator<char>(tokenizer_input)),
+                                    std::istreambuf_iterator<char>());
+        const std::string old_added = "\"added_tokens\": []";
+        const auto added_position = tokenizer_json.find(old_added);
+        assert(added_position != std::string::npos);
+        tokenizer_json.replace(added_position, old_added.size(),
+            "\"added_tokens\": [{\"id\": 999, \"content\": \"<|im_start|>\", \"special\": true}]");
+        std::filesystem::rename(tokenizer_path, tokenizer_path.string() + ".old");
+        {
+            std::ofstream replacement(tokenizer_path);
+            replacement << tokenizer_json;
+        }
+        const auto new_probe = session.probe_public_streaming(
+            {base_request, device(), "embedded_app"});
+        const auto current_tokens = tc::Tokenizer(tokenizer_path.parent_path())
+            .prompt(base_request.prompt, base_request.dynamic_text);
+        assert(new_probe->workload_identity().token_shapes.front().valid_rows ==
+               static_cast<uint32_t>(current_tokens.valid));
+        assert(new_probe->workload_identity().token_shapes.front().valid_rows !=
+               token.valid_rows);
+        const auto old_fd = probe->source_lease()->duplicate_fd("tokenizer/tokenizer.json");
+        tc::Tokenizer old_tokenizer(old_fd.get(),
+            probe->source_lease()->file("tokenizer/tokenizer.json").bytes);
+        assert(old_tokenizer.prompt(base_request.prompt, true).valid ==
+               static_cast<int>(token.valid_rows));
+        rejects([&] { snapshot->revalidate_source(); }, "source");
+        rejects([&] { session.compile_public_streaming(new_probe, record); },
+                "streaming_record_identity_mismatch");
+        rejects([&] {
+            session.generate_resolved(bound_execution, event, cancelled);
+        }, "source");
+
         const auto shard = std::filesystem::path(argv[1]) /
             (klein4 ? "transformer/diffusion_pytorch_model.safetensors" :
                       "transformer/diffusion_pytorch_model-00002-of-00002.safetensors");
@@ -211,7 +248,7 @@ int main(int argc, char **argv) {
         rejects([&] { snapshot->revalidate_source(); }, "source path");
 
         std::cout << "PASS FLUX public adapter: shared source closure, "
-                     "lease-backed descriptor, exact identity/layout, "
+                     "lease-backed descriptor/tokenizer, stale tokenizer rejection, exact identity/layout, "
                      "route rejection, target failure cleanup and source "
                      "replacement detection\n";
     } catch (const std::exception &error) {

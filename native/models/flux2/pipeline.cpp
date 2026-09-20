@@ -29,7 +29,7 @@ std::string flux_exact_kernel_revision(const std::string &model) {
     return model + "-mlx-eager-block-v1";
 }
 std::string flux_component_policy(const std::string &model) {
-    return model + "-components-v1";
+    return model + "-components-v2-all-sources-request-cache";
 }
 
 void append_public_artifacts(
@@ -84,7 +84,7 @@ streaming::PresetSourceIdentity flux_public_source_identity(
 
 streaming::PresetRuntimeIdentity flux_public_runtime_identity(const std::string &model) {
     return {"turbocider-streaming-2026-09-18", "public-streaming-runtime-v2",
-            model + "-public-adapter-v2-feature-digest",
+            model + "-public-adapter-v3-all-component-lease",
             model == "flux2-klein-4b" ? "flux2-single-pread-bf16-lease-v1" : "flux2-sharded-pread-bf16-lease-v1",
             flux_exact_kernel_revision(model),
             "mlx-request-cache-policy-v1"};
@@ -167,7 +167,11 @@ Flux::probe_public_streaming(
     flux2::StreamingMetadata metadata(lease, model_id_);
     metadata.check_unchanged();
 
-    const auto tokens = tokenizer_.prompt(request.prompt, request.dynamic_text);
+    const auto tokenizer_fd = lease->duplicate_fd("tokenizer/tokenizer.json");
+    Tokenizer request_tokenizer(tokenizer_fd.get(),
+                                lease->file("tokenizer/tokenizer.json").bytes);
+    const auto tokens = request_tokenizer.prompt(request.prompt, request.dynamic_text);
+    lease->revalidate_after_drain();
     streaming::PresetWorkload workload;
     workload.model = model_id_;
     workload.operation = request.operation;
@@ -266,12 +270,19 @@ RunResult Flux::generate_resolved(
     const auto previous_target = public_stream_target_bytes_;
     public_stream_target_bytes_ = *target;
     try {
+        public_stream_lease_->revalidate_after_drain();
+        const auto fd = public_stream_lease_->duplicate_fd("tokenizer/tokenizer.json");
+        public_stream_tokenizer_ = std::make_unique<Tokenizer>(
+            fd.get(), public_stream_lease_->file("tokenizer/tokenizer.json").bytes);
+        public_stream_lease_->revalidate_after_drain();
         auto result = run(execution->request, event, cancelled, false);
         public_stream_target_bytes_ = previous_target;
+        public_stream_tokenizer_.reset();
         public_stream_lease_.reset();
         return result;
     } catch (...) {
         public_stream_target_bytes_ = previous_target;
+        public_stream_tokenizer_.reset();
         public_stream_lease_.reset();
         throw;
     }
@@ -325,6 +336,7 @@ LoadResult Flux::load(const Event &event, std::atomic<bool> &cancelled) {
     // Load image weights only: Qwen is intentionally staged during prompt encoding.
     require(device_info().physical_memory >= (16ull << 30),
             "insufficient memory for BF16 image weights");
+    reset_public_component_cache();
     bool transformer_cold = transformer_.bytes() == 0;
     transformer_.load(root_ / "transformer", event, cancelled);
     if (transformer_cold && !active_loras_.empty())
@@ -349,6 +361,21 @@ void Flux::unload() {
     cached_encoder_manifest_.clear();
     transformer_.clear();
     vae_.clear();
+    public_component_cache_ = false;
+}
+void Flux::reset_public_component_cache() {
+    if (!public_stream_lease_ && !public_component_cache_) return;
+    // Clear both incoming and outgoing public caches at a safe request
+    // boundary. Preserve the marker on failure; catch paths cannot prove that
+    // GPU work has drained and must not free potentially live arrays.
+    mx::synchronize();
+    encoder_hybrid_.reset();
+    cached_conditioning_.reset();
+    cached_prompt_.clear();
+    cached_encoder_manifest_.clear();
+    vae_.clear();
+    public_component_cache_ = bool(public_stream_lease_);
+    mx::clear_cache();
 }
 bool Flux::conditioning(const Request &r, const Tokens &tokens, const Event &event,
                         std::atomic<bool> &cancelled) {
@@ -480,6 +507,7 @@ RunResult Flux::prepare(const Request &requested, bool warmup, const Event &even
     require(r.model == model_id_ && !r.prompt.empty(), "FLUX preparation requires a prompt");
     ResidencyPolicy::validate_budget(plan, device_info().physical_memory);
     mx::set_cache_limit(r.allocator_cache_bytes);
+    reset_public_component_cache();
     select_loras(r);
     auto tokens = tokenizer_.prompt(r.prompt, r.dynamic_text);
     bool hit = conditioning(r, tokens, event, cancelled);
@@ -539,6 +567,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     auto residency = ResidencyPolicy::for_request(r, physical);
     mx::reset_peak_memory();
     mx::set_cache_limit(r.allocator_cache_bytes);
+    reset_public_component_cache();
     select_loras(r);
     if (exact_streaming) {
         require((model_id_ == "flux2-klein-9b" || model_id_ == "flux2-klein-4b") && active_loras_.empty(),
@@ -556,19 +585,10 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         hybrid_.reset();
         hybrid_gpu_graph_ = {};
         hybrid_gpu_mlp_start_ = -1;
-        if (public_streaming) {
-            // A public request cannot reuse conditioning or VAE arrays created
-            // from an earlier path-based source generation. Rebuild every
-            // source-dependent component through the request-scoped lease.
-            encoder_hybrid_.reset();
-            cached_conditioning_.reset();
-            cached_prompt_.clear();
-            cached_encoder_manifest_.clear();
-            vae_.clear();
-        }
         mx::clear_cache();
     }
-    auto tokens = tokenizer_.prompt(r.prompt, r.dynamic_text);
+    auto tokens = (public_stream_tokenizer_ ? *public_stream_tokenizer_ : tokenizer_)
+                      .prompt(r.prompt, r.dynamic_text);
     if (r.execution != "gpu_ane" && r.execution != "auto")
         hybrid_.reset();
     auto dump = [&](const std::string &name, const Tensor &a) {
@@ -755,7 +775,8 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         runtime.retention = public_streaming ?
             "request" : "request;multi_pool=retain_all";
         runtime.reader_revision = 1;
-        runtime.weight_format = "diffusers-bf16-sharded";
+        runtime.weight_format = model_id_ == "flux2-klein-4b" ?
+            "diffusers-bf16-single-file" : "diffusers-bf16-sharded";
         runtime.kernel_revision = flux_exact_kernel_revision(model_id_);
         runtime.conditioning_recipe = "qwen3-flux2-klein-v1";
         runtime.upsample_boundary = "no-upsample;release-before-vae";

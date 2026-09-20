@@ -166,3 +166,13 @@ Z-Image tokenizer 单独来自 `Tongyi-MAI/Z-Image-Turbo`，下载时将其具�
 | Flux VAE | 168,120,878 | `ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04` |
 
 下载 session `70822` 持续运行，目录约 9.3 GiB；Flux transformer 与 Z BF16 transformer 正在下载。其余未完成文件未宣称通过校验。后续可重跑 `/tmp/tc-verify-downloads.py` 校验新完成文件，再执行真实模型推理。
+
+## 第六轮：Flux 组件来源修复与新 App 启动
+
+复核发现 Flux public probe 虽捕获 tokenizer 文件，却仍使用 engine 构造时的旧 tokenizer；run 也存在同样问题。现改为 probe 与 generate 各自从本次 lease 的 held fd 构建 tokenizer，解析前后重新校验来源，成功/失败都恢复请求绑定。新测试在同一 engine 内替换 tokenizer 的 special token，使实际 token 数改变：新 probe 必须匹配新文件，旧 fd 仍读到原内容，旧 snapshot/record/请求必须拒绝。
+
+另外将原来仅 incoming public 才清理的组件缓存扩为 incoming/outgoing public 请求边界：run、prepare 和 load 在安全同步后清除 conditioning、encoder hybrid 和 VAE；失败时保留标记，下一次安全边界再清理。现有 text/VAE held-fd 加载保留。组件 revision 升为 `*-components-v2-all-sources-request-cache`，adapter 升为 `*-public-adapter-v3-all-component-lease`。修正 4B receipt runtime 的格式标签为 `diffusers-bf16-single-file`。
+
+新 native 库与 CLI 已构建到 `build/m1-flux-components`，Flux 4B/9B public adapter 测试均 PASS（`/tmp/tc-flux-components-public-tests.log`），API contracts 80 PASS/3 缺 fixture SKIP（`/tmp/tc-flux-components-contract-tests.log`），本机 GPU self-test PASS（`/tmp/tc-flux-components-selftest.json`）。当前 build session `22293` 已进入后续完整 Swift 构建，尚未宣称整个 build exit 0。真实权重的 A→B→A 出图、失败恢复 owner 与缓存峰值仍待验，host fixture 不替代它们。
+
+上一轮完整 `build/m1-flux4/TurboCiderNativeApp` 也已在桌面启动，90 秒保持存活，stdout/stderr 无报错，然后终止本次启动的进程。`/tmp/tc-flux4-app-launch.log`、`/tmp/tc-flux4-app-stderr.log` 为证据；这是 launch smoke，不是 UI 全流程验收，也不包含本节新 Flux native 修改。
