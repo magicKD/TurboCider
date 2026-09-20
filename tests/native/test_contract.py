@@ -425,7 +425,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(profile['id'], 'm5pro24-v1' if expected else 'legacy')
         for flag in ['z_image_suffix_streaming', 'z_image_hybrid_segments',
                      'z_image_memory_lifecycle', 'z_image_smallest_partition',
-                     'external_automatic_partitions', 'coreml_output_copy']:
+                     'external_automatic_partitions', 'coreml_output_copy', 'z_image_int8_streaming']:
             self.assertIs(profile[flag], expected)
 
     def test_z_image_streaming_contract(self):
@@ -461,6 +461,14 @@ class ContractTests(unittest.TestCase):
             profile_code, _, profile_error = plan({**request, 'profile': str(profile)})
             self.assertEqual(profile_code == 0,
                              system['optimization_profile']['z_image_suffix_streaming'], profile_error)
+            config = json.loads(profile.read_text())
+            for field in ('z_image_int8_streaming', 'z_image_suffix_streaming'):
+                injected = json.loads(json.dumps(config))
+                injected['models']['z-image-turbo'][field] = True
+                profile.write_text(json.dumps(injected))
+                code, _, error = plan({**request, 'profile': str(profile)})
+                self.assertNotEqual(code, 0)
+                self.assertIn('unknown profile field', error)
         self.assertNotEqual(plan({**hybrid, 'allow_approximation': False})[0], 0)
         self.assertNotEqual(plan({**hybrid, 'loras': [dict(
             path='/tmp/style.safetensors', strength=1, role='transformer')]})[0], 0)

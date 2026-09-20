@@ -567,6 +567,12 @@ Tensor z_hybrid_input_range(const Tensor &x, const Weights &w,
 
 Tensor z_hybrid_gpu_suffix(const Tensor &x, const Weights &w,
                            const std::string &prefix, int start, int end) {
+    // Streamed ConvRot MLPs retain only the GPU suffix. Rotation groups and
+    // quantization groups align at the partition boundary, so local columns
+    // have the same meaning as the selected columns of the resident matrix.
+    const int rows = w.at(prefix + ".w1.weight").shape(0);
+    require(rows == end || rows == end - start, "invalid Z-Image GPU suffix width");
+    if (rows != end) { end = rows; start = 0; }
     auto gate = z_hybrid_output_range(x, w, prefix + ".w1", start, end);
     auto up = z_hybrid_output_range(x, w, prefix + ".w3", start, end);
     return z_hybrid_input_range(silu(gate) * up, w, prefix + ".w2", end,
@@ -1921,11 +1927,15 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                ? r.memory_budget_bytes
                : std::min<uint64_t>(10ull << 30,
                                      device_info().physical_memory / 2));
+    const unsigned prefetch_layers = legacy_streamed ? optimizations_.z_image_stream_prefetch(
+        convrot_transformer_, r.execution == "gpu_ane", budget,
+        std::getenv("TURBOCIDER_Z_STREAM_PREFETCH")) : 1;
     // Reserve VAE, temporary activations and allocator cache. This is a planning
     // estimate for the denoiser, not an OS-enforced process memory limit.
     const uint64_t reserve = (3ull << 30) + uint64_t(r.width) * r.height * 2048;
     const auto configuration = streamed ?
         std::to_string(budget) + ":" + std::to_string(reserve) +
+        ":prefetch=" + std::to_string(prefetch_layers) +
         (optimizations_.z_image_suffix_streaming
              ? ":" + r.execution + ":" + r.ane_manifest : "") : "";
     const bool prompt_changed = !cached_conditioning_ ||
@@ -2004,14 +2014,15 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 transformer_, event, cancelled, exact_stream_generation_);
         }
     } else if (legacy_streamed) {
-        require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !diffusers_layout_,
-                "Z-Image streaming currently requires the Comfy BF16 checkpoint");
+        require(!gguf_transformer_ && !nvfp4_transformer_ && !diffusers_layout_,
+                "Z-Image streaming requires Comfy BF16 or INT8 ConvRot weights");
         require(!hybrid_ || !std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE"),
                 "full-MLP hybrid validation requires resident weights");
         if (!weight_stream_)
             weight_stream_ = std::make_unique<ZImageWeightStream>(
                 transformer_path_, budget, reserve, transformer_, event, cancelled,
-                hybrid_ && optimizations_.z_image_suffix_streaming ? hybrid_->ane_mlp_end : 0);
+                hybrid_ && optimizations_.z_image_suffix_streaming ? hybrid_->ane_mlp_end : 0,
+                prefetch_layers);
         else weight_stream_->reset_metrics();
     }
     if (tight_exact) {

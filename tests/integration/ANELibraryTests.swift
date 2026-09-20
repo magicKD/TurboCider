@@ -39,6 +39,21 @@ import Foundation
         try check(match?.manifest == manifest.path && match?.rows == 1088, "Registered variable source was not discovered without draft paths")
         try check(AccelerationDiscovery.find(modelPath: model.path, minimumRows: 1568, modelID: "z-image-turbo", requireCompiled: false) == nil, "Capacity overflow accepted")
         try check(AccelerationDiscovery.find(modelPath: model.path, minimumRows: 1088, modelID: "z-image-turbo", loras: [StudioLoRA(path: "/missing.safetensors")], requireCompiled: false) == nil, "Base source accepted active LoRA")
+        let int8 = checkpoint.deletingLastPathComponent().appendingPathComponent("z_image_turbo_int8_convrot.safetensors")
+        try Data(repeating: 1, count: 16).write(to: int8)
+        raw["source"] = ["checkpoint": int8.path, "checkpoint_bytes": 16]
+        try write()
+        try check(AccelerationDiscovery.find(modelPath: model.path, minimumRows: 1088, modelID: "z-image-turbo", requireCompiled: false) == nil, "INT8 partition matched while the engine selects BF16")
+        let savedBF16 = root.appendingPathComponent("saved-bf16.safetensors")
+        try fm.moveItem(at: checkpoint, to: savedBF16)
+        let int8Match = AccelerationDiscovery.find(modelPath: model.path, minimumRows: 1088, modelID: "z-image-turbo", requireCompiled: false)
+        try check(int8Match?.manifest == manifest.path && int8Match?.rows == 1088, "INT8 ConvRot partition was not discovered")
+        raw["source"] = ["checkpoint": savedBF16.path, "checkpoint_bytes": 16]
+        try write()
+        try check(AccelerationDiscovery.find(modelPath: model.path, minimumRows: 1088, modelID: "z-image-turbo", requireCompiled: false) == nil, "BF16 partition matched an INT8 installation of the same size")
+        try fm.moveItem(at: savedBF16, to: checkpoint)
+        raw["source"] = ["checkpoint": checkpoint.path, "checkpoint_bytes": 16]
+        try write()
         try rejects { _ = try store.registerANE(modelID: "flux2-klein-4b", manifest: manifest) }
         raw["shape"] = ["K":3840,"N":3840,"input_mode":"fixed","buckets":[1056,1088]]
         try write(); try rejects { _ = try store.registerANE(modelID: "z-image-turbo", manifest: manifest) }

@@ -243,8 +243,25 @@ struct StudioDraft: Codable, Sendable {
     var usesANE: Bool { acceleration?.policy == "gpu_ane" }
     var usesPublicStreaming: Bool { streaming.selection.targetBytes != nil }
     var modelPath: String { modelPaths[modelID] ?? "" }
+    var zImageVariant: ZImageVariant? {
+        modelID == "z-image-turbo" && !modelPath.isEmpty
+            ? ZImageInstallation.variant(URL(fileURLWithPath: modelPath)) : nil
+    }
+    var zImageRequiresResident: Bool {
+        ZImageInstallation.requiresResident(variantID: zImageVariant?.id)
+    }
+    @discardableResult
+    mutating func normalizeZImageResidency(systemJSON: String = NativeEngine.system()) -> Bool {
+        guard residency == "streamed",
+              ZImageInstallation.requiresResident(variantID: zImageVariant?.id, systemJSON: systemJSON) else { return false }
+        residency = "resident"
+        return true
+    }
     var accelerationHint: String {
         let policy = acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")
+        if policy == "gpu", let variant = zImageVariant, variant.id != "bf16" {
+            return "GPU · \(variant.title)"
+        }
         if policy == "gpu" { return "GPU · BF16，按所选融合设置运行" }
         if policy == "profile" { return "设备配置 · 运行时校验" }
         if policy == "gpu_ane" { return "手动混合 · 需匹配实际 token 容量，可能不比 GPU 快" }
@@ -401,12 +418,17 @@ struct StudioDraft: Codable, Sendable {
         guard (1...50).contains(steps) else { throw NativeFailure(message: "采样步数需为 1–50，当前模型默认 \(model.default_steps) 步。") }
         if ["z-image-turbo", "z-image-turbo-gguf"].contains(modelID) {
             guard (residency == "resident" || (modelID == "z-image-turbo" && residency == "streamed")), frames == 1, !audio else {
-                throw NativeFailure(message: "Z-Image-Turbo 支持常驻或 BF16 流式加载，每次生成单张图片。")
+                throw NativeFailure(message: "Z-Image-Turbo 支持常驻或 BF16 / INT8 流式加载，每次生成单张图片。")
             }
             if residency == "streamed" {
+                guard !zImageRequiresResident else {
+                    throw NativeFailure(message: zImageVariant?.id == "int8-convrot"
+                        ? "INT8 流式加载仅在 Apple M5 Pro、24 GiB 内存的机器上启用；当前设备仅支持常驻加载。"
+                        : "当前权重版本仅支持常驻加载，请将模型驻留改为常驻。")
+                }
                 guard activeLoRAs.isEmpty, profilePath.isEmpty,
                       ["gpu", "gpu_ane"].contains(acceleration?.policy ?? "gpu") else {
-                    throw NativeFailure(message: "流式加载支持 BF16 和不使用 LoRA 的配置，请明确选择 GPU 或 GPU+ANE。")
+                    throw NativeFailure(message: "流式加载支持 BF16 / INT8，暂不支持 LoRA，请明确选择 GPU 或 GPU+ANE。")
                 }
                 guard acceleration?.policy != "gpu_ane" ||
                       AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming") else {
@@ -621,6 +643,10 @@ final class StudioState: ObservableObject {
                 ?? UserDefaults.standard.string(forKey: "modelPath.flux2-klein-4b")
                 ?? UserDefaults.standard.string(forKey: "TurboCiderNativeModelPath") ?? ""
         }
+        if draft.normalizeZImageResidency() {
+            message = "此设备未启用当前权重的流式加载，已恢复常驻。"
+            save()
+        }
     }
     var streamingQueryKey: String {
         [draft.modelID, draft.operation, String(draft.width), String(draft.height),
@@ -796,6 +822,25 @@ final class StudioState: ObservableObject {
         message = switchedModel.map { "已切换至 \($0.name)，模型参数与加速配置已重置，已恢复该模型的 LoRA 选择。" + (draft.modelPath.isEmpty ? "请在模型中心配置模型文件。" : "请核对生成参数。") }
         draft.operation = operation
         if draft.initImageID == nil { draft.initImageID = draft.assets.first?.id }
+    }
+    func selectInstallation(modelID: String, path: String) {
+        guard !importing, !path.isEmpty else { return }
+        if draft.modelID != modelID { selectModel(modelID) }
+        guard draft.modelID == modelID, draft.modelPath != path else { return }
+        draft.modelPaths[modelID] = path
+        draft.profilePath = ""
+        var config = draft.acceleration ?? StudioAcceleration()
+        // Keep candidates for switching back; resolution checks the new checkpoint
+        // and active LoRAs before accepting any previous or registered partition.
+        config.knownManifests = Array(Set((config.knownManifests ?? []) +
+            [config.manifest, config.sourceManifest])).filter { !$0.isEmpty }.sorted()
+        config.manifest = ""; config.sourceManifest = ""; config.compileGPU = nil
+        if config.policy == "profile" || draft.zImageVariant?.id == "nvfp4" { config.policy = "gpu" }
+        draft.acceleration = config
+        draft.normalizeZImageResidency()
+        let title = draft.zImageVariant?.title ?? "所选安装"
+        message = "已切换至 \(title)。" + (draft.usesANE ? "生成时自动匹配此版本的 ANE 分区。" : "")
+        save()
     }
     func selectModel(_ id: String) {
         guard let model = models.first(where: { $0.id == id }), model.executor else { return }
