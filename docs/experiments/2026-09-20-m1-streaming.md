@@ -837,3 +837,16 @@ Metal 测试采用真实 FFN 几何 3840×10240、a=5120、两个输入 rows，�
 完整 native hook 构建及 runtime/catalog 编译后核对通过，库 SHA-256 `88d2a7925b55cc3ab47693e2bb1505d67cacd54484c7143417649eba47603065`，runtime key `tc-runtime-build-v1-6b4148d20c99784f5bdcddf5e21462ffab732566dd50c40608a706c68e9df474`。native contract 83 项运行、3 项原有跳过，其余通过；Z public adapter 回归通过。host macOS 26.0/26.2 链接提示保留，本机 26.4.1 执行通过。见[验证记录](2026-09-21-m1-z-verified-join-validation.json)。
 
 这证明已验证 reader 和 Core ML 会话能共同完成真实权重的 FFN join，尚未接入新 StageExecutor 的完整 request owner、noise/main receipts、attention/latent 轨迹和输出发布。零输入不能评价非零数值质量，原 INT8 失败仍保留；未验证预测阻塞/取消 drain，也没有完整图片、速度比较或新 release/App 构建。GPU async submission 与 CPU+NE 配置不证明实际硬件重叠或 ANE 驻留。
+
+
+## 第四十七轮：GPU/ANE 身份绑定到 common layout（2026-09-21）
+
+检查 StageExecutor 接入时发现：既有 suffix descriptor 虽然精确描述 GPU 字段、读范围和 packing recipe，但未包含 Core ML bundle/partition；直接复用会让同一 GPU 切分对应的不同前缀模型共用布局身份。本轮新增 metadata-only `describe_hybrid_streaming()`，只接受已验证的 GPU metadata 和 VerifiedCoreMLBundleLease，检查二者父 checkpoint SHA 一致，冻结 HY-M0 512²/caption 64/9 steps 与 1088 bucket 范围，调用 common layout compiler 保留用户选择的 P/G/K/D/Q。
+
+新的 descriptor workload 绑定 bundle 内容、partition identity、precision、bucket、scale 的 IEEE float32 位模式、GPU suffix kernel、join 顺序和共享 backing 复用政策；backend/stage adapter revision 与 pure GPU、suffix-only metadata 独立，明确标记 layout-only。该对象不授予执行或 release authority。GPU fixed/prefix/slot fields 和源 artifact 列表保持原样，派生文件依旧是 recipe identity，不把尚未生成的字节称为 content SHA。
+
+测试 setup 对官方完整 checkpoint 做 native 内容验证，再导入 32 个 stub compiled tree 的 fixture；规划函数本身只做 metadata/来源 generation 检查，不打包、不加载 Core ML、不分配 GPU。两个安装路径不同但字节相同的 bundle 得到相同布局 digest；只改 precision 或一个模型 payload 字节都改变布局 digest。不同但 native 已验证的父文件、未验证 GPU metadata，以及不符固定范围的 width/caption rows/steps 均拒绝。逐字段检查 fixed 和 30 层 fields、packing recipe、GPU capacity 与逻辑 I/O 相对原 suffix plan 不变；P1/K1/D0/Q1 与 P7/K2/D1/Q2 均保留策略和 9 passes，exact descriptor digest 保持不变。所有 fixture generation 最终清理通过。
+
+普通执行与 ASan/UBSan 通过；sanitizer 覆盖本轮新 factory 和 test 对象，链接的上一轮 support dylib 未重新插桩，不声称覆盖全库。见[验证记录](2026-09-21-m1-z-hybrid-layout-validation.json)。host macOS 26.0/26.2 链接提示保留，本机执行通过。新源文件已加入 build source list，本轮仅单独编译/运行 metadata 测试，没有完整 dylib/App 重建。
+
+这补齐 StageExecutor 接入前的布局身份约束，并未实现 hybrid adapter 或完整 request owner。stub 模型不提供 Core ML 算术证据，本轮没有模型预测、GPU join、完整出图或性能比较；原 INT8 非零质量失败保持。GPU 字段容量也不包含 Core ML models/activation 等完整请求内存，不能据此晋升 release record。

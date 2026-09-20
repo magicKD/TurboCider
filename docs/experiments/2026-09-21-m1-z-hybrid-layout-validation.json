@@ -1,0 +1,49 @@
+{
+  "scope": "Metadata-only verified hybrid layout binding; stub compiled model trees, no model execution",
+  "support_library": "build/m1-hybrid-math/libturbocider.dylib",
+  "support_library_sha256": "88d2a7925b55cc3ab47693e2bb1505d67cacd54484c7143417649eba47603065",
+  "new_factory_compiled_separately": true,
+  "tests": {
+    "normal": "PASS",
+    "address_undefined": "PASS for new factory/test objects; linked support dylib is not sanitizer-instrumented",
+    "parent": "Full native SHA verification of official Z checkpoint in test setup",
+    "portable_layout": "baseline and relocated equal",
+    "bundle_precision_changes": "distinct layout digests",
+    "gpu_fields_recipe_capacity_io": "unchanged from verified suffix plan",
+    "policies": [
+      "P1/K1/D0/Q1",
+      "P7/K2/D1/Q2"
+    ],
+    "passes": 9,
+    "rejections": [
+      "different verified parent",
+      "unverified metadata source",
+      "width outside frozen scope",
+      "caption rows outside frozen scope",
+      "steps outside frozen scope"
+    ],
+    "exact_descriptor": "unchanged",
+    "generation_cleanup": "PASS"
+  },
+  "fixture_layout_digests": {
+    "baseline": "7e1242281cd143b72c5f0d8b894afc4957c9b52fd017b868c94c05edcc7210d7",
+    "relocated": "7e1242281cd143b72c5f0d8b894afc4957c9b52fd017b868c94c05edcc7210d7",
+    "precision": "3162e57a424d4aff78d496427bd9635517f84e6967ff879d0885ac6097c39245",
+    "payload": "99f3160c40121e6d9fa7dbf3b5af57c4cef8e870d91e99fc474a0f612d4a0447"
+  },
+  "source_sha256": {
+    "native/models/z_image/hybrid_layout.hpp": "54185c755e436cabe2221b29c277ae5e0c742cea1d5b96b2d4a86c7bf200655a",
+    "native/models/z_image/hybrid_layout.cpp": "e4f909a9a309f0aa23f13b2602d4d626265310fffb44ecf49a7f0c616d31008d",
+    "tests/native/z_image_hybrid_layout_test.cpp": "4c67ea482a4b44b715ae942d81496382aeaf789ac3ed167b8a34eb65c0efc88d",
+    "tests/native/test_z_image_hybrid_layout.py": "83f08a278ab5909274da16a35003f2a92b33eb7a6f22db4fdac154038a3abcf8"
+  },
+  "limitations": [
+    "Layout-only revision, not execution or release authority",
+    "GPU weight capacities exclude Core ML/activation/whole-request memory",
+    "No packing, GPU or Core ML prediction in planning function",
+    "Test setup imports stub generations and verifies checkpoint before planning",
+    "No full dylib/App rebuild in this round",
+    "StageExecutor integration and full owner/receipts still pending",
+    "Original INT8 nonzero quality failure unchanged"
+  ]
+}

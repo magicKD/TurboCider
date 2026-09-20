@@ -411,3 +411,10 @@ HybridSession 已新增消费 VerifiedCoreMLBundleLease 的内部构造路径，
 既有 GPU suffix 图和普通/compiled-post join 已提取为共享 hybrid_math。Metal 的 full/compact 等价、稀疏独立 oracle、BF16 转换/scale 顺序和完成后输出独立性测试通过。真实 verified source/reader/session 以 P1/K1 手动运行 2 fixed noise + 1 resident main + 29 streamed main，32 个零输入 join 与 29 次 fill 通过，派生 SHA 与既有实际打包记录一致。详见[第四十六轮](../../experiments/2026-09-20-m1-streaming.md)。
 
 这验证组件在真实权重上联合执行，不是完整 HY-M0：仍未接新 StageExecutor/完整 request owner 或生成真实 component receipt，没有 9 steps/288 branches 的 denoiser 和完整输出。join 自身是 lazy 运算，不提供 drain authority；本次 driver 显式完成 GPU consumer 后才复用。原 INT8 非零质量失败保留，完整质量/性能准入与硬件驻留证据仍缺。
+
+
+## 23. H0 hybrid common-layout 绑定（2026-09-21）
+
+新增 describe_hybrid_streaming，将 verified GPU parent 与 bundle partition 的一致性、bundle 内容/precision/scales、GPU kernel/join/backing 政策纳入独立 layout-only descriptor 身份，再由 common compiler 编译 P/G/K/D/Q。GPU fields/packing recipe 不变，尚未生成的派生源保持 recipe identity。跨路径复制身份相同、bundle 内容或 precision 改变身份不同、父来源和固定 scope 错配拒绝、容量/I/O/exact descriptor 不变的测试通过，见[第四十七轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+该规划接口不加载 Core ML/不打包/不分配 GPU，不授予执行权限；初始 scope 明确为 HY-M0 512²/64 caption rows/9 steps。StageExecutor 的实际 hybrid adapter、完整 owner 和 component receipt 仍待实施，不能用 metadata 布局通过替代执行或整请求内存/质量资格。
