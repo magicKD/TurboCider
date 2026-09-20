@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "memory_accounting.hpp"
 #include "memory_schedule.hpp"
 #include "memory_policy.hpp"
@@ -175,5 +177,11 @@ class MemoryCapabilityRegistry {
  * depend on Foundation or Objective-C JSON; platform bridges may use this
  * helper when converting a canonical manifest to a release record. */
 std::string memory_sha256_hex(std::string_view value);
+
+// Hash exactly [0, bytes) from a borrowed descriptor with bounded heap memory.
+// Uses pread so callers' offsets are preserved. The caller must revalidate the
+// file generation after hashing before treating this as an artifact identity.
+std::string memory_sha256_fd(int fd, uint64_t bytes,
+                             const std::atomic<bool> *cancelled = nullptr);
 
 } // namespace tc

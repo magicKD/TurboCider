@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -79,6 +80,21 @@ class SourceLease final {
     static std::shared_ptr<const SourceLease> capture(
         std::vector<SourceFileIdentity> files);
 
+    // Explicit content verification from the same held descriptors. Reuses
+    // only native, process-local hashes of unchanged file generations; caller
+    // digests are expectations to verify, never proof. First capture reads all
+    // bytes and is cancellable. No serialized descriptor grants this trust.
+    static std::shared_ptr<const SourceLease> capture_verified(
+        std::vector<SourceFileIdentity> files,
+        const std::atomic<bool> *cancelled = nullptr);
+
+    // Request-time capture: consumes native generation-bound proofs without
+    // reading model contents. Missing/evicted/changed proofs fail explicitly.
+    // The current cache is process-local; this is not a persistent import API.
+    static std::shared_ptr<const SourceLease> capture_preverified(
+        std::vector<SourceFileIdentity> files,
+        const std::atomic<bool> *cancelled = nullptr);
+
     // Fixture/replay path. Reopens a previously captured descriptor and
     // verifies it exactly. Real public adapters use capture().
     static std::shared_ptr<const SourceLease> open_and_verify(
@@ -100,10 +116,19 @@ class SourceLease final {
 
     uint64_t generation() const noexcept;
     std::string_view digest() const noexcept;
+    bool has_verified_content() const noexcept;
+    // Stable across copies: logical ids, sizes and verified SHA-256 only.
+    // Throws for metadata-only capture/replay. digest() remains request binding.
+    std::string_view artifact_digest() const;
+    uint64_t verification_bytes_read() const noexcept;
+    size_t verification_cache_hits() const noexcept;
     size_t file_count() const noexcept;
 
   private:
     struct State;
+    static std::shared_ptr<const SourceLease> capture_impl(
+        std::vector<SourceFileIdentity> files, bool verify_content, bool allow_hash,
+        const std::atomic<bool> *cancelled);
     explicit SourceLease(std::unique_ptr<State> state);
     std::unique_ptr<State> state_;
 };

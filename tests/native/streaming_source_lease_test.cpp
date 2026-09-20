@@ -1,5 +1,6 @@
 #include "../../native/runtime/streaming/source_lease.hpp"
 #include "../../native/runtime/streaming/resolved_request.hpp"
+#include "../../native/runtime/memory_manifest.hpp"
 
 #include <cassert>
 #include <cerrno>
@@ -7,6 +8,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <pthread.h>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
@@ -50,6 +52,123 @@ int main(int argc, char **argv) {
     if (argc != 2) return 2;
     const std::filesystem::path root = argv[1];
     std::filesystem::create_directories(root);
+    // Content identity must survive a copy while request binding changes.
+    const auto content_path = root / "content.bin";
+    const auto copy_path = root / "copy.bin";
+    write_file(content_path, "abc");
+    write_file(copy_path, "abc");
+    const std::string abc_sha =
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    assert(rejects([&] {
+        SourceLease::capture_preverified({source_file("weights", content_path)});
+    }, "artifact_verification_required"));
+    const auto verified = SourceLease::capture_verified(
+        {source_file("weights", content_path)});
+    assert(verified->has_verified_content());
+    // Golden independently encoded with Python struct.pack('>Q', ...) and
+    // hashlib: domain H, files L, logical_id S, bytes U, sha256 S.
+    assert(verified->artifact_digest() ==
+           "a9f38a05906edccaba47bc39980ac8c899ace84eb5d164381f0e7e6d623ec39b");
+    assert(verified->file("weights").content_digest == abc_sha);
+    assert(verified->verification_bytes_read() == 3);
+    assert(verified->verification_cache_hits() == 0);
+    const auto cached = SourceLease::capture_verified(
+        {source_file("weights", content_path)});
+    assert(cached->artifact_digest() == verified->artifact_digest());
+    assert(cached->verification_bytes_read() == 0);
+    assert(cached->verification_cache_hits() == 1);
+    const auto ready = SourceLease::capture_preverified(
+        {source_file("weights", content_path)});
+    assert(ready->artifact_digest() == verified->artifact_digest());
+    assert(ready->verification_bytes_read() == 0);
+    const auto copied = SourceLease::capture_verified(
+        {source_file("weights", copy_path)});
+    assert(copied->artifact_digest() == verified->artifact_digest());
+    assert(copied->digest() != verified->digest());
+    assert(copied->verification_bytes_read() == 3);
+    const auto renamed_role = SourceLease::capture_verified(
+        {source_file("different-role", copy_path)});
+    assert(renamed_role->artifact_digest() != copied->artifact_digest());
+    const auto ordered = SourceLease::capture_verified(
+        {source_file("b", content_path), source_file("a", copy_path)});
+    const auto reordered = SourceLease::capture_verified(
+        {source_file("a", content_path), source_file("b", copy_path)});
+    assert(ordered->artifact_digest() == reordered->artifact_digest());
+    const auto replay = SourceLease::open_and_verify(verified->descriptor());
+    assert(!replay->has_verified_content());
+    assert(rejects([&] { (void) replay->artifact_digest(); }, "not verified"));
+    auto expected = source_file("weights", content_path);
+    expected.content_digest = digest('0');
+    const auto untrusted = SourceLease::capture({expected});
+    assert(!untrusted->has_verified_content());
+    assert(rejects([&] { (void) untrusted->artifact_digest(); }, "not verified"));
+    assert(rejects([&] { SourceLease::capture_verified({expected}); },
+                   "content digest mismatch"));
+    expected.content_digest = abc_sha;
+    assert(SourceLease::capture_verified({expected})->has_verified_content());
+    std::atomic<bool> cancelled{true};
+    assert(rejects([&] { SourceLease::capture_verified({expected}, &cancelled); },
+                   "cancelled"));
+    {
+        const auto fd = verified->duplicate_fd("weights");
+        assert(::lseek(fd.get(), 2, SEEK_SET) == 2);
+        assert(tc::memory_sha256_fd(fd.get(), 3) == abc_sha);
+        assert(::lseek(fd.get(), 0, SEEK_CUR) == 2);
+        assert(rejects([&] { tc::memory_sha256_fd(fd.get(), 4); }, "truncated"));
+        assert(rejects([&] { tc::memory_sha256_fd(fd.get(), 3, &cancelled); },
+                       "cancelled"));
+    }
+    // Same-size mutation with restored mtime must not hit the native cache.
+    struct stat original{};
+    assert(::stat(content_path.c_str(), &original) == 0);
+    write_file(content_path, "abd");
+#if defined(__APPLE__)
+    const struct timespec original_times[] = {original.st_atimespec, original.st_mtimespec};
+#else
+    const struct timespec original_times[] = {original.st_atim, original.st_mtim};
+#endif
+    assert(::utimensat(AT_FDCWD, content_path.c_str(), original_times, 0) == 0);
+    assert(rejects([&] {
+        SourceLease::capture_preverified({source_file("weights", content_path)});
+    }, "artifact_verification_required"));
+    const auto mutated = SourceLease::capture_verified(
+        {source_file("weights", content_path)});
+    assert(mutated->artifact_digest() != verified->artifact_digest());
+    assert(mutated->verification_bytes_read() == 3);
+    assert(mutated->verification_cache_hits() == 0);
+    assert(rejects([&] { verified->revalidate_after_drain(); }, "changed"));
+    // Cross the bounded read-buffer boundary, checked against the independent
+    // portable in-memory SHA implementation (Apple fd hashing is accelerated).
+    const auto large_path = root / "large.bin";
+    const std::string large(2 * 1024 * 1024 + 17, 'a');
+    write_file(large_path, large);
+    const auto large_lease = SourceLease::capture_verified(
+        {source_file("large", large_path)});
+    const auto large_sha = tc::memory_sha256_hex(large);
+    assert(large_lease->file("large").content_digest == large_sha);
+    // App worker stacks are small: the 1 MiB read buffer must stay on the heap.
+    const auto large_fd = large_lease->duplicate_fd("large");
+    struct HashWorker {
+        int fd;
+        uint64_t bytes;
+        std::string digest;
+        std::exception_ptr error;
+    } worker{large_fd.get(), large.size(), {}, {}};
+    pthread_attr_t attributes;
+    assert(pthread_attr_init(&attributes) == 0);
+    assert(pthread_attr_setstacksize(&attributes, 256 * 1024) == 0);
+    pthread_t thread;
+    assert(pthread_create(&thread, &attributes, [](void *raw) -> void * {
+        auto &value = *static_cast<HashWorker *>(raw);
+        try { value.digest = tc::memory_sha256_fd(value.fd, value.bytes); }
+        catch (...) { value.error = std::current_exception(); }
+        return nullptr;
+    }, &worker) == 0);
+    assert(pthread_attr_destroy(&attributes) == 0);
+    assert(pthread_join(thread, nullptr) == 0);
+    if (worker.error) std::rethrow_exception(worker.error);
+    assert(worker.digest == large_sha);
+    assert(rejects([&] { tc::memory_sha256_fd(-1, 3); }, "invalid"));
     const auto first_path = root / "first.safetensors";
     const auto second_path = root / "second.safetensors";
     write_file(first_path, "0123456789abcdef");
@@ -205,6 +324,7 @@ int main(int argc, char **argv) {
     assert(snapshot->source_lease() == second_lease.get());
 
     std::cout << "PASS source lease/value probe: single-fd capture, canonical ordering, "
+                 "verified content, copy identity, cache invalidation, cancellation, "
                  "fd duplication, generation, same-size mutation, path/alias replace, "
                  "empty/digest rejection and snapshot revalidation\n";
 }

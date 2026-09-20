@@ -136,3 +136,33 @@ Z-Image tokenizer 单独来自 `Tongyi-MAI/Z-Image-Turbo`，下载时将其具�
 前一轮完整 App build 与 `make test-app` 都已 exit 0，日志 `/tmp/tc-app-suite.log`，覆盖 streaming identity、ANE library、variant、Studio、history、model library、store、run insights、tensor cache。**该完整 App suite 对应新增 4B selector 之前的构建**；新的独立 App 构建 session `30718` 正在运行（`/tmp/tc-flux4-app-build.log`），其中已加入 4B Studio intent 回归，完成后须重跑。
 
 下载 session `70822` 仍存活且持续增长，已开始 Flux transformer 权重下载；完整 Flux/Z-Image 文件尚未齐备。下一步：确认新 App/4B intent、完成官方模型校验后以 private exact 流程实跑，对比 eager resident / compiled resident / streamed，分别记录质量、全请求内存和耗时；再开展 ANE artifact 与 partition 实验。合成 block smoke 不作为模型出图、收益或 public qualification。
+
+## 第五轮：内容验证基础与完整 App 回归
+
+### 内容证明与请求文件绑定分开
+
+新增 `SourceLease::capture_verified()`：只从该 lease 已打开的 fd 计算 SHA-256，使用 1 MiB 堆缓冲、`pread` 和取消检查；Apple 使用 CommonCrypto，其他平台保留 portable SHA 实现。全部文件完成后重新校验 held fd、named path 和 canonical target，再发布结果与缓存，避免读到变化中的文件仍发布证明。
+
+`artifact_digest()` 使用独立 domain `tc-streaming-artifact-content-v1`，只编码排序后的 logical id、字节数、实际验证的 SHA-256；现有 `digest()` 保留请求 stat binding 语义。`capture()` 与 `open_and_verify()` 不因调用方提供了 `content_digest` 就授予内容证明；读取其 artifact digest 会明确失败。调用方提供给 verified capture 的摘要是待核对的期望值，不是可直接信任的证明。
+
+增加有锁、最多 256 项的进程内原生摘要缓存，key 包含 device/inode/size/mtime/ctime。`capture_preverified()` 只消费仍匹配的缓存证明，缺失、被逐出或文件变化时返回 `artifact_verification_required`，不会隐式读取大权重。暴露本次验证读取字节数与缓存命中数用于检查成本。
+
+测试覆盖：独立 Python canonical golden、不同安装副本内容身份一致而 binding 不同、logical role 区分、排序稳定、缓存零字节读取、同尺寸修改并恢复 mtime 后缓存失效、假摘要拒绝、metadata/replay 不授予证明、取消、短读、fd offset 保持、跨缓冲边界 SHA 对照，以及 **256 KiB worker stack** 上的实际文件摘要。
+
+验证均 exit 0：source lease fixture（`/tmp/tc-source-content-tests.log`）、最终 fixture 的 ASan+UBSan（`/tmp/tc-source-content-sanitizer.log`）、完整 `make test-streaming-host PYTHON=python3`（`/tmp/tc-content-host-tests.log`，含 3535 layouts、executor/receipt/public resolver、LTX/H3/Z/Flux 4B/9B descriptor）及 repository 13 项测试（`/tmp/tc-content-repository-tests.log`）。本轮新增接口尚未用于已构建的 App；App suite 对应上一轮的完整 4B native/App 构建。
+
+**边界仍未关闭**：这只是 R1/A1 的底层接口。当前缓存不能跨进程或重启保存证明；导入/下载 UI、Z/Flux public probe、portable descriptor/layout、catalog/Python/schema/receipt 迁移尚未接入。正常 public adapter 仍使用原 metadata capture，生产 catalog 仍为空；不能声称跨安装 public resolve 已通过，也没有重用旧认证证据。
+
+### App 与下载验证
+
+`build/m1-flux4` 的完整 App 构建 session `30718` 已 exit 0。随后从此目录运行九组 App suite（streaming resolution、ANE library、Studio variant、Studio behavior、history、model library、library store、run insights、tensor cache），全部 PASS，exit 0。新 Studio behavior 包含 4B public streaming intent；日志 `/tmp/tc-flux4-app-suite.log`。这次与前节旧构建的 App 测试已明确区分；仍不是 GUI 完整出图或 LTX worker 严格结果验收的证明。
+
+对固定 revision 调用官方 Hugging Face API 的 `blobs=true`，取得 LFS SHA-256/普通 Git blob SHA-1 和字节数；对已完整落盘的 **18 个 Flux 文件** 全量验证，hash 前后核对 stat，全部匹配。日志 `/tmp/tc-download-verification.log`，逐文件结果 `/tmp/tc-download-verification.json`，原始官方清单 `/tmp/tc-flux-verified-manifest.json` 与 `/tmp/tc-z-verified-manifest.json`。
+
+| 完整权重文件 | 字节数 | 官方 SHA-256 |
+|---|---:|---|
+| Flux text encoder shard 1 | 4,967,215,360 | `8c0506e7f4936fa7e26183a4fd8da4e2bdbc5990ba64ae441f965d51228f36ea` |
+| Flux text encoder shard 2 | 3,077,766,632 | `82f2bd839378541b0557bfabaf37c7d3d637071fdcb73302dedd7cf61162ce07` |
+| Flux VAE | 168,120,878 | `ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04` |
+
+下载 session `70822` 持续运行，目录约 9.3 GiB；Flux transformer 与 Z BF16 transformer 正在下载。其余未完成文件未宣称通过校验。后续可重跑 `/tmp/tc-verify-downloads.py` 校验新完成文件，再执行真实模型推理。

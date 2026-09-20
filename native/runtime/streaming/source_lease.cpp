@@ -1,6 +1,7 @@
 #include "source_lease.hpp"
 
 #include "canonical_encoding.hpp"
+#include "../memory_manifest.hpp"
 
 #include "../../core/common.hpp"
 
@@ -10,9 +11,11 @@
 #include <fcntl.h>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <sys/stat.h>
+#include <tuple>
 #include <unistd.h>
 
 namespace tc::streaming {
@@ -142,6 +145,21 @@ void validate_order_and_uniqueness(
 
 std::atomic<uint64_t> next_generation{1};
 
+// This cache is never populated from serialized/user-supplied digests. ctime
+// and mtime both participate, so restoring mtime alone cannot reuse a hash.
+using ContentKey = std::tuple<uint64_t, uint64_t, uint64_t, int64_t, int64_t>;
+std::mutex content_cache_mutex;
+std::map<ContentKey, std::string> content_cache;
+
+ContentKey content_key(const SourceFileIdentity &file) {
+    return {file.device, file.inode, file.bytes, file.mtime_ns, file.ctime_ns};
+}
+
+void check_cancelled(const std::atomic<bool> *cancelled) {
+    if (cancelled && cancelled->load(std::memory_order_relaxed))
+        throw Cancelled();
+}
+
 uint64_t allocate_generation() {
     auto value = next_generation.fetch_add(1, std::memory_order_relaxed);
     if (value == 0 || value == std::numeric_limits<uint64_t>::max()) {
@@ -173,6 +191,9 @@ struct SourceLease::State {
     std::vector<OpenFile> files;
     std::map<std::string, size_t> indexes;
     uint64_t generation = 0;
+    std::string artifact_digest;
+    uint64_t verification_bytes_read = 0;
+    size_t verification_cache_hits = 0;
 };
 
 SourceLeaseDescriptor capture_source_lease_descriptor(
@@ -183,6 +204,25 @@ SourceLeaseDescriptor capture_source_lease_descriptor(
 
 std::shared_ptr<const SourceLease> SourceLease::capture(
         std::vector<SourceFileIdentity> files) {
+    return capture_impl(std::move(files), false, false, nullptr);
+}
+
+std::shared_ptr<const SourceLease> SourceLease::capture_verified(
+        std::vector<SourceFileIdentity> files,
+        const std::atomic<bool> *cancelled) {
+    return capture_impl(std::move(files), true, true, cancelled);
+}
+
+std::shared_ptr<const SourceLease> SourceLease::capture_preverified(
+        std::vector<SourceFileIdentity> files,
+        const std::atomic<bool> *cancelled) {
+    return capture_impl(std::move(files), true, false, cancelled);
+}
+
+std::shared_ptr<const SourceLease> SourceLease::capture_impl(
+        std::vector<SourceFileIdentity> files, bool verify_content, bool allow_hash,
+        const std::atomic<bool> *cancelled) {
+    check_cancelled(cancelled);
     for (auto &file : files)
         file.path = normalized_named_path(
             file.path, "source path is unavailable");
@@ -203,6 +243,7 @@ std::shared_ptr<const SourceLease> SourceLease::capture(
     auto state = std::make_unique<State>();
     state->files.reserve(files.size());
     for (auto file : files) {
+        check_cancelled(cancelled);
         const int raw = ::open(file.path.c_str(), O_RDONLY | O_CLOEXEC);
         lease_require(raw >= 0, "source open failed");
         OwnedSourceFd fd(raw);
@@ -228,14 +269,55 @@ std::shared_ptr<const SourceLease> SourceLease::capture(
         state->indexes.emplace(file.logical_id, index);
         state->files.push_back({std::move(file), std::move(fd)});
     }
+    if (verify_content) {
+        CanonicalEncoder artifact("tc-streaming-artifact-content-v1");
+        artifact.begin_list("files", state->files.size());
+        for (auto &entry : state->files) {
+            check_cancelled(cancelled);
+            std::string verified;
+            {
+                std::lock_guard lock(content_cache_mutex);
+                const auto cached = content_cache.find(content_key(entry.identity));
+                if (cached != content_cache.end()) verified = cached->second;
+            }
+            if (verified.empty()) {
+                lease_require(allow_hash, "artifact_verification_required");
+                verified = memory_sha256_fd(entry.fd.get(), entry.identity.bytes,
+                                             cancelled);
+                state->verification_bytes_read += entry.identity.bytes;
+            } else {
+                ++state->verification_cache_hits;
+            }
+            lease_require(entry.identity.content_digest.empty() ||
+                          entry.identity.content_digest == verified,
+                          "source content digest mismatch");
+            entry.identity.content_digest = verified;
+            artifact.string_field("logical_id", entry.identity.logical_id);
+            artifact.unsigned_field("bytes", entry.identity.bytes);
+            artifact.string_field("sha256", verified);
+        }
+        state->artifact_digest = artifact.sha256();
+    }
     state->descriptor.files.reserve(state->files.size());
     for (const auto &file : state->files)
         state->descriptor.files.push_back(file.identity);
     state->descriptor.source_snapshot_digest =
         observed_digest(state->descriptor.files);
     state->generation = allocate_generation();
-    return std::shared_ptr<const SourceLease>(
+    auto result = std::shared_ptr<const SourceLease>(
         new SourceLease(std::move(state)));
+    // Includes earlier files in a multi-artifact capture. Never publish hashes
+    // if any held fd or named path changed while another artifact was read.
+    result->revalidate_after_drain();
+    check_cancelled(cancelled);
+    if (verify_content) {
+        std::lock_guard lock(content_cache_mutex);
+        for (const auto &entry : result->state_->files) {
+            if (content_cache.size() >= 256) content_cache.clear();
+            content_cache[content_key(entry.identity)] = entry.identity.content_digest;
+        }
+    }
+    return result;
 }
 
 std::shared_ptr<const SourceLease> SourceLease::open_and_verify(
@@ -374,6 +456,23 @@ std::string_view SourceLease::digest() const noexcept {
 
 size_t SourceLease::file_count() const noexcept {
     return state_ ? state_->files.size() : 0;
+}
+
+bool SourceLease::has_verified_content() const noexcept {
+    return state_ && !state_->artifact_digest.empty();
+}
+
+std::string_view SourceLease::artifact_digest() const {
+    lease_require(has_verified_content(), "source content was not verified");
+    return state_->artifact_digest;
+}
+
+uint64_t SourceLease::verification_bytes_read() const noexcept {
+    return state_ ? state_->verification_bytes_read : 0;
+}
+
+size_t SourceLease::verification_cache_hits() const noexcept {
+    return state_ ? state_->verification_cache_hits : 0;
 }
 
 } // namespace tc::streaming
