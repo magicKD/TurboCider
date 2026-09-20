@@ -87,6 +87,15 @@ struct StudioBehaviorTests {
                   publicOptions.targets.count == 5 &&
                   publicOptions.targets.allSatisfy { $0.status == "catalog_empty" },
                   "Empty production catalog was not exposed as five unavailable tiers")
+        var publicFlux4 = publicZ
+        publicFlux4.modelID = "flux2-klein-4b"
+        publicFlux4.modelPaths[publicFlux4.modelID] = "/test/flux4"
+        publicFlux4.steps = 4
+        let flux4Pair = try publicFlux4.publicStreamingRequest(output: output)
+        try check(publicFlux4.publicStreamingModel && flux4Pair.v2?.model == "flux2-klein-4b" &&
+                  flux4Pair.v2?.execution.streaming?.target_request_memory_bytes == 8 << 30 &&
+                  flux4Pair.v2?.execution.policy == "gpu" && flux4Pair.v2?.parameters.compile_gpu != true,
+                  "Flux 4B public intent must preserve the explicit eager streaming route")
         publicZ.streaming.selection = .off
         let offPair = try publicZ.publicStreamingRequest(output: output)
         try check(offPair.v2 == nil, "Off unexpectedly constructed a V2 selector")

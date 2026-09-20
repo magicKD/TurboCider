@@ -7,7 +7,7 @@ if [[ -z "${DEVELOPER_DIR:-}" ]]; then
  fi
 fi
 source tools/native/dependencies.sh
-OUT="$PWD/build/native"
+OUT="${TURBOCIDER_BUILD_OUTPUT_DIR:-$PWD/build/native}"
 SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 TOOLCHAIN="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin"
 [[ -d "$TOOLCHAIN" ]] || TOOLCHAIN="$DEVELOPER_DIR/usr/bin"

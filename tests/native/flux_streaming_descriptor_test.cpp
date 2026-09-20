@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <fcntl.h>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -45,6 +46,51 @@ void rejects(Function function, const char *part) {
 
 int main(int argc, char **argv) {
     try {
+        if (argc == 3 && std::string(argv[1]) == "--4b") {
+            const std::string root = argv[2];
+            tc::flux2::StreamingMetadata metadata(root, "flux2-klein-4b");
+            assert(metadata.hidden_size() == 3072 && metadata.head_count() == 24);
+            assert(metadata.dual_block_count() == 5 && metadata.single_block_count() == 20);
+            assert(metadata.dual_block_bytes() == 2ull * (26ull * 3072 * 3072 + 512));
+            assert(metadata.single_block_bytes() == 2ull * (13ull * 3072 * 3072 + 256));
+            const auto descriptor = metadata.describe(workload());
+            assert(descriptor.artifacts.size() == 1 && descriptor.stages[0].blocks.size() == 25);
+            const auto &fixed = descriptor.stages[0].resident_fields;
+            assert(fixed.size() == 9);
+            bool found_context = false;
+            for (const auto &field : fixed) {
+                if (field.materialization->reads[0].tensor == "context_embedder.weight") {
+                    assert(field.bytes == 3072ull * 7680 * 2);
+                    found_context = true;
+                }
+            }
+            assert(found_context);
+            for (uint32_t d : {0u, 1u}) for (uint32_t q : {1u, 2u}) {
+                tc::flux2::StreamingPlanView plan(root, "flux2-klein-4b", config(0, 2, 1, d, q), workload());
+                const auto &stage = plan.layout().stages[0];
+                assert(stage.groups.size() == 25 && stage.pools.size() == 2);
+                assert(stage.pools[0].layout_class == "flux2-klein-4b-dual-bf16-v1");
+                assert(stage.pools[1].layout_class == "flux2-klein-4b-single-bf16-v1");
+                assert(stage.resident_source_read_bytes == metadata.fixed_bytes());
+                for (uint32_t i = 0; i < 25; ++i) {
+                    assert(stage.groups[i].blocks == std::vector<uint32_t>{i});
+                    assert(descriptor.stages[0].blocks[i].fields.size() == (i < 5 ? 16 : 4));
+                }
+            }
+            std::vector<tc::streaming::SourceFileIdentity> files;
+            for (const auto *name : {"config.json", "diffusion_pytorch_model.safetensors"}) {
+                tc::streaming::SourceFileIdentity file;
+                file.logical_id = name; file.path = std::filesystem::path(root) / name;
+                files.push_back(std::move(file));
+            }
+            auto lease = tc::streaming::SourceLease::capture(std::move(files));
+            tc::flux2::StreamingPlanView leased(lease, "flux2-klein-4b", config(), workload());
+            tc::flux2::StreamingPlanView direct(root, "flux2-klein-4b", config(), workload());
+            assert(leased.layout().digest == direct.layout().digest);
+            rejects([&] { tc::flux2::StreamingPlanView bad(root, "flux2-klein-4b", config(1), workload()); }, "requires P0");
+            std::cout << "PASS FLUX 4B single-file descriptor: 5+20 blocks, 3072/7680 geometry, two pools, D/Q layouts, lease parity\n";
+            return 0;
+        }
         if (argc == 2) {
             const tc::flux2::StreamingMetadata metadata(
                 argv[1], "flux2-klein-9b");
@@ -151,7 +197,7 @@ int main(int argc, char **argv) {
                 "P0");
         rejects([&] { tc::flux2::StreamingMetadata value(
                           valid, "flux2-klein-4b"); },
-                "only FLUX.2 Klein 9B");
+                "configuration does not match");
 
         changed = work;
         changed.width = 250;

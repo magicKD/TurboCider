@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,6 +13,7 @@ from test_flux_streaming_descriptor import HIDDEN, SHARD_NAMES, write_fixture
 
 
 ROOT = Path(__file__).resolve().parents[2]
+NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
 
 
 def byte_vocab() -> dict[str, int]:
@@ -27,23 +29,14 @@ def byte_vocab() -> dict[str, int]:
     return result
 
 
-def write_model_root(root: Path) -> None:
+def write_model_root(root: Path, klein4: bool = False) -> None:
     transformer = root / "transformer"
-    write_fixture(transformer)
-    (transformer / "config.json").write_text(json.dumps({
-        "attention_head_dim": 128,
-        "guidance_embeds": False,
-        "in_channels": 128,
-        "joint_attention_dim": HIDDEN * 3,
-        "num_attention_heads": 32,
-        "num_layers": 8,
-        "num_single_layers": 24,
-    }, separators=(",", ":")))
+    write_fixture(transformer, klein4=klein4)
 
     text_encoder = root / "text_encoder"
     text_encoder.mkdir(parents=True)
     (text_encoder / "config.json").write_text(json.dumps({
-        "hidden_size": 4096,
+        "hidden_size": 2560 if klein4 else 4096,
         "num_hidden_layers": 36,
         "num_attention_heads": 32,
         "num_key_value_heads": 8,
@@ -90,8 +83,8 @@ def main() -> None:
             "-I", str(ROOT / "native/core"),
             "-isystem", str(mlx_root / "include"),
             str(ROOT / "tests/native/flux_public_streaming_test.cpp"),
-            "-L", str(ROOT / "build/native"), "-lturbocider",
-            "-Wl,-rpath," + str(ROOT / "build/native"),
+            "-L", str(NATIVE), "-lturbocider",
+            "-Wl,-rpath," + str(NATIVE),
             "-o", str(binary),
         ], check=True)
         result = subprocess.run(
@@ -107,6 +100,15 @@ def main() -> None:
             print(result.stderr, end="")
             raise RuntimeError("FLUX public adapter test lacks PASS marker")
         print(result.stdout, end="")
+
+        root4 = Path(raw) / "model4"
+        root4.mkdir()
+        write_model_root(root4, klein4=True)
+        result4 = subprocess.run([str(binary), str(root4), "flux2-klein-4b"],
+                                 text=True, capture_output=True, timeout=180)
+        if result4.returncode:
+            raise RuntimeError(result4.stdout + result4.stderr)
+        print("4B: " + result4.stdout, end="")
 
         missing_result = subprocess.run(
             [str(binary), str(missing)], text=True, capture_output=True,

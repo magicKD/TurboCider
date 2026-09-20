@@ -182,6 +182,7 @@ class FluxExactAdapter final : public streaming::ModelSlotAdapter {
     streaming::MlxWeightPager &source_;
     const Event &event_;
     std::atomic<bool> &cancelled_;
+    uint32_t heads_ = 0, hidden_ = 0;
     uint32_t dual_blocks_ = 0;
     uint32_t single_blocks_ = 0;
     uint32_t active_pool_ = std::numeric_limits<uint32_t>::max();
@@ -218,6 +219,7 @@ class FluxExactAdapter final : public streaming::ModelSlotAdapter {
                      streaming::MlxWeightPager &source,
                      const Event &event, std::atomic<bool> &cancelled)
         : plan_(plan), source_(source), event_(event), cancelled_(cancelled),
+          heads_(plan.metadata().head_count()), hidden_(plan.metadata().hidden_size()),
           dual_blocks_(plan.metadata().dual_block_count()),
           single_blocks_(plan.metadata().single_block_count()) {
         for (auto &value : jobs_)
@@ -355,14 +357,14 @@ class FluxExactAdapter final : public streaming::ModelSlotAdapter {
             flux_exact_dual_block(
                 *image_, *context_, current_, block, *image_modulation_,
                 *text_modulation_, *cos_, *sin_, text_tokens_, total_tokens_,
-                32);
+                heads_);
             mx::eval({*image_, *context_});
         } else {
             require(single_started_,
                     "FLUX exact single block ran before class boundary");
             flux_exact_single_block(
                 *image_, current_, block - dual_blocks_,
-                *single_modulation_, *cos_, *sin_, 4096, 32);
+                *single_modulation_, *cos_, *sin_, hidden_, heads_);
             mx::eval(*image_);
         }
         checkpoint(cancelled_);
@@ -485,7 +487,7 @@ class FluxDirectExecutor final {
                     layout_.multi_pool_policy ==
                         streaming::MultiPoolPolicy::retain_all &&
                     layout_.pools.size() == 2 &&
-                    layout_.groups.size() == 32,
+                    (layout_.groups.size() == 32 || layout_.groups.size() == 25),
                 "FLUX direct baseline requires P0/G1/K2/D1/Q2 retained layout");
         pools_.resize(layout_.pools.size());
         mailbox_ = std::make_unique<streaming::CompletionMailbox>(
@@ -878,10 +880,13 @@ Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int 
     };
     const int total_blocks = dual_layers_ + single_layers_;
     if (exact_stream) {
-        require(model_id_ == "flux2-klein-9b" && !hybrid_ &&
-                    !compile_blocks && dual_layers_ == 8 &&
-                    single_layers_ == 24 && heads_ == 32 && hidden_ == 4096,
-                "FLUX exact streaming requires the eager Klein 9B GPU path");
+        require((model_id_ == "flux2-klein-9b" || model_id_ == "flux2-klein-4b") &&
+                    !hybrid_ && !compile_blocks &&
+                    uint32_t(dual_layers_) == exact_stream->plan().metadata().dual_block_count() &&
+                    uint32_t(single_layers_) == exact_stream->plan().metadata().single_block_count() &&
+                    uint32_t(heads_) == exact_stream->plan().metadata().head_count() &&
+                    uint32_t(hidden_) == exact_stream->plan().metadata().hidden_size(),
+                "FLUX exact streaming requires a matching eager Klein GPU path");
         exact_stream->run_pass(
             stream_pass, stream_pass, x, c, mi, mt, ms, cos, sin, nt, n);
     } else {

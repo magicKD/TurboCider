@@ -648,10 +648,11 @@ extern "C" int tc_engine_create_model_candidate(const char *id, const char *path
     if (!id || (std::strcmp(id, "ltx-2.5-distilled") != 0 &&
                 std::strcmp(id, "minimax-h3-turbo") != 0 &&
                 std::strcmp(id, "z-image-turbo") != 0 &&
-                std::strcmp(id, "flux2-klein-9b") != 0)) {
+                std::strcmp(id, "flux2-klein-9b") != 0 &&
+                std::strcmp(id, "flux2-klein-4b") != 0)) {
         if (engine) *engine = nullptr;
         if (error) *error = strdup(
-            "candidate executor is restricted to qualified LTX/H3/Z-Image/FLUX 9B development routes");
+            "candidate executor is restricted to LTX/H3/Z-Image/FLUX Klein development routes");
         return 1;
     }
     int status = 0;

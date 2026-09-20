@@ -61,19 +61,27 @@ void rejects(Function &&function, const char *part) {
 } // namespace
 
 int main(int argc, char **argv) {
-    assert(argc == 2);
+    assert(argc == 2 || argc == 3);
     try {
-        tc::Flux session(argv[1], "flux2-klein-9b");
-        const auto base_request = request();
+        const std::string model = argc == 3 ? argv[2] : "flux2-klein-9b";
+        const bool klein4 = model == "flux2-klein-4b";
+        tc::Flux session(argv[1], model);
+        auto base_request = request();
+        base_request.model = model;
         const auto probe = session.probe_public_streaming(
             {base_request, device(), "embedded_app"});
-        assert(probe && probe->model_id() == "flux2-klein-9b");
+        assert(probe && probe->model_id() == model);
         assert(probe->source_lease() != nullptr);
-        assert(probe->source_lease()->file_count() == 9);
+        assert(probe->source_lease()->file_count() == (klein4 ? 7 : 9));
         std::vector<std::string> logical_ids;
         for (const auto &file : probe->source_lease()->descriptor().files)
             logical_ids.push_back(file.logical_id);
-        assert(logical_ids == std::vector<std::string>({
+        if (klein4) {
+            assert(logical_ids == std::vector<std::string>({
+                "config.json", "diffusion_pytorch_model.safetensors",
+                "text_encoder/config.json", "text_encoder/model.safetensors",
+                "tokenizer/tokenizer.json", "vae/ae.safetensors", "vae/config.json"}));
+        } else assert(logical_ids == std::vector<std::string>({
             "config.json",
             "diffusion_pytorch_model-00001-of-00002.safetensors",
             "diffusion_pytorch_model-00002-of-00002.safetensors",
@@ -100,7 +108,7 @@ int main(int argc, char **argv) {
         const tc::flux2::StreamingWorkload workload{
             256, 256, token.padded_rows, 0, 3};
         const tc::flux2::StreamingPlanView expected(
-            value_probe->lease_ptr(), "flux2-klein-9b", config(), workload);
+            value_probe->lease_ptr(), model, config(), workload);
 
         tc::streaming::StreamingPresetRecord record;
         record.id = "flux-public-host-test";
@@ -192,7 +200,8 @@ int main(int argc, char **argv) {
         }, "streaming_target_unsupported");
 
         const auto shard = std::filesystem::path(argv[1]) /
-            "transformer/diffusion_pytorch_model-00002-of-00002.safetensors";
+            (klein4 ? "transformer/diffusion_pytorch_model.safetensors" :
+                      "transformer/diffusion_pytorch_model-00002-of-00002.safetensors");
         const auto moved = shard.string() + ".moved";
         std::filesystem::rename(shard, moved);
         {

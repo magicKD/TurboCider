@@ -118,6 +118,9 @@ test-streaming-contract:
 test-streaming-pager:
 	@"$(PYTHON)" -B tests/native/test_mlx_weight_pager.py
 	@"$(PYTHON)" -B tests/native/test_mlx_weights_lease.py
+.PHONY: test-flux4-streaming-metal
+test-flux4-streaming-metal:
+	@TURBOCIDER_TEST_GPU=1 "$(PYTHON)" -B tests/native/test_flux4_streaming_metal.py
 test-streaming-metal:
 	@$(MAKE) test-streaming-pager
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py

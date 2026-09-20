@@ -20,21 +20,21 @@ SHARD_NAMES = (
 HIDDEN = 4096
 
 
-def fixed_records() -> list[tuple[str, list[int]]]:
+def fixed_records(hidden: int = HIDDEN, context: int = HIDDEN * 3) -> list[tuple[str, list[int]]]:
     return [
-        ("context_embedder.weight", [HIDDEN, HIDDEN * 3]),
-        ("double_stream_modulation_img.linear.weight", [HIDDEN * 6, HIDDEN]),
-        ("double_stream_modulation_txt.linear.weight", [HIDDEN * 6, HIDDEN]),
-        ("norm_out.linear.weight", [HIDDEN * 2, HIDDEN]),
-        ("proj_out.weight", [128, HIDDEN]),
-        ("single_stream_modulation.linear.weight", [HIDDEN * 3, HIDDEN]),
-        ("time_guidance_embed.timestep_embedder.linear_1.weight", [HIDDEN, 256]),
-        ("time_guidance_embed.timestep_embedder.linear_2.weight", [HIDDEN, HIDDEN]),
-        ("x_embedder.weight", [HIDDEN, 128]),
+        ("context_embedder.weight", [hidden, context]),
+        ("double_stream_modulation_img.linear.weight", [hidden * 6, hidden]),
+        ("double_stream_modulation_txt.linear.weight", [hidden * 6, hidden]),
+        ("norm_out.linear.weight", [hidden * 2, hidden]),
+        ("proj_out.weight", [128, hidden]),
+        ("single_stream_modulation.linear.weight", [hidden * 3, hidden]),
+        ("time_guidance_embed.timestep_embedder.linear_1.weight", [hidden, 256]),
+        ("time_guidance_embed.timestep_embedder.linear_2.weight", [hidden, hidden]),
+        ("x_embedder.weight", [hidden, 128]),
     ]
 
 
-def dual_shapes() -> list[tuple[str, list[int]]]:
+def dual_shapes(hidden: int = HIDDEN) -> list[tuple[str, list[int]]]:
     records = []
     for name in (
         "attn.add_k_proj.weight", "attn.add_q_proj.weight",
@@ -42,62 +42,64 @@ def dual_shapes() -> list[tuple[str, list[int]]]:
         "attn.to_k.weight", "attn.to_out.0.weight",
         "attn.to_q.weight", "attn.to_v.weight",
     ):
-        records.append((name, [HIDDEN, HIDDEN]))
+        records.append((name, [hidden, hidden]))
     for name in (
         "attn.norm_added_k.weight", "attn.norm_added_q.weight",
         "attn.norm_k.weight", "attn.norm_q.weight",
     ):
         records.append((name, [128]))
     records.extend((
-        ("ff.linear_in.weight", [HIDDEN * 6, HIDDEN]),
-        ("ff.linear_out.weight", [HIDDEN, HIDDEN * 3]),
-        ("ff_context.linear_in.weight", [HIDDEN * 6, HIDDEN]),
-        ("ff_context.linear_out.weight", [HIDDEN, HIDDEN * 3]),
+        ("ff.linear_in.weight", [hidden * 6, hidden]),
+        ("ff.linear_out.weight", [hidden, hidden * 3]),
+        ("ff_context.linear_in.weight", [hidden * 6, hidden]),
+        ("ff_context.linear_out.weight", [hidden, hidden * 3]),
     ))
     return records
 
 
-def single_shapes() -> list[tuple[str, list[int]]]:
+def single_shapes(hidden: int = HIDDEN) -> list[tuple[str, list[int]]]:
     return [
         ("attn.norm_k.weight", [128]),
         ("attn.norm_q.weight", [128]),
-        ("attn.to_out.weight", [HIDDEN, HIDDEN * 4]),
-        ("attn.to_qkv_mlp_proj.weight", [HIDDEN * 9, HIDDEN]),
+        ("attn.to_out.weight", [hidden, hidden * 4]),
+        ("attn.to_qkv_mlp_proj.weight", [hidden * 9, hidden]),
     ]
 
 
-def model_records() -> list[tuple[str, list[int], int]]:
-    records = [(name, shape, index % 2)
-               for index, (name, shape) in enumerate(fixed_records())]
-    for block in range(8):
-        for suffix, shape in dual_shapes():
+def model_records(klein4: bool = False) -> list[tuple[str, list[int], int]]:
+    hidden = 3072 if klein4 else HIDDEN
+    records = [(name, shape, 0 if klein4 else index % 2)
+               for index, (name, shape) in enumerate(fixed_records(hidden, 7680 if klein4 else hidden * 3))]
+    for block in range(5 if klein4 else 8):
+        for suffix, shape in dual_shapes(hidden):
             records.append((f"transformer_blocks.{block}.{suffix}", shape, 0))
-    for block in range(24):
-        for suffix, shape in single_shapes():
-            records.append((f"single_transformer_blocks.{block}.{suffix}", shape, 1))
+    for block in range(20 if klein4 else 24):
+        for suffix, shape in single_shapes(hidden):
+            records.append((f"single_transformer_blocks.{block}.{suffix}", shape, 0 if klein4 else 1))
     return records
 
 
 def write_fixture(directory: Path, *, missing: bool = False,
                   wrong_dtype: bool = False, wrong_shape: bool = False,
-                  overlap: bool = False) -> None:
+                  overlap: bool = False, klein4: bool = False) -> None:
     directory.mkdir()
     (directory / "config.json").write_text(json.dumps({
         "attention_head_dim": 128,
         "guidance_embeds": False,
         "in_channels": 128,
-        "joint_attention_dim": HIDDEN * 3,
-        "num_attention_heads": 32,
-        "num_layers": 8,
-        "num_single_layers": 24,
+        "joint_attention_dim": 7680 if klein4 else HIDDEN * 3,
+        "num_attention_heads": 24 if klein4 else 32,
+        "num_layers": 5 if klein4 else 8,
+        "num_single_layers": 20 if klein4 else 24,
     }, separators=(",", ":")))
-    records = model_records()
-    weight_map = {name: SHARD_NAMES[shard]
+    records = model_records(klein4)
+    shards = ("diffusion_pytorch_model.safetensors",) if klein4 else SHARD_NAMES
+    weight_map = {name: shards[shard]
                   for name, _shape, shard in records}
-    shard_records: list[list[tuple[str, list[int]]]] = [[], []]
+    shard_records: list[list[tuple[str, list[int]]]] = [[] for _ in shards]
     for name, shape, shard in records:
         if not (missing and name ==
-                "single_transformer_blocks.23.attn.to_out.weight"):
+                f"single_transformer_blocks.{19 if klein4 else 23}.attn.to_out.weight"):
             shard_records[shard].append((name, shape))
 
     total_size = 0
@@ -128,14 +130,15 @@ def write_fixture(directory: Path, *, missing: bool = False,
             cursor += size
             total_size += size
         encoded = json.dumps(header, separators=(",", ":")).encode()
-        path = directory / SHARD_NAMES[shard]
+        path = directory / shards[shard]
         with path.open("wb") as stream:
             stream.write(struct.pack("<Q", len(encoded)))
             stream.write(encoded)
             stream.truncate(8 + len(encoded) + cursor)
-    (directory / "diffusion_pytorch_model.safetensors.index.json").write_text(
-        json.dumps({"metadata": {"total_size": total_size},
-                    "weight_map": weight_map}, separators=(",", ":")))
+    if not klein4:
+        (directory / "diffusion_pytorch_model.safetensors.index.json").write_text(
+            json.dumps({"metadata": {"total_size": total_size},
+                        "weight_map": weight_map}, separators=(",", ":")))
 
 
 def main() -> None:
@@ -192,6 +195,17 @@ def main() -> None:
         ], check=True)
         subprocess.run([str(binary), *map(str, fixtures)], check=True,
                        timeout=240)
+        for name, options in (("valid", {}), ("missing", {"missing": True}),
+                              ("dtype", {"wrong_dtype": True}), ("shape", {"wrong_shape": True}),
+                              ("overlap", {"overlap": True})):
+            fixture4 = directory / ("4b-" + name)
+            write_fixture(fixture4, klein4=True, **options)
+            run = subprocess.run([str(binary), "--4b", str(fixture4)], capture_output=True, text=True)
+            if run.returncode != (0 if name == "valid" else 1):
+                raise AssertionError((name, run.returncode, run.stdout, run.stderr))
+            if name != "valid" and "flux_streaming_metadata:" not in run.stderr:
+                raise AssertionError((name, run.stderr))
+            if name == "valid": print(run.stdout, end="")
         if arguments.transformer:
             real = arguments.transformer.expanduser().resolve()
             if not real.is_dir():

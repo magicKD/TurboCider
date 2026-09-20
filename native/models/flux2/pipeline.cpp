@@ -25,10 +25,12 @@ bool flux_exact_streaming_requested(const Request &request) {
         *stage->second.residency == "streamed";
 }
 
-constexpr const char *kFluxExactKernelRevision =
-    "flux2-klein-9b-mlx-eager-block-v1";
-constexpr const char *kFluxPublicComponentPolicy =
-    "flux2-klein-9b-components-v1";
+std::string flux_exact_kernel_revision(const std::string &model) {
+    return model + "-mlx-eager-block-v1";
+}
+std::string flux_component_policy(const std::string &model) {
+    return model + "-components-v1";
+}
 
 void append_public_artifacts(
         const std::filesystem::path &root, std::string_view prefix,
@@ -72,24 +74,25 @@ void append_public_artifacts(
 }
 
 streaming::PresetSourceIdentity flux_public_source_identity(
-        const streaming::SourceLease &lease) {
+        const streaming::SourceLease &lease, const std::string &model) {
     streaming::CanonicalEncoder encoder("flux2-public-source-v1");
     encoder.string_field("lease_digest", lease.digest());
     encoder.unsigned_field("artifact_count", lease.file_count());
-    return {"flux2-klein-9b-bf16", "diffusers-bf16-sharded", encoder.sha256(),
+    return {model + "-bf16", model == "flux2-klein-4b" ? "diffusers-bf16-single-file" : "diffusers-bf16-sharded", encoder.sha256(),
             std::string(lease.digest())};
 }
 
-streaming::PresetRuntimeIdentity flux_public_runtime_identity() {
+streaming::PresetRuntimeIdentity flux_public_runtime_identity(const std::string &model) {
     return {"turbocider-streaming-2026-09-18", "public-streaming-runtime-v2",
-            "flux2-klein-9b-public-adapter-v2-feature-digest",
-            "flux2-sharded-pread-bf16-lease-v1", kFluxExactKernelRevision,
+            model + "-public-adapter-v2-feature-digest",
+            model == "flux2-klein-4b" ? "flux2-single-pread-bf16-lease-v1" : "flux2-sharded-pread-bf16-lease-v1",
+            flux_exact_kernel_revision(model),
             "mlx-request-cache-policy-v1"};
 }
 
 std::string flux_public_feature_digest(const Request &request) {
     streaming::CanonicalEncoder encoder(
-        "flux2-klein-9b-public-workload-features-v1");
+        request.model + "-public-workload-features-v1");
     encoder.boolean_field("inputs_empty", request.inputs.empty());
     encoder.boolean_field("loras_empty", request.loras.empty());
     encoder.boolean_field("ane_disabled", request.ane_manifest.empty());
@@ -115,7 +118,7 @@ std::shared_ptr<const streaming::ModelStreamingProbe>
 Flux::probe_public_streaming(
         const streaming::PublicResolveInput &input) const {
     const auto &request = input.request;
-    require(model_id_ == "flux2-klein-9b" && request.model == model_id_,
+    require((model_id_ == "flux2-klein-9b" || model_id_ == "flux2-klein-4b") && request.model == model_id_,
             "streaming_engine_model_mismatch");
     require(request.operation == "image.generate" && request.inputs.empty() &&
                 request.frames == 1 && !request.audio &&
@@ -136,20 +139,25 @@ Flux::probe_public_streaming(
     };
     const auto transformer_root = root_ / "transformer";
     add("config.json", transformer_root / "config.json");
-    add("diffusion_pytorch_model.safetensors.index.json",
-        transformer_root / "diffusion_pytorch_model.safetensors.index.json");
     std::error_code error;
-    const auto index = files.back().path;
-    require(std::filesystem::is_regular_file(index, error) && !error,
-            "streaming_route_unsupported: FLUX index is missing");
+    if (model_id_ == "flux2-klein-9b") {
+        const auto index = transformer_root / "diffusion_pytorch_model.safetensors.index.json";
+        require(std::filesystem::is_regular_file(index, error) && !error,
+                "streaming_route_unsupported: FLUX index is missing");
+        add("diffusion_pytorch_model.safetensors.index.json", index);
+    } else {
+        const auto weights = transformer_root / "diffusion_pytorch_model.safetensors";
+        require(std::filesystem::is_regular_file(weights, error) && !error,
+                "streaming_route_unsupported: FLUX 4B single-file weights are missing");
+    }
     require(std::filesystem::is_directory(transformer_root, error) && !error,
             "streaming_route_unsupported: FLUX transformer directory is missing");
     // Capture every transformer shard before constructing metadata.  The
     // lease-backed metadata parser then treats the index as authoritative and
     // rejects missing, duplicate, or unexpected shard identities.
     append_public_artifacts(transformer_root, "", files);
-    require(files.size() >= 4,
-            "streaming_route_unsupported: FLUX indexed shards are missing");
+    require(model_id_ == "flux2-klein-4b" ? files.size() == 2 : files.size() >= 4,
+            "streaming_route_unsupported: FLUX transformer artifact set is invalid");
     add("text_encoder/config.json", root_ / "text_encoder/config.json");
     append_public_artifacts(root_ / "text_encoder", "text_encoder", files);
     add("vae/config.json", root_ / "vae/config.json");
@@ -184,9 +192,9 @@ Flux::probe_public_streaming(
         static_cast<uint32_t>(tokens.ids.size())});
     return std::make_shared<streaming::ValueModelStreamingProbe>(
         streaming::ValueModelStreamingProbe::Values{
-            model_id_, flux_public_source_identity(*lease),
-            std::move(workload), flux_public_runtime_identity(),
-            kFluxPublicComponentPolicy, std::move(lease)});
+            model_id_, flux_public_source_identity(*lease, model_id_),
+            std::move(workload), flux_public_runtime_identity(model_id_),
+            flux_component_policy(model_id_), std::move(lease)});
 }
 
 std::shared_ptr<const streaming::ModelStreamingSnapshot>
@@ -533,9 +541,9 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     mx::set_cache_limit(r.allocator_cache_bytes);
     select_loras(r);
     if (exact_streaming) {
-        require(model_id_ == "flux2-klein-9b" && active_loras_.empty(),
+        require((model_id_ == "flux2-klein-9b" || model_id_ == "flux2-klein-4b") && active_loras_.empty(),
                 "streaming_route_unsupported: FLUX exact streaming supports "
-                "Klein 9B BF16 without LoRA");
+                "Klein 4B/9B BF16 without LoRA");
         // Exact retention is request-scoped. Never let a preceding resident
         // request or failed exact executor coexist with the compiled slots.
         mx::synchronize();
@@ -611,7 +619,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     require(actual_tokens <= 20000, "request exceeds native token workspace budget");
     auto hybrid_start = Clock::now();
     auto selection = select_acceleration(r, actual_tokens, event, cancelled);
-    if (r.execution == "gpu" && model_id_ == "flux2-klein-4b" &&
+    if (!exact_streaming && r.execution == "gpu" && model_id_ == "flux2-klein-4b" &&
         !std::getenv("TURBOCIDER_FLUX_EAGER_BLOCKS"))
         r.compile_gpu = true;
     event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
@@ -748,11 +756,11 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
             "request" : "request;multi_pool=retain_all";
         runtime.reader_revision = 1;
         runtime.weight_format = "diffusers-bf16-sharded";
-        runtime.kernel_revision = kFluxExactKernelRevision;
+        runtime.kernel_revision = flux_exact_kernel_revision(model_id_);
         runtime.conditioning_recipe = "qwen3-flux2-klein-v1";
         runtime.upsample_boundary = "no-upsample;release-before-vae";
         runtime.component_policy_revision = public_stream_lease_ ?
-            kFluxPublicComponentPolicy : "flux2-private-components-v1";
+            flux_component_policy(model_id_) : "flux2-private-components-v1";
         runtime.multi_pool_policy = "retain_all";
         runtime.pool_count = static_cast<uint32_t>(stage.pools.size());
         runtime.slot_bundle_count = counters.slot_bundles;
@@ -766,7 +774,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
                 const streaming::ActualExecutionReceipt>(
                     streaming::make_actual_execution_receipt(
                         exact_stream_->implementation(), compiled.digest,
-                        kFluxPublicComponentPolicy,
+                        flux_component_policy(model_id_),
                         std::vector<streaming::ActualStageReceipt>{
                             *stage_receipt}));
         }

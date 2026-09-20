@@ -279,7 +279,7 @@ struct StudioDraft: Codable, Sendable {
         return "当前任务 · GPU；尚无匹配此尺寸、操作与步数的混合收益验证"
     }
     var publicStreamingModel: Bool {
-        ["ltx-2.5-distilled", "minimax-h3-turbo", "z-image-turbo", "flux2-klein-9b"].contains(modelID)
+        ["ltx-2.5-distilled", "minimax-h3-turbo", "z-image-turbo", "flux2-klein-9b", "flux2-klein-4b"].contains(modelID)
     }
     func publicStreamingRequest(output: URL,
                                 random: () -> Int = { Int.random(in: 0...2147483647) }) throws -> (legacy: NativeRequest, v2: NativeRequestV2?) {

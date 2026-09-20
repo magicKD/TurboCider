@@ -165,9 +165,9 @@ std::pair<uint32_t, std::string> block_identity(
 
 using ShapeMap = std::map<std::string, std::vector<uint64_t>>;
 
-ShapeMap fixed_shapes(uint64_t hidden) {
+ShapeMap fixed_shapes(uint64_t hidden, uint64_t context_width) {
     return {
-        {"context_embedder.weight", {hidden, hidden * 3}},
+        {"context_embedder.weight", {hidden, context_width}},
         {"double_stream_modulation_img.linear.weight", {hidden * 6, hidden}},
         {"double_stream_modulation_txt.linear.weight", {hidden * 6, hidden}},
         {"norm_out.linear.weight", {hidden * 2, hidden}},
@@ -258,6 +258,8 @@ struct StreamingMetadata::State {
     std::string identity;
     uint32_t heads = 0;
     uint32_t hidden = 0;
+    uint32_t context_width = 0;
+    bool indexed = true;
     uint32_t dual_count = 0;
     uint32_t single_count = 0;
     uint64_t fixed_total = 0;
@@ -288,8 +290,9 @@ StreamingMetadata::StreamingMetadata(
     std::shared_ptr<const streaming::SourceLease> lease,
     const std::string &transformer_directory, const std::string &model_id)
     : state_(std::make_unique<State>()) {
-    require_metadata(model_id == "flux2-klein-9b",
-                     "only FLUX.2 Klein 9B has a block-safe shadow");
+    require_metadata(model_id == "flux2-klein-9b" || model_id == "flux2-klein-4b",
+                     "only FLUX.2 Klein 4B/9B support exact streaming");
+    state_->indexed = model_id == "flux2-klein-9b";
     state_->lease = std::move(lease);
     std::filesystem::path absolute;
     if (state_->lease) {
@@ -316,19 +319,19 @@ StreamingMetadata::StreamingMetadata(
     struct stat index_status{};
     if (state_->lease) {
         config_fd = state_->lease->duplicate_fd("config.json");
-        index_fd = state_->lease->duplicate_fd(
-            "diffusion_pytorch_model.safetensors.index.json");
         require_metadata(::fstat(config_fd.get(), &config_status) == 0 &&
-                             S_ISREG(config_status.st_mode) &&
-                             ::fstat(index_fd.get(), &index_status) == 0 &&
-                             S_ISREG(index_status.st_mode),
-                         "leased FLUX config or index is invalid");
+                             S_ISREG(config_status.st_mode), "leased FLUX config is invalid");
+        if (state_->indexed) {
+            index_fd = state_->lease->duplicate_fd("diffusion_pytorch_model.safetensors.index.json");
+            require_metadata(::fstat(index_fd.get(), &index_status) == 0 &&
+                                 S_ISREG(index_status.st_mode), "leased FLUX index is invalid");
+        }
     } else {
         config_status = checked_status(state_->config_path);
-        index_status = checked_status(state_->index_path);
+        if (state_->indexed) index_status = checked_status(state_->index_path);
     }
     state_->config_identity = fingerprint(config_status);
-    state_->index_identity = fingerprint(index_status);
+    if (state_->indexed) state_->index_identity = fingerprint(index_status);
 
     @autoreleasepool {
         NSDictionary *config = state_->lease
@@ -345,54 +348,59 @@ StreamingMetadata::StreamingMetadata(
         state_->single_count = config_integer(config, @"num_single_layers",
                                               "single layer count");
         state_->hidden = state_->heads * head_dimension;
+        state_->context_width = config_integer(config, @"joint_attention_dim", "joint attention width");
+        const bool klein4 = !state_->indexed;
         require_metadata(head_dimension == kHeadDimension &&
-                             config_integer(config, @"in_channels",
-                                            "input channels") == 128 &&
-                             config_integer(config, @"joint_attention_dim",
-                                            "joint attention width") ==
-                                 state_->hidden * 3 &&
-                             state_->heads == 32 && state_->hidden == 4096 &&
-                             state_->dual_count == 8 &&
-                             state_->single_count == 24,
-                         "configuration does not match FLUX.2 Klein 9B");
+                             config_integer(config, @"in_channels", "input channels") == 128 &&
+                             state_->context_width == (klein4 ? 7680u : 12288u) &&
+                             state_->heads == (klein4 ? 24u : 32u) &&
+                             state_->hidden == (klein4 ? 3072u : 4096u) &&
+                             state_->dual_count == (klein4 ? 5u : 8u) &&
+                             state_->single_count == (klein4 ? 20u : 24u),
+                         "configuration does not match FLUX.2 Klein model");
 
         state_->dual.resize(state_->dual_count);
         state_->single.resize(state_->single_count);
 
-        NSDictionary *index = state_->lease
-            ? json_object(index_fd.get(),
-                          static_cast<uint64_t>(index_status.st_size),
-                          "FLUX safetensors index")
-            : json_object(state_->index_path, "FLUX safetensors index");
-        NSDictionary *weight_map = index[@"weight_map"];
-        NSDictionary *metadata = index[@"metadata"];
-        require_metadata([weight_map isKindOfClass:NSDictionary.class] &&
-                             [metadata isKindOfClass:NSDictionary.class],
-                         "invalid FLUX safetensors index");
-        const uint64_t indexed_total = integer(metadata[@"total_size"],
-                                               "index total_size");
+        uint64_t indexed_total = 0;
         std::map<std::string, std::string> mapping;
         std::set<std::string> shard_names;
-        for (id raw_key in weight_map) {
-            require_metadata([raw_key isKindOfClass:NSString.class] &&
-                                 [weight_map[raw_key]
-                                     isKindOfClass:NSString.class],
-                             "invalid index weight mapping");
-            const std::string key = [(NSString *)raw_key UTF8String];
-            const std::string shard =
-                [(NSString *)weight_map[raw_key] UTF8String];
-            require_metadata(!key.empty() && !shard.empty() &&
-                                 std::filesystem::path(shard).filename() ==
-                                     std::filesystem::path(shard) &&
-                                 std::filesystem::path(shard).extension() ==
-                                     ".safetensors",
-                             "invalid index shard path");
-            require_metadata(mapping.emplace(key, shard).second,
-                             "duplicate tensor in index");
-            shard_names.insert(shard);
+        if (state_->indexed) {
+            NSDictionary *index = state_->lease
+                ? json_object(index_fd.get(),
+                              static_cast<uint64_t>(index_status.st_size),
+                              "FLUX safetensors index")
+                : json_object(state_->index_path, "FLUX safetensors index");
+            NSDictionary *weight_map = index[@"weight_map"];
+            NSDictionary *metadata = index[@"metadata"];
+            require_metadata([weight_map isKindOfClass:NSDictionary.class] &&
+                                 [metadata isKindOfClass:NSDictionary.class],
+                             "invalid FLUX safetensors index");
+            indexed_total = integer(metadata[@"total_size"],
+                                                   "index total_size");
+            for (id raw_key in weight_map) {
+                require_metadata([raw_key isKindOfClass:NSString.class] &&
+                                     [weight_map[raw_key]
+                                         isKindOfClass:NSString.class],
+                                 "invalid index weight mapping");
+                const std::string key = [(NSString *)raw_key UTF8String];
+                const std::string shard =
+                    [(NSString *)weight_map[raw_key] UTF8String];
+                require_metadata(!key.empty() && !shard.empty() &&
+                                     std::filesystem::path(shard).filename() ==
+                                         std::filesystem::path(shard) &&
+                                     std::filesystem::path(shard).extension() ==
+                                         ".safetensors",
+                                 "invalid index shard path");
+                require_metadata(mapping.emplace(key, shard).second,
+                                 "duplicate tensor in index");
+                shard_names.insert(shard);
+            }
+            require_metadata(!mapping.empty() && shard_names.size() == 2,
+                             "Klein 9B requires two indexed shards");
+        } else {
+            shard_names.insert("diffusion_pytorch_model.safetensors");
         }
-        require_metadata(!mapping.empty() && shard_names.size() == 2,
-                         "Klein 9B requires two indexed shards");
 
         std::map<std::string, uint32_t> artifact_by_name;
         for (const auto &name : shard_names) {
@@ -420,7 +428,7 @@ StreamingMetadata::StreamingMetadata(
 
         std::set<std::string> discovered;
         uint64_t discovered_total = 0;
-        const ShapeMap fixed_expected = fixed_shapes(state_->hidden);
+        const ShapeMap fixed_expected = fixed_shapes(state_->hidden, state_->context_width);
         const ShapeMap dual_expected = dual_shapes(state_->hidden);
         const ShapeMap single_expected = single_shapes(state_->hidden);
 
@@ -465,8 +473,8 @@ StreamingMetadata::StreamingMetadata(
                 require_metadata(discovered.insert(name).second,
                                  "duplicate tensor across shards");
                 const auto mapped = mapping.find(name);
-                require_metadata(mapped != mapping.end() &&
-                                     mapped->second == artifact.name,
+                require_metadata(!state_->indexed || (mapped != mapping.end() &&
+                                     mapped->second == artifact.name),
                                  "index and shard header disagree");
                 NSDictionary *record = root[key_string];
                 require_metadata([record isKindOfClass:NSDictionary.class] &&
@@ -474,7 +482,7 @@ StreamingMetadata::StreamingMetadata(
                                          isKindOfClass:NSString.class] &&
                                      [record[@"dtype"]
                                          isEqualToString:@"BF16"],
-                                 "Klein 9B shadow supports BF16 weights only");
+                                 "Klein streaming supports BF16 weights only");
                 const std::vector<uint64_t> shape =
                     shape_vector(record[@"shape"]);
                 NSArray *offsets = record[@"data_offsets"];
@@ -532,8 +540,8 @@ StreamingMetadata::StreamingMetadata(
                              "unexpected safetensors shard payload length");
         }
 
-        require_metadata(discovered.size() == mapping.size() &&
-                             discovered_total == indexed_total,
+        require_metadata(!state_->indexed || (discovered.size() == mapping.size() &&
+                             discovered_total == indexed_total),
                          "index tensor set or total_size differs from shards");
         std::sort(state_->fixed.begin(), state_->fixed.end(),
                   [](const auto &left, const auto &right) {
@@ -582,6 +590,9 @@ StreamingMetadata::StreamingMetadata(
 
 StreamingMetadata::~StreamingMetadata() = default;
 
+uint32_t StreamingMetadata::hidden_size() const noexcept { return state_->hidden; }
+uint32_t StreamingMetadata::head_count() const noexcept { return state_->heads; }
+
 uint32_t StreamingMetadata::dual_block_count() const noexcept {
     return state_ ? state_->dual_count : 0;
 }
@@ -625,8 +636,8 @@ void StreamingMetadata::check_unchanged() const {
     }
     require_metadata(fingerprint(checked_status(state_->config_path)) ==
                          state_->config_identity &&
-                         fingerprint(checked_status(state_->index_path)) ==
-                         state_->index_identity,
+                         (!state_->indexed || fingerprint(checked_status(state_->index_path)) ==
+                         state_->index_identity),
                      "checkpoint_changed: FLUX config or index is stale");
     for (const auto &artifact : state_->artifacts) {
         struct stat opened{};
@@ -690,7 +701,7 @@ streaming::Descriptor StreamingMetadata::describe(
 
     streaming::StageDescriptor stage;
     stage.id = "denoiser";
-    stage.adapter_revision = "flux2-klein-9b-two-class-v1-metadata";
+    stage.adapter_revision = state_->model_id + "-two-class-v1-metadata";
     stage.min_slots = 2;
     stage.max_slots = 2;
     stage.max_group_size = 1;
@@ -723,7 +734,7 @@ streaming::Descriptor StreamingMetadata::describe(
         stage.resident_fields.push_back(field(
             record, "flux2.fixed." + record.suffix));
 
-    auto append = [&](uint32_t id, const char *layout_class,
+    auto append = [&](uint32_t id, const std::string &layout_class,
                       const std::vector<TensorRecord> &records) {
         streaming::BlockSpec block;
         block.id = id;
@@ -737,11 +748,11 @@ streaming::Descriptor StreamingMetadata::describe(
         stage.blocks.push_back(std::move(block));
     };
     for (uint32_t block = 0; block < state_->dual.size(); ++block)
-        append(block, "flux2-klein-9b-dual-bf16-v1",
+        append(block, state_->model_id + "-dual-bf16-v1",
                state_->dual[block]);
     for (uint32_t block = 0; block < state_->single.size(); ++block)
         append(state_->dual_count + block,
-               "flux2-klein-9b-single-bf16-v1",
+               state_->model_id + "-single-bf16-v1",
                state_->single[block]);
     descriptor.stages.push_back(std::move(stage));
     return descriptor;
@@ -767,7 +778,7 @@ StreamingPlanView::StreamingPlanView(
                          stage.pass_transition ==
                              streaming::PassTransition::reload &&
                          stage.pools.size() == 2,
-                     "FLUX 9B shadow requires P0/K2/G1/D0..1/Q1..2 reload");
+                     "FLUX exact streaming requires P0/K2/G1/D0..1/Q1..2 reload");
     const uint32_t dual = metadata_.dual_block_count();
     const uint32_t total = dual + metadata_.single_block_count();
     require_metadata(stage.groups.size() == total,
@@ -806,7 +817,7 @@ StreamingPlanView::StreamingPlanView(
                          stage.pass_transition ==
                              streaming::PassTransition::reload &&
                          stage.pools.size() == 2,
-                     "FLUX 9B shadow requires P0/K2/G1/D0..1/Q1..2 reload");
+                     "FLUX exact streaming requires P0/K2/G1/D0..1/Q1..2 reload");
     const uint32_t dual = metadata_.dual_block_count();
     const uint32_t total = dual + metadata_.single_block_count();
     require_metadata(stage.groups.size() == total,
