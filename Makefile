@@ -58,6 +58,7 @@ test:
 test-app:
 	@build/native/turbocider-ane-library-tests
 	@build/native/turbocider-studio-tests
+	@build/native/turbocider-history-tests
 	@build/native/turbocider-model-library-tests
 	@build/native/turbocider-library-store-tests
 	@build/native/turbocider-run-insights-tests

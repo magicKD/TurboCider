@@ -103,11 +103,15 @@ struct StudioView: View {
     @StateObject private var tensorCache = TensorCacheController()
     @State private var page: StudioPage? = .studio
     @State private var selected: UUID?
+    @State private var selectedTasks: Set<UUID> = []
+    @State private var resultSelection = HistorySelection()
     @State private var inspector = true
     @State private var dropping = false
     @State private var compareOriginal = false
     @State private var submitting = false
     private var selectedJob: NativeJob? { store.jobs.first { $0.id == selected && $0.hasOutput } ?? store.jobs.first { $0.hasOutput } }
+    private var outputJobs: [NativeJob] { store.jobs.filter { $0.hasOutput } }
+    private var outputIDs: [UUID] { outputJobs.map(\.id) }
     private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
     private var loraStrategyHint: String {
         let selected = studio.draft.loraStrategy == "auto"
@@ -158,10 +162,12 @@ struct StudioView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) { Text("本地创作").foregroundStyle(.secondary) }
             ToolbarItem(placement: .automatic) { Text(studio.saved ? "草稿已保存" : "草稿尚未保存").font(.caption).foregroundStyle(.secondary) }
-            ToolbarItem { Button { studio.newDraft(); selected = nil; page = .studio } label: { Label("新建创作", systemImage: "square.and.pencil") } }
+            ToolbarItem { Button { studio.newDraft(); selected = nil; resultSelection.clear(); page = .studio } label: { Label("新建创作", systemImage: "square.and.pencil") } }
             ToolbarItem { Button { inspector.toggle() } label: { Label("显示参数", systemImage: "sidebar.right") } }
         }
         .onDisappear { studio.save() }
+        .onChange(of: store.deletableJobIDs) { _, ids in selectedTasks.formIntersection(ids) }
+        .onChange(of: outputIDs) { _, ids in resultSelection.retain(Set(ids)) }
         .task { library.refresh(studio: studio, migrate: true) }
         .task {
             while !Task.isCancelled {
@@ -226,7 +232,7 @@ struct StudioView: View {
                         Button("另存为…") { exportResult(job.request.output) }
                         Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: job.request.output)]) }
                         Button("复用参数") { studio.reuse(job) }
-                        Button("删除图片（移到废纸篓）", role: .destructive) { trashResult(job) }.disabled(store.busy)
+                        Button(resultDeletionTitle(for: job), role: .destructive) { trashResults(resultDeletionIDs(for: job)) }.disabled(store.busy)
                     } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).frame(width: 26)
                 }
             } else {
@@ -237,17 +243,19 @@ struct StudioView: View {
         }.padding(12).background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
     }
     private var resultStrip: some View {
-        ScrollView(.horizontal) { LazyHStack(spacing: 8) {
-            ForEach(store.jobs.filter { $0.hasOutput }) { job in
-                Button { selected = job.id; compareOriginal = false } label: {
-                    StudioResultThumbnail(path: job.request.output).frame(width: 60, height: 48)
+        VStack(alignment: .leading, spacing: 6) {
+            if resultSelection.ids.count > 1 { resultSelectionControls }
+            ScrollView(.horizontal) { LazyHStack(spacing: 8) {
+                ForEach(outputJobs) { job in
+                    resultThumbnail(job, height: 48).frame(width: 60)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(selectedJob?.id == job.id ? ciderAccent : .clear, lineWidth: 2))
-                }.buttonStyle(.plain).contextMenu {
-                    Button("删除图片（移到废纸篓）", role: .destructive) { trashResult(job) }.disabled(store.busy)
-                }.help("种子 \(job.request.seed) · \(operationName(job.request.operation ?? "image.generate"))")
-            }
-        }.padding(2) }.frame(height: 52)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(resultSelection.ids.contains(job.id) || (resultSelection.ids.isEmpty && selectedJob?.id == job.id) ? ciderAccent : .clear, lineWidth: 2))
+                        .contextMenu {
+                            Button(resultDeletionTitle(for: job), role: .destructive) { trashResults(resultDeletionIDs(for: job)) }.disabled(store.busy)
+                        }.help("种子 \(job.request.seed) · Ctrl/⌘ 点击多选，Shift 点击连续选择")
+                }
+            }.padding(2) }.frame(height: 52)
+        }
     }
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -533,7 +541,23 @@ struct StudioView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("任务与历史").font(.largeTitle.weight(.medium))
             Text("删除任务记录保留结果文件；删除图片会移到废纸篓。").foregroundStyle(.secondary)
-            if store.deletedJob != nil { Button("撤销删除任务") { do { try store.undoDeleteJob() } catch { studio.message = error.localizedDescription } }.accessibilityIdentifier("undoDeleteJob") }
+            HStack {
+                Button(selectedTasks == store.deletableJobIDs && !selectedTasks.isEmpty ? "取消全选" : "全选") {
+                    selectedTasks = selectedTasks == store.deletableJobIDs ? [] : store.deletableJobIDs
+                }.disabled(store.deletableJobIDs.isEmpty).accessibilityIdentifier("selectAllTasks")
+                Text("已选择 \(selectedTasks.count) 项").font(.callout).foregroundStyle(.secondary)
+                Button("删除所选任务", role: .destructive) { deleteTasks(selectedTasks) }
+                    .disabled(selectedTasks.isEmpty).accessibilityIdentifier("deleteSelectedTasks")
+                Spacer()
+                Button("清空任务历史", role: .destructive) {
+                    do { try store.clearHistory(); selectedTasks = [] }
+                    catch { studio.message = error.localizedDescription }
+                }.disabled(store.deletableJobIDs.isEmpty).accessibilityIdentifier("clearTaskHistory")
+            }
+            if store.jobs.contains(where: { !store.deletableJobIDs.contains($0.id) }) {
+                Text("进行中的任务会保留，完成或取消后可删除。").font(.caption).foregroundStyle(.secondary)
+            }
+            if !store.deletedJobs.isEmpty { Button("撤销删除 \(store.deletedJobs.count) 项任务") { do { try store.undoDeleteJob() } catch { studio.message = error.localizedDescription } }.accessibilityIdentifier("undoDeleteJob") }
             List(store.jobs) { job in
                 DisclosureGroup {
                     Text(job.request.prompt).textSelection(.enabled)
@@ -542,41 +566,104 @@ struct StudioView: View {
                     HStack {
                         Button("复用参数") { studio.reuse(job); page = .studio }
                         if job.hasOutput {
-                            Button("查看结果") { selected = job.id; page = .studio }
+                            Button("查看结果") { showResult(job) }
                             Button("删除图片", role: .destructive) { trashResult(job) }.disabled(store.busy)
                         }
                         if job.outputDeleted == true { Text("图片已删除").foregroundStyle(.secondary) }
-                        Button("删除任务记录", role: .destructive) { do { try store.deleteJob(job.id) } catch { studio.message = error.localizedDescription } }
-                            .disabled(!job.isTerminal).accessibilityIdentifier("deleteJob")
+                        Button("删除任务记录", role: .destructive) { deleteTasks([job.id]) }
+                            .disabled(!store.deletableJobIDs.contains(job.id)).accessibilityIdentifier("deleteJob")
                     }.buttonStyle(.borderless).accessibilityElement(children: .contain)
                     if let json = job.resultJSON { DisclosureGroup("执行与性能详情") { Text(json).font(.system(.caption, design: .monospaced)).textSelection(.enabled) } }
                 } label: {
-                    HStack { VStack(alignment: .leading) { Text(job.request.prompt).lineLimit(1); Text("\(operationName(job.request.operation ?? "image.generate")) · \(job.request.width)×\(job.request.height) · 种子 \(job.request.seed)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(stateName(job.state)).font(.caption) }
+                    HStack(spacing: 10) {
+                        Toggle("选择任务：\(job.request.prompt)", isOn: Binding(
+                            get: { selectedTasks.contains(job.id) },
+                            set: { if $0 { selectedTasks.insert(job.id) } else { selectedTasks.remove(job.id) } }
+                        )).toggleStyle(.checkbox).labelsHidden()
+                            .disabled(!store.deletableJobIDs.contains(job.id))
+                            .accessibilityIdentifier("selectTask-\(job.id)")
+                        VStack(alignment: .leading) { Text(job.request.prompt).lineLimit(1); Text("\(operationName(job.request.operation ?? "image.generate")) · \(job.request.width)×\(job.request.height) · 种子 \(job.request.seed)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(stateName(job.state)).font(.caption)
+                    }
                 }.padding(.vertical, 6)
             }.listStyle(.inset)
             runStatus
         }.padding(28)
     }
     private var libraryPage: some View {
-        ScrollView { VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 18) {
             Text("素材库").font(.largeTitle.weight(.medium))
-            Text("每一张结果，都可以成为下一次创作的输入。").foregroundStyle(.secondary)
-            if store.jobs.filter({ $0.hasOutput }).isEmpty { ContentUnavailableView("还没有生成结果", systemImage: "photo", description: Text("在创作中生成第一张图像。")) }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], spacing: 18) {
-                ForEach(store.jobs.filter { $0.hasOutput }) { job in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Button { selected = job.id; compareOriginal = false; page = .studio } label: { StudioResultThumbnail(path: job.request.output).frame(height: 180) }.buttonStyle(.plain)
-                        Text(job.request.prompt).font(.caption).lineLimit(2)
-                        HStack {
-                            Text("种子 \(job.request.seed)").font(.caption2).foregroundStyle(.secondary)
-                            Spacer()
-                            Button { trashResult(job) } label: { Image(systemName: "trash") }
-                                .help("删除图片（移到废纸篓）").disabled(store.busy).accessibilityIdentifier("trashOutput")
-                        }
+            Text("单击选择，Ctrl/⌘ 点击多选，Shift 点击连续选择；双击查看结果。").foregroundStyle(.secondary)
+            resultSelectionControls
+            ScrollView {
+                if outputJobs.isEmpty { ContentUnavailableView("还没有生成结果", systemImage: "photo", description: Text("在创作中生成第一张图像。")) }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], spacing: 18) {
+                    ForEach(outputJobs) { job in
+                        VStack(alignment: .leading, spacing: 8) {
+                            resultThumbnail(job, height: 180)
+                            Text(job.request.prompt).font(.caption).lineLimit(2)
+                            HStack {
+                                Text("种子 \(job.request.seed)").font(.caption2).foregroundStyle(.secondary)
+                                Spacer()
+                                Button { showResult(job) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.help("查看结果")
+                                Button { trashResults(resultDeletionIDs(for: job)) } label: { Image(systemName: "trash") }
+                                    .help(resultDeletionTitle(for: job)).disabled(store.busy).accessibilityIdentifier("trashOutput")
+                            }
+                        }.padding(8)
+                            .background(resultSelection.ids.contains(job.id) ? ciderAccent.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(resultSelection.ids.contains(job.id) ? ciderAccent : .clear, lineWidth: 2))
+                            .contextMenu {
+                                Button("查看结果") { showResult(job) }
+                                Button(resultDeletionTitle(for: job), role: .destructive) { trashResults(resultDeletionIDs(for: job)) }.disabled(store.busy)
+                            }
                     }
+                }.padding(2)
+            }
+            runStatus
+        }.padding(28)
+    }
+    private var resultSelectionControls: some View {
+        HStack {
+            Text("已选择 \(resultSelection.ids.count) 项").font(.callout).foregroundStyle(.secondary)
+            Button("全选") { resultSelection.selectAll(outputIDs) }.disabled(outputIDs.isEmpty).accessibilityIdentifier("selectAllOutputs")
+            Button("取消选择") { resultSelection.clear() }.disabled(resultSelection.ids.isEmpty)
+            Spacer()
+            Button("删除所选图片", role: .destructive) { trashResults(resultSelection.ids) }
+                .disabled(store.busy || resultSelection.ids.isEmpty).help("将所选结果移到废纸篓")
+                .accessibilityIdentifier("trashSelectedOutputs")
+        }
+    }
+    private func resultThumbnail(_ job: NativeJob, height: CGFloat) -> some View {
+        StudioResultThumbnail(path: job.request.output).frame(height: height).frame(maxWidth: .infinity)
+            .accessibilityHidden(true)
+            .overlay(alignment: .topTrailing) {
+                if resultSelection.ids.contains(job.id) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.white, ciderAccent).padding(4).allowsHitTesting(false)
                 }
             }
-        }.padding(28) }
+            .overlay {
+                ResultSelectionTarget(label: "选择图片：\(job.request.prompt)，种子 \(job.request.seed)", selected: resultSelection.ids.contains(job.id)) { flags, clicks in
+                    let toggle = !flags.intersection([.control, .command]).isEmpty
+                    resultSelection.select(job.id, orderedIDs: outputIDs, toggle: toggle, range: flags.contains(.shift))
+                    if resultSelection.ids.contains(job.id) { selected = job.id; compareOriginal = false }
+                    if clicks == 2 && !toggle && !flags.contains(.shift) { showResult(job) }
+                }
+            }
+    }
+    private func showResult(_ job: NativeJob) {
+        selected = job.id; compareOriginal = false
+        resultSelection.select(job.id, orderedIDs: outputIDs)
+        page = .studio
+    }
+    private func resultDeletionIDs(for job: NativeJob) -> Set<UUID> {
+        resultSelection.ids.contains(job.id) ? resultSelection.ids : [job.id]
+    }
+    private func resultDeletionTitle(for job: NativeJob) -> String {
+        let count = resultDeletionIDs(for: job).count
+        return count > 1 ? "删除所选 \(count) 个结果（移到废纸篓）" : "删除图片（移到废纸篓）"
+    }
+    private func deleteTasks(_ ids: Set<UUID>) {
+        do { try store.deleteJobs(ids); selectedTasks.subtract(ids) }
+        catch { studio.message = error.localizedDescription }
     }
     private func chooseModel(_ id: String) {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
@@ -639,7 +726,15 @@ struct StudioView: View {
         } catch { studio.message = error is CancellationError ? "加载已取消" : error.localizedDescription } }
     }
     private func trashResult(_ job: NativeJob) {
-        do { try store.trashOutput(job.id); if selected == job.id { selected = nil }; compareOriginal = false }
+        trashResults([job.id])
+    }
+    private func trashResults(_ ids: Set<UUID>) {
+        do {
+            try store.trashOutputs(ids)
+            resultSelection.retain(Set(outputIDs))
+            if let selected, !outputIDs.contains(selected) { self.selected = nil }
+            compareOriginal = false
+        }
         catch { studio.message = error.localizedDescription }
     }
     private func generate() {
@@ -657,6 +752,7 @@ struct StudioView: View {
                 studio.lastSeed = request.seed; studio.save()
                 let job = try await store.generate(modelURL: URL(fileURLWithPath: resolved.modelPath), request: request)
                 selected = job.id; compareOriginal = false
+                resultSelection.select(job.id, orderedIDs: outputIDs)
             } catch { studio.message = error is CancellationError ? "生成已取消，草稿与原图已保留。" : error.localizedDescription }
         }
     }
