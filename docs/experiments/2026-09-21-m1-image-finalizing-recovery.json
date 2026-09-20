@@ -1,0 +1,46 @@
+{
+  "scope": "Image finalizing receipt, process-restart state recovery and App rebuild; not whole worker protocol acceptance",
+  "tests": {
+    "transaction": {
+      "exit_code": 0,
+      "output": "PASS image transaction: request correlation, PNG decode, SHA receipt, atomic publication, rollback, cancellation, cleanup and receipt-bound recovery\n",
+      "cases": [
+        "retained staging after original owner release",
+        "published target recovery",
+        "idempotent replay",
+        "missing staging rejection",
+        "changed content rejection",
+        "same bytes with replacement inode rejection",
+        "symlink target rejection",
+        "invalid staging path rejection"
+      ]
+    },
+    "history": {
+      "exit_code": 0,
+      "output": "PASS: modifier selection, batch history delete/undo/clear, atomic-save rollback, managed-file validation, batch trash and finalizing restart recovery\n",
+      "cases": [
+        "persisted finalizing before rename",
+        "persisted finalizing after rename",
+        "corrupted staged data",
+        "missing receipt",
+        "second restart preserves persisted result"
+      ]
+    }
+  },
+  "app_build_exit_code": 0,
+  "app_sha256": "ae9425d53670cb5fc10480916ec8af0c5b518bf20a0fa444ef35b878c721f8e7",
+  "source_sha256": {
+    "apps/macos/ImageOutputTransaction.swift": "3aaf14c10e385a65d7c437543261b0dd967f8d1cce9bdfeac81718ead4bc36e9",
+    "apps/macos/JobStore.swift": "831bc166b6674c074b4d084412329d69003efcb1032599667f37c2ec01517ce0",
+    "apps/macos/App.swift": "d2564731356e0681cbdcf9b26200f8633e81ce1f51459581ca1034ff11d433fe",
+    "tests/integration/ImageOutputTransactionTests.swift": "46f26492400e4bcbd79d156a86ad338243687689d0a3be0f47832dd32ddc5da3",
+    "tests/integration/HistoryManagementTests.swift": "6c52dfeec007758a22fc147528465dc677da30cab11870acad8c6de44ef59fb0"
+  },
+  "preserved_compile_failure": "tests/integration/HistoryManagementTests.swift:130:17: error: cannot find 'fm' in scope\n128 |         for mode in [\"before-rename\", \"after-rename\", \"corrupt\", \"missing-receipt\"] {\n129 |             let folder = root.appendingPathComponent(\"recovery-\\(mode)\")\n130 |             try fm.createDirectory(at: folder, withIntermediateDirectories: true)\n    |                 `- error: cannot find 'fm' in scope\n131 |             var request = NativeRequest(prompt: \"recovery fixture\", output: folder.appendingPathComponent(\"final.png\").path)\n132 |             request.operation = \"image.generate\"; request.width = 64; request.height = 64\n",
+  "limits": [
+    "Tests construct persisted crash-boundary states; no forced OS crash/power-loss campaign",
+    "No power-loss/fsync durability guarantee",
+    "Post-publication save failure branch implemented; no real full-model disk-failure injection in this round",
+    "Worker envelope, process liveness on restart, Flux public catalog and full lifecycle qualification remain pending"
+  ]
+}

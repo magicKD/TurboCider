@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 @main
 struct HistoryManagementTests {
@@ -119,6 +120,42 @@ struct HistoryManagementTests {
         try FileManager.default.removeItem(atPath: jobs[2].request.output)
         try imageStore.trashOutputs([jobs[2].id])
         try check(imageStore.jobs.first { $0.id == jobs[2].id }?.outputDeleted == true, "A missing output could not be removed from the gallery")
-        print("PASS: modifier selection, batch history delete/undo/clear, atomic-save rollback, managed-file validation and batch trash")
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 64, pixelsHigh: 64,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        bitmap.bitmapData!.initialize(repeating: 0, count: bitmap.bytesPerRow * 64)
+        let png = bitmap.representation(using: .png, properties: [:])!
+        for mode in ["before-rename", "after-rename", "corrupt", "missing-receipt"] {
+            let folder = root.appendingPathComponent("recovery-\(mode)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var request = NativeRequest(prompt: "recovery fixture", output: folder.appendingPathComponent("final.png").path)
+            request.operation = "image.generate"; request.width = 64; request.height = 64
+            var transaction: ImageOutputTransaction? = try ImageOutputTransaction(request: request)
+            let staged = transaction!.stagedURL
+            try png.write(to: staged)
+            let payload: [String: Any] = ["schema_version": 1, "model": request.model,
+                "operation": "image.generate", "output": staged.path, "width": 64, "height": 64,
+                "steps": request.steps, "seed": request.seed, "warmup": false]
+            let result = try transaction!.prepare(JSONSerialization.data(withJSONObject: payload))
+            var pending = NativeJob(id: UUID(), createdAt: Date(), request: request,
+                state: "finalizing", phase: "export", completed: 0, total: 1, elapsed: 1)
+            if mode != "missing-receipt" { pending.resultJSON = String(decoding: result, as: UTF8.self) }
+            try JSONEncoder().encode([pending]).write(to: folder.appendingPathComponent("jobs.json"), options: .atomic)
+            transaction!.retainForRecovery()
+            if mode == "after-rename" { try transaction!.publish() }
+            transaction = nil
+            if mode == "corrupt" { try Data("corrupt".utf8).write(to: staged) }
+            let recovered = NativeJobStore(directory: folder)
+            let expected = ["before-rename", "after-rename"].contains(mode) ? "succeeded" : "failed"
+            try check(recovered.storageError == nil && recovered.jobs.first?.state == expected,
+                      "Job recovery failed: \(mode)")
+            if expected == "succeeded" {
+                try check(try Data(contentsOf: URL(fileURLWithPath: request.output)) == png, "Recovered job pixels changed")
+            }
+            let replay = NativeJobStore(directory: folder)
+            try check(replay.jobs.first?.id == pending.id && replay.jobs.first?.state == expected,
+                      "Recovery was not persisted/idempotent: \(mode)")
+        }
+        print("PASS: modifier selection, batch history delete/undo/clear, atomic-save rollback, managed-file validation, batch trash and finalizing restart recovery")
     }
 }

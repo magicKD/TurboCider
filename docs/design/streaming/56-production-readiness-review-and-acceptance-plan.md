@@ -138,6 +138,8 @@ H3/LTX 已有专门 quarantine owner，不能据此说所有模型都缺取消�
 5. 首个限定发布可先默认 Off、显式选档；自动推荐在 resident-fit evidence 存在时启用。显式 Off/指定档位优先，unavailable 不自动改 Off 重跑。
 6. typed error 包含 `code / phase / retryability / recovery_action / primary_error / cleanup_error`；JobStore 对安全 cancel、可重试失败和需重启隔离分别处理。
 
+2026-09-21 R5 图片提交增量：排他 rename 已拒绝目标覆盖；JobStore 在 rename 前保存 finalizing 与含 SHA/device/inode 的已校验图片收据，重启复核 staging/最终文件并完成或拒绝恢复，发布后保存失败保留 finalizing。transaction/history 重启状态测试与 App 重建通过，见实验第五十一/五十二轮。尚无完整 worker envelope/进程存活恢复、真实进程强退或断电验证，R5 不能整体关闭。
+
 ### R6 · 发布身份、运行容器与证据范围不能只靠标签
 
 Z-Image/Flux 的 `turbocider_build_id` 当前是固定版本字符串；更新 runtime 后需可验证地改变兼容身份，不能靠忘记更新的手工标签持续沿用 qualification。

@@ -65,7 +65,7 @@ private func operationName(_ value: String) -> String {
      "video.reference": "参考视频"][value] ?? value
 }
 private func stateName(_ value: String) -> String {
-    ["preparing": "准备中", "running": "生成中", "cancelling": "正在安全停止", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断"][value] ?? value
+    ["preparing": "准备中", "running": "生成中", "finalizing": "正在保存结果", "cancelling": "正在安全停止", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断"][value] ?? value
 }
 private func phaseName(_ value: String) -> String {
     if value == "pack_z_image_suffix" { return "整理 GPU 权重" }

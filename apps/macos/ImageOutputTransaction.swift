@@ -14,7 +14,9 @@ final class ImageOutputTransaction: @unchecked Sendable {
     private let operation: String
     private var verifiedIdentity: [Int64]?
     private var verifiedFile: FileHandle?
-    private var published = false
+    private(set) var published = false
+    private var preserveForRecovery = false
+    private var ownsDirectory = true
 
     private static let crcTable: [UInt32] = (0..<256).map { value in
         var crc = UInt32(value)
@@ -94,7 +96,9 @@ final class ImageOutputTransaction: @unchecked Sendable {
 
     deinit {
         try? verifiedFile?.close()
-        try? FileManager.default.removeItem(at: directory)
+        if ownsDirectory && (!preserveForRecovery || published) {
+            try? FileManager.default.removeItem(at: directory)
+        }
     }
 
     private func identity(fd: Int32? = nil) throws -> [Int64] {
@@ -176,11 +180,90 @@ final class ImageOutputTransaction: @unchecked Sendable {
         receipt["image_artifact"] = ["schema_version": 1, "staged_output": stagedURL.path,
             "published_output": destination.path, "bytes": before[2],
             "sha256": hash.finalize().map { String(format: "%02x", $0) }.joined(),
-            "media_verified": true] as [String: Any]
+            "media_verified": true, "device": before[0], "inode": before[1]] as [String: Any]
         let data = try JSONSerialization.data(withJSONObject: receipt, options: [.sortedKeys])
         verifiedIdentity = before
         verifiedFile = file
         return data
+    }
+
+    // Call only after the finalizing job and prepared result are persisted.
+    func retainForRecovery() { preserveForRecovery = true }
+    func discardRecovery() { preserveForRecovery = false }
+
+    private init(request: NativeRequest, recovering url: URL, directory: URL) {
+        self.request = request
+        self.operation = NativeRequestV2(legacy: request).operation
+        self.destination = URL(fileURLWithPath: request.output).standardizedFileURL
+        self.stagedURL = url
+        self.directory = directory
+        self.ownsDirectory = false
+    }
+
+    /// Recovery validates the persisted receipt against the same PNG checks and
+    /// held-file hash as prepare. A rename preserves device/inode; a coincident
+    /// file with identical bytes is not proof that this transaction published it.
+    static func recover(request: NativeRequest, result: Data) throws {
+        struct Artifact: Decodable {
+            let schema_version: Int
+            let staged_output: String
+            let published_output: String
+            let bytes: Int64
+            let sha256: String
+            let media_verified: Bool
+            let device: Int64
+            let inode: Int64
+        }
+        struct Receipt: Decodable { let output: String; let image_artifact: Artifact }
+        let receipt = try JSONDecoder().decode(Receipt.self, from: result)
+        let expected = receipt.image_artifact
+        let destination = URL(fileURLWithPath: request.output).standardizedFileURL
+        let staged = URL(fileURLWithPath: expected.staged_output).standardizedFileURL
+        let directory = staged.deletingLastPathComponent()
+        let prefix = ".tc-image-staging-"
+        guard expected.schema_version == 1, expected.media_verified, expected.bytes > 0,
+              expected.sha256.count == 64,
+              expected.sha256.allSatisfy({ "0123456789abcdef".contains($0) }),
+              NativeRequestV2(legacy: request).operation.hasPrefix("image."),
+              destination.pathExtension == "png", receipt.output == destination.path,
+              expected.published_output == destination.path,
+              expected.staged_output == staged.path, staged.lastPathComponent == "output.png",
+              directory.deletingLastPathComponent() == destination.deletingLastPathComponent(),
+              directory.lastPathComponent.hasPrefix(prefix),
+              UUID(uuidString: String(directory.lastPathComponent.dropFirst(prefix.count))) != nil else {
+            throw NativeFailure(message: "image_recovery_invalid: 图片发布记录无效。")
+        }
+        var targetStat = stat()
+        let targetExists = lstat(destination.path, &targetStat) == 0
+        if !targetExists && errno != ENOENT {
+            throw NativeFailure(message: "image_recovery_invalid: 无法检查最终图片。")
+        }
+        var stageStat = stat()
+        if targetExists {
+            // Successful rename consumes the staging name.
+            guard lstat(staged.path, &stageStat) != 0, errno == ENOENT else {
+                throw NativeFailure(message: "image_recovery_conflict: 最终路径与暂存图片同时存在。")
+            }
+        } else {
+            var directoryStat = stat()
+            guard lstat(directory.path, &directoryStat) == 0,
+                  directoryStat.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else {
+                throw NativeFailure(message: "image_recovery_invalid: 暂存目录无效。")
+            }
+        }
+        let current = targetExists ? destination : staged
+        let transaction = ImageOutputTransaction(request: request, recovering: current, directory: directory)
+        var payload = try JSONSerialization.jsonObject(with: result) as! [String: Any]
+        payload["output"] = current.path
+        let checked = try transaction.prepare(JSONSerialization.data(withJSONObject: payload))
+        let actual = try JSONDecoder().decode(Receipt.self, from: checked).image_artifact
+        guard actual.sha256 == expected.sha256, actual.bytes == expected.bytes,
+              actual.device == expected.device, actual.inode == expected.inode else {
+            throw NativeFailure(message: "image_recovery_changed: 图片与发布记录不一致。")
+        }
+        if !targetExists { try transaction.publish() }
+        // Never recursively remove a directory reconstructed from history.
+        _ = rmdir(directory.path)
     }
 
     func publish() throws {

@@ -142,8 +142,47 @@ import CryptoKit
             catch { rejected = error.localizedDescription.contains("image_publish_failed") }
             try check(rejected && (try Data(contentsOf: marker)) == original, "Publication failure damaged destination")
         }
+        for mode in ["staged", "published", "missing", "changed", "wrong_inode", "symlink", "bad_receipt"] {
+            var recoveryRequest = request
+            recoveryRequest.output = root.appendingPathComponent("recover-\(mode).png").path
+            var transaction: ImageOutputTransaction? = try ImageOutputTransaction(request: recoveryRequest)
+            let staged = transaction!.stagedURL
+            try png.write(to: staged)
+            var receipt = try transaction!.prepare(result(transaction!))
+            transaction!.retainForRecovery()
+            if ["published", "wrong_inode", "symlink"].contains(mode) { try transaction!.publish() }
+            transaction = nil // Simulate the original owner no longer being present.
+            let final = URL(fileURLWithPath: recoveryRequest.output)
+            if mode == "missing" { try fm.removeItem(at: staged) }
+            if mode == "changed" { try original.write(to: staged) }
+            if mode == "wrong_inode" { try png.write(to: final, options: .atomic) }
+            if mode == "symlink" {
+                try fm.removeItem(at: final)
+                try fm.createSymbolicLink(at: final, withDestinationURL: fixture)
+            }
+            if mode == "bad_receipt" {
+                var value = try JSONSerialization.jsonObject(with: receipt) as! [String: Any]
+                var artifact = value["image_artifact"] as! [String: Any]
+                artifact["staged_output"] = fixture.path
+                value["image_artifact"] = artifact
+                receipt = try JSONSerialization.data(withJSONObject: value)
+            }
+            var recovered = false
+            do { try ImageOutputTransaction.recover(request: recoveryRequest, result: receipt); recovered = true }
+            catch { if ["staged", "published"].contains(mode) { throw error } }
+            try check(recovered == ["staged", "published"].contains(mode), "Incorrect recovery outcome: \(mode)")
+            if recovered {
+                try check(try Data(contentsOf: final) == png, "Recovery changed pixels")
+                try ImageOutputTransaction.recover(request: recoveryRequest, result: receipt) // Idempotent replay.
+                try check(!fm.fileExists(atPath: staged.deletingLastPathComponent().path), "Recovery retained empty staging")
+            } else {
+                // Rejected history is retained for diagnostics; the verifier never
+                // recursively deletes paths reconstructed from a receipt.
+                try? fm.removeItem(at: staged.deletingLastPathComponent())
+            }
+        }
         let leftovers = try fm.contentsOfDirectory(atPath: root.path).filter { $0.hasPrefix(".tc-image-staging-") }
         try check(leftovers.isEmpty, "Staging directories leaked: \(leftovers)")
-        print("PASS image transaction: request correlation, PNG decode, SHA receipt, atomic publication, rollback, cancellation and cleanup")
+        print("PASS image transaction: request correlation, PNG decode, SHA receipt, atomic publication, rollback, cancellation, cleanup and receipt-bound recovery")
     }
 }

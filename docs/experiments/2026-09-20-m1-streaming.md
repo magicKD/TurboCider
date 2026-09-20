@@ -908,3 +908,14 @@ Swift App 和全部 integration test executables 完整构建退出 0，链接�
 回归测试在 prepare 后创建冲突目标，验证原目标/符号链接及其指向文件不变、失败不消费 staging。使用修改前 production 源编译同一测试，确实以 `Publication replaced a concurrent destination: regular` 失败；新实现运行通过，同时保留 request correlation、PNG CRC/解码、SHA receipt、取消、双发布拒绝和清理等测试。见[红灯与修复验证](2026-09-21-m1-image-publication-collision.json)。本次针对 App 源重建已退出 0，新 App SHA 记录在验证文件中；不将定向测试称为整个 App 生命周期验收。
 
 此修复没有解决发布后 jobs.json 持久化失败或 crash 的 finalizing 恢复窗口，也没有补足 Flux public catalog 的资格。两者仍是后续工作，目标覆盖保护不替代完整产物事务。
+
+
+## 第五十二轮：App 图片发布的 finalizing 恢复（2026-09-21）
+
+图片发布前，JobStore 现在先保存 `finalizing` 与完整已校验结果，然后才执行上一轮的排他 rename，最后保存 succeeded。ImageOutputTransaction 在发布意图保存后保留未提交 staging，避免异常结束时丢掉恢复所需文件；正常发布后清理空 staging。若图片已发布而最后保存失败，内存状态回到 finalizing 并设置 storageError，保留已落盘意图，阻止继续生成；不再将已发布图片改写成 failed/cancelled。UI 增加正在保存结果状态。
+
+图片 receipt 增加验证时的 device/inode。重启读取 finalizing 时，先校验收据字段、输出路径及同目录 UUID staging 范围，再复用原 PNG framing/CRC/解码/尺寸/request/hash 校验，并核对 device/inode。staging 仍在时继续排他发布；已改名时核对最终文件再完成成功记录。同字节但不同 inode 的替换文件不能冒充已完成 rename。冲突、损坏、符号链接、缺失/非法收据均拒绝成功，保留诊断文件；恢复只尝试删除空 staging 目录，不递归删除从历史重建的路径。恢复后的状态再次保存，重复启动保持一致。
+
+定向 transaction 测试与完整 JobStore/history 测试通过，覆盖发布前/后持久化状态、重复恢复、缺失 staging、内容变更、相同字节不同 inode、符号链接、非法 staging 路径、损坏图片和缺失收据，原有 PNG/取消/冲突/历史删除回归保持通过。最初 history 测试编译因局部 FileManager 变量名缺失失败，修正后测试与 App 重建退出 0；见[验证与源码/App 哈希](2026-09-21-m1-image-finalizing-recovery.json)。
+
+本轮通过构造实际落盘的中断边界状态并重新打开 JobStore 验证恢复，没有执行断电、OS crash 或真实模型运行时的磁盘故障注入，不声明 fsync/断电持久性。单次请求的 worker envelope、重启时旧进程存活判断、完整 source/quality/release 资格仍未关闭；此修复也不授予 Flux public streaming 档位。

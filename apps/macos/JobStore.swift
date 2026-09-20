@@ -100,8 +100,18 @@ final class NativeJobStore: ObservableObject {
             if FileManager.default.fileExists(atPath: file.path) {
                 jobs = try JSONDecoder().decode([NativeJob].self, from: Data(contentsOf: file))
                 for i in jobs.indices where !jobs[i].isTerminal {
-                    jobs[i].state = "interrupted"
-                    jobs[i].error = "上次运行已中断，可复用参数重新生成。"
+                    if jobs[i].state == "finalizing" {
+                        do {
+                            guard let result = jobs[i].resultJSON else { throw NativeFailure(message: "Missing image finalization receipt") }
+                            try ImageOutputTransaction.recover(request: jobs[i].request, result: Data(result.utf8))
+                            jobs[i].state = "succeeded"; jobs[i].phase = "complete"; jobs[i].error = nil
+                        } catch {
+                            jobs[i].state = "failed"; jobs[i].error = error.localizedDescription
+                        }
+                    } else {
+                        jobs[i].state = "interrupted"
+                        jobs[i].error = "上次运行已中断，可复用参数重新生成。"
+                    }
                 }
                 try persist()
             }
@@ -550,6 +560,11 @@ final class NativeJobStore: ObservableObject {
                     try await work.value
                 } onCancel: { work.cancel() }
                 if cancelRequested || Task.isCancelled { throw CancellationError() }
+                guard let i = jobs.firstIndex(where: { $0.id == id }) else { throw NativeFailure(message: "Missing job") }
+                jobs[i].state = "finalizing"; jobs[i].phase = "export"
+                jobs[i].resultJSON = String(decoding: result, as: UTF8.self)
+                try persist() // Durable intent precedes the file-system rename.
+                imageTransaction.retainForRecovery()
                 try imageTransaction.publish()
             }
             guard let i = jobs.firstIndex(where: { $0.id == id }) else { throw NativeFailure(message: "Missing job") }
@@ -562,12 +577,22 @@ final class NativeJobStore: ObservableObject {
             return jobs[i]
         } catch {
             if let i = jobs.firstIndex(where: { $0.id == id }) {
-                jobs[i].state = error is CancellationError ? "cancelled" : "failed"
                 jobs[i].elapsed = Self.seconds(start.duration(to: .now))
                 jobs[i].error = error.localizedDescription
-                do { try persist() } catch { storageError = error.localizedDescription }
+                if imageTransaction?.published == true {
+                    // The finalizing receipt is already durable. Do not turn a
+                    // published image into a failed/cancelled job if final save fails.
+                    jobs[i].state = "finalizing"
+                    storageError = error.localizedDescription
+                } else {
+                    imageTransaction?.discardRecovery()
+                    jobs[i].state = error is CancellationError ? "cancelled" : "failed"
+                    do { try persist() } catch { storageError = error.localizedDescription }
+                }
             }
-            if !recordProcessQuarantine(error) {
+            if imageTransaction?.published == true {
+                sessionState = "图片已发布 · 历史记录待恢复"
+            } else if !recordProcessQuarantine(error) {
                 sessionState = engine == nil ? "未加载" : "会话就绪 · 可重试"
             }
             throw error
