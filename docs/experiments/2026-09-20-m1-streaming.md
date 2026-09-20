@@ -995,3 +995,5 @@ App 后续：重建已退出 0，链接 `m1-hybrid-reporting` 新库的 history 
 完整 JobStore/history 回归通过：模型目录不存在时，任务被保存为 failed，原始意图可重新打开并恢复，resolution 为空，没有产物/staging 或可复用 engine；jobs.json 被目录占用而导致首次保存失败时，停止在持久化阶段，不先触发模型检查，同时保留 storageError 并释放 busy 状态。原有历史操作、hybrid 精度和 finalizing 恢复回归保持通过。见[源码/测试哈希及结果](2026-09-21-m1-public-submission-validation.json)。App 可执行文件仍在重建，不能把已通过的 host/history 回归称作新 GUI 生成验收。
 
 这一步关闭的是 acquire/resolve 早于任务保存的窗口；Z/Flux 仍使用嵌入式 engine。通用 worker envelope、进程身份/回收 deadline、跨重启存活检查、正式 public campaign 与 production catalog 尚未接通，没有新增模型、内存或发布资格。
+
+构建后续：原 App 重建进程已确认退出 0，可执行文件与所链接 native 库 SHA 已补入本轮验证记录；未追加 GUI 生成或真实 public 模型请求。

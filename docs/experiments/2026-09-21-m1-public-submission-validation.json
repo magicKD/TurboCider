@@ -11,7 +11,12 @@
   },
   "compatibility": "Optional field; earlier history without intent remains decodable",
   "authority": "Persisted original intent and resolution JSON are metadata only; no native authority is persisted",
-  "app_build": "running",
+  "app_build": {
+    "exit_code": 0,
+    "app_sha256": "fa6e866175457add7e2bf57077f2b22d0b9db9676a3297fa45f8ff7a14996f47",
+    "library_sha256": "244f57358444264cfd44a55b588904c3c5cb9ba398fd4403a5d376c7113c81ab",
+    "new_gui_generation_test": false
+  },
   "limitations": [
     "Z/Flux still use embedded engine; no generic worker/envelope yet",
     "No real public model request or production catalog admission tested here",
