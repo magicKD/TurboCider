@@ -219,7 +219,12 @@ bool supported_streaming_target(uint64_t target) noexcept {
 std::string canonical_streaming_preset_record(
         const StreamingPresetRecord &record) {
     validate_identity(record.source);
-    CanonicalEncoder out(record.source.identity_version == 2
+    catalog_check(record.release.policy_revision.empty() ||
+                      (record.source.identity_version == 2 &&
+                       record.release.policy_revision == "tc-public-strict-v1"),
+                  "unsupported release policy revision");
+    CanonicalEncoder out(!record.release.policy_revision.empty()
+        ? "tc-streaming-preset-record-v3" : record.source.identity_version == 2
         ? "tc-streaming-preset-record-v2" : "tc-streaming-preset-record-v1");
     out.string_field("id", record.id);
     out.unsigned_field("revision", record.revision);
@@ -273,6 +278,8 @@ std::string canonical_streaming_preset_record(
         record.performance.confidence_status);
     out.string_field(
         "performance.evidence_digest", record.performance.evidence_digest);
+    if (!record.release.policy_revision.empty())
+        out.string_field("release.policy_revision", record.release.policy_revision);
     out.string_field("release.channel", record.release.channel);
     out.boolean_field("release.revoked", record.release.revoked);
     out.string_field(
@@ -283,7 +290,8 @@ std::string canonical_streaming_preset_record(
 
 std::string streaming_preset_record_digest(
         const StreamingPresetRecord &record) {
-    CanonicalEncoder out(record.source.identity_version == 2
+    CanonicalEncoder out(!record.release.policy_revision.empty()
+        ? "tc-streaming-preset-record-digest-v3" : record.source.identity_version == 2
         ? "tc-streaming-preset-record-digest-v2" : "tc-streaming-preset-record-digest-v1");
     out.string_field(
         "canonical_record", canonical_streaming_preset_record(record));
@@ -349,6 +357,10 @@ void validate_streaming_preset_record(
                   "invalid performance confidence status");
     catalog_check(valid_digest(record.performance.evidence_digest),
                   "invalid performance evidence digest");
+    catalog_check(record.release.policy_revision.empty() ||
+                      (record.source.identity_version == 2 &&
+                       record.release.policy_revision == "tc-public-strict-v1"),
+                  "unsupported release policy revision");
     catalog_check(record.release.channel == "public-stable" ||
                       record.release.channel == "public-experimental" ||
                       record.release.channel == "revoked",

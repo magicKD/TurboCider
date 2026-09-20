@@ -380,6 +380,42 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertEqual(builder.canonical_record_digest(legacy),
                          builder.canonical_record_digest(explicit))
 
+    def test_explicit_strict_policy_has_separate_record_and_review_identity(self):
+        fixture = native_fixture_record()
+        fixture["source"]["identity_version"] = 2
+        del fixture["source"]["source_snapshot_digest"]
+        fixture["release"]["policy_revision"] = "tc-public-strict-v1"
+        self.assertEqual(builder.canonical_record_digest(fixture),
+                         "3b09dce86f9116b1b1fffcf7373e5584ad645294724cd99aeb8e9abfb57535a0")
+        value = record()
+        value["source"]["identity_version"] = 2
+        del value["source"]["source_snapshot_digest"]
+        legacy = copy.deepcopy(value)
+        value["release"]["policy_revision"] = "tc-public-strict-v1"
+        builder.validate_record_shape(value)
+        self.assertNotEqual(builder.canonical_record_digest(value), builder.canonical_record_digest(legacy))
+        self.assertNotEqual(builder.record_identity_digest(value), builder.record_identity_digest(legacy))
+        self.assertEqual(builder.catalog_binding(value)["release_policy_revision"], "tc-public-strict-v1")
+        self.assertNotIn("release_policy_revision", builder.catalog_binding(legacy))
+        self.assertEqual(builder.record_schema(value, builder.RECORD_SCHEMA), "tc-streaming-preset-record-v3")
+        for policy in ("", "unknown", "tc-public-calibrated-v1", True, 1):
+            bad = copy.deepcopy(value); bad["release"]["policy_revision"] = policy
+            with self.assertRaises(builder.CatalogBuildError): builder.validate_record_shape(bad)
+            with self.assertRaises(builder.CatalogBuildError): builder.canonical_record_digest(bad)
+        old = record(); old["release"]["policy_revision"] = "tc-public-strict-v1"
+        with self.assertRaises(builder.CatalogBuildError): builder.validate_record_shape(old)
+        public = copy.deepcopy(value)
+        public["release"]["channel"] = "public-stable"
+        path = self.root / "explicit-strict.json"
+        path.write_text(json.dumps(public))
+        with self.assertRaisesRegex(builder.CatalogBuildError, "P3 swap evidence"):
+            builder.build_record(self.root / "p2", path, None,
+                                 performance_bundle=self.root / "p1",
+                                 default_bundle=self.root / "p0")
+        with self.assertRaisesRegex(builder.CatalogBuildError, "binding"):
+            builder._validate_binding({"catalog_binding": builder.catalog_binding(legacy)}, value, "P0")
+
+
     def test_record_shape_rejects_unencoded_fields(self):
         value = record()
         value["performance"]["median_ratio"] = 1.0

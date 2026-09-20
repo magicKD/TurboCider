@@ -303,9 +303,11 @@ streaming::StreamingPresetRecord parse_record(NSDictionary *value,
         path + ".performance.evidence_digest");
 
     NSDictionary *release = object_value(value[@"release"], path + ".release");
-    exact_keys(release, @[
-        @"channel", @"revoked", @"reviewed_commit", @"review_digest"
-    ], path + ".release");
+    exact_keys(release, release[@"policy_revision"] ? @[
+        @"channel", @"revoked", @"reviewed_commit", @"review_digest", @"policy_revision"
+    ] : @[@"channel", @"revoked", @"reviewed_commit", @"review_digest"], path + ".release");
+    if (release[@"policy_revision"])
+        result.release.policy_revision = required_string(release, @"policy_revision", path + ".release.policy_revision");
     result.release.channel = required_string(
         release, @"channel", path + ".release.channel");
     result.release.revoked = required_bool(
@@ -452,12 +454,14 @@ NSDictionary *test_streaming_catalog_record_dictionary(
             @(record.performance.confidence_status.c_str()),
         @"evidence_digest": @(record.performance.evidence_digest.c_str()),
     };
-    NSDictionary *release = @{
+    NSMutableDictionary *release = [@{
         @"channel": @(record.release.channel.c_str()),
         @"revoked": @(record.release.revoked),
         @"reviewed_commit": @(record.release.reviewed_commit.c_str()),
         @"review_digest": @(record.release.review_digest.c_str()),
-    };
+    } mutableCopy];
+    if (!record.release.policy_revision.empty())
+        release[@"policy_revision"] = @(record.release.policy_revision.c_str());
     return @{
         @"id": @(record.id.c_str()),
         @"revision": @(record.revision),

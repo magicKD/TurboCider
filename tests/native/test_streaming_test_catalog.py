@@ -438,6 +438,21 @@ class TestCatalogTests(unittest.TestCase):
                 status, failure = resolve(public)
                 self.assertNotEqual(status, 0)
                 self.assertIn("artifact_verification_required", failure)
+                explicit_policy = copy.deepcopy(portable)
+                explicit_record = explicit_policy["records"][0]
+                explicit_record["release"]["policy_revision"] = "tc-public-strict-v1"
+                explicit_record["canonical_record_digest"] = builder.canonical_record_digest(explicit_record)
+                status, failure = install(public, explicit_policy)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("artifact_verification_required", failure)
+                for unsupported in ("unknown", "tc-public-calibrated-v1"):
+                    bad_policy = copy.deepcopy(explicit_policy)
+                    bad_policy["records"][0]["release"]["policy_revision"] = unsupported
+                    status, failure = install(public, bad_policy)
+                    self.assertNotEqual(status, 0)
+                    self.assertIn("unsupported release policy revision", failure)
                 invalid_portable = copy.deepcopy(portable)
                 invalid_portable["records"][0]["source"]["source_snapshot_digest"] = "b" * 64
                 status, failure = install(public, invalid_portable)

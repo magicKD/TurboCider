@@ -458,6 +458,22 @@ int main() {
            "c322e18cabc2ed4756a8cbbc468c24989ba175dda64745902014a1971aca0bb0");
     assert(streaming_source_identity_digest(portable_fixture.source) !=
            streaming_source_identity_digest(canonical_fixture.source));
+    auto explicit_policy = portable_fixture;
+    explicit_policy.release.policy_revision = "tc-public-strict-v1";
+    explicit_policy = finalize_streaming_preset_record(explicit_policy);
+    validate_streaming_preset_record(explicit_policy, explicit_policy.catalog_revision);
+    assert(explicit_policy.canonical_record_digest ==
+           "3b09dce86f9116b1b1fffcf7373e5584ad645294724cd99aeb8e9abfb57535a0");
+    for (const auto *policy : {"unknown", "tc-public-calibrated-v1"}) {
+        auto bad_policy = explicit_policy;
+        bad_policy.release.policy_revision = policy;
+        rejects([&] { (void) streaming_preset_record_digest(bad_policy); },
+                "unsupported release policy revision");
+    }
+    auto nonportable_policy = canonical_fixture;
+    nonportable_policy.release.policy_revision = "tc-public-strict-v1";
+    rejects([&] { (void) streaming_preset_record_digest(nonportable_policy); },
+            "unsupported release policy revision");
     auto invalid_portable = portable_fixture;
     invalid_portable.source.source_snapshot_digest = digest('b');
     rejects([&] { (void) streaming_preset_record_digest(invalid_portable); },

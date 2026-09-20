@@ -932,3 +932,14 @@ Swift App 和全部 integration test executables 完整构建退出 0，链接�
 ![Flux4 512-square private streaming](2026-09-21-m1-flux4-512-current-image.png)
 
 需要区分 setup 的 native 内容验证与 execution 的 lease：本次 private 执行明确报告 `source_lease_verified=false`、`flux2-private-components-v1`，不能反推它消费了 public shared verified lease，也不能移用为 public full-request 资格。现有 public-calibrated channel/schema 尚未实现，正式记录仍需绑定实际 public component/container、完成要求的校准/质量/生命周期/发布 gate。本轮说明当前 private streaming 可在本机完成这一尺寸，不代表 Flux App 的 public streaming 已可用。
+
+
+## 第五十四轮：发布策略的独立 record v3 身份（2026-09-21）
+
+推进 56 的 public-calibrated 方案时发现，record v2 已经用于 portable source identity，不能复用同一个 canonical domain 表示新增 release 字段。本轮增加可选 `release.policy_revision`；缺省字段保持原 v1/v2 的字节与 digest，显式策略使用 record/digest/identity v3，并要求 portable source v2。当前仅接受 `tc-public-strict-v1`；未知策略及 `tc-public-calibrated-v1` 仍拒绝，public channel 与必需 gate 不变。
+
+策略不仅进入完整 record digest，也进入排除 review 本身的 record identity 和 campaign catalog_binding，防止同一份 review/实验身份被换用到不同策略。native 与 Python 的 strict v3 golden digest 同为 `3b09dce86f9116b1b1fffcf7373e5584ad645294724cd99aeb8e9abfb57535a0`；v1/v2 既有 golden 保持。测试还验证显式 strict 缺 P3 仍拒绝、旧 campaign binding 不能用于 v3、新策略不能绑定旧路径 snapshot source。Objective-C++ test/calibration catalog parser 与 serializer 已保留该可选字段；生产目录仍为空。
+
+host preset/runtime 测试、builder 17 项、bundled catalog 6 项、policy generator 4 项及 ObjC++ 语法检查通过。第一次新 builder 测试误用仅供 native canonical 对照、并不符合 builder estimator 约束的 fixture，出现 estimator unsupported；改为独立校验 canonical golden 与有效 builder fixture 后通过，没有放宽校准检查。完整 native 构建及 runtime/catalog 编译后核对通过；新库 C API 测试 3 项中 2 项通过、1 项因未提供 release-without-hooks 库跳过，实际验证 v3 strict record 装载、未验证来源仍拒绝 resolve、未知策略拒绝。首次 C API 调用环境变量错误导致 hook 测试跳过，纠正后才计为通过。contract 83 项、3 项原有跳过，其余通过。详见[验证记录](2026-09-21-m1-release-policy-v3-validation.json)。
+
+这一步是显式策略编码的基础，不是 calibrated 发布实现完成。P3 必需性尚未改变；未来新增 calibrated channel 前仍需冻结并实现 builder/verifier 的 gate 集合、保留 P3 verdict、全局正确性/生命周期阻断和 App 展示，并取得实际所需证据。不得把当前 strict v3 身份当作已授予 public-calibrated 资格。

@@ -76,6 +76,8 @@ struct PresetRelease {
     std::string channel;
     bool revoked = false;
     std::string reviewed_commit, review_digest;
+    // Empty preserves legacy v1/v2 identity. Explicit policies use record v3.
+    std::string policy_revision;
 };
 
 struct StreamingPresetRecord {

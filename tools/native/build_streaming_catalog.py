@@ -398,9 +398,12 @@ def validate_record_shape(record: dict[str, Any]) -> None:
     require_exact_keys(
         release,
         {"channel", "revoked", "reviewed_commit", "review_digest"},
-        set(),
+        {"policy_revision"},
         "record.release",
     )
+    if "policy_revision" in release:
+        if release["policy_revision"] != "tc-public-strict-v1" or version != 2:
+            raise CatalogBuildError("unsupported release policy revision")
     if release.get("channel") not in ("staging", "public-stable", "public-experimental", "revoked"):
         raise CatalogBuildError("record.release.channel is invalid")
     if release.get("revoked") is not False:
@@ -560,6 +563,10 @@ def encode_record_fields(
     out.unsigned_field("performance.logical_read_bytes", performance["logical_read_bytes"])
     for key in ("profile_id", "comparison_kind", "confidence_status", "evidence_digest"):
         out.string_field(f"performance.{key}", performance[key])
+    # Policy is part of review identity too; unlike review_digest it cannot
+    # be excluded without allowing an approved campaign to change policy.
+    if "policy_revision" in record["release"]:
+        out.string_field("release.policy_revision", record["release"]["policy_revision"])
     if include_release:
         release = record["release"]
         out.string_field("release.channel", release["channel"])
@@ -574,6 +581,10 @@ def record_schema(record: dict[str, Any], legacy: str) -> str:
         raise CatalogBuildError("unsupported source identity version")
     if version == 2 and "source_snapshot_digest" in record["source"]:
         raise CatalogBuildError("portable source identity must not contain a snapshot")
+    if "policy_revision" in record["release"]:
+        if version != 2 or record["release"]["policy_revision"] != "tc-public-strict-v1":
+            raise CatalogBuildError("unsupported release policy revision")
+        return legacy.removesuffix("v1") + "v3"
     return legacy if version == 1 else legacy.removesuffix("v1") + "v2"
 
 
@@ -603,6 +614,8 @@ def record_identity_digest(record: dict[str, Any]) -> str:
 def catalog_binding(record: dict[str, Any]) -> dict[str, Any]:
     performance = record["performance"]
     return {
+        **({"release_policy_revision": record["release"]["policy_revision"]}
+           if "policy_revision" in record["release"] else {}),
         "source": copy.deepcopy(record["source"]),
         "workload": copy.deepcopy(record["workload"]),
         "runtime": copy.deepcopy(record["runtime"]),

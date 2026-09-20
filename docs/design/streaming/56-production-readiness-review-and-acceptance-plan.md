@@ -276,6 +276,8 @@ policy generator 根据 frozen policy 生成三份必需 gate；P3 verdict 单�
 | **D2：发布封装** | calibrated policy 门禁、generated catalog 编译接入、包完整性/无 test hook 检查、正式证据索引 | builder emitter、build/package、release tests | A2 接口；可提前写 fixture 测试 | 1–2 日 + campaign / M1 |
 | **I：集成与签收** | M0 实验、M1 必需 gate、App E2E、安装/撤回 | acceptance card + evidence；修复回归归原工作包 | 对应 A/B/C/D | 1–2 日起；实际以 gate 为准 |
 
+2026-09-21 A2 策略身份增量：portable source 已占用 record v2，因此显式 release.policy_revision 使用独立 v3 canonical domain，同时进入 review identity/campaign binding。缺省旧记录 v1/v2 字节不变；当前只实现显式 tc-public-strict-v1，P3 仍必需，public-calibrated 仍拒绝。host/native/C API 对照通过，见实验第五十四轮；这不是 D2 calibrated gate 聚合或新 public channel 完成。
+
 ### 6.1 并行图与关键路径
 
 ```mermaid
