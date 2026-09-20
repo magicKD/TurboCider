@@ -551,3 +551,14 @@ campaign 默认 cli_worker，缺少新 symbol 的旧库会明确报错，不自�
 [真实 worker 验证与生成结果](2026-09-21-m1-z-worker-source-verification.json)、[合成测试 catalog](2026-09-21-m1-z-verified-worker-catalog.json)、[请求](2026-09-21-m1-z-verified-worker-request.json)：取消返回 2（本次 wall 1.030 s），20,701,575,490 bytes 的复核 10.572 s，缓存复验 0.000514 s、零 payload bytes、4 hits。随后真实 Z-Image 256²/9 步/P0/G1/K2/D0/Q1 请求成功，报告 execution_container=cli_worker、actual_plan_verified=true、drained=true，PNG SHA-256 仍为 `8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3`。请求 wall 33.619 s，MLX peak 8,975,747,432 bytes；未测完整进程树 footprint，也未进行时延统计比较。
 
 此轮仍使用合成 TEMPLATE catalog 的 12 GiB 目标与 calibration 字段，不能据它声称 12 GiB 资格或发布预设。R6 的 CLI 容器入口已修正，但自动 runtime build fingerprint、最终包清单和完整 App/worker 安装验收仍待完成。
+
+
+## 第二十八轮：标准 campaign 的显式内容验证（2026-09-21）
+
+`build_test_streaming_catalog.py --verify-sources` 现在先显式调用 native 验证，再生成 v2 worker record；默认不隐式 hash。campaign native variant 新增布尔配置 `verify_streaming_sources: true`，在 engine 创建后、catalog 安装前完成同一操作，失败会释放 engine 并保留错误。缺少验证 API 的旧库明确失败，不用 Python 文件哈希冒充 native proof。新共享 helper 位于 `tools/native/streaming_source_verification.py`。
+
+campaign build identity 记录该配置；raw sample 的 `source_verification` 保存 native 摘要、读取字节、缓存命中数、验证 wall 和 engine_setup scope。persistent engine 的首次验证发生在 worker ready 之前，其成本单独记录，不计入每次生成 wall；per_request engine 的验证在创建计时范围内，计入原有完整 lifecycle wall。重复样本上的 persistent setup report 不表示重复执行了哈希。启动截止时间仍由冻结的 worker_start_timeout_seconds 决定，不自适应放宽。
+
+验证：campaign suite 34 项通过，新增验证先于 catalog 安装、验证失败只释放一次 engine、创建失败不会附带上一 engine 证明的检查；test-catalog API suite 3 项通过，新增 CLI 显式验证生成 v2/cli_worker record 的实际调用。使用已构建的 m1-worker-identity 库，没有重建 native 或 App。
+
+[标准 campaign setup 的真实验证记录](2026-09-21-m1-z-campaign-source-verification.json)：load_native_worker 通过配置显式验证真实 Z-Image 四文件，共 20,701,575,490 bytes、10.628 s，然后安装上一轮 v2 测试 record 并成功 public resolve。本次未执行 GPU generate 或完整 P1/P2 campaign，因此不声称新增性能资格。内容证明仍仅在当前 native 进程有效：独立的 catalog CLI 与 campaign worker 都需各自验证，catalog JSON 不携带可恢复的信任。persistent import proof 和 App 集成仍待完成。

@@ -333,7 +333,7 @@ class TestCatalogTests(unittest.TestCase):
                 self.assertTrue(value)
                 return json.loads(value)
 
-            def build_exact_catalog_with_cli() -> dict:
+            def build_exact_catalog_with_cli(verify=False) -> dict:
                 request_path = root / "request.json"
                 plan_path = root / "plan.json"
                 output_path = root / "generated-test-catalog.json"
@@ -369,6 +369,7 @@ class TestCatalogTests(unittest.TestCase):
                     "--target-gib", "12",
                     "--catalog-revision", "tc-streaming-test-cli-r1",
                     "--output", str(output_path),
+                    *(["--verify-sources", "--force"] if verify else []),
                 ], check=True, capture_output=True, text=True)
                 return json.loads(output_path.read_text())
 
@@ -425,6 +426,10 @@ class TestCatalogTests(unittest.TestCase):
                 status, failure = install(public, invalid_portable)
                 self.assertNotEqual(status, 0)
                 self.assertIn("missing or unknown fields", failure)
+
+                verified_cli = build_exact_catalog_with_cli(verify=True)
+                self.assertEqual(verified_cli["records"][0]["source"]["identity_version"], 2)
+                self.assertEqual(verified_cli["records"][0]["workload"]["execution_container"], "cli_worker")
 
                 error = c.c_void_p()
                 status = library.tc_engine_test_clear_streaming_catalog(

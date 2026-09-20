@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from streaming_source_verification import verify_native_sources
+
 from verify_streaming_campaign import (
     EvidenceError,
     p3_contract,
@@ -393,6 +395,9 @@ def validate_policy(policy: dict[str, Any]) -> None:
             if config.get("constructor", "public") not in ("public", "candidate"):
                 raise CampaignError(f"variant {variant} has invalid constructor")
             native_constructor_name(config)
+            if type(config.get("verify_streaming_sources", False)) is not bool:
+                raise CampaignError("verify_streaming_sources must be boolean")
+
             test_catalog = config.get("test_streaming_catalog")
             if test_catalog is not None:
                 if (
@@ -649,6 +654,7 @@ def build_identity(policy: dict[str, Any]) -> dict[str, Any]:
                 "binary_size_bytes": library.stat().st_size,
                 "constructor": config.get("constructor", "public"),
                 "execution_container": config.get("execution_container", "cli_worker"),
+                "verify_streaming_sources": config.get("verify_streaming_sources", False),
             }
             test_catalog = config.get("test_streaming_catalog")
             if isinstance(test_catalog, str):
@@ -1030,6 +1036,9 @@ def load_native_library(config: dict[str, Any]) -> Any:
 
 
 def create_native_engine(library: Any, config: dict[str, Any]) -> c.c_void_p:
+    library._tc_source_verification = None
+    if type(config.get("verify_streaming_sources", False)) is not bool:
+        raise CampaignError("verify_streaming_sources must be boolean")
     model_path = Path(config["model_path"]).expanduser().resolve()
     constructor_name = native_constructor_name(config)
     constructor = getattr(library, constructor_name)
@@ -1042,6 +1051,12 @@ def create_native_engine(library: Any, config: dict[str, Any]) -> c.c_void_p:
     failure = consume(library, error)
     if status or not engine.value:
         raise CampaignError(failure or "native engine creation failed")
+    if config.get("verify_streaming_sources", False):
+        try:
+            library._tc_source_verification = verify_native_sources(library, engine)
+        except Exception as exc:
+            library.tc_engine_free(engine)
+            raise CampaignError(str(exc)) from exc
     install_catalog = getattr(
         library, "_tc_engine_test_set_streaming_catalog", None
     )
@@ -1567,6 +1582,8 @@ def worker_main(config_path: Path, descriptor: int) -> int:
                     "client_wall_seconds": 0.0,
                     "process_peak_rss_bytes": peak_rss_bytes(),
                 }
+            if backend == "native" and config.get("verify_streaming_sources", False):
+                response["source_verification"] = getattr(library, "_tc_source_verification", None)
             response.update({
                 "type": "result", "run_id": command["run_id"],
                 "worker_pid": os.getpid(),

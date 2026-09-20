@@ -15,6 +15,8 @@ import os
 import tempfile
 from pathlib import Path
 
+from streaming_source_verification import verify_native_sources
+
 
 GIB = 1 << 30
 PUBLIC_TARGETS_GIB = (8, 10, 12, 16, 20)
@@ -100,6 +102,11 @@ def build_catalog(args: argparse.Namespace) -> dict:
     if status or not engine.value:
         raise CatalogBuildError(failure or "native engine creation failed")
     try:
+        if getattr(args, "verify_sources", False):
+            try:
+                verify_native_sources(library, engine)
+            except Exception as exc:
+                raise CatalogBuildError(str(exc)) from exc
         output = c.c_void_p()
         error = c.c_void_p()
         status = library.tc_engine_test_build_streaming_catalog_json(
@@ -154,6 +161,8 @@ def main() -> int:
     parser.add_argument("--catalog-revision", required=True)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--verify-sources", action="store_true",
+                        help="Explicitly verify native contents before building a v2 test record")
     args = parser.parse_args()
     try:
         catalog = build_catalog(args)
