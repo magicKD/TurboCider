@@ -16,6 +16,10 @@ class Flux : public ModelSession {
     std::unique_ptr<HybridSession> encoder_hybrid_;
     std::unique_ptr<FluxExactStream> exact_stream_;
     uint64_t exact_stream_generation_ = 0;
+    bool streaming_quarantined_ = false;
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    bool test_fail_drain_ = false;
+#endif
     Weights transformer_, vae_;
     std::string cached_prompt_;
     std::string cached_encoder_manifest_;
@@ -45,6 +49,10 @@ class Flux : public ModelSession {
     RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) override;
     explicit Flux(const std::filesystem::path &, std::string model_id);
     ~Flux();
+    bool streaming_quarantined() const noexcept override { return streaming_quarantined_; }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    void test_set_streaming_drain_failure(bool value) override { test_fail_drain_ = value; }
+#endif
     LoadResult load(const Event &, std::atomic<bool> &) override;
     void unload() override;
     Tensor encode(const Tokens &, const Event &, std::atomic<bool> &, HybridSession * = nullptr);

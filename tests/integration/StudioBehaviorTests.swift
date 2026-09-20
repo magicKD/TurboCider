@@ -19,6 +19,17 @@ struct StudioBehaviorTests {
             else { unsetenv("TURBOCIDER_MODEL_LIBRARY") }
         }
         defer { try? FileManager.default.removeItem(at: root) }
+        let poisoned = NativeJobStore(directory: root.appendingPathComponent("poisoned-store"))
+        try check(!poisoned.recordProcessQuarantine(NativeFailure(message: "ordinary failure")), "Ordinary errors must remain retryable")
+        try check(poisoned.recordProcessQuarantine(NativeFailure(message: "streaming_process_quarantined: primary: cancelled; GPU drain incomplete")), "Quarantine error was ignored")
+        try check(poisoned.requiresProcessRestart && !poisoned.canUnload, "Quarantined process remained usable")
+        try check(poisoned.sessionState.contains("重启"), "Quarantine UI must require restart")
+        do {
+            try await poisoned.load(modelURL: root.appendingPathComponent("missing"))
+            throw NativeFailure(message: "Quarantined store reopened an engine")
+        } catch {
+            try check(error.localizedDescription.contains("streaming_process_quarantined:"), "Quarantine lost on retry")
+        }
         let monitor = ResourceMonitor()
         monitor.sample()
         try check(monitor.residentBytes.map { $0 > 0 } == true, "Resident memory unavailable")

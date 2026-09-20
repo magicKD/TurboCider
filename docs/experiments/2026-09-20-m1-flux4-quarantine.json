@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "scope": "Flux Klein 4B BF16 candidate exact denoiser; test-hook build; injected false drain return, not GPU hang; no public release certification",
+  "source_revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+  "cases": {
+    "success-final": {
+      "mode": "success",
+      "library_sha256": "e06dc49a0b8c6770857c70e2c2f96e2d50ca5ef1b0fb5dcefd8f51d6582c1c03",
+      "first": {
+        "status": 0,
+        "error": null,
+        "wall_seconds": 8.542705083964393,
+        "streaming_runtime": null
+      },
+      "image_sha256": "505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02",
+      "status": "PASS",
+      "raw_report": "/Users/chencanhui/models/TurboCider/experiments/m1-flux4-quarantine/success-final/report.json"
+    },
+    "cancel-retry": {
+      "mode": "cancel-retry",
+      "library_sha256": "e06dc49a0b8c6770857c70e2c2f96e2d50ca5ef1b0fb5dcefd8f51d6582c1c03",
+      "first": {
+        "status": 2,
+        "result": null,
+        "error": "generation cancelled",
+        "wall_seconds": 1.6254967499990016
+      },
+      "retry": {
+        "status": 0,
+        "error": null,
+        "wall_seconds": 7.153939499985427,
+        "streaming_runtime": null
+      },
+      "image_sha256": "505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02",
+      "status": "PASS",
+      "raw_report": "/Users/chencanhui/models/TurboCider/experiments/m1-flux4-quarantine/cancel-retry/report.json"
+    },
+    "unsafe": {
+      "mode": "quarantine",
+      "library_sha256": "e06dc49a0b8c6770857c70e2c2f96e2d50ca5ef1b0fb5dcefd8f51d6582c1c03",
+      "first": {
+        "status": 1,
+        "result": null,
+        "error": "streaming_process_quarantined: primary: generation cancelled; GPU drain incomplete; restart the process",
+        "wall_seconds": 1.7450386250857264
+      },
+      "retries": {
+        "generate": {
+          "status": 1,
+          "result": null,
+          "error": "streaming_process_quarantined: GPU drain incomplete; restart the process",
+          "wall_seconds": 0.0003634589957073331
+        },
+        "load": {
+          "status": 1,
+          "result": null,
+          "error": "streaming_process_quarantined: GPU drain incomplete; restart the process",
+          "wall_seconds": 0.0003709580050781369
+        },
+        "unload": {
+          "status": 1,
+          "result": null,
+          "error": "streaming_process_quarantined: GPU drain incomplete; restart the process",
+          "wall_seconds": 8.582952432334423e-06
+        },
+        "prepare": {
+          "status": 1,
+          "result": null,
+          "error": "streaming_process_quarantined: GPU drain incomplete; restart the process",
+          "wall_seconds": 1.2457952834665775e-05
+        }
+      },
+      "replacement_load": {
+        "status": 1,
+        "result": null,
+        "error": "streaming_process_quarantined: GPU drain incomplete; restart the process",
+        "wall_seconds": 3.800005652010441e-05
+      },
+      "retained_engines": 2,
+      "status": "PASS",
+      "raw_report": "/Users/chencanhui/models/TurboCider/experiments/m1-flux4-quarantine/unsafe/report.json"
+    }
+  }
+}

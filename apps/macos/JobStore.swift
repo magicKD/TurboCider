@@ -64,6 +64,7 @@ final class NativeJobStore: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var storageError: String?
     @Published private(set) var sessionState = "未加载"
+    @Published private(set) var requiresProcessRestart = false
     @Published var externalServiceActive = false
     @Published private(set) var loadedPath: String?
     @Published private(set) var loadedModelID: String?
@@ -88,7 +89,7 @@ final class NativeJobStore: ObservableObject {
     private var denoiseStart: Int?
     private var lastDetailUpdate = 0.0
     var activeJob: NativeJob? { jobs.first { $0.id == activeID } }
-    var canUnload: Bool { engine != nil && !busy }
+    var canUnload: Bool { engine != nil && !busy && !requiresProcessRestart }
     var deletableJobIDs: Set<UUID> { Set(jobs.filter { $0.isTerminal && $0.id != activeID }.map(\.id)) }
 
     init(directory: URL) {
@@ -276,8 +277,18 @@ final class NativeJobStore: ObservableObject {
             do { try persist() } catch { storageError = error.localizedDescription }
         }
     }
+    @discardableResult
+    func recordProcessQuarantine(_ error: Error) -> Bool {
+        guard error.localizedDescription.contains("streaming_process_quarantined:") else { return false }
+        requiresProcessRestart = true
+        engine = nil; loadedPath = nil; loadedModelID = nil
+        sessionReport = nil
+        sessionState = "GPU 状态未恢复 · 请重启应用"
+        return true
+    }
     private func acquire(_ url: URL, modelID: String) async throws -> NativeEngine {
         guard !externalServiceActive else { throw NativeFailure(message: "本地 API 正在运行，请先在 API 页面停止服务。") }
+        guard !requiresProcessRestart else { throw NativeFailure(message: "streaming_process_quarantined: GPU 状态未恢复，请重启应用。") }
         let path = url.standardizedFileURL.path
         if loadedPath == path, loadedModelID == modelID, let engine { return engine }
         if let old = engine { _ = try await old.unload() }
@@ -312,7 +323,7 @@ final class NativeJobStore: ObservableObject {
             sessionReport = resourceReport
             sessionState = "图像权重已加载 · 文本按需"
         } catch {
-            sessionState = engine == nil ? "加载失败" : "会话就绪 · 加载未完成"
+            if !recordProcessQuarantine(error) { sessionState = engine == nil ? "加载失败" : "会话就绪 · 加载未完成" }
             throw error
         }
     }
@@ -391,7 +402,7 @@ final class NativeJobStore: ObservableObject {
             let plan = report?["plan"] as? [String: Any]
             let mode = (report?["execution"] as? String) ?? (plan?["execution"] as? String) ?? "gpu"
             sessionState = (warmup ? "当前任务已预热 · 未保存图片" : "权重与当前文本已就绪") + (mode.hasPrefix("gpu_ane") ? " · GPU + ANE" : " · GPU")
-        } catch { sessionState = "准备未完成 · 可重试"; throw error }
+        } catch { if !recordProcessQuarantine(error) { sessionState = "准备未完成 · 可重试" }; throw error }
     }
     func maintainCache(modelURL: URL, action: String, source: URL? = nil, directory: URL? = nil) async throws -> Data {
         guard !busy else { throw NativeFailure(message: "请等待当前任务完成。") }
@@ -408,7 +419,7 @@ final class NativeJobStore: ObservableObject {
             if action == "clear" { engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil; sessionState = "模型已卸载 · 编译缓存已清除" }
             else { sessionState = action == "compile_manifest" ? "加速分区预编译完成" : "缓存检查完成" }
             return data
-        } catch { sessionState = "缓存操作未完成 · 可重试"; throw error }
+        } catch { if !recordProcessQuarantine(error) { sessionState = "缓存操作未完成 · 可重试" }; throw error }
     }
     func generate(modelURL: URL, request: NativeRequest,
                   streamingRequest: NativeRequestV2? = nil) async throws -> NativeJob {
@@ -529,7 +540,9 @@ final class NativeJobStore: ObservableObject {
                 jobs[i].error = error.localizedDescription
                 do { try persist() } catch { storageError = error.localizedDescription }
             }
-            sessionState = engine == nil ? "未加载" : "会话就绪 · 可重试"
+            if !recordProcessQuarantine(error) {
+                sessionState = engine == nil ? "未加载" : "会话就绪 · 可重试"
+            }
             throw error
         }
     }

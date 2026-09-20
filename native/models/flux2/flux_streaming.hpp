@@ -31,6 +31,11 @@ class FluxExactStream {
     FluxExactStream(const FluxExactStream &) = delete;
     FluxExactStream &operator=(const FluxExactStream &) = delete;
 
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    void test_set_drain_failure(bool);
+#endif
+    void start();
+    bool drain_safely() noexcept;
     void run_pass(uint32_t pass, uint32_t step, Tensor &image,
                   Tensor &context, const std::vector<Tensor> &image_modulation,
                   const std::vector<Tensor> &text_modulation,

@@ -177,6 +177,9 @@ struct MemoryDrainResult {
 class ModelSession {
   public:
     virtual ~ModelSession() = default;
+    // An unsafe streaming drain requires process lifetime retention. API
+    // callers must not unload, reuse or free this session's visible storage.
+    virtual bool streaming_quarantined() const noexcept { return false; }
     virtual bool uses_parent_mlx() const { return true; }
     virtual bool uses_parent_mlx(const Request &) const { return uses_parent_mlx(); }
     /* Non-owning binding valid only for the duration of one admitted API
@@ -232,6 +235,9 @@ class ModelSession {
         throw std::runtime_error("preparation unavailable");
     }
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    virtual void test_set_streaming_drain_failure(bool) {
+        throw std::runtime_error("streaming drain fault unavailable");
+    }
     /* Test-build-only lifecycle control. It is intentionally absent from
      * release binaries and from the public C header/request schema. */
     virtual void test_set_ltx_exact_destroy_failures(uint32_t) {

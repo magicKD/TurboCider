@@ -378,3 +378,19 @@ audit build 的 10 blocks / 20 matched pairs 已完整结束：40/40 请求成�
 该修改不宣称完整 R5 已关闭：视频路径仍使用独立 LTX 事务，其他非 LTX 视频未统一；跨 jobs.json 与产物的崩溃一致提交、持久化 worker diagnostics、独立 job/request 协议仍待完成。已提交产物后的历史写盘失败，也不属于本次原文件回滚承诺范围。固定源码的完整 App、Studio、StreamingResolution 编译和测试均 exit 0（session `92350`）。图片事务、StreamingResolution 和 Studio 日志分别为 `/tmp/tc-image-transaction-tests.log`、`/tmp/tc-image-resolution-tests.log`、`/tmp/tc-image-studio-tests.log`，App 为 `build/m1-audit/TurboCiderNativeApp`。
 
 新版 App 启动 30 秒保持存活，随后仅终止本次测试进程；`/tmp/tc-image-app-smoke.json` 记录结果，stderr 为 0 字节。这是启动检查，未冒充全部 UI 流程或 public 模型生成验收。
+
+## 第十六轮：Flux exact owner 的失败隔离
+
+新增 [真实权重生命周期记录](2026-09-20-m1-flux4-quarantine.json) 和可复跑的 `tools/native/check_flux_streaming_quarantine.py`。这是 Flux Klein 4B BF16 的私有 candidate/test-hook 路径，尚不构成 public catalog 发布资格。
+
+- adapter 持有当前 pass 的 Tensor/调制向量和 Event 副本，避免异常离开 denoise 栈后只保留 executor、却丢失其引用对象。失败 drain 会断开 API 栈回调，保留 pass/current weights；I/O 仍先 shutdown/join，未 detach。
+- pool 初始化移到完整 exact owner 建立后的 start，覆盖 begin 部分失败的保留路径。安全 drain 后释放 owner；无法确认完成时 session 标记 quarantine，API 将其提升为进程级状态。`tc_engine_free` 使用无分配的链表保留整个 engine；后续 GPU generate/load/prepare/unload 拒绝运行，同进程新建 engine 也不能恢复 GPU 使用。
+- API 同时保留 primary cancellation 和 drain incomplete 信息，返回 runtime failure。App 清除可复用句柄并显示“GPU 状态未恢复 · 请重启应用”，不再显示可重试。
+
+真实权重检查三项通过：正常生成；首个 transformer block 取消后同 engine 再次生成；测试钩子令 drain 返回 false 后 generate/prepare/load/unload 全部拒绝、free 不 terminate、新 engine 的 load 也拒绝。正常和取消后重试的 PNG SHA-256 均为 `505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02`，与原始真实 Flux smoke 逐字节相同。unsafe 用例记录 2 个完整 engine 保留至 disposable 测试进程退出，拒绝入口没有继续回调。
+
+`make test-streaming-host` 通过；包含新增 quarantine 状态断言的 StudioBehaviorTests、StreamingResolutionTests、ImageOutputTransactionTests 通过，App 编译通过。native 完整 test-hook/audit 构建通过，之后针对 API 补充入口检查重新编译和链接通过。增量链接脚本曾因 H3 对象清单不完整/包含 probe main 失败，修正为 build.sh 的精确 runtime 对象清单后通过；未把失败链接当成测试成功。
+
+限制：本轮只验证 Flux exact denoiser。Z-Image owner、encoder/VAE 阶段 GPU 失败、更多取消边界及真实后端 hang 仍未关闭；同步 backend 和 join 仍可能无界阻塞，不承诺故障后 60 秒内回收。测试钩子只模拟 drain 返回失败，没有制造 GPU hang。完整 R4 和 streaming 总目标仍未完成。最新 `origin/dev` 再次 fetch 后确认已是当前 HEAD 的祖先，无新增待合并提交。
+
+隔离改动后又完成一轮冻结 P1（[policy](2026-09-20-m1-flux4-quarantine-p1-policy.json)、[summary](2026-09-20-m1-flux4-quarantine-p1-summary.json)、[audit](2026-09-20-m1-flux4-quarantine-p1-audit.json)、[quality](2026-09-20-m1-flux4-quarantine-p1-quality.json)、[semantics](2026-09-20-m1-flux4-quarantine-p1-semantics.json)）：40/40 成功、20 matched pairs PNG 相同、steady framework allocations/thread creates 均为 0。原 direct 基线库不变，新 generic 库 SHA 为 `e06dc49a0b8c6770857c70e2c2f96e2d50ca5ef1b0fb5dcefd8f51d6582c1c03`。wall median 8.52517 → 8.42341 s，ratio 0.988063、95% CI upper 1.005300；wall P95 ratio 0.983265、upper 1.008404；denoise median ratio 0.993680、upper 1.009260。数值位于冻结的 1.02/1.05/1.02 阈值内，但环境仍 partial（下载及启动阶段 App Swift 构建），正式结论 **INCONCLUSIVE**，不提升成 PASS 或生产资格。原始 bundle 为 `/Users/chencanhui/models/TurboCider/experiments/m1-flux4-quarantine-p1`。

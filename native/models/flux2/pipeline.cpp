@@ -560,7 +560,8 @@ RunResult Flux::generate(const Request &r, const Event &event, std::atomic<bool>
     return run(r, event, cancelled, false);
 }
 RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
-                    bool warmup) {
+                    bool warmup) try {
+    require(!streaming_quarantined_, "streaming_process_quarantined: restart the process");
     auto r = requested;
     const bool exact_streaming = flux_exact_streaming_requested(r);
     const bool public_streaming = public_stream_lease_ != nullptr;
@@ -709,6 +710,10 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
                 transformer_, event, cancelled, exact_stream_generation_);
         }
     }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    if (exact_stream_) exact_stream_->test_set_drain_failure(test_fail_drain_);
+#endif
+    if (exact_stream_) exact_stream_->start();
     auto dit_start = Clock::now();
     for (int i = start_step; i < r.steps; ++i) {
         checkpoint(cancelled);
@@ -881,5 +886,15 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     if (encoder_hybrid_)
         result.encoder_hybrid = encoder_hybrid_->metrics();
     return result;
+} catch (...) {
+    if (exact_stream_) {
+        if (!exact_stream_->drain_safely()) {
+            streaming_quarantined_ = true;
+        } else {
+            exact_stream_.reset();
+            transformer_.clear();
+        }
+    }
+    throw;
 }
 } // namespace tc

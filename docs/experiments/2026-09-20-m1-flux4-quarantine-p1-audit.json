@@ -1,0 +1,251 @@
+{
+  "format": "turbocider-streaming-audit-v1",
+  "status": "passed",
+  "passed": true,
+  "reason": "opt-in requests used the framework without steady allocation or thread creation",
+  "new_framework_hooks": 0,
+  "new_memory_probes": 0,
+  "new_worker_threads": 40,
+  "new_pool_allocations": 40,
+  "new_cache_clear_or_unload_calls": 80,
+  "steady_framework_allocations": 0,
+  "steady_framework_thread_creates": 0,
+  "runtime_observations": {
+    "candidate_successful_requests": 20,
+    "candidate_total_requests": 20,
+    "block_streaming_enabled_values": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ],
+    "per_request": [
+      {
+        "run_id": "block-000-position-1-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-000-position-2-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-001-position-0-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-001-position-3-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-002-position-1-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-002-position-2-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-003-position-0-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-003-position-3-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-004-position-1-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-004-position-2-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-005-position-0-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-005-position-3-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-006-position-1-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-006-position-2-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-007-position-0-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-007-position-3-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-008-position-1-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-008-position-2-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-009-position-0-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      },
+      {
+        "run_id": "block-009-position-3-candidate",
+        "new_framework_hooks": 0,
+        "new_memory_probes": 0,
+        "new_worker_threads": 2,
+        "new_pool_allocations": 2,
+        "new_cache_clear_or_unload_calls": 4,
+        "steady_framework_allocations": 0,
+        "steady_framework_thread_creates": 0
+      }
+    ],
+    "counter_totals": {
+      "new_framework_hooks": 0,
+      "new_memory_probes": 0,
+      "new_worker_threads": 40,
+      "new_pool_allocations": 40,
+      "new_cache_clear_or_unload_calls": 80,
+      "steady_framework_allocations": 0,
+      "steady_framework_thread_creates": 0
+    },
+    "audit_build": true
+  }
+}

@@ -33,6 +33,7 @@ struct tc_engine {
     std::atomic<bool> cancelled{false};
     std::atomic<bool> memory_quarantined{false};
     std::atomic<bool> streaming_quarantined{false};
+    tc_engine *quarantine_next = nullptr;
     // Set only by the internal exact-layout candidate constructor. Production model
     // creation remains fail-closed for unqualified manual layouts.
     bool allow_experimental_streaming = false;
@@ -52,6 +53,26 @@ struct tc_coreml_ffn {
 namespace {
 using tc::configure_streams;
 using tc::DeviceLease;
+// Intentionally never destroyed: unknown GPU completion retains the complete
+// engine, including cancellation storage, model weights and streaming owners.
+std::atomic<bool> streaming_process_quarantined{false};
+std::atomic<tc_engine *> quarantined_engines{nullptr};
+void require_streaming_process_healthy() {
+    tc::require(!streaming_process_quarantined.load(std::memory_order_acquire),
+                "streaming_process_quarantined: GPU drain incomplete; restart the process");
+}
+bool observe_streaming_quarantine(tc_engine *engine) noexcept {
+    if (!engine || !engine->session || !engine->session->streaming_quarantined())
+        return false;
+    engine->streaming_quarantined.store(true, std::memory_order_release);
+    streaming_process_quarantined.store(true, std::memory_order_release);
+    return true;
+}
+void propagate_streaming_quarantine(tc_engine *engine, const char *primary) {
+    if (observe_streaming_quarantine(engine))
+        throw std::runtime_error(std::string("streaming_process_quarantined: primary: ") +
+            primary + "; GPU drain incomplete; restart the process");
+}
 char *copy(const std::string &s) {
     auto p = strdup(s.c_str());
     if (!p)
@@ -371,6 +392,7 @@ int tc_coreml_ffn_create(const char *manifest, const char *checkpoint,
                         "invalid Core ML FFN minimum row count");
             tc::require(warmups >= 0 && warmups <= 8,
                         "invalid Core ML FFN warmup count");
+            require_streaming_process_healthy();
             configure_streams();
             auto value = std::make_unique<tc_coreml_ffn>();
             std::atomic<bool> cancelled{false};
@@ -399,6 +421,7 @@ int tc_coreml_ffn_predict(tc_coreml_ffn *bridge, int block,
             tc::require(bridge && bridge->session && input && output,
                         "missing Core ML FFN bridge or buffer");
             std::lock_guard<std::mutex> lock(bridge->mutex);
+            require_streaming_process_healthy();
             auto metrics = bridge->session->metrics();
             tc::require(rows > 0 && rows <= metrics.bucket,
                         "Core ML FFN request exceeds the manifest row bucket");
@@ -614,6 +637,7 @@ int tc_engine_resolve_streaming_json(
             std::unique_lock<std::mutex> local(
                 e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
             auto request = tc::request_from_json(
                 tc::parse_json(request_json));
             auto resolved = resolve_public_streaming_locked(
@@ -827,6 +851,7 @@ extern "C" int tc_engine_test_set_streaming_catalog_json(
             std::unique_lock<std::mutex> local(
                 engine->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
             if (!engine->test_streaming_catalog_provider)
                 engine->test_streaming_catalog_provider =
                     std::make_shared<
@@ -859,6 +884,7 @@ extern "C" int tc_engine_test_build_streaming_catalog_json(
             std::unique_lock<std::mutex> local(
                 engine->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
             auto request = tc::request_from_json(
                 tc::parse_json(request_json));
             *catalog_json = copy(test_streaming_catalog_json_for_request(
@@ -895,6 +921,27 @@ extern "C" int tc_engine_test_clear_streaming_catalog(
                 "unknown test streaming catalog clear error");
         return 1;
     }
+}
+
+extern "C" int tc_engine_test_streaming_drain_failure(
+        tc_engine *engine, int enabled, char **error) {
+    if (error) *error = nullptr;
+    try {
+        tc::require(engine && engine->allow_experimental_streaming,
+                    "streaming drain fault requires private candidate engine");
+        std::unique_lock<std::mutex> local(engine->mutex, std::try_to_lock);
+        tc::require(local.owns_lock(), "engine busy");
+        require_streaming_process_healthy();
+        engine->session->test_set_streaming_drain_failure(enabled != 0);
+        return 0;
+    } catch (const std::exception &exception) { return fail(error, exception); }
+    catch (...) { if (error) *error = strdup("unknown drain test fault"); return 1; }
+}
+extern "C" uint64_t tc_engine_test_streaming_retained_engines() {
+    uint64_t count = 0;
+    for (auto *entry = quarantined_engines.load(std::memory_order_acquire);
+         entry; entry = entry->quarantine_next) ++count;
+    return count;
 }
 
 extern "C" int tc_engine_test_ltx_exact_destroy_failures(
@@ -957,6 +1004,15 @@ void tc_engine_cancel(tc_engine *e) {
         e->cancelled.store(true);
 }
 void tc_engine_free(tc_engine *e) {
+    if (!e) return;
+    observe_streaming_quarantine(e);
+    if (streaming_process_quarantined.load(std::memory_order_acquire)) {
+        auto *head = quarantined_engines.load(std::memory_order_relaxed);
+        do { e->quarantine_next = head; }
+        while (!quarantined_engines.compare_exchange_weak(
+            head, e, std::memory_order_release, std::memory_order_relaxed));
+        return;
+    }
     delete e;
 }
 int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *ctx, char **out,
@@ -973,6 +1029,7 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
                         "memory_worker_quarantined: engine must be recreated");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
             auto request = tc::request_from_json(tc::parse_json(r));
             ResolvedStreamingExecution public_execution;
             if (request.streaming_selector &&
@@ -987,6 +1044,7 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
             // MLX uses process-global device/allocation policy. Serialize all embeddings.
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
+            require_streaming_process_healthy();
             DeviceLease device_lease;
             e->cancelled.store(false);
             tc::require(public_execution || !request.streaming.active() ||
@@ -1026,7 +1084,7 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
             struct Drain {
                 bool enabled;
                 ~Drain() {
-                    if (enabled) {
+                    if (enabled && !streaming_process_quarantined.load(std::memory_order_acquire)) {
                         try {
                             tc::mx::synchronize();
                         } catch (...) {
@@ -1087,11 +1145,13 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
                     result.plan.memory_policy = request_plan->memory_policy;
                 }
             } catch (const std::exception &failure) {
+                propagate_streaming_quarantine(e, failure.what());
                 finalize_memory_failure(
                     e, e->session.get(), memory_execution.get(),
                     failure.what());
                 throw;
             } catch (...) {
+                propagate_streaming_quarantine(e, "unknown native generation failure");
                 finalize_memory_failure(
                     e, e->session.get(), memory_execution.get(),
                     "unknown native generation failure");
@@ -1125,6 +1185,7 @@ int tc_engine_take_last_memory_report_json(
             std::unique_lock<std::mutex> local(
                 e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
             tc::require(e->last_memory_report.has_value(),
                         "memory_report_unavailable: no terminal constrained request report");
             const auto value = tc::json(
@@ -1284,6 +1345,7 @@ int tc_native_self_test(char **out, char **error) {
         try {
             tc::require(out, "missing output");
             std::lock_guard<std::mutex> lock(tc::execution_mutex());
+            require_streaming_process_healthy();
             using namespace tc;
             for (auto &s : {"flux2-klein-4b", "ltx-2.5-distilled", "minimax-h3-turbo"})
                 validate_recipe(model_recipe(s));
@@ -1363,8 +1425,10 @@ int tc_engine_load(tc_engine *e, tc_event_callback cb, void *ctx, char **out, ch
             tc::require(e && out, "missing engine or output");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
+            require_streaming_process_healthy();
             DeviceLease lease;
             const bool parent_mlx = e->session->uses_parent_mlx();
             if (parent_mlx)
@@ -1421,8 +1485,10 @@ int tc_engine_unload(tc_engine *e, char **out, char **error) {
             tc::require(e && out, "missing engine or output");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
+            require_streaming_process_healthy();
             const bool parent_mlx = e->session->uses_parent_mlx();
             if (parent_mlx) {
                 configure_streams();
@@ -1462,6 +1528,7 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
                         "memory_worker_quarantined: engine must be recreated");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
             std::optional<tc::Request> parsed_request;
             if (!cache) {
                 parsed_request = tc::request_from_json(tc::parse_json(request));
@@ -1474,6 +1541,7 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
             }
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
+            require_streaming_process_healthy();
             DeviceLease lease;
             std::optional<tc::ExecutionPlan> request_plan;
             if (!cache) {
@@ -1499,7 +1567,7 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
             struct Drain {
                 bool enabled;
                 ~Drain() {
-                    if (enabled) {
+                    if (enabled && !streaming_process_quarantined.load(std::memory_order_acquire)) {
                         try {
                             tc::mx::synchronize();
                         } catch (...) {
@@ -1621,6 +1689,7 @@ int tc_coreml_resources_json(const char *request, tc_event_callback cb, void *ct
             std::unique_ptr<DeviceLease> lease;
             if (!inventory) {
                 tc::require(global.try_lock(), "runtime busy");
+                require_streaming_process_healthy();
                 lease = std::make_unique<DeviceLease>();
             }
             std::atomic<bool> inventory_cancelled{false};
