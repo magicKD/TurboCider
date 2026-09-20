@@ -1,0 +1,20 @@
+{
+  "scope": "Persist App public submission intent before model acquisition and resolution",
+  "source_sha256": "618df57e89d9017728834fe289ea9a06a078c3e7656ecccead421906fcddbfc1",
+  "test_source_sha256": "5b04932b2bea723ac08da1e3c9e6420556ebcac129710f9e6137b4e56412d640",
+  "history_binary_sha256": "01610ec4601bb005e7fa58c24ffd0b958a8f564602ea3898634337d7ce81620e",
+  "history_log_sha256": "8acf343f62b36529ee8ce6fde83bce024f6aceddbdcc1db16dc6cb31992d13bc",
+  "tests": {
+    "missing_model": "PASS failed job and original selector/output persisted and survived reopening; no output/staging; idle/no engine retained",
+    "initial_save_failure": "PASS failed in-memory job/storage error, no model inspection, output or staging",
+    "existing_history": "PASS deletion/undo/rollback, hybrid precision and finalizing recovery"
+  },
+  "compatibility": "Optional field; earlier history without intent remains decodable",
+  "authority": "Persisted original intent and resolution JSON are metadata only; no native authority is persisted",
+  "app_build": "running",
+  "limitations": [
+    "Z/Flux still use embedded engine; no generic worker/envelope yet",
+    "No real public model request or production catalog admission tested here",
+    "No process-kill/power-loss or worker-reaping test"
+  ]
+}

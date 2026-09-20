@@ -3,7 +3,7 @@ import AppKit
 
 @main
 struct HistoryManagementTests {
-    @MainActor static func main() throws {
+    @MainActor static func main() async throws {
         func check(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
             guard try condition() else { throw NativeFailure(message: message) }
         }
@@ -170,6 +170,40 @@ struct HistoryManagementTests {
             try check(replay.jobs.first?.id == pending.id && replay.jobs.first?.state == expected,
                       "Recovery was not persisted/idempotent: \(mode)")
         }
-        print("PASS: modifier selection, batch history delete/undo/clear, atomic-save rollback, managed-file validation, batch trash and finalizing restart recovery")
+        for blockedSave in [false, true] {
+            let folder = root.appendingPathComponent(blockedSave ? "submission-save-failure" : "submission-model-failure")
+            let submitted = NativeJobStore(directory: folder)
+            if blockedSave {
+                try FileManager.default.createDirectory(at: folder.appendingPathComponent("jobs.json"), withIntermediateDirectories: false)
+            }
+            var request = NativeRequest(prompt: "persist before model inspection", output: folder.appendingPathComponent("outputs/result.png").path)
+            request.model = "z-image-turbo"; request.width = 512; request.height = 512; request.steps = 9
+            let intent = NativeRequestV2(legacy: request, targetBytes: 10 << 30)
+            var failure: Error?
+            do {
+                _ = try await submitted.generate(modelURL: folder.appendingPathComponent("missing-model"),
+                                                 request: request, streamingRequest: intent)
+            } catch { failure = error }
+            try check(failure != nil && !submitted.busy && !submitted.canUnload, "Failed submission retained active work")
+            try check(submitted.jobs.count == 1 && submitted.jobs[0].state == "failed", "Failed public preflight lost its job")
+            let job = submitted.jobs[0]
+            try check(job.publicStreamingResolutionJSON == nil, "Failed preflight persisted an authority")
+            let stored = try JSONDecoder().decode(NativeRequestV2.self, from: Data((job.publicStreamingIntentJSON ?? "").utf8))
+            try check(stored.outputs[0].path == request.output && stored.execution.streaming == intent.execution.streaming,
+                      "Original selector or output was changed before persistence")
+            try check(!FileManager.default.fileExists(atPath: request.output), "Preflight failure published output")
+            let leftovers = try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("outputs").path)
+            try check(!leftovers.contains { $0.hasPrefix(".tc-image-staging-") }, "Failed submission leaked staging")
+            if blockedSave {
+                try check(submitted.storageError != nil && !(failure?.localizedDescription.contains("Z-Image 模型检查失败") ?? false),
+                          "Model inspection preceded the failed initial save")
+            } else {
+                let restored = NativeJobStore(directory: folder)
+                try check(restored.jobs.first?.id == job.id && restored.jobs.first?.state == "failed" &&
+                          restored.jobs.first?.publicStreamingIntentJSON == job.publicStreamingIntentJSON,
+                          "Preflight failure and original intent did not survive reopening")
+            }
+        }
+        print("PASS: history operations, hybrid precision, finalizing recovery and durable public submission failure")
     }
 }

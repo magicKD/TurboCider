@@ -987,3 +987,11 @@ Metadata-only 计划不加载 artifact，改为通用 Core ML MLP/FP16 IO 描述
 App 后续：重建已退出 0，链接 `m1-hybrid-reporting` 新库的 history tests 通过，包含 finalizing 重启恢复。使用独立状态目录启动 App，按本次 PID 确认屏幕窗口存在，随后只终止本次进程并确认退出；没有视觉截图或新的 App 模型生成，不称完整 GUI/E2E 通过。见[App 构建、窗口与回归证据](2026-09-21-m1-hybrid-reporting-app-validation.json)。继续核查时发现 NativeJob.routeSummary 仍硬编码 INT8；已添加按 loaded-session weight_variant 显示 FP16/INT8、旧记录显示精度未确认的代码及回归，第二次 App/history 构建正在进行。另确认 Z/Flux public resolve 仍在嵌入式 engine 中，且发生在 job 持久化之前；通用一次性 worker/envelope 与先持久化 pending intent 的事务接入仍需完成。
 
 历史显示后续：第二次 App/history 构建退出 0，新 history tests 通过。NativeJob.routeSummary 现在从 `hybrid.weight_variant` 显示 MLP FP16/INT8；unknown 或旧记录缺失该字段时显示精度未确认，即使旧 plan 宣称 INT8 也不据此猜测。四种标签用例和原有历史/产物恢复回归均通过，见[源码、App 与测试哈希](2026-09-21-m1-hybrid-history-precision-validation.json)。本次没有新增视觉验收。
+
+## 第五十八轮：先持久化 public 任务意图，再检查模型与 resolve（2026-09-21）
+
+旧 JobStore 在插入/保存 job 之前 acquire 模型并 resolve public selector，导致此阶段失败没有任务历史，也丢失最初的 selector。现在先保存 preparing job、原始 NativeRequestV2 意图和目标内存，再执行 acquire/resolve；成功的 resolution 另行持久化后才进入 generate。所有这些阶段的异常均进入已有失败处理。新 `publicStreamingIntentJSON` 为可选字段，旧历史可继续读取；保存原始输出路径和 selector，不把绑定后的 staging 路径或 native authority 当作原始意图。
+
+完整 JobStore/history 回归通过：模型目录不存在时，任务被保存为 failed，原始意图可重新打开并恢复，resolution 为空，没有产物/staging 或可复用 engine；jobs.json 被目录占用而导致首次保存失败时，停止在持久化阶段，不先触发模型检查，同时保留 storageError 并释放 busy 状态。原有历史操作、hybrid 精度和 finalizing 恢复回归保持通过。见[源码/测试哈希及结果](2026-09-21-m1-public-submission-validation.json)。App 可执行文件仍在重建，不能把已通过的 host/history 回归称作新 GUI 生成验收。
+
+这一步关闭的是 acquire/resolve 早于任务保存的窗口；Z/Flux 仍使用嵌入式 engine。通用 worker envelope、进程身份/回收 deadline、跨重启存活检查、正式 public campaign 与 production catalog 尚未接通，没有新增模型、内存或发布资格。

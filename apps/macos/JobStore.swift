@@ -19,6 +19,7 @@ struct NativeJob: Codable, Identifiable, Sendable {
     /// authority, fd and exact layout are never persisted here.
     var publicStreamingTargetBytes: UInt64? = nil
     var publicStreamingResolutionJSON: String? = nil
+    var publicStreamingIntentJSON: String? = nil
     var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
     var routeSummary: String? {
         guard let resultJSON, let data = resultJSON.data(using: .utf8),
@@ -493,27 +494,35 @@ final class NativeJobStore: ObservableObject {
             catch { throw error }
         }
         var openedForPublicStreaming: NativeEngine?
-        var publicResolutionJSON: String?
         var frozenStreamingRequest = stagedStreamingRequest
         var publicResolution: NativeStreamingResolution?
-        if let streamingRequest = stagedStreamingRequest, request.model != "ltx-2.5-distilled" {
-            let opened = try await acquire(modelURL, modelID: request.model)
-            if cancelRequested { throw CancellationError() }
-            let resolution = try await opened.resolveStreaming(streamingRequest)
-            frozenStreamingRequest = try resolution.binding(streamingRequest)
-            publicResolution = resolution
-            publicResolutionJSON = String(
-                decoding: try JSONEncoder().encode(resolution), as: UTF8.self)
-            openedForPublicStreaming = opened
-            sessionState = "已验证 public 流式档位 · \(resolution.selection.target_request_memory_bytes / (1 << 30)) GiB"
+        let publicStreamingIntentJSON = try streamingRequest.map {
+            String(decoding: try JSONEncoder().encode($0), as: UTF8.self)
         }
         let id = UUID(); activeID = id; telemetry = StepTelemetry(); lastSequence = -1; denoiseStart = nil; lastDetailUpdate = 0
         jobs.insert(NativeJob(id: id, createdAt: Date(), request: request, state: "preparing", phase: "prepare", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path,
                               publicStreamingTargetBytes: streamingRequest?.execution.streaming?.target_request_memory_bytes,
-                              publicStreamingResolutionJSON: publicResolutionJSON), at: 0)
+                              publicStreamingIntentJSON: publicStreamingIntentJSON), at: 0)
         let start = ContinuousClock.now
         do {
             try persist()
+            if let streamingRequest = stagedStreamingRequest, request.model != "ltx-2.5-distilled" {
+                if cancelRequested { throw CancellationError() }
+                let opened = try await acquire(modelURL, modelID: request.model)
+                if cancelRequested { throw CancellationError() }
+                let resolution = try await opened.resolveStreaming(streamingRequest)
+                frozenStreamingRequest = try resolution.binding(streamingRequest)
+                publicResolution = resolution
+                let resolutionJSON = String(
+                    decoding: try JSONEncoder().encode(resolution), as: UTF8.self)
+                guard let index = jobs.firstIndex(where: { $0.id == id }) else {
+                    throw NativeFailure(message: "Missing job")
+                }
+                jobs[index].publicStreamingResolutionJSON = resolutionJSON
+                try persist()
+                openedForPublicStreaming = opened
+                sessionState = "已验证 public 流式档位 · \(resolution.selection.target_request_memory_bytes / (1 << 30)) GiB"
+            }
             let callback: @Sendable (NativeEvent) -> Void = { [weak self] event in
                 DispatchQueue.main.async { [weak self] in self?.receive(event, id: id) }
             }
