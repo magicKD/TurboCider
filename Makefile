@@ -91,6 +91,7 @@ test:
 # No real model weights, full inference, or system memory pressure in these
 # focused targets. GPU tests may report SKIP when Metal access is unavailable.
 test-streaming-host:
+	@"$(PYTHON)" -B tests/native/test_qwen3_sweep_geometry.py
 	@"$(PYTHON)" -B tests/native/test_streaming_layout.py
 	@"$(PYTHON)" -B tests/native/test_streaming_actual_receipt.py
 	@$(MAKE) test-streaming-source-lease
