@@ -478,3 +478,14 @@ D1/Q2 的请求中位数比 D0/Q1 减少约 14.9%（约 1.175×），refill 等�
 MLX peak 为约 8.88–8.98 GB，最大 8,975,747,452 bytes；该计数不含 Core ML、OS 和文件缓存。请求中的旧 8 GiB denoiser budget 不能解释为完整请求内存上限，本轮不构成 8 GiB 发布资格。每组只有两个样本，且未完成正式环境资格核验，因此以上只是探索结果，不是 P1/P2 PASS，也未写入 public catalog 或自动默认策略。
 
 构建为带测试 hook/audit 的 `build/m1-z-prefetch/libturbocider.dylib`，SHA-256 为 `ff97422078dbc791812bbdcc8d97a69246eee903454d420f93e5e83a4a7e7538`。descriptor 的四组合及越界拒绝测试通过；GPU weight-stream suite 共 10 项，4 项通过、6 项因 ConvRot/suffix 设备资格跳过。其中双线程各 1000 次独立槽 refill 验证了精确计数、字节数及 GPU 读取值。D1/Q2 首块取消返回 cancelled，原 engine 重试成功且图片一致；注入 unsafe drain 后保留 owner，并拒绝旧/新 engine 后续 GPU 使用。最新 App 的既有启动结果见前文，本轮没有重新构建或宣称验证 GUI 的 D1/Q2 操作流程。
+
+
+## 第二十二轮：Z-Image 可移植布局身份接口（2026-09-21）
+
+为推进 R1，将文件内容身份与本次打开的文件绑定拆开：新增 `StreamingMetadata::describe_verified()`，要求调用方传入已经由 native 内容验证得到的 lease。checkpoint identity 使用全 lease 的 logical id/size/SHA-256 摘要，transformer artifact 使用其真实内容 SHA-256；路径、inode、mtime、ctime 和 generation 留在请求 lease 中。接口继续从 held fd 解析 header，并在描述时检查文件和命名路径，没有在 options/describe 中添加大文件哈希。
+
+执行 `.venv/bin/python tests/native/test_z_image_streaming_descriptor.py` 通过。新增案例验证：原样复制到另一目录后 portable layout digest 相同而 binding/generation 不同；legacy snapshot layout 与 portable layout 不同；workload 步数或 D/Q 改变会改变布局；已验证 generation 的再次 capture 不读 payload；仅填写 caller content digest 仍被拒绝；同大小 payload 改写导致旧 lease 拒绝、新布局变化；删除文件导致拒绝；只有 tokenizer 改变时，全模型内容身份与布局也变化。测试使用临时 sparse safetensors fixture，由 native 实际读取全部逻辑内容验证，退出后清理。
+
+这是后续 RecordV2 迁移所需接口与反例测试，尚未切换 public probe/compile、Python catalog builder 或 receipt schema，也没有 persistent import proof。现有 private/public legacy 路由保持其版本语义；不能据此宣称跨安装 public resolve 已通过。该轮未改变数值执行路径，没有复用旧图片性能数据作为新发布证据。
+
+本轮 `git fetch origin dev` 成功，随后 `git merge-base --is-ancestor origin/dev HEAD` 返回 0，当前分支已包含最新 dev，无新增合并内容。

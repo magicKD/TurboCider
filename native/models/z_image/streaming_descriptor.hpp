@@ -34,6 +34,10 @@ class StreamingMetadata {
     StreamingMetadata &operator=(const StreamingMetadata &) = delete;
 
     streaming::Descriptor describe(const StreamingWorkload &) const;
+    // Portable semantic identity for the v2 migration. Requires content proof
+    // already captured by the native verifier; never hashes payloads here.
+    // The request lease/snapshot remains separate and must still be revalidated.
+    streaming::Descriptor describe_verified(const StreamingWorkload &) const;
     void check_unchanged() const;
     const streaming::SourceLease &lease() const;
     std::shared_ptr<const streaming::SourceLease> lease_ptr() const;

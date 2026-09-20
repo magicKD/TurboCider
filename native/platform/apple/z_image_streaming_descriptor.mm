@@ -344,6 +344,22 @@ StreamingMetadata::lease_ptr() const {
     return state_->lease;
 }
 
+streaming::Descriptor StreamingMetadata::describe_verified(
+    const StreamingWorkload &workload) const {
+    require_metadata(lease().has_verified_content(),
+                     "artifact_verification_required");
+    auto descriptor = describe(workload);
+    // The whole lease covers auxiliary inputs too, even though this stage's
+    // materializations read only the transformer. No binding stat enters here.
+    descriptor.checkpoint_identity =
+        "artifact-content-v1:" + std::string(lease().artifact_digest());
+    descriptor.artifacts.front().identity =
+        lease().file(state_->logical_id).content_digest;
+    descriptor.artifacts.front().identity_kind =
+        streaming::SourceIdentityKind::content_sha256;
+    return descriptor;
+}
+
 streaming::Descriptor StreamingMetadata::describe(
     const StreamingWorkload &workload) const {
     check_unchanged();

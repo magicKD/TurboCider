@@ -56,6 +56,8 @@ Z-Image/Flux 的 capture 输入未提供权重内容 digest。哈希 stat 元数
 
 验收：相同内容的另一目录/另一安装可 resolve；相同大小但不同内容不可 resolve；request 中途替换/截断仍拒绝；layout digest 跨安装稳定。
 
+2026-09-21 增量：Z-Image metadata 新增显式 `describe_verified()`，要求 native verified lease，使用全 lease 的内容身份与 transformer SHA-256 生成 portable descriptor，保留独立的 request snapshot 和 revalidation。Host 测试覆盖跨目录复制布局相同、binding/generation 不同、同大小 payload 改写、辅助 tokenizer 改写、删除、伪造 caller digest、workload/预取策略变化；已通过。该接口不在查询时 hash 权重。现有 `describe()`、public probe/compile 和 catalog 仍走 legacy snapshot 路径；persistent import proof、RecordV2/native/Python/receipt 联动迁移及跨安装 resolve 验收仍待完成，R1 尚未关闭。
+
 ### R2 · Options 查询不能匹配真实完整 record
 
 证据：`native/api/c_api.mm::tc_streaming_options_json()` 只填 model、shape 等基础 workload；没有填 conditioning revision、VAE policy、feature digest 和 token shapes。

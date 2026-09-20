@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <fcntl.h>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -67,6 +68,82 @@ int main(int argc, char **argv) {
         assert(!metadata.snapshot_identity().empty());
 
         const auto work = workload();
+        rejects([&] { (void) metadata.describe_verified(work); },
+                "artifact_verification_required");
+        {
+            using tc::streaming::SourceFileIdentity;
+            using tc::streaming::SourceLease;
+            auto file = [](const std::string &path) {
+                SourceFileIdentity value;
+                value.logical_id = "transformer";
+                value.path = path;
+                return value;
+            };
+            const auto original = SourceLease::capture_verified({file(valid)});
+            const tc::z_image::StreamingMetadata original_metadata(original);
+            const auto portable = original_metadata.describe_verified(work);
+            const auto original_layout = tc::streaming::compile_layout(config(), portable);
+            assert(portable.artifacts.front().identity_kind ==
+                   tc::streaming::SourceIdentityKind::content_sha256);
+            const std::string copy = valid + ".copy.safetensors";
+            std::filesystem::copy_file(valid, copy);
+            const auto copied = SourceLease::capture_verified({file(copy)});
+            const tc::z_image::StreamingMetadata copied_metadata(copied);
+            assert(original->digest() != copied->digest());
+            assert(original->generation() != copied->generation());
+            assert(original->artifact_digest() == copied->artifact_digest());
+            assert(original_layout.digest == tc::streaming::compile_layout(
+                config(), copied_metadata.describe_verified(work)).digest);
+            assert(original_layout.digest != tc::streaming::compile_layout(
+                config(), original_metadata.describe(work)).digest);
+            auto changed_work = work;
+            changed_work.steps += 1;
+            assert(original_layout.digest != tc::streaming::compile_layout(
+                config(), copied_metadata.describe_verified(changed_work)).digest);
+            assert(original_layout.digest != tc::streaming::compile_layout(
+                config(3, 2, 1, 1, 2), portable).digest);
+            const auto ready = SourceLease::capture_preverified({file(copy)});
+            assert(ready->verification_bytes_read() == 0);
+            assert(ready->artifact_digest() == original->artifact_digest());
+            // Serialized caller hashes do not grant a content proof.
+            auto claimed = file(copy);
+            claimed.content_digest = copied->file("transformer").content_digest;
+            const tc::z_image::StreamingMetadata untrusted(SourceLease::capture({claimed}));
+            rejects([&] { (void) untrusted.describe_verified(work); },
+                    "artifact_verification_required");
+            const int fd = ::open(copy.c_str(), O_WRONLY);
+            assert(fd >= 0);
+            const char changed = 1;
+            assert(::pwrite(fd, &changed, 1,
+                            copied->file("transformer").bytes - 1) == 1);
+            assert(::close(fd) == 0);
+            rejects([&] { (void) copied_metadata.describe_verified(work); },
+                    "checkpoint_changed");
+            const auto updated = SourceLease::capture_verified({file(copy)});
+            const tc::z_image::StreamingMetadata updated_metadata(updated);
+            assert(original_layout.digest != tc::streaming::compile_layout(
+                config(), updated_metadata.describe_verified(work)).digest);
+            std::filesystem::remove(copy);
+            rejects([&] { (void) updated_metadata.describe_verified(work); },
+                    "checkpoint_changed");
+            // Non-transformer inputs also belong to the checkpoint identity.
+            const std::string auxiliary_path = valid + ".tokenizer";
+            { std::ofstream out(auxiliary_path); out << "tokenizer-v1"; }
+            auto auxiliary = file(auxiliary_path);
+            auxiliary.logical_id = "tokenizer";
+            const auto complete = SourceLease::capture_verified({file(valid), auxiliary});
+            const tc::z_image::StreamingMetadata complete_metadata(complete);
+            const auto complete_layout = tc::streaming::compile_layout(
+                config(), complete_metadata.describe_verified(work));
+            { std::ofstream out(auxiliary_path); out << "tokenizer-v2"; }
+            rejects([&] { (void) complete_metadata.describe_verified(work); },
+                    "checkpoint_changed");
+            const auto new_complete = SourceLease::capture_verified({auxiliary, file(valid)});
+            const tc::z_image::StreamingMetadata new_complete_metadata(new_complete);
+            assert(complete_layout.digest != tc::streaming::compile_layout(
+                config(), new_complete_metadata.describe_verified(work)).digest);
+            std::filesystem::remove(auxiliary_path);
+        }
         const auto descriptor_value = metadata.describe(work);
         assert(descriptor_value.artifacts.size() == 1);
         assert(descriptor_value.stages.size() == 1);
@@ -200,7 +277,7 @@ int main(int argc, char **argv) {
 
         std::cout << "PASS Z-Image descriptor: header-only 30x13 BF16 "
                      "projection, shared SourceLease, K1/K2 G1 layouts and K2 D0/D1 Q1/Q2, "
-                     "malformed metadata and stale snapshot rejection; layout="
+                     "portable verified layouts, malformed metadata and stale snapshot rejection; layout="
                   << plan.layout().digest << '\n';
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
