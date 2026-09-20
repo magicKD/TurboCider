@@ -424,3 +424,35 @@ App 新二进制再次直接启动并保持 30 秒，无提前退出、stdout/st
 [两模型复跑记录](2026-09-21-m1-streaming-release-smokes.json)：Flux 8.22962 s、Z-Image 33.82261 s，二者 PNG 均与先前 SHA 一致。库 SHA-256 为 `0d24ae5f29307b461a03d00b855f0f51f0f0d469c1641f8f3fdc60e88f0ca3df`。Z-Image backend/precision 断言通过，metadata-only public adapter 合约测试通过（四组件 lease、身份/layout snapshot、路由拒绝、目标失败清理与源替换检测）。这些是本机 smoke 时间，不是新的受控 P1 统计。
 
 `check_streaming_owner_lifecycle.py` 的 success/cancel-retry 模式也可用于无测试钩子构建；quarantine 模式明确要求 test-hook 构建。上述运行仍通过研究用 candidate constructor，不把无测试钩子误称为 public preset 已发布。正式 streaming catalog、R1/R6 身份链及完整 R4/R5 验收仍未完成。
+
+最新 App 使用已验证且源码未变的 Swift 二进制，配合新构建的相邻无测试钩子 native 库装配至 `build/m1-release/TurboCiderNativeApp`。再次启动观察 30 秒，无提前退出、stdout/stderr 为 0，随后只终止该测试进程；不将启动观察当成完整 GUI 工作流验收。
+
+## 第二十轮：两模型 Qwen3 分宽度热态与跨进程复测
+
+先保留 [Z-Image 首轮](2026-09-21-m1-z-image-qwen3-initial-sweep.json)：35 层、64 tokens、50% INT8 prefix 的 warm median 比 GPU 快 1.609×，但 GPU 前两次 post-first 调用为 2.99209/0.719663 s，GPU warm CV=1.1973，故 retain=false。没有删除这些样本或把原失败结果改成通过。
+
+为区分加载/稳定化/常驻热态，新实验预先固定“1 次 first + 5 次 settling + 10 次 measured”，每个后端都执行同样次数，保留 first、全部 post-first、settling、measured 数组及加载时间。工具新增 `--settling-runs`（默认 0，保留原协议）与 `--first-backend`；运行前写出 plan.json。数值/速度/稳定性阈值仍为 relative L2 ≤0.025、cosine ≥0.999、relative max abs ≤0.05、warm speedup ≥1.1、双方 warm CV ≤0.25。单元测试验证计数不丢失、全部后端实际执行 settling、非法计数/非有限时间拒绝、加载顺序轮转及 Core ML 调用总数。
+
+首轮 settled sweep 的相关记录：Z-Image [25%](2026-09-21-m1-z-image-qwen3-w2432-settled-report.json)、[50%](2026-09-21-m1-z-image-qwen3-settled-sweep.json)、[75%](2026-09-21-m1-z-image-qwen3-w7296-settled-report.json)；Flux [25%](2026-09-21-m1-flux4-qwen3-w2432-settled-report.json)、[50%](2026-09-21-m1-flux4-qwen3-w4864-settled-report.json)、[75%](2026-09-21-m1-flux4-qwen3-w7296-settled-report.json)。这轮期间曾有 native 构建，且部分分区发生明显跨进程排序变化，不能直接选一次最快的结果。
+
+随后在我们启动的下载、导出、构建、完整图像推理全部结束后，预先冻结两轮独立进程复测，第二轮 hybrid 先运行，第三轮 GPU 先运行，并反转模型/宽度顺序：[完整计划](2026-09-21-m1-qwen3-repeatability-plan.json)、[全部 12 个复测结果](2026-09-21-m1-qwen3-repeatability-results.json)。下表为 warm GPU median / hybrid median；大于 1 才更快。
+
+| 模型 | MLP prefix | 首轮 settled | 独立复测 2 | 独立复测 3 |
+| --- | ---: | ---: | ---: | ---: |
+| Flux 4B（27 层） | 25% / 2432 | 1.001× | 1.024× | 1.027× |
+| Flux 4B | 50% / 4864 | 0.584× | 1.217× | 1.218× |
+| Flux 4B | 75% / 7296 | 1.204× | 1.205× | 1.205× |
+| Z-Image（35 层） | 25% / 2432 | 1.288× | 1.304× | 1.309× |
+| Z-Image | 50% / 4864 | 1.608× | 1.606× | 1.611× |
+| Z-Image | 75% / 7296 | 0.897× | 2.028× | 2.031× |
+
+在后两轮、固定 64-token 常驻条件下，Flux 50%/75% 很接近（约 0.114/0.115 s，GPU 约 0.139 s）；Z-Image 75% 最快（约 0.176 s，GPU 约 0.357 s）。所有分区最终 conditioning 质量检查通过；relative L2：Flux 25/50/75% 为 0.007869/0.008728/0.003803，Z-Image 为 0.007553/0.008996/0.010440。每次 sweep 的 hybrid 调用总数严格为 Flux 432、Z-Image 560，没有 runtime failure，固定 bucket backing 检查通过。
+
+这些仍是研究结果，不是默认路由资格：
+
+- 首轮的显著回退仍有效，原因未定位；不能将排序变化直接归因于 ANE 硬件驻留、温度或编译干扰。Core ML 使用 CPU+NE 配置，调用计数不证明每个算子实际在 ANE 执行。
+- 后两轮 hybrid load 仍约 7.9–9.1 s，first 和 settling 另计；不是零开销加速。真实 App 每次文本编码会释放 GPU text weights，不能直接套用常驻 probe 的热态时延。
+- probe 使用确定性 64-token 输入；图像 smoke 的 Flux/Z 提示词分别是 30/26 tokens。生产 padding/profitability 策略没有被修改，probe 的显式 eligibility override 不授予实际 App 路由资格。
+- 目前 private manual streaming 与 encoder ANE 的组合仍被计划器拒绝；尚未建立该组合的 typed identity、stage ownership/receipt 和端到端图像质量、内存、延迟证据。因此没有宣称“图片快 1.2×/2×”，也未写入自动加速策略或 public catalog。
+
+下一步优化重点仍包括 Z-Image GPU refill 等待（首次完整图像报告约 17.26 s），以及把可重复的编码器候选接入正确的多阶段生命周期，再测完整请求；不能只删除 GPU-only guard。

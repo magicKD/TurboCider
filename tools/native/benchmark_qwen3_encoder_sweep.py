@@ -2,7 +2,9 @@
 """Qualify Qwen3 encoder GPU/Core ML prefill over a sequence-length sweep.
 
 Each backend runs in a separate process with one recorded first encoder pass
-and multiple warm passes in the same resident process.  Core ML source
+and multiple warm passes in the same resident process. Optional fixed settling
+passes are predeclared and retained separately; no time-based sample removal
+is performed. Core ML source
 packages are rejected: setup and warm timing must use a compiled-cache manifest.
 The final deterministic conditioning tensors are compared after timing so the
 quality calculation does not contaminate the measured samples.
@@ -66,6 +68,10 @@ def arguments() -> argparse.Namespace:
     )
     parser.add_argument("--tokens", type=int, nargs="+", default=DEFAULT_TOKENS)
     parser.add_argument("--runs", type=int, default=5)
+    parser.add_argument("--settling-runs", type=int, default=0,
+                        help="fixed post-first settling passes, recorded separately for every backend; default 0 preserves the original protocol")
+    parser.add_argument("--first-backend", choices=["gpu", "hybrid"], default="gpu",
+                        help="backend order starts here and rotates across token lengths")
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--min-speedup", type=float, default=1.1)
@@ -96,6 +102,8 @@ def arguments() -> argparse.Namespace:
     args = parser.parse_args()
     if args.runs < 1 or args.runs > 50:
         parser.error("--runs must be in 1...50")
+    if args.settling_runs < 0 or args.settling_runs > 20 or args.runs + args.settling_runs > 50:
+        parser.error("--settling-runs must be in 0...20 and runs + settling must not exceed 50")
     if args.timeout < 1:
         parser.error("--timeout must be positive")
     if not args.tokens or any(value < 1 or value > 2048 for value in args.tokens):
@@ -186,10 +194,18 @@ def hybrid_execution_status(summary: dict, mode: str, tokens: int, runs: int,
     return executed, backing_qualified
 
 
+def backend_order(index: int, mlx_reference: bool, first: str) -> tuple[str, ...]:
+    variants = ("gpu", "hybrid", "mlx_reference") if mlx_reference else ("gpu", "hybrid")
+    if first not in ("gpu", "hybrid"):
+        raise ValueError("invalid first backend")
+    offset = (index + variants.index(first)) % len(variants)
+    return variants[offset:] + variants[:offset]
+
+
 def command_for(args: argparse.Namespace, tokens: int, folder: Path,
                 hybrid: bool) -> list[str]:
     command = [
-        str(args.probe), str(args.weights), str(tokens), str(args.runs),
+        str(args.probe), str(args.weights), str(tokens), str(args.runs + args.settling_runs),
         str(folder / "conditioning.safetensors"), args.mode,
     ]
     if hybrid:
@@ -200,7 +216,7 @@ def command_for(args: argparse.Namespace, tokens: int, folder: Path,
 def mlx_command_for(args: argparse.Namespace, tokens: int, folder: Path) -> list[str]:
     return [
         str(args.mlx_python), str(args.mlx_script), str(args.weights),
-        str(tokens), str(args.runs), str(folder / "conditioning.safetensors"),
+        str(tokens), str(args.runs + args.settling_runs), str(folder / "conditioning.safetensors"),
         args.mode,
     ]
 
@@ -378,12 +394,27 @@ def tensor_quality(candidate_path: Path, reference_path: Path) -> dict:
     }
 
 
+def apply_settling(result: dict, settling: int, measured: int) -> dict:
+    """Split by a predeclared count, never by observed time or stability."""
+    samples = list(result["warm_seconds"])
+    if (settling < 0 or measured < 1 or len(samples) != settling + measured or
+            any(not math.isfinite(value) or value <= 0 for value in samples)):
+        raise ValueError("probe sample count/timings differ from settling protocol")
+    warm = samples[settling:]
+    return {**result, "post_first_seconds": samples,
+            "settling_seconds": samples[:settling], "warm_seconds": warm,
+            "warm_median_seconds": statistics.median(warm),
+            "warm_cv": statistics.pstdev(warm) / statistics.mean(warm)}
+
+
 def compact_backend(result: dict) -> dict:
     probe = result["probe"]
     last = probe["samples"][-1]
     compact = {
         "load_seconds": probe["load_seconds"],
         "first_encoder_seconds": result["first_encoder_seconds"],
+        "post_first_seconds": result["post_first_seconds"],
+        "settling_seconds": result["settling_seconds"],
         "warm_seconds": result["warm_seconds"],
         "warm_median_seconds": result["warm_median_seconds"],
         "warm_cv": result["warm_cv"],
@@ -419,6 +450,8 @@ def compact_mlx_reference(result: dict) -> dict:
     return {
         "load_seconds": probe["load_seconds"],
         "first_encoder_seconds": result["first_encoder_seconds"],
+        "post_first_seconds": result["post_first_seconds"],
+        "settling_seconds": result["settling_seconds"],
         "warm_seconds": result["warm_seconds"],
         "warm_median_seconds": result["warm_median_seconds"],
         "warm_cv": result["warm_cv"],
@@ -478,15 +511,7 @@ def main() -> int:
 
     planned = []
     for index, tokens in enumerate(args.tokens):
-        if args.mlx_reference:
-            orders = (
-                ("gpu", "hybrid", "mlx_reference"),
-                ("hybrid", "mlx_reference", "gpu"),
-                ("mlx_reference", "gpu", "hybrid"),
-            )
-            order = orders[index % len(orders)]
-        else:
-            order = ("gpu", "hybrid") if index % 2 == 0 else ("hybrid", "gpu")
+        order = backend_order(index, args.mlx_reference, args.first_backend)
         commands = {}
         for variant in order:
             folder = args.output / str(tokens) / variant
@@ -517,6 +542,9 @@ def main() -> int:
                 "mlx_script": str(args.mlx_script),
                 "min_mlx_reference_speedup": args.min_mlx_reference_speedup,
             } if args.mlx_reference else {}),
+            "first_backend": args.first_backend,
+            "settling_runs": args.settling_runs,
+            "measured_runs": args.runs,
             "planned": planned,
         }, indent=2, sort_keys=True))
         return 0
@@ -549,11 +577,13 @@ def main() -> int:
             "defaults and remains fail-closed"
         ),
         "method": (
-            "separate backend processes; one first pass and N warm resident passes; "
+            "separate backend processes; one first pass, fixed predeclared settling passes, and N measured resident passes; "
             "backend order alternates by sequence length; final conditioning quality "
             "is computed after timing"
         ),
+        "first_backend": args.first_backend,
         "runs": args.runs,
+        "settling_runs": args.settling_runs,
         "gates": {
             "min_warm_speedup": args.min_speedup,
             "min_warm_samples": 3,
@@ -568,6 +598,8 @@ def main() -> int:
         "cases": [],
     }
     report_path = args.output / "report.json"
+    (args.output / "plan.json").write_text(json.dumps(
+        {**report, "planned": planned}, indent=2, sort_keys=True) + "\n")
     for item in planned:
         tokens = item["tokens"]
         results = {}
@@ -582,6 +614,8 @@ def main() -> int:
                     force_hybrid_prefill=variant == "hybrid",
                 )
             )
+            results[variant] = apply_settling(
+                results[variant], args.settling_runs, args.runs)
         quality = tensor_quality(
             args.output / str(tokens) / "hybrid" / "conditioning.safetensors",
             args.output / str(tokens) / "gpu" / "conditioning.safetensors",
@@ -599,7 +633,7 @@ def main() -> int:
         )
         hybrid_summary = compact_backend(results["hybrid"])
         hybrid_executed, backing_qualified = hybrid_execution_status(
-            hybrid_summary, args.mode, tokens, args.runs, manifest["shape"]["buckets"]
+            hybrid_summary, args.mode, tokens, args.runs + args.settling_runs, manifest["shape"]["buckets"]
         )
         case = {
             "tokens": tokens,

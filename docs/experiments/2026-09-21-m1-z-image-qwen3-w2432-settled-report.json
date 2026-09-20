@@ -1,0 +1,167 @@
+{
+  "cases": [
+    {
+      "backing_qualified": true,
+      "gpu": {
+        "first_encoder_seconds": 3.09889,
+        "load_seconds": 1.95402,
+        "mlx_peak_bytes": 9323182592,
+        "post_first_seconds": [
+          0.678464,
+          0.357604,
+          0.357936,
+          0.357105,
+          0.357877,
+          0.357247,
+          0.358478,
+          0.357809,
+          0.357154,
+          0.357525,
+          0.356416,
+          0.358327,
+          0.358449,
+          0.356534,
+          0.357397
+        ],
+        "process_peak_rss_bytes": 3468541952,
+        "process_wall_seconds": 10.829112000064924,
+        "settling_seconds": [
+          0.678464,
+          0.357604,
+          0.357936,
+          0.357105,
+          0.357877
+        ],
+        "warm_cv": 0.0019635188404812302,
+        "warm_median_seconds": 0.35746100000000003,
+        "warm_seconds": [
+          0.357247,
+          0.358478,
+          0.357809,
+          0.357154,
+          0.357525,
+          0.356416,
+          0.358327,
+          0.358449,
+          0.356534,
+          0.357397
+        ]
+      },
+      "hybrid": {
+        "ane_calls_session_total": 560,
+        "ane_first_runtime_calls_session_total": 35,
+        "ane_first_runtime_seconds_session_total": 0.110908,
+        "ane_seconds_session_total": 1.57451,
+        "ane_subsequent_runtime_calls_session_total": 525,
+        "ane_subsequent_runtime_seconds_session_total": 1.4636,
+        "coreml_block_count": 35,
+        "coreml_bucket": 64,
+        "coreml_interface_setup_seconds": 0.000557248,
+        "coreml_load_seconds": 12.4368,
+        "coreml_model_load_seconds": 6.77378,
+        "coreml_output_backing_setup_seconds": 0.0195233,
+        "first_encoder_seconds": 3.18218,
+        "load_seconds": 14.3322,
+        "minimum_profitable_rows": 64,
+        "mlx_peak_bytes": 8328390144,
+        "output_copy_bytes_session_total": 0,
+        "post_first_seconds": [
+          0.53108,
+          0.27589,
+          0.27646,
+          0.276229,
+          0.27835,
+          0.278521,
+          0.278807,
+          0.27927,
+          0.281485,
+          0.28152,
+          0.275886,
+          0.275793,
+          0.275778,
+          0.276501,
+          0.276682
+        ],
+        "prefill_actual_tokens": 64,
+        "prefill_compute_tokens": 64,
+        "prefill_fixed_shape": true,
+        "prefill_padding_tokens": 0,
+        "prefill_plan_reason": "exact_bucket",
+        "prefill_selected_bucket": 64,
+        "process_peak_rss_bytes": 5061820416,
+        "process_wall_seconds": 22.08223233302124,
+        "qualified_flexible_backing": false,
+        "runtime_failed": false,
+        "runtime_failure_block": -1,
+        "runtime_failures_session_total": 0,
+        "settling_seconds": [
+          0.53108,
+          0.27589,
+          0.27646,
+          0.276229,
+          0.27835
+        ],
+        "warm_cv": 0.007657617046664282,
+        "warm_median_seconds": 0.2776015,
+        "warm_seconds": [
+          0.278521,
+          0.278807,
+          0.27927,
+          0.281485,
+          0.28152,
+          0.275886,
+          0.275793,
+          0.275778,
+          0.276501,
+          0.276682
+        ]
+      },
+      "hybrid_executed": true,
+      "order": [
+        "gpu",
+        "hybrid"
+      ],
+      "quality": {
+        "all_finite": true,
+        "cosine": 0.9999748496380112,
+        "max_abs": 32.0,
+        "relative_l2": 0.007553477033722616,
+        "relative_max_abs": 0.004784688995215311,
+        "shape_match": true
+      },
+      "quality_passed": true,
+      "retain": true,
+      "speed_passed": true,
+      "stability_passed": true,
+      "tokens": 64,
+      "warm_speedup": 1.2876767596716878
+    }
+  ],
+  "encoder_ane_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w2432-int8/compiled-cache/manifest-dc33ba33b86e6d3b5f6db522e097b0243f17236644dd94eae3b322f92f879715.json",
+  "force_fused_sdpa": false,
+  "format": "turbocider-qwen3-encoder-sweep-v1",
+  "gates": {
+    "max_relative_abs": 0.05,
+    "max_relative_l2": 0.025,
+    "max_warm_cv": 0.25,
+    "min_cosine": 0.999,
+    "min_warm_samples": 3,
+    "min_warm_speedup": 1.1
+  },
+  "hardware": {
+    "chip": "Apple M1 Pro",
+    "machine": "arm64"
+  },
+  "hybrid_prefill_policy": "qualification hybrid process sets ANE minimum tokens to 1 and padding limit to 10000%; production routing keeps conservative defaults and remains fail-closed",
+  "manifest_blocks": 35,
+  "manifest_buckets": [
+    64
+  ],
+  "method": "separate backend processes; one first pass, fixed predeclared settling passes, and N measured resident passes; backend order alternates by sequence length; final conditioning quality is computed after timing",
+  "mlx_reference": false,
+  "mlx_version": "0.32.0",
+  "mode": "z_image",
+  "runs": 10,
+  "settling_runs": 5,
+  "weights": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/text_encoders/qwen_3_4b.safetensors"
+}

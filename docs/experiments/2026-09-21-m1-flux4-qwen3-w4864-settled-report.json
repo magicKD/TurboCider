@@ -1,0 +1,167 @@
+{
+  "cases": [
+    {
+      "backing_qualified": true,
+      "gpu": {
+        "first_encoder_seconds": 0.890441,
+        "load_seconds": 1.72673,
+        "mlx_peak_bytes": 8132644352,
+        "post_first_seconds": [
+          0.142354,
+          0.138703,
+          0.138484,
+          0.138937,
+          0.138984,
+          0.139523,
+          0.139114,
+          0.139208,
+          0.139344,
+          0.139248,
+          0.138837,
+          0.13922,
+          0.139142,
+          0.139568,
+          0.1393
+        ],
+        "process_peak_rss_bytes": 4621008896,
+        "process_wall_seconds": 4.905691917054355,
+        "settling_seconds": [
+          0.142354,
+          0.138703,
+          0.138484,
+          0.138937,
+          0.138984
+        ],
+        "warm_cv": 0.0014188934241094711,
+        "warm_median_seconds": 0.13923400000000002,
+        "warm_seconds": [
+          0.139523,
+          0.139114,
+          0.139208,
+          0.139344,
+          0.139248,
+          0.138837,
+          0.13922,
+          0.139142,
+          0.139568,
+          0.1393
+        ]
+      },
+      "hybrid": {
+        "ane_calls_session_total": 432,
+        "ane_first_runtime_calls_session_total": 27,
+        "ane_first_runtime_seconds_session_total": 0.0951707,
+        "ane_seconds_session_total": 1.9661,
+        "ane_subsequent_runtime_calls_session_total": 405,
+        "ane_subsequent_runtime_seconds_session_total": 1.87093,
+        "coreml_block_count": 27,
+        "coreml_bucket": 64,
+        "coreml_interface_setup_seconds": 0.000439705,
+        "coreml_load_seconds": 6.7655,
+        "coreml_model_load_seconds": 1.08049,
+        "coreml_output_backing_setup_seconds": 0.00843046,
+        "first_encoder_seconds": 2.10538,
+        "load_seconds": 8.55449,
+        "minimum_profitable_rows": 64,
+        "mlx_peak_bytes": 8066290176,
+        "output_copy_bytes_session_total": 0,
+        "post_first_seconds": [
+          0.410145,
+          0.234037,
+          0.233473,
+          0.245279,
+          0.239489,
+          0.24086,
+          0.244728,
+          0.235218,
+          0.228833,
+          0.247588,
+          0.236918,
+          0.237534,
+          0.237999,
+          0.238911,
+          0.240263
+        ],
+        "prefill_actual_tokens": 64,
+        "prefill_compute_tokens": 64,
+        "prefill_fixed_shape": true,
+        "prefill_padding_tokens": 0,
+        "prefill_plan_reason": "exact_bucket",
+        "prefill_selected_bucket": 64,
+        "process_peak_rss_bytes": 4602232832,
+        "process_wall_seconds": 14.555279041989706,
+        "qualified_flexible_backing": false,
+        "runtime_failed": false,
+        "runtime_failure_block": -1,
+        "runtime_failures_session_total": 0,
+        "settling_seconds": [
+          0.410145,
+          0.234037,
+          0.233473,
+          0.245279,
+          0.239489
+        ],
+        "warm_cv": 0.020364125906991513,
+        "warm_median_seconds": 0.238455,
+        "warm_seconds": [
+          0.24086,
+          0.244728,
+          0.235218,
+          0.228833,
+          0.247588,
+          0.236918,
+          0.237534,
+          0.237999,
+          0.238911,
+          0.240263
+        ]
+      },
+      "hybrid_executed": true,
+      "order": [
+        "gpu",
+        "hybrid"
+      ],
+      "quality": {
+        "all_finite": true,
+        "cosine": 0.9999921206689151,
+        "max_abs": 64.0,
+        "relative_l2": 0.008728185197196073,
+        "relative_max_abs": 0.007407407407407408,
+        "shape_match": true
+      },
+      "quality_passed": true,
+      "retain": false,
+      "speed_passed": false,
+      "stability_passed": true,
+      "tokens": 64,
+      "warm_speedup": 0.5839005263047536
+    }
+  ],
+  "encoder_ane_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-int8/compiled-cache/manifest-3779713220316227ab137612495665e0079068ecff6ca5cbb60755ddc10d9f32.json",
+  "force_fused_sdpa": false,
+  "format": "turbocider-qwen3-encoder-sweep-v1",
+  "gates": {
+    "max_relative_abs": 0.05,
+    "max_relative_l2": 0.025,
+    "max_warm_cv": 0.25,
+    "min_cosine": 0.999,
+    "min_warm_samples": 3,
+    "min_warm_speedup": 1.1
+  },
+  "hardware": {
+    "chip": "Apple M1 Pro",
+    "machine": "arm64"
+  },
+  "hybrid_prefill_policy": "qualification hybrid process sets ANE minimum tokens to 1 and padding limit to 10000%; production routing keeps conservative defaults and remains fail-closed",
+  "manifest_blocks": 27,
+  "manifest_buckets": [
+    64
+  ],
+  "method": "separate backend processes; one first pass, fixed predeclared settling passes, and N measured resident passes; backend order alternates by sequence length; final conditioning quality is computed after timing",
+  "mlx_reference": false,
+  "mlx_version": "0.32.0",
+  "mode": "flux_klein",
+  "runs": 10,
+  "settling_runs": 5,
+  "weights": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder"
+}

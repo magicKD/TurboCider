@@ -1,0 +1,58 @@
+{
+  "cases": [],
+  "encoder_ane_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w7296-int8/compiled-cache/manifest-0a1b0e2d6c17cd4c70051e4882d74a367a4c91dcfd2f68067435fcc383723b7d.json",
+  "force_fused_sdpa": false,
+  "format": "turbocider-qwen3-encoder-sweep-v1",
+  "gates": {
+    "max_relative_abs": 0.05,
+    "max_relative_l2": 0.025,
+    "max_warm_cv": 0.25,
+    "min_cosine": 0.999,
+    "min_warm_samples": 3,
+    "min_warm_speedup": 1.1
+  },
+  "hardware": {
+    "chip": "Apple M1 Pro",
+    "machine": "arm64"
+  },
+  "hybrid_prefill_policy": "qualification hybrid process sets ANE minimum tokens to 1 and padding limit to 10000%; production routing keeps conservative defaults and remains fail-closed",
+  "manifest_blocks": 35,
+  "manifest_buckets": [
+    64
+  ],
+  "method": "separate backend processes; one first pass, fixed predeclared settling passes, and N measured resident passes; backend order alternates by sequence length; final conditioning quality is computed after timing",
+  "mlx_reference": false,
+  "mlx_version": "0.32.0",
+  "mode": "z_image",
+  "planned": [
+    {
+      "commands": {
+        "gpu": [
+          "/Users/chencanhui/code/TurboCider/build/m1-cache/qwen3-quant-probe",
+          "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+          "64",
+          "15",
+          "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w7296-settled-sweep/64/gpu/conditioning.safetensors",
+          "z_image"
+        ],
+        "hybrid": [
+          "/Users/chencanhui/code/TurboCider/build/m1-cache/qwen3-quant-probe",
+          "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+          "64",
+          "15",
+          "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w7296-settled-sweep/64/hybrid/conditioning.safetensors",
+          "z_image",
+          "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w7296-int8/compiled-cache/manifest-0a1b0e2d6c17cd4c70051e4882d74a367a4c91dcfd2f68067435fcc383723b7d.json"
+        ]
+      },
+      "order": [
+        "gpu",
+        "hybrid"
+      ],
+      "tokens": 64
+    }
+  ],
+  "runs": 10,
+  "settling_runs": 5,
+  "weights": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/text_encoders/qwen_3_4b.safetensors"
+}
