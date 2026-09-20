@@ -4,6 +4,8 @@
 
 统一的是资源和生命周期，不是强行让四个模型使用同样的 block 内存布局。
 
+2026-09-20 接入补充：新 exact/public 路径当前为 GPU-only；旧 Z-Image 的 resident Core ML + GPU 权重 streaming 是独立专用路径。首个 common hybrid adapter 按 [57 第 3–5 节](57-gpu-ane-integration-and-delivery-plan.md) 接入，必须覆盖 noise refiners、resident block prefix、streamed groups 和 FFN channel split。GPU-only card 不授予 ANE 权限；encoder ANE、其他模型 hybrid 和 ANE bank streaming 分别立项。四模型当前实现状态以 [55](55-current-state-and-next-phase.md) / [56](56-production-readiness-review-and-acceptance-plan.md) 为准，下方首轮矩阵保留设计背景。
+
 ## 1. ModelResourceDescriptor（拟议）
 
 ```text

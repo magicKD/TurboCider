@@ -2,6 +2,8 @@
 
 [目录](README.md) · [布局](02-configuration.md) · [验收](07-tooling-and-validation.md)
 
+2026-09-20 Hybrid 补充：Core ML bundle 文件大小不是 runtime 内存上限，GPU FFN suffix 缩小也不证明完整请求峰值下降。规划与测量需覆盖模型 load、packing、首次 predict、共享 backing、denoise/VAE 切换及 worker；未知项不能记为 0。具体分账、采样覆盖限制和 ANE model bank 释放实验见 [57 第 6、10 节](57-gpu-ane-integration-and-delivery-plan.md)。沿用本文件的 unknown/bounded 区分，public calibrated 档位不因此获得 hard-cap 保证。
+
 ## 1. 不从预算倒推，不代表不估内存
 
 manual 模式不搜索 K/G/P，只计算用户布局需要多少资源。编译分两步：

@@ -4,6 +4,9 @@
 
 本文定义实验原则与工具输出；具体 P0–P4 gate、统计判定、测试 ID 和发布执行顺序统一在 [12](12-acceptance-playbook.md)。
 
+2026-09-20 口径补充：12 保留早期 gate 定义；当前 public P2 指完整请求内存校准，实施入口见 [56 第 5、8 节](56-production-readiness-review-and-acceptance-plan.md)，正式工具证据合同参见 [50](50-public-streaming-calibration-and-release-evidence.md)。56 的 calibrated release policy 尚未实现，不能当作现有 builder 已允许跳过 P3。
+当前 campaign 只接受 `artifact_sha256_equal`。Hybrid 的迁移正确性、相对 exact GPU 的近似质量、same-plan 性能与完整请求收益必须分别判定；拟议新 quality mode、逐样本规则、独立 verifier、H 包测试矩阵见 [57 第 7–9 节](57-gpu-ane-integration-and-delivery-plan.md)。禁止为支持 ANE 而放宽旧 GPU exact policy。
+
 ## 1. 先有可解释工具，再有自动调参
 
 拟议统一工具 `tools/native/streaming_tool.py`（当前不存在），子命令如下。Python 负责输入/报告编排，

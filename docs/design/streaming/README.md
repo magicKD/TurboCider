@@ -1,5 +1,8 @@
 # TurboCider 通用 Streaming 框架
 
+2026-09-20 实施入口：先读 [56 Production readiness 复核与验收计划](56-production-readiness-review-and-acceptance-plan.md) 第 5–9 节，执行 GPU M0 开发基座 → GPU M1 单档产品；GPU/ANE 的专项接入、逐文件 PR、质量工具与测试清单见 [57 GPU/ANE 接入与交付方案](57-gpu-ane-integration-and-delivery-plan.md)。
+56 管总体关键路径，57 细化增量 hybrid。先做 resident Core ML + streamed GPU suffix；ANE model bank 装载/驱逐独立实验，不阻塞 GPU 首发。两篇均是代码复核与待实施方案，不是新增模型实验或资格放行。
+
 修订日期：2026-09-19。状态：设计规格及实施中，尚未发布。当前收口摘要和下一步优先看
 [55 当前状态与下一阶段](55-current-state-and-next-phase.md)，逐轮代码/测试证据见 [13 实施进度](13-implementation-progress.md)。
 
@@ -86,6 +89,10 @@
 | [53 Final Implementation Closure](53-public-streaming-final-implementation-closure.md) | 将当前代码接缝收敛为可直接施工的文件级方案：R3 receipt/context、scheduler、四模型 adapter、App/JobStore、catalog、工具链、提交边界和 Definition of Done |
 | [54 Deep Implementation Spec](54-public-streaming-deep-implementation-spec.md) | 代码级补充：对象所有权、精确调用顺序、compiler/ledger、owner pump、H3 C receipt、LTX worker 协议、工具链、四臂实验、PR 停止条件和 release checklist |
 | [55 Current State / Next Phase](55-current-state-and-next-phase.md) | 当前工作树整理结果、四模型完成度、public 阻断项和下一阶段实施顺序 |
+| [56 Production Readiness / Acceptance](56-production-readiness-review-and-acceptance-plan.md) | 2026-09-20 复核、GPU M0/M1、W0/A/B/C/D 工作包、worker/来源/失败闭环及最短验收路径 |
+| [57 GPU / ANE Integration](57-gpu-ane-integration-and-delivery-plan.md) | Hybrid H0–H4、Core ML 来源、suffix layout、共享 backing、component receipt、近似质量与独立 ANE bank 实验 |
+
+**当前施工以 56 → 57 为入口**，具体 runtime/adapter 合同再回查主题文档。下方各轮阅读建议和检查点保留历史背景，不能当作当前尚未实现的清单；55/56 的代码事实优先于更早的状态描述。GPU-only、hybrid 及 ANE model bank streaming 分别验收，不共享未经确认的 release record。
 
 架构阅读：01 → 02 → 03 → 04/05 → **17**。实现阅读：09 → 10 → 06/11 → **18** → 12；实验工具原则见 07。查事实和历史先读 08。
 
@@ -195,7 +202,9 @@ Flux 9B 的可复现 private candidate 请求见
 [flux9-p1-same-layout-policy.json](examples/flux9-p1-same-layout-policy.json)。后者会硬校验baseline必须为
 `flux_direct_same_layout_v1`、candidate必须为`generic_stage_executor_v1`。
 
-## 当前代码检查点（2026-09-18）
+## 历史代码检查点（2026-09-18）
+
+以下为当时快照；其中 H3/LTX hooks、public context 和下一步顺序不能代表 2026-09-20 状态。当前事实与计划见 55/56，GPU/ANE 增量方案见 57。
 
 统一 executor 已支持 ordered multi-class barrier、单 pool K=2/G=1 的显式 cross-pass
 `carry_first_group`（C ABI v3）、claim后fill overlap和同步reader completion快路径。H3 Turbo K2/G1真实

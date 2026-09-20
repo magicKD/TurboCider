@@ -1,5 +1,7 @@
 # 当前代码状态与下一阶段计划
 
+2026-09-20 后续复核：本文保留 2026-09-19 交接基线。新增发布阻断与 GPU M0/M1 执行计划见 [56](56-production-readiness-review-and-acceptance-plan.md)，GPU/ANE hybrid 的详细接入、质量工具和 H0–H4 项目划分见 [57](57-gpu-ane-integration-and-delivery-plan.md)。新文档不增加任何实机资格结论，production catalog 状态未因文档修改而变化。
+
 修订日期：2026-09-19。本文是当前工作树的交接摘要，不替代 [13 实施进度](13-implementation-progress.md)、
 [37 校准与验收](37-public-streaming-calibration-performance-acceptance.md) 和 [52 App/档位规格](52-public-streaming-app-config-and-model-tier-spec.md)。
 

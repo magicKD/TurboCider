@@ -2,6 +2,8 @@
 
 [目录](README.md) · [参数](02-configuration.md) · [模型 adapter](04-model-adapters.md)
 
+2026-09-20 补充：下方早期接口草案须与实际 `context.hpp` / `stream_slot_c.h` 对照，当前实现状态见 [56](56-production-readiness-review-and-acceptance-plan.md)。Hybrid 扩展合同见 [57 第 5–6 节](57-gpu-ane-integration-and-delivery-plan.md)：GPU slot 只登记实际 reader；Core ML input/output/model 另保留至 prediction 和 GPU join 完成。首版保持同步 block 边界，不把 prediction 返回或 cancel 标志当作全部消费者完成，不改 slot C ABI 来虚构 ANE reader。
+
 状态：待实现接口草案。以下新类型与 C ABI 不代表已有代码；已有 `MemoryLedger`、`MemoryExecutionContext`、
 `MemoryCompletionToken` 应复用，不能制造第二套相互独立的内存账。
 
