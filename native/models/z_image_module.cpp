@@ -90,6 +90,14 @@ ModelModule z_image_module() {
                 "LoRA GPU+ANE remains explicit and requires an artifact bound to the exact adapter path, content, role and strength"
             };
             return d;
+        },
+        [](const Request &r) {
+            const bool gpu = r.execution == "gpu" && r.ane_manifest.empty();
+            const bool hybrid = r.execution == "gpu_ane" && !r.ane_manifest.empty() &&
+                                device_info().optimizations().z_image_suffix_streaming;
+            require(r.encoder_ane_manifest.empty() && (gpu || hybrid),
+                    "streaming_route_unsupported: Z-Image manual streaming requires GPU "
+                    "or measured-device GPU+ANE without encoder ANE");
         }
     };
 }

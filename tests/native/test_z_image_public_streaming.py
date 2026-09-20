@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -34,7 +36,7 @@ def main() -> None:
     sdk = subprocess.check_output(
         ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True
     ).strip()
-    mlx_root = Path(subprocess.check_output([
+    mlx_root = Path(os.environ["MLX_ROOT"]) if "MLX_ROOT" in os.environ else Path(subprocess.check_output([
         str(ROOT / ".venv/bin/python3"), "-I", "-c",
         "import sysconfig; print(sysconfig.get_paths()['purelib'] + '/mlx')",
     ], text=True).strip())
@@ -62,6 +64,16 @@ def main() -> None:
             "added_tokens": [],
         }))
 
+        renamed = Path(raw) / "renamed-int8"
+        renamed_transformer = renamed / transformer.relative_to(root)
+        renamed_transformer.parent.mkdir(parents=True)
+        write_fixture(renamed_transformer, convrot=True)
+        for relative in ("split_files/text_encoders/qwen_3_4b.safetensors",
+                         "split_files/vae/ae.safetensors", "tokenizer/tokenizer.json"):
+            destination = renamed / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(root / relative, destination)
+
         binary = Path(raw) / "z-image-public-streaming-test"
         subprocess.run([
             compiler, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
@@ -74,7 +86,7 @@ def main() -> None:
             "-o", str(binary),
         ], check=True)
         result = subprocess.run(
-            [str(binary), str(root)], text=True, capture_output=True,
+            [str(binary), str(root), str(renamed)], text=True, capture_output=True,
             timeout=180,
         )
         if result.returncode:

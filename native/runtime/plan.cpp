@@ -76,8 +76,12 @@ static ExecutionPlan make_plan_impl(
         require(!r.residency_specified && !r.memory_budget_specified &&
                     !r.streaming_offload_specified && !r.memory_budget_bytes && !r.streaming_offload,
                 "streaming_config_conflict: explicit legacy residency/budget/offload");
-        require(r.execution == "gpu" && r.ane_manifest.empty() && r.encoder_ane_manifest.empty(),
-                "streaming_route_unsupported: manual streaming requires GPU-only execution");
+        const auto &validate_execution = module_for(r.model).validate_manual_streaming_execution;
+        if (validate_execution)
+            validate_execution(r);
+        else
+            require(r.execution == "gpu" && r.ane_manifest.empty() && r.encoder_ane_manifest.empty(),
+                    "streaming_route_unsupported: manual streaming requires GPU-only execution");
         require(r.loras.empty(), "streaming_route_unsupported: LoRA is not yet validated");
         if (r.memory_constrained.enabled && r.memory_constrained.has(MemoryFieldMaxRefillSlots))
             for (const auto &[id, stage] : r.streaming.stages)
