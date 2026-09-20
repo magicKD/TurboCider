@@ -2,6 +2,7 @@
 #include "mlx.hpp"
 #include "../runtime/session.hpp"
 namespace tc {
+namespace z_image { class VerifiedCoreMLBundleLease; }
 struct HybridBucketPlan {
     int requested_rows = 0;
     int selected_rows = 0;
@@ -52,8 +53,14 @@ class HybridSession {
                   const std::vector<LoRAAsset> &loras = {}, int policy_rows = 0,
                   int required_blocks = 0,
                   bool qualified_flexible_backing = false);
+    // Internal typed source path; does not confer public release authority.
+    // No warmups: request owner must arrange consumer eval/drain before reuse.
+    HybridSession(std::shared_ptr<const z_image::VerifiedCoreMLBundleLease>,
+                  const Event &, std::atomic<bool> &);
+    void revalidate_source() const;
     ~HybridSession();
     void set_tokens(int tokens);
+    // Typed sessions require fully padded contiguous FP16 [1,rows,hidden].
     Tensor predict(int block, const Tensor &input);
     bool runtime_available() const { return !runtime_failed; }
     void record_runtime_failure(int block);

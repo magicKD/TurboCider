@@ -1,0 +1,30 @@
+{
+  "scope": "Typed HybridSession lifecycle and fixed-zero ABI smoke; not image/quality/performance qualification",
+  "predictions": 32,
+  "warmups": 0,
+  "input": "contiguous FP16 [1,1088,3840], all zeros; independent exact-zero oracle for bias-free FFN",
+  "preliminary_loads": [
+    "cancel during first load callback",
+    "event exception at second load callback"
+  ],
+  "invalid_inputs": [
+    "unpadded 1024 rows",
+    "float32",
+    "noncontiguous/broadcast backing",
+    "block 32"
+  ],
+  "source_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-int8/compiled-cache/manifest-3609feb6e38e3ea1216507b14b8b919dc2e7864713dda0373481161e2b0649e4.json",
+  "source_sha256": {
+    "native/backends/coreml.hpp": "370229a982f98e6c611f23de8d03bd6b709af10396bc88f4c2eb0d88c964f2e7",
+    "native/backends/coreml.mm": "e908f384c603825d1ab9acd56371bb6d30e6a59323e90782fd7a4177bd2dd494",
+    "tests/native/verified_hybrid_session_test.cpp": "2e19ff539977c41b08de37f3bc3380a6227f92248b5b0d2d0ef1babaa1bcd5d6",
+    "tests/native/test_verified_hybrid_session.py": "efae1044053b0c4e9b05caf32251522358916024be51a971f6ab84353a5b29c9"
+  },
+  "failure_policy": "Retain failures; fix implementation or harness explicitly before any new run. No quality threshold change.",
+  "limitations": [
+    "Original INT8 nonzero quality smoke remains failed",
+    "CPU+NE does not prove ANE residency",
+    "No GPU suffix join or complete request owner",
+    "Research fixture assembly only; no installation-ID routing"
+  ]
+}

@@ -805,3 +805,18 @@ host fixture 的 2 个有效安装副本得到相同身份，20 个无效案例�
 真实完整父 checkpoint 验证 SHA 为 `2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6`。32 个 model.mlmodelc 共 128 个模型 regular files，加 manifest，私有导入 1,888,495,798 bytes；bundle content digest `6f46bcb483d2c23fde3deae1a67e794332d03623ae816a1322a78c091dce3546`，partition identity `ef19a8dbedc7a4ffd59f49d7aa8555e39a999964a3d39360a70e0a51d94eef34`。外部 generation/parent 引用释放后 bundle revalidate 通过，最后 bundle 释放后目录删除。见[验证记录](2026-09-21-m1-z-coreml-bundle-validation.json)。
 
 该对象验证元数据所声明的父关联，不证明任意 compiled code 确由该 checkpoint 导出；模型加载时的实际 feature ABI、算术质量和独立 release qualification 仍须验证，父 checkpoint 的实际 tensor 几何也由模型 metadata/reader 校验。第四十一轮 INT8 候选仍因 block 29 不通过数值筛查。本轮没有 Core ML prediction、GPU suffix join 或速度比较。新文件已加入 build source list，只编译了 standalone native 测试，尚未重建完整 dylib/App。安装 ID 注册、HybridSession typed 接入、执行 owner/join/receipt 及 public authority 仍待完成。
+
+
+## 第四十五轮：verified bundle 接入真实 HybridSession（2026-09-21）
+
+HybridSession 新增内部 typed 构造器，直接消费 VerifiedCoreMLBundleLease 提供的 32 个 generation 内路径与分区，不再重开/重解释 legacy manifest，也不要求导出机 checkpoint 路径等价。加载前后复核 bundle，固定 FP16 bucket ABI 在每个 CoreMLBranch 加载时核对，沿用一个 MLX 共享输出 backing，无 warmup。新增显式 revalidate_source，供执行 owner 在需要的边界核验；未将其当作 public execution authority。
+
+会话 Impl 持有 bundle；无论正常析构或构造中抛出异常，先保留 bundle 局部 owner，在 autorelease pool 内清理 branches，pool 退出后才释放 bundle，避免路径文件早于 Core ML 模型对象释放。预测入口对 typed 路径按不可变 partition 检查分支编号、完整 padded FP16 [1,R,H]、连续 backing 与实际元素数，再交给 Core ML；错误输入在预测前拒绝，不标记 runtime prediction failure。既有 Z 调用先补齐再裁回有效行数的约定保留。该资源顺序不替代 GPU consumer 的 drain，调用方仍必须等共享输出读取完成才能复用或释放。
+
+构建期间两次明确停止本任务拥有的 build process group：首次补上 typed 输入检查，第二次将检查依据收紧到不可变 partition，避免依赖公开的统计字段；不是因等待超时重启。最终完整 native hook 构建与 runtime/catalog 编译后核对通过。库 SHA-256 `cb901a231ccdd8ac5ee45bdae9bb84b58160a4c51c8950f7b8a4f311079fbbf0`，runtime key `tc-runtime-build-v1-75560d32bb86bce2c3290a110ddaa6ffa046f6f8c254c3626b6f2dfb89553e6a`。
+
+按[固定计划](2026-09-21-m1-z-verified-session-plan.json)对实际 32 个 INT8 compiled models 执行新路径测试：先在首个 load callback 设置取消，验证部分构造退出保留 Cancelled 类型；再在第二个 load callback 注入事件异常，验证传播和干净重试。完整构造后释放外部 generation/parent/bundle 引用，会话仍能保留目录并验证来源。32 次全零输入预测、0 warmups、0 runtime failures，每次通过 GPU 逐元素验证全零输出，并在消费完成后复用同一输出 backing 地址；未补齐行数、float32、非连续/广播 backing、越界分支全部拒绝且会话仍可运行。最后 revalidate 和 session 释放后的 generation 目录删除通过。
+
+旧 manifest/C API bridge 亦用新库完成 block 29 的一次全零预测，checkpoint SHA 验证通过、零 runtime failures、close 正常。native contract 83 项运行、3 项原有跳过，其余通过；Z public adapter 的 shared lease/identity、route rejection、失败清理和 source replacement 回归通过。host 链接 macOS 26.0/26.2 提示保留，本机 26.4.1 运行通过。见[验证记录](2026-09-21-m1-z-verified-session-validation.json)。
+
+本轮证明 typed source 能进入真实会话并预测，零输入只验证 bias-free FFN 的基本 ABI/执行与所有权，不改变第四十一轮 INT8 非零输入质量失败结论，也不证明 ANE 驻留或速度收益。未接通新 StageExecutor 的 GPU suffix join、noise/main 完整 owner 与 9 steps/288 branch receipts，没有新完整出图或 release/App 构建；public hybrid 准入保持关闭。

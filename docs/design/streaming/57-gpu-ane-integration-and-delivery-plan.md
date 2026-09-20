@@ -397,3 +397,10 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 新增内部 VerifiedCoreMLBundleLease，保留已验证 generation/父 SourceLease，验证 manifest/source/export 的 parent SHA/bytes、一致的 FFN partition/scale/precision/bucket 和完整 branch map，提供 32 个 generation 内 compiled 路径和 canonical partition identity。布尔/小数/重复 JSON、越界/重复路径及各种字段错配测试通过，跨安装副本得到相同身份；真实 32 分支、1.89 GB 研究 bundle 绑定与 owner 清理通过，详见[第四十四轮](../../experiments/2026-09-20-m1-streaming.md)。
 
 此对象是内部来源/语义绑定，不是产品 release authority；声明的 export-parent 关联不等于 compiled code 的数学正确性证明。研究 fixture 组装排除了缓存锁文件，产品安装 ID 注册仍缺失。未接入 HybridSession/new StageExecutor，未验证此次 bundle 的模型 feature ABI/预测，未实现混合精度 bank；原 INT8 数值候选仍失败。因此 H0/H1/HY-M0 不能整体关闭。
+
+
+## 21. H1/H2 typed HybridSession 接缝（2026-09-21）
+
+HybridSession 已新增消费 VerifiedCoreMLBundleLease 的内部构造路径，使用验证后的固定 partition/模型路径，加载前后校验来源，持有 bundle 到 branches 和 autorelease pool 清理结束。typed prediction 检查完整 padded FP16 输入与分支范围；错误输入不会进入 Core ML 或污染 runtime failure 状态。真实 32 分支全零预测、共享 backing GPU 消费/复用、部分构造取消、事件异常、外部引用释放后的保留及最终目录清理均通过；旧 bridge 和 public GPU adapter 回归通过，见[第四十五轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+这提供了实际 typed 会话执行接缝，尚未将 suffix reader/新 StageExecutor、完整 request owner、GPU join 和实际 receipt 连成 denoiser；未验证 prediction hang/drain quarantine，也没有产品安装注册或独立质量资格。原 INT8 非零数值筛查仍失败，零输入测试不能覆盖这一结论。HY-M0 继续未完成。
