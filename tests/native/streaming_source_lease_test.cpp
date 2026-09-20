@@ -323,6 +323,24 @@ int main(int argc, char **argv) {
     snapshot->revalidate_source();
     assert(snapshot->source_lease() == second_lease.get());
 
+    auto proof = SourceLease::capture_verified(second_lease->descriptor().files);
+    auto portable = source;
+    portable.identity_version = 2;
+    portable.source_snapshot_digest.clear();
+    portable.artifact_manifest_digest = std::string(proof->artifact_digest());
+    ValueModelStreamingProbe verified_probe({
+        "test-model", portable, workload, runtime, "components-v1", proof});
+    assert(verified_probe.source_lease() == proof.get());
+    assert(rejects([&] {
+        ValueModelStreamingProbe unverified({
+            "test-model", portable, workload, runtime, "components-v1", second_lease});
+    }, "source lease digest differs"));
+    portable.source_snapshot_digest = std::string(proof->digest());
+    assert(rejects([&] {
+        ValueModelStreamingProbe mixed({
+            "test-model", portable, workload, runtime, "components-v1", proof});
+    }, "source lease digest differs"));
+
     std::cout << "PASS source lease/value probe: single-fd capture, canonical ordering, "
                  "verified content, copy identity, cache invalidation, cancellation, "
                  "fd duplication, generation, same-size mutation, path/alias replace, "

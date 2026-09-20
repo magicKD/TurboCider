@@ -126,6 +126,17 @@ struct SelectedStreamingPreset {
     StreamingSelector requested_selector;
 };
 
+// Compare portable content or legacy snapshot identity to native lease proof.
+// This does not replace request-time path/fd revalidation.
+inline bool streaming_source_matches_lease(const PresetSourceIdentity &source,
+                                    const SourceLease &lease) {
+    if (!lease.generation() || lease.digest().empty()) return false;
+    if (source.identity_version == 1)
+        return source.source_snapshot_digest == lease.digest();
+    return source.identity_version == 2 && source.source_snapshot_digest.empty() &&
+        lease.has_verified_content() && source.artifact_manifest_digest == lease.artifact_digest();
+}
+
 class StreamingAuthority final {
   public:
     StreamingAuthority(const StreamingAuthority &) = delete;
@@ -145,13 +156,13 @@ class StreamingAuthority final {
                        std::string layout_digest,
                        std::string component_policy_revision,
                        std::string device_digest,
-                       uint64_t source_generation,
+                       uint64_t source_generation, std::string source_binding_digest,
                        std::string resolution_digest);
 
     std::string preset_digest_, source_digest_, workload_digest_;
     std::string runtime_digest_, layout_digest_;
     std::string component_policy_revision_;
-    std::string device_digest_;
+    std::string device_digest_, source_binding_digest_;
     uint64_t source_generation_ = 0;
     std::string resolution_digest_;
 };

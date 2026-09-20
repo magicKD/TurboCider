@@ -551,6 +551,59 @@ int main() {
     rejects([&] { resolve_streaming_preset(query(10 * gib), invalid_catalog); },
             "calibration is incomplete");
 
+    {
+        SourceFileIdentity input;
+        input.logical_id = "model";
+        input.path = fixture_path;
+        auto verified = SourceLease::capture_verified({input});
+        auto portable = slow;
+        portable.source = {"original-bf16", "safetensors-bf16",
+                           std::string(verified->artifact_digest()), "", 2};
+        portable = finalize_streaming_preset_record(portable);
+        StreamingPresetCatalog portable_catalog{"test-r1", {portable}};
+        Probe first;
+        first.source_value = portable.source;
+        first.lease_value = verified;
+        auto first_selection = PublicPresetResolver::select(
+            selector(10 * gib), first, device(), portable_catalog);
+        Snapshot first_snapshot(portable.plan.layout_digest);
+        first_snapshot.source_value = portable.source;
+        first_snapshot.lease_value = verified;
+        auto first_authorized = PublicPresetResolver::authorize(
+            first_selection, first, first_snapshot, device());
+        const auto copied_path = fixture_root / "copied.safetensors";
+        std::filesystem::copy_file(fixture_path, copied_path);
+        input.path = copied_path;
+        Probe copied;
+        copied.source_value = portable.source;
+        copied.lease_value = SourceLease::capture_verified({input});
+        auto copied_selection = PublicPresetResolver::select(
+            selector(10 * gib), copied, device(), portable_catalog);
+        Snapshot copied_snapshot(portable.plan.layout_digest);
+        copied_snapshot.source_value = portable.source;
+        copied_snapshot.lease_value = copied.lease_value;
+        auto copied_authorized = PublicPresetResolver::authorize(
+            copied_selection, copied, copied_snapshot, device());
+        assert(copied_selection.record.canonical_record_digest ==
+               first_selection.record.canonical_record_digest);
+        assert(copied_authorized.authority->matches(portable, copied_snapshot, device()));
+        assert(!first_authorized.authority->matches(portable, copied_snapshot, device()));
+        rejects([&] { PublicPresetResolver::authorize(
+            first_selection, first, copied_snapshot, device()); },
+            "streaming_source_lease_mismatch");
+        Probe untrusted = copied;
+        untrusted.lease_value = SourceLease::capture({input});
+        rejects([&] { PublicPresetResolver::select(
+            selector(10 * gib), untrusted, device(), portable_catalog); }, "artifact_changed");
+        { std::fstream file(copied_path, std::ios::binary | std::ios::in | std::ios::out);
+          file.put('X'); }
+        rejects([&] { PublicPresetResolver::select(
+            selector(10 * gib), copied, device(), portable_catalog); }, "source");
+        copied.lease_value = SourceLease::capture_verified({input});
+        rejects([&] { PublicPresetResolver::select(
+            selector(10 * gib), copied, device(), portable_catalog); }, "artifact_changed");
+    }
+
     Probe probe;
     auto selected = PublicPresetResolver::select(
         selector(10 * gib), probe, device(), catalog);

@@ -282,12 +282,8 @@ void PublicStreamingCoordinator::revalidate(
             "streaming_source_lease_required");
     require(probe_lease == snapshot_lease &&
                 probe_lease->generation() != 0 &&
-                probe_lease->digest() ==
-                    execution.probe->source_identity()
-                        .source_snapshot_digest &&
-                snapshot_lease->digest() ==
-                    execution.model_snapshot->source_identity()
-                        .source_snapshot_digest,
+                streaming_source_matches_lease(execution.probe->source_identity(), *probe_lease) &&
+                streaming_source_matches_lease(execution.model_snapshot->source_identity(), *snapshot_lease),
             "streaming_source_lease_mismatch");
     snapshot_lease->revalidate_paths();
     snapshot_lease->revalidate_open_files();

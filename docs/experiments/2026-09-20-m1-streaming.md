@@ -499,3 +499,14 @@ MLX peak 为约 8.88–8.98 GB，最大 8,975,747,452 bytes；该计数不含 Co
 
 
 验证结果：`test_streaming_preset_resolver.py` host suite 通过；`test_streaming_catalog_builder.py` 16 项通过；完整 native hook 构建成功，`test_streaming_test_catalog.py` 3 项通过，其中新库实际接受 Python 编码的 v2 record，但当前 Z-Image adapter resolve 返回 `artifact_verification_required`；带 snapshot 的 v2 JSON 被拒绝。既有 v1 catalog 生成、CLI 导出、安装、resolve、失败替换保留原快照仍通过。hook 库路径 `build/m1-catalog-v2/libturbocider.dylib`，SHA-256 `9c6b5f7bbf3bb0f18c2ada534db3f12b1df2643dc4d62c492993464cb6650684`；release hook 缺席检查使用前述保留的 m1-release 库，不宣称本轮重建了 release App。没有进行 GPU 性能复测或提升 public catalog。
+
+
+## 第二十四轮：V2 resolver 内容证明与请求权限分离（2026-09-21）
+
+核心 resolver 不再一律拒绝 v2 probe：只有 native verified lease 的全内容摘要与 record identity 一致、且 portable identity 不含 snapshot 时才接受。metadata-only lease 或 caller 提供的 digest 不会获得内容信任。probe/snapshot 仍必须共享同一 lease 实例；select/authorize 检查命名路径与 held fd，coordinator 的执行前检查继续生效。authority 除 portable source identity 外，独立保存本次 lease generation 和 snapshot digest，不能因内容相同而跨请求复用。
+
+新增真实临时文件 host 案例：相同内容复制到另一路径后能选择同一 v2 record，并分别授权；原 authority 对复制请求 matches=false；原 probe 搭配复制 snapshot 授权被拒绝；metadata-only lease 被拒绝；同大小文件改写使旧 lease 失效，重新验证后的新内容也不能匹配旧 record。ValueProbe 另测 verified v2 成功，以及未验证 lease、混合 snapshot 的 v2 拒绝。
+
+这完成 core resolver 的身份/权限接缝，不代表模型 public adapter 已迁移。Z-Image/Flux probe 仍捕获 legacy snapshot，导入验证入口和 persistent proof、portable layout 的实际模型执行接入、生产 catalog 和真实端到端验收仍待完成。本轮不变更 GPU/ANE 路由，不据 host 测试宣称 GPU 性能或 App 验收通过。
+
+验证：`.venv/bin/python tests/native/test_streaming_preset_resolver.py` 与 `.venv/bin/python tests/native/test_streaming_source_lease.py` 均编译并通过（host-only，无 GPU）；覆盖既有 v1 authority、coordinator、receipt/drain 回归及上述新增 v2 案例。

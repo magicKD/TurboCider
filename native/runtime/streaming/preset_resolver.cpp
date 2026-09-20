@@ -17,10 +17,6 @@ void require_resolution(bool value, const std::string &code) {
 
 const SourceLease &validated_probe_lease(
         const ModelStreamingProbe &probe) {
-    // RecordV2 serialization lands before the adapter/authority migration.
-    // Do not interpret a portable record as a legacy request binding.
-    require_resolution(probe.source_identity().identity_version == 1,
-                       "streaming_source_identity_version_unsupported");
     const auto *lease = probe.source_lease();
     require_resolution(lease != nullptr,
                        "streaming_source_lease_required");
@@ -29,8 +25,10 @@ const SourceLease &validated_probe_lease(
                            !lease->digest().empty(),
                        "streaming_source_lease_invalid");
     require_resolution(
-        lease->digest() == probe.source_identity().source_snapshot_digest,
+        streaming_source_matches_lease(probe.source_identity(), *lease),
         "artifact_changed");
+    lease->revalidate_paths();
+    lease->revalidate_open_files();
     return *lease;
 }
 
@@ -48,9 +46,7 @@ const SourceLease &validated_source_chain(
                            snapshot_lease->generation() != 0,
                        "streaming_source_lease_mismatch");
     require_resolution(snapshot_lease->digest() == probe_lease.digest() &&
-                           snapshot_lease->digest() ==
-                               snapshot.source_identity()
-                                   .source_snapshot_digest,
+                           streaming_source_matches_lease(snapshot.source_identity(), *snapshot_lease),
                        "artifact_changed");
     return *snapshot_lease;
 }
@@ -251,7 +247,7 @@ ResolvedStreamingSelection PublicPresetResolver::authorize(
             snapshot.layout().digest,
             std::string(snapshot.component_policy_revision()),
             streaming_device_identity_digest(device),
-            source_lease.generation(), digest));
+            source_lease.generation(), std::string(source_lease.digest()), digest));
     return {record, selected.requested_selector, exact, device, digest,
             std::move(authority)};
 }
