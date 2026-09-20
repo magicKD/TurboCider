@@ -790,3 +790,18 @@ host fixture 验证多 chunk 内容复制与字节数、跨安装内容身份、
 复制字节和 portable 内容 digest 与上一轮相同：117,968,870 bytes、`f98a425fd17d2c11f4d369598d0dde7c510b82e44390d50d250554e9346f7538`。见[原始验证与源码身份记录](2026-09-21-m1-z-coreml-generation-execution-validation.json)。该测试证明 sealed generation 能被实际 Core ML 路径加载并预测，弥补上一轮仅文件操作的证据范围；它没有执行 GPU suffix join，也不替代原 32 分支非零输入数值筛查或完整出图。CPU+NE 不证明实际 ANE 驻留，未做性能比较。
 
 本轮只新增测试与文档，没有修改生产 native 实现或重建完整 dylib/App。VerifiedCoreMLBundleLease 的 manifest/父 checkpoint/partition/precision 语义绑定、安装 ID 注册和 HybridSession 接入仍未完成；Core ML 预测本身的取消/阻塞 owner/drain 也没有由导入 syscall 测试覆盖。
+
+
+## 第四十四轮：Core ML bundle 的父内容与分区绑定（2026-09-21）
+
+新增内部 `VerifiedCoreMLBundleLease::bind()`，接收已导入的 CoreMLGeneration 和 native 已验证的父 SourceLease。它持有两者，读取 generation 内相对 manifest，拒绝重复 JSON 字段、布尔值冒充数字、非整数/非有限数、路径越界/绝对路径、缺失/重复/空 compiled model。验证 schema 2、Z exporter recipe 1、无 ConvRot/LoRA、3840×10240 FFN、[0,a) 且 a 为 128 的倍数并严格位于 MLP 内、固定 bucket 1088、scale 8/32，以及 source/export_identity 的全部对应字段一致。source/export_identity 的 checkpoint SHA/bytes 必须匹配 native 已验证的父文件；导出机绝对 checkpoint 路径不参与路径等价判定。
+
+分支映射要求 0/1 为 noise、2..31 为 30 main，32 个不同 compiled 路径由 bundle 提供。当前接受单一 fp16 或 int8_pc precision revision；legacy artifact key 固定为 int8_pc，即使 variant 为 fp16 也以 export_identity 为准。没有混合精度 bank 支持。partition identity 采用 canonical domain `tc-z-image-hybrid-partition-v1`，绑定 generation 内容、父 SHA、几何/范围、bucket、precision、scale 的明确 float32 IEEE 位模式以及 branch/path 映射，不使用浮点字符串或安装绝对路径。
+
+host fixture 的 2 个有效安装副本得到相同身份，20 个无效案例被拒绝；另检查未验证父 lease 拒绝、manifest 越界路径拒绝、generation caller 引用释放后 bundle 继续持有，以及父路径替换后 revalidate 拒绝。普通测试和 ASan/UBSan 通过。fixture compiled files 是 stub，仅验证元数据/来源合同，不能当作模型 ABI 或算术证明。最初测试编译有一处混合类型 auto 声明，修正后重新运行通过。
+
+首次真实验证直接导入整个 compiled-cache，被 SourceLease 的空文件规则拒绝：该目录含 33 个空锁文件，进程已退出；未更改验证规则。后续测试工具明确组装只含 manifest 与其引用的 32 个 model.mlmodelc 的研究 bundle，保持 manifest 字节/相对路径，排除缓存管理文件，再运行独立验证。此组装步骤是测试 fixture，不是产品安装接口；SourceLease/当前 generation 仍要求每个 regular file 非空。
+
+真实完整父 checkpoint 验证 SHA 为 `2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6`。32 个 model.mlmodelc 共 128 个模型 regular files，加 manifest，私有导入 1,888,495,798 bytes；bundle content digest `6f46bcb483d2c23fde3deae1a67e794332d03623ae816a1322a78c091dce3546`，partition identity `ef19a8dbedc7a4ffd59f49d7aa8555e39a999964a3d39360a70e0a51d94eef34`。外部 generation/parent 引用释放后 bundle revalidate 通过，最后 bundle 释放后目录删除。见[验证记录](2026-09-21-m1-z-coreml-bundle-validation.json)。
+
+该对象验证元数据所声明的父关联，不证明任意 compiled code 确由该 checkpoint 导出；模型加载时的实际 feature ABI、算术质量和独立 release qualification 仍须验证，父 checkpoint 的实际 tensor 几何也由模型 metadata/reader 校验。第四十一轮 INT8 候选仍因 block 29 不通过数值筛查。本轮没有 Core ML prediction、GPU suffix join 或速度比较。新文件已加入 build source list，只编译了 standalone native 测试，尚未重建完整 dylib/App。安装 ID 注册、HybridSession typed 接入、执行 owner/join/receipt 及 public authority 仍待完成。

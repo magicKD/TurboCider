@@ -110,7 +110,7 @@ SOURCES=(
 native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_mlx/vdn_mlx.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
  native/models/z_image/gguf.cpp
- native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp
+ native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/models/z_image/coreml_bundle.mm
  native/platform/apple/z_image_weight_stream.mm
  native/models/llada/llada.cpp native/models/llada/llada_text.cpp
  native/models/llada/llada_transformer.cpp

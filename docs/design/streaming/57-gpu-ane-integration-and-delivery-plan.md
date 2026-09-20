@@ -390,3 +390,10 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 第四十三轮补齐导入过程的确定性短 I/O、EOF/EIO/ENOSPC、零进展、读/写/seal 边界取消、seal 失败、目标内容损坏与源 generation 变化测试；每例验证失败不发布、fd/目录清理和干净重试，普通/ASan/UBSan 通过。真实 block 29 FP16 compiled model 已从只读私有 generation 路径加载并完成一次全零预测，feature ABI、全零 oracle、前后 revalidate 与最终目录清理通过。见[实验记录](../../experiments/2026-09-20-m1-streaming.md)。
 
 这关闭的是文件导入故障和实际 Core ML 路径加载的验证缺口；不证明已接入 HybridSession，不替代 typed bundle 的语义/父来源绑定，也没有覆盖预测阻塞/取消或完整 owner/join/receipt。H0/H1 和 HY-M0 仍不能整体标记完成。
+
+
+## 20. H0/H1 typed bundle 语义绑定进度（2026-09-21）
+
+新增内部 VerifiedCoreMLBundleLease，保留已验证 generation/父 SourceLease，验证 manifest/source/export 的 parent SHA/bytes、一致的 FFN partition/scale/precision/bucket 和完整 branch map，提供 32 个 generation 内 compiled 路径和 canonical partition identity。布尔/小数/重复 JSON、越界/重复路径及各种字段错配测试通过，跨安装副本得到相同身份；真实 32 分支、1.89 GB 研究 bundle 绑定与 owner 清理通过，详见[第四十四轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+此对象是内部来源/语义绑定，不是产品 release authority；声明的 export-parent 关联不等于 compiled code 的数学正确性证明。研究 fixture 组装排除了缓存锁文件，产品安装 ID 注册仍缺失。未接入 HybridSession/new StageExecutor，未验证此次 bundle 的模型 feature ABI/预测，未实现混合精度 bank；原 INT8 数值候选仍失败。因此 H0/H1/HY-M0 不能整体关闭。

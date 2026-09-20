@@ -4,7 +4,8 @@
 namespace tc::z_image {
 
 // Internal import primitive, not hybrid execution authority. The tree must be
-// self-contained: semantic manifest/parent/partition validation is a separate
+// self-contained with nonempty regular files (SourceLease requirement); cache
+// management lock files are not model payload. Semantic manifest/parent/partition validation is a separate
 // responsibility of the future VerifiedCoreMLBundleLease factory.
 class CoreMLGeneration final {
   public:
