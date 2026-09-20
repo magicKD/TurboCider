@@ -365,3 +365,16 @@ audit build 的 10 blocks / 20 matched pairs 已完整结束：40/40 请求成�
 数值区间落在冻结的 1.02/1.05/1.02 上限内，但**总体结果仍为 INCONCLUSIVE**：environment.json 是 partial，背景模型下载持续，未取得完整电源/热状态/SSD 环境记录。没有修改 environment 状态来取得 PASS，也不据此发布认证卡。它提供了真实 4B 上逐图一致、完整布局执行和框架开销的证据，不能替代完整发布门。
 
 封存：[summary](2026-09-20-m1-flux4-p1-summary.json)、[audit](2026-09-20-m1-flux4-p1-audit.json)、[quality](2026-09-20-m1-flux4-p1-quality.json)、[semantics](2026-09-20-m1-flux4-p1-semantics.json)。完整原始 bundle 位于 `/Users/chencanhui/models/TurboCider/experiments/m1-flux4-p1`，两侧 native SHA-256 为 `1d6761714a05f18a0c31c0185a5db32851f8c013b7af4d5225ab9f6f4533e90f`。session `29177` exit 1 对应验证器 INCONCLUSIVE，并非请求失败。
+
+
+## 第十五轮：App 图片产物验证与原子发布
+
+非 LTX 图片请求此前直接写最终输出路径，公共结果校验失败时也可能已覆盖目标。新增 ImageOutputTransaction：请求只写同目录 0700 私有 staging，公共 selector 对暂存路径重新解析并冻结；父层先验证原 native result 与冻结 request，再验证图片、生成含 SHA-256/字节数的 receipt，最后同步 rename 发布。历史中的用户请求和返回 receipt 使用最终路径。
+
+校验要求 model/operation/seed/steps/尺寸/path/warmup 的严格类型与请求匹配，输出是普通非空 PNG、单图、正确尺寸且完整解码；读取前后与发布前对 held-fd/path 的 inode/size/mtime/ctime 做一致性检查。后台验证任务参与 App 取消，最后发布前再检查取消状态。失败清理暂存目录，推理/校验/取消/rename 失败不会替换原文件。
+
+首轮测试发现 ImageIO 能容忍某些截断 PNG，仅检查 decode/status 不足以证明完整。因此增加有界分块的 PNG signature/IHDR/IDAT/IEND 边界和逐块 CRC-32 校验，要求 IEND 完整且位于文件末尾，再进行完整栅格解码。新增测试现已通过：错误 JSON 字段、空/缺失/非 PNG/截断/错误 CRC/符号链接、尺寸不符、正常 SHA receipt 与发布、重复发布拒绝、验证后替换 inode、取消、发布目标不可替换及暂存清理。日志 `/tmp/tc-image-transaction-tests.log`；首次失败日志由测试运行记录，未把容错解码当作通过。
+
+该修改不宣称完整 R5 已关闭：视频路径仍使用独立 LTX 事务，其他非 LTX 视频未统一；跨 jobs.json 与产物的崩溃一致提交、持久化 worker diagnostics、独立 job/request 协议仍待完成。已提交产物后的历史写盘失败，也不属于本次原文件回滚承诺范围。固定源码的完整 App、Studio、StreamingResolution 编译和测试均 exit 0（session `92350`）。图片事务、StreamingResolution 和 Studio 日志分别为 `/tmp/tc-image-transaction-tests.log`、`/tmp/tc-image-resolution-tests.log`、`/tmp/tc-image-studio-tests.log`，App 为 `build/m1-audit/TurboCiderNativeApp`。
+
+新版 App 启动 30 秒保持存活，随后仅终止本次测试进程；`/tmp/tc-image-app-smoke.json` 记录结果，stderr 为 0 字节。这是启动检查，未冒充全部 UI 流程或 public 模型生成验收。

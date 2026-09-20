@@ -81,6 +81,7 @@ final class NativeJobStore: ObservableObject {
     private var cancelRequested = false
     private var tensorCacheTask: Task<Data, Error>?
     private var ltxTask: Task<Data, Error>?
+    private var imageValidationTask: Task<Data, Error>?
     private var lastPersist = Date.distantPast
     private var telemetry = StepTelemetry()
     private var lastSequence = -1
@@ -267,6 +268,7 @@ final class NativeJobStore: ObservableObject {
         cancelRequested = true
         tensorCacheTask?.cancel()
         ltxTask?.cancel()
+        imageValidationTask?.cancel()
         if coreMLResourceBusy { NativeEngine.cancelCoreMLResources() }
         engine?.cancel()
         if let id = activeID, let i = jobs.firstIndex(where: { $0.id == id }) {
@@ -414,16 +416,30 @@ final class NativeJobStore: ObservableObject {
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
         // Close the reentrancy window before any async plan/session operation.
         busy = true; cancelRequested = false; actualRoute = nil
-        defer { busy = false; activeID = nil; ltxTask = nil }
+        defer { busy = false; activeID = nil; ltxTask = nil; imageValidationTask = nil }
+        let imageTransaction = NativeRequestV2(legacy: request).operation.hasPrefix("image.")
+            ? try ImageOutputTransaction(request: request) : nil
+        var generationRequest = request
+        var stagedStreamingRequest = streamingRequest
+        if let imageTransaction {
+            generationRequest.output = imageTransaction.stagedURL.path
+            if let intent = stagedStreamingRequest {
+                guard intent.outputs.count == 1, intent.outputs[0].path == request.output else {
+                    throw NativeFailure(message: "image_transaction_request_invalid: 流式图片输出请求不一致。")
+                }
+                stagedStreamingRequest?.outputs[0].path = imageTransaction.stagedURL.path
+            }
+        }
         if streamingRequest == nil {
-            do { _ = try await Task.detached { try NativeEngine.plan(request) }.value }
+            let planRequest = generationRequest
+            do { _ = try await Task.detached { try NativeEngine.plan(planRequest) }.value }
             catch { throw error }
         }
         var openedForPublicStreaming: NativeEngine?
         var publicResolutionJSON: String?
-        var frozenStreamingRequest = streamingRequest
+        var frozenStreamingRequest = stagedStreamingRequest
         var publicResolution: NativeStreamingResolution?
-        if let streamingRequest, request.model != "ltx-2.5-distilled" {
+        if let streamingRequest = stagedStreamingRequest, request.model != "ltx-2.5-distilled" {
             let opened = try await acquire(modelURL, modelID: request.model)
             if cancelRequested { throw CancellationError() }
             let resolution = try await opened.resolveStreaming(streamingRequest)
@@ -444,7 +460,7 @@ final class NativeJobStore: ObservableObject {
             let callback: @Sendable (NativeEvent) -> Void = { [weak self] event in
                 DispatchQueue.main.async { [weak self] in self?.receive(event, id: id) }
             }
-            let result: Data
+            var result: Data
             let usesLTXWorker = request.model == "ltx-2.5-distilled" &&
                 (streamingRequest != nil || LTXWorker.accepts(request))
             if let streamingRequest, request.model == "ltx-2.5-distilled" {
@@ -480,11 +496,23 @@ final class NativeJobStore: ObservableObject {
                 if let streamingRequest = frozenStreamingRequest {
                     result = try await opened.generate(streamingRequest, onEvent: callback)
                 } else {
-                    result = try await opened.generate(request, onEvent: callback)
+                    result = try await opened.generate(generationRequest, onEvent: callback)
                 }
             }
             if let publicResolution, let frozenStreamingRequest {
                 try publicResolution.validateResult(result, request: frozenStreamingRequest)
+            }
+            if let imageTransaction {
+                let unverified = result
+                let work = Task.detached {
+                    try imageTransaction.prepare(unverified)
+                }
+                imageValidationTask = work
+                result = try await withTaskCancellationHandler {
+                    try await work.value
+                } onCancel: { work.cancel() }
+                if cancelRequested || Task.isCancelled { throw CancellationError() }
+                try imageTransaction.publish()
             }
             guard let i = jobs.firstIndex(where: { $0.id == id }) else { throw NativeFailure(message: "Missing job") }
             jobs[i].state = "succeeded"; jobs[i].phase = "complete"
