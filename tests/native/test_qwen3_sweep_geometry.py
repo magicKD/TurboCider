@@ -23,6 +23,24 @@ def manifest(tmp_path, hidden, width, blocks):
 
 
 class GeometryTests(unittest.TestCase):
+    def test_fixed_execution_and_flexible_qualification_are_separate(self):
+        summary = dict(ane_calls_session_total=162,
+                       ane_first_runtime_calls_session_total=27,
+                       ane_subsequent_runtime_calls_session_total=135,
+                       coreml_block_count=27, runtime_failed=False,
+                       runtime_failures_session_total=0,
+                       prefill_fixed_shape=True, prefill_actual_tokens=64,
+                       qualified_flexible_backing=False)
+        self.assertEqual(sweep.hybrid_execution_status(summary, 'flux_klein', 64, 5, [64]), (True, True))
+        self.assertEqual(sweep.hybrid_execution_status(summary, 'flux_klein', 64, 5, [64, 128]), (True, False))
+        summary['qualified_flexible_backing'] = True
+        self.assertEqual(sweep.hybrid_execution_status(summary, 'flux_klein', 64, 5, [64, 128]), (True, True))
+        summary['ane_calls_session_total'] = 161
+        self.assertFalse(sweep.hybrid_execution_status(summary, 'flux_klein', 64, 5, [64])[0])
+        summary['ane_calls_session_total'] = 162
+        summary['runtime_failures_session_total'] = 1
+        self.assertFalse(sweep.hybrid_execution_status(summary, 'flux_klein', 64, 5, [64])[0])
+
     def test_supported_and_rejected_geometry(self):
         import tempfile
         with tempfile.TemporaryDirectory() as raw:

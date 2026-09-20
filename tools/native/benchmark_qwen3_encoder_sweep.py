@@ -164,6 +164,28 @@ def load_compiled_manifest(path: Path, mode: str) -> dict:
     return manifest
 
 
+def hybrid_execution_status(summary: dict, mode: str, tokens: int, runs: int,
+                            buckets: list[int]) -> tuple[bool, bool]:
+    blocks = MODE_GEOMETRY[mode]["required_blocks"]
+    executed = (
+        summary.get("ane_calls_session_total") == blocks * (runs + 1) and
+        summary.get("ane_first_runtime_calls_session_total") == blocks and
+        summary.get("ane_subsequent_runtime_calls_session_total") == blocks * runs and
+        summary.get("coreml_block_count") == blocks and
+        summary.get("runtime_failed") is False and
+        summary.get("runtime_failures_session_total") == 0 and
+        summary.get("prefill_fixed_shape") is True and
+        summary.get("prefill_actual_tokens") == tokens
+    )
+    # A single fixed bucket does not use the flexible backing capability.
+    # Keep flexible-interface qualification separate from observed execution.
+    backing_qualified = (
+        len(buckets) == 1 or
+        summary.get("qualified_flexible_backing") is True
+    )
+    return executed, backing_qualified
+
+
 def command_for(args: argparse.Namespace, tokens: int, folder: Path,
                 hybrid: bool) -> list[str]:
     command = [
@@ -576,14 +598,8 @@ def main() -> int:
             results["hybrid"]["warm_cv"] <= args.max_warm_cv
         )
         hybrid_summary = compact_backend(results["hybrid"])
-        hybrid_executed = (
-            hybrid_summary.get("ane_calls_session_total", 0) > 0 and
-            hybrid_summary.get("coreml_block_count") ==
-                MODE_GEOMETRY[args.mode]["required_blocks"] and
-            hybrid_summary.get("qualified_flexible_backing") is True and
-            hybrid_summary.get("runtime_failed") is not True and
-            hybrid_summary.get("prefill_fixed_shape") is True and
-            hybrid_summary.get("prefill_actual_tokens") == tokens
+        hybrid_executed, backing_qualified = hybrid_execution_status(
+            hybrid_summary, args.mode, tokens, args.runs, manifest["shape"]["buckets"]
         )
         case = {
             "tokens": tokens,
@@ -591,6 +607,7 @@ def main() -> int:
             "gpu": compact_backend(results["gpu"]),
             "hybrid": hybrid_summary,
             "hybrid_executed": hybrid_executed,
+            "backing_qualified": backing_qualified,
             "warm_speedup": speedup,
             "quality": quality,
             "quality_passed": quality_passed,
@@ -598,7 +615,7 @@ def main() -> int:
             "stability_passed": stability_passed,
             "retain": (
                 quality_passed and speed_passed and stability_passed and
-                hybrid_executed
+                hybrid_executed and backing_qualified
             ),
         }
         if args.mlx_reference:

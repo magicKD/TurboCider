@@ -297,3 +297,32 @@ R4 检查再次确认 Flux/Z exact owner 仍有完整生命周期缺口：StageE
 已用官方 Flux text encoder 启动完整 27-block、64-row、4864-prefix、INT8 per-channel 导出（`/tmp/tc-qwen-full-export.log`，session `59965`），路径 `/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-int8`。native qwen3-quant-probe 已针对新库编译到 `build/m1-cache`（`/tmp/tc-qwen-probe-build.log`）。记录时导出尚未结束，完整 encoder 的输出质量和收益均未判定。
 
 Flux smoke 进程 PID 36144 已在开始推理前接入 process-tree sampler，50 ms 间隔/250 ms gap 上限，correlation `m1-flux4-official-smoke-20260920`，证据写入该实验目录的 `process-memory.jsonl`（session `78685`）。采样从等待下载阶段开始，仍需独立 verifier 验证完整性；不能把下载与导出并行期间的结果用作正式冷/暖性能资格。
+
+
+### 官方 Flux 4B：真实 streaming 出图成功
+
+Flux transformer 下载完成，完整大小 7,751,109,744 字节，SHA-256 与 pinned 官方 `9f29f9edcfdae452a653ffb51a534ca4decd389952c225724ff3b94042612a6e` 一致；其余已下载 Flux 文件一并校验。以同一狐狸/雪地/松林提示、seed 42、256×256、4 步跑了两次真实 BF16 candidate exact streaming。
+
+首次 native 已完成导出，事件最后时间 9.442 秒；Python harness 随后因缺 Pillow 退出，未保存 native result。保留原图和 events，不将 harness exit 1 当作完整测试通过。第二次改用系统 ImageIO（sips）验证，并在后处理前先保存 result，在新目录重跑：native status 0、图像解码成功，request wall 8.116 秒，text 1.570 秒、denoise 6.182 秒、VAE 0.229 秒。两张 PNG 的 SHA-256 均为 `505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02`。图像目视有狐狸、雪地和松林，无明显损坏；这不是多提示质量评测。
+
+真实 result 确认 generic_stage_executor_v1、25 groups × 4 passes = 100 fills、两个 retained pools/四个 slot bundles、K2/D1/Q2、drained=true；逻辑读取 29,834,145,792 字节，MLX peak 6,269,857,144 字节。实际布局 digest 为 `87c3bf901d70dc9261544e67bce9618bfa91c8c305df2b369962646659157e5f`。来源由实验脚本按官方 hash 核验，但 candidate result 的 source_lease_verified=false，没有 public receipt；不能称为 public catalog 功能已认证。
+
+原始结果及源校验见 [Flux smoke JSON](2026-09-20-m1-flux4-streaming-smoke.json)，产物见 [狐狸图像](2026-09-20-m1-flux4-streaming-smoke.png)。正式性能比较仍需固定并发/缓存/进程生命周期条件；上述两次均有下载或导出/编译背景活动。
+
+首次 process-tree 证据 verifier 为 complete，tree peak footprint 6,356,833,344 字节；第二次 native 子进程 exit 0，但 sampler 因短命 sips 子进程 unknown_child 返回 inconclusive，不能用于整棵进程树内存资格。两份 verifier 结果均封存在 smoke JSON，未丢弃失败记录。首次的系统 compression 增量也包含其他进程活动，不归因于本模型。
+
+### 完整 Flux encoder：50% 分区的初步结果
+
+27 个 INT8 分区导出和 native compile 均 exit 0。64-token 固定 bucket、GPU/ANE MLP 宽度各 4864、原 checkpoint、确定性 token IDs、输出 tap 8/17/26，分别用独立进程执行 GPU 与 hybrid，一次首轮加 5 次暖态。
+
+- 完整 conditioning 相对 L2 **0.008728185**、cosine **0.999992121**、相对最大误差 **0.007407407**，全部 finite，符合预先设置的 0.025 / 0.999 / 0.05 门槛；这不是图像质量证明。
+- GPU 暖态中位数 **0.138848 秒**，hybrid **0.114904 秒**，比值 **1.208×**；hybrid CV **0.3224** 超出既定 0.25，因此本轮不能保留为稳定的推荐分区。
+- GPU load **2.412 秒**，hybrid load **16.418 秒**；首个 encoder pass 分别 **1.635 秒**和 **2.402 秒**。冷请求明显无收益，不能用暖态小收益掩盖冷启动成本。
+- Core ML 模型数 27、累计预测调用 162、没有 runtime failure；compute 配置不等于实测 ANE 驻留证明。
+
+[原始 encoder report](2026-09-20-m1-qwen3-full-encoder-sweep.json) 保留原值。其中 hybrid_executed=false 暴露工具的第二个问题：它将 flexible backing 资格混入执行观测，而本次单固定 bucket 不使用 flexible backing。现将“全部 blocks/calls 是否实际执行”和 backing 资格拆开：单 bucket 不要求 flexible 标志，多 bucket 仍要求；并强化为核对首轮/后续/总调用数和零失败，拒绝仅执行部分 blocks 的假阳性。新增回归通过，不篡改这份历史原始结果。正在以 10 个暖态样本复测波动，结果出来前不提高任何阈值。
+
+
+10 样本复测已结束：[第二份完整 encoder report](2026-09-20-m1-qwen3-full-encoder-sweep-2.json)。完整调用数为 297 = 27×11，hybrid_executed=true，fixed backing 资格检查通过；conditioning 数值与上轮一致。GPU 暖态中位数 0.139203 秒，hybrid 0.117130 秒，比值 1.188×；hybrid 第一暖态 0.335283 秒导致 CV 0.4710，仍超过 0.25，retain=false。未删除尖峰或提高阈值。Core ML load 从 14.607 秒降至 6.871 秒，说明系统编译/模型缓存影响 setup；不能把第二轮当作独立冷启动加速证明。
+
+为继续探索划分，已启动 `/tmp/tc-qwen-width-sweep.py`，依次导出/编译/测量 2432（25%）与 7296（75%）前缀，均 27 blocks、64 tokens、INT8、10 暖态样本；日志 `/tmp/tc-qwen-width-sweep.log`。这些仍是完整 encoder 的探索性对照，未宣称 Flux denoiser hybrid 或完整图像请求收益。Z 官方模型仍在下载，目标整体保持未完成。
