@@ -418,3 +418,10 @@ HybridSession 已新增消费 VerifiedCoreMLBundleLease 的内部构造路径，
 新增 describe_hybrid_streaming，将 verified GPU parent 与 bundle partition 的一致性、bundle 内容/precision/scales、GPU kernel/join/backing 政策纳入独立 layout-only descriptor 身份，再由 common compiler 编译 P/G/K/D/Q。GPU fields/packing recipe 不变，尚未生成的派生源保持 recipe identity。跨路径复制身份相同、bundle 内容或 precision 改变身份不同、父来源和固定 scope 错配拒绝、容量/I/O/exact descriptor 不变的测试通过，见[第四十七轮](../../experiments/2026-09-20-m1-streaming.md)。
 
 该规划接口不加载 Core ML/不打包/不分配 GPU，不授予执行权限；初始 scope 明确为 HY-M0 512²/64 caption rows/9 steps。StageExecutor 的实际 hybrid adapter、完整 owner 和 component receipt 仍待实施，不能用 metadata 布局通过替代执行或整请求内存/质量资格。
+
+
+## 24. H2 实际 hybrid transformer owner 与 stage 执行（2026-09-21）
+
+内部 ZImageHybridStream 已连接 verified sources、typed Core ML、GPU suffix/join、原 transformer attention/投影及 common StageExecutor；持有输入和 pending tensor，失败保持不可重用，无法确认 drain 时保留整个 owner。真实 512²/P1/K2/D1/Q2、非零 latent/合成 caption 的 9 步 Euler 运行完成 288 branches、261 groups，实际 stage receipt verifier 与最终清理通过。独立取消及不安全 drain 注入通过；具体数值、轨迹、回归及限制见[第四十八轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+仍缺 ModelEngine/public route 接入与整引擎 poison、完整 H3 component receipt、Qwen prompt/VAE 出图、GPU 对照/质量/性能准入。补充 branch completion 不能替代 component receipt；原 INT8 非零质量失败保留，未证明 ANE 驻留或实际 hang 恢复。HY-M0 继续未完成。

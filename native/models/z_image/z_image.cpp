@@ -2,6 +2,7 @@
 #include "z_image.hpp"
 #include "block_profile.hpp"
 #include "hybrid_math.hpp"
+#include "hybrid_stream.hpp"
 
 #include "../../media/image.hpp"
 #include "../../platform/apple/platform.hpp"
@@ -706,7 +707,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                const Tensor &freqs, const Tensor &temb, HybridSession *hybrid,
                int hybrid_block,
                 const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph,
-                bool compile_hybrid_segments = false) {
+                bool compile_hybrid_segments = false, std::vector<Tensor> *keepalive = nullptr) {
     ZBlockProfile profile(prefix, hybrid != nullptr);
     // A LoRA can dequantize only the projections it touches.  Do not infer
     // that the whole block is dense from QKV/w1 alone: Q8 GGUF modulation or
@@ -788,6 +789,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
         if (actual_rows < hybrid->rows)
             packed = mx::concatenate(
                 {packed, mx::zeros({1, hybrid->rows - actual_rows, 3840}, mx::float16)}, 1);
+        if (keepalive) keepalive->insert(keepalive->end(), {value, gate_mlp, feed_input, packed});
         mx::eval({feed_input, packed});
         profile.packed();
         const auto ffn = prefix + ".feed_forward";
@@ -799,9 +801,11 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                             w.at(ffn + ".w3.weight"), w.at(ffn + ".w2.weight")})[0]
             : z_hybrid_gpu_suffix(feed_input, w, ffn, hybrid->ane_mlp_end,
                                   hybrid->mlp_width);
+        if (keepalive) keepalive->push_back(gpu);
         mx::async_eval({gpu});
         profile.submitted(gpu);
         auto ane = slice_axis(hybrid->predict(hybrid_block, packed), 1, 0, actual_rows);
+        if (keepalive) keepalive->push_back(ane);
         profile.predicted(gpu);
         feed = z_image::join_hybrid_ffn(gpu, ane, Tensor(z_hybrid_output_scale(hybrid), gpu.dtype()));
         if (std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE")) {
@@ -855,6 +859,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                      mx::max(mx::abs(feed)).item<float>());
     }
     auto result = value + gate_mlp * rms(feed, w.at(prefix + ".ffn_norm2.weight"), 1e-5f);
+    if (keepalive) keepalive->push_back(result);
     profile.finish(result);
     if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
         mx::eval({result});
@@ -943,7 +948,8 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
                      const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph,
                      ZImageWeightStream *weight_stream,
                      ZImageExactStream *exact_stream, uint32_t pass,
-                     bool compile_hybrid_segments) {
+                     bool compile_hybrid_segments, ZImageHybridStream *hybrid_stream = nullptr) {
+    require(!hybrid_stream || (!weight_stream && !exact_stream), "hybrid/exact stream conflict");
     require(!(weight_stream && exact_stream),
             "Z-Image legacy and exact streaming cannot run together");
     if (weight_stream) weight_stream->begin_pass();
@@ -978,14 +984,17 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     caption_emb = mx::expand_dims(caption_emb, 0);
     for (int i = 0; i < 2; ++i) {
         checkpoint(cancelled);
-        image = z_block(image, w, "noise_refiner." + std::to_string(i), image_freqs, temb,
-                        hybrid, i, gpu_graph, compile_hybrid_segments);
+        image = hybrid_stream ? hybrid_stream->encode_noise(uint32_t(i), image, image_freqs, temb)
+            : z_block(image, w, "noise_refiner." + std::to_string(i), image_freqs, temb,
+                      hybrid, i, gpu_graph, compile_hybrid_segments);
         caption_emb = z_context_block(caption_emb, w,
                                       "context_refiner." + std::to_string(i), caption_freqs);
     }
     auto unified = mx::concatenate({image, caption_emb}, 1);
     auto unified_freqs = mx::concatenate({image_freqs, caption_freqs}, 0);
-    if (exact_stream) {
+    if (hybrid_stream) {
+        hybrid_stream->run_main(pass, unified, unified_freqs, temb);
+    } else if (exact_stream) {
         exact_stream->run_pass(pass, pass, unified, unified_freqs, temb);
     } else {
         for (int i = 0; i < 30; ++i) {
@@ -1073,15 +1082,38 @@ Tensor z_initial_noise(const Request &r, int height, int width) {
 
 namespace {
 
-class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
+struct ZHybridExecution {
+    HybridSession session;
+    z_image::HybridGpuGraph graph;
+    std::vector<Tensor> pending;
+    std::vector<ZHybridBranchCompletion> completed;
+    uint32_t step = 0;
+    ZHybridExecution(std::shared_ptr<const z_image::VerifiedCoreMLBundleLease> bundle,
+                     const Event &event, std::atomic<bool> &cancel)
+        : session(bundle, event, cancel),
+          graph(z_image::make_hybrid_gpu_graph(3840, 10240, int(bundle->partition().ane_end))) {
+        pending.reserve(16); completed.reserve(9 * 32);
+    }
+    void record(uint32_t branch, uint32_t rows) {
+        require(step < 9 && branch < 32 && rows == (branch < 2 ? 1024u : 1088u), "hybrid branch shape mismatch");
+        require(completed.size() == size_t(step) * 32 + branch, "hybrid branch order mismatch");
+        const auto calls = session.metrics().runtime_calls;
+        require(calls == completed.size() + 1, "hybrid prediction count mismatch");
+        completed.push_back({step, branch, rows, calls});
+        pending.clear(); // Only called after the block GPU consumer completes.
+    }
+};
+
+class ZImageStageAdapter final : public streaming::ModelSlotAdapter {
     struct Job {
-        ZImageExactAdapter *owner = nullptr;
+        ZImageStageAdapter *owner = nullptr;
         uint32_t slot = 0;
         uint32_t block = 0;
         std::array<char, 512> error{};
     };
 
     ZImageWeightStream &source_;
+    ZHybridExecution *hybrid_ = nullptr;
     uint32_t prefix_ = 0;
     uint32_t slot_count_ = 0;
     Event event_;
@@ -1103,10 +1135,10 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
     }
 
   public:
-    ZImageExactAdapter(ZImageWeightStream &source, uint32_t prefix,
+    ZImageStageAdapter(ZImageWeightStream &source, uint32_t prefix,
                        uint32_t slot_count,
-                       const Event &event, std::atomic<bool> &cancelled)
-        : source_(source), prefix_(prefix), slot_count_(slot_count),
+                       const Event &event, std::atomic<bool> &cancelled, ZHybridExecution *hybrid = nullptr)
+        : source_(source), hybrid_(hybrid), prefix_(prefix), slot_count_(slot_count),
           event_(event),
           cancelled_(cancelled) {
         require(slot_count_ >= 1 && slot_count_ <= jobs_.size(),
@@ -1201,8 +1233,10 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
             *unified_ = z_block(
                 *unified_, source_.prefix_weights(block),
                 "layers." + std::to_string(block), *freqs_, *temb_,
-                nullptr, int(2 + block), nullptr);
+                hybrid_ ? &hybrid_->session : nullptr, int(2 + block),
+                hybrid_ ? &hybrid_->graph : nullptr, false, hybrid_ ? &hybrid_->pending : nullptr);
             mx::eval(*unified_);
+            if (hybrid_) hybrid_->record(2 + block, uint32_t(unified_->shape(1)));
             checkpoint(cancelled_);
         }
     }
@@ -1235,12 +1269,14 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
         event_("z_image_denoise_block", int(block), 30);
         *unified_ = z_block(
             *unified_, current_, "layers." + std::to_string(block),
-            *freqs_, *temb_, nullptr, int(2 + block), nullptr);
+            *freqs_, *temb_, hybrid_ ? &hybrid_->session : nullptr, int(2 + block),
+            hybrid_ ? &hybrid_->graph : nullptr, false, hybrid_ ? &hybrid_->pending : nullptr);
         // The executor has already started the following vacant slot's fill
         // after claiming this content. This synchronous completion therefore
         // matches the specialized pager's ordering without an extra
         // async_eval call per block.
         mx::eval(*unified_);
+        if (hybrid_) hybrid_->record(2 + block, uint32_t(unified_->shape(1)));
         checkpoint(cancelled_);
         require(reader_sequence_ != std::numeric_limits<uint64_t>::max(),
                 "Z-Image exact reader sequence overflow");
@@ -1276,10 +1312,179 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
 
 } // namespace
 
+struct ZImageHybridStream::Impl {
+    std::shared_ptr<const streaming::SourceLease> parent;
+    std::shared_ptr<const z_image::VerifiedCoreMLBundleLease> bundle;
+    std::shared_ptr<std::atomic<bool>> cancelled;
+    Event event;
+    std::thread::id owner = std::this_thread::get_id();
+    z_image::StreamingWorkload workload;
+    std::unique_ptr<z_image::StreamingMetadata> metadata;
+    z_image::HybridStreamingPlan plan;
+    std::shared_ptr<const z_image::GpuSuffixSource> derived;
+    Weights fixed;
+    std::unique_ptr<ZImageWeightStream> source;
+    std::unique_ptr<ZHybridExecution> hybrid;
+    std::shared_ptr<ZImageStageAdapter> adapter;
+    std::unique_ptr<streaming::StageExecutor> executor;
+    struct Inputs { Tensor latent, caption; };
+    std::optional<Inputs> inputs;
+    uint32_t next_pass = 0;
+    bool active = false, failed = false, finished = false;
+    void check_owner() const {
+        require(owner == std::this_thread::get_id(), "hybrid stream owner thread mismatch");
+    }
+    Impl(std::shared_ptr<const streaming::SourceLease> p,
+         std::shared_ptr<const z_image::VerifiedCoreMLBundleLease> b,
+         const StreamingConfig &config, const z_image::StreamingWorkload &work,
+         Event e, std::shared_ptr<std::atomic<bool>> c)
+        : parent(std::move(p)), bundle(std::move(b)), cancelled(std::move(c)), event(std::move(e)), workload(work) {
+        require(parent && bundle && cancelled, "hybrid stream requires owned verified sources and cancellation");
+        if (!event) event = [](const std::string &, int, int) {};
+        checkpoint(*cancelled);
+        metadata = std::make_unique<z_image::StreamingMetadata>(parent);
+        plan = z_image::describe_hybrid_streaming(*metadata, *bundle, config, workload);
+        require(config.active() && !plan.layout.stages[0].resident && !plan.layout.stages[0].groups.empty(),
+                "hybrid stream requires a streamed main stage");
+        require(!std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE"),
+                "legacy full-weight hybrid validator cannot consume suffix-only weights");
+    }
+    void initialize(uint64_t budget, uint64_t activation, uint64_t request) {
+        require(request != 0, "hybrid request generation must be nonzero");
+        derived = metadata->materialize_gpu_suffix(workload, bundle->partition().ane_end, *cancelled, event);
+        require(derived->plan().recipe_digest == plan.gpu.recipe_digest, "hybrid materialization recipe changed");
+        const auto &stage = plan.layout.stages[0];
+        source = std::make_unique<ZImageWeightStream>(derived, stage.prefix, stage.slot_count,
+                                                    budget, activation, fixed, event, *cancelled);
+        hybrid = std::make_unique<ZHybridExecution>(bundle, event, *cancelled);
+        adapter = std::make_shared<ZImageStageAdapter>(*source, stage.prefix, stage.slot_count,
+                                                      event, *cancelled, hybrid.get());
+        executor = std::make_unique<streaming::StageExecutor>(0, request, adapter);
+        executor->begin(stage);
+        executor->enable_receipt({plan.layout.digest, "z-image-verified-hybrid-stage-v1", parent->generation()});
+        bundle->revalidate(); derived->check_unchanged();
+    }
+};
+
+ZImageHybridStream::ZImageHybridStream(std::shared_ptr<const streaming::SourceLease> parent,
+        std::shared_ptr<const z_image::VerifiedCoreMLBundleLease> bundle,
+        const StreamingConfig &config, const z_image::StreamingWorkload &workload,
+        uint64_t budget, uint64_t activation, Event event,
+        std::shared_ptr<std::atomic<bool>> cancel, uint64_t request)
+    : impl_(std::make_unique<Impl>(std::move(parent), std::move(bundle), config, workload,
+                                  std::move(event), std::move(cancel))) {
+    try { impl_->initialize(budget, activation, request); }
+    catch (...) {
+        if (!drain_safely()) (void)impl_.release();
+        throw;
+    }
+}
+ZImageHybridStream::~ZImageHybridStream() {
+    if (impl_ && !drain_safely()) (void)impl_.release();
+}
+bool ZImageHybridStream::drain_safely() noexcept {
+    if (!impl_) return true;
+    if (impl_->owner != std::this_thread::get_id()) return false;
+    if (!impl_->finished) impl_->failed = true;
+    bool safe = true;
+    try {
+        if (impl_->executor) safe = impl_->executor->retry_drain();
+        // Fixed noise, embeddings and final projection live outside the pool.
+        if (safe) mx::synchronize();
+    } catch (...) { safe = false; }
+    if (impl_->adapter) impl_->adapter->unbind_pass(safe);
+    if (safe) {
+        if (impl_->hybrid) impl_->hybrid->pending.clear();
+        impl_->inputs.reset();
+    }
+    impl_->active = false;
+    return safe;
+}
+bool ZImageHybridStream::failed() const noexcept { return !impl_ || impl_->failed; }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+void ZImageHybridStream::test_set_drain_failure(bool value) {
+    impl_->check_owner(); impl_->adapter->test_fail_drain = value;
+}
+#endif
+const streaming::Layout &ZImageHybridStream::layout() const { return impl_->plan.layout; }
+streaming::ExecutionCounters ZImageHybridStream::counters() const {
+    impl_->check_owner(); return impl_->executor->counters();
+}
+HybridMetrics ZImageHybridStream::hybrid_metrics() const {
+    impl_->check_owner(); return impl_->hybrid->session.metrics();
+}
+const std::vector<ZHybridBranchCompletion> &ZImageHybridStream::branches() const { return impl_->hybrid->completed; }
+std::shared_ptr<const streaming::ActualStageReceipt> ZImageHybridStream::receipt() const {
+    impl_->check_owner(); require(impl_->finished, "hybrid receipt is not finalized"); return impl_->executor->receipt();
+}
+std::vector<float> ZImageHybridStream::sigmas() const { return z_sigmas(512, 512, 9); }
+Tensor ZImageHybridStream::encode_noise(uint32_t branch, const Tensor &image, const Tensor &freqs, const Tensor &temb) {
+    impl_->check_owner();
+    require(impl_->active && !impl_->failed && branch < 2, "noise hook requires active hybrid transform");
+    checkpoint(*impl_->cancelled);
+    auto &execution = *impl_->hybrid;
+    execution.pending = {image, freqs, temb};
+    auto result = z_block(image, impl_->fixed, "noise_refiner." + std::to_string(branch), freqs, temb,
+                          &execution.session, int(branch), &execution.graph, false, &execution.pending);
+    mx::eval(result);
+    execution.record(branch, uint32_t(result.shape(1)));
+    checkpoint(*impl_->cancelled);
+    return result;
+}
+void ZImageHybridStream::run_main(uint32_t pass, Tensor &unified, const Tensor &freqs, const Tensor &temb) {
+    impl_->check_owner();
+    require(impl_->active && !impl_->failed && pass == impl_->next_pass &&
+            impl_->hybrid->completed.size() == size_t(pass) * 32 + 2, "main hook requires completed noise refiners");
+    impl_->adapter->bind_pass(pass, pass, unified, freqs, temb);
+    impl_->executor->run_pass(pass, pass, *impl_->cancelled);
+    impl_->adapter->copy_pass_result(unified);
+    impl_->adapter->unbind_pass();
+}
+Tensor ZImageHybridStream::transform(const Tensor &latent, const Tensor &caption, float sigma, uint32_t step) {
+    impl_->check_owner();
+    require(!impl_->active && !impl_->failed && !impl_->finished && step == impl_->next_pass && step < 9,
+            "hybrid stream unavailable or pass out of order");
+    require(latent.shape() == mx::Shape{16, 1, 64, 64} && caption.ndim() == 2 &&
+            caption.shape(0) > 32 && caption.shape(0) <= 64 && caption.shape(1) == 2560 &&
+            std::isfinite(sigma) && sigma >= 0 && sigma <= 1, "hybrid transform input scope mismatch");
+    try {
+        checkpoint(*impl_->cancelled);
+        impl_->bundle->revalidate(); impl_->derived->check_unchanged();
+        impl_->inputs.emplace(Impl::Inputs{mx::astype(latent, mx::bfloat16), caption});
+        impl_->active = true; impl_->hybrid->step = step;
+        auto output = mx::astype(z_transformer(impl_->inputs->latent, impl_->inputs->caption, sigma, 512, 512,
+            impl_->fixed, impl_->event, *impl_->cancelled, &impl_->hybrid->session, &impl_->hybrid->graph,
+            nullptr, nullptr, step, false, this), mx::float32);
+        impl_->hybrid->pending.push_back(output);
+        mx::eval(output);
+        impl_->bundle->revalidate(); impl_->derived->check_unchanged();
+        require(impl_->hybrid->completed.size() == size_t(step + 1) * 32, "incomplete hybrid transformer pass");
+        impl_->hybrid->pending.clear(); impl_->inputs.reset(); impl_->active = false; ++impl_->next_pass;
+        checkpoint(*impl_->cancelled);
+        return output;
+    } catch (const std::exception &error) {
+        impl_->failed = true; drain_safely();
+        if (std::strcmp(error.what(), "streaming_cancelled") == 0) throw Cancelled();
+        throw;
+    } catch (...) { impl_->failed = true; drain_safely(); throw; }
+}
+void ZImageHybridStream::finish() {
+    impl_->check_owner();
+    require(!impl_->active && !impl_->failed && !impl_->finished && impl_->next_pass == 9,
+            "hybrid execution incomplete");
+    try {
+        impl_->executor->finish();
+        impl_->bundle->revalidate(); impl_->derived->check_unchanged();
+        require(impl_->hybrid->completed.size() == 288 && impl_->hybrid->session.metrics().runtime_calls == 288,
+                "hybrid branch totals mismatch");
+        impl_->finished = true;
+    } catch (...) { impl_->failed = true; drain_safely(); throw; }
+}
+
 struct ZImageExactStream::Impl {
     z_image::StreamingPlanView plan;
     ZImageWeightStream source;
-    std::shared_ptr<ZImageExactAdapter> adapter;
+    std::shared_ptr<ZImageStageAdapter> adapter;
     std::unique_ptr<streaming::StageExecutor> executor;
     std::atomic<bool> &cancelled;
     streaming::ExecutionCounters final_counters{};
@@ -1296,7 +1501,7 @@ struct ZImageExactStream::Impl {
           source(checkpoint, plan.layout().stages.front().prefix,
                  plan.layout().stages.front().slot_count, budget,
                  activation_reserve, fixed, event, cancelled),
-          adapter(std::make_shared<ZImageExactAdapter>(
+          adapter(std::make_shared<ZImageStageAdapter>(
               source, plan.layout().stages.front().prefix,
               plan.layout().stages.front().slot_count, event, cancelled)),
           executor(std::make_unique<streaming::StageExecutor>(
@@ -1315,7 +1520,7 @@ struct ZImageExactStream::Impl {
           source(plan.lease_ptr(), plan.layout().stages.front().prefix,
                  plan.layout().stages.front().slot_count, budget,
                  activation_reserve, fixed, event, cancelled),
-          adapter(std::make_shared<ZImageExactAdapter>(
+          adapter(std::make_shared<ZImageStageAdapter>(
               source, plan.layout().stages.front().prefix,
               plan.layout().stages.front().slot_count, event, cancelled)),
           executor(std::make_unique<streaming::StageExecutor>(

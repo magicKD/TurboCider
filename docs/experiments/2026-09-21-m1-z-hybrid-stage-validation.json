@@ -1,0 +1,196 @@
+{
+  "scope": "Internal full transformer with synthetic caption, nonzero latent and existing 9-step Euler schedule; not full image or performance qualification",
+  "output_root": "/Users/chencanhui/models/TurboCider/experiments/m1-hybrid-stage-smoke",
+  "results": {
+    "complete": {
+      "mode": "complete",
+      "passed": true,
+      "completed_passes": 9,
+      "coreml_calls": 288,
+      "stage_groups": 261,
+      "stage_read_bytes": 63646382592,
+      "layout_digest": "83001699e3186c4b0e03f5e83e974afe71db222ba6f1805beb6cfcffe921d622",
+      "stage_event_digest": "29721c9251e74b1f8c9f0238cbf803244ea84f79f8e786e4aa97cefe0b0ccd9c",
+      "stage_canonical_digest": "379511274515a4219b6a4f87b830606c06f031ec90eb46e5d54d33c165335add"
+    },
+    "cancel": {
+      "mode": "cancel",
+      "passed": true,
+      "completed_branches": 4,
+      "generation_cleanup": true
+    },
+    "unsafe": {
+      "mode": "unsafe",
+      "passed": true,
+      "completed_branches": 3,
+      "generation_cleanup": true
+    }
+  },
+  "arrays": {
+    "caption.npy": {
+      "shape": [
+        64,
+        2560
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 0.0,
+      "sha256": "e45aafe2505704947e2af5f995ac9592cc3237c0c9a0c13974af9796f47f2fad"
+    },
+    "final.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 4.2332916259765625,
+      "sha256": "fcaf0b5deb03cb0c7e63292f04da0a17b686fa375d4ce1a01fc47ef261c2398b"
+    },
+    "initial.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 1.0,
+      "sha256": "b45bf79ef2092dbbcecb10a33bab868b6b9048da0bbc6159e4ee9499ebe6fa48"
+    },
+    "velocity-0.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 3.34375,
+      "sha256": "548f29d681dd8d92bc58d3a6c601a147164eac5fd76a1530cb06b9784d1a67a8"
+    },
+    "velocity-1.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 3.03125,
+      "sha256": "7d02ead8f600cb11251ece0c32107bf4be3f75982171a5aed22b8f79ecc9172d"
+    },
+    "velocity-2.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 3.359375,
+      "sha256": "7c583d9661093c06688a0efe738a5126980696be2315fffbf72d5b59bdeda493"
+    },
+    "velocity-3.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 3.453125,
+      "sha256": "6825cdf5d8a51460aad46510478c1087f8b02d06f51a608c6cbf37b2d56fafd6"
+    },
+    "velocity-4.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 3.484375,
+      "sha256": "def371ee08052a3ad5e3b38f2853e167ea8272bbafb4c00e0f4f10e2258d32bd"
+    },
+    "velocity-5.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 3.546875,
+      "sha256": "03a1c9b6b7625188bc9468c0f4ca346020cbfd5e7e538022f3308c656c27b505"
+    },
+    "velocity-6.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 3.625,
+      "sha256": "84efe58a3da04de822d298bc3cb32dcf0f0580d084382d047966550162fb0d40"
+    },
+    "velocity-7.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 3.71875,
+      "sha256": "108ace9e06f7819f49519b694de4ee5f25359be89b17edd23908612cf01bddfa"
+    },
+    "velocity-8.npy": {
+      "shape": [
+        16,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "finite": true,
+      "max_abs": 4.15625,
+      "sha256": "680ba16e02538cc59b7d20f058022d7f10e17cd0a2dc6e7e56e5a3924ad6ae84"
+    }
+  },
+  "library_sha256": "2820120234420a2cc88d944eadf041a78c9cae9f890c52262f45e63bdbb5a72a",
+  "runtime_key": "tc-runtime-build-v1-1f0d08ef12a3036b47dde60ab88976a3a2975ccde2152d0e5fa2902cb01dc7b5",
+  "regressions": {
+    "contract": {
+      "run": 83,
+      "skipped": 3,
+      "passed": 80
+    },
+    "public_adapter": "pass",
+    "weight_stream": {
+      "run": 10,
+      "skipped": 6,
+      "passed": 4
+    },
+    "hybrid_layout": "pass"
+  },
+  "limitations": [
+    "Original INT8 candidate still fails branch 29 numerical gate",
+    "No Qwen prompt encoding, VAE or image quality comparison",
+    "No hardware residency, overlap or performance claim",
+    "Unsafe drain is deterministic injection, not a hardware hang",
+    "Internal owner only; ModelEngine integration and complete hybrid component receipt remain pending"
+  ]
+}

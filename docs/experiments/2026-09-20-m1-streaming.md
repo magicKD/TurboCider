@@ -850,3 +850,18 @@ Metal 测试采用真实 FFN 几何 3840×10240、a=5120、两个输入 rows，�
 普通执行与 ASan/UBSan 通过；sanitizer 覆盖本轮新 factory 和 test 对象，链接的上一轮 support dylib 未重新插桩，不声称覆盖全库。见[验证记录](2026-09-21-m1-z-hybrid-layout-validation.json)。host macOS 26.0/26.2 链接提示保留，本机执行通过。新源文件已加入 build source list，本轮仅单独编译/运行 metadata 测试，没有完整 dylib/App 重建。
 
 这补齐 StageExecutor 接入前的布局身份约束，并未实现 hybrid adapter 或完整 request owner。stub 模型不提供 Core ML 算术证据，本轮没有模型预测、GPU join、完整出图或性能比较；原 INT8 非零质量失败保持。GPU 字段容量也不包含 Core ML models/activation 等完整请求内存，不能据此晋升 release record。
+
+
+## 第四十八轮：完整 hybrid transformer 接入 StageExecutor（2026-09-21）
+
+新增内部单线程 owner `ZImageHybridStream`，将 verified parent/bundle、派生 suffix source、reader、typed HybridSession、GPU graph、输入与尚未完成的 tensor、adapter 和 StageExecutor 放入同一生命周期。复用原 transformer 的 embedding、noise/context refiners、attention、main blocks 和 final projection；noise 两个分支直接执行，main 的 resident prefix 与 streamed groups 交给 common StageExecutor。保留原 denoise 的 BF16 模型输入/F32 velocity 边界。hybrid layout revision 从 layout-only 更新到实际 stage-v1，并绑定 block kernel 与 owner/drain 政策；上一轮身份记录不回写。
+
+每个 block 的 GPU suffix/ANE output/join consumer 完成后才记录 branch completion 或 reader fence，允许复用 slot/output backing。异常后 owner 失败状态保持，拒绝再次 transform；drain 先处理 StageExecutor 的 I/O/reader，再同步覆盖 noise、embedding、final projection 的 GPU 工作。只有确认完成才能释放 pending tensors、输入和来源。无法确认 drain 时保留整个 owner，避免只留 buffer 却释放 Core ML generation；此路径仍待整合到 ModelEngine 的 poison 状态。
+
+按[执行前计划](2026-09-21-m1-z-hybrid-stage-plan.json)，实际运行官方权重、既有 32 个 INT8 compiled models，512²、P1/G1/K2/D1/Q2、9 步现有 sigma/Euler 调度。初始 latent 为非零 sin 序列，caption 为 64×2560 全零合成输入，不涉及 prompt encoder。完成 288 次 Core ML 调用、261 个 streamed group、63,646,382,592 bytes group 读取；每步 32 个分支、29 个 group。每步 velocity 与最终 latent 为有限 F32，最终 latent 与初始不同。native actual stage receipt verifier 通过；另保存完整 [branch 轨迹](2026-09-21-m1-z-hybrid-stage-branches.csv)和 [group receipt 字段](2026-09-21-m1-z-hybrid-stage-groups.csv)，逐项复核 9-pass 矩阵、fill/reader completion 与实际字节。补充 branch 轨迹尚不是完整 H3 component receipt schema。
+
+独立进程取消测试在 4 个分支完成后抛出 typed Cancelled；独立事件异常在 3 个分支完成后触发。后者注入无法确认 drain，验证返回 false 且私有 generation 仍存在；解除注入后安全 drain，最终 owner 释放清理目录。两种故障均拒绝复用失败 owner；正常路径同样先确认最终 generation 清理才写 passed 结果。错误 step、输入维度、过早读取 receipt 和跨线程执行均被拒绝。注入检查的是保留政策，不是实际硬件 hang 恢复。
+
+完整 native 构建、runtime/catalog 核对通过。库 SHA `2820120234420a2cc88d944eadf041a78c9cae9f890c52262f45e63bdbb5a72a`，runtime key `tc-runtime-build-v1-1f0d08ef12a3036b47dde60ab88976a3a2975ccde2152d0e5fa2902cb01dc7b5`。contract 83 项（3 项原有跳过）、public adapter、reader 10 项（6 项设备限制跳过）及更新后的 metadata layout 测试通过。首次构建因补齐 BF16/F32 边界主动中止，修正后重新构建；没有因超时重启实际实验。链接 macOS 26.0/26.2 提示保留，本机 26.4.1 执行通过。见[结果与 tensor 哈希](2026-09-21-m1-z-hybrid-stage-validation.json)。
+
+这是内部完整 transformer 的非零轨迹与 owner 验证，尚未连接 ModelEngine/public hybrid 路由，没有 Qwen prompt/VAE/完整图片，也未进行纯 GPU 数值或速度对照。原 INT8 block 29 质量失败保持，有限输出不能替代质量门槛。Core ML CPU+NE 配置不证明 ANE 驻留或硬件重叠；没有整体请求内存准入、完整 component receipt、产品安装注册或新 App E2E 资格，HY-M0 尚不能整体完成。

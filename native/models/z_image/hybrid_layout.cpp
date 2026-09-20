@@ -20,12 +20,14 @@ HybridStreamingPlan describe_hybrid_streaming(
             partition.bucket_rows == 1088 && descriptor.workload.at("unified_rows") == "1088" &&
             descriptor.workload.at("image_rows") == "1024" && plan.gpu.packing.size() == 32,
             "hybrid layout partition/workload mismatch");
-    // Distinct from exact-GPU and suffix-only metadata identities. These
-    // revisions intentionally do not assert that an execution adapter exists.
-    descriptor.backend_revision = "z-image-verified-hybrid-v1-layout-only";
-    descriptor.stages[0].adapter_revision = "z-image-verified-hybrid-v1-layout-only";
+    // Independent from exact-GPU and the earlier planning-only revision.
+    // Execution still requires the internal owner and separate public authority.
+    descriptor.backend_revision = "z-image-verified-hybrid-stage-v1";
+    descriptor.stages[0].adapter_revision = "z-image-verified-hybrid-stage-v1";
     auto &identity = descriptor.workload;
     identity["execution"] = "gpu_ane";
+    identity["hybrid_block_kernel"] = "uncompiled-attention-compiled-ffn-v1";
+    identity["component_lifecycle"] = "owned-inputs-stage-drain-v1";
     identity["approximation"] = "true";
     identity["hybrid_partition_identity"] = partition.identity;
     identity["hybrid_bundle_content"] = partition.artifact_content_digest;
