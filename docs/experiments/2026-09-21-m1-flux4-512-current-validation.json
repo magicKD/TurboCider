@@ -1,0 +1,15 @@
+{
+  "scope": "Single private Flux 4B 512-square observation, not public qualification",
+  "image_sha256": "7bf7c59b5d277965fa34686730f6358b6e3718201c484fbf199f806d3b13c27e",
+  "memory_raw_sha256": "3a74b65f9e8df7ece0dca1c364bf0184eb93f288bb03a7f087ea8d67b5f526dd",
+  "events_sha256": "b477e70632ec0916d892dbdba46ed4256f3bf8f9bd80cd02e6ef374f63e1e123",
+  "raw_root": "/Users/chencanhui/models/TurboCider/experiments/m1-flux4-512-current",
+  "source_scope": "Native content verification at setup succeeded; execution actual_layout.source_lease_verified is false. Do not infer owned verified public execution from setup verification.",
+  "resident_admission": "Flux4 estimate = 12 GiB + width*height*8192; resident requires estimate+4 GiB physical. Every positive shape exceeds 16 GiB. Streaming skips this resident-only estimate.",
+  "limits": [
+    "One sample; no P95 calibration or performance comparison",
+    "Private component policy differs from public request policy",
+    "Sampler compression/swap counters are interval observations, not per-request causal attribution",
+    "No public catalog authority or App streaming success"
+  ]
+}

@@ -919,3 +919,16 @@ Swift App 和全部 integration test executables 完整构建退出 0，链接�
 定向 transaction 测试与完整 JobStore/history 测试通过，覆盖发布前/后持久化状态、重复恢复、缺失 staging、内容变更、相同字节不同 inode、符号链接、非法 staging 路径、损坏图片和缺失收据，原有 PNG/取消/冲突/历史删除回归保持通过。最初 history 测试编译因局部 FileManager 变量名缺失失败，修正后测试与 App 重建退出 0；见[验证与源码/App 哈希](2026-09-21-m1-image-finalizing-recovery.json)。
 
 本轮通过构造实际落盘的中断边界状态并重新打开 JobStore 验证恢复，没有执行断电、OS crash 或真实模型运行时的磁盘故障注入，不声明 fsync/断电持久性。单次请求的 worker envelope、重启时旧进程存活判断、完整 source/quality/release 资格仍未关闭；此修复也不授予 Flux public streaming 档位。
+
+
+## 第五十三轮：Flux4 512² streaming 的当前观测（2026-09-21）
+
+核对第五十轮 App 默认请求拒绝的原因：Flux4 resident 的保守 estimate 是 `12 GiB + width×height×8192`，准入要求再留 4 GiB。因此在 16 GiB 机器上所有非零尺寸都会被拒绝；减小分辨率并不能让这条默认路径通过。exact streaming 路径使用独立布局/内存合同，不受此 resident-only estimate 限制。本轮未凭单次实验降低默认保护，也未将 catalog-empty 当作 streaming 不可执行。
+
+新增复用 native campaign helper 的单请求工具 `run_image_streaming_smoke.py`，在加载模型前保存请求、库/工具 SHA 和计划，显式做 native source verification，保存 events/result 并释放 engine。外部 process-tree sampler 覆盖整个子进程。以现有真实官方 Flux4、512²、4 steps、seed 42、P0/G1/K2/D1/Q2、retain_all 跑 private exact GPU 请求：[计划](2026-09-21-m1-flux4-512-current-plan.json)、[结果](2026-09-21-m1-flux4-512-current-result.json)、[源验证](2026-09-21-m1-flux4-512-current-source-verification.json)。
+
+完成 25 blocks×4 passes、100 次 fill、29,834,145,792 bytes 读取，两个 pool/4 个实际 slot bundles，最终 drain=true。PNG 512² 检查通过。native request wall **12.868 s**、denoise **10.498 s**；MLX peak **6,269,857,144 bytes**。1067 个进程树样本最大间隔 **29.77 ms**，低于冻结的 100 ms 上限；tree phys-footprint peak **6,354,752,576 bytes**，采样窗口 swap-out **0**。[内存摘要](2026-09-21-m1-flux4-512-current-memory-summary.json)及[原始证据哈希/限制](2026-09-21-m1-flux4-512-current-validation.json)保留。swap/compression 是采样窗口观测，不按因果归属于本请求；这不是重复样本性能或 P95 校准。
+
+![Flux4 512-square private streaming](2026-09-21-m1-flux4-512-current-image.png)
+
+需要区分 setup 的 native 内容验证与 execution 的 lease：本次 private 执行明确报告 `source_lease_verified=false`、`flux2-private-components-v1`，不能反推它消费了 public shared verified lease，也不能移用为 public full-request 资格。现有 public-calibrated channel/schema 尚未实现，正式记录仍需绑定实际 public component/container、完成要求的校准/质量/生命周期/发布 gate。本轮说明当前 private streaming 可在本机完成这一尺寸，不代表 Flux App 的 public streaming 已可用。
