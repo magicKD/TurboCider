@@ -30,6 +30,7 @@ STATE+=(apps/macos/RunInsights.swift)
 STATE+=(apps/macos/TensorCacheController.swift)
 STATE+=(apps/macos/LTXWorker.swift)
 STATE+=(apps/macos/ImageOutputTransaction.swift)
+STATE+=(apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift)
 STATE+=(apps/macos/VideoPreview.swift)
 STATE+=(apps/macos/HistorySelection.swift)
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" services/model-library/main.swift -o "$OUT/turbocider-library"
@@ -63,3 +64,5 @@ printf 'Built Swift App and integration tests\n'
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" tests/integration/StreamingResolutionTests.swift -o "$OUT/turbocider-streaming-resolution-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/LTXWorkerTests.swift -o "$OUT/turbocider-ltx-worker-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/ImageOutputTransaction.swift tests/integration/ImageOutputTransactionTests.swift -o "$OUT/turbocider-image-transaction-tests"
+
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift tests/integration/WorkerTerminalEnvelopeTests.swift -o "$OUT/turbocider-worker-terminal-tests"

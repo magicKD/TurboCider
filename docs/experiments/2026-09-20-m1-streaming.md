@@ -1013,3 +1013,17 @@ App 后续：重建已退出 0，链接 `m1-hybrid-reporting` 新库的 history 
 真实 CLI 拒绝坏 digest（无 terminal）、缺失模型（关联 error terminal），并对本地完整 Z-Image 模型返回 `catalog_has_no_public_records`，未产生 resolution 或图片。首个脚本误将空目录拒绝名称写为 `unvalidated_workload`，断言失败；原计划/结果/脚本/日志保留，修正测试预期后在独立目录重跑全部三项通过，未修改生产代码或目录准入。按 wrapper 控制流，真实查询先通过来源验证再进入 resolver；错误 terminal 当前不携带来源 proof，不能单靠该 terminal 独立复核 source verification。
 
 另一次独立真实模型 query 启动 1 秒后接收 SIGTERM，返回绑定原 job/request/digest 的 cancelled terminal、`worker_cancelled` 和退出码 2；全程约 1.09 秒，无超时、resolution 或产物。测试预先设置 30 秒观察期限及超时 kill/reap，实际未触发。该单次结果不是所有 native 操作的有界取消证明，也不替代尚未实现的父进程组监督/重启身份合同。日志、可执行文件/库及源码 SHA、真实 terminal 与首次断言失败均补入本轮验证记录；production catalog 仍为空。
+
+## 第六十轮：worker generate 与父端 terminal 身份校验（2026-09-21）
+
+新增 `worker-generate INPUT.json`，复用一次性 query 的严格 envelope、独立 cli_worker engine、来源验证及信号取消。输出须为本次尚不存在的 staging PNG 路径，父目录须为物理路径；worker 在同一 engine 中 resolve 并绑定 native exact selector，再调用 `tc_engine_generate`。原生 C API 仍负责最新 catalog/source 验证与 common actual receipt verifier，外层不构造 authority。原始 envelope request_digest 保持绑定 App 提交意图，native resolution 的 workload digest 保持独立。
+
+成功 terminal 只在 native 返回后核对模型、操作、输出/shape/seed/steps、verified summary 与 resolution 的 source/runtime/device/record/layout/receipt 身份后形成。worker 以 NOFOLLOW/NONBLOCK 打开生成文件，检查 regular file、单 link、非空，并流式计算 SHA-256；读取前后核对 inode、size、mtime/ctime。返回完整 result、public summary 与 artifact(path/size/hash)，错误/取消均不带成功产物。这里只是已有输出预检，不是原子无覆盖写入；父端必须提供私有 staging 目录并清理部分输出。PNG 完整 framing/解码、尺寸检查和最终无覆盖发布仍由 App 的 ImageOutputTransaction 承担，不能仅凭哈希把文件当成有效图片。
+
+新增 Swift `WorkerTerminalEnvelope`，要求父端给定预期 runtime identity，核对协议、job/request/digest、cli_worker 容器、退出码与状态，使用 `NativeStreamingResolution.binding/validateResult` 复核成功 summary，并检查 artifact 元数据。它不能替代实际文件检查。helper 与对应测试已加入 App 构建脚本，但尚未接入 JobStore 或进程 runner，本轮没有重建完整 App 或声称 GUI 生成通过。
+
+隔离 C API doubles 直接运行真实 wrapper：15 项覆盖成功绑定、坏 exact、旧文件保护、生成错误/取消后的部分文件、空结果、verified=false、错误 layout/record/source/output/尺寸、缺失 receipt/文件及符号链接文件。成功 fixture 使用明确的 stub 字节，不是 PNG，也不是模型执行。另由 Swift 实际消费该 terminal，跨语言校验通过；Swift 身份/状态篡改测试、原六项 query 控制流及 request protocol/golden 回归通过。首个生成测试因 Foundation 标准化 `/private/var` 路径而误拒绝，保留失败记录，改为显式词法检查加物理父目录检查后通过同一用例。
+
+完整 native 构建退出 0，83 项合约测试中 80 项通过、3 项跳过。真实 Z-Image 路径验证缺失模型拒绝、空公开目录拒绝、已有文件预检保留原字节、SIGTERM 来源验证取消；真实 Flux4 也通过空公开目录拒绝与 SIGTERM 来源验证取消。均无新产物或成功 resolution；这些不能当作真实 worker 整图生成成功或有界 denoiser 取消证明。见[完整验证、构建身份、日志哈希与真实 terminal](2026-09-21-m1-worker-generate-validation.json)。production catalog、质量/内存/性能发布门未改变，父进程组监督、reaping/restart 身份与 App 接线仍待完成。
+
+本轮再次 fetch origin/dev 成功，远端仍为 `61c0849`，已是当前分支祖先，无新增待合并改动。

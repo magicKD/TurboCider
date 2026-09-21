@@ -1,5 +1,6 @@
 #pragma once
 #include "worker_protocol.hpp"
+#include "generate_worker.hpp"
 #include "../../native/runtime/build_identity.hpp"
 #include "turbocider/turbocider.h"
 #include <atomic>
@@ -21,11 +22,12 @@ inline NSDictionary *consume(int code, char *output, char *error) {
     id value=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
     require([value isKindOfClass:NSDictionary.class],"worker_native_result_invalid");return value;
 }
-inline int query(const char *path) {
+inline int run(const char *path,bool generate) {
     NSDictionary *input=nil; NSMutableDictionary *reply=nil; int exit_code=1;
     try {
         input=read_input(path); reply=terminal(input,tc::runtime_build_identity());
         NSDictionary *request=input[@"native_request_v2"];
+        if(generate)require_fresh_output(request);
         tc_engine *raw=nullptr;char *error=nullptr;
         int status=tc_engine_create_model_worker([request[@"model"] UTF8String],
             [input[@"model_installation_ref"] fileSystemRepresentation],&raw,&error);
@@ -60,7 +62,22 @@ inline int query(const char *path) {
             [resolution[@"selection"][@"execution_container"] isEqual:@"cli_worker"] &&
             [resolution[@"requested_selector"] isEqual:request[@"execution"][@"streaming"]],"worker_resolution_mismatch");
         if(cancelled)throw std::runtime_error("worker_cancelled");
-        reply[@"status"]=@"resolved";
+        NSDictionary *generated=nil,*summary=nil,*artifact=nil;
+        if(generate) {
+            NSDictionary *bound=bind_generation(request,resolution);
+            NSString *bound_json=[[NSString alloc] initWithData:canonical_request(bound) encoding:NSUTF8StringEncoding];
+            result=nullptr;error=nullptr;
+            status=tc_engine_generate(engine.get(),bound_json.UTF8String,nullptr,nullptr,&result,&error);
+            generated=consume(status,result,error);
+            if(cancelled)throw std::runtime_error("worker_cancelled");
+            summary=verify_generation(generated,bound,resolution);
+            artifact=generation_artifact(bound,cancelled);
+            if(cancelled)throw std::runtime_error("worker_cancelled");
+        }
+        reply[@"status"]=generate?@"succeeded":@"resolved";
+        if(generate) {
+            reply[@"result"]=generated;reply[@"public_streaming_summary"]=summary;reply[@"artifact"]=artifact;
+        }
         reply[@"resolution_digest"]=resolution[@"resolution_digest"];
         reply[@"record_digest"]=resolution[@"selection"][@"record_digest"];
         reply[@"layout_digest"]=resolution[@"selection"][@"layout_digest"];
@@ -70,11 +87,13 @@ inline int query(const char *path) {
         if(!reply) {std::cerr<<error.what()<<'\n';return 1;}
         const bool stopped=cancelled.load(std::memory_order_relaxed);
         reply[@"status"]=stopped?@"cancelled":@"error";
-        reply[@"error"]=@{@"code":stopped?@"worker_cancelled":@"worker_query_failed",@"message":@(error.what())};
+        reply[@"error"]=@{@"code":stopped?@"worker_cancelled":generate?@"worker_generate_failed":@"worker_query_failed",@"message":@(error.what())};
         exit_code=stopped?2:1;
     }
     NSData *bytes=canonical_request(reply);
     std::cout.write(static_cast<const char *>(bytes.bytes),std::streamsize(bytes.length));std::cout<<'\n';
     return exit_code;
 }
+inline int query(const char *path) {return run(path,false);}
+inline int generate(const char *path) {return run(path,true);}
 }
