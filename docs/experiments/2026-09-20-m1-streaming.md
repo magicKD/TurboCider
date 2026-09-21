@@ -1116,3 +1116,22 @@ NativeProcessRunner 在已有有界读取和日志保留中增设 stderr observe
 [Z 图片](2026-09-21-m1-z-public-semantics-image.png)正常显示雪地狐狸；Flux 新 PNG 与[此前 private 路径同参数图片](2026-09-21-m1-flux4-512-current-image.png)逐字节一致，SHA-256 同为 `7bf7c59b5d277965fa34686730f6358b6e3718201c484fbf199f806d3b13c27e`。这是单图片一致性观察，不是正式 same-plan P1、多 prompt/seed 质量门或性能统计。完整请求、result/receipt、来源与内存摘要、哈希见[验证记录](2026-09-21-m1-public-semantics-smoke.json)。
 
 新增 `tests/fixtures/streaming/acceptance-core-v0.json`，明确标记 partial。这里验证的是独立 Python 进程中的 public C API 执行，并非 native CLI terminal 或 App 成功发布的真实 E2E；尚缺完整故障矩阵、正式 P0/P1/P2/P3/发布策略、包/安装/撤回和 hybrid 完整集成。因此 M0/M1 与整体目标均未宣告完成，未实施或暗中豁免 calibrated release policy。
+
+## 第六十七轮：512²/P7 public-semantics 预取配对探索（2026-09-21）
+
+沿用第六十六轮 test-hook 原生库与真实 Z-Image 模型，保持 512²、9 步、seed 42、26-token prompt、P7/G1/K2、GPU kernel、retention=request 及 serial pool 不变，仅比较 D0/Q1 与 D1/Q2。candidate test catalog 由实际来源验证与 native probe 产生。新增 `benchmark_public_streaming_pair.py`，检查两记录的 source/workload/runtime/device 和 D/Q 之外的 plan 一致，预先冻结 4 组配对顺序 AB/BA/AB/BA。每次新进程执行 public source verification→resolve→exact generate→free，并做全生命周期内存采样；未清空 OS cache、未施加人工内存压力、未额外 warmup，GPU 测量期间无编译或其他由本任务启动的模型任务。运行中电源观察为 AC/100%，系统没有记录 thermal/performance warning。
+
+首个基线成功生成正确图片，但 sampler 最大间隔 225.9115 ms 超过预定 100 ms，原 driver 因此退出。保存原脚本、日志、计划与完整样本后，显式增加 `--resume --retain-inconclusive-memory`：只保留不确定的内存 verdict 并继续观察耗时，不放宽阈值、不升级为 PASS、不重跑或丢弃该样本。原 frozen plan 不变，driver-only amendment 单独存档；前两个进程的启动时间相隔 159.245 s，因此第一组存在恢复中断，不能当作严格无间断配对。后续按原顺序完成剩余七次，所有样本均纳入汇总。
+
+| 指标，中位数，秒 | D0/Q1，n=4 | D1/Q2，n=4 | 候选缩短 |
+|---|---:|---:|---:|
+| 完整脚本 wall，含来源验证/resolve/清理 | 61.229 | 61.017 | 0.35% |
+| native request wall | 49.874 | 49.372 | 1.01% |
+| denoise | 44.102 | 43.267 | 1.89% |
+| refill wait | 2.691 | 1.462 | 仅作为阶段观察 |
+
+四组完整 wall 的候选相对变化为缩短 0.61%、1.10%、1.99%，以及**变慢 2.18%**。等待时间的降低没有形成相当幅度的端到端收益；这组小样本不足以支持改动默认 D0/Q1 或声明稳定加速。第二十一轮约 14.9% 的观察来自 256²/P0、同进程多 engine 的 private 实验，其布局、shape、执行与计时范围不同，不能推广到本轮。
+
+8 次 PNG 均与独立参考图逐字节一致，SHA-256 为 `286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e`；每次 `actual_plan_verified=true`、`source_lease_verified=true`、drained=true，均为 207 fills/提交及 9 passes，实际 D/Q 与候选记录一致。采样中观测到的进程树峰值范围约 8.226–8.344 GiB，但样本 1、4、6 的最大间隔分别为 225.9115、108.8016、105.0923 ms，三者保持 INCONCLUSIVE，可能漏峰，整体内存资格也为 **INCONCLUSIVE**。七次运行期间观测到 host-wide swap-out（约 86–344 MiB/次），不能独占归因于模型，也不能宣称零 swap 或 P2 通过。
+
+CPU-only 工具测试 3 项通过：保留不确定样本且不重复执行/覆盖 raw evidence；库变化拒绝 resume；已有但不完整的样本不自动重跑。完整冻结计划、修改记录、所有样本/配对值、实际 receipt 和原始证据哈希见[验证记录](2026-09-21-m1-public-prefetch-validation.json)。生产目录仍为空；本轮是单 prompt/seed 的内部探索，不是 P0/P1/P2/P3，不证明全局最优、App 公开 E2E 或 GPU/ANE 收益。

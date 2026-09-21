@@ -1,0 +1,1024 @@
+{
+  "date": "2026-09-21",
+  "scope": "Exploratory complete public-semantics Z-Image P7/G1/K2 D0/Q1 vs D1/Q2 on M1 Pro 16 GiB; not release qualification",
+  "runtime_identity": "tc-runtime-build-v1-41c12856b518ecc749cd644083f25a108b96da4c174d6b912fea136b7a751d26",
+  "experiment_root": "/Users/chencanhui/models/TurboCider/experiments/m1-public-prefetch",
+  "plan": {
+    "schema_version": 1,
+    "scope": "Exploratory paired public-semantics D/Q comparison, never release evidence.\n\nEach sample gets a fresh process, source verification and full lifetime memory\nsampling. Both catalogs must differ only in D/Q (apart from catalog/review fields).\nOS caches are not flushed; there is no artificial pressure or extra warmup.\n",
+    "schedule": [
+      {
+        "pair": 1,
+        "variant": "baseline"
+      },
+      {
+        "pair": 1,
+        "variant": "candidate"
+      },
+      {
+        "pair": 2,
+        "variant": "candidate"
+      },
+      {
+        "pair": 2,
+        "variant": "baseline"
+      },
+      {
+        "pair": 3,
+        "variant": "baseline"
+      },
+      {
+        "pair": 3,
+        "variant": "candidate"
+      },
+      {
+        "pair": 4,
+        "variant": "candidate"
+      },
+      {
+        "pair": 4,
+        "variant": "baseline"
+      }
+    ],
+    "library": "/Users/chencanhui/code/TurboCider/build/m1-core-v0/libturbocider.dylib",
+    "library_sha256": "1c1801c345af4bfae3ece00a8ebbd276aa3e3e47d5cdd2f398043b45a35050c9",
+    "request": {
+      "schema_version": 2,
+      "model": "z-image-turbo",
+      "operation": "image.generate",
+      "inputs": [
+        {
+          "kind": "text",
+          "role": "prompt",
+          "text": "A red fox standing in fresh snow, pine forest, soft morning sunlight, detailed photograph."
+        }
+      ],
+      "outputs": [
+        {
+          "kind": "image",
+          "path": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/planned-output.png",
+          "width": 512,
+          "height": 512
+        }
+      ],
+      "sampling": {
+        "seed": 42,
+        "steps": 9
+      },
+      "execution": {
+        "policy": "gpu",
+        "streaming": {
+          "schema_version": 2,
+          "enabled": true,
+          "selection": "memory_tier",
+          "retention": "request",
+          "target_request_memory_bytes": 10737418240
+        }
+      },
+      "parameters": {
+        "dynamic_text": true,
+        "compile_gpu": false
+      }
+    },
+    "model": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo",
+    "catalogs": {
+      "baseline": {
+        "path": "/Users/chencanhui/models/TurboCider/experiments/m1-public-prefetch/test-catalog.json",
+        "sha256": "5a9912458c1b0856824689dc060322c8ac06bf0057db1abc1e2fb3f3e2078afa"
+      },
+      "candidate": {
+        "path": "/Users/chencanhui/models/TurboCider/experiments/m1-public-prefetch/candidate-catalog.json",
+        "sha256": "41ec61a596a18dc2b62e3358a7c7a8ccc0e6b4d81c3cc4e247af3826965072a9"
+      }
+    },
+    "configurations": {
+      "baseline": {
+        "canonical_config": {
+          "enabled": true,
+          "retention": "request",
+          "schema_version": 1,
+          "selection": "manual",
+          "stages": {
+            "denoiser": {
+              "block_group_size": 1,
+              "io_workers": 1,
+              "prefetch_distance": 0,
+              "residency": "streamed",
+              "resident_prefix_blocks": 7,
+              "slot_count": 2
+            }
+          }
+        },
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "multi_pool_policy": "serial",
+        "pass_transition": "reload"
+      },
+      "candidate": {
+        "canonical_config": {
+          "enabled": true,
+          "retention": "request",
+          "schema_version": 1,
+          "selection": "manual",
+          "stages": {
+            "denoiser": {
+              "block_group_size": 1,
+              "io_workers": 2,
+              "prefetch_distance": 1,
+              "residency": "streamed",
+              "resident_prefix_blocks": 7,
+              "slot_count": 2
+            }
+          }
+        },
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "layout_digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "multi_pool_policy": "serial",
+        "pass_transition": "reload"
+      }
+    },
+    "expected_image_sha256": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+    "source_sha256": {
+      "benchmark_public_streaming_pair.py": "27237b43fb060e2650b654f946e89e48903eff32123f1d771d44317456c69a13",
+      "run_public_streaming_smoke.py": "e80b758df38c259b6351513e5470adeab19c7893b8b77f0f3be11bcaf3a9cbba",
+      "collect_streaming_memory.py": "4f02394e4deebb3c395f3ba320de157ffc8e49a7afaf017e3130fc4f0c335ed5",
+      "process_tree_sampler.py": "4bbb8b96669cffad7a0a3f232d07922689632cfe1639b87dfcd1cdff7998277c",
+      "verify_process_tree_samples.py": "1a735cf2b837a01475c0b2455dbf7bb12cf6bedee3db0367856774209db5b557"
+    }
+  },
+  "summary": {
+    "schema_version": 1,
+    "scope": "Exploratory paired samples; not formal P0/P1/P2/P3 or release qualification",
+    "memory_qualification": "INCONCLUSIVE",
+    "plan_sha256": "d42815ee59f30e96056ba6ae2b7f65376d155daedf263fc4ebbcc1b597551c23",
+    "samples": [
+      {
+        "index": 1,
+        "pair": 1,
+        "variant": "baseline",
+        "exit_code": 3,
+        "memory_status": "inconclusive",
+        "memory_reasons": [
+          "sample_gap_exceeded"
+        ],
+        "max_gap_ns": 225911500,
+        "wall_seconds": 60.8114366249647,
+        "request_seconds": 49.463604375,
+        "denoise_seconds": 44.086069667,
+        "wait_seconds": 3.1444939129999994,
+        "tree_peak_bytes": 8958679616,
+        "mlx_peak_bytes": 8975747432,
+        "swap_out_bytes": 0,
+        "image_sha256": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "receipt_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+        "memory_sha256": "5369438212eef6801101a7454f586d062f16815cb9269e634250626b0bfd9d48"
+      },
+      {
+        "index": 2,
+        "pair": 1,
+        "variant": "candidate",
+        "exit_code": 0,
+        "memory_status": "complete",
+        "memory_reasons": [],
+        "max_gap_ns": 49503625,
+        "wall_seconds": 60.439226124901325,
+        "request_seconds": 49.163083,
+        "denoise_seconds": 43.122427167,
+        "wait_seconds": 1.9413178339999992,
+        "tree_peak_bytes": 8832260696,
+        "mlx_peak_bytes": 8978303336,
+        "swap_out_bytes": 194052096,
+        "image_sha256": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "receipt_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+        "memory_sha256": "6b3f94eef4a09f660fabfe2e287b0fce1abbdc7c83e0dc2b0c9e430fbdf78e14"
+      },
+      {
+        "index": 3,
+        "pair": 2,
+        "variant": "candidate",
+        "exit_code": 0,
+        "memory_status": "complete",
+        "memory_reasons": [],
+        "max_gap_ns": 59964542,
+        "wall_seconds": 60.970413416973315,
+        "request_seconds": 49.618067333,
+        "denoise_seconds": 43.611479542,
+        "wait_seconds": 1.4449540819999998,
+        "tree_peak_bytes": 8939838064,
+        "mlx_peak_bytes": 8975747432,
+        "swap_out_bytes": 360448000,
+        "image_sha256": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "receipt_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+        "memory_sha256": "01f51abb386fad05522f1be3a0ce8d311d9dd2dec3b44ebf907168e132d775fe"
+      },
+      {
+        "index": 4,
+        "pair": 2,
+        "variant": "baseline",
+        "exit_code": 3,
+        "memory_status": "inconclusive",
+        "memory_reasons": [
+          "sample_gap_exceeded"
+        ],
+        "max_gap_ns": 108801583,
+        "wall_seconds": 61.64683741598856,
+        "request_seconds": 50.284938333,
+        "denoise_seconds": 44.117915792,
+        "wait_seconds": 2.2381327480000017,
+        "tree_peak_bytes": 8878086744,
+        "mlx_peak_bytes": 8975747432,
+        "swap_out_bytes": 162398208,
+        "image_sha256": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "receipt_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+        "memory_sha256": "f6e8db3df5283819365f9ac059d578385694b1faf6d77152bec234da989f9c24"
+      },
+      {
+        "index": 5,
+        "pair": 3,
+        "variant": "baseline",
+        "exit_code": 0,
+        "memory_status": "complete",
+        "memory_reasons": [],
+        "max_gap_ns": 95597875,
+        "wall_seconds": 62.30113350006286,
+        "request_seconds": 50.884462667,
+        "denoise_seconds": 44.853891334,
+        "wait_seconds": 3.5384802510000006,
+        "tree_peak_bytes": 8887786072,
+        "mlx_peak_bytes": 8975747432,
+        "swap_out_bytes": 90570752,
+        "image_sha256": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "receipt_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+        "memory_sha256": "5c5005e45ad879cf99cf3812e5f90977044080b3636080c7d352b73ce70828a8"
+      },
+      {
+        "index": 6,
+        "pair": 3,
+        "variant": "candidate",
+        "exit_code": 3,
+        "memory_status": "inconclusive",
+        "memory_reasons": [
+          "sample_gap_exceeded"
+        ],
+        "max_gap_ns": 105092250,
+        "wall_seconds": 61.06367699999828,
+        "request_seconds": 49.496098042,
+        "denoise_seconds": 43.412135375,
+        "wait_seconds": 1.4794998650000009,
+        "tree_peak_bytes": 8959515248,
+        "mlx_peak_bytes": 8975747432,
+        "swap_out_bytes": 111542272,
+        "image_sha256": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "receipt_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+        "memory_sha256": "196615babe71cc5aca0574676a5b1dfbeb98d5b1fd85dbb78d14e6c5d14652f4"
+      },
+      {
+        "index": 7,
+        "pair": 4,
+        "variant": "candidate",
+        "exit_code": 0,
+        "memory_status": "complete",
+        "memory_reasons": [],
+        "max_gap_ns": 37525917,
+        "wall_seconds": 61.81700341706164,
+        "request_seconds": 49.248595542,
+        "denoise_seconds": 43.097459209,
+        "wait_seconds": 1.3989450429999999,
+        "tree_peak_bytes": 8856853056,
+        "mlx_peak_bytes": 8975747432,
+        "swap_out_bytes": 101318656,
+        "image_sha256": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "receipt_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+        "memory_sha256": "9037bb35d03d8fcf2a005330aafb1484df9bfd14ea9a366e7da55785744f1822"
+      },
+      {
+        "index": 8,
+        "pair": 4,
+        "variant": "baseline",
+        "exit_code": 0,
+        "memory_status": "complete",
+        "memory_reasons": [],
+        "max_gap_ns": 29958541,
+        "wall_seconds": 60.49560166709125,
+        "request_seconds": 49.1452785,
+        "denoise_seconds": 43.168758958,
+        "wait_seconds": 1.7598143709999985,
+        "tree_peak_bytes": 8894126680,
+        "mlx_peak_bytes": 8975747432,
+        "swap_out_bytes": 122880000,
+        "image_sha256": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "receipt_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+        "memory_sha256": "b649983911621f26fb268185f1b2ce22f2bb9569beba56213552fd4a739d64aa"
+      }
+    ],
+    "variants": {
+      "baseline": {
+        "wall_seconds": 61.22913702047663,
+        "request_seconds": 49.874271354,
+        "denoise_seconds": 44.1019927295,
+        "wait_seconds": 2.6913133305000008,
+        "tree_peak_bytes": 8890956376.0,
+        "mlx_peak_bytes": 8975747432.0
+      },
+      "candidate": {
+        "wall_seconds": 61.0170452084858,
+        "request_seconds": 49.372346792,
+        "denoise_seconds": 43.267281271,
+        "wait_seconds": 1.4622269735000004,
+        "tree_peak_bytes": 8898345560.0,
+        "mlx_peak_bytes": 8975747432.0
+      }
+    },
+    "candidate_reduction_percent": {
+      "wall_seconds": 0.3463903336084928,
+      "request_seconds": 1.0063797392395268,
+      "denoise_seconds": 1.8926842231817176
+    }
+  },
+  "actual_execution": [
+    {
+      "index": 1,
+      "variant": "baseline",
+      "start_epoch_seconds": 1789955434.253488,
+      "actual_layout": {
+        "block_group_size": 1,
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+        "digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "drained": true,
+        "group_count": 23,
+        "io_workers": 1,
+        "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+        "multi_pool_policy": "serial",
+        "pass_count": 9,
+        "pass_transition": "reload",
+        "pool_count": 1,
+        "prefetch_distance": 0,
+        "reader_revision": 1,
+        "receipt": {
+          "canonical_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+          "event_digest": "c602f15e1412669e587190035a78ded1c508a8c0032fbb65147d67fc4594870d",
+          "fills": 207,
+          "groups_submitted": 207,
+          "logical_read_bytes": 74896879104,
+          "reader_fences_completed": 207,
+          "reader_fences_issued": 207,
+          "schema_version": 2,
+          "source_generation": 3,
+          "verifier_revision": "tc-streaming-receipt-verifier-v2"
+        },
+        "refill_worker_count": 1,
+        "resident_prefix_blocks": 7,
+        "retention": "request",
+        "slot_bundle_count": 2,
+        "slot_count": 2,
+        "source_lease_verified": true,
+        "stage": "denoiser",
+        "startup_policy": "prefetch_window_before_prefix",
+        "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+        "weight_format": "comfy-bf16-single-file"
+      },
+      "public_streaming": {
+        "actual_layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "actual_plan_verified": true,
+        "authorized_layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "calibrated_request_bytes": 9663676416,
+        "catalog_revision": "tc-m1-core-v0-z-r1",
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+        "execution_container": "cli_worker",
+        "memory_scope": "execution_process_tree_v1",
+        "preset_id": "test-z-image-turbo-10g-fb537d0803d5",
+        "preset_revision": 1,
+        "receipt_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+        "receipt_schema_version": 2,
+        "receipt_source_generation": 3,
+        "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+        "record_digest": "073429c05a77bb628019d11e1ea8dc50b449fe4c6dfa2f2b2020468a7eeec9ce",
+        "resolution_digest": "c2b4d6224d29d03b996fb20eb05aea4588ffb1932fc394c0a47c72fe03396eef",
+        "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+        "schema_version": 1,
+        "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+        "target_request_memory_bytes": 10737418240,
+        "workload_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79"
+      },
+      "evidence_sha256": {
+        "memory.jsonl": "5369438212eef6801101a7454f586d062f16815cb9269e634250626b0bfd9d48",
+        "memory-summary.json": "50f4be7edf6d02811762088844a2611c2eff7bca245719cfe57c1236f2e42ba2",
+        "run/plan.json": "120d1365d1c58071ee2b148ca18e3ee0c87766424b64da7429081a0d0638e3f6",
+        "run/result.json": "ea7eaf90a0cd8496ae3f07cc74cbd1ffeb094a6884e7554126c94a0a3856242b",
+        "run/observation.json": "9b5c48cefd4297c3c5ca4e28a230d743ab759aa46f3cdf7056c4ec7591005b94",
+        "run/source-verification.json": "5570196e22c5c747ff6cdaff65b9424979fc9f9045066511d88dcd6732dc2333",
+        "run/image.png": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "run/events.jsonl": "742b6791a2d815ad95247dc84dd54a6dab22e301bee30140f2cf77a0f5bc7da8"
+      }
+    },
+    {
+      "index": 2,
+      "variant": "candidate",
+      "start_epoch_seconds": 1789955593.498792,
+      "actual_layout": {
+        "block_group_size": 1,
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+        "digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "drained": true,
+        "group_count": 23,
+        "io_workers": 2,
+        "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+        "multi_pool_policy": "serial",
+        "pass_count": 9,
+        "pass_transition": "reload",
+        "pool_count": 1,
+        "prefetch_distance": 1,
+        "reader_revision": 1,
+        "receipt": {
+          "canonical_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+          "event_digest": "06d6cac41fe4c7ac278756f33cd33748b7256d7c953c2f2a61d13dda36cdc9ed",
+          "fills": 207,
+          "groups_submitted": 207,
+          "logical_read_bytes": 74896879104,
+          "reader_fences_completed": 207,
+          "reader_fences_issued": 207,
+          "schema_version": 2,
+          "source_generation": 3,
+          "verifier_revision": "tc-streaming-receipt-verifier-v2"
+        },
+        "refill_worker_count": 2,
+        "resident_prefix_blocks": 7,
+        "retention": "request",
+        "slot_bundle_count": 2,
+        "slot_count": 2,
+        "source_lease_verified": true,
+        "stage": "denoiser",
+        "startup_policy": "prefetch_window_before_prefix",
+        "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+        "weight_format": "comfy-bf16-single-file"
+      },
+      "public_streaming": {
+        "actual_layout_digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "actual_plan_verified": true,
+        "authorized_layout_digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "calibrated_request_bytes": 9663676416,
+        "catalog_revision": "tc-m1-core-v0-z-prefetch-r1",
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+        "execution_container": "cli_worker",
+        "memory_scope": "execution_process_tree_v1",
+        "preset_id": "test-z-image-turbo-10g-ba9b33494e71",
+        "preset_revision": 1,
+        "receipt_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+        "receipt_schema_version": 2,
+        "receipt_source_generation": 3,
+        "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+        "record_digest": "400ce9c83a5d7e9374bb353c10971431cf1d870eb06b215adbd2f34a874e4a23",
+        "resolution_digest": "23b422af123af8de4fb30ac5de11c3525317b1679f9d9f8034a33108a52f8819",
+        "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+        "schema_version": 1,
+        "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+        "target_request_memory_bytes": 10737418240,
+        "workload_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79"
+      },
+      "evidence_sha256": {
+        "memory.jsonl": "6b3f94eef4a09f660fabfe2e287b0fce1abbdc7c83e0dc2b0c9e430fbdf78e14",
+        "memory-summary.json": "56e27078ed1fc6deb0f29b91fd39a07b073c88fbc003ae737b4d29bbe42fe80f",
+        "run/plan.json": "474ad971c4ddc393272923fdd3b657be16b08431760f622bdf7bc759ed5b016d",
+        "run/result.json": "471c062d5879b7949924ce052eba048740b125b4ca8ba285dd012a5439b91617",
+        "run/observation.json": "8cad2ea91110cf2af8ce49c45a87ea712ebdf76644d8000114aa599de645681a",
+        "run/source-verification.json": "b9eb3ac2fda59df3064154e16db2845d63360e2c6c15a48ebca7651fd0dd0a81",
+        "run/image.png": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "run/events.jsonl": "db9359c74d3e5771f75453fa511517e33bb841b25a717b5872693719cfd22a23"
+      }
+    },
+    {
+      "index": 3,
+      "variant": "candidate",
+      "start_epoch_seconds": 1789955654.286447,
+      "actual_layout": {
+        "block_group_size": 1,
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+        "digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "drained": true,
+        "group_count": 23,
+        "io_workers": 2,
+        "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+        "multi_pool_policy": "serial",
+        "pass_count": 9,
+        "pass_transition": "reload",
+        "pool_count": 1,
+        "prefetch_distance": 1,
+        "reader_revision": 1,
+        "receipt": {
+          "canonical_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+          "event_digest": "06d6cac41fe4c7ac278756f33cd33748b7256d7c953c2f2a61d13dda36cdc9ed",
+          "fills": 207,
+          "groups_submitted": 207,
+          "logical_read_bytes": 74896879104,
+          "reader_fences_completed": 207,
+          "reader_fences_issued": 207,
+          "schema_version": 2,
+          "source_generation": 3,
+          "verifier_revision": "tc-streaming-receipt-verifier-v2"
+        },
+        "refill_worker_count": 2,
+        "resident_prefix_blocks": 7,
+        "retention": "request",
+        "slot_bundle_count": 2,
+        "slot_count": 2,
+        "source_lease_verified": true,
+        "stage": "denoiser",
+        "startup_policy": "prefetch_window_before_prefix",
+        "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+        "weight_format": "comfy-bf16-single-file"
+      },
+      "public_streaming": {
+        "actual_layout_digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "actual_plan_verified": true,
+        "authorized_layout_digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "calibrated_request_bytes": 9663676416,
+        "catalog_revision": "tc-m1-core-v0-z-prefetch-r1",
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+        "execution_container": "cli_worker",
+        "memory_scope": "execution_process_tree_v1",
+        "preset_id": "test-z-image-turbo-10g-ba9b33494e71",
+        "preset_revision": 1,
+        "receipt_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+        "receipt_schema_version": 2,
+        "receipt_source_generation": 3,
+        "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+        "record_digest": "400ce9c83a5d7e9374bb353c10971431cf1d870eb06b215adbd2f34a874e4a23",
+        "resolution_digest": "23b422af123af8de4fb30ac5de11c3525317b1679f9d9f8034a33108a52f8819",
+        "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+        "schema_version": 1,
+        "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+        "target_request_memory_bytes": 10737418240,
+        "workload_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79"
+      },
+      "evidence_sha256": {
+        "memory.jsonl": "01f51abb386fad05522f1be3a0ce8d311d9dd2dec3b44ebf907168e132d775fe",
+        "memory-summary.json": "9bd89280a987f382fc2f907a6a6b52f3031edd7027043bb3dbf58bdee00120e0",
+        "run/plan.json": "5a871de07a9379f5fe8043b5921178d59062b39f1dad802043c71e9bda125ff4",
+        "run/result.json": "73d66bc1a9a272b170313b224bc0d65ec7cd6927581810b4eb027b35024fddaa",
+        "run/observation.json": "34643c3dfc0398067d4cbf677af009fc58bd4ccc550fb090278638300fead67b",
+        "run/source-verification.json": "bd4a7ef55b1ddd741e0d10b14d7fbb186fcc6052d5e74ec81207993a31e7d28e",
+        "run/image.png": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "run/events.jsonl": "ea5c3aa337fd3b39ae49423b02bb6132f50c9668ab717d9aaf822309838561ad"
+      }
+    },
+    {
+      "index": 4,
+      "variant": "baseline",
+      "start_epoch_seconds": 1789955715.626267,
+      "actual_layout": {
+        "block_group_size": 1,
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+        "digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "drained": true,
+        "group_count": 23,
+        "io_workers": 1,
+        "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+        "multi_pool_policy": "serial",
+        "pass_count": 9,
+        "pass_transition": "reload",
+        "pool_count": 1,
+        "prefetch_distance": 0,
+        "reader_revision": 1,
+        "receipt": {
+          "canonical_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+          "event_digest": "c602f15e1412669e587190035a78ded1c508a8c0032fbb65147d67fc4594870d",
+          "fills": 207,
+          "groups_submitted": 207,
+          "logical_read_bytes": 74896879104,
+          "reader_fences_completed": 207,
+          "reader_fences_issued": 207,
+          "schema_version": 2,
+          "source_generation": 3,
+          "verifier_revision": "tc-streaming-receipt-verifier-v2"
+        },
+        "refill_worker_count": 1,
+        "resident_prefix_blocks": 7,
+        "retention": "request",
+        "slot_bundle_count": 2,
+        "slot_count": 2,
+        "source_lease_verified": true,
+        "stage": "denoiser",
+        "startup_policy": "prefetch_window_before_prefix",
+        "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+        "weight_format": "comfy-bf16-single-file"
+      },
+      "public_streaming": {
+        "actual_layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "actual_plan_verified": true,
+        "authorized_layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "calibrated_request_bytes": 9663676416,
+        "catalog_revision": "tc-m1-core-v0-z-r1",
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+        "execution_container": "cli_worker",
+        "memory_scope": "execution_process_tree_v1",
+        "preset_id": "test-z-image-turbo-10g-fb537d0803d5",
+        "preset_revision": 1,
+        "receipt_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+        "receipt_schema_version": 2,
+        "receipt_source_generation": 3,
+        "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+        "record_digest": "073429c05a77bb628019d11e1ea8dc50b449fe4c6dfa2f2b2020468a7eeec9ce",
+        "resolution_digest": "c2b4d6224d29d03b996fb20eb05aea4588ffb1932fc394c0a47c72fe03396eef",
+        "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+        "schema_version": 1,
+        "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+        "target_request_memory_bytes": 10737418240,
+        "workload_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79"
+      },
+      "evidence_sha256": {
+        "memory.jsonl": "f6e8db3df5283819365f9ac059d578385694b1faf6d77152bec234da989f9c24",
+        "memory-summary.json": "13ffec516ddb5e16e496fead5bdf89734b2517b74181cd461c200ef4ba7520b0",
+        "run/plan.json": "58ac8a7cc5fb3a8a200db18c9949eb6fbfd80520c70142986316bd544bc44384",
+        "run/result.json": "790015af000395468b7953eb5ca2b71714833f85719e970fbbe11f75c50b2378",
+        "run/observation.json": "8da0e72cdcdbfc78cb17c010ca9c8648208e69271a5922799cd35f558e18a0ec",
+        "run/source-verification.json": "eb0e104e90d4c6b3a8e9aca15a18135e1ae254aad3fb0801dc1d786f92e3ed59",
+        "run/image.png": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "run/events.jsonl": "4659de6ae46ac020ab138555c05ea4783427a506b1190508ab2ff2256ece29f7"
+      }
+    },
+    {
+      "index": 5,
+      "variant": "baseline",
+      "start_epoch_seconds": 1789955777.602302,
+      "actual_layout": {
+        "block_group_size": 1,
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+        "digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "drained": true,
+        "group_count": 23,
+        "io_workers": 1,
+        "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+        "multi_pool_policy": "serial",
+        "pass_count": 9,
+        "pass_transition": "reload",
+        "pool_count": 1,
+        "prefetch_distance": 0,
+        "reader_revision": 1,
+        "receipt": {
+          "canonical_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+          "event_digest": "c602f15e1412669e587190035a78ded1c508a8c0032fbb65147d67fc4594870d",
+          "fills": 207,
+          "groups_submitted": 207,
+          "logical_read_bytes": 74896879104,
+          "reader_fences_completed": 207,
+          "reader_fences_issued": 207,
+          "schema_version": 2,
+          "source_generation": 3,
+          "verifier_revision": "tc-streaming-receipt-verifier-v2"
+        },
+        "refill_worker_count": 1,
+        "resident_prefix_blocks": 7,
+        "retention": "request",
+        "slot_bundle_count": 2,
+        "slot_count": 2,
+        "source_lease_verified": true,
+        "stage": "denoiser",
+        "startup_policy": "prefetch_window_before_prefix",
+        "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+        "weight_format": "comfy-bf16-single-file"
+      },
+      "public_streaming": {
+        "actual_layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "actual_plan_verified": true,
+        "authorized_layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "calibrated_request_bytes": 9663676416,
+        "catalog_revision": "tc-m1-core-v0-z-r1",
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+        "execution_container": "cli_worker",
+        "memory_scope": "execution_process_tree_v1",
+        "preset_id": "test-z-image-turbo-10g-fb537d0803d5",
+        "preset_revision": 1,
+        "receipt_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+        "receipt_schema_version": 2,
+        "receipt_source_generation": 3,
+        "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+        "record_digest": "073429c05a77bb628019d11e1ea8dc50b449fe4c6dfa2f2b2020468a7eeec9ce",
+        "resolution_digest": "c2b4d6224d29d03b996fb20eb05aea4588ffb1932fc394c0a47c72fe03396eef",
+        "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+        "schema_version": 1,
+        "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+        "target_request_memory_bytes": 10737418240,
+        "workload_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79"
+      },
+      "evidence_sha256": {
+        "memory.jsonl": "5c5005e45ad879cf99cf3812e5f90977044080b3636080c7d352b73ce70828a8",
+        "memory-summary.json": "62092088cb235018cffb060ade7986b5327f91302a3f9a9d0aa7e8d0c025dc65",
+        "run/plan.json": "e526bdfbcb6850a78c9055eabb57f1c5ac14dbd85918bb1f0e878d58c1df24bc",
+        "run/result.json": "0eca036aa1204a442c5571a82371fddbfcaeaca9bf81c2977a17f98b832c25d3",
+        "run/observation.json": "5918c8600618030a2022ed6358b18c2f73d6e4663a5ec1da145eba83fd3caf37",
+        "run/source-verification.json": "056b0029827fb4a3928ee8d542124cdabd77d26f6e2673ff3b0040192b01a8ba",
+        "run/image.png": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "run/events.jsonl": "24189f3008193c5ddf4c25dc7bf1f7b7c189fbfcc8332884c92af708fa146a6c"
+      }
+    },
+    {
+      "index": 6,
+      "variant": "candidate",
+      "start_epoch_seconds": 1789955840.266188,
+      "actual_layout": {
+        "block_group_size": 1,
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+        "digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "drained": true,
+        "group_count": 23,
+        "io_workers": 2,
+        "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+        "multi_pool_policy": "serial",
+        "pass_count": 9,
+        "pass_transition": "reload",
+        "pool_count": 1,
+        "prefetch_distance": 1,
+        "reader_revision": 1,
+        "receipt": {
+          "canonical_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+          "event_digest": "06d6cac41fe4c7ac278756f33cd33748b7256d7c953c2f2a61d13dda36cdc9ed",
+          "fills": 207,
+          "groups_submitted": 207,
+          "logical_read_bytes": 74896879104,
+          "reader_fences_completed": 207,
+          "reader_fences_issued": 207,
+          "schema_version": 2,
+          "source_generation": 3,
+          "verifier_revision": "tc-streaming-receipt-verifier-v2"
+        },
+        "refill_worker_count": 2,
+        "resident_prefix_blocks": 7,
+        "retention": "request",
+        "slot_bundle_count": 2,
+        "slot_count": 2,
+        "source_lease_verified": true,
+        "stage": "denoiser",
+        "startup_policy": "prefetch_window_before_prefix",
+        "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+        "weight_format": "comfy-bf16-single-file"
+      },
+      "public_streaming": {
+        "actual_layout_digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "actual_plan_verified": true,
+        "authorized_layout_digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "calibrated_request_bytes": 9663676416,
+        "catalog_revision": "tc-m1-core-v0-z-prefetch-r1",
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+        "execution_container": "cli_worker",
+        "memory_scope": "execution_process_tree_v1",
+        "preset_id": "test-z-image-turbo-10g-ba9b33494e71",
+        "preset_revision": 1,
+        "receipt_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+        "receipt_schema_version": 2,
+        "receipt_source_generation": 3,
+        "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+        "record_digest": "400ce9c83a5d7e9374bb353c10971431cf1d870eb06b215adbd2f34a874e4a23",
+        "resolution_digest": "23b422af123af8de4fb30ac5de11c3525317b1679f9d9f8034a33108a52f8819",
+        "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+        "schema_version": 1,
+        "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+        "target_request_memory_bytes": 10737418240,
+        "workload_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79"
+      },
+      "evidence_sha256": {
+        "memory.jsonl": "196615babe71cc5aca0574676a5b1dfbeb98d5b1fd85dbb78d14e6c5d14652f4",
+        "memory-summary.json": "567c8096e267772b004c09ca1af7b2cf513747db70cfd135d2b4ebcdcb220274",
+        "run/plan.json": "b8813a8c828e37efc08681e3480a6186088968fb474d695007ecb9e28572341b",
+        "run/result.json": "d3c07c47ea650655dbb96e6297ddd6d14694b4c565eab1448ed652f174e77d89",
+        "run/observation.json": "2b4194c343469e7ace17e3a16bae03c10f098ab76e941f712de632688d142417",
+        "run/source-verification.json": "ea2dd87d93f713f8d563e9f79aa9692d5873c120bbee19edd0bad57e49b2d269",
+        "run/image.png": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "run/events.jsonl": "b8c1067ea44e6dd35aeefb66c20a27be18885928159cab153bd711fc7312d5d2"
+      }
+    },
+    {
+      "index": 7,
+      "variant": "candidate",
+      "start_epoch_seconds": 1789955902.122526,
+      "actual_layout": {
+        "block_group_size": 1,
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+        "digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "drained": true,
+        "group_count": 23,
+        "io_workers": 2,
+        "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+        "multi_pool_policy": "serial",
+        "pass_count": 9,
+        "pass_transition": "reload",
+        "pool_count": 1,
+        "prefetch_distance": 1,
+        "reader_revision": 1,
+        "receipt": {
+          "canonical_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+          "event_digest": "06d6cac41fe4c7ac278756f33cd33748b7256d7c953c2f2a61d13dda36cdc9ed",
+          "fills": 207,
+          "groups_submitted": 207,
+          "logical_read_bytes": 74896879104,
+          "reader_fences_completed": 207,
+          "reader_fences_issued": 207,
+          "schema_version": 2,
+          "source_generation": 3,
+          "verifier_revision": "tc-streaming-receipt-verifier-v2"
+        },
+        "refill_worker_count": 2,
+        "resident_prefix_blocks": 7,
+        "retention": "request",
+        "slot_bundle_count": 2,
+        "slot_count": 2,
+        "source_lease_verified": true,
+        "stage": "denoiser",
+        "startup_policy": "prefetch_window_before_prefix",
+        "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+        "weight_format": "comfy-bf16-single-file"
+      },
+      "public_streaming": {
+        "actual_layout_digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "actual_plan_verified": true,
+        "authorized_layout_digest": "ba9b33494e711ff0b8a4cf1812ffdeb65f27cda14de9d2694329439620d84da1",
+        "calibrated_request_bytes": 9663676416,
+        "catalog_revision": "tc-m1-core-v0-z-prefetch-r1",
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+        "execution_container": "cli_worker",
+        "memory_scope": "execution_process_tree_v1",
+        "preset_id": "test-z-image-turbo-10g-ba9b33494e71",
+        "preset_revision": 1,
+        "receipt_digest": "c984a5e988e994c15512dfc83747b2a4b56952228f69dbcee186735b38ba40a7",
+        "receipt_schema_version": 2,
+        "receipt_source_generation": 3,
+        "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+        "record_digest": "400ce9c83a5d7e9374bb353c10971431cf1d870eb06b215adbd2f34a874e4a23",
+        "resolution_digest": "23b422af123af8de4fb30ac5de11c3525317b1679f9d9f8034a33108a52f8819",
+        "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+        "schema_version": 1,
+        "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+        "target_request_memory_bytes": 10737418240,
+        "workload_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79"
+      },
+      "evidence_sha256": {
+        "memory.jsonl": "9037bb35d03d8fcf2a005330aafb1484df9bfd14ea9a366e7da55785744f1822",
+        "memory-summary.json": "4dcbdb1c34801dcb8f1550761710a5c4ca01749ea1177c889d98fee7e4769395",
+        "run/plan.json": "178af0739a453f2f458fcc528143c839a3e390d51568ed1332b5360b7ddd99d9",
+        "run/result.json": "acb8f256186180e48ce0c56d53cfac5107ebb0f6fec17aa810c69be7693e76c7",
+        "run/observation.json": "517f248d14061a1806b8e260c48f33ab6f1352b0b947ec49e4839e4704608d33",
+        "run/source-verification.json": "4c5db833043f4aae173f2cf6eb8b47be35c364d897ab9e798520970fd63868f3",
+        "run/image.png": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "run/events.jsonl": "0a624a89b6abb61f7ceae8e0a58119a1a0764f3bb052840ed36f23cc540118cd"
+      }
+    },
+    {
+      "index": 8,
+      "variant": "baseline",
+      "start_epoch_seconds": 1789955964.45707,
+      "actual_layout": {
+        "block_group_size": 1,
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+        "digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "drained": true,
+        "group_count": 23,
+        "io_workers": 1,
+        "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+        "multi_pool_policy": "serial",
+        "pass_count": 9,
+        "pass_transition": "reload",
+        "pool_count": 1,
+        "prefetch_distance": 0,
+        "reader_revision": 1,
+        "receipt": {
+          "canonical_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+          "event_digest": "c602f15e1412669e587190035a78ded1c508a8c0032fbb65147d67fc4594870d",
+          "fills": 207,
+          "groups_submitted": 207,
+          "logical_read_bytes": 74896879104,
+          "reader_fences_completed": 207,
+          "reader_fences_issued": 207,
+          "schema_version": 2,
+          "source_generation": 3,
+          "verifier_revision": "tc-streaming-receipt-verifier-v2"
+        },
+        "refill_worker_count": 1,
+        "resident_prefix_blocks": 7,
+        "retention": "request",
+        "slot_bundle_count": 2,
+        "slot_count": 2,
+        "source_lease_verified": true,
+        "stage": "denoiser",
+        "startup_policy": "prefetch_window_before_prefix",
+        "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+        "weight_format": "comfy-bf16-single-file"
+      },
+      "public_streaming": {
+        "actual_layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "actual_plan_verified": true,
+        "authorized_layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+        "calibrated_request_bytes": 9663676416,
+        "catalog_revision": "tc-m1-core-v0-z-r1",
+        "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+        "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+        "execution_container": "cli_worker",
+        "memory_scope": "execution_process_tree_v1",
+        "preset_id": "test-z-image-turbo-10g-fb537d0803d5",
+        "preset_revision": 1,
+        "receipt_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+        "receipt_schema_version": 2,
+        "receipt_source_generation": 3,
+        "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+        "record_digest": "073429c05a77bb628019d11e1ea8dc50b449fe4c6dfa2f2b2020468a7eeec9ce",
+        "resolution_digest": "c2b4d6224d29d03b996fb20eb05aea4588ffb1932fc394c0a47c72fe03396eef",
+        "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+        "schema_version": 1,
+        "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+        "target_request_memory_bytes": 10737418240,
+        "workload_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79"
+      },
+      "evidence_sha256": {
+        "memory.jsonl": "b649983911621f26fb268185f1b2ce22f2bb9569beba56213552fd4a739d64aa",
+        "memory-summary.json": "fc1976726958aa3fbf02254b7c01edfb721cccfe171ec86646fdf354e04205ed",
+        "run/plan.json": "f21cadcccfda43b343a5b38dffb4785618c8082472cb2b3d1949213f505dceca",
+        "run/result.json": "6c05398f7b32bd02ac7165164b2fba6bf5ceee96e217eae5c9a3f3a129fe8b00",
+        "run/observation.json": "0350c8fd7ceb3eab2297e8e1b3e8d9888b3753c188e41086ef7ef0f0a947bd60",
+        "run/source-verification.json": "10bba6b03b29955423ec370d5f19ed15b56ca182c4e5b5b302917da08280e5a1",
+        "run/image.png": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "run/events.jsonl": "32f9595fa0016cdd0b1325d4e37513cddfde4ee5bd7d3431fd4931dd4cadaf6c"
+      }
+    }
+  ],
+  "paired_reduction_percent": [
+    {
+      "pair": 1,
+      "wall_seconds": 0.6120731900462473,
+      "request_seconds": 0.6075606070306772,
+      "denoise_seconds": 2.185820843814801
+    },
+    {
+      "pair": 2,
+      "wall_seconds": 1.0972566109933246,
+      "request_seconds": 1.3261843846437804,
+      "denoise_seconds": 1.1479151743878035
+    },
+    {
+      "pair": 3,
+      "wall_seconds": 1.9862503786762242,
+      "request_seconds": 2.728464745880854,
+      "denoise_seconds": 3.214338636226921
+    },
+    {
+      "pair": 4,
+      "wall_seconds": -2.1842939214690382,
+      "request_seconds": -0.21022780855741718,
+      "denoise_seconds": 0.16516515813986832
+    }
+  ],
+  "amendment": {
+    "initial_run_stopped_after_sample": 1,
+    "reason": "Sampler gap 225.9115 ms exceeded unchanged 100 ms threshold; generation itself succeeded.",
+    "change": "Explicit --resume --retain-inconclusive-memory preserved first raw sample and original plan, continued remaining frozen order; no sample rerun or dropped; incomplete memory verdicts stay INCONCLUSIVE.",
+    "driver_history": [
+      {
+        "driver_sha256": "23d88cce8ffe699254c03aadfb0f2b043c5b5c02cc133ae9e313344d5d1017f9",
+        "retain_inconclusive_memory": true,
+        "original_driver_sha256": "27237b43fb060e2650b654f946e89e48903eff32123f1d771d44317456c69a13"
+      }
+    ],
+    "first_to_second_process_start_seconds": 159.24530386924744
+  },
+  "host_tests": "3 PASS: retained inconclusive/no rerun/no overwritten raw evidence; changed library rejected; incomplete existing sample never retried",
+  "power_observation": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=7340131)\t100%; charged; 0:00 remaining present: true\n",
+  "thermal_observation": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+  "interpretation": "Median denoise 1.8927% shorter but full harness wall only 0.3464% shorter. One of four paired full-wall results is slower. Insufficient evidence to change default D0/Q1 or claim robust end-to-end speedup.",
+  "limitations": [
+    "Three memory samples (1,4,6) are INCONCLUSIVE due to gaps >100 ms. Observed peaks may miss peaks; no P95 calibration inferred.",
+    "Host-wide swap-out observed in seven runs; counters do not attribute swap exclusively to this model. No zero-swap/P2 qualification.",
+    "One prompt/seed, four samples per tuple, first pair interrupted for driver amendment; caches unflushed, no randomized order, no formal performance acceptance.",
+    "Catalogs contain template calibration/review metadata, production catalog stays empty.",
+    "No GPU/ANE comparison or public App E2E in this round; no global optimality claim."
+  ],
+  "hashes": {
+    "benchmark-initial.py": "27237b43fb060e2650b654f946e89e48903eff32123f1d771d44317456c69a13",
+    "benchmark_public_streaming_pair.py": "23d88cce8ffe699254c03aadfb0f2b043c5b5c02cc133ae9e313344d5d1017f9",
+    "run_public_streaming_smoke.py": "e80b758df38c259b6351513e5470adeab19c7893b8b77f0f3be11bcaf3a9cbba",
+    "test-catalog.json": "5a9912458c1b0856824689dc060322c8ac06bf0057db1abc1e2fb3f3e2078afa",
+    "candidate-catalog.json": "41ec61a596a18dc2b62e3358a7c7a8ccc0e6b4d81c3cc4e247af3826965072a9",
+    "candidate-plan.json": "75a15fdcdcc3228037f292ff5c14223400bc7686d0a865b59d08df52757b0857",
+    "plan.json": "d42815ee59f30e96056ba6ae2b7f65376d155daedf263fc4ebbcc1b597551c23",
+    "summary.json": "f357cf0046fa321485df5893d5e147700a682a3201f75c7666b2cb8f5ae03379",
+    "test_public_streaming_pair.py": "05e43cff185c95c6a276134a90b3bc95c2cf86d113c34508fc0216a842fc73cc"
+  },
+  "logs_sha256": {
+    "tc-public-prefetch-campaign.log": "8719c82c0e13e991ce7da1f0b1956378008b98ae0ef306614c55dc473522d1d8",
+    "tc-public-prefetch-catalog.log": "fcc31da148e7f87b92d4d6bb2dd1985b602498178dfb4f4e7260ae68f8a40134",
+    "initial-stopped.log": "8719c82c0e13e991ce7da1f0b1956378008b98ae0ef306614c55dc473522d1d8",
+    "tc-public-prefetch-host-tests.log": "874534737f4701704f9b0116ad6673c10191cb548b704a28ae5d386ac15a7c2b",
+    "tc-public-prefetch-campaign-resumed.log": "f6ffcf54c8dbbfd0b6158bce05c2f24a82939469015ffea3faa0dd1a10c7f0ec"
+  }
+}
