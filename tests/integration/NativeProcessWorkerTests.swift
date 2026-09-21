@@ -28,7 +28,11 @@ import Foundation
                     "grace_seconds": 5, "reaping_seconds": 5, "cancel_delay_seconds": cancel ? 1 : 0,
                     "scope": "Real source check through native process supervisor; no successful model generation or timing qualification"]
                 try JSONSerialization.data(withJSONObject: plan, options: .prettyPrinted).write(to: folder.appendingPathComponent("plan.json"))
-                let task = Task { try await runner.run(executable: executable, arguments: ["worker-generate", inputPath.path]) }
+                let wire = try JSONSerialization.jsonObject(with: input) as! [String: Any]
+                let admission = WorkerLaunchAdmission(journal: folder.appendingPathComponent("launch.json"),
+                    jobID: UUID(uuidString: wire["job_id"] as! String)!, requestID: UUID(uuidString: wire["request_id"] as! String)!,
+                    requestDigest: wire["request_digest"] as! String)
+                let task = Task { try await runner.run(executable: executable, arguments: ["worker-generate", inputPath.path], admission: admission) }
                 if cancel { try await Task.sleep(for: .seconds(1)); task.cancel() }
                 let result = try await task.value
                 try result.stdout.write(to: folder.appendingPathComponent("stdout.json"))
@@ -39,6 +43,8 @@ import Foundation
                 try JSONSerialization.data(withJSONObject: observation, options: .prettyPrinted).write(to: folder.appendingPathComponent("observation.json"))
                 precondition(!result.cleanupPending && result.failure == nil && !result.forcedStop)
                 precondition(result.cancellationRequested == cancel && result.exitCode == (cancel ? 2 : 1))
+                let record = try JSONDecoder().decode(WorkerLaunchAdmission.Record.self, from: Data(contentsOf: admission.journal))
+                precondition(record.process.pid == result.pid && record.process.observe() == .exited)
                 let terminal = try WorkerTerminalEnvelope.validate(result.stdout, input: input, request: request,
                     runtimeFingerprint: fingerprint, operation: .generate, exitCode: result.exitCode!)
                 precondition(terminal.status == (cancel ? "cancelled" : "error"))

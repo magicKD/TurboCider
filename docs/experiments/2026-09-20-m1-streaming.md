@@ -1039,3 +1039,17 @@ App 后续：重建已退出 0，链接 `m1-hybrid-reporting` 新库的 history 
 通过该 supervisor 调用上一轮实际 CLI，分别对完整 Z-Image 和 Flux4 验证空 production catalog 拒绝及 1 秒后请求取消；四次均确认清理完成后再用 Swift terminal validator 核对 job/request/digest、runtime、container、退出码和错误状态，无产物。取消是 source verification 阶段，不证明所有 GPU/ANE drain 状态。首个 fixture 测试编译误把 await 放入 precondition autoclosure；首个真实测试因实验父目录不存在而在启动 worker 前失败，均保留记录并修正测试设置。见[源码/二进制/日志哈希及四次真实结果](2026-09-21-m1-process-runner-validation.json)。
 
 runner 及测试已加入 App 构建脚本，但未接入 JobStore，也未重建完整 App/做 GUI 生成。检查 JobStore.init 确认它仍直接将非 terminal 历史标 interrupted；接入外部 worker 前必须补持久化进程身份、启动窗口与重启存活确认。当前 actor 锁是进程内状态，不能声称 App 重启后已安全清理旧 worker。public catalog 和发布门保持不变。
+
+## 第六十二轮：模型启动前的持久化身份与父进程退出屏障（2026-09-21）
+
+为一次性 CLI 增加可选 `--supervised` 模式：在解析输入/创建模型 engine 之前等待 stdin 的单个放行字节。父进程关闭管道、退出或发送错误字节，worker 均拒绝启动。supervisor 的可选 admission 参数建立独占 pipe，在捕获实际子进程身份并保存 journal 后才写放行字节；普通直接 CLI 调用仍可沿用原入口。此字节只控制启动顺序，不承载 source/catalog authority，也不新增 resolve 后的确认往返。
+
+`WorkerProcessIdentity` 记录 PID/PGID、内核进程启动秒/微秒及 boot session UUID；捕获时要求它确为当前父进程的独立 group leader。`WorkerLaunchAdmission` 将这些身份与 job UUID、request UUID、request digest 写入 0600 临时文件，fsync 后通过 RENAME_EXCL 发布 journal，再 fsync 父目录，旧 journal 不覆盖。journal 保存失败或任务已取消则关闭 admission pipe；子进程继续由已有 supervisor 清理。调用方仍须先持久化 pending intent，并为本请求提供私有目录，这部分尚未接到 JobStore。
+
+重启观察为只读：匹配的活进程返回 present；原 leader/group 已不存在或 boot session 已变返回 exited；出生时间/请求关联不匹配、缺失/无效 journal、无法确认的系统结果返回 unknown。读取 journal 使用 NOFOLLOW/NONBLOCK、regular-file/16 KiB 限制及前后 metadata 检查。不会仅凭持久化 PID 发信号，因为检查出生时间再 kill 仍存在 PID 复用窗口。当前缺失 journal 保守返回 unknown，App 后续还须处理未开始 spawn 的 pending 状态和恢复展示，不能直接一律标 interrupted。
+
+实际 fixture 验证 journal 先于工作、存活/退出/错误出生时间及请求关联、旧 journal 字节保持不变、存储失败不放行；另杀掉仍握有未放行 pipe 的父进程，确认孤儿 worker 因 EOF 退出且没有工作 marker。Swift 6 complete concurrency + warnings-as-errors 通过，原 supervisor 的有界取消/进程组/日志上限/cleanup_pending 回归通过。最初严格检查拒绝 deprecated C-string 数组转换，测试编译另遇到 throwing autoclosure，均保留并修正。
+
+完整 native 构建退出 0；合约 83 项中 80 项通过、3 项跳过。真实 CLI 的 query/generate 均通过 EOF、错误字节、等待放行和放行后输入检查；再用新库/CLI 对完整 Z-Image、Flux4 各执行空公开目录拒绝和来源验证取消，四次均保存实际 journal、核对 PID，并在 OS 回收后确认身份 exited。见[构建/源码/日志哈希、journal 与实际 terminal](2026-09-21-m1-worker-admission-validation.json)。没有新增实际公开生成资格或性能结论。
+
+本轮没有完整 App 重建/GUI 生成；JobStore 的 launch reference、重启恢复及 worker/UI 接线仍待完成。journal 的同步 write/fsync 和系统 spawn 不构成存储/内核卡住时的硬实时启动上界；已有 5+5 秒取消策略也不应被扩大解释为覆盖任意阻塞系统调用。

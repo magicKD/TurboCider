@@ -30,7 +30,7 @@ STATE+=(apps/macos/RunInsights.swift)
 STATE+=(apps/macos/TensorCacheController.swift)
 STATE+=(apps/macos/LTXWorker.swift)
 STATE+=(apps/macos/ImageOutputTransaction.swift)
-STATE+=(apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/NativeProcessRunner.swift)
+STATE+=(apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift)
 STATE+=(apps/macos/VideoPreview.swift)
 STATE+=(apps/macos/HistorySelection.swift)
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" services/model-library/main.swift -o "$OUT/turbocider-library"
@@ -68,5 +68,7 @@ printf 'Built Swift App and integration tests\n'
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift tests/integration/WorkerTerminalEnvelopeTests.swift -o "$OUT/turbocider-worker-terminal-tests"
 
 "$TOOLCHAIN/clang" -isysroot "$SDK" -mmacosx-version-min="$DEPLOYMENT_TARGET" -Wall -Wextra -Werror tests/integration/native_process_fixture.c -o "$OUT/turbocider-process-fixture"
-"$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -parse-as-library apps/macos/NativeProcessRunner.swift tests/integration/NativeProcessRunnerTests.swift -o "$OUT/turbocider-process-runner-tests"
-"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/NativeProcessRunner.swift tests/integration/NativeProcessWorkerTests.swift -o "$OUT/turbocider-process-worker-tests"
+"$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -parse-as-library apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift tests/integration/NativeProcessRunnerTests.swift -o "$OUT/turbocider-process-runner-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift tests/integration/NativeProcessWorkerTests.swift -o "$OUT/turbocider-process-worker-tests"
+
+"$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -parse-as-library apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift tests/integration/WorkerLaunchAdmissionTests.swift -o "$OUT/turbocider-worker-admission-tests"

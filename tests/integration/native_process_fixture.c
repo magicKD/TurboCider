@@ -11,8 +11,19 @@ static void ready(const char *path,pid_t other) {
     dprintf(fd,"%d %d %d\n",getpid(),getpgrp(),other);close(fd);
 }
 int main(int argc,char **argv) {
-    if(argc!=3)return 91;
+    if(argc!=3 && argc!=4)return 91;
+    if(argc==4) { unsigned char byte=0; if(strcmp(argv[3],"--supervised") || read(0,&byte,1)!=1 || byte!=1)return 88; }
     const char *mode=argv[1];
+    if(!strcmp(mode,"parent_before_admission")) {
+        int gate[2];if(pipe(gate))return 95;
+        pid_t child=fork();if(child<0)return 96;
+        if(!child) {
+            close(gate[1]);if(dup2(gate[0],0)<0)_exit(97);close(gate[0]);if(setpgid(0,0))_exit(98);
+            char marker[4096];snprintf(marker,sizeof(marker),"%s.child",argv[2]);
+            execl(argv[0],argv[0],"normal",marker,"--supervised",(char *)0);_exit(99);
+        }
+        close(gate[0]);ready(argv[2],child);for(;;)pause();
+    }
     if(!strcmp(mode,"ignore") || !strcmp(mode,"child") || !strcmp(mode,"early_parent"))signal(SIGTERM,SIG_IGN);
     if(!strcmp(mode,"cooperative"))signal(SIGTERM,stop);
     pid_t child=0;

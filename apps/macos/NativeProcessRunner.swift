@@ -85,7 +85,7 @@ actor NativeProcessRunner {
         return (read, write)
     }
     private func launch(executable: URL, arguments: [String], environment: [String: String],
-                        stdout: FD, stderr: FD) throws -> Child {
+                        stdout: FD, stderr: FD, stdin: FD?) throws -> Child {
         guard executable.isFileURL, executable.path.hasPrefix("/"),
               ([executable.path] + arguments + environment.flatMap { [$0.key, $0.value] }).allSatisfy({ !$0.contains("\0") }),
               environment.keys.allSatisfy({ !$0.isEmpty && !$0.contains("=") }) else { throw Failure.invalidLaunch }
@@ -96,7 +96,11 @@ actor NativeProcessRunner {
         defer { posix_spawn_file_actions_destroy(&actions) }
         try check(posix_spawnattr_init(&attributes), "spawnattr_init")
         defer { posix_spawnattr_destroy(&attributes) }
-        try check(posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0), "stdin")
+        if let stdin {
+            try check(posix_spawn_file_actions_adddup2(&actions, stdin.value, STDIN_FILENO), "stdin")
+        } else {
+            try check(posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0), "stdin")
+        }
         try check(posix_spawn_file_actions_adddup2(&actions, stdout.value, STDOUT_FILENO), "stdout")
         try check(posix_spawn_file_actions_adddup2(&actions, stderr.value, STDERR_FILENO), "stderr")
         try check(posix_spawnattr_setpgroup(&attributes, 0), "pgroup")
@@ -133,7 +137,8 @@ actor NativeProcessRunner {
         return nil
     }
     func run(executable: URL, arguments: [String],
-             environment: [String: String] = ProcessInfo.processInfo.environment) async throws -> Result {
+             environment: [String: String] = ProcessInfo.processInfo.environment,
+             admission: WorkerLaunchAdmission? = nil) async throws -> Result {
         guard pending == nil else { throw Failure.cleanupPending }
         guard !active else { throw Failure.busy }
         guard policy.grace >= .zero, policy.reap >= .zero, policy.stdoutLimit > 0, policy.stderrLimit > 0 else { throw Failure.invalidLaunch }
@@ -141,10 +146,26 @@ actor NativeProcessRunner {
         active = true
         defer { if pending == nil { active = false } }
         let (outRead, outWrite) = try pipePair(), (errRead, errWrite) = try pipePair()
-        let child = try launch(executable: executable, arguments: arguments, environment: environment, stdout: outWrite, stderr: errWrite)
+        let gate = try admission.map { _ in try pipePair() }
+        if let gate {
+            guard fcntl(gate.0.value, F_SETFL, 0) == 0, fcntl(gate.1.value, F_SETNOSIGPIPE, 1) == 0 else { throw Failure.system("admission_pipe", errno) }
+        }
+        let child = try launch(executable: executable, arguments: arguments + (admission == nil ? [] : ["--supervised"]),
+                               environment: environment, stdout: outWrite, stderr: errWrite, stdin: gate?.0)
+        gate?.0.close()
         outWrite.close(); errWrite.close()
         defer { outRead.close(); errRead.close() }
         var stdout = Data(), stderr = Data(), failure: String?
+        if let admission, let gate {
+            do {
+                try admission.persist(WorkerProcessIdentity.capture(child.pid))
+                if !Task.isCancelled {
+                    var byte: UInt8 = 1
+                    guard write(gate.1.value, &byte, 1) == 1 else { throw Failure.system("admission_write", errno) }
+                }
+            } catch { failure = "worker_admission_failed: \(error)" }
+            gate.1.close()
+        }
         var stopAt: ContinuousClock.Instant?, killAt: ContinuousClock.Instant?
         var cancelled = false, forced = false
         while true {
