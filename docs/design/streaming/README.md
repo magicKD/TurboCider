@@ -1,5 +1,7 @@
 # TurboCider 通用 Streaming 框架
 
+**2026-09-21 当前完成情况：**见[代码与实机验证快照](../../experiments/2026-09-21-streaming-current-status.md)。两模型 GPU streaming 已实际出图，App worker 流程及发布证据工具已有测试；生产目录仍为空，完整发布验收和 GPU/ANE 集成尚未完成。下文设计及历史交接的日期按各篇保留。
+
 2026-09-20 实施入口：先读 [56 Production readiness 复核与验收计划](56-production-readiness-review-and-acceptance-plan.md) 第 5–9 节，执行 GPU M0 开发基座 → GPU M1 单档产品；GPU/ANE 的专项接入、逐文件 PR、质量工具与测试清单见 [57 GPU/ANE 接入与交付方案](57-gpu-ane-integration-and-delivery-plan.md)。
 56 管总体关键路径，57 细化增量 hybrid。先做 resident Core ML + streamed GPU suffix；ANE model bank 装载/驱逐独立实验，不阻塞 GPU 首发。两篇均是代码复核与待实施方案，不是新增模型实验或资格放行。
 

@@ -1147,3 +1147,15 @@ CPU-only 工具测试 3 项通过：保留不确定样本且不重复执行/覆�
 P3 PASS 字符串本身不能成为加速声明，还须匹配 verifier 的 memory qualification、swap status、speedup flag 和 faster-and-lower-swap classification。calibrated 产品声明本身仍不提供 swap 加速、hard cap 或保证零 swap。assessment 最多返回 READY_FOR_REVIEW，固定 production_authorized=false；它不能替代 raw-evidence/review 加载与校验，也不创建 native authority。
 
 CPU 回归共 35 项通过：策略合同 8、catalog builder 17、policy preparer 4、bundled catalog 6。见[源码与日志验证记录](2026-09-21-release-policy-contract-validation.json)。下一步仍需把新 record/channel、完整验收/review evidence、原始 bundle 重验、native/resolver、包生成和 App 标识一起接通；本轮没有新模型或性能测试，也没有将前述 INCONCLUSIVE 样本转换为发布证据。
+
+## 第六十九轮：验收证据读取、campaign 重验与现状提交（2026-09-21）
+
+新增 `verify_streaming_acceptance.py`，读取人工批准的 review 及 source/actual、quality、lifecycle、App、installation、package/revocation 六类报告，要求固定检查项、相同 reviewed commit、冻结策略和 catalog binding。执行过的检查必须引用原始文件，按路径、SHA-256、字节数核对；FAIL、NOT_RUN、INCONCLUSIVE 均保留。目录逐级按 descriptor 打开并拒绝符号链接、路径越界、FIFO、空文件、超大 JSON、重复键、非有限数及读取过程中的变化。JSON 限制 1 MiB，原始大文件分块哈希。
+
+新增 `verify_streaming_release_evidence.py`，独立重验 P0/P1/P2 原始 bundle（可选 P3），要求持久 summary 与重算结果完全一致，校验 policy SHA、binding、候选 clean commit 与 PASS P2 的 headroom/样本条件，再调用 calibrated assessment。最多输出 READY_FOR_REVIEW，固定 production_authorized=false；现有 builder/native 仍未支持 calibrated 产品记录，生产目录未改变。
+
+这些工具验证人工评审所引用证据的身份和完整覆盖，不能从任意日志自动证明 App/生命周期行为；reviewer 名称及摘要不是身份认证或签名。完整嵌套 record/schema 验证和执行授权仍须后续 catalog/native 集成，不能把本轮工具就绪当成发布完成。
+
+整理了新增模块的资源清理与 CLI 输出代码，并重跑 10 项验收工具测试和 8 项策略回归，全部通过。集成测试实际运行 synthetic P0/P1/P2 verifier；修改 App restart verdict 会阻断，篡改 campaign summary 会被重算比较拒绝。所有 fixture 都是合成证据，不是新增模型、App 或性能验收。源码与归档日志哈希见[验证记录](2026-09-21-release-evidence-validation.json)。
+
+按当前现状新增[完成情况与提交快照](2026-09-21-streaming-current-status.md)，并从设计入口及旧状态页链接，区分真实 GPU 出图、App 测试、性能探索与发布缺口。本轮没有重跑 native 构建或实机模型，M0/M1 和整体目标仍未完成。
