@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from verify_streaming_campaign import EvidenceError, verify as verify_campaign
+from streaming_release_policy import (STAGING_GATES, PUBLIC_GATES, required_gates as policy_gates, ReleasePolicyError)
 
 
 SCHEMA = "turbocider-streaming-catalog-build-v1"
@@ -32,8 +33,6 @@ RECORD_IDENTITY_SCHEMA = "tc-streaming-preset-record-identity-v1"
 REVIEW_SCHEMA = "tc-streaming-catalog-review-v1"
 CALIBRATION_SCOPE = "execution_process_tree_v1"
 CALIBRATION_ESTIMATOR = "tree-phys-footprint-linear-p95-v1"
-STAGING_GATES = ("P0", "P1", "P2")
-PUBLIC_GATES = (*STAGING_GATES, "P3")
 REVIEW_ROLES = ("runtime", "model", "performance", "release")
 
 
@@ -922,7 +921,10 @@ def build_record(
     if record["release"]["channel"] not in ("staging", "public-experimental", "public-stable"):
         raise CatalogBuildError("record channel is not releasable")
     is_public = record["release"]["channel"].startswith("public-")
-    required_gates = PUBLIC_GATES if is_public else STAGING_GATES
+    try:
+        required_gates = policy_gates(record["release"]["channel"], record["release"].get("policy_revision"))
+    except ReleasePolicyError as exc:
+        raise CatalogBuildError(str(exc)) from exc
     if default_bundle is None:
         raise CatalogBuildError("P0 default-path evidence bundle is required")
     if performance_bundle is None:

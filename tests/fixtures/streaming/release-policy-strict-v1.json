@@ -1,0 +1,26 @@
+{
+  "contract": {
+    "schema": "tc-streaming-release-policy-contract-v1",
+    "policy_revision": "tc-public-strict-v1",
+    "public_channels": [
+      "public-stable",
+      "public-experimental"
+    ],
+    "required_campaign_gates": [
+      "P0",
+      "P1",
+      "P2",
+      "P3"
+    ],
+    "required_acceptance_gates": [],
+    "optional_campaign_gates": [],
+    "claims": {
+      "calibrated_scope_only": false,
+      "hard_memory_cap": false,
+      "guaranteed_zero_swap": false,
+      "swap_speedup_requires_p3": true
+    },
+    "p3_safety_failures_block_release": true
+  },
+  "sha256": "2dcbee5c936e5ea11489ae78012b8541c0153275a70a962ab8fd2b99b43b3415"
+}

@@ -86,6 +86,8 @@ class ReleasePolicyPreparationTests(unittest.TestCase):
             self.record_path, self.templates, 8 << 30, output
         )
         self.assertEqual(manifest["status"], "frozen")
+        self.assertEqual(manifest["release_policy_contract"]["contract"]["required_campaign_gates"], ["P0", "P1", "P2", "P3"])
+        self.assertEqual(manifest["release_policy_contract"]["contract"]["policy_revision"], "tc-public-strict-v1")
         self.assertEqual(manifest["target_bytes"], 8 << 30)
         binding = builder.catalog_binding(self.record)
         for kind in preparer.KINDS:

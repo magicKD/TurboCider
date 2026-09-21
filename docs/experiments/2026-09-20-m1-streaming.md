@@ -1135,3 +1135,15 @@ NativeProcessRunner 在已有有界读取和日志保留中增设 stderr observe
 8 次 PNG 均与独立参考图逐字节一致，SHA-256 为 `286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e`；每次 `actual_plan_verified=true`、`source_lease_verified=true`、drained=true，均为 207 fills/提交及 9 passes，实际 D/Q 与候选记录一致。采样中观测到的进程树峰值范围约 8.226–8.344 GiB，但样本 1、4、6 的最大间隔分别为 225.9115、108.8016、105.0923 ms，三者保持 INCONCLUSIVE，可能漏峰，整体内存资格也为 **INCONCLUSIVE**。七次运行期间观测到 host-wide swap-out（约 86–344 MiB/次），不能独占归因于模型，也不能宣称零 swap 或 P2 通过。
 
 CPU-only 工具测试 3 项通过：保留不确定样本且不重复执行/覆盖 raw evidence；库变化拒绝 resume；已有但不完整的样本不自动重跑。完整冻结计划、修改记录、所有样本/配对值、实际 receipt 和原始证据哈希见[验证记录](2026-09-21-m1-public-prefetch-validation.json)。生产目录仍为空；本轮是单 prompt/seed 的内部探索，不是 P0/P1/P2/P3，不证明全局最优、App 公开 E2E 或 GPU/ANE 收益。
+
+## 第六十八轮：发布策略冻结合同与 P3 阻断规则（2026-09-21）
+
+为 56 §5.3 的 calibrated 策略补充代码合同，而不是把原 public gate 的 P3 判断删除。新增 `streaming_release_policy.py`，定义 strict/calibrated 的 channel、必需 campaign/验收门和产品声明边界；`freeze_streaming_release_policy.py` 以排他写入保存 canonical 合同和 SHA-256。两份 golden fixture 位于 `tests/fixtures/streaming/release-policy-{strict,calibrated}-v1.json`，改动 gate/声明、未知 revision 及 bool/integer 等值篡改均拒绝。
+
+现有 catalog builder 的 gate 选择已使用共享函数；legacy 和 explicit strict 的 public 路径继续要求 P0/P1/P2/P3。现有四-template preparer 升级 generator revision v2，在 manifest 中保存 explicit strict frozen contract 及哈希，campaign validator 和阈值不变。**现有 builder/native 仍拒绝 calibrated record，生产目录仍为空。** 新策略只有 preparatory contract/aggregation，尚未放行 channel。
+
+新增 calibrated assessment 仅消费调用方已经独立验证的 summary、policy binding 和验收 verdict：P0/P1/P2 必须 PASS；binding 必须显式属于 calibrated 且彼此一致，不能把 strict 证据事后改名；source/actual、quality、lifecycle、App、installation、package/revocation 任一缺失或未通过均阻断。P3 单独保留 NOT_RUN/INCONCLUSIVE/FAIL/PASS，不自动升级。已观察到的输出/来源/审计/hard failure 或失败的 memory qualification 仍阻断；未知可靠性字段也拒绝。仅性能 verdict 为 FAIL、其余可靠性已通过的情形可保留为受限评审候选，不隐去 FAIL。
+
+P3 PASS 字符串本身不能成为加速声明，还须匹配 verifier 的 memory qualification、swap status、speedup flag 和 faster-and-lower-swap classification。calibrated 产品声明本身仍不提供 swap 加速、hard cap 或保证零 swap。assessment 最多返回 READY_FOR_REVIEW，固定 production_authorized=false；它不能替代 raw-evidence/review 加载与校验，也不创建 native authority。
+
+CPU 回归共 35 项通过：策略合同 8、catalog builder 17、policy preparer 4、bundled catalog 6。见[源码与日志验证记录](2026-09-21-release-policy-contract-validation.json)。下一步仍需把新 record/channel、完整验收/review evidence、原始 bundle 重验、native/resolver、包生成和 App 标识一起接通；本轮没有新模型或性能测试，也没有将前述 INCONCLUSIVE 样本转换为发布证据。
