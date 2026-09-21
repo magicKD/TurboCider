@@ -525,6 +525,22 @@ public final class NativeEngine: @unchecked Sendable {
         guard status == 0 else { throw NativeFailure(message: message) }
         return Data(output.utf8)
     }
+    /// Candidate metadata for the controlled CLI worker; availability still
+    /// requires a one-shot worker query against the selected installation.
+    public static func workerStreamingOptions(_ request: NativeRequestV2) throws -> NativeStreamingOptions {
+        let data = try JSONEncoder().encode(request)
+        var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+        let status = String(decoding: data, as: UTF8.self).withCString {
+            tc_worker_streaming_options_json($0, &result, &error)
+        }
+        let message = consume(error), output = consume(result)
+        guard status == 0 else { throw NativeFailure(message: message) }
+        let options = try JSONDecoder().decode(NativeStreamingOptions.self, from: Data(output.utf8))
+        guard options.schema_version == 2, options.execution_container == "cli_worker" else {
+            throw NativeFailure(message: "worker_options_invalid")
+        }
+        return options
+    }
     public static func streamingOptions(_ request: NativeRequestV2) throws -> NativeStreamingOptions {
         let data = try JSONEncoder().encode(request)
         var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?

@@ -521,7 +521,7 @@ int tc_plan_json(const char *r, char **out, char **error) {
         }
     }
 }
-int tc_streaming_options_json(const char *r, char **out, char **error) {
+static int streaming_options_for_container(const char *r, const char *container, char **out, char **error) {
     if (out)
         *out = nullptr;
     if (error)
@@ -542,7 +542,7 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
             for (const uint64_t target : tc::public_streaming_targets) {
                 tc::streaming::PresetResolveQuery query;
                 query.workload = tc::streaming::basic_streaming_workload(
-                    request, device_class, "embedded_app");
+                    request, device_class, container);
                 query.target_request_memory_bytes = target;
                 query.physical_memory_bytes = device.physical_memory;
                 if (selector.selection && *selector.selection == "preset" &&
@@ -577,7 +577,7 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
                 @"catalog_revision" : @(catalog.revision.c_str()),
                 @"query_status" : catalog_empty
                     ? @"catalog_empty" : @"tentative_without_artifact_identity",
-                @"execution_container" : @"embedded_app",
+                @"execution_container" : @(container),
                 @"device" : @{
                     @"gpu" : @(device.gpu.c_str()),
                     @"physical_memory_bytes" : @(device.physical_memory),
@@ -594,6 +594,12 @@ int tc_streaming_options_json(const char *r, char **out, char **error) {
             return 1;
         }
     }
+}
+int tc_streaming_options_json(const char *r, char **out, char **error) {
+    return streaming_options_for_container(r, "embedded_app", out, error);
+}
+int tc_worker_streaming_options_json(const char *r, char **out, char **error) {
+    return streaming_options_for_container(r, "cli_worker", out, error);
 }
 int tc_engine_create_model(const char *id, const char *path, tc_engine **engine, char **error) {
     if (engine)

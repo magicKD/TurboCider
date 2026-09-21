@@ -1,0 +1,127 @@
+{
+  "date": "2026-09-21",
+  "scope": "App public Z/Flux streaming availability uses cli_worker metadata and supervised query workers; stale/cancelled installation queries discarded",
+  "runtime_identity": "tc-runtime-build-v1-b82af7b4103c4960f41456a6199529b18ff563d76fb9ae7a116a1036ddd11c90",
+  "validation": {
+    "native_build": "PASS exit 0",
+    "native_contract": "83 total, 80 PASS, 3 skipped",
+    "fixed_container_metadata": "PASS Z/Flux cli_worker and legacy embedded_app; JSON container override rejected",
+    "final_swift_build": "PASS App, query tests, Studio tests; no compiler warnings",
+    "query_fixtures": "PASS exact binding, wrong container/runtime/selector rejection, serialization, active/queued cancellation, retry after cancellation, temporary cleanup; fake workers only",
+    "studio": "PASS superseded/outer cancellation, stale draft key, installation generation invalidation, unsupported model, default Off and empty-catalog no-open",
+    "real_queries": "PASS Z and Flux each catalog rejection and source-verification cancellation with supervised exit confirmation",
+    "supervisor_regression": "PASS bounded output, cooperative/forced cancellation, group cleanup, unrelated process survives, pending cleanup admission lock",
+    "launch_admission_regression": "PASS identity journal, persistence failure, parent death/EOF",
+    "library": "PASS build and isolated location/list (empty library)",
+    "GUI": "Not rerun this round; no visual acceptance claim"
+  },
+  "initial_failures": [
+    "Initial query fixture run failed parsing empty output; diagnostic repeat showed a cancelled cooperative worker leaving its fixture lock, so next worker failed with FileExistsError. Both logs and diagnostic fixture preserved.",
+    "Supervisor sent SIGTERM to the group then redundantly to its leader, interrupting cooperative cleanup twice. Fixed to signal leader separately only if outside original group; query and supervisor/admission regressions passed.",
+    "Initial Swift build warned about mutable captured intent in test; frozen before final warning-free build."
+  ],
+  "real_results": {
+    "real-queries/flux2-klein-4b-reject-result.json": {
+      "cancelled": false,
+      "error": "catalog_has_no_public_records"
+    },
+    "real-queries/z-image-turbo-reject-result.json": {
+      "cancelled": false,
+      "error": "catalog_has_no_public_records"
+    },
+    "real-queries/z-image-turbo-reject-plan.json": {
+      "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-options/turbocider",
+      "expected": "catalog_has_no_public_records",
+      "model": "z-image-turbo",
+      "cancel_after_seconds": 0,
+      "runtime_fingerprint": "tc-runtime-build-v1-b82af7b4103c4960f41456a6199529b18ff563d76fb9ae7a116a1036ddd11c90",
+      "scope": "Real query adapter, no model generation"
+    },
+    "real-queries/flux2-klein-4b-cancel-plan.json": {
+      "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-options/turbocider",
+      "model": "flux2-klein-4b",
+      "cancel_after_seconds": 1,
+      "runtime_fingerprint": "tc-runtime-build-v1-b82af7b4103c4960f41456a6199529b18ff563d76fb9ae7a116a1036ddd11c90",
+      "expected": "CancellationError after cleanup",
+      "scope": "Real query adapter, no model generation"
+    },
+    "real-queries/z-image-turbo-cancel-result.json": {
+      "cancelled": true,
+      "error": "The operation couldn’t be completed. (Swift.CancellationError error 1.)"
+    },
+    "real-queries/flux2-klein-4b-cancel-result.json": {
+      "cancelled": true,
+      "error": "The operation couldn’t be completed. (Swift.CancellationError error 1.)"
+    },
+    "real-queries/flux2-klein-4b-reject-plan.json": {
+      "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-options/turbocider",
+      "model": "flux2-klein-4b",
+      "cancel_after_seconds": 0,
+      "runtime_fingerprint": "tc-runtime-build-v1-b82af7b4103c4960f41456a6199529b18ff563d76fb9ae7a116a1036ddd11c90",
+      "expected": "catalog_has_no_public_records",
+      "scope": "Real query adapter, no model generation"
+    },
+    "real-queries/z-image-turbo-cancel-plan.json": {
+      "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-options/turbocider",
+      "model": "z-image-turbo",
+      "cancel_after_seconds": 1,
+      "runtime_fingerprint": "tc-runtime-build-v1-b82af7b4103c4960f41456a6199529b18ff563d76fb9ae7a116a1036ddd11c90",
+      "expected": "CancellationError after cleanup",
+      "scope": "Real query adapter, no model generation"
+    }
+  },
+  "source_sha256": {
+    "apps/macos/App.swift": "dcf142c91f90fa7b2f5a6bbbac7bf0c5f1cf2b6f064b5587f710162db05aef54",
+    "apps/macos/ModelLibraryController.swift": "264f44d1a068ae4cbc0391692ffea85b713e63a9ac193c821bda43025d3b33ef",
+    "apps/macos/NativeProcessRunner.swift": "04e912cdb8b1d02a73aef36f3b3abab7f72a917c6175ce12de873baf62d05c3b",
+    "apps/macos/StudioState.swift": "146482292bf6d073ae2dcc12eda5b47940aa5849f5af6be0ecb57abd9dabe3fc",
+    "bindings/c/include/turbocider/turbocider.h": "5830d3b98c5b200d59d537e3ff965948be3ef716fb3cf1afadba076d871efe6c",
+    "bindings/swift/TurboCiderNative.swift": "be498be86b9e0c8c4fd8b408a225aca98166877134195a56169478743d3e2a58",
+    "native/api/c_api.mm": "bfd25cc3ab5c40acd8f38e4fb77e30c463e6ee50ef157ce46c0f98686ec7aced",
+    "tests/integration/StudioBehaviorTests.swift": "43512c18c6aa24fbbbda4694d2ac9df75c1dc38c5053e1f8e126a733a3325ce5",
+    "tools/native/build_app.sh": "8940ba7e836dcdd5af214f685637855b37b7d197bd0b576a59e21fdce593ccaf",
+    "apps/macos/PublicImageQueries.swift": "a33bb6b40103b94f22016ca8b53d247f47d465400331ab0d67bdac38e3454f8c",
+    "tests/integration/PublicImageQueryTests.swift": "fc242fd522d8037671efa3e637b2193a4cff6f13df18aefcdd0c2231929a1fb2",
+    "tests/integration/StudioStreamingQueryTests.swift": "ac57042dd3b6614561b0061a7657ab49cab8e5d9d154731884c7941e0a3324a9",
+    "tests/native/test_worker_options.py": "f0714c8352b3fcd8c834ef273550a83b89024f1da1802c61f647cfe258836a0b"
+  },
+  "binary_sha256": {
+    "turbocider": "bc8125a1223825d223f098b67277b59aad8fcdac28eb42a23d5719864c82ea7c",
+    "libturbocider.dylib": "1d32aa335f1dbd96932c793bbccd9ff2e373b6c4e02b9eb7883bb0ae89e8c752",
+    "TurboCiderNativeApp": "edc6c2893f95e7d851a60a00432bed57a9e49deed7c361788e5b6e12a5632393",
+    "turbocider-library": "3b03c9b5b957eb64192994d4d32385b261a380e09a12c75f94ae90c45feb9ad7",
+    "turbocider-public-image-query-tests": "65cb53bf0dafcea1daf54ff2959086e72cf46c16f27546c339ee650504869783",
+    "turbocider-studio-tests": "39a5603b3affcd77bb08b42415e003d234181ae8fbc50f16d5e1b46c617d4c0d"
+  },
+  "evidence_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-worker-options",
+  "log_sha256": {
+    "query-lock-failure.log": "21966647223e8786118312f447a5ead8d50411a9be5cfa000da9e87521be25f5",
+    "tc-worker-options-admission-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-worker-options-admission-tests.log": "98c1a70acefb64ab488c1c9257ae439bc8ff07660ac743cf3369084464beeb39",
+    "tc-worker-options-app-build-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-worker-options-app-build.log": "e96e2964bcd1d7ce68c134e9f777aadc7c7b7fcd28ec276dc406296d86da1a51",
+    "tc-worker-options-helper-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-worker-options-library-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-worker-options-native-build.log": "6f25673d62544a66ce84fffc7239d2dc46c98933c77db0294a154480bf810cef",
+    "tc-worker-options-native-contract.log": "16d463fb4607ee6aa1f8528c70bb0aedbb8a56f93f01367bf45160a2a58e8884",
+    "tc-worker-options-native-tests.log": "bc8881acd8a44ddd73db068cfdae65ba13f2cffc17fc60df3105365960842093",
+    "tc-worker-options-process-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-worker-options-process-tests.log": "0fdedfcdc5e7750e61270d9fcb843502d424a54fbb4e5c49a2ec2ce4f6203b6f",
+    "tc-worker-options-query-test-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-worker-options-query-tests-final.log": "896a91fc502872bd6ff9c12f68ee131210514825af8c9cd074f909a82b9a9ea6",
+    "tc-worker-options-query-tests-initial.log": "fa1af9a691e7fec6f785278fc82c7d972f082faaa20b2993473e88ac3e332ab3",
+    "tc-worker-options-query-tests.log": "896a91fc502872bd6ff9c12f68ee131210514825af8c9cd074f909a82b9a9ea6",
+    "tc-worker-options-real-queries.log": "60bbe665785cd8aa9c3cd877bfa12aa3acd8b576af0eba750a4ebec3de0454c4",
+    "tc-worker-options-studio-tests-final.log": "6996ce6cec5fd2453c78c619ccd3a94a283788b12541447d7c55327e8917e2e4",
+    "tc-worker-options-studio-tests.log": "de8c5ffe2d363932ce69aa66df71edc684f459e865e7f954d730e84d4ce9fb4c",
+    "tc-worker-options-tests-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "limitations": [
+    "Production catalog remains empty. Metadata has no real candidates; successful resolutions in adapter tests use fake workers, not model qualification.",
+    "Real model cases reject or cancel during query/source verification. No successful native image generation, GPU/ANE cancellation or release gate qualification is claimed.",
+    "Each candidate uses a separate source-verifying query worker; no cross-process source-proof cache. Queries may be slow for a populated catalog.",
+    "Installation generation tracks library index refresh, not arbitrary external filesystem mutations. Generation independently revalidates sources.",
+    "Worker progress/resolved events are not yet streamed to App telemetry.",
+    "Full public quality, memory, performance and hybrid engine integration work remains outstanding."
+  ]
+}

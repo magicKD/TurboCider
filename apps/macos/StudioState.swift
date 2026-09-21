@@ -629,7 +629,11 @@ final class StudioState: ObservableObject {
     @Published private(set) var streamingOptions: NativeStreamingOptions?
     @Published private(set) var streamingOptionsLoading = false
     @Published private(set) var streamingOptionsError: String?
+    @Published private(set) var streamingInstallationGeneration: UInt64 = 0
     private var streamingQueryGeneration: UInt64 = 0
+    private var streamingOptionsTask: Task<NativeStreamingOptions, Error>?
+    typealias StreamingOptionsProvider = @Sendable (NativeRequestV2, URL?) async throws -> NativeStreamingOptions
+    private let streamingOptionsProvider: StreamingOptionsProvider
     @Published var importing = false
     @Published var saved = true
     @Published var lastSeed: Int?
@@ -638,7 +642,13 @@ final class StudioState: ObservableObject {
     private let file: URL
     private var saveTask: Task<Void, Never>?
     private var undoAssets: [([StudioAsset], UUID?)] = []
-    init(directory: URL, models: [StudioModel] = StudioModel.catalog()) {
+    init(directory: URL, models: [StudioModel] = StudioModel.catalog(), streamingOptionsProvider: StreamingOptionsProvider? = nil) {
+        self.streamingOptionsProvider = streamingOptionsProvider ?? { request, modelURL in
+            if ["z-image-turbo", "flux2-klein-4b"].contains(request.model) {
+                return try await PublicImageQueries.options(request, modelURL: modelURL)
+            }
+            return try await NativeEngine.streamingOptions(request, modelURL: modelURL)
+        }
         self.models = models
         file = directory.appendingPathComponent("studio-draft.json")
         importer = StudioAssetImporter(directory: directory.appendingPathComponent("inputs"))
@@ -668,7 +678,9 @@ final class StudioState: ObservableObject {
         value.streaming = StudioStreamingState()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "invalid"
+        let container = ["z-image-turbo", "flux2-klein-4b"].contains(draft.modelID) ? "cli_worker" : "embedded_app"
+        let prefix = "\(NativeEngine.runtimeBuildIdentity())|\(container)|\(streamingInstallationGeneration)|"
+        return prefix + ((try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "invalid")
     }
     var physicalMemoryBytes: UInt64 { ProcessInfo.processInfo.physicalMemory }
     var recommendedStreamingSelection: StudioStreamingSelection {
@@ -698,15 +710,21 @@ final class StudioState: ObservableObject {
         guard draft.streaming.selection != .off else { return true }
         return streamingOption(for: draft.streaming.selection)?.status == "available"
     }
+    func invalidateStreamingInstallation() {
+        streamingInstallationGeneration &+= 1
+        streamingOptionsTask?.cancel()
+        streamingOptions = nil; streamingOptionsError = nil; streamingOptionsLoading = false
+    }
     func refreshStreamingOptions() async {
         streamingQueryGeneration &+= 1
+        streamingOptionsTask?.cancel()
         let generation = streamingQueryGeneration
         let key = streamingQueryKey
         streamingOptions = nil
         streamingOptionsError = nil
         streamingOptionsLoading = false
         defer {
-            if generation == streamingQueryGeneration { streamingOptionsLoading = false }
+            if generation == streamingQueryGeneration { streamingOptionsLoading = false; streamingOptionsTask = nil }
         }
         guard draft.publicStreamingModel else {
             streamingOptions = nil
@@ -718,7 +736,12 @@ final class StudioState: ObservableObject {
             streamingOptionsLoading = true
             streamingOptionsError = nil
             let modelURL = draft.modelPath.isEmpty ? nil : URL(fileURLWithPath: draft.modelPath)
-            let options = try await NativeEngine.streamingOptions(request, modelURL: modelURL)
+            let provider = streamingOptionsProvider
+            let task = Task { try await provider(request, modelURL) }
+            streamingOptionsTask = task
+            let options = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: { task.cancel() }
             try Task.checkCancellation()
             guard generation == streamingQueryGeneration, key == streamingQueryKey else { return }
             streamingOptions = options

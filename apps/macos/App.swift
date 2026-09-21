@@ -168,6 +168,7 @@ struct StudioView: View {
         .onDisappear { studio.save() }
         .onChange(of: store.deletableJobIDs) { _, ids in selectedTasks.formIntersection(ids) }
         .onChange(of: outputIDs) { _, ids in resultSelection.retain(Set(ids)) }
+        .onChange(of: library.installationGeneration) { _, _ in studio.invalidateStreamingInstallation() }
         .task { library.refresh(studio: studio, migrate: true) }
         .task(id: studio.streamingQueryKey) {
             await studio.refreshStreamingOptions()

@@ -48,7 +48,9 @@ actor NativeProcessRunner {
         func send(_ signal: Int32) {
             guard status == nil, !identityLost else { return }
             _ = kill(-pid, signal)
-            _ = kill(pid, signal)
+            // The group signal already reaches its leader. Do not interrupt a
+            // cooperative cleanup twice; target PID separately only if escaped.
+            if getpgid(pid) != pid { _ = kill(pid, signal) }
         }
         func reapIfExited() {
             guard status == nil, exited(), !identityLost else { return }

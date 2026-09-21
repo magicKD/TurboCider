@@ -32,6 +32,9 @@ int tc_plan_json(const char *request_json, char **plan_json, char **error);
  * it never loads model weights, creates GPU pools or starts I/O workers. */
 int tc_streaming_options_json(const char *request_json,
                               char **result_json, char **error);
+/* Read-only discovery for the fixed cli_worker container. No model creation,
+ * source verification, GPU weights or execution authority. */
+int tc_worker_streaming_options_json(const char *request_json, char **result_json, char **error);
 int tc_engine_create(const char *model_path, tc_engine **engine, char **error);
 /* Additive ABI: select a registered model module. Model paths are local only. */
 int tc_engine_create_model(const char *model_id, const char *model_path,

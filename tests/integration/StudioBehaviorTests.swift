@@ -632,6 +632,7 @@ struct StudioBehaviorTests {
         try JSONEncoder().encode([externalJob]).write(to: deletionRoot.appendingPathComponent("jobs.json"))
         let externalStore = NativeJobStore(directory: deletionRoot)
         try rejects { _ = try externalStore.trashOutput(externalJob.id) }
+        try await StudioStreamingQueryTests.run(root: root.appendingPathComponent("worker-query-state"))
         print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/Wan/Z-Image defaults and separate LoRA forwarding")
     }
 }

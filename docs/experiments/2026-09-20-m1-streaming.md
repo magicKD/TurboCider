@@ -1067,3 +1067,15 @@ App 收到结果后先确认 supervisor 已回收 worker/group并持久化 exitC
 再从实际 NativeJobStore.generate 走本地完整 Z-Image 与 Flux4，分别验证空 production catalog 拒绝和取消，四次均保存任务/worker 身份并确认退出，没有复用 engine、最终图片或残留 staging；重新打开历史保持正确状态。使用独立状态目录启动最终 App，按本次 PID 观察到屏幕窗口并只终止/回收该进程。窗口截图命令返回 `could not create image from window`，因此没有视觉验收或按钮驱动的 GUI 生成声明。见[完整记录、真实 JobStore 结果和构建哈希](2026-09-21-m1-app-worker-validation.json)。临时定向构建脚本第一次因工作目录错误在编译前失败，修正后成功，失败日志保留。
 
 生成已迁移，但 Studio 的 streaming availability 查询仍使用 embedded-container NativeEngine.streamingOptions，尚须切到 cli_worker 查询以与生成 catalog 对齐；worker 的进度/resolved 事件也尚未接入 App telemetry。production catalog 仍为空，未获得实际 public 成功图片或新的质量/内存/性能资格。整体交付并未完成。
+
+## 第六十四轮：App 查询容器一致性、取消及安装状态失效（2026-09-21）
+
+Z-Image/Flux4 的 Studio streaming availability 现在使用固定 cli_worker 容器，与实际生成一致。新增 additive C API `tc_worker_streaming_options_json`，复用严格 metadata discovery；旧 API 保持 embedded_app，request JSON 不能覆盖容器。空目录直接返回五档不可用，不打开模型。出现 candidate 时，App 通过独立串行 query runner、启动身份 journal 和一次性 worker-query 做来源验证及原生 resolve，核对 request/runtime/container/selector 后才接收结果；查询不授予生成 authority，生成仍独立验证。
+
+Studio 会取消被替代的查询，并向 worker 传播任务取消；generation 与包含 runtime、container、installation generation 的 draft key 一起防止旧结果回写。模型库 index 刷新使旧 availability 失效并触发重新查询。这不等于监听所有外部文件变动。每个 candidate 当前单独启动验证 worker，无跨进程 source-proof 缓存；目录将来非空时需继续评估查询延迟。
+
+首次 fake-worker 查询回归失败，诊断重跑发现取消的合作 worker 未完成 fixture lock 清理，下一次查询因此失败。supervisor 原来先向 group 发 SIGTERM、再向 leader 重复发送，第二次信号会打断合作清理。改为只在 leader 离开原 group 时单独发送 PID 信号后，取消、清理、再次查询及原有 group cleanup/启动 journal 回归全部通过。保留初次失败日志、诊断 fixture 和修改前 supervisor；测试初次构建的 mutable capture warning 也保留，最终构建已无该 warning。
+
+完整 native 构建通过，runtime 为 `tc-runtime-build-v1-b82af7b4103c4960f41456a6199529b18ff563d76fb9ae7a116a1036ddd11c90`；83 项 native contract 中 80 项通过、3 项跳过。最终 App、query/Studio tests 及模型库辅助程序构建通过。fake-worker 测试覆盖绑定拒绝、串行执行、活动/排队取消、临时目录清理；Studio 测试覆盖 superseded/outer cancellation、旧 draft/安装版本结果拒绝及默认 Off。真实 Z/Flux 各自通过目录拒绝与来源验证阶段取消，共四例。模型库在独立空目录下 location/list 检查通过。本轮未重跑 GUI 视觉检查。
+
+详细结果和源码、二进制、日志哈希见[验证记录](2026-09-21-m1-worker-options-validation.json)。production catalog 仍为空；成功 query fixture 不构成真实模型 qualification，真实测试没有成功 resolution 或图片。worker progress/resolved 事件到 App telemetry 的接线、完整 public 质量/内存/性能发布门及 hybrid engine 集成仍未完成。
