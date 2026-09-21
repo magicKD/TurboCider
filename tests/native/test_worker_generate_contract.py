@@ -38,6 +38,15 @@ with tempfile.TemporaryDirectory(prefix='tc-generate-contract-') as tmp:
         expected = 0 if mode == 'generate_success' else 2 if mode == 'generate_cancel' else 1
         assert proc.returncode == expected, (mode, proc.returncode, proc.stdout, proc.stderr)
         result = json.loads(proc.stdout)
+        events = [json.loads(line.removeprefix('TC_EVENT\t')) for line in proc.stderr.splitlines() if line.startswith('TC_EVENT\t')]
+        if mode not in ['bad_exact', 'existing']:
+            assert [e['kind'] for e in events] == ['resolved', 'progress', 'progress'], (mode, events)
+            assert [e['sequence'] for e in events] == [1, 2, 3]
+            for e in events:
+                assert e['execution_container'] == 'cli_worker' and e['runtime_fingerprint'] == 'test-runtime'
+                for key in ['job_id', 'request_id', 'request_digest']: assert e[key] == wire[key]
+        else: assert not events
+
         for key in ['job_id', 'request_id', 'request_digest']:
             assert result[key] == wire[key], mode
         assert result['actual_container'] == 'cli_worker' and result['runtime_fingerprint'] == 'test-runtime'

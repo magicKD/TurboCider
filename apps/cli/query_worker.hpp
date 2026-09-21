@@ -1,6 +1,7 @@
 #pragma once
 #include "worker_protocol.hpp"
 #include "generate_worker.hpp"
+#include "worker_events.hpp"
 #include "../../native/runtime/build_identity.hpp"
 #include "turbocider/turbocider.h"
 #include <atomic>
@@ -65,9 +66,11 @@ inline int run(const char *path,bool generate) {
         NSDictionary *generated=nil,*summary=nil,*artifact=nil;
         if(generate) {
             NSDictionary *bound=bind_generation(request,resolution);
+            Events events(input,tc::runtime_build_identity());
+            events.resolved(resolution);
             NSString *bound_json=[[NSString alloc] initWithData:canonical_request(bound) encoding:NSUTF8StringEncoding];
             result=nullptr;error=nullptr;
-            status=tc_engine_generate(engine.get(),bound_json.UTF8String,nullptr,nullptr,&result,&error);
+            status=tc_engine_generate(engine.get(),bound_json.UTF8String,Events::progress,&events,&result,&error);
             generated=consume(status,result,error);
             if(cancelled)throw std::runtime_error("worker_cancelled");
             summary=verify_generation(generated,bound,resolution);

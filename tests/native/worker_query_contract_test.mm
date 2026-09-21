@@ -44,7 +44,11 @@ int tc_engine_resolve_streaming_json(tc_engine *,const char *request,char **resu
     NSData *data=tc_worker::canonical_request(resolution);
     *result=strdup([[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] UTF8String]);return 0;
 }
-int tc_engine_generate(tc_engine *engine,const char *request,tc_event_callback,void *,char **result,char **error) {
+int tc_engine_generate(tc_engine *engine,const char *request,tc_event_callback callback,void *context,char **result,char **error) {
+    if(callback) {
+        callback("{\"sequence\":1,\"phase\":\"route_gpu\",\"completed\":0,\"total\":1,\"elapsed_seconds\":0}",context);
+        for(int i=0;i<10000;++i)callback("{\"sequence\":2,\"phase\":\"denoise\",\"completed\":1,\"total\":9,\"elapsed_seconds\":1.5}",context);
+    }
     if(mode=="existing" || mode=="bad_exact")std::abort(); // Must reject before generation.
     NSDictionary *input=[NSJSONSerialization JSONObjectWithData:[@(request) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
     NSDictionary *selector=input[@"execution"][@"streaming"],*output=input[@"outputs"][0];

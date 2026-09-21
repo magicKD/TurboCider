@@ -592,8 +592,20 @@ final class NativeJobStore: ObservableObject {
                 try persist()
                 sessionState = "流式图片工作进程运行中"
                 let admission = prepared.reference.admission(jobID: id, store: directory)
+                let events = WorkerEventStream(jobID: id, reference: prepared.reference, request: intent) { [weak self] event in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.activeID == id,
+                              let job = self.jobs.first(where: { $0.id == id }), !job.isTerminal else { return }
+                        switch event {
+                        case .progress(let value): self.receive(value, id: id)
+                        case .resolved(let value):
+                            self.sessionState = "已解析流式档位 · \(value.selection.target_request_memory_bytes / (1 << 30)) GiB"
+                        }
+                    }
+                }
                 let work = Task { try await NativeProcessRunner.shared.run(executable: executable,
-                    arguments: ["worker-generate", prepared.inputURL.path], admission: admission) }
+                    arguments: ["worker-generate", prepared.inputURL.path], admission: admission,
+                    onStderr: { try events.consume($0) }) }
                 publicWorkerTask = work
                 let process: NativeProcessRunner.Result
                 do { process = try await work.value }
@@ -616,6 +628,7 @@ final class NativeJobStore: ObservableObject {
                 guard let exitCode = process.exitCode else { throw NativeFailure(message: "worker_terminated: 工作进程异常退出。") }
                 let verified = try WorkerTerminalEnvelope.validate(process.stdout, input: prepared.input, request: intent,
                     runtimeFingerprint: prepared.reference.runtimeFingerprint, operation: .generate, exitCode: exitCode)
+                try events.finish(resolution: verified.resolution)
                 if verified.status == "cancelled" { throw CancellationError() }
                 guard verified.status == "succeeded", let data = verified.result, let resolution = verified.resolution,
                       let artifact = verified.artifact else {

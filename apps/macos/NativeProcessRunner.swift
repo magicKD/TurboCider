@@ -119,7 +119,7 @@ actor NativeProcessRunner {
         try check(posix_spawn(&pid, executable.path, &actions, &attributes, &argv, &envp), "posix_spawn")
         return Child(pid)
     }
-    private func drain(_ fd: FD, into data: inout Data, limit: Int) -> String? {
+    private func drain(_ fd: FD, into data: inout Data, limit: Int, observer: (@Sendable (Data) throws -> Void)? = nil) -> String? {
         guard fd.value >= 0 else { return nil }
         var buffer = [UInt8](repeating: 0, count: 16 * 1024)
         var consumed = 0
@@ -134,13 +134,18 @@ actor NativeProcessRunner {
             consumed += count
             let allowed = min(count, max(0, limit - data.count))
             data.append(contentsOf: buffer.prefix(allowed))
+            if let observer {
+                do { try observer(Data(buffer.prefix(allowed))) }
+                catch { return "worker_event_invalid: \(error)" }
+            }
             if allowed < count { return "worker_log_limit" }
         }
         return nil
     }
     func run(executable: URL, arguments: [String],
              environment: [String: String] = ProcessInfo.processInfo.environment,
-             admission: WorkerLaunchAdmission? = nil) async throws -> Result {
+             admission: WorkerLaunchAdmission? = nil,
+             onStderr: (@Sendable (Data) throws -> Void)? = nil) async throws -> Result {
         guard pending == nil else { throw Failure.cleanupPending }
         guard !active else { throw Failure.busy }
         guard policy.grace >= .zero, policy.reap >= .zero, policy.stdoutLimit > 0, policy.stderrLimit > 0 else { throw Failure.invalidLaunch }
@@ -172,7 +177,7 @@ actor NativeProcessRunner {
         var cancelled = false, forced = false
         while true {
             if let error = drain(outRead, into: &stdout, limit: policy.stdoutLimit) { failure = failure ?? error }
-            if let error = drain(errRead, into: &stderr, limit: policy.stderrLimit) { failure = failure ?? error }
+            if let error = drain(errRead, into: &stderr, limit: policy.stderrLimit, observer: onStderr) { failure = failure ?? error }
             if Task.isCancelled { cancelled = true }
             if child.identityLost { failure = failure ?? "worker_process_identity_lost"; break }
             if child.exited() {
@@ -185,7 +190,7 @@ actor NativeProcessRunner {
                 while outRead.value >= 0 || errRead.value >= 0 {
                     let before = stdout.count + stderr.count
                     if let error = drain(outRead, into: &stdout, limit: policy.stdoutLimit) { failure = failure ?? error }
-                    if let error = drain(errRead, into: &stderr, limit: policy.stderrLimit) { failure = failure ?? error }
+                    if let error = drain(errRead, into: &stderr, limit: policy.stderrLimit, observer: onStderr) { failure = failure ?? error }
                     if failure != nil { break }
                     // Group absence guarantees no owned writer remains; escaped
                     // processes are outside this worker's supported contract.

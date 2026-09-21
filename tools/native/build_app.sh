@@ -30,7 +30,7 @@ STATE+=(apps/macos/RunInsights.swift)
 STATE+=(apps/macos/TensorCacheController.swift)
 STATE+=(apps/macos/LTXWorker.swift)
 STATE+=(apps/macos/ImageOutputTransaction.swift)
-STATE+=(apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift apps/macos/PublicImageWorker.swift apps/macos/PublicImageQueries.swift)
+STATE+=(apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift apps/macos/PublicImageWorker.swift apps/macos/PublicImageQueries.swift apps/macos/WorkerEventStream.swift)
 STATE+=(apps/macos/VideoPreview.swift)
 STATE+=(apps/macos/HistorySelection.swift)
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" services/model-library/main.swift -o "$OUT/turbocider-library"

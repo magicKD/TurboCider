@@ -1079,3 +1079,13 @@ Studio 会取消被替代的查询，并向 worker 传播任务取消；generati
 完整 native 构建通过，runtime 为 `tc-runtime-build-v1-b82af7b4103c4960f41456a6199529b18ff563d76fb9ae7a116a1036ddd11c90`；83 项 native contract 中 80 项通过、3 项跳过。最终 App、query/Studio tests 及模型库辅助程序构建通过。fake-worker 测试覆盖绑定拒绝、串行执行、活动/排队取消、临时目录清理；Studio 测试覆盖 superseded/outer cancellation、旧 draft/安装版本结果拒绝及默认 Off。真实 Z/Flux 各自通过目录拒绝与来源验证阶段取消，共四例。模型库在独立空目录下 location/list 检查通过。本轮未重跑 GUI 视觉检查。
 
 详细结果和源码、二进制、日志哈希见[验证记录](2026-09-21-m1-worker-options-validation.json)。production catalog 仍为空；成功 query fixture 不构成真实模型 qualification，真实测试没有成功 resolution 或图片。worker progress/resolved 事件到 App telemetry 的接线、完整 public 质量/内存/性能发布门及 hybrid engine 集成仍未完成。
+
+## 第六十五轮：worker 实时进度到 App 的绑定事件流（2026-09-21）
+
+图片 worker 在冻结 native exact selector 后发送 resolved 通知，并将 generate 的原生回调接入进度流。stdout 保持单个最终 terminal；stderr 使用 `TC_EVENT\t` 前缀的单行 JSON，绑定 job/request/digest、cli_worker 和编译 runtime identity，有独立递增序号。单条 JSON 最多 128 KiB，worker 全生命周期事件输出最多 512 KiB；同 phase 最快每 250 ms 发送一次，过滤 transformer/block 细节回调，phase 切换可立即通知。达到预算后停止发送遥测；resolved 本身超限时也不发送后续 progress，最终 terminal 校验仍完整执行。没有增加 parent ACK 或跨进程 authority。
+
+NativeProcessRunner 在已有有界读取和日志保留中增设 stderr observer，解析失败转入原有 TERM/KILL/reap 流程。App 增量解析支持任意分块，限制单行缓存，跳过普通诊断并校验身份、顺序、进度数值以及 resolved 的原生 binding。进度进入现有 job telemetry；resolved 仅更新会话说明，不替代终态 receipt。已收到的 resolved 必须与成功 terminal 一致；坏事件、截断事件、终态不一致均不能发布图片。过期 job 的回调被 active job 与 terminal 状态检查丢弃。
+
+完整 native 构建及 App/模型库构建通过；native contract 83 项中 80 项通过、3 项跳过。隔离 C API double 验证真实 wrapper 的 resolved→progress 顺序、请求关联与 10,000 次密集回调限流，并保留原生成拒绝/取消/产物校验回归。另以 10,000 次 phase 切换验证 512 KiB 生命周期上限、单帧上限与 emitted sequence，超大 resolved 后无后续遥测。supervisor 的 Swift 6 complete concurrency/warnings-as-errors 检查和进程组取消、输出上限、cleanup_pending 回归通过。App fake-worker 检查实际观察到 worker 尚未退出时 denoise 完成数和 elapsed 已更新，且有效 PNG 仍正常发布；错误身份/截断事件阻止发布，逐字节 framing、普通长日志、重复序号和超长事件拒绝通过。
+
+本轮 fetch origin/dev 成功，仍为 `61c08495815d645bb54d75ae9dbea466f0648b2d`，已是当前分支祖先，无新增待合并改动。详细构建身份、最终回归与真实模型结果见[验证记录](2026-09-21-m1-worker-events-validation.json)。production catalog 仍为空，fake 进度与图片不代表真实 public 模型成功或质量/性能资格；事件预算耗尽后允许丢弃遥测，普通诊断仍受 supervisor 的 1 MiB stderr 上限约束。本轮未做 GUI 视觉验收。公开目录发布验证及完整 hybrid engine 路径仍待完成。

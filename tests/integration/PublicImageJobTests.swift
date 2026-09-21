@@ -35,6 +35,16 @@ enum PublicImageJobTests {
             selection=dict(preset_id='fixture',preset_revision=1,record_digest='record',release_channel='public',target_request_memory_bytes=budget,calibrated_request_bytes=1024,memory_scope='request',layout_digest='layout',component_policy_revision='policy',execution_container='cli_worker')
             identity=dict(source_digest='source',runtime_digest='runtime',device_digest='device')
             resolution=dict(schema_version=1,status='resolved',request_digest='workload',resolution_digest='resolution',catalog_revision='catalog',requested_selector=selector,exact_selector=exact,selection=selection,identity=identity)
+            if mode in ['events','bad_event','partial_event']:
+                event=dict(event_schema_version=1,kind='resolved',sequence=1,job_id=wire['job_id'],request_id=wire['request_id'],request_digest=wire['request_digest'],execution_container='cli_worker',runtime_fingerprint='\(NativeEngine.runtimeBuildIdentity())',payload=resolution)
+                print('TC_EVENT\\t'+json.dumps(event),file=sys.stderr,flush=True)
+                event.update(kind='progress',sequence=2,payload=dict(sequence=10,phase='denoise',completed=0,total=4,elapsed_seconds=1))
+                if mode=='bad_event':event['request_id']=str(uuid.uuid4())
+                print('TC_EVENT\\t'+json.dumps(event),file=sys.stderr,flush=True)
+                event.update(sequence=3,payload=dict(sequence=11,phase='denoise',completed=2,total=4,elapsed_seconds=3))
+                print('TC_EVENT\\t'+json.dumps(event),file=sys.stderr,flush=True)
+                if mode=='partial_event':sys.stderr.write('TC_EVENT\\t{');sys.stderr.flush()
+                time.sleep(1)
             summary=dict(selection,**identity,schema_version=1,catalog_revision='catalog',resolution_digest='resolution',workload_digest='workload',authorized_layout_digest='layout',actual_layout_digest='layout',receipt_schema_version=3,receipt_source_generation=1,receipt_digest='receipt',receipt_verifier_revision='verifier',actual_plan_verified=True)
             result=dict(schema_version=1,model=request['model'],operation=request['operation'],output=out['path'],width=out['width'],height=out['height'],steps=request['sampling']['steps'],seed=request['sampling']['seed'],warmup=False,public_streaming=summary)
             artifact=dict(path=out['path'],size=len(pixels),sha256=hashlib.sha256(pixels).hexdigest() if mode!='bad_hash' else '0'*64)
@@ -50,7 +60,7 @@ enum PublicImageJobTests {
             value.model = "z-image-turbo"; value.operation = "image.generate"; value.width = 64; value.height = 64; value.steps = 4
             return value
         }
-        for mode in ["success", "bad_id", "bad_hash", "invalid_png"] {
+        for mode in ["success", "bad_id", "bad_hash", "invalid_png", "bad_event", "partial_event"] {
             let store = NativeJobStore(directory: root.appendingPathComponent(mode), workerExecutable: try worker(mode))
             let original = request(store)
             var failure: Error?
@@ -69,6 +79,63 @@ enum PublicImageJobTests {
             let leftovers = try fm.contentsOfDirectory(atPath: store.directory.appendingPathComponent("outputs").path)
             try check(!leftovers.contains(where: { $0.hasPrefix(".tc-image-staging-") }), "Worker staging leaked: \(mode)")
         }
+        let streaming = NativeJobStore(directory: root.appendingPathComponent("events"), workerExecutable: try worker("events"))
+        let streamedRequest = request(streaming)
+        let streamed = Task { try await streaming.generate(modelURL: root, request: streamedRequest,
+            streamingRequest: NativeRequestV2(legacy: streamedRequest, targetBytes: 10 << 30)) }
+        var observed = false
+        for _ in 0..<100 {
+            if let job = streaming.jobs.first, job.phase == "denoise", job.completed == 2,
+               job.elapsed == 3, job.state == "running", job.publicWorker?.exitConfirmed == false {
+                observed = true; break
+            }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        _ = try await streamed.value
+        try check(observed, "Progress was not visible before worker exit")
+        try check(streaming.jobs[0].state == "succeeded", "Events prevented valid publication")
+        let reference = streaming.jobs[0].publicWorker!
+        let diagnostics = reference.directory(jobID: streaming.jobs[0].id, store: streaming.directory)
+        let wire = try JSONSerialization.jsonObject(with: Data(contentsOf: diagnostics.appendingPathComponent("input.json"))) as! [String: Any]
+        let intent = try JSONDecoder().decode(NativeRequestV2.self, from: JSONSerialization.data(withJSONObject: wire["native_request_v2"]!))
+        let log = try Data(contentsOf: diagnostics.appendingPathComponent("stderr.log"))
+        let records = log.split(separator: 10).filter { $0.starts(with: Data("TC_EVENT\t".utf8)) }.map { Data($0) }
+        try check(records.count == 3, "Missing saved telemetry")
+        func parser() -> WorkerEventStream {
+            WorkerEventStream(jobID: streaming.jobs[0].id, reference: reference, request: intent) { _ in }
+        }
+        let fragmented = parser()
+        try fragmented.consume(Data(repeating: 120, count: 200_000)) // Bounded non-event diagnostic discard.
+        try fragmented.consume(Data([10]))
+        for byte in log { try fragmented.consume(Data([byte])) }
+        try fragmented.finish(resolution: nil)
+        let firstObject = try JSONSerialization.jsonObject(with: records[0].dropFirst(9)) as! [String: Any]
+        var different = firstObject["payload"] as! [String: Any]
+        different["resolution_digest"] = "different-terminal"
+        let differentResolution = try JSONDecoder().decode(NativeStreamingResolution.self, from: JSONSerialization.data(withJSONObject: different))
+        do { try fragmented.finish(resolution: differentResolution); throw NativeFailure(message: "Accepted mismatched terminal resolution") }
+        catch let error as NativeFailure { try check(!error.message.hasPrefix("Accepted"), error.message) }
+        for key in ["job_id", "request_id", "request_digest", "execution_container", "runtime_fingerprint", "event_schema_version", "sequence", "kind"] {
+            var value = try JSONSerialization.jsonObject(with: records[0].dropFirst(9)) as! [String: Any]
+            value[key] = ["event_schema_version", "sequence"].contains(key) ? 0 : "wrong"
+            var bad = Data("TC_EVENT\t".utf8); bad.append(try JSONSerialization.data(withJSONObject: value)); bad.append(10)
+            do { try parser().consume(bad); throw NativeFailure(message: "Accepted bad event \(key)") }
+            catch let error as NativeFailure { try check(!error.message.hasPrefix("Accepted"), error.message) }
+            catch {} // Typed decoder rejection is also valid.
+        }
+        let duplicate = parser()
+        var first = records[0]; first.append(10)
+        try duplicate.consume(first)
+        do { try duplicate.consume(first); throw NativeFailure(message: "Accepted duplicate event") }
+        catch let error as NativeFailure { try check(!error.message.hasPrefix("Accepted"), error.message) }
+        let truncated = parser()
+        try truncated.consume(records[0])
+        do { try truncated.finish(resolution: nil); throw NativeFailure(message: "Accepted truncated event") }
+        catch let error as NativeFailure { try check(!error.message.hasPrefix("Accepted"), error.message) }
+        var oversized = Data("TC_EVENT\t".utf8); oversized.append(Data(repeating: 120, count: 128 * 1024 + 1))
+        do { try parser().consume(oversized); throw NativeFailure(message: "Accepted oversized event") }
+        catch let error as NativeFailure { try check(!error.message.hasPrefix("Accepted"), error.message) }
+        print("PASS: live worker telemetry before exit, fragmented framing and identity/order/size checks; malformed/truncated events block publication")
         let live = NativeJobStore(directory: root.appendingPathComponent("live"), workerExecutable: try worker("hang"))
         let original = request(live)
         let task = Task { try await live.generate(modelURL: root, request: original, streamingRequest: NativeRequestV2(legacy: original, targetBytes: 10 << 30)) }
