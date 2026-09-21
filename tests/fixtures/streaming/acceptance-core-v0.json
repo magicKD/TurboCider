@@ -1,0 +1,98 @@
+{
+  "schema": "turbocider-streaming-core-v0-acceptance-card-v1",
+  "status": "partial",
+  "production_qualified": false,
+  "scope": "M1 Pro 16 GiB, GPU, 512x512, exact token shapes, request retention, test-only catalog, public cli_worker engine",
+  "evidence": "../../../docs/experiments/2026-09-21-m1-public-semantics-smoke.json",
+  "verified_this_round": [
+    "native_source_verification",
+    "native_resolve_and_exact_generation",
+    "actual_plan_verified_receipt",
+    "decoded_png",
+    "denoise_step_1_cancel_no_image",
+    "engine_free_return_and_process_exit",
+    "full_lifetime_memory_sample_complete"
+  ],
+  "remaining_required_evidence": [
+    "full_fault_and_unsafe_drain_matrix_with_owner_quarantine",
+    "same_plan_reference_and_quality_campaign",
+    "P0_P1_P2_release_campaigns",
+    "frozen_calibrated_policy_end_to_end_or_strict_P3",
+    "installation_package_revocation_acceptance",
+    "real_App_successful_public_publication"
+  ],
+  "models": [
+    {
+      "model": "z-image-turbo",
+      "steps": 9,
+      "seed": 42,
+      "target_bytes": 10737418240,
+      "token_shapes": [
+        {
+          "compute_rows": 32,
+          "encoder": "qwen3",
+          "padded_rows": 32,
+          "template_revision": "z-image-template-v1",
+          "tokenizer_revision": "qwen3-z-image-v1",
+          "valid_rows": 26
+        }
+      ],
+      "layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+      "plan": {
+        "enabled": true,
+        "retention": "request",
+        "schema_version": 1,
+        "selection": "manual",
+        "stages": {
+          "denoiser": {
+            "block_group_size": 1,
+            "io_workers": 1,
+            "prefetch_distance": 0,
+            "residency": "streamed",
+            "resident_prefix_blocks": 7,
+            "slot_count": 2
+          }
+        }
+      },
+      "pass_transition": "reload",
+      "multi_pool_policy": "serial",
+      "record_digest": "073429c05a77bb628019d11e1ea8dc50b449fe4c6dfa2f2b2020468a7eeec9ce"
+    },
+    {
+      "model": "flux2-klein-4b",
+      "steps": 4,
+      "seed": 42,
+      "target_bytes": 10737418240,
+      "token_shapes": [
+        {
+          "compute_rows": 30,
+          "encoder": "qwen3",
+          "padded_rows": 30,
+          "template_revision": "flux2-template-v1",
+          "tokenizer_revision": "qwen3-flux2-v1",
+          "valid_rows": 30
+        }
+      ],
+      "layout_digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+      "plan": {
+        "enabled": true,
+        "retention": "request",
+        "schema_version": 1,
+        "selection": "manual",
+        "stages": {
+          "denoiser": {
+            "block_group_size": 1,
+            "io_workers": 2,
+            "prefetch_distance": 1,
+            "residency": "streamed",
+            "resident_prefix_blocks": 0,
+            "slot_count": 2
+          }
+        }
+      },
+      "pass_transition": "reload",
+      "multi_pool_policy": "retain_all",
+      "record_digest": "6c96979a1294f77a791cd76fb15cce6df17cc57b1a65fc221ae6452efee65a4f"
+    }
+  ]
+}

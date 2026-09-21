@@ -1089,3 +1089,30 @@ NativeProcessRunner 在已有有界读取和日志保留中增设 stderr observe
 完整 native 构建及 App/模型库构建通过；native contract 83 项中 80 项通过、3 项跳过。隔离 C API double 验证真实 wrapper 的 resolved→progress 顺序、请求关联与 10,000 次密集回调限流，并保留原生成拒绝/取消/产物校验回归。另以 10,000 次 phase 切换验证 512 KiB 生命周期上限、单帧上限与 emitted sequence，超大 resolved 后无后续遥测。supervisor 的 Swift 6 complete concurrency/warnings-as-errors 检查和进程组取消、输出上限、cleanup_pending 回归通过。App fake-worker 检查实际观察到 worker 尚未退出时 denoise 完成数和 elapsed 已更新，且有效 PNG 仍正常发布；错误身份/截断事件阻止发布，逐字节 framing、普通长日志、重复序号和超长事件拒绝通过。
 
 本轮 fetch origin/dev 成功，仍为 `61c08495815d645bb54d75ae9dbea466f0648b2d`，已是当前分支祖先，无新增待合并改动。详细构建身份、最终回归与真实模型结果见[验证记录](2026-09-21-m1-worker-events-validation.json)。production catalog 仍为空，fake 进度与图片不代表真实 public 模型成功或质量/性能资格；事件预算耗尽后允许丢弃遥测，普通诊断仍受 supervisor 的 1 MiB stderr 上限约束。本轮未做 GUI 视觉验收。公开目录发布验证及完整 hybrid engine 路径仍待完成。
+
+## 第六十六轮：真实 Z/Flux 的 public-semantics exact 整图与采样取消（2026-09-21）
+
+补充 M0 的真实执行证据。新增 `run_public_streaming_smoke.py`：在独立进程中调用普通 public worker engine constructor，显式验证所有来源，安装 engine-scoped test catalog，调用 native resolve，把返回的 exact selector 写回同一请求，再 generate。脚本保存计划/源码与库哈希、来源报告、resolution、逐事件日志、最终 result/receipt、完整解码 PNG 和 engine free 返回状态；外层现有 sampler 覆盖整个进程生命周期。未使用 candidate constructor，也未向 request 注入 authority。
+
+专用 test-hook 构建 `build/m1-core-v0` 完成，identity 为 `tc-runtime-build-v1-41c12856b518ecc749cd644083f25a108b96da4c174d6b912fea136b7a751d26`。3 项目录隔离测试全部通过，确认普通 release header/library 不暴露测试安装入口。两个记录均由实际模型 probe 和显式内容验证产生 identity-v2 来源，模板 calibration/review 仅供内部运行，**不构成公开认证**；production catalog 保持空目录。整图测试前构建、host 测试和目录构造均已结束，两个模型顺序运行。
+
+| 单次真实 GPU 运行 | Z-Image Turbo | Flux4 |
+|---|---:|---:|
+| 图片、步数、seed | 512² / 9 / 42 | 512² / 4 / 42 |
+| P/G/K/D/Q | 7/1/2/0/1 | 0/1/2/1/2 |
+| pool policy | serial | retain_all |
+| 脚本总 wall，含来源验证/resolve/清理 | 60.296 s | 21.919 s |
+| native request wall | 48.633 s | 13.025 s |
+| denoise | 42.547 s | 11.165 s |
+| 进程树 phys_footprint 峰值 | 8.321 GiB | 5.984 GiB |
+| MLX allocator 峰值 | 8.359 GiB | 5.839 GiB |
+| fills / submitted groups | 207 / 207 | 100 / 100 |
+| logical read | 74,896,879,104 B | 29,444,075,520 B |
+
+两次结果均 `actual_plan_verified=true`、actual layout 与授权 layout 相同、`source_lease_verified=true`、drained=true，持有 schema-2 receipt。内存采样 complete，未观察到 swap-out；sampler 的 swap/compression 计数不能当作模型独占归因。单次峰值低于 10 GiB 档位的 9 GiB headroom 线，不等于多样本 P95 认证或 hard cap；记录中的 calibrated_request_bytes 是测试模板值，不能当成本轮测量值。
+
+另用独立进程对每个模型在 denoise 第 1 步发出取消，均返回取消错误，无图片，engine free 返回后进程退出，内存采样完整。Z 初次脚本仅记录总 wall 20.531 s，没有单独计时取消延迟；随后增加取消时间点，Flux 从发出取消到 cleanup 返回为 0.09467 s，总 wall 13.083 s。两版脚本均按实际 plan 中 SHA 保存；没有把 Z 总 wall 当成取消延迟，也不把这些合作取消样例推广到 unsafe GPU drain。
+
+[Z 图片](2026-09-21-m1-z-public-semantics-image.png)正常显示雪地狐狸；Flux 新 PNG 与[此前 private 路径同参数图片](2026-09-21-m1-flux4-512-current-image.png)逐字节一致，SHA-256 同为 `7bf7c59b5d277965fa34686730f6358b6e3718201c484fbf199f806d3b13c27e`。这是单图片一致性观察，不是正式 same-plan P1、多 prompt/seed 质量门或性能统计。完整请求、result/receipt、来源与内存摘要、哈希见[验证记录](2026-09-21-m1-public-semantics-smoke.json)。
+
+新增 `tests/fixtures/streaming/acceptance-core-v0.json`，明确标记 partial。这里验证的是独立 Python 进程中的 public C API 执行，并非 native CLI terminal 或 App 成功发布的真实 E2E；尚缺完整故障矩阵、正式 P0/P1/P2/P3/发布策略、包/安装/撤回和 hybrid 完整集成。因此 M0/M1 与整体目标均未宣告完成，未实施或暗中豁免 calibrated release policy。
