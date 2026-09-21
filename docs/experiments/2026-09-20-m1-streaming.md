@@ -1027,3 +1027,15 @@ App 后续：重建已退出 0，链接 `m1-hybrid-reporting` 新库的 history 
 完整 native 构建退出 0，83 项合约测试中 80 项通过、3 项跳过。真实 Z-Image 路径验证缺失模型拒绝、空公开目录拒绝、已有文件预检保留原字节、SIGTERM 来源验证取消；真实 Flux4 也通过空公开目录拒绝与 SIGTERM 来源验证取消。均无新产物或成功 resolution；这些不能当作真实 worker 整图生成成功或有界 denoiser 取消证明。见[完整验证、构建身份、日志哈希与真实 terminal](2026-09-21-m1-worker-generate-validation.json)。production catalog、质量/内存/性能发布门未改变，父进程组监督、reaping/restart 身份与 App 接线仍待完成。
 
 本轮再次 fetch origin/dev 成功，远端仍为 `61c0849`，已是当前分支祖先，无新增待合并改动。
+
+## 第六十一轮：有界取消、进程组清理与 cleanup_pending 准入（2026-09-21）
+
+新增 Swift actor `NativeProcessRunner`，以 posix_spawn 建立本请求独立进程组，显式设置 stdin、stdout/stderr、信号 mask/default 和 CLOEXEC-default；沿用单请求单进程，不改动 LTXWorker。[W0 首版策略](2026-09-21-m1-process-runner-policy.json)固定 cooperative SIGTERM grace **5 秒**，随后 SIGKILL，再给 **5 秒**确认回收；stdout/stderr 分别最多保留 4/1 MiB，非阻塞分批读取，超限触发本请求清理，不形成无限日志文件。
+
+先以 waitid WNOWAIT 观察 leader，保留 PID 直到最后一次 group/leader 信号发出；随后才 waitpid 回收，回收后绝不再向该 PID/PGID 发信号，避免 PID 复用误杀。完成要求 leader 已回收且原进程组不存在。leader 先正常退出时也清理残留组成员；deadline 到期或观察丢失身份则返回 cleanup_pending 并保留 actor 准入锁，显式 pollCleanup 观察到退出后才释放。这里的进程边界是本请求 group，支持的 worker 不得 setsid/setpgid 逃离；不是任意恶意进程树控制器，也没有 OS 硬实时保证。
+
+实际 C fixture/Swift 测试通过：启动失败后可重试、非零 exit 与双流内容、3 MiB stdout + 512 KiB stderr 无管道死锁、并发准入拒绝、合作取消约 55 ms、忽略 SIGTERM 的单进程及带子进程分别约 5.07/5.05 秒后强制终止并确认 group 消失、无关 sleep 进程保持存活、leader 提前退出清理残留子进程、日志超限与内存保留上限。以仅测试使用的零 grace/reap policy 确定性触发 cleanup_pending，确认新任务被拒绝，随后真实 OS 回收解除阻塞；这不是实际制造内核不可中断进程。Swift 6 complete concurrency 检查及 warnings-as-errors 通过。
+
+通过该 supervisor 调用上一轮实际 CLI，分别对完整 Z-Image 和 Flux4 验证空 production catalog 拒绝及 1 秒后请求取消；四次均确认清理完成后再用 Swift terminal validator 核对 job/request/digest、runtime、container、退出码和错误状态，无产物。取消是 source verification 阶段，不证明所有 GPU/ANE drain 状态。首个 fixture 测试编译误把 await 放入 precondition autoclosure；首个真实测试因实验父目录不存在而在启动 worker 前失败，均保留记录并修正测试设置。见[源码/二进制/日志哈希及四次真实结果](2026-09-21-m1-process-runner-validation.json)。
+
+runner 及测试已加入 App 构建脚本，但未接入 JobStore，也未重建完整 App/做 GUI 生成。检查 JobStore.init 确认它仍直接将非 terminal 历史标 interrupted；接入外部 worker 前必须补持久化进程身份、启动窗口与重启存活确认。当前 actor 锁是进程内状态，不能声称 App 重启后已安全清理旧 worker。public catalog 和发布门保持不变。
