@@ -1,0 +1,203 @@
+{
+  "scope": "App public Z/Flux image generation migrated to supervised worker; transaction/restart tests and actual model rejection/cancel, not public success qualification",
+  "runtime_fingerprint": "tc-runtime-build-v1-fcc5039927a82873956cd1d98957cea3d3509ffb1e3caa2ec7d8f6cd2801d697",
+  "checks": {
+    "native_build": "PASS",
+    "native_contract": "83 tests: 80 PASS, 3 skipped",
+    "runtime_API": "new additive tc_runtime_build_identity / NativeEngine.runtimeBuildIdentity agrees with compiled CLI manifest and actual terminal validation",
+    "App_build": "PASS final rebuild, including unreadable-history guard",
+    "history_and_fake_worker": "PASS successful PNG publication, mismatched request ID/hash/invalid PNG rejected; cancellation removes partial staging; live worker recovery blocks; confirmed exit unblocks; unstarted/no-journal interrupted; started/no-journal unknown remains blocked; corrupt history remains intact and blocks admission",
+    "image_transaction": "PASS native request/result correlation, complete PNG/decode/SHA, no-clobber publish, rollback, cancellation, cleanup, before/after-rename recovery",
+    "real_JobStore": "PASS Z and Flux4 each catalog_has_no_public_records rejection and cancellation; worker exit saved; no reusable engine, output or staging leftovers; histories reopen correctly",
+    "GUI_window": "PASS isolated App PID observed with on-screen window, own SIGTERM then wait exit -15",
+    "GUI_screenshot": "FAILED could not create image from window; no visual acceptance claim"
+  },
+  "initial_setup_failure": "Temporary targeted build script retained relative source-directory resolution from build_app.sh and failed before compilation; corrected its working directory and preserved log",
+  "real_results": {
+    "flux2-klein-4b-cancel": {
+      "plan": {
+        "cancel": true,
+        "scope": "Real model through App job/worker path; no public qualification",
+        "model": "flux2-klein-4b",
+        "runtime_identity": "tc-runtime-build-v1-fcc5039927a82873956cd1d98957cea3d3509ffb1e3caa2ec7d8f6cd2801d697",
+        "executable": "/Users/chencanhui/code/TurboCider/build/m1-app-worker/turbocider",
+        "expected": "cancelled after starting worker; exit confirmed"
+      },
+      "observation": {
+        "busy": false,
+        "worker_exit_confirmed": true,
+        "error": "The operation couldn’t be completed. (Swift.CancellationError error 1.)",
+        "has_reusable_engine": false,
+        "cleanup_pending": false,
+        "state": "cancelled"
+      },
+      "job_id": "901F95DC-99A8-4806-A81C-6C1F52C78722",
+      "job_state": "cancelled",
+      "public_worker": {
+        "requestID": "26788A66-E494-4DE4-AC9D-AEED08A180E4",
+        "requestDigest": "d360748b0eb4c5d4fb1d125f60713f1a4abf5592ac374f19fe8543f0f4cb6fae",
+        "exitConfirmed": true,
+        "runtimeFingerprint": "tc-runtime-build-v1-fcc5039927a82873956cd1d98957cea3d3509ffb1e3caa2ec7d8f6cd2801d697",
+        "stagedOutput": "/Users/chencanhui/models/TurboCider/experiments/m1-app-worker/real-models/flux2-klein-4b-cancel/outputs/.tc-image-staging-192EA813-F83A-4AFF-9513-2082A31EDCDF/output.png",
+        "started": true
+      }
+    },
+    "flux2-klein-4b-reject": {
+      "plan": {
+        "cancel": false,
+        "scope": "Real model through App job/worker path; no public qualification",
+        "model": "flux2-klein-4b",
+        "runtime_identity": "tc-runtime-build-v1-fcc5039927a82873956cd1d98957cea3d3509ffb1e3caa2ec7d8f6cd2801d697",
+        "executable": "/Users/chencanhui/code/TurboCider/build/m1-app-worker/turbocider",
+        "expected": "failed: catalog_has_no_public_records; exit confirmed"
+      },
+      "observation": {
+        "busy": false,
+        "worker_exit_confirmed": true,
+        "error": "catalog_has_no_public_records",
+        "has_reusable_engine": false,
+        "cleanup_pending": false,
+        "state": "failed"
+      },
+      "job_id": "C77DDDD1-C9DC-4BC2-AAEB-D05A3D081633",
+      "job_state": "failed",
+      "public_worker": {
+        "requestID": "C804B572-5273-48EF-BF7D-D6E09D7A941E",
+        "requestDigest": "bc144a4bbb1d578c14334442b99876fdb909000d955f0a5204f762d7377ac733",
+        "exitConfirmed": true,
+        "runtimeFingerprint": "tc-runtime-build-v1-fcc5039927a82873956cd1d98957cea3d3509ffb1e3caa2ec7d8f6cd2801d697",
+        "stagedOutput": "/Users/chencanhui/models/TurboCider/experiments/m1-app-worker/real-models/flux2-klein-4b-reject/outputs/.tc-image-staging-44893FDC-F243-4128-B215-CE98D69021E6/output.png",
+        "started": true
+      }
+    },
+    "z-image-turbo-cancel": {
+      "plan": {
+        "runtime_identity": "tc-runtime-build-v1-fcc5039927a82873956cd1d98957cea3d3509ffb1e3caa2ec7d8f6cd2801d697",
+        "executable": "/Users/chencanhui/code/TurboCider/build/m1-app-worker/turbocider",
+        "model": "z-image-turbo",
+        "cancel": true,
+        "scope": "Real model through App job/worker path; no public qualification",
+        "expected": "cancelled after starting worker; exit confirmed"
+      },
+      "observation": {
+        "busy": false,
+        "worker_exit_confirmed": true,
+        "error": "The operation couldn’t be completed. (Swift.CancellationError error 1.)",
+        "has_reusable_engine": false,
+        "cleanup_pending": false,
+        "state": "cancelled"
+      },
+      "job_id": "6CDC4154-084D-4191-A8A7-F57AC40C5F1F",
+      "job_state": "cancelled",
+      "public_worker": {
+        "requestID": "DFFC1C78-13E2-44D6-BE5C-AE5EB6921BF2",
+        "requestDigest": "a7869b79a7e6a1fdac8fd095d3888ac64636f877a9088fd4f67b3f6f21662dc7",
+        "exitConfirmed": true,
+        "runtimeFingerprint": "tc-runtime-build-v1-fcc5039927a82873956cd1d98957cea3d3509ffb1e3caa2ec7d8f6cd2801d697",
+        "stagedOutput": "/Users/chencanhui/models/TurboCider/experiments/m1-app-worker/real-models/z-image-turbo-cancel/outputs/.tc-image-staging-F2D06621-9E8E-4636-B47B-B242CCF56B9A/output.png",
+        "started": true
+      }
+    },
+    "z-image-turbo-reject": {
+      "plan": {
+        "executable": "/Users/chencanhui/code/TurboCider/build/m1-app-worker/turbocider",
+        "cancel": false,
+        "model": "z-image-turbo",
+        "runtime_identity": "tc-runtime-build-v1-fcc5039927a82873956cd1d98957cea3d3509ffb1e3caa2ec7d8f6cd2801d697",
+        "expected": "failed: catalog_has_no_public_records; exit confirmed",
+        "scope": "Real model through App job/worker path; no public qualification"
+      },
+      "observation": {
+        "has_reusable_engine": false,
+        "state": "failed",
+        "busy": false,
+        "worker_exit_confirmed": true,
+        "error": "catalog_has_no_public_records",
+        "cleanup_pending": false
+      },
+      "job_id": "3F50CB54-BCF6-433C-958C-71C2539E66DD",
+      "job_state": "failed",
+      "public_worker": {
+        "requestID": "174AA6E6-C445-4A97-AD14-CBCDFB301829",
+        "requestDigest": "d755cf302c8b7f65709d2a37683fd5d92db8cb4e2b33bc00376440d2f527014a",
+        "exitConfirmed": true,
+        "runtimeFingerprint": "tc-runtime-build-v1-fcc5039927a82873956cd1d98957cea3d3509ffb1e3caa2ec7d8f6cd2801d697",
+        "stagedOutput": "/Users/chencanhui/models/TurboCider/experiments/m1-app-worker/real-models/z-image-turbo-reject/outputs/.tc-image-staging-3DFB5405-A1D7-4328-BFD3-72A728CF8325/output.png",
+        "started": true
+      }
+    }
+  },
+  "window_observation": {
+    "app_sha256": "f2e586f1b651c44a9568cd8e6095fca630832aa4b4f54a916169240449c53fd1",
+    "pid": 35143,
+    "state_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-app-worker/app-state",
+    "alive": true,
+    "window_query_status": 0,
+    "windows": [
+      {
+        "kCGWindowAlpha": 1,
+        "kCGWindowBounds": {
+          "Height": 738,
+          "Width": 960,
+          "X": 276,
+          "Y": 105
+        },
+        "kCGWindowIsOnscreen": true,
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowNumber": 101044,
+        "kCGWindowOwnerName": "TurboCiderNativeApp",
+        "kCGWindowOwnerPID": 35143,
+        "kCGWindowSharingState": 0,
+        "kCGWindowStoreType": 1
+      }
+    ],
+    "screenshot_exit": 1,
+    "screenshot_stderr": "could not create image from window\n",
+    "shutdown_exit": -15
+  },
+  "source_sha256": {
+    "apps/macos/PublicImageWorker.swift": "38a40d7c01f9b504d62a1c941cb6a9a7dd64fdfd6a11e295cb3653d13722d1db",
+    "apps/macos/JobStore.swift": "b57af0f02804fcf4acb92124be3164f1c4df46e3faefd740d4c472c55093229a",
+    "apps/macos/ImageOutputTransaction.swift": "9b9b407a3d807fcbad4105e95a342cce39516fb14bcefa9593d180b8a0e601d4",
+    "apps/macos/App.swift": "4f0654a6746f3938046e5f87a346ffd675e433b936ea3b43f53b3b05cd436b39",
+    "bindings/c/include/turbocider/turbocider.h": "3091272cd2551cc5f09f79c26493e21410d5dd7e33be1b0822fe003bb272fb8e",
+    "bindings/swift/TurboCiderNative.swift": "96fa201b33db199a18a7c388d51a05dca4ffd2e4cc966b049b6d50850d3e57f8",
+    "native/api/c_api.mm": "888fb61363b19f7362d4b5448cbc768378419ea2381d2c4a797af213947f5a4c",
+    "tools/native/build_app.sh": "5c5f88ba8b50196cbfd3b4c6252c9793e4a65c60937ed4150e1dca1820c42614",
+    "tests/integration/HistoryManagementTests.swift": "04dec370166a3eb5c6f61d34cd18429578354dd43785f9ec71111bd6c1bc8201",
+    "tests/integration/PublicImageJobTests.swift": "76846360171b66924153a7eb27550e915a642dfd9de7b1c14fafa3a769e7c398",
+    "tests/integration/PublicImageAppModelTests.swift": "7cfe08ecd9b6da2d6db6a1fb7553459b1e32fda9cdfd541cd12bca4d564a0c05"
+  },
+  "binary_sha256": {
+    "turbocider": "bc8125a1223825d223f098b67277b59aad8fcdac28eb42a23d5719864c82ea7c",
+    "libturbocider.dylib": "64785054446db63c1aea11b68c2dfee3c8bf130d2d21ae645b37b0ff06693b2a",
+    "TurboCiderNativeApp": "f2e586f1b651c44a9568cd8e6095fca630832aa4b4f54a916169240449c53fd1",
+    "turbocider-history-tests": "3aa5487972429486a1b13e51727004b852f8d53e2ed86905973b8eecb87ffb94",
+    "turbocider-image-transaction-tests": "75a3836afa7d8af390a91fe6954701f437b67864d4d2dcd009512801bef0efa4",
+    "turbocider-public-image-app-tests": "ef5d71a858c96e3b366ae49bc27029209af5e0b38db52a8e35ed51f795f3502a"
+  },
+  "evidence_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-app-worker",
+  "log_sha256": {
+    "swift-build-setup-failure.log": "655300d3d825985f0ca83d6197d88c24e0dad1cd9ac11f76bd631eb753de1416",
+    "swift-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "swift-initial-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native-contract.log": "aff67df3c10eb0b750e3d7c74173e0ecac0c3fb4159c694a8968de7eb698c48c",
+    "window-check.log": "feeebf3c9762a7f83cbd399fe07430e710cd5680ae44c32fda65a07e95c0befb",
+    "real-tests.log": "ceec725cbc67e665fddf5f92d641e9e188f433c8c446f1e9d865edd43ba507f8",
+    "history-tests.log": "0ed9a9b2d40581498f8bb292cefbd1b858819e81b205662367bd5cf72db46223",
+    "history-tests-final.log": "9094670c1fcfcf09488ec0c040a7006fb1c44f131b3a8853ece4ab4eefdc9c65",
+    "real-tests-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "image-tests-final.log": "5fd1b255c881a92f0a13edb01785d9b90cd44e544a21ef23d789c487176a47aa",
+    "app.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native-build.log": "df33a94de29b52873abdb0fa83888c718473483296f9aa0ca51acf8614428b21"
+  },
+  "limitations": [
+    "Public catalog remains empty. Successful App publication uses a fake worker and a valid 64x64 fixture, not actual native model execution/qualification. Real model paths reject or cancel before generation.",
+    "Studio streaming availability queries still use embedded-container NativeEngine.streamingOptions; these must migrate to cli_worker queries before public UI availability can match generation records.",
+    "Progress/resolved events from the new native worker are not yet streamed into App telemetry.",
+    "Started jobs with missing/invalid journal remain cleanup_pending; unreadable history remains blocked until records are repaired and App reopened. No automatic unsafe PID kill/reset.",
+    "LTX worker behavior remains on its existing implementation; this round covers public Z/Flux image jobs.",
+    "No screenshot-based visual acceptance or user-button-driven GUI model generation; real integration tests call actual NativeJobStore.generate."
+  ]
+}

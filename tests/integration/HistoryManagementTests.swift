@@ -204,6 +204,7 @@ struct HistoryManagementTests {
                           "Preflight failure and original intent did not survive reopening")
             }
         }
-        print("PASS: history operations, hybrid precision, finalizing recovery and durable public submission failure")
+        try await PublicImageJobTests.run(root: root.appendingPathComponent("public-worker-tests"))
+        print("PASS: history operations, hybrid precision, finalizing recovery, durable public submission and public worker jobs")
     }
 }

@@ -20,6 +20,7 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var publicStreamingTargetBytes: UInt64? = nil
     var publicStreamingResolutionJSON: String? = nil
     var publicStreamingIntentJSON: String? = nil
+    var publicWorker: PublicImageWorker.Reference? = nil
     var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
     var routeSummary: String? {
         guard let resultJSON, let data = resultJSON.data(using: .utf8),
@@ -72,6 +73,7 @@ struct StepTelemetry {
 final class NativeJobStore: ObservableObject {
     @Published private(set) var jobs: [NativeJob] = []
     @Published private(set) var busy = false
+    @Published private(set) var workerCleanupPending = false
     @Published private(set) var storageError: String?
     @Published private(set) var sessionState = "未加载"
     @Published private(set) var requiresProcessRestart = false
@@ -92,6 +94,9 @@ final class NativeJobStore: ObservableObject {
     private var cancelRequested = false
     private var tensorCacheTask: Task<Data, Error>?
     private var ltxTask: Task<Data, Error>?
+    private var publicWorkerTask: Task<NativeProcessRunner.Result, Error>?
+    private var workerRecoveryReadFailed = false
+    private let workerExecutable: URL?
     private var imageValidationTask: Task<Data, Error>?
     private var lastPersist = Date.distantPast
     private var telemetry = StepTelemetry()
@@ -102,14 +107,30 @@ final class NativeJobStore: ObservableObject {
     var canUnload: Bool { engine != nil && !busy && !requiresProcessRestart }
     var deletableJobIDs: Set<UUID> { Set(jobs.filter { $0.isTerminal && $0.id != activeID }.map(\.id)) }
 
-    init(directory: URL) {
+    init(directory: URL, workerExecutable: URL? = nil) {
         self.directory = directory
+        self.workerExecutable = workerExecutable
         do {
             try FileManager.default.createDirectory(at: directory.appendingPathComponent("outputs"), withIntermediateDirectories: true)
             let file = directory.appendingPathComponent("jobs.json")
             if FileManager.default.fileExists(atPath: file.path) {
                 jobs = try JSONDecoder().decode([NativeJob].self, from: Data(contentsOf: file))
                 for i in jobs.indices where !jobs[i].isTerminal {
+                    if var worker = jobs[i].publicWorker, !worker.exitConfirmed {
+                        let admission = worker.admission(jobID: jobs[i].id, store: directory)
+                        let hasJournal = FileManager.default.fileExists(atPath: admission.journal.path)
+                        if (worker.started || hasJournal) && admission.observe() != .exited {
+                            jobs[i].state = "cleanup_pending"
+                            jobs[i].error = "旧工作进程的退出尚未确认，请等待清理后重新检查。"
+                            workerCleanupPending = true; busy = true
+                            sessionState = "等待旧工作进程退出"
+                            continue
+                        }
+                        worker.exitConfirmed = true; jobs[i].publicWorker = worker
+                        if jobs[i].state != "finalizing" {
+                            try ImageOutputTransaction.discardWorkerStaging(worker.stagedOutput, destination: jobs[i].request.output)
+                        }
+                    }
                     if jobs[i].state == "finalizing" {
                         do {
                             guard let result = jobs[i].resultJSON else { throw NativeFailure(message: "Missing image finalization receipt") }
@@ -125,8 +146,31 @@ final class NativeJobStore: ObservableObject {
                 }
                 try persist()
             }
+        } catch {
+            storageError = error.localizedDescription
+            workerRecoveryReadFailed = true; workerCleanupPending = true; busy = true
+            sessionState = "无法确认历史任务状态 · 请修复历史记录后重新打开 App"
+        }
+    }
+    /// Re-check only; persisted PIDs are never signalled after an App restart.
+    func refreshWorkerCleanup() async {
+        guard workerCleanupPending, !workerRecoveryReadFailed else { return }
+        guard await NativeProcessRunner.shared.pollCleanup() else { return }
+        do {
+            for i in jobs.indices where jobs[i].state == "cleanup_pending" {
+                guard var worker = jobs[i].publicWorker else { continue }
+                guard worker.exitConfirmed || worker.admission(jobID: jobs[i].id, store: directory).observe() == .exited else { continue }
+                worker.exitConfirmed = true; jobs[i].publicWorker = worker
+                try ImageOutputTransaction.discardWorkerStaging(worker.stagedOutput, destination: jobs[i].request.output)
+                jobs[i].state = "interrupted"; jobs[i].error = "工作进程已退出，可重新生成。"
+            }
+            try persist()
+            workerCleanupPending = jobs.contains { $0.state == "cleanup_pending" }
+            busy = workerCleanupPending
+            sessionState = workerCleanupPending ? "等待旧工作进程退出" : "未加载"
         } catch { storageError = error.localizedDescription }
     }
+
     private func persist() throws {
         try JSONEncoder().encode(jobs).write(to: directory.appendingPathComponent("jobs.json"), options: .atomic)
         lastPersist = Date()
@@ -285,10 +329,11 @@ final class NativeJobStore: ObservableObject {
     }
     private var coreMLResourceBusy = false
     func cancel() {
-        guard busy else { return }
+        guard busy, !workerCleanupPending else { return }
         cancelRequested = true
         tensorCacheTask?.cancel()
         ltxTask?.cancel()
+        publicWorkerTask?.cancel()
         imageValidationTask?.cancel()
         if coreMLResourceBusy { NativeEngine.cancelCoreMLResources() }
         engine?.cancel()
@@ -474,7 +519,7 @@ final class NativeJobStore: ObservableObject {
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
         // Close the reentrancy window before any async plan/session operation.
         busy = true; cancelRequested = false; actualRoute = nil
-        defer { busy = false; activeID = nil; ltxTask = nil; imageValidationTask = nil }
+        defer { busy = workerCleanupPending; activeID = nil; ltxTask = nil; publicWorkerTask = nil; imageValidationTask = nil }
         let imageTransaction = NativeRequestV2(legacy: request).operation.hasPrefix("image.")
             ? try ImageOutputTransaction(request: request) : nil
         var generationRequest = request
@@ -493,6 +538,8 @@ final class NativeJobStore: ObservableObject {
             do { _ = try await Task.detached { try NativeEngine.plan(planRequest) }.value }
             catch { throw error }
         }
+        let usesImageWorker = stagedStreamingRequest != nil && ["z-image-turbo", "flux2-klein-4b"].contains(request.model)
+        var publicWorkerArtifact: WorkerTerminalEnvelope.Artifact?
         var openedForPublicStreaming: NativeEngine?
         var frozenStreamingRequest = stagedStreamingRequest
         var publicResolution: NativeStreamingResolution?
@@ -506,7 +553,7 @@ final class NativeJobStore: ObservableObject {
         let start = ContinuousClock.now
         do {
             try persist()
-            if let streamingRequest = stagedStreamingRequest, request.model != "ltx-2.5-distilled" {
+            if let streamingRequest = stagedStreamingRequest, request.model != "ltx-2.5-distilled", !usesImageWorker {
                 if cancelRequested { throw CancellationError() }
                 let opened = try await acquire(modelURL, modelID: request.model)
                 if cancelRequested { throw CancellationError() }
@@ -529,7 +576,58 @@ final class NativeJobStore: ObservableObject {
             var result: Data
             let usesLTXWorker = request.model == "ltx-2.5-distilled" &&
                 (streamingRequest != nil || LTXWorker.accepts(request))
-            if let streamingRequest, request.model == "ltx-2.5-distilled" {
+            if usesImageWorker, let intent = stagedStreamingRequest {
+                guard !externalServiceActive else { throw NativeFailure(message: "本地 API 正在运行，请先停止服务。") }
+                guard !requiresProcessRestart else { throw NativeFailure(message: "原生会话未安全清理，请先重启 App。") }
+                if let old = engine { _ = try await old.unload() }
+                engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil
+                if cancelRequested { throw CancellationError() }
+                let prepared = try PublicImageWorker.prepare(jobID: id, model: modelURL, request: intent, store: directory)
+                guard let index = jobs.firstIndex(where: { $0.id == id }) else { throw NativeFailure(message: "Missing job") }
+                jobs[index].publicWorker = prepared.reference
+                try persist()
+                let executable = try workerExecutable ?? PublicImageWorker.executable()
+                jobs[index].publicWorker?.started = true
+                jobs[index].state = "running"
+                try persist()
+                sessionState = "流式图片工作进程运行中"
+                let admission = prepared.reference.admission(jobID: id, store: directory)
+                let work = Task { try await NativeProcessRunner.shared.run(executable: executable,
+                    arguments: ["worker-generate", prepared.inputURL.path], admission: admission) }
+                publicWorkerTask = work
+                let process: NativeProcessRunner.Result
+                do { process = try await work.value }
+                catch {
+                    // Runner throws only before a child exists; post-spawn failures
+                    // are returned with an explicit cleanup observation.
+                    jobs[index].publicWorker?.exitConfirmed = true
+                    throw error
+                }
+                if process.cleanupPending {
+                    workerCleanupPending = true
+                    imageTransaction?.retainForWorkerCleanup()
+                    throw PublicImageWorker.Failure.cleanupPending
+                }
+                jobs[index].publicWorker?.exitConfirmed = true
+                try persist()
+                try PublicImageWorker.saveDiagnostics(process, reference: prepared.reference, jobID: id, store: directory)
+                if cancelRequested || process.cancellationRequested { throw CancellationError() }
+                if let failure = process.failure { throw NativeFailure(message: failure) }
+                guard let exitCode = process.exitCode else { throw NativeFailure(message: "worker_terminated: 工作进程异常退出。") }
+                let verified = try WorkerTerminalEnvelope.validate(process.stdout, input: prepared.input, request: intent,
+                    runtimeFingerprint: prepared.reference.runtimeFingerprint, operation: .generate, exitCode: exitCode)
+                if verified.status == "cancelled" { throw CancellationError() }
+                guard verified.status == "succeeded", let data = verified.result, let resolution = verified.resolution,
+                      let artifact = verified.artifact else {
+                    throw NativeFailure(message: verified.errorMessage ?? "worker_result_invalid", code: verified.errorCode)
+                }
+                publicResolution = resolution
+                frozenStreamingRequest = try resolution.binding(intent)
+                publicWorkerArtifact = artifact
+                jobs[index].publicStreamingResolutionJSON = String(decoding: try JSONEncoder().encode(resolution), as: UTF8.self)
+                try persist()
+                result = data
+            } else if let streamingRequest, request.model == "ltx-2.5-distilled" {
                 guard !externalServiceActive else { throw NativeFailure(message: "本地 API 正在运行，请先在 API 页面停止服务。") }
                 if let old = engine { _ = try await old.unload() }
                 engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil
@@ -570,8 +668,9 @@ final class NativeJobStore: ObservableObject {
             }
             if let imageTransaction {
                 let unverified = result
+                let artifact = publicWorkerArtifact
                 let work = Task.detached {
-                    try imageTransaction.prepare(unverified)
+                    try imageTransaction.prepare(unverified, expectedSHA256: artifact?.sha256, expectedBytes: artifact?.size)
                 }
                 imageValidationTask = work
                 result = try await withTaskCancellationHandler {
@@ -590,7 +689,7 @@ final class NativeJobStore: ObservableObject {
             jobs[i].resultJSON = String(decoding: result, as: UTF8.self)
             sessionReport = jobs[i].resultJSON
             jobs[i].elapsed = Self.seconds(start.duration(to: .now))
-            sessionState = usesLTXWorker ? "视频完成 · 独立进程已释放" : request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
+            sessionState = usesImageWorker ? "图片完成 · 工作进程已释放" : usesLTXWorker ? "视频完成 · 独立进程已释放" : request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
             try persist()
             return jobs[i]
         } catch {
@@ -602,6 +701,10 @@ final class NativeJobStore: ObservableObject {
                     // published image into a failed/cancelled job if final save fails.
                     jobs[i].state = "finalizing"
                     storageError = error.localizedDescription
+                } else if workerCleanupPending {
+                    imageTransaction?.retainForWorkerCleanup()
+                    jobs[i].state = "cleanup_pending"
+                    do { try persist() } catch { storageError = error.localizedDescription }
                 } else {
                     imageTransaction?.discardRecovery()
                     jobs[i].state = error is CancellationError ? "cancelled" : "failed"
@@ -610,6 +713,8 @@ final class NativeJobStore: ObservableObject {
             }
             if imageTransaction?.published == true {
                 sessionState = "图片已发布 · 历史记录待恢复"
+            } else if workerCleanupPending {
+                sessionState = "等待工作进程清理"
             } else if !recordProcessQuarantine(error) {
                 sessionState = engine == nil ? "未加载" : "会话就绪 · 可重试"
             }

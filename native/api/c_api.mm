@@ -6,6 +6,7 @@
 #include <mutex>
 #include <cstring>
 #include "../runtime/execution.hpp"
+#include "../runtime/build_identity.hpp"
 #include "../runtime/memory_accounting.hpp"
 #include "../runtime/memory_execution.hpp"
 #include "../runtime/streaming/audit.hpp"
@@ -334,6 +335,8 @@ void finalize_memory_failure(tc_engine *engine,
 }
 
 } // namespace
+
+char *tc_runtime_build_identity(void) { return strdup(tc::runtime_build_identity()); }
 
 uint32_t tc_abi_version(void) {
     return 1;

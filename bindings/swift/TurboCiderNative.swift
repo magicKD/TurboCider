@@ -503,6 +503,7 @@ public final class NativeEngine: @unchecked Sendable {
               let count = value["valid"] as? Int else { throw NativeFailure(message: "文本 token 计数结果无效。") }
         return count
     }
+    public static func runtimeBuildIdentity() -> String { consume(tc_runtime_build_identity()) }
     public static func system() -> String { consume(tc_system_json()) }
     public static func models() -> String { consume(tc_models_json()) }
     public static func plan(_ request: NativeRequest) throws -> Data {

@@ -22,6 +22,8 @@ int tc_engine_cache(tc_engine *,const char *request_json,tc_event_callback,void 
 int tc_coreml_resources_json(const char *,tc_event_callback,void *,char **result,char **error);
 void tc_coreml_resources_cancel(void);
 uint32_t tc_abi_version(void);
+/* Compiled native identity; caller releases with tc_string_free. */
+char *tc_runtime_build_identity(void);
 char *tc_system_json(void);
 char *tc_models_json(void);
 int tc_plan_json(const char *request_json, char **plan_json, char **error);

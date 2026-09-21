@@ -87,7 +87,7 @@ final class ImageOutputTransaction: @unchecked Sendable {
         guard operation.hasPrefix("image."), destination.pathExtension == "png" else {
             throw NativeFailure(message: "image_transaction_request_invalid: 图片输出必须为 PNG。")
         }
-        directory = destination.deletingLastPathComponent()
+        directory = destination.deletingLastPathComponent().resolvingSymlinksInPath()
             .appendingPathComponent(".tc-image-staging-\(UUID())", isDirectory: true)
         stagedURL = directory.appendingPathComponent("output.png")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
@@ -112,7 +112,7 @@ final class ImageOutputTransaction: @unchecked Sendable {
                 Int64(value.st_ctimespec.tv_sec), Int64(value.st_ctimespec.tv_nsec)]
     }
 
-    func prepare(_ result: Data) throws -> Data {
+    func prepare(_ result: Data, expectedSHA256: String? = nil, expectedBytes: UInt64? = nil) throws -> Data {
         struct Summary: Decodable {
             let schema_version: Int
             let model: String
@@ -175,11 +175,17 @@ final class ImageOutputTransaction: @unchecked Sendable {
         guard try identity() == before, try identity(fd: fd) == before else {
             throw NativeFailure(message: "image_artifact_changed: 图片在验证期间发生变化。")
         }
+        let actualHash = hash.finalize().map { String(format: "%02x", $0) }.joined()
+        if expectedSHA256 != nil || expectedBytes != nil {
+            guard expectedSHA256 == actualHash, expectedBytes == UInt64(before[2]) else {
+                throw NativeFailure(message: "worker_artifact_mismatch: 图片与工作进程报告的内容不一致。")
+            }
+        }
         var receipt = try JSONSerialization.jsonObject(with: result) as! [String: Any]
         receipt["output"] = destination.path
         receipt["image_artifact"] = ["schema_version": 1, "staged_output": stagedURL.path,
             "published_output": destination.path, "bytes": before[2],
-            "sha256": hash.finalize().map { String(format: "%02x", $0) }.joined(),
+            "sha256": actualHash,
             "media_verified": true, "device": before[0], "inode": before[1]] as [String: Any]
         let data = try JSONSerialization.data(withJSONObject: receipt, options: [.sortedKeys])
         verifiedIdentity = before
@@ -190,6 +196,20 @@ final class ImageOutputTransaction: @unchecked Sendable {
     // Call only after the finalizing job and prepared result are persisted.
     func retainForRecovery() { preserveForRecovery = true }
     func discardRecovery() { preserveForRecovery = false }
+    func retainForWorkerCleanup() { preserveForRecovery = true }
+
+    static func discardWorkerStaging(_ stagedPath: String, destination: String) throws {
+        let staged = URL(fileURLWithPath: stagedPath)
+        let directory = staged.deletingLastPathComponent()
+        let parent = URL(fileURLWithPath: destination).deletingLastPathComponent().resolvingSymlinksInPath()
+        let prefix = ".tc-image-staging-"
+        guard staged.lastPathComponent == "output.png", directory.lastPathComponent.hasPrefix(prefix),
+              UUID(uuidString: String(directory.lastPathComponent.dropFirst(prefix.count))) != nil,
+              directory.deletingLastPathComponent().resolvingSymlinksInPath() == parent else {
+            throw NativeFailure(message: "worker_staging_cleanup_invalid")
+        }
+        if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
+    }
 
     private init(request: NativeRequest, recovering url: URL, directory: URL) {
         self.request = request
@@ -218,7 +238,7 @@ final class ImageOutputTransaction: @unchecked Sendable {
         let receipt = try JSONDecoder().decode(Receipt.self, from: result)
         let expected = receipt.image_artifact
         let destination = URL(fileURLWithPath: request.output).standardizedFileURL
-        let staged = URL(fileURLWithPath: expected.staged_output).standardizedFileURL
+        let staged = URL(fileURLWithPath: expected.staged_output)
         let directory = staged.deletingLastPathComponent()
         let prefix = ".tc-image-staging-"
         guard expected.schema_version == 1, expected.media_verified, expected.bytes > 0,
@@ -228,7 +248,7 @@ final class ImageOutputTransaction: @unchecked Sendable {
               destination.pathExtension == "png", receipt.output == destination.path,
               expected.published_output == destination.path,
               expected.staged_output == staged.path, staged.lastPathComponent == "output.png",
-              directory.deletingLastPathComponent() == destination.deletingLastPathComponent(),
+              directory.deletingLastPathComponent().resolvingSymlinksInPath() == destination.deletingLastPathComponent().resolvingSymlinksInPath(),
               directory.lastPathComponent.hasPrefix(prefix),
               UUID(uuidString: String(directory.lastPathComponent.dropFirst(prefix.count))) != nil else {
             throw NativeFailure(message: "image_recovery_invalid: 图片发布记录无效。")

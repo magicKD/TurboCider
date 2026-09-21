@@ -1053,3 +1053,17 @@ runner 及测试已加入 App 构建脚本，但未接入 JobStore，也未重�
 完整 native 构建退出 0；合约 83 项中 80 项通过、3 项跳过。真实 CLI 的 query/generate 均通过 EOF、错误字节、等待放行和放行后输入检查；再用新库/CLI 对完整 Z-Image、Flux4 各执行空公开目录拒绝和来源验证取消，四次均保存实际 journal、核对 PID，并在 OS 回收后确认身份 exited。见[构建/源码/日志哈希、journal 与实际 terminal](2026-09-21-m1-worker-admission-validation.json)。没有新增实际公开生成资格或性能结论。
 
 本轮没有完整 App 重建/GUI 生成；JobStore 的 launch reference、重启恢复及 worker/UI 接线仍待完成。journal 的同步 write/fsync 和系统 spawn 不构成存储/内核卡住时的硬实时启动上界；已有 5+5 秒取消策略也不应被扩大解释为覆盖任意阻塞系统调用。
+
+## 第六十三轮：App public 图片任务接入 worker 与重启恢复（2026-09-21）
+
+JobStore 的 public Z-Image/Flux4 图片生成现已接到独立 worker：先保存原始任务意图，再保存本次 staging 请求的 request UUID/digest、runtime fingerprint 和输出路径引用，保存 started 标记后启动带 admission journal 的进程。旧嵌入式 engine 先卸载，API 服务或进程 quarantine 状态阻止此路径。新增 additive C API `tc_runtime_build_identity` 及 Swift getter，用所链接 native 库的编译身份核对 worker terminal，避免把 worker 自报身份当成预期值。LTX 和非 public 路径保留现有实现。
+
+App 收到结果后先确认 supervisor 已回收 worker/group并持久化 exitConfirmed，再保存有限大小 stdout/stderr、核对协议/请求/容器/runtime及 native resolution/verified summary。ImageOutputTransaction 完整读取 PNG、解码和计算 SHA 后，额外比较 worker 报告的 size/hash，随后才走现有 finalizing→无覆盖发布→succeeded。staging 使用物理父目录以符合 worker 输入合同；恢复时支持父目录的路径别名。取消、错身份/哈希、无效 PNG 或异常退出都不能发布产物，清理未确认时保留 staging。
+
+新增可选 publicWorker 历史引用，旧历史可解码。重新打开 App 时，有外部 worker 的未完成任务先检查 journal/进程身份；活进程或 unknown 保持 cleanup_pending 和 busy，UI 显示等待清理并提供重新检查。只有确认退出才清理其私有 staging 并标 interrupted；尚未开始 spawn 且无 journal 的任务可直接中断。started 但缺失 journal 保守阻塞，不能凭缺文件假定进程不存在。另修复历史无法解码时 busy 仍为 false 的缺口：现在保持阻塞，检查动作不覆盖损坏历史。当前此类损坏需要修复记录后重新打开 App。
+
+完整 native 与最终 App 重建通过；83 项 native contract 中 80 项通过、3 项跳过。真实 JobStore 配合 fake worker 和有效 64² PNG，覆盖成功发布/历史恢复、错误 request ID、错误 hash、无效 PNG、忽略 SIGTERM 的取消、活 worker 期间重新打开历史并阻止新任务、退出后解锁、未知/未开始启动的区分及损坏历史保护。原 PNG、SHA、无覆盖 rename、取消、回滚及 before/after-rename finalizing 恢复测试保持通过。fake worker 结果不是 native 模型执行或发布资格。
+
+再从实际 NativeJobStore.generate 走本地完整 Z-Image 与 Flux4，分别验证空 production catalog 拒绝和取消，四次均保存任务/worker 身份并确认退出，没有复用 engine、最终图片或残留 staging；重新打开历史保持正确状态。使用独立状态目录启动最终 App，按本次 PID 观察到屏幕窗口并只终止/回收该进程。窗口截图命令返回 `could not create image from window`，因此没有视觉验收或按钮驱动的 GUI 生成声明。见[完整记录、真实 JobStore 结果和构建哈希](2026-09-21-m1-app-worker-validation.json)。临时定向构建脚本第一次因工作目录错误在编译前失败，修正后成功，失败日志保留。
+
+生成已迁移，但 Studio 的 streaming availability 查询仍使用 embedded-container NativeEngine.streamingOptions，尚须切到 cli_worker 查询以与生成 catalog 对齐；worker 的进度/resolved 事件也尚未接入 App telemetry。production catalog 仍为空，未获得实际 public 成功图片或新的质量/内存/性能资格。整体交付并未完成。
