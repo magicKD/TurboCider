@@ -44,6 +44,134 @@ def plan(r):
     return status,json.loads(a) if a else None,b
 
 class ContractTests(unittest.TestCase):
+    def test_qwen21_canvas_memory_estimate_covers_recorded_peak(self):
+        # Planning only; does not perform high-resolution inference.
+        request = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                       width=2048, height=2048, steps=1, audio=False, frames=1,
+                       execution='gpu', residency='component_staged')
+        code, result, error = plan(request)
+        self.assertEqual(code, 0, error)
+        self.assertGreater(result['memory_estimate_bytes'], 62259019410)
+        self.assertEqual(result['memory_estimate_kind'], 'conservative_heuristic_not_hard_limit')
+
+    def test_qwen21_reference_memory_estimate_includes_prefix_kv(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                    width=512, height=512, steps=1, audio=False, frames=1, execution='gpu')
+        per_reference = 2 * 32 * 4096 * 4096 * 2 + (512 << 20)
+        for residency in ('component_staged', 'resident'):
+            request = {**base, 'residency': residency}
+            code, empty, error = plan(request)
+            self.assertEqual(code, 0, error)
+            for count in (1, 3, 10):
+                with self.subTest(residency=residency, references=count):
+                    refs = [dict(kind='image', role='reference', path=f'/tmp/ref-{i}.png')
+                            for i in range(count)]
+                    code, result, error = plan({**request, 'operation':'image.edit', 'inputs':refs})
+                    self.assertEqual(code, 0, error)
+                    self.assertEqual(result['memory_estimate_bytes'],
+                                     empty['memory_estimate_bytes'] + count * per_reference)
+                    self.assertEqual(result['memory_estimate_kind'], 'conservative_heuristic_not_hard_limit')
+                    if count == 10:
+                        # Actual 512-square ten-reference MLX peak; not total
+                        # process memory and not a general upper-bound proof.
+                        self.assertGreater(result['memory_estimate_bytes'], 44596678034)
+
+    def test_qwen21_experimental_pe_edit_contract(self):
+        refs = [dict(kind='image', role='reference', path=f'/tmp/pe-ref-{i}.png') for i in range(10)]
+        request = dict(model='qwen-image-2.1', operation='image.edit', prompt='Make it matte',
+                       inputs=refs, width=512, height=512, steps=40, audio=False, frames=1,
+                       prompt_enhance=True, prompt_enhancer_path='/tmp/pe-i2i-not-loaded',
+                       prompt_enhance_edit_experimental=True)
+        code, result, error = plan(request)
+        self.assertEqual(code, 0, error)
+        self.assertTrue(result['prompt_enhance_edit_experimental'])
+        self.assertIn('prompt_enhance', next(stage for stage in result['stages']
+                                           if stage['id'] == 'text_encode')['dependencies'])
+        version2 = dict(schema_version=2, model=request['model'], operation='image.edit',
+                        inputs=[dict(kind='text', role='prompt', text=request['prompt']), *refs],
+                        outputs=[dict(kind='image', path='/tmp/pe-edit-unused.png', width=512,
+                                      height=512, frames=1, audio=False)],
+                        sampling=dict(seed=42, steps=40), parameters=dict(prompt_enhance=True,
+                            prompt_enhancer_path=request['prompt_enhancer_path'],
+                            prompt_enhance_edit_experimental=True))
+        code, result2, error = plan(version2)
+        self.assertEqual(code, 0, error)
+        self.assertTrue(result2['prompt_enhance_edit_experimental'])
+        self.assertEqual(result2['stages'], result['stages'])
+        for invalid in [dict(prompt_enhance=False), dict(prompt_enhancer_path=''),
+                        dict(prompt_enhance_edit_experimental=False),
+                        dict(prompt_enhance_edit_experimental='true'), dict(inputs=[]),
+                        dict(inputs=refs+[refs[0]]), dict(model='z-image-turbo'),
+                        dict(operation='image.generate', inputs=[]),
+                        dict(execution='gpu_ane', allow_approximation=True, ane_manifest='/tmp/no.json')]:
+            with self.subTest(invalid=invalid):
+                self.assertNotEqual(plan({**request, **invalid})[0], 0)
+        version2['parameters']['prompt_enhance_edit_experimental'] = 'true'
+        self.assertNotEqual(plan(version2)[0], 0)
+
+    def test_qwen21_prompt_enhancer_contract(self):
+        request = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                       width=512, height=512, steps=1, audio=False, frames=1,
+                       prompt_enhance=True, prompt_enhancer_path='/tmp/pe-t2i-test-not-loaded')
+        code, result, error = plan(request)
+        self.assertEqual(code, 0, error)
+        self.assertTrue(result['prompt_enhance'])
+        self.assertEqual(result['prompt_enhancer_path'], request['prompt_enhancer_path'])
+        self.assertEqual(result['stages'][0]['id'], 'prompt_enhance')
+        self.assertIn('prompt_enhance', next(stage for stage in result['stages']
+                                           if stage['id'] == 'text_encode')['dependencies'])
+        version2 = dict(schema_version=2, model=request['model'], operation='image.generate',
+                        inputs=[dict(kind='text', role='prompt', text=request['prompt'])],
+                        outputs=[dict(kind='image', path='/tmp/pe-unused.png', width=512,
+                                      height=512, frames=1, audio=False)],
+                        sampling=dict(seed=42, steps=1),
+                        parameters=dict(prompt_enhance=True,
+                                        prompt_enhancer_path=request['prompt_enhancer_path']))
+        code2, result2, error2 = plan(version2)
+        self.assertEqual(code2, 0, error2)
+        self.assertTrue(result2['prompt_enhance'])
+        self.assertEqual(result2['stages'], result['stages'])
+        for invalid in [dict(prompt_enhancer_path=''), dict(model='z-image-turbo'),
+                        dict(operation='image.edit', inputs=[dict(kind='image', role='reference', path='/tmp/ref.png')]),
+                        dict(prompt_enhance='true')]:
+            self.assertNotEqual(plan({**request, **invalid})[0], 0, invalid)
+        disabled = {**request, 'prompt_enhance':False, 'prompt_enhancer_path':''}
+        self.assertEqual(plan(disabled)[0], 0)
+
+    def test_qwen21_contract(self):
+        request = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                       width=512, height=512, steps=40, audio=False, frames=1)
+        code, result, error = plan(request)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(result['residency'], 'component_staged')
+        for width, height in [(2048,2048),(2400,1792),(1792,2400),(2528,1696),
+                              (1696,2528),(2752,1536),(1536,2752)]:
+            self.assertEqual(plan({**request, 'width':width, 'height':height})[0], 0)
+        refs = [dict(kind='image', role='reference', path=f'/tmp/qwen-ref-{i}.png') for i in range(10)]
+        # Planning validates role/count, not media existence (decoding is a run-time check).
+        edit = {**request, 'operation':'image.edit', 'inputs':refs}
+        code, result, error = plan(edit)
+        self.assertEqual(code, 0, error)
+        hybrid = {**request, 'execution':'gpu_ane', 'allow_approximation':True,
+                  'ane_manifest':'/tmp/qwen-ane-not-loaded-during-planning.json'}
+        code, result, error = plan(hybrid)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(result['precision'], 'bf16_gpu+fp16_mlp_fp16_io')
+        self.assertEqual(result['gpu_graph'], 'qwen21_decode_mlp_complement')
+        self.assertEqual(result['algorithm_approximations'], ['qwen21_decode_mlp_fp16_partition'])
+        for invalid in [dict(width=1024), dict(operation='image.edit', inputs=refs[:1]),
+                        dict(encoder_ane_manifest='/tmp/encoder.json'), dict(allow_approximation=False),
+                        dict(ane_manifest='')]:
+            self.assertNotEqual(plan({**hybrid, **invalid})[0], 0, invalid)
+        for invalid in [dict(width=528), dict(width=4096, height=4096), dict(frames=2), dict(audio=True),
+                        dict(residency='streamed'), dict(operation='image.transform'), dict(inputs=refs),
+                        dict(operation='image.edit',inputs=[]), dict(operation='image.edit',inputs=refs+[refs[0]]),
+                        dict(operation='image.edit',inputs=[{**refs[0],'role':'init_image'}]),
+                        # Visual masks remain ordered references, not alpha injection.
+                        dict(operation='image.edit',inputs=[refs[0],{**refs[1],'role':'mask'}]),
+                        dict(execution='gpu',ane_manifest='/tmp/no-qwen-ane.json')]:
+            self.assertNotEqual(plan({**request, **invalid})[0], 0, invalid)
+
     def test_device_optimization_profile(self):
         system = json.loads(consume(C.c_void_p(lib.tc_system_json())))
         expected = system['gpu'] == 'Apple M5 Pro' and system['physical_memory_bytes'] == 24 << 30

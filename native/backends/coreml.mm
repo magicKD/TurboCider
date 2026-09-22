@@ -316,6 +316,10 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     : impl_(std::make_unique<Impl>()), manifest(file.string()) {
     auto begin = Clock::now();
     auto d = read_json(file);
+    if ([d[@"export_identity"] isKindOfClass:NSDictionary.class]) {
+        export_variant = string_value(d[@"export_identity"], @"variant");
+        tensor_layout = string_value(d[@"export_identity"], @"tensor_layout");
+    }
     require([d[@"schema_version"] isKindOfClass:NSNumber.class] &&
                 [d[@"shape"] isKindOfClass:NSDictionary.class] &&
                 [d[@"source"] isKindOfClass:NSDictionary.class] &&

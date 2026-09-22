@@ -109,6 +109,9 @@ struct StudioDraft: Codable, Sendable {
     var randomSeed = false
     var strength = 0.75
     var dynamicText = true
+    var promptEnhance = false
+    var promptEnhanceEditExperimental = false
+    var promptEnhancerPath = ""
     var residency = "resident"
     var zImageStreamingBudgetGiB = 10
     var profilePath = ""
@@ -121,7 +124,7 @@ struct StudioDraft: Codable, Sendable {
     init() {}
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
-        case seedText, randomSeed, strength, dynamicText, residency, zImageStreamingBudgetGiB, profilePath, acceleration
+        case seedText, randomSeed, strength, dynamicText, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs
     }
     init(from decoder: Decoder) throws {
@@ -147,6 +150,9 @@ struct StudioDraft: Codable, Sendable {
         randomSeed = try c.decodeIfPresent(Bool.self, forKey: .randomSeed) ?? randomSeed
         strength = try c.decodeIfPresent(Double.self, forKey: .strength) ?? strength
         dynamicText = try c.decodeIfPresent(Bool.self, forKey: .dynamicText) ?? dynamicText
+        promptEnhance = try c.decodeIfPresent(Bool.self, forKey: .promptEnhance) ?? promptEnhance
+        promptEnhanceEditExperimental = try c.decodeIfPresent(Bool.self, forKey: .promptEnhanceEditExperimental) ?? false
+        promptEnhancerPath = try c.decodeIfPresent(String.self, forKey: .promptEnhancerPath) ?? promptEnhancerPath
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
         zImageStreamingBudgetGiB = try c.decodeIfPresent(Int.self, forKey: .zImageStreamingBudgetGiB) ?? 10
         profilePath = try c.decodeIfPresent(String.self, forKey: .profilePath) ?? profilePath
@@ -266,7 +272,12 @@ struct StudioDraft: Codable, Sendable {
             }
         }
         guard !audio || model.canGenerateAudio else { throw NativeFailure(message: "当前执行器尚未开放音频输出，请关闭音频。") }
-        guard (64...2048).contains(width), (64...2048).contains(height), width % 16 == 0, height % 16 == 0 else { throw NativeFailure(message: "宽高需为 64–2048 之间的 16 倍数。") }
+        let maxDimension = modelID == "qwen-image-2.1" ? 4096 : 2048
+        let dimensionMultiple = modelID == "qwen-image-2.1" ? 32 : 16
+        guard (64...maxDimension).contains(width), (64...maxDimension).contains(height), width % dimensionMultiple == 0, height % dimensionMultiple == 0 else { throw NativeFailure(message: "宽高需为 64–\(maxDimension) 之间的 \(dimensionMultiple) 倍数。") }
+        if modelID == "qwen-image-2.1", width * height > 8_388_608 {
+            throw NativeFailure(message: "Qwen Image 2.1 当前画布上限为 8 百万像素。")
+        }
         guard (1...50).contains(steps) else { throw NativeFailure(message: "采样步数需为 1–50，当前模型默认 \(model.default_steps) 步。") }
         if ["z-image-turbo", "z-image-turbo-gguf"].contains(modelID) {
             guard (residency == "resident" || (modelID == "z-image-turbo" && residency == "streamed")), frames == 1, !audio else {
@@ -299,7 +310,10 @@ struct StudioDraft: Codable, Sendable {
         if !randomSeed { _ = try fixedSeed() }
         guard strength.isFinite, (0...1).contains(strength) else { throw NativeFailure(message: "图像强度需为 0–1。") }
         if operation == "image.transform" && activeAssets.count != 1 { throw NativeFailure(message: "请选择一张原图。") }
-        if operation == "image.edit" && !(1...8).contains(activeAssets.count) { throw NativeFailure(message: "参考编辑需要 1–8 张有序参考图。") }
+        let editLimit = model.max_images ?? 8
+        if operation == "image.edit" && (activeAssets.isEmpty || activeAssets.count > editLimit) {
+            throw NativeFailure(message: "参考编辑需要 1–\(editLimit) 张有序参考图。")
+        }
         if operation == "video.image" && activeAssets.count != 1 { throw NativeFailure(message: "视频首帧模式需要一张首帧图片。") }
         if operation == "video.keyframes" && !(1...2).contains(activeAssets.count) { throw NativeFailure(message: "关键帧模式需要一张首帧，或首尾两张图片。") }
         if !activeAssets.isEmpty {
@@ -337,6 +351,17 @@ struct StudioDraft: Codable, Sendable {
         let model = StudioModel.catalog().first { $0.id == modelID }
         guard let model, model.executor else { throw NativeFailure(message: "当前模型没有可用执行器。") }
         try validate(model: model)
+        if modelID == "qwen-image-2.1" && promptEnhance {
+            guard operation == "image.generate" || (operation == "image.edit" && promptEnhanceEditExperimental) else {
+                throw NativeFailure(message: "PE-I2I 需要显式开启实验性 FP32 视觉；编辑质量尚未通过验收。")
+            }
+            guard FileManager.default.fileExists(atPath: URL(fileURLWithPath: promptEnhancerPath).appendingPathComponent("system_prompt.txt").path),
+                  FileManager.default.fileExists(atPath: URL(fileURLWithPath: promptEnhancerPath).appendingPathComponent("tokenizer.json").path) else {
+                throw NativeFailure(message: operation == "image.edit"
+                    ? "请选择完整的 Qwen-Image-2.1 PE-I2I 模型安装目录。"
+                    : "请选择完整的 Qwen-Image-2.1 PE-T2I 模型安装目录。")
+            }
+        }
         var request = NativeRequest(prompt: prompt, output: output.path)
         request.model = modelID; request.operation = operation
         request.width = width; request.height = height; request.steps = steps
@@ -359,6 +384,10 @@ struct StudioDraft: Codable, Sendable {
             }
         }
         request.dynamic_text = dynamicText; request.residency = residency
+        request.prompt_enhance = modelID == "qwen-image-2.1" && promptEnhance
+        request.prompt_enhance_edit_experimental = modelID == "qwen-image-2.1" &&
+            operation == "image.edit" && promptEnhance && promptEnhanceEditExperimental
+        request.prompt_enhancer_path = modelID == "qwen-image-2.1" && !promptEnhancerPath.isEmpty ? promptEnhancerPath : nil
         if modelID == "z-image-turbo", residency == "streamed" {
             request.memory_budget_bytes = UInt64(zImageStreamingBudgetGiB) << 30
         }
@@ -460,6 +489,120 @@ actor StudioAssetImporter {
         else if let data { try data.write(to: target, options: .atomic) }
         let orientation = info[kCGImagePropertyOrientation] as? Int ?? 1
         return StudioAsset(path: target.path, name: name, width: orientation >= 5 ? height : width, height: orientation >= 5 ? width : height)
+    }
+}
+
+enum Qwen21AnnotationTool: String, CaseIterable { case ellipse, brush }
+enum Qwen21AnnotationOutput: String { case annotatedImage, separateMask }
+struct Qwen21AnnotationStroke {
+    var tool: Qwen21AnnotationTool
+    // Coordinates are normalized to the displayed image, top-left origin.
+    var points: [CGPoint]
+    var width: Double = 0.012
+}
+enum Qwen21AnnotationRenderer {
+    static func render(source: URL, strokes: [Qwen21AnnotationStroke],
+                       output: Qwen21AnnotationOutput = .annotatedImage) throws -> Data {
+        guard !strokes.isEmpty, strokes.count <= 100,
+              strokes.allSatisfy({ stroke in
+                  (1...4096).contains(stroke.points.count) && stroke.width.isFinite &&
+                  (0.002...0.1).contains(stroke.width) &&
+                  (stroke.tool != .ellipse || (stroke.points.count >= 2 &&
+                    stroke.points.first!.x != stroke.points.last!.x && stroke.points.first!.y != stroke.points.last!.y)) &&
+                  stroke.points.allSatisfy { $0.x.isFinite && $0.y.isFinite && (0...1).contains($0.x) && (0...1).contains($0.y) }
+              }) else { throw NativeFailure(message: "无效或过多的标注，请减少笔画后重试。") }
+        guard let source = CGImageSourceCreateWithURL(source as CFURL, nil),
+              CGImageSourceGetCount(source) == 1,
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 2048
+              ] as CFDictionary),
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
+        else { throw NativeFailure(message: "无法读取标注原图。") }
+        let w = CGFloat(image.width), h = CGFloat(image.height)
+        let bounds = CGRect(x: 0, y: 0, width: w, height: h)
+        if output == .separateMask {
+            // A mask is an opaque visual reference, never the source's alpha.
+            context.setFillColor(CGColor(colorSpace: space, components: [0, 0, 0, 1])!)
+            context.fill(bounds)
+        } else { context.draw(image, in: bounds) }
+        let ink = CGColor(colorSpace: space, components: output == .separateMask ? [1, 1, 1, 1] : [1, 0, 0, 1])!
+        context.setStrokeColor(ink)
+        context.setFillColor(ink)
+        context.setLineCap(.round); context.setLineJoin(.round)
+        for stroke in strokes {
+            let points = stroke.points.map { CGPoint(x: $0.x * w, y: (1 - $0.y) * h) }
+            let thickness = CGFloat(stroke.width) * min(w, h)
+            context.setLineWidth(thickness)
+            if stroke.tool == .ellipse {
+                guard let a = points.first, let b = points.last, a != b else { continue }
+                let rect = CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
+                                  width: abs(a.x-b.x), height: abs(a.y-b.y))
+                if output == .separateMask { context.fillEllipse(in: rect) }
+                else { context.strokeEllipse(in: rect) }
+            } else if points.allSatisfy({ $0 == points[0] }) {
+                context.fillEllipse(in: CGRect(x: points[0].x-thickness/2, y: points[0].y-thickness/2,
+                                               width: thickness, height: thickness))
+            } else {
+                context.beginPath(); context.addLines(between: points); context.strokePath()
+            }
+        }
+        let data = NSMutableData()
+        guard let result = context.makeImage(),
+              let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)
+        else { throw NativeFailure(message: "无法创建标注 PNG。") }
+        CGImageDestinationAddImage(destination, result, nil)
+        guard CGImageDestinationFinalize(destination) else { throw NativeFailure(message: "保存标注失败。") }
+        return data as Data
+    }
+}
+
+struct Qwen21CanvasPreset: Identifiable {
+    let id: String
+    let width: Int
+    let height: Int
+    var title: String { "\(id) · \(width) × \(height)" }
+    // Exact aligned sizes recommended by the official Qwen-Image-2.1 README.
+    static let recommended: [Qwen21CanvasPreset] = [
+        .init(id: "1:1", width: 2048, height: 2048),
+        .init(id: "4:3", width: 2400, height: 1792),
+        .init(id: "3:4", width: 1792, height: 2400),
+        .init(id: "3:2", width: 2528, height: 1696),
+        .init(id: "2:3", width: 1696, height: 2528),
+        .init(id: "16:9", width: 2752, height: 1536),
+        .init(id: "9:16", width: 1536, height: 2752)
+    ]
+}
+
+enum Qwen21PromptExample: String, CaseIterable {
+    case transparent, extraction, rgbaEdit, maskEdit, annotatedEdit
+    var title: String {
+        switch self {
+        case .transparent: return "透明文生图"
+        case .extraction: return "提取主体（透明背景）"
+        case .rgbaEdit: return "RGBA 图编辑"
+        case .maskEdit: return "单独蒙版引导编辑"
+        case .annotatedEdit: return "圈选 / 涂抹引导编辑"
+        }
+    }
+    var referenceCount: Int { self == .transparent ? 0 : (self == .maskEdit ? 2 : 1) }
+    var prompt: String {
+        switch self {
+        case .transparent:
+            return "This is an RGBA image with transparency. A cute cartoon dragon sticker. The image has alpha channel and the background is transparent."
+        case .extraction:
+            return "Extract the main foreground subject from <image1>. Preserve its appearance and details. Remove the background and output an RGBA image with a transparent background."
+        case .rgbaEdit:
+            return "Change the foreground subject in <image1> to cobalt blue. Preserve its shape and details. Keep the transparent background and output an RGBA image with an alpha channel."
+        case .maskEdit:
+            return "Use <image2> as a spatial mask for <image1>: white marks the area to edit and black marks the area to preserve. Change the object inside the white region to matte red. Keep the rest of <image1> unchanged. Do not include the mask in the output."
+        case .annotatedEdit:
+            return "Change the object marked by the circle or painted annotation in <image1> to matte red. Remove the annotation from the final image. Keep the unmarked objects and background unchanged."
+        }
     }
 }
 
@@ -626,7 +769,7 @@ final class StudioState: ObservableObject {
         draft.operation = (model.executor_operations ?? model.operations).first ??
             (model.isVideo ? "video.generate" : "image.generate")
         draft.width = model.default_width; draft.height = model.default_height
-        if id == "z-image-turbo" { draft.width = 512; draft.height = 512 }
+        if id == "z-image-turbo" || id == "qwen-image-2.1" { draft.width = 512; draft.height = 512 }
         draft.steps = model.default_steps; draft.frames = model.default_frames
         draft.fps = model.default_fps ?? (model.isVideo ? 24 : 1)
         draft.audio = model.default_audio ?? false
@@ -657,6 +800,63 @@ final class StudioState: ObservableObject {
             ["image.transform", "image.edit", "video.image", "video.reference", "video.keyframes"].contains($0)
         }
     }
+    // Keep the existing eight-asset staging area for smaller-input models,
+    // while allowing the complete ten-reference Qwen21 input contract.
+    var imageImportLimit: Int {
+        max(8, models.first(where: { $0.id == draft.modelID })?.max_images ?? 8)
+    }
+    func applyQwen21Example(_ example: Qwen21PromptExample) {
+        guard draft.modelID == "qwen-image-2.1", !importing else { return }
+        guard draft.assets.count >= example.referenceCount else {
+            message = "请先添加至少 \(example.referenceCount) 张图片；蒙版示例中第一张为原图、第二张为白色编辑区蒙版。"
+            return
+        }
+        // Output canvas is independent of the native reference encoding size.
+        // Keep examples inside the maintained 512-square regression scope.
+        let size = (512, 512)
+        draft.operation = example.referenceCount == 0 ? "image.generate" : "image.edit"
+        draft.prompt = example.prompt
+        draft.width = size.0; draft.height = size.1; draft.steps = 40
+        draft.profilePath = ""
+        var acceleration = draft.acceleration ?? StudioAcceleration()
+        acceleration.policy = "gpu"
+        draft.acceleration = acceleration
+        message = "已替换为可编辑的示例提示词，使用 GPU / 40 步 / \(size.0)×\(size.1)。这不是模型提示词重写；蒙版与标注作为视觉参考，不保证逐像素锁定未编辑区。"
+    }
+    func annotateQwen21Asset(_ id: UUID, strokes: [Qwen21AnnotationStroke],
+                            output: Qwen21AnnotationOutput = .annotatedImage) async -> Bool {
+        guard draft.modelID == "qwen-image-2.1", !importing,
+              let original = draft.assets.first(where: { $0.id == id }) else { return false }
+        if output == .separateMask && draft.assets.count >= imageImportLimit {
+            message = "独立蒙版需要一个参考图位置；请先移除一张图片（最多 10 张，包含蒙版）。"
+            return false
+        }
+        importing = true; defer { importing = false }
+        do {
+            let data = try Qwen21AnnotationRenderer.render(source: URL(fileURLWithPath: original.path), strokes: strokes, output: output)
+            var annotated = try await importer.importData(data)
+            guard draft.modelID == "qwen-image-2.1", let index = draft.assets.firstIndex(where: { $0.id == id }),
+                  output != .separateMask || draft.assets.count < imageImportLimit else {
+                await importer.discard([annotated]); return false
+            }
+            annotated.name = original.name + (output == .separateMask ? " · 黑白蒙版" : " · 标注")
+            rememberAssets()
+            if output == .separateMask {
+                // Append, don't insert: existing <imageN> references stay valid.
+                draft.assets.append(annotated)
+                message = "已添加 <image\(draft.assets.count)> 作为 <image\(index + 1)> 的黑白蒙版：白色编辑、黑色保留。请在提示词中引用这两个编号；属于视觉引导，不保证逐像素锁定。原图与提示词未修改，可撤销。"
+            } else {
+                draft.assets[index] = annotated
+                if draft.initImageID == id { draft.initImageID = annotated.id }
+                message = "已在参考 \(index + 1) 使用标注副本；原文件未改动，可撤销。请在提示词中说明圈选 / 涂抹区域的修改，并要求移除标注。"
+            }
+            draft.operation = "image.edit"
+            return true
+        } catch {
+            message = error.localizedDescription
+            return false
+        }
+    }
     private func validateImageImport() -> Bool {
         guard supportsImageInputs else { message = "当前模型未开放图片输入。已有素材会继续保留。"; return false }
         return true
@@ -667,7 +867,7 @@ final class StudioState: ObservableObject {
         importing = true; defer { importing = false }
         var staged: [StudioAsset] = []
         do {
-            guard draft.assets.count + urls.count <= 8 else { throw NativeFailure(message: "最多保留 8 张输入图片。本次未导入任何图片，请减少选择后重试。") }
+            guard draft.assets.count + urls.count <= imageImportLimit else { throw NativeFailure(message: "最多保留 \(imageImportLimit) 张输入图片。本次未导入任何图片，请减少选择后重试。") }
             for url in urls { staged.append(try await importer.importFile(url)) }
             attach(staged)
         } catch { await importer.discard(staged); message = error.localizedDescription }
@@ -696,7 +896,7 @@ final class StudioState: ObservableObject {
         importing = true; defer { importing = false }
         var staged: [StudioAsset] = []
         do {
-            guard draft.assets.count + images.count <= 8 else { throw NativeFailure(message: "粘贴后超过 8 张图片，本次未导入。") }
+            guard draft.assets.count + images.count <= imageImportLimit else { throw NativeFailure(message: "粘贴后超过 \(imageImportLimit) 张图片，本次未导入。") }
             for image in images { staged.append(try await importer.importData(image)) }
             attach(staged)
         } catch { await importer.discard(staged); message = error.localizedDescription }
@@ -707,7 +907,7 @@ final class StudioState: ObservableObject {
         importing = true; defer { importing = false }
         var staged: [StudioAsset] = []
         do {
-            guard draft.assets.count + providers.count <= 8 else { throw NativeFailure(message: "最多 8 张图片，请减少选择后重试。") }
+            guard draft.assets.count + providers.count <= imageImportLimit else { throw NativeFailure(message: "最多 \(imageImportLimit) 张图片，请减少选择后重试。") }
             for provider in providers {
                 let type = provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ? UTType.fileURL.identifier
                     : provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .image) == true })
@@ -744,6 +944,9 @@ final class StudioState: ObservableObject {
         }
         draft.acceleration = StudioAcceleration(policy: request.profile == nil ? request.execution : "profile", manifest: request.ane_manifest ?? "", sourceManifest: draft.acceleration?.sourceManifest ?? "", compileGPU: request.compile_gpu)
         draft.dynamicText = request.dynamic_text
+        draft.promptEnhance = request.prompt_enhance ?? false
+        draft.promptEnhanceEditExperimental = request.prompt_enhance_edit_experimental ?? false
+        draft.promptEnhancerPath = request.prompt_enhancer_path ?? ""
         draft.assets = (request.inputs ?? []).map { StudioAsset(path: $0.path, name: URL(fileURLWithPath: $0.path).lastPathComponent, width: 0, height: 0) }
         draft.loras = (request.loras ?? []).map { StudioLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
         draft.loraStrategy = request.lora_strategy ?? "auto"

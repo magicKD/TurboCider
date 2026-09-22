@@ -125,6 +125,7 @@ Request request_from_json(NSDictionary *d) {
             @"allow_approximation",
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
+            @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
             @"loras",        @"audio",          @"noise_path",
             @"vsa",          @"vsa_sparsity",   @"vsa_tile_size",
             @"vsa_prefix_mode", @"vsa_dense_first_n_steps",
@@ -134,6 +135,9 @@ Request request_from_json(NSDictionary *d) {
         ]);
         r.model = string_value(d, @"model", r.model);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
+        r.prompt_enhancer_path = string_value(d, @"prompt_enhancer_path");
+        r.prompt_enhance = boolean(d, @"prompt_enhance", false);
+        r.prompt_enhance_edit_experimental = boolean(d, @"prompt_enhance_edit_experimental", false);
         auto model_descriptor = module_for(r.model).describe();
         auto descriptor = to_dictionary(model_descriptor);
         r.operation = string_value(d, @"operation",
@@ -231,6 +235,7 @@ Request request_from_json(NSDictionary *d) {
                 "execution.warmup_iterations must be 0...8");
         auto parameters = d[@"parameters"] ? dictionary(d[@"parameters"], "parameters") : @{};
         keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path",
+                            @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
                             @"streaming_offload", @"vsa", @"vsa_sparsity",
                             @"vsa_tile_size", @"vsa_prefix_mode",
                             @"vsa_dense_first_n_steps", @"vsa_dense_layers",
@@ -238,6 +243,9 @@ Request request_from_json(NSDictionary *d) {
         r.compile_gpu = boolean(parameters, @"compile_gpu", false);
         r.dynamic_text = boolean(parameters, @"dynamic_text", true);
         r.noise_path = string_value(parameters, @"noise_path");
+        r.prompt_enhancer_path = string_value(parameters, @"prompt_enhancer_path");
+        r.prompt_enhance = boolean(parameters, @"prompt_enhance", false);
+        r.prompt_enhance_edit_experimental = boolean(parameters, @"prompt_enhance_edit_experimental", false);
         r.streaming_offload = boolean(parameters, @"streaming_offload", false);
         r.vsa = boolean(parameters, @"vsa", false);
         r.vsa_sparsity = numeric(parameters, @"vsa_sparsity", r.vsa_sparsity);

@@ -1,6 +1,8 @@
 #include "bridge.hpp"
 namespace tc {
 static NSString *gpu_graph_label(const Request &r) {
+    if (r.model == "qwen-image-2.1")
+        return r.execution == "gpu_ane" ? @"qwen21_decode_mlp_complement" : @"qwen21_compiled_prefix_blocks";
     if (r.model == "minimax-h3-vdn")
         return @"h3_vdn_int6_window_delta";
     if (r.model.starts_with("minimax-h3-fasth3-mlx-int6"))
@@ -55,6 +57,8 @@ static NSString *encoder_backend_label(const Request &request, bool hybrid) {
     return hybrid ? @"mlx_cpp_metal+coreml" : @"mlx_cpp_metal";
 }
 static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
+    if (request.model == "qwen-image-2.1")
+        return @"qwen3_vl_deepstack_gpu_only";
     if (ltx_gemma4_encoder(request))
         return hybrid ? @"gemma4_encoder_mlp_complement"
                       : @"gemma4_gpu_only";
@@ -66,6 +70,8 @@ static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
 static NSString *encoder_weight_validation_label(const Request &request,
                                                   bool hybrid,
                                                   bool executed) {
+    if (request.model == "qwen-image-2.1")
+        return @"native Qwen3-VL language/vision/DeepStack checkpoint loaded directly";
     if (ltx_gemma4_encoder(request)) {
         if (hybrid)
             return executed
@@ -172,6 +178,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                       r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"modelscope_int6_parity_candidate" :
                       r.model == "z-image-turbo" ? @"native_candidate" :
                       r.model == "llada-image-turbo" ? @"native_llada_candidate" :
+                      r.model == "qwen-image-2.1" ? @"native_qwen21_experimental" :
                       @"weights_pending";
     auto weight_validation = r.model == "z-image-turbo-gguf" ?
             @"GGUF header checked at load; paired output parity pending" :
@@ -191,6 +198,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                                @"in-memory-lora; comfy-oracle-validated") :
         r.model == "llada-image-turbo" ?
             @"native checkpoint loaded directly; see recorded parity evidence" :
+        r.model == "qwen-image-2.1" ?
+            @"native Comfy BF16 components; component parity recorded; edit quality pending" :
         @"pending";
     auto lora_fusion = lora_strategy == "none" ? @"none" :
         (lora_strategy == "inference_time" ?
@@ -237,7 +246,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             @"row_symmetric_int8_weight_quantization"];
     else if (hybrid)
         [algorithm_approximations addObject:
-            @"single_block_mlp_int8_per_channel"];
+            r.model == "qwen-image-2.1" ? @"qwen21_decode_mlp_fp16_partition" : @"single_block_mlp_int8_per_channel"];
     if (encoder_hybrid)
         [algorithm_approximations addObject:encoder_approximation_label(r)];
     if (r.model == "ltx-2.5-distilled") {
@@ -251,6 +260,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     return @{
         @"selection_pending" : @(r.execution == "auto"),
         @"requested_execution" : @(r.execution.c_str()),
+        @"prompt_enhance" : @(r.prompt_enhance),
+        @"prompt_enhance_edit_experimental" : @(r.prompt_enhance_edit_experimental),
+        @"prompt_enhancer_path" : @(r.prompt_enhancer_path.c_str()),
         @"schema_version" : @1,
         @"model" : @(r.model.c_str()),
         @"executable" : @(recipe.executable),
@@ -270,7 +282,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                       r.model == "wan2.1-1.3b-qad" ? @"fp16-int8-affine-dit+bf16-umt5+fp32-taehv" :
                       r.model == "z-image-turbo-gguf" ? @"checkpoint_defined_gguf" :
             (!r.quantized_cache.empty() ? @"int8_weight_bf16_activation_streamed" :
-             (hybrid ? @"bf16_gpu+int8_mlp_fp16_io" : @"bf16")),
+             (hybrid ? (r.model == "qwen-image-2.1" ? @"bf16_gpu+fp16_mlp_fp16_io" : @"bf16_gpu+int8_mlp_fp16_io") : @"bf16")),
         @"algorithm_approximations" : algorithm_approximations,
         @"requested_shape" : @[ @(r.width), @(r.height), @(r.frames) ],
         @"decoded_shape" : @[ @(dw), @(dh), @(r.frames) ],
@@ -600,6 +612,21 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"lora_applied_projections"] = @(result.lora_applied_projections);
     if (result.block_residency)
         value[@"block_residency"] = to_dictionary(*result.block_residency);
+    if (!result.enhanced_prompt.empty())
+        value[@"prompt_enhancement"] = @{
+            @"backend": r.prompt_enhance_edit_experimental ? @"native_qwen35_pe_i2i_experimental" : @"native_qwen35_pe_t2i", @"complete": @YES,
+            @"experimental_edit": @(r.prompt_enhance_edit_experimental),
+            @"visual_precision": r.prompt_enhance_edit_experimental ? @"float32" : @"not_used",
+            @"quality_accepted": @NO,
+            @"original_prompt": @(result.original_prompt.c_str()),
+            @"positive_prompt": @(result.enhanced_prompt.c_str()),
+            @"wh_ratio": @(result.enhanced_wh_ratio.c_str()),
+            @"ratio_follow": @(result.enhanced_ratio_follow.c_str()),
+            @"applied_ratio": @NO, // request dimensions remain explicit
+            @"generated_tokens": @(result.prompt_enhance_tokens),
+            @"chunked_prefill": @(result.prompt_enhance_chunked_prefill),
+            @"seconds": @(result.prompt_enhance_seconds)
+        };
     return value;
 }
 } // namespace tc

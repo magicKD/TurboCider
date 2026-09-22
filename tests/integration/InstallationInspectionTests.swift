@@ -27,6 +27,14 @@ import Foundation
             InstallationInspection.inspect(modelID: model, root: root.appendingPathComponent(path))
         }
         try check(inspect().issues.contains { $0.code == "missing_root" }, "Missing directory accepted")
+        try json("qwen/processor/tokenizer.json", ["model": ["type": "BPE"]])
+        for path in LibraryRecipe.all.first(where: { $0.modelID == "qwen-image-2.1" })!.include {
+            try tensor("qwen/" + path)
+        }
+        try check(inspect("qwen-image-2.1", at: "qwen").status == "files_present", "Qwen21 assets rejected")
+        try check(inspect("qwen-image-2.1", at: "qwen").checkedWeightFiles == 3, "Qwen21 inspection skipped a component")
+        try fm.removeItem(at: root.appendingPathComponent("qwen/processor/tokenizer.json"))
+        try check(inspect("qwen-image-2.1", at: "qwen").status == "incomplete", "Missing Qwen21 tokenizer accepted")
         try json("z/tokenizer/tokenizer.json", ["model": ["type": "BPE"]])
         for component in ["transformer", "text_encoder", "vae"] { try tensor("z/\(component)/model.safetensors") }
         try check(inspect().status == "files_present" && inspect().checkedWeightFiles == 3, "Complete Z fixture rejected")

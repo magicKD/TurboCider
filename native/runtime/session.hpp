@@ -69,6 +69,11 @@ struct BlockResidencyMetrics {
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::string selection, backend, precision, checkpoint;
+    std::string original_prompt, enhanced_prompt, enhanced_wh_ratio;
+    std::string enhanced_ratio_follow;
+    double prompt_enhance_seconds = 0;
+    int prompt_enhance_tokens = 0;
+    bool prompt_enhance_chunked_prefill = false;
     Request request;
     ExecutionPlan plan;
     int text_tokens = 0, valid_text_tokens = 0, total_tokens = 0, reference_tokens = 0,

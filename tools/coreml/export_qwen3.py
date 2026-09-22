@@ -1,4 +1,4 @@
-"""Offline Qwen3 gated-MLP Core ML exporter for FLUX, Z-Image, and H3 encoders.
+"""Offline gated-MLP Core ML exporter for Qwen3 encoders and Qwen21 DiT.
 
 The exporter accepts a Qwen3/Qwen3-VL text-encoder directory, a single
 safetensors file, or an index-bound shard set.  BF16/F16 weights are copied
@@ -7,6 +7,8 @@ projection at a time through MLX; model weights are never merged or written
 to the artifact directory.  The resulting source manifest is compiled by the
 normal ``coreml_resources`` cache workflow before native execution.  Use
 ``--tensor-prefix model.language_model`` for H3's Qwen3-VL checkpoint.
+Use ``--tensor-layout qwen21 --hidden 4096 --mlp-width 12288 --layer-count 32``
+with the Comfy DiT checkpoint for experimental Qwen Image 2.1 branches.
 """
 
 import argparse
@@ -28,6 +30,19 @@ from pathlib import Path
 HIDDEN = 2560
 MLP_WIDTH = 9728
 LAYERS = 36
+
+
+def mlp_weights(source, layer, layout, prefix, hidden, width, np, mx):
+    if layout == "qwen21":
+        root = f"transformer_blocks.{layer}.img_mlp"
+        fused = source.tensor(root + ".gate_up.weight", (width * 2, hidden), np, mx)
+        gate, up = np.split(fused, 2, axis=0)
+        down = source.tensor(root + ".out.weight", (hidden, width), np, mx)
+        return gate, up, down
+    root = f"{prefix}.layers.{layer}.mlp"
+    return (source.tensor(root + ".gate_proj.weight", (width, hidden), np, mx),
+            source.tensor(root + ".up_proj.weight", (width, hidden), np, mx),
+            source.tensor(root + ".down_proj.weight", (hidden, width), np, mx))
 
 
 def atom(path, value):
@@ -287,7 +302,7 @@ class QwenSource:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=Path, required=True,
-                        help="Qwen3 text_encoder directory, file, or index")
+                        help="Qwen3 text_encoder directory/index, or single Qwen3/Qwen21 checkpoint")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--bucket", type=int,
                         help="one fixed token bucket")
@@ -304,6 +319,8 @@ def main():
     parser.add_argument("--layer-count", type=int, default=LAYERS)
     parser.add_argument("--tensor-prefix", default="model",
                         help="checkpoint prefix before .layers (for example model.language_model)")
+    parser.add_argument("--tensor-layout", choices=["qwen3", "qwen21"], default="qwen3",
+                        help="qwen21 reads Comfy fused gate_up and img_mlp.out weights")
     parser.add_argument("--variant", choices=["int8_pc", "fp16"], default="int8_pc")
     parser.add_argument("--output-scale", type=float, default=1.0,
                         help="divide the ANE branch before FP16 down projection")
@@ -340,6 +357,8 @@ def main():
         raise ValueError("mlp-width must be a positive multiple of 32 up to 65536")
     if args.layer_count <= 0 or args.layer_count > 64:
         raise ValueError("layer-count must be 1...64")
+    if args.tensor_layout == "qwen21" and (args.hidden != 4096 or args.mlp_width != 12288 or args.layer_count > 32):
+        raise ValueError("Qwen21 DiT requires --hidden 4096 --mlp-width 12288 and at most 32 layers")
     if (not re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*",
                          args.tensor_prefix) or
             args.tensor_prefix.startswith(".") or args.tensor_prefix.endswith(".")):
@@ -369,7 +388,9 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         provenance = source.provenance()
         identity = {
-            "owner": "turbocider.qwen3.encoder.coreml.v1",
+            "owner": ("turbocider.qwen21.dit.coreml.v1" if args.tensor_layout == "qwen21"
+                      else "turbocider.qwen3.encoder.coreml.v1"),
+            **({"tensor_layout": "qwen21"} if args.tensor_layout == "qwen21" else {}),
             **provenance,
             "buckets": buckets,
             "hidden": args.hidden,
@@ -410,10 +431,8 @@ def main():
                     saved = artifact_receipt(destination, receipt)
                     checksums[str(layer)] = saved
                 else:
-                    prefix = f"{args.tensor_prefix}.layers.{layer}.mlp"
-                    gate = source.tensor(prefix + ".gate_proj.weight", (args.mlp_width, args.hidden), np, mx)
-                    up = source.tensor(prefix + ".up_proj.weight", (args.mlp_width, args.hidden), np, mx)
-                    down = source.tensor(prefix + ".down_proj.weight", (args.hidden, args.mlp_width), np, mx)
+                    gate, up, down = mlp_weights(source, layer, args.tensor_layout, args.tensor_prefix,
+                                                args.hidden, args.mlp_width, np, mx)
                     width = args.ane_mlp_width
                     first = np.ascontiguousarray(np.concatenate((gate[:width], up[:width]), axis=0)[:, :, None, None])
                     last = np.ascontiguousarray(down[:, :width][:, :, None, None])

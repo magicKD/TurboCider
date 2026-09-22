@@ -2,12 +2,14 @@
 #include <limits>
 #include <map>
 #include <unordered_map>
+#include <array>
 namespace tc {
 struct Tokenizer::Impl {
     NSDictionary *vocab_;
     NSRegularExpression *pattern_;
     std::unordered_map<std::string, int> ranks_;
     std::vector<std::string> byte_encoder_;
+    std::unordered_map<int, std::string> token_decoder_;
     std::map<std::string, int> special_;
     std::vector<int> encode(const std::string &);
     explicit Impl(const std::filesystem::path &);
@@ -48,19 +50,40 @@ Tokenizer::Impl::Impl(const std::filesystem::path &root) {
     for (NSDictionary *t in config[@"added_tokens"])
         special_ [[t [@"content"] UTF8String]] = [t[@"id"] intValue];
     byte_encoder_.resize(256);
+    std::array<int, 512> byte_decoder;
+    byte_decoder.fill(-1);
     int extra = 0;
     for (int b = 0; b < 256; ++b) {
         int cp = (b >= 33 && b <= 126) || (b >= 161 && b <= 172) || (b >= 174) ? b : 256 + extra++;
         unichar c = cp;
         byte_encoder_[b] = [[NSString stringWithCharacters:&c length:1] UTF8String];
+        byte_decoder[cp] = b;
+    }
+    // Added tokens are literal text and can be outside the base vocabulary.
+    for (const auto &[text, id] : special_) token_decoder_[id] = text;
+    for (NSString *key in vocab_) {
+        int id = [vocab_[key] intValue];
+        require(id >= 0, "negative tokenizer vocabulary ID");
+        if (token_decoder_.count(id)) continue;
+        std::string decoded;
+        for (NSUInteger i = 0; i < key.length; ++i) {
+            unichar cp = [key characterAtIndex:i];
+            require(cp < byte_decoder.size() && byte_decoder[cp] >= 0,
+                    "unsupported non-byte-level tokenizer vocabulary");
+            decoded.push_back(char(byte_decoder[cp]));
+        }
+        token_decoder_.emplace(id, std::move(decoded));
     }
 }
 std::vector<int> Tokenizer::Impl::encode(const std::string &raw) {
-    NSString *s = [@(raw.c_str()) precomposedStringWithCanonicalMapping];
-    std::string text = s.UTF8String;
+    NSString *s = [[NSString alloc] initWithBytes:raw.data() length:raw.size() encoding:NSUTF8StringEncoding];
+    require(s != nil, "tokenizer input is not UTF-8");
+    s = [s precomposedStringWithCanonicalMapping];
+    NSData *normalized = [s dataUsingEncoding:NSUTF8StringEncoding];
+    std::string text(static_cast<const char *>(normalized.bytes), normalized.length);
     std::vector<int> result;
     auto ordinary = [&](const std::string &sub) {
-        NSString *part = @(sub.c_str());
+        NSString *part = [[NSString alloc] initWithBytes:sub.data() length:sub.size() encoding:NSUTF8StringEncoding];
         for (NSTextCheckingResult *m in [pattern_ matchesInString:part
                                                           options:0
                                                             range:NSMakeRange(0, part.length)]) {
@@ -120,6 +143,24 @@ Tokens Tokenizer::raw(const std::string &s) const {
     auto ids = impl_->encode(s);
     require(!ids.empty() && ids.size() <= 512,
             "raw prompt must contain 1...512 tokens");
+    int valid = int(ids.size());
+    return {std::move(ids), valid};
+}
+std::string Tokenizer::decode(const std::vector<int> &ids) const {
+    require(ids.size() <= 262144, "decode sequence exceeds token limit");
+    std::string decoded;
+    for (int id : ids) {
+        auto found = impl_->token_decoder_.find(id);
+        require(found != impl_->token_decoder_.end(), "token ID cannot be decoded");
+        decoded += found->second;
+    }
+    return decoded;
+}
+Tokens Tokenizer::raw_bounded(const std::string &s, int max_tokens) const {
+    require(max_tokens > 0 && max_tokens <= 32768, "invalid extended tokenizer limit");
+    require(!s.empty() && s.size() <= 1024 * 1024, "extended prompt must contain 1 byte...1 MiB");
+    auto ids = impl_->encode(s);
+    require(!ids.empty() && ids.size() <= size_t(max_tokens), "extended prompt exceeds token budget");
     int valid = int(ids.size());
     return {std::move(ids), valid};
 }

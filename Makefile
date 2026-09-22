@@ -3,7 +3,7 @@
 LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3.11))
 PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),python3.11)
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
-.PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
+.PHONY: help setup build build-app build-vision-quality package test test-qwen21 test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -16,6 +16,7 @@ help:
 	@echo 'make test-app                     Run App behavior tests (macOS clipboard access)'
 	@echo 'make test-library                 Verify model library using tiny loopback downloads'
 	@echo 'make test                         Verify repository boundaries and request contracts'
+	@echo 'make test-qwen21                 Run focused Qwen21 native/App contract checks (no inference)'
 	@echo 'make test-model MODEL=/path/to/FLUX.2-klein-4B OUTPUT=/tmp/new-tc-validation'
 	@echo 'make doctor                       Inspect this Mac and native dependencies'
 	@echo 'make h3-quant-cache MODEL=/path/to/transformer OUTPUT=/path/to/cache'
@@ -30,6 +31,7 @@ build-vision-quality:
 package: build
 	@tools/native/package.sh
 test:
+	@"$(PYTHON)" tests/native/test_qwen21_sequence.py
 	@"$(PYTHON)" tests/repository/test_layout.py
 	@"$(PYTHON)" tests/repository/test_independence.py
 	@"$(PYTHON)" tests/repository/test_cpp_boundaries.py
@@ -55,6 +57,13 @@ test:
 	@"$(PYTHON)" -B tests/native/test_vdn_modelscope.py
 	@"$(PYTHON)" -B tests/native/test_vdn_mlx_solve.py
 	@"$(PYTHON)" tests/native/test_inventory.py
+test-qwen21:
+	@"$(PYTHON)" -m unittest discover -s tests/native -p 'test_qwen21_*.py'
+	@"$(PYTHON)" -m unittest discover -s tests/native -p 'test_qwen35_sample_report.py'
+	@"$(PYTHON)" -m unittest discover -s tests/native -p 'test_contract.py' -k qwen21
+	@build/native/qwen21-prompt-rewrite-test
+	@build/native/qwen35-sampling-test
+	@build/native/turbocider-qwen21-workflow-tests
 test-app:
 	@build/native/turbocider-ane-library-tests
 	@build/native/turbocider-studio-variant-tests

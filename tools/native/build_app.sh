@@ -31,6 +31,8 @@ STATE+=(apps/macos/TensorCacheController.swift)
 STATE+=(apps/macos/LTXWorker.swift)
 STATE+=(apps/macos/VideoPreview.swift)
 STATE+=(apps/macos/HistorySelection.swift)
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/Qwen21AppTests.swift -o "$OUT/turbocider-qwen21-app-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/Qwen21WorkflowTests.swift -o "$OUT/turbocider-qwen21-workflow-tests"
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" services/model-library/main.swift -o "$OUT/turbocider-library"
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/LibraryStoreTests.swift -o "$OUT/turbocider-library-store-tests"
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/HubClientTests.swift -o "$OUT/turbocider-hub-tests"

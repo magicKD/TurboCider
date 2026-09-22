@@ -3,6 +3,44 @@
 #import <ImageIO/ImageIO.h>
 #include <cmath>
 namespace tc {
+Tensor load_rgba_image_tensor(const std::filesystem::path &path) {
+    CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:@(path.c_str())], nullptr);
+    require(source != nullptr, "cannot read image: " + path.string());
+    NSDictionary *properties = CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr));
+    int w = [properties[(__bridge NSString*)kCGImagePropertyPixelWidth] intValue];
+    int h = [properties[(__bridge NSString*)kCGImagePropertyPixelHeight] intValue];
+    if (w <= 0 || h <= 0 || uint64_t(w) * h > 100000000) {
+        CFRelease(source);
+        throw std::invalid_argument("image dimensions exceed import limit");
+    }
+    int orientation = [properties[(__bridge NSString*)kCGImagePropertyOrientation] intValue];
+    // Thumbnail transforms can quantize premultiplied 8-bit RGB before our
+    // float conversion. Decode the full image and apply orientation afterward.
+    CGImageRef image = CGImageSourceCreateImageAtIndex(source, 0, nullptr);
+    CFRelease(source);
+    require(image != nullptr, "RGBA image decode failed");
+    w = int(CGImageGetWidth(image)); h = int(CGImageGetHeight(image));
+    std::vector<float> rgba(size_t(w) * h * 4, 0.f);
+    CGColorSpaceRef color = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef context = CGBitmapContextCreate(rgba.data(), w, h, 32, size_t(w) * 16, color,
+        CGBitmapInfo(kCGImageAlphaPremultipliedLast) | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+    CGColorSpaceRelease(color);
+    if (!context) { CGImageRelease(image); throw std::runtime_error("RGBA bitmap allocation failed"); }
+    CGContextSetBlendMode(context, kCGBlendModeCopy);
+    CGContextDrawImage(context, CGRectMake(0, 0, w, h), image);
+    CGContextRelease(context); CGImageRelease(image);
+    for (size_t i = 0; i < size_t(w) * h; ++i) {
+        float alpha = std::clamp(rgba[i * 4 + 3], 0.f, 1.f);
+        for (int c = 0; c < 3; ++c)
+            rgba[i * 4 + c] = alpha > 0.f ? std::clamp(rgba[i * 4 + c] / alpha, 0.f, 1.f) : 0.f;
+        rgba[i * 4 + 3] = alpha;
+    }
+    auto pixels = Tensor(rgba.data(), {1, h, w, 4}, mx::float32);
+    if (orientation >= 5 && orientation <= 8) pixels = mx::transpose(pixels, {0, 2, 1, 3});
+    if (orientation == 2 || orientation == 3 || orientation == 6 || orientation == 7) pixels = mx::flip(pixels, 2);
+    if (orientation == 3 || orientation == 4 || orientation == 7 || orientation == 8) pixels = mx::flip(pixels, 1);
+    return pixels;
+}
 struct RGBImage {int width,height;std::vector<uint8_t> bytes;};
 static RGBImage read_rgb(const std::filesystem::path& path) {
     CGImageSourceRef source=CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:@(path.c_str())],nullptr);

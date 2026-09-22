@@ -28,6 +28,10 @@ struct LibraryRecipe: Codable, Sendable {
     var preparation: String
     var supplements: [LibrarySupplement] = []
     static let all: [LibraryRecipe] = [
+        .init(modelID: "qwen-image-2.1", repository: "Comfy-Org/Qwen-Image-2.1",
+              include: ["diffusion_models/qwen_image_2.1_bf16.safetensors", "text_encoders/qwen3vl_8b_bf16.safetensors", "vae/qwen_image_2.1_vae_bf16.safetensors"],
+              preparation: "实验性原生 GPU / RGBA 路径；编辑画质仍在验证，尚无 ANE 加速。模型条款请在来源页面确认；Qwen 原始发布附研究用途许可。",
+              supplements: [.init(repository: "Qwen/Qwen-Image-2.1", include: ["processor/tokenizer.json"])]),
         .init(modelID: "z-image-turbo", repository: "Tongyi-MAI/Z-Image-Turbo",
               include: ["model_index.json", "scheduler/", "transformer/", "vae/", "text_encoder/", "tokenizer/"],
               preparation: "完整 Diffusers 目录可直接加载；可选择兼容 Qwen3-4B 文本组件避免重复下载。"),

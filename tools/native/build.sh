@@ -50,12 +50,29 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
  native/models/z_image/gguf.cpp
  native/models/z_image/z_image.cpp
+ native/models/qwen21/transformer.cpp
+ native/models/qwen21/hybrid.cpp
+ native/models/qwen21/sequence.cpp
+ native/models/qwen21/text_encoder.cpp
+ native/models/qwen21/vae.cpp
+ native/models/qwen21/vision.cpp
+ native/models/qwen21/conditioning.cpp
+ native/models/qwen21/pe_processor.cpp
+ native/models/qwen21/pe_conditioning.cpp
+ native/platform/apple/qwen21_prompt_rewrite.mm
+ native/models/qwen21/pe_delta.cpp
+ native/models/qwen21/pe_language.cpp
+ native/models/qwen21/pe_sampling.cpp
+ native/models/qwen21/pe_generation.cpp
+ native/models/qwen21/pipeline.cpp
+ native/models/qwen21_module.cpp
  native/platform/apple/z_image_weight_stream.mm
  native/models/llada/llada.cpp native/models/llada/llada_text.cpp
  native/models/llada/llada_transformer.cpp
  native/models/flux2/pipeline.cpp native/models/flux2/flux_text.cpp native/models/flux2/flux_transformer.cpp
  native/models/flux2/flux_vae.cpp native/models/flux2/flux_encode.cpp
  native/media/image.mm native/media/input.mm native/media/video.mm native/media/audio.mm
+ native/media/pe_image.mm
 )
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories
@@ -148,6 +165,33 @@ fi
 "$CXX" "${COMMON[@]}" tools/native/ltx_mlx_block_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/ltx-mlx-block-probe"
 "$CXX" "${COMMON[@]}" tools/native/ltx_mlx_model_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/ltx-mlx-model-probe"
 printf 'Built %s\n' "$OUT/turbocider"
+"$CXX" "${COMMON[@]}" tools/native/qwen21_transformer_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-transformer-probe"
+# This probe catches tc::Cancelled across the dylib boundary; its RTTI must
+# have the same visibility as the native library's exception type.
+"$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen21_text_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-text-probe"
+"$CXX" "${COMMON[@]}" tools/native/qwen21_vae_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-vae-probe"
+if [[ "$EXPERIMENTAL_PROBES" == "1" ]]; then
+ "$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen21_session_probe.mm -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-session-probe"
+ "$CXX" "${COMMON[@]}" tools/native/qwen21_mlp_hybrid_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-mlp-hybrid-probe"
+"$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen35_multimodal_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -framework Foundation -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen35-multimodal-probe"
+"$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen35_multimodal_sample_probe.mm -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -framework Foundation -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen35-multimodal-sample-probe"
+"$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen35_edit_features_probe.mm -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -framework Foundation -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen35-edit-features-probe"
+fi
+"$CXX" "${COMMON[@]}" tools/native/qwen21_generate.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-generate"
+"$CXX" "${COMMON[@]}" tools/native/qwen21_vision_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-vision-probe"
+"$CXX" "${COMMON[@]}" tools/native/qwen21_conditioning_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-conditioning-probe"
+"$CXX" "${COMMON[@]}" tests/native/qwen21_media_schedule_test.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-media-schedule-test"
+"$CXX" "${COMMON[@]}" tests/native/qwen21_hybrid_merge_test.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-hybrid-merge-test"
+"$CXX" "${COMMON[@]}" tests/native/qwen21_prompt_rewrite_test.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen21-prompt-rewrite-test"
+"$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen35_delta_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen35-delta-probe"
+"$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen35_language_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen35-language-probe"
+"$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen35_vision_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -framework Foundation -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen35-vision-probe"
+"$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen35_image_decode_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -framework Foundation -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen35-image-decode-probe"
+"$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen35_tokenizer_probe.mm -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/qwen35-tokenizer-probe"
+"$CXX" "${COMMON[@]}" -fvisibility=default tools/native/qwen35_pe_sample_probe.mm -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -framework Foundation -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen35-pe-sample-probe"
+"$CXX" "${COMMON[@]}" -fvisibility=default tests/native/qwen35_sampling_test.cpp -L"$OUT" -lturbocider -Wl,-rpath,@executable_path -o "$OUT/qwen35-sampling-test"
+"$CXX" "${COMMON[@]}" -fvisibility=default tests/native/qwen35_generation_test.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -framework Foundation -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen35-generation-test"
+"$CXX" "${COMMON[@]}" -fvisibility=default tests/native/qwen35_conditioning_test.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen35-conditioning-test"
 if [[ "${TURBOCIDER_NATIVE_ONLY:-0}" == "1" ]]; then
  exit 0
 fi

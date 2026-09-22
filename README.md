@@ -12,6 +12,9 @@ Create images and videos in a native SwiftUI studio, automate jobs with the CLI,
 
 ## App preview
 
+Qwen-Image-2.1 native App/CLI support and validation boundaries:
+[Qwen-Image-2.1 guide](docs/public/QWEN_IMAGE_21.md).
+
 ![TurboCider macOS App](assets/app/app.png)
 
 ## What makes it different

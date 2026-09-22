@@ -25,6 +25,13 @@ struct Request {
     std::string ltx_backend = "auto";
     std::string profile_identity;
     std::string model_variant = "auto";
+    // Optional native Qwen3.5 PE-T2I prompt enhancer installation. Empty
+    // keeps the normal Comfy Qwen21 text path; PE edit/vision is not implied.
+    std::string prompt_enhancer_path;
+    bool prompt_enhance = false;
+    // Explicit opt-in only: native PE-I2I with experimental FP32 vision.
+    // Does not qualify BF16 PE vision or edit-image quality.
+    bool prompt_enhance_edit_experimental = false;
     std::string lora_strategy = "auto";
     bool vsa = false;
     // Preserve the JSON decimal through top-k computation. A float-rounded

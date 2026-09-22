@@ -3,8 +3,8 @@
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 namespace tc {
-void save_png(const Tensor&pixels,const std::filesystem::path&output){
- require(pixels.ndim()==4&&pixels.shape(0)==1&&pixels.shape(3)==3,"expected NHWC RGB pixels");
+static void save_png_channels(const Tensor&pixels,const std::filesystem::path&output,int channels){
+ require(pixels.ndim()==4&&pixels.shape(0)==1&&pixels.shape(3)==channels,"unexpected PNG channel count");
  // Match the reference export: denormalize in the VAE dtype, then
  // convert to FP32 for byte quantization (BF16 rounding is observable).
  auto unit=mx::clip(pixels/Tensor(2.f,pixels.dtype())+Tensor(.5f,pixels.dtype()),Tensor(0.f,pixels.dtype()),Tensor(1.f,pixels.dtype()));
@@ -13,7 +13,8 @@ void save_png(const Tensor&pixels,const std::filesystem::path&output){
  auto tmp=output.string()+"."+std::string(NSUUID.UUID.UUIDString.UTF8String)+".tmp";
  CGDataProviderRef provider=CGDataProviderCreateWithData(nullptr,bytes.data<uint8_t>(),bytes.size(),nullptr);
  CGColorSpaceRef color=CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
- CGImageRef image=CGImageCreate(pixels.shape(2),pixels.shape(1),8,24,pixels.shape(2)*3,color,kCGBitmapByteOrderDefault,provider,nullptr,false,kCGRenderingIntentDefault);
+ CGBitmapInfo bitmap=channels==4?CGBitmapInfo(kCGImageAlphaLast):kCGBitmapByteOrderDefault;
+ CGImageRef image=CGImageCreate(pixels.shape(2),pixels.shape(1),8,channels*8,pixels.shape(2)*channels,color,bitmap,provider,nullptr,false,kCGRenderingIntentDefault);
  require(image!=nullptr,"could not create RGB image");
  CGImageDestinationRef dest=CGImageDestinationCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:@(tmp.c_str())],(__bridge CFStringRef)UTTypePNG.identifier,1,nullptr);
  bool ok=false;if(dest){CGImageDestinationAddImage(dest,image,nullptr);ok=CGImageDestinationFinalize(dest);CFRelease(dest);}
@@ -21,4 +22,6 @@ void save_png(const Tensor&pixels,const std::filesystem::path&output){
  if(!ok){std::filesystem::remove(tmp);throw std::runtime_error("PNG encoding failed");}
  try{std::filesystem::rename(tmp,output);}catch(...){std::filesystem::remove(tmp);throw;}
 }
+void save_png(const Tensor&pixels,const std::filesystem::path&output){save_png_channels(pixels,output,3);}
+void save_rgba_png(const Tensor&pixels,const std::filesystem::path&output){save_png_channels(pixels,output,4);}
 }

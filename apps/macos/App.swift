@@ -109,6 +109,7 @@ struct StudioView: View {
     @State private var dropping = false
     @State private var compareOriginal = false
     @State private var submitting = false
+    @State private var annotationAsset: StudioAsset?
     private var selectedJob: NativeJob? { store.jobs.first { $0.id == selected && $0.hasOutput } ?? store.jobs.first { $0.hasOutput } }
     private var outputJobs: [NativeJob] { store.jobs.filter { $0.hasOutput } }
     private var outputIDs: [UUID] { outputJobs.map(\.id) }
@@ -168,6 +169,7 @@ struct StudioView: View {
         .onDisappear { studio.save() }
         .onChange(of: store.deletableJobIDs) { _, ids in selectedTasks.formIntersection(ids) }
         .onChange(of: outputIDs) { _, ids in resultSelection.retain(Set(ids)) }
+        .sheet(item: $annotationAsset) { asset in Qwen21AnnotationEditor(asset: asset, studio: studio) }
         .task { library.refresh(studio: studio, migrate: true) }
         .task {
             while !Task.isCancelled {
@@ -265,7 +267,7 @@ struct StudioView: View {
                 if studio.canUndoAssets { Button { studio.undoAssetChange() } label: { Image(systemName: "arrow.uturn.backward") }.help("撤销素材修改") }
                 Spacer()
                 if studio.importing { ProgressView().controlSize(.small) }
-                Text("\(studio.draft.assets.count) / 8").font(.caption).foregroundStyle(.secondary)
+                Text("\(studio.draft.assets.count) / \(studio.imageImportLimit)").font(.caption).foregroundStyle(.secondary)
             }.disabled(studio.importing)
             if !studio.draft.assets.isEmpty { inputStrip }
             if studio.draft.assets.count > studio.draft.activeAssets.count {
@@ -274,6 +276,49 @@ struct StudioView: View {
             }
             PromptEditor(text: $studio.draft.prompt) { Task { await studio.pasteImage() } }
                 .frame(height: 72).accessibilityIdentifier("prompt")
+            if studio.draft.modelID == "qwen-image-2.1" {
+                HStack {
+                    Menu("替换为 Qwen 2.1 示例提示词…") {
+                        ForEach(Qwen21PromptExample.allCases, id: \.self) { example in
+                            Button(example.title) { studio.applyQwen21Example(example) }
+                                .disabled(studio.draft.assets.count < example.referenceCount)
+                        }
+                    }.disabled(studio.importing || store.busy || submitting)
+                    Text("支持透明 PNG；蒙版作为有序参考图输入。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Text("蒙版示例：参考 1 为原图，参考 2 为白色编辑区 / 黑色保留区蒙版。圈选示例直接使用带标注的图片。示例会替换提示词与参数，不是自动 prompt rewriting。")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Toggle("原生 PE 提示词增强（实验性）", isOn: $studio.draft.promptEnhance)
+                    .disabled(store.busy || submitting)
+                    .accessibilityIdentifier("qwen21PromptEnhance")
+                if studio.draft.promptEnhance {
+                    if studio.draft.operation == "image.edit" {
+                        Toggle("允许 PE-I2I FP32 视觉（未通过编辑质量验收）",
+                               isOn: $studio.draft.promptEnhanceEditExperimental)
+                            .disabled(store.busy || submitting)
+                            .accessibilityIdentifier("qwen21PromptEnhanceEditExperimental")
+                        Text("默认关闭。使用 PE-I2I 模型及 8 位参考图；PNG 已完成字节对齐，JPEG 解码仍有差异。编辑可能改变未指定区域或细节。")
+                            .font(.caption2).foregroundStyle(.orange)
+                    }
+                    HStack {
+                        TextField(studio.draft.operation == "image.edit" ? "PE-I2I 安装目录" : "PE-T2I 安装目录",
+                                  text: $studio.draft.promptEnhancerPath)
+                        Button("选择…") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseDirectories = true; panel.canChooseFiles = false
+                            panel.allowsMultipleSelection = false
+                            if panel.runModal() == .OK, let url = panel.url {
+                                studio.draft.promptEnhancerPath = url.path
+                            }
+                        }
+                    }.disabled(store.busy || submitting)
+                    Text(studio.draft.operation == "image.edit"
+                         ? "无 Python 推理；实验性 PE-I2I 可能耗时数十分钟。保留下方显式画布尺寸，不自动采用 PE 推荐比例。"
+                         : "无 Python 推理；当前增强可能耗时数分钟。保留下方显式画布尺寸，不自动采用 PE 推荐比例。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
             PromptCapacityView(studio: studio, busy: store.busy || submitting)
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -302,6 +347,10 @@ struct StudioView: View {
                     HStack(spacing: 4) {
                         Text(["image.transform", "video.image"].contains(studio.draft.operation) && studio.draft.initImageID == asset.id ? "原图" : "参考 \(index + 1)").font(.caption2)
                         Menu {
+                            if studio.draft.modelID == "qwen-image-2.1" {
+                                Button("圈选 / 涂抹 / 独立蒙版…") { annotationAsset = asset }
+                                    .disabled(studio.importing || store.busy || submitting)
+                            }
                             Button("设为原图") {
                                 let operation = studio.draft.modelID == "ltx-2.5-distilled" ? "video.image" : "image.transform"
                                 studio.changeOperation(operation); studio.draft.initImageID = asset.id
@@ -374,6 +423,18 @@ struct StudioView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
                 HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in Button("\(size)") { studio.draft.width = size; studio.draft.height = size }.font(.caption) } }
+                if studio.draft.modelID == "qwen-image-2.1" {
+                    Menu("官方 2K 比例（未完成验证）") {
+                        ForEach(Qwen21CanvasPreset.recommended) { preset in
+                            Button(preset.title) {
+                                studio.draft.width = preset.width
+                                studio.draft.height = preset.height
+                            }
+                        }
+                    }.accessibilityIdentifier("qwen21CanvasPresets")
+                    Text("当前回归测试聚焦 512 × 512。2K 内存占用高且未完成质量验证；实验性 GPU + ANE 仅支持 512 × 512。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             }
             if model?.isVideo == true {
                 Divider()

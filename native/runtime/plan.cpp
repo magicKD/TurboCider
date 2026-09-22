@@ -69,8 +69,9 @@ ExecutionPlan make_plan(const Request &requested) {
         r.lora_strategy = lora_strategy;
     auto recipe = model_recipe(r.model);
     validate_recipe(recipe);
-    require(r.width >= 64 && r.height >= 64 && r.width <= 2048 && r.height <= 2048,
-            "dimensions must be 64...2048");
+    const int max_dimension = r.model == "qwen-image-2.1" ? 4096 : 2048;
+    require(r.width >= 64 && r.height >= 64 && r.width <= max_dimension && r.height <= max_dimension,
+            "dimensions must be 64..." + std::to_string(max_dimension));
     require(r.steps >= 1 && r.steps <= 50, "steps must be 1...50");
     require(r.execution == "gpu" || r.execution == "auto" || r.execution == "gpu_ane",
             "unknown execution mode");
@@ -81,6 +82,19 @@ ExecutionPlan make_plan(const Request &requested) {
         require(!r.ane_manifest.empty(), "gpu_ane requires an explicit ANE manifest or profile");
     }
     module_for(r.model).validate(r);
+    require((!r.prompt_enhance && !r.prompt_enhance_edit_experimental && r.prompt_enhancer_path.empty()) || r.model == "qwen-image-2.1",
+            "native prompt enhancement is currently supported only for Qwen21");
+    require(!r.prompt_enhance_edit_experimental ||
+                (r.prompt_enhance && r.operation == "image.edit" && !r.inputs.empty()),
+            "experimental PE-I2I requires prompt_enhance and image.edit references");
+    if (r.prompt_enhance) {
+        require((r.operation == "image.generate" && r.inputs.empty()) || r.prompt_enhance_edit_experimental,
+                "Qwen21 PE edit requires explicit prompt_enhance_edit_experimental=true (FP32 vision; not quality-qualified)");
+        require(!r.prompt_enhancer_path.empty(), "prompt_enhance requires prompt_enhancer_path");
+        recipe.stages.insert(recipe.stages.begin(), {"prompt_enhance", {}});
+        for (auto &stage : recipe.stages)
+            if (stage.id == "text_encode") stage.dependencies.push_back("prompt_enhance");
+    }
     if (r.model == "ltx-2.5-distilled" && !r.audio) {
         recipe.stages.erase(std::remove_if(recipe.stages.begin(), recipe.stages.end(),
                                            [](const Stage &stage) {
@@ -95,6 +109,14 @@ ExecutionPlan make_plan(const Request &requested) {
         for (auto &stage : recipe.stages)
             if (stage.id == "denoise")
                 stage.dependencies.push_back("image_encode");
+    }
+    if (r.model == "qwen-image-2.1" && !r.inputs.empty()) {
+        recipe.stages.insert(recipe.stages.begin(), {"vision_encode", {}});
+        recipe.stages.insert(recipe.stages.begin() + 2, {"reference_vae_encode", {}});
+        for (auto &stage : recipe.stages) {
+            if (stage.id == "text_encode") stage.dependencies.push_back("vision_encode");
+            if (stage.id == "denoise") stage.dependencies.push_back("reference_vae_encode");
+        }
     }
     if (r.model == "ltx-2.5-distilled" && r.operation == "video.image") {
         recipe.stages.insert(recipe.stages.begin(), {"first_frame_vae_encode", {}});
@@ -137,6 +159,22 @@ ExecutionPlan make_plan(const Request &requested) {
         // this remains a heuristic, not an allocator-enforced limit.
         plan.memory_estimate_bytes = (12ull << 30) +
             uint64_t(r.width) * r.height * r.frames * (hybrid ? 1024 : 1408);
+    else if (r.model == "qwen-image-2.1") {
+        // Each approximately 1024-square reference contributes 4096 latent
+        // tokens. Its BF16 prefix K/V alone occupies 2 GiB across 32 layers
+        // (2 * 32 * 4096 tokens * 4096 hidden * 2 bytes). Add 512 MiB per
+        // reference for working tensors, beyond the canvas/base allowance.
+        // The previous 512-MiB-only term underestimated the measured ten-ref
+        // peak (44,596,678,034 MLX bytes at 512-square) by over 13 GiB.
+        // Still a heuristic: input aspect ratios and allocator lifetimes vary.
+        constexpr uint64_t reference_prefix_bytes = 2ull * 32 * 4096 * 4096 * 2;
+        // A 2048-square one-step probe peaked at 62,259,019,410 MLX bytes;
+        // include the observed VAE/DiT working-set growth so high-resolution
+        // plans do not under-report unified-memory pressure. This is not a cap.
+        plan.memory_estimate_bytes = ((r.residency == "resident" ? 40ull : 22ull) << 30) +
+                                     (hybrid ? (10ull << 30) : 0) + uint64_t(r.width) * r.height * 10240 +
+                                     uint64_t(r.inputs.size()) * (reference_prefix_bytes + (512ull << 20));
+    }
     else if (r.model == "z-image-turbo")
         plan.memory_estimate_bytes = r.residency == "streamed"
             ? std::max<uint64_t>(10ull << 30, r.memory_budget_bytes)
