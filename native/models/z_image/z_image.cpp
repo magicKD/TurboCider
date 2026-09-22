@@ -20,6 +20,8 @@
 
 namespace tc {
 
+using ZImageGpuGraph = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
+
 class ZImageExactStream {
   public:
     ZImageExactStream(const std::filesystem::path &checkpoint,
@@ -42,6 +44,7 @@ class ZImageExactStream {
 
     void run_pass(uint32_t pass, uint32_t step, Tensor &unified,
                   const Tensor &freqs, const Tensor &temb);
+    void bind_hybrid(HybridSession *, ZImageGpuGraph *, bool compile_segments);
     void finish();
     void enable_receipt(streaming::ExecutionReceiptOptions);
     std::shared_ptr<const streaming::ActualStageReceipt> receipt() const;
@@ -567,6 +570,10 @@ Tensor z_hybrid_input_range(const Tensor &x, const Weights &w,
 
 Tensor z_hybrid_gpu_suffix(const Tensor &x, const Weights &w,
                            const std::string &prefix, int start, int end) {
+    // Compact streamed weights already exclude the ANE prefix.
+    const int rows = w.at(prefix + ".w1.weight").shape(0);
+    require(rows == end || rows == end - start, "invalid Z-Image GPU suffix width");
+    if (rows != end) { end = rows; start = 0; }
     auto gate = z_hybrid_output_range(x, w, prefix + ".w1", start, end);
     auto up = z_hybrid_output_range(x, w, prefix + ".w3", start, end);
     return z_hybrid_input_range(silu(gate) * up, w, prefix + ".w2", end,
@@ -1096,7 +1103,10 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
     uint32_t slot_count_ = 0;
     const Event &event_;
     std::atomic<bool> &cancelled_;
-    std::array<Job, 2> jobs_{};
+    std::vector<Job> jobs_;
+    HybridSession *hybrid_ = nullptr;
+    ZImageGpuGraph *gpu_graph_ = nullptr;
+    bool compile_segments_ = false;
     Weights current_;
     Tensor *unified_ = nullptr;
     const Tensor *freqs_ = nullptr;
@@ -1116,13 +1126,19 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
                        const Event &event, std::atomic<bool> &cancelled)
         : source_(source), prefix_(prefix), slot_count_(slot_count),
           event_(event),
-          cancelled_(cancelled) {
-        require(slot_count_ >= 1 && slot_count_ <= jobs_.size(),
-                "Z-Image exact adapter requires one or two slots");
+          cancelled_(cancelled), jobs_(slot_count) {
+        require(slot_count_ >= 1 && slot_count_ <= 3,
+                "Z-Image exact adapter requires one to three slots");
         for (uint32_t slot = 0; slot < jobs_.size(); ++slot) {
             jobs_[slot].owner = this;
             jobs_[slot].slot = slot;
         }
+    }
+
+    void bind_hybrid(HybridSession *hybrid, ZImageGpuGraph *graph, bool compile_segments) {
+        hybrid_ = hybrid;
+        gpu_graph_ = graph;
+        compile_segments_ = compile_segments;
     }
 
     void bind_pass(uint32_t pass, uint32_t step, Tensor &unified,
@@ -1150,7 +1166,7 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
 
     void create_pool(const streaming::PoolLayout &pool) override {
         require(pool.id == 0 && pool.slots.size() == slot_count_,
-                "Z-Image exact adapter requires one compiled K1/K2 pool");
+                "Z-Image exact adapter requires one compiled slot pool");
         const uint64_t capacity = pool.slots.front().capacity_bytes;
         for (const auto &slot : pool.slots)
             require(slot.capacity_bytes == capacity,
@@ -1197,7 +1213,7 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
             *unified_ = z_block(
                 *unified_, source_.prefix_weights(block),
                 "layers." + std::to_string(block), *freqs_, *temb_,
-                nullptr, int(2 + block), nullptr);
+                hybrid_, int(2 + block), gpu_graph_, compile_segments_);
             mx::eval(*unified_);
             checkpoint(cancelled_);
         }
@@ -1231,7 +1247,7 @@ class ZImageExactAdapter final : public streaming::ModelSlotAdapter {
         event_("z_image_denoise_block", int(block), 30);
         *unified_ = z_block(
             *unified_, current_, "layers." + std::to_string(block),
-            *freqs_, *temb_, nullptr, int(2 + block), nullptr);
+            *freqs_, *temb_, hybrid_, int(2 + block), gpu_graph_, compile_segments_);
         // The executor has already started the following vacant slot's fill
         // after claiming this content. This synchronous completion therefore
         // matches the specialized pager's ordering without an extra
@@ -1282,7 +1298,7 @@ struct ZImageExactStream::Impl {
          const Event &event, std::atomic<bool> &cancelled,
          uint64_t request_generation)
         : plan(checkpoint.string(), config, workload),
-          source(checkpoint, plan.layout().stages.front().prefix,
+          source(plan.metadata(), plan.layout().stages.front().prefix,
                  plan.layout().stages.front().slot_count, budget,
                  activation_reserve, fixed, event, cancelled),
           adapter(std::make_shared<ZImageExactAdapter>(
@@ -1302,7 +1318,7 @@ struct ZImageExactStream::Impl {
          const Event &event, std::atomic<bool> &cancelled,
          uint64_t request_generation)
         : plan(std::move(lease), config, workload),
-          source(plan.lease_ptr(), plan.layout().stages.front().prefix,
+          source(plan.metadata(), plan.layout().stages.front().prefix,
                  plan.layout().stages.front().slot_count, budget,
                  activation_reserve, fixed, event, cancelled),
           adapter(std::make_shared<ZImageExactAdapter>(
@@ -1356,6 +1372,12 @@ void ZImageExactStream::run_pass(
         throw;
     }
     impl_->adapter->unbind_pass();
+}
+
+void ZImageExactStream::bind_hybrid(HybridSession *hybrid, ZImageGpuGraph *graph,
+                                   bool compile_segments) {
+    require(impl_ && !impl_->finished, "Z-Image exact executor is unavailable");
+    impl_->adapter->bind_hybrid(hybrid, graph, compile_segments);
 }
 
 void ZImageExactStream::finish() {
@@ -1572,6 +1594,10 @@ ZImage::compile_public_streaming(
     auto plan = std::make_shared<z_image::StreamingPlanView>(
         value_probe->lease_ptr(), record.plan.canonical_config,
         descriptor_workload);
+    // The public BF16 identity must not accept a renamed quantized checkpoint.
+    // INT8 remains on the private/manual candidate route until separately qualified.
+    require(!plan->metadata().convrot(),
+            "streaming_route_unsupported: Z-Image public card requires BF16 tensor metadata");
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
     if (!record.plan.layout_digest.empty())
 #endif
@@ -1938,7 +1964,12 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         exact_stream_.reset();
         weight_stream_.reset();
         transformer_.clear();
-        if (tight_exact)
+        if (prompt_changed && optimizations_.z_image_memory_lifecycle) {
+            hybrid_.reset();
+            hybrid_gpu_graph_ = {};
+            hybrid_gpu_mlp_start_ = -1;
+        }
+        if (tight_exact || (prompt_changed && constrained_memory))
             vae_.clear();
         mx::clear_cache();
         stream_configuration_.clear();
@@ -1977,19 +2008,20 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     if (plan.request.execution != r.execution || plan.request.compile_gpu != r.compile_gpu)
         plan = make_plan(r);
     if (exact_streaming) {
-        require(!load_only && r.execution == "gpu" && !hybrid_ &&
-                    active_loras_.empty() && !gguf_transformer_ &&
-                    !convrot_transformer_ && !nvfp4_transformer_ &&
-                    !diffusers_layout_,
+        require(!load_only && (r.execution == "gpu" || r.execution == "gpu_ane") &&
+                    active_loras_.empty() && !gguf_transformer_ && !nvfp4_transformer_ &&
+                    !diffusers_layout_ && !std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE"),
                 "streaming_route_unsupported: the Z-Image exact candidate "
-                "supports generated Comfy BF16 GPU requests without LoRA, "
-                "ANE, quantization, Diffusers shards, or prepare-only mode");
+                "supports generated Comfy BF16/INT8 ConvRot GPU or GPU+ANE requests "
+                "without LoRA, full-MLP validation, Diffusers shards, or prepare-only mode");
         require(exact_stream_generation_ != UINT64_MAX,
                 "Z-Image exact request generation overflow");
         ++exact_stream_generation_;
         const z_image::StreamingWorkload workload{
             uint32_t(r.width), uint32_t(r.height), uint32_t(caption_rows),
-            uint32_t(r.steps)};
+            uint32_t(r.steps),
+            hybrid_ && optimizations_.z_image_suffix_streaming ? uint32_t(hybrid_->ane_mlp_end) : 0u,
+            std::getenv("TURBOCIDER_Z_CONVROT_FP32_SCALES") != nullptr};
         if (public_stream_lease_) {
             exact_stream_ = std::make_unique<ZImageExactStream>(
                 public_stream_lease_, r.streaming, workload, budget, reserve,
@@ -2003,6 +2035,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 transformer_path_, r.streaming, workload, budget, reserve,
                 transformer_, event, cancelled, exact_stream_generation_);
         }
+        exact_stream_->bind_hybrid(hybrid_.get(),
+            hybrid_gpu_graph_ ? &hybrid_gpu_graph_ : nullptr, optimizations_.z_image_hybrid_segments);
     } else if (legacy_streamed) {
         require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !diffusers_layout_,
                 "Z-Image streaming currently requires the Comfy BF16 checkpoint");
@@ -2116,8 +2150,10 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         runtime.pass_transition = "reload";
         runtime.retention = "request";
         runtime.reader_revision = 1;
-        runtime.weight_format = "comfy-bf16-single-file";
-        runtime.kernel_revision = kZImageKernelRevision;
+        runtime.weight_format = convrot_transformer_
+            ? "comfy-int8-convrot-single-file" : "comfy-bf16-single-file";
+        runtime.kernel_revision = convrot_transformer_
+            ? "z-image-convrot-packed-q8-v1" : kZImageKernelRevision;
         runtime.conditioning_recipe = "qwen3-simple-flow-shift3-v1";
         runtime.upsample_boundary = (public_stream_lease_ || tight_exact)
             ? "no-upsample;denoiser-pool-drained-before-vae"

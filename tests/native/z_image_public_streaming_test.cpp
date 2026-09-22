@@ -60,7 +60,7 @@ void rejects(Function &&function, const char *part) {
 } // namespace
 
 int main(int argc, char **argv) {
-    assert(argc == 2);
+    assert(argc == 3);
     try {
         tc::ZImage session(argv[1]);
         const auto base_request = request();
@@ -104,6 +104,17 @@ int main(int argc, char **argv) {
         assert(snapshot->layout().digest == record.plan.layout_digest);
         assert(snapshot->layout().materializations_complete);
         snapshot->revalidate_source();
+
+        // A checkpoint filename is not a weight-format capability. A renamed
+        // ConvRot source must never enter the BF16 public receipt/catalog path.
+        tc::ZImage renamed(argv[2]);
+        const auto quantized_probe = renamed.probe_public_streaming(input);
+        auto quantized_record = record;
+        quantized_record.source = quantized_probe->source_identity();
+        quantized_record.workload = quantized_probe->workload_identity();
+        quantized_record.runtime = quantized_probe->runtime_identity();
+        rejects([&] { renamed.compile_public_streaming(quantized_probe, quantized_record); },
+                "requires BF16 tensor metadata");
 
         auto wrong = record;
         wrong.source.model_variant += "-wrong";

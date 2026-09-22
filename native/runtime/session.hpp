@@ -271,6 +271,9 @@ struct ModelModule {
     std::function<void(const Request &)> validate;
     std::function<std::unique_ptr<ModelSession>(const std::filesystem::path &)> create;
     std::function<ModelDescriptor()> describe;
+    // Optional model-owned validation for private/manual streaming routes.
+    // Absent means GPU-only. Public selectors retain their separate validator.
+    std::function<void(const Request &)> validate_manual_streaming_execution = {};
 };
 const ModelModule &module_for(const std::string &);
 std::vector<ModelDescriptor> describe_modules();
