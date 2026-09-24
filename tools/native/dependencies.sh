@@ -1,6 +1,5 @@
 # Sourced after changing to the repository root. Explicit overrides are optional.
 if [ -z "${MLX_ROOT:-}" ]; then
-  # 动态查找 Python 解释器，支持不同的环境（uv/conda/pyenv/venv）
   PYTHON_CMD=""
   if [ -x "$PWD/.venv/bin/python3" ]; then
     PYTHON_CMD="$PWD/.venv/bin/python3"
