@@ -9,8 +9,9 @@ namespace tc {
 
 // Opt-in host wall-clock diagnostics. "overlap" retains concurrent MLP
 // submission; "serial" isolates the two branches; "gpu_split" measures the
-// same unfused pre/post path with a compiled full-width GPU MLP. Extra evals
-// affect scheduling, so always compare against an uninstrumented control.
+// same unfused pre/post path with a compiled full-width GPU MLP; "gpu_detail"
+// inserts per-operation completion boundaries in the dense GPU block. Extra
+// evals affect scheduling, so always compare against an uninstrumented control.
 struct ZProfileRequest;
 inline thread_local ZProfileRequest *z_active_profile = nullptr;
 
@@ -28,11 +29,13 @@ struct ZProfileRequest {
         require(std::filesystem::path(path).is_absolute(), "Z-Image profile path must be absolute");
         const char *configured = std::getenv("TURBOCIDER_Z_PROFILE_MODE");
         mode = configured ? configured : "overlap";
-        require(mode == "overlap" || mode == "serial" || mode == "gpu_split",
-                "Z-Image profile mode must be overlap, serial or gpu_split");
+        require(mode == "overlap" || mode == "serial" || mode == "gpu_split" ||
+                    mode == "gpu_detail",
+                "Z-Image profile mode must be overlap, serial, gpu_split or gpu_detail");
         require((r.execution == "gpu" || r.execution == "gpu_ane") &&
-                    (mode != "gpu_split" || r.execution == "gpu"),
-                "Z-Image gpu_split profiling requires explicit GPU execution");
+                    ((mode != "gpu_split" && mode != "gpu_detail") ||
+                     r.execution == "gpu"),
+                "Z-Image gpu_split/gpu_detail profiling requires explicit GPU execution");
         file = std::fopen(path, "a");
         require(file != nullptr, "cannot open Z-Image profile output");
         static thread_local unsigned sequence = 0;
@@ -73,6 +76,7 @@ struct ZBlockProfile {
     }
     explicit operator bool() const { return request != nullptr; }
     bool split_gpu() const { return request && request->mode == "gpu_split"; }
+    bool detail_gpu() const { return request && request->mode == "gpu_detail"; }
     bool serial() const { return request && request->mode == "serial"; }
     bool separate_pack() const { return serial() || split_gpu(); }
     double since(Clock::time_point time) const {
@@ -113,6 +117,16 @@ struct ZBlockProfile {
         mx::eval(value);
         gpu = since(last);
         last = Clock::now();
+    }
+    void detail(const char *phase, const std::vector<Tensor> &values) {
+        if (!detail_gpu()) return;
+        mx::eval(values);
+        const double seconds = since(last);
+        last = Clock::now();
+        std::fprintf(request->file,
+            "{\"type\":\"detail\",\"request\":%u,\"index\":%u,\"name\":\"%s\","
+            "\"phase\":\"%s\",\"seconds\":%.9f}\n",
+            request->request, request->block, name.c_str(), phase, seconds);
     }
     void finish(const Tensor &value, bool fused = false) {
         if (!request) return;

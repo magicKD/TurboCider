@@ -38,7 +38,7 @@ class ZImage final : public ModelSession {
     void select_loras(const Request &);
     Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);
     Tensor denoise(const Tensor &, const Tensor &, float, float, int, int,
-                   const Event &, std::atomic<bool> &);
+                   const Event &, std::atomic<bool> &, std::vector<Tensor> * = nullptr);
     Tensor decode(const Tensor &, int, int, const Event &, std::atomic<bool> &);
     bool conditioning(const Request &, const Event &, std::atomic<bool> &);
     std::string select_acceleration(Request &, int, const Event &, std::atomic<bool> &);

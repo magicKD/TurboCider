@@ -10,6 +10,9 @@ struct DeviceInfo {
     }
 };
 DeviceInfo device_info();
+bool z_image_mpp_swiglu_default();
+bool z_image_virtual_norm_default();
+bool z_image_small_shape_metal_default();
 struct FluxConfiguration {
     int hidden = 0, heads = 0, dual_layers = 0, single_layers = 0;
 };

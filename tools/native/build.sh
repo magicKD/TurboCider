@@ -12,7 +12,8 @@ case "$EXPERIMENTAL_PROBES" in
  0|1) ;;
  *) printf 'TURBOCIDER_BUILD_EXPERIMENTAL_PROBES must be 0 or 1\n' >&2; exit 2 ;;
 esac
-OUT="$PWD/build/native"
+OUT="${TURBOCIDER_NATIVE_OUT:-$PWD/build/native}"
+if [[ "$OUT" != /* ]]; then OUT="$PWD/$OUT"; fi
 mkdir -p "$OUT" "$OUT/module-cache"
 export CLANG_MODULE_CACHE_PATH="$OUT/module-cache"
 SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"

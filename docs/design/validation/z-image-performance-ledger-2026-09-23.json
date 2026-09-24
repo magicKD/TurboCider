@@ -1,0 +1,54 @@
+{
+  "schema": "turbocider-z-image-performance-ledger-v1",
+  "date": "2026-09-23",
+  "authoritative_result": "z-image-clean-performance-2026-09-23.json",
+  "rule": "Files listed below may retain parity, implementation-history or diagnostic value, but their timing numbers must not be used for kernel selection, speedup claims, regression thresholds or capacity planning.",
+  "invalidated_reason": "They were measured before the 2026-09-23 reboot while the same machine showed approximately 2x degraded DiT and over 20x degraded VAE performance. Stable ABBA ratios within that state were not sufficient evidence of healthy performance.",
+  "invalid_for_performance": [
+    "z-image-buffer-mid-screen.md",
+    "z-image-context-cache-abba.md",
+    "z-image-final-default-1024-abba-pending.md",
+    "z-image-final-default-1024-abba.json",
+    "z-image-final-default-512-abba.json",
+    "z-image-metal-1024-8-screen-2026-09-22.json",
+    "z-image-metal-512-8-2026-09-22.json",
+    "z-image-mpp-default-2026-09-22.json",
+    "z-image-parent-storage-diagnostic.md",
+    "z-image-regression-telemetry-2026-09-22.md",
+    "z-image-retest-profile-2026-09-23.md",
+    "z-image-swiglu-wide-screen-2026-09-22.md",
+    "z-image-vector-default-1024-2026-09-22.json",
+    "z-image-vector-default-2026-09-22.json",
+    "z-image-vector-norm-2026-09-22.json",
+    "z-image-vector-qkv-pending-2026-09-22.md",
+    "z-image-virtual-default-promotion-2026-09-22.md",
+    "z-image-virtual-gate-norm-2026-09-22.md",
+    "z-image-virtual-norm-2026-09-22.json",
+    "z-image-virtual128-screen-2026-09-22.json",
+    "z-image-virtual256-abba-pending-2026-09-22.md"
+  ],
+  "completed_control": "z-image-reboot-control.md",
+  "authoritative_local_measurements": [
+    {
+      "path": "${PROJECT_ROOT}/outputs/z-image-gpu-vs-ane-512-clean-2026-09-23/summary.json",
+      "scope": "512x512 8-step resident pure GPU versus selected b1056/a4096 GPU+ANE"
+    }
+  ],
+  "invalid_local_measurements": [
+    {
+      "path": "${PROJECT_ROOT}/outputs/z-image-gpu-vs-ane-512-b4128-invalid-route-2026-09-23/summary.json",
+      "reason": "forced the 1024-oriented b4128/a4096 partition onto a 1056-row 512 workload; retained only as a route-mismatch diagnostic"
+    }
+  ],
+  "screened_but_not_selected": [
+    {
+      "path": "${PROJECT_ROOT}/outputs/z-image-gpu-vs-ane-512-a8192-screen-2026-09-23/summary.json",
+      "reason": "valid clean b1056 measurement, but the M4 Pro-oriented a8192 split is nonoptimal on M4 Max and loses to pure GPU"
+    }
+  ],
+  "enforcement": [
+    "benchmark summaries record boot-session and system-state metadata",
+    "the strict auditor rejects cross-boot schedules",
+    "the strict auditor rejects known M4 Max 512/8 and 1024/9 degraded-state envelopes, including legacy reports without the new metadata"
+  ]
+}

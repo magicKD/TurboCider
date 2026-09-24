@@ -1,5 +1,6 @@
 #include "z_image.hpp"
 #include "block_profile.hpp"
+#include "metal_kernels.hpp"
 
 #include "../../media/image.hpp"
 #include "../../platform/apple/platform.hpp"
@@ -304,6 +305,58 @@ Tensor z_rope(const Tensor &ids) {
     return mx::concatenate(parts, 1);
 }
 
+std::vector<Tensor> z_prepare_qkv(const Tensor &qkv, const Tensor &qw,
+                                  const Tensor &kw, const Tensor &freqs) {
+    // Exact-shape Metal path is the production default after parity. Keep a
+    // disable switch for bisecting old binaries and device-specific issues.
+    if (!std::getenv("TURBOCIDER_Z_DISABLE_FUSED_QKV") &&
+        !std::getenv("TURBOCIDER_Z_EAGER_ROPE"))
+        return z_metal::prepare_qkv(qkv, qw, kw, freqs);
+    auto parts = mx::split(qkv, 3, -1);
+    auto q = rms(heads(parts[0], kHeads, kHeadDim), qw, 1e-5f);
+    auto k = rms(heads(parts[1], kHeads, kHeadDim), kw, 1e-5f);
+    auto result = z_apply_rope_pair(q, k, freqs);
+    result.push_back(heads(parts[2], kHeads, kHeadDim));
+    return result;
+}
+
+Tensor z_modulate_norm(const Tensor &x, const Tensor &weight, const Tensor &mod,
+                       const Tensor &residual, bool gated) {
+    // Smaller-thread experiments retain their scalar kernel and reduction
+    // geometry. The vector kernel preserves the default 960-thread ordering.
+    const char *norm_threads = std::getenv("TURBOCIDER_Z_NORM_THREADS");
+    const bool vector_norm = !std::getenv("TURBOCIDER_Z_DISABLE_VECTOR_NORM") &&
+        (!norm_threads || std::string(norm_threads) == "960");
+    if (const char *virtual_threads = std::getenv("TURBOCIDER_Z_VIRTUAL_NORM_THREADS")) {
+        const std::string threads(virtual_threads);
+        require(vector_norm && !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_MOD"),
+                "virtual norm threads require the fused vector norm path");
+        require(threads == "128" || threads == "256" || threads == "512",
+                "virtual norm threads must be 128, 256 or 512");
+        return z_metal::norm_mod_virtual(x,weight,mod,residual,gated,
+            x.dtype() != mx::float32 && !std::getenv("TURBOCIDER_Z_INLINE_GATE_TANH"),
+            std::stoi(threads));
+    }
+    // Qualified large shapes only: image refiner and one padded text block.
+    // Keep512, other prompt lengths/devices/dtypes on their original path.
+    if (vector_norm && !norm_threads &&
+        !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_MOD") &&
+        !std::getenv("TURBOCIDER_Z_DISABLE_VIRTUAL_NORM") &&
+        x.dtype() == mx::bfloat16 && x.ndim() == 3 && x.shape(0) == 1 &&
+        x.shape(2) == 3840 && (x.shape(1) == 4096 || x.shape(1) == 4128) &&
+        z_image_virtual_norm_default())
+        return z_metal::norm_mod_virtual(x,weight,mod,residual,gated,
+            !std::getenv("TURBOCIDER_Z_INLINE_GATE_TANH"),256);
+    if (!std::getenv("TURBOCIDER_Z_DISABLE_FUSED_MOD"))
+        return z_metal::norm_mod(x, weight, mod, residual, gated,
+            x.dtype() != mx::float32 && !std::getenv("TURBOCIDER_Z_INLINE_GATE_TANH"),
+            vector_norm);
+    auto normalized = rms(x, weight, 1e-5f);
+    if (gated)
+        return residual + mx::tanh(mod) * normalized;
+    return normalized * (Tensor(1.f, mod.dtype()) + mod);
+}
+
 Tensor z_attention(const Tensor &x, const Weights &w, const std::string &prefix,
                    const Tensor &freqs) {
     auto qkv = linear_compat(x, w, prefix + ".attention.qkv");
@@ -314,13 +367,9 @@ Tensor z_attention(const Tensor &x, const Weights &w, const std::string &prefix,
                      prefix.c_str(), mx::all(mx::isfinite(qkv32)).item<bool>(),
                      mx::max(mx::abs(qkv32)).item<float>());
     }
-    auto chunks = mx::split(qkv, 3, -1);
-    auto q = rms(heads(chunks[0], kHeads, kHeadDim),
-                 w.at(prefix + ".attention.q_norm.weight"), 1e-5f);
-    auto k = rms(heads(chunks[1], kHeads, kHeadDim),
-                 w.at(prefix + ".attention.k_norm.weight"), 1e-5f);
-    auto rotated = z_apply_rope_pair(q, k, freqs);
-    auto v = heads(chunks[2], kHeads, kHeadDim);
+    auto rotated = z_prepare_qkv(qkv, w.at(prefix + ".attention.q_norm.weight"),
+                                w.at(prefix + ".attention.k_norm.weight"), freqs);
+    auto v = rotated[2];
     auto result = attend(rotated[0], rotated[1], v, false, {},
                          !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA"));
     if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
@@ -473,35 +522,69 @@ Tensor z_hybrid_gpu_suffix(const Tensor &x, const Weights &w,
 std::function<std::vector<Tensor>(const std::vector<Tensor> &)> &z_gpu_block_graph() {
     static auto graph = mx::compile([](const std::vector<Tensor> &args) {
         require(args.size() == 16, "invalid Z-Image compiled block inputs");
-        auto fast_rms = [](const Tensor &x, const Tensor &weight) {
-            return mx::astype(
-                mx::fast::rms_norm(mx::astype(x, mx::float32),
-                                   mx::astype(weight, mx::float32), 1e-5f),
-                x.dtype());
+        auto projection = [](const Tensor &x, const Tensor &w) {
+            const char *mode = std::getenv("TURBOCIDER_Z_MPP_PROJECTIONS");
+            const bool qualified_default = !std::getenv("TURBOCIDER_Z_DISABLE_MPP_PROJECTIONS") &&
+                z_image_small_shape_metal_default() && x.shape(1) <= 1056;
+            if (mode || qualified_default) {
+                if (!mode || std::string(mode) != "attention_out" ||
+                    w.shape() == mx::Shape{3840,3840})
+                    return z_metal::projection(x, w);
+            }
+            return mx::matmul(x, mx::transpose(w));
         };
         auto modulation = mx::expand_dims(
             mx::matmul(args[2], mx::transpose(args[3])) + args[4], 1);
         auto mod = mx::split(modulation, 4, -1);
-        auto attention_input =
-            fast_rms(args[0], args[5]) * (Tensor(1.f, mod[0].dtype()) + mod[0]);
-        auto qkv = mx::matmul(attention_input, mx::transpose(args[6]));
-        auto qkv_parts = mx::split(qkv, 3, -1);
-        auto q = fast_rms(heads(qkv_parts[0], kHeads, kHeadDim), args[7]);
-        auto k = fast_rms(heads(qkv_parts[1], kHeads, kHeadDim), args[8]);
-        auto rotated = z_apply_rope_pair(q, k, args[1]);
-        auto attention = mx::matmul(
-            attend(rotated[0], rotated[1], heads(qkv_parts[2], kHeads, kHeadDim), false, {},
+        auto attention_input = z_modulate_norm(args[0], args[5], mod[0], args[0], false);
+        const bool fused_qkv_projection =
+            !std::getenv("TURBOCIDER_Z_DISABLE_MPP_QKV_PREPARE") &&
+            (std::getenv("TURBOCIDER_Z_MPP_QKV_PREPARE") ||
+             (z_image_small_shape_metal_default() && attention_input.shape(1) <= 1056));
+        auto rotated = fused_qkv_projection
+            ? z_metal::project_prepare_qkv(attention_input,args[6],args[7],args[8],args[1])
+            : z_prepare_qkv(projection(attention_input,args[6]),args[7],args[8],args[1]);
+        auto attention = projection(
+            attend(rotated[0], rotated[1], rotated[2], false, {},
                    !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA")),
-            mx::transpose(args[9]));
-        auto value = args[0] + mx::tanh(mod[1]) * fast_rms(attention, args[10]);
-        auto feed_input =
-            fast_rms(value, args[11]) * (Tensor(1.f, mod[2].dtype()) + mod[2]);
-        auto gate = mx::matmul(feed_input, mx::transpose(args[12]));
-        auto up = mx::matmul(feed_input, mx::transpose(args[13]));
-        auto feed = mx::matmul((gate * mx::sigmoid(gate)) * up,
-                               mx::transpose(args[14]));
+            args[9]);
+        auto residual_and_feed = [&] {
+            const char *setting = std::getenv("TURBOCIDER_Z_GATE_NORM_VIRTUAL_THREADS");
+            const bool qualified_default = !std::getenv("TURBOCIDER_Z_DISABLE_GATE_NORM") &&
+                z_image_small_shape_metal_default() && attention.shape(1) <= 1056;
+            if (setting || qualified_default) {
+                const std::string threads(setting ? setting : "128");
+                require(threads == "128" || threads == "256" || threads == "512",
+                        "virtual gate norm threads must be 128, 256 or 512");
+                require(!std::getenv("TURBOCIDER_Z_DISABLE_FUSED_MOD") &&
+                        !std::getenv("TURBOCIDER_Z_FUSED_GATE_NORM"),
+                        "virtual gate norm conflicts with disabled modulation or scalar gate fusion");
+                if (attention.shape(1) <= 1056)
+                    return z_metal::gate_norm_virtual(attention,args[0],args[10],mod[1],
+                        args[11],mod[2],std::stoi(threads));
+            }
+            if (std::getenv("TURBOCIDER_Z_FUSED_GATE_NORM"))
+                return z_metal::gate_norm(attention,args[0],args[10],mod[1],args[11],mod[2]);
+            auto value = z_modulate_norm(attention, args[10], mod[1], args[0], true);
+            return std::vector<Tensor>{value,
+                z_modulate_norm(value, args[11], mod[2], value, false)};
+        }();
+        auto value = residual_and_feed[0], feed_input = residual_and_feed[1];
+        auto activation = [&] {
+            if (std::getenv("TURBOCIDER_Z_MPP_SWIGLU_DUAL"))
+                return z_metal::swiglu_dual_gemm(feed_input, args[12], args[13]);
+            auto up = projection(feed_input, args[13]);
+            if (!std::getenv("TURBOCIDER_Z_DISABLE_MPP_SWIGLU") &&
+                (std::getenv("TURBOCIDER_Z_MPP_SWIGLU") || z_image_mpp_swiglu_default()) &&
+                feed_input.dtype() == mx::bfloat16 && args[12].dtype() == mx::bfloat16 &&
+                up.dtype() == mx::bfloat16)
+                return z_metal::swiglu_gemm(feed_input, args[12], up);
+            auto gate = projection(feed_input, args[12]);
+            return (gate * mx::sigmoid(gate)) * up;
+        }();
+        auto feed = projection(activation, args[14]);
         return std::vector<Tensor>{
-            value + mx::tanh(mod[3]) * fast_rms(feed, args[15])};
+            z_modulate_norm(feed, args[15], mod[3], value, true)};
     });
     return graph;
 }
@@ -539,12 +622,10 @@ std::function<std::vector<Tensor>(const std::vector<Tensor> &)> &z_hybrid_pre_gr
         };
         auto mod = mx::split(mx::expand_dims(mx::matmul(a[2], mx::transpose(a[3])) + a[4], 1), 4, -1);
         auto input = fast_rms(a[0], a[5]) * (Tensor(1.f, mod[0].dtype()) + mod[0]);
-        auto qkv = mx::split(mx::matmul(input, mx::transpose(a[6])), 3, -1);
-        auto q = fast_rms(heads(qkv[0], kHeads, kHeadDim), a[7]);
-        auto k = fast_rms(heads(qkv[1], kHeads, kHeadDim), a[8]);
-        auto rotated = z_apply_rope_pair(q, k, a[1]);
+        auto qkv = mx::matmul(input, mx::transpose(a[6]));
+        auto rotated = z_prepare_qkv(qkv, a[7], a[8], a[1]);
         auto attention = mx::matmul(
-            attend(rotated[0], rotated[1], heads(qkv[2], kHeads, kHeadDim), false, {},
+            attend(rotated[0], rotated[1], rotated[2], false, {},
                    !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA")), mx::transpose(a[9]));
         auto value = a[0] + mx::tanh(mod[1]) * fast_rms(attention, a[10]);
         auto feed = fast_rms(value, a[11]) * (Tensor(1.f, mod[2].dtype()) + mod[2]);
@@ -639,9 +720,9 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
         !w.convrot(prefix + ".feed_forward.w2") &&
         !w.quantized(prefix + ".feed_forward.w3") &&
         !w.convrot(prefix + ".feed_forward.w3");
-    if (profile.split_gpu())
+    if (profile.split_gpu() || profile.detail_gpu())
         require(fully_dense && !w.has_runtime_loras(),
-                "Z-Image gpu_split profiling requires dense BF16 weights without runtime LoRA");
+                "Z-Image detailed GPU profiling requires dense BF16 weights without runtime LoRA");
     if (compile_hybrid_segments && hybrid && gpu_graph && fully_dense && x.dtype() == mx::bfloat16 &&
         !w.has_runtime_loras() && w.has(prefix + ".adaLN_modulation.0.bias") &&
         !std::getenv("TURBOCIDER_Z_HYBRID_EAGER_SEGMENTS") &&
@@ -652,7 +733,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
         return z_compiled_hybrid_block(x, w, prefix, freqs, temb, hybrid, hybrid_block,
                                       *gpu_graph, profile);
     if (!hybrid && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && fully_dense &&
-        !w.has_runtime_loras() && !profile.split_gpu()) {
+        !w.has_runtime_loras() && !profile.split_gpu() && !profile.detail_gpu()) {
         auto result = z_compiled_gpu_block(x, w, prefix, freqs, temb);
         profile.finish(result, true);
         return result;
@@ -672,6 +753,44 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
     auto gate_msa = mx::tanh(parts[1]);
     auto scale_mlp = Tensor(1.f, parts[2].dtype()) + parts[2];
     auto gate_mlp = mx::tanh(parts[3]);
+    if (profile.detail_gpu()) {
+        profile.detail("modulation", {scale_msa, gate_msa, scale_mlp, gate_mlp});
+        auto attention_input = z_modulate_norm(
+            x, w.at(prefix + ".attention_norm1.weight"), parts[0], x, false);
+        profile.detail("attention_norm_mod", {attention_input});
+        auto qkv = mx::matmul(attention_input,
+                              mx::transpose(w.at(prefix + ".attention.qkv.weight")));
+        profile.detail("qkv_projection", {qkv});
+        auto rotated = z_prepare_qkv(qkv,
+            w.at(prefix + ".attention.q_norm.weight"),
+            w.at(prefix + ".attention.k_norm.weight"), freqs);
+        profile.detail("qkv_norm_rope_layout", rotated);
+        auto attended = attend(rotated[0], rotated[1], rotated[2], false, {},
+                               !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA"));
+        profile.detail("sdpa", {attended});
+        auto attention = mx::matmul(
+            attended, mx::transpose(w.at(prefix + ".attention.out.weight")));
+        profile.detail("attention_out_projection", {attention});
+        auto value = z_modulate_norm(attention,
+            w.at(prefix + ".attention_norm2.weight"), parts[1], x, true);
+        auto feed_input = z_modulate_norm(value,
+            w.at(prefix + ".ffn_norm1.weight"), parts[2], value, false);
+        profile.detail("residual_feed_norm", {value, feed_input});
+        auto up = mx::matmul(feed_input,
+            mx::transpose(w.at(prefix + ".feed_forward.w3.weight")));
+        profile.detail("ffn_up_projection", {up});
+        auto activation = z_metal::swiglu_gemm(
+            feed_input, w.at(prefix + ".feed_forward.w1.weight"), up);
+        profile.detail("ffn_gate_swiglu", {activation});
+        auto feed = mx::matmul(
+            activation, mx::transpose(w.at(prefix + ".feed_forward.w2.weight")));
+        profile.detail("ffn_down_projection", {feed});
+        auto result = z_modulate_norm(feed,
+            w.at(prefix + ".ffn_norm2.weight"), parts[3], value, true);
+        profile.detail("final_gate_norm", {result});
+        profile.finish(result);
+        return result;
+    }
     auto attention = z_attention(rms(x, w.at(prefix + ".attention_norm1.weight"), 1e-5f) *
                                      scale_msa,
                                  w, prefix, freqs);
@@ -848,11 +967,13 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
                      int height, const Weights &w, const Event &event,
                      std::atomic<bool> &cancelled, HybridSession *hybrid,
                      const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph,
-                     ZImageWeightStream *weight_stream, bool compile_hybrid_segments) {
+                     ZImageWeightStream *weight_stream, bool compile_hybrid_segments,
+                     std::vector<Tensor> *context_cache = nullptr) {
     if (weight_stream) weight_stream->begin_pass();
     auto patch = z_patchify(latent, caption);
     auto image = linear_compat(patch.image, w, "x_embedder");
-    auto caption_emb = linear_compat(
+    const bool reuse_context = context_cache && !context_cache->empty();
+    auto caption_emb = reuse_context ? context_cache->at(0) : linear_compat(
         rms(patch.caption, w.at("cap_embedder.0.weight"), 1e-5f), w, "cap_embedder.1");
     if (std::getenv("TURBOCIDER_Z_CONVROT_DEBUG")) {
         mx::eval({image, caption_emb});
@@ -864,7 +985,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
         image = mx::concatenate(
             {slice_axis(image, 0, 0, patch.image_length),
              mx::repeat(w.at("x_pad_token"), image.shape(0) - patch.image_length, 0)}, 0);
-    if (caption_emb.shape(0) > patch.caption_length)
+    if (!reuse_context && caption_emb.shape(0) > patch.caption_length)
         caption_emb = mx::concatenate(
             {slice_axis(caption_emb, 0, 0, patch.caption_length),
              mx::repeat(w.at("cap_pad_token"), caption_emb.shape(0) - patch.caption_length, 0)}, 0);
@@ -873,19 +994,21 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     // boundary after embedding and padding so those storage dtypes cannot
     // promote every residual and modulation tensor to FP32.
     image = mx::astype(image, mx::bfloat16);
-    caption_emb = mx::astype(caption_emb, mx::bfloat16);
+    if (!reuse_context) caption_emb = mx::astype(caption_emb, mx::bfloat16);
     auto temb = z_timestep((1.f - sigma) * 1000.f, w);
     auto image_freqs = z_rope(patch.image_ids);
     auto caption_freqs = z_rope(patch.caption_ids);
     image = mx::expand_dims(image, 0);
-    caption_emb = mx::expand_dims(caption_emb, 0);
+    if (!reuse_context) caption_emb = mx::expand_dims(caption_emb, 0);
     for (int i = 0; i < 2; ++i) {
         checkpoint(cancelled);
         image = z_block(image, w, "noise_refiner." + std::to_string(i), image_freqs, temb,
                         hybrid, i, gpu_graph, compile_hybrid_segments);
-        caption_emb = z_context_block(caption_emb, w,
-                                      "context_refiner." + std::to_string(i), caption_freqs);
+        if (!reuse_context)
+            caption_emb = z_context_block(caption_emb, w,
+                                          "context_refiner." + std::to_string(i), caption_freqs);
     }
+    if (context_cache && !reuse_context) context_cache->push_back(caption_emb);
     auto unified = mx::concatenate({image, caption_emb}, 1);
     auto unified_freqs = mx::concatenate({image_freqs, caption_freqs}, 0);
     for (int i = 0; i < 30; ++i) {
@@ -1432,12 +1555,22 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     dump("z_latent_initial", z);
     auto sigmas = z_sigmas(r.width, r.height, r.steps);
     const auto caption = *cached_conditioning_;
+    // Request-local: never reuse across prompts, LoRA changes or resolutions.
+    // First-step refinement remains in denoise timing and is evaluated through
+    // the unified graph before subsequent steps can consume the cached tensor.
+    std::vector<Tensor> context_cache;
+    const bool cache_context = !std::getenv("TURBOCIDER_Z_DISABLE_CACHE_CONTEXT") &&
+        (std::getenv("TURBOCIDER_Z_CACHE_CONTEXT") ||
+         (z_image_small_shape_metal_default() && r.width <= 512 && r.height <= 512)) &&
+        !hybrid_ && !weight_stream_ && !gguf_transformer_ &&
+        !nvfp4_transformer_ && !convrot_transformer_;
     auto dit_start = Clock::now();
     profile.phase("denoise_begin");
     for (int i = 0; i < r.steps; ++i) {
         checkpoint(cancelled);
         event("denoise", i, r.steps);
-        auto noise = denoise(z, caption, sigmas[i], float(r.width), r.height, i, event, cancelled);
+        auto noise = denoise(z, caption, sigmas[i], float(r.width), r.height, i, event, cancelled,
+                             cache_context ? &context_cache : nullptr);
         z = euler_step(z, noise, sigmas[i + 1] - sigmas[i]);
         mx::eval(z);
         dump("z_latent_step_" + std::to_string(i + 1), z);
@@ -1512,12 +1645,13 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
 }
 
 Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma, float width,
-                       int height, int, const Event &event, std::atomic<bool> &cancelled) {
+                       int height, int, const Event &event, std::atomic<bool> &cancelled,
+                       std::vector<Tensor> *context_cache) {
     auto model_input = mx::astype(latent, mx::bfloat16);
     return mx::astype(
         z_transformer(model_input, caption, sigma, int(width), height, transformer_, event,
                       cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr, weight_stream_.get(),
-                      optimizations_.z_image_hybrid_segments),
+                      optimizations_.z_image_hybrid_segments, context_cache),
         mx::float32);
 }
 

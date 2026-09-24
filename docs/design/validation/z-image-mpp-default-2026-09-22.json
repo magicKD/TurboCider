@@ -1,0 +1,42 @@
+{
+  "status": "invalid_for_performance_pre_reboot_system_state",
+  "superseded_status": "MPP SwiGLU default qualified on M4 Max BF16; fallback retained",
+  "workload": {
+    "size": 512, "steps": 8, "seed": 123, "execution": "gpu", "precision": "bf16",
+    "prompt": "A sunlit greenhouse filled with orchids and ferns, photographic detail."
+  },
+  "qualification": {
+    "native_sha256": "b4690820ee89e0462e1e85c675898630945f61d1e2cff4d9b2f4c77fffacb551",
+    "schedule": "A-B-B-A, fresh process each, one cold excluded and two warm samples each; separate parity requests in first A/B",
+    "a_environment": {},
+    "b_environment": {"TURBOCIDER_Z_MPP_SWIGLU": "1"},
+    "a_diffusion_seconds": [15.644036083, 15.603990625, 15.750017042, 15.763935792],
+    "b_diffusion_seconds": [14.926929, 14.828056, 14.737028791, 14.761041333],
+    "a_median_seconds": 15.6970265625,
+    "b_median_seconds": 14.7945486665,
+    "diffusion_speedup": 1.0610007048098413,
+    "parity": "all 11 dump files and PNG byte-identical in first A/B",
+    "raw_reports": "/private/tmp/z-image-mpp-corrected-abba-20260922"
+  },
+  "promotion": {
+    "build": "TURBOCIDER_NATIVE_ONLY=1 bash tools/native/build.sh",
+    "native_sha256": "00fdcc495c5442e1b1b7ddc3be0f5755ac301925a4226705159c5a5d2a858725",
+    "eligibility": "macOS 26+, device name Apple M4 Max, Apple9 capability; call site requires BF16 operands",
+    "disable_switch": "TURBOCIDER_Z_DISABLE_MPP_SWIGLU=1",
+    "default_diffusion_seconds": 14.683981459,
+    "default_wall_seconds": 19.814767042000312,
+    "disabled_diffusion_seconds": 15.845010625,
+    "disabled_wall_seconds": 21.159459958027583,
+    "parity": "default, disabled fallback and previous explicit-MPP run: all dump files and PNG byte-identical",
+    "raw_reports": "/private/tmp/z-image-mpp-promoted-512-20260922",
+    "scope": "one warm sample each; dispatch/rebuild smoke test, not a new robust speedup claim"
+  },
+  "tests": {"gpu_test_methods_passed": 2, "cpu_benchmark_test_methods_passed": 6},
+  "limitations": [
+    "No 1024 benchmark of this rebuilt library in this turn",
+    "Other devices/OS/precision combinations were not measured; retain original automatic path outside eligibility",
+    "Previous false-off trial using MPP_SWIGLU=0 was terminated and excluded",
+    "Native build only, no application packaging",
+    "512 diffusion under 10 seconds and historical absolute-runtime regression remain unresolved"
+  ]
+}

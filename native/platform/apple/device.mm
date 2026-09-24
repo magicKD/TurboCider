@@ -10,6 +10,28 @@ DeviceInfo device_info() {
     return {device ? std::string(device.name.UTF8String) : "unavailable",
             NSProcessInfo.processInfo.physicalMemory};
 }
+static bool z_image_qualified_m4_max() {
+    // Automatic selection is restricted to the device qualified by the
+    // matched Z-Image BF16 experiments, not every Metal-capable device.
+    static const bool qualified = [] {
+        if (@available(macOS 26.0, *)) {
+            id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+            return device && [device.name isEqualToString:@"Apple M4 Max"] &&
+                   [device supportsFamily:MTLGPUFamilyApple9];
+        }
+        return false;
+    }();
+    return qualified;
+}
+bool z_image_mpp_swiglu_default() {
+    return z_image_qualified_m4_max();
+}
+bool z_image_virtual_norm_default() {
+    return z_image_qualified_m4_max();
+}
+bool z_image_small_shape_metal_default() {
+    return z_image_qualified_m4_max();
+}
 FluxConfiguration flux_configuration(const std::filesystem::path &root,
                                      const std::string &model) {
     auto t = read_json(root / "transformer/config.json"),
@@ -89,6 +111,9 @@ NSDictionary *system_info() {
         @"recommended_working_set_bytes" : @(d ? d.recommendedMaxWorkingSetSize : 0),
         @"os" : [NSProcessInfo processInfo].operatingSystemVersionString,
         @"mlx_version" : @(mx::version()),
+        @"z_image_mpp_swiglu_default" : @(z_image_mpp_swiglu_default()),
+        @"z_image_virtual_norm_default" : @(z_image_virtual_norm_default()),
+        @"z_image_small_shape_metal_default" : @(z_image_small_shape_metal_default()),
         @"runtime_dependencies" : @[ @"libmlx", @"Metal", @"Foundation", @"ImageIO" ],
         @"python_runtime_required" : @NO
     };

@@ -1,0 +1,42 @@
+{
+  "status": "invalid_for_performance_pre_reboot_system_state",
+  "superseded_status": "production_rebuild_screen",
+  "hardware": "Apple M4 Max, 64 GiB, macOS 26.6.2 (25G83)",
+  "mlx_version": "0.32.0",
+  "library_sha256": "b4690820ee89e0462e1e85c675898630945f61d1e2cff4d9b2f4c77fffacb551",
+  "workload": {
+    "size": 1024,
+    "steps": 8,
+    "seed": 123,
+    "prompt": "A sunlit greenhouse filled with orchids and ferns, photographic detail.",
+    "execution": "gpu",
+    "precision": "bf16",
+    "mpp": false
+  },
+  "variants": {
+    "scalar": {
+      "environment": {"TURBOCIDER_Z_DISABLE_VECTOR_NORM": "1"},
+      "diffusion_seconds": 83.307956083,
+      "vae_seconds": 19.982071417,
+      "request_seconds": 104.375392583
+    },
+    "default_vector": {
+      "environment": {},
+      "diffusion_seconds": 78.516040334,
+      "vae_seconds": 20.261002667,
+      "request_seconds": 99.8575425
+    }
+  },
+  "speedup": {
+    "diffusion": 1.0610310419197864,
+    "request": 1.0452429528094986
+  },
+  "parity": "all dumped latent steps, decoded tensor and PNG byte-identical",
+  "raw_reports": "/private/tmp/z-image-vector-default-1024-20260922",
+  "limitations": [
+    "one warm sample per variant; not ABBA",
+    "VAE remains approximately 20 seconds on this current system",
+    "does not compare against historical 35.44-second diffusion directly",
+    "512-under-10-second target remains unmet"
+  ]
+}

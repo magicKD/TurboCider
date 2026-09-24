@@ -1,0 +1,67 @@
+{
+  "schema": "turbocider-z-image-metal-validation-v1",
+  "date": "2026-09-22",
+  "status": "invalid_for_performance_pre_reboot_system_state",
+  "superseded_status": "initial matched 1024 screen; repetitions still required",
+  "conditions": {
+    "gpu": "M4 Max 40-core",
+    "memory_gib": 64,
+    "width": 1024,
+    "height": 1024,
+    "steps": 8,
+    "seed": 42,
+    "precision": "bf16",
+    "execution": "gpu",
+    "residency": "resident",
+    "prompt": "A cinematic red fox walking through fresh snow, soft morning light."
+  },
+  "method": "Same binary, fresh processes; one cold request excluded, one timed warm request per variant, separate quality requests. Candidate cold request may overlap baseline quality tail; all timed warm samples are uncontended.",
+  "baseline": {
+    "sha256": "af368263f6b6915a5bb72b490bad5512d78b20777af6673825ebe64cb3a58c39",
+    "environment": {
+      "TURBOCIDER_Z_DISABLE_FUSED_QKV": "1",
+      "TURBOCIDER_Z_DISABLE_FUSED_MOD": "1"
+    },
+    "warm_timings_seconds": [
+      {
+        "denoise": 132.059043708,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 153.419558084,
+        "text_encode": 1.66e-7,
+        "vae_decode": 20.239010417
+      }
+    ],
+    "warm_wall_seconds": [
+      153.41985045804176
+    ]
+  },
+  "candidate": {
+    "sha256": "af368263f6b6915a5bb72b490bad5512d78b20777af6673825ebe64cb3a58c39",
+    "environment": {
+      "TURBOCIDER_Z_MPP_SWIGLU": "1"
+    },
+    "warm_timings_seconds": [
+      {
+        "denoise": 77.120987709,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 98.694875459,
+        "text_encode": 4.2e-8,
+        "vae_decode": 20.470075334
+      }
+    ],
+    "warm_wall_seconds": [
+      98.6951753750327
+    ]
+  },
+  "parity": true,
+  "diffusion_speedup": 1.7123619345527226,
+  "wall_speedup": 1.5544817654465912,
+  "limitations": [
+    "Single warm sample per variant, not repeated ABBA",
+    "Single prompt/seed",
+    "512x512 under-10-second target remains unmet",
+    "MPP SwiGLU remains experimental opt-in"
+  ]
+}

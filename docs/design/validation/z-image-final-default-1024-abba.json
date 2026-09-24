@@ -1,0 +1,41 @@
+{
+  "status": "invalid_for_performance_pre_reboot_system_state",
+  "superseded_status": "qualified_relative_speedup_not_historical_recovery",
+  "library_sha256": "349630000153d6b294712f325c1e90b48fb8f11f5cf9048352d1d0c03f84b818",
+  "workload": {
+    "gpu": "Apple M4 Max", "width": 1024, "height": 1024,
+    "steps": 8, "seed": 123, "precision": "bf16", "execution": "gpu",
+    "prompt": "A sunlit greenhouse filled with orchids and ferns, photographic detail."
+  },
+  "method": "Four fresh processes ABBA, one warm sample each; cold and separate parity requests excluded; no overlapping GPU experiment",
+  "control_environment": {
+    "TURBOCIDER_Z_DISABLE_FUSED_QKV": "1",
+    "TURBOCIDER_Z_DISABLE_FUSED_MOD": "1",
+    "TURBOCIDER_Z_DISABLE_MPP_SWIGLU": "1"
+  },
+  "candidate_environment": {},
+  "control_diffusion_seconds": [131.568994542, 131.638046583],
+  "candidate_diffusion_seconds": [66.999903333, 66.9950195],
+  "control_median_diffusion_seconds": 131.6035205625,
+  "candidate_median_diffusion_seconds": 66.9974614165,
+  "diffusion_speedup": 1.9643060763805145,
+  "control_median_wall_seconds": 152.98402822899516,
+  "candidate_median_wall_seconds": 88.24329889551154,
+  "wall_speedup": 1.7336617073908671,
+  "parity": {
+    "requests": 4, "tensor_files_per_request": 11,
+    "all_tensor_files_byte_identical": true, "pngs_byte_identical": true,
+    "png_sha256": "a8a502441a0628374d3d9d2880ccb7d760ad3776de9094b421926f063cf4ee99"
+  },
+  "runtime_fingerprints_equal": true,
+  "audit": "tools/validation/z_image_benchmark_audit.py passed on completed summary",
+  "raw_reports": "/private/tmp/z-image-final-default-1024-abba",
+  "limitations": [
+    "Only two independent warm samples per arm, one prompt/seed and one machine state",
+    "Control is the current library with fusion disabled, not the historical September 7 binary",
+    "Denoise timing measures the synchronized pure-GPU pipeline, not summed hardware kernel timestamps",
+    "This verifies >=1.5x relative improvement for the tested 1024 workload, not restoration of historical speed",
+    "512-under-ten-seconds and historical same-machine regression remain unresolved",
+    "Exact file equality is not a separate perceptual-quality or tensor-finiteness audit"
+  ]
+}
