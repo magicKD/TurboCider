@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
-# Prefer the project environment so tests use the same dependencies as the build.
-LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3.11))
-PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),python3.11)
+# Prefer the project environment, then fallback to active environment (uv/conda/pyenv)
+LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3))
+PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),$(shell which python3 2>/dev/null || echo python3.11))
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
 help:
