@@ -392,11 +392,12 @@ def main():
         if (args.tensor_layout != "qwen21" or
                 (args.variant != "int8_pc" and
                  not (args.variant == "fp16" and args.a8_boundary == "hidden")) or
-                args.calibration_dir is None or len(buckets) != 1 or buckets[0] != 1024 or
+                args.calibration_dir is None or len(buckets) != 1 or
+                buckets[0] not in (1024, 4096) or
                 args.output_scale != 1 or
                 not all(math.isfinite(v) and 0 <= v <= 1 for v in (args.sq_alpha1, args.sq_alpha2)) or
                 not math.isfinite(args.activation_scale) or not 0.125 <= args.activation_scale <= 64):
-            raise ValueError("Qwen21 W8A8 requires fixed 1024 rows, real calibration, INT8 weights and valid scales")
+            raise ValueError("Qwen21 W8A8 requires fixed 1024/4096 rows, matching real calibration, INT8 weights and valid scales")
     elif args.calibration_dir is not None:
         raise ValueError("calibration requires --activation-precision int8")
     elif args.a8_boundary != "both":

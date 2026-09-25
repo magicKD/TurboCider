@@ -60,10 +60,13 @@ int main(int argc, char **argv) {
         tc::configure_streams();
         std::filesystem::path root(argv[1]), output(argv[3]);
         int width = std::stoi(argv[4]), height = std::stoi(argv[5]), steps = std::stoi(argv[6]);
-        tc::require(ane_manifest.empty() || (width == 512 && height == 512 &&
-                        (first_reference == argc ||
-                         (experimental_w8a8 && argc - first_reference <= 3))),
-                    "experimental Qwen21 hybrid needs 512x512 text-to-image, or W8A8 with up to three references");
+        tc::require(ane_manifest.empty() ||
+                        ((width == 512 && height == 512 &&
+                          (first_reference == argc ||
+                           (experimental_w8a8 && argc - first_reference <= 3))) ||
+                         (experimental_w8a8 && width == 1024 && height == 1024 &&
+                          first_reference == argc)),
+                    "experimental Qwen21 hybrid needs 512x512 text-to-image/up to three W8A8 references, or 1024x1024 W8A8 text-to-image");
         tc::require(!experimental_w8a8 || !ane_manifest.empty(),
                     "--experimental-w8a8 requires an explicit ANE manifest");
         tc::require(!experimental_gpu_w8a16 || experimental_w8a8,
@@ -71,6 +74,7 @@ int main(int argc, char **argv) {
         tc::require(gpu_full_blocks.empty() || experimental_w8a8,
                     "--experimental-gpu-ffn-blocks requires explicit W8A8 ANE opt-in");
         auto seed = std::stoull(argv[7]);
+        const int image_rows = width / 16 * (height / 16);
         auto schedule = tc::qwen21::sigmas(width, height, steps);
         tc::mx::eval(schedule);
         std::atomic<bool> cancelled{false};
@@ -141,10 +145,11 @@ int main(int argc, char **argv) {
             std::unique_ptr<tc::HybridSession> ane;
             std::unique_ptr<tc::qwen21::HybridMLP> hybrid;
             if (!ane_manifest.empty()) {
-                ane = std::make_unique<tc::HybridSession>(std::filesystem::absolute(ane_manifest), root, 1024,
+                ane = std::make_unique<tc::HybridSession>(std::filesystem::absolute(ane_manifest), root, image_rows,
                     event, cancelled, 1, root / "diffusion_models/qwen_image_2.1_bf16.safetensors",
-                    std::vector<tc::LoRAAsset>{}, 1024, 32);
-                tc::require(ane->tensor_layout == "qwen21" && ane->checkpoint_sha_verified &&
+                    std::vector<tc::LoRAAsset>{}, image_rows, 32);
+                tc::require(ane->rows == image_rows && ane->tensor_layout == "qwen21" &&
+                                ane->checkpoint_sha_verified &&
                                 ane->block_count == 32 && ane->ane_mlp_end == 4096 &&
                                 (experimental_w8a8
                                     ? ane->activation_precision == "int8" && ane->export_variant == "int8_pc" &&
@@ -210,6 +215,7 @@ int main(int argc, char **argv) {
         if (!image_slots.empty()) artifacts.emplace("image_slots", tc::Tensor(image_slots.data(), {int(image_slots.size())}, tc::mx::int32));
         tc::mx::save_safetensors(output.string() + ".safetensors", artifacts,
             {{"prompt", argv[2]}, {"seed", std::to_string(seed)},
+             {"height", std::to_string(height / 16)}, {"width", std::to_string(width / 16)},
              {"text_final_norm", (!raw_text && (reference_latents.empty() || normalized_edit)) ? "true" : "false"},
              {"experimental_ane_manifest", ane_manifest},
              {"experimental_w8a8", experimental_w8a8 ? "true" : "false"},

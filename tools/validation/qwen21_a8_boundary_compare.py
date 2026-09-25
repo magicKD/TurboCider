@@ -53,13 +53,14 @@ def bf16_reference(checkpoint, inputs):
     import mlx.core as mx
     weights = mx.load(str(checkpoint))
     prefix = "transformer_blocks.0.img_mlp."
-    activation = mx.array(np.array(inputs).transpose(0, 3, 2, 1).reshape(1, 1024, 4096)).astype(mx.bfloat16)
+    rows = inputs.shape[-1]
+    activation = mx.array(np.array(inputs).transpose(0, 3, 2, 1).reshape(1, rows, 4096)).astype(mx.bfloat16)
     gate_up = weights[prefix + "gate_up.weight"]
     gate, up = mx.split(mx.matmul(activation, mx.concatenate(
         [gate_up[:4096], gate_up[12288:16384]]).T), 2, axis=-1)
     expected = mx.matmul(gate * mx.sigmoid(gate) * up,
                          weights[prefix + "out.weight"][:, :4096].T)
-    return np.array(expected.astype(mx.float32)).reshape(1, 1024, 4096).transpose(0, 2, 1)[:, :, None, :]
+    return np.array(expected.astype(mx.float32)).reshape(1, rows, 4096).transpose(0, 2, 1)[:, :, None, :]
 
 
 def main():
@@ -69,9 +70,14 @@ def main():
     parser.add_argument("--checkpoint", type=Path, help="optional true BF16 MLP branch reference")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    manifests = [json.loads(source.read_text()) for source in args.source]
+    buckets = [manifest.get("shape", {}).get("buckets") for manifest in manifests]
+    if not buckets or any(bucket != buckets[0] for bucket in buckets) or buckets[0] not in ([1024], [4096]):
+        raise ValueError("comparison requires one fixed, matching 1024/4096-row Qwen21 bucket")
+    rows = buckets[0][0]
     value = np.load(args.input, mmap_mode="r", allow_pickle=False)
-    if value.shape != (1024, 4096) or value.dtype != np.float32 or not np.isfinite(value).all():
-        raise ValueError("expected finite [1024,4096] FP32 Qwen21 FFN input")
+    if value.shape != (rows, 4096) or value.dtype != np.float32 or not np.isfinite(value).all():
+        raise ValueError(f"expected finite [{rows},4096] FP32 Qwen21 FFN input")
     provided = np.ascontiguousarray(value.astype(np.float16).T[None, :, None, :])
     reference = bf16_reference(args.checkpoint, provided) if args.checkpoint else None
     report = {source.parent.name: compare(source, provided, reference) for source in args.source}

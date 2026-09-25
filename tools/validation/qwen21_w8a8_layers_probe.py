@@ -51,7 +51,7 @@ def validate_manifest(manifest, source, checkpoint):
             identity.get("a8_graph") != "sq_v1_both" or
             identity.get("projected_weight_granularity") != "per_tensor" or
             identity.get("variant") != "int8_pc" or
-            manifest.get("shape", {}).get("buckets") != [1024] or
+            manifest.get("shape", {}).get("buckets") not in ([1024], [4096]) or
             manifest["shape"].get("ane_mlp_end") != 4096 or
             set(manifest["artifacts"]) != {str(i) for i in range(32)} or
             manifest.get("source", {}).get("checkpoint_sha256") != file_sha256(checkpoint)):
@@ -92,6 +92,7 @@ def main():
         parser.error("blocks must be unique, ordered indices in 0...31")
     manifest = json.loads(args.manifest.read_text())
     validate_manifest(manifest, args.manifest, args.checkpoint)
+    rows = manifest["shape"]["buckets"][0]
     if args.output.exists() or args.output.is_symlink():
         parser.error("output already exists; choose a new report name")
     weights = mx.load(str(args.checkpoint))
@@ -104,7 +105,7 @@ def main():
         if sample_path.is_symlink() or not sample_path.is_file():
             raise ValueError(f"missing real held-out input for block {block}")
         sample = np.load(sample_path, mmap_mode="r", allow_pickle=False)
-        if sample.shape != (1024, 4096) or sample.dtype != np.float32 or not np.isfinite(sample).all():
+        if sample.shape != (rows, 4096) or sample.dtype != np.float32 or not np.isfinite(sample).all():
             raise ValueError(f"invalid held-out input for block {block}")
         digest = hashlib.sha256(b"step1.npy\0")
         with sample_path.open("rb") as stream:
@@ -124,7 +125,7 @@ def main():
             actual = model.predict({"x": supplied})["y"]
             if iteration >= 2:
                 durations.append(time.perf_counter() - start)
-        actual = np.ascontiguousarray(actual.transpose(0, 3, 2, 1).reshape(1, 1024, 4096))
+        actual = np.ascontiguousarray(actual.transpose(0, 3, 2, 1).reshape(1, rows, 4096))
         report["layers"][str(block)] = {
             "input_sha256": file_sha256(sample_path),
             "ane_branch": metrics(actual, reference),

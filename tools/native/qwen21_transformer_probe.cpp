@@ -20,11 +20,13 @@ int main(int argc, char **argv) {
         }
         config.channels = source_latents.shape(2);
         config.context_dim = inputs.at("text").shape(2);
-        int height = calibration && !metadata.count("height") ? 32 : std::stoi(metadata.at("height"));
-        int width = calibration && !metadata.count("width") ? 32 : std::stoi(metadata.at("width"));
-        if (calibration) tc::require(height == 32 && width == 32 && config.layers == 32 &&
-                                    source_latents.shape(1) == 1024 && config.channels == 64,
-                                    "Qwen21 calibration needs real full-model 512px generation inputs");
+        const int default_side = calibration && source_latents.shape(1) == 4096 ? 64 : 32;
+        int height = calibration && !metadata.count("height") ? default_side : std::stoi(metadata.at("height"));
+        int width = calibration && !metadata.count("width") ? default_side : std::stoi(metadata.at("width"));
+        if (calibration) tc::require(((height == 32 && width == 32) ||
+                                     (height == 64 && width == 64)) && config.layers == 32 &&
+                                    source_latents.shape(1) == height * width && config.channels == 64,
+                                    "Qwen21 calibration needs real full-model 512px or 1024px generation inputs");
         tc::qwen21::Transformer model(weights, config);
         auto text = inputs.at("text"), latents = source_latents;
         std::vector<tc::qwen21::ReferenceLatents> references;

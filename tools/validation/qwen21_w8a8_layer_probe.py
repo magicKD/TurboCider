@@ -48,17 +48,19 @@ def main():
     manifest = json.loads(args.manifest.read_text())
     identity = manifest.get("export_identity", {})
     expected_precision = "fp16" if args.weight_only_control else "int8"
+    buckets = manifest.get("shape", {}).get("buckets")
     if (identity.get("tensor_layout") != "qwen21" or
             identity.get("activation_precision", "fp16") != expected_precision or
             identity.get("ane_mlp_end") != 4096 or
             sorted(manifest["artifacts"]) != ["0"] or
-            manifest["shape"].get("buckets") != [1024]):
-        raise ValueError("expected a compiled Qwen21 block-0 1024-row manifest of the requested precision")
+            buckets not in ([1024], [4096])):
+        raise ValueError("expected a compiled Qwen21 block-0 1024/4096-row manifest of the requested precision")
+    rows = buckets[0]
     if not 1 <= args.iterations <= 100:
         parser.error("iterations must be 1...100")
     x = np.load(args.input, mmap_mode="r", allow_pickle=False)
-    if x.shape != (1024, 4096) or x.dtype != np.float32 or not np.isfinite(x).all():
-        raise ValueError("expected finite real Qwen21 [1024,4096] FP32 activation")
+    if x.shape != (rows, 4096) or x.dtype != np.float32 or not np.isfinite(x).all():
+        raise ValueError(f"expected finite real Qwen21 [{rows},4096] FP32 activation")
     x16 = np.ascontiguousarray(x[None].astype(np.float16))
     weights = mx.load(str(args.checkpoint))
     prefix = "transformer_blocks.0.img_mlp."
@@ -78,7 +80,7 @@ def main():
     branch_reference = ffn(ane_weights, ane_down)
     gpu_suffix = ffn(gpu_weights, gpu_down)
     mx.eval(reference, branch_reference, gpu_suffix)
-    bridge = CoreMLFFN(args.library, args.manifest, args.checkpoint, 1024, 0)
+    bridge = CoreMLFFN(args.library, args.manifest, args.checkpoint, rows, 0)
     try:
         prediction = None
         durations = []

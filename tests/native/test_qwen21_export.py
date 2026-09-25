@@ -1,6 +1,7 @@
 """Offline fused checkpoint mapping; no Core ML or model assets required."""
 import importlib.util
 from pathlib import Path
+import tempfile
 import unittest
 
 import numpy as np
@@ -42,6 +43,21 @@ class Qwen21ExportTests(unittest.TestCase):
         actual = export.mlp_weights(source, 2, "qwen3", "model", 4, 6, np, None)
         for a, b in zip(actual, values):
             np.testing.assert_array_equal(a, b)
+
+    def test_4096_row_calibration_cannot_reuse_512px_samples(self):
+        smooth_spec = importlib.util.spec_from_file_location(
+            "smooth_calibration", ROOT / "tools/coreml/z_image_smoothquant.py")
+        smooth = importlib.util.module_from_spec(smooth_spec)
+        smooth_spec.loader.exec_module(smooth)
+        with tempfile.TemporaryDirectory() as directory:
+            sample = Path(directory) / "step1.npy"
+            np.save(sample, np.ones((1024, 4), np.float32))
+            with self.assertRaisesRegex(ValueError, "4096"):
+                smooth.load_calibration(Path(directory), 4096, 4, np)
+            np.save(sample, np.ones((4096, 4), np.float32))
+            rows, digest = smooth.load_calibration(Path(directory), 4096, 4, np)
+            self.assertEqual(rows[0].shape, (4096, 4))
+            self.assertEqual(len(digest), 64)
 
 
 if __name__ == "__main__":
