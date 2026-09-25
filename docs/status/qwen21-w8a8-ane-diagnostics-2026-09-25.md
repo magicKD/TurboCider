@@ -35,7 +35,9 @@ relative RMSE；数值来自忽略目录下的对应 compare JSON）：
 `CPU_AND_NE` 失真定位在 **W8 上投影与 hidden A8 的图组合中、进入 down
 之前**。把 hidden A8 改成 uint8、把 down 切成两段、把上投影后 SwiGLU
 暂转 FP32 均未改善：各自的单层对比结果约为 `0.91267`、`0.91267`、
-`0.91270`。简单统一输出增益也不是修复：拟合增益约 `7.14×` 后仍剩
+`0.91270`；将 fused gate/up W8 卷积拆成两个独立 W8 卷积，结果也仍为
+`0.91270`。把 hidden `dequantize` 换成显式 INT8 `cast × scale` 后仍为
+`0.91271`。简单统一输出增益也不是修复：拟合增益约 `7.14×` 后仍剩
 `0.599` relative RMSE。相应离线 JSON 为
 `qwen21-a8-amplitude-compare-512.json`、
 `qwen21-hidden-input-vs-both-tap-512.json`、
