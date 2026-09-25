@@ -31,13 +31,19 @@ BF16 GPU FFN suffix, resizes each reference to approximately 256 pixels, and
 runs layers 3, 5 and 7 entirely on GPU. Its 29/32 decode FFN coverage is
 90.625%. These reference dimensions change the conditioning input and can lose
 details; this mode is **not** the default or a production image-quality gate.
-In one matched 512²/40-step two-reference resident-Session experiment, two
-consecutive requests measured about 1.130× faster request wall time and 1.197×
-faster denoising versus BF16 GPU. The edit inputs were re-encoded on every
-request; first-run cold startup and other prompts/seeds are not covered by
-that warm result. On the same edit with only 5 steps, the mixed route was
-slower overall (GPU/mixed request-wall ratio about 0.835×); keep GPU as the
-default, especially for short requests.
+The resident Session now caches the text/visual conditioning and reference VAE
+latents for an unchanged prompt, reference resize and ordered reference file
+contents (checked by SHA-256 on every request). Denoising prefix KV remains
+request-owned. Replacing a reference in place invalidates the cache; staged or
+one-shot requests cannot claim this resident hit. Under the matched 512²/40-step
+two-reference, seed-17 workload, two cached GPU requests took 44.733/44.777 s
+and W8A8 mixed requests took 37.159/37.176 s, about **1.204×** request-wall
+speedup. At 5 steps the corresponding cached figures were 6.688/6.727 s and
+6.012/5.999 s, about **1.117×**. These numbers differ from the earlier
+re-encode-on-every-request result (40-step 1.130×, 5-step 0.835×), and apply
+only to repeated identical editing conditions after Session preparation. They
+do not establish a benefit for a new prompt/reference, cold process, other
+seeds, or 1024² requests; GPU stays the default.
 
 For the explicit W8A8 editing candidate, use schema 1 fields like these with a
 compiled 1024-row, 32-layer, checkpoint-matched, per-tensor W8A8 manifest:

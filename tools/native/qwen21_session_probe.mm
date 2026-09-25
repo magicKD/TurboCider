@@ -1,6 +1,7 @@
 // Native production-Session lifecycle and warm-request benchmark. No Python.
 #include "../../native/models/qwen21/pipeline.hpp"
 #include "../../native/platform/apple/bridge.hpp"
+#include "../../native/platform/apple/platform.hpp"
 #include <fstream>
 #include <iostream>
 
@@ -19,8 +20,9 @@ int main(int argc, char **argv) {
             r.steps = std::stoi(argv[3]);
             const int repeats = std::stoi(argv[4]);
             tc::require(repeats >= 1 && repeats <= 10, "repeats must be 1...10");
-            const bool dump_tensors = argc == 8;
-            tc::require(!dump_tensors || std::string(argv[7]) == "--dump-tensors", "unknown session probe option");
+            const bool dump_tensors = argc == 8 && std::string(argv[7]) == "--dump-tensors";
+            const bool test_edit_cache = argc == 8 && std::string(argv[7]) == "--test-edit-cache";
+            tc::require(argc != 8 || dump_tensors || test_edit_cache, "unknown session probe option");
             const std::string prompt_arg = argc >= 7 ? argv[6] : "A ceramic teapot on a wooden table, warm sunlight, detailed photography.";
             if (prompt_arg.starts_with("--request=")) {
                 const std::filesystem::path request_path = prompt_arg.substr(10);
@@ -31,6 +33,16 @@ int main(int argc, char **argv) {
                 r.residency = "resident";
             } else {
                 r.prompt = prompt_arg;
+            }
+            std::filesystem::path mutable_reference;
+            if (test_edit_cache) {
+                tc::require(r.inputs.size() >= 2,
+                            "edit cache mutation probe needs two distinct reference images");
+                mutable_reference = directory / "mutable-reference.png";
+                tc::require(tc::sha256_file(r.inputs[0].path) != tc::sha256_file(r.inputs[1].path),
+                            "edit cache mutation probe needs different reference bytes");
+                std::filesystem::copy_file(r.inputs[0].path, mutable_reference);
+                r.inputs[0].path = mutable_reference.string();
             }
             if (std::string(argv[5]) != "-") {
                 r.execution = "gpu_ane"; r.allow_approximation = true;
@@ -69,8 +81,8 @@ int main(int argc, char **argv) {
                 // than relying only on request metadata.
                 r.dump = dump_tensors ? (directory / (name + "-dump")).string() : "";
                 auto result = session.generate(r, event, cancelled);
-                tc::require(result.prompt_cache_hit == r.inputs.empty(),
-                            "unexpected resident prompt cache state");
+                tc::require(result.prompt_cache_hit,
+                            "repeated resident prompt/references were not cached");
                 tc::require(std::filesystem::is_regular_file(r.output), "generation did not export");
                 if (r.execution == "gpu_ane") {
                     tc::require(result.hybrid.has_value() && result.request.execution == "gpu_ane",
@@ -86,6 +98,20 @@ int main(int argc, char **argv) {
                 std::cout << "{\"iteration\":" << iteration << ",\"wall_seconds\":" << result.timings.wall
                           << ",\"denoise_seconds\":" << result.timings.denoise
                           << ",\"setup_seconds\":" << result.timings.hybrid << "}" << std::endl;
+            }
+            if (test_edit_cache) {
+                std::filesystem::copy_file(r.inputs[1].path, mutable_reference,
+                                           std::filesystem::copy_options::overwrite_existing);
+                r.output = (directory / "changed-reference.png").string();
+                auto changed = session.generate(r, event, cancelled);
+                tc::require(!changed.prompt_cache_hit && std::filesystem::is_regular_file(r.output),
+                            "overwritten Qwen21 reference reused stale conditioning");
+                save("changed-reference.json", changed);
+                r.output = (directory / "changed-reference-repeat.png").string();
+                auto repeated = session.generate(r, event, cancelled);
+                tc::require(repeated.prompt_cache_hit && std::filesystem::is_regular_file(r.output),
+                            "unchanged Qwen21 reference failed to repopulate conditioning cache");
+                save("changed-reference-repeat.json", repeated);
             }
             // Cancellation happens between prefill and decode. It must not
             // export or leave a partially consumed hybrid prefix for a retry.

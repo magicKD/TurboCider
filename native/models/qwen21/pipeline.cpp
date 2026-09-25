@@ -56,6 +56,7 @@ void Session::unload() {
     hybrid_runtime_options_.clear();
     cached_text_.reset();
     cached_prompt_.clear();
+    cached_edit_.reset();
     transformer_.clear();
     vae_.clear();
     mx::clear_cache();
@@ -144,17 +145,33 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         std::filesystem::create_directories(r.dump);
         mx::save_safetensors((std::filesystem::path(r.dump) / (name + ".safetensors")).string(), {{"tensor", tensor}});
     };
+    // The one-entry edit cache is request-local to this resident Session. A
+    // path/mtime-only key would reuse stale visual conditions after an image
+    // is overwritten in place; verify the ordered file bytes on each request.
+    std::vector<std::string> image_sha256;
+    if (r.residency == "resident") {
+        image_sha256.reserve(r.inputs.size());
+        for (const auto &input : r.inputs) {
+            checkpoint(cancelled);
+            image_sha256.push_back(sha256_file(input.path));
+        }
+    } else cached_edit_.reset();
+    const bool edit_hit = cached_edit_ && !r.inputs.empty() &&
+        cached_edit_->prompt == r.prompt &&
+        cached_edit_->reference_size == r.qwen21_reference_size &&
+        cached_edit_->image_sha256 == image_sha256;
     std::vector<Tensor> images;
-    for (const auto &input : r.inputs) {
+    if (!edit_hit) for (const auto &input : r.inputs) {
         checkpoint(cancelled);
-        auto pixels = resize_reference(load_rgba_image_tensor(input.path), r.qwen21_reference_size);
-        images.push_back(pixels);
+        images.push_back(resize_reference(load_rgba_image_tensor(input.path),
+                                          r.qwen21_reference_size));
     }
-    const bool hit = images.empty() && cached_text_ && cached_prompt_ == r.prompt;
+    const bool hit = edit_hit || (r.inputs.empty() && cached_text_ && cached_prompt_ == r.prompt);
     Tensor text(0.f);
     std::vector<int> slots;
     auto text_start = Clock::now();
-    if (hit) text = *cached_text_;
+    if (edit_hit) { text = cached_edit_->text; slots = cached_edit_->image_slots; }
+    else if (hit) text = *cached_text_;
     else {
         // Staged requests release the DiT; resident requests keep its packed
         // suffix too, including when encoding a different prompt.
@@ -185,14 +202,18 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             assembled.embeddings.shape(1), event, cancelled, assembled.deepstack_deltas));
         mx::eval(text);
         slots = assembled.image_slots;
-        if (images.empty()) { cached_text_ = text; cached_prompt_ = r.prompt; }
+        if (r.inputs.empty()) { cached_text_ = text; cached_prompt_ = r.prompt; }
     }
     mx::clear_cache();
     double text_seconds = seconds(text_start);
     dump("qwen21_text", text);
     std::vector<ReferenceLatents> references;
     auto image_start = Clock::now();
-    if (!images.empty()) {
+    if (edit_hit) {
+        references = cached_edit_->reference_latents;
+        for (size_t i = 0; i < references.size(); ++i)
+            dump("qwen21_reference_" + std::to_string(i), references[i].latents);
+    } else if (!images.empty()) {
         Weights weights;
         weights.load_file(root_ / "vae/qwen_image_2.1_vae_bf16.safetensors");
         VAE encoder(weights);
@@ -204,6 +225,18 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             references.push_back({latent, {images[i].shape(1) / 16, images[i].shape(2) / 16, slots[i]}});
             dump("qwen21_reference_" + std::to_string(i), latent);
         }
+    }
+    if (!edit_hit && !r.inputs.empty() && r.residency == "resident") {
+        // Do not publish a cache entry if a reference changed during the
+        // decode/encode pass. Hashing again also catches same-path overwrites
+        // whose mtime or file size were preserved.
+        for (size_t i = 0; i < r.inputs.size(); ++i) {
+            checkpoint(cancelled);
+            require(sha256_file(r.inputs[i].path) == image_sha256[i],
+                    "Qwen21 reference changed while encoding conditioning");
+        }
+        cached_edit_ = CachedEditCondition{r.prompt, r.qwen21_reference_size,
+                                          std::move(image_sha256), text, slots, references};
     }
     images.clear(); mx::clear_cache();
     double image_seconds = seconds(image_start);

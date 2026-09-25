@@ -7,6 +7,13 @@
 FLUX and Z-Image keep text conditioning in a compatible resident session.
 Changing only the seed does not require encoding again. CLI `batch` and the
 local API preserve the session across requests; a one-shot process does not.
+The Qwen Image 2.1 resident Session also retains one editing condition: text,
+visual conditioning and reference VAE latents are reused only when the prompt,
+reference resize and ordered reference file SHA-256 values match. A changed
+reference is re-encoded even if the file path is unchanged. Hashing reference
+files still costs work; denoising prefix KV is rebuilt for each request. The
+cache is in memory, not an on-disk Core ML or image-result cache; unloading the
+Session releases it. Staged or one-shot edits do not reuse this condition.
 The native LTX route can also persist connected conditioning on disk with an
 identity derived from model, checkpoint, tokenizer and prompt. Cache reuse is
 reported by the executor rather than inferred from a faster request.
