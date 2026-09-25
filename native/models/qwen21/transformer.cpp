@@ -1,6 +1,7 @@
 #include "transformer.hpp"
 #include <cmath>
 #include <cstdlib>
+#include <iostream>
 
 namespace tc::qwen21 {
 namespace {
@@ -34,6 +35,12 @@ Transformer::Transformer(const Weights &weights, TransformerConfig config)
     : weights_(weights), config_(config) {
     const char *metal_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE");
     metal_qk_rope_ = metal_rope && std::string(metal_rope) == "1";
+    const char *profile_blocks = std::getenv("TURBOCIDER_QWEN21_PROFILE_GPU_BLOCKS");
+    profile_gpu_blocks_ = profile_blocks && std::string(profile_blocks) == "1";
+    const char *profile_ops = std::getenv("TURBOCIDER_QWEN21_PROFILE_GPU_OPS");
+    profile_gpu_ops_ = profile_ops && std::string(profile_ops) == "1";
+    require(!profile_gpu_blocks_ || !profile_gpu_ops_,
+            "select only one Qwen21 GPU profiling mode");
     require(config.layers > 0 && config.heads > 0 && config.head_dim > 0 &&
             config.channels > 0 && config.context_dim > 0, "invalid Qwen21 transformer dimensions");
     int sum = 0;
@@ -173,17 +180,34 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     for (int i = 0; i < config_.layers; ++i) {
         auto &functions = reuse ? decode_blocks_ : prefill_blocks_;
         if (functions.size() <= size_t(i)) {
-            functions.push_back(mx::compile([this, i, reuse, prefix_length, split_mlp,
-                                             metal_rope = metal_qk_rope_, tracing = trace != nullptr](const std::vector<Tensor> &args) {
+            const bool profile_ops = profile_gpu_ops_ && !split_mlp && i == 0;
+            auto block = [this, i, reuse, prefix_length, split_mlp, profile_ops,
+                          metal_rope = metal_qk_rope_, tracing = trace != nullptr](const std::vector<Tensor> &args) {
+                auto mark_start = Clock::now();
+                if (profile_ops) {
+                    mx::eval(args);
+                    mark_start = Clock::now();
+                }
+                auto mark = [&](const char *phase, std::initializer_list<Tensor> values) {
+                    if (!profile_ops) return;
+                    mx::eval(std::vector<Tensor>(values));
+                    std::cerr << "{\"qwen21_gpu_op\":\"" << phase << "\",\"block\":" << i
+                              << ",\"phase\":\"" << (reuse ? "decode" : "prefill")
+                              << "\",\"seconds\":" << std::chrono::duration<double>(Clock::now() - mark_start).count()
+                              << "}" << std::endl;
+                    mark_start = Clock::now();
+                };
                 auto hidden = args[0];
                 std::vector<Tensor> mods(args.begin() + 1, args.begin() + 5);
                 const auto &cosine = args[5], &sine = args[6];
                 std::string p = "transformer_blocks." + std::to_string(i);
                 auto input = layer_norm(hidden, config_.epsilon) * (Tensor(1.f, hidden.dtype()) + mods[0]);
                 auto attention_input = input;
+                mark("attention_input_norm", {input});
                 auto q = heads(linear(input, weights_, p + ".attn.to_q"), config_.heads, config_.head_dim);
                 auto k = heads(linear(input, weights_, p + ".attn.to_k"), config_.heads, config_.head_dim);
                 auto v = heads(linear(input, weights_, p + ".attn.to_v"), config_.heads, config_.head_dim);
+                mark("qkv_projection", {q, k, v});
                 q = mx::fast::rms_norm(q, weights_.at(p + ".attn.norm_q.weight"), config_.epsilon);
                 k = mx::fast::rms_norm(k, weights_.at(p + ".attn.norm_k.weight"), config_.epsilon);
                 if (metal_rope) {
@@ -193,6 +217,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                     q = rotate(q, cosine, sine);
                     k = rotate(k, cosine, sine);
                 }
+                mark("qk_norm_rope", {q, k});
                 Tensor output = hidden;
                 auto pk = k, pv = v;
                 if (reuse) {
@@ -209,10 +234,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                             false, {}, false, segment.causal ? "causal" : ""));
                     output = mx::concatenate(segments, 1);
                 }
+                mark("attention", {output});
                 auto projected = linear(output, weights_, p + ".attn.to_out.0");
+                mark("attention_output_projection", {projected});
                 hidden = hidden + mx::tanh(mods[1]) * projected;
                 auto after_attention = hidden;
                 input = layer_norm(hidden, config_.epsilon) * (Tensor(1.f, hidden.dtype()) + mods[2]);
+                mark("attention_residual_ffn_input", {input});
                 if (split_mlp) return std::vector<Tensor>{hidden, input};
                 auto ff = input;
                 if (weights_.has(p + ".img_mlp.gate_up.weight")) {
@@ -221,17 +249,33 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 } else {
                     ff = silu(linear(input, weights_, p + ".img_mlp.gate_layer")) * linear(input, weights_, p + ".img_mlp.proj");
                 }
+                mark("ffn_gate_up", {ff});
                 hidden = hidden + mx::tanh(mods[3]) * linear(ff, weights_, p + ".img_mlp.out");
+                mark("ffn_down_residual", {hidden});
                 if (tracing) return std::vector<Tensor>{hidden, pk, pv, attention_input, q, k, v, output, projected, after_attention, input, ff};
                 return reuse ? std::vector<Tensor>{hidden} : std::vector<Tensor>{hidden, pk, pv};
-            }));
+            };
+            functions.push_back(profile_ops ? BlockFunction(block) : mx::compile(block));
         }
         std::vector<Tensor> args{hidden, mods[0], mods[1], mods[2], mods[3], cosine, sine};
         if (reuse) {
             args.push_back(prefix_[i].key);
             args.push_back(prefix_[i].value);
         }
+        // Diagnostic only: force each pure-GPU block boundary so the elapsed
+        // time can be attributed to that block. This destroys normal lazy
+        // scheduling and must never be used as a production speed benchmark.
+        const bool profile_block = profile_gpu_blocks_ && !split_mlp;
+        if (profile_block) mx::eval(args);
+        auto block_start = profile_block ? Clock::now() : Clock::time_point{};
         auto outputs = functions[i](args);
+        if (profile_block) {
+            mx::eval(outputs);
+            std::cerr << "{\"qwen21_gpu_block\":" << i
+                      << ",\"phase\":\"" << (reuse ? "decode" : "prefill")
+                      << "\",\"seconds\":" << std::chrono::duration<double>(Clock::now() - block_start).count()
+                      << "}" << std::endl;
+        }
         hidden = outputs[0];
         if (split_mlp) {
             auto feed = decode_mlp_(i, outputs[1]);
