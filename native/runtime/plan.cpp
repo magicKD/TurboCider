@@ -82,6 +82,10 @@ ExecutionPlan make_plan(const Request &requested) {
         require(!r.ane_manifest.empty(), "gpu_ane requires an explicit ANE manifest or profile");
     }
     module_for(r.model).validate(r);
+    require(r.model == "qwen-image-2.1" ||
+                (!r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
+                 r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty()),
+            "Qwen21-only acceleration options cannot be used with other models");
     require((!r.prompt_enhance && !r.prompt_enhance_edit_experimental && r.prompt_enhancer_path.empty()) || r.model == "qwen-image-2.1",
             "native prompt enhancement is currently supported only for Qwen21");
     require(!r.prompt_enhance_edit_experimental ||

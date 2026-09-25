@@ -65,7 +65,9 @@ class W8A8DiagnosticsTests(unittest.TestCase):
         # The exporter deliberately permits a FP16-weight/A8 research graph.
         pipeline = (ROOT / "native/models/qwen21/pipeline.cpp").read_text()
         self.assertIn('hybrid_->export_variant == "fp16" &&', pipeline)
-        self.assertIn('hybrid_->activation_precision == "fp16" &&', pipeline)
+        self.assertIn('hybrid_->activation_precision == "fp16"', pipeline)
+        self.assertIn('hybrid_->export_variant == "int8_pc" &&', pipeline)
+        self.assertIn('hybrid_->activation_precision == "int8" &&', pipeline)
 
     def test_heldout_layer_artifact_must_stay_in_cache(self):
         with tempfile.TemporaryDirectory() as directory:

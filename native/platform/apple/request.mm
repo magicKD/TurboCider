@@ -111,6 +111,26 @@ static void parse_ltx_options(NSDictionary *d, Request &r) {
     r.ltx_sparse_keep_blocks = number(
         d, @"ltx_sparse_keep_blocks", r.ltx_sparse_keep_blocks);
 }
+static void parse_qwen21_options(NSDictionary *d, Request &r) {
+    r.qwen21_w8a8 = boolean(d, @"qwen21_w8a8", r.qwen21_w8a8);
+    r.qwen21_gpu_w8a16 = boolean(d, @"qwen21_gpu_w8a16", r.qwen21_gpu_w8a16);
+    r.qwen21_reference_size = number(d, @"qwen21_reference_size", r.qwen21_reference_size);
+    if (d[@"qwen21_gpu_full_ffn_blocks"]) {
+        NSArray *blocks = d[@"qwen21_gpu_full_ffn_blocks"];
+        require([blocks isKindOfClass:NSArray.class] && blocks.count <= 3,
+                "qwen21_gpu_full_ffn_blocks must contain at most three layer indices");
+        int previous = -1;
+        for (id raw in blocks) {
+            require([raw isKindOfClass:NSNumber.class] &&
+                        CFGetTypeID((__bridge CFTypeRef)raw) != CFBooleanGetTypeID() &&
+                        [raw doubleValue] == [raw intValue] &&
+                        [raw intValue] > previous && [raw intValue] < 32,
+                    "qwen21_gpu_full_ffn_blocks must be sorted unique indices in [0,31]");
+            previous = [raw intValue];
+            r.qwen21_gpu_full_ffn_blocks.push_back(previous);
+        }
+    }
+}
 Request request_from_json(NSDictionary *d) {
     int version = number(d, @"schema_version", 1);
     require(version == 1 || version == 2, "unsupported schema_version");
@@ -126,6 +146,8 @@ Request request_from_json(NSDictionary *d) {
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
+            @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_reference_size",
+            @"qwen21_gpu_full_ffn_blocks",
             @"loras",        @"audio",          @"noise_path",
             @"vsa",          @"vsa_sparsity",   @"vsa_tile_size",
             @"vsa_prefix_mode", @"vsa_dense_first_n_steps",
@@ -138,6 +160,7 @@ Request request_from_json(NSDictionary *d) {
         r.prompt_enhancer_path = string_value(d, @"prompt_enhancer_path");
         r.prompt_enhance = boolean(d, @"prompt_enhance", false);
         r.prompt_enhance_edit_experimental = boolean(d, @"prompt_enhance_edit_experimental", false);
+        parse_qwen21_options(d, r);
         auto model_descriptor = module_for(r.model).describe();
         auto descriptor = to_dictionary(model_descriptor);
         r.operation = string_value(d, @"operation",
@@ -220,12 +243,14 @@ Request request_from_json(NSDictionary *d) {
             execution,
             @[ @"policy", @"profile", @"ane_manifest", @"encoder_ane_manifest", @"allow_approximation",
                @"residency", @"memory_budget_bytes", @"warmup_iterations",
+               @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks",
                @"quantized_cache" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");
         r.encoder_ane_manifest = string_value(execution, @"encoder_ane_manifest");
         r.allow_approximation = boolean(execution, @"allow_approximation", false);
+        parse_qwen21_options(execution, r);
         r.residency = string_value(execution, @"residency", model_descriptor.default_residency);
         r.memory_budget_bytes = byte_count(execution, @"memory_budget_bytes", 0);
         r.quantized_cache = string_value(execution, @"quantized_cache");
@@ -236,6 +261,7 @@ Request request_from_json(NSDictionary *d) {
         auto parameters = d[@"parameters"] ? dictionary(d[@"parameters"], "parameters") : @{};
         keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path",
                             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
+                            @"qwen21_reference_size",
                             @"streaming_offload", @"vsa", @"vsa_sparsity",
                             @"vsa_tile_size", @"vsa_prefix_mode",
                             @"vsa_dense_first_n_steps", @"vsa_dense_layers",
@@ -246,6 +272,7 @@ Request request_from_json(NSDictionary *d) {
         r.prompt_enhancer_path = string_value(parameters, @"prompt_enhancer_path");
         r.prompt_enhance = boolean(parameters, @"prompt_enhance", false);
         r.prompt_enhance_edit_experimental = boolean(parameters, @"prompt_enhance_edit_experimental", false);
+        r.qwen21_reference_size = number(parameters, @"qwen21_reference_size", r.qwen21_reference_size);
         r.streaming_offload = boolean(parameters, @"streaming_offload", false);
         r.vsa = boolean(parameters, @"vsa", false);
         r.vsa_sparsity = numeric(parameters, @"vsa_sparsity", r.vsa_sparsity);

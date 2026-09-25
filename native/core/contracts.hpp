@@ -32,6 +32,11 @@ struct Request {
     // Explicit opt-in only: native PE-I2I with experimental FP32 vision.
     // Does not qualify BF16 PE vision or edit-image quality.
     bool prompt_enhance_edit_experimental = false;
+    // Explicit Qwen21-only W8A8 diagnostics in the public CLI contract.
+    // The default remains the original 1024-reference BF16 GPU path.
+    bool qwen21_w8a8 = false, qwen21_gpu_w8a16 = false;
+    int qwen21_reference_size = 1024;
+    std::vector<int> qwen21_gpu_full_ffn_blocks;
     std::string lora_strategy = "auto";
     bool vsa = false;
     // Preserve the JSON decimal through top-k computation. A float-rounded

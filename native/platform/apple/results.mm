@@ -246,7 +246,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             @"row_symmetric_int8_weight_quantization"];
     else if (hybrid)
         [algorithm_approximations addObject:
-            r.model == "qwen-image-2.1" ? @"qwen21_decode_mlp_fp16_partition" : @"single_block_mlp_int8_per_channel"];
+            r.model == "qwen-image-2.1"
+                ? (r.qwen21_w8a8 ? @"qwen21_decode_mlp_w8a8_per_tensor" : @"qwen21_decode_mlp_fp16_partition")
+                : @"single_block_mlp_int8_per_channel"];
+    if (r.model == "qwen-image-2.1" && r.qwen21_reference_size != 1024)
+        [algorithm_approximations addObject:@"qwen21_reference_resize_256"];
     if (encoder_hybrid)
         [algorithm_approximations addObject:encoder_approximation_label(r)];
     if (r.model == "ltx-2.5-distilled") {
@@ -257,7 +261,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         if (r.ltx_stage2_text_rows)
             [algorithm_approximations addObject:@"ltx_stage2_text_context_pruning"];
     }
-    return @{
+    NSMutableDictionary *report = [@{
         @"selection_pending" : @(r.execution == "auto"),
         @"requested_execution" : @(r.execution.c_str()),
         @"prompt_enhance" : @(r.prompt_enhance),
@@ -282,7 +286,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                       r.model == "wan2.1-1.3b-qad" ? @"fp16-int8-affine-dit+bf16-umt5+fp32-taehv" :
                       r.model == "z-image-turbo-gguf" ? @"checkpoint_defined_gguf" :
             (!r.quantized_cache.empty() ? @"int8_weight_bf16_activation_streamed" :
-             (hybrid ? (r.model == "qwen-image-2.1" ? @"bf16_gpu+fp16_mlp_fp16_io" : @"bf16_gpu+int8_mlp_fp16_io") : @"bf16")),
+             (hybrid ? (r.model == "qwen-image-2.1"
+                            ? (r.qwen21_w8a8
+                                ? (r.qwen21_gpu_w8a16 ? @"w8a16_gpu+w8a8_mlp_fp16_io" : @"bf16_gpu+w8a8_mlp_fp16_io")
+                                : @"bf16_gpu+fp16_mlp_fp16_io")
+                            : @"bf16_gpu+int8_mlp_fp16_io") : @"bf16")),
         @"algorithm_approximations" : algorithm_approximations,
         @"requested_shape" : @[ @(r.width), @(r.height), @(r.frames) ],
         @"decoded_shape" : @[ @(dw), @(dh), @(r.frames) ],
@@ -342,7 +350,18 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"limitation" : recipe.executable
             ? @"capabilities depend on model artifacts and configured hardware"
             : @"native executor migration incomplete"
-    };
+    } mutableCopy];
+    if (r.model == "qwen-image-2.1") {
+        NSMutableArray *blocks = [NSMutableArray array];
+        for (int block : r.qwen21_gpu_full_ffn_blocks) [blocks addObject:@(block)];
+        report[@"qwen21_w8a8"] = @(r.qwen21_w8a8);
+        report[@"qwen21_gpu_w8a16"] = @(r.qwen21_gpu_w8a16);
+        report[@"qwen21_reference_size"] = @(r.qwen21_reference_size);
+        report[@"qwen21_gpu_full_ffn_blocks"] = blocks;
+        if (r.qwen21_w8a8)
+            report[@"planned_w8a8_ffn_layer_coverage"] = @((32. - blocks.count) / 32.);
+    }
+    return report;
 }
 static NSDictionary *runtime_plan(const RunResult &result) {
     NSMutableDictionary *plan = [to_dictionary(result.plan) mutableCopy];

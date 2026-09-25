@@ -19,6 +19,7 @@ class Session final : public ModelSession {
     std::unique_ptr<HybridSession> hybrid_;
     std::unique_ptr<HybridMLP> hybrid_mlp_;
     std::string hybrid_manifest_;
+    std::string hybrid_runtime_options_;
     RunResult run(const Request &, const Event &, std::atomic<bool> &, bool warmup, bool prepare_only);
 };
 } // namespace tc::qwen21

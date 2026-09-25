@@ -17,9 +17,55 @@ performed by the native runtime.
 
 The App exposes Qwen-specific examples, ten-reference import limits, RGBA
 handling, mask/annotation authoring, and the PE-I2I warning. Use the GPU route
-for normal operation. The experimental GPU+ANE route is restricted to the
-validated 512² text-to-image configuration and is not hardware-placement
+for normal operation. The experimental GPU+ANE route requires an explicit
+manifest and approximation opt-in; it is not hardware-placement or image-quality
 proof.
+
+## Explicit 512² GPU/Core ML experiments
+
+The default remains BF16 GPU, with references resized to approximately 1024
+pixels. There are two opt-in mixed routes: a 32-layer FP16 Core ML FFN prefix
+for 512² text-to-image, and a W8A8 Core ML prefix for 512² text-to-image or
+1–3-reference editing. The measured, faster W8A8 editing candidate keeps a
+BF16 GPU FFN suffix, resizes each reference to approximately 256 pixels, and
+runs layers 3, 5 and 7 entirely on GPU. Its 29/32 decode FFN coverage is
+90.625%. These reference dimensions change the conditioning input and can lose
+details; this mode is **not** the default or a production image-quality gate.
+
+For the explicit W8A8 editing candidate, use schema 1 fields like these with a
+compiled 1024-row, 32-layer, checkpoint-matched, per-tensor W8A8 manifest:
+
+```json
+{
+  "model": "qwen-image-2.1",
+  "operation": "image.edit",
+  "prompt": "Compose these two referenced objects in one scene.",
+  "output": "results/edit.png",
+  "width": 512, "height": 512, "steps": 40, "seed": 17,
+  "frames": 1, "audio": false,
+  "execution": "gpu_ane", "allow_approximation": true,
+  "ane_manifest": "path/to/compiled/manifest-HASH.json",
+  "qwen21_w8a8": true,
+  "qwen21_reference_size": 256,
+  "qwen21_gpu_full_ffn_blocks": [3, 5, 7],
+  "inputs": [
+    {"kind": "image", "role": "reference", "path": "path/to/first.png"},
+    {"kind": "image", "role": "reference", "path": "path/to/second.png"}
+  ]
+}
+```
+
+Run `build/native/turbocider plan request.json` to check the policy and
+`build/native/turbocider generate path/to/model request.json` to verify the
+manifest and generate an image. Schema 2 puts the W8A8 and fallback flags
+under `execution`, and `qwen21_reference_size` under `parameters`. W8A16 GPU
+suffix is an additional explicit research option (`qwen21_gpu_w8a16: true`),
+but tested slower than the BF16 suffix; do not enable it for speed by default.
+The 1024² W8A8 text-to-image results remain diagnostic-only and are not
+accepted by the public CLI hybrid policy. See the
+[512²](../status/qwen21-w8a8-ane-diagnostics-2026-09-25.md) and
+[1024²](../status/qwen21-w8a8-ane-1024-diagnostics.md) reports for timing
+scope, visual differences, and remaining validation work.
 
 ## 512² validation snapshot
 

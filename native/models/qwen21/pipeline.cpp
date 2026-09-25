@@ -53,6 +53,7 @@ void Session::unload() {
     hybrid_mlp_.reset();
     hybrid_.reset();
     hybrid_manifest_.clear();
+    hybrid_runtime_options_.clear();
     cached_text_.reset();
     cached_prompt_.clear();
     transformer_.clear();
@@ -78,7 +79,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             "Qwen21 requires a .png output");
     ResidencyPolicy::validate_budget(plan, device_info().physical_memory);
     if (!hybrid_requested) {
-        hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear();
+        hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
         r.execution = "gpu"; // automatic selection remains conservative
     }
     plan.request = r;
@@ -146,7 +147,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     std::vector<Tensor> images;
     for (const auto &input : r.inputs) {
         checkpoint(cancelled);
-        auto pixels = resize_reference(load_rgba_image_tensor(input.path));
+        auto pixels = resize_reference(load_rgba_image_tensor(input.path), r.qwen21_reference_size);
         images.push_back(pixels);
     }
     const bool hit = images.empty() && cached_text_ && cached_prompt_ == r.prompt;
@@ -220,15 +221,32 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors",
                 std::vector<LoRAAsset>{}, r.width / 16 * (r.height / 16), 32);
             hybrid_manifest_ = identity;
+            hybrid_runtime_options_.clear();
         }
+        const std::string runtime_options =
+            (r.qwen21_w8a8 ? "w8a8" : "fp16") +
+            std::string(r.qwen21_gpu_w8a16 ? ":w8a16" : ":bf16") +
+            (r.qwen21_gpu_full_ffn_blocks.empty() ? ":full" : ":fallback357");
         require(hybrid_->hidden == 4096 && hybrid_->mlp_width == 12288 &&
                     hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end == 4096 &&
                     hybrid_->block_count == 32 && hybrid_->checkpoint_sha_verified &&
-                    hybrid_->tensor_layout == "qwen21" && hybrid_->export_variant == "fp16" &&
-                    hybrid_->activation_precision == "fp16" &&
+                    hybrid_->rows == r.width / 16 * (r.height / 16) &&
+                    hybrid_->tensor_layout == "qwen21" &&
+                    (r.qwen21_w8a8
+                        ? hybrid_->export_variant == "int8_pc" &&
+                          hybrid_->activation_precision == "int8" &&
+                          hybrid_->a8_graph == "sq_v1_both" &&
+                          hybrid_->projected_weight_granularity == "per_tensor"
+                        : hybrid_->export_variant == "fp16" &&
+                          hybrid_->activation_precision == "fp16") &&
                     hybrid_->output_scale == 1.f,
-                "Qwen21 gpu_ane manifest is not a verified 32-block FP16 partition");
-        if (!hybrid_mlp_) hybrid_mlp_ = std::make_unique<HybridMLP>(transformer_, *hybrid_);
+                "Qwen21 gpu_ane manifest precision/rows are not a verified 32-block partition");
+        if (!hybrid_mlp_ || hybrid_runtime_options_ != runtime_options) {
+            hybrid_mlp_.reset();
+            hybrid_mlp_ = std::make_unique<HybridMLP>(
+                transformer_, *hybrid_, r.qwen21_gpu_w8a16, r.qwen21_gpu_full_ffn_blocks);
+            hybrid_runtime_options_ = runtime_options;
+        }
     }
     RunResult result;
     result.original_prompt = original_prompt;
@@ -244,8 +262,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.backend = "mlx_cpp_metal"; result.precision = "bf16";
     if (hybrid_requested) {
         result.backend = "mlx_cpp_metal+coreml";
-        result.precision = "bf16_gpu+fp16_mlp_fp16_io";
-        result.selection = "gpu_ane experimental: BF16 GPU suffix + FP16 Core ML CPU/ANE prefix; runtime placement not guaranteed";
+        result.precision = r.qwen21_w8a8
+            ? (r.qwen21_gpu_w8a16 ? "w8a16_gpu+w8a8_mlp_fp16_io" : "bf16_gpu+w8a8_mlp_fp16_io")
+            : "bf16_gpu+fp16_mlp_fp16_io";
+        result.selection = r.qwen21_w8a8
+            ? "gpu_ane explicit experimental: W8A8 Core ML prefix + GPU FFN suffix, placement unverified"
+            : "gpu_ane experimental: BF16 GPU suffix + FP16 Core ML CPU/ANE prefix; runtime placement not guaranteed";
     }
     result.timings.hybrid = hybrid_requested ? seconds(hybrid_start) : 0;
     result.checkpoint = "qwen_image_2.1_bf16.safetensors";
@@ -254,6 +276,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.total_tokens = result.text_tokens + result.reference_tokens + r.height / 16 * (r.width / 16);
     result.timings.text = text_seconds; result.timings.image = image_seconds;
     emit(event, hybrid_requested ? "route_gpu_ane" : "route_gpu", 1, 1);
+    const uint64_t coreml_calls_before = hybrid_requested ? hybrid_->metrics().runtime_calls : 0;
     if (!prepare_only) {
         auto schedule = sigmas(r.width, r.height, r.steps);
         mx::eval(schedule);
@@ -290,6 +313,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             }
         }
         result.timings.denoise = seconds(dit_start); result.actual_steps = r.steps;
+        if (r.qwen21_w8a8)
+            require(hybrid_->metrics().runtime_calls - coreml_calls_before ==
+                        uint64_t(r.steps - 1) * (32 - r.qwen21_gpu_full_ffn_blocks.size()),
+                    "Qwen21 W8A8 did not execute the required FFN layer coverage");
         dump("qwen21_latents", latents);
         if (r.residency == "component_staged") { hybrid_mlp_.reset(); transformer_.clear(); mx::clear_cache(); }
         checkpoint(cancelled);
@@ -308,7 +335,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     }
     if (hybrid_requested) result.hybrid = hybrid_->metrics(); // session-cumulative, including preparation
     if (!prepare_only && r.residency == "component_staged") {
-        hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear();
+        hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
         transformer_.clear(); vae_.clear(); mx::clear_cache();
     }
     result.timings.wall = seconds(start);
@@ -317,7 +344,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
 } catch (...) {
     // Local prefix state is already destroyed; no partial cache survives a retry.
     try { mx::synchronize(); } catch (...) {}
-    hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear();
+    hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
     throw;
 }
 } // namespace tc::qwen21

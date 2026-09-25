@@ -172,6 +172,50 @@ class ContractTests(unittest.TestCase):
                         dict(execution='gpu',ane_manifest='/tmp/no-qwen-ane.json')]:
             self.assertNotEqual(plan({**request, **invalid})[0], 0, invalid)
 
+    def test_qwen21_explicit_w8a8_edit_cli_gate(self):
+        refs = [dict(kind='image', role='reference', path=f'qwen-exp-{i}.png')
+                for i in range(3)]
+        request = dict(model='qwen-image-2.1', operation='image.edit', prompt='Two teapots',
+                       width=512, height=512, steps=40, audio=False, frames=1,
+                       inputs=refs[:2], execution='gpu_ane', allow_approximation=True,
+                       ane_manifest='qwen-w8a8-compiled.json', qwen21_w8a8=True,
+                       qwen21_reference_size=256, qwen21_gpu_full_ffn_blocks=[3, 5, 7])
+        code, result, error = plan(request)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(result['precision'], 'bf16_gpu+w8a8_mlp_fp16_io')
+        self.assertEqual(result['planned_w8a8_ffn_layer_coverage'], 29 / 32)
+        self.assertEqual(result['qwen21_reference_size'], 256)
+        self.assertEqual(result['qwen21_gpu_full_ffn_blocks'], [3, 5, 7])
+        self.assertIn('qwen21_reference_resize_256', result['algorithm_approximations'])
+        self.assertIn('qwen21_decode_mlp_w8a8_per_tensor', result['algorithm_approximations'])
+        for size in (1, 2, 3):
+            self.assertEqual(plan({**request, 'inputs': refs[:size]})[0], 0)
+        schema2 = dict(schema_version=2, model='qwen-image-2.1', operation='image.edit',
+                       inputs=[dict(kind='text', role='prompt', text='Two teapots'), *refs[:2]],
+                       outputs=[dict(kind='image', path='qwen-edit.png', width=512, height=512,
+                                     frames=1, audio=False)], sampling=dict(seed=42, steps=40),
+                       execution=dict(policy='gpu_ane', allow_approximation=True,
+                                      ane_manifest=request['ane_manifest'], qwen21_w8a8=True,
+                                      qwen21_gpu_full_ffn_blocks=[3, 5, 7]),
+                       parameters=dict(qwen21_reference_size=256))
+        code, _, error = plan(schema2)
+        self.assertEqual(code, 0, error)
+        for invalid in [dict(qwen21_w8a8=False), dict(qwen21_reference_size=512),
+                        dict(qwen21_reference_size=1024), dict(qwen21_gpu_full_ffn_blocks=[]),
+                        dict(qwen21_gpu_full_ffn_blocks=[3, 5]),
+                        dict(qwen21_gpu_full_ffn_blocks=[7, 5, 3]),
+                        dict(qwen21_gpu_full_ffn_blocks=[3, 3, 7]),
+                        dict(inputs=refs + refs[:1]), dict(width=1024),
+                        dict(steps=1), dict(allow_approximation=False),
+                        dict(execution='gpu'), dict(qwen21_gpu_w8a16='true')]:
+            self.assertNotEqual(plan({**request, **invalid})[0], 0, invalid)
+        gpu = {**request, 'execution': 'gpu', 'ane_manifest': '', 'qwen21_w8a8': False,
+               'qwen21_gpu_full_ffn_blocks': []}
+        self.assertEqual(plan(gpu)[0], 0)
+        self.assertNotEqual(plan({**gpu, 'allow_approximation': False})[0], 0)
+        other = {**gpu, 'model': 'z-image-turbo'}
+        self.assertNotEqual(plan(other)[0], 0)
+
     def test_device_optimization_profile(self):
         system = json.loads(consume(C.c_void_p(lib.tc_system_json())))
         expected = system['gpu'] == 'Apple M5 Pro' and system['physical_memory_bytes'] == 24 << 30
