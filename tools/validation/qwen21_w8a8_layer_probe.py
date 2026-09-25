@@ -34,6 +34,23 @@ def metrics(actual, expected):
             "max_abs": float(np.max(np.abs(difference)))}
 
 
+def validate_manifest(manifest, weight_only_control=False):
+    identity = manifest.get("export_identity", {})
+    shape = manifest.get("shape", {})
+    buckets = shape.get("buckets")
+    width = identity.get("ane_mlp_end")
+    expected_precision = "fp16" if weight_only_control else "int8"
+    if (identity.get("tensor_layout") != "qwen21" or
+            identity.get("activation_precision", "fp16") != expected_precision or
+            type(width) is not int or width < 32 or width >= 12288 or width % 32 or
+            shape.get("ane_mlp_start") != 0 or shape.get("ane_mlp_end") != width or
+            shape.get("K") != 4096 or shape.get("mlp_width") != 12288 or
+            sorted(manifest.get("artifacts", {})) != ["0"] or
+            buckets not in ([1024], [4096])):
+        raise ValueError("expected a compiled Qwen21 block-0 1024/4096-row manifest with a valid FFN partition")
+    return buckets[0], width
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--library", type=Path, default=Path("build/native/libturbocider.dylib"))
@@ -46,16 +63,8 @@ def main():
                         help="accept a Qwen21 W8A16 control manifest without activation Q/DQ")
     args = parser.parse_args()
     manifest = json.loads(args.manifest.read_text())
-    identity = manifest.get("export_identity", {})
     expected_precision = "fp16" if args.weight_only_control else "int8"
-    buckets = manifest.get("shape", {}).get("buckets")
-    if (identity.get("tensor_layout") != "qwen21" or
-            identity.get("activation_precision", "fp16") != expected_precision or
-            identity.get("ane_mlp_end") != 4096 or
-            sorted(manifest["artifacts"]) != ["0"] or
-            buckets not in ([1024], [4096])):
-        raise ValueError("expected a compiled Qwen21 block-0 1024/4096-row manifest of the requested precision")
-    rows = buckets[0]
+    rows, width = validate_manifest(manifest, args.weight_only_control)
     if not 1 <= args.iterations <= 100:
         parser.error("iterations must be 1...100")
     x = np.load(args.input, mmap_mode="r", allow_pickle=False)
@@ -72,7 +81,7 @@ def main():
         gate, up = mx.split(mx.matmul(activation, gate_up.T), 2, axis=-1)
         return mx.matmul(gate * mx.sigmoid(gate) * up, projection.T)
 
-    width, total = 4096, 12288
+    total = 12288
     ane_weights = mx.concatenate([fused[:width], fused[total:total + width]])
     gpu_weights = mx.concatenate([fused[width:total], fused[total + width:]])
     ane_down, gpu_down = down[:, :width], down[:, width:]
@@ -93,6 +102,7 @@ def main():
             "scope": "one cached-decode FFN block on one real prompt; not e2e or ANE residency",
             "input_sha256": hashlib.sha256(args.input.read_bytes()).hexdigest(),
             "activation_precision": expected_precision,
+            "ane_mlp_width": width,
             "ane_branch": metrics(prediction, np.array(branch_reference.astype(mx.float32))),
             "hybrid": metrics(hybrid, full),
             "coreml_prediction_seconds": durations[2:],

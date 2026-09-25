@@ -51,6 +51,26 @@ Each reference count still has only one prompt/seed and requires broader visual
 validation. Earlier three-reference tests with the default 1024px reference
 resize were slower on the mixed route; these are different inputs.
 
+An additional explicitly selected **6144-channel W8A8** partition was
+measured on the same 512²/40-step prepared, condition-cached 1/2/3-reference
+workloads. Its request-wall speedups over matched GPU were **1.357× / 1.348× /
+1.338×**, compared with **1.209× / 1.204× / 1.198×** for the established
+4096 partition. For the same two-reference input at 5 steps, a new
+condition-cached comparison measured GPU 6.706/6.707 s, 4096 W8A8
+6.003/5.996 s, and 6144 W8A8 5.560/5.543 s (6144: **1.208×** request-wall
+vs GPU). The earlier 5-step 0.835× test had `prompt_cache_hit=false`;
+it does not describe this repeated-input cache-hit scenario.
+
+To opt into the faster candidate, point the example's `ane_manifest` at a
+checkpoint-matched 1024-row, 32-block, 6144-channel compiled manifest; keep
+`qwen21_gpu_full_ffn_blocks: [3, 5, 7]` and the BF16 GPU suffix. No global
+manifest path is bundled: a local model must first be explicitly exported and
+compiled from the same checkpoint. The 4096 manifest remains available if
+composition fidelity matters: the 6144 two-reference result has visibly
+shifted composition (RGB correlation 0.928 to GPU, versus 0.996 for 4096).
+Single- and three-reference outputs also require broader quality checks.
+Neither opt-in establishes physical ANE occupancy; GPU remains the default.
+
 For the explicit W8A8 editing candidate, use schema 1 fields like these with a
 compiled 1024-row, 32-layer, checkpoint-matched, per-tensor W8A8 manifest:
 

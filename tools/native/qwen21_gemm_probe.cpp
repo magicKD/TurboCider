@@ -83,13 +83,14 @@ double median(std::vector<double> samples) {
 int main(int argc, char **argv) {
     try {
         if (argc != 4 && argc != 5)
-            throw std::invalid_argument("usage: qwen21-gemm-probe gate_up|down|gate_swiglu ROWS RUNS [--fp16]");
+            throw std::invalid_argument("usage: qwen21-gemm-probe gate_up|down|gate_swiglu ROWS RUNS [--fp16|--w4]");
         const std::string operation(argv[1]);
         if (operation != "gate_up" && operation != "down" && operation != "gate_swiglu")
             throw std::invalid_argument("operation must be gate_up, down or gate_swiglu");
         const int rows=std::stoi(argv[2]), runs=std::stoi(argv[3]);
         const bool fp16_only = argc == 5 && std::string(argv[4]) == "--fp16";
-        if (argc == 5 && !fp16_only)
+        const bool w4_only = argc == 5 && std::string(argv[4]) == "--w4";
+        if (argc == 5 && !fp16_only && !w4_only)
             throw std::invalid_argument("unknown Qwen21 GEMM probe option");
         if ((rows != 1024 && rows != 4096) || runs < 2 || runs > 50)
             throw std::invalid_argument("rows must be 1024/4096 and runs must be 2...50");
@@ -150,7 +151,7 @@ int main(int argc, char **argv) {
                       << ",\"max_abs\":" << max_abs << "}" << std::endl;
             return 0;
         }
-        for (const auto [bm,bn] : std::vector<std::pair<int,int>>{{16,128},{32,128},{48,128},{32,256},{64,128}}) {
+        if (!w4_only) for (const auto [bm,bn] : std::vector<std::pair<int,int>>{{16,128},{32,128},{48,128},{32,256},{64,128}}) {
             auto candidate=mx::compile([bm,bn,operation](const Arrays &a) {
                 return Arrays{operation == "gate_swiglu"
                     ? mpp_swiglu(a[0],a[1],bm,bn)
@@ -183,23 +184,29 @@ int main(int argc, char **argv) {
                       << ",\"relative_l2\":" << relative_l2
                       << ",\"max_abs\":" << max_abs << "}" << std::endl;
         }
-        if (operation == "gate_swiglu") return 0;
+        if (operation == "gate_swiglu" && !w4_only) return 0;
         for (int group_size : {32,64,128}) {
-            auto quantized=mx::quantize(mx::astype(w,mx::float16),group_size,8,"affine");
+            const int bits = w4_only ? 4 : 8;
+            auto quantized=mx::quantize(mx::astype(w,mx::float16),group_size,bits,"affine");
             if (quantized.size()!=3)
-                throw std::runtime_error("Qwen21 W8A16 expected weight, scales and biases");
+                throw std::runtime_error("Qwen21 quantized GEMM expected weight, scales and biases");
             mx::eval(quantized);
             Arrays qargs{x,quantized[0],quantized[1],quantized[2]};
-            auto qgemm=mx::compile([group_size](const Arrays &a) {
-                return Arrays{mx::quantized_matmul(a[0],a[1],a[2],a[3],true,
-                                                   group_size,8,"affine")};
+            auto qgemm=mx::compile([group_size,bits,operation](const Arrays &a) {
+                auto projected=mx::quantized_matmul(a[0],a[1],a[2],a[3],true,
+                                                    group_size,bits,"affine");
+                if (operation == "gate_swiglu") {
+                    auto parts=mx::split(projected,2,-1);
+                    return Arrays{(parts[0]*mx::sigmoid(parts[0]))*parts[1]};
+                }
+                return Arrays{projected};
             });
             auto actual=mx::astype(qgemm(qargs)[0],mx::float32);
             const auto relative_l2=mx::sqrt(mx::sum(mx::square(actual-expected))/
                                             mx::sum(mx::square(expected))).item<float>();
             const auto max_abs=mx::max(mx::abs(actual-expected)).item<float>();
             if (!std::isfinite(relative_l2) || !std::isfinite(max_abs))
-                throw std::runtime_error("nonfinite Qwen21 W8A16 projection error");
+                throw std::runtime_error("nonfinite Qwen21 quantized projection error");
             auto timed=[&](auto &graph,const Arrays &input_args) {
                 auto start=std::chrono::steady_clock::now();
                 mx::eval(graph(input_args));
@@ -214,7 +221,8 @@ int main(int argc, char **argv) {
                 if (i>=3) { mlxtimes.push_back(a); qtimes.push_back(b); }
             }
             std::cout << "{\"operation\":\"" << operation << "\",\"rows\":" << rows
-                      << ",\"precision\":\"w8a16\",\"group_size\":" << group_size
+                      << ",\"precision\":\"" << (w4_only ? "w4a16" : "w8a16")
+                      << "\",\"group_size\":" << group_size
                       << ",\"mlx_ms\":" << median(mlxtimes)
                       << ",\"quant_ms\":" << median(qtimes)
                       << ",\"relative_l2\":" << relative_l2

@@ -47,6 +47,14 @@ FP16 没有足够的单算子收益覆盖真实模型的 dtype 边界、画质�
 不是图像质量结果；筛查开关为 `qwen21-gemm-probe gate_up 1024 7 --fp16`
 （`down` 和 `gate_swiglu` 同理）。
 
+同一 1024 行随机 BF16 形状又筛查了 FP16 activation＋affine W4 weight
+（每臂 5 次交替样本，group 32/64/128；不计离线量化）：gate/up
+`17.20–17.53 ms` 对 BF16 `13.95–14.08 ms`，down
+`8.98–9.24 ms` 对 BF16 `7.33–7.35 ms`；单算子 rL2
+`0.081–0.100`。W4 在这些 GPU 大矩阵乘上同样更慢且随机输入误差
+更高，没有进入生图路径。可用 `qwen21-gemm-probe gate_up 1024 5 --w4`
+及 `down` 复现；此测试不能代表真实模型的图像质量或其它硬件。
+
 复现（同机、独占 GPU）：
 
 ```sh

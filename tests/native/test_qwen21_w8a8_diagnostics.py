@@ -39,6 +39,36 @@ class W8A8DiagnosticsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.layer.metrics(reference, np.zeros_like(reference))
 
+    def test_layer_probe_checks_partition_and_row_provenance(self):
+        manifest = {
+            "export_identity": {"tensor_layout": "qwen21", "activation_precision": "int8",
+                                "ane_mlp_end": 6144},
+            "shape": {"ane_mlp_start": 0, "ane_mlp_end": 6144, "K": 4096,
+                      "mlp_width": 12288, "buckets": [1024]},
+            "artifacts": {"0": {"int8_pc": "block0.mlmodelc"}},
+        }
+        self.assertEqual(self.layer.validate_manifest(manifest), (1024, 6144))
+        manifest["export_identity"]["ane_mlp_end"] = 4096
+        manifest["shape"]["ane_mlp_end"] = 4096
+        manifest["shape"]["buckets"] = [4096]
+        self.assertEqual(self.layer.validate_manifest(manifest), (4096, 4096))
+        for key, value in (("ane_mlp_end", True), ("ane_mlp_end", 8193),
+                           ("ane_mlp_end", 12288)):
+            with self.subTest(value=value):
+                manifest["export_identity"][key] = value
+                with self.assertRaises(ValueError):
+                    self.layer.validate_manifest(manifest)
+        manifest["export_identity"]["ane_mlp_end"] = 4096
+        manifest["shape"]["ane_mlp_end"] = 6144
+        with self.assertRaises(ValueError):
+            self.layer.validate_manifest(manifest)
+        manifest["shape"]["ane_mlp_end"] = 4096
+        manifest["export_identity"]["activation_precision"] = "fp16"
+        with self.assertRaises(ValueError):
+            self.layer.validate_manifest(manifest)
+        self.assertEqual(self.layer.validate_manifest(manifest, weight_only_control=True),
+                         (4096, 4096))
+
     def test_policy_output_divergence_cannot_be_hidden_by_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "manifest.json"

@@ -260,8 +260,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             (r.qwen21_w8a8 ? "w8a8" : "fp16") +
             std::string(r.qwen21_gpu_w8a16 ? ":w8a16" : ":bf16") +
             (r.qwen21_gpu_full_ffn_blocks.empty() ? ":full" : ":fallback357");
+        // Keep the established 4096-channel path and permit the separately
+        // calibrated 6144-channel W8A8 experiment only by explicit manifest.
+        const bool supported_partition = r.qwen21_w8a8
+            ? (hybrid_->ane_mlp_end == 4096 || hybrid_->ane_mlp_end == 6144)
+            : hybrid_->ane_mlp_end == 4096;
         require(hybrid_->hidden == 4096 && hybrid_->mlp_width == 12288 &&
-                    hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end == 4096 &&
+                    hybrid_->ane_mlp_start == 0 && supported_partition &&
                     hybrid_->block_count == 32 && hybrid_->checkpoint_sha_verified &&
                     hybrid_->rows == r.width / 16 * (r.height / 16) &&
                     hybrid_->tensor_layout == "qwen21" &&
