@@ -225,6 +225,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end == 4096 &&
                     hybrid_->block_count == 32 && hybrid_->checkpoint_sha_verified &&
                     hybrid_->tensor_layout == "qwen21" && hybrid_->export_variant == "fp16" &&
+                    hybrid_->activation_precision == "fp16" &&
                     hybrid_->output_scale == 1.f,
                 "Qwen21 gpu_ane manifest is not a verified 32-block FP16 partition");
         if (!hybrid_mlp_) hybrid_mlp_ = std::make_unique<HybridMLP>(transformer_, *hybrid_);

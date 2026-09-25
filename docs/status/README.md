@@ -1,6 +1,10 @@
 # TurboCider 状态文档入口
 
-更新时间：2026-09-15
+更新时间：2026-09-25
+
+Qwen-Image-2.1 的最新 W8A8/ANE 数值诊断见
+[512² 单层诊断](qwen21-w8a8-ane-diagnostics-2026-09-25.md)；当前 W8A8
+尚未通过质量和端到端速度门槛，生产运行仍保持既有路径。
 
 最新 encoder-prefill 与 GPU/ANE 边界请看
 [2026-09-15 Encoder prefill 与 GPU/ANE 可选路径状态](encoder-prefill-optional-2026-09-15.md)。

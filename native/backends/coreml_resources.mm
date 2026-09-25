@@ -35,11 +35,11 @@ NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomi
          model_id=="minimax-h3-fasth3-mlx-int6-vsa"||
          model_id=="minimax-h3-vdn";
  require(model_id=="flux2-klein-4b"||model_id=="z-image-turbo"||
-             model_id=="z-image-turbo-gguf"||h3,
+             model_id=="z-image-turbo-gguf"||model_id=="qwen-image-2.1"||h3,
          "unsupported Core ML resource model");
  bool z_image=model_id=="z-image-turbo"||model_id=="z-image-turbo-gguf";
- int bucket=h3?512:(z_image?4128:1088);
- int ane_mlp_limit=h3?25599:(z_image?10239:9216);
+ int bucket=h3?512:(z_image?4128:(model_id=="qwen-image-2.1"?1024:1088));
+ int ane_mlp_limit=h3?25599:(z_image?10239:(model_id=="qwen-image-2.1"?12287:9216));
  fs::path storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket)),cache=support()/"cache/coreml";
  std::string manifest=string_value(request,@"manifest"),source=string_value(request,@"source_manifest");
  auto profile=string_value(request,@"profile");

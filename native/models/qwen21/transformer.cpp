@@ -227,7 +227,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             hidden = split_residual({hidden, *split_gate, feed})[0];
             mx::eval(hidden); // consume shared Core ML output before next block
         }
-        if (trace) trace->emplace("block" + std::to_string(i), hidden);
+        if (trace) {
+            trace->emplace("block" + std::to_string(i), hidden);
+            // Offline calibration uses the *actual* post-attention, modulated
+            // FFN input; approximating it from the block output misses the
+            // per-step adaptive norm and creates invalid A8 statistics.
+            trace->emplace("mlp_input" + std::to_string(i), outputs[10]);
+        }
         if (trace && i == 0) {
             const char *names[] = {"attention_input", "q", "k", "v", "attention", "projected", "after_attention", "mlp_input", "ff"};
             for (int j = 0; j < 9; ++j) trace->emplace(names[j], outputs[3 + j]);

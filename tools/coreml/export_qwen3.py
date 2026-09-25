@@ -322,6 +322,23 @@ def main():
     parser.add_argument("--tensor-layout", choices=["qwen3", "qwen21"], default="qwen3",
                         help="qwen21 reads Comfy fused gate_up and img_mlp.out weights")
     parser.add_argument("--variant", choices=["int8_pc", "fp16"], default="int8_pc")
+    parser.add_argument("--activation-precision", choices=["fp16", "int8"], default="fp16",
+                        help="explicit dual activation Q/DQ with SmoothQuant (Qwen21 only)")
+    parser.add_argument("--calibration-dir", type=Path,
+                        help="real decode FFN inputs: block0/step1.npy ... block31/step1.npy")
+    parser.add_argument("--sq-alpha1", type=float, default=0.5)
+    parser.add_argument("--sq-alpha2", type=float, default=0.5)
+    parser.add_argument("--activation-scale", type=float, default=8.0)
+    parser.add_argument("--a8-boundary", choices=["both", "input", "hidden"], default="both",
+                        help="research-only isolation of an A8 boundary; only both is W8A8")
+    parser.add_argument("--down-weight-granularity", choices=["per_channel", "per_tensor", "per_block", "fp16"],
+                        default="per_channel", help="research-only ANE down-projection W8 layout")
+    parser.add_argument("--projected-weight-precision", choices=["int8", "fp16"], default="int8",
+                        help="research-only upper projection precision (int8_pc variant only)")
+    parser.add_argument("--tap-hidden", action="store_true",
+                        help="research-only output after SwiGLU/optional hidden A8; excludes down projection")
+    parser.add_argument("--down-op", choices=["conv", "linear"], default="conv",
+                        help="research-only Core ML down-projection lowering")
     parser.add_argument("--output-scale", type=float, default=1.0,
                         help="divide the ANE branch before FP16 down projection")
     args = parser.parse_args()
@@ -369,6 +386,34 @@ def main():
     if (not math.isfinite(args.output_scale) or args.output_scale < 1.0 or
             args.output_scale > 256.0):
         raise ValueError("output-scale must be finite and in 1...256")
+    if args.activation_precision == "int8":
+        if (args.tensor_layout != "qwen21" or
+                (args.variant != "int8_pc" and
+                 not (args.variant == "fp16" and args.a8_boundary == "hidden")) or
+                args.calibration_dir is None or len(buckets) != 1 or buckets[0] != 1024 or
+                args.output_scale != 1 or
+                not all(math.isfinite(v) and 0 <= v <= 1 for v in (args.sq_alpha1, args.sq_alpha2)) or
+                not math.isfinite(args.activation_scale) or not 0.125 <= args.activation_scale <= 64):
+            raise ValueError("Qwen21 W8A8 requires fixed 1024 rows, real calibration, INT8 weights and valid scales")
+    elif args.calibration_dir is not None:
+        raise ValueError("calibration requires --activation-precision int8")
+    elif args.a8_boundary != "both":
+        raise ValueError("isolated A8 boundaries require Qwen21 calibration")
+    if args.down_weight_granularity != "per_channel" and args.activation_precision != "int8":
+        raise ValueError("alternate W8 granularity requires Qwen21 A8 calibration")
+    if args.projected_weight_precision != "int8" and (
+            args.variant != "int8_pc" or args.activation_precision != "int8"):
+        raise ValueError("FP16 upper projection requires Qwen21 A8 calibration")
+    if (args.projected_weight_precision == "fp16" and
+            args.down_weight_granularity == "fp16" and not args.tap_hidden):
+        raise ValueError("int8_pc diagnostic requires at least one W8 projection")
+    if args.tap_hidden and (args.activation_precision != "int8" or
+                            args.variant != "int8_pc" or args.layer_count != 1 or
+                            args.ane_mlp_width != args.hidden or
+                            len(buckets) != 1):
+        raise ValueError("hidden tap requires a single fixed-shape Qwen21 A8 layer and matching width")
+    if args.down_op != "conv" and (args.activation_precision != "int8" or len(buckets) != 1):
+        raise ValueError("linear down projection requires fixed-shape Qwen21 A8 calibration")
 
     import numpy as np
     import mlx.core as mx
@@ -376,9 +421,18 @@ def main():
     import coremltools.optimize.coreml as optimize
     from coremltools.converters.mil import Builder as mb
     from coremltools.converters.mil.mil import get_new_symbol, types
+    if args.activation_precision == "int8":
+        from z_image_smoothquant import (load_calibration, smooth_partial_ffn,
+                                          calibrate_hidden_a8, verify_w8a8)
 
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     source = QwenSource(args.model)
+    calibration = {}
+    if args.activation_precision == "int8":
+        for layer in range(args.layer_count):
+            _, digest = load_calibration(args.calibration_dir / f"block{layer}",
+                                         buckets[0], args.hidden, np)
+            calibration[str(layer)] = digest
     output = args.output.absolute()
     if output.is_symlink():
         raise ValueError("symlink output unsupported")
@@ -399,6 +453,16 @@ def main():
             "ane_mlp_end": args.ane_mlp_width,
             "output_scale": args.output_scale,
             "variant": args.variant,
+            **({"activation_precision": "int8", "calibration_sha256": calibration,
+                "sq_alpha1": args.sq_alpha1, "sq_alpha2": args.sq_alpha2,
+                "activation_scale": args.activation_scale, "a8_graph": "sq_v1_" + args.a8_boundary}
+               if calibration else {}),
+            **({"down_weight_granularity": args.down_weight_granularity}
+               if calibration and args.down_weight_granularity != "per_channel" else {}),
+            **({"down_op": args.down_op} if args.down_op != "conv" else {}),
+            **({"projected_weight_precision": args.projected_weight_precision}
+               if args.projected_weight_precision != "int8" else {}),
+            **({"tap_hidden": True} if args.tap_hidden else {}),
             "tensor_prefix": args.tensor_prefix,
             **({"minimum_profitable_rows": minimum_profitable_rows}
                if minimum_profitable_rows else {}),
@@ -417,7 +481,7 @@ def main():
                 raise ValueError("refusing to adopt a nonempty export directory")
             atom(marker, identity)
 
-        artifacts, checksums = {}, {}
+        artifacts, checksums, activation_receipts = {}, {}, {}
         with source:
             for layer in range(args.layer_count):
                 name = f"block{layer}_mlp_branch.{args.variant}.mlpackage"
@@ -430,12 +494,55 @@ def main():
                 if destination_exists:
                     saved = artifact_receipt(destination, receipt)
                     checksums[str(layer)] = saved
+                    if calibration:
+                        activation_receipt = output / f"block{layer}.activation.json"
+                        if activation_receipt.is_symlink() or not activation_receipt.is_file():
+                            raise ValueError(f"missing Qwen21 activation receipt: block {layer}")
+                        activation_receipts[str(layer)] = json.loads(activation_receipt.read_text())
                 else:
                     gate, up, down = mlp_weights(source, layer, args.tensor_layout, args.tensor_prefix,
                                                 args.hidden, args.mlp_width, np, mx)
                     width = args.ane_mlp_width
-                    first = np.ascontiguousarray(np.concatenate((gate[:width], up[:width]), axis=0)[:, :, None, None])
-                    last = np.ascontiguousarray(down[:, :width][:, :, None, None])
+                    inverse_s1 = None
+                    input_a8_scale = hidden_a8_scale = None
+                    if calibration:
+                        samples, digest = load_calibration(args.calibration_dir / f"block{layer}",
+                                                            buckets[0], args.hidden, np)
+                        if digest != calibration[str(layer)]:
+                            raise ValueError("Qwen21 calibration changed during export")
+                        gate, up, down, s1, _ = smooth_partial_ffn(
+                            gate[:width], up[:width], down[:, :width], samples,
+                            args.sq_alpha1, args.sq_alpha2, np)
+                        inverse_s1 = np.ascontiguousarray(
+                            (1 / s1).astype(np.float16).reshape(1, args.hidden, 1, 1))
+                        maximum = max(float(np.max(np.abs(sample / s1))) for sample in samples)
+                        input_a8_scale = np.float16(max(maximum / 127, 1e-6))
+                        search = []
+                        if args.a8_boundary != "input":
+                            # Uniformly amplifying the hidden activation and
+                            # shrinking down weights is algebraically exact.
+                            # Search at scale>=1, then transform the chosen
+                            # A8 step; the shared Z-Image search API rejects
+                            # subunit scales for its own deployment contract.
+                            search_scale = max(1., args.activation_scale)
+                            hidden_a8_scale, search = calibrate_hidden_a8(
+                                gate, up, down, s1, samples, float(input_a8_scale),
+                                search_scale, np, outlier_rows=True)
+                            hidden_a8_scale = np.float16(
+                                float(hidden_a8_scale) * (search_scale / args.activation_scale) ** 2)
+                        activation_receipts[str(layer)] = {
+                            "input_a8_scale": float(input_a8_scale),
+                            "hidden_a8_scale": float(hidden_a8_scale) if hidden_a8_scale is not None else None,
+                            "hidden_threshold_search": search,
+                            "hidden_search_scale": max(1., args.activation_scale),
+                            "calibration_sha256": digest,
+                        }
+                        if hidden_a8_scale is not None:
+                            down = down * np.float32(args.activation_scale ** 2)
+                    else:
+                        gate, up, down = gate[:width], up[:width], down[:, :width]
+                    first = np.ascontiguousarray(np.concatenate((gate, up), axis=0).astype(np.float16)[:, :, None, None])
+                    last = np.ascontiguousarray(down.astype(np.float16)[:, :, None, None])
                     del gate, up, down
 
                     rows = buckets[0] if len(buckets) == 1 else get_new_symbol()
@@ -449,15 +556,42 @@ def main():
                     @mb.program(input_specs=[mb.TensorSpec(shape=(1, args.hidden, 1, rows), dtype=types.fp16)],
                                 opset_version=ct.target.macOS15)
                     def branch(x):
-                        projected = mb.conv(x=x, weight=first, pad_type="valid", name="projected")
+                        projected_input = x
+                        if inverse_s1 is not None:
+                            projected_input = mb.mul(x=x, y=inverse_s1, name="smooth_input")
+                            if args.a8_boundary != "hidden":
+                                quantized = mb.quantize(input=projected_input, scale=input_a8_scale,
+                                                         output_dtype="int8", name="a8_input")
+                                projected_input = mb.dequantize(input=quantized, scale=input_a8_scale,
+                                                                 name="a8_input_dequantized")
+                        projected = mb.conv(x=projected_input, weight=first, pad_type="valid", name="projected")
                         gate_value, up_value = mb.split(x=projected, num_splits=2, axis=1)
-                        activation = mb.mul(x=mb.silu(x=gate_value), y=up_value)
+                        activation = mb.silu(x=gate_value)
+                        if hidden_a8_scale is not None:
+                            reciprocal = np.float16(1 / args.activation_scale)
+                            activation = mb.mul(x=activation, y=reciprocal)
+                            up_value = mb.mul(x=up_value, y=reciprocal)
+                        activation = mb.mul(x=activation, y=up_value)
+                        if hidden_a8_scale is not None:
+                            quantized = mb.quantize(input=activation, scale=hidden_a8_scale,
+                                                     output_dtype="int8", name="a8_hidden")
+                            activation = mb.dequantize(input=quantized, scale=hidden_a8_scale,
+                                                        name="a8_hidden_dequantized")
+                        if args.tap_hidden:
+                            return mb.reshape(x=activation, shape=(1, args.hidden, 1, rows), name="y")
                         if args.output_scale != 1.0:
                             activation = mb.mul(x=activation,
                                                 y=np.float16(1.0 / args.output_scale),
                                                 name="output_scale")
-                        return mb.conv(x=activation,
-                                       weight=last, pad_type="valid", name="y")
+                        if args.down_op == "linear":
+                            tokens = mb.reshape(
+                                x=mb.transpose(x=activation, perm=[0, 3, 2, 1]),
+                                shape=(rows, width))
+                            projected = mb.linear(x=tokens, weight=last[:, :, 0, 0], name="down_linear")
+                            return mb.transpose(
+                                x=mb.reshape(x=projected, shape=(1, rows, 1, args.hidden)),
+                                perm=[0, 3, 2, 1], name="y")
+                        return mb.conv(x=activation, weight=last, pad_type="valid", name="y")
 
                     model = ct.convert(branch, convert_to="mlprogram",
                                        minimum_deployment_target=ct.target.macOS15,
@@ -465,11 +599,30 @@ def main():
                                        skip_model_load=True, **convert_inputs)
                     compressed = model
                     if args.variant == "int8_pc":
-                        quantizer = optimize.OptimizationConfig(global_config=
-                            optimize.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int8",
-                                                             granularity="per_channel", block_size=32,
-                                                             weight_threshold=0))
+                        w8 = optimize.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int8",
+                                                               granularity="per_channel", block_size=32,
+                                                               weight_threshold=0)
+                        down_w8 = (None if args.tap_hidden else
+                                   w8 if args.down_weight_granularity == "per_channel" else
+                                   None if args.down_weight_granularity == "fp16" else
+                                   optimize.OpLinearQuantizerConfig(
+                                       mode="linear_symmetric", dtype="int8",
+                                       granularity=args.down_weight_granularity, block_size=32,
+                                       weight_threshold=0))
+                        quantizer = (optimize.OptimizationConfig(global_config=None,
+                            op_name_configs={**({"projected": w8}
+                                               if args.projected_weight_precision == "int8" else {}),
+                                             **({} if down_w8 is None else {
+                                                 "down_linear" if args.down_op == "linear" else "y": down_w8})})
+                            if calibration else optimize.OptimizationConfig(global_config=w8))
                         compressed = optimize.linear_quantize_weights(model, quantizer)
+                    if calibration and args.a8_boundary == "both":
+                        expected_w8 = tuple(
+                            (["projected"] if args.projected_weight_precision == "int8" else []) +
+                            (["down_linear" if args.down_op == "linear" else "y"]
+                             if down_w8 is not None else []))
+                        if expected_w8:
+                            verify_w8a8(compressed.get_spec(), expected_w8)
                     with tempfile.TemporaryDirectory(prefix=".export-", dir=output) as temporary:
                         package = Path(temporary) / name
                         compressed.save(package)
@@ -482,6 +635,8 @@ def main():
                     if not saved:
                         raise ValueError(f"generated Qwen3 artifact is empty: block {layer}")
                     atom(receipt, saved)
+                    if calibration:
+                        atom(output / f"block{layer}.activation.json", activation_receipts[str(layer)])
                     checksums[str(layer)] = saved
                     del first, last, branch, model, compressed
                     gc.collect()
@@ -509,6 +664,7 @@ def main():
             "functions": {str(bucket): "main" for bucket in buckets},
             "artifacts": artifacts,
             "artifact_sha256": checksums,
+            **({"activation_quantization": activation_receipts} if calibration else {}),
             "export_identity": identity,
         })
         print(json.dumps({"source_manifest": str(output / "manifest.json"),

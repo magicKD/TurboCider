@@ -3,21 +3,30 @@
 
 int main(int argc, char **argv) {
     try {
-        tc::require(argc == 4 || argc == 5, "usage: qwen21-transformer-probe weights.safetensors inputs.safetensors output.safetensors [single|trace|trajectory|benchmark_iterations]");
+        tc::require(argc == 4 || argc == 5, "usage: qwen21-transformer-probe weights.safetensors inputs.safetensors OUTPUT [single|trace|trajectory|calibration|benchmark_iterations]; calibration OUTPUT is a new directory");
         tc::configure_streams();
         tc::Weights weights;
         weights.load_file(argv[1]);
         auto [inputs, metadata] = tc::mx::load_safetensors(argv[2]);
+        const bool calibration = argc == 5 && std::string(argv[4]) == "calibration";
+        const auto &source_latents = inputs.at(calibration && inputs.count("initial") ? "initial" : "latents");
         tc::qwen21::TransformerConfig config;
-        config.layers = std::stoi(metadata.at("layers"));
-        config.heads = std::stoi(metadata.at("heads"));
-        config.head_dim = std::stoi(metadata.at("head_dim"));
-        config.channels = inputs.at("latents").shape(2);
+        if (!calibration || metadata.count("layers")) {
+            config.layers = std::stoi(metadata.at("layers"));
+            config.heads = std::stoi(metadata.at("heads"));
+            config.head_dim = std::stoi(metadata.at("head_dim"));
+            config.rope_axes = {std::stoi(metadata.at("axis0")), std::stoi(metadata.at("axis1")),
+                                std::stoi(metadata.at("axis2"))};
+        }
+        config.channels = source_latents.shape(2);
         config.context_dim = inputs.at("text").shape(2);
-        config.rope_axes = {std::stoi(metadata.at("axis0")), std::stoi(metadata.at("axis1")), std::stoi(metadata.at("axis2"))};
-        int height = std::stoi(metadata.at("height")), width = std::stoi(metadata.at("width"));
+        int height = calibration && !metadata.count("height") ? 32 : std::stoi(metadata.at("height"));
+        int width = calibration && !metadata.count("width") ? 32 : std::stoi(metadata.at("width"));
+        if (calibration) tc::require(height == 32 && width == 32 && config.layers == 32 &&
+                                    source_latents.shape(1) == 1024 && config.channels == 64,
+                                    "Qwen21 calibration needs real full-model 512px generation inputs");
         tc::qwen21::Transformer model(weights, config);
-        auto text = inputs.at("text"), latents = inputs.at("latents");
+        auto text = inputs.at("text"), latents = source_latents;
         std::vector<tc::qwen21::ReferenceLatents> references;
         if (metadata.count("reference_count")) {
             int count = std::stoi(metadata.at("reference_count"));
@@ -32,6 +41,45 @@ int main(int argc, char **argv) {
             auto output = model.forward(latents, text, 0.8f, height, width, false, &trace, references);
             trace.emplace("output", output);
             tc::mx::save_safetensors(argv[3], trace);
+            return 0;
+        }
+        if (calibration) {
+            tc::require(inputs.count("sigmas"), "calibration requires the generation schedule");
+            auto schedule = tc::mx::astype(inputs.at("sigmas"), tc::mx::float32);
+            tc::require(schedule.ndim() == 1 && schedule.size() >= 3,
+                        "calibration requires at least two denoising steps");
+            tc::mx::eval(schedule);
+            // The prefix is populated by an actual prefill at step zero.
+            // Capture the second step, where production decoding reuses KV.
+            auto first = model.forward(latents, text, schedule.data<float>()[0],
+                                       height, width, true, nullptr, references);
+            latents = latents + first * tc::Tensor(schedule.data<float>()[1] -
+                                                   schedule.data<float>()[0], latents.dtype());
+            tc::mx::eval(latents);
+            std::unordered_map<std::string, tc::Tensor> trace;
+            auto output = model.forward(latents, text, schedule.data<float>()[1],
+                                        height, width, true, &trace, references);
+            tc::mx::eval(output);
+            // Capture all target rows, but not the large attention/KV and
+            // block-output traces, for the per-block SmoothQuant exporter.
+            const int image_rows = int(latents.shape(1));
+            const auto directory = std::filesystem::absolute(argv[3]);
+            tc::require(!std::filesystem::exists(directory), "calibration output directory already exists");
+            std::filesystem::create_directories(directory);
+            for (int block = 0; block < config.layers; ++block) {
+                auto key = "mlp_input" + std::to_string(block);
+                auto input = trace.at(key);
+                const int prefix = int(input.shape(1)) - image_rows;
+                auto sample = tc::mx::astype(
+                    tc::mx::squeeze(tc::slice_axis(input, 1, prefix, input.shape(1)), 0),
+                    tc::mx::float32);
+                tc::require(tc::mx::all(tc::mx::isfinite(sample)).item<bool>(),
+                            "nonfinite Qwen21 calibration activation");
+                auto folder = directory / ("block" + std::to_string(block));
+                std::filesystem::create_directory(folder);
+                tc::mx::save((folder / "step1.npy").string(), sample);
+                std::cerr << "calibration block " << block + 1 << '/' << config.layers << '\n';
+            }
             return 0;
         }
         if (argc == 5 && std::string(argv[4]) == "single") {
