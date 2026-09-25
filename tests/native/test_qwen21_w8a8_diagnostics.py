@@ -86,6 +86,7 @@ class W8A8DiagnosticsTests(unittest.TestCase):
         torch.equal = np.array_equal
         safetensors = ModuleType("safetensors")
         safetensors.__path__ = []
+        safetensors.safe_open = lambda *args, **kwargs: None
         safetensors_torch = ModuleType("safetensors.torch")
         safetensors_torch.load_file = lambda _: None
         with patch.dict(sys.modules, {"torch": torch, "safetensors": safetensors,
@@ -101,6 +102,36 @@ class W8A8DiagnosticsTests(unittest.TestCase):
         candidate["reference0"] = np.array([2])
         with self.assertRaisesRegex(ValueError, "Unmatched benchmark inputs"):
             compare.matched_inputs(baseline, candidate)
+        durations = [2.0, 1.0, 1.0]
+        summary = compare.coreml_prediction_summary(
+            {"coreml_step_seconds": np.array([0.0, 0.32, 0.64]),
+             "coreml_step_calls": np.array([0, 32, 32])}, durations, w8a8=True)
+        self.assertAlmostEqual(summary["coreml_prediction_seconds_total"], 0.96)
+        self.assertAlmostEqual(summary["coreml_prediction_median_per_ffn_call_ms"], 15)
+        partial = compare.coreml_prediction_summary(
+            {"coreml_step_seconds": np.array([0.0, 0.29, 0.58]),
+             "coreml_step_calls": np.array([0, 29, 29])}, durations, w8a8=True)
+        self.assertEqual(partial["w8a8_ffn_layer_coverage"], 29 / 32)
+        fp16 = compare.coreml_prediction_summary(
+            {"coreml_step_seconds": np.array([0.0, 0.32, 0.64]),
+             "coreml_step_calls": np.array([0, 32, 32])}, durations, w8a8=False)
+        self.assertNotIn("w8a8_ffn_layer_coverage", fp16)
+        self.assertEqual(fp16["hybrid_ffn_layer_coverage"], 1)
+        with self.assertRaisesRegex(ValueError, "both per-step"):
+            compare.coreml_prediction_summary(
+                {"coreml_step_seconds": np.array([0.0, 0.32, 0.64])}, durations, w8a8=True)
+        with self.assertRaisesRegex(ValueError, "29/32"):
+            compare.coreml_prediction_summary(
+                {"coreml_step_seconds": np.array([0.0, 0.29, 0.58]),
+                 "coreml_step_calls": np.array([0, 28, 28])}, durations, w8a8=True)
+        with self.assertRaisesRegex(ValueError, "no prefill"):
+            compare.coreml_prediction_summary(
+                {"coreml_step_seconds": np.array([0.1, 0.32, 0.64]),
+                 "coreml_step_calls": np.array([0, 32, 32])}, durations, w8a8=True)
+        with self.assertRaisesRegex(ValueError, "Invalid per-step"):
+            compare.coreml_prediction_summary(
+                {"coreml_step_seconds": np.array([0, 1.2, 0.64]),
+                 "coreml_step_calls": np.array([0, 32, 32])}, durations, w8a8=True)
 
 
 if __name__ == "__main__":

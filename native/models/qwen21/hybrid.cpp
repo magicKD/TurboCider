@@ -2,15 +2,24 @@
 #include "hybrid_merge.hpp"
 
 namespace tc::qwen21 {
-HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16)
+HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16,
+                     const std::vector<int> &gpu_full_blocks)
     : ane_(ane), gpu_w8a16_(gpu_w8a16) {
     require(ane.hidden == 4096 && ane.mlp_width == 12288 && ane.ane_mlp_start == 0 &&
             ane.ane_mlp_end > 0 && ane.ane_mlp_end < 12288 && ane.block_count == 32 &&
             ane.checkpoint_sha_verified, "invalid or unverified Qwen21 MLP partition");
+    require(gpu_full_blocks.size() <= 3, "Qwen21 W8A8 requires at least 29/32 hybrid FFN layers");
+    for (int block : gpu_full_blocks) {
+        require(block >= 0 && block < 32 && !gpu_full_blocks_[block],
+                "Qwen21 full-GPU FFN fallback needs unique layer indices in [0,31]");
+        gpu_full_blocks_[block] = true;
+    }
     const int width = ane.ane_mlp_end;
     for (int i = 0; i < 32; ++i) {
         auto prefix = "transformer_blocks." + std::to_string(i) + ".img_mlp.";
         const auto &fused = weights.at(prefix + "gate_up.weight");
+        if (gpu_full_blocks_[i])
+            full_weights_.emplace(i, std::make_pair(fused, weights.at(prefix + "out.weight")));
         auto gate_up = mx::contiguous(mx::concatenate({slice_axis(fused, 0, width, 12288),
                                                        slice_axis(fused, 0, 12288 + width, 24576)}, 0));
         auto down = mx::contiguous(slice_axis(weights.at(prefix + "out.weight"), 1, width, 12288));
@@ -49,10 +58,22 @@ HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16)
             return std::vector<Tensor>{mx::matmul(silu(parts[0]) * parts[1], mx::transpose(args[2]))};
         });
     }
+    if (!full_weights_.empty()) {
+        full_ffn_ = mx::compile([](const std::vector<Tensor> &args) {
+            auto parts = mx::split(mx::matmul(args[0], mx::transpose(args[1])), 2, -1);
+            return std::vector<Tensor>{mx::matmul(silu(parts[0]) * parts[1], mx::transpose(args[2]))};
+        });
+    }
 }
 Tensor HybridMLP::operator()(int block, const Tensor &input) {
     require(block >= 0 && block < 32 && input.shape() == mx::Shape{1, ane_.rows, 4096},
             "Qwen21 hybrid decode shape/block mismatch");
+    if (gpu_full_blocks_[block]) {
+        const auto &weights = full_weights_.at(block);
+        auto output = full_ffn_({input, weights.first, weights.second})[0];
+        require(output.dtype() == input.dtype(), "Qwen21 full-GPU fallback changed activation precision");
+        return output;
+    }
     auto packed = mx::contiguous(mx::astype(input, mx::float16));
     mx::eval(input, packed);
     auto gpu = gpu_w8a16_
