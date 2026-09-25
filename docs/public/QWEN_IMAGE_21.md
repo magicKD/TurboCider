@@ -44,6 +44,12 @@ re-encode-on-every-request result (40-step 1.130×, 5-step 0.835×), and apply
 only to repeated identical editing conditions after Session preparation. They
 do not establish a benefit for a new prompt/reference, cold process, other
 seeds, or 1024² requests; GPU stays the default.
+Separate 40-step cached resident samples with one and three 256px references
+measured about **1.209×** and **1.198×** request-wall speedup respectively;
+all three reference subjects remained visible in the tested three-image output.
+Each reference count still has only one prompt/seed and requires broader visual
+validation. Earlier three-reference tests with the default 1024px reference
+resize were slower on the mixed route; these are different inputs.
 
 For the explicit W8A8 editing candidate, use schema 1 fields like these with a
 compiled 1024-row, 32-layer, checkpoint-matched, per-tensor W8A8 manifest:

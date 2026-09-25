@@ -82,12 +82,15 @@ double median(std::vector<double> samples) {
 
 int main(int argc, char **argv) {
     try {
-        if (argc != 4)
-            throw std::invalid_argument("usage: qwen21-gemm-probe gate_up|down|gate_swiglu ROWS RUNS");
+        if (argc != 4 && argc != 5)
+            throw std::invalid_argument("usage: qwen21-gemm-probe gate_up|down|gate_swiglu ROWS RUNS [--fp16]");
         const std::string operation(argv[1]);
         if (operation != "gate_up" && operation != "down" && operation != "gate_swiglu")
             throw std::invalid_argument("operation must be gate_up, down or gate_swiglu");
         const int rows=std::stoi(argv[2]), runs=std::stoi(argv[3]);
+        const bool fp16_only = argc == 5 && std::string(argv[4]) == "--fp16";
+        if (argc == 5 && !fp16_only)
+            throw std::invalid_argument("unknown Qwen21 GEMM probe option");
         if ((rows != 1024 && rows != 4096) || runs < 2 || runs > 50)
             throw std::invalid_argument("rows must be 1024/4096 and runs must be 2...50");
         ZImageGpuBenchmarkLock benchmark_lock;
@@ -109,6 +112,44 @@ int main(int argc, char **argv) {
         });
         auto expected=mx::astype(baseline(args)[0],mx::float32);
         mx::eval(expected);
+        if (fp16_only) {
+            auto x16=mx::astype(x,mx::float16), w16=mx::astype(w,mx::float16);
+            mx::eval(x16,w16);
+            Arrays fp16_args{x16,w16};
+            auto fp16=mx::compile([operation](const Arrays &a) {
+                auto projected=mx::matmul(a[0],mx::transpose(a[1]));
+                if (operation == "gate_swiglu") {
+                    auto parts=mx::split(projected,2,-1);
+                    return Arrays{(parts[0]*mx::sigmoid(parts[0]))*parts[1]};
+                }
+                return Arrays{projected};
+            });
+            auto actual=mx::astype(fp16(fp16_args)[0],mx::float32);
+            auto relative_l2=mx::sqrt(mx::sum(mx::square(actual-expected)) /
+                                      mx::sum(mx::square(expected))).item<float>();
+            auto max_abs=mx::max(mx::abs(actual-expected)).item<float>();
+            if (!std::isfinite(relative_l2) || !std::isfinite(max_abs))
+                throw std::runtime_error("nonfinite Qwen21 FP16 projection error");
+            auto timed=[&](auto &graph,const Arrays &input_args) {
+                auto start=std::chrono::steady_clock::now();
+                mx::eval(graph(input_args));
+                return std::chrono::duration<double,std::milli>(
+                    std::chrono::steady_clock::now()-start).count();
+            };
+            std::vector<double> bf16_times, fp16_times;
+            for (int i=0;i<runs+3;++i) {
+                double bf16_ms,fp16_ms;
+                if (i%2) { fp16_ms=timed(fp16,fp16_args); bf16_ms=timed(baseline,args); }
+                else { bf16_ms=timed(baseline,args); fp16_ms=timed(fp16,fp16_args); }
+                if (i>=3) { bf16_times.push_back(bf16_ms); fp16_times.push_back(fp16_ms); }
+            }
+            std::cout << "{\"operation\":\"" << operation << "\",\"rows\":" << rows
+                      << ",\"precision\":\"fp16\",\"bf16_ms\":" << median(bf16_times)
+                      << ",\"fp16_ms\":" << median(fp16_times)
+                      << ",\"relative_l2\":" << relative_l2
+                      << ",\"max_abs\":" << max_abs << "}" << std::endl;
+            return 0;
+        }
         for (const auto [bm,bn] : std::vector<std::pair<int,int>>{{16,128},{32,128},{48,128},{32,256},{64,128}}) {
             auto candidate=mx::compile([bm,bn,operation](const Arrays &a) {
                 return Arrays{operation == "gate_swiglu"
