@@ -1,5 +1,6 @@
 #include "transformer.hpp"
 #include <cmath>
+#include <cstdlib>
 
 namespace tc::qwen21 {
 namespace {
@@ -31,6 +32,8 @@ Tensor gelu(const Tensor &x) {
 
 Transformer::Transformer(const Weights &weights, TransformerConfig config)
     : weights_(weights), config_(config) {
+    const char *metal_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE");
+    metal_qk_rope_ = metal_rope && std::string(metal_rope) == "1";
     require(config.layers > 0 && config.heads > 0 && config.head_dim > 0 &&
             config.channels > 0 && config.context_dim > 0, "invalid Qwen21 transformer dimensions");
     int sum = 0;
@@ -170,7 +173,8 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     for (int i = 0; i < config_.layers; ++i) {
         auto &functions = reuse ? decode_blocks_ : prefill_blocks_;
         if (functions.size() <= size_t(i)) {
-            functions.push_back(mx::compile([this, i, reuse, prefix_length, split_mlp, tracing = trace != nullptr](const std::vector<Tensor> &args) {
+            functions.push_back(mx::compile([this, i, reuse, prefix_length, split_mlp,
+                                             metal_rope = metal_qk_rope_, tracing = trace != nullptr](const std::vector<Tensor> &args) {
                 auto hidden = args[0];
                 std::vector<Tensor> mods(args.begin() + 1, args.begin() + 5);
                 const auto &cosine = args[5], &sine = args[6];
@@ -180,8 +184,15 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 auto q = heads(linear(input, weights_, p + ".attn.to_q"), config_.heads, config_.head_dim);
                 auto k = heads(linear(input, weights_, p + ".attn.to_k"), config_.heads, config_.head_dim);
                 auto v = heads(linear(input, weights_, p + ".attn.to_v"), config_.heads, config_.head_dim);
-                q = rotate(mx::fast::rms_norm(q, weights_.at(p + ".attn.norm_q.weight"), config_.epsilon), cosine, sine);
-                k = rotate(mx::fast::rms_norm(k, weights_.at(p + ".attn.norm_k.weight"), config_.epsilon), cosine, sine);
+                q = mx::fast::rms_norm(q, weights_.at(p + ".attn.norm_q.weight"), config_.epsilon);
+                k = mx::fast::rms_norm(k, weights_.at(p + ".attn.norm_k.weight"), config_.epsilon);
+                if (metal_rope) {
+                    auto pair = rope_pairs_pair(q, k, cosine, sine);
+                    q = pair[0]; k = pair[1];
+                } else {
+                    q = rotate(q, cosine, sine);
+                    k = rotate(k, cosine, sine);
+                }
                 Tensor output = hidden;
                 auto pk = k, pv = v;
                 if (reuse) {

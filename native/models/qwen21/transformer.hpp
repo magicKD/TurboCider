@@ -42,6 +42,7 @@ class Transformer {
     struct KV { Tensor key, value; };
     const Weights &weights_;
     TransformerConfig config_;
+    bool metal_qk_rope_ = false;
     std::vector<KV> prefix_;
     std::optional<Tensor> cached_text_;
     std::vector<Tensor> cached_references_;
