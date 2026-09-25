@@ -149,8 +149,13 @@ int main(int argc, char **argv) {
                     event, cancelled, 1, root / "diffusion_models/qwen_image_2.1_bf16.safetensors",
                     std::vector<tc::LoRAAsset>{}, image_rows, 32);
                 tc::require(ane->rows == image_rows && ane->tensor_layout == "qwen21" &&
-                                ane->checkpoint_sha_verified &&
-                                ane->block_count == 32 && ane->ane_mlp_end == 4096 &&
+                                ane->checkpoint_sha_verified && ane->hidden == 4096 &&
+                                ane->mlp_width == 12288 && ane->ane_mlp_start == 0 &&
+                                ane->block_count == 32 &&
+                                (experimental_w8a8
+                                    ? (ane->ane_mlp_end == 4096 ||
+                                       (image_rows == 1024 && ane->ane_mlp_end == 6144))
+                                    : ane->ane_mlp_end == 4096) &&
                                 (experimental_w8a8
                                     ? ane->activation_precision == "int8" && ane->export_variant == "int8_pc" &&
                                       ane->a8_graph == "sq_v1_both" &&

@@ -71,6 +71,21 @@ shifted composition (RGB correlation 0.928 to GPU, versus 0.996 for 4096).
 Single- and three-reference outputs also require broader quality checks.
 Neither opt-in establishes physical ANE occupancy; GPU remains the default.
 
+For explicit **512² text-to-image** with a checkpoint-matched 6144-channel
+W8A8 manifest, use `operation: "image.generate"`, no `inputs`,
+`qwen21_w8a8: true`, `execution: "gpu_ane"`, and
+`allow_approximation: true`. Leave `qwen21_gpu_full_ffn_blocks` empty for the
+32/32-layer route. A single fox prompt/seed in a prepared, prompt-cached
+resident Session measured GPU **5.999/5.997 s** versus W8A8
+**5.042/4.820 s** at 5 steps (about **1.216×** request-wall), and
+**43.184/43.223 s** versus **30.468/30.489 s** at 40 steps
+(about **1.418×**). The 40-step fox remains recognizable, with differences
+around its legs and tail; an independent glass-bottle-and-cactus prompt/seed
+also gave visually similar results in a diagnostic generator. These are
+limited samples, not a default quality or cold-start speed guarantee; the
+[text-to-image evidence](../status/qwen21-w8a8-6144-t2i.md) distinguishes
+per-step timing from complete resident and first requests.
+
 For the explicit W8A8 editing candidate, use schema 1 fields like these with a
 compiled 1024-row, 32-layer, checkpoint-matched, per-tensor W8A8 manifest:
 
