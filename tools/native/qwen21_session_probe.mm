@@ -8,7 +8,7 @@ int main(int argc, char **argv) {
     @autoreleasepool {
         try {
             tc::require(argc >= 6 && argc <= 8,
-                "usage: qwen21-session-probe MODEL OUTPUT_DIRECTORY STEPS REPEATS MANIFEST_OR_DASH [PROMPT] [--dump-tensors]");
+                "usage: qwen21-session-probe MODEL OUTPUT_DIRECTORY STEPS REPEATS MANIFEST_OR_DASH [PROMPT|--request=JSON] [--dump-tensors]");
             tc::configure_streams();
             const auto directory = std::filesystem::absolute(argv[2]);
             tc::require(!std::filesystem::exists(directory), "benchmark directory already exists");
@@ -21,10 +21,24 @@ int main(int argc, char **argv) {
             tc::require(repeats >= 1 && repeats <= 10, "repeats must be 1...10");
             const bool dump_tensors = argc == 8;
             tc::require(!dump_tensors || std::string(argv[7]) == "--dump-tensors", "unknown session probe option");
-            r.prompt = argc >= 7 ? argv[6] : "A ceramic teapot on a wooden table, warm sunlight, detailed photography.";
+            const std::string prompt_arg = argc >= 7 ? argv[6] : "A ceramic teapot on a wooden table, warm sunlight, detailed photography.";
+            if (prompt_arg.starts_with("--request=")) {
+                const std::filesystem::path request_path = prompt_arg.substr(10);
+                r = tc::request_from_json(tc::read_json(request_path));
+                tc::require(r.model == "qwen-image-2.1" && r.width == 512 && r.height == 512 &&
+                            r.steps == std::stoi(argv[3]) && r.residency == "component_staged",
+                            "session probe needs a matching 512px component-staged Qwen21 request");
+                r.residency = "resident";
+            } else {
+                r.prompt = prompt_arg;
+            }
             if (std::string(argv[5]) != "-") {
                 r.execution = "gpu_ane"; r.allow_approximation = true;
                 r.ane_manifest = std::filesystem::absolute(argv[5]).string();
+            } else {
+                r.execution = "gpu"; r.ane_manifest.clear();
+                tc::require(!r.qwen21_w8a8 && r.qwen21_gpu_full_ffn_blocks.empty(),
+                            "GPU request cannot retain W8A8 hybrid options");
             }
             tc::make_plan(r);
             tc::qwen21::Session session(std::filesystem::absolute(argv[1]));
@@ -55,12 +69,14 @@ int main(int argc, char **argv) {
                 // than relying only on request metadata.
                 r.dump = dump_tensors ? (directory / (name + "-dump")).string() : "";
                 auto result = session.generate(r, event, cancelled);
-                tc::require(result.prompt_cache_hit, "resident prompt cache was not reused");
+                tc::require(result.prompt_cache_hit == r.inputs.empty(),
+                            "unexpected resident prompt cache state");
                 tc::require(std::filesystem::is_regular_file(r.output), "generation did not export");
                 if (r.execution == "gpu_ane") {
                     tc::require(result.hybrid.has_value() && result.request.execution == "gpu_ane",
                                 "hybrid selection/report was lost");
-                    tc::require(result.hybrid->runtime_calls - previous_calls == uint64_t(r.steps - 1) * 32,
+                    tc::require(result.hybrid->runtime_calls - previous_calls ==
+                                    uint64_t(r.steps - 1) * (32 - r.qwen21_gpu_full_ffn_blocks.size()),
                                 "wrong decode-only hybrid call count");
                     previous_calls = result.hybrid->runtime_calls;
                     tc::require(result.hybrid->load_seconds == warmed.hybrid->load_seconds,
@@ -83,7 +99,10 @@ int main(int argc, char **argv) {
             tc::require(caught && !std::filesystem::exists(warm.output), "cancellation/export contract failed");
             cancelled = false;
             // Switching to GPU must release the Core ML bank and report GPU.
-            warm.execution = "gpu"; warm.ane_manifest.clear(); warm.allow_approximation = false;
+            warm.execution = "gpu"; warm.ane_manifest.clear();
+            warm.qwen21_w8a8 = false; warm.qwen21_gpu_w8a16 = false;
+            warm.qwen21_gpu_full_ffn_blocks.clear();
+            warm.allow_approximation = warm.qwen21_reference_size != 1024;
             auto gpu = session.prepare(warm, false, event, cancelled);
             tc::require(!gpu.hybrid && gpu.request.execution == "gpu", "GPU switch retained hybrid route");
             session.unload();
