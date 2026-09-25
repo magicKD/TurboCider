@@ -31,8 +31,9 @@ ModelModule qwen21_module() {
                              (r.qwen21_w8a8 && r.operation == "image.edit" &&
                               r.qwen21_reference_size == 256 &&
                               r.inputs.size() >= 1 && r.inputs.size() <= 3 &&
-                              r.qwen21_gpu_full_ffn_blocks == std::vector<int>{3, 5, 7})),
-                        "Qwen21 gpu_ane requires 512px text-to-image or explicit W8A8 1...3-reference edit with 256px references and GPU fallback 3,5,7");
+                              (r.qwen21_gpu_full_ffn_blocks.empty() ||
+                               r.qwen21_gpu_full_ffn_blocks == std::vector<int>{3, 5, 7}))),
+                        "Qwen21 gpu_ane requires 512px text-to-image or explicit W8A8 1...3-reference edit with 256px references and either full coverage or GPU fallback 3,5,7");
             } else {
                 require(r.ane_manifest.empty() && r.encoder_ane_manifest.empty() &&
                             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
@@ -64,7 +65,7 @@ ModelModule qwen21_module() {
                 "reference images are resized to approximately 1024 squared pixels with 32-aligned dimensions",
                 "RGBA is preserved; App masks are visual references, not hard pixel-preserving inpainting",
                 "native PE-T2I is optional and slow; PE-I2I requires explicit prompt_enhance_edit_experimental with FP32 vision, supported 8-bit files, and is not quality-qualified; BF16 visual parity remains unaccepted",
-                "experimental gpu_ane: explicit verified FP16 512x512 text-to-image or W8A8 512x512 edit with 1...3 references scaled to 256 and full GPU FFN blocks 3,5,7; device placement and warm E2E not qualified"
+                "experimental gpu_ane: explicit FP16 512x512 text-to-image or W8A8 512x512 edit with 1...3 references scaled to 256; full 32-layer coverage is faster but changes some edited details, while GPU-only blocks 3,5,7 remain an opt-in alternative; device placement and broad quality are not qualified"
             };
             return d;
         }};

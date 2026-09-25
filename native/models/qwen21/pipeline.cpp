@@ -265,6 +265,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         const bool supported_partition = r.qwen21_w8a8
             ? (hybrid_->ane_mlp_end == 4096 || hybrid_->ane_mlp_end == 6144)
             : hybrid_->ane_mlp_end == 4096;
+        // Full FFN coverage on edits was visually checked only for the
+        // 6144-channel W8A8 candidate. Preserve the calibrated 4096 edit
+        // route's 3/5/7 GPU fallback rather than silently broadening it.
+        const bool supported_edit_coverage = r.operation != "image.edit" ||
+            !r.qwen21_gpu_full_ffn_blocks.empty() ||
+            (r.qwen21_w8a8 && hybrid_->ane_mlp_end == 6144);
+        require(supported_edit_coverage,
+                "Qwen21 32-layer W8A8 edit requires a 6144-channel manifest; use GPU fallback 3,5,7 for the 4096-channel route");
         require(hybrid_->hidden == 4096 && hybrid_->mlp_width == 12288 &&
                     hybrid_->ane_mlp_start == 0 && supported_partition &&
                     hybrid_->block_count == 32 && hybrid_->checkpoint_sha_verified &&

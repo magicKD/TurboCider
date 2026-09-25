@@ -190,6 +190,11 @@ class ContractTests(unittest.TestCase):
         self.assertIn('qwen21_decode_mlp_w8a8_per_tensor', result['algorithm_approximations'])
         for size in (1, 2, 3):
             self.assertEqual(plan({**request, 'inputs': refs[:size]})[0], 0)
+            code, full, error = plan({**request, 'inputs': refs[:size],
+                                      'qwen21_gpu_full_ffn_blocks': []})
+            self.assertEqual(code, 0, error)
+            self.assertEqual(full['planned_w8a8_ffn_layer_coverage'], 1)
+            self.assertEqual(full['qwen21_gpu_full_ffn_blocks'], [])
         schema2 = dict(schema_version=2, model='qwen-image-2.1', operation='image.edit',
                        inputs=[dict(kind='text', role='prompt', text='Two teapots'), *refs[:2]],
                        outputs=[dict(kind='image', path='qwen-edit.png', width=512, height=512,
@@ -200,8 +205,12 @@ class ContractTests(unittest.TestCase):
                        parameters=dict(qwen21_reference_size=256))
         code, _, error = plan(schema2)
         self.assertEqual(code, 0, error)
+        schema2['execution']['qwen21_gpu_full_ffn_blocks'] = []
+        code, full, error = plan(schema2)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(full['planned_w8a8_ffn_layer_coverage'], 1)
         for invalid in [dict(qwen21_w8a8=False), dict(qwen21_reference_size=512),
-                        dict(qwen21_reference_size=1024), dict(qwen21_gpu_full_ffn_blocks=[]),
+                        dict(qwen21_reference_size=1024),
                         dict(qwen21_gpu_full_ffn_blocks=[3, 5]),
                         dict(qwen21_gpu_full_ffn_blocks=[7, 5, 3]),
                         dict(qwen21_gpu_full_ffn_blocks=[3, 3, 7]),
