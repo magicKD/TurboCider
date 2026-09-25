@@ -30,6 +30,7 @@ class HybridSession {
     std::string manifest;
     std::string export_variant, tensor_layout;
     std::string activation_precision;
+    std::string a8_graph, projected_weight_granularity;
     int rows = 0, hidden = 0, block_count = 0;
     int minimum_profitable_rows = 0;
     int mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;

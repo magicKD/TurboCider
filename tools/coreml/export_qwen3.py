@@ -335,6 +335,8 @@ def main():
                         default="per_channel", help="research-only ANE down-projection W8 layout")
     parser.add_argument("--projected-weight-precision", choices=["int8", "fp16"], default="int8",
                         help="research-only upper projection precision (int8_pc variant only)")
+    parser.add_argument("--projected-weight-granularity", choices=["per_channel", "per_block", "per_tensor"],
+                        default="per_channel", help="research-only W8 gate/up weight layout")
     parser.add_argument("--tap-hidden", action="store_true",
                         help="research-only output after SwiGLU/optional hidden A8; excludes down projection")
     parser.add_argument("--down-op", choices=["conv", "linear"], default="conv",
@@ -404,6 +406,10 @@ def main():
     if args.projected_weight_precision != "int8" and (
             args.variant != "int8_pc" or args.activation_precision != "int8"):
         raise ValueError("FP16 upper projection requires Qwen21 A8 calibration")
+    if args.projected_weight_granularity != "per_channel" and (
+            args.activation_precision != "int8" or args.variant != "int8_pc" or
+            args.projected_weight_precision != "int8"):
+        raise ValueError("alternate W8 gate/up granularity requires Qwen21 A8 calibration")
     if (args.projected_weight_precision == "fp16" and
             args.down_weight_granularity == "fp16" and not args.tap_hidden):
         raise ValueError("int8_pc diagnostic requires at least one W8 projection")
@@ -462,6 +468,8 @@ def main():
             **({"down_op": args.down_op} if args.down_op != "conv" else {}),
             **({"projected_weight_precision": args.projected_weight_precision}
                if args.projected_weight_precision != "int8" else {}),
+            **({"projected_weight_granularity": args.projected_weight_granularity}
+               if args.projected_weight_granularity != "per_channel" else {}),
             **({"tap_hidden": True} if args.tap_hidden else {}),
             "tensor_prefix": args.tensor_prefix,
             **({"minimum_profitable_rows": minimum_profitable_rows}
@@ -602,6 +610,11 @@ def main():
                         w8 = optimize.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int8",
                                                                granularity="per_channel", block_size=32,
                                                                weight_threshold=0)
+                        projected_w8 = (w8 if args.projected_weight_granularity == "per_channel" else
+                                        optimize.OpLinearQuantizerConfig(
+                                            mode="linear_symmetric", dtype="int8",
+                                            granularity=args.projected_weight_granularity,
+                                            block_size=32, weight_threshold=0))
                         down_w8 = (None if args.tap_hidden else
                                    w8 if args.down_weight_granularity == "per_channel" else
                                    None if args.down_weight_granularity == "fp16" else
@@ -610,7 +623,7 @@ def main():
                                        granularity=args.down_weight_granularity, block_size=32,
                                        weight_threshold=0))
                         quantizer = (optimize.OptimizationConfig(global_config=None,
-                            op_name_configs={**({"projected": w8}
+                            op_name_configs={**({"projected": projected_w8}
                                                if args.projected_weight_precision == "int8" else {}),
                                              **({} if down_w8 is None else {
                                                  "down_linear" if args.down_op == "linear" else "y": down_w8})})

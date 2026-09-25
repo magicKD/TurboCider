@@ -10,14 +10,17 @@
 
 int main(int argc, char **argv) {
     try {
-        tc::require(argc >= 8, "usage: qwen21-generate MODEL_ROOT PROMPT OUTPUT.png WIDTH HEIGHT STEPS SEED [--raw-text] [--normalized-edit] [--ane-manifest=PATH] [REFERENCE.png ... up to 10]");
+        tc::require(argc >= 8, "usage: qwen21-generate MODEL_ROOT PROMPT OUTPUT.png WIDTH HEIGHT STEPS SEED [--raw-text] [--normalized-edit] [--ane-manifest=PATH] [--experimental-w8a8] [--experimental-gpu-w8a16] [REFERENCE.png ... up to 10]");
         bool normalized_edit = false, raw_text = false;
+        bool experimental_w8a8 = false, experimental_gpu_w8a16 = false;
         std::string ane_manifest;
         int first_reference = 8;
         for (; first_reference < argc; ++first_reference) {
             std::string option(argv[first_reference]);
             if (option == "--raw-text") raw_text = true;
             else if (option == "--normalized-edit") normalized_edit = true;
+            else if (option == "--experimental-w8a8") experimental_w8a8 = true;
+            else if (option == "--experimental-gpu-w8a16") experimental_gpu_w8a16 = true;
             else if (option.starts_with("--ane-manifest=")) ane_manifest = option.substr(15);
             else { tc::require(!option.starts_with("--"), "unknown Qwen21 diagnostic option"); break; }
         }
@@ -25,8 +28,14 @@ int main(int argc, char **argv) {
         tc::configure_streams();
         std::filesystem::path root(argv[1]), output(argv[3]);
         int width = std::stoi(argv[4]), height = std::stoi(argv[5]), steps = std::stoi(argv[6]);
-        tc::require(ane_manifest.empty() || (width == 512 && height == 512 && first_reference == argc),
-                    "experimental Qwen21 hybrid is restricted to 512x512 text-to-image");
+        tc::require(ane_manifest.empty() || (width == 512 && height == 512 &&
+                        (first_reference == argc ||
+                         (experimental_w8a8 && argc - first_reference <= 3))),
+                    "experimental Qwen21 hybrid needs 512x512 text-to-image, or W8A8 with up to three references");
+        tc::require(!experimental_w8a8 || !ane_manifest.empty(),
+                    "--experimental-w8a8 requires an explicit ANE manifest");
+        tc::require(!experimental_gpu_w8a16 || experimental_w8a8,
+                    "--experimental-gpu-w8a16 requires explicit W8A8 ANE opt-in");
         auto seed = std::stoull(argv[7]);
         auto schedule = tc::qwen21::sigmas(width, height, steps);
         tc::mx::eval(schedule);
@@ -40,7 +49,9 @@ int main(int argc, char **argv) {
         std::vector<int> image_slots;
         auto total_start = tc::Clock::now();
         for (int i = first_reference; i < argc; ++i) {
-            auto pixels = tc::load_rgba_image_tensor(argv[i]);
+            // Match the production edit path: a 512 output does not imply
+            // 512 reference pixels or a smaller reference prefix KV.
+            auto pixels = tc::qwen21::resize_reference(tc::load_rgba_image_tensor(argv[i]));
             tc::require(pixels.shape(1) % 32 == 0 && pixels.shape(2) % 32 == 0 &&
                         int64_t(pixels.shape(1)) * pixels.shape(2) <= 12845056,
                         "diagnostic reference images must have dimensions divisible by 32 and fit the vision budget");
@@ -99,7 +110,15 @@ int main(int argc, char **argv) {
                 ane = std::make_unique<tc::HybridSession>(std::filesystem::absolute(ane_manifest), root, 1024,
                     event, cancelled, 1, root / "diffusion_models/qwen_image_2.1_bf16.safetensors",
                     std::vector<tc::LoRAAsset>{}, 1024, 32);
-                hybrid = std::make_unique<tc::qwen21::HybridMLP>(weights, *ane);
+                tc::require(ane->tensor_layout == "qwen21" && ane->checkpoint_sha_verified &&
+                                ane->block_count == 32 && ane->ane_mlp_end == 4096 &&
+                                (experimental_w8a8
+                                    ? ane->activation_precision == "int8" && ane->export_variant == "int8_pc" &&
+                                      ane->a8_graph == "sq_v1_both" &&
+                                      ane->projected_weight_granularity == "per_tensor"
+                                    : ane->activation_precision == "fp16" && ane->export_variant == "fp16"),
+                            "Qwen21 diagnostic manifest precision requires matching experimental opt-in");
+                hybrid = std::make_unique<tc::qwen21::HybridMLP>(weights, *ane, experimental_gpu_w8a16);
             }
             tc::qwen21::Transformer transformer(weights);
             if (hybrid) transformer.set_decode_mlp([&](int block, const tc::Tensor &input) { return (*hybrid)(block, input); });
@@ -140,7 +159,9 @@ int main(int argc, char **argv) {
         tc::mx::save_safetensors(output.string() + ".safetensors", artifacts,
             {{"prompt", argv[2]}, {"seed", std::to_string(seed)},
              {"text_final_norm", (!raw_text && (reference_latents.empty() || normalized_edit)) ? "true" : "false"},
-             {"experimental_ane_manifest", ane_manifest}});
+             {"experimental_ane_manifest", ane_manifest},
+             {"experimental_w8a8", experimental_w8a8 ? "true" : "false"},
+             {"experimental_gpu_w8a16", experimental_gpu_w8a16 ? "true" : "false"}});
         std::cout << "{\"total_seconds\":" << std::chrono::duration<double>(tc::Clock::now() - total_start).count() << "}" << std::endl;
         return 0;
     } catch (const std::exception &error) {

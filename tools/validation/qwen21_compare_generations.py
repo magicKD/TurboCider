@@ -8,6 +8,17 @@ import torch
 from safetensors.torch import load_file
 
 
+def matched_inputs(baseline, candidate):
+    extra = lambda data: {key for key in data if key == "image_slots" or key.startswith("reference")}
+    if extra(baseline) != extra(candidate):
+        raise ValueError("Unmatched reference tensor keys")
+    keys = ("text", "initial", "sigmas", *sorted(extra(baseline)))
+    inputs = {key: torch.equal(baseline[key], candidate[key]) for key in keys}
+    if not all(inputs.values()):
+        raise ValueError(f"Unmatched benchmark inputs: {inputs}")
+    return inputs
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--baseline", type=Path, required=True)
@@ -15,9 +26,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     baseline, candidate = (load_file(str(p)) for p in (args.baseline, args.candidate))
-    inputs = {key: torch.equal(baseline[key], candidate[key]) for key in ("text", "initial", "sigmas")}
-    if not all(inputs.values()):
-        raise ValueError(f"Unmatched benchmark inputs: {inputs}")
+    inputs = matched_inputs(baseline, candidate)
     a, b = baseline["latents"].float(), candidate["latents"].float()
     latents_rrms = float(((a - b).square().mean() / a.square().mean()).sqrt())
     pixels_a, pixels_b = ((data["pixels"].float() * .5 + .5).clamp(0, 1) for data in (baseline, candidate))

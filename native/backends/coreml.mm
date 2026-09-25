@@ -339,6 +339,9 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
         export_variant = string_value(d[@"export_identity"], @"variant");
         tensor_layout = string_value(d[@"export_identity"], @"tensor_layout");
         activation_precision = string_value(d[@"export_identity"], @"activation_precision", "fp16");
+        a8_graph = string_value(d[@"export_identity"], @"a8_graph");
+        projected_weight_granularity = string_value(
+            d[@"export_identity"], @"projected_weight_granularity", "per_channel");
         if (id image_rows = d[@"export_identity"][@"image_only_token_rows"]) {
             require([image_rows isKindOfClass:NSNumber.class] &&
                         [image_rows doubleValue] == 1024 &&
