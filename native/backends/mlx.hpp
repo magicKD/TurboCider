@@ -43,6 +43,19 @@ class Weights {
     size_t pack_convrot_q8();
     size_t pack_convrot_q8(int group_size, mx::Dtype scale_dtype);
     size_t pack_comfy_nvfp4();
+    // Quantize an aligned dense matrix range into MLX affine W8. The logical
+    // shape of the stored matrix becomes precisely the selected GPU shard.
+    void quantize_dense_range(const std::string &prefix, int row_start, int row_end,
+                              int col_start, int col_end, int group_size = 32);
+    // Offline channel routing: gather exactly the GPU-owned FFN channels
+    // before packing W8; no gather/scatter is left in the inference graph.
+    void quantize_dense_indices(const std::string &prefix,
+                                const std::vector<int> &channel_indexes,
+                                int axis, int group_size = 32);
+    // Experimental routed BF16 complement: retain exactly the GPU-owned
+    // channels, in source order, without changing their storage dtype.
+    void select_dense_indices(const std::string &prefix,
+                              const std::vector<int> &channel_indexes, int axis);
     void dequantize(const std::vector<std::string> &);
     const Tensor &at(const std::string &) const;
     bool has(const std::string &) const;

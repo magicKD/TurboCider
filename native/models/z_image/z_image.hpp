@@ -34,6 +34,10 @@ class ZImage final : public ModelSession {
     std::unique_ptr<HybridSession> encoder_hybrid_;
     std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
     int hybrid_gpu_mlp_start_ = -1;
+    int gpu_w8_suffix_start_ = -1;
+    int gpu_w8_group_size_ = 0;
+    std::string gpu_w8_manifest_;
+    std::string gpu_bf16_route_manifest_;
 
     void select_loras(const Request &);
     Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);

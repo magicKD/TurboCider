@@ -140,6 +140,10 @@ fi
 "$CXX" -std=c++20 -O3 -fobjc-arc -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I native/media -c tools/native/ltx_audio_mux.mm -o "$LTX_OUT/ltx_audio_mux_tool.o"
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_audio_mux_tool.o" "$OUT/native_media_audio.o" "$OUT/native_media_video.o" -o "$OUT/ltx-audio-mux" -framework Foundation -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" -dynamiclib "${OBJECTS[@]}" "${H3_OBJECTS[@]}" "$LTX_OUT/libltx-runtime.a" -o "$OUT/libturbocider.dylib" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework Accelerate -framework ImageIO -framework CoreGraphics -framework UniformTypeIdentifiers -framework Vision -Wl,-rpath,"$MLX_ROOT/lib" -Wl,-install_name,@rpath/libturbocider.dylib
+if [[ "${TURBOCIDER_BUILD_LIB_ONLY:-0}" == "1" ]]; then
+ printf 'Built %s/libturbocider.dylib (library only)\n' "$OUT"
+ exit 0
+fi
 "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_dit_streaming_probe.c -o "$VIDEO_OUT/h3_dit_streaming_probe.o"
 "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_dit_streaming_probe.o" -L"$OUT" -lturbocider -o "$OUT/h3-dit-streaming-probe" -Wl,-rpath,@executable_path
 "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_quantize_stream_cache.c -o "$VIDEO_OUT/h3_quantize_stream_cache.o"

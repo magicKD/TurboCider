@@ -250,6 +250,84 @@ bool Weights::quantized(const std::string &prefix) const {
            at(prefix + ".weight").dtype() == mx::uint32;
 }
 
+void Weights::quantize_dense_range(const std::string &prefix, int row_start, int row_end,
+                                   int col_start, int col_end, int group_size) {
+    require(!quantized(prefix) && !convrot(prefix) && !nvfp4(prefix) &&
+                !has(prefix + ".scales") && !has(prefix + ".biases") &&
+                !has_runtime_loras(),
+            "W8 conversion requires dense weights without runtime LoRA: " + prefix);
+    auto key = prefix + ".weight";
+    const auto &weight = at(key);
+    require(weight.ndim() == 2 &&
+                (weight.dtype() == mx::bfloat16 || weight.dtype() == mx::float16) &&
+                row_start >= 0 && row_end <= weight.shape(0) && row_start < row_end &&
+                col_start >= 0 && col_end <= weight.shape(1) && col_start < col_end &&
+                (group_size == 32 || group_size == 64 || group_size == 128) &&
+                (col_end - col_start) % group_size == 0,
+            "invalid W8 dense matrix shard: " + prefix);
+    auto sliced = slice_axis(slice_axis(weight, 0, row_start, row_end), 1, col_start, col_end);
+    auto arrays = mx::quantize(mx::astype(sliced, mx::float16), group_size, 8, "affine");
+    require(arrays.size() == 3, "MLX affine W8 conversion did not return scales and biases");
+    mx::eval(arrays);
+    values_.at(key) = std::move(arrays[0]);
+    values_.emplace(prefix + ".scales", std::move(arrays[1]));
+    values_.emplace(prefix + ".biases", std::move(arrays[2]));
+}
+
+void Weights::quantize_dense_indices(const std::string &prefix,
+                                     const std::vector<int> &channels,
+                                     int axis, int group_size) {
+    require(!quantized(prefix) && !convrot(prefix) && !nvfp4(prefix) &&
+                !has(prefix + ".scales") && !has(prefix + ".biases") &&
+                !has_runtime_loras(),
+            "routed W8 conversion requires dense weights without runtime LoRA: " + prefix);
+    const auto key = prefix + ".weight";
+    const auto &weight = at(key);
+    require(weight.ndim() == 2 &&
+                (weight.dtype() == mx::bfloat16 || weight.dtype() == mx::float16) &&
+                (axis == 0 || axis == 1) && !channels.empty() &&
+                (group_size == 32 || group_size == 64 || group_size == 128) &&
+                (axis == 0 ? weight.shape(1) : int(channels.size())) % group_size == 0,
+            "invalid routed W8 matrix geometry: " + prefix);
+    int previous = -1;
+    for (int channel : channels) {
+        require(channel > previous && channel < weight.shape(axis),
+                "routed W8 channels must be increasing in range: " + prefix);
+        previous = channel;
+    }
+    auto indexes = Tensor(channels.data(), {int(channels.size())}, mx::int32);
+    auto selected = mx::take(weight, indexes, axis);
+    auto arrays = mx::quantize(mx::astype(selected, mx::float16), group_size, 8, "affine");
+    require(arrays.size() == 3, "MLX routed affine W8 conversion failed");
+    mx::eval(arrays);
+    values_.at(key) = std::move(arrays[0]);
+    values_.emplace(prefix + ".scales", std::move(arrays[1]));
+    values_.emplace(prefix + ".biases", std::move(arrays[2]));
+}
+
+void Weights::select_dense_indices(const std::string &prefix,
+                                   const std::vector<int> &channels, int axis) {
+    require(!quantized(prefix) && !convrot(prefix) && !nvfp4(prefix) &&
+                !has(prefix + ".scales") && !has(prefix + ".biases") &&
+                !has_runtime_loras(),
+            "routed BF16 selection requires dense weights without runtime LoRA: " + prefix);
+    const auto key = prefix + ".weight";
+    const auto &weight = at(key);
+    require(weight.ndim() == 2 && weight.dtype() == mx::bfloat16 &&
+                (axis == 0 || axis == 1) && !channels.empty(),
+            "invalid routed BF16 matrix geometry: " + prefix);
+    int previous = -1;
+    for (int channel : channels) {
+        require(channel > previous && channel < weight.shape(axis),
+                "routed BF16 channels must be increasing in range: " + prefix);
+        previous = channel;
+    }
+    auto indexes = Tensor(channels.data(), {int(channels.size())}, mx::int32);
+    auto selected = mx::take(weight, indexes, axis);
+    mx::eval(selected);
+    values_.at(key) = std::move(selected);
+}
+
 bool Weights::convrot(const std::string &prefix) const {
     if (!has(prefix + ".weight") || !has(prefix + ".comfy_quant"))
         return false;

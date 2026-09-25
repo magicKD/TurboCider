@@ -114,6 +114,12 @@ dist/cli/turbocider plan request.json
 dist/cli/turbocider generate /absolute/Z-Image-Turbo request.json
 ```
 
+For a **compiled, checkpoint-matching** GPU/ANE artifact, append
+`--ane-manifest path/to/compiled/manifest-HASH.json` to `plan`, `generate`
+or `batch`. This explicitly opts into approximate `gpu_ane` without changing
+the request file. The [Z-Image 512² W8A8 guide](Z_IMAGE_ANE.md) explains the
+fastest measured local profile, its exact shape and warm versus cold timing.
+
 A successful plan validates a request, not the presence of every model file.
 Use unique output paths. Relative paths resolve from the working directory.
 

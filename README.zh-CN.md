@@ -79,6 +79,13 @@ dist/cli/turbocider plan examples/requests/z-image-turbo.json
 dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z-image-turbo.json
 ```
 
+CLI 的 `plan`、`generate` 和 `batch` 可在末尾加
+`--ane-manifest path/to/compiled-manifest.json`，显式使用与该请求
+匹配的 ANE 产物，不修改 JSON。512²、8 步下目前最快的本地 Z-Image
+W8A8/BF16 并行方案及其 **约 1.31× 暖请求加速**、画质和冷启动边界详见
+[Z-Image GPU/ANE 指南（英文）](docs/public/Z_IMAGE_ANE.md)；其他模型仍可传各自
+匹配的 ANE manifest，默认 `auto` 策略不变。
+
 相对输出路径按当前工作目录解析；示例可能使用 `/tmp` 下的绝对路径。完整图像、视频、LoRA、ANE 准备和服务步骤见[快速开始](docs/public/GETTING_STARTED.md)与[使用参考](docs/public/USAGE.md)。
 
 ## 模型能力

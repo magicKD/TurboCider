@@ -38,6 +38,10 @@ test:
 	@"$(PYTHON)" tests/native/test_hash_small_stack.py
 	@"$(PYTHON)" tests/native/test_contract.py
 	@"$(PYTHON)" -B tests/native/test_z_image_sharded_checkpoint.py
+	@"$(PYTHON)" -B tests/native/test_z_image_smoothquant.py
+	@"$(PYTHON)" -B tests/native/test_cli_ane_override.py
+	@"$(PYTHON)" -B tests/native/test_z_image_w8a8_layers.py
+	@"$(PYTHON)" -B tests/native/test_z_image_w8a8_coreml.py
 	@"$(PYTHON)" -B tests/native/test_z_image_weight_stream.py
 	@"$(PYTHON)" -B tests/native/test_coreml_lora.py
 	@"$(PYTHON)" -B tests/native/test_llada_reference.py

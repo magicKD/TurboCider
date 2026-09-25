@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "model": "z-image-turbo",
+  "operation": "image.generate",
+  "inputs": [
+    {
+      "kind": "text",
+      "role": "prompt",
+      "text": "A cinematic red fox walking through fresh snow, soft morning light."
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "image",
+      "path": "outputs/z-image-turbo-512-cli.png",
+      "width": 512,
+      "height": 512,
+      "frames": 1,
+      "audio": false
+    }
+  ],
+  "sampling": {"seed": 42, "steps": 8},
+  "execution": {"policy": "gpu", "residency": "resident"}
+}

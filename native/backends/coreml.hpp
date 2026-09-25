@@ -16,6 +16,11 @@ struct HybridBucketPlan {
 // callers can take an intentional GPU fallback before loading Core ML models.
 HybridBucketPlan hybrid_bucket_plan(const std::filesystem::path &, int tokens);
 
+// Returns 1024 only for a manifest explicitly marked as a fixed-row Z-Image
+// W8A8 image-only branch. Full source/weight provenance is checked by the
+// HybridSession constructor before any model is used.
+int z_image_image_only_manifest_rows(const std::filesystem::path &);
+
 // Public Core ML only. The framework may execute portions on CPU.
 class HybridSession {
     struct Impl;
@@ -24,9 +29,13 @@ class HybridSession {
   public:
     std::string manifest;
     std::string export_variant, tensor_layout;
+    std::string activation_precision;
     int rows = 0, hidden = 0, block_count = 0;
     int minimum_profitable_rows = 0;
     int mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;
+    int image_only_token_rows = 0;
+    bool has_channel_route = false;
+    std::vector<std::vector<int>> gpu_channel_indices;
     float output_scale = 1.f;
     bool checkpoint_sha_verified = false;
     bool lora_identity_verified = false;

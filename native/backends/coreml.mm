@@ -112,6 +112,25 @@ HybridBucketPlan hybrid_bucket_plan(const std::filesystem::path &file, int token
     return plan;
 }
 
+int z_image_image_only_manifest_rows(const std::filesystem::path &file) {
+    auto d = read_json(file);
+    NSDictionary *identity = d[@"export_identity"];
+    if (![identity isKindOfClass:NSDictionary.class] ||
+        identity[@"image_only_token_rows"] == nil)
+        return 0;
+    id marker = identity[@"image_only_token_rows"];
+    NSDictionary *shape = d[@"shape"];
+    require([marker isKindOfClass:NSNumber.class] &&
+                [marker doubleValue] == 1024 &&
+                [identity[@"activation_precision"] isEqual:@"int8"] &&
+                [shape isKindOfClass:NSDictionary.class] &&
+                [shape[@"buckets"] isEqual:@[@1024]] &&
+                (shape[@"input_mode"] == nil ||
+                 [shape[@"input_mode"] isEqual:@"fixed"]),
+            "invalid marked Z-Image W8A8 image-only manifest");
+    return 1024;
+}
+
 struct CoreMLPartitions::Impl {
     std::vector<std::unique_ptr<CoreMLBranch>> branches;
 };
@@ -319,6 +338,14 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     if ([d[@"export_identity"] isKindOfClass:NSDictionary.class]) {
         export_variant = string_value(d[@"export_identity"], @"variant");
         tensor_layout = string_value(d[@"export_identity"], @"tensor_layout");
+        activation_precision = string_value(d[@"export_identity"], @"activation_precision", "fp16");
+        if (id image_rows = d[@"export_identity"][@"image_only_token_rows"]) {
+            require([image_rows isKindOfClass:NSNumber.class] &&
+                        [image_rows doubleValue] == 1024 &&
+                        activation_precision == "int8",
+                    "invalid image-only Z-Image W8A8 manifest");
+            image_only_token_rows = 1024;
+        }
     }
     require([d[@"schema_version"] isKindOfClass:NSNumber.class] &&
                 [d[@"shape"] isKindOfClass:NSDictionary.class] &&
@@ -330,6 +357,8 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                 [d[@"source"][@"checkpoint_bytes"] isKindOfClass:NSNumber.class],
             "invalid hybrid manifest numbers");
     require([d[@"schema_version"] intValue] == 2, "hybrid requires manifest schema 2");
+    require(activation_precision.empty() || activation_precision == "fp16" ||
+                activation_precision == "int8", "invalid hybrid activation precision");
     hidden = [d[@"shape"][@"K"] intValue];
     require(hidden > 0 && hidden <= 8192 && [d[@"shape"][@"N"] intValue] == hidden,
             "hybrid hidden dimension mismatch");
@@ -351,6 +380,10 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
         previous = [bucket intValue];
         impl_->buckets.push_back(previous);
     }
+    if (image_only_token_rows)
+        require(!impl_->flexible && impl_->buckets.size() == 1 &&
+                    impl_->buckets[0] == image_only_token_rows,
+                "image-only Z-Image W8A8 requires a fixed 1024-row artifact");
     impl_->minimum_profitable_rows =
         hybrid_minimum_profitable_rows(d[@"shape"], impl_->buckets);
     set_tokens(tokens);
@@ -484,6 +517,51 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     require(required_blocks >= 0 && required_blocks <= manifest_blocks,
             "hybrid manifest has too few required blocks");
     block_count = required_blocks ? required_blocks : manifest_blocks;
+    if (id routing = d[@"export_identity"][@"channel_routing"]) {
+        require([routing isKindOfClass:NSDictionary.class] &&
+                    [routing[@"group_width"] isKindOfClass:NSNumber.class] &&
+                    [routing[@"ane_group_indexes"] isKindOfClass:NSDictionary.class] &&
+                    block_count == 32 && mlp_width == 10240 && ane_mlp_start == 0,
+                "invalid Z-Image channel routing manifest");
+        const int group = [routing[@"group_width"] intValue];
+        require(group >= 32 && group % 32 == 0 &&
+                    [routing[@"group_width"] doubleValue] == double(group) &&
+                    mlp_width % group == 0 && ane_mlp_end % group == 0,
+                "invalid Z-Image channel routing group width");
+        NSDictionary *groups = routing[@"ane_group_indexes"];
+        require(groups.count == NSUInteger(block_count),
+                "Z-Image channel routing requires all 32 blocks");
+        for (int block = 0; block < block_count; ++block) {
+            NSString *key = [NSString stringWithFormat:@"%d", block];
+            NSArray *selected = groups[key];
+            require([selected isKindOfClass:NSArray.class] &&
+                        selected.count == NSUInteger(ane_mlp_end / group),
+                    "invalid Z-Image ANE channel selection");
+            std::vector<bool> ane_groups(size_t(mlp_width / group), false);
+            int previous = -1;
+            for (id entry in selected) {
+                require([entry isKindOfClass:NSNumber.class] &&
+                            CFGetTypeID((__bridge CFTypeRef)entry) != CFBooleanGetTypeID() &&
+                            [entry doubleValue] == double([entry intValue]),
+                        "invalid Z-Image ANE channel index");
+                const int index = [entry intValue];
+                require(index > previous && index < mlp_width / group,
+                        "Z-Image ANE channel indexes must be ordered and unique");
+                ane_groups[size_t(index)] = true;
+                previous = index;
+            }
+            std::vector<int> gpu;
+            gpu.reserve(size_t(mlp_width - ane_mlp_end));
+            for (int index = 0; index < mlp_width / group; ++index)
+                if (!ane_groups[size_t(index)])
+                    for (int offset = 0; offset < group; ++offset)
+                        gpu.push_back(index * group + offset);
+            require(gpu.size() == size_t(mlp_width - ane_mlp_end),
+                    "Z-Image GPU complement does not cover the hidden channels");
+            gpu_channel_indices.push_back(std::move(gpu));
+        }
+        has_channel_route = true;
+    }
     manifest_validation_seconds =
         std::chrono::duration<double>(Clock::now() - begin).count();
     // Blocks execute serially and z_block materializes the prior consumer

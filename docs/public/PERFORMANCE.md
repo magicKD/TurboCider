@@ -20,6 +20,7 @@ below. These are dated workload results, not current-release or all-model claims
 | FLUX 4B · M4 Pro 48 GiB · 512² · 4 steps · September 5 historical snapshot | Native GPU 4.758 s | GPU + ANE 2.896 s | **1.64×** | **39.1%** |
 | FLUX 4B · M4 Max 64 GB · 512² · 4 steps · September 7 | Native GPU 2.266 s | GPU + ANE 1.628 s | **1.39×** | **28.2%** |
 | Z-Image Turbo · M4 Max 64 GB · 1024² · 9 steps · September 7 | Stock ComfyUI GPU 40.110 s | GPU + ANE 30.001 s | **1.34×** | **25.2%** |
+| Z-Image Turbo · M4 Max 64 GB · 512² · 8 steps · September 25 experimental profile | Native BF16 GPU 7.069 s | W8A8 ANE + BF16 GPU 5.393 s | **1.311×** | **23.7%** |
 | FLUX 4B · M4 Pro 48 GiB · 512² · 4 steps · September 5 | Original flux2-engine GPU 6.073 s | Native GPU 4.758 s | **1.28×** | **21.7%** |
 
 All dates are in 2026. Speedup is baseline median divided by candidate median;
@@ -68,6 +69,15 @@ These values describe tested images, not every prompt. They do not establish
 bitwise equality or replace a perceptual study. Separate shared-noise Z-Image
 checks against ComfyUI reported PNG cosine 0.999770 and correlation 0.998665;
 those were not the seed-varied timed samples.
+
+The September 25 **Z-Image 512², eight-step** M4 Max regular-build,
+same-library BF16-GPU versus W8A8-ANE/BF16-GPU crossover measured
+7.0688 → 5.3934 s warm request wall (**1.311×**) and 6.8256 → 5.1466 s
+warm denoising (**1.326×**). It is a different shape, step count and baseline
+from the historical 1024² ComfyUI row above. The 5,120-channel image-only
+manifest is explicit rather than the automatic profile; see the
+[Z-Image GPU/ANE guide](Z_IMAGE_ANE.md) for the CLI command, quality caveats
+and the cold-start distinction.
 
 ## What is deliberately not a headline
 
