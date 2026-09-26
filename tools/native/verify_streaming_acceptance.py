@@ -147,7 +147,15 @@ def verify(bundle: Path, binding: dict, frozen: dict) -> dict:
             if (report['schema'] != REPORT_SCHEMA or report['gate'] != gate or
                     any(report[k] != review[k] for k in ('policy_sha256','catalog_binding_sha256','reviewed_commit'))):
                 raise AcceptanceError('report binding differs from review')
-            exact(report['checks'], CHECKS[gate], gate+' checks')
+            required_checks = CHECKS[gate]
+            if gate == 'quality' and 'text_capacity' in binding:
+                required_checks += ('text_capacity_boundaries',)
+            exact(report['checks'], required_checks, gate+' checks')
+            if gate == 'quality' and 'text_capacity' in binding:
+                range_check = report['checks']['text_capacity_boundaries']
+                if not any(a.get('path') == 'text-capacity/range.json'
+                           for a in range_check.get('artifacts', []) if isinstance(a, dict)):
+                    raise AcceptanceError('text capacity review must reference the original range manifest')
             worst = 'PASS'
             for check in report['checks'].values():
                 exact(check, ('verdict','artifacts'), 'check')

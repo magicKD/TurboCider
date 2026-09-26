@@ -41,6 +41,23 @@ class AcceptanceTests(unittest.TestCase):
 
     def verify(self): return acceptance.verify(self.root,self.binding,self.frozen)
 
+    def test_capacity_requires_review_of_original_range_manifest(self):
+        self.binding['text_capacity'] = dict(minimum_rows=7, maximum_rows=1024)
+        self.base['catalog_binding_sha256'] = hashlib.sha256(canonical(self.binding)).hexdigest()
+        for report in self.reports.values(): report.update(self.base)
+        self.save()
+        with self.assertRaisesRegex(acceptance.AcceptanceError, 'checks'): self.verify()
+        self.reports['quality']['checks']['text_capacity_boundaries'] = dict(verdict='PASS', artifacts=[self.ref('raw.log')])
+        self.save()
+        with self.assertRaisesRegex(acceptance.AcceptanceError, 'original range manifest'): self.verify()
+        (self.root/'text-capacity').mkdir()
+        (self.root/'text-capacity/range.json').write_text('{"fixture":true}')
+        self.reports['quality']['checks']['text_capacity_boundaries']['artifacts'] = [self.ref('text-capacity/range.json')]
+        self.save()
+        self.assertEqual(self.verify()['verdicts']['quality'], 'PASS')
+        # Range semantics are separately reverified by release evidence; a
+        # reviewed inventory is not permission to accept this fixture as real.
+
     @unittest.skipUnless(sys.platform == 'darwin', 'P2 uses Darwin process sampling')
     def test_reverify_real_synthetic_campaigns_and_reject_changed_summary(self):
         import verify_streaming_release_evidence as release

@@ -9,6 +9,8 @@ import argparse
 import ctypes as C
 import hashlib
 import json
+import os
+from dataclasses import asdict
 import time
 from pathlib import Path
 from run_streaming_campaign import load_native_library, create_native_engine, consume
@@ -39,6 +41,11 @@ def run(args):
     engine = None
     started = time.monotonic()
     observation = dict(status='failed', cleanup_returned=False, cancellation_sent=False)
+    from process_tree_sampler import DarwinBackend
+    process = DarwinBackend().process(os.getpid())
+    if process is None:
+        raise RuntimeError('cannot bind public generation to its process identity')
+    observation['process_identity'] = asdict(process.identity)
     callback_type = C.CFUNCTYPE(None, C.c_char_p, C.c_void_p)
     try:
         engine = create_native_engine(library, config)

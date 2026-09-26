@@ -27,11 +27,16 @@ def read(path):
 
 def verify(frozen, binding, bundles, acceptance):
     validate_frozen(frozen)
-    if not isinstance(binding, dict) or set(binding) != {'release_policy_revision','source','workload','runtime','device','plan','performance_profile'}:
+    binding_keys = {'release_policy_revision','source','workload','runtime','device','plan','performance_profile'}
+    if not isinstance(binding, dict) or set(binding) not in (binding_keys, binding_keys | {'text_capacity'}):
         raise ValueError('incomplete catalog binding')
     if set(bundles) not in ({'P0','P1','P2'}, {'P0','P1','P2','P3'}):
         raise ValueError('release requires P0/P1/P2, with optional P3')
     accepted = verify_acceptance(acceptance, binding, frozen)
+    text_capacity = None
+    if 'text_capacity' in binding:
+        from verify_streaming_text_capacity import verify as verify_text_capacity
+        text_capacity = verify_text_capacity(acceptance / 'text-capacity', binding, accepted['reviewed_commit'])
     summaries, policies, evidence = {}, {}, {}
     for gate, bundle in bundles.items():
         policy, policy_digest = read_evidence(bundle/'campaign-policy.json')
@@ -51,6 +56,7 @@ def verify(frozen, binding, bundles, acceptance):
                                   campaign_bindings={g:policies[g] for g in ('P0','P1','P2')})
     return dict(schema='tc-streaming-release-evidence-verification-v1', assessment=assessment,
                 acceptance=accepted, campaign_evidence=evidence, campaign_summaries=summaries,
+                **({'text_capacity': text_capacity} if text_capacity else {}),
                 production_authorized=False)
 
 

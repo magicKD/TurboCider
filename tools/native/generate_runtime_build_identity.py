@@ -30,6 +30,14 @@ BUILD_SCRIPTS = (
     "tools/native/streaming_release_policy.py",
     "tools/native/verify_streaming_acceptance.py",
     "tools/native/verify_streaming_release_evidence.py",
+    "tools/native/verify_streaming_text_capacity.py",
+    "tools/native/run_streaming_text_capacity.py",
+    "tools/native/run_public_streaming_smoke.py",
+    "tools/native/run_image_streaming_smoke.py",
+    "tools/native/run_streaming_campaign.py",
+    "tools/native/capture_streaming_source_identity.py",
+    "tools/native/verify_process_tree_samples.py",
+    "tools/native/process_tree_sampler.py",
 )
 SEARCH_ENV = (
     "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH",

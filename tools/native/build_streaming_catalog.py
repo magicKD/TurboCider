@@ -962,6 +962,24 @@ def _check_existing_records(
             )
 
 
+def expected_memory_calibration(record, memory, target, summary_digest, text_capacity=None):
+    peak = math.ceil(float(memory["peak_p95_bytes"]["candidate"]))
+    gap = memory["maximum_sample_gap_ns"]
+    evidence_digest = summary_digest
+    if "text_capacity" in record:
+        if not text_capacity or text_capacity["target_bytes"] != target:
+            raise CatalogBuildError("text capacity memory target differs from P2")
+        if record["calibration"]["estimator_revision"] != "tree-phys-footprint-p95-with-text-boundaries-v1":
+            raise CatalogBuildError("text capacity calibration must include boundary peaks")
+        peak = max(peak, text_capacity["maximum_peak_bytes"])
+        gap = max(gap, text_capacity["maximum_sample_gap_ns"])
+        evidence_digest = hashlib.sha256(canonical_json({
+            "p2_summary_sha256": summary_digest,
+            "text_capacity_range_sha256": text_capacity["range_file"]["sha256"],
+        })).hexdigest()
+    return peak, gap, evidence_digest
+
+
 def build_record(
     bundle: Path,
     input_path: Path,
@@ -980,10 +998,8 @@ def build_record(
         raise CatalogBuildError("record input must contain an object")
     provided_digest = record.pop("canonical_record_digest", None)
     validate_record_shape(record)
-    if "text_capacity" in record:
-        # A single upper-bound P2 run does not qualify every encoder/DiT shape.
-        # Keep range records on the test path until range evidence is verified.
-        raise CatalogBuildError("text capacity release requires independently verified range evidence")
+    if "text_capacity" in record and record["release"]["channel"] != "public-calibrated":
+        raise CatalogBuildError("text capacity release requires calibrated policy and range acceptance evidence")
     if record["release"]["channel"] not in ("staging", "public-experimental", "public-stable", "public-calibrated"):
         raise CatalogBuildError("record channel is not releasable")
     is_public = record["release"]["channel"].startswith("public-")
@@ -1035,6 +1051,7 @@ def build_record(
         if is_public and not calibrated else None
     )
     acceptance = None
+    text_capacity = None
     assessment = None
     review_gates = required_gates
     if calibrated:
@@ -1051,6 +1068,7 @@ def build_record(
         if assessment["status"] != "READY_FOR_REVIEW":
             raise CatalogBuildError(f"calibrated acceptance is blocked: {assessment['blocking_gates']}")
         acceptance = verified["acceptance"]
+        text_capacity = verified.get("text_capacity")
         if "P3" in verified["campaign_evidence"]:
             evidence_digests["P3"] = verified["campaign_evidence"]["P3"]["summary_sha256"]
             review_gates = (*required_gates, "P3")
@@ -1059,21 +1077,22 @@ def build_record(
         p3_result = assessment["p3"]
     if record["calibration"]["calibrated_request_bytes"] > memory["allowed_peak_bytes"]:
         raise CatalogBuildError("record calibrated bytes exceed allowed peak")
-    expected_peak = math.ceil(float(memory["peak_p95_bytes"]["candidate"]))
+    expected_peak, expected_gap, expected_memory_digest = expected_memory_calibration(
+        record, memory, target, summary_digest, text_capacity)
     if record["calibration"]["calibrated_request_bytes"] != expected_peak:
         raise CatalogBuildError(
-            "record calibrated bytes do not equal candidate process-tree P95"
+            "record calibrated bytes do not equal candidate process-tree P95 and required boundary envelope"
         )
     if record["calibration"]["confirmation_sample_count"] != memory["required_count"]:
         raise CatalogBuildError("record confirmation count differs from evidence")
-    if record["calibration"]["maximum_sample_gap_ns"] != memory["maximum_sample_gap_ns"]:
+    if record["calibration"]["maximum_sample_gap_ns"] != expected_gap:
         raise CatalogBuildError("record maximum sample gap differs from evidence")
     if record["calibration"]["maximum_sample_gap_ns"] > memory["allowed_max_gap_ns"]:
         raise CatalogBuildError("record maximum sample gap exceeds policy")
     if record["calibration"]["calibrated_request_bytes"] > memory["allowed_peak_bytes"]:
         raise CatalogBuildError("record calibrated bytes exceed public headroom")
-    if record["calibration"]["evidence_digest"] != summary_digest:
-        raise CatalogBuildError("calibration evidence digest is not summary.json SHA-256")
+    if record["calibration"]["evidence_digest"] != expected_memory_digest:
+        raise CatalogBuildError("calibration evidence digest differs from verified memory evidence")
     performance_digest = evidence_digests["P1"]
     if record["performance"]["evidence_digest"] != performance_digest:
         raise CatalogBuildError(
