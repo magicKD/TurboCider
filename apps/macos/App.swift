@@ -611,7 +611,16 @@ struct StudioView: View {
                     Text(RunInsights(json: json).cacheLabel).font(.callout).foregroundStyle(.secondary)
                 }
             }
-            if let error = studio.message ?? store.storageError {
+            if let conflict = studio.draft.zImageStreamingConflict() {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(conflict).font(.caption).textSelection(.enabled)
+                    Button("切换常驻加载，保留当前设置") { studio.useZImageResidentLoading() }
+                        .disabled(store.busy || submitting)
+                        .accessibilityIdentifier("fixZImageStreamingConflict")
+                    Text("常驻加载会使用更多内存。此问题与提示词内容或长度无关。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }.accessibilityIdentifier("zImageStreamingConflict")
+            } else if let error = studio.message ?? store.storageError {
                 HStack(alignment: .top) { Text(error).font(.caption).textSelection(.enabled); Spacer(); Button { studio.message = nil } label: { Image(systemName: "xmark") } }
                     .foregroundStyle(.secondary).accessibilityIdentifier("statusMessage")
             }
@@ -801,6 +810,7 @@ struct StudioView: View {
         guard let path = studio.draft.modelPaths[id], !path.isEmpty else { return }
         studio.message = nil
         if studio.draft.modelID != id { studio.selectModel(id) }
+        if let conflict = studio.draft.zImageStreamingConflict() { studio.message = conflict; return }
         let snapshot = studio.draft
         Task { do {
             let resolved = try await store.resolveAcceleration(snapshot)
@@ -824,6 +834,7 @@ struct StudioView: View {
     }
     private func generate() {
         guard !store.busy, !api.running, !api.changing, !submitting, !studio.importing else { return }
+        if let conflict = studio.draft.zImageStreamingConflict() { studio.message = conflict; return }
         let snapshot = studio.draft
         let ext = model?.isVideo == true ? "mp4" : "png"
         let output = store.directory.appendingPathComponent("outputs/\(UUID().uuidString).\(ext)")

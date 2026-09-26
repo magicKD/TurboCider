@@ -173,6 +173,26 @@ struct StudioDraft: Codable, Sendable {
     var zImageRequiresResident: Bool {
         ZImageInstallation.requiresResident(variantID: zImageVariant?.id)
     }
+    // Keep the UI and request validation on the same capability check. These
+    // conflicts depend on settings, so editing the prompt cannot resolve them.
+    func zImageStreamingConflict(systemJSON: String = NativeEngine.system()) -> String? {
+        guard modelID == "z-image-turbo", residency == "streamed" else { return nil }
+        if ZImageInstallation.requiresResident(variantID: zImageVariant?.id, systemJSON: systemJSON) {
+            return zImageVariant?.id == "int8-convrot"
+                ? "当前设备的 INT8 权重仅支持常驻加载；INT8 流式加载需要 Apple M5 Pro、24 GiB 内存。"
+                : "当前权重版本仅支持常驻加载。"
+        }
+        if !activeLoRAs.isEmpty {
+            return "已启用 LoRA，无法使用流式加载。切换常驻加载即可保留并使用这些 LoRA。"
+        }
+        if !profilePath.isEmpty || !["gpu", "gpu_ane"].contains(acceleration?.policy ?? "gpu") {
+            return "当前加速配置不支持流式加载。请切换常驻加载，或清除加速配置并明确选择 GPU。"
+        }
+        if usesANE && !AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming", systemJSON: systemJSON) {
+            return "当前设备不支持 ANE 流式加载。请切换常驻加载，或关闭 ANE 使用 GPU 流式加载。"
+        }
+        return nil
+    }
     @discardableResult
     mutating func normalizeZImageResidency(systemJSON: String = NativeEngine.system()) -> Bool {
         guard residency == "streamed",
@@ -284,19 +304,7 @@ struct StudioDraft: Codable, Sendable {
                 throw NativeFailure(message: "Z-Image-Turbo 支持常驻或 BF16 / INT8 流式加载，每次生成单张图片。")
             }
             if residency == "streamed" {
-                guard !zImageRequiresResident else {
-                    throw NativeFailure(message: zImageVariant?.id == "int8-convrot"
-                        ? "INT8 流式加载仅在 Apple M5 Pro、24 GiB 内存的机器上启用；当前设备仅支持常驻加载。"
-                        : "当前权重版本仅支持常驻加载，请将模型驻留改为常驻。")
-                }
-                guard activeLoRAs.isEmpty, profilePath.isEmpty,
-                      ["gpu", "gpu_ane"].contains(acceleration?.policy ?? "gpu") else {
-                    throw NativeFailure(message: "流式加载支持 BF16 / INT8，暂不支持 LoRA，请明确选择 GPU 或 GPU+ANE。")
-                }
-                guard acceleration?.policy != "gpu_ane" ||
-                      AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming") else {
-                    throw NativeFailure(message: "ANE 流式优化目前仅在已验证的 M5 Pro 24 GiB 上启用；此设备请使用纯 GPU 流式加载。")
-                }
+                if let conflict = zImageStreamingConflict() { throw NativeFailure(message: conflict) }
                 guard [6, 8, 10, 12].contains(zImageStreamingBudgetGiB) else {
                     throw NativeFailure(message: "请选择 6、8、10 或 12 GiB 的流式内存预算。")
                 }
@@ -686,6 +694,12 @@ final class StudioState: ObservableObject {
         config.automaticVersion = 1
         draft.profilePath = ""
         draft.acceleration = config
+    }
+    func useZImageResidentLoading() {
+        guard draft.modelID == "z-image-turbo", draft.residency == "streamed" else { return }
+        draft.residency = "resident"
+        message = "已切换常驻加载，提示词、LoRA 和加速设置已保留。常驻加载会使用更多内存。"
+        save()
     }
     func rememberAcceleration(_ resolved: StudioDraft) {
         guard draft.modelID == resolved.modelID, draft.activeLoRAs == resolved.activeLoRAs,
