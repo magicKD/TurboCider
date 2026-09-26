@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from verify_streaming_campaign import EvidenceError, verify as verify_campaign
-from streaming_release_policy import (STAGING_GATES, PUBLIC_GATES, required_gates as policy_gates, ReleasePolicyError)
+from streaming_release_policy import (STAGING_GATES, PUBLIC_GATES, STRICT, CALIBRATED,
+    required_gates as policy_gates, ReleasePolicyError)
 
 
 SCHEMA = "turbocider-streaming-catalog-build-v1"
@@ -31,6 +32,7 @@ RECORD_SCHEMA = "tc-streaming-preset-record-v1"
 RECORD_DIGEST_SCHEMA = "tc-streaming-preset-record-digest-v1"
 RECORD_IDENTITY_SCHEMA = "tc-streaming-preset-record-identity-v1"
 REVIEW_SCHEMA = "tc-streaming-catalog-review-v1"
+CALIBRATED_REVIEW_SCHEMA = "tc-streaming-catalog-review-v2"
 CALIBRATION_SCOPE = "execution_process_tree_v1"
 CALIBRATION_ESTIMATOR = "tree-phys-footprint-linear-p95-v1"
 REVIEW_ROLES = ("runtime", "model", "performance", "release")
@@ -401,10 +403,15 @@ def validate_record_shape(record: dict[str, Any]) -> None:
         "record.release",
     )
     if "policy_revision" in release:
-        if release["policy_revision"] != "tc-public-strict-v1" or version != 2:
+        if release["policy_revision"] not in (STRICT, CALIBRATED) or version != 2:
             raise CatalogBuildError("unsupported release policy revision")
-    if release.get("channel") not in ("staging", "public-stable", "public-experimental", "revoked"):
+    if release.get("channel") not in ("staging", "public-stable", "public-experimental", "public-calibrated", "revoked"):
         raise CatalogBuildError("record.release.channel is invalid")
+    if release["channel"] != "revoked":
+        try:
+            policy_gates(release["channel"], release.get("policy_revision"))
+        except ReleasePolicyError as exc:
+            raise CatalogBuildError(str(exc)) from exc
     if release.get("revoked") is not False:
         raise CatalogBuildError("new catalog records cannot be revoked")
     require_string(release.get("reviewed_commit"), "record.release.reviewed_commit")
@@ -581,8 +588,13 @@ def record_schema(record: dict[str, Any], legacy: str) -> str:
     if version == 2 and "source_snapshot_digest" in record["source"]:
         raise CatalogBuildError("portable source identity must not contain a snapshot")
     if "policy_revision" in record["release"]:
-        if version != 2 or record["release"]["policy_revision"] != "tc-public-strict-v1":
+        if version != 2 or record["release"]["policy_revision"] not in (STRICT, CALIBRATED):
             raise CatalogBuildError("unsupported release policy revision")
+        release = record["release"]
+        if release["channel"] != "revoked" and (
+            (release["channel"] == "public-calibrated") != (release["policy_revision"] == CALIBRATED)
+        ):
+            raise CatalogBuildError("release channel and policy do not match")
         return legacy.removesuffix("v1") + "v3"
     return legacy if version == 1 else legacy.removesuffix("v1") + "v2"
 
@@ -824,18 +836,24 @@ def _validate_review(
     evidence_digests: dict[str, str],
     identity_digest: str,
     required_gates: tuple[str, ...],
+    acceptance_digest: str | None = None,
+    policy_digest: str | None = None,
 ) -> str:
     require_exact_keys(
         review,
         {
             "schema", "status", "reviewed_commit", "record_identity_digest",
             "evidence_summary_sha256", "reviewers", "review_digest",
-        },
+        } | ({"acceptance_review_sha256", "release_policy_sha256"} if acceptance_digest else set()),
         set(),
         "review",
     )
-    if review["schema"] != REVIEW_SCHEMA or review["status"] != "approved":
-        raise CatalogBuildError("review is not an approved v1 review")
+    schema = CALIBRATED_REVIEW_SCHEMA if acceptance_digest else REVIEW_SCHEMA
+    if review["schema"] != schema or review["status"] != "approved":
+        raise CatalogBuildError("review is not an approved catalog review")
+    if acceptance_digest and (review["acceptance_review_sha256"] != acceptance_digest or
+                              review["release_policy_sha256"] != policy_digest):
+        raise CatalogBuildError("review acceptance or frozen policy digest differs")
     reviewed_commit = require_commit(review["reviewed_commit"], "review.reviewed_commit")
     require_string(
         review["record_identity_digest"],
@@ -911,6 +929,9 @@ def build_record(
     default_bundle: Path | None = None,
     swap_bundle: Path | None = None,
     existing_catalog_path: Path | None = None,
+    *,
+    frozen_policy_path: Path | None = None,
+    acceptance_bundle: Path | None = None,
 ) -> dict[str, Any]:
     record_input = read_object(input_path, "record input")
     record = copy.deepcopy(record_input.get("record", record_input))
@@ -918,9 +939,10 @@ def build_record(
         raise CatalogBuildError("record input must contain an object")
     provided_digest = record.pop("canonical_record_digest", None)
     validate_record_shape(record)
-    if record["release"]["channel"] not in ("staging", "public-experimental", "public-stable"):
+    if record["release"]["channel"] not in ("staging", "public-experimental", "public-stable", "public-calibrated"):
         raise CatalogBuildError("record channel is not releasable")
     is_public = record["release"]["channel"].startswith("public-")
+    calibrated = record["release"]["channel"] == "public-calibrated"
     try:
         required_gates = policy_gates(record["release"]["channel"], record["release"].get("policy_revision"))
     except ReleasePolicyError as exc:
@@ -929,8 +951,12 @@ def build_record(
         raise CatalogBuildError("P0 default-path evidence bundle is required")
     if performance_bundle is None:
         raise CatalogBuildError("P1 same-layout evidence bundle is required")
-    if is_public and swap_bundle is None:
+    if "P3" in required_gates and swap_bundle is None:
         raise CatalogBuildError("P3 swap evidence bundle is required for public release")
+    if calibrated and (frozen_policy_path is None or acceptance_bundle is None):
+        raise CatalogBuildError("calibrated release requires frozen policy and acceptance evidence")
+    if not calibrated and (frozen_policy_path is not None or acceptance_bundle is not None):
+        raise CatalogBuildError("calibrated evidence cannot replace strict release gates")
 
     bundle_paths = {
         "P0": default_bundle.resolve(),
@@ -961,8 +987,31 @@ def build_record(
     )
     p3_result = (
         _validate_p3_summary(summaries["P3"], policies["P3"])
-        if is_public else None
+        if is_public and not calibrated else None
     )
+    acceptance = None
+    assessment = None
+    review_gates = required_gates
+    if calibrated:
+        # This verifier re-reads the original campaign and acceptance artifacts,
+        # including any optional P3 failures. A saved READY label is insufficient.
+        # Import locally: the evidence verifier shares validation helpers above.
+        from verify_streaming_release_evidence import read, verify
+        try:
+            verified = verify(read(frozen_policy_path), catalog_binding(record),
+                              bundle_paths, acceptance_bundle)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            raise CatalogBuildError(f"calibrated release evidence is invalid: {exc}") from exc
+        assessment = verified["assessment"]
+        if assessment["status"] != "READY_FOR_REVIEW":
+            raise CatalogBuildError(f"calibrated acceptance is blocked: {assessment['blocking_gates']}")
+        acceptance = verified["acceptance"]
+        if "P3" in verified["campaign_evidence"]:
+            evidence_digests["P3"] = verified["campaign_evidence"]["P3"]["summary_sha256"]
+            review_gates = (*required_gates, "P3")
+        if acceptance["reviewed_commit"] != record["release"]["reviewed_commit"]:
+            raise CatalogBuildError("acceptance reviewed commit differs from record")
+        p3_result = assessment["p3"]
     if record["calibration"]["calibrated_request_bytes"] > memory["allowed_peak_bytes"]:
         raise CatalogBuildError("record calibrated bytes exceed allowed peak")
     expected_peak = math.ceil(float(memory["peak_p95_bytes"]["candidate"]))
@@ -990,7 +1039,9 @@ def build_record(
     record_id_digest = record_identity_digest(record)
     review = read_object(review_path, "review")
     reviewed_commit = _validate_review(
-        review, record, evidence_digests, record_id_digest, required_gates
+        review, record, evidence_digests, record_id_digest, review_gates,
+        acceptance["review_file"]["sha256"] if acceptance else None,
+        acceptance["policy_sha256"] if acceptance else None,
     )
     for kind in ("P0", "P2"):
         _validate_commit_identity(
@@ -1020,6 +1071,7 @@ def build_record(
             "candidate_peak_p95_bytes": expected_peak,
             "fresh_process_generations": memory.get("fresh_process_generations", {}),
             "p3": p3_result,
+            **({"acceptance": acceptance, "release_assessment": assessment} if calibrated else {}),
         },
     }
 
@@ -1040,7 +1092,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--swap-bundle",
         type=Path,
-        help="verified P3 natural-swap comparison (required for public channels)",
+        help="verified P3 natural-swap comparison (required for strict public channels)",
     )
     parser.add_argument(
         "--existing-catalog",
@@ -1050,6 +1102,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--record-input", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--review", type=Path)
+    parser.add_argument("--frozen-policy", type=Path)
+    parser.add_argument("--acceptance", type=Path)
     args = parser.parse_args(argv)
     try:
         result = build_record(
@@ -1059,6 +1113,8 @@ def main(argv: list[str] | None = None) -> int:
             args.default_bundle.resolve() if args.default_bundle else None,
             args.swap_bundle.resolve() if args.swap_bundle else None,
             args.existing_catalog.resolve() if args.existing_catalog else None,
+            frozen_policy_path=args.frozen_policy.resolve() if args.frozen_policy else None,
+            acceptance_bundle=args.acceptance.resolve() if args.acceptance else None,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open("x", encoding="utf-8") as stream:

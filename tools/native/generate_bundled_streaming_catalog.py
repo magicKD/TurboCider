@@ -20,6 +20,7 @@ from verify_streaming_campaign import EvidenceError
 SCHEMA = "tc-bundled-streaming-catalog-input-v1"
 INPUT_KEYS = {"bundle", "record_input", "review", "performance_bundle",
               "default_bundle", "swap_bundle", "expected_record_digest"}
+CALIBRATED_INPUT_KEYS = (INPUT_KEYS - {"swap_bundle"}) | {"frozen_policy", "acceptance"}
 U64_FIELDS = {"minimum_physical_memory_bytes", "maximum_physical_memory_bytes",
               "calibrated_request_bytes", "logical_read_bytes",
               "confirmation_sample_count", "maximum_sample_gap_ns"}
@@ -74,7 +75,7 @@ def render_catalog(revision: str, records: list[dict], runtime_id: str) -> str:
             raise ValueError("bundled catalog revision mismatch")
         if record["runtime"]["turbocider_build_id"] != runtime_id:
             raise ValueError("bundled record belongs to a different native build")
-        if record["release"]["channel"] not in ("public-stable", "public-experimental"):
+        if record["release"]["channel"] not in ("public-stable", "public-experimental", "public-calibrated"):
             raise ValueError("only public channels may enter the bundled catalog")
         if record.get("canonical_record_digest") != canonical_record_digest(record):
             raise ValueError("bundled record digest mismatch")
@@ -97,7 +98,8 @@ def generate(inventory: Path, runtime_manifest: Path) -> tuple[str, dict]:
     runtime_id = json.loads(runtime_manifest.read_text())["runtime_build_id"]
     records = []
     for entry in value["records"]:
-        if not isinstance(entry, dict) or set(entry) != INPUT_KEYS:
+        if not isinstance(entry, dict) or set(entry) not in (
+                INPUT_KEYS, CALIBRATED_INPUT_KEYS, CALIBRATED_INPUT_KEYS | {"swap_bundle"}):
             raise ValueError("bundled entries must name all original builder inputs and expected digest")
         def source(key: str) -> Path:
             if not isinstance(entry[key], str) or not entry[key]:
@@ -107,7 +109,9 @@ def generate(inventory: Path, runtime_manifest: Path) -> tuple[str, dict]:
         # TEMPLATE calibration alone cannot authorize a production entry.
         verified = build_record(source("bundle"), source("record_input"), source("review"),
                                 source("performance_bundle"), source("default_bundle"),
-                                source("swap_bundle"))
+                                source("swap_bundle") if "swap_bundle" in entry else None,
+                                frozen_policy_path=source("frozen_policy") if "frozen_policy" in entry else None,
+                                acceptance_bundle=source("acceptance") if "acceptance" in entry else None)
         record = verified["record"]
         if record["canonical_record_digest"] != entry["expected_record_digest"]:
             raise ValueError("reviewed bundled record changed")

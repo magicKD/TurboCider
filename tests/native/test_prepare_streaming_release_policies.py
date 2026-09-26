@@ -114,6 +114,27 @@ class ReleasePolicyPreparationTests(unittest.TestCase):
                 self.root / "prepared",
             )
 
+    def test_calibrated_optional_p3_and_strict_required_p3(self):
+        templates = {k: v for k, v in self.templates.items() if k != "P3"}
+        with self.assertRaisesRegex(preparer.PolicyPreparationError, "P3"):
+            preparer.prepare_policy_set(self.record_path, templates, 8 << 30,
+                                        self.root / "strict")
+        self.record["source"]["identity_version"] = 2
+        self.record["source"].pop("source_snapshot_digest", None)
+        self.record["release"].update(channel="public-calibrated", policy_revision=preparer.CALIBRATED)
+        self.record_path.write_text(json.dumps(self.record))
+        for include_p3 in (False, True):
+            output = self.root / str(include_p3)
+            manifest = preparer.prepare_policy_set(
+                self.record_path, self.templates if include_p3 else templates, 8 << 30, output)
+            self.assertEqual(manifest["release_policy_contract"]["contract"]["required_campaign_gates"],
+                             ["P0", "P1", "P2"])
+            self.assertEqual((output / "p3-campaign-policy.json").exists(), include_p3)
+            self.assertEqual(set(manifest["template_sha256"]), set(self.templates if include_p3 else templates))
+        with self.assertRaisesRegex(preparer.PolicyPreparationError, "require P0, P1 and P2"):
+            preparer.prepare_policy_set(self.record_path, {"P0": templates["P0"]},
+                                        8 << 30, self.root / "incomplete")
+
     def test_rejects_non_public_target(self):
         with self.assertRaisesRegex(
             preparer.PolicyPreparationError, "8/10/12/16/20"

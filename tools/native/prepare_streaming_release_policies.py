@@ -27,7 +27,7 @@ from build_streaming_catalog import (
     validate_record_shape,
 )
 from run_streaming_campaign import CampaignError, validate_policy
-from streaming_release_policy import STRICT, freeze as freeze_release_policy
+from streaming_release_policy import STRICT, CALIBRATED, freeze as freeze_release_policy
 
 
 SCHEMA = "turbocider-streaming-release-policy-set-v1"
@@ -112,19 +112,25 @@ def prepare_policy_set(
         raise PolicyPreparationError(
             "target must be one of 8/10/12/16/20 GiB"
         )
-    if set(template_paths) != set(KINDS):
-        raise PolicyPreparationError("templates must contain P0, P1, P2 and P3")
     if output.exists():
         raise PolicyPreparationError(f"output must not already exist: {output}")
     record = _record(record_path.resolve())
+    calibrated = record["release"].get("policy_revision") == CALIBRATED
+    required = set(KINDS[:-1] if calibrated else KINDS)
+    if not required <= set(template_paths) or set(template_paths) - set(KINDS):
+        raise PolicyPreparationError(
+            "calibrated templates require P0, P1 and P2; P3 is optional" if calibrated
+            else "templates must contain P0, P1, P2 and P3"
+        )
+    kinds = tuple(kind for kind in KINDS if kind in template_paths)
     policies: dict[str, dict[str, Any]] = {}
-    for kind in KINDS:
+    for kind in kinds:
         template = read_object(template_paths[kind].resolve(), f"{kind} template")
         policies[kind] = bind_policy(template, kind, record, target_bytes)
 
     output.mkdir(parents=True)
     files: dict[str, dict[str, Any]] = {}
-    for kind in KINDS:
+    for kind in kinds:
         name = f"{kind.lower()}-campaign-policy.json"
         path = output / name
         path.write_text(
@@ -145,7 +151,7 @@ def prepare_policy_set(
         "catalog_binding_sha256": sha256_bytes(canonical_json(binding)),
         "record_input_sha256": sha256_file(record_path.resolve()),
         "template_sha256": {
-            kind: sha256_file(template_paths[kind].resolve()) for kind in KINDS
+            kind: sha256_file(template_paths[kind].resolve()) for kind in kinds
         },
         "files": files,
     }
@@ -161,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--p0-template", required=True, type=Path)
     parser.add_argument("--p1-template", required=True, type=Path)
     parser.add_argument("--p2-template", required=True, type=Path)
-    parser.add_argument("--p3-template", required=True, type=Path)
+    parser.add_argument("--p3-template", type=Path, help="required for strict releases; optional for calibrated releases")
     parser.add_argument(
         "--target-gib", required=True, type=int, choices=(8, 10, 12, 16, 20)
     )
@@ -174,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                 "P0": args.p0_template,
                 "P1": args.p1_template,
                 "P2": args.p2_template,
-                "P3": args.p3_template,
+                **({"P3": args.p3_template} if args.p3_template else {}),
             },
             args.target_gib << 30,
             args.output.resolve(),

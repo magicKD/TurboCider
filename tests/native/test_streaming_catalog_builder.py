@@ -337,6 +337,94 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertEqual(builder.canonical_record_digest(value), wrapped.digest())
         self.assertNotEqual(builder.canonical_record_digest(value), hashlib.sha256(raw).hexdigest())
 
+    def calibrated_fixture(self):
+        # Synthetic campaigns isolate builder wiring; acceptance inventory and
+        # its artifact/commit/policy verification are real, not mocked labels.
+        from test_streaming_acceptance import AcceptanceTests
+        from streaming_release_policy import canonical
+        fixture = self.make_fixture()
+        value = fixture["record"]
+        value["source"]["identity_version"] = 2
+        del value["source"]["source_snapshot_digest"]
+        value["release"].update(channel="public-calibrated", policy_revision=builder.CALIBRATED)
+        accepted = AcceptanceTests()
+        accepted.setUp()
+        self.addCleanup(accepted.doCleanups)
+        accepted.binding = builder.catalog_binding(value)
+        accepted.base.update(reviewed_commit=value["release"]["reviewed_commit"],
+            catalog_binding_sha256=hashlib.sha256(canonical(accepted.binding)).hexdigest())
+        for report in accepted.reports.values():
+            report.update(accepted.base)
+        accepted.save()
+        policy_path = accepted.root / "frozen.json"
+        policy_path.write_text(json.dumps(accepted.frozen))
+        for kind, bundle in fixture["bundles"].items():
+            path = bundle / "campaign-policy.json"
+            policy = json.loads(path.read_text())
+            policy["catalog_binding"] = accepted.binding
+            path.write_text(json.dumps(policy))
+            summary = fixture["summaries"][kind]
+            summary["policy_sha256"] = builder.sha256_file(path)
+            (bundle / "summary.json").write_text(json.dumps(summary))
+            fixture["digests"][kind] = builder.sha256_file(bundle / "summary.json")
+        value["calibration"]["evidence_digest"] = fixture["digests"]["P2"]
+        value["performance"]["evidence_digest"] = fixture["digests"]["P1"]
+        review = fixture["review"]
+        review.update(schema=builder.CALIBRATED_REVIEW_SCHEMA,
+            record_identity_digest=builder.record_identity_digest(value),
+            evidence_summary_sha256={k: fixture["digests"][k] for k in builder.STAGING_GATES},
+            acceptance_review_sha256=builder.sha256_file(accepted.root / "review.json"),
+            release_policy_sha256=accepted.frozen["sha256"])
+        review["review_digest"] = builder._review_digest(review)
+        value["release"]["review_digest"] = review["review_digest"]
+        fixture["review_path"].write_text(json.dumps(review))
+        fixture["record_path"].write_text(json.dumps(value))
+        return fixture, accepted, policy_path
+
+    def build_calibrated(self, fixture, accepted, policy_path, **kwargs):
+        import verify_streaming_release_evidence as release
+        def synthetic_verifier(path):
+            return fixture["summaries"][Path(path).name]
+        with mock.patch.object(builder, "verify_campaign", side_effect=synthetic_verifier), \
+             mock.patch.object(release, "verify_campaign", side_effect=synthetic_verifier):
+            bundles = fixture["bundles"]
+            return builder.build_record(bundles["P2"], fixture["record_path"], fixture["review_path"],
+                bundles["P1"], bundles["P0"], kwargs.get("swap_bundle"),
+                frozen_policy_path=policy_path, acceptance_bundle=accepted.root)
+
+    def test_calibrated_requires_bound_acceptance_without_weakening_strict(self):
+        fixture, accepted, policy_path = self.calibrated_fixture()
+        result = self.build_calibrated(fixture, accepted, policy_path)
+        self.assertEqual(result["record"]["release"]["channel"], "public-calibrated")
+        self.assertEqual(result["evidence"]["p3"]["verdict"], "NOT_RUN")
+        self.assertFalse(result["evidence"]["release_assessment"]["claims"]["swap_speedup"])
+        with self.assertRaisesRegex(builder.CatalogBuildError, "frozen policy and acceptance"):
+            self.build(fixture)
+        (accepted.root / "raw.log").write_text("mutated evidence")
+        with self.assertRaisesRegex(builder.CatalogBuildError, "digest or size"):
+            self.build_calibrated(fixture, accepted, policy_path)
+
+    def test_calibrated_rejects_failed_acceptance_and_replacement_review(self):
+        fixture, accepted, policy_path = self.calibrated_fixture()
+        accepted.reports["app"]["checks"]["restart_recovery"]["verdict"] = "FAIL"
+        accepted.save()
+        with self.assertRaisesRegex(builder.CatalogBuildError, "acceptance is blocked"):
+            self.build_calibrated(fixture, accepted, policy_path)
+        accepted.reports["app"]["checks"]["restart_recovery"]["verdict"] = "PASS"
+        accepted.reports["app"]["checks"]["restart_recovery"]["artifacts"].append(accepted.ref("raw.log"))
+        accepted.save()
+        with self.assertRaisesRegex(builder.CatalogBuildError, "acceptance or frozen policy digest"):
+            self.build_calibrated(fixture, accepted, policy_path)
+
+    def test_calibrated_does_not_ignore_supplied_p3_failure(self):
+        fixture, accepted, policy_path = self.calibrated_fixture()
+        p3 = fixture["summaries"]["P3"]
+        p3.update(overall="FAIL", hard_failure_samples=["fixture failure"], quality_failures=[],
+                  audit_passed=True, source_provenance_complete=True, quality_status="complete")
+        (fixture["bundles"]["P3"] / "summary.json").write_text(json.dumps(p3))
+        with self.assertRaisesRegex(builder.CatalogBuildError, "P3_reliability"):
+            self.build_calibrated(fixture, accepted, policy_path, swap_bundle=fixture["bundles"]["P3"])
+
     def test_python_digest_matches_native_locked_fixture(self):
         self.assertEqual(
             builder.canonical_record_digest(native_fixture_record()),

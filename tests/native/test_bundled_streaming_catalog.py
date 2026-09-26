@@ -68,6 +68,29 @@ class BundledCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate"):
             bundled.render_catalog(self.catalog["revision"], [original, original], "test-build")
 
+    def test_calibrated_inventory_requires_acceptance_and_preserves_optional_p3(self):
+        calibrated = record()
+        calibrated["source"]["identity_version"] = 2
+        calibrated["source"].pop("source_snapshot_digest", None)
+        calibrated["release"].update(channel="public-calibrated", policy_revision="tc-public-calibrated-v1")
+        calibrated["canonical_record_digest"] = bundled.canonical_record_digest(calibrated)
+        entry = {key: key + ".json" for key in bundled.CALIBRATED_INPUT_KEYS}
+        entry["expected_record_digest"] = calibrated["canonical_record_digest"]
+        self.catalog["records"] = [entry]
+        for with_p3 in (False, True):
+            if with_p3:
+                entry["swap_bundle"] = "P3"
+            with patch.object(bundled, "build_record", return_value={"record": calibrated}) as builder:
+                header, manifest = self.generate()
+                self.assertIn("public-calibrated", header)
+                self.assertEqual(manifest["record_digests"], [calibrated["canonical_record_digest"]])
+                self.assertEqual(builder.call_args.kwargs, dict(
+                    frozen_policy_path=self.root / "frozen_policy.json", acceptance_bundle=self.root / "acceptance.json"))
+                self.assertEqual(builder.call_args.args[5], self.root / "P3" if with_p3 else None)
+        del entry["acceptance"]
+        with self.assertRaisesRegex(ValueError, "original builder inputs"):
+            self.generate()
+
     def test_cli_checks_generated_header_and_inventory_after_build(self):
         self.generate()
         output = self.root / "generated"

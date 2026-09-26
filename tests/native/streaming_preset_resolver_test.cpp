@@ -464,12 +464,29 @@ int main() {
     validate_streaming_preset_record(explicit_policy, explicit_policy.catalog_revision);
     assert(explicit_policy.canonical_record_digest ==
            "3b09dce86f9116b1b1fffcf7373e5584ad645294724cd99aeb8e9abfb57535a0");
-    for (const auto *policy : {"unknown", "tc-public-calibrated-v1"}) {
+    for (const auto *policy : {"unknown"}) {
         auto bad_policy = explicit_policy;
         bad_policy.release.policy_revision = policy;
         rejects([&] { (void) streaming_preset_record_digest(bad_policy); },
                 "unsupported release policy revision");
     }
+    auto calibrated = explicit_policy;
+    calibrated.release.policy_revision = "tc-public-calibrated-v1";
+    rejects([&] { (void) streaming_preset_record_digest(calibrated); },
+            "release channel and policy do not match");
+    calibrated.release.channel = "public-calibrated";
+    calibrated = finalize_streaming_preset_record(calibrated);
+    validate_streaming_preset_record(calibrated, calibrated.catalog_revision);
+    assert(calibrated.canonical_record_digest ==
+           "07beecfaebc2fd0618104a0ff21dfb1208fa47285480134e96e70d2a445662bf");
+    StreamingPresetCatalog calibrated_catalog{"test-r1", {calibrated}};
+    assert(resolve_streaming_preset(query(10 * gib), calibrated_catalog).selected);
+    auto stable_only = query(10 * gib);
+    stable_only.allow_experimental = false;
+    assert(!resolve_streaming_preset(stable_only, calibrated_catalog).selected);
+    calibrated_catalog.records[0].release.revoked = true;
+    calibrated_catalog.records[0] = finalize_streaming_preset_record(calibrated_catalog.records[0]);
+    assert(!resolve_streaming_preset(query(10 * gib), calibrated_catalog).selected);
     auto nonportable_policy = canonical_fixture;
     nonportable_policy.release.policy_revision = "tc-public-strict-v1";
     rejects([&] { (void) streaming_preset_record_digest(nonportable_policy); },

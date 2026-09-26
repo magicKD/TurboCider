@@ -18,7 +18,7 @@ if bool(args.real_checkpoint) != bool(args.real_manifest):
     parser.error('both real paths are required')
 
 ROOT = Path(__file__).resolve().parents[2]
-sources = ['tests/native/coreml_bundle_test.cpp', 'native/models/z_image/coreml_bundle.mm',
+sources = ['tests/native/coreml_bundle_test.cpp', 'native/platform/apple/z_image_coreml_bundle.mm',
            'native/models/z_image/coreml_generation.cpp', 'native/runtime/streaming/source_lease.cpp',
            'native/runtime/streaming/canonical_encoding.cpp', 'native/runtime/memory_manifest.cpp',
            'native/core/common.cpp', 'native/core/json_keys.cpp']

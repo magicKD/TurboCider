@@ -30,7 +30,19 @@ bool valid_digest(const std::string &value) {
 
 bool released(const StreamingPresetRecord &record, bool experimental) {
     return record.release.channel == "public-stable" ||
-        (experimental && record.release.channel == "public-experimental");
+        (experimental && (record.release.channel == "public-experimental" ||
+                          record.release.channel == "public-calibrated"));
+}
+
+void validate_release_policy(const StreamingPresetRecord &record) {
+    const auto &policy = record.release.policy_revision;
+    catalog_check(policy.empty() || (record.source.identity_version == 2 &&
+        (policy == "tc-public-strict-v1" || policy == "tc-public-calibrated-v1")),
+        "unsupported release policy revision");
+    if (record.release.channel != "revoked")
+        catalog_check((record.release.channel == "public-calibrated") ==
+                      (policy == "tc-public-calibrated-v1"),
+                      "release channel and policy do not match");
 }
 
 bool device_memory_matches(const StreamingPresetRecord &record,
@@ -219,10 +231,7 @@ bool supported_streaming_target(uint64_t target) noexcept {
 std::string canonical_streaming_preset_record(
         const StreamingPresetRecord &record) {
     validate_identity(record.source);
-    catalog_check(record.release.policy_revision.empty() ||
-                      (record.source.identity_version == 2 &&
-                       record.release.policy_revision == "tc-public-strict-v1"),
-                  "unsupported release policy revision");
+    validate_release_policy(record);
     CanonicalEncoder out(!record.release.policy_revision.empty()
         ? "tc-streaming-preset-record-v3" : record.source.identity_version == 2
         ? "tc-streaming-preset-record-v2" : "tc-streaming-preset-record-v1");
@@ -357,12 +366,10 @@ void validate_streaming_preset_record(
                   "invalid performance confidence status");
     catalog_check(valid_digest(record.performance.evidence_digest),
                   "invalid performance evidence digest");
-    catalog_check(record.release.policy_revision.empty() ||
-                      (record.source.identity_version == 2 &&
-                       record.release.policy_revision == "tc-public-strict-v1"),
-                  "unsupported release policy revision");
+    validate_release_policy(record);
     catalog_check(record.release.channel == "public-stable" ||
                       record.release.channel == "public-experimental" ||
+                      record.release.channel == "public-calibrated" ||
                       record.release.channel == "revoked",
                   "invalid release channel");
     catalog_check(valid_identifier(record.release.reviewed_commit),

@@ -1,4 +1,4 @@
-#include "coreml_bundle.hpp"
+#include "../../models/z_image/coreml_bundle.hpp"
 #include "../../core/common.hpp"
 #include "../../core/json_keys.hpp"
 #include "../../runtime/streaming/canonical_encoding.hpp"

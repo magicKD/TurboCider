@@ -1,7 +1,7 @@
 """Explicit release gates and claims; policy decisions never grant runtime authority.
 
-The calibrated contract is preparatory. Production record/channel support must
-also be enabled in builder, native validation, packaging and UI before use.
+Calibrated records require original campaigns and reviewed acceptance evidence
+through the catalog builder. Freezing a policy alone does not publish a record.
 Legacy records retain the strict P0-P3 public contract.
 """
 from __future__ import annotations

@@ -463,7 +463,7 @@ struct StudioView: View {
                             ForEach(StudioStreamingSelection.allCases) { value in
                                 let option = studio.streamingOption(for: value)
                                 let unavailable = value != .off && option?.status != "available"
-                                Text(value.label + (option?.status == "candidate" ? "（待验证）" : unavailable ? "（不可用）" : ""))
+                                Text(value.label + (option?.status == "candidate" ? "（待验证）" : unavailable ? "（不可用）" : option?.release_channel == "public-calibrated" ? "（已校准）" : ""))
                                     .tag(value)
                                     .disabled(unavailable)
                             }
@@ -484,6 +484,10 @@ struct StudioView: View {
                             Text("\(selection.label)：\(detail)")
                                 .font(.caption2)
                                 .foregroundStyle(option.status == "available" ? .green : .orange)
+                            if option.release_channel == "public-calibrated" {
+                                Text("此档位已针对匹配的模型、设备和任务校准内存用量；预算不是内存硬上限，也不保证没有交换或一定更快。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
                         } else if studio.draft.streaming.selection == .off {
                             let recommendation = studio.recommendedStreamingSelection
                             if recommendation != .off {
