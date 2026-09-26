@@ -22,6 +22,17 @@ ModelModule qwen21_module() {
                     "Qwen21 W8A16 GPU suffix requires explicit W8A8 Core ML opt-in");
             require(!r.qwen21_w8a8 || r.steps >= 2,
                     "Qwen21 W8A8 needs at least one cached decode step");
+            const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
+            require(!norm_rope || std::string_view(norm_rope) == "0" ||
+                        std::string_view(norm_rope) == "1",
+                    "TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE accepts only 0 or 1");
+            if (norm_rope && std::string_view(norm_rope) == "1") {
+                const char *paired = std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE");
+                require(r.execution == "gpu" && r.allow_approximation &&
+                            r.width == 512 && r.height == 512 &&
+                            (!paired || std::string_view(paired) != "1"),
+                        "Qwen21 fused Q/K norm-RoPE needs explicit 512px GPU approximation and no paired RoPE flag");
+            }
             const char *reuse_flag = std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN");
             require(!reuse_flag || std::string_view(reuse_flag) == "0" ||
                         std::string_view(reuse_flag) == "1",

@@ -258,6 +258,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         if (reuse_flag && std::string_view(reuse_flag) == "1")
             [algorithm_approximations addObject:@"qwen21_gpu_reuse_final_ffn"];
     }
+    if (r.model == "qwen-image-2.1") {
+        const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
+        if (norm_rope && std::string_view(norm_rope) == "1")
+            [algorithm_approximations addObject:@"qwen21_metal_qk_norm_rope"];
+    }
     if (encoder_hybrid)
         [algorithm_approximations addObject:encoder_approximation_label(r)];
     if (r.model == "ltx-2.5-distilled") {

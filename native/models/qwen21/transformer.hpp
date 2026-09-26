@@ -47,6 +47,7 @@ class Transformer {
     const Weights &weights_;
     TransformerConfig config_;
     bool metal_qk_rope_ = false;
+    bool metal_qk_norm_rope_ = false;
     bool profile_gpu_blocks_ = false;
     bool profile_gpu_ops_ = false;
     std::vector<KV> prefix_;

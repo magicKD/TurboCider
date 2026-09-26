@@ -1,4 +1,5 @@
 #include "transformer.hpp"
+#include "metal/qk_norm_rope.hpp"
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -35,6 +36,10 @@ Transformer::Transformer(const Weights &weights, TransformerConfig config)
     : weights_(weights), config_(config) {
     const char *metal_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE");
     metal_qk_rope_ = metal_rope && std::string(metal_rope) == "1";
+    const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
+    metal_qk_norm_rope_ = norm_rope && std::string(norm_rope) == "1";
+    require(!metal_qk_norm_rope_ || !metal_qk_rope_,
+            "Qwen21 Q/K norm-RoPE fusion supersedes the paired RoPE kernel");
     const char *profile_blocks = std::getenv("TURBOCIDER_QWEN21_PROFILE_GPU_BLOCKS");
     profile_gpu_blocks_ = profile_blocks && std::string(profile_blocks) == "1";
     const char *profile_ops = std::getenv("TURBOCIDER_QWEN21_PROFILE_GPU_OPS");
@@ -193,7 +198,8 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         if (functions.size() <= size_t(i)) {
             const bool profile_ops = profile_gpu_ops_ && !split_mlp && i == 0;
             auto block = [this, i, reuse, prefix_length, split_mlp, capture_ffn, reuse_ffn, profile_ops,
-                          metal_rope = metal_qk_rope_, tracing = trace != nullptr](const std::vector<Tensor> &args) {
+                          metal_rope = metal_qk_rope_, fused_norm_rope = metal_qk_norm_rope_,
+                          tracing = trace != nullptr](const std::vector<Tensor> &args) {
                 auto mark_start = Clock::now();
                 if (profile_ops) {
                     mx::eval(args);
@@ -215,16 +221,25 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 auto input = layer_norm(hidden, config_.epsilon) * (Tensor(1.f, hidden.dtype()) + mods[0]);
                 auto attention_input = input;
                 mark("attention_input_norm", {input});
-                auto q = heads(linear(input, weights_, p + ".attn.to_q"), config_.heads, config_.head_dim);
-                auto k = heads(linear(input, weights_, p + ".attn.to_k"), config_.heads, config_.head_dim);
+                auto q = linear(input, weights_, p + ".attn.to_q");
+                auto k = linear(input, weights_, p + ".attn.to_k");
                 auto v = heads(linear(input, weights_, p + ".attn.to_v"), config_.heads, config_.head_dim);
                 mark("qkv_projection", {q, k, v});
-                q = mx::fast::rms_norm(q, weights_.at(p + ".attn.norm_q.weight"), config_.epsilon);
-                k = mx::fast::rms_norm(k, weights_.at(p + ".attn.norm_k.weight"), config_.epsilon);
-                if (metal_rope) {
-                    auto pair = rope_pairs_pair(q, k, cosine, sine);
+                if (fused_norm_rope) {
+                    auto pair = metal::prepare_qk(q, k,
+                        weights_.at(p + ".attn.norm_q.weight"), weights_.at(p + ".attn.norm_k.weight"),
+                        cosine, sine, config_.epsilon);
                     q = pair[0]; k = pair[1];
                 } else {
+                    q = mx::fast::rms_norm(heads(q, config_.heads, config_.head_dim),
+                                           weights_.at(p + ".attn.norm_q.weight"), config_.epsilon);
+                    k = mx::fast::rms_norm(heads(k, config_.heads, config_.head_dim),
+                                           weights_.at(p + ".attn.norm_k.weight"), config_.epsilon);
+                }
+                if (!fused_norm_rope && metal_rope) {
+                    auto pair = rope_pairs_pair(q, k, cosine, sine);
+                    q = pair[0]; k = pair[1];
+                } else if (!fused_norm_rope) {
                     q = rotate(q, cosine, sine);
                     k = rotate(k, cosine, sine);
                 }

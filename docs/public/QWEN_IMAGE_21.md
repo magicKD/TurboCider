@@ -43,6 +43,20 @@ reference edits. The same combined flags yielded only **1.033×** on tested
 limited-prompt diagnostics, not a quality-qualified default or cold-start
 speed guarantee; both flags work through the normal CLI `generate` command.
 
+There is also an opt-in **GPU-only fused Q/K RMSNorm+RoPE Metal kernel**:
+`TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE=1`. It requires a 512×512 GPU request
+with `allow_approximation: true` and cannot be combined with
+`TURBOCIDER_QWEN21_METAL_QK_ROPE=1`. Against plain GPU, two-run warm-Session
+request speedups were about **1.02×** on the tested 5-step text-to-image and
+1/2/3-reference edits, and **1.019×** on the tested 40-step two-reference edit.
+The final image is visually similar but not bit-identical. When combined with
+final-step FFN reuse, it was only about **0.3–0.4%** faster than the previous
+paired-RoPE plus FFN-reuse combination on matched samples; this is too small
+to recommend it as the fastest option. Defaults and the existing W8A8
+GPU/ANE route remain unchanged. See the
+[fused GPU kernel ablation](../status/qwen21-gpu-fused-qk-norm-rope-2026-09-26.md)
+for paired inputs, image differences and the mixed-route comparison.
+
 ## Explicit 512² GPU/Core ML experiments
 
 The default remains BF16 GPU, with references resized to approximately 1024

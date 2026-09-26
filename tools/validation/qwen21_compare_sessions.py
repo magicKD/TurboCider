@@ -36,6 +36,9 @@ def main():
     parser.add_argument("--candidate-execution", default="gpu_ane_experimental",
                         choices=("gpu_ane_experimental", "gpu"),
                         help="Use gpu for explicit GPU-only approximate candidates")
+    parser.add_argument("--candidate-approximation", default="qwen21_gpu_reuse_final_ffn",
+                        choices=("qwen21_gpu_reuse_final_ffn", "qwen21_metal_qk_norm_rope"),
+                        help="Expected approximation label for GPU-only candidates")
     args = parser.parse_args()
     names = sorted(p.name for p in args.baseline.glob("run-*.json"))
     assert names and names == sorted(p.name for p in args.candidate.glob("run-*.json")), "unmatched runs"
@@ -48,7 +51,7 @@ def main():
         assert a["prompt_cache_hit"] and b["prompt_cache_hit"], "not a warm prompt-cached comparison"
         assert a["plan"]["execution"] == "gpu" and b["plan"]["execution"] == args.candidate_execution
         if args.candidate_execution == "gpu":
-            approximation = "qwen21_gpu_reuse_final_ffn"
+            approximation = args.candidate_approximation
             assert approximation not in a["plan"]["algorithm_approximations"]
             assert approximation in b["plan"]["algorithm_approximations"]
         assert a["actual_denoise_steps"] == b["actual_denoise_steps"] == a["steps"]

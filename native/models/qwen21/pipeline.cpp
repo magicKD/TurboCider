@@ -310,6 +310,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.request = r; result.plan = std::move(plan);
     result.prepared = prepare_only; result.warmup = warmup; result.prompt_cache_hit = hit;
     result.selection = "gpu: native Qwen Image 2.1 with request-owned prefix KV cache";
+    const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
+    if (norm_rope && std::string_view(norm_rope) == "1")
+        result.selection += "; experimental fused Metal Q/K norm-RoPE";
     if (reuse_final_ffn)
         result.selection += "; experimental final-step cached GPU FFN approximation";
     result.backend = "mlx_cpp_metal"; result.precision = "bf16";

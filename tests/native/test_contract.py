@@ -213,6 +213,30 @@ class ContractTests(unittest.TestCase):
         with patch.dict(os.environ, {'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '2'}):
             self.assertNotEqual(plan(base)[0], 0)
 
+    def test_qwen21_metal_qk_norm_rope_gate(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                    width=512, height=512, steps=5, audio=False, frames=1,
+                    execution='gpu', allow_approximation=True)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE': '0'}):
+            self.assertNotIn('qwen21_metal_qk_norm_rope', plan(base)[1]['algorithm_approximations'])
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE': '1'}):
+            self.assertIn('qwen21_metal_qk_norm_rope', plan(base)[1]['algorithm_approximations'])
+            for invalid in [dict(execution='auto'), dict(execution='gpu_ane', ane_manifest='probe.json',
+                            qwen21_w8a8=True), dict(allow_approximation=False),
+                            dict(width=1024, height=1024)]:
+                with self.subTest(invalid=invalid):
+                    self.assertNotEqual(plan({**base, **invalid})[0], 0)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE': '1',
+                                      'TURBOCIDER_QWEN21_METAL_QK_ROPE': '1'}):
+            self.assertNotEqual(plan(base)[0], 0)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE': '1',
+                                      'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '1'}):
+            labels = plan(base)[1]['algorithm_approximations']
+            self.assertIn('qwen21_metal_qk_norm_rope', labels)
+            self.assertIn('qwen21_gpu_reuse_final_ffn', labels)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE': '2'}):
+            self.assertNotEqual(plan(base)[0], 0)
+
     def test_qwen21_explicit_w8a8_edit_cli_gate(self):
         refs = [dict(kind='image', role='reference', path=f'qwen-exp-{i}.png')
                 for i in range(3)]
