@@ -53,6 +53,7 @@ Transformer::Transformer(const Weights &weights, TransformerConfig config)
 
 void Transformer::reset() {
     prefix_.clear();
+    cached_ffn_.clear();
     cached_text_.reset();
     cached_references_.clear();
 }
@@ -79,6 +80,8 @@ void Transformer::geometry(int text_length, int height, int width, const std::ve
     reset();
     prefill_blocks_.clear();
     decode_blocks_.clear();
+    capture_blocks_.clear();
+    reuse_blocks_.clear();
     text_length_ = text_length;
     height_ = height;
     width_ = width;
@@ -132,6 +135,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     if (!cache_prefix || !cached_text_ || cached_text_->id() != text.id() || !same_references) reset();
     bool reuse = cache_prefix && prefix_.size() == size_t(config_.layers);
     const bool split_mlp = reuse && bool(decode_mlp_);
+    const bool capture_ffn = reuse && ffn_cache_mode_ == FFNCacheMode::Capture;
+    const bool reuse_ffn = reuse && ffn_cache_mode_ == FFNCacheMode::Reuse;
+    require(!(capture_ffn || reuse_ffn) || (!split_mlp && !trace),
+            "Qwen21 GPU FFN step cache cannot mix with hybrid or tensor tracing");
+    if (capture_ffn) cached_ffn_.clear();
+    if (reuse_ffn) require(cached_ffn_.size() == size_t(config_.layers),
+                           "Qwen21 GPU FFN cache is missing a complete preceding decode step");
     require(!split_mlp || !trace, "Qwen21 MLP split trace is not supported");
     auto temb = embedding(timestep, latents.dtype());
     auto modulation = linear(silu(temb), weights_, "modulation.1");
@@ -168,7 +178,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         for (int i = 0; i < 4; ++i) trace->emplace("mod" + std::to_string(i), mods[i]);
     }
     std::vector<KV> new_prefix;
-    if (trace) { prefill_blocks_.clear(); decode_blocks_.clear(); }
+    if (trace) { prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear(); reuse_blocks_.clear(); }
     // Decode modulation is identical across blocks. Materialize its gate once
     // per forward, and fuse the split-path residual's elementwise operations.
     // The full-GPU block retains its existing compiled arithmetic.
@@ -178,10 +188,11 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         return std::vector<Tensor>{a[0] + a[1] * a[2]};
     });
     for (int i = 0; i < config_.layers; ++i) {
-        auto &functions = reuse ? decode_blocks_ : prefill_blocks_;
+        auto &functions = reuse_ffn ? reuse_blocks_ : capture_ffn ? capture_blocks_
+                               : reuse ? decode_blocks_ : prefill_blocks_;
         if (functions.size() <= size_t(i)) {
             const bool profile_ops = profile_gpu_ops_ && !split_mlp && i == 0;
-            auto block = [this, i, reuse, prefix_length, split_mlp, profile_ops,
+            auto block = [this, i, reuse, prefix_length, split_mlp, capture_ffn, reuse_ffn, profile_ops,
                           metal_rope = metal_qk_rope_, tracing = trace != nullptr](const std::vector<Tensor> &args) {
                 auto mark_start = Clock::now();
                 if (profile_ops) {
@@ -242,17 +253,23 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 input = layer_norm(hidden, config_.epsilon) * (Tensor(1.f, hidden.dtype()) + mods[2]);
                 mark("attention_residual_ffn_input", {input});
                 if (split_mlp) return std::vector<Tensor>{hidden, input};
-                auto ff = input;
-                if (weights_.has(p + ".img_mlp.gate_up.weight")) {
-                    auto gate_up = mx::split(linear(input, weights_, p + ".img_mlp.gate_up"), 2, -1);
-                    ff = silu(gate_up[0]) * gate_up[1];
+                Tensor ff = input, feed = input;
+                if (reuse_ffn) {
+                    feed = args[9];
                 } else {
-                    ff = silu(linear(input, weights_, p + ".img_mlp.gate_layer")) * linear(input, weights_, p + ".img_mlp.proj");
+                    if (weights_.has(p + ".img_mlp.gate_up.weight")) {
+                        auto gate_up = mx::split(linear(input, weights_, p + ".img_mlp.gate_up"), 2, -1);
+                        ff = silu(gate_up[0]) * gate_up[1];
+                    } else {
+                        ff = silu(linear(input, weights_, p + ".img_mlp.gate_layer")) * linear(input, weights_, p + ".img_mlp.proj");
+                    }
+                    feed = linear(ff, weights_, p + ".img_mlp.out");
                 }
                 mark("ffn_gate_up", {ff});
-                hidden = hidden + mx::tanh(mods[3]) * linear(ff, weights_, p + ".img_mlp.out");
+                hidden = hidden + mx::tanh(mods[3]) * feed;
                 mark("ffn_down_residual", {hidden});
                 if (tracing) return std::vector<Tensor>{hidden, pk, pv, attention_input, q, k, v, output, projected, after_attention, input, ff};
+                if (capture_ffn) return std::vector<Tensor>{hidden, feed};
                 return reuse ? std::vector<Tensor>{hidden} : std::vector<Tensor>{hidden, pk, pv};
             };
             functions.push_back(profile_ops ? BlockFunction(block) : mx::compile(block));
@@ -262,6 +279,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             args.push_back(prefix_[i].key);
             args.push_back(prefix_[i].value);
         }
+        if (reuse_ffn) args.push_back(cached_ffn_[i]);
         // Diagnostic only: force each pure-GPU block boundary so the elapsed
         // time can be attributed to that block. This destroys normal lazy
         // scheduling and must never be used as a production speed benchmark.
@@ -277,6 +295,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                       << "}" << std::endl;
         }
         hidden = outputs[0];
+        if (capture_ffn) cached_ffn_.push_back(outputs[1]);
         if (split_mlp) {
             auto feed = decode_mlp_(i, outputs[1]);
             hidden = split_residual({hidden, *split_gate, feed})[0];
@@ -303,7 +322,8 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         cached_text_ = text;
         for (const auto &r : references) cached_references_.push_back(r.latents);
     }
-    if (trace) { prefill_blocks_.clear(); decode_blocks_.clear(); }
+    if (capture_ffn) mx::eval(cached_ffn_);
+    if (trace) { prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear(); reuse_blocks_.clear(); }
     return result;
 }
 } // namespace tc::qwen21

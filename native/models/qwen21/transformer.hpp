@@ -37,6 +37,10 @@ class Transformer {
     // conditioning is unchanged. Caller owns the callback's runtime/session.
     using DecodeMLP = std::function<Tensor(int, const Tensor &)>;
     void set_decode_mlp(DecodeMLP fn) { decode_mlp_ = std::move(fn); decode_blocks_.clear(); }
+    // Explicit diagnostic: capture each decode FFN output for reuse on the
+    // immediately following denoise step. Never enabled by default.
+    enum class FFNCacheMode { Off, Capture, Reuse };
+    void set_ffn_cache_mode(FFNCacheMode mode) { ffn_cache_mode_ = mode; }
 
   private:
     struct KV { Tensor key, value; };
@@ -46,6 +50,8 @@ class Transformer {
     bool profile_gpu_blocks_ = false;
     bool profile_gpu_ops_ = false;
     std::vector<KV> prefix_;
+    FFNCacheMode ffn_cache_mode_ = FFNCacheMode::Off;
+    std::vector<Tensor> cached_ffn_;
     std::optional<Tensor> cached_text_;
     std::vector<Tensor> cached_references_;
     std::vector<ReferenceGeometry> reference_geometry_;
@@ -53,7 +59,7 @@ class Transformer {
     std::optional<Tensor> cosine_, sine_;
     int text_length_ = 0, height_ = 0, width_ = 0;
     using BlockFunction = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
-    std::vector<BlockFunction> prefill_blocks_, decode_blocks_;
+    std::vector<BlockFunction> prefill_blocks_, decode_blocks_, capture_blocks_, reuse_blocks_;
     DecodeMLP decode_mlp_;
     Tensor embedding(float timestep, mx::Dtype) const;
     void geometry(int text_length, int height, int width, const std::vector<ReferenceGeometry> &);

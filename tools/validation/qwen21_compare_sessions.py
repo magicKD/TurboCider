@@ -33,16 +33,24 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--verify-dumps", action="store_true",
                         help="Require and compare dumped text/noise tensors")
+    parser.add_argument("--candidate-execution", default="gpu_ane_experimental",
+                        choices=("gpu_ane_experimental", "gpu"),
+                        help="Use gpu for explicit GPU-only approximate candidates")
     args = parser.parse_args()
     names = sorted(p.name for p in args.baseline.glob("run-*.json"))
     assert names and names == sorted(p.name for p in args.candidate.glob("run-*.json")), "unmatched runs"
     comparisons = []
     for name in names:
         a, b = (json.loads((root / name).read_text()) for root in (args.baseline, args.candidate))
-        keys = ("model", "operation", "width", "height", "steps", "seed", "text_tokens")
+        keys = ("model", "operation", "width", "height", "steps", "seed", "text_tokens",
+                "reference_tokens")
         assert all(a[key] == b[key] for key in keys), "request metadata differs"
         assert a["prompt_cache_hit"] and b["prompt_cache_hit"], "not a warm prompt-cached comparison"
-        assert a["plan"]["execution"] == "gpu" and b["plan"]["execution"] == "gpu_ane_experimental"
+        assert a["plan"]["execution"] == "gpu" and b["plan"]["execution"] == args.candidate_execution
+        if args.candidate_execution == "gpu":
+            approximation = "qwen21_gpu_reuse_final_ffn"
+            assert approximation not in a["plan"]["algorithm_approximations"]
+            assert approximation in b["plan"]["algorithm_approximations"]
         assert a["actual_denoise_steps"] == b["actual_denoise_steps"] == a["steps"]
         pixels = [np.asarray(Image.open(root / name.replace(".json", ".png")).convert("RGBA"),
                              dtype=np.float64) / 255 for root in (args.baseline, args.candidate)]
@@ -50,7 +58,12 @@ def main():
         assert x.shape == y.shape
         dump_equal = None
         if args.verify_dumps:
-            dump_names = ("qwen21_text.safetensors", "qwen21_initial.safetensors")
+            dump_names = ["qwen21_text.safetensors", "qwen21_initial.safetensors"]
+            reference_names = [sorted(p.name for p in (root / name.replace(".json", "-dump")).glob(
+                "qwen21_reference_*.safetensors")) for root in (args.baseline, args.candidate)]
+            assert reference_names[0] == reference_names[1], "reference dump files differ"
+            assert not a["reference_tokens"] or reference_names[0], "missing reference tensors"
+            dump_names.extend(reference_names[0])
             tensors = []
             for root in (args.baseline, args.candidate):
                 dump_dir = root / name.replace(".json", "-dump")
@@ -67,7 +80,7 @@ def main():
                                 alpha_rmse=float(np.sqrt(np.mean((pixels[0][..., 3]-pixels[1][..., 3])**2))),
                                 input_tensors_equal=dump_equal) )
     report = dict(scope="prepared, prompt-cached Session request wall time including decode/export and any enabled tensor-dump I/O; not cold-start or hardware-placement proof",
-                  input_validation="metadata matched; optional dumped text/noise tensor equality checked" if args.verify_dumps else
+                  input_validation="metadata matched; optional dumped text/noise/reference tensor equality checked" if args.verify_dumps else
                                    "metadata matched; prompt/noise tensor equality not checked by this script",
                   repeats=len(comparisons), runs=comparisons,
                   median_wall_speedup=statistics.median(r["baseline_wall"] for r in comparisons) /

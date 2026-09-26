@@ -191,6 +191,28 @@ class ContractTests(unittest.TestCase):
                 with self.subTest(invalid=invalid):
                     self.assertNotEqual(plan({**base, **invalid})[0], 0)
 
+    def test_qwen21_gpu_final_ffn_reuse_gate(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                    width=512, height=512, steps=5, audio=False, frames=1,
+                    execution='gpu', allow_approximation=True)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '0'}):
+            self.assertEqual(plan(base)[1]['algorithm_approximations'], [])
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '1'}):
+            self.assertEqual(plan(base)[1]['algorithm_approximations'],
+                             ['qwen21_gpu_reuse_final_ffn'])
+            self.assertEqual(plan({**base, 'steps':2})[1]['algorithm_approximations'], [])
+            self.assertNotEqual(plan({**base, 'allow_approximation':False})[0], 0)
+            self.assertNotEqual(plan({**base, 'execution':'auto'})[0], 0)
+            self.assertNotEqual(plan({**base, 'width':1024, 'height':1024})[0], 0)
+            edit = {**base, 'operation':'image.edit', 'qwen21_reference_size':256,
+                    'inputs':[dict(kind='image', role='reference', path=f'ref-{i}.png')
+                              for i in range(3)]}
+            self.assertEqual(plan(edit)[0], 0)
+            self.assertNotEqual(plan({**edit, 'qwen21_reference_size':1024})[0], 0)
+            self.assertNotEqual(plan({**edit, 'inputs':edit['inputs'] + [edit['inputs'][0]]})[0], 0)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '2'}):
+            self.assertNotEqual(plan(base)[0], 0)
+
     def test_qwen21_explicit_w8a8_edit_cli_gate(self):
         refs = [dict(kind='image', role='reference', path=f'qwen-exp-{i}.png')
                 for i in range(3)]

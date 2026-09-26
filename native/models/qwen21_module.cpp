@@ -22,6 +22,16 @@ ModelModule qwen21_module() {
                     "Qwen21 W8A16 GPU suffix requires explicit W8A8 Core ML opt-in");
             require(!r.qwen21_w8a8 || r.steps >= 2,
                     "Qwen21 W8A8 needs at least one cached decode step");
+            const char *reuse_flag = std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN");
+            require(!reuse_flag || std::string_view(reuse_flag) == "0" ||
+                        std::string_view(reuse_flag) == "1",
+                    "TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN accepts only 0 or 1");
+            if (reuse_flag && std::string_view(reuse_flag) == "1")
+                require(r.execution == "gpu" && r.allow_approximation &&
+                            r.width == 512 && r.height == 512 &&
+                            (r.operation != "image.edit" ||
+                             (r.qwen21_reference_size == 256 && r.inputs.size() <= 3)),
+                        "Qwen21 final-step FFN reuse needs explicit GPU and approximation opt-in at 512px; edits require 1...3 references resized to 256px");
             require(r.qwen21_gpu_full_ffn_blocks.empty() ||
                         (r.qwen21_w8a8 && r.qwen21_gpu_full_ffn_blocks == std::vector<int>{3, 5, 7}),
                     "Qwen21 full GPU fallback requires explicit W8A8 and validated layers 3,5,7");

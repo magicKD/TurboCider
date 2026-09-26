@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
             warm.execution = "gpu"; warm.ane_manifest.clear();
             warm.qwen21_w8a8 = false; warm.qwen21_gpu_w8a16 = false;
             warm.qwen21_gpu_full_ffn_blocks.clear();
-            warm.allow_approximation = warm.qwen21_reference_size != 1024;
+            warm.allow_approximation = warm.allow_approximation || warm.qwen21_reference_size != 1024;
             auto gpu = session.prepare(warm, false, event, cancelled);
             tc::require(!gpu.hybrid && gpu.request.execution == "gpu", "GPU switch retained hybrid route");
             session.unload();

@@ -1,4 +1,6 @@
 #include "bridge.hpp"
+#include <cstdlib>
+#include <string_view>
 namespace tc {
 static NSString *gpu_graph_label(const Request &r) {
     if (r.model == "qwen-image-2.1")
@@ -251,6 +253,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                 : @"single_block_mlp_int8_per_channel"];
     if (r.model == "qwen-image-2.1" && r.qwen21_reference_size != 1024)
         [algorithm_approximations addObject:@"qwen21_reference_resize_256"];
+    if (r.model == "qwen-image-2.1" && r.steps >= 3) {
+        const char *reuse_flag = std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN");
+        if (reuse_flag && std::string_view(reuse_flag) == "1")
+            [algorithm_approximations addObject:@"qwen21_gpu_reuse_final_ffn"];
+    }
     if (encoder_hybrid)
         [algorithm_approximations addObject:encoder_approximation_label(r)];
     if (r.model == "ltx-2.5-distilled") {

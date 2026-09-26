@@ -21,6 +21,18 @@ for normal operation. The experimental GPU+ANE route requires an explicit
 manifest and approximation opt-in; it is not hardware-placement or image-quality
 proof.
 
+For a separate **GPU-only** short-step experiment, set
+`TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN=1` and explicitly request
+`execution: "gpu"`, `allow_approximation: true`, 512×512 and at least 3 steps.
+The final denoise step reuses the previous step's 32 FFN outputs while still
+running current-step attention and modulation; 1–3-reference edits additionally
+require `qwen21_reference_size: 256`. It is disabled by default and cannot be
+combined with the GPU+ANE path. On one matched 5-step text-to-image and
+1/2/3-reference workload, prepared warm-request speedups were approximately
+**1.126× / 1.125× / 1.112× / 1.107×**; two matched 40-step cases were only
+about **1.01–1.02×**. Images were close in these samples, not broadly
+quality-qualified. See the [GPU FFN cache report](../status/qwen21-gpu-final-ffn-cache-2026-09-26.md).
+
 ## Explicit 512² GPU/Core ML experiments
 
 The default remains BF16 GPU, with references resized to approximately 1024

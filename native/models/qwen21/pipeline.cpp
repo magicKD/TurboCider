@@ -8,7 +8,9 @@
 #include "../../runtime/residency.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <mlx/random.h>
+#include <cstdlib>
 #include <fstream>
+#include <string_view>
 
 namespace tc::qwen21 {
 namespace {
@@ -74,6 +76,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");
     const std::string original_prompt = r.prompt;
     const bool hybrid_requested = r.execution == "gpu_ane";
+    const char *ffn_cache_flag = std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN");
+    const bool reuse_final_ffn = ffn_cache_flag && std::string_view(ffn_cache_flag) == "1" && r.steps >= 3;
     auto plan = make_plan(r);
     require(!r.prompt.empty(), "Qwen21 requires a prompt");
     require(warmup || prepare_only || (!r.output.empty() && std::filesystem::path(r.output).extension() == ".png"),
@@ -306,6 +310,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.request = r; result.plan = std::move(plan);
     result.prepared = prepare_only; result.warmup = warmup; result.prompt_cache_hit = hit;
     result.selection = "gpu: native Qwen Image 2.1 with request-owned prefix KV cache";
+    if (reuse_final_ffn)
+        result.selection += "; experimental final-step cached GPU FFN approximation";
     result.backend = "mlx_cpp_metal"; result.precision = "bf16";
     if (hybrid_requested) {
         result.backend = "mlx_cpp_metal+coreml";
@@ -351,6 +357,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             emit(event, "denoise", 0, r.steps);
             for (int step = 0; step < r.steps; ++step) {
                 checkpoint(cancelled);
+                if (reuse_final_ffn)
+                    dit.set_ffn_cache_mode(step == r.steps - 2 ? Transformer::FFNCacheMode::Capture :
+                                           step == r.steps - 1 ? Transformer::FFNCacheMode::Reuse :
+                                           Transformer::FFNCacheMode::Off);
                 auto noise = dit.forward(latents, text, schedule.data<float>()[step], r.height / 16, r.width / 16,
                                          true, nullptr, references);
                 latents = latents + noise * Tensor(schedule.data<float>()[step+1] - schedule.data<float>()[step], latents.dtype());
