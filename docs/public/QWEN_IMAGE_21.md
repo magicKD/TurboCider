@@ -32,6 +32,16 @@ combined with the GPU+ANE path. On one matched 5-step text-to-image and
 **1.126× / 1.125× / 1.112× / 1.107×**; two matched 40-step cases were only
 about **1.01–1.02×**. Images were close in these samples, not broadly
 quality-qualified. See the [GPU FFN cache report](../status/qwen21-gpu-final-ffn-cache-2026-09-26.md).
+For the fastest **tested 512², 5-step GPU-only diagnostic combination** on
+this M4 Max, also set `TURBOCIDER_QWEN21_METAL_QK_ROPE=1` when invoking the
+CLI. Both environment flags must be explicitly set; the request still needs
+`execution: "gpu"` and `allow_approximation: true` (and 256px references for
+editing). Prepared warm-request speedups against matching default GPU were
+**1.145×** for text-to-image and **1.139× / 1.136× / 1.126×** for 1/2/3
+reference edits. The same combined flags yielded only **1.033×** on tested
+40-step text-to-image and two-reference edits. These are single-machine,
+limited-prompt diagnostics, not a quality-qualified default or cold-start
+speed guarantee; both flags work through the normal CLI `generate` command.
 
 ## Explicit 512² GPU/Core ML experiments
 
