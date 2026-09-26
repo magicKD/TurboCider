@@ -83,6 +83,15 @@ ModelModule qwen21_module() {
                     r.width == 1024 && r.height == 1024 && r.qwen21_w8a8 &&
                     r.operation == "image.generate" && r.inputs.empty() &&
                     r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty();
+                // The Core ML FFN only sees the 512px output's 1024 decode
+                // tokens. Full-size references are cached as GPU prefix KV,
+                // so this tests their *actual* fidelity and prefill cost
+                // without changing the calibrated 1024-row ANE graph.
+                const char *full_ref = std::getenv("TURBOCIDER_QWEN21_FULL_REF_W8A8_DIAGNOSTIC");
+                const bool diagnostic_full_ref = full_ref && std::string_view(full_ref) == "1" &&
+                    r.width == 512 && r.height == 512 && r.qwen21_w8a8 &&
+                    r.operation == "image.edit" && !r.inputs.empty() && r.inputs.size() <= 3 &&
+                    r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty();
                 const bool supported_512 = r.width == 512 && r.height == 512 &&
                     ((r.operation == "image.generate" && r.inputs.empty() &&
                       r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty()) ||
@@ -92,8 +101,8 @@ ModelModule qwen21_module() {
                       (r.qwen21_gpu_full_ffn_blocks.empty() ||
                        r.qwen21_gpu_full_ffn_blocks == std::vector<int>{3, 5, 7})));
                 require(r.allow_approximation && !r.ane_manifest.empty() &&
-                            (diagnostic_t2i || supported_512),
-                        "Qwen21 gpu_ane requires 512px text-to-image or explicit W8A8 1...3-reference edit with 256px references and either full coverage or GPU fallback 3,5,7; 1024px W8A8 text-to-image is diagnostic-only");
+                            (diagnostic_t2i || diagnostic_full_ref || supported_512),
+                        "Qwen21 gpu_ane requires 512px text-to-image or explicit W8A8 1...3-reference edit with 256px references and either full coverage or GPU fallback 3,5,7; 1024px text-to-image and 512px editing with 1024px references are diagnostic-only");
             } else {
                 require(r.ane_manifest.empty() && r.encoder_ane_manifest.empty() &&
                             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&

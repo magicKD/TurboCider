@@ -316,6 +316,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             (r.qwen21_w8a8 && hybrid_->ane_mlp_end == 6144);
         require(supported_edit_coverage,
                 "Qwen21 32-layer W8A8 edit requires a 6144-channel manifest; use GPU fallback 3,5,7 for the 4096-channel route");
+        if (r.operation == "image.edit" && r.qwen21_reference_size == 1024)
+            require(r.qwen21_w8a8 && hybrid_->ane_mlp_end == 6144 &&
+                        r.qwen21_gpu_full_ffn_blocks.empty(),
+                    "Qwen21 full-reference W8A8 diagnostic requires a 6144-channel, 32-layer manifest");
         require(hybrid_->hidden == 4096 && hybrid_->mlp_width == 12288 &&
                     hybrid_->ane_mlp_start == 0 && supported_partition &&
                     hybrid_->block_count == 32 && hybrid_->checkpoint_sha_verified &&

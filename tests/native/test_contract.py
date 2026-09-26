@@ -191,6 +191,30 @@ class ContractTests(unittest.TestCase):
                 with self.subTest(invalid=invalid):
                     self.assertNotEqual(plan({**base, **invalid})[0], 0)
 
+    def test_qwen21_full_reference_w8a8_diagnostic_gate(self):
+        refs = [dict(kind='image', role='reference', path=f'ref-{i}.png')
+                for i in range(3)]
+        base = dict(model='qwen-image-2.1', operation='image.edit', prompt='Three objects',
+                    width=512, height=512, steps=40, audio=False, frames=1,
+                    execution='gpu_ane', allow_approximation=True, qwen21_w8a8=True,
+                    ane_manifest='compiled-manifest-not-loaded-during-planning.json',
+                    qwen21_reference_size=1024, inputs=refs)
+        flag = 'TURBOCIDER_QWEN21_FULL_REF_W8A8_DIAGNOSTIC'
+        with patch.dict(os.environ, {flag:'0'}):
+            self.assertNotEqual(plan(base)[0], 0)
+        with patch.dict(os.environ, {flag:'1'}):
+            code, result, error = plan(base)
+            self.assertEqual(code, 0, error)
+            self.assertEqual(result['execution'], 'gpu_ane_experimental')
+            self.assertIn('qwen21_w8a8_full_reference_diagnostic',
+                          result['algorithm_approximations'])
+            for invalid in [dict(width=1024, height=1024), dict(qwen21_w8a8=False),
+                            dict(qwen21_gpu_full_ffn_blocks=[3,5,7]),
+                            dict(inputs=refs + [refs[0]]), dict(allow_approximation=False),
+                            dict(ane_manifest='')]:
+                with self.subTest(invalid=invalid):
+                    self.assertNotEqual(plan({**base, **invalid})[0], 0)
+
     def test_qwen21_gpu_final_ffn_reuse_gate(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
                     width=512, height=512, steps=5, audio=False, frames=1,

@@ -253,6 +253,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                 : @"single_block_mlp_int8_per_channel"];
     if (r.model == "qwen-image-2.1" && r.qwen21_reference_size != 1024)
         [algorithm_approximations addObject:@"qwen21_reference_resize_256"];
+    if (r.model == "qwen-image-2.1" && hybrid && r.operation == "image.edit" &&
+        r.qwen21_w8a8 && r.qwen21_reference_size == 1024)
+        [algorithm_approximations addObject:@"qwen21_w8a8_full_reference_diagnostic"];
     if (r.model == "qwen-image-2.1" && !r.loras.empty())
         [algorithm_approximations addObject:@"qwen21_viggle_v021_r256_6step_distillation"];
     if (r.model == "qwen-image-2.1" && !r.loras.empty()) {

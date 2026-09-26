@@ -199,6 +199,23 @@ remains the default. See the
 [full-coverage edit comparison](../status/qwen21-w8a8-full32-edit.md)
 for timings and visual caveats.
 
+A separate **diagnostic-only full-size-reference editing** option is now
+available at 512²: set `TURBOCIDER_QWEN21_FULL_REF_W8A8_DIAGNOSTIC=1`, use
+`qwen21_w8a8: true`, `qwen21_reference_size: 1024`, `execution: "gpu_ane"`,
+`allow_approximation: true`, a checkpoint-matched 1024-row/6144-channel
+compiled manifest, and empty `qwen21_gpu_full_ffn_blocks`. Only 1–3 ordered
+editing references are permitted. The 32/32 W8A8 ANE FFN coverage uses the
+same output latent rows while the full reference tokens remain on the GPU;
+there is no 256px-reference information loss. On one prompt/seed per reference
+count, prepared resident 5-step request-wall speedups over **same-input** GPU
+were approximately **1.121× / 1.065× / 1.042×** for 1/2/3 references; at 40
+steps the corresponding samples were **1.299× / 1.160× / 1.149×**. The
+three-reference 40-step sticker placement/size visibly changed, and both
+5-step outputs had ghosting. The tested W8A16 GPU suffix was again slower
+than BF16 (BF16/W8A16 median **0.986×** on the full-size two-reference 5-step
+sample). This is not a quality-qualified default or cold-start speed claim;
+see the [full-reference diagnostic report](../status/qwen21-w8a8-fullref-512-diagnostics-2026-09-26.md).
+
 For explicit **512² text-to-image** with a checkpoint-matched 6144-channel
 W8A8 manifest, use `operation: "image.generate"`, no `inputs`,
 `qwen21_w8a8: true`, `execution: "gpu_ane"`, and
