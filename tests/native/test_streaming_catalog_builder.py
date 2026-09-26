@@ -143,6 +143,41 @@ def native_fixture_record() -> dict:
 
 
 class CatalogBuilderTests(unittest.TestCase):
+    def test_text_capacity_is_versioned_and_binds_only_supported_dynamic_route(self):
+        value = record()
+        value["source"] = dict(identity_version=2, model_variant="z-image-turbo-comfy-bf16",
+                               weight_format="comfy-bf16-single-file", artifact_manifest_digest="a" * 64)
+        value["runtime"]["adapter_revision"] = "z-image-public-adapter-v6-text-capacity"
+        value["workload"]["execution_container"] = "cli_worker"
+        value["calibration"]["execution_container"] = "cli_worker"
+        value["workload"]["token_shapes"] = [dict(encoder="qwen3", tokenizer_revision="qwen3-z-image-v1",
+            template_revision="z-image-template-v1", valid_rows=1024, padded_rows=1024, compute_rows=1024)]
+        exact_digest = builder.canonical_record_digest(value)
+        value["text_capacity"] = dict(policy_revision="z-image-dynamic-text-capacity-v1", minimum_rows=1, maximum_rows=1024)
+        builder.validate_record_shape(value)
+        self.assertEqual(builder.record_schema(value, builder.RECORD_SCHEMA), "tc-streaming-preset-record-v4")
+        self.assertNotEqual(exact_digest, builder.canonical_record_digest(value))
+        self.assertEqual(builder.catalog_binding(value)["text_capacity"], value["text_capacity"])
+        changed = copy.deepcopy(value)
+        changed["text_capacity"]["minimum_rows"] = 2
+        self.assertNotEqual(builder.record_identity_digest(changed), builder.record_identity_digest(value))
+        for section, key, invalid in (("text_capacity", "minimum_rows", 0),
+            ("text_capacity", "maximum_rows", 1025), ("text_capacity", "maximum_rows", True),
+            ("text_capacity", "policy_revision", "unknown"), ("workload", "dynamic_text", False),
+            ("workload", "execution", "ane"), ("workload", "execution_container", "embedded_app"),
+            ("source", "weight_format", "int8"), ("runtime", "adapter_revision", "old")):
+            changed = copy.deepcopy(value)
+            changed[section][key] = invalid
+            with self.subTest(section=section, key=key, invalid=invalid):
+                with self.assertRaises(builder.CatalogBuildError):
+                    builder.validate_record_shape(changed)
+                with self.assertRaises(builder.CatalogBuildError):
+                    builder.canonical_record_digest(changed)
+        changed = copy.deepcopy(value)
+        changed["workload"]["token_shapes"][0]["valid_rows"] = 1023
+        with self.assertRaises(builder.CatalogBuildError):
+            builder.validate_record_shape(changed)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="tc-catalog-builder-")
         self.addCleanup(self.temporary.cleanup)

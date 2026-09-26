@@ -165,7 +165,8 @@ void verify_and_attach_public_streaming_result(
     const auto &layout = execution.model_snapshot->layout();
     actual_check(layout.materializations_complete,
                  "authorized layout has incomplete source metadata");
-    actual_check(layout.digest == record.plan.layout_digest,
+    actual_check(execution.selection.authority->matches(
+                     record, *execution.model_snapshot, execution.selection.device),
                  "authorized layout differs from preset");
     actual_check(!layout.stages.empty(), "authorized layout has no stages");
     if (result.streaming_stages.empty()) {
@@ -296,7 +297,7 @@ void verify_and_attach_public_streaming_result(
         execution.probe->runtime_identity());
     metrics.device_digest = streaming_device_identity_digest(
         execution.selection.device);
-    metrics.authorized_layout_digest = record.plan.layout_digest;
+    metrics.authorized_layout_digest = layout.digest;
     metrics.actual_layout_digest = layout.digest;
     metrics.component_policy_revision =
         record.plan.component_policy_revision;

@@ -80,6 +80,13 @@ struct PresetRelease {
     std::string policy_revision;
 };
 
+// The record workload is the calibrated upper bound. Actual request shapes
+// remain exact in the probe, compiled snapshot and execution receipt.
+struct PresetTextCapacity {
+    std::string policy_revision;
+    uint32_t minimum_rows = 0, maximum_rows = 0;
+};
+
 struct StreamingPresetRecord {
     std::string id, catalog_revision;
     uint32_t revision = 0;
@@ -92,6 +99,7 @@ struct StreamingPresetRecord {
     PresetPerformance performance;
     PresetRelease release;
     std::string canonical_record_digest;
+    std::optional<PresetTextCapacity> text_capacity;
 };
 
 struct StreamingPresetCatalog {
@@ -126,6 +134,9 @@ struct PresetCandidateResolution {
 
 PresetWorkload basic_streaming_workload(const Request &,
     std::string device_class, std::string execution_container);
+
+bool streaming_preset_workload_matches(
+    const StreamingPresetRecord &, const PresetWorkload &);
 
 uint64_t streaming_target_margin_bytes(uint64_t target);
 bool supported_streaming_target(uint64_t target) noexcept;

@@ -42,6 +42,9 @@ def assignments(path: str, value: dict) -> list[str]:
         if key == "stages":
             for name, stage in item.items():
                 result.extend(assignments(member + "[" + cpp_string(name) + "]", stage))
+        elif key == "text_capacity":
+            result.append(member + ".emplace();")
+            result.extend(assignments("(*" + member + ")", item))
         elif key == "token_shapes":
             for token in item:
                 result.append(member + ".emplace_back();")

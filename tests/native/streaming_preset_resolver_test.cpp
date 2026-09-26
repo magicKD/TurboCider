@@ -168,6 +168,8 @@ class Snapshot final : public ModelStreamingSnapshot {
     Descriptor descriptor_value;
     Layout layout_value;
     std::string component = "zimage-components-v1";
+    std::optional<PresetWorkload> actual_workload;
+    std::string capacity_digest;
     std::shared_ptr<const SourceLease> lease_value = test_lease;
     mutable uint32_t source_revalidations = 0;
     mutable bool source_valid = true;
@@ -213,6 +215,12 @@ class Snapshot final : public ModelStreamingSnapshot {
     }
     const Layout &layout() const noexcept override {
         return layout_value;
+    }
+    const PresetWorkload *workload_identity() const noexcept override {
+        return actual_workload ? &*actual_workload : nullptr;
+    }
+    std::string_view capacity_layout_digest() const noexcept override {
+        return capacity_digest;
     }
     std::string_view component_policy_revision() const noexcept override {
         return component;
@@ -440,6 +448,79 @@ int main() {
     assert(streaming_target_margin_bytes(10 * gib) == gib);
     assert(supported_streaming_target(12 * gib));
     assert(!supported_streaming_target(14 * gib));
+
+    {
+        SourceFileIdentity file;
+        file.logical_id = "model";
+        file.path = fixture_path;
+        auto lease = SourceLease::capture_verified({file});
+        auto capacity = record("text-capacity", 1, 7 * gib, 100);
+        capacity.source = {"z-image-turbo-comfy-bf16", "comfy-bf16-single-file",
+                           std::string(lease->artifact_digest()), "", 2};
+        capacity.runtime.adapter_revision = "z-image-public-adapter-v6-text-capacity";
+        capacity.workload.execution_container = "cli_worker";
+        capacity.calibration.execution_container = "cli_worker";
+        capacity.workload.token_shapes = {{"qwen3", "qwen3-z-image-v1", "z-image-template-v1", 1024, 1024, 1024}};
+        capacity.text_capacity = PresetTextCapacity{"z-image-dynamic-text-capacity-v1", 1, 1024};
+        capacity = finalize_streaming_preset_record(capacity);
+        validate_streaming_preset_record(capacity, "test-r1");
+        auto exact = capacity;
+        exact.text_capacity.reset();
+        exact = finalize_streaming_preset_record(exact);
+        assert(exact.canonical_record_digest != capacity.canonical_record_digest);
+        for (uint32_t rows : {1, 26, 31, 32, 33, 511, 512, 513, 1023, 1024}) {
+            Probe probe;
+            probe.source_value = capacity.source;
+            probe.runtime_value = capacity.runtime;
+            probe.workload_value = capacity.workload;
+            auto &token = probe.workload_value.token_shapes.front();
+            token.valid_rows = token.padded_rows = token.compute_rows = rows;
+            probe.lease_value = lease;
+            assert(streaming_preset_workload_matches(capacity, probe.workload_value));
+            assert(streaming_preset_workload_matches(exact, probe.workload_value) == (rows == 1024));
+            auto selected = PublicPresetResolver::select(selector(10 * gib), probe, device(), {"test-r1", {capacity}});
+            Snapshot snapshot(digest('9'));
+            snapshot.actual_workload = probe.workload_value;
+            snapshot.capacity_digest = capacity.plan.layout_digest;
+            snapshot.source_value = capacity.source;
+            snapshot.runtime_value = capacity.runtime;
+            snapshot.lease_value = lease;
+            auto authorized = PublicPresetResolver::authorize(selected, probe, snapshot, device());
+            assert(authorized.authority->matches(capacity, snapshot, device()));
+            snapshot.actual_workload->token_shapes.front().valid_rows = rows == 1 ? 2 : 1;
+            snapshot.actual_workload->token_shapes.front().padded_rows = snapshot.actual_workload->token_shapes.front().valid_rows;
+            snapshot.actual_workload->token_shapes.front().compute_rows = snapshot.actual_workload->token_shapes.front().valid_rows;
+            assert(!authorized.authority->matches(capacity, snapshot, device()));
+            rejects([&] { PublicPresetResolver::authorize(selected, probe, snapshot, device()); }, "streaming_authority_mismatch");
+            snapshot.actual_workload = probe.workload_value;
+            snapshot.capacity_digest = digest('8');
+            rejects([&] { PublicPresetResolver::authorize(selected, probe, snapshot, device()); }, "streaming_actual_plan_mismatch");
+            snapshot.capacity_digest = capacity.plan.layout_digest;
+            snapshot.actual_workload.reset();
+            rejects([&] { PublicPresetResolver::authorize(selected, probe, snapshot, device()); }, "streaming_actual_plan_mismatch");
+        }
+        for (uint32_t rows : {0, 1025}) {
+            auto invalid = capacity.workload;
+            auto &token = invalid.token_shapes.front();
+            token.valid_rows = token.padded_rows = token.compute_rows = rows;
+            assert(!streaming_preset_workload_matches(capacity, invalid));
+        }
+        auto changed = capacity.workload;
+        changed.width = 768;
+        assert(!streaming_preset_workload_matches(capacity, changed));
+        changed = capacity.workload;
+        changed.feature_digest = digest('8');
+        assert(!streaming_preset_workload_matches(capacity, changed));
+        changed = capacity.workload;
+        changed.token_shapes.front().tokenizer_revision = "different";
+        assert(!streaming_preset_workload_matches(capacity, changed));
+        auto invalid = capacity;
+        invalid.workload.dynamic_text = false;
+        rejects([&] { finalize_streaming_preset_record(invalid); }, "unsupported text capacity route");
+        invalid = capacity;
+        invalid.text_capacity->maximum_rows = 1025;
+        rejects([&] { finalize_streaming_preset_record(invalid); }, "invalid text capacity");
+    }
 
     auto slow = record("slower-small", 2, 7 * gib, 100);
     const auto stable_digest = slow.canonical_record_digest;

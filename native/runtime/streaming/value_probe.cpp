@@ -114,6 +114,14 @@ const Layout &ValueModelStreamingSnapshot::layout() const noexcept {
     return values_.layout;
 }
 
+const PresetWorkload *ValueModelStreamingSnapshot::workload_identity() const noexcept {
+    return values_.workload ? &*values_.workload : nullptr;
+}
+
+std::string_view ValueModelStreamingSnapshot::capacity_layout_digest() const noexcept {
+    return values_.capacity_layout_digest;
+}
+
 std::string_view ValueModelStreamingSnapshot::component_policy_revision() const noexcept {
     return values_.component_policy_revision;
 }

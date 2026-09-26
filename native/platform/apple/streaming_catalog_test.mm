@@ -200,11 +200,13 @@ StreamingConfig parse_config(NSDictionary *value, const std::string &path) {
 
 streaming::StreamingPresetRecord parse_record(NSDictionary *value,
                                               const std::string &path) {
-    exact_keys(value, @[
+    NSMutableArray *record_keys = [@[
         @"id", @"revision", @"catalog_revision", @"source", @"workload",
         @"runtime", @"device", @"plan", @"calibration", @"performance",
         @"release", @"canonical_record_digest"
-    ], path);
+    ] mutableCopy];
+    if (value[@"text_capacity"]) [record_keys addObject:@"text_capacity"];
+    exact_keys(value, record_keys, path);
     streaming::StreamingPresetRecord result;
     result.id = required_string(value, @"id", path + ".id");
     result.revision = required_u32(value, @"revision", path + ".revision");
@@ -217,6 +219,14 @@ streaming::StreamingPresetRecord parse_record(NSDictionary *value,
         path + ".workload");
     result.runtime = parse_runtime(
         object_value(value[@"runtime"], path + ".runtime"), path + ".runtime");
+    if (value[@"text_capacity"]) {
+        auto *capacity = object_value(value[@"text_capacity"], path + ".text_capacity");
+        exact_keys(capacity, @[@"policy_revision", @"minimum_rows", @"maximum_rows"], path + ".text_capacity");
+        result.text_capacity = streaming::PresetTextCapacity{
+            required_string(capacity, @"policy_revision", path + ".text_capacity.policy_revision"),
+            required_u32(capacity, @"minimum_rows", path + ".text_capacity.minimum_rows"),
+            required_u32(capacity, @"maximum_rows", path + ".text_capacity.maximum_rows")};
+    }
 
     NSDictionary *device = object_value(value[@"device"], path + ".device");
     exact_keys(device, @[
@@ -462,7 +472,7 @@ NSDictionary *test_streaming_catalog_record_dictionary(
     } mutableCopy];
     if (!record.release.policy_revision.empty())
         release[@"policy_revision"] = @(record.release.policy_revision.c_str());
-    return @{
+    NSMutableDictionary *result = [@{
         @"id": @(record.id.c_str()),
         @"revision": @(record.revision),
         @"catalog_revision": @(record.catalog_revision.c_str()),
@@ -476,7 +486,15 @@ NSDictionary *test_streaming_catalog_record_dictionary(
         @"release": release,
         @"canonical_record_digest":
             @(record.canonical_record_digest.c_str()),
-    };
+    } mutableCopy];
+    if (record.text_capacity) {
+        const auto &capacity = *record.text_capacity;
+        result[@"text_capacity"] = @{
+            @"policy_revision": @(capacity.policy_revision.c_str()),
+            @"minimum_rows": @(capacity.minimum_rows),
+            @"maximum_rows": @(capacity.maximum_rows)};
+    }
+    return result;
 }
 
 } // namespace tc

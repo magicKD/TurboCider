@@ -112,17 +112,16 @@ streaming::PresetRuntimeIdentity z_image_public_runtime_identity() {
     return {
         tc::catalog_runtime_identity(),
         "public-streaming-runtime-v2",
-        "z-image-public-adapter-v5-encoder-caption-shapes",
+        "z-image-public-adapter-v6-text-capacity",
         "z-image-pread-bf16-v2-fd-lease",
         kZImageKernelRevision,
         "mlx-request-cache-policy-v2-k1-zero-cache",
     };
 }
 
-std::string z_image_public_feature_digest(
-        const Request &request, uint32_t caption_rows) {
+std::string z_image_public_feature_digest(const Request &request) {
     streaming::CanonicalEncoder feature(
-        "z-image-public-workload-features-v1");
+        "z-image-public-workload-features-v2");
     feature.boolean_field("inputs_empty", request.inputs.empty());
     feature.boolean_field("loras_empty", request.loras.empty());
     feature.boolean_field("ane_disabled", request.ane_manifest.empty());
@@ -130,7 +129,6 @@ std::string z_image_public_feature_digest(
         "encoder_ane_disabled", request.encoder_ane_manifest.empty());
     feature.boolean_field("compile_gpu", request.compile_gpu);
     feature.boolean_field("dynamic_text", request.dynamic_text);
-    feature.unsigned_field("caption_rows", caption_rows);
     return feature.sha256();
 }
 
@@ -2216,8 +2214,6 @@ ZImage::probe_public_streaming(
     // The encoder processes the padded token IDs, but encode_text removes
     // those padding rows before z_patchify aligns the valid caption to 32.
     const uint32_t encoder_rows = static_cast<uint32_t>(tokens.ids.size());
-    const uint32_t caption_rows = padded_z_image_rows(
-        static_cast<uint32_t>(tokens.valid));
 
     streaming::PresetWorkload workload;
     workload.model = model_id_;
@@ -2236,8 +2232,7 @@ ZImage::probe_public_streaming(
     workload.approximation = false;
     workload.conditioning_revision = "qwen3-simple-flow-shift3-v1";
     workload.vae_policy_revision = "z-image-vae-v1";
-    workload.feature_digest = z_image_public_feature_digest(
-        request, caption_rows);
+    workload.feature_digest = z_image_public_feature_digest(request);
     workload.token_shapes.push_back({
         "qwen3", "qwen3-z-image-v1", "z-image-template-v1",
         static_cast<uint32_t>(tokens.valid), encoder_rows, encoder_rows});
@@ -2264,7 +2259,7 @@ ZImage::compile_public_streaming(
                 record.plan.component_policy_revision,
             "streaming_probe_identity_mismatch");
     require(record.source == value_probe->source_identity() &&
-                record.workload == value_probe->workload_identity() &&
+                streaming::streaming_preset_workload_matches(record, value_probe->workload_identity()) &&
                 record.runtime == value_probe->runtime_identity(),
             "streaming_record_identity_mismatch");
     const auto &workload = value_probe->workload_identity();
@@ -2281,17 +2276,28 @@ ZImage::compile_public_streaming(
     // INT8 remains on the private/manual candidate route until separately qualified.
     require(!plan->metadata().convrot(),
             "streaming_route_unsupported: Z-Image public card requires BF16 tensor metadata");
+    std::string capacity_digest;
+    if (record.text_capacity) {
+        auto capacity_workload = descriptor_workload;
+        capacity_workload.caption_rows = padded_z_image_rows(record.text_capacity->maximum_rows);
+        const z_image::StreamingPlanView capacity_plan(
+            value_probe->lease_ptr(), record.plan.canonical_config, capacity_workload);
+        capacity_digest = capacity_plan.layout().digest;
+        require(capacity_digest == record.plan.layout_digest,
+                "streaming_capacity_layout_digest_mismatch");
+    } else {
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
     if (!record.plan.layout_digest.empty())
 #endif
         require(plan->layout().digest == record.plan.layout_digest,
                 "streaming_layout_digest_mismatch");
+    }
     return std::make_shared<streaming::ValueModelStreamingSnapshot>(
         streaming::ValueModelStreamingSnapshot::Values{
             model_id_, value_probe->source_identity(),
             value_probe->runtime_identity(), plan->descriptor(),
             plan->layout(), std::string(value_probe->component_policy_revision()),
-            value_probe->lease_ptr()});
+            value_probe->lease_ptr(), workload, std::move(capacity_digest)});
 }
 
 RunResult ZImage::generate_resolved(
@@ -2323,8 +2329,8 @@ RunResult ZImage::generate_resolved(
                     execution->model_snapshot->source_identity() &&
                 execution->selection.record.runtime ==
                     execution->model_snapshot->runtime_identity() &&
-                execution->selection.record.plan.layout_digest ==
-                    execution->model_snapshot->layout().digest &&
+                streaming::streaming_snapshot_matches_record(
+                    execution->selection.record, *execution->model_snapshot) &&
                 execution->selection.record.plan.component_policy_revision ==
                     execution->model_snapshot
                         ->component_policy_revision(),

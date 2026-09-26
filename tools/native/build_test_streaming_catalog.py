@@ -125,6 +125,25 @@ def build_catalog(args: argparse.Namespace) -> dict:
             raise CatalogBuildError(f"native catalog JSON is invalid: {exc}") from exc
         if not isinstance(catalog, dict):
             raise CatalogBuildError("native runtime returned a non-object catalog")
+        minimum = getattr(args, "text_minimum_rows", None)
+        if minimum is not None:
+            # The real adapter has compiled the supplied upper-bound prompt.
+            # Adding a range never changes that workload or its layout proof.
+            from build_streaming_catalog import (
+                CatalogBuildError as RecordError, canonical_record_digest,
+                validate_record_shape,
+            )
+            try:
+                for record in catalog["records"]:
+                    record["text_capacity"] = dict(
+                        policy_revision="z-image-dynamic-text-capacity-v1",
+                        minimum_rows=minimum,
+                        maximum_rows=record["workload"]["token_shapes"][0]["valid_rows"],
+                    )
+                    validate_record_shape(record, allow_test_template=True)
+                    record["canonical_record_digest"] = canonical_record_digest(record)
+            except (RecordError, KeyError, IndexError, TypeError) as exc:
+                raise CatalogBuildError(f"invalid test text capacity: {exc}") from exc
         return catalog
     finally:
         library.tc_engine_free(engine)
@@ -163,6 +182,8 @@ def main() -> int:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--verify-sources", action="store_true",
                         help="Explicitly verify native contents before building a v2 test record")
+    parser.add_argument("--text-minimum-rows", type=int,
+                        help="Test-only dynamic Z-Image range ending at the actual supplied prompt length")
     args = parser.parse_args()
     try:
         catalog = build_catalog(args)

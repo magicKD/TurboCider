@@ -265,7 +265,10 @@ class TestCatalogTests(unittest.TestCase):
                 "pre_tokenizer": {
                     "pretokenizers": [{"pattern": {"Regex": "."}}]
                 },
-                "added_tokens": [],
+                "added_tokens": [
+                    {"content": "<|im_start|>user\n", "id": 256},
+                    {"content": "<|im_end|>\n<|im_start|>assistant\n", "id": 257},
+                ],
             }))
 
             def create(constructor) -> c.c_void_p:
@@ -286,10 +289,10 @@ class TestCatalogTests(unittest.TestCase):
                 )
                 return status, consume(library, error)
 
-            def resolve_full(engine: c.c_void_p) -> tuple[int, str, str]:
+            def resolve_full(engine: c.c_void_p, payload=None) -> tuple[int, str, str]:
                 result, error = c.c_void_p(), c.c_void_p()
                 status = library.tc_engine_resolve_streaming_json(
-                    engine, json.dumps(request()).encode(),
+                    engine, json.dumps(request() if payload is None else payload).encode(),
                     c.byref(result), c.byref(error),
                 )
                 return (
@@ -333,11 +336,14 @@ class TestCatalogTests(unittest.TestCase):
                 self.assertTrue(value)
                 return json.loads(value)
 
-            def build_exact_catalog_with_cli(verify=False) -> dict:
+            def build_exact_catalog_with_cli(verify=False, prompt=None, minimum=None) -> dict:
                 request_path = root / "request.json"
                 plan_path = root / "plan.json"
                 output_path = root / "generated-test-catalog.json"
-                request_path.write_text(json.dumps(request()))
+                payload = request()
+                if prompt is not None:
+                    payload["inputs"][0]["text"] = prompt
+                request_path.write_text(json.dumps(payload))
                 plan_path.write_text(json.dumps({
                     "canonical_config": {
                         "enabled": True,
@@ -358,7 +364,7 @@ class TestCatalogTests(unittest.TestCase):
                     "pass_transition": "reload",
                     "multi_pool_policy": "serial",
                 }))
-                subprocess.run([
+                completed = subprocess.run([
                     sys.executable, "-B",
                     str(ROOT / "tools/native/build_test_streaming_catalog.py"),
                     "--library", raw,
@@ -370,7 +376,9 @@ class TestCatalogTests(unittest.TestCase):
                     "--catalog-revision", "tc-streaming-test-cli-r1",
                     "--output", str(output_path),
                     *(["--verify-sources", "--force"] if verify else []),
-                ], check=True, capture_output=True, text=True)
+                    *(["--text-minimum-rows", str(minimum)] if minimum is not None else []),
+                ], check=False, capture_output=True, text=True)
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                 return json.loads(output_path.read_text())
 
             public = create(library.tc_engine_create_model)
@@ -477,6 +485,54 @@ class TestCatalogTests(unittest.TestCase):
                 self.assertEqual(verified_cli["records"][0]["source"]["identity_version"], 2)
                 self.assertEqual(verified_cli["records"][0]["workload"]["execution_container"], "cli_worker")
 
+                overhead = verified_cli["records"][0]["workload"]["token_shapes"][0]["valid_rows"] - len("gate")
+                capacity = build_exact_catalog_with_cli(verify=True, prompt="g" * (1024 - overhead), minimum=1)
+                capacity_record = capacity["records"][0]
+                self.assertEqual(capacity_record["text_capacity"]["maximum_rows"], 1024)
+                worker = create(library.tc_engine_create_model_worker)
+                try:
+                    output, error = c.c_void_p(), c.c_void_p()
+                    status = library.tc_engine_verify_streaming_sources_json(worker, c.byref(output), c.byref(error))
+                    cold_proof = json.loads(consume(library, output))
+                    self.assertEqual(status, 0, consume(library, error))
+                    self.assertGreater(cold_proof["verification_bytes_read"], 0)
+                    status, failure = install(worker, capacity)
+                    self.assertEqual(status, 0, failure)
+                    previous_selector = None
+                    layouts = set()
+                    for rows in (overhead + 1, 31, 32, 33, 511, 512, 513, 1023, 1024):
+                        payload = request()
+                        payload["inputs"][0]["text"] = "g" * (rows - overhead)
+                        status, raw_result, failure = resolve_full(worker, payload)
+                        self.assertEqual(status, 0, failure)
+                        resolved = json.loads(raw_result)
+                        layouts.add(resolved["selection"]["layout_digest"])
+                        if previous_selector:
+                            stale = copy.deepcopy(payload)
+                            stale["execution"]["streaming"] = previous_selector
+                            status, _, failure = resolve_full(worker, stale)
+                            self.assertNotEqual(status, 0)
+                            self.assertIn("streaming_resolution_stale", failure)
+                        previous_selector = resolved["exact_selector"]
+                    self.assertGreater(len(layouts), 1)
+                    self.assertEqual(resolved["selection"]["layout_digest"], capacity_record["plan"]["layout_digest"])
+                    too_long = request()
+                    too_long["inputs"][0]["text"] = "g" * (1025 - overhead)
+                    status, _, failure = resolve_full(worker, too_long)
+                    self.assertNotEqual(status, 0)
+                    self.assertIn("no silent truncation", failure)
+                    wrong_capacity = copy.deepcopy(capacity)
+                    wrong_record = wrong_capacity["records"][0]
+                    wrong_record["plan"]["layout_digest"] = "a" * 64
+                    wrong_record["canonical_record_digest"] = builder.canonical_record_digest(wrong_record)
+                    status, failure = install(worker, wrong_capacity)
+                    self.assertEqual(status, 0, failure)
+                    status, _, failure = resolve_full(worker)
+                    self.assertNotEqual(status, 0)
+                    self.assertIn("streaming_capacity_layout_digest_mismatch", failure)
+                finally:
+                    library.tc_engine_free(worker)
+
                 error = c.c_void_p()
                 status = library.tc_engine_test_clear_streaming_catalog(
                     public, c.byref(error)
@@ -528,7 +584,9 @@ class TestCatalogTests(unittest.TestCase):
                 proof = verify()
                 self.assertEqual(proof["status"], "verified")
                 self.assertEqual(len(proof["files"]), 4)
-                self.assertGreater(proof["verification_bytes_read"], 0)
+                # The capacity worker above already verified these same files.
+                self.assertEqual(proof["verification_bytes_read"], 0)
+                self.assertEqual(proof["verification_cache_hits"], 4)
                 cached = verify()
                 self.assertEqual(cached["verification_bytes_read"], 0)
                 self.assertEqual(cached["verification_cache_hits"], 4)

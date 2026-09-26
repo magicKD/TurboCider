@@ -170,7 +170,7 @@ NSDictionary *streaming_resolution_dictionary(
             @"calibrated_request_bytes" :
                 @(record.calibration.calibrated_request_bytes),
             @"memory_scope" : @(record.calibration.scope.c_str()),
-            @"layout_digest" : @(record.plan.layout_digest.c_str()),
+            @"layout_digest" : @(execution.model_snapshot->layout().digest.c_str()),
             @"component_policy_revision" :
                 @(record.plan.component_policy_revision.c_str()),
             @"execution_container" :

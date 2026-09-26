@@ -201,7 +201,7 @@ ResolvedStreamingSelection PublicPresetResolver::authorize(
     const auto &record = selected.record;
     require_resolution(record.source == probe.source_identity(),
                        "artifact_changed");
-    require_resolution(record.workload == probe.workload_identity(),
+    require_resolution(streaming_preset_workload_matches(record, probe.workload_identity()),
                        "streaming_resolution_stale");
     require_resolution(record.runtime == probe.runtime_identity(),
                        "streaming_resolution_stale");
@@ -211,8 +211,11 @@ ResolvedStreamingSelection PublicPresetResolver::authorize(
                        "artifact_changed");
     require_resolution(snapshot.runtime_identity() == probe.runtime_identity(),
                        "streaming_resolution_stale");
-    require_resolution(snapshot.layout().digest == record.plan.layout_digest,
+    require_resolution(streaming_snapshot_matches_record(record, snapshot),
                        "streaming_actual_plan_mismatch");
+    require_resolution(!snapshot.workload_identity() ||
+                           *snapshot.workload_identity() == probe.workload_identity(),
+                       "streaming_authority_mismatch");
     require_resolution(snapshot.component_policy_revision() ==
                            record.plan.component_policy_revision,
                        "streaming_actual_plan_mismatch");
@@ -242,7 +245,7 @@ ResolvedStreamingSelection PublicPresetResolver::authorize(
         new StreamingAuthority(
             record.canonical_record_digest,
             streaming_source_identity_digest(snapshot.source_identity()),
-            streaming_workload_identity_digest(record.workload),
+            streaming_workload_identity_digest(probe.workload_identity()),
             streaming_runtime_identity_digest(snapshot.runtime_identity()),
             snapshot.layout().digest,
             std::string(snapshot.component_policy_revision()),

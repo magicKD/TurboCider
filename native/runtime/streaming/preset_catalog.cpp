@@ -213,6 +213,32 @@ void validate_workload(const PresetWorkload &workload) {
     }
 }
 
+void validate_text_capacity(const StreamingPresetRecord &record) {
+    if (!record.text_capacity) return;
+    const auto &capacity = *record.text_capacity;
+    const auto &workload = record.workload;
+    catalog_check(capacity.policy_revision == "z-image-dynamic-text-capacity-v1" &&
+        capacity.minimum_rows > 0 && capacity.minimum_rows <= capacity.maximum_rows &&
+        capacity.maximum_rows <= 1024, "invalid text capacity bounds or policy");
+    catalog_check(record.source.identity_version == 2 &&
+        record.source.model_variant == "z-image-turbo-comfy-bf16" &&
+        record.source.weight_format == "comfy-bf16-single-file" &&
+        record.runtime.adapter_revision == "z-image-public-adapter-v6-text-capacity" &&
+        workload.model == "z-image-turbo" && workload.operation == "image.generate" &&
+        workload.execution == "gpu" && workload.execution_container == "cli_worker" &&
+        workload.dynamic_text && !workload.audio && !workload.approximation &&
+        workload.batch == 1 && workload.frames == 1 && workload.fps == 0 &&
+        workload.token_shapes.size() == 1, "unsupported text capacity route");
+    const auto &token = workload.token_shapes.front();
+    catalog_check(token.encoder == "qwen3" &&
+        token.tokenizer_revision == "qwen3-z-image-v1" &&
+        token.template_revision == "z-image-template-v1" &&
+        token.valid_rows == capacity.maximum_rows &&
+        token.padded_rows == capacity.maximum_rows &&
+        token.compute_rows == capacity.maximum_rows,
+        "text capacity workload must be the exact upper bound");
+}
+
 } // namespace
 
 uint64_t streaming_target_margin_bytes(uint64_t target) {
@@ -232,7 +258,8 @@ std::string canonical_streaming_preset_record(
         const StreamingPresetRecord &record) {
     validate_identity(record.source);
     validate_release_policy(record);
-    CanonicalEncoder out(!record.release.policy_revision.empty()
+    validate_text_capacity(record);
+    CanonicalEncoder out(record.text_capacity ? "tc-streaming-preset-record-v4" : !record.release.policy_revision.empty()
         ? "tc-streaming-preset-record-v3" : record.source.identity_version == 2
         ? "tc-streaming-preset-record-v2" : "tc-streaming-preset-record-v1");
     out.string_field("id", record.id);
@@ -240,6 +267,11 @@ std::string canonical_streaming_preset_record(
     out.string_field("catalog_revision", record.catalog_revision);
     encode_source(out, record.source);
     encode_workload(out, record.workload);
+    if (record.text_capacity) {
+        out.string_field("text_capacity.policy_revision", record.text_capacity->policy_revision);
+        out.unsigned_field("text_capacity.minimum_rows", record.text_capacity->minimum_rows);
+        out.unsigned_field("text_capacity.maximum_rows", record.text_capacity->maximum_rows);
+    }
     encode_runtime(out, record.runtime);
     out.unsigned_field(
         "device.minimum_physical_memory_bytes",
@@ -299,7 +331,7 @@ std::string canonical_streaming_preset_record(
 
 std::string streaming_preset_record_digest(
         const StreamingPresetRecord &record) {
-    CanonicalEncoder out(!record.release.policy_revision.empty()
+    CanonicalEncoder out(record.text_capacity ? "tc-streaming-preset-record-digest-v4" : !record.release.policy_revision.empty()
         ? "tc-streaming-preset-record-digest-v3" : record.source.identity_version == 2
         ? "tc-streaming-preset-record-digest-v2" : "tc-streaming-preset-record-digest-v1");
     out.string_field(
@@ -322,6 +354,7 @@ void validate_streaming_preset_record(
                   "record catalog revision mismatch");
     validate_identity(record.source);
     validate_workload(record.workload);
+    validate_text_capacity(record);
     validate_identity(record.runtime);
     catalog_check(record.device.minimum_physical_memory_bytes > 0,
                   "missing minimum physical memory");
@@ -383,6 +416,22 @@ void validate_streaming_preset_record(
                   "canonical record digest mismatch");
 }
 
+bool streaming_preset_workload_matches(const StreamingPresetRecord &record,
+                                       const PresetWorkload &actual) {
+    if (!record.text_capacity) return record.workload == actual;
+    validate_text_capacity(record);
+    if (actual.token_shapes.size() != 1) return false;
+    const auto &token = actual.token_shapes.front();
+    const auto &capacity = *record.text_capacity;
+    if (token.valid_rows < capacity.minimum_rows || token.valid_rows > capacity.maximum_rows ||
+        token.padded_rows != token.valid_rows || token.compute_rows != token.valid_rows)
+        return false;
+    auto normalized = actual;
+    auto &rows = normalized.token_shapes.front();
+    rows.valid_rows = rows.padded_rows = rows.compute_rows = capacity.maximum_rows;
+    return normalized == record.workload;
+}
+
 static bool basic_workload_matches(const PresetWorkload &a,
                                    const PresetWorkload &b) {
     return std::tie(a.model, a.operation, a.execution, a.device_class,
@@ -442,7 +491,7 @@ static PresetResolution resolve_preset_impl(
             continue;
         model_seen = true;
         if (discovery ? !basic_workload_matches(record.workload, query.workload)
-                      : !(record.workload == query.workload))
+                      : !streaming_preset_workload_matches(record, query.workload))
             continue;
         workload_seen = true;
         if (!discovery && query.require_exact_identity && !(record.source == query.source))

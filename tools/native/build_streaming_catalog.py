@@ -203,6 +203,33 @@ def validate_config_shape(config: dict[str, Any]) -> None:
             raise CatalogBuildError(f"record.plan stage {stage_id} slot policy is invalid")
 
 
+def validate_text_capacity(record: dict[str, Any]) -> None:
+    if "text_capacity" not in record:
+        return
+    capacity = record["text_capacity"]
+    require_exact_keys(capacity, {"policy_revision", "minimum_rows", "maximum_rows"}, set(), "text_capacity")
+    low = require_uint(capacity["minimum_rows"], "text_capacity.minimum_rows", positive=True)
+    high = require_uint(capacity["maximum_rows"], "text_capacity.maximum_rows", positive=True)
+    if capacity["policy_revision"] != "z-image-dynamic-text-capacity-v1" or not low <= high <= 1024:
+        raise CatalogBuildError("invalid text capacity bounds or policy")
+    source, workload = record["source"], record["workload"]
+    if (source.get("identity_version") != 2 or
+        source["model_variant"] != "z-image-turbo-comfy-bf16" or
+        source["weight_format"] != "comfy-bf16-single-file" or
+        record["runtime"]["adapter_revision"] != "z-image-public-adapter-v6-text-capacity" or
+        workload["model"] != "z-image-turbo" or workload["operation"] != "image.generate" or
+        workload["execution"] != "gpu" or workload["execution_container"] != "cli_worker" or
+        workload["dynamic_text"] is not True or workload["audio"] is not False or
+        workload["approximation"] is not False or workload["batch"] != 1 or
+        workload["frames"] != 1 or workload["fps"] != 0 or len(workload["token_shapes"]) != 1):
+        raise CatalogBuildError("unsupported text capacity route")
+    token = workload["token_shapes"][0]
+    if (token["encoder"] != "qwen3" or token["tokenizer_revision"] != "qwen3-z-image-v1" or
+        token["template_revision"] != "z-image-template-v1" or
+        any(token[key] != high for key in ("valid_rows", "padded_rows", "compute_rows"))):
+        raise CatalogBuildError("text capacity workload must be the exact upper bound")
+
+
 def validate_record_shape(record: dict[str, Any], *, allow_test_template: bool = False) -> None:
     require_exact_keys(
         record,
@@ -211,7 +238,7 @@ def validate_record_shape(record: dict[str, Any], *, allow_test_template: bool =
             "runtime", "device", "plan", "calibration", "performance",
             "release",
         },
-        {"canonical_record_digest"},
+        {"canonical_record_digest", "text_capacity"},
         "record",
     )
     for key in (
@@ -419,6 +446,9 @@ def validate_record_shape(record: dict[str, Any], *, allow_test_template: bool =
     require_string(release.get("review_digest"), "record.release.review_digest", digest=True)
 
 
+    validate_text_capacity(record)
+
+
 class CanonicalEncoder:
     def __init__(self, schema: str):
         self.value = bytearray(b"H")
@@ -536,6 +566,11 @@ def encode_record_fields(
             out.string_field(f"token.{key}", token[key])
         for key in ("valid_rows", "padded_rows", "compute_rows"):
             out.unsigned_field(f"token.{key}", token[key])
+    if "text_capacity" in record:
+        capacity = record["text_capacity"]
+        out.string_field("text_capacity.policy_revision", capacity["policy_revision"])
+        out.unsigned_field("text_capacity.minimum_rows", capacity["minimum_rows"])
+        out.unsigned_field("text_capacity.maximum_rows", capacity["maximum_rows"])
     runtime = record["runtime"]
     for key in ("turbocider_build_id", "runtime_revision", "adapter_revision", "reader_revision", "kernel_revision", "allocator_policy_revision"):
         out.string_field(f"runtime.{key}", runtime[key])
@@ -583,6 +618,7 @@ def encode_record_fields(
 
 
 def record_schema(record: dict[str, Any], legacy: str) -> str:
+    validate_text_capacity(record)
     version = record["source"].get("identity_version", 1)
     if type(version) is not int or version not in (1, 2):
         raise CatalogBuildError("unsupported source identity version")
@@ -596,7 +632,9 @@ def record_schema(record: dict[str, Any], legacy: str) -> str:
             (release["channel"] == "public-calibrated") != (release["policy_revision"] == CALIBRATED)
         ):
             raise CatalogBuildError("release channel and policy do not match")
-        return legacy.removesuffix("v1") + "v3"
+        return legacy.removesuffix("v1") + ("v4" if "text_capacity" in record else "v3")
+    if "text_capacity" in record:
+        return legacy.removesuffix("v1") + "v4"
     return legacy if version == 1 else legacy.removesuffix("v1") + "v2"
 
 
@@ -626,6 +664,8 @@ def record_identity_digest(record: dict[str, Any]) -> str:
 def catalog_binding(record: dict[str, Any]) -> dict[str, Any]:
     performance = record["performance"]
     return {
+        **({"text_capacity": copy.deepcopy(record["text_capacity"])}
+           if "text_capacity" in record else {}),
         **({"release_policy_revision": record["release"]["policy_revision"]}
            if "policy_revision" in record["release"] else {}),
         "source": copy.deepcopy(record["source"]),
@@ -940,6 +980,10 @@ def build_record(
         raise CatalogBuildError("record input must contain an object")
     provided_digest = record.pop("canonical_record_digest", None)
     validate_record_shape(record)
+    if "text_capacity" in record:
+        # A single upper-bound P2 run does not qualify every encoder/DiT shape.
+        # Keep range records on the test path until range evidence is verified.
+        raise CatalogBuildError("text capacity release requires independently verified range evidence")
     if record["release"]["channel"] not in ("staging", "public-experimental", "public-stable", "public-calibrated"):
         raise CatalogBuildError("record channel is not releasable")
     is_public = record["release"]["channel"].startswith("public-")

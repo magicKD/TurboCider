@@ -53,6 +53,10 @@ class ModelStreamingSnapshot {
     virtual const PresetRuntimeIdentity &runtime_identity() const noexcept = 0;
     virtual const Descriptor &descriptor() const noexcept = 0;
     virtual const Layout &layout() const noexcept = 0;
+    virtual const PresetWorkload *workload_identity() const noexcept { return nullptr; }
+    // Set only after independently compiling the capacity workload with the
+    // same source lease and canonical config as the actual request layout.
+    virtual std::string_view capacity_layout_digest() const noexcept { return {}; }
     virtual std::string_view component_policy_revision() const noexcept = 0;
     // Metadata/source lease check performed under the engine/global execution
     // locks immediately before the adapter is allowed to open readers or
@@ -102,6 +106,8 @@ class ValueModelStreamingSnapshot : public ModelStreamingSnapshot {
         Layout layout;
         std::string component_policy_revision;
         std::shared_ptr<const SourceLease> lease;
+        std::optional<PresetWorkload> workload = std::nullopt;
+        std::string capacity_layout_digest = {};
     };
 
     explicit ValueModelStreamingSnapshot(Values);
@@ -111,6 +117,8 @@ class ValueModelStreamingSnapshot : public ModelStreamingSnapshot {
     const PresetRuntimeIdentity &runtime_identity() const noexcept override;
     const Descriptor &descriptor() const noexcept override;
     const Layout &layout() const noexcept override;
+    const PresetWorkload *workload_identity() const noexcept override;
+    std::string_view capacity_layout_digest() const noexcept override;
     std::string_view component_policy_revision() const noexcept override;
     void revalidate_source() const override;
     const SourceLease *source_lease() const noexcept override;
@@ -125,6 +133,9 @@ struct SelectedStreamingPreset {
     StreamingPresetRecord record;
     StreamingSelector requested_selector;
 };
+
+bool streaming_snapshot_matches_record(
+    const StreamingPresetRecord &, const ModelStreamingSnapshot &);
 
 // Compare portable content or legacy snapshot identity to native lease proof.
 // This does not replace request-time path/fd revalidation.
