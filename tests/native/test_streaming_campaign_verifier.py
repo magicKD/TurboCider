@@ -764,6 +764,33 @@ class CampaignTests(unittest.TestCase):
             "new_cache_clear_or_unload_calls": 0,
         })
 
+    def test_p2_audit_requires_complete_measured_steady_counters(self):
+        counters = {
+            "audit_available": True, "block_streaming_enabled": True,
+            "new_framework_hooks": 12, "new_memory_probes": 0,
+            "new_worker_threads": 1, "new_pool_allocations": 2,
+            "new_cache_clear_or_unload_calls": 1,
+            "steady_framework_allocations": 0,
+            "steady_framework_thread_creates": 0,
+        }
+        row = {"variant": "candidate", "status": "success",
+               "run_id": "measured-0", "runtime_audit": counters}
+        p2 = {"comparison_kind": "P2"}
+        self.assertTrue(default_audit([row], p2)["passed"])
+        for key in ("steady_framework_allocations", "steady_framework_thread_creates"):
+            for value, expected in ((1, False), (-1, None), (True, None), (None, None)):
+                with self.subTest(key=key, value=value):
+                    changed = {**row, "runtime_audit": {**counters, key: value}}
+                    self.assertIs(default_audit([changed], p2)["passed"], expected)
+        for enabled in (False, 1, "true"):
+            changed = {**row, "runtime_audit": {**counters, "block_streaming_enabled": enabled}}
+            self.assertFalse(default_audit([changed], p2)["passed"])
+        unaudited = {**row, "runtime_audit": {**counters, "audit_available": False}}
+        self.assertIsNone(default_audit([unaudited], p2)["passed"])
+        failed = {**row, "status": "failure"}
+        self.assertFalse(default_audit([row, failed], p2)["passed"])
+        self.assertIsNone(default_audit([], p2)["passed"])
+
     def run_bundle(
         self, campaign: dict, audit: dict | None = None,
         environment: dict | None = None,

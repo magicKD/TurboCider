@@ -1874,7 +1874,7 @@ def default_audit(raw: list[dict[str, Any]], policy: dict[str, Any]) -> dict[str
         "new_framework_hooks", "new_memory_probes", "new_worker_threads",
         "new_pool_allocations", "new_cache_clear_or_unload_calls",
     )
-    if policy.get("comparison_kind") == "P1":
+    if policy.get("comparison_kind") in ("P1", "P2"):
         required += (
             "steady_framework_allocations",
             "steady_framework_thread_creates",
@@ -1912,10 +1912,13 @@ def default_audit(raw: list[dict[str, Any]], policy: dict[str, Any]) -> dict[str
                 **totals,
                 "runtime_observations": observations,
             }
-        if policy.get("comparison_kind") == "P1":
+        # P2 needs the same measured steady-path invariants. Its separate
+        # verifier still checks process-tree memory, quality and provenance;
+        # counter success alone does not qualify a memory tier.
+        if policy.get("comparison_kind") in ("P1", "P2"):
             passed = (
                 len(successful) == len(candidate) and
-                all(enabled) and
+                all(value is True for value in enabled) and
                 totals["steady_framework_allocations"] == 0 and
                 totals["steady_framework_thread_creates"] == 0
             )
