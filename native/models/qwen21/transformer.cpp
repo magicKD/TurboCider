@@ -87,6 +87,7 @@ void Transformer::geometry(int text_length, int height, int width, const std::ve
     decode_blocks_.clear();
     capture_blocks_.clear();
     reuse_blocks_.clear();
+    half_reuse_blocks_.clear();
     text_length_ = text_length;
     height_ = height;
     width_ = width;
@@ -140,13 +141,16 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     if (!cache_prefix || !cached_text_ || cached_text_->id() != text.id() || !same_references) reset();
     bool reuse = cache_prefix && prefix_.size() == size_t(config_.layers);
     const bool split_mlp = reuse && bool(decode_mlp_);
-    const bool capture_ffn = reuse && ffn_cache_mode_ == FFNCacheMode::Capture;
-    const bool reuse_ffn = reuse && ffn_cache_mode_ == FFNCacheMode::Reuse;
+    const bool half_reuse_ffn = reuse && ffn_cache_mode_ == FFNCacheMode::ReuseEvenAndCapture;
+    const bool capture_ffn = reuse && (ffn_cache_mode_ == FFNCacheMode::Capture || half_reuse_ffn);
+    const bool reuse_ffn = reuse && (ffn_cache_mode_ == FFNCacheMode::Reuse || half_reuse_ffn);
     require(!(capture_ffn || reuse_ffn) || (!split_mlp && !trace),
             "Qwen21 GPU FFN step cache cannot mix with hybrid or tensor tracing");
-    if (capture_ffn) cached_ffn_.clear();
     if (reuse_ffn) require(cached_ffn_.size() == size_t(config_.layers),
                            "Qwen21 GPU FFN cache is missing a complete preceding decode step");
+    std::vector<Tensor> previous_ffn;
+    if (half_reuse_ffn) previous_ffn = std::move(cached_ffn_);
+    if (capture_ffn) cached_ffn_.clear();
     require(!split_mlp || !trace, "Qwen21 MLP split trace is not supported");
     auto temb = embedding(timestep, latents.dtype());
     auto modulation = linear(silu(temb), weights_, "modulation.1");
@@ -183,7 +187,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         for (int i = 0; i < 4; ++i) trace->emplace("mod" + std::to_string(i), mods[i]);
     }
     std::vector<KV> new_prefix;
-    if (trace) { prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear(); reuse_blocks_.clear(); }
+    if (trace) { prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear(); reuse_blocks_.clear(); half_reuse_blocks_.clear(); }
     // Decode modulation is identical across blocks. Materialize its gate once
     // per forward, and fuse the split-path residual's elementwise operations.
     // The full-GPU block retains its existing compiled arithmetic.
@@ -193,11 +197,12 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         return std::vector<Tensor>{a[0] + a[1] * a[2]};
     });
     for (int i = 0; i < config_.layers; ++i) {
-        auto &functions = reuse_ffn ? reuse_blocks_ : capture_ffn ? capture_blocks_
+        auto &functions = half_reuse_ffn ? half_reuse_blocks_ : reuse_ffn ? reuse_blocks_ : capture_ffn ? capture_blocks_
                                : reuse ? decode_blocks_ : prefill_blocks_;
         if (functions.size() <= size_t(i)) {
             const bool profile_ops = profile_gpu_ops_ && !split_mlp && i == 0;
-            auto block = [this, i, reuse, prefix_length, split_mlp, capture_ffn, reuse_ffn, profile_ops,
+            auto block = [this, i, reuse, prefix_length, split_mlp, capture_ffn,
+                          reuse_ffn_block = reuse_ffn && (!half_reuse_ffn || i % 2 == 0), profile_ops,
                           metal_rope = metal_qk_rope_, fused_norm_rope = metal_qk_norm_rope_,
                           tracing = trace != nullptr](const std::vector<Tensor> &args) {
                 auto mark_start = Clock::now();
@@ -269,7 +274,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 mark("attention_residual_ffn_input", {input});
                 if (split_mlp) return std::vector<Tensor>{hidden, input};
                 Tensor ff = input, feed = input;
-                if (reuse_ffn) {
+                if (reuse_ffn_block) {
                     feed = args[9];
                 } else {
                     if (weights_.has(p + ".img_mlp.gate_up.weight")) {
@@ -294,7 +299,8 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             args.push_back(prefix_[i].key);
             args.push_back(prefix_[i].value);
         }
-        if (reuse_ffn) args.push_back(cached_ffn_[i]);
+        if (reuse_ffn && (!half_reuse_ffn || i % 2 == 0))
+            args.push_back(half_reuse_ffn ? previous_ffn[i] : cached_ffn_[i]);
         // Diagnostic only: force each pure-GPU block boundary so the elapsed
         // time can be attributed to that block. This destroys normal lazy
         // scheduling and must never be used as a production speed benchmark.

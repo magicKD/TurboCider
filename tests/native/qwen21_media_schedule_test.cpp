@@ -30,6 +30,14 @@ int main(int argc, char **argv) {
                 tc::require(sigma.data<float>()[i] > sigma.data<float>()[i+1], "schedule is not strictly descending");
             schedules.emplace(std::to_string(steps), sigma);
         }
+        auto viggle = tc::qwen21::viggle_v021_sigmas(512, 512);
+        tc::mx::eval(viggle);
+        tc::require(viggle.shape() == tc::mx::Shape{7} && viggle.data<float>()[0] == 1.f &&
+                    viggle.data<float>()[6] == 0.f, "Viggle six-step schedule shape/endpoints invalid");
+        for (int i = 0; i < 6; ++i)
+            tc::require(viggle.data<float>()[i] > viggle.data<float>()[i+1],
+                        "Viggle six-step sigma nodes are not descending");
+        schedules.emplace("viggle_512", viggle);
         tc::mx::save_safetensors((output / "schedules.safetensors").string(), schedules);
         bool rejected = false;
         try { tc::qwen21::sigmas(513,512,40); } catch (const std::exception &) { rejected = true; }

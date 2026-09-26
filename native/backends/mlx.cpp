@@ -535,11 +535,12 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
             // across hundreds of adapter projections.  The adapter remains
             // stored in its compact source dtype; only this rank-sized branch
             // is promoted for the projection.
-            auto input = mx::astype(x, mx::float32);
-            auto down = mx::astype(adapter.down, mx::float32);
-            auto up = mx::astype(adapter.up, mx::float32);
+            const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
+            auto input = mx::astype(x, rank_dtype);
+            auto down = mx::astype(adapter.down, rank_dtype);
+            auto up = mx::astype(adapter.up, rank_dtype);
             auto low = mx::matmul(input, mx::transpose(down));
-            auto delta = mx::matmul(low, mx::transpose(up)) *
+            auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
                          Tensor(adapter.scale, mx::float32);
             if (adapter.output_start == 0 && adapter.output_end == output.shape(-1))
                 output = mx::astype(mx::astype(output, mx::float32) + delta,
@@ -921,6 +922,27 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
                     }
                     ++adapter_applied;
                     continue;
+                }
+
+                // Comfy Qwen21 packs the separately trained gate/up projections
+                // into [gate; up]. Preserve both low-rank branches separately
+                // at inference time: BF16 weight merging is lossy for a
+                // distilled adapter, and each branch has its own A matrix.
+                std::smatch qwen_mlp;
+                if (inference_time && std::regex_match(target, qwen_mlp,
+                        std::regex("^transformer_blocks\\.([0-9]+)\\.img_mlp\\.(gate_layer|proj)$"))) {
+                    auto prefix = "transformer_blocks." + std::string(qwen_mlp[1]) + ".img_mlp.gate_up";
+                    auto fused = values_.find(prefix + ".weight");
+                    if (fused != values_.end()) {
+                        const auto &base = fused->second;
+                        require(base.ndim() == 2 && base.shape(0) == 2 * up.shape(0) &&
+                                    base.shape(1) == down.shape(1),
+                                "Qwen21 fused gate/up LoRA geometry does not match " + target);
+                        int start = qwen_mlp[2] == "gate_layer" ? 0 : up.shape(0);
+                        runtime_loras_[prefix].push_back({down, up, scale, start, start + up.shape(0)});
+                        ++adapter_applied;
+                        continue;
+                    }
                 }
 
                 // Comfy's Z-Image single-file format stores Q/K/V as one

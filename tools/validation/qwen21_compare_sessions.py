@@ -36,8 +36,16 @@ def main():
     parser.add_argument("--candidate-execution", default="gpu_ane_experimental",
                         choices=("gpu_ane_experimental", "gpu"),
                         help="Use gpu for explicit GPU-only approximate candidates")
+    parser.add_argument("--baseline-execution", default="gpu",
+                        choices=("gpu_ane_experimental", "gpu"),
+                        help="Set to gpu_ane_experimental for a paired hybrid GPU suffix comparison")
+    parser.add_argument("--candidate-gpu-w8a16", action="store_true",
+                        help="Require BF16→W8A16 GPU suffix with the same W8A8 Core ML route")
     parser.add_argument("--candidate-approximation", default="qwen21_gpu_reuse_final_ffn",
-                        choices=("qwen21_gpu_reuse_final_ffn", "qwen21_metal_qk_norm_rope"),
+        choices=("qwen21_gpu_reuse_final_ffn", "qwen21_metal_qk_norm_rope",
+                                 "qwen21_gpu_reuse_penultimate_even_ffn",
+                                 "qwen21_viggle_v021_r256_6step_distillation",
+                                 "qwen21_viggle_lora_fp16_matmuls"),
                         help="Expected approximation label for GPU-only candidates")
     args = parser.parse_args()
     names = sorted(p.name for p in args.baseline.glob("run-*.json"))
@@ -49,7 +57,17 @@ def main():
                 "reference_tokens")
         assert all(a[key] == b[key] for key in keys), "request metadata differs"
         assert a["prompt_cache_hit"] and b["prompt_cache_hit"], "not a warm prompt-cached comparison"
-        assert a["plan"]["execution"] == "gpu" and b["plan"]["execution"] == args.candidate_execution
+        assert a["plan"]["execution"] == args.baseline_execution and b["plan"]["execution"] == args.candidate_execution
+        if args.candidate_gpu_w8a16:
+            assert args.baseline_execution == args.candidate_execution == "gpu_ane_experimental"
+            assert not a["plan"]["qwen21_gpu_w8a16"] and b["plan"]["qwen21_gpu_w8a16"]
+            assert a["plan"]["qwen21_w8a8"] and b["plan"]["qwen21_w8a8"]
+            assert a["hybrid"]["bucket"] == b["hybrid"]["bucket"]
+            assert a["hybrid"]["ane_mlp_range"] == b["hybrid"]["ane_mlp_range"]
+            assert a["hybrid"]["checkpoint_sha256_verified"] and b["hybrid"]["checkpoint_sha256_verified"]
+            assert a["hybrid"]["runtime_calls_session_total"] == b["hybrid"]["runtime_calls_session_total"]
+            assert a["hybrid"]["runtime_failures_session_total"] == b["hybrid"]["runtime_failures_session_total"] == 0
+            assert a["hybrid"]["block_count"] == b["hybrid"]["block_count"] == 32
         if args.candidate_execution == "gpu":
             approximation = args.candidate_approximation
             assert approximation not in a["plan"]["algorithm_approximations"]

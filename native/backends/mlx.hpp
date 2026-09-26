@@ -23,6 +23,7 @@ class Weights {
     std::unordered_map<std::string, Tensor> values_;
     std::unordered_map<std::string, std::vector<RuntimeLoRA>> runtime_loras_;
     bool metal_convrot_ = false;
+    bool runtime_lora_fp16_ = false;
 
   public:
     void load(const std::filesystem::path &, const Event &, std::atomic<bool> &);
@@ -33,6 +34,9 @@ class Weights {
     void cast_unquantized_float32(mx::Dtype);
     void set_metal_convrot(bool enabled) { metal_convrot_ = enabled; }
     bool metal_convrot() const { return metal_convrot_; }
+    // Experimental Qwen21 student only: narrow LoRA matmuls while retaining
+    // FP32 accumulation with the BF16 base projection.
+    void set_runtime_lora_fp16(bool enabled) { runtime_lora_fp16_ = enabled; }
     std::vector<std::string> sorted_keys() const;
     void bind_arrays(const std::vector<std::string> &,
                      const std::vector<Tensor> &, size_t offset = 0);

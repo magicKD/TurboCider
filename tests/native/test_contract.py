@@ -237,6 +237,62 @@ class ContractTests(unittest.TestCase):
         with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE': '2'}):
             self.assertNotEqual(plan(base)[0], 0)
 
+    def test_qwen21_gpu_penultimate_even_ffn_reuse_gate(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                    width=512, height=512, steps=5, audio=False, frames=1,
+                    execution='gpu', allow_approximation=True)
+        flag = 'TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN'
+        with patch.dict(os.environ, {flag: '1', 'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '1'}):
+            labels = plan(base)[1]['algorithm_approximations']
+            self.assertIn('qwen21_gpu_reuse_final_ffn', labels)
+            self.assertIn('qwen21_gpu_reuse_penultimate_even_ffn', labels)
+            self.assertNotIn('qwen21_gpu_reuse_penultimate_even_ffn',
+                             plan({**base, 'steps':2})[1]['algorithm_approximations'])
+            for invalid in [dict(execution='auto'), dict(allow_approximation=False),
+                            dict(width=1024, height=1024)]:
+                with self.subTest(invalid=invalid):
+                    self.assertNotEqual(plan({**base, **invalid})[0], 0)
+        with patch.dict(os.environ, {flag: '1', 'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '0'}):
+            self.assertNotEqual(plan(base)[0], 0)
+        with patch.dict(os.environ, {flag: '2', 'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '1'}):
+            self.assertNotEqual(plan(base)[0], 0)
+
+    def test_qwen21_viggle_v021_r256_six_step_lora_gate(self):
+        adapter = dict(path='download/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors',
+                       strength=1.0, role='transformer')
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=512, height=512, steps=6, audio=False, frames=1,
+                    execution='gpu', allow_approximation=True, loras=[adapter],
+                    lora_strategy='inference_time')
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '0'}):
+            code, result, error = plan(base)
+            self.assertEqual(code, 0, error)
+            self.assertEqual(result['lora_strategy'], 'inference_time')
+            self.assertIn('qwen21_viggle_v021_r256_6step_distillation',
+                          result['algorithm_approximations'])
+            for invalid in [dict(steps=5), dict(execution='gpu_ane', ane_manifest='probe.json'),
+                            dict(allow_approximation=False), dict(width=1024, height=1024),
+                            dict(lora_strategy='in_memory_merge'),
+                            dict(loras=[{**adapter, 'strength':0.5}]),
+                            dict(loras=[{**adapter, 'path':'wrong.safetensors'}])]:
+                with self.subTest(invalid=invalid):
+                    self.assertNotEqual(plan({**base, **invalid})[0], 0)
+            edit = {**base, 'operation':'image.edit', 'inputs':[
+                dict(kind='image', role='reference', path=f'ref-{i}.png') for i in range(3)]}
+            self.assertEqual(plan(edit)[0], 0)
+            self.assertNotEqual(plan({**edit, 'inputs':edit['inputs'] + [edit['inputs'][0]]})[0], 0)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '1'}):
+            self.assertNotEqual(plan(base)[0], 0)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_VIGGLE_LORA_FP16': '1'}):
+            code, result, error = plan(base)
+            self.assertEqual(code, 0, error)
+            self.assertIn('qwen21_viggle_lora_fp16_matmuls', result['algorithm_approximations'])
+            code, plain, error = plan({**base, 'loras':[], 'lora_strategy':'auto'})
+            self.assertEqual(code, 0, error)
+            self.assertNotIn('qwen21_viggle_lora_fp16_matmuls', plain['algorithm_approximations'])
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_VIGGLE_LORA_FP16': 'invalid'}):
+            self.assertNotEqual(plan(base)[0], 0)
+
     def test_qwen21_explicit_w8a8_edit_cli_gate(self):
         refs = [dict(kind='image', role='reference', path=f'qwen-exp-{i}.png')
                 for i in range(3)]

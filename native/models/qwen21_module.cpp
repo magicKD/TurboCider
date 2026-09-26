@@ -22,6 +22,18 @@ ModelModule qwen21_module() {
                     "Qwen21 W8A16 GPU suffix requires explicit W8A8 Core ML opt-in");
             require(!r.qwen21_w8a8 || r.steps >= 2,
                     "Qwen21 W8A8 needs at least one cached decode step");
+            if (!r.loras.empty()) {
+                constexpr std::string_view name =
+                    "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors";
+                require(r.loras.size() == 1 && r.loras[0].role == "transformer" &&
+                            r.loras[0].strength == 1.f &&
+                            std::filesystem::path(r.loras[0].path).filename().string() == name &&
+                            r.steps == 6 && r.execution == "gpu" && r.allow_approximation &&
+                            r.width == 512 && r.height == 512 &&
+                            r.qwen21_reference_size == 1024 &&
+                            (r.operation != "image.edit" || r.inputs.size() <= 3),
+                        "Qwen21 Viggle v0.2.1 r256 requires one inference-time transformer LoRA at scale 1, six steps, explicit 512px GPU approximation, and at most three full-size edit references");
+            }
             const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
             require(!norm_rope || std::string_view(norm_rope) == "0" ||
                         std::string_view(norm_rope) == "1",
@@ -43,6 +55,22 @@ ModelModule qwen21_module() {
                             (r.operation != "image.edit" ||
                              (r.qwen21_reference_size == 256 && r.inputs.size() <= 3)),
                         "Qwen21 final-step FFN reuse needs explicit GPU and approximation opt-in at 512px; edits require 1...3 references resized to 256px");
+            const char *half_reuse = std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN");
+            require(!half_reuse || std::string_view(half_reuse) == "0" ||
+                        std::string_view(half_reuse) == "1",
+                    "TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN accepts only 0 or 1");
+            if (half_reuse && std::string_view(half_reuse) == "1")
+                require(reuse_flag && std::string_view(reuse_flag) == "1",
+                        "Qwen21 penultimate even-layer FFN reuse requires final-step FFN reuse");
+            if (!r.loras.empty())
+                require(!reuse_flag || std::string_view(reuse_flag) != "1",
+                        "Viggle six-step LoRA has not been validated with final-step FFN reuse");
+            const char *lora_fp16 = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
+            require(!lora_fp16 || std::string_view(lora_fp16) == "0" ||
+                        std::string_view(lora_fp16) == "1",
+                    "TURBOCIDER_QWEN21_VIGGLE_LORA_FP16 accepts only 0 or 1");
+            // With no adapter attached this flag has no effect, allowing a
+            // resident session to switch back to the base GPU model.
             require(r.qwen21_gpu_full_ffn_blocks.empty() ||
                         (r.qwen21_w8a8 && r.qwen21_gpu_full_ffn_blocks == std::vector<int>{3, 5, 7}),
                     "Qwen21 full GPU fallback requires explicit W8A8 and validated layers 3,5,7");
@@ -73,7 +101,7 @@ ModelModule qwen21_module() {
                         "Qwen21 ANE manifests require execution=gpu_ane");
             }
             require(r.residency == "resident" || r.residency == "component_staged", "Qwen21 supports resident or component_staged residency");
-            require(!r.streaming_offload && r.quantized_cache.empty() && r.loras.empty(), "Qwen21 streaming/quantized cache/LoRA are not implemented");
+            require(!r.streaming_offload && r.quantized_cache.empty(), "Qwen21 streaming/quantized cache are not implemented");
             if (r.operation == "image.generate") require(r.inputs.empty(), "Qwen21 image.generate takes no images");
             else {
                 require(!r.inputs.empty() && r.inputs.size() <= 10, "Qwen21 image.edit requires 1...10 references");
@@ -88,6 +116,9 @@ ModelModule qwen21_module() {
             d.operations = d.executor_operations = {"image.generate", "image.edit"};
             d.inputs = {"text", "image"}; d.roles = {"reference"}; d.max_images = 10; d.output = "image";
             d.steps = 40; d.frames = 1; d.width = d.height = 1024; d.default_audio = false;
+            d.supports_lora = true; d.runtime_lora = true;
+            d.lora_mode = "inference-time-viggle-v0.2.1-r256-only";
+            d.lora_strategies = {"inference_time"}; d.default_lora_strategy = "inference_time";
             d.default_residency = "component_staged"; d.backend = "mlx_cpp_metal";
             d.supports_gpu_ane = true;
             d.runtime_dependency = "bundled-native-mlx-cpp";

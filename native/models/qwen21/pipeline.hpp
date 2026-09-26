@@ -30,6 +30,8 @@ class Session final : public ModelSession {
     std::unique_ptr<HybridMLP> hybrid_mlp_;
     std::string hybrid_manifest_;
     std::string hybrid_runtime_options_;
+    std::string active_lora_identity_;
+    size_t lora_applied_projections_ = 0;
     RunResult run(const Request &, const Event &, std::atomic<bool> &, bool warmup, bool prepare_only);
 };
 } // namespace tc::qwen21

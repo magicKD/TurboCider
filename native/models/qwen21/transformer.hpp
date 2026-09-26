@@ -39,7 +39,7 @@ class Transformer {
     void set_decode_mlp(DecodeMLP fn) { decode_mlp_ = std::move(fn); decode_blocks_.clear(); }
     // Explicit diagnostic: capture each decode FFN output for reuse on the
     // immediately following denoise step. Never enabled by default.
-    enum class FFNCacheMode { Off, Capture, Reuse };
+    enum class FFNCacheMode { Off, Capture, Reuse, ReuseEvenAndCapture };
     void set_ffn_cache_mode(FFNCacheMode mode) { ffn_cache_mode_ = mode; }
 
   private:
@@ -60,7 +60,7 @@ class Transformer {
     std::optional<Tensor> cosine_, sine_;
     int text_length_ = 0, height_ = 0, width_ = 0;
     using BlockFunction = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
-    std::vector<BlockFunction> prefill_blocks_, decode_blocks_, capture_blocks_, reuse_blocks_;
+    std::vector<BlockFunction> prefill_blocks_, decode_blocks_, capture_blocks_, reuse_blocks_, half_reuse_blocks_;
     DecodeMLP decode_mlp_;
     Tensor embedding(float timestep, mx::Dtype) const;
     void geometry(int text_length, int height, int width, const std::vector<ReferenceGeometry> &);

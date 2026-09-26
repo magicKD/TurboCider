@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
             auto prepared = session.prepare(r, false, event, cancelled);
             save("prepare.json", prepared);
             tc::require(!std::filesystem::exists(r.output), "prepare exported an image");
-            auto warm = r; warm.steps = 2;
+            auto warm = r; warm.steps = r.loras.empty() ? 2 : r.steps;
             auto warmed = session.prepare(warm, true, event, cancelled);
             save("warmup.json", warmed);
             tc::require(!std::filesystem::exists(r.output), "warmup exported an image");
@@ -127,6 +127,19 @@ int main(int argc, char **argv) {
             } catch (const tc::Cancelled &) { caught = true; }
             tc::require(caught && !std::filesystem::exists(warm.output), "cancellation/export contract failed");
             cancelled = false;
+            if (!r.loras.empty()) {
+                // Resident requests may alternate between a student and the
+                // unchanged base checkpoint. Neither path may retain the
+                // other's runtime adapter or silently skip rebinding it.
+                auto plain = warm;
+                plain.loras.clear(); plain.lora_strategy = "auto";
+                auto without_adapter = session.prepare(plain, false, event, cancelled);
+                tc::require(without_adapter.lora_applied_projections == 0,
+                            "resident base-model switch retained Viggle LoRA");
+                auto restored = session.prepare(warm, false, event, cancelled);
+                tc::require(restored.lora_applied_projections == 227,
+                            "resident Viggle switch did not restore all adapter projections");
+            }
             // Switching to GPU must release the Core ML bank and report GPU.
             warm.execution = "gpu"; warm.ane_manifest.clear();
             warm.qwen21_w8a8 = false; warm.qwen21_gpu_w8a16 = false;

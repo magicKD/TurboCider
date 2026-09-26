@@ -56,6 +56,15 @@ def main():
             reference = Config(ModelConfig.qwen_image_21(), num_inference_steps=steps, height=512, width=512).scheduler.sigmas
             error = mx.max(mx.abs(reference - schedules[str(steps)])).item()
             assert error < 1e-6, error
+        # Viggle's shipped scheduler has shift_terminal=null, unlike the base
+        # scheduler's terminal 0.02 stretch. Check its six raw nodes independently.
+        raw = np.array([1., .9375, .875, .75, .5, .25], dtype=np.float32)
+        slope = (0.9 - 0.5) / (8192. - 256.)
+        mu = np.float32(slope * 1024. + .5 - slope * 256.)
+        scale = np.exp(mu)
+        expected = np.concatenate([scale / (scale + (1. / raw - 1.)), [0.]])
+        error = np.max(np.abs(np.asarray(schedules['viggle_512']) - expected))
+        assert error < 1e-6, error
         print("PASS: straight alpha export, RGBA import/visible colors, RGB compatibility, sigma schedules and native input guards")
 
 

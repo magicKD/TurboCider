@@ -61,6 +61,8 @@ void Session::unload() {
     cached_edit_.reset();
     transformer_.clear();
     vae_.clear();
+    active_lora_identity_.clear();
+    lora_applied_projections_ = 0;
     mx::clear_cache();
 }
 RunResult Session::prepare(const Request &request, bool warmup, const Event &event, std::atomic<bool> &cancelled) {
@@ -78,6 +80,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool hybrid_requested = r.execution == "gpu_ane";
     const char *ffn_cache_flag = std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN");
     const bool reuse_final_ffn = ffn_cache_flag && std::string_view(ffn_cache_flag) == "1" && r.steps >= 3;
+    const char *half_reuse_flag = std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN");
+    const bool half_reuse_ffn = half_reuse_flag && std::string_view(half_reuse_flag) == "1" && r.steps >= 4;
     auto plan = make_plan(r);
     require(!r.prompt.empty(), "Qwen21 requires a prompt");
     require(warmup || prepare_only || (!r.output.empty() && std::filesystem::path(r.output).extension() == ".png"),
@@ -244,7 +248,41 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     }
     images.clear(); mx::clear_cache();
     double image_seconds = seconds(image_start);
+    // Keep the distilled student as separate low-rank matrices. A BF16
+    // in-memory/disk merge loses the update's small values. Revalidate the
+    // pinned downloaded asset when its path/size/mtime changes; staged runs
+    // reload and bind it on every request after the text encoder is released.
+    std::string lora_identity;
+    if (!r.loras.empty()) {
+        auto path = std::filesystem::canonical(r.loras[0].path);
+        require(std::filesystem::is_regular_file(path), "Viggle LoRA is not a regular file");
+        lora_identity = path.string() + ":" + std::to_string(std::filesystem::file_size(path)) +
+            ":" + std::to_string(static_cast<long long>(
+                      std::filesystem::last_write_time(path).time_since_epoch().count()));
+    }
+    const bool bind_lora = !r.loras.empty() &&
+        (active_lora_identity_ != lora_identity || !transformer_.bytes());
+    if (active_lora_identity_ != lora_identity) {
+        hybrid_mlp_.reset();
+        transformer_.clear();
+        active_lora_identity_.clear();
+        lora_applied_projections_ = 0;
+    }
+    if (bind_lora) {
+        require(sha256_file(r.loras[0].path) ==
+                    "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
+                "Viggle v0.2.1 r256 LoRA hash does not match the pinned adapter");
+    }
     load(event, cancelled);
+    const char *lora_fp16_flag = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
+    const bool lora_fp16 = lora_fp16_flag && std::string_view(lora_fp16_flag) == "1";
+    transformer_.set_runtime_lora_fp16(lora_fp16);
+    if (bind_lora) {
+        lora_applied_projections_ = transformer_.apply_loras(r.loras, "transformer", event, cancelled, true);
+        require(lora_applied_projections_ == 227,
+                "Viggle v0.2.1 r256 LoRA did not bind all 227 transformer projections");
+        active_lora_identity_ = lora_identity;
+    }
     auto hybrid_start = Clock::now();
     if (hybrid_requested) {
         auto manifest = std::filesystem::canonical(r.ane_manifest);
@@ -308,13 +346,20 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.prompt_enhance_chunked_prefill = prompt_enhance_chunked_prefill;
     result.prompt_enhance_seconds = prompt_enhance_seconds;
     result.request = r; result.plan = std::move(plan);
+    result.lora_applied_projections = lora_applied_projections_;
     result.prepared = prepare_only; result.warmup = warmup; result.prompt_cache_hit = hit;
     result.selection = "gpu: native Qwen Image 2.1 with request-owned prefix KV cache";
+    if (!r.loras.empty())
+        result.selection += "; Viggle v0.2.1 r256 runtime LoRA; six-step student schedule";
+    if (lora_fp16)
+        result.selection += "; experimental FP16 low-rank LoRA matmuls";
     const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
     if (norm_rope && std::string_view(norm_rope) == "1")
         result.selection += "; experimental fused Metal Q/K norm-RoPE";
     if (reuse_final_ffn)
         result.selection += "; experimental final-step cached GPU FFN approximation";
+    if (half_reuse_ffn)
+        result.selection += "; experimental penultimate-step even-layer FFN reuse";
     result.backend = "mlx_cpp_metal"; result.precision = "bf16";
     if (hybrid_requested) {
         result.backend = "mlx_cpp_metal+coreml";
@@ -334,7 +379,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     emit(event, hybrid_requested ? "route_gpu_ane" : "route_gpu", 1, 1);
     const uint64_t coreml_calls_before = hybrid_requested ? hybrid_->metrics().runtime_calls : 0;
     if (!prepare_only) {
-        auto schedule = sigmas(r.width, r.height, r.steps);
+        auto schedule = r.loras.empty() ? sigmas(r.width, r.height, r.steps) :
+                                      viggle_v021_sigmas(r.width, r.height);
         mx::eval(schedule);
         auto latents = mx::astype(mx::random::normal({1, r.height / 16 * (r.width / 16), 64},
             mx::float32, mx::random::key(r.seed)), mx::bfloat16);
@@ -361,7 +407,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             for (int step = 0; step < r.steps; ++step) {
                 checkpoint(cancelled);
                 if (reuse_final_ffn)
-                    dit.set_ffn_cache_mode(step == r.steps - 2 ? Transformer::FFNCacheMode::Capture :
+                    dit.set_ffn_cache_mode(half_reuse_ffn && step == r.steps - 3 ? Transformer::FFNCacheMode::Capture :
+                                           half_reuse_ffn && step == r.steps - 2 ? Transformer::FFNCacheMode::ReuseEvenAndCapture :
+                                           !half_reuse_ffn && step == r.steps - 2 ? Transformer::FFNCacheMode::Capture :
                                            step == r.steps - 1 ? Transformer::FFNCacheMode::Reuse :
                                            Transformer::FFNCacheMode::Off);
                 auto noise = dit.forward(latents, text, schedule.data<float>()[step], r.height / 16, r.width / 16,

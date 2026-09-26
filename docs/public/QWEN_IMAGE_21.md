@@ -21,6 +21,78 @@ for normal operation. The experimental GPU+ANE route requires an explicit
 manifest and approximation opt-in; it is not hardware-placement or image-quality
 proof.
 
+## Viggle v0.2.1 r256: six-step GPU student (research/evaluation only)
+
+The optional `Viggle/Qwen-Image-2.1-viggle-turbo` **v0.2.1 6-step r256**
+adapter can run on the existing BF16 Qwen-Image-2.1 checkpoint for text-to-image
+and 1–3-reference editing. Download the specifically named LoRA into
+`models/Viggle-Qwen-Image-2.1-viggle-turbo/` (for example through the Hugging
+Face CLI or a trusted mirror); the runtime verifies SHA-256
+`2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803`
+before binding all 227 projections. The locally tested file came from revision
+`bb26a0f38e5fe6c124aaccc9187a87eed5d9ed13`. Download and read the model's
+`LICENSE` and `NOTICE`: it is **non-commercial research/evaluation only**.
+
+The adapter remains separate at inference time (`W x + B A x`); do **not**
+premerge into the BF16 checkpoint, because BF16 rounding loses parts of the
+distilled update. The native sampler uses the shipped raw six nodes
+`[1, .9375, .875, .75, .5, .25]`, Qwen21's resolution-dependent shift, a zero
+endpoint, and no base-model terminal stretch. Use scale 1, six steps, explicit
+`allow_approximation: true`, 512×512, `execution: "gpu"`, and the default 1024px
+reference encoding for edits. GPU+ANE W8A8 and experimental FFN step reuse are
+not validated with this adapter and are rejected. The previous BF16 GPU path
+remains available without `loras`.
+
+```json
+{
+  "model": "qwen-image-2.1", "operation": "image.generate",
+  "prompt": "A red fox in falling snow beside pine trees",
+  "output": "results/fox.png", "width": 512, "height": 512,
+  "steps": 6, "seed": 42, "frames": 1, "audio": false,
+  "execution": "gpu", "allow_approximation": true,
+  "lora_strategy": "inference_time",
+  "loras": [{"path": "models/Viggle-Qwen-Image-2.1-viggle-turbo/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors",
+             "role": "transformer", "strength": 1.0}]
+}
+```
+
+For editing, change `operation` to `image.edit` and add 1–3 ordered
+`inputs` with `{"kind":"image","role":"reference","path":"..."}`. Run
+`build/native/turbocider plan request.json` and then
+`build/native/turbocider generate models/Comfy-Org-Qwen-Image-2.1 request.json`.
+On one 512² fox prompt/seed, two prepared, prompt-cached resident requests
+took **8.187/8.229 s** with the adapter versus **43.180/43.157 s** with the
+40-step base GPU model (**5.26×** median request-wall speedup); matched
+six-step base GPU was **7.073/7.049 s**, so the runtime LoRA makes each step
+costlier, while reducing the number of steps. This is a *distilled model with
+a different schedule and result*, not lossless acceleration. The fox stays
+recognizable; its pose, face and snow differ. Single-, two- and three-reference
+examples all exported; the one-reference matte-red request stayed glossy,
+and the three-reference dragon sticker was redrawn as a head close-up. These
+are qualitative samples, not a general edit-fidelity pass. Full timing and
+quality notes: [Viggle validation](../status/qwen21-viggle-v021-r256-2026-09-26.md).
+
+For a separate, explicitly approximate GPU kernel option *on this adapter*,
+set `TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE=1` when running the CLI. On two
+matched prepared resident repetitions, fused Q/K was about **1.024×** faster
+for both text-to-image (8.033/7.996 s) and two-full-size-reference editing
+(21.471/21.385 s) relative to the same adapter without the kernel; all input
+tensors matched. Output RGB correlation was 0.99908 (fox) and 0.99643 (two
+references), but pixels changed. This is a limited opt-in, not a new default
+or a substitute for user review of material/detail preservation.
+
+For the fastest **tested** Viggle GPU diagnostic, combine that switch with
+`TURBOCIDER_QWEN21_VIGGLE_LORA_FP16=1`. It computes only the runtime LoRA's
+rank-sized matmuls in FP16 and still adds their result in FP32; the BF16 base
+weights remain unchanged. The two switches together measured **7.882/7.858
+s** on text-to-image and **20.988/21.044 s** on two-reference editing, about
+**1.043×/1.044×** against the plain six-step adapter. Exact dumped inputs
+matched; RGB correlations were 0.99965/0.99885. The one-/three-reference
+samples had one prepared run each: **14.147 s** (1.039×) and **28.695 s**
+(1.049×), with the same visible matte/sticker limitations. These are not
+general quality qualifications. Leave both switches off when detail fidelity
+matters more than a few percent speed.
+
 For a separate **GPU-only** short-step experiment, set
 `TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN=1` and explicitly request
 `execution: "gpu"`, `allow_approximation: true`, 512×512 and at least 3 steps.
@@ -56,6 +128,19 @@ to recommend it as the fastest option. Defaults and the existing W8A8
 GPU/ANE route remain unchanged. See the
 [fused GPU kernel ablation](../status/qwen21-gpu-fused-qk-norm-rope-2026-09-26.md)
 for paired inputs, image differences and the mixed-route comparison.
+
+For a separate **speed-first, approximate 5-step GPU-only experiment** on
+512×512, keep the paired-RoPE and final-FFN-reuse flags above and additionally
+set `TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN=1`. The request must
+still opt into `allow_approximation: true`; 1–3-reference edits require 256px
+references. This reuses even-numbered FFN layers on the penultimate step and
+all layers on the final step; it is not a kernel-equivalent computation. One
+matched two-run resident test measured approximately **1.226×** text-to-image
+and **1.219× / 1.204× / 1.193×** for 1/2/3-reference edits against plain
+GPU. The three-reference sticker detail visibly changed. At 40 steps, the
+tested two-reference improvement was only about **1.041×** against plain GPU;
+it is disabled by default, not broadly quality-qualified, and is not an ANE
+speedup. See the [half-layer FFN experiment](../status/qwen21-gpu-penultimate-half-ffn-2026-09-26.md).
 
 ## Explicit 512² GPU/Core ML experiments
 
@@ -159,6 +244,11 @@ manifest and generate an image. Schema 2 puts the W8A8 and fallback flags
 under `execution`, and `qwen21_reference_size` under `parameters`. W8A16 GPU
 suffix is an additional explicit research option (`qwen21_gpu_w8a16: true`),
 but tested slower than the BF16 suffix; do not enable it for speed by default.
+On the matched 6144-channel W8A8, 512²/two-reference/5-step resident input,
+the BF16 suffix took **5.420/5.437 s** and the W8A16 suffix took
+**5.768/6.022 s** (BF16/W8A16 median **0.921×**). Exact text, initial-noise
+and both reference tensors matched; this measures the GPU suffix, not faster
+or slower ANE int8 compute.
 For the conservative W8A8 editing option, set `qwen21_gpu_full_ffn_blocks`
 to `[3, 5, 7]`; a 4096-channel edit manifest **requires** this fallback at
 runtime even though `plan` does not load or inspect the manifest.

@@ -253,10 +253,22 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                 : @"single_block_mlp_int8_per_channel"];
     if (r.model == "qwen-image-2.1" && r.qwen21_reference_size != 1024)
         [algorithm_approximations addObject:@"qwen21_reference_resize_256"];
+    if (r.model == "qwen-image-2.1" && !r.loras.empty())
+        [algorithm_approximations addObject:@"qwen21_viggle_v021_r256_6step_distillation"];
+    if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
+        const char *fp16_lora = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
+        if (fp16_lora && std::string_view(fp16_lora) == "1")
+            [algorithm_approximations addObject:@"qwen21_viggle_lora_fp16_matmuls"];
+    }
     if (r.model == "qwen-image-2.1" && r.steps >= 3) {
         const char *reuse_flag = std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN");
         if (reuse_flag && std::string_view(reuse_flag) == "1")
             [algorithm_approximations addObject:@"qwen21_gpu_reuse_final_ffn"];
+    }
+    if (r.model == "qwen-image-2.1" && r.steps >= 4) {
+        const char *half_reuse = std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN");
+        if (half_reuse && std::string_view(half_reuse) == "1")
+            [algorithm_approximations addObject:@"qwen21_gpu_reuse_penultimate_even_ffn"];
     }
     if (r.model == "qwen-image-2.1") {
         const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
