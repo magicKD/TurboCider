@@ -3,8 +3,7 @@
 [Documentation](README.md) · [Performance highlights](PERFORMANCE.md)
 
 This is a public, self-contained export of existing project measurements.
-The [machine-readable timing samples](benchmarks/measurements.json) preserve
-the selected records without depending on private development documents.
+The summaries below preserve selected timing records and test conditions.
 The original publication pass exported existing measurements. The September 16
 M5 entry below summarizes new local measurements; its complete experiment records
 remain in a Git-ignored local directory.
