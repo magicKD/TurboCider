@@ -1,5 +1,6 @@
 #include "coreml.hpp"
 #include "coreml_partitions.hpp"
+#include "coreml_output_copy.hpp"
 #include "../platform/apple/bridge.hpp"
 #include "../platform/apple/platform.hpp"
 #import <CoreML/CoreML.h>
@@ -285,27 +286,8 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
         auto *destination = reinterpret_cast<uint16_t *>(output_storage_.data<mx::float16_t>());
         const size_t row_stride = [actual_output.strides[3] unsignedLongLongValue];
         const size_t channel_stride = [actual_output.strides[1] unsignedLongLongValue];
-        if (!optimize_output_copy_) {
-            // Preserve the established implementation on unmeasured hardware.
-            for (int row = 0; row < rows_; ++row)
-                for (int c = 0; c < hidden_; ++c) {
-                    const size_t offset = size_t(row) * row_stride + size_t(c) * channel_stride;
-                    destination[size_t(row) * hidden_ + c] = source[offset];
-                }
-        } else {
-            // Strides can differ when the framework declines the caller output backing.
-            // Resolve Objective-C properties once per prediction, not once per
-            // element. Flexible models normally take this owned-output path.
-            for (int row = 0; row < rows_; ++row) {
-                auto *target_row = destination + size_t(row) * hidden_;
-                const auto *source_row = source + size_t(row) * row_stride;
-                if (channel_stride == 1)
-                    std::memcpy(target_row, source_row, size_t(hidden_) * sizeof(uint16_t));
-                else
-                    for (int c = 0; c < hidden_; ++c)
-                        target_row[c] = source_row[size_t(c) * channel_stride];
-            }
-        }
+        copy_coreml_fp16(destination, source, size_t(rows_), size_t(hidden_),
+                         row_stride, channel_stride, optimize_output_copy_);
     }
     // The model coordinator and per-block eval guarantee that the prior
     // consumer has completed before this branch writes its next output. Core ML
