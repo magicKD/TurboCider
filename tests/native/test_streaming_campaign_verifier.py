@@ -601,6 +601,30 @@ class CampaignTests(unittest.TestCase):
             request_semantic_identity(v2),
         )
 
+    def test_p1_rejects_different_text_or_compilation_policy(self):
+        # Identical images/layouts do not make different encoder/graph work a
+        # valid performance comparison. The actual workload must match too.
+        for field, value in (("dynamic_text", False), ("compile_gpu", True)):
+            with self.subTest(field=field):
+                campaign = policy(blocks=1)
+                campaign["variants"]["candidate"]["request_patch"] = {field: value}
+                bundle = self.run_bundle(campaign)
+                semantic = json.loads((bundle / "semantic-equivalence.json").read_text())
+                self.assertFalse(semantic["equivalent"])
+                with self.assertRaises(EvidenceError):
+                    verify(bundle)
+
+    def test_schema_v2_parameter_defaults_and_explicit_policy(self):
+        v1 = {"model": "z-image-turbo", "prompt": "fox", "execution": "gpu"}
+        v2 = {"schema_version": 2, "model": "z-image-turbo",
+              "inputs": [{"kind": "text", "role": "prompt", "text": "fox"}],
+              "execution": {"policy": "gpu"}}
+        self.assertEqual(request_semantic_identity(v1), request_semantic_identity(v2))
+        v2["parameters"] = {"dynamic_text": False, "compile_gpu": True}
+        self.assertNotEqual(request_semantic_identity(v1), request_semantic_identity(v2))
+        v1.update(dynamic_text=False, compile_gpu=True)
+        self.assertEqual(request_semantic_identity(v1), request_semantic_identity(v2))
+
     def test_ltx_fill_counters_and_request_retention_normalize(self):
         common = {
             "stage": "denoiser",

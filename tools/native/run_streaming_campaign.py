@@ -906,6 +906,7 @@ def request_semantic_identity(request: dict[str, Any]) -> dict[str, Any]:
         )
         sampling = request.get("sampling") or {}
         execution = request.get("execution") or {}
+        parameters = request.get("parameters") or {}
         return {
             "model": request.get("model"),
             "operation": request.get("operation"),
@@ -919,6 +920,8 @@ def request_semantic_identity(request: dict[str, Any]) -> dict[str, Any]:
             "seed": sampling.get("seed"),
             "steps": sampling.get("steps"),
             "execution": execution.get("policy"),
+            "dynamic_text": parameters.get("dynamic_text", True),
+            "compile_gpu": parameters.get("compile_gpu", False),
             "ltx_backend": execution.get("ltx_backend"),
             "ltx_fast_av": execution.get("ltx_fast_av"),
             "ltx_video_attention_batch": execution.get(
@@ -949,6 +952,8 @@ def request_semantic_identity(request: dict[str, Any]) -> dict[str, Any]:
         "seed": request.get("seed"),
         "steps": request.get("steps"),
         "execution": request.get("execution"),
+        "dynamic_text": request.get("dynamic_text", True),
+        "compile_gpu": request.get("compile_gpu", False),
         "ltx_backend": request.get("ltx_backend"),
         "ltx_fast_av": request.get("ltx_fast_av"),
         "ltx_video_attention_batch": request.get(
