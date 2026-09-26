@@ -263,7 +263,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         // Keep the established 4096-channel path and permit the separately
         // calibrated 6144-channel W8A8 experiment only by explicit manifest.
         const bool supported_partition = r.qwen21_w8a8
-            ? (hybrid_->ane_mlp_end == 4096 || hybrid_->ane_mlp_end == 6144)
+            ? (hybrid_->ane_mlp_end == 4096 ||
+               (r.width == 512 && r.height == 512 && hybrid_->ane_mlp_end == 6144))
             : hybrid_->ane_mlp_end == 4096;
         // Full FFN coverage on edits was visually checked only for the
         // 6144-channel W8A8 candidate. Preserve the calibrated 4096 edit

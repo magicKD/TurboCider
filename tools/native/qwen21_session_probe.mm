@@ -27,9 +27,12 @@ int main(int argc, char **argv) {
             if (prompt_arg.starts_with("--request=")) {
                 const std::filesystem::path request_path = prompt_arg.substr(10);
                 r = tc::request_from_json(tc::read_json(request_path));
-                tc::require(r.model == "qwen-image-2.1" && r.width == 512 && r.height == 512 &&
+                tc::require(r.model == "qwen-image-2.1" &&
+                            ((r.width == 512 && r.height == 512) ||
+                             (r.width == 1024 && r.height == 1024 &&
+                              r.operation == "image.generate" && r.inputs.empty())) &&
                             r.steps == std::stoi(argv[3]) && r.residency == "component_staged",
-                            "session probe needs a matching 512px component-staged Qwen21 request");
+                            "session probe needs a matching 512px or diagnostic 1024px component-staged Qwen21 request");
                 r.residency = "resident";
             } else {
                 r.prompt = prompt_arg;

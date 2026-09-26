@@ -126,8 +126,13 @@ but tested slower than the BF16 suffix; do not enable it for speed by default.
 For the conservative W8A8 editing option, set `qwen21_gpu_full_ffn_blocks`
 to `[3, 5, 7]`; a 4096-channel edit manifest **requires** this fallback at
 runtime even though `plan` does not load or inspect the manifest.
-The 1024² W8A8 text-to-image results remain diagnostic-only and are not
-accepted by the public CLI hybrid policy. See the
+The 1024² W8A8 text-to-image results remain diagnostic-only. A local
+`TURBOCIDER_QWEN21_1024_W8A8_DIAGNOSTIC=1` opt-in now permits explicit
+1024² W8A8 text-to-image with a checkpoint-matched 4096-row/4096-channel
+compiled manifest for resident Session benchmarking, but does not qualify
+1024² editing or change the default GPU policy. The measured warm-request
+speedups are 1.114× at 5 steps and 1.159× at 40 steps on one prompt/seed;
+physical ANE placement and broad image quality remain unverified. See the
 [512²](../status/qwen21-w8a8-ane-diagnostics-2026-09-25.md) and
 [1024²](../status/qwen21-w8a8-ane-1024-diagnostics.md) reports for timing
 scope, visual differences, and remaining validation work.

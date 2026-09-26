@@ -1,4 +1,6 @@
 #include "qwen21/pipeline.hpp"
+#include <cstdlib>
+#include <string_view>
 
 namespace tc {
 ModelModule qwen21_module() {
@@ -24,16 +26,25 @@ ModelModule qwen21_module() {
                         (r.qwen21_w8a8 && r.qwen21_gpu_full_ffn_blocks == std::vector<int>{3, 5, 7}),
                     "Qwen21 full GPU fallback requires explicit W8A8 and validated layers 3,5,7");
             if (r.execution == "gpu_ane") {
+                // Local benchmark escape hatch, not a quality-qualified public
+                // route. The runtime still verifies the exact 4096-row,
+                // checkpoint-matched, 32-block compiled W8A8 manifest.
+                const char *diagnostic = std::getenv("TURBOCIDER_QWEN21_1024_W8A8_DIAGNOSTIC");
+                const bool diagnostic_t2i = diagnostic && std::string_view(diagnostic) == "1" &&
+                    r.width == 1024 && r.height == 1024 && r.qwen21_w8a8 &&
+                    r.operation == "image.generate" && r.inputs.empty() &&
+                    r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty();
+                const bool supported_512 = r.width == 512 && r.height == 512 &&
+                    ((r.operation == "image.generate" && r.inputs.empty() &&
+                      r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty()) ||
+                     (r.qwen21_w8a8 && r.operation == "image.edit" &&
+                      r.qwen21_reference_size == 256 &&
+                      r.inputs.size() >= 1 && r.inputs.size() <= 3 &&
+                      (r.qwen21_gpu_full_ffn_blocks.empty() ||
+                       r.qwen21_gpu_full_ffn_blocks == std::vector<int>{3, 5, 7})));
                 require(r.allow_approximation && !r.ane_manifest.empty() &&
-                            r.width == 512 && r.height == 512 &&
-                            ((r.operation == "image.generate" && r.inputs.empty() &&
-                              r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty()) ||
-                             (r.qwen21_w8a8 && r.operation == "image.edit" &&
-                              r.qwen21_reference_size == 256 &&
-                              r.inputs.size() >= 1 && r.inputs.size() <= 3 &&
-                              (r.qwen21_gpu_full_ffn_blocks.empty() ||
-                               r.qwen21_gpu_full_ffn_blocks == std::vector<int>{3, 5, 7}))),
-                        "Qwen21 gpu_ane requires 512px text-to-image or explicit W8A8 1...3-reference edit with 256px references and either full coverage or GPU fallback 3,5,7");
+                            (diagnostic_t2i || supported_512),
+                        "Qwen21 gpu_ane requires 512px text-to-image or explicit W8A8 1...3-reference edit with 256px references and either full coverage or GPU fallback 3,5,7; 1024px W8A8 text-to-image is diagnostic-only");
             } else {
                 require(r.ane_manifest.empty() && r.encoder_ane_manifest.empty() &&
                             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&

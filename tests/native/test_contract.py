@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 lib = C.CDLL(str(ROOT / 'build/native/libturbocider.dylib'))
@@ -171,6 +172,24 @@ class ContractTests(unittest.TestCase):
                         dict(operation='image.edit',inputs=[refs[0],{**refs[1],'role':'mask'}]),
                         dict(execution='gpu',ane_manifest='/tmp/no-qwen-ane.json')]:
             self.assertNotEqual(plan({**request, **invalid})[0], 0, invalid)
+
+    def test_qwen21_1024_w8a8_diagnostic_gate(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                    width=1024, height=1024, steps=5, audio=False, frames=1,
+                    execution='gpu_ane', allow_approximation=True, qwen21_w8a8=True,
+                    ane_manifest='diagnostic-manifest-not-loaded-during-planning.json')
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_1024_W8A8_DIAGNOSTIC': '0'}):
+            self.assertNotEqual(plan(base)[0], 0)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_1024_W8A8_DIAGNOSTIC': '1'}):
+            code, result, error = plan(base)
+            self.assertEqual(code, 0, error)
+            self.assertEqual(result['execution'], 'gpu_ane_experimental')
+            for invalid in [dict(width=512, height=1024), dict(qwen21_w8a8=False),
+                            dict(operation='image.edit', inputs=[dict(kind='image', role='reference', path='ref.png')]),
+                            dict(qwen21_gpu_full_ffn_blocks=[3, 5, 7]),
+                            dict(allow_approximation=False), dict(ane_manifest='')]:
+                with self.subTest(invalid=invalid):
+                    self.assertNotEqual(plan({**base, **invalid})[0], 0)
 
     def test_qwen21_explicit_w8a8_edit_cli_gate(self):
         refs = [dict(kind='image', role='reference', path=f'qwen-exp-{i}.png')
