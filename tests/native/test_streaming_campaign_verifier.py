@@ -625,6 +625,23 @@ class CampaignTests(unittest.TestCase):
         v1.update(dynamic_text=False, compile_gpu=True)
         self.assertEqual(request_semantic_identity(v1), request_semantic_identity(v2))
 
+    def test_schema_v2_execution_approximation_policy_is_not_ignored(self):
+        common = {"model": "ltx-2.5-distilled", "operation": "video.generate"}
+        v1 = {**common, "prompt": "fox", "execution": "gpu"}
+        v2 = {**common, "schema_version": 2,
+              "inputs": [{"kind": "text", "role": "prompt", "text": "fox"}],
+              "execution": {"policy": "gpu"}}
+        choices = {"allow_approximation": True, "ltx_sol_stage2": True,
+                   "ltx_sol_tau": 0.2, "ltx_sol_dense_edge_blocks": 2,
+                   "ltx_sol_dense_edge_steps": 1}
+        for key, value in choices.items():
+            with self.subTest(key=key):
+                left, right = json.loads(json.dumps(v1)), json.loads(json.dumps(v2))
+                right["execution"][key] = value
+                self.assertNotEqual(request_semantic_identity(left), request_semantic_identity(right))
+                left[key] = value
+                self.assertEqual(request_semantic_identity(left), request_semantic_identity(right))
+
     def test_ltx_fill_counters_and_request_retention_normalize(self):
         common = {
             "stage": "denoiser",

@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
                                   probe->source_lease());
         const auto &token = probe->workload_identity().token_shapes.front();
         const tc::z_image::StreamingWorkload workload{
-            256, 256, token.padded_rows, 3};
+            256, 256, (token.valid_rows + 31) / 32 * 32, 3};
         const tc::z_image::StreamingPlanView expected(
             value_probe->lease_ptr(), config(), workload);
 
@@ -104,6 +104,40 @@ int main(int argc, char **argv) {
         assert(snapshot->layout().digest == record.plan.layout_digest);
         assert(snapshot->layout().materializations_complete);
         snapshot->revalidate_source();
+
+        // Qwen encoder padding is removed before the DiT caption is aligned
+        // to 32 rows. Fixed encoder length must not inflate the denoiser plan.
+        assert(token.padded_rows == token.valid_rows);
+        assert(token.compute_rows == token.valid_rows);
+        auto fixed_request = base_request;
+        fixed_request.dynamic_text = false;
+        const auto fixed_probe = session.probe_public_streaming(
+            {fixed_request, device(), "embedded_app"});
+        const auto &fixed_token = fixed_probe->workload_identity().token_shapes.front();
+        assert(fixed_token.valid_rows == token.valid_rows);
+        assert(fixed_token.padded_rows == 512 && fixed_token.compute_rows == 512);
+        assert(fixed_probe->workload_identity() != probe->workload_identity());
+        auto fixed_record = record;
+        fixed_record.workload = fixed_probe->workload_identity();
+        const auto fixed_snapshot = session.compile_public_streaming(fixed_probe, fixed_record);
+        assert(fixed_snapshot->layout().digest == snapshot->layout().digest);
+
+        auto long_request = fixed_request;
+        long_request.prompt = std::string(600, 'g');
+        const auto long_probe = session.probe_public_streaming(
+            {long_request, device(), "embedded_app"});
+        const auto &long_token = long_probe->workload_identity().token_shapes.front();
+        assert(long_token.valid_rows > 512 && long_token.valid_rows <= 1024);
+        assert(long_token.padded_rows == long_token.valid_rows);
+        assert(long_token.compute_rows == long_token.valid_rows);
+        const tc::z_image::StreamingPlanView long_expected(
+            value_probe->lease_ptr(), config(),
+            {256, 256, (long_token.valid_rows + 31) / 32 * 32, 3});
+        auto long_record = record;
+        long_record.workload = long_probe->workload_identity();
+        long_record.plan.layout_digest = long_expected.layout().digest;
+        const auto long_snapshot = session.compile_public_streaming(long_probe, long_record);
+        assert(long_snapshot->layout().digest == long_expected.layout().digest);
 
         tc::ZImage shared(argv[3]);
         const auto shared_probe = shared.probe_public_streaming(input);

@@ -927,15 +927,15 @@ def request_semantic_identity(request: dict[str, Any]) -> dict[str, Any]:
             "ltx_video_attention_batch": execution.get(
                 "ltx_video_attention_batch", False
             ),
-            "allow_approximation": request.get(
+            "allow_approximation": execution.get(
                 "allow_approximation", False
             ),
-            "ltx_sol_stage2": request.get("ltx_sol_stage2", False),
-            "ltx_sol_tau": request.get("ltx_sol_tau"),
-            "ltx_sol_dense_edge_blocks": request.get(
+            "ltx_sol_stage2": execution.get("ltx_sol_stage2", False),
+            "ltx_sol_tau": execution.get("ltx_sol_tau"),
+            "ltx_sol_dense_edge_blocks": execution.get(
                 "ltx_sol_dense_edge_blocks"
             ),
-            "ltx_sol_dense_edge_steps": request.get(
+            "ltx_sol_dense_edge_steps": execution.get(
                 "ltx_sol_dense_edge_steps"
             ),
         }

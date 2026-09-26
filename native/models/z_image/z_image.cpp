@@ -112,7 +112,7 @@ streaming::PresetRuntimeIdentity z_image_public_runtime_identity() {
     return {
         tc::catalog_runtime_identity(),
         "public-streaming-runtime-v2",
-        "z-image-public-adapter-v4-shared-text-lease",
+        "z-image-public-adapter-v5-encoder-caption-shapes",
         "z-image-pread-bf16-v2-fd-lease",
         kZImageKernelRevision,
         "mlx-request-cache-policy-v2-k1-zero-cache",
@@ -2213,8 +2213,11 @@ ZImage::probe_public_streaming(
     const auto tokens = tokenizer.z_image_prompt(request.prompt, request.dynamic_text);
     lease->revalidate_open_files();
     lease->revalidate_paths();
+    // The encoder processes the padded token IDs, but encode_text removes
+    // those padding rows before z_patchify aligns the valid caption to 32.
+    const uint32_t encoder_rows = static_cast<uint32_t>(tokens.ids.size());
     const uint32_t caption_rows = padded_z_image_rows(
-        static_cast<uint32_t>(tokens.ids.size()));
+        static_cast<uint32_t>(tokens.valid));
 
     streaming::PresetWorkload workload;
     workload.model = model_id_;
@@ -2237,7 +2240,7 @@ ZImage::probe_public_streaming(
         request, caption_rows);
     workload.token_shapes.push_back({
         "qwen3", "qwen3-z-image-v1", "z-image-template-v1",
-        static_cast<uint32_t>(tokens.valid), caption_rows, caption_rows});
+        static_cast<uint32_t>(tokens.valid), encoder_rows, encoder_rows});
 
     return std::make_shared<streaming::ValueModelStreamingProbe>(
         streaming::ValueModelStreamingProbe::Values{
@@ -2269,7 +2272,7 @@ ZImage::compile_public_streaming(
             "streaming_workload_invalid: Z-Image token shape count");
     z_image::StreamingWorkload descriptor_workload{
         workload.width, workload.height,
-        workload.token_shapes.front().padded_rows,
+        padded_z_image_rows(workload.token_shapes.front().valid_rows),
         workload.steps};
     auto plan = std::make_shared<z_image::StreamingPlanView>(
         value_probe->lease_ptr(), record.plan.canonical_config,
