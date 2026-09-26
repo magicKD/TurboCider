@@ -330,3 +330,103 @@ Spike 时间盒建议 2 个工程日，前提是现有 2–4 个 block artifacts
 4. **第二天：做最早的真实集成。** GPU 先打一条完整输出/取消链；hybrid H1 与 H4a 可并行，H2 先在 fake branch 验资源协议。当天报告按代码实现、host 测试、真实 smoke、发布资格四列分别标状态。
 
 后续每次合并只增加一个可验证能力；每个 milestone 都保留可运行基线和独立 record 撤回能力。本文不创建任务、不运行 campaign；实施开始后在 13 记录代码与证据，在 56 更新总体阻断，在本附录更新对应 H 包完成状态。
+
+
+## 12. 2026-09-21 编码器完整请求探索更新
+
+[实验第三十五、三十六轮](../../experiments/2026-09-20-m1-streaming.md)补充了 legacy Z-Image encoder 分流的完整图片证据。75%/50%/25% INT8 FFN 在各两对冷 worker 样本中，完整请求分流/GPU wall 中位数比为 1.164/1.241/1.240，均无收益；三个比例 final latent relative-L2 均超过预先冻结的 0.05。此前局部暖态 encoder 加速不能用作完整请求性能资格，也不能由此确定一般最优比例。
+
+代码已在 legacy streaming 的 encoder/denoiser 边界同步并释放 encoder 会话，缓存 conditioning 保留来源指标；同 engine 首次分流→缓存命中→切回 GPU 的真实模型回归通过。这只证明正常完成路径的 native owner 释放，不证明 Core ML 服务缓存驱逐，也未关闭故障/取消 drain。该实验未实施本文 HY-M0 denoiser 接入：typed bundle/source partition、suffix materialization、共享 backing join、实际 component receipt、质量准入和 public routing 仍待完成。两个目标模型 explicit streaming + encoder ANE 的拒绝保持不变；Flux legacy streamed 路径不支持，本轮没有 Flux 完整分流图片。
+
+
+## 13. H1 权重后缀转换实施进度（2026-09-21）
+
+已新增内部 `z_image/suffix_materialization.hpp/.cpp`，将 legacy packer 的几何计算和 down-projection 按行打包提取为无 MLX/Core ML 依赖的共享组件。`suffix_geometry()` 只计算 metadata；`pack_suffix_rows()` 只使用调用方持有的 source/destination fd，采用至多 4 MiB scratch，验证文件范围、整数上限和不同 regular file，处理 EINTR/短读写/EOF/零进展/取消，并累计实际 I/O（含失败前已完成部分）。调用方仍负责 private destination 生命周期、source lease revalidation 和失败时禁止发布。
+
+现有 `ZImageWeightStream::pack_suffix()` 已复用同一组件，保留 2 个 noise refiners + 30 个主 layers 的映射、context refiners 不裁剪，以及 ConvRot 对齐/scale 规则；dtype/几何在创建临时文件前检查。此变更未开放 M1 上 legacy denoiser suffix 的设备限制，也未为新框架添加 public hybrid authority。
+
+`test_z_image_suffix_materialization.py` 的独立字节 oracle 验证 BF16/I8、首通道/中间/末通道、非零文件偏移、多 scratch 批次，以及确定性的 EINTR、短读写、EOF、ENOSPC、取消和重试；故障注入只通过 host 测试对象的 syscall 符号重命名实现，不加入生产 hook。ASan/UBSan 通过。对应 HY-MAT-01/02 的转换子项有证据，但 fixed/prefix/slot descriptor 的完整 hybrid 接入、derived-source identity、Ready 发布与完整 owner 仍未完成，所以不能将这两个测试 ID 整体标记通过。
+
+
+## 14. H1 metadata 布局实施进度（2026-09-21）
+
+`describe_gpu_suffix()` 已连接共享几何组件与 common layout compiler：显式列出 fixed/noise、完整 context、所有主层的后缀字段和 32 个 w2 packing records；计量 setup 与 refill 分离。独立 recipe identity 不伪装派生内容哈希，metadata-only adapter revision 不提供执行准入。稀疏 fixture 的偏移/容量 oracle、真实模型 header 与 ASan/UBSan 通过，原 exact descriptor 回归保持通过。见[第三十八轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+当前仍未将配方发布为经验证的 derived source，未接 Core ML bundle/partition 权限、执行 owner、join/receipt；HY-MAT-01/02 仍只有子项证据。真实 full-image 性能与完整内存不能从 metadata 权重容量推断，新 suffix 配方的跨安装 verified-content 重放亦待单独验证。
+
+
+## 15. H1 派生文件 owner 实施进度（2026-09-21）
+
+新增内部 `materialize_gpu_suffix()` / `GpuSuffixSource`。工厂只接受已由 native 验证内容的父 lease，内部重建配方，不接受调用方提供的 plan 作为权限。持有的 source fd 经现有 packer 生成完整派生文件；临时文件在首次 payload 写入前 unlink，完成后关闭唯一写句柄，对只读 fd 计算 SHA-256 并复核父/派生文件 generation，最后才返回 owner。取消/回调异常会析构未发布的 owner 和 fd。
+
+返回对象保留父 lease；只允许 artifact 0/1 的只读 CLOEXEC fd 复制，并在复制和结束核对时检查父文件替换/修改。metadata recipe descriptor 保持不变，实际派生 SHA-256 单独提供给后续执行证据，避免 setup 后悄悄改变已经编译的 layout 身份。验证读取量与 packing I/O 分开报告。
+
+稀疏真实几何 fixture 已验证完整派生字节、只读/unlinked 属性、内容 SHA、四个取消边界和事件异常 fd 清理、owner 独立保留父 lease、两份独立副本的配方/内容身份重放，以及打包中父文件修改和完成后路径替换拒绝；ASan/UBSan 通过。这里没有 Core ML session、GPU consumer 或 public hybrid authority；adapter 对该 source 的执行消费、完整 owner/join 和 receipt 仍待实施，HY-MAT/HY-LIFE 不能整体标记完成。
+
+
+## 16. H1 GPU 读取接缝实施进度（2026-09-21）
+
+已将 `GpuSuffixSource` 接入内部 ZImageWeightStream 构造器，复用 fixed/prefix/slot 加载与 exact fill 接口，保持 source owner 到 reader 结束。新路径的 capacity 取 common compiler 对齐结果，逻辑 I/O 独立计量。稀疏真实几何 fixture 的 Metal 数值检查、P2/K1/K2 双 pass、并发 fill、buffer 复用、取消重试与来源替换拒绝通过；128-byte 字段的 256-byte capacity 和预算边界亦通过。见[第四十轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+尚未将新 reader 接入 hybrid StageExecutor/z_block 的完整流程，没有加载 ANE artifact、提交 GPU/ANE join 或生成 hybrid receipt。此进度是 HY-MAT 的读取子项，不是 HY-M0 完成或 public hybrid 资格。
+
+
+## 17. H0 artifact 与局部数值验证进度（2026-09-21）
+
+已导出并 native compile 真实 Z-Image 32 个 denoiser 前缀 FFN（[0,5120)/10240，bucket 1088，INT8 per-channel），完成固定合成输入的 32 次 native prediction，源 checkpoint 内容验证通过。冻结的 relative-L2 ≤ 0.025 等阈值下，31 个分支通过、block 29（layers.27）以 0.02562 失败，整个候选仍不通过。另行预先冻结的单分支 FP16 对照以 0.00468 通过；原 INT8 结论保留，没有把单分支成功当作混合精度 bank 或完整图片资格。计划偏差、编译接口误用、所有结果及限制见[第四十一轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+这提供了 artifact 准备和局部算术证据，尚未提供 native VerifiedCoreMLBundleLease/managed immutable generation、typed partition 或实际硬件驻留证明。H0 不能整体关闭，H2 hybrid executor/完整 owner/join、H3 真实步骤 receipt 和 H4 完整质量/性能准入仍待完成；public hybrid guard 保持关闭。
+
+
+## 18. H1 私有 Core ML generation 基础（2026-09-21）
+
+已新增内部 CoreMLGeneration：枚举并验证完整 regular-file tree，经 held source fd 复制到独立私有目录，再独立验证目标内容，关闭写句柄并设只读权限，owner 持有目标 SourceLease/目录 snapshot 到最后使用者结束。revalidate 拒绝文件/目录替换与 entry set 变化；源安装更新不影响旧 generation。host 生命周期/变更拒绝测试、ASan/UBSan 和真实单分支 compiled tree 导入通过，见[第四十二轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+这是受管理 generation 的内部存储基础，尚无 validated installation-ID 注册、manifest/父 checkpoint/partition/precision 语义验证或 HybridSession 接入；不能称为 VerifiedCoreMLBundleLease 完成，更不能授予 public hybrid authority。真实模型验证只涉及文件复制/内容与生命周期，没有在新 generation 上预测，取消中途和 I/O 故障测试仍需补齐。
+
+
+## 19. H1 generation 故障与模型加载验证（2026-09-21）
+
+第四十三轮补齐导入过程的确定性短 I/O、EOF/EIO/ENOSPC、零进展、读/写/seal 边界取消、seal 失败、目标内容损坏与源 generation 变化测试；每例验证失败不发布、fd/目录清理和干净重试，普通/ASan/UBSan 通过。真实 block 29 FP16 compiled model 已从只读私有 generation 路径加载并完成一次全零预测，feature ABI、全零 oracle、前后 revalidate 与最终目录清理通过。见[实验记录](../../experiments/2026-09-20-m1-streaming.md)。
+
+这关闭的是文件导入故障和实际 Core ML 路径加载的验证缺口；不证明已接入 HybridSession，不替代 typed bundle 的语义/父来源绑定，也没有覆盖预测阻塞/取消或完整 owner/join/receipt。H0/H1 和 HY-M0 仍不能整体标记完成。
+
+
+## 20. H0/H1 typed bundle 语义绑定进度（2026-09-21）
+
+新增内部 VerifiedCoreMLBundleLease，保留已验证 generation/父 SourceLease，验证 manifest/source/export 的 parent SHA/bytes、一致的 FFN partition/scale/precision/bucket 和完整 branch map，提供 32 个 generation 内 compiled 路径和 canonical partition identity。布尔/小数/重复 JSON、越界/重复路径及各种字段错配测试通过，跨安装副本得到相同身份；真实 32 分支、1.89 GB 研究 bundle 绑定与 owner 清理通过，详见[第四十四轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+此对象是内部来源/语义绑定，不是产品 release authority；声明的 export-parent 关联不等于 compiled code 的数学正确性证明。研究 fixture 组装排除了缓存锁文件，产品安装 ID 注册仍缺失。未接入 HybridSession/new StageExecutor，未验证此次 bundle 的模型 feature ABI/预测，未实现混合精度 bank；原 INT8 数值候选仍失败。因此 H0/H1/HY-M0 不能整体关闭。
+
+
+## 21. H1/H2 typed HybridSession 接缝（2026-09-21）
+
+HybridSession 已新增消费 VerifiedCoreMLBundleLease 的内部构造路径，使用验证后的固定 partition/模型路径，加载前后校验来源，持有 bundle 到 branches 和 autorelease pool 清理结束。typed prediction 检查完整 padded FP16 输入与分支范围；错误输入不会进入 Core ML 或污染 runtime failure 状态。真实 32 分支全零预测、共享 backing GPU 消费/复用、部分构造取消、事件异常、外部引用释放后的保留及最终目录清理均通过；旧 bridge 和 public GPU adapter 回归通过，见[第四十五轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+这提供了实际 typed 会话执行接缝，尚未将 suffix reader/新 StageExecutor、完整 request owner、GPU join 和实际 receipt 连成 denoiser；未验证 prediction hang/drain quarantine，也没有产品安装注册或独立质量资格。原 INT8 非零数值筛查仍失败，零输入测试不能覆盖这一结论。HY-M0 继续未完成。
+
+
+## 22. H2 共享 FFN 算术与真实 joint 分支验证（2026-09-21）
+
+既有 GPU suffix 图和普通/compiled-post join 已提取为共享 hybrid_math。Metal 的 full/compact 等价、稀疏独立 oracle、BF16 转换/scale 顺序和完成后输出独立性测试通过。真实 verified source/reader/session 以 P1/K1 手动运行 2 fixed noise + 1 resident main + 29 streamed main，32 个零输入 join 与 29 次 fill 通过，派生 SHA 与既有实际打包记录一致。详见[第四十六轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+这验证组件在真实权重上联合执行，不是完整 HY-M0：仍未接新 StageExecutor/完整 request owner 或生成真实 component receipt，没有 9 steps/288 branches 的 denoiser 和完整输出。join 自身是 lazy 运算，不提供 drain authority；本次 driver 显式完成 GPU consumer 后才复用。原 INT8 非零质量失败保留，完整质量/性能准入与硬件驻留证据仍缺。
+
+
+## 23. H0 hybrid common-layout 绑定（2026-09-21）
+
+新增 describe_hybrid_streaming，将 verified GPU parent 与 bundle partition 的一致性、bundle 内容/precision/scales、GPU kernel/join/backing 政策纳入独立 layout-only descriptor 身份，再由 common compiler 编译 P/G/K/D/Q。GPU fields/packing recipe 不变，尚未生成的派生源保持 recipe identity。跨路径复制身份相同、bundle 内容或 precision 改变身份不同、父来源和固定 scope 错配拒绝、容量/I/O/exact descriptor 不变的测试通过，见[第四十七轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+该规划接口不加载 Core ML/不打包/不分配 GPU，不授予执行权限；初始 scope 明确为 HY-M0 512²/64 caption rows/9 steps。StageExecutor 的实际 hybrid adapter、完整 owner 和 component receipt 仍待实施，不能用 metadata 布局通过替代执行或整请求内存/质量资格。
+
+
+## 24. H2 实际 hybrid transformer owner 与 stage 执行（2026-09-21）
+
+内部 ZImageHybridStream 已连接 verified sources、typed Core ML、GPU suffix/join、原 transformer attention/投影及 common StageExecutor；持有输入和 pending tensor，失败保持不可重用，无法确认 drain 时保留整个 owner。真实 512²/P1/K2/D1/Q2、非零 latent/合成 caption 的 9 步 Euler 运行完成 288 branches、261 groups，实际 stage receipt verifier 与最终清理通过。独立取消及不安全 drain 注入通过；具体数值、轨迹、回归及限制见[第四十八轮](../../experiments/2026-09-20-m1-streaming.md)。
+
+仍缺 ModelEngine/public route 接入与整引擎 poison、完整 H3 component receipt、Qwen prompt/VAE 出图、GPU 对照/质量/性能准入。补充 branch completion 不能替代 component receipt；原 INT8 非零质量失败保留，未证明 ANE 驻留或实际 hang 恢复。HY-M0 继续未完成。
+
+
+## 25. H4 真实 prompt 图像与探索性 GPU 对照（2026-09-21）
+
+47 有效 token/64 caption bucket 的真实 Qwen 输入、9-step hybrid stage 和共享原生 VAE 已分别完成，形成 512² 图像；同初始噪声/同 prompt 的完整 GPU streaming reference 也已运行。单样本最终 latent relative-L2 0.10764、RGB RMSE 0.02206，原 INT8 局部门槛失败保留；单样本、拆分进程和后台编译不提供质量或速度资格。详见[第五十轮](../../experiments/2026-09-20-m1-streaming.md)。仍需同 partition 迁移对照、完整请求 owner/component receipt、多样本质量和请求内存/生命周期准入。

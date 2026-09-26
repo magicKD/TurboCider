@@ -1,0 +1,32 @@
+{
+  "scope": "First resident legacy vs typed streaming, same FP16 partition, exploratory single sample",
+  "initial_byte_equal": true,
+  "final_latent_byte_equal": true,
+  "final_latent_relative_l2": 0.0,
+  "decoded_byte_equal": true,
+  "image_sha256": "7337f90b64e27c498318494c5d5b6d8e0873ae030fe763ed2ead184b56ca1580",
+  "typed_image_sha256": "7337f90b64e27c498318494c5d5b6d8e0873ae030fe763ed2ead184b56ca1580",
+  "result_sha256": "8a374e3a60a391087b6b1df47d262a4e859277511417a7febe989218152b6b59",
+  "events_sha256": "1ac2ae0100f47c7a2e31fbbea38487ea3bff06e1f0d6c8e2b57680312850b98e",
+  "tensors": {
+    "z_decoded.safetensors": "88cb755048fd1a4f8847b4977c11ed8c7e7f381d258e385d9cad480d686455a5",
+    "z_latent_final.safetensors": "0749fd0ccad0a2026d98a245c853fedf901483bec5e5e1c7f3d08553aba83a8b",
+    "z_latent_initial.safetensors": "dd231809fbb6f3258b3aec3004aeec5a2b00a74d46d67556ee8076a0889debcc",
+    "z_latent_step_1.safetensors": "9874a8114245c29c4b49dae7e658aa1d40f8517d9f47ac03697a282b5458c5f1",
+    "z_latent_step_2.safetensors": "079c665b5130e3e8667e47b594a26612294375c5b91f72ef6327b4184ade0060",
+    "z_latent_step_3.safetensors": "1db0ee133e878c5e62535441b954b6bde229f8e4a5776caef58cb7883911148e",
+    "z_latent_step_4.safetensors": "dff71902d9f294999a723296e47068ad9824f96027e453173a9ce02694a84e9d",
+    "z_latent_step_5.safetensors": "498af1dc59f08c4daf9067c4a8541e7a79d7249dfac7e6233482d3bc46441ac8",
+    "z_latent_step_6.safetensors": "ab1a1df0674d4d2dc5c968cc56e5542b5c36c292db3e271554d4d19e9a68be51",
+    "z_latent_step_7.safetensors": "807551aefca92653aa29a4d39dcf7280a87f253d839e98a75604a1e0badb4601",
+    "z_latent_step_8.safetensors": "9431f9fe9d7fb0b5d4700c969eb6359116d85ef0322410922784658fb40b24c1",
+    "z_latent_step_9.safetensors": "0749fd0ccad0a2026d98a245c853fedf901483bec5e5e1c7f3d08553aba83a8b"
+  },
+  "qualification": "Pending second legacy run; no repeatability or same-plan P1 verdict, no performance or release qualification",
+  "runtime_reporting_observation": {
+    "runtime_precision": null,
+    "runtime_backend": null,
+    "export_identity_variant": "fp16",
+    "plan_precision_mislabel": "bf16_gpu+int8_mlp_fp16_io"
+  }
+}

@@ -12,6 +12,9 @@ class Tokenizer {
 
   public:
     explicit Tokenizer(const std::filesystem::path &);
+    // Reads synchronously from an already-authorized, caller-owned descriptor.
+    // Does not reopen its path or retain the descriptor after construction.
+    Tokenizer(int fd, uint64_t bytes);
     ~Tokenizer();
     Tokens raw(const std::string &) const;
     Tokens prompt(const std::string &, bool dynamic = true);

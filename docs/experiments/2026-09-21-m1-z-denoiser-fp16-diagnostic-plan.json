@@ -1,0 +1,28 @@
+{
+  "scope": "Single failed branch precision diagnostic, not a replacement of the 32-branch INT8 smoke",
+  "created_utc": "2026-09-20T20:26:59.399994+00:00",
+  "block": 29,
+  "tensor_prefix": "layers.27",
+  "bucket": 1088,
+  "ane_mlp_range": [
+    0,
+    5120
+  ],
+  "variant": "fp16",
+  "activation_scale": 8,
+  "output_scale": 32,
+  "source_checkpoint_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+  "input": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-prefix-smoke-w5120/input.npy",
+  "reference": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-prefix-smoke-w5120/29-reference.npy",
+  "thresholds": {
+    "relative_l2_max": 0.025,
+    "cosine_min": 0.999,
+    "relative_max_abs_max": 0.05
+  },
+  "warmups": 0,
+  "predictions": 1,
+  "output": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-b29",
+  "stop": "No retry or threshold change. Even a pass covers this branch/input only; INT8 32-branch outcome remains failed.",
+  "input_sha256": "637b3fca219b346e91b47c152e4c30d3aaa22c13acfcc636d545e55d8b4a242e",
+  "reference_sha256": "46b1e2970577bd007f7e2be5067cd345af6a04a46850229596932fe1bc65d219"
+}

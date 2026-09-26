@@ -1,0 +1,145 @@
+{
+  "date": "2026-09-21",
+  "scope": "Bounded correlated worker resolved/progress events into live App telemetry; terminal remains authoritative",
+  "runtime_identity": "tc-runtime-build-v1-92d97e3d7edafedc3c14d46620b4bd7b33837cc8036f7aac819056077228716b",
+  "build_notes": "Initial complete native build passed. Final build adds suppression of progress when oversized resolved cannot be emitted. App/library were built against unchanged C ABI in m1-worker-options, then copied to final directory to load the final native library through @executable_path. Final history and real-App test binaries compiled in m1-worker-events and run beside final native library. No native API change this round.",
+  "validation": {
+    "final_native_build": "PASS exit 0",
+    "final_native_contract": "83 total, 80 PASS, 3 skipped",
+    "Swift_build": "PASS App/library/history/real-model test binaries; no warnings",
+    "native_generate_wrapper": "15 PASS including success, exact/result/artifact rejection, cancellation; double callbacks exercise resolved/progress binding and 10,000 same-phase calls throttled",
+    "native_query_regression": "6 PASS",
+    "event_budget": "PASS 10,000 phase switches bounded by 512 KiB lifetime output, monotonic emitted sequence and frame bounds; oversized resolved suppresses subsequent telemetry",
+    "App_history": "PASS live denoise progress before worker exit, successful PNG publication, malformed/truncated events block publication, fragmented framing, identity/order/size and mismatched terminal rejection; existing history/recovery tests pass",
+    "supervisor": "PASS Swift 6 complete concurrency and warnings-as-errors; owned process group cleanup, output overflow, cleanup_pending admission lock and unrelated process isolation",
+    "real_App_jobs": "PASS real Z/Flux each empty-catalog rejection and source-verification cancellation; no image output, confirmed worker cleanup",
+    "GUI": "Not run this round; no visual acceptance claim"
+  },
+  "events": {
+    "channel": "stderr, TC_EVENT tab prefix, JSON per line",
+    "frame_json_limit": 131072,
+    "lifetime_limit": 524288,
+    "same_phase_interval_ms": 250,
+    "block_detail_filtered": true,
+    "authority": false,
+    "terminal_channel": "single stdout JSON"
+  },
+  "real_results": {
+    "real-models/flux2-klein-4b-reject/plan.json": {
+      "model": "flux2-klein-4b",
+      "scope": "Real model through App job/worker path; no public qualification",
+      "expected": "failed: catalog_has_no_public_records; exit confirmed",
+      "cancel": false,
+      "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-events-final/turbocider",
+      "runtime_identity": "tc-runtime-build-v1-92d97e3d7edafedc3c14d46620b4bd7b33837cc8036f7aac819056077228716b"
+    },
+    "real-models/flux2-klein-4b-reject/observation.json": {
+      "has_reusable_engine": false,
+      "cleanup_pending": false,
+      "error": "catalog_has_no_public_records",
+      "worker_exit_confirmed": true,
+      "state": "failed",
+      "busy": false
+    },
+    "real-models/flux2-klein-4b-cancel/plan.json": {
+      "model": "flux2-klein-4b",
+      "scope": "Real model through App job/worker path; no public qualification",
+      "expected": "cancelled after starting worker; exit confirmed",
+      "cancel": true,
+      "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-events-final/turbocider",
+      "runtime_identity": "tc-runtime-build-v1-92d97e3d7edafedc3c14d46620b4bd7b33837cc8036f7aac819056077228716b"
+    },
+    "real-models/flux2-klein-4b-cancel/observation.json": {
+      "has_reusable_engine": false,
+      "cleanup_pending": false,
+      "error": "The operation couldn’t be completed. (Swift.CancellationError error 1.)",
+      "worker_exit_confirmed": true,
+      "state": "cancelled",
+      "busy": false
+    },
+    "real-models/z-image-turbo-reject/plan.json": {
+      "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-events-final/turbocider",
+      "model": "z-image-turbo",
+      "scope": "Real model through App job/worker path; no public qualification",
+      "runtime_identity": "tc-runtime-build-v1-92d97e3d7edafedc3c14d46620b4bd7b33837cc8036f7aac819056077228716b",
+      "cancel": false,
+      "expected": "failed: catalog_has_no_public_records; exit confirmed"
+    },
+    "real-models/z-image-turbo-reject/observation.json": {
+      "worker_exit_confirmed": true,
+      "has_reusable_engine": false,
+      "error": "catalog_has_no_public_records",
+      "cleanup_pending": false,
+      "busy": false,
+      "state": "failed"
+    },
+    "real-models/z-image-turbo-cancel/plan.json": {
+      "scope": "Real model through App job/worker path; no public qualification",
+      "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-events-final/turbocider",
+      "model": "z-image-turbo",
+      "runtime_identity": "tc-runtime-build-v1-92d97e3d7edafedc3c14d46620b4bd7b33837cc8036f7aac819056077228716b",
+      "cancel": true,
+      "expected": "cancelled after starting worker; exit confirmed"
+    },
+    "real-models/z-image-turbo-cancel/observation.json": {
+      "has_reusable_engine": false,
+      "cleanup_pending": false,
+      "error": "The operation couldn’t be completed. (Swift.CancellationError error 1.)",
+      "worker_exit_confirmed": true,
+      "state": "cancelled",
+      "busy": false
+    }
+  },
+  "source_sha256": {
+    "apps/cli/query_worker.hpp": "f3e2eda950b24a10f0f858a507fde897a92e7d12e78b23c2889a2d5d99456160",
+    "apps/cli/worker_events.hpp": "f2198a416c7cb3fec881754272cc581d3beb9e5d5f94050816f3de0dafe72c6b",
+    "apps/macos/JobStore.swift": "3b6bd1efe35e63011c3c3471c0d325a9dbc5afab4afe78324ca9fde14a12d246",
+    "apps/macos/NativeProcessRunner.swift": "f1b15760b958851b145c604f2bab9b9cc9fae8b57d68637de1ba1ec8437835ad",
+    "apps/macos/WorkerEventStream.swift": "f31c4c88f01d1ada887cb65617d23c89e4d799913704077861adf27e96a550d3",
+    "docs/experiments/2026-09-20-m1-streaming.md": "effdff0a1361ac85a714f0d55d1f5255f434608bc2df48c57b4b7d3ec9d1158b",
+    "tests/integration/PublicImageJobTests.swift": "578f984e1e08141989818325d9a9397138b8177fc5de5d9769c2f30a79860e6f",
+    "tests/native/test_worker_events.py": "20ee7911067dc89212da4f46b77a18175a34e5733d684fd220563670681d6b03",
+    "tests/native/test_worker_generate_contract.py": "4ea36203d6e523b5553a621d62e4a222af7e0117c5d94df9c4471270759264cd",
+    "tests/native/worker_events_test.mm": "6f33083463754897bde574d0e09d1d814bbeff8a6c6aa6efd83aaff4e373764e",
+    "tests/native/worker_query_contract_test.mm": "1bffe6e4b8443142b9943d888949750a95e301ff69085be3d1b8bdf9e49b160c",
+    "tools/native/build_app.sh": "bcd3dd9f330764a87e65e2ca72dfeb597ad0c519030bc7b0a78a7b1963ba28cf"
+  },
+  "binary_sha256": {
+    "turbocider": "a3acd78bde13e6027bf3a7255f25bdca2e6884b6985418ba981c85deb25e249a",
+    "libturbocider.dylib": "91fc6defc66a391c1f9c7743192d1699dda67e124ef79812c93d605350547776",
+    "TurboCiderNativeApp": "7c8f3f53d714aec5d139dc536758d5344a099388932230b8c56203ab85a66951",
+    "turbocider-library": "3b03c9b5b957eb64192994d4d32385b261a380e09a12c75f94ae90c45feb9ad7",
+    "turbocider-history-tests": "1b52370e33943afe6575283a5f61728cfbff8ececf59c2f4fde6dc8479a4d634",
+    "turbocider-public-image-app-tests": "07e7010e7ba901dee127d784c6313f672914fcd9b646991fdab552b70a868f5d"
+  },
+  "evidence_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-worker-events",
+  "log_sha256": {
+    "tc-worker-events-budget-tests.log": "29f76c36faaa675c2e28bdfe0508dd6c24a32ec03eba22795933b585df395380",
+    "tc-worker-events-dev-fetch.log": "a8399d415b02599034a0eeea8f195c366111333b3b6ba14895fad98373bdca13",
+    "tc-worker-events-final-tests-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-worker-events-history-tests-final.log": "87fc96e946ed8cb9159c5c3b5d914dd9ac602c815b241be3267dfb42d99c1c75",
+    "tc-worker-events-history-tests.log": "87fc96e946ed8cb9159c5c3b5d914dd9ac602c815b241be3267dfb42d99c1c75",
+    "tc-worker-events-native-build-final.log": "2d40c906ae1f4608d8c0938c224c0e3476c1388d33a017cc58abb0349628e5b3",
+    "tc-worker-events-native-build-initial.log": "1d9aa5b687d1027493e65acaec02bc099e3ea3680fef665f59ee8d9a2e34e7c2",
+    "tc-worker-events-native-build.log": "1d9aa5b687d1027493e65acaec02bc099e3ea3680fef665f59ee8d9a2e34e7c2",
+    "tc-worker-events-native-contract-final.log": "8db70490ee9031b0ccc63ce417a5f62ad0449b0ee37851275420e45d0badbd29",
+    "tc-worker-events-native-contract.log": "cfddd7f9f91c8beebdfebd6c49e9c668bf516e22e89eefa9141dcbb54ffcc9f5",
+    "tc-worker-events-native-fixtures-final.log": "f1ed4253e45f0791b8de41dbc5db9c428f829057ea262e55978826fb2b1594f9",
+    "tc-worker-events-native-fixtures.log": "f1ed4253e45f0791b8de41dbc5db9c428f829057ea262e55978826fb2b1594f9",
+    "tc-worker-events-process-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-worker-events-process-tests.log": "97306ec55ad4f4fdb66e08e2c1c499c41f29db7a3cf7c89d3e1b29443809b570",
+    "tc-worker-events-query-regression.log": "ab87190510f99afeb5c9ac12670ec7666f48ce7a0ba5c21620c8175795407c7c",
+    "tc-worker-events-real-app-tests.log": "ceec725cbc67e665fddf5f92d641e9e188f433c8c446f1e9d865edd43ba507f8",
+    "tc-worker-events-swift-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "dev_merge": {
+    "fetched": "61c08495815d645bb54d75ae9dbea466f0648b2d",
+    "already_ancestor": true
+  },
+  "limitations": [
+    "Production catalog remains empty; successful progress/image cases use fixtures or C API doubles. Real models only reject/cancel before successful public resolution/generation.",
+    "Telemetry may be dropped at its lifetime cap. Diagnostic stderr still has the supervisor 1 MiB total cap; overflow triggers owned cleanup.",
+    "No GPU/ANE performance, quality, full-generation cancellation or public release qualification inferred from these transport/App tests.",
+    "No screenshot-based GUI acceptance this round. Full public calibration and hybrid engine integration remain outstanding."
+  ]
+}

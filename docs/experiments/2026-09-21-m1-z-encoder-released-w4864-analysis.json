@@ -1,0 +1,265 @@
+{
+  "scope": "Exploratory legacy budget streaming; not framework/public hybrid qualification",
+  "pairs": [
+    {
+      "gpu_index": 0,
+      "hybrid_index": 1,
+      "rgb": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9995065070119609,
+        "correlation": 0.9970876856029085,
+        "mae": 1.9808603922526042,
+        "max_abs": 142.0,
+        "relative_l2": 0.03143284277733814
+      },
+      "tensors": {
+        "z_decoded.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9973532771198408,
+          "correlation": 0.9971040439140946,
+          "mae": 0.015542730981763953,
+          "max_abs": 1.1098923683166504,
+          "relative_l2": 0.07276349543872931
+        },
+        "z_latent_final.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9965121752113345,
+          "correlation": 0.9965104328106427,
+          "mae": 0.03172892541535788,
+          "max_abs": 1.1686170399188995,
+          "relative_l2": 0.08355323998770695
+        },
+        "z_latent_initial.safetensors": {
+          "valid": true,
+          "identical": true,
+          "cosine": 1.0,
+          "correlation": 1.0,
+          "mae": 0.0,
+          "max_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "z_latent_step_1.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9999994258545168,
+          "correlation": 0.999999426386635,
+          "mae": 0.0006512804425398144,
+          "max_abs": 0.011784076690673828,
+          "relative_l2": 0.0010716573293621703
+        },
+        "z_latent_step_2.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9999969041295411,
+          "correlation": 0.9999969041503511,
+          "mae": 0.001397572823940152,
+          "max_abs": 0.027886569499969482,
+          "relative_l2": 0.002488343998528909
+        },
+        "z_latent_step_3.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9999838425312826,
+          "correlation": 0.9999838413553648,
+          "mae": 0.0026444024796035137,
+          "max_abs": 0.08475886285305023,
+          "relative_l2": 0.005684752406686113
+        },
+        "z_latent_step_4.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9999481201550848,
+          "correlation": 0.9999481134048056,
+          "mae": 0.004053299058213611,
+          "max_abs": 0.11434715986251831,
+          "relative_l2": 0.01018748503662906
+        },
+        "z_latent_step_5.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9998848756357513,
+          "correlation": 0.9998848581937291,
+          "mae": 0.005665479145278596,
+          "max_abs": 0.1647759974002838,
+          "relative_l2": 0.015176255974121854
+        },
+        "z_latent_step_6.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9997123301935231,
+          "correlation": 0.9997122439822137,
+          "mae": 0.00832170860128656,
+          "max_abs": 0.23453399538993835,
+          "relative_l2": 0.02399009648494366
+        },
+        "z_latent_step_7.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9993385818188882,
+          "correlation": 0.9993382797903982,
+          "mae": 0.012031700559589353,
+          "max_abs": 0.44844093918800354,
+          "relative_l2": 0.036382363015885766
+        },
+        "z_latent_step_8.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9984528332871184,
+          "correlation": 0.9984519782299596,
+          "mae": 0.01823823794025259,
+          "max_abs": 0.7997444868087769,
+          "relative_l2": 0.05565407752883617
+        },
+        "z_latent_step_9.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9965121752113345,
+          "correlation": 0.9965104328106427,
+          "mae": 0.03172892541535788,
+          "max_abs": 1.1686170399188995,
+          "relative_l2": 0.08355323998770695
+        }
+      },
+      "quality_within_exploratory_thresholds": false,
+      "request_wall_ratio_hybrid_over_gpu": 1.3797020114869079
+    },
+    {
+      "gpu_index": 3,
+      "hybrid_index": 2,
+      "rgb": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9995065070119609,
+        "correlation": 0.9970876856029085,
+        "mae": 1.9808603922526042,
+        "max_abs": 142.0,
+        "relative_l2": 0.03143284277733814
+      },
+      "tensors": {
+        "z_decoded.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9973532771198408,
+          "correlation": 0.9971040439140946,
+          "mae": 0.015542730981763953,
+          "max_abs": 1.1098923683166504,
+          "relative_l2": 0.07276349543872931
+        },
+        "z_latent_final.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9965121752113345,
+          "correlation": 0.9965104328106427,
+          "mae": 0.03172892541535788,
+          "max_abs": 1.1686170399188995,
+          "relative_l2": 0.08355323998770695
+        },
+        "z_latent_initial.safetensors": {
+          "valid": true,
+          "identical": true,
+          "cosine": 1.0,
+          "correlation": 1.0,
+          "mae": 0.0,
+          "max_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "z_latent_step_1.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9999994258545168,
+          "correlation": 0.999999426386635,
+          "mae": 0.0006512804425398144,
+          "max_abs": 0.011784076690673828,
+          "relative_l2": 0.0010716573293621703
+        },
+        "z_latent_step_2.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9999969041295411,
+          "correlation": 0.9999969041503511,
+          "mae": 0.001397572823940152,
+          "max_abs": 0.027886569499969482,
+          "relative_l2": 0.002488343998528909
+        },
+        "z_latent_step_3.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9999838425312826,
+          "correlation": 0.9999838413553648,
+          "mae": 0.0026444024796035137,
+          "max_abs": 0.08475886285305023,
+          "relative_l2": 0.005684752406686113
+        },
+        "z_latent_step_4.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9999481201550848,
+          "correlation": 0.9999481134048056,
+          "mae": 0.004053299058213611,
+          "max_abs": 0.11434715986251831,
+          "relative_l2": 0.01018748503662906
+        },
+        "z_latent_step_5.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9998848756357513,
+          "correlation": 0.9998848581937291,
+          "mae": 0.005665479145278596,
+          "max_abs": 0.1647759974002838,
+          "relative_l2": 0.015176255974121854
+        },
+        "z_latent_step_6.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9997123301935231,
+          "correlation": 0.9997122439822137,
+          "mae": 0.00832170860128656,
+          "max_abs": 0.23453399538993835,
+          "relative_l2": 0.02399009648494366
+        },
+        "z_latent_step_7.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9993385818188882,
+          "correlation": 0.9993382797903982,
+          "mae": 0.012031700559589353,
+          "max_abs": 0.44844093918800354,
+          "relative_l2": 0.036382363015885766
+        },
+        "z_latent_step_8.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9984528332871184,
+          "correlation": 0.9984519782299596,
+          "mae": 0.01823823794025259,
+          "max_abs": 0.7997444868087769,
+          "relative_l2": 0.05565407752883617
+        },
+        "z_latent_step_9.safetensors": {
+          "valid": true,
+          "identical": false,
+          "cosine": 0.9965121752113345,
+          "correlation": 0.9965104328106427,
+          "mae": 0.03172892541535788,
+          "max_abs": 1.1686170399188995,
+          "relative_l2": 0.08355323998770695
+        }
+      },
+      "quality_within_exploratory_thresholds": false,
+      "request_wall_ratio_hybrid_over_gpu": 1.1044422657826374
+    }
+  ],
+  "gpu_request_wall_median_seconds": 34.46706629201071,
+  "hybrid_request_wall_median_seconds": 42.77733806252945,
+  "median_ratio_hybrid_over_gpu": 1.2411076039983424,
+  "gpu_worker_wait_median_seconds": 34.99066760396818,
+  "hybrid_worker_wait_median_seconds": 43.32581268751528,
+  "worker_wait_ratio_hybrid_over_gpu": 1.238210518812789,
+  "worker_wait_scope": "Parent wait from Popen return to worker exit; excludes Popen call itself",
+  "gpu_repeat_image_identical": true,
+  "hybrid_repeat_image_identical": true,
+  "qualification": "NOT_PERFORMED: two exploratory pairs, diagnostic dumps, uncontrolled OS/Core ML caches"
+}

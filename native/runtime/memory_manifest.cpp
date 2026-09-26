@@ -4,11 +4,16 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <iomanip>
 #include <limits>
 #include <map>
 #include <sstream>
 #include <tuple>
+#include <unistd.h>
+#if defined(__APPLE__)
+#include <CommonCrypto/CommonDigest.h>
+#endif
 
 namespace tc {
 namespace {
@@ -487,5 +492,57 @@ std::string memory_sha256_hex(std::string_view value) {
     for (uint8_t byte : bytes) output << std::setw(2) << unsigned(byte);
     return output.str();
 }
+
+#if defined(__APPLE__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
+std::string memory_sha256_fd(int fd, uint64_t bytes,
+                             const std::atomic<bool> *cancelled) {
+    require(fd >= 0 && bytes <= static_cast<uint64_t>(
+                std::numeric_limits<off_t>::max()), "invalid SHA-256 file range");
+    const auto check_cancelled = [&] {
+        if (cancelled && cancelled->load(std::memory_order_relaxed))
+            throw Cancelled();
+    };
+    check_cancelled();
+    std::vector<char> buffer(1024 * 1024);
+#if defined(__APPLE__)
+    CC_SHA256_CTX hash;
+    CC_SHA256_Init(&hash);
+#else
+    Sha256 hash;
+#endif
+    uint64_t offset = 0;
+    while (offset < bytes) {
+        check_cancelled();
+        const size_t count = static_cast<size_t>(
+            std::min<uint64_t>(buffer.size(), bytes - offset));
+        const ssize_t read = ::pread(fd, buffer.data(), count,
+                                     static_cast<off_t>(offset));
+        if (read < 0 && errno == EINTR) continue;
+        require(read > 0, "SHA-256 source read failed or truncated");
+#if defined(__APPLE__)
+        CC_SHA256_Update(&hash, buffer.data(), static_cast<CC_LONG>(read));
+#else
+        hash.update(std::string_view(buffer.data(), static_cast<size_t>(read)));
+#endif
+        offset += static_cast<uint64_t>(read);
+    }
+    check_cancelled();
+#if defined(__APPLE__)
+    std::array<uint8_t, CC_SHA256_DIGEST_LENGTH> result{};
+    CC_SHA256_Final(result.data(), &hash);
+#else
+    const auto result = hash.finish();
+#endif
+    std::ostringstream output;
+    output << std::hex << std::setfill('0');
+    for (uint8_t byte : result) output << std::setw(2) << unsigned(byte);
+    return output.str();
+}
+#if defined(__APPLE__)
+#pragma clang diagnostic pop
+#endif
 
 } // namespace tc

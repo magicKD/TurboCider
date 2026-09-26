@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-21",
+  "scope": "Snapshot of reviewed acceptance inventory and independent campaign reverification; no production authorization",
+  "base_commit": "79bfff7",
+  "production_calibrated_enabled": false,
+  "validation": {
+    "acceptance_inventory_and_synthetic_campaign_integration": "10 PASS",
+    "release_policy_regression": "8 PASS"
+  },
+  "commands": [
+    "python3 tests/native/test_streaming_acceptance.py",
+    "python3 tests/native/test_streaming_release_policy.py"
+  ],
+  "source_sha256": {
+    "tools/native/verify_streaming_acceptance.py": "dae05d51c0d6c693d3be033c672cfcb27323f3b68d889e0e2b8c215dedc8e29d",
+    "tools/native/verify_streaming_release_evidence.py": "90f8edf8afe7032eeffba66964232aa13e91549bd7e822c43d779ee9e1573b63",
+    "tests/native/test_streaming_acceptance.py": "e5b0928acd058072bf6f336e6b8700de12618d7c9738743393000e1b87afbd9e",
+    "tools/native/streaming_release_policy.py": "92bafd9578f9710ee25ef3e84f432a578e50e4d98c97099ef214d1237906b1d6",
+    "tools/native/verify_streaming_campaign.py": "cfa74f10de9ea3333661c555eb6f8605a8c46a0e5d887383b005737578076f92",
+    "tools/native/build_streaming_catalog.py": "f8c5bb3bdd46e57a649074549cb214569843aba5d62dc7650bff4994621939f9"
+  },
+  "evidence_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-release-evidence",
+  "logs_sha256": {
+    "tc-acceptance-tests-snapshot.log": "7399b976a6d89d1aa25803903632e75f18d8911e79fa0a0cb2bf89e825ecf898",
+    "tc-acceptance-policy-snapshot.log": "22cbab5860e0ed2ea3e43efab413488a491da7c974e0f815fdbd990765ee4f67"
+  },
+  "verified_invariants": [
+    "All six acceptance reports bind to the reviewed commit, frozen policy and catalog binding; executed checks require raw artifacts.",
+    "Bounded descriptor-based inventory rejects traversal, symlinks, FIFO, oversized JSON, duplicate keys, changed files and hash/size mismatches.",
+    "P0/P1/P2 raw synthetic campaigns are actually reverified; persisted-summary tampering is rejected.",
+    "Failed App acceptance blocks review readiness; NOT_RUN and INCONCLUSIVE do not become PASS.",
+    "All results retain production_authorized=false; output creation does not overwrite existing files."
+  ],
+  "limitations": [
+    "Synthetic fixtures are tool tests, not real model or App acceptance evidence.",
+    "Human review must establish behavioral claims from artifacts. Reviewer names/digests do not authenticate reviewers or provide signatures.",
+    "Nested catalog binding validation and execution authority remain catalog/native integration responsibilities.",
+    "Calibrated builder/native/resolver/package/App integration is incomplete; production catalog remains empty.",
+    "No new native/Swift build, model run, performance/memory qualification or GUI acceptance in this snapshot."
+  ]
+}

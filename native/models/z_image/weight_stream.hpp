@@ -9,6 +9,7 @@
 #include <mutex>
 
 namespace tc {
+namespace z_image { class GpuSuffixSource; }
 
 // Explicit layer streaming. The worker reads/converts into buffers allocated
 // on the inference thread; it never calls MLX's thread-unsafe default stream.
@@ -40,16 +41,19 @@ class ZImageWeightStream {
     int fd_ = -1;
     int packed_fd_ = -1;
     std::shared_ptr<const streaming::SourceLease> lease_;
+    std::shared_ptr<const z_image::GpuSuffixSource> suffix_source_;
     uint64_t file_bytes_ = 0;
     int64_t modified_seconds_ = 0, modified_nanos_ = 0;
     std::vector<Record> fixed_records_;
     std::array<std::vector<Record>, 30> blocks_;
     std::vector<Weights> pinned_;
     std::vector<Slot> slots_{2};
-    bool convrot_ = false;
     uint32_t exact_slot_count_ = 2;
+    bool convrot_ = false;
+    unsigned prefetch_layers_ = 1;
     std::atomic<bool> &cancelled_;
     BlockResidencyMetrics metrics_;
+    // Exact workers own separate slots; only completion accounting is shared.
     int expected_block_ = 0;
     bool exact_layout_ = false;
     bool exact_pool_live_ = false;
@@ -60,6 +64,7 @@ class ZImageWeightStream {
                    streaming::OwnedSourceFd());
     void pack_suffix(int prefix_channels, const Event &);
     void pack_exact_suffix(const z_image::StreamingMetadata &, const Event &);
+    void prepare_convrot(std::vector<Record> &);
     void check_source() const;
     void allocate(Slot &, const std::vector<Record> &);
     ReadResult read(const std::vector<Read> &,
@@ -83,7 +88,7 @@ class ZImageWeightStream {
     ZImageWeightStream(const std::filesystem::path &, uint64_t budget,
                        uint64_t activation_reserve, Weights &fixed,
                        const Event &, std::atomic<bool> &,
-                       int prefix_channels = 0);
+                       int prefix_channels = 0, unsigned prefetch_layers = 1);
     // Exact-layout construction preserves the user-selected prefix. It loads
     // only fixed/prefix weights; the generic StageExecutor remains the sole
     // owner of worker creation, suffix fill dispatch and slot state.
@@ -103,6 +108,12 @@ class ZImageWeightStream {
                        uint64_t budget,
                        uint64_t activation_reserve, Weights &fixed,
                        const Event &, std::atomic<bool> &);
+    // Internal hybrid reader only. Requires a completed native derived source,
+    // preserves P/K, and does not authorize a public or exact-GPU route.
+    ZImageWeightStream(std::shared_ptr<const z_image::GpuSuffixSource>,
+                       unsigned pinned_blocks, uint32_t slot_count,
+                       uint64_t budget, uint64_t activation_reserve,
+                       Weights &fixed, const Event &, std::atomic<bool> &);
     ~ZImageWeightStream();
     ZImageWeightStream(const ZImageWeightStream &) = delete;
     void reset_metrics();
@@ -118,6 +129,7 @@ class ZImageWeightStream {
                         const std::atomic<bool> *worker_cancel);
     Weights bind_exact(uint32_t slot, uint32_t block) const;
     const Weights &prefix_weights(uint32_t block) const;
+    // Owner-thread observation only, after outstanding exact fills are joined.
     const BlockResidencyMetrics &metrics() const { return metrics_; }
 };
 

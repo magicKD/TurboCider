@@ -19,8 +19,6 @@ void validate_common(std::string_view model_id,
     value_require(!model_id.empty(), "model id is empty");
     value_require(!source.model_variant.empty(), "source model variant is empty");
     value_require(!source.weight_format.empty(), "source weight format is empty");
-    value_require(!source.source_snapshot_digest.empty(),
-                  "source snapshot digest is empty");
     value_require(!runtime.runtime_revision.empty(),
                   "runtime revision is empty");
     value_require(!runtime.adapter_revision.empty(),
@@ -35,7 +33,7 @@ void validate_common(std::string_view model_id,
     value_require(lease != nullptr, "source lease is missing");
     value_require(!lease->digest().empty(), "source lease digest is empty");
     value_require(lease->generation() != 0, "source lease generation is zero");
-    value_require(lease->digest() == source.source_snapshot_digest,
+    value_require(streaming_source_matches_lease(source, *lease),
                   "source lease digest differs from source identity");
 }
 

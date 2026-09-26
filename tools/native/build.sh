@@ -46,8 +46,31 @@ MACOS_FLAGS=(-mmacosx-version-min="$DEPLOYMENT_TARGET")
 COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I bindings/c/include -I native/core -isystem "$MLX_ROOT/include" -Wall -Wextra -Wno-unused-parameter)
 if [[ -n "$TEST_HOOK_FLAG" ]]; then COMMON+=("$TEST_HOOK_FLAG"); fi
 if [[ -n "$AUDIT_COUNTER_FLAG" ]]; then COMMON+=("$AUDIT_COUNTER_FLAG"); fi
+COMMON+=(-DTURBOCIDER_HAS_BUNDLED_CATALOG=1)
+BUILD_IDENTITY_DIR="$OUT/runtime-build"
+BUILD_IDENTITY_PYTHON="${TURBOCIDER_BUILD_PYTHON:-python3}"
+BUILD_IDENTITY_FLAGS=("${COMMON[@]}")
+runtime_build_identity() {
+ "$BUILD_IDENTITY_PYTHON" tools/native/generate_runtime_build_identity.py \
+  --root "$PWD" --mlx-root "$MLX_ROOT" --sdk "$SDK" --toolchain "$TOOLCHAIN" \
+  --output "$BUILD_IDENTITY_DIR" --deployment-target "$DEPLOYMENT_TARGET" \
+  --test-hooks "$TEST_HOOKS" --audit-counters "$AUDIT_COUNTERS" \
+  --experimental-probes "$EXPERIMENTAL_PROBES" "$@" -- "${BUILD_IDENTITY_FLAGS[@]}"
+}
+runtime_build_identity
+bundled_streaming_catalog() {
+ "$BUILD_IDENTITY_PYTHON" tools/native/generate_bundled_streaming_catalog.py \
+  --inventory native/runtime/streaming/bundled_catalog.json \
+  --runtime-manifest "$BUILD_IDENTITY_DIR/runtime-build-manifest.json" \
+  --output "$BUILD_IDENTITY_DIR" "$@"
+}
+bundled_streaming_catalog
+# Native identity and catalog implementations require these generated headers.
+# Missing generation fails instead of sharing a manual fallback ID/catalog.
+COMMON+=(-I "$BUILD_IDENTITY_DIR")
 OBJECTS=()
 SOURCES=(
+ native/runtime/build_identity.cpp
  native/core/common.cpp
  native/core/json_keys.cpp
  native/runtime/streaming/config.cpp native/runtime/streaming/layout.cpp
@@ -87,7 +110,7 @@ SOURCES=(
 native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_mlx/vdn_mlx.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
  native/models/z_image/gguf.cpp
- native/models/z_image/z_image.cpp
+ native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/models/z_image/coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp
  native/platform/apple/z_image_weight_stream.mm
  native/models/llada/llada.cpp native/models/llada/llada_text.cpp
  native/models/llada/llada_transformer.cpp
@@ -187,6 +210,8 @@ fi
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_video_vae_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-video-vae-probe"
 "$CXX" "${COMMON[@]}" tools/native/ltx_mlx_block_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/ltx-mlx-block-probe"
 "$CXX" "${COMMON[@]}" tools/native/ltx_mlx_model_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/ltx-mlx-model-probe"
+runtime_build_identity --verify
+bundled_streaming_catalog --verify
 printf 'Built %s\n' "$OUT/turbocider"
 if [[ "${TURBOCIDER_NATIVE_ONLY:-0}" == "1" ]]; then
  exit 0

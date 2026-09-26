@@ -1,0 +1,14 @@
+{
+  "scope": "Real checkpoint derived-file validation; no GPU/Core ML execution",
+  "first_gpu_channel": 5120,
+  "branches": 32,
+  "sampled_rows_per_branch": 3,
+  "parent_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+  "parent_verification_bytes": 12309866400,
+  "recipe_sha256": "30a0c45e5459ac2bcadcc06addb1896b45a48d9dbad9875bbe73c5be9a51d373",
+  "derived_sha256": "59b03803a9dac69d0fe89a79ef318056260b77d48cdc588744aef6bee89fcb47",
+  "pack_read_bytes": 2516582400,
+  "pack_write_bytes": 1258291200,
+  "derived_verification_read_bytes": 1258291200,
+  "sampled_rows_equal": true
+}

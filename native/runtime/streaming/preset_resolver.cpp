@@ -25,8 +25,10 @@ const SourceLease &validated_probe_lease(
                            !lease->digest().empty(),
                        "streaming_source_lease_invalid");
     require_resolution(
-        lease->digest() == probe.source_identity().source_snapshot_digest,
+        streaming_source_matches_lease(probe.source_identity(), *lease),
         "artifact_changed");
+    lease->revalidate_paths();
+    lease->revalidate_open_files();
     return *lease;
 }
 
@@ -44,9 +46,7 @@ const SourceLease &validated_source_chain(
                            snapshot_lease->generation() != 0,
                        "streaming_source_lease_mismatch");
     require_resolution(snapshot_lease->digest() == probe_lease.digest() &&
-                           snapshot_lease->digest() ==
-                               snapshot.source_identity()
-                                   .source_snapshot_digest,
+                           streaming_source_matches_lease(snapshot.source_identity(), *snapshot_lease),
                        "artifact_changed");
     return *snapshot_lease;
 }
@@ -55,12 +55,18 @@ const SourceLease &validated_source_chain(
 
 std::string streaming_source_identity_digest(
         const PresetSourceIdentity &source) {
-    CanonicalEncoder out("tc-streaming-source-identity-v1");
+    require_resolution(source.identity_version == 1 || source.identity_version == 2,
+                       "streaming_source_identity_version_unsupported");
+    require_resolution(source.identity_version != 2 || source.source_snapshot_digest.empty(),
+                       "streaming_portable_identity_contains_snapshot");
+    CanonicalEncoder out(source.identity_version == 2
+        ? "tc-streaming-source-identity-v2" : "tc-streaming-source-identity-v1");
     out.string_field("model_variant", source.model_variant);
     out.string_field("weight_format", source.weight_format);
     out.string_field(
         "artifact_manifest_digest", source.artifact_manifest_digest);
-    out.string_field("source_snapshot_digest", source.source_snapshot_digest);
+    if (source.identity_version == 1)
+        out.string_field("source_snapshot_digest", source.source_snapshot_digest);
     return out.sha256();
 }
 
@@ -241,7 +247,7 @@ ResolvedStreamingSelection PublicPresetResolver::authorize(
             snapshot.layout().digest,
             std::string(snapshot.component_policy_revision()),
             streaming_device_identity_digest(device),
-            source_lease.generation(), digest));
+            source_lease.generation(), std::string(source_lease.digest()), digest));
     return {record, selected.requested_selector, exact, device, digest,
             std::move(authority)};
 }

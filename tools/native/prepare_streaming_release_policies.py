@@ -27,10 +27,11 @@ from build_streaming_catalog import (
     validate_record_shape,
 )
 from run_streaming_campaign import CampaignError, validate_policy
+from streaming_release_policy import STRICT, freeze as freeze_release_policy
 
 
 SCHEMA = "turbocider-streaming-release-policy-set-v1"
-GENERATOR_REVISION = "tc-streaming-release-policy-generator-v1"
+GENERATOR_REVISION = "tc-streaming-release-policy-generator-v2"
 KINDS = ("P0", "P1", "P2", "P3")
 
 
@@ -139,6 +140,7 @@ def prepare_policy_set(
         "schema": SCHEMA,
         "generator_revision": GENERATOR_REVISION,
         "status": "frozen",
+        "release_policy_contract": freeze_release_policy(record["release"].get("policy_revision", STRICT)),
         "target_bytes": target_bytes,
         "catalog_binding_sha256": sha256_bytes(canonical_json(binding)),
         "record_input_sha256": sha256_file(record_path.resolve()),

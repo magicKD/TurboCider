@@ -2,6 +2,8 @@
 
 2026-09-16；M5 Pro、16 核 GPU、24 GiB、macOS 26.4.1、MLX 0.32.0。
 
+2026-09-20 补充：INT8 ConvRot 已接入流式加载、ANE GPU 后缀读取和按预算选择的预加载深度，见 [INT8 流式实验](../status/z-image-int8-streaming-2026-09-20.md)。以下计时及 BF16 范围说明保留为 9 月 16 日的历史记录。
+
 本轮运行时优化仅在 **Apple M5 Pro + 24 GiB** 启用。统一内置配置见 [`device_optimizations.hpp`](../../native/runtime/device_optimizations.hpp)，其他机型返回 `legacy`，保留原执行路径。原生引擎检查真实硬件，Swift 读取引擎返回的 `optimization_profile`；显式 ANE、手填 manifest 或 profile JSON 均不能绕过机型限制。
 
 `profiles/*.example.json` 是需显式选择的执行参数模板，默认禁用，不会自动扫描加载；它们配置 GPU/ANE 策略、分区和预算。本轮优化的机型开关由上述内置表控制，与是否选择外部 profile 分开。M4 原有自动混合策略继续保留，M5/M5 Max 及其他容量未放行。

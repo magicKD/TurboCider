@@ -1,0 +1,45 @@
+{
+  "scope": "32-branch FP16 candidate on original frozen synthetic fixture; no full-image or release qualification",
+  "completed": true,
+  "branches": 32,
+  "passed": 32,
+  "input_byte_identical": true,
+  "references_byte_identical": true,
+  "input_sha256": "637b3fca219b346e91b47c152e4c30d3aaa22c13acfcc636d545e55d8b4a242e",
+  "thresholds": {
+    "relative_l2_max": 0.025,
+    "cosine_min": 0.999,
+    "relative_max_abs_max": 0.05
+  },
+  "max_relative_l2": 0.004708222934309326,
+  "min_cosine": 0.9999889578098774,
+  "max_relative_max_abs": 0.006578947368421052,
+  "branch29": {
+    "block": 29,
+    "prefix": "layers.27",
+    "rows": 1088,
+    "metrics": {
+      "valid": true,
+      "identical": false,
+      "cosine": 0.9999890993052973,
+      "correlation": 0.9999890991766398,
+      "mae": 0.12063407769659819,
+      "max_abs": 8.0,
+      "relative_l2": 0.00467754260108202
+    },
+    "relative_max_abs": 0.00625,
+    "passed": true,
+    "prediction_seconds_diagnostic_only": 0.03362891706638038,
+    "reference_sha256": "46b1e2970577bd007f7e2be5067cd345af6a04a46850229596932fe1bc65d219",
+    "candidate_sha256": "37c6617a2c0b4463dbf53a59cc0bccad13135d8c4969d878e14ce0ed410c8330"
+  },
+  "original_int8_failure_preserved": true,
+  "runtime": "/Users/chencanhui/code/TurboCider/build/m1-policy-v3/libturbocider.dylib",
+  "compile_events_sha256": "7103b828847eba2d5f6158b6957b300cf4c995d23439f86781c3383c6831f202",
+  "export_log_sha256": "1625fa48d9ec715ad2ef7a7c7a64cc2863ffc5f89cdaa0cb772250319823a847",
+  "observed_ane_residency": "unknown; CPU_AND_NE requested",
+  "dev_fetch": {
+    "revision": "61c08495815d645bb54d75ae9dbea466f0648b2d",
+    "is_ancestor": true
+  }
+}

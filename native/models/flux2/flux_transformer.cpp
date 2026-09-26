@@ -180,13 +180,20 @@ class FluxExactAdapter final : public streaming::ModelSlotAdapter {
 
     flux2::StreamingPlanView &plan_;
     streaming::MlxWeightPager &source_;
-    const Event &event_;
+    Event event_;
     std::atomic<bool> &cancelled_;
+    uint32_t heads_ = 0, hidden_ = 0;
     uint32_t dual_blocks_ = 0;
     uint32_t single_blocks_ = 0;
     uint32_t active_pool_ = std::numeric_limits<uint32_t>::max();
     std::array<Job, 4> jobs_{};
     Weights current_;
+    struct PassStorage {
+        Tensor image, context;
+        std::vector<Tensor> image_modulation, text_modulation, single_modulation;
+        Tensor cosine, sine;
+    };
+    std::optional<PassStorage> pass_storage_;
     Tensor *image_ = nullptr;
     Tensor *context_ = nullptr;
     const std::vector<Tensor> *image_modulation_ = nullptr;
@@ -218,6 +225,7 @@ class FluxExactAdapter final : public streaming::ModelSlotAdapter {
                      streaming::MlxWeightPager &source,
                      const Event &event, std::atomic<bool> &cancelled)
         : plan_(plan), source_(source), event_(event), cancelled_(cancelled),
+          heads_(plan.metadata().head_count()), hidden_(plan.metadata().hidden_size()),
           dual_blocks_(plan.metadata().dual_block_count()),
           single_blocks_(plan.metadata().single_block_count()) {
         for (auto &value : jobs_)
@@ -234,20 +242,35 @@ class FluxExactAdapter final : public streaming::ModelSlotAdapter {
         require(!image_, "FLUX exact pass context is already bound");
         pass_ = pass;
         step_ = step;
-        image_ = &image;
-        context_ = &context;
-        image_modulation_ = &image_modulation;
-        text_modulation_ = &text_modulation;
-        single_modulation_ = &single_modulation;
-        cos_ = &cos;
-        sin_ = &sin;
+        pass_storage_.emplace(PassStorage{image, context, image_modulation,
+            text_modulation, single_modulation, cos, sin});
+        image_ = &pass_storage_->image;
+        context_ = &pass_storage_->context;
+        image_modulation_ = &pass_storage_->image_modulation;
+        text_modulation_ = &pass_storage_->text_modulation;
+        single_modulation_ = &pass_storage_->single_modulation;
+        cos_ = &pass_storage_->cosine;
+        sin_ = &pass_storage_->sine;
         text_tokens_ = text_tokens;
         total_tokens_ = total_tokens;
         single_started_ = false;
     }
 
-    void unbind_pass() noexcept {
-        current_.clear();
+    void copy_pass_result(Tensor &image, Tensor &context) const {
+        require_context();
+        image = *image_;
+        context = *context_;
+    }
+
+    void unbind_pass(bool safe = true) noexcept {
+        if (safe) {
+            current_.clear();
+            pass_storage_.reset();
+        } else {
+            // No callbacks may refer to the API stack after failure returns.
+            // Joined I/O and the retained executor keep all other dependencies.
+            event_ = {};
+        }
         image_ = nullptr;
         context_ = nullptr;
         image_modulation_ = nullptr;
@@ -355,14 +378,14 @@ class FluxExactAdapter final : public streaming::ModelSlotAdapter {
             flux_exact_dual_block(
                 *image_, *context_, current_, block, *image_modulation_,
                 *text_modulation_, *cos_, *sin_, text_tokens_, total_tokens_,
-                32);
+                heads_);
             mx::eval({*image_, *context_});
         } else {
             require(single_started_,
                     "FLUX exact single block ran before class boundary");
             flux_exact_single_block(
                 *image_, current_, block - dual_blocks_,
-                *single_modulation_, *cos_, *sin_, 4096, 32);
+                *single_modulation_, *cos_, *sin_, hidden_, heads_);
             mx::eval(*image_);
         }
         checkpoint(cancelled_);
@@ -376,7 +399,13 @@ class FluxExactAdapter final : public streaming::ModelSlotAdapter {
         return readers;
     }
 
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    bool test_fail_drain = false;
+#endif
     bool drain() noexcept override {
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+        if (test_fail_drain) return false;
+#endif
         try {
             mx::synchronize();
             return true;
@@ -485,8 +514,12 @@ class FluxDirectExecutor final {
                     layout_.multi_pool_policy ==
                         streaming::MultiPoolPolicy::retain_all &&
                     layout_.pools.size() == 2 &&
-                    layout_.groups.size() == 32,
+                    (layout_.groups.size() == 32 || layout_.groups.size() == 25),
                 "FLUX direct baseline requires P0/G1/K2/D1/Q2 retained layout");
+    }
+
+    void begin() {
+        require(pools_.empty(), "FLUX direct executor already started");
         pools_.resize(layout_.pools.size());
         mailbox_ = std::make_unique<streaming::CompletionMailbox>(
             layout_.slot_count * (1 + TC_STREAM_MAX_READER_QUEUES));
@@ -517,10 +550,12 @@ class FluxDirectExecutor final {
                 layout_.workers, layout_.slot_count, *mailbox_);
         } catch (...) {
             failed_ = true;
-            if (!cleanup()) std::terminate();
+            cleanup(); // The complete outer owner retains an unsafe executor.
             throw;
         }
     }
+
+    bool retry_drain() noexcept { return cleanup(); }
 
     ~FluxDirectExecutor() {
         if (pools_live_ && !cleanup()) std::terminate();
@@ -635,7 +670,7 @@ class FluxDirectExecutor final {
             ++passes_;
         } catch (...) {
             failed_ = true;
-            if (!cleanup()) std::terminate();
+            cleanup(); // The complete outer owner retains an unsafe executor.
             throw;
         }
     }
@@ -671,6 +706,7 @@ struct FluxExactStream::Impl {
     bool direct = false;
     bool public_execution = false;
     bool finished = false;
+    bool started = false;
 
     Impl(const std::filesystem::path &transformer_directory,
          const std::string &model_id, const StreamingConfig &config,
@@ -697,7 +733,6 @@ struct FluxExactStream::Impl {
         } else {
             executor = std::make_unique<streaming::StageExecutor>(
                 0, request_generation, adapter);
-            executor->begin(plan.layout().stages.front());
         }
     }
 
@@ -719,7 +754,6 @@ struct FluxExactStream::Impl {
                 "FLUX public streaming does not allow the benchmark direct executor");
         plan.metadata().check_unchanged();
         source.load_resident(resident, &cancelled);
-        executor->begin(plan.layout().stages.front());
     }
 };
 
@@ -743,7 +777,34 @@ FluxExactStream::FluxExactStream(
           std::move(lease), model_id, config, workload, resident,
           event, cancelled, request_generation)) {}
 
-FluxExactStream::~FluxExactStream() = default;
+FluxExactStream::~FluxExactStream() {
+    if (impl_ && !drain_safely()) {
+        // Last-resort containment for internal callers. API engines retain the
+        // whole session and require process restart before reaching this point.
+        (void)impl_.release();
+    }
+}
+
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+void FluxExactStream::test_set_drain_failure(bool value) {
+    impl_->adapter->test_fail_drain = value;
+}
+#endif
+void FluxExactStream::start() {
+    require(impl_ && !impl_->finished, "FLUX exact executor unavailable");
+    if (impl_->started) return;
+    impl_->started = true;
+    if (impl_->direct) impl_->direct_executor->begin();
+    else impl_->executor->begin(impl_->plan.layout().stages.front());
+}
+
+bool FluxExactStream::drain_safely() noexcept {
+    if (!impl_) return true;
+    const bool safe = impl_->direct ? impl_->direct_executor->retry_drain()
+                                    : impl_->executor->retry_drain();
+    impl_->adapter->unbind_pass(safe);
+    return safe;
+}
 
 void FluxExactStream::run_pass(
         uint32_t pass, uint32_t step, Tensor &image, Tensor &context,
@@ -758,18 +819,30 @@ void FluxExactStream::run_pass(
         pass, step, image, context, image_modulation, text_modulation,
         single_modulation, cos, sin, text_tokens, total_tokens);
     try {
+        start();
         if (impl_->direct)
             impl_->direct_executor->run_pass(
                 pass, step, impl_->cancelled);
         else
             impl_->executor->run_pass(pass, step, impl_->cancelled);
-    } catch (...) {
-        impl_->adapter->unbind_pass();
+    } catch (const Cancelled &) {
+        // A cooperative refill cancellation is cleanup detail, not a new
+        // primary runtime failure. Keep the API's typed cancellation result.
+        drain_safely();
+        throw;
+    } catch (const std::exception &primary) {
+        drain_safely();
+        if (std::strcmp(primary.what(), "streaming_cancelled") == 0)
+            throw Cancelled();
         const auto detail = impl_->adapter->fill_error();
         if (!detail.empty())
-            throw std::runtime_error("FLUX exact fill failed: " + detail);
+            throw std::runtime_error(std::string(primary.what()) + " ; FLUX exact fill: " + detail);
+        throw;
+    } catch (...) {
+        drain_safely();
         throw;
     }
+    impl_->adapter->copy_pass_result(image, context);
     impl_->adapter->unbind_pass();
 }
 
@@ -786,6 +859,7 @@ void FluxExactStream::enable_receipt(
     require(impl_ && !impl_->finished && !impl_->direct &&
                 impl_->executor != nullptr,
             "FLUX exact receipt is unavailable");
+    start();
     impl_->executor->enable_receipt(std::move(options));
 }
 
@@ -878,10 +952,13 @@ Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int 
     };
     const int total_blocks = dual_layers_ + single_layers_;
     if (exact_stream) {
-        require(model_id_ == "flux2-klein-9b" && !hybrid_ &&
-                    !compile_blocks && dual_layers_ == 8 &&
-                    single_layers_ == 24 && heads_ == 32 && hidden_ == 4096,
-                "FLUX exact streaming requires the eager Klein 9B GPU path");
+        require((model_id_ == "flux2-klein-9b" || model_id_ == "flux2-klein-4b") &&
+                    !hybrid_ && !compile_blocks &&
+                    uint32_t(dual_layers_) == exact_stream->plan().metadata().dual_block_count() &&
+                    uint32_t(single_layers_) == exact_stream->plan().metadata().single_block_count() &&
+                    uint32_t(heads_) == exact_stream->plan().metadata().head_count() &&
+                    uint32_t(hidden_) == exact_stream->plan().metadata().hidden_size(),
+                "FLUX exact streaming requires a matching eager Klein GPU path");
         exact_stream->run_pass(
             stream_pass, stream_pass, x, c, mi, mt, ms, cos, sin, nt, n);
     } else {

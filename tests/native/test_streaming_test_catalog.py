@@ -225,6 +225,8 @@ class TestCatalogTests(unittest.TestCase):
         library.tc_engine_create_model_candidate.argtypes = (
             library.tc_engine_create_model.argtypes
         )
+        library.tc_engine_create_model_worker.argtypes = library.tc_engine_create_model.argtypes
+
         library.tc_engine_resolve_streaming_json.argtypes = [
             c.c_void_p, c.c_char_p, c.POINTER(c.c_void_p),
             c.POINTER(c.c_void_p),
@@ -240,6 +242,8 @@ class TestCatalogTests(unittest.TestCase):
             c.POINTER(c.c_void_p), c.POINTER(c.c_void_p),
         ]
         library.tc_engine_free.argtypes = [c.c_void_p]
+        library.tc_engine_verify_streaming_sources_json.argtypes = [
+            c.c_void_p, c.POINTER(c.c_void_p), c.POINTER(c.c_void_p)]
 
         with tempfile.TemporaryDirectory(prefix="tc-test-catalog-") as raw_root:
             root = Path(raw_root)
@@ -329,7 +333,7 @@ class TestCatalogTests(unittest.TestCase):
                 self.assertTrue(value)
                 return json.loads(value)
 
-            def build_exact_catalog_with_cli() -> dict:
+            def build_exact_catalog_with_cli(verify=False) -> dict:
                 request_path = root / "request.json"
                 plan_path = root / "plan.json"
                 output_path = root / "generated-test-catalog.json"
@@ -365,6 +369,7 @@ class TestCatalogTests(unittest.TestCase):
                     "--target-gib", "12",
                     "--catalog-revision", "tc-streaming-test-cli-r1",
                     "--output", str(output_path),
+                    *(["--verify-sources", "--force"] if verify else []),
                 ], check=True, capture_output=True, text=True)
                 return json.loads(output_path.read_text())
 
@@ -380,6 +385,12 @@ class TestCatalogTests(unittest.TestCase):
                     "turbocider-streaming-test-catalog-v1",
                 )
                 generated_record = generated["records"][0]
+                manifest_path = Path(raw).resolve().parent / "runtime-build/runtime-build-manifest.json"
+                if manifest_path.is_file():
+                    build_manifest = json.loads(manifest_path.read_text())
+                    self.assertEqual(generated_record["runtime"]["turbocider_build_id"],
+                                     build_manifest["runtime_build_id"])
+                    self.assertRegex(build_manifest["runtime_build_id"], r"^tc-runtime-build-v1-[0-9a-f]{64}$")
                 self.assertEqual(
                     generated_record["plan"]["canonical_config"]
                     ["stages"]["denoiser"]["resident_prefix_blocks"],
@@ -398,11 +409,59 @@ class TestCatalogTests(unittest.TestCase):
                     resolved_value["selection"]["layout_digest"],
                     generated_record["plan"]["layout_digest"],
                 )
+                stale_runtime = copy.deepcopy(generated)
+                stale_runtime_record = stale_runtime["records"][0]
+                stale_runtime_record["runtime"]["turbocider_build_id"] = "different-native-build"
+                stale_runtime_record["canonical_record_digest"] = builder.canonical_record_digest(stale_runtime_record)
+                status, failure = install(public, stale_runtime)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("streaming_resolution_stale", failure)
+                status, failure = install(public, generated)
+                self.assertEqual(status, 0, failure)
                 cli_generated = build_exact_catalog_with_cli()
+                self.assertEqual(cli_generated["records"][0]["workload"]["execution_container"], "cli_worker")
                 self.assertEqual(
                     cli_generated["records"][0]["plan"]["layout_digest"],
                     generated_record["plan"]["layout_digest"],
                 )
+
+                portable = copy.deepcopy(generated)
+                portable_record = portable["records"][0]
+                portable_record["source"]["identity_version"] = 2
+                del portable_record["source"]["source_snapshot_digest"]
+                portable_record["canonical_record_digest"] = builder.canonical_record_digest(portable_record)
+                status, failure = install(public, portable)
+                self.assertEqual(status, 0, failure)
+                # Portable records cannot authorize the still-legacy adapter.
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("artifact_verification_required", failure)
+                explicit_policy = copy.deepcopy(portable)
+                explicit_record = explicit_policy["records"][0]
+                explicit_record["release"]["policy_revision"] = "tc-public-strict-v1"
+                explicit_record["canonical_record_digest"] = builder.canonical_record_digest(explicit_record)
+                status, failure = install(public, explicit_policy)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("artifact_verification_required", failure)
+                for unsupported in ("unknown", "tc-public-calibrated-v1"):
+                    bad_policy = copy.deepcopy(explicit_policy)
+                    bad_policy["records"][0]["release"]["policy_revision"] = unsupported
+                    status, failure = install(public, bad_policy)
+                    self.assertNotEqual(status, 0)
+                    self.assertIn("unsupported release policy revision", failure)
+                invalid_portable = copy.deepcopy(portable)
+                invalid_portable["records"][0]["source"]["source_snapshot_digest"] = "b" * 64
+                status, failure = install(public, invalid_portable)
+                self.assertNotEqual(status, 0)
+                self.assertIn("missing or unknown fields", failure)
+
+                verified_cli = build_exact_catalog_with_cli(verify=True)
+                self.assertEqual(verified_cli["records"][0]["source"]["identity_version"], 2)
+                self.assertEqual(verified_cli["records"][0]["workload"]["execution_container"], "cli_worker")
 
                 error = c.c_void_p()
                 status = library.tc_engine_test_clear_streaming_catalog(
@@ -444,8 +503,77 @@ class TestCatalogTests(unittest.TestCase):
                 status, failure = resolve(public)
                 self.assertNotEqual(status, 0)
                 self.assertIn("catalog_has_no_public_records", failure)
+                def verify():
+                    result, error = c.c_void_p(), c.c_void_p()
+                    status = library.tc_engine_verify_streaming_sources_json(
+                        public, c.byref(result), c.byref(error))
+                    failure = consume(library, error)
+                    self.assertEqual(status, 0, failure)
+                    return json.loads(consume(library, result))
+
+                proof = verify()
+                self.assertEqual(proof["status"], "verified")
+                self.assertEqual(len(proof["files"]), 4)
+                self.assertGreater(proof["verification_bytes_read"], 0)
+                cached = verify()
+                self.assertEqual(cached["verification_bytes_read"], 0)
+                self.assertEqual(cached["verification_cache_hits"], 4)
+                verified_catalog = build_exact_catalog(public)
+                verified_record = verified_catalog["records"][0]
+                self.assertEqual(verified_record["source"]["identity_version"], 2)
+                self.assertNotIn("source_snapshot_digest", verified_record["source"])
+                self.assertEqual(verified_record["source"]["artifact_manifest_digest"],
+                                 proof["artifact_manifest_digest"])
+                self.assertEqual(verified_record["canonical_record_digest"],
+                                 builder.canonical_record_digest(verified_record))
+                status, failure = install(public, verified_catalog)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(public)
+                self.assertEqual(status, 0, failure)
+                fresh = create(library.tc_engine_create_model)
+                try:
+                    status, failure = install(fresh, verified_catalog)
+                    self.assertEqual(status, 0, failure)
+                    status, failure = resolve(fresh)
+                    self.assertEqual(status, 0, failure)
+                finally:
+                    library.tc_engine_free(fresh)
+                text_file = root / "split_files/text_encoders/qwen_3_4b.safetensors"
+                with text_file.open("r+b") as stream:
+                    stream.write(b"X")
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("artifact_verification_required", failure)
+                updated = verify()
+                self.assertNotEqual(updated["artifact_manifest_digest"], proof["artifact_manifest_digest"])
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("artifact_verification_required", failure)
             finally:
                 library.tc_engine_free(public)
+
+            worker = create(library.tc_engine_create_model_worker)
+            try:
+                worker_catalog = build_exact_catalog(worker)
+                worker_record = worker_catalog["records"][0]
+                self.assertEqual(worker_record["workload"]["execution_container"], "cli_worker")
+                self.assertEqual(worker_record["calibration"]["execution_container"], "cli_worker")
+                status, failure = install(worker, worker_catalog)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(worker)
+                self.assertEqual(status, 0, failure)
+                app_catalog = copy.deepcopy(worker_catalog)
+                app_record = app_catalog["records"][0]
+                app_record["workload"]["execution_container"] = "embedded_app"
+                app_record["calibration"]["execution_container"] = "embedded_app"
+                app_record["canonical_record_digest"] = builder.canonical_record_digest(app_record)
+                status, failure = install(worker, app_catalog)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(worker)
+                self.assertNotEqual(status, 0)
+                self.assertIn("unvalidated_workload", failure)
+            finally:
+                library.tc_engine_free(worker)
 
             candidate = create(library.tc_engine_create_model_candidate)
             try:

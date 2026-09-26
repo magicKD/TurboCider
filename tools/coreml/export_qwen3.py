@@ -254,6 +254,10 @@ class QwenSource:
             bits = value.shape[1] * 32 // expected_shape[1]
             if bits not in (4, 8):
                 raise ValueError(f"unsupported Qwen3 affine bit depth {bits}: {name}")
+            if mx is None:
+                # The App's Core ML toolchain does not need MLX for ordinary
+                # BF16/F16 checkpoints. Only affine dequantization uses it.
+                import mlx.core as mx
             q = mx.array(value, dtype=mx.uint32)
             s = mx.array(scales)
             b = mx.array(biases) if biases is not None else None
@@ -352,7 +356,7 @@ def main():
         raise ValueError("output-scale must be finite and in 1...256")
 
     import numpy as np
-    import mlx.core as mx
+    mx = None
     import coremltools as ct
     import coremltools.optimize.coreml as optimize
     from coremltools.converters.mil import Builder as mb

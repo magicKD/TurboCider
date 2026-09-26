@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "comparison_kind": "P1",
+  "engine_lifecycle": "per_request",
+  "expected_implementations": {
+    "baseline": "flux_direct_same_layout_v1",
+    "candidate": "generic_stage_executor_v1"
+  },
+  "initial_matched_pairs": 20,
+  "minimum_tail_requests_per_variant": 0,
+  "bootstrap_iterations": 4000,
+  "bootstrap_seed": 59,
+  "thresholds": {
+    "P1_same_layout": {
+      "wall_median_ratio_max": 1.02,
+      "wall_p95_ratio_max": 1.05,
+      "denoise_median_ratio_max": 1.02,
+      "steady_framework_allocations": 0,
+      "steady_framework_thread_creates": 0
+    }
+  },
+  "workload": {
+    "request": {
+      "schema_version": 2,
+      "model": "flux2-klein-4b",
+      "operation": "image.generate",
+      "inputs": [
+        {
+          "kind": "text",
+          "role": "prompt",
+          "text": "A red fox standing in fresh snow, pine forest, soft morning sunlight, detailed photograph."
+        }
+      ],
+      "outputs": [
+        {
+          "kind": "image",
+          "path": "${OUTPUT}",
+          "width": 256,
+          "height": 256
+        }
+      ],
+      "sampling": {
+        "seed": 42,
+        "steps": 4
+      },
+      "execution": {
+        "policy": "gpu",
+        "streaming": {
+          "schema_version": 1,
+          "enabled": true,
+          "selection": "manual",
+          "retention": "request",
+          "stages": {
+            "denoiser": {
+              "residency": "streamed",
+              "block_group_size": 1,
+              "slot_count": 2,
+              "resident_prefix_blocks": 0,
+              "prefetch_distance": 1,
+              "io_workers": 2
+            }
+          }
+        }
+      },
+      "parameters": {
+        "dynamic_text": true
+      }
+    },
+    "seed_stride": 0,
+    "output_suffix": ".png"
+  },
+  "protocol": {
+    "measured_blocks": 10,
+    "warmup_requests_per_variant": 1,
+    "worker_start_timeout_seconds": 60,
+    "worker_launch_order": [
+      "candidate",
+      "baseline"
+    ],
+    "request_timeout_seconds": 300,
+    "cache_condition": "one-per-variant-warmup-then-per-request-engine-os-cache-warm",
+    "stopping_rule": "fixed-10-block-m1-flux4-quarantine-owner-confirmation",
+    "quantile_estimator": "linear-interpolated-p95",
+    "bootstrap_unit": "abba_block",
+    "multiplicity_policy": "single-frozen-klein-4b-bf16-tuple",
+    "exclusion_policy": "no-exclusions-after-freeze",
+    "timing_scope": "engine-create-through-engine-destroy-image-export-and-safe-stream-drain",
+    "launch_pressure": false,
+    "background_activity": "Z-Image download continues; App Swift build may overlap startup; no other GPU inference or Core ML export/compile during campaign. Environment remains partial."
+  },
+  "quality": {
+    "mode": "artifact_sha256_equal",
+    "artifacts": [
+      {
+        "name": "image",
+        "path": "${OUTPUT}"
+      }
+    ]
+  },
+  "semantic_equivalence": {
+    "declared_equivalent": true,
+    "expected_actual": {
+      "stage": "denoiser",
+      "resident_prefix_blocks": 0,
+      "block_group_size": 1,
+      "slot_count": 2,
+      "prefetch_distance": 1,
+      "io_workers": 2,
+      "group_count": 25,
+      "pass_count": 4,
+      "startup_policy": "prefetch_window_before_prefix",
+      "pass_transition": "reload",
+      "retention": "request;multi_pool=retain_all",
+      "reader_revision": 1,
+      "weight_format": "diffusers-bf16-single-file",
+      "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+      "conditioning_recipe": "qwen3-flux2-klein-v1",
+      "upsample_boundary": "no-upsample;release-before-vae",
+      "engine_lifecycle": "per_request",
+      "total_fills": 100
+    },
+    "fields": [
+      "normalized_request_identity",
+      "resident_prefix_blocks",
+      "block_group_size",
+      "slot_count",
+      "prefetch_distance",
+      "io_workers",
+      "group_count",
+      "pass_count",
+      "startup_policy",
+      "pass_transition",
+      "retention",
+      "engine_lifecycle",
+      "reader_revision",
+      "weight_format",
+      "kernel_revision",
+      "conditioning_recipe",
+      "upsample_boundary",
+      "total_fills"
+    ]
+  },
+  "variants": {
+    "baseline": {
+      "backend": "native",
+      "library": "/Users/chencanhui/code/TurboCider/build/m1-audit/libturbocider.dylib",
+      "model_id": "flux2-klein-4b",
+      "model_path": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B",
+      "constructor": "candidate",
+      "environment": {
+        "TURBOCIDER_FLUX_DIRECT_STREAMING_BASELINE": "1"
+      }
+    },
+    "candidate": {
+      "backend": "native",
+      "library": "/Users/chencanhui/code/TurboCider/build/m1-quarantine/libturbocider.dylib",
+      "model_id": "flux2-klein-4b",
+      "model_path": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B",
+      "constructor": "candidate"
+    }
+  }
+}

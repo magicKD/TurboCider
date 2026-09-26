@@ -1,0 +1,157 @@
+{
+  "scope": "Real Flux proof reuse after engine destruction; second engine resolves before any explicit verification call; no GPU generation",
+  "library_sha256": "726e4e84775b6c6cd784f9b0d616f1802e5012fab40e40ce092243bfa5731952",
+  "first_verification": {
+    "scope": "engine_setup",
+    "wall_seconds": 7.9934757080627605,
+    "report": {
+      "artifact_manifest_digest": "fdba1a4019cf925357b30afbc27390450b287dcf8d2d10f0d39c07ea08030fca",
+      "files": [
+        {
+          "bytes": 541,
+          "logical_id": "config.json",
+          "sha256": "09733c74a3da6d17dd0a0472a091a8950c7c6935889c32c16cc800ede05029de"
+        },
+        {
+          "bytes": 7751109744,
+          "logical_id": "diffusion_pytorch_model.safetensors",
+          "sha256": "9f29f9edcfdae452a653ffb51a534ca4decd389952c225724ff3b94042612a6e"
+        },
+        {
+          "bytes": 1536,
+          "logical_id": "text_encoder/config.json",
+          "sha256": "214b4c29a0d975e9fddf9994a5673f22cb2c4c5750352f9227c2c3251ebeab40"
+        },
+        {
+          "bytes": 4967215360,
+          "logical_id": "text_encoder/model-00001-of-00002.safetensors",
+          "sha256": "8c0506e7f4936fa7e26183a4fd8da4e2bdbc5990ba64ae441f965d51228f36ea"
+        },
+        {
+          "bytes": 3077766632,
+          "logical_id": "text_encoder/model-00002-of-00002.safetensors",
+          "sha256": "82f2bd839378541b0557bfabaf37c7d3d637071fdcb73302dedd7cf61162ce07"
+        },
+        {
+          "bytes": 11422654,
+          "logical_id": "tokenizer/tokenizer.json",
+          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        },
+        {
+          "bytes": 821,
+          "logical_id": "vae/config.json",
+          "sha256": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948"
+        },
+        {
+          "bytes": 168120878,
+          "logical_id": "vae/diffusion_pytorch_model.safetensors",
+          "sha256": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"
+        }
+      ],
+      "model": "flux2-klein-4b",
+      "proof_scope": "native_process_generation",
+      "schema_version": 1,
+      "status": "verified",
+      "verification_bytes_read": 15975638166,
+      "verification_cache_hits": 0
+    }
+  },
+  "fresh_engine_resolution_wall_seconds": 0.23955616704188287,
+  "resolution": {
+    "catalog_revision": "verified-source-smoke-v2",
+    "exact_selector": {
+      "catalog_revision": "verified-source-smoke-v2",
+      "enabled": true,
+      "expected_resolution_digest": "dcd8e12e014da29b62ad85bbdaafadbb28d20682c1275ba9efb7a693932c12b0",
+      "preset_id": "test-flux2-klein-4b-12g-aa7271f33abc",
+      "preset_revision": 1,
+      "retention": "request",
+      "schema_version": 2,
+      "selection": "preset",
+      "target_request_memory_bytes": 12884901888
+    },
+    "identity": {
+      "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+      "runtime_digest": "4e09e6854ad933a199d82819994e2d7b5b786b5e8e95e33ad459ead684ac7659",
+      "source_digest": "b0d8f57c7301054278a1920d2fda5e032a0b2b9fadd4f947d818db8841c95452"
+    },
+    "request_digest": "e467409473274ad11f9697a9a1fb875b6221309e935e4cf853713cd71d6f38ba",
+    "requested_selector": {
+      "enabled": true,
+      "retention": "request",
+      "schema_version": 2,
+      "selection": "memory_tier",
+      "target_request_memory_bytes": 12884901888
+    },
+    "resolution_digest": "dcd8e12e014da29b62ad85bbdaafadbb28d20682c1275ba9efb7a693932c12b0",
+    "schema_version": 1,
+    "selection": {
+      "calibrated_request_bytes": 11596411699,
+      "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+      "execution_container": "cli_worker",
+      "layout_digest": "aa7271f33abc1b2aa78c42230e1311a23329ea5be116d19409fdfc00e07444c1",
+      "memory_scope": "execution_process_tree_v1",
+      "preset_id": "test-flux2-klein-4b-12g-aa7271f33abc",
+      "preset_revision": 1,
+      "record_digest": "2a51ed1e1b2bed78d320a916435dd9d79e9fc2e6325e5dc86db7eb749580574a",
+      "release_channel": "public-experimental",
+      "target_request_memory_bytes": 12884901888
+    },
+    "status": "resolved"
+  },
+  "post_resolution_cached_verification": {
+    "scope": "engine_setup",
+    "wall_seconds": 0.0012427920009940863,
+    "report": {
+      "artifact_manifest_digest": "fdba1a4019cf925357b30afbc27390450b287dcf8d2d10f0d39c07ea08030fca",
+      "files": [
+        {
+          "bytes": 541,
+          "logical_id": "config.json",
+          "sha256": "09733c74a3da6d17dd0a0472a091a8950c7c6935889c32c16cc800ede05029de"
+        },
+        {
+          "bytes": 7751109744,
+          "logical_id": "diffusion_pytorch_model.safetensors",
+          "sha256": "9f29f9edcfdae452a653ffb51a534ca4decd389952c225724ff3b94042612a6e"
+        },
+        {
+          "bytes": 1536,
+          "logical_id": "text_encoder/config.json",
+          "sha256": "214b4c29a0d975e9fddf9994a5673f22cb2c4c5750352f9227c2c3251ebeab40"
+        },
+        {
+          "bytes": 4967215360,
+          "logical_id": "text_encoder/model-00001-of-00002.safetensors",
+          "sha256": "8c0506e7f4936fa7e26183a4fd8da4e2bdbc5990ba64ae441f965d51228f36ea"
+        },
+        {
+          "bytes": 3077766632,
+          "logical_id": "text_encoder/model-00002-of-00002.safetensors",
+          "sha256": "82f2bd839378541b0557bfabaf37c7d3d637071fdcb73302dedd7cf61162ce07"
+        },
+        {
+          "bytes": 11422654,
+          "logical_id": "tokenizer/tokenizer.json",
+          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        },
+        {
+          "bytes": 821,
+          "logical_id": "vae/config.json",
+          "sha256": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948"
+        },
+        {
+          "bytes": 168120878,
+          "logical_id": "vae/diffusion_pytorch_model.safetensors",
+          "sha256": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"
+        }
+      ],
+      "model": "flux2-klein-4b",
+      "proof_scope": "native_process_generation",
+      "schema_version": 1,
+      "status": "verified",
+      "verification_bytes_read": 0,
+      "verification_cache_hits": 8
+    }
+  }
+}

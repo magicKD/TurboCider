@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <vector>
 #include <unistd.h>
+#include "query_worker.hpp"
+#include "startup_gate.hpp"
 int tc_service_main(const char*,const char*,const char*);
 int tc_rpc_main(const char*,const char*);
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
@@ -39,9 +41,9 @@ static int create_for(const char *path,NSString *request,tc_engine **engine,char
  if(path&&path[0]=='@'){
   NSString *resolved=registered_model_path(path,model);
   if(!resolved){*error=strdup("cannot resolve registered model or alias does not match request.model; use turbocider library list");return 1;}
-  return tc_engine_create_model([model UTF8String],resolved.UTF8String,engine,error);
+  return tc_engine_create_model_worker([model UTF8String],resolved.UTF8String,engine,error);
  }
- return tc_engine_create_model([model UTF8String],path,engine,error);
+ return tc_engine_create_model_worker([model UTF8String],path,engine,error);
 }
 static tc_engine *active=nullptr;
 static bool resource_mode=false;
@@ -111,8 +113,13 @@ static int library_main(int argc,char **argv) {
  [task waitUntilExit];return task.terminationStatus;
 }
 int main(int argc,char**argv){@autoreleasepool{
- if(argc<2){std::cerr<<"turbocider library help | cache help | serve SOCKET STATE | rpc SOCKET REQUEST.json | coreml REQUEST.json | doctor|models|self-test|plan REQUEST.json|tokenize MODEL PROMPT|generate MODEL REQUEST.json | batch MODEL REQUEST1.json REQUEST2.json ... | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
+ if(argc<2){std::cerr<<"turbocider library help | cache help | serve SOCKET STATE | rpc SOCKET REQUEST.json | coreml REQUEST.json | worker-query INPUT.json | worker-generate INPUT.json | doctor|models|self-test|plan REQUEST.json|tokenize MODEL PROMPT|generate MODEL REQUEST.json | batch MODEL REQUEST1.json REQUEST2.json ... | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
  std::string cmd=argv[1];char*out=nullptr,*err=nullptr;int code=0;
+ if((cmd=="worker-query" || cmd=="worker-generate") &&
+    (argc==3 || (argc==4 && std::string(argv[3])=="--supervised"))) {
+   if(argc==4 && !tc_worker::await_admission()) {std::cerr<<"worker_start_not_admitted\n";return 1;}
+   return cmd=="worker-query"?tc_worker::query(argv[2]):tc_worker::generate(argv[2]);
+ }
  if(cmd=="library"||cmd=="cache")return library_main(argc,argv);
  if(cmd=="prepare-lora"){std::cerr<<"LoRA preparation is offline-only; run python3 tools/native/prepare_lora.py MODEL BASE LORA OUTPUT [options] in the development environment\n";return 1;}
  if(cmd=="serve"&&argc==4){auto executable=executable_path(argv[0]);return tc_service_main(argv[2],argv[3],executable.c_str());}

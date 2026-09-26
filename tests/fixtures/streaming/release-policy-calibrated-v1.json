@@ -1,0 +1,33 @@
+{
+  "contract": {
+    "schema": "tc-streaming-release-policy-contract-v1",
+    "policy_revision": "tc-public-calibrated-v1",
+    "public_channels": [
+      "public-calibrated"
+    ],
+    "required_campaign_gates": [
+      "P0",
+      "P1",
+      "P2"
+    ],
+    "required_acceptance_gates": [
+      "source_actual",
+      "quality",
+      "lifecycle",
+      "app",
+      "installation",
+      "package_revocation"
+    ],
+    "optional_campaign_gates": [
+      "P3"
+    ],
+    "claims": {
+      "calibrated_scope_only": true,
+      "hard_memory_cap": false,
+      "guaranteed_zero_swap": false,
+      "swap_speedup_requires_p3": true
+    },
+    "p3_safety_failures_block_release": true
+  },
+  "sha256": "f6fafe2ab7d3717d500d10f7dcfa23417d1493245d7656f8a84d64f2d95e363f"
+}

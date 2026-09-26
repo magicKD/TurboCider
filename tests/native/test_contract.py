@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-lib = C.CDLL(str(ROOT / 'build/native/libturbocider.dylib'))
+NATIVE = Path(os.environ.get('TURBOCIDER_TEST_NATIVE_DIR', ROOT / 'build/native')).resolve()
+lib = C.CDLL(str(NATIVE / 'libturbocider.dylib'))
 lib.tc_plan_json.argtypes = [C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
 lib.tc_string_free.argtypes = [C.c_void_p]
 lib.tc_engine_create.argtypes = [C.c_char_p,C.POINTER(C.c_void_p),C.POINTER(C.c_void_p)]
@@ -132,10 +133,11 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['memory_policy']['digest'], policy['digest'])
 
     def test_memory_constrained_routes_remain_plan_only_without_manifest(self):
+        physical = json.loads(consume(C.c_void_p(lib.tc_system_json())))["physical_memory_bytes"]
         common = {
             'memory_constrained': {
                 'enabled': True,
-                'limit_bytes': 48 * (1 << 30),
+                'limit_bytes': min(48 * (1 << 30), physical),
                 'buffer_percent': 15,
                 'min_free_bytes': 1 << 30,
             },
@@ -160,14 +162,15 @@ class ContractTests(unittest.TestCase):
         policy = configured['memory_policy']
         self.assertTrue(policy['route_available'])
         self.assertFalse(policy['execution_supported'])
-        self.assertTrue(policy['estimate_fits'])
         self.assertEqual(policy['capability_level'], 'hook_bridged')
         self.assertEqual(policy['certification_state'], 'plan_only')
-        self.assertEqual(policy['admission_state'], 'plan_only')
+        self.assertEqual(policy['admission_state'],
+                         'plan_only' if policy['estimate_fits'] else 'rejected')
         self.assertFalse(policy['release_stable'])
         self.assertEqual(policy['manifest_digest'], '')
         self.assertEqual(policy['evidence_digest'], '')
-        self.assertIn('no verified capability manifest', policy['reason'])
+        self.assertIn('no verified capability manifest' if policy['estimate_fits']
+                      else 'exceeds effective budget', policy['reason'])
         self.assertEqual(policy['adapter_candidate'],
                          'h3_c_metal_streamed_v1')
         self.assertEqual(policy['effective_residency'], 'streamed')
@@ -176,6 +179,12 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['residency'], 'streamed')
         self.assertEqual(policy['denoiser_budget_bytes'],
                          policy['effective_budget_bytes'] - 4 * (1 << 30))
+
+        # The native API must reject an oversized user limit on every machine.
+        status, _, error = plan({**h3, 'memory_constrained': {
+            **h3['memory_constrained'], 'limit_bytes': physical + (1 << 30)}})
+        self.assertNotEqual(status, 0)
+        self.assertIn('exceeds physical memory', error)
 
         h3_unsupported = (
             {**h3, 'audio': True},
@@ -211,12 +220,13 @@ class ContractTests(unittest.TestCase):
         policy = configured['memory_policy']
         self.assertTrue(policy['route_available'])
         self.assertFalse(policy['execution_supported'])
-        self.assertTrue(policy['estimate_fits'])
         self.assertEqual(policy['capability_level'], 'hook_bridged')
         self.assertEqual(policy['certification_state'], 'plan_only')
-        self.assertEqual(policy['admission_state'], 'plan_only')
+        self.assertEqual(policy['admission_state'],
+                         'plan_only' if policy['estimate_fits'] else 'rejected')
         self.assertFalse(policy['release_stable'])
-        self.assertIn('no verified capability manifest', policy['reason'])
+        self.assertIn('no verified capability manifest' if policy['estimate_fits']
+                      else 'exceeds effective budget', policy['reason'])
         self.assertEqual(policy['adapter_candidate'],
                          'ltx_c_metal_streamed_video_v1')
         self.assertEqual(configured['ltx_backend'], 'c_metal')
@@ -425,7 +435,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(profile['id'], 'm5pro24-v1' if expected else 'legacy')
         for flag in ['z_image_suffix_streaming', 'z_image_hybrid_segments',
                      'z_image_memory_lifecycle', 'z_image_smallest_partition',
-                     'external_automatic_partitions', 'coreml_output_copy']:
+                     'external_automatic_partitions', 'coreml_output_copy', 'z_image_int8_streaming']:
             self.assertIs(profile[flag], expected)
 
     def test_z_image_streaming_contract(self):
@@ -461,6 +471,14 @@ class ContractTests(unittest.TestCase):
             profile_code, _, profile_error = plan({**request, 'profile': str(profile)})
             self.assertEqual(profile_code == 0,
                              system['optimization_profile']['z_image_suffix_streaming'], profile_error)
+            config = json.loads(profile.read_text())
+            for field in ('z_image_int8_streaming', 'z_image_suffix_streaming'):
+                injected = json.loads(json.dumps(config))
+                injected['models']['z-image-turbo'][field] = True
+                profile.write_text(json.dumps(injected))
+                code, _, error = plan({**request, 'profile': str(profile)})
+                self.assertNotEqual(code, 0)
+                self.assertIn('unknown profile field', error)
         self.assertNotEqual(plan({**hybrid, 'allow_approximation': False})[0], 0)
         self.assertNotEqual(plan({**hybrid, 'loras': [dict(
             path='/tmp/style.safetensors', strength=1, role='transformer')]})[0], 0)
@@ -1961,9 +1979,9 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['encoder_gpu_graph'],
                          'qwen3_encoder_mlp_complement')
         self.assertEqual(configured['encoder_precision'],
-                         'bf16_gpu+int8_mlp_fp16_io')
+                         'bf16_gpu+coreml_mlp_fp16_io')
         self.assertEqual(configured['precision'], 'bf16')
-        self.assertIn('qwen3_encoder_mlp_int8_per_channel',
+        self.assertIn('qwen3_encoder_mlp_coreml_approximation',
                       configured['algorithm_approximations'])
 
         both = {**base, 'execution': 'gpu_ane', 'ane_manifest': '/tmp/dit.json',
@@ -1975,7 +1993,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['execution'], 'gpu_ane_experimental')
         self.assertEqual(configured['encoder_execution'], 'gpu_ane_experimental')
         self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
-        self.assertEqual(configured['precision'], 'bf16_gpu+int8_mlp_fp16_io')
+        self.assertEqual(configured['precision'], 'bf16_gpu+coreml_mlp_fp16_io')
 
         gguf = {**base, 'model': 'z-image-turbo-gguf',
                 'model_variant': 'Q8_0', 'width': 512, 'height': 512,
@@ -2025,7 +2043,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['encoder_backend'], 'mlx_cpp_metal+coreml')
         self.assertEqual(configured['encoder_gpu_graph'],
                          'qwen3_vl_encoder_mlp_complement')
-        self.assertIn('qwen3_vl_encoder_mlp_int8_per_channel',
+        self.assertIn('qwen3_vl_encoder_mlp_coreml_approximation',
                       configured['algorithm_approximations'])
 
         h3_vsa = {**h3_base, 'model': 'minimax-h3-fasth3-mlx-int6-vsa',
@@ -2054,9 +2072,9 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(configured['encoder_backend'], 'metal_mps+coreml')
         self.assertEqual(configured['encoder_gpu_graph'],
                          'gemma4_encoder_mlp_complement')
-        self.assertIn('gemma4_encoder_mlp_int8_per_channel',
+        self.assertIn('gemma4_encoder_mlp_coreml_approximation',
                       configured['algorithm_approximations'])
-        self.assertNotIn('qwen3_encoder_mlp_int8_per_channel',
+        self.assertNotIn('qwen3_encoder_mlp_coreml_approximation',
                          configured['algorithm_approximations'])
 
         profile_source = (ROOT/'native/platform/apple/profile.mm').read_text()

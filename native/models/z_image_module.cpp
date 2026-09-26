@@ -83,7 +83,7 @@ ModelModule z_image_module() {
             d.parallel_strategy = "GPU computes attention first, then the compiled MLP suffix overlaps the Core ML ANE gated-MLP prefix; base 4096-channel M4 Max route is automatic";
             d.candidate_limitations = {
                 "text-to-image only",
-                "streamed residency is experimental: Comfy BF16, explicit GPU, no LoRA; GPU+ANE compact suffix streaming is enabled only on the measured M5 Pro 24 GiB device",
+                "streamed residency is experimental: Comfy BF16, explicit GPU, no LoRA; INT8 ConvRot streaming, multi-layer prefetch and GPU+ANE compact suffix streaming require Apple M5 Pro with exactly 24 GiB",
                 "inference_time LoRA is an explicit GPU path and is not yet performance-qualified",
                 "automatic GPU+ANE is limited to the base model on Apple M4 Max 64 GB with the measured 4096-channel 32-block manifest",
                 "the repeated warm 1024x1024 base workload measured about 1.21x end-to-end versus the optimized GPU path",

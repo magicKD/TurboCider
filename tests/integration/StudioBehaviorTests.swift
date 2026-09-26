@@ -19,6 +19,17 @@ struct StudioBehaviorTests {
             else { unsetenv("TURBOCIDER_MODEL_LIBRARY") }
         }
         defer { try? FileManager.default.removeItem(at: root) }
+        let poisoned = NativeJobStore(directory: root.appendingPathComponent("poisoned-store"))
+        try check(!poisoned.recordProcessQuarantine(NativeFailure(message: "ordinary failure")), "Ordinary errors must remain retryable")
+        try check(poisoned.recordProcessQuarantine(NativeFailure(message: "streaming_process_quarantined: primary: cancelled; GPU drain incomplete")), "Quarantine error was ignored")
+        try check(poisoned.requiresProcessRestart && !poisoned.canUnload, "Quarantined process remained usable")
+        try check(poisoned.sessionState.contains("重启"), "Quarantine UI must require restart")
+        do {
+            try await poisoned.load(modelURL: root.appendingPathComponent("missing"))
+            throw NativeFailure(message: "Quarantined store reopened an engine")
+        } catch {
+            try check(error.localizedDescription.contains("streaming_process_quarantined:"), "Quarantine lost on retry")
+        }
         let monitor = ResourceMonitor()
         monitor.sample()
         try check(monitor.residentBytes.map { $0 > 0 } == true, "Resident memory unavailable")
@@ -47,6 +58,23 @@ struct StudioBehaviorTests {
         } catch { try check(error.localizedDescription.contains("超时"), "Unexpected inspection failure: \(error)") }
         try check(inventoryStart.duration(to: .now) < .seconds(3), "Disk inspection exceeded deadline")
         let studio = StudioState(directory: root)
+        let originalDraft = studio.draft
+        let queryKey = studio.streamingQueryKey
+        studio.draft.prompt += " changed"
+        try check(studio.streamingQueryKey != queryKey, "Prompt must invalidate token-dependent options")
+        studio.draft = originalDraft
+        studio.draft.modelPaths[studio.draft.modelID] = "/changed/installation"
+        try check(studio.streamingQueryKey != queryKey, "Installation must invalidate options")
+        studio.draft = originalDraft
+        studio.draft.dynamicText.toggle()
+        try check(studio.streamingQueryKey != queryKey, "Token policy must invalidate options")
+        studio.draft = originalDraft
+        studio.draft.streaming.status = "available"
+        studio.draft.streaming.catalogRevision = "result-only"
+        try check(studio.streamingQueryKey == queryKey, "Publishing options must not trigger a query loop")
+        studio.draft = originalDraft
+        try check(studio.recommendedStreamingSelection == .off,
+                  "Physical memory alone cannot recommend an unverified preset")
         let wanDraft = Data(#"{"modelID":"wan2.1-1.3b-qad","modelPaths":{"wan2.1-1.3b-qad":"/models/wan"},"prompt":"keep my prompt","frames":81}"#.utf8)
         let decodedWan = try JSONDecoder().decode(StudioDraft.self, from: wanDraft)
         try check(decodedWan.modelPath == "/models/wan" && decodedWan.frames == 81 &&
@@ -87,6 +115,19 @@ struct StudioBehaviorTests {
                   publicOptions.targets.count == 5 &&
                   publicOptions.targets.allSatisfy { $0.status == "catalog_empty" },
                   "Empty production catalog was not exposed as five unavailable tiers")
+        let unopenedOptions = try await NativeEngine.streamingOptions(publicPair.v2!,
+            modelURL: URL(fileURLWithPath: "/missing/must-not-be-opened"))
+        try check(unopenedOptions.query_status == "catalog_empty",
+                  "An empty catalog must not open or load the selected installation")
+        var publicFlux4 = publicZ
+        publicFlux4.modelID = "flux2-klein-4b"
+        publicFlux4.modelPaths[publicFlux4.modelID] = "/test/flux4"
+        publicFlux4.steps = 4
+        let flux4Pair = try publicFlux4.publicStreamingRequest(output: output)
+        try check(publicFlux4.publicStreamingModel && flux4Pair.v2?.model == "flux2-klein-4b" &&
+                  flux4Pair.v2?.execution.streaming?.target_request_memory_bytes == 8 << 30 &&
+                  flux4Pair.v2?.execution.policy == "gpu" && flux4Pair.v2?.parameters.compile_gpu != true,
+                  "Flux 4B public intent must preserve the explicit eager streaming route")
         publicZ.streaming.selection = .off
         let offPair = try publicZ.publicStreamingRequest(output: output)
         try check(offPair.v2 == nil, "Off unexpectedly constructed a V2 selector")
@@ -119,14 +160,22 @@ struct StudioBehaviorTests {
             .write(to: fakeLTX, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700],
                                               ofItemAtPath: fakeLTX.path)
-        _ = try await LTXWorker.generate(
-            model: URL(fileURLWithPath: publicLTX.modelPath),
-            request: ltxPair.v2!, outputPath: ltxOutput.path,
-            executable: fakeLTX, onEvent: { _ in })
+        var rejectedEmptyWorker = false
+        do {
+            _ = try await LTXWorker.generate(
+                model: URL(fileURLWithPath: publicLTX.modelPath),
+                request: ltxPair.v2!, outputPath: ltxOutput.path,
+                executable: fakeLTX, onEvent: { _ in })
+        } catch { rejectedEmptyWorker = true }
+        try check(rejectedEmptyWorker && (try Data(contentsOf: ltxOutput)).isEmpty,
+                  "Empty worker result must fail and preserve the existing output")
         let capturedLTXJSON = try JSONSerialization.jsonObject(
             with: Data(contentsOf: capturedLTX)) as! [String: Any]
         let capturedExecution = capturedLTXJSON["execution"] as! [String: Any]
         let capturedSelector = capturedExecution["streaming"] as! [String: Any]
+        let stagedOutput = (capturedLTXJSON["outputs"] as! [[String: Any]])[0]["path"] as! String
+        try check(stagedOutput != ltxOutput.path && stagedOutput.contains(".tc-ltx-staging-"),
+                  "Worker must write into a fresh request-scoped staging directory")
         let capturedTarget = (capturedSelector["target_request_memory_bytes"] as? NSNumber)?.uint64Value
         try check(capturedLTXJSON["schema_version"] as? Int == 2 &&
                   capturedTarget == 12 << 30 &&
@@ -583,6 +632,7 @@ struct StudioBehaviorTests {
         try JSONEncoder().encode([externalJob]).write(to: deletionRoot.appendingPathComponent("jobs.json"))
         let externalStore = NativeJobStore(directory: deletionRoot)
         try rejects { _ = try externalStore.trashOutput(externalJob.id) }
+        try await StudioStreamingQueryTests.run(root: root.appendingPathComponent("worker-query-state"))
         print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/Wan/Z-Image defaults and separate LoRA forwarding")
     }
 }

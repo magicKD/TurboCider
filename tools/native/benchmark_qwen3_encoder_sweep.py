@@ -2,7 +2,9 @@
 """Qualify Qwen3 encoder GPU/Core ML prefill over a sequence-length sweep.
 
 Each backend runs in a separate process with one recorded first encoder pass
-and multiple warm passes in the same resident process.  Core ML source
+and multiple warm passes in the same resident process. Optional fixed settling
+passes are predeclared and retained separately; no time-based sample removal
+is performed. Core ML source
 packages are rejected: setup and warm timing must use a compiled-cache manifest.
 The final deterministic conditioning tensors are compared after timing so the
 quality calculation does not contaminate the measured samples.
@@ -27,8 +29,8 @@ from pathlib import Path
 DEFAULT_TOKENS = (64, 128, 256, 512, 1024, 2048)
 INVALID_METRIC = 1e30
 MODE_GEOMETRY = {
-    "z_image": {"hidden": 2560, "mlp_width": 9728, "required_blocks": 35},
-    "flux_klein": {"hidden": 4096, "mlp_width": 12288, "required_blocks": 27},
+    "z_image": {"shapes": ((2560, 9728),), "required_blocks": 35},
+    "flux_klein": {"shapes": ((2560, 9728), (4096, 12288)), "required_blocks": 27},
 }
 OUTPUT_LAYERS = {
     "z_image": (34,),
@@ -66,6 +68,10 @@ def arguments() -> argparse.Namespace:
     )
     parser.add_argument("--tokens", type=int, nargs="+", default=DEFAULT_TOKENS)
     parser.add_argument("--runs", type=int, default=5)
+    parser.add_argument("--settling-runs", type=int, default=0,
+                        help="fixed post-first settling passes, recorded separately for every backend; default 0 preserves the original protocol")
+    parser.add_argument("--first-backend", choices=["gpu", "hybrid"], default="gpu",
+                        help="backend order starts here and rotates across token lengths")
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--min-speedup", type=float, default=1.1)
@@ -96,6 +102,8 @@ def arguments() -> argparse.Namespace:
     args = parser.parse_args()
     if args.runs < 1 or args.runs > 50:
         parser.error("--runs must be in 1...50")
+    if args.settling_runs < 0 or args.settling_runs > 20 or args.runs + args.settling_runs > 50:
+        parser.error("--settling-runs must be in 0...20 and runs + settling must not exceed 50")
     if args.timeout < 1:
         parser.error("--timeout must be positive")
     if not args.tokens or any(value < 1 or value > 2048 for value in args.tokens):
@@ -133,12 +141,11 @@ def load_compiled_manifest(path: Path, mode: str) -> dict:
             buckets != sorted(set(buckets))):
         raise ValueError("encoder manifest has no sequence buckets")
     geometry = MODE_GEOMETRY[mode]
-    if (shape.get("K") != geometry["hidden"] or
-            shape.get("N") != geometry["hidden"] or
-            shape.get("mlp_width") != geometry["mlp_width"] or
+    if ((shape.get("K"), shape.get("mlp_width")) not in geometry["shapes"] or
+            shape.get("N") != shape.get("K") or
             shape.get("ane_mlp_start") != 0 or
             type(shape.get("ane_mlp_end")) is not int or
-            not 0 < shape["ane_mlp_end"] <= geometry["mlp_width"]):
+            not 0 < shape["ane_mlp_end"] <= shape["mlp_width"]):
         raise ValueError(f"encoder manifest geometry does not match {mode}")
     block_indices = set()
     for block, variants in artifacts.items():
@@ -165,10 +172,40 @@ def load_compiled_manifest(path: Path, mode: str) -> dict:
     return manifest
 
 
+def hybrid_execution_status(summary: dict, mode: str, tokens: int, runs: int,
+                            buckets: list[int]) -> tuple[bool, bool]:
+    blocks = MODE_GEOMETRY[mode]["required_blocks"]
+    executed = (
+        summary.get("ane_calls_session_total") == blocks * (runs + 1) and
+        summary.get("ane_first_runtime_calls_session_total") == blocks and
+        summary.get("ane_subsequent_runtime_calls_session_total") == blocks * runs and
+        summary.get("coreml_block_count") == blocks and
+        summary.get("runtime_failed") is False and
+        summary.get("runtime_failures_session_total") == 0 and
+        summary.get("prefill_fixed_shape") is True and
+        summary.get("prefill_actual_tokens") == tokens
+    )
+    # A single fixed bucket does not use the flexible backing capability.
+    # Keep flexible-interface qualification separate from observed execution.
+    backing_qualified = (
+        len(buckets) == 1 or
+        summary.get("qualified_flexible_backing") is True
+    )
+    return executed, backing_qualified
+
+
+def backend_order(index: int, mlx_reference: bool, first: str) -> tuple[str, ...]:
+    variants = ("gpu", "hybrid", "mlx_reference") if mlx_reference else ("gpu", "hybrid")
+    if first not in ("gpu", "hybrid"):
+        raise ValueError("invalid first backend")
+    offset = (index + variants.index(first)) % len(variants)
+    return variants[offset:] + variants[:offset]
+
+
 def command_for(args: argparse.Namespace, tokens: int, folder: Path,
                 hybrid: bool) -> list[str]:
     command = [
-        str(args.probe), str(args.weights), str(tokens), str(args.runs),
+        str(args.probe), str(args.weights), str(tokens), str(args.runs + args.settling_runs),
         str(folder / "conditioning.safetensors"), args.mode,
     ]
     if hybrid:
@@ -179,7 +216,7 @@ def command_for(args: argparse.Namespace, tokens: int, folder: Path,
 def mlx_command_for(args: argparse.Namespace, tokens: int, folder: Path) -> list[str]:
     return [
         str(args.mlx_python), str(args.mlx_script), str(args.weights),
-        str(tokens), str(args.runs), str(folder / "conditioning.safetensors"),
+        str(tokens), str(args.runs + args.settling_runs), str(folder / "conditioning.safetensors"),
         args.mode,
     ]
 
@@ -357,12 +394,27 @@ def tensor_quality(candidate_path: Path, reference_path: Path) -> dict:
     }
 
 
+def apply_settling(result: dict, settling: int, measured: int) -> dict:
+    """Split by a predeclared count, never by observed time or stability."""
+    samples = list(result["warm_seconds"])
+    if (settling < 0 or measured < 1 or len(samples) != settling + measured or
+            any(not math.isfinite(value) or value <= 0 for value in samples)):
+        raise ValueError("probe sample count/timings differ from settling protocol")
+    warm = samples[settling:]
+    return {**result, "post_first_seconds": samples,
+            "settling_seconds": samples[:settling], "warm_seconds": warm,
+            "warm_median_seconds": statistics.median(warm),
+            "warm_cv": statistics.pstdev(warm) / statistics.mean(warm)}
+
+
 def compact_backend(result: dict) -> dict:
     probe = result["probe"]
     last = probe["samples"][-1]
     compact = {
         "load_seconds": probe["load_seconds"],
         "first_encoder_seconds": result["first_encoder_seconds"],
+        "post_first_seconds": result["post_first_seconds"],
+        "settling_seconds": result["settling_seconds"],
         "warm_seconds": result["warm_seconds"],
         "warm_median_seconds": result["warm_median_seconds"],
         "warm_cv": result["warm_cv"],
@@ -398,6 +450,8 @@ def compact_mlx_reference(result: dict) -> dict:
     return {
         "load_seconds": probe["load_seconds"],
         "first_encoder_seconds": result["first_encoder_seconds"],
+        "post_first_seconds": result["post_first_seconds"],
+        "settling_seconds": result["settling_seconds"],
         "warm_seconds": result["warm_seconds"],
         "warm_median_seconds": result["warm_median_seconds"],
         "warm_cv": result["warm_cv"],
@@ -457,15 +511,7 @@ def main() -> int:
 
     planned = []
     for index, tokens in enumerate(args.tokens):
-        if args.mlx_reference:
-            orders = (
-                ("gpu", "hybrid", "mlx_reference"),
-                ("hybrid", "mlx_reference", "gpu"),
-                ("mlx_reference", "gpu", "hybrid"),
-            )
-            order = orders[index % len(orders)]
-        else:
-            order = ("gpu", "hybrid") if index % 2 == 0 else ("hybrid", "gpu")
+        order = backend_order(index, args.mlx_reference, args.first_backend)
         commands = {}
         for variant in order:
             folder = args.output / str(tokens) / variant
@@ -496,6 +542,9 @@ def main() -> int:
                 "mlx_script": str(args.mlx_script),
                 "min_mlx_reference_speedup": args.min_mlx_reference_speedup,
             } if args.mlx_reference else {}),
+            "first_backend": args.first_backend,
+            "settling_runs": args.settling_runs,
+            "measured_runs": args.runs,
             "planned": planned,
         }, indent=2, sort_keys=True))
         return 0
@@ -528,11 +577,13 @@ def main() -> int:
             "defaults and remains fail-closed"
         ),
         "method": (
-            "separate backend processes; one first pass and N warm resident passes; "
+            "separate backend processes; one first pass, fixed predeclared settling passes, and N measured resident passes; "
             "backend order alternates by sequence length; final conditioning quality "
             "is computed after timing"
         ),
+        "first_backend": args.first_backend,
         "runs": args.runs,
+        "settling_runs": args.settling_runs,
         "gates": {
             "min_warm_speedup": args.min_speedup,
             "min_warm_samples": 3,
@@ -547,6 +598,8 @@ def main() -> int:
         "cases": [],
     }
     report_path = args.output / "report.json"
+    (args.output / "plan.json").write_text(json.dumps(
+        {**report, "planned": planned}, indent=2, sort_keys=True) + "\n")
     for item in planned:
         tokens = item["tokens"]
         results = {}
@@ -561,6 +614,8 @@ def main() -> int:
                     force_hybrid_prefill=variant == "hybrid",
                 )
             )
+            results[variant] = apply_settling(
+                results[variant], args.settling_runs, args.runs)
         quality = tensor_quality(
             args.output / str(tokens) / "hybrid" / "conditioning.safetensors",
             args.output / str(tokens) / "gpu" / "conditioning.safetensors",
@@ -577,14 +632,8 @@ def main() -> int:
             results["hybrid"]["warm_cv"] <= args.max_warm_cv
         )
         hybrid_summary = compact_backend(results["hybrid"])
-        hybrid_executed = (
-            hybrid_summary.get("ane_calls_session_total", 0) > 0 and
-            hybrid_summary.get("coreml_block_count") ==
-                MODE_GEOMETRY[args.mode]["required_blocks"] and
-            hybrid_summary.get("qualified_flexible_backing") is True and
-            hybrid_summary.get("runtime_failed") is not True and
-            hybrid_summary.get("prefill_fixed_shape") is True and
-            hybrid_summary.get("prefill_actual_tokens") == tokens
+        hybrid_executed, backing_qualified = hybrid_execution_status(
+            hybrid_summary, args.mode, tokens, args.runs + args.settling_runs, manifest["shape"]["buckets"]
         )
         case = {
             "tokens": tokens,
@@ -592,6 +641,7 @@ def main() -> int:
             "gpu": compact_backend(results["gpu"]),
             "hybrid": hybrid_summary,
             "hybrid_executed": hybrid_executed,
+            "backing_qualified": backing_qualified,
             "warm_speedup": speedup,
             "quality": quality,
             "quality_passed": quality_passed,
@@ -599,7 +649,7 @@ def main() -> int:
             "stability_passed": stability_passed,
             "retain": (
                 quality_passed and speed_passed and stability_passed and
-                hybrid_executed
+                hybrid_executed and backing_qualified
             ),
         }
         if args.mlx_reference:

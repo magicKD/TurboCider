@@ -61,19 +61,27 @@ void rejects(Function &&function, const char *part) {
 } // namespace
 
 int main(int argc, char **argv) {
-    assert(argc == 2);
+    assert(argc == 2 || argc == 3);
     try {
-        tc::Flux session(argv[1], "flux2-klein-9b");
-        const auto base_request = request();
+        const std::string model = argc == 3 ? argv[2] : "flux2-klein-9b";
+        const bool klein4 = model == "flux2-klein-4b";
+        tc::Flux session(argv[1], model);
+        auto base_request = request();
+        base_request.model = model;
         const auto probe = session.probe_public_streaming(
             {base_request, device(), "embedded_app"});
-        assert(probe && probe->model_id() == "flux2-klein-9b");
+        assert(probe && probe->model_id() == model);
         assert(probe->source_lease() != nullptr);
-        assert(probe->source_lease()->file_count() == 9);
+        assert(probe->source_lease()->file_count() == (klein4 ? 7 : 9));
         std::vector<std::string> logical_ids;
         for (const auto &file : probe->source_lease()->descriptor().files)
             logical_ids.push_back(file.logical_id);
-        assert(logical_ids == std::vector<std::string>({
+        if (klein4) {
+            assert(logical_ids == std::vector<std::string>({
+                "config.json", "diffusion_pytorch_model.safetensors",
+                "text_encoder/config.json", "text_encoder/model.safetensors",
+                "tokenizer/tokenizer.json", "vae/ae.safetensors", "vae/config.json"}));
+        } else assert(logical_ids == std::vector<std::string>({
             "config.json",
             "diffusion_pytorch_model-00001-of-00002.safetensors",
             "diffusion_pytorch_model-00002-of-00002.safetensors",
@@ -100,7 +108,7 @@ int main(int argc, char **argv) {
         const tc::flux2::StreamingWorkload workload{
             256, 256, token.padded_rows, 0, 3};
         const tc::flux2::StreamingPlanView expected(
-            value_probe->lease_ptr(), "flux2-klein-9b", config(), workload);
+            value_probe->lease_ptr(), model, config(), workload);
 
         tc::streaming::StreamingPresetRecord record;
         record.id = "flux-public-host-test";
@@ -191,8 +199,82 @@ int main(int argc, char **argv) {
             session.generate_resolved(execution, event, cancelled);
         }, "streaming_target_unsupported");
 
+        // The existing engine must tokenize a new probe from its newly held
+        // source, rather than from the Tokenizer constructed with the engine.
+        const auto tokenizer_path = std::filesystem::path(argv[1]) /
+            "tokenizer/tokenizer.json";
+        std::ifstream tokenizer_input(tokenizer_path);
+        std::string tokenizer_json((std::istreambuf_iterator<char>(tokenizer_input)),
+                                    std::istreambuf_iterator<char>());
+        const std::string old_added = "\"added_tokens\": []";
+        const auto added_position = tokenizer_json.find(old_added);
+        assert(added_position != std::string::npos);
+        tokenizer_json.replace(added_position, old_added.size(),
+            "\"added_tokens\": [{\"id\": 999, \"content\": \"<|im_start|>\", \"special\": true}]");
+        std::filesystem::rename(tokenizer_path, tokenizer_path.string() + ".old");
+        {
+            std::ofstream replacement(tokenizer_path);
+            replacement << tokenizer_json;
+        }
+        const auto new_probe = session.probe_public_streaming(
+            {base_request, device(), "embedded_app"});
+        const auto current_tokens = tc::Tokenizer(tokenizer_path.parent_path())
+            .prompt(base_request.prompt, base_request.dynamic_text);
+        assert(new_probe->workload_identity().token_shapes.front().valid_rows ==
+               static_cast<uint32_t>(current_tokens.valid));
+        assert(new_probe->workload_identity().token_shapes.front().valid_rows !=
+               token.valid_rows);
+        const auto old_fd = probe->source_lease()->duplicate_fd("tokenizer/tokenizer.json");
+        tc::Tokenizer old_tokenizer(old_fd.get(),
+            probe->source_lease()->file("tokenizer/tokenizer.json").bytes);
+        assert(old_tokenizer.prompt(base_request.prompt, true).valid ==
+               static_cast<int>(token.valid_rows));
+        rejects([&] { snapshot->revalidate_source(); }, "source");
+        rejects([&] { session.compile_public_streaming(new_probe, record); },
+                "streaming_record_identity_mismatch");
+        rejects([&] {
+            session.generate_resolved(bound_execution, event, cancelled);
+        }, "source");
+
+        if (klein4) {
+            auto proof = session.verify_streaming_sources(cancelled);
+            assert(proof->has_verified_content());
+            auto verified_probe = session.probe_public_streaming(
+                {base_request, device(), "cli_worker"});
+            assert(verified_probe->source_identity().identity_version == 2);
+            assert(verified_probe->source_identity().source_snapshot_digest.empty());
+            assert(verified_probe->source_identity().artifact_manifest_digest == proof->artifact_digest());
+            assert(verified_probe->source_lease()->verification_bytes_read() == 0);
+            tc::Flux fresh_session(argv[1], model);
+            const auto fresh_probe = fresh_session.probe_public_streaming({base_request, device(), "cli_worker"});
+            assert(fresh_probe->source_identity() == verified_probe->source_identity());
+            assert(fresh_probe->source_lease()->verification_bytes_read() == 0);
+
+            auto verified_record = record;
+            verified_record.source = verified_probe->source_identity();
+            verified_record.workload = verified_probe->workload_identity();
+            const auto &work = verified_record.workload;
+            auto value_probe = std::dynamic_pointer_cast<const tc::streaming::ValueModelStreamingProbe>(verified_probe);
+            tc::flux2::StreamingPlanView verified_plan(value_probe->lease_ptr(), model, config(),
+                {work.width, work.height, work.token_shapes.front().padded_rows, 0, work.steps});
+            verified_record.plan.layout_digest = verified_plan.layout().digest;
+            auto verified_snapshot = session.compile_public_streaming(verified_probe, verified_record);
+            assert(verified_snapshot->layout().digest == verified_plan.layout().digest);
+            { std::ofstream changed(std::filesystem::path(argv[1]) / "text_encoder/config.json", std::ios::app); changed << ' '; }
+            rejects([&] { session.probe_public_streaming(
+                {base_request, device(), "cli_worker"}); }, "artifact_verification_required");
+            rejects([&] { fresh_session.probe_public_streaming(
+                {base_request, device(), "cli_worker"}); }, "artifact_verification_required");
+            auto updated = session.verify_streaming_sources(cancelled);
+            assert(updated->artifact_digest() != proof->artifact_digest());
+            auto updated_probe = session.probe_public_streaming({base_request, device(), "cli_worker"});
+            rejects([&] { session.compile_public_streaming(updated_probe, verified_record); },
+                    "streaming_record_identity_mismatch");
+        }
+
         const auto shard = std::filesystem::path(argv[1]) /
-            "transformer/diffusion_pytorch_model-00002-of-00002.safetensors";
+            (klein4 ? "transformer/diffusion_pytorch_model.safetensors" :
+                      "transformer/diffusion_pytorch_model-00002-of-00002.safetensors");
         const auto moved = shard.string() + ".moved";
         std::filesystem::rename(shard, moved);
         {
@@ -202,7 +284,7 @@ int main(int argc, char **argv) {
         rejects([&] { snapshot->revalidate_source(); }, "source path");
 
         std::cout << "PASS FLUX public adapter: shared source closure, "
-                     "lease-backed descriptor, exact identity/layout, "
+                     "lease-backed descriptor/tokenizer, stale tokenizer rejection, exact identity/layout, "
                      "route rejection, target failure cleanup and source "
                      "replacement detection\n";
     } catch (const std::exception &error) {

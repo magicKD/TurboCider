@@ -32,8 +32,11 @@ class StreamingMetadata {
     StreamingMetadata &operator=(const StreamingMetadata &) = delete;
 
     streaming::Descriptor describe(const StreamingWorkload &) const;
+    streaming::Descriptor describe_verified(const StreamingWorkload &) const;
     void check_unchanged() const;
 
+    uint32_t hidden_size() const noexcept;
+    uint32_t head_count() const noexcept;
     uint32_t dual_block_count() const noexcept;
     uint32_t single_block_count() const noexcept;
     uint32_t dual_fields_per_block() const noexcept { return 16; }
@@ -52,11 +55,8 @@ class StreamingMetadata {
                       const std::string &, const std::string &);
 };
 
-// First execution-shaped projection is intentionally restricted to Klein 9B:
-// its current eager GPU path establishes a synchronization boundary after
-// every dual and single block.  Klein 4B keeps its compiled multi-block graph
-// and remains fail-closed until address/lifetime experiments prove a slot-safe
-// binding strategy without adding per-block waits to the default path.
+// Exact streaming uses eager per-block completion for both Klein variants.
+// The default 4B resident compiled graph remains a separate execution route.
 class StreamingPlanView {
   public:
     StreamingPlanView(const std::string &transformer_directory,

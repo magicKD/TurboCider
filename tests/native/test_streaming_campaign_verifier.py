@@ -144,6 +144,17 @@ def passed_audit() -> dict:
     }
 
 
+class ContainerConstructorTests(unittest.TestCase):
+    def test_controlled_entry_selection(self):
+        self.assertEqual(campaign_runner.native_constructor_name({}), "tc_engine_create_model_worker")
+        self.assertEqual(campaign_runner.native_constructor_name({"constructor": "candidate"}),
+                         "tc_engine_create_model_candidate_worker")
+        self.assertEqual(campaign_runner.native_constructor_name({"execution_container": "embedded_app"}),
+                         "tc_engine_create_model")
+        with self.assertRaises(CampaignError):
+            campaign_runner.native_constructor_name({"execution_container": "arbitrary"})
+
+
 class CampaignTests(unittest.TestCase):
     def test_quality_artifact_canonicalizer_validation_and_hashing(self):
         campaign = policy(blocks=1)
@@ -316,7 +327,7 @@ class CampaignTests(unittest.TestCase):
             _tc_engine_test_set_streaming_catalog = None
 
             @staticmethod
-            def tc_engine_create_model(_model, _path, engine, _error):
+            def tc_engine_create_model_worker(_model, _path, engine, _error):
                 engine._obj.value = 123
                 return 0
 
@@ -340,6 +351,30 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(engine.value, 123)
         self.assertEqual(calls, [(123, catalog.read_bytes())])
         self.assertEqual(freed, [])
+        config = {"model_id": "fixture-model", "model_path": str(root),
+                  "verify_streaming_sources": True,
+                  "test_streaming_catalog": str(catalog)}
+        proof = {"scope": "engine_setup", "report": {"status": "verified"}}
+        def verify(lib, value):
+            self.assertEqual(len(calls), 1)  # No second catalog installation yet.
+            self.assertEqual(value.value, 123)
+            return proof
+        with mock.patch.object(campaign_runner, "verify_native_sources", side_effect=verify):
+            create_native_engine(library, config)
+        self.assertEqual(library._tc_source_verification, proof)
+        self.assertEqual(len(calls), 2)
+        with mock.patch.object(campaign_runner, "verify_native_sources", side_effect=RuntimeError("cancelled")):
+            with self.assertRaisesRegex(CampaignError, "cancelled"):
+                create_native_engine(library, config)
+        self.assertEqual(freed, [123])
+        self.assertEqual(len(calls), 2)
+        self.assertIsNone(library._tc_source_verification)
+        library._tc_source_verification = proof
+        library.tc_engine_create_model_worker = lambda *_: 1
+        with self.assertRaisesRegex(CampaignError, "native engine creation failed"):
+            create_native_engine(library, config)
+        self.assertIsNone(library._tc_source_verification)
+        self.assertEqual(freed, [123])
 
     def test_probe_backend_reuses_semantic_and_quality_verifier(self):
         root = Path(tempfile.mkdtemp(prefix="tc-probe-campaign-"))

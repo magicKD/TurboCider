@@ -1,0 +1,25 @@
+{
+  "scope": "Internal private Core ML generation import; no execution authority or model prediction",
+  "tests": [
+    {
+      "command": ".venv/bin/python tests/native/test_coreml_generation.py",
+      "result": "PASS after canonicalizing fixture temp root; initial /var symlink ancestor rejection preserved in report"
+    },
+    {
+      "command": "TC_STREAMING_SANITIZER=address,undefined .venv/bin/python tests/native/test_coreml_generation.py",
+      "result": "PASS"
+    },
+    {
+      "command": ".venv/bin/python tests/native/test_coreml_generation.py --artifact /Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-b29/compiled-cache/427807c6ecaa779c3f0c93d7500babcd1f85a45bfbca116662b7addaa53e4663/model.mlmodelc",
+      "result": "PASS",
+      "copied_bytes": 117968870,
+      "content_digest": "f98a425fd17d2c11f4d369598d0dde7c510b82e44390d50d250554e9346f7538"
+    }
+  ],
+  "limitations": [
+    "No full dylib or App build",
+    "No Core ML prediction from imported generation",
+    "No semantic bundle/parent/partition authority",
+    "Cancellation covered at entry only; mid-copy/I/O fault injection pending"
+  ]
+}

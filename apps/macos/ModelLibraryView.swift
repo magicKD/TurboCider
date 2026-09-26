@@ -102,6 +102,9 @@ struct ModelLibraryView: View {
                 Text(store.sessionState).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if store.busy {
+                Button("取消任务") { store.cancel() }.accessibilityIdentifier("cancelModelOperation")
+            }
             Button("释放内存") { Task { do { try await store.unload() } catch { studio.message = error.localizedDescription } } }
                 .disabled(!store.canUnload).accessibilityIdentifier("unloadModel")
         }.padding(16).background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
@@ -173,10 +176,23 @@ struct ModelLibraryView: View {
                                     Text(installation.name).font(.callout.weight(.medium)); Spacer()
                                     Text(installation.managed ? "托管下载" : "外部目录").font(.caption2).foregroundStyle(.secondary)
                                 }
+                                if item.id == "z-image-turbo", let variant = ZImageInstallation.variant(URL(fileURLWithPath: installation.path)) {
+                                    Text(variant.title).font(.caption.weight(.medium))
+                                }
                                 Text(installation.path).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
                                 HStack {
-                                    Button("使用此安装") { studio.draft.modelPaths[item.id] = installation.path; studio.selectModel(item.id) }
-                                        .disabled(store.busy || library.busy || studio.draft.modelPaths[item.id] == installation.path)
+                                    Button("使用此安装") { studio.selectInstallation(modelID: item.id, path: installation.path) }
+                                        .disabled(store.busy || store.resolvingAcceleration || studio.importing || library.busy || studio.draft.modelPaths[item.id] == installation.path)
+                                    if ["z-image-turbo", "flux2-klein-4b", "flux2-klein-9b"].contains(item.id) {
+                                        Button("校验文件") {
+                                            Task {
+                                                do { try await store.verifyModelSources(modelURL: URL(fileURLWithPath: installation.path), modelID: item.id) }
+                                                catch { studio.message = error.localizedDescription }
+                                            }
+                                        }
+                                        .disabled(store.busy || store.requiresProcessRestart || store.externalServiceActive || store.resolvingAcceleration || studio.importing || library.busy)
+                                        .help("读取模型文件并核对内容身份；首次校验可能需要一些时间。校验不会授予加速预设资格。")
+                                    }
                                     Button("移除登记") { library.remove(installation, studio: studio) }.disabled(store.busy || library.busy)
                                         .help("仅移除登记，保留模型文件。")
                                 }

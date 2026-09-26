@@ -78,6 +78,7 @@ NSDictionary *system_info() {
         @"optimization_profile" : @{
             @"id" : @(optimizations.id),
             @"z_image_suffix_streaming" : @(optimizations.z_image_suffix_streaming),
+            @"z_image_int8_streaming" : @(optimizations.z_image_int8_streaming),
             @"z_image_hybrid_segments" : @(optimizations.z_image_hybrid_segments),
             @"z_image_memory_lifecycle" : @(optimizations.z_image_memory_lifecycle),
             @"z_image_smallest_partition" : @(optimizations.z_image_smallest_partition),

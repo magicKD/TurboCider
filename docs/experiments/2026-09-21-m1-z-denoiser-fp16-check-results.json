@@ -1,0 +1,40 @@
+{
+  "scope": "One frozen failed-branch FP16 diagnostic; does not amend INT8 smoke results.",
+  "plan_sha256": "f058aa51f5866b8486fe70e530c95000458abbbad3f8b07bca6be80c87c7b9b5",
+  "driver_sha256": "65399dd81185a0f2e3c7635cd465b2b99f7ded256089597dc154b40a4efa3d31",
+  "compile_result": {
+    "artifact": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-b29/compiled-cache/427807c6ecaa779c3f0c93d7500babcd1f85a45bfbca116662b7addaa53e4663/model.mlmodelc",
+    "cache_hit": false,
+    "identity": {
+      "abi": 1,
+      "architecture": "arm64",
+      "compiler": "CoreML.compileModel",
+      "gpu": "Apple M1 Pro",
+      "os_build": "25E253",
+      "schema_version": 1,
+      "source_sha256": "d0929be84d2673798349ca31c736387d6a6eb70963d01c88291188e62b63d976"
+    },
+    "key": "427807c6ecaa779c3f0c93d7500babcd1f85a45bfbca116662b7addaa53e4663",
+    "schema_version": 1,
+    "seconds": 0.429870833
+  },
+  "compiled_tree_sha256": "551ea10ebc6d13bf6117a95d35f706490d4ca419d10461bad675f9245deefed7",
+  "block": 29,
+  "predictions": 1,
+  "warmups": 0,
+  "compute_units": "CPU_AND_NE",
+  "observed_ane_residency": "unknown",
+  "metrics": {
+    "valid": true,
+    "identical": false,
+    "cosine": 0.9999890993052973,
+    "correlation": 0.9999890991766398,
+    "mae": 0.12063407769659819,
+    "max_abs": 8.0,
+    "relative_l2": 0.00467754260108202
+  },
+  "relative_max_abs": 0.00625,
+  "passed": true,
+  "candidate_sha256": "37c6617a2c0b4463dbf53a59cc0bccad13135d8c4969d878e14ce0ed410c8330",
+  "qualification": "NONE: one branch and synthetic input; original 32-branch INT8 result unchanged"
+}

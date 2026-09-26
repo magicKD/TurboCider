@@ -449,6 +449,39 @@ int main() {
     canonical_fixture.source.source_snapshot_digest = digest('b');
     assert(streaming_preset_record_digest(canonical_fixture) ==
            "13b5797176d713924b9c16857acbf0f7a35313d2426a22fdca38c488b3ea3df1");
+    auto portable_fixture = canonical_fixture;
+    portable_fixture.source.identity_version = 2;
+    portable_fixture.source.source_snapshot_digest.clear();
+    portable_fixture = finalize_streaming_preset_record(portable_fixture);
+    validate_streaming_preset_record(portable_fixture, portable_fixture.catalog_revision);
+    assert(portable_fixture.canonical_record_digest ==
+           "c322e18cabc2ed4756a8cbbc468c24989ba175dda64745902014a1971aca0bb0");
+    assert(streaming_source_identity_digest(portable_fixture.source) !=
+           streaming_source_identity_digest(canonical_fixture.source));
+    auto explicit_policy = portable_fixture;
+    explicit_policy.release.policy_revision = "tc-public-strict-v1";
+    explicit_policy = finalize_streaming_preset_record(explicit_policy);
+    validate_streaming_preset_record(explicit_policy, explicit_policy.catalog_revision);
+    assert(explicit_policy.canonical_record_digest ==
+           "3b09dce86f9116b1b1fffcf7373e5584ad645294724cd99aeb8e9abfb57535a0");
+    for (const auto *policy : {"unknown", "tc-public-calibrated-v1"}) {
+        auto bad_policy = explicit_policy;
+        bad_policy.release.policy_revision = policy;
+        rejects([&] { (void) streaming_preset_record_digest(bad_policy); },
+                "unsupported release policy revision");
+    }
+    auto nonportable_policy = canonical_fixture;
+    nonportable_policy.release.policy_revision = "tc-public-strict-v1";
+    rejects([&] { (void) streaming_preset_record_digest(nonportable_policy); },
+            "unsupported release policy revision");
+    auto invalid_portable = portable_fixture;
+    invalid_portable.source.source_snapshot_digest = digest('b');
+    rejects([&] { (void) streaming_preset_record_digest(invalid_portable); },
+            "must not contain a snapshot");
+    invalid_portable = portable_fixture;
+    invalid_portable.source.identity_version = 3;
+    rejects([&] { (void) streaming_preset_record_digest(invalid_portable); },
+            "unsupported source identity version");
     auto changed = slow;
     changed.plan.canonical_config = config(12);
     assert(streaming_preset_record_digest(changed) != stable_digest);
@@ -458,6 +491,38 @@ int main() {
         record("fast-fit", 1, 8 * gib, 200),
         record("fast-too-large", 0, 10 * gib, 50),
     }};
+    // Discovery cannot authorize incomplete or differently tokenized requests.
+    auto basic = query(10 * gib, true);
+    auto options_request = public_request();
+    options_request.fps = 24;
+    basic.workload = basic_streaming_workload(options_request,
+        basic.workload.device_class, basic.workload.execution_container);
+    assert(basic.workload.fps == 0);
+    options_request.operation = "video.generate";
+    assert(basic_streaming_workload(options_request, "device", "embedded_app").fps == 24);
+    basic.source = {};
+    basic.runtime = {};
+    basic.workload.conditioning_revision.clear();
+    basic.workload.vae_policy_revision.clear();
+    basic.workload.feature_digest.clear();
+    basic.workload.token_shapes.clear();
+    const auto candidate = find_streaming_preset_candidate(basic, catalog);
+    assert(candidate.candidate && candidate.candidate->id == "fast-fit");
+    assert(resolve_streaming_preset(basic, catalog).rejection_code ==
+           "unvalidated_workload");
+    auto wrong_tokens = query(10 * gib, true);
+    ++wrong_tokens.workload.token_shapes.front().valid_rows;
+    assert(find_streaming_preset_candidate(wrong_tokens, catalog).candidate);
+    assert(resolve_streaming_preset(wrong_tokens, catalog).rejection_code ==
+           "unvalidated_workload");
+    basic.workload.width += 16;
+    assert(!find_streaming_preset_candidate(basic, catalog).candidate);
+    basic.workload.width -= 16;
+    basic.workload.execution_container = "cli_worker";
+    assert(!find_streaming_preset_candidate(basic, catalog).candidate);
+    basic.workload.execution_container = "embedded_app";
+    basic.physical_memory_bytes = 4 * gib;
+    assert(!find_streaming_preset_candidate(basic, catalog).candidate);
     auto ten = resolve_streaming_preset(query(10 * gib), catalog);
     assert(ten.selected && ten.selected->id == "fast-fit");
     auto twelve = resolve_streaming_preset(query(12 * gib), catalog);
@@ -501,6 +566,59 @@ int main() {
     StreamingPresetCatalog invalid_catalog{"test-r1", {invalid}};
     rejects([&] { resolve_streaming_preset(query(10 * gib), invalid_catalog); },
             "calibration is incomplete");
+
+    {
+        SourceFileIdentity input;
+        input.logical_id = "model";
+        input.path = fixture_path;
+        auto verified = SourceLease::capture_verified({input});
+        auto portable = slow;
+        portable.source = {"original-bf16", "safetensors-bf16",
+                           std::string(verified->artifact_digest()), "", 2};
+        portable = finalize_streaming_preset_record(portable);
+        StreamingPresetCatalog portable_catalog{"test-r1", {portable}};
+        Probe first;
+        first.source_value = portable.source;
+        first.lease_value = verified;
+        auto first_selection = PublicPresetResolver::select(
+            selector(10 * gib), first, device(), portable_catalog);
+        Snapshot first_snapshot(portable.plan.layout_digest);
+        first_snapshot.source_value = portable.source;
+        first_snapshot.lease_value = verified;
+        auto first_authorized = PublicPresetResolver::authorize(
+            first_selection, first, first_snapshot, device());
+        const auto copied_path = fixture_root / "copied.safetensors";
+        std::filesystem::copy_file(fixture_path, copied_path);
+        input.path = copied_path;
+        Probe copied;
+        copied.source_value = portable.source;
+        copied.lease_value = SourceLease::capture_verified({input});
+        auto copied_selection = PublicPresetResolver::select(
+            selector(10 * gib), copied, device(), portable_catalog);
+        Snapshot copied_snapshot(portable.plan.layout_digest);
+        copied_snapshot.source_value = portable.source;
+        copied_snapshot.lease_value = copied.lease_value;
+        auto copied_authorized = PublicPresetResolver::authorize(
+            copied_selection, copied, copied_snapshot, device());
+        assert(copied_selection.record.canonical_record_digest ==
+               first_selection.record.canonical_record_digest);
+        assert(copied_authorized.authority->matches(portable, copied_snapshot, device()));
+        assert(!first_authorized.authority->matches(portable, copied_snapshot, device()));
+        rejects([&] { PublicPresetResolver::authorize(
+            first_selection, first, copied_snapshot, device()); },
+            "streaming_source_lease_mismatch");
+        Probe untrusted = copied;
+        untrusted.lease_value = SourceLease::capture({input});
+        rejects([&] { PublicPresetResolver::select(
+            selector(10 * gib), untrusted, device(), portable_catalog); }, "artifact_changed");
+        { std::fstream file(copied_path, std::ios::binary | std::ios::in | std::ios::out);
+          file.put('X'); }
+        rejects([&] { PublicPresetResolver::select(
+            selector(10 * gib), copied, device(), portable_catalog); }, "source");
+        copied.lease_value = SourceLease::capture_verified({input});
+        rejects([&] { PublicPresetResolver::select(
+            selector(10 * gib), copied, device(), portable_catalog); }, "artifact_changed");
+    }
 
     Probe probe;
     auto selected = PublicPresetResolver::select(

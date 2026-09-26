@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "scope": "Compare fixed K2 Z-Image D/Q tuples with a predeclared mirrored order.\n\nExploratory candidate-only measurement, not public preset qualification. Every\nrequest uses a fresh engine in one process; F_NOCACHE and numeric kernels are\nunchanged. All images must match an independently supplied baseline digest.\n",
+  "request": {
+    "schema_version": 2,
+    "model": "z-image-turbo",
+    "operation": "image.generate",
+    "inputs": [
+      {
+        "kind": "text",
+        "role": "prompt",
+        "text": "A red fox standing in fresh snow, pine forest, soft morning sunlight, detailed photograph."
+      }
+    ],
+    "outputs": [
+      {
+        "kind": "image",
+        "path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-image-streaming-smoke/image.png",
+        "width": 256,
+        "height": 256
+      }
+    ],
+    "sampling": {
+      "seed": 42,
+      "steps": 9
+    },
+    "execution": {
+      "policy": "gpu",
+      "streaming": {
+        "schema_version": 1,
+        "enabled": true,
+        "selection": "manual",
+        "retention": "request",
+        "stages": {
+          "denoiser": {
+            "residency": "streamed",
+            "block_group_size": 1,
+            "slot_count": 2,
+            "resident_prefix_blocks": 0,
+            "prefetch_distance": 0,
+            "io_workers": 1
+          }
+        }
+      }
+    }
+  },
+  "config": {
+    "library": "/Users/chencanhui/code/TurboCider/build/m1-z-prefetch/libturbocider.dylib",
+    "model_path": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo",
+    "model_id": "z-image-turbo",
+    "constructor": "candidate"
+  },
+  "library_sha256": "ff97422078dbc791812bbdcc8d97a69246eee903454d420f93e5e83a4a7e7538",
+  "warmup": [
+    0,
+    1
+  ],
+  "measured_schedule": [
+    [
+      0,
+      1
+    ],
+    [
+      1,
+      2
+    ],
+    [
+      1,
+      1
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      1,
+      1
+    ],
+    [
+      1,
+      2
+    ],
+    [
+      0,
+      1
+    ]
+  ],
+  "expected_image_sha256": "8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3",
+  "timing_scope": "engine creation through safe engine destruction, including export; artifact hash and audit serialization excluded"
+}

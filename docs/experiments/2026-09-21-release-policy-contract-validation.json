@@ -1,0 +1,47 @@
+{
+  "date": "2026-09-21",
+  "scope": "Preparatory calibrated policy contract and aggregation, with existing strict builder/generator consuming shared gate selection and frozen contract metadata",
+  "production_calibrated_enabled": false,
+  "validation": {
+    "policy_contract": "8 PASS",
+    "catalog_builder": "17 PASS",
+    "policy_preparer": "4 PASS",
+    "bundled_catalog": "6 PASS"
+  },
+  "verified_invariants": [
+    "Legacy/explicit strict public gates remain P0/P1/P2/P3; channel/policy mismatches rejected.",
+    "Calibrated assessment requires matching explicit calibrated campaign bindings; missing P2 or source/actual, quality, lifecycle, App, installation, package/revocation verdict blocks.",
+    "P3 NOT_RUN/INCONCLUSIVE/FAIL is preserved; quality, source, audit, hard failures and failed memory qualification block review readiness.",
+    "P3 PASS alone grants no speedup claim; qualified observation requires exact verifier fields; calibrated product claims still exclude swap speedup/hard cap/guaranteed zero swap.",
+    "Frozen contract canonical comparison rejects modified claims/gates, including bool/integer alias tampering.",
+    "Policy preparer v2 emits strict frozen contract metadata while retaining four templates and unchanged campaign validation."
+  ],
+  "contract_digests": {
+    "strict": "2dcbee5c936e5ea11489ae78012b8541c0153275a70a962ab8fd2b99b43b3415",
+    "calibrated": "f6fafe2ab7d3717d500d10f7dcfa23417d1493245d7656f8a84d64f2d95e363f"
+  },
+  "source_sha256": {
+    "tools/native/streaming_release_policy.py": "92bafd9578f9710ee25ef3e84f432a578e50e4d98c97099ef214d1237906b1d6",
+    "tools/native/freeze_streaming_release_policy.py": "d4e5920a123cd43247bc86261ebcc8fbef93affcff5eafaa277d3dc5b6d99ebe",
+    "tools/native/build_streaming_catalog.py": "f8c5bb3bdd46e57a649074549cb214569843aba5d62dc7650bff4994621939f9",
+    "tools/native/prepare_streaming_release_policies.py": "61a5053e3e4205c4be04c9bd594d2bfcea998ef10bb82439af2454888e43b692",
+    "tests/native/test_streaming_release_policy.py": "7b209098f5cbb6f528dd40d43f65057769ceae4fcc1fc02b2fa94c66e7492ccc",
+    "tests/native/test_prepare_streaming_release_policies.py": "7dbb86b123c7223233f25f890cf3830cb0446b809d13abfb786821755ce40f1a",
+    "tests/fixtures/streaming/release-policy-strict-v1.json": "c7943fe7d399118cab7259b0154de92256aa4fb854b843f171fe9d8ee9432874",
+    "tests/fixtures/streaming/release-policy-calibrated-v1.json": "06aae0e273bed8285f1b17063f5b8f5f27b74374d56547fac754574ec3535a11"
+  },
+  "evidence_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-release-contract",
+  "logs_sha256": {
+    "tc-release-policy-tests-final.log": "b63336ce1c86d532b329335a48b6cd8c0759103c1ab242a911fdafee4e51cc2a",
+    "tc-release-policy-preparer-tests-final.log": "abb427bee6a56414597e0853d6929cfb236dd08b4beabe4537d92bc1e15d461a",
+    "tc-release-policy-preparer-tests.log": "d44df5115a869b96a4d58f6608343667176635decb08578896dc13266c793f44",
+    "tc-release-policy-builder-tests.log": "a90ae7aa0eefff69ba863f3bf402e57c19852521cd812b5e229f1fa6638d893c",
+    "tc-release-policy-bundled-tests.log": "ab9396bfb5045bd765faaddb3402251837cbfaf65804a7ca39a0635c215e7066",
+    "tc-release-policy-tests.log": "410f8d0df873a23a3f4be89f05b0047865f6194661bae0ef6c1c5981e15126ad"
+  },
+  "limitations": [
+    "Assessment consumes independently verified summaries, policy bindings and acceptance verdicts; it is not a raw-evidence verifier, catalog builder or execution authority.",
+    "Calibrated record/schema support, acceptance/review evidence loading, original-bundle verification, native channel validation/resolver, bundled packaging and App labels remain to be integrated. Existing builder/native still reject calibrated records.",
+    "No new model run, performance or memory qualification, App build or public catalog record this round. Previous INCONCLUSIVE data is unchanged."
+  ]
+}

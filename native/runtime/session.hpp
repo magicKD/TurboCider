@@ -13,6 +13,7 @@ namespace streaming {
 struct PublicResolveInput;
 struct StreamingPresetRecord;
 class ModelStreamingProbe;
+class SourceLease;
 class ModelStreamingSnapshot;
 struct ResolvedRequestExecution;
 struct ActualExecutionReceipt;
@@ -32,6 +33,8 @@ ExecutionPlan make_plan(const Request &);
 ExecutionPlan make_plan_after_public_streaming_preflight(const Request &);
 std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
+    // Exporter-declared weight variant; unknown for legacy manifests without it.
+    std::string weight_variant = "unknown";
     double load_seconds = 0;
     double manifest_validation_seconds = 0;
     double output_backing_setup_seconds = 0;
@@ -65,7 +68,15 @@ struct HybridMetrics {
     bool qualified_flexible_backing = false;
     bool checkpoint_sha_verified = false;
     bool lora_identity_verified = false;
+    // Native session handles were released at the encoder/denoiser boundary.
+    // Does not assert that Core ML's out-of-process caches were evicted.
+    bool session_released_after_encoding = false;
 };
+inline std::string hybrid_precision_label(const HybridMetrics &metrics) {
+    if (metrics.weight_variant == "fp16") return "bf16_gpu+fp16_mlp_fp16_io";
+    if (metrics.weight_variant == "int8_pc") return "bf16_gpu+int8_mlp_fp16_io";
+    return "bf16_gpu+coreml_mlp_fp16_io";
+}
 struct LoadResult {
     uint64_t weight_bytes = 0, active_bytes = 0;
 };
@@ -177,6 +188,9 @@ struct MemoryDrainResult {
 class ModelSession {
   public:
     virtual ~ModelSession() = default;
+    // An unsafe streaming drain requires process lifetime retention. API
+    // callers must not unload, reuse or free this session's visible storage.
+    virtual bool streaming_quarantined() const noexcept { return false; }
     virtual bool uses_parent_mlx() const { return true; }
     virtual bool uses_parent_mlx(const Request &) const { return uses_parent_mlx(); }
     /* Non-owning binding valid only for the duration of one admitted API
@@ -208,6 +222,11 @@ class ModelSession {
      * layouts.  Metadata probes and snapshot compilation must not allocate GPU
      * buffers or start refill workers.  Models gain no public eligibility until
      * all three methods are explicitly overridden. */
+    // Explicit CPU/file-I/O verification; never performed implicitly by options.
+    virtual std::shared_ptr<const streaming::SourceLease>
+    verify_streaming_sources(std::atomic<bool> &) {
+        throw std::runtime_error("streaming_artifact_verification_unsupported");
+    }
     virtual std::shared_ptr<const streaming::ModelStreamingProbe>
     probe_public_streaming(const streaming::PublicResolveInput &) const {
         throw std::runtime_error("streaming_public_adapter_unsupported");
@@ -232,6 +251,9 @@ class ModelSession {
         throw std::runtime_error("preparation unavailable");
     }
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    virtual void test_set_streaming_drain_failure(bool) {
+        throw std::runtime_error("streaming drain fault unavailable");
+    }
     /* Test-build-only lifecycle control. It is intentionally absent from
      * release binaries and from the public C header/request schema. */
     virtual void test_set_ltx_exact_destroy_failures(uint32_t) {

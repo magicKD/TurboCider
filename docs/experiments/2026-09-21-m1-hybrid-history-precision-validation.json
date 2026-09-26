@@ -1,0 +1,11 @@
+{
+  "scope": "App history precision display fix",
+  "build_exit": 0,
+  "history_tests": "PASS including fp16/int8_pc/unknown/missing variant and finalizing recovery",
+  "app_sha256": "422f8d58d527f360ab3be6cf9cebeeadab04e2b6938dfbd4ce02f30bd69eb2b3",
+  "history_binary_sha256": "8f13c017dbdd5dde84f58c263369f696e793163b6ef5c37c547538a5c28cd1b4",
+  "test_log_sha256": "b4c4d860bf5689d4f68a9e634af9fc2c2e339dba12641d32d74efecd73fa540c",
+  "app_source_sha256": "02b6c50b1cc7072563bab4c4ac7a80494e70b11734a6fdfbc7e2763b613b3a0a",
+  "test_source_sha256": "27a437c43e0ef0587618dcfecba5ae35eb651b189e491efd6b2be964c5ef7fac",
+  "new_visual_ui_acceptance": false
+}

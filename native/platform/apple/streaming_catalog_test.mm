@@ -76,17 +76,22 @@ bool required_bool(NSDictionary *value, NSString *key,
 
 streaming::PresetSourceIdentity parse_source(NSDictionary *value,
                                              const std::string &path) {
-    exact_keys(value, @[
-        @"model_variant", @"weight_format", @"artifact_manifest_digest",
-        @"source_snapshot_digest"
-    ], path);
+    const uint32_t version = value[@"identity_version"]
+        ? required_u32(value, @"identity_version", path + ".identity_version") : 1;
+    require(version == 1 || version == 2, path + " unsupported source identity version");
+    NSMutableArray *keys = [@[@"model_variant", @"weight_format",
+                              @"artifact_manifest_digest"] mutableCopy];
+    if (version == 1) [keys addObject:@"source_snapshot_digest"];
+    if (value[@"identity_version"]) [keys addObject:@"identity_version"];
+    exact_keys(value, keys, path);
     return {
         required_string(value, @"model_variant", path + ".model_variant"),
         required_string(value, @"weight_format", path + ".weight_format"),
         required_string(value, @"artifact_manifest_digest",
                         path + ".artifact_manifest_digest"),
-        required_string(value, @"source_snapshot_digest",
-                        path + ".source_snapshot_digest"),
+        version == 1 ? required_string(value, @"source_snapshot_digest",
+                        path + ".source_snapshot_digest") : std::string{},
+        version,
     };
 }
 
@@ -298,9 +303,11 @@ streaming::StreamingPresetRecord parse_record(NSDictionary *value,
         path + ".performance.evidence_digest");
 
     NSDictionary *release = object_value(value[@"release"], path + ".release");
-    exact_keys(release, @[
-        @"channel", @"revoked", @"reviewed_commit", @"review_digest"
-    ], path + ".release");
+    exact_keys(release, release[@"policy_revision"] ? @[
+        @"channel", @"revoked", @"reviewed_commit", @"review_digest", @"policy_revision"
+    ] : @[@"channel", @"revoked", @"reviewed_commit", @"review_digest"], path + ".release");
+    if (release[@"policy_revision"])
+        result.release.policy_revision = required_string(release, @"policy_revision", path + ".release.policy_revision");
     result.release.channel = required_string(
         release, @"channel", path + ".release.channel");
     result.release.revoked = required_bool(
@@ -387,14 +394,16 @@ NSDictionary *test_streaming_catalog_record_dictionary(
         @"token_shapes": tokens,
     } mutableCopy];
 
-    NSDictionary *source = @{
+    NSMutableDictionary *source = [@{
         @"model_variant": @(record.source.model_variant.c_str()),
         @"weight_format": @(record.source.weight_format.c_str()),
         @"artifact_manifest_digest":
             @(record.source.artifact_manifest_digest.c_str()),
-        @"source_snapshot_digest":
-            @(record.source.source_snapshot_digest.c_str()),
-    };
+    } mutableCopy];
+    if (record.source.identity_version == 1)
+        source[@"source_snapshot_digest"] = @(record.source.source_snapshot_digest.c_str());
+    else
+        source[@"identity_version"] = @(record.source.identity_version);
     NSDictionary *runtime = @{
         @"turbocider_build_id":
             @(record.runtime.turbocider_build_id.c_str()),
@@ -445,12 +454,14 @@ NSDictionary *test_streaming_catalog_record_dictionary(
             @(record.performance.confidence_status.c_str()),
         @"evidence_digest": @(record.performance.evidence_digest.c_str()),
     };
-    NSDictionary *release = @{
+    NSMutableDictionary *release = [@{
         @"channel": @(record.release.channel.c_str()),
         @"revoked": @(record.release.revoked),
         @"reviewed_commit": @(record.release.reviewed_commit.c_str()),
         @"review_digest": @(record.release.review_digest.c_str()),
-    };
+    } mutableCopy];
+    if (!record.release.policy_revision.empty())
+        release[@"policy_revision"] = @(record.release.policy_revision.c_str());
     return @{
         @"id": @(record.id.c_str()),
         @"revision": @(record.revision),

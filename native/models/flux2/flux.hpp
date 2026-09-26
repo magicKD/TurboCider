@@ -16,6 +16,12 @@ class Flux : public ModelSession {
     std::unique_ptr<HybridSession> encoder_hybrid_;
     std::unique_ptr<FluxExactStream> exact_stream_;
     uint64_t exact_stream_generation_ = 0;
+    bool streaming_quarantined_ = false;
+    mutable bool streaming_content_identity_ = false;
+    std::vector<streaming::SourceFileIdentity> streaming_source_files() const;
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    bool test_fail_drain_ = false;
+#endif
     Weights transformer_, vae_;
     std::string cached_prompt_;
     std::string cached_encoder_manifest_;
@@ -32,7 +38,10 @@ class Flux : public ModelSession {
     };
     std::unordered_map<std::string, LoRAFileHash> lora_hash_cache_;
     std::shared_ptr<const streaming::SourceLease> public_stream_lease_;
+    std::unique_ptr<Tokenizer> public_stream_tokenizer_;
+    bool public_component_cache_ = false;
     uint64_t public_stream_target_bytes_ = 0;
+    void reset_public_component_cache();
 
   public:
     std::string select_acceleration(Request &, int, const Event &, std::atomic<bool> &);
@@ -42,6 +51,10 @@ class Flux : public ModelSession {
     RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) override;
     explicit Flux(const std::filesystem::path &, std::string model_id);
     ~Flux();
+    bool streaming_quarantined() const noexcept override { return streaming_quarantined_; }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    void test_set_streaming_drain_failure(bool value) override { test_fail_drain_ = value; }
+#endif
     LoadResult load(const Event &, std::atomic<bool> &) override;
     void unload() override;
     Tensor encode(const Tokens &, const Event &, std::atomic<bool> &, HybridSession * = nullptr);
@@ -54,6 +67,8 @@ class Flux : public ModelSession {
     Tensor decode(const Tensor &, int, int, const Event &, std::atomic<bool> &,
                   const std::string &);
     RunResult generate(const Request &, const Event &, std::atomic<bool> &) override;
+    std::shared_ptr<const streaming::SourceLease>
+    verify_streaming_sources(std::atomic<bool> &) override;
     std::shared_ptr<const streaming::ModelStreamingProbe>
     probe_public_streaming(
         const streaming::PublicResolveInput &) const override;

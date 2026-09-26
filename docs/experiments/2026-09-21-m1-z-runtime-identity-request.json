@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "model": "z-image-turbo",
+  "operation": "image.generate",
+  "inputs": [
+    {
+      "kind": "text",
+      "role": "prompt",
+      "text": "A red fox standing in fresh snow, pine forest, soft morning sunlight, detailed photograph."
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "image",
+      "path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-runtime-identity-smoke/image.png",
+      "width": 256,
+      "height": 256
+    }
+  ],
+  "sampling": {
+    "seed": 42,
+    "steps": 9
+  },
+  "execution": {
+    "policy": "gpu",
+    "streaming": {
+      "schema_version": 2,
+      "enabled": true,
+      "selection": "memory_tier",
+      "retention": "request",
+      "target_request_memory_bytes": 12884901888
+    }
+  }
+}

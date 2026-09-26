@@ -15,6 +15,8 @@ import os
 import tempfile
 from pathlib import Path
 
+from streaming_source_verification import verify_native_sources
+
 
 GIB = 1 << 30
 PUBLIC_TARGETS_GIB = (8, 10, 12, 16, 20)
@@ -39,7 +41,7 @@ def load_library(path: Path) -> c.CDLL:
         raise CatalogBuildError(f"cannot load native library: {exc}") from exc
     required = (
         "tc_string_free",
-        "tc_engine_create_model",
+        "tc_engine_create_model_worker",
         "tc_engine_free",
         "tc_engine_test_build_streaming_catalog_json",
     )
@@ -49,10 +51,10 @@ def load_library(path: Path) -> c.CDLL:
                 f"{path} does not export required test-only symbol {symbol}"
             )
     library.tc_string_free.argtypes = [c.c_void_p]
-    library.tc_engine_create_model.argtypes = [
+    library.tc_engine_create_model_worker.argtypes = [
         c.c_char_p, c.c_char_p, c.POINTER(c.c_void_p), c.POINTER(c.c_void_p)
     ]
-    library.tc_engine_create_model.restype = c.c_int
+    library.tc_engine_create_model_worker.restype = c.c_int
     library.tc_engine_free.argtypes = [c.c_void_p]
     library.tc_engine_test_build_streaming_catalog_json.argtypes = [
         c.c_void_p, c.c_char_p, c.c_char_p, c.c_uint64, c.c_char_p,
@@ -92,7 +94,7 @@ def build_catalog(args: argparse.Namespace) -> dict:
     library = load_library(library_path)
     engine = c.c_void_p()
     error = c.c_void_p()
-    status = library.tc_engine_create_model(
+    status = library.tc_engine_create_model_worker(
         args.model_id.encode(), str(model_path).encode(),
         c.byref(engine), c.byref(error)
     )
@@ -100,6 +102,11 @@ def build_catalog(args: argparse.Namespace) -> dict:
     if status or not engine.value:
         raise CatalogBuildError(failure or "native engine creation failed")
     try:
+        if getattr(args, "verify_sources", False):
+            try:
+                verify_native_sources(library, engine)
+            except Exception as exc:
+                raise CatalogBuildError(str(exc)) from exc
         output = c.c_void_p()
         error = c.c_void_p()
         status = library.tc_engine_test_build_streaming_catalog_json(
@@ -154,6 +161,8 @@ def main() -> int:
     parser.add_argument("--catalog-revision", required=True)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--verify-sources", action="store_true",
+                        help="Explicitly verify native contents before building a v2 test record")
     args = parser.parse_args()
     try:
         catalog = build_catalog(args)

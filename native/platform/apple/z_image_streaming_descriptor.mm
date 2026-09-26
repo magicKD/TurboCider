@@ -1,6 +1,10 @@
 #import <Foundation/Foundation.h>
 
 #include "../../models/z_image/streaming_descriptor.hpp"
+#include "../../models/z_image/suffix_materialization.hpp"
+#include "../../runtime/streaming/canonical_encoding.hpp"
+#include "../../runtime/memory_manifest.hpp"
+#include <fcntl.h>
 
 #include <algorithm>
 #include <array>
@@ -478,6 +482,22 @@ StreamingMetadata::lease_ptr() const {
     return state_->lease;
 }
 
+streaming::Descriptor StreamingMetadata::describe_verified(
+    const StreamingWorkload &workload) const {
+    require_metadata(lease().has_verified_content(),
+                     "artifact_verification_required");
+    auto descriptor = describe(workload);
+    // The whole lease covers auxiliary inputs too, even though this stage's
+    // materializations read only the transformer. No binding stat enters here.
+    descriptor.checkpoint_identity =
+        "artifact-content-v1:" + std::string(lease().artifact_digest());
+    descriptor.artifacts.front().identity =
+        lease().file(state_->logical_id).content_digest;
+    descriptor.artifacts.front().identity_kind =
+        streaming::SourceIdentityKind::content_sha256;
+    return descriptor;
+}
+
 streaming::Descriptor StreamingMetadata::describe(
     const StreamingWorkload &workload) const {
     check_unchanged();
@@ -597,6 +617,222 @@ streaming::Descriptor StreamingMetadata::describe(
     return descriptor;
 }
 
+GpuSuffixPlan StreamingMetadata::describe_gpu_suffix(
+    const StreamingWorkload &workload, uint32_t first_gpu_channel) const {
+    require_metadata(first_gpu_channel > 0 && first_gpu_channel < 10240,
+                     "invalid hybrid GPU suffix channel");
+    GpuSuffixPlan plan;
+    plan.descriptor = lease().has_verified_content()
+        ? describe_verified(workload) : describe(workload);
+    const auto geometry = suffix_geometry(kHidden, 10240, first_gpu_channel, 2);
+    // Validate the complete branch map before producing any partial plan.
+    // Noise refiners are fixed, main blocks may be prefix or streamed, and
+    // context refiners deliberately never enter this map.
+    std::map<std::string, unsigned> projections;
+    for (unsigned branch = 0; branch < 32; ++branch) {
+        const auto prefix = branch < 2
+            ? "noise_refiner." + std::to_string(branch)
+            : "layers." + std::to_string(branch - 2);
+        const auto &records = branch < 2 ? state_->fixed : state_->blocks[branch - 2];
+        for (unsigned projection = 1; projection <= 3; ++projection) {
+            const auto name = prefix + ".feed_forward.w" + std::to_string(projection) + ".weight";
+            const auto it = std::find_if(records.begin(), records.end(),
+                [&](const TensorRecord &r) { return r.name == name; });
+            const std::vector<uint64_t> expected = projection == 2
+                ? std::vector<uint64_t>{kHidden, 10240}
+                : std::vector<uint64_t>{10240, kHidden};
+            require_metadata(it != records.end() && it->shape == expected,
+                             "missing or invalid hybrid FFN tensor");
+            projections.emplace(name, projection);
+        }
+    }
+    streaming::CanonicalEncoder recipe("tc-z-image-bf16-suffix-recipe-v1");
+    recipe.string_field("parent_identity", plan.descriptor.artifacts.front().identity);
+    recipe.string_field("parent_identity_kind", lease().has_verified_content() ? "content_sha256" : "snapshot");
+    recipe.unsigned_field("parent_bytes", state_->file_bytes);
+    recipe.unsigned_field("first_gpu_channel", first_gpu_channel);
+    recipe.string_field("conversion", "bf16-row-suffix-v1");
+    recipe.begin_list("tensors", projections.size());
+    auto field = [&](const TensorRecord &r, const std::string &name,
+                     const std::string &storage_id) {
+        streaming::Materialization m;
+        m.format = "BF16";
+        m.storage_mode = "mlx-metal-shared";
+        m.conversion = "copy-bf16-v1";
+        m.shape = r.shape;
+        streaming::SourceRange read{0, r.file_offset, r.bytes, r.name, "BF16", r.shape};
+        uint64_t bytes = r.bytes;
+        if (const auto it = projections.find(r.name); it != projections.end()) {
+            recipe.string_field("tensor", r.name);
+            recipe.unsigned_field("source_offset", r.file_offset);
+            recipe.unsigned_field("source_bytes", r.bytes);
+            recipe.unsigned_field("projection", it->second);
+            if (it->second == 2) {
+                m.shape[1] -= first_gpu_channel;
+                bytes = geometry.down_suffix_bytes;
+                plan.packing.push_back({read, plan.setup_write_bytes, bytes, first_gpu_channel});
+                read.artifact = 1;
+                read.offset = plan.setup_write_bytes;
+                read.bytes = bytes;
+                read.shape = m.shape;
+                plan.setup_read_bytes = checked_add(plan.setup_read_bytes, r.bytes, "packing read overflow");
+                plan.setup_write_bytes = checked_add(plan.setup_write_bytes, bytes, "packing write overflow");
+            } else {
+                m.shape[0] -= first_gpu_channel;
+                bytes = geometry.up_suffix_bytes;
+                read.offset = checked_add(r.file_offset, geometry.up_skip_bytes, "suffix offset overflow");
+                read.bytes = bytes;
+                read.shape = m.shape;
+            }
+        }
+        m.reads.push_back(std::move(read));
+        return streaming::FieldSpec{name, storage_id, bytes, 256, std::move(m)};
+    };
+    auto &stage = plan.descriptor.stages.front();
+    stage.adapter_revision = "z-image-bf16-gpu-suffix-v1-metadata-only";
+    // Foundation dictionary enumeration is not a canonical order.
+    auto fixed = state_->fixed;
+    std::sort(fixed.begin(), fixed.end(), [](const auto &a, const auto &b) { return a.name < b.name; });
+    uint64_t fixed_bytes = 0;
+    for (const auto &r : fixed) {
+        auto f = field(r, r.name, "z-image.fixed." + r.name);
+        fixed_bytes = checked_add(fixed_bytes, f.bytes, "suffix fixed bytes overflow");
+        stage.resident_fields.push_back(std::move(f));
+    }
+    for (auto &block : stage.blocks) {
+        block.layout_class = "z-image-bf16-suffix-main-block-v1";
+        block.fields.clear();
+        for (const auto &r : state_->blocks[block.id])
+            block.fields.push_back(field(r, r.suffix,
+                "z-image.block." + std::to_string(block.id) + "." + r.suffix));
+    }
+    require_metadata(plan.packing.size() == 32, "incomplete suffix packing map");
+    plan.recipe_digest = recipe.sha256();
+    // This is a metadata recipe, not the SHA-256 of materialized bytes. The
+    // future execution source must bind and verify the private derived fd.
+    plan.descriptor.artifacts.push_back({"transformer-gpu-suffix",
+        "recipe:" + plan.recipe_digest, plan.setup_write_bytes,
+        streaming::SourceIdentityKind::snapshot});
+    plan.descriptor.backend_revision = "z-image-bf16-gpu-suffix-v1-metadata-only";
+    auto &identity = plan.descriptor.workload;
+    identity["fixed_bytes"] = std::to_string(fixed_bytes);
+    identity["first_gpu_channel"] = std::to_string(first_gpu_channel);
+    identity["suffix_recipe"] = plan.recipe_digest;
+    identity["suffix_setup_read_bytes"] = std::to_string(plan.setup_read_bytes);
+    identity["suffix_setup_write_bytes"] = std::to_string(plan.setup_write_bytes);
+    identity["reader_revision"] = "z-image-derived-fd-bf16-v1-metadata-only";
+    check_unchanged();
+    return plan;
+}
+
+struct GpuSuffixSource::State {
+    GpuSuffixPlan plan;
+    std::shared_ptr<const streaming::SourceLease> parent;
+    std::string logical_id, content_digest;
+    streaming::OwnedSourceFd derived;
+    struct stat identity{};
+};
+
+GpuSuffixSource::GpuSuffixSource(std::unique_ptr<State> state)
+    : state_(std::move(state)) {}
+GpuSuffixSource::~GpuSuffixSource() = default;
+const GpuSuffixPlan &GpuSuffixSource::plan() const noexcept { return state_->plan; }
+const std::string &GpuSuffixSource::content_digest() const noexcept { return state_->content_digest; }
+uint64_t GpuSuffixSource::verification_read_bytes() const noexcept {
+    return state_->plan.setup_write_bytes;
+}
+const streaming::SourceFileIdentity &GpuSuffixSource::parent_file() const {
+    return state_->parent->file(state_->logical_id);
+}
+void GpuSuffixSource::check_unchanged() const {
+    state_->parent->revalidate_after_drain();
+    struct stat actual{};
+    require_metadata(::fstat(state_->derived.get(), &actual) == 0,
+                     "derived suffix fd unavailable");
+    const auto &expected = state_->identity;
+    require_metadata(S_ISREG(actual.st_mode) && actual.st_nlink == 0 &&
+        actual.st_dev == expected.st_dev && actual.st_ino == expected.st_ino &&
+        actual.st_size == expected.st_size &&
+        actual.st_mtimespec.tv_sec == expected.st_mtimespec.tv_sec &&
+        actual.st_mtimespec.tv_nsec == expected.st_mtimespec.tv_nsec &&
+        actual.st_ctimespec.tv_sec == expected.st_ctimespec.tv_sec &&
+        actual.st_ctimespec.tv_nsec == expected.st_ctimespec.tv_nsec,
+        "derived suffix changed");
+}
+streaming::OwnedSourceFd GpuSuffixSource::duplicate_fd(uint32_t artifact) const {
+    require_metadata(artifact < 2, "unknown suffix artifact");
+    check_unchanged();
+    if (artifact == 0) return state_->parent->duplicate_fd(state_->logical_id);
+    const int fd = ::fcntl(state_->derived.get(), F_DUPFD_CLOEXEC, 0);
+    require_metadata(fd >= 0, "cannot duplicate derived suffix fd");
+    return streaming::OwnedSourceFd(fd);
+}
+
+std::unique_ptr<GpuSuffixSource> StreamingMetadata::materialize_gpu_suffix(
+    const StreamingWorkload &workload, uint32_t first_gpu_channel,
+    std::atomic<bool> &cancelled, const Event &event) const {
+    checkpoint(cancelled);
+    require_metadata(lease().has_verified_content(), "artifact_verification_required");
+    auto ready = std::make_unique<GpuSuffixSource::State>();
+    ready->plan = describe_gpu_suffix(workload, first_gpu_channel);
+    ready->parent = lease_ptr();
+    ready->logical_id = state_->logical_id;
+    auto source = ready->parent->duplicate_fd(ready->logical_id);
+    require_metadata(::fcntl(source.get(), F_NOCACHE, 1) == 0,
+                     "cannot configure suffix source reader");
+    // Open both handles while the exclusively-created file is named, verify
+    // that they refer to the same inode, then unlink before writing payload.
+    // Only the read-only handle is allowed to escape after final verification.
+    auto pattern = (std::filesystem::path(NSTemporaryDirectory().UTF8String) /
+                    "turbocider-z-derived-XXXXXX").string();
+    streaming::OwnedSourceFd writable(::mkstemp(pattern.data()));
+    struct Unlink {
+        const std::string &path;
+        bool pending = true;
+        ~Unlink() { if (pending) ::unlink(path.c_str()); }
+    } cleanup{pattern, bool(writable)};
+    require_metadata(bool(writable), "cannot create derived suffix file");
+    ready->derived = streaming::OwnedSourceFd(::open(pattern.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+    require_metadata(bool(ready->derived), "cannot open derived suffix reader");
+    struct stat writer_stat{}, reader_stat{};
+    require_metadata(::fstat(writable.get(), &writer_stat) == 0 &&
+                     ::fstat(ready->derived.get(), &reader_stat) == 0 &&
+                     writer_stat.st_dev == reader_stat.st_dev && writer_stat.st_ino == reader_stat.st_ino,
+                     "derived suffix binding changed");
+    require_metadata(::unlink(pattern.c_str()) == 0, "cannot unlink derived suffix file");
+    cleanup.pending = false;
+    require_metadata(::fcntl(writable.get(), F_SETFD, FD_CLOEXEC) == 0 &&
+                     ::fcntl(writable.get(), F_NOCACHE, 1) == 0 &&
+                     ::fcntl(ready->derived.get(), F_NOCACHE, 1) == 0,
+                     "cannot configure derived suffix file");
+    SuffixPackMetrics actual;
+    for (size_t i = 0; i < ready->plan.packing.size(); ++i) {
+        checkpoint(cancelled);
+        if (event) event("pack_z_image_suffix", int(i), int(ready->plan.packing.size()));
+        const auto &record = ready->plan.packing[i];
+        const auto geometry = suffix_geometry(record.source.shape[0], record.source.shape[1],
+                                              record.first_gpu_channel, 2);
+        pack_suffix_rows(source.get(), record.source.offset, writable.get(), record.destination_offset,
+                         geometry, cancelled, actual);
+    }
+    require_metadata(actual.read_bytes == ready->plan.setup_read_bytes &&
+                     actual.write_bytes == ready->plan.setup_write_bytes,
+                     "derived suffix I/O differs from plan");
+    // Close the last writable handle before computing the actual content hash.
+    writable = streaming::OwnedSourceFd();
+    require_metadata(::fstat(ready->derived.get(), &ready->identity) == 0 &&
+                     ready->identity.st_nlink == 0 && ready->identity.st_size >= 0 &&
+                     uint64_t(ready->identity.st_size) == ready->plan.setup_write_bytes,
+                     "derived suffix size differs from plan");
+    if (event) event("verify_z_image_suffix", 0, 1);
+    ready->content_digest = memory_sha256_fd(ready->derived.get(), ready->plan.setup_write_bytes, &cancelled);
+    if (event) event("verify_z_image_suffix", 1, 1);
+    checkpoint(cancelled);
+    auto result = std::unique_ptr<GpuSuffixSource>(new GpuSuffixSource(std::move(ready)));
+    result->check_unchanged();
+    return result;
+}
+
 StreamingPlanView::StreamingPlanView(
     const std::string &checkpoint, const StreamingConfig &config,
     const StreamingWorkload &workload)
@@ -611,7 +847,8 @@ StreamingPlanView::StreamingPlanView(
     const StreamingConfig &config, const StreamingWorkload &workload)
     : metadata_(std::move(lease), "transformer",
                 {workload.ane_mlp_prefix_channels, workload.fp32_scales}),
-      descriptor_(metadata_.describe(workload)),
+      descriptor_(metadata_.lease().has_verified_content()
+          ? metadata_.describe_verified(workload) : metadata_.describe(workload)),
       layout_(streaming::compile_layout(config, descriptor_)) {
     validate();
 }
@@ -625,14 +862,12 @@ void StreamingPlanView::validate() const {
     require_metadata(stage.id == "denoiser" && !stage.resident &&
                          stage.group_size == 1 && stage.slot_count >= 1 &&
                          stage.slot_count <= (metadata_.convrot() ? 3u : 2u) &&
-                         (metadata_.convrot() ? stage.distance < stage.slot_count : stage.distance == 0) &&
-                         (metadata_.convrot() ? stage.workers <= stage.slot_count : stage.workers == 1) &&
+                         stage.distance < stage.slot_count &&
+                         stage.workers >= 1 && stage.workers <= stage.slot_count &&
                          stage.pass_transition ==
                              streaming::PassTransition::reload &&
                          stage.pools.size() == 1,
-                     metadata_.convrot()
-                         ? "Z-Image ConvRot requires K=1..3/G=1/D<K/Q<=K reload"
-                         : "Z-Image shadow requires K=1 or K=2/G=1/D=0/Q=1 reload");
+                     "Z-Image shadow requires K=1..2 (BF16) or 1..3 (ConvRot)/G=1/D<K/1<=Q<=K reload");
     require_metadata(stage.prefix < descriptor_.stages.front().blocks.size() &&
                          stage.groups.size() ==
                              descriptor_.stages.front().blocks.size() -

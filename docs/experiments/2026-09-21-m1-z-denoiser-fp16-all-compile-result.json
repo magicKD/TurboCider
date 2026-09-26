@@ -1,0 +1,10 @@
+{
+  "return_code": 0,
+  "result": {
+    "action": "compile_manifest",
+    "cache": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-all/compiled-cache",
+    "cache_hits": 0,
+    "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-all/compiled-cache/manifest-554c5f440eab7cf1afb59035a16ac54653818784ea4638bd628453e2f9f3ea22.json",
+    "partitions": 32
+  }
+}

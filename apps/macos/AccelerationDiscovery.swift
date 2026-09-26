@@ -133,6 +133,7 @@ struct AccelerationDiscovery {
         if modelID == "z-image-turbo" {
             checkpointCandidates = [
                 model.appendingPathComponent("split_files/diffusion_models/z_image_turbo_bf16.safetensors"),
+                model.appendingPathComponent("split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors"),
                 model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors.index.json"),
                 model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors")
             ]

@@ -1,0 +1,1669 @@
+{
+  "date": "2026-09-21",
+  "scope": "Real model public-semantics C API generation using engine-scoped test-only catalogs; NOT production qualification",
+  "runtime_identity": "tc-runtime-build-v1-41c12856b518ecc749cd644083f25a108b96da4c174d6b912fea136b7a751d26",
+  "build": "TURBOCIDER_BUILD_TEST_HOOKS=1, TURBOCIDER_NATIVE_ONLY=1, build/m1-core-v0; exit 0",
+  "catalog_tests": "3 PASS: release header/library exclude test hooks; hook catalogs engine-scoped and immutable; identity/policy rejection",
+  "experiment_root": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0",
+  "constructor": "tc_engine_create_model_worker (public); verify native source contents; install test-only catalog; native resolve; bind exact_selector; generate; free engine; process exits",
+  "cases": {
+    "z-success": {
+      "observation": {
+        "status": "succeeded",
+        "cleanup_returned": true,
+        "cancellation_sent": false,
+        "image_sha256": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "wall_seconds": 60.29566704190802
+      },
+      "memory": {
+        "schema": "turbocider-streaming-memory-summary-v1",
+        "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+        "root_identity": {
+          "pid": 54055,
+          "start_seconds": 1789954916,
+          "start_microseconds": 887050
+        },
+        "correlation_id": "m1-core-v0-z-success",
+        "status": "complete",
+        "complete": true,
+        "reasons": [],
+        "sample_count": 3010,
+        "max_gap_ns": 41390583,
+        "allowed_max_gap_ns": 100000000,
+        "tree_peak_rss_bytes": 4929847296,
+        "tree_peak_phys_footprint_bytes": 8934546032,
+        "swap_in_bytes": 131072,
+        "swap_out_bytes": 0,
+        "compression_bytes": 53631483904,
+        "decompression_bytes": 40718254080,
+        "command_exit_code": 0,
+        "evidence_digest": "d010323ad86db9dd0421ff4be06e0849336d48855029b427ab1d830111ccd51f",
+        "evidence_path": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/z-success-memory.jsonl"
+      },
+      "source_verification": {
+        "scope": "engine_setup",
+        "wall_seconds": 10.781133875017986,
+        "report": {
+          "artifact_manifest_digest": "6668c65bf99c32a7c16a73396b611abf39f2eee4f9325a0180f7e5d7a3bfe759",
+          "files": [
+            {
+              "bytes": 8044982048,
+              "logical_id": "text_encoder",
+              "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a"
+            },
+            {
+              "bytes": 11422654,
+              "logical_id": "tokenizer",
+              "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+            },
+            {
+              "bytes": 12309866400,
+              "logical_id": "transformer",
+              "sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6"
+            },
+            {
+              "bytes": 335304388,
+              "logical_id": "vae",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            }
+          ],
+          "model": "z-image-turbo",
+          "proof_scope": "native_process_generation",
+          "schema_version": 1,
+          "status": "verified",
+          "verification_bytes_read": 20701575490,
+          "verification_cache_hits": 0
+        }
+      },
+      "request": {
+        "schema_version": 2,
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "inputs": [
+          {
+            "kind": "text",
+            "role": "prompt",
+            "text": "A red fox standing in fresh snow, pine forest, soft morning sunlight, detailed photograph."
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "image",
+            "path": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/z-success/image.png",
+            "width": 512,
+            "height": 512
+          }
+        ],
+        "sampling": {
+          "seed": 42,
+          "steps": 9
+        },
+        "execution": {
+          "policy": "gpu",
+          "streaming": {
+            "schema_version": 2,
+            "enabled": true,
+            "selection": "memory_tier",
+            "retention": "request",
+            "target_request_memory_bytes": 10737418240
+          }
+        },
+        "parameters": {
+          "dynamic_text": true,
+          "compile_gpu": false
+        }
+      },
+      "resolution": {
+        "status": 0,
+        "error": null,
+        "result": {
+          "catalog_revision": "tc-m1-core-v0-z-r1",
+          "exact_selector": {
+            "catalog_revision": "tc-m1-core-v0-z-r1",
+            "enabled": true,
+            "expected_resolution_digest": "c2b4d6224d29d03b996fb20eb05aea4588ffb1932fc394c0a47c72fe03396eef",
+            "preset_id": "test-z-image-turbo-10g-fb537d0803d5",
+            "preset_revision": 1,
+            "retention": "request",
+            "schema_version": 2,
+            "selection": "preset",
+            "target_request_memory_bytes": 10737418240
+          },
+          "identity": {
+            "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+            "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+            "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a"
+          },
+          "request_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79",
+          "requested_selector": {
+            "enabled": true,
+            "retention": "request",
+            "schema_version": 2,
+            "selection": "memory_tier",
+            "target_request_memory_bytes": 10737418240
+          },
+          "resolution_digest": "c2b4d6224d29d03b996fb20eb05aea4588ffb1932fc394c0a47c72fe03396eef",
+          "schema_version": 1,
+          "selection": {
+            "calibrated_request_bytes": 9663676416,
+            "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+            "execution_container": "cli_worker",
+            "layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+            "memory_scope": "execution_process_tree_v1",
+            "preset_id": "test-z-image-turbo-10g-fb537d0803d5",
+            "preset_revision": 1,
+            "record_digest": "073429c05a77bb628019d11e1ea8dc50b449fe4c6dfa2f2b2020468a7eeec9ce",
+            "release_channel": "public-experimental",
+            "target_request_memory_bytes": 10737418240
+          },
+          "status": "resolved"
+        }
+      },
+      "result": {
+        "status": 0,
+        "error": null,
+        "result": {
+          "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+          "actual_denoise_steps": 9,
+          "block_residency": {
+            "activation_reserve_bytes": 5213293696,
+            "active_blocks": 30,
+            "block_bytes": 361820672,
+            "enabled": true,
+            "estimated_working_set_bytes": 8469679744,
+            "fully_resident": false,
+            "memory_budget_bytes": 10737418240,
+            "mlp_prefix_channels": 0,
+            "pinned_blocks": 7,
+            "policy": "shared_block_residency_v1",
+            "quantized": false,
+            "refill_slots": 2,
+            "request_bytes_loaded": 78884821120,
+            "request_load_seconds": 25.177353669000002,
+            "request_max_refill_block": 9,
+            "request_max_refill_seconds": 0.239770833,
+            "request_pack_read_bytes": 0,
+            "request_pack_seconds": 0,
+            "request_pack_write_bytes": 0,
+            "request_refill_load_seconds": 24.174802211000003,
+            "request_slot_allocations": 2,
+            "request_slot_fills": 207,
+            "request_slot_refills": 207,
+            "request_wait_seconds": 1.6417730860000008,
+            "streamed_blocks": 23,
+            "suffix_pack_bytes": 0
+          },
+          "block_streaming": {
+            "activation_reserve_bytes": 5213293696,
+            "active_blocks": 30,
+            "actual_layout": {
+              "block_group_size": 1,
+              "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+              "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+              "digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+              "drained": true,
+              "group_count": 23,
+              "io_workers": 1,
+              "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+              "multi_pool_policy": "serial",
+              "pass_count": 9,
+              "pass_transition": "reload",
+              "pool_count": 1,
+              "prefetch_distance": 0,
+              "reader_revision": 1,
+              "receipt": {
+                "canonical_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+                "event_digest": "c602f15e1412669e587190035a78ded1c508a8c0032fbb65147d67fc4594870d",
+                "fills": 207,
+                "groups_submitted": 207,
+                "logical_read_bytes": 74896879104,
+                "reader_fences_completed": 207,
+                "reader_fences_issued": 207,
+                "schema_version": 2,
+                "source_generation": 3,
+                "verifier_revision": "tc-streaming-receipt-verifier-v2"
+              },
+              "refill_worker_count": 1,
+              "resident_prefix_blocks": 7,
+              "retention": "request",
+              "slot_bundle_count": 2,
+              "slot_count": 2,
+              "source_lease_verified": true,
+              "stage": "denoiser",
+              "startup_policy": "prefetch_window_before_prefix",
+              "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+              "weight_format": "comfy-bf16-single-file"
+            },
+            "block_bytes": 361820672,
+            "enabled": true,
+            "estimated_working_set_bytes": 8469679744,
+            "fully_resident": false,
+            "implementation": "generic_stage_executor_v2",
+            "layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+            "memory_budget_bytes": 10737418240,
+            "mlp_prefix_channels": 0,
+            "pinned_blocks": 7,
+            "policy": "shared_block_residency_v1",
+            "quantized": false,
+            "refill_slots": 2,
+            "request_bytes_loaded": 78884821120,
+            "request_load_seconds": 25.177353669000002,
+            "request_max_refill_block": 9,
+            "request_max_refill_seconds": 0.239770833,
+            "request_pack_read_bytes": 0,
+            "request_pack_seconds": 0,
+            "request_pack_write_bytes": 0,
+            "request_refill_load_seconds": 24.174802211000003,
+            "request_slot_allocations": 2,
+            "request_slot_fills": 207,
+            "request_slot_refills": 207,
+            "request_wait_seconds": 1.6417730860000008,
+            "streamed_blocks": 23,
+            "suffix_pack_bytes": 0
+          },
+          "checkpoint": null,
+          "encoder_execution": "gpu",
+          "encoder_gpu_graph": "qwen3_gpu_only",
+          "encoder_hybrid": {},
+          "encoder_runtime_backend": "mlx_cpp_metal",
+          "encoder_runtime_precision": "bf16",
+          "gpu_graph": "eager_blocks",
+          "height": 512,
+          "hybrid": {},
+          "lora_strategy": "none",
+          "memory": {
+            "mlx_active_bytes": 338834080,
+            "mlx_peak_bytes": 8975747432,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "model": "z-image-turbo",
+          "operation": "image.generate",
+          "output": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/z-success/image.png",
+          "plan": {
+            "algorithm_approximations": [],
+            "audio": false,
+            "audio_capability": "not_applicable",
+            "backend": "mlx_cpp_metal",
+            "decoded_shape": [
+              512,
+              512,
+              1
+            ],
+            "encoder_backend": "mlx_cpp_metal",
+            "encoder_execution": "gpu",
+            "encoder_gpu_graph": "qwen3_gpu_only",
+            "encoder_precision": "bf16",
+            "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+            "executable": true,
+            "execution": "gpu",
+            "executor_operations": null,
+            "gpu_graph": "eager_blocks",
+            "limitation": "capabilities depend on model artifacts and configured hardware",
+            "lora_count": 0,
+            "lora_fusion": "none",
+            "lora_strategy": "none",
+            "ltx_backend": "auto",
+            "ltx_fast_av": true,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 1,
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": false,
+            "ltx_sol_tau": 0.5,
+            "ltx_sparse_anchor_stride": 0,
+            "ltx_sparse_keep_blocks": 0,
+            "ltx_sparse_mode": 0,
+            "ltx_sparse_radius": 1,
+            "ltx_sparse_tokens_per_frame": 0,
+            "ltx_stage2_text_rows": 0,
+            "ltx_video_attention_batch": false,
+            "memory_budget_bytes": null,
+            "memory_budget_scope": "unset",
+            "memory_estimate_bytes": null,
+            "memory_estimate_kind": "requires_layout_metadata",
+            "model": "z-image-turbo",
+            "operation": "image.generate",
+            "precision": "bf16",
+            "profile_identity": "",
+            "quantized_cache": null,
+            "requested_execution": "gpu",
+            "requested_shape": [
+              512,
+              512,
+              1
+            ],
+            "residency": "resident",
+            "schema_version": 1,
+            "selection_pending": false,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "denoise",
+                "iterations": 9
+              },
+              {
+                "dependencies": [
+                  "denoise"
+                ],
+                "id": "vae_decode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "vae_decode"
+                ],
+                "id": "export",
+                "iterations": 1
+              }
+            ],
+            "streaming": {
+              "actual_layout": {
+                "block_group_size": 1,
+                "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+                "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+                "digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+                "drained": true,
+                "group_count": 23,
+                "io_workers": 1,
+                "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+                "multi_pool_policy": "serial",
+                "pass_count": 9,
+                "pass_transition": "reload",
+                "pool_count": 1,
+                "prefetch_distance": 0,
+                "reader_revision": 1,
+                "receipt": {
+                  "canonical_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+                  "event_digest": "c602f15e1412669e587190035a78ded1c508a8c0032fbb65147d67fc4594870d",
+                  "fills": 207,
+                  "groups_submitted": 207,
+                  "logical_read_bytes": 74896879104,
+                  "reader_fences_completed": 207,
+                  "reader_fences_issued": 207,
+                  "schema_version": 2,
+                  "source_generation": 3,
+                  "verifier_revision": "tc-streaming-receipt-verifier-v2"
+                },
+                "refill_worker_count": 1,
+                "resident_prefix_blocks": 7,
+                "retention": "request",
+                "slot_bundle_count": 2,
+                "slot_count": 2,
+                "source_lease_verified": true,
+                "stage": "denoiser",
+                "startup_policy": "prefetch_window_before_prefix",
+                "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+                "weight_format": "comfy-bf16-single-file"
+              },
+              "authority": "public_preset_authority",
+              "eligibility": "public_reviewed_preset",
+              "enforcement": "exact_layout",
+              "execution_supported": true,
+              "field_provenance": {
+                "enabled": "test_catalog",
+                "retention": "test_catalog",
+                "schema_version": "test_catalog",
+                "selection": "test_catalog",
+                "stages.denoiser.block_group_size": "test_catalog",
+                "stages.denoiser.io_workers": "test_catalog",
+                "stages.denoiser.prefetch_distance": "test_catalog",
+                "stages.denoiser.residency": "test_catalog",
+                "stages.denoiser.resident_prefix_blocks": "test_catalog",
+                "stages.denoiser.slot_count": "test_catalog"
+              },
+              "merged_intent": {
+                "enabled": true,
+                "retention": "request",
+                "schema_version": 1,
+                "selection": "manual",
+                "stages": {
+                  "denoiser": {
+                    "block_group_size": 1,
+                    "io_workers": 1,
+                    "prefetch_distance": 0,
+                    "residency": "streamed",
+                    "resident_prefix_blocks": 7,
+                    "slot_count": 2
+                  }
+                }
+              },
+              "rejection_code": null,
+              "requested_layout": {
+                "enabled": true,
+                "retention": "request",
+                "schema_version": 1,
+                "selection": "manual",
+                "stages": {
+                  "denoiser": {
+                    "block_group_size": 1,
+                    "io_workers": 1,
+                    "prefetch_distance": 0,
+                    "residency": "streamed",
+                    "resident_prefix_blocks": 7,
+                    "slot_count": 2
+                  }
+                }
+              },
+              "resolution_state": "executed_exact_layout",
+              "resolved_layout": {
+                "block_group_size": 1,
+                "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+                "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+                "digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+                "drained": true,
+                "group_count": 23,
+                "io_workers": 1,
+                "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+                "multi_pool_policy": "serial",
+                "pass_count": 9,
+                "pass_transition": "reload",
+                "pool_count": 1,
+                "prefetch_distance": 0,
+                "reader_revision": 1,
+                "receipt": {
+                  "canonical_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+                  "event_digest": "c602f15e1412669e587190035a78ded1c508a8c0032fbb65147d67fc4594870d",
+                  "fills": 207,
+                  "groups_submitted": 207,
+                  "logical_read_bytes": 74896879104,
+                  "reader_fences_completed": 207,
+                  "reader_fences_issued": 207,
+                  "schema_version": 2,
+                  "source_generation": 3,
+                  "verifier_revision": "tc-streaming-receipt-verifier-v2"
+                },
+                "refill_worker_count": 1,
+                "resident_prefix_blocks": 7,
+                "retention": "request",
+                "slot_bundle_count": 2,
+                "slot_count": 2,
+                "source_lease_verified": true,
+                "stage": "denoiser",
+                "startup_policy": "prefetch_window_before_prefix",
+                "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+                "weight_format": "comfy-bf16-single-file"
+              }
+            },
+            "streaming_offload": false,
+            "validation": "native_candidate",
+            "weight_validation": "comfy-oracle-validated; m4max-a4096-hybrid-qualified"
+          },
+          "prompt_cache_hit": false,
+          "public_streaming": {
+            "actual_layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+            "actual_plan_verified": true,
+            "authorized_layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+            "calibrated_request_bytes": 9663676416,
+            "catalog_revision": "tc-m1-core-v0-z-r1",
+            "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+            "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+            "execution_container": "cli_worker",
+            "memory_scope": "execution_process_tree_v1",
+            "preset_id": "test-z-image-turbo-10g-fb537d0803d5",
+            "preset_revision": 1,
+            "receipt_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+            "receipt_schema_version": 2,
+            "receipt_source_generation": 3,
+            "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+            "record_digest": "073429c05a77bb628019d11e1ea8dc50b449fe4c6dfa2f2b2020468a7eeec9ce",
+            "resolution_digest": "c2b4d6224d29d03b996fb20eb05aea4588ffb1932fc394c0a47c72fe03396eef",
+            "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+            "schema_version": 1,
+            "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a",
+            "target_request_memory_bytes": 10737418240,
+            "workload_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79"
+          },
+          "reference_tokens": 0,
+          "runtime_backend": "mlx_cpp_metal",
+          "runtime_precision": "bf16",
+          "schema_version": 1,
+          "seed": 42,
+          "steps": 9,
+          "streaming_receipt": {
+            "boundaries": [],
+            "canonical_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+            "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+            "implementation": "generic_stage_executor_v2",
+            "layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+            "schema_version": 2,
+            "stages": [
+              {
+                "canonical_digest": "da77fec2fc061e8ca2c0353c80fc9ea1c8aaba72f35db35b323ab94973b0a1df",
+                "completed_groups": 207,
+                "completed_passes": 9,
+                "drain_completed": true,
+                "event_digest": "c602f15e1412669e587190035a78ded1c508a8c0032fbb65147d67fc4594870d",
+                "fills": 207,
+                "groups_submitted": 207,
+                "implementation": "generic_stage_executor_v2",
+                "layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+                "logical_read_bytes": 74896879104,
+                "reader_fences_completed": 207,
+                "reader_fences_issued": 207,
+                "schema_version": 2,
+                "source_generation": 3,
+                "stage_id": "denoiser",
+                "stage_index": 0
+              }
+            ]
+          },
+          "streaming_stages": [
+            {
+              "runtime": {
+                "block_group_size": 1,
+                "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+                "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+                "digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+                "drained": true,
+                "group_count": 23,
+                "io_workers": 1,
+                "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+                "multi_pool_policy": "serial",
+                "pass_count": 9,
+                "pass_transition": "reload",
+                "pool_count": 1,
+                "prefetch_distance": 0,
+                "reader_revision": 1,
+                "receipt": {
+                  "canonical_digest": "567a72993761f2fe25b6773c9785720d797e67d2f1314e7cbed743337393e2ba",
+                  "event_digest": "c602f15e1412669e587190035a78ded1c508a8c0032fbb65147d67fc4594870d",
+                  "fills": 207,
+                  "groups_submitted": 207,
+                  "logical_read_bytes": 74896879104,
+                  "reader_fences_completed": 207,
+                  "reader_fences_issued": 207,
+                  "schema_version": 2,
+                  "source_generation": 3,
+                  "verifier_revision": "tc-streaming-receipt-verifier-v2"
+                },
+                "refill_worker_count": 1,
+                "resident_prefix_blocks": 7,
+                "retention": "request",
+                "slot_bundle_count": 2,
+                "slot_count": 2,
+                "source_lease_verified": true,
+                "stage": "denoiser",
+                "startup_policy": "prefetch_window_before_prefix",
+                "upsample_boundary": "no-upsample;denoiser-pool-drained-before-vae",
+                "weight_format": "comfy-bf16-single-file"
+              },
+              "stage_index": 0
+            }
+          ],
+          "text_tokens": 26,
+          "timings_seconds": {
+            "denoise": 42.546686833,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 48.633038,
+            "text_encode": 3.44796675,
+            "vae_decode": 1.16208675
+          },
+          "valid_text_tokens": 26,
+          "validation": "candidate; consult recorded parity suite",
+          "warmup": false,
+          "width": 512
+        },
+        "callback_errors": []
+      },
+      "evidence_sha256": {
+        "source-verification.json": "847f169d1fd5b453fe30559413872eeed62fa59ea19da07aa9c5161506e3ca79",
+        "plan.json": "9f95578b816c148e33255848a2960169818120aac58b07ccd814f9c8dd1fd1f8",
+        "result.json": "4413760c66cc189037c05da387c9ee861ac8cac6231340e88a15a1bcf15ff55c",
+        "observation.json": "8279dc028256870b2db064cb7bb6e82383478de92cce3d5544deab5bb7c4b700",
+        "events.jsonl": "861a6fe3a43c42e993cb3f654c11345e58d9abe1a3bf439b5607080c6b720c46",
+        "resolve-result.json": "dae12a2e22ec4e1fd642980027205fe1b01fa68c5fd962da00ffd95a73e2c03b",
+        "image.png": "286d65c6f3e606fc9da7c514f7332eb073c3885b6f8bd6a1085d0f1ee2d5668e",
+        "exact-request.json": "41ae9a0c80d21d86087f84c180919e28c1913486f3b09957abfce64ef318501c"
+      },
+      "memory_jsonl_sha256": "83642d8824c851ed69417627b71c6ce3985ba7a2250cadb32f988302e730b9ef",
+      "harness_sha256": "1d9edc9c3fd5d4b22bb548335195f804d8ca44563b31a3cdf281077be2630472"
+    },
+    "z-cancel": {
+      "observation": {
+        "status": "cancelled_as_expected",
+        "cleanup_returned": true,
+        "cancellation_sent": true,
+        "wall_seconds": 20.531071958015673
+      },
+      "memory": {
+        "schema": "turbocider-streaming-memory-summary-v1",
+        "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+        "root_identity": {
+          "pid": 54520,
+          "start_seconds": 1789955016,
+          "start_microseconds": 725206
+        },
+        "correlation_id": "m1-core-v0-z-cancel",
+        "status": "complete",
+        "complete": true,
+        "reasons": [],
+        "sample_count": 1030,
+        "max_gap_ns": 39088375,
+        "allowed_max_gap_ns": 100000000,
+        "tree_peak_rss_bytes": 4739727360,
+        "tree_peak_phys_footprint_bytes": 8954845832,
+        "swap_in_bytes": 3211264,
+        "swap_out_bytes": 328204288,
+        "compression_bytes": 15404761088,
+        "decompression_bytes": 4378869760,
+        "command_exit_code": 0,
+        "evidence_digest": "907382edf338f095e04605917d27af8c81cc84e63004c19c6cd84669176d069d",
+        "evidence_path": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/z-cancel-memory.jsonl"
+      },
+      "source_verification": {
+        "scope": "engine_setup",
+        "wall_seconds": 10.485218208050355,
+        "report": {
+          "artifact_manifest_digest": "6668c65bf99c32a7c16a73396b611abf39f2eee4f9325a0180f7e5d7a3bfe759",
+          "files": [
+            {
+              "bytes": 8044982048,
+              "logical_id": "text_encoder",
+              "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a"
+            },
+            {
+              "bytes": 11422654,
+              "logical_id": "tokenizer",
+              "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+            },
+            {
+              "bytes": 12309866400,
+              "logical_id": "transformer",
+              "sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6"
+            },
+            {
+              "bytes": 335304388,
+              "logical_id": "vae",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            }
+          ],
+          "model": "z-image-turbo",
+          "proof_scope": "native_process_generation",
+          "schema_version": 1,
+          "status": "verified",
+          "verification_bytes_read": 20701575490,
+          "verification_cache_hits": 0
+        }
+      },
+      "request": {
+        "schema_version": 2,
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "inputs": [
+          {
+            "kind": "text",
+            "role": "prompt",
+            "text": "A red fox standing in fresh snow, pine forest, soft morning sunlight, detailed photograph."
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "image",
+            "path": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/z-cancel/image.png",
+            "width": 512,
+            "height": 512
+          }
+        ],
+        "sampling": {
+          "seed": 42,
+          "steps": 9
+        },
+        "execution": {
+          "policy": "gpu",
+          "streaming": {
+            "schema_version": 2,
+            "enabled": true,
+            "selection": "memory_tier",
+            "retention": "request",
+            "target_request_memory_bytes": 10737418240
+          }
+        },
+        "parameters": {
+          "dynamic_text": true,
+          "compile_gpu": false
+        }
+      },
+      "resolution": {
+        "status": 0,
+        "error": null,
+        "result": {
+          "catalog_revision": "tc-m1-core-v0-z-r1",
+          "exact_selector": {
+            "catalog_revision": "tc-m1-core-v0-z-r1",
+            "enabled": true,
+            "expected_resolution_digest": "c2b4d6224d29d03b996fb20eb05aea4588ffb1932fc394c0a47c72fe03396eef",
+            "preset_id": "test-z-image-turbo-10g-fb537d0803d5",
+            "preset_revision": 1,
+            "retention": "request",
+            "schema_version": 2,
+            "selection": "preset",
+            "target_request_memory_bytes": 10737418240
+          },
+          "identity": {
+            "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+            "runtime_digest": "ef52e7a557610cc00e6b986ff5601c5af672637dd0e70feb105df010da525733",
+            "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a"
+          },
+          "request_digest": "e78a1ab681bca93bcd153fcbe287386ac3d0849245e204fd1367beb5cf1f8c79",
+          "requested_selector": {
+            "enabled": true,
+            "retention": "request",
+            "schema_version": 2,
+            "selection": "memory_tier",
+            "target_request_memory_bytes": 10737418240
+          },
+          "resolution_digest": "c2b4d6224d29d03b996fb20eb05aea4588ffb1932fc394c0a47c72fe03396eef",
+          "schema_version": 1,
+          "selection": {
+            "calibrated_request_bytes": 9663676416,
+            "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+            "execution_container": "cli_worker",
+            "layout_digest": "fb537d0803d512b2355d0cf42598fa1339d45dab0a6d92936e00ad8ca17b11f3",
+            "memory_scope": "execution_process_tree_v1",
+            "preset_id": "test-z-image-turbo-10g-fb537d0803d5",
+            "preset_revision": 1,
+            "record_digest": "073429c05a77bb628019d11e1ea8dc50b449fe4c6dfa2f2b2020468a7eeec9ce",
+            "release_channel": "public-experimental",
+            "target_request_memory_bytes": 10737418240
+          },
+          "status": "resolved"
+        }
+      },
+      "result": {
+        "status": 2,
+        "error": "generation cancelled",
+        "result": null,
+        "callback_errors": []
+      },
+      "evidence_sha256": {
+        "source-verification.json": "1d74a2246c1e9d57a1320c4a4a704af3994dc487013cb2b4bf6263d5b9627764",
+        "plan.json": "d4f4dd8687e7e8e9cd294544b18c3db975588e4da22b31fcea060f9aa8257141",
+        "result.json": "96709b7fc92fb296e44e9aad92d5c493a73ae2a63f4af2dd032372b433c90159",
+        "observation.json": "d1662f1f3c4f33113418674ef8f09e9aff06ba0a2ff14db69c11bde5ff0be4b9",
+        "events.jsonl": "a6040e3f438e4ef150d3e6045706b324f0cbc55044d262ae4ea5b2a3ddfb20c9",
+        "resolve-result.json": "dae12a2e22ec4e1fd642980027205fe1b01fa68c5fd962da00ffd95a73e2c03b",
+        "exact-request.json": "2ad2adc8d40c2d041bfbfcc54fcc04f90bd932bb1f8b54c2acfc58af056e6774"
+      },
+      "memory_jsonl_sha256": "36a2c9223dcb58d56d5768e2672187b00dfbc3405331219d9a8b81df0678c6b3",
+      "harness_sha256": "1d9edc9c3fd5d4b22bb548335195f804d8ca44563b31a3cdf281077be2630472"
+    },
+    "flux-success": {
+      "observation": {
+        "status": "succeeded",
+        "cleanup_returned": true,
+        "cancellation_sent": false,
+        "image_sha256": "7bf7c59b5d277965fa34686730f6358b6e3718201c484fbf199f806d3b13c27e",
+        "wall_seconds": 21.918568457942456
+      },
+      "memory": {
+        "schema": "turbocider-streaming-memory-summary-v1",
+        "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+        "root_identity": {
+          "pid": 55032,
+          "start_seconds": 1789955088,
+          "start_microseconds": 918924
+        },
+        "correlation_id": "m1-core-v0-flux-success",
+        "status": "complete",
+        "complete": true,
+        "reasons": [],
+        "sample_count": 1101,
+        "max_gap_ns": 29743208,
+        "allowed_max_gap_ns": 100000000,
+        "tree_peak_rss_bytes": 6429245440,
+        "tree_peak_phys_footprint_bytes": 6425089160,
+        "swap_in_bytes": 655360,
+        "swap_out_bytes": 0,
+        "compression_bytes": 8773844992,
+        "decompression_bytes": 5933793280,
+        "command_exit_code": 0,
+        "evidence_digest": "ff2eefe904c3f6b1b8b1cacc8d84892a0f2965604276c2687ea5de22904a0754",
+        "evidence_path": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/flux-success-memory.jsonl"
+      },
+      "source_verification": {
+        "scope": "engine_setup",
+        "wall_seconds": 8.045019167009741,
+        "report": {
+          "artifact_manifest_digest": "fdba1a4019cf925357b30afbc27390450b287dcf8d2d10f0d39c07ea08030fca",
+          "files": [
+            {
+              "bytes": 541,
+              "logical_id": "config.json",
+              "sha256": "09733c74a3da6d17dd0a0472a091a8950c7c6935889c32c16cc800ede05029de"
+            },
+            {
+              "bytes": 7751109744,
+              "logical_id": "diffusion_pytorch_model.safetensors",
+              "sha256": "9f29f9edcfdae452a653ffb51a534ca4decd389952c225724ff3b94042612a6e"
+            },
+            {
+              "bytes": 1536,
+              "logical_id": "text_encoder/config.json",
+              "sha256": "214b4c29a0d975e9fddf9994a5673f22cb2c4c5750352f9227c2c3251ebeab40"
+            },
+            {
+              "bytes": 4967215360,
+              "logical_id": "text_encoder/model-00001-of-00002.safetensors",
+              "sha256": "8c0506e7f4936fa7e26183a4fd8da4e2bdbc5990ba64ae441f965d51228f36ea"
+            },
+            {
+              "bytes": 3077766632,
+              "logical_id": "text_encoder/model-00002-of-00002.safetensors",
+              "sha256": "82f2bd839378541b0557bfabaf37c7d3d637071fdcb73302dedd7cf61162ce07"
+            },
+            {
+              "bytes": 11422654,
+              "logical_id": "tokenizer/tokenizer.json",
+              "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+            },
+            {
+              "bytes": 821,
+              "logical_id": "vae/config.json",
+              "sha256": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948"
+            },
+            {
+              "bytes": 168120878,
+              "logical_id": "vae/diffusion_pytorch_model.safetensors",
+              "sha256": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"
+            }
+          ],
+          "model": "flux2-klein-4b",
+          "proof_scope": "native_process_generation",
+          "schema_version": 1,
+          "status": "verified",
+          "verification_bytes_read": 15975638166,
+          "verification_cache_hits": 0
+        }
+      },
+      "request": {
+        "schema_version": 2,
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "inputs": [
+          {
+            "kind": "text",
+            "role": "prompt",
+            "text": "A red fox standing in fresh snow, pine forest, soft morning sunlight, detailed photograph."
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "image",
+            "path": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/flux-success/image.png",
+            "width": 512,
+            "height": 512
+          }
+        ],
+        "sampling": {
+          "seed": 42,
+          "steps": 4
+        },
+        "execution": {
+          "policy": "gpu",
+          "streaming": {
+            "schema_version": 2,
+            "enabled": true,
+            "selection": "memory_tier",
+            "retention": "request",
+            "target_request_memory_bytes": 10737418240
+          }
+        },
+        "parameters": {
+          "dynamic_text": true,
+          "compile_gpu": false
+        }
+      },
+      "resolution": {
+        "status": 0,
+        "error": null,
+        "result": {
+          "catalog_revision": "tc-m1-core-v0-flux-r1",
+          "exact_selector": {
+            "catalog_revision": "tc-m1-core-v0-flux-r1",
+            "enabled": true,
+            "expected_resolution_digest": "eca98828f0fef77f7f3a269bc8403c5e63f1a522681d15b911ecce5e0d7bfda2",
+            "preset_id": "test-flux2-klein-4b-10g-0fc0f2be6109",
+            "preset_revision": 1,
+            "retention": "request",
+            "schema_version": 2,
+            "selection": "preset",
+            "target_request_memory_bytes": 10737418240
+          },
+          "identity": {
+            "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+            "runtime_digest": "2747ce734472355616ef3ff43f697d0b51385c72f412b085fc2a1ff364e14bf8",
+            "source_digest": "b0d8f57c7301054278a1920d2fda5e032a0b2b9fadd4f947d818db8841c95452"
+          },
+          "request_digest": "8b6b0424deeec99aaf80064d0608a239fdca73093d7f89eb0947d08dd192fa78",
+          "requested_selector": {
+            "enabled": true,
+            "retention": "request",
+            "schema_version": 2,
+            "selection": "memory_tier",
+            "target_request_memory_bytes": 10737418240
+          },
+          "resolution_digest": "eca98828f0fef77f7f3a269bc8403c5e63f1a522681d15b911ecce5e0d7bfda2",
+          "schema_version": 1,
+          "selection": {
+            "calibrated_request_bytes": 9663676416,
+            "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+            "execution_container": "cli_worker",
+            "layout_digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+            "memory_scope": "execution_process_tree_v1",
+            "preset_id": "test-flux2-klein-4b-10g-0fc0f2be6109",
+            "preset_revision": 1,
+            "record_digest": "6c96979a1294f77a791cd76fb15cce6df17cc57b1a65fc221ae6452efee65a4f",
+            "release_channel": "public-experimental",
+            "target_request_memory_bytes": 10737418240
+          },
+          "status": "resolved"
+        }
+      },
+      "result": {
+        "status": 0,
+        "error": null,
+        "result": {
+          "acceleration_selection": "gpu: explicitly selected",
+          "actual_denoise_steps": 4,
+          "block_residency": {
+            "activation_reserve_bytes": 0,
+            "active_blocks": 25,
+            "block_bytes": 490734592,
+            "enabled": true,
+            "estimated_working_set_bytes": 1862274048,
+            "fully_resident": false,
+            "memory_budget_bytes": 10737418240,
+            "mlp_prefix_channels": 0,
+            "pinned_blocks": 0,
+            "policy": "shared_block_residency_v1",
+            "quantized": false,
+            "refill_slots": 4,
+            "request_bytes_loaded": 29834145792,
+            "request_load_seconds": 8.841389244999995,
+            "request_max_refill_block": 1,
+            "request_max_refill_seconds": 0.305520375,
+            "request_pack_read_bytes": 0,
+            "request_pack_seconds": 0,
+            "request_pack_write_bytes": 0,
+            "request_refill_load_seconds": 8.775354744999994,
+            "request_slot_allocations": 4,
+            "request_slot_fills": 100,
+            "request_slot_refills": 100,
+            "request_wait_seconds": 1.8337507960000006,
+            "streamed_blocks": 25,
+            "suffix_pack_bytes": 0
+          },
+          "block_streaming": {
+            "activation_reserve_bytes": 0,
+            "active_blocks": 25,
+            "actual_layout": {
+              "block_group_size": 1,
+              "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+              "conditioning_recipe": "qwen3-flux2-klein-v1",
+              "digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+              "drained": true,
+              "group_count": 25,
+              "io_workers": 2,
+              "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+              "multi_pool_policy": "retain_all",
+              "pass_count": 4,
+              "pass_transition": "reload",
+              "pool_count": 2,
+              "prefetch_distance": 1,
+              "reader_revision": 1,
+              "receipt": {
+                "canonical_digest": "cd189a8722d313a84a3c68acd6ec92378445341731863f704ce75b36c9ff1f96",
+                "event_digest": "b838e37f5d89f757730d225e5df1898a6b06603e42ad361ecad9659bf1e052a1",
+                "fills": 100,
+                "groups_submitted": 100,
+                "logical_read_bytes": 29444075520,
+                "reader_fences_completed": 100,
+                "reader_fences_issued": 100,
+                "schema_version": 2,
+                "source_generation": 3,
+                "verifier_revision": "tc-streaming-receipt-verifier-v2"
+              },
+              "refill_worker_count": 2,
+              "resident_prefix_blocks": 0,
+              "retention": "request",
+              "slot_bundle_count": 4,
+              "slot_count": 2,
+              "source_lease_verified": true,
+              "stage": "denoiser",
+              "startup_policy": "prefetch_window_before_prefix",
+              "upsample_boundary": "no-upsample;release-before-vae",
+              "weight_format": "diffusers-bf16-single-file"
+            },
+            "block_bytes": 490734592,
+            "enabled": true,
+            "estimated_working_set_bytes": 1862274048,
+            "fully_resident": false,
+            "implementation": "generic_stage_executor_v2",
+            "layout_digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+            "memory_budget_bytes": 10737418240,
+            "mlp_prefix_channels": 0,
+            "pinned_blocks": 0,
+            "policy": "shared_block_residency_v1",
+            "quantized": false,
+            "refill_slots": 4,
+            "request_bytes_loaded": 29834145792,
+            "request_load_seconds": 8.841389244999995,
+            "request_max_refill_block": 1,
+            "request_max_refill_seconds": 0.305520375,
+            "request_pack_read_bytes": 0,
+            "request_pack_seconds": 0,
+            "request_pack_write_bytes": 0,
+            "request_refill_load_seconds": 8.775354744999994,
+            "request_slot_allocations": 4,
+            "request_slot_fills": 100,
+            "request_slot_refills": 100,
+            "request_wait_seconds": 1.8337507960000006,
+            "streamed_blocks": 25,
+            "suffix_pack_bytes": 0
+          },
+          "checkpoint": null,
+          "encoder_execution": "gpu",
+          "encoder_gpu_graph": "qwen3_gpu_only",
+          "encoder_hybrid": {},
+          "encoder_runtime_backend": "mlx_cpp_metal",
+          "encoder_runtime_precision": "bf16",
+          "gpu_graph": "eager_blocks",
+          "height": 512,
+          "hybrid": {},
+          "lora_strategy": "none",
+          "memory": {
+            "mlx_active_bytes": 101649478,
+            "mlx_peak_bytes": 6269857144,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "model": "flux2-klein-4b",
+          "operation": "image.generate",
+          "output": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/flux-success/image.png",
+          "plan": {
+            "algorithm_approximations": [],
+            "audio": false,
+            "audio_capability": "not_applicable",
+            "backend": "mlx_cpp_metal",
+            "decoded_shape": [
+              512,
+              512,
+              1
+            ],
+            "encoder_backend": "mlx_cpp_metal",
+            "encoder_execution": "gpu",
+            "encoder_gpu_graph": "qwen3_gpu_only",
+            "encoder_precision": "bf16",
+            "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+            "executable": true,
+            "execution": "gpu",
+            "executor_operations": null,
+            "gpu_graph": "eager_blocks",
+            "limitation": "capabilities depend on model artifacts and configured hardware",
+            "lora_count": 0,
+            "lora_fusion": "none",
+            "lora_strategy": "none",
+            "ltx_backend": "auto",
+            "ltx_fast_av": true,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 1,
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": false,
+            "ltx_sol_tau": 0.5,
+            "ltx_sparse_anchor_stride": 0,
+            "ltx_sparse_keep_blocks": 0,
+            "ltx_sparse_mode": 0,
+            "ltx_sparse_radius": 1,
+            "ltx_sparse_tokens_per_frame": 0,
+            "ltx_stage2_text_rows": 0,
+            "ltx_video_attention_batch": false,
+            "memory_budget_bytes": null,
+            "memory_budget_scope": "unset",
+            "memory_estimate_bytes": null,
+            "memory_estimate_kind": "requires_layout_metadata",
+            "model": "flux2-klein-4b",
+            "operation": "image.generate",
+            "precision": "bf16",
+            "profile_identity": "",
+            "quantized_cache": null,
+            "requested_execution": "gpu",
+            "requested_shape": [
+              512,
+              512,
+              1
+            ],
+            "residency": "resident",
+            "schema_version": 1,
+            "selection_pending": false,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "denoise",
+                "iterations": 4
+              },
+              {
+                "dependencies": [
+                  "denoise"
+                ],
+                "id": "vae_decode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "vae_decode"
+                ],
+                "id": "export",
+                "iterations": 1
+              }
+            ],
+            "streaming": {
+              "actual_layout": {
+                "block_group_size": 1,
+                "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+                "conditioning_recipe": "qwen3-flux2-klein-v1",
+                "digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+                "drained": true,
+                "group_count": 25,
+                "io_workers": 2,
+                "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+                "multi_pool_policy": "retain_all",
+                "pass_count": 4,
+                "pass_transition": "reload",
+                "pool_count": 2,
+                "prefetch_distance": 1,
+                "reader_revision": 1,
+                "receipt": {
+                  "canonical_digest": "cd189a8722d313a84a3c68acd6ec92378445341731863f704ce75b36c9ff1f96",
+                  "event_digest": "b838e37f5d89f757730d225e5df1898a6b06603e42ad361ecad9659bf1e052a1",
+                  "fills": 100,
+                  "groups_submitted": 100,
+                  "logical_read_bytes": 29444075520,
+                  "reader_fences_completed": 100,
+                  "reader_fences_issued": 100,
+                  "schema_version": 2,
+                  "source_generation": 3,
+                  "verifier_revision": "tc-streaming-receipt-verifier-v2"
+                },
+                "refill_worker_count": 2,
+                "resident_prefix_blocks": 0,
+                "retention": "request",
+                "slot_bundle_count": 4,
+                "slot_count": 2,
+                "source_lease_verified": true,
+                "stage": "denoiser",
+                "startup_policy": "prefetch_window_before_prefix",
+                "upsample_boundary": "no-upsample;release-before-vae",
+                "weight_format": "diffusers-bf16-single-file"
+              },
+              "authority": "public_preset_authority",
+              "eligibility": "public_reviewed_preset",
+              "enforcement": "exact_layout",
+              "execution_supported": true,
+              "field_provenance": {
+                "enabled": "test_catalog",
+                "retention": "test_catalog",
+                "schema_version": "test_catalog",
+                "selection": "test_catalog",
+                "stages.denoiser.block_group_size": "test_catalog",
+                "stages.denoiser.io_workers": "test_catalog",
+                "stages.denoiser.prefetch_distance": "test_catalog",
+                "stages.denoiser.residency": "test_catalog",
+                "stages.denoiser.resident_prefix_blocks": "test_catalog",
+                "stages.denoiser.slot_count": "test_catalog"
+              },
+              "merged_intent": {
+                "enabled": true,
+                "retention": "request",
+                "schema_version": 1,
+                "selection": "manual",
+                "stages": {
+                  "denoiser": {
+                    "block_group_size": 1,
+                    "io_workers": 2,
+                    "prefetch_distance": 1,
+                    "residency": "streamed",
+                    "resident_prefix_blocks": 0,
+                    "slot_count": 2
+                  }
+                }
+              },
+              "rejection_code": null,
+              "requested_layout": {
+                "enabled": true,
+                "retention": "request",
+                "schema_version": 1,
+                "selection": "manual",
+                "stages": {
+                  "denoiser": {
+                    "block_group_size": 1,
+                    "io_workers": 2,
+                    "prefetch_distance": 1,
+                    "residency": "streamed",
+                    "resident_prefix_blocks": 0,
+                    "slot_count": 2
+                  }
+                }
+              },
+              "resolution_state": "executed_exact_layout",
+              "resolved_layout": {
+                "block_group_size": 1,
+                "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+                "conditioning_recipe": "qwen3-flux2-klein-v1",
+                "digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+                "drained": true,
+                "group_count": 25,
+                "io_workers": 2,
+                "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+                "multi_pool_policy": "retain_all",
+                "pass_count": 4,
+                "pass_transition": "reload",
+                "pool_count": 2,
+                "prefetch_distance": 1,
+                "reader_revision": 1,
+                "receipt": {
+                  "canonical_digest": "cd189a8722d313a84a3c68acd6ec92378445341731863f704ce75b36c9ff1f96",
+                  "event_digest": "b838e37f5d89f757730d225e5df1898a6b06603e42ad361ecad9659bf1e052a1",
+                  "fills": 100,
+                  "groups_submitted": 100,
+                  "logical_read_bytes": 29444075520,
+                  "reader_fences_completed": 100,
+                  "reader_fences_issued": 100,
+                  "schema_version": 2,
+                  "source_generation": 3,
+                  "verifier_revision": "tc-streaming-receipt-verifier-v2"
+                },
+                "refill_worker_count": 2,
+                "resident_prefix_blocks": 0,
+                "retention": "request",
+                "slot_bundle_count": 4,
+                "slot_count": 2,
+                "source_lease_verified": true,
+                "stage": "denoiser",
+                "startup_policy": "prefetch_window_before_prefix",
+                "upsample_boundary": "no-upsample;release-before-vae",
+                "weight_format": "diffusers-bf16-single-file"
+              }
+            },
+            "streaming_offload": false,
+            "validation": "native_candidate",
+            "weight_validation": "see parity evidence"
+          },
+          "prompt_cache_hit": false,
+          "public_streaming": {
+            "actual_layout_digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+            "actual_plan_verified": true,
+            "authorized_layout_digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+            "calibrated_request_bytes": 9663676416,
+            "catalog_revision": "tc-m1-core-v0-flux-r1",
+            "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+            "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+            "execution_container": "cli_worker",
+            "memory_scope": "execution_process_tree_v1",
+            "preset_id": "test-flux2-klein-4b-10g-0fc0f2be6109",
+            "preset_revision": 1,
+            "receipt_digest": "cd189a8722d313a84a3c68acd6ec92378445341731863f704ce75b36c9ff1f96",
+            "receipt_schema_version": 2,
+            "receipt_source_generation": 3,
+            "receipt_verifier_revision": "tc-streaming-receipt-verifier-v2",
+            "record_digest": "6c96979a1294f77a791cd76fb15cce6df17cc57b1a65fc221ae6452efee65a4f",
+            "resolution_digest": "eca98828f0fef77f7f3a269bc8403c5e63f1a522681d15b911ecce5e0d7bfda2",
+            "runtime_digest": "2747ce734472355616ef3ff43f697d0b51385c72f412b085fc2a1ff364e14bf8",
+            "schema_version": 1,
+            "source_digest": "b0d8f57c7301054278a1920d2fda5e032a0b2b9fadd4f947d818db8841c95452",
+            "target_request_memory_bytes": 10737418240,
+            "workload_digest": "8b6b0424deeec99aaf80064d0608a239fdca73093d7f89eb0947d08dd192fa78"
+          },
+          "reference_tokens": 0,
+          "runtime_backend": null,
+          "runtime_precision": null,
+          "schema_version": 1,
+          "seed": 42,
+          "steps": 4,
+          "streaming_receipt": {
+            "boundaries": [],
+            "canonical_digest": "cd189a8722d313a84a3c68acd6ec92378445341731863f704ce75b36c9ff1f96",
+            "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+            "implementation": "generic_stage_executor_v2",
+            "layout_digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+            "schema_version": 2,
+            "stages": [
+              {
+                "canonical_digest": "5b11dfe68bf54d230078b9151b944195a52afbf3993eb61599f15641a06f987f",
+                "completed_groups": 100,
+                "completed_passes": 4,
+                "drain_completed": true,
+                "event_digest": "b838e37f5d89f757730d225e5df1898a6b06603e42ad361ecad9659bf1e052a1",
+                "fills": 100,
+                "groups_submitted": 100,
+                "implementation": "generic_stage_executor_v2",
+                "layout_digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+                "logical_read_bytes": 29444075520,
+                "reader_fences_completed": 100,
+                "reader_fences_issued": 100,
+                "schema_version": 2,
+                "source_generation": 3,
+                "stage_id": "denoiser",
+                "stage_index": 0
+              }
+            ]
+          },
+          "streaming_stages": [
+            {
+              "runtime": {
+                "block_group_size": 1,
+                "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+                "conditioning_recipe": "qwen3-flux2-klein-v1",
+                "digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+                "drained": true,
+                "group_count": 25,
+                "io_workers": 2,
+                "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+                "multi_pool_policy": "retain_all",
+                "pass_count": 4,
+                "pass_transition": "reload",
+                "pool_count": 2,
+                "prefetch_distance": 1,
+                "reader_revision": 1,
+                "receipt": {
+                  "canonical_digest": "cd189a8722d313a84a3c68acd6ec92378445341731863f704ce75b36c9ff1f96",
+                  "event_digest": "b838e37f5d89f757730d225e5df1898a6b06603e42ad361ecad9659bf1e052a1",
+                  "fills": 100,
+                  "groups_submitted": 100,
+                  "logical_read_bytes": 29444075520,
+                  "reader_fences_completed": 100,
+                  "reader_fences_issued": 100,
+                  "schema_version": 2,
+                  "source_generation": 3,
+                  "verifier_revision": "tc-streaming-receipt-verifier-v2"
+                },
+                "refill_worker_count": 2,
+                "resident_prefix_blocks": 0,
+                "retention": "request",
+                "slot_bundle_count": 4,
+                "slot_count": 2,
+                "source_lease_verified": true,
+                "stage": "denoiser",
+                "startup_policy": "prefetch_window_before_prefix",
+                "upsample_boundary": "no-upsample;release-before-vae",
+                "weight_format": "diffusers-bf16-single-file"
+              },
+              "stage_index": 0
+            }
+          ],
+          "text_tokens": 30,
+          "timings_seconds": {
+            "denoise": 11.165499833,
+            "hybrid_setup": 9.4459e-05,
+            "image_encode": 8.3e-08,
+            "request_wall": 13.02528475,
+            "text_encode": 0.872026417,
+            "vae_decode": 0.765490959
+          },
+          "valid_text_tokens": 30,
+          "validation": "candidate; consult recorded parity suite",
+          "warmup": false,
+          "width": 512
+        },
+        "callback_errors": []
+      },
+      "evidence_sha256": {
+        "source-verification.json": "baaa8958523b02de54aaedcb9e0d7858101da994d95c0482c9b2c329a4c63bc9",
+        "plan.json": "3c3c101245ac4e169c5bf61844821c2476ef161b02893f57083b0f5696202858",
+        "result.json": "0afff423728eccd2557644b0a050722d158221dcf86a6a7b0cf0f0ccf3ff4a72",
+        "observation.json": "9233cf6f9b420ec8cad80de6287b27662bec738aa4dca14d9dd9276a74d2d9a2",
+        "events.jsonl": "e42058d015a470ed08b0fddc237fe7172da1c8e0d825a5e8c2582248954dd53b",
+        "resolve-result.json": "126307a66ba4f7aeb455af5c62a5bc5dfd08c8e469fee1780d3ee99748054862",
+        "image.png": "7bf7c59b5d277965fa34686730f6358b6e3718201c484fbf199f806d3b13c27e",
+        "exact-request.json": "b673132c0039a211498189650580e58df9c0584c987efc1493a706505d2abc81"
+      },
+      "memory_jsonl_sha256": "7258f9333ae2e4b355f003ee1082c761a7f5f659e27d4a7704c21e8df7b75cd0",
+      "harness_sha256": "e80b758df38c259b6351513e5470adeab19c7893b8b77f0f3be11bcaf3a9cbba"
+    },
+    "flux-cancel": {
+      "observation": {
+        "status": "cancelled_as_expected",
+        "cleanup_returned": true,
+        "cancellation_sent": true,
+        "cancellation_wall_seconds": 12.988771499949507,
+        "wall_seconds": 13.083441582974046,
+        "cancellation_to_cleanup_seconds": 0.09467008302453905
+      },
+      "memory": {
+        "schema": "turbocider-streaming-memory-summary-v1",
+        "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+        "root_identity": {
+          "pid": 55241,
+          "start_seconds": 1789955130,
+          "start_microseconds": 672733
+        },
+        "correlation_id": "m1-core-v0-flux-cancel",
+        "status": "complete",
+        "complete": true,
+        "reasons": [],
+        "sample_count": 661,
+        "max_gap_ns": 37891833,
+        "allowed_max_gap_ns": 100000000,
+        "tree_peak_rss_bytes": 4202381312,
+        "tree_peak_phys_footprint_bytes": 6464509040,
+        "swap_in_bytes": 770048,
+        "swap_out_bytes": 0,
+        "compression_bytes": 4702011392,
+        "decompression_bytes": 3123658752,
+        "command_exit_code": 0,
+        "evidence_digest": "389ed4ba54725f91e3cc8988601b6b4e7e4138f171f43857857b3e883d1375a0",
+        "evidence_path": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/flux-cancel-memory.jsonl"
+      },
+      "source_verification": {
+        "scope": "engine_setup",
+        "wall_seconds": 7.920551417046227,
+        "report": {
+          "artifact_manifest_digest": "fdba1a4019cf925357b30afbc27390450b287dcf8d2d10f0d39c07ea08030fca",
+          "files": [
+            {
+              "bytes": 541,
+              "logical_id": "config.json",
+              "sha256": "09733c74a3da6d17dd0a0472a091a8950c7c6935889c32c16cc800ede05029de"
+            },
+            {
+              "bytes": 7751109744,
+              "logical_id": "diffusion_pytorch_model.safetensors",
+              "sha256": "9f29f9edcfdae452a653ffb51a534ca4decd389952c225724ff3b94042612a6e"
+            },
+            {
+              "bytes": 1536,
+              "logical_id": "text_encoder/config.json",
+              "sha256": "214b4c29a0d975e9fddf9994a5673f22cb2c4c5750352f9227c2c3251ebeab40"
+            },
+            {
+              "bytes": 4967215360,
+              "logical_id": "text_encoder/model-00001-of-00002.safetensors",
+              "sha256": "8c0506e7f4936fa7e26183a4fd8da4e2bdbc5990ba64ae441f965d51228f36ea"
+            },
+            {
+              "bytes": 3077766632,
+              "logical_id": "text_encoder/model-00002-of-00002.safetensors",
+              "sha256": "82f2bd839378541b0557bfabaf37c7d3d637071fdcb73302dedd7cf61162ce07"
+            },
+            {
+              "bytes": 11422654,
+              "logical_id": "tokenizer/tokenizer.json",
+              "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+            },
+            {
+              "bytes": 821,
+              "logical_id": "vae/config.json",
+              "sha256": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948"
+            },
+            {
+              "bytes": 168120878,
+              "logical_id": "vae/diffusion_pytorch_model.safetensors",
+              "sha256": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"
+            }
+          ],
+          "model": "flux2-klein-4b",
+          "proof_scope": "native_process_generation",
+          "schema_version": 1,
+          "status": "verified",
+          "verification_bytes_read": 15975638166,
+          "verification_cache_hits": 0
+        }
+      },
+      "request": {
+        "schema_version": 2,
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "inputs": [
+          {
+            "kind": "text",
+            "role": "prompt",
+            "text": "A red fox standing in fresh snow, pine forest, soft morning sunlight, detailed photograph."
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "image",
+            "path": "/Users/chencanhui/models/TurboCider/experiments/m1-core-v0/flux-cancel/image.png",
+            "width": 512,
+            "height": 512
+          }
+        ],
+        "sampling": {
+          "seed": 42,
+          "steps": 4
+        },
+        "execution": {
+          "policy": "gpu",
+          "streaming": {
+            "schema_version": 2,
+            "enabled": true,
+            "selection": "memory_tier",
+            "retention": "request",
+            "target_request_memory_bytes": 10737418240
+          }
+        },
+        "parameters": {
+          "dynamic_text": true,
+          "compile_gpu": false
+        }
+      },
+      "resolution": {
+        "status": 0,
+        "error": null,
+        "result": {
+          "catalog_revision": "tc-m1-core-v0-flux-r1",
+          "exact_selector": {
+            "catalog_revision": "tc-m1-core-v0-flux-r1",
+            "enabled": true,
+            "expected_resolution_digest": "eca98828f0fef77f7f3a269bc8403c5e63f1a522681d15b911ecce5e0d7bfda2",
+            "preset_id": "test-flux2-klein-4b-10g-0fc0f2be6109",
+            "preset_revision": 1,
+            "retention": "request",
+            "schema_version": 2,
+            "selection": "preset",
+            "target_request_memory_bytes": 10737418240
+          },
+          "identity": {
+            "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+            "runtime_digest": "2747ce734472355616ef3ff43f697d0b51385c72f412b085fc2a1ff364e14bf8",
+            "source_digest": "b0d8f57c7301054278a1920d2fda5e032a0b2b9fadd4f947d818db8841c95452"
+          },
+          "request_digest": "8b6b0424deeec99aaf80064d0608a239fdca73093d7f89eb0947d08dd192fa78",
+          "requested_selector": {
+            "enabled": true,
+            "retention": "request",
+            "schema_version": 2,
+            "selection": "memory_tier",
+            "target_request_memory_bytes": 10737418240
+          },
+          "resolution_digest": "eca98828f0fef77f7f3a269bc8403c5e63f1a522681d15b911ecce5e0d7bfda2",
+          "schema_version": 1,
+          "selection": {
+            "calibrated_request_bytes": 9663676416,
+            "component_policy_revision": "flux2-klein-4b-components-v2-all-sources-request-cache",
+            "execution_container": "cli_worker",
+            "layout_digest": "0fc0f2be6109e881f98472a1969dd03538fa383b873d107db17e93f00a80cd13",
+            "memory_scope": "execution_process_tree_v1",
+            "preset_id": "test-flux2-klein-4b-10g-0fc0f2be6109",
+            "preset_revision": 1,
+            "record_digest": "6c96979a1294f77a791cd76fb15cce6df17cc57b1a65fc221ae6452efee65a4f",
+            "release_channel": "public-experimental",
+            "target_request_memory_bytes": 10737418240
+          },
+          "status": "resolved"
+        }
+      },
+      "result": {
+        "status": 2,
+        "error": "generation cancelled",
+        "result": null,
+        "callback_errors": []
+      },
+      "evidence_sha256": {
+        "source-verification.json": "dfc3396bdbfd6b1b9ba1905c129162271c5a4bf529510a69b48201b5f2254bc5",
+        "plan.json": "8dda5f55e3b8498638ccd565163736bcf7776a7e7043dc4614879ebcc4891a12",
+        "result.json": "96709b7fc92fb296e44e9aad92d5c493a73ae2a63f4af2dd032372b433c90159",
+        "observation.json": "1b5f7cacc0b511b8fed2eb96a10ca892e014f7b01f5b6198fc70930193a38b69",
+        "events.jsonl": "7cfb2088b2a019ff1307ef15ca765ef60f006541d2aa7ba4608a5558746ca9e3",
+        "resolve-result.json": "126307a66ba4f7aeb455af5c62a5bc5dfd08c8e469fee1780d3ee99748054862",
+        "exact-request.json": "f69c686a3fe9c5dc9b5fd0b7e35e5919ccab823916aca302b857d556174e65ed"
+      },
+      "memory_jsonl_sha256": "13e5668892d23ce945a9e4dac6fa45a1c4f95213ae4fb0b0fdf6afc636d51c70",
+      "harness_sha256": "e80b758df38c259b6351513e5470adeab19c7893b8b77f0f3be11bcaf3a9cbba"
+    }
+  },
+  "source_sha256": {
+    "request.json": "c9e9f3da87dc42caf54f07bd4ab318806448fab487bd52f1d3fd2c9c5e0ebc26",
+    "plan.json": "3b4a3152a85d28282b4205cf5bd8e98f2d905678ce64603231da8b0df4141bca",
+    "test-catalog.json": "5a9912458c1b0856824689dc060322c8ac06bf0057db1abc1e2fb3f3e2078afa",
+    "flux-request.json": "4470d045443d44df0ae723aa89994f0adb711fc19517137b8e1807e1d89e7ef7",
+    "flux-plan.json": "5e031d194d81cc05adf499c0689ab5377d1aecc982c28c2babfe24baf6999fb5",
+    "flux-test-catalog.json": "1079f3c345ee5a5399769d42f3bd6643fbd295702733e7f21d4a09edaa57ee5a",
+    "environment.txt": "161b962ea25cf5c28239025d56bbe8aef0cc01fadd5edf73d4e1ce37d9f52a6a",
+    "vm-before.txt": "9998cd654332098be835df166aa34a9463b620a5dd729388dc5bf64e2ce84c05",
+    "run_public_streaming_smoke-initial.py": "1d9edc9c3fd5d4b22bb548335195f804d8ca44563b31a3cdf281077be2630472",
+    "run_public_streaming_smoke.py": "e80b758df38c259b6351513e5470adeab19c7893b8b77f0f3be11bcaf3a9cbba"
+  },
+  "binary_sha256": {
+    "turbocider": "91b5576d77a206596a904ad19088775f3453efda32c9aeb323a99869f4096b05",
+    "libturbocider.dylib": "1c1801c345af4bfae3ece00a8ebbd276aa3e3e47d5cdd2f398043b45a35050c9"
+  },
+  "logs": {
+    "tc-core-v0-flux-success.log": "f1cacf0e98af88712e8f6eb4216d7789cd661b38f62a9578d14a070446a30134",
+    "tc-core-v0-z-cancel.log": "f6941f05dcc84a39c5faa27b592166475843f5124ea5d2d7a25fde3aee6ea827",
+    "tc-core-v0-z-success.log": "f1cacf0e98af88712e8f6eb4216d7789cd661b38f62a9578d14a070446a30134",
+    "tc-core-v0-catalog-tests.log": "d55332257ec13fa95eadf6e776508e6d6aa607bc11fffc7a5e1ce84647d472c2",
+    "tc-core-v0-catalog.log": "285a65da1df939cfa32f28d3732e3037d3e7d5376aac30e60b0fa8b319039615",
+    "tc-core-v0-native-build.log": "12f0a6919376c7ce7596357c2a096df2e14bb043bc2ce70269ede49b862e4ec7",
+    "tc-core-v0-flux-catalog.log": "d9441708bdd9340c12707f4eed62eccf091ebcebb50ddbf2ab3537209dad400c",
+    "tc-core-v0-help.log": "6aeb85f09b06670071ab478aff573b74d56167a2ba0bea9ae77e51a6a46f91cd",
+    "tc-core-v0-flux-cancel.log": "f6941f05dcc84a39c5faa27b592166475843f5124ea5d2d7a25fde3aee6ea827"
+  },
+  "limitations": [
+    "Catalog review/calibration/performance values are templates generated by test hooks. Their public-experimental string and calibrated_request_bytes are not release qualification or measured calibration. Production catalog remains empty.",
+    "One prompt and seed per model, one success and one cancellation each. No formal P0/P1/P2/P3 or statistical performance/quality conclusion.",
+    "Public C API path exercised in a disposable Python process with cli_worker identity; not native CLI terminal protocol or App-driven real successful publication.",
+    "Engine free returned and sampler observed process exit; cancellation alone does not prove unsafe-drain/recovery/poison fault coverage or full M0 acceptance.",
+    "Swap/compression counters are sampler observations, not proof of model-exclusive attribution or a guaranteed zero-swap/hard memory cap.",
+    "Calibrated release policy and complete hybrid engine route remain unimplemented."
+  ],
+  "flux_previous_private_comparison": {
+    "reference": "docs/experiments/2026-09-21-m1-flux4-512-current-image.png",
+    "reference_sha256": "7bf7c59b5d277965fa34686730f6358b6e3718201c484fbf199f806d3b13c27e",
+    "new_sha256": "7bf7c59b5d277965fa34686730f6358b6e3718201c484fbf199f806d3b13c27e",
+    "byte_identical": true,
+    "scope": "Single image equality against earlier private execution; not a formal same-plan P1 or performance comparison"
+  }
+}

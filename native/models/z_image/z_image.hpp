@@ -26,7 +26,14 @@ class ZImage final : public ModelSession {
     std::unique_ptr<ZImageExactStream> exact_stream_;
     std::string stream_configuration_;
     uint64_t exact_stream_generation_ = 0;
+    bool streaming_quarantined_ = false;
+    mutable bool streaming_content_identity_ = false;
+    std::vector<streaming::SourceFileIdentity> streaming_source_files() const;
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    bool test_fail_drain_ = false;
+#endif
     std::optional<Tensor> cached_conditioning_;
+    std::optional<HybridMetrics> cached_encoder_hybrid_metrics_;
     std::string cached_prompt_;
     std::string cached_encoder_manifest_;
     bool cached_dynamic_ = true;
@@ -41,6 +48,8 @@ class ZImage final : public ModelSession {
     // Bound only for one public exact generate call. Legacy/private paths keep
     // the empty value and retain their existing path-based construction.
     std::shared_ptr<const streaming::SourceLease> public_stream_lease_;
+    std::unique_ptr<Tokenizer> public_stream_tokenizer_;
+    bool public_component_cache_ = false;
     uint64_t public_stream_target_bytes_ = 0;
 
     void select_loras(const Request &);
@@ -59,10 +68,16 @@ class ZImage final : public ModelSession {
     ZImage(const std::filesystem::path &, std::string,
            const std::filesystem::path &transformer_checkpoint);
     ~ZImage() override;
+    bool streaming_quarantined() const noexcept override { return streaming_quarantined_; }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    void test_set_streaming_drain_failure(bool value) override { test_fail_drain_ = value; }
+#endif
     LoadResult load(const Event &, std::atomic<bool> &) override;
     void unload() override;
     RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) override;
     RunResult generate(const Request &, const Event &, std::atomic<bool> &) override;
+    std::shared_ptr<const streaming::SourceLease>
+    verify_streaming_sources(std::atomic<bool> &) override;
     std::shared_ptr<const streaming::ModelStreamingProbe>
     probe_public_streaming(
         const streaming::PublicResolveInput &) const override;

@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+namespace tc { struct Request; }
 namespace tc::streaming {
 
 inline constexpr uint64_t gib = 1ull << 30;
@@ -32,6 +33,9 @@ struct PresetWorkload {
 struct PresetSourceIdentity {
     std::string model_variant, weight_format;
     std::string artifact_manifest_digest, source_snapshot_digest;
+    // v1 binds a local snapshot. v2 contains verified portable content identity
+    // only; source_snapshot_digest must be empty. Request bindings stay in leases.
+    uint32_t identity_version = 1;
     bool operator==(const PresetSourceIdentity &) const = default;
 };
 
@@ -72,6 +76,8 @@ struct PresetRelease {
     std::string channel;
     bool revoked = false;
     std::string reviewed_commit, review_digest;
+    // Empty preserves legacy v1/v2 identity. Explicit policies use record v3.
+    std::string policy_revision;
 };
 
 struct StreamingPresetRecord {
@@ -111,6 +117,16 @@ struct PresetResolution {
     std::vector<std::string> rejected_preset_ids;
 };
 
+// Discovery only. A candidate is not execution authority and must pass the
+// installed-model resolver before a caller may present it as available.
+struct PresetCandidateResolution {
+    std::optional<StreamingPresetRecord> candidate;
+    std::string rejection_code;
+};
+
+PresetWorkload basic_streaming_workload(const Request &,
+    std::string device_class, std::string execution_container);
+
 uint64_t streaming_target_margin_bytes(uint64_t target);
 bool supported_streaming_target(uint64_t target) noexcept;
 
@@ -124,6 +140,8 @@ void validate_streaming_preset_record(
     const StreamingPresetRecord &, std::string_view catalog_revision);
 
 PresetResolution resolve_streaming_preset(
+    const PresetResolveQuery &, const StreamingPresetCatalog &);
+PresetCandidateResolution find_streaming_preset_candidate(
     const PresetResolveQuery &, const StreamingPresetCatalog &);
 const StreamingPresetCatalog &production_streaming_preset_catalog();
 

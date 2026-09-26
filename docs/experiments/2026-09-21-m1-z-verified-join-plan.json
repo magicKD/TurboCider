@@ -1,0 +1,39 @@
+{
+  "scope": "Real verified GPU suffix + Core ML prefix branch joins; synthetic zero oracle, no image or performance qualification",
+  "branches": 32,
+  "noise_rows": 1024,
+  "main_rows": 1088,
+  "bucket": 1088,
+  "ane_channels": [
+    0,
+    5120
+  ],
+  "gpu_channels": [
+    5120,
+    10240
+  ],
+  "resident_main_layers": 1,
+  "slots": 1,
+  "expected_fills": 29,
+  "passes": 1,
+  "warmups": 0,
+  "input": "BF16 zeros on GPU, exact FP16 zeros to fixed Core ML bucket",
+  "oracle": "all joined BF16 outputs exactly zero",
+  "reuse_policy": "GPU all-elements comparison completes join consumers before slot/output reuse",
+  "known_quality_status": "Original 32-branch INT8 nonzero prefix smoke failed block29; unchanged",
+  "source_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-int8/compiled-cache/manifest-3609feb6e38e3ea1216507b14b8b919dc2e7864713dda0373481161e2b0649e4.json",
+  "source_sha256": {
+    "native/models/z_image/hybrid_math.hpp": "d13063739febdbb1c5c30065a1a7d7bc51077dddd6ba162f55064cc86d41ba0e",
+    "native/models/z_image/hybrid_math.cpp": "3f52f529e0890818a9afca326232f1f994901bf6fc9a7246b3531be4f55f9f27",
+    "tests/native/z_image_verified_join_test.cpp": "1282a92a9c6c5cb76141ad8c3b6347ffecc3174e7efd0cd448a17d027a2111bd",
+    "tests/native/test_z_image_verified_join.py": "6912fb819e51b06a31259cf76596d698092394ab9e19359043cd9a1d7e258c61"
+  },
+  "limitations": [
+    "Manual branch driver, not StageExecutor receipts",
+    "No complete denoiser/attention/latent trajectory",
+    "No prediction hang/cancel quarantine",
+    "CPU+NE is not ANE residency proof",
+    "No full-image speed or quality claim"
+  ],
+  "expected_derived_sha256": "59b03803a9dac69d0fe89a79ef318056260b77d48cdc588744aef6bee89fcb47"
+}

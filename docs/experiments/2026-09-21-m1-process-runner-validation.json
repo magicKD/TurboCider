@@ -1,0 +1,208 @@
+{
+  "scope": "Bounded cancellation/process-group cleanup and real CLI rejection/cancel through Swift supervisor; no App/GUI or successful generation qualification",
+  "policy": "2026-09-21-m1-process-runner-policy.json",
+  "tests": {
+    "fixture_build": "PASS clang -Wall -Wextra -Werror",
+    "runner_build": "PASS swiftc",
+    "strict_concurrency": "PASS Swift 6 complete checking, warnings as errors",
+    "lifecycle": "PASS spawn failure releases admission; stdout/stderr/nonzero exit; 3 MiB stdout + 512 KiB stderr without deadlock; concurrent run blocked; cooperative cancel; SIGTERM-ignoring process/group SIGKILL after 5 seconds; unrelated process survives; leader exit cleans child; output overflow capped and cleaned",
+    "cleanup_pending": "PASS injected grace=0/reap=0 forces pending; another run rejected until explicit OS-confirmed cleanup; then admission restored",
+    "real_worker_build": "PASS Swift/native bindings + actual worker terminal validator",
+    "real_worker": "PASS Z and Flux4 each production empty-catalog rejection and cooperative source-verification cancellation"
+  },
+  "initial_failures": [
+    {
+      "case": "Swift test compile",
+      "reason": "await inside precondition autoclosure",
+      "fix": "await result first, then assert; production runner unchanged"
+    },
+    {
+      "case": "real model test setup",
+      "reason": "missing parent experiment directory; failed before spawning any worker",
+      "fix": "create parent directory, preserve setup failure, rerun into previously uncreated real-models directory"
+    }
+  ],
+  "real_model_results": {
+    "flux2-klein-4b-cancel": {
+      "plan": {
+        "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-generate/turbocider",
+        "cancel_delay_seconds": 1,
+        "runtime_fingerprint": "tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85",
+        "grace_seconds": 5,
+        "expected": "cooperative source cancellation, exit 2",
+        "scope": "Real source check through native process supervisor; no successful model generation or timing qualification",
+        "reaping_seconds": 5,
+        "mode": "worker-generate"
+      },
+      "observation": {
+        "exit_code": 2,
+        "cleanup_pending": false,
+        "failure": null,
+        "pid": 25031,
+        "forced_stop": false,
+        "cancellation_requested": true
+      },
+      "terminal": {
+        "actual_container": "cli_worker",
+        "artifact": null,
+        "error": {
+          "code": "worker_cancelled",
+          "message": "generation cancelled"
+        },
+        "job_id": "8d32832f-dfca-4ae7-a198-4e224dd8be97",
+        "layout_digest": null,
+        "protocol_version": 1,
+        "public_streaming_summary": null,
+        "record_digest": null,
+        "request_digest": "e79e7d6933b95fad19666a22d72f7123a05a31b978b388f00667d55aeec78ffc",
+        "request_id": "17533342-75fc-49bb-8d14-e89c14abb4d4",
+        "resolution_digest": null,
+        "runtime_fingerprint": "tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85",
+        "status": "cancelled"
+      }
+    },
+    "flux2-klein-4b-reject": {
+      "plan": {
+        "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-generate/turbocider",
+        "cancel_delay_seconds": 0,
+        "runtime_fingerprint": "tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85",
+        "grace_seconds": 5,
+        "expected": "catalog_has_no_public_records, exit 1",
+        "scope": "Real source check through native process supervisor; no successful model generation or timing qualification",
+        "reaping_seconds": 5,
+        "mode": "worker-generate"
+      },
+      "observation": {
+        "exit_code": 1,
+        "cleanup_pending": false,
+        "failure": null,
+        "pid": 24977,
+        "forced_stop": false,
+        "cancellation_requested": false
+      },
+      "terminal": {
+        "actual_container": "cli_worker",
+        "artifact": null,
+        "error": {
+          "code": "worker_generate_failed",
+          "message": "catalog_has_no_public_records"
+        },
+        "job_id": "9baa8347-f31a-4288-81eb-7efa146a1bdc",
+        "layout_digest": null,
+        "protocol_version": 1,
+        "public_streaming_summary": null,
+        "record_digest": null,
+        "request_digest": "fac84eb6cac04c828209827b968adadba6f11fcce48b307b026de20d70e15898",
+        "request_id": "690276cd-44d0-4c4f-aa52-cd8ff50935d6",
+        "resolution_digest": null,
+        "runtime_fingerprint": "tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85",
+        "status": "error"
+      }
+    },
+    "z-image-turbo-cancel": {
+      "plan": {
+        "scope": "Real source check through native process supervisor; no successful model generation or timing qualification",
+        "reaping_seconds": 5,
+        "grace_seconds": 5,
+        "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-generate/turbocider",
+        "mode": "worker-generate",
+        "expected": "cooperative source cancellation, exit 2",
+        "runtime_fingerprint": "tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85",
+        "cancel_delay_seconds": 1
+      },
+      "observation": {
+        "cleanup_pending": false,
+        "exit_code": 2,
+        "failure": null,
+        "pid": 24976,
+        "cancellation_requested": true,
+        "forced_stop": false
+      },
+      "terminal": {
+        "actual_container": "cli_worker",
+        "artifact": null,
+        "error": {
+          "code": "worker_cancelled",
+          "message": "generation cancelled"
+        },
+        "job_id": "f0a4e7ca-76dc-4557-8f51-638ec5305939",
+        "layout_digest": null,
+        "protocol_version": 1,
+        "public_streaming_summary": null,
+        "record_digest": null,
+        "request_digest": "166bec26da81405074cba5a61f87f49dac4788043843cab1b8d8c92bf1eb70f3",
+        "request_id": "202fd738-ad7e-423f-b916-bf8184e4efcf",
+        "resolution_digest": null,
+        "runtime_fingerprint": "tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85",
+        "status": "cancelled"
+      }
+    },
+    "z-image-turbo-reject": {
+      "plan": {
+        "reaping_seconds": 5,
+        "executable": "/Users/chencanhui/code/TurboCider/build/m1-worker-generate/turbocider",
+        "runtime_fingerprint": "tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85",
+        "expected": "catalog_has_no_public_records, exit 1",
+        "grace_seconds": 5,
+        "cancel_delay_seconds": 0,
+        "mode": "worker-generate",
+        "scope": "Real source check through native process supervisor; no successful model generation or timing qualification"
+      },
+      "observation": {
+        "pid": 24927,
+        "cleanup_pending": false,
+        "exit_code": 1,
+        "cancellation_requested": false,
+        "forced_stop": false,
+        "failure": null
+      },
+      "terminal": {
+        "actual_container": "cli_worker",
+        "artifact": null,
+        "error": {
+          "code": "worker_generate_failed",
+          "message": "catalog_has_no_public_records"
+        },
+        "job_id": "01b50740-01b2-4afb-a5f8-122bb7d63850",
+        "layout_digest": null,
+        "protocol_version": 1,
+        "public_streaming_summary": null,
+        "record_digest": null,
+        "request_digest": "88aee674e80a7f523ec843defc12521c6c5c794c2314bdaf44251c5f76096b40",
+        "request_id": "127d7f28-1e29-4348-9450-c64e76570cf4",
+        "resolution_digest": null,
+        "runtime_fingerprint": "tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85",
+        "status": "error"
+      }
+    }
+  },
+  "source_sha256": {
+    "apps/macos/NativeProcessRunner.swift": "eddd003bb86de92aafb4ea3290e2b2bfc3eec0087fb2f3fa727844199ab6a2eb",
+    "tests/integration/NativeProcessRunnerTests.swift": "a1bef02ce62179a899d25fca2d23a5cbb65b1663d1649b9e4d5d9ee28096ca72",
+    "tests/integration/native_process_fixture.c": "d7b43403b7efbbdad5631c5753670a650f08e337d22d20b4aca233adea9249c9",
+    "tests/integration/NativeProcessWorkerTests.swift": "ca1996814500e548a4e4b943d87b180eb04029592dbc46430adc1bdc997940d1",
+    "tools/native/build_app.sh": "6809546fde9989dbeae6a1918cec6e63a1f1839659aef89bc892ab8daca4a719"
+  },
+  "test_binary_sha256": {
+    "tc-native-process-fixture": "4a10aa8812a1f3d888ba8c72804d60d08b8cffaaa24d531581662f8aeb4211a3",
+    "tc-native-process-tests": "2a5295d8775473f73ff1e24e0c36290314b9b9b147dccf2c7ab1874f63f2907e",
+    "tc-native-process-worker-tests": "1ab22bd82c0960d4adcdc9a1d1ef28c72073cddd018655f6c288f7ed687c7c74"
+  },
+  "evidence_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-process-runner",
+  "log_sha256": {
+    "runner-tests.log": "a90b711b117a6203f50b2c5a6834f9bcb3f1155c627624c7f465b60b85fea6ee",
+    "real-worker-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "runner-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "real-worker-tests.log": "94dec5857569bf4c849b2b9e60ed6a19e9d39411fc0f1392c23c8500f8b98b21",
+    "runner-build-initial.log": "c5987e3ee17d27a591e02cdc7063554e650ecc904a8e9d3118996b5b7aecc8b1",
+    "runner-concurrency.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "real-models-initial-setup-failure.log": "a71efe227f5490e444bdcc42d5b96741bac2b11a62f824a1d5fe947897f6e610"
+  },
+  "limitations": [
+    "No JobStore wiring/full App build/GUI generation in this round",
+    "Runner admission is process-local, not yet persistent across App restart",
+    "JobStore currently marks pending/running jobs interrupted without external worker identity checks; this must change before production worker wiring",
+    "No successful real public model generation; production catalog empty",
+    "Real cancellation tests cover source verification, not GPU/ANE reader drains; fixture cases cover supervisor behavior only"
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "scope": "Campaign engine setup verification and public resolution only; no GPU generation",
+  "config": {
+    "library": "/Users/chencanhui/code/TurboCider/build/m1-worker-identity/libturbocider.dylib",
+    "model_id": "z-image-turbo",
+    "model_path": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo",
+    "constructor": "public",
+    "execution_container": "cli_worker",
+    "verify_streaming_sources": true,
+    "test_streaming_catalog": "/Users/chencanhui/code/TurboCider/docs/experiments/2026-09-21-m1-z-verified-worker-catalog.json"
+  },
+  "source_verification": {
+    "scope": "engine_setup",
+    "wall_seconds": 10.62772800005041,
+    "report": {
+      "artifact_manifest_digest": "6668c65bf99c32a7c16a73396b611abf39f2eee4f9325a0180f7e5d7a3bfe759",
+      "files": [
+        {
+          "bytes": 8044982048,
+          "logical_id": "text_encoder",
+          "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a"
+        },
+        {
+          "bytes": 11422654,
+          "logical_id": "tokenizer",
+          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        },
+        {
+          "bytes": 12309866400,
+          "logical_id": "transformer",
+          "sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6"
+        },
+        {
+          "bytes": 335304388,
+          "logical_id": "vae",
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+        }
+      ],
+      "model": "z-image-turbo",
+      "proof_scope": "native_process_generation",
+      "schema_version": 1,
+      "status": "verified",
+      "verification_bytes_read": 20701575490,
+      "verification_cache_hits": 0
+    }
+  },
+  "resolution": {
+    "catalog_revision": "verified-source-smoke-v2",
+    "exact_selector": {
+      "catalog_revision": "verified-source-smoke-v2",
+      "enabled": true,
+      "expected_resolution_digest": "69b2d1f0b4c9c08225e6f44dfd977e1c86b4031ffab1eda66dad4264973144e5",
+      "preset_id": "test-z-image-turbo-12g-6bf3f271ad9b",
+      "preset_revision": 1,
+      "retention": "request",
+      "schema_version": 2,
+      "selection": "preset",
+      "target_request_memory_bytes": 12884901888
+    },
+    "identity": {
+      "device_digest": "1f0d8053f0687dc86af564b7c8d2f02b141b9d005c089249a1178f6a204c889e",
+      "runtime_digest": "6ee1d77dbba1e8a842b3304a26bc4c2502ed9e1bedb2bfcf3a4ffcb57044da76",
+      "source_digest": "3f22df460319fe3ba578e767fef6557d7e280e08926a8dff1e448653ad2ee81a"
+    },
+    "request_digest": "f9554f8bb73beeb0453bb9e4aea7e542599f195400e8f98326d64eb8cc302cc4",
+    "requested_selector": {
+      "enabled": true,
+      "retention": "request",
+      "schema_version": 2,
+      "selection": "memory_tier",
+      "target_request_memory_bytes": 12884901888
+    },
+    "resolution_digest": "69b2d1f0b4c9c08225e6f44dfd977e1c86b4031ffab1eda66dad4264973144e5",
+    "schema_version": 1,
+    "selection": {
+      "calibrated_request_bytes": 11596411699,
+      "component_policy_revision": "zimage-components-v2-all-sources-request-cache",
+      "execution_container": "cli_worker",
+      "layout_digest": "6bf3f271ad9b246812b4926e47ddeb6315869db6c5a41d82b6f2c61aa442d30b",
+      "memory_scope": "execution_process_tree_v1",
+      "preset_id": "test-z-image-turbo-12g-6bf3f271ad9b",
+      "preset_revision": 1,
+      "record_digest": "3daf724ddc725882e05e09ec402130f0ea0ab0215a52641b42354e541016f37c",
+      "release_channel": "public-experimental",
+      "target_request_memory_bytes": 12884901888
+    },
+    "status": "resolved"
+  }
+}

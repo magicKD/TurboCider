@@ -56,6 +56,18 @@ Z-Image/Flux 的 capture 输入未提供权重内容 digest。哈希 stat 元数
 
 验收：相同内容的另一目录/另一安装可 resolve；相同大小但不同内容不可 resolve；request 中途替换/截断仍拒绝；layout digest 跨安装稳定。
 
+2026-09-21 增量：Z-Image metadata 新增显式 `describe_verified()`，要求 native verified lease，使用全 lease 的内容身份与 transformer SHA-256 生成 portable descriptor，保留独立的 request snapshot 和 revalidation。Host 测试覆盖跨目录复制布局相同、binding/generation 不同、同大小 payload 改写、辅助 tokenizer 改写、删除、伪造 caller digest、workload/预取策略变化；已通过。该接口不在查询时 hash 权重。现有 `describe()`、public probe/compile 和 catalog 仍走 legacy snapshot 路径；persistent import proof、RecordV2/native/Python/receipt 联动迁移及跨安装 resolve 验收仍待完成，R1 尚未关闭。
+
+RecordV2 格式增量：`source.identity_version=2` 要求 `model_variant`、`weight_format`、`artifact_manifest_digest`，禁止序列化 `source_snapshot_digest`。省略版本或显式 1 使用原 v1 字段与原 canonical bytes；其他版本拒绝。v2 的 record、record digest、record identity 和 source identity 分别使用独立 `*-v2` domain，native/Python 字段顺序一致，test-catalog JSON 同步支持。固定 native/Python record 样例 SHA-256 为 `c322e18cabc2ed4756a8cbbc468c24989ba175dda64745902014a1971aca0bb0`，v1 原样例仍为 `13b5797176d713924b9c16857acbf0f7a35313d2426a22fdca38c488b3ea3df1`。这一步只完成格式合同，内容证明不能由 JSON 自授；core resolver/value probe/authority 已支持 v2 native verified lease，并将 request generation 与 snapshot digest 单独绑定 authority；host 复制测试验证同 record 可选而不同请求不能共用 authority。实际模型 public probe 仍为 legacy。后续必须将模型导入验证、portable descriptor 与 receipt 的真实执行一起接通，不能删除版本保护后直接发布旧 calibration。
+
+2026-09-21 后续：已增加 `tc_engine_verify_streaming_sources_json`，Z-Image 显式验证后 probe 使用 capture_preverified，plan/source identity 与 core resolver/authority 接通 v2。真实本机四文件摘要复核、取消重试、零 payload 复验及合成 test-catalog 下的公开 adapter 图片/receipt 均通过，详见实验记录第二十六轮。默认未验证 engine 的 legacy 路径暂留；persistent import proof、App 验证 UI、Flux 迁移和生产 record 正式证据仍缺失，R1 不能标为关闭。
+
+2026-09-21 Flux 后续：显式 source verification 已接入 Flux，4B host 变更失效测试及真实 worker v2 图片/receipt 通过；8 个官方 artifact 摘要验证与原 PNG 字节一致，详见实验第三十轮。两个目标模型均已有显式进程内验证路径，尚未完成 persistent import proof、App 接入和生产记录资格，R1 仍未整体关闭。
+
+2026-09-21 App 增量：模型库增加显式文件校验入口、状态和取消，Swift SDK/真实模型会话功能测试及启动 smoke 通过，详见实验第三十一轮。新会话的证明复用、persistent import、生产资格和完整 GUI 验收仍未关闭。
+
+2026-09-21 新会话增量：Flux/Z-Image query 可复用完整 native 进程内容证明，采用后保持内容模式，变更失效不降级；未验证查询不 hash payload。SourceLease、两模型 public adapter/API 回归及真实 Flux 销毁旧 engine 后的新 engine v2 resolve 通过，详见实验第三十二轮。这修复 App options 新开 engine 的证明接入，尚不提供持久化证明或生产 catalog。
+
 ### R2 · Options 查询不能匹配真实完整 record
 
 证据：`native/api/c_api.mm::tc_streaming_options_json()` 只填 model、shape 等基础 workload；没有填 conditioning revision、VAE policy、feature digest 和 token shapes。
@@ -87,6 +99,8 @@ exact request 开头清 transformer，但仅 K1 清 VAE，也没有像 Flux publ
 验收：resident→public、public A→B→A、同 prompt 换 encoder/VAE、取消后重试、来源替换；执行来源和输出一致，旧缓存不跨 generation 冒充新源。
 
 ### R4 · 安全析构有协议，但模型失败恢复尚未统一接上
+
+2026-09-21 进展：Flux/Z-Image exact denoiser 已接上完整 engine 保留、进程 quarantine 与 App 重启提示；两模型真实权重正常/取消重试/注入 unsafe drain 的六项检查通过，见 [实验第十八轮](../../experiments/2026-09-20-m1-streaming.md#第十八轮z-image-exact-owner-与取消异常传播)。以下为审查时证据；encoder/VAE、其余故障边界与有界 worker 恢复仍待关闭，R4 未整体完成。
 
 证据：`PublicStreamingRunContext` 在 native 中的调用点目前限于自身实现，实际构造主要在 resolver host test；四模型 public 方法仍使用各自 owner/receipt 路径。
 `tc_engine::streaming_quarantined` 有初始化和读取，当前无置 true 的路径。
@@ -124,6 +138,8 @@ H3/LTX 已有专门 quarantine owner，不能据此说所有模型都缺取消�
 5. 首个限定发布可先默认 Off、显式选档；自动推荐在 resident-fit evidence 存在时启用。显式 Off/指定档位优先，unavailable 不自动改 Off 重跑。
 6. typed error 包含 `code / phase / retryability / recovery_action / primary_error / cleanup_error`；JobStore 对安全 cancel、可重试失败和需重启隔离分别处理。
 
+2026-09-21 R5 图片提交增量：排他 rename 已拒绝目标覆盖；JobStore 在 rename 前保存 finalizing 与含 SHA/device/inode 的已校验图片收据，重启复核 staging/最终文件并完成或拒绝恢复，发布后保存失败保留 finalizing。transaction/history 重启状态测试与 App 重建通过，见实验第五十一/五十二轮。尚无完整 worker envelope/进程存活恢复、真实进程强退或断电验证，R5 不能整体关闭。
+
 ### R6 · 发布身份、运行容器与证据范围不能只靠标签
 
 Z-Image/Flux 的 `turbocider_build_id` 当前是固定版本字符串；更新 runtime 后需可验证地改变兼容身份，不能靠忘记更新的手工标签持续沿用 qualification。
@@ -134,6 +150,14 @@ Z-Image/Flux 的 `turbocider_build_id` 当前是固定版本字符串；更新 r
 容器由受控入口确定，首版至少区分 App embedded 与 disposable CLI worker；不能让普通 request 自报更宽松容器。
 P2 使用发布入口同样的 root/child boundary、冷暖缓存和生命周期。要说明 App 是否被纳入采样，不能把 worker-only 峰值叫整个桌面 App 峰值。
 发布后的撤回策略首版可以是新 bundled catalog + App 更新；现有 production provider 为静态 snapshot，不应声称已经实现远程即时撤回。
+
+2026-09-21 runtime 身份增量：标准 native build 在编译前生成 `runtime-build/runtime-build-manifest.json` 和内部常量 `tc-runtime-build-v1-<sha256>`，Flux/Z-Image/H3/LTX 的 public runtime identity 使用该常量。输入覆盖 native 源码/头文件/shader、C binding、native CLI/service glue、构建脚本、MLX headers/dylib/metallib、clang/clang++/ld/ar 内容、compiler version、SDKSettings.json、架构、部署目标和测试/审计/实验开关及编译选项；源码目录、SDK 和 MLX 安装目录经过位置归一化。构建完成前再次计算并比较清单，输入变更则报错；没有生成 header 的非标准构建会失败，不使用手写默认身份。
+
+这是保守的 native compatibility key，不是签名、模型来源证明或实际 binary hash。SDK 只固定 SDKSettings 身份，未 hash 整个 Apple SDK；Swift frontend、外部 helper 可执行文件与最终 bundle/动态依赖运行时完整性仍需单独的 package manifest/安装验收。catalog 的独立 revision 字段保留，但当前 bundled catalog 仍内嵌于 native 源码且为空，未来分离数据生成时还需避免 catalog 内容与 build key 自引用。测试 hook/审计配置不同会产生不同 key，旧实验或 hook 记录不能直接改标签作为新 release 资格。R6 仍未整体关闭。
+
+2026-09-21 catalog 数据分离增量：`native/runtime/streaming/bundled_catalog.json` 现在作为独立的 reviewed input inventory，不参与 runtime 源码 fingerprint。标准构建先生成 runtime key，再由 `generate_bundled_streaming_catalog.py` 生成只读 C++ 数据和 `bundled-catalog-manifest.json`；构建结束同时复核 runtime 和 catalog 两份清单，关闭上述 key 自引用。inventory 中每个条目必须提供相对于该文件的 `bundle / record_input / review / performance_bundle / default_bundle / swap_bundle` 路径与 `expected_record_digest`。生成器重新调用既有 evidence builder，保留 public 的 P0/P1/P2/P3、review 和原始证据检查；随后要求记录与当前 runtime key、catalog revision、预期 digest 一致，只允许 public-stable/public-experimental，禁止重复 id。只有结构化字段赋值进入生成 header，字符串逐字节转义、整数字段按 native 宽度检查，native 初始化再次验证 canonical digest。
+
+默认 inventory 仍为空；此变更不是发布任何记录，也不降低既有 qualification gates。独立 host 编译仍可使用空 catalog，而标准构建通过宏强制依赖生成 header。撤回首版仍通过更新 bundled inventory 和 App/package 分发；没有远程可写 catalog 或运行时 JSON 自授入口。最终 binary/bundle 哈希与签收仍需独立处理。
 
 ## 3. 四模型应如何排序
 
@@ -252,6 +276,8 @@ policy generator 根据 frozen policy 生成三份必需 gate；P3 verdict 单�
 | **D2：发布封装** | calibrated policy 门禁、generated catalog 编译接入、包完整性/无 test hook 检查、正式证据索引 | builder emitter、build/package、release tests | A2 接口；可提前写 fixture 测试 | 1–2 日 + campaign / M1 |
 | **I：集成与签收** | M0 实验、M1 必需 gate、App E2E、安装/撤回 | acceptance card + evidence；修复回归归原工作包 | 对应 A/B/C/D | 1–2 日起；实际以 gate 为准 |
 
+2026-09-21 A2 策略身份增量：portable source 已占用 record v2，因此显式 release.policy_revision 使用独立 v3 canonical domain，同时进入 review identity/campaign binding。缺省旧记录 v1/v2 字节不变；当前只实现显式 tc-public-strict-v1，P3 仍必需，public-calibrated 仍拒绝。host/native/C API 对照通过，见实验第五十四轮；这不是 D2 calibrated gate 聚合或新 public channel 完成。
+
 ### 6.1 并行图与关键路径
 
 ```mermaid
@@ -288,6 +314,8 @@ B 可以在现有 local test-catalog 下先验证全组件，不等 A2；C 用 f
 - 构建使用现有 `TURBOCIDER_BUILD_OUTPUT_DIR` 分离输出。当前部分 tests 固定读取 `build/native`，未参数化之前只能在隔离 checkout 运行，不能两个构建覆盖同一 dylib。
 
 每个工作包提交：代码、针对合同的正/负测试、实际命令与结果、影响的 identity/revision、剩余边界。不得只提交“已完成”说明。
+
+2026-09-21 R6 容器增量：新增受控 worker constructor，native CLI/test-catalog CLI/campaign 使用 cli_worker；App 入口保留 embedded_app，普通请求不能切换容器。Host/API 测试验证仅容器不同的记录不可互用，真实 Z-Image v2 worker 图片/receipt 通过且正确报告 cli_worker，见实验第二十七轮。旧报告保留原始值；自动 build fingerprint 和最终包验收尚未完成，R6 未整体关闭。
 
 ## 7. 最小技术方案：保留框架，收口三个合同
 

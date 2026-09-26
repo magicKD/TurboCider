@@ -1,4 +1,5 @@
 #include "preset_catalog.hpp"
+#include "../../core/contracts.hpp"
 
 #include "canonical_encoding.hpp"
 
@@ -79,12 +80,15 @@ void encode_config(CanonicalEncoder &out, const StreamingConfig &config) {
 }
 
 void encode_source(CanonicalEncoder &out, const PresetSourceIdentity &source) {
+    if (source.identity_version == 2)
+        out.unsigned_field("source.identity_version", 2);
     out.string_field("source.model_variant", source.model_variant);
     out.string_field("source.weight_format", source.weight_format);
     out.string_field(
         "source.artifact_manifest_digest", source.artifact_manifest_digest);
-    out.string_field(
-        "source.source_snapshot_digest", source.source_snapshot_digest);
+    if (source.identity_version == 1)
+        out.string_field(
+            "source.source_snapshot_digest", source.source_snapshot_digest);
 }
 
 void encode_runtime(CanonicalEncoder &out, const PresetRuntimeIdentity &runtime) {
@@ -132,14 +136,20 @@ void encode_workload(CanonicalEncoder &out, const PresetWorkload &workload) {
 }
 
 void validate_identity(const PresetSourceIdentity &source) {
+    catalog_check(source.identity_version == 1 || source.identity_version == 2,
+                  "unsupported source identity version");
     catalog_check(valid_identifier(source.model_variant),
                   "missing/invalid model variant");
     catalog_check(valid_identifier(source.weight_format),
                   "missing/invalid weight format");
     catalog_check(valid_digest(source.artifact_manifest_digest),
                   "invalid artifact manifest digest");
-    catalog_check(valid_digest(source.source_snapshot_digest),
-                  "invalid source snapshot digest");
+    if (source.identity_version == 1)
+        catalog_check(valid_digest(source.source_snapshot_digest),
+                      "invalid source snapshot digest");
+    else
+        catalog_check(source.source_snapshot_digest.empty(),
+                      "portable source identity must not contain a snapshot");
 }
 
 void validate_identity(const PresetRuntimeIdentity &runtime) {
@@ -208,7 +218,14 @@ bool supported_streaming_target(uint64_t target) noexcept {
 
 std::string canonical_streaming_preset_record(
         const StreamingPresetRecord &record) {
-    CanonicalEncoder out("tc-streaming-preset-record-v1");
+    validate_identity(record.source);
+    catalog_check(record.release.policy_revision.empty() ||
+                      (record.source.identity_version == 2 &&
+                       record.release.policy_revision == "tc-public-strict-v1"),
+                  "unsupported release policy revision");
+    CanonicalEncoder out(!record.release.policy_revision.empty()
+        ? "tc-streaming-preset-record-v3" : record.source.identity_version == 2
+        ? "tc-streaming-preset-record-v2" : "tc-streaming-preset-record-v1");
     out.string_field("id", record.id);
     out.unsigned_field("revision", record.revision);
     out.string_field("catalog_revision", record.catalog_revision);
@@ -261,6 +278,8 @@ std::string canonical_streaming_preset_record(
         record.performance.confidence_status);
     out.string_field(
         "performance.evidence_digest", record.performance.evidence_digest);
+    if (!record.release.policy_revision.empty())
+        out.string_field("release.policy_revision", record.release.policy_revision);
     out.string_field("release.channel", record.release.channel);
     out.boolean_field("release.revoked", record.release.revoked);
     out.string_field(
@@ -271,7 +290,9 @@ std::string canonical_streaming_preset_record(
 
 std::string streaming_preset_record_digest(
         const StreamingPresetRecord &record) {
-    CanonicalEncoder out("tc-streaming-preset-record-digest-v1");
+    CanonicalEncoder out(!record.release.policy_revision.empty()
+        ? "tc-streaming-preset-record-digest-v3" : record.source.identity_version == 2
+        ? "tc-streaming-preset-record-digest-v2" : "tc-streaming-preset-record-digest-v1");
     out.string_field(
         "canonical_record", canonical_streaming_preset_record(record));
     return out.sha256();
@@ -336,6 +357,10 @@ void validate_streaming_preset_record(
                   "invalid performance confidence status");
     catalog_check(valid_digest(record.performance.evidence_digest),
                   "invalid performance evidence digest");
+    catalog_check(record.release.policy_revision.empty() ||
+                      (record.source.identity_version == 2 &&
+                       record.release.policy_revision == "tc-public-strict-v1"),
+                  "unsupported release policy revision");
     catalog_check(record.release.channel == "public-stable" ||
                       record.release.channel == "public-experimental" ||
                       record.release.channel == "revoked",
@@ -351,9 +376,41 @@ void validate_streaming_preset_record(
                   "canonical record digest mismatch");
 }
 
-PresetResolution resolve_streaming_preset(
+static bool basic_workload_matches(const PresetWorkload &a,
+                                   const PresetWorkload &b) {
+    return std::tie(a.model, a.operation, a.execution, a.device_class,
+                    a.execution_container, a.width, a.height, a.frames, a.fps,
+                    a.steps, a.batch, a.audio, a.dynamic_text, a.approximation) ==
+           std::tie(b.model, b.operation, b.execution, b.device_class,
+                    b.execution_container, b.width, b.height, b.frames, b.fps,
+                    b.steps, b.batch, b.audio, b.dynamic_text, b.approximation);
+}
+
+PresetWorkload basic_streaming_workload(const Request &request,
+        std::string device_class, std::string execution_container) {
+    PresetWorkload result;
+    result.model = request.model;
+    result.operation = request.operation;
+    result.execution = request.execution;
+    result.device_class = std::move(device_class);
+    result.execution_container = std::move(execution_container);
+    result.width = static_cast<uint32_t>(request.width);
+    result.height = static_cast<uint32_t>(request.height);
+    result.frames = static_cast<uint32_t>(request.frames);
+    // Image adapters have no frame rate; the legacy request defaults to 24.
+    result.fps = request.operation.starts_with("image.") ? 0 :
+        static_cast<uint32_t>(request.fps);
+    result.steps = static_cast<uint32_t>(request.steps);
+    result.batch = 1;
+    result.audio = request.audio;
+    result.dynamic_text = request.dynamic_text;
+    result.approximation = request.allow_approximation;
+    return result;
+}
+
+static PresetResolution resolve_preset_impl(
         const PresetResolveQuery &query,
-        const StreamingPresetCatalog &catalog) {
+        const StreamingPresetCatalog &catalog, bool discovery) {
     PresetResolution result;
     if (!supported_streaming_target(query.target_request_memory_bytes)) {
         result.rejection_code = "unsupported_memory_target";
@@ -377,13 +434,14 @@ PresetResolution resolve_streaming_preset(
         if (record.workload.model != query.workload.model)
             continue;
         model_seen = true;
-        if (!(record.workload == query.workload))
+        if (discovery ? !basic_workload_matches(record.workload, query.workload)
+                      : !(record.workload == query.workload))
             continue;
         workload_seen = true;
-        if (query.require_exact_identity && !(record.source == query.source))
+        if (!discovery && query.require_exact_identity && !(record.source == query.source))
             continue;
         source_seen = true;
-        if (query.require_exact_identity && !(record.runtime == query.runtime))
+        if (!discovery && query.require_exact_identity && !(record.runtime == query.runtime))
             continue;
         runtime_seen = true;
         if (!device_memory_matches(record, query.physical_memory_bytes))
@@ -438,11 +496,32 @@ PresetResolution resolve_streaming_preset(
     return result;
 }
 
+PresetResolution resolve_streaming_preset(
+        const PresetResolveQuery &query, const StreamingPresetCatalog &catalog) {
+    return resolve_preset_impl(query, catalog, false);
+}
+
+PresetCandidateResolution find_streaming_preset_candidate(
+        const PresetResolveQuery &query, const StreamingPresetCatalog &catalog) {
+    auto result = resolve_preset_impl(query, catalog, true);
+    return {std::move(result.selected), std::move(result.rejection_code)};
+}
+
+#ifdef TURBOCIDER_HAS_BUNDLED_CATALOG
+#include "turbocider_bundled_catalog_generated.hpp"
+#endif
+
 const StreamingPresetCatalog &production_streaming_preset_catalog() {
+#ifdef TURBOCIDER_HAS_BUNDLED_CATALOG
+    static const StreamingPresetCatalog catalog = make_bundled_streaming_catalog();
+#else
+    // Standalone host tests have no release catalog. The standard build defines
+    // TURBOCIDER_HAS_BUNDLED_CATALOG and requires the generated data header.
     // Deliberately empty until a model/workload/device record has passed the
     // full public acceptance protocol. Tests inject their own fixture catalog.
     static const StreamingPresetCatalog catalog{
         "tc-streaming-catalog-empty-v1", {}};
+#endif
     return catalog;
 }
 

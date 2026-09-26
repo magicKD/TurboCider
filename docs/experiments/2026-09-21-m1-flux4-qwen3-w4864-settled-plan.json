@@ -1,0 +1,58 @@
+{
+  "cases": [],
+  "encoder_ane_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-int8/compiled-cache/manifest-3779713220316227ab137612495665e0079068ecff6ca5cbb60755ddc10d9f32.json",
+  "force_fused_sdpa": false,
+  "format": "turbocider-qwen3-encoder-sweep-v1",
+  "gates": {
+    "max_relative_abs": 0.05,
+    "max_relative_l2": 0.025,
+    "max_warm_cv": 0.25,
+    "min_cosine": 0.999,
+    "min_warm_samples": 3,
+    "min_warm_speedup": 1.1
+  },
+  "hardware": {
+    "chip": "Apple M1 Pro",
+    "machine": "arm64"
+  },
+  "hybrid_prefill_policy": "qualification hybrid process sets ANE minimum tokens to 1 and padding limit to 10000%; production routing keeps conservative defaults and remains fail-closed",
+  "manifest_blocks": 27,
+  "manifest_buckets": [
+    64
+  ],
+  "method": "separate backend processes; one first pass, fixed predeclared settling passes, and N measured resident passes; backend order alternates by sequence length; final conditioning quality is computed after timing",
+  "mlx_reference": false,
+  "mlx_version": "0.32.0",
+  "mode": "flux_klein",
+  "planned": [
+    {
+      "commands": {
+        "gpu": [
+          "/Users/chencanhui/code/TurboCider/build/m1-cache/qwen3-quant-probe",
+          "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder",
+          "64",
+          "15",
+          "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-settled-sweep/64/gpu/conditioning.safetensors",
+          "flux_klein"
+        ],
+        "hybrid": [
+          "/Users/chencanhui/code/TurboCider/build/m1-cache/qwen3-quant-probe",
+          "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder",
+          "64",
+          "15",
+          "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-settled-sweep/64/hybrid/conditioning.safetensors",
+          "flux_klein",
+          "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-int8/compiled-cache/manifest-3779713220316227ab137612495665e0079068ecff6ca5cbb60755ddc10d9f32.json"
+        ]
+      },
+      "order": [
+        "gpu",
+        "hybrid"
+      ],
+      "tokens": 64
+    }
+  ],
+  "runs": 10,
+  "settling_runs": 5,
+  "weights": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder"
+}

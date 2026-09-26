@@ -92,6 +92,7 @@ test:
 # No real model weights, full inference, or system memory pressure in these
 # focused targets. GPU tests may report SKIP when Metal access is unavailable.
 test-streaming-host:
+	@"$(PYTHON)" -B tests/native/test_qwen3_sweep_geometry.py
 	@"$(PYTHON)" -B tests/native/test_streaming_layout.py
 	@"$(PYTHON)" -B tests/native/test_streaming_actual_receipt.py
 	@$(MAKE) test-streaming-source-lease
@@ -115,10 +116,14 @@ test-streaming-contract:
 	@"$(PYTHON)" -B tests/native/test_z_image_candidate_streaming_gate.py
 	@"$(PYTHON)" -B tests/native/test_z_image_public_streaming.py
 	@"$(PYTHON)" -B tests/native/test_flux_candidate_streaming_gate.py
+	@"$(PYTHON)" -B tests/native/test_flux_cache_scope.py
 	@"$(PYTHON)" -B tests/native/test_flux_public_streaming.py
 test-streaming-pager:
 	@"$(PYTHON)" -B tests/native/test_mlx_weight_pager.py
 	@"$(PYTHON)" -B tests/native/test_mlx_weights_lease.py
+.PHONY: test-flux4-streaming-metal
+test-flux4-streaming-metal:
+	@TURBOCIDER_TEST_GPU=1 "$(PYTHON)" -B tests/native/test_flux4_streaming_metal.py
 test-streaming-metal:
 	@$(MAKE) test-streaming-pager
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
@@ -146,8 +151,13 @@ test-ltx-streaming-lifecycle-faults:
 		--cache "$(OUTPUT)/cache" --output "$(OUTPUT)/lifecycle" \
 		--require-test-hooks
 test-app:
+	@build/native/turbocider-image-transaction-tests
+	@build/native/turbocider-ltx-worker-tests
+	@build/native/turbocider-streaming-resolution-tests
 	@build/native/turbocider-ane-library-tests
+	@build/native/turbocider-studio-variant-tests
 	@build/native/turbocider-studio-tests
+	@build/native/turbocider-history-tests
 	@build/native/turbocider-model-library-tests
 	@build/native/turbocider-library-store-tests
 	@build/native/turbocider-run-insights-tests

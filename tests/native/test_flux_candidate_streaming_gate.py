@@ -5,12 +5,16 @@ from __future__ import annotations
 
 import ctypes as C
 import json
+import os
 from pathlib import Path
 import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
-LIB = C.CDLL(str(ROOT / "build/native/libturbocider.dylib"))
+NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
+MODEL = os.environ.get("TURBOCIDER_TEST_FLUX_MODEL", "flux2-klein-9b")
+assert MODEL in ("flux2-klein-9b", "flux2-klein-4b")
+LIB = C.CDLL(str(NATIVE / "libturbocider.dylib"))
 LIB.tc_engine_create_model.argtypes = [
     C.c_char_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)
 ]
@@ -41,7 +45,7 @@ def consume(pointer: C.c_void_p) -> str:
 def create(symbol, root: Path) -> C.c_void_p:
     engine, error = C.c_void_p(), C.c_void_p()
     status = symbol(
-        b"flux2-klein-9b", str(root).encode(),
+        MODEL.encode(), str(root).encode(),
         C.byref(engine), C.byref(error),
     )
     failure = consume(error)
@@ -82,7 +86,7 @@ def resolve(engine: C.c_void_p, request: dict) -> tuple[int, str]:
 def request() -> dict:
     return {
         "schema_version": 2,
-        "model": "flux2-klein-9b",
+        "model": MODEL,
         "operation": "image.generate",
         "inputs": [{"kind": "text", "role": "prompt", "text": "g"}],
         "outputs": [{
@@ -132,13 +136,13 @@ def fixture(root: Path) -> None:
     }))
     values = {
         "transformer/config.json": {
-            "num_attention_heads": 32, "attention_head_dim": 128,
-            "num_layers": 8, "num_single_layers": 24,
+            "num_attention_heads": 24 if MODEL.endswith("4b") else 32, "attention_head_dim": 128,
+            "num_layers": 5 if MODEL.endswith("4b") else 8, "num_single_layers": 20 if MODEL.endswith("4b") else 24,
             "in_channels": 128, "guidance_embeds": False,
-            "joint_attention_dim": 12288,
+            "joint_attention_dim": 7680 if MODEL.endswith("4b") else 12288,
         },
         "text_encoder/config.json": {
-            "hidden_size": 4096, "num_hidden_layers": 36,
+            "hidden_size": 2560 if MODEL.endswith("4b") else 4096, "num_hidden_layers": 36,
             "num_attention_heads": 32, "num_key_value_heads": 8,
         },
         "vae/config.json": {"latent_channels": 32},
@@ -190,7 +194,7 @@ def main() -> None:
     assert "FluxExactStream" in pipeline
     assert "MultiPoolPolicy::retain_all" in transformer
 
-    print("PASS FLUX 9B public gate remains fail-closed; exact resolve stops at empty catalog; private candidate reaches the generic route")
+    print("PASS " + MODEL + " public gate remains fail-closed; exact resolve stops at empty catalog; private candidate reaches the generic route")
 
 
 if __name__ == "__main__":
