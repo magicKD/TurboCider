@@ -6,6 +6,9 @@ two independent, persistent worker processes.  A frozen campaign explicitly
 chooses whether each worker retains one engine or creates one engine per
 request.  Measured requests are serialized in alternating ABBA/BAAB blocks and
 appended to raw-samples.jsonl before the next request is dispatched.
+P0 can instead use one exclusive worker per measured sample, warming its
+persistent engine before measurement and confirming process exit before
+starting the next worker. This avoids retaining two resident models at once.
 
 This tool intentionally does not create memory pressure, clear OS caches, or
 change swap settings.  Those operations require a separate, explicitly
@@ -37,6 +40,7 @@ from streaming_source_verification import verify_native_sources
 
 from verify_streaming_campaign import (
     EvidenceError,
+    exclusive_worker_contract,
     p3_contract,
     verify,
 )
@@ -264,6 +268,10 @@ def validate_policy(policy: dict[str, Any]) -> None:
         raise CampaignError(
             "P2/P3 require per_request engines and worker restart between blocks"
         )
+    try:
+        exclusive_worker_contract(policy)
+    except EvidenceError as exc:
+        raise CampaignError(str(exc)) from exc
     if policy.get("comparison_kind") == "P3":
         try:
             p3_contract(policy)
@@ -1685,6 +1693,64 @@ class Worker:
             self.log.close()
 
 
+def run_exclusive_sample(policy, sample, sample_index, config_path, output,
+                         timeout, start_timeout):
+    """Warm and measure one engine; release the whole process before returning."""
+    session = {"run_id": sample["run_id"], "started_mono_ns": time.monotonic_ns(),
+               "warmup_run_ids": []}
+    warmups = []
+    worker = None
+    row = {**sample, "sample_index": sample_index}
+    try:
+        worker = Worker(sample["variant"], config_path,
+                        output / "workers" / (sample["run_id"] + ".log"),
+                        timeout, start_timeout)
+        session.update(worker_pid=worker.pid, ready_mono_ns=time.monotonic_ns())
+        for index in range(policy["protocol"]["warmup_requests_per_variant"]):
+            warm = {**sample, "run_id": f"warmup-{index:03d}-{sample['run_id']}",
+                    "worker_session_id": sample["run_id"]}
+            request, artifacts, canonicalizers = request_for(policy, warm, output)
+            started = time.monotonic_ns()
+            response = run_worker_request(worker, {
+                "type": "run", **warm, "request": request,
+                "artifact_paths": artifacts, "artifact_canonicalizers": canonicalizers,
+            }, output, policy, "warmup")
+            warmups.append({**warm, **response, "started_mono_ns": started,
+                            "finished_mono_ns": time.monotonic_ns()})
+            session["warmup_run_ids"].append(warm["run_id"])
+            if response.get("run_id") != warm["run_id"] or response.get("status") != "success":
+                raise CampaignError("exclusive worker warmup failed")
+        request, artifacts, canonicalizers = request_for(policy, sample, output)
+        session["measured_started_mono_ns"] = time.monotonic_ns()
+        response = run_worker_request(worker, {
+            "type": "run", **sample, "sample_index": sample_index,
+            "request": request, "artifact_paths": artifacts,
+            "artifact_canonicalizers": canonicalizers,
+        }, output, policy, "measured")
+        session["measured_finished_mono_ns"] = time.monotonic_ns()
+        if response.get("run_id") != sample["run_id"]:
+            raise CampaignError("exclusive worker returned a different run_id")
+        row.update(response)
+    except (EOFError, OSError, CampaignError) as exc:
+        row.update(status="worker_error", error=str(exc),
+                   worker_pid=worker.pid if worker else None)
+    finally:
+        if worker is not None:
+            worker.close()
+            session["exit_code"] = worker.process.returncode
+        session["exited_mono_ns"] = time.monotonic_ns()
+    # These rows are flushed before another worker may be started. An interrupted
+    # campaign is never a completed performance result.
+    for warm in warmups:
+        append_jsonl(output / "warmups.jsonl", warm)
+        if warm.get("memory_summary") is not None:
+            append_jsonl(output / "memory-summaries.jsonl", warm["memory_summary"])
+    append_jsonl(output / "worker-sessions.jsonl", session)
+    if session.get("exit_code") != 0:
+        row.update(status="worker_error", error="exclusive worker failed to exit cleanly")
+    return row, warmups
+
+
 def planned_samples(blocks: int) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for block_index in range(blocks):
@@ -2064,11 +2130,17 @@ def run_campaign(
     aborted = False
     abort_reason = None
     plan = planned_samples(int(policy["protocol"]["measured_blocks"]))
+    exclusive = exclusive_worker_contract(policy)
+    if exclusive:
+        (output / "worker-sessions.jsonl").touch()
+        manifest.pop("worker_launch_order")
+        manifest["worker_residency"] = "exclusive_warmed_per_sample"
+        write_json(output / "manifest.json", manifest)
     try:
         launch_order = tuple(
             policy["protocol"].get("worker_launch_order", list(VARIANTS))
         )
-        for variant in launch_order:
+        for variant in (() if exclusive else launch_order):
             workers[variant] = Worker(
                 variant, worker_configs[variant],
                 output / "workers" / f"{variant}-generation-000.log",
@@ -2076,7 +2148,7 @@ def run_campaign(
             )
         warmup_count = int(policy["protocol"].get("warmup_requests_per_variant", 1))
         warmup_failed = False
-        for warmup_index in range(warmup_count):
+        for warmup_index in range(0 if exclusive else warmup_count):
             order = VARIANTS if warmup_index % 2 == 0 else tuple(reversed(VARIANTS))
             for variant in order:
                 sample = {
@@ -2131,6 +2203,15 @@ def run_campaign(
                     "worker_pid": workers.get(sample["variant"], None).pid
                     if sample["variant"] in workers else None,
                 }
+            elif exclusive:
+                row, sample_warmups = run_exclusive_sample(
+                    policy, sample, sample_index, worker_configs[sample["variant"]],
+                    output, timeout, start_timeout,
+                )
+                warmups.extend(sample_warmups)
+                if row.get("status") == "worker_error":
+                    aborted = True
+                    abort_reason = row.get("error", "exclusive worker failed")
             else:
                 if (
                     sample["position"] == 0 and sample["block_index"] > 0 and
@@ -2231,6 +2312,8 @@ def run_campaign(
         "warmups.jsonl", "quality.json", "audit.json", "environment.json",
         "faults.json",
     ]
+    if exclusive:
+        names.append("worker-sessions.jsonl")
     if memory_enabled:
         names.append("memory-summaries.jsonl")
         memory_directory = output / "memory"

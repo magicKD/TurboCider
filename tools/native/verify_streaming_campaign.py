@@ -243,6 +243,76 @@ def protocol_complete(policy: dict[str, Any]) -> bool:
     )
 
 
+def exclusive_worker_contract(policy: dict[str, Any]) -> bool:
+    """P0 may measure a warmed App engine without retaining its competitor."""
+    protocol = policy.get("protocol", {})
+    enabled = protocol.get("exclusive_warmed_worker_per_sample", False)
+    if type(enabled) is not bool:
+        raise EvidenceError("exclusive_warmed_worker_per_sample must be boolean")
+    if enabled and (
+        policy.get("comparison_kind") != "P0" or
+        policy.get("engine_lifecycle") != "persistent" or
+        type(protocol.get("warmup_requests_per_variant")) is not int or
+        protocol["warmup_requests_per_variant"] < 1 or
+        "worker_launch_order" in protocol or
+        protocol.get("restart_workers_between_blocks", False) is not False or
+        any(v.get("backend", "native") not in ("native", "synthetic")
+            for v in policy.get("variants", {}).values())
+    ):
+        raise EvidenceError("exclusive workers require P0 persistent engines and per-sample warmup")
+    return enabled
+
+
+def verify_exclusive_workers(bundle, policy, manifest, raw, warmups):
+    if not exclusive_worker_contract(policy):
+        return
+    if manifest.get("worker_residency") != "exclusive_warmed_per_sample":
+        raise EvidenceError("exclusive worker residency was not recorded")
+    validate_manifest_file(bundle, manifest.get("files", {}), "worker-sessions.jsonl")
+    sessions = read_jsonl(bundle / "worker-sessions.jsonl")
+    if len(sessions) != len(raw):
+        raise EvidenceError("exclusive worker session count differs")
+    warm_by_id = {r.get("run_id"): r for r in warmups}
+    if len(warm_by_id) != len(warmups):
+        raise EvidenceError("duplicate exclusive warmup")
+    consumed = set()
+    previous_exit = 0
+    warm_count = policy["protocol"]["warmup_requests_per_variant"]
+    for row, session in zip(raw, sessions):
+        times = [session.get(k) for k in ("started_mono_ns", "ready_mono_ns",
+                 "measured_started_mono_ns", "measured_finished_mono_ns", "exited_mono_ns")]
+        if (any(type(t) is not int or t <= 0 for t in times) or
+                times != sorted(times) or times[0] <= previous_exit or
+                session.get("exit_code") != 0):
+            raise EvidenceError("exclusive workers overlap or did not exit cleanly")
+        previous_exit = times[-1]
+        if (session.get("run_id") != row.get("run_id") or
+                session.get("worker_pid") != row.get("worker_pid") or
+                row.get("engine_lifecycle") != "persistent" or
+                row.get("engine_generation") != 1):
+            raise EvidenceError("exclusive measured engine identity differs")
+        ids = session.get("warmup_run_ids")
+        if not isinstance(ids, list) or len(ids) != warm_count or len(set(ids)) != len(ids):
+            raise EvidenceError("exclusive session lacks its declared warmups")
+        last_warm_exit = times[1]
+        for name in ids:
+            warm = warm_by_id.get(name, {})
+            start, end = warm.get("started_mono_ns"), warm.get("finished_mono_ns")
+            if (name in consumed or warm.get("status") != "success" or
+                    warm.get("worker_pid") != session["worker_pid"] or
+                    warm.get("worker_session_id") != row["run_id"] or
+                    warm.get("variant") != row.get("variant") or
+                    warm.get("engine_lifecycle") != "persistent" or
+                    warm.get("engine_generation") != row["engine_generation"] or
+                    type(start) is not int or type(end) is not int or
+                    not last_warm_exit <= start <= end <= times[2]):
+                raise EvidenceError("exclusive measurement lacks same-engine preceding warmup")
+            last_warm_exit = end
+            consumed.add(name)
+    if consumed != set(warm_by_id):
+        raise EvidenceError("unbound exclusive warmup evidence")
+
+
 def p3_contract(policy: dict[str, Any]) -> dict[str, Any]:
     value = policy.get("swap_comparison")
     required = {
@@ -969,6 +1039,7 @@ def verify(bundle: Path) -> dict[str, Any]:
         )
     policy_sha256 = sha256_file(policy_path)
     validate_manifest(bundle, manifest, policy_sha256, comparison_kind)
+    verify_exclusive_workers(bundle, policy, manifest, raw, warmups)
     p3_environment = None
     if comparison_kind == "P3":
         p3_environment = validate_p3_environment(policy, environment, manifest)

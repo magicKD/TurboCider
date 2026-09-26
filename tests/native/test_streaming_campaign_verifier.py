@@ -905,6 +905,98 @@ class CampaignTests(unittest.TestCase):
             ["baseline", "candidate", "candidate", "baseline"],
         )
 
+    def exclusive_policy(self, blocks=1):
+        value = policy(blocks=blocks)
+        value.update(comparison_kind="P0", engine_lifecycle="persistent")
+        value["protocol"]["exclusive_warmed_worker_per_sample"] = True
+        value["thresholds"] = {"P0_legacy": {
+            "wall_median_ratio_max": 1.02, "wall_p95_ratio_max": 1.05,
+            "denoise_median_ratio_max": 1.02, "new_framework_hooks": 0,
+            "new_memory_probes": 0, "new_worker_threads": 0,
+            "new_pool_allocations": 0, "new_cache_clear_or_unload_calls": 0,
+        }}
+        for config in value["variants"].values():
+            config["source_identity"] = {
+                "commit": "a" * 40, "source_manifest_sha256": "b" * 64, "clean": True,
+            }
+        return value
+
+    def rewrite_evidence(self, bundle, name, rows):
+        path = bundle / name
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        manifest = json.loads((bundle / "manifest.json").read_text())
+        manifest["files"][name] = {
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "bytes": path.stat().st_size,
+        }
+        (bundle / "manifest.json").write_text(json.dumps(manifest))
+
+    def test_exclusive_warmed_workers_complete_full_abba_campaign(self):
+        bundle = self.run_bundle(self.exclusive_policy(blocks=10))
+        self.assertEqual(verify(bundle)["overall"], "PASS")
+        sessions = [json.loads(s) for s in (bundle / "worker-sessions.jsonl").read_text().splitlines()]
+        self.assertEqual(len(sessions), 40)
+        for previous, current in zip(sessions, sessions[1:]):
+            self.assertLess(previous["exited_mono_ns"], current["started_mono_ns"])
+        self.assertTrue(all(s["exit_code"] == 0 for s in sessions))
+        rows = [json.loads(s) for s in (bundle / "raw-samples.jsonl").read_text().splitlines()]
+        warms = [json.loads(s) for s in (bundle / "warmups.jsonl").read_text().splitlines()]
+        self.assertEqual(len(warms), 40)
+        for row, warm in zip(rows, warms):
+            self.assertEqual(row["worker_pid"], warm["worker_pid"])
+            self.assertEqual((row["engine_generation"], warm["engine_generation"]), (1, 1))
+
+    def test_exclusive_worker_verifier_rejects_overlapping_or_live_workers(self):
+        bundle = self.run_bundle(self.exclusive_policy())
+        original = [json.loads(s) for s in (bundle / "worker-sessions.jsonl").read_text().splitlines()]
+        for mutation in ("overlap", "exit"):
+            rows = json.loads(json.dumps(original))
+            if mutation == "overlap":
+                rows[0]["exited_mono_ns"] = rows[1]["started_mono_ns"] + 1
+            else:
+                rows[0]["exit_code"] = -15
+            self.rewrite_evidence(bundle, "worker-sessions.jsonl", rows)
+            with self.assertRaisesRegex(EvidenceError, "overlap or did not exit"):
+                verify(bundle)
+
+    def test_exclusive_worker_verifier_rejects_different_or_missing_warm_engine(self):
+        bundle = self.run_bundle(self.exclusive_policy())
+        original = [json.loads(s) for s in (bundle / "warmups.jsonl").read_text().splitlines()]
+        for mutation in ("engine", "pid", "missing"):
+            rows = json.loads(json.dumps(original))
+            if mutation == "engine": rows[0]["engine_generation"] = 2
+            elif mutation == "pid": rows[0]["worker_pid"] += 1
+            else: rows.pop(0)
+            self.rewrite_evidence(bundle, "warmups.jsonl", rows)
+            with self.assertRaisesRegex(EvidenceError, "same-engine preceding warmup"):
+                verify(bundle)
+
+    def test_exclusive_warmup_failure_stops_and_preserves_evidence(self):
+        value = self.exclusive_policy()
+        value["variants"]["baseline"]["synthetic"]["fail_runs"] = [
+            "warmup-000-block-000-position-0-baseline"]
+        bundle = self.run_bundle(value)
+        result = json.loads((bundle / "summary.json").read_text())
+        self.assertNotEqual(result["overall"], "PASS")
+        sessions = [json.loads(s) for s in (bundle / "worker-sessions.jsonl").read_text().splitlines()]
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0]["exit_code"], 0)
+        warm = json.loads((bundle / "warmups.jsonl").read_text())
+        self.assertEqual(warm["status"], "failure")
+        rows = [json.loads(s) for s in (bundle / "raw-samples.jsonl").read_text().splitlines()]
+        self.assertEqual([r["status"] for r in rows], ["worker_error"] + ["not_run_after_abort"] * 3)
+
+    def test_exclusive_worker_policy_rejects_incompatible_lifecycle(self):
+        for field, bad in (("engine_lifecycle", "per_request"), ("comparison_kind", "P1"),
+                           ("warmup_requests_per_variant", 0), ("exclusive_warmed_worker_per_sample", 1),
+                           ("restart_workers_between_blocks", True),
+                           ("worker_launch_order", ["candidate", "baseline"])):
+            value = self.exclusive_policy()
+            container = value if field in value else value["protocol"]
+            container[field] = bad
+            with self.assertRaises(CampaignError):
+                campaign_runner.validate_policy(value)
+
     @unittest.skipUnless(sys.platform == "darwin", "requires Darwin libproc")
     def test_process_tree_memory_sampling_is_attached_to_each_request(self):
         campaign = policy(blocks=1)
