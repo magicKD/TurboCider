@@ -27,15 +27,19 @@ static std::vector<fs::path> artifacts(const fs::path&file,const std::string&kin
 NSDictionary *coreml_resources(NSDictionary*request,const Event&event,std::atomic<bool>&cancelled){
  for(NSString*k in request)require([@[@"action",@"cache",@"manifest",@"source_manifest",@"storage",@"profile",@"model",@"model_root",@"kind",@"apply",@"plan_token"] containsObject:k],"unknown Core ML resource request field");
  auto action=string_value(request,@"action");
- require(action!="export", "Core ML export is offline-only; run tools/coreml/export_flux2.py or export_z_image.py, then import and compile the resulting manifest");
+ require(action!="export", "Core ML export is offline-only; run the matching tools/coreml exporter, then import and compile the resulting manifest");
  require(action=="inventory"||action=="delete_artifacts"||action=="clear_runtime"||action=="clear_compiled"||action=="compile","unknown Core ML resource action");
  auto absolute=[](const std::string&s){return fs::absolute(s).lexically_normal();};
  auto model_id=string_value(request,@"model","flux2-klein-4b");
+ bool h3=model_id=="minimax-h3-fasth3-mlx-int6"||
+         model_id=="minimax-h3-fasth3-mlx-int6-vsa"||
+         model_id=="minimax-h3-vdn";
  require(model_id=="flux2-klein-4b"||model_id=="z-image-turbo"||
-             model_id=="z-image-turbo-gguf",
-         "Core ML resource model must be flux2-klein-4b, z-image-turbo or z-image-turbo-gguf");
+             model_id=="z-image-turbo-gguf"||h3,
+         "unsupported Core ML resource model");
  bool z_image=model_id=="z-image-turbo"||model_id=="z-image-turbo-gguf";
- int bucket=z_image?4128:1088,ane_mlp_limit=z_image?10239:9216;
+ int bucket=h3?512:(z_image?4128:1088);
+ int ane_mlp_limit=h3?25599:(z_image?10239:9216);
  fs::path storage=support()/("coreml/"+model_id+"/m"+std::to_string(bucket)),cache=support()/"cache/coreml";
  std::string manifest=string_value(request,@"manifest"),source=string_value(request,@"source_manifest");
  auto profile=string_value(request,@"profile");

@@ -18,7 +18,7 @@ def model(m,w,down=None):
         return mb.matmul(x=a,y=down,name='y')
     return ct.convert(graph,convert_to='mlprogram',minimum_deployment_target=ct.target.macOS15,compute_precision=ct.precision.FLOAT16,skip_model_load=True)
 
-def prepare(root,m,h,f,af,cf,layers,layout,row_gpu):
+def prepare(root,m,h,f,af,cf,layers,layout,row_gpu,qkv_split=False):
     root.mkdir(parents=True,exist_ok=True)
     records=[]
     for l in range(layers):
@@ -30,7 +30,16 @@ def prepare(root,m,h,f,af,cf,layers,layout,row_gpu):
         down=(rng.standard_normal((f,h))/np.sqrt(f)).astype('float16')
         out=(rng.standard_normal((h,h))/np.sqrt(h)).astype('float16')
         def save(name,a):np.ascontiguousarray(a).tofile(d/name)
-        save('qkv_gpu.weights.fp16',qkv);save('qkv.bias.fp16',np.zeros(3*h,dtype='float16'))
+        save('qkv_gpu.weights.fp16',qkv[:,:h] if qkv_split else qkv)
+        save('qkv.bias.fp16',np.zeros(3*h,dtype='float16'))
+        # Semantic QKV split for fused attention: GPU owns Q (H columns),
+        # ANE owns K/V (2*KV width; default heads make this 2H).
+        if qkv_split:
+            qkv_ane=qkv[:,h:].copy(); save('qkv_ane.weights.fp16',qkv_ane)
+            t=time.perf_counter(); qkv_model=model(m,qkv_ane); package=d/'qkv.mlpackage'
+            qkv_model.save(str(package)); converted=time.perf_counter()-t
+            t=time.perf_counter(); tmp=Path(ct.models.utils.compile_model(str(package))); shutil.move(str(tmp),d/'qkv.mlmodelc')
+            records.append(dict(layer=l,kind='qkv',convert_save_s=converted,compile_s=time.perf_counter()-t))
         save('out.weights.fp16',out);save('down.weights.fp16',down)
         for name in ['norm1','norm2']:save(name+'.weights.fp16',np.ones(h,dtype='float16'))
         gf=f-af-cf

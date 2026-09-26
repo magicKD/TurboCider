@@ -1,0 +1,58 @@
+{
+  "status": "invalid_for_performance_pre_reboot_system_state",
+  "superseded_status": "screen_only_no_default_change",
+  "native_sha256": "742ad2df8ece7903033e242b9ecf1b13dc7250fc1dc3992f2940cb5a7a4a8db2",
+  "workload": {
+    "size": 1024, "steps": 8, "seed": 123, "execution": "gpu", "precision": "bf16",
+    "prompt": "A sunlit greenhouse filled with orchids and ferns, photographic detail.",
+    "mpp": "M4 Max device-qualified default"
+  },
+  "schedule": "256 then 128 threads, fresh processes; one excluded cold, one warm and a separate parity request per process",
+  "virtual256": {
+    "environment": {"TURBOCIDER_Z_VIRTUAL_NORM_THREADS": "256"},
+    "diffusion_seconds": 67.086016833,
+    "wall_seconds": 88.15016324998578,
+    "vae_seconds": 19.99808175
+  },
+  "virtual128": {
+    "environment": {"TURBOCIDER_Z_VIRTUAL_NORM_THREADS": "128"},
+    "diffusion_seconds": 66.597062333,
+    "wall_seconds": 87.97534079203615,
+    "vae_seconds": 20.304987875
+  },
+  "parity": "all 11 dump files and final PNG byte-identical between 128 and 256; loaded runtime paths and hashes match",
+  "raw_reports": "/private/tmp/z-image-virtual128-vs256-1024-20260922",
+  "verification": {
+    "gpu_test_methods_passed": 3,
+    "cpu_benchmark_test_methods_passed": 6,
+    "virtual_norm_coverage": "128/256/512 threads, rows1/33/1056/4128, inline/precompute gates, BF16/FP16/FP32; zero max_abs required",
+    "git_diff_check": "passed"
+  },
+  "microbenchmark": {
+    "repetitions": 12,
+    "warmup_pairs_excluded": 4,
+    "order": "alternating candidate/reference within each case",
+    "rows": [1056, 4128],
+    "threads": [128, 512],
+    "dtype": ["bf16", "fp16", "fp32"],
+    "all_norm_cases_max_abs": 0,
+    "bf16_1056": "approximately 1 ms for control and both candidates; no compelling gain",
+    "bf16_4128_virtual128": {
+      "norm_control_ms": 5.49385, "norm_candidate_ms": 2.00152,
+      "gated_control_ms": 19.4963, "gated_candidate_ms": 4.97967
+    },
+    "bf16_4128_virtual512": {
+      "norm_control_ms": 15.4817, "norm_candidate_ms": 7.50577,
+      "gated_control_ms": 16.0143, "gated_candidate_ms": 9.038
+    },
+    "raw_pattern": "/private/tmp/z-image-virtual{128,512}-{1056,4128}-screen2.jsonl"
+  },
+  "limitations": [
+    "Whole-model result is only one warm sample per variant, not ABBA",
+    "128 is only about 0.7 percent faster in diffusion here; not a robust winner over 256",
+    "No whole-model 512 test of 128 or 512 physical threads this turn",
+    "Microbenchmark control times vary and do not establish a robust cross-tile ranking",
+    "No default dispatch or production binary changes in this turn",
+    "512 under 10 seconds and historical absolute-performance regression remain unresolved"
+  ]
+}

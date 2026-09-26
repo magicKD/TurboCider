@@ -1,0 +1,44 @@
+{
+  "status": "invalid_for_performance_pre_reboot_system_state",
+  "superseded_status": "qualified_relative_speedup_not_absolute_target_completion",
+  "library_sha256": "349630000153d6b294712f325c1e90b48fb8f11f5cf9048352d1d0c03f84b818",
+  "hardware": "Apple M4 Max, 64 GB unified memory",
+  "workload": {
+    "width": 512, "height": 512, "steps": 8, "seed": 123,
+    "precision": "bf16", "execution": "gpu", "residency": "resident",
+    "prompt": "A sunlit greenhouse filled with orchids and ferns, photographic detail."
+  },
+  "method": "Same-library fresh-process ABBA; two warm requests per process, first request and separate parity request excluded; no concurrent GPU experiment",
+  "control_environment": {
+    "TURBOCIDER_Z_DISABLE_FUSED_QKV": "1",
+    "TURBOCIDER_Z_DISABLE_FUSED_MOD": "1",
+    "TURBOCIDER_Z_DISABLE_MPP_SWIGLU": "1"
+  },
+  "candidate_environment": {},
+  "control_diffusion_seconds": [23.512990791, 23.311017041, 23.280910459, 23.731053791],
+  "candidate_diffusion_seconds": [14.774981417, 14.789016, 14.753070916, 14.731929542],
+  "control_median_diffusion_seconds": 23.412003916,
+  "candidate_median_diffusion_seconds": 14.7640261665,
+  "diffusion_speedup": 1.5857465742727084,
+  "control_median_wall_seconds": 28.647202312509762,
+  "candidate_median_wall_seconds": 19.962892604002263,
+  "wall_speedup": 1.4350226132442563,
+  "parity": {
+    "requests": 4,
+    "tensor_files_per_request": 11,
+    "all_tensor_files_byte_identical": true,
+    "pngs_byte_identical": true,
+    "includes": "initial latent, all eight denoising steps, final latent, decoded tensor and PNG"
+  },
+  "runtime_fingerprints_equal": true,
+  "raw_reports": "/private/tmp/z-image-final-default-512-abba-20260922",
+  "limitations": [
+    "Control is the current library with fusion disabled, not the September 7 historical binary",
+    "One prompt/seed and one hardware/OS configuration qualified in this run",
+    "This establishes the original 1.2x relative requirement for this workload only",
+    "512 diffusion remains above ten seconds",
+    "Historical same-machine absolute-runtime regression remains unresolved",
+    "No new 1024 speedup claim follows from this 512 run",
+    "Experimental virtual gate fusion remains off; no quantization or reduced steps"
+  ]
+}

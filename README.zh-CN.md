@@ -68,6 +68,8 @@ open dist/TurboCider.app
 
 在 App 先选择图片或视频创作，自动匹配兼容执行器，再登记所需模型文件夹。已有权重可以继续放在原来的目录；Z-Image 可关联 FLUX.2 Klein 4B 的兼容文本组件。首次先使用 GPU，成功生成后再按设备配置 ANE。发行目录中的 App 当前为本机 ad-hoc 签名，尚未完成 Developer ID 公证。
 
+任务页支持勾选、全选后批量删除，也可一键清空任务历史；正在进行的任务会保留，最近一次删除可整批撤销。删除任务记录保留结果文件。素材库和创作结果缩略图支持 Ctrl/Command 点击增减选择、Shift 点击连续选择，再统一移到废纸篓；素材库双击图片可查看结果。
+
 CLI 示例：
 
 ```sh
@@ -76,6 +78,13 @@ dist/cli/turbocider models
 dist/cli/turbocider plan examples/requests/z-image-turbo.json
 dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z-image-turbo.json
 ```
+
+CLI 的 `plan`、`generate` 和 `batch` 可在末尾加
+`--ane-manifest path/to/compiled-manifest.json`，显式使用与该请求
+匹配的 ANE 产物，不修改 JSON。512²、8 步下目前最快的本地 Z-Image
+W8A8/BF16 并行方案及其 **约 1.31× 暖请求加速**、画质和冷启动边界详见
+[Z-Image GPU/ANE 指南（英文）](docs/public/Z_IMAGE_ANE.md)；其他模型仍可传各自
+匹配的 ANE manifest，默认 `auto` 策略不变。
 
 相对输出路径按当前工作目录解析；示例可能使用 `/tmp` 下的绝对路径。完整图像、视频、LoRA、ANE 准备和服务步骤见[快速开始](docs/public/GETTING_STARTED.md)与[使用参考](docs/public/USAGE.md)。
 

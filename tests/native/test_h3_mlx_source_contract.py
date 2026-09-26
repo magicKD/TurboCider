@@ -37,6 +37,9 @@ class H3MLXSourceContractTests(unittest.TestCase):
         self.assertIn("h3_mlx_tensor_probe.cpp", build)
         self.assertIn("h3_mlx_tokenizer_probe.cpp", build)
         self.assertIn("h3_mlx_conditioner_probe.cpp", build)
+        self.assertIn("h3_mlx_encoder_benchmark_probe.cpp", build)
+        self.assertIn("h3_mlx_mlp_hybrid_probe.cpp", build)
+        self.assertIn("TURBOCIDER_BUILD_EXPERIMENTAL_PROBES", build)
         self.assertIn("h3_mlx_prompt_cache_probe.cpp", build)
         self.assertIn("h3_mlx_vsa_probe.cpp", build)
         self.assertIn("h3_mlx_vsa_pipeline_probe.cpp", build)
@@ -62,6 +65,54 @@ class H3MLXSourceContractTests(unittest.TestCase):
         self.assertIn('fasth3_int6_qmm', source)
         self.assertIn('fasth3_int6_vsa', source)
         self.assertIn('int6_g64_bf16_activation', source)
+
+    def test_qwen3_vl_encoder_hybrid_is_manifest_bound_and_streamed(self):
+        conditioner = (ROOT / "native/models/h3_mlx/conditioner.cpp").read_text()
+        header = (ROOT / "native/models/h3_mlx/conditioner.hpp").read_text()
+        session = (ROOT / "native/platform/apple/h3_mlx_session.mm").read_text()
+        shards = (ROOT / "native/platform/apple/h3_mlx_shards.mm").read_text()
+        probe = (ROOT / "tools/native/h3_mlx_conditioner_probe.cpp").read_text()
+        results = (ROOT / "native/platform/apple/results.mm").read_text()
+        resources = (ROOT / "native/backends/coreml_resources.mm").read_text()
+        for token in [
+            "hybrid_manifest",
+            "hybrid_session",
+            "conditioner_checkpoint(component_root_)",
+            "ane_mlp_end",
+            "TURBOCIDER_H3_QWEN3_HYBRID_VALIDATE",
+            "H3 Qwen3 hybrid MLP quality gate failed",
+        ]:
+            self.assertIn(token, conditioner + header)
+        self.assertIn("load_slice", shards)
+        self.assertIn("STRIDED_READ_SLAB_BYTES", shards)
+        self.assertIn(
+            "source_row_bytes - source_row_bytes / 2u", shards,
+        )
+        self.assertIn("scratch.data() + local * source_row_bytes", shards)
+        self.assertGreaterEqual(shards.count("@autoreleasepool"), 3)
+        self.assertIn("select_conditioner(request)", session)
+        self.assertIn("encoder_ane_manifest.empty()", session)
+        self.assertIn("qwen3_vl_encoder_mlp_complement", results)
+        self.assertIn("--encoder-ane-manifest", probe)
+        self.assertTrue((ROOT / "tools/native/h3_mlx_mlp_hybrid_probe.cpp").is_file())
+        self.assertIn('model_id=="minimax-h3-fasth3-mlx-int6"', resources)
+        self.assertIn("ane_mlp_limit=h3?25599", resources)
+
+    def test_qwen3_vl_encoder_sdpa_candidate_is_opt_in_and_validated(self):
+        source = (ROOT / "native/models/h3_mlx/conditioner.cpp").read_text()
+        for token in [
+            'TURBOCIDER_H3_FUSED_SDPA',
+            'TURBOCIDER_H3_DISABLE_FUSED_SDPA',
+            'TURBOCIDER_H3_FUSED_SDPA_MIN_TOKENS',
+            'TURBOCIDER_H3_FUSED_SDPA_VALIDATE',
+            'TURBOCIDER_H3_FUSED_SDPA_MAX_RELATIVE_L2',
+            'TURBOCIDER_H3_FUSED_SDPA_MIN_COSINE',
+            'TURBOCIDER_H3_FUSED_SDPA_MAX_RELATIVE_ABS',
+            'tc::attend(query_heads, key_heads, value_heads',
+            'H3 fused SDPA quality gate failed',
+        ]:
+            self.assertIn(token, source)
+        self.assertIn('"causal"', source)
 
     def test_vsa_profile_is_capability_gated_and_observable(self):
         module = (ROOT / "native/models/h3_mlx_module.cpp").read_text()

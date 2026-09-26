@@ -3,12 +3,16 @@
 #include "../../models/h3_mlx/conditioner.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <fcntl.h>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <memory>
+#include <unistd.h>
 
 namespace tc::h3_mlx {
 namespace {
@@ -49,6 +53,90 @@ std::vector<uint8_t> read_bytes(NSFileHandle *handle, uint64_t offset, size_t by
     require(data.length == bytes, "truncated H3 conditioner safetensors tensor");
     const auto *begin = static_cast<const uint8_t *>(data.bytes);
     return std::vector<uint8_t>(begin, begin + data.length);
+}
+
+std::vector<uint8_t> read_strided_rows(const std::string &path,
+                                       uint64_t first_offset,
+                                       size_t source_row_bytes,
+                                       size_t selected_row_bytes,
+                                       size_t rows) {
+    require(source_row_bytes >= selected_row_bytes && selected_row_bytes > 0 &&
+                rows <= SIZE_MAX / selected_row_bytes,
+            "H3 conditioner matrix slice overflows");
+    const uint64_t maximum_offset =
+        static_cast<uint64_t>(std::numeric_limits<off_t>::max());
+    require(first_offset <= maximum_offset,
+            "H3 conditioner matrix slice offset exceeds off_t");
+    if (rows > 1)
+        require(rows - 1 <=
+                    (maximum_offset - first_offset) / source_row_bytes,
+                "H3 conditioner matrix slice offset overflows");
+    const uint64_t last_row_offset =
+        first_offset + (rows ? rows - 1u : 0u) * source_row_bytes;
+    if (rows)
+        require(selected_row_bytes - 1u <= maximum_offset - last_row_offset,
+                "H3 conditioner matrix slice span exceeds off_t");
+    int descriptor = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    require(descriptor >= 0, "cannot open H3 conditioner shard: " + path);
+    std::vector<uint8_t> bytes(rows * selected_row_bytes);
+
+    auto read_exact = [&](uint8_t *destination, size_t request_bytes,
+                          uint64_t offset) {
+        size_t completed = 0;
+        while (completed < request_bytes) {
+            const ssize_t read_count = pread(
+                descriptor, destination + completed,
+                request_bytes - completed,
+                static_cast<off_t>(offset + completed));
+            if (read_count < 0) {
+                const int failure = errno;
+                close(descriptor);
+                throw std::runtime_error(
+                    "cannot read H3 conditioner matrix slice: " + path +
+                    ": " + std::strerror(failure));
+            }
+            if (read_count == 0) {
+                close(descriptor);
+                throw std::runtime_error(
+                    "truncated H3 conditioner matrix slice: " + path);
+            }
+            completed += static_cast<size_t>(read_count);
+        }
+    };
+
+    /* A wide column suffix is almost the whole source row. Reading it with
+     * one pread per row turned the H3 hybrid down projection into 5,120 small
+     * syscalls per layer. Read bounded row slabs instead, then compact the
+     * selected columns in memory. Narrow slices retain the lower-I/O row path. */
+    constexpr size_t STRIDED_READ_SLAB_BYTES = 8u << 20;
+    if (rows > 1 && selected_row_bytes >=
+                        source_row_bytes - source_row_bytes / 2u) {
+        const size_t rows_per_slab = std::max<size_t>(
+            1u, STRIDED_READ_SLAB_BYTES / source_row_bytes);
+        std::vector<uint8_t> scratch;
+        for (size_t first_row = 0; first_row < rows;
+             first_row += rows_per_slab) {
+            const size_t slab_rows =
+                std::min(rows_per_slab, rows - first_row);
+            const size_t span_bytes =
+                (slab_rows - 1u) * source_row_bytes + selected_row_bytes;
+            scratch.resize(span_bytes);
+            read_exact(scratch.data(), span_bytes,
+                       first_offset + first_row * source_row_bytes);
+            for (size_t local = 0; local < slab_rows; ++local)
+                memcpy(bytes.data() +
+                           (first_row + local) * selected_row_bytes,
+                       scratch.data() + local * source_row_bytes,
+                       selected_row_bytes);
+        }
+    } else {
+        for (size_t row = 0; row < rows; ++row)
+            read_exact(bytes.data() + row * selected_row_bytes,
+                       selected_row_bytes,
+                       first_offset + row * source_row_bytes);
+    }
+    close(descriptor);
+    return bytes;
 }
 
 uint64_t little_u64(const uint8_t *bytes) {
@@ -252,36 +340,95 @@ struct ShardIndex::Impl {
     }
 
     Tensor load(const std::string &key) const {
-        const auto &metadata = info(key);
-        NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:@(metadata.path.c_str())];
-        require(handle != nil, "cannot open H3 conditioner shard: " + metadata.path);
-        auto bytes = read_bytes(handle, header_for(metadata.path).data_offset + metadata.begin,
-                                static_cast<size_t>(metadata.end - metadata.begin));
-        [handle closeFile];
-        return conditioner_fp32(make_tensor(std::move(bytes), metadata));
+        @autoreleasepool {
+            const auto &metadata = info(key);
+            NSFileHandle *handle =
+                [NSFileHandle fileHandleForReadingAtPath:@(metadata.path.c_str())];
+            require(handle != nil,
+                    "cannot open H3 conditioner shard: " + metadata.path);
+            auto bytes = read_bytes(
+                handle, header_for(metadata.path).data_offset + metadata.begin,
+                static_cast<size_t>(metadata.end - metadata.begin));
+            [handle closeFile];
+            return conditioner_fp32(make_tensor(std::move(bytes), metadata));
+        }
     }
 
     Tensor load_rows(const std::string &key, const std::vector<int> &rows) const {
-        const auto &metadata = info(key);
-        require(metadata.shape.size() == 2, "H3 conditioner row gather requires rank-2 tensor");
-        const int row_count = metadata.shape[0];
-        const size_t row_bytes = size_t(metadata.shape[1]) * dtype_size(metadata.dtype);
-        for (int row : rows)
-            require(row >= 0 && row < row_count, "H3 conditioner token is out of range");
-        NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:@(metadata.path.c_str())];
-        require(handle != nil, "cannot open H3 conditioner shard: " + metadata.path);
-        std::vector<uint8_t> bytes;
-        bytes.reserve(row_bytes * rows.size());
-        for (int row : rows) {
-            auto part = read_bytes(handle,
-                header_for(metadata.path).data_offset + metadata.begin + row_bytes * size_t(row),
-                row_bytes);
-            bytes.insert(bytes.end(), part.begin(), part.end());
+        @autoreleasepool {
+            const auto &metadata = info(key);
+            require(metadata.shape.size() == 2,
+                    "H3 conditioner row gather requires rank-2 tensor");
+            const int row_count = metadata.shape[0];
+            const size_t row_bytes =
+                size_t(metadata.shape[1]) * dtype_size(metadata.dtype);
+            for (int row : rows)
+                require(row >= 0 && row < row_count,
+                        "H3 conditioner token is out of range");
+            NSFileHandle *handle =
+                [NSFileHandle fileHandleForReadingAtPath:@(metadata.path.c_str())];
+            require(handle != nil,
+                    "cannot open H3 conditioner shard: " + metadata.path);
+            std::vector<uint8_t> bytes;
+            bytes.reserve(row_bytes * rows.size());
+            for (int row : rows) {
+                auto part = read_bytes(
+                    handle, header_for(metadata.path).data_offset +
+                                metadata.begin + row_bytes * size_t(row),
+                    row_bytes);
+                bytes.insert(bytes.end(), part.begin(), part.end());
+            }
+            [handle closeFile];
+            TensorInfo gathered = metadata;
+            gathered.shape[0] = static_cast<int>(rows.size());
+            return conditioner_fp32(make_tensor(std::move(bytes), gathered));
         }
-        [handle closeFile];
-        TensorInfo gathered = metadata;
-        gathered.shape[0] = static_cast<int>(rows.size());
-        return conditioner_fp32(make_tensor(std::move(bytes), gathered));
+    }
+
+    Tensor load_slice(const std::string &key, int row_start, int row_end,
+                      int column_start, int column_end) const {
+        @autoreleasepool {
+            const auto &metadata = info(key);
+            require(metadata.shape.size() == 2 && row_start >= 0 &&
+                        row_start < row_end && row_end <= metadata.shape[0] &&
+                        column_start >= 0 && column_start < column_end &&
+                        column_end <= metadata.shape[1],
+                    "invalid H3 conditioner matrix slice: " + key);
+            const size_t item_bytes = dtype_size(metadata.dtype);
+            const size_t source_row_bytes =
+                size_t(metadata.shape[1]) * item_bytes;
+            const size_t selected_row_bytes =
+                size_t(column_end - column_start) * item_bytes;
+            const size_t selected_rows = size_t(row_end - row_start);
+            require(selected_rows <= SIZE_MAX / selected_row_bytes,
+                    "H3 conditioner matrix slice overflows");
+            const uint64_t tensor_offset =
+                header_for(metadata.path).data_offset + metadata.begin;
+            TensorInfo selected = metadata;
+            selected.shape = {row_end - row_start, column_end - column_start};
+            if (column_start == 0 && column_end == metadata.shape[1]) {
+                NSFileHandle *handle =
+                    [NSFileHandle fileHandleForReadingAtPath:@(metadata.path.c_str())];
+                require(handle != nil,
+                        "cannot open H3 conditioner shard: " + metadata.path);
+                auto bytes = read_bytes(
+                    handle, tensor_offset + uint64_t(row_start) * source_row_bytes,
+                    selected_rows * source_row_bytes);
+                [handle closeFile];
+                return conditioner_fp32(make_tensor(std::move(bytes), selected));
+            }
+            const uint64_t last_offset = tensor_offset +
+                uint64_t(row_end - 1) * source_row_bytes +
+                uint64_t(column_end) * item_bytes;
+            require(last_offset <= std::filesystem::file_size(metadata.path),
+                    "truncated H3 conditioner matrix slice: " + key);
+            auto bytes = read_strided_rows(
+                metadata.path,
+                tensor_offset + uint64_t(row_start) * source_row_bytes +
+                    uint64_t(column_start) * item_bytes,
+                source_row_bytes, selected_row_bytes, selected_rows);
+            return conditioner_fp32(make_tensor(std::move(bytes), selected));
+        }
     }
 };
 
@@ -291,6 +438,10 @@ ShardIndex::~ShardIndex() = default;
 Tensor ShardIndex::tensor(const std::string &key) const { return impl_->load(key); }
 Tensor ShardIndex::rows(const std::string &key, const std::vector<int> &rows) const {
     return impl_->load_rows(key, rows);
+}
+Tensor ShardIndex::slice(const std::string &key, int row_start, int row_end,
+                         int column_start, int column_end) const {
+    return impl_->load_slice(key, row_start, row_end, column_start, column_end);
 }
 bool ShardIndex::has(const std::string &key) const { return impl_->infos.count(key) != 0; }
 

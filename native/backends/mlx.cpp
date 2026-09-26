@@ -13,14 +13,16 @@ namespace {
 template <typename Attention>
 Tensor compatible_sdpa(Attention attention, const Tensor &q, const Tensor &k,
                        const Tensor &v, float scale, const std::optional<Tensor> &mask,
-                       bool force_fused) {
+                       bool force_fused, const std::string &mask_mode) {
     if constexpr (std::is_invocable_v<Attention, const Tensor &, const Tensor &,
                                       const Tensor &, float, const std::string &,
                                       std::optional<Tensor>, const std::optional<Tensor> &,
                                       bool, mx::StreamOrDevice>)
-        return attention(q, k, v, scale, "", mask, {}, force_fused, mx::StreamOrDevice{});
+        return attention(q, k, v, scale, mask_mode, mask, {}, force_fused,
+                         mx::StreamOrDevice{});
     else
-        return attention(q, k, v, scale, "", mask, {}, mx::StreamOrDevice{});
+        return attention(q, k, v, scale, mask_mode, mask, {},
+                         mx::StreamOrDevice{});
 }
 
 struct LoRAPair { std::optional<Tensor> down, up, alpha; };
@@ -246,6 +248,84 @@ bool Weights::quantized(const std::string &prefix) const {
     return has(prefix + ".weight") && has(prefix + ".scales") &&
            !has(prefix + ".comfy_quant") &&
            at(prefix + ".weight").dtype() == mx::uint32;
+}
+
+void Weights::quantize_dense_range(const std::string &prefix, int row_start, int row_end,
+                                   int col_start, int col_end, int group_size) {
+    require(!quantized(prefix) && !convrot(prefix) && !nvfp4(prefix) &&
+                !has(prefix + ".scales") && !has(prefix + ".biases") &&
+                !has_runtime_loras(),
+            "W8 conversion requires dense weights without runtime LoRA: " + prefix);
+    auto key = prefix + ".weight";
+    const auto &weight = at(key);
+    require(weight.ndim() == 2 &&
+                (weight.dtype() == mx::bfloat16 || weight.dtype() == mx::float16) &&
+                row_start >= 0 && row_end <= weight.shape(0) && row_start < row_end &&
+                col_start >= 0 && col_end <= weight.shape(1) && col_start < col_end &&
+                (group_size == 32 || group_size == 64 || group_size == 128) &&
+                (col_end - col_start) % group_size == 0,
+            "invalid W8 dense matrix shard: " + prefix);
+    auto sliced = slice_axis(slice_axis(weight, 0, row_start, row_end), 1, col_start, col_end);
+    auto arrays = mx::quantize(mx::astype(sliced, mx::float16), group_size, 8, "affine");
+    require(arrays.size() == 3, "MLX affine W8 conversion did not return scales and biases");
+    mx::eval(arrays);
+    values_.at(key) = std::move(arrays[0]);
+    values_.emplace(prefix + ".scales", std::move(arrays[1]));
+    values_.emplace(prefix + ".biases", std::move(arrays[2]));
+}
+
+void Weights::quantize_dense_indices(const std::string &prefix,
+                                     const std::vector<int> &channels,
+                                     int axis, int group_size) {
+    require(!quantized(prefix) && !convrot(prefix) && !nvfp4(prefix) &&
+                !has(prefix + ".scales") && !has(prefix + ".biases") &&
+                !has_runtime_loras(),
+            "routed W8 conversion requires dense weights without runtime LoRA: " + prefix);
+    const auto key = prefix + ".weight";
+    const auto &weight = at(key);
+    require(weight.ndim() == 2 &&
+                (weight.dtype() == mx::bfloat16 || weight.dtype() == mx::float16) &&
+                (axis == 0 || axis == 1) && !channels.empty() &&
+                (group_size == 32 || group_size == 64 || group_size == 128) &&
+                (axis == 0 ? weight.shape(1) : int(channels.size())) % group_size == 0,
+            "invalid routed W8 matrix geometry: " + prefix);
+    int previous = -1;
+    for (int channel : channels) {
+        require(channel > previous && channel < weight.shape(axis),
+                "routed W8 channels must be increasing in range: " + prefix);
+        previous = channel;
+    }
+    auto indexes = Tensor(channels.data(), {int(channels.size())}, mx::int32);
+    auto selected = mx::take(weight, indexes, axis);
+    auto arrays = mx::quantize(mx::astype(selected, mx::float16), group_size, 8, "affine");
+    require(arrays.size() == 3, "MLX routed affine W8 conversion failed");
+    mx::eval(arrays);
+    values_.at(key) = std::move(arrays[0]);
+    values_.emplace(prefix + ".scales", std::move(arrays[1]));
+    values_.emplace(prefix + ".biases", std::move(arrays[2]));
+}
+
+void Weights::select_dense_indices(const std::string &prefix,
+                                   const std::vector<int> &channels, int axis) {
+    require(!quantized(prefix) && !convrot(prefix) && !nvfp4(prefix) &&
+                !has(prefix + ".scales") && !has(prefix + ".biases") &&
+                !has_runtime_loras(),
+            "routed BF16 selection requires dense weights without runtime LoRA: " + prefix);
+    const auto key = prefix + ".weight";
+    const auto &weight = at(key);
+    require(weight.ndim() == 2 && weight.dtype() == mx::bfloat16 &&
+                (axis == 0 || axis == 1) && !channels.empty(),
+            "invalid routed BF16 matrix geometry: " + prefix);
+    int previous = -1;
+    for (int channel : channels) {
+        require(channel > previous && channel < weight.shape(axis),
+                "routed BF16 channels must be increasing in range: " + prefix);
+        previous = channel;
+    }
+    auto indexes = Tensor(channels.data(), {int(channels.size())}, mx::int32);
+    auto selected = mx::take(weight, indexes, axis);
+    mx::eval(selected);
+    values_.at(key) = std::move(selected);
 }
 
 bool Weights::convrot(const std::string &prefix) const {
@@ -545,6 +625,63 @@ std::vector<Tensor> Weights::project_many(
         outputs.push_back(std::move(output));
     }
     return outputs;
+}
+
+Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
+                              int row_start, int row_end,
+                              int col_start, int col_end,
+                              bool add_bias) const {
+    require(!runtime_loras_.count(prefix),
+            "sliced projection does not support inference-time LoRA: " + prefix);
+    const auto &weight = at(prefix + ".weight");
+    require(weight.ndim() == 2 && row_start >= 0 && row_start < row_end &&
+                row_end <= weight.shape(0) && col_start >= 0 &&
+                col_start < col_end && x.shape(-1) == col_end - col_start,
+            "invalid sliced projection geometry: " + prefix);
+
+    Tensor output = x;
+    if (quantized(prefix)) {
+        const auto &all_scales = at(prefix + ".scales");
+        // GGUF/MLX affine tensors store one scale per 32 logical input
+        // values.  Derive the full logical width from the scale matrix,
+        // then derive the packed width/bit depth from the weight tensor.
+        // Inferring geometry from `col_end` is wrong for partial slices: the
+        // slice endpoint is a logical coordinate, not a full tensor width.
+        const int logical_input = all_scales.shape(1) * 32;
+        const auto geometry = quantized_geometry(weight, all_scales, logical_input);
+        require(col_end <= logical_input &&
+                    col_start % geometry.group_size == 0 &&
+                    col_end % geometry.group_size == 0 &&
+                    (col_start * geometry.bits) % 32 == 0 &&
+                    (col_end * geometry.bits) % 32 == 0,
+                "quantized projection slice must align to packed groups: " + prefix);
+        auto q = slice_axis(weight, 0, row_start, row_end);
+        q = slice_axis(q, 1, col_start * geometry.bits / 32,
+                      col_end * geometry.bits / 32);
+        auto scales = slice_axis(all_scales, 0, row_start, row_end);
+        scales = slice_axis(scales, 1, col_start / geometry.group_size,
+                            col_end / geometry.group_size);
+        std::optional<Tensor> biases;
+        if (has(prefix + ".biases")) {
+            biases = slice_axis(at(prefix + ".biases"), 0, row_start, row_end);
+            biases = slice_axis(*biases, 1, col_start / geometry.group_size,
+                                col_end / geometry.group_size);
+        }
+        output = mx::quantized_matmul(x, q, scales, biases, true,
+                                      geometry.group_size, geometry.bits,
+                                      "affine");
+    } else {
+        require(!convrot(prefix) && !nvfp4(prefix),
+                "sliced projection supports dense or affine MLX weights: " + prefix);
+        auto selected = slice_axis(weight, 0, row_start, row_end);
+        selected = slice_axis(selected, 1, col_start, col_end);
+        output = mx::matmul(x, mx::transpose(selected));
+    }
+    if (add_bias && has(prefix + ".bias"))
+        output = output + mx::astype(
+            slice_axis(at(prefix + ".bias"), 0, row_start, row_end),
+            output.dtype());
+    return output;
 }
 
 
@@ -886,12 +1023,13 @@ Tensor heads(const Tensor &x, int n, int d) {
     return mx::transpose(mx::reshape(x, {1, x.shape(1), n, d}), {0, 2, 1, 3});
 }
 Tensor attend(const Tensor &q, const Tensor &k, const Tensor &v, bool f32,
-              const std::optional<Tensor> &mask, bool force_fused) {
+              const std::optional<Tensor> &mask, bool force_fused,
+              const std::string &mask_mode) {
     auto dtype = q.dtype();
     auto a = compatible_sdpa(mx::fast::scaled_dot_product_attention,
         f32 ? mx::astype(q, mx::float32) : q, f32 ? mx::astype(k, mx::float32) : k,
         f32 ? mx::astype(v, mx::float32) : v, 1.f / std::sqrt(float(q.shape(-1))), mask,
-        force_fused);
+        force_fused, mask_mode);
     if (f32)
         a = mx::astype(a, dtype);
     return mx::reshape(mx::transpose(a, {0, 2, 1, 3}), {1, q.shape(2), q.shape(1) * q.shape(3)});

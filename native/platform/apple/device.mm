@@ -10,6 +10,28 @@ DeviceInfo device_info() {
     return {device ? std::string(device.name.UTF8String) : "unavailable",
             NSProcessInfo.processInfo.physicalMemory};
 }
+static bool z_image_qualified_m4_max() {
+    // Automatic selection is restricted to the device qualified by the
+    // matched Z-Image BF16 experiments, not every Metal-capable device.
+    static const bool qualified = [] {
+        if (@available(macOS 26.0, *)) {
+            id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+            return device && [device.name isEqualToString:@"Apple M4 Max"] &&
+                   [device supportsFamily:MTLGPUFamilyApple9];
+        }
+        return false;
+    }();
+    return qualified;
+}
+bool z_image_mpp_swiglu_default() {
+    return z_image_qualified_m4_max();
+}
+bool z_image_virtual_norm_default() {
+    return z_image_qualified_m4_max();
+}
+bool z_image_small_shape_metal_default() {
+    return z_image_qualified_m4_max();
+}
 FluxConfiguration flux_configuration(const std::filesystem::path &root,
                                      const std::string &model) {
     auto t = read_json(root / "transformer/config.json"),
@@ -68,15 +90,30 @@ std::string sha256_file(const std::filesystem::path &path) {
 namespace tc {
 NSDictionary *system_info() {
     id<MTLDevice> d = MTLCreateSystemDefaultDevice();
+    const auto &optimizations = device_optimizations(
+        d ? d.name.UTF8String : "unavailable", [NSProcessInfo processInfo].physicalMemory);
     return @{
         @"abi" : @1,
         @"engine_version" : @"0.2.0-native-dev",
         @"gpu_available" : @(d != nil),
         @"gpu" : d.name ?: @"unavailable",
+        @"optimization_profile" : @{
+            @"id" : @(optimizations.id),
+            @"z_image_suffix_streaming" : @(optimizations.z_image_suffix_streaming),
+            @"z_image_int8_streaming" : @(optimizations.z_image_int8_streaming),
+            @"z_image_hybrid_segments" : @(optimizations.z_image_hybrid_segments),
+            @"z_image_memory_lifecycle" : @(optimizations.z_image_memory_lifecycle),
+            @"z_image_smallest_partition" : @(optimizations.z_image_smallest_partition),
+            @"external_automatic_partitions" : @(optimizations.external_automatic_partitions),
+            @"coreml_output_copy" : @(optimizations.coreml_output_copy)
+        },
         @"physical_memory_bytes" : @([NSProcessInfo processInfo].physicalMemory),
         @"recommended_working_set_bytes" : @(d ? d.recommendedMaxWorkingSetSize : 0),
         @"os" : [NSProcessInfo processInfo].operatingSystemVersionString,
         @"mlx_version" : @(mx::version()),
+        @"z_image_mpp_swiglu_default" : @(z_image_mpp_swiglu_default()),
+        @"z_image_virtual_norm_default" : @(z_image_virtual_norm_default()),
+        @"z_image_small_shape_metal_default" : @(z_image_small_shape_metal_default()),
         @"runtime_dependencies" : @[ @"libmlx", @"Metal", @"Foundation", @"ImageIO" ],
         @"python_runtime_required" : @NO
     };

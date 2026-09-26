@@ -4,6 +4,8 @@
 #include "../../core/tokenizer.hpp"
 #include "../../runtime/session.hpp"
 #include "../../backends/coreml.hpp"
+#include "weight_stream.hpp"
+#include "../../runtime/device_optimizations.hpp"
 
 namespace tc {
 
@@ -13,25 +15,34 @@ class ZImage final : public ModelSession {
     std::string model_id_ = "z-image-turbo";
     bool diffusers_layout_ = false, gguf_transformer_ = false, convrot_transformer_ = false;
     bool nvfp4_transformer_ = false;
+    DeviceOptimizations optimizations_;
     Tokenizer tokenizer_;
     Weights text_encoder_;
     Weights transformer_;
     Weights vae_;
+    std::unique_ptr<ZImageWeightStream> weight_stream_;
+    std::string stream_configuration_;
     std::optional<Tensor> cached_conditioning_;
     std::string cached_prompt_;
+    std::string cached_encoder_manifest_;
     bool cached_dynamic_ = true;
     std::vector<LoRAAsset> active_loras_;
     std::string cached_lora_identity_;
     std::string active_lora_strategy_ = "none";
     size_t lora_applied_projections_ = 0;
     std::unique_ptr<HybridSession> hybrid_;
+    std::unique_ptr<HybridSession> encoder_hybrid_;
     std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
     int hybrid_gpu_mlp_start_ = -1;
+    int gpu_w8_suffix_start_ = -1;
+    int gpu_w8_group_size_ = 0;
+    std::string gpu_w8_manifest_;
+    std::string gpu_bf16_route_manifest_;
 
     void select_loras(const Request &);
     Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);
     Tensor denoise(const Tensor &, const Tensor &, float, float, int, int,
-                   const Event &, std::atomic<bool> &);
+                   const Event &, std::atomic<bool> &, std::vector<Tensor> * = nullptr);
     Tensor decode(const Tensor &, int, int, const Event &, std::atomic<bool> &);
     bool conditioning(const Request &, const Event &, std::atomic<bool> &);
     std::string select_acceleration(Request &, int, const Event &, std::atomic<bool> &);

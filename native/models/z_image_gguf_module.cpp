@@ -66,6 +66,7 @@ ModelModule z_image_gguf_module() {
             d.lora_strategies = {"inference_time", "in_memory_merge"};
             d.default_lora_strategy = "inference_time";
             d.supports_gpu_ane = true;
+            d.supports_encoder_gpu_ane = true;
             d.backend = "mlx_cpp_metal_gguf";
             d.runtime_dependency = "bundled-native-mlx-cpp";
             d.parallel_strategy = "Q8_0/Q4_0/Q4_1 native MLX can split the FFN between Metal and Core ML ANE";

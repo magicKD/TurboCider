@@ -1,6 +1,15 @@
 # TurboCider 状态文档入口
 
-更新时间：2026-09-09
+更新时间：2026-09-15
+
+最新 encoder-prefill 与 GPU/ANE 边界请看
+[2026-09-15 Encoder prefill 与 GPU/ANE 可选路径状态](encoder-prefill-optional-2026-09-15.md)。
+它记录默认 GPU、encoder/denoiser manifest 分离、实验 probe 的可选构建开关、
+FLUX/Z-Image/H3/LTX 的资格结果、未通过的 LTX topology，以及 H3 exact-256
+收益在本轮复跑中未稳定复现的限制。
+
+跨 encoder、DiT、VAE 和 Core ML 生命周期的统一设计结论见
+[ANE 加速现状与分阶段决策](../design/ane-acceleration-status-2026-09-15.md)。
 
 本轮重构与提交范围以 [原生框架重构总结](native-refactor-summary-2026-09-09.md) 为准。
 其中区分已完成的结构整理、实际运行结果和仍未证明的发布/性能范围。

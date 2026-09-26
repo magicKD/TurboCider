@@ -5,7 +5,7 @@ source tools/native/dependencies.sh
 OUT="$PWD/build/native"
 [[ -f "$OUT/libturbocider.dylib" ]] || { echo 'Build the native runtime first.' >&2; exit 1; }
 MINIMUM="$(otool -l "$OUT/libturbocider.dylib" | awk '/minos /{print $2;exit}')"
-for probe in qwen3_quant nvfp4; do
+for probe in qwen3_quant qwen3_prefill_plan nvfp4 mlx_project_slice; do
   name="${probe//_/-}"
   xcrun clang++ -std=c++20 -O2 "-mmacosx-version-min=$MINIMUM" \
     -I native/core -isystem "$MLX_ROOT/include" "tools/native/${probe}_probe.cpp" \

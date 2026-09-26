@@ -21,6 +21,10 @@ class PrivateFFN {
         NSString *identifier=((id(*)(id,SEL))objc_msgSend)(model_,@selector(hexStringIdentifier));
         dir_=[NSTemporaryDirectory() stringByAppendingPathComponent:identifier];
         auto fm=[NSFileManager defaultManager];
+        // A content-derived path may belong to an earlier process. Never
+        // overwrite or delete that cache implicitly in a research benchmark.
+        if([fm fileExistsAtPath:dir_])
+            throw std::runtime_error("private compile directory already exists; preserve it and use a fresh TMPDIR");
         [fm createDirectoryAtPath:[dir_ stringByAppendingPathComponent:@"weights"] withIntermediateDirectories:YES attributes:nil error:nil];
         [mil writeToFile:[dir_ stringByAppendingPathComponent:@"model.mil"] atomically:YES];
         for(NSString *name in @[@"up",@"gate",@"down"])
@@ -42,7 +46,7 @@ class PrivateFFN {
         NSError *e=nil;
         if(model_)((BOOL(*)(id,SEL,unsigned int,NSError**))objc_msgSend)(model_,@selector(unloadWithQoS:error:),21,&e);
         if(in_)CFRelease(in_);if(out_)CFRelease(out_);
-        if(dir_)[[NSFileManager defaultManager] removeItemAtPath:dir_ error:nil];
+        // Retain compilation artifacts for provenance; cleanup is explicit.
     }
     double run(){
         auto t=Clock::now();IOSurfaceLock(in_,0,nullptr);auto p=(__fp16*)IOSurfaceGetBaseAddress(in_);

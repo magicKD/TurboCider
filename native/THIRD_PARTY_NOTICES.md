@@ -3,6 +3,17 @@
 The FLUX.2/Qwen3/VAE implementation was ported with reference to mflux
 (commit 12fd27ea7015c6c872ced51b56b313306a543dd2). Model weights are not distributed.
 
+The Qwen-Image-2.1 transformer, RGBA VAE and Qwen3-VL text encoder are C++ ports with reference to mflux commit
+8c00dab2505a96019df9d30bc9c223bf20d733c4, under the same MIT license below.
+Request-owned cross-step prefix KV caching is a TurboCider addition.
+
+The experimental Qwen3.5 prompt-enhancer gated-delta, language backbone and
+PE-specific visual-tower precision/activation mode are
+modified C++ implementations developed with reference to Hugging Face Transformers'
+`models/qwen3_5/modeling_qwen3_5.py`, Copyright 2025 The Qwen Team and
+The HuggingFace Inc. team, under Apache-2.0. This is not a complete prompt-enhancer
+backend. The Apache-2.0 license is reproduced in `licenses/FastVideo-LICENSE.txt`.
+
 MIT License
 
 Copyright (c) 2026 Filip Strand

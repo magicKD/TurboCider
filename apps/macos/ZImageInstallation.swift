@@ -2,6 +2,49 @@ import Foundation
 
 /// App-owned directory bindings keep user checkpoints in their original location.
 struct ZImageInstallation {
+    static func requiresResident(variantID: String?, systemJSON: String = NativeEngine.system()) -> Bool {
+        guard let variantID else { return false }
+        if variantID == "bf16" { return false }
+        if variantID == "int8-convrot" {
+            return !AccelerationDiscovery.optimizationEnabled("z_image_int8_streaming", systemJSON: systemJSON)
+        }
+        return true
+    }
+    struct Choice: Identifiable {
+        var path: String
+        var title: String
+        var id: String { path }
+    }
+    // Match the native loader's filename priority, without opening weight data.
+    static func variant(_ model: URL) -> ZImageVariant? {
+        ZImageVariant.all.first { FileManager.default.fileExists(atPath: model.appendingPathComponent($0.path).path) }
+    }
+    static func choices(_ installations: [LibraryInstallation], currentPath: String) -> [Choice] {
+        var entries = installations.filter { $0.modelID == "z-image-turbo" }.map { (path: $0.path, name: $0.name) }
+        if !currentPath.isEmpty, !entries.contains(where: { $0.path == currentPath }) {
+            entries.append((path: currentPath, name: "当前安装"))
+        }
+        var seen = Set<String>()
+        var choices: [Choice] = []
+        let current = currentPath.isEmpty ? nil : URL(fileURLWithPath: currentPath).resolvingSymlinksInPath().path
+        for entry in entries {
+            let model = URL(fileURLWithPath: entry.path)
+            let canonical = model.resolvingSymlinksInPath().path
+            guard seen.insert(canonical).inserted else { continue }
+            choices.append(Choice(path: canonical == current ? currentPath : entry.path,
+                                  title: variant(model)?.title ?? entry.name))
+        }
+        let counts = Dictionary(grouping: choices, by: \.title).mapValues(\.count)
+        var positions: [String: Int] = [:]
+        return choices.map { choice in
+            var choice = choice
+            if counts[choice.title, default: 0] > 1 {
+                positions[choice.title, default: 0] += 1
+                choice.title += " · 安装 \(positions[choice.title]!)"
+            }
+            return choice
+        }
+    }
     static func splitDirectory(_ model: URL) -> URL? {
         [model.appendingPathComponent("split_files"), model.appendingPathComponent("models"), model]
             .first { (FileManager.default.fileExists(atPath: $0.appendingPathComponent("diffusion_models/z_image_turbo_bf16.safetensors").path)

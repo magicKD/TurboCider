@@ -1,0 +1,2098 @@
+{
+  "schema_version": 1,
+  "host": {
+    "architecture": "Apple Silicon arm64",
+    "physical_memory_gib": 24,
+    "mlx_version": "0.32.0"
+  },
+  "measurement_stage": "Initial 2026-09-15 experiments plus scoped-cache cleanup and final 2026-09-16 verification. See per-suite annotations.",
+  "notes": [
+    "MLX peak excludes OS, Core ML and file cache.",
+    "VM counter deltas cover the whole system, not this process.",
+    "Cold and warm requests are not matched performance samples.",
+    "The first client elapsed time includes a file-access preflight delay.",
+    "Full local artifacts were retained; this portable record omits paths, UUIDs and unrelated plan fields."
+  ],
+  "suites": [
+    {
+      "name": "paired-512",
+      "all_images_byte_identical": true,
+      "runs": [
+        {
+          "name": "00-resident",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "resident"
+          },
+          "wall_seconds": 19.31636116700247,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 12648717088,
+              "mlx_peak_bytes": 16028818484,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "timings_seconds": {
+              "denoise": 9.23413175,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 19.283787167,
+              "text_encode": 4.007407542,
+              "vae_decode": 1.24492525
+            },
+            "prompt_cache_hit": false,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 592019456,
+            "Swapouts": 8190148608,
+            "Pageins": 21969240064,
+            "Compressions": 24863309824,
+            "Decompressions": 15254421504
+          },
+          "denoise_step_seconds": [
+            3.5143628750000016,
+            0.8230917499999997,
+            0.8216279589999989,
+            0.8161096660000009,
+            0.813961334,
+            0.8102172500000009,
+            0.8132201660000007,
+            0.8208999999999982
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c"
+        },
+        {
+          "name": "01-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 11.604093166999519,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221376288,
+              "mlx_peak_bytes": 10601477684,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 55366477440,
+              "request_load_seconds": 7.274586536,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 2.6927050409999986,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 9.530157542,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 11.602206166,
+              "text_encode": 0.000219792,
+              "vae_decode": 1.015236667
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 283574272,
+            "Swapouts": 0,
+            "Pageins": 10114187264,
+            "Compressions": 2477768704,
+            "Decompressions": 777764864
+          },
+          "denoise_step_seconds": [
+            1.266227834,
+            1.1995840000000002,
+            1.1776612499999999,
+            1.1787630829999998,
+            1.1736393330000006,
+            1.1938095840000003,
+            1.1612314579999996,
+            1.1792057499999995
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c"
+        },
+        {
+          "name": "02-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 10.496249707997777,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221376288,
+              "mlx_peak_bytes": 10601477684,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 49207611392,
+              "request_load_seconds": 6.582251580000004,
+              "request_slot_allocations": 0,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 2.7835939979999993,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 9.734098792,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 10.495825667,
+              "text_encode": 9.4542e-05,
+              "vae_decode": 0.726326375
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 69632000,
+            "Swapouts": 0,
+            "Pageins": 107970560,
+            "Compressions": 0,
+            "Decompressions": 1749630976
+          },
+          "denoise_step_seconds": [
+            1.31798125,
+            1.2097494159999997,
+            1.1828832500000002,
+            1.200589334,
+            1.2107082499999997,
+            1.2086606250000003,
+            1.1921799160000006,
+            1.2113189589999998
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c"
+        },
+        {
+          "name": "03-resident",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "resident"
+          },
+          "wall_seconds": 11.024394666019361,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 12648717088,
+              "mlx_peak_bytes": 16028818484,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "timings_seconds": {
+              "denoise": 7.9986915,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 11.022568458,
+              "text_encode": 0.000106,
+              "vae_decode": 1.411899167
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 50266112,
+            "Swapouts": 0,
+            "Pageins": 10394386432,
+            "Compressions": 17834049536,
+            "Decompressions": 11464245248
+          },
+          "denoise_step_seconds": [
+            1.8727596249999998,
+            0.8613907919999999,
+            0.867267333,
+            0.875929792,
+            0.8743295830000006,
+            0.8834485839999999,
+            0.8816098329999988,
+            0.8818799580000007
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c"
+        },
+        {
+          "name": "prepare",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 1.2787344999960624,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 6158866048,
+              "request_load_seconds": 0.79677425,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 0,
+              "request_wait_seconds": 0,
+              "streamed_blocks": 17
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 2883584,
+            "Swapouts": 0,
+            "Pageins": 4641587200,
+            "Compressions": 0,
+            "Decompressions": 163102720
+          },
+          "denoise_step_seconds": [],
+          "png_sha256": null
+        },
+        {
+          "name": "cancel",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 0.7363712919759564,
+          "status": 2,
+          "error": "generation cancelled",
+          "metrics": {},
+          "system_vm_delta_bytes": {
+            "Swapins": 2686976,
+            "Swapouts": 0,
+            "Pageins": 2155216896,
+            "Compressions": 0,
+            "Decompressions": 17121280
+          },
+          "denoise_step_seconds": [],
+          "png_sha256": null
+        },
+        {
+          "name": "retry",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 11.57542295800522,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221376288,
+              "mlx_peak_bytes": 10601477684,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 55366477440,
+              "request_load_seconds": 7.645037202,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 2.949192213,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 9.861042375,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 11.575027708,
+              "text_encode": 6.0833e-05,
+              "vae_decode": 0.757715792
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 68108288,
+            "Swapouts": 0,
+            "Pageins": 2865594368,
+            "Compressions": 1018363904,
+            "Decompressions": 963887104
+          },
+          "denoise_step_seconds": [
+            1.360200833,
+            1.2158462500000002,
+            1.2210675000000002,
+            1.2136220839999998,
+            1.2148252909999995,
+            1.198414209,
+            1.206021166000001,
+            1.2310097919999983
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c"
+        }
+      ]
+    },
+    {
+      "name": "low-budget-256",
+      "all_images_byte_identical": true,
+      "runs": [
+        {
+          "name": "00-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 256,
+            "height": 256,
+            "steps": 2,
+            "seed": 314159,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 6442450944
+          },
+          "wall_seconds": 5.239887000003364,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 3238770464,
+              "mlx_peak_bytes": 8255621909,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 4810640512,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 6257923200,
+              "fully_resident": false,
+              "memory_budget_bytes": 6442450944,
+              "pinned_blocks": 2,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 22440796288,
+              "request_load_seconds": 3.6527677940000007,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 56,
+              "request_wait_seconds": 2.746661956,
+              "streamed_blocks": 28
+            },
+            "timings_seconds": {
+              "denoise": 3.701856292,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 5.213884666,
+              "text_encode": 0.964937041,
+              "vae_decode": 0.208654875
+            },
+            "prompt_cache_hit": false,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 17547264,
+            "Swapouts": 0,
+            "Pageins": 25023512576,
+            "Compressions": 12365398016,
+            "Decompressions": 4832591872
+          },
+          "denoise_step_seconds": [
+            1.9221366670000002,
+            1.7796889579999995
+          ],
+          "png_sha256": "1f903dbd7952a4d8bdda29e8f0deec0605e71c152c3e4ec69dacc4ec0bd617f6"
+        },
+        {
+          "name": "01-resident",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 256,
+            "height": 256,
+            "steps": 2,
+            "seed": 314159,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "resident"
+          },
+          "wall_seconds": 3.6879650420160033,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 12646161184,
+              "mlx_peak_bytes": 14185782596,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "timings_seconds": {
+              "denoise": 1.797038584,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 3.686554708,
+              "text_encode": 0.00010175,
+              "vae_decode": 0.313293083
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 121929728,
+            "Swapouts": 0,
+            "Pageins": 7662682112,
+            "Compressions": 10296360960,
+            "Decompressions": 11233951744
+          },
+          "denoise_step_seconds": [
+            1.544330792,
+            0.25216724999999984
+          ],
+          "png_sha256": "1f903dbd7952a4d8bdda29e8f0deec0605e71c152c3e4ec69dacc4ec0bd617f6"
+        },
+        {
+          "name": "02-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 256,
+            "height": 256,
+            "steps": 2,
+            "seed": 314159,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 6442450944
+          },
+          "wall_seconds": 2.9361095419735648,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 3238770464,
+              "mlx_peak_bytes": 4778391876,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 4810640512,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 6257923200,
+              "fully_resident": false,
+              "memory_budget_bytes": 6442450944,
+              "pinned_blocks": 2,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 22440796288,
+              "request_load_seconds": 2.6608167489999994,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 56,
+              "request_wait_seconds": 1.8205577560000001,
+              "streamed_blocks": 28
+            },
+            "timings_seconds": {
+              "denoise": 2.377884167,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 2.9352005,
+              "text_encode": 0.000115583,
+              "vae_decode": 0.178130083
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 62750720,
+            "Swapouts": 0,
+            "Pageins": 8882110464,
+            "Compressions": 0,
+            "Decompressions": 663175168
+          },
+          "denoise_step_seconds": [
+            1.177112,
+            1.200743542
+          ],
+          "png_sha256": "1f903dbd7952a4d8bdda29e8f0deec0605e71c152c3e4ec69dacc4ec0bd617f6"
+        },
+        {
+          "name": "prepare",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 256,
+            "height": 256,
+            "steps": 2,
+            "seed": 314159,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 6442450944
+          },
+          "wall_seconds": 0.0006647919653914869,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "block_residency": {
+              "activation_reserve_bytes": 4810640512,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 6257923200,
+              "fully_resident": false,
+              "memory_budget_bytes": 6442450944,
+              "pinned_blocks": 2,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 0,
+              "request_load_seconds": 0,
+              "request_slot_allocations": 0,
+              "request_slot_refills": 0,
+              "request_wait_seconds": 0,
+              "streamed_blocks": 28
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 1310720,
+            "Compressions": 0,
+            "Decompressions": 376832
+          },
+          "denoise_step_seconds": [],
+          "png_sha256": null
+        },
+        {
+          "name": "cancel",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 256,
+            "height": 256,
+            "steps": 2,
+            "seed": 314159,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 6442450944
+          },
+          "wall_seconds": 0.7615694589912891,
+          "status": 2,
+          "error": "generation cancelled",
+          "metrics": {},
+          "system_vm_delta_bytes": {
+            "Swapins": 4128768,
+            "Swapouts": 0,
+            "Pageins": 43712512,
+            "Compressions": 0,
+            "Decompressions": 122585088
+          },
+          "denoise_step_seconds": [],
+          "png_sha256": null
+        },
+        {
+          "name": "retry",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 256,
+            "height": 256,
+            "steps": 2,
+            "seed": 314159,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 6442450944
+          },
+          "wall_seconds": 4.1419631249736995,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 3238770464,
+              "mlx_peak_bytes": 4778391876,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 4810640512,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 6257923200,
+              "fully_resident": false,
+              "memory_budget_bytes": 6442450944,
+              "pinned_blocks": 2,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 22440796288,
+              "request_load_seconds": 3.5154720479999995,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 56,
+              "request_wait_seconds": 2.6081254559999993,
+              "streamed_blocks": 28
+            },
+            "timings_seconds": {
+              "denoise": 113.535146125,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 114.139301667,
+              "text_encode": 5.2333e-05,
+              "vae_decode": 0.266859333
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 130793472,
+            "Swapouts": 0,
+            "Pageins": 1767260160,
+            "Compressions": 1315176448,
+            "Decompressions": 2523365376
+          },
+          "denoise_step_seconds": [
+            112.018972875,
+            1.5160946249999938
+          ],
+          "png_sha256": "1f903dbd7952a4d8bdda29e8f0deec0605e71c152c3e4ec69dacc4ec0bd617f6"
+        },
+        {
+          "name": "changed-prompt-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography. A small wooden cabin in the background.",
+            "width": 256,
+            "height": 256,
+            "steps": 2,
+            "seed": 314159,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 6442450944
+          },
+          "wall_seconds": 5.549066999985371,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 3238819626,
+              "mlx_peak_bytes": 8258403097,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 4810640512,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 6257923200,
+              "fully_resident": false,
+              "memory_budget_bytes": 6442450944,
+              "pinned_blocks": 2,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 22440796288,
+              "request_load_seconds": 3.746801375,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 56,
+              "request_wait_seconds": 2.808789665999999,
+              "streamed_blocks": 28
+            },
+            "timings_seconds": {
+              "denoise": 3.829555333,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 5.548478625,
+              "text_encode": 1.048823083,
+              "vae_decode": 0.255069708
+            },
+            "prompt_cache_hit": false,
+            "text_tokens": 35,
+            "valid_text_tokens": 35,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 24576000,
+            "Swapouts": 0,
+            "Pageins": 24594104320,
+            "Compressions": 11094310912,
+            "Decompressions": 5263622144
+          },
+          "denoise_step_seconds": [
+            1.9867825840000002,
+            1.8427281249999994
+          ],
+          "png_sha256": "5526c079564b5eff456a88dac40e4a59ab159e27e6d782962f6f604e9baf1af7"
+        },
+        {
+          "name": "changed-prompt-resident",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography. A small wooden cabin in the background.",
+            "width": 256,
+            "height": 256,
+            "steps": 2,
+            "seed": 314159,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "resident"
+          },
+          "wall_seconds": 4.853294999978971,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 12646193962,
+              "mlx_peak_bytes": 14185815374,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "timings_seconds": {
+              "denoise": 2.67077175,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 4.851893917,
+              "text_encode": 0.000102833,
+              "vae_decode": 0.373465833
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 35,
+            "valid_text_tokens": 35,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 245678080,
+            "Swapouts": 1142947840,
+            "Pageins": 9726607360,
+            "Compressions": 11363500032,
+            "Decompressions": 11735040000
+          },
+          "denoise_step_seconds": [
+            2.3867226249999995,
+            0.2835597080000003
+          ],
+          "png_sha256": "5526c079564b5eff456a88dac40e4a59ab159e27e6d782962f6f604e9baf1af7"
+        }
+      ]
+    },
+    {
+      "name": "pr-cleanup",
+      "measurement_stage": "After PR cleanup; streaming alone temporarily overrides the allocator cache.",
+      "timing_valid_for_comparison": false,
+      "timing_note": "Native durations contain large discontinuities absent from Python monotonic timing. Exclude this overnight run from performance comparisons.",
+      "cache_limit_restoration_passed": true,
+      "all_images_byte_identical": true,
+      "runs": [
+        {
+          "name": "00-resident",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "resident"
+          },
+          "wall_seconds": 18.81031279201852,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 12648717088,
+              "mlx_peak_bytes": 16028818484,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "timings_seconds": {
+              "denoise": 948.885221583,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 2817.192241083,
+              "text_encode": 3.310609666,
+              "vae_decode": 914.789300584
+            },
+            "prompt_cache_hit": false,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 1210482688,
+            "Swapouts": 14309326848,
+            "Pageins": 23428186112,
+            "Compressions": 44145442816,
+            "Decompressions": 20824752128
+          },
+          "denoise_step_seconds": [
+            1.8614312910000308,
+            943.1442543750001,
+            0.6347626669999045,
+            0.6283052080000289,
+            0.6254092500000752,
+            0.6292591249998623,
+            0.7189368340000328,
+            0.642534957999942
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c"
+        },
+        {
+          "name": "01-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 12.377992500027176,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221376288,
+              "mlx_peak_bytes": 10601477684,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 55366477440,
+              "request_load_seconds": 8.028439422000002,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 4.062672874999999,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 1955.9219375,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 1958.41716075,
+              "text_encode": 0.000220417,
+              "vae_decode": 0.852007209
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 958693376,
+            "Swapouts": 46792704,
+            "Pageins": 10661298176,
+            "Compressions": 1129791488,
+            "Decompressions": 1737490432
+          },
+          "denoise_step_seconds": [
+            1.163252917,
+            1.076255958,
+            909.957923292,
+            1.105531707999944,
+            1.089142250000009,
+            1.0846543339999926,
+            1039.313758458,
+            1.1313660829998753
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c"
+        },
+        {
+          "name": "02-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 10.523473499983083,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221376288,
+              "mlx_peak_bytes": 10601477684,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 49207611392,
+              "request_load_seconds": 1056.4301505479998,
+              "request_slot_allocations": 0,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 3.7470112139999996,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 1963.644795625,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 1964.653540541,
+              "text_encode": 5.075e-05,
+              "vae_decode": 0.97496975
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 237338624,
+            "Swapouts": 0,
+            "Pageins": 830865408,
+            "Compressions": 2029977600,
+            "Decompressions": 961576960
+          },
+          "denoise_step_seconds": [
+            1.110550416,
+            1.109998542,
+            1051.068901958,
+            1.1050354169999537,
+            1.0422936670001945,
+            1.0470754159998705,
+            1.034220624999989,
+            906.126689042
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c"
+        },
+        {
+          "name": "03-resident",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "resident"
+          },
+          "wall_seconds": 16.71793649997562,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 12648717088,
+              "mlx_peak_bytes": 16028818484,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "timings_seconds": {
+              "denoise": 1505.240342625,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 1509.389850583,
+              "text_encode": 0.000105459,
+              "vae_decode": 2.258833333
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 684376064,
+            "Swapouts": 2440216576,
+            "Pageins": 11873632256,
+            "Compressions": 65562591232,
+            "Decompressions": 50427674624
+          },
+          "denoise_step_seconds": [
+            515.2546505,
+            2.257031250000068,
+            2.172850791999963,
+            2.5884223749999364,
+            981.072960292,
+            0.6394072909999977,
+            0.629323500000055,
+            0.6252167090001421
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c"
+        },
+        {
+          "name": "prepare",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 2.06727487500757,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 6158866048,
+              "request_load_seconds": 0.8086584590000002,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 0,
+              "request_wait_seconds": 0,
+              "streamed_blocks": 17
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 363315200,
+            "Swapouts": 0,
+            "Pageins": 5244010496,
+            "Compressions": 0,
+            "Decompressions": 892174336
+          },
+          "denoise_step_seconds": [],
+          "png_sha256": null
+        },
+        {
+          "name": "cancel",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 0.6139070839853957,
+          "status": 2,
+          "error": "generation cancelled",
+          "metrics": {},
+          "system_vm_delta_bytes": {
+            "Swapins": 93585408,
+            "Swapouts": 0,
+            "Pageins": 2071822336,
+            "Compressions": 0,
+            "Decompressions": 274956288
+          },
+          "denoise_step_seconds": [],
+          "png_sha256": null
+        },
+        {
+          "name": "retry",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 11.319988208007999,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221376288,
+              "mlx_peak_bytes": 10601477684,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 55366477440,
+              "request_load_seconds": 578.8094230809999,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 3.6792147479999993,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 1591.572779958,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 1593.453112875,
+              "text_encode": 5.5666e-05,
+              "vae_decode": 0.968783333
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 401047552,
+            "Swapouts": 0,
+            "Pageins": 3280535552,
+            "Compressions": 2262892544,
+            "Decompressions": 956383232
+          },
+          "denoise_step_seconds": [
+            1.1699868329999998,
+            1012.704506834,
+            1.1474264999999377,
+            1.0588209580000694,
+            1.0567660829999568,
+            1.044203959000015,
+            572.334752375,
+            1.0562925829999585
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c"
+        },
+        {
+          "name": "changed-prompt-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography. A small wooden cabin in the background.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 16.410245416976977,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221425450,
+              "mlx_peak_bytes": 10601526846,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 55366477440,
+              "request_load_seconds": 1837.7749074139988,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 4.501404497999998,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 1839.500448083,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 2814.540347208,
+              "text_encode": 0.850093667,
+              "vae_decode": 971.764745666
+            },
+            "prompt_cache_hit": false,
+            "text_tokens": 35,
+            "valid_text_tokens": 35,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 330694656,
+            "Swapouts": 30343168,
+            "Pageins": 19174096896,
+            "Compressions": 16937467904,
+            "Decompressions": 17029513216
+          },
+          "denoise_step_seconds": [
+            904.038954334,
+            1.7846337500000118,
+            1.1110459999999875,
+            1.1169317080000383,
+            928.109972042,
+            1.1399970830000257,
+            1.1124283330000253,
+            1.0864343339999323
+          ],
+          "png_sha256": "e2730810dcc563b940e336342043500596adecab4c21626ca09be0ec81d8d083"
+        },
+        {
+          "name": "changed-prompt-resident",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography. A small wooden cabin in the background.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "resident"
+          },
+          "wall_seconds": 12.115008666994981,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 12648749866,
+              "mlx_peak_bytes": 15894633534,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "timings_seconds": {
+              "denoise": 1078.171807833,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 2029.394449208,
+              "text_encode": 0.00011675,
+              "vae_decode": 949.2758905
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 35,
+            "valid_text_tokens": 35,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 712916992,
+            "Swapouts": 4695457792,
+            "Pageins": 10378395648,
+            "Compressions": 29919100928,
+            "Decompressions": 13509689344
+          },
+          "denoise_step_seconds": [
+            1.6917271249999999,
+            0.6336383749999999,
+            0.6259920829999999,
+            1072.588436542,
+            0.6349299159999191,
+            0.6305583750001915,
+            0.6307355419999112,
+            0.7357114169999477
+          ],
+          "png_sha256": "e2730810dcc563b940e336342043500596adecab4c21626ca09be0ec81d8d083"
+        }
+      ]
+    },
+    {
+      "name": "pr-final",
+      "measurement_stage": "After PR cleanup; streaming alone temporarily overrides the allocator cache.",
+      "timing_valid_for_comparison": true,
+      "timing_note": "Native and Python clocks agree; idle sleep inhibited for this run.",
+      "cache_limit_restoration_passed": true,
+      "all_images_byte_identical": true,
+      "runs": [
+        {
+          "name": "00-resident",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "resident"
+          },
+          "wall_seconds": 14.211622625007294,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 12648717088,
+              "mlx_peak_bytes": 16028818484,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "timings_seconds": {
+              "denoise": 6.4716025,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 14.2058935,
+              "text_encode": 2.463777375,
+              "vae_decode": 1.907281958
+            },
+            "prompt_cache_hit": false,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 464371712,
+            "Swapouts": 6137315328,
+            "Pageins": 21614084096,
+            "Compressions": 39558578176,
+            "Decompressions": 17316036608
+          },
+          "denoise_step_seconds": [
+            1.984735625,
+            0.6601802499999998,
+            0.6437430420000005,
+            0.6391863749999995,
+            0.6373721250000006,
+            0.6352412919999999,
+            0.6358254159999994,
+            0.635256
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c",
+          "cache_limit_restored": true
+        },
+        {
+          "name": "01-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 10.447883416956756,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221376288,
+              "mlx_peak_bytes": 10601477684,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 55366477440,
+              "request_load_seconds": 6.81911357,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 2.972355210999999,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 8.265646459,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 10.446340583,
+              "text_encode": 0.00018,
+              "vae_decode": 0.699840791
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 490455040,
+            "Swapouts": 0,
+            "Pageins": 10054991872,
+            "Compressions": 162545664,
+            "Decompressions": 1449050112
+          },
+          "denoise_step_seconds": [
+            1.035005792,
+            1.0628642080000001,
+            1.0454116669999998,
+            1.024459083,
+            1.0276942089999999,
+            1.0209550410000006,
+            1.0185106669999993,
+            1.0307241250000008
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c",
+          "cache_limit_restored": true
+        },
+        {
+          "name": "02-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 8.991631416021846,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221376288,
+              "mlx_peak_bytes": 10601477684,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 49207611392,
+              "request_load_seconds": 6.019437959000002,
+              "request_slot_allocations": 0,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 3.0196646609999975,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 8.315198209,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 8.991242833,
+              "text_encode": 5.0875e-05,
+              "vae_decode": 0.643904916
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 131006464,
+            "Swapouts": 0,
+            "Pageins": 171212800,
+            "Compressions": 0,
+            "Decompressions": 397557760
+          },
+          "denoise_step_seconds": [
+            1.0488803750000002,
+            1.0429624579999999,
+            1.0640054170000002,
+            1.0292840829999994,
+            1.0369832090000006,
+            1.0265005409999999,
+            1.0308869170000001,
+            1.0356743329999993
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c",
+          "cache_limit_restored": true
+        },
+        {
+          "name": "03-resident",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "resident"
+          },
+          "wall_seconds": 8.177490832982585,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 12648717088,
+              "mlx_peak_bytes": 16028818484,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "timings_seconds": {
+              "denoise": 5.80897175,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 8.176610291,
+              "text_encode": 7.4042e-05,
+              "vae_decode": 0.931054708
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 448724992,
+            "Swapouts": 755367936,
+            "Pageins": 9768665088,
+            "Compressions": 12771049472,
+            "Decompressions": 9888907264
+          },
+          "denoise_step_seconds": [
+            1.3593093330000001,
+            0.6360974590000001,
+            0.6386357079999998,
+            0.6329132500000001,
+            0.6313126249999996,
+            0.6339337080000007,
+            0.6388312089999992,
+            0.6374619580000003
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c",
+          "cache_limit_restored": true
+        },
+        {
+          "name": "prepare",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 0.9773922499734908,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 6158866048,
+              "request_load_seconds": 0.810595959,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 0,
+              "request_wait_seconds": 0,
+              "streamed_blocks": 17
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 47398912,
+            "Swapouts": 0,
+            "Pageins": 5039210496,
+            "Compressions": 0,
+            "Decompressions": 411205632
+          },
+          "denoise_step_seconds": [],
+          "png_sha256": null,
+          "cache_limit_restored": true
+        },
+        {
+          "name": "cancel",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 0.6233045000117272,
+          "status": 2,
+          "error": "generation cancelled",
+          "metrics": {},
+          "system_vm_delta_bytes": {
+            "Swapins": 11862016,
+            "Swapouts": 0,
+            "Pageins": 2039267328,
+            "Compressions": 0,
+            "Decompressions": 218185728
+          },
+          "denoise_step_seconds": [],
+          "png_sha256": null,
+          "cache_limit_restored": true
+        },
+        {
+          "name": "retry",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 10.824382999970112,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221376288,
+              "mlx_peak_bytes": 10601477684,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 55366477440,
+              "request_load_seconds": 7.499566205999997,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 3.272261996000002,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 9.122442209,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 10.823986125,
+              "text_encode": 4.7458e-05,
+              "vae_decode": 0.738273083
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 27,
+            "valid_text_tokens": 27,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 553566208,
+            "Swapouts": 0,
+            "Pageins": 3625598976,
+            "Compressions": 386514944,
+            "Decompressions": 2396815360
+          },
+          "denoise_step_seconds": [
+            1.268780542,
+            1.180411458,
+            1.1644782080000002,
+            1.161738917,
+            1.1515052079999997,
+            1.064032084,
+            1.0654166250000001,
+            1.066047416
+          ],
+          "png_sha256": "1177f0a9492b183fdada99dbe701ec7dc83b0bc6876c6d560ff2f569f7525e9c",
+          "cache_limit_restored": true
+        },
+        {
+          "name": "changed-prompt-streamed",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography. A small wooden cabin in the background.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "streamed",
+            "memory_budget_bytes": 10737418240
+          },
+          "wall_seconds": 16.65557633404387,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 7221425450,
+              "mlx_peak_bytes": 10601526846,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "block_residency": {
+              "activation_reserve_bytes": 5213293696,
+              "active_blocks": 30,
+              "block_bytes": 361820672,
+              "enabled": true,
+              "estimated_working_set_bytes": 10640603776,
+              "fully_resident": false,
+              "memory_budget_bytes": 10737418240,
+              "pinned_blocks": 13,
+              "policy": "shared_block_residency_v1",
+              "quantized": false,
+              "refill_slots": 2,
+              "request_bytes_loaded": 55366477440,
+              "request_load_seconds": 8.964038879999995,
+              "request_slot_allocations": 2,
+              "request_slot_refills": 136,
+              "request_wait_seconds": 3.7052424930000014,
+              "streamed_blocks": 17
+            },
+            "timings_seconds": {
+              "denoise": 12.845270375,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 16.654775541,
+              "text_encode": 0.854372416,
+              "vae_decode": 1.343475958
+            },
+            "prompt_cache_hit": false,
+            "text_tokens": 35,
+            "valid_text_tokens": 35,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 166248448,
+            "Swapouts": 0,
+            "Pageins": 22884777984,
+            "Compressions": 36821680128,
+            "Decompressions": 29299490816
+          },
+          "denoise_step_seconds": [
+            2.3418299169999997,
+            1.735840542,
+            1.8653027079999998,
+            1.9367220419999995,
+            1.6094015000000006,
+            1.1210330000000006,
+            1.1189575830000003,
+            1.116147625
+          ],
+          "png_sha256": "e2730810dcc563b940e336342043500596adecab4c21626ca09be0ec81d8d083",
+          "cache_limit_restored": true
+        },
+        {
+          "name": "changed-prompt-resident",
+          "request": {
+            "model": "z-image-turbo",
+            "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography. A small wooden cabin in the background.",
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "seed": 42,
+            "execution": "gpu",
+            "dynamic_text": true,
+            "residency": "resident"
+          },
+          "wall_seconds": 11.298124624998309,
+          "status": 0,
+          "error": null,
+          "metrics": {
+            "memory": {
+              "mlx_active_bytes": 12648749866,
+              "mlx_peak_bytes": 16028851262,
+              "scope": "MLX allocator; excludes Core ML/OS/file cache"
+            },
+            "timings_seconds": {
+              "denoise": 6.689924417,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 11.29505675,
+              "text_encode": 0.000121959,
+              "vae_decode": 2.536596917
+            },
+            "prompt_cache_hit": true,
+            "text_tokens": 35,
+            "valid_text_tokens": 35,
+            "gpu_graph": "compiled_fused_blocks"
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 443629568,
+            "Swapouts": 4475977728,
+            "Pageins": 11051450368,
+            "Compressions": 28188524544,
+            "Decompressions": 13005258752
+          },
+          "denoise_step_seconds": [
+            1.570085167,
+            0.6648899580000003,
+            0.6698522499999999,
+            0.6780037920000002,
+            0.7011218329999993,
+            0.7982725420000003,
+            0.8023503750000005,
+            0.8052834999999998
+          ],
+          "png_sha256": "e2730810dcc563b940e336342043500596adecab4c21626ca09be0ec81d8d083",
+          "cache_limit_restored": true
+        }
+      ]
+    }
+  ],
+  "client_runs": [
+    {
+      "name": "client-first",
+      "state": "succeeded",
+      "client_elapsed_seconds": 3855.069999875,
+      "request": {
+        "model": "z-image-turbo",
+        "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "seed": 42,
+        "execution": "gpu",
+        "dynamic_text": true,
+        "residency": "streamed",
+        "memory_budget_bytes": 10737418240
+      },
+      "metrics": {
+        "memory": {
+          "mlx_active_bytes": 7221376288,
+          "mlx_peak_bytes": 10601477684,
+          "scope": "MLX allocator; excludes Core ML/OS/file cache"
+        },
+        "block_residency": {
+          "activation_reserve_bytes": 5213293696,
+          "active_blocks": 30,
+          "block_bytes": 361820672,
+          "enabled": true,
+          "estimated_working_set_bytes": 10640603776,
+          "fully_resident": false,
+          "memory_budget_bytes": 10737418240,
+          "pinned_blocks": 13,
+          "policy": "shared_block_residency_v1",
+          "quantized": false,
+          "refill_slots": 2,
+          "request_bytes_loaded": 55366477440,
+          "request_load_seconds": 11.08182937500001,
+          "request_slot_allocations": 2,
+          "request_slot_refills": 136,
+          "request_wait_seconds": 5.342290251999996,
+          "streamed_blocks": 17
+        },
+        "timings_seconds": {
+          "denoise": 15.577970458,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 21.267193209,
+          "text_encode": 2.248561958,
+          "vae_decode": 1.534442458
+        },
+        "prompt_cache_hit": false,
+        "text_tokens": 27,
+        "valid_text_tokens": 27,
+        "gpu_graph": "compiled_fused_blocks"
+      }
+    },
+    {
+      "name": "client-reused",
+      "state": "succeeded",
+      "client_elapsed_seconds": 15.987627459,
+      "request": {
+        "model": "z-image-turbo",
+        "prompt": "A red fox walking through fresh snow in a pine forest, soft morning sunlight, detailed photography.",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "seed": 42,
+        "execution": "gpu",
+        "dynamic_text": true,
+        "residency": "streamed",
+        "memory_budget_bytes": 10737418240
+      },
+      "metrics": {
+        "memory": {
+          "mlx_active_bytes": 7221376288,
+          "mlx_peak_bytes": 10601477684,
+          "scope": "MLX allocator; excludes Core ML/OS/file cache"
+        },
+        "block_residency": {
+          "activation_reserve_bytes": 5213293696,
+          "active_blocks": 30,
+          "block_bytes": 361820672,
+          "enabled": true,
+          "estimated_working_set_bytes": 10640603776,
+          "fully_resident": false,
+          "memory_budget_bytes": 10737418240,
+          "pinned_blocks": 13,
+          "policy": "shared_block_residency_v1",
+          "quantized": false,
+          "refill_slots": 2,
+          "request_bytes_loaded": 49207611392,
+          "request_load_seconds": 8.942374289999997,
+          "request_slot_allocations": 0,
+          "request_slot_refills": 136,
+          "request_wait_seconds": 4.811976797999999,
+          "streamed_blocks": 17
+        },
+        "timings_seconds": {
+          "denoise": 14.302915708,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 15.937214708,
+          "text_encode": 6.2875e-05,
+          "vae_decode": 1.588308458
+        },
+        "prompt_cache_hit": true,
+        "text_tokens": 27,
+        "valid_text_tokens": 27,
+        "gpu_graph": "compiled_fused_blocks"
+      }
+    }
+  ],
+  "implementation_commit": "8be1ae2"
+}

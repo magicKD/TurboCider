@@ -1,0 +1,107 @@
+{
+  "schema": "turbocider-z-image-clean-performance-v1",
+  "date": "2026-09-23",
+  "status": "authoritative_clean_post_reboot_result",
+  "hardware": {
+    "gpu": "Apple M4 Max, 40-core GPU",
+    "memory_gib": 64,
+    "os": "macOS 26.6.2 (25G83)",
+    "boot_time": "Wed Sep 23 17:13:16 2026"
+  },
+  "runtime": {
+    "native_sha256": "53ad53680d6c5cace4656e567bd7dfe2ec9d1518279e4a8345c4104c29883b54",
+    "mlx_sha256": "1876795e05b3434925e745fbf6e9f0c8c0446b666224c9d881609ab353e94e51",
+    "jaccl_sha256": "8ee82aae82996938435bcebe724d819296712b8b34fac021ce7aa66073730e1e",
+    "mlx_version": "0.32.0"
+  },
+  "method": "Fresh-process ABBA; first request excluded; two warm requests and one separate parity request per process; shared GPU benchmark lock; same native/runtime fingerprints; exact tensor and PNG parity.",
+  "workloads": {
+    "512x512_8_step_greenhouse_seed123": {
+      "precision": "bf16",
+      "execution": "gpu",
+      "residency": "resident",
+      "unfused_diffusion_seconds": [7.313913833, 7.315570708, 7.319747791, 7.315840167],
+      "default_diffusion_seconds": [6.767316375, 6.768038292, 6.768451708, 6.766274],
+      "unfused_median_diffusion_seconds": 7.3157054375,
+      "default_median_diffusion_seconds": 6.7676773335,
+      "unfused_median_wall_seconds": 7.554426104000413,
+      "default_median_wall_seconds": 7.006552353999723,
+      "default_median_vae_seconds": 0.2192010415,
+      "diffusion_speedup": 1.0809772802387108,
+      "wall_speedup": 1.078194484579557,
+      "parity": "byte-identical initial latent, all 8 steps, final latent, decoded tensor and PNG"
+    },
+    "512x512_8_step_fox_seed42_screen": {
+      "unfused_diffusion_seconds": 7.31467825,
+      "default_diffusion_seconds": 6.767401042,
+      "diffusion_speedup": 1.0808696284738373,
+      "parity": "byte-identical initial latent, all 8 steps, final latent, decoded tensor and PNG",
+      "limitation": "one warm sample per arm; corroborating prompt/seed screen, not the primary qualification"
+    },
+    "512x512_8_step_fox_seed42_gpu_vs_gpu_ane": {
+      "status": "authoritative_clean_post_reboot_route_comparison",
+      "execution": {
+        "gpu": "resident bf16",
+        "gpu_ane": "resident bf16 GPU plus Core ML int8 per-channel MLP prefix"
+      },
+      "gpu_ane_partition": {
+        "bucket": 1056,
+        "ane_mlp_range": [0, 4096],
+        "block_count": 32,
+        "compute_units": "cpuAndNeuralEngine",
+        "observed_ane_residency": "unknown"
+      },
+      "method": "Fresh-process GPU/GPU+ANE/GPU+ANE/GPU schedule; first cold request excluded; three warm requests per process and six warm samples per arm; shared GPU benchmark lock; no swap-ins or swap-outs.",
+      "gpu_median_wall_seconds": 7.0044781255001,
+      "gpu_median_diffusion_seconds": 6.766969709,
+      "gpu_ane_median_wall_seconds": 5.803947958499521,
+      "gpu_ane_median_diffusion_seconds": 5.5654627085,
+      "gpu_ane_wall_time_reduction_percent": 17.139466288430516,
+      "gpu_ane_diffusion_time_reduction_percent": 17.755465920026325,
+      "gpu_over_gpu_ane_wall_speedup": 1.2068471625839576,
+      "cold_wall_seconds": {
+        "gpu": [7.7790, 7.5955],
+        "gpu_ane": [11.8163, 11.7928]
+      },
+      "quality": {
+        "routes_deterministic_individually": true,
+        "pixels_equal_across_routes": false,
+        "correlation": 0.9611344482905666,
+        "cosine": 0.9961061651729999,
+        "mae_255": 5.397271474202474,
+        "rmse_255": 16.380156309432323,
+        "default_aligned_rgb_gate_passed": false
+      },
+      "split_screen": {
+        "a8192_b1056_median_wall_seconds": 9.315444667000065,
+        "a8192_b1056_median_diffusion_seconds": 9.0640809585,
+        "reason_not_selected": "The M4 Pro-oriented wider ANE prefix spends about 5.5 seconds per warm request in Core ML predictions and is slower than the optimized M4 Max GPU path; a4096 spends about 2.0 seconds and leaves the wider suffix on the faster GPU."
+      },
+      "conclusion": "The correctly tuned a4096/b1056 GPU+ANE route is 1.207x faster warm than optimized pure GPU at 512x512. The wider historical a8192 split is slower on this M4 Max. Keep the route explicit rather than automatic because the INT8 output fails the current aligned-RGB quality gate and cold requests remain slower.",
+      "raw_summary": "${PROJECT_ROOT}/outputs/z-image-gpu-vs-ane-512-clean-2026-09-23/summary.json"
+    },
+    "1024x1024_9_step_fox_seed42": {
+      "default_diffusion_seconds": [34.193284667, 34.210623875],
+      "default_median_diffusion_seconds": 34.201954271000005,
+      "default_median_vae_seconds": 0.8710318125000001,
+      "default_median_wall_seconds": 35.140750542000006,
+      "historical_2026_09_07_diffusion_seconds": 35.437059625,
+      "historical_2026_09_07_vae_seconds": 0.857119583,
+      "historical_2026_09_07_wall_seconds": 36.359820875,
+      "conclusion": "system performance is normal; current diffusion and wall are faster than the historical healthy run"
+    }
+  },
+  "promoted_exact_optimizations": [
+    "32x128 MPP SwiGLU tile replacing the polluted-state 32x256 choice",
+    "shape-specific 48x128/16x128/32x128 MPP dense projections for small rows",
+    "QKV projection epilogue fused with Q/K RMSNorm, RoPE and SDPA layout",
+    "128-thread exact virtual gate-residual plus FFN-input norm",
+    "request-local reuse of invariant context-refiner output"
+  ],
+  "scope": "Small-shape fused projection/gate/context defaults are restricted to qualified Apple M4 Max workloads with at most 1056 transformer rows; the SwiGLU tile also improves the 4128-row 1024 path.",
+  "tests": {
+    "gpu_kernel_methods": 4,
+    "cpu_benchmark_audit_methods": 16,
+    "git_diff_check": "passed"
+  }
+}

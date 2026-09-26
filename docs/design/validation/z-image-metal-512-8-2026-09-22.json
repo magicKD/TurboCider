@@ -1,0 +1,66 @@
+{
+  "schema": "turbocider-z-image-metal-validation-v1",
+  "date": "2026-09-22",
+  "status": "invalid_for_performance_pre_reboot_system_state",
+  "superseded_status": "validated first fusion candidate; 512x512 optimization remains in progress",
+  "conditions": {
+    "gpu": "Apple M4 Max",
+    "memory_gib": 64,
+    "mlx": "0.32.0",
+    "width": 512,
+    "height": 512,
+    "steps": 8,
+    "seed": 42,
+    "execution": "gpu",
+    "residency": "resident",
+    "precision": "bf16",
+    "text": "dynamic, same prompt in all runs",
+    "weight_file": "z_image_turbo_bf16.safetensors"
+  },
+  "method": "Fresh-process ABBA; one cold request excluded, three timed warm requests per process, separate untimed quality request. Same binary fingerprint for all variants; no reduced steps, ANE or quantization.",
+  "samples": {
+    "baseline": [
+      23.49105475,
+      23.685924875,
+      23.41097225,
+      23.787149083,
+      23.695925584,
+      23.851045708
+    ],
+    "fused": [
+      16.393016834,
+      16.501999667,
+      16.561973125,
+      16.363017458,
+      16.617007334,
+      16.389922583
+    ]
+  },
+  "library_sha256": "fec1fcba0be41943ba3802a8b6b51b187963ddaf8ada8737e128f8764298f72b",
+  "diffusion_speedup": 1.4403960082391085,
+  "baseline_median_denoise_seconds": 23.690925229500003,
+  "fused_median_denoise_seconds": 16.4475082505,
+  "parity": {
+    "pairs": 2,
+    "steps_compared": 8,
+    "initial_latent_equal": true,
+    "all_step_latents_equal": true,
+    "final_latent_equal": true,
+    "decoded_tensor_equal": true,
+    "png_pixels_equal": true,
+    "max_abs": 0
+  },
+  "kernels": [
+    "packed QKV + head RMSNorm + RoPE + SDPA layout",
+    "RMSNorm + AdaLN scale",
+    "RMSNorm + tanh gate + residual"
+  ],
+  "raw_run_directory_basename": "z-image-fused-512-8-v2-20260922",
+  "next_candidate": "Precompute channel-only tanh once, rather than repeat across tokens; benchmarking separately.",
+  "limitations": [
+    "Single prompt and seed for full diffusion parity so far",
+    "This is not yet an exhaustive 512x512 tuning result",
+    "Current absolute runtime is slower than historical reports; old 2026-09-09 binary also measures slowly today",
+    "1024 work stopped when user specified 512x512/8 steps as priority"
+  ]
+}

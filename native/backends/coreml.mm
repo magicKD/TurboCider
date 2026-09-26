@@ -5,6 +5,7 @@
 #import <CoreML/CoreML.h>
 #include <set>
 #include <algorithm>
+#include <cstring>
 namespace tc {
 class CoreMLBranch {
     MLModel *model_;
@@ -12,7 +13,8 @@ class CoreMLBranch {
     MLMultiArray *output_;
     MLPredictionOptions *options_;
     int rows_, hidden_;
-    bool flexible_;
+    bool flexible_, allow_flexible_backing_;
+    bool optimize_output_copy_ = false;
 
   public:
     double model_load_seconds = 0, interface_setup_seconds = 0;
@@ -21,16 +23,113 @@ class CoreMLBranch {
     uint64_t calls = 0, copied_bytes = 0, warmup_calls = 0, runtime_calls = 0;
     uint64_t first_runtime_calls = 0, subsequent_runtime_calls = 0;
     CoreMLBranch(const std::filesystem::path &, int rows, int hidden,
-                 const Tensor &output_storage, MLMultiArray *output_backing, bool flexible = false);
+                 const Tensor &output_storage, MLMultiArray *output_backing,
+                 bool flexible = false, bool allow_flexible_backing = false);
     void bind(int rows, const Tensor &storage, MLMultiArray *output);
     Tensor predict(const Tensor &packed_input, int actual_rows, bool warmup = false);
 };
 struct HybridSession::Impl {
     std::vector<std::unique_ptr<CoreMLBranch>> branches;
     std::vector<int> buckets;
+    std::vector<int> minimum_profitable_rows;
     bool flexible = false;
+    bool allow_flexible_backing = false;
 };
 HybridSession::~HybridSession() = default;
+
+static std::vector<int> hybrid_minimum_profitable_rows(
+        NSDictionary *shape, const std::vector<int> &buckets) {
+    std::vector<int> minimums = buckets;
+    id policy_value = shape[@"minimum_profitable_rows"];
+    if (policy_value == nil)
+        return minimums;
+    require([policy_value isKindOfClass:NSDictionary.class],
+            "Core ML minimum-profitable-row policy must be an object");
+    NSDictionary *policy = policy_value;
+    require(policy.count <= buckets.size(),
+            "Core ML minimum-profitable-row policy has too many buckets");
+    for (id key in policy) {
+        require([key isKindOfClass:NSString.class],
+                "Core ML minimum-profitable-row bucket must be a string");
+        int matched = -1;
+        for (size_t index = 0; index < buckets.size(); ++index) {
+            NSString *expected = [NSString stringWithFormat:@"%d", buckets[index]];
+            if ([(NSString *)key isEqualToString:expected]) {
+                matched = int(index);
+                break;
+            }
+        }
+        require(matched >= 0,
+                "Core ML minimum-profitable-row policy names an unknown bucket");
+        id threshold = policy[key];
+        require([threshold isKindOfClass:NSNumber.class] &&
+                    [threshold doubleValue] == [threshold intValue] &&
+                    [threshold intValue] > 0 &&
+                    [threshold intValue] <= buckets[size_t(matched)],
+                "Core ML minimum-profitable-row threshold is invalid");
+        minimums[size_t(matched)] = [threshold intValue];
+    }
+    return minimums;
+}
+
+HybridBucketPlan hybrid_bucket_plan(const std::filesystem::path &file, int tokens) {
+    require(tokens > 0, "Core ML input row count must be positive");
+    auto d = read_json(file);
+    require([d[@"schema_version"] isKindOfClass:NSNumber.class] &&
+                [d[@"shape"] isKindOfClass:NSDictionary.class],
+            "invalid hybrid manifest shape");
+    require([d[@"schema_version"] intValue] == 2,
+            "hybrid requires manifest schema 2");
+    NSArray *buckets = d[@"shape"][@"buckets"];
+    const auto mode = string_value(d[@"shape"], @"input_mode", "fixed");
+    const bool flexible = mode == "enumerated" || mode == "range";
+    require(mode == "fixed" || flexible, "unknown Core ML input shape mode");
+    require([buckets isKindOfClass:NSArray.class] && buckets.count > 0 &&
+                buckets.count <= 128 && (flexible || buckets.count == 1),
+            "invalid Core ML input buckets");
+    std::vector<int> rows;
+    int previous = 0;
+    for (id bucket in buckets) {
+        require([bucket isKindOfClass:NSNumber.class] &&
+                    [bucket doubleValue] == [bucket intValue] &&
+                    [bucket intValue] > previous && [bucket intValue] <= 8192,
+                "Core ML buckets must be increasing positive integers up to 8192");
+        previous = [bucket intValue];
+        rows.push_back(previous);
+    }
+    const auto minimums = hybrid_minimum_profitable_rows(d[@"shape"], rows);
+    HybridBucketPlan plan;
+    plan.requested_rows = tokens;
+    plan.maximum_rows = rows.back();
+    plan.flexible = flexible;
+    const auto chosen = std::lower_bound(rows.begin(), rows.end(), tokens);
+    if (chosen != rows.end()) {
+        const auto index = size_t(chosen - rows.begin());
+        plan.selected_rows = *chosen;
+        plan.minimum_profitable_rows = minimums[index];
+        plan.supported = true;
+    }
+    return plan;
+}
+
+int z_image_image_only_manifest_rows(const std::filesystem::path &file) {
+    auto d = read_json(file);
+    NSDictionary *identity = d[@"export_identity"];
+    if (![identity isKindOfClass:NSDictionary.class] ||
+        identity[@"image_only_token_rows"] == nil)
+        return 0;
+    id marker = identity[@"image_only_token_rows"];
+    NSDictionary *shape = d[@"shape"];
+    require([marker isKindOfClass:NSNumber.class] &&
+                [marker doubleValue] == 1024 &&
+                [identity[@"activation_precision"] isEqual:@"int8"] &&
+                [shape isKindOfClass:NSDictionary.class] &&
+                [shape[@"buckets"] isEqual:@[@1024]] &&
+                (shape[@"input_mode"] == nil ||
+                 [shape[@"input_mode"] isEqual:@"fixed"]),
+            "invalid marked Z-Image W8A8 image-only manifest");
+    return 1024;
+}
 
 struct CoreMLPartitions::Impl {
     std::vector<std::unique_ptr<CoreMLBranch>> branches;
@@ -84,8 +183,11 @@ uint64_t CoreMLPartitions::copied_bytes() const {
 }
 
 CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidden,
-                           const Tensor &output_storage, MLMultiArray *output_backing, bool flexible)
-    : output_storage_(output_storage), output_(output_backing), rows_(rows), hidden_(hidden), flexible_(flexible) {
+                           const Tensor &output_storage, MLMultiArray *output_backing,
+                           bool flexible, bool allow_flexible_backing)
+    : output_storage_(output_storage), output_(output_backing), rows_(rows), hidden_(hidden),
+      flexible_(flexible), allow_flexible_backing_(allow_flexible_backing) {
+    optimize_output_copy_ = device_info().optimizations().coreml_output_copy;
     auto setup_begin = Clock::now();
     require(path.extension() == ".mlmodelc" && std::filesystem::is_directory(path),
             "expected compiled Core ML artifact: " + path.string());
@@ -132,12 +234,20 @@ void CoreMLBranch::bind(int rows, const Tensor &storage, MLMultiArray *output) {
     auto outputConstraint = model_.modelDescription.outputDescriptionsByName[@"y"].multiArrayConstraint;
     require(compatible && (flexible_ || [outputConstraint.shape isEqual:shape]),
             "Core ML feature shape ABI mismatch for " + std::to_string(rows) + " rows");
-    require(output != nil, "Core ML shared output backing missing");
+    require(flexible_ || output != nil, "Core ML shared output backing missing");
     rows_ = rows;
     output_storage_ = storage;
-    output_ = output;
+    // Enumerated/range models can resolve a different concrete output shape at
+    // prediction time.  Core ML 9 on macOS 26 can accept a caller backing for
+    // such a model and then write past that backing, corrupting the process
+    // before an NSError or C++ fallback is possible. Keep zero-copy backing
+    // for fixed-shape artifacts. Flexible artifacts default to Core ML-owned
+    // output plus the stride-aware copy below and require explicit qualification
+    // to opt back into caller-owned backing.
+    output_ = (!flexible_ || allow_flexible_backing_) ? output : nil;
     options_ = [MLPredictionOptions new];
-    options_.outputBackings = @{@"y" : output_};
+    if (output_)
+        options_.outputBackings = @{@"y" : output_};
     interface_setup_seconds += std::chrono::duration<double>(Clock::now() - bind_begin).count();
 }
 Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
@@ -166,16 +276,35 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
                 [actual_output.shape isEqual:@[ @1, @(hidden_), @1, @(rows_) ]] &&
                 actual_output.dataType == MLMultiArrayDataTypeFloat16,
             "Core ML returned an unexpected output shape or dtype");
-    if (actual_output.dataPointer != output_.dataPointer) {
+    if (!output_ || actual_output.dataPointer != output_.dataPointer) {
         copied_bytes += uint64_t(rows_) * uint64_t(hidden_) * 2;
-        // Strides can differ when the framework declines the caller output backing.
-        for (int row = 0; row < rows_; ++row)
-            for (int c = 0; c < hidden_; ++c) {
-                size_t offset = row * [actual_output.strides[3] unsignedLongLongValue] +
-                                c * [actual_output.strides[1] unsignedLongLongValue];
-                ((uint16_t *)output_storage_.data<mx::float16_t>())[size_t(row) * hidden_ + c] =
-                    ((uint16_t *)actual_output.dataPointer)[offset];
+        if (!optimize_output_copy_) {
+            // Preserve the established implementation on unmeasured hardware.
+            for (int row = 0; row < rows_; ++row)
+                for (int c = 0; c < hidden_; ++c) {
+                    size_t offset = row * [actual_output.strides[3] unsignedLongLongValue] +
+                                    c * [actual_output.strides[1] unsignedLongLongValue];
+                    ((uint16_t *)output_storage_.data<mx::float16_t>())[size_t(row) * hidden_ + c] =
+                        ((uint16_t *)actual_output.dataPointer)[offset];
+                }
+        } else {
+            // Strides can differ when the framework declines the caller output backing.
+            // Resolve Objective-C properties once per prediction, not once per
+            // element. Flexible models normally take this owned-output path.
+            const auto *source = static_cast<const uint16_t *>(actual_output.dataPointer);
+            auto *destination = reinterpret_cast<uint16_t *>(output_storage_.data<mx::float16_t>());
+            const size_t row_stride = [actual_output.strides[3] unsignedLongLongValue];
+            const size_t channel_stride = [actual_output.strides[1] unsignedLongLongValue];
+            for (int row = 0; row < rows_; ++row) {
+                auto *target_row = destination + size_t(row) * hidden_;
+                const auto *source_row = source + size_t(row) * row_stride;
+                if (channel_stride == 1)
+                    std::memcpy(target_row, source_row, size_t(hidden_) * sizeof(uint16_t));
+                else
+                    for (int c = 0; c < hidden_; ++c)
+                        target_row[c] = source_row[size_t(c) * channel_stride];
             }
+        }
     }
     // The model coordinator and per-block eval guarantee that the prior
     // consumer has completed before this branch writes its next output. Core ML
@@ -201,10 +330,23 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
 HybridSession::HybridSession(const std::filesystem::path &file, const std::filesystem::path &model,
                              int tokens, const Event &event, std::atomic<bool> &cancelled,
                              int warmups, const std::filesystem::path &requested_checkpoint,
-                             const std::vector<LoRAAsset> &requested_loras, int policy_rows)
+                             const std::vector<LoRAAsset> &requested_loras, int policy_rows,
+                             int required_blocks, bool qualified_flexible_backing)
     : impl_(std::make_unique<Impl>()), manifest(file.string()) {
     auto begin = Clock::now();
     auto d = read_json(file);
+    if ([d[@"export_identity"] isKindOfClass:NSDictionary.class]) {
+        export_variant = string_value(d[@"export_identity"], @"variant");
+        tensor_layout = string_value(d[@"export_identity"], @"tensor_layout");
+        activation_precision = string_value(d[@"export_identity"], @"activation_precision", "fp16");
+        if (id image_rows = d[@"export_identity"][@"image_only_token_rows"]) {
+            require([image_rows isKindOfClass:NSNumber.class] &&
+                        [image_rows doubleValue] == 1024 &&
+                        activation_precision == "int8",
+                    "invalid image-only Z-Image W8A8 manifest");
+            image_only_token_rows = 1024;
+        }
+    }
     require([d[@"schema_version"] isKindOfClass:NSNumber.class] &&
                 [d[@"shape"] isKindOfClass:NSDictionary.class] &&
                 [d[@"source"] isKindOfClass:NSDictionary.class] &&
@@ -215,12 +357,18 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                 [d[@"source"][@"checkpoint_bytes"] isKindOfClass:NSNumber.class],
             "invalid hybrid manifest numbers");
     require([d[@"schema_version"] intValue] == 2, "hybrid requires manifest schema 2");
+    require(activation_precision.empty() || activation_precision == "fp16" ||
+                activation_precision == "int8", "invalid hybrid activation precision");
     hidden = [d[@"shape"][@"K"] intValue];
     require(hidden > 0 && hidden <= 8192 && [d[@"shape"][@"N"] intValue] == hidden,
             "hybrid hidden dimension mismatch");
     NSArray *buckets = d[@"shape"][@"buckets"];
     const auto mode = string_value(d[@"shape"], @"input_mode", "fixed");
     impl_->flexible = mode == "enumerated" || mode == "range";
+    // Only explicitly qualified callers may use a caller-owned backing with
+    // flexible shapes. Generic sessions, including unqualified H3 encoder
+    // artifacts, keep the conservative Core ML-owned output path.
+    impl_->allow_flexible_backing = impl_->flexible && qualified_flexible_backing;
     require(mode == "fixed" || impl_->flexible, "unknown Core ML input shape mode");
     require([buckets isKindOfClass:NSArray.class] && buckets.count > 0 && buckets.count <= 128 &&
                 (impl_->flexible || buckets.count == 1), "invalid Core ML input buckets");
@@ -232,6 +380,12 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
         previous = [bucket intValue];
         impl_->buckets.push_back(previous);
     }
+    if (image_only_token_rows)
+        require(!impl_->flexible && impl_->buckets.size() == 1 &&
+                    impl_->buckets[0] == image_only_token_rows,
+                "image-only Z-Image W8A8 requires a fixed 1024-row artifact");
+    impl_->minimum_profitable_rows =
+        hybrid_minimum_profitable_rows(d[@"shape"], impl_->buckets);
     set_tokens(tokens);
     require(!policy_rows || rows == policy_rows, "Core ML bucket has no matching measured policy");
     id manifest_mlp_width = d[@"shape"][@"mlp_width"];
@@ -357,9 +511,57 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     }
     lora_identity_verified = !requested_loras.empty();
     // Existing local manifests lack a full source SHA; explicitly research-only.
-    block_count = int([d[@"artifacts"] count]);
-    require(block_count > 0 && block_count <= 64,
+    const int manifest_blocks = int([d[@"artifacts"] count]);
+    require(manifest_blocks > 0 && manifest_blocks <= 64,
             "hybrid manifest has an invalid block count");
+    require(required_blocks >= 0 && required_blocks <= manifest_blocks,
+            "hybrid manifest has too few required blocks");
+    block_count = required_blocks ? required_blocks : manifest_blocks;
+    if (id routing = d[@"export_identity"][@"channel_routing"]) {
+        require([routing isKindOfClass:NSDictionary.class] &&
+                    [routing[@"group_width"] isKindOfClass:NSNumber.class] &&
+                    [routing[@"ane_group_indexes"] isKindOfClass:NSDictionary.class] &&
+                    block_count == 32 && mlp_width == 10240 && ane_mlp_start == 0,
+                "invalid Z-Image channel routing manifest");
+        const int group = [routing[@"group_width"] intValue];
+        require(group >= 32 && group % 32 == 0 &&
+                    [routing[@"group_width"] doubleValue] == double(group) &&
+                    mlp_width % group == 0 && ane_mlp_end % group == 0,
+                "invalid Z-Image channel routing group width");
+        NSDictionary *groups = routing[@"ane_group_indexes"];
+        require(groups.count == NSUInteger(block_count),
+                "Z-Image channel routing requires all 32 blocks");
+        for (int block = 0; block < block_count; ++block) {
+            NSString *key = [NSString stringWithFormat:@"%d", block];
+            NSArray *selected = groups[key];
+            require([selected isKindOfClass:NSArray.class] &&
+                        selected.count == NSUInteger(ane_mlp_end / group),
+                    "invalid Z-Image ANE channel selection");
+            std::vector<bool> ane_groups(size_t(mlp_width / group), false);
+            int previous = -1;
+            for (id entry in selected) {
+                require([entry isKindOfClass:NSNumber.class] &&
+                            CFGetTypeID((__bridge CFTypeRef)entry) != CFBooleanGetTypeID() &&
+                            [entry doubleValue] == double([entry intValue]),
+                        "invalid Z-Image ANE channel index");
+                const int index = [entry intValue];
+                require(index > previous && index < mlp_width / group,
+                        "Z-Image ANE channel indexes must be ordered and unique");
+                ane_groups[size_t(index)] = true;
+                previous = index;
+            }
+            std::vector<int> gpu;
+            gpu.reserve(size_t(mlp_width - ane_mlp_end));
+            for (int index = 0; index < mlp_width / group; ++index)
+                if (!ane_groups[size_t(index)])
+                    for (int offset = 0; offset < group; ++offset)
+                        gpu.push_back(index * group + offset);
+            require(gpu.size() == size_t(mlp_width - ane_mlp_end),
+                    "Z-Image GPU complement does not cover the hidden channels");
+            gpu_channel_indices.push_back(std::move(gpu));
+        }
+        has_channel_route = true;
+    }
     manifest_validation_seconds =
         std::chrono::duration<double>(Clock::now() - begin).count();
     // Blocks execute serially and z_block materializes the prior consumer
@@ -395,7 +597,8 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                     std::filesystem::weakly_canonical(file.parent_path()).string() + "/"),
                 "artifact path escapes manifest directory");
         impl_->branches.push_back(
-            std::make_unique<CoreMLBranch>(path, rows, hidden, output_storage, output, impl_->flexible));
+            std::make_unique<CoreMLBranch>(path, rows, hidden, output_storage, output,
+                                           impl_->flexible, impl_->allow_flexible_backing));
     }
     if (warmups) {
         auto warmup_begin = Clock::now();
@@ -421,6 +624,8 @@ void HybridSession::set_tokens(int tokens) {
             "Core ML token capacity exceeded: request needs " + std::to_string(tokens) +
             " rows, artifact supports at most " + std::to_string(impl_->buckets.back()) +
             ". Select a larger/flexible artifact or use GPU.");
+    const auto selected_index = size_t(chosen - impl_->buckets.begin());
+    minimum_profitable_rows = impl_->minimum_profitable_rows[selected_index];
     if (rows == *chosen) return;
     const int selected = *chosen;
     if (!impl_->branches.empty()) {
@@ -437,11 +642,52 @@ void HybridSession::set_tokens(int tokens) {
     rows = selected;
 }
 Tensor HybridSession::predict(int block, const Tensor &input) {
+    require(runtime_available(), "Core ML runtime failure is latched; use GPU fallback");
     try { return impl_->branches.at(block)->predict(input, input.shape(1)); }
     catch (const std::exception &error) {
+        record_runtime_failure(block);
         throw std::runtime_error("Core ML block " + std::to_string(block) +
             " (" + std::to_string(rows) + " rows): " + error.what());
     }
+}
+void HybridSession::record_runtime_failure(int block) {
+    require(block >= 0 && block < block_count,
+            "invalid Core ML runtime failure block");
+    ++runtime_failures;
+    runtime_failed = true;
+    if (runtime_failure_block < 0)
+        runtime_failure_block = block;
+}
+void HybridSession::record_quality(double relative_l2, double cosine, double max_abs,
+                                   double relative_max_abs, bool passed) {
+    require(std::isfinite(relative_l2) && std::isfinite(cosine) &&
+                std::isfinite(max_abs) && std::isfinite(relative_max_abs) &&
+                relative_l2 >= 0 && cosine >= -1 && cosine <= 1 &&
+                max_abs >= 0 && relative_max_abs >= 0,
+            "invalid hybrid quality metrics");
+    ++quality_validation_calls;
+    quality_max_relative_l2 = std::max(quality_max_relative_l2, relative_l2);
+    quality_min_cosine = std::min(quality_min_cosine, cosine);
+    quality_max_abs = std::max(quality_max_abs, max_abs);
+    quality_max_relative_abs = std::max(quality_max_relative_abs, relative_max_abs);
+    quality_validation_passed = quality_validation_passed && passed;
+}
+void HybridSession::record_prefill_plan(int actual_tokens, int selected_bucket,
+                                        int compute_tokens, int padding_tokens,
+                                        bool fixed_shape,
+                                        const std::string &reason) {
+    require(actual_tokens > 0 && selected_bucket >= 0 &&
+                (selected_bucket == 0 || selected_bucket >= actual_tokens) &&
+                compute_tokens >= actual_tokens &&
+                padding_tokens == compute_tokens - actual_tokens &&
+                !reason.empty(),
+            "invalid Qwen3 prefill plan telemetry");
+    prefill_actual_tokens = actual_tokens;
+    prefill_selected_bucket = selected_bucket;
+    prefill_compute_tokens = compute_tokens;
+    prefill_padding_tokens = padding_tokens;
+    prefill_fixed_shape = fixed_shape;
+    prefill_plan_reason = reason;
 }
 HybridMetrics HybridSession::metrics() const {
     HybridMetrics metrics;
@@ -450,14 +696,31 @@ HybridMetrics HybridSession::metrics() const {
     metrics.output_backing_setup_seconds = output_backing_setup_seconds;
     metrics.zero_input_warmup_seconds = zero_input_warmup_seconds;
     metrics.bucket = rows;
+    metrics.minimum_profitable_rows = minimum_profitable_rows;
     metrics.hidden = hidden;
     metrics.block_count = block_count;
     metrics.mlp_width = mlp_width;
     metrics.ane_mlp_start = ane_mlp_start;
     metrics.ane_mlp_end = ane_mlp_end;
     metrics.output_scale = output_scale;
+    metrics.qualified_flexible_backing = impl_->allow_flexible_backing;
+    metrics.runtime_failures = runtime_failures;
+    metrics.runtime_failed = runtime_failed;
+    metrics.runtime_failure_block = runtime_failure_block;
     metrics.checkpoint_sha_verified = checkpoint_sha_verified;
     metrics.lora_identity_verified = lora_identity_verified;
+    metrics.quality_validation_calls = quality_validation_calls;
+    metrics.quality_max_relative_l2 = quality_max_relative_l2;
+    metrics.quality_min_cosine = quality_min_cosine;
+    metrics.quality_max_abs = quality_max_abs;
+    metrics.quality_max_relative_abs = quality_max_relative_abs;
+    metrics.quality_validation_passed = quality_validation_passed;
+    metrics.prefill_actual_tokens = prefill_actual_tokens;
+    metrics.prefill_selected_bucket = prefill_selected_bucket;
+    metrics.prefill_compute_tokens = prefill_compute_tokens;
+    metrics.prefill_padding_tokens = prefill_padding_tokens;
+    metrics.prefill_fixed_shape = prefill_fixed_shape;
+    metrics.prefill_plan_reason = prefill_plan_reason;
     for (auto &branch : impl_->branches) {
         metrics.model_load_seconds += branch->model_load_seconds;
         metrics.model_interface_setup_seconds += branch->interface_setup_seconds;

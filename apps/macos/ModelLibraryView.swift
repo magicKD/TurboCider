@@ -173,10 +173,13 @@ struct ModelLibraryView: View {
                                     Text(installation.name).font(.callout.weight(.medium)); Spacer()
                                     Text(installation.managed ? "托管下载" : "外部目录").font(.caption2).foregroundStyle(.secondary)
                                 }
+                                if item.id == "z-image-turbo", let variant = ZImageInstallation.variant(URL(fileURLWithPath: installation.path)) {
+                                    Text(variant.title).font(.caption.weight(.medium))
+                                }
                                 Text(installation.path).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
                                 HStack {
-                                    Button("使用此安装") { studio.draft.modelPaths[item.id] = installation.path; studio.selectModel(item.id) }
-                                        .disabled(store.busy || library.busy || studio.draft.modelPaths[item.id] == installation.path)
+                                    Button("使用此安装") { studio.selectInstallation(modelID: item.id, path: installation.path) }
+                                        .disabled(store.busy || store.resolvingAcceleration || studio.importing || library.busy || studio.draft.modelPaths[item.id] == installation.path)
                                     Button("移除登记") { library.remove(installation, studio: studio) }.disabled(store.busy || library.busy)
                                         .help("仅移除登记，保留模型文件。")
                                 }

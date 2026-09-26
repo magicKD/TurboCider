@@ -6,6 +6,8 @@
 
 #include <unordered_map>
 
+namespace tc { class HybridSession; }
+
 namespace tc::h3_mlx {
 
 struct ConditionerConfig {
@@ -34,6 +36,8 @@ class ShardIndex {
     ShardIndex &operator=(const ShardIndex &) = delete;
     Tensor tensor(const std::string &) const;
     Tensor rows(const std::string &, const std::vector<int> &) const;
+    Tensor slice(const std::string &, int row_start, int row_end,
+                 int column_start, int column_end) const;
     bool has(const std::string &) const;
 };
 
@@ -52,14 +56,27 @@ class Conditioner {
     Tokenizer tokenizer_;
     std::filesystem::path component_root_;
     std::filesystem::path tokenizer_root_;
+    std::filesystem::path hybrid_manifest_;
+    int hybrid_warmup_iterations_ = 0;
+    mutable std::unique_ptr<HybridSession> hybrid_;
 
     Tensor layer(int, const Tensor &, const Tensor &, const Tensor &,
                  ConditionerDebugTensors *) const;
 
   public:
     Conditioner(const std::filesystem::path &component_root,
-                const std::filesystem::path &tokenizer_root);
+                const std::filesystem::path &tokenizer_root,
+                const std::filesystem::path &hybrid_manifest = {},
+                int hybrid_warmup_iterations = 0);
+    ~Conditioner();
     const ConditionerConfig &config() const { return config_; }
+    const std::filesystem::path &hybrid_manifest() const {
+        return hybrid_manifest_;
+    }
+    int hybrid_warmup_iterations() const {
+        return hybrid_warmup_iterations_;
+    }
+    HybridSession *hybrid_session() const { return hybrid_.get(); }
     ConditioningResult encode_prompt(const std::string &, const Event &,
                                       std::atomic<bool> &,
                                       std::vector<Tensor> *debug_layers = nullptr,

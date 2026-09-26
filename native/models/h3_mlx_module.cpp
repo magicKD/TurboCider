@@ -105,6 +105,7 @@ ModelDescriptor descriptor(bool vsa) {
     d.fps = 24;
     d.default_audio = true;
     d.default_residency = "component_staged";
+    d.supports_encoder_gpu_ane = true;
     d.backend = "mlx_cpp_metal";
     d.runtime_dependency = "ModelScope FastH3 student + MLX C++";
     d.parallel_strategy = vsa
@@ -119,10 +120,12 @@ ModelDescriptor descriptor(bool vsa) {
         ? std::vector<std::string>{
               "T2VA only; requires ModelScope VSA gate checkpoint",
               "reference gather+SDPA is implemented; SIMD kernel qualification remains pending",
+              "Qwen3-VL encoder GPU+ANE requires an explicit manifest and remains performance-state-sensitive",
               "FastVideo ABBA and perceptual quality gates remain required",
               "dense and old C/Metal profiles remain unchanged"}
         : std::vector<std::string>{
               "T2VA only; FL2VA/Ref2VA/keyframes/LoRA/VSA require another profile",
+              "Qwen3-VL encoder GPU+ANE requires an explicit manifest and remains performance-state-sensitive",
               "FastVideo ABBA performance and final perceptual quality gates remain required",
               "old minimax-h3-turbo C/Metal module remains the compatibility default"};
     return d;
@@ -178,6 +181,7 @@ ModelDescriptor vdn_descriptor() {
     d.fps = 24;
     d.default_audio = true;
     d.default_residency = "component_staged";
+    d.supports_encoder_gpu_ane = true;
     d.backend = "mlx_cpp_metal";
     d.runtime_dependency =
         "pinned FL2VA base + ModelScope OpenVDN stage-DMD branch/adapter + MLX C++";
@@ -191,6 +195,7 @@ ModelDescriptor vdn_descriptor() {
     d.candidate_limitations = {
         "T2VA only; stage-DMD step 250 and larryvrh_v4_step600_ema are identity-bound",
         "native VDN checkpoint/attention integration is enabled; matched vpipe qualification remains pending",
+        "Qwen3-VL encoder GPU+ANE requires an explicit manifest and remains performance-state-sensitive",
         "ANE remains disabled until full-denoise ABBA reaches 1.20x with quality gates",
         "legacy H3 and both FastH3 profiles remain unchanged"};
     return d;

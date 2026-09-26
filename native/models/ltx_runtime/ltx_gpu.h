@@ -33,12 +33,18 @@ ltx_gpu_buffer *ltx_gpu_buffer_new(ltx_gpu *gpu, size_t bytes,
 ltx_gpu_buffer *ltx_gpu_buffer_new_copy(ltx_gpu *gpu, const void *data,
                                         size_t bytes,
                                         char *error, size_t error_size);
+/* Retain a shared Metal buffer for a second owner. */
+ltx_gpu_buffer *ltx_gpu_buffer_retain(ltx_gpu_buffer *buffer);
 void ltx_gpu_buffer_free(ltx_gpu_buffer *buffer);
 size_t ltx_gpu_buffer_bytes(const ltx_gpu_buffer *buffer);
 void *ltx_gpu_buffer_contents(ltx_gpu_buffer *buffer);
 int ltx_gpu_buffer_write(ltx_gpu_buffer *buffer, const void *data,
                          size_t bytes, char *error, size_t error_size);
 int ltx_gpu_buffer_read(const ltx_gpu_buffer *buffer, void *data,
+                        size_t bytes, char *error, size_t error_size);
+int ltx_gpu_buffer_copy(ltx_gpu *gpu, ltx_gpu_buffer *output,
+                        size_t output_offset,
+                        const ltx_gpu_buffer *input, size_t input_offset,
                         size_t bytes, char *error, size_t error_size);
 
 int ltx_gpu_add_f32(ltx_gpu *gpu, ltx_gpu_buffer *output,
@@ -220,6 +226,18 @@ int ltx_gpu_rms_norm_weighted_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
                                    uint32_t rows, uint32_t columns,
                                    float epsilon,
                                    char *error, size_t error_size);
+/* Normalize one Gemma hidden-state tap and scatter it directly into the two
+ * device-resident [rows, hidden * tap_count] projection inputs. */
+int ltx_gpu_gemma_projection_tap_bf16(
+                                   ltx_gpu *gpu,
+                                   ltx_gpu_buffer *video_output,
+                                   ltx_gpu_buffer *audio_output,
+                                   const ltx_gpu_buffer *input,
+                                   uint32_t rows, uint32_t hidden,
+                                   uint32_t tap, uint32_t tap_count,
+                                   float video_multiplier,
+                                   float audio_multiplier,
+                                   char *error, size_t error_size);
 int ltx_gpu_adaln_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
                        const ltx_gpu_buffer *input,
                        const ltx_gpu_buffer *scale,
@@ -358,6 +376,46 @@ int ltx_gpu_self_attention_core_mps_bf16(
                           uint32_t rows, uint32_t heads,
                           uint32_t head_dim, float scale,
                           char *error, size_t error_size);
+/* Experimental block patterns. Existing Sol API always uses mode 0.
+ * mode: 0=Sol, 1=structured drop, 2=structured pooled, 3=CiderSol,
+ * 4=pooled-QK top-k blocks plus exact safety region, remote blocks dropped;
+ * 5=pooled-QK top-k exact blocks plus pooled remote correction.
+ * When tokens_per_frame > 0, radius is in latent frames and the route
+ * includes the union of query/key frames intersected by each 64-token tile.
+ * Otherwise radius is in contiguous 64-token blocks (not a 3D window).
+ * anchor_stride is in blocks; zero disables anchors. */
+typedef struct {
+    uint32_t mode;
+    uint32_t radius;
+    uint32_t anchor_stride;
+    uint32_t tokens_per_frame;
+    uint32_t keep_blocks; /* Modes 4/5; 1...256, clamped to block count. */
+} ltx_sparse_pattern;
+/* Route scratch is uint32 [head][query_block][ceil(key_blocks/32)], LSB first.
+ * Tail bits are zero. Reserve extra words for the preceding Sol key statistics.
+ * Scratch consumers must rebuild with this layout; function signatures and
+ * request options are unchanged. The supported attention head dimension is 128. */
+static inline uint64_t ltx_sparse_route_scratch_words(uint32_t rows, uint32_t heads) {
+    if (!rows || rows > 16384u || !heads) return 0;
+    uint64_t blocks = (rows + 63u) / 64u;
+    uint64_t packed = (uint64_t)heads * blocks * ((blocks + 31u) / 32u);
+    uint64_t statistics = (uint64_t)heads * 128u * 2u;
+    return packed > statistics ? packed : statistics;
+}
+int ltx_gpu_self_attention_core_sparse_bf16(
+    ltx_gpu *gpu, ltx_gpu_buffer *output,
+    const ltx_gpu_buffer *query, const ltx_gpu_buffer *key,
+    const ltx_gpu_buffer *value, const ltx_gpu_buffer *cosine,
+    const ltx_gpu_buffer *sine, const ltx_gpu_buffer *gate,
+    ltx_gpu_buffer *packed_query, ltx_gpu_buffer *packed_key,
+    ltx_gpu_buffer *packed_value, ltx_gpu_buffer *packed_output,
+    ltx_gpu_buffer *query_centroids, ltx_gpu_buffer *key_centroids,
+    ltx_gpu_buffer *value_sums, ltx_gpu_buffer *thresholds,
+    ltx_gpu_buffer *routes, uint32_t rows, uint32_t heads,
+    uint32_t head_dim, float scale, float tau,
+    uint32_t sink_start, uint32_t sink_end,
+    uint32_t sink_query_start, uint32_t sink_query_end,
+    const ltx_sparse_pattern *pattern, char *error, size_t error_size);
 int ltx_gpu_self_attention_core_sol_bf16(
                           ltx_gpu *gpu, ltx_gpu_buffer *output,
                           const ltx_gpu_buffer *query,
@@ -553,6 +611,19 @@ int ltx_gpu_mlp_int8_convrot_mps_bf16(
                         const ltx_gpu_buffer *fc2_weight,
                         const ltx_gpu_buffer *fc2_scale,
                         const ltx_gpu_buffer *fc2_bias,
+                        uint32_t rows, uint32_t input_dim,
+                        uint32_t hidden_dim, uint32_t output_dim,
+                        uint32_t convrot_group_size,
+                        char *error, size_t error_size);
+int ltx_gpu_gated_mlp_int8_convrot_mps_bf16(
+                        ltx_gpu *gpu, ltx_gpu_buffer *output,
+                        const ltx_gpu_buffer *input,
+                        const ltx_gpu_buffer *gate_weight,
+                        const ltx_gpu_buffer *gate_scale,
+                        const ltx_gpu_buffer *up_weight,
+                        const ltx_gpu_buffer *up_scale,
+                        const ltx_gpu_buffer *down_weight,
+                        const ltx_gpu_buffer *down_scale,
                         uint32_t rows, uint32_t input_dim,
                         uint32_t hidden_dim, uint32_t output_dim,
                         uint32_t convrot_group_size,

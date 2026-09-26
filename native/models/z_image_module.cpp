@@ -1,5 +1,6 @@
 #include "../runtime/session.hpp"
 #include "z_image/z_image.hpp"
+#include "../platform/apple/platform.hpp"
 
 namespace tc {
 
@@ -33,8 +34,18 @@ ModelModule z_image_module() {
                     require(r.lora_strategy == "in_memory_merge",
                             "Z-Image GPU+ANE LoRA requires lora_strategy=in_memory_merge");
             }
-            require(r.residency == "resident",
-                    "Z-Image component-staged residency is not implemented");
+            require(r.residency == "resident" || r.residency == "streamed",
+                    "Z-Image supports resident or streamed residency");
+            require(!r.streaming_offload, "use residency=streamed for native Z-Image streaming");
+            if (r.residency == "streamed") {
+                require(r.execution == "gpu" || r.execution == "gpu_ane",
+                        "Z-Image streaming requires explicit GPU or GPU+ANE execution");
+                require(r.execution != "gpu_ane" || device_info().optimizations().z_image_suffix_streaming,
+                        "Z-Image GPU+ANE streaming is only enabled for the measured M5 Pro 24 GiB device profile");
+                require(r.loras.empty(), "Z-Image streaming with LoRA is not yet supported");
+                require(r.memory_budget_bytes == 0 || r.memory_budget_bytes >= (6ull << 30),
+                        "Z-Image streaming budget must be at least 6 GiB");
+            }
             require(r.loras.size() <= 8, "at most eight Z-Image LoRA adapters may be active");
             for (const auto &lora : r.loras) {
                 require(lora.role == "transformer",
@@ -66,11 +77,13 @@ ModelModule z_image_module() {
             d.lora_strategies = {"in_memory_merge", "inference_time"};
             d.default_lora_strategy = "in_memory_merge";
             d.supports_gpu_ane = true;
+            d.supports_encoder_gpu_ane = true;
             d.backend = "mlx_cpp_metal";
             d.runtime_dependency = "bundled-native-mlx-cpp";
             d.parallel_strategy = "GPU computes attention first, then the compiled MLP suffix overlaps the Core ML ANE gated-MLP prefix; base 4096-channel M4 Max route is automatic";
             d.candidate_limitations = {
                 "text-to-image only",
+                "streamed residency is experimental: Comfy BF16, explicit GPU, no LoRA; INT8 ConvRot streaming, multi-layer prefetch and GPU+ANE compact suffix streaming require Apple M5 Pro with exactly 24 GiB",
                 "inference_time LoRA is an explicit GPU path and is not yet performance-qualified",
                 "automatic GPU+ANE is limited to the base model on Apple M4 Max 64 GB with the measured 4096-channel 32-block manifest",
                 "the repeated warm 1024x1024 base workload measured about 1.21x end-to-end versus the optimized GPU path",

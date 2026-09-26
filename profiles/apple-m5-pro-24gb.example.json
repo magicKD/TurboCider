@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "enabled": false,
+  "match": {
+    "gpu_name": "Apple M5 Pro",
+    "memory_bytes": 25769803776
+  },
+  "models": {
+    "flux2-klein-4b": {
+      "policy": "auto",
+      "allow_approximation": true,
+      "ane_manifest": "../artifacts/flux2-m5pro-24gb/a6144-b1088/compiled/REPLACE_WITH_RETURNED_MANIFEST.json",
+      "residency": "resident",
+      "allocator_cache_bytes": 536870912,
+      "memory_budget_bytes": 19327352832,
+      "warmup_iterations": 0,
+      "coreml_export": {
+        "bucket": 1088,
+        "ane_mlp_width": 6144,
+        "variant": "int8_pc",
+        "output_dir": "../artifacts/flux2-m5pro-24gb/a6144-b1088/source",
+        "cache_dir": "../artifacts/flux2-m5pro-24gb/a6144-b1088/compiled"
+      }
+    },
+    "z-image-turbo": {
+      "policy": "gpu",
+      "allow_approximation": false,
+      "residency": "resident",
+      "allocator_cache_bytes": 536870912
+    }
+  }
+}

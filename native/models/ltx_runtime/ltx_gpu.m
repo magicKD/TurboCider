@@ -43,6 +43,7 @@ typedef enum {
     LTX_PIPELINE_RMS_NORM_WEIGHTED_F32,
     LTX_PIPELINE_RMS_NORM_BF16,
     LTX_PIPELINE_RMS_NORM_WEIGHTED_BF16,
+    LTX_PIPELINE_GEMMA_PROJECTION_TAP_BF16,
     LTX_PIPELINE_ADALN_BF16,
     LTX_PIPELINE_ADALN_BF16_F16,
     LTX_PIPELINE_OUTPUT_ADALN_BF16,
@@ -108,6 +109,15 @@ typedef struct {
     float eta;
     float s_noise;
 } ltx_diffusion_args;
+
+typedef struct {
+    uint32_t rows;
+    uint32_t hidden;
+    uint32_t tap;
+    uint32_t tap_count;
+    float video_multiplier;
+    float audio_multiplier;
+} ltx_gemma_projection_tap_args;
 
 typedef struct {
     uint32_t rows;
@@ -192,6 +202,27 @@ typedef struct {
 @end
 
 @implementation LTXInt8MLPGraph
+@end
+
+@interface LTXInt8GatedMLPGraph : NSObject
+@property(nonatomic, strong) MPSGraph *graph;
+@property(nonatomic, strong) MPSGraphTensor *input;
+@property(nonatomic, strong) MPSGraphTensor *gate_weight;
+@property(nonatomic, strong) MPSGraphTensor *gate_scale;
+@property(nonatomic, strong) MPSGraphTensor *up_weight;
+@property(nonatomic, strong) MPSGraphTensor *up_scale;
+@property(nonatomic, strong) MPSGraphTensor *down_weight;
+@property(nonatomic, strong) MPSGraphTensor *down_scale;
+@property(nonatomic, strong) MPSGraphTensor *output;
+@property(nonatomic, strong) NSArray<NSNumber *> *input_shape;
+@property(nonatomic, strong) NSArray<NSNumber *> *input_weight_shape;
+@property(nonatomic, strong) NSArray<NSNumber *> *input_scale_shape;
+@property(nonatomic, strong) NSArray<NSNumber *> *down_weight_shape;
+@property(nonatomic, strong) NSArray<NSNumber *> *down_scale_shape;
+@property(nonatomic, strong) NSArray<NSNumber *> *output_shape;
+@end
+
+@implementation LTXInt8GatedMLPGraph
 @end
 
 @interface LTXInt8QKVGraph : NSObject
@@ -448,6 +479,7 @@ static const char *const ltx_pipeline_names[LTX_PIPELINE_COUNT] = {
     "ltx_rms_norm_weighted_f32",
     "ltx_rms_norm_bf16",
     "ltx_rms_norm_weighted_bf16",
+    "ltx_gemma_projection_tap_bf16",
     "ltx_adaln_bf16",
     "ltx_adaln_bf16_f16",
     "ltx_output_adaln_bf16",
@@ -497,6 +529,7 @@ struct ltx_gpu {
 struct ltx_gpu_buffer {
     void *buffer;
     size_t bytes;
+    uint32_t references;
 };
 
 static int ltx_gpu_fail(char *error, size_t error_size,
@@ -993,6 +1026,7 @@ ltx_gpu_buffer *ltx_gpu_buffer_new(ltx_gpu *gpu, size_t bytes,
         }
         result->buffer = (__bridge_retained void *)buffer;
         result->bytes = bytes;
+        result->references = 1u;
     }
     return result;
 }
@@ -1014,8 +1048,19 @@ ltx_gpu_buffer *ltx_gpu_buffer_new_copy(ltx_gpu *gpu, const void *data,
     return buffer;
 }
 
+ltx_gpu_buffer *ltx_gpu_buffer_retain(ltx_gpu_buffer *buffer) {
+    if (!buffer || !buffer->references || buffer->references == UINT32_MAX)
+        return NULL;
+    buffer->references++;
+    return buffer;
+}
+
 void ltx_gpu_buffer_free(ltx_gpu_buffer *buffer) {
     if (!buffer) return;
+    if (buffer->references > 1u) {
+        buffer->references--;
+        return;
+    }
     if (buffer->buffer) (void)CFBridgingRelease(buffer->buffer);
     free(buffer);
 }
@@ -1042,6 +1087,31 @@ int ltx_gpu_buffer_read(const ltx_gpu_buffer *buffer, void *data,
         return ltx_gpu_fail(error, error_size, "invalid Metal buffer read");
     memcpy(data, ltx_buffer(buffer).contents, bytes);
     return 1;
+}
+
+int ltx_gpu_buffer_copy(ltx_gpu *gpu, ltx_gpu_buffer *output,
+                        size_t output_offset,
+                        const ltx_gpu_buffer *input, size_t input_offset,
+                        size_t bytes, char *error, size_t error_size) {
+    if (!gpu || !output || !input || !bytes ||
+        output_offset > output->bytes || bytes > output->bytes - output_offset ||
+        input_offset > input->bytes || bytes > input->bytes - input_offset)
+        return ltx_gpu_fail(error, error_size, "invalid Metal buffer copy");
+    @autoreleasepool {
+        id<MTLCommandBuffer> command = [ltx_queue(gpu) commandBuffer];
+        id<MTLBlitCommandEncoder> encoder = [command blitCommandEncoder];
+        if (!command || !encoder)
+            return ltx_gpu_fail(error, error_size,
+                                "create Metal buffer-copy command failed");
+        [encoder copyFromBuffer:ltx_buffer(input)
+                   sourceOffset:input_offset
+                       toBuffer:ltx_buffer(output)
+              destinationOffset:output_offset
+                           size:bytes];
+        [encoder endEncoding];
+        return ltx_finish_command(gpu, command, "buffer copy", error,
+                                  error_size);
+    }
 }
 
 int ltx_gpu_add_f32(ltx_gpu *gpu, ltx_gpu_buffer *output,
@@ -2319,6 +2389,62 @@ int ltx_gpu_rms_norm_weighted_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
                                  error, error_size);
 }
 
+int ltx_gpu_gemma_projection_tap_bf16(
+                                   ltx_gpu *gpu,
+                                   ltx_gpu_buffer *video_output,
+                                   ltx_gpu_buffer *audio_output,
+                                   const ltx_gpu_buffer *input,
+                                   uint32_t rows, uint32_t hidden,
+                                   uint32_t tap, uint32_t tap_count,
+                                   float video_multiplier,
+                                   float audio_multiplier,
+                                   char *error, size_t error_size) {
+    uint64_t input_elements = (uint64_t)rows * hidden;
+    uint64_t output_elements = input_elements * tap_count;
+    uint64_t input_bytes = 0;
+    uint64_t output_bytes = 0;
+    if (!ltx_required_bytes(input_elements, sizeof(uint16_t), &input_bytes) ||
+        !ltx_required_bytes(output_elements, sizeof(uint16_t), &output_bytes) ||
+        !gpu || !rows || !hidden || !tap_count || tap >= tap_count ||
+        output_elements > UINT32_MAX ||
+        !isfinite(video_multiplier) || video_multiplier <= 0.0f ||
+        !isfinite(audio_multiplier) || audio_multiplier <= 0.0f ||
+        !ltx_buffer_fits(input, input_bytes) ||
+        !ltx_buffer_fits(video_output, output_bytes) ||
+        !ltx_buffer_fits(audio_output, output_bytes))
+        return ltx_gpu_fail(error, error_size,
+                            "invalid Gemma projection tap arguments");
+    @autoreleasepool {
+        id<MTLComputePipelineState> pipeline =
+            ltx_pipeline(gpu, LTX_PIPELINE_GEMMA_PROJECTION_TAP_BF16);
+        if (pipeline.maxTotalThreadsPerThreadgroup < 256u)
+            return ltx_gpu_fail(
+                error, error_size,
+                "Gemma projection tap requires a 256-thread threadgroup");
+        id<MTLCommandBuffer> command = [ltx_queue(gpu) commandBuffer];
+        id<MTLComputeCommandEncoder> encoder =
+            [command computeCommandEncoder];
+        if (!command || !encoder)
+            return ltx_gpu_fail(
+                error, error_size,
+                "create Gemma projection tap command failed");
+        ltx_gemma_projection_tap_args args = {
+            rows, hidden, tap, tap_count,
+            video_multiplier, audio_multiplier,
+        };
+        [encoder setComputePipelineState:pipeline];
+        [encoder setBuffer:ltx_buffer(video_output) offset:0 atIndex:0];
+        [encoder setBuffer:ltx_buffer(audio_output) offset:0 atIndex:1];
+        [encoder setBuffer:ltx_buffer(input) offset:0 atIndex:2];
+        [encoder setBytes:&args length:sizeof(args) atIndex:3];
+        [encoder dispatchThreadgroups:MTLSizeMake(rows, 1, 1)
+                 threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+        [encoder endEncoding];
+        return ltx_finish_command(
+            gpu, command, "Gemma projection tap", error, error_size);
+    }
+}
+
 int ltx_gpu_adaln_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
                        const ltx_gpu_buffer *input,
                        const ltx_gpu_buffer *scale,
@@ -2617,6 +2743,11 @@ typedef struct {
     uint32_t head_major_output;
     float scale_log2;
     float tau;
+    uint32_t mode;
+    uint32_t radius;
+    uint32_t anchor_stride;
+    uint32_t tokens_per_frame;
+    uint32_t keep_blocks;
 } ltx_sol_args;
 
 static int ltx_gpu_linear_impl(ltx_gpu *gpu, ltx_gpu_buffer *output,
@@ -3158,7 +3289,7 @@ int ltx_gpu_unpack_heads_gate_bf16(
     }
 }
 
-int ltx_gpu_self_attention_core_sol_bf16(
+int ltx_gpu_self_attention_core_sparse_bf16(
                           ltx_gpu *gpu, ltx_gpu_buffer *output,
                           const ltx_gpu_buffer *query,
                           const ltx_gpu_buffer *key,
@@ -3180,12 +3311,13 @@ int ltx_gpu_self_attention_core_sol_bf16(
                           uint32_t sink_start, uint32_t sink_end,
                           uint32_t sink_query_start,
                           uint32_t sink_query_end,
+                          const ltx_sparse_pattern *pattern,
                           char *error, size_t error_size) {
     uint32_t blocks = rows ? (rows + 63u) / 64u : 0u;
     uint64_t elements = (uint64_t)rows * heads * head_dim;
     uint64_t summary_elements = (uint64_t)heads * blocks * head_dim;
     uint64_t threshold_elements = (uint64_t)heads * blocks;
-    uint64_t route_elements = threshold_elements * blocks;
+    uint64_t route_elements = ltx_sparse_route_scratch_words(rows, heads);
     uint64_t tensor_bytes = 0;
     uint64_t frequency_bytes = 0;
     uint64_t gate_bytes = 0;
@@ -3204,10 +3336,15 @@ int ltx_gpu_self_attention_core_sol_bf16(
                             &bf16_summary_bytes) ||
         !ltx_required_bytes(threshold_elements, sizeof(float),
                             &threshold_bytes) ||
-        !ltx_required_bytes(route_elements, sizeof(float), &route_bytes) ||
+        !ltx_required_bytes(route_elements, sizeof(uint32_t), &route_bytes) ||
         elements > UINT32_MAX || !gpu || !rows || !heads ||
         head_dim != 128u || !blocks || !(scale > 0.0f) ||
         !isfinite(scale) || !isfinite(tau) ||
+        (pattern && (pattern->mode > 5u || pattern->radius > 16384u ||
+                     ((pattern->mode == 4u || pattern->mode == 5u) &&
+                      (!pattern->keep_blocks || pattern->keep_blocks > 256u)) ||
+                     pattern->tokens_per_frame > rows ||
+                     (pattern->tokens_per_frame && rows % pattern->tokens_per_frame))) ||
         sink_start > sink_end || sink_end > blocks ||
         sink_query_start > sink_query_end || sink_query_end > blocks ||
         !ltx_buffer_fits(query, tensor_bytes) ||
@@ -3255,6 +3392,7 @@ int ltx_gpu_self_attention_core_sol_bf16(
             key_stats.maxTotalThreadsPerThreadgroup < 128u ||
             threshold_stats.maxTotalThreadsPerThreadgroup < 128u ||
             route.maxTotalThreadsPerThreadgroup < 128u ||
+            route.threadExecutionWidth != 32u ||
             attention.maxTotalThreadsPerThreadgroup < 256u || blocks > 256u)
             return ltx_gpu_fail(error, error_size,
                                 "device cannot dispatch BF16 Sol attention for this row count");
@@ -3267,7 +3405,12 @@ int ltx_gpu_self_attention_core_sol_bf16(
         ltx_sol_args sol_args = {
             rows, heads, head_dim, blocks,
             sink_start, sink_end, sink_query_start, sink_query_end,
-            1u, 1u, scale * 1.4426950408889634f, tau
+            1u, 1u, scale * 1.4426950408889634f, tau,
+            pattern ? pattern->mode : 0u,
+            pattern ? pattern->radius : 1u,
+            pattern ? pattern->anchor_stride : 0u,
+            pattern ? pattern->tokens_per_frame : 0u,
+            pattern ? pattern->keep_blocks : 0u
         };
         uint32_t count = (uint32_t)elements;
         id<MTLComputeCommandEncoder> encoder =
@@ -3324,9 +3467,15 @@ int ltx_gpu_self_attention_core_sol_bf16(
                  threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
         [encoder endEncoding];
 
+        /* Structured and top-k modes route directly from Q/K centroids and do
+         * not consume thresholds.  Avoid the Sol statistics/threshold passes
+         * in those modes; this preserves the route mask exactly while
+         * removing two dispatches from the hot path. */
+        bool needs_thresholds = !pattern || pattern->mode == 0u ||
+                                pattern->mode == 3u;
         uint64_t stats_bytes =
             (uint64_t)heads * head_dim * 2u * sizeof(float);
-        if (route_bytes >= stats_bytes) {
+        if (needs_thresholds && route_bytes >= stats_bytes) {
             encoder = [command computeCommandEncoder];
             if (!encoder)
                 return ltx_gpu_fail(error, error_size,
@@ -3352,7 +3501,7 @@ int ltx_gpu_self_attention_core_sol_bf16(
             [encoder dispatchThreadgroups:MTLSizeMake(blocks, heads, 1)
                      threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
             [encoder endEncoding];
-        } else {
+        } else if (needs_thresholds) {
             encoder = [command computeCommandEncoder];
             if (!encoder)
                 return ltx_gpu_fail(error, error_size,
@@ -3414,6 +3563,28 @@ int ltx_gpu_self_attention_core_sol_bf16(
         return ltx_finish_command(gpu, command, "Sol attention", error,
                                   error_size);
     }
+}
+
+int ltx_gpu_self_attention_core_sol_bf16(
+    ltx_gpu *gpu, ltx_gpu_buffer *output,
+    const ltx_gpu_buffer *query, const ltx_gpu_buffer *key,
+    const ltx_gpu_buffer *value, const ltx_gpu_buffer *cosine,
+    const ltx_gpu_buffer *sine, const ltx_gpu_buffer *gate,
+    ltx_gpu_buffer *packed_query, ltx_gpu_buffer *packed_key,
+    ltx_gpu_buffer *packed_value, ltx_gpu_buffer *packed_output,
+    ltx_gpu_buffer *query_centroids, ltx_gpu_buffer *key_centroids,
+    ltx_gpu_buffer *value_sums, ltx_gpu_buffer *thresholds,
+    ltx_gpu_buffer *routes, uint32_t rows, uint32_t heads,
+    uint32_t head_dim, float scale, float tau,
+    uint32_t sink_start, uint32_t sink_end,
+    uint32_t sink_query_start, uint32_t sink_query_end,
+    char *error, size_t error_size) {
+    return ltx_gpu_self_attention_core_sparse_bf16(
+        gpu, output, query, key, value, cosine, sine, gate,
+        packed_query, packed_key, packed_value, packed_output,
+        query_centroids, key_centroids, value_sums, thresholds, routes,
+        rows, heads, head_dim, scale, tau, sink_start, sink_end,
+        sink_query_start, sink_query_end, NULL, error, error_size);
 }
 
 int ltx_gpu_linear_int8_weight_bf16(
@@ -4009,6 +4180,149 @@ int ltx_gpu_mlp_int8_convrot_mps_bf16(
         }
         return ltx_finish_mps_command(gpu, command, "MPSGraph INT8 MLP",
                                       error, error_size);
+    }
+}
+
+static LTXInt8GatedMLPGraph *ltx_int8_gated_mlp_graph(
+        ltx_gpu *gpu, uint32_t rows, uint32_t input_dim,
+        uint32_t hidden_dim, uint32_t output_dim) {
+    NSMutableDictionary<NSString *, id> *cache =
+        (NSMutableDictionary<NSString *, id> *)ltx_int8_mlp_graphs(gpu);
+    NSString *key = [NSString stringWithFormat:@"gated:%u:%u:%u:%u",
+                     rows, input_dim, hidden_dim, output_dim];
+    LTXInt8GatedMLPGraph *cached = cache[key];
+    if (cached) return cached;
+
+    LTXInt8GatedMLPGraph *mlp = [[LTXInt8GatedMLPGraph alloc] init];
+    mlp.graph = [[MPSGraph alloc] init];
+    mlp.input_shape = @[@1, @(rows), @(input_dim)];
+    mlp.input_weight_shape = @[@1, @(hidden_dim), @(input_dim)];
+    mlp.input_scale_shape = @[@1, @(hidden_dim), @1];
+    mlp.down_weight_shape = @[@1, @(output_dim), @(hidden_dim)];
+    mlp.down_scale_shape = @[@1, @(output_dim), @1];
+    mlp.output_shape = @[@1, @(rows), @(output_dim)];
+    mlp.input = [mlp.graph placeholderWithShape:mlp.input_shape
+                                        dataType:MPSDataTypeBFloat16 name:nil];
+    mlp.gate_weight = [mlp.graph placeholderWithShape:mlp.input_weight_shape
+                                              dataType:MPSDataTypeInt8 name:nil];
+    mlp.gate_scale = [mlp.graph placeholderWithShape:mlp.input_scale_shape
+                                             dataType:MPSDataTypeFloat32 name:nil];
+    mlp.up_weight = [mlp.graph placeholderWithShape:mlp.input_weight_shape
+                                            dataType:MPSDataTypeInt8 name:nil];
+    mlp.up_scale = [mlp.graph placeholderWithShape:mlp.input_scale_shape
+                                           dataType:MPSDataTypeFloat32 name:nil];
+    mlp.down_weight = [mlp.graph placeholderWithShape:mlp.down_weight_shape
+                                              dataType:MPSDataTypeInt8 name:nil];
+    mlp.down_scale = [mlp.graph placeholderWithShape:mlp.down_scale_shape
+                                             dataType:MPSDataTypeFloat32 name:nil];
+    MPSGraphTensor *hadamard = [mlp.graph constantWithData:
+        ltx_hadamard_256_bf16() shape:@[@256, @256]
+                                dataType:MPSDataTypeBFloat16];
+    MPSGraphTensor *rotated_input = ltx_graph_convrot_256(
+        mlp.graph, mlp.input, rows, input_dim, hadamard);
+    MPSGraphTensor *gate = ltx_graph_int8_weight_linear(
+        mlp.graph, rotated_input, mlp.gate_weight, mlp.gate_scale, nil);
+    MPSGraphTensor *up = ltx_graph_int8_weight_linear(
+        mlp.graph, rotated_input, mlp.up_weight, mlp.up_scale, nil);
+    MPSGraphTensor *activated = ltx_graph_gelu_tanh_bf16(mlp.graph, gate);
+    MPSGraphTensor *product = [mlp.graph
+        multiplicationWithPrimaryTensor:activated secondaryTensor:up name:nil];
+    product = [mlp.graph castTensor:product
+                            toType:MPSDataTypeBFloat16 name:nil];
+    MPSGraphTensor *rotated_product = ltx_graph_convrot_256(
+        mlp.graph, product, rows, hidden_dim, hadamard);
+    mlp.output = ltx_graph_int8_weight_linear(
+        mlp.graph, rotated_product, mlp.down_weight, mlp.down_scale, nil);
+    cache[key] = mlp;
+    return mlp;
+}
+
+int ltx_gpu_gated_mlp_int8_convrot_mps_bf16(
+                        ltx_gpu *gpu, ltx_gpu_buffer *output,
+                        const ltx_gpu_buffer *input,
+                        const ltx_gpu_buffer *gate_weight,
+                        const ltx_gpu_buffer *gate_scale,
+                        const ltx_gpu_buffer *up_weight,
+                        const ltx_gpu_buffer *up_scale,
+                        const ltx_gpu_buffer *down_weight,
+                        const ltx_gpu_buffer *down_scale,
+                        uint32_t rows, uint32_t input_dim,
+                        uint32_t hidden_dim, uint32_t output_dim,
+                        uint32_t convrot_group_size,
+                        char *error, size_t error_size) {
+    uint64_t input_bytes = 0, input_weight_bytes = 0;
+    uint64_t input_scale_bytes = 0, down_weight_bytes = 0;
+    uint64_t down_scale_bytes = 0, output_bytes = 0;
+    if (!ltx_required_bytes((uint64_t)rows * input_dim, sizeof(uint16_t),
+                            &input_bytes) ||
+        !ltx_required_bytes((uint64_t)hidden_dim * input_dim, sizeof(int8_t),
+                            &input_weight_bytes) ||
+        !ltx_required_bytes(hidden_dim, sizeof(float), &input_scale_bytes) ||
+        !ltx_required_bytes((uint64_t)output_dim * hidden_dim, sizeof(int8_t),
+                            &down_weight_bytes) ||
+        !ltx_required_bytes(output_dim, sizeof(float), &down_scale_bytes) ||
+        !ltx_required_bytes((uint64_t)rows * output_dim, sizeof(uint16_t),
+                            &output_bytes) ||
+        !gpu || !rows || !input_dim || !hidden_dim || !output_dim ||
+        convrot_group_size != 256u || input_dim % 256u || hidden_dim % 256u ||
+        !ltx_buffer_fits(input, input_bytes) ||
+        !ltx_buffer_fits(gate_weight, input_weight_bytes) ||
+        !ltx_buffer_fits(gate_scale, input_scale_bytes) ||
+        !ltx_buffer_fits(up_weight, input_weight_bytes) ||
+        !ltx_buffer_fits(up_scale, input_scale_bytes) ||
+        !ltx_buffer_fits(down_weight, down_weight_bytes) ||
+        !ltx_buffer_fits(down_scale, down_scale_bytes) ||
+        !ltx_buffer_fits(output, output_bytes))
+        return ltx_gpu_fail(error, error_size,
+                            "invalid MPS ConvRot INT8 gated MLP arguments");
+    @autoreleasepool {
+        LTXInt8GatedMLPGraph *mlp = ltx_int8_gated_mlp_graph(
+            gpu, rows, input_dim, hidden_dim, output_dim);
+        if (!mlp)
+            return ltx_gpu_fail(error, error_size,
+                                "create MPS ConvRot INT8 gated MLP graph failed");
+        MPSCommandBuffer *command =
+            [MPSCommandBuffer commandBufferFromCommandQueue:ltx_queue(gpu)];
+        if (!command)
+            return ltx_gpu_fail(error, error_size,
+                                "create MPS ConvRot INT8 gated MLP command failed");
+        NSMutableDictionary<MPSGraphTensor *, MPSGraphTensorData *> *feeds =
+            [NSMutableDictionary dictionary];
+#define LTX_GATED_FEED(TENSOR, BUFFER, SHAPE, TYPE) \
+        feeds[TENSOR] = [[MPSGraphTensorData alloc] \
+            initWithMTLBuffer:ltx_buffer(BUFFER) shape:SHAPE dataType:TYPE]
+        LTX_GATED_FEED(mlp.input, input, mlp.input_shape,
+                       MPSDataTypeBFloat16);
+        LTX_GATED_FEED(mlp.gate_weight, gate_weight,
+                       mlp.input_weight_shape, MPSDataTypeInt8);
+        LTX_GATED_FEED(mlp.gate_scale, gate_scale,
+                       mlp.input_scale_shape, MPSDataTypeFloat32);
+        LTX_GATED_FEED(mlp.up_weight, up_weight,
+                       mlp.input_weight_shape, MPSDataTypeInt8);
+        LTX_GATED_FEED(mlp.up_scale, up_scale,
+                       mlp.input_scale_shape, MPSDataTypeFloat32);
+        LTX_GATED_FEED(mlp.down_weight, down_weight,
+                       mlp.down_weight_shape, MPSDataTypeInt8);
+        LTX_GATED_FEED(mlp.down_scale, down_scale,
+                       mlp.down_scale_shape, MPSDataTypeFloat32);
+#undef LTX_GATED_FEED
+        MPSGraphTensorData *output_data = [[MPSGraphTensorData alloc]
+            initWithMTLBuffer:ltx_buffer(output) shape:mlp.output_shape
+                     dataType:MPSDataTypeBFloat16];
+        @try {
+            [mlp.graph encodeToCommandBuffer:command feeds:feeds
+                targetOperations:nil
+                resultsDictionary:@{mlp.output: output_data}
+                executionDescriptor:nil];
+        } @catch (NSException *exception) {
+            char message[1024];
+            const char *reason = exception.reason.UTF8String;
+            snprintf(message, sizeof(message), "MPSGraph INT8 gated MLP: %s",
+                     reason ? reason : "unknown exception");
+            return ltx_gpu_fail(error, error_size, message);
+        }
+        return ltx_finish_mps_command(
+            gpu, command, "MPSGraph INT8 gated MLP", error, error_size);
     }
 }
 

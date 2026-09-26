@@ -73,33 +73,71 @@ static void keys(NSDictionary *d, NSArray *allowed) {
     for (NSString *k in d)
         require([set containsObject:k], "unknown field: " + std::string(k.UTF8String));
 }
+static NSArray *ltx_option_keys() {
+    return @[
+        @"ltx_backend", @"ltx_fast_av", @"ltx_video_attention_batch",
+        @"ltx_sol_stage1", @"ltx_sol_stage2", @"ltx_sol_tau",
+        @"ltx_sol_dense_edge_blocks", @"ltx_sol_dense_edge_steps",
+        @"ltx_stage2_text_rows", @"ltx_sparse_mode", @"ltx_sparse_radius",
+        @"ltx_sparse_anchor_stride", @"ltx_sparse_tokens_per_frame",
+        @"ltx_sparse_keep_blocks"
+    ];
+}
+static void keys_with_ltx_options(NSDictionary *d, NSArray *allowed) {
+    NSMutableArray *combined = [allowed mutableCopy];
+    [combined addObjectsFromArray:ltx_option_keys()];
+    keys(d, combined);
+}
+static void parse_ltx_options(NSDictionary *d, Request &r) {
+    r.ltx_backend = string_value(d, @"ltx_backend", r.ltx_backend);
+    r.ltx_fast_av = boolean(d, @"ltx_fast_av", r.ltx_fast_av);
+    r.ltx_video_attention_batch = boolean(
+        d, @"ltx_video_attention_batch", r.ltx_video_attention_batch);
+    r.ltx_sol_stage1 = boolean(d, @"ltx_sol_stage1", r.ltx_sol_stage1);
+    r.ltx_sol_stage2 = boolean(d, @"ltx_sol_stage2", r.ltx_sol_stage2);
+    r.ltx_sol_tau = numeric(d, @"ltx_sol_tau", r.ltx_sol_tau);
+    r.ltx_sol_dense_edge_blocks = number(
+        d, @"ltx_sol_dense_edge_blocks", r.ltx_sol_dense_edge_blocks);
+    r.ltx_sol_dense_edge_steps = number(
+        d, @"ltx_sol_dense_edge_steps", r.ltx_sol_dense_edge_steps);
+    r.ltx_stage2_text_rows = number(
+        d, @"ltx_stage2_text_rows", r.ltx_stage2_text_rows);
+    r.ltx_sparse_mode = number(d, @"ltx_sparse_mode", r.ltx_sparse_mode);
+    r.ltx_sparse_radius = number(d, @"ltx_sparse_radius", r.ltx_sparse_radius);
+    r.ltx_sparse_anchor_stride = number(
+        d, @"ltx_sparse_anchor_stride", r.ltx_sparse_anchor_stride);
+    r.ltx_sparse_tokens_per_frame = number(
+        d, @"ltx_sparse_tokens_per_frame", r.ltx_sparse_tokens_per_frame);
+    r.ltx_sparse_keep_blocks = number(
+        d, @"ltx_sparse_keep_blocks", r.ltx_sparse_keep_blocks);
+}
 Request request_from_json(NSDictionary *d) {
     int version = number(d, @"schema_version", 1);
     require(version == 1 || version == 2, "unsupported schema_version");
     Request r;
     if (version == 1) {
-        keys(d, @[
+        keys_with_ltx_options(d, @[
             @"compile_gpu",  @"schema_version", @"model",
             @"prompt",       @"output",         @"execution",
             @"width",        @"height",         @"steps",
             @"seed",         @"frames",         @"dynamic_text",
-            @"dump_tensors", @"ane_manifest",   @"allow_approximation",
+            @"dump_tensors", @"ane_manifest", @"encoder_ane_manifest",
+            @"allow_approximation",
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
+            @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
             @"loras",        @"audio",          @"noise_path",
             @"vsa",          @"vsa_sparsity",   @"vsa_tile_size",
             @"vsa_prefix_mode", @"vsa_dense_first_n_steps",
             @"vsa_dense_layers", @"vsa_impl",
             @"lora_strategy", @"streaming_offload", @"memory_budget_bytes",
-            @"quantized_cache",
-            @"warmup_iterations", @"ltx_backend", @"ltx_fast_av",
-            @"ltx_video_attention_batch",
-            @"ltx_sol_stage1", @"ltx_sol_stage2", @"ltx_sol_tau",
-            @"ltx_sol_dense_edge_blocks", @"ltx_sol_dense_edge_steps",
-            @"ltx_stage2_text_rows"
+            @"quantized_cache", @"warmup_iterations"
         ]);
         r.model = string_value(d, @"model", r.model);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
+        r.prompt_enhancer_path = string_value(d, @"prompt_enhancer_path");
+        r.prompt_enhance = boolean(d, @"prompt_enhance", false);
+        r.prompt_enhance_edit_experimental = boolean(d, @"prompt_enhance_edit_experimental", false);
         auto model_descriptor = module_for(r.model).describe();
         auto descriptor = to_dictionary(model_descriptor);
         r.operation = string_value(d, @"operation",
@@ -109,6 +147,7 @@ Request request_from_json(NSDictionary *d) {
         r.output = string_value(d, @"output");
         r.execution = string_value(d, @"execution", "gpu");
         r.ane_manifest = string_value(d, @"ane_manifest");
+        r.encoder_ane_manifest = string_value(d, @"encoder_ane_manifest");
         r.width = number(d, @"width", model_descriptor.width);
         r.height = number(d, @"height", model_descriptor.height);
         r.frames = number(d, @"frames", model_descriptor.frames);
@@ -123,19 +162,7 @@ Request request_from_json(NSDictionary *d) {
         r.streaming_offload = boolean(d, @"streaming_offload", false);
         r.memory_budget_bytes = byte_count(d, @"memory_budget_bytes", 0);
         r.quantized_cache = string_value(d, @"quantized_cache");
-        r.ltx_backend = string_value(d, @"ltx_backend", r.ltx_backend);
-        r.ltx_fast_av = boolean(d, @"ltx_fast_av", r.ltx_fast_av);
-        r.ltx_video_attention_batch = boolean(
-            d, @"ltx_video_attention_batch", r.ltx_video_attention_batch);
-        r.ltx_sol_stage1 = boolean(d, @"ltx_sol_stage1", r.ltx_sol_stage1);
-        r.ltx_sol_stage2 = boolean(d, @"ltx_sol_stage2", r.ltx_sol_stage2);
-        r.ltx_sol_tau = numeric(d, @"ltx_sol_tau", r.ltx_sol_tau);
-        r.ltx_sol_dense_edge_blocks = number(
-            d, @"ltx_sol_dense_edge_blocks", r.ltx_sol_dense_edge_blocks);
-        r.ltx_sol_dense_edge_steps = number(
-            d, @"ltx_sol_dense_edge_steps", r.ltx_sol_dense_edge_steps);
-        r.ltx_stage2_text_rows = number(
-            d, @"ltx_stage2_text_rows", r.ltx_stage2_text_rows);
+        parse_ltx_options(d, r);
         r.warmup_iterations = number(d, @"warmup_iterations", 0);
         require(r.warmup_iterations >= 0 && r.warmup_iterations <= 8,
                 "warmup_iterations must be 0...8");
@@ -189,40 +216,26 @@ Request request_from_json(NSDictionary *d) {
         r.seed = number(sampling, @"seed", 42);
         r.steps = number(sampling, @"steps", [descriptor[@"default_steps"] intValue]);
         auto execution = d[@"execution"] ? dictionary(d[@"execution"], "execution") : @{};
-        keys(execution,
-             @[ @"policy", @"profile", @"ane_manifest", @"allow_approximation",
-                @"residency", @"memory_budget_bytes", @"warmup_iterations",
-                @"quantized_cache", @"ltx_backend", @"ltx_fast_av",
-                @"ltx_video_attention_batch",
-                @"ltx_sol_stage1", @"ltx_sol_stage2", @"ltx_sol_tau",
-                @"ltx_sol_dense_edge_blocks", @"ltx_sol_dense_edge_steps",
-                @"ltx_stage2_text_rows" ]);
+        keys_with_ltx_options(
+            execution,
+            @[ @"policy", @"profile", @"ane_manifest", @"encoder_ane_manifest", @"allow_approximation",
+               @"residency", @"memory_budget_bytes", @"warmup_iterations",
+               @"quantized_cache" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");
+        r.encoder_ane_manifest = string_value(execution, @"encoder_ane_manifest");
         r.allow_approximation = boolean(execution, @"allow_approximation", false);
         r.residency = string_value(execution, @"residency", model_descriptor.default_residency);
         r.memory_budget_bytes = byte_count(execution, @"memory_budget_bytes", 0);
         r.quantized_cache = string_value(execution, @"quantized_cache");
-        r.ltx_backend = string_value(execution, @"ltx_backend", r.ltx_backend);
-        r.ltx_fast_av = boolean(execution, @"ltx_fast_av", r.ltx_fast_av);
-        r.ltx_video_attention_batch = boolean(
-            execution, @"ltx_video_attention_batch",
-            r.ltx_video_attention_batch);
-        r.ltx_sol_stage1 = boolean(execution, @"ltx_sol_stage1", r.ltx_sol_stage1);
-        r.ltx_sol_stage2 = boolean(execution, @"ltx_sol_stage2", r.ltx_sol_stage2);
-        r.ltx_sol_tau = numeric(execution, @"ltx_sol_tau", r.ltx_sol_tau);
-        r.ltx_sol_dense_edge_blocks = number(
-            execution, @"ltx_sol_dense_edge_blocks", r.ltx_sol_dense_edge_blocks);
-        r.ltx_sol_dense_edge_steps = number(
-            execution, @"ltx_sol_dense_edge_steps", r.ltx_sol_dense_edge_steps);
-        r.ltx_stage2_text_rows = number(
-            execution, @"ltx_stage2_text_rows", r.ltx_stage2_text_rows);
+        parse_ltx_options(execution, r);
         r.warmup_iterations = number(execution, @"warmup_iterations", 0);
         require(r.warmup_iterations >= 0 && r.warmup_iterations <= 8,
                 "execution.warmup_iterations must be 0...8");
         auto parameters = d[@"parameters"] ? dictionary(d[@"parameters"], "parameters") : @{};
         keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path",
+                            @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
                             @"streaming_offload", @"vsa", @"vsa_sparsity",
                             @"vsa_tile_size", @"vsa_prefix_mode",
                             @"vsa_dense_first_n_steps", @"vsa_dense_layers",
@@ -230,6 +243,9 @@ Request request_from_json(NSDictionary *d) {
         r.compile_gpu = boolean(parameters, @"compile_gpu", false);
         r.dynamic_text = boolean(parameters, @"dynamic_text", true);
         r.noise_path = string_value(parameters, @"noise_path");
+        r.prompt_enhancer_path = string_value(parameters, @"prompt_enhancer_path");
+        r.prompt_enhance = boolean(parameters, @"prompt_enhance", false);
+        r.prompt_enhance_edit_experimental = boolean(parameters, @"prompt_enhance_edit_experimental", false);
         r.streaming_offload = boolean(parameters, @"streaming_offload", false);
         r.vsa = boolean(parameters, @"vsa", false);
         r.vsa_sparsity = numeric(parameters, @"vsa_sparsity", r.vsa_sparsity);
@@ -304,6 +320,13 @@ Request request_from_json(NSDictionary *d) {
         }
     }
     resolve_profile(r);
+    if (!r.encoder_ane_manifest.empty()) {
+        require(r.allow_approximation,
+                "encoder_ane_manifest requires allow_approximation=true");
+        require(module_for(r.model).describe().supports_encoder_gpu_ane,
+                "encoder_ane_manifest is currently supported for FLUX/Z-Image "
+                "Qwen3, LTX Gemma4, and H3 Qwen3-VL encoders only");
+    }
     if (r.execution == "gpu_ane") {
         require(!r.ane_manifest.empty(),
                 "gpu_ane requires an explicit ANE manifest or partition directory");

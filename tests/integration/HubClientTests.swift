@@ -1,6 +1,19 @@
 import Foundation
 import Darwin
 
+private final class ProgressProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var samples: [Int64] = []
+    func record(_ completed: Int64, _ total: Int64) {
+        lock.lock(); defer { lock.unlock() }
+        if completed > 0 && total > 0 { samples.append(completed) }
+    }
+    var observed: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return !samples.isEmpty
+    }
+}
+
 @main struct HubClientTests {
     static func main() async throws {
         guard CommandLine.arguments.count == 3, let endpoint = URL(string: CommandLine.arguments[1]) else {
@@ -41,6 +54,14 @@ import Darwin
         }
         let client = HubClient(provider: .huggingface, testEndpoint: endpoint)
         let downloader = LibraryDownloader(store: store, client: client)
+        let slowSnapshot = try await client.snapshot(repository: "test/slow")
+        guard let slowFile = slowSnapshot.files.first else { throw LibraryFailure(message: "Slow fixture is empty") }
+        let progressProbe = ProgressProbe()
+        let progressFile = root.appendingPathComponent("progress.bin")
+        try await client.download(slowFile, repository: "test/slow", destination: progressFile) {
+            progressProbe.record($0, $1)
+        }
+        try check(progressProbe.observed, "Download progress never reached the URLSession delegate")
         for repository in ["test/badhash", "test/badsize", "test/unsafe", "test/cycle"] {
             do {
                 _ = try await downloader.install(LibraryDownloadRequest(modelID: "fixture", repository: repository, provider: .huggingface))

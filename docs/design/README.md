@@ -15,6 +15,11 @@
 
 当前各模型在 M4 Max/M4 Pro 及其他 Apple Silicon 上的 GPU/ANE fork-join 方案、自动门禁和实测口径见 [GPU/ANE 并行化方案](parallel-acceleration.md) 与 [并行化 SVG 图](parallel-acceleration.svg)。Transformer 的 CPU/GPU/ANE 轴、public/private ANE 对照和 vpipe/H3/LTX 结论见 [Transformer 异构并行技术报告](transformer-heterogeneous-report.md)；Core ML 启动生命周期见 [Core ML / ANE 启动开销](coreml-ane-startup.md)，量化和低内存对照见 [量化与 Streaming 对照](quantized-streaming-vpipe-comparison.md)。
 
+截至 2026-09-15 的 encoder、DiT、VAE、Core ML 生命周期和各模型采用决策统一见
+[ANE 加速现状与分阶段决策](ane-acceleration-status-2026-09-15.md)。该文档区分
+resident encoder-prefill、DiT/denoiser、VAE 和完整请求，不把局部 microbenchmark
+或历史单次结果写成默认产品收益。
+
 跨后端不要求逐像素一致时的 RGB 回归、视频运动和公开 Vision feature-print 分层判定见 [感知质量诊断](vision-quality-diagnostics.md)。
 
 ## App 产品、界面与实现方案
@@ -55,6 +60,13 @@ LTX 2.5 对照 `ltx-mac` 的逐项实现审计、C/Metal Fast A/V 默认路径�
 GPU+ANE profile、Stage-2 Sol/text256 可选近似、T2V/I2V/音频矩阵和严格 ABBA 质量门见
 [LTX 2.5 加速对齐与验收方案](ltx25-ltx-mac-acceleration-parity-plan.md)。当前 ANE
 复跑受 E5 bundle 重编译警告污染，不能把该轮耗时视为正式性能结果。
+
+当前 Stage-2 sparse/Sol attention 的实现模式、Metal core、完整视频速度与画质
+结论见 [交付摘要](ltx-stage2-sparse-results.md)，完整实验账本见
+[研究记录](ltx-stage2-sparse-research.md)。M4 Max 上 GPU/ANE Transformer、真实 LTX
+Stage-2、VAE 驻留干扰和 256-pixel 分块解码的持续复验见
+[M4 Max reproduction](../../experimental/transformer/notes/M4_MAX_REPRODUCTION.md)。
+这些入口严格区分 synthetic kernel、Stage-2、完整请求和视频画质证据。
 
 当前 Video VAE 的进程生命周期、clean `exec` finalizer、带音频 component-staged 路径、
 VAE/Transformer 分阶段性能门和代码职责整理见

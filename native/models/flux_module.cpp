@@ -54,7 +54,8 @@ ModelModule flux_module() {
                 d.supports_lora = true; d.runtime_lora = true; d.lora_mode = "load-time-baked";
                 d.lora_strategies = {"in_memory_merge"};
                 d.default_lora_strategy = "in_memory_merge";
-                d.supports_gpu_ane = true; d.backend = "mlx_cpp_metal";
+                d.supports_gpu_ane = true; d.supports_encoder_gpu_ane = true;
+                d.backend = "mlx_cpp_metal";
                 d.runtime_dependency = "bundled-native-mlx-cpp";
                 d.parallel_strategy = "compiled GPU attention/MLP complement overlaps a Core ML ANE MLP prefix";
                 d.candidate_limitations = {
@@ -112,8 +113,13 @@ ModelModule flux9_module() {
             d.supports_lora = true; d.runtime_lora = true; d.lora_mode = "load-time-baked";
             d.lora_strategies = {"in_memory_merge"};
             d.default_lora_strategy = "in_memory_merge";
+            d.supports_encoder_gpu_ane = true;
             d.backend = "mlx_cpp_metal"; d.default_residency = "resident";
-            d.default_audio = false; d.candidate_limitations = {"9B runtime requires a matching 9B checkpoint and remains GPU-only"};
+            d.default_audio = false;
+            d.candidate_limitations = {
+                "9B runtime requires a matching 9B checkpoint",
+                "the 9B denoiser remains GPU-only; an explicit Qwen3 encoder GPU+ANE manifest is experimental"
+            };
             return d;
         }
     };

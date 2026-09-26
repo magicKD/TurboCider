@@ -1,0 +1,47 @@
+{
+  "status": "invalid_for_performance_pre_reboot_system_state",
+  "superseded_status": "vector_norm_enabled_by_default_in_source_and_rebuilt_native_library",
+  "hardware": "Apple M4 Max, 64 GiB, macOS 26.6.2 (25G83)",
+  "mlx_version": "0.32.0",
+  "library_sha256": "b4690820ee89e0462e1e85c675898630945f61d1e2cff4d9b2f4c77fffacb551",
+  "mlx_sha256": "1876795e05b3434925e745fbf6e9f0c8c0446b666224c9d881609ab353e94e51",
+  "build_command": "TURBOCIDER_NATIVE_ONLY=1 bash tools/native/build.sh",
+  "workload": {
+    "size": 512,
+    "steps": 8,
+    "seed": 123,
+    "prompt": "A sunlit greenhouse filled with orchids and ferns, photographic detail.",
+    "execution": "gpu",
+    "precision": "bf16",
+    "mpp": false
+  },
+  "schedule": "scalar, default, unfused; separate fresh processes, one cold excluded and two warm samples each; separate parity request each",
+  "unfused": {
+    "environment": {"TURBOCIDER_Z_DISABLE_FUSED_QKV": "1", "TURBOCIDER_Z_DISABLE_FUSED_MOD": "1"},
+    "diffusion_seconds": [23.274035958, 23.692996917],
+    "median_wall_seconds": 28.86330391652882
+  },
+  "scalar": {
+    "environment": {"TURBOCIDER_Z_DISABLE_VECTOR_NORM": "1"},
+    "diffusion_seconds": [16.515054583, 16.70693275],
+    "median_wall_seconds": 21.595757791015785
+  },
+  "default": {
+    "environment": {},
+    "diffusion_seconds": [15.989989, 15.716038708],
+    "median_wall_seconds": 21.199040603998583
+  },
+  "default_vs_unfused_diffusion_speedup": 1.481328197513351,
+  "default_vs_scalar_diffusion_speedup": 1.0478129786222794,
+  "parity": "All dumped files including every step latent and decoded tensor, plus PNG, byte-identical across all three variants",
+  "raw_reports": "/private/tmp/z-image-vector-default-512-20260922",
+  "tests": {"gpu_methods_passed": 2, "cpu_benchmark_methods_passed": 4},
+  "limitations": [
+    "This production-rebuild screen is not ABBA",
+    "1024 was not rerun with the rebuilt production library in this turn",
+    "Prior isolated-library 1024 vector result remains a single-warm-sample screen",
+    "No claim of speedup over historical same-machine September 7 performance",
+    "512 diffusion under 10 seconds remains unmet",
+    "Native CLI/dylib rebuilt; application packaging not run"
+  ]
+}

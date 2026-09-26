@@ -21,6 +21,13 @@ struct RunInsightsView: View {
                 }
                 Text("请求完成或准备完成时的采样；不含 Core ML、系统和文件缓存。实时 App 内存见侧栏。").font(.caption).foregroundStyle(.secondary)
             }
+            if let blocks = info.streamedBlocks, blocks > 0 {
+                HStack(spacing: 16) {
+                    Text("流式加载 \(blocks) 层")
+                    if let bytes = info.streamReadBytes { Text("权重读取 \(RunInsights.memory(bytes))") }
+                    if let seconds = info.streamWaitSeconds { Text(String(format: "等待读取 %.2f 秒", seconds)) }
+                }.font(.caption).monospacedDigit()
+            }
             if let calls = info.coreMLCalls, calls > 0 {
                 HStack(spacing: 20) {
                     metric("Core ML 会话累计调用", String(calls))

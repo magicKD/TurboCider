@@ -11,8 +11,10 @@ class Flux : public ModelSession {
     int hidden_ = 0, heads_ = 0, dual_layers_ = 0, single_layers_ = 0;
     Tokenizer tokenizer_;
     std::unique_ptr<HybridSession> hybrid_;
+    std::unique_ptr<HybridSession> encoder_hybrid_;
     Weights transformer_, vae_;
     std::string cached_prompt_;
+    std::string cached_encoder_manifest_;
     bool cached_dynamic_ = true;
     std::optional<Tensor> cached_conditioning_;
     std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
@@ -36,7 +38,7 @@ class Flux : public ModelSession {
     ~Flux();
     LoadResult load(const Event &, std::atomic<bool> &) override;
     void unload() override;
-    Tensor encode(const Tokens &, const Event &, std::atomic<bool> &);
+    Tensor encode(const Tokens &, const Event &, std::atomic<bool> &, HybridSession * = nullptr);
     Tensor denoise(const Tensor &, const Tensor &, float, int, int, const Event &,
                    std::atomic<bool> &, const std::vector<float> &reference_ids = {},
                    bool compile_blocks = false);
