@@ -77,7 +77,7 @@ constexpr const char *kZImageKernelRevision =
 constexpr const char *kZImagePublicImplementation =
     "generic_stage_executor_v2";
 constexpr const char *kZImagePublicComponentPolicy =
-    "zimage-components-v2-all-sources-request-cache";
+    "zimage-components-v3-shared-text-request-cache";
 
 uint32_t padded_z_image_rows(uint32_t rows) {
     require(rows && rows <= UINT32_MAX - 31,
@@ -106,7 +106,7 @@ streaming::PresetRuntimeIdentity z_image_public_runtime_identity() {
     return {
         tc::runtime_build_identity(),
         "public-streaming-runtime-v2",
-        "z-image-public-adapter-v3-all-component-lease",
+        "z-image-public-adapter-v4-shared-text-lease",
         "z-image-pread-bf16-v2-fd-lease",
         kZImageKernelRevision,
         "mlx-request-cache-policy-v2-k1-zero-cache",
@@ -1748,17 +1748,45 @@ std::vector<streaming::SourceFileIdentity> ZImage::streaming_source_files() cons
     streaming::SourceFileIdentity transformer_file;
     transformer_file.logical_id = "transformer";
     transformer_file.path = transformer_path_;
-    streaming::SourceFileIdentity text_file;
-    text_file.logical_id = "text_encoder";
-    text_file.path = text_path_;
     streaming::SourceFileIdentity vae_file;
     vae_file.logical_id = "vae";
     vae_file.path = vae_path_;
     streaming::SourceFileIdentity tokenizer_file;
     tokenizer_file.logical_id = "tokenizer";
     tokenizer_file.path = root_ / "tokenizer/tokenizer.json";
-    return {std::move(transformer_file), std::move(text_file),
-            std::move(vae_file), std::move(tokenizer_file)};
+    std::vector<streaming::SourceFileIdentity> files{
+        std::move(transformer_file), std::move(vae_file), std::move(tokenizer_file)};
+    auto add_text = [&](const std::filesystem::path &path, std::string logical_id) {
+        streaming::SourceFileIdentity file;
+        file.logical_id = std::move(logical_id);
+        file.path = path;
+        files.push_back(std::move(file));
+    };
+    if (!std::filesystem::is_directory(text_path_)) {
+        add_text(text_path_, "text_encoder");
+        return files;
+    }
+    // Match the shared component loader: real shards take precedence over
+    // convenience links. Retain the named binding paths so retargeting a
+    // directory symlink invalidates the lease instead of silently reopening it.
+    std::vector<std::filesystem::path> shards, links;
+    for (const auto &entry : std::filesystem::directory_iterator(text_path_)) {
+        if (entry.path().extension() != ".safetensors") continue;
+        if (entry.is_symlink()) links.push_back(entry.path());
+        else if (entry.is_regular_file()) shards.push_back(entry.path());
+    }
+    if (shards.empty()) {
+        require(links.size() == 1,
+                "streaming_source_identity: shared text encoder requires regular shards or one checkpoint link");
+        shards = std::move(links);
+    }
+    std::sort(shards.begin(), shards.end());
+    for (const auto &path : shards)
+        add_text(path, "text_encoder/" + path.filename().string());
+    const auto index = text_path_ / "model.safetensors.index.json";
+    if (std::filesystem::exists(index))
+        add_text(index, "text_encoder/model.safetensors.index.json");
+    return files;
 }
 
 std::shared_ptr<const streaming::SourceLease>
@@ -1787,11 +1815,11 @@ ZImage::probe_public_streaming(
             "streaming_route_unsupported: Z-Image public card requires Comfy BF16 eager GPU without LoRA/quantization");
     require(std::filesystem::is_regular_file(transformer_path_) &&
                 transformer_path_.extension() == ".safetensors" &&
-                std::filesystem::is_regular_file(text_path_) &&
-                text_path_.extension() == ".safetensors" &&
+                ((std::filesystem::is_regular_file(text_path_) &&
+                  text_path_.extension() == ".safetensors") || has_safetensors(text_path_)) &&
                 std::filesystem::is_regular_file(vae_path_) &&
                 vae_path_.extension() == ".safetensors",
-            "streaming_route_unsupported: Z-Image public card requires single-file transformer/text/VAE artifacts");
+            "streaming_route_unsupported: Z-Image public card requires single-file transformer/VAE and valid text weights");
 
     auto files = streaming_source_files();
     auto lease = streaming::SourceLease::capture_for_query(
@@ -2053,9 +2081,15 @@ void ZImage::unload() {
 
 Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic<bool> &cancelled) try {
     if (text_encoder_.bytes() == 0) {
-        if (public_stream_lease_)
-            text_encoder_.load_lease(public_stream_lease_, {"text_encoder"}, event, cancelled);
-        else
+        if (public_stream_lease_) {
+            std::vector<std::string> artifacts;
+            for (const auto &file : public_stream_lease_->descriptor().files)
+                if (file.logical_id == "text_encoder" ||
+                    (file.logical_id.starts_with("text_encoder/") &&
+                     file.logical_id.ends_with(".safetensors")))
+                    artifacts.push_back(file.logical_id);
+            text_encoder_.load_lease(public_stream_lease_, artifacts, event, cancelled);
+        } else
             load_z_component(text_encoder_, text_path_, event, cancelled);
     }
     auto result = components::qwen3_conditioning(

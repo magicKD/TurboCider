@@ -60,7 +60,7 @@ void rejects(Function &&function, const char *part) {
 } // namespace
 
 int main(int argc, char **argv) {
-    assert(argc == 3);
+    assert(argc == 4);
     try {
         tc::ZImage session(argv[1]);
         const auto base_request = request();
@@ -104,6 +104,28 @@ int main(int argc, char **argv) {
         assert(snapshot->layout().digest == record.plan.layout_digest);
         assert(snapshot->layout().materializations_complete);
         snapshot->revalidate_source();
+
+        tc::ZImage shared(argv[3]);
+        const auto shared_probe = shared.probe_public_streaming(input);
+        const auto *shared_lease = shared_probe->source_lease();
+        assert(shared_lease && shared_lease->file_count() == 6);
+        assert(shared_lease->file("text_encoder/model-00001-of-00002.safetensors").bytes == 14);
+        assert(shared_lease->file("text_encoder/model-00002-of-00002.safetensors").bytes == 14);
+        rejects([&] { shared_lease->file("text_encoder/model.safetensors"); }, "logical id");
+        auto shared_record = record;
+        shared_record.source = shared_probe->source_identity();
+        auto shared_value = std::dynamic_pointer_cast<const tc::streaming::ValueModelStreamingProbe>(shared_probe);
+        tc::z_image::StreamingPlanView shared_plan(shared_value->lease_ptr(), config(), workload);
+        shared_record.plan.layout_digest = shared_plan.layout().digest;
+        const auto shared_snapshot = shared.compile_public_streaming(shared_probe, shared_record);
+        shared_snapshot->revalidate_source();
+        const auto shared_binding = std::filesystem::path(argv[3]) / "text_encoder";
+        const auto replacement_dir = std::filesystem::path(argv[3]) / "replacement-text";
+        std::filesystem::copy(std::filesystem::canonical(shared_binding), replacement_dir,
+                              std::filesystem::copy_options::recursive | std::filesystem::copy_options::copy_symlinks);
+        std::filesystem::remove(shared_binding);
+        std::filesystem::create_directory_symlink(replacement_dir, shared_binding);
+        rejects([&] { shared_snapshot->revalidate_source(); }, "source path");
 
         // A checkpoint filename is not a weight-format capability. A renamed
         // ConvRot source must never enter the BF16 public receipt/catalog path.
@@ -205,7 +227,7 @@ int main(int argc, char **argv) {
         rejects([&] { replacement_snapshot->revalidate_source(); },
                 "source path");
 
-        std::cout << "PASS Z-Image public adapter: shared four-artifact lease, "
+        std::cout << "PASS Z-Image public adapter: single-file and shared sharded text leases, "
                      "exact identity/layout snapshot, route rejection, target "
                      "failure cleanup and source replacement detection\n";
     } catch (const std::exception &error) {

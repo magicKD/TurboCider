@@ -447,12 +447,25 @@ class TestCatalogTests(unittest.TestCase):
                 status, failure = resolve(public)
                 self.assertNotEqual(status, 0)
                 self.assertIn("artifact_verification_required", failure)
-                for unsupported in ("unknown", "tc-public-calibrated-v1"):
+                for unsupported, diagnostic in (
+                    ("unknown", "unsupported release policy revision"),
+                    ("tc-public-calibrated-v1", "release channel and policy do not match"),
+                ):
                     bad_policy = copy.deepcopy(explicit_policy)
                     bad_policy["records"][0]["release"]["policy_revision"] = unsupported
                     status, failure = install(public, bad_policy)
                     self.assertNotEqual(status, 0)
-                    self.assertIn("unsupported release policy revision", failure)
+                    self.assertIn(diagnostic, failure)
+                calibrated = copy.deepcopy(explicit_policy)
+                calibrated_record = calibrated["records"][0]
+                calibrated_record["release"].update(
+                    channel="public-calibrated", policy_revision="tc-public-calibrated-v1")
+                calibrated_record["canonical_record_digest"] = builder.canonical_record_digest(calibrated_record)
+                status, failure = install(public, calibrated)
+                self.assertEqual(status, 0, failure)
+                status, failure = resolve(public)
+                self.assertNotEqual(status, 0)
+                self.assertIn("artifact_verification_required", failure)
                 invalid_portable = copy.deepcopy(portable)
                 invalid_portable["records"][0]["source"]["source_snapshot_digest"] = "b" * 64
                 status, failure = install(public, invalid_portable)

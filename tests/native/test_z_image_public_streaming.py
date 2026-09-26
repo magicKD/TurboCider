@@ -75,6 +75,17 @@ def main() -> None:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(root / relative, destination)
 
+        shared = Path(raw) / "shared-text"
+        shared.mkdir()
+        for index in (1, 2):
+            (shared / f"model-0000{index}-of-00002.safetensors").write_bytes(f"shared-shard-{index}".encode())
+        (shared / "model.safetensors.index.json").write_text('{"weight_map":{}}')
+        # An extra convenience link must not duplicate the regular shards.
+        (shared / "model.safetensors").symlink_to(root / "split_files/text_encoders/qwen_3_4b.safetensors")
+        shared_model = Path(raw) / "shared-model"
+        shutil.copytree(root, shared_model)
+        (shared_model / "text_encoder").symlink_to(shared, target_is_directory=True)
+
         binary = Path(raw) / "z-image-public-streaming-test"
         subprocess.run([
             compiler, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
@@ -87,7 +98,7 @@ def main() -> None:
             "-o", str(binary),
         ], check=True)
         result = subprocess.run(
-            [str(binary), str(root), str(renamed)], text=True, capture_output=True,
+            [str(binary), str(root), str(renamed), str(shared_model)], text=True, capture_output=True,
             timeout=180,
         )
         if result.returncode:
