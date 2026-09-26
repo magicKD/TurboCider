@@ -4,12 +4,20 @@ import Foundation
 /// this is lifecycle/integration evidence, not a successful generation campaign.
 @main struct PublicImageAppModelTests {
     @MainActor static func main() async throws {
+        guard CommandLine.arguments.count >= 5, CommandLine.arguments.count % 2 == 1 else {
+            throw NativeFailure(message: "Usage: app-model-tests NEW_OUTPUT_DIRECTORY WORKER MODEL_ID MODEL_PATH [MODEL_ID MODEL_PATH ...]")
+        }
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
         let executable = URL(fileURLWithPath: CommandLine.arguments[2])
         guard !FileManager.default.fileExists(atPath: root.path) else { throw NativeFailure(message: "Experiment directory already exists") }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        for (model, path) in [("z-image-turbo", "/Users/chencanhui/models/TurboCider/Z-Image-Turbo"),
-                              ("flux2-klein-4b", "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B")] {
+        for offset in stride(from: 3, to: CommandLine.arguments.count, by: 2) {
+            let model = CommandLine.arguments[offset]
+            let path = CommandLine.arguments[offset + 1]
+            guard ["z-image-turbo", "flux2-klein-4b"].contains(model),
+                  FileManager.default.fileExists(atPath: path) else {
+                throw NativeFailure(message: "Unsupported model or missing local model directory: \(model)")
+            }
             for cancel in [false, true] {
                 let directory = root.appendingPathComponent(model + (cancel ? "-cancel" : "-reject"))
                 let store = NativeJobStore(directory: directory, workerExecutable: executable)

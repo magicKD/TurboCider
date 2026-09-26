@@ -58,9 +58,16 @@ runtime_build_identity() {
   --experimental-probes "$EXPERIMENTAL_PROBES" "$@" -- "${BUILD_IDENTITY_FLAGS[@]}"
 }
 runtime_build_identity
+CATALOG_INPUT=(--inventory native/runtime/streaming/bundled_catalog.json)
+if [[ -n "${TURBOCIDER_TEST_BUNDLED_CATALOG:-}" ]]; then
+ if [[ "$TEST_HOOKS" != "1" ]]; then
+  printf 'TURBOCIDER_TEST_BUNDLED_CATALOG requires a test-hook build\n' >&2; exit 2
+ fi
+ CATALOG_INPUT=(--test-catalog "$TURBOCIDER_TEST_BUNDLED_CATALOG")
+fi
 bundled_streaming_catalog() {
  "$BUILD_IDENTITY_PYTHON" tools/native/generate_bundled_streaming_catalog.py \
-  --inventory native/runtime/streaming/bundled_catalog.json \
+  "${CATALOG_INPUT[@]}" \
   --runtime-manifest "$BUILD_IDENTITY_DIR/runtime-build-manifest.json" \
   --output "$BUILD_IDENTITY_DIR" "$@"
 }

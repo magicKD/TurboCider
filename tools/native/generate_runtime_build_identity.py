@@ -9,6 +9,7 @@ Final App/bundle and runtime dependency verification remain packaging concerns.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -17,6 +18,8 @@ import subprocess
 from pathlib import Path
 
 DOMAIN = "tc-runtime-build-v1"
+CATALOG_DOMAIN = "tc-catalog-runtime-v1"
+INSTRUMENTATION_FLAGS = {"-DTURBOCIDER_ENABLE_TEST_HOOKS=1", "-DTURBOCIDER_ENABLE_AUDIT_COUNTERS=1"}
 SOURCE_SUFFIXES = {".h", ".hpp", ".c", ".cpp", ".m", ".mm", ".metal", ".inc"}
 BUILD_SCRIPTS = (
     "tools/native/build.sh", "tools/native/dependencies.sh",
@@ -24,6 +27,9 @@ BUILD_SCRIPTS = (
     "tools/native/generate_bundled_streaming_catalog.py",
     "tools/native/build_streaming_catalog.py",
     "tools/native/verify_streaming_campaign.py",
+    "tools/native/streaming_release_policy.py",
+    "tools/native/verify_streaming_acceptance.py",
+    "tools/native/verify_streaming_release_evidence.py",
 )
 SEARCH_ENV = (
     "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH",
@@ -72,7 +78,20 @@ def seal(inputs: dict) -> dict:
     canonical = json.dumps(inputs, sort_keys=True, separators=(",", ":"),
                            ensure_ascii=True).encode()
     digest = hashlib.sha256(DOMAIN.encode() + b"\0" + canonical).hexdigest()
+    # Calibration needs the test catalog and counters; a release must not expose
+    # their private symbols. Preserve the full build identity for worker/binary
+    # binding, while catalog compatibility excludes only these two switches.
+    # Sources, SDK, toolchain, MLX, optimization flags and all other policy stay
+    # bound. This key does not grant publication or replace reviewed evidence.
+    compatible = copy.deepcopy(inputs)
+    compatible["policy"]["test_hooks"] = "0"
+    compatible["policy"]["audit_counters"] = "0"
+    compatible["policy"]["common_flags"] = [
+        flag for flag in compatible["policy"]["common_flags"] if flag not in INSTRUMENTATION_FLAGS]
+    encoded = json.dumps(compatible, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    catalog_digest = hashlib.sha256(CATALOG_DOMAIN.encode() + b"\0" + encoded).hexdigest()
     return {"schema": DOMAIN, "runtime_build_id": f"{DOMAIN}-{digest}",
+            "catalog_runtime_id": f"{CATALOG_DOMAIN}-{catalog_digest}",
             "inputs": inputs}
 
 
@@ -116,6 +135,13 @@ def verify_existing(path: Path, expected: dict) -> None:
         raise ValueError("native build inputs changed during compilation; rebuild required")
 
 
+def generated_header(value: dict) -> str:
+    return ("#pragma once\n#define TURBOCIDER_RUNTIME_BUILD_ID "
+            + json.dumps(value["runtime_build_id"])
+            + "\n#define TURBOCIDER_CATALOG_RUNTIME_ID "
+            + json.dumps(value["catalog_runtime_id"]) + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("root", "mlx-root", "sdk", "toolchain", "output"):
@@ -129,14 +155,15 @@ def main() -> None:
     try:
         value = manifest(args)
         path = args.output / "runtime-build-manifest.json"
+        header = args.output / "turbocider_runtime_build_generated.hpp"
         if args.verify:
             verify_existing(path, value)
+            if header.read_text() != generated_header(value):
+                raise ValueError("generated runtime identity header changed during compilation")
         else:
             args.output.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n")
-            (args.output / "turbocider_runtime_build_generated.hpp").write_text(
-                "#pragma once\n#define TURBOCIDER_RUNTIME_BUILD_ID "
-                + json.dumps(value["runtime_build_id"]) + "\n")
+            header.write_text(generated_header(value))
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"runtime build identity: {error}\n")
 

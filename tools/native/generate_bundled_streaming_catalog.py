@@ -62,7 +62,7 @@ def assignments(path: str, value: dict) -> list[str]:
     return result
 
 
-def render_catalog(revision: str, records: list[dict], runtime_id: str) -> str:
+def render_catalog(revision: str, records: list[dict], runtime_id: str, *, test_only: bool = False) -> str:
     if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,256}", revision):
         raise ValueError("invalid bundled catalog revision")
     lines = ["#pragma once", "// Generated data; do not edit.",
@@ -70,7 +70,7 @@ def render_catalog(revision: str, records: list[dict], runtime_id: str) -> str:
              "StreamingPresetCatalog catalog;", "catalog.revision = " + cpp_string(revision) + ";"]
     ids = set()
     for record in records:
-        validate_record_shape(record)
+        validate_record_shape(record, allow_test_template=test_only)
         if record["catalog_revision"] != revision:
             raise ValueError("bundled catalog revision mismatch")
         if record["runtime"]["turbocider_build_id"] != runtime_id:
@@ -95,7 +95,8 @@ def generate(inventory: Path, runtime_manifest: Path) -> tuple[str, dict]:
         raise ValueError("unsupported bundled catalog input schema")
     if not isinstance(value["records"], list) or len(value["records"]) > 64:
         raise ValueError("bundled catalog must contain 0...64 records")
-    runtime_id = json.loads(runtime_manifest.read_text())["runtime_build_id"]
+    runtime = json.loads(runtime_manifest.read_text())
+    runtime_id = runtime["catalog_runtime_id"]
     records = []
     for entry in value["records"]:
         if not isinstance(entry, dict) or set(entry) not in (
@@ -118,21 +119,52 @@ def generate(inventory: Path, runtime_manifest: Path) -> tuple[str, dict]:
         records.append(record)
     header = render_catalog(value["revision"], records, runtime_id)
     return header, {"schema": "tc-bundled-streaming-catalog-manifest-v1",
-                    "revision": value["revision"], "runtime_build_id": runtime_id,
+                    "revision": value["revision"], "runtime_build_id": runtime["runtime_build_id"],
+                    "catalog_runtime_id": runtime_id,
                     "input_sha256": hashlib.sha256(raw).hexdigest(),
                     "header_sha256": hashlib.sha256(header.encode()).hexdigest(),
                     "record_digests": [r["canonical_record_digest"] for r in records]}
 
 
+def generate_test_fixture(fixture: Path, runtime_manifest: Path) -> tuple[str, dict]:
+    """Exercise the real App/worker discovery path in a non-distributable build.
+
+    This deliberately accepts the existing test-catalog format, never the
+    production inventory. Release builds still require reviewed evidence.
+    """
+    runtime = json.loads(runtime_manifest.read_text())
+    if runtime["inputs"]["policy"]["test_hooks"] != "1":
+        raise ValueError("bundled test fixtures require test hooks; release build rejected")
+    raw = fixture.read_bytes()
+    value = json.loads(raw)
+    if (not isinstance(value, dict) or set(value) != {"schema", "revision", "records"}
+            or value["schema"] != "turbocider-streaming-test-catalog-v1"
+            or not isinstance(value["records"], list) or not 1 <= len(value["records"]) <= 64):
+        raise ValueError("invalid bundled test catalog")
+    header = render_catalog(value["revision"], value["records"], runtime["catalog_runtime_id"], test_only=True)
+    header = ('#ifndef TURBOCIDER_ENABLE_TEST_HOOKS\n'
+              '#error "A test catalog cannot be compiled into a release"\n#endif\n' + header)
+    return header, {"schema": "tc-bundled-streaming-test-manifest-v1", "test_only": True,
+                    "revision": value["revision"], "runtime_build_id": runtime["runtime_build_id"],
+                    "catalog_runtime_id": runtime["catalog_runtime_id"],
+                    "input_sha256": hashlib.sha256(raw).hexdigest(),
+                    "header_sha256": hashlib.sha256(header.encode()).hexdigest(),
+                    "record_digests": [r["canonical_record_digest"] for r in value["records"]]}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--inventory", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--inventory", type=Path)
+    source.add_argument("--test-catalog", type=Path,
+                        help="Test-hook builds only: exercise App discovery with a test catalog")
     parser.add_argument("--runtime-manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--verify", action="store_true")
     args = parser.parse_args()
     try:
-        header, manifest = generate(args.inventory, args.runtime_manifest)
+        header, manifest = (generate_test_fixture(args.test_catalog, args.runtime_manifest)
+                            if args.test_catalog else generate(args.inventory, args.runtime_manifest))
         header_path = args.output / "turbocider_bundled_catalog_generated.hpp"
         manifest_path = args.output / "bundled-catalog-manifest.json"
         if args.verify:

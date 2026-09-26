@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Compatibility keys must track behavioral inputs, not checkout locations."""
 import argparse
+import contextlib
 import copy
+import io
 import json
 import os
 from pathlib import Path
@@ -69,6 +71,7 @@ class RuntimeBuildIdentityTests(unittest.TestCase):
                 path = self.root / relative
                 path.write_text(path.read_text() + "changed")
                 self.assertNotEqual(before["runtime_build_id"], self.manifest()["runtime_build_id"])
+                self.assertNotEqual(before["catalog_runtime_id"], self.manifest()["catalog_runtime_id"])
 
     def test_dependency_header_toolchain_and_sdk_changes_invalidate(self):
         for path in (self.mlx / "include/mlx/private.h", self.mlx / "lib/libmlx.dylib",
@@ -77,6 +80,26 @@ class RuntimeBuildIdentityTests(unittest.TestCase):
                 before = self.manifest()
                 path.write_text(path.read_text() + "change")
                 self.assertNotEqual(before["runtime_build_id"], self.manifest()["runtime_build_id"])
+                self.assertNotEqual(before["catalog_runtime_id"], self.manifest()["catalog_runtime_id"])
+
+    def test_only_instrumentation_switches_share_catalog_compatibility(self):
+        original = self.manifest()
+        for hook, audit in (("1", "0"), ("0", "1"), ("1", "1")):
+            args = copy.deepcopy(self.args)
+            args.test_hooks, args.audit_counters = hook, audit
+            if hook == "1": args.flags.append("-DTURBOCIDER_ENABLE_TEST_HOOKS=1")
+            if audit == "1": args.flags.append("-DTURBOCIDER_ENABLE_AUDIT_COUNTERS=1")
+            instrumented = identity.manifest(args)
+            self.assertNotEqual(original["runtime_build_id"], instrumented["runtime_build_id"])
+            self.assertEqual(original["catalog_runtime_id"], instrumented["catalog_runtime_id"])
+            for extra in ("-ffast-math", "-DTURBOCIDER_ENABLE_TEST_HOOKS=2", "-DTURBOCIDER_OTHER_TEST=1"):
+                changed = copy.deepcopy(args)
+                changed.flags.append(extra)
+                self.assertNotEqual(original["catalog_runtime_id"], identity.manifest(changed)["catalog_runtime_id"])
+        for name in ("experimental_probes", "deployment_target"):
+            args = copy.deepcopy(self.args)
+            setattr(args, name, "1")
+            self.assertNotEqual(original["catalog_runtime_id"], identity.manifest(args)["catalog_runtime_id"])
 
     def test_policy_changes_invalidate(self):
         original = self.manifest()
@@ -112,6 +135,21 @@ class RuntimeBuildIdentityTests(unittest.TestCase):
         (self.mlx / "lib/mlx.metallib").unlink()
         with self.assertRaisesRegex(ValueError, "missing MLX"):
             self.manifest()
+
+    def test_cli_rejects_tampered_generated_identity_header(self):
+        value = self.manifest()
+        args = ['identity', '--root', str(self.root), '--mlx-root', str(self.mlx),
+                '--sdk', str(self.sdk), '--toolchain', str(self.tools),
+                '--output', str(self.args.output), '--deployment-target', '26.2',
+                '--test-hooks', '0', '--audit-counters', '0', '--experimental-probes', '0']
+        with patch.object(identity, 'manifest', return_value=value):
+            with patch.object(sys, 'argv', args): identity.main()
+            with patch.object(sys, 'argv', args + ['--verify']): identity.main()
+            header = self.args.output / 'turbocider_runtime_build_generated.hpp'
+            header.write_text(header.read_text().replace(value['catalog_runtime_id'], 'forged-key'))
+            with patch.object(sys, 'argv', args + ['--verify']), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error: identity.main()
+            self.assertEqual(error.exception.code, 1)
 
 
 if __name__ == "__main__":

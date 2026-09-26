@@ -3,6 +3,11 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/native/dependencies.sh
 ROOT="$PWD"
+# Check before replacing an existing App. Instrumented calibration builds are
+# never distributable, even when their catalog compatibility key matches.
+"${TURBOCIDER_BUILD_PYTHON:-python3}" tools/native/check_release_binary.py \
+ --library build/native/libturbocider.dylib \
+ --manifest build/native/runtime-build/runtime-build-manifest.json
 APP="$ROOT/dist/TurboCider.app"
 BIN="$APP/Contents/MacOS"
 RES="$APP/Contents/Resources"

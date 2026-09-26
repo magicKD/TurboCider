@@ -203,7 +203,7 @@ def validate_config_shape(config: dict[str, Any]) -> None:
             raise CatalogBuildError(f"record.plan stage {stage_id} slot policy is invalid")
 
 
-def validate_record_shape(record: dict[str, Any]) -> None:
+def validate_record_shape(record: dict[str, Any], *, allow_test_template: bool = False) -> None:
     require_exact_keys(
         record,
         {
@@ -393,7 +393,8 @@ def validate_record_shape(record: dict[str, Any]) -> None:
     require_string(performance.get("evidence_digest"), "record.performance.evidence_digest", digest=True)
     if performance["comparison_kind"] != "P1_same_layout":
         raise CatalogBuildError("record.performance.comparison_kind must be P1_same_layout")
-    if performance["confidence_status"] != "PASS":
+    allowed_confidence = ("PASS", "TEMPLATE") if allow_test_template else ("PASS",)
+    if performance["confidence_status"] not in allowed_confidence:
         raise CatalogBuildError("record.performance.confidence_status must be PASS")
     release = record["release"]
     require_exact_keys(

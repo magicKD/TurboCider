@@ -46,6 +46,9 @@ test:
 	@"$(PYTHON)" tests/repository/test_independence.py
 	@"$(PYTHON)" tests/repository/test_cpp_boundaries.py
 	@"$(PYTHON)" tests/native/test_hash_small_stack.py
+	@"$(PYTHON)" tests/native/test_runtime_build_identity.py
+	@"$(PYTHON)" tests/native/test_bundled_streaming_catalog.py
+	@"$(PYTHON)" tests/native/test_release_binary.py
 	@"$(PYTHON)" tests/native/test_contract.py
 	@$(MAKE) test-streaming-host
 	@$(MAKE) test-streaming-contract

@@ -22,7 +22,7 @@ class BundledCatalogTests(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.inventory = self.root / "catalog.json"
         self.runtime = self.root / "runtime.json"
-        self.runtime.write_text(json.dumps({"runtime_build_id": "test-build"}))
+        self.runtime.write_text(json.dumps({"runtime_build_id": "test-full-build", "catalog_runtime_id": "test-build"}))
         self.catalog = {"schema": bundled.SCHEMA, "revision": record()["catalog_revision"], "records": []}
 
     def generate(self):
@@ -38,6 +38,35 @@ class BundledCatalogTests(unittest.TestCase):
         self.assertNotEqual(manifest["input_sha256"], other["input_sha256"])
         self.assertEqual(manifest["runtime_build_id"], other["runtime_build_id"])
 
+    def test_app_fixture_is_only_compilable_with_test_hooks(self):
+        fixture = self.root / "test-catalog.json"
+        template = record()
+        template["performance"]["confidence_status"] = "TEMPLATE"
+        template["canonical_record_digest"] = bundled.canonical_record_digest(template)
+        fixture.write_text(json.dumps({"schema": "turbocider-streaming-test-catalog-v1",
+            "revision": self.catalog["revision"], "records": [template]}))
+        runtime = {"runtime_build_id": "test-full-build", "catalog_runtime_id": "test-build",
+                   "inputs": {"policy": {"test_hooks": "0"}}}
+        self.runtime.write_text(json.dumps(runtime))
+        with self.assertRaisesRegex(ValueError, "release build rejected"):
+            bundled.generate_test_fixture(fixture, self.runtime)
+        runtime["inputs"]["policy"]["test_hooks"] = "1"
+        self.runtime.write_text(json.dumps(runtime))
+        header, manifest = bundled.generate_test_fixture(fixture, self.runtime)
+        self.assertTrue(manifest["test_only"])
+        self.assertIn('#ifndef TURBOCIDER_ENABLE_TEST_HOOKS', header)
+        self.assertIn('#error', header)
+        self.assertIn('"TEMPLATE"', header)
+        with self.assertRaisesRegex(bundled.CatalogBuildError, "must be PASS"):
+            bundled.render_catalog(self.catalog["revision"], [template], "test-build")
+        runtime["catalog_runtime_id"] = "other-build"
+        self.runtime.write_text(json.dumps(runtime))
+        with self.assertRaisesRegex(ValueError, "different native build"):
+            bundled.generate_test_fixture(fixture, self.runtime)
+        # A fixture can never double as a production inventory.
+        with self.assertRaisesRegex(ValueError, "schema"):
+            bundled.generate(fixture, self.runtime)
+
     def test_entries_require_original_evidence_and_reverification(self):
         self.catalog["records"] = [{"status": "verified", "record": record()}]
         with self.assertRaisesRegex(ValueError, "original builder inputs"):
@@ -52,6 +81,23 @@ class BundledCatalogTests(unittest.TestCase):
                 ("bundle", "record_input", "review", "performance_bundle", "default_bundle", "swap_bundle")))
         # With no verifier stub, the missing evidence must fail, not silently
         # accept the expected digest or a caller-provided verified label.
+        with self.assertRaises((OSError, ValueError, bundled.CatalogBuildError, bundled.EvidenceError)):
+            self.generate()
+
+    def test_instrumentation_compatibility_does_not_replace_evidence(self):
+        entry = {key: key + ".json" for key in bundled.INPUT_KEYS}
+        entry["expected_record_digest"] = record()["canonical_record_digest"]
+        self.catalog["records"] = [entry]
+        with patch.object(bundled, "build_record", return_value={"record": record()}):
+            first, original = self.generate()
+            self.runtime.write_text(json.dumps({"runtime_build_id": "instrumented-build", "catalog_runtime_id": "test-build"}))
+            second, instrumented = self.generate()
+            self.assertEqual(first, second)
+            self.assertNotEqual(original["runtime_build_id"], instrumented["runtime_build_id"])
+            self.runtime.write_text(json.dumps({"runtime_build_id": "instrumented-build", "catalog_runtime_id": "different-kernels"}))
+            with self.assertRaisesRegex(ValueError, "different native build"):
+                self.generate()
+        self.runtime.write_text(json.dumps({"runtime_build_id": "test-full-build", "catalog_runtime_id": "test-build"}))
         with self.assertRaises((OSError, ValueError, bundled.CatalogBuildError, bundled.EvidenceError)):
             self.generate()
 

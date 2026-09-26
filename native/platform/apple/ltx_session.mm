@@ -108,7 +108,7 @@ static streaming::PresetSourceIdentity ltx_public_source_identity(
 }
 
 static streaming::PresetRuntimeIdentity ltx_public_runtime_identity() {
-    return {tc::runtime_build_identity(), "public-streaming-runtime-v3",
+    return {tc::catalog_runtime_identity(), "public-streaming-runtime-v3",
             "ltx-public-adapter-v2", "ltx-pread-convrot-lease-v1",
             kLtxPublicKernelRevision, "ltx-request-cache-disabled-v1"};
 }

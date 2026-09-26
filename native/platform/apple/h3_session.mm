@@ -349,7 +349,7 @@ static tc::streaming::PresetSourceIdentity h3_public_source_identity(
 }
 
 static tc::streaming::PresetRuntimeIdentity h3_public_runtime_identity() {
-    return {tc::runtime_build_identity(),
+    return {tc::catalog_runtime_identity(),
             "public-streaming-runtime-v2",
             "h3-turbo-public-adapter-v1",
             "h3-pread-bf16-source-lease-v2",

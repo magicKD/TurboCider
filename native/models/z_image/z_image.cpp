@@ -104,7 +104,7 @@ streaming::PresetSourceIdentity z_image_public_source_identity(
 
 streaming::PresetRuntimeIdentity z_image_public_runtime_identity() {
     return {
-        tc::runtime_build_identity(),
+        tc::catalog_runtime_identity(),
         "public-streaming-runtime-v2",
         "z-image-public-adapter-v4-shared-text-lease",
         "z-image-pread-bf16-v2-fd-lease",

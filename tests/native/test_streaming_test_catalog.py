@@ -389,8 +389,9 @@ class TestCatalogTests(unittest.TestCase):
                 if manifest_path.is_file():
                     build_manifest = json.loads(manifest_path.read_text())
                     self.assertEqual(generated_record["runtime"]["turbocider_build_id"],
-                                     build_manifest["runtime_build_id"])
+                                     build_manifest["catalog_runtime_id"])
                     self.assertRegex(build_manifest["runtime_build_id"], r"^tc-runtime-build-v1-[0-9a-f]{64}$")
+                    self.assertRegex(build_manifest["catalog_runtime_id"], r"^tc-catalog-runtime-v1-[0-9a-f]{64}$")
                 self.assertEqual(
                     generated_record["plan"]["canonical_config"]
                     ["stages"]["denoiser"]["resident_prefix_blocks"],

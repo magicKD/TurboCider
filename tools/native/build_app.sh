@@ -74,5 +74,6 @@ printf 'Built Swift App and integration tests\n'
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -parse-as-library apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift tests/integration/WorkerLaunchAdmissionTests.swift -o "$OUT/turbocider-worker-admission-tests"
 
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/PublicImageAppModelTests.swift -o "$OUT/turbocider-public-image-app-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/PublicImageStreamingSmoke.swift -o "$OUT/turbocider-public-streaming-smoke"
 
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift apps/macos/PublicImageWorker.swift apps/macos/PublicImageQueries.swift tests/integration/PublicImageQueryTests.swift -o "$OUT/turbocider-public-image-query-tests"
