@@ -38,6 +38,9 @@ public struct NativeRequest: Codable, Sendable {
     public var allow_approximation: Bool?
     public var dump_tensors: String?
     public var operation: String?
+    public var prompt_enhancer_path: String?
+    public var prompt_enhance: Bool?
+    public var prompt_enhance_edit_experimental: Bool?
     public var inputs: [NativeInput]?
     public var profile: String?
     public var residency: String?

@@ -1,4 +1,107 @@
 import SwiftUI
+import ImageIO
+
+struct Qwen21AnnotationEditor: View {
+    let asset: StudioAsset
+    @ObservedObject var studio: StudioState
+    @Environment(\.dismiss) private var dismiss
+    @State private var tool = Qwen21AnnotationTool.ellipse
+    @State private var output = Qwen21AnnotationOutput.annotatedImage
+    @State private var width = 0.012
+    @State private var strokes: [Qwen21AnnotationStroke] = []
+    @State private var current: Qwen21AnnotationStroke?
+    @State private var preview: NSImage?
+    private func path(_ stroke: Qwen21AnnotationStroke, in rect: CGRect) -> Path {
+        let points = stroke.points.map { CGPoint(x: rect.minX + $0.x * rect.width, y: rect.minY + $0.y * rect.height) }
+        var path = Path()
+        guard let a = points.first, let b = points.last else { return path }
+        if stroke.tool == .ellipse {
+            path.addEllipse(in: CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x-b.x), height: abs(a.y-b.y)))
+        } else {
+            path.move(to: a)
+            if points.count == 1 { path.addLine(to: CGPoint(x: a.x + 0.01, y: a.y)) }
+            else { for point in points.dropFirst() { path.addLine(to: point) } }
+        }
+        return path
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("标注 / 蒙版视觉引导").font(.title2)
+            Text("生成新的 PNG（最长边最多 2048），不修改原图。独立蒙版会追加为参考图：白色编辑、黑色保留。均为语义引导，不保证逐像素锁定。")
+                .font(.caption).foregroundStyle(.secondary)
+            Picker("输出", selection: $output) {
+                Text("原图上的红色标注").tag(Qwen21AnnotationOutput.annotatedImage)
+                Text("独立黑白蒙版").tag(Qwen21AnnotationOutput.separateMask)
+            }.pickerStyle(.segmented).disabled(studio.importing || current != nil)
+            HStack {
+                Picker("工具", selection: $tool) {
+                    Text("圈选").tag(Qwen21AnnotationTool.ellipse)
+                    Text("画笔").tag(Qwen21AnnotationTool.brush)
+                }.pickerStyle(.segmented).frame(width: 200)
+                Slider(value: $width, in: 0.002...0.08).frame(width: 150).accessibilityLabel("标注粗细")
+                Button("撤销笔画") { if !strokes.isEmpty { strokes.removeLast() } }.disabled(strokes.isEmpty)
+                Button("清空") { strokes.removeAll() }.disabled(strokes.isEmpty)
+            }.disabled(studio.importing || current != nil)
+            GeometryReader { proxy in
+                let ratio = CGFloat(asset.width) / CGFloat(asset.height)
+                let w = min(proxy.size.width, proxy.size.height * ratio)
+                let h = w / ratio
+                let rect = CGRect(x: (proxy.size.width-w)/2, y: (proxy.size.height-h)/2, width: w, height: h)
+                ZStack {
+                    Color.gray.opacity(0.2)
+                    if let preview {
+                        Image(nsImage: preview).resizable().frame(width: w, height: h)
+                    }
+                    Canvas { context, _ in
+                        for stroke in strokes + (current.map { [$0] } ?? []) {
+                            if output == .separateMask && stroke.tool == .ellipse {
+                                context.fill(path(stroke, in: rect), with: .color(.white.opacity(0.65)))
+                            } else {
+                                context.stroke(path(stroke, in: rect), with: .color(output == .separateMask ? .white.opacity(0.65) : .red),
+                                    style: StrokeStyle(lineWidth: stroke.width * min(w, h), lineCap: .round, lineJoin: .round))
+                            }
+                        }
+                    }
+                }.contentShape(Rectangle()).gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        guard !studio.importing, preview != nil, strokes.count < 100 else { return }
+                        if current == nil && !rect.contains(drag.startLocation) { return }
+                        func normalized(_ point: CGPoint) -> CGPoint {
+                            CGPoint(x: max(0, min(1, (point.x-rect.minX)/w)), y: max(0, min(1, (point.y-rect.minY)/h)))
+                        }
+                        if current == nil { current = Qwen21AnnotationStroke(tool: tool, points: [normalized(drag.startLocation)], width: width) }
+                        guard var stroke = current else { return }
+                        if stroke.tool == .ellipse { stroke.points = [stroke.points[0], normalized(drag.location)] }
+                        else if stroke.points.count < 4096 { stroke.points.append(normalized(drag.location)) }
+                        current = stroke
+                    }
+                    .onEnded { _ in
+                        if let stroke = current,
+                           stroke.tool != .ellipse || (stroke.points.first!.x != stroke.points.last!.x &&
+                                                        stroke.points.first!.y != stroke.points.last!.y) { strokes.append(stroke) }
+                        current = nil
+                    })
+            }.frame(minHeight: 400)
+            HStack {
+                Text("\(strokes.count) / 100 笔画").font(.caption)
+                Spacer()
+                Button("取消") { dismiss() }.disabled(studio.importing)
+                Button(output == .separateMask ? "添加独立蒙版" : "使用标注副本") {
+                    Task { if await studio.annotateQwen21Asset(asset.id, strokes: strokes, output: output) { dismiss() } }
+                }.buttonStyle(.borderedProminent).disabled(strokes.isEmpty || current != nil || studio.importing || preview == nil)
+            }
+            if let message = studio.message { Text(message).font(.caption).foregroundStyle(.secondary) }
+        }.padding(20).frame(width: 780, height: 620)
+            .onAppear {
+                if let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: asset.path) as CFURL, nil),
+                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 1600
+                   ] as CFDictionary) { preview = NSImage(cgImage: image, size: .zero) }
+            }
+    }
+}
 import AppKit
 import ImageIO
 

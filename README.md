@@ -12,6 +12,9 @@ Create images and videos in a native SwiftUI studio, automate jobs with the CLI,
 
 ## App preview
 
+Qwen-Image-2.1 native App/CLI support and validation boundaries:
+[Qwen-Image-2.1 guide](docs/public/QWEN_IMAGE_21.md).
+
 ![TurboCider macOS App](assets/app/app.png)
 
 ## What makes it different
@@ -72,6 +75,12 @@ open dist/TurboCider.app
 Choose image or video creation in the App; a compatible executor is selected automatically. Register its model folder and generate with GPU first. Compatible Z-Image text components can be linked from a local FLUX.2 Klein 4B installation. Configure ANE only after preparing artifacts for the actual model, shape and LoRA identity. Current packages are locally ad-hoc signed, not notarized releases.
 
 For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`. `batch` reuses a session; `serve` exposes the local job API. See [getting started](docs/public/GETTING_STARTED.md) and the [request / SDK / API reference](docs/public/USAGE.md).
+
+For a compiled ANE manifest, `generate` and `batch` also accept a trailing
+`--ane-manifest MANIFEST.json`; the explicit profile stays independent of the
+default GPU and other models' ANE manifests. See the
+[measured Z-Image 512² W8A8 route](docs/public/Z_IMAGE_ANE.md) for its
+~1.31× warm-wall result and qualification limits.
 
 ## Model capabilities
 

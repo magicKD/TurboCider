@@ -33,6 +33,9 @@ struct NativeJob: Codable, Identifiable, Sendable {
                 ? "GPU + Core ML · \(precision) · ANE 驻留未知" : "GPU · \(precision)"
         }
         if execution.hasPrefix("gpu_ane") {
+            if request.model == "qwen-image-2.1", result["runtime_precision"] as? String == "bf16_gpu+fp16_mlp_fp16_io" {
+                return "GPU + Core ML · BF16/FP16 · ANE 驻留未知"
+            }
             let variant = (result["hybrid"] as? [String: Any])?["weight_variant"] as? String
             let precision: String
             switch variant {

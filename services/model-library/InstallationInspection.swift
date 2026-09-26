@@ -153,6 +153,11 @@ private struct InstallationProbe {
             issue("missing_root", report.path, "模型目录不可访问或已移动；请选择现有目录重新登记。"); return
         }
         switch report.modelID {
+        case "qwen-image-2.1":
+            json("processor/tokenizer.json")
+            for path in ["diffusion_models/qwen_image_2.1_bf16.safetensors", "text_encoders/qwen3vl_8b_bf16.safetensors", "vae/qwen_image_2.1_vae_bf16.safetensors"] {
+                weights(path)
+            }
         case "z-image-turbo":
             json("tokenizer/tokenizer.json")
             let comfy = ZImageVariant.all.filter(\.runnable).map(\.path).first(where: { exists($0) }) ?? ZImageVariant.all[0].path

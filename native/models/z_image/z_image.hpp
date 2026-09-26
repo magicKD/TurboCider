@@ -51,12 +51,16 @@ class ZImage final : public ModelSession {
     std::unique_ptr<Tokenizer> public_stream_tokenizer_;
     bool public_component_cache_ = false;
     uint64_t public_stream_target_bytes_ = 0;
+    int gpu_w8_suffix_start_ = -1;
+    int gpu_w8_group_size_ = 0;
+    std::string gpu_w8_manifest_;
+    std::string gpu_bf16_route_manifest_;
 
     void select_loras(const Request &);
     void load_vae(const Event &, std::atomic<bool> &);
     Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);
     Tensor denoise(const Tensor &, const Tensor &, float, float, int, int,
-                   const Event &, std::atomic<bool> &);
+                   const Event &, std::atomic<bool> &, std::vector<Tensor> * = nullptr);
     Tensor decode(const Tensor &, int, int, const Event &, std::atomic<bool> &);
     bool conditioning(const Request &, const Event &, std::atomic<bool> &);
     std::string select_acceleration(Request &, int, const Event &, std::atomic<bool> &);

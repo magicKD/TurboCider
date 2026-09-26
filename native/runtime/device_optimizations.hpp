@@ -40,6 +40,8 @@ struct DeviceOptimizations {
 };
 inline constexpr DeviceOptimizations legacy_device_optimizations{};
 inline constexpr DeviceOptimizations measured_device_optimizations[] = {
+    {"m4pro48-coreml-copy-v1", "Apple M4 Pro", 48ull << 30,
+     false, false, false, false, false, true, false},
     {"m5pro24-v1", "Apple M5 Pro", 24ull << 30,
      true, true, true, true, true, true, true},
 };

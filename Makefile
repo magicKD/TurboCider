@@ -1,9 +1,9 @@
 .DEFAULT_GOAL := help
-# Prefer the project environment so tests use the same dependencies as the build.
-LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3.11))
-PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),python3.11)
+# Prefer the project environment, then fallback to active environment (uv/conda/pyenv)
+LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3))
+PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),$(shell which python3 2>/dev/null || echo python3.11))
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
-.PHONY: help setup build build-app build-vision-quality package test test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
+.PHONY: help setup build build-app build-vision-quality package test test-qwen21 test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
 .PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-catalog-builder test-streaming-source-identity test-streaming-source-lease test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults test-process-tree-sampler
 help:
 	@echo 'TurboCider — native multimodal inference system'
@@ -28,6 +28,7 @@ help:
 	@echo 'make test-streaming-pager          Verify sparse MLX resident/slot pager failure contracts'
 	@echo 'make test-ltx-streaming-lifecycle MODEL=/path OUTPUT=/path  Opt-in real LTX exact lifecycle test'
 	@echo 'make test-ltx-streaming-lifecycle-faults MODEL=/path OUTPUT=/path  Require a test-hook build and unsafe-cleanup matrix'
+	@echo 'make test-qwen21                 Run focused Qwen21 native/App contract checks (no inference)'
 	@echo 'make test-model MODEL=/path/to/FLUX.2-klein-4B OUTPUT=/tmp/new-tc-validation'
 	@echo 'make doctor                       Inspect this Mac and native dependencies'
 	@echo 'make h3-quant-cache MODEL=/path/to/transformer OUTPUT=/path/to/cache'
@@ -42,6 +43,7 @@ build-vision-quality:
 package: build
 	@tools/native/package.sh
 test:
+	@"$(PYTHON)" tests/native/test_qwen21_sequence.py
 	@"$(PYTHON)" tests/repository/test_layout.py
 	@"$(PYTHON)" tests/repository/test_independence.py
 	@"$(PYTHON)" tests/repository/test_cpp_boundaries.py
@@ -49,6 +51,7 @@ test:
 	@"$(PYTHON)" tests/native/test_runtime_build_identity.py
 	@"$(PYTHON)" tests/native/test_bundled_streaming_catalog.py
 	@"$(PYTHON)" tests/native/test_release_binary.py
+	@"$(PYTHON)" tests/native/test_coreml_output_copy.py
 	@"$(PYTHON)" tests/native/test_contract.py
 	@$(MAKE) test-streaming-host
 	@$(MAKE) test-streaming-contract
@@ -59,6 +62,10 @@ test:
 	@$(MAKE) test-streaming-pager
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
 	@"$(PYTHON)" -B tests/native/test_z_image_sharded_checkpoint.py
+	@"$(PYTHON)" -B tests/native/test_z_image_smoothquant.py
+	@"$(PYTHON)" -B tests/native/test_cli_ane_override.py
+	@"$(PYTHON)" -B tests/native/test_z_image_w8a8_layers.py
+	@"$(PYTHON)" -B tests/native/test_z_image_w8a8_coreml.py
 	@"$(PYTHON)" -B tests/native/test_z_image_weight_stream.py
 	@"$(PYTHON)" -B tests/native/test_z_image_int8_exact.py
 	@"$(PYTHON)" -B tests/native/test_coreml_lora.py
@@ -153,6 +160,13 @@ test-ltx-streaming-lifecycle-faults:
 		--library build/native/libturbocider.dylib --model "$(MODEL)" \
 		--cache "$(OUTPUT)/cache" --output "$(OUTPUT)/lifecycle" \
 		--require-test-hooks
+test-qwen21:
+	@"$(PYTHON)" -m unittest discover -s tests/native -p 'test_qwen21_*.py'
+	@"$(PYTHON)" -m unittest discover -s tests/native -p 'test_qwen35_sample_report.py'
+	@"$(PYTHON)" -m unittest discover -s tests/native -p 'test_contract.py' -k qwen21
+	@build/native/qwen21-prompt-rewrite-test
+	@build/native/qwen35-sampling-test
+	@build/native/turbocider-qwen21-workflow-tests
 test-app:
 	@build/native/turbocider-image-transaction-tests
 	@build/native/turbocider-ltx-worker-tests

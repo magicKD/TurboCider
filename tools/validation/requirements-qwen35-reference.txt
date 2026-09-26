@@ -1,0 +1,11 @@
+# Development-only PE oracle. Never imported by native inference.
+# Match references/Qwen-Image-2.1/prompt_rewrite/requirements.txt for the
+# Transformers path; vLLM/server packages are not used by these tests.
+transformers==5.4.0
+tokenizers==0.22.1
+huggingface_hub==1.27.0
+accelerate==1.11.0
+torch==2.10.0
+torchvision==0.25.0
+pillow==11.1.0
+safetensors==0.8.0

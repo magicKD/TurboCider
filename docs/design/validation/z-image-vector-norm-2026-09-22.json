@@ -1,0 +1,52 @@
+{
+  "status": "invalid_for_performance_pre_reboot_system_state",
+  "superseded_status": "historical_screen_promoted_by_followup_production_rebuild",
+  "date": "2026-09-22",
+  "hardware": "Apple M4 Max, 40 GPU cores, 64 GiB",
+  "os": "26.6.2 (25G83)",
+  "library_sha256": "cc3952a1ac25a221b2c2b2bf28b0da08f3d0384a0aaee1b60318ff0c834873f3",
+  "conditions": {
+    "execution": "gpu",
+    "precision": "bf16",
+    "steps": 8,
+    "seed": 42,
+    "prompt": "A cinematic red fox walking through fresh snow, soft morning light.",
+    "shared_environment": {"TURBOCIDER_Z_MPP_SWIGLU": "1"},
+    "candidate_only_environment": {"TURBOCIDER_Z_NORM_VECTOR": "1"},
+    "followup_default": "The rebuilt production library enables this path by default; TURBOCIDER_Z_DISABLE_VECTOR_NORM selects scalar fallback.",
+    "change": "four-wide norm/mod memory accesses; unchanged 960-thread reduction and explicit activation rounding"
+  },
+  "512": {
+    "schedule": "B,A,A,B fresh processes, one excluded cold plus two warm requests each; separate parity requests in first B and A",
+    "scalar_denoise_seconds": [15.482989208, 15.860041333, 15.700058125, 15.699989958],
+    "vector_denoise_seconds": [14.826057417, 14.829996292, 14.837899042, 14.690964583],
+    "scalar_median_denoise_seconds": 15.7000240415,
+    "vector_median_denoise_seconds": 14.8280268545,
+    "scalar_median_wall_seconds": 20.967095625499496,
+    "vector_median_wall_seconds": 20.168028104002587,
+    "parity": "all dump files and PNG byte-identical via diff -rq and cmp",
+    "raw_report_directory": "/private/tmp/z-image-vector-512-20260922"
+  },
+  "1024": {
+    "schedule": "A,B fresh processes; one excluded cold plus one warm request each",
+    "scalar_denoise_seconds": 76.79492875,
+    "vector_denoise_seconds": 72.186031375,
+    "scalar_wall_seconds": 98.43910087499535,
+    "vector_wall_seconds": 93.59049954201328,
+    "parity": "warm PNG byte-identical via cmp; intermediate latent parity not tested in this screen",
+    "raw_report_directory": "/private/tmp/z-image-vector-1024-20260922",
+    "limitation": "single warm sample per variant; not robust ABBA"
+  },
+  "tests": {
+    "native_gpu": "2 unittest methods passed; scalar/reference and vector/scalar checks at rows 1,33,1056,4128, BF16/FP16/FP32, inline/precomputed gate",
+    "report_accounting": "3 CPU unittest methods passed",
+    "vector_precision": "zero max_abs required against scalar norm in every synthetic case"
+  },
+  "limitations": [
+    "Does not restore historical same-machine 1024 performance",
+    "Does not meet 512 diffusion under 10 seconds",
+    "512 full-model parity covers one prompt and seed only",
+    "Compared against current fused+MPP scalar control, not the original unfused implementation",
+    "This historical screen used an isolated candidate dylib; follow-up production rebuild is recorded in z-image-vector-default-2026-09-22.json"
+  ]
+}

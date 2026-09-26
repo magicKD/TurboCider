@@ -14,6 +14,7 @@ dist/cli/turbocider models
 dist/cli/turbocider plan request.json
 dist/cli/turbocider generate /absolute/model request.json
 dist/cli/turbocider batch /absolute/model first.json second.json
+dist/cli/turbocider generate path/to/model request.json --ane-manifest path/to/compiled/manifest-HASH.json
 ```
 
 Use the model catalog's executable operations, not the upstream model's entire
@@ -61,6 +62,21 @@ stdout contains final JSON; stderr contains progress events. Ctrl-C cancels at
 a safe boundary, with exit code 2 for cancellation. Once an output has been
 atomically committed, the operation succeeds. Choose unique output paths.
 Batch requests must use the same model.
+For `plan`, `generate` and `batch`, the optional trailing
+`--ane-manifest path/to/compiled/manifest-HASH.json` explicitly selects a
+GPU/ANE manifest and consents to approximation for that invocation. It works
+with schema 1 and 2, preserves the request JSON, and rejects a conflicting
+`ane_manifest` already in the request. It does not select a quantization
+profile by filename or override the runtime's checkpoint, shape, token,
+adapter or artifact validation. Existing JSON-specified ANE execution and
+other model-specific ANE profiles still work without this flag.
+
+For the fastest **measured** Z-Image 512²/8-step W8A8 route (M4 Max 64 GB),
+use `examples/requests/z-image-turbo-512.json` and
+the compiled *1,024-image-row, 5,120-intermediate-channel* manifest. See the
+[Z-Image GPU/ANE status and exact timing scope](Z_IMAGE_ANE.md). `plan` checks
+request syntax and execution policy; a real generation is still required to
+verify that the model and compiled ANE artifact are compatible.
 
 ## Model capabilities
 
@@ -234,6 +250,11 @@ require up to 1536 total rows. Enumerated 1056–1536-row partitions cover this
 range in 32-row increments. A fixed 1056-row cache allows only 32 padded text
 tokens. Larger images require larger compatible partitions. Continuous-range
 shapes are not the qualified default.
+The separate image-only W8A8 profile fixes **ANE input at 1,024 image rows**
+and executes caption rows on the GPU; its fixed bucket is not the older
+1,056-row all-token profile. The FFN GPU/ANE split still occurs over
+intermediate channels for each image token. Use the exact marked compiled
+manifest, not an uncompiled source `.mlpackage`.
 
 The resource interface also supports `inventory`, `delete_artifacts`,
 `clear_compiled` and `clear_runtime`. Destructive actions default to preview;

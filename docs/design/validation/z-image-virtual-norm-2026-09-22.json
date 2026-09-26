@@ -1,0 +1,41 @@
+{
+  "status": "invalid_for_performance_pre_reboot_system_state",
+  "superseded_status": "experimental_only_not_default",
+  "method": "256 physical threads retain 30 virtual SIMD partial sums, four consecutive elements per virtual lane, original final simd_sum, precise rsqrt and BF16 boundaries",
+  "native_sha256": "742ad2df8ece7903033e242b9ecf1b13dc7250fc1dc3992f2940cb5a7a4a8db2",
+  "workload": {
+    "execution": "gpu", "precision": "bf16", "steps": 8, "seed": 123,
+    "prompt": "A sunlit greenhouse filled with orchids and ferns, photographic detail.",
+    "mpp": "device-qualified default on M4 Max"
+  },
+  "control_environment": {},
+  "candidate_environment": {"TURBOCIDER_Z_VIRTUAL_NORM_THREADS": "256"},
+  "512": {
+    "control_diffusion_seconds": [14.682054958, 14.691004458],
+    "candidate_diffusion_seconds": [14.866926458, 14.859995042],
+    "control_wall_seconds": [19.70298775000265, 19.97637887496967],
+    "candidate_wall_seconds": [20.017645000014454, 19.956660417024978],
+    "parity": "all 11 dump files and PNG byte-identical",
+    "raw_reports": "/private/tmp/z-image-virtual-norm-512-20260922"
+  },
+  "1024": {
+    "control_diffusion_seconds": [72.446985792],
+    "candidate_diffusion_seconds": [66.981055458],
+    "control_wall_seconds": [93.87291674996959],
+    "candidate_wall_seconds": [88.58585841703461],
+    "parity": "all 11 dump files and PNG byte-identical",
+    "raw_reports": "/private/tmp/z-image-virtual-norm-1024-20260922"
+  },
+  "tests": {
+    "gpu_methods": "3 passed including new exact virtual/vector comparison",
+    "virtual_geometry": "256 threads: rows 1,33,1056,4128; 128 and 512 threads: rows33; all three dtypes, inline/precomputed gates",
+    "cpu_benchmark_methods": "6 passed"
+  },
+  "limitations": [
+    "A-B screens, not ABBA; cold and parity requests excluded",
+    "512 showed slight regression and 1024 has only one warm sample per variant",
+    "No default dispatch change; experimental kernel opt-in only",
+    "Full native-only rebuild completed, no application packaging",
+    "Historical absolute-runtime regression and 512-under-10-second requirement remain unresolved"
+  ]
+}

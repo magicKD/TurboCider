@@ -32,6 +32,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lora import apply as apply_lora
 from lora import load as load_loras
 from lora import provenance as lora_provenance
+from z_image_smoothquant import (load_calibration_union,
+                                 smooth_partial_ffn,
+                                 calibrate_input_a8, calibrate_hidden_a8,
+                                 calibrate_adaptive_hidden_a8,
+                                 calibrate_hidden_channel_groups, route_channel_indices)
 
 
 HIDDEN = 3840
@@ -451,9 +456,52 @@ def main() -> None:
                         help="minimum and default row count for flexible exports")
     parser.add_argument("--bucket-step", type=int, default=32)
     parser.add_argument("--ane-mlp-width", type=int, default=7680)
+    parser.add_argument("--row-split-probe", action="store_true",
+                        help="single-block W8A8 probe: full FFN width on a prefix of image-token rows; "
+                             "not accepted by the native hybrid runtime")
     parser.add_argument("--activation-scale", type=float, default=8.0)
     parser.add_argument("--output-scale", type=float, default=32.0)
     parser.add_argument("--variant", choices=["int8_pc", "fp16"], default="int8_pc")
+    parser.add_argument("--activation-precision", choices=["fp16", "int8"], default="fp16",
+                        help="int8 requires real, per-block FFN input calibration")
+    parser.add_argument("--calibration-dir", type=Path,
+                        help="block0/ ... block31/ of .npy samples, each [bucket, 3840] FP16")
+    parser.add_argument("--extra-calibration-dir", type=Path, action="append", default=[],
+                        help="additional independent block directories; digest binds ordered union")
+    parser.add_argument("--calibration-source-rows", type=int,
+                        help="read larger captured rows but calibrate only the exported prefix; "
+                             "1024-row image-only probe from 1056-row Z-Image captures")
+    parser.add_argument("--sq-alpha1", type=float, default=0.5)
+    parser.add_argument("--sq-alpha2", type=float, default=0.5)
+    parser.add_argument("--sq-hidden-rows", type=int, default=32)
+    parser.add_argument("--input-a8-search", action="store_true",
+                        help="search input A8 clipping by calibrated partial-FFN output error")
+    parser.add_argument("--outlier-rows", action="store_true",
+                        help="include high-amplitude FFN input rows in calibration statistics")
+    parser.add_argument("--region-image-rows", type=int,
+                        help="experimental image/context split with independent A8 scales")
+    parser.add_argument("--shared-region-input-qdq", action="store_true",
+                        help="one input Q/DQ for image/caption via fixed per-row pre/post scales")
+    parser.add_argument("--sq-hidden-image-only", action="store_true",
+                        help="derive hidden-channel SmoothQuant scales from image rows only")
+    parser.add_argument("--hidden-a8-channel-groups", type=int,
+                        help="experimental image-row hidden A8 scales per channel group; "
+                             "1024-row image-only export needs no separate caption region")
+    parser.add_argument("--adaptive-hidden-a8-bins", type=int,
+                        help="experimental fixed hidden A8 scale bank selected per image token")
+    parser.add_argument("--adaptive-hidden-a8-shared-qdq", action="store_true",
+                        help="experimental one-Q/DQ bank via per-token pre/post scale")
+    parser.add_argument("--image-hidden-sq-alpha2", type=float,
+                        help="experimental image-only hidden SQ after SwiGLU; preserve "
+                             "the original W8 projections and caption path")
+    parser.add_argument("--image-hidden-sq-blocks",
+                        help="comma-separated subset for image-only hidden SQ; default all exported blocks")
+    parser.add_argument("--adaptive-caption-a8-bins", type=int,
+                        help="experimental fixed hidden A8 scale bank per caption token")
+    parser.add_argument("--adaptive-caption-a8-blocks",
+                        help="comma-separated subset for caption A8; default exported non-refiner blocks")
+    parser.add_argument("--channel-routing", type=Path,
+                        help="training-only ANE channel groups; GPU packs the exact complement")
     parser.add_argument("--convrot-mode", choices=["native", "derotate"], default="native",
                         help="keep ConvRot weights rotated and emit online FWHT, or derotate offline")
     parser.add_argument("--blocks", default="all", help="all or comma-separated block indexes")
@@ -472,23 +520,107 @@ def main() -> None:
                list(range(args.min_bucket, args.bucket + 1, args.bucket_step)))
     if args.shape_mode == "enumerated" and not 2 <= len(buckets) <= 128:
         raise ValueError("enumerated export requires 2...128 shapes")
-    if args.ane_mlp_width <= 0 or args.ane_mlp_width >= MLP_WIDTH:
-        raise ValueError("ane-mlp-width must be in 1...10239")
+    if args.ane_mlp_width <= 0 or args.ane_mlp_width > MLP_WIDTH or (
+            args.ane_mlp_width == MLP_WIDTH and not args.row_split_probe):
+        raise ValueError("ane-mlp-width must be in 1...10239 outside the full-width row probe")
+    if args.row_split_probe and not (
+            args.ane_mlp_width == MLP_WIDTH and args.bucket in (256, 384, 416, 512, 544, 768, 1024) and
+            args.calibration_source_rows == 1056 and args.activation_precision == "int8" and
+            args.shape_mode == "fixed" and args.region_image_rows is None and
+            args.hidden_a8_channel_groups == 4 and args.blocks != "all"):
+        raise ValueError("row-split probe needs one image-row bucket, full FFN width, "
+                         "four hidden A8 groups and 1056-row real captures")
     if not 1.0 <= args.activation_scale <= 64.0:
         raise ValueError("activation-scale must be 1...64")
     if not 1.0 <= args.output_scale <= 256.0:
         raise ValueError("output-scale must be 1...256")
+    if args.activation_precision == "int8":
+        if (args.variant != "int8_pc" or args.calibration_dir is None or
+                args.shape_mode != "fixed" or args.sq_hidden_rows < 1 or
+                not 0 <= args.sq_alpha1 <= 1 or not 0 <= args.sq_alpha2 <= 1):
+            raise ValueError("W8A8 requires INT8 weights, fixed bucket and real SmoothQuant calibration")
+        if any(path.is_symlink() or not path.is_dir() for path in
+               [args.calibration_dir, *args.extra_calibration_dir]):
+            raise ValueError("calibration directories must be real directories")
+    elif args.calibration_dir is not None or args.extra_calibration_dir:
+        raise ValueError("calibration directories require --activation-precision int8")
+    if args.calibration_source_rows is not None and not (
+            args.activation_precision == "int8" and
+            (args.bucket == 1024 or args.row_split_probe) and
+            args.calibration_source_rows == 1056 and args.region_image_rows is None):
+        raise ValueError("calibration source row trimming requires an image-only W8A8 export")
+    if (args.input_a8_search or args.outlier_rows) and args.activation_precision != "int8":
+        raise ValueError("A8 calibration options require INT8 activation calibration")
+    if args.region_image_rows is not None and (args.activation_precision != "int8" or
+            not args.outlier_rows or not 0 < args.region_image_rows < args.bucket or
+            args.region_image_rows % 32):
+        raise ValueError("region-image-rows needs outlier-aware W8A8 and a 32-aligned split")
+    if args.shared_region_input_qdq and args.region_image_rows is None:
+        raise ValueError("shared input Q/DQ requires image/caption regions")
+    if args.sq_hidden_image_only and args.region_image_rows is None:
+        raise ValueError("image-only hidden SmoothQuant requires region-image-rows")
+    if args.hidden_a8_channel_groups is not None and (
+            not (args.sq_hidden_image_only or
+                 ((args.bucket == 1024 or args.row_split_probe) and args.region_image_rows is None and
+                  args.activation_precision == "int8" and args.outlier_rows)) or
+            args.hidden_a8_channel_groups < 2 or
+            args.ane_mlp_width % args.hidden_a8_channel_groups or
+            (args.ane_mlp_width // args.hidden_a8_channel_groups) % 32):
+        raise ValueError("hidden A8 channel groups need image-only calibration and 32-aligned groups")
+    if args.adaptive_hidden_a8_bins is not None and (
+            not args.sq_hidden_image_only or args.adaptive_hidden_a8_bins < 2 or
+            args.adaptive_hidden_a8_bins > 8 or args.hidden_a8_channel_groups is not None):
+        raise ValueError("adaptive hidden A8 requires image-only SQ, 2...8 bins, no channel groups")
+    if args.adaptive_hidden_a8_shared_qdq and args.adaptive_hidden_a8_bins is None:
+        raise ValueError("shared Q/DQ requires an adaptive hidden A8 scale bank")
+    if args.image_hidden_sq_alpha2 is not None and (
+            not args.adaptive_hidden_a8_shared_qdq or
+            not args.sq_hidden_image_only or
+            not 0 <= args.image_hidden_sq_alpha2 <= 1):
+        raise ValueError("image-only hidden SQ requires a shared adaptive A8 graph and alpha2 in [0, 1]")
+    if args.adaptive_caption_a8_bins is not None and (
+            not args.adaptive_hidden_a8_shared_qdq or
+            args.region_image_rows is None or
+            not 2 <= args.adaptive_caption_a8_bins <= 8):
+        raise ValueError("adaptive caption A8 needs a shared image bank and 2...8 bins")
+    if args.channel_routing is not None and (
+            args.activation_precision != "int8" or args.region_image_rows is None or
+            args.lora or args.blocks != "all"):
+        raise ValueError("channel routing requires all W8A8 blocks and no LoRA")
     blocks = list(DEFAULT_BLOCKS)
     block_indexes = parse_blocks(args.blocks, blocks)
+    if args.row_split_probe and len(block_indexes) != 1:
+        raise ValueError("full-width row-split probe exports exactly one block")
+    if args.image_hidden_sq_blocks is not None and args.image_hidden_sq_alpha2 is None:
+        raise ValueError("image-only hidden SQ blocks require an alpha2 override")
+    if args.adaptive_caption_a8_blocks is not None and args.adaptive_caption_a8_bins is None:
+        raise ValueError("adaptive caption A8 blocks require a scale bank")
+    image_hidden_sq_blocks = (parse_blocks(args.image_hidden_sq_blocks, blocks)
+                              if args.image_hidden_sq_blocks is not None else
+                              block_indexes if args.image_hidden_sq_alpha2 is not None else [])
+    if any(block not in block_indexes for block in image_hidden_sq_blocks):
+        raise ValueError("image-only hidden SQ blocks must be exported")
+    adaptive_caption_a8_blocks = (parse_blocks(args.adaptive_caption_a8_blocks, blocks)
+                                  if args.adaptive_caption_a8_blocks is not None else
+                                  [block for block in block_indexes if block >= 2]
+                                  if args.adaptive_caption_a8_bins is not None else [])
+    if any(block not in block_indexes for block in adaptive_caption_a8_blocks):
+        raise ValueError("adaptive caption A8 blocks must be exported")
+    if any(block < 2 for block in adaptive_caption_a8_blocks):
+        raise ValueError("noise-refiner blocks have no real caption rows for adaptive A8")
 
     import numpy as np
     import coremltools as ct
     import coremltools.optimize.coreml as optimize
     from coremltools.converters.mil import Builder as mb
     from coremltools.converters.mil.mil import types, get_new_symbol
+    from z_image_smoothquant import verify_w8a8
 
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     checkpoint_source = source_from_model(args.model, args.convrot_mode)
+    if (args.activation_precision == "int8" and
+            getattr(checkpoint_source, "has_convrot", False) and args.convrot_mode == "native"):
+        raise ValueError("SmoothQuant on ConvRot weights requires --convrot-mode derotate")
     checkpoint = checkpoint_source.checkpoint
     if args.lora_strength and len(args.lora_strength) != len(args.lora):
         raise ValueError("--lora-strength must be repeated once per --lora")
@@ -496,6 +628,39 @@ def main() -> None:
     lora_roles = [args.lora_role] * len(args.lora)
     lora_records = lora_provenance(args.lora, lora_strengths, lora_roles)
     lora_bundles = load_loras(args.lora, lora_strengths, lora_roles, np)
+    calibration = {}
+    calibration_dirs = [args.calibration_dir, *args.extra_calibration_dir] if args.calibration_dir else []
+    if args.activation_precision == "int8":
+        for ordinal in block_indexes:
+            samples, digest = load_calibration_union(
+                [path / f"block{ordinal}" for path in calibration_dirs],
+                args.bucket, HIDDEN, np, pad_rows=ordinal < 2,
+                source_rows=args.calibration_source_rows)
+            calibration[str(ordinal)] = {"sha256": digest, "samples": len(samples)}
+    channel_routing = None
+    if args.channel_routing is not None:
+        if args.channel_routing.is_symlink() or not args.channel_routing.is_file():
+            raise ValueError("channel routing must be a regular JSON file")
+        route = json.loads(args.channel_routing.read_text())
+        group = route.get("group_width")
+        groups = route.get("ane_group_indexes")
+        if (route.get("owner") != "turbocider.z_image.w8a8.channel_routing.v1" or
+                not isinstance(group, int) or group < 32 or group % 32 or
+                MLP_WIDTH % group or args.ane_mlp_width % group or
+                route.get("mlp_width") != MLP_WIDTH or
+                route.get("ane_mlp_width") != args.ane_mlp_width or
+                not isinstance(groups, dict) or set(groups) != set(calibration) or
+                route.get("calibration_sha256") != {block: item["sha256"]
+                                                     for block, item in calibration.items()}):
+            raise ValueError("channel routing geometry or calibration differs from export")
+        for key, selected in groups.items():
+            if (not isinstance(selected, list) or
+                    len(selected) != args.ane_mlp_width // group or
+                    any(not isinstance(index, int) or isinstance(index, bool) or
+                        index < 0 or index >= MLP_WIDTH // group for index in selected) or
+                    len(set(selected)) != len(selected) or selected != sorted(selected)):
+                raise ValueError(f"invalid ANE channel group selection for block {key}")
+        channel_routing = {"group_width": group, "ane_group_indexes": groups}
     output = args.output.absolute()
     if output.is_symlink():
         raise ValueError("symlink output unsupported")
@@ -505,6 +670,8 @@ def main() -> None:
     with os.fdopen(descriptor, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         provenance = checkpoint_source.provenance()
+        if channel_routing is not None and route["checkpoint_sha256"] != provenance["checkpoint_sha256"]:
+            raise ValueError("channel routing checkpoint differs from export")
         identity = {
             "owner": ("turbocider.z_image.coreml.v1" if args.model_kind == "z-image"
                       else "turbocider.llada_image.coreml.v1"),
@@ -514,10 +681,63 @@ def main() -> None:
             "mlp_width": MLP_WIDTH,
             "ane_mlp_start": 0,
             "ane_mlp_end": args.ane_mlp_width,
+            **({"row_split_probe": True} if args.row_split_probe else {}),
             "activation_scale": args.activation_scale,
             "output_scale": args.output_scale,
             "blocks": block_indexes,
             "variant": args.variant,
+            "activation_precision": args.activation_precision,
+            **({"calibration": calibration, "sq_alpha1": args.sq_alpha1,
+                "sq_alpha2": args.sq_alpha2, "sq_hidden_rows": args.sq_hidden_rows,
+                "a8_graph": ("explicit_dual_qdq_shared_region_input_v13"
+                             if args.shared_region_input_qdq else
+                             "explicit_dual_qdq_image_only_channel_groups_v12"
+                             if (args.bucket == 1024 or args.row_split_probe) and
+                                args.region_image_rows is None and
+                                args.hidden_a8_channel_groups is not None else
+                             (("explicit_dual_qdq_regions_image_sq_adaptive_shared_vector_v11"
+                              if args.adaptive_hidden_a8_shared_qdq else
+                              "explicit_dual_qdq_regions_image_sq_adaptive_bins_v10"
+                              if args.adaptive_hidden_a8_bins is not None else
+                              "explicit_dual_qdq_regions_image_sq_channel_groups_v9"
+                              if args.hidden_a8_channel_groups is not None else
+                              "explicit_dual_qdq_regions_image_sq_v8" if args.sq_hidden_image_only
+                              else "explicit_dual_qdq_regions_input_search_v7" if args.input_a8_search
+                              else "explicit_dual_qdq_regions_v6")
+                             if args.region_image_rows is not None else
+                             "explicit_dual_qdq_output_nmse_outlier_rows_v5_" +
+                             ("input_search" if args.input_a8_search else "max_input")
+                             if args.outlier_rows else
+                             ("explicit_dual_qdq_output_nmse_input_search_v4"
+                              if args.input_a8_search else "explicit_dual_qdq_output_nmse_v3"))),
+                **({"region_image_rows": args.region_image_rows}
+                   if args.region_image_rows is not None else {}),
+                **({"shared_region_input_qdq": True}
+                   if args.shared_region_input_qdq else {}),
+                **({"hidden_a8_channel_groups": args.hidden_a8_channel_groups}
+                   if args.hidden_a8_channel_groups is not None else {}),
+                **({"adaptive_hidden_a8_bins": args.adaptive_hidden_a8_bins}
+                   if args.adaptive_hidden_a8_bins is not None else {}),
+                **({"adaptive_hidden_a8_shared_qdq": True}
+                   if args.adaptive_hidden_a8_shared_qdq else {}),
+                **({"image_hidden_sq_alpha2": args.image_hidden_sq_alpha2}
+                   if args.image_hidden_sq_alpha2 is not None else {}),
+                **({"image_hidden_sq_blocks": image_hidden_sq_blocks}
+                   if args.image_hidden_sq_blocks is not None else {}),
+                **({"adaptive_caption_a8_bins": args.adaptive_caption_a8_bins}
+                   if args.adaptive_caption_a8_bins is not None else {}),
+                **({"adaptive_caption_a8_blocks": adaptive_caption_a8_blocks}
+                   if args.adaptive_caption_a8_blocks is not None else {}),
+                **({"calibration_directory_count": len(calibration_dirs)}
+                   if len(calibration_dirs) > 1 else {}),
+                **({"calibration_source_rows": args.calibration_source_rows}
+                   if args.calibration_source_rows is not None else {}),
+                **({"image_only_token_rows": 1024}
+                   if not args.row_split_probe and args.bucket == 1024 and
+                      args.region_image_rows is None and
+                      args.hidden_a8_channel_groups is not None else {}),
+                **({"channel_routing": channel_routing} if channel_routing is not None else {})}
+               if calibration else {}),
             "coremltools": ct.__version__,
             "numpy": np.__version__,
             "checkpoint_format": "gguf" if isinstance(checkpoint_source, GGUFSource)
@@ -550,12 +770,14 @@ def main() -> None:
         with checkpoint_source as reader:
             artifacts = {}
             checksums = {}
+            activation_receipts = {}
             convrot_groups = set()
             for ordinal in block_indexes:
                 prefix = blocks[ordinal]
                 name = f"block{ordinal}_mlp_branch.int8_pc.mlpackage"
                 destination = output / name
                 receipt = output / f"block{ordinal}.json"
+                activation_receipt = output / f"block{ordinal}.activation.json"
                 if destination.is_symlink() or receipt.is_symlink():
                     raise ValueError("symlink artifact unsupported")
                 if destination.exists() and receipt.exists():
@@ -565,6 +787,10 @@ def main() -> None:
                     if not valid:
                         raise ValueError(f"existing export corrupted: block {ordinal}")
                     checksums[str(ordinal)] = saved
+                    if calibration:
+                        if activation_receipt.is_symlink() or not activation_receipt.is_file():
+                            raise ValueError(f"missing activation receipt for block {ordinal}")
+                        activation_receipts[str(ordinal)] = json.loads(activation_receipt.read_text())
                 else:
                     if destination.exists():
                         raise ValueError(f"incomplete artifact must be removed: block {ordinal}")
@@ -588,8 +814,71 @@ def main() -> None:
                     w1, _ = apply_export_lora(w1_name, w1, lora_bundles, np, native_group)
                     w2, _ = apply_export_lora(w2_name, w2, lora_bundles, np, native_group)
                     w3, _ = apply_export_lora(w3_name, w3, lora_bundles, np, native_group)
+                    if channel_routing is not None:
+                        indices, _ = route_channel_indices(
+                            channel_routing["ane_group_indexes"][str(ordinal)],
+                            channel_routing["group_width"], MLP_WIDTH,
+                            args.ane_mlp_width, np)
+                        w1, w3, w2 = w1[indices], w3[indices], w2[:, indices]
                     width = args.ane_mlp_width
-                    first = np.ascontiguousarray(np.concatenate((w1[:width], w3[:width]), axis=0)[:, :, None, None])
+                    inverse_input_scale = None
+                    input_a8_scale = None
+                    hidden_a8_scale = None
+                    region_input_scales = None
+                    region_hidden_scales = None
+                    region_samples = None
+                    image_hidden_channel_scales = None
+                    adaptive_hidden_scales = None
+                    adaptive_caption_scales = None
+                    image_resmooth_ratio = None
+                    image_resmooth_inverse = None
+                    if calibration:
+                        samples, digest = load_calibration_union(
+                            [path / f"block{ordinal}" for path in calibration_dirs],
+                            args.bucket, HIDDEN, np, pad_rows=ordinal < 2,
+                            source_rows=args.calibration_source_rows)
+                        if digest != calibration[str(ordinal)]["sha256"]:
+                            raise ValueError("calibration changed during export")
+                        gate, up, down, s1, s2 = smooth_partial_ffn(
+                            w1[:width], w3[:width], w2[:, :width], samples,
+                            args.sq_alpha1, args.sq_alpha2, np, args.sq_hidden_rows,
+                            outlier_rows=args.outlier_rows,
+                            hidden_region_rows=(args.region_image_rows if args.sq_hidden_image_only
+                                                else None))
+                        if ordinal in image_hidden_sq_blocks:
+                            _, _, _, _, image_s2 = smooth_partial_ffn(
+                                w1[:width], w3[:width], w2[:, :width], samples,
+                                args.sq_alpha1, args.image_hidden_sq_alpha2, np,
+                                args.sq_hidden_rows, outlier_rows=args.outlier_rows,
+                                hidden_region_rows=args.region_image_rows)
+                            ratio = s2 / image_s2
+                            image_resmooth_ratio = np.ascontiguousarray(
+                                ratio.astype(np.float16).reshape(1, width, 1, 1))
+                            image_resmooth_inverse = np.ascontiguousarray(
+                                (1 / ratio).astype(np.float16).reshape(1, width, 1, 1))
+                        inverse_input_scale = np.ascontiguousarray(
+                            (1 / s1).astype(np.float16).reshape(1, HIDDEN, 1, 1))
+                        if args.input_a8_search:
+                            input_a8_scale, input_trials = calibrate_input_a8(
+                                gate, up, down, s1, samples, np,
+                                outlier_rows=args.outlier_rows)
+                        else:
+                            maximum = max(float(np.max(np.abs(sample.astype(np.float32) / s1)))
+                                          for sample in samples)
+                            input_a8_scale = np.float16(max(maximum / 127, 1e-6))
+                        if args.region_image_rows is not None:
+                            regions = [(sample[:args.region_image_rows] for sample in samples),
+                                       (sample[args.region_image_rows:] for sample in samples)]
+                            region_samples = [list(group) for group in regions]
+                            region_input_scales = [np.float16(max(
+                                max(float(np.max(np.abs(sample.astype(np.float32) / s1)))
+                                    for sample in group) / 127, 1e-6))
+                                for group in region_samples]
+                        first = np.ascontiguousarray(
+                            np.concatenate((gate, up), axis=0).astype(np.float16)[:, :, None, None])
+                    else:
+                        first = np.ascontiguousarray(
+                            np.concatenate((w1[:width], w3[:width]), axis=0)[:, :, None, None])
                     # Z-Image's BF16 gated activations can exceed FP16 range at
                     # the elementwise product even though the final projection
                     # is finite.  Scale both multiplicands before the product
@@ -597,8 +886,60 @@ def main() -> None:
                     # Per-channel symmetric quantization is invariant to this
                     # uniform row scale apart from normal FP16 rounding.
                     scale = np.float32(args.activation_scale)
+                    if calibration:
+                        hidden_a8_scale, trials = calibrate_hidden_a8(
+                            gate, up, down, s1, samples, float(input_a8_scale),
+                            float(scale), np, outlier_rows=args.outlier_rows)
+                        if region_input_scales is not None:
+                            region_hidden_scales = [calibrate_hidden_a8(
+                                gate, up, down, s1, group, float(region_input_scales[index]),
+                                float(scale), np, outlier_rows=args.outlier_rows)[0]
+                                for index, group in enumerate(region_samples)]
+                        if args.hidden_a8_channel_groups is not None:
+                            image_hidden_channel_scales = calibrate_hidden_channel_groups(
+                                gate, up, down, s1,
+                                region_samples[0] if region_samples is not None else samples,
+                                float(region_input_scales[0] if region_input_scales is not None
+                                      else input_a8_scale), float(scale),
+                                args.hidden_a8_channel_groups, np)
+                        if args.adaptive_hidden_a8_bins is not None:
+                            adaptive_hidden_scales = calibrate_adaptive_hidden_a8(
+                                gate, (up * image_resmooth_ratio.reshape(-1, 1)
+                                       if image_resmooth_ratio is not None else up),
+                                s1, region_samples[0],
+                                float(region_input_scales[0]), float(scale),
+                                args.region_image_rows, args.adaptive_hidden_a8_bins, np)
+                        if ordinal in adaptive_caption_a8_blocks:
+                            adaptive_caption_scales = calibrate_adaptive_hidden_a8(
+                                gate, up, s1, region_samples[1],
+                                float(region_input_scales[1]), float(scale),
+                                args.bucket - args.region_image_rows,
+                                args.adaptive_caption_a8_bins, np)
+                        activation_receipts[str(ordinal)] = {
+                            "input_a8_scale": float(input_a8_scale),
+                            "hidden_a8_scale": float(hidden_a8_scale),
+                            "threshold_search": trials,
+                            **({"input_threshold_search": input_trials}
+                               if args.input_a8_search else {}),
+                            **({"region_image_rows": args.region_image_rows,
+                                "region_input_a8_scales": list(map(float, region_input_scales)),
+                                "region_hidden_a8_scales": list(map(float, region_hidden_scales))}
+                               if region_input_scales is not None else {}),
+                            **({"image_hidden_channel_a8_scales": list(map(
+                                float, image_hidden_channel_scales))}
+                               if image_hidden_channel_scales is not None else {}),
+                            **({"adaptive_hidden_a8_scales": list(map(
+                                float, adaptive_hidden_scales))}
+                               if adaptive_hidden_scales is not None else {}),
+                            **({"image_hidden_sq_alpha2": args.image_hidden_sq_alpha2}
+                               if image_resmooth_ratio is not None else {}),
+                            **({"adaptive_caption_a8_scales": list(map(
+                                float, adaptive_caption_scales))}
+                               if adaptive_caption_scales is not None else {}),
+                        }
                     last = np.ascontiguousarray(
-                        (w2[:, :width].astype(np.float32) * (scale * scale / np.float32(args.output_scale))).astype(np.float16)[:, :, None, None]
+                        ((down if calibration else w2[:, :width].astype(np.float32)) *
+                         (scale * scale / np.float32(args.output_scale))).astype(np.float16)[:, :, None, None]
                     )
                     del w1, w2, w3
                     rotation_hidden = (convrot_activation_weight(HIDDEN, native_group, np)
@@ -622,7 +963,68 @@ def main() -> None:
                         opset_version=ct.target.macOS15,
                     )
                     def branch(x):
+                        def quantize_regions(value, scales, label, channels,
+                                             image_channel_scales=None):
+                            pieces = []
+                            for index, (begin, end) in enumerate(
+                                    ((0, args.region_image_rows), (args.region_image_rows, args.bucket))):
+                                region = mb.slice_by_index(
+                                    x=value, begin=[0, 0, 0, begin], end=[1, channels, 1, end],
+                                    name=f"{label}_slice_{index}")
+                                if index == 0 and image_channel_scales is not None:
+                                    channel_pieces = []
+                                    step = channels // len(image_channel_scales)
+                                    for group, channel_scale in enumerate(image_channel_scales):
+                                        channel = mb.slice_by_index(
+                                            x=region, begin=[0, group * step, 0, 0],
+                                            end=[1, (group + 1) * step, 1, end - begin],
+                                            name=f"{label}_channel_{group}")
+                                        integer = mb.quantize(
+                                            input=channel, scale=channel_scale,
+                                            output_dtype="int8", name=f"{label}_q_0_{group}")
+                                        channel_pieces.append(mb.dequantize(
+                                            input=integer, scale=channel_scale,
+                                            name=f"{label}_dq_0_{group}"))
+                                    pieces.append(mb.concat(
+                                        values=channel_pieces, axis=1,
+                                        name=f"{label}_image_channels"))
+                                    continue
+                                integer = mb.quantize(input=region, scale=scales[index],
+                                                      output_dtype="int8", name=f"{label}_q_{index}")
+                                pieces.append(mb.dequantize(input=integer, scale=scales[index],
+                                                            name=f"{label}_dq_{index}"))
+                            return mb.concat(values=pieces, axis=3, name=f"{label}_concat")
+
                         projected_input = x
+                        if inverse_input_scale is not None:
+                            projected_input = mb.mul(x=projected_input, y=inverse_input_scale,
+                                                     name="smoothquant_input")
+                            if region_input_scales is not None:
+                                if args.shared_region_input_qdq:
+                                    image_scale, caption_scale = map(float, region_input_scales)
+                                    ratio = np.ones((1, 1, 1, args.bucket), dtype=np.float16)
+                                    ratio[..., :args.region_image_rows] = caption_scale / image_scale
+                                    inverse = np.ones_like(ratio)
+                                    inverse[..., :args.region_image_rows] = image_scale / caption_scale
+                                    prepared = mb.mul(x=projected_input, y=ratio,
+                                                      name="a8_input_region_prepare")
+                                    quantized = mb.quantize(
+                                        input=prepared, scale=region_input_scales[1],
+                                        output_dtype="int8", name="a8_input_region_q_shared")
+                                    reconstructed = mb.dequantize(
+                                        input=quantized, scale=region_input_scales[1],
+                                        name="a8_input_region_dq_shared")
+                                    projected_input = mb.mul(
+                                        x=reconstructed, y=inverse,
+                                        name="a8_input_region_restore")
+                                else:
+                                    projected_input = quantize_regions(
+                                        projected_input, region_input_scales, "a8_input", HIDDEN)
+                            else:
+                                a8 = mb.quantize(input=projected_input, scale=input_a8_scale,
+                                                 output_dtype="int8", name="a8_input")
+                                projected_input = mb.dequantize(input=a8, scale=input_a8_scale,
+                                                                name="a8_input_dequantized")
                         if native_group is not None:
                             projected_input = mb.conv(
                                 x=x, weight=rotation_hidden, groups=HIDDEN // native_group,
@@ -634,6 +1036,155 @@ def main() -> None:
                         gated = mb.mul(x=mb.silu(x=gate), y=reciprocal)
                         raised = mb.mul(x=up, y=reciprocal)
                         last_input = mb.mul(x=gated, y=raised)
+                        if hidden_a8_scale is not None:
+                            if adaptive_hidden_scales is not None:
+                                image = mb.slice_by_index(
+                                    x=last_input, begin=[0, 0, 0, 0],
+                                    end=[1, width, 1, args.region_image_rows],
+                                    name="a8_hidden_adaptive_image")
+                                if image_resmooth_ratio is not None:
+                                    image = mb.mul(x=image, y=image_resmooth_ratio,
+                                                   name="a8_hidden_image_resmooth")
+                                peak = mb.reduce_max(x=mb.abs(x=image), axes=[1],
+                                                     keep_dims=True, name="a8_hidden_peak")
+                                chosen = None
+                                scale_ratio = None
+                                inverse_ratio = None
+                                base_scale = np.float16(adaptive_hidden_scales[-1])
+                                for index in reversed(range(len(adaptive_hidden_scales))):
+                                    value = np.float16(adaptive_hidden_scales[index])
+                                    if args.adaptive_hidden_a8_shared_qdq:
+                                        # Core ML folds select(dynamic per-token
+                                        # predicate, scalar, scalar) to a *single*
+                                        # scalar in this shape. Explicit constant
+                                        # vectors preserve the token axis.
+                                        candidate_ratio = np.full(
+                                            (1, 1, 1, args.region_image_rows),
+                                            float(base_scale) / float(value),
+                                            dtype=np.float16)
+                                        candidate_inverse = np.full(
+                                            (1, 1, 1, args.region_image_rows),
+                                            float(value) / float(base_scale),
+                                            dtype=np.float16)
+                                        if scale_ratio is None:
+                                            scale_ratio = candidate_ratio
+                                            inverse_ratio = candidate_inverse
+                                    else:
+                                        q = mb.quantize(input=image, scale=value,
+                                                        output_dtype="int8",
+                                                        name=f"a8_hidden_adaptive_q_{index}")
+                                        candidate = mb.dequantize(input=q, scale=value,
+                                                                 name=f"a8_hidden_adaptive_dq_{index}")
+                                        if chosen is None:
+                                            chosen = candidate
+                                    if index != len(adaptive_hidden_scales) - 1:
+                                        selected = mb.less_equal(
+                                            x=peak, y=np.float16(float(value) * 127.),
+                                            name=f"a8_hidden_adaptive_le_{index}")
+                                        if args.adaptive_hidden_a8_shared_qdq:
+                                            scale_ratio = mb.select(
+                                                cond=selected, a=candidate_ratio, b=scale_ratio,
+                                                name=f"a8_hidden_ratio_select_{index}")
+                                            inverse_ratio = mb.select(
+                                                cond=selected, a=candidate_inverse,
+                                                b=inverse_ratio,
+                                                name=f"a8_hidden_inverse_select_{index}")
+                                        else:
+                                            chosen = mb.select(
+                                                cond=selected, a=candidate, b=chosen,
+                                                name=f"a8_hidden_adaptive_select_{index}")
+                                if args.adaptive_hidden_a8_shared_qdq:
+                                    prepared = mb.mul(x=image, y=scale_ratio,
+                                                      name="a8_hidden_adaptive_prepare")
+                                    q = mb.quantize(input=prepared, scale=base_scale,
+                                                    output_dtype="int8",
+                                                    name="a8_hidden_adaptive_q_shared")
+                                    dq = mb.dequantize(input=q, scale=base_scale,
+                                                       name="a8_hidden_adaptive_dq_shared")
+                                    chosen = mb.mul(x=dq, y=inverse_ratio,
+                                                    name="a8_hidden_adaptive_restore")
+                                if image_resmooth_inverse is not None:
+                                    chosen = mb.mul(x=chosen, y=image_resmooth_inverse,
+                                                    name="a8_hidden_image_unresmooth")
+                                caption = mb.slice_by_index(
+                                    x=last_input, begin=[0, 0, 0, args.region_image_rows],
+                                    end=[1, width, 1, args.bucket],
+                                    name="a8_hidden_adaptive_caption")
+                                if adaptive_caption_scales is not None:
+                                    caption_rows = args.bucket - args.region_image_rows
+                                    caption_peak = mb.reduce_max(
+                                        x=mb.abs(x=caption), axes=[1], keep_dims=True,
+                                        name="a8_hidden_caption_peak")
+                                    base = np.float16(adaptive_caption_scales[-1])
+                                    caption_ratio = caption_inverse = None
+                                    for index in reversed(range(len(adaptive_caption_scales))):
+                                        value = np.float16(adaptive_caption_scales[index])
+                                        candidate_ratio = np.full(
+                                            (1, 1, 1, caption_rows), float(base) / float(value),
+                                            dtype=np.float16)
+                                        candidate_inverse = np.full(
+                                            (1, 1, 1, caption_rows), float(value) / float(base),
+                                            dtype=np.float16)
+                                        if caption_ratio is None:
+                                            caption_ratio = candidate_ratio
+                                            caption_inverse = candidate_inverse
+                                        else:
+                                            selected = mb.less_equal(
+                                                x=caption_peak,
+                                                y=np.float16(float(value) * 127.),
+                                                name=f"a8_hidden_caption_le_{index}")
+                                            caption_ratio = mb.select(
+                                                cond=selected, a=candidate_ratio,
+                                                b=caption_ratio,
+                                                name=f"a8_hidden_caption_ratio_{index}")
+                                            caption_inverse = mb.select(
+                                                cond=selected, a=candidate_inverse,
+                                                b=caption_inverse,
+                                                name=f"a8_hidden_caption_inverse_{index}")
+                                    caption_prepared = mb.mul(
+                                        x=caption, y=caption_ratio,
+                                        name="a8_hidden_caption_prepare")
+                                    caption_q = mb.quantize(
+                                        input=caption_prepared, scale=base,
+                                        output_dtype="int8", name="a8_hidden_caption_q_shared")
+                                    caption_dq = mb.dequantize(
+                                        input=caption_q, scale=base,
+                                        name="a8_hidden_caption_dq_shared")
+                                    caption = mb.mul(
+                                        x=caption_dq, y=caption_inverse,
+                                        name="a8_hidden_caption_restore")
+                                else:
+                                    value = region_hidden_scales[1]
+                                    q = mb.quantize(input=caption, scale=value,
+                                                    output_dtype="int8", name="a8_hidden_q_1")
+                                    caption = mb.dequantize(input=q, scale=value,
+                                                            name="a8_hidden_dq_1")
+                                last_input = mb.concat(values=[chosen, caption], axis=3,
+                                                       name="a8_hidden_adaptive_concat")
+                            elif region_hidden_scales is not None:
+                                last_input = quantize_regions(
+                                    last_input, region_hidden_scales, "a8_hidden", width,
+                                    image_hidden_channel_scales)
+                            elif image_hidden_channel_scales is not None:
+                                step = width // len(image_hidden_channel_scales)
+                                pieces = []
+                                for group, channel_scale in enumerate(image_hidden_channel_scales):
+                                    channel = mb.slice_by_index(
+                                        x=last_input, begin=[0, group * step, 0, 0],
+                                        end=[1, (group + 1) * step, 1, args.bucket],
+                                        name=f"a8_hidden_channel_{group}")
+                                    integer = mb.quantize(input=channel, scale=channel_scale,
+                                                          output_dtype="int8",
+                                                          name=f"a8_hidden_q_0_{group}")
+                                    pieces.append(mb.dequantize(input=integer, scale=channel_scale,
+                                                                name=f"a8_hidden_dq_0_{group}"))
+                                last_input = mb.concat(values=pieces, axis=1,
+                                                       name="a8_hidden_image_channels")
+                            else:
+                                a8_hidden = mb.quantize(input=last_input, scale=hidden_a8_scale,
+                                                        output_dtype="int8", name="a8_hidden")
+                                last_input = mb.dequantize(input=a8_hidden, scale=hidden_a8_scale,
+                                                           name="a8_hidden_dequantized")
                         if native_group is not None:
                             last_input = mb.conv(
                                 x=last_input, weight=rotation_width,
@@ -650,16 +1201,22 @@ def main() -> None:
                         skip_model_load=True,
                         **convert_inputs,
                     )
+                    if calibration:
+                        del samples
                     if args.variant == "int8_pc":
-                        quantizer = optimize.OptimizationConfig(
-                            global_config=optimize.OpLinearQuantizerConfig(
-                                mode="linear_symmetric", dtype="int8", granularity="per_channel",
-                                block_size=32, weight_threshold=0
-                            )
-                        )
+                        w8 = optimize.OpLinearQuantizerConfig(
+                            mode="linear_symmetric", dtype="int8", granularity="per_channel",
+                            block_size=32, weight_threshold=0)
+                        quantizer = (optimize.OptimizationConfig(
+                            global_config=None, op_name_configs={name: w8 for name in ("projected", "y")})
+                            if calibration else optimize.OptimizationConfig(global_config=w8))
                         compressed = optimize.linear_quantize_weights(model, quantizer)
                     else:
                         compressed = model
+                    if calibration:
+                        verify_w8a8(compressed.get_spec(), ("projected", "y"),
+                                    allow_adaptive_scale=args.adaptive_hidden_a8_shared_qdq,
+                                    allow_input_region_scale=args.shared_region_input_qdq)
                     with tempfile.TemporaryDirectory(prefix=".export-", dir=output) as temporary:
                         package = Path(temporary) / name
                         compressed.save(package)
@@ -667,6 +1224,8 @@ def main() -> None:
                     saved = {str(path.relative_to(destination)): sha(path)
                              for path in sorted(destination.rglob("*")) if path.is_file()}
                     atom(receipt, saved)
+                    if calibration:
+                        atom(activation_receipt, activation_receipts[str(ordinal)])
                     checksums[str(ordinal)] = saved
                     del first, last, rotation_hidden, rotation_width, branch, model, compressed
                     gc.collect()
@@ -677,6 +1236,13 @@ def main() -> None:
         checkpoint_source.validate_unchanged(provenance)
         if lora_records != lora_provenance(args.lora, lora_strengths, lora_roles):
             raise ValueError("LoRA changed during export")
+        for ordinal in block_indexes:
+            if calibration and load_calibration_union(
+                    [path / f"block{ordinal}" for path in calibration_dirs],
+                    args.bucket, HIDDEN, np, pad_rows=ordinal < 2,
+                    source_rows=args.calibration_source_rows)[1] != \
+                    calibration[str(ordinal)]["sha256"]:
+                raise ValueError("calibration changed during export")
         for bundle in lora_bundles:
             if bundle["role"] == "transformer" and bundle["applied"] == 0:
                 raise ValueError(f"LoRA did not match an exported Z-Image FFN: {bundle['path']}")
@@ -710,6 +1276,7 @@ def main() -> None:
             "functions": {str(bucket): "main" for bucket in buckets},
             "artifacts": artifacts,
             "artifact_sha256": checksums,
+            **({"activation_quantization": activation_receipts} if calibration else {}),
             "export_identity": identity,
         })
         print(json.dumps({"source_manifest": str(output / "manifest.json"),

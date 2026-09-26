@@ -15,6 +15,12 @@ int main() {
            optimized.z_image_memory_lifecycle && optimized.z_image_smallest_partition &&
            optimized.external_automatic_partitions && optimized.coreml_output_copy &&
            optimized.z_image_int8_streaming);
+    const auto &m4_copy = device_optimizations("Apple M4 Pro", 48ull << 30);
+    assert(std::string_view(m4_copy.id) == "m4pro48-coreml-copy-v1");
+    assert(m4_copy.coreml_output_copy && !m4_copy.z_image_suffix_streaming &&
+           !m4_copy.z_image_hybrid_segments && !m4_copy.z_image_memory_lifecycle &&
+           !m4_copy.z_image_smallest_partition && !m4_copy.external_automatic_partitions &&
+           !m4_copy.z_image_int8_streaming);
     auto rejects_stream = [](auto operation) {
         try { operation(); }
         catch (const std::invalid_argument &) { return true; }
@@ -31,7 +37,7 @@ int main() {
     for (const char *value : {"", "0", "9", "12", "auto"})
         assert(rejects_stream([&] { optimized.z_image_stream_prefetch(true, true, 6ull << 30, value); }));
     for (const auto &device : std::vector<DeviceInfo>{
-             {"Apple M4 Pro", 24ull << 30}, {"Apple M4 Pro", 48ull << 30},
+             {"Apple M4 Pro", 24ull << 30}, {"Apple M4 Pro", 64ull << 30},
              {"Apple M4 Max", 64ull << 30}, {"Apple M5", 24ull << 30},
              {"Apple M5 Max", 24ull << 30}, {"Apple M5 Pro", 48ull << 30},
              {"Apple M5 Pro", 16ull << 30}, {"Apple M5 Pro", 64ull << 30},
