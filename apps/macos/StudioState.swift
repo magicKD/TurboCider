@@ -109,7 +109,7 @@ enum StudioStreamingSelection: String, Codable, Sendable, CaseIterable, Identifi
         case .tier20: return 20
         }
     }
-    var label: String { gib.map { "\($0) GiB" } ?? "关闭（默认）" }
+    var label: String { gib.map { "\($0) GiB" } ?? "不使用档位（默认）" }
     static func from(targetBytes: UInt64) -> Self? {
         allCases.first { $0.targetBytes == targetBytes }
     }
@@ -231,19 +231,9 @@ struct StudioDraft: Codable, Sendable {
         loras = try c.decodeIfPresent([StudioLoRA].self, forKey: .loras) ?? loras
         modelLoRAs = try c.decodeIfPresent([String: [StudioLoRA]].self, forKey: .modelLoRAs) ?? [:]
         initImageID = try c.decodeIfPresent(UUID.self, forKey: .initImageID)
-        // Migrate the old Z-Image-only selector.  Six GiB was never a public
-        // tier; map it to the nearest supported product bucket but leave the
-        // native catalog to decide whether that bucket is actually available.
-        if !c.contains(.streaming), residency == "streamed" {
-            switch zImageStreamingBudgetGiB {
-            case 8: streaming.selection = .tier8
-            case 10: streaming.selection = .tier10
-            case 12: streaming.selection = .tier12
-            default: streaming.selection = .tier8
-            }
-            streaming.status = "migrated_legacy_streaming"
-            streaming.userSelected = true
-        }
+        // Old sampling budgets are not calibrated full-request targets. Keep
+        // the existing experimental residency choice; the separate public
+        // selector stays Off until explicitly selected by the user.
     }
     var activeLoRAs: [StudioLoRA] { loras.filter(\.enabled) }
     var usesANE: Bool { acceleration?.policy == "gpu_ane" }

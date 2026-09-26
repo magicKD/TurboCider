@@ -518,7 +518,7 @@ struct StudioView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("动态文本长度", isOn: $studio.draft.dynamicText).controlSize(.small)
                     if studio.draft.publicStreamingModel {
-                        Picker("流式加载", selection: Binding(
+                        Picker("流式内存档位", selection: Binding(
                             get: { studio.draft.streaming.selection },
                             set: { studio.setStreamingSelection($0) })) {
                             ForEach(StudioStreamingSelection.allCases) { value in
@@ -545,19 +545,27 @@ struct StudioView: View {
                             Text("\(selection.label)：\(detail)")
                                 .font(.caption2)
                                 .foregroundStyle(option.status == "available" ? .green : .orange)
+                            if studio.draft.modelID == "z-image-turbo", option.status != "available" {
+                                Button("恢复常驻加载，保留当前设置") { studio.useZImageResidentLoading() }
+                                    .disabled(store.busy || submitting)
+                                    .accessibilityIdentifier("recoverUnavailableStreamingTarget")
+                            }
                             if option.release_channel == "public-calibrated" {
                                 Text("此档位已针对匹配的模型、设备和任务校准内存用量；预算不是内存硬上限，也不保证没有交换或一定更快。")
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
                         } else if studio.draft.streaming.selection == .off {
                             let recommendation = studio.recommendedStreamingSelection
-                            if recommendation != .off {
-                                Text("当前可用档位：\(recommendation.label)；Off 使用默认加载方式。")
+                            if studio.draft.modelID == "z-image-turbo", studio.draft.residency == "streamed" {
+                                Text("当前使用下方的实验流式设置；未启用校准档位。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            } else if recommendation != .off {
+                                Text("当前可用档位：\(recommendation.label)；未选择档位时使用下方加载方式。")
                                     .font(.caption2).foregroundStyle(.secondary)
                             } else {
                                 Text(studio.streamingOptions?.targets.contains(where: { $0.status == "candidate" }) == true
                                      ? "已有候选档位，请先选择本地模型完成验证。"
-                                     : "暂无经过验证的流式档位。Off 使用默认加载方式。")
+                                     : "暂无经过验证的流式档位，使用下方加载方式。")
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
                         }

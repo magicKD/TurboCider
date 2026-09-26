@@ -136,12 +136,22 @@ struct StudioBehaviorTests {
             with: JSONEncoder().encode(offV2)) as! [String: Any]
         try check((offJSON["execution"] as? [String: Any])?["streaming"] == nil,
                   "Off encoded an enabled or zero-byte selector")
-        let migratedLegacy = try JSONDecoder().decode(StudioDraft.self, from: Data(
-            #"{"modelID":"z-image-turbo","modelPaths":{"z-image-turbo":"/test/z-image"},"residency":"streamed","zImageStreamingBudgetGiB":6}"#.utf8))
-        try check(migratedLegacy.streaming.selection == .tier8 &&
-                  migratedLegacy.streaming.userSelected &&
-                  migratedLegacy.streaming.status == "migrated_legacy_streaming",
-                  "Legacy six-GiB Z-Image draft did not migrate to a re-resolved public tier")
+        for budget in [6, 8, 10, 12] {
+            let migratedLegacy = try JSONDecoder().decode(StudioDraft.self, from: Data(
+                "{\"modelID\":\"z-image-turbo\",\"modelPaths\":{\"z-image-turbo\":\"/test/z-image\"},\"residency\":\"streamed\",\"zImageStreamingBudgetGiB\":\(budget)}".utf8))
+            let legacyPair = try migratedLegacy.publicStreamingRequest(output: output)
+            try check(migratedLegacy.streaming.selection == .off &&
+                      !migratedLegacy.streaming.userSelected && legacyPair.v2 == nil &&
+                      legacyPair.legacy.residency == "streamed" &&
+                      legacyPair.legacy.memory_budget_bytes == UInt64(budget) << 30,
+                      "Legacy sampling budget was incorrectly promoted to a public tier")
+            let reopenedLegacy = try JSONDecoder().decode(StudioDraft.self,
+                from: JSONEncoder().encode(migratedLegacy))
+            try check(reopenedLegacy.streaming.selection == .off &&
+                      reopenedLegacy.residency == "streamed" &&
+                      reopenedLegacy.zImageStreamingBudgetGiB == budget,
+                      "Saving the migrated draft lost its original streaming settings")
+        }
         var publicLTX = StudioDraft()
         publicLTX.modelID = "ltx-2.5-distilled"
         publicLTX.modelPaths[publicLTX.modelID] = "/test/ltx"
