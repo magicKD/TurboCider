@@ -65,6 +65,14 @@ For calibrated capacity records, the acceptance bundle must include `text-capaci
 
 The capacity calibration estimator is `tree-phys-footprint-p95-with-text-boundaries-v1`: calibrated bytes are the greater of the P2 candidate P95 and all observed boundary peaks. Its maximum sampling gap includes both bundles, and its evidence digest binds the P2 summary and original range manifest. Thus a short-input memory spike cannot disappear behind the maximum-length measurement. The runner, receipt producer and verifier sources participate in native build identity. These checks produce reviewable evidence; they do not create review approval or authorize a production catalog by themselves.
 
+### Capacity estimator validation
+
+The `acd024b` build completed P0/P1/P2 and all ten text boundaries (8–1024 tokens). Its 40-request memory campaign and 20 boundary generations passed independent verification; the maximum boundary footprint was 9,126,976,496 bytes. Real App selection/persistence and success/cancel/success, source mutation rejection, same-plan English/Chinese images, and lifecycle recovery also passed with a test catalog.
+
+Preparing the release record exposed a builder inconsistency: calibration required the boundary estimator, but record shape validation rejected that estimator. Shape validation now accepts it for capacity records. Exact records retain their existing estimator, and release construction still requires the original verified boundary evidence. A regression exercises calibration, shape validation and bundled catalog rendering together, including rejection of an exact record using the capacity estimator and a capacity release omitting boundary evidence.
+
+These `acd024b` observations remain evidence for that build. The validator correction participates in native build identity; its rebuilt artifacts need their own matching qualification. The production catalog remains empty until the complete release requirements are satisfied.
+
 ## Resident App performance measurements
 
 The App reuses one model engine between normal requests. Keeping both baseline and candidate resident engines alive during an alternating benchmark doubled model residency on the local 48 GiB host: the two worker footprints totaled about 42.7 GiB before other applications and OS memory. That attempt was stopped after four measured requests; all timings and the abort explanation remain in `/private/tmp/tc-stream-qualification-cc93154-p0/operator-abort.json`. It is not a passing performance result. The earlier per-request engine campaign remains independently INCONCLUSIVE.

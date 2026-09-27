@@ -35,6 +35,7 @@ REVIEW_SCHEMA = "tc-streaming-catalog-review-v1"
 CALIBRATED_REVIEW_SCHEMA = "tc-streaming-catalog-review-v2"
 CALIBRATION_SCOPE = "execution_process_tree_v1"
 CALIBRATION_ESTIMATOR = "tree-phys-footprint-linear-p95-v1"
+TEXT_CAPACITY_CALIBRATION_ESTIMATOR = "tree-phys-footprint-p95-with-text-boundaries-v1"
 REVIEW_ROLES = ("runtime", "model", "performance", "release")
 
 
@@ -398,7 +399,13 @@ def validate_record_shape(record: dict[str, Any], *, allow_test_template: bool =
         require_string(calibration.get(key), f"record.calibration.{key}")
     if calibration["scope"] != CALIBRATION_SCOPE:
         raise CatalogBuildError("record.calibration.scope is unsupported")
-    if calibration["estimator_revision"] != CALIBRATION_ESTIMATOR:
+    # Capacity releases bind both the campaign P95 and boundary peaks. Keep
+    # legacy/test record shapes readable; build_record independently requires
+    # the boundary estimator and original range evidence before release.
+    estimators = {CALIBRATION_ESTIMATOR}
+    if "text_capacity" in record:
+        estimators.add(TEXT_CAPACITY_CALIBRATION_ESTIMATOR)
+    if calibration["estimator_revision"] not in estimators:
         raise CatalogBuildError("record.calibration.estimator_revision is unsupported")
     if calibration["execution_container"] != workload["execution_container"]:
         raise CatalogBuildError("record calibration/workload container differs")
@@ -969,7 +976,7 @@ def expected_memory_calibration(record, memory, target, summary_digest, text_cap
     if "text_capacity" in record:
         if not text_capacity or text_capacity["target_bytes"] != target:
             raise CatalogBuildError("text capacity memory target differs from P2")
-        if record["calibration"]["estimator_revision"] != "tree-phys-footprint-p95-with-text-boundaries-v1":
+        if record["calibration"]["estimator_revision"] != TEXT_CAPACITY_CALIBRATION_ESTIMATOR:
             raise CatalogBuildError("text capacity calibration must include boundary peaks")
         peak = max(peak, text_capacity["maximum_peak_bytes"])
         gap = max(gap, text_capacity["maximum_sample_gap_ns"])

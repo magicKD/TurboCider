@@ -151,6 +151,34 @@ class CapacityEvidenceTests(unittest.TestCase):
         self.assertEqual(builder.expected_memory_calibration(self.record, memory, 16 << 30, 'b' * 64),
                          (8 << 30, 20_000_000, 'b' * 64))
 
+    def test_boundary_calibration_survives_record_validation_and_catalog_rendering(self):
+        from generate_bundled_streaming_catalog import render_catalog
+        record = self.record
+        record['release'].update(channel='public-calibrated', policy_revision=verifier.CALIBRATED)
+        record['calibration']['estimator_revision'] = builder.TEXT_CAPACITY_CALIBRATION_ESTIMATOR
+        memory = dict(peak_p95_bytes=dict(candidate=8 << 30), maximum_sample_gap_ns=20_000_000)
+        boundary = dict(target_bytes=16 << 30, maximum_peak_bytes=9 << 30,
+            maximum_sample_gap_ns=30_000_000, range_file=dict(sha256='a' * 64))
+        peak, gap, digest = builder.expected_memory_calibration(record, memory, 16 << 30, 'b' * 64, boundary)
+        record['calibration'].update(calibrated_request_bytes=peak, maximum_sample_gap_ns=gap,
+                                     evidence_digest=digest)
+        builder.validate_record_shape(record)
+        record['canonical_record_digest'] = builder.canonical_record_digest(record)
+        header = render_catalog(record['catalog_revision'], [record], record['runtime']['turbocider_build_id'])
+        self.assertIn(builder.TEXT_CAPACITY_CALIBRATION_ESTIMATOR, header)
+        self.assertIn(str(9 << 30), header)
+        exact = copy.deepcopy(record)
+        exact.pop('text_capacity')
+        with self.assertRaisesRegex(builder.CatalogBuildError, 'estimator_revision'):
+            builder.validate_record_shape(exact)
+        # Shape compatibility must not let a release omit its boundary proof.
+        for invalid in (None, dict(boundary, target_bytes=12 << 30)):
+            with self.assertRaises(builder.CatalogBuildError):
+                builder.expected_memory_calibration(record, memory, 16 << 30, 'b' * 64, invalid)
+        record['calibration']['estimator_revision'] = builder.CALIBRATION_ESTIMATOR
+        with self.assertRaisesRegex(builder.CatalogBuildError, 'boundary peaks'):
+            builder.expected_memory_calibration(record, memory, 16 << 30, 'b' * 64, boundary)
+
     def test_full_inventory_walk_and_missing_boundary_or_mutated_evidence(self):
         # Only the low-level OS sampler is mocked here; its own tests validate
         # real hash-chained logs. All range inventory/identity checks run.
