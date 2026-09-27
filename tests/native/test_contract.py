@@ -747,6 +747,11 @@ class ContractTests(unittest.TestCase):
                 self.assertIn('qwen21_runtime_lora_base_ane_suffix_only_diagnostic',
                               result['algorithm_approximations'])
                 self.assertNotEqual(plan({**hybrid, 'qwen21_gpu_w8a16': True})[0], 0)
+                for layers in ('8', '16'):
+                    with patch.dict(os.environ, {
+                        'TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC': layers
+                    }):
+                        self.assertNotEqual(plan(hybrid)[0], 0)
         with patch.dict(os.environ, {flag: 'bad'}):
             self.assertNotEqual(plan(base)[0], 0)
 
