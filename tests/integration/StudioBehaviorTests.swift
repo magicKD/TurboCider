@@ -656,6 +656,53 @@ struct StudioBehaviorTests {
         try check(installed.appendingPathComponent("split_files").resolvingSymlinksInPath().path == comfy.appendingPathComponent("models").resolvingSymlinksInPath().path, "Comfy weights were not bound in place")
         try check(installed.appendingPathComponent("text_encoder").resolvingSymlinksInPath().path == shared.appendingPathComponent("text_encoder").resolvingSymlinksInPath().path, "Shared text weights were not bound in place")
         try check(!FileManager.default.fileExists(atPath: comfy.appendingPathComponent("tokenizer").path), "App modified the original model directory")
+        let localProfileURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("assets/config/local-streaming-profile.json")
+        let localProfile = try StudioLocalStreamingProfile.load(from: localProfileURL)
+        let localHardware = #"{"gpu":"Apple M4 Pro","physical_memory_bytes":51539607552}"#
+        let beforeLocalProfile = studio.draft
+        studio.draft.operation = "image.generate"
+        studio.draft.acceleration = nil
+        studio.draft.profilePath = ""
+        studio.draft.loras = []
+        try check(localProfile.conflict(draft: studio.draft, systemJSON: localHardware) == nil,
+                  "Local BF16 installation rejected experimental profile")
+        try check(localProfile.conflict(draft: studio.draft, systemJSON: "{}") != nil,
+                  "Local profile escaped its hardware scope")
+        studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane")
+        try check(localProfile.conflict(draft: studio.draft, systemJSON: localHardware) != nil,
+                  "Local profile accepted ANE")
+        let rejectedDraft = try JSONEncoder().encode(studio.draft)
+        studio.applyLocalStreamingProfile(localProfile, systemJSON: localHardware)
+        let rejectedObject = try JSONSerialization.jsonObject(with: rejectedDraft) as! NSDictionary
+        try check(rejectedObject == JSONSerialization.jsonObject(with: JSONEncoder().encode(studio.draft)) as! NSDictionary,
+                  "Rejected local profile changed user settings")
+        studio.draft.acceleration = nil
+        studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.8)]
+        try check(localProfile.conflict(draft: studio.draft, systemJSON: localHardware) != nil,
+                  "Local profile accepted LoRA")
+        studio.draft.loras = []
+        studio.draft.streaming.selection = .tier16
+        let preservedPrompt = studio.draft.prompt
+        let preservedSeed = studio.draft.seedText
+        studio.applyLocalStreamingProfile(localProfile, systemJSON: localHardware)
+        let localPair = try studio.draft.publicStreamingRequest(output: output)
+        try check(localPair.v2 == nil && localPair.legacy.residency == "streamed" &&
+                  localPair.legacy.memory_budget_bytes == 10 << 30 && studio.draft.width == 512 &&
+                  studio.draft.height == 512 && studio.draft.steps == 9 && studio.draft.dynamicText,
+                  "Local profile did not use the checked experimental request")
+        try check(studio.draft.prompt == preservedPrompt && studio.draft.seedText == preservedSeed &&
+                  studio.draft.modelPath == installed.path, "Local profile discarded user content")
+        let savedLocalDraft = StudioState(directory: root).draft
+        try check(savedLocalDraft.residency == "streamed" && savedLocalDraft.zImageStreamingBudgetGiB == 10 &&
+                  savedLocalDraft.streaming.selection == .off, "Local profile did not persist independently of catalog tiers")
+        var invalidProfile = try JSONSerialization.jsonObject(with: Data(contentsOf: localProfileURL)) as! [String: Any]
+        invalidProfile["memoryGuarantee"] = true
+        let invalidProfileURL = root.appendingPathComponent("invalid-local-profile.json")
+        try JSONSerialization.data(withJSONObject: invalidProfile).write(to: invalidProfileURL)
+        try rejects { _ = try StudioLocalStreamingProfile.load(from: invalidProfileURL) }
+        studio.draft = beforeLocalProfile
         studio.draft.loras = [StudioLoRA(path: lora.path, strength: 0.8)]
         studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: loraManifest.path)
         let configuration = root.appendingPathComponent("app-configuration.json")

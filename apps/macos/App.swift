@@ -598,6 +598,16 @@ struct StudioView: View {
                         Text("近似模式只修改 Stage-2；需要多 prompt/seed 质量回归，720p 自动限制为画质优先。")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
+                    if studio.draft.modelID == "z-image-turbo", let profile = StudioLocalStreamingProfile.bundled {
+                        Button("应用本机实验流式配置（512×512 · 9 步）") {
+                            studio.applyLocalStreamingProfile(profile)
+                        }
+                        .disabled(store.busy || submitting || profile.conflict(draft: studio.draft) != nil)
+                        .accessibilityIdentifier("localExperimentalStreamingProfile")
+                        Text(profile.conflict(draft: studio.draft)
+                             ?? "仅本机实验：M4 Pro / 48 GiB、BF16、纯 GPU、无 LoRA。采样预算 10 GiB，不是应用内存上限；尚未通过正式容量认证。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                     if studio.draft.modelID == "z-image-turbo", studio.draft.zImageRequiresResident, !studio.draft.usesPublicStreaming {
                         LabeledContent("模型驻留", value: "常驻")
                         Text(studio.draft.zImageVariant?.id == "int8-convrot"

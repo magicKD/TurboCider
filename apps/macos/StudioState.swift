@@ -3,6 +3,49 @@ import Combine
 import ImageIO
 import UniformTypeIdentifiers
 
+/// A local convenience preset, separate from the calibrated native catalog.
+struct StudioLocalStreamingProfile: Decodable {
+    let schemaVersion: Int
+    let experimental: Bool
+    let memoryGuarantee: Bool
+    let gpu: String
+    let physicalMemoryBytes: UInt64
+    let width: Int
+    let height: Int
+    let steps: Int
+    let samplingBudgetGiB: Int
+
+    static func load(from url: URL) throws -> Self {
+        let profile = try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
+        guard profile.schemaVersion == 1, profile.experimental, !profile.memoryGuarantee,
+              profile.gpu == "Apple M4 Pro", profile.physicalMemoryBytes == 48 << 30,
+              profile.width == 512, profile.height == 512, profile.steps == 9,
+              profile.samplingBudgetGiB == 10 else {
+            throw NativeFailure(message: "本机实验流式配置与已检查的参数不符。")
+        }
+        return profile
+    }
+    static let bundled: Self? = Bundle.main.url(forResource: "local-streaming-profile", withExtension: "json")
+        .flatMap { try? load(from: $0) }
+
+    func conflict(draft: StudioDraft, systemJSON: String = NativeEngine.system()) -> String? {
+        let hardware = (try? JSONSerialization.jsonObject(with: Data(systemJSON.utf8))) as? [String: Any]
+        guard hardware?["gpu"] as? String == gpu,
+              (hardware?["physical_memory_bytes"] as? NSNumber)?.uint64Value == physicalMemoryBytes else {
+            return "此本机实验配置仅适用于 Apple M4 Pro、48 GiB 内存。"
+        }
+        guard draft.modelID == "z-image-turbo", draft.zImageVariant?.id == "bf16",
+              draft.operation == "image.generate" else {
+            return "请先选择 Z-Image Turbo 的 BF16 模型和文生图。"
+        }
+        guard draft.profilePath.isEmpty, (draft.acceleration?.policy ?? "gpu") == "gpu",
+              draft.activeLoRAs.isEmpty else {
+            return "请先选择纯 GPU 并关闭 LoRA，再应用本机实验配置。"
+        }
+        return nil
+    }
+}
+
 struct StudioModel: Decodable, Identifiable {
     let id: String
     let name: String
@@ -968,6 +1011,24 @@ final class StudioState: ObservableObject {
         setStreamingSelection(.off)
         draft.residency = "resident"
         message = "已切换常驻加载，提示词、LoRA 和加速设置已保留。常驻加载会使用更多内存。"
+        save()
+    }
+    func applyLocalStreamingProfile(_ profile: StudioLocalStreamingProfile,
+                                    systemJSON: String = NativeEngine.system()) {
+        if let conflict = profile.conflict(draft: draft, systemJSON: systemJSON) {
+            message = conflict
+            return
+        }
+        setStreamingSelection(.off)
+        draft.residency = "streamed"
+        draft.zImageStreamingBudgetGiB = profile.samplingBudgetGiB
+        draft.width = profile.width
+        draft.height = profile.height
+        draft.steps = profile.steps
+        draft.frames = 1
+        draft.audio = false
+        draft.dynamicText = true
+        message = "已应用本机实验流式配置：512×512、9 步。采样预算 10 GiB，不承诺应用内存上限。"
         save()
     }
     func rememberAcceleration(_ resolved: StudioDraft) {
