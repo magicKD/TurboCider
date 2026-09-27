@@ -752,6 +752,15 @@ class ContractTests(unittest.TestCase):
                         'TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC': layers
                     }):
                         self.assertNotEqual(plan(hybrid)[0], 0)
+                with patch.dict(os.environ, {
+                    'TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_LAST16_FFN_DIAGNOSTIC': '1'
+                }):
+                    for count in (1, 2, 3):
+                        self.assertNotEqual(plan({**hybrid, 'inputs': refs[:count]})[0], 0)
+                with patch.dict(os.environ, {
+                    'TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC': '1'
+                }):
+                    self.assertNotEqual(plan(hybrid)[0], 0)
         with patch.dict(os.environ, {flag: 'bad'}):
             self.assertNotEqual(plan(base)[0], 0)
 
