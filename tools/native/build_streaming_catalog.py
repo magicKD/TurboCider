@@ -969,7 +969,14 @@ def _check_existing_records(
             )
 
 
-def expected_memory_calibration(record, memory, target, summary_digest, text_capacity=None):
+def expected_memory_calibration(
+    record: dict[str, Any],
+    memory: dict[str, Any],
+    target: int,
+    summary_digest: str,
+    text_capacity: dict[str, Any] | None = None,
+) -> tuple[int, int, str]:
+    """Combine P2 and optional text-boundary peaks without discarding evidence."""
     peak = math.ceil(float(memory["peak_p95_bytes"]["candidate"]))
     gap = memory["maximum_sample_gap_ns"]
     evidence_digest = summary_digest

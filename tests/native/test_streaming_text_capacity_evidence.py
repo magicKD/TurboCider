@@ -136,7 +136,7 @@ class CapacityEvidenceTests(unittest.TestCase):
 
     def test_boundary_peak_and_gap_are_included_in_calibration(self):
         memory = dict(peak_p95_bytes=dict(candidate=8 << 30), maximum_sample_gap_ns=20_000_000)
-        self.record['calibration']['estimator_revision'] = 'tree-phys-footprint-p95-with-text-boundaries-v1'
+        self.record['calibration']['estimator_revision'] = builder.TEXT_CAPACITY_CALIBRATION_ESTIMATOR
         boundary = dict(target_bytes=16 << 30, maximum_peak_bytes=9 << 30,
             maximum_sample_gap_ns=30_000_000, range_file=dict(sha256='a' * 64))
         peak, gap, digest = builder.expected_memory_calibration(self.record, memory, 16 << 30, 'b' * 64, boundary)

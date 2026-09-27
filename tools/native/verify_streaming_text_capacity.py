@@ -86,8 +86,8 @@ def identity_digest(value, kind):
     return out.digest()
 
 
-def validate_case(record, rows, documents, *, library_sha256, target, memory_limit):
-    """Validate case semantics after Inventory has authenticated every file hash."""
+def _validate_requests(record, rows, documents, *, library_sha256, target):
+    """Check public/manual request parity and actual generation parameters."""
     capacity = record["text_capacity"]
     require(type(rows) is int and capacity["minimum_rows"] <= rows <= capacity["maximum_rows"],
             "case outside token interval")
@@ -137,6 +137,12 @@ def validate_case(record, rows, documents, *, library_sha256, target, memory_lim
         require(result["valid_text_tokens"] == rows and result["text_tokens"] == rows and
                 result["actual_denoise_steps"] == workload["steps"] and
                 result["seed"] == semantic["seed"], "truncated text or incomplete generation")
+    return workload
+
+
+def _validate_execution_receipts(record, rows, workload, documents, *, target):
+    """Bind the selected record to the completed native layout and receipt."""
+    capacity = record["text_capacity"]
     public = documents["public_result"]["result"]
     manual = documents["manual_result"]["result"]
     resolved = documents["public_resolution"]
@@ -186,6 +192,11 @@ def validate_case(record, rows, documents, *, library_sha256, target, memory_lim
             receipt["source_generation"] == selected["receipt_source_generation"] > 0 and
             receipt["reader_fences_issued"] == receipt["reader_fences_completed"] > 0,
             "incomplete native receipt")
+    return selected, layout
+
+
+def _validate_request_memory(documents, *, memory_limit):
+    """Require complete sampling of the same process that produced the image."""
     observed = documents["public_observation"]
     require(observed.get("status") == "succeeded" and observed.get("cleanup_returned") is True and
             observed.get("cancellation_sent") is False, "request did not finish and release")
@@ -196,6 +207,18 @@ def validate_case(record, rows, documents, *, library_sha256, target, memory_lim
             0 < memory["tree_peak_phys_footprint_bytes"] <= memory_limit and
             0 < memory["max_gap_ns"] <= memory["allowed_max_gap_ns"] <= 100_000_000 and
             memory["swap_out_bytes"] == 0, "incomplete or out-of-budget memory evidence")
+    return memory
+
+
+def validate_case(record, rows, documents, *, library_sha256, target, memory_limit):
+    """Validate case semantics after Inventory has authenticated every file hash."""
+    workload = _validate_requests(
+        record, rows, documents, library_sha256=library_sha256, target=target,
+    )
+    selected, layout = _validate_execution_receipts(
+        record, rows, workload, documents, target=target,
+    )
+    memory = _validate_request_memory(documents, memory_limit=memory_limit)
     return dict(rows=rows, workload_digest=selected["workload_digest"], layout_digest=layout,
                 device_digest=selected["device_digest"], peak_bytes=memory["tree_peak_phys_footprint_bytes"],
                 maximum_sample_gap_ns=memory["max_gap_ns"],
