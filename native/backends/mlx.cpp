@@ -632,8 +632,6 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
                               int row_start, int row_end,
                               int col_start, int col_end,
                               bool add_bias) const {
-    require(!runtime_loras_.count(prefix),
-            "sliced projection does not support inference-time LoRA: " + prefix);
     const auto &weight = at(prefix + ".weight");
     require(weight.ndim() == 2 && row_start >= 0 && row_start < row_end &&
                 row_end <= weight.shape(0) && col_start >= 0 &&
@@ -677,6 +675,36 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
         auto selected = slice_axis(weight, 0, row_start, row_end);
         selected = slice_axis(selected, 1, col_start, col_end);
         output = mx::matmul(x, mx::transpose(selected));
+    }
+    auto runtime = runtime_loras_.find(prefix);
+    if (runtime != runtime_loras_.end()) {
+        for (const auto &adapter : runtime->second) {
+            const int first = std::max(row_start, adapter.output_start);
+            const int last = std::min(row_end, adapter.output_end);
+            if (first >= last) continue;
+            // A matrix slice must also slice the LoRA's input columns. For a
+            // fused gate/up adapter, intersect its global output row range
+            // before selecting the corresponding low-rank B rows.
+            const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
+            auto down = mx::astype(slice_axis(adapter.down, 1, col_start, col_end), rank_dtype);
+            auto up = mx::astype(slice_axis(adapter.up, 0,
+                first - adapter.output_start, last - adapter.output_start), rank_dtype);
+            auto low = mx::matmul(mx::astype(x, rank_dtype), mx::transpose(down));
+            auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
+                Tensor(adapter.scale, mx::float32);
+            const int begin = first - row_start, end = last - row_start;
+            auto middle = mx::astype(mx::astype(slice_axis(output, -1, begin, end), mx::float32) + delta,
+                                     output.dtype());
+            if (begin == 0 && end == row_end - row_start) output = std::move(middle);
+            else {
+                std::vector<Tensor> pieces;
+                if (begin) pieces.push_back(slice_axis(output, -1, 0, begin));
+                pieces.push_back(std::move(middle));
+                if (end < row_end - row_start)
+                    pieces.push_back(slice_axis(output, -1, end, row_end - row_start));
+                output = mx::concatenate(pieces, -1);
+            }
+        }
     }
     if (add_bias && has(prefix + ".bias"))
         output = output + mx::astype(

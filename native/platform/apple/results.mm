@@ -1,4 +1,5 @@
 #include "bridge.hpp"
+#include "../../models/qwen21/diagnostic_options.hpp"
 #include <cstdlib>
 #include <string_view>
 namespace tc {
@@ -237,6 +238,53 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         }];
     }
     NSMutableArray *algorithm_approximations = [NSMutableArray array];
+    if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
+            std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC")))
+        [algorithm_approximations addObject:@"qwen21_decode_dbcache_diagnostic"];
+    if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
+            std::getenv("TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC")))
+        [algorithm_approximations addObject:@"qwen21_rectangular_decode_w8a8_tiled_diagnostic"];
+    if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
+            std::getenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC")))
+        [algorithm_approximations addObject:@"qwen21_runtime_lora_base_ane_suffix_only_diagnostic"];
+    if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
+            std::getenv("TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC")))
+        [algorithm_approximations addObject:@"qwen21_viggle_reference_resize_512_diagnostic"];
+    const char *last_target = std::getenv("TURBOCIDER_QWEN21_PREFILL_LAST_TARGET_ONLY_DIAGNOSTIC");
+    if (r.model == "qwen-image-2.1" && last_target && std::string_view(last_target) == "1")
+        [algorithm_approximations addObject:@"qwen21_prefill_last_target_only_diagnostic"];
+    const char *fused_qkv = std::getenv("TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC");
+    if (r.model == "qwen-image-2.1" && fused_qkv && std::string_view(fused_qkv) == "1")
+        [algorithm_approximations addObject:@"qwen21_metal_fused_qkv_diagnostic"];
+    const char *tiled_prefill = std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC");
+    const int tiled_layers = qwen21::tiled_prefill_layer_count(tiled_prefill ? tiled_prefill : "0");
+    if (r.model == "qwen-image-2.1" && tiled_layers > 0)
+        [algorithm_approximations addObject:tiled_layers == 8 ?
+            @"qwen21_tiled_prefill_last8_w8a8_diagnostic" :
+            tiled_layers == 16 ?
+            @"qwen21_tiled_prefill_last16_w8a8_diagnostic" :
+            tiled_layers == 20 ?
+            @"qwen21_tiled_prefill_last20_w8a8_diagnostic" :
+            tiled_layers == 24 ?
+            @"qwen21_tiled_prefill_last24_w8a8_diagnostic" :
+            @"qwen21_tiled_prefill_w8a8_diagnostic"];
+    const char *tiled_prefix_reuse = std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_PREFIX_KV_DIAGNOSTIC");
+    if (r.model == "qwen-image-2.1" && tiled_prefix_reuse && std::string_view(tiled_prefix_reuse) == "1")
+        [algorithm_approximations addObject:@"qwen21_tiled_prefill_prefix_kv_diagnostic"];
+    const char *prefix_target_only = std::getenv("TURBOCIDER_QWEN21_TILED_PREFIX_TARGET_ONLY_DIAGNOSTIC");
+    if (r.model == "qwen-image-2.1" && prefix_target_only && std::string_view(prefix_target_only) == "1")
+        [algorithm_approximations addObject:@"qwen21_tiled_prefix_target_only_diagnostic"];
+    const char *hybrid_reuse = std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC");
+    if (r.model == "qwen-image-2.1" && hybrid_reuse && std::string_view(hybrid_reuse) == "1")
+        [algorithm_approximations addObject:@"qwen21_hybrid_reuse_final_ffn_diagnostic"];
+    const char *hybrid_last16 =
+        std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_LAST16_FFN_DIAGNOSTIC");
+    if (r.model == "qwen-image-2.1" && hybrid_last16 && std::string_view(hybrid_last16) == "1")
+        [algorithm_approximations addObject:@"qwen21_hybrid_reuse_final_last16_ffn_diagnostic"];
+    const char *hybrid_half = std::getenv(
+        "TURBOCIDER_QWEN21_HYBRID_REUSE_PENULTIMATE_EVEN_FFN_DIAGNOSTIC");
+    if (r.model == "qwen-image-2.1" && hybrid_half && std::string_view(hybrid_half) == "1")
+        [algorithm_approximations addObject:@"qwen21_hybrid_reuse_penultimate_even_ffn_diagnostic"];
     if (r.model == "minimax-h3-vdn")
         [algorithm_approximations addObject:
             @"affine_int6_g64_base_weight_quantization"];
@@ -252,7 +300,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                 ? (r.qwen21_w8a8 ? @"qwen21_decode_mlp_w8a8_per_tensor" : @"qwen21_decode_mlp_fp16_partition")
                 : @"single_block_mlp_int8_per_channel"];
     if (r.model == "qwen-image-2.1" && r.qwen21_reference_size != 1024)
-        [algorithm_approximations addObject:@"qwen21_reference_resize_256"];
+        [algorithm_approximations addObject:[NSString stringWithFormat:
+            @"qwen21_reference_resize_%d", r.qwen21_reference_size]];
     if (r.model == "qwen-image-2.1" && hybrid && r.operation == "image.edit" &&
         r.qwen21_w8a8 && r.qwen21_reference_size == 1024)
         [algorithm_approximations addObject:@"qwen21_w8a8_full_reference_diagnostic"];
@@ -274,6 +323,13 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             [algorithm_approximations addObject:@"qwen21_gpu_reuse_penultimate_even_ffn"];
     }
     if (r.model == "qwen-image-2.1") {
+        const char *local_references = std::getenv("TURBOCIDER_QWEN21_REF_LOCAL_ATTENTION");
+        if (local_references && std::string_view(local_references) == "1")
+            [algorithm_approximations addObject:@"qwen21_reference_local_attention"];
+        if (local_references && std::string_view(local_references) == "2")
+            [algorithm_approximations addObject:@"qwen21_last_reference_local_attention"];
+        if (local_references && std::string_view(local_references) == "3")
+            [algorithm_approximations addObject:@"qwen21_last16_reference_local_attention_diagnostic"];
         const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
         if (norm_rope && std::string_view(norm_rope) == "1")
             [algorithm_approximations addObject:@"qwen21_metal_qk_norm_rope"];
@@ -654,6 +710,14 @@ NSDictionary *to_dictionary(const RunResult &result) {
         @"encoder_hybrid" : encoder_hybrid,
         @"validation" : @"candidate; consult recorded parity suite"
     } mutableCopy];
+    if (result.db_cache_enabled)
+        value[@"qwen21_dbcache"] = @{
+            @"front_blocks": @8, @"back_blocks": @0, @"warmup_steps": @8,
+            @"threshold": @(result.db_cache_threshold),
+            @"max_consecutive": @(result.db_cache_max_consecutive),
+            @"cached_steps": @(result.db_cache_steps),
+            @"saved_middle_blocks": @(result.db_cache_steps * 24)
+        };
     if (!r.loras.empty() && result.lora_applied_projections)
         value[@"lora_applied_projections"] = @(result.lora_applied_projections);
     if (result.block_residency)

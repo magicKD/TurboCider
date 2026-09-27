@@ -92,8 +92,11 @@ int main(int argc, char **argv) {
         const bool w4_only = argc == 5 && std::string(argv[4]) == "--w4";
         if (argc == 5 && !fp16_only && !w4_only)
             throw std::invalid_argument("unknown Qwen21 GEMM probe option");
-        if ((rows != 1024 && rows != 4096) || runs < 2 || runs > 50)
-            throw std::invalid_argument("rows must be 1024/4096 and runs must be 2...50");
+        // 2091/3157/4226 are real first-step lengths of the resized-512
+        // 1/2/3-reference edit fixtures. 13,442 uses three full references.
+        if ((rows != 1024 && rows != 2091 && rows != 3157 && rows != 4096 &&
+             rows != 4226 && rows != 13442) || runs < 2 || runs > 50)
+            throw std::invalid_argument("rows must be 1024/2091/3157/4096/4226/13442 and runs must be 2...50");
         ZImageGpuBenchmarkLock benchmark_lock;
         const int input=operation=="down" ? 12288 : 4096;
         const int output=operation=="down" ? 4096 : 24576;

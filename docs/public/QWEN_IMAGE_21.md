@@ -39,8 +39,10 @@ distilled update. The native sampler uses the shipped raw six nodes
 `[1, .9375, .875, .75, .5, .25]`, Qwen21's resolution-dependent shift, a zero
 endpoint, and no base-model terminal stretch. Use scale 1, six steps, explicit
 `allow_approximation: true`, 512×512, `execution: "gpu"`, and the default 1024px
-reference encoding for edits. GPU+ANE W8A8 and experimental FFN step reuse are
-not validated with this adapter and are rejected. The previous BF16 GPU path
+reference encoding for edits. GPU+ANE W8A8 is rejected by default; a separate
+suffix-only base-ANE experiment requires explicit opt-ins and is documented in the
+[Viggle/base-ANE status](../status/qwen21-viggle-base-ane-reuse-2026-09-27.md).
+FFN step reuse remains unsupported with this adapter. The previous BF16 GPU path
 remains available without `loras`.
 
 ```json
@@ -148,15 +150,17 @@ The default remains BF16 GPU, with references resized to approximately 1024
 pixels. There are two opt-in mixed routes: a 32-layer FP16 Core ML FFN prefix
 for 512² text-to-image, and a W8A8 Core ML prefix for 512² text-to-image or
 1–3-reference editing. The W8A8 editing candidates keep a BF16 GPU FFN
-suffix and resize each reference to approximately 256 pixels. The
-speed-first 6144-channel candidate uses all 32/32 FFN layers in parallel;
+suffix and explicitly choose 256px or 512px reference resize. A separate
+original-size 1024px-reference diagnostic leaves its long first-step FFNs
+on GPU. The speed-first 6144-channel candidate uses all 32/32 decode FFN layers in parallel;
 the alternative runs layers 3, 5 and 7 entirely on GPU and covers 29/32
 decode FFNs (90.625%). These reference dimensions change the input and can lose
 details; this mode is **not** the default or a production image-quality gate.
 The resident Session now caches the text/visual conditioning and reference VAE
 latents for an unchanged prompt, reference resize and ordered reference file
 contents (checked by SHA-256 on every request). Denoising prefix KV remains
-request-owned. Replacing a reference in place invalidates the cache; staged or
+request-owned by default; explicit resident diagnostics can retain it across
+matching requests. Replacing a reference in place invalidates the cache; staged or
 one-shot requests cannot claim this resident hit. Under the matched 512²/40-step
 two-reference, seed-17 workload, two cached GPU requests took 44.733/44.777 s
 and W8A8 mixed requests took 37.159/37.176 s, about **1.204×** request-wall
@@ -215,6 +219,84 @@ three-reference 40-step sticker placement/size visibly changed, and both
 than BF16 (BF16/W8A16 median **0.986×** on the full-size two-reference 5-step
 sample). This is not a quality-qualified default or cold-start speed claim;
 see the [full-reference diagnostic report](../status/qwen21-w8a8-fullref-512-diagnostics-2026-09-26.md).
+
+For **20–40-step base-model** requests where the user accepts visible
+texture/shadow differences, `TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC=1` enables
+an independent, request-scoped decode residual cache on either BF16 GPU or
+the validated W8A8 GPU/ANE route. For the tested speed-first policy, set
+`TURBOCIDER_QWEN21_DBCACHE_THRESHOLD=0.25` and
+`TURBOCIDER_QWEN21_DBCACHE_MAX_CONSECUTIVE=8`, with
+`allow_approximation: true` in the request. The default policy remains much
+more conservative and may not skip any steps; no cache is enabled by default.
+On one 512², 40-step, **two original-size-reference** edit, fully warmed
+resident GPU went from 68.414 to 38.224 s, and a checkpoint-matched
+6144-channel W8A8 hybrid went from 57.308 to 32.797 s; the cached hybrid
+was 1.165× faster than the cached GPU. The two teapots, positions and
+recognizable details were retained on visual inspection, but material and
+shadow pixels changed. This is not a cold-CLI timing or a general speed or
+quality guarantee. See the [DBCache status](../status/qwen21-dbcache-2026-09-27.md)
+for the 20/40-step, 0–3-reference matrix and the matched input checks.
+
+Looping the same 1024-row W8A8 graph over the **first eight** FFNs of a
+three-full-reference edit shortened a five-step warm request by about 4.4%,
+but visibly doubled/glowed the central sticker; the temporary route was
+removed. See the [rejected first-eight screen](../status/qwen21-fullref-first8-tiled-prefill-screen-2026-09-27.md).
+
+A more conservative **opt-in full-reference research path** uses
+`TURBOCIDER_QWEN21_REF_LOCAL_ATTENTION=3` to keep the first 16 blocks'
+cross-reference attention exact and restrict only later reference queries
+in the last 16 blocks. The 512² three-reference, five-step pure-GPU request
+was ~1.044× faster on two seeds with recognizable subjects; at 40 steps
+the single-run saving was only ~1.1%. On the full-reference W8A8/BF16
+hybrid, add `TURBOCIDER_QWEN21_FULL_REF_W8A8_DIAGNOSTIC=1`; combining mode
+3 with the existing final-block target-only diagnostic measured **22.80 s**
+against **24.23 s** for the same-input decode-only hybrid (about 1.063×).
+The target-only addition produced the same PNG as mode 3 without it in
+this fixture. Relative to the matched **25.22 s** exact GPU baseline, this
+mixed route is about 1.106× faster, but it changes reference attention and
+FFN precision, so it is neither a GPU-kernel-only improvement nor a default
+quality guarantee. The stronger Q/K-fused GPU combination was faster but
+blurred the sticker; avoid it when editing fidelity matters. See the
+[late-block edit screen](../status/qwen21-fullref-last16-local-2026-09-27.md)
+for flags, visual caveats, full warm-request comparisons and lifecycle checks.
+
+With the same **original-size references**, a long-lived resident Session
+can additionally enable `TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV=1` for repeated
+identical edits. In a three-reference, five-step matched run, the *first*
+request was GPU 23.857 s versus W8A8 hybrid 22.825 s; three later **prefix
+hits** had GPU/hybrid median wall 8.732/7.890 s, about **1.107×**. These
+numbers do not compare a cache hit against a miss. Inputs were tensor-equal;
+both teapots and the sticker remain recognizable, with small visible detail
+changes. Memory use is higher and only one prompt/seed was checked. This
+route does not tile full-reference FFNs, and a one-shot CLI has no repeat
+hit. See the [steady-prefix comparison](../status/qwen21-fullref-prefix-steady-2026-09-27.md).
+Offloading the 1,024 target FFN rows on the *first step of a prefix hit* to
+the same W8A8 graphs saved about 4–6% in one three-reference screen but
+visibly distorted the sticker face; that additional candidate was removed.
+See the [rejected hit-FFN screen](../status/qwen21-fullref-prefix-hit-w8a8-rejected-2026-09-27.md).
+
+For an explicit **five-step, resized-512-reference** speed-first edit, the
+last 16 first-step FFNs can loop over 1,024-token W8A8 tiles in the *same*
+Core ML models, while GPU executes the complementary channels. With the
+screened final/penultimate FFN reuse and fused-QKV diagnostics, a three-image
+first request measured **7.706 s** against **10.114 s** for the same-input
+pure-GPU control. Optional resident prefix-KV reuse reduced a subsequent
+identical-condition request to **4.887 s**; this hit must not be compared with
+the uncached GPU control. These are visibly lossy, explicitly gated research
+options: a one-shot CLI call receives no cache hit; LoRA, full-size references
+and other steps are excluded. GPU and the lower-loss hybrid remain available.
+See the [tiled-prefix experiment](../status/qwen21-tiled-prefix-kv-edit-2026-09-27.md)
+for flags, matched checks, memory and image-quality caveats.
+
+For the *same repeated-edit workload*, an additional explicit
+`TURBOCIDER_QWEN21_TILED_PREFIX_TARGET_ONLY_DIAGNOSTIC=1` computes the
+1,024 target FFN rows with one Core ML call per eligible first-step layer
+on a prefix-KV hit. Three-reference hit calls fall from 127 to 112; tested
+one/two/three-reference request walls were **4.185 / 4.637 / 4.673 s**.
+Matched strict-tail PNGs were byte-identical in these fixtures, but the
+option remains opt-in pending wider prompt and device checks. It offers
+**no first-request or one-shot CLI hit**. See the
+[target-only follow-up](../status/qwen21-prefix-hit-target-only-2026-09-27.md).
 
 For explicit **512² text-to-image** with a checkpoint-matched 6144-channel
 W8A8 manifest, use `operation: "image.generate"`, no `inputs`,

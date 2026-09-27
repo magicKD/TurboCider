@@ -1,6 +1,32 @@
 # TurboCider 状态文档入口
 
-更新时间：2026-09-25
+更新时间：2026-09-27
+
+Qwen-Image-2.1 的当前入口是 [公开运行说明](../public/QWEN_IMAGE_21.md)；
+逐项实验与可用开关见 [Qwen21 加速路径索引](qwen21-acceleration-routes-2026-09-27.md)。
+索引明确区分 512px 缩图与 1024px 原尺寸参考、首请求与 resident
+prefix-KV hit，以及保留和已撤回的候选。下方 9 月 25 日结论是历史快照，
+不能覆盖 9 月 27 日的实测结果。
+
+新增 [Qwen21 base DBCache 20/40 步实验](qwen21-dbcache-2026-09-27.md)：
+记录 decode-only 请求级残差缓存的门禁、跳过计数、GPU／GPU+ANE
+同条件时间和 PNG 观感；额外记录 40 步两张原尺寸参考图的四路
+GPU／GPU+ANE 严格输入对照，以及三图编辑中连续跳过上限 2/4/8
+的质量与速度取舍。此路由仍是显式诊断；已补 768×512／512×768
+矩形画布的局部测量，尚未覆盖六步 LoRA。
+
+[Qwen21 768×512／512×768 复用 512² W8A8 图](qwen21-rectangular-w8a8-2026-09-27.md)
+记录固定 1024-row 图的 decode 序列切片、两种方向单次 warm 配对和
+尚待完成的多种子门禁；没有将诊断路线设为默认。
+
+[Viggle runtime LoRA + base ANE 复用诊断](qwen21-viggle-base-ane-reuse-2026-09-27.md)
+记录 GPU 后缀低秩投影、未覆盖的 ANE 前缀 LoRA 非线性更新，及
+六步对照；融合 Q/K＋FP16 低秩后文生图两次配对约 1.22×，
+一图编辑收益不稳定，原尺寸双／三图单次配对略慢于优化 GPU。
+额外 512px 缩图的双／三图各两次同输入 warm 配对，hybrid 对 GPU
+中位约 1.139×／1.070×，主体与贴纸可辨，但只覆盖一类编辑和一个
+种子，且未包含 ANE 前缀 LoRA 校正；另一个小贴纸贴壶的
+编辑任务虽然肉眼合格，hybrid 比 GPU 略慢；仍不作为默认推荐。
 
 Qwen-Image-2.1 的最新 W8A8/ANE 数值诊断见
 [512² 单层诊断](qwen21-w8a8-ane-diagnostics-2026-09-25.md)；当前 W8A8

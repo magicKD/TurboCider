@@ -74,7 +74,9 @@ class Weights {
                                      const std::vector<std::string> &) const;
     // Project one aligned matrix slice. The input contains exactly the
     // selected column range; this is used by exact tensor-parallel MLP
-    // branches without materializing the full gate/up activation.
+    // branches without materializing the full gate/up activation. Runtime
+    // LoRA projections intersect both the selected input columns and output
+    // rows (including separately trained fused gate/up row ranges).
     Tensor project_slice(const Tensor &, const std::string &, int row_start,
                          int row_end, int col_start, int col_end,
                          bool add_bias = true) const;

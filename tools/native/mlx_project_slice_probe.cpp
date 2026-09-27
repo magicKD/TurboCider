@@ -1,6 +1,7 @@
 #include "../../native/backends/mlx.hpp"
 
 #include <iostream>
+#include <unistd.h>
 
 namespace {
 
@@ -117,12 +118,76 @@ int main() {
         tc::require(rejected_unaligned,
                     "quantized projection accepted an unaligned column slice");
 
+        // Exercise the actual safetensors binding path: Qwen21's separately
+        // trained gate/proj adapters share one fused [gate; up] base matrix.
+        // A row slice crossing that boundary must intersect each adapter's
+        // output rows and its selected input columns independently.
+        struct Fixture {
+            std::filesystem::path path = std::filesystem::temp_directory_path() /
+                ("turbocider-lora-slice-" + std::to_string(getpid()) + ".safetensors");
+            ~Fixture() { std::error_code error; std::filesystem::remove(path, error); }
+        } fixture;
+        const auto adapter_down = tc::mx::reshape(
+            tc::mx::sin(tc::mx::arange(8 * input_width, tc::mx::float32) *
+                        tc::Tensor(0.047f)) * tc::Tensor(0.07f), {8, input_width});
+        const auto adapter_up = tc::mx::reshape(
+            tc::mx::cos(tc::mx::arange(output_width * 8, tc::mx::float32) *
+                        tc::Tensor(0.031f)) * tc::Tensor(0.10f), {output_width, 8});
+        const auto second_down = adapter_down * tc::Tensor(-0.7f);
+        const auto second_up = adapter_up * tc::Tensor(1.3f);
+        const std::string stem = "transformer_blocks.0.img_mlp.";
+        tc::mx::save_safetensors(fixture.path.string(), {
+            {stem + "gate_layer.lora_A.weight", adapter_down},
+            {stem + "gate_layer.lora_B.weight", adapter_up},
+            {stem + "proj.lora_A.weight", second_down},
+            {stem + "proj.lora_B.weight", second_up},
+        });
+        tc::Weights fused;
+        const auto fused_weight = tc::mx::concatenate({weight, weight * tc::Tensor(-0.8f)}, 0);
+        fused.bind_arrays({stem + "gate_up.weight"}, {fused_weight});
+        std::atomic<bool> cancelled{false};
+        const auto applied = fused.apply_loras(
+            {{fixture.path.string(), 1.f, "transformer"}}, "transformer",
+            [](const std::string &, int, int) {}, cancelled, true);
+        tc::require(applied == 2, "fused gate/up runtime LoRA did not bind both branches");
+        const auto full = fused.project(input, stem + "gate_up");
+        tc::Weights base_fused;
+        base_fused.bind_arrays({stem + "gate_up.weight"}, {fused_weight});
+        const auto base_full = base_fused.project(input, stem + "gate_up");
+        tc::require(relative_l2(tc::slice_axis(full, -1, 0, output_width),
+                                tc::slice_axis(base_full, -1, 0, output_width)) > 1e-4f &&
+                    relative_l2(tc::slice_axis(full, -1, output_width, 2 * output_width),
+                                tc::slice_axis(base_full, -1, output_width,
+                                               2 * output_width)) > 1e-4f,
+                    "runtime LoRA test fixture does not affect both gate and up branches");
+        const auto rows = fused.project_slice(input, stem + "gate_up", 48, 144,
+                                               0, input_width);
+        const auto left = fused.project_slice(
+            tc::slice_axis(input, -1, 0, column_split), stem + "gate_up",
+            48, 144, 0, column_split);
+        const auto right = fused.project_slice(
+            tc::slice_axis(input, -1, column_split, input_width), stem + "gate_up",
+            48, 144, column_split, input_width);
+        const float lora_rows = relative_l2(rows, tc::slice_axis(full, -1, 48, 144));
+        const float lora_columns = relative_l2(left + right, rows);
+        tc::require(lora_rows < 1e-5f && lora_columns < 1e-5f,
+                    "runtime LoRA row/column slices disagree with full fused projection");
+        fused.set_runtime_lora_fp16(true);
+        const float half_rank_rows = relative_l2(
+            fused.project_slice(input, stem + "gate_up", 48, 144, 0, input_width),
+            tc::slice_axis(fused.project(input, stem + "gate_up"), -1, 48, 144));
+        tc::require(half_rank_rows < 1e-5f,
+                    "FP16 runtime LoRA row slice disagrees with full fused projection");
+
         std::cout << "{\"dense_row_relative_l2\":" << dense_row_relative
                   << ",\"dense_partition_relative_l2\":"
                   << dense_partition_relative
                   << ",\"q4_row_relative_l2\":" << q_row_relative
                   << ",\"q4_partition_relative_l2\":"
                   << q_partition_relative
+                  << ",\"lora_rows_relative_l2\":" << lora_rows
+                  << ",\"lora_columns_relative_l2\":" << lora_columns
+                  << ",\"fp16_lora_rows_relative_l2\":" << half_rank_rows
                   << ",\"unaligned_rejected\":true}" << std::endl;
     } catch (const std::exception &error) {
         std::cerr << error.what() << std::endl;
