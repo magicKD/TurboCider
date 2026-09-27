@@ -42,6 +42,43 @@ hybrid 每请求 1216 次预测且零运行失败。
 两边输入张量一致，hybrid 仍为请求内 1216 次 Core ML 推理、零错误。
 实验 JSON/PNG 与比对报告保存在忽略的临时目录，不进入 Git。
 
+## 合并分支后的 20 步横向画布四路回归
+
+在 `dev` 合入 `dev-verify` 与 `feat/stream` 后，用同一个 base checkpoint、
+同一份已编译 1024-row／6144-channel W8A8 manifest，重新运行
+768×512 茶壶文生图（seed 42）。四个独立 resident Session 均完整
+预热 20 步，再各测一次条件编码命中的 warm 请求，均保存输入张量与
+PNG；计时包含 VAE／PNG 和张量 dump，不含首次模型／Core ML 加载。
+缓存路线为阈值 `0.25`、最多连续跳过 `8` 步；hybrid 同时开启矩形
+W8A8 图复用。四路经 `qwen21_compare_sessions.py --verify-dumps`
+分别检查缓存前后和缓存 GPU／hybrid 的 text、noise 张量逐字节相同。
+
+| 路线 | 无缓存 → DBCache warm 墙钟 | 同路线缓存收益 | 跳过步数／本请求 Core ML 预测 |
+| --- | ---: | ---: | ---: |
+| BF16 GPU | 33.266 → 21.290 s | 1.563× | 10／0 |
+| W8A8 GPU＋Core ML | 29.132 → 18.532 s | 1.572× | 10／1216→736 |
+
+同开缓存的 GPU／hybrid 墙钟比为 `1.149×`；未开缓存时为
+`1.142×`。候选节省 `10 × 24 = 240` 层中段计算；矩形每层
+两次预测，故 hybrid 调用减少 `480`，符合报告。manifest 的
+checkpoint SHA 校验通过、Core ML 运行失败数为零；此记录仍
+**不能证明每次预测实际都在 ANE 上执行**。GPU 缓存对无缓存的
+RGB RMSE 为 `7.17/255`，hybrid 自身缓存前后为 `6.43/255`；
+相同缓存条件下 hybrid 对 GPU 为 `4.84/255`。这些数值仅辅助
+发现异常，不是验收门槛。四张 PNG 并排肉眼看茶壶、壶身、壶沿、
+盘子和木桌构图都保留，釉面颗粒和局部阴影变化可见；四张图
+**都呈现双壶嘴**，无缓存基线本身已有这一缺陷，不能把
+「候选保持相似」误说成茶壶结构正确。
+
+本机忽略目录中的原始报告、张量和图片：
+`results/qwen21/post-merge-rect768-{gpu,hybrid}{,-cache}-20260927/`；
+配对比较为同目录下的
+`post-merge-rect768-{gpu-cache-gain,hybrid-cache-gain,cache-comparison}-20260927.json`。
+这仅是同 prompt／seed、单次 warm 配对，提供合并后横向矩形路线
+没有观察到明显退速的**局部**证据；不覆盖冷请求、纵向画布、
+图像编辑、多种子或一般模型的性能。尤其三图编辑的 staged hybrid
+仍可能慢于纯 GPU，不能因本表将它自动设为默认。
+
 ## 40 步文生图及 DBCache 叠加（两个矩形方向）
 
 扩展 DBCache 的显式门禁到矩形 base GPU，以及已开启矩形 W8A8
