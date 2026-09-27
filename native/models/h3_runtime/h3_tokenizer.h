@@ -4,12 +4,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define H3_PAD_TOKEN_ID UINT32_C(151643)
 
 typedef struct h3_tokenizer h3_tokenizer;
 
 h3_tokenizer *h3_tokenizer_load(const char *tokenizer_json,
                                 char *error, size_t error_size);
+/* Parse a tokenizer from a caller-owned request lease descriptor. The
+ * descriptor remains owned by the caller and is read with pread(). */
+h3_tokenizer *h3_tokenizer_load_fd(const char *display_path, int descriptor,
+                                   char *error, size_t error_size);
 void h3_tokenizer_free(h3_tokenizer *tokenizer);
 
 /* The caller owns *ids and releases it with h3_tokenizer_ids_free(). */
@@ -22,5 +30,9 @@ void h3_tokenizer_ids_free(uint32_t *ids);
 char *h3_tokenizer_decode(const h3_tokenizer *tokenizer,
                           const uint32_t *ids, size_t count,
                           char *error, size_t error_size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

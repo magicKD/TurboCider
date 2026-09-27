@@ -13,6 +13,11 @@ typedef struct ltx_gemma_tokenizer ltx_gemma_tokenizer;
 /* Load the tokenizers.json BPE specification used by Gemma4. */
 ltx_gemma_tokenizer *ltx_gemma_tokenizer_load(
     const char *tokenizer_json, char *error, size_t error_size);
+/* Parse from a caller-owned open fd.  The implementation reads the JSON
+ * bytes with pread and never reopens tokenizer_json; path is diagnostic only. */
+ltx_gemma_tokenizer *ltx_gemma_tokenizer_load_fd(
+    int descriptor, const char *tokenizer_json,
+    char *error, size_t error_size);
 void ltx_gemma_tokenizer_free(ltx_gemma_tokenizer *tokenizer);
 
 /* max_length=0 returns the unpadded sequence. Otherwise output is exactly

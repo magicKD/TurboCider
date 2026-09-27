@@ -510,7 +510,11 @@ struct ltx_gpu {
     void *queue;
     void *deferred_commands;
     void *deferred_operations;
+    void *deferred_memory_tokens;
+    void *deferred_memory_async;
+    void *deferred_memory_queue_ids;
     int batch_active;
+    int memory_callback_failed;
     void *bf16_linear_graphs;
     void *int8_linear_graphs;
     void *adaln_single_graphs;
@@ -523,13 +527,27 @@ struct ltx_gpu {
     void *int8_cross_attention_graphs;
     void *int8_cross_kv_graphs;
     void *int8_cross_query_graphs;
+    ltx_gpu_memory_hooks memory_hooks;
+    uint64_t allocator_domain;
+    uint64_t generation;
+    uint64_t next_buffer_handle;
+    uint32_t memory_queue_id;
+    uint32_t next_memory_stage_id;
     void *pipelines[LTX_PIPELINE_COUNT];
 };
 
 struct ltx_gpu_buffer {
+    ltx_gpu *owner;
     void *buffer;
     size_t bytes;
     uint32_t references;
+    void *memory_token;
+    uint64_t allocator_domain;
+    uint64_t generation;
+    uint64_t handle;
+    uint8_t accounted;
+    uint8_t memory_retired;
+    ltx_gpu_memory_hooks memory_hooks;
 };
 
 static int ltx_gpu_fail(char *error, size_t error_size,
@@ -563,6 +581,56 @@ static NSMutableArray<NSString *> *ltx_deferred_operations(
         const ltx_gpu *gpu) {
     return gpu ?
         (__bridge NSMutableArray<NSString *> *)gpu->deferred_operations : nil;
+}
+
+static NSMutableArray<NSValue *> *ltx_deferred_memory_tokens(
+        const ltx_gpu *gpu) {
+    return gpu ?
+        (__bridge NSMutableArray<NSValue *> *)gpu->deferred_memory_tokens : nil;
+}
+
+static NSMutableArray<NSNumber *> *ltx_deferred_memory_async(
+        const ltx_gpu *gpu) {
+    return gpu ?
+        (__bridge NSMutableArray<NSNumber *> *)gpu->deferred_memory_async : nil;
+}
+
+static NSMutableArray<NSNumber *> *ltx_deferred_memory_queue_ids(
+        const ltx_gpu *gpu) {
+    return gpu ?
+        (__bridge NSMutableArray<NSNumber *> *)gpu->deferred_memory_queue_ids : nil;
+}
+
+static int ltx_memory_hooks_have_async(
+        const ltx_gpu_memory_hooks *hooks) {
+    if (!hooks) return 0;
+    const size_t async_size = offsetof(ltx_gpu_memory_hooks, complete) +
+        sizeof(hooks->complete);
+    return hooks->struct_size >= async_size && hooks->version >= 2u &&
+        hooks->retire && hooks->complete;
+}
+
+static void ltx_release_deferred_memory_tokens(ltx_gpu *gpu,
+                                               int completion_status) {
+    if (!gpu) return;
+    NSMutableArray<NSValue *> *tokens = ltx_deferred_memory_tokens(gpu);
+    NSMutableArray<NSNumber *> *async = ltx_deferred_memory_async(gpu);
+    NSMutableArray<NSNumber *> *queue_ids = ltx_deferred_memory_queue_ids(gpu);
+    for (NSUInteger index = 0; index < tokens.count; index++) {
+        NSValue *value = tokens[index];
+        void *token = value.pointerValue;
+        const BOOL is_async = index < async.count && async[index].boolValue;
+        const uint32_t queue_id = index < queue_ids.count ?
+            queue_ids[index].unsignedIntValue : gpu->memory_queue_id;
+        if (is_async && gpu->memory_hooks.complete)
+            gpu->memory_hooks.complete(gpu->memory_hooks.user, token,
+                                       queue_id, completion_status);
+        if (gpu->memory_hooks.release)
+            gpu->memory_hooks.release(gpu->memory_hooks.user, token);
+    }
+    [tokens removeAllObjects];
+    [async removeAllObjects];
+    [queue_ids removeAllObjects];
 }
 
 static id<MTLComputePipelineState> ltx_pipeline(
@@ -843,9 +911,16 @@ ltx_gpu *ltx_gpu_create(const char *shader_source_path,
         }
         gpu->device = (__bridge_retained void *)device;
         gpu->queue = (__bridge_retained void *)queue;
+        gpu->memory_queue_id = LTX_GPU_MEMORY_QUEUE_MAIN;
         gpu->deferred_commands = (__bridge_retained void *)
             [[NSMutableArray alloc] init];
         gpu->deferred_operations = (__bridge_retained void *)
+            [[NSMutableArray alloc] init];
+        gpu->deferred_memory_tokens = (__bridge_retained void *)
+            [[NSMutableArray alloc] init];
+        gpu->deferred_memory_async = (__bridge_retained void *)
+            [[NSMutableArray alloc] init];
+        gpu->deferred_memory_queue_ids = (__bridge_retained void *)
             [[NSMutableArray alloc] init];
         gpu->bf16_linear_graphs = (__bridge_retained void *)
             [[NSMutableDictionary alloc] init];
@@ -878,15 +953,51 @@ ltx_gpu *ltx_gpu_create(const char *shader_source_path,
     return gpu;
 }
 
+int ltx_gpu_set_memory_hooks_for_queue(
+        ltx_gpu *gpu, const ltx_gpu_memory_hooks *hooks,
+        uint64_t allocator_domain, uint64_t generation, uint32_t queue_id,
+        char *error, size_t error_size) {
+    const size_t base_size = offsetof(ltx_gpu_memory_hooks, release) +
+        sizeof(hooks->release);
+    const size_t async_size = offsetof(ltx_gpu_memory_hooks, complete) +
+        sizeof(hooks->complete);
+    if (!gpu || !hooks || hooks->struct_size < base_size ||
+        (hooks->version != 1u && hooks->version != 2u) ||
+        !hooks->reserve || !hooks->commit || !hooks->cancel ||
+        !hooks->release || !allocator_domain || !generation || !queue_id ||
+        (hooks->version >= 2u &&
+         (hooks->struct_size < async_size || !hooks->retire ||
+          !hooks->complete))) {
+        return ltx_gpu_fail(error, error_size,
+                            "invalid constrained GPU memory hooks");
+    }
+    if (gpu->next_buffer_handle != 0) {
+        return ltx_gpu_fail(error, error_size,
+                            "GPU memory hooks must be set before buffers");
+    }
+    memset(&gpu->memory_hooks, 0, sizeof(gpu->memory_hooks));
+    memcpy(&gpu->memory_hooks, hooks,
+           MIN(hooks->struct_size, sizeof(gpu->memory_hooks)));
+    gpu->allocator_domain = allocator_domain;
+    gpu->generation = generation;
+    gpu->memory_queue_id = queue_id;
+    return 1;
+}
+
+int ltx_gpu_set_memory_hooks(ltx_gpu *gpu,
+                             const ltx_gpu_memory_hooks *hooks,
+                             uint64_t allocator_domain,
+                             uint64_t generation,
+                             char *error, size_t error_size) {
+    return ltx_gpu_set_memory_hooks_for_queue(
+        gpu, hooks, allocator_domain, generation,
+        LTX_GPU_MEMORY_QUEUE_MAIN, error, error_size);
+}
+
 void ltx_gpu_free(ltx_gpu *gpu) {
     if (!gpu) return;
-    @autoreleasepool {
-        NSArray<id<MTLCommandBuffer>> *commands =
-            [ltx_deferred_commands(gpu) copy];
-        if (commands.count) [commands.lastObject waitUntilCompleted];
-        [ltx_deferred_commands(gpu) removeAllObjects];
-        [ltx_deferred_operations(gpu) removeAllObjects];
-    }
+    char drain_error[1024] = {0};
+    (void)ltx_gpu_drain(gpu, drain_error, sizeof(drain_error));
     for (unsigned index = 0; index < LTX_PIPELINE_COUNT; index++)
         if (gpu->pipelines[index])
             (void)CFBridgingRelease(gpu->pipelines[index]);
@@ -916,6 +1027,12 @@ void ltx_gpu_free(ltx_gpu *gpu) {
         (void)CFBridgingRelease(gpu->int8_cross_query_graphs);
     if (gpu->deferred_operations)
         (void)CFBridgingRelease(gpu->deferred_operations);
+    if (gpu->deferred_memory_queue_ids)
+        (void)CFBridgingRelease(gpu->deferred_memory_queue_ids);
+    if (gpu->deferred_memory_async)
+        (void)CFBridgingRelease(gpu->deferred_memory_async);
+    if (gpu->deferred_memory_tokens)
+        (void)CFBridgingRelease(gpu->deferred_memory_tokens);
     if (gpu->deferred_commands)
         (void)CFBridgingRelease(gpu->deferred_commands);
     if (gpu->queue) (void)CFBridgingRelease(gpu->queue);
@@ -940,6 +1057,11 @@ int ltx_gpu_get_info(const ltx_gpu *gpu, ltx_gpu_info *info) {
     return 1;
 }
 
+int ltx_gpu_streaming_boundary_completed(const ltx_gpu *gpu) {
+    return gpu && !gpu->batch_active && !gpu->memory_callback_failed &&
+        ltx_deferred_commands(gpu).count == 0 && ltx_deferred_operations(gpu).count == 0;
+}
+
 int ltx_gpu_batch_begin(ltx_gpu *gpu, char *error, size_t error_size) {
     if (!gpu || gpu->batch_active)
         return ltx_gpu_fail(error, error_size,
@@ -959,14 +1081,24 @@ int ltx_gpu_batch_end(ltx_gpu *gpu, char *error, size_t error_size) {
     if (!gpu || !gpu->batch_active)
         return ltx_gpu_fail(error, error_size,
                             "GPU command batch is not active");
+    gpu->batch_active = 0;
+    return ltx_gpu_drain(gpu, error, error_size);
+}
+
+int ltx_gpu_drain(ltx_gpu *gpu, char *error, size_t error_size) {
+    if (!gpu)
+        return ltx_gpu_fail(error, error_size,
+                            "invalid GPU completion drain");
+    const int incomplete_batch = gpu->batch_active;
+    gpu->batch_active = 0;
     int ok = 1;
     @autoreleasepool {
         NSMutableArray<id<MTLCommandBuffer>> *commands =
             ltx_deferred_commands(gpu);
         NSMutableArray<NSString *> *operations =
             ltx_deferred_operations(gpu);
-        gpu->batch_active = 0;
         if (commands.count) [commands.lastObject waitUntilCompleted];
+        int completion_status = 0;
         for (NSUInteger index = 0; index < commands.count; index++) {
             id<MTLCommandBuffer> command = commands[index];
             if (command.status != MTLCommandBufferStatusError) continue;
@@ -977,11 +1109,26 @@ int ltx_gpu_batch_end(ltx_gpu *gpu, char *error, size_t error_size) {
                      operation.UTF8String,
                      ltx_error_description(command.error));
             ok = ltx_gpu_fail(error, error_size, message);
+            completion_status = (int)command.status;
             break;
+        }
+        /* Every deferred token belongs to this ordered queue. Waiting for the
+         * last command proves that all earlier commands have reached a
+         * terminal state, so v2 tokens can now publish completion before the
+         * bridge token is destroyed. */
+        ltx_release_deferred_memory_tokens(gpu, completion_status);
+        if (gpu->memory_callback_failed && ok) {
+            ok = ltx_gpu_fail(
+                error, error_size,
+                "memory_lifetime_violation: LTX memory completion callback failed");
         }
         [commands removeAllObjects];
         [operations removeAllObjects];
     }
+    if (incomplete_batch && ok)
+        return ltx_gpu_fail(
+            error, error_size,
+            "memory_lifetime_violation: GPU batch was active at drain");
     return ok;
 }
 
@@ -1003,49 +1150,98 @@ void ltx_gpu_clear_graph_cache(ltx_gpu *gpu) {
     }
 }
 
-ltx_gpu_buffer *ltx_gpu_buffer_new(ltx_gpu *gpu, size_t bytes,
-                                   char *error, size_t error_size) {
+ltx_gpu_buffer *ltx_gpu_buffer_new_classified(
+        ltx_gpu *gpu, size_t bytes, ltx_gpu_memory_class memory_class,
+        const char *tag, char *error, size_t error_size) {
     if (!gpu || !bytes) {
         ltx_gpu_fail(error, error_size, "invalid Metal buffer size/context");
         return NULL;
     }
+    void *memory_token = NULL;
+    const bool hooks_enabled = gpu->memory_hooks.reserve != NULL;
+    if (hooks_enabled && !gpu->memory_hooks.reserve(
+            gpu->memory_hooks.user, (uint32_t)memory_class,
+            (uint64_t)bytes, tag ? tag : "ltx_gpu_buffer",
+            &memory_token, error, error_size))
+        return NULL;
     ltx_gpu_buffer *result = NULL;
     @autoreleasepool {
         id<MTLBuffer> buffer = [ltx_device(gpu)
             newBufferWithLength:(NSUInteger)bytes
                         options:MTLResourceStorageModeShared];
         if (!buffer) {
+            if (hooks_enabled && gpu->memory_hooks.cancel)
+                gpu->memory_hooks.cancel(gpu->memory_hooks.user,
+                                          memory_token);
             ltx_gpu_fail(error, error_size, "Metal buffer allocation failed");
             return NULL;
         }
         result = calloc(1, sizeof(*result));
         if (!result) {
+            if (hooks_enabled && gpu->memory_hooks.cancel)
+                gpu->memory_hooks.cancel(gpu->memory_hooks.user,
+                                          memory_token);
             ltx_gpu_fail(error, error_size,
                          "out of memory tracking Metal buffer");
             return NULL;
         }
         result->buffer = (__bridge_retained void *)buffer;
-        result->bytes = bytes;
+        result->owner = gpu;
+        result->bytes = (size_t)[buffer length];
         result->references = 1u;
+        result->allocator_domain = gpu->allocator_domain;
+        result->generation = gpu->generation;
+        result->handle = ++gpu->next_buffer_handle;
+        if (hooks_enabled && !gpu->memory_hooks.commit(
+                gpu->memory_hooks.user, memory_token,
+                result->allocator_domain, result->handle,
+                (uint64_t)result->bytes, result->generation,
+                error, error_size)) {
+            (void)CFBridgingRelease(result->buffer);
+            free(result);
+            if (gpu->memory_hooks.cancel)
+                gpu->memory_hooks.cancel(gpu->memory_hooks.user,
+                                          memory_token);
+            return NULL;
+        }
+        result->memory_token = memory_token;
+        result->accounted = hooks_enabled ? 1u : 0u;
+        if (hooks_enabled) result->memory_hooks = gpu->memory_hooks;
     }
     return result;
 }
 
-ltx_gpu_buffer *ltx_gpu_buffer_new_copy(ltx_gpu *gpu, const void *data,
-                                        size_t bytes,
-                                        char *error, size_t error_size) {
+ltx_gpu_buffer *ltx_gpu_buffer_new(ltx_gpu *gpu, size_t bytes,
+                                   char *error, size_t error_size) {
+    return ltx_gpu_buffer_new_classified(
+        gpu, bytes, LTX_GPU_MEMORY_UNKNOWN, "ltx_gpu_buffer",
+        error, error_size);
+}
+
+ltx_gpu_buffer *ltx_gpu_buffer_new_copy_classified(
+        ltx_gpu *gpu, const void *data, size_t bytes,
+        ltx_gpu_memory_class memory_class, const char *tag,
+        char *error, size_t error_size) {
     if (!data || !bytes) {
         ltx_gpu_fail(error, error_size, "invalid Metal buffer copy source");
         return NULL;
     }
-    ltx_gpu_buffer *buffer = ltx_gpu_buffer_new(gpu, bytes, error,
-                                                error_size);
+    ltx_gpu_buffer *buffer = ltx_gpu_buffer_new_classified(
+        gpu, bytes, memory_class, tag, error, error_size);
     if (!buffer) return NULL;
     if (!ltx_gpu_buffer_write(buffer, data, bytes, error, error_size)) {
         ltx_gpu_buffer_free(buffer);
         return NULL;
     }
     return buffer;
+}
+
+ltx_gpu_buffer *ltx_gpu_buffer_new_copy(ltx_gpu *gpu, const void *data,
+                                        size_t bytes,
+                                        char *error, size_t error_size) {
+    return ltx_gpu_buffer_new_copy_classified(
+        gpu, data, bytes, LTX_GPU_MEMORY_UNKNOWN,
+        "ltx_gpu_buffer_copy", error, error_size);
 }
 
 ltx_gpu_buffer *ltx_gpu_buffer_retain(ltx_gpu_buffer *buffer) {
@@ -1060,6 +1256,42 @@ void ltx_gpu_buffer_free(ltx_gpu_buffer *buffer) {
     if (buffer->references > 1u) {
         buffer->references--;
         return;
+    }
+    /* In a batch, the buffer may still be referenced by an in-flight command.
+     * v2 moves the lease to pending before the token is queued for the owner
+     * thread's drain. v1 retains the historical release-after-wait behavior. */
+    if (buffer->accounted && buffer->memory_token &&
+        buffer->memory_hooks.release) {
+        if (buffer->owner && buffer->owner->batch_active) {
+            ltx_gpu *gpu = buffer->owner;
+            int async = ltx_memory_hooks_have_async(
+                &buffer->memory_hooks);
+            if (async) {
+                char callback_error[512] = {0};
+                uint32_t stage_id = ++gpu->next_memory_stage_id;
+                if (!stage_id) stage_id = ++gpu->next_memory_stage_id;
+                uint32_t slot_id = (uint32_t)buffer->handle;
+                if (!slot_id) slot_id = 1u;
+                if (!buffer->memory_hooks.retire(
+                        buffer->memory_hooks.user, buffer->memory_token,
+                        gpu->memory_queue_id, stage_id, slot_id,
+                        callback_error, sizeof(callback_error))) {
+                    gpu->memory_callback_failed = 1;
+                    /* The token never entered the scheduler's pending state;
+                     * release it after the queue drain without attempting a
+                     * completion post that would itself be stale. */
+                    async = 0;
+                }
+            }
+            [ltx_deferred_memory_tokens(gpu)
+                addObject:[NSValue valueWithPointer:buffer->memory_token]];
+            [ltx_deferred_memory_async(gpu) addObject:@(async)];
+            [ltx_deferred_memory_queue_ids(gpu)
+                addObject:@(gpu->memory_queue_id)];
+        } else {
+            buffer->memory_hooks.release(buffer->memory_hooks.user,
+                                         buffer->memory_token);
+        }
     }
     if (buffer->buffer) (void)CFBridgingRelease(buffer->buffer);
     free(buffer);

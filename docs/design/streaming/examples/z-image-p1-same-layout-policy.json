@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "comparison_kind": "P1",
+  "engine_lifecycle": "per_request",
+  "initial_matched_pairs": 20,
+  "minimum_tail_requests_per_variant": 0,
+  "bootstrap_iterations": 4000,
+  "bootstrap_seed": 29,
+  "thresholds": {
+    "P1_same_layout": {
+      "wall_median_ratio_max": 1.02,
+      "wall_p95_ratio_max": 1.05,
+      "denoise_median_ratio_max": 1.02,
+      "steady_framework_allocations": 0,
+      "steady_framework_thread_creates": 0
+    }
+  },
+  "workload": {
+    "request": {},
+    "seed_stride": 0,
+    "output_suffix": ".png"
+  },
+  "protocol": {
+    "measured_blocks": 10,
+    "warmup_requests_per_variant": 1,
+    "worker_start_timeout_seconds": 30,
+    "worker_launch_order": ["candidate", "baseline"],
+    "request_timeout_seconds": 300,
+    "cache_condition": "one-per-variant-warmup-then-per-request-engine-os-cache-warm",
+    "stopping_rule": "fixed-10-block-p1-qos-confirmation",
+    "quantile_estimator": "linear-interpolated-p95",
+    "bootstrap_unit": "abba_block",
+    "multiplicity_policy": "single-frozen-tuple",
+    "exclusion_policy": "no-exclusions",
+    "timing_scope": "engine-create-through-engine-destroy-and-denoise",
+    "launch_pressure": false
+  },
+  "quality": {
+    "mode": "artifact_sha256_equal",
+    "artifacts": [
+      {"name": "image", "path": "${OUTPUT}"}
+    ]
+  },
+  "semantic_equivalence": {
+    "declared_equivalent": true,
+    "expected_actual": {
+      "stage": "denoiser",
+      "resident_prefix_blocks": 14,
+      "block_group_size": 1,
+      "slot_count": 2,
+      "prefetch_distance": 0,
+      "io_workers": 1,
+      "group_count": 16,
+      "pass_count": 1,
+      "startup_policy": "prefetch_window_before_prefix",
+      "pass_transition": "reload",
+      "retention": "request",
+      "reader_revision": 1,
+      "weight_format": "comfy-bf16-single-file",
+      "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+      "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+      "upsample_boundary": "no-upsample;denoiser-pool-retained-through-vae",
+      "engine_lifecycle": "per_request",
+      "total_fills": 16
+    },
+    "fields": [
+      "normalized_request_identity",
+      "resident_prefix_blocks",
+      "block_group_size",
+      "slot_count",
+      "prefetch_distance",
+      "io_workers",
+      "group_count",
+      "pass_count",
+      "startup_policy",
+      "pass_transition",
+      "retention",
+      "engine_lifecycle",
+      "reader_revision",
+      "weight_format",
+      "kernel_revision",
+      "conditioning_recipe",
+      "upsample_boundary",
+      "total_fills"
+    ]
+  },
+  "variants": {
+    "baseline": {
+      "backend": "native",
+      "library": "build/native/libturbocider.dylib",
+      "model_id": "z-image-turbo",
+      "model_path": "models/Comfy-Org-z_image_turbo",
+      "constructor": "public",
+      "request": {
+        "schema_version": 1,
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "prompt": "A red fox walking through fresh snow",
+        "output": "${OUTPUT}",
+        "width": 64,
+        "height": 64,
+        "steps": 1,
+        "seed": 42,
+        "execution": "gpu",
+        "residency": "streamed",
+        "memory_budget_bytes": 10737418240,
+        "audio": false,
+        "dynamic_text": true
+      }
+    },
+    "candidate": {
+      "backend": "native",
+      "library": "build/native/libturbocider.dylib",
+      "model_id": "z-image-turbo",
+      "model_path": "models/Comfy-Org-z_image_turbo",
+      "constructor": "candidate",
+      "request": {
+        "schema_version": 2,
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "inputs": [
+          {"kind": "text", "role": "prompt", "text": "A red fox walking through fresh snow"}
+        ],
+        "outputs": [
+          {"kind": "image", "path": "${OUTPUT}", "width": 64, "height": 64}
+        ],
+        "sampling": {"seed": 42, "steps": 1},
+        "execution": {
+          "policy": "gpu",
+          "streaming": {
+            "schema_version": 1,
+            "enabled": true,
+            "selection": "manual",
+            "retention": "request",
+            "stages": {
+              "denoiser": {
+                "residency": "streamed",
+                "block_group_size": 1,
+                "slot_count": 2,
+                "resident_prefix_blocks": 14,
+                "prefetch_distance": 0,
+                "io_workers": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

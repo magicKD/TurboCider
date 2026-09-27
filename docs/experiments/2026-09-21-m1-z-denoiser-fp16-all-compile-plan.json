@@ -1,0 +1,11 @@
+{
+  "request": {
+    "action": "compile",
+    "model": "z-image-turbo",
+    "source_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-all/artifacts/manifest.json",
+    "cache": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-all/compiled-cache"
+  },
+  "library": "/Users/chencanhui/code/TurboCider/build/m1-policy-v3/libturbocider.dylib",
+  "library_sha256": "70bafadc0fc26bde63cbd0bddcf92072a75ecdad663c00aa52b6979178afed51",
+  "source_manifest_sha256": "deb6db5a920332ed7754265fb7fb48d05a6cf06476133c8a09751de8a8a620d3"
+}

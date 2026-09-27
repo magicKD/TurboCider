@@ -1,0 +1,20 @@
+{
+  "canonical_config": {
+    "enabled": true,
+    "schema_version": 1,
+    "selection": "manual",
+    "retention": "request",
+    "stages": {
+      "denoiser": {
+        "residency": "streamed",
+        "block_group_size": 1,
+        "slot_count": 2,
+        "resident_prefix_blocks": 7,
+        "prefetch_distance": 0,
+        "io_workers": 1
+      }
+    }
+  },
+  "pass_transition": "reload",
+  "multi_pool_policy": "serial"
+}

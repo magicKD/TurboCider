@@ -1,0 +1,34 @@
+{
+  "scope": "Atomic image destination collision regression on macOS 26.4.1",
+  "before": {
+    "exit_code": 133,
+    "failure": "Swift/ErrorType.swift:254: Fatal error: Error raised at top level: main.NativeFailure(message: \"Publication replaced a concurrent destination: regular\", code: nil, retryable: false, action: nil)\n",
+    "production_source": "8ea5dc7:apps/macos/ImageOutputTransaction.swift"
+  },
+  "after": {
+    "exit_code": 0,
+    "output": "PASS image transaction: request correlation, PNG decode, SHA receipt, atomic publication, rollback, cancellation and cleanup\n"
+  },
+  "new_cases": [
+    "destination regular file created after prepare",
+    "destination symlink created after prepare",
+    "destination dangling symlink created after prepare"
+  ],
+  "invariants": [
+    "existing destination unchanged",
+    "symlink target unchanged",
+    "failed publish retains staged PNG until owner cleanup",
+    "unique destination success",
+    "double publish rejected"
+  ],
+  "implementation": "Darwin renamex_np with RENAME_EXCL, no overwrite fallback",
+  "sdk_declaration": "MacOSX.sdk/usr/include/sys/stdio.h: renamex_np available since macOS 10.12",
+  "source_sha256": "52733ba55194fd7ba953ab9d294e6ebe6e1a721554739fb947d0d652b550749f",
+  "test_sha256": "8f8abf0ec8ad9952a4abe47cad4da9765846dd5e91f2b526f3b331aa8feb1858",
+  "app_rebuild": "completed, exit 0; current Swift App linked against m1-hybrid-stage native library",
+  "remaining": [
+    "durable finalizing state and crash recovery",
+    "public Flux streaming release gates and catalog admission"
+  ],
+  "app_sha256": "bccfbf05839cb130da931a3613dbdc5ed09038c253871f23313182f564a8a142"
+}

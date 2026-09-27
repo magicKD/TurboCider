@@ -5,6 +5,7 @@
 #include "h3_host.h"
 #include "h3_quant_cache.h"
 #include "h3_text_encoder.h"
+#include "../../core/stream_slot_c.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -32,6 +33,47 @@ typedef struct {
     double wait_seconds;
 } h3_dit_streaming_info;
 
+#define H3_DIT_STREAM_FILL_ABI_V1 1u
+
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    uint32_t block;
+    uint32_t slot;
+    uint64_t source_bytes;
+    uint64_t content_bytes;
+    double seconds;
+} h3_dit_stream_fill_result_v1;
+
+#define H3_DIT_EXACT_STREAM_ABI_V1 1u
+
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    uint64_t request_generation;
+    uint32_t prefetch_distance;
+    uint32_t io_workers;
+    int carry_first_group;
+    h3_gpu_cancel_query_v1 cancel;
+    const void *cancel_user;
+} h3_dit_exact_stream_options_v1;
+
+typedef struct {
+    int enabled;
+    int finished;
+    int poisoned;
+    uint32_t completed_passes;
+    uint64_t pool_creates;
+    uint64_t slot_bundles;
+    uint64_t fills;
+    uint64_t content_bytes_loaded;
+    uint64_t groups_submitted;
+    double refill_load_seconds;
+    double max_refill_seconds;
+    int32_t max_refill_block;
+    double wait_seconds;
+} h3_dit_exact_streaming_info;
+
 typedef void (*h3_dit_progress)(const char *phase, int completed, int total,
                                 void *opaque);
 
@@ -44,6 +86,8 @@ typedef int (*h3_dit_preview)(int completed_steps, int total_steps,
  * small block norms and two alternating BF16 matrix slots. */
 h3_dit *h3_dit_load_t2va(const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -77,6 +121,8 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
 h3_dit *h3_dit_load_t2va_core(
                          const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -108,6 +154,8 @@ h3_dit *h3_dit_load_t2va_core(
 h3_dit *h3_dit_load_conditioned(
                          const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -228,8 +276,55 @@ int h3_dit_reuse_schedule(int steps, int reuse_interval, uint8_t *selected,
                           size_t selected_count);
 
 int h3_dit_get_gpu_stats(const h3_dit *dit, h3_gpu_stats *stats);
+/* Wait for all command buffers owned by this DiT and execute their completion
+ * handlers.  The call is synchronous and must run on the request owner
+ * thread; it is used by the Apple adapter before consuming its memory
+ * completion mailbox. */
+int h3_dit_drain_gpu(h3_dit *dit, char *error, size_t error_size);
 int h3_dit_get_streaming_info(const h3_dit *dit,
                               h3_dit_streaming_info *info);
+/* Candidate-only bridge used by the generic slot executor.  The snapshot
+ * check performs metadata I/O but no payload read or GPU work.  A successful
+ * check is required before fill; fill writes only a slot already proven
+ * writable by the framework and never publishes legacy stream_ready state. */
+int h3_dit_stream_check_source_snapshot(h3_dit *dit,
+                                        char *error, size_t error_size);
+/* Returns UINT_MAX when no streamed block is available. */
+unsigned h3_dit_stream_first_block_id(const h3_dit *dit);
+int h3_dit_stream_fill_slot_v1(
+    h3_dit *dit, unsigned block, unsigned slot, size_t chunk_bytes,
+    h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+    h3_dit_stream_fill_result_v1 *result,
+    char *error, size_t error_size);
+/* Internal experimental execution authority. It accepts only the frozen
+ * original-BF16 K=2/G=1 H3 candidate and never changes the legacy route unless
+ * explicitly enabled after load. */
+int h3_dit_enable_exact_streaming_v1(
+    h3_dit *dit, const h3_dit_exact_stream_options_v1 *options,
+    char *error, size_t error_size);
+/* Bind request-scoped duplicate descriptors before the exact executor starts.
+ * Private/default callers leave the source array null and retain path I/O. */
+int h3_dit_bind_exact_sources_v1(
+    h3_dit *dit, const h3_weight_source_v1 *sources, size_t source_count,
+    char *error, size_t error_size);
+int h3_dit_enable_exact_receipt_v1(
+    h3_dit *dit, uint64_t source_generation,
+    const char *layout_digest, const char *implementation,
+    char *error, size_t error_size);
+int h3_dit_get_exact_streaming_info(
+    const h3_dit *dit, h3_dit_exact_streaming_info *info);
+/* Copy the sealed common executor receipt.  The caller may first pass a V2
+ * struct with zero capacities and null arrays to obtain the required counts,
+ * then provide caller-owned arrays for the second call.  This is only valid
+ * on the owner thread after the exact executor has finished. */
+int h3_dit_copy_exact_receipt_v2(
+    const h3_dit *dit, tc_stream_receipt_v2 *receipt,
+    char *error, size_t error_size);
+/* Thread-safe cancellation request for the candidate executor. */
+void h3_dit_cancel_exact_streaming(h3_dit *dit);
+/* Status-returning owner teardown.  On failure *dit remains unchanged and
+ * must be quarantined with every callback/slot/model dependency intact. */
+int h3_dit_destroy(h3_dit **dit, char *error, size_t error_size);
 /* True after an opt-in final-pass progressive eviction consumed resident
  * block weights. Such a DiT is intentionally one-shot and cannot be cached or
  * reprepared for another request. */

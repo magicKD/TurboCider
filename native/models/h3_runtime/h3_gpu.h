@@ -4,8 +4,51 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct h3_gpu h3_gpu;
 typedef struct h3_gpu_tensor h3_gpu_tensor;
+
+typedef enum {
+    H3_GPU_MEMORY_UNKNOWN = 0,
+    H3_GPU_MEMORY_WEIGHTS = 1,
+    H3_GPU_MEMORY_ACTIVATION = 2,
+    H3_GPU_MEMORY_CONDITIONING = 3,
+    H3_GPU_MEMORY_REFILL_SLOT = 4,
+    H3_GPU_MEMORY_CONVERSION_SCRATCH = 5,
+    H3_GPU_MEMORY_OUTPUT = 6,
+} h3_gpu_memory_class;
+
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    void *user;
+    int (*reserve)(void *user, uint32_t memory_class,
+                   uint64_t upper_bytes, const char *tag,
+                   void **token, char *error, size_t error_size);
+    int (*commit)(void *user, void *token, uint64_t allocator_domain,
+                  uint64_t handle, uint64_t actual_bytes,
+                  uint64_t generation, char *error, size_t error_size);
+    void (*cancel)(void *user, void *token);
+    void (*release)(void *user, void *token);
+    /* Optional asynchronous lifetime bridge.  retire() moves the active
+     * lease into a pending-release state before the command is committed;
+     * complete() only publishes the completion result to the owner-thread
+     * mailbox.  Neither callback may wait for Metal or mutate model state. */
+    int (*retire)(void *user, void *token, uint32_t stage_id,
+                  uint32_t slot_id, char *error, size_t error_size);
+    void (*complete)(void *user, void *token, int status);
+} h3_gpu_memory_hooks;
+
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    const h3_gpu_memory_hooks *memory_hooks;
+    uint64_t memory_allocator_domain;
+    uint64_t memory_generation;
+} h3_gpu_options;
 
 typedef enum {
     H3_GPU_F32 = 0,
@@ -33,9 +76,32 @@ typedef struct {
     double gpu_seconds;
 } h3_gpu_stats;
 
+#define H3_GPU_COMPLETION_ABI_V1 1u
+
+/* A copied, asynchronous completion record for the command buffer that is
+ * current when h3_gpu_continue_with_completion() is called.  The callback
+ * runs on Metal's completion thread and must only publish bounded POD state;
+ * it must not mutate model/slot state, wait for the owner, or free GPU
+ * resources.  user must remain valid until h3_gpu_drain()/submit succeeds. */
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    void *user;
+    uint32_t queue;
+    uint64_t sequence;
+    void (*complete)(void *user, uint32_t queue, uint64_t sequence,
+                     int status);
+} h3_gpu_completion_v1;
+
 h3_gpu *h3_gpu_create(const char *shader_source_path,
                       char *error, size_t error_size);
+h3_gpu *h3_gpu_create_with_options(const char *shader_source_path,
+                                   const h3_gpu_options *options,
+                                   char *error, size_t error_size);
 void h3_gpu_free(h3_gpu *gpu);
+/* Wait for every committed command in the ordered queue and run completion
+ * handlers before allocator hooks are detached.  No new work is submitted. */
+int h3_gpu_drain(h3_gpu *gpu);
 int h3_gpu_is_m5(const h3_gpu *gpu);
 int h3_gpu_has_nax_mlp(const h3_gpu *gpu);
 int h3_gpu_has_int8_mlp(const h3_gpu *gpu);
@@ -44,12 +110,24 @@ h3_gpu_tensor *h3_gpu_tensor_new_f32(h3_gpu *gpu, size_t elements);
 h3_gpu_tensor *h3_gpu_tensor_new_f16(h3_gpu *gpu, size_t elements);
 h3_gpu_tensor *h3_gpu_tensor_new_bf16(h3_gpu *gpu, size_t elements);
 h3_gpu_tensor *h3_gpu_tensor_new_i8(h3_gpu *gpu, size_t elements);
+h3_gpu_tensor *h3_gpu_tensor_new_classified(
+    h3_gpu *gpu, size_t elements, h3_gpu_dtype dtype,
+    h3_gpu_memory_class memory_class, const char *tag);
 h3_gpu_tensor *h3_gpu_tensor_from_f32(h3_gpu *gpu, const float *values,
                                       size_t elements);
+h3_gpu_tensor *h3_gpu_tensor_from_f32_classified(
+    h3_gpu *gpu, const float *values, size_t elements,
+    h3_gpu_memory_class memory_class, const char *tag);
 h3_gpu_tensor *h3_gpu_tensor_from_bf16(h3_gpu *gpu, const uint16_t *values,
                                        size_t elements);
+h3_gpu_tensor *h3_gpu_tensor_from_bf16_classified(
+    h3_gpu *gpu, const uint16_t *values, size_t elements,
+    h3_gpu_memory_class memory_class, const char *tag);
 h3_gpu_tensor *h3_gpu_tensor_from_u32(h3_gpu *gpu, const uint32_t *values,
                                       size_t elements);
+h3_gpu_tensor *h3_gpu_tensor_from_u32_classified(
+    h3_gpu *gpu, const uint32_t *values, size_t elements,
+    h3_gpu_memory_class memory_class, const char *tag);
 /* Allocate shared Metal storage and pread BF16 payload directly into it. */
 h3_gpu_tensor *h3_gpu_tensor_load_bf16(h3_gpu *gpu, const char *path,
                                        uint64_t file_offset, size_t elements);
@@ -74,6 +152,23 @@ int h3_gpu_tensor_read_file_bf16(h3_gpu_tensor *tensor, const char *path,
 int h3_gpu_tensor_stream_file_bf16(h3_gpu_tensor *tensor, const char *path,
                                    uint64_t file_offset, size_t elements,
                                    char *error, size_t error_size);
+typedef int (*h3_gpu_cancel_query_v1)(const void *user);
+/* Candidate streaming reader. Unlike the legacy whole-tensor helper, this
+ * reads in a fixed bounded chunk, observes cancellation between chunks, and
+ * reports exact bytes copied. A failed/cancelled destination is partial and
+ * must never be published Ready. */
+int h3_gpu_tensor_stream_file_bf16_cancellable(
+    h3_gpu_tensor *tensor, const char *path, uint64_t file_offset,
+    size_t elements, size_t chunk_bytes,
+    h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+    uint64_t *bytes_read, char *error, size_t error_size);
+/* Request-scoped lease variant. The descriptor remains owned by the caller;
+ * this function never closes it and performs only checked positional reads. */
+int h3_gpu_tensor_stream_fd_bf16_cancellable(
+    h3_gpu_tensor *tensor, int descriptor, const char *label,
+    uint64_t file_offset, size_t elements, size_t chunk_bytes,
+    h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+    uint64_t *bytes_read, char *error, size_t error_size);
 int h3_gpu_tensor_stream_file_i8(h3_gpu_tensor *tensor, const char *path,
                                  uint64_t file_offset, size_t elements,
                                  char *error, size_t error_size);
@@ -153,6 +248,16 @@ int h3_gpu_begin(h3_gpu *gpu);
 /* Commit the current command buffer without waiting, then continue encoding on
  * the same ordered queue. h3_gpu_submit() waits and validates the whole chain. */
 int h3_gpu_continue(h3_gpu *gpu);
+/* As h3_gpu_continue(), but register a copied callback on the command buffer
+ * that contains the actual preceding readers.  This is the narrow primitive
+ * used by a streaming adapter to prove that a refill slot is safe to reuse;
+ * CPU encode return is deliberately not a completion signal. */
+int h3_gpu_continue_with_completion(
+    h3_gpu *gpu, const h3_gpu_completion_v1 *completion);
+/* Candidate streaming boundary: commit the current command buffer when one
+ * exists, then wait for the full ordered queue.  Unlike h3_gpu_drain(), this
+ * also closes partially encoded work on an adapter error path. */
+int h3_gpu_flush_and_drain(h3_gpu *gpu);
 /* Asynchronously release tensor ownership after the current command buffer
  * completes, then continue encoding on the same ordered queue. On success this
  * consumes every non-NULL tensor reference in the array; callers must clear
@@ -942,5 +1047,9 @@ int h3_gpu_euler_bf16(h3_gpu *gpu, h3_gpu_tensor *sample,
 int h3_gpu_silu_mul_bf16(h3_gpu *gpu, h3_gpu_tensor *output,
                          const h3_gpu_tensor *gate,
                          const h3_gpu_tensor *up, uint32_t elements);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "model": "ltx-2.5-distilled",
+  "operation": "video.generate",
+  "inputs": [
+    {
+      "kind": "text",
+      "role": "prompt",
+      "text": "A cinematic red fox running through a snowy forest, detailed fur, soft morning sunlight."
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "video",
+      "path": "${OUTPUT}",
+      "width": 512,
+      "height": 320,
+      "frames": 33,
+      "fps": 24,
+      "audio": false
+    }
+  ],
+  "sampling": {
+    "seed": 42,
+    "steps": 11
+  },
+  "execution": {
+    "policy": "gpu",
+    "ltx_backend": "c_metal",
+    "ltx_fast_av": true,
+    "streaming": {
+      "schema_version": 2,
+      "enabled": true,
+      "selection": "memory_tier",
+      "retention": "request",
+      "target_request_memory_bytes": 21474836480
+    }
+  },
+  "parameters": {
+    "dynamic_text": true
+  }
+}

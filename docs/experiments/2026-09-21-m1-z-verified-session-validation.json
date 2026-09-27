@@ -1,0 +1,61 @@
+{
+  "scope": "Internal verified-bundle HybridSession load, zero-input prediction and lifetime; no image/performance qualification",
+  "plan_sha256": "0d3e5bba19d6e38c43391dd80c91a860c415057851d6fb4b808ad8aea36f31ab",
+  "native_library": "build/m1-verified-coreml/libturbocider.dylib",
+  "native_library_sha256": "cb901a231ccdd8ac5ee45bdae9bb84b58160a4c51c8950f7b8a4f311079fbbf0",
+  "runtime_build_id": "tc-runtime-build-v1-75560d32bb86bce2c3290a110ddaa6ffa046f6f8c254c3626b6f2dfb89553e6a",
+  "build": {
+    "result": "PASS",
+    "runtime_and_catalog_postbuild_verify": "PASS",
+    "test_hooks": true,
+    "interrupted_attempts": 2,
+    "interruption_reason": "Explicitly stopped owned build groups for input ABI guard and refinement to immutable partition fields, not observation timeout"
+  },
+  "typed_session": {
+    "result": "PASS",
+    "predictions": 32,
+    "runtime_failures": 0,
+    "warmups": 0,
+    "oracle": "all zero FP16 input yields exact zero on all 32 bias-free FFN branches",
+    "shared_output_backing": "same address, GPU consumer completed before each reuse",
+    "invalid_inputs": [
+      "unpadded rows",
+      "float32",
+      "noncontiguous/broadcast storage",
+      "out-of-range block"
+    ],
+    "invalid_inputs_rejected_without_latching_runtime_failure": true,
+    "partial_constructor_cancel": "Cancelled type preserved; clean retry",
+    "load_event_exception": "propagated; clean retry",
+    "generation_retained_after_external_owners_reset": true,
+    "generation_removed_after_session_release": true,
+    "observed_ane_residency": "unknown"
+  },
+  "legacy_bridge": {
+    "result": "PASS",
+    "predictions": 1,
+    "block": 29,
+    "zero_oracle": true,
+    "runtime_failures": 0,
+    "checkpoint_sha256_verified": true,
+    "close_completed": true
+  },
+  "regressions": {
+    "native_contract": {
+      "run": 83,
+      "skipped": 3,
+      "result": "PASS"
+    },
+    "z_public_adapter": "PASS",
+    "py_compile": "PASS",
+    "diff_check": "PASS"
+  },
+  "limitations": [
+    "No new release/App build",
+    "Host test link warns deployment target 26.0 vs dylib 26.2; machine runs 26.4.1",
+    "No GPU suffix join or denoiser integration",
+    "No full request drain/quarantine or prediction hang fault validation",
+    "INT8 nonzero numerical failure remains unchanged",
+    "No performance or residency qualification"
+  ]
+}

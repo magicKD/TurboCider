@@ -5,6 +5,25 @@
 #include <limits.h>
 #include <string.h>
 
+int h3_stream_uniform_active_mask(unsigned total_blocks,
+                                  unsigned active_blocks,
+                                  uint8_t *mask,
+                                  size_t mask_count) {
+    if (!mask || total_blocks < 2 || active_blocks < 2 ||
+        active_blocks > total_blocks || mask_count < total_blocks)
+        return 0;
+    memset(mask, 1, total_blocks);
+    unsigned skipped = total_blocks - active_blocks;
+    for (unsigned index = 0; index < skipped; index++) {
+        unsigned block = ((2 * index + 1) * total_blocks) / (2 * skipped);
+        if (block == 0) block = 1;
+        if (block >= total_blocks - 1) block = total_blocks - 2;
+        if (!mask[block]) return 0;
+        mask[block] = 0;
+    }
+    return 1;
+}
+
 h3_stream_plan_status h3_stream_plan_build(
     uint64_t memory_budget_bytes, uint64_t activation_reserve_bytes,
     uint64_t block_bytes, unsigned active_blocks,

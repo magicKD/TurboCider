@@ -1,0 +1,17 @@
+{
+  "scope": "App source-verification integration and launch smoke; no full GUI automation or release qualification",
+  "app_sha256": "954aad24975d08d872695c7df06045aae4ce495bb50519d37216991546201c62",
+  "native_library_sha256": "48c8be973b06e6e909bdc1925644498eb7aa760f3d81e51b90b24e0952ae68cf",
+  "swift_verification": "PASS Swift source verification: model=flux2-klein-4b files=8 elapsed=8.161103010177612s cached payload=0",
+  "model_store_verification": "PASS model-library verification: busy admission, cancellation, retry, clean report state and unload",
+  "image_transaction": "PASS image transaction: request correlation, PNG decode, SHA receipt, atomic publication, rollback, cancellation and cleanup",
+  "streaming_resolution": "PASS streaming App transaction: frozen selector, result correlation, native verified identity, strict types and receipt versions",
+  "studio_behavior": "PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/Wan/Z-Image defaults and separate LoRA forwarding",
+  "launch": {
+    "started_pid": 97099,
+    "alive_after_seconds": 15,
+    "alive": true,
+    "exit_after_owned_termination": -15,
+    "log_bytes": 0
+  }
+}

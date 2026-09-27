@@ -1,0 +1,532 @@
+{
+  "schema_version": 1,
+  "scope": "Official-weight candidate exact streaming smoke; downloads running; not release qualification or controlled performance",
+  "request": {
+    "schema_version": 2,
+    "model": "flux2-klein-4b",
+    "operation": "image.generate",
+    "inputs": [
+      {
+        "kind": "text",
+        "role": "prompt",
+        "text": "A red fox standing in fresh snow, pine forest, soft morning sunlight, detailed photograph."
+      }
+    ],
+    "outputs": [
+      {
+        "kind": "image",
+        "path": "/Users/chencanhui/models/TurboCider/experiments/m1-flux4-streaming-smoke-2/image.png",
+        "width": 256,
+        "height": 256
+      }
+    ],
+    "sampling": {
+      "seed": 42,
+      "steps": 4
+    },
+    "execution": {
+      "policy": "gpu",
+      "streaming": {
+        "schema_version": 1,
+        "enabled": true,
+        "selection": "manual",
+        "retention": "request",
+        "stages": {
+          "denoiser": {
+            "residency": "streamed",
+            "block_group_size": 1,
+            "slot_count": 2,
+            "resident_prefix_blocks": 0,
+            "prefetch_distance": 1,
+            "io_workers": 2
+          }
+        }
+      }
+    }
+  },
+  "library": "/Users/chencanhui/code/TurboCider/build/m1-cache/libturbocider.dylib",
+  "library_sha256": "7011bf1315cc10ee3d13f3c37e1be64d5fc36db775fd80a009a5c2b9017b8d85",
+  "status": 0,
+  "error": null,
+  "wall_seconds": 8.162038082955405,
+  "peak_rss_bytes": 5592727552,
+  "result": {
+    "acceleration_selection": "gpu: explicitly selected",
+    "actual_denoise_steps": 4,
+    "block_residency": {
+      "activation_reserve_bytes": 0,
+      "active_blocks": 25,
+      "block_bytes": 490734592,
+      "enabled": true,
+      "estimated_working_set_bytes": 1862274048,
+      "fully_resident": false,
+      "memory_budget_bytes": 0,
+      "mlp_prefix_channels": 0,
+      "pinned_blocks": 0,
+      "policy": "shared_block_residency_v1",
+      "quantized": false,
+      "refill_slots": 4,
+      "request_bytes_loaded": 29834145792,
+      "request_load_seconds": 8.814109413000002,
+      "request_max_refill_block": 11,
+      "request_max_refill_seconds": 0.214969875,
+      "request_pack_read_bytes": 0,
+      "request_pack_seconds": 0,
+      "request_pack_write_bytes": 0,
+      "request_refill_load_seconds": 8.734907372000002,
+      "request_slot_allocations": 4,
+      "request_slot_fills": 100,
+      "request_slot_refills": 100,
+      "request_wait_seconds": 3.4167158349999998,
+      "streamed_blocks": 25,
+      "suffix_pack_bytes": 0
+    },
+    "block_streaming": {
+      "activation_reserve_bytes": 0,
+      "active_blocks": 25,
+      "actual_layout": {
+        "block_group_size": 1,
+        "component_policy_revision": "flux2-private-components-v1",
+        "conditioning_recipe": "qwen3-flux2-klein-v1",
+        "digest": "87c3bf901d70dc9261544e67bce9618bfa91c8c305df2b369962646659157e5f",
+        "drained": true,
+        "group_count": 25,
+        "io_workers": 2,
+        "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+        "multi_pool_policy": "retain_all",
+        "pass_count": 4,
+        "pass_transition": "reload",
+        "pool_count": 2,
+        "prefetch_distance": 1,
+        "reader_revision": 1,
+        "refill_worker_count": 2,
+        "resident_prefix_blocks": 0,
+        "retention": "request;multi_pool=retain_all",
+        "slot_bundle_count": 4,
+        "slot_count": 2,
+        "source_lease_verified": false,
+        "stage": "denoiser",
+        "startup_policy": "prefetch_window_before_prefix",
+        "upsample_boundary": "no-upsample;release-before-vae",
+        "weight_format": "diffusers-bf16-single-file"
+      },
+      "block_bytes": 490734592,
+      "enabled": true,
+      "estimated_working_set_bytes": 1862274048,
+      "fully_resident": false,
+      "implementation": "generic_stage_executor_v1",
+      "layout_digest": "87c3bf901d70dc9261544e67bce9618bfa91c8c305df2b369962646659157e5f",
+      "memory_budget_bytes": 0,
+      "mlp_prefix_channels": 0,
+      "pinned_blocks": 0,
+      "policy": "shared_block_residency_v1",
+      "quantized": false,
+      "refill_slots": 4,
+      "request_bytes_loaded": 29834145792,
+      "request_load_seconds": 8.814109413000002,
+      "request_max_refill_block": 11,
+      "request_max_refill_seconds": 0.214969875,
+      "request_pack_read_bytes": 0,
+      "request_pack_seconds": 0,
+      "request_pack_write_bytes": 0,
+      "request_refill_load_seconds": 8.734907372000002,
+      "request_slot_allocations": 4,
+      "request_slot_fills": 100,
+      "request_slot_refills": 100,
+      "request_wait_seconds": 3.4167158349999998,
+      "streamed_blocks": 25,
+      "suffix_pack_bytes": 0
+    },
+    "checkpoint": null,
+    "encoder_execution": "gpu",
+    "encoder_gpu_graph": "qwen3_gpu_only",
+    "encoder_hybrid": {},
+    "encoder_runtime_backend": "mlx_cpp_metal",
+    "encoder_runtime_precision": "bf16",
+    "gpu_graph": "eager_blocks",
+    "height": 256,
+    "hybrid": {},
+    "lora_strategy": "none",
+    "memory": {
+      "mlx_active_bytes": 100224070,
+      "mlx_peak_bytes": 6269857144,
+      "scope": "MLX allocator; excludes Core ML/OS/file cache"
+    },
+    "model": "flux2-klein-4b",
+    "operation": "image.generate",
+    "output": "/Users/chencanhui/models/TurboCider/experiments/m1-flux4-streaming-smoke-2/image.png",
+    "plan": {
+      "algorithm_approximations": [],
+      "audio": false,
+      "audio_capability": "not_applicable",
+      "backend": "mlx_cpp_metal",
+      "decoded_shape": [
+        256,
+        256,
+        1
+      ],
+      "encoder_backend": "mlx_cpp_metal",
+      "encoder_execution": "gpu",
+      "encoder_gpu_graph": "qwen3_gpu_only",
+      "encoder_precision": "bf16",
+      "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+      "executable": true,
+      "execution": "gpu",
+      "executor_operations": null,
+      "gpu_graph": "eager_blocks",
+      "limitation": "capabilities depend on model artifacts and configured hardware",
+      "lora_count": 0,
+      "lora_fusion": "none",
+      "lora_strategy": "none",
+      "ltx_backend": "auto",
+      "ltx_fast_av": true,
+      "ltx_sol_dense_edge_blocks": 1,
+      "ltx_sol_dense_edge_steps": 1,
+      "ltx_sol_stage1": false,
+      "ltx_sol_stage2": false,
+      "ltx_sol_tau": 0.5,
+      "ltx_sparse_anchor_stride": 0,
+      "ltx_sparse_keep_blocks": 0,
+      "ltx_sparse_mode": 0,
+      "ltx_sparse_radius": 1,
+      "ltx_sparse_tokens_per_frame": 0,
+      "ltx_stage2_text_rows": 0,
+      "ltx_video_attention_batch": false,
+      "memory_budget_bytes": null,
+      "memory_budget_scope": "unset",
+      "memory_estimate_bytes": null,
+      "memory_estimate_kind": "requires_layout_metadata",
+      "model": "flux2-klein-4b",
+      "operation": "image.generate",
+      "precision": "bf16",
+      "profile_identity": "",
+      "quantized_cache": null,
+      "requested_execution": "gpu",
+      "requested_shape": [
+        256,
+        256,
+        1
+      ],
+      "residency": "resident",
+      "schema_version": 1,
+      "selection_pending": false,
+      "stages": [
+        {
+          "dependencies": [],
+          "id": "text_encode",
+          "iterations": 1
+        },
+        {
+          "dependencies": [
+            "text_encode"
+          ],
+          "id": "denoise",
+          "iterations": 4
+        },
+        {
+          "dependencies": [
+            "denoise"
+          ],
+          "id": "vae_decode",
+          "iterations": 1
+        },
+        {
+          "dependencies": [
+            "vae_decode"
+          ],
+          "id": "export",
+          "iterations": 1
+        }
+      ],
+      "streaming": {
+        "actual_layout": {
+          "block_group_size": 1,
+          "component_policy_revision": "flux2-private-components-v1",
+          "conditioning_recipe": "qwen3-flux2-klein-v1",
+          "digest": "87c3bf901d70dc9261544e67bce9618bfa91c8c305df2b369962646659157e5f",
+          "drained": true,
+          "group_count": 25,
+          "io_workers": 2,
+          "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+          "multi_pool_policy": "retain_all",
+          "pass_count": 4,
+          "pass_transition": "reload",
+          "pool_count": 2,
+          "prefetch_distance": 1,
+          "reader_revision": 1,
+          "refill_worker_count": 2,
+          "resident_prefix_blocks": 0,
+          "retention": "request;multi_pool=retain_all",
+          "slot_bundle_count": 4,
+          "slot_count": 2,
+          "source_lease_verified": false,
+          "stage": "denoiser",
+          "startup_policy": "prefetch_window_before_prefix",
+          "upsample_boundary": "no-upsample;release-before-vae",
+          "weight_format": "diffusers-bf16-single-file"
+        },
+        "authority": "private_candidate_constructor",
+        "eligibility": "experimental_candidate",
+        "enforcement": "exact_layout",
+        "execution_supported": true,
+        "field_provenance": {
+          "enabled": "request",
+          "retention": "request",
+          "schema_version": "request",
+          "selection": "request",
+          "stages.denoiser.block_group_size": "request",
+          "stages.denoiser.io_workers": "request",
+          "stages.denoiser.prefetch_distance": "request",
+          "stages.denoiser.residency": "request",
+          "stages.denoiser.resident_prefix_blocks": "request",
+          "stages.denoiser.slot_count": "request"
+        },
+        "merged_intent": {
+          "enabled": true,
+          "retention": "request",
+          "schema_version": 1,
+          "selection": "manual",
+          "stages": {
+            "denoiser": {
+              "block_group_size": 1,
+              "io_workers": 2,
+              "prefetch_distance": 1,
+              "residency": "streamed",
+              "resident_prefix_blocks": 0,
+              "slot_count": 2
+            }
+          }
+        },
+        "rejection_code": null,
+        "requested_layout": {
+          "enabled": true,
+          "retention": "request",
+          "schema_version": 1,
+          "selection": "manual",
+          "stages": {
+            "denoiser": {
+              "block_group_size": 1,
+              "io_workers": 2,
+              "prefetch_distance": 1,
+              "residency": "streamed",
+              "resident_prefix_blocks": 0,
+              "slot_count": 2
+            }
+          }
+        },
+        "resolution_state": "executed_exact_layout",
+        "resolved_layout": {
+          "block_group_size": 1,
+          "component_policy_revision": "flux2-private-components-v1",
+          "conditioning_recipe": "qwen3-flux2-klein-v1",
+          "digest": "87c3bf901d70dc9261544e67bce9618bfa91c8c305df2b369962646659157e5f",
+          "drained": true,
+          "group_count": 25,
+          "io_workers": 2,
+          "kernel_revision": "flux2-klein-4b-mlx-eager-block-v1",
+          "multi_pool_policy": "retain_all",
+          "pass_count": 4,
+          "pass_transition": "reload",
+          "pool_count": 2,
+          "prefetch_distance": 1,
+          "reader_revision": 1,
+          "refill_worker_count": 2,
+          "resident_prefix_blocks": 0,
+          "retention": "request;multi_pool=retain_all",
+          "slot_bundle_count": 4,
+          "slot_count": 2,
+          "source_lease_verified": false,
+          "stage": "denoiser",
+          "startup_policy": "prefetch_window_before_prefix",
+          "upsample_boundary": "no-upsample;release-before-vae",
+          "weight_format": "diffusers-bf16-single-file"
+        }
+      },
+      "streaming_offload": false,
+      "validation": "native_candidate",
+      "weight_validation": "see parity evidence"
+    },
+    "prompt_cache_hit": false,
+    "reference_tokens": 0,
+    "runtime_backend": null,
+    "runtime_precision": null,
+    "schema_version": 1,
+    "seed": 42,
+    "steps": 4,
+    "text_tokens": 30,
+    "timings_seconds": {
+      "denoise": 6.181726209,
+      "hybrid_setup": 0.000115084,
+      "image_encode": 8.3e-08,
+      "request_wall": 8.115989916,
+      "text_encode": 1.57042275,
+      "vae_decode": 0.228653875
+    },
+    "valid_text_tokens": 30,
+    "validation": "candidate; consult recorded parity suite",
+    "warmup": false,
+    "width": 256
+  },
+  "image": {
+    "width": 256,
+    "height": 256,
+    "sha256": "505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02",
+    "decoded_by": "macOS sips ImageIO"
+  },
+  "first_smoke_image_sha256": "505668fa0966029c4f0d4f943b482c1620b2433c947d006824bfc76930919b02",
+  "source_verification": {
+    "repository": "black-forest-labs/FLUX.2-klein-4B",
+    "revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+    "files": [
+      {
+        "file": "LICENSE.md",
+        "bytes": 9584,
+        "digest": "0afa7632c1a195ea6627a3c53e6ebf18d1be3aa5"
+      },
+      {
+        "file": "model_index.json",
+        "bytes": 446,
+        "digest": "554a39bf1019138dd0b28809b745df8ef33657c8"
+      },
+      {
+        "file": "scheduler/scheduler_config.json",
+        "bytes": 486,
+        "digest": "7e53605e2643440b310fa554f087641893883c5f"
+      },
+      {
+        "file": "text_encoder/config.json",
+        "bytes": 1536,
+        "digest": "86f951d170cfd1fdc1c8a57a041e05c27b7b789b"
+      },
+      {
+        "file": "text_encoder/generation_config.json",
+        "bytes": 214,
+        "digest": "f5af93d0c7764fa38e3b1cd3aaba1b6307246d3b"
+      },
+      {
+        "file": "text_encoder/model-00001-of-00002.safetensors",
+        "bytes": 4967215360,
+        "digest": "8c0506e7f4936fa7e26183a4fd8da4e2bdbc5990ba64ae441f965d51228f36ea"
+      },
+      {
+        "file": "text_encoder/model-00002-of-00002.safetensors",
+        "bytes": 3077766632,
+        "digest": "82f2bd839378541b0557bfabaf37c7d3d637071fdcb73302dedd7cf61162ce07"
+      },
+      {
+        "file": "text_encoder/model.safetensors.index.json",
+        "bytes": 32855,
+        "digest": "b65d8063815c8679d85bb919337b36fae8de75cf"
+      },
+      {
+        "file": "tokenizer/added_tokens.json",
+        "bytes": 707,
+        "digest": "b54f9135e44c1e81047e8d05cb027af8bc039eed"
+      },
+      {
+        "file": "tokenizer/chat_template.jinja",
+        "bytes": 4168,
+        "digest": "01be9b307daa2d425f7c168c9fb145a286e0afb4"
+      },
+      {
+        "file": "tokenizer/merges.txt",
+        "bytes": 1671853,
+        "digest": "31349551d90c7606f325fe0f11bbb8bd5fa0d7c7"
+      },
+      {
+        "file": "tokenizer/special_tokens_map.json",
+        "bytes": 613,
+        "digest": "ac23c0aaa2434523c494330aeb79c58395378103"
+      },
+      {
+        "file": "tokenizer/tokenizer.json",
+        "bytes": 11422654,
+        "digest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+      },
+      {
+        "file": "tokenizer/tokenizer_config.json",
+        "bytes": 5404,
+        "digest": "ddaf69808214a44fdd26d3785b66c1367c78277a"
+      },
+      {
+        "file": "tokenizer/vocab.json",
+        "bytes": 2776833,
+        "digest": "4783fe10ac3adce15ac8f358ef5462739852c569"
+      },
+      {
+        "file": "transformer/config.json",
+        "bytes": 541,
+        "digest": "f21592ae2bc9f43052e78785bde7414f219ae369"
+      },
+      {
+        "file": "transformer/diffusion_pytorch_model.safetensors",
+        "bytes": 7751109744,
+        "digest": "9f29f9edcfdae452a653ffb51a534ca4decd389952c225724ff3b94042612a6e"
+      },
+      {
+        "file": "vae/config.json",
+        "bytes": 821,
+        "digest": "c3f38eb4c188a96a462519159356bd0fcc28cd14"
+      },
+      {
+        "file": "vae/diffusion_pytorch_model.safetensors",
+        "bytes": 168120878,
+        "digest": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"
+      }
+    ]
+  },
+  "memory_evidence": {
+    "first": {
+      "schema": "turbocider-process-tree-verification-v1",
+      "status": "complete",
+      "complete": true,
+      "correlation_id": "m1-flux4-official-smoke-20260920",
+      "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+      "root_identity": {
+        "pid": 36144,
+        "start_seconds": 1789916707,
+        "start_microseconds": 542237
+      },
+      "record_count": 4066,
+      "sample_count": 4062,
+      "final_evidence_digest": "0f3650a6457bf6a966496856546ee403fd7d3e00812fee4ecfe8205d82683f05",
+      "max_gap_ns": 74283875,
+      "allowed_max_gap_ns": 250000000,
+      "tree_peak_rss_bytes": 5089083392,
+      "tree_peak_phys_footprint_bytes": 6356833344,
+      "swap_in_bytes": 393216,
+      "swap_out_bytes": 7864320,
+      "compression_bytes": 7490715648,
+      "decompression_bytes": 2346811392,
+      "reasons": [],
+      "command_exit_code": null
+    },
+    "second": {
+      "schema": "turbocider-process-tree-verification-v1",
+      "status": "inconclusive",
+      "complete": false,
+      "correlation_id": "m1-flux4-official-smoke-2-20260920",
+      "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+      "root_identity": {
+        "pid": 38043,
+        "start_seconds": 1789917070,
+        "start_microseconds": 688365
+      },
+      "record_count": 346,
+      "sample_count": 340,
+      "final_evidence_digest": "a21aec00d623830dc768b4f355d3714b10da00d221016eccc6dc236809cd6465",
+      "max_gap_ns": 60032541,
+      "allowed_max_gap_ns": 250000000,
+      "tree_peak_rss_bytes": 5561614336,
+      "tree_peak_phys_footprint_bytes": 6354392128,
+      "swap_in_bytes": 0,
+      "swap_out_bytes": 0,
+      "compression_bytes": 3237527552,
+      "decompression_bytes": 1633796096,
+      "reasons": [
+        "unknown_child"
+      ],
+      "command_exit_code": 0
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "scope": "CoreMLGeneration failure cleanup and actual path-based Core ML loading; no hybrid authority or image/performance qualification",
+  "faults": [
+    "EINTR and short read/write",
+    "EOF after partial read",
+    "EIO after partial read",
+    "ENOSPC after partial write",
+    "zero-progress write",
+    "cancel after read",
+    "cancel after write",
+    "cancel at sealing",
+    "fchmod failure",
+    "corrupted copied content",
+    "source path replacement during copy",
+    "source in-place mutation during copy"
+  ],
+  "fault_validation": {
+    "normal": "PASS",
+    "asan_ubsan": "PASS",
+    "checks": [
+      "expected return versus exception checked independently",
+      "Cancelled exception type at three copy/seal boundaries",
+      "corruption rejected by native target digest verification",
+      "fd count restored after each case",
+      "private directory removed after each case",
+      "clean retry reproduces complete independent byte oracle"
+    ]
+  },
+  "prediction": {
+    "artifact": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-b29/compiled-cache/427807c6ecaa779c3f0c93d7500babcd1f85a45bfbca116662b7addaa53e4663/model.mlmodelc",
+    "predictions": 1,
+    "warmups": 0,
+    "input": "zeros, FP16 [1,3840,1,1088]",
+    "output": "all elements exactly zero, fixed FP16 ABI verified",
+    "compute_units": "CPU_AND_NE",
+    "observed_ane_residency": "unknown",
+    "copied_bytes": 117968870,
+    "content_digest": "f98a425fd17d2c11f4d369598d0dde7c510b82e44390d50d250554e9346f7538",
+    "revalidation": "before load, after load, after predict, after Core ML autorelease pool",
+    "directory_removed_after_owner_release": true
+  },
+  "source_sha256": {
+    "tests/native/coreml_generation_fault_test.cpp": "973c293eb4912d03fca0e9fdc7931da3014efc14426fb78343d714d8bf81e961",
+    "tests/native/test_coreml_generation_faults.py": "613975d5094ee1321d828c5ceee787bdd936f8de45f0bd0cad9127e04fa1344b",
+    "tests/native/coreml_generation_prediction_test.mm": "5ea38b48fb81b0158777303069da0b7b66111d31e6f193ad4d3914986eb97491",
+    "tests/native/test_coreml_generation_prediction.py": "278204dae266186b8d7ff5930a0d233701dde837d27ce3935ce94f9358c94d42"
+  },
+  "limitations": [
+    "No complete dylib or App build",
+    "No typed bundle semantic validation or HybridSession integration",
+    "No Core ML prediction cancellation/hang fault injection",
+    "No numerical quality result beyond one zero-input bias-free branch",
+    "No performance or actual ANE residency qualification"
+  ]
+}

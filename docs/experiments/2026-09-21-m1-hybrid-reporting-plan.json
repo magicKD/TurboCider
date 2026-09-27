@@ -1,0 +1,86 @@
+{
+  "scope": "Real FP16 hybrid prepare and one-step reporting regression; no quality qualification",
+  "one_step_request": {
+    "schema_version": 2,
+    "model": "z-image-turbo",
+    "operation": "image.generate",
+    "inputs": [
+      {
+        "kind": "text",
+        "role": "prompt",
+        "text": "A red fox standing in a snowy pine forest at sunrise, soft golden light falling across its orange fur, delicate snowflakes, realistic wildlife photography, detailed natural textures and a calm winter atmosphere."
+      }
+    ],
+    "outputs": [
+      {
+        "kind": "image",
+        "path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-hybrid-reporting/one-step.png",
+        "width": 512,
+        "height": 512
+      }
+    ],
+    "sampling": {
+      "seed": 42,
+      "steps": 1
+    },
+    "parameters": {
+      "dynamic_text": true,
+      "compile_gpu": false,
+      "noise_path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-fp16-legacy-migration/resident-1/noise.safetensors"
+    },
+    "execution": {
+      "policy": "gpu_ane",
+      "residency": "resident",
+      "memory_budget_bytes": 8589934592,
+      "warmup_iterations": 0,
+      "ane_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-all/compiled-cache/manifest-554c5f440eab7cf1afb59035a16ac54653818784ea4638bd628453e2f9f3ea22.json",
+      "allow_approximation": true
+    }
+  },
+  "config": {
+    "library": "/Users/chencanhui/code/TurboCider/build/m1-hybrid-reporting/libturbocider.dylib",
+    "model_path": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo",
+    "model_id": "z-image-turbo",
+    "constructor": "public",
+    "verify_streaming_sources": true
+  },
+  "request": {
+    "schema_version": 2,
+    "model": "z-image-turbo",
+    "operation": "image.generate",
+    "inputs": [
+      {
+        "kind": "text",
+        "role": "prompt",
+        "text": "A red fox standing in a snowy pine forest at sunrise, soft golden light falling across its orange fur, delicate snowflakes, realistic wildlife photography, detailed natural textures and a calm winter atmosphere."
+      }
+    ],
+    "outputs": [
+      {
+        "kind": "image",
+        "path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-hybrid-reporting/unused.png",
+        "width": 512,
+        "height": 512
+      }
+    ],
+    "sampling": {
+      "seed": 42,
+      "steps": 9
+    },
+    "parameters": {
+      "dynamic_text": true,
+      "compile_gpu": false,
+      "noise_path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-fp16-legacy-migration/resident-1/noise.safetensors"
+    },
+    "execution": {
+      "policy": "gpu_ane",
+      "residency": "resident",
+      "memory_budget_bytes": 8589934592,
+      "warmup_iterations": 0,
+      "ane_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-all/compiled-cache/manifest-554c5f440eab7cf1afb59035a16ac54653818784ea4638bd628453e2f9f3ea22.json",
+      "allow_approximation": true
+    }
+  },
+  "library_sha256": "244f57358444264cfd44a55b588904c3c5cb9ba398fd4403a5d376c7113c81ab",
+  "script_sha256": "aad6df566897d1d80d7e953c9987e7030b69df67649783849e4ab7a9c2e5aee7"
+}

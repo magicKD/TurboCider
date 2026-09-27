@@ -1,0 +1,25 @@
+{
+  "schema": "turbocider-streaming-memory-summary-v1",
+  "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+  "root_identity": {
+    "pid": 87372,
+    "start_seconds": 1789943346,
+    "start_microseconds": 658161
+  },
+  "correlation_id": "m1-flux4-512-current",
+  "status": "complete",
+  "complete": true,
+  "reasons": [],
+  "sample_count": 1067,
+  "max_gap_ns": 29769208,
+  "allowed_max_gap_ns": 100000000,
+  "tree_peak_rss_bytes": 6264176640,
+  "tree_peak_phys_footprint_bytes": 6354752576,
+  "swap_in_bytes": 262144,
+  "swap_out_bytes": 0,
+  "compression_bytes": 6266109952,
+  "decompression_bytes": 3879124992,
+  "command_exit_code": 0,
+  "evidence_digest": "69ebbc6d0177d54378840cd5d5ef5d62d52c2bcfb2694e24a5c625312ac8b3a3",
+  "evidence_path": "/Users/chencanhui/models/TurboCider/experiments/m1-flux4-512-current/memory.jsonl"
+}

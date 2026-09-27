@@ -1,0 +1,118 @@
+{
+  "cases": [
+    {
+      "backing_qualified": true,
+      "gpu": {
+        "first_encoder_seconds": 1.28314,
+        "load_seconds": 1.5951,
+        "mlx_peak_bytes": 8132644352,
+        "process_peak_rss_bytes": 3466625024,
+        "process_wall_seconds": 4.369859541999176,
+        "warm_cv": 0.015704955916376835,
+        "warm_median_seconds": 0.139081,
+        "warm_seconds": [
+          0.14633,
+          0.138684,
+          0.13922,
+          0.139331,
+          0.139054,
+          0.13923,
+          0.138885,
+          0.138808,
+          0.139108,
+          0.139046
+        ]
+      },
+      "hybrid": {
+        "ane_calls_session_total": 297,
+        "ane_first_runtime_calls_session_total": 27,
+        "ane_first_runtime_seconds_session_total": 0.0825047,
+        "ane_seconds_session_total": 0.487973,
+        "ane_subsequent_runtime_calls_session_total": 270,
+        "ane_subsequent_runtime_seconds_session_total": 0.405468,
+        "coreml_block_count": 27,
+        "coreml_bucket": 64,
+        "coreml_interface_setup_seconds": 0.00227583,
+        "coreml_load_seconds": 11.6853,
+        "coreml_model_load_seconds": 5.95965,
+        "coreml_output_backing_setup_seconds": 0.0278285,
+        "first_encoder_seconds": 2.55379,
+        "load_seconds": 13.5925,
+        "minimum_profitable_rows": 64,
+        "mlx_peak_bytes": 8067224064,
+        "output_copy_bytes_session_total": 0,
+        "prefill_actual_tokens": 64,
+        "prefill_compute_tokens": 64,
+        "prefill_fixed_shape": true,
+        "prefill_padding_tokens": 0,
+        "prefill_plan_reason": "exact_bucket",
+        "prefill_selected_bucket": 64,
+        "process_peak_rss_bytes": 4404887552,
+        "process_wall_seconds": 17.967418542015366,
+        "qualified_flexible_backing": false,
+        "runtime_failed": false,
+        "runtime_failure_block": -1,
+        "runtime_failures_session_total": 0,
+        "warm_cv": 0.3754389279734919,
+        "warm_median_seconds": 0.1363425,
+        "warm_seconds": [
+          0.331407,
+          0.13749,
+          0.136905,
+          0.136221,
+          0.136003,
+          0.135802,
+          0.135962,
+          0.136464,
+          0.136487,
+          0.135885
+        ]
+      },
+      "hybrid_executed": true,
+      "order": [
+        "gpu",
+        "hybrid"
+      ],
+      "quality": {
+        "all_finite": true,
+        "cosine": 0.9999958389832884,
+        "max_abs": 64.0,
+        "relative_l2": 0.007869257792986105,
+        "relative_max_abs": 0.007407407407407408,
+        "shape_match": true
+      },
+      "quality_passed": true,
+      "retain": false,
+      "speed_passed": false,
+      "stability_passed": false,
+      "tokens": 64,
+      "warm_speedup": 1.0200854465775528
+    }
+  ],
+  "encoder_ane_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w2432-int8/compiled-cache/manifest-0484827364636d0d1efcef6cf983f5f7864fdc881b8b7521ba87afd36a8fe45a.json",
+  "force_fused_sdpa": false,
+  "format": "turbocider-qwen3-encoder-sweep-v1",
+  "gates": {
+    "max_relative_abs": 0.05,
+    "max_relative_l2": 0.025,
+    "max_warm_cv": 0.25,
+    "min_cosine": 0.999,
+    "min_warm_samples": 3,
+    "min_warm_speedup": 1.1
+  },
+  "hardware": {
+    "chip": "Apple M1 Pro",
+    "machine": "arm64"
+  },
+  "hybrid_prefill_policy": "qualification hybrid process sets ANE minimum tokens to 1 and padding limit to 10000%; production routing keeps conservative defaults and remains fail-closed",
+  "manifest_blocks": 27,
+  "manifest_buckets": [
+    64
+  ],
+  "method": "separate backend processes; one first pass and N warm resident passes; backend order alternates by sequence length; final conditioning quality is computed after timing",
+  "mlx_reference": false,
+  "mlx_version": "0.32.0",
+  "mode": "flux_klein",
+  "runs": 10,
+  "weights": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder"
+}

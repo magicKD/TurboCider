@@ -1,0 +1,108 @@
+{
+  "scope": "One-shot native public worker-generate and Swift terminal validation helper; no App process runner integration",
+  "runtime_fingerprint": "tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85",
+  "checks": {
+    "native_build": "PASS exit 0",
+    "native_contract": "83 tests: 80 PASS, 3 skipped",
+    "query_contract": "6 isolated C API double cases PASS",
+    "generate_contract": "15 isolated C API double cases PASS; stub artifact bytes are not a PNG or native model execution",
+    "protocol": "native strict input and Swift request digest golden PASS",
+    "swift_terminal": "binding/query/success/error/cancel mutations PASS; native wrapper terminal with C API doubles accepted by Swift",
+    "real_Z": "missing model, empty catalog, existing-output preflight, SIGTERM cancellation PASS",
+    "real_Flux4": "empty catalog and SIGTERM cancellation PASS"
+  },
+  "initial_failure": {
+    "result": "worker_output_invalid on /private/var temporary directory",
+    "cause": "Foundation stringByStandardizingPath rewrites canonical /private/var path; lexical equality check rejected valid physical path",
+    "fix": "Check explicit dot/dot-dot/duplicate separators; separately require physical parent path; same real temporary-directory test then passed"
+  },
+  "real_results": {
+    "Z": {
+      "missing_model": {
+        "exit_code": 1,
+        "timed_out": false,
+        "stdout": "{\"actual_container\":\"cli_worker\",\"artifact\":null,\"error\":{\"code\":\"worker_generate_failed\",\"message\":\"missing file: /Users/chencanhui/models/TurboCider/experiments/m1-worker-generate/cli-tests/missing_model/missing-model/tokenizer/tokenizer.json\"},\"job_id\":\"d72f0129-b132-4de5-a78d-09b443071b4d\",\"layout_digest\":null,\"protocol_version\":1,\"public_streaming_summary\":null,\"record_digest\":null,\"request_digest\":\"d27306432651ee120a3e383137b051bc9843664bc77b3f606f3b21ddf65db169\",\"request_id\":\"c60e1b7c-cef6-4b5e-a550-0d14da9ce8ac\",\"resolution_digest\":null,\"runtime_fingerprint\":\"tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85\",\"status\":\"error\"}\n",
+        "stderr": "",
+        "wall_seconds_diagnostic": 0.889517082949169
+      },
+      "real_model": {
+        "exit_code": 1,
+        "timed_out": false,
+        "stdout": "{\"actual_container\":\"cli_worker\",\"artifact\":null,\"error\":{\"code\":\"worker_generate_failed\",\"message\":\"catalog_has_no_public_records\"},\"job_id\":\"5a238130-4bbf-4947-b00e-663c33e09577\",\"layout_digest\":null,\"protocol_version\":1,\"public_streaming_summary\":null,\"record_digest\":null,\"request_digest\":\"c4415500a820b3bbf9e339b0ad3cf7cdc3dc343a1e11369001e87d690057afdb\",\"request_id\":\"64fd4c21-4301-4c83-aaed-313f6878fced\",\"resolution_digest\":null,\"runtime_fingerprint\":\"tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85\",\"status\":\"error\"}\n",
+        "stderr": "",
+        "wall_seconds_diagnostic": 11.049720042035915
+      },
+      "existing": {
+        "exit_code": 1,
+        "timed_out": false,
+        "stdout": "{\"actual_container\":\"cli_worker\",\"artifact\":null,\"error\":{\"code\":\"worker_generate_failed\",\"message\":\"worker_output_exists\"},\"job_id\":\"a23dba1d-b60c-4b57-8dc1-73581e902a9e\",\"layout_digest\":null,\"protocol_version\":1,\"public_streaming_summary\":null,\"record_digest\":null,\"request_digest\":\"06243d43a774a88327613731b3d8ec2d98d18bea441dfcd4f7a97673a77c38ae\",\"request_id\":\"259fa715-f987-4321-8e66-eb8f81427023\",\"resolution_digest\":null,\"runtime_fingerprint\":\"tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85\",\"status\":\"error\"}\n",
+        "stderr": "",
+        "wall_seconds_diagnostic": 0.01812541694380343
+      },
+      "real_cancel": {
+        "exit_code": 2,
+        "timed_out": false,
+        "stdout": "{\"actual_container\":\"cli_worker\",\"artifact\":null,\"error\":{\"code\":\"worker_cancelled\",\"message\":\"generation cancelled\"},\"job_id\":\"7884e399-0dde-4dc5-b238-e4981c199600\",\"layout_digest\":null,\"protocol_version\":1,\"public_streaming_summary\":null,\"record_digest\":null,\"request_digest\":\"7cb2c02ad76b456390beab4e0fec6e941e4ebbb02aebe84a926db5e49a0d56bf\",\"request_id\":\"27bd4c4b-865b-47fb-b05f-6c56ed3b340e\",\"resolution_digest\":null,\"runtime_fingerprint\":\"tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85\",\"status\":\"cancelled\"}\n",
+        "stderr": "",
+        "wall_seconds_diagnostic": 1.0624304589582607
+      }
+    },
+    "Flux4": {
+      "real_model": {
+        "exit_code": 1,
+        "timed_out": false,
+        "stdout": "{\"actual_container\":\"cli_worker\",\"artifact\":null,\"error\":{\"code\":\"worker_generate_failed\",\"message\":\"catalog_has_no_public_records\"},\"job_id\":\"44544711-0436-477d-9547-46272a782a9e\",\"layout_digest\":null,\"protocol_version\":1,\"public_streaming_summary\":null,\"record_digest\":null,\"request_digest\":\"bc68ab72dfd034a205b58e16fe137ca14cd50f284fcfec1d64ecf7db228d8e66\",\"request_id\":\"fe4b97b2-fc94-4dcb-ad73-4411db3f9c9a\",\"resolution_digest\":null,\"runtime_fingerprint\":\"tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85\",\"status\":\"error\"}\n",
+        "stderr": "",
+        "wall_seconds_diagnostic": 8.415606208029203
+      },
+      "real_cancel": {
+        "exit_code": 2,
+        "timed_out": false,
+        "stdout": "{\"actual_container\":\"cli_worker\",\"artifact\":null,\"error\":{\"code\":\"worker_cancelled\",\"message\":\"generation cancelled\"},\"job_id\":\"3a5e8132-a788-4a4f-8650-903b76f1db27\",\"layout_digest\":null,\"protocol_version\":1,\"public_streaming_summary\":null,\"record_digest\":null,\"request_digest\":\"93f72aad8a0406410cfde152531b69b78eb9e889ad99e86287362f536ffa2479\",\"request_id\":\"f9453f94-a525-4a36-bce0-dfd74b1dec6e\",\"resolution_digest\":null,\"runtime_fingerprint\":\"tc-runtime-build-v1-d8a47ea3a55597ed90efb106cc135f05e12f57d937a8d42f8d1a43b14e1f7b85\",\"status\":\"cancelled\"}\n",
+        "stderr": "",
+        "wall_seconds_diagnostic": 1.0795910839224234
+      }
+    }
+  },
+  "limitations": [
+    "Production catalog remains empty; actual model paths reject before generation. Successful generation only exercised with isolated C API doubles.",
+    "Worker hashes the final regular file and detects changes during read; it does not decode PNG. App ImageOutputTransaction must independently validate file bytes, complete PNG/decode/dimensions and compare the returned hash before publication.",
+    "Fresh output check is a preflight, not atomic no-clobber publication. Caller must own a private staging directory; App owns cleanup of partial output.",
+    "New Swift terminal helper and build target are tested in isolation but not wired into JobStore. No new full App build or GUI generation in this round.",
+    "No process-group supervisor, bounded reaping or restart process identity contract yet. No progress event stream in this one-shot generate entry.",
+    "Cancellation runs exercise source verification, not denoising or all cleanup states. Timing is diagnostic, not performance evidence."
+  ],
+  "source_sha256": {
+    "apps/cli/main.mm": "c347bb8c04a09b54fb738344d4eedae288149f56ead840944b26a91fe1ce3924",
+    "apps/cli/query_worker.hpp": "4da6a203eacfa11ee953a967ff8da0739561310f1eaa301d5d9b97c13c2e7920",
+    "apps/cli/generate_worker.hpp": "106283bd78ccc1dbaf9232437c32eaf9138c0b4fb3d9c18d605ef28d778a074f",
+    "apps/macos/WorkerTerminalEnvelope.swift": "e86a015608c8a97b2ac3c014674a1c6580ad29fbdbc593ded0af98115aa9fe57",
+    "tests/native/worker_query_contract_test.mm": "1d6880102c2845b38061769833812709eb1dfd916203d91972bf5ccb36abcb48",
+    "tests/native/test_worker_generate_contract.py": "f25fd9a6dae0126b7999322fb9c1ceff3dfeff1a9a6a2a3b06dbbdbde90aff36",
+    "tests/integration/WorkerTerminalEnvelopeTests.swift": "647284c9c489f706709585d099fcb5c43458d4f64d6c19c13aaea0215432cf2d",
+    "tools/native/build_app.sh": "9d510e4db93de85685e8f120dd764a71fe158d9ba5fe230a2f4aa5eb70578d02"
+  },
+  "binary_sha256": {
+    "turbocider": "937b929027f0870ae511b14c56c3c921df92e895b601e76ade33193eeb4d1139",
+    "libturbocider.dylib": "d601c77dd662412d51101cbc157fd416d768ce8b52238d6e24854a71ac569913"
+  },
+  "evidence_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-worker-generate",
+  "log_sha256": {
+    "query-regression.log": "ab87190510f99afeb5c9ac12670ec7666f48ce7a0ba5c21620c8175795407c7c",
+    "contract.log": "fd183f309d5d6f9a710fbe986911baa9b782265b09e4da47e58b0da7f386dcad",
+    "swift-terminal-tests.log": "6d54a812335fb7e23b12cecf84fa2d22aa40fd06c2d607992fadd04ac3007709",
+    "flux-cli-check.log": "a6988d329730047c449e9b422d100c4355f4a19dceb6c3c1abc29e0f295e7370",
+    "native-contract.log": "d5dee30fb8794930eadae47044159b0873a7a3a692fc81a4b57e68a26bab8b74",
+    "swift-terminal-tests-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "contract-initial.log": "38117502c0adadf6fb8193713de29d1ae24af3247cfdd78e8e8daa5f2286e185",
+    "contract-path-failure.log": "5f8bf8f31f39e97c87c732d3ef1c9d2e2561c0cd1a00b97217a5edbc2db6308a",
+    "protocol.log": "93e0f69f5140b91b299438803e2e114636dfc2403c0eb3fa15c145992faa04b6",
+    "cli-check.log": "8937c8087b7c33d91fd02706ba5043f3727178a8bd492a2a933e71654df993eb",
+    "build.log": "b08a023f86ed4c913c53e0f6f411596ce5c7f45247271ea9a3efa395879f1817"
+  },
+  "dev_sync": {
+    "fetch": "PASS",
+    "origin_dev": "61c08495815d645bb54d75ae9dbea466f0648b2d",
+    "already_ancestor": true
+  }
+}

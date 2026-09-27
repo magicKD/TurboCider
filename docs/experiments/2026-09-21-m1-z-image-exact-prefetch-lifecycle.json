@@ -1,0 +1,125 @@
+{
+  "cancel-retry": {
+    "model": "z-image-turbo",
+    "mode": "cancel-retry",
+    "test_hooks_present": true,
+    "library_sha256": "ff97422078dbc791812bbdcc8d97a69246eee903454d420f93e5e83a4a7e7538",
+    "first": {
+      "status": 2,
+      "result": null,
+      "error": "generation cancelled",
+      "wall_seconds": 2.7751952089602128
+    },
+    "retry": {
+      "status": 0,
+      "error": null,
+      "wall_seconds": 24.409798125037923,
+      "block_streaming": {
+        "activation_reserve_bytes": 4810640512,
+        "active_blocks": 30,
+        "actual_layout": {
+          "block_group_size": 1,
+          "component_policy_revision": "",
+          "conditioning_recipe": "qwen3-simple-flow-shift3-v1",
+          "digest": "224fcf14a134620ea40fcf68926ef54f40848e32ba9ca9700199a1cdf3d95427",
+          "drained": true,
+          "group_count": 30,
+          "io_workers": 2,
+          "kernel_revision": "z-image-mlx-compiled-dense-block-v1",
+          "multi_pool_policy": "serial",
+          "pass_count": 9,
+          "pass_transition": "reload",
+          "pool_count": 1,
+          "prefetch_distance": 1,
+          "reader_revision": 1,
+          "refill_worker_count": 2,
+          "resident_prefix_blocks": 0,
+          "retention": "request",
+          "slot_bundle_count": 2,
+          "slot_count": 2,
+          "source_lease_verified": false,
+          "stage": "denoiser",
+          "startup_policy": "prefetch_window_before_prefix",
+          "upsample_boundary": "no-upsample;denoiser-pool-retained-through-vae",
+          "weight_format": "comfy-bf16-single-file"
+        },
+        "block_bytes": 361820672,
+        "enabled": true,
+        "estimated_working_set_bytes": 5534281856,
+        "fully_resident": false,
+        "implementation": "generic_stage_executor_v1",
+        "layout_digest": "224fcf14a134620ea40fcf68926ef54f40848e32ba9ca9700199a1cdf3d95427",
+        "memory_budget_bytes": 8589934592,
+        "mlp_prefix_channels": 0,
+        "pinned_blocks": 0,
+        "policy": "shared_block_residency_v1",
+        "quantized": false,
+        "refill_slots": 2,
+        "request_bytes_loaded": 99146778752,
+        "request_load_seconds": 33.92952616699998,
+        "request_max_refill_block": 18,
+        "request_max_refill_seconds": 0.292215583,
+        "request_pack_read_bytes": 0,
+        "request_pack_seconds": 0,
+        "request_pack_write_bytes": 0,
+        "request_refill_load_seconds": 33.60136620899998,
+        "request_slot_allocations": 2,
+        "request_slot_fills": 270,
+        "request_slot_refills": 270,
+        "request_wait_seconds": 12.243039488000003,
+        "streamed_blocks": 30,
+        "suffix_pack_bytes": 0
+      }
+    },
+    "image_sha256": "8a3e89a095a124aba019f09e47a7f34248d34680e4fd127494be8babb5848be3",
+    "status": "PASS",
+    "raw_report": "/Users/chencanhui/models/TurboCider/experiments/m1-z-parallel-owner/cancel-retry/report.json"
+  },
+  "quarantine": {
+    "model": "z-image-turbo",
+    "mode": "quarantine",
+    "test_hooks_present": true,
+    "library_sha256": "ff97422078dbc791812bbdcc8d97a69246eee903454d420f93e5e83a4a7e7538",
+    "first": {
+      "status": 1,
+      "result": null,
+      "error": "streaming_process_quarantined: primary: generation cancelled; GPU drain incomplete; restart the process",
+      "wall_seconds": 3.348479583975859
+    },
+    "retries": {
+      "generate": {
+        "status": 1,
+        "result": null,
+        "error": "streaming_process_quarantined: GPU drain incomplete; restart the process",
+        "wall_seconds": 2.2666994482278824e-05
+      },
+      "load": {
+        "status": 1,
+        "result": null,
+        "error": "streaming_process_quarantined: GPU drain incomplete; restart the process",
+        "wall_seconds": 1.1582975275814533e-05
+      },
+      "unload": {
+        "status": 1,
+        "result": null,
+        "error": "streaming_process_quarantined: GPU drain incomplete; restart the process",
+        "wall_seconds": 1.2165983207523823e-05
+      },
+      "prepare": {
+        "status": 1,
+        "result": null,
+        "error": "streaming_process_quarantined: GPU drain incomplete; restart the process",
+        "wall_seconds": 8.834060281515121e-06
+      }
+    },
+    "replacement_load": {
+      "status": 1,
+      "result": null,
+      "error": "streaming_process_quarantined: GPU drain incomplete; restart the process",
+      "wall_seconds": 3.404100425541401e-05
+    },
+    "retained_engines": 2,
+    "status": "PASS",
+    "raw_report": "/Users/chencanhui/models/TurboCider/experiments/m1-z-parallel-owner/quarantine/report.json"
+  }
+}

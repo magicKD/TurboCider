@@ -1,0 +1,265 @@
+{
+  "scope": "Durable worker identity before startup admission; read-only restart observation helper, not JobStore recovery integration",
+  "runtime_fingerprint": "tc-runtime-build-v1-61b7eb6ee5e845a0f4286127438cff1c58586f74bf9c0544a7d58f8210148d35",
+  "tests": {
+    "native_build": "PASS exit 0",
+    "native_contract": "83 tests: 80 PASS, 3 skipped",
+    "strict_Swift": "PASS Swift 6 complete concurrency with warnings as errors",
+    "admission": "PASS journal precedes work; present/exited/birth mismatch/request mismatch/missing journal observation; stale journal preserved; persistence failure blocks work; parent death before admission closes pipe and orphan exits without work",
+    "supervisor_regression": "PASS prior normal/large-output/cooperative/forced/group/overflow/cleanup_pending cases",
+    "native_gate": "PASS real worker-query and worker-generate EOF/bad byte/wait for admission/accepted byte then missing-input rejection",
+    "real_models": "PASS Z and Flux4 each empty-catalog rejection and source-verification cancellation, journal PID and post-reap identity checked"
+  },
+  "initial_failures": [
+    {
+      "phase": "strict Swift typecheck",
+      "reason": "deprecated String(cString: array) under warnings-as-errors",
+      "fix": "explicit UTF-8 decoding of bytes before null terminator"
+    },
+    {
+      "phase": "admission test compile",
+      "reason": "throwing file read in precondition autoclosure",
+      "fix": "read before assertion; no runtime attempt from failed test build"
+    }
+  ],
+  "launch_contract": {
+    "ordering": [
+      "caller saves pending intent (not yet JobStore-wired)",
+      "spawn worker with private admission stdin pipe",
+      "capture child PID/PGID/start time/boot session",
+      "persist fsynced immutable journal with job/request/digest via exclusive rename and directory fsync",
+      "send one admission byte and close pipe",
+      "existing supervisor handles completion/cancel/cleanup_pending"
+    ],
+    "parent_death_before_admission": "EOF rejects before input/model inspection",
+    "restart_observation": "matching live identity -> present; confirmed original leader/group absent or different boot -> exited; unavailable/missing/mismatched evidence -> unknown; never signals persisted PID",
+    "ownership_boundary": "owned process group; supported workers must not escape with setsid/setpgid"
+  },
+  "real_results": {
+    "flux2-klein-4b-cancel": {
+      "observation": {
+        "exit_code": 2,
+        "cleanup_pending": false,
+        "cancellation_requested": true,
+        "failure": null,
+        "pid": 28831,
+        "forced_stop": false
+      },
+      "launch": {
+        "jobID": "ED984802-6C86-4FA8-B9E9-6DAE66A3472B",
+        "schemaVersion": 1,
+        "requestID": "E378137C-9967-4345-ABC6-0D5356FFBD89",
+        "process": {
+          "bootSession": "d8ad5dc8-b819-4efe-bc9e-0df8479a5377",
+          "processGroup": 28831,
+          "pid": 28831,
+          "startSeconds": 1789950608,
+          "startMicroseconds": 520328
+        },
+        "requestDigest": "e7a181d75d2b135221ea519c8a0d54f30ae92a0d8dc0bfa2c5f763311f9e00e1"
+      },
+      "terminal": {
+        "actual_container": "cli_worker",
+        "artifact": null,
+        "error": {
+          "code": "worker_cancelled",
+          "message": "generation cancelled"
+        },
+        "job_id": "ed984802-6c86-4fa8-b9e9-6dae66a3472b",
+        "layout_digest": null,
+        "protocol_version": 1,
+        "public_streaming_summary": null,
+        "record_digest": null,
+        "request_digest": "e7a181d75d2b135221ea519c8a0d54f30ae92a0d8dc0bfa2c5f763311f9e00e1",
+        "request_id": "e378137c-9967-4345-abc6-0d5356ffbd89",
+        "resolution_digest": null,
+        "runtime_fingerprint": "tc-runtime-build-v1-61b7eb6ee5e845a0f4286127438cff1c58586f74bf9c0544a7d58f8210148d35",
+        "status": "cancelled"
+      }
+    },
+    "flux2-klein-4b-reject": {
+      "observation": {
+        "exit_code": 1,
+        "cleanup_pending": false,
+        "cancellation_requested": false,
+        "failure": null,
+        "pid": 28785,
+        "forced_stop": false
+      },
+      "launch": {
+        "jobID": "00D2EDEB-A686-4BA2-A7DE-683C82716CFF",
+        "schemaVersion": 1,
+        "requestID": "7D562D21-64D4-44B7-82FB-0125BBC1CA77",
+        "process": {
+          "bootSession": "d8ad5dc8-b819-4efe-bc9e-0df8479a5377",
+          "startSeconds": 1789950599,
+          "processGroup": 28785,
+          "startMicroseconds": 996635,
+          "pid": 28785
+        },
+        "requestDigest": "06f8bb40da3342a2e22a957aca361eb15873dd936483327727b4b6079d768d71"
+      },
+      "terminal": {
+        "actual_container": "cli_worker",
+        "artifact": null,
+        "error": {
+          "code": "worker_generate_failed",
+          "message": "catalog_has_no_public_records"
+        },
+        "job_id": "00d2edeb-a686-4ba2-a7de-683c82716cff",
+        "layout_digest": null,
+        "protocol_version": 1,
+        "public_streaming_summary": null,
+        "record_digest": null,
+        "request_digest": "06f8bb40da3342a2e22a957aca361eb15873dd936483327727b4b6079d768d71",
+        "request_id": "7d562d21-64d4-44b7-82fb-0125bbc1ca77",
+        "resolution_digest": null,
+        "runtime_fingerprint": "tc-runtime-build-v1-61b7eb6ee5e845a0f4286127438cff1c58586f74bf9c0544a7d58f8210148d35",
+        "status": "error"
+      }
+    },
+    "z-image-turbo-cancel": {
+      "observation": {
+        "exit_code": 2,
+        "cleanup_pending": false,
+        "cancellation_requested": true,
+        "failure": null,
+        "pid": 28779,
+        "forced_stop": false
+      },
+      "launch": {
+        "jobID": "E2137951-8022-4226-80F0-9B637CBBC366",
+        "schemaVersion": 1,
+        "requestID": "1A8A4C1A-17C6-4D56-8901-C329DE8160DD",
+        "process": {
+          "startMicroseconds": 905336,
+          "processGroup": 28779,
+          "startSeconds": 1789950598,
+          "pid": 28779,
+          "bootSession": "d8ad5dc8-b819-4efe-bc9e-0df8479a5377"
+        },
+        "requestDigest": "c5e13b4499c229e06781ac49f8d89c00a3018f3c66e113a8359177c75752165b"
+      },
+      "terminal": {
+        "actual_container": "cli_worker",
+        "artifact": null,
+        "error": {
+          "code": "worker_cancelled",
+          "message": "generation cancelled"
+        },
+        "job_id": "e2137951-8022-4226-80f0-9b637cbbc366",
+        "layout_digest": null,
+        "protocol_version": 1,
+        "public_streaming_summary": null,
+        "record_digest": null,
+        "request_digest": "c5e13b4499c229e06781ac49f8d89c00a3018f3c66e113a8359177c75752165b",
+        "request_id": "1a8a4c1a-17c6-4d56-8901-c329de8160dd",
+        "resolution_digest": null,
+        "runtime_fingerprint": "tc-runtime-build-v1-61b7eb6ee5e845a0f4286127438cff1c58586f74bf9c0544a7d58f8210148d35",
+        "status": "cancelled"
+      }
+    },
+    "z-image-turbo-reject": {
+      "observation": {
+        "cancellation_requested": false,
+        "forced_stop": false,
+        "pid": 28724,
+        "failure": null,
+        "exit_code": 1,
+        "cleanup_pending": false
+      },
+      "launch": {
+        "jobID": "9A1DD32E-2F21-43F9-9C96-16DE34A27AC2",
+        "schemaVersion": 1,
+        "requestID": "B6562F0F-E7AD-485F-BB5B-7265C35B455D",
+        "process": {
+          "bootSession": "d8ad5dc8-b819-4efe-bc9e-0df8479a5377",
+          "startMicroseconds": 831893,
+          "pid": 28724,
+          "processGroup": 28724,
+          "startSeconds": 1789950585
+        },
+        "requestDigest": "f108a623dcf94db79d638469978865b0a592984fb3f2ac04bfd2a34eae59e56a"
+      },
+      "terminal": {
+        "actual_container": "cli_worker",
+        "artifact": null,
+        "error": {
+          "code": "worker_generate_failed",
+          "message": "catalog_has_no_public_records"
+        },
+        "job_id": "9a1dd32e-2f21-43f9-9c96-16de34a27ac2",
+        "layout_digest": null,
+        "protocol_version": 1,
+        "public_streaming_summary": null,
+        "record_digest": null,
+        "request_digest": "f108a623dcf94db79d638469978865b0a592984fb3f2ac04bfd2a34eae59e56a",
+        "request_id": "b6562f0f-e7ad-485f-bb5b-7265c35b455d",
+        "resolution_digest": null,
+        "runtime_fingerprint": "tc-runtime-build-v1-61b7eb6ee5e845a0f4286127438cff1c58586f74bf9c0544a7d58f8210148d35",
+        "status": "error"
+      }
+    }
+  },
+  "gate_results": {
+    "EOF": {
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "worker_start_not_admitted\n"
+    },
+    "bad_byte": {
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "worker_start_not_admitted\n"
+    },
+    "admitted_missing_input": {
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "worker_input_open_failed\n"
+    },
+    "wait_then_EOF": {
+      "alive_before_EOF": true,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "worker_start_not_admitted\n"
+    }
+  },
+  "source_sha256": {
+    "apps/cli/main.mm": "9c7dae6e4d440828b119f550062726731c105437117ec78b48c910af35b9b988",
+    "apps/cli/startup_gate.hpp": "6319e5e60933c164e8ac339f7c2892c8d5acce0aff179b9f4d3652e4cb62dcc3",
+    "apps/macos/WorkerProcessIdentity.swift": "667b42a8e14051f456915f76518265e050dfef5f43a6191682fadb5feeefb4dd",
+    "apps/macos/NativeProcessRunner.swift": "85c7a29138eb198b3734582bfabdc43d58d4eb25dba8114325125d64a488e843",
+    "tests/integration/WorkerLaunchAdmissionTests.swift": "46cb6b800173d1e7f11aa9d4cc7b5e558bbd4cbaa5bd585b27e181ab29a33dc5",
+    "tests/integration/native_process_fixture.c": "5bea361822b3a1e3c43a5ae2d7ccc9a80053141dcd773e2308ed40d0d2712d0e",
+    "tests/integration/NativeProcessWorkerTests.swift": "30d7242364ef94d3c979c8434e3f15b8a415bc3e96431a1f417edc138a9aaefd",
+    "tests/native/test_worker_admission.py": "4573a308b7ea75bb8131f778be752c30ac73651844d278deb4af2476d9fc36c3",
+    "tools/native/build_app.sh": "93b91c61733b51b308a19c02e1c012128ed0ed41a6865d12529301f617527a78"
+  },
+  "binary_sha256": {
+    "turbocider": "bc8125a1223825d223f098b67277b59aad8fcdac28eb42a23d5719864c82ea7c",
+    "libturbocider.dylib": "922edd1075603d8ada2de7f6d5a500b026e194e3f494165df379ed2431473074"
+  },
+  "log_sha256": {
+    "tc-admission-native-gate.log": "9b6b123b9447079f6c60ab95c79deab66522579622b7d2ce6728f729df2daece",
+    "tc-worker-journal-typecheck-initial.log": "b3127f50ca5d253e90e306e390e727becc72cfb21cce73d7521d7e8f5e1ea58d",
+    "tc-admission-tests.log": "98c1a70acefb64ab488c1c9257ae439bc8ff07660ac743cf3369084464beeb39",
+    "tc-admission-native-contract.log": "d4a020206a4175f9a5ee9045af67f406608cdf823161fffc97e6017e6c724385",
+    "tc-worker-admission-build.log": "39cd5f942e5b253812465706e6e1fda8900dbaaae9860e923afb7a080604f979",
+    "tc-admission-real-tests.log": "94dec5857569bf4c849b2b9e60ed6a19e9d39411fc0f1392c23c8500f8b98b21",
+    "tc-admission-runner-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-admission-native-regression.log": "6845cca09a51abfd1af0d034e7829eb8546925f656af61183ef6eb3a6d2f0180",
+    "tc-admission-tests-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-admission-tests-build-initial.log": "8ea5641cdbcc86d607bb2a20e163d811c3a4ac450ab4a26d8be41f46df35787a",
+    "tc-admission-real-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tc-admission-runner-tests.log": "dbccdc7e93ab3694a67351b7f42c30f3c9597f80b290e3a9e7149b29cfa2bb2a"
+  },
+  "evidence_directory": "/Users/chencanhui/models/TurboCider/experiments/m1-worker-admission",
+  "limitations": [
+    "No JobStore launch-reference persistence or restart/UI wiring yet; runner remains unused by current public Z/Flux App generation path",
+    "No full App build/GUI generation in this round",
+    "Journal write/fsync and OS process creation are synchronous OS operations; this does not prove a hard wall-clock startup deadline under stalled storage/kernel scheduling",
+    "Missing/invalid journals fail closed as unknown; App must handle crash-before-spawn state and recovery UX rather than treating absence as exit",
+    "Read-only restart observer never kills a persisted PID because checking birth time then signalling is still racy",
+    "Real public success remains untested because production catalog is empty; cancellation checks are in source verification, not denoising"
+  ]
+}

@@ -1,0 +1,327 @@
+{
+  "format": "turbocider-streaming-quality-v1",
+  "mode": "artifact_sha256_equal",
+  "status": "complete",
+  "samples": [
+    {
+      "pair_id": "block-000-pair-0",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-000-pair-1",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-001-pair-0",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-001-pair-1",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-002-pair-0",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-002-pair-1",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-003-pair-0",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-003-pair-1",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-004-pair-0",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-004-pair-1",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-005-pair-0",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-005-pair-1",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-006-pair-0",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-006-pair-1",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-007-pair-0",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-007-pair-1",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-008-pair-0",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-008-pair-1",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-009-pair-0",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    },
+    {
+      "pair_id": "block-009-pair-1",
+      "passed": true,
+      "measured": true,
+      "statuses": {
+        "baseline": "success",
+        "candidate": "success"
+      },
+      "artifacts": {
+        "image": {
+          "baseline_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "candidate_sha256": "5b39235aab9acbbccbce6b1fffdc672cbf5f138c2f935db1fdaf3fb2efa1d108",
+          "equal": true
+        }
+      }
+    }
+  ]
+}

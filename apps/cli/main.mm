@@ -10,8 +10,14 @@
 #include <filesystem>
 #include <vector>
 #include <unistd.h>
+#include "query_worker.hpp"
+#include "startup_gate.hpp"
 int tc_service_main(const char*,const char*,const char*);
 int tc_rpc_main(const char*,const char*);
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+extern "C" int tc_engine_test_set_streaming_catalog_json(
+    tc_engine*,const char*,char**);
+#endif
 static std::string executable_path(const char *fallback);
 static NSString *registered_model_path(const char *alias,NSString *expected_model) {
  auto helper=std::filesystem::path(executable_path("turbocider")).parent_path()/"turbocider-library";
@@ -35,9 +41,9 @@ static int create_for(const char *path,NSString *request,tc_engine **engine,char
  if(path&&path[0]=='@'){
   NSString *resolved=registered_model_path(path,model);
   if(!resolved){*error=strdup("cannot resolve registered model or alias does not match request.model; use turbocider library list");return 1;}
-  return tc_engine_create_model([model UTF8String],resolved.UTF8String,engine,error);
+  return tc_engine_create_model_worker([model UTF8String],resolved.UTF8String,engine,error);
  }
- return tc_engine_create_model([model UTF8String],path,engine,error);
+ return tc_engine_create_model_worker([model UTF8String],path,engine,error);
 }
 static tc_engine *active=nullptr;
 static bool resource_mode=false;
@@ -78,6 +84,17 @@ static void configure_ltx_cli_environment(NSString *request) {
   if(path.length)setenv("TURBOCIDER_LTX_CONDITIONING_CACHE_DIR",path.UTF8String,0);
  }
 }
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+static int install_test_streaming_catalog(tc_engine *engine,char **error) {
+ const char *path=std::getenv("TURBOCIDER_TEST_STREAMING_CATALOG");
+ if(!path||!path[0])return 0;
+ NSString *catalog=[NSString stringWithContentsOfFile:@(path)
+   encoding:NSUTF8StringEncoding error:nil];
+ if(!catalog){if(error)*error=strdup("cannot read test streaming catalog");return 1;}
+ return tc_engine_test_set_streaming_catalog_json(
+   engine,catalog.UTF8String,error);
+}
+#endif
 static NSString *request_with_ane_manifest(NSString *request,const char *manifest_path,
                                            std::string &failure) {
  if(!request){failure="cannot read request";return nil;}
@@ -151,7 +168,7 @@ static int library_main(int argc,char **argv) {
  [task waitUntilExit];return task.terminationStatus;
 }
 int main(int argc,char**argv){@autoreleasepool{
- if(argc<2){std::cerr<<"turbocider library help | cache help | serve SOCKET STATE | rpc SOCKET REQUEST.json | coreml REQUEST.json | doctor|models|self-test|plan REQUEST.json [--ane-manifest MANIFEST.json]|tokenize MODEL PROMPT|generate MODEL REQUEST.json [--ane-manifest MANIFEST.json] | batch MODEL REQUEST1.json REQUEST2.json ... [--ane-manifest MANIFEST.json] | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
+ if(argc<2){std::cerr<<"turbocider library help | cache help | serve SOCKET STATE | rpc SOCKET REQUEST.json | coreml REQUEST.json | worker-query INPUT.json | worker-generate INPUT.json | doctor|models|self-test|plan REQUEST.json [--ane-manifest MANIFEST.json]|tokenize MODEL PROMPT|generate MODEL REQUEST.json [--ane-manifest MANIFEST.json] | batch MODEL REQUEST1.json REQUEST2.json ... [--ane-manifest MANIFEST.json] | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
  std::string cmd=argv[1];char*out=nullptr,*err=nullptr;int code=0;
  const bool allows_ane=cmd=="plan"||cmd=="generate"||cmd=="batch";
  const bool has_ane=allows_ane&&argc>=5&&std::string(argv[argc-2])=="--ane-manifest";
@@ -161,6 +178,11 @@ int main(int argc,char**argv){@autoreleasepool{
   for(int i=2;i<request_argc;++i)if(std::string(argv[i])=="--ane-manifest"){
    std::cerr<<"--ane-manifest MANIFEST.json must be the final two arguments\n";return 1;
   }
+ }
+ if((cmd=="worker-query" || cmd=="worker-generate") &&
+    (argc==3 || (argc==4 && std::string(argv[3])=="--supervised"))) {
+   if(argc==4 && !tc_worker::await_admission()) {std::cerr<<"worker_start_not_admitted\n";return 1;}
+   return cmd=="worker-query"?tc_worker::query(argv[2]):tc_worker::generate(argv[2]);
  }
  if(cmd=="library"||cmd=="cache")return library_main(argc,argv);
  if(cmd=="prepare-lora"){std::cerr<<"LoRA preparation is offline-only; run python3 tools/native/prepare_lora.py MODEL BASE LORA OUTPUT [options] in the development environment\n";return 1;}
@@ -203,6 +225,9 @@ int main(int argc,char**argv){@autoreleasepool{
    if(cmd=="generate"||cmd=="ltx-worker")
     configure_ltx_cli_environment(request);
    code=create_for(argv[2],request,&active,&err);
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+   if(!code)code=install_test_streaming_catalog(active,&err);
+#endif
    if(!code){std::signal(SIGINT,stop);std::signal(SIGTERM,stop);code=tc_engine_generate(active,request.UTF8String,event,nullptr,&out,&err);std::signal(SIGINT,SIG_DFL);std::signal(SIGTERM,SIG_DFL);}
    tc_engine_free(active);
   }

@@ -1,18 +1,51 @@
 #include "../platform/apple/bridge.hpp"
+#include "../platform/apple/platform.hpp"
 #include "../backends/mlx.hpp"
 #include "../backends/coreml.hpp"
 #include "turbocider/turbocider.h"
 #include <mutex>
 #include <cstring>
 #include "../runtime/execution.hpp"
+#include "../runtime/build_identity.hpp"
+#include "../runtime/memory_accounting.hpp"
+#include "../runtime/memory_execution.hpp"
+#include "../runtime/streaming/audit.hpp"
+#include "../runtime/streaming/preset_catalog.hpp"
+#include "../runtime/streaming/preset_resolver.hpp"
+#include "../runtime/streaming/public_runtime.hpp"
+#include "../runtime/streaming/public_result.hpp"
+#include "../runtime/streaming/public_request_validation.hpp"
+#include "../runtime/streaming/resolved_request.hpp"
 #include "../models/ltx_runtime/ltx_gemma_tokenizer.h"
 #include "../models/ltx_runtime/ltx_weights.h"
 #import <Metal/Metal.h>
+#include <algorithm>
 #include <cmath>
+namespace tc {
+std::unique_ptr<ModelSession> create_h3_candidate(
+    const std::filesystem::path &);
+}
 struct tc_engine {
+    std::string model_id;
+    std::filesystem::path model_root;
+    std::string execution_container = "embedded_app";
     std::unique_ptr<tc::ModelSession> session;
     std::mutex mutex;
     std::atomic<bool> cancelled{false};
+    std::atomic<bool> memory_quarantined{false};
+    std::atomic<bool> streaming_quarantined{false};
+    tc_engine *quarantine_next = nullptr;
+    // Set only by the internal exact-layout candidate constructor. Production model
+    // creation remains fail-closed for unqualified manual layouts.
+    bool allow_experimental_streaming = false;
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    // Test/calibration builds may attach an immutable catalog provider to one
+    // engine. Release builds have no setter and always use the production
+    // provider below.
+    std::shared_ptr<tc::streaming::TestStreamingCatalogProvider>
+        test_streaming_catalog_provider;
+#endif
+    std::optional<tc::MemoryExecutionReport> last_memory_report;
 };
 struct tc_coreml_ffn {
     std::unique_ptr<tc::HybridSession> session;
@@ -21,6 +54,26 @@ struct tc_coreml_ffn {
 namespace {
 using tc::configure_streams;
 using tc::DeviceLease;
+// Intentionally never destroyed: unknown GPU completion retains the complete
+// engine, including cancellation storage, model weights and streaming owners.
+std::atomic<bool> streaming_process_quarantined{false};
+std::atomic<tc_engine *> quarantined_engines{nullptr};
+void require_streaming_process_healthy() {
+    tc::require(!streaming_process_quarantined.load(std::memory_order_acquire),
+                "streaming_process_quarantined: GPU drain incomplete; restart the process");
+}
+bool observe_streaming_quarantine(tc_engine *engine) noexcept {
+    if (!engine || !engine->session || !engine->session->streaming_quarantined())
+        return false;
+    engine->streaming_quarantined.store(true, std::memory_order_release);
+    streaming_process_quarantined.store(true, std::memory_order_release);
+    return true;
+}
+void propagate_streaming_quarantine(tc_engine *engine, const char *primary) {
+    if (observe_streaming_quarantine(engine))
+        throw std::runtime_error(std::string("streaming_process_quarantined: primary: ") +
+            primary + "; GPU drain incomplete; restart the process");
+}
 char *copy(const std::string &s) {
     auto p = strdup(s.c_str());
     if (!p)
@@ -32,11 +85,298 @@ int fail(char **error, const std::exception &e) {
         *error = strdup(e.what());
     return dynamic_cast<const tc::Cancelled *>(&e) ? 2 : 1;
 }
+
+tc::streaming::StreamingDeviceIdentity streaming_device_identity() {
+    const auto device = tc::device_info();
+    const auto version = NSProcessInfo.processInfo.operatingSystemVersion;
+    const std::string os_family = "macOS-" +
+        std::to_string(version.majorVersion) + "." +
+        std::to_string(version.minorVersion);
+    return {
+        device.gpu,
+        device.gpu + "/" + std::to_string(device.physical_memory),
+        os_family,
+        device.physical_memory,
+    };
+}
+
+using ResolvedStreamingExecution =
+    std::shared_ptr<const tc::streaming::ResolvedRequestExecution>;
+
+ResolvedStreamingExecution resolve_public_streaming_locked(
+        tc_engine &engine, tc::Request request) {
+    tc::require(engine.session != nullptr, "streaming_engine_unavailable");
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    const auto &catalog_provider = engine.test_streaming_catalog_provider
+        ? static_cast<const tc::streaming::StreamingCatalogProvider &>(
+              *engine.test_streaming_catalog_provider)
+        : tc::streaming::production_streaming_catalog_provider();
+#else
+    const auto &catalog_provider =
+        tc::streaming::production_streaming_catalog_provider();
+#endif
+    tc::streaming::PublicStreamingCoordinator coordinator(
+        *engine.session, engine.model_id, engine.execution_container,
+        catalog_provider);
+    auto preflight = coordinator.preflight(request);
+    auto plan =
+        tc::make_plan_after_public_streaming_preflight(request);
+    request = std::move(plan.request);
+    return coordinator.resolve_normalized(
+        std::move(request), streaming_device_identity(),
+        std::move(preflight));
+}
+
+void revalidate_public_streaming_locked(
+        tc_engine &engine,
+        const tc::streaming::ResolvedRequestExecution &execution) {
+    tc::require(engine.session != nullptr, "streaming_engine_unavailable");
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+    const auto &catalog_provider = engine.test_streaming_catalog_provider
+        ? static_cast<const tc::streaming::StreamingCatalogProvider &>(
+              *engine.test_streaming_catalog_provider)
+        : tc::streaming::production_streaming_catalog_provider();
+#else
+    const auto &catalog_provider =
+        tc::streaming::production_streaming_catalog_provider();
+#endif
+    tc::streaming::PublicStreamingCoordinator coordinator(
+        *engine.session, engine.model_id, engine.execution_container,
+        catalog_provider);
+    coordinator.revalidate(execution, streaming_device_identity());
+}
+
+NSDictionary *streaming_resolution_dictionary(
+        const tc::streaming::ResolvedRequestExecution &execution) {
+    const auto &selection = execution.selection;
+    const auto &record = selection.record;
+    return @{
+        @"schema_version" : @1,
+        @"status" : @"resolved",
+        @"request_digest" : @(execution.request_digest.c_str()),
+        @"resolution_digest" : @(selection.resolution_digest.c_str()),
+        @"catalog_revision" : @(record.catalog_revision.c_str()),
+        @"requested_selector" :
+            tc::streaming_selector_dictionary(selection.requested_selector),
+        @"exact_selector" :
+            tc::streaming_selector_dictionary(selection.exact_selector),
+        @"selection" : @{
+            @"preset_id" : @(record.id.c_str()),
+            @"preset_revision" : @(record.revision),
+            @"record_digest" : @(record.canonical_record_digest.c_str()),
+            @"release_channel" : @(record.release.channel.c_str()),
+            @"target_request_memory_bytes" :
+                @(*selection.exact_selector.target_request_memory_bytes),
+            @"calibrated_request_bytes" :
+                @(record.calibration.calibrated_request_bytes),
+            @"memory_scope" : @(record.calibration.scope.c_str()),
+            @"layout_digest" : @(execution.model_snapshot->layout().digest.c_str()),
+            @"component_policy_revision" :
+                @(record.plan.component_policy_revision.c_str()),
+            @"execution_container" :
+                @(record.workload.execution_container.c_str()),
+        },
+        @"identity" : @{
+            @"source_digest" : @(
+                tc::streaming::streaming_source_identity_digest(
+                    execution.probe->source_identity()).c_str()),
+            @"runtime_digest" : @(
+                tc::streaming::streaming_runtime_identity_digest(
+                    execution.probe->runtime_identity()).c_str()),
+            @"device_digest" : @(
+                tc::streaming::streaming_device_identity_digest(
+                    selection.device).c_str()),
+        },
+    };
+}
+
+std::unique_ptr<tc::MemoryExecutionContext> prepare_memory_execution(
+        tc::ModelSession &session, tc::ExecutionPlan &plan, bool parent_mlx) {
+    if (!plan.memory_policy || !plan.memory_policy->enabled) return nullptr;
+    tc::streaming::audit_increment(
+        tc::streaming::AuditCounter::FrameworkHooks);
+    auto &policy = *plan.memory_policy;
+    tc::MemoryCapabilityResolution capability;
+    const auto device = tc::device_info();
+    tc::MemoryDeviceIdentity identity{
+        device.gpu, tc::memory_runtime_revision()};
+    capability = tc::preflight_memory_capability(
+        session, plan, identity,
+        tc::production_memory_capability_registry());
+    if (parent_mlx) tc::mx::synchronize();
+    // A constrained request cannot inherit an unaccounted resident session.
+    // Start from a clean model/cache boundary; retained constrained sessions
+    // can be reintroduced once their backings participate in the ledger.
+    tc::streaming::audit_increment(
+        tc::streaming::AuditCounter::CacheClearOrUnloadCalls);
+    session.unload();
+    if (parent_mlx) {
+        tc::streaming::audit_increment(
+            tc::streaming::AuditCounter::CacheClearOrUnloadCalls);
+        tc::mx::clear_cache();
+    }
+    const auto observation = tc::observe_process_memory();
+    tc::require(observation.available,
+                "memory_observation_unreliable: process footprint is unavailable");
+    const auto swap_baseline = tc::observe_swap_activity();
+    tc::require(swap_baseline.available,
+                "memory_observation_unreliable: system swap counters are unavailable");
+    auto compiled = tc::authorize_memory_capability(
+        plan, capability, observation.process_footprint_bytes);
+    tc::require(policy.planned_upper_bytes >
+                    observation.process_footprint_bytes,
+                "memory_budget_too_small: planned request envelope does not "
+                "cover the clean process baseline");
+    tc::require(observation.process_footprint_bytes <=
+                    policy.planned_upper_bytes &&
+                    policy.non_denoiser_reserve_bytes <=
+                        policy.planned_upper_bytes -
+                            observation.process_footprint_bytes,
+                "memory_budget_too_small: process baseline and non-denoiser "
+                "reserve exhaust the effective budget");
+    const uint64_t runtime_denoiser_budget =
+        policy.planned_upper_bytes - observation.process_footprint_bytes -
+        policy.non_denoiser_reserve_bytes;
+    tc::require(runtime_denoiser_budget > 0,
+                "memory_budget_too_small: no denoiser budget remains after "
+                "the process baseline and component reserve");
+    policy.denoiser_budget_bytes = std::min(
+        policy.denoiser_budget_bytes, runtime_denoiser_budget);
+    plan.request.memory_budget_bytes = policy.denoiser_budget_bytes;
+    plan.request.memory_constrained.denoiser_budget_bytes =
+        policy.denoiser_budget_bytes;
+    // Re-run the existing model-specific minimum/route validation against
+    // the runtime-adjusted sub-budget before any checkpoint allocation.
+    tc::module_for(plan.request.model).validate(plan.request);
+    policy.admission_state = "admitted";
+    policy.enforcement_scope =
+        "process_footprint_boundaries+swapout_delta+streamed_denoiser_v1";
+    return std::make_unique<tc::MemoryExecutionContext>(
+        policy, std::move(compiled), observation, tc::ProcessMemoryObserver{},
+        swap_baseline, [] { return tc::observe_swap_activity(); });
+}
+
+void drain_memory_execution(tc::ModelSession &session,
+                            tc::MemoryExecutionContext &execution) {
+    const auto result = session.drain_memory_completions(
+        execution, std::chrono::seconds(30));
+    tc::require(result.completed && result.pending_after == 0,
+                "memory_lifetime_violation: completion drain failed" +
+                    (result.failure.empty() ? std::string{} :
+                     std::string(": ") + result.failure));
+    // First-generation constrained candidates retain no request-external
+    // model or allocator cache.  Teardown happens only after the backend has
+    // proved all submitted GPU work complete, while the context is still
+    // bound so release hooks can close their ledger leases.
+    tc::streaming::audit_increment(
+        tc::streaming::AuditCounter::CacheClearOrUnloadCalls);
+    session.unload();
+    const auto mailbox = execution.drain_completion_mailbox();
+    tc::require(mailbox.ok(),
+                "memory_lifetime_violation: completion mailbox drain failed" +
+                    (mailbox.failure.empty() ? std::string{} :
+                     std::string(": ") + mailbox.failure));
+    const auto snapshot = execution.admission().snapshot();
+    tc::require(snapshot.pending_release_count == 0 &&
+                    execution.scheduler().pending_count() == 0 &&
+                    execution.scheduler().outstanding_completion_count() == 0 &&
+                    snapshot.reservation_count == 0 &&
+                    snapshot.storage_count == 0 &&
+                    snapshot.unknown_bytes == 0,
+                "memory_lifetime_violation: completion drain left accounted resources");
+}
+
+void finalize_memory_failure(tc_engine *engine,
+                             tc::ModelSession *session,
+                             tc::MemoryExecutionContext *execution,
+                             std::string reason) noexcept {
+    if (!execution || execution->finished()) return;
+    auto disposition = execution->finalize_failure(std::move(reason));
+    if (disposition == tc::MemoryFailureDisposition::NeedsGpuDrain) {
+        if (!session) {
+            disposition = execution->complete_failure_cleanup(
+                false, "GPU completion drain is unavailable");
+        } else {
+            try {
+                drain_memory_execution(*session, *execution);
+                disposition = execution->complete_failure_cleanup(true);
+            } catch (const std::exception &cleanup) {
+                disposition = execution->complete_failure_cleanup(
+                    false, cleanup.what());
+                try {
+                    tc::streaming::audit_increment(
+                        tc::streaming::AuditCounter::CacheClearOrUnloadCalls);
+                    session->unload();
+                } catch (...) {
+                }
+            } catch (...) {
+                disposition = execution->complete_failure_cleanup(
+                    false, "unknown completion drain failure");
+                try {
+                    tc::streaming::audit_increment(
+                        tc::streaming::AuditCounter::CacheClearOrUnloadCalls);
+                    session->unload();
+                } catch (...) {
+                }
+            }
+        }
+    }
+    if (engine && disposition != tc::MemoryFailureDisposition::Clean)
+        engine->memory_quarantined.store(true, std::memory_order_release);
+    if (engine && execution && execution->finished()) {
+        try {
+            if (!engine->last_memory_report)
+                engine->last_memory_report = execution->take_report();
+        } catch (...) {
+            /* Preserve the primary runtime error and quarantine decision. A
+             * report is diagnostic evidence, never a success condition. */
+        }
+    }
+}
+
 } // namespace
+
+char *tc_runtime_build_identity(void) { return strdup(tc::runtime_build_identity()); }
 
 uint32_t tc_abi_version(void) {
     return 1;
 }
+#ifdef TURBOCIDER_ENABLE_AUDIT_COUNTERS
+extern "C" void tc_streaming_audit_reset(void) {
+    tc::streaming::audit_reset();
+}
+
+extern "C" int tc_streaming_audit_snapshot_json(
+        char **result, char **error) {
+    if (result) *result = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(result, "missing streaming audit result pointer");
+            const auto snapshot = tc::streaming::audit_snapshot();
+            *result = copy(tc::json(@{
+                @"format": @"turbocider-streaming-audit-snapshot-v1",
+                @"new_framework_hooks": @(snapshot.framework_hooks),
+                @"new_memory_probes": @(snapshot.memory_probes),
+                @"new_worker_threads": @(snapshot.worker_threads),
+                @"new_pool_allocations": @(snapshot.pool_allocations),
+                @"new_cache_clear_or_unload_calls":
+                    @(snapshot.cache_clear_or_unload_calls),
+                @"steady_framework_allocations":
+                    @(snapshot.steady_framework_allocations),
+                @"steady_framework_thread_creates":
+                    @(snapshot.steady_framework_thread_creates)
+            }));
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error) *error = strdup("unknown streaming audit error");
+            return 1;
+        }
+    }
+}
+#endif
 void tc_string_free(char *s) {
     free(s);
 }
@@ -55,6 +395,7 @@ int tc_coreml_ffn_create(const char *manifest, const char *checkpoint,
                         "invalid Core ML FFN minimum row count");
             tc::require(warmups >= 0 && warmups <= 8,
                         "invalid Core ML FFN warmup count");
+            require_streaming_process_healthy();
             configure_streams();
             auto value = std::make_unique<tc_coreml_ffn>();
             std::atomic<bool> cancelled{false};
@@ -83,6 +424,7 @@ int tc_coreml_ffn_predict(tc_coreml_ffn *bridge, int block,
             tc::require(bridge && bridge->session && input && output,
                         "missing Core ML FFN bridge or buffer");
             std::lock_guard<std::mutex> lock(bridge->mutex);
+            require_streaming_process_healthy();
             auto metrics = bridge->session->metrics();
             tc::require(rows > 0 && rows <= metrics.bucket,
                         "Core ML FFN request exceeds the manifest row bucket");
@@ -179,6 +521,86 @@ int tc_plan_json(const char *r, char **out, char **error) {
         }
     }
 }
+static int streaming_options_for_container(const char *r, const char *container, char **out, char **error) {
+    if (out)
+        *out = nullptr;
+    if (error)
+        *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(out, "missing output pointer");
+            const auto request = tc::request_from_json(tc::parse_json(r));
+            tc::streaming::validate_public_streaming_request(request);
+            const auto &selector = *request.streaming_selector;
+            const auto device = tc::device_info();
+            const std::string device_class = device.gpu + "/" +
+                std::to_string(device.physical_memory);
+            const auto &catalog =
+                tc::streaming::production_streaming_preset_catalog();
+            const bool catalog_empty = catalog.records.empty();
+            NSMutableArray *targets = [NSMutableArray array];
+            for (const uint64_t target : tc::public_streaming_targets) {
+                tc::streaming::PresetResolveQuery query;
+                query.workload = tc::streaming::basic_streaming_workload(
+                    request, device_class, container);
+                query.target_request_memory_bytes = target;
+                query.physical_memory_bytes = device.physical_memory;
+                if (selector.selection && *selector.selection == "preset" &&
+                    selector.target_request_memory_bytes &&
+                    target == *selector.target_request_memory_bytes) {
+                    query.preset_id = selector.preset_id;
+                    query.preset_revision = selector.preset_revision;
+                    query.catalog_revision = selector.catalog_revision;
+                }
+                const auto resolution =
+                    tc::streaming::find_streaming_preset_candidate(query, catalog);
+                NSMutableDictionary *entry = [@{
+                    @"target_request_memory_bytes" : @(target),
+                    @"status" : resolution.candidate ? @"candidate" :
+                        (catalog_empty ? @"catalog_empty" : @"unavailable"),
+                    @"reason_code" : resolution.candidate
+                        ? @"artifact_verification_required" : @(resolution.rejection_code.c_str())
+                } mutableCopy];
+                if (resolution.candidate) {
+                    const auto &record = *resolution.candidate;
+                    entry[@"preset_id"] = @(record.id.c_str());
+                    entry[@"preset_revision"] = @(record.revision);
+                    entry[@"calibrated_request_bytes"] =
+                        @(record.calibration.calibrated_request_bytes);
+                    entry[@"memory_scope"] = @(record.calibration.scope.c_str());
+                    entry[@"release_channel"] = @(record.release.channel.c_str());
+                }
+                [targets addObject:entry];
+            }
+            *out = copy(tc::json(@{
+                @"schema_version" : @2,
+                @"catalog_revision" : @(catalog.revision.c_str()),
+                @"query_status" : catalog_empty
+                    ? @"catalog_empty" : @"tentative_without_artifact_identity",
+                @"execution_container" : @(container),
+                @"device" : @{
+                    @"gpu" : @(device.gpu.c_str()),
+                    @"physical_memory_bytes" : @(device.physical_memory),
+                    @"device_class" : @(device_class.c_str())
+                },
+                @"targets" : targets
+            }));
+            return 0;
+        } catch (const std::exception &e) {
+            return fail(error, e);
+        } catch (...) {
+            if (error)
+                *error = strdup("unknown streaming options error");
+            return 1;
+        }
+    }
+}
+int tc_streaming_options_json(const char *r, char **out, char **error) {
+    return streaming_options_for_container(r, "embedded_app", out, error);
+}
+int tc_worker_streaming_options_json(const char *r, char **out, char **error) {
+    return streaming_options_for_container(r, "cli_worker", out, error);
+}
 int tc_engine_create_model(const char *id, const char *path, tc_engine **engine, char **error) {
     if (engine)
         *engine = nullptr;
@@ -191,6 +613,9 @@ int tc_engine_create_model(const char *id, const char *path, tc_engine **engine,
             tc::require(bool(module.create), "model executor unavailable");
             auto e = std::make_unique<tc_engine>();
             e->session = module.create(path);
+            e->model_id = id;
+            e->model_root =
+                std::filesystem::absolute(path).lexically_normal();
             *engine = e.release();
             return 0;
         } catch (const std::exception &e) {
@@ -202,23 +627,449 @@ int tc_engine_create_model(const char *id, const char *path, tc_engine **engine,
         }
     }
 }
+int tc_engine_create_model_worker(const char *id, const char *path,
+                                  tc_engine **engine, char **error) {
+    const int status = tc_engine_create_model(id, path, engine, error);
+    if (!status) (*engine)->execution_container = "cli_worker";
+    return status;
+}
 int tc_engine_create(const char *path, tc_engine **engine, char **error) {
     return tc_engine_create_model("flux2-klein-4b", path, engine, error);
 }
+
+int tc_engine_verify_streaming_sources_json(tc_engine *e, char **result_json, char **error) {
+    if (result_json) *result_json = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(e && e->session && result_json, "missing artifact verification input/output");
+            std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
+            tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
+            tc::require(!e->streaming_quarantined.load(), "streaming_quarantined");
+            e->cancelled.store(false);
+            auto lease = e->session->verify_streaming_sources(e->cancelled);
+            tc::require(lease && lease->has_verified_content(), "artifact_verification_required");
+            lease->revalidate_after_drain();
+            tc::checkpoint(e->cancelled);
+            NSMutableArray *files = [NSMutableArray array];
+            for (const auto &file : lease->descriptor().files)
+                [files addObject:@{@"logical_id": @(file.logical_id.c_str()),
+                                   @"bytes": @(file.bytes),
+                                   @"sha256": @(file.content_digest.c_str())}];
+            *result_json = copy(tc::json(@{
+                @"schema_version": @1, @"model": @(e->model_id.c_str()),
+                @"status": @"verified", @"proof_scope": @"native_process_generation",
+                @"artifact_manifest_digest": @(std::string(lease->artifact_digest()).c_str()),
+                @"verification_bytes_read": @(lease->verification_bytes_read()),
+                @"verification_cache_hits": @(lease->verification_cache_hits()),
+                @"files": files}));
+            return 0;
+        } catch (const std::exception &exception) { return fail(error, exception); }
+        catch (...) {
+            if (error) *error = strdup("unknown artifact verification error");
+            return 1;
+        }
+    }
+}
+
+int tc_engine_resolve_streaming_json(
+        tc_engine *e, const char *request_json,
+        char **result_json, char **error) {
+    if (result_json) *result_json = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(e && request_json && result_json,
+                        "missing streaming resolve input/output");
+            tc::require(!e->streaming_quarantined.load(
+                            std::memory_order_acquire),
+                        "streaming_quarantined: engine must be recreated");
+            std::unique_lock<std::mutex> local(
+                e->mutex, std::try_to_lock);
+            tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
+            auto request = tc::request_from_json(
+                tc::parse_json(request_json));
+            auto resolved = resolve_public_streaming_locked(
+                *e, std::move(request));
+            *result_json = copy(tc::json(
+                streaming_resolution_dictionary(*resolved)));
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error)
+                *error = strdup("unknown public streaming resolution error");
+            return 1;
+        }
+    }
+}
+
 extern "C" int tc_engine_create_model_candidate(const char *id, const char *path,
                                                 tc_engine **engine, char **error) {
-    if (!id || std::strcmp(id, "ltx-2.5-distilled") != 0) {
+    if (!id || (std::strcmp(id, "ltx-2.5-distilled") != 0 &&
+                std::strcmp(id, "minimax-h3-turbo") != 0 &&
+                std::strcmp(id, "z-image-turbo") != 0 &&
+                std::strcmp(id, "flux2-klein-9b") != 0 &&
+                std::strcmp(id, "flux2-klein-4b") != 0)) {
         if (engine) *engine = nullptr;
-        if (error) *error = strdup("candidate executor is restricted to LTX");
+        if (error) *error = strdup(
+            "candidate executor is restricted to LTX/H3/Z-Image/FLUX Klein development routes");
         return 1;
     }
-    return tc_engine_create_model(id, path, engine, error);
+    int status = 0;
+    if (std::strcmp(id, "minimax-h3-turbo") == 0) {
+        try {
+            auto e = std::make_unique<tc_engine>();
+            e->session = tc::create_h3_candidate(path);
+            e->model_id = id;
+            e->model_root =
+                std::filesystem::absolute(path).lexically_normal();
+            e->allow_experimental_streaming = true;
+            *engine = e.release();
+        } catch (const std::exception &exception) {
+            status = fail(error, exception);
+        } catch (...) {
+            if (error) *error = strdup("unknown H3 candidate creation error");
+            status = 1;
+        }
+    } else {
+        status = tc_engine_create_model(id, path, engine, error);
+    }
+    if (!status && engine && *engine)
+        (*engine)->allow_experimental_streaming = true;
+    return status;
 }
+extern "C" int tc_engine_create_model_candidate_worker(
+        const char *id, const char *path, tc_engine **engine, char **error) {
+    const int status = tc_engine_create_model_candidate(id, path, engine, error);
+    if (!status) (*engine)->execution_container = "cli_worker";
+    return status;
+}
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+tc::streaming::PresetPlan test_streaming_plan_from_json(
+        const char *plan_json) {
+    NSDictionary *root = tc::parse_json(plan_json);
+    NSSet *allowed = [NSSet setWithArray:@[
+        @"canonical_config", @"pass_transition", @"multi_pool_policy"
+    ]];
+    tc::require(root.count == allowed.count,
+                "test_streaming_plan_has_missing_or_unknown_fields");
+    for (NSString *key in root)
+        tc::require([allowed containsObject:key],
+                    "test_streaming_plan_unknown_field");
+    tc::require(root[@"canonical_config"] != nil,
+                "test_streaming_plan_missing_canonical_config");
+    tc::require(root[@"pass_transition"] != nil &&
+                    root[@"multi_pool_policy"] != nil,
+                "test_streaming_plan_missing_pool_policy");
+    tc::StreamingConfig config;
+    tc::parse_streaming_config(
+        root[@"canonical_config"], config, "test_record");
+    tc::validate_streaming_config(config);
+    tc::streaming::PresetPlan result;
+    result.canonical_config = std::move(config);
+    result.pass_transition = tc::string_value(
+        root, @"pass_transition");
+    result.multi_pool_policy = tc::string_value(
+        root, @"multi_pool_policy");
+    tc::require(!result.pass_transition.empty() &&
+                    !result.multi_pool_policy.empty(),
+                "test_streaming_plan_missing_pool_policy");
+    return result;
+}
+
+std::string test_streaming_catalog_json_for_request(
+        tc_engine &engine, tc::Request request, const char *plan_json,
+        uint64_t target_request_memory_bytes, const char *catalog_revision) {
+    tc::require(engine.session != nullptr, "streaming_engine_unavailable");
+    tc::require(!engine.allow_experimental_streaming,
+                "test_record_requires_a_public_engine");
+    tc::require(catalog_revision && *catalog_revision,
+                "test_record_catalog_revision_required");
+    tc::require(tc::streaming::supported_streaming_target(
+                    target_request_memory_bytes),
+                "test_record_target_unsupported");
+    tc::require(request.streaming_selector &&
+                    request.streaming_selector->active(),
+                "test_record_selector_required");
+    tc::require(request.streaming_selector->target_request_memory_bytes &&
+                    *request.streaming_selector->target_request_memory_bytes ==
+                        target_request_memory_bytes,
+                "test_record_target_mismatch");
+
+    tc::streaming::validate_public_streaming_request(request);
+    auto normalized = tc::make_plan_after_public_streaming_preflight(request);
+    request = std::move(normalized.request);
+    const auto device = streaming_device_identity();
+    tc::streaming::PublicResolveInput input{
+        request, device, engine.execution_container};
+    auto probe = engine.session->probe_public_streaming(input);
+    tc::require(probe != nullptr, "streaming_public_probe_unavailable");
+    tc::require(probe->model_id() == engine.model_id &&
+                    probe->workload_identity().model == engine.model_id &&
+                    probe->workload_identity().execution_container ==
+                        engine.execution_container,
+                "streaming_probe_identity_mismatch");
+
+    auto plan = test_streaming_plan_from_json(plan_json);
+    tc::streaming::StreamingPresetRecord record;
+    record.revision = 1;
+    record.catalog_revision = catalog_revision;
+    record.source = probe->source_identity();
+    record.workload = probe->workload_identity();
+    record.runtime = probe->runtime_identity();
+    record.device.minimum_physical_memory_bytes =
+        device.physical_memory_bytes;
+    record.device.maximum_physical_memory_bytes = 0;
+    record.plan = std::move(plan);
+    record.plan.component_policy_revision =
+        std::string(probe->component_policy_revision());
+    // The test-only adapter hook accepts an empty layout digest solely to
+    // discover the canonical digest. The final record is compiled again below
+    // with the discovered digest, so no execution path can use the template.
+    record.plan.layout_digest.clear();
+    const uint64_t allowed_peak = target_request_memory_bytes -
+        tc::streaming::streaming_target_margin_bytes(
+            target_request_memory_bytes);
+    record.calibration.complete = true;
+    record.calibration.calibrated_request_bytes = allowed_peak;
+    record.calibration.scope = "execution_process_tree_v1";
+    record.calibration.estimator_revision =
+        "tree-phys-footprint-linear-p95-v1";
+    record.calibration.calibration_id = "test-record-template-v1";
+    record.calibration.execution_container = engine.execution_container;
+    record.calibration.evidence_digest = std::string(64, '0');
+    record.calibration.confirmation_sample_count = 1;
+    record.calibration.maximum_sample_gap_ns = 1;
+    record.performance.rank = 1;
+    record.performance.logical_read_bytes = 0;
+    record.performance.profile_id = "test-record-template-v1";
+    record.performance.comparison_kind = "P1_same_layout";
+    record.performance.confidence_status = "TEMPLATE";
+    record.performance.evidence_digest = std::string(64, '0');
+    record.release.channel = "public-experimental";
+    record.release.revoked = false;
+    record.release.reviewed_commit = "test-record-template";
+    record.release.review_digest = std::string(64, '0');
+
+    auto snapshot = engine.session->compile_public_streaming(probe, record);
+    tc::require(snapshot != nullptr,
+                "streaming_public_snapshot_unavailable");
+    tc::require(!snapshot->layout().stages.empty(),
+                "test_record_layout_has_no_stages");
+    for (const auto &stage : snapshot->layout().stages) {
+        const char *transition = stage.pass_transition ==
+                tc::streaming::PassTransition::reload
+            ? "reload" : "carry_first_group";
+        const char *pool_policy = stage.multi_pool_policy ==
+                tc::streaming::MultiPoolPolicy::serial
+            ? "serial" : "retain_all";
+        tc::require(record.plan.pass_transition == transition,
+                    "test_record_pass_transition_mismatch");
+        tc::require(record.plan.multi_pool_policy == pool_policy,
+                    "test_record_multi_pool_policy_mismatch");
+    }
+    record.plan.layout_digest = snapshot->layout().digest;
+    const std::string target_name = std::to_string(
+        target_request_memory_bytes / tc::streaming_gib);
+    record.id = "test-" + engine.model_id + "-" + target_name + "g-" +
+        record.plan.layout_digest.substr(0, 12);
+    record = tc::streaming::finalize_streaming_preset_record(
+        std::move(record));
+    tc::streaming::validate_streaming_preset_record(
+        record, catalog_revision);
+    // Recompile with the complete identity. This catches a model adapter that
+    // only accepts the empty-digest discovery path but cannot authorize the
+    // resulting exact record.
+    snapshot = engine.session->compile_public_streaming(probe, record);
+    tc::require(snapshot != nullptr &&
+                    snapshot->layout().digest == record.plan.layout_digest,
+                "test_record_layout_recompile_mismatch");
+
+    return tc::json(@{
+        @"schema": @"turbocider-streaming-test-catalog-v1",
+        @"revision": @(catalog_revision),
+        @"records": @[tc::test_streaming_catalog_record_dictionary(record)]
+    });
+}
+
+extern "C" int tc_engine_test_set_streaming_catalog_json(
+        tc_engine *engine, const char *catalog_json, char **error) {
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(engine && engine->session && catalog_json,
+                        "missing engine or test streaming catalog");
+            tc::require(!engine->allow_experimental_streaming,
+                        "test streaming catalog requires a public engine");
+            auto catalog = tc::parse_test_streaming_catalog_json(catalog_json);
+            std::unique_lock<std::mutex> local(
+                engine->mutex, std::try_to_lock);
+            tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
+            if (!engine->test_streaming_catalog_provider)
+                engine->test_streaming_catalog_provider =
+                    std::make_shared<
+                        tc::streaming::TestStreamingCatalogProvider>();
+            engine->test_streaming_catalog_provider->install(
+                std::move(catalog));
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error)
+                *error = strdup(
+                    "unknown test streaming catalog installation error");
+            return 1;
+        }
+    }
+}
+
+extern "C" int tc_engine_test_build_streaming_catalog_json(
+        tc_engine *engine, const char *request_json, const char *plan_json,
+        uint64_t target_request_memory_bytes, const char *catalog_revision,
+        char **catalog_json, char **error) {
+    if (catalog_json) *catalog_json = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(engine && request_json && plan_json &&
+                            catalog_revision && catalog_json,
+                        "missing test streaming record input/output");
+            std::unique_lock<std::mutex> local(
+                engine->mutex, std::try_to_lock);
+            tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
+            auto request = tc::request_from_json(
+                tc::parse_json(request_json));
+            *catalog_json = copy(test_streaming_catalog_json_for_request(
+                *engine, std::move(request), plan_json,
+                target_request_memory_bytes, catalog_revision));
+            return 0;
+        } catch (const std::exception &exception) {
+            return fail(error, exception);
+        } catch (...) {
+            if (error)
+                *error = strdup(
+                    "unknown test streaming catalog record error");
+            return 1;
+        }
+    }
+}
+
+extern "C" int tc_engine_test_clear_streaming_catalog(
+        tc_engine *engine, char **error) {
+    if (error) *error = nullptr;
+    try {
+        tc::require(engine && engine->session,
+                    "missing engine for test streaming catalog clear");
+        std::unique_lock<std::mutex> local(
+            engine->mutex, std::try_to_lock);
+        tc::require(local.owns_lock(), "engine busy");
+        engine->test_streaming_catalog_provider.reset();
+        return 0;
+    } catch (const std::exception &exception) {
+        return fail(error, exception);
+    } catch (...) {
+        if (error)
+            *error = strdup(
+                "unknown test streaming catalog clear error");
+        return 1;
+    }
+}
+
+extern "C" int tc_engine_test_streaming_drain_failure(
+        tc_engine *engine, int enabled, char **error) {
+    if (error) *error = nullptr;
+    try {
+        tc::require(engine && engine->allow_experimental_streaming,
+                    "streaming drain fault requires private candidate engine");
+        std::unique_lock<std::mutex> local(engine->mutex, std::try_to_lock);
+        tc::require(local.owns_lock(), "engine busy");
+        require_streaming_process_healthy();
+        engine->session->test_set_streaming_drain_failure(enabled != 0);
+        return 0;
+    } catch (const std::exception &exception) { return fail(error, exception); }
+    catch (...) { if (error) *error = strdup("unknown drain test fault"); return 1; }
+}
+extern "C" uint64_t tc_engine_test_streaming_retained_engines() {
+    uint64_t count = 0;
+    for (auto *entry = quarantined_engines.load(std::memory_order_acquire);
+         entry; entry = entry->quarantine_next) ++count;
+    return count;
+}
+
+extern "C" int tc_engine_test_ltx_exact_destroy_failures(
+        tc_engine *engine, uint32_t failures, char **error) {
+    if (error) *error = nullptr;
+    try {
+        tc::require(engine && engine->session,
+                    "missing candidate engine for LTX lifecycle fault");
+        tc::require(engine->allow_experimental_streaming,
+                    "LTX lifecycle fault requires the private candidate engine");
+        std::unique_lock<std::mutex> local(engine->mutex, std::try_to_lock);
+        tc::require(local.owns_lock(), "engine busy");
+        engine->session->test_set_ltx_exact_destroy_failures(failures);
+        return 0;
+    } catch (const std::exception &exception) {
+        return fail(error, exception);
+    } catch (...) {
+        if (error) *error = strdup("unknown LTX lifecycle test-hook error");
+        return 1;
+    }
+}
+
+extern "C" int tc_engine_test_ltx_exact_cancel_first_fill(
+        tc_engine *engine, char **error) {
+    if (error) *error = nullptr;
+    try {
+        tc::require(engine && engine->session,
+                    "missing candidate engine for LTX lifecycle fault");
+        tc::require(engine->allow_experimental_streaming,
+                    "LTX lifecycle fault requires the private candidate engine");
+        std::unique_lock<std::mutex> local(engine->mutex, std::try_to_lock);
+        tc::require(local.owns_lock(), "engine busy");
+        engine->session->test_cancel_ltx_exact_first_fill();
+        return 0;
+    } catch (const std::exception &exception) {
+        return fail(error, exception);
+    } catch (...) {
+        if (error) *error = strdup("unknown LTX lifecycle test-hook error");
+        return 1;
+    }
+}
+
+extern "C" uint64_t tc_engine_test_ltx_process_quarantine_count(void) {
+    return static_cast<uint64_t>(
+        tc::ltx_exact_process_quarantine_count_for_test());
+}
+
+extern "C" int tc_engine_test_ltx_retry_process_quarantine(char **error) {
+    if (error) *error = nullptr;
+    std::string failure;
+    if (tc::ltx_exact_retry_process_quarantine_for_test(failure)) return 0;
+    if (error)
+        *error = strdup(failure.empty() ?
+            "LTX process quarantine retry remains unsafe" : failure.c_str());
+    return 1;
+}
+#endif
 void tc_engine_cancel(tc_engine *e) {
     if (e)
         e->cancelled.store(true);
 }
 void tc_engine_free(tc_engine *e) {
+    if (!e) return;
+    observe_streaming_quarantine(e);
+    if (streaming_process_quarantined.load(std::memory_order_acquire)) {
+        auto *head = quarantined_engines.load(std::memory_order_relaxed);
+        do { e->quarantine_next = head; }
+        while (!quarantined_engines.compare_exchange_weak(
+            head, e, std::memory_order_release, std::memory_order_relaxed));
+        return;
+    }
     delete e;
 }
 int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *ctx, char **out,
@@ -227,27 +1078,70 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
         *out = nullptr;
     if (error)
         *error = nullptr;
+    std::unique_ptr<tc::MemoryExecutionContext> memory_execution;
     @autoreleasepool {
         try {
             tc::require(e && out, "missing engine or output");
+            tc::require(!e->memory_quarantined.load(std::memory_order_acquire),
+                        "memory_worker_quarantined: engine must be recreated");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
+            auto request = tc::request_from_json(tc::parse_json(r));
+            ResolvedStreamingExecution public_execution;
+            if (request.streaming_selector &&
+                request.streaming_selector->active()) {
+                tc::require(!e->streaming_quarantined.load(
+                                std::memory_order_acquire),
+                            "streaming_quarantined: engine must be recreated");
+                public_execution = resolve_public_streaming_locked(
+                    *e, std::move(request));
+                request = public_execution->request;
+            }
             // MLX uses process-global device/allocation policy. Serialize all embeddings.
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
+            require_streaming_process_healthy();
             DeviceLease device_lease;
             e->cancelled.store(false);
-            auto request = tc::request_from_json(tc::parse_json(r));
+            tc::require(public_execution || !request.streaming.active() ||
+                            e->allow_experimental_streaming,
+                        "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
+            // Preserve the dev/default hot path: sessions already compile
+            // their own plan, so API preplanning is only for the explicit
+            // constrained-memory add-on.
+            std::optional<tc::ExecutionPlan> request_plan;
+            if (request.memory_constrained.enabled) {
+                request_plan = tc::make_plan(request);
+                e->last_memory_report.reset();
+            }
+            // Candidate resolution may select a different backend/residency.
+            // uses_parent_mlx needs that resolved route, while the final
+            // runtime-adjusted budget is propagated after admission below.
+            if (request_plan)
+                request = request_plan->request;
             const bool parent_mlx = e->session->uses_parent_mlx(request);
             if (parent_mlx) {
                 tc::require(tc::mx::is_available(tc::mx::Device(tc::mx::Device::gpu)),
                             "Metal GPU unavailable");
                 configure_streams();
             }
+            if (public_execution)
+                revalidate_public_streaming_locked(
+                    *e, *public_execution);
+            if (request_plan) {
+                memory_execution = prepare_memory_execution(
+                    *e->session, *request_plan, parent_mlx);
+                request = request_plan->request;
+            }
+            tc::ScopedMemoryExecutionBinding memory_binding(
+                *e->session, memory_execution.get());
+            if (memory_execution)
+                memory_execution->begin_running();
             struct Drain {
                 bool enabled;
                 ~Drain() {
-                    if (enabled) {
+                    if (enabled && !streaming_process_quarantined.load(std::memory_order_acquire)) {
                         try {
                             tc::mx::synchronize();
                         } catch (...) {
@@ -258,6 +1152,10 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
             uint64_t seq = 0;
             auto begin = tc::Clock::now();
             tc::Event event = [&](const std::string &phase, int current, int total) {
+                if (memory_execution &&
+                    !memory_execution->uses_explicit_schedule() &&
+                    (current == 0 || current == total))
+                    memory_execution->checkpoint(phase);
                 if (!(phase == "export" && current == total))
                     tc::checkpoint(e->cancelled);
                 if (cb) {
@@ -275,18 +1173,92 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
                     }
                 }
             };
-            auto result = e->session->generate(request, event, e->cancelled);
+            tc::RunResult result;
+            try {
+                result = public_execution
+                    ? e->session->generate_resolved(
+                        public_execution, event, e->cancelled)
+                    : e->session->generate(request, event, e->cancelled);
+                if (public_execution)
+                    tc::streaming::verify_and_attach_public_streaming_result(
+                        *public_execution, result);
+                if (memory_execution) {
+                    if (memory_execution->uses_explicit_schedule()) {
+                        drain_memory_execution(
+                            *e->session, *memory_execution);
+                        memory_execution->emit_terminal_schedule_event();
+                        memory_execution->begin_draining();
+                    } else {
+                        memory_execution->begin_draining();
+                        drain_memory_execution(
+                            *e->session, *memory_execution);
+                        memory_execution->checkpoint("complete");
+                    }
+                    memory_execution->finish_success();
+                    auto report = memory_execution->take_report();
+                    result.memory_admission = report.metrics;
+                    result.memory_trace = report.trace;
+                    e->last_memory_report = std::move(report);
+                    result.plan.memory_policy = request_plan->memory_policy;
+                }
+            } catch (const std::exception &failure) {
+                propagate_streaming_quarantine(e, failure.what());
+                finalize_memory_failure(
+                    e, e->session.get(), memory_execution.get(),
+                    failure.what());
+                throw;
+            } catch (...) {
+                propagate_streaming_quarantine(e, "unknown native generation failure");
+                finalize_memory_failure(
+                    e, e->session.get(), memory_execution.get(),
+                    "unknown native generation failure");
+                throw;
+            }
             *out = copy(tc::json(tc::to_dictionary(result)));
             return 0;
         } catch (const std::exception &ex) {
+            finalize_memory_failure(
+                e, nullptr, memory_execution.get(), ex.what());
             return fail(error, ex);
         } catch (...) {
+            finalize_memory_failure(
+                e, nullptr,
+                memory_execution.get(), "unknown native error");
             if (error)
                 *error = strdup("unknown native error");
             return 1;
         }
     }
 }
+
+int tc_engine_take_last_memory_report_json(
+        tc_engine *e, char **report, char **error) {
+    if (report) *report = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(e && report,
+                        "missing engine or memory report output");
+            std::unique_lock<std::mutex> local(
+                e->mutex, std::try_to_lock);
+            tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
+            tc::require(e->last_memory_report.has_value(),
+                        "memory_report_unavailable: no terminal constrained request report");
+            const auto value = tc::json(
+                tc::to_dictionary(*e->last_memory_report));
+            *report = copy(value);
+            e->last_memory_report.reset();
+            return 0;
+        } catch (const std::exception &ex) {
+            return fail(error, ex);
+        } catch (...) {
+            if (error) *error = strdup("unknown memory report error");
+            return 1;
+        }
+    }
+}
+
 int tc_tokenize_json(const char *path, const char *prompt, char **out, char **error) {
     if (out)
         *out = nullptr;
@@ -430,6 +1402,7 @@ int tc_native_self_test(char **out, char **error) {
         try {
             tc::require(out, "missing output");
             std::lock_guard<std::mutex> lock(tc::execution_mutex());
+            require_streaming_process_healthy();
             using namespace tc;
             for (auto &s : {"flux2-klein-4b", "ltx-2.5-distilled", "minimax-h3-turbo"})
                 validate_recipe(model_recipe(s));
@@ -509,8 +1482,10 @@ int tc_engine_load(tc_engine *e, tc_event_callback cb, void *ctx, char **out, ch
             tc::require(e && out, "missing engine or output");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
+            require_streaming_process_healthy();
             DeviceLease lease;
             const bool parent_mlx = e->session->uses_parent_mlx();
             if (parent_mlx)
@@ -567,8 +1542,10 @@ int tc_engine_unload(tc_engine *e, char **out, char **error) {
             tc::require(e && out, "missing engine or output");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
+            require_streaming_process_healthy();
             const bool parent_mlx = e->session->uses_parent_mlx();
             if (parent_mlx) {
                 configure_streams();
@@ -600,25 +1577,54 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
         *out = nullptr;
     if (error)
         *error = nullptr;
+    std::unique_ptr<tc::MemoryExecutionContext> memory_execution;
     @autoreleasepool {
         try {
             tc::require(e && request && out, "missing preparation input");
+            tc::require(!e->memory_quarantined.load(std::memory_order_acquire),
+                        "memory_worker_quarantined: engine must be recreated");
             std::unique_lock<std::mutex> local(e->mutex, std::try_to_lock);
             tc::require(local.owns_lock(), "engine busy");
+            require_streaming_process_healthy();
+            std::optional<tc::Request> parsed_request;
+            if (!cache) {
+                parsed_request = tc::request_from_json(tc::parse_json(request));
+                tc::require(!(parsed_request->streaming_selector &&
+                                parsed_request->streaming_selector->active()),
+                            "streaming_prepare_unsupported: public streaming "
+                            "is resolved and executed only by generate");
+                tc::require(!parsed_request->streaming.active(),
+                            "streaming_layout_not_certified: exact model adapter execution is not yet qualified");
+            }
             std::unique_lock<std::mutex> global(tc::execution_mutex(), std::try_to_lock);
             tc::require(global.owns_lock(), "native GPU runtime busy");
+            require_streaming_process_healthy();
             DeviceLease lease;
-            std::optional<tc::Request> parsed_request;
-            if (!cache)
-                parsed_request = tc::request_from_json(tc::parse_json(request));
+            std::optional<tc::ExecutionPlan> request_plan;
+            if (!cache) {
+                if (parsed_request->memory_constrained.enabled) {
+                    request_plan = tc::make_plan(*parsed_request);
+                    parsed_request = request_plan->request;
+                    e->last_memory_report.reset();
+                }
+            }
             const bool parent_mlx = cache || e->session->uses_parent_mlx(*parsed_request);
             if (parent_mlx)
                 configure_streams();
+            if (request_plan)
+                memory_execution = prepare_memory_execution(
+                    *e->session, *request_plan, parent_mlx);
+            if (request_plan)
+                parsed_request = request_plan->request;
+            tc::ScopedMemoryExecutionBinding memory_binding(
+                *e->session, memory_execution.get());
+            if (memory_execution)
+                memory_execution->begin_running();
             e->cancelled.store(false);
             struct Drain {
                 bool enabled;
                 ~Drain() {
-                    if (enabled) {
+                    if (enabled && !streaming_process_quarantined.load(std::memory_order_acquire)) {
                         try {
                             tc::mx::synchronize();
                         } catch (...) {
@@ -629,6 +1635,10 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
             auto begin = tc::Clock::now();
             uint64_t sequence = 0;
             tc::Event event = [&](const std::string &phase, int current, int total) {
+                if (memory_execution &&
+                    !memory_execution->uses_explicit_schedule() &&
+                    (current == 0 || current == total))
+                    memory_execution->checkpoint(phase);
                 tc::checkpoint(e->cancelled);
                 if (cb) {
                     auto text = tc::json(@{
@@ -655,14 +1665,53 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
                 tc::require(warmup == 0 || warmup == 1, "warmup must be 0 or 1");
                 auto r = std::move(*parsed_request);
                 r.dump.clear();
-                result =
-                    tc::to_dictionary(e->session->prepare(r, warmup != 0, event, e->cancelled));
+                tc::RunResult prepared;
+                try {
+                    prepared = e->session->prepare(
+                        r, warmup != 0, event, e->cancelled);
+                    if (memory_execution) {
+                        if (memory_execution->uses_explicit_schedule()) {
+                            drain_memory_execution(
+                                *e->session, *memory_execution);
+                            memory_execution->emit_terminal_schedule_event();
+                            memory_execution->begin_draining();
+                        } else {
+                            memory_execution->begin_draining();
+                            drain_memory_execution(
+                                *e->session, *memory_execution);
+                            memory_execution->checkpoint(
+                                "prepare_complete");
+                        }
+                        memory_execution->finish_success();
+                        auto report = memory_execution->take_report();
+                        prepared.memory_admission = report.metrics;
+                        prepared.memory_trace = report.trace;
+                        e->last_memory_report = std::move(report);
+                        prepared.plan.memory_policy = request_plan->memory_policy;
+                    }
+                } catch (const std::exception &failure) {
+                    finalize_memory_failure(
+                        e, e->session.get(), memory_execution.get(),
+                        failure.what());
+                    throw;
+                } catch (...) {
+                    finalize_memory_failure(
+                        e, e->session.get(), memory_execution.get(),
+                        "unknown native preparation failure");
+                    throw;
+                }
+                result = tc::to_dictionary(prepared);
             }
             *out = copy(tc::json(result));
             return 0;
         } catch (const std::exception &ex) {
+            finalize_memory_failure(
+                e, nullptr, memory_execution.get(), ex.what());
             return fail(error, ex);
         } catch (...) {
+            finalize_memory_failure(
+                e, nullptr,
+                memory_execution.get(), "unknown preparation error");
             if (error)
                 *error = strdup("unknown preparation error");
             return 1;
@@ -697,6 +1746,7 @@ int tc_coreml_resources_json(const char *request, tc_event_callback cb, void *ct
             std::unique_ptr<DeviceLease> lease;
             if (!inventory) {
                 tc::require(global.try_lock(), "runtime busy");
+                require_streaming_process_healthy();
                 lease = std::make_unique<DeviceLease>();
             }
             std::atomic<bool> inventory_cancelled{false};

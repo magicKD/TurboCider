@@ -1,0 +1,22 @@
+{
+  "scope": "Opt-in 9-step transformer execution and owner fault tests; no image qualification.",
+  "modes": [
+    "complete",
+    "cancel",
+    "unsafe"
+  ],
+  "shape": [
+    512,
+    512
+  ],
+  "caption": "64 zero BF16 rows of width 2560; synthetic, not a prompt encoding",
+  "latent": "FP32 reshape(sin(arange(65536)*0.01)); BF16 cast at model input",
+  "steps": 9,
+  "schedule": "existing z_sigmas and Euler update",
+  "policy": "P1/G1/K2/D1/Q2",
+  "qualification": "NONE: synthetic conditioning, no GPU-only quality/performance reference or VAE",
+  "library_sha256": "2820120234420a2cc88d944eadf041a78c9cae9f890c52262f45e63bdbb5a72a",
+  "driver_sha256": "783dcef50f779b67205483c2af89f4f9db68a80b0e27dbf080add5444d82ff19",
+  "test_sha256": "b7412cfbd09bfa439d051441b7e8e85ef90c2bac4d56d9ac4a229765893a7cc3",
+  "manifest_sha256": "3609feb6e38e3ea1216507b14b8b919dc2e7864713dda0373481161e2b0649e4"
+}

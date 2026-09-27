@@ -1,0 +1,12 @@
+{
+  "backend": "native",
+  "library": "build/native/libturbocider.dylib",
+  "model_id": "flux2-klein-9b",
+  "model_path": "models/FLUX.2-klein-9B",
+  "constructor": "candidate",
+  "environment": {
+    "TURBOCIDER_FLUX_DIRECT_STREAMING_BASELINE": "1"
+  },
+  "engine_lifecycle": "per_request",
+  "request_timeout_seconds": 300.0
+}

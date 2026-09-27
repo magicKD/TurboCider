@@ -1,0 +1,107 @@
+{
+  "scope": "One legacy hybrid reference for a frozen Z prompt and partition; no release qualification.",
+  "config": {
+    "library": "/Users/chencanhui/code/TurboCider/build/m1-policy-v3/libturbocider.dylib",
+    "model_path": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo",
+    "model_id": "z-image-turbo",
+    "constructor": "public",
+    "verify_streaming_sources": true
+  },
+  "request": {
+    "schema_version": 2,
+    "model": "z-image-turbo",
+    "operation": "image.generate",
+    "inputs": [
+      {
+        "kind": "text",
+        "role": "prompt",
+        "text": "A red fox standing in a snowy pine forest at sunrise, soft golden light falling across its orange fur, delicate snowflakes, realistic wildlife photography, detailed natural textures and a calm winter atmosphere."
+      }
+    ],
+    "outputs": [
+      {
+        "kind": "image",
+        "path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-fp16-legacy-migration/resident-2/image.png",
+        "width": 512,
+        "height": 512
+      }
+    ],
+    "sampling": {
+      "seed": 42,
+      "steps": 9
+    },
+    "parameters": {
+      "dynamic_text": true,
+      "compile_gpu": false,
+      "noise_path": "/Users/chencanhui/models/TurboCider/experiments/m1-z-fp16-legacy-migration/resident-2/noise.safetensors"
+    },
+    "dump_tensors": "/Users/chencanhui/models/TurboCider/experiments/m1-z-fp16-legacy-migration/resident-2/tensors",
+    "execution": {
+      "policy": "gpu_ane",
+      "residency": "resident",
+      "memory_budget_bytes": 8589934592,
+      "warmup_iterations": 0,
+      "ane_manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-z-denoiser-b1088-w5120-fp16-all/compiled-cache/manifest-554c5f440eab7cf1afb59035a16ac54653818784ea4638bd628453e2f9f3ea22.json",
+      "allow_approximation": true
+    }
+  },
+  "library_sha256": "70bafadc0fc26bde63cbd0bddcf92072a75ecdad663c00aa52b6979178afed51",
+  "script_sha256": "5a70b0cb476be03b002df21c2d288336c26badff7055a8602d4647c396e85f6b",
+  "manifest_sha256": "554c5f440eab7cf1afb59035a16ac54653818784ea4638bd628453e2f9f3ea22",
+  "export_identity": {
+    "activation_scale": 8,
+    "ane_mlp_end": 5120,
+    "ane_mlp_start": 0,
+    "blocks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "bucket": 1088,
+    "checkpoint": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+    "checkpoint_bytes": 12309866400,
+    "checkpoint_format": "safetensors",
+    "checkpoint_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+    "convrot_mode": "none",
+    "coremltools": "8.3.0",
+    "hidden": 3840,
+    "mlp_width": 10240,
+    "numpy": "2.0.2",
+    "output_scale": 32,
+    "owner": "turbocider.z_image.coreml.v1",
+    "recipe": 1,
+    "variant": "fp16"
+  },
+  "migration_rule": "Require byte-identical repeated legacy tensors before assessing byte-identical typed stage final latent; preserve failures without loosening tolerance",
+  "initial_sha256": "6191bf549febe18ddf05814e8e5ef7b339053e99afc39b4334f0bf1f7d9aba88",
+  "comparison": "Same partition migration diagnostic; two separately invoked fresh processes; no release or performance qualification"
+}

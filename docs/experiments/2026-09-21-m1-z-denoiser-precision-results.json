@@ -1,0 +1,46 @@
+{
+  "scope": "Offline arithmetic diagnostics for failed Z prefix smoke cases.\n\nDoes not rerun Core ML, change thresholds, or replace the original BF16 oracle.\nThe FP16 GPU graph is a counterfactual, not a Core ML artifact validation.\n",
+  "cases": [
+    {
+      "block": 29,
+      "original_bf16_replay_identical": true,
+      "bf16_vs_fp32": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9999927952238843,
+        "correlation": 0.9999927951387414,
+        "mae": 0.11103067849883153,
+        "max_abs": 4.15185546875,
+        "relative_l2": 0.003802004613200044
+      },
+      "candidate_vs_fp32": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9996794230403168,
+        "correlation": 0.9996794201647022,
+        "mae": 0.7882027309931873,
+        "max_abs": 10.766524314880371,
+        "relative_l2": 0.02532919751999643
+      },
+      "fp16_gpu_graph_vs_bf16": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9999913819654164,
+        "correlation": 0.9999913818640556,
+        "mae": 0.10229827008119102,
+        "max_abs": 4.0,
+        "relative_l2": 0.004157395638637006
+      },
+      "candidate_vs_fp16_gpu_graph": {
+        "valid": true,
+        "identical": false,
+        "cosine": 0.9996778715760923,
+        "correlation": 0.9996778686424648,
+        "mae": 0.7864245167942535,
+        "max_abs": 10.6875,
+        "relative_l2": 0.025390708252527816
+      }
+    }
+  ],
+  "primary_smoke_outcome_unchanged": false
+}

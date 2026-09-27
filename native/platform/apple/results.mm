@@ -2,6 +2,8 @@
 #include "../../models/qwen21/diagnostic_options.hpp"
 #include <cstdlib>
 #include <string_view>
+#include "../../runtime/memory_execution.hpp"
+#include "../../runtime/streaming/actual_receipt.hpp"
 namespace tc {
 static NSString *gpu_graph_label(const Request &r) {
     if (r.model == "qwen-image-2.1")
@@ -97,10 +99,10 @@ static NSString *encoder_weight_validation_label(const Request &request,
 }
 static NSString *encoder_approximation_label(const Request &request) {
     if (ltx_gemma4_encoder(request))
-        return @"gemma4_encoder_mlp_int8_per_channel";
+        return @"gemma4_encoder_mlp_coreml_approximation";
     return h3_qwen3_vl_encoder(request)
-        ? @"qwen3_vl_encoder_mlp_int8_per_channel"
-        : @"qwen3_encoder_mlp_int8_per_channel";
+        ? @"qwen3_vl_encoder_mlp_coreml_approximation"
+        : @"qwen3_encoder_mlp_coreml_approximation";
 }
 static NSArray *strings(const std::vector<std::string> &values) {
     NSMutableArray *array = [NSMutableArray array];
@@ -298,7 +300,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         [algorithm_approximations addObject:
             r.model == "qwen-image-2.1"
                 ? (r.qwen21_w8a8 ? @"qwen21_decode_mlp_w8a8_per_tensor" : @"qwen21_decode_mlp_fp16_partition")
-                : @"single_block_mlp_int8_per_channel"];
+                : @"single_block_mlp_coreml_approximation"];
     if (r.model == "qwen-image-2.1" && r.qwen21_reference_size != 1024)
         [algorithm_approximations addObject:[NSString stringWithFormat:
             @"qwen21_reference_resize_%d", r.qwen21_reference_size]];
@@ -359,7 +361,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"encoder_execution" : encoder_hybrid ? @"gpu_ane_experimental" : @"gpu",
         @"encoder_backend" : encoder_backend_label(r, encoder_hybrid),
         @"encoder_gpu_graph" : encoder_gpu_graph_label(r, encoder_hybrid),
-        @"encoder_precision" : encoder_hybrid ? @"bf16_gpu+int8_mlp_fp16_io"
+        @"encoder_precision" : encoder_hybrid ? @"bf16_gpu+coreml_mlp_fp16_io"
                                                 : @"bf16",
         @"encoder_weight_validation" :
             encoder_weight_validation_label(r, encoder_hybrid, false),
@@ -373,7 +375,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                             ? (r.qwen21_w8a8
                                 ? (r.qwen21_gpu_w8a16 ? @"w8a16_gpu+w8a8_mlp_fp16_io" : @"bf16_gpu+w8a8_mlp_fp16_io")
                                 : @"bf16_gpu+fp16_mlp_fp16_io")
-                            : @"bf16_gpu+int8_mlp_fp16_io") : @"bf16")),
+                            : @"bf16_gpu+coreml_mlp_fp16_io") : @"bf16")),
         @"algorithm_approximations" : algorithm_approximations,
         @"requested_shape" : @[ @(r.width), @(r.height), @(r.frames) ],
         @"decoded_shape" : @[ @(dw), @(dh), @(r.frames) ],
@@ -444,7 +446,329 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         if (r.qwen21_w8a8)
             report[@"planned_w8a8_ffn_layer_coverage"] = @((32. - blocks.count) / 32.);
     }
+    if (r.streaming.active()) {
+        report[@"executable"] = @NO;
+        report[@"memory_estimate_kind"] = @"requires_layout_metadata";
+        NSMutableDictionary *origins = [NSMutableDictionary dictionary];
+        for (const auto &[key, origin] : r.streaming.provenance)
+            origins[@(key.c_str())] = @(origin.c_str());
+        report[@"streaming"] = @{
+            @"requested_layout": r.streaming_requested
+                ? streaming_config_dictionary(*r.streaming_requested) : (id)NSNull.null,
+            @"merged_intent": streaming_config_dictionary(r.streaming),
+            @"field_provenance": origins,
+            @"eligibility": @"plan_only",
+            @"execution_supported": @NO,
+            @"rejection_code": @"streaming_layout_not_certified",
+            @"resolution_state": @"requires_checkpoint_metadata",
+            @"resolved_layout": NSNull.null,
+            @"actual_layout": NSNull.null,
+            @"enforcement": @"none"
+        };
+    }
+    if (r.streaming_selector && r.streaming_selector->active()) {
+        report[@"executable"] = @NO;
+        report[@"memory_estimate_kind"] = @"requires_preset_resolution";
+        NSMutableDictionary *origins = [NSMutableDictionary dictionary];
+        for (const auto &[key, origin] : r.streaming_selector->provenance)
+            origins[@(key.c_str())] = @(origin.c_str());
+        report[@"streaming"] = @{
+            @"requested_selector": r.streaming_selector_requested
+                ? streaming_selector_dictionary(*r.streaming_selector_requested)
+                : (id)NSNull.null,
+            @"merged_selector": streaming_selector_dictionary(
+                *r.streaming_selector),
+            @"field_provenance": origins,
+            @"eligibility": @"plan_only",
+            @"execution_supported": @NO,
+            @"rejection_code": @"streaming_preset_resolution_required",
+            @"resolution_state": @"requires_engine_artifact_and_catalog",
+            @"resolved_layout": NSNull.null,
+            @"actual_layout": NSNull.null,
+            @"enforcement": @"none"
+        };
+    }
+    if (plan.memory_policy) {
+        const auto &policy = *plan.memory_policy;
+        report[@"memory_policy"] = @{
+            @"enabled" : @(policy.enabled),
+            @"user_limit_bytes" : @(policy.user_limit_bytes),
+            @"effective_budget_bytes" : @(policy.effective_budget_bytes),
+            @"system_reserve_bytes" : @(policy.system_reserve_bytes),
+            @"buffer_percent" : @(policy.buffer_percent),
+            @"max_refill_slots" : @(policy.max_refill_slots),
+            @"allow_quality_preserving_tiling" :
+                @(policy.allow_quality_preserving_tiling),
+            @"estimate_fits" : @(policy.estimate_fits),
+            @"route_available" : @(policy.route_available),
+            @"execution_supported" : @(policy.execution_supported),
+            @"capability_level" :
+                @(memory_capability_level_name(policy.capability_level)),
+            @"certification_state" :
+                @(memory_certification_state_name(policy.certification_state)),
+            @"release_stable" : @(policy.release_stable),
+            @"manifest_digest" : @(policy.manifest_digest.c_str()),
+            @"evidence_digest" : @(policy.evidence_digest.c_str()),
+            @"planned_upper_bytes" : @(policy.planned_upper_bytes),
+            @"framework_upper_bytes" : @(policy.framework_upper_bytes),
+            @"non_denoiser_reserve_bytes" :
+                @(policy.non_denoiser_reserve_bytes),
+            @"denoiser_budget_bytes" : @(policy.denoiser_budget_bytes),
+            @"refill_slots" : @(policy.refill_slots),
+            @"adapter_candidate" : @(policy.adapter_candidate.c_str()),
+            @"candidate_backend" : @(policy.candidate_backend.c_str()),
+            @"candidate_dtype" : @(policy.candidate_dtype.c_str()),
+            @"candidate_model_variant" :
+                @(policy.candidate_model_variant.c_str()),
+            @"candidate_sampler_mode" :
+                @(policy.candidate_sampler_mode.c_str()),
+            @"candidate_tiling_mode" :
+                @(policy.candidate_tiling_mode.c_str()),
+            @"effective_residency" : @(policy.effective_residency.c_str()),
+            @"estimate_provenance" : @(policy.estimate_provenance.c_str()),
+            @"admission_state" : @(policy.admission_state.c_str()),
+            @"enforcement_scope" : @(policy.enforcement_scope.c_str()),
+            @"reason" : @(policy.reason.c_str()),
+            @"digest" : @(policy.digest.c_str())
+        };
+    }
     return report;
+}
+static NSDictionary *actual_streaming_layout(
+        const StreamingRuntimeMetrics &m) {
+    NSMutableDictionary *value = [@{
+        @"stage" : @(m.stage.c_str()),
+        @"resident_prefix_blocks" : @(m.resident_prefix_blocks),
+        @"block_group_size" : @(m.block_group_size),
+        @"slot_count" : @(m.slot_count),
+        @"prefetch_distance" : @(m.prefetch_distance),
+        @"io_workers" : @(m.io_workers),
+        @"group_count" : @(m.group_count),
+        @"pass_count" : @(m.pass_count),
+        @"startup_policy" : @(m.startup_policy.c_str()),
+        @"pass_transition" : @(m.pass_transition.c_str()),
+        @"retention" : @(m.retention.c_str()),
+        @"reader_revision" : @(m.reader_revision),
+        @"weight_format" : @(m.weight_format.c_str()),
+        @"kernel_revision" : @(m.kernel_revision.c_str()),
+        @"conditioning_recipe" : @(m.conditioning_recipe.c_str()),
+        @"upsample_boundary" : @(m.upsample_boundary.c_str()),
+        @"component_policy_revision" :
+            @(m.component_policy_revision.c_str()),
+        @"multi_pool_policy" : @(m.multi_pool_policy.c_str()),
+        @"pool_count" : @(m.pool_count),
+        @"slot_bundle_count" : @(m.slot_bundle_count),
+        @"refill_worker_count" : @(m.refill_worker_count),
+        @"source_lease_verified" : @(m.source_lease_verified),
+        @"drained" : @(m.drained),
+    } mutableCopy];
+    if (!m.layout_digest.empty())
+        value[@"digest"] = @(m.layout_digest.c_str());
+    if (m.receipt_schema_version) {
+        value[@"receipt"] = @{
+            @"schema_version" : @(m.receipt_schema_version),
+            @"fills" : @(m.receipt_fills),
+            @"groups_submitted" : @(m.receipt_groups_submitted),
+            @"logical_read_bytes" : @(m.receipt_logical_read_bytes),
+            @"reader_fences_issued" :
+                @(m.receipt_reader_fences_issued),
+            @"reader_fences_completed" :
+                @(m.receipt_reader_fences_completed),
+            @"source_generation" : @(m.receipt_source_generation),
+            @"event_digest" : @(m.receipt_event_digest.c_str()),
+            @"canonical_digest" : @(m.receipt_digest.c_str()),
+            @"verifier_revision" :
+                @(m.receipt_verifier_revision.c_str()),
+        };
+    }
+    return value;
+}
+
+static NSDictionary *actual_streaming_stage(
+        const StreamingStageRuntimeMetrics &stage) {
+    return @{
+        @"stage_index" : @(stage.stage_index),
+        @"runtime" : actual_streaming_layout(stage.runtime),
+    };
+}
+
+static NSDictionary *actual_streaming_boundary(
+        const StreamingBoundaryRuntimeMetrics &boundary) {
+    return @{
+        @"boundary_index" : @(boundary.boundary_index),
+        @"id" : @(boundary.id.c_str()),
+        @"from_stage" : @(boundary.from_stage.c_str()),
+        @"to_stage" : @(boundary.to_stage.c_str()),
+        @"source_stage_drained" : @(boundary.source_stage_drained),
+        @"source_stage_backing_released" :
+            @(boundary.source_stage_backing_released),
+        @"live_slot_bytes_before" : @(boundary.live_slot_bytes_before),
+        @"live_slot_bytes_after" : @(boundary.live_slot_bytes_after),
+        @"pending_readers_before" : @(boundary.pending_readers_before),
+        @"pending_readers_after" : @(boundary.pending_readers_after),
+        @"released_slot_bytes" : @(boundary.released_slot_bytes),
+        @"event_digest" : @(boundary.event_digest.c_str()),
+    };
+}
+
+static NSDictionary *actual_stage_receipt(
+        const streaming::ActualStageReceipt &stage) {
+    return @{
+        @"stage_index" : @(stage.stage_index),
+        @"stage_id" : @(stage.stage_id.c_str()),
+        @"schema_version" : @(stage.schema_version),
+        @"implementation" : @(stage.implementation.c_str()),
+        @"layout_digest" : @(stage.layout_digest.c_str()),
+        @"completed_passes" : @(stage.completed_passes),
+        @"completed_groups" : @(stage.completed_groups),
+        @"fills" : @(stage.fills),
+        @"groups_submitted" : @(stage.groups_submitted),
+        @"logical_read_bytes" : @(stage.logical_read_bytes),
+        @"reader_fences_issued" : @(stage.reader_fences_issued),
+        @"reader_fences_completed" : @(stage.reader_fences_completed),
+        @"source_generation" : @(stage.source_generation),
+        @"drain_completed" : @(stage.drain_completed),
+        @"event_digest" : @(stage.event_digest.c_str()),
+        @"canonical_digest" : @(stage.canonical_digest.c_str()),
+    };
+}
+
+static NSDictionary *actual_boundary_receipt(
+        const streaming::ActualBoundaryReceipt &boundary) {
+    return @{
+        @"boundary_index" : @(boundary.boundary_index),
+        @"id" : @(boundary.id.c_str()),
+        @"from_stage_index" : @(boundary.from_stage_index),
+        @"to_stage_index" : @(boundary.to_stage_index),
+        @"source_generation" : @(boundary.source_generation),
+        @"last_reader_sequence" : @(boundary.last_reader_sequence),
+        @"completed_reader_sequence" : @(boundary.completed_reader_sequence),
+        @"live_slot_bytes_before" : @(boundary.live_slot_bytes_before),
+        @"live_slot_bytes_after" : @(boundary.live_slot_bytes_after),
+        @"released_slot_bytes" : @(boundary.released_slot_bytes),
+        @"pending_readers_before" : @(boundary.pending_readers_before),
+        @"pending_readers_after" : @(boundary.pending_readers_after),
+        @"source_stage_drained" : @(boundary.source_stage_drained),
+        @"source_stage_backing_released" :
+            @(boundary.source_stage_backing_released),
+        @"next_stage_started" : @(boundary.next_stage_started),
+        @"event_digest" : @(boundary.event_digest.c_str()),
+        @"canonical_digest" : @(boundary.canonical_digest.c_str()),
+    };
+}
+
+static NSDictionary *actual_streaming_receipt(
+        const streaming::ActualExecutionReceipt &receipt) {
+    NSMutableArray *stages =
+        [NSMutableArray arrayWithCapacity:receipt.stages.size()];
+    for (const auto &stage : receipt.stages)
+        [stages addObject:actual_stage_receipt(stage)];
+    NSMutableArray *boundaries =
+        [NSMutableArray arrayWithCapacity:receipt.boundaries.size()];
+    for (const auto &boundary : receipt.boundaries)
+        [boundaries addObject:actual_boundary_receipt(boundary)];
+    return @{
+        @"schema_version" : @(receipt.schema_version),
+        @"implementation" : @(receipt.implementation.c_str()),
+        @"layout_digest" : @(receipt.layout_digest.c_str()),
+        @"component_policy_revision" :
+            @(receipt.component_policy_revision.c_str()),
+        @"stages" : stages,
+        @"boundaries" : boundaries,
+        @"canonical_digest" : @(receipt.canonical_digest.c_str()),
+    };
+}
+
+static void attach_streaming_details(
+        NSMutableDictionary *value, const RunResult &result) {
+    if (!result.streaming_stages.empty()) {
+        NSMutableArray *stages = [NSMutableArray
+            arrayWithCapacity:result.streaming_stages.size()];
+        for (const auto &stage : result.streaming_stages)
+            [stages addObject:actual_streaming_stage(stage)];
+        value[@"streaming_stages"] = stages;
+    }
+    if (!result.streaming_boundaries.empty()) {
+        NSMutableArray *boundaries = [NSMutableArray
+            arrayWithCapacity:result.streaming_boundaries.size()];
+        for (const auto &boundary : result.streaming_boundaries)
+            [boundaries addObject:actual_streaming_boundary(boundary)];
+        value[@"streaming_boundaries"] = boundaries;
+    }
+    if (result.streaming_receipt)
+        value[@"streaming_receipt"] = actual_streaming_receipt(
+            *result.streaming_receipt);
+}
+
+static NSDictionary *public_streaming_result(
+        const PublicStreamingSelectionMetrics &m) {
+    return @{
+        @"schema_version" : @1,
+        @"target_request_memory_bytes" :
+            @(m.target_request_memory_bytes),
+        @"calibrated_request_bytes" : @(m.calibrated_request_bytes),
+        @"preset_id" : @(m.preset_id.c_str()),
+        @"preset_revision" : @(m.preset_revision),
+        @"catalog_revision" : @(m.catalog_revision.c_str()),
+        @"record_digest" : @(m.record_digest.c_str()),
+        @"resolution_digest" : @(m.resolution_digest.c_str()),
+        @"source_digest" : @(m.source_digest.c_str()),
+        @"workload_digest" : @(m.workload_digest.c_str()),
+        @"runtime_digest" : @(m.runtime_digest.c_str()),
+        @"device_digest" : @(m.device_digest.c_str()),
+        @"authorized_layout_digest" :
+            @(m.authorized_layout_digest.c_str()),
+        @"actual_layout_digest" : @(m.actual_layout_digest.c_str()),
+        @"component_policy_revision" :
+            @(m.component_policy_revision.c_str()),
+        @"execution_container" : @(m.execution_container.c_str()),
+        @"memory_scope" : @(m.memory_scope.c_str()),
+        @"receipt_schema_version" : @(m.receipt_schema_version),
+        @"receipt_source_generation" :
+            @(m.receipt_source_generation),
+        @"receipt_digest" : @(m.receipt_digest.c_str()),
+        @"receipt_verifier_revision" :
+            @(m.receipt_verifier_revision.c_str()),
+        @"actual_plan_verified" : @(m.actual_plan_verified),
+    };
+}
+
+static NSDictionary *to_dictionary(const BlockResidencyMetrics &);
+
+NSDictionary *streaming_result_envelope(const RunResult &result) {
+    require(result.public_streaming.has_value() &&
+                result.public_streaming->actual_plan_verified,
+            "public streaming finalizer envelope is unverified");
+    require(result.streaming_receipt != nullptr &&
+                !result.streaming_stages.empty(),
+            "public streaming finalizer envelope is incomplete");
+    NSMutableDictionary *value = [@{
+        @"format" : @"turbocider-ltx-public-finalizer-envelope-v1",
+        @"schema_version" : @1,
+    } mutableCopy];
+    value[@"public_streaming"] = public_streaming_result(
+        *result.public_streaming);
+    if (result.block_residency) {
+        NSDictionary *residency = to_dictionary(*result.block_residency);
+        value[@"block_residency"] = residency;
+        NSMutableDictionary *block = [residency mutableCopy];
+        const auto &first = result.streaming_stages.front().runtime;
+        block[@"implementation"] = @(first.implementation.c_str());
+        block[@"layout_digest"] = @(first.layout_digest.c_str());
+        NSMutableArray *stages = [NSMutableArray
+            arrayWithCapacity:result.streaming_stages.size()];
+        for (const auto &stage : result.streaming_stages)
+            [stages addObject:actual_streaming_stage(stage)];
+        block[@"actual_layout"] = @{
+            @"schema_version" : @3,
+            @"digest" : @(first.layout_digest.c_str()),
+            @"stage_count" : @(result.streaming_stages.size()),
+            @"stages" : stages,
+        };
+        value[@"block_streaming"] = block;
+    }
+    attach_streaming_details(value, result);
+    return value;
 }
 static NSDictionary *runtime_plan(const RunResult &result) {
     NSMutableDictionary *plan = [to_dictionary(result.plan) mutableCopy];
@@ -461,8 +785,11 @@ static NSDictionary *runtime_plan(const RunResult &result) {
         result.request, encoder_hybrid);
     plan[@"encoder_gpu_graph"] =
         encoder_gpu_graph_label(result.request, encoder_hybrid);
-    plan[@"encoder_precision"] = encoder_hybrid ? @"bf16_gpu+int8_mlp_fp16_io"
+    plan[@"encoder_precision"] = encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
                                                   : @"bf16";
+    if (result.hybrid && result.request.model != "z-image-turbo-gguf")
+        plan[@"precision"] = @((result.precision.empty()
+            ? hybrid_precision_label(*result.hybrid) : result.precision).c_str());
     plan[@"encoder_weight_validation"] = encoder_weight_validation_label(
         result.request, encoder_hybrid, true);
     if (result.request.model == "z-image-turbo-gguf") {
@@ -481,10 +808,32 @@ static NSDictionary *runtime_plan(const RunResult &result) {
         NSMutableArray *approximations = [NSMutableArray arrayWithObject:
             @"checkpoint_defined_gguf_weight_quantization"];
         if (hybrid)
-            [approximations addObject:@"single_block_mlp_int8_per_channel"];
+            [approximations addObject:@"single_block_mlp_coreml_approximation"];
         if (encoder_hybrid)
             [approximations addObject:encoder_approximation_label(result.request)];
         plan[@"algorithm_approximations"] = approximations;
+    }
+    if (result.streaming_runtime) {
+        NSDictionary *actual = actual_streaming_layout(
+            *result.streaming_runtime);
+        NSMutableDictionary *streaming =
+            [plan[@"streaming"] isKindOfClass:NSDictionary.class]
+                ? [plan[@"streaming"] mutableCopy]
+                : [NSMutableDictionary dictionary];
+        const bool public_execution = result.public_streaming.has_value();
+        streaming[@"eligibility"] = public_execution
+            ? @"public_reviewed_preset" : @"experimental_candidate";
+        streaming[@"execution_supported"] = @YES;
+        streaming[@"rejection_code"] = NSNull.null;
+        streaming[@"resolution_state"] = @"executed_exact_layout";
+        streaming[@"resolved_layout"] = actual;
+        streaming[@"actual_layout"] = actual;
+        streaming[@"enforcement"] = @"exact_layout";
+        streaming[@"authority"] = public_execution
+            ? @"public_preset_authority"
+            : @"private_candidate_constructor";
+        plan[@"streaming"] = streaming;
+        plan[@"executable"] = @YES;
     }
     return plan;
 }
@@ -497,6 +846,7 @@ NSDictionary *to_dictionary(const LoadResult &r) {
 }
 NSDictionary *to_dictionary(const HybridMetrics &m) {
     return @{
+        @"weight_variant" : @(m.weight_variant.c_str()),
         @"load_seconds" : @(m.load_seconds),
         @"manifest_validation_seconds" : @(m.manifest_validation_seconds),
         @"output_backing_setup_seconds" : @(m.output_backing_setup_seconds),
@@ -531,6 +881,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"output_copy_bytes_session_total" : @(m.copied_bytes),
         @"checkpoint_sha256_verified" : @(m.checkpoint_sha_verified),
         @"lora_identity_verified" : @(m.lora_identity_verified),
+        @"session_released_after_encoding" : @(m.session_released_after_encoding),
         @"quality_validation_enabled" : @(m.quality_validation_calls > 0),
         @"quality_validation_calls_session_total" : @(m.quality_validation_calls),
         @"quality_max_relative_l2_session" : @(m.quality_max_relative_l2),
@@ -566,13 +917,155 @@ static NSDictionary *to_dictionary(const BlockResidencyMetrics &m) {
         @"request_bytes_loaded" : @(m.request_bytes_loaded),
         @"request_slot_allocations" : @(m.request_slot_allocations),
         @"request_slot_refills" : @(m.request_slot_refills),
+        @"request_slot_fills" : @(m.request_slot_fills),
         @"request_load_seconds" : @(m.request_load_seconds),
         @"request_wait_seconds" : @(m.request_wait_seconds),
+        @"request_refill_load_seconds" : @(m.request_refill_load_seconds),
+        @"request_max_refill_seconds" : @(m.request_max_refill_seconds),
+        @"request_max_refill_block" : @(m.request_max_refill_block),
         @"mlp_prefix_channels" : @(m.mlp_prefix_channels),
         @"suffix_pack_bytes" : @(m.suffix_pack_bytes),
         @"request_pack_read_bytes" : @(m.request_pack_read_bytes),
         @"request_pack_write_bytes" : @(m.request_pack_write_bytes),
         @"request_pack_seconds" : @(m.request_pack_seconds),
+    };
+}
+static NSDictionary *to_dictionary(const MemoryAdmissionMetrics &m) {
+    return @{
+        @"budget_bytes" : @(m.budget_bytes),
+        @"planned_increment_bytes" : @(m.planned_increment_bytes),
+        @"framework_upper_bytes" : @(m.framework_upper_bytes),
+        @"planned_process_upper_bytes" :
+            @(m.planned_process_upper_bytes),
+        @"allocation_ceiling_bytes" : @(m.allocation_ceiling_bytes),
+        @"ledger_budget_bytes" : @(m.ledger_budget_bytes),
+        @"ledger_process_baseline_bytes" :
+            @(m.ledger_process_baseline_bytes),
+        @"ledger_storage_bytes" : @(m.ledger_storage_bytes),
+        @"ledger_known_bytes" : @(m.ledger_known_bytes),
+        @"ledger_committed_bytes" : @(m.ledger_committed_bytes),
+        @"ledger_active_bytes" : @(m.ledger_active_bytes),
+        @"ledger_reserved_bytes" : @(m.ledger_reserved_bytes),
+        @"ledger_pending_release_bytes" :
+            @(m.ledger_pending_release_bytes),
+        @"ledger_cached_bytes" : @(m.ledger_cached_bytes),
+        @"ledger_unknown_bytes" : @(m.ledger_unknown_bytes),
+        @"ledger_peak_unknown_bytes" : @(m.ledger_peak_unknown_bytes),
+        @"initial_process_footprint_bytes" :
+            @(m.initial_process_footprint_bytes),
+        @"peak_process_footprint_bytes" : @(m.peak_process_footprint_bytes),
+        @"final_process_footprint_bytes" : @(m.final_process_footprint_bytes),
+        @"unattributed_process_footprint_bytes" :
+            @(m.unattributed_process_footprint_bytes),
+        @"peak_unattributed_process_footprint_bytes" :
+            @(m.peak_unattributed_process_footprint_bytes),
+        @"peak_observed_over_budget_bytes" :
+            @(m.peak_observed_over_budget_bytes),
+        @"system_available_bytes_at_admission" :
+            @(m.system_available_bytes_at_admission),
+        @"final_system_available_bytes" :
+            @(m.final_system_available_bytes),
+        @"minimum_system_available_bytes" :
+            @(m.minimum_system_available_bytes),
+        @"ledger_peak_committed_bytes" : @(m.ledger_peak_committed_bytes),
+        @"ledger_storage_count" : @(m.ledger_storage_count),
+        @"ledger_site_allocation_count" :
+            @(m.ledger_site_allocation_count),
+        @"ledger_site_reserved_count" : @(m.ledger_site_reserved_count),
+        @"ledger_site_active_count" : @(m.ledger_site_active_count),
+        @"ledger_site_pending_count" : @(m.ledger_site_pending_count),
+        @"ledger_site_cached_count" : @(m.ledger_site_cached_count),
+        @"observation_count" : @(m.observation_count),
+        @"observed_within_budget" : @(m.observed_within_budget),
+        @"tainted" : @(m.tainted),
+        @"worker_quarantined" : @(m.worker_quarantined),
+        @"pressure_transitions" : @(m.pressure_transitions),
+        @"pressure_state" : @(m.pressure_state.c_str()),
+        @"execution_state" : @(m.execution_state.c_str()),
+        @"watchdog_sample_count" : @(m.watchdog_sample_count),
+        @"watchdog_dropped_samples" : @(m.watchdog_dropped_samples),
+        @"watchdog_critical" : @(m.watchdog_critical),
+        @"watchdog_failure_reason" : m.watchdog_failure_reason.empty()
+            ? (id)[NSNull null] : @(m.watchdog_failure_reason.c_str()),
+        @"trace_event_count" : @(m.trace_event_count),
+        @"trace_dropped_events" : @(m.trace_dropped_events),
+        @"trace_overflowed" : @(m.trace_overflowed),
+        @"explicit_epoch_transition_count" :
+            @(m.explicit_epoch_transition_count),
+        @"automatic_epoch_transition_count" :
+            @(m.automatic_epoch_transition_count),
+        @"current_epoch" : @(m.current_epoch),
+        @"planned_peak_epoch" : @(m.planned_peak_epoch),
+        @"schedule_event_count" : @(m.schedule_event_count),
+        @"schedule_event_attempted_count" :
+            @(m.schedule_event_attempted_count),
+        @"schedule_event_rejected_count" :
+            @(m.schedule_event_rejected_count),
+        @"schedule_expected_event_count" :
+            @(m.schedule_expected_event_count),
+        @"schedule_mismatch_count" : @(m.schedule_mismatch_count),
+        @"schedule_next_sequence" : @(m.schedule_next_sequence),
+        @"schedule_cursor_state" : @(m.schedule_cursor_state.c_str()),
+        @"schedule_first_failure" : m.schedule_first_failure.empty()
+            ? (id)[NSNull null] : @(m.schedule_first_failure.c_str()),
+        @"schedule_cursor_complete" : @(m.schedule_cursor_complete),
+        @"swap_observation_available" : @(m.swap_observation_available),
+        @"swap_counter_invalid" : @(m.swap_counter_invalid),
+        @"swap_activity_detected" : @(m.swap_activity_detected),
+        @"swap_sample_count" : @(m.swap_sample_count),
+        @"swapins_begin" : @(m.swapins_begin),
+        @"swapins_end" : @(m.swapins_end),
+        @"swapins_delta" : @(m.swapins_delta),
+        @"swapouts_begin" : @(m.swapouts_begin),
+        @"swapouts_end" : @(m.swapouts_end),
+        @"swapouts_delta" : @(m.swapouts_delta),
+        @"compressed_pages_begin" : @(m.compressed_pages_begin),
+        @"compressed_pages_end" : @(m.compressed_pages_end),
+        @"swap_first_observed_phase" :
+            m.swap_first_observed_phase.empty()
+                ? (id)[NSNull null]
+                : @(m.swap_first_observed_phase.c_str()),
+        @"swap_observation_source" :
+            m.swap_observation_source.empty()
+                ? (id)[NSNull null]
+                : @(m.swap_observation_source.c_str()),
+        @"failure_disposition" : @(m.failure_disposition.c_str()),
+        @"failure_reason" : m.failure_reason.empty()
+            ? (id)[NSNull null] : @(m.failure_reason.c_str()),
+        @"cleanup_failure" : m.cleanup_failure.empty()
+            ? (id)[NSNull null] : @(m.cleanup_failure.c_str()),
+        @"last_phase" : @(m.last_phase.c_str()),
+        @"observation_source" : @(m.observation_source.c_str()),
+    };
+}
+static NSDictionary *to_dictionary(const MemoryTraceEvent &event) {
+    return @{
+        @"sequence" : @(event.sequence),
+        @"monotonic_ns" : @(event.monotonic_ns),
+        @"kind" : @(memory_trace_event_kind_name(event.kind)),
+        @"phase_id" : @(event.phase_id),
+        @"site_id" : @(event.site_id),
+        @"epoch" : @(event.epoch),
+        @"upper_bytes" : @(event.upper_bytes),
+        @"actual_bytes" : @(event.actual_bytes),
+        @"committed_bytes" : @(event.committed_bytes),
+        @"reserved_bytes" : @(event.reserved_bytes),
+        @"pending_bytes" : @(event.pending_bytes),
+        @"stage_id" : @(event.stage_id),
+        @"slot_id" : @(event.slot_id),
+        @"status" : @(event.status),
+    };
+}
+static NSArray *to_array(const std::vector<MemoryTraceEvent> &events) {
+    NSMutableArray *result = [NSMutableArray arrayWithCapacity:events.size()];
+    for (const auto &event : events)
+        [result addObject:to_dictionary(event)];
+    return result;
+}
+NSDictionary *to_dictionary(const MemoryExecutionReport &report) {
+    return @{
+        @"memory_admission" : to_dictionary(report.metrics),
+        @"memory_trace" : to_array(report.trace),
     };
 }
 RunResult native_run_result(NSDictionary *value, const Request &request,
@@ -612,16 +1105,38 @@ NSDictionary *to_dictionary(const RunResult &result) {
             copy[@"lora_strategy"] = @(effective_lora_strategy(result.request).c_str());
         if (result.block_residency)
             copy[@"block_residency"] = to_dictionary(*result.block_residency);
+        if (result.memory_admission)
+            copy[@"memory_admission"] = to_dictionary(*result.memory_admission);
+        if (!result.memory_trace.empty())
+            copy[@"memory_trace"] = to_array(result.memory_trace);
+        if (result.memory_admission)
+            copy[@"plan"] = runtime_plan(result);
         if (result.encoder_hybrid) {
             copy[@"encoder_execution"] = @"gpu_ane_experimental";
             copy[@"encoder_runtime_backend"] = encoder_backend_label(
                 result.request, true);
             copy[@"encoder_gpu_graph"] =
                 encoder_gpu_graph_label(result.request, true);
-            copy[@"encoder_runtime_precision"] = @"bf16_gpu+int8_mlp_fp16_io";
+            copy[@"encoder_runtime_precision"] = @(hybrid_precision_label(*result.encoder_hybrid).c_str());
             copy[@"encoder_hybrid"] = to_dictionary(*result.encoder_hybrid);
             copy[@"plan"] = runtime_plan(result);
         }
+        if (result.streaming_runtime) {
+            copy[@"plan"] = runtime_plan(result);
+            const auto &runtime = *result.streaming_runtime;
+            NSMutableDictionary *block = result.block_residency
+                ? [to_dictionary(*result.block_residency) mutableCopy]
+                : [NSMutableDictionary dictionary];
+            block[@"implementation"] = @(runtime.implementation.c_str());
+            block[@"layout_digest"] = runtime.layout_digest.empty()
+                ? (id)NSNull.null : (id)@(runtime.layout_digest.c_str());
+            block[@"actual_layout"] = actual_streaming_layout(runtime);
+            copy[@"block_streaming"] = block;
+        }
+        if (result.public_streaming)
+            copy[@"public_streaming"] = public_streaming_result(
+                *result.public_streaming);
+        attach_streaming_details(copy, result);
         return copy;
     }
     const auto &r = result.request;
@@ -634,10 +1149,10 @@ NSDictionary *to_dictionary(const RunResult &result) {
         r, result.encoder_hybrid.has_value());
     auto encoder_gpu_graph =
         encoder_gpu_graph_label(r, result.encoder_hybrid.has_value());
-    auto encoder_precision = result.encoder_hybrid ? @"bf16_gpu+int8_mlp_fp16_io"
+    auto encoder_precision = result.encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
                                                     : @"bf16";
-    if (result.prepared)
-        return @{
+    if (result.prepared) {
+        NSMutableDictionary *prepared = [@{
             @"acceleration_selection" : @(result.selection.c_str()),
             @"prepared" : @YES,
             @"warmup" : @(result.warmup),
@@ -662,12 +1177,25 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"block_residency" : result.block_residency ? to_dictionary(*result.block_residency) : (id)[NSNull null],
             @"hybrid" : hybrid,
             @"encoder_hybrid" : encoder_hybrid
-        };
-    NSDictionary *memory = @{
+        } mutableCopy];
+        if (result.memory_admission)
+            prepared[@"memory_admission"] =
+                to_dictionary(*result.memory_admission);
+        if (!result.memory_trace.empty())
+            prepared[@"memory_trace"] = to_array(result.memory_trace);
+        if (result.public_streaming)
+            prepared[@"public_streaming"] = public_streaming_result(
+                *result.public_streaming);
+        attach_streaming_details(prepared, result);
+        return prepared;
+    }
+    NSMutableDictionary *memory = [@{
               @"mlx_peak_bytes" : @(result.peak_bytes),
               @"mlx_active_bytes" : @(result.active_bytes),
               @"scope" : @"MLX allocator; excludes Core ML/OS/file cache"
-          };
+          } mutableCopy];
+    if (result.memory_admission)
+        memory[@"admission"] = to_dictionary(*result.memory_admission);
     NSMutableDictionary *value = [@{
         @"acceleration_selection" : @(result.selection.c_str()),
         @"schema_version" : @1,
@@ -722,6 +1250,23 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"lora_applied_projections"] = @(result.lora_applied_projections);
     if (result.block_residency)
         value[@"block_residency"] = to_dictionary(*result.block_residency);
+    if (result.streaming_runtime) {
+        const auto &runtime = *result.streaming_runtime;
+        NSMutableDictionary *block = result.block_residency
+            ? [to_dictionary(*result.block_residency) mutableCopy]
+            : [NSMutableDictionary dictionary];
+        block[@"implementation"] = @(runtime.implementation.c_str());
+        block[@"layout_digest"] = runtime.layout_digest.empty()
+            ? (id)NSNull.null : (id)@(runtime.layout_digest.c_str());
+        block[@"actual_layout"] = actual_streaming_layout(runtime);
+        value[@"block_streaming"] = block;
+    }
+    if (result.public_streaming)
+        value[@"public_streaming"] = public_streaming_result(
+            *result.public_streaming);
+    attach_streaming_details(value, result);
+    if (!result.memory_trace.empty())
+        value[@"memory_trace"] = to_array(result.memory_trace);
     if (!result.enhanced_prompt.empty())
         value[@"prompt_enhancement"] = @{
             @"backend": r.prompt_enhance_edit_experimental ? @"native_qwen35_pe_i2i_experimental" : @"native_qwen35_pe_t2i", @"complete": @YES,

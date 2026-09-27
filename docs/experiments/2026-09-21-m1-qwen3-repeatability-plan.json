@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "scope": "Exploratory independent-process repeatability follow-up; no public release calibration or hardware ANE residency proof",
+  "settling_runs": 5,
+  "measured_runs": 10,
+  "tokens": 64,
+  "background": "Owned downloads, exports, builds and full-model inference completed before this follow-up; unrelated system activity uncontrolled",
+  "probe_sha256": "455f6ac6757a9f7e41a05fd40465ca34f1db01b926cb5332c8ba15e42c19682a",
+  "library_sha256": "7011bf1315cc10ee3d13f3c37e1be64d5fc36db775fd80a009a5c2b9017b8d85",
+  "cases": [
+    {
+      "repeat": 2,
+      "family": "flux4",
+      "width": 7296,
+      "mode": "flux_klein",
+      "weights": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w7296-int8/compiled-cache/manifest-bfdf9f883ac09476de373e09d96cc37656b66ab7f61ba813e1a3af1999e4f8dd.json",
+      "first_backend": "hybrid",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w7296-settled-repeat2"
+    },
+    {
+      "repeat": 2,
+      "family": "flux4",
+      "width": 4864,
+      "mode": "flux_klein",
+      "weights": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-int8/compiled-cache/manifest-3779713220316227ab137612495665e0079068ecff6ca5cbb60755ddc10d9f32.json",
+      "first_backend": "hybrid",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-settled-repeat2"
+    },
+    {
+      "repeat": 2,
+      "family": "flux4",
+      "width": 2432,
+      "mode": "flux_klein",
+      "weights": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w2432-int8/compiled-cache/manifest-0484827364636d0d1efcef6cf983f5f7864fdc881b8b7521ba87afd36a8fe45a.json",
+      "first_backend": "hybrid",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w2432-settled-repeat2"
+    },
+    {
+      "repeat": 2,
+      "family": "zimage",
+      "width": 7296,
+      "mode": "z_image",
+      "weights": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w7296-int8/compiled-cache/manifest-0a1b0e2d6c17cd4c70051e4882d74a367a4c91dcfd2f68067435fcc383723b7d.json",
+      "first_backend": "hybrid",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w7296-settled-repeat2"
+    },
+    {
+      "repeat": 2,
+      "family": "zimage",
+      "width": 4864,
+      "mode": "z_image",
+      "weights": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w4864-int8/compiled-cache/manifest-b813c4215fa379fd459487f70d55e9bb86e3f9d9ed722d361631aba2914cf1e2.json",
+      "first_backend": "hybrid",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w4864-settled-repeat2"
+    },
+    {
+      "repeat": 2,
+      "family": "zimage",
+      "width": 2432,
+      "mode": "z_image",
+      "weights": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w2432-int8/compiled-cache/manifest-dc33ba33b86e6d3b5f6db522e097b0243f17236644dd94eae3b322f92f879715.json",
+      "first_backend": "hybrid",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w2432-settled-repeat2"
+    },
+    {
+      "repeat": 3,
+      "family": "zimage",
+      "width": 2432,
+      "mode": "z_image",
+      "weights": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w2432-int8/compiled-cache/manifest-dc33ba33b86e6d3b5f6db522e097b0243f17236644dd94eae3b322f92f879715.json",
+      "first_backend": "gpu",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w2432-settled-repeat3"
+    },
+    {
+      "repeat": 3,
+      "family": "zimage",
+      "width": 4864,
+      "mode": "z_image",
+      "weights": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w4864-int8/compiled-cache/manifest-b813c4215fa379fd459487f70d55e9bb86e3f9d9ed722d361631aba2914cf1e2.json",
+      "first_backend": "gpu",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w4864-settled-repeat3"
+    },
+    {
+      "repeat": 3,
+      "family": "zimage",
+      "width": 7296,
+      "mode": "z_image",
+      "weights": "/Users/chencanhui/models/TurboCider/Z-Image-Turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w7296-int8/compiled-cache/manifest-0a1b0e2d6c17cd4c70051e4882d74a367a4c91dcfd2f68067435fcc383723b7d.json",
+      "first_backend": "gpu",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-zimage-b64-w7296-settled-repeat3"
+    },
+    {
+      "repeat": 3,
+      "family": "flux4",
+      "width": 2432,
+      "mode": "flux_klein",
+      "weights": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w2432-int8/compiled-cache/manifest-0484827364636d0d1efcef6cf983f5f7864fdc881b8b7521ba87afd36a8fe45a.json",
+      "first_backend": "gpu",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w2432-settled-repeat3"
+    },
+    {
+      "repeat": 3,
+      "family": "flux4",
+      "width": 4864,
+      "mode": "flux_klein",
+      "weights": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-int8/compiled-cache/manifest-3779713220316227ab137612495665e0079068ecff6ca5cbb60755ddc10d9f32.json",
+      "first_backend": "gpu",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w4864-settled-repeat3"
+    },
+    {
+      "repeat": 3,
+      "family": "flux4",
+      "width": 7296,
+      "mode": "flux_klein",
+      "weights": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B/text_encoder",
+      "manifest": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w7296-int8/compiled-cache/manifest-bfdf9f883ac09476de373e09d96cc37656b66ab7f61ba813e1a3af1999e4f8dd.json",
+      "first_backend": "gpu",
+      "output": "/Users/chencanhui/models/TurboCider/experiments/m1-qwen3-flux4-b64-w7296-settled-repeat3"
+    }
+  ]
+}

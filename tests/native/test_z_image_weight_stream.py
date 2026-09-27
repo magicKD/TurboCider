@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
 
 
 @unittest.skipUnless(os.environ.get("TURBOCIDER_TEST_GPU") == "1", "explicit Metal GPU test opt-in required")
@@ -24,12 +25,12 @@ class WeightStreamTests(unittest.TestCase):
             "clang++", "-std=c++20", "-I", str(ROOT / "native"),
             "-I", str(ROOT / "native/core"), "-isystem", str(mlx / "include"),
             str(ROOT / "tests/native/z_image_weight_stream_test.cpp"),
-            "-L" + str(ROOT / "build/native"), "-lturbocider",
+            "-L" + str(NATIVE), "-lturbocider",
             "-L" + str(mlx / "lib"), "-lmlx",
-            "-Wl,-rpath," + str(ROOT / "build/native"), "-Wl,-rpath," + str(mlx / "lib"),
+            "-Wl,-rpath," + str(NATIVE), "-Wl,-rpath," + str(mlx / "lib"),
             "-o", str(cls.binary),
         ], check=True, capture_output=True)
-        lib = C.CDLL(str(ROOT / "build/native/libturbocider.dylib"))
+        lib = C.CDLL(str(NATIVE / "libturbocider.dylib"))
         lib.tc_system_json.restype = C.c_void_p
         lib.tc_string_free.argtypes = [C.c_void_p]
         result = lib.tc_system_json()

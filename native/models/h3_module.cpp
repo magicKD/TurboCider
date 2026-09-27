@@ -1,6 +1,7 @@
 #include "../runtime/session.hpp"
 namespace tc {
 std::unique_ptr<ModelSession> create_h3(const std::filesystem::path &);
+std::unique_ptr<ModelSession> create_h3_candidate(const std::filesystem::path &);
 namespace {
 constexpr uint64_t h3_streaming_activation_reserve_bytes = 4ull << 30;
 constexpr uint64_t h3_bf16_stream_block_bytes = 770725376ull;

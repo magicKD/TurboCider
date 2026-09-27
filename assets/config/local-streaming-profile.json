@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "experimental": true,
+  "memoryGuarantee": false,
+  "gpu": "Apple M4 Pro",
+  "physicalMemoryBytes": 51539607552,
+  "width": 512,
+  "height": 512,
+  "steps": 9,
+  "samplingBudgetGiB": 10
+}

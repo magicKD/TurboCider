@@ -3,6 +3,13 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/native/dependencies.sh
 ROOT="$PWD"
+OUT="${TURBOCIDER_BUILD_OUTPUT_DIR:-${TURBOCIDER_NATIVE_OUT:-$ROOT/build/native}}"
+if [[ "$OUT" != /* ]]; then OUT="$ROOT/$OUT"; fi
+# Check before replacing an existing App. Instrumented calibration builds are
+# never distributable, even when their catalog compatibility key matches.
+"${TURBOCIDER_BUILD_PYTHON:-python3}" tools/native/check_release_binary.py \
+ --library "$OUT"/libturbocider.dylib \
+ --manifest "$OUT"/runtime-build/runtime-build-manifest.json
 APP="$ROOT/dist/TurboCider.app"
 BIN="$APP/Contents/MacOS"
 RES="$APP/Contents/Resources"
@@ -28,17 +35,18 @@ MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
 PACKAGE_MIN_MACOS="${TURBOCIDER_PACKAGE_MIN_MACOS:-${MLX_MIN_MACOS:-15.0}}"
 rm -rf "$APP" "$ROOT/dist/cli"
 mkdir -p "$BIN" "$RES" "$ROOT/dist/cli"
-cp build/native/TurboCiderNativeApp "$BIN/"
+cp "$OUT"/TurboCiderNativeApp "$BIN/"
 cp assets/branding/AppIcon.icns assets/branding/LogoMark.png "$RES/"
-cp build/native/turbocider "$BIN/"
+cp assets/config/local-streaming-profile.json "$RES/"
+cp "$OUT"/turbocider "$BIN/"
 for folder in "$BIN" "$ROOT/dist/cli"; do
- cp build/native/turbocider-library "$folder/"
+ cp "$OUT"/turbocider-library "$folder/"
  codesign --force --sign - "$folder/turbocider-library"
- cp build/native/libturbocider.dylib "$folder/"
- cp build/native/h3-quantize-stream-cache "$folder/"
+ cp "$OUT"/libturbocider.dylib "$folder/"
+ cp "$OUT"/h3-quantize-stream-cache "$folder/"
  cp "$MLX_ROOT/lib/libmlx.dylib" "$MLX_ROOT/lib/libjaccl.dylib" "$MLX_ROOT/lib/mlx.metallib" "$folder/"
- cp build/native/h3_shaders.metal build/native/ltx_shaders.metal "$folder/"
- cp build/native/ltx-video-finalizer build/native/ltx-video-vae-decode "$folder/"
+ cp "$OUT"/h3_shaders.metal "$OUT"/ltx_shaders.metal "$folder/"
+ cp "$OUT"/ltx-video-finalizer "$OUT"/ltx-video-vae-decode "$folder/"
  install_name_tool -delete_rpath "$MLX_ROOT/lib" "$folder/libturbocider.dylib"
  install_name_tool -add_rpath @loader_path "$folder/libturbocider.dylib"
  # Third-party binaries may carry build-machine rpaths; remove every such path.
@@ -58,7 +66,7 @@ for folder in "$BIN" "$ROOT/dist/cli"; do
  done
  for library in "$folder"/*.dylib; do codesign --force --sign - "$library"; done
 done
-cp build/native/turbocider "$ROOT/dist/cli/"
+cp "$OUT"/turbocider "$ROOT/dist/cli/"
 # LoRA conversion/merge scripts are release-pipeline tools only.  They are
 # intentionally not copied into the App bundle: production sessions accept
 # provenance-verified premerged checkpoints and never launch Python.

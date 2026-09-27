@@ -1,0 +1,59 @@
+{
+  "scope": "One verified-source private streaming image request, with preserved raw evidence.\n\nUse collect_streaming_memory.py to observe the complete process lifetime.\nThis smoke does not qualify a public record or establish performance benefits.\n",
+  "config": {
+    "library": "/Users/chencanhui/code/TurboCider/build/m1-hybrid-image/libturbocider.dylib",
+    "model_path": "/Users/chencanhui/models/TurboCider/FLUX.2-klein-4B",
+    "model_id": "flux2-klein-4b",
+    "constructor": "candidate",
+    "verify_streaming_sources": true
+  },
+  "request": {
+    "schema_version": 2,
+    "model": "flux2-klein-4b",
+    "operation": "image.generate",
+    "inputs": [
+      {
+        "kind": "text",
+        "role": "prompt",
+        "text": "A red fox standing in fresh snow, pine forest, soft morning sunlight, detailed photograph."
+      }
+    ],
+    "outputs": [
+      {
+        "kind": "image",
+        "path": "/Users/chencanhui/models/TurboCider/experiments/m1-flux4-512-current/run/image.png",
+        "width": 512,
+        "height": 512
+      }
+    ],
+    "sampling": {
+      "seed": 42,
+      "steps": 4
+    },
+    "execution": {
+      "policy": "gpu",
+      "streaming": {
+        "schema_version": 1,
+        "enabled": true,
+        "selection": "manual",
+        "retention": "request",
+        "stages": {
+          "denoiser": {
+            "residency": "streamed",
+            "block_group_size": 1,
+            "slot_count": 2,
+            "resident_prefix_blocks": 0,
+            "prefetch_distance": 1,
+            "io_workers": 2
+          }
+        }
+      }
+    },
+    "parameters": {
+      "dynamic_text": true,
+      "compile_gpu": false
+    }
+  },
+  "library_sha256": "38641fb9bdb40430075726f5bf3cab7a0e93881718ea150de116c51ca1307fa3",
+  "script_sha256": "d13eb74c06d3339aa36c9e61e5abaf3218b6dd7afd9a4b43ce180c7a46c89c0e"
+}

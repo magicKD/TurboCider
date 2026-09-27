@@ -364,16 +364,17 @@ static uint64_t h3_u64_le(const unsigned char bytes[8]) {
     return value;
 }
 
-int h3_st_read_header(const char *path, h3_st_header *header,
-                      char *error, size_t error_size) {
-    if (!path || !header) return 0;
-    memset(header, 0, sizeof(*header));
-    if (error && error_size) error[0] = '\0';
-    int descriptor = open(path, O_RDONLY);
-    if (descriptor < 0) {
-        if (error && error_size) snprintf(error, error_size, "%s: %s", path, strerror(errno));
+static int h3_st_read_header_owned(const char *path, int descriptor,
+                                   int retain_descriptor,
+                                   h3_st_header *header,
+                                   char *error, size_t error_size) {
+    if (!path || descriptor < 0 || !header) {
+        if (descriptor >= 0) close(descriptor);
         return 0;
     }
+    memset(header, 0, sizeof(*header));
+    header->descriptor = -1;
+    if (error && error_size) error[0] = '\0';
     struct stat status;
     unsigned char prefix[8];
     if (fstat(descriptor, &status) != 0 || status.st_size < 8 ||
@@ -396,16 +397,22 @@ int h3_st_read_header(const char *path, h3_st_header *header,
         close(descriptor);
         return 0;
     }
-    close(descriptor);
     json[header_size] = '\0';
     header->path = strdup(path);
     header->file_size = file_size;
     header->header_size = header_size;
     if (!header->path) {
         free(json);
+        close(descriptor);
         if (error && error_size) snprintf(error, error_size, "out of memory");
         return 0;
     }
+    if (retain_descriptor) {
+        header->descriptor = descriptor;
+    } else {
+        close(descriptor);
+    }
+    descriptor = -1;
     h3_json_cursor cursor = {json, json + header_size, error, error_size};
     size_t capacity = 0;
     if (!h3_json_take(&cursor, '{')) goto fail;
@@ -455,8 +462,42 @@ int h3_st_read_header(const char *path, h3_st_header *header,
 
 fail:
     free(json);
+    if (descriptor >= 0) close(descriptor);
     h3_st_free_header(header);
     return 0;
+}
+
+int h3_st_read_header(const char *path, h3_st_header *header,
+                      char *error, size_t error_size) {
+    if (!path || !header) return 0;
+    int descriptor = open(path, O_RDONLY | O_CLOEXEC);
+    if (descriptor < 0) {
+        if (error && error_size)
+            snprintf(error, error_size, "%s: %s", path, strerror(errno));
+        return 0;
+    }
+    return h3_st_read_header_owned(path, descriptor, 0, header,
+                                   error, error_size);
+}
+
+int h3_st_read_header_fd(const char *path, int descriptor,
+                         h3_st_header *header,
+                         char *error, size_t error_size) {
+    if (!path || descriptor < 0 || !header) {
+        if (error && error_size)
+            snprintf(error, error_size, "invalid safetensors fd header request");
+        return 0;
+    }
+    const int duplicate = dup(descriptor);
+    if (duplicate < 0) {
+        if (error && error_size)
+            snprintf(error, error_size, "%s: cannot duplicate descriptor: %s",
+                     path, strerror(errno));
+        return 0;
+    }
+    (void)fcntl(duplicate, F_SETFD, FD_CLOEXEC);
+    return h3_st_read_header_owned(path, duplicate, 1, header,
+                                   error, error_size);
 }
 
 void h3_st_free_header(h3_st_header *header) {
@@ -466,7 +507,9 @@ void h3_st_free_header(h3_st_header *header) {
     }
     free(header->tensors);
     free(header->path);
+    if (header->descriptor >= 0) close(header->descriptor);
     memset(header, 0, sizeof(*header));
+    header->descriptor = -1;
 }
 
 const h3_st_tensor *h3_st_find(const h3_st_header *header, const char *name) {
@@ -504,7 +547,12 @@ int h3_st_read_data(const h3_st_header *header, const h3_st_tensor *tensor,
         }
         return 0;
     }
-    int descriptor = open(header->path, O_RDONLY);
+    int descriptor = header->descriptor;
+    int close_descriptor = 0;
+    if (descriptor < 0) {
+        descriptor = open(header->path, O_RDONLY | O_CLOEXEC);
+        close_descriptor = 1;
+    }
     if (descriptor < 0) {
         if (error && error_size) {
             snprintf(error, error_size, "%s: %s", header->path, strerror(errno));
@@ -524,12 +572,12 @@ int h3_st_read_data(const h3_st_header *header, const h3_st_tensor *tensor,
                          tensor->name ? tensor->name : "tensor",
                          count < 0 ? strerror(errno) : "unexpected end of file");
             }
-            close(descriptor);
+            if (close_descriptor) close(descriptor);
             return 0;
         }
         done += (size_t)count;
     }
-    close(descriptor);
+    if (close_descriptor) close(descriptor);
     return 1;
 }
 

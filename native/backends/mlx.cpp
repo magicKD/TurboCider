@@ -1,9 +1,12 @@
 #include "mlx.hpp"
+#include "mlx_fd_reader.hpp"
 #include "../core/gguf.hpp"
+#include "../runtime/streaming/source_lease.hpp"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <stdexcept>
 #include <type_traits>
 namespace tc {
 namespace {
@@ -165,6 +168,36 @@ void Weights::load(const std::filesystem::path &p, const Event &event,
             }
             ++i;
         }
+    } catch (...) {
+        clear();
+        throw;
+    }
+}
+void Weights::load_lease(
+        const std::shared_ptr<const streaming::SourceLease> &lease,
+        const std::vector<std::string> &logical_ids, const Event &event,
+        std::atomic<bool> &cancelled) {
+    require(lease != nullptr, "missing streaming source lease");
+    require(values_.empty(), "weights are already loaded");
+    require(!logical_ids.empty(), "streaming lease has no weight artifacts");
+    try {
+        int index = 0;
+        for (const auto &logical_id : logical_ids) {
+            checkpoint(cancelled);
+            auto duplicate = lease->duplicate_fd(logical_id);
+            auto reader = std::make_shared<MlxLeaseFdReader>(
+                MlxOwnedFd(duplicate.release()), logical_id);
+            event("load_" + logical_id, index,
+                  static_cast<int>(logical_ids.size()));
+            auto data = mx::load_safetensors(reader);
+            for (auto &[key, value] : data.first) {
+                require(!values_.count(key), "duplicate tensor: " + key);
+                values_.emplace(key, std::move(value));
+            }
+            lease_readers_.push_back(std::move(reader));
+            ++index;
+        }
+        require(!values_.empty(), "streaming lease contains no tensors");
     } catch (...) {
         clear();
         throw;
@@ -838,6 +871,7 @@ void Weights::erase_prefix(const std::string &prefix) {
 void Weights::clear() {
     values_.clear();
     runtime_loras_.clear();
+    lease_readers_.clear();
 }
 
 size_t Weights::bytes() const {

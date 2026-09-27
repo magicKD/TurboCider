@@ -1,0 +1,5 @@
+{
+  "status": 1,
+  "error": "Z-Image GPU+ANE streaming is only enabled for the measured M5 Pro 24 GiB device profile",
+  "result": null
+}

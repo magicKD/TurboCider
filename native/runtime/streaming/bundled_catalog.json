@@ -1,0 +1,5 @@
+{
+  "schema": "tc-bundled-streaming-catalog-input-v1",
+  "revision": "tc-streaming-catalog-empty-v1",
+  "records": []
+}

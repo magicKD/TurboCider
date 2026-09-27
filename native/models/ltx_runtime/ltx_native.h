@@ -1,4 +1,8 @@
 #pragma once
+#include "ltx_gpu.h"
+#include "../../core/memory_schedule_c.h"
+#include "../../core/stream_slot_c.h"
+#include "ltx_safetensors.h"
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -24,6 +28,15 @@ typedef struct {
      * target; resident execution ignores both fields. */
     int stream_blocks;
     uint64_t memory_budget_bytes;
+    /* Zero preserves the legacy maximum. Constrained callers pass 1..3 and
+     * the runtime must not allocate or prefetch more refill slots. */
+    uint32_t max_refill_slots;
+    /* Optional per-buffer admission installed before any Transformer Metal
+     * buffer is created. Constrained callers must supply all hook callbacks;
+     * default callers leave this NULL and retain the legacy fast path. */
+    const ltx_gpu_memory_hooks *memory_hooks;
+    uint64_t memory_allocator_domain;
+    uint64_t memory_generation;
     /* Lifecycle options are explicit at the library boundary.  The embedded
      * runtime deliberately does not inherit the benchmark CLI's environment
      * variables. */
@@ -64,6 +77,9 @@ typedef struct {
     const char *v2a_directories[2];
     const char *kv_directory;
     const char *qkv_directories[2];
+    /* Optional owner-thread semantic schedule callback. The native runtime
+     * copies this POD during create; workers and Metal callbacks never emit. */
+    const tc_memory_schedule_hooks_v1 *schedule_hooks;
 } ltx_native_options;
 typedef struct {
     int enabled;
@@ -81,7 +97,69 @@ typedef struct {
     double wait_seconds;
 } ltx_native_streaming_info;
 ltx_native_denoiser *ltx_native_create(const ltx_native_options*,ltx_native_progress,void*,char*,size_t);
+/* Internal experimental layout-only entry. Public TurboCider eligibility is
+ * checked separately; this does not certify a layout or a memory upper.
+ * Exact G=1/P>=1/single-class plan, GPU-only, no legacy budget authority.
+ * Plan arrays are copied at create. On failure, a non-null *out is quarantined
+ * and must be retained until streaming_destroy succeeds. */
+typedef struct {
+    uint32_t struct_size, version, resident_prefix_blocks;
+    const tc_stream_stage_plan_v1 *plan;
+} ltx_native_streaming_options_v1;
+int ltx_native_create_streamed_v1(const ltx_native_options *,
+    const ltx_native_streaming_options_v1 *, ltx_native_denoiser **out,
+    ltx_native_progress, void *, char *, size_t);
+int ltx_native_streaming_destroy(ltx_native_denoiser **, char *, size_t);
+int ltx_native_streaming_counters(ltx_native_denoiser *, tc_stream_counters_v1 *, char *, size_t);
+/* Public adapters may enable and copy the common executor's real receipt
+ * after exact creation and before the first stage.  The V2 getter follows the
+ * common size-query/two-call ABI from stream_slot_c.h. */
+int ltx_native_streaming_enable_receipt(
+    ltx_native_denoiser *, const tc_stream_receipt_config_v1 *,
+    char *, size_t);
+int ltx_native_streaming_receipt_v2(
+    ltx_native_denoiser *, tc_stream_receipt_v2 *, char *, size_t);
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+/* Private deterministic fault injection for lifecycle tests. Release builds
+ * do not contain this symbol and no request/environment setting can reach it. */
+int ltx_native_streaming_test_set_destroy_failures(
+    ltx_native_denoiser *, uint32_t, char *, size_t);
+int ltx_native_streaming_test_cancel_first_fill(
+    ltx_native_denoiser *, char *, size_t);
+#endif
+/* v2 exact entry borrows a header parsed by ltx_st_read_header_fd and its fd.
+ * Identity/change checks run before construction and at stage boundaries;
+ * these are NOT a content hash or protection against concurrent modification.
+ * All request artifacts must be immutable during execution.
+ * The caller owns both objects and must keep them alive until destroy returns.
+ * The native context never closes/free's the borrowed descriptor or header. */
+typedef struct {
+    uint32_t struct_size, version;
+    ltx_native_streaming_options_v1 base;
+    const ltx_st_header *metadata_header;
+    const ltx_st_mapping *metadata_mapping;
+} ltx_native_streaming_options_v2;
+int ltx_native_create_streamed_v2(const ltx_native_options *,
+    const ltx_native_streaming_options_v2 *, ltx_native_denoiser **out,
+    ltx_native_progress, void *, char *, size_t);
+/* Public two-stage LTX uses one exact executor per denoising stage.  Passes in
+ * the common executor remain stage-local while schedule_pass_begin binds them
+ * to the global distilled 8+3 step sequence.  V1/V2 keep their historical
+ * single-executor 11-pass contract. */
+typedef struct {
+    uint32_t struct_size, version;
+    ltx_native_streaming_options_v1 base;
+    const ltx_st_header *metadata_header;
+    const ltx_st_mapping *metadata_mapping;
+    uint32_t schedule_pass_begin;
+    uint32_t reserved;
+} ltx_native_streaming_options_v3;
+int ltx_native_create_streamed_v3(const ltx_native_options *,
+    const ltx_native_streaming_options_v3 *, ltx_native_denoiser **out,
+    ltx_native_progress, void *, char *, size_t);
 void ltx_native_free(ltx_native_denoiser*);
+/* Owner-thread completion barrier for native GPU and auxiliary GPU queues. */
+int ltx_native_drain(ltx_native_denoiser*, char*, size_t);
 int ltx_native_get_streaming_info(
     const ltx_native_denoiser*, ltx_native_streaming_info*);
 /* All inputs are BF16. Stage 1 receives seeded noise, stage 2 receives the
@@ -97,6 +175,26 @@ int ltx_native_run(ltx_native_denoiser*,int stage,uint64_t seed,
 int ltx_native_upsample_stage2(
     ltx_native_denoiser*, const char *upsampler_checkpoint,
     const char *video_vae_checkpoint,
+    uint16_t *output, size_t output_elements,
+    const uint16_t *input, size_t input_elements,
+    char *error, size_t error_size);
+/* Request-lease variant. Both descriptors are borrowed for the call and
+ * duplicated by the component loaders; diagnostic paths are never reopened. */
+int ltx_native_upsample_stage2_fd(
+    ltx_native_denoiser*, int upsampler_fd,
+    const char *upsampler_diagnostic_path, int video_vae_fd,
+    const char *video_vae_diagnostic_path,
+    uint16_t *output, size_t output_elements,
+    const uint16_t *input, size_t input_elements,
+    char *error, size_t error_size);
+/* Request-scoped public boundary helper.  It creates only a short-lived GPU
+ * utility context after the Stage-1 transformer executor/backing has been
+ * destroyed, so upsampling cannot overlap the released Stage-1 pool. */
+int ltx_native_upsample_stage2_standalone_fd(
+    const char *shader_source, uint32_t width, uint32_t height,
+    uint32_t frames, uint32_t fps,
+    int upsampler_fd, const char *upsampler_diagnostic_path,
+    int video_vae_fd, const char *video_vae_diagnostic_path,
     uint16_t *output, size_t output_elements,
     const uint16_t *input, size_t input_elements,
     char *error, size_t error_size);

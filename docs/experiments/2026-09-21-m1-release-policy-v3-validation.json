@@ -1,0 +1,39 @@
+{
+  "scope": "Explicit strict release policy in record v3; calibrated channel remains unsupported",
+  "native_python_v3_golden": "3b09dce86f9116b1b1fffcf7373e5584ad645294724cd99aeb8e9abfb57535a0",
+  "legacy_v1_v2_golden_unchanged": true,
+  "library_sha256": "70bafadc0fc26bde63cbd0bddcf92072a75ecdad663c00aa52b6979178afed51",
+  "runtime_build_id": "tc-runtime-build-v1-8fa36c1ffc632ffd59616d8077d9fba962da65032eecd384c16b6ff5a23f3ed7",
+  "tests": {
+    "preset_runtime_host": "passed",
+    "catalog_builder": {
+      "run": 17,
+      "passed": 17
+    },
+    "bundled_catalog": {
+      "run": 6,
+      "passed": 6
+    },
+    "release_policy_generator": {
+      "run": 4,
+      "passed": 4
+    },
+    "objc_syntax": "passed",
+    "c_api": {
+      "run": 3,
+      "passed": 2,
+      "skipped": 1,
+      "skip_reason": "No release-without-hooks library supplied; test-hook build exercised"
+    },
+    "contract": {
+      "run": 83,
+      "passed": 80,
+      "skipped": 3
+    }
+  },
+  "preserved_errors": [
+    "Initial builder test used canonical-only fixture with unsupported estimator; fixed test fixture, no validation relaxation",
+    "Initial C API invocation omitted TURBOCIDER_TEST_HOOK_LIBRARY and skipped hook tests; corrected invocation ran them"
+  ],
+  "qualification": "No new production catalog record, public-calibrated channel or changed P3 gate"
+}

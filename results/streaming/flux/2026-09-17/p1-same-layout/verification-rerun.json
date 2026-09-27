@@ -1,0 +1,129 @@
+{
+  "format": "turbocider-streaming-campaign-verification-v1",
+  "schema_version": 1,
+  "overall": "PASS",
+  "comparison_kind": "P1",
+  "total_blocks": 10,
+  "bootstrap_blocks": 10,
+  "total_pairs": 20,
+  "matched_pairs": 20,
+  "failed_samples": [],
+  "hard_failure_samples": [],
+  "quality_failures": [],
+  "quality_not_measured": [],
+  "quality_status": "complete",
+  "environment_status": "complete",
+  "environment_complete": true,
+  "campaign_status": "complete",
+  "campaign_complete": true,
+  "audit_status": "passed",
+  "audit_passed": true,
+  "audit_observations": {
+    "steady_framework_allocations": {
+      "value": 0,
+      "maximum": 0
+    },
+    "steady_framework_thread_creates": {
+      "value": 0,
+      "maximum": 0
+    }
+  },
+  "source_provenance_complete": true,
+  "protocol_complete": true,
+  "sample_size_sufficient": true,
+  "minimum_matched_pairs": 20,
+  "minimum_tail_requests_per_variant": 0,
+  "required_matched_pairs": 20,
+  "completion": {
+    "successful_requests": 40,
+    "total_requests": 40,
+    "rate": 1.0
+  },
+  "decisions": {
+    "wall_median": "PASS",
+    "wall_p95": "PASS",
+    "denoise_median": "PASS"
+  },
+  "metrics": {
+    "wall": {
+      "baseline": {
+        "name": "baseline_wall",
+        "count": 20,
+        "median": 1.9462210414931178,
+        "p95": 1.9640820359927602
+      },
+      "candidate": {
+        "name": "candidate_wall",
+        "count": 20,
+        "median": 1.9456572915660217,
+        "p95": 1.9704578917357138
+      },
+      "ratio": {
+        "median": 0.9997103361257139,
+        "p95": 1.0032462268001605
+      },
+      "bootstrap_95": {
+        "median_ratio": {
+          "lower": 0.996204959255469,
+          "upper": 1.0041413469245244
+        },
+        "p95_ratio": {
+          "lower": 0.9727081405065072,
+          "upper": 1.0062290835555794
+        }
+      }
+    },
+    "denoise": {
+      "baseline": {
+        "name": "baseline_denoise",
+        "count": 20,
+        "median": 1.336996354,
+        "p95": 1.35406327435
+      },
+      "candidate": {
+        "name": "candidate_denoise",
+        "count": 20,
+        "median": 1.334537146,
+        "p95": 1.35359215865
+      },
+      "ratio": {
+        "median": 0.9981606471905158,
+        "p95": 0.9996520726106937
+      },
+      "bootstrap_95": {
+        "median_ratio": {
+          "lower": 0.9952575113915586,
+          "upper": 1.0026211896461164
+        },
+        "p95_ratio": {
+          "lower": 0.9827286083485977,
+          "upper": 1.006290841409466
+        }
+      }
+    }
+  },
+  "bootstrap": {
+    "iterations": 4000,
+    "seed": 59,
+    "unit": "abba_block"
+  },
+  "build_identity": {
+    "baseline": {
+      "backend": "native",
+      "binary_path": "/Users/james/cch/video-generation/TurboCider/build/native/libturbocider.dylib",
+      "binary_sha256": "2d99b9889cdfd9abf85c2a0a98b4addb8c130bc3aa6a82341b196e387f671878",
+      "binary_size_bytes": 5004848,
+      "constructor": "candidate",
+      "variant_config_sha256": "1b454060a6971dfe351cded697c944b1e1de3a86cef24bb95eb9916078d74a11"
+    },
+    "candidate": {
+      "backend": "native",
+      "binary_path": "/Users/james/cch/video-generation/TurboCider/build/native/libturbocider.dylib",
+      "binary_sha256": "2d99b9889cdfd9abf85c2a0a98b4addb8c130bc3aa6a82341b196e387f671878",
+      "binary_size_bytes": 5004848,
+      "constructor": "candidate",
+      "variant_config_sha256": "84cf9c6d8b9c4d432ea1cad94ba2e30d94622ca026fa3971d9eba948269360fa"
+    }
+  },
+  "policy_sha256": "36ab684a530f772bef88ae32f92502bf0f16a99000274cabf5b1e712d845dc0b"
+}

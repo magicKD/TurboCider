@@ -3,8 +3,13 @@
 #import <Foundation/Foundation.h>
 
 #include <stdarg.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 @interface LTXGemmaTokenizer : NSObject
 @property(nonatomic, strong) NSDictionary<NSString *, NSNumber *> *vocab;
@@ -133,19 +138,13 @@ static int ltx_encode_text(LTXGemmaTokenizer *tokenizer, NSString *input,
     return 1;
 }
 
-ltx_gemma_tokenizer *ltx_gemma_tokenizer_load(
-    const char *tokenizer_json, char *error, size_t error_size) {
+static ltx_gemma_tokenizer *ltx_gemma_tokenizer_load_data(
+    NSData *data, const char *label, char *error, size_t error_size) {
     @autoreleasepool {
         if (error && error_size) error[0] = '\0';
-        if (!tokenizer_json) {
-            ltx_fail(error, error_size, "Gemma tokenizer path is required");
-            return NULL;
-        }
-        NSString *path = [NSString stringWithUTF8String:tokenizer_json];
-        NSData *data = [NSData dataWithContentsOfFile:path];
         if (!data) {
             ltx_fail(error, error_size, "cannot read Gemma tokenizer: %s",
-                     tokenizer_json);
+                     label ? label : "<fd>");
             return NULL;
         }
         NSError *jsonError = nil;
@@ -238,6 +237,49 @@ ltx_gemma_tokenizer *ltx_gemma_tokenizer_load(
         tokenizer.byteFallback = fallback;
         return (__bridge_retained ltx_gemma_tokenizer *)tokenizer;
     }
+}
+
+ltx_gemma_tokenizer *ltx_gemma_tokenizer_load(
+    const char *tokenizer_json, char *error, size_t error_size) {
+    if (!tokenizer_json) {
+        ltx_fail(error, error_size, "Gemma tokenizer path is required");
+        return NULL;
+    }
+    NSString *path = [NSString stringWithUTF8String:tokenizer_json];
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    return ltx_gemma_tokenizer_load_data(data, tokenizer_json,
+                                         error, error_size);
+}
+
+ltx_gemma_tokenizer *ltx_gemma_tokenizer_load_fd(
+    int descriptor, const char *tokenizer_json,
+    char *error, size_t error_size) {
+    if (descriptor < 0) {
+        ltx_fail(error, error_size, "Gemma tokenizer fd is invalid");
+        return NULL;
+    }
+    struct stat status = {0};
+    if (fstat(descriptor, &status) != 0 || !S_ISREG(status.st_mode) ||
+        status.st_size <= 0 || (uintmax_t)status.st_size > SIZE_MAX) {
+        ltx_fail(error, error_size, "Gemma tokenizer fd is not a valid regular file");
+        return NULL;
+    }
+    NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)status.st_size];
+    size_t offset = 0;
+    while (offset < (size_t)status.st_size) {
+        ssize_t count = pread(descriptor,
+                              (unsigned char *)data.mutableBytes + offset,
+                              (size_t)status.st_size - offset,
+                              (off_t)offset);
+        if (count <= 0) {
+            ltx_fail(error, error_size, "cannot read Gemma tokenizer fd: %s",
+                     strerror(errno));
+            return NULL;
+        }
+        offset += (size_t)count;
+    }
+    return ltx_gemma_tokenizer_load_data(
+        data, tokenizer_json ? tokenizer_json : "<fd>", error, error_size);
 }
 
 void ltx_gemma_tokenizer_free(ltx_gemma_tokenizer *opaque) {

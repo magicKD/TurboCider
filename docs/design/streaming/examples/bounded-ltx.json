@@ -1,0 +1,27 @@
+{
+  "execution": {
+    "policy": "gpu",
+    "streaming": {
+      "schema_version": 1,
+      "enabled": true,
+      "selection": "manual",
+      "retention": "request",
+      "stages": {
+        "denoiser": {
+          "residency": "streamed",
+          "block_group_size": 1,
+          "slot_count": 3,
+          "resident_prefix_blocks": 1,
+          "prefetch_distance": 2,
+          "io_workers": 1
+        }
+      }
+    },
+    "memory_constrained": {
+      "enabled": true,
+      "limit_bytes": 21474836480,
+      "buffer_percent": 15,
+      "min_free_bytes": 2147483648
+    }
+  }
+}

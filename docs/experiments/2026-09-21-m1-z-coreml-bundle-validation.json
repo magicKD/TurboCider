@@ -1,0 +1,46 @@
+{
+  "scope": "Internal typed Core ML bundle source/metadata binding; no model predictions or qualification",
+  "tests": {
+    "valid_relocated_fixtures": 2,
+    "invalid_manifest_fixtures": 20,
+    "normal": "PASS",
+    "asan_ubsan": "PASS",
+    "additional": [
+      "unverified parent rejected",
+      "manifest path escapes rejected",
+      "owner retains generation/parent",
+      "parent path replacement rejected",
+      "final generation cleanup"
+    ]
+  },
+  "real_attempts": [
+    {
+      "input": "whole compiled-cache",
+      "outcome": "FAIL before bundle binding: streaming_source_lease: source is empty",
+      "cause": "33 cache lock files of size zero"
+    },
+    {
+      "input": "research fixture preserving manifest bytes and copying its 32 referenced compiled model directories",
+      "outcome": "PASS",
+      "models": 32,
+      "copied_bytes": 1888495798,
+      "parent_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+      "bundle_digest": "6f46bcb483d2c23fde3deae1a67e794332d03623ae816a1322a78c091dce3546",
+      "partition_identity": "ef19a8dbedc7a4ffd59f49d7aa8555e39a999964a3d39360a70e0a51d94eef34",
+      "owner_revalidation_and_cleanup": "PASS"
+    }
+  ],
+  "source_sha256": {
+    "native/models/z_image/coreml_bundle.hpp": "b119bea2c7c569a755ccfac0558f228ec2dc9637ca742390b774c0dac9a5b789",
+    "native/models/z_image/coreml_bundle.mm": "b9db0b0007f26da4b43cfc4c9bb63b0cefbb2c73f0e2935cd249724c1d1201f4",
+    "tests/native/coreml_bundle_test.cpp": "b45f7c066c0a81df6543843f7e1e64c06d9091fb74f7f6ca79c2bbbcf4d7c8d4",
+    "tests/native/test_coreml_bundle.py": "02dd23df65ce1cbb50c0ca0d9aa29d39fe2ea1e21d3b2b266e2da26e14437a20"
+  },
+  "limitations": [
+    "Fixture assembly is not product installation API",
+    "No installation-ID registry or HybridSession integration",
+    "No mathematical proof from metadata association",
+    "No full dylib/App build",
+    "Original INT8 numerical failure unchanged"
+  ]
+}

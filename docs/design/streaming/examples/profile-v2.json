@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "enabled": true,
+  "match": {
+    "gpu_name": "Apple M4 Max",
+    "memory_bytes": 68719476736
+  },
+  "models": {
+    "ltx-2.5-distilled": {
+      "policy": "gpu",
+      "streaming": {
+        "schema_version": 1,
+        "enabled": true,
+        "selection": "manual",
+        "retention": "request",
+        "stages": {
+          "denoiser": {
+            "residency": "streamed",
+            "block_group_size": 1,
+            "slot_count": 3,
+            "resident_prefix_blocks": 1,
+            "prefetch_distance": 2,
+            "io_workers": 1
+          }
+        }
+      },
+      "memory_constrained": {"enabled": false}
+    }
+  }
+}

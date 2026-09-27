@@ -32,6 +32,9 @@ struct h3_ctx {
     char *dit_key;
     char *dit_resident_key;
     struct h3_dit *dit;
+    /* Candidate-only request owner retained when executor teardown cannot
+     * prove that every async reader is complete. Never enters the cache. */
+    struct h3_dit *exact_dit_quarantine;
     char *video_decoder_key;
     struct h3_video_vae_decoder *video_decoder;
     char *taeh3_decoder_key;

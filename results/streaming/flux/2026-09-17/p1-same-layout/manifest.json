@@ -1,0 +1,57 @@
+{
+  "format": "turbocider-streaming-campaign-manifest-v1",
+  "schema_version": 1,
+  "status": "complete",
+  "started_at": "2026-09-17T11:09:31.993078+00:00",
+  "policy_sha256": "36ab684a530f772bef88ae32f92502bf0f16a99000274cabf5b1e712d845dc0b",
+  "pressure_launched_by_runner": false,
+  "engine_lifecycle": "per_request",
+  "worker_launch_order": [
+    "candidate",
+    "baseline"
+  ],
+  "finished_at": "2026-09-17T11:10:54.029644+00:00",
+  "planned_requests": 40,
+  "recorded_requests": 40,
+  "planned_pairs": 20,
+  "aborted": false,
+  "abort_reason": null,
+  "files": {
+    "campaign-policy.json": {
+      "sha256": "36ab684a530f772bef88ae32f92502bf0f16a99000274cabf5b1e712d845dc0b",
+      "bytes": 4198
+    },
+    "build-identity.json": {
+      "sha256": "e73a093d5438a2fcbdc5200cf96dd026e91166b6881a3031457da97fcb2f752b",
+      "bytes": 798
+    },
+    "raw-samples.jsonl": {
+      "sha256": "0bb28024bae6d5343060191e4c83675031a427ad75f489ca5c2d3c21ead02625",
+      "bytes": 161348
+    },
+    "warmups.jsonl": {
+      "sha256": "6cce8c6b96e4f1eb2b14129f32c8e395405d1ff59ade1cae86ff224b1831bb80",
+      "bytes": 7930
+    },
+    "quality.json": {
+      "sha256": "7bf2323df04b701a6d7cd53f66e70d493041d556b0fcc43bbc8f83b10154f1db",
+      "bytes": 9408
+    },
+    "audit.json": {
+      "sha256": "98940d84f7b1b8a38cc31f20ce1dd9650177c6a1b0eb55df483294ba46b230fa",
+      "bytes": 621
+    },
+    "environment.json": {
+      "sha256": "e351c528bc50b8763f484ff818144b27a6dc4e9c4a4a49000c442682c0cf91fa",
+      "bytes": 1490
+    },
+    "faults.json": {
+      "sha256": "13e13600909055d2eaf22138d9f871404b8947f99065fa7585662e631a3470a9",
+      "bytes": 112
+    },
+    "semantic-equivalence.json": {
+      "sha256": "9e4b1b9faf0472824a359bcb64823c622398bd31a787a9af5a86e5363ee78724",
+      "bytes": 78733
+    }
+  }
+}

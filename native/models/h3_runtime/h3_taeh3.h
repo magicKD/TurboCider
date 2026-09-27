@@ -23,6 +23,8 @@ int h3_taeh3_decoder_decode(h3_taeh3_decoder *decoder,
 
 int h3_taeh3_decoder_get_gpu_stats(const h3_taeh3_decoder *decoder,
                                    h3_gpu_stats *stats);
+int h3_taeh3_decoder_drain_gpu(h3_taeh3_decoder *decoder,
+                               char *error, size_t error_size);
 
 void h3_taeh3_decoder_free(h3_taeh3_decoder *decoder);
 

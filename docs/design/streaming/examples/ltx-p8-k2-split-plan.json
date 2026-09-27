@@ -1,0 +1,28 @@
+{
+  "canonical_config": {
+    "enabled": true,
+    "schema_version": 1,
+    "selection": "manual",
+    "retention": "request",
+    "stages": {
+      "ltx-stage1-denoiser": {
+        "residency": "streamed",
+        "block_group_size": 1,
+        "slot_count": 2,
+        "resident_prefix_blocks": 8,
+        "prefetch_distance": 1,
+        "io_workers": 2
+      },
+      "ltx-stage2-denoiser": {
+        "residency": "streamed",
+        "block_group_size": 1,
+        "slot_count": 2,
+        "resident_prefix_blocks": 8,
+        "prefetch_distance": 1,
+        "io_workers": 2
+      }
+    }
+  },
+  "pass_transition": "reload",
+  "multi_pool_policy": "serial"
+}

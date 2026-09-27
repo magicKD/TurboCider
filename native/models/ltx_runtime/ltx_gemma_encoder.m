@@ -474,8 +474,9 @@ static ltx_gpu_buffer *gemma_load_tensor(
      * Read the bounded tensor range directly into the shared Metal buffer;
      * the mapping remains available for the large embedding lookup. */
     const size_t bytes = (size_t)range;
-    ltx_gpu_buffer *buffer = ltx_gpu_buffer_new(
-        encoder->gpu, bytes, error, error_size);
+    ltx_gpu_buffer *buffer = ltx_gpu_buffer_new_classified(
+        encoder->gpu, bytes, LTX_GPU_MEMORY_WEIGHTS,
+        "ltx_gemma_weight", error, error_size);
     if (!buffer) return NULL;
     if (!ltx_st_read_mapped_data(
             &encoder->mapping, tensor, ltx_gpu_buffer_contents(buffer),
@@ -979,9 +980,26 @@ ltx_gemma_encoder *ltx_gemma_encoder_create(
             gemma_fail(error, error_size, "missing Gemma encoder options");
             return NULL;
         }
+    if (options->source_fd_version > 1u) {
+        gemma_fail(error, error_size,
+                   "unsupported Gemma source fd authority version");
+        return NULL;
+    }
+    const int fd_authority = options->source_fd_version == 1u;
+    if (fd_authority &&
+        (options->checkpoint_fd < 0 || options->tokenizer_fd < 0)) {
+        gemma_fail(error, error_size,
+                   "Gemma source fd authority requires checkpoint and tokenizer fds");
+        return NULL;
+    }
     ltx_gemma_checkpoint_info info;
-    if (!ltx_gemma_checkpoint_inspect(options->checkpoint, &info,
-                                      error, error_size) ||
+    int inspected = fd_authority ?
+        ltx_gemma_checkpoint_inspect_fd(
+            options->checkpoint_fd, options->checkpoint, &info,
+            error, error_size) :
+        ltx_gemma_checkpoint_inspect(options->checkpoint, &info,
+                                     error, error_size);
+    if (!inspected ||
         !ltx_gemma_checkpoint_validate(&info, error, error_size))
         return NULL;
     ltx_gemma_encoder *encoder = calloc(1, sizeof(*encoder));
@@ -989,22 +1007,54 @@ ltx_gemma_encoder *ltx_gemma_encoder_create(
         gemma_fail(error, error_size, "out of memory creating Gemma encoder");
         return NULL;
     }
-    if (!ltx_st_read_header(options->checkpoint, &encoder->header,
-                            error, error_size) ||
-        !ltx_st_map_open(&encoder->header, &encoder->mapping,
-                         error, error_size)) {
+    int loaded = fd_authority ?
+        ltx_st_read_header_fd(options->checkpoint_fd, options->checkpoint,
+                              &encoder->header, error, error_size) :
+        ltx_st_read_header(options->checkpoint, &encoder->header,
+                           error, error_size);
+    if (loaded) {
+        loaded = fd_authority ?
+            ltx_st_map_fd(&encoder->header, options->checkpoint_fd,
+                          &encoder->mapping, error, error_size) :
+            ltx_st_map_open(&encoder->header, &encoder->mapping,
+                            error, error_size);
+    }
+    if (!loaded) {
         ltx_st_free_header(&encoder->header);
         free(encoder);
         return NULL;
     }
     encoder->mapping_open = 1;
-    encoder->tokenizer = ltx_gemma_tokenizer_load(
-        options->tokenizer_json, error, error_size);
+    encoder->tokenizer = fd_authority ?
+        ltx_gemma_tokenizer_load_fd(options->tokenizer_fd,
+                                    options->tokenizer_json,
+                                    error, error_size) :
+        ltx_gemma_tokenizer_load(options->tokenizer_json, error, error_size);
     encoder->gpu = ltx_gpu_create(options->shader_source,
                                   error, error_size);
     if (!encoder->tokenizer || !encoder->gpu) {
         ltx_gemma_encoder_free(encoder);
         return NULL;
+    }
+    if (options->memory_hooks) {
+        const size_t async_size = offsetof(ltx_gpu_memory_hooks, complete) +
+            sizeof(options->memory_hooks->complete);
+        if (options->memory_hooks->version < 2u ||
+            options->memory_hooks->struct_size < async_size ||
+            !options->memory_hooks->retire ||
+            !options->memory_hooks->complete ||
+            !ltx_gpu_set_memory_hooks_for_queue(
+                encoder->gpu, options->memory_hooks,
+                options->memory_allocator_domain,
+                options->memory_generation,
+                LTX_GPU_MEMORY_QUEUE_TEXT, error, error_size)) {
+            if (error && error_size && !error[0])
+                gemma_fail(error, error_size,
+                           "constrained LTX Gemma encoder requires version-2 "
+                           "asynchronous memory hooks");
+            ltx_gemma_encoder_free(encoder);
+            return NULL;
+        }
     }
     encoder->max_tokens = options->max_tokens ? options->max_tokens : 1024u;
     const char *resident_weights = getenv(

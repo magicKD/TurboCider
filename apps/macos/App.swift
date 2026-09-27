@@ -65,7 +65,7 @@ private func operationName(_ value: String) -> String {
      "video.reference": "参考视频"][value] ?? value
 }
 private func stateName(_ value: String) -> String {
-    ["preparing": "准备中", "running": "生成中", "cancelling": "正在安全停止", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断"][value] ?? value
+    ["preparing": "准备中", "running": "生成中", "cleanup_pending": "等待进程清理", "finalizing": "正在保存结果", "cancelling": "正在安全停止", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断"][value] ?? value
 }
 private func phaseName(_ value: String) -> String {
     if value == "pack_z_image_suffix" { return "整理 GPU 权重" }
@@ -169,8 +169,12 @@ struct StudioView: View {
         .onDisappear { studio.save() }
         .onChange(of: store.deletableJobIDs) { _, ids in selectedTasks.formIntersection(ids) }
         .onChange(of: outputIDs) { _, ids in resultSelection.retain(Set(ids)) }
+        .onChange(of: library.installationGeneration) { _, _ in studio.invalidateStreamingInstallation() }
         .sheet(item: $annotationAsset) { asset in Qwen21AnnotationEditor(asset: asset, studio: studio) }
         .task { library.refresh(studio: studio, migrate: true) }
+        .task(id: studio.streamingQueryKey) {
+            await studio.refreshStreamingOptions()
+        }
         .task {
             while !Task.isCancelled {
                 await tensorCache.automaticSweep(store: store)
@@ -329,7 +333,8 @@ struct StudioView: View {
                 Button(action: generate) { Label(store.busy ? "正在运行" : (model?.isVideo == true ? "生成视频" : "生成图像"), systemImage: "sparkles").padding(.horizontal, 8).padding(.vertical, 4) }
                     .buttonStyle(.borderedProminent).foregroundStyle(Color(red: 0.13, green: 0.09, blue: 0.04))
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(store.busy || api.running || api.changing || submitting || studio.importing || model?.executor != true)
+                    .disabled(store.busy || api.running || api.changing || submitting || studio.importing ||
+                              model?.executor != true || !studio.selectedStreamingTargetAvailable)
                     .accessibilityIdentifier("generate")
             }
         }.padding(14).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -512,6 +517,62 @@ struct StudioView: View {
             DisclosureGroup("高级参数") {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("动态文本长度", isOn: $studio.draft.dynamicText).controlSize(.small)
+                    if studio.draft.publicStreamingModel {
+                        Picker("流式内存档位", selection: Binding(
+                            get: { studio.draft.streaming.selection },
+                            set: { studio.setStreamingSelection($0) })) {
+                            ForEach(StudioStreamingSelection.allCases) { value in
+                                let option = studio.streamingOption(for: value)
+                                let unavailable = value != .off && option?.status != "available"
+                                Text(value.label + (option?.status == "candidate" ? "（待验证）" : unavailable ? "（不可用）" : option?.release_channel == "public-calibrated" ? "（已校准）" : ""))
+                                    .tag(value)
+                                    .disabled(unavailable)
+                            }
+                        }
+                        .disabled(store.busy || submitting)
+                        .accessibilityIdentifier("publicStreamingSelection")
+                        if studio.streamingOptionsLoading {
+                            Text("正在检查当前模型与本机物理内存的可用档位…")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        } else if studio.draft.streaming.selection != .off,
+                                  let option = studio.streamingOption(for: studio.draft.streaming.selection) {
+                            let selection = studio.draft.streaming.selection
+                            let detail = option.status == "available"
+                                ? "已校验本地模型，生成前会再次确认。"
+                                : option.status == "candidate"
+                                    ? "请先选择本地模型，完成档位验证。"
+                                    : "当前模型或任务尚无匹配的已验证档位。"
+                            Text("\(selection.label)：\(detail)")
+                                .font(.caption2)
+                                .foregroundStyle(option.status == "available" ? .green : .orange)
+                            if studio.draft.modelID == "z-image-turbo", option.status != "available" {
+                                Button("恢复常驻加载，保留当前设置") { studio.useZImageResidentLoading() }
+                                    .disabled(store.busy || submitting)
+                                    .accessibilityIdentifier("recoverUnavailableStreamingTarget")
+                            }
+                            if option.release_channel == "public-calibrated" {
+                                Text("此档位已针对匹配的模型、设备和任务校准内存用量；预算不是内存硬上限，也不保证没有交换或一定更快。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        } else if studio.draft.streaming.selection == .off {
+                            let recommendation = studio.recommendedStreamingSelection
+                            if studio.draft.modelID == "z-image-turbo", studio.draft.residency == "streamed" {
+                                Text("当前使用下方的实验流式设置；未启用校准档位。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            } else if recommendation != .off {
+                                Text("当前可用档位：\(recommendation.label)；未选择档位时使用下方加载方式。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            } else {
+                                Text(studio.streamingOptions?.targets.contains(where: { $0.status == "candidate" }) == true
+                                     ? "已有候选档位，请先选择本地模型完成验证。"
+                                     : "暂无经过验证的流式档位，使用下方加载方式。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        if let error = studio.streamingOptionsError {
+                            Text(error).font(.caption2).foregroundStyle(.orange)
+                        }
+                    }
                     if studio.draft.modelID == "ltx-2.5-distilled" {
                         Picker("LTX 后端", selection: $studio.draft.ltxBackend) {
                             Text("自动（C/Metal）").tag("auto")
@@ -537,13 +598,23 @@ struct StudioView: View {
                         Text("近似模式只修改 Stage-2；需要多 prompt/seed 质量回归，720p 自动限制为画质优先。")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
-                    if studio.draft.modelID == "z-image-turbo", studio.draft.zImageRequiresResident {
+                    if studio.draft.modelID == "z-image-turbo", let profile = StudioLocalStreamingProfile.bundled {
+                        Button("应用本机实验流式配置（512×512 · 9 步）") {
+                            studio.applyLocalStreamingProfile(profile)
+                        }
+                        .disabled(store.busy || submitting || profile.conflict(draft: studio.draft) != nil)
+                        .accessibilityIdentifier("localExperimentalStreamingProfile")
+                        Text(profile.conflict(draft: studio.draft)
+                             ?? "仅本机实验：M4 Pro / 48 GiB、BF16、纯 GPU、无 LoRA。采样预算 10 GiB，不是应用内存上限；尚未通过正式容量认证。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    if studio.draft.modelID == "z-image-turbo", studio.draft.zImageRequiresResident, !studio.draft.usesPublicStreaming {
                         LabeledContent("模型驻留", value: "常驻")
                         Text(studio.draft.zImageVariant?.id == "int8-convrot"
                              ? "INT8 流式加载仅在 Apple M5 Pro、24 GiB 内存的机器上启用；当前设备使用常驻加载。"
                              : "此权重版本使用常驻加载。")
                             .font(.caption2).foregroundStyle(.secondary)
-                    } else if studio.draft.modelID == "z-image-turbo" {
+                    } else if studio.draft.modelID == "z-image-turbo" && !studio.draft.usesPublicStreaming {
                         Picker("模型驻留", selection: $studio.draft.residency) {
                             Text("常驻").tag("resident")
                             Text("流式加载（实验）").tag("streamed")
@@ -564,7 +635,7 @@ struct StudioView: View {
                     } else if studio.draft.modelID == "z-image-turbo-gguf" {
                         LabeledContent("模型驻留", value: "常驻")
                             .font(.caption)
-                    } else {
+                    } else if !studio.draft.usesPublicStreaming {
                         Picker("模型驻留", selection: $studio.draft.residency) { Text("保留图像权重").tag("resident"); Text("分阶段释放").tag("component_staged") }
                     }
                     Button(studio.draft.profilePath.isEmpty ? "选择加速配置…" : "更换加速配置…", action: chooseProfile)
@@ -601,7 +672,8 @@ struct StudioView: View {
                     Text("采样阶段预计还需约 \(Int(ceil(speed * Double(job.total - job.completed)))) 秒，图像解码另计。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
-            } else if store.busy { HStack { ProgressView().controlSize(.small); Text(store.sessionState).font(.caption); Spacer(); Button("取消") { store.cancel() } } }
+            } else if store.workerCleanupPending { HStack { Text(store.sessionState).font(.caption); Spacer(); Button("检查清理状态") { Task { await store.refreshWorkerCleanup() } } } }
+            else if store.busy { HStack { ProgressView().controlSize(.small); Text(store.sessionState).font(.caption); Spacer(); Button("取消") { store.cancel() } } }
             else if submitting || store.resolvingAcceleration {
                 HStack { ProgressView().controlSize(.small); Text(store.accelerationStatus ?? "正在准备生成请求…").font(.callout); Spacer() }
             }
@@ -815,6 +887,9 @@ struct StudioView: View {
         Task { do {
             let resolved = try await store.resolveAcceleration(snapshot)
             studio.rememberAcceleration(resolved)
+            if resolved.usesPublicStreaming {
+                throw NativeFailure(message: "public 流式加载会在生成时解析并锁定档位；请直接点击生成。")
+            }
             let output = store.directory.appendingPathComponent("unused-prepare.png")
             let request = try await Task.detached { try resolved.request(output: output) }.value
             try await store.prepare(modelURL: URL(fileURLWithPath: path), request: request, warmup: false)
@@ -844,9 +919,14 @@ struct StudioView: View {
             do {
                 let resolved = try await store.resolveAcceleration(snapshot)
                 studio.rememberAcceleration(resolved)
-                let request = try await Task.detached { try resolved.request(output: output) }.value
-                studio.lastSeed = request.seed; studio.save()
-                let job = try await store.generate(modelURL: URL(fileURLWithPath: resolved.modelPath), request: request)
+                let pair = try await Task.detached {
+                    try resolved.publicStreamingRequest(output: output)
+                }.value
+                studio.lastSeed = pair.legacy.seed; studio.save()
+                let job = try await store.generate(
+                    modelURL: URL(fileURLWithPath: resolved.modelPath),
+                    request: pair.legacy,
+                    streamingRequest: pair.v2)
                 selected = job.id; compareOriginal = false
                 resultSelection.select(job.id, orderedIDs: outputIDs)
             } catch { studio.message = error is CancellationError ? "生成已取消，草稿与原图已保留。" : error.localizedDescription }

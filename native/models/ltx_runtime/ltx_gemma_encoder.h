@@ -1,6 +1,7 @@
 #ifndef LTX_GEMMA_ENCODER_H
 #define LTX_GEMMA_ENCODER_H
 
+#include "ltx_gpu.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -17,10 +18,20 @@ typedef struct {
     const char *tokenizer_json;
     const char *shader_source;
     uint32_t max_tokens;
+    const ltx_gpu_memory_hooks *memory_hooks;
+    uint64_t memory_allocator_domain;
+    uint64_t memory_generation;
     /* Optional directory (or one layer manifest) containing compiled
      * ltx-gemma-ane-mlp-v1 artifacts.  A bounded procedure cache is retained
      * across warm encodes, with exact per-layer GPU fallback on failure. */
     const char *ane_manifest;
+    /* Additive request-scoped source authority. Legacy callers leave these
+     * fields zeroed. Public streaming callers set source_fd_version=1 and
+     * provide borrowed descriptors held by their SourceLease; create()
+     * duplicates/maps them and never reopens checkpoint/tokenizer by path. */
+    uint32_t source_fd_version;
+    int checkpoint_fd;
+    int tokenizer_fd;
 } ltx_gemma_encoder_options;
 
 typedef struct {

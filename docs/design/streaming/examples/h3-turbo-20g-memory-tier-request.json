@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "model": "minimax-h3-turbo",
+  "operation": "video.generate",
+  "inputs": [
+    {
+      "kind": "text",
+      "role": "prompt",
+      "text": "A red fox running through a snowy pine forest, cinematic camera movement, soft morning sunlight."
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "video",
+      "path": "${OUTPUT}",
+      "width": 512,
+      "height": 512,
+      "frames": 22,
+      "fps": 24,
+      "audio": false
+    }
+  ],
+  "sampling": {
+    "seed": 42,
+    "steps": 4
+  },
+  "execution": {
+    "policy": "gpu",
+    "streaming": {
+      "schema_version": 2,
+      "enabled": true,
+      "selection": "memory_tier",
+      "retention": "request",
+      "target_request_memory_bytes": 21474836480
+    }
+  },
+  "parameters": {
+    "dynamic_text": true
+  }
+}

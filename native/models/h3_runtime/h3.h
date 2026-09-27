@@ -5,6 +5,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "h3_gpu.h"
+#include "h3_memory.h"
+#include "../../core/memory_schedule_c.h"
+#include "../../core/stream_slot_c.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -19,6 +24,17 @@ extern "C" {
 
 typedef struct h3_ctx h3_ctx;
 typedef struct h3_result h3_result;
+
+/* Borrowed request-scoped weight source. The runtime duplicates descriptors
+ * before returning to the caller and never closes caller-owned descriptors. */
+typedef struct {
+    const char *path;
+    int descriptor;
+} h3_weight_source_v1;
+
+typedef struct {
+    uint64_t components_drained;
+} h3_drain_info;
 
 typedef struct {
     size_t embedding_entries;
@@ -115,6 +131,26 @@ typedef struct {
      * cache is produced offline and must contain all active block matrices;
      * NULL keeps the original BF16 streaming route. */
     const char *ssd_quantized_cache_directory;
+    /* Internal exact-layout candidate. Public model construction must keep
+     * this disabled until a registry record is qualified. The request owns
+     * cancel_user for the complete h3_generate() call. */
+    int exact_streaming;
+    uint64_t exact_streaming_generation;
+    uint32_t exact_prefetch_distance;
+    uint32_t exact_io_workers;
+    int exact_carry_first_group;
+    h3_gpu_cancel_query_v1 exact_cancel;
+    const void *exact_cancel_user;
+    /* Optional public-proof recorder. All three fields are required together.
+     * Private exact requests leave them zero/null and preserve the historical
+     * counters-only result. */
+    uint64_t exact_receipt_source_generation;
+    const char *exact_receipt_layout_digest;
+    const char *exact_receipt_implementation;
+    /* Optional request-scoped transformer shard lease. Required by public
+     * exact streaming and ignored by legacy/default requests. */
+    const h3_weight_source_v1 *exact_weight_sources;
+    size_t exact_weight_source_count;
     /* Optional lower internal model canvas. Both must be zero (exact output
      * canvas) or valid same-aspect dimensions no larger than width/height. */
     int render_width;
@@ -146,9 +182,20 @@ typedef struct {
      * result instead of discarding them after media delivery. This is intended
      * for same-machine tensor handoff; callers must use h3_result_free(). */
     int retain_decoded;
+    /* Optional constrained-memory allocator hooks. The pointed-to options
+     * remain owned by the caller and must stay valid for h3_generate().
+     * NULL preserves the historical unaccounted allocator path. */
+    const h3_gpu_options *gpu_options;
+    /* In constrained mode both GPU and host hooks must be installed. */
+    const h3_host_memory_hooks *host_memory_hooks;
+    uint64_t memory_allocator_domain;
+    uint64_t memory_generation;
     h3_frame_callback on_frame;
     h3_progress_callback on_progress;
     void *callback_opaque;
+    /* Optional semantic memory schedule callback. The pointed-to POD remains
+     * owned by the caller for the complete h3_generate() call. */
+    const tc_memory_schedule_hooks_v1 *schedule_hooks;
 } h3_params;
 
 #define H3_PARAMS_DEFAULT { \
@@ -162,7 +209,14 @@ typedef struct {
     .core_reuse = 1, .token_reduction = 0, .use_int8_row_fc2 = 0, \
     .use_reference_rope = 0, .ssd_streaming = 0, \
     .ssd_pinned_prefix = 0, .ssd_memory_budget_bytes = 0, \
-    .ssd_quantized_cache_directory = NULL, .render_width = 0, \
+    .ssd_quantized_cache_directory = NULL, \
+    .exact_streaming = 0, .exact_streaming_generation = 0, \
+    .exact_prefetch_distance = 0, .exact_io_workers = 0, \
+    .exact_carry_first_group = 0, .exact_cancel = NULL, \
+    .exact_cancel_user = NULL, .exact_receipt_source_generation = 0, \
+    .exact_receipt_layout_digest = NULL, \
+    .exact_receipt_implementation = NULL, .exact_weight_sources = NULL, \
+    .exact_weight_source_count = 0, .render_width = 0, \
     .render_height = 0, .use_slower_bf16_mlp = 0, \
     .use_slower_bf16_qkv = 0, .use_slower_bf16_attention_output = 0, \
     .use_slower_row_major_attention_output = 0, \
@@ -170,8 +224,10 @@ typedef struct {
     .use_slower_unfused_qkv_rope = 0, .use_slower_scalar_qkv_rms = 0, \
     .use_slower_uncached_int8_scales = 0, \
     .use_slower_dynamic_fc1_k = 0, .use_slower_grouped_quantizer = 0, \
-    .preview_denoise = 0, .retain_decoded = 0, .on_frame = NULL, \
-    .on_progress = NULL, .callback_opaque = NULL \
+    .preview_denoise = 0, .retain_decoded = 0, .gpu_options = NULL, \
+    .host_memory_hooks = NULL, .memory_allocator_domain = 0, \
+    .memory_generation = 0, .on_frame = NULL, \
+    .on_progress = NULL, .callback_opaque = NULL, .schedule_hooks = NULL \
 }
 
 typedef struct {
@@ -222,6 +278,22 @@ struct h3_result {
     uint64_t ssd_request_bytes_read;
     double ssd_request_read_seconds;
     double ssd_request_wait_seconds;
+    int exact_streaming;
+    int exact_streaming_finished;
+    int exact_streaming_poisoned;
+    uint32_t exact_completed_passes;
+    uint64_t exact_pool_creates;
+    uint64_t exact_slot_bundles;
+    uint64_t exact_fills;
+    uint64_t exact_content_bytes_loaded;
+    uint64_t exact_groups_submitted;
+    double exact_refill_load_seconds;
+    double exact_max_refill_seconds;
+    int32_t exact_max_refill_block;
+    double exact_wait_seconds;
+    /* Owned sealed event matrix. NULL for legacy/private requests. */
+    tc_stream_receipt_v2 *exact_receipt;
+    double denoise_seconds;
     int decoded_width;
     int decoded_height;
     int decoded_frames;
@@ -256,6 +328,11 @@ void h3_cache_get_info(const h3_ctx *ctx, h3_cache_info *info);
 /* Generate media, delivering decoded frames incrementally through on_frame. */
 h3_result *h3_generate(h3_ctx *ctx, const char *prompt,
                        const h3_params *params);
+/* Wait for all retained H3 component queues. Short-lived components already
+ * drain during h3_generate()/free; this call closes retained DiT/decoder
+ * queues before the request owner consumes allocator completion messages. */
+int h3_drain(h3_ctx *ctx, h3_drain_info *info,
+             char *error, size_t error_size);
 void h3_result_free(h3_result *result);
 
 #ifdef __cplusplus

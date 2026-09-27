@@ -1,0 +1,21 @@
+{
+  "scope": "W0 first public Z/Flux one-shot supervisor; not yet JobStore-wired",
+  "cooperative_signal": "SIGTERM",
+  "cooperative_grace_seconds": 5,
+  "escalation_signal": "SIGKILL",
+  "post_kill_reaping_deadline_seconds": 5,
+  "poll_milliseconds": 25,
+  "stdout_retained_limit_bytes": 4194304,
+  "stderr_retained_limit_bytes": 1048576,
+  "drain_per_stream_per_poll_limit_bytes": 262144,
+  "group": "posix_spawn SETPGROUP, new PGID=child PID",
+  "identity_lifetime": "waitid WNOWAIT before last signal; waitpid reap only after final group cleanup signal; never signal PID/PGID after reaping",
+  "complete": "leader reaped AND owned process group absent",
+  "deadline_or_identity_loss": "cleanup_pending; admission retained; explicit pollCleanup may release after OS confirmation",
+  "limitations": [
+    "Deadline observation depends on OS scheduling; no hard realtime promise",
+    "Process groups are the ownership boundary; supported workers must not call setsid/setpgid to escape",
+    "Admission and PID ownership are process-local; durable restart identity/pending-job integration is still required",
+    "No arbitrary overall generation timeout"
+  ]
+}

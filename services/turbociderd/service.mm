@@ -51,6 +51,7 @@ std::string final_line(std::string text) {
 struct LtxServiceRequest {
     bool matches = false;
     bool audio = false;
+    bool memory_constrained = false;
     std::string residency;
 };
 LtxServiceRequest inspect_ltx_request(NSDictionary *request) {
@@ -74,11 +75,21 @@ LtxServiceRequest inspect_ltx_request(NSDictionary *request) {
             [outputs[0] isKindOfClass:NSDictionary.class] ? outputs[0] : @{};
         if ([output[@"audio"] isKindOfClass:NSNumber.class])
             result.audio = [output[@"audio"] boolValue];
+        NSDictionary *memory =
+            [execution[@"memory_constrained"] isKindOfClass:NSDictionary.class] ?
+                execution[@"memory_constrained"] : @{};
+        if ([memory[@"enabled"] isKindOfClass:NSNumber.class])
+            result.memory_constrained = [memory[@"enabled"] boolValue];
     } else {
         if ([request[@"residency"] isKindOfClass:NSString.class])
             residency = request[@"residency"];
         if ([request[@"audio"] isKindOfClass:NSNumber.class])
             result.audio = [request[@"audio"] boolValue];
+        NSDictionary *memory =
+            [request[@"memory_constrained"] isKindOfClass:NSDictionary.class] ?
+                request[@"memory_constrained"] : @{};
+        if ([memory[@"enabled"] isKindOfClass:NSNumber.class])
+            result.memory_constrained = [memory[@"enabled"] boolValue];
     }
     if (residency) result.residency = residency.UTF8String;
     return result;
@@ -89,7 +100,47 @@ bool external_ltx_request(NSDictionary *request) {
      * post-denoise Video/Audio VAE finalizer can exec into a clean MLX
      * process.  Audio used to be excluded here, which left the daemon's
      * MPSGraph allocator resident and made Video VAE decode 3–5x slower. */
-    return value.matches && value.residency == "component_staged";
+    return value.matches && !value.memory_constrained &&
+        value.residency == "component_staged";
+}
+
+struct LtxServiceRoute {
+    bool external_worker = false;
+    bool resident_candidate = false;
+    std::string name = "native_session";
+};
+
+LtxServiceRoute route_ltx_plan(NSDictionary *plan) {
+    LtxServiceRoute route;
+    if (![plan isKindOfClass:NSDictionary.class] ||
+        ![plan[@"model"] isEqual:@"ltx-2.5-distilled"])
+        return route;
+    NSString *residency = [plan[@"residency"] isKindOfClass:NSString.class] ?
+        plan[@"residency"] : @"";
+    NSDictionary *memory =
+        [plan[@"memory_policy"] isKindOfClass:NSDictionary.class] ?
+            plan[@"memory_policy"] : nil;
+    const bool constrained = memory && [memory[@"enabled"] boolValue];
+    if (constrained) {
+        /* The current constrained LTX adapter is admitted in the daemon
+         * process. A disposable worker is not eligible until parent+child
+         * envelopes and ACK handoff are implemented. */
+        route.name = "memory_constrained_native_session";
+        return route;
+    }
+    if ([residency isEqual:@"component_staged"]) {
+        route.external_worker = true;
+        route.name = "disposable_worker";
+    } else if ([residency isEqual:@"resident"] &&
+               ![plan[@"audio"] boolValue]) {
+        const char *enabled = std::getenv(
+            "TURBOCIDER_LTX_RESIDENT_CANDIDATE");
+        if (enabled && std::strcmp(enabled, "1") == 0) {
+            route.resident_candidate = true;
+            route.name = "resident_session";
+        }
+    }
+    return route;
 }
 bool resident_ltx_candidate_request(NSDictionary *request) {
     const char *enabled = std::getenv("TURBOCIDER_LTX_RESIDENT_CANDIDATE");
@@ -107,6 +158,7 @@ struct Job {
     bool cancellation=false;
     bool external_worker=false;
     bool resident_candidate=false;
+    bool route_resolved=false;
     std::chrono::steady_clock::time_point persisted{};
 };
 class Service {
@@ -304,9 +356,10 @@ class Service {
             job.value[@"state"]=@"running";
             auto request=encode(job.value[@"request"]);auto path=field(job.value,@"model_path");
             auto model=field(job.value[@"request"],@"model");auto identity=model+"\n"+path;
-            bool external_worker=job.external_worker ||
+            bool external_worker=job.route_resolved ? job.external_worker :
                 external_ltx_request(job.value[@"request"]);
-            bool resident_candidate=job.resident_candidate ||
+            bool resident_candidate=job.route_resolved ?
+                job.resident_candidate :
                 resident_ltx_candidate_request(job.value[@"request"]);
             bool resident_reuse=!external_worker && resident_candidate &&
                 engine_ != nullptr && loaded_ == identity;
@@ -377,6 +430,13 @@ public:
             if(![value isKindOfClass:NSDictionary.class])continue;
             auto id=field(value,@"id");check([name isEqual:@((id+".json").c_str())],"job file identity mismatch");
             Job job{value};
+            if ([value[@"service_route"] isKindOfClass:NSString.class]) {
+                job.route_resolved = true;
+                job.external_worker =
+                    [value[@"service_route"] isEqual:@"disposable_worker"];
+                job.resident_candidate =
+                    [value[@"service_route"] isEqual:@"resident_session"];
+            }
             if([@[@"queued",@"running",@"cancelling"] containsObject:value[@"state"]]){value[@"state"]=@"interrupted";persist(job);}
             jobs_.emplace(id,std::move(job));
         }
@@ -399,20 +459,20 @@ public:
             NSMutableDictionary *inference=[request[@"request"] mutableCopy];if(!inference[@"model"])inference[@"model"]=@"flux2-klein-4b";
             char *plan=nullptr,*error=nullptr;auto text=encode(inference);auto status=tc_plan_json(text.c_str(),&plan,&error);auto message=take(error),prepared=take(plan);check(status==0,message.c_str());
             id plan_value=decode(prepared);
-            /* The planner returns a flattened execution summary, not the
-             * request schema.  In particular, schema-v2 residency lives in
-             * request.execution.residency but the plan exposes it at the top
-             * level.  Route from the validated original request so both
-             * schema versions select the same disposable LTX worker. */
-            bool external_worker=external_ltx_request(inference);
-            bool resident_candidate=resident_ltx_candidate_request(inference);
+            /* Route from the effective plan. A constrained request may be
+             * normalized from resident/component_staged to streamed, so the
+             * original request is not authoritative for process topology. */
+            LtxServiceRoute route = route_ltx_plan(plan_value);
+            bool external_worker=route.external_worker;
+            bool resident_candidate=route.resident_candidate;
             check([plan_value[@"executable"] boolValue] || external_worker ||
                   resident_candidate,"model executor unavailable");
             auto path=field(request,@"model_path");check(!path.empty(),"model path required");
             auto id=std::string(NSUUID.UUID.UUIDString.UTF8String);
-            Job job{[@{@"schema_version":@1,@"id":@(id.c_str()),@"state":@"queued",@"created_at":@(NSDate.date.timeIntervalSince1970),@"model_path":@(path.c_str()),@"request":inference} mutableCopy]};
+            Job job{[@{@"schema_version":@1,@"id":@(id.c_str()),@"state":@"queued",@"created_at":@(NSDate.date.timeIntervalSince1970),@"model_path":@(path.c_str()),@"request":inference,@"service_route":@(route.name.c_str())} mutableCopy]};
             job.external_worker=external_worker;
             job.resident_candidate=resident_candidate;
+            job.route_resolved=true;
             persist(job);jobs_.emplace(id,std::move(job));pending_.push_back(id);available_.notify_one();return @{@"id":@(id.c_str()),@"state":@"queued"};
         }
         if(action=="jobs") {

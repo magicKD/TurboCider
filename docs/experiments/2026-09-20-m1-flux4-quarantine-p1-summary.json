@@ -1,0 +1,133 @@
+{
+  "format": "turbocider-streaming-campaign-verification-v1",
+  "schema_version": 1,
+  "overall": "INCONCLUSIVE",
+  "comparison_kind": "P1",
+  "total_blocks": 10,
+  "bootstrap_blocks": 10,
+  "total_pairs": 20,
+  "matched_pairs": 20,
+  "failed_samples": [],
+  "hard_failure_samples": [],
+  "quality_failures": [],
+  "quality_not_measured": [],
+  "quality_status": "complete",
+  "environment_status": "partial",
+  "environment_complete": false,
+  "campaign_status": "complete",
+  "campaign_complete": true,
+  "audit_status": "passed",
+  "audit_passed": true,
+  "audit_observations": {
+    "steady_framework_allocations": {
+      "value": 0,
+      "maximum": 0
+    },
+    "steady_framework_thread_creates": {
+      "value": 0,
+      "maximum": 0
+    }
+  },
+  "source_provenance_complete": true,
+  "protocol_complete": true,
+  "memory_evidence": null,
+  "memory_qualification": "NOT_REQUESTED",
+  "p3_environment": null,
+  "p3_result": null,
+  "sample_size_sufficient": true,
+  "minimum_matched_pairs": 20,
+  "minimum_tail_requests_per_variant": 0,
+  "required_matched_pairs": 20,
+  "completion": {
+    "successful_requests": 40,
+    "total_requests": 40,
+    "rate": 1.0
+  },
+  "decisions": {
+    "wall_median": "INCONCLUSIVE",
+    "wall_p95": "INCONCLUSIVE",
+    "denoise_median": "INCONCLUSIVE"
+  },
+  "metrics": {
+    "wall": {
+      "baseline": {
+        "name": "baseline_wall",
+        "count": 20,
+        "median": 8.525173479516525,
+        "p95": 8.913368854543661
+      },
+      "candidate": {
+        "name": "candidate_wall",
+        "count": 20,
+        "median": 8.423409146082122,
+        "p95": 8.764207121048821
+      },
+      "ratio": {
+        "median": 0.9880630776981943,
+        "p95": 0.9832653920275269
+      },
+      "bootstrap_95": {
+        "median_ratio": {
+          "lower": 0.9731629250415897,
+          "upper": 1.0053003971094938
+        },
+        "p95_ratio": {
+          "lower": 0.9257244321266148,
+          "upper": 1.0084039356464067
+        }
+      }
+    },
+    "denoise": {
+      "baseline": {
+        "name": "baseline_denoise",
+        "count": 20,
+        "median": 6.277440167,
+        "p95": 6.8026492944
+      },
+      "candidate": {
+        "name": "candidate_denoise",
+        "count": 20,
+        "median": 6.2377670415,
+        "p95": 6.3602329104
+      },
+      "ratio": {
+        "median": 0.9936800472096001,
+        "p95": 0.934964105181168
+      },
+      "bootstrap_95": {
+        "median_ratio": {
+          "lower": 0.9828829352841195,
+          "upper": 1.009260475154456
+        },
+        "p95_ratio": {
+          "lower": 0.890522328196098,
+          "upper": 1.0129216253343307
+        }
+      }
+    }
+  },
+  "bootstrap": {
+    "iterations": 4000,
+    "seed": 59,
+    "unit": "abba_block"
+  },
+  "build_identity": {
+    "baseline": {
+      "backend": "native",
+      "binary_path": "/Users/chencanhui/code/TurboCider/build/m1-audit/libturbocider.dylib",
+      "binary_sha256": "1d6761714a05f18a0c31c0185a5db32851f8c013b7af4d5225ab9f6f4533e90f",
+      "binary_size_bytes": 5649888,
+      "constructor": "candidate",
+      "variant_config_sha256": "0453434f011c8744d30c6cefd5276fb49b4500e3d39891b6ffcbbd59b4392216"
+    },
+    "candidate": {
+      "backend": "native",
+      "binary_path": "/Users/chencanhui/code/TurboCider/build/m1-quarantine/libturbocider.dylib",
+      "binary_sha256": "e06dc49a0b8c6770857c70e2c2f96e2d50ca5ef1b0fb5dcefd8f51d6582c1c03",
+      "binary_size_bytes": 5727616,
+      "constructor": "candidate",
+      "variant_config_sha256": "6c0cee83a7b868812c550bf70d4ffda0694d669d82a59891d2dc82fdac8598c9"
+    }
+  },
+  "policy_sha256": "f80b6d8547534c55ec677074d28e81eaf71f4de7e926959a3c235ff5e453eefc"
+}

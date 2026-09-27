@@ -107,9 +107,13 @@ def arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "--residency",
-        choices=("paired", "resident", "component_staged", "streamed"),
+        choices=("paired", "resident", "component_staged", "streamed", "exact"),
         default="paired",
     )
+    parser.add_argument("--exact-slots", type=int, default=3)
+    parser.add_argument("--exact-prefix-blocks", type=int, default=1)
+    parser.add_argument("--exact-prefetch-distance", type=int)
+    parser.add_argument("--exact-io-workers", type=int, default=1)
     parser.add_argument(
         "--execution", choices=("gpu", "gpu_ane"), default="gpu"
     )
@@ -152,6 +156,23 @@ def arguments() -> argparse.Namespace:
         parser.error("--memory-budget-bytes must be non-negative")
     if args.residency == "streamed" and not args.memory_budget_bytes:
         parser.error("streamed residency requires a non-zero memory budget")
+    if not 1 <= args.exact_slots <= 3:
+        parser.error("--exact-slots must be 1...3")
+    if not 1 <= args.exact_prefix_blocks < 48:
+        parser.error("--exact-prefix-blocks must be 1...47")
+    if args.exact_prefetch_distance is None:
+        args.exact_prefetch_distance = args.exact_slots - 1
+    if not 0 <= args.exact_prefetch_distance < args.exact_slots:
+        parser.error("--exact-prefetch-distance must be below exact slots")
+    if not 1 <= args.exact_io_workers <= args.exact_slots:
+        parser.error("--exact-io-workers must be 1...exact slots")
+    if args.residency == "exact" and (
+        args.execution != "gpu" or args.audio or args.first_frame or
+        args.ltx_fast_mode != "quality"
+    ):
+        parser.error(
+            "exact candidate requires GPU dense text-to-video without audio"
+        )
     if args.execution == "gpu_ane" and not args.ane_manifest:
         parser.error("gpu_ane execution requires --ane-manifest")
     if args.execution == "gpu_ane" and args.residency in ("paired", "streamed"):
@@ -254,6 +275,50 @@ def run_mode(library, model: Path, output: Path, report: Path,
                 "dump_tensors": str(dump.resolve()),
                 "output": str(destination.resolve()),
             }
+            if residency == "exact":
+                request = {
+                    "schema_version": 2,
+                    "model": "ltx-2.5-distilled",
+                    "operation": "video.generate",
+                    "inputs": [{
+                        "kind": "text", "role": "prompt",
+                        "text": args.prompt,
+                    }],
+                    "outputs": [{
+                        "kind": "video",
+                        "path": str(destination.resolve()),
+                        "width": args.width,
+                        "height": args.height,
+                        "frames": args.frames,
+                        "fps": 24,
+                        "audio": False,
+                    }],
+                    "sampling": {"seed": args.seed, "steps": args.steps},
+                    "execution": {
+                        "policy": "gpu",
+                        "ltx_backend": "c_metal",
+                        "ltx_fast_av": True,
+                        "ltx_video_attention_batch":
+                            args.ltx_video_attention_batch,
+                        "streaming": {
+                            "schema_version": 1,
+                            "enabled": True,
+                            "selection": "manual",
+                            "retention": "request",
+                            "stages": {"denoiser": {
+                                "residency": "streamed",
+                                "block_group_size": 1,
+                                "slot_count": args.exact_slots,
+                                "resident_prefix_blocks":
+                                    args.exact_prefix_blocks,
+                                "prefetch_distance":
+                                    args.exact_prefetch_distance,
+                                "io_workers": args.exact_io_workers,
+                            }},
+                        },
+                    },
+                    "dump_tensors": str(dump.resolve()),
+                }
             if args.ltx_fast_mode != "quality":
                 request.update({
                     "allow_approximation": True,
@@ -490,6 +555,12 @@ def main() -> int:
             "first_frame_strength": (
                 args.first_frame_strength if args.first_frame else None
             ),
+            "exact_layout": {
+                "slots": args.exact_slots,
+                "prefix_blocks": args.exact_prefix_blocks,
+                "prefetch_distance": args.exact_prefetch_distance,
+                "io_workers": args.exact_io_workers,
+            } if args.residency == "exact" else None,
             "ane_persistent_worker": os.environ.get(
                 "TURBOCIDER_LTX_ANE_PERSISTENT_WORKER", "0"
             ) == "1",

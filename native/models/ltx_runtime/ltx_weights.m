@@ -364,27 +364,25 @@ static int ltx_gemma_require_linear(
     return 1;
 }
 
-int ltx_gemma_checkpoint_inspect(const char *path,
-                                 ltx_gemma_checkpoint_info *info,
-                                 char *error, size_t error_size) {
-    if (!path || !info)
+static int ltx_gemma_checkpoint_inspect_loaded(
+        const char *path, const ltx_st_header *header,
+        const ltx_st_mapping *mapping, ltx_gemma_checkpoint_info *info,
+        char *error, size_t error_size) {
+    if (!path || !header || !mapping || !info)
         return ltx_weights_fail(error, error_size,
                                 "missing Gemma checkpoint inspection argument");
     memset(info, 0, sizeof(*info));
     snprintf(info->path, sizeof(info->path), "%s", path);
-    ltx_st_header header;
-    if (!ltx_st_read_header(path, &header, error, error_size)) return 0;
-    info->tensor_count = header.tensor_count;
-    if (!header.metadata_gemma_config) {
-        ltx_st_free_header(&header);
+    info->tensor_count = header->tensor_count;
+    if (!header->metadata_gemma_config) {
         return ltx_weights_fail(error, error_size,
                                 "Gemma checkpoint has no gemma_config metadata");
     }
 
     __block NSArray *layer_types = nil;
     @autoreleasepool {
-        NSData *data = [NSData dataWithBytes:header.metadata_gemma_config
-                                      length:strlen(header.metadata_gemma_config)];
+        NSData *data = [NSData dataWithBytes:header->metadata_gemma_config
+                                      length:strlen(header->metadata_gemma_config)];
         NSError *json_error = nil;
         id raw = [NSJSONSerialization JSONObjectWithData:data
                                                  options:0
@@ -395,7 +393,6 @@ int ltx_gemma_checkpoint_inspect(const char *path,
         if (!root || !text ||
             ![root[@"model_type"] isEqual:@"gemma4_unified"] ||
             ![text[@"model_type"] isEqual:@"gemma4_unified_text"]) {
-            ltx_st_free_header(&header);
             return ltx_weights_fail(error, error_size,
                                     "invalid Gemma4 unified metadata");
         }
@@ -430,14 +427,12 @@ int ltx_gemma_checkpoint_inspect(const char *path,
             fabs([full_rope[@"rope_theta"] doubleValue] - 1000000.0) > 1e-6 ||
             fabs([full_rope[@"partial_rotary_factor"] doubleValue] - 0.25) >
                 1e-12) {
-            ltx_st_free_header(&header);
             return ltx_weights_fail(error, error_size,
                                     "unsupported Gemma4 attention/norm parameters");
         }
         NSArray *raw_types = text[@"layer_types"];
         if (![raw_types isKindOfClass:NSArray.class] ||
             raw_types.count != info->num_layers) {
-            ltx_st_free_header(&header);
             return ltx_weights_fail(error, error_size,
                                     "Gemma layer schedule mismatch");
         }
@@ -448,7 +443,6 @@ int ltx_gemma_checkpoint_inspect(const char *path,
         info->attention_heads != 16u || info->sliding_kv_heads != 8u ||
         info->full_kv_heads != 1u || info->sliding_head_dim != 256u ||
         info->full_head_dim != 512u || !info->attention_k_eq_v) {
-        ltx_st_free_header(&header);
         return ltx_weights_fail(error, error_size,
                                 "unsupported Gemma4 text geometry");
     }
@@ -459,36 +453,30 @@ int ltx_gemma_checkpoint_inspect(const char *path,
     info->projection_audio_dim = 2048u;
     info->projection_input_dim = stacked_hidden;
     if (!ltx_gemma_require_tensor(
-            &header, "model.embed_tokens.weight", LTX_DTYPE_BF16, 2u,
+            header, "model.embed_tokens.weight", LTX_DTYPE_BF16, 2u,
             info->vocab_size, info->hidden_size, error, error_size) ||
         !ltx_gemma_require_tensor(
-            &header, "model.norm.weight", LTX_DTYPE_BF16, 1u,
+            header, "model.norm.weight", LTX_DTYPE_BF16, 1u,
             info->hidden_size, 0u, error, error_size) ||
         !ltx_gemma_require_tensor(
-            &header, "text_embedding_projection.video_aggregate_embed.weight",
+            header, "text_embedding_projection.video_aggregate_embed.weight",
             LTX_DTYPE_BF16, 2u, info->projection_video_dim,
             stacked_hidden, error, error_size) ||
         !ltx_gemma_require_tensor(
-            &header, "text_embedding_projection.video_aggregate_embed.bias",
+            header, "text_embedding_projection.video_aggregate_embed.bias",
             LTX_DTYPE_BF16, 1u, info->projection_video_dim, 0u,
             error, error_size) ||
         !ltx_gemma_require_tensor(
-            &header, "text_embedding_projection.audio_aggregate_embed.weight",
+            header, "text_embedding_projection.audio_aggregate_embed.weight",
             LTX_DTYPE_BF16, 2u, info->projection_audio_dim,
             stacked_hidden, error, error_size) ||
         !ltx_gemma_require_tensor(
-            &header, "text_embedding_projection.audio_aggregate_embed.bias",
+            header, "text_embedding_projection.audio_aggregate_embed.bias",
             LTX_DTYPE_BF16, 1u, info->projection_audio_dim, 0u,
             error, error_size)) {
-        ltx_st_free_header(&header);
         return 0;
     }
 
-    ltx_st_mapping mapping;
-    if (!ltx_st_map_open(&header, &mapping, error, error_size)) {
-        ltx_st_free_header(&header);
-        return 0;
-    }
     int ok = 1;
     int all_convrot = 1;
     char name[512];
@@ -515,11 +503,11 @@ int ltx_gemma_checkpoint_inspect(const char *path,
         snprintf(name, sizeof(name), FORMAT, __VA_ARGS__)
 #define LTX_GEMMA_VECTOR(SUFFIX, DIMENSION) \
         (LTX_GEMMA_NAME("model.layers.%u.%s", layer, (SUFFIX)), \
-         ltx_gemma_require_tensor(&header, name, LTX_DTYPE_BF16, 1u, \
+         ltx_gemma_require_tensor(header, name, LTX_DTYPE_BF16, 1u, \
                                   (DIMENSION), 0u, error, error_size) != NULL)
 #define LTX_GEMMA_LINEAR(SUFFIX, INPUT, OUTPUT) \
         (LTX_GEMMA_NAME("model.layers.%u.%s", layer, (SUFFIX)), \
-         ltx_gemma_require_linear(&header, &mapping, name, (INPUT), (OUTPUT), \
+         ltx_gemma_require_linear(header, mapping, name, (INPUT), (OUTPUT), \
                                   &all_convrot, error, error_size))
         ok = LTX_GEMMA_VECTOR("input_layernorm.weight", info->hidden_size) &&
              LTX_GEMMA_VECTOR("post_attention_layernorm.weight", info->hidden_size) &&
@@ -541,7 +529,7 @@ int ltx_gemma_checkpoint_inspect(const char *path,
         if (ok && sliding) {
             ok = LTX_GEMMA_LINEAR("self_attn.v_proj", info->hidden_size,
                                   key_value_dim);
-        } else if (ok && ltx_st_find(&header, name)) {
+        } else if (ok && ltx_st_find(header, name)) {
             ok = ltx_weights_fail(error, error_size,
                                   "full Gemma attention unexpectedly has v_proj");
         }
@@ -549,11 +537,44 @@ int ltx_gemma_checkpoint_inspect(const char *path,
 #undef LTX_GEMMA_VECTOR
 #undef LTX_GEMMA_NAME
     }
-    ltx_st_map_close(&mapping);
     if (ok) {
         info->quantized_int8 = 1;
         info->all_convrot_group_256 = all_convrot;
     }
+    return ok;
+}
+
+int ltx_gemma_checkpoint_inspect(const char *path,
+                                 ltx_gemma_checkpoint_info *info,
+                                 char *error, size_t error_size) {
+    if (!path || !info)
+        return ltx_weights_fail(error, error_size,
+                                "missing Gemma checkpoint inspection argument");
+    ltx_st_header header = {0};
+    ltx_st_mapping mapping = {0};
+    int ok = ltx_st_read_header(path, &header, error, error_size) &&
+        ltx_st_map_open(&header, &mapping, error, error_size) &&
+        ltx_gemma_checkpoint_inspect_loaded(
+            path, &header, &mapping, info, error, error_size);
+    ltx_st_map_close(&mapping);
+    ltx_st_free_header(&header);
+    return ok;
+}
+
+int ltx_gemma_checkpoint_inspect_fd(int descriptor, const char *path,
+                                    ltx_gemma_checkpoint_info *info,
+                                    char *error, size_t error_size) {
+    if (descriptor < 0 || !path || !info)
+        return ltx_weights_fail(error, error_size,
+                                "missing Gemma checkpoint fd inspection argument");
+    ltx_st_header header = {0};
+    ltx_st_mapping mapping = {0};
+    int ok = ltx_st_read_header_fd(
+            descriptor, path, &header, error, error_size) &&
+        ltx_st_map_fd(&header, descriptor, &mapping, error, error_size) &&
+        ltx_gemma_checkpoint_inspect_loaded(
+            path, &header, &mapping, info, error, error_size);
+    ltx_st_map_close(&mapping);
     ltx_st_free_header(&header);
     return ok;
 }

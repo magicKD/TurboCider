@@ -1,0 +1,33 @@
+{
+  "document_kind": "proposed_synthetic_compiler_fixture",
+  "schema_version": 1,
+  "model": "synthetic-homogeneous",
+  "input": {
+    "block_count": 10,
+    "block_backing_bytes": 134217728,
+    "block_group_size": 3,
+    "slot_count": 2,
+    "resident_prefix_blocks": 2,
+    "prefetch_distance": 1,
+    "io_workers": 1,
+    "pass_count": 2,
+    "cross_pass_content_cache": false
+  },
+  "expected": {
+    "prefix_blocks": [0, 1],
+    "groups": [[2, 3, 4], [5, 6, 7], [8, 9]],
+    "slot_assignment": [0, 1, 0],
+    "slot_capacity_bytes": [402653184, 402653184],
+    "prefix_bytes": 268435456,
+    "pool_bytes": 805306368,
+    "weight_backing_bytes": 1073741824,
+    "suffix_logical_read_bytes_per_pass": 1073741824,
+    "suffix_logical_read_bytes_total": 2147483648,
+    "prefix_logical_read_bytes_total": 268435456,
+    "pool_create_count": 1,
+    "slot_bundle_create_count": 2,
+    "fill_count": 6
+  },
+  "whole_request_upper": null,
+  "execution_eligibility": "synthetic_only"
+}

@@ -22,16 +22,48 @@ int tc_engine_cache(tc_engine *,const char *request_json,tc_event_callback,void 
 int tc_coreml_resources_json(const char *,tc_event_callback,void *,char **result,char **error);
 void tc_coreml_resources_cancel(void);
 uint32_t tc_abi_version(void);
+/* Compiled native identity; caller releases with tc_string_free. */
+char *tc_runtime_build_identity(void);
 char *tc_system_json(void);
 char *tc_models_json(void);
 int tc_plan_json(const char *request_json, char **plan_json, char **error);
+/* Read-only public streaming preset query for the embedded App container.
+ * This validates request intent and inspects the native catalog/device only;
+ * it never loads model weights, creates GPU pools or starts I/O workers. */
+int tc_streaming_options_json(const char *request_json,
+                              char **result_json, char **error);
+/* Read-only discovery for the fixed cli_worker container. No model creation,
+ * source verification, GPU weights or execution authority. */
+int tc_worker_streaming_options_json(const char *request_json, char **result_json, char **error);
 int tc_engine_create(const char *model_path, tc_engine **engine, char **error);
 /* Additive ABI: select a registered model module. Model paths are local only. */
 int tc_engine_create_model(const char *model_id, const char *model_path,
                            tc_engine **engine, char **error);
+/* Controlled one-shot CLI worker entry. The container is immutable for the
+ * engine lifetime and is never selected from request JSON. App clients retain
+ * tc_engine_create_model; catalogs cannot cross these execution containers. */
+int tc_engine_create_model_worker(const char *model_id, const char *model_path,
+                                 tc_engine **engine, char **error);
+/* Explicit cancellable CPU/file-I/O content verification for supported models.
+ * Returns verified SHA-256 identities and process-local generation proof metrics.
+ * Does not grant a preset, allocate GPU weights, or persist proof across processes.
+ * Subsequent streaming queries on this engine require unchanged verified sources.
+ * Call tc_engine_cancel to cancel; status is 0 success, 2 cancelled, 1 failure. */
+int tc_engine_verify_streaming_sources_json(tc_engine *, char **result_json, char **error);
+
+/* Exact, metadata-only public streaming resolution for this engine's model
+ * source and execution container. It does not acquire the process GPU lock,
+ * allocate GPU backing, load weights, prepare or generate. */
+int tc_engine_resolve_streaming_json(tc_engine *, const char *request_json,
+                                     char **result_json, char **error);
 int tc_engine_generate(tc_engine *, const char *request_json,
                        tc_event_callback callback, void *context,
                        char **result_json, char **error);
+/* Additive diagnostic ABI. Returns and consumes the most recent terminal
+ * memory report from an enabled constrained request. Default/disabled calls
+ * do not create or overwrite a report. */
+int tc_engine_take_last_memory_report_json(
+    tc_engine *, char **report_json, char **error);
 void tc_engine_cancel(tc_engine *);
 /* Explicit image-weight preparation and resource release; idle engine only.
  * Loading does not perform inference or warm a prompt/shape. */

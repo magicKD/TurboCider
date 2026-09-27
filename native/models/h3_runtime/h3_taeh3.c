@@ -532,6 +532,20 @@ int h3_taeh3_decoder_get_gpu_stats(const h3_taeh3_decoder *decoder,
     return decoder && h3_gpu_get_stats(decoder->gpu, stats);
 }
 
+int h3_taeh3_decoder_drain_gpu(h3_taeh3_decoder *decoder,
+                               char *error, size_t error_size) {
+    if (!decoder || !decoder->gpu) {
+        fail(error, error_size, "invalid H3 TAEH3 GPU drain");
+        return 0;
+    }
+    if (!h3_gpu_drain(decoder->gpu)) {
+        fail(error, error_size, "cannot drain H3 TAEH3 GPU: %s",
+             h3_gpu_error(decoder->gpu));
+        return 0;
+    }
+    return 1;
+}
+
 void h3_taeh3_decoder_free(h3_taeh3_decoder *decoder) {
     if (!decoder) return;
     free_conv(&decoder->input);

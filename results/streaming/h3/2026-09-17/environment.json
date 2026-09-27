@@ -1,0 +1,56 @@
+{
+  "format": "turbocider-streaming-environment-v1",
+  "status": "complete",
+  "captured_at_local": "2026-09-17T16:41:00+08:00",
+  "host": {
+    "model_name": "Mac Studio",
+    "model_identifier": "Mac16,9",
+    "chip": "Apple M4 Max",
+    "cpu_cores": 16,
+    "performance_cores": 12,
+    "efficiency_cores": 4
+  },
+  "gpu": {
+    "name": "Apple M4 Max",
+    "cores": 40,
+    "metal": "supported"
+  },
+  "ram_bytes": 68719476736,
+  "ssd": {
+    "controller": "Apple SSD Controller",
+    "model": "APPLE SSD AP1024Z",
+    "trim": true,
+    "filesystem": "APFS",
+    "workspace_volume_size_gib": 926,
+    "workspace_volume_free_gib": 63
+  },
+  "power": "AC Power",
+  "thermal": {
+    "thermal_warning": "none recorded",
+    "performance_warning": "none recorded"
+  },
+  "pressure": {
+    "protocol": "none",
+    "system_memory_free_percent_after_campaign": 91,
+    "swap_policy": "unchanged"
+  },
+  "os": {
+    "name": "macOS",
+    "version": "26.6.2",
+    "build": "25G83",
+    "kernel": "Darwin 25.6.0",
+    "architecture": "arm64"
+  },
+  "toolchain": {
+    "macos_sdk": "26.5",
+    "developer_directory": "/Library/Developer/CommandLineTools",
+    "python": "3.9.6"
+  },
+  "campaign": {
+    "schedule": "serialized ABBA/BAAB",
+    "engine_lifecycle": "per_request",
+    "cache_condition": "one warmup per variant followed by per-request probe with OS cache warm",
+    "operator_exclusions": "none"
+  },
+  "notes": "H3 same-layout P1 follow-up on the frozen original-BF16 P0/G1/K2/D1/Q1 tuple; no artificial memory pressure or swap certification."
+}

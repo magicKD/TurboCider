@@ -7,6 +7,7 @@
 #include "h3_dit_schedule.h"
 #include "h3_streaming_policy.h"
 #include "h3_weights.h"
+#include "../../core/stream_slot_c.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -25,11 +26,11 @@
 
 enum {
     TEXT_DIM = 5120,
-    HIDDEN = 5376,
-    HEADS = 56,
-    HEAD_DIM = 128,
-    INNER = HEADS * HEAD_DIM,
-    FFN = 14336,
+    HIDDEN = H3_DIT_HIDDEN,
+    HEADS = H3_DIT_HEADS,
+    HEAD_DIM = H3_DIT_HEAD_DIM,
+    INNER = H3_DIT_INNER,
+    FFN = H3_DIT_FFN,
     VIDEO_CHANNELS = 24,
     VIDEO_PATCH = 96,
     AUDIO_CHANNELS = 32,
@@ -140,6 +141,8 @@ static int quantize_block_mlp_width(h3_dit *dit, h3_dit_block *block,
                                     char *error, size_t error_size);
 static int quantize_block_qkv(h3_dit *dit, h3_dit_block *block,
                               char *error, size_t error_size);
+static int stream_block_pinned(const h3_dit *dit, unsigned block);
+static unsigned first_streamed_block(const h3_dit *dit);
 
 enum {
     STREAM_QKV,
@@ -159,6 +162,7 @@ enum {
 
 typedef struct {
     const char *path;
+    int descriptor;
     uint64_t file_offset;
     size_t elements;
     unsigned field;
@@ -170,9 +174,41 @@ typedef struct {
     unsigned source_count;
 } h3_dit_stream_layer;
 
+typedef struct {
+    tc_stream_completion_sink_v1 sink;
+    tc_stream_slot_ticket_v1 ticket;
+} h3_dit_exact_completion;
+
+typedef struct {
+    tc_stream_cancel_query_v1 executor;
+    const void *executor_user;
+    h3_gpu_cancel_query_v1 request;
+    const void *request_user;
+} h3_dit_exact_cancel;
+
+typedef struct {
+    tc_stream_executor *executor;
+    h3_dit_exact_stream_options_v1 options;
+    h3_dit_exact_completion completions[2];
+    uint32_t pass;
+    uint32_t step;
+    uint32_t allocated_slots;
+    uint64_t queue_sequence;
+    double refill_load_seconds;
+    double max_refill_seconds;
+    int32_t max_refill_block;
+    int enabled;
+    int bound;
+    int finished;
+    int poisoned;
+    int carried_attention_adaln;
+    int carried_attention_input_quantized;
+} h3_dit_exact_stream;
+
 struct h3_dit {
     h3_gpu *gpu;
     h3_weight_store *weights;
+    uint64_t stream_source_identity;
     char *weight_directory;
     h3_dit_schedule *schedule;
     int fused_mlp;
@@ -343,6 +379,7 @@ struct h3_dit {
     h3_dit_block blocks[H3_DIT_BLOCKS];
     h3_dit_block stream_slots[2];
     h3_dit_stream_layer stream_layers[H3_DIT_BLOCKS];
+    h3_dit_exact_stream exact_stream;
     unsigned stream_ready_layer;
     unsigned stream_ready_slot;
     uint64_t stream_bytes;
@@ -2460,6 +2497,7 @@ static int prepare_stream_source(h3_dit *dit,
         return 0;
     }
     source->path = header->path;
+    source->descriptor = header->descriptor;
     source->file_offset = tensor->file_offset;
     source->elements = (size_t)(rows * columns);
     source->field = field;
@@ -2483,6 +2521,7 @@ static int prepare_stream_layer(h3_dit *dit, unsigned layer,
             const h3_quant_cache_source *source = &cached->sources[index];
             stream->sources[index] = (h3_dit_stream_source){
                 .path = source->path,
+                .descriptor = -1,
                 .file_offset = source->file_offset,
                 .elements = source->elements,
                 .field = source->field == H3_QUANT_QKV_WEIGHT ?
@@ -2519,21 +2558,24 @@ static int prepare_stream_layer(h3_dit *dit, unsigned layer,
 }
 
 static int allocate_stream_slot(h3_dit *dit, h3_dit_block *slot,
+                                unsigned slot_index,
                                 char *error, size_t error_size) {
+    char tag[96];
+#define NEW_SLOT_TENSOR(field, elements, dtype) \
+    do { \
+        snprintf(tag, sizeof(tag), "h3.stream.slot%u.%s", slot_index, #field); \
+        slot->field = h3_gpu_tensor_new_classified( \
+            dit->gpu, (elements), (dtype), H3_GPU_MEMORY_REFILL_SLOT, tag); \
+    } while (0)
     if (dit->ssd_quantized) {
-        slot->qkv_int8 = h3_gpu_tensor_new_i8(
-            dit->gpu, (size_t)INNER * 3 * HIDDEN);
-        slot->qkv_scales = h3_gpu_tensor_new_f32(
-            dit->gpu, INNER * 3);
-        slot->out_int8 = h3_gpu_tensor_new_i8(
-            dit->gpu, (size_t)HIDDEN * INNER);
-        slot->out_scales = h3_gpu_tensor_new_f32(dit->gpu, HIDDEN);
-        slot->fc1_int8 = h3_gpu_tensor_new_i8(
-            dit->gpu, (size_t)FFN * 2 * HIDDEN);
-        slot->fc1_scales = h3_gpu_tensor_new_f32(dit->gpu, FFN * 2);
-        slot->fc2_int8 = h3_gpu_tensor_new_i8(
-            dit->gpu, (size_t)HIDDEN * FFN);
-        slot->fc2_scales = h3_gpu_tensor_new_f32(dit->gpu, HIDDEN);
+        NEW_SLOT_TENSOR(qkv_int8, (size_t)INNER * 3 * HIDDEN, H3_GPU_I8);
+        NEW_SLOT_TENSOR(qkv_scales, INNER * 3, H3_GPU_F32);
+        NEW_SLOT_TENSOR(out_int8, (size_t)HIDDEN * INNER, H3_GPU_I8);
+        NEW_SLOT_TENSOR(out_scales, HIDDEN, H3_GPU_F32);
+        NEW_SLOT_TENSOR(fc1_int8, (size_t)FFN * 2 * HIDDEN, H3_GPU_I8);
+        NEW_SLOT_TENSOR(fc1_scales, FFN * 2, H3_GPU_F32);
+        NEW_SLOT_TENSOR(fc2_int8, (size_t)HIDDEN * FFN, H3_GPU_I8);
+        NEW_SLOT_TENSOR(fc2_scales, HIDDEN, H3_GPU_F32);
         if (!slot->qkv_int8 || !slot->qkv_scales || !slot->out_int8 ||
             !slot->out_scales || !slot->fc1_int8 || !slot->fc1_scales ||
             !slot->fc2_int8 || !slot->fc2_scales) {
@@ -2544,19 +2586,16 @@ static int allocate_stream_slot(h3_dit *dit, h3_dit_block *slot,
         }
         return 1;
     }
-    slot->qkv = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)INNER * 3 * HIDDEN);
-    slot->out = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)HIDDEN * INNER);
-    slot->fc1 = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)FFN * 2 * HIDDEN);
-    slot->fc2 = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)HIDDEN * FFN);
+    NEW_SLOT_TENSOR(qkv, (size_t)INNER * 3 * HIDDEN, H3_GPU_BF16);
+    NEW_SLOT_TENSOR(out, (size_t)HIDDEN * INNER, H3_GPU_BF16);
+    NEW_SLOT_TENSOR(fc1, (size_t)FFN * 2 * HIDDEN, H3_GPU_BF16);
+    NEW_SLOT_TENSOR(fc2, (size_t)HIDDEN * FFN, H3_GPU_BF16);
     if (!slot->qkv || !slot->out || !slot->fc1 || !slot->fc2) {
         fail(error, error_size, "cannot allocate BF16 SSD layer slot: %s",
              h3_gpu_error(dit->gpu));
         return 0;
     }
+#undef NEW_SLOT_TENSOR
     return 1;
 }
 
@@ -2670,6 +2709,105 @@ static int read_stream_layer(h3_dit_stream_job *job) {
     }
     job->seconds = stream_now() - started;
     return job->ok;
+}
+
+int h3_dit_stream_check_source_snapshot(h3_dit *dit,
+                                        char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!dit || !dit->weights || !dit->ssd_streaming ||
+        dit->ssd_quantized) {
+        fail(error, error_size,
+             "H3 candidate source check requires BF16 SSD streaming");
+        return 0;
+    }
+    uint64_t identity = 0;
+    if (!h3_weight_store_identity(
+            dit->weights, &identity, error, error_size)) return 0;
+    if (!dit->stream_source_identity) {
+        dit->stream_source_identity = identity;
+        return 1;
+    }
+    if (identity != dit->stream_source_identity) {
+        fail(error, error_size,
+             "checkpoint_changed: H3 streaming source snapshot is stale");
+        return 0;
+    }
+    return 1;
+}
+
+unsigned h3_dit_stream_first_block_id(const h3_dit *dit) {
+    if (!dit || !dit->ssd_streaming) return UINT_MAX;
+    const unsigned first = first_streamed_block(dit);
+    return first < H3_DIT_BLOCKS ? first : UINT_MAX;
+}
+
+int h3_dit_stream_fill_slot_v1(
+        h3_dit *dit, unsigned block, unsigned slot, size_t chunk_bytes,
+        h3_gpu_cancel_query_v1 cancel, const void *cancel_user,
+        h3_dit_stream_fill_result_v1 *result,
+        char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (result) memset(result, 0, sizeof(*result));
+    if (!dit || !result || !chunk_bytes || !dit->ssd_streaming ||
+        dit->ssd_quantized || !dit->stream_source_identity || slot >= 2 ||
+        block >= H3_DIT_BLOCKS || !dit->block_active[block] ||
+        stream_block_pinned(dit, block)) {
+        fail(error, error_size, "invalid H3 candidate stream fill request");
+        return 0;
+    }
+    h3_dit_stream_layer *layer = &dit->stream_layers[block];
+    if (layer->source_count != 4) {
+        fail(error, error_size,
+             "H3 candidate requires four BF16 matrix sources");
+        return 0;
+    }
+    result->struct_size = sizeof(*result);
+    result->version = H3_DIT_STREAM_FILL_ABI_V1;
+    result->block = block;
+    result->slot = slot;
+    const double started = stream_now();
+    h3_dit_block *destination = &dit->stream_slots[slot];
+    for (unsigned index = 0; index < layer->source_count; ++index) {
+        const h3_dit_stream_source *source = &layer->sources[index];
+        h3_gpu_tensor *target = stream_slot_target(destination, source->field);
+        if (source->dtype != H3_GPU_BF16 || !target ||
+            h3_gpu_tensor_dtype(target) != H3_GPU_BF16 ||
+            h3_gpu_tensor_elements(target) != source->elements ||
+            source->elements > UINT64_MAX / sizeof(uint16_t)) {
+            fail(error, error_size,
+                 "H3 candidate stream destination differs from metadata");
+            result->seconds = stream_now() - started;
+            return 0;
+        }
+        uint64_t field_bytes = 0;
+        const int read_ok = source->descriptor >= 0 ?
+            h3_gpu_tensor_stream_fd_bf16_cancellable(
+                target, source->descriptor, source->path,
+                source->file_offset, source->elements, chunk_bytes,
+                cancel, cancel_user, &field_bytes, error, error_size) :
+            h3_gpu_tensor_stream_file_bf16_cancellable(
+                target, source->path, source->file_offset, source->elements,
+                chunk_bytes, cancel, cancel_user, &field_bytes,
+                error, error_size);
+        if (!read_ok) {
+            if (field_bytes <= UINT64_MAX - result->source_bytes)
+                result->source_bytes += field_bytes;
+            else
+                result->source_bytes = UINT64_MAX;
+            result->seconds = stream_now() - started;
+            return 0;
+        }
+        if (field_bytes > UINT64_MAX - result->source_bytes) {
+            fail(error, error_size,
+                 "H3 candidate source byte counter overflow");
+            result->seconds = stream_now() - started;
+            return 0;
+        }
+        result->source_bytes += field_bytes;
+    }
+    result->content_bytes = result->source_bytes;
+    result->seconds = stream_now() - started;
+    return 1;
 }
 
 static void *read_stream_layer_thread(void *opaque) {
@@ -2804,8 +2942,9 @@ static int run_refiner_block(h3_dit *dit, const h3_dit_block *weight,
 
 static int refine_text(h3_dit *dit, const h3_text_embedding *text,
                        char *error, size_t error_size) {
-    h3_gpu_tensor *source = h3_gpu_tensor_from_bf16(
-        dit->gpu, text->values, text->tokens * TEXT_DIM);
+    h3_gpu_tensor *source = h3_gpu_tensor_from_bf16_classified(
+        dit->gpu, text->values, text->tokens * TEXT_DIM,
+        H3_GPU_MEMORY_CONDITIONING, "h3.dit.conditioning.text_source");
     h3_gpu_tensor *condition_w = bf2(dit, "condition_proj.weight", HIDDEN,
                                      TEXT_DIM, error, error_size);
     h3_gpu_tensor *condition_b = bf1(dit, "condition_proj.bias", HIDDEN,
@@ -2825,16 +2964,22 @@ static int refine_text(h3_dit *dit, const h3_text_embedding *text,
                              error, error_size);
     size_t rows = dit->text_rows;
     if (ok && final_norm) {
-        dit->refined_text = h3_gpu_tensor_new_bf16(dit->gpu, rows * HIDDEN);
-        norm = h3_gpu_tensor_new_bf16(dit->gpu, rows * HIDDEN);
-        qkv = h3_gpu_tensor_new_bf16(dit->gpu, rows * INNER * 3);
-        query = h3_gpu_tensor_new_bf16(dit->gpu, rows * INNER);
-        key = h3_gpu_tensor_new_bf16(dit->gpu, rows * INNER);
-        value = h3_gpu_tensor_new_bf16(dit->gpu, rows * INNER);
-        heads = h3_gpu_tensor_new_bf16(dit->gpu, rows * INNER);
-        branch = h3_gpu_tensor_new_bf16(dit->gpu, rows * HIDDEN);
-        fc1 = h3_gpu_tensor_new_bf16(dit->gpu, rows * FFN * 2);
-        activated = h3_gpu_tensor_new_bf16(dit->gpu, rows * FFN);
+        dit->refined_text = h3_gpu_tensor_new_classified(
+            dit->gpu, rows * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_CONDITIONING, "h3.dit.conditioning.refined_text");
+#define REFINER_ACT(name, elements) h3_gpu_tensor_new_classified(             \
+            dit->gpu, (elements), H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,      \
+            "h3.dit.refiner.activation." name)
+        norm = REFINER_ACT("norm", rows * HIDDEN);
+        qkv = REFINER_ACT("qkv", rows * INNER * 3);
+        query = REFINER_ACT("query", rows * INNER);
+        key = REFINER_ACT("key", rows * INNER);
+        value = REFINER_ACT("value", rows * INNER);
+        heads = REFINER_ACT("heads", rows * INNER);
+        branch = REFINER_ACT("branch", rows * HIDDEN);
+        fc1 = REFINER_ACT("fc1", rows * FFN * 2);
+        activated = REFINER_ACT("activated", rows * FFN);
+#undef REFINER_ACT
         ok = dit->refined_text && norm && qkv && query && key && value &&
              heads && branch && fc1 && activated;
     }
@@ -2946,23 +3091,41 @@ static int prepare_rope(h3_dit *dit, char *error, size_t error_size) {
             }
         }
     }
-    h3_gpu_tensor *cos_f32 = h3_gpu_tensor_from_f32(dit->gpu, cosines, count);
-    h3_gpu_tensor *sin_f32 = h3_gpu_tensor_from_f32(dit->gpu, sines, count);
+    h3_gpu_tensor *cos_f32 = h3_gpu_tensor_from_f32_classified(
+        dit->gpu, cosines, count, H3_GPU_MEMORY_CONVERSION_SCRATCH,
+        "h3.dit.rope.cos_f32");
+    h3_gpu_tensor *sin_f32 = h3_gpu_tensor_from_f32_classified(
+        dit->gpu, sines, count, H3_GPU_MEMORY_CONVERSION_SCRATCH,
+        "h3.dit.rope.sin_f32");
     h3_gpu_tensor *reduced_cos_f32 = reduced_count ?
-        h3_gpu_tensor_from_f32(dit->gpu, reduced_cosines, reduced_count) : NULL;
+        h3_gpu_tensor_from_f32_classified(
+            dit->gpu, reduced_cosines, reduced_count,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.rope.reduced_cos_f32") : NULL;
     h3_gpu_tensor *reduced_sin_f32 = reduced_count ?
-        h3_gpu_tensor_from_f32(dit->gpu, reduced_sines, reduced_count) : NULL;
+        h3_gpu_tensor_from_f32_classified(
+            dit->gpu, reduced_sines, reduced_count,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.rope.reduced_sin_f32") : NULL;
     free(cosines);
     free(sines);
     free(reduced_cosines);
     free(reduced_sines);
-    dit->rope_cos = h3_gpu_tensor_new_bf16(dit->gpu, count);
-    dit->rope_sin = h3_gpu_tensor_new_bf16(dit->gpu, count);
+    dit->rope_cos = h3_gpu_tensor_new_classified(
+        dit->gpu, count, H3_GPU_BF16, H3_GPU_MEMORY_CONDITIONING,
+        "h3.dit.conditioning.rope_cos");
+    dit->rope_sin = h3_gpu_tensor_new_classified(
+        dit->gpu, count, H3_GPU_BF16, H3_GPU_MEMORY_CONDITIONING,
+        "h3.dit.conditioning.rope_sin");
     if (reduced_count) {
-        dit->reduced_rope_cos = h3_gpu_tensor_new_bf16(
-            dit->gpu, reduced_count);
-        dit->reduced_rope_sin = h3_gpu_tensor_new_bf16(
-            dit->gpu, reduced_count);
+        dit->reduced_rope_cos = h3_gpu_tensor_new_classified(
+            dit->gpu, reduced_count, H3_GPU_BF16,
+            H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.reduced_rope_cos");
+        dit->reduced_rope_sin = h3_gpu_tensor_new_classified(
+            dit->gpu, reduced_count, H3_GPU_BF16,
+            H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.reduced_rope_sin");
     }
     int ok = cos_f32 && sin_f32 && dit->rope_cos && dit->rope_sin &&
         (!reduced_count || (reduced_cos_f32 && reduced_sin_f32 &&
@@ -3039,8 +3202,10 @@ static int prepare_maps(h3_dit *dit, const h3_text_embedding *text,
                 (void)second;
                 reduced[row] = rows[first];
             }
-            dit->reduced_row_maps[step] = h3_gpu_tensor_from_u32(
-                dit->gpu, reduced, dit->reduced_sequence);
+            dit->reduced_row_maps[step] = h3_gpu_tensor_from_u32_classified(
+                dit->gpu, reduced, dit->reduced_sequence,
+                H3_GPU_MEMORY_CONDITIONING,
+                "h3.dit.conditioning.reduced_row_map");
         }
         uint32_t audio_row = h3_dit_schedule_audio_row(dit->schedule, step);
         uint32_t video_row = h3_dit_schedule_video_row(dit->schedule, step);
@@ -3048,12 +3213,15 @@ static int prepare_maps(h3_dit *dit, const h3_text_embedding *text,
             audio[index] = audio_row;
         for (uint32_t index = 0; index < dit->video_rows; index++)
             video[index] = video_row;
-        dit->row_maps[step] = h3_gpu_tensor_from_u32(
-            dit->gpu, rows, dit->sequence);
-        dit->final_audio_maps[step] = h3_gpu_tensor_from_u32(
-            dit->gpu, audio, dit->audio_rows);
-        dit->final_video_maps[step] = h3_gpu_tensor_from_u32(
-            dit->gpu, video, dit->video_rows);
+        dit->row_maps[step] = h3_gpu_tensor_from_u32_classified(
+            dit->gpu, rows, dit->sequence, H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.row_map");
+        dit->final_audio_maps[step] = h3_gpu_tensor_from_u32_classified(
+            dit->gpu, audio, dit->audio_rows, H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.final_audio_map");
+        dit->final_video_maps[step] = h3_gpu_tensor_from_u32_classified(
+            dit->gpu, video, dit->video_rows, H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.final_video_map");
         if (!dit->row_maps[step] ||
             (dit->token_reduction && !dit->reduced_row_maps[step]) ||
             !dit->final_audio_maps[step] ||
@@ -3111,11 +3279,15 @@ static int prepare_projection_maps(h3_dit *dit, char *error,
         return 0;
     }
     if (video)
-        dit->video_projection_map = h3_gpu_tensor_from_u32(
-            dit->gpu, video, dit->video_total_rows);
+        dit->video_projection_map = h3_gpu_tensor_from_u32_classified(
+            dit->gpu, video, dit->video_total_rows,
+            H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.video_projection_map");
     if (audio)
-        dit->audio_projection_map = h3_gpu_tensor_from_u32(
-            dit->gpu, audio, dit->audio_total_rows);
+        dit->audio_projection_map = h3_gpu_tensor_from_u32_classified(
+            dit->gpu, audio, dit->audio_total_rows,
+            H3_GPU_MEMORY_CONDITIONING,
+            "h3.dit.conditioning.audio_projection_map");
     free(video); free(audio);
     if ((video_segments > 1 && !dit->video_projection_map) ||
         (audio_segments > 1 && !dit->audio_projection_map)) {
@@ -3160,12 +3332,16 @@ static int prepare_token_reduction_maps(h3_dit *dit, char *error,
     }
     for (uint32_t row = 0; row < dit->sequence; row++)
         parents[row] = token_reduced_parent(dit, row);
-    dit->token_pool_pairs = h3_gpu_tensor_from_u32(
-        dit->gpu, pairs, pair_count);
-    dit->token_baseline_indices = h3_gpu_tensor_from_u32(
-        dit->gpu, baseline_indices, dit->reduced_sequence);
-    dit->token_expand_parents = h3_gpu_tensor_from_u32(
-        dit->gpu, parents, dit->sequence);
+    dit->token_pool_pairs = h3_gpu_tensor_from_u32_classified(
+        dit->gpu, pairs, pair_count, H3_GPU_MEMORY_CONDITIONING,
+        "h3.dit.conditioning.token_pool_pairs");
+    dit->token_baseline_indices = h3_gpu_tensor_from_u32_classified(
+        dit->gpu, baseline_indices, dit->reduced_sequence,
+        H3_GPU_MEMORY_CONDITIONING,
+        "h3.dit.conditioning.token_baseline_indices");
+    dit->token_expand_parents = h3_gpu_tensor_from_u32_classified(
+        dit->gpu, parents, dit->sequence, H3_GPU_MEMORY_CONDITIONING,
+        "h3.dit.conditioning.token_expand_parents");
     free(pairs);
     free(baseline_indices);
     free(parents);
@@ -3180,15 +3356,11 @@ static int prepare_token_reduction_maps(h3_dit *dit, char *error,
 }
 
 static void configure_active_blocks(h3_dit *dit, unsigned active) {
-    memset(dit->block_active, 1, sizeof(dit->block_active));
+    int ok = h3_stream_uniform_active_mask(
+        H3_DIT_BLOCKS, active, dit->block_active,
+        sizeof(dit->block_active));
+    if (!ok) abort();
     dit->active_block_count = active;
-    unsigned skipped = H3_DIT_BLOCKS - active;
-    for (unsigned index = 0; index < skipped; index++) {
-        unsigned block = ((2 * index + 1) * H3_DIT_BLOCKS) / (2 * skipped);
-        if (block == 0) block = 1;
-        if (block >= H3_DIT_BLOCKS - 1) block = H3_DIT_BLOCKS - 2;
-        dit->block_active[block] = 0;
-    }
 }
 
 static int configure_explicit_gate_skip(h3_dit *dit, char *error,
@@ -4941,9 +5113,9 @@ static int load_core(h3_dit *dit, h3_dit_progress progress, void *opaque,
         }
     }
     if (dit->ssd_streaming) {
-        if (!allocate_stream_slot(dit, &dit->stream_slots[0],
+        if (!allocate_stream_slot(dit, &dit->stream_slots[0], 0,
                                   error, error_size) ||
-            !allocate_stream_slot(dit, &dit->stream_slots[1],
+            !allocate_stream_slot(dit, &dit->stream_slots[1], 1,
                                   error, error_size)) return 0;
         unsigned first = first_streamed_block(dit);
         if (first == H3_DIT_BLOCKS) {
@@ -4994,8 +5166,9 @@ static int load_core(h3_dit *dit, h3_dit_progress progress, void *opaque,
         h3_gpu_tensor *target[4] = {0};
         int ok = 1;
         for (unsigned index = 0; index < 4; index++) {
-            target[index] = h3_gpu_tensor_new_bf16(dit->gpu,
-                                                    elements[index]);
+            target[index] = h3_gpu_tensor_new_classified(
+                dit->gpu, elements[index], H3_GPU_BF16,
+                H3_GPU_MEMORY_WEIGHTS, "h3.dit.weight.final_bf16");
             if (!target[index]) ok = 0;
         }
         if (ok) ok = h3_gpu_begin(dit->gpu);
@@ -5143,8 +5316,14 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         !h3_runtime_getenv("H3_DISABLE_FUSED_PATCH_CAST") && !h3_runtime_getenv("H3_SCALAR_PATCH");
     dit->fused_patch_pack = dit->fused_patch_projection &&
         !h3_runtime_getenv("H3_DISABLE_FUSED_PATCH_PACK");
-#define BF(field, elements) (dit->field = h3_gpu_tensor_new_bf16(dit->gpu, (elements)))
-#define F32(field, elements) (dit->field = h3_gpu_tensor_new_f32(dit->gpu, (elements)))
+#define BF(field, elements)                                                   \
+    (dit->field = h3_gpu_tensor_new_classified(                              \
+        dit->gpu, (elements), H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,         \
+        "h3.dit.activation." #field))
+#define F32(field, elements)                                                  \
+    (dit->field = h3_gpu_tensor_new_classified(                              \
+        dit->gpu, (elements), H3_GPU_F32, H3_GPU_MEMORY_ACTIVATION,          \
+        "h3.dit.activation." #field))
     h3_gpu_tensor *all[] = {
         F32(video_input, video_total * VIDEO_PATCH),
         F32(audio_input, audio_total * AUDIO_CHANNELS),
@@ -5170,10 +5349,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         }
     }
     if (!dit->fused_patch_pack) {
-        dit->video_projected = h3_gpu_tensor_new_bf16(
-            dit->gpu, video_total * HIDDEN);
-        dit->audio_projected = h3_gpu_tensor_new_bf16(
-            dit->gpu, audio_total * HIDDEN);
+        dit->video_projected = h3_gpu_tensor_new_classified(
+            dit->gpu, video_total * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.video_projected");
+        dit->audio_projected = h3_gpu_tensor_new_classified(
+            dit->gpu, audio_total * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.audio_projected");
         if (!dit->video_projected || !dit->audio_projected) {
             fail(error, error_size,
                  "cannot allocate packed patch projections: %s",
@@ -5182,10 +5363,14 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         }
     }
     if (!dit->fused_patch_projection) {
-        dit->video_projected_f32 = h3_gpu_tensor_new_f32(
-            dit->gpu, video_total * HIDDEN);
-        dit->audio_projected_f32 = h3_gpu_tensor_new_f32(
-            dit->gpu, audio_total * HIDDEN);
+        dit->video_projected_f32 = h3_gpu_tensor_new_classified(
+            dit->gpu, video_total * HIDDEN, H3_GPU_F32,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.video_projected_f32");
+        dit->audio_projected_f32 = h3_gpu_tensor_new_classified(
+            dit->gpu, audio_total * HIDDEN, H3_GPU_F32,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.audio_projected_f32");
         if (!dit->video_projected_f32 || !dit->audio_projected_f32) {
             fail(error, error_size,
                  "cannot allocate separate patch projections: %s",
@@ -5198,12 +5383,15 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         dit->mod_mlp = dit->qkv;
         dit->mlp_output = NULL;
     } else {
-        dit->attention_heads = h3_gpu_tensor_new_bf16(
-            dit->gpu, sequence * INNER);
-        dit->mod_mlp = h3_gpu_tensor_new_bf16(
-            dit->gpu, sequence * HIDDEN);
-        dit->mlp_output = h3_gpu_tensor_new_bf16(
-            dit->gpu, sequence * HIDDEN);
+        dit->attention_heads = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * INNER, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.attention_heads");
+        dit->mod_mlp = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.mod_mlp");
+        dit->mlp_output = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.mlp_output");
     }
     if (!dit->attention_heads || !dit->mod_mlp ||
         (!dit->activation_aliases && !dit->mlp_output)) {
@@ -5214,10 +5402,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
     }
     if (dit->coreml_same_loaded_ab) {
         size_t elements = sequence * HIDDEN;
-        dit->coreml_benchmark_mlp_input = h3_gpu_tensor_new_bf16(
-            dit->gpu, elements);
-        dit->coreml_benchmark_mlp_output = h3_gpu_tensor_new_bf16(
-            dit->gpu, elements);
+        dit->coreml_benchmark_mlp_input = h3_gpu_tensor_new_classified(
+            dit->gpu, elements, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+            "h3.dit.activation.coreml_benchmark_input");
+        dit->coreml_benchmark_mlp_output = h3_gpu_tensor_new_classified(
+            dit->gpu, elements, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+            "h3.dit.activation.coreml_benchmark_output");
         if (!dit->coreml_benchmark_mlp_input ||
             !dit->coreml_benchmark_mlp_output) {
             fail(error, error_size,
@@ -5228,10 +5418,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         dit->coreml_benchmark_capture_elements = elements;
     }
     if (h3_runtime_getenv("H3_DISABLE_FUSED_FINAL_SLICE")) {
-        dit->final_audio_input = h3_gpu_tensor_new_bf16(
-            dit->gpu, audio * HIDDEN);
-        dit->final_video_input = h3_gpu_tensor_new_bf16(
-            dit->gpu, video * HIDDEN);
+        dit->final_audio_input = h3_gpu_tensor_new_classified(
+            dit->gpu, audio * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.final_audio_input");
+        dit->final_video_input = h3_gpu_tensor_new_classified(
+            dit->gpu, video * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.final_video_input");
         if (!dit->final_audio_input || !dit->final_video_input) {
             fail(error, error_size,
                  "cannot allocate separate final DiT slices: %s",
@@ -5241,10 +5433,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
     }
     if (!dit->bf16_final || h3_runtime_getenv("H3_DISABLE_FUSED_FINAL_HEAD") ||
         h3_runtime_getenv("H3_DISABLE_FUSED_FINAL_SLICE")) {
-        dit->final_audio_norm = h3_gpu_tensor_new_bf16(
-            dit->gpu, audio * HIDDEN);
-        dit->final_video_norm = h3_gpu_tensor_new_bf16(
-            dit->gpu, video * HIDDEN);
+        dit->final_audio_norm = h3_gpu_tensor_new_classified(
+            dit->gpu, audio * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.final_audio_norm");
+        dit->final_video_norm = h3_gpu_tensor_new_classified(
+            dit->gpu, video * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.final_video_norm");
         if (!dit->final_audio_norm || !dit->final_video_norm) {
             fail(error, error_size,
                  "cannot allocate separate final DiT normalization: %s",
@@ -5253,14 +5447,20 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         }
     }
     if (!dit->bf16_final) {
-        dit->final_audio_f32 = h3_gpu_tensor_new_f32(
-            dit->gpu, audio * HIDDEN);
-        dit->final_video_f32 = h3_gpu_tensor_new_f32(
-            dit->gpu, video * HIDDEN);
-        dit->audio_output = h3_gpu_tensor_new_f32(
-            dit->gpu, audio * AUDIO_CHANNELS);
-        dit->video_output = h3_gpu_tensor_new_f32(
-            dit->gpu, video * VIDEO_PATCH);
+        dit->final_audio_f32 = h3_gpu_tensor_new_classified(
+            dit->gpu, audio * HIDDEN, H3_GPU_F32,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.final_audio_f32");
+        dit->final_video_f32 = h3_gpu_tensor_new_classified(
+            dit->gpu, video * HIDDEN, H3_GPU_F32,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.final_video_f32");
+        dit->audio_output = h3_gpu_tensor_new_classified(
+            dit->gpu, audio * AUDIO_CHANNELS, H3_GPU_F32,
+            H3_GPU_MEMORY_OUTPUT, "h3.dit.output.audio_f32");
+        dit->video_output = h3_gpu_tensor_new_classified(
+            dit->gpu, video * VIDEO_PATCH, H3_GPU_F32,
+            H3_GPU_MEMORY_OUTPUT, "h3.dit.output.video_f32");
         if (!dit->final_audio_f32 || !dit->final_video_f32 ||
             !dit->audio_output || !dit->video_output) {
             fail(error, error_size,
@@ -5270,11 +5470,15 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         }
     }
     if (!dit->fused_mlp) {
-        dit->fc1 = h3_gpu_tensor_new_bf16(dit->gpu, sequence * FFN * 2);
+        dit->fc1 = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * FFN * 2, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.fc1");
     }
     if (!dit->fused_mlp || dit->nax_mlp || dit->int8_mlp ||
         dit->ane_gpu_int8_mlp) {
-        dit->activated = h3_gpu_tensor_new_bf16(dit->gpu, sequence * FFN);
+        dit->activated = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * FFN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.activated");
         if ((!dit->fused_mlp && !dit->fc1) || !dit->activated) {
             fail(error, error_size,
                  "cannot allocate diagnostic DiT MLP tensors: %s",
@@ -5285,10 +5489,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
     if (dit->int8_mlp || dit->ane_gpu_int8_mlp || dit->int8_qkv ||
         dit->int8_attention_out) {
         size_t padded_sequence = (sequence + 127) & ~(size_t)127;
-        dit->int8_activation = h3_gpu_tensor_new_i8(
-            dit->gpu, padded_sequence * FFN);
-        dit->int8_activation_scales = h3_gpu_tensor_new_f32(
-            dit->gpu, padded_sequence * (FFN / 1024));
+        dit->int8_activation = h3_gpu_tensor_new_classified(
+            dit->gpu, padded_sequence * FFN, H3_GPU_I8,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.int8_values");
+        dit->int8_activation_scales = h3_gpu_tensor_new_classified(
+            dit->gpu, padded_sequence * (FFN / 1024), H3_GPU_F32,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.int8_scales");
         if (!dit->int8_activation || !dit->int8_activation_scales) {
             fail(error, error_size,
                  "cannot allocate int8 DiT activation arena: %s",
@@ -5313,8 +5519,10 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         if (dit->token_original_in_qkv)
             dit->token_original_offset = qkv_used;
         else
-            dit->token_original = h3_gpu_tensor_new_bf16(
-                dit->gpu, full_elements);
+            dit->token_original = h3_gpu_tensor_new_classified(
+                dit->gpu, full_elements, H3_GPU_BF16,
+                H3_GPU_MEMORY_ACTIVATION,
+                "h3.dit.activation.token_original");
         dit->token_baseline_offset = attention_used;
         if (attention_used > attention_capacity ||
             baseline_elements > attention_capacity - attention_used ||
@@ -5329,10 +5537,12 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
     }
     if (dit->core_reuse_interval > 1 || dit->first_block_cache ||
         dit->tea_cache) {
-        dit->core_input = h3_gpu_tensor_new_bf16(
-            dit->gpu, sequence * HIDDEN);
-        dit->core_residual = h3_gpu_tensor_new_bf16(
-            dit->gpu, sequence * HIDDEN);
+        dit->core_input = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.core_input");
+        dit->core_residual = h3_gpu_tensor_new_classified(
+            dit->gpu, sequence * HIDDEN, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.core_residual");
         if (!dit->core_input || !dit->core_residual) {
             fail(error, error_size,
                  "cannot allocate DiT core residual cache: %s",
@@ -5349,10 +5559,13 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         }
         dit->first_block_cache_partial_count =
             h3_gpu_relative_l1_partial_count((uint32_t)elements);
-        dit->first_block_cache_previous = h3_gpu_tensor_new_bf16(
-            dit->gpu, elements);
-        dit->first_block_cache_partials = h3_gpu_tensor_new_f32(
-            dit->gpu, (size_t)dit->first_block_cache_partial_count * 2);
+        dit->first_block_cache_previous = h3_gpu_tensor_new_classified(
+            dit->gpu, elements, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+            "h3.dit.activation.first_block_cache_previous");
+        dit->first_block_cache_partials = h3_gpu_tensor_new_classified(
+            dit->gpu, (size_t)dit->first_block_cache_partial_count * 2,
+            H3_GPU_F32, H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.first_block_cache_partials");
         dit->first_block_cache_host_partials = malloc(
             (size_t)dit->first_block_cache_partial_count * 2 * sizeof(float));
         if (!dit->first_block_cache_partial_count ||
@@ -5380,10 +5593,13 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
                 h3_gpu_relative_l1_partial_count((uint32_t)audio_elements);
         size_t partial_groups = (size_t)dit->tea_cache_partial_count +
             dit->tea_cache_audio_partial_count;
-        dit->tea_cache_previous = h3_gpu_tensor_new_bf16(
-            dit->gpu, elements);
-        dit->tea_cache_partials = h3_gpu_tensor_new_f32(
-            dit->gpu, partial_groups * 2);
+        dit->tea_cache_previous = h3_gpu_tensor_new_classified(
+            dit->gpu, elements, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+            "h3.dit.activation.tea_cache_previous");
+        dit->tea_cache_partials = h3_gpu_tensor_new_classified(
+            dit->gpu, partial_groups * 2, H3_GPU_F32,
+            H3_GPU_MEMORY_CONVERSION_SCRATCH,
+            "h3.dit.convert.tea_cache_partials");
         dit->tea_cache_host_partials = malloc(
             partial_groups * 2 * sizeof(float));
         if (!dit->tea_cache_partial_count || !dit->tea_cache_previous ||
@@ -5399,16 +5615,21 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
         size_t threshold_elements = (size_t)HEADS * blocks;
         size_t route_elements = threshold_elements * blocks;
         dit->sol_route_elements = route_elements;
-        dit->sol_query_centroids = h3_gpu_tensor_new_f32(
-            dit->gpu, summary_elements);
-        dit->sol_key_centroids = h3_gpu_tensor_new_bf16(
-            dit->gpu, summary_elements);
-        dit->sol_value_sums = h3_gpu_tensor_new_bf16(
-            dit->gpu, summary_elements);
-        dit->sol_thresholds = h3_gpu_tensor_new_f32(
-            dit->gpu, threshold_elements);
-        dit->sol_routes = h3_gpu_tensor_new_f32(
-            dit->gpu, route_elements);
+        dit->sol_query_centroids = h3_gpu_tensor_new_classified(
+            dit->gpu, summary_elements, H3_GPU_F32,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.sol_query_centroids");
+        dit->sol_key_centroids = h3_gpu_tensor_new_classified(
+            dit->gpu, summary_elements, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.sol_key_centroids");
+        dit->sol_value_sums = h3_gpu_tensor_new_classified(
+            dit->gpu, summary_elements, H3_GPU_BF16,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.sol_value_sums");
+        dit->sol_thresholds = h3_gpu_tensor_new_classified(
+            dit->gpu, threshold_elements, H3_GPU_F32,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.sol_thresholds");
+        dit->sol_routes = h3_gpu_tensor_new_classified(
+            dit->gpu, route_elements, H3_GPU_F32,
+            H3_GPU_MEMORY_ACTIVATION, "h3.dit.activation.sol_routes");
         if (!dit->sol_query_centroids || !dit->sol_key_centroids ||
             !dit->sol_value_sums || !dit->sol_thresholds ||
             !dit->sol_routes) {
@@ -5427,10 +5648,14 @@ static int allocate_activations(h3_dit *dit, char *error, size_t error_size) {
             dit->sol_verify_elements = (uint32_t)elements;
             dit->sol_verify_partial_count =
                 h3_gpu_compare_bf16_partial_count((uint32_t)elements);
-            dit->sol_verify_dense = h3_gpu_tensor_new_bf16(
-                dit->gpu, elements);
-            dit->sol_verify_partials = h3_gpu_tensor_new_f32(
-                dit->gpu, (size_t)dit->sol_verify_partial_count * 4);
+            dit->sol_verify_dense = h3_gpu_tensor_new_classified(
+                dit->gpu, elements, H3_GPU_BF16,
+                H3_GPU_MEMORY_CONVERSION_SCRATCH,
+                "h3.dit.convert.sol_verify_dense");
+            dit->sol_verify_partials = h3_gpu_tensor_new_classified(
+                dit->gpu, (size_t)dit->sol_verify_partial_count * 4,
+                H3_GPU_F32, H3_GPU_MEMORY_CONVERSION_SCRATCH,
+                "h3.dit.convert.sol_verify_partials");
             if (!dit->sol_verify_partial_count || !dit->sol_verify_dense ||
                 !dit->sol_verify_partials) {
                 fail(error, error_size,
@@ -5455,6 +5680,8 @@ static void schedule_report(int completed, int total, void *opaque) {
 
 static h3_dit *load_dit(const char *weight_directory,
                         const char *shader_source_path,
+                        const h3_gpu_options *gpu_options,
+                        const h3_host_memory_options *host_memory,
                         const h3_text_embedding *text,
                         const h3_layout *layout,
                         const h3_sigma_schedule *sigmas,
@@ -5606,7 +5833,8 @@ static h3_dit *load_dit(const char *weight_directory,
     }
     if (prepare_gate_cache_identity(dit, sigmas))
         (void)configure_cached_gate_skip(dit);
-    dit->gpu = h3_gpu_create(shader_source_path, error, error_size);
+    dit->gpu = h3_gpu_create_with_options(
+        shader_source_path, gpu_options, error, error_size);
     if (!dit->gpu) goto failed;
     dit->nax_mlp = dit->fused_mlp && h3_gpu_has_nax_mlp(dit->gpu);
     dit->int8_mlp = (!dit->ssd_streaming || dit->ssd_quantized) &&
@@ -5674,12 +5902,14 @@ static h3_dit *load_dit(const char *weight_directory,
     int fixed_gate_skip = dit->explicit_gate_skip || dit->cached_gate_skip;
     dit->schedule = fixed_gate_skip ?
         h3_dit_schedule_precompute_active(
-            dit->weights, dit->gpu, sigmas, dit->video_condition_rows != 0,
+            dit->weights, dit->gpu, host_memory, sigmas,
+            dit->video_condition_rows != 0,
             dit->audio_condition_rows != 0, dit->block_active,
             H3_DIT_BLOCKS, schedule_report, &schedule_state,
             error, error_size) :
         h3_dit_schedule_precompute(
-            dit->weights, dit->gpu, sigmas, dit->video_condition_rows != 0,
+            dit->weights, dit->gpu, host_memory, sigmas,
+            dit->video_condition_rows != 0,
             dit->audio_condition_rows != 0, schedule_report, &schedule_state,
             error, error_size);
     if (dit->schedule) {
@@ -5733,6 +5963,8 @@ failed:
 
 h3_dit *h3_dit_load_t2va(const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -5757,7 +5989,9 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
                          int use_int8_row_fc2,
                          h3_dit_progress progress, void *progress_opaque,
                          char *error, size_t error_size) {
-    return load_dit(weight_directory, shader_source_path, text, layout, sigmas,
+    return load_dit(weight_directory, shader_source_path, gpu_options,
+                    host_memory,
+                    text, layout, sigmas,
                     active_blocks, core_reuse_interval, token_reduction,
                     ssd_streaming, ssd_pinned_prefix,
                     ssd_memory_budget_bytes,
@@ -5781,6 +6015,8 @@ h3_dit *h3_dit_load_t2va(const char *weight_directory,
 h3_dit *h3_dit_load_t2va_core(
                          const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -5805,7 +6041,9 @@ h3_dit *h3_dit_load_t2va_core(
                          int use_int8_row_fc2,
                          h3_dit_progress progress, void *progress_opaque,
                          char *error, size_t error_size) {
-    return load_dit(weight_directory, shader_source_path, text, layout, sigmas,
+    return load_dit(weight_directory, shader_source_path, gpu_options,
+                    host_memory,
+                    text, layout, sigmas,
                     active_blocks, core_reuse_interval, token_reduction,
                     ssd_streaming, ssd_pinned_prefix,
                     ssd_memory_budget_bytes,
@@ -5827,6 +6065,8 @@ h3_dit *h3_dit_load_t2va_core(
 h3_dit *h3_dit_load_conditioned(
                          const char *weight_directory,
                          const char *shader_source_path,
+                         const h3_gpu_options *gpu_options,
+                         const h3_host_memory_options *host_memory,
                          const h3_text_embedding *text,
                          const h3_layout *layout,
                          const h3_sigma_schedule *sigmas,
@@ -5855,7 +6095,9 @@ h3_dit *h3_dit_load_conditioned(
                          size_t condition_audio_elements,
                          h3_dit_progress progress, void *progress_opaque,
                          char *error, size_t error_size) {
-    return load_dit(weight_directory, shader_source_path, text, layout, sigmas,
+    return load_dit(weight_directory, shader_source_path, gpu_options,
+                    host_memory,
+                    text, layout, sigmas,
                     active_blocks, core_reuse_interval, token_reduction,
                     ssd_streaming, ssd_pinned_prefix,
                     ssd_memory_budget_bytes,
@@ -6764,6 +7006,498 @@ static int run_block(h3_dit *dit, unsigned index, int step,
     return 1;
 }
 
+enum {
+    H3_DIT_EXACT_QUEUE = 1u,
+};
+
+/* Match the qualified legacy H3 reader: one pread per matrix, with
+ * cancellation checked between the four independently described fields.
+ * Splitting every matrix into 8 MiB reads added measurable syscall overhead
+ * without creating additional I/O/GPU overlap because K2/G1 already overlaps
+ * the whole next-block fill with the current block's readers. */
+static const size_t H3_DIT_EXACT_CHUNK_BYTES = SIZE_MAX;
+
+static uint64_t h3_dit_exact_layer_bytes(const h3_dit *dit,
+                                         unsigned block) {
+    if (!dit || block >= H3_DIT_BLOCKS) return 0;
+    const h3_dit_stream_layer *layer = &dit->stream_layers[block];
+    if (layer->source_count != 4) return 0;
+    uint64_t bytes = 0;
+    for (unsigned index = 0; index < layer->source_count; ++index) {
+        const h3_dit_stream_source *source = &layer->sources[index];
+        if (source->dtype != H3_GPU_BF16 ||
+            source->elements > UINT64_MAX / sizeof(uint16_t)) return 0;
+        uint64_t field = (uint64_t)source->elements * sizeof(uint16_t);
+        if (field > UINT64_MAX - bytes) return 0;
+        bytes += field;
+    }
+    return bytes;
+}
+
+static uint64_t h3_dit_exact_slot_bytes(const h3_dit_block *slot) {
+    if (!slot || !slot->qkv || !slot->out || !slot->fc1 || !slot->fc2 ||
+        h3_gpu_tensor_dtype(slot->qkv) != H3_GPU_BF16 ||
+        h3_gpu_tensor_dtype(slot->out) != H3_GPU_BF16 ||
+        h3_gpu_tensor_dtype(slot->fc1) != H3_GPU_BF16 ||
+        h3_gpu_tensor_dtype(slot->fc2) != H3_GPU_BF16) return 0;
+    h3_gpu_tensor *fields[] = {
+        slot->qkv, slot->out, slot->fc1, slot->fc2
+    };
+    uint64_t bytes = 0;
+    for (unsigned index = 0; index < 4; ++index) {
+        size_t elements = h3_gpu_tensor_elements(fields[index]);
+        if (elements > UINT64_MAX / sizeof(uint16_t)) return 0;
+        uint64_t field = (uint64_t)elements * sizeof(uint16_t);
+        if (field > UINT64_MAX - bytes) return 0;
+        bytes += field;
+    }
+    return bytes;
+}
+
+static void h3_dit_exact_reader_complete(void *opaque, uint32_t queue,
+                                         uint64_t sequence, int status) {
+    h3_dit_exact_completion *completion = opaque;
+    if (!completion || !completion->sink.post) return;
+    /* Copy every field before publishing.  The owner may recycle this
+     * per-slot context as soon as the mailbox establishes completion. */
+    const tc_stream_completion_sink_v1 sink = completion->sink;
+    const tc_stream_slot_ticket_v1 ticket = completion->ticket;
+    const tc_stream_reader_fence_v1 fence = {queue, sequence};
+    (void)sink.post(sink.user, &ticket, fence, status);
+}
+
+static int h3_dit_exact_allocate(void *opaque, uint32_t slot,
+                                 uint64_t capacity, char *error,
+                                 size_t error_size) {
+    h3_dit *dit = opaque;
+    if (!dit || slot >= 2 || slot != dit->exact_stream.allocated_slots ||
+        !capacity || h3_dit_exact_slot_bytes(&dit->stream_slots[slot]) !=
+            capacity) {
+        fail(error, error_size,
+             "H3 exact slot capacity differs from loaded backing");
+        return 0;
+    }
+    dit->exact_stream.allocated_slots++;
+    return 1;
+}
+
+static void h3_dit_exact_destroy_pool(void *opaque) {
+    h3_dit *dit = opaque;
+    if (dit) dit->exact_stream.allocated_slots = 0;
+    /* The two slot backings belong to h3_dit and are released only after the
+     * executor has proved drain safety in h3_dit_free(). */
+}
+
+static int h3_dit_exact_cancelled(const void *opaque) {
+    const h3_dit_exact_cancel *cancel = opaque;
+    return cancel &&
+        ((cancel->executor && cancel->executor(cancel->executor_user)) ||
+         (cancel->request && cancel->request(cancel->request_user)));
+}
+
+static int h3_dit_exact_fill(void *opaque,
+                             const tc_stream_slot_ticket_v1 *ticket,
+                             const tc_stream_group_v1 *group,
+                             tc_stream_cancel_query_v1 cancel,
+                             const void *cancel_user, uint64_t *content_bytes,
+                             char *error, size_t error_size) {
+    h3_dit *dit = opaque;
+    if (content_bytes) *content_bytes = 0;
+    if (!dit || !ticket || !group || !content_bytes ||
+        ticket->slot >= 2 || group->slot != ticket->slot ||
+        group->block_count != 1 || !group->blocks ||
+        group->blocks[0] >= H3_DIT_BLOCKS) {
+        fail(error, error_size, "invalid H3 exact fill ticket");
+        return 0;
+    }
+    h3_dit_stream_fill_result_v1 result = {0};
+    const h3_dit_exact_cancel combined_cancel = {
+        cancel, cancel_user,
+        dit->exact_stream.options.cancel,
+        dit->exact_stream.options.cancel_user
+    };
+    if (!h3_dit_stream_fill_slot_v1(
+            dit, group->blocks[0], ticket->slot,
+            H3_DIT_EXACT_CHUNK_BYTES, h3_dit_exact_cancelled,
+            &combined_cancel, &result,
+            error, error_size)) return 0;
+    if (result.content_bytes != group->content_bytes) {
+        fail(error, error_size,
+             "H3 exact fill byte count differs from compiled group");
+        return 0;
+    }
+    h3_dit_exact_stream *stream = &dit->exact_stream;
+    stream->refill_load_seconds += result.seconds;
+    if (result.seconds > stream->max_refill_seconds) {
+        stream->max_refill_seconds = result.seconds;
+        stream->max_refill_block = (int32_t)group->blocks[0];
+    }
+    *content_bytes = result.content_bytes;
+    return 1;
+}
+
+static int h3_dit_exact_next_fusion(const h3_dit *dit, unsigned block,
+                                    unsigned *next) {
+    if (!dit || !next || block + 1 >= H3_DIT_BLOCKS ||
+        !dit->block_active[block + 1] ||
+        h3_runtime_getenv("H3_DISABLE_FUSED_CROSS_BLOCK_ADALN")) return 0;
+    *next = block + 1;
+    return 1;
+}
+
+static int h3_dit_exact_compute(h3_dit *dit, unsigned block,
+                                h3_dit_block *weight,
+                                char *error, size_t error_size) {
+    h3_dit_exact_stream *stream = &dit->exact_stream;
+    int attention_adaln_ready = stream->carried_attention_adaln;
+    int attention_input_quantized =
+        stream->carried_attention_input_quantized;
+    stream->carried_attention_adaln = 0;
+    stream->carried_attention_input_quantized = 0;
+    unsigned next = H3_DIT_BLOCKS;
+    int fuse_next = h3_dit_exact_next_fusion(dit, block, &next);
+    return run_block(
+        dit, block, (int)stream->step, weight,
+        attention_adaln_ready, attention_input_quantized,
+        fuse_next, next, &stream->carried_attention_adaln,
+        &stream->carried_attention_input_quantized, error, error_size);
+}
+
+static int h3_dit_exact_prefix(void *opaque, uint32_t pass,
+                               char *error, size_t error_size) {
+    h3_dit *dit = opaque;
+    if (!dit || !dit->exact_stream.bound ||
+        pass != dit->exact_stream.pass) {
+        fail(error, error_size, "unbound H3 exact prefix pass");
+        return 0;
+    }
+    dit->exact_stream.carried_attention_adaln = 0;
+    dit->exact_stream.carried_attention_input_quantized = 0;
+    for (unsigned block = 0; block < H3_DIT_BLOCKS; ++block) {
+        if (!dit->block_active[block] || !stream_block_pinned(dit, block))
+            continue;
+        if (!h3_dit_exact_compute(dit, block, &dit->blocks[block],
+                                  error, error_size)) return 0;
+    }
+    return 1;
+}
+
+static int h3_dit_exact_prepare(void *opaque,
+                                const tc_stream_slot_ticket_v1 *ticket,
+                                const tc_stream_group_v1 *group,
+                                char *error, size_t error_size) {
+    h3_dit *dit = opaque;
+    if (!dit || !ticket || !group || !dit->exact_stream.bound ||
+        ticket->item.pass != dit->exact_stream.pass ||
+        ticket->item.step != dit->exact_stream.step || ticket->slot >= 2 ||
+        group->slot != ticket->slot || group->block_count != 1 ||
+        !group->blocks || group->blocks[0] >= H3_DIT_BLOCKS ||
+        !dit->block_active[group->blocks[0]] ||
+        stream_block_pinned(dit, group->blocks[0])) {
+        fail(error, error_size, "invalid H3 exact prepare ticket");
+        return 0;
+    }
+    return 1;
+}
+
+static int h3_dit_exact_encode(void *opaque,
+                               const tc_stream_slot_ticket_v1 *ticket,
+                               const tc_stream_group_v1 *group,
+                               const tc_stream_completion_sink_v1 *sink,
+                               tc_stream_reader_set_v1 *readers,
+                               char *error, size_t error_size) {
+    h3_dit *dit = opaque;
+    if (!sink || !sink->post || !readers ||
+        !h3_dit_exact_prepare(opaque, ticket, group,
+                              error, error_size)) return 0;
+    const unsigned block = group->blocks[0];
+    h3_dit_block weight = dit->blocks[block];
+    h3_dit_block *slot = &dit->stream_slots[ticket->slot];
+    weight.qkv = slot->qkv;
+    weight.out = slot->out;
+    weight.fc1 = slot->fc1;
+    weight.fc2 = slot->fc2;
+    if (!h3_dit_exact_compute(dit, block, &weight, error, error_size))
+        return 0;
+    h3_dit_exact_stream *stream = &dit->exact_stream;
+    if (stream->queue_sequence == UINT64_MAX) {
+        fail(error, error_size, "H3 exact reader sequence overflow");
+        return 0;
+    }
+    const uint64_t sequence = ++stream->queue_sequence;
+    h3_dit_exact_completion *completion =
+        &stream->completions[ticket->slot];
+    completion->sink = *sink;
+    completion->ticket = *ticket;
+    h3_gpu_completion_v1 gpu_completion = {
+        sizeof(gpu_completion), H3_GPU_COMPLETION_ABI_V1,
+        completion, H3_DIT_EXACT_QUEUE, sequence,
+        h3_dit_exact_reader_complete
+    };
+    if (!h3_gpu_continue_with_completion(dit->gpu, &gpu_completion)) {
+        fail(error, error_size, "cannot close H3 exact reader boundary: %s",
+             h3_gpu_error(dit->gpu));
+        return 0;
+    }
+    readers->count = 1;
+    readers->fences[0] = (tc_stream_reader_fence_v1){
+        H3_DIT_EXACT_QUEUE, sequence
+    };
+    return 1;
+}
+
+static int h3_dit_exact_drain(void *opaque, char *error,
+                              size_t error_size) {
+    h3_dit *dit = opaque;
+    if (!dit || !h3_gpu_flush_and_drain(dit->gpu)) {
+        fail(error, error_size, "cannot drain H3 exact GPU work: %s",
+             dit && dit->gpu ? h3_gpu_error(dit->gpu) : "GPU is absent");
+        return 0;
+    }
+    return 1;
+}
+
+int h3_dit_enable_exact_streaming_v1(
+        h3_dit *dit, const h3_dit_exact_stream_options_v1 *options,
+        char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!dit || !options || options->struct_size != sizeof(*options) ||
+        options->version != H3_DIT_EXACT_STREAM_ABI_V1 ||
+        !options->request_generation || options->prefetch_distance != 1 ||
+        options->io_workers != 1 || options->carry_first_group != 1 ||
+        dit->exact_stream.executor || !dit->request_ready ||
+        !dit->ssd_streaming || dit->ssd_quantized ||
+        dit->active_block_count != H3_DIT_BLOCKS ||
+        dit->core_reuse_interval != 1 || dit->token_reduction ||
+        dit->first_block_cache || dit->tea_cache || dit->step_gate_skip) {
+        fail(error, error_size,
+             "H3 exact candidate requires original-BF16 K2/G1, all blocks, "
+             "one worker, carry, and no dynamic shortcuts");
+        return 0;
+    }
+    const unsigned streamed = dit->active_block_count -
+        (unsigned)dit->ssd_pinned_prefix;
+    if (streamed < 2 || streamed > H3_DIT_BLOCKS ||
+        !h3_dit_stream_check_source_snapshot(dit, error, error_size))
+        return 0;
+
+    uint32_t blocks[H3_DIT_BLOCKS] = {0};
+    tc_stream_group_v1 groups[H3_DIT_BLOCKS] = {0};
+    uint64_t capacity = 0;
+    unsigned group_count = 0;
+    for (unsigned block = 0; block < H3_DIT_BLOCKS; ++block) {
+        if (!dit->block_active[block] || stream_block_pinned(dit, block))
+            continue;
+        uint64_t bytes = h3_dit_exact_layer_bytes(dit, block);
+        if (!bytes || (capacity && bytes != capacity)) {
+            fail(error, error_size,
+                 "H3 exact candidate requires homogeneous BF16 blocks");
+            return 0;
+        }
+        capacity = bytes;
+        blocks[group_count] = block;
+        groups[group_count] = (tc_stream_group_v1){
+            group_count, group_count % 2u, 1u, &blocks[group_count], bytes
+        };
+        group_count++;
+    }
+    if (group_count != streamed || !capacity) {
+        fail(error, error_size, "H3 exact streamed suffix is incomplete");
+        return 0;
+    }
+    uint64_t capacities[2] = {capacity, capacity};
+    tc_stream_stage_plan_v3 plan = {
+        sizeof(plan), TC_STREAM_SLOT_ABI_V3,
+        0u, 0u, 2u, options->prefetch_distance, options->io_workers,
+        (uint32_t)h3_dit_schedule_steps(dit->schedule),
+        TC_STREAM_PASS_CARRY_FIRST_GROUP_V3,
+        options->request_generation, capacities, group_count, groups
+    };
+    h3_dit_exact_stream *stream = &dit->exact_stream;
+    memset(stream, 0, sizeof(*stream));
+    stream->max_refill_block = -1;
+    stream->options = *options;
+    tc_stream_adapter_v1 adapter = {
+        sizeof(adapter), TC_STREAM_SLOT_ABI_V1, dit,
+        h3_dit_exact_allocate, h3_dit_exact_destroy_pool,
+        h3_dit_exact_fill, h3_dit_exact_prefix, h3_dit_exact_prepare,
+        h3_dit_exact_encode, h3_dit_exact_drain
+    };
+    tc_stream_executor *executor = NULL;
+    if (!tc_stream_executor_create_v3(
+            &plan, &adapter, &executor, error, error_size)) {
+        stream->executor = executor;
+        stream->poisoned = executor != NULL;
+        return 0;
+    }
+    stream->executor = executor;
+    stream->enabled = 1;
+    /* From this point onward only generic tickets publish slot contents. */
+    dit->stream_ready_layer = UINT_MAX;
+    dit->stream_ready_slot = UINT_MAX;
+    return 1;
+}
+
+int h3_dit_enable_exact_receipt_v1(
+        h3_dit *dit, uint64_t source_generation,
+        const char *layout_digest, const char *implementation,
+        char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!dit || !dit->exact_stream.executor ||
+        !dit->exact_stream.enabled || dit->exact_stream.finished ||
+        !source_generation || !layout_digest || strlen(layout_digest) != 64 ||
+        !implementation || !*implementation || strlen(implementation) >= 64) {
+        fail(error, error_size, "invalid H3 exact receipt configuration");
+        return 0;
+    }
+    tc_stream_receipt_config_v1 config = {0};
+    config.struct_size = sizeof(config);
+    config.version = TC_STREAM_RECEIPT_ABI_V1;
+    config.source_generation = source_generation;
+    memcpy(config.layout_digest, layout_digest, 64);
+    config.layout_digest[64] = '\0';
+    snprintf(config.implementation, sizeof(config.implementation), "%s",
+             implementation);
+    char detail[512] = {0};
+    if (!tc_stream_executor_enable_receipt_v1(
+            dit->exact_stream.executor, &config, detail, sizeof(detail))) {
+        fail(error, error_size, "%s", detail[0] ? detail :
+             "cannot enable H3 exact receipt");
+        return 0;
+    }
+    return 1;
+}
+
+int h3_dit_bind_exact_sources_v1(
+        h3_dit *dit, const h3_weight_source_v1 *sources,
+        size_t source_count, char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!dit || !dit->weights || !dit->ssd_streaming ||
+        dit->ssd_quantized || dit->exact_stream.enabled ||
+        dit->exact_stream.executor || !sources || !source_count) {
+        fail(error, error_size, "invalid H3 exact source binding");
+        return 0;
+    }
+    if (!h3_weight_store_bind_sources(
+            dit->weights, sources, source_count, error, error_size))
+        return 0;
+    for (unsigned block = 0; block < H3_DIT_BLOCKS; ++block) {
+        h3_dit_stream_layer *layer = &dit->stream_layers[block];
+        for (unsigned field = 0; field < layer->source_count; ++field) {
+            h3_dit_stream_source *source = &layer->sources[field];
+            source->descriptor = -1;
+            for (size_t shard = 0;
+                 shard < h3_weight_store_shards(dit->weights); ++shard) {
+                const h3_st_header *header = h3_weight_store_header(
+                    dit->weights, shard);
+                if (header && header->path && source->path &&
+                    !strcmp(header->path, source->path)) {
+                    source->descriptor = header->descriptor;
+                    break;
+                }
+            }
+            if (source->dtype == H3_GPU_BF16 && source->descriptor < 0) {
+                fail(error, error_size,
+                     "H3 exact source binding omitted block %u field %u",
+                     block, field);
+                return 0;
+            }
+        }
+    }
+    dit->stream_source_identity = 0;
+    return h3_dit_stream_check_source_snapshot(dit, error, error_size);
+}
+
+int h3_dit_get_exact_streaming_info(
+        const h3_dit *dit, h3_dit_exact_streaming_info *info) {
+    if (!dit || !info) return 0;
+    memset(info, 0, sizeof(*info));
+    const h3_dit_exact_stream *stream = &dit->exact_stream;
+    info->enabled = stream->enabled;
+    info->finished = stream->finished;
+    info->poisoned = stream->poisoned;
+    info->completed_passes = stream->pass;
+    if (!stream->executor) return 1;
+    tc_stream_counters_v1 counters = {0};
+    char ignored[128] = {0};
+    if (!tc_stream_executor_counters(
+            stream->executor, &counters, ignored, sizeof(ignored))) return 0;
+    info->pool_creates = counters.pool_creates;
+    info->slot_bundles = counters.slot_bundles;
+    info->fills = counters.fills;
+    info->content_bytes_loaded = counters.content_bytes_loaded;
+    info->groups_submitted = counters.groups_submitted;
+    info->refill_load_seconds = stream->refill_load_seconds;
+    info->max_refill_seconds = stream->max_refill_seconds;
+    info->max_refill_block = stream->max_refill_block;
+    info->wait_seconds = counters.wait_seconds;
+    return 1;
+}
+
+int h3_dit_copy_exact_receipt_v2(
+        const h3_dit *dit, tc_stream_receipt_v2 *receipt,
+        char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!dit || !receipt || receipt->struct_size != sizeof(*receipt) ||
+        receipt->version != TC_STREAM_RECEIPT_ABI_V2 ||
+        !dit->exact_stream.executor || !dit->exact_stream.finished) {
+        fail(error, error_size,
+             "H3 exact receipt is unavailable before a clean finish");
+        return 0;
+    }
+    char detail[512] = {0};
+    if (!tc_stream_executor_receipt_v2(
+            dit->exact_stream.executor, receipt, detail, sizeof(detail))) {
+        fail(error, error_size, "%s", detail[0] ? detail :
+             "cannot copy H3 exact receipt");
+        return 0;
+    }
+    return 1;
+}
+
+void h3_dit_cancel_exact_streaming(h3_dit *dit) {
+    if (dit && dit->exact_stream.executor)
+        tc_stream_executor_cancel(dit->exact_stream.executor);
+}
+
+static int h3_dit_run_exact_pass(h3_dit *dit, int step,
+                                 char *error, size_t error_size) {
+    h3_dit_exact_stream *stream = &dit->exact_stream;
+    if (!stream->enabled || !stream->executor || stream->finished ||
+        stream->poisoned || step < 0 || (uint32_t)step != stream->pass ||
+        !h3_dit_stream_check_source_snapshot(dit, error, error_size)) {
+        if (!error || !error[0])
+            fail(error, error_size, "invalid H3 exact pass/lifecycle");
+        return 0;
+    }
+    stream->step = (uint32_t)step;
+    stream->bound = 1;
+    int ok = tc_stream_executor_run_pass(
+        stream->executor, stream->pass, stream->step, error, error_size);
+    stream->bound = 0;
+    if (!ok) {
+        stream->poisoned = 1;
+        return 0;
+    }
+    stream->pass++;
+    if (stream->pass == (uint32_t)h3_dit_schedule_steps(dit->schedule)) {
+        if (!tc_stream_executor_finish(
+                stream->executor, error, error_size)) {
+            stream->poisoned = 1;
+            return 0;
+        }
+        stream->finished = 1;
+    }
+    if (!h3_gpu_begin(dit->gpu)) {
+        stream->poisoned = 1;
+        fail(error, error_size,
+             "cannot resume H3 command chain after exact pass: %s",
+             h3_gpu_error(dit->gpu));
+        return 0;
+    }
+    return 1;
+}
+
 static int first_block_cache_probe(h3_dit *dit, uint32_t elements,
                                    float *score, char *error,
                                    size_t error_size) {
@@ -7142,6 +7876,18 @@ static int encode_forward(h3_dit *dit, int step, int begin, int submit,
             }
         }
         if (!tea_cache_reused) {
+        if (dit->exact_stream.enabled) {
+            if (use_token_reduction || use_first_block_cache ||
+                use_tea_cache || use_step_gate_skip ||
+                dit->core_reuse_interval != 1) {
+                dit->exact_stream.poisoned = 1;
+                fail(error, error_size,
+                     "H3 exact runtime encountered an unsupported shortcut");
+                return 0;
+            }
+            if (!h3_dit_run_exact_pass(
+                    dit, step, error, error_size)) return 0;
+        } else {
         unsigned command_blocks = disable_command_split
             ? 0 : command_block_interval(dit);
         if (dit->ssd_streaming) command_blocks = 0;
@@ -7376,6 +8122,7 @@ static int encode_forward(h3_dit *dit, int step, int begin, int submit,
         if (use_token_reduction &&
             token_reduction_end == H3_DIT_BLOCKS &&
             !leave_token_reduction(dit, error, error_size)) return 0;
+        }
         }
         if (use_tea_cache && !tea_cache_reused) {
             OP(h3_gpu_sub_bf16(dit->gpu, dit->core_residual, dit->hidden,
@@ -7615,6 +8362,10 @@ static int same_sigmas(const h3_sigma_schedule *left,
 
 void h3_dit_release_request(h3_dit *dit) {
     if (!dit) return;
+    /* The first H3 exact candidate is request-scoped and one-shot.  Keeping
+     * its request state until model teardown preserves every callback and GPU
+     * dependency if a caller attempts the legacy retained-session API. */
+    if (dit->exact_stream.executor) return;
     free_request_state(dit);
     reset_run_state(dit);
 }
@@ -7674,6 +8425,11 @@ int h3_dit_reprepare(h3_dit *dit,
                      h3_dit_progress progress, void *progress_opaque,
                      char *error, size_t error_size) {
     if (error && error_size) error[0] = '\0';
+    if (dit && dit->exact_stream.executor) {
+        fail(error, error_size,
+             "H3 exact candidate is one-shot and cannot be reprepared");
+        return 0;
+    }
     if (!dit || dit->final_evicted_blocks || !text || !layout || !sigmas ||
         !isfinite(spatial_rope_scale) || spatial_rope_scale <= 0.0f) {
         fail(error, error_size, "invalid resident DiT reprepare arguments");
@@ -7786,6 +8542,11 @@ int h3_dit_reset_run(h3_dit *dit,
                      size_t condition_audio_elements,
                      char *error, size_t error_size) {
     if (error && error_size) error[0] = '\0';
+    if (dit && dit->exact_stream.executor) {
+        fail(error, error_size,
+             "H3 exact candidate is one-shot and cannot be reset");
+        return 0;
+    }
     if (!dit || !dit->request_ready || dit->final_evicted_blocks) {
         fail(error, error_size, "prepared DiT is absent");
         return 0;
@@ -8185,10 +8946,14 @@ static int ensure_previous_velocities(h3_dit *dit, char *error,
     if (dit->previous_video_velocity && dit->previous_audio_velocity) return 1;
     free_tensor(&dit->previous_video_velocity);
     free_tensor(&dit->previous_audio_velocity);
-    dit->previous_video_velocity = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)dit->video_rows * VIDEO_PATCH);
-    dit->previous_audio_velocity = h3_gpu_tensor_new_bf16(
-        dit->gpu, (size_t)dit->audio_rows * AUDIO_CHANNELS);
+    dit->previous_video_velocity = h3_gpu_tensor_new_classified(
+        dit->gpu, (size_t)dit->video_rows * VIDEO_PATCH, H3_GPU_BF16,
+        H3_GPU_MEMORY_ACTIVATION,
+        "h3.dit.activation.previous_video_velocity");
+    dit->previous_audio_velocity = h3_gpu_tensor_new_classified(
+        dit->gpu, (size_t)dit->audio_rows * AUDIO_CHANNELS, H3_GPU_BF16,
+        H3_GPU_MEMORY_ACTIVATION,
+        "h3.dit.activation.previous_audio_velocity");
     if (dit->previous_video_velocity && dit->previous_audio_velocity) return 1;
     free_tensor(&dit->previous_video_velocity);
     free_tensor(&dit->previous_audio_velocity);
@@ -8483,6 +9248,11 @@ int h3_dit_denoise_euler_preview(
              "adaptive cache cannot be combined with denoiser reuse");
         return 0;
     }
+    if (dit->exact_stream.executor && reuse_interval != 1) {
+        fail(error, error_size,
+             "H3 exact candidate requires one evaluation per denoise step");
+        return 0;
+    }
     if (gpu_sampler_requested(dit))
         return denoise_euler_gpu(dit, video_latent, audio_latent,
                                  reuse_interval, progress, progress_opaque,
@@ -8613,7 +9383,20 @@ int h3_dit_denoise_euler(h3_dit *dit, float *video_latent,
         progress, progress_opaque, NULL, NULL, error, error_size);
 }
 
-void h3_dit_free(h3_dit *dit) {
+int h3_dit_drain_gpu(h3_dit *dit, char *error, size_t error_size) {
+    if (!dit || !dit->gpu) {
+        fail(error, error_size, "invalid H3 DiT GPU drain");
+        return 0;
+    }
+    if (!h3_gpu_drain(dit->gpu)) {
+        fail(error, error_size, "cannot drain H3 DiT GPU: %s",
+             h3_gpu_error(dit->gpu));
+        return 0;
+    }
+    return 1;
+}
+
+static void h3_dit_free_resources(h3_dit *dit) {
     if (!dit) return;
     if (dit->first_block_cache && h3_runtime_getenv("H3_PROFILE")) {
         fprintf(stderr,
@@ -8799,6 +9582,32 @@ void h3_dit_free(h3_dit *dit) {
     h3_quant_cache_close(&dit->quant_cache);
     free(dit->weight_directory);
     free(dit);
+}
+
+int h3_dit_destroy(h3_dit **owner, char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!owner || !*owner) return 1;
+    h3_dit *dit = *owner;
+    if (dit->exact_stream.executor) {
+        if (!dit->exact_stream.finished)
+            tc_stream_executor_cancel(dit->exact_stream.executor);
+        if (!tc_stream_executor_destroy(
+                &dit->exact_stream.executor, error, error_size)) return 0;
+        dit->exact_stream.enabled = 0;
+    }
+    *owner = NULL;
+    h3_dit_free_resources(dit);
+    return 1;
+}
+
+void h3_dit_free(h3_dit *dit) {
+    if (!dit) return;
+    char detail[1024] = {0};
+    h3_dit *owner = dit;
+    if (!h3_dit_destroy(&owner, detail, sizeof(detail)))
+        fprintf(stderr,
+                "h3: exact streaming model quarantined at teardown: %s\n",
+                detail[0] ? detail : "drain incomplete");
 }
 
 static int video_shape(int channels, int time, int height, int width,

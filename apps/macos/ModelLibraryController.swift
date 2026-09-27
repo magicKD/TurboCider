@@ -65,6 +65,7 @@ enum LibraryTool {
 @MainActor final class ModelLibraryController: ObservableObject {
     @Published private(set) var root = LibraryStore.defaultRoot.path
     @Published private(set) var installations: [LibraryInstallation] = []
+    @Published private(set) var installationGeneration: UInt64 = 0
     @Published private(set) var anePartitions: [LibraryANEPartition] = []
     @Published private(set) var loras: [LibraryLoRA] = []
     @Published private(set) var busy = false
@@ -99,6 +100,7 @@ enum LibraryTool {
         let data = try await LibraryTool.run(["list", "--root", root])
         let index = try LibraryTool.decode(LibraryIndex.self, from: data)
         installations = index.installations
+        installationGeneration &+= 1
         loras = index.loras ?? []
         anePartitions = index.anePartitions ?? []
     }

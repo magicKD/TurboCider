@@ -183,7 +183,9 @@ static int layer_weights_load(load_context *load, int layer,
 
 static h3_gpu_tensor *allocate_bf16(load_context *load, size_t elements) {
     h3_gpu_tensor *tensor = defer(
-        load, h3_gpu_tensor_new_bf16(load->gpu, elements));
+        load, h3_gpu_tensor_new_classified(
+            load->gpu, elements, H3_GPU_BF16, H3_GPU_MEMORY_WEIGHTS,
+            "h3.text.weight.prefetch"));
     if (!tensor) {
         fail(load->error, load->error_size,
              "cannot allocate prefetched Qwen weight: %s",
@@ -475,6 +477,7 @@ void h3_text_embedding_free(h3_text_embedding *embedding) {
 static int text_encode_bf16_impl(
                         const char *weight_directory,
                         const char *shader_source_path,
+                        const h3_gpu_options *gpu_options,
                         const uint32_t *token_ids, size_t token_count,
                         const h3_text_vision_span *spans, size_t span_count,
                         const uint32_t *position_ids, const uint8_t *tags,
@@ -518,7 +521,8 @@ static int text_encode_bf16_impl(
     h3_weight_store *store = h3_weight_store_open(weight_directory, error,
                                                    error_size);
     if (!store) return 0;
-    h3_gpu *gpu = h3_gpu_create(shader_source_path, error, error_size);
+    h3_gpu *gpu = h3_gpu_create_with_options(
+        shader_source_path, gpu_options, error, error_size);
     if (!gpu) {
         h3_weight_store_free(store);
         return 0;
@@ -568,23 +572,47 @@ static int text_encode_bf16_impl(
         }
     }
 
-    h3_gpu_tensor *ids = h3_gpu_tensor_from_u32(gpu, token_ids, token_count);
-    h3_gpu_tensor *rope_cos = h3_gpu_tensor_from_f32(
-        gpu, cosines, token_count * TEXT_ROPE_HALF);
-    h3_gpu_tensor *rope_sin = h3_gpu_tensor_from_f32(
-        gpu, sines, token_count * TEXT_ROPE_HALF);
+    h3_gpu_tensor *ids = h3_gpu_tensor_from_u32_classified(
+        gpu, token_ids, token_count, H3_GPU_MEMORY_CONDITIONING,
+        "h3.text.conditioning.token_ids");
+    h3_gpu_tensor *rope_cos = h3_gpu_tensor_from_f32_classified(
+        gpu, cosines, token_count * TEXT_ROPE_HALF,
+        H3_GPU_MEMORY_CONDITIONING, "h3.text.conditioning.rope_cos");
+    h3_gpu_tensor *rope_sin = h3_gpu_tensor_from_f32_classified(
+        gpu, sines, token_count * TEXT_ROPE_HALF,
+        H3_GPU_MEMORY_CONDITIONING, "h3.text.conditioning.rope_sin");
     free(cosines);
     free(sines);
-    h3_gpu_tensor *hidden = h3_gpu_tensor_new_bf16(gpu, hidden_count);
-    h3_gpu_tensor *norm = h3_gpu_tensor_new_bf16(gpu, hidden_count);
-    h3_gpu_tensor *query = h3_gpu_tensor_new_bf16(gpu, query_count);
-    h3_gpu_tensor *key = h3_gpu_tensor_new_bf16(gpu, kv_count);
-    h3_gpu_tensor *value = h3_gpu_tensor_new_bf16(gpu, kv_count);
-    h3_gpu_tensor *attention_heads = h3_gpu_tensor_new_bf16(gpu, query_count);
-    h3_gpu_tensor *attention_output = h3_gpu_tensor_new_bf16(gpu, hidden_count);
-    h3_gpu_tensor *gate = h3_gpu_tensor_new_bf16(gpu, intermediate_count);
-    h3_gpu_tensor *up = h3_gpu_tensor_new_bf16(gpu, intermediate_count);
-    h3_gpu_tensor *mlp_output = h3_gpu_tensor_new_bf16(gpu, hidden_count);
+    h3_gpu_tensor *hidden = h3_gpu_tensor_new_classified(
+        gpu, hidden_count, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+        "h3.text.activation.hidden");
+    h3_gpu_tensor *norm = h3_gpu_tensor_new_classified(
+        gpu, hidden_count, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+        "h3.text.activation.norm");
+    h3_gpu_tensor *query = h3_gpu_tensor_new_classified(
+        gpu, query_count, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+        "h3.text.activation.query");
+    h3_gpu_tensor *key = h3_gpu_tensor_new_classified(
+        gpu, kv_count, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+        "h3.text.activation.key");
+    h3_gpu_tensor *value = h3_gpu_tensor_new_classified(
+        gpu, kv_count, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+        "h3.text.activation.value");
+    h3_gpu_tensor *attention_heads = h3_gpu_tensor_new_classified(
+        gpu, query_count, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+        "h3.text.activation.attention_heads");
+    h3_gpu_tensor *attention_output = h3_gpu_tensor_new_classified(
+        gpu, hidden_count, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+        "h3.text.activation.attention_output");
+    h3_gpu_tensor *gate = h3_gpu_tensor_new_classified(
+        gpu, intermediate_count, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+        "h3.text.activation.gate");
+    h3_gpu_tensor *up = h3_gpu_tensor_new_classified(
+        gpu, intermediate_count, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+        "h3.text.activation.up");
+    h3_gpu_tensor *mlp_output = h3_gpu_tensor_new_classified(
+        gpu, hidden_count, H3_GPU_BF16, H3_GPU_MEMORY_ACTIVATION,
+        "h3.text.activation.mlp_output");
     h3_gpu_tensor *deepstack[3] = {NULL, NULL, NULL};
     if (span_count) {
         uint16_t *values = calloc(hidden_count, sizeof(*values));
@@ -600,8 +628,9 @@ static int text_encode_bf16_impl(
                        span->deepstack[layer],
                        span->tokens * TEXT_HIDDEN * sizeof(*values));
             }
-            deepstack[layer] = h3_gpu_tensor_from_bf16(gpu, values,
-                                                        hidden_count);
+            deepstack[layer] = h3_gpu_tensor_from_bf16_classified(
+                gpu, values, hidden_count, H3_GPU_MEMORY_CONDITIONING,
+                "h3.text.conditioning.deepstack");
         }
         free(values);
     }
@@ -788,9 +817,23 @@ int h3_text_encode_bf16(const char *weight_directory,
                         h3_text_embedding *output,
                         char *error, size_t error_size) {
     return text_encode_bf16_impl(
-        weight_directory, shader_source_path, token_ids, token_count,
+        weight_directory, shader_source_path, NULL, token_ids, token_count,
         NULL, 0, NULL, NULL, TEXT_LAYERS, progress, progress_opaque,
         output, error, error_size);
+}
+
+int h3_text_encode_bf16_with_options(
+                        const char *weight_directory,
+                        const char *shader_source_path,
+                        const h3_gpu_options *gpu_options,
+                        const uint32_t *token_ids, size_t token_count,
+                        h3_text_progress progress, void *progress_opaque,
+                        h3_text_embedding *output,
+                        char *error, size_t error_size) {
+    return text_encode_bf16_impl(
+        weight_directory, shader_source_path, gpu_options,
+        token_ids, token_count, NULL, 0, NULL, NULL, TEXT_LAYERS,
+        progress, progress_opaque, output, error, error_size);
 }
 
 int h3_text_encode_multimodal_bf16(
@@ -808,7 +851,7 @@ int h3_text_encode_multimodal_bf16(
         return 0;
     }
     return text_encode_bf16_impl(
-        weight_directory, shader_source_path, token_ids, token_count,
+        weight_directory, shader_source_path, NULL, token_ids, token_count,
         spans, span_count, position_ids, tags, TEXT_LAYERS,
         progress, progress_opaque,
         output, error, error_size);
@@ -830,7 +873,7 @@ int h3_text_encode_multimodal_layers_bf16(
         return 0;
     }
     return text_encode_bf16_impl(
-        weight_directory, shader_source_path, token_ids, token_count,
+        weight_directory, shader_source_path, NULL, token_ids, token_count,
         spans, span_count, position_ids, tags, layer_count,
         progress, progress_opaque, output, error, error_size);
 }

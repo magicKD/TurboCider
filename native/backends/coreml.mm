@@ -1,5 +1,6 @@
 #include "coreml.hpp"
 #include "coreml_partitions.hpp"
+#include "../models/z_image/coreml_bundle.hpp"
 #include "coreml_output_copy.hpp"
 #include "../platform/apple/bridge.hpp"
 #include "../platform/apple/platform.hpp"
@@ -30,11 +31,18 @@ class CoreMLBranch {
     Tensor predict(const Tensor &packed_input, int actual_rows, bool warmup = false);
 };
 struct HybridSession::Impl {
+    std::shared_ptr<const z_image::VerifiedCoreMLBundleLease> bundle;
     std::vector<std::unique_ptr<CoreMLBranch>> branches;
     std::vector<int> buckets;
     std::vector<int> minimum_profitable_rows;
     bool flexible = false;
     bool allow_flexible_backing = false;
+    ~Impl() {
+        // Covers ordinary destruction and a partially constructed session.
+        // Keep path-backed model files alive through Objective-C pool drain.
+        auto held_bundle = std::move(bundle);
+        @autoreleasepool { branches.clear(); }
+    }
 };
 HybridSession::~HybridSession() = default;
 
@@ -188,6 +196,9 @@ CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidd
                            bool flexible, bool allow_flexible_backing)
     : output_storage_(output_storage), output_(output_backing), rows_(rows), hidden_(hidden),
       flexible_(flexible), allow_flexible_backing_(allow_flexible_backing) {
+    // Keep strong model/backing ownership, but do not retain setup temporaries
+    // until an enclosing full-image request's autorelease pool drains.
+    @autoreleasepool {
     optimize_output_copy_ = device_info().optimizations().coreml_output_copy;
     auto setup_begin = Clock::now();
     require(path.extension() == ".mlmodelc" && std::filesystem::is_directory(path),
@@ -218,6 +229,7 @@ CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidd
     bind(rows, output_storage, output_backing);
     interface_setup_seconds =
         std::chrono::duration<double>(Clock::now() - setup_begin).count() - model_load_seconds;
+    }
 }
 void CoreMLBranch::bind(int rows, const Tensor &storage, MLMultiArray *output) {
     auto bind_begin = Clock::now();
@@ -252,6 +264,9 @@ void CoreMLBranch::bind(int rows, const Tensor &storage, MLMultiArray *output) {
     interface_setup_seconds += std::chrono::duration<double>(Clock::now() - bind_begin).count();
 }
 Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
+    // The returned tensor references MLX-owned backing; temporary feature
+    // providers/results can be released before the next GPU stage.
+    @autoreleasepool {
     // Input has been materialized before GPU attention submission. No writable alias
     // is exposed to callers; output storage is leased until the block completes.
     auto begin = Clock::now();
@@ -309,6 +324,7 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
         }
     }
     return slice_axis(output_storage_, 1, 0, actual);
+    }
 }
 HybridSession::HybridSession(const std::filesystem::path &file, const std::filesystem::path &model,
                              int tokens, const Event &event, std::atomic<bool> &cancelled,
@@ -343,6 +359,11 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                 [d[@"source"][@"checkpoint_bytes"] isKindOfClass:NSNumber.class],
             "invalid hybrid manifest numbers");
     require([d[@"schema_version"] intValue] == 2, "hybrid requires manifest schema 2");
+    id export_identity = d[@"export_identity"];
+    if ([export_identity isKindOfClass:NSDictionary.class]) {
+        const auto variant = string_value(export_identity, @"variant");
+        if (variant == "fp16" || variant == "int8_pc") weight_variant = variant;
+    }
     require(activation_precision.empty() || activation_precision == "fp16" ||
                 activation_precision == "int8", "invalid hybrid activation precision");
     hidden = [d[@"shape"][@"K"] intValue];
@@ -603,6 +624,54 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     }
     load_seconds = std::chrono::duration<double>(Clock::now() - begin).count();
 }
+HybridSession::HybridSession(std::shared_ptr<const z_image::VerifiedCoreMLBundleLease> bundle,
+                             const Event &event, std::atomic<bool> &cancelled)
+    : impl_(std::make_unique<Impl>()) {
+    @autoreleasepool {
+        const auto begin = Clock::now();
+        require(bool(bundle), "verified Core ML bundle required");
+        checkpoint(cancelled);
+        impl_->bundle = std::move(bundle);
+        impl_->bundle->revalidate();
+        const auto &spec = impl_->bundle->partition();
+        rows = int(spec.bucket_rows); hidden = int(spec.hidden);
+        mlp_width = int(spec.mlp_width); ane_mlp_start = int(spec.ane_begin); ane_mlp_end = int(spec.ane_end);
+        output_scale = spec.output_scale;
+        weight_variant = spec.precision_revision;
+        block_count = int(impl_->bundle->models().size());
+        require(block_count == 32 && rows == 1088 && hidden == 3840, "invalid verified Z partition");
+        impl_->buckets = {rows}; impl_->minimum_profitable_rows = {rows};
+        minimum_profitable_rows = rows;
+        checkpoint_sha_verified = true;
+        manifest = "verified-bundle:" + spec.identity;
+        manifest_validation_seconds = std::chrono::duration<double>(Clock::now() - begin).count();
+        const auto output_begin = Clock::now();
+        auto storage = mx::contiguous(mx::zeros({1, rows, hidden}, mx::float16));
+        mx::eval(storage);
+        require(storage.data_size() == size_t(rows) * hidden && storage.flags().row_contiguous,
+                "verified Core ML output backing must be contiguous");
+        NSError *error = nil;
+        auto output = [[MLMultiArray alloc] initWithDataPointer:storage.data<mx::float16_t>()
+            shape:@[@1, @(hidden), @1, @(rows)] dataType:MLMultiArrayDataTypeFloat16
+            strides:@[@(size_t(rows) * hidden), @1, @(size_t(rows) * hidden), @(hidden)]
+            deallocator:^(void *) {} error:&error];
+        require(output != nil, "verified Core ML output allocation failed");
+        output_backing_setup_seconds = std::chrono::duration<double>(Clock::now() - output_begin).count();
+        for (int i = 0; i < block_count; ++i) {
+            checkpoint(cancelled);
+            event("coreml_load", i, block_count);
+            impl_->branches.push_back(std::make_unique<CoreMLBranch>(impl_->bundle->models()[size_t(i)],
+                rows, hidden, storage, output, false, false));
+        }
+        checkpoint(cancelled);
+        impl_->bundle->revalidate();
+        load_seconds = std::chrono::duration<double>(Clock::now() - begin).count();
+    }
+}
+void HybridSession::revalidate_source() const {
+    require(bool(impl_->bundle), "session does not own a verified bundle");
+    impl_->bundle->revalidate();
+}
 void HybridSession::set_tokens(int tokens) {
     require(tokens > 0, "Core ML input row count must be positive");
     auto chosen = std::lower_bound(impl_->buckets.begin(), impl_->buckets.end(), tokens);
@@ -629,6 +698,15 @@ void HybridSession::set_tokens(int tokens) {
 }
 Tensor HybridSession::predict(int block, const Tensor &input) {
     require(runtime_available(), "Core ML runtime failure is latched; use GPU fallback");
+    if (impl_->bundle) {
+        const auto &spec = impl_->bundle->partition();
+        require(block >= 0 && size_t(block) < impl_->branches.size(), "invalid verified Core ML block");
+        require(input.shape() == mx::Shape{1, int(spec.bucket_rows), int(spec.hidden)} && input.dtype() == mx::float16,
+                "verified Core ML input requires padded FP16 [1,R,H]");
+        mx::eval(input);
+        require(input.flags().row_contiguous && input.data_size() == size_t(spec.bucket_rows) * spec.hidden,
+                "verified Core ML input must have a complete contiguous backing");
+    }
     try { return impl_->branches.at(block)->predict(input, input.shape(1)); }
     catch (const std::exception &error) {
         record_runtime_failure(block);
@@ -677,6 +755,7 @@ void HybridSession::record_prefill_plan(int actual_tokens, int selected_bucket,
 }
 HybridMetrics HybridSession::metrics() const {
     HybridMetrics metrics;
+    metrics.weight_variant = weight_variant;
     metrics.load_seconds = load_seconds;
     metrics.manifest_validation_seconds = manifest_validation_seconds;
     metrics.output_backing_setup_seconds = output_backing_setup_seconds;
