@@ -31,3 +31,5 @@ but fails the current aligned-RGB quality gate (correlation 0.9611, MAE
 5.397/255), so it remains explicit and is not added to automatic selection.
 
 Full evidence: `docs/design/validation/z-image-clean-performance-2026-09-23.json`.
+
+A later four-image [M4 Pro screening](../design/validation/z-image-m4-pro-metal-2026-09-27.md) explicitly enabled the additional kernels and observed a 3.02% warm request reduction with identical PNGs. This small local result does not expand the qualified M4 Max defaults.

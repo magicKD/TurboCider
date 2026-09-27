@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
-# Prefer the project environment so tests use the same dependencies as the build.
-LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3.11))
-PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),python3.11)
+# Prefer the project environment, then fallback to active environment (uv/conda/pyenv)
+LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3))
+PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),$(shell which python3 2>/dev/null || echo python3.11))
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-qwen21 test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
 help:
@@ -36,6 +36,7 @@ test:
 	@"$(PYTHON)" tests/repository/test_independence.py
 	@"$(PYTHON)" tests/repository/test_cpp_boundaries.py
 	@"$(PYTHON)" tests/native/test_hash_small_stack.py
+	@"$(PYTHON)" tests/native/test_coreml_output_copy.py
 	@"$(PYTHON)" tests/native/test_contract.py
 	@"$(PYTHON)" -B tests/native/test_z_image_sharded_checkpoint.py
 	@"$(PYTHON)" -B tests/native/test_z_image_smoothquant.py

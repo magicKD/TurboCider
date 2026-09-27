@@ -1,0 +1,62 @@
+{
+  "status": "PASS_FUNCTIONAL_EXPLORATORY_ONLY",
+  "scope": "Four actual generations; one cold and one warm per variant; no statistical qualification or default profile promotion",
+  "hardware": "Apple M4 Pro 48 GiB",
+  "source_commit": "95b176061d77f9b619cb950c91b9a1b693a24c7b",
+  "library_sha256": "ed6462bbf17964ef9cffaec21816ca3d32d699bcc0fafa219ac24a7e86741e73",
+  "images": [
+    {
+      "variant": "baseline",
+      "cold": true,
+      "wall_seconds": 21.12956974998815,
+      "denoise_seconds": 18.998891333,
+      "text_encode_seconds": 0.413581208,
+      "png_sha256": "0376727a3ef96137b2010debf101b8dc67aaaba37cb0599683b9faef61717164",
+      "image": "outputs/integration-20260927/m4pro-metal-4-image-screen/0-baseline/image-0.png"
+    },
+    {
+      "variant": "baseline",
+      "cold": false,
+      "wall_seconds": 19.591911416995572,
+      "denoise_seconds": 19.008394125,
+      "text_encode_seconds": 3.75e-07,
+      "png_sha256": "0376727a3ef96137b2010debf101b8dc67aaaba37cb0599683b9faef61717164",
+      "image": "outputs/integration-20260927/m4pro-metal-4-image-screen/0-baseline/image-1.png"
+    },
+    {
+      "variant": "fused",
+      "cold": true,
+      "wall_seconds": 22.806670874997508,
+      "denoise_seconds": 19.313049667,
+      "text_encode_seconds": 1.263342833,
+      "png_sha256": "0376727a3ef96137b2010debf101b8dc67aaaba37cb0599683b9faef61717164",
+      "image": "outputs/integration-20260927/m4pro-metal-4-image-screen/1-fused/image-0.png"
+    },
+    {
+      "variant": "fused",
+      "cold": false,
+      "wall_seconds": 19.000977791991318,
+      "denoise_seconds": 18.407603125,
+      "text_encode_seconds": 3.34e-07,
+      "png_sha256": "0376727a3ef96137b2010debf101b8dc67aaaba37cb0599683b9faef61717164",
+      "image": "outputs/integration-20260927/m4pro-metal-4-image-screen/1-fused/image-1.png"
+    }
+  ],
+  "all_four_pngs_byte_identical": true,
+  "warm_wall_reduction_percent": 3.016212213432279,
+  "warm_denoise_reduction_percent": 3.1606615269505145,
+  "candidate_flags": {
+    "TURBOCIDER_Z_MPP_SWIGLU": "1",
+    "TURBOCIDER_Z_MPP_PROJECTIONS": "1",
+    "TURBOCIDER_Z_MPP_QKV_PREPARE": "1",
+    "TURBOCIDER_Z_GATE_NORM_VIRTUAL_THREADS": "128"
+  },
+  "context_cache_enabled": false,
+  "automatic_device_profile_changed": false,
+  "artifacts": {
+    "outputs/integration-20260927/m4pro-metal-4-image-screen/plan.json": "847c03793798944f514fcc2eb456f1be8a75ad958d9723e43f45e9bb0b1f002d",
+    "outputs/integration-20260927/m4pro-metal-4-image-screen/summary.json": "eaae3ef193ad2ad84d8fa8599bf25413d7ddaee9f60a1ece4a6ec276e4dbdaee",
+    "outputs/integration-20260927/m4pro-metal-4-image-screen/0-baseline/report.json": "5199956453fcb13a7a8aaec233465919542136fa828d16442d300d744c92a9b0",
+    "outputs/integration-20260927/m4pro-metal-4-image-screen/1-fused/report.json": "37cf12a99184b605ff87db9b92bac41ac61ce0c4af40f178cb536d61ea962a72"
+  }
+}

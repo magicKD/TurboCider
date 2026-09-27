@@ -1,5 +1,6 @@
 #include "coreml.hpp"
 #include "coreml_partitions.hpp"
+#include "coreml_output_copy.hpp"
 #include "../platform/apple/bridge.hpp"
 #include "../platform/apple/platform.hpp"
 #import <CoreML/CoreML.h>
@@ -278,33 +279,15 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
             "Core ML returned an unexpected output shape or dtype");
     if (!output_ || actual_output.dataPointer != output_.dataPointer) {
         copied_bytes += uint64_t(rows_) * uint64_t(hidden_) * 2;
-        if (!optimize_output_copy_) {
-            // Preserve the established implementation on unmeasured hardware.
-            for (int row = 0; row < rows_; ++row)
-                for (int c = 0; c < hidden_; ++c) {
-                    size_t offset = row * [actual_output.strides[3] unsignedLongLongValue] +
-                                    c * [actual_output.strides[1] unsignedLongLongValue];
-                    ((uint16_t *)output_storage_.data<mx::float16_t>())[size_t(row) * hidden_ + c] =
-                        ((uint16_t *)actual_output.dataPointer)[offset];
-                }
-        } else {
-            // Strides can differ when the framework declines the caller output backing.
-            // Resolve Objective-C properties once per prediction, not once per
-            // element. Flexible models normally take this owned-output path.
-            const auto *source = static_cast<const uint16_t *>(actual_output.dataPointer);
-            auto *destination = reinterpret_cast<uint16_t *>(output_storage_.data<mx::float16_t>());
-            const size_t row_stride = [actual_output.strides[3] unsignedLongLongValue];
-            const size_t channel_stride = [actual_output.strides[1] unsignedLongLongValue];
-            for (int row = 0; row < rows_; ++row) {
-                auto *target_row = destination + size_t(row) * hidden_;
-                const auto *source_row = source + size_t(row) * row_stride;
-                if (channel_stride == 1)
-                    std::memcpy(target_row, source_row, size_t(hidden_) * sizeof(uint16_t));
-                else
-                    for (int c = 0; c < hidden_; ++c)
-                        target_row[c] = source_row[size_t(c) * channel_stride];
-            }
-        }
+        // Resolve Core ML properties once, including on the conservative copy
+        // path. Millions of Objective-C property calls per block can dominate
+        // flexible-shape inference even though the tensor copy itself is small.
+        const auto *source = static_cast<const uint16_t *>(actual_output.dataPointer);
+        auto *destination = reinterpret_cast<uint16_t *>(output_storage_.data<mx::float16_t>());
+        const size_t row_stride = [actual_output.strides[3] unsignedLongLongValue];
+        const size_t channel_stride = [actual_output.strides[1] unsignedLongLongValue];
+        copy_coreml_fp16(destination, source, size_t(rows_), size_t(hidden_),
+                         row_stride, channel_stride, optimize_output_copy_);
     }
     // The model coordinator and per-block eval guarantee that the prior
     // consumer has completed before this branch writes its next output. Core ML

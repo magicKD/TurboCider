@@ -925,12 +925,13 @@ class ContractTests(unittest.TestCase):
     def test_device_optimization_profile(self):
         system = json.loads(consume(C.c_void_p(lib.tc_system_json())))
         expected = system['gpu'] == 'Apple M5 Pro' and system['physical_memory_bytes'] == 24 << 30
+        copy_only = system['gpu'] == 'Apple M4 Pro' and system['physical_memory_bytes'] == 48 << 30
         profile = system['optimization_profile']
-        self.assertEqual(profile['id'], 'm5pro24-v1' if expected else 'legacy')
+        self.assertEqual(profile['id'], 'm5pro24-v1' if expected else 'm4pro48-coreml-copy-v1' if copy_only else 'legacy')
         for flag in ['z_image_suffix_streaming', 'z_image_hybrid_segments',
                      'z_image_memory_lifecycle', 'z_image_smallest_partition',
                      'external_automatic_partitions', 'coreml_output_copy', 'z_image_int8_streaming']:
-            self.assertIs(profile[flag], expected)
+            self.assertIs(profile[flag], expected or (copy_only and flag == 'coreml_output_copy'))
 
     def test_z_image_streaming_contract(self):
         request = dict(model='z-image-turbo', operation='image.generate',

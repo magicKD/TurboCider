@@ -64,6 +64,49 @@ struct StudioBehaviorTests {
         let restoredStream = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(zStream))
         try check(restoredStream.residency == "streamed" && restoredStream.zImageStreamingBudgetGiB == 8,
                   "Z-Image streaming draft did not persist")
+        let adapter = root.appendingPathComponent("stream-conflict-lora.safetensors")
+        try Data([0]).write(to: adapter)
+        var conflictDraft = restoredStream
+        conflictDraft.loras = [StudioLoRA(path: adapter.path, strength: 0.8)]
+        for prompt in ["a fox", "日落时分的湖泊"] {
+            conflictDraft.prompt = prompt
+            try check(conflictDraft.zImageStreamingConflict()?.contains("LoRA") == true,
+                      "Streaming conflict incorrectly depends on the prompt")
+            do {
+                _ = try conflictDraft.request(output: output)
+                throw NativeFailure(message: "Streaming accepted active LoRA")
+            } catch {
+                try check(error.localizedDescription == conflictDraft.zImageStreamingConflict(),
+                          "UI and request validation disagree on the streaming conflict")
+            }
+        }
+        let conflictDirectory = root.appendingPathComponent("stream-conflict")
+        let conflictStudio = StudioState(directory: conflictDirectory)
+        conflictStudio.draft = conflictDraft
+        conflictStudio.save()
+        let restoredConflict = StudioState(directory: conflictDirectory)
+        try check(restoredConflict.draft.zImageStreamingConflict()?.contains("LoRA") == true,
+                  "Saved invalid streaming settings hid the recovery action")
+        restoredConflict.useZImageResidentLoading()
+        let recovered = try restoredConflict.draft.request(output: output)
+        try check(recovered.residency == "resident" && recovered.memory_budget_bytes == nil &&
+                  recovered.loras?.count == 1 && restoredConflict.draft.loras == conflictDraft.loras &&
+                  recovered.prompt == conflictDraft.prompt && recovered.seed == 42,
+                  "Streaming recovery lost LoRA, prompt or generation parameters")
+        try check(StudioState(directory: conflictDirectory).draft.residency == "resident",
+                  "Streaming recovery was not persisted")
+        conflictDraft.loras[0].enabled = false
+        try check(conflictDraft.zImageStreamingConflict() == nil,
+                  "Disabled LoRA blocked GPU streaming")
+        conflictDraft.acceleration = StudioAcceleration(policy: "gpu_ane")
+        try check(conflictDraft.zImageStreamingConflict(systemJSON: "{}")?.contains("ANE") == true,
+                  "Unsupported ANE streaming did not explain the conflict")
+        conflictDraft.acceleration = StudioAcceleration(policy: "auto")
+        try check(conflictDraft.zImageStreamingConflict()?.contains("加速配置") == true,
+                  "Automatic streaming policy did not explain the conflict")
+        conflictDraft.acceleration = nil; conflictDraft.profilePath = "/test/profile.json"
+        try check(conflictDraft.zImageStreamingConflict()?.contains("加速配置") == true,
+                  "Legacy profile streaming did not explain the conflict")
         zStream.acceleration = StudioAcceleration(policy: "gpu_ane")
         try rejects { _ = try zStream.request(output: output) }
         zStream.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/z-image/compiled.json")
