@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ImageUpscaleView: View {
     @ObservedObject var store: NativeJobStore
     @ObservedObject var studio: StudioState
+    var showSettings = true
     var onResult: (NativeJob) -> Void
     @State private var sourcePath = ""
     @State private var submitting = false
@@ -14,98 +15,62 @@ struct ImageUpscaleView: View {
         store.jobs.first { $0.id == resultID && $0.hasOutput }
             ?? store.jobs.first { $0.request.operation == "image.upscale" && $0.hasOutput }
     }
-    private var preloadKey: String {
-        "\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)"
-    }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("图像超分").font(.largeTitle)
-                Text("x2plus 放大 2 倍，x4plus 放大 4 倍。原图保留，结果另存为 PNG。")
-                    .foregroundStyle(.secondary)
-                GroupBox("模型与加速") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Picker("超分模型", selection: Binding(get: { studio.draft.upscaleVariant }, set: { studio.selectUpscaleVariant($0) })) {
-                            ForEach(UpscaleVariant.allCases, id: \.self) { Text($0.title).tag($0) }
-                        }.accessibilityIdentifier("upscaleVariant")
-                        HStack {
-                            TextField("本地 Core ML 模型路径", text: $studio.draft.upscaleModelPath)
-                                .textFieldStyle(.roundedBorder).accessibilityIdentifier("upscaleModelPath")
-                            Button("选择模型…") { chooseModel() }
+        HStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("图像超分").font(.largeTitle)
+                    Text("x2plus 放大 2 倍，x4plus 放大 4 倍。原图保留，结果另存为 PNG。")
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        TextField("要超分的图片路径", text: $sourcePath).textFieldStyle(.roundedBorder)
+                            .accessibilityIdentifier("upscaleInputPath")
+                        Button("选择图片…") {
+                            let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = false
+                            present(panel) { sourcePath = $0.path }
                         }
-                        HStack {
-                            Link("下载 \(studio.draft.upscaleVariant.rawValue) 预转换模型", destination: studio.draft.upscaleVariant.downloadURL)
-                            Link("模型转换与处理说明", destination: UpscaleVariant.processingURL)
-                        }
-                        Text("下载后解压并选择 .mlpackage；App 原生编译并加载，不需要 Python。模型保留在原目录。")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Picker("超分设备", selection: $studio.draft.upscaleCompute) {
-                            ForEach(UpscaleCompute.allCases, id: \.self) { Text($0.title).tag($0) }
-                        }.accessibilityIdentifier("upscaleCompute")
-                        Toggle("自动预加载并预热模型", isOn: $studio.draft.upscaleAutoPreload)
-                            .accessibilityIdentifier("upscaleAutoPreload")
+                        Button("开始超分 ×\(studio.draft.upscaleVariant.scale)", action: run)
+                            .buttonStyle(.borderedProminent).disabled(sourcePath.isEmpty || studio.draft.upscaleModelPath.isEmpty)
+                            .accessibilityIdentifier("upscaleStart")
                     }.disabled(locked)
-                    HStack {
-                        Button("预加载") { Task { await preload() } }
-                            .disabled(locked || studio.draft.upscaleModelPath.isEmpty).accessibilityIdentifier("preloadUpscaler")
-                        Button("释放超分模型") { Task { await store.releaseUpscaler() } }
-                            .disabled(locked || store.upscaleReady == nil).accessibilityIdentifier("releaseUpscaler")
-                        if store.busy && store.activeJob == nil { ProgressView().controlSize(.small) }
-                        Text(store.upscaleStatus).font(.caption).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
-                    Text("只保留一个超分模型；连续任务复用它。切换模型或设备时重新加载。ANE 选项允许 CPU 回退，不代表所有算子均在 ANE 上运行。")
-                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
-                }
-                HStack {
-                    TextField("要超分的图片路径", text: $sourcePath).textFieldStyle(.roundedBorder)
-                        .accessibilityIdentifier("upscaleInputPath")
-                    Button("选择图片…") {
-                        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = false
-                        present(panel) { sourcePath = $0.path }
-                    }
-                    Button("开始超分 ×\(studio.draft.upscaleVariant.scale)", action: run)
-                        .buttonStyle(.borderedProminent).disabled(sourcePath.isEmpty || studio.draft.upscaleModelPath.isEmpty)
-                        .accessibilityIdentifier("upscaleStart")
-                }.disabled(locked)
-                if store.busy {
-                    HStack {
-                        ProgressView().controlSize(.small)
-                        if let job = store.activeJob { Text("超分分块 \(job.completed)/\(job.total)") }
-                        else { Text(store.sessionState) }
-                        Spacer(); Button("取消") { store.cancel() }
-                    }
-                }
-                if let message = studio.message { Text(message).foregroundStyle(.orange).textSelection(.enabled) }
-                if let result {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("超分结果 · \(result.request.width) × \(result.request.height)").font(.headline)
-                        MediaPreview(path: result.request.output, maxPixel: 1400).frame(height: 360)
-                            .accessibilityIdentifier("upscaleOutput")
+                    if store.busy {
                         HStack {
-                            Text(result.routeSummary ?? "").font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                            Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: result.request.output)]) }
+                            ProgressView().controlSize(.small)
+                            if let job = store.activeJob { Text("超分分块 \(job.completed)/\(job.total)") }
+                            else { Text(store.sessionState) }
+                            Spacer(); Button("取消") { store.cancel() }
                         }
                     }
-                } else if !sourcePath.isEmpty {
-                    MediaPreview(path: sourcePath, maxPixel: 1000).frame(height: 280)
-                }
-            }.padding(24)
-        }
-        .task(id: preloadKey) {
-            guard studio.draft.upscaleAutoPreload else { return }
-            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            guard !locked, (try? ImageUpscaler.validateModelURL(URL(fileURLWithPath: studio.draft.upscaleModelPath))) != nil else { return }
-            await preload()
+                    if let message = studio.message { Text(message).foregroundStyle(.orange).textSelection(.enabled) }
+                    if let result {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("超分结果 · \(result.request.width) × \(result.request.height)").font(.headline)
+                            MediaPreview(path: result.request.output, maxPixel: 1400).frame(height: 360)
+                                .accessibilityIdentifier("upscaleOutput")
+                            HStack {
+                                Text(result.routeSummary ?? "").font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: result.request.output)]) }
+                            }
+                        }
+                    } else if !sourcePath.isEmpty {
+                        MediaPreview(path: sourcePath, maxPixel: 1000).frame(height: 280)
+                    } else {
+                        ContentUnavailableView("选择要放大的图片", systemImage: "photo.badge.plus",
+                                               description: Text("选择原图，在右侧设置模型后开始超分。"))
+                            .frame(height: 280)
+                    }
+                }.padding(24)
+            }
+            if showSettings {
+                Divider()
+                ScrollView {
+                    UpscaleSettingsView(store: store, studio: studio, locked: locked)
+                        .padding(18)
+                }.frame(width: 290).background(Color(nsColor: .controlBackgroundColor))
+            }
         }
         .onDisappear { studio.save() }
-    }
-    private func preload() async {
-        studio.message = nil
-        do {
-            try await store.preloadUpscaler(modelURL: URL(fileURLWithPath: studio.draft.upscaleModelPath), compute: studio.draft.upscaleCompute)
-            if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
-        } catch { if !(error is CancellationError) { studio.message = error.localizedDescription } }
     }
     private func run() {
         guard !locked else { return }
@@ -121,14 +86,6 @@ struct ImageUpscaleView: View {
             } catch { studio.message = error is CancellationError ? "超分已取消，原图已保留。" : error.localizedDescription }
         }
     }
-    private func chooseModel() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
-        panel.message = "选择解压后的 x2plus 或 x4plus Core ML 模型。"
-        present(panel) { url in
-            do { try ImageUpscaler.validateModelURL(url); studio.draft.upscaleModelPath = url.path; studio.save() }
-            catch { studio.message = error.localizedDescription }
-        }
-    }
     private func present(_ panel: NSOpenPanel, selected: @escaping (URL) -> Void) {
         Task { @MainActor in
             let completion: (NSApplication.ModalResponse) -> Void = { response in
@@ -138,5 +95,95 @@ struct ImageUpscaleView: View {
                 panel.beginSheetModal(for: window, completionHandler: completion)
             } else { panel.begin(completionHandler: completion) }
         }
+    }
+}
+
+/// Shared settings keep generation and standalone upscaling in sync.
+struct UpscaleSettingsView: View {
+    @ObservedObject var store: NativeJobStore
+    @ObservedObject var studio: StudioState
+    var locked: Bool
+    var showAfterGeneration = false
+    var preloadOnAppear = true
+    @State private var showDetails = false
+    private var preloadKey: String {
+        "\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)"
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("图像超分").font(.headline)
+            VStack(alignment: .leading, spacing: 10) {
+                if showAfterGeneration {
+                    Toggle("生成后自动超分", isOn: $studio.draft.upscaleAfterGeneration)
+                        .accessibilityIdentifier("upscaleAfterGeneration")
+                }
+                Picker("超分模型", selection: Binding(get: { studio.draft.upscaleVariant }, set: { studio.selectUpscaleVariant($0) })) {
+                    ForEach(UpscaleVariant.allCases, id: \.self) { Text("\($0.rawValue) · \($0.scale)×").tag($0) }
+                }.accessibilityIdentifier("upscaleVariant")
+                HStack {
+                    Text(studio.draft.upscaleModelPath.isEmpty ? "尚未选择模型" : URL(fileURLWithPath: studio.draft.upscaleModelPath).lastPathComponent)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2).help(studio.draft.upscaleModelPath)
+                    Spacer()
+                    Button("选择…", action: chooseModel).accessibilityIdentifier("chooseUpscaleModel")
+                }
+                Picker("超分设备", selection: $studio.draft.upscaleCompute) {
+                    ForEach(UpscaleCompute.allCases, id: \.self) { Text($0.title).tag($0) }
+                }.accessibilityIdentifier("upscaleCompute")
+                Toggle("自动预加载", isOn: $studio.draft.upscaleAutoPreload)
+                    .accessibilityIdentifier("upscaleAutoPreload")
+                DisclosureGroup("模型路径与下载", isExpanded: $showDetails) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField("本地 Core ML 模型路径", text: $studio.draft.upscaleModelPath)
+                            .textFieldStyle(.roundedBorder).accessibilityIdentifier("upscaleModelPath")
+                        Link("下载 \(studio.draft.upscaleVariant.rawValue) 模型", destination: studio.draft.upscaleVariant.downloadURL)
+                        Link("模型转换与处理说明", destination: UpscaleVariant.processingURL)
+                        Text("解压后选择 .mlpackage。模型留在原目录，无需 Python。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.padding(.top, 8)
+                }.accessibilityIdentifier("upscaleModelDetails")
+            }.disabled(locked)
+            HStack {
+                Button("预加载") { Task { await preload() } }
+                    .disabled(locked || studio.draft.upscaleModelPath.isEmpty).accessibilityIdentifier("preloadUpscaler")
+                Button("释放") { Task { await store.releaseUpscaler() } }
+                    .disabled(locked || store.upscaleReady == nil).accessibilityIdentifier("releaseUpscaler")
+            }
+            Text(store.upscaleStatus).font(.caption).foregroundStyle(.secondary)
+                .accessibilityIdentifier("upscaleStatus")
+            Text("原图保留，超分结果另存。预加载后连续复用一个模型；切换模型或设备时重新加载。")
+                .font(.caption).foregroundStyle(.secondary)
+            if studio.draft.upscaleCompute == .ane {
+                Text("ANE 首次准备较慢；预加载后通常更快。不支持的算子可能使用 CPU。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if store.busy && store.activeJob == nil {
+                HStack { ProgressView().controlSize(.small); Button("取消预加载") { store.cancel() } }
+            }
+        }
+        .task(id: preloadKey) {
+            guard preloadOnAppear, studio.draft.upscaleAutoPreload else { return }
+            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+            guard !locked, (try? ImageUpscaler.validateModelURL(URL(fileURLWithPath: studio.draft.upscaleModelPath))) != nil else { return }
+            await preload()
+        }
+    }
+    private func preload() async {
+        studio.message = nil
+        do {
+            try await store.preloadUpscaler(modelURL: URL(fileURLWithPath: studio.draft.upscaleModelPath), compute: studio.draft.upscaleCompute)
+            if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
+        } catch { if !(error is CancellationError) { studio.message = error.localizedDescription } }
+    }
+    private func chooseModel() {
+        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
+        panel.message = "选择解压后的 x2plus 或 x4plus Core ML 模型。"
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            do { try ImageUpscaler.validateModelURL(url); studio.draft.upscaleModelPath = url.path; studio.save() }
+            catch { studio.message = error.localizedDescription }
+        }
+        if let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }) {
+            panel.beginSheetModal(for: window, completionHandler: completion)
+        } else { panel.begin(completionHandler: completion) }
     }
 }

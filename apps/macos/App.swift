@@ -153,7 +153,7 @@ struct StudioView: View {
             Group {
                 switch page ?? .studio {
                 case .studio: workspace
-                case .upscale: ImageUpscaleView(store: store, studio: studio) { job in
+                case .upscale: ImageUpscaleView(store: store, studio: studio, showSettings: inspector) { job in
                     selected = job.id; compareOriginal = false; resultSelection.select(job.id, orderedIDs: outputIDs)
                 }
                 case .models: modelsPage
@@ -284,6 +284,7 @@ struct StudioView: View {
     }
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if studio.supportsImageInputs || !studio.draft.assets.isEmpty {
             HStack {
                 Button(action: chooseImages) { Label("添加图片", systemImage: "plus") }.disabled(!studio.supportsImageInputs).accessibilityIdentifier("addImages")
                 Button { Task { await studio.pasteImage() } } label: { Label("粘贴图片", systemImage: "doc.on.clipboard") }.disabled(!studio.supportsImageInputs).accessibilityIdentifier("pasteImages")
@@ -292,6 +293,7 @@ struct StudioView: View {
                 if studio.importing { ProgressView().controlSize(.small) }
                 Text("\(studio.draft.assets.count) / \(studio.imageImportLimit)").font(.caption).foregroundStyle(.secondary)
             }.disabled(studio.importing)
+            }
             if !studio.draft.assets.isEmpty { inputStrip }
             if studio.draft.assets.count > studio.draft.activeAssets.count {
                 Text("\(studio.draft.assets.count - studio.draft.activeAssets.count) 张图片已保留，未参与当前模式。")
@@ -310,62 +312,14 @@ struct StudioView: View {
                     Text("支持透明 PNG；蒙版作为有序参考图输入。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
-                Text("蒙版示例：参考 1 为原图，参考 2 为白色编辑区 / 黑色保留区蒙版。圈选示例直接使用带标注的图片。示例会替换提示词与参数，不是自动 prompt rewriting。")
-                    .font(.caption2).foregroundStyle(.secondary)
-                Toggle("原生 PE 提示词增强（实验性）", isOn: $studio.draft.promptEnhance)
-                    .disabled(store.busy || submitting)
-                    .accessibilityIdentifier("qwen21PromptEnhance")
-                if studio.draft.promptEnhance {
-                    if studio.draft.operation == "image.edit" {
-                        Toggle("允许 PE-I2I FP32 视觉（未通过编辑质量验收）",
-                               isOn: $studio.draft.promptEnhanceEditExperimental)
-                            .disabled(store.busy || submitting)
-                            .accessibilityIdentifier("qwen21PromptEnhanceEditExperimental")
-                        Text("默认关闭。使用 PE-I2I 模型及 8 位参考图；PNG 已完成字节对齐，JPEG 解码仍有差异。编辑可能改变未指定区域或细节。")
-                            .font(.caption2).foregroundStyle(.orange)
-                    }
-                    HStack {
-                        TextField(studio.draft.operation == "image.edit" ? "PE-I2I 安装目录" : "PE-T2I 安装目录",
-                                  text: $studio.draft.promptEnhancerPath)
-                        Button("选择…") {
-                            let panel = NSOpenPanel()
-                            panel.canChooseDirectories = true; panel.canChooseFiles = false
-                            panel.allowsMultipleSelection = false
-                            if panel.runModal() == .OK, let url = panel.url {
-                                studio.draft.promptEnhancerPath = url.path
-                            }
-                        }
-                    }.disabled(store.busy || submitting)
-                    Text(studio.draft.operation == "image.edit"
-                         ? "无 Python 推理；实验性 PE-I2I 可能耗时数十分钟。保留下方显式画布尺寸，不自动采用 PE 推荐比例。"
-                         : "无 Python 推理；当前增强可能耗时数分钟。保留下方显式画布尺寸，不自动采用 PE 推荐比例。")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
+
             }
             PromptCapacityView(studio: studio, busy: store.busy || submitting)
-            if model?.isVideo != true {
-                HStack {
-                    Toggle("生成后自动超分（保留原图）", isOn: $studio.draft.upscaleAfterGeneration)
-                        .accessibilityIdentifier("upscaleAfterGeneration")
-                    Button("超分模型…", action: chooseUpscaleModel).accessibilityIdentifier("chooseUpscaleModel")
-                }.disabled(store.busy || submitting)
-                Picker("超分设备", selection: $studio.draft.upscaleCompute) {
-                    ForEach(UpscaleCompute.allCases, id: \.self) { Text($0.title).tag($0) }
-                }.disabled(store.busy || submitting).accessibilityIdentifier("upscaleCompute")
-                if studio.draft.upscaleCompute == .ane {
-                    Text("仅允许 Core ML 使用 CPU/ANE；不支持的算子可能回退 CPU。首次加载和运行速度取决于设备。")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-                if studio.draft.upscaleAfterGeneration {
-                    Text(studio.draft.upscaleModelPath.isEmpty ? "请在「图片超分」中选择本地 x2plus / x4plus Core ML 模型；不会自动下载。"
-                         : "超分模型：\(URL(fileURLWithPath: studio.draft.upscaleModelPath).lastPathComponent)")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            }
 
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(inputSummary).font(.caption)
+                    Text(studio.draft.upscaleAfterGeneration && model?.isVideo != true
+                         ? "生成后超分 ×\(studio.draft.upscaleVariant.scale) · 保留原图" : inputSummary).font(.caption)
                     Text(studio.draft.randomSeed ? "每次随机 · 本次 \(studio.lastSeed.map(String.init) ?? "待确定")" : "固定种子 \(studio.draft.seedText)").font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -392,6 +346,41 @@ struct StudioView: View {
         }.padding(14).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(dropping ? ciderAccent : Color.primary.opacity(0.12), lineWidth: 1))
             .onDrop(of: [.fileURL, .image], isTargeted: $dropping) { providers in Task { await studio.importProviders(providers) }; return true }
+    }
+    private var promptEnhancementSettings: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("蒙版示例：参考 1 为原图，参考 2 为白色编辑区 / 黑色保留区蒙版。圈选示例直接使用带标注的图片。示例会替换提示词与参数，不是自动 prompt rewriting。")
+                .font(.caption2).foregroundStyle(.secondary)
+            Toggle("原生 PE 提示词增强（实验性）", isOn: $studio.draft.promptEnhance)
+                .disabled(store.busy || submitting)
+                .accessibilityIdentifier("qwen21PromptEnhance")
+            if studio.draft.promptEnhance {
+                if studio.draft.operation == "image.edit" {
+                    Toggle("允许 PE-I2I FP32 视觉（未通过编辑质量验收）",
+                           isOn: $studio.draft.promptEnhanceEditExperimental)
+                        .disabled(store.busy || submitting)
+                        .accessibilityIdentifier("qwen21PromptEnhanceEditExperimental")
+                    Text("默认关闭。使用 PE-I2I 模型及 8 位参考图；PNG 已完成字节对齐，JPEG 解码仍有差异。编辑可能改变未指定区域或细节。")
+                        .font(.caption2).foregroundStyle(.orange)
+                }
+                HStack {
+                    TextField(studio.draft.operation == "image.edit" ? "PE-I2I 安装目录" : "PE-T2I 安装目录",
+                              text: $studio.draft.promptEnhancerPath)
+                    Button("选择…") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true; panel.canChooseFiles = false
+                        panel.allowsMultipleSelection = false
+                        if panel.runModal() == .OK, let url = panel.url {
+                            studio.draft.promptEnhancerPath = url.path
+                        }
+                    }
+                }.disabled(store.busy || submitting)
+                Text(studio.draft.operation == "image.edit"
+                     ? "无 Python 推理；实验性 PE-I2I 可能耗时数十分钟。保留下方显式画布尺寸，不自动采用 PE 推荐比例。"
+                     : "无 Python 推理；当前增强可能耗时数分钟。保留下方显式画布尺寸，不自动采用 PE 推荐比例。")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
     }
     private var inputStrip: some View {
         ScrollView(.horizontal) { HStack(alignment: .top, spacing: 10) {
@@ -565,6 +554,17 @@ struct StudioView: View {
                 Text(loraStrategyHint).font(.caption2).foregroundStyle(.secondary)
                 Text(model?.runtime_lora == true ? "运行时按文件身份缓存并应用，不复制整份 checkpoint。" : "此模型要求 LoRA 对应的预融合 checkpoint 与 provenance manifest。")
                     .font(.caption2).foregroundStyle(.secondary)
+            }
+            if studio.draft.modelID == "qwen-image-2.1" {
+                Divider()
+                Text("提示词增强").font(.headline)
+                promptEnhancementSettings
+            }
+            if model?.isVideo != true {
+                Divider()
+                UpscaleSettingsView(store: store, studio: studio,
+                                    locked: store.busy || submitting || api.running || api.changing,
+                                    showAfterGeneration: true, preloadOnAppear: false)
             }
             DisclosureGroup("高级参数") {
                 VStack(alignment: .leading, spacing: 12) {

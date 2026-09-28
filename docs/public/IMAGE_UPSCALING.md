@@ -4,10 +4,10 @@ TurboCider supports **2× and 4×** super-resolution using local Real-ESRGAN x2p
 
 ## Use
 
-1. Open **图像超分** in the sidebar. Select **x2plus** or **x4plus**, follow the model download link, unzip it and select its `.mlpackage`. The App reads the model in place and remembers a separate path for each variant.
+1. Open **图像超分** in the sidebar. Its right parameter panel contains model, device and preload settings; the left side contains the image input and result. Select **x2plus** or **x4plus**, follow the model download link, unzip it and select its `.mlpackage`. The App reads the model in place and remembers a separate path for each variant.
 2. Select **GPU** or **ANE 优先**. Automatic preload compiles, loads and warms the selected model in advance. The status changes to **已预加载** when ready. One resident model is retained for subsequent images; changing model or device replaces it. **释放超分模型** releases that session.
 3. Choose an image and click **开始超分**. The original is preserved; the PNG result receives a separate history record.
-4. In **创作**, enable **生成后自动超分（保留原图）** to upscale each successful image generation. The Generate menu and result toolbar also offer upscaling. Cancellation or failure during upscaling preserves the original generated image.
+4. In **创作**, enable **生成后自动超分** in the right parameter panel to upscale each successful image generation. The Generate menu and result toolbar also offer upscaling. Cancellation or failure during upscaling preserves the original generated image.
 
 Preloading moves startup work earlier; it does not eliminate startup time or persist a loaded model across App restarts. It temporarily reserves the App's job slot so generation and preload cannot compete. A Core ML prediction in progress finishes before cancellation takes effect.
 

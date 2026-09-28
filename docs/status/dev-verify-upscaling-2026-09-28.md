@@ -66,3 +66,9 @@ Visual inspection of the x2 output found correct orientation and colors. GPU/ANE
 Computer use launched the packaged test copy and confirmed the sidebar entry, GPU default and the 8-step control/help text. Subsequent controls could not be exercised because the computer-use native transport repeatedly returned `Sky Computer Use native pipe closed before response`, including after session reset. A complete dedicated-page click-through remains a manual QA item; backend and controller tests above are separate evidence, not a substitute claim that all UI actions passed.
 
 `dev` is integrated into `dev-verify`; `main` is an ancestor and the merge preflight is conflict-free. No main merge or remote push was performed. Build and covered native/controller regressions support integration, with a final manual UI smoke recommended before main. This change does not qualify production streaming, optional absent models, or a public distribution release; existing experimental labels and gates remain in place.
+
+## Right sidebar refinement
+
+Creation now keeps its prompt and action controls on the left. Upscaling model, device, auto-after-generation and preload/release settings share one `UpscaleSettingsView` in the right sidebar, also used by the standalone upscaling page. Qwen prompt-enhancement configuration moved to the creation sidebar. Text-only generation hides irrelevant image-import controls; the toolbar toggles the standalone settings panel too.
+
+The revised App compiles. Interactive verification is pending: AppleScript fallback was authorized and macOS reports accessibility enabled, but the console subsequently became locked (`IOConsoleLocked` and `CGSSessionScreenIsLocked` both true), producing a black capture and inaccessible windows. The user has been asked to unlock the desktop. These checks are not recorded as passed.
