@@ -4,10 +4,12 @@ TurboCider supports **2× and 4×** super-resolution using local Real-ESRGAN x2p
 
 ## Use
 
-1. Open **图像超分** in the sidebar. Its right parameter panel contains model, device and preload settings; the left side contains the image input and result. Select **x2plus** or **x4plus**, follow the model download link, unzip it and select its `.mlpackage`. The App reads the model in place and remembers a separate path for each variant.
-2. Select **GPU** or **ANE 优先**. Automatic preload compiles, loads and warms the selected model in advance. The status changes to **已预加载** when ready. One resident model is retained for subsequent images; changing model or device replaces it. **释放超分模型** releases that session.
-3. Choose an image and click **开始超分**. The original is preserved; the PNG result receives a separate history record.
-4. In **创作**, use the selector beside **生成图像**: **不超分**, **超分 ×2**, or **超分 ×4**. New drafts default to no upscaling. Choosing a scale selects its saved model path and shows the final output dimensions; the right sidebar contains only model/device/preload configuration. Cancellation or failure during upscaling preserves the original generated image. To process an existing result separately, choose **单独超分此图…** from its **…** menu; the dedicated page opens with that image filled in and waits for **开始超分**.
+1. Open **模型**, choose the **超分** category, then select **Real-ESRGAN x2plus** or **x4plus**. Use **下载模型** to save the ZIP in your browser, unzip it, and choose **导入并校验本地模型…**. The App checks the actual scale and prepares the Core ML package natively; importing a model never enables automatic upscaling.
+2. Go to **创作 → 单图修改 → 图像超分**. Choose the input image and x2/x4 model. There is no separate sidebar item. **管理模型** opens the matching model-center entry; weights, paths and download instructions are managed there.
+3. Select **GPU** or **ANE 优先** in the right parameter panel. **自动预加载**, **预加载** and **释放** manage the resident model. Click **开始超分** to create a separate PNG/history record while preserving the original.
+4. For image generation, use the selector beside **生成图像**: **不超分**, **超分 ×2**, or **超分 ×4**. New drafts default to no upscaling. Cancellation or failure during upscaling preserves the original generated image. An existing result's **… → 单独超分此图…** action opens the same single-image upscaling workspace with its source filled in and waits for Start.
+
+The two upscalers are auxiliary entries in the unified `library.json` installation index. External packages remain in place; removing a registration retains its files. Exported model configurations include `real-esrgan-x2plus` and `real-esrgan-x4plus` in `modelPaths`; importing them restores upscaler paths without changing the generation engine or opting into post-generation processing. Existing App upscaler paths migrate into the library on startup.
 
 Preloading moves startup work earlier; it does not eliminate startup time or persist a loaded model across App restarts. It temporarily reserves the App's job slot so generation and preload cannot compete. A Core ML prediction in progress finishes before cancellation takes effect.
 

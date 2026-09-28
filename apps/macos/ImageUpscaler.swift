@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 enum UpscaleVariant: String, Codable, CaseIterable, Sendable {
     case x2plus, x4plus
     var scale: Int { self == .x2plus ? 2 : 4 }
+    var modelID: String { "real-esrgan-\(rawValue)" }
+    static func from(modelID: String) -> Self? { allCases.first { $0.modelID == modelID } }
     var title: String { "Real-ESRGAN \(rawValue) · \(scale)×" }
     var downloadURL: URL { URL(string: "https://github.com/hanxiao/real-esrgan-coreml/releases/download/v1.0.0/RealESRGAN_\(rawValue)_522_fp16.zip")! }
     static let processingURL = URL(string: "https://github.com/hanxiao/real-esrgan-coreml#usage")!

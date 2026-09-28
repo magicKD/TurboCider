@@ -1326,6 +1326,25 @@ final class StudioState: ObservableObject {
     var generationUpscaleVariant: UpscaleVariant? {
         draft.upscaleAfterGeneration ? draft.upscaleVariant : nil
     }
+    /// Generation engines and auxiliary upscalers share the library index, but not the engine picker.
+    var libraryModelPaths: [String: String] {
+        var paths = draft.modelPaths
+        for variant in UpscaleVariant.allCases {
+            let path = variant == draft.upscaleVariant ? draft.upscaleModelPath : draft.upscaleModelPaths[variant.rawValue] ?? ""
+            if !path.isEmpty { paths[variant.modelID] = path }
+        }
+        return paths
+    }
+    func applyLibraryInstallation(_ item: LibraryInstallation, replace: Bool) {
+        if let variant = UpscaleVariant.from(modelID: item.modelID) {
+            guard replace || (draft.upscaleModelPaths[variant.rawValue] ?? "").isEmpty else { return }
+            draft.upscaleModelPaths[variant.rawValue] = item.path
+            if draft.upscaleVariant == variant { draft.upscaleModelPath = item.path }
+        } else if replace || (draft.modelPaths[item.modelID] ?? "").isEmpty {
+            draft.modelPaths[item.modelID] = item.path
+        }
+        save()
+    }
     func selectGenerationUpscale(_ variant: UpscaleVariant?) {
         if let variant { selectUpscaleVariant(variant) }
         draft.upscaleAfterGeneration = variant != nil

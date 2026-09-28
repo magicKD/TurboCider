@@ -109,6 +109,17 @@ private struct NearestPredictor: UpscalePredictor {
         let choices = StudioState(directory: root.appendingPathComponent("draft-store"))
         try check(choices.generationUpscaleVariant == nil && choices.draft.upscaleModelPath == missing.path
                   && choices.draft.upscaleModelPaths["x2plus"] == "/local/x2.mlpackage", "Opting out or restart discarded model paths or enabled upscaling")
+        let engineID = choices.draft.modelID
+        let installation = LibraryInstallation(id: "upscale-test", modelID: "real-esrgan-x2plus", name: "x2",
+            path: "/library/registered-x2.mlpackage", managed: false, components: [:], createdAt: Date())
+        choices.applyLibraryInstallation(installation, replace: false)
+        try check(choices.libraryModelPaths[installation.modelID] == "/local/x2.mlpackage", "Library refresh replaced an explicit choice")
+        choices.applyLibraryInstallation(installation, replace: true)
+        choices.selectUpscaleVariant(.x2plus)
+        try check(choices.draft.upscaleModelPath == installation.path && choices.draft.modelID == engineID
+                  && choices.draft.modelPaths[installation.modelID] == nil && !choices.draft.upscaleAfterGeneration,
+                  "Auxiliary model import changed generation engine or opted into upscaling")
+        try check(choices.libraryModelPaths[installation.modelID] == installation.path, "Unified configuration omitted upscaler")
         let legacy = try JSONDecoder().decode(StudioDraft.self, from: Data("{}".utf8))
         try check(!legacy.upscaleAfterGeneration && legacy.upscaleModelPath.isEmpty && legacy.upscaleCompute == .gpu, "Legacy draft enabled upscaling")
         print("PASS: synthetic 2x/4x RGB/tiling/alpha, input preservation, invalid tensors, cancellation, missing local weights and draft persistence")
@@ -140,6 +151,38 @@ private struct NearestPredictor: UpscalePredictor {
             await live.releaseUpscaler()
             try check(live.upscaleReady == nil && !live.busy, "Release retained model state")
             print("PASS: real model preload/reuse/release, export, history restart and cancellation; output: \(job.request.output)")
+            let previousRoot = ProcessInfo.processInfo.environment["TURBOCIDER_MODEL_LIBRARY"]
+            setenv("TURBOCIDER_MODEL_LIBRARY", root.appendingPathComponent("registered-models").path, 1)
+            defer {
+                if let previousRoot { setenv("TURBOCIDER_MODEL_LIBRARY", previousRoot, 1) }
+                else { unsetenv("TURBOCIDER_MODEL_LIBRARY") }
+            }
+            let library = ModelLibraryController(), importedStudio = StudioState(directory: root.appendingPathComponent("imported-studio"))
+            func waitForLibrary() async throws {
+                let start = ContinuousClock.now
+                while library.busy {
+                    try check(start.duration(to: .now) < .seconds(60), "Library operation timed out")
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+            }
+            let variant: UpscaleVariant = job.request.width / (try ImageUpscaler.dimensions(image, scale: 2).width) == 2 ? .x2plus : .x4plus
+            library.registerUpscaler(model, variant: variant == .x2plus ? .x4plus : .x2plus, studio: importedStudio)
+            try await waitForLibrary()
+            try check(library.installations.isEmpty && library.message != nil, "Wrong-scale model was registered")
+            library.registerUpscaler(model, variant: variant, studio: importedStudio)
+            try await waitForLibrary()
+            try check(library.installations.count == 1 && importedStudio.libraryModelPaths[variant.modelID] == model.resolvingSymlinksInPath().path,
+                      "Validated model was not added to unified library")
+            let config = root.appendingPathComponent("all-models.json")
+            library.exportConfiguration(to: config, studio: importedStudio)
+            library.remove(library.installations[0], studio: importedStudio)
+            try await waitForLibrary()
+            try check(importedStudio.libraryModelPaths[variant.modelID] == nil && FileManager.default.fileExists(atPath: model.path), "Removal lost weights or retained active path")
+            library.importPaths(config, studio: importedStudio)
+            try await waitForLibrary()
+            try check(library.installations.count == 1 && importedStudio.libraryModelPaths[variant.modelID] != nil
+                      && !importedStudio.draft.upscaleAfterGeneration, "Configuration round trip failed or enabled upscaling")
+            print("PASS: native model scale validation, unified registration/export/import/removal and opt-out preservation")
         }
 
     }

@@ -6,23 +6,33 @@ struct ModelLibraryView: View {
     @ObservedObject var store: NativeJobStore
     @ObservedObject var studio: StudioState
     @ObservedObject var library: ModelLibraryController
+    @Binding var selection: String?
     let chooseModel: (String) -> Void
     let loadModel: (String) -> Void
     let importConfiguration: () -> Void
     let operationName: (String) -> String
     @State private var query = ""
     @State private var category = "all"
-    @State private var selection: String?
     @State private var downloadModel: StudioModel?
 
     private var matches: [StudioModel] {
         studio.models.filter { model in
             let path = studio.draft.modelPaths[model.id] ?? ""
             return model.matchesLibrarySearch(query, path: path) &&
-                (category != "local" || !path.isEmpty) &&
+                category != "upscale" && (category != "local" || !path.isEmpty) &&
                 (category != "image" || !model.isVideo) &&
                 (category != "video" || model.isVideo)
         }
+    }
+    private var matchingUpscalers: [UpscaleVariant] {
+        UpscaleVariant.allCases.filter { variant in
+            let path = studio.draft.upscaleModelPaths[variant.rawValue] ?? ""
+            return category != "video" && (category != "local" || !path.isEmpty) &&
+                (query.isEmpty || (variant.title + " " + variant.modelID + " 图像超分 " + path).localizedCaseInsensitiveContains(query))
+        }
+    }
+    private var selectedUpscaler: UpscaleVariant? {
+        matchingUpscalers.first { $0.modelID == selection } ?? (matches.isEmpty ? matchingUpscalers.first : nil)
     }
     private var selected: StudioModel? {
         matches.first { $0.id == (selection ?? studio.draft.modelID) } ?? matches.first
@@ -48,8 +58,8 @@ struct ModelLibraryView: View {
                 Spacer()
                 Menu("管理目录") {
                     Button("更换模型库目录…", action: chooseLibraryRoot)
-                    Button("导入模型、LoRA 与 ANE 配置…", action: importPaths)
-                    Button("导出模型、LoRA 与 ANE 配置…", action: exportPaths)
+                    Button("导入模型、超分、LoRA 与 ANE 配置…", action: importPaths)
+                    Button("导出模型、超分、LoRA 与 ANE 配置…", action: exportPaths)
                     Button("在 Finder 中打开") { NSWorkspace.shared.open(URL(fileURLWithPath: library.root)) }
                     Button("刷新并同步已有路径") { library.refresh(studio: studio, migrate: true) }
                 }.disabled(library.busy || store.busy).accessibilityIdentifier("manageModelLibrary")
@@ -67,7 +77,7 @@ struct ModelLibraryView: View {
                 }.padding(9).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
                 Picker("筛选", selection: $category) {
                     Text("全部").tag("all"); Text("已登记").tag("local")
-                    Text("图像").tag("image"); Text("视频").tag("video")
+                    Text("图像").tag("image"); Text("视频").tag("video"); Text("超分").tag("upscale")
                 }.labelsHidden().frame(width: 120).accessibilityIdentifier("modelFilter")
             }
             HStack(alignment: .top, spacing: 0) {
@@ -77,29 +87,99 @@ struct ModelLibraryView: View {
                             Button { selection = item.id } label: { modelRow(item) }.buttonStyle(.plain)
                                 .accessibilityIdentifier("modelRow-\(item.id)")
                         }
+                        ForEach(matchingUpscalers, id: \.self) { variant in
+                            Button { selection = variant.modelID } label: {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Label(variant.title, systemImage: "arrow.up.left.and.arrow.down.right")
+                                    Text((studio.draft.upscaleModelPaths[variant.rawValue] ?? "").isEmpty ? "图像超分 · 需要下载或导入" : "图像超分 · 已配置")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                                    .background(selectedUpscaler == variant ? Color.accentColor.opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                            }.buttonStyle(.plain).accessibilityIdentifier("modelRow-\(variant.modelID)")
+                        }
                     }.padding(6)
                 }.frame(width: 250)
                 Divider()
                 ScrollView {
-                    if let selected { details(selected).padding(22) }
+                    if let variant = selectedUpscaler { upscalerDetails(variant).padding(22) }
+                    else if let selected { details(selected).padding(22) }
                     else {
                         ContentUnavailableView("没有匹配的模型", systemImage: "magnifyingglass", description: Text("试试其他名称，或切换到“全部”。")).padding(30)
                     }
                 }.frame(maxWidth: .infinity)
             }.background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
         }.padding(24)
-            .task { library.refresh(studio: studio) }
+            .task {
+                if let selection, UpscaleVariant.from(modelID: selection) != nil { category = "upscale" }
+                library.refresh(studio: studio)
+            }
             .onChange(of: store.busy) { _, busy in if !busy { library.refresh(studio: studio) } }
             .sheet(item: $downloadModel) { item in ModelDownloadView(model: item, library: library, studio: studio) }
+            .onChange(of: studio.draft.upscaleModelPaths) { _, _ in library.refresh(studio: studio, migrate: true) }
             .onChange(of: studio.draft.modelPaths) { _, _ in library.refresh(studio: studio, migrate: true) }
+    }
+
+    private func upscalerDetails(_ variant: UpscaleVariant) -> some View {
+        let path = studio.draft.upscaleModelPaths[variant.rawValue] ?? ""
+        let exists = !path.isEmpty && FileManager.default.fileExists(atPath: path)
+        return VStack(alignment: .leading, spacing: 16) {
+            Text(variant.title).font(.title2)
+            Text("把图片的宽和高各放大 \(variant.scale) 倍。原图保留，结果另存为 PNG。")
+            Text(exists ? "本地模型已配置" : "需要下载或导入模型")
+                .foregroundStyle(exists ? Color.green : Color.secondary)
+                .accessibilityIdentifier("upscaleLibraryStatus")
+            HStack {
+                Link("下载模型（ZIP · 约 30 MB）", destination: variant.downloadURL)
+                Link("转换与处理说明", destination: UpscaleVariant.processingURL)
+            }
+            Text("1. 点击下载，在浏览器中保存 ZIP。\n2. 解压后导入 .mlpackage。\n3. App 校验倍率并由 Core ML 原生编译，无需 Python。")
+                .font(.callout).foregroundStyle(.secondary)
+            Text("首次加载或预加载会准备模型。GPU 启动较快；可在创作参数中选择 ANE 优先。")
+                .font(.caption).foregroundStyle(.secondary)
+            Button("导入并校验本地模型…") { chooseUpscaler(variant) }
+                .disabled(library.busy || store.busy).accessibilityIdentifier("importUpscaleModel")
+            if !path.isEmpty {
+                Text(path).font(.caption).textSelection(.enabled).accessibilityIdentifier("upscaleLibraryPath")
+                if !exists { Text("文件已移动或不可访问，请重新导入。").foregroundStyle(.orange) }
+                Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                    .disabled(!exists)
+            }
+            Divider()
+            Text("已登记路径").font(.headline)
+            ForEach(library.installations.filter { $0.modelID == variant.modelID }) { item in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(item.path).font(.caption).textSelection(.enabled)
+                    HStack {
+                        Button(item.path == path ? "当前路径" : "使用此路径") { library.registerUpscaler(URL(fileURLWithPath: item.path), variant: variant, studio: studio) }
+                            .disabled(item.path == path || !FileManager.default.fileExists(atPath: item.path))
+                        Button("移除登记") { library.remove(item, studio: studio) }
+                    }.disabled(library.busy || store.busy)
+                }
+            }
+            Text("登记外部路径不会复制权重；移除登记也不会删除模型文件。路径随统一模型配置导入和导出。")
+                .font(.caption).foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private func chooseUpscaler(_ variant: UpscaleVariant) {
+        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.message = "选择解压后的 \(variant.rawValue) Core ML 模型。"
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
+            if response == .OK, let url = panel.url { library.registerUpscaler(url, variant: variant, studio: studio) }
+        }
+        if let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }) {
+            panel.beginSheetModal(for: window, completionHandler: completion)
+        } else { panel.begin(completionHandler: completion) }
     }
 
     private var sessionBanner: some View {
         HStack(spacing: 12) {
-            Image(systemName: store.loadedModelID == nil ? "memorychip" : "memorychip.fill").font(.title2).foregroundStyle(.tint)
+            Image(systemName: store.loadedModelID == nil && store.upscaleReady == nil ? "memorychip" : "memorychip.fill").font(.title2).foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 4) {
-                Text(store.loadedModelID.flatMap { id in studio.models.first { $0.id == id }?.name } ?? "没有打开的模型会话").font(.headline)
+                Text(store.loadedModelID.flatMap { id in studio.models.first { $0.id == id }?.name }
+                     ?? store.upscaleReady.map { "超分模型已就绪 · ×\($0.scale)" } ?? "没有打开的模型会话").font(.headline)
                 Text(store.sessionState).font(.caption).foregroundStyle(.secondary)
+                if store.upscaleReady != nil { Text(store.upscaleStatus).font(.caption).foregroundStyle(.secondary) }
             }
             Spacer()
             if store.busy {

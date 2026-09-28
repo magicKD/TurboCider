@@ -54,9 +54,9 @@ struct TurboCiderNativeApp: App {
     }
 }
 private enum StudioPage: String, CaseIterable, Identifiable {
-    case studio = "创作", upscale = "图像超分", library = "素材库", tasks = "任务", models = "模型", api = "本地 API"
+    case studio = "创作", library = "素材库", tasks = "任务", models = "模型", api = "本地 API"
     var id: String { rawValue }
-    var symbol: String { switch self { case .studio: return "sparkles"; case .upscale: return "arrow.up.left.and.arrow.down.right"; case .library: return "photo.on.rectangle"; case .tasks: return "clock"; case .models: return "cpu"; case .api: return "network" } }
+    var symbol: String { switch self { case .studio: return "sparkles"; case .library: return "photo.on.rectangle"; case .tasks: return "clock"; case .models: return "cpu"; case .api: return "network" } }
 }
 private let ciderAccent = Color(red: 0.02, green: 0.70, blue: 0.64)
 private func operationName(_ value: String) -> String {
@@ -110,6 +110,8 @@ struct StudioView: View {
     @State private var dropping = false
     @State private var compareOriginal = false
     @State private var upscaleSourcePath = ""
+    @State private var imageUpscaling = false
+    @State private var librarySelection: String?
     @State private var submitting = false
     @State private var annotationAsset: StudioAsset?
     private var selectedJob: NativeJob? { store.jobs.first { $0.id == selected && $0.hasOutput } ?? store.jobs.first { $0.hasOutput } }
@@ -154,9 +156,6 @@ struct StudioView: View {
             Group {
                 switch page ?? .studio {
                 case .studio: workspace
-                case .upscale: ImageUpscaleView(store: store, studio: studio, showSettings: inspector, sourcePath: $upscaleSourcePath) { job in
-                    selected = job.id; compareOriginal = false; resultSelection.select(job.id, orderedIDs: outputIDs)
-                }
                 case .models: modelsPage
                 case .tasks: tasksPage
                 case .library: libraryPage
@@ -168,7 +167,7 @@ struct StudioView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) { Text("本地创作").foregroundStyle(.secondary) }
             ToolbarItem(placement: .automatic) { Text(studio.saved ? "草稿已保存" : "草稿尚未保存").font(.caption).foregroundStyle(.secondary) }
-            ToolbarItem { Button { studio.newDraft(); selected = nil; resultSelection.clear(); page = .studio } label: { Label("新建创作", systemImage: "square.and.pencil") } }
+            ToolbarItem { Button { studio.newDraft(); selected = nil; resultSelection.clear(); imageUpscaling = false; page = .studio } label: { Label("新建创作", systemImage: "square.and.pencil") } }
             ToolbarItem { Button { inspector.toggle() } label: { Label("显示参数", systemImage: "sidebar.right") } }
         }
         .onDisappear { studio.save() }
@@ -177,9 +176,9 @@ struct StudioView: View {
         .onChange(of: library.installationGeneration) { _, _ in studio.invalidateStreamingInstallation() }
         .sheet(item: $annotationAsset) { asset in Qwen21AnnotationEditor(asset: asset, studio: studio) }
         .task { library.refresh(studio: studio, migrate: true) }
-        .task(id: "\(page == .upscale):\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleAfterGeneration):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)") {
+        .task(id: "\(page == .studio && imageUpscaling):\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleAfterGeneration):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)") {
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            guard studio.draft.upscaleAutoPreload, (page == .upscale || studio.draft.upscaleAfterGeneration),
+            guard studio.draft.upscaleAutoPreload, (page == .studio && imageUpscaling || studio.draft.upscaleAfterGeneration),
                   (try? ImageUpscaler.validateModelURL(URL(fileURLWithPath: studio.draft.upscaleModelPath))) != nil,
                   !studio.draft.upscaleModelPath.isEmpty, !store.busy, !api.running, !api.changing else { return }
             do {
@@ -198,11 +197,25 @@ struct StudioView: View {
         }
     }
     private var workspace: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 12) {
-                if api.running { HStack { Label("本地 API 正在接收任务", systemImage: "network"); Spacer(); Button("管理服务") { page = .api } }.font(.callout).padding(10).background(ciderAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8)) }
+        VStack(spacing: 0) {
+            creationHeader.padding(.horizontal, 18).padding(.top, 18)
+            if imageUpscaling {
+                ImageUpscaleView(store: store, studio: studio, showSettings: inspector, sourcePath: $upscaleSourcePath,
+                                 manageModels: { librarySelection = studio.draft.upscaleVariant.modelID; page = .models }) { job in
+                    selected = job.id; compareOriginal = false; resultSelection.select(job.id, orderedIDs: outputIDs)
+                }
+            } else {
+                generationWorkspace
+            }
+        }
+    }
+    private var creationHeader: some View {
+        VStack(spacing: 12) {
                 HStack {
-                    Picker("创作类型", selection: Binding(get: { studio.creationKind }, set: { studio.changeCreationKind($0); compareOriginal = false })) {
+                    Picker("创作类型", selection: Binding(get: { imageUpscaling ? "image" : studio.creationKind }, set: {
+                        guard $0 != (imageUpscaling ? "image" : studio.creationKind) else { return }
+                        imageUpscaling = false; studio.changeCreationKind($0); compareOriginal = false
+                    })) {
                         Label("图片生成", systemImage: "photo").tag("image")
                         Label("视频生成", systemImage: "video").tag("video")
                     }.pickerStyle(.segmented).frame(maxWidth: 300)
@@ -211,12 +224,32 @@ struct StudioView: View {
                     Button { page = .models } label: { Label("模型中心", systemImage: "square.stack.3d.up") }
                 }
                 HStack {
-                    Picker("创作方式", selection: Binding(get: { studio.draft.operation }, set: { studio.changeOperation($0); compareOriginal = false })) {
-                        ForEach(studio.creationOperations, id: \.self) { Text(operationName($0)).tag($0) }
+                    Picker("创作方式", selection: Binding(get: { imageUpscaling ? "image.transform" : studio.draft.operation }, set: {
+                        guard $0 != (imageUpscaling ? "image.transform" : studio.draft.operation) else { return }
+                        imageUpscaling = false; studio.changeOperation($0); compareOriginal = false
+                    })) {
+                        ForEach(imageUpscaling ? ["image.generate", "image.transform", "image.edit"] : studio.creationOperations, id: \.self) { Text(operationName($0)).tag($0) }
                     }.pickerStyle(.segmented).frame(maxWidth: 440).disabled(store.busy || studio.importing).accessibilityIdentifier("operation")
                     Spacer()
                     Text("STUDIO").font(.caption2).tracking(2).foregroundStyle(.secondary)
                 }
+            if imageUpscaling || studio.draft.operation == "image.transform" {
+                Picker("单图处理", selection: Binding(get: { imageUpscaling }, set: {
+                    imageUpscaling = $0
+                    if !$0 { studio.changeOperation("image.transform") }
+                    else if upscaleSourcePath.isEmpty { upscaleSourcePath = studio.draft.activeAssets.first?.path ?? "" }
+                })) {
+                    Text("修改内容").tag(false)
+                    Text("图像超分").tag(true)
+                }.pickerStyle(.segmented).frame(maxWidth: 300)
+                    .disabled(store.busy || studio.importing).accessibilityIdentifier("singleImageTool")
+            }
+        }
+    }
+    private var generationWorkspace: some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 12) {
+                if api.running { HStack { Label("本地 API 正在接收任务", systemImage: "network"); Spacer(); Button("管理服务") { page = .api } }.font(.callout).padding(10).background(ciderAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8)) }
                 mediaStage.frame(maxWidth: .infinity, maxHeight: .infinity)
                 if !store.jobs.filter({ $0.hasOutput }).isEmpty { resultStrip }
                 composer
@@ -251,7 +284,7 @@ struct StudioView: View {
                     } }.disabled(studio.importing) }
                     Menu {
                         if URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" {
-                            Button("单独超分此图…") { upscaleSourcePath = job.request.output; page = .upscale }
+                            Button("单独超分此图…") { upscaleSourcePath = job.request.output; imageUpscaling = true; page = .studio }
                         }
                         Button("另存为…") { exportResult(job.request.output) }
                         Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: job.request.output)]) }
@@ -562,7 +595,7 @@ struct StudioView: View {
                 Divider()
                 UpscaleSettingsView(store: store, studio: studio,
                                     locked: store.busy || submitting || api.running || api.changing,
-                                    showsVariantPicker: false)
+                                    showsVariantPicker: false, manageModels: { librarySelection = studio.draft.upscaleVariant.modelID; page = .models })
             }
             DisclosureGroup("高级参数") {
                 VStack(alignment: .leading, spacing: 12) {
@@ -749,7 +782,7 @@ struct StudioView: View {
         }
     }
     private var modelsPage: some View {
-        ModelLibraryView(store: store, studio: studio, library: library, chooseModel: chooseModel,
+        ModelLibraryView(store: store, studio: studio, library: library, selection: $librarySelection, chooseModel: chooseModel,
                          loadModel: loadModel, importConfiguration: importConfiguration,
                          operationName: operationName)
     }

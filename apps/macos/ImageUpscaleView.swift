@@ -7,6 +7,7 @@ struct ImageUpscaleView: View {
     @ObservedObject var studio: StudioState
     var showSettings = true
     @Binding var sourcePath: String
+    var manageModels: () -> Void
     var onResult: (NativeJob) -> Void
     @State private var submitting = false
     @State private var resultID: UUID?
@@ -22,7 +23,7 @@ struct ImageUpscaleView: View {
         HStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("图像超分").font(.largeTitle)
+                    Text("图像超分").font(.title2)
                     Text("x2plus 放大 2 倍，x4plus 放大 4 倍。原图保留，结果另存为 PNG。")
                         .foregroundStyle(.secondary)
                     HStack {
@@ -69,7 +70,7 @@ struct ImageUpscaleView: View {
             if showSettings {
                 Divider()
                 ScrollView {
-                    UpscaleSettingsView(store: store, studio: studio, locked: locked)
+                    UpscaleSettingsView(store: store, studio: studio, locked: locked, manageModels: manageModels)
                         .padding(18)
                 }.frame(width: 290).background(Color(nsColor: .controlBackgroundColor))
             }
@@ -108,6 +109,7 @@ struct UpscaleSettingsView: View {
     @ObservedObject var studio: StudioState
     var locked: Bool
     var showsVariantPicker = true
+    var manageModels: () -> Void
     @State private var showDetails = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -127,21 +129,17 @@ struct UpscaleSettingsView: View {
                     Text(studio.draft.upscaleModelPath.isEmpty ? "尚未选择模型" : URL(fileURLWithPath: studio.draft.upscaleModelPath).lastPathComponent)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2).help(studio.draft.upscaleModelPath)
                     Spacer()
-                    Button("选择…", action: chooseModel).accessibilityIdentifier("chooseUpscaleModel")
+                    Button("管理模型", action: manageModels).accessibilityIdentifier("manageUpscaleModels")
                 }
                 Picker("超分设备", selection: $studio.draft.upscaleCompute) {
                     ForEach(UpscaleCompute.allCases, id: \.self) { Text($0.title).tag($0) }
                 }.accessibilityIdentifier("upscaleCompute")
                 Toggle("自动预加载", isOn: $studio.draft.upscaleAutoPreload)
                     .accessibilityIdentifier("upscaleAutoPreload")
-                DisclosureGroup("模型路径与下载", isExpanded: $showDetails) {
+                DisclosureGroup("模型路径", isExpanded: $showDetails) {
                     VStack(alignment: .leading, spacing: 10) {
-                        TextField("本地 Core ML 模型路径", text: $studio.draft.upscaleModelPath)
-                            .textFieldStyle(.roundedBorder).accessibilityIdentifier("upscaleModelPath")
-                        Link("下载 \(studio.draft.upscaleVariant.rawValue) 模型", destination: studio.draft.upscaleVariant.downloadURL)
-                        Link("模型转换与处理说明", destination: UpscaleVariant.processingURL)
-                        Text("解压后选择 .mlpackage。模型留在原目录，无需 Python。")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Text(studio.draft.upscaleModelPath.isEmpty ? "请在模型中心下载或导入模型。" : studio.draft.upscaleModelPath)
+                            .font(.caption).textSelection(.enabled).accessibilityIdentifier("upscaleModelPath")
                     }.padding(.top, 8)
                 }
             }.disabled(locked)
@@ -170,17 +168,5 @@ struct UpscaleSettingsView: View {
             try await store.preloadUpscaler(modelURL: URL(fileURLWithPath: studio.draft.upscaleModelPath), compute: studio.draft.upscaleCompute)
             if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
         } catch { if !(error is CancellationError) { studio.message = error.localizedDescription } }
-    }
-    private func chooseModel() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
-        panel.message = "选择解压后的 x2plus 或 x4plus Core ML 模型。"
-        let completion: (NSApplication.ModalResponse) -> Void = { response in
-            guard response == .OK, let url = panel.url else { return }
-            do { try ImageUpscaler.validateModelURL(url); studio.draft.upscaleModelPath = url.path; studio.save() }
-            catch { studio.message = error.localizedDescription }
-        }
-        if let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }) {
-            panel.beginSheetModal(for: window, completionHandler: completion)
-        } else { panel.begin(completionHandler: completion) }
     }
 }

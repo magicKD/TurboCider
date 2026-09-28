@@ -120,7 +120,7 @@ enum LibraryTool {
                     studio.draft.modelPaths["z-image-turbo"] = installed.path
                     studio.save()
                 }
-                let data = try JSONEncoder().encode(["modelPaths": studio.draft.modelPaths])
+                let data = try JSONEncoder().encode(["modelPaths": studio.libraryModelPaths])
                 let response = try await LibraryTool.run(["import", "{request}", "--root", root], payload: data)
                 if let raw = try JSONSerialization.jsonObject(with: response) as? [String: Any],
                    let result = raw["result"] as? [String: Any], let errors = result["errors"] as? [String: String], !errors.isEmpty {
@@ -150,9 +150,7 @@ enum LibraryTool {
             }
             try await readIndex()
             // Keep explicit draft choices. New installations fill missing entries only.
-            for item in installations where (studio.draft.modelPaths[item.modelID] ?? "").isEmpty {
-                studio.draft.modelPaths[item.modelID] = item.path
-            }
+            for item in installations { studio.applyLibraryInstallation(item, replace: false) }
         }
     }
     func configure(root url: URL, studio: StudioState) {
@@ -167,6 +165,11 @@ enum LibraryTool {
         perform { [self] in
             _ = try await LibraryTool.run(["remove", item.id, "--root", root])
             if studio.draft.modelPaths[item.modelID] == item.path { studio.draft.modelPaths[item.modelID] = "" }
+            if let variant = UpscaleVariant.from(modelID: item.modelID), studio.draft.upscaleModelPaths[variant.rawValue] == item.path {
+                studio.draft.upscaleModelPaths.removeValue(forKey: variant.rawValue)
+                if studio.draft.upscaleVariant == variant { studio.draft.upscaleModelPath = "" }
+            }
+            studio.save()
             try await readIndex(); message = "已移除登记，模型文件仍保留。"
         }
     }
@@ -180,7 +183,7 @@ enum LibraryTool {
             if let imported = result?["installations"],
                let data = try? JSONSerialization.data(withJSONObject: imported),
                let items = try? JSONDecoder().decode([LibraryInstallation].self, from: data) {
-                for item in items { studio.draft.modelPaths[item.modelID] = item.path }
+                for item in items { studio.applyLibraryInstallation(item, replace: true) }
             }
         }
     }
@@ -188,6 +191,22 @@ enum LibraryTool {
         perform { [self] in
             _ = try await LibraryTool.run(["register-lora", modelID, url.path, "--root", root])
             try await readIndex()
+        }
+    }
+    func registerUpscaler(_ url: URL, variant: UpscaleVariant, studio: StudioState) {
+        perform { [self] in
+            let scale = try await Task.detached(priority: .utility) {
+                try CoreMLUpscalePredictor(url: url, compute: .gpu).scale
+            }.value
+            guard scale == variant.scale else {
+                throw NativeFailure(message: "所选模型实际为 ×\(scale)，请选择对应的超分模型条目。")
+            }
+            try Task.checkCancellation()
+            let response = try await LibraryTool.run(["register", variant.modelID, url.path, "--root", root])
+            let item = try LibraryTool.decode(LibraryInstallation.self, from: response)
+            studio.applyLibraryInstallation(item, replace: true)
+            try await readIndex()
+            message = "\(variant.title) 已校验并登记。文件保留原位，生图超分选项保持不变。"
         }
     }
     func removeLoRA(_ item: LibraryLoRA) {
@@ -212,7 +231,7 @@ enum LibraryTool {
     }
     func exportConfiguration(to url: URL, studio: StudioState) {
         do {
-            let object: [String: Any] = ["schemaVersion": 1, "modelPaths": studio.draft.modelPaths,
+            let object: [String: Any] = ["schemaVersion": 1, "modelPaths": studio.libraryModelPaths,
                 "loras": loras.map { ["modelID": $0.modelID, "path": $0.path] },
                 "anePartitions": anePartitions.map { ["modelID": $0.modelID, "path": $0.path] }]
             try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
