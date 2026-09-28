@@ -14,21 +14,25 @@ class CoreMLBranch {
     Tensor output_storage_;
     MLMultiArray *output_;
     MLPredictionOptions *options_;
-    int rows_, hidden_;
+    int rows_, hidden_, output_channels_;
     bool flexible_, allow_flexible_backing_;
     bool optimize_output_copy_ = false;
 
   public:
     double model_load_seconds = 0, interface_setup_seconds = 0;
     double seconds = 0, warmup_seconds = 0;
+    double feature_binding_seconds = 0, model_prediction_seconds = 0;
+    double output_handling_seconds = 0;
     double first_runtime_seconds = 0, subsequent_runtime_seconds = 0;
     uint64_t calls = 0, copied_bytes = 0, warmup_calls = 0, runtime_calls = 0;
     uint64_t first_runtime_calls = 0, subsequent_runtime_calls = 0;
     CoreMLBranch(const std::filesystem::path &, int rows, int hidden,
                  const Tensor &output_storage, MLMultiArray *output_backing,
-                 bool flexible = false, bool allow_flexible_backing = false);
+                 bool flexible = false, bool allow_flexible_backing = false,
+                 int output_channels = 0);
     void bind(int rows, const Tensor &storage, MLMultiArray *output);
-    Tensor predict(const Tensor &packed_input, int actual_rows, bool warmup = false);
+    Tensor predict(const Tensor &packed_input, int actual_rows, bool warmup = false,
+                   const Tensor *gate_up_delta = nullptr);
 };
 struct HybridSession::Impl {
     std::shared_ptr<const z_image::VerifiedCoreMLBundleLease> bundle;
@@ -193,8 +197,9 @@ uint64_t CoreMLPartitions::copied_bytes() const {
 
 CoreMLBranch::CoreMLBranch(const std::filesystem::path &path, int rows, int hidden,
                            const Tensor &output_storage, MLMultiArray *output_backing,
-                           bool flexible, bool allow_flexible_backing)
+                           bool flexible, bool allow_flexible_backing, int output_channels)
     : output_storage_(output_storage), output_(output_backing), rows_(rows), hidden_(hidden),
+      output_channels_(output_channels ? output_channels : hidden),
       flexible_(flexible), allow_flexible_backing_(allow_flexible_backing) {
     // Keep strong model/backing ownership, but do not retain setup temporaries
     // until an enclosing full-image request's autorelease pool drains.
@@ -245,7 +250,8 @@ void CoreMLBranch::bind(int rows, const Tensor &storage, MLMultiArray *output) {
             compatible &= NSLocationInRange([shape[i] unsignedIntegerValue], [flexible.sizeRangeForDimension[i] rangeValue]);
     }
     auto outputConstraint = model_.modelDescription.outputDescriptionsByName[@"y"].multiArrayConstraint;
-    require(compatible && (flexible_ || [outputConstraint.shape isEqual:shape]),
+    NSArray *output_shape = @[ @1, @(output_channels_), @1, @(rows) ];
+    require(compatible && (flexible_ || [outputConstraint.shape isEqual:output_shape]),
             "Core ML feature shape ABI mismatch for " + std::to_string(rows) + " rows");
     require(flexible_ || output != nil, "Core ML shared output backing missing");
     rows_ = rows;
@@ -263,7 +269,8 @@ void CoreMLBranch::bind(int rows, const Tensor &storage, MLMultiArray *output) {
         options_.outputBackings = @{@"y" : output_};
     interface_setup_seconds += std::chrono::duration<double>(Clock::now() - bind_begin).count();
 }
-Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
+Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup,
+                             const Tensor *gate_up_delta) {
     // The returned tensor references MLX-owned backing; temporary feature
     // providers/results can be released before the next GPU stage.
     @autoreleasepool {
@@ -280,20 +287,39 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
                                       }
                                             error:&error];
     require(in != nil, "Core ML input binding failed");
+    NSMutableDictionary *features = [NSMutableDictionary dictionaryWithObject:
+        [MLFeatureValue featureValueWithMultiArray:in] forKey:@"x"];
+    if (gate_up_delta) {
+        require(gate_up_delta->shape() == mx::Shape{1, rows_, 2 * (output_channels_ - hidden_)} &&
+                    gate_up_delta->dtype() == mx::float16 &&
+                    gate_up_delta->flags().row_contiguous,
+                "Core ML fused LoRA delta must be contiguous FP16 [1,R,2W]");
+        const int width = 2 * (output_channels_ - hidden_);
+        MLMultiArray *delta = [[MLMultiArray alloc]
+            initWithDataPointer:(void *)gate_up_delta->data<mx::float16_t>()
+                         shape:@[@1, @(width), @1, @(rows_)]
+                      dataType:MLMultiArrayDataTypeFloat16
+                       strides:@[@(rows_ * width), @1, @(rows_ * width), @(width)]
+                   deallocator:^(void *) {} error:&error];
+        require(delta != nil, "Core ML fused LoRA delta binding failed");
+        features[@"lora_gate_up"] = [MLFeatureValue featureValueWithMultiArray:delta];
+    }
     auto provider = [[MLDictionaryFeatureProvider alloc]
-        initWithDictionary:@{@"x" : [MLFeatureValue featureValueWithMultiArray:in]}
-                     error:&error];
+        initWithDictionary:features error:&error];
+    require(provider != nil, "Core ML feature provider binding failed");
+    auto features_ready = Clock::now();
     auto result = [model_ predictionFromFeatures:provider options:options_ error:&error];
+    auto prediction_ready = Clock::now();
     require(result != nil,
             "Core ML prediction failed: " +
                 std::string(error ? error.localizedDescription.UTF8String : "unknown"));
     auto actual_output = [result featureValueForName:@"y"].multiArrayValue;
     require(actual_output != nil &&
-                [actual_output.shape isEqual:@[ @1, @(hidden_), @1, @(rows_) ]] &&
+                [actual_output.shape isEqual:@[ @1, @(output_channels_), @1, @(rows_) ]] &&
                 actual_output.dataType == MLMultiArrayDataTypeFloat16,
             "Core ML returned an unexpected output shape or dtype");
     if (!output_ || actual_output.dataPointer != output_.dataPointer) {
-        copied_bytes += uint64_t(rows_) * uint64_t(hidden_) * 2;
+        copied_bytes += uint64_t(rows_) * uint64_t(output_channels_) * 2;
         // Resolve Core ML properties once, including on the conservative copy
         // path. Millions of Objective-C property calls per block can dominate
         // flexible-shape inference even though the tensor copy itself is small.
@@ -301,13 +327,17 @@ Tensor CoreMLBranch::predict(const Tensor &input, int actual, bool warmup) {
         auto *destination = reinterpret_cast<uint16_t *>(output_storage_.data<mx::float16_t>());
         const size_t row_stride = [actual_output.strides[3] unsignedLongLongValue];
         const size_t channel_stride = [actual_output.strides[1] unsignedLongLongValue];
-        copy_coreml_fp16(destination, source, size_t(rows_), size_t(hidden_),
+        copy_coreml_fp16(destination, source, size_t(rows_), size_t(output_channels_),
                          row_stride, channel_stride, optimize_output_copy_);
     }
     // The model coordinator and per-block eval guarantee that the prior
     // consumer has completed before this branch writes its next output. Core ML
     // writes directly into an MLX-owned shared buffer; no tensor escapes the block.
-    const double elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    const auto completed = Clock::now();
+    const double elapsed = std::chrono::duration<double>(completed - begin).count();
+    feature_binding_seconds += std::chrono::duration<double>(features_ready - begin).count();
+    model_prediction_seconds += std::chrono::duration<double>(prediction_ready - features_ready).count();
+    output_handling_seconds += std::chrono::duration<double>(completed - prediction_ready).count();
     ++calls;
     seconds += elapsed;
     if (warmup) {
@@ -339,6 +369,7 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
         tensor_layout = string_value(d[@"export_identity"], @"tensor_layout");
         activation_precision = string_value(d[@"export_identity"], @"activation_precision", "fp16");
         a8_graph = string_value(d[@"export_identity"], @"a8_graph");
+        mlp_output_kind = string_value(d[@"export_identity"], @"mlp_output_kind");
         projected_weight_granularity = string_value(
             d[@"export_identity"], @"projected_weight_granularity", "per_channel");
         if (id image_rows = d[@"export_identity"][@"image_only_token_rows"]) {
@@ -367,6 +398,8 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     require(activation_precision.empty() || activation_precision == "fp16" ||
                 activation_precision == "int8", "invalid hybrid activation precision");
     hidden = [d[@"shape"][@"K"] intValue];
+    output_channels = (mlp_output_kind == "gate_up" || mlp_output_kind == "fused_lora")
+        ? [d[@"shape"][@"output_channels"] intValue] : hidden;
     require(hidden > 0 && hidden <= 8192 && [d[@"shape"][@"N"] intValue] == hidden,
             "hybrid hidden dimension mismatch");
     NSArray *buckets = d[@"shape"][@"buckets"];
@@ -418,6 +451,34 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                 ane_mlp_end > 0 && ane_mlp_end <= mlp_width && std::isfinite(output_scale) &&
                 output_scale >= 1.f && output_scale <= 256.f,
             "unsupported Core ML MLP partition; expected a nonempty [0,N) prefix");
+    require(mlp_output_kind.empty() ||
+                (mlp_output_kind == "gate_up" && tensor_layout == "qwen21" &&
+                 hidden == 4096 && mlp_width == 12288 && ane_mlp_end == 6144 &&
+                 output_channels == 2 * ane_mlp_end && !impl_->flexible &&
+                 impl_->buckets.size() == 1 && impl_->buckets[0] == 1024 &&
+                 activation_precision == "int8" && a8_graph == "sq_v1_input" &&
+                 output_scale == 1.f &&
+                 [d[@"shape"][@"output_channels"] isKindOfClass:NSNumber.class] &&
+                 [d[@"shape"][@"output_channels"] intValue] == output_channels) ||
+                (mlp_output_kind == "fused_lora" && tensor_layout == "qwen21" &&
+                 hidden == 4096 && mlp_width == 12288 &&
+                 (ane_mlp_end == 4096 || ane_mlp_end == 6144 || ane_mlp_end == 8192) &&
+                 output_channels == hidden + ane_mlp_end && !impl_->flexible &&
+                 impl_->buckets.size() == 1 && impl_->buckets[0] == 1024 &&
+                 activation_precision == "int8" && a8_graph == "sq_v1_both" &&
+                 output_scale == 1.f &&
+                 [d[@"shape"][@"output_channels"] isKindOfClass:NSNumber.class] &&
+                 [d[@"shape"][@"output_channels"] intValue] == output_channels) ||
+                (mlp_output_kind == "fused_lora" && tensor_layout == "z_image" &&
+                 hidden == 3840 && mlp_width == 10240 &&
+                 (ane_mlp_end == 4096 || ane_mlp_end == 6144 || ane_mlp_end == 8192) &&
+                 output_channels == hidden + ane_mlp_end && !impl_->flexible &&
+                 impl_->buckets.size() == 1 && impl_->buckets[0] == 1056 &&
+                 activation_precision == "fp16" && a8_graph.empty() &&
+                 !image_only_token_rows && !has_channel_route &&
+                 [d[@"shape"][@"output_channels"] isKindOfClass:NSNumber.class] &&
+                 [d[@"shape"][@"output_channels"] intValue] == output_channels),
+            "Core ML alternate output requires a verified fixed-row model ABI");
     auto checkpoint = requested_checkpoint.empty()
                           ? model / "transformer/diffusion_pytorch_model.safetensors"
                           : requested_checkpoint;
@@ -576,17 +637,17 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
     // retaining block_count identical rows*hidden FP16 buffers without
     // changing the prediction ABI or exposing a writable tensor to callers.
     auto output_setup_begin = Clock::now();
-    auto output_storage = mx::contiguous(mx::zeros({1, rows, hidden}, mx::float16));
+    auto output_storage = mx::contiguous(mx::zeros({1, rows, output_channels}, mx::float16));
     mx::eval(output_storage);
-    require(output_storage.data_size() == size_t(rows) * size_t(hidden) &&
+    require(output_storage.data_size() == size_t(rows) * size_t(output_channels) &&
                 output_storage.flags().row_contiguous,
             "Core ML output backing must be fully materialized and contiguous");
     NSError *output_error = nil;
     auto output =
         [[MLMultiArray alloc] initWithDataPointer:output_storage.data<mx::float16_t>()
-                                            shape:@[ @1, @(hidden), @1, @(rows) ]
+                                            shape:@[ @1, @(output_channels), @1, @(rows) ]
                                          dataType:MLMultiArrayDataTypeFloat16
-                                          strides:@[ @(rows * hidden), @1, @(rows * hidden), @(hidden) ]
+                                          strides:@[ @(rows * output_channels), @1, @(rows * output_channels), @(output_channels) ]
                                       deallocator:^(void *) {
                                       }
                                             error:&output_error];
@@ -605,18 +666,28 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                 "artifact path escapes manifest directory");
         impl_->branches.push_back(
             std::make_unique<CoreMLBranch>(path, rows, hidden, output_storage, output,
-                                           impl_->flexible, impl_->allow_flexible_backing));
+                                           impl_->flexible, impl_->allow_flexible_backing,
+                                           output_channels));
     }
     if (warmups) {
         auto warmup_begin = Clock::now();
         auto input = mx::zeros({1, rows, hidden}, mx::float16);
         mx::eval(input);
+        // The dynamic correction is an activation, never adapter weights.
+        // Warm every frozen-base block with the same zero input; do not build
+        // a new large zero tensor for each block or warmup iteration.
+        std::optional<Tensor> zero_delta;
+        if (mlp_output_kind == "fused_lora") {
+            zero_delta = mx::contiguous(mx::zeros({1, rows, 2 * ane_mlp_end}, mx::float16));
+            mx::eval(*zero_delta);
+        }
         for (int iteration = 0; iteration < warmups; ++iteration)
             for (int block = 0; block < block_count; ++block) {
                 tc::checkpoint(cancelled);
                 event("coreml_warmup", iteration * block_count + block,
                       warmups * block_count);
-                auto result = impl_->branches[block]->predict(input, rows, true);
+                auto result = impl_->branches[block]->predict(
+                    input, rows, true, zero_delta ? &*zero_delta : nullptr);
                 mx::eval(result);
             }
         zero_input_warmup_seconds =
@@ -634,7 +705,7 @@ HybridSession::HybridSession(std::shared_ptr<const z_image::VerifiedCoreMLBundle
         impl_->bundle = std::move(bundle);
         impl_->bundle->revalidate();
         const auto &spec = impl_->bundle->partition();
-        rows = int(spec.bucket_rows); hidden = int(spec.hidden);
+        rows = int(spec.bucket_rows); hidden = int(spec.hidden); output_channels = hidden;
         mlp_width = int(spec.mlp_width); ane_mlp_start = int(spec.ane_begin); ane_mlp_end = int(spec.ane_end);
         output_scale = spec.output_scale;
         weight_variant = spec.precision_revision;
@@ -684,12 +755,12 @@ void HybridSession::set_tokens(int tokens) {
     if (rows == *chosen) return;
     const int selected = *chosen;
     if (!impl_->branches.empty()) {
-        auto storage = mx::contiguous(mx::zeros({1, selected, hidden}, mx::float16));
+        auto storage = mx::contiguous(mx::zeros({1, selected, output_channels}, mx::float16));
         mx::eval(storage);
         NSError *error = nil;
         auto output = [[MLMultiArray alloc] initWithDataPointer:storage.data<mx::float16_t>()
-            shape:@[ @1, @(hidden), @1, @(selected) ] dataType:MLMultiArrayDataTypeFloat16
-            strides:@[ @(selected * hidden), @1, @(selected * hidden), @(hidden) ]
+            shape:@[ @1, @(output_channels), @1, @(selected) ] dataType:MLMultiArrayDataTypeFloat16
+            strides:@[ @(selected * output_channels), @1, @(selected * output_channels), @(output_channels) ]
             deallocator:^(void *) {} error:&error];
         require(output != nil, "Core ML flexible backing allocation failed");
         for (auto &branch : impl_->branches) branch->bind(selected, storage, output);
@@ -697,6 +768,8 @@ void HybridSession::set_tokens(int tokens) {
     rows = selected;
 }
 Tensor HybridSession::predict(int block, const Tensor &input) {
+    require(mlp_output_kind != "fused_lora",
+            "fused LoRA Core ML graph requires an explicit pre-SiLU correction");
     require(runtime_available(), "Core ML runtime failure is latched; use GPU fallback");
     if (impl_->bundle) {
         const auto &spec = impl_->bundle->partition();
@@ -711,6 +784,27 @@ Tensor HybridSession::predict(int block, const Tensor &input) {
     catch (const std::exception &error) {
         record_runtime_failure(block);
         throw std::runtime_error("Core ML block " + std::to_string(block) +
+            " (" + std::to_string(rows) + " rows): " + error.what());
+    }
+}
+Tensor HybridSession::predict_with_lora(int block, const Tensor &input,
+                                         const Tensor &gate_up_delta) {
+    require(mlp_output_kind == "fused_lora" && runtime_available() &&
+                input.shape() == mx::Shape{1, rows, hidden} && input.dtype() == mx::float16 &&
+                input.flags().row_contiguous &&
+                gate_up_delta.shape() == mx::Shape{1, rows, 2 * ane_mlp_end} &&
+                gate_up_delta.dtype() == mx::float16 && gate_up_delta.flags().row_contiguous,
+            "fused runtime LoRA Core ML input/delta ABI mismatch (rows=" +
+                std::to_string(rows) + ", input_rows=" + std::to_string(input.shape(1)) +
+                ", delta_rows=" + std::to_string(gate_up_delta.shape(1)) +
+                ", input_channels=" + std::to_string(input.shape(2)) +
+                ", delta_channels=" + std::to_string(gate_up_delta.shape(2)) +
+                ", input_contiguous=" + std::to_string(input.flags().row_contiguous) +
+                ", delta_contiguous=" + std::to_string(gate_up_delta.flags().row_contiguous) + ")");
+    try { return impl_->branches.at(block)->predict(input, rows, false, &gate_up_delta); }
+    catch (const std::exception &error) {
+        record_runtime_failure(block);
+        throw std::runtime_error("Core ML fused LoRA block " + std::to_string(block) +
             " (" + std::to_string(rows) + " rows): " + error.what());
     }
 }
@@ -763,6 +857,8 @@ HybridMetrics HybridSession::metrics() const {
     metrics.bucket = rows;
     metrics.minimum_profitable_rows = minimum_profitable_rows;
     metrics.hidden = hidden;
+    metrics.output_channels = output_channels;
+    metrics.mlp_output_kind = mlp_output_kind;
     metrics.block_count = block_count;
     metrics.mlp_width = mlp_width;
     metrics.ane_mlp_start = ane_mlp_start;
@@ -792,6 +888,9 @@ HybridMetrics HybridSession::metrics() const {
         metrics.calls += branch->calls;
         metrics.copied_bytes += branch->copied_bytes;
         metrics.prediction_seconds += branch->seconds;
+        metrics.feature_binding_seconds += branch->feature_binding_seconds;
+        metrics.model_prediction_seconds += branch->model_prediction_seconds;
+        metrics.output_handling_seconds += branch->output_handling_seconds;
         metrics.warmup_calls += branch->warmup_calls;
         metrics.runtime_calls += branch->runtime_calls;
         metrics.first_runtime_prediction_calls += branch->first_runtime_calls;

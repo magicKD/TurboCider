@@ -246,9 +246,17 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
             std::getenv("TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC")))
         [algorithm_approximations addObject:@"qwen21_rectangular_decode_w8a8_tiled_diagnostic"];
-    if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
-            std::getenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC")))
+    if (r.model == "qwen-image-2.1" && qwen21::gate_up_ane(r))
+        [algorithm_approximations addObject:@"qwen21_w8a8_gate_up_gpu_silu_down_diagnostic"];
+    if (r.model == "qwen-image-2.1" && qwen21::fused_lora_ane(r))
+        [algorithm_approximations addObject:@"qwen21_w8a8_fused_lora_pre_silu_diagnostic"];
+    if (r.model == "qwen-image-2.1" && qwen21::lora_base_ane(r) &&
+            !qwen21::gate_up_ane(r) && !qwen21::fused_lora_ane(r))
         [algorithm_approximations addObject:@"qwen21_runtime_lora_base_ane_suffix_only_diagnostic"];
+    if (r.model == "z-image-turbo" && r.hybrid_mlp_mode == "lora_suffix")
+        [algorithm_approximations addObject:@"z_image_runtime_lora_base_ane_suffix_only_diagnostic"];
+    if (r.model == "z-image-turbo" && r.hybrid_mlp_mode == "lora_fused")
+        [algorithm_approximations addObject:@"z_image_runtime_lora_base_fused_pre_silu_experimental"];
     if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
             std::getenv("TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC")))
         [algorithm_approximations addObject:@"qwen21_viggle_reference_resize_512_diagnostic"];
@@ -407,6 +415,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"weight_validation" : weight_validation,
         @"lora_count" : @(r.loras.size()),
         @"lora_strategy" : @(lora_strategy.c_str()),
+        @"hybrid_mlp_mode" : @(r.hybrid_mlp_mode.c_str()),
         @"lora_fusion" : lora_fusion,
         @"audio" : @(r.audio),
         @"ltx_backend" : @(r.ltx_backend.c_str()),
@@ -854,6 +863,9 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"model_interface_setup_seconds" : @(m.model_interface_setup_seconds),
         @"zero_input_warmup_seconds" : @(m.zero_input_warmup_seconds),
         @"prediction_seconds_session_total" : @(m.prediction_seconds),
+        @"feature_binding_seconds_session_total" : @(m.feature_binding_seconds),
+        @"model_prediction_seconds_session_total" : @(m.model_prediction_seconds),
+        @"output_handling_seconds_session_total" : @(m.output_handling_seconds),
         @"first_runtime_prediction_seconds_session_total" :
             @(m.first_runtime_prediction_seconds),
         @"subsequent_runtime_prediction_seconds_session_total" :
@@ -871,6 +883,8 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"bucket" : @(m.bucket),
         @"minimum_profitable_rows" : @(m.minimum_profitable_rows),
         @"hidden" : @(m.hidden),
+        @"output_channels" : @(m.output_channels),
+        @"mlp_output_kind" : @(m.mlp_output_kind.c_str()),
         @"block_count" : @(m.block_count),
         @"mlp_width" : @(m.mlp_width),
         @"ane_mlp_range" : @[ @(m.ane_mlp_start), @(m.ane_mlp_end) ],

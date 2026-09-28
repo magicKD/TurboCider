@@ -1,0 +1,64 @@
+{
+  "artifact_sha256": {
+    "0": {
+      "Data/com.apple.CoreML/model.mlmodel": "e0b4e8ab0bb1e1db436ac2cfd7007690d0530495863ed0a702ddd25d2feebc18",
+      "Data/com.apple.CoreML/weights/weight.bin": "528b629c2b42ae996133442f970347102c44cca6550a9bf0ae72a0104c94969e",
+      "Manifest.json": "f1aee7b83770a9b4c4423263052e3b440151ca389847633e2ac40c409aa53bec"
+    }
+  },
+  "artifacts": {
+    "0": {
+      "int8_pc": "block0_mlp_branch.int8_pc.mlpackage"
+    }
+  },
+  "export_identity": {
+    "activation_precision": "fp16",
+    "activation_scale": 8.0,
+    "ane_mlp_end": 8192,
+    "ane_mlp_start": 0,
+    "blocks": [
+      0
+    ],
+    "bucket": 1056,
+    "checkpoint": "/Users/james/cch/video-generation/TurboCider/models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+    "checkpoint_bytes": 12309866400,
+    "checkpoint_format": "safetensors",
+    "checkpoint_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+    "convrot_mode": "none",
+    "coremltools": "8.3.0",
+    "hidden": 3840,
+    "mlp_output_kind": "fused_lora",
+    "mlp_width": 10240,
+    "numpy": "2.0.2",
+    "output_scale": 32.0,
+    "owner": "turbocider.z_image.coreml.v1",
+    "recipe": 1,
+    "tensor_layout": "z_image",
+    "variant": "int8_pc"
+  },
+  "functions": {
+    "1056": "main"
+  },
+  "schema_version": 2,
+  "shape": {
+    "K": 3840,
+    "N": 3840,
+    "activation_scale": 8.0,
+    "ane_mlp_end": 8192,
+    "ane_mlp_start": 0,
+    "buckets": [
+      1056
+    ],
+    "mlp_width": 10240,
+    "output_channels": 12032,
+    "output_scale": 32.0
+  },
+  "source": {
+    "blocks": [
+      0
+    ],
+    "checkpoint": "/Users/james/cch/video-generation/TurboCider/models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+    "checkpoint_bytes": 12309866400,
+    "checkpoint_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6"
+  }
+}

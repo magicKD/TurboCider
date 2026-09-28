@@ -24,6 +24,9 @@ struct Request {
     // from `ane_manifest`, which selects a denoiser/DiT partition.
     std::string encoder_ane_manifest;
     std::string profile, residency = "resident", quantized_cache;
+    // Request-local hybrid MLP route. "auto" preserves legacy selection;
+    // explicit modes avoid process-global diagnostic flags in resident/batch use.
+    std::string hybrid_mlp_mode = "auto";
     std::string ltx_backend = "auto";
     std::string profile_identity;
     std::string model_variant = "auto";

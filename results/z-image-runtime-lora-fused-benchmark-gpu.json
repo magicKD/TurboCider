@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "model": "z-image-turbo",
+  "operation": "image.generate",
+  "prompt": "A cinematic red fox walking through fresh snow, soft morning light.",
+  "output": "results/z-image-runtime-lora-fused-benchmark-gpu.png",
+  "execution": "gpu",
+  "residency": "resident",
+  "allow_approximation": true,
+  "width": 512,
+  "height": 512,
+  "frames": 1,
+  "steps": 8,
+  "seed": 42,
+  "audio": false,
+  "lora_strategy": "inference_time",
+  "loras": [{
+    "path": "models/Comfy-Org-z_image_turbo/split_files/loras/z_image_turbo_distill_patch_lora_bf16.safetensors",
+    "role": "transformer",
+    "strength": 1.0
+  }]
+}

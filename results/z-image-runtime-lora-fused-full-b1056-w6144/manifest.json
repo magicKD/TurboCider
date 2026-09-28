@@ -1,0 +1,374 @@
+{
+  "artifact_sha256": {
+    "0": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "5bb45d333627c034da498dff7262d46008195ea7f7e4d3ca34f3f00d93a1f3ad",
+      "Manifest.json": "b3a462be09d4cf1a2653af12c9b3996b5d71f6dae0eabdc45e3002290dfd5f7f"
+    },
+    "1": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "ea485676c92a40964603d64d30a136c23e46a30cfa292fa16f9ff78c28dfd6c3",
+      "Manifest.json": "5021cf5fba589d15708be21a13b93822d11d5a746567341aecdae23f9ec134a2"
+    },
+    "10": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "d445665f112f7e1ac21340887bad08ef5d2e1cfdcecd1df5c1e43199b902a3ca",
+      "Manifest.json": "736259793b8430133abe4eaf8ef2a9c514572f2c268cdbffaeec2d79e0087bc3"
+    },
+    "11": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "44698afb1d892ccb7c258fb11e30366e1fe8a924ec1301989fa453781a8f997d",
+      "Manifest.json": "70ce15a6962bc61cc49f3edb3c7cbd87ae5acc030c9a86fee839e0319fdaedb1"
+    },
+    "12": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "3e7daa3a73df2372f9512cdcca224cc8b75cb57e2dad0da6646967ac09870ab1",
+      "Manifest.json": "ad0d3c0177e281a4d99909eca199d137118e506a61e2b21f361771a2c7cad33e"
+    },
+    "13": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "00dc6732b16e6f55f867d09ab65b04b7c0269df4573d1349418a500d26655e89",
+      "Manifest.json": "afc503f9d42414e171eedf141912c78ab9d78d6bf7ffa8ffeb1fcd3855c30e2a"
+    },
+    "14": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "979c6caf070c52ebc43368acb116690350d61f6367a6596713c091dcc7b0bfcf",
+      "Manifest.json": "52283973b56d96e8b9712911e4f41fed33939b8cf68f5fa90e5fc6ee2540aa56"
+    },
+    "15": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "acd3450713281d25fa55265f22bb25a34172220ab62b1bb21fefc2b55fc378bf",
+      "Manifest.json": "4607e5904fb13884ac13a4ba705b4518289a48d40b57b2097b0f16f5a33b553b"
+    },
+    "16": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "f9e16f0c690277f8017a009c79e0d3139345da2ef21c4123e10240275bc7b436",
+      "Manifest.json": "250575532f84729709c0407d005a70ea47c0feb0b27509a096dbf12e0293db69"
+    },
+    "17": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "c11fd868f2f10834dcdfe7a5492b180cb31f84479267456f4c3d231cfd822d57",
+      "Manifest.json": "2b0199132640524b44f722766f26fcbcae926995ef828ab7d499705a3fb9e778"
+    },
+    "18": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "b47dc76b0483525126e1df89fee3d27cc923f2d0922bf4f8e206b5205c2e16f2",
+      "Manifest.json": "eaa3632fa7b602704d13b933356ddf923590d6f1390bb0e1167e79a841276f7b"
+    },
+    "19": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "3eb070cc19e9381308339998f6e2a634c6950f009854823804a3928c34d16f04",
+      "Manifest.json": "4811b3fda2625236ba6e160f67bd5cd752d1e373d6f469220a32e52d76ad9687"
+    },
+    "2": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "66ec7fb4d143aadf6ff4c146616b13f40dfee64e80d19b499e5449eee360380c",
+      "Manifest.json": "9e78fae4fb83b154ed78b6030193770b2519a45098f774dfde710365378c2296"
+    },
+    "20": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "83ff1d6c575e2064c8ea89a7ba2f72afe0a1bd18cea17767a9f4e30cb13b9363",
+      "Manifest.json": "63eaedf4c2e8ece9daa704007186370e04281d960bc702ea0721342b350d3042"
+    },
+    "21": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "6867986cf71dbe8679c984307c5a9c7461e8ebfd4d5f4b0ef63600cc724fd78e",
+      "Manifest.json": "60a3510f3542e50b3ea777c801a99d6efaadec57c7668b504d30b166419a602f"
+    },
+    "22": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "fd2bf8735b96435c4b8801f79c14da5a2197c2793c5653900638b3f2f5bf2659",
+      "Manifest.json": "887d886e2d0a27847124dbc636f42f5849a8b671aa541e3c776b6a563f5279ac"
+    },
+    "23": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "5b0da5533d963b8d9dde94c615774ad27239e65005e6b6a4a9d3987e7efacbc5",
+      "Manifest.json": "6dfc0b71bce8de6feeda4c2e56d9f3d9a6b76c43d354c9bf6692ac4f72887ba5"
+    },
+    "24": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "d0e23eacc36566ecbcd544c5e47bea58fa5f350c79da629a6b8842baae968e40",
+      "Manifest.json": "61496ec54679f9d33c4de085adf4c12493a9a9423544b71887fd1e06b2b98f03"
+    },
+    "25": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "996483da96f933b8b105b88f5de893ddda0e90bc22918004b99b0b3a22a75341",
+      "Manifest.json": "e64d1a9b2455c173ca3eb6f5511be88e7dd92ac6c216454cfc922214c012eed7"
+    },
+    "26": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "f692674d92c2acfa1cb59cd72fdcc2eb69787ab8c9c584afc7f660d5ac54f8c2",
+      "Manifest.json": "fdee444d3c96600bc798a3ffde1335d20202c98ebd96634b9b9eebccf27b63dd"
+    },
+    "27": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "0f82590d38f6422e85fd6adc1075e703d2575728d2ba28b3c5d315147be282db",
+      "Manifest.json": "6f70f0a5673ab09e385f85781bc6d5948fe8228a70fe326582e6acccd843089b"
+    },
+    "28": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "d60790ee51ca024ab534ced33f1290b1a99682d427911b9d1eeba5deed937f65",
+      "Manifest.json": "341878a34e8c6e15c99d7a2d57cebf99ed759df6e3e26689fca7daf00943f6ac"
+    },
+    "29": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "888b5f97d1458ac37e8eae87c7531d7c72b7e9150d3fad933649313f29b6081f",
+      "Manifest.json": "cbc548e9412505ffa9ac1d49240bdaaff2b660bca56606d4adfd884f76f811f6"
+    },
+    "3": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "863aea589237b77553d4c3fa89a15ff8716bb619beef5aa7ddebac125ba04f18",
+      "Manifest.json": "de1a2078ef4aad120fae961ba3b402e42e995474060e21edff5a54dacc9501de"
+    },
+    "30": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "481d43efa628a5388415a47d96008285288ffd43cac6afa6420f5bcc4260818e",
+      "Manifest.json": "325c9c256e9ef028557657e5a9d230a07c13be4b8aa10ed5fdd55fc7e2383d29"
+    },
+    "31": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "0e20eacf886f1dcfeb4a71d3c7a4c155e1870bee64217b9fcd3cbe8f4dda0e97",
+      "Manifest.json": "5dd14e11453131fca3e5cf56eab30c48b207303cb873c9fea125417878a9b96d"
+    },
+    "4": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "7a8551961589caccdd0857a48af04542287c301a13bb132193aba405a8353150",
+      "Manifest.json": "61414b44d8eeb1721dba2d74e84e5ba363f471c414825d5cbf25847cdd4d0406"
+    },
+    "5": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "aad6b79b41ffbf90e478240b97d84e250d4cbbc3f0978cb2c5dcc57f18fdc534",
+      "Manifest.json": "1a3ec17c6dc9cee1e79b5ab467242100c5d1046d61aed53579cdd6bf4c2a0fc1"
+    },
+    "6": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "e6af032cb0b714cd9c2988057be476939fd23854ed3b839d4f8140eef3d2c098",
+      "Manifest.json": "b5503f20e5fc969083589d927e3fa0229e8a695825fea12c74721e1055691e55"
+    },
+    "7": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "68212d0171cb422f4a2bec315438f8bf8ab10948ceeebbecbacd9ba8e6012b0e",
+      "Manifest.json": "6262011459b56e83e96f819786242dfb9ea9e02a19bfe65fb12cc51d42874c1e"
+    },
+    "8": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "5c2c818f1ff07ac830531c65444ebae6fc0d0d6783584bf01f9ecd9cae12e1a0",
+      "Manifest.json": "25e589b21557282816a8bc39e74c3fc7e9d5e08a348bbbfbaee409e9c103bfc4"
+    },
+    "9": {
+      "Data/com.apple.CoreML/model.mlmodel": "353ce2b610a0be294930c9d3d3d68e64c7acfb0e0c0c52ec122dfe1f4de12378",
+      "Data/com.apple.CoreML/weights/weight.bin": "2ae1460a1cf99047bf7f83e631fc56666c75e8bb072650b481efdc657faa3218",
+      "Manifest.json": "fc8f38d216def69c01de513166b6a799a32114038a48042c32deec2a1b8ff792"
+    }
+  },
+  "artifacts": {
+    "0": {
+      "int8_pc": "block0_mlp_branch.int8_pc.mlpackage"
+    },
+    "1": {
+      "int8_pc": "block1_mlp_branch.int8_pc.mlpackage"
+    },
+    "10": {
+      "int8_pc": "block10_mlp_branch.int8_pc.mlpackage"
+    },
+    "11": {
+      "int8_pc": "block11_mlp_branch.int8_pc.mlpackage"
+    },
+    "12": {
+      "int8_pc": "block12_mlp_branch.int8_pc.mlpackage"
+    },
+    "13": {
+      "int8_pc": "block13_mlp_branch.int8_pc.mlpackage"
+    },
+    "14": {
+      "int8_pc": "block14_mlp_branch.int8_pc.mlpackage"
+    },
+    "15": {
+      "int8_pc": "block15_mlp_branch.int8_pc.mlpackage"
+    },
+    "16": {
+      "int8_pc": "block16_mlp_branch.int8_pc.mlpackage"
+    },
+    "17": {
+      "int8_pc": "block17_mlp_branch.int8_pc.mlpackage"
+    },
+    "18": {
+      "int8_pc": "block18_mlp_branch.int8_pc.mlpackage"
+    },
+    "19": {
+      "int8_pc": "block19_mlp_branch.int8_pc.mlpackage"
+    },
+    "2": {
+      "int8_pc": "block2_mlp_branch.int8_pc.mlpackage"
+    },
+    "20": {
+      "int8_pc": "block20_mlp_branch.int8_pc.mlpackage"
+    },
+    "21": {
+      "int8_pc": "block21_mlp_branch.int8_pc.mlpackage"
+    },
+    "22": {
+      "int8_pc": "block22_mlp_branch.int8_pc.mlpackage"
+    },
+    "23": {
+      "int8_pc": "block23_mlp_branch.int8_pc.mlpackage"
+    },
+    "24": {
+      "int8_pc": "block24_mlp_branch.int8_pc.mlpackage"
+    },
+    "25": {
+      "int8_pc": "block25_mlp_branch.int8_pc.mlpackage"
+    },
+    "26": {
+      "int8_pc": "block26_mlp_branch.int8_pc.mlpackage"
+    },
+    "27": {
+      "int8_pc": "block27_mlp_branch.int8_pc.mlpackage"
+    },
+    "28": {
+      "int8_pc": "block28_mlp_branch.int8_pc.mlpackage"
+    },
+    "29": {
+      "int8_pc": "block29_mlp_branch.int8_pc.mlpackage"
+    },
+    "3": {
+      "int8_pc": "block3_mlp_branch.int8_pc.mlpackage"
+    },
+    "30": {
+      "int8_pc": "block30_mlp_branch.int8_pc.mlpackage"
+    },
+    "31": {
+      "int8_pc": "block31_mlp_branch.int8_pc.mlpackage"
+    },
+    "4": {
+      "int8_pc": "block4_mlp_branch.int8_pc.mlpackage"
+    },
+    "5": {
+      "int8_pc": "block5_mlp_branch.int8_pc.mlpackage"
+    },
+    "6": {
+      "int8_pc": "block6_mlp_branch.int8_pc.mlpackage"
+    },
+    "7": {
+      "int8_pc": "block7_mlp_branch.int8_pc.mlpackage"
+    },
+    "8": {
+      "int8_pc": "block8_mlp_branch.int8_pc.mlpackage"
+    },
+    "9": {
+      "int8_pc": "block9_mlp_branch.int8_pc.mlpackage"
+    }
+  },
+  "export_identity": {
+    "activation_precision": "fp16",
+    "activation_scale": 8.0,
+    "ane_mlp_end": 6144,
+    "ane_mlp_start": 0,
+    "blocks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "bucket": 1056,
+    "checkpoint": "/Users/james/cch/video-generation/TurboCider/models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+    "checkpoint_bytes": 12309866400,
+    "checkpoint_format": "safetensors",
+    "checkpoint_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+    "convrot_mode": "none",
+    "coremltools": "8.3.0",
+    "hidden": 3840,
+    "mlp_output_kind": "fused_lora",
+    "mlp_width": 10240,
+    "numpy": "2.0.2",
+    "output_scale": 32.0,
+    "owner": "turbocider.z_image.coreml.v1",
+    "recipe": 1,
+    "tensor_layout": "z_image",
+    "variant": "int8_pc"
+  },
+  "functions": {
+    "1056": "main"
+  },
+  "schema_version": 2,
+  "shape": {
+    "K": 3840,
+    "N": 3840,
+    "activation_scale": 8.0,
+    "ane_mlp_end": 6144,
+    "ane_mlp_start": 0,
+    "buckets": [
+      1056
+    ],
+    "mlp_width": 10240,
+    "output_channels": 9984,
+    "output_scale": 32.0
+  },
+  "source": {
+    "blocks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "checkpoint": "/Users/james/cch/video-generation/TurboCider/models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+    "checkpoint_bytes": 12309866400,
+    "checkpoint_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6"
+  }
+}

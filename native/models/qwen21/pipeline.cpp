@@ -9,6 +9,7 @@
 #include "../../runtime/residency.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <mlx/random.h>
+#include <bit>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -89,8 +90,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool hybrid_requested = r.execution == "gpu_ane";
     const bool rectangular_w8a8 = option_enabled(std::getenv(
         "TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC"));
-    const bool lora_base_ane = option_enabled(std::getenv(
-        "TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC"));
+    const bool lora_base_ane = qwen21::lora_base_ane(r);
+    const bool gate_up_ane = qwen21::gate_up_ane(r);
+    const bool fused_lora_ane = qwen21::fused_lora_ane(r);
     const bool fused_qkv = option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC"));
     const char *tiled_prefill_flag = std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC");
     const int tiled_prefill_layers = tiled_prefill_layer_count(tiled_prefill_flag ? tiled_prefill_flag : "0");
@@ -305,10 +307,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     std::string lora_identity;
     if (!r.loras.empty()) {
         auto path = std::filesystem::canonical(r.loras[0].path);
-        require(std::filesystem::is_regular_file(path), "Viggle LoRA is not a regular file");
+        require(std::filesystem::is_regular_file(path), "Qwen21 LoRA is not a regular file");
         lora_identity = path.string() + ":" + std::to_string(std::filesystem::file_size(path)) +
             ":" + std::to_string(static_cast<long long>(
-                      std::filesystem::last_write_time(path).time_since_epoch().count()));
+                      std::filesystem::last_write_time(path).time_since_epoch().count())) +
+            ":" + std::to_string(std::bit_cast<uint32_t>(r.loras[0].strength));
+        // Alternate adapters are not pinned by filename, so a same-size,
+        // same-mtime replacement must still invalidate the resident MLX
+        // binding. The original Viggle path keeps its fast warm-request ABI.
+        if (fused_lora_ane) lora_identity += ":" + sha256_file(path);
     }
     const bool bind_lora = !r.loras.empty() &&
         (active_lora_identity_ != lora_identity || !transformer_.bytes());
@@ -330,7 +337,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         transformer_.clear();
     }
     if (bind_lora) {
-        require(sha256_file(r.loras[0].path) ==
+        require(fused_lora_ane || sha256_file(r.loras[0].path) ==
                     "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
                 "Viggle v0.2.1 r256 LoRA hash does not match the pinned adapter");
     }
@@ -339,8 +346,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     transformer_.set_runtime_lora_fp16(lora_fp16);
     if (bind_lora) {
         lora_applied_projections_ = transformer_.apply_loras(r.loras, "transformer", event, cancelled, true);
-        require(lora_applied_projections_ == 227,
-                "Viggle v0.2.1 r256 LoRA did not bind all 227 transformer projections");
+        require(fused_lora_ane ? lora_applied_projections_ > 0 : lora_applied_projections_ == 227,
+                "Qwen21 LoRA did not bind transformer projections");
         active_lora_identity_ = lora_identity;
     }
     if (fused_qkv && fused_qkv_weights_.empty()) {
@@ -406,6 +413,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             require(r.qwen21_w8a8 && hybrid_->ane_mlp_end == 6144 &&
                         r.qwen21_gpu_full_ffn_blocks.empty(),
                     "Qwen21 runtime LoRA/base ANE needs a 6144-channel full-coverage base manifest");
+        require((fused_lora_ane ? (hybrid_->mlp_output_kind == "fused_lora" &&
+                                     hybrid_->output_channels == 4096 + 6144 &&
+                                     hybrid_->a8_graph == "sq_v1_both") :
+                gate_up_ane ? (hybrid_->mlp_output_kind == "gate_up" &&
+                                   hybrid_->output_channels == 12288 &&
+                                   hybrid_->a8_graph == "sq_v1_input") :
+                               (hybrid_->mlp_output_kind.empty() &&
+                                hybrid_->output_channels == 4096)),
+                "Qwen21 alternate FFN manifest requires its matching explicit mode");
         if (r.operation == "image.edit" && r.qwen21_reference_size == 512)
             require(r.qwen21_w8a8 && hybrid_->ane_mlp_end == 6144 &&
                         r.qwen21_gpu_full_ffn_blocks.empty(),
@@ -423,7 +439,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     (r.qwen21_w8a8
                         ? hybrid_->export_variant == "int8_pc" &&
                           hybrid_->activation_precision == "int8" &&
-                          hybrid_->a8_graph == "sq_v1_both" &&
+                          hybrid_->a8_graph == (gate_up_ane ? "sq_v1_input" : "sq_v1_both") &&
                           hybrid_->projected_weight_granularity == "per_tensor"
                         : hybrid_->export_variant == "fp16" &&
                           hybrid_->activation_precision == "fp16") &&
@@ -457,7 +473,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (profile_segments && std::string_view(profile_segments) == "1")
         result.selection += "; diagnostic synchronized block-0 prefill attention segments";
     if (!r.loras.empty())
-        result.selection += "; Viggle v0.2.1 r256 runtime LoRA; six-step student schedule";
+        result.selection += fused_lora_ane
+            ? "; experimental runtime LoRA with Viggle six-step schedule; adapter quality unqualified"
+            : "; Viggle v0.2.1 r256 runtime LoRA; six-step student schedule";
     if (lora_fp16)
         result.selection += "; experimental FP16 low-rank LoRA matmuls";
     const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
@@ -508,8 +526,16 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 " layers 1024-row tiled W8A8 FFN";
         if (rectangular_w8a8)
             result.selection += "; diagnostic 1536-row decode FFN in two 1024-row W8A8 tiles";
-        if (lora_base_ane)
-            result.selection += "; diagnostic runtime LoRA on GPU FFN suffix only, base W8A8 ANE prefix unchanged";
+        if (fused_lora_ane && r.loras.empty())
+            result.selection += "; experimental reusable frozen-base fused FFN with zero runtime LoRA input";
+        else if (lora_base_ane)
+            result.selection += fused_lora_ane
+                ? "; diagnostic fused base W8A8 ANE FFN with pre-SiLU runtime LoRA and GPU down LoRA"
+                : gate_up_ane
+                ? "; diagnostic base W8A8 ANE gate/up, GPU pre-SiLU LoRA and complete BF16 down projection"
+                : "; diagnostic runtime LoRA on GPU FFN suffix only, base W8A8 ANE prefix unchanged";
+        else if (gate_up_ane)
+            result.selection += "; diagnostic base W8A8 ANE gate/up, GPU SiLU and BF16 down projection";
         if (tiled_prefix_reuse)
             result.selection += "; diagnostic repeated tiled-prefill prefix KV";
         if (prefix_target_only)

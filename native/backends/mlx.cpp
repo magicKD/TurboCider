@@ -746,6 +746,54 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
     return output;
 }
 
+Tensor Weights::lora_delta_slice(const Tensor &x, const std::string &prefix,
+                                 int row_start, int row_end,
+                                 int col_start, int col_end,
+                                 std::optional<mx::Dtype> output_dtype) const {
+    const auto &weight = at(prefix + ".weight");
+    require(weight.ndim() == 2 && row_start >= 0 && row_start < row_end &&
+                row_end <= weight.shape(0) && col_start >= 0 && col_start < col_end &&
+                x.shape(-1) == col_end - col_start,
+            "invalid runtime LoRA delta slice geometry: " + prefix);
+    auto result_shape = x.shape();
+    result_shape.back() = row_end - row_start;
+    const auto destination_dtype = output_dtype.value_or(x.dtype());
+    // Most runtime adapters cover the full requested projection slice. Avoid
+    // materializing and adding a full-sized FP32 zero tensor before their
+    // low-rank result (notably the gate/up Core ML correction each block).
+    std::optional<Tensor> result;
+    auto runtime = runtime_loras_.find(prefix);
+    if (runtime == runtime_loras_.end()) return mx::zeros(result_shape, destination_dtype);
+    for (const auto &adapter : runtime->second) {
+        const int first = std::max(row_start, adapter.output_start);
+        const int last = std::min(row_end, adapter.output_end);
+        if (first >= last) continue;
+        const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
+        auto down = mx::astype(slice_axis(adapter.down, 1, col_start, col_end), rank_dtype);
+        auto up = mx::astype(slice_axis(adapter.up, 0,
+            first - adapter.output_start, last - adapter.output_start), rank_dtype);
+        auto low = mx::matmul(mx::astype(x, rank_dtype), mx::transpose(down));
+        auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
+            Tensor(adapter.scale, mx::float32);
+        const int begin = first - row_start, end = last - row_start;
+        if (begin || end != row_end - row_start) {
+            std::vector<Tensor> pieces;
+            if (begin) {
+                auto shape = result_shape; shape.back() = begin;
+                pieces.push_back(mx::zeros(shape, mx::float32));
+            }
+            pieces.push_back(std::move(delta));
+            if (end != row_end - row_start) {
+                auto shape = result_shape; shape.back() = row_end - row_start - end;
+                pieces.push_back(mx::zeros(shape, mx::float32));
+            }
+            delta = mx::concatenate(pieces, -1);
+        }
+        result = result ? *result + delta : delta;
+    }
+    return result ? mx::astype(*result, destination_dtype) :
+                    mx::zeros(result_shape, destination_dtype);
+}
 
 Tensor Weights::project_range(const Tensor &x, const std::string &prefix,
                               int row_start, int row_end,

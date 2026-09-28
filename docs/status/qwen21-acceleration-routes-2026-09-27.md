@@ -1,5 +1,11 @@
 # Qwen-Image-2.1 加速路径索引（2026-09-27）
 
+2026-09-28 更新：下面旧的 LoRA/base-ANE 后缀测量**没有计算前缀 LoRA**，
+不能当作正确 runtime LoRA 的速度结论。完整可复用 base Core ML 图、
+Qwen/Z-Image 对比及现行 CLI 模式请先看
+[runtime LoRA 路线汇总](runtime-lora-acceleration-2026-09-28.md)；
+本页保留此前 base、编辑与诊断历史。
+
 验收优先级：先检查文生图的主体、构图和可辨细节，图像编辑还须检查
 参考主体及明确的编辑指令确实得到保留；通过肉眼观感门槛后，优先
 选择端到端更快的路径，不以逐像素、RMSE 或相关系数接近为硬性

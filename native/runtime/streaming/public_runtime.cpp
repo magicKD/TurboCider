@@ -71,6 +71,7 @@ std::string preflight_request_digest(const Request &request) {
     out.string_field("model_variant", request.model_variant);
     out.string_field("residency", request.residency);
     out.string_field("lora_strategy", request.lora_strategy);
+    out.string_field("hybrid_mlp_mode", request.hybrid_mlp_mode);
     out.string_field("ltx_backend", request.ltx_backend);
     out.unsigned_field("width", static_cast<uint64_t>(request.width));
     out.unsigned_field("height", static_cast<uint64_t>(request.height));

@@ -42,6 +42,11 @@ struct HybridMetrics {
     double model_interface_setup_seconds = 0;
     double zero_input_warmup_seconds = 0;
     double prediction_seconds = 0;
+    // Cumulative Core ML API phase wall times (including warmup). These are
+    // diagnostic host spans; none establishes physical ANE placement.
+    double feature_binding_seconds = 0;
+    double model_prediction_seconds = 0;
+    double output_handling_seconds = 0;
     double first_runtime_prediction_seconds = 0;
     double subsequent_runtime_prediction_seconds = 0;
     uint64_t calls = 0, copied_bytes = 0;
@@ -61,7 +66,8 @@ struct HybridMetrics {
         prefill_compute_tokens = 0, prefill_padding_tokens = 0;
     bool prefill_fixed_shape = false;
     std::string prefill_plan_reason;
-    int bucket = 0, hidden = 0, block_count = 0;
+    int bucket = 0, hidden = 0, output_channels = 0, block_count = 0;
+    std::string mlp_output_kind;
     int minimum_profitable_rows = 0;
     int mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;
     float output_scale = 1.f;

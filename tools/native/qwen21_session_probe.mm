@@ -25,8 +25,6 @@ int main(int argc, char **argv) {
                 std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC"));
             const bool rectangular_w8a8 = tc::qwen21::option_enabled(
                 std::getenv("TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC"));
-            const bool lora_base_ane = tc::qwen21::option_enabled(
-                std::getenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC"));
             const int repeats = std::stoi(argv[4]);
             tc::require(repeats >= 1 && repeats <= 10, "repeats must be 1...10");
             const bool dump_tensors = argc == 8 && std::string(argv[7]) == "--dump-tensors";
@@ -50,6 +48,8 @@ int main(int argc, char **argv) {
             } else {
                 r.prompt = prompt_arg;
             }
+            const bool lora_base_ane = tc::qwen21::lora_base_ane(r);
+            const bool gate_up_ane = tc::qwen21::gate_up_ane(r);
             const bool prefix_lora_guard = prefix_probe && !r.loras.empty();
             prefix_probe = prefix_probe && r.loras.empty();
             std::filesystem::path mutable_reference;
@@ -291,7 +291,11 @@ int main(int argc, char **argv) {
                 if (lora_base_ane) {
                     tc::require(setenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC", "0", 1) == 0,
                                 "cannot disable LoRA/base ANE before testing base GPU rebind");
+                    if (gate_up_ane)
+                        tc::require(setenv("TURBOCIDER_QWEN21_LORA_GATE_UP_DIAGNOSTIC", "0", 1) == 0,
+                                    "cannot disable gate/up ANE before testing base GPU rebind");
                     plain.execution = "gpu"; plain.ane_manifest.clear(); plain.qwen21_w8a8 = false;
+                    plain.hybrid_mlp_mode = "auto";
                 }
                 auto without_adapter = session.prepare(plain, false, event, cancelled);
                 tc::require(without_adapter.lora_applied_projections == 0,
@@ -299,6 +303,9 @@ int main(int argc, char **argv) {
                 if (lora_base_ane)
                     tc::require(setenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC", "1", 1) == 0,
                                 "cannot restore LoRA/base ANE before testing rebind");
+                if (gate_up_ane)
+                    tc::require(setenv("TURBOCIDER_QWEN21_LORA_GATE_UP_DIAGNOSTIC", "1", 1) == 0,
+                                "cannot restore gate/up ANE before testing rebind");
                 if (lora_ref512)
                     tc::require(setenv("TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC", "1", 1) == 0,
                                 "cannot restore LoRA/512px diagnostic before testing rebind");
@@ -317,9 +324,13 @@ int main(int argc, char **argv) {
             }
             // Switching to GPU must release the Core ML bank and report GPU.
             warm.execution = "gpu"; warm.ane_manifest.clear();
+            warm.hybrid_mlp_mode = "auto";
             if (lora_base_ane)
                 tc::require(setenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC", "0", 1) == 0,
                             "cannot disable LoRA/base ANE before GPU lifecycle switch");
+            if (gate_up_ane)
+                tc::require(setenv("TURBOCIDER_QWEN21_LORA_GATE_UP_DIAGNOSTIC", "0", 1) == 0,
+                            "cannot disable gate/up ANE before GPU lifecycle switch");
             if (rectangular_w8a8)
                 tc::require(setenv("TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC", "0", 1) == 0,
                             "cannot disable rectangular tiling before GPU lifecycle switch");

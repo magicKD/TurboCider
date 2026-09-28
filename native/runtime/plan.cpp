@@ -118,6 +118,9 @@ static ExecutionPlan make_plan_impl(
         require(!r.ane_manifest.empty(), "gpu_ane requires an explicit ANE manifest or profile");
     }
     module_for(r.model).validate(r);
+    require(r.hybrid_mlp_mode == "auto" || r.model == "qwen-image-2.1" ||
+                r.model == "z-image-turbo",
+            "hybrid_mlp_mode is supported only for Qwen-Image-2.1 and Z-Image Turbo");
     require(r.model == "qwen-image-2.1" ||
                 (!r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
                  r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty()),

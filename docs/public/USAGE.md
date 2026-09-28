@@ -78,6 +78,37 @@ the compiled *1,024-image-row, 5,120-intermediate-channel* manifest. See the
 request syntax and execution policy; a real generation is still required to
 verify that the model and compiled ANE artifact are compatible.
 
+For an adapter-independent Core ML FFN, select an explicitly exported
+`lora_fused` **base-only** manifest and `--hybrid-mode lora_fused` for both
+base and inference-time LoRA requests. Reuse the same manifest and resident
+CLI session across adapters; do not export/compile the adapter into Core ML
+or select `lora_merged`. The mode name is historical: **base FFN operators**
+are fused, but no LoRA weights, rank, strength or adapter identity are baked
+into the Core ML artifact. In the no-adapter request, the runtime supplies zero
+gate/up corrections. With an adapter, GPU LoRA gate/up deltas enter before the
+Core ML SiLU, and GPU computes down-LoRA from the Core ML hidden output;
+non-FFN LoRA also stays on GPU. This is a separate opt-in graph, **not** the
+default fastest base graph. Qwen-Image-2.1 runtime LoRA has not established
+a whole-request speedup over GPU; Z-Image Turbo's explicit 4096-channel
+runtime-LoRA graph has. See the [Qwen runtime LoRA experiments](../status/qwen21-runtime-lora-fused-2026-09-28.md)
+and [Z-Image runtime LoRA experiments](../status/z-image-runtime-lora-fused-2026-09-28.md)
+for exact geometry, accuracy limits and measured timings. A different LoRA
+does not need a new Core ML compilation, but still needs independent schedule
+and image-quality validation. The [route comparison and code map](../status/runtime-lora-acceleration-2026-09-28.md)
+distinguish the fastest base path, complete runtime LoRA, and deliberately
+incomplete diagnostics.
+
+For the small, visually checked Z-Image-only direct-FP16 delta experiment,
+set `TURBOCIDER_Z_RUNTIME_LORA_DIRECT_FP16=1` on the CLI process while using
+the explicit `lora_fused` manifest; omit the variable for the prior numerical
+boundary. Qwen ignores this flag. It does not change the base model or merge
+an adapter, and it has not been promoted to automatic routing.
+
+To check adapter-file switching without compiling another Core ML graph,
+`tools/validation/runtime_lora_shared_graph_switch.py` uses a temporary synthetic
+second adapter and verifies base → adapter A → adapter B → base isolation;
+this is a correctness test, not quality validation for a trained adapter B.
+
 ## Model capabilities
 
 | Model ID | Executable scope | Important limits |
