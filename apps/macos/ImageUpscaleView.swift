@@ -104,11 +104,7 @@ struct UpscaleSettingsView: View {
     @ObservedObject var studio: StudioState
     var locked: Bool
     var showAfterGeneration = false
-    var preloadOnAppear = true
     @State private var showDetails = false
-    private var preloadKey: String {
-        "\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)"
-    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("图像超分").font(.headline)
@@ -140,7 +136,7 @@ struct UpscaleSettingsView: View {
                         Text("解压后选择 .mlpackage。模型留在原目录，无需 Python。")
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(.top, 8)
-                }.accessibilityIdentifier("upscaleModelDetails")
+                }
             }.disabled(locked)
             HStack {
                 Button("预加载") { Task { await preload() } }
@@ -159,12 +155,6 @@ struct UpscaleSettingsView: View {
             if store.busy && store.activeJob == nil {
                 HStack { ProgressView().controlSize(.small); Button("取消预加载") { store.cancel() } }
             }
-        }
-        .task(id: preloadKey) {
-            guard preloadOnAppear, studio.draft.upscaleAutoPreload else { return }
-            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            guard !locked, (try? ImageUpscaler.validateModelURL(URL(fileURLWithPath: studio.draft.upscaleModelPath))) != nil else { return }
-            await preload()
         }
     }
     private func preload() async {

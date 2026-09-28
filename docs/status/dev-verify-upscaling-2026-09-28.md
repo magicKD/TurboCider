@@ -51,7 +51,7 @@ Raw reports and PNGs: `outputs/dev-verify-20260928/upscale-resident/`. Reproduce
 - Synthetic 2×/4× upscaler tests passed for RGB ordering, multi-tile seams, reflection, one-pixel transparent inputs, cancellation, invalid tensors, missing model rejection and persistence.
 - Real x4plus: 512²→2048² and 768×384→3072×1536 exports passed; the integrated job store passed history restoration and cancellation without publishing a cancelled output.
 - Real x2plus: 768×384→1536×768, explicit preload, cache reuse, GPU→ANE invalidation, release, history restore and cancellation passed.
-- UI inspection confirmed the dedicated sidebar entry, Z-Image default 8 steps and GPU default. Further interaction was temporarily blocked by the computer-use transport (`native pipe closed before response`); final evidence is recorded below when available.
+- Interactive acceptance passed using the user-authorized AppleScript fallback after desktop unlock: dedicated upscaling, native model selection, GPU/ANE switching, preload/release, generation followed by automatic upscaling, and persistent settings/history. See the final acceptance record below.
 
 These checks do not qualify the existing experimental streaming catalog or all optional models. Production streaming records remain empty. Models absent locally receive contract/static coverage only. Main integration must retain those existing experimental labels and capability gates.
 
@@ -63,12 +63,26 @@ A real controller-level flow using the existing local Z-Image installation passe
 
 Visual inspection of the x2 output found correct orientation and colors. GPU/ANE output comparison has mean absolute 8-bit differences 0.079 (x2) and 0.110 (x4), with maxima 2 and 5 respectively; this confirms close numerical agreement for this image, not a general quality certification.
 
-Computer use launched the packaged test copy and confirmed the sidebar entry, GPU default and the 8-step control/help text. Subsequent controls could not be exercised because the computer-use native transport repeatedly returned `Sky Computer Use native pipe closed before response`, including after session reset. A complete dedicated-page click-through remains a manual QA item; backend and controller tests above are separate evidence, not a substitute claim that all UI actions passed.
+The packaged test copy was exercised through its real controls with isolated draft/history storage. GPU remains the default, and Z-Image displays and executes 8 steps. The earlier native computer-use transport failure was worked around with the user-authorized AppleScript interface; the covered click-through is now complete.
 
-`dev` is integrated into `dev-verify`; `main` is an ancestor and the merge preflight is conflict-free. No main merge or remote push was performed. Build and covered native/controller regressions support integration, with a final manual UI smoke recommended before main. This change does not qualify production streaming, optional absent models, or a public distribution release; existing experimental labels and gates remain in place.
+`dev` is integrated into `dev-verify`; `main` is an ancestor and the merge preflight is conflict-free. No main merge or remote push was performed. Build, native/controller regressions and the covered UI acceptance support integration into main. This change does not qualify production streaming, optional absent models, or a public distribution release; existing experimental labels and gates remain in place.
 
 ## Right sidebar refinement
 
 Creation now keeps its prompt and action controls on the left. Upscaling model, device, auto-after-generation and preload/release settings share one `UpscaleSettingsView` in the right sidebar, also used by the standalone upscaling page. Qwen prompt-enhancement configuration moved to the creation sidebar. Text-only generation hides irrelevant image-import controls; the toolbar toggles the standalone settings panel too.
 
-The revised App compiles. Interactive verification is pending: AppleScript fallback was authorized and macOS reports accessibility enabled, but the console subsequently became locked (`IOConsoleLocked` and `CGSSessionScreenIsLocked` both true), producing a black capture and inaccessible windows. The user has been asked to unlock the desktop. These checks are not recorded as passed.
+Interactive verification found and fixed two issues: the model-path disclosure group inherited its accessibility identifier into child controls, and two views could concurrently request automatic preload when post-generation upscaling was enabled. The path field now retains its own identifier; one root-level task owns automatic preload for both pages, independently of sidebar visibility.
+
+## Final interactive acceptance
+
+On the unlocked M4 Pro, using local models and the packaged test copy:
+
+- Standalone x4plus/GPU: 768×384 → 3072×1536 PNG, successful history receipt and model cache hit.
+- Native model chooser: selected the existing x2plus `.mlpackage`; x2/x4 paths were stored independently.
+- Standalone x2plus/CPU+ANE: 768×384 → 1536×768 PNG, successful history receipt and model cache hit. Release and manual preload controls worked.
+- Creation: clicking Generate ran Z-Image Turbo on GPU at 512×512, seed 42, with `actual_denoise_steps: 8`; automatic x2plus/CPU+ANE produced 1024×1024 using the resident cache. The original and enhanced images both remain in history and on disk.
+- Both pages share the same model/device settings. The toolbar hides and restores each right sidebar. The minimum supported window (980×700 content, 980×752 including the title bar) keeps prompt/actions usable and settings scrollable.
+- Expanded model details expose one `upscaleModelPath` field and two separate links. No repeated-preload warning appeared in the repaired workflow.
+- After restarting the App, both model paths, x2plus/ANE choice, post-generation toggle and all four successful history records were restored; automatic preload reached ready again. The UI generation job took 20.90 s and its cached x2 follow-up took 0.29 s in this run.
+
+Evidence under `outputs/dev-verify-20260928`: `ui-x4-result.png`, `ui-x2-ane-result.txt`, `ui-generation-complete.png`, `ui-details-final.txt`, `ui-studio-minimum.png`, `ui-upscale-minimum.png`, and `ui-sidebar-review-state/jobs.json`. These are local ignored artifacts, not release assets. App build and package logs are `ui-acceptance-build.log` and `ui-acceptance-package.log`; the packaged executable UUID matches the tested build and strict signature validation passes.

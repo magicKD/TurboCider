@@ -176,9 +176,9 @@ struct StudioView: View {
         .onChange(of: library.installationGeneration) { _, _ in studio.invalidateStreamingInstallation() }
         .sheet(item: $annotationAsset) { asset in Qwen21AnnotationEditor(asset: asset, studio: studio) }
         .task { library.refresh(studio: studio, migrate: true) }
-        .task(id: "\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleAfterGeneration):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)") {
+        .task(id: "\(page == .upscale):\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleAfterGeneration):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)") {
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            guard studio.draft.upscaleAutoPreload, studio.draft.upscaleAfterGeneration,
+            guard studio.draft.upscaleAutoPreload, (page == .upscale || studio.draft.upscaleAfterGeneration),
                   (try? ImageUpscaler.validateModelURL(URL(fileURLWithPath: studio.draft.upscaleModelPath))) != nil,
                   !studio.draft.upscaleModelPath.isEmpty, !store.busy, !api.running, !api.changing else { return }
             do {
@@ -564,7 +564,7 @@ struct StudioView: View {
                 Divider()
                 UpscaleSettingsView(store: store, studio: studio,
                                     locked: store.busy || submitting || api.running || api.changing,
-                                    showAfterGeneration: true, preloadOnAppear: false)
+                                   showAfterGeneration: true)
             }
             DisclosureGroup("高级参数") {
                 VStack(alignment: .leading, spacing: 12) {
