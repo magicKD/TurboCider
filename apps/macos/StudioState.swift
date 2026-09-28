@@ -1323,6 +1323,15 @@ final class StudioState: ObservableObject {
         draft.upscaleModelPath = draft.upscaleModelPaths[variant.rawValue] ?? ""
         save()
     }
+    var generationUpscaleVariant: UpscaleVariant? {
+        draft.upscaleAfterGeneration ? draft.upscaleVariant : nil
+    }
+    func selectGenerationUpscale(_ variant: UpscaleVariant?) {
+        if let variant { selectUpscaleVariant(variant) }
+        draft.upscaleAfterGeneration = variant != nil
+        message = nil
+        save()
+    }
     func rememberUpscaleModel(_ info: UpscaleModelInfo) {
         guard draft.upscaleModelPath == info.path, draft.upscaleCompute == info.compute else { return }
         let variant: UpscaleVariant = info.scale == 2 ? .x2plus : .x4plus

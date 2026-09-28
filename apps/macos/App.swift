@@ -109,6 +109,7 @@ struct StudioView: View {
     @State private var inspector = true
     @State private var dropping = false
     @State private var compareOriginal = false
+    @State private var upscaleSourcePath = ""
     @State private var submitting = false
     @State private var annotationAsset: StudioAsset?
     private var selectedJob: NativeJob? { store.jobs.first { $0.id == selected && $0.hasOutput } ?? store.jobs.first { $0.hasOutput } }
@@ -153,7 +154,7 @@ struct StudioView: View {
             Group {
                 switch page ?? .studio {
                 case .studio: workspace
-                case .upscale: ImageUpscaleView(store: store, studio: studio, showSettings: inspector) { job in
+                case .upscale: ImageUpscaleView(store: store, studio: studio, showSettings: inspector, sourcePath: $upscaleSourcePath) { job in
                     selected = job.id; compareOriginal = false; resultSelection.select(job.id, orderedIDs: outputIDs)
                 }
                 case .models: modelsPage
@@ -248,12 +249,10 @@ struct StudioView: View {
                             studio.changeOperation("image.transform"); studio.draft.initImageID = added.id
                         }
                     } }.disabled(studio.importing) }
-                    if URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" {
-                        Button("超分 ×\(studio.draft.upscaleVariant.scale)") { upscaleImage(URL(fileURLWithPath: job.request.output)) }
-                            .disabled(store.busy || submitting || api.running || api.changing)
-                            .accessibilityIdentifier("upscaleResult")
-                    }
                     Menu {
+                        if URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" {
+                            Button("单独超分此图…") { upscaleSourcePath = job.request.output; page = .upscale }
+                        }
                         Button("另存为…") { exportResult(job.request.output) }
                         Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: job.request.output)]) }
                         Button("复用参数") { studio.reuse(job) }
@@ -319,23 +318,22 @@ struct StudioView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(studio.draft.upscaleAfterGeneration && model?.isVideo != true
-                         ? "生成后超分 ×\(studio.draft.upscaleVariant.scale) · 保留原图" : inputSummary).font(.caption)
+                         ? "输出 \(studio.draft.width * studio.draft.upscaleVariant.scale) × \(studio.draft.height * studio.draft.upscaleVariant.scale)" : inputSummary).font(.caption)
                     Text(studio.draft.randomSeed ? "每次随机 · 本次 \(studio.lastSeed.map(String.init) ?? "待确定")" : "固定种子 \(studio.draft.seedText)").font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Menu {
-                    Button("打开图像超分页") { page = .upscale }
-                    Button("选择本地超分模型…", action: chooseUpscaleModel)
-                    Button("选择图片并超分…", action: chooseUpscaleImage)
-                    if let job = selectedJob, URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" {
-                        Button("当前结果超分 ×\(studio.draft.upscaleVariant.scale)") { upscaleImage(URL(fileURLWithPath: job.request.output)) }
+                if model?.isVideo != true {
+                    Picker("生成后", selection: Binding(get: { studio.generationUpscaleVariant }, set: { studio.selectGenerationUpscale($0) })) {
+                        Text("不超分").tag(Optional<UpscaleVariant>.none)
+                        Text("超分 ×2").tag(Optional(UpscaleVariant.x2plus))
+                        Text("超分 ×4").tag(Optional(UpscaleVariant.x4plus))
                     }
-                    if !studio.draft.upscaleModelPath.isEmpty {
-                        Text(URL(fileURLWithPath: studio.draft.upscaleModelPath).lastPathComponent)
-                    }
-                } label: { Label("图片超分", systemImage: "arrow.up.left.and.arrow.down.right") }
+                    .labelsHidden().frame(width: 125)
+                    .help("选择是否在生图完成后放大图片，原图始终保留。")
                     .disabled(store.busy || submitting || api.running || api.changing || studio.importing)
-                    .accessibilityIdentifier("upscaleMenu")
+                    .accessibilityLabel("生成后超分")
+                    .accessibilityIdentifier("generationUpscale")
+                }
                 Button(action: generate) { Label(store.busy ? "正在运行" : (model?.isVideo == true ? "生成视频" : "生成图像"), systemImage: "sparkles").padding(.horizontal, 8).padding(.vertical, 4) }
                     .buttonStyle(.borderedProminent).foregroundStyle(Color(red: 0.13, green: 0.09, blue: 0.04))
                     .keyboardShortcut(.return, modifiers: .command)
@@ -564,7 +562,7 @@ struct StudioView: View {
                 Divider()
                 UpscaleSettingsView(store: store, studio: studio,
                                     locked: store.busy || submitting || api.running || api.changing,
-                                   showAfterGeneration: true)
+                                    showsVariantPicker: false)
             }
             DisclosureGroup("高级参数") {
                 VStack(alignment: .leading, spacing: 12) {
@@ -958,47 +956,6 @@ struct StudioView: View {
             compareOriginal = false
         }
         catch { studio.message = error.localizedDescription }
-    }
-    private func chooseUpscaleModel() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false
-        panel.message = "选择本地 Real-ESRGAN x2plus / x4plus Core ML 模型（.mlpackage、.mlmodelc 或 .mlmodel）。保留原目录，不会下载或复制权重。"
-        presentUpscalePanel(panel) { url in
-            do { try ImageUpscaler.validateModelURL(url); studio.draft.upscaleModelPath = url.path; studio.save(); studio.message = nil }
-            catch { studio.message = error.localizedDescription }
-        }
-    }
-    private func presentUpscalePanel(_ panel: NSOpenPanel, selected: @escaping (URL) -> Void) {
-        // Leave menu tracking before presenting a sheet; avoid a nested modal loop.
-        Task { @MainActor in
-            let completion: (NSApplication.ModalResponse) -> Void = { response in
-                if response == .OK, let url = panel.url { selected(url) }
-            }
-            if let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }) {
-                panel.beginSheetModal(for: window, completionHandler: completion)
-            } else { panel.begin(completionHandler: completion) }
-        }
-    }
-    private func chooseUpscaleImage() {
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = false
-        panel.message = "选择要超分的图片；原图保留，结果另存为 PNG。"
-        presentUpscalePanel(panel) { url in upscaleImage(url) }
-    }
-    private func upscaleImage(_ source: URL) {
-        guard !store.busy, !submitting, !api.running, !api.changing else { return }
-        let modelURL = URL(fileURLWithPath: studio.draft.upscaleModelPath)
-        do { try ImageUpscaler.validateModelURL(modelURL) }
-        catch { studio.message = error.localizedDescription; return }
-        let compute = studio.draft.upscaleCompute
-        submitting = true; studio.message = nil
-        Task {
-            defer { submitting = false }
-            do {
-                let job = try await store.upscale(source: source, modelURL: modelURL, compute: compute)
-                if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
-                selected = job.id; compareOriginal = false; resultSelection.select(job.id, orderedIDs: outputIDs)
-            } catch { studio.message = error is CancellationError ? "超分已取消，原图已保留。" : error.localizedDescription }
-        }
     }
     private func generate() {
         guard !store.busy, !api.running, !api.changing, !submitting, !studio.importing else { return }

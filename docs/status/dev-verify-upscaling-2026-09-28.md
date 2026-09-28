@@ -69,7 +69,7 @@ The packaged test copy was exercised through its real controls with isolated dra
 
 ## Right sidebar refinement
 
-Creation now keeps its prompt and action controls on the left. Upscaling model, device, auto-after-generation and preload/release settings share one `UpscaleSettingsView` in the right sidebar, also used by the standalone upscaling page. Qwen prompt-enhancement configuration moved to the creation sidebar. Text-only generation hides irrelevant image-import controls; the toolbar toggles the standalone settings panel too.
+Creation now keeps its prompt and action controls on the left. Upscaling model, device and preload/release settings share one `UpscaleSettingsView` in the right sidebar, also used by the standalone upscaling page. Whether to upscale is selected beside Generate, as described below. Qwen prompt-enhancement configuration moved to the creation sidebar. Text-only generation hides irrelevant image-import controls; the toolbar toggles the standalone settings panel too.
 
 Interactive verification found and fixed two issues: the model-path disclosure group inherited its accessibility identifier into child controls, and two views could concurrently request automatic preload when post-generation upscaling was enabled. The path field now retains its own identifier; one root-level task owns automatic preload for both pages, independently of sidebar visibility.
 
@@ -86,3 +86,11 @@ On the unlocked M4 Pro, using local models and the packaged test copy:
 - After restarting the App, both model paths, x2plus/ANE choice, post-generation toggle and all four successful history records were restored; automatic preload reached ready again. The UI generation job took 20.90 s and its cached x2 follow-up took 0.29 s in this run.
 
 Evidence under `outputs/dev-verify-20260928`: `ui-x4-result.png`, `ui-x2-ane-result.txt`, `ui-generation-complete.png`, `ui-details-final.txt`, `ui-studio-minimum.png`, `ui-upscale-minimum.png`, and `ui-sidebar-review-state/jobs.json`. These are local ignored artifacts, not release assets. App build and package logs are `ui-acceptance-build.log` and `ui-acceptance-package.log`; the packaged executable UUID matches the tested build and strict signature validation passes.
+
+## Explicit output choice and local configuration
+
+The creation composer now provides one choice beside Generate: **不超分 / 超分 ×2 / 超分 ×4**. A new draft defaults to no upscaling. Selecting a scale restores its model path and shows final dimensions; opting out retains both installed paths. The right sidebar no longer duplicates the enable toggle or scale selector. Existing images can be sent to the separate page through **… → 单独超分此图…**; this fills the source and waits for the user to start. Selecting a different source displays its preview rather than an unrelated previous output.
+
+The actual local App's draft configuration was backed up and configured with the existing `models/upscalers/RealESRGAN_x2plus_522_fp16.mlpackage` and `RealESRGAN_x4plus_522_fp16.mlpackage` paths. Unrelated settings were preserved. The actual packaged App was opened, all three choices exercised, both models reached GPU preload-ready, and the final selection was restored to **不超分**. No new model download was needed.
+
+The upscaler regression suite passes, including 2×/4× choice, opt-out, per-model path retention and restart persistence. UI evidence: `ui-choice-x4.txt`, `ui-choice-off.txt`, `ui-result-prefill.txt`, `ui-choice-final.png`; build/test/package logs: `ui-choice-build.log`, `ui-choice-tests.log`, `ui-choice-package.log`.

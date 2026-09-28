@@ -6,14 +6,17 @@ struct ImageUpscaleView: View {
     @ObservedObject var store: NativeJobStore
     @ObservedObject var studio: StudioState
     var showSettings = true
+    @Binding var sourcePath: String
     var onResult: (NativeJob) -> Void
-    @State private var sourcePath = ""
     @State private var submitting = false
     @State private var resultID: UUID?
     private var locked: Bool { store.busy || submitting || store.externalServiceActive }
     private var result: NativeJob? {
-        store.jobs.first { $0.id == resultID && $0.hasOutput }
+        let candidate = store.jobs.first { $0.id == resultID && $0.hasOutput }
             ?? store.jobs.first { $0.request.operation == "image.upscale" && $0.hasOutput }
+        // A newly selected source must not be obscured by an unrelated past result.
+        guard sourcePath.isEmpty || candidate?.request.inputs?.first?.path == sourcePath else { return nil }
+        return candidate
     }
     var body: some View {
         HStack(spacing: 0) {
@@ -54,6 +57,7 @@ struct ImageUpscaleView: View {
                             }
                         }
                     } else if !sourcePath.isEmpty {
+                        Text("待超分原图").font(.headline)
                         MediaPreview(path: sourcePath, maxPixel: 1000).frame(height: 280)
                     } else {
                         ContentUnavailableView("选择要放大的图片", systemImage: "photo.badge.plus",
@@ -103,19 +107,22 @@ struct UpscaleSettingsView: View {
     @ObservedObject var store: NativeJobStore
     @ObservedObject var studio: StudioState
     var locked: Bool
-    var showAfterGeneration = false
+    var showsVariantPicker = true
     @State private var showDetails = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("图像超分").font(.headline)
+            Text("超分设置").font(.headline)
             VStack(alignment: .leading, spacing: 10) {
-                if showAfterGeneration {
-                    Toggle("生成后自动超分", isOn: $studio.draft.upscaleAfterGeneration)
-                        .accessibilityIdentifier("upscaleAfterGeneration")
+                if showsVariantPicker {
+                    Picker("超分模型", selection: Binding(get: { studio.draft.upscaleVariant }, set: { studio.selectUpscaleVariant($0) })) {
+                        ForEach(UpscaleVariant.allCases, id: \.self) { Text("\($0.rawValue) · \($0.scale)×").tag($0) }
+                    }.accessibilityIdentifier("upscaleVariant")
+                } else {
+                    Text("\(studio.draft.upscaleVariant.rawValue) · \(studio.draft.upscaleVariant.scale)× 模型")
+                        .font(.subheadline)
+                    Text("是否超分和放大倍率，在生成按钮旁选择。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                Picker("超分模型", selection: Binding(get: { studio.draft.upscaleVariant }, set: { studio.selectUpscaleVariant($0) })) {
-                    ForEach(UpscaleVariant.allCases, id: \.self) { Text("\($0.rawValue) · \($0.scale)×").tag($0) }
-                }.accessibilityIdentifier("upscaleVariant")
                 HStack {
                     Text(studio.draft.upscaleModelPath.isEmpty ? "尚未选择模型" : URL(fileURLWithPath: studio.draft.upscaleModelPath).lastPathComponent)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2).help(studio.draft.upscaleModelPath)

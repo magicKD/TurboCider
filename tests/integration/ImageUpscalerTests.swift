@@ -100,6 +100,15 @@ private struct NearestPredictor: UpscalePredictor {
         studio.draft = draft; studio.newDraft()
         try check(studio.draft.upscaleModelPath == missing.path && !studio.draft.upscaleAfterGeneration && studio.draft.upscaleCompute == .ane,
                   "New creation lost the installed upscale model or enabled processing implicitly")
+        studio.draft.upscaleModelPaths["x2plus"] = "/local/x2.mlpackage"
+        studio.selectGenerationUpscale(.x2plus)
+        try check(studio.generationUpscaleVariant == .x2plus && studio.draft.upscaleModelPath == "/local/x2.mlpackage", "2x choice did not select its model")
+        studio.selectGenerationUpscale(.x4plus)
+        try check(studio.generationUpscaleVariant == .x4plus && studio.draft.upscaleModelPath == missing.path, "4x choice lost its model")
+        studio.selectGenerationUpscale(nil)
+        let choices = StudioState(directory: root.appendingPathComponent("draft-store"))
+        try check(choices.generationUpscaleVariant == nil && choices.draft.upscaleModelPath == missing.path
+                  && choices.draft.upscaleModelPaths["x2plus"] == "/local/x2.mlpackage", "Opting out or restart discarded model paths or enabled upscaling")
         let legacy = try JSONDecoder().decode(StudioDraft.self, from: Data("{}".utf8))
         try check(!legacy.upscaleAfterGeneration && legacy.upscaleModelPath.isEmpty && legacy.upscaleCompute == .gpu, "Legacy draft enabled upscaling")
         print("PASS: synthetic 2x/4x RGB/tiling/alpha, input preservation, invalid tensors, cancellation, missing local weights and draft persistence")
