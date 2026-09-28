@@ -1451,7 +1451,7 @@ class ContractTests(unittest.TestCase):
                        'frames': 1, 'audio': False, 'execution': 'gpu'}
             code, configured, error = plan(request)
             self.assertEqual(code, 0, error)
-            self.assertEqual(configured['stages'][1]['iterations'], 9)
+            self.assertEqual(configured['stages'][1]['iterations'], 8 if model == 'z-image-turbo' else 9)
             for steps in [1, 8, 9, 20, 50]:
                 code, configured, error = plan({**request, 'steps': steps})
                 self.assertEqual(code, 0, error)

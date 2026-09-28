@@ -10,7 +10,7 @@ ModelModule z_image_module() {
         [] {
             return Recipe{"z-image-turbo",
                           {{"text_encode", {}},
-                           {"denoise", {"text_encode"}, 9},
+                           {"denoise", {"text_encode"}, 8},
                            {"vae_decode", {"denoise"}},
                            {"export", {"vae_decode"}}},
                           true};
@@ -24,7 +24,7 @@ ModelModule z_image_module() {
             require(r.width % 16 == 0 && r.height % 16 == 0,
                     "Z-Image dimensions must be multiples of 16");
             require(r.steps >= 1 && r.steps <= 50,
-                    "Z-Image-Turbo steps must be 1...50 (default 9)");
+                    "Z-Image-Turbo steps must be 1...50 (default 8)");
             require(r.model_variant == "auto" || r.model_variant == "z-image-turbo",
                     "model_variant does not match Z-Image-Turbo");
             if (r.execution == "gpu_ane") {
@@ -64,7 +64,7 @@ ModelModule z_image_module() {
             d.executor_operations = d.operations;
             d.inputs = {"text"};
             d.output = "image";
-            d.steps = 9;
+            d.steps = 8;
             d.frames = 1;
             d.width = 1024;
             d.height = 1024;

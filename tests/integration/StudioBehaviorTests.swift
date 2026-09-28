@@ -594,7 +594,7 @@ struct StudioBehaviorTests {
         studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane")
         let zImage = try studio.draft.request(output: root.appendingPathComponent("z-image.png"))
         try check(zImage.model == "z-image-turbo" && zImage.operation == "image.generate" &&
-                    zImage.width == 512 && zImage.height == 512 && zImage.steps == 9 &&
+                    zImage.width == 512 && zImage.height == 512 && zImage.steps == 8 &&
                     zImage.frames == 1 && zImage.audio == false && zImage.execution == "gpu" &&
                     zImage.loras?.first?.role == "transformer",
                   "Z-Image App defaults, GPU fail-closed policy or separate LoRA forwarding changed")

@@ -218,6 +218,12 @@ struct StudioDraft: Codable, Sendable {
     // Public add-on selector.  Legacy residency/budget fields below remain
     // Codable for old drafts and private/experimental routes.
     var streaming = StudioStreamingState()
+    var upscaleAfterGeneration = false
+    var upscaleModelPath = ""
+    var upscaleCompute = UpscaleCompute.gpu
+    var upscaleVariant = UpscaleVariant.x4plus
+    var upscaleModelPaths: [String: String] = [:]
+    var upscaleAutoPreload = true
     var promptEnhance = false
     var promptEnhanceEditExperimental = false
     var promptEnhancerPath = ""
@@ -234,7 +240,7 @@ struct StudioDraft: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
-        case assets, loras, initImageID, loraStrategy, modelLoRAs
+        case assets, loras, initImageID, loraStrategy, modelLoRAs, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -262,6 +268,12 @@ struct StudioDraft: Codable, Sendable {
         if let value = try c.decodeIfPresent(StudioStreamingState.self, forKey: .streaming) {
             streaming = value
         }
+        upscaleAfterGeneration = try c.decodeIfPresent(Bool.self, forKey: .upscaleAfterGeneration) ?? false
+        upscaleModelPath = try c.decodeIfPresent(String.self, forKey: .upscaleModelPath) ?? ""
+        upscaleCompute = try c.decodeIfPresent(UpscaleCompute.self, forKey: .upscaleCompute) ?? .gpu
+        upscaleVariant = try c.decodeIfPresent(UpscaleVariant.self, forKey: .upscaleVariant) ?? .x4plus
+        upscaleModelPaths = try c.decodeIfPresent([String: String].self, forKey: .upscaleModelPaths) ?? [:]
+        upscaleAutoPreload = try c.decodeIfPresent(Bool.self, forKey: .upscaleAutoPreload) ?? true
         promptEnhance = try c.decodeIfPresent(Bool.self, forKey: .promptEnhance) ?? promptEnhance
         promptEnhanceEditExperimental = try c.decodeIfPresent(Bool.self, forKey: .promptEnhanceEditExperimental) ?? false
         promptEnhancerPath = try c.decodeIfPresent(String.self, forKey: .promptEnhancerPath) ?? promptEnhancerPath
@@ -1277,6 +1289,14 @@ final class StudioState: ObservableObject {
     func reuse(_ job: NativeJob) {
         guard !importing else { message = "请等待素材导入完成。"; return }
         let request = job.request
+        if request.operation == "image.upscale" {
+            draft.upscaleModelPath = job.modelPath ?? ""
+            draft.upscaleCompute = UpscaleCompute(rawValue: request.execution) ?? .gpu
+            draft.upscaleVariant = request.model == "real-esrgan-x2plus" ? .x2plus : .x4plus
+            draft.upscaleModelPaths[draft.upscaleVariant.rawValue] = draft.upscaleModelPath
+            message = "已恢复超分模型；点击图片超分可重新选择原图。"
+            save(); return
+        }
         draft.modelID = request.model
         if let path = job.modelPath { draft.modelPaths[request.model] = path }
         draft.prompt = request.prompt; draft.width = request.width; draft.height = request.height
@@ -1297,5 +1317,25 @@ final class StudioState: ObservableObject {
         draft.loraStrategy = request.lora_strategy ?? "auto"
         draft.initImageID = draft.assets.first?.id; draft.strength = request.inputs?.first?.strength ?? 0.75
     }
-    func newDraft() { guard !importing else { message = "请等待素材导入完成。"; return }; let paths = draft.modelPaths; draft = StudioDraft(); draft.modelPaths = paths; undoAssets = []; lastSeed = nil }
+    func selectUpscaleVariant(_ variant: UpscaleVariant) {
+        draft.upscaleModelPaths[draft.upscaleVariant.rawValue] = draft.upscaleModelPath
+        draft.upscaleVariant = variant
+        draft.upscaleModelPath = draft.upscaleModelPaths[variant.rawValue] ?? ""
+        save()
+    }
+    func rememberUpscaleModel(_ info: UpscaleModelInfo) {
+        guard draft.upscaleModelPath == info.path, draft.upscaleCompute == info.compute else { return }
+        let variant: UpscaleVariant = info.scale == 2 ? .x2plus : .x4plus
+        draft.upscaleVariant = variant; draft.upscaleModelPaths[variant.rawValue] = info.path
+        save()
+    }
+    func newDraft() {
+        guard !importing else { message = "请等待素材导入完成。"; return }
+        let paths = draft.modelPaths, upscaleModelPath = draft.upscaleModelPath
+        let upscaleCompute = draft.upscaleCompute, upscaleVariant = draft.upscaleVariant
+        let upscaleModelPaths = draft.upscaleModelPaths, upscaleAutoPreload = draft.upscaleAutoPreload
+        draft = StudioDraft(); draft.modelPaths = paths; draft.upscaleModelPath = upscaleModelPath; draft.upscaleCompute = upscaleCompute
+        draft.upscaleVariant = upscaleVariant; draft.upscaleModelPaths = upscaleModelPaths; draft.upscaleAutoPreload = upscaleAutoPreload
+        undoAssets = []; lastSeed = nil
+    }
 }

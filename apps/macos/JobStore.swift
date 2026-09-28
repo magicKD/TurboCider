@@ -23,6 +23,10 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var publicWorker: PublicImageWorker.Reference? = nil
     var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
     var routeSummary: String? {
+        if request.operation == "image.upscale" {
+            let scale = request.model == "real-esrgan-x2plus" ? 2 : 4
+            return request.execution == "ane" ? "Core ML · \(scale)× 图像超分 · CPU/ANE（ANE 驻留未知）" : "Core ML · \(scale)× 图像超分 · CPU/GPU"
+        }
         guard let resultJSON, let data = resultJSON.data(using: .utf8),
               let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let plan = result["plan"] as? [String: Any], let execution = plan["execution"] as? String else { return nil }
@@ -74,6 +78,10 @@ struct StepTelemetry {
 
 @MainActor
 final class NativeJobStore: ObservableObject {
+    @Published private(set) var upscaleReady: UpscaleModelInfo?
+    @Published private(set) var upscaleStatus = "超分模型未加载"
+    private let upscaleSession = UpscaleSession()
+    private var upscalePrepareTask: Task<UpscaleModelInfo, Error>?
     @Published private(set) var jobs: [NativeJob] = []
     @Published private(set) var busy = false
     @Published private(set) var workerCleanupPending = false
@@ -95,6 +103,7 @@ final class NativeJobStore: ObservableObject {
     private var activeID: UUID?
     private var preparationID: UUID?
     private var cancelRequested = false
+    private var upscaleTask: Task<Data, Error>?
     private var tensorCacheTask: Task<Data, Error>?
     private var ltxTask: Task<Data, Error>?
     private var publicWorkerTask: Task<NativeProcessRunner.Result, Error>?
@@ -107,7 +116,7 @@ final class NativeJobStore: ObservableObject {
     private var denoiseStart: Int?
     private var lastDetailUpdate = 0.0
     var activeJob: NativeJob? { jobs.first { $0.id == activeID } }
-    var canUnload: Bool { engine != nil && !busy && !requiresProcessRestart }
+    var canUnload: Bool { (engine != nil || upscaleReady != nil) && !busy && !requiresProcessRestart }
     var deletableJobIDs: Set<UUID> { Set(jobs.filter { $0.isTerminal && $0.id != activeID }.map(\.id)) }
 
     init(directory: URL, workerExecutable: URL? = nil) {
@@ -334,6 +343,8 @@ final class NativeJobStore: ObservableObject {
     func cancel() {
         guard busy, !workerCleanupPending else { return }
         cancelRequested = true
+        upscalePrepareTask?.cancel()
+        upscaleTask?.cancel()
         tensorCacheTask?.cancel()
         ltxTask?.cancel()
         publicWorkerTask?.cancel()
@@ -424,12 +435,15 @@ final class NativeJobStore: ObservableObject {
     }
     func unload() async throws {
         guard !busy else { throw NativeFailure(message: "正在使用模型，暂时无法释放内存。") }
-        guard let engine else { return }
+        guard engine != nil || upscaleReady != nil else { return }
         busy = true; sessionState = "正在释放内存…"
         defer { busy = false }
         do {
-            let data = try await engine.unload()
-            resourceReport = String(decoding: data, as: UTF8.self)
+            if let engine {
+                let data = try await engine.unload()
+                resourceReport = String(decoding: data, as: UTF8.self)
+            }
+            await upscaleSession.release(); upscaleReady = nil; upscaleStatus = "超分模型已释放"
             self.engine = nil; loadedPath = nil; loadedModelID = nil; sessionState = "未加载"
             sessionReport = nil
         } catch { sessionState = "释放失败 · 会话保留"; throw error }
@@ -515,6 +529,104 @@ final class NativeJobStore: ObservableObject {
             else { sessionState = action == "compile_manifest" ? "加速分区预编译完成" : "缓存检查完成" }
             return data
         } catch { if !recordProcessQuarantine(error) { sessionState = "缓存操作未完成 · 可重试" }; throw error }
+    }
+    private func prepareUpscaleModel(_ modelURL: URL, compute: UpscaleCompute, warmup: Bool = true) async throws -> UpscaleModelInfo {
+        upscaleStatus = warmup ? "正在预加载并预热超分模型…" : "正在加载超分模型…"
+        let task = Task { try await upscaleSession.prepare(model: modelURL, compute: compute, warmup: warmup) }
+        upscalePrepareTask = task
+        defer { upscalePrepareTask = nil }
+        do {
+            let info = try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
+            if cancelRequested { throw CancellationError() }
+            upscaleReady = info; upscaleStatus = "已预加载 · \(info.scale)× · \(compute.title)"
+            return info
+        } catch {
+            await upscaleSession.release(); upscaleReady = nil; upscaleStatus = "超分模型未加载：\(error.localizedDescription)"
+            throw error
+        }
+    }
+    func preloadUpscaler(modelURL: URL, compute: UpscaleCompute) async throws {
+        guard !busy, !externalServiceActive, !resolvingAcceleration, !requiresProcessRestart else {
+            throw NativeFailure(message: "请等待当前任务或本地 API 停止后预加载。")
+        }
+        busy = true; cancelRequested = false; sessionState = "正在预加载超分模型…"
+        defer { busy = false; sessionState = engine == nil ? "未加载生成模型" : "会话可复用" }
+        _ = try await prepareUpscaleModel(modelURL, compute: compute)
+    }
+    func releaseUpscaler() async {
+        guard !busy else { return }
+        busy = true
+        await upscaleSession.release(); upscaleReady = nil; upscaleStatus = "超分模型已释放"
+        busy = false
+    }
+    func upscale(source: URL, modelURL: URL, compute: UpscaleCompute = .gpu) async throws -> NativeJob {
+        guard !busy, !externalServiceActive, !resolvingAcceleration, !requiresProcessRestart else {
+            throw NativeFailure(message: "请等待当前任务或本地 API 停止，再进行超分。")
+        }
+        guard storageError == nil else { throw NativeFailure(message: storageError!) }
+        try ImageUpscaler.validateModelURL(modelURL)
+        _ = try ImageUpscaler.dimensions(source, scale: 2)
+        busy = true; cancelRequested = false
+        defer { busy = false; activeID = nil; upscaleTask = nil }
+        if let engine { _ = try await engine.unload(); self.engine = nil; loadedPath = nil; loadedModelID = nil }
+        let modelInfo = try await prepareUpscaleModel(modelURL, compute: compute, warmup: false)
+        let scale = modelInfo.scale
+        let size = try ImageUpscaler.dimensions(source, scale: scale)
+        let output = directory.appendingPathComponent("outputs/\(UUID()).png")
+        var request = NativeRequest(prompt: "图像超分 ×\(scale)", output: output.path)
+        request.model = scale == 2 ? "real-esrgan-x2plus" : "real-esrgan-x4plus"; request.operation = "image.upscale"
+        request.width = size.width * scale; request.height = size.height * scale
+        request.steps = 1; request.seed = 0; request.execution = compute.rawValue
+        request.inputs = [NativeInput(kind: "image", role: "source", path: source.path)]
+        let transaction = try ImageOutputTransaction(request: request)
+        let id = UUID(), start = ContinuousClock.now
+        activeID = id; actualRoute = compute == .gpu ? "Core ML · CPU/GPU · \(scale)× 超分" : "Core ML · CPU/ANE · \(scale)× 超分（ANE 驻留未知）"
+        jobs.insert(NativeJob(id: id, createdAt: Date(), request: request, state: "preparing",
+                             phase: "upscale", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path), at: 0)
+        do {
+            try persist()
+            if cancelRequested { throw CancellationError() }
+            let frozenRequest = request
+            let task = Task.detached { [self] () throws -> Data in
+                try await upscaleSession.render(source: source, destination: transaction.stagedURL, expected: modelInfo) { completed, total in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.activeID == id, !self.cancelRequested,
+                              let i = self.jobs.firstIndex(where: { $0.id == id }), !self.jobs[i].isTerminal else { return }
+                        self.jobs[i].state = "running"; self.jobs[i].completed = completed; self.jobs[i].total = total
+                        self.jobs[i].elapsed = Self.seconds(start.duration(to: .now))
+                    }
+                }
+                let result = try JSONSerialization.data(withJSONObject: [
+                    "schema_version": 1, "model": frozenRequest.model, "operation": "image.upscale",
+                    "output": transaction.stagedURL.path, "width": frozenRequest.width, "height": frozenRequest.height,
+                    "steps": 1, "seed": 0, "warmup": false, "scale": scale, "model_cache_hit": modelInfo.cacheHit,
+                    "source": source.path, "coreml_model": modelURL.path, "compute_units": compute == .gpu ? "cpu_and_gpu" : "cpu_and_neural_engine"
+                ])
+                return try transaction.prepare(result)
+            }
+            upscaleTask = task
+            let result = try await task.value
+            if cancelRequested { throw CancellationError() }
+            guard let i = jobs.firstIndex(where: { $0.id == id }) else { throw NativeFailure(message: "Missing upscale job") }
+            jobs[i].state = "finalizing"; jobs[i].resultJSON = String(decoding: result, as: UTF8.self)
+            try persist()
+            transaction.retainForRecovery(); try transaction.publish()
+            jobs[i].state = "succeeded"; jobs[i].phase = "complete"
+            jobs[i].completed = jobs[i].total; jobs[i].elapsed = Self.seconds(start.duration(to: .now))
+            sessionState = "超分完成 · 原图已保留"
+            try persist()
+            return jobs[i]
+        } catch {
+            if let i = jobs.firstIndex(where: { $0.id == id }) {
+                jobs[i].state = transaction.published ? "finalizing" : error is CancellationError ? "cancelled" : "failed"
+                jobs[i].error = error.localizedDescription
+                jobs[i].elapsed = Self.seconds(start.duration(to: .now))
+                if !transaction.published { transaction.discardRecovery() }
+                do { try persist() } catch { storageError = error.localizedDescription }
+            }
+            sessionState = "超分未完成 · 原图已保留"
+            throw error
+        }
     }
     func generate(modelURL: URL, request: NativeRequest,
                   streamingRequest: NativeRequestV2? = nil) async throws -> NativeJob {

@@ -17,6 +17,10 @@ Qwen-Image-2.1 native App/CLI support and validation boundaries:
 
 ![TurboCider macOS App](assets/app/app.png)
 
+Studio also supports [2× / 4× image upscaling](docs/public/IMAGE_UPSCALING.md) with a local Real-ESRGAN x2plus / x4plus Core ML model: upscale an existing image or automatically upscale after generation, keeping the original. The App runs this path entirely in Swift/Core ML, without Python. Z-Image Turbo defaults to 8 steps.
+
+
+
 ## What makes it different
 
 - **Hardware-aware parallelism:** Metal / MLX on the GPU and Core ML FFN partitions eligible for the Neural Engine, coordinated by the CPU.

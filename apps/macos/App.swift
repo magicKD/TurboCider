@@ -54,13 +54,13 @@ struct TurboCiderNativeApp: App {
     }
 }
 private enum StudioPage: String, CaseIterable, Identifiable {
-    case studio = "创作", library = "素材库", tasks = "任务", models = "模型", api = "本地 API"
+    case studio = "创作", upscale = "图像超分", library = "素材库", tasks = "任务", models = "模型", api = "本地 API"
     var id: String { rawValue }
-    var symbol: String { switch self { case .studio: return "sparkles"; case .library: return "photo.on.rectangle"; case .tasks: return "clock"; case .models: return "cpu"; case .api: return "network" } }
+    var symbol: String { switch self { case .studio: return "sparkles"; case .upscale: return "arrow.up.left.and.arrow.down.right"; case .library: return "photo.on.rectangle"; case .tasks: return "clock"; case .models: return "cpu"; case .api: return "network" } }
 }
 private let ciderAccent = Color(red: 0.02, green: 0.70, blue: 0.64)
 private func operationName(_ value: String) -> String {
-    ["image.generate": "文生图", "image.transform": "单图修改", "image.edit": "参考编辑",
+    ["image.upscale": "图片超分", "image.generate": "文生图", "image.transform": "单图修改", "image.edit": "参考编辑",
      "video.generate": "文生视频", "video.image": "图生视频", "video.keyframes": "关键帧视频",
      "video.reference": "参考视频"][value] ?? value
 }
@@ -69,6 +69,7 @@ private func stateName(_ value: String) -> String {
 }
 private func phaseName(_ value: String) -> String {
     if value == "pack_z_image_suffix" { return "整理 GPU 权重" }
+    if value == "upscale" { return "图像超分" }
     if value == "denoise" { return "采样" }
     if value.contains("text_cache_hit") { return "复用文本编码" }
     if value.contains("vae") || value.contains("decode") { return "图像编解码" }
@@ -152,6 +153,9 @@ struct StudioView: View {
             Group {
                 switch page ?? .studio {
                 case .studio: workspace
+                case .upscale: ImageUpscaleView(store: store, studio: studio) { job in
+                    selected = job.id; compareOriginal = false; resultSelection.select(job.id, orderedIDs: outputIDs)
+                }
                 case .models: modelsPage
                 case .tasks: tasksPage
                 case .library: libraryPage
@@ -172,6 +176,16 @@ struct StudioView: View {
         .onChange(of: library.installationGeneration) { _, _ in studio.invalidateStreamingInstallation() }
         .sheet(item: $annotationAsset) { asset in Qwen21AnnotationEditor(asset: asset, studio: studio) }
         .task { library.refresh(studio: studio, migrate: true) }
+        .task(id: "\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleAfterGeneration):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)") {
+            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+            guard studio.draft.upscaleAutoPreload, studio.draft.upscaleAfterGeneration,
+                  (try? ImageUpscaler.validateModelURL(URL(fileURLWithPath: studio.draft.upscaleModelPath))) != nil,
+                  !studio.draft.upscaleModelPath.isEmpty, !store.busy, !api.running, !api.changing else { return }
+            do {
+                try await store.preloadUpscaler(modelURL: URL(fileURLWithPath: studio.draft.upscaleModelPath), compute: studio.draft.upscaleCompute)
+                if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
+            } catch { if !(error is CancellationError) { studio.message = error.localizedDescription } }
+        }
         .task(id: studio.streamingQueryKey) {
             await studio.refreshStreamingOptions()
         }
@@ -225,7 +239,7 @@ struct StudioView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityIdentifier("generatedImage")
                 if let route = job.routeSummary { Text("实际路径：\(route)").font(.caption2).foregroundStyle(.secondary) }
                 HStack(spacing: 12) {
-                    Text("\(job.request.width) × \(job.request.height) · 种子 \(job.request.seed)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    Text(job.request.operation == "image.upscale" ? "\(job.request.width) × \(job.request.height) · 超分结果" : "\(job.request.width) × \(job.request.height) · 种子 \(job.request.seed)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
                     Spacer()
                     if URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" { Button("编辑此图") { Task {
                         let previous = Set(studio.draft.assets.map(\.id))
@@ -234,6 +248,11 @@ struct StudioView: View {
                             studio.changeOperation("image.transform"); studio.draft.initImageID = added.id
                         }
                     } }.disabled(studio.importing) }
+                    if URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" {
+                        Button("超分 ×\(studio.draft.upscaleVariant.scale)") { upscaleImage(URL(fileURLWithPath: job.request.output)) }
+                            .disabled(store.busy || submitting || api.running || api.changing)
+                            .accessibilityIdentifier("upscaleResult")
+                    }
                     Menu {
                         Button("另存为…") { exportResult(job.request.output) }
                         Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: job.request.output)]) }
@@ -324,12 +343,45 @@ struct StudioView: View {
                 }
             }
             PromptCapacityView(studio: studio, busy: store.busy || submitting)
+            if model?.isVideo != true {
+                HStack {
+                    Toggle("生成后自动超分（保留原图）", isOn: $studio.draft.upscaleAfterGeneration)
+                        .accessibilityIdentifier("upscaleAfterGeneration")
+                    Button("超分模型…", action: chooseUpscaleModel).accessibilityIdentifier("chooseUpscaleModel")
+                }.disabled(store.busy || submitting)
+                Picker("超分设备", selection: $studio.draft.upscaleCompute) {
+                    ForEach(UpscaleCompute.allCases, id: \.self) { Text($0.title).tag($0) }
+                }.disabled(store.busy || submitting).accessibilityIdentifier("upscaleCompute")
+                if studio.draft.upscaleCompute == .ane {
+                    Text("仅允许 Core ML 使用 CPU/ANE；不支持的算子可能回退 CPU。首次加载和运行速度取决于设备。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                if studio.draft.upscaleAfterGeneration {
+                    Text(studio.draft.upscaleModelPath.isEmpty ? "请在「图片超分」中选择本地 x2plus / x4plus Core ML 模型；不会自动下载。"
+                         : "超分模型：\(URL(fileURLWithPath: studio.draft.upscaleModelPath).lastPathComponent)")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(inputSummary).font(.caption)
                     Text(studio.draft.randomSeed ? "每次随机 · 本次 \(studio.lastSeed.map(String.init) ?? "待确定")" : "固定种子 \(studio.draft.seedText)").font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Menu {
+                    Button("打开图像超分页") { page = .upscale }
+                    Button("选择本地超分模型…", action: chooseUpscaleModel)
+                    Button("选择图片并超分…", action: chooseUpscaleImage)
+                    if let job = selectedJob, URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" {
+                        Button("当前结果超分 ×\(studio.draft.upscaleVariant.scale)") { upscaleImage(URL(fileURLWithPath: job.request.output)) }
+                    }
+                    if !studio.draft.upscaleModelPath.isEmpty {
+                        Text(URL(fileURLWithPath: studio.draft.upscaleModelPath).lastPathComponent)
+                    }
+                } label: { Label("图片超分", systemImage: "arrow.up.left.and.arrow.down.right") }
+                    .disabled(store.busy || submitting || api.running || api.changing || studio.importing)
+                    .accessibilityIdentifier("upscaleMenu")
                 Button(action: generate) { Label(store.busy ? "正在运行" : (model?.isVideo == true ? "生成视频" : "生成图像"), systemImage: "sparkles").padding(.horizontal, 8).padding(.vertical, 4) }
                     .buttonStyle(.borderedProminent).foregroundStyle(Color(red: 0.13, green: 0.09, blue: 0.04))
                     .keyboardShortcut(.return, modifiers: .command)
@@ -406,7 +458,7 @@ struct StudioView: View {
                         .textFieldStyle(.roundedBorder).accessibilityIdentifier("steps")
                     Button("重置") { studio.draft.steps = model?.default_steps ?? 4 }
                 }
-                Text(studio.draft.modelID.hasPrefix("z-image-turbo") ? "1–50 步，默认 9 步。其他步数的画质与加速收益需自行验证。" : "1–50 步，默认 \(model?.default_steps ?? 4) 步。")
+                Text(studio.draft.modelID.hasPrefix("z-image-turbo") ? "1–50 步，默认 \(model?.default_steps ?? 8) 步。其他步数的画质与加速收益需自行验证。" : "1–50 步，默认 \(model?.default_steps ?? 4) 步。")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Text("输出尺寸").font(.subheadline)
@@ -907,10 +959,55 @@ struct StudioView: View {
         }
         catch { studio.message = error.localizedDescription }
     }
+    private func chooseUpscaleModel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false
+        panel.message = "选择本地 Real-ESRGAN x2plus / x4plus Core ML 模型（.mlpackage、.mlmodelc 或 .mlmodel）。保留原目录，不会下载或复制权重。"
+        presentUpscalePanel(panel) { url in
+            do { try ImageUpscaler.validateModelURL(url); studio.draft.upscaleModelPath = url.path; studio.save(); studio.message = nil }
+            catch { studio.message = error.localizedDescription }
+        }
+    }
+    private func presentUpscalePanel(_ panel: NSOpenPanel, selected: @escaping (URL) -> Void) {
+        // Leave menu tracking before presenting a sheet; avoid a nested modal loop.
+        Task { @MainActor in
+            let completion: (NSApplication.ModalResponse) -> Void = { response in
+                if response == .OK, let url = panel.url { selected(url) }
+            }
+            if let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }) {
+                panel.beginSheetModal(for: window, completionHandler: completion)
+            } else { panel.begin(completionHandler: completion) }
+        }
+    }
+    private func chooseUpscaleImage() {
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = false
+        panel.message = "选择要超分的图片；原图保留，结果另存为 PNG。"
+        presentUpscalePanel(panel) { url in upscaleImage(url) }
+    }
+    private func upscaleImage(_ source: URL) {
+        guard !store.busy, !submitting, !api.running, !api.changing else { return }
+        let modelURL = URL(fileURLWithPath: studio.draft.upscaleModelPath)
+        do { try ImageUpscaler.validateModelURL(modelURL) }
+        catch { studio.message = error.localizedDescription; return }
+        let compute = studio.draft.upscaleCompute
+        submitting = true; studio.message = nil
+        Task {
+            defer { submitting = false }
+            do {
+                let job = try await store.upscale(source: source, modelURL: modelURL, compute: compute)
+                if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
+                selected = job.id; compareOriginal = false; resultSelection.select(job.id, orderedIDs: outputIDs)
+            } catch { studio.message = error is CancellationError ? "超分已取消，原图已保留。" : error.localizedDescription }
+        }
+    }
     private func generate() {
         guard !store.busy, !api.running, !api.changing, !submitting, !studio.importing else { return }
         if let conflict = studio.draft.zImageStreamingConflict() { studio.message = conflict; return }
         let snapshot = studio.draft
+        if snapshot.upscaleAfterGeneration && model?.isVideo != true {
+            do { try ImageUpscaler.validateModelURL(URL(fileURLWithPath: snapshot.upscaleModelPath)) }
+            catch { studio.message = error.localizedDescription; return }
+        }
         let ext = model?.isVideo == true ? "mp4" : "png"
         let output = store.directory.appendingPathComponent("outputs/\(UUID().uuidString).\(ext)")
         submitting = true; studio.message = nil
@@ -929,6 +1026,11 @@ struct StudioView: View {
                     streamingRequest: pair.v2)
                 selected = job.id; compareOriginal = false
                 resultSelection.select(job.id, orderedIDs: outputIDs)
+                if snapshot.upscaleAfterGeneration && ext == "png" {
+                    let upscaled = try await store.upscale(source: output, modelURL: URL(fileURLWithPath: snapshot.upscaleModelPath), compute: snapshot.upscaleCompute)
+                    if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
+                    selected = upscaled.id; resultSelection.select(upscaled.id, orderedIDs: outputIDs)
+                }
             } catch { studio.message = error is CancellationError ? "生成已取消，草稿与原图已保留。" : error.localizedDescription }
         }
     }

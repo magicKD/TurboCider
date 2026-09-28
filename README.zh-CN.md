@@ -14,6 +14,8 @@ TurboCider 是面向 Apple Silicon Mac 的本地多模态推理引擎。它把�
 
 ![TurboCider macOS 应用预览](assets/app/app.png)
 
+Studio 支持 [2× / 4× 图像超分](docs/public/IMAGE_UPSCALING.md)：选择本地 Real-ESRGAN x2plus / x4plus Core ML 模型，可单独超分图片，也可在生成后自动超分并保留原图。运行时完全使用 Swift/Core ML，不依赖 Python。Z-Image Turbo 默认 8 步。
+
 ## 为什么选择 TurboCider
 
 - **硬件级异构并行。** Metal / MLX 执行 GPU 计算，Core ML 承接适合 ANE 的 FFN 分区；CPU 负责调度、准备和同步。已验证的分区路径使用共享输出缓冲，避免额外的输出复制。
