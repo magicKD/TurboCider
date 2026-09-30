@@ -71,7 +71,7 @@ class GGUFExecutionTests(unittest.TestCase):
         cls.path = Path(cls.temp.name)
         compiler = ["xcrun", "clang++", "-std=c++20", "-O2", "-ffp-contract=off", "-Wall", "-Wextra", "-Werror",
                     "-I", str(ROOT / "native/core")]
-        sources = [str(ROOT / "tests/native/gguf_core_probe.cpp"), str(ROOT / "native/core/gguf_decode.cpp")]
+        sources = [str(ROOT / "tests/native/gguf_core_probe.cpp"), str(ROOT / "native/core/gguf_decode.cpp"), str(ROOT / "native/core/gguf_affine.cpp")]
         cls.probe = cls.path / "probe"
         subprocess.run([*compiler, *sources, "-o", str(cls.probe)], check=True)
         library = cls.path / "decode.dylib"
@@ -82,6 +82,7 @@ class GGUFExecutionTests(unittest.TestCase):
         cls.library.tc_gguf_test_half.restype = C.c_float
         cls.library.tc_gguf_test_round.argtypes = [C.c_uint32, C.c_float, C.POINTER(C.c_uint16)]
         cls.library.tc_gguf_test_decode.argtypes = [C.c_uint32, C.c_void_p] + [C.c_uint64]*7 + [C.c_uint32, C.c_void_p] + [C.c_uint64]*3 + [C.POINTER(C.c_uint64), C.c_uint64, C.c_int, C.POINTER(C.c_uint64)]
+        cls.library.tc_gguf_test_affine.argtypes=[C.c_uint32,C.c_void_p,C.c_uint64,C.c_uint64,C.c_uint64,C.c_uint32,C.c_void_p,C.c_uint64]
 
     @classmethod
     def tearDownClass(cls): cls.temp.cleanup()
@@ -204,6 +205,45 @@ class GGUFExecutionTests(unittest.TestCase):
         dense = self.values(self.decode(raw, 8, 2, 128, dtype=2), 2, 128, 2)
         strided = self.values(self.decode(raw, 8, 2, 128, dtype=2, column_stride=4), 2, 128, 2)
         self.assertEqual(dense, strided)
+        rng=random.Random(81)
+        for trial in range(32):
+            raw=b"".join(block(8,rng) for _ in range(8))
+            for dtype in (0,1,2):
+                vector=self.values(self.decode(raw,8,2,128,dtype=dtype),2,128,dtype)
+                scalar=self.values(self.decode(raw,8,2,128,dtype=dtype,column_stride=8),2,128,dtype)
+                self.assertEqual(vector,scalar,(trial,dtype))
+        overflowing=struct.pack("<e",512.)+bytes([128]*32)
+        self.assertNotEqual(self.decode(overflowing,8,1,32,dtype=1)[0],0)
+
+    def test_native_affine_codes_scales_biases_source_values(self):
+        rng=random.Random(818)
+        for typ in (2,3,8):
+            bits=8 if typ==8 else 4
+            raw=b"".join(block(typ,rng) for _ in range(8))
+            source=C.create_string_buffer(raw,len(raw))
+            parts=[]
+            for part,size in [(0,2*128*bits//8),(1,2*128//32*2),(2,2*128//32*2)]:
+                out=(C.c_ubyte*(size+16))(*([0xA5]*(size+16)))
+                status=self.library.tc_gguf_test_affine(typ,source,len(raw),2,128,part,out,size)
+                self.assertEqual(status,0,self.library.tc_gguf_test_error())
+                self.assertEqual(bytes(out)[size:],bytes([0xA5]*16));parts.append(bytes(out)[:size])
+            scales=struct.unpack('<8e',parts[1]);biases=struct.unpack('<8e',parts[2])
+            words=struct.unpack('<'+'I'*(len(parts[0])//4),parts[0])
+            values=[]
+            for i in range(256):
+                code=(words[i//(32//bits)]>>((i%(32//bits))*bits))&((1<<bits)-1)
+                values.append(code*scales[i//32]+biases[i//32])
+            reconstructed=b''.join(struct.pack('<f',value) for value in values)
+            golden=self.values(self.decode(raw,typ,2,128),2,128)
+            # GGML's signed-code product and MLX's unsigned affine expression
+            # can give opposite signed zero; the frozen D0 contract permits
+            # zero canonicalization, not tolerance on any nonzero value.
+            def canonical_zero(raw):
+                return b''.join(struct.pack('<I',0 if bits&0x7fffffff==0 else bits)
+                               for bits in struct.unpack('<256I',raw))
+            self.assertEqual(canonical_zero(reconstructed),canonical_zero(golden))
+            out=(C.c_ubyte*16)()
+            self.assertNotEqual(self.library.tc_gguf_test_affine(typ,source,len(raw),2,128,99,out,16),0)
 
     def test_slice_gather_duplicate_order_and_guard_bytes(self):
         raw = b"".join(struct.pack("<f", float(x)) for x in range(60))

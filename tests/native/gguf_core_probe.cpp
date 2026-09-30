@@ -1,5 +1,6 @@
 #include "gguf.hpp"
 #include "gguf_decode.hpp"
+#include "gguf_affine.hpp"
 #include <iostream>
 #include <span>
 #include <string>
@@ -54,6 +55,14 @@ extern "C" int tc_gguf_test_round(uint32_t dtype, float value, uint16_t *result)
     } catch (const std::exception &error) { last_error = error.what(); return 1; }
 }
 extern "C" float tc_gguf_test_half(uint16_t value) { return tc::gguf::fp16_to_float(value); }
+extern "C" int tc_gguf_test_affine(uint32_t type,const void *source,uint64_t bytes,uint64_t rows,uint64_t columns,
+        uint32_t part,void *target,uint64_t capacity) {
+    try {
+        tc::gguf::pack_native_affine({{static_cast<const std::byte *>(source),size_t(bytes)},type,rows,columns},
+            tc::gguf::AffinePart(part),{static_cast<std::byte *>(target),size_t(capacity)});
+        last_error.clear();return 0;
+    } catch(const std::exception &error) { last_error=error.what();return 1; }
+}
 
 int main(int argc, char **argv) {
     try {

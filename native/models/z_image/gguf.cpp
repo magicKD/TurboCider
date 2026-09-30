@@ -14,7 +14,7 @@ class NativeGGUF final : public ModelSession {
     fs::path selected_;
     std::unique_ptr<ZImage> session_;
 
-    ZImage &select(const std::string &variant) {
+    ZImage &select(const std::string &variant, bool bounded = false) {
         std::vector<fs::path> matches;
         auto lower = [](std::string s) {
             std::transform(s.begin(), s.end(), s.begin(),
@@ -32,13 +32,16 @@ class NativeGGUF final : public ModelSession {
         if (!session_ || selected_ != matches.front()) {
             unload();
             selected_ = matches.front();
-            validate_native_gguf(selected_);
+            if (!bounded) validate_native_gguf(selected_);
             session_ = std::make_unique<ZImage>(root_, "z-image-turbo-gguf", selected_);
         }
         return *session_;
     }
 
   public:
+    bool streaming_quarantined() const noexcept override {
+        return session_ && session_->streaming_quarantined();
+    }
     explicit NativeGGUF(const fs::path &path) {
         // Resolve components relative to the user's selected location, even
         // when the checkpoint itself is a symlink to a shared weight store.
@@ -70,11 +73,11 @@ class NativeGGUF final : public ModelSession {
     }
     RunResult prepare(const Request &r, bool warmup, const Event &event,
                       std::atomic<bool> &cancelled) override {
-        return select(r.model_variant).prepare(r, warmup, event, cancelled);
+        return select(r.model_variant, r.quantized_execution.active()).prepare(r, warmup, event, cancelled);
     }
     RunResult generate(const Request &r, const Event &event,
                        std::atomic<bool> &cancelled) override {
-        return select(r.model_variant).generate(r, event, cancelled);
+        return select(r.model_variant, r.quantized_execution.active()).generate(r, event, cancelled);
     }
 };
 } // namespace

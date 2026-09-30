@@ -39,6 +39,7 @@
 | [10 执行与产品接入](10-execution-and-product-integration.md) | 配置冲突、同步/异步 decode、slot/lazy graph、分片恢复、P4 产品接入 |
 | [11 固定验收与可行性](11-acceptance-profiles-and-feasibility.md) | 数值/媒体/内存/性能硬判定、runner 合同、INT8 证据与退出规则 |
 | [12 实施进度](12-implementation-progress.md) | 已实现的安全目录/CPU Q4–Q8 decoder、真实 Z 权重验证、SIMD 原始回执与剩余工作 |
+| [13 有界 GPU 实验实现](13-gguf-bounded-runtime-progress.md) | SourceLease/ledger/slots接入真实Z生成、MLX浮点加载差异、兼容profiles与通过/失败记录 |
 
 ## 当前状态速查
 
@@ -47,7 +48,7 @@
 | 原生 MLX Q4_0/Q4_1/Q8_0 及浮点 GGUF | 已有，仍不是全部 Q4–Q8 |
 | CPU Q4/Q5/Q6/K/Q8 有界目标解码 | 已实现，含 Q8 ARM SIMD；见12；不自动授予整图/后端资格 |
 | IQ 解码和 encoder GGUF | 设计/待实施，不放宽现有拒绝门禁 |
-| 通用 1–2 层 GGUF 解码 pager | 设计；复用现有 streaming 协议，不冒充已有 BF16 pager 支持转换 |
+| GGUF 0/1层前瞻 GPU 执行 | 实验已接入Z；p=2、streamed source/tiles与完整内存资格未完成，见13 |
 | Z ConvRot gate/up 共用旋转 | 本轮新增显式实验路径；证据见 08 |
 | Z 默认启用 butterfly / ConvRot W8A8 | 未启用；现有 butterfly 不是 INT8 GEMM |
 | M5 GPU ConvRot W8A8 | 设计/未实机验证；本轮无 M5，不发布默认配置 |

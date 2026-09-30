@@ -202,6 +202,13 @@ struct PublicStreamingSelectionMetrics {
     std::string receipt_digest, receipt_verifier_revision;
     bool actual_plan_verified = false;
 };
+struct QuantizedExecutionMetrics {
+    std::string source_sha256, layout_digest;
+    uint64_t packed_bytes = 0, packed_capacity_bytes = 0, source_float_bytes = 0;
+    uint64_t dense_capacity_bytes = 0, managed_peak_bytes = 0, fills = 0, decoded_bytes = 0;
+    double source_load_seconds = 0, decode_seconds = 0, exposed_wait_seconds = 0;
+    uint32_t slots = 0, prefetch = 0;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::string selection, backend, precision, checkpoint;
@@ -231,6 +238,7 @@ struct RunResult {
         streaming_receipt;
     std::optional<PublicStreamingSelectionMetrics> public_streaming;
     std::optional<MemoryAdmissionMetrics> memory_admission;
+    std::optional<QuantizedExecutionMetrics> quantized_execution;
     std::vector<MemoryTraceEvent> memory_trace;
     std::string native_json;
 };

@@ -112,6 +112,17 @@ static NSArray *strings(const std::vector<std::string> &values) {
         [array addObject:@(value.c_str())];
     return array;
 }
+static NSDictionary *quantized_config(const QuantizedExecutionConfig &c) {
+    if (!c.active()) return @{@"enabled": @NO, @"schema_version": @(c.schema_version.value_or(1))};
+    return @{@"enabled": @YES, @"schema_version": @1,
+        @"mode": @(c.mode.value_or(c.precision_profile == "z-source-native-affine-v1" || c.precision_profile == "z-mlx-compat-affine-v1" ? "bounded_packed" : "bounded_dequant").c_str()),
+        @"source_residency": @(c.source_residency.value_or("packed_resident").c_str()),
+        @"decode_backend": @(c.decode_backend.value_or("cpu_simd").c_str()),
+        @"precision_profile": @(c.precision_profile.value_or("z-source-mixed-v1").c_str()),
+        @"granularity": @"layer", @"prefetch_layers": @(c.prefetch_layers.value_or(1)),
+        @"persistent_dense_layers": @0, @"oversized_layer_policy": @"reject",
+        @"ane_compute": @"off", @"allow_requantization": @NO};
+}
 NSDictionary *to_dictionary(const ModelDescriptor &d) {
     NSMutableDictionary *result = [@{
         @"id" : @(d.id.c_str()),
@@ -470,7 +481,15 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         if (r.qwen21_w8a8)
             report[@"planned_w8a8_ffn_layer_coverage"] = @((32. - blocks.count) / 32.);
     }
+    if (r.quantized_execution.specified()) report[@"quantized_execution"] = quantized_config(r.quantized_execution);
+    if (r.quantized_execution.active()) {
+        report[@"executable"] = @NO;
+        report[@"quantized_execution_qualification"] = @"experimental-unqualified";
+        report[@"memory_estimate_kind"] = @"requires_gguf_layout_and_framework_envelope";
+    }
     if (r.streaming.active()) {
+        // Quantized execution remains an explicit experimental candidate;
+        // its typed request is reported separately below.
         report[@"executable"] = @NO;
         report[@"memory_estimate_kind"] = @"requires_layout_metadata";
         NSMutableDictionary *origins = [NSMutableDictionary dictionary];
@@ -1330,6 +1349,21 @@ NSDictionary *to_dictionary(const RunResult &result) {
         @"encoder_hybrid" : encoder_hybrid,
         @"validation" : @"candidate; consult recorded parity suite"
     } mutableCopy];
+    if (result.quantized_execution) {
+        const auto &m = *result.quantized_execution;
+        value[@"quantized_execution"] = @{
+            @"experimental": @YES, @"whole_request_bounded_certified": @NO,
+            @"source_sha256": @(m.source_sha256.c_str()), @"layout_digest": @(m.layout_digest.c_str()),
+            @"packed_source_bytes": @(m.packed_bytes), @"packed_capacity_bytes": @(m.packed_capacity_bytes),
+            @"source_float_bytes": @(m.source_float_bytes), @"max_dense_pool_capacity_bytes": @(m.dense_capacity_bytes),
+            @"managed_peak_bytes": @(m.managed_peak_bytes), @"slot_count": @(m.slots), @"prefetch_layers": @(m.prefetch),
+            @"fill_count": @(m.fills), @"decoded_bytes": @(m.decoded_bytes),
+            @"source_load_seconds": @(m.source_load_seconds), @"decode_active_seconds": @(m.decode_seconds),
+            @"exposed_ready_wait_seconds": @(m.exposed_wait_seconds),
+            @"scope": @"managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS"
+        };
+        value[@"validation"] = @"experimental source-mixed GGUF execution; not a production capability";
+    }
     if (result.db_cache_enabled)
         value[@"qwen21_dbcache"] = @{
             @"front_blocks": @8, @"back_blocks": @0, @"warmup_steps": @8,

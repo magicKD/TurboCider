@@ -155,3 +155,10 @@ fixture 审计。没有模型生成、性能重测、ANE/M5 执行或完整内�
 切片、sanitizer 与最终 SIMD 投影回执见 [12](12-implementation-progress.md)。本节
 是首次进入代码实施的增量，不重写前面历史边界；R0/R1 完整资格仍未完成，W8A8/ANE
 新增路线仍未实现。
+
+## 9. 后续 GGUF GPU 实验纵切
+
+SourceLease/managed ledger/slots已接到Z真实Q8/Q4生成。实际通过与失败、原MLX
+BF16→FP16浮点加载差异、明确compat profiles、取消重试及限制见
+[13](13-gguf-bounded-runtime-progress.md)。没有完整R1发布资格，没有新增production
+catalog、W8A8或ANE资格；发行库/CLI/App未替换。

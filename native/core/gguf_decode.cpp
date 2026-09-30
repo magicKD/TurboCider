@@ -115,6 +115,48 @@ void write_value(std::byte *p, DecodeDType dtype, float value) {
     std::memcpy(p, &bits, 2);
 }
 struct Geometry { uint64_t row_bytes, row_extent, target_extent; const TypeInfo *type; };
+
+bool identical_dtype(uint32_t source, DecodeDType target) {
+    return (source == 0 && target == DecodeDType::f32) ||
+           (source == 1 && target == DecodeDType::f16) ||
+           (source == 30 && target == DecodeDType::bf16);
+}
+
+uint64_t copy_finite(const uint8_t *source, std::byte *target, uint64_t elements,
+                     uint32_t type, bool use_simd, const std::atomic<bool> *cancel) {
+    const uint32_t width = type == 0 ? 4 : 2;
+    const uint32_t mask = type == 0 ? 0x7f800000 : type == 1 ? 0x7c00 : 0x7f80;
+    uint64_t copied = 0, vector_elements = 0;
+#if defined(__aarch64__)
+    if (use_simd) {
+        const uint32_t lanes = 16 / width;
+        for (; elements - copied >= lanes; copied += lanes) {
+            cancelled(cancel);
+            const uint8x16_t bytes = vld1q_u8(source + copied * width);
+            if (width == 4) {
+                const uint32x4_t bits = vreinterpretq_u32_u8(bytes);
+                decode_check(!vmaxvq_u32(vceqq_u32(vandq_u32(bits, vdupq_n_u32(mask)), vdupq_n_u32(mask))),
+                             "nonfinite source float");
+            } else {
+                const uint16x8_t bits = vreinterpretq_u16_u8(bytes);
+                decode_check(!vmaxvq_u16(vceqq_u16(vandq_u16(bits, vdupq_n_u16(uint16_t(mask))),
+                                                   vdupq_n_u16(uint16_t(mask)))), "nonfinite source float");
+            }
+            vst1q_u8(reinterpret_cast<uint8_t *>(target + copied * width), bytes);
+        }
+        vector_elements = copied;
+    }
+#else
+    (void)use_simd;
+#endif
+    for (; copied < elements; ++copied) {
+        cancelled(cancel);
+        const uint32_t bits = width == 4 ? u32(source + copied * width) : u16(source + copied * width);
+        decode_check((bits & mask) != mask, "nonfinite source float");
+        std::memcpy(target + copied * width, source + copied * width, width);
+    }
+    return vector_elements;
+}
 Geometry validate(const PackedMatrix &source, uint64_t target_rows,
                   uint64_t column_begin, uint64_t columns, const DecodeTarget &target) {
     const auto &type = decode_type(source.type);
@@ -140,7 +182,7 @@ Geometry validate(const PackedMatrix &source, uint64_t target_rows,
     return {row_bytes, row_extent, target_extent, &type};
 }
 #if defined(__aarch64__)
-void q8_bf16_block(const uint8_t *source, std::byte *target) {
+void q8_dense_block(const uint8_t *source, std::byte *target, DecodeDType dtype) {
     const float scale = half(source); finite(scale);
     // Q8 codes * finite FP16 scale cannot overflow FP32/BF16. Preserve the
     // FP16 scale exactly, multiply in FP32, then apply integer RNE once.
@@ -153,8 +195,19 @@ void q8_bf16_block(const uint8_t *source, std::byte *target) {
             const uint32x4_t tie = vandq_u32(vshrq_n_u32(bits, 16), vdupq_n_u32(1));
             return vshrn_n_u32(vaddq_u32(bits, vaddq_u32(vdupq_n_u32(0x7fff), tie)), 16);
         };
-        const uint16x8_t result = vcombine_u16(round(a), round(b));
-        vst1q_u16(reinterpret_cast<uint16_t *>(target + j * 2), result);
+        if (dtype == DecodeDType::f32) {
+            vst1q_f32(reinterpret_cast<float *>(target + j * 4), a);
+            vst1q_f32(reinterpret_cast<float *>(target + j * 4 + 16), b);
+        } else if (dtype == DecodeDType::f16) {
+            decode_check(vmaxvq_f32(vabsq_f32(a)) < 65520.f && vmaxvq_f32(vabsq_f32(b)) < 65520.f,
+                         "FP16 conversion overflow");
+            const uint16x8_t result = vcombine_u16(vreinterpret_u16_f16(vcvt_f16_f32(a)),
+                                                  vreinterpret_u16_f16(vcvt_f16_f32(b)));
+            vst1q_u16(reinterpret_cast<uint16_t *>(target + j * 2), result);
+        } else {
+            const uint16x8_t result = vcombine_u16(round(a), round(b));
+            vst1q_u16(reinterpret_cast<uint16_t *>(target + j * 2), result);
+        }
     }
 }
 #endif
@@ -164,20 +217,25 @@ DecodeReceipt row_into(const PackedMatrix &source, uint64_t source_row, uint64_t
                        DecodeOptions options) {
     decode_check(source_row < source.rows, "gather row out of bounds");
     const auto &type = *geometry.type;
+    const auto *bytes = reinterpret_cast<const uint8_t *>(source.bytes.data());
+    if (identical_dtype(source.type, target.dtype) && target.column_stride == type.bytes) {
+        const uint64_t vectors = copy_finite(bytes + source_row * geometry.row_bytes + column_begin * type.bytes,
+            target.bytes.data() + target_row * target.row_stride, columns, source.type, options.use_simd, cancel);
+        return {decode_mul(columns, type.bytes), columns, decode_mul(columns, type.bytes), 1024, vectors};
+    }
     const uint64_t first = column_begin / type.elements;
     const uint64_t last = (column_begin + columns - 1) / type.elements;
-    const auto *bytes = reinterpret_cast<const uint8_t *>(source.bytes.data());
     uint64_t simd_blocks = 0;
     for (uint64_t block = first; block <= last; ++block) {
         cancelled(cancel);
         const uint64_t begin = std::max(column_begin, block * type.elements);
         const uint64_t end = std::min(column_begin + columns, (block + 1) * type.elements);
 #if defined(__aarch64__)
-        if (options.use_simd && source.type == 8 && target.dtype == DecodeDType::bf16 && target.column_stride == 2 &&
+        if (options.use_simd && source.type == 8 && target.column_stride == dtype_bytes(target.dtype) &&
             begin == block * 32 && end == (block + 1) * 32 &&
-            (reinterpret_cast<uintptr_t>(target.bytes.data()) + target_row * target.row_stride) % alignof(uint16_t) == 0) {
-            q8_bf16_block(bytes + source_row * geometry.row_bytes + block * type.bytes,
-                          target.bytes.data() + target_row * target.row_stride + (begin - column_begin) * 2);
+            (reinterpret_cast<uintptr_t>(target.bytes.data()) + target_row * target.row_stride) % dtype_bytes(target.dtype) == 0) {
+            q8_dense_block(bytes + source_row * geometry.row_bytes + block * type.bytes,
+                          target.bytes.data() + target_row * target.row_stride + (begin - column_begin) * dtype_bytes(target.dtype), target.dtype);
             ++simd_blocks;
             continue;
         }

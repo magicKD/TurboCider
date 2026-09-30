@@ -149,3 +149,7 @@ Apple 将 M4 级 ANE 的 INT8×INT8、per-channel 权重量化列为优化方向
 Qwen3 adapter 命名进一步核对 02 固定 GGML 快照的 `conversion/qwen.py` 与
 `gguf-py/gguf/tensor_mapping.py`，不是从文件名猜 Q/K permutation。产品接入和
 验收不足分别收敛到 [10](10-execution-and-product-integration.md)、[11](11-acceptance-profiles-and-feasibility.md)。
+
+后续真实浮点切片发现当前MLX将BF16 GGUF浮点矩阵加载为FP16，F32 norm/bias保持
+F32；文件dtype不能直接当作旧路径执行dtype。已在独立compat profile复现，严格
+区分真实source与旧importer参考，见[13](13-gguf-bounded-runtime-progress.md)。

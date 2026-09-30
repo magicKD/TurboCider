@@ -83,6 +83,32 @@ static void keys(NSDictionary *d, NSArray *allowed) {
     for (NSString *k in d)
         require([set containsObject:k], "unknown field: " + std::string(k.UTF8String));
 }
+static void parse_quantized_execution(NSDictionary *d, QuantizedExecutionConfig &c) {
+    require([d isKindOfClass:NSDictionary.class], "quantized_execution must be an object");
+    require(d[@"enabled"] && d[@"schema_version"], "quantized_execution object requires enabled and schema_version");
+    keys(d, @[@"enabled", @"schema_version", @"mode", @"source_residency", @"decode_backend",
+              @"precision_profile", @"granularity", @"prefetch_layers", @"persistent_dense_layers",
+              @"oversized_layer_policy", @"ane_compute", @"allow_requantization"]);
+    if (d[@"enabled"]) c.enabled = boolean(d, @"enabled", false);
+    if (d[@"allow_requantization"]) c.allow_requantization = boolean(d, @"allow_requantization", false);
+    auto integer = [&](NSString *key, std::optional<uint32_t> &field) {
+        if (!d[key]) return;
+        id value = d[key];
+        require([value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID() &&
+                    std::isfinite([value doubleValue]) && [value doubleValue] >= 0 &&
+                    [value doubleValue] <= UINT32_MAX && [value doubleValue] == std::floor([value doubleValue]),
+                std::string(key.UTF8String) + " must be uint32");
+        field = [value unsignedIntValue];
+    };
+    integer(@"schema_version", c.schema_version); integer(@"prefetch_layers", c.prefetch_layers);
+    integer(@"persistent_dense_layers", c.persistent_dense_layers);
+    auto string = [&](NSString *key, std::optional<std::string> &field) { if (d[key]) field = string_value(d, key); };
+    string(@"mode", c.mode); string(@"source_residency", c.source_residency);
+    string(@"decode_backend", c.decode_backend); string(@"precision_profile", c.precision_profile);
+    string(@"granularity", c.granularity); string(@"oversized_layer_policy", c.oversized_layer_policy);
+    string(@"ane_compute", c.ane_compute);
+    validate_quantized_execution(c);
+}
 static NSArray *ltx_option_keys() {
     return @[
         @"ltx_backend", @"ltx_fast_av", @"ltx_video_attention_batch",
@@ -300,7 +326,7 @@ Request request_from_json(NSDictionary *d) {
                @"residency", @"memory_budget_bytes", @"warmup_iterations",
                @"hybrid_mlp_mode",
                @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks",
-               @"quantized_cache", @"memory_constrained", @"streaming" ]);
+               @"quantized_cache", @"memory_constrained", @"streaming", @"quantized_execution" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");
@@ -318,6 +344,7 @@ Request request_from_json(NSDictionary *d) {
             parse_memory_constrained(execution[@"memory_constrained"],
                                      r.memory_constrained);
         r.quantized_cache = string_value(execution, @"quantized_cache");
+        if (execution[@"quantized_execution"]) parse_quantized_execution(execution[@"quantized_execution"], r.quantized_execution);
         parse_ltx_options(execution, r);
         r.warmup_iterations = number(execution, @"warmup_iterations", 0);
         require(r.warmup_iterations >= 0 && r.warmup_iterations <= 8,

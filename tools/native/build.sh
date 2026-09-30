@@ -48,6 +48,9 @@ COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_
 if [[ -n "$TEST_HOOK_FLAG" ]]; then COMMON+=("$TEST_HOOK_FLAG"); fi
 if [[ -n "$AUDIT_COUNTER_FLAG" ]]; then COMMON+=("$AUDIT_COUNTER_FLAG"); fi
 COMMON+=(-DTURBOCIDER_HAS_BUNDLED_CATALOG=1)
+if [[ "$EXPERIMENTAL_PROBES" == "1" ]]; then
+ COMMON+=(-DTURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS=1)
+fi
 BUILD_IDENTITY_DIR="$OUT/runtime-build"
 BUILD_IDENTITY_PYTHON="${TURBOCIDER_BUILD_PYTHON:-python3}"
 BUILD_IDENTITY_FLAGS=("${COMMON[@]}")
@@ -81,6 +84,8 @@ SOURCES=(
  native/runtime/build_identity.cpp
  native/core/common.cpp
  native/core/gguf_decode.cpp
+ native/core/gguf_affine.cpp
+ native/core/quantized_execution.cpp
  native/core/json_keys.cpp
  native/runtime/streaming/config.cpp native/runtime/streaming/layout.cpp
  native/runtime/streaming/public_request_validation.cpp
@@ -92,6 +97,7 @@ SOURCES=(
  native/runtime/streaming/slot_pool.cpp native/runtime/streaming/io_executor.cpp native/runtime/streaming/context.cpp
  native/runtime/streaming/run_context.cpp
  native/runtime/streaming/mlx_weight_pager.cpp
+ native/runtime/streaming/gguf_weight_pager.cpp
  native/runtime/streaming/c_bridge.cpp native/runtime/streaming/audit.cpp
  native/models/ltx_runtime/ltx_streaming_descriptor.cpp native/models/ltx_runtime/ltx_streaming_plan.cpp
  native/models/h3_runtime/h3_streaming_descriptor.cpp
@@ -120,6 +126,7 @@ SOURCES=(
 native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_mlx/vdn_mlx.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
  native/models/z_image/gguf.cpp
+ native/models/z_image/gguf_execution.cpp
  native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/platform/apple/z_image_coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp
  native/models/qwen21/transformer.cpp
  native/models/qwen21/hybrid.cpp

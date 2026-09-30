@@ -16,6 +16,7 @@
 #include "../../runtime/streaming/context.hpp"
 #include "../../runtime/streaming/resolved_request.hpp"
 #include "streaming_descriptor.hpp"
+#include "gguf_execution.hpp"
 #include "../../components/text/qwen3.hpp"
 
 #include <array>
@@ -33,6 +34,21 @@
 namespace tc {
 
 using ZImageGpuGraph = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
+
+class ZImageGgufStream {
+  public:
+    ZImageGgufStream(const std::filesystem::path &, uint32_t prefetch,
+                    uint32_t width, uint32_t height, uint32_t caption, uint32_t steps,
+                    uint64_t managed_budget, Weights &fixed, const Event &, std::atomic<bool> &, const std::string &profile);
+    ~ZImageGgufStream();
+    void run_pass(uint32_t, Tensor &, const Tensor &, const Tensor &);
+    void finish();
+    bool drain_safely() noexcept;
+    QuantizedExecutionMetrics metrics() const;
+  private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 class ZImageExactStream {
   public:
@@ -1012,7 +1028,7 @@ Tensor z_compiled_hybrid_block(const Tensor &x, const Weights &w, const std::str
 Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                const Tensor &freqs, const Tensor &temb, HybridSession *hybrid,
                int hybrid_block, const ZImageGpuGraph *gpu_graph,
-               bool compile_hybrid_segments, std::vector<Tensor> *keepalive);
+               bool compile_hybrid_segments, std::vector<Tensor> *keepalive, bool allow_dense_compile = true);
 
 Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs, const Tensor &temb, ane::HybridFfn &runtime,
@@ -1138,7 +1154,8 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                const Tensor &freqs, const Tensor &temb, HybridSession *hybrid,
                int hybrid_block,
                 const std::function<std::vector<Tensor>(const std::vector<Tensor> &)> *gpu_graph,
-                bool compile_hybrid_segments = false, std::vector<Tensor> *keepalive = nullptr) {
+                bool compile_hybrid_segments = false, std::vector<Tensor> *keepalive = nullptr,
+                bool allow_dense_compile) {
     ZBlockProfile profile(prefix, hybrid != nullptr);
     // A LoRA can dequantize only the projections it touches.  Do not infer
     // that the whole block is dense from QKV/w1 alone: Q8 GGUF modulation or
@@ -1203,7 +1220,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
         !std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE"))
         return z_compiled_hybrid_block(x, w, prefix, freqs, temb, hybrid, hybrid_block,
                                       *gpu_graph, profile);
-    if (!hybrid && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && bf16_graph &&
+    if (allow_dense_compile && !hybrid && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && bf16_graph &&
         !std::getenv("TURBOCIDER_Z_FFN_CAPTURE_DIR") &&
         !w.has_runtime_loras() && !profile.split_gpu() && !profile.detail_gpu()) {
         auto result = z_compiled_gpu_block(x, w, prefix, freqs, temb);
@@ -1509,7 +1526,10 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
                      ZImageExactStream *exact_stream, uint32_t pass,
                      bool compile_hybrid_segments, ZImageHybridStream *hybrid_stream = nullptr,
                      std::vector<Tensor> *context_cache = nullptr,
-                     ane::HybridFfn *runtime = nullptr, bool runtime_gguf_compatibility = false) {
+                     ane::HybridFfn *runtime = nullptr, bool runtime_gguf_compatibility = false,
+                     ZImageGgufStream *gguf_stream = nullptr) {
+    require(!gguf_stream || (!weight_stream && !exact_stream && !hybrid_stream && !runtime && !hybrid),
+            "GGUF bounded execution conflicts with another transformer backend");
     require(!hybrid_stream || (!weight_stream && !exact_stream), "hybrid/exact stream conflict");
     require(!(weight_stream && exact_stream),
             "Z-Image legacy and exact streaming cannot run together");
@@ -1565,6 +1585,8 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     auto unified_freqs = mx::concatenate({image_freqs, caption_freqs}, 0);
     if (hybrid_stream) {
         hybrid_stream->run_main(pass, unified, unified_freqs, temb);
+    } else if (gguf_stream) {
+        gguf_stream->run_pass(pass, unified, unified_freqs, temb);
     } else if (exact_stream) {
         exact_stream->run_pass(pass, pass, unified, unified_freqs, temb);
     } else {
@@ -1900,6 +1922,145 @@ class ZImageStageAdapter final : public streaming::ModelSlotAdapter {
 };
 
 } // namespace
+
+namespace {
+class GgufStageAdapter final : public streaming::ModelSlotAdapter {
+    struct Job { GgufStageAdapter *owner = nullptr; const streaming::Group *group = nullptr; std::array<char,512> error{}; };
+    streaming::GgufWeightPager &source_;
+    std::atomic<bool> &cancel_;
+    Event event_;
+    std::vector<Job> jobs_;
+    std::optional<Tensor> value_, freqs_, temb_;
+    Weights current_;
+    uint32_t pass_ = 0, pool_ = 0;
+    uint64_t sequence_ = 0;
+  public:
+    GgufStageAdapter(streaming::GgufWeightPager &source, uint32_t slots, Event event, std::atomic<bool> &cancel)
+        : source_(source), cancel_(cancel), event_(std::move(event)), jobs_(slots) {
+        for (auto &job : jobs_) job.owner = this;
+    }
+    void bind_pass(uint32_t pass, const Tensor &value, const Tensor &freqs, const Tensor &temb) {
+        require(!value_, "GGUF pass already bound");
+        pass_ = pass; value_ = value; freqs_ = freqs; temb_ = temb;
+    }
+    Tensor result() const { require(value_.has_value(), "GGUF pass not bound"); return *value_; }
+    void unbind(bool safe = true) {
+        if (safe) { current_.clear(); value_.reset(); freqs_.reset(); temb_.reset(); }
+        else event_ = {};
+    }
+    void create_pool(const streaming::PoolLayout &pool) override { pool_ = pool.id; source_.create_pool(pool); }
+    streaming::FillJob make_fill_job(const streaming::Group &group, const tc_stream_slot_ticket_v1 &ticket) override {
+        auto &job = jobs_.at(ticket.slot); job.group = &group; job.error[0] = 0;
+        return {ticket, &job, [](void *raw, const tc_stream_slot_ticket_v1 *ticket,
+                    const std::atomic<bool> *cancel, uint64_t *bytes) -> int {
+            auto &job = *static_cast<Job *>(raw);
+            try { *bytes = job.owner->source_.fill(*job.group, *ticket, cancel); return 0; }
+            catch (const std::exception &error) { std::snprintf(job.error.data(), job.error.size(), "%s", error.what()); return -1; }
+            catch (...) { std::snprintf(job.error.data(), job.error.size(), "%s", "unknown GGUF decode error"); return -1; }
+        }};
+    }
+    std::string error() const { for (const auto &job : jobs_) if (job.error[0]) return job.error.data(); return {}; }
+    void encode_prefix(uint32_t pass) override { require(pass == pass_, "GGUF prefix pass mismatch"); source_.check_unchanged(); }
+    void prepare_group(const streaming::Group &group, const tc_stream_slot_ticket_v1 &ticket) override {
+        require(value_ && ticket.item.pass == pass_ && ticket.item.step == pass_, "GGUF pass identity mismatch");
+        current_ = source_.bind(group, ticket);
+    }
+    bool overlap_next_fill_after_claim() const noexcept override { return jobs_.size() > 1; }
+    streaming::ReaderSet encode_group(const streaming::Group &group, const tc_stream_slot_ticket_v1 &ticket,
+                                      streaming::CompletionMailbox &) override {
+        require(value_ && ticket.item.pass == pass_, "GGUF encode pass mismatch");
+        checkpoint(cancel_);
+        const uint32_t block = group.blocks.front();
+        event_("z_image_denoise_block", int(block), 30);
+        *value_ = z_block(*value_, current_, "layers." + std::to_string(block), *freqs_, *temb_,
+                          nullptr, int(2 + block), nullptr, false, nullptr, false);
+        mx::eval(*value_); // Actual last reader completion, not a submission timestamp.
+        checkpoint(cancel_);
+        require(sequence_ != UINT64_MAX, "GGUF reader sequence overflow");
+        streaming::ReaderSet readers;
+        readers.count = 1; readers.fences[0] = {1,++sequence_}; readers.already_complete = true;
+        current_.clear(); return readers;
+    }
+    bool drain() noexcept override { try { mx::synchronize(); return true; } catch (...) { return false; } }
+    void destroy_pool() noexcept override { current_.clear(); source_.destroy_pool(pool_); }
+};
+}
+
+struct ZImageGgufStream::Impl {
+    std::shared_ptr<const streaming::SourceLease> lease;
+    z_image::GgufExecutionPlan plan;
+    MemoryLedger ledger;
+    std::unique_ptr<streaming::GgufWeightPager> source;
+    std::shared_ptr<GgufStageAdapter> adapter;
+    std::unique_ptr<streaming::StageExecutor> executor;
+    std::atomic<bool> &cancel;
+    uint32_t next = 0;
+    bool finished = false;
+    Impl(const std::filesystem::path &path, uint32_t p, uint32_t width, uint32_t height,
+         uint32_t caption, uint32_t steps, uint64_t budget, Weights &fixed, Event event, std::atomic<bool> &cancelled,
+         const std::string &profile)
+        : ledger(budget), cancel(cancelled) {
+        streaming::SourceFileIdentity file; file.logical_id = "transformer"; file.path = path;
+        lease = streaming::SourceLease::capture_verified({std::move(file)}, &cancel);
+        plan = z_image::describe_gguf_execution(lease, p, width, height, caption, steps, profile);
+        require(gguf::checked_add(plan.packed_capacity_upper, plan.dense_capacity_upper) <= budget,
+                "qe_budget_floor: packed source and dense slots exceed managed weight ceiling");
+        source = std::make_unique<streaming::GgufWeightPager>(lease, plan.descriptor, plan.descriptor.stages.front(),
+                                                           plan.layout.stages.front(), ledger);
+        event("load_gguf_packed_source", 0, 1);
+        source->load_packed(&cancel); source->load_resident_aliases(fixed);
+        event("load_gguf_packed_source", 1, 1);
+        adapter = std::make_shared<GgufStageAdapter>(*source, p + 1, std::move(event), cancel);
+        executor = std::make_unique<streaming::StageExecutor>(0, lease->generation(), adapter);
+        executor->begin(plan.layout.stages.front());
+    }
+};
+ZImageGgufStream::ZImageGgufStream(const std::filesystem::path &path, uint32_t p, uint32_t width,
+        uint32_t height, uint32_t caption, uint32_t steps, uint64_t budget, Weights &fixed,
+        const Event &event, std::atomic<bool> &cancel, const std::string &profile)
+    : impl_(std::make_unique<Impl>(path,p,width,height,caption,steps,budget,fixed,event,cancel,profile)) {}
+ZImageGgufStream::~ZImageGgufStream() { if (impl_ && !drain_safely()) (void)impl_.release(); }
+bool ZImageGgufStream::drain_safely() noexcept {
+    if (!impl_) return true;
+    const bool safe = !impl_->executor || impl_->executor->retry_drain();
+    if (impl_->adapter) impl_->adapter->unbind(safe);
+    return safe;
+}
+void ZImageGgufStream::run_pass(uint32_t pass, Tensor &value, const Tensor &freqs, const Tensor &temb) {
+    require(impl_ && !impl_->finished && pass == impl_->next, "GGUF pass out of order");
+    impl_->source->check_unchanged(); impl_->adapter->bind_pass(pass,value,freqs,temb);
+    try {
+        impl_->executor->run_pass(pass,pass,impl_->cancel);
+        value = impl_->adapter->result(); impl_->adapter->unbind();
+        impl_->source->check_unchanged(); ++impl_->next;
+    } catch (const std::exception &error) {
+        drain_safely(); checkpoint(impl_->cancel);
+        const auto detail = impl_->adapter->error();
+        if (!detail.empty()) throw std::runtime_error(std::string(error.what()) + "; " + detail);
+        throw;
+    }
+}
+void ZImageGgufStream::finish() {
+    require(impl_ && !impl_->finished && impl_->next == impl_->plan.layout.stages.front().pass_count,
+            "GGUF execution incomplete");
+    impl_->executor->finish(); mx::synchronize(); impl_->source->check_unchanged(); impl_->finished = true;
+}
+QuantizedExecutionMetrics ZImageGgufStream::metrics() const {
+    const auto source = impl_->source->metrics(); const auto execution = impl_->executor->counters();
+    QuantizedExecutionMetrics result;
+    result.source_sha256 = impl_->lease->file("transformer").content_digest;
+    result.layout_digest = impl_->plan.layout.digest;
+    result.packed_bytes = source.packed_source_bytes; result.packed_capacity_bytes = source.packed_capacity_bytes;
+    result.source_float_bytes = source.source_float_bytes; result.dense_capacity_bytes = source.maximum_dense_pool_capacity_bytes;
+    result.managed_peak_bytes = impl_->ledger.snapshot().peak_committed_bytes;
+    result.fills = source.fill_count; result.decoded_bytes = source.decoded_bytes;
+    result.source_load_seconds = source.packed_read_seconds; result.decode_seconds = source.decode_seconds;
+    result.exposed_wait_seconds = execution.wait_seconds;
+    result.slots = impl_->plan.layout.stages.front().slot_count; result.prefetch = result.slots - 1;
+    require(result.fills == uint64_t(impl_->next) * 30 && execution.groups_submitted == result.fills,
+            "GGUF fill/compute counts do not match actual passes");
+    return result;
+}
 
 struct ZImageHybridStream::Impl {
     std::shared_ptr<const streaming::SourceLease> parent;
@@ -2265,7 +2426,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
         require(std::filesystem::is_regular_file(transformer_checkpoint) &&
                     transformer_checkpoint.extension() == ".gguf",
                 "native Z-Image GGUF transformer checkpoint is invalid");
-        transformer_path_ = std::filesystem::canonical(transformer_checkpoint);
+        transformer_path_ = std::filesystem::absolute(transformer_checkpoint).lexically_normal();
         transformer_checkpoint_ = transformer_path_;
         gguf_transformer_ = true;
         nvfp4_transformer_ = false;
@@ -2657,6 +2818,11 @@ void ZImage::load_vae(
 }
 
 void ZImage::unload() {
+    if (gguf_stream_ && !gguf_stream_->drain_safely()) {
+        streaming_quarantined_ = true;
+        throw std::runtime_error("GGUF drain unproven; restart the process");
+    }
+    gguf_stream_.reset();
     runtime_ffn_.reset(); runtime_manifest_.clear();
     exact_stream_.reset();
     weight_stream_.reset();
@@ -2913,12 +3079,19 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             "Z-Image output must be .png");
     require(r.inputs.empty(), "Z-Image-Turbo currently supports text-to-image only");
     require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
-    const bool exact_streaming = z_image_exact_streaming_requested(r);
+    const bool quantized = r.quantized_execution.active();
+    if (quantized) {
+#ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+        throw std::invalid_argument("qe_capability_unqualified: explicit experimental build required");
+#endif
+        require(gguf_transformer_ && !load_only && !public_stream_lease_, "GGUF bounded mode requires a private generate request");
+    }
+    const bool exact_streaming = !quantized && z_image_exact_streaming_requested(r);
     const uint32_t exact_slot_count = exact_streaming
         ? z_image_exact_slot_count(r) : 0;
     const bool tight_exact = exact_streaming && exact_slot_count == 1;
     const bool legacy_streamed = r.residency == "streamed";
-    const bool streamed = exact_streaming || legacy_streamed;
+    const bool streamed = exact_streaming || legacy_streamed || quantized;
     const bool constrained_memory =
         optimizations_.z_image_memory_lifecycle &&
         !ResidencyPolicy::for_request(
@@ -2957,7 +3130,12 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const bool prompt_changed = !cached_conditioning_ ||
         cached_prompt_ != r.prompt || cached_dynamic_ != r.dynamic_text ||
         cached_encoder_manifest_ != r.encoder_ane_manifest;
-    if (exact_streaming) {
+    if (quantized) {
+        mx::synchronize();
+        gguf_stream_.reset(); exact_stream_.reset(); weight_stream_.reset();
+        transformer_.clear(); vae_.clear(); hybrid_.reset(); runtime_ffn_.reset(); encoder_hybrid_.reset();
+        hybrid_gpu_graph_ = {}; stream_configuration_.clear(); mx::clear_cache();
+    } else if (exact_streaming) {
         // Exact retention is request-scoped. Never inherit resident weights,
         // a legacy prefetcher, or a previous exact executor into this request.
         mx::synchronize();
@@ -2995,11 +3173,16 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     RequestCacheLimit cache_limit(
         streamed || constrained_memory,
-        tight_exact ? 0 : r.allocator_cache_bytes);
+        (tight_exact || quantized) ? 0 : r.allocator_cache_bytes);
     mx::reset_peak_memory();
     select_loras(r);
     auto text_start = Clock::now();
     bool prompt_hit = conditioning(r, event, cancelled);
+    if (quantized) {
+        mx::eval(*cached_conditioning_); mx::synchronize();
+        text_encoder_.clear(); encoder_hybrid_.reset(); mx::clear_cache();
+        event("qwen3_weights_released_before_gguf", 1, 1);
+    }
     if (legacy_streamed && encoder_hybrid_) {
         // Finish every consumer of the shared Core ML output backing before
         // releasing the encoder. Preserve provenance on cached conditioning,
@@ -3063,7 +3246,13 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
     if (plan.request.execution != r.execution || plan.request.compile_gpu != r.compile_gpu)
         plan = make_plan(r);
-    if (exact_streaming) {
+    if (quantized) {
+        gguf_stream_ = std::make_unique<ZImageGgufStream>(transformer_path_,
+            r.quantized_execution.prefetch_layers.value_or(1), uint32_t(r.width), uint32_t(r.height),
+            uint32_t(caption_rows), uint32_t(r.steps), std::min<uint64_t>(10ull << 30, device_info().physical_memory / 2),
+            transformer_, event, cancelled, r.quantized_execution.precision_profile.value_or("z-source-mixed-v1"));
+        selection += "; experimental packed-resident GGUF, bounded dequant, " + r.quantized_execution.precision_profile.value_or("z-source-mixed-v1");
+    } else if (exact_streaming) {
         require(!hybrid_ || hybrid_->activation_precision != "int8",
                 "streaming_route_unsupported: W8A8 ANE requires resident loading");
         require(!load_only && (r.execution == "gpu" || r.execution == "gpu_ane") &&
@@ -3111,7 +3300,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 prefetch_layers);
         else weight_stream_->reset_metrics();
     }
-    if (tight_exact) {
+    if (tight_exact || quantized) {
         // K1 is the minimum-memory exact layout.  Its fixed/prefix tensors are
         // already materialized by ZImageWeightStream; loading the VAE here
         // would keep another 320+ MiB resident throughout all denoise passes.
@@ -3274,6 +3463,11 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         event("denoise", i + 1, r.steps);
     }
     const double denoise_seconds = std::chrono::duration<double>(Clock::now() - dit_start).count();
+    std::optional<QuantizedExecutionMetrics> quantized_metrics;
+    if (quantized) {
+        gguf_stream_->finish(); quantized_metrics = gguf_stream_->metrics();
+        transformer_.clear(); gguf_stream_.reset(); mx::clear_cache();
+    }
     std::optional<BlockResidencyMetrics> exact_metrics;
     std::optional<StreamingRuntimeMetrics> exact_runtime;
     std::shared_ptr<const streaming::ActualExecutionReceipt> exact_receipt;
@@ -3353,7 +3547,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     profile.phase("denoise_end");
     checkpoint(cancelled);
-    if (tight_exact) {
+    if (tight_exact || quantized) {
         load_vae(event, cancelled);
         vae_.materialize();
     }
@@ -3384,6 +3578,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.text_tokens = int(reported_tokens.ids.size());
     result.valid_text_tokens = reported_tokens.valid;
     result.actual_steps = r.steps;
+    result.quantized_execution = quantized_metrics;
     result.lora_applied_projections = lora_applied_projections_;
     if (gguf_transformer_) {
         result.backend = hybrid_ ? "mlx_cpp_metal_gguf+coreml" : "mlx_cpp_metal_gguf";
@@ -3436,6 +3631,11 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         result.hybrid = runtime_ffn_->metrics();
         if (!runtime_ffn_->available()) result.selection += "; GPU fallback: " + runtime_ffn_->reason();
     }
+    if (quantized) {
+        result.backend = r.quantized_execution.precision_profile == "z-source-native-affine-v1" || r.quantized_execution.precision_profile == "z-mlx-compat-affine-v1"
+            ? "mlx_cpp_metal_gguf_bounded_native_affine" : "mlx_cpp_metal_gguf_bounded_cpu_dequant";
+        result.precision = r.quantized_execution.precision_profile.value_or("z-source-mixed-v1");
+    }
     result.encoder_hybrid = cached_encoder_hybrid_metrics_;
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
     result.timings.text = text_seconds;
@@ -3472,6 +3672,13 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     return result;
 } catch (...) {
+    if (gguf_stream_ && !gguf_stream_->drain_safely()) {
+        streaming_quarantined_ = true;
+        throw;
+    }
+    if (requested.quantized_execution.active()) {
+        mx::synchronize(); transformer_.clear(); gguf_stream_.reset(); vae_.clear(); mx::clear_cache();
+    }
     if (exact_stream_ && !exact_stream_->drain_safely()) {
         streaming_quarantined_ = true;
         throw;
@@ -3504,7 +3711,7 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
                       cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr,
                       weight_stream_.get(), exact_stream_.get(), uint32_t(step),
                       optimizations_.z_image_hybrid_segments || experimental_compiled_a8,
-                      nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_),
+                      nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_, gguf_stream_.get()),
         mx::float32);
 }
 

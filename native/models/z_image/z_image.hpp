@@ -11,6 +11,7 @@
 namespace tc {
 
 class ZImageExactStream;
+class ZImageGgufStream;
 
 class ZImage final : public ModelSession {
     std::filesystem::path root_;
@@ -25,6 +26,7 @@ class ZImage final : public ModelSession {
     Weights vae_;
     std::unique_ptr<ZImageWeightStream> weight_stream_;
     std::unique_ptr<ZImageExactStream> exact_stream_;
+    std::unique_ptr<ZImageGgufStream> gguf_stream_;
     std::string stream_configuration_;
     uint64_t exact_stream_generation_ = 0;
     bool streaming_quarantined_ = false;
