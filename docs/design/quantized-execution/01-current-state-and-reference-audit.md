@@ -6,7 +6,7 @@
 
 | 位置 | 已有能力 / 实際边界 |
 | --- | --- |
-| `native/core/gguf.hpp` | GGUF v2/v3 目录预检，仅接受 F32/F16/BF16/Q4_0/Q4_1/Q8_0；不是完整安全 parser 或 K/IQ decoder |
+| `native/core/gguf.hpp` | 旧MLX格式门禁仍只接受F32/F16/BF16/Q4_0/Q4_1/Q8_0；后续12新增独立安全目录/CPU decoder，不等于MLX已开放K |
 | `native/backends/mlx.cpp: Weights::load_gguf_file` | 调用 MLX loader 后接收 tensor，未建立统一的 Z 执行精度合同 |
 | 同文件 `pack_convrot_q8` | signed I8 和每输出行 scale 映射成 MLX unsigned affine Q8；Z 默认 scales 为 BF16，源 checkpoint scales 为 FP32 |
 | 同文件 `convrot_rotate_*` | Comfy H4 Kronecker 得到 H256；有 dense 和 Metal butterfly，两者均为浮点旋转 |
@@ -142,6 +142,9 @@ Apple 将 M4 级 ANE 的 INT8×INT8、per-channel 权重量化列为优化方向
 包含 F32/BF16/Q8_0，架构标签为 lumina2；Q4 样本为 BF16/Q4_0 且没有 metadata。
 精确数量、大小、shape 差异和未完成的 content binding 见 [09](09-release-scope-and-component-contracts.md)。
 不能将它们当作仅 bits 不同的严格性能对照，也不能按架构字符串单独决定 adapter。
+
+以上“本轮/未复制”描述原设计审计时点；之后的实际 P1a/P1b 实施与 GGML MIT
+适配声明、payload 数值样本见 12。没有复制 Unsloth Studio AGPL 实现。
 
 Qwen3 adapter 命名进一步核对 02 固定 GGML 快照的 `conversion/qwen.py` 与
 `gguf-py/gguf/tensor_mapping.py`，不是从文件名猜 Q/K permutation。产品接入和

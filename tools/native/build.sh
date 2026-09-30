@@ -80,6 +80,7 @@ OBJECTS=()
 SOURCES=(
  native/runtime/build_identity.cpp
  native/core/common.cpp
+ native/core/gguf_decode.cpp
  native/core/json_keys.cpp
  native/runtime/streaming/config.cpp native/runtime/streaming/layout.cpp
  native/runtime/streaming/public_request_validation.cpp

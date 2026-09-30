@@ -148,3 +148,10 @@ fixture 审计。没有模型生成、性能重测、ANE/M5 执行或完整内�
 模板仍为 unbound/not_run，`git diff --check` 通过。这些是文档/结构检查，不是产品验收。
 另以 09 的 required-key/shape 表核对两个本地 GGUF 目录，各 453 个 tensor 全部匹配，
 仅应用声明的 pad-token reshape；type histogram 一致。未解码 payload，不代表 tensor 数值通过。
+
+## 8. 后续实际代码实施
+
+安全目录与预分配 CPU decoder 的第一阶段实现、固定 GGML oracle、真实 Z Q8/Q4
+切片、sanitizer 与最终 SIMD 投影回执见 [12](12-implementation-progress.md)。本节
+是首次进入代码实施的增量，不重写前面历史边界；R0/R1 完整资格仍未完成，W8A8/ANE
+新增路线仍未实现。

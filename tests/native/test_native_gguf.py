@@ -15,10 +15,14 @@ def string(value):
 
 def fixture(types, metadata=b'', count=0):
     data = struct.pack('<IIQQ', 0x46554747, 3, len(types), count) + metadata
+    sizes = {0: 4096, 1: 2048, 2: 576, 3: 640, 8: 1088, 30: 2048}
+    offset = 0
     for index, dtype in enumerate(types):
         data += string('weight.' + str(index))
-        data += struct.pack('<IQQIQ', 2, 32, 32, dtype, 0)
-    return data + bytes(4096)
+        data += struct.pack('<IQQIQ', 2, 32, 32, dtype, offset)
+        offset += (sizes.get(dtype, 1024) + 31) // 32 * 32
+    data += bytes((-len(data)) % 32)
+    return data + bytes(offset)
 
 
 class NativeGGUFTests(unittest.TestCase):
