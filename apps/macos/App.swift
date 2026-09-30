@@ -122,6 +122,7 @@ struct StudioView: View {
     @State private var librarySelection: String?
     @Binding var submitting: Bool
     @State private var annotationAsset: StudioAsset?
+    @State private var preparationAsset: StudioAsset?
     private var selectedJob: NativeJob? { store.jobs.first { $0.id == selected && $0.hasOutput } }
     private var previewAsset: StudioAsset? {
         studio.draft.assets.first { $0.id == previewAssetID } ?? studio.draft.activeAssets.first
@@ -257,7 +258,7 @@ struct StudioView: View {
         }
         .onChange(of: studio.draft.operation) { _, _ in focusInput() }
         .onChange(of: studio.workspaceResetID) { _, _ in
-            focusInput(); imageUpscaling = false; annotationAsset = nil
+            focusInput(); imageUpscaling = false; annotationAsset = nil; preparationAsset = nil
             showingRecentResults = false; ignoredStatusID = store.jobs.first?.id; page = .studio
         }
         .onChange(of: page) { _, _ in showingRecentResults = false }
@@ -275,6 +276,7 @@ struct StudioView: View {
     var body: some View {
         workspaceState
         .sheet(item: $annotationAsset) { asset in Qwen21AnnotationEditor(asset: asset, studio: studio).tint(ciderAccent) }
+        .sheet(item: $preparationAsset) { asset in ReferenceImagePreparationView(asset: asset, studio: studio).tint(ciderAccent) }
         .task { library.refresh(studio: studio, migrate: true) }
         .task(id: "\(page == .studio && imageUpscaling):\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleAfterGeneration):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)") {
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
@@ -655,6 +657,7 @@ struct StudioView: View {
                                 Text("图 \(index + 1)").font(.caption.weight(.semibold))
                                 Menu {
                                     Button("仅编辑这张") { studio.useOnlyAssetForEditing(asset.id); focusInput(asset) }.disabled(store.busy)
+                                    Button("调整尺寸…") { preparationAsset = asset }.disabled(store.busy)
                                     if studio.draft.modelID == "qwen-image-2.1" {
                                         Button("圈选修改…") { annotationAsset = asset }.disabled(store.busy || !editingImage)
                                     }
@@ -669,7 +672,15 @@ struct StudioView: View {
                             .background(selectedJob == nil && previewAsset?.id == asset.id ? ciderAccent.opacity(0.1) : Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 9))
                             .overlay(RoundedRectangle(cornerRadius: 9).stroke(selectedJob == nil && previewAsset?.id == asset.id ? ciderAccent : .clear, lineWidth: 1.5))
                             .opacity(studio.draft.activeAssets.contains(asset) ? 1 : 0.55)
-                            .help("\(asset.name) · \(asset.width) × \(asset.height)").disabled(assetControlsLocked)
+                            .help("\(asset.name) · \(asset.width) × \(asset.height) · 拖动可调整顺序").disabled(assetControlsLocked)
+                            .draggable(StudioReferenceDrag(id: asset.id, workspaceID: studio.workspaceResetID))
+                            .dropDestination(for: StudioReferenceDrag.self) { items, _ in
+                                guard !assetControlsLocked, items.count == 1,
+                                      let item = items.first, item.workspaceID == studio.workspaceResetID,
+                                      studio.draft.assets.contains(where: { $0.id == item.id }) else { return false }
+                                studio.reorderAsset(item.id, to: asset.id)
+                                return true
+                            }
                     }
                 }.padding(2)
             }.frame(height: 70)

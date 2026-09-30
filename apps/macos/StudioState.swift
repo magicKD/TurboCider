@@ -115,12 +115,26 @@ struct StudioLoRA: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
+struct StudioAssetOriginal: Codable, Equatable, Sendable {
+    var path: String
+    var name: String
+    var width: Int
+    var height: Int
+}
 struct StudioAsset: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var path: String
     var name: String
     var width: Int
     var height: Int
+    // Optional fields preserve compatibility with existing drafts. An old
+    // asset's current file becomes its original baseline on first preparation.
+    var original: StudioAssetOriginal? = nil
+    var preparation: ReferenceImagePreparation? = nil
+    var originalImage: StudioAssetOriginal {
+        original ?? StudioAssetOriginal(path: path, name: name, width: width, height: height)
+    }
+    var hasDerivative: Bool { path != originalImage.path }
 }
 
 /// Product-facing streaming choices.  The native runtime owns the layout
@@ -782,6 +796,10 @@ struct StudioDraft: Codable, Sendable {
 /// Serial import keeps provider order stable. Source files are never removed;
 /// a draft removes bindings only, so in-flight jobs keep their immutable inputs.
 actor StudioAssetImporter {
+    struct Preparation: Sendable {
+        var asset: StudioAsset
+        var createdDerivative: URL?
+    }
     let directory: URL
     init(directory: URL) { self.directory = directory }
     func importFile(_ url: URL) throws -> StudioAsset {
@@ -793,6 +811,40 @@ actor StudioAssetImporter {
     func importData(_ data: Data) throws -> StudioAsset {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { throw NativeFailure(message: "剪贴板不包含可解码的图片。") }
         return try stage(source: source, name: "粘贴图片", sourceURL: nil, data: data)
+    }
+    func prepare(asset: StudioAsset, preset: ReferenceImagePreparation) throws -> Preparation {
+        try Task.checkCancellation()
+        let original = asset.originalImage
+        let rendered = try ReferenceImagePreparationRenderer.render(source: URL(fileURLWithPath: original.path), preset: preset)
+        var prepared = asset
+        prepared.original = StudioAssetOriginal(path: original.path, name: original.name,
+            width: rendered.originalWidth, height: rendered.originalHeight)
+        prepared.preparation = preset
+        prepared.width = rendered.width; prepared.height = rendered.height
+        if let data = rendered.png {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let target = directory.appendingPathComponent("\(UUID().uuidString).png")
+            do {
+                // A fresh immutable path leaves earlier in-flight inputs and
+                // undo snapshots intact. Never overwrite the original file.
+                try data.write(to: target, options: .atomic)
+                try Task.checkCancellation()
+                prepared.path = target.path
+                return Preparation(asset: prepared, createdDerivative: target)
+            } catch {
+                try? FileManager.default.removeItem(at: target)
+                throw error
+            }
+        }
+        prepared.path = original.path; prepared.name = original.name
+        return Preparation(asset: prepared, createdDerivative: nil)
+    }
+    func discardPreparations(_ preparations: [Preparation]) {
+        for preparation in preparations {
+            guard let url = preparation.createdDerivative,
+                  url.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL else { continue }
+            try? FileManager.default.removeItem(at: url)
+        }
     }
     func discard(_ assets: [StudioAsset]) {
         for asset in assets where URL(fileURLWithPath: asset.path).deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL {
@@ -811,7 +863,11 @@ actor StudioAssetImporter {
         if let sourceURL { try FileManager.default.copyItem(at: sourceURL, to: target) }
         else if let data { try data.write(to: target, options: .atomic) }
         let orientation = info[kCGImagePropertyOrientation] as? Int ?? 1
-        return StudioAsset(path: target.path, name: name, width: orientation >= 5 ? height : width, height: orientation >= 5 ? width : height)
+        let displayedWidth = (5...8).contains(orientation) ? height : width
+        let displayedHeight = (5...8).contains(orientation) ? width : height
+        return StudioAsset(path: target.path, name: name, width: displayedWidth, height: displayedHeight,
+            original: StudioAssetOriginal(path: target.path, name: name, width: displayedWidth, height: displayedHeight),
+            preparation: .original)
     }
 }
 
@@ -1294,6 +1350,55 @@ final class StudioState: ObservableObject {
         rememberAssets(); draft.assets.swapAt(index, index + offset)
         message = "参考图顺序已更新，请核对提示词中的图片编号。"
     }
+    func reorderAsset(_ id: UUID, to targetID: UUID) {
+        guard !importing, id != targetID,
+              let source = draft.assets.firstIndex(where: { $0.id == id }),
+              let target = draft.assets.firstIndex(where: { $0.id == targetID }) else { return }
+        rememberAssets()
+        let asset = draft.assets.remove(at: source)
+        draft.assets.insert(asset, at: target)
+        message = "参考图顺序已更新，请核对提示词中的图片编号。"
+    }
+    @discardableResult
+    func prepareAsset(id: UUID, preset: ReferenceImagePreparation) async -> Bool {
+        await prepareAssets(ids: [id], preset: preset)
+    }
+    @discardableResult
+    func prepareAssets(ids: Set<UUID>, preset: ReferenceImagePreparation) async -> Bool {
+        guard !importing, !ids.isEmpty else { return false }
+        let assets = draft.assets.filter { ids.contains($0.id) }
+        guard assets.count == ids.count, Set(assets.map(\.id)).count == assets.count else {
+            message = "部分参考图已不存在或编号重复，请重新选择。"; return false
+        }
+        let context = assetImportContext
+        importing = true; defer { importing = false }
+        var staged: [StudioAssetImporter.Preparation] = []
+        do {
+            // Preserve draft order, even when the caller supplies an unordered
+            // set. Nothing is published until the whole batch succeeds.
+            for asset in assets {
+                try Task.checkCancellation()
+                let prepared = try await importer.prepare(asset: asset, preset: preset)
+                staged.append(prepared)
+                try validateAssetImportContext(context)
+            }
+            try validateAssetImportContext(context)
+            let replacements = Dictionary(uniqueKeysWithValues: staged.map { ($0.asset.id, $0.asset) })
+            let updated = draft.assets.map { replacements[$0.id] ?? $0 }
+            if updated != draft.assets {
+                rememberAssets()
+                draft.assets = updated
+            }
+            message = preset == .original ? "已恢复 \(assets.count) 张原始副本，编号与原图选择已保留，可撤销。"
+                : "已处理 \(assets.count) 张参考图：\(preset.title)，保持比例、不裁剪、不放大。原始副本、编号与原图选择已保留，可撤销。"
+            save()
+            return true
+        } catch {
+            await importer.discardPreparations(staged)
+            message = error is CancellationError ? "参考图处理已取消，原始副本与草稿已保留。" : error.localizedDescription
+            return false
+        }
+    }
     var canUndoAssets: Bool { !undoAssets.isEmpty }
     func undoAssetChange() {
         guard !importing else { return }
@@ -1473,8 +1578,10 @@ final class StudioState: ObservableObject {
                 draft.assets.append(annotated)
                 message = "已添加 <image\(draft.assets.count)> 作为 <image\(index + 1)> 的黑白蒙版：白色编辑、黑色保留。请在提示词中引用这两个编号；属于视觉引导，不保证逐像素锁定。原图与提示词未修改，可撤销。"
             } else {
+                annotated.id = original.id
+                // The baked annotation is the new preparation baseline. Undo
+                // retains the previous asset; later resizing must keep ink.
                 draft.assets[index] = annotated
-                if draft.initImageID == id { draft.initImageID = annotated.id }
                 message = "已在参考 \(index + 1) 使用标注副本；原文件未改动，可撤销。请在提示词中说明圈选 / 涂抹区域的修改，并要求移除标注。"
             }
             draft.operation = "image.edit"
