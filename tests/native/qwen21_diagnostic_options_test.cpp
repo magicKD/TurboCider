@@ -6,6 +6,15 @@ using tc::qwen21::expected_w8a8_calls;
 
 int main() {
     using namespace tc::qwen21;
+    assert(!option_enabled(nullptr));
+    assert(!option_enabled("0"));
+    assert(!option_enabled(""));
+    assert(!option_enabled("true"));
+    assert(option_enabled("1"));
+    assert(binary_option_or_unset(nullptr));
+    assert(binary_option_or_unset("0"));
+    assert(binary_option_or_unset("1"));
+    assert(!binary_option_or_unset("true"));
     assert(tiled_prefill_layer_count("0") == 0);
     assert(tiled_prefill_layer_count("1") == 32);
     assert(tiled_prefill_layer_count("16") == 16);

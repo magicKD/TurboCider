@@ -122,6 +122,7 @@ static void parse_ltx_options(NSDictionary *d, Request &r) {
         d, @"ltx_sparse_keep_blocks", r.ltx_sparse_keep_blocks);
 }
 static void parse_qwen21_options(NSDictionary *d, Request &r) {
+    r.hybrid_mlp_mode = string_value(d, @"hybrid_mlp_mode", r.hybrid_mlp_mode);
     r.qwen21_w8a8 = boolean(d, @"qwen21_w8a8", r.qwen21_w8a8);
     r.qwen21_gpu_w8a16 = boolean(d, @"qwen21_gpu_w8a16", r.qwen21_gpu_w8a16);
     r.qwen21_reference_size = number(d, @"qwen21_reference_size", r.qwen21_reference_size);
@@ -199,9 +200,11 @@ Request request_from_json(NSDictionary *d) {
             @"vsa_prefix_mode", @"vsa_dense_first_n_steps",
             @"vsa_dense_layers", @"vsa_impl",
             @"lora_strategy", @"streaming_offload", @"memory_budget_bytes",
+            @"hybrid_mlp_mode",
             @"quantized_cache", @"warmup_iterations", @"memory_constrained"
         ]);
         r.model = string_value(d, @"model", r.model);
+        r.hybrid_mlp_mode = string_value(d, @"hybrid_mlp_mode", r.hybrid_mlp_mode);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
         r.prompt_enhancer_path = string_value(d, @"prompt_enhancer_path");
         r.prompt_enhance = boolean(d, @"prompt_enhance", false);
@@ -295,6 +298,7 @@ Request request_from_json(NSDictionary *d) {
             execution,
             @[ @"policy", @"profile", @"ane_manifest", @"encoder_ane_manifest", @"allow_approximation",
                @"residency", @"memory_budget_bytes", @"warmup_iterations",
+               @"hybrid_mlp_mode",
                @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks",
                @"quantized_cache", @"memory_constrained", @"streaming" ]);
         r.execution = string_value(execution, @"policy", "gpu");

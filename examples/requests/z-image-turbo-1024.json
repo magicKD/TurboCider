@@ -1,0 +1,15 @@
+{
+  "model": "z-image-turbo",
+  "operation": "image.generate",
+  "prompt": "A white lighthouse on a rugged sea cliff at sunset, waves breaking against dark rocks, detailed stonework, dramatic clouds, photorealistic.",
+  "output": "outputs/z-image-turbo-1024.png",
+  "width": 1024,
+  "height": 1024,
+  "steps": 8,
+  "seed": 7,
+  "frames": 1,
+  "audio": false,
+  "execution": "gpu",
+  "residency": "resident",
+  "allow_approximation": true
+}

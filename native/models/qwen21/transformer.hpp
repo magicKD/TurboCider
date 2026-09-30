@@ -38,6 +38,28 @@ class Transformer {
     // Decode-only FFN split: prefill remains exact GPU so cached
     // conditioning is unchanged. Caller owns the callback's runtime.
     using DecodeMLP = std::function<Tensor(int, const Tensor &)>;
+    using StageMLP = std::function<void(int, int)>;
+    // Optional QKV split boundary: stage three weights, then return owned
+    // [1,rows,3*hidden] raw Q/K/V projections. Norm/RoPE/attention stay in
+    // the compiled block; a failed runtime must recompute all Q/K/V on GPU.
+    using ProjectQKV = std::function<Tensor(int, const Tensor &)>;
+    enum class QKVPlan { Hybrid, HybridTimed, GpuProbe, Gpu };
+    using PlanQKV = std::function<QKVPlan(int, int)>;
+    using ObserveQKV = std::function<void(int, int, double)>;
+    void set_stage_qkv(StageMLP fn) { stage_qkv_ = std::move(fn); }
+    void set_project_qkv(ProjectQKV fn) { project_qkv_ = std::move(fn); }
+    void set_plan_qkv(PlanQKV fn) { plan_qkv_ = std::move(fn); }
+    void set_observe_qkv(ObserveQKV fn) { observe_qkv_ = std::move(fn); }
+    // SplitUntimed requires a callback returning owned/evaluated FFN output,
+    // never a lazy view into the next Core ML prediction's shared backing.
+    enum class MLPPlan { Split, SplitUntimed, GpuProbe, Gpu };
+    using PlanMLP = std::function<MLPPlan(int, int)>;
+    using ObserveMLP = std::function<void(int, int, double)>;
+    // Full GPU probes and split blocks report the same whole-block window.
+    // Ordinary GPU decisions stay lazy and are not timing samples.
+    void set_plan_mlp(PlanMLP fn) { plan_mlp_ = std::move(fn); }
+    void set_observe_mlp(ObserveMLP fn) { observe_mlp_ = std::move(fn); }
+    void set_stage_mlp(StageMLP fn) { stage_mlp_ = std::move(fn); }
     void set_decode_mlp(DecodeMLP fn, int first_block = 0) {
         require(first_block >= 0 && first_block < config_.layers,
                 "Qwen21 decode MLP first block is outside the transformer");
@@ -111,9 +133,19 @@ class Transformer {
     std::optional<Tensor> cosine_, sine_;
     int text_length_ = 0, height_ = 0, width_ = 0;
     using BlockFunction = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
-    std::vector<BlockFunction> prefill_blocks_, decode_blocks_, capture_blocks_, reuse_blocks_,
+    // FFN split and QKV-input modes each alter the compiled graph ABI.
+    // Keep their variants separate, including resident route switches.
+    using BlockVariants = std::array<BlockFunction, 4>;
+    std::vector<BlockVariants> prefill_blocks_, decode_blocks_, capture_blocks_, reuse_blocks_,
                                reuse_last16_blocks_, half_reuse_blocks_;
     DecodeMLP decode_mlp_;
+    StageMLP stage_qkv_;
+    ProjectQKV project_qkv_;
+    PlanQKV plan_qkv_;
+    ObserveQKV observe_qkv_;
+    PlanMLP plan_mlp_;
+    ObserveMLP observe_mlp_;
+    StageMLP stage_mlp_;
     DecodeMLP prefill_mlp_;
     int prefill_first_block_ = 0, decode_first_block_ = 0;
     Tensor embedding(float timestep, mx::Dtype) const;

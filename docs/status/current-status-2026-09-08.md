@@ -13,7 +13,7 @@
 ## 本轮架构与发行边界收口
 
 - 已将 `gpu_ane/mac_transformer@9f322e1` 的 tensor/sequence/head/CPU/GPU/ANE、public/private ANE 和 1/multi-block 结论整理为 [Transformer 异构并行技术报告](../design/transformer-heterogeneous-report.md)。报告明确区分 hot operator、fresh process 和模型 E2E，不把 1.5–2.6× MLP micro 写成 H3/LTX 点击生成加速。
-- 已补充 [Core ML / ANE 启动报告](../design/coreml-ane-startup.md)：编译、load、interface/backing、zero-input warmup、first/subsequent prediction 分开计时；`prepare(load-only)` 能前移首请求开销，但不能减少 prepare+generate 总工作。
+- 当时的 Core ML / ANE 启动报告（`coreml-ane-startup.md`，当前源码树未保留）：编译、load、interface/backing、zero-input warmup、first/subsequent prediction 分开计时；`prepare(load-only)` 能前移首请求开销，但不能减少 prepare+generate 总工作。当前 artifact 使用说明见 [CLI](../public/USAGE.md#core-ml-artifacts)。
 - 已补充 [vpipe/H3/LTX 量化与 streaming 对照](../design/quantized-streaming-vpipe-comparison.md)：Z-Image GGUF streaming 的 Q3/Q4/Q8 256²重复 ABBA×2 已完成，physical footprint 降低 25.2–38.3%，但 warm 代价为 4.00–7.83%，因此保持显式低内存 fallback；H3 已有 BF16 双 slot 后台 `pread` 和预算驱动 pinned-prefix，LTX 已接入共享 policy 驱动的最多三槽 per-block streaming，完整 16/24/32 GB 矩阵仍待补。
 - private ANE 已严格移入实验边界：正式 `native/` 删除调用 `_ANEInMemoryModel*` 的 bridge/MLP/linear 实现，产品构建链接 `h3_ane_disabled.c`；真实研究实现只留在 `experimental/video/h3/vendor`。完整 build 后 `libturbocider.dylib` 中没有 `_ANEInMemoryModel`、`_ANERequest`、`_ANEIOSurfaceObject` 或 AppleNeuralEngine 未解析符号。
 - `tools/native/build.sh`、`tests/repository/test_layout.py` 已加入静态 fail-closed 回归；public H3 Core ML、其他 native 模型和 Swift App 在移除 private bridge 后重新构建通过。
@@ -107,4 +107,4 @@ LLaDA 原生 C++/MLX session 也已通过公共 `tc_engine_prepare` 支持真正
 5. 补齐 FLUX 4B/9B、Z-Image BF16/ConvRot/GGUF 的 LoRA 异常、取消、多 adapter、多尺寸和多机器 E2E 门禁。
 6. 为 LLaDA 增加独立 LoRA 文件识别、内存融合/inference-time 分支和 provenance-bound artifact 后再评测。
 
-详细数据见 [ConvRot 原生 ANE 验证](../design/validation/z-image-convrot-native-ane-2026-09-08.json)、[GGUF 状态](z-image-gguf-2026-09-07.md)和 [GPU/ANE 并行方案](../design/parallel-acceleration.md)。
+历史详细数据曾记录于 `z-image-convrot-native-ane-2026-09-08.json`、`z-image-gguf-2026-09-07.md`（当前源码树未保留）。保留的设计参考见 [GPU/ANE 并行方案](../design/parallel-acceleration.md)，当前 GGUF 范围见 [CLI 模型能力](../public/USAGE.md#model-capabilities)。

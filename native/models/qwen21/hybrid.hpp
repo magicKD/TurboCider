@@ -24,7 +24,8 @@ class HybridMLP {
                                          const Tensor &prefix_tail);
   private:
     struct BridgeTiming {
-        double input_ready = 0, gpu_submit = 0, prediction_api = 0;
+        double input_ready = 0, gpu_submit = 0, prediction_api = 0,
+            lora_delta_wait = 0;
     };
     Tensor run(int block, const Tensor &input, BridgeTiming *timing);
     const Weights &weights_;

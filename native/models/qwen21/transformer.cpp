@@ -168,6 +168,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     if (!cache_prefix || !cached_text_ || cached_text_->id() != text.id() || !same_references) reset();
     bool reuse = cache_prefix && prefix_.size() == size_t(config_.layers);
     const bool split_mlp = reuse ? bool(decode_mlp_) : bool(prefill_mlp_);
+    require(bool(stage_qkv_) == bool(project_qkv_),
+            "Qwen21 QKV stage and projection callbacks must be paired");
+    require(!plan_qkv_ || (project_qkv_ && observe_qkv_),
+            "Qwen21 planned QKV needs paired projection and completed-block observer");
+    require(!project_qkv_ || (!split_mlp && !fused_qkv_),
+            "Qwen21 QKV tier needs its own GPU FFN and cannot combine with another QKV tier");
+    require(!plan_mlp_ || bool(observe_mlp_), "Qwen21 planned MLP requires a completed-block observer");
     const bool half_reuse_ffn = reuse && ffn_cache_mode_ == FFNCacheMode::ReuseEvenAndCapture;
     const bool capture_ffn = reuse && (ffn_cache_mode_ == FFNCacheMode::Capture || half_reuse_ffn);
     const bool reuse_last16_ffn = reuse && ffn_cache_mode_ == FFNCacheMode::ReuseLast16;
@@ -271,15 +278,29 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         // The capture path below owns an independent copy per layer.
         const bool reuse_ffn_block = reuse_ffn && (!half_reuse_ffn || i % 2 == 0) &&
             (!reuse_last16_ffn || i >= config_.layers / 2);
-        const bool split_this = split_mlp &&
+        const bool split_candidate = split_mlp &&
             (reuse ? i >= decode_first_block_ : i >= prefill_first_block_) && !reuse_ffn_block;
+        const int ffn_rows = target_only_block ? height * width : hidden.shape(1);
+        const auto plan = split_candidate ? (plan_mlp_ ? plan_mlp_(i, ffn_rows) : MLPPlan::Split)
+                                          : MLPPlan::Gpu;
+        const bool split_this = plan == MLPPlan::Split || plan == MLPPlan::SplitUntimed;
+        const int qkv_rows = hidden.shape(1);
+        const auto qkv_plan = project_qkv_ && !trace && plan_qkv_ ?
+            plan_qkv_(i, qkv_rows) : QKVPlan::Hybrid;
+        const bool external_qkv = bool(project_qkv_) && !trace &&
+            (qkv_plan == QKVPlan::Hybrid || qkv_plan == QKVPlan::HybridTimed);
+        const bool measured_qkv = bool(project_qkv_) && !trace &&
+            (qkv_plan == QKVPlan::HybridTimed || qkv_plan == QKVPlan::GpuProbe);
+        const bool measured_block = plan_mlp_ && (plan == MLPPlan::Split || plan == MLPPlan::GpuProbe);
         auto &functions = half_reuse_ffn ? half_reuse_blocks_ : reuse_last16_ffn ? reuse_last16_blocks_ :
                                reuse_ffn ? reuse_blocks_ : capture_ffn ? capture_blocks_
                                : reuse ? decode_blocks_ : prefill_blocks_;
-        if (functions.size() <= size_t(i)) {
+        if (functions.size() <= size_t(i)) functions.resize(size_t(i) + 1);
+        auto &function = functions[i][(split_this ? 1 : 0) + (external_qkv ? 2 : 0)];
+        if (!function) {
             const bool profile_ops = profile_gpu_ops_ && !split_this && i == 0;
             const bool profile_segments = profile_prefill_segments_ && !reuse && !split_this && i == 0;
-            auto block = [this, i, reuse, prefix_length, split_this, capture_ffn,
+            auto block = [this, i, reuse, prefix_length, split_this, external_qkv, capture_ffn,
                           target_only_block,
                           reuse_ffn_block,
                           profile_ops, profile_segments,
@@ -290,7 +311,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 // a fused QKV/RoPE kernel, avoid projecting and rotating Q for
                 // the discarded text/reference rows; K/V still cover every
                 // row for target attention and the next-step prefix cache.
-                const bool short_q = target_only_block && !fused_qkv_ &&
+                const bool short_q = target_only_block && !fused_qkv_ && !external_qkv &&
                                      !fused_norm_rope && !metal_rope;
                 auto mark_start = Clock::now();
                 if (profile_ops) {
@@ -314,7 +335,11 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 auto attention_input = input;
                 mark("attention_input_norm", {input});
                 Tensor q(0.f), k(0.f), v(0.f);
-                if (fused_qkv_) {
+                if (external_qkv) {
+                    q = args[args.size() - 3];
+                    k = args[args.size() - 2];
+                    v = heads(args.back(), config_.heads, config_.head_dim);
+                } else if (fused_qkv_) {
                     auto all = metal::project_prepare_qkv(input, fused_qkv_->at(i),
                         weights_.at(p + ".attn.norm_q.weight"),
                         weights_.at(p + ".attn.norm_k.weight"),
@@ -444,7 +469,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 return reuse ? std::vector<Tensor>{hidden} : std::vector<Tensor>{hidden, pk, pv};
             };
             auto compiled = profile_ops || profile_segments ? BlockFunction(block) : mx::compile(block);
-            functions.push_back(std::move(compiled));
+            function = std::move(compiled);
         }
         std::vector<Tensor> args{hidden, mods[0], mods[1], mods[2], mods[3], cosine, sine};
         if (reuse) {
@@ -453,13 +478,35 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         }
         if (reuse_ffn_block)
             args.push_back(half_reuse_ffn ? previous_ffn[i] : cached_ffn_[i]);
+        // Probe complete blocks from the same materialized upstream inputs,
+        // including staging, QKV join, attention and GPU FFN. The GPU probe
+        // uses the ordinary fused/lazy block rather than an external QKV ABI.
+        if (measured_qkv) mx::eval(args);
+        auto qkv_start = measured_qkv ? Clock::now() : Clock::time_point{};
+        if (external_qkv) {
+            const int rows = qkv_rows;
+            stage_qkv_(i, rows); // may overlap the GPU attention-input norm
+            auto normed = layer_norm(hidden, config_.epsilon) *
+                          (Tensor(1.f, hidden.dtype()) + mods[0]);
+            auto projected = project_qkv_(i, normed);
+            require(projected.shape() == mx::Shape{1, rows, 3 * config_.hidden()} &&
+                        projected.dtype() == hidden.dtype(),
+                    "Qwen21 external QKV projection shape/dtype mismatch");
+            auto three = mx::split(projected, 3, -1);
+            args.insert(args.end(), three.begin(), three.end());
+        }
         // Diagnostic only: force each pure-GPU block boundary so the elapsed
         // time can be attributed to that block. This destroys normal lazy
         // scheduling and must never be used as a production speed benchmark.
         const bool profile_block = profile_gpu_blocks_ && !split_mlp;
         if (profile_block) mx::eval(args);
         auto block_start = profile_block ? Clock::now() : Clock::time_point{};
-        auto outputs = functions[i](args);
+        // Exclude ALL prior work (also request modulation/input preparation)
+        // from BOTH measured routes. Ordinary full GPU blocks remain lazy.
+        if (measured_block) mx::eval(args);
+        auto measured_start = measured_block ? Clock::now() : Clock::time_point{};
+        if (split_this && stage_mlp_) stage_mlp_(i, ffn_rows);
+        auto outputs = function(args);
         if (profile_block) {
             mx::eval(outputs);
             std::cerr << "{\"qwen21_gpu_block\":" << i
@@ -495,7 +542,18 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             const auto gate = target_only_block
                 ? slice_axis(*split_gate, 1, prefix_length, split_gate->shape(1)) : *split_gate;
             hidden = split_residual({hidden, gate, feed})[0];
-            mx::eval(hidden); // consume shared Core ML output before next block
+            // Frozen callbacks can borrow reusable Core ML backing and must
+            // finish the residual here. Runtime's untimed callback instead
+            // returns owned/evaluated output, so its residual can stay lazy.
+            if (plan != MLPPlan::SplitUntimed) mx::eval(hidden);
+        }
+        if (measured_block) {
+            if (!split_this) mx::eval(outputs);
+            observe_mlp_(i, ffn_rows, std::chrono::duration<double>(Clock::now() - measured_start).count());
+        }
+        if (measured_qkv) {
+            mx::eval(outputs);
+            observe_qkv_(i, qkv_rows, std::chrono::duration<double>(Clock::now() - qkv_start).count());
         }
         if (trace) {
             trace->emplace("block" + std::to_string(i), hidden);

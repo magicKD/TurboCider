@@ -462,6 +462,9 @@ def main() -> None:
     parser.add_argument("--activation-scale", type=float, default=8.0)
     parser.add_argument("--output-scale", type=float, default=32.0)
     parser.add_argument("--variant", choices=["int8_pc", "fp16"], default="int8_pc")
+    parser.add_argument("--runtime-lora-fused", action="store_true",
+                        help="base-only fixed-row FFN with runtime gate/up input and pre-down hidden tap; "
+                             "never merges an adapter into the artifact")
     parser.add_argument("--activation-precision", choices=["fp16", "int8"], default="fp16",
                         help="int8 requires real, per-block FFN input calibration")
     parser.add_argument("--calibration-dir", type=Path,
@@ -534,6 +537,13 @@ def main() -> None:
         raise ValueError("activation-scale must be 1...64")
     if not 1.0 <= args.output_scale <= 256.0:
         raise ValueError("output-scale must be 1...256")
+    if args.runtime_lora_fused and (args.model_kind != "z-image" or args.lora or
+            args.shape_mode != "fixed" or args.bucket != 1056 or
+            args.ane_mlp_width not in (4096, 6144, 8192) or
+            args.activation_precision != "fp16" or args.row_split_probe or
+            args.channel_routing is not None):
+        raise ValueError("runtime LoRA fused probe requires a base-only fixed 1056-row "
+                         "4096/6144/8192-channel Z-Image FP16-activation graph")
     if args.activation_precision == "int8":
         if (args.variant != "int8_pc" or args.calibration_dir is None or
                 args.shape_mode != "fixed" or args.sq_hidden_rows < 1 or
@@ -687,6 +697,8 @@ def main() -> None:
             "blocks": block_indexes,
             "variant": args.variant,
             "activation_precision": args.activation_precision,
+            **({"mlp_output_kind": "fused_lora", "tensor_layout": "z_image"}
+               if args.runtime_lora_fused else {}),
             **({"calibration": calibration, "sq_alpha1": args.sq_alpha1,
                 "sq_alpha2": args.sq_alpha2, "sq_hidden_rows": args.sq_hidden_rows,
                 "a8_graph": ("explicit_dual_qdq_shared_region_input_v13"
@@ -958,11 +970,7 @@ def main() -> None:
                                 (1, HIDDEN, 1, ct.RangeDim(args.min_bucket, args.bucket,
                                                          default=args.min_bucket))))
                         convert_inputs["inputs"] = [ct.TensorType(name="x", shape=shape, dtype=np.float16)]
-                    @mb.program(
-                        input_specs=[mb.TensorSpec(shape=(1, HIDDEN, 1, rows), dtype=types.fp16)],
-                        opset_version=ct.target.macOS15,
-                    )
-                    def branch(x):
+                    def branch_impl(x, lora_gate_up=None):
                         def quantize_regions(value, scales, label, channels,
                                              image_channel_scales=None):
                             pieces = []
@@ -1032,10 +1040,19 @@ def main() -> None:
                         projected = mb.conv(x=projected_input, weight=first,
                                             pad_type="valid", name="projected")
                         gate, up = mb.split(x=projected, num_splits=2, axis=1)
+                        if lora_gate_up is not None:
+                            gate_delta, up_delta = mb.split(x=lora_gate_up, num_splits=2, axis=1)
+                            gate = mb.add(x=gate, y=gate_delta, name="lora_gate")
+                            up = mb.add(x=up, y=up_delta, name="lora_up")
                         reciprocal = np.float16(1.0 / args.activation_scale)
                         gated = mb.mul(x=mb.silu(x=gate), y=reciprocal)
                         raised = mb.mul(x=up, y=reciprocal)
                         last_input = mb.mul(x=gated, y=raised)
+                        if lora_gate_up is not None:
+                            # Runtime down-LoRA must consume the unscaled, pre-A8 hidden.
+                            hidden = mb.mul(x=last_input,
+                                            y=np.float16(args.activation_scale ** 2),
+                                            name="lora_hidden_unscale")
                         if hidden_a8_scale is not None:
                             if adaptive_hidden_scales is not None:
                                 image = mb.slice_by_index(
@@ -1190,8 +1207,26 @@ def main() -> None:
                                 x=last_input, weight=rotation_width,
                                 groups=width // native_group,
                                 pad_type="valid", name="convrot_mlp")
+                        if lora_gate_up is not None:
+                            base_down = mb.conv(x=last_input, weight=last,
+                                                pad_type="valid", name="base_down")
+                            return mb.concat(values=[base_down, hidden], axis=1, name="y")
                         return mb.conv(x=last_input, weight=last,
                                        pad_type="valid", name="y")
+
+                    if args.runtime_lora_fused:
+                        @mb.program(input_specs=[
+                            mb.TensorSpec(shape=(1, HIDDEN, 1, rows), dtype=types.fp16),
+                            mb.TensorSpec(shape=(1, 2 * width, 1, rows), dtype=types.fp16)],
+                            opset_version=ct.target.macOS15)
+                        def branch(x, lora_gate_up):
+                            return branch_impl(x, lora_gate_up)
+                    else:
+                        @mb.program(input_specs=[
+                            mb.TensorSpec(shape=(1, HIDDEN, 1, rows), dtype=types.fp16)],
+                            opset_version=ct.target.macOS15)
+                        def branch(x):
+                            return branch_impl(x)
 
                     model = ct.convert(
                         branch,
@@ -1208,7 +1243,8 @@ def main() -> None:
                             mode="linear_symmetric", dtype="int8", granularity="per_channel",
                             block_size=32, weight_threshold=0)
                         quantizer = (optimize.OptimizationConfig(
-                            global_config=None, op_name_configs={name: w8 for name in ("projected", "y")})
+                            global_config=None, op_name_configs={name: w8 for name in
+                                ("projected", "base_down" if args.runtime_lora_fused else "y")})
                             if calibration else optimize.OptimizationConfig(global_config=w8))
                         compressed = optimize.linear_quantize_weights(model, quantizer)
                     else:
@@ -1269,6 +1305,8 @@ def main() -> None:
                 "ane_mlp_end": args.ane_mlp_width,
                 "activation_scale": args.activation_scale,
                 "output_scale": args.output_scale,
+                **({"output_channels": HIDDEN + args.ane_mlp_width}
+                   if args.runtime_lora_fused else {}),
                 "buckets": buckets,
                 **({"input_mode": args.shape_mode, "default_bucket": args.min_bucket}
                    if args.shape_mode != "fixed" else {}),

@@ -1,0 +1,14 @@
+{
+  "model": "z-image-turbo-gguf",
+  "operation": "image.generate",
+  "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+  "width": 512,
+  "height": 512,
+  "steps": 8,
+  "seed": 42,
+  "frames": 1,
+  "audio": false,
+  "execution": "gpu",
+  "residency": "resident",
+  "output": "outputs/z-image-gguf-base-512.png"
+}

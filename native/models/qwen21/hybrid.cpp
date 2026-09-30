@@ -1,8 +1,8 @@
 #include "hybrid.hpp"
 #include "hybrid_merge.hpp"
+#include "diagnostic_options.hpp"
 #include <cstdlib>
 #include <iostream>
-#include <string_view>
 
 namespace tc::qwen21 {
 HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16,
@@ -16,6 +16,12 @@ HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16,
     require(ane.hidden == 4096 && ane.mlp_width == 12288 && ane.ane_mlp_start == 0 &&
             ane.ane_mlp_end > 0 && ane.ane_mlp_end < 12288 && ane.block_count == 32 &&
             ane.checkpoint_sha_verified, "invalid or unverified Qwen21 MLP partition");
+    require(ane.mlp_output_kind.empty() ||
+                ((ane.mlp_output_kind == "gate_up" || ane.mlp_output_kind == "fused_lora") &&
+                 ane.output_channels == (ane.mlp_output_kind == "gate_up"
+                    ? 2 * ane.ane_mlp_end : 4096 + ane.ane_mlp_end) &&
+                 !gpu_w8a16_ && gpu_full_blocks.empty()),
+            "Qwen21 LoRA graph needs a BF16 GPU complement");
     require(gpu_full_blocks.size() <= 3, "Qwen21 W8A8 requires at least 29/32 hybrid FFN layers");
     for (int block : gpu_full_blocks) {
         require(block >= 0 && block < 32 && !gpu_full_blocks_[block],
@@ -80,6 +86,10 @@ Tensor HybridMLP::operator()(int block, const Tensor &input) {
 Tensor HybridMLP::run(int block, const Tensor &input, BridgeTiming *timing) {
     require(block >= 0 && block < 32 && input.shape() == mx::Shape{1, ane_.rows, 4096},
             "Qwen21 hybrid decode shape/block mismatch");
+    const bool profile_fused = !timing && ane_.mlp_output_kind == "fused_lora" &&
+        option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_RUNTIME_LORA_FFN"));
+    BridgeTiming profile_timing;
+    if (profile_fused) timing = &profile_timing;
     if (gpu_full_blocks_[block]) {
         const auto &weights = full_weights_.at(block);
         auto output = full_ffn_({input, weights.first, weights.second})[0];
@@ -106,13 +116,68 @@ Tensor HybridMLP::run(int block, const Tensor &input, BridgeTiming *timing) {
             : suffix_({input, fused_[block], down_[block]})[0];
     }
     if (gpu_w8a16_) gpu = mx::astype(gpu, input.dtype());
-    mx::async_eval(gpu);
+    // Dynamic LoRA gate/up must be ready before Core ML may execute SiLU.
+    // Submit the independent GPU suffix *after* that barrier so its kernels
+    // can overlap the Core ML call instead of being accidentally drained by
+    // mx::eval(deltas) on MLX's default GPU stream.
+    if (ane_.mlp_output_kind != "fused_lora") mx::async_eval(gpu);
     if (timing) timing->gpu_submit += std::chrono::duration<double>(Clock::now() - started).count();
     started = timing ? Clock::now() : Clock::time_point{};
-    auto ane = ane_.predict(block, packed);
+    Tensor ane = packed;
+    if (ane_.mlp_output_kind == "fused_lora") {
+        const auto stem = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
+        const int width = ane_.ane_mlp_end;
+        auto deltas = runtime_lora_suffix_
+            ? mx::contiguous(mx::astype(mx::concatenate({
+                weights_.lora_delta_slice(input, stem + "gate_up", 0, width, 0, 4096),
+                weights_.lora_delta_slice(input, stem + "gate_up", 12288, 12288 + width, 0, 4096)
+              }, -1), mx::float16))
+            : mx::contiguous(mx::zeros({1, ane_.rows, 2 * width}, mx::float16));
+        const auto delta_wait_started = timing ? Clock::now() : Clock::time_point{};
+        mx::eval(deltas);
+        if (timing) timing->lora_delta_wait +=
+            std::chrono::duration<double>(Clock::now() - delta_wait_started).count();
+        mx::async_eval(gpu);
+        ane = ane_.predict_with_lora(block, packed, deltas);
+    } else {
+        ane = ane_.predict(block, packed);
+    }
     if (timing) timing->prediction_api += std::chrono::duration<double>(Clock::now() - started).count();
-    auto result = merge_mlp_partitions(gpu, ane, ane_.output_scale);
+    Tensor result = gpu;
+    if (ane_.mlp_output_kind == "gate_up") {
+        const auto stem = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
+        const int width = ane_.ane_mlp_end;
+        auto gate = mx::astype(slice_axis(ane, -1, 0, width), input.dtype());
+        auto up = mx::astype(slice_axis(ane, -1, width, 2 * width), input.dtype());
+        if (runtime_lora_suffix_) {
+            // The base graph ends before the nonlinearity. Both adapter
+            // contributions must be added here; adding them to a completed
+            // base FFN output cannot reproduce the student network.
+            gate = gate + weights_.lora_delta_slice(input, stem + "gate_up", 0, width, 0, 4096);
+            up = up + weights_.lora_delta_slice(input, stem + "gate_up", 12288, 12288 + width, 0, 4096);
+        }
+        auto prefix = weights_.project_slice(silu(gate) * up, stem + "out",
+                                              0, 4096, 0, width);
+        result = gpu + prefix;
+    } else if (ane_.mlp_output_kind == "fused_lora") {
+        const auto stem = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
+        auto prefix = mx::astype(slice_axis(ane, -1, 0, 4096), input.dtype());
+        auto hidden = mx::astype(slice_axis(ane, -1, 4096, ane_.output_channels), input.dtype());
+        result = gpu + prefix;
+        if (runtime_lora_suffix_)
+            result = result + weights_.lora_delta_slice(hidden, stem + "out",
+                                                         0, 4096, 0, ane_.ane_mlp_end);
+    } else {
+        result = merge_mlp_partitions(gpu, ane, ane_.output_scale);
+    }
     require(result.dtype() == input.dtype(), "Qwen21 hybrid FFN changed activation precision");
+    if (profile_fused)
+        std::cerr << "{\"qwen21_runtime_lora_ffn_block\":" << block
+                  << ",\"input_ready_seconds\":" << timing->input_ready
+                  << ",\"gpu_graph_submit_seconds\":" << timing->gpu_submit
+                  << ",\"lora_delta_wait_seconds\":" << timing->lora_delta_wait
+                  << ",\"predict_and_submit_seconds\":" << timing->prediction_api
+                  << "}" << std::endl;
     // Transformer materializes the residual update before invoking the next
     // callback. Let that single barrier also consume this shared Core ML
     // output; a second barrier here only splits the same dependency chain.
@@ -122,8 +187,7 @@ Tensor HybridMLP::tiled_sequence(int block, const Tensor &input) {
     require(input.ndim() == 3 && input.shape(0) == 1 && input.shape(1) > ane_.rows &&
                 input.shape(2) == 4096, "Qwen21 tiled FFN requires a long sequence");
     std::vector<Tensor> pieces;
-    const char *profile_flag = std::getenv("TURBOCIDER_QWEN21_PROFILE_TILED_FFN");
-    const bool profile = profile_flag && std::string_view(profile_flag) == "1";
+    const bool profile = option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_TILED_FFN"));
     BridgeTiming timing;
     double merge_wait = 0;
     for (int64_t start = 0; start < input.shape(1); start += ane_.rows) {

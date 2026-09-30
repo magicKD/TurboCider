@@ -73,6 +73,9 @@ pip-wheel-metadata/
 # TurboCider generated artifacts and runtime state
 /outputs/
 /results/qwen21/
+# Local Z-Image benchmark requests, images, exports and compile identities.
+# Portable requests belong in examples/requests; conclusions belong in docs/.
+/results/z-image-*
 /artifacts/
 /state/
 /runtime.json

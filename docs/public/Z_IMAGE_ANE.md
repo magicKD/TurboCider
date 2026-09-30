@@ -127,3 +127,43 @@ Z-Image-only CLI path.
 To compare actual warm latency, send repeated requests to a resident engine
 (for example `batch`); `plan` and a single cold `generate` do not measure the
 published warm-request speedup.
+
+## Independent runtime LoRA (experimental)
+
+For the Comfy BF16 base model with a runtime adapter, **do not use a merged
+adapter manifest**. An explicit `lora_fused` FFN graph keeps all base weights
+fixed: GPU runtime gate/up corrections enter the Core ML graph before SiLU,
+and its hidden tap lets GPU compute runtime LoRA down. The adapter is loaded
+only at inference. Use a separately exported and compiled fixed 1056-row
+4096-channel `--runtime-lora-fused` base manifest, a resident 512×512,
+eight-step request with `"lora_strategy": "inference_time"`, and the CLI
+`--hybrid-mode lora_fused --ane-manifest MANIFEST` option (or equivalent
+request JSON). Do not reuse the no-LoRA W8A8 image-only manifest: its
+interface does not expose the nonlinear LoRA boundary.
+The **same** `lora_fused` manifest can also serve a base request: omit
+`loras` and `lora_strategy`, keep the explicit mode/manifest, and the GPU
+supplies zero gate/up delta and skips down-LoRA. Resident base/adapter
+switches retain this frozen Core ML session; automatic no-LoRA routing still
+uses its separately measured fastest graph. This shared base route is not
+yet independently speed-qualified.
+
+On this M4 Max and one real rank-32 Z-Image LoRA, four warm fox requests
+measured 8.699 s median full GPU versus 7.254 s median explicit GPU/Core ML,
+approximately **1.20×**. Both routes applied 238 LoRA projections; the hybrid
+completed 256 predictions per request. The two outputs looked close in that
+one prompt/seed, but neither other adapters nor other prompts are
+quality-qualified. Automatic routing still prefers GPU for runtime LoRA.
+An additional opt-in `TURBOCIDER_Z_RUNTIME_LORA_DIRECT_FP16=1` screen skipped
+the intermediate BF16 rounding of the dynamic GPU correction (no LoRA terms
+were removed). In a later matched two-warm-request pair it took 7.067/7.048 s
+versus 8.579/8.601 s on GPU, approximately **1.217×**; the difference from
+the original shared-base route was only about 0.6% in a separate interleaved
+screen. It remains optional, not the automatic policy. See the
+[runtime route comparison](../status/runtime-lora-acceleration-2026-09-28.md)
+for the Qwen contrast, limitations and negative experiments.
+The frozen-base 4096-channel graph is **W8 weights with FP16 activations**,
+not the separately measured no-LoRA W8A8 path. See
+`docs/status/z-image-runtime-lora-fused-2026-09-28.md` for numerical and
+performance caveats. `lora_suffix` remains a deliberately incomplete FFN
+diagnostic; prior dense-suffix runs could also skip the suffix adapter and
+must not be used as correct runtime LoRA speedups.

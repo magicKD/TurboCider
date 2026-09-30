@@ -1,4 +1,5 @@
 #pragma once
+#include "../../core/contracts.hpp"
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -14,6 +15,24 @@ inline bool option_enabled(const char *value) {
 
 inline bool binary_option_or_unset(const char *value) {
     return !value || std::string_view(value) == "0" || option_enabled(value);
+}
+
+inline bool lora_base_ane(const Request &request) {
+    if (request.hybrid_mlp_mode != "auto")
+        return request.hybrid_mlp_mode == "lora_suffix" ||
+               request.hybrid_mlp_mode == "lora_gate_up" ||
+               request.hybrid_mlp_mode == "lora_fused";
+    return option_enabled(std::getenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC"));
+}
+
+inline bool gate_up_ane(const Request &request) {
+    if (request.hybrid_mlp_mode != "auto")
+        return request.hybrid_mlp_mode == "lora_gate_up";
+    return option_enabled(std::getenv("TURBOCIDER_QWEN21_LORA_GATE_UP_DIAGNOSTIC"));
+}
+
+inline bool fused_lora_ane(const Request &request) {
+    return request.hybrid_mlp_mode == "lora_fused";
 }
 
 // Return a negative sentinel for malformed values so planning and execution

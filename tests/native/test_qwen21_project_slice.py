@@ -40,6 +40,8 @@ class ProjectSliceTests(unittest.TestCase):
             self.assertLess(measured["lora_rows_relative_l2"], 1e-5)
             self.assertLess(measured["lora_columns_relative_l2"], 1e-5)
             self.assertLess(measured["fp16_lora_rows_relative_l2"], 1e-5)
+            self.assertLess(measured["gate_delta_relative_l2"], 1e-5)
+            self.assertLess(measured["up_delta_relative_l2"], 1e-5)
 
 
 if __name__ == "__main__":
