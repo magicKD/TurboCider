@@ -157,26 +157,9 @@ struct StudioView: View {
     }
     private var generationBlocker: String? {
         guard let model, model.executor else { return "请选择可运行的本地模型。" }
-        if studio.draft.modelPath.isEmpty { return "请先选择本地模型文件夹。" }
-        if !model.supports(studio.draft.operation) { return "当前模型不支持此创作方式，请重新选择。" }
-        if studio.draft.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "请输入画面描述或编辑指令。" }
-        let count = studio.draft.activeAssets.count
-        if studio.draft.modelID == "qwen-image-2.1", !studio.draft.activeLoRAs.isEmpty, studio.draft.qwen21TurboLoRA == nil {
-            return "Qwen 2.1 请选择单个已支持的 Viggle 六步 r128 / r256 LoRA。"
-        }
-        if let adapter = studio.draft.qwen21TurboLoRA {
-            if adapter.role != "transformer" || adapter.strength != 1 {
-                return "六步 LoRA 需要 Transformer 角色、强度 1；请应用 GPU 预设。"
-            }
-            if studio.draft.width != 512 || studio.draft.height != 512 || studio.draft.steps != 6 {
-                return "六步 LoRA 需要 512×512、6 步；请在参数中应用 GPU 预设。"
-            }
-            if studio.draft.operation == "image.edit", count > 3 { return "六步 LoRA 最多使用 3 张参考图，请移除多余图片或关闭 LoRA。" }
-        }
-        if ["image.transform", "video.image"].contains(studio.draft.operation), count != 1 { return "请添加并选择一张原图。" }
-        if ["image.edit", "video.reference", "video.keyframes"].contains(studio.draft.operation), count == 0 { return "请添加至少一张参考图。" }
-        if count > (model.max_images ?? 8) { return "当前模型最多支持 \(model.max_images ?? 8) 张输入图，请移除多余图片。" }
         if !studio.selectedStreamingTargetAvailable { return "当前流式档位不可用，请在参数中选择可用档位。" }
+        do { try studio.draft.validate(model: model) }
+        catch { return error.localizedDescription }
         return nil
     }
     private var workflowDescription: String {
@@ -201,7 +184,7 @@ struct StudioView: View {
         case "in_memory_merge":
             return "加载时把 delta 融合到内存，不写完整 merged checkpoint。"
         case "inference_time":
-            return "推理请求期间加载独立 LoRA；不会长期保存融合后的模型权重。"
+            return "推理时加载独立 LoRA，不合并或改写基础模型权重。"
         default:
             return "自动选择当前模型已声明的默认 LoRA 策略。"
         }
@@ -530,7 +513,7 @@ struct StudioView: View {
                         .menuStyle(.borderlessButton).fixedSize().disabled(assetControlsLocked)
                         .accessibilityLabel("添加图片").accessibilityIdentifier("addImages")
                 }
-                Text(studio.draft.qwen21TurboLoRA != nil ? "Turbo · 6 步" : "\(studio.draft.steps) 步")
+                Text(studio.draft.qwen21TurboSummary ?? "\(studio.draft.steps) 步")
                     .font(.caption).foregroundStyle(.secondary)
                 if studio.draft.assets.count > studio.draft.activeAssets.count {
                     Button("使用已添加图片") { studio.changeOperation("image.edit"); focusInput() }
@@ -562,9 +545,15 @@ struct StudioView: View {
                     Label(blocker, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     if studio.draft.modelPath.isEmpty { Button("选择模型") { page = .models }.font(.caption) }
+                    else if !studio.draft.qwen21TurboConfigurationIssues.isEmpty {
+                        Button("应用 Turbo 设置") { studio.applyQwen21TurboPreset() }
+                            .font(.caption).disabled(assetControlsLocked || api.running || api.changing)
+                            .accessibilityIdentifier("repairTurboSettings")
+                    }
                     else if studio.supportsImageInputs, studio.draft.operation != "image.generate", studio.draft.activeAssets.isEmpty {
                         Button("添加图片", action: chooseImages).font(.caption).disabled(assetControlsLocked)
                     }
+                    else { Button("查看设置") { inspector = true }.font(.caption) }
                 }.accessibilityIdentifier("generationRequirement")
             }
         }
@@ -685,9 +674,10 @@ struct StudioView: View {
                     Text("采样步数")
                     TextField("采样步数", value: $studio.draft.steps, format: .number)
                         .textFieldStyle(.roundedBorder).accessibilityIdentifier("steps")
+                        .disabled(studio.draft.qwen21TurboLoRA != nil)
                     Button("重置") { studio.draft.steps = studio.draft.qwen21TurboLoRA != nil ? 6 : (model?.default_steps ?? 4) }
                 }
-                Text(studio.draft.qwen21TurboLoRA != nil ? "此 Viggle 适配器使用固定 6 步采样。"
+                Text(studio.draft.qwen21TurboLoRA != nil ? "Turbo 快速模式固定使用专用 6 步采样。"
                      : studio.draft.modelID.hasPrefix("z-image-turbo") ? "1–50 步，默认 \(model?.default_steps ?? 8) 步。其他步数的画质与加速收益需自行验证。" : "1–50 步，默认 \(model?.default_steps ?? 4) 步。")
                     .font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.modelID == "qwen-image-2.1", studio.draft.activeLoRAs.isEmpty, studio.draft.steps == 6 {
@@ -704,7 +694,7 @@ struct StudioView: View {
                 VStack(alignment: .leading, spacing: 4) { Text("高度").font(.caption2).foregroundStyle(.secondary); TextField("高", value: $studio.draft.height, format: .number).accessibilityIdentifier("height") }
                 Button { let width = studio.draft.width; studio.draft.width = studio.draft.height; studio.draft.height = width } label: { Image(systemName: "arrow.left.arrow.right") }
                     .disabled(studio.draft.width == studio.draft.height).help("交换宽高").accessibilityLabel("交换宽高").padding(.bottom, 3)
-            }.textFieldStyle(.roundedBorder)
+            }.textFieldStyle(.roundedBorder).disabled(studio.draft.qwen21TurboLoRA != nil)
             if studio.draft.modelID == "ltx-2.5-distilled" {
                 HStack {
                     Button("5 秒 · 480p 桶") {
@@ -722,6 +712,7 @@ struct StudioView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
                 HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in Button("\(size)") { studio.draft.width = size; studio.draft.height = size }.font(.caption) } }
+                    .disabled(studio.draft.qwen21TurboLoRA != nil)
                 if studio.draft.modelID == "qwen-image-2.1" {
                     Menu("更多比例") {
                         ForEach(Qwen21CanvasPreset.recommended) { preset in
@@ -730,8 +721,10 @@ struct StudioView: View {
                                 studio.draft.height = preset.height
                             }
                         }
-                    }.accessibilityIdentifier("qwen21CanvasPresets")
-                    Text("六步 LoRA 使用 512 × 512；更高分辨率可在生成后超分。")
+                    }.accessibilityIdentifier("qwen21CanvasPresets").disabled(studio.draft.qwen21TurboLoRA != nil)
+                    Text(studio.draft.qwen21TurboLoRA != nil
+                         ? "App 当前 Turbo 快速模式支持 512 × 512；可在生成后超分。这不是模型本身的分辨率上限。"
+                         : "基础模型可选择其他画幅；更大的画布需要更多时间和内存。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
@@ -776,7 +769,7 @@ struct StudioView: View {
                     Text("LoRA 独立文件").font(.caption); Spacer()
                     Menu("模型库") {
                         ForEach(library.loras.filter { $0.modelID == studio.draft.modelID }) { item in
-                            Button(item.name) { studio.draft.loras.append(StudioLoRA(path: item.path)) }
+                            Button(item.name) { studio.addLoRA(item.path) }
                                 .disabled(studio.draft.loras.count >= 8 || studio.draft.loras.contains { $0.path == item.path } || !FileManager.default.isReadableFile(atPath: item.path))
                         }
                     }.disabled(!library.loras.contains { $0.modelID == studio.draft.modelID })
@@ -785,39 +778,45 @@ struct StudioView: View {
                 ForEach($studio.draft.loras) { $lora in
                     let index = studio.draft.loras.firstIndex(where: { $0.id == lora.id }) ?? 0
                     VStack(alignment: .leading, spacing: 6) {
-                        Toggle(isOn: $lora.enabled) { Text(URL(fileURLWithPath: lora.path).lastPathComponent).font(.caption2).lineLimit(1).help(lora.path) }.toggleStyle(.checkbox).accessibilityIdentifier("loraEnabled-\(index)")
+                        Toggle(isOn: Binding(get: { lora.enabled }, set: { studio.setLoRAEnabled(lora.id, enabled: $0) })) { Text(URL(fileURLWithPath: lora.path).lastPathComponent).font(.caption2).lineLimit(1).help(lora.path) }.toggleStyle(.checkbox).accessibilityIdentifier("loraEnabled-\(index)")
                         HStack {
                             Picker("角色", selection: $lora.role) {
                                 Text("Transformer").tag("transformer")
                                 if studio.draft.modelID.hasPrefix("flux2-") { Text("Text Encoder").tag("text_encoder") }
                                 if studio.draft.modelID == "ltx-2.5-distilled" { Text("Refiner").tag("refiner") }
-                            }.labelsHidden()
+                            }.labelsHidden().disabled(studio.draft.qwen21TurboLoRA?.id == lora.id)
                             Text("强度").font(.caption2)
-                            TextField("强度", value: $lora.strength, format: .number).textFieldStyle(.roundedBorder).frame(width: 64).disabled(!lora.enabled).accessibilityIdentifier("loraStrength-\(index)")
-                            Button { studio.draft.loras.removeAll { $0.id == lora.id } } label: { Image(systemName: "trash") }
+                            TextField("强度", value: $lora.strength, format: .number).textFieldStyle(.roundedBorder).frame(width: 64).disabled(!lora.enabled || studio.draft.qwen21TurboLoRA?.id == lora.id).accessibilityIdentifier("loraStrength-\(index)")
+                            Button { studio.removeLoRA(lora.id) } label: { Image(systemName: "trash") }
                                 .help("移除 LoRA").accessibilityLabel("移除 \(URL(fileURLWithPath: lora.path).lastPathComponent)")
                         }
                     }
                 }
                 Text(studio.draft.modelID == "qwen-image-2.1" ? "六步 Viggle 使用单个适配器，强度固定为 1；关闭后保留文件。" : "强度默认 1.0；取消勾选会保留文件和强度。可输入 −8 到 8。").font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.qwen21TurboLoRA != nil {
-                    Button("恢复 Turbo 推荐设置") { studio.applyQwen21TurboPreset() }
+                    Button("恢复 Turbo 快速设置") { studio.applyQwen21TurboPreset() }
                         .disabled(store.busy || assetControlsLocked)
                         .accessibilityIdentifier("qwen21TurboPreset")
                     Text("已识别六步 Viggle 适配器；预设保留提示词和参考图。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
-                Picker("LoRA 执行策略", selection: $studio.draft.loraStrategy) {
-                    Text("自动").tag("auto")
-                    ForEach(model?.lora_strategies ?? [], id: \.self) { strategy in
-                        Text(strategy == "disk_premerge" ? "离线预融合" :
-                             strategy == "in_memory_merge" ? "内存融合" :
-                             strategy == "inference_time" ? "推理时融合" : strategy).tag(strategy)
-                    }
-                }.disabled(studio.draft.activeLoRAs.isEmpty)
-                Text(loraStrategyHint).font(.caption2).foregroundStyle(.secondary)
-                Text(model?.runtime_lora == true ? "运行时按文件身份缓存并应用，不复制整份 checkpoint。" : "此模型要求 LoRA 对应的预融合 checkpoint 与 provenance manifest。")
-                    .font(.caption2).foregroundStyle(.secondary)
+                if studio.draft.qwen21TurboLoRA != nil {
+                    Text("运行时加载 · 不合并权重").font(.caption)
+                    Text("Viggle 推荐强度 1。保留独立 LoRA，避免合并到 BF16 权重造成精度损失。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Picker("LoRA 执行策略", selection: $studio.draft.loraStrategy) {
+                        Text("自动").tag("auto")
+                        ForEach(model?.lora_strategies ?? [], id: \.self) { strategy in
+                            Text(strategy == "disk_premerge" ? "离线预融合" :
+                                 strategy == "in_memory_merge" ? "内存融合" :
+                                 strategy == "inference_time" ? "运行时加载" : strategy).tag(strategy)
+                        }
+                    }.disabled(studio.draft.activeLoRAs.isEmpty)
+                    Text(loraStrategyHint).font(.caption2).foregroundStyle(.secondary)
+                    Text(model?.runtime_lora == true ? "运行时按文件身份缓存并应用，不复制整份 checkpoint。" : "此模型要求 LoRA 对应的预融合 checkpoint 与 provenance manifest。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             }
             if studio.draft.modelID == "qwen-image-2.1" {
                 Divider()
@@ -1239,7 +1238,7 @@ struct StudioView: View {
             panel.directoryURL = split.appendingPathComponent("loras")
         }
         if panel.runModal() == .OK, let url = panel.url {
-            studio.draft.loras.append(StudioLoRA(path: url.path))
+            studio.addLoRA(url.path)
             library.registerLoRA(url, modelID: studio.draft.modelID)
         }
     }

@@ -577,6 +577,31 @@ struct StudioBehaviorTests {
                     ltxFast.ltx_video_attention_batch == false &&
                     ltxFast.inputs?.map(\.role) == ["first_frame"],
                   "LTX optional Sol/text-pruned I2V mode was not forwarded")
+        let ltxDescriptor = studio.models.first { $0.id == "ltx-2.5-distilled" }!
+        for backend in ["auto", "c_metal"] {
+            for mode in ["sol", "fast_approx"] {
+                var bounded = studio.draft
+                bounded.operation = "video.generate"; bounded.assets = []; bounded.initImageID = nil
+                bounded.audio = false; bounded.ltxBackend = backend; bounded.ltxAccelerationMode = mode
+                try bounded.validate(model: ltxDescriptor)
+                // The 8n+1 value reaches the old Stage-2 multiplication. Large
+                // aligned dimensions also passed its old model-specific guards.
+                var hugeFrames = bounded
+                hugeFrames.width = 1280; hugeFrames.height = 704
+                hugeFrames.frames = 1_000_000_000_000_000_001
+                try rejects { try hugeFrames.validate(model: ltxDescriptor) }
+                for value in [Int.max - 63, Int.min] {
+                    var hugeWidth = bounded; hugeWidth.width = value
+                    try rejects { try hugeWidth.validate(model: ltxDescriptor) }
+                    var hugeHeight = bounded; hugeHeight.height = value
+                    try rejects { try hugeHeight.validate(model: ltxDescriptor) }
+                }
+                var negativeFrames = bounded; negativeFrames.frames = Int.min
+                try rejects { try negativeFrames.validate(model: ltxDescriptor) }
+                bounded.width = 64; bounded.height = 64; bounded.frames = 361
+                try bounded.validate(model: ltxDescriptor)
+            }
+        }
         studio.draft.audio = false
         studio.selectModel("wan2.1-1.3b-qad")
         try check(studio.draft.loraStrategy == "auto", "Model switch did not reset LoRA strategy")
@@ -801,6 +826,7 @@ struct StudioBehaviorTests {
                   "Single-image undo did not restore reference order and primary selection")
         let adapter = root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors")
         try Data([0]).write(to: adapter)
+        try await verifyTurboControls(root: root.appendingPathComponent("turbo-controls"), source: source, adapter: adapter)
         studio.draft.loras = [StudioLoRA(path: adapter.path)]
         studio.applyQwen21TurboPreset()
         try check(studio.imageImportLimit == 3, "Turbo LoRA import limit differs from the native three-image contract")
@@ -864,6 +890,8 @@ struct StudioBehaviorTests {
         try check(mask && Array(studio.draft.assets.prefix(3)) == originals && studio.draft.initImageID == originals[1].id,
                   "Mask insertion renumbered existing references or changed the primary image")
         studio.undoAssetChange()
+        try check(studio.message?.contains("已撤销") == true && studio.message?.contains("已添加") != true,
+                  "Undoing a mask left its successful-addition message visible")
         // Deferred providers exercise an actual suspension, rather than relying
         // on file size or timing. Unrelated text/settings edits remain permitted.
         let deferred = DeferredStudioImageProvider()
@@ -941,5 +969,139 @@ struct StudioBehaviorTests {
         try studio.importConfiguration(from: configuration)
         try check(studio.workspaceResetID != reset, "Configuration import did not reset the workspace")
         print("PASS editing state: result copies/fresh instructions, single-image selection, reference/mask order, turbo limits, delayed-provider conflicts/cancellation, prompt preservation and workspace resets")
+    }
+
+    @MainActor private static func verifyTurboControls(root: URL, source: URL, adapter: URL) async throws {
+        func check(_ condition: @autoclosure () throws -> Bool, _ reason: String) throws {
+            if try !condition() { throw NativeFailure(message: reason) }
+        }
+        let studio = StudioState(directory: root)
+        studio.selectModel("qwen-image-2.1")
+        studio.draft.modelPaths[studio.draft.modelID] = root.path
+        await studio.addFiles(Array(repeating: source, count: 4))
+        let assets = studio.draft.assets
+        studio.draft.prompt = "Preserve this description and the retained reference tray"
+        let prompt = studio.draft.prompt
+        studio.draft.width = 768; studio.draft.steps = 40
+        studio.addLoRA(adapter.path)
+        let id = studio.draft.loras[0].id
+        try check(studio.draft.qwen21TurboConfigurationIssues.isEmpty && studio.draft.qwen21TurboSummary == "Turbo · 6 步" &&
+                  studio.draft.steps == 6 && studio.draft.width == 512 && studio.draft.height == 512 &&
+                  studio.draft.prompt == prompt && studio.draft.assets == assets,
+                  "Adding the supported Turbo adapter did not apply its setup or lost draft content")
+        let text = try studio.draft.request(output: root.appendingPathComponent("unused-text.png"))
+        try check(text.inputs?.isEmpty == true && studio.draft.assets.count == 4 && text.execution == "gpu" && text.steps == 6,
+                  "Text generation incorrectly used or rejected retained reference images")
+        studio.addLoRA(adapter.deletingLastPathComponent().appendingPathComponent("./" + adapter.lastPathComponent).path)
+        try check(studio.draft.loras.count == 1 && studio.draft.loras[0].id == id,
+                  "Adding an equivalent adapter path created a duplicate")
+        let second = root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors")
+        try Data([0]).write(to: second)
+        studio.addLoRA(second.path)
+        let secondID = studio.draft.loras.last!.id
+        try check(studio.draft.loras.count == 2 && studio.draft.qwen21TurboSummary == nil && studio.draft.steps == 40,
+                  "Multiple active adapters were advertised as a supported Turbo configuration")
+        do {
+            try studio.draft.validate()
+            throw NativeFailure(message: "Multiple Turbo adapters unexpectedly validated")
+        } catch {
+            try check(error.localizedDescription.contains("单个"), "Multiple adapters lost their actionable validation reason")
+        }
+        studio.removeLoRA(secondID)
+        try check(studio.draft.loras.count == 1 && studio.draft.loras[0].id == id && studio.draft.steps == 6,
+                  "Removing an extra adapter did not restore the single-adapter Turbo configuration")
+        studio.changeModel("flux2-klein-4b"); studio.changeModel("qwen-image-2.1")
+        try check(studio.draft.loras.first?.id == id && studio.draft.steps == 6 &&
+                  studio.draft.qwen21TurboConfigurationIssues.isEmpty && studio.draft.prompt == prompt && studio.draft.assets == assets,
+                  "Model round trip restored Turbo LoRA with the base 40-step schedule")
+        studio.setLoRAEnabled(id, enabled: false)
+        try check(studio.draft.steps == 40 && studio.draft.qwen21TurboSummary == nil &&
+                  studio.draft.loras.count == 1 && !studio.draft.loras[0].enabled &&
+                  studio.draft.prompt == prompt && studio.draft.assets == assets,
+                  "Disabling Turbo lost its file/content or left the base model on six steps")
+        let base = try studio.draft.request(output: root.appendingPathComponent("unused-base.png"))
+        try check(base.steps == 40 && base.loras == nil && base.inputs?.isEmpty == true,
+                  "A disabled adapter or retained references leaked into base text generation")
+        let qwenDescriptor = studio.models.first { $0.id == "qwen-image-2.1" }!
+        var pe = studio.draft
+        pe.promptEnhance = true; pe.promptEnhancerPath = root.appendingPathComponent("missing-pe").path
+        do {
+            try pe.validate(model: qwenDescriptor)
+            throw NativeFailure(message: "Missing PE installation unexpectedly validated")
+        } catch {
+            try check(error.localizedDescription.contains("PE-T2I"), "Missing PE directory was not exposed by settings validation")
+        }
+        let peDirectory = root.appendingPathComponent("pe-fixture")
+        try FileManager.default.createDirectory(at: peDirectory, withIntermediateDirectories: true)
+        try "Rewrite the supplied description".write(to: peDirectory.appendingPathComponent("system_prompt.txt"), atomically: true, encoding: .utf8)
+        try "{}".write(to: peDirectory.appendingPathComponent("tokenizer.json"), atomically: true, encoding: .utf8)
+        pe.promptEnhancerPath = peDirectory.path
+        try pe.validate(model: qwenDescriptor)
+        pe.operation = "image.edit"; pe.assets = Array(assets.prefix(1)); pe.promptEnhanceEditExperimental = false
+        do {
+            try pe.validate(model: qwenDescriptor)
+            throw NativeFailure(message: "PE editing without experimental opt-in unexpectedly validated")
+        } catch {
+            try check(error.localizedDescription.contains("显式开启"), "PE editing opt-in was not exposed by settings validation")
+        }
+        pe.promptEnhanceEditExperimental = true
+        try pe.validate(model: qwenDescriptor)
+        let peRequest = try pe.request(output: root.appendingPathComponent("unused-pe-edit.png"))
+        try check(peRequest.prompt_enhance == true && peRequest.prompt_enhance_edit_experimental == true &&
+                  peRequest.prompt_enhancer_path == peDirectory.path,
+                  "Valid PE settings did not preserve the request's enhancement/experimental intent")
+        studio.setLoRAEnabled(id, enabled: true)
+        try check(studio.draft.steps == 6 && studio.draft.qwen21TurboConfigurationIssues.isEmpty,
+                  "Re-enabling Turbo did not restore its qualified schedule")
+        studio.draft.steps = 40
+        try check(studio.draft.qwen21TurboSummary == "Turbo · 待配置" &&
+                  studio.draft.qwen21TurboConfigurationIssues.count == 1 &&
+                  studio.draft.qwen21TurboConfigurationIssues[0].contains("40") &&
+                  !studio.draft.qwen21TurboConfigurationIssues[0].contains("512"),
+                  "A steps-only conflict falsely blamed the already correct canvas")
+        do {
+            try studio.draft.validate()
+            throw NativeFailure(message: "Turbo base schedule unexpectedly validated")
+        } catch {
+            try check(error.localizedDescription.contains("40") && !error.localizedDescription.contains("512"),
+                      "Request validation diverged from the precise steps-only reason")
+        }
+        studio.save()
+        let reopened = StudioState(directory: root)
+        try check(reopened.draft.steps == 40 && reopened.draft.qwen21TurboSummary == "Turbo · 待配置",
+                  "Opening an old Turbo draft silently migrated its settings")
+        studio.draft.steps = 6; studio.draft.width = 768
+        studio.draft.loras[0].role = "text_encoder"; studio.draft.loras[0].strength = 0.8
+        studio.draft.loraStrategy = "disk_premerge"
+        let issues = studio.draft.qwen21TurboConfigurationIssues
+        try check(issues.count == 4 && issues.contains(where: { $0.contains("768×512") && $0.contains("App") }) &&
+                  issues.contains(where: { $0.contains("text_encoder") }) && issues.contains(where: { $0.contains("0.8") }) &&
+                  issues.contains(where: { $0.contains("disk_premerge") }), "Turbo issues omitted actual canvas/role/strength/strategy values")
+        studio.applyQwen21TurboPreset()
+        studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane")
+        try check(studio.draft.accelerationHint == "GPU · BF16 · LoRA 运行时加载" &&
+                  (try studio.draft.request(output: root.appendingPathComponent("unused-gpu.png"))).execution == "gpu",
+                  "Turbo device hint disagreed with the forced pure GPU request")
+        studio.draft.acceleration = StudioAcceleration(policy: "gpu")
+        studio.draft.loraStrategy = "auto"
+        try check(studio.draft.qwen21TurboConfigurationIssues.isEmpty,
+                  "The supported automatic strategy was treated as a conflict")
+        studio.removeLoRA(id)
+        try check(studio.draft.steps == 40 && studio.draft.loras.isEmpty && studio.draft.qwen21TurboSummary == nil &&
+                  studio.draft.prompt == prompt && studio.draft.assets == assets,
+                  "Removing the last Turbo adapter left six-step base settings or erased content")
+        studio.addLoRA(adapter.path)
+        studio.draft.steps = 12
+        studio.setLoRAEnabled(studio.draft.loras[0].id, enabled: false)
+        try check(studio.draft.steps == 12, "Leaving Turbo reset a manually chosen non-six-step schedule")
+        studio.changeModel("flux2-klein-4b")
+        studio.draft.steps = 13; studio.draft.width = 768
+        studio.addLoRA(adapter.path)
+        let fluxID = studio.draft.loras[0].id
+        studio.setLoRAEnabled(fluxID, enabled: false); studio.setLoRAEnabled(fluxID, enabled: true); studio.removeLoRA(fluxID)
+        try check(studio.draft.steps == 13 && studio.draft.width == 768 && studio.draft.qwen21TurboSummary == nil &&
+                  studio.draft.prompt == prompt && studio.draft.assets == assets,
+                  "Qwen Turbo controls changed another model's schedule or content")
+        print("PASS Turbo controls: add/enable/disable/remove, model round trip, retained TTI references, precise conflict reasons, GPU hint and unchanged old drafts/other models")
     }
 }

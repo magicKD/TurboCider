@@ -303,6 +303,22 @@ struct StudioDraft: Codable, Sendable {
                 .contains(URL(fileURLWithPath: adapter.path).lastPathComponent) else { return nil }
         return adapter
     }
+    var qwen21TurboConfigurationIssues: [String] {
+        guard let adapter = qwen21TurboLoRA else { return [] }
+        var issues: [String] = []
+        if steps != 6 { issues.append("当前采样为 \(steps) 步，六步 LoRA 需要 6 步") }
+        if width != 512 || height != 512 { issues.append("当前画布为 \(width)×\(height)，App 的 Turbo 快速模式当前支持 512×512") }
+        if adapter.role != "transformer" { issues.append("当前 LoRA 角色为 \(adapter.role)，六步 LoRA 需要 transformer") }
+        if adapter.strength != 1 { issues.append("当前 LoRA 强度为 \(String(format: "%g", adapter.strength))，六步 LoRA 需要强度 1") }
+        if loraStrategy != "auto" && loraStrategy != "inference_time" {
+            issues.append("当前 LoRA 策略为 \(loraStrategy)，六步 LoRA 需要推理时加载")
+        }
+        return issues
+    }
+    var qwen21TurboSummary: String? {
+        guard qwen21TurboLoRA != nil else { return nil }
+        return qwen21TurboConfigurationIssues.isEmpty ? "Turbo · 6 步" : "Turbo · 待配置"
+    }
     var usesANE: Bool { acceleration?.policy == "gpu_ane" }
     var usesPublicStreaming: Bool { streaming.selection.targetBytes != nil }
     var modelPath: String { modelPaths[modelID] ?? "" }
@@ -344,6 +360,7 @@ struct StudioDraft: Codable, Sendable {
         return true
     }
     var accelerationHint: String {
+        if qwen21TurboLoRA != nil { return "GPU · BF16 · LoRA 运行时加载" }
         let policy = acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")
         if policy == "gpu", let variant = zImageVariant, variant.id != "bf16" {
             return "GPU · \(variant.title)"
@@ -453,6 +470,15 @@ struct StudioDraft: Codable, Sendable {
         guard !modelPath.isEmpty else { throw NativeFailure(message: "请先在模型中心选择模型文件夹。") }
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
         guard model.supports(operation) else { throw NativeFailure(message: "当前模型不支持“\(operation)”操作。") }
+        // Bound user-entered integers before any model-specific token/latent
+        // arithmetic, including LTX's Stage-2 row product below.
+        let maxDimension = modelID == "qwen-image-2.1" ? 4096 : 2048
+        let dimensionMultiple = modelID == "qwen-image-2.1" ? 32 : 16
+        guard (64...maxDimension).contains(width), (64...maxDimension).contains(height), width % dimensionMultiple == 0, height % dimensionMultiple == 0 else { throw NativeFailure(message: "宽高需为 64–\(maxDimension) 之间的 \(dimensionMultiple) 倍数。") }
+        guard frames >= 1 && frames <= 362 else { throw NativeFailure(message: "帧数超出支持范围。") }
+        if modelID == "qwen-image-2.1", width * height > 8_388_608 {
+            throw NativeFailure(message: "Qwen Image 2.1 当前画布上限为 8 百万像素。")
+        }
         if usesPublicStreaming {
             guard publicStreamingModel else {
                 throw NativeFailure(message: "当前模型尚未加入 public 流式加载目录，请选择 Off。")
@@ -511,12 +537,6 @@ struct StudioDraft: Codable, Sendable {
             }
         }
         guard !audio || model.canGenerateAudio else { throw NativeFailure(message: "当前执行器尚未开放音频输出，请关闭音频。") }
-        let maxDimension = modelID == "qwen-image-2.1" ? 4096 : 2048
-        let dimensionMultiple = modelID == "qwen-image-2.1" ? 32 : 16
-        guard (64...maxDimension).contains(width), (64...maxDimension).contains(height), width % dimensionMultiple == 0, height % dimensionMultiple == 0 else { throw NativeFailure(message: "宽高需为 64–\(maxDimension) 之间的 \(dimensionMultiple) 倍数。") }
-        if modelID == "qwen-image-2.1", width * height > 8_388_608 {
-            throw NativeFailure(message: "Qwen Image 2.1 当前画布上限为 8 百万像素。")
-        }
         guard (1...50).contains(steps) else { throw NativeFailure(message: "采样步数需为 1–50，当前模型默认 \(model.default_steps) 步。") }
         if ["z-image-turbo", "z-image-turbo-gguf"].contains(modelID) {
             guard (residency == "resident" || (modelID == "z-image-turbo" && residency == "streamed")), frames == 1, !audio else {
@@ -532,7 +552,6 @@ struct StudioDraft: Codable, Sendable {
                 throw NativeFailure(message: "Z-Image LoRA 仅支持 transformer 角色。")
             }
         }
-        guard frames >= 1 && frames <= 362 else { throw NativeFailure(message: "帧数超出支持范围。") }
         guard (1...120).contains(fps) else { throw NativeFailure(message: "帧率超出支持范围。") }
         if !randomSeed { _ = try fixedSeed() }
         guard strength.isFinite, (0...1).contains(strength) else { throw NativeFailure(message: "图像强度需为 0–1。") }
@@ -551,14 +570,12 @@ struct StudioDraft: Codable, Sendable {
         if let max = model.max_images, activeAssets.count > max { throw NativeFailure(message: "当前模型最多接受 \(max) 张输入图片。") }
         if !activeLoRAs.isEmpty && model.supports_lora != true { throw NativeFailure(message: "当前模型不支持 LoRA。") }
         if modelID == "qwen-image-2.1", !activeLoRAs.isEmpty {
-            guard let adapter = qwen21TurboLoRA else {
+            guard qwen21TurboLoRA != nil else {
                 throw NativeFailure(message: "Qwen 2.1 当前支持单个 Viggle v0.2.1 六步 r128 / r256 LoRA，请只启用一个已支持的适配器。")
             }
-            guard adapter.role == "transformer", adapter.strength == 1 else {
-                throw NativeFailure(message: "Qwen 2.1 六步 LoRA 需使用 transformer 角色、强度 1。请应用六步 GPU 预设。")
-            }
-            guard width == 512, height == 512, steps == 6 else {
-                throw NativeFailure(message: "Qwen 2.1 六步 LoRA 当前使用 512×512、6 步。请应用六步 GPU 预设。")
+            let issues = qwen21TurboConfigurationIssues
+            guard issues.isEmpty else {
+                throw NativeFailure(message: issues.joined(separator: "；") + "。请应用 Turbo 快速设置。")
             }
             guard operation != "image.edit" || activeAssets.count <= 3 else {
                 throw NativeFailure(message: "Qwen 2.1 六步 LoRA 编辑最多支持 3 张参考图；更多参考图请关闭 LoRA。")
@@ -580,15 +597,6 @@ struct StudioDraft: Codable, Sendable {
             guard ["transformer", "text_encoder", "refiner"].contains(lora.role) else { throw NativeFailure(message: "不支持的 LoRA 角色。") }
         }
         for asset in activeAssets where !FileManager.default.fileExists(atPath: asset.path) { throw NativeFailure(message: "找不到素材：\(asset.name)。请重新添加。") }
-    }
-    func fixedSeed() throws -> Int {
-        guard let value = Int(seedText), (0...2147483647).contains(value) else { throw NativeFailure(message: "种子需为 0–2147483647 的整数。") }
-        return value
-    }
-    func request(output: URL, random: () -> Int = { Int.random(in: 0...2147483647) }) throws -> NativeRequest {
-        let model = StudioModel.catalog().first { $0.id == modelID }
-        guard let model, model.executor else { throw NativeFailure(message: "当前模型没有可用执行器。") }
-        try validate(model: model)
         if modelID == "qwen-image-2.1" && promptEnhance {
             guard operation == "image.generate" || (operation == "image.edit" && promptEnhanceEditExperimental) else {
                 throw NativeFailure(message: "PE-I2I 需要显式开启实验性 FP32 视觉；编辑质量尚未通过验收。")
@@ -600,6 +608,15 @@ struct StudioDraft: Codable, Sendable {
                     : "请选择完整的 Qwen-Image-2.1 PE-T2I 模型安装目录。")
             }
         }
+    }
+    func fixedSeed() throws -> Int {
+        guard let value = Int(seedText), (0...2147483647).contains(value) else { throw NativeFailure(message: "种子需为 0–2147483647 的整数。") }
+        return value
+    }
+    func request(output: URL, random: () -> Int = { Int.random(in: 0...2147483647) }) throws -> NativeRequest {
+        let model = StudioModel.catalog().first { $0.id == modelID }
+        guard let model, model.executor else { throw NativeFailure(message: "当前模型没有可用执行器。") }
+        try validate(model: model)
         var request = NativeRequest(prompt: prompt, output: output.path)
         request.model = modelID; request.operation = operation
         request.width = width; request.height = height; request.steps = steps
@@ -1199,6 +1216,7 @@ final class StudioState: ObservableObject {
         draft.acceleration = StudioAcceleration(policy: "gpu")
         draft.loras = draft.modelLoRAs[id] ?? []
         draft.loraStrategy = "auto"
+        if draft.qwen21TurboLoRA != nil { configureQwen21TurboPreset() }
         if !model.operations.contains(where: { $0 != "image.generate" && $0 != "video.generate" }) {
             draft.assets.removeAll(); draft.initImageID = nil
         }
@@ -1217,7 +1235,45 @@ final class StudioState: ObservableObject {
     var canUndoAssets: Bool { !undoAssets.isEmpty }
     func undoAssetChange() {
         guard !importing else { return }
-        if let previous = undoAssets.popLast() { draft.assets = previous.0; draft.initImageID = previous.1 }
+        if let previous = undoAssets.popLast() {
+            draft.assets = previous.0; draft.initImageID = previous.1
+            message = "已撤销素材修改，恢复之前的图片顺序与原图选择。"
+        }
+    }
+    func addLoRA(_ path: String) {
+        guard !importing, !path.isEmpty else { return }
+        let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard !draft.loras.contains(where: { URL(fileURLWithPath: $0.path).standardizedFileURL.path == normalized }) else {
+            message = "此 LoRA 已添加，可使用开关启用。"; return
+        }
+        guard draft.loras.count < 8 else { message = "最多可配置 8 个 LoRA 文件。"; return }
+        let wasTurbo = draft.qwen21TurboLoRA != nil
+        draft.loras.append(StudioLoRA(path: normalized))
+        synchronizeQwen21TurboSettings(wasTurbo: wasTurbo)
+        save()
+    }
+    func setLoRAEnabled(_ id: UUID, enabled: Bool) {
+        guard !importing, let index = draft.loras.firstIndex(where: { $0.id == id }), draft.loras[index].enabled != enabled else { return }
+        let wasTurbo = draft.qwen21TurboLoRA != nil
+        draft.loras[index].enabled = enabled
+        synchronizeQwen21TurboSettings(wasTurbo: wasTurbo)
+        save()
+    }
+    func removeLoRA(_ id: UUID) {
+        guard !importing, draft.loras.contains(where: { $0.id == id }) else { return }
+        let wasTurbo = draft.qwen21TurboLoRA != nil
+        draft.loras.removeAll { $0.id == id }
+        synchronizeQwen21TurboSettings(wasTurbo: wasTurbo)
+        save()
+    }
+    private func synchronizeQwen21TurboSettings(wasTurbo: Bool) {
+        guard draft.modelID == "qwen-image-2.1" else { return }
+        if draft.qwen21TurboLoRA != nil { configureQwen21TurboPreset() }
+        else {
+            if wasTurbo, draft.steps == 6 { draft.steps = 40 }
+            message = wasTurbo && draft.activeLoRAs.isEmpty
+                ? "已关闭六步 Turbo，基础 Qwen 使用 \(draft.steps) 步；提示词与参考图已保留。" : nil
+        }
     }
     /// Qwen uses reference editing for both one and multiple images. Do not ask
     /// changeOperation to find another model just to edit a single reference.
@@ -1302,7 +1358,11 @@ final class StudioState: ObservableObject {
         message = "已替换为可编辑的示例提示词，使用 GPU / \(steps) 步 / \(size.0)×\(size.1)。这不是模型提示词重写；蒙版与标注作为视觉参考，不保证逐像素锁定未编辑区。"
     }
     func applyQwen21TurboPreset() {
-        guard !importing, let adapter = draft.qwen21TurboLoRA,
+        guard !importing else { message = "请等待素材导入完成。"; return }
+        configureQwen21TurboPreset()
+    }
+    private func configureQwen21TurboPreset() {
+        guard let adapter = draft.qwen21TurboLoRA,
               let index = draft.loras.firstIndex(where: { $0.id == adapter.id }) else {
             message = "请先启用单个 Qwen 2.1 Viggle 六步 r128 / r256 LoRA。"
             return
