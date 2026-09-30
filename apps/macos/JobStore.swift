@@ -24,6 +24,16 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var publicStreamingResolutionJSON: String? = nil
     var publicStreamingIntentJSON: String? = nil
     var publicWorker: PublicImageWorker.Reference? = nil
+    /// Optional provenance for independently persisted Playground templates.
+    /// Missing in older histories; it does not affect native execution.
+    var workflowID: String? = nil
+    var workflowName: String? {
+        switch workflowID {
+        case "playground.outfit": return "Playground · 换装"
+        case "playground.identity": return "Playground · 人物一致性"
+        default: return nil
+        }
+    }
     var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
     var routeSummary: String? {
         if request.operation == "image.upscale" {
@@ -637,7 +647,8 @@ final class NativeJobStore: ObservableObject {
         }
     }
     func generate(modelURL: URL, request: NativeRequest,
-                  streamingRequest: NativeRequestV2? = nil) async throws -> NativeJob {
+                  streamingRequest: NativeRequestV2? = nil,
+                  workflowID: String? = nil) async throws -> NativeJob {
         guard !busy else { throw NativeFailure(message: "一次只能生成一张图或一个视频。") }
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
         // Close the reentrancy window before any async plan/session operation.
@@ -672,7 +683,8 @@ final class NativeJobStore: ObservableObject {
         let id = UUID(); activeID = id; telemetry = StepTelemetry(); lastSequence = -1; denoiseStart = nil; lastDetailUpdate = 0
         jobs.insert(NativeJob(id: id, createdAt: Date(), request: request, state: "preparing", phase: "prepare", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path,
                               publicStreamingTargetBytes: streamingRequest?.execution.streaming?.target_request_memory_bytes,
-                              publicStreamingIntentJSON: publicStreamingIntentJSON), at: 0)
+                              publicStreamingIntentJSON: publicStreamingIntentJSON,
+                              workflowID: workflowID), at: 0)
         let start = ContinuousClock.now
         do {
             try persist()

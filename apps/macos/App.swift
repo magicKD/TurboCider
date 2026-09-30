@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 struct TurboCiderNativeApp: App {
     @StateObject private var store: NativeJobStore
     @StateObject private var studio: StudioState
+    @StateObject private var playground: PlaygroundState
     @StateObject private var api: LocalAPIController
     @State private var submitting = false
     @NSApplicationDelegateAdaptor(StudioAppDelegate.self) private var delegate
@@ -17,13 +18,17 @@ struct TurboCiderNativeApp: App {
             setenv("TURBOCIDER_LTX_CONDITIONING_CACHE_DIR", TensorCache.sharedRoot.path, 0)
         }
         _store = StateObject(wrappedValue: NativeJobStore(directory: directory))
-        _studio = StateObject(wrappedValue: StudioState(directory: directory))
+        let studioState = StudioState(directory: directory)
+        _studio = StateObject(wrappedValue: studioState)
+        _playground = StateObject(wrappedValue: PlaygroundState(directory: directory,
+            initialSettings: studioState.draft, models: studioState.models))
         _api = StateObject(wrappedValue: LocalAPIController(directory: directory))
     }
     var body: some Scene {
         WindowGroup("TurboCider") {
-            StudioView(store: store, studio: studio, api: api, submitting: $submitting).frame(minWidth: 980, minHeight: 700)
-                .onAppear { delegate.store = store; delegate.studio = studio; delegate.api = api }
+            StudioView(store: store, studio: studio, playground: playground, api: api, submitting: $submitting).frame(minWidth: 980, minHeight: 700)
+                .onAppear { delegate.store = store; delegate.studio = studio; delegate.playground = playground; delegate.api = api; delegate.submitting = submitting }
+                .onChange(of: submitting) { _, value in delegate.submitting = value }
         }
         .commands {
             CommandGroup(replacing: .newItem) { Button("新建创作") { studio.newDraft() }.keyboardShortcut("n")
@@ -46,20 +51,24 @@ struct TurboCiderNativeApp: App {
 @MainActor final class StudioAppDelegate: NSObject, NSApplicationDelegate {
     weak var store: NativeJobStore?
     weak var studio: StudioState?
+    weak var playground: PlaygroundState?
     weak var api: LocalAPIController?
+    var submitting = false
     func applicationWillTerminate(_ notification: Notification) { api?.terminateNow() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         studio?.save()
-        guard store?.busy == true || api?.running == true else { return .terminateNow }
+        playground?.save()
+        guard submitting || store?.busy == true || api?.running == true ||
+                studio?.importing == true || playground?.importing == true else { return .terminateNow }
         let alert = NSAlert(); alert.messageText = "任务仍在进行中"; alert.informativeText = "退出会中断本机任务。草稿与历史记录会保留。"
         alert.addButton(withTitle: "继续运行"); alert.addButton(withTitle: "退出并中断")
         return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
     }
 }
 private enum StudioPage: String, CaseIterable, Identifiable {
-    case studio = "创作", library = "素材库", tasks = "任务", models = "模型", api = "本地 API"
+    case studio = "创作", playground = "Playground", library = "素材库", tasks = "任务", models = "模型", api = "本地 API"
     var id: String { rawValue }
-    var symbol: String { switch self { case .studio: return "sparkles"; case .library: return "photo.on.rectangle"; case .tasks: return "clock"; case .models: return "cpu"; case .api: return "network" } }
+    var symbol: String { switch self { case .studio: return "sparkles"; case .playground: return "square.grid.2x2"; case .library: return "photo.on.rectangle"; case .tasks: return "clock"; case .models: return "cpu"; case .api: return "network" } }
 }
 private let ciderAccent = Color(red: 0.02, green: 0.70, blue: 0.64)
 private func operationName(_ value: String) -> String {
@@ -103,6 +112,7 @@ private struct StudioResultThumbnail: View {
 struct StudioView: View {
     @ObservedObject var store: NativeJobStore
     @ObservedObject var studio: StudioState
+    @ObservedObject var playground: PlaygroundState
     @ObservedObject var api: LocalAPIController
     @StateObject private var library = ModelLibraryController()
     @StateObject private var tensorCache = TensorCacheController()
@@ -123,11 +133,16 @@ struct StudioView: View {
     @Binding var submitting: Bool
     @State private var annotationAsset: StudioAsset?
     @State private var preparationAsset: StudioAsset?
+    @State private var showingCanvasSizing = false
     private var selectedJob: NativeJob? { store.jobs.first { $0.id == selected && $0.hasOutput } }
     private var previewAsset: StudioAsset? {
         studio.draft.assets.first { $0.id == previewAssetID } ?? studio.draft.activeAssets.first
     }
     private var editingImage: Bool { ["image.edit", "image.transform"].contains(studio.draft.operation) }
+    private var qwenCanvasLocked: Bool {
+        studio.draft.modelID == "qwen-image-2.1" &&
+            (!studio.draft.activeLoRAs.isEmpty || studio.draft.qwen21DiTCache != "off")
+    }
     private func focusInput(_ asset: StudioAsset? = nil) {
         selected = nil; compareOriginal = false; resultSelection.clear()
         previewAssetID = asset?.id ?? studio.draft.activeAssets.first?.id
@@ -222,6 +237,15 @@ struct StudioView: View {
             Group {
                 switch page ?? .studio {
                 case .studio: workspace
+                case .playground:
+                    PlaygroundView(state: playground, creator: studio, store: store, api: api,
+                        submitting: $submitting, showCreation: { page = .studio },
+                        continueInCreation: { job in
+                            Task {
+                                if await studio.editResult(job) { page = .studio; imageUpscaling = false; focusInput() }
+                                else { playground.message = studio.message ?? "未能将结果带入创作。" }
+                            }
+                        })
                 case .models: modelsPage
                 case .tasks: tasksPage
                 case .library: libraryPage
@@ -232,7 +256,7 @@ struct StudioView: View {
         .tint(ciderAccent)
         .toolbar {
 
-            ToolbarItem(placement: .automatic) { Text(studio.saved ? "草稿已保存" : "草稿尚未保存").font(.caption).foregroundStyle(.secondary) }
+            ToolbarItem(placement: .automatic) { Text((page == .playground ? playground.saved : studio.saved) ? "草稿已保存" : "草稿尚未保存").font(.caption).foregroundStyle(.secondary) }
             ToolbarItem { Button { studio.newDraft(); focusInput(); imageUpscaling = false; page = .studio } label: { Label("新建创作", systemImage: "square.and.pencil") }.disabled(store.busy || assetControlsLocked) }
             ToolbarItem {
                 if page == .studio {
@@ -245,7 +269,7 @@ struct StudioView: View {
     }
     private var workspaceState: some View {
         navigation
-        .onDisappear { studio.save() }
+        .onDisappear { studio.save(); playground.save() }
         .onChange(of: store.deletableJobIDs) { _, ids in selectedTasks.formIntersection(ids) }
         .onChange(of: outputIDs) { _, ids in
             resultSelection.retain(Set(ids))
@@ -258,7 +282,7 @@ struct StudioView: View {
         }
         .onChange(of: studio.draft.operation) { _, _ in focusInput() }
         .onChange(of: studio.workspaceResetID) { _, _ in
-            focusInput(); imageUpscaling = false; annotationAsset = nil; preparationAsset = nil
+            focusInput(); imageUpscaling = false; annotationAsset = nil; preparationAsset = nil; showingCanvasSizing = false
             showingRecentResults = false; ignoredStatusID = store.jobs.first?.id; page = .studio
         }
         .onChange(of: page) { _, _ in showingRecentResults = false }
@@ -277,10 +301,15 @@ struct StudioView: View {
         workspaceState
         .sheet(item: $annotationAsset) { asset in Qwen21AnnotationEditor(asset: asset, studio: studio).tint(ciderAccent) }
         .sheet(item: $preparationAsset) { asset in ReferenceImagePreparationView(asset: asset, studio: studio).tint(ciderAccent) }
+        .sheet(isPresented: $showingCanvasSizing) {
+            EditingCanvasSizingView(studio: studio,
+                initialAssetID: studio.draft.activeAssets.first(where: { $0.id == previewAssetID })?.id,
+                submissionLocked: preparingSubmission).tint(ciderAccent)
+        }
         .task { library.refresh(studio: studio, migrate: true) }
-        .task(id: "\(page == .studio && imageUpscaling):\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleAfterGeneration):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)") {
+        .task(id: "\(page?.rawValue ?? ""):\(imageUpscaling):\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleAfterGeneration):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)") {
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            guard !preparingSubmission, studio.draft.upscaleAutoPreload, (page == .studio && imageUpscaling || studio.draft.upscaleAfterGeneration),
+            guard page == .studio, !preparingSubmission, studio.draft.upscaleAutoPreload, (imageUpscaling || studio.draft.upscaleAfterGeneration),
                   (try? ImageUpscaler.validateModelURL(URL(fileURLWithPath: studio.draft.upscaleModelPath))) != nil,
                   !studio.draft.upscaleModelPath.isEmpty, !store.busy, !api.running, !api.changing else { return }
             do {
@@ -750,7 +779,12 @@ struct StudioView: View {
                 VStack(alignment: .leading, spacing: 4) { Text("高度").font(.caption2).foregroundStyle(.secondary); TextField("高", value: $studio.draft.height, format: .number).accessibilityIdentifier("height") }
                 Button { let width = studio.draft.width; studio.draft.width = studio.draft.height; studio.draft.height = width } label: { Image(systemName: "arrow.left.arrow.right") }
                     .disabled(studio.draft.width == studio.draft.height).help("交换宽高").accessibilityLabel("交换宽高").padding(.bottom, 3)
-            }.textFieldStyle(.roundedBorder).disabled(studio.draft.qwen21TurboLoRA != nil)
+            }.textFieldStyle(.roundedBorder).disabled(qwenCanvasLocked)
+            if editingImage {
+                Button("匹配参考原图 / 自动缩放…") { showingCanvasSizing = true }
+                    .disabled(assetControlsLocked || studio.draft.activeAssets.isEmpty)
+                    .accessibilityIdentifier("matchReferenceCanvas")
+            }
             if studio.draft.modelID == "ltx-2.5-distilled" {
                 HStack {
                     Button("5 秒 · 480p 桶") {
@@ -767,8 +801,10 @@ struct StudioView: View {
                 Text("LTX 会使用 64 的倍数；480/720 高度分别向下对齐为 448/704。121 帧约 5.04 秒。")
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
-                HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in Button("\(size)") { studio.draft.width = size; studio.draft.height = size }.font(.caption) } }
-                    .disabled(studio.draft.qwen21TurboLoRA != nil)
+                HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in
+                    Button("\(size)") { studio.draft.width = size; studio.draft.height = size }
+                        .font(.caption).disabled(qwenCanvasLocked && size != 512)
+                } }
                 if studio.draft.modelID == "qwen-image-2.1" {
                     Menu("更多比例") {
                         ForEach(Qwen21CanvasPreset.recommended) { preset in
@@ -777,9 +813,9 @@ struct StudioView: View {
                                 studio.draft.height = preset.height
                             }
                         }
-                    }.accessibilityIdentifier("qwen21CanvasPresets").disabled(studio.draft.qwen21TurboLoRA != nil)
-                    Text(studio.draft.qwen21TurboLoRA != nil
-                         ? "App 当前 Turbo 快速模式支持 512 × 512；可在生成后超分。这不是模型本身的分辨率上限。"
+                    }.accessibilityIdentifier("qwen21CanvasPresets").disabled(qwenCanvasLocked)
+                    Text(qwenCanvasLocked
+                         ? "当前 LoRA 或 DiT 缓存路径支持 512 × 512；点击 512 可恢复兼容画布。基础模型关闭这些选项后可使用其他画幅。"
                          : "基础模型可选择其他画幅；更大的画布需要更多时间和内存。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
@@ -1183,6 +1219,7 @@ struct StudioView: View {
             if !store.deletedJobs.isEmpty { Button("撤销删除 \(store.deletedJobs.count) 项任务") { do { try store.undoDeleteJob() } catch { studio.message = error.localizedDescription } }.accessibilityIdentifier("undoDeleteJob") }
             List(store.jobs) { job in
                 DisclosureGroup {
+                    if let name = job.workflowName { Label(name, systemImage: "square.grid.2x2").font(.caption).foregroundStyle(.secondary) }
                     Text(job.request.prompt).textSelection(.enabled)
                     if let json = job.resultJSON {
                         RunInsightsView(json: json, firstDenoiseStepSeconds:
@@ -1209,7 +1246,12 @@ struct StudioView: View {
                         )).toggleStyle(.checkbox).labelsHidden()
                             .disabled(!store.deletableJobIDs.contains(job.id))
                             .accessibilityIdentifier("selectTask-\(job.id)")
-                        VStack(alignment: .leading) { Text(job.request.prompt).lineLimit(1); Text("\(operationName(job.request.operation ?? "image.generate")) · \(job.request.width)×\(job.request.height) · 种子 \(job.request.seed)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(stateName(job.state)).font(.caption)
+                        VStack(alignment: .leading) {
+                            Text(job.request.prompt).lineLimit(1)
+                            Text("\(job.workflowName ?? operationName(job.request.operation ?? "image.generate")) · \(job.request.width)×\(job.request.height) · 种子 \(job.request.seed)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(); Text(stateName(job.state)).font(.caption)
                     }
                 }.padding(.vertical, 6)
             }.listStyle(.inset)

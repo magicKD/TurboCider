@@ -39,7 +39,10 @@ STATE+=(apps/macos/ImageOutputTransaction.swift)
 STATE+=(apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift apps/macos/PublicImageWorker.swift apps/macos/PublicImageQueries.swift apps/macos/WorkerEventStream.swift)
 STATE+=(apps/macos/VideoPreview.swift)
 STATE+=(apps/macos/HistorySelection.swift apps/macos/ImageUpscaler.swift)
+STATE+=(apps/macos/EditingCanvasSizing.swift apps/macos/PlaygroundState.swift)
 if [[ "$APP_ONLY" == 0 ]]; then
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/PlaygroundStateTests.swift -o "$OUT/turbocider-playground-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/EditingCanvasSizingTests.swift -o "$OUT/turbocider-editing-canvas-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ReferenceImagePreparationTests.swift -o "$OUT/turbocider-reference-preparation-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/Qwen21AppTests.swift -o "$OUT/turbocider-qwen21-app-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/Qwen21WorkflowTests.swift -o "$OUT/turbocider-qwen21-workflow-tests"
@@ -52,7 +55,7 @@ if [[ "$APP_ONLY" == 0 ]]; then
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/TensorCacheTests.swift -o "$OUT/turbocider-tensor-cache-tests"
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/InstallationInspectionTests.swift -o "$OUT/turbocider-installation-tests"
 fi
-"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" apps/macos/ImageUpscaleView.swift apps/macos/ReferenceImagePreparationView.swift apps/macos/ModelLibraryView.swift apps/macos/ANELibraryView.swift apps/macos/ModelDownloadView.swift apps/macos/LocalAPIView.swift apps/macos/RunInsightsView.swift apps/macos/TensorCacheView.swift apps/macos/MediaViews.swift apps/macos/AccelerationView.swift apps/macos/CoreMLStorageView.swift apps/macos/App.swift -o "$OUT/TurboCiderNativeApp"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" apps/macos/ImageUpscaleView.swift apps/macos/EditingCanvasSizingView.swift apps/macos/PlaygroundView.swift apps/macos/ReferenceImagePreparationView.swift apps/macos/ModelLibraryView.swift apps/macos/ANELibraryView.swift apps/macos/ModelDownloadView.swift apps/macos/LocalAPIView.swift apps/macos/RunInsightsView.swift apps/macos/TensorCacheView.swift apps/macos/MediaViews.swift apps/macos/AccelerationView.swift apps/macos/CoreMLStorageView.swift apps/macos/App.swift -o "$OUT/TurboCiderNativeApp"
 if [[ "$APP_ONLY" == 1 ]]; then
  printf 'Built Swift App and model-library helper; test targets skipped\n'
  exit 0
