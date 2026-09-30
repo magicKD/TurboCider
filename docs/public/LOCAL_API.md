@@ -38,7 +38,7 @@ Send one newline-terminated JSON object per connection. Responses use
 | `status`, `cancel` | `id` |
 | `jobs` | Optional `offset`, `limit` (default 20, maximum 100) |
 | `plan` | `request` |
-| `capabilities`, `models`, `doctor`, `service_status` | None |
+| `capabilities`, `models`, `installations`, `doctor`, `service_status` | None |
 
 `capabilities` is the discovery entry point for scripts and local AI agents.
 It returns the protocol version, action descriptions and JSON Schemas for each
@@ -47,6 +47,23 @@ workflow rules. It does not load weights. The embedded `request` is validated
 by the native `plan` action, not by a duplicate schema maintained by the client.
 `models` lists registered capabilities, not installed weights. Supply an
 existing native-compatible model path when submitting.
+
+`installations` returns the service's local model-library registry, including
+registered model components, LoRAs and ANE partitions. The response contains
+`schema_version: 1`, `root`, `index`, `scope: "registered_metadata"` and
+`files_verified: false`. Registrations may be stale; this query does not read
+weights, scan model directories, download files or establish compatibility.
+Choose a registration explicitly and use its absolute path in a request.
+
+The service invokes its sibling `turbocider-library inventory` helper using its
+own environment and library settings. A client's environment cannot select a
+different library through this RPC. Missing metadata returns an empty registry
+without creating a directory; unreadable or invalid metadata returns an error.
+The index is limited to 4 MiB and settings to 1 MiB. The helper has a 10-second
+deadline, 8 MiB stdout limit and 64 KiB diagnostic limit. Inventory dispatch can
+delay other RPC replies until it finishes, but does not lock the inference
+worker. Older services/helpers must be updated together; clients must not fall
+back to guessing paths or scanning the caller's default model directory.
 
 Unknown action fields and duplicate JSON keys (including escaped spellings and
 keys inside the native request) are rejected. `offset` must be an integer in
@@ -71,6 +88,7 @@ from turbocider_local import Client, JobTimeout, TransportError
 client = Client('/the/socket/path/shown/in/the/App')
 capabilities = client.capabilities()
 models = client.models()
+inventory = client.installations()  # service-side registered paths; files unverified
 plan = client.plan(request)  # complete native schema 1 or 2 request
 job_id = client.submit('/absolute/local/model', request)
 print(job_id, flush=True)   # keep this ID even if waiting is interrupted
@@ -84,6 +102,10 @@ job. `JobFailed` carries the terminal job record. A transport error after sendin
 unique requested output path before deciding whether to submit again. A lost
 reply is not evidence that the job failed to enter the queue. Cancellation also
 requires polling until a terminal state.
+
+The Python client's default transport timeout is 30 seconds. If overriding it,
+allow more than 10 seconds for `installations`; the CLI gives that query
+12 seconds and a larger response limit. Neither client retries a submission.
 
 The following inline alternative needs only the Python standard library:
 

@@ -28,6 +28,7 @@ SDK_SOURCE=bindings/swift/TurboCiderNative.swift
 STATE=(apps/macos/ZImageInstallation.swift apps/macos/JobStore.swift apps/macos/ReferenceImagePreparation.swift apps/macos/StudioState.swift apps/macos/AccelerationDiscovery.swift apps/macos/ResourceMonitor.swift apps/macos/ResourceInventory.swift)
 LIBRARY=(services/model-library/LibraryStore.swift services/model-library/LibrarySettings.swift services/model-library/LibraryRecipes.swift services/model-library/HubClient.swift services/model-library/LibraryDownload.swift)
 LIBRARY+=(services/model-library/LibraryANE.swift)
+LIBRARY+=(services/model-library/LibraryInventory.swift)
 LIBRARY+=(services/model-library/TensorCache.swift)
 LIBRARY+=(services/model-library/DiagnosticTensorCache.swift)
 LIBRARY+=(services/model-library/InstallationInspection.swift)

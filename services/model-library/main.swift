@@ -15,16 +15,17 @@ private struct Failure: Encodable { let ok = false; let error: String }
 @main struct ModelLibraryCLI {
     static func run(_ arguments: [String]) async throws {
         var args = arguments
-        var root = LibraryStore.defaultRoot
+        var rootOverride: URL?
         if let position = args.firstIndex(of: "--root") {
             guard position + 1 < args.count else { throw LibraryFailure(message: "--root requires a directory.") }
-            root = URL(fileURLWithPath: args[position + 1], isDirectory: true)
+            rootOverride = URL(fileURLWithPath: args[position + 1], isDirectory: true)
             args.removeSubrange(position...(position + 1))
         }
         guard let command = args.first else { throw LibraryFailure(message: "Use library help for model-library commands.") }
         if command == "help" || command == "--help" {
             print("""
             turbocider library list [--root DIRECTORY]
+            turbocider library inventory [--root DIRECTORY]
             turbocider library register MODEL_ID DIRECTORY [--root DIRECTORY]
             turbocider library remove INSTALLATION_ID [--root DIRECTORY]
             turbocider library register-ane MODEL_ID MANIFEST.json [--root DIRECTORY]
@@ -48,6 +49,11 @@ private struct Failure: Encodable { let ok = false; let error: String }
             """)
             return
         }
+        if command == "inventory" {
+            guard args.count == 1 else { throw LibraryFailure(message: "Use: turbocider library inventory [--root DIRECTORY]") }
+            emit(Success(result: try LibraryInventory.read(root: rootOverride)))
+            return
+        }
         if command == "cache" {
             switch args.dropFirst().first ?? "help" {
             case "inventory" where args.count == 2: emit(Success(result: try TensorCache.standard.inventory()))
@@ -66,7 +72,7 @@ private struct Failure: Encodable { let ok = false; let error: String }
             }
             return
         }
-        let store = try LibraryStore(root: root)
+        let store = try LibraryStore(root: rootOverride ?? LibraryStore.defaultRoot)
         switch command {
         case "location" where args.count == 1:
             emit(Success(result: ["root": store.root.path]))

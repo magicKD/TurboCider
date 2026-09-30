@@ -20,6 +20,7 @@ inline NSDictionary *tc_service_capabilities() {
     NSArray *actions = @[
         action(@"capabilities", @"Describe this protocol without loading weights.", false, @{}, @[]),
         action(@"models", @"List registered model capabilities; this is not an installed-model inventory.", false, @{}, @[]),
+        action(@"installations", @"Read the service's registered model, LoRA and ANE paths without loading weights or verifying files.", false, @{}, @[]),
         action(@"service_status", @"Read service ownership, active job and session state.", false, @{}, @[]),
         action(@"doctor", @"Read local runtime and device diagnostics.", false, @{}, @[]),
         action(@"plan", @"Validate and resolve a native request without generation; weight compatibility is checked at load time.", false,
@@ -50,6 +51,18 @@ inline NSDictionary *tc_service_capabilities() {
         @"job_states": @{@"active": @[@"queued", @"running", @"cancelling"],
                         @"terminal": @[@"succeeded", @"failed", @"cancelled", @"interrupted"]},
         @"limits": @{@"pending_jobs": @32, @"history_records": @10000},
+        @"installation_discovery": @{
+            @"action": @"installations", @"schema_version": @1,
+            @"scope": @"registered_metadata", @"files_verified": @NO,
+            @"configuration": @"service environment and model-library settings",
+            @"helper": @"matching sibling turbocider-library",
+            @"deadline_seconds": @10, @"max_index_bytes": @4194304,
+            @"max_settings_bytes": @1048576, @"max_helper_stdout_bytes": @8388608,
+            @"max_helper_stderr_bytes": @65536,
+            @"missing_registry": @"empty index; no directories created",
+            @"invalid_registry": @"error; no fallback scan",
+            @"dispatch": @"serial RPC dispatch; inference worker remains unlocked"
+        },
         @"workflow": @{
             @"execution": @"client_orchestrated_sequential_jobs",
             @"reference_order": @"inputs array order determines image numbering",

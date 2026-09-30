@@ -3,6 +3,7 @@
 #include "../../native/core/json_keys.hpp"
 #include "capabilities.hpp"
 #include "rpc_page_numbers.hpp"
+#include "library_inventory.hpp"
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -499,10 +500,11 @@ public:
         worker_=std::thread([this]{run();});
     }
     ~Service(){ {std::lock_guard<std::mutex> lock(mutex_);closing_=true;tc_engine_cancel(engine_);if(active_child_>0)::kill(active_child_,SIGTERM);for(auto& id:pending_){auto&job=jobs_.at(id);job.value[@"state"]=@"interrupted";try{persist(job);}catch(...){}}}available_.notify_one();worker_.join();tc_engine_free(engine_);}
-    id rpc(NSDictionary *request) {
+    id rpc(NSDictionary *request, const std::function<bool()> &shouldStop) {
         auto action=validate_rpc(request);
         if(action=="capabilities")return tc_service_capabilities();
         if(action=="models")return decode(take(tc_models_json()));
+        if(action=="installations")return tc_service::library_inventory(executable_,shouldStop);
         if(action=="doctor")return decode(take(tc_system_json()));
         if(action=="plan") {char *result=nullptr,*error=nullptr;auto text=encode(request[@"request"]);auto status=tc_plan_json(text.c_str(),&result,&error);auto value=take(result),message=take(error);check(status==0,message.c_str());return decode(value);}
         std::lock_guard<std::mutex> lock(mutex_);
@@ -551,18 +553,18 @@ public:
     }
 };
 sockaddr_un address(const char *path){sockaddr_un a{};a.sun_family=AF_UNIX;check(strlen(path)<sizeof(a.sun_path),"socket path too long");strcpy(a.sun_path,path);return a;}
-std::string receive(int fd){
+std::string receive(int fd,size_t maximum=rpc_max_bytes){
     std::string text;char buffer[4096];
     for(;;){
         ssize_t n=read(fd,buffer,sizeof(buffer));check(n>0,"connection ended before newline");
         const char *newline=static_cast<const char*>(memchr(buffer,'\n',size_t(n)));
         const size_t count=newline?size_t(newline-buffer):size_t(n);
-        check(count<=rpc_max_bytes-text.size(),"JSON message exceeds 1 MiB");
+        check(count<=maximum-text.size(),"JSON message exceeds the transport size limit");
         text.append(buffer,count);if(newline)return text;
     }
 }
 void send_all(int fd,const std::string& text){size_t offset=0;while(offset<text.size()){auto n=write(fd,text.data()+offset,text.size()-offset);check(n>0,"connection write failed");offset+=n;}}
-void configure(int fd){int one=1;setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&one,sizeof(one));timeval timeout{5,0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));}
+void configure(int fd,int seconds=5){int one=1;setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&one,sizeof(one));timeval timeout{seconds,0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));}
 }
 int tc_service_main(const char *socket_path,const char *directory,const char *executable) {@autoreleasepool{try {
     pid_t owner=0;
@@ -588,15 +590,17 @@ int tc_service_main(const char *socket_path,const char *directory,const char *ex
     check(executable&&*executable,"service executable path is required");
     Service service(directory,executable);stopping=0;std::signal(SIGINT,stop_service);std::signal(SIGTERM,stop_service);
     std::cout<<"{\"ready\":true}"<<std::endl;
-    while(!stopping){if(owner&&getppid()!=owner)break;pollfd p{server.fd,POLLIN,0};if(poll(&p,1,200)<=0)continue;File client{accept(server.fd,nullptr,nullptr)};if(client.fd<0)continue;configure(client.fd);
-        @autoreleasepool {try{NSDictionary *request=parse_rpc(receive(client.fd));id result=service.rpc(request);send_all(client.fd,encode(@{@"ok":@YES,@"result":result})+"\n");}catch(const std::exception& e){try{send_all(client.fd,encode(@{@"ok":@NO,@"error":@(e.what())})+"\n");}catch(...){}}}
+    while(!stopping){tc_service::reap_inventory_children();if(owner&&getppid()!=owner)break;pollfd p{server.fd,POLLIN,0};if(poll(&p,1,200)<=0)continue;File client{accept(server.fd,nullptr,nullptr)};if(client.fd<0)continue;configure(client.fd);
+        @autoreleasepool {try{NSDictionary *request=parse_rpc(receive(client.fd));id result=service.rpc(request,[owner]{return stopping||(owner&&getppid()!=owner);});send_all(client.fd,encode(@{@"ok":@YES,@"result":result})+"\n");}catch(const std::exception& e){try{send_all(client.fd,encode(@{@"ok":@NO,@"error":@(e.what())})+"\n");}catch(...){}}}
     }
+    tc_service::reap_inventory_children();
     std::signal(SIGINT,SIG_DFL);std::signal(SIGTERM,SIG_DFL);return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<std::endl;return 1;}}}
 int tc_rpc_main(const char *socket_path,const char *file) {@autoreleasepool{try{
     NSData *data=[NSData dataWithContentsOfFile:@(file)];check(data!=nil,"cannot read RPC request");
     auto payload=parse_rpc(std::string((const char*)data.bytes,data.length));
     auto encoded=encode(payload);check(encoded.size()<=rpc_max_bytes,"RPC request exceeds 1 MiB");
-    auto a=address(socket_path);File client{socket(AF_UNIX,SOCK_STREAM,0)};check(client.fd>=0,"cannot create socket");configure(client.fd);check(connect(client.fd,(sockaddr*)&a,sizeof(a))==0,"cannot connect to service");
-    send_all(client.fd,encoded+"\n");std::cout<<receive(client.fd)<<std::endl;return 0;
+    const bool inventory=[payload[@"action"] isEqual:@"installations"];
+    auto a=address(socket_path);File client{socket(AF_UNIX,SOCK_STREAM,0)};check(client.fd>=0,"cannot create socket");configure(client.fd,inventory?12:5);check(connect(client.fd,(sockaddr*)&a,sizeof(a))==0,"cannot connect to service");
+    send_all(client.fd,encoded+"\n");std::cout<<receive(client.fd,inventory?tc_service::library_inventory_stdout_max+65536:rpc_max_bytes)<<std::endl;return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<std::endl;return 1;}}}

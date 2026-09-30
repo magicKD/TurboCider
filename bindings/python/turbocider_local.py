@@ -113,6 +113,38 @@ class Client:
     def models(self) -> dict[str, Any]:
         return self.rpc("models")
 
+    def installations(self) -> dict[str, Any]:
+        """Read the service's registered local model/LoRA metadata.
+
+        The service resolves its library configuration. Client environment
+        variables and working directory cannot select another library here.
+        Entries may be stale: this call does not validate or load weight files.
+        Older services report an APIError; there is no directory-scan fallback.
+        """
+        value = self.rpc("installations")
+        if (not isinstance(value, dict) or type(value.get("schema_version")) is not int
+                or value["schema_version"] != 1
+                or value.get("scope") != "registered_metadata"
+                or value.get("files_verified") is not False
+                or not isinstance(value.get("root"), str)
+                or not value["root"].startswith("/") or "\0" in value["root"]
+                or not isinstance(value.get("index"), dict)):
+            raise TransportError("Invalid installation inventory response",
+                                 submission_may_have_succeeded=False)
+        index = value["index"]
+        if type(index.get("schemaVersion")) is not int or index["schemaVersion"] != 1:
+            raise TransportError("Unsupported model-library schema",
+                                 submission_may_have_succeeded=False)
+        for key in ("installations", "loras", "anePartitions"):
+            entries = index.get(key, [] if key != "installations" else None)
+            if not isinstance(entries, list) or any(not isinstance(item, dict) for item in entries):
+                raise TransportError("Invalid model-library " + key,
+                                     submission_may_have_succeeded=False)
+        return value
+
+    def service_status(self) -> dict[str, Any]:
+        return self.rpc("service_status")
+
     def plan(self, request: dict[str, Any]) -> dict[str, Any]:
         return self.rpc("plan", request=request)
 
