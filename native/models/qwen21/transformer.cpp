@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 
 namespace tc::qwen21 {
 namespace {
@@ -69,11 +70,15 @@ Transformer::Transformer(const Weights &weights, TransformerConfig config,
     require(sum == config.head_dim, "Qwen21 RoPE axes must sum to head dimension");
 }
 
+void Transformer::clear_db_residuals() {
+    db_prev_front_residual_.reset(); db_middle_residual_.reset();
+    db_consecutive_steps_ = 0; db_last_step_ = -1;
+}
+
 void Transformer::reset() {
     prefix_.clear();
     cached_ffn_.clear();
-    db_prev_front_residual_.reset(); db_middle_residual_.reset();
-    db_consecutive_steps_ = db_cached_steps_ = 0;
+    clear_db_residuals(); db_cached_steps_ = 0;
     cached_text_.reset();
     cached_references_.clear();
     prefill_tile_tails_.clear();
@@ -89,6 +94,130 @@ bool Transformer::prefix_matches(const Tensor &text, int height, int width,
     for (size_t i = 0; i < references.size(); ++i)
         if (references[i].latents.id() != cached_references_[i].id() ||
             !(references[i].geometry == reference_geometry_[i])) return false;
+    return true;
+}
+
+bool Transformer::plain_prefix_route() const {
+    return !fused_qkv_ && !metal_qk_rope_ && !metal_qk_norm_rope_ &&
+        !reference_local_attention_ && !prefill_last_target_only_ &&
+        !profile_gpu_blocks_ && !profile_gpu_ops_ && !profile_prefill_segments_ &&
+        !decode_mlp_ && !prefill_mlp_ && !project_qkv_ && !plan_mlp_ &&
+        !plan_qkv_ && !stage_mlp_ && !stage_qkv_ && !observe_mlp_ && !observe_qkv_ &&
+        !capture_tile_tails_ && !db_cache_enabled_ && ffn_cache_mode_ == FFNCacheMode::Off;
+}
+
+std::optional<Transformer::PrefixSnapshot>
+Transformer::export_prefix_snapshot(uint64_t max_bytes) const {
+    if (!plain_prefix_route() || !cached_text_ ||
+        prefix_.size() != size_t(config_.layers) || sequence_.prefix_length <= 0 ||
+        cached_references_.size() != reference_geometry_.size()) return std::nullopt;
+    PrefixSnapshot snapshot;
+    snapshot.config = config_;
+    snapshot.text = cached_text_;
+    snapshot.text_length = text_length_;
+    snapshot.height = height_;
+    snapshot.width = width_;
+    snapshot.prefix_length = sequence_.prefix_length;
+    snapshot.dtype = cached_text_->dtype();
+    const mx::Shape shape{1, config_.heads, snapshot.prefix_length, config_.head_dim};
+    for (const auto &kv : prefix_) {
+        for (const auto *value : {&kv.key, &kv.value}) {
+            if (value->shape() != shape || value->dtype() != snapshot.dtype ||
+                value->nbytes() > max_bytes - snapshot.bytes) return std::nullopt;
+            snapshot.bytes += value->nbytes();
+        }
+    }
+    std::vector<Tensor> completed{*snapshot.text};
+    for (size_t i = 0; i < cached_references_.size(); ++i) {
+        snapshot.references.push_back({cached_references_[i], reference_geometry_[i]});
+        completed.push_back(cached_references_[i]);
+    }
+    for (const auto &kv : prefix_) {
+        // MLX copy alone aliases its source buffer. Explicit same-dtype
+        // AsType(copy=true) outside compile forces a value-preserving copy;
+        // the live prefix_ owner prevents allocator donation. Contiguous
+        // compacts transposed/sliced head rows instead of retaining targets.
+        snapshot.keys.push_back(mx::copy(mx::contiguous(
+            mx::astype(kv.key, kv.key.dtype(), std::optional<bool>{true}))));
+        snapshot.values.push_back(mx::copy(mx::contiguous(
+            mx::astype(kv.value, kv.value.dtype(), std::optional<bool>{true}))));
+        completed.push_back(snapshot.keys.back());
+        completed.push_back(snapshot.values.back());
+    }
+    mx::eval(completed);
+    auto leaf = [](const Tensor &value) {
+        return value.is_available() && !value.has_primitive() &&
+            value.inputs().empty() && value.siblings().empty();
+    };
+    if (!leaf(*snapshot.text)) return std::nullopt;
+    for (const auto &reference : snapshot.references)
+        if (!leaf(reference.latents)) return std::nullopt;
+    for (size_t i = 0; i < snapshot.keys.size(); ++i) {
+        for (const auto *value : {&snapshot.keys[i], &snapshot.values[i]})
+            if (!leaf(*value) || !value->flags().row_contiguous ||
+                value->data_size() != value->size()) return std::nullopt;
+        if (snapshot.keys[i].buffer().ptr() == prefix_[i].key.buffer().ptr() ||
+            snapshot.values[i].buffer().ptr() == prefix_[i].value.buffer().ptr()) return std::nullopt;
+    }
+    return snapshot;
+}
+
+bool Transformer::import_prefix_snapshot(const PrefixSnapshot &snapshot, const Tensor &text,
+                                        int height, int width,
+                                        const std::vector<ReferenceLatents> &references) {
+    if (!plain_prefix_route() || snapshot.config != config_ || !snapshot.text ||
+        snapshot.keys.size() != size_t(config_.layers) ||
+        snapshot.values.size() != snapshot.keys.size() ||
+        text.ndim() != 3 || text.shape(0) != 1 || text.shape(1) <= 0 ||
+        text.shape(2) != config_.context_dim || text.id() != snapshot.text->id() ||
+        text.dtype() != snapshot.dtype || snapshot.text_length != text.shape(1) ||
+        !text.is_available() || text.has_primitive() || !text.inputs().empty() || !text.siblings().empty() ||
+        height <= 0 || width <= 0 || height != snapshot.height || width != snapshot.width ||
+        references.size() != snapshot.references.size() || references.size() > 10) return false;
+    std::vector<ReferenceGeometry> reference_geometry;
+    int previous_slot = 0;
+    int64_t prefix_length = text.shape(1);
+    for (size_t i = 0; i < references.size(); ++i) {
+        const auto &reference = references[i];
+        const auto &expected = snapshot.references[i];
+        const auto &g = reference.geometry;
+        const int64_t reference_tokens = int64_t(g.height) * g.width;
+        if (g.height <= 0 || g.width <= 0 || g.text_slot < previous_slot ||
+            g.text_slot > text.shape(1) || g != expected.geometry ||
+            reference_tokens > std::numeric_limits<int>::max() - prefix_length ||
+            reference.latents.id() != expected.latents.id() ||
+            reference.latents.shape() != mx::Shape{1, int(reference_tokens), config_.channels} ||
+            reference.latents.dtype() != snapshot.dtype || !reference.latents.is_available() ||
+            reference.latents.has_primitive() || !reference.latents.inputs().empty() ||
+            !reference.latents.siblings().empty()) return false;
+        previous_slot = g.text_slot;
+        prefix_length += reference_tokens;
+        reference_geometry.push_back(g);
+    }
+    if (prefix_length != snapshot.prefix_length ||
+        prefix_length + int64_t(height) * width > std::numeric_limits<int>::max()) return false;
+    const mx::Shape shape{1, config_.heads, int(prefix_length), config_.head_dim};
+    uint64_t bytes = 0;
+    for (size_t i = 0; i < snapshot.keys.size(); ++i) {
+        for (const auto *value : {&snapshot.keys[i], &snapshot.values[i]}) {
+            if (value->shape() != shape || value->dtype() != snapshot.dtype ||
+                !value->is_available() || value->has_primitive() ||
+                !value->inputs().empty() || !value->siblings().empty() ||
+                !value->flags().row_contiguous || value->data_size() != value->size() ||
+                value->nbytes() > std::numeric_limits<uint64_t>::max() - bytes) return false;
+            bytes += value->nbytes();
+        }
+    }
+    if (bytes != snapshot.bytes) return false;
+    // Validate every value before changing the current request. Geometry must
+    // run before installing the bank because a shape change resets prefix_.
+    geometry(text.shape(1), height, width, reference_geometry);
+    reset();
+    prefix_.reserve(snapshot.keys.size());
+    for (size_t i = 0; i < snapshot.keys.size(); ++i)
+        prefix_.push_back({snapshot.keys[i], snapshot.values[i]});
+    cached_text_ = text;
+    for (const auto &reference : references) cached_references_.push_back(reference.latents);
     return true;
 }
 
@@ -146,7 +275,7 @@ void Transformer::geometry(int text_length, int height, int width, const std::ve
 Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float timestep,
                             int height, int width, bool cache_prefix,
                             std::unordered_map<std::string, Tensor> *trace,
-                            const std::vector<ReferenceLatents> &references) {
+                            const std::vector<ReferenceLatents> &references) try {
     require(height > 0 && width > 0 && latents.ndim() == 3 && latents.shape(0) == 1 &&
             latents.shape(1) == height * width && latents.shape(2) == config_.channels,
             "Qwen21 latent shape must be [1,H*W,channels]");
@@ -183,12 +312,23 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     const bool reuse_last16_ffn = reuse && ffn_cache_mode_ == FFNCacheMode::ReuseLast16;
     const bool reuse_ffn = reuse && (ffn_cache_mode_ == FFNCacheMode::Reuse ||
                                       reuse_last16_ffn || half_reuse_ffn);
-    const bool db_decode = db_cache_enabled_ && reuse && !trace && db_step_ >= 1 &&
-                           db_total_steps_ >= 20 && db_step_ < db_total_steps_;
-    require(!db_cache_enabled_ || (config_.layers > db_front_blocks + db_back_blocks &&
+    require(!db_cache_enabled_ || (config_.layers > db_front_blocks_ + db_back_blocks &&
+                (db_front_blocks_ == 1 || db_front_blocks_ == 8) &&
+                (db_warmup_steps_ == 4 || db_warmup_steps_ == 8) &&
                 db_threshold_ > 0.f && db_threshold_ <= 0.5f &&
-                db_max_consecutive_ >= 1 && db_max_consecutive_ <= 8),
-            "Qwen21 DBCache geometry, threshold or consecutive skip bound is invalid");
+                db_max_consecutive_ >= 1 && db_max_consecutive_ <= 8 &&
+                db_total_steps_ >= 20 && db_step_ >= 0 && db_step_ < db_total_steps_),
+            "Qwen21 DBCache geometry, threshold, step or consecutive skip bound is invalid");
+    if (db_cache_enabled_) {
+        // A traced, repeated or discontinuous forward cannot prove that the
+        // saved middle residual belongs to the immediately preceding step.
+        // Step zero starts a new request even when the prefix KV stays warm.
+        if (trace || db_step_ == 0 ||
+            (db_last_step_ >= 0 && db_step_ != db_last_step_ + 1))
+            clear_db_residuals();
+        if (db_step_ == 0) db_cached_steps_ = 0;
+    }
+    const bool db_decode = db_cache_enabled_ && reuse && !trace && db_step_ >= 1;
     require(!db_decode || ffn_cache_mode_ == FFNCacheMode::Off,
             "Qwen21 DBCache cannot combine with step-FFN reuse");
     require(!(capture_ffn || reuse_ffn) || !trace,
@@ -248,13 +388,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     std::optional<Tensor> db_middle_input;
     bool db_skip = false;
     for (int i = 0; i < config_.layers; ++i) {
-        if (db_decode && i == db_front_blocks) {
+        if (db_decode && i == db_front_blocks_) {
             // Match cache-dit's relative L1 change of the front-block
             // residual. Only a completed earlier decode step can supply the
             // middle-block residual; never reuse first-step prefix outputs.
             auto front_residual = mx::astype(hidden - db_input, mx::float32);
             if (db_prev_front_residual_ && db_middle_residual_ &&
-                db_step_ >= 8 && db_step_ < db_total_steps_ - 1 &&
+                db_step_ >= db_warmup_steps_ && db_step_ < db_total_steps_ - 1 &&
                 db_consecutive_steps_ < db_max_consecutive_) {
                 auto numerator = mx::sum(mx::abs(front_residual - *db_prev_front_residual_));
                 auto denominator = mx::sum(mx::abs(*db_prev_front_residual_)) + 1e-6f;
@@ -263,6 +403,11 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             }
             db_prev_front_residual_ = mx::copy(front_residual);
             mx::eval(*db_prev_front_residual_);
+            require(db_prev_front_residual_->is_available() &&
+                        !db_prev_front_residual_->has_primitive() &&
+                        db_prev_front_residual_->inputs().empty() &&
+                        db_prev_front_residual_->siblings().empty(),
+                    "Qwen21 DBCache front residual retained an unfinished graph");
             if (db_skip) {
                 hidden = hidden + *db_middle_residual_;
                 mx::eval(hidden);
@@ -589,8 +734,15 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             require(db_middle_input.has_value(), "Qwen21 DBCache middle-block input is missing");
             db_middle_residual_ = mx::copy(hidden - *db_middle_input);
             // HybridMLP's Core ML output backing is reused at the next
-            // prediction: own and finish the entire aggregate residual now.
+            // prediction. The subtraction creates a separate value; MLX copy
+            // alone would alias its input. Finish that residual before any
+            // later prediction can overwrite external output backing.
             mx::eval(*db_middle_residual_);
+            require(db_middle_residual_->is_available() &&
+                        !db_middle_residual_->has_primitive() &&
+                        db_middle_residual_->inputs().empty() &&
+                        db_middle_residual_->siblings().empty(),
+                    "Qwen21 DBCache middle residual retained an unfinished graph");
         }
     }
     if (!reuse && !(prefill_last_target_only_ && !trace))
@@ -605,6 +757,12 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     if (capture_ffn) mx::eval(cached_ffn_);
     if (trace) { prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear();
                  reuse_blocks_.clear(); reuse_last16_blocks_.clear(); half_reuse_blocks_.clear(); }
+    if (db_cache_enabled_ && !trace) db_last_step_ = db_step_;
     return result;
+} catch (...) {
+    // A callback or trace failure may occur after front residual publication.
+    // Never let a retry consume that partially executed step's caches.
+    clear_step_cache();
+    throw;
 }
 } // namespace tc::qwen21

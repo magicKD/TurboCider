@@ -218,6 +218,7 @@ struct RunResult {
     bool db_cache_enabled = false;
     float db_cache_threshold = 0.f;
     int db_cache_steps = 0, db_cache_max_consecutive = 0;
+    int db_cache_front_blocks = 8, db_cache_warmup_steps = 8;
     Timings timings;
     uint64_t active_bytes = 0, peak_bytes = 0;
     std::optional<HybridMetrics> hybrid;

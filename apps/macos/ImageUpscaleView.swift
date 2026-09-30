@@ -8,11 +8,15 @@ struct ImageUpscaleView: View {
     var showSettings = true
     @Binding var sourcePath: String
     var manageModels: () -> Void
+    var historyContent: AnyView? = nil
+    var selectedPreviewJob: NativeJob? = nil
+    var usePreviewAsSource: ((NativeJob) -> Void)? = nil
     var onResult: (NativeJob) -> Void
     @State private var submitting = false
     @State private var resultID: UUID?
     private var locked: Bool { store.busy || submitting || store.externalServiceActive }
     private var result: NativeJob? {
+        if let selectedPreviewJob, selectedPreviewJob.hasOutput { return selectedPreviewJob }
         let candidate = store.jobs.first { $0.id == resultID && $0.hasOutput }
             ?? store.jobs.first { $0.request.operation == "image.upscale" && $0.hasOutput }
         // A newly selected source must not be obscured by an unrelated past result.
@@ -21,6 +25,7 @@ struct ImageUpscaleView: View {
     }
     var body: some View {
         HStack(spacing: 0) {
+            VStack(spacing: 8) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("图像超分").font(.title2)
@@ -48,18 +53,23 @@ struct ImageUpscaleView: View {
                     if let message = studio.message { Text(message).foregroundStyle(.orange).textSelection(.enabled) }
                     if let result {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("超分结果 · \(result.request.width) × \(result.request.height)").font(.headline)
-                            MediaPreview(path: result.request.output, maxPixel: 1400).frame(height: 360)
+                            Text("\(result.request.operation == "image.upscale" ? "超分结果" : "历史图片") · \(result.request.width) × \(result.request.height)").font(.headline)
+                            InteractiveMediaPreview(path: result.request.output).frame(height: 360)
                                 .accessibilityIdentifier("upscaleOutput")
                             HStack {
                                 Text(result.routeSummary ?? "").font(.caption).foregroundStyle(.secondary)
                                 Spacer()
+                                if selectedPreviewJob != nil, let usePreviewAsSource {
+                                    Button("用作超分原图") { usePreviewAsSource(result) }
+                                        .disabled(locked || studio.importing)
+                                        .accessibilityIdentifier("usePreviewAsUpscaleSource")
+                                }
                                 Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: result.request.output)]) }
                             }
                         }
                     } else if !sourcePath.isEmpty {
                         Text("待超分原图").font(.headline)
-                        MediaPreview(path: sourcePath, maxPixel: 1000).frame(height: 280)
+                        InteractiveMediaPreview(path: sourcePath).frame(height: 280)
                     } else {
                         ContentUnavailableView("选择要放大的图片", systemImage: "photo.badge.plus",
                                                description: Text("选择原图，打开「超分设置」选择模型后开始超分。"))
@@ -67,12 +77,16 @@ struct ImageUpscaleView: View {
                     }
                 }.padding(24)
             }
+            if let historyContent { historyContent.padding(.horizontal, 18).padding(.bottom, 12) }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("upscaleCanvasScrollArea")
             if showSettings {
                 Divider()
                 ScrollView {
                     UpscaleSettingsView(store: store, studio: studio, locked: locked, manageModels: manageModels)
                         .padding(18)
-                }.frame(width: 290).background(Color(nsColor: .controlBackgroundColor))
+                }.frame(width: 270).background(Color(nsColor: .controlBackgroundColor))
+                    .accessibilityIdentifier("upscaleInspector")
             }
         }
         .onDisappear { studio.save() }

@@ -11,6 +11,10 @@ ModelModule qwen21_module() {
         [] { return Recipe{"qwen-image-2.1", {{"text_encode", {}}, {"denoise", {"text_encode"}, 40},
                                             {"vae_decode", {"denoise"}}, {"export", {"vae_decode"}}}, true}; },
         [](const Request &r) {
+            const auto db_options = qwen21::db_cache_options(r);
+            if (db_options.enabled && (db_options.front_blocks != 8 || db_options.warmup_steps != 8))
+                require(db_options.diagnostic && r.execution == "gpu" && r.loras.empty(),
+                        "Qwen21 alternative DiT front/warmup policies are diagnostic-only on the base GPU route");
             require(r.operation == "image.generate" || r.operation == "image.edit", "unsupported Qwen21 operation");
             require(r.frames == 1 && !r.audio, "Qwen21 produces one RGBA image without audio");
             require(r.width % 32 == 0 && r.height % 32 == 0 && int64_t(r.width) * r.height <= 8388608,
@@ -57,7 +61,7 @@ ModelModule qwen21_module() {
                             r.residency == "resident" && r.loras.empty() && !r.qwen21_w8a8 &&
                             !r.qwen21_gpu_w8a16 && r.qwen21_gpu_full_ffn_blocks.empty() &&
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC")) &&
-                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC")) &&
+                            !db_options.enabled &&
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV")) &&
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN")) &&
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN")) &&
@@ -74,7 +78,7 @@ ModelModule qwen21_module() {
                             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
                             (r.loras.empty() || r.lora_strategy == "inference_time") &&
                             r.qwen21_gpu_full_ffn_blocks.empty() && r.residency == "resident" &&
-                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC")) &&
+                            !db_options.enabled &&
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV")),
                         "Qwen21 runtime-weight FFN requires explicit resident GPU/ANE FP16, unmerged runtime LoRA and no frozen W8A8 or DBCache/prefix reuse");
             if (r.hybrid_mlp_mode != "auto" && !runtime_ane && !runtime_qkv)
@@ -99,7 +103,7 @@ ModelModule qwen21_module() {
                             (r.operation == "image.generate" ||
                              (r.operation == "image.edit" && !r.inputs.empty() && r.inputs.size() <= 3)) &&
                             !qwen21::option_enabled(rect_flag) &&
-                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC")) &&
+                            !db_options.enabled &&
                             qwen21::tiled_prefill_layer_count(
                                 std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC") ?
                                 std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC") : "0") == 0,
@@ -131,15 +135,7 @@ ModelModule qwen21_module() {
                             (r.operation == "image.generate" ||
                              (r.operation == "image.edit" && !r.inputs.empty() && r.inputs.size() <= 3)),
                         "Qwen21 runtime LoRA/base ANE requires explicit six-step 512px Viggle W8A8 hybrid with 0...3 full-size or diagnostic resized-512 references");
-            const char *db_cache = std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC");
-            const char *db_threshold = std::getenv("TURBOCIDER_QWEN21_DBCACHE_THRESHOLD");
-            const char *db_max = std::getenv("TURBOCIDER_QWEN21_DBCACHE_MAX_CONSECUTIVE");
-            require(qwen21::binary_option_or_unset(db_cache) &&
-                        qwen21::db_cache_threshold(db_threshold) > 0.f &&
-                        qwen21::db_cache_max_consecutive(db_max) > 0 &&
-                        (!db_max || qwen21::option_enabled(db_cache)),
-                    "Qwen21 DBCache requires explicit opt-in for a finite threshold in (0, 0.5] and a max consecutive skip count of 1...8");
-            if (qwen21::option_enabled(db_cache))
+            if (db_options.diagnostic)
                 require(r.allow_approximation && r.steps >= 20 && r.steps <= 40 &&
                             ((r.width == 512 && r.height == 512) ||
                              (((r.width == 768 && r.height == 512) ||
@@ -154,6 +150,37 @@ ModelModule qwen21_module() {
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC")) &&
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_LAST16_FFN_DIAGNOSTIC")),
                         "Qwen21 DBCache is diagnostic-only for 20...40-step 512px or validated 768x512/512x768 base GPU or GPU/ANE with 0...3 references and no step-FFN reuse");
+            if (db_options.enabled && !db_options.diagnostic) {
+                require(r.allow_approximation && r.execution == "gpu" &&
+                            r.hybrid_mlp_mode == "auto" && r.width == 512 && r.height == 512 &&
+                            r.steps >= 20 && r.steps <= 40 && !r.prompt_enhance &&
+                            r.qwen21_reference_size == 1024 && !r.qwen21_w8a8 &&
+                            !r.qwen21_gpu_w8a16 && r.qwen21_gpu_full_ffn_blocks.empty() &&
+                            r.dump.empty() &&
+                            (r.operation == "image.generate" ? r.inputs.empty() :
+                             (!r.inputs.empty() && r.inputs.size() <= 3)),
+                        "Qwen21 DiT cache presets require explicit approximation, 20...40-step 512px GPU base-schedule generation or 1...3 full-size edit references, with prompt enhancement off");
+                for (const char *name : {
+                        "TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV",
+                        "TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC",
+                        "TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE",
+                        "TURBOCIDER_QWEN21_METAL_QK_ROPE",
+                        "TURBOCIDER_QWEN21_REF_LOCAL_ATTENTION",
+                        "TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC",
+                        "TURBOCIDER_QWEN21_TILED_PREFILL_PREFIX_KV_DIAGNOSTIC",
+                        "TURBOCIDER_QWEN21_TILED_PREFIX_TARGET_ONLY_DIAGNOSTIC",
+                        "TURBOCIDER_QWEN21_PREFILL_LAST_TARGET_ONLY_DIAGNOSTIC",
+                        "TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN",
+                        "TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN",
+                        "TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC",
+                        "TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_LAST16_FFN_DIAGNOSTIC",
+                        "TURBOCIDER_QWEN21_HYBRID_REUSE_PENULTIMATE_EVEN_FFN_DIAGNOSTIC",
+                        "TURBOCIDER_QWEN21_VIGGLE_LORA_FP16"}) {
+                    const char *value = std::getenv(name);
+                    require(!value || std::string_view(value) == "0",
+                            std::string("Qwen21 DiT cache preset conflicts with experimental option ") + name);
+                }
+            }
             const char *tiled_prefill = std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC");
             const int tiled_layers = qwen21::tiled_prefill_layer_count(tiled_prefill ? tiled_prefill : "0");
             const char *tiled_prefix_kv = std::getenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV");
@@ -196,22 +223,28 @@ ModelModule qwen21_module() {
                         "Qwen21 tiled prefix target-only needs explicit resident W8A8 tiled prefix reuse");
             if (!r.loras.empty()) {
                 const bool experimental_adapter = fused_lora_ane || runtime_ane;
+                const auto *viggle = qwen21::viggle_v021_adapter(
+                    std::filesystem::path(r.loras[0].path).filename().string());
                 require(r.loras.size() == 1 && r.loras[0].role == "transformer" &&
-                            (experimental_adapter
-                                ? (std::isfinite(r.loras[0].strength) &&
-                                   r.loras[0].strength >= -8.f && r.loras[0].strength <= 8.f)
-                                : (r.loras[0].strength == 1.f &&
-                                   qwen21::viggle_v021_adapter(
-                                       std::filesystem::path(r.loras[0].path).filename().string()))) &&
-                            r.steps == 6 && (r.execution == "gpu" ||
-                                             (r.execution == "gpu_ane" && (lora_base_ane || runtime_ane))) &&
-                            r.allow_approximation &&
-                            r.width == 512 && r.height == 512 &&
-                            (r.qwen21_reference_size == 1024 ||
-                             (r.qwen21_reference_size == 512 &&
-                              qwen21::option_enabled(lora_ref512_flag))) &&
-                            (r.operation != "image.edit" || r.inputs.size() <= 3),
-                        "Qwen21 requires one six-step runtime transformer LoRA with explicit 512px approximation; lora_fused/runtime permit an unqualified adapter/strength with the Viggle schedule");
+                            std::isfinite(r.loras[0].strength) &&
+                            r.loras[0].strength >= -8.f && r.loras[0].strength <= 8.f &&
+                            r.lora_strategy == "inference_time" &&
+                            r.width == 512 && r.height == 512 && r.inputs.size() <= 3,
+                        "Qwen21 LoRA needs one runtime transformer adapter with finite strength -8...8, a 512px canvas and 0...3 references");
+                if (viggle || experimental_adapter) {
+                    require((!viggle || experimental_adapter || r.loras[0].strength == 1.f) && r.steps == 6 &&
+                                (r.execution == "gpu" ||
+                                 (r.execution == "gpu_ane" && (lora_base_ane || runtime_ane))) &&
+                                r.allow_approximation &&
+                                (r.qwen21_reference_size == 1024 ||
+                                 (r.qwen21_reference_size == 512 &&
+                                  qwen21::option_enabled(lora_ref512_flag))),
+                            "Viggle requires six steps and strength 1; explicit lora_fused/runtime alternate adapters retain the experimental six-step schedule");
+                } else {
+                    require(r.execution == "gpu" && r.hybrid_mlp_mode == "auto" &&
+                                r.steps >= 20 && r.steps <= 40 && r.qwen21_reference_size == 1024,
+                            "ordinary Qwen21 LoRA requires GPU execution, the 20...40-step base schedule and full-size references");
+                }
             }
             const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
             const char *fused_qkv = std::getenv("TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC");
@@ -354,7 +387,7 @@ ModelModule qwen21_module() {
                         "Qwen21 hybrid penultimate even FFN reuse requires last-16 final reuse and excludes GPU penultimate reuse");
             if (!r.loras.empty())
                 require(!reuse_flag || std::string_view(reuse_flag) != "1",
-                        "Viggle six-step LoRA has not been validated with final-step FFN reuse");
+                        "Qwen21 runtime LoRA has not been validated with final-step FFN reuse");
             const char *lora_fp16 = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
             require(qwen21::binary_option_or_unset(lora_fp16),
                     "TURBOCIDER_QWEN21_VIGGLE_LORA_FP16 accepts only 0 or 1");
@@ -419,7 +452,7 @@ ModelModule qwen21_module() {
             d.inputs = {"text", "image"}; d.roles = {"reference"}; d.max_images = 10; d.output = "image";
             d.steps = 40; d.frames = 1; d.width = d.height = 1024; d.default_audio = false;
             d.supports_lora = true; d.runtime_lora = true;
-            d.lora_mode = "inference-time-viggle-v0.2.1-r128/r256; alternate six-step adapters experimental in explicit lora_fused";
+            d.lora_mode = "inference-time GPU LoRA with 20...40-step base schedule; Viggle v0.2.1 r128/r256 uses six steps; alternate six-step adapters experimental in explicit lora_fused/runtime";
             d.lora_strategies = {"inference_time"}; d.default_lora_strategy = "inference_time";
             d.default_residency = "component_staged"; d.backend = "mlx_cpp_metal";
             d.supports_gpu_ane = true;

@@ -12,7 +12,7 @@ this change does not qualify them for the new low-memory strategy.
 | Route | Qualified request |
 | --- | --- |
 | BF16 GPU | Qwen Image 2.1, text-to-image, canvas at most 512×512, `component_staged`, no reference image, LoRA, prompt enhancement, or approximation |
-| Experimental hybrid | Same device, 512×512 text-to-image, at least two steps, `component_staged`, explicit `gpu_ane`, `qwen21_w8a8=true`, `allow_approximation=true`, `auto`/`base_fused` MLP mode, checkpoint-matched 32-block W8A8 manifest with 6144/12288 MLP channels; no reference image, LoRA, prompt enhancement, GPU W8A16 suffix, or diagnostic reuse cache |
+| Experimental hybrid | Same device, 512×512 text-to-image, at least two steps, `component_staged`, explicit `gpu_ane`, `qwen21_w8a8=true`, `allow_approximation=true`, `auto`/`base_fused` MLP mode, checkpoint-matched 32-block W8A8 manifest with 6144/12288 MLP channels; no reference image, LoRA, prompt enhancement, GPU W8A16 suffix, DiT cache, or diagnostic reuse cache |
 
 The App exposes **Qwen 低内存 ANE（实验）** under acceleration settings. The
 control and request submission both check hardware eligibility. A saved draft
@@ -52,7 +52,11 @@ The `dev-verify` runtime-weight FFN/QKV modes keep their existing additional
 2 GiB estimate. LoRA fused/gate-up/suffix graphs and their diagnostics do not
 receive the new low-memory estimate. Upstream staged cleanup and LoRA state
 reset continue to apply to all devices. The new layer-streaming/cache/wired
-strategy remains restricted to the qualified hardware and base graph.
+strategy remains restricted to the qualified hardware and base graph. The newer
+DiT cache presets keep upstream estimates and cannot combine with this low-memory
+hybrid experiment. Explicit per-request cache `off` still overrides diagnostic
+environment defaults. Ordinary LoRA sampling and edit-prefix snapshots retain
+their upstream behavior.
 
 The shared fd-backed reader also needs a correctness fix: duplicated descriptors
 share a kernel cursor. Each reader now owns a logical cursor and uses positional
@@ -118,8 +122,8 @@ configuration are excluded from the change.
 
 ## PR build verification
 
-After integrating `dev-verify`, a clean build with the exact hardware gate passed
-41 focused Qwen tests (one optional installed-adapter audit skipped), 36 Qwen
+After integrating `dev-verify` at `975aa91`, a clean build with the exact hardware gate passed
+43 focused Qwen tests (two optional installed-adapter audits skipped), 39 Qwen
 request-contract tests, the device-profile contract, CPU policy/boundary checks,
 the source-lease fixture, App workflow checks, and ANE library checks. App reuse
 checks cover the newer hybrid modes and explicit `base_fused` resubmission.
@@ -129,7 +133,7 @@ memory capacities, off-by-one byte counts, unknown devices, and malformed App
 hardware descriptions.
 
 The `dev-verify` integration build's full 512×512 / 40-step `base_fused` hybrid
-run completed in 59.063 s with 1248 Core ML runtime calls, 5.67 GiB MLX peak,
+run completed in 56.591 s with 1248 Core ML runtime calls, 5.67 GiB MLX peak,
 and approximately 161 KiB MLX active after completion. Its PNG matched the previously qualified hybrid byte for byte.
 This is a functional/parity acceptance run, not another paired speed comparison.
 The gated build also passed cancellation during load and denoising, retry,
@@ -160,6 +164,7 @@ An explicit hybrid request uses:
   "residency": "component_staged",
   "qwen21_w8a8": true,
   "hybrid_mlp_mode": "base_fused",
+  "qwen21_dit_cache": "off",
   "allow_approximation": true,
   "ane_manifest": "/path/to/matching-compiled-manifest.json"
 }

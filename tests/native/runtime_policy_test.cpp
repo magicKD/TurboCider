@@ -60,6 +60,12 @@ int main() {
     }
     auto base_fused = qwen_ane; base_fused.hybrid_mlp_mode = "base_fused";
     assert(qwen21::layer_staged_hybrid_t2i(base_fused, qwen_device));
+    for (const char *mode : {"conservative", "balanced", "fast"}) {
+        auto cached = base_fused;
+        cached.qwen21_dit_cache = mode;
+        cached.qwen21_dit_cache_explicit = true;
+        assert(!qwen21::layer_staged_hybrid_t2i(cached, qwen_device));
+    }
     const auto &m4_copy = device_optimizations("Apple M4 Pro", 48ull << 30);
     assert(std::string_view(m4_copy.id) == "m4pro48-coreml-copy-v1");
     assert(!m4_copy.qwen21_layer_streaming);

@@ -11,11 +11,11 @@ namespace tc::qwen21 {
 inline bool layer_staged_hybrid_t2i(const Request &r, const DeviceInfo &device) {
     if (!device.optimizations().qwen21_layer_streaming ||
         (r.hybrid_mlp_mode != "auto" && r.hybrid_mlp_mode != "base_fused")) return false;
-    if (lora_base_ane(r) || gate_up_ane(r) || fused_lora_ane(r)) return false;
+    if (lora_base_ane(r) || gate_up_ane(r) || fused_lora_ane(r) ||
+        db_cache_options(r).enabled) return false;
     // Existing diagnostic caches/fusions retain weights or change execution
     // geometry. Keep their established memory estimate and resident route.
     for (const char *flag : {"TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC",
-            "TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC",
             "TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN",
             "TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN",
             "TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC",

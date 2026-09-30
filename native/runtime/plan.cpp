@@ -119,12 +119,16 @@ static ExecutionPlan make_plan_impl(
         require(!r.ane_manifest.empty(), "gpu_ane requires an explicit ANE manifest or profile");
     }
     module_for(r.model).validate(r);
+    require(r.qwen21_dit_cache == "off" || r.qwen21_dit_cache == "conservative" ||
+                r.qwen21_dit_cache == "balanced" || r.qwen21_dit_cache == "fast",
+            "qwen21_dit_cache must be off, conservative, balanced or fast");
     require(r.hybrid_mlp_mode == "auto" || r.model == "qwen-image-2.1" ||
                 r.model == "z-image-turbo" || r.model == "z-image-turbo-gguf",
             "hybrid_mlp_mode is supported only for Qwen-Image-2.1 and Z-Image Turbo (including native GGUF)");
     require(r.model == "qwen-image-2.1" ||
                 (!r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
-                 r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty()),
+                 r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty() &&
+                 r.qwen21_dit_cache == "off"),
             "Qwen21-only acceleration options cannot be used with other models");
     require((!r.prompt_enhance && !r.prompt_enhance_edit_experimental && r.prompt_enhancer_path.empty()) || r.model == "qwen-image-2.1",
             "native prompt enhancement is currently supported only for Qwen21");

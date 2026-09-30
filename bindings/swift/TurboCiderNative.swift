@@ -43,6 +43,7 @@ public struct NativeRequest: Codable, Sendable {
     public var prompt_enhancer_path: String?
     public var prompt_enhance: Bool?
     public var prompt_enhance_edit_experimental: Bool?
+    public var qwen21_dit_cache: String?
     public var inputs: [NativeInput]?
     public var profile: String?
     public var residency: String?
@@ -113,6 +114,7 @@ public struct NativeExecutionV2: Codable, Sendable {
     public var ltx_sol_dense_edge_steps: Int?
     public var ltx_stage2_text_rows: Int?
     public var streaming: NativeStreamingSelectorV2?
+    public var qwen21_dit_cache: String?
 }
 public struct NativeParametersV2: Codable, Sendable {
     public var dynamic_text: Bool
@@ -161,7 +163,8 @@ public struct NativeRequestV2: Codable, Sendable {
             ltx_sol_dense_edge_blocks: request.ltx_sol_dense_edge_blocks,
             ltx_sol_dense_edge_steps: request.ltx_sol_dense_edge_steps,
             ltx_stage2_text_rows: request.ltx_stage2_text_rows,
-            streaming: targetBytes.map { NativeStreamingSelectorV2(targetBytes: $0) })
+            streaming: targetBytes.map { NativeStreamingSelectorV2(targetBytes: $0) },
+            qwen21_dit_cache: request.qwen21_dit_cache)
         parameters = NativeParametersV2(
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
             noise_path: request.noise_path)

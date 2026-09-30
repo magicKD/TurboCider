@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <stdexcept>
 #include <string_view>
 
 namespace tc::qwen21 {
@@ -55,6 +56,70 @@ inline int db_cache_max_consecutive(const char *value) {
     const auto [end, error] = std::from_chars(input.data(), input.data() + input.size(), limit);
     return error == std::errc{} && end == input.data() + input.size() &&
            limit >= 1 && limit <= 8 ? limit : -1;
+}
+
+// Restrict the SGLang comparison to its F1/W4 candidate and the established
+// F8/W8 policy. These are diagnostic controls, never preset overrides.
+inline int db_cache_front_blocks(const char *value) {
+    if (!value) return 8;
+    const std::string_view input(value);
+    return input == "1" ? 1 : input == "8" ? 8 : -1;
+}
+
+inline int db_cache_warmup_steps(const char *value) {
+    if (!value) return 8;
+    const std::string_view input(value);
+    return input == "4" ? 4 : input == "8" ? 8 : -1;
+}
+
+struct DbCacheOptions {
+    bool enabled = false;
+    float threshold = 0.08f;
+    int max_consecutive = 2;
+    int front_blocks = 8;
+    int warmup_steps = 8;
+    bool diagnostic = false;
+    std::string mode = "off";
+};
+
+// Request presets own their parameters. Legacy environment diagnostics remain
+// available with mode=off, but cannot silently override a saved App request.
+inline DbCacheOptions db_cache_options(const Request &request) {
+    // An explicit per-request Off wins over a process-wide diagnostic default.
+    // Requests that omit the field retain the original environment behavior.
+    if (request.qwen21_dit_cache_explicit && request.qwen21_dit_cache == "off")
+        return {};
+    const char *flag = std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC");
+    const char *threshold = std::getenv("TURBOCIDER_QWEN21_DBCACHE_THRESHOLD");
+    const char *maximum = std::getenv("TURBOCIDER_QWEN21_DBCACHE_MAX_CONSECUTIVE");
+    const char *front = std::getenv("TURBOCIDER_QWEN21_DBCACHE_FRONT_BLOCKS");
+    const char *warmup = std::getenv("TURBOCIDER_QWEN21_DBCACHE_WARMUP_STEPS");
+    if (!binary_option_or_unset(flag))
+        throw std::invalid_argument("Qwen21 DBCache diagnostic accepts only 0 or 1");
+    DbCacheOptions result;
+    result.mode = request.qwen21_dit_cache;
+    if (result.mode != "off") {
+        if (result.mode != "conservative" && result.mode != "balanced" && result.mode != "fast")
+            throw std::invalid_argument("Qwen21 DiT cache mode must be off, conservative, balanced or fast");
+        if (option_enabled(flag) || threshold || maximum || front || warmup)
+            throw std::invalid_argument("Qwen21 DiT cache preset conflicts with DBCache environment diagnostics; unset threshold/max/front/warmup overrides and disable the diagnostic flag");
+        result.enabled = true;
+        result.threshold = result.mode == "conservative" ? 0.15f : 0.25f;
+        result.max_consecutive = result.mode == "conservative" ? 1 :
+                                 result.mode == "balanced" ? 2 : 4;
+        return result;
+    }
+    result.enabled = option_enabled(flag);
+    result.diagnostic = result.enabled;
+    result.threshold = db_cache_threshold(threshold);
+    result.max_consecutive = db_cache_max_consecutive(maximum);
+    result.front_blocks = db_cache_front_blocks(front);
+    result.warmup_steps = db_cache_warmup_steps(warmup);
+    if (result.threshold <= 0.f || result.max_consecutive <= 0 ||
+        result.front_blocks <= 0 || result.warmup_steps <= 0 ||
+        ((maximum || front || warmup) && !result.enabled))
+        throw std::invalid_argument("Qwen21 DBCache requires a finite threshold in (0, 0.5], a max consecutive skip count of 1...8, front blocks 1 or 8, and warmup steps 4 or 8; max/front/warmup overrides require the diagnostic flag");
+    return result;
 }
 
 // Shared by request planning and execution so an admitted shape cannot

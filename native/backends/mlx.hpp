@@ -105,7 +105,8 @@ class Weights {
     size_t bytes() const;
     void materialize();
     size_t apply_loras(const std::vector<LoRAAsset> &, const std::string &, const Event &,
-                      std::atomic<bool> &, bool inference_time = false);
+                      std::atomic<bool> &, bool inference_time = false,
+                      bool strict_targets = false);
 };
 Tensor linear(const Tensor &, const Weights &, const std::string &);
 Tensor silu(const Tensor &);

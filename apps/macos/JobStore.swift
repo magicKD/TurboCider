@@ -12,7 +12,10 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var elapsed: Double
     var error: String?
     var resultJSON: String?
+    /// Rolling mean of the most recent (at most five) completed denoise intervals.
     var secondsPerStep: Double?
+    /// Denoise boundary 0→1; absent when that boundary was not observed or in older history.
+    var firstDenoiseStepSeconds: Double? = nil
     var modelPath: String?
     var outputDeleted: Bool?
     /// Public selector metadata is persisted for display/reuse only. Native
@@ -60,15 +63,20 @@ struct StepTelemetry {
     private var lastSequence = -1
     private var boundary: (step: Int, time: Double)?
     private var samples: [Double] = []
+    private(set) var firstDenoiseStepSeconds: Double?
     mutating func observe(_ event: NativeEvent) -> Double? {
         guard event.sequence > lastSequence else { return secondsPerStep }
         lastSequence = event.sequence
         guard event.phase == "denoise" else { return secondsPerStep }
         if let previous = boundary, event.completed == previous.step + 1 {
             let duration = event.elapsed_seconds - previous.time
-            if duration.isFinite && duration > 0 { samples.append(duration); samples = Array(samples.suffix(5)) }
+            if duration.isFinite && duration > 0 {
+                if previous.step == 0 { firstDenoiseStepSeconds = duration }
+                samples.append(duration); samples = Array(samples.suffix(5))
+            }
         } else if let previous = boundary, event.completed < previous.step {
             samples = []
+            firstDenoiseStepSeconds = nil
         }
         if boundary == nil || boundary!.step != event.completed { boundary = (event.completed, event.elapsed_seconds) }
         return secondsPerStep
@@ -875,6 +883,7 @@ final class NativeJobStore: ObservableObject {
         current.phase = event.phase; current.completed = event.completed - offset; current.total = event.total - offset
         current.elapsed = event.elapsed_seconds
         current.secondsPerStep = telemetry.observe(event)
+        current.firstDenoiseStepSeconds = telemetry.firstDenoiseStepSeconds
         jobs[i] = current
         if Date().timeIntervalSince(lastPersist) > 1 {
             do { try persist() } catch { storageError = error.localizedDescription; cancel() }
