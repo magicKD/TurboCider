@@ -7,6 +7,11 @@ if [[ -z "${DEVELOPER_DIR:-}" ]]; then
  fi
 fi
 source tools/native/dependencies.sh
+PACKAGE_ONLY="${TURBOCIDER_BUILD_PACKAGE_ONLY:-0}"
+case "$PACKAGE_ONLY" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_BUILD_PACKAGE_ONLY must be 0 or 1\n' >&2; exit 2 ;;
+esac
 EXPERIMENTAL_PROBES="${TURBOCIDER_BUILD_EXPERIMENTAL_PROBES:-0}"
 case "$EXPERIMENTAL_PROBES" in
  0|1) ;;
@@ -215,11 +220,24 @@ if [[ "${TURBOCIDER_BUILD_LIB_ONLY:-0}" == "1" ]]; then
  printf 'Built %s/libturbocider.dylib (library only)\n' "$OUT"
  exit 0
 fi
-"$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_dit_streaming_probe.c -o "$VIDEO_OUT/h3_dit_streaming_probe.o"
-"$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_dit_streaming_probe.o" -L"$OUT" -lturbocider -o "$OUT/h3-dit-streaming-probe" -Wl,-rpath,@executable_path
+if [[ "$PACKAGE_ONLY" == "0" ]]; then
+ "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_dit_streaming_probe.c -o "$VIDEO_OUT/h3_dit_streaming_probe.o"
+ "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_dit_streaming_probe.o" -L"$OUT" -lturbocider -o "$OUT/h3-dit-streaming-probe" -Wl,-rpath,@executable_path
+fi
 "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_quantize_stream_cache.c -o "$VIDEO_OUT/h3_quantize_stream_cache.o"
 "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_quantize_stream_cache.o" -L"$OUT" -lturbocider -o "$OUT/h3-quantize-stream-cache" -Wl,-rpath,@executable_path
 "$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm native/core/json_keys.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
+if [[ "$PACKAGE_ONLY" == "1" ]]; then
+ runtime_build_identity --verify
+ bundled_streaming_catalog --verify
+ if [[ "${TURBOCIDER_NATIVE_ONLY:-0}" != "1" ]]; then
+  export TURBOCIDER_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
+  export TURBOCIDER_BUILD_OUTPUT_DIR="$OUT"
+  TURBOCIDER_BUILD_APP_ONLY=1 tools/native/build_app.sh
+ fi
+ printf 'Built package binaries; test and auxiliary probe targets skipped\n'
+ exit 0
+fi
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tensor_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-tensor-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tokenizer_probe.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/h3-mlx-tokenizer-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_conditioner_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-conditioner-probe"
