@@ -2,6 +2,7 @@
 #include "z_image.hpp"
 #include "block_profile.hpp"
 #include "hybrid_math.hpp"
+#include "ffn.hpp"
 #include "padding.hpp"
 #include "hybrid_stream.hpp"
 #include "vae.hpp"
@@ -620,9 +621,8 @@ Tensor z_attention(const Tensor &x, const Weights &w, const std::string &prefix,
 }
 
 Tensor z_ffn(const Tensor &x, const Weights &w, const std::string &prefix) {
-    return linear_compat(silu(linear_compat(x, w, prefix + ".w1")) *
-                             linear_compat(x, w, prefix + ".w3"),
-                         w, prefix + ".w2");
+    const char *shared = std::getenv("TURBOCIDER_Z_CONVROT_SHARED_GATE_UP");
+    return z_image::feed_forward(x, w, prefix, shared && std::strcmp(shared, "1") == 0);
 }
 
 float z_hybrid_output_scale(const HybridSession *hybrid) {
