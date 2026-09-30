@@ -3,6 +3,7 @@
 #include "runtime/execution.hpp"
 #include "runtime/lora_identity.hpp"
 #include "core/tokenizer.hpp"
+#include "models/qwen21/memory_policy.hpp"
 #include "platform/apple/platform.hpp"
 #include <cassert>
 #include <iostream>
@@ -15,8 +16,49 @@ int main() {
            optimized.z_image_memory_lifecycle && optimized.z_image_smallest_partition &&
            optimized.external_automatic_partitions && optimized.coreml_output_copy &&
            optimized.z_image_int8_streaming);
+    assert(optimized.qwen21_layer_streaming);
+    Request qwen_gpu;
+    qwen_gpu.model = "qwen-image-2.1";
+    qwen_gpu.width = qwen_gpu.height = 512;
+    qwen_gpu.steps = 40;
+    qwen_gpu.residency = "component_staged";
+    Request qwen_ane = qwen_gpu;
+    qwen_ane.execution = "gpu_ane";
+    qwen_ane.qwen21_w8a8 = true;
+    qwen_ane.allow_approximation = true;
+    qwen_ane.ane_manifest = "verified-at-execution.json";
+    const DeviceInfo qwen_device{"Apple M5 Pro", 24ull << 30};
+    assert(qwen21::layer_staged_t2i(qwen_gpu, qwen_device));
+    assert(qwen21::layer_staged_t2i(qwen_ane, qwen_device));
+    assert(qwen21::layer_staged_hybrid_t2i(qwen_ane, qwen_device));
+    for (const auto &mutate : std::vector<std::function<void(Request &)>>{
+            [](Request &r) { r.residency = "resident"; },
+            [](Request &r) { r.width = r.height = 1024; },
+            [](Request &r) { r.operation = "image.edit"; },
+            [](Request &r) { InputAsset input; input.kind = "image"; input.role = "reference";
+                             input.path = "ref.png"; r.inputs.push_back(input); },
+            [](Request &r) { r.loras.push_back({"adapter.safetensors"}); },
+            [](Request &r) { r.prompt_enhance = true; }}) {
+        for (auto request : {qwen_gpu, qwen_ane}) {
+            mutate(request);
+            assert(!qwen21::layer_staged_t2i(request, qwen_device));
+        }
+    }
+    for (const auto &mutate : std::vector<std::function<void(Request &)>>{
+            [](Request &r) { r.qwen21_gpu_w8a16 = true; },
+            [](Request &r) { r.qwen21_w8a8 = false; },
+            [](Request &r) { r.allow_approximation = false; },
+            [](Request &r) { r.steps = 1; },
+            [](Request &r) { r.ane_manifest.clear(); },
+            [](Request &r) { r.qwen21_gpu_full_ffn_blocks = {3, 5, 7}; }}) {
+        auto request = qwen_ane; mutate(request);
+        assert(!qwen21::layer_staged_t2i(request, qwen_device));
+    }
     const auto &m4_copy = device_optimizations("Apple M4 Pro", 48ull << 30);
     assert(std::string_view(m4_copy.id) == "m4pro48-coreml-copy-v1");
+    assert(!m4_copy.qwen21_layer_streaming);
+    assert(!qwen21::layer_staged_t2i(qwen_gpu, {"Apple M4 Pro", 48ull << 30}));
+    assert(!qwen21::layer_staged_t2i(qwen_ane, {"Apple M4 Pro", 48ull << 30}));
     assert(m4_copy.coreml_output_copy && !m4_copy.z_image_suffix_streaming &&
            !m4_copy.z_image_hybrid_segments && !m4_copy.z_image_memory_lifecycle &&
            !m4_copy.z_image_smallest_partition && !m4_copy.external_automatic_partitions &&
@@ -49,6 +91,10 @@ int main() {
                !legacy.z_image_memory_lifecycle && !legacy.z_image_smallest_partition &&
                !legacy.external_automatic_partitions && !legacy.coreml_output_copy &&
                !legacy.z_image_int8_streaming);
+        assert(!legacy.qwen21_layer_streaming);
+        assert(!qwen21::layer_staged_t2i(qwen_gpu, device));
+        assert(!qwen21::layer_staged_t2i(qwen_ane, device));
+        assert(!qwen21::layer_staged_hybrid_t2i(qwen_ane, device));
         assert(legacy.supports_z_image_streaming(false));
         assert(!legacy.supports_z_image_streaming(true));
         assert(legacy.z_image_stream_prefetch(false, false, 6ull << 30) == 1);

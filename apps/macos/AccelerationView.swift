@@ -23,6 +23,7 @@ struct AccelerationView: View {
     }
     private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration(policy: studio.draft.profilePath.isEmpty ? "gpu" : "profile") }
     @State private var zImageBucket: Int?
+    @State private var qwenLowMemoryANEAvailable = false
     private var zImageCapacity: String? {
         guard studio.draft.modelID == "z-image-turbo", let zImageBucket else { return nil }
         let imageRows = ((studio.draft.width / 16) * (studio.draft.height / 16) + 31) / 32 * 32
@@ -50,7 +51,25 @@ struct AccelerationView: View {
                 if supportsAutomaticGPUANE { Button("重新检测本机加速") { Task { await discover() } }.disabled(store.busy) }
             }
             if config.policy == "gpu_ane" {
-                Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定或变长分区的容量必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
+                if studio.draft.modelID == "qwen-image-2.1" {
+                    Toggle("Qwen 低内存 ANE（实验）", isOn: Binding(
+                        get: { config.qwen21W8A8 ?? false },
+                        set: { value in
+                            guard !value || qwenLowMemoryANEAvailable else { return }
+                            update { $0.qwen21W8A8 = value }
+                            if value { studio.draft.residency = "component_staged" }
+                        }))
+                        .disabled(store.busy || (!qwenLowMemoryANEAvailable && config.qwen21W8A8 != true))
+                        .accessibilityIdentifier("qwenLowMemoryANE")
+                    Text("此实验仅支持 Apple M5 Pro、24 GiB 内存，需选择匹配的 Qwen 量化分区。限 512×512 文生图，不支持参考图、LoRA 或提示词增强；画面可能与纯 GPU 不同。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if !qwenLowMemoryANEAvailable {
+                        Text("当前设备不支持此实验；已保存的实验选项可关闭，普通 Qwen ANE 配置仍可使用。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定或变长分区的容量必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
+                }
                 if (studio.draft.modelID.hasPrefix("flux2-") || studio.draft.modelID == "z-image-turbo") && !studio.draft.activeLoRAs.isEmpty {
                     Text("带 LoRA 的 ANE 加速需要匹配同一文件与强度的分区。没有匹配缓存时会提示选择对应分区，或关闭 ANE 使用 GPU。")
                         .font(.caption).foregroundStyle(.orange)
@@ -80,6 +99,7 @@ struct AccelerationView: View {
                 CoreMLStorageView(store: store, studio: studio)
             }
         }.task(id: discoveryID) { await discover() }
+            .task { qwenLowMemoryANEAvailable = Qwen21LowMemoryANEHardware.isEligible() }
             .task(id: "\(studio.draft.modelID)|\(config.manifest)") { await readZImageBucket() }
             .padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
     }

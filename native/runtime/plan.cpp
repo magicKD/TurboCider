@@ -1,5 +1,6 @@
 #include "session.hpp"
 #include "streaming/public_request_validation.hpp"
+#include "../models/qwen21/memory_policy.hpp"
 #include <set>
 #include <cmath>
 #include <algorithm>
@@ -217,8 +218,21 @@ static ExecutionPlan make_plan_impl(
         // A 2048-square one-step probe peaked at 62,259,019,410 MLX bytes;
         // include the observed VAE/DiT working-set growth so high-resolution
         // plans do not under-report unified-memory pressure. This is not a cap.
-        plan.memory_estimate_bytes = ((r.residency == "resident" ? 40ull : 22ull) << 30) +
-                                     (hybrid ? (10ull << 30) : 0) + uint64_t(r.width) * r.height * 10240 +
+        // The exact small-canvas GPU T2I route streams text/DiT layers and
+        // releases compiled graphs before loading the VAE. Retain generous
+        // headroom for long prompts and allocator/cache variation; measured
+        // short-prompt 512px MLX peaks are about 5.5 GiB on M5 Pro/24 GiB.
+        const auto device = device_info();
+        const bool staged_hybrid = qwen21::layer_staged_hybrid_t2i(r, device);
+        // The explicit 512px W8A8 route streams original DiT layers, building
+        // only a compact request-owned BF16 suffix cache (4.5 GiB for the
+        // qualified 6144 prefix). Core ML stays loaded during denoising. Reserve
+        // 17 GiB before pixel working space for both banks and layer staging.
+        const uint64_t base_gib = r.residency == "resident" ? 40ull :
+            staged_hybrid ? 17ull :
+            qwen21::layer_staged_t2i(r, device) ? 16ull : 22ull;
+        plan.memory_estimate_bytes = (base_gib << 30) +
+                                     (hybrid && !staged_hybrid ? (10ull << 30) : 0) + uint64_t(r.width) * r.height * 10240 +
                                      uint64_t(r.inputs.size()) * (reference_prefix_bytes + (512ull << 20));
     }
     else if (r.model == "z-image-turbo")

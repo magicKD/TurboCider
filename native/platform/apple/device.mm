@@ -105,7 +105,8 @@ NSDictionary *system_info() {
             @"z_image_memory_lifecycle" : @(optimizations.z_image_memory_lifecycle),
             @"z_image_smallest_partition" : @(optimizations.z_image_smallest_partition),
             @"external_automatic_partitions" : @(optimizations.external_automatic_partitions),
-            @"coreml_output_copy" : @(optimizations.coreml_output_copy)
+            @"coreml_output_copy" : @(optimizations.coreml_output_copy),
+            @"qwen21_layer_streaming" : @(optimizations.qwen21_layer_streaming)
         },
         @"physical_memory_bytes" : @([NSProcessInfo processInfo].physicalMemory),
         @"recommended_working_set_bytes" : @(d ? d.recommendedMaxWorkingSetSize : 0),

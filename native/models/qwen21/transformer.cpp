@@ -225,7 +225,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         for (int i = 0; i < 4; ++i) trace->emplace("mod" + std::to_string(i), mods[i]);
     }
     std::vector<KV> new_prefix;
-    if (trace) { prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear();
+    if (trace || release_layer_) { prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear();
                  reuse_blocks_.clear(); reuse_last16_blocks_.clear(); half_reuse_blocks_.clear(); }
     // Decode modulation is identical across blocks. Materialize its gate once
     // per forward, and fuse the split-path residual's elementwise operations.
@@ -510,6 +510,18 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         }
         if (!reuse && cache_prefix) new_prefix.push_back(split_this ? KV{outputs[2], outputs[3]} :
                                                         KV{outputs[1], outputs[2]});
+        if (release_layer_) {
+            // Own only prefix rows, not a view retaining all target K/V.
+            // Synchronize every result before releasing compiled constants.
+            mx::eval(outputs);
+            if (!reuse && cache_prefix) {
+                auto &kv = new_prefix.back();
+                kv.key = mx::copy(kv.key); kv.value = mx::copy(kv.value);
+                mx::eval(kv.key, kv.value);
+            }
+            functions[i] = {};
+            release_layer_("transformer_blocks." + std::to_string(i) + ".");
+        }
         if (db_decode && i == config_.layers - db_back_blocks - 1) {
             require(db_middle_input.has_value(), "Qwen21 DBCache middle-block input is missing");
             db_middle_residual_ = mx::copy(hidden - *db_middle_input);

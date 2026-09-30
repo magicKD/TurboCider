@@ -45,7 +45,47 @@ def plan(r):
     a,b=consume(out),consume(err)
     return status,json.loads(a) if a else None,b
 
+def qwen21_streaming_device():
+    system = json.loads(consume(C.c_void_p(lib.tc_system_json())))
+    return system["gpu"] == "Apple M5 Pro" and system["physical_memory_bytes"] == 24 << 30
+
+
 class ContractTests(unittest.TestCase):
+    def test_qwen21_layer_staged_t2i_fits_24gib_without_lowering_other_routes(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=512, height=512, steps=40, audio=False, frames=1,
+                    execution='gpu', residency='component_staged')
+        code, result, error = plan(base)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(result['memory_estimate_bytes'] + (4 << 30) <= 24 << 30,
+                         qwen21_streaming_device())
+        self.assertGreater(result['memory_estimate_bytes'], 5820995946)
+        for extra in (dict(residency='resident'), dict(width=1024, height=1024),
+                      dict(allow_approximation=True)):
+            code, other, error = plan({**base, **extra})
+            self.assertEqual(code, 0, error)
+            self.assertGreater(other['memory_estimate_bytes'] + (4 << 30), 24 << 30)
+
+    def test_qwen21_layer_staged_hybrid_fits_24gib_only_for_bounded_route(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=512, height=512, steps=40, audio=False, frames=1,
+                    execution='gpu_ane', residency='component_staged', allow_approximation=True,
+                    qwen21_w8a8=True, ane_manifest='checkpoint-verified-at-execution.json')
+        code, result, error = plan(base)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(result['memory_estimate_bytes'] + (4 << 30) <= 24 << 30,
+                         qwen21_streaming_device())
+        self.assertGreater(result['memory_estimate_bytes'], 16 << 30)
+        for extra in (dict(residency='resident'), dict(qwen21_gpu_w8a16=True),
+                      dict(qwen21_w8a8=False)):
+            code, result, error = plan({**base, **extra})
+            self.assertEqual(code, 0, error)
+            self.assertGreater(result['memory_estimate_bytes'] + (4 << 30), 24 << 30)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC': '1'}):
+            code, result, error = plan({**base, 'qwen21_w8a8': True})
+            self.assertEqual(code, 0, error)
+            self.assertGreater(result['memory_estimate_bytes'] + (4 << 30), 24 << 30)
+
     def test_qwen21_dbcache_diagnostic_gate(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
                     width=512, height=512, steps=20, audio=False, frames=1,
@@ -510,7 +550,8 @@ class ContractTests(unittest.TestCase):
                     code, result, error = plan({**request, 'operation':'image.edit', 'inputs':refs})
                     self.assertEqual(code, 0, error)
                     self.assertEqual(result['memory_estimate_bytes'],
-                                     empty['memory_estimate_bytes'] + count * per_reference)
+                                     empty['memory_estimate_bytes'] + count * per_reference +
+                                     ((6 << 30) if residency == 'component_staged' and qwen21_streaming_device() else 0))
                     self.assertEqual(result['memory_estimate_kind'], 'conservative_heuristic_not_hard_limit')
                     if count == 10:
                         # Actual 512-square ten-reference MLX peak; not total
@@ -1323,6 +1364,7 @@ class ContractTests(unittest.TestCase):
     def test_device_optimization_profile(self):
         system = json.loads(consume(C.c_void_p(lib.tc_system_json())))
         expected = system['gpu'] == 'Apple M5 Pro' and system['physical_memory_bytes'] == 24 << 30
+        self.assertIs(system['optimization_profile']['qwen21_layer_streaming'], expected)
         copy_only = system['gpu'] == 'Apple M4 Pro' and system['physical_memory_bytes'] == 48 << 30
         profile = system['optimization_profile']
         self.assertEqual(profile['id'], 'm5pro24-v1' if expected else 'm4pro48-coreml-copy-v1' if copy_only else 'legacy')

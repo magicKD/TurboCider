@@ -36,6 +36,7 @@ public struct NativeRequest: Codable, Sendable {
     public var compile_gpu: Bool?
     public var ane_manifest: String?
     public var allow_approximation: Bool?
+    public var qwen21_w8a8: Bool?
     public var dump_tensors: String?
     public var operation: String?
     public var prompt_enhancer_path: String?

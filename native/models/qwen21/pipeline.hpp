@@ -1,6 +1,7 @@
 #pragma once
 #include "../../runtime/session.hpp"
 #include "../../backends/mlx.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 #include "hybrid.hpp"
 #include "transformer.hpp"
 
@@ -35,6 +36,7 @@ class Session final : public ModelSession {
     std::string cached_prefix_runtime_;
     float cached_prefix_sigma_ = -1.f;
     std::unique_ptr<HybridSession> hybrid_;
+    std::optional<streaming::SourceFileIdentity> hybrid_source_identity_;
     std::unique_ptr<HybridMLP> hybrid_mlp_;
     std::string hybrid_manifest_;
     std::string hybrid_runtime_options_;

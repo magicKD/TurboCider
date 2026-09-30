@@ -70,6 +70,22 @@ import Foundation
         try store.unregisterANE(id: item.id)
         try check(fm.fileExists(atPath: manifest.path) && fm.fileExists(atPath: checkpoint.path), "Unregister removed external files")
         try check(try store.read().anePartitions?.isEmpty == true, "Registration was not removed")
+        try fm.createDirectory(at: directory.appendingPathComponent("block0.mlpackage"), withIntermediateDirectories: true)
+        raw["shape"] = ["K":4096,"N":4096,"mlp_width":12288,"buckets":[1024]]
+        raw["source"] = ["checkpoint": checkpoint.path,"checkpoint_bytes":16,"blocks":Array(0..<32)]
+        raw["export_identity"] = ["owner":"turbocider.qwen21.dit.coreml.v1","tensor_layout":"qwen21"]
+        try write()
+        let qwen = try store.registerANE(modelID: "qwen-image-2.1", manifest: manifest)
+        try check(qwen.partitionCount == 32 && qwen.modelID == "qwen-image-2.1",
+                  "Qwen W8A8 partition cannot be selected in the App")
+        try check(try store.registerANE(modelID: "auto", manifest: manifest).id == qwen.id,
+                  "Qwen partition auto identification failed")
+        try rejects { _ = try store.registerANE(modelID: "z-image-turbo", manifest: manifest) }
+        raw["export_identity"] = ["owner":"unrelated-model","tensor_layout":"qwen21"]
+        try write(); try rejects { _ = try store.registerANE(modelID: "qwen-image-2.1", manifest: manifest) }
+        raw["export_identity"] = ["owner":"turbocider.qwen21.dit.coreml.v1","tensor_layout":"qwen21"]
+        raw["source"] = ["checkpoint":checkpoint.path,"checkpoint_bytes":16,"blocks":Array(0..<31)]
+        try write(); try rejects { _ = try store.registerANE(modelID: "qwen-image-2.1", manifest: manifest) }
         print("PASS: ANE registration, alias deduplication, model/LoRA/capacity matching, dynamic source discovery, refresh, import, stale-artifact checks and non-destructive removal")
     }
 }

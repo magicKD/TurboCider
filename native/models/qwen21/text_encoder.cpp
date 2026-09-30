@@ -53,7 +53,8 @@ Tensor TextEncoder::encode(const Tokens &tokens, const Event &event, std::atomic
 Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &positions,
                                       int valid_tokens, const Event &event,
                                       std::atomic<bool> &cancelled,
-                                      const std::vector<Tensor> &deepstack_deltas) const {
+                                      const std::vector<Tensor> &deepstack_deltas,
+                                      const std::function<void(const std::string &)> &release_layer) const {
     require(embeddings.ndim() == 3 && embeddings.shape(0) == 1 && embeddings.shape(1) > 0,
             "Qwen21 text embeddings must be [1,sequence,hidden]");
     int count = embeddings.shape(1);
@@ -102,7 +103,11 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
         // Visual levels enter consecutive early language layers, not layers
         // 8/16/24. The prompt assembler zeros these deltas outside image spans.
         if (size_t(i) < deepstack_deltas.size()) hidden = hidden + deepstack_deltas[i];
-        if ((i + 1) % 4 == 0 || i + 1 == config_.layers) mx::eval(hidden);
+        // Safetensors are lazy: evaluating and dropping each consumed layer
+        // bounds live language weights instead of accumulating all 36 layers.
+        // Finish the GPU work before invalidating the backing arrays.
+        if (release_layer || (i + 1) % 4 == 0 || i + 1 == config_.layers) mx::eval(hidden);
+        if (release_layer) release_layer(p + ".");
         if (event) event("qwen21_text_encode", i + 1, config_.layers);
     }
     return config_.final_norm ? vl_norm(hidden, weights_.at(language_prefix_ + "norm.weight"), config_.epsilon) : hidden;

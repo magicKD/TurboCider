@@ -5,8 +5,10 @@
 #include "vae.hpp"
 #include "scheduler.hpp"
 #include "pe_generation.hpp"
+#include "memory_policy.hpp"
 #include "../../media/image.hpp"
 #include "../../runtime/residency.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <mlx/random.h>
 #include <cstdlib>
@@ -22,6 +24,32 @@ void emit(const Event &event, const std::string &phase, int step, int total) {
 double seconds(Clock::time_point start) {
     return std::chrono::duration<double>(Clock::now() - start).count();
 }
+// The compact suffix bank survives between layers. Keep that bounded MLX
+// working set resident during denoising, rather than repeatedly compressing
+// it under checkpoint I/O pressure. This changes no system-wide setting and
+// restores the caller's prior process limit after drain, including failure.
+class ScopedWiredResidency {
+    std::optional<size_t> previous_;
+  public:
+    void activate(size_t bytes) {
+        require(!previous_, "Qwen21 wired residency already active");
+        previous_ = mx::set_wired_limit(bytes);
+        if (*previous_ > bytes) mx::set_wired_limit(*previous_);
+    }
+    void reset() {
+        if (!previous_) return;
+        mx::synchronize();
+        mx::set_wired_limit(*previous_);
+        previous_.reset();
+    }
+    ~ScopedWiredResidency() {
+        if (!previous_) return;
+        // A device error can make synchronize throw. Still attempt policy
+        // restoration while preserving the original request exception.
+        try { mx::synchronize(); } catch (...) {}
+        try { mx::set_wired_limit(*previous_); } catch (...) {}
+    }
+};
 std::string read_utf8_file(const std::filesystem::path &path) {
     std::ifstream stream(path, std::ios::binary);
     require(stream.good(), "cannot read Qwen35 PE system prompt: " + path.string());
@@ -63,6 +91,7 @@ void Session::unload() {
     fused_qkv_weights_.clear();
     hybrid_mlp_.reset();
     hybrid_.reset();
+    hybrid_source_identity_.reset();
     hybrid_manifest_.clear();
     hybrid_runtime_options_.clear();
     cached_text_.reset();
@@ -83,6 +112,7 @@ RunResult Session::generate(const Request &request, const Event &event, std::ato
 RunResult Session::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
                        bool warmup, bool prepare_only) try {
     auto start = Clock::now();
+    ScopedWiredResidency wired_residency;
     Request r = requested;
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");
     const std::string original_prompt = r.prompt;
@@ -128,12 +158,17 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         fused_qkv_weights_.clear();
     }
     auto plan = make_plan(r);
+    const auto device = device_info();
+    const bool layer_staged = layer_staged_t2i(r, device);
+    require(!layer_staged || (!fused_qkv && !db_cache && !reuse_final_ffn &&
+                !half_reuse_ffn && !hybrid_reuse_ffn && !hybrid_reuse_last16),
+            "Qwen21 layer-staged T2I does not support diagnostic QKV/FFN caches");
     require(!r.prompt.empty(), "Qwen21 requires a prompt");
     require(warmup || prepare_only || (!r.output.empty() && std::filesystem::path(r.output).extension() == ".png"),
             "Qwen21 requires a .png output");
-    ResidencyPolicy::validate_budget(plan, device_info().physical_memory);
+    ResidencyPolicy::validate_budget(plan, device.physical_memory);
     if (!hybrid_requested) {
-        hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
+        hybrid_mlp_.reset(); hybrid_.reset(); hybrid_source_identity_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
         r.execution = "gpu"; // automatic selection remains conservative
     }
     plan.request = r;
@@ -256,8 +291,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         TextConfig config;
         config.final_norm = false; // official checkpoint's pre-final-RMSNorm hidden state
         TextEncoder encoder(weights, config);
+        std::function<void(const std::string &)> release_layer;
+        if (layer_staged) {
+            mx::eval(assembled.embeddings);
+            weights.erase("model.embed_tokens.weight");
+            release_layer = [&](const std::string &prefix) { weights.erase_prefix(prefix); };
+        }
         text = assembled.retain(encoder.encode_embeddings(assembled.embeddings, assembled.positions,
-            assembled.embeddings.shape(1), event, cancelled, assembled.deepstack_deltas));
+            assembled.embeddings.shape(1), event, cancelled, assembled.deepstack_deltas, release_layer));
         mx::eval(text);
         slots = assembled.image_slots;
         if (r.inputs.empty()) { cached_text_ = text; cached_prompt_ = r.prompt; }
@@ -334,7 +375,23 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
                 "Viggle v0.2.1 r256 LoRA hash does not match the pinned adapter");
     }
-    load(event, cancelled);
+    std::shared_ptr<const streaming::SourceLease> dit_source;
+    const Event quiet_load = [](const std::string &, int, int) {};
+    if (layer_staged) {
+        // Keep the decoder out of the DiT working set (including prepare).
+        vae_.clear();
+        transformer_.clear();
+        checkpoint(cancelled);
+        emit(event, "load_qwen21_transformer", 0, 1);
+        streaming::SourceFileIdentity source;
+        source.logical_id = "qwen21_dit";
+        source.path = root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors";
+        dit_source = streaming::SourceLease::capture({source});
+        // Header-only setup. MLX reads each layer from the held descriptor
+        // when that layer is evaluated; no full DiT materialization here.
+        transformer_.load_lease(dit_source, {"qwen21_dit"}, quiet_load, cancelled);
+        emit(event, "load_qwen21_transformer", 1, 1);
+    } else load(event, cancelled);
     const bool lora_fp16 = option_enabled(std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16"));
     transformer_.set_runtime_lora_fp16(lora_fp16);
     if (bind_lora) {
@@ -367,7 +424,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (hybrid_requested) {
         auto manifest = std::filesystem::canonical(r.ane_manifest);
         auto identity = manifest.string() + ":" + sha256_file(manifest);
-        if (!hybrid_ || hybrid_manifest_ != identity) {
+        // prepare(load-only) may retain Core ML while a staged generate
+        // recaptures lazy GPU weights. A replaced checkpoint must re-enter
+        // HybridSession's full SHA validation before those halves can mix.
+        const bool source_changed = layer_staged && (!hybrid_source_identity_ ||
+            *hybrid_source_identity_ != dit_source->file("qwen21_dit"));
+        if (!hybrid_ || hybrid_manifest_ != identity || source_changed) {
             hybrid_mlp_.reset();
             hybrid_.reset();
             const int graph_rows = rectangular_w8a8 ? 1024 : r.width / 16 * (r.height / 16);
@@ -376,12 +438,20 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 event, cancelled, 1,
                 root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors",
                 std::vector<LoRAAsset>{}, graph_rows, 32);
+            hybrid_source_identity_.reset();
+            if (layer_staged) {
+                dit_source->revalidate_after_drain();
+                hybrid_source_identity_ = dit_source->file("qwen21_dit");
+            }
             hybrid_manifest_ = identity;
             hybrid_runtime_options_.clear();
         }
+        require(!layer_staged || hybrid_->ane_mlp_end == 6144,
+                "Qwen21 M5 Pro 24 GiB layer streaming requires the qualified 6144-channel ANE partition");
         const std::string runtime_options =
             (r.qwen21_w8a8 ? "w8a8" : "fp16") +
             std::string(r.qwen21_gpu_w8a16 ? ":w8a16" : ":bf16") +
+            (layer_staged ? ":layer-staged" : ":resident") +
             (r.qwen21_gpu_full_ffn_blocks.empty() ? ":full" : ":fallback357");
         // Keep the established 4096-channel path and permit the separately
         // calibrated 6144-channel W8A8 experiment only by explicit manifest.
@@ -432,7 +502,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         if (!hybrid_mlp_ || hybrid_runtime_options_ != runtime_options) {
             hybrid_mlp_.reset();
             hybrid_mlp_ = std::make_unique<HybridMLP>(
-                transformer_, *hybrid_, r.qwen21_gpu_w8a16, r.qwen21_gpu_full_ffn_blocks);
+                transformer_, *hybrid_, r.qwen21_gpu_w8a16, r.qwen21_gpu_full_ffn_blocks, layer_staged);
             hybrid_runtime_options_ = runtime_options;
         }
     }
@@ -517,6 +587,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     }
     if (last_target_only)
         result.selection += "; diagnostic final prefill block target-only output";
+    if (layer_staged) result.selection += "; BF16 layer-streamed text/DiT + staged VAE";
+    if (layer_staged && hybrid_requested)
+        result.selection += "; request-owned compact BF16 GPU suffix cache";
     if (db_cache)
         result.selection += "; diagnostic decode DBCache (front 8, back 0, warmup 8)";
     result.timings.hybrid = hybrid_requested ? seconds(hybrid_start) : 0;
@@ -528,6 +601,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     emit(event, hybrid_requested ? "route_gpu_ane" : "route_gpu", 1, 1);
     const uint64_t coreml_calls_before = hybrid_requested ? hybrid_->metrics().runtime_calls : 0;
     if (!prepare_only) {
+        if (layer_staged && hybrid_requested && hybrid_->ane_mlp_end == 6144)
+            wired_residency.activate(6ull << 30);
         auto schedule = r.loras.empty() ? sigmas(r.width, r.height, r.steps) :
                                       viggle_v021_sigmas(r.width, r.height);
         mx::eval(schedule);
@@ -581,6 +656,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             cached_prefix_transformer_ = std::make_unique<Transformer>(
                 transformer_, TransformerConfig{}, fused_qkv ? &fused_qkv_weights_ : nullptr);
         Transformer &dit = retain_prefix ? *cached_prefix_transformer_ : *request_dit;
+        if (layer_staged) dit.set_layer_release([&](const std::string &prefix) {
+            transformer_.erase_prefix(prefix);
+            checkpoint(cancelled);
+        });
         dit.configure_db_cache(db_cache, db_threshold, r.steps, db_max_consecutive);
         result.selection += retain_prefix ?
             (prefix_hit ? "; experimental resident prefix KV hit" : "; experimental resident prefix KV miss") : "";
@@ -600,6 +679,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             emit(event, "denoise", 0, r.steps);
             for (int step = 0; step < r.steps; ++step) {
                 checkpoint(cancelled);
+                if (layer_staged && step > 0) {
+                    dit_source->revalidate_after_drain();
+                    transformer_.clear();
+                    transformer_.load_lease(dit_source, {"qwen21_dit"}, quiet_load, cancelled);
+                }
                 dit.set_db_cache_step(step);
                 if (step == 0 && prefix_hit && tiled_prefix_reuse)
                     dit.set_decode_mlp([this, &cancelled, &dit, last_target_only,
@@ -640,6 +724,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                          true, nullptr, references);
                 latents = latents + noise * Tensor(schedule.data<float>()[step+1] - schedule.data<float>()[step], latents.dtype());
                 mx::eval(latents);
+                if (layer_staged) dit_source->revalidate_after_drain();
                 require(mx::all(mx::isfinite(latents)).item<bool>(), "nonfinite Qwen21 latent");
                 if (profile_steps) {
                     const auto elapsed = seconds(step_started);
@@ -688,11 +773,21 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         dump("qwen21_latents", latents);
         if (r.residency == "component_staged") {
+            // Compiled block functions also own weight constants. Clearing
+            // Weights alone does not release those allocations before decode.
+            if (layer_staged) request_dit.reset();
             hybrid_mlp_.reset(); clear_prefix_cache();
             fused_qkv_weights_.clear(); transformer_.clear(); mx::clear_cache();
+            wired_residency.reset();
         }
         checkpoint(cancelled);
         auto decode_start = Clock::now();
+        if (layer_staged && !vae_.bytes()) {
+            emit(event, "load_qwen21_vae", 0, 1);
+            vae_.load_file(root_ / "vae/qwen_image_2.1_vae_bf16.safetensors");
+            vae_.materialize();
+            emit(event, "load_qwen21_vae", 1, 1);
+        }
         VAE decoder(vae_);
         auto spatial = mx::transpose(mx::reshape(latents, {1, r.height / 16, r.width / 16, 64}), {0, 3, 1, 2});
         auto pixels = mx::transpose(decoder.decode(spatial, event, cancelled), {0, 2, 3, 1});
@@ -707,7 +802,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     }
     if (hybrid_requested) result.hybrid = hybrid_->metrics(); // session-cumulative, including preparation
     if (!prepare_only && r.residency == "component_staged") {
-        hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
+        hybrid_mlp_.reset(); hybrid_.reset(); hybrid_source_identity_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
         clear_prefix_cache(); fused_qkv_weights_.clear();
         transformer_.clear(); vae_.clear(); mx::clear_cache();
     }
@@ -718,7 +813,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     try { mx::synchronize(); } catch (...) {}
     clear_prefix_cache();
     fused_qkv_weights_.clear();
-    hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
+    hybrid_mlp_.reset(); hybrid_.reset(); hybrid_source_identity_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
+    if (layer_staged_t2i(requested, device_info())) {
+        transformer_.clear(); vae_.clear(); mx::clear_cache();
+    }
     if (transformer_.has("transformer_blocks.0.attn.qkv_packed.weight"))
         transformer_.clear(); // A cancelled pack may have replaced only some layers.
     throw;
