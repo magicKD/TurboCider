@@ -34,6 +34,9 @@ class RuntimeHostTests(unittest.TestCase):
     def test_memory_admission_and_host_scratch(self):
         self.run_host_test("ane_memory_test", ("native/backends/ane_memory.cpp",))
 
+    def test_private_artifact_locks_crash_recovery_and_safe_refusal(self):
+        self.run_host_test("ane_artifact_lease_test")
+
     def test_simd_conversion_matches_scalar_including_overflow_and_tails(self):
         self.run_host_test("ane_runtime_convert_test")
 

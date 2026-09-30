@@ -2,6 +2,7 @@
 #include "ane_runtime_convert.hpp"
 #include "ane_runtime_quant.hpp"
 #include "ane_memory.hpp"
+#include "ane_artifact_lease.hpp"
 
 #import <CoreML/CoreML.h>
 #import <CoreVideo/CoreVideo.h>
@@ -204,26 +205,7 @@ int dimension(NSDictionary *manifest, NSString *key) {
 // Core ML may keep referring to the compiled directory after model load.
 // Keep this verified, private copy alive until the model and worker are gone;
 // changes to the user's artifact must not change the bytes Core ML sees.
-struct ArtifactLease {
-    std::filesystem::path root;
-    ArtifactLease() {
-        auto pattern = (std::filesystem::temp_directory_path() /
-                        "turbocider-runtime-ane-XXXXXX").string();
-        std::vector<char> name(pattern.begin(), pattern.end());
-        name.push_back('\0');
-        const char *created = mkdtemp(name.data());
-        check(created != nullptr, "cannot create private runtime ANE artifact directory");
-        root = created;
-    }
-    ~ArtifactLease() {
-        if (!root.empty()) {
-            std::error_code error;
-            std::filesystem::remove_all(root, error);
-        }
-    }
-    ArtifactLease(const ArtifactLease &) = delete;
-    ArtifactLease &operator=(const ArtifactLease &) = delete;
-};
+using ArtifactLease = detail::ArtifactLease;
 
 bool matches_digest(NSData *bytes, NSString *digest) {
     if (!bytes || bytes.length > 64 * 1024 * 1024) return false;
@@ -269,6 +251,9 @@ std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphSh
           "runtime ANE compiled artifact must be a real directory");
     const auto private_model = lease.root / "graph.mlmodelc";
     std::filesystem::create_directory(private_model);
+    // Do not depend on the host application's umask. Nested directories and
+    // copied files must remain private and eligible for guarded lease cleanup.
+    std::filesystem::permissions(private_model, std::filesystem::perms::owner_all);
     size_t observed = 0;
     for (const auto &entry : std::filesystem::recursive_directory_iterator(root / "graph.mlmodelc")) {
         check(!entry.is_symlink(), "runtime ANE compiled artifact contains a symlink");
@@ -276,6 +261,7 @@ std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphSh
         const auto private_path = lease.root / relative;
         if (entry.is_directory()) {
             std::filesystem::create_directory(private_path);
+            std::filesystem::permissions(private_path, std::filesystem::perms::owner_all);
             continue;
         }
         check(entry.is_regular_file(), "runtime ANE compiled artifact contains a nonregular entry");
@@ -289,6 +275,8 @@ std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphSh
         check(matches_digest(bytes, digest), "runtime ANE artifact digest mismatch");
         check([bytes writeToFile:@(private_path.c_str()) atomically:NO],
               "cannot snapshot runtime ANE compiled artifact");
+        std::filesystem::permissions(private_path, std::filesystem::perms::owner_read |
+                                                  std::filesystem::perms::owner_write);
         check(matches_digest([NSData dataWithContentsOfFile:@(private_path.c_str())], digest),
               "runtime ANE private artifact digest mismatch");
         ++observed;
