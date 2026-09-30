@@ -38,12 +38,54 @@ Send one newline-terminated JSON object per connection. Responses use
 | `status`, `cancel` | `id` |
 | `jobs` | Optional `offset`, `limit` (default 20, maximum 100) |
 | `plan` | `request` |
-| `models`, `doctor`, `service_status` | None |
+| `capabilities`, `models`, `doctor`, `service_status` | None |
+
+`capabilities` is the discovery entry point for scripts and local AI agents.
+It returns the protocol version, action descriptions and JSON Schemas for each
+RPC envelope, response envelopes, job states, transport/queue limits and
+workflow rules. It does not load weights. The embedded `request` is validated
+by the native `plan` action, not by a duplicate schema maintained by the client.
+`models` lists registered capabilities, not installed weights. Supply an
+existing native-compatible model path when submitting.
+
+Unknown action fields and duplicate JSON keys (including escaped spellings and
+keys inside the native request) are rejected. `offset` must be an integer in
+0–2147483647; `limit` must be an integer in 1–100. Booleans, numeric strings,
+fractions, nulls and out-of-range values are errors, not implicit conversions.
+Request JSON is limited to 1 MiB, excluding the terminating newline.
 
 For the CLI client, save an action such as `{"action":"models"}` to
 `rpc.json`, then run `dist/cli/turbocider rpc /tmp/turbocider.sock rpc.json`.
 
 ## Python client
+
+The repository includes a dependency-free client in
+[`bindings/python/turbocider_local.py`](../../bindings/python/turbocider_local.py).
+Add `bindings/python` to `PYTHONPATH`, or copy that single file into your local
+automation project. In the App, **复制 AI 接入说明** copies the actual socket path,
+discovery request and lifecycle rules for Codex or another local agent.
+
+```python
+from turbocider_local import Client, JobTimeout, TransportError
+
+client = Client('/the/socket/path/shown/in/the/App')
+capabilities = client.capabilities()
+models = client.models()
+plan = client.plan(request)  # complete native schema 1 or 2 request
+job_id = client.submit('/absolute/local/model', request)
+print(job_id, flush=True)   # keep this ID even if waiting is interrupted
+job = client.wait(job_id, timeout=1800)
+```
+
+The client never starts a service, downloads files or retries a submission.
+`JobTimeout` preserves `job_id` and the last observed job; it does not cancel the
+job. `JobFailed` carries the terminal job record. A transport error after sending
+`submit` has `submission_may_have_succeeded=True`: inspect `jobs` and match the
+unique requested output path before deciding whether to submit again. A lost
+reply is not evidence that the job failed to enter the queue. Cancellation also
+requires polling until a terminal state.
+
+The following inline alternative needs only the Python standard library:
 
 Only the standard library is needed. Set the socket to the App page's value
 or your CLI service's socket. Model paths are absolute native-compatible
@@ -85,7 +127,7 @@ while True:
     if job['state'] in {'succeeded', 'failed', 'cancelled', 'interrupted'}:
         print(job.get('result', job.get('error')))
         break
-    time.sleep(0.5)
+    time.sleep(1)
 
 # Cancellation: rpc('cancel', id=job_id)
 # Paged history: rpc('jobs', offset=0, limit=20)
@@ -104,6 +146,42 @@ For repeated prompts, submit another request with a new seed and output path.
 A compatible resident session reuses conditioning; check `prompt_cache_hit`
 in the result. Changing model or relevant input identity invalidates reuse.
 The service admits up to 32 pending jobs; history is capped at 10,000 records.
+
+## Ordered editing workflows
+
+API inputs are existing local files. Each `inputs` reference position determines
+the image number used by the model. Keep identity/outfit/scene roles in your
+workflow state, then emit references in that declared order. Do not reorder
+them after constructing a prompt containing image numbers.
+
+[`qwen_reference_workflow.py`](../../examples/local_api/qwen_reference_workflow.py)
+demonstrates one- to three-reference Qwen Turbo editing at 512×512, optionally
+followed by another edit using the first output. It uses an existing Viggle
+six-step adapter at strength 1, GPU, and DiT cache off. This is a pinned Turbo
+example, not the schedule for ordinary LoRA adapters.
+
+```sh
+python3 examples/local_api/qwen_reference_workflow.py \
+  --socket /the/app/socket \
+  --model /absolute/Qwen-Image-2.1 \
+  --turbo-lora /absolute/viggle-turbo-6step.safetensors \
+  --reference /absolute/person.png --reference /absolute/outfit.png \
+  --prompt 'Put the outfit from image 2 on the person in image 1, preserving their identity.' \
+  --then 'Keep the same person and outfit; change the background to a garden.' \
+  --output-dir /absolute/results
+```
+
+Without `--run` it only discovers the API and plans the first step. Add `--run`
+to submit; the second step is planned and submitted only after the first output
+exists and its job has succeeded. Each invocation creates unique output names
+and prints each job ID immediately. A failed stage stops the workflow. The
+service does not provide an atomic workflow transaction or automatically undo
+earlier successful jobs. A standalone CLI service can outlive the App.
+
+API jobs currently remain in their service history; they are not automatically
+inserted into the App's creation history. You can import a completed output as a
+reference through the App. Automatic installation discovery, shared App history
+and a persisted workflow scheduler are not part of this protocol revision.
 
 ## Troubleshooting
 
