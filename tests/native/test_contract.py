@@ -46,6 +46,35 @@ def plan(r):
     return status,json.loads(a) if a else None,b
 
 class ContractTests(unittest.TestCase):
+    def test_qwen21_runtime_qkv_is_base_only_and_distinct_from_ffn(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=1024, height=1024, steps=5, audio=False, frames=1,
+                    execution='gpu_ane', allow_approximation=True, residency='resident',
+                    hybrid_mlp_mode='runtime_qkv', ane_manifest='matmul-checked-at-execution.json')
+        code, result, error = plan(base)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(result['gpu_graph'], 'runtime_weight_token_row_qkv')
+        self.assertIn('runtime_weight_fp16_token_row_qkv', result['algorithm_approximations'])
+        self.assertNotIn('runtime_weight_fp16_token_row_ffn', result['algorithm_approximations'])
+        for invalid in (dict(execution='gpu'), dict(allow_approximation=False),
+                        dict(ane_manifest=''), dict(residency='component_staged'),
+                        dict(width=512, height=512),
+                        dict(operation='image.edit', inputs=[dict(kind='image', role='reference',
+                            path='ref.png')]), dict(qwen21_w8a8=True),
+                        dict(loras=[dict(path='a.safetensors',
+                            role='transformer', strength=1.)], lora_strategy='inference_time')):
+            with self.subTest(invalid=invalid):
+                self.assertNotEqual(plan({**base, **invalid})[0], 0)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC': '1'}):
+            self.assertNotEqual(plan(base)[0], 0)
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC': '1'}):
+            self.assertNotEqual(plan(base)[0], 0)
+        for flag in ('TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN',
+                     'TURBOCIDER_QWEN21_PREFILL_LAST_TARGET_ONLY_DIAGNOSTIC',
+                     'TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC'):
+            with patch.dict(os.environ, {flag: '1'}):
+                self.assertNotEqual(plan(base)[0], 0)
+
     def test_request_local_qwen21_hybrid_mlp_modes(self):
         adapter = dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors',
                        strength=1, role='transformer')
@@ -1264,7 +1293,7 @@ class ContractTests(unittest.TestCase):
             self.assertIn('qwen21_metal_qk_norm_rope', plan(base)[1]['algorithm_approximations'])
             for invalid in [dict(execution='auto'), dict(execution='gpu_ane', ane_manifest='probe.json'),
                             dict(allow_approximation=False),
-                            dict(width=1024, height=1024)]:
+                            dict(width=768, height=768)]:
                 with self.subTest(invalid=invalid):
                     self.assertNotEqual(plan({**base, **invalid})[0], 0)
             hybrid = dict(base, execution='gpu_ane', qwen21_w8a8=True,
@@ -1273,6 +1302,64 @@ class ContractTests(unittest.TestCase):
             self.assertIn('qwen21_metal_qk_norm_rope',
                           plan(hybrid)[1]['algorithm_approximations'])
             self.assertNotEqual(plan({**hybrid, 'qwen21_gpu_w8a16': True})[0], 0)
+            runtime = dict(base, execution='gpu_ane', hybrid_mlp_mode='runtime',
+                           residency='resident', ane_manifest='runtime-v2.json')
+            for count in range(4):
+                request = dict(runtime)
+                if count:
+                    request.update(operation='image.edit', qwen21_reference_size=512,
+                                   inputs=[dict(kind='image', role='reference', path=f'ref-{i}.png')
+                                           for i in range(count)])
+                for lora in (False, True):
+                    if lora:
+                        request.update(steps=6, lora_strategy='inference_time', loras=[dict(
+                            path='runtime-adapter.safetensors', role='transformer', strength=1.0)])
+                    with patch.dict(os.environ, {'TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC':
+                                                 '1' if count and lora else '0'}):
+                        code, result, error = plan(request)
+                    self.assertEqual(code, 0, error)
+                    self.assertIn('qwen21_metal_qk_norm_rope', result['algorithm_approximations'])
+                    self.assertIn('runtime_weight_fp16_token_row_ffn', result['algorithm_approximations'])
+            for invalid in (dict(width=768, height=768), dict(allow_approximation=False),
+                            dict(qwen21_gpu_w8a16=True), dict(qwen21_w8a8=True),
+                            dict(residency='component_staged')):
+                with self.subTest(invalid=invalid):
+                    self.assertNotEqual(plan({**runtime, **invalid})[0], 0)
+            with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_QK_ROPE': '1'}):
+                self.assertNotEqual(plan(runtime)[0], 0)
+            for route in (base, runtime, hybrid):
+                large = dict(route, width=1024, height=1024, steps=40, residency='resident')
+                with patch.dict(os.environ, {'TURBOCIDER_QWEN21_1024_W8A8_DIAGNOSTIC': '1'}):
+                    code, result, error = plan(large)
+                    self.assertEqual(code, 0, error)
+                    self.assertIn('qwen21_metal_qk_norm_rope', result['algorithm_approximations'])
+                    for invalid in (dict(operation='image.edit', inputs=[dict(
+                                            kind='image', role='reference', path='reference.png')]),
+                                    dict(steps=6, lora_strategy='inference_time', loras=[dict(
+                                            path='adapter.safetensors', role='transformer', strength=1.0)]),
+                                    dict(residency='component_staged'), dict(height=512),
+                                    dict(allow_approximation=False), dict(qwen21_gpu_w8a16=True)):
+                        with self.subTest(route=route, invalid=invalid):
+                            self.assertNotEqual(plan({**large, **invalid})[0], 0)
+                    with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_QK_ROPE': '1'}):
+                        self.assertNotEqual(plan(large)[0], 0)
+            qkv = dict(base, width=1024, height=1024, steps=40,
+                       execution='gpu_ane', residency='resident',
+                       hybrid_mlp_mode='runtime_qkv', ane_manifest='qkv-runtime.json')
+            code, result, error = plan(qkv)
+            self.assertEqual(code, 0, error)
+            self.assertIn('qwen21_metal_qk_norm_rope', result['algorithm_approximations'])
+            self.assertIn('runtime_weight_fp16_token_row_qkv', result['algorithm_approximations'])
+            for invalid in (dict(width=512, height=512), dict(residency='component_staged'),
+                            dict(allow_approximation=False), dict(qwen21_w8a8=True),
+                            dict(loras=[dict(path='adapter.safetensors', role='transformer', strength=1.)],
+                                 lora_strategy='inference_time'),
+                            dict(operation='image.edit', inputs=[dict(kind='image', role='reference',
+                                                                  path='reference.png')])):
+                with self.subTest(qkv_invalid=invalid):
+                    self.assertNotEqual(plan({**qkv, **invalid})[0], 0)
+            with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_QK_ROPE': '1'}):
+                self.assertNotEqual(plan(qkv)[0], 0)
         with patch.dict(os.environ, {'TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE': '1',
                                       'TURBOCIDER_QWEN21_METAL_QK_ROPE': '1'}):
             self.assertNotEqual(plan(base)[0], 0)
@@ -1955,6 +2042,14 @@ class ContractTests(unittest.TestCase):
                 self.assertNotIn('default_lora_strategy',descriptor)
             else:
                 self.assertEqual(descriptor['default_lora_strategy'],default)
+
+    def test_qwen21_lora_precision_receipt_survives_hybrid_route_selection(self):
+        source = (ROOT/'native/models/qwen21/pipeline.cpp').read_text()
+        marker = 'result.selection += "; experimental FP16 low-rank LoRA matmuls";'
+        self.assertEqual(source.count(marker), 1)
+        position = source.index(marker)
+        self.assertLess(source.rfind('result.selection ='), position)
+        self.assertIn('if (lora_fp16 && !r.loras.empty())', source[position-100:position])
 
     def test_native_inference_time_lora_keeps_packed_weights(self):
         header=(ROOT/'native/backends/mlx.hpp').read_text()

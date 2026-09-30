@@ -27,9 +27,15 @@ ModelModule z_image_module() {
                     "Z-Image-Turbo steps must be 1...50 (default 9)");
             require(r.hybrid_mlp_mode == "auto" || r.hybrid_mlp_mode == "base_fused" ||
                         r.hybrid_mlp_mode == "lora_merged" || r.hybrid_mlp_mode == "lora_suffix" ||
-                        r.hybrid_mlp_mode == "lora_fused",
+                        r.hybrid_mlp_mode == "lora_fused" || r.hybrid_mlp_mode == "runtime",
                     "unsupported Z-Image hybrid_mlp_mode");
-            if (r.hybrid_mlp_mode != "auto")
+            if (r.hybrid_mlp_mode == "runtime")
+                require(r.execution == "gpu_ane" && r.allow_approximation &&
+                            !r.ane_manifest.empty() &&
+                            (r.loras.empty() || r.lora_strategy == "inference_time") &&
+                            r.residency == "resident" && r.encoder_ane_manifest.empty(),
+                        "Z-Image runtime-weight FFN requires explicit resident GPU/ANE, unmerged runtime LoRA and no encoder ANE");
+            if (r.hybrid_mlp_mode != "auto" && r.hybrid_mlp_mode != "runtime")
                 require(r.execution == "gpu_ane" && r.allow_approximation &&
                             !r.ane_manifest.empty() &&
                             (r.hybrid_mlp_mode == "base_fused" ? r.loras.empty() :
@@ -46,7 +52,7 @@ ModelModule z_image_module() {
                 require(r.allow_approximation,
                         "Z-Image GPU+ANE requires allow_approximation=true");
                 if (!r.loras.empty() && r.hybrid_mlp_mode != "lora_suffix" &&
-                    r.hybrid_mlp_mode != "lora_fused")
+                    r.hybrid_mlp_mode != "lora_fused" && r.hybrid_mlp_mode != "runtime")
                     require(r.lora_strategy == "in_memory_merge",
                             "Z-Image GPU+ANE LoRA requires lora_strategy=in_memory_merge");
             }

@@ -39,9 +39,13 @@ distilled update. The native sampler uses the shipped raw six nodes
 `[1, .9375, .875, .75, .5, .25]`, Qwen21's resolution-dependent shift, a zero
 endpoint, and no base-model terminal stretch. Use scale 1, six steps, explicit
 `allow_approximation: true`, 512×512, `execution: "gpu"`, and the default 1024px
-reference encoding for edits. GPU+ANE W8A8 is rejected by default; a separate
-suffix-only base-ANE experiment requires explicit opt-ins and is documented in the
-[Viggle/base-ANE status](../status/qwen21-viggle-base-ane-reuse-2026-09-27.md).
+reference encoding for edits. GPU+ANE W8A8 is rejected by default. The explicit
+`lora_fused` route now computes the complete runtime adapter using a reusable,
+base-only Core ML graph; it does not merge LoRA weights and has not established
+a stable whole-request advantage over GPU. See the
+[current routes and portable CLI examples](../status/runtime-lora-acceleration-2026-09-28.md).
+The older `lora_suffix` experiment omits ANE-prefix LoRA; its faster results
+are not complete-LoRA speedups.
 FFN step reuse remains unsupported with this adapter. The previous BF16 GPU path
 remains available without `loras`.
 

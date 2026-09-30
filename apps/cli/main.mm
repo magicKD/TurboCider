@@ -148,8 +148,8 @@ static NSString *request_with_acceleration(NSString *request,const char *manifes
  if(hybrid_mode){
   std::string_view mode(hybrid_mode);
   if(mode!="auto"&&mode!="base_fused"&&mode!="lora_suffix"&&
-     mode!="lora_gate_up"&&mode!="lora_fused"&&mode!="lora_merged"){
-   failure="--hybrid-mode must be auto, base_fused, lora_suffix, lora_gate_up, lora_fused or lora_merged";return nil;
+     mode!="lora_gate_up"&&mode!="lora_fused"&&mode!="lora_merged"&&mode!="runtime"){
+   failure="--hybrid-mode must be auto, base_fused, lora_suffix, lora_gate_up, lora_fused, lora_merged or runtime";return nil;
   }
   id existing=execution[@"hybrid_mlp_mode"];
   if(existing&&(![existing isKindOfClass:NSString.class]||

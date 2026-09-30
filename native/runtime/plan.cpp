@@ -119,8 +119,8 @@ static ExecutionPlan make_plan_impl(
     }
     module_for(r.model).validate(r);
     require(r.hybrid_mlp_mode == "auto" || r.model == "qwen-image-2.1" ||
-                r.model == "z-image-turbo",
-            "hybrid_mlp_mode is supported only for Qwen-Image-2.1 and Z-Image Turbo");
+                r.model == "z-image-turbo" || r.model == "z-image-turbo-gguf",
+            "hybrid_mlp_mode is supported only for Qwen-Image-2.1 and Z-Image Turbo (including native GGUF)");
     require(r.model == "qwen-image-2.1" ||
                 (!r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
                  r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty()),
@@ -221,15 +221,15 @@ static ExecutionPlan make_plan_impl(
         // include the observed VAE/DiT working-set growth so high-resolution
         // plans do not under-report unified-memory pressure. This is not a cap.
         plan.memory_estimate_bytes = ((r.residency == "resident" ? 40ull : 22ull) << 30) +
-                                     (hybrid ? (10ull << 30) : 0) + uint64_t(r.width) * r.height * 10240 +
+                                     (hybrid ? ((r.hybrid_mlp_mode == "runtime" || r.hybrid_mlp_mode == "runtime_qkv" ? 2ull : 10ull) << 30) : 0) + uint64_t(r.width) * r.height * 10240 +
                                      uint64_t(r.inputs.size()) * (reference_prefix_bytes + (512ull << 20));
     }
     else if (r.model == "z-image-turbo")
         plan.memory_estimate_bytes = r.residency == "streamed"
             ? std::max<uint64_t>(10ull << 30, r.memory_budget_bytes)
-            : (25ull << 30) + uint64_t(r.width) * r.height * 8192;
+            : ((r.hybrid_mlp_mode == "runtime" ? 27ull : 25ull) << 30) + uint64_t(r.width) * r.height * 8192;
     else if (r.model == "z-image-turbo-gguf")
-        plan.memory_estimate_bytes = (16ull << 30) +
+        plan.memory_estimate_bytes = ((r.hybrid_mlp_mode == "runtime" ? 18ull : 16ull) << 30) +
             uint64_t(r.width) * r.height * 4096;
     else if (r.model == "llada-image-turbo") {
         const uint64_t pixels = uint64_t(r.width) * uint64_t(r.height);

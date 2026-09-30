@@ -33,6 +33,32 @@ ExecutionPlan make_plan(const Request &);
 ExecutionPlan make_plan_after_public_streaming_preflight(const Request &);
 std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
+    // Runtime-weight route only; all times/counts are session cumulative.
+    uint64_t runtime_weight_slot_bytes = 0, runtime_weight_estimated_bytes = 0;
+    uint64_t runtime_weight_hybrid_blocks = 0, runtime_weight_gpu_blocks = 0;
+    uint64_t runtime_weight_untimed_hybrid_blocks = 0; // hybrid subset without whole-block timing fences
+    uint64_t runtime_weight_async_hybrid_blocks = 0; // untimed subset without a separate GPU-head wait
+    uint64_t runtime_weight_unsplit_gpu_blocks = 0; // subset of GPU blocks; no FFN bridge
+    uint64_t runtime_weight_full_gpu_probe_blocks = 0; // measured subset of unsplit GPU blocks
+    double runtime_weight_full_gpu_probe_seconds = 0;
+    uint64_t runtime_weight_fallback_blocks = 0, runtime_weight_ane_rows = 0;
+    uint64_t runtime_weight_overflow_retries = 0;
+    double runtime_weight_stage_seconds = 0, runtime_weight_stage_wait_seconds = 0;
+    double runtime_weight_join_seconds = 0, runtime_weight_gpu_seconds = 0;
+    // Async steady blocks are excluded from the two branch timers above.
+    // This host wait overlaps GPU work; it is NOT exposed ANE latency.
+    double runtime_weight_async_ane_wait_seconds = 0;
+    // Serialized host spans around the parallel branches. post_join includes
+    // output restoration, optional down-LoRA and final concatenation/eval;
+    // async post_join also includes any GPU-head work still outstanding at
+    // the final output fence. None is a GPU kernel/physical overlap timer.
+    double runtime_weight_lora_gate_up_seconds = 0, runtime_weight_post_join_seconds = 0;
+    // Combined attention/input + LoRA correction readiness; subset of pre,
+    // not a pure LoRA kernel timer or part of the parallel FFN window.
+    double runtime_weight_lora_input_ready_seconds = 0;
+    double runtime_weight_wall_seconds = 0;
+    double runtime_weight_pre_seconds = 0;
+    float runtime_weight_headroom = 1.f;
     // Exporter-declared weight variant; unknown for legacy manifests without it.
     std::string weight_variant = "unknown";
     double load_seconds = 0;
@@ -77,6 +103,20 @@ struct HybridMetrics {
     // Native session handles were released at the encoder/denoiser boundary.
     // Does not assert that Core ML's out-of-process caches were evicted.
     bool session_released_after_encoding = false;
+};
+// Independent from HybridMetrics: QKV projections and FFNs must never be
+// reported as the same accelerator or share their cumulative call counts.
+struct QkvMetrics {
+    uint64_t calls = 0, hybrid_blocks = 0, gpu_blocks = 0, fallback_blocks = 0;
+    uint64_t gpu_probe_blocks = 0, measured_hybrid_blocks = 0;
+    uint64_t ane_rows = 0, failures = 0, slot_bytes = 0, estimated_bytes = 0;
+    int failure_block = -1, chunk_rows = 0, chunks = 0;
+    double load_seconds = 0, stage_seconds = 0, stage_wait_seconds = 0;
+    double prediction_seconds = 0, output_seconds = 0, wall_seconds = 0;
+    double gpu_probe_seconds = 0, measured_hybrid_seconds = 0;
+    bool auto_scheduling = false;
+    bool failed = false;
+    std::string failure_reason;
 };
 inline std::string hybrid_precision_label(const HybridMetrics &metrics) {
     if (metrics.weight_variant == "fp16") return "bf16_gpu+fp16_mlp_fp16_io";
@@ -181,6 +221,7 @@ struct RunResult {
     Timings timings;
     uint64_t active_bytes = 0, peak_bytes = 0;
     std::optional<HybridMetrics> hybrid;
+    std::optional<QkvMetrics> qkv;
     std::optional<HybridMetrics> encoder_hybrid;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;

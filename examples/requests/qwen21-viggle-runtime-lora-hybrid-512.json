@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "model": "qwen-image-2.1",
+  "operation": "image.generate",
+  "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+  "output": "outputs/qwen21-viggle-runtime-lora-hybrid-512.png",
+  "execution": "gpu_ane",
+  "hybrid_mlp_mode": "lora_fused",
+  "qwen21_w8a8": true,
+  "residency": "resident",
+  "allow_approximation": true,
+  "width": 512,
+  "height": 512,
+  "frames": 1,
+  "steps": 6,
+  "seed": 42,
+  "audio": false,
+  "lora_strategy": "inference_time",
+  "loras": [{
+    "path": "models/Viggle-Qwen-Image-2.1-viggle-turbo/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors",
+    "role": "transformer",
+    "strength": 1.0
+  }]
+}

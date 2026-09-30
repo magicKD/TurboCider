@@ -23,7 +23,11 @@ TurboCider 是面向 Apple Silicon Mac 的本地多模态推理引擎。它把�
 - **按模型能力创作。** 文生图、图片修改、参考图编辑与视频生成按执行器开放。独立 LoRA、强度、随机种子和 GPU / ANE 选择都有明确控制。
 - **模型与缓存集中管理。** App / CLI 共用模型目录，支持外部路径登记、ModelScope / Hugging Face 下载预览及兼容文本组件复用；App 可启停本地 API，并管理可重建的文本张量缓存。
 
-ANE 路径使用经过验证的 INT8 分区，属于高保真近似，不是逐位无损。不同模型、芯片和输入的收益不同；默认使用 GPU。公开 Core ML 接口不能保证每个算子都实际驻留 ANE，也不提供可靠的本任务 ANE 占用百分比。我们公开边界和测量方法，不以单项测试宣称通用 SOTA。
+下述已测 INT8 ANE 分区属于高保真近似，不是逐位无损。可选 runtime-weight 路径将权重 staging 为 FP16，不是 INT8 ANE 计算。不同模型、芯片和输入的收益不同；默认使用 GPU。公开 Core ML 接口不能保证每个算子都实际驻留 ANE，也不提供可靠的本任务 ANE 占用百分比。我们公开边界和测量方法，不以单项测试宣称通用 SOTA。
+
+Qwen / Z-Image 当前实验、runtime LoRA 共用 base 图及 optional 边界统一见
+[GPU/ANE 加速状态](docs/status/acceleration.md)。Qwen 六步 runtime LoRA
+尚无可靠的整请求 GPU 加速收益，不作为默认最快方案。
 
 ## 性能亮点
 

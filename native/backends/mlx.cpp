@@ -970,7 +970,15 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
             require(down.ndim() == 2 && up.ndim() == 2 && down.shape(0) == up.shape(1),
                     "invalid LoRA rank geometry: " + stem);
             float scale = adapter.strength;
-            if (pair.alpha) { require(pair.alpha->size() == 1, "LoRA alpha must be scalar: " + stem); mx::eval(*pair.alpha); scale *= pair.alpha->item<float>() / float(down.shape(0)); }
+            if (pair.alpha) {
+                require(pair.alpha->size() == 1, "LoRA alpha must be scalar: " + stem);
+                // item<T>() reads storage as T; it does not convert BF16,
+                // FP16 or integer scalar metadata to a floating-point value.
+                const auto alpha = mx::astype(*pair.alpha, mx::float32).item<float>();
+                require(std::isfinite(alpha), "LoRA alpha must be finite: " + stem);
+                scale *= alpha / float(down.shape(0));
+            }
+            require(std::isfinite(scale), "LoRA effective scale must be finite: " + stem);
             const auto targets = lora_targets(stem);
             auto resolve_target_key = [&](const std::string &target) {
                 auto key = target.ends_with(".weight") ? target : target + ".weight";

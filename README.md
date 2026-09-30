@@ -26,7 +26,12 @@ Qwen-Image-2.1 native App/CLI support and validation boundaries:
 - **Explicit capabilities:** image generation, image editing and video generation are offered only where the executor supports them. LoRA and GPU / ANE controls remain explicit.
 - **Shared model management:** App / CLI registrations, ModelScope / Hugging Face download previews and compatible text-component reuse. Start the local API from the App and manage regenerable text-tensor retention.
 
-The ANE routes use validated INT8 partitions: they are high-fidelity approximations, not bit-exact inference. Gains depend on hardware, model and shape. GPU is the default. Core ML compute-unit selection is not proof of ANE occupancy. These are reproducible workload results, not a universal SOTA claim. See the measurements below and [benchmark methodology](docs/public/PERFORMANCE.md).
+The INT8 ANE partitions benchmarked below are high-fidelity approximations, not bit-exact inference. The optional runtime-weight route stages FP16 weights; it is not INT8 ANE compute. Gains depend on hardware, model and shape. GPU is the default. Core ML compute-unit selection is not proof of ANE occupancy. These are reproducible workload results, not a universal SOTA claim. See the measurements below and [benchmark methodology](docs/public/PERFORMANCE.md).
+
+For current Qwen / Z-Image results, reusable base graphs with runtime LoRA,
+and which experiments remain optional, see the maintained
+[GPU/ANE acceleration status](docs/status/acceleration.md). Qwen six-step
+runtime LoRA has not established an end-to-end speedup over GPU.
 
 ## Performance highlights
 

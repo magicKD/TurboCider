@@ -4,6 +4,7 @@
 #include "../../core/tokenizer.hpp"
 #include "../../runtime/session.hpp"
 #include "../../backends/coreml.hpp"
+#include "../../backends/ane_ffn.hpp"
 #include "weight_stream.hpp"
 #include "../../runtime/device_optimizations.hpp"
 
@@ -42,6 +43,8 @@ class ZImage final : public ModelSession {
     std::string active_lora_strategy_ = "none";
     size_t lora_applied_projections_ = 0;
     std::unique_ptr<HybridSession> hybrid_;
+    std::unique_ptr<ane::HybridFfn> runtime_ffn_;
+    std::string runtime_manifest_;
     std::unique_ptr<HybridSession> encoder_hybrid_;
     std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
     int hybrid_gpu_mlp_start_ = -1;

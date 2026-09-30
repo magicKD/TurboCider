@@ -1,0 +1,15 @@
+{
+  "model": "qwen-image-2.1",
+  "operation": "image.generate",
+  "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+  "output": "outputs/qwen21-base-1024.png",
+  "width": 1024,
+  "height": 1024,
+  "steps": 40,
+  "seed": 42,
+  "frames": 1,
+  "audio": false,
+  "execution": "gpu",
+  "residency": "resident",
+  "allow_approximation": true
+}

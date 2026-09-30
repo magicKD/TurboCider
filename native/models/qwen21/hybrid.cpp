@@ -1,8 +1,8 @@
 #include "hybrid.hpp"
 #include "hybrid_merge.hpp"
+#include "diagnostic_options.hpp"
 #include <cstdlib>
 #include <iostream>
-#include <string_view>
 
 namespace tc::qwen21 {
 HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16,
@@ -86,9 +86,8 @@ Tensor HybridMLP::operator()(int block, const Tensor &input) {
 Tensor HybridMLP::run(int block, const Tensor &input, BridgeTiming *timing) {
     require(block >= 0 && block < 32 && input.shape() == mx::Shape{1, ane_.rows, 4096},
             "Qwen21 hybrid decode shape/block mismatch");
-    const char *profile_flag = std::getenv("TURBOCIDER_QWEN21_PROFILE_RUNTIME_LORA_FFN");
     const bool profile_fused = !timing && ane_.mlp_output_kind == "fused_lora" &&
-        profile_flag && std::string_view(profile_flag) == "1";
+        option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_RUNTIME_LORA_FFN"));
     BridgeTiming profile_timing;
     if (profile_fused) timing = &profile_timing;
     if (gpu_full_blocks_[block]) {
@@ -188,8 +187,7 @@ Tensor HybridMLP::tiled_sequence(int block, const Tensor &input) {
     require(input.ndim() == 3 && input.shape(0) == 1 && input.shape(1) > ane_.rows &&
                 input.shape(2) == 4096, "Qwen21 tiled FFN requires a long sequence");
     std::vector<Tensor> pieces;
-    const char *profile_flag = std::getenv("TURBOCIDER_QWEN21_PROFILE_TILED_FFN");
-    const bool profile = profile_flag && std::string_view(profile_flag) == "1";
+    const bool profile = option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_TILED_FFN"));
     BridgeTiming timing;
     double merge_wait = 0;
     for (int64_t start = 0; start < input.shape(1); start += ane_.rows) {
