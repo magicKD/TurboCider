@@ -24,6 +24,9 @@ class HybridQkv {
                std::atomic<bool> &cancelled);
     void drain();
     bool available() const { return graph_ && !metrics_.failed; }
+    bool retains_resources() const {
+        return graph_ || !weights_.empty() || output_.capacity();
+    }
     const tc::QkvMetrics &metrics() const { return metrics_; }
 
   private:

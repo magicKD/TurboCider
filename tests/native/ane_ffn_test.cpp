@@ -345,6 +345,7 @@ void lora_tests(const char *manifest) {
     y = runtime.run(2, x, high_gpu, cancelled, &high);
     assert(mx::all(y == expected).item<bool>());
     assert(runtime.metrics().runtime_failed && runtime.metrics().runtime_weight_fallback_blocks == 1);
+    assert(!runtime.retains_resources());
     std::cout << "PASS runtime LoRA activation corrections: base/adapter/signed-adapter/base, "
                  "all projections, headroom+hidden restore, whole-tail fallback; worst relative L2=" << worst << '\n';
     std::cout << "PASS runtime base v2: validation-only hidden, exact copy accounting, consecutive base, "
@@ -598,7 +599,10 @@ void async_head_tests(const char *base_manifest, const char *lora_manifest) {
             if (plan.measured()) runtime.observe_block(0, 64, plan.split() ? .1 : 1.);
         }
         assert(runtime.metrics().runtime_failed == with_adapter);
-        if (with_adapter) assert(runtime.metrics().runtime_weight_fallback_blocks == 1);
+        if (with_adapter) {
+            assert(runtime.metrics().runtime_weight_fallback_blocks == 1);
+            assert(!runtime.retains_resources());
+        }
         if (retained_hidden) assert(mx::all(*retained_hidden == *hidden_snapshot).item<bool>());
         assert(mx::all(*saved == *snapshot).item<bool>());
     }
@@ -785,6 +789,7 @@ void quantized_tests(const char *manifest) {
         y = runtime.run(2, x, dense_gpu, cancelled);
         assert(mx::all(y == expected).item<bool>());
         assert(runtime.metrics().runtime_failed && runtime.metrics().runtime_calls == 4);
+        assert(!runtime.retains_resources());
     }
     std::cout << "PASS Q4/Q8 staging vs MLX dequantize and packed GPU FFN; mixed sources, owned metadata, "
                  "invalid-source fallback; worst relative L2=" << worst << '\n';
@@ -940,10 +945,28 @@ int main(int argc, char **argv) {
     auto metrics = runtime.metrics();
     assert(metrics.runtime_failed && metrics.runtime_failures == 1);
     assert(metrics.runtime_weight_fallback_blocks == 1);
+    assert(!runtime.retains_resources());
     runtime.stage(2, 97, weights);
     y = runtime.run(2, x, gpu, cancelled);
     assert(mx::all(y == expected).item<bool>());
     assert(runtime.metrics().runtime_calls == metrics.runtime_calls);
+    assert(!runtime.retains_resources());
+    // A GPU error during tail recomputation must preserve its exception after
+    // the failed ANE graph has already been retired. Cleanup cannot dereference
+    // that graph again, nor leave its scratch/lease in the resident session.
+    ane::HybridFfn failed_gpu_runtime(argv[1], 64, 96, 128ull << 20, cancelled);
+    failed_gpu_runtime.stage(0, 97, weights);
+    bool fallback_error = false;
+    try {
+        failed_gpu_runtime.run(0, x, [&](const Tensor &part) -> Tensor {
+            if (part.shape(1) == 64) throw std::runtime_error("GPU tail recomputation failed");
+            return gpu(part);
+        }, cancelled);
+    } catch (const std::runtime_error &error) {
+        fallback_error = std::string(error.what()) == "GPU tail recomputation failed";
+    }
+    assert(fallback_error && !failed_gpu_runtime.retains_resources());
+    assert(failed_gpu_runtime.metrics().runtime_failed);
     // Cancellation while staging is pending must be drained before buffers
     // and the graph are destroyed, and must not poison the next request.
     ane::HybridFfn cancelled_runtime(argv[1], 64, 96, 128ull << 20, cancelled);
@@ -963,6 +986,7 @@ int main(int argc, char **argv) {
     // Memory admission failure is a real GPU fallback, not uncomputed output.
     ane::HybridFfn no_budget(argv[1], 64, 96, 1, cancelled);
     assert(!no_budget.available());
+    assert(!no_budget.retains_resources());
     no_budget.stage(0, 97, weights);
     y = no_budget.run(0, x, gpu, cancelled);
     expected = gpu(x);
@@ -979,6 +1003,7 @@ int main(int argc, char **argv) {
                                       (4ull << 30) - 1, 18ull << 30};
     pressured.begin_request("next-adapter", low); // drains, releases graph + scratch
     assert(!pressured.available() && pressured.reason().find("memory admission") != std::string::npos);
+    assert(!pressured.retains_resources());
     pressured.stage(0, 97, weights);
     y = pressured.run(0, x, gpu, cancelled);
     assert(mx::all(y == gpu(x)).item<bool>() && pressured.metrics().runtime_calls == 2);

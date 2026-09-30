@@ -55,6 +55,14 @@ y = h Wd^T + LoRA_down(h)
   这是临时图生命周期保护，不承诺 Core ML 系统缓存完全不落盘，也不
   改变权重、精度、选路或硬件资格。对应纯 host 回归不加载模型。
 - 部分 chunk 失败也不能发布半成品；保留整段 GPU 重算和失败计数。
+- runtime FFN/QKV 永久降级时立即退役本实例的 graph、worker、slots 和
+  host scratch，不把不可再用的图留到 GPU fallback 请求结束。先析构图
+  并等待 worker，再释放其借用的权重/输出存储；私有 lease 随图销毁。
+  失败的 GPU 尾段重算仍抛出原异常，清理不再访问已释放的图。取消及
+  外部 GPU/adapter callback 异常保持原有 drain/可重用语义，不因此
+  将正常图标为永久失效。模型层下一请求的重新准入策略保持不变。
+  这是源码修正；[本轮记录](../../docs/status/runtime-ane-failure-retirement-2026-10-01.md)
+  只有编译/静态证据，测试仍暂停。
 - 同 adapter 的 resident 请求可保留调度状态，切换 adapter/返回 base
   必须隔离。保留数值、非有限值、headroom、失败后状态回归。
   Qwen ref512 的 batch 诊断开关也允许显式 runtime 的 base 请求，便于

@@ -55,6 +55,11 @@ class HybridFfn {
     HybridMetrics metrics() const;
     const std::string &reason() const { return reason_; }
     bool available() const { return graph_ && !failed_; }
+    // Current ownership, unlike the historical slot-byte metrics. A failed
+    // optional route must release all of these before returning GPU output.
+    bool retains_resources() const {
+        return graph_ || !weights_.empty() || output_.capacity() || hidden_.capacity();
+    }
     bool supports_lora_inputs() const { return graph_ && graph_->shape().lora_inputs; }
   private:
     std::unique_ptr<RuntimeGraph> graph_;
