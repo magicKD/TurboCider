@@ -217,6 +217,7 @@ test-api:
 	@"$(PYTHON)" tests/native/test_service_lifecycle.py
 	@"$(PYTHON)" -B tests/native/test_service_rpc_validation.py
 	@"$(PYTHON)" -B tests/native/test_local_client.py
+	@"$(PYTHON)" -B tests/native/test_service_installations.py
 test-reference-preparation:
 	@build/native/turbocider-reference-preparation-tests
 test-editing-canvas:

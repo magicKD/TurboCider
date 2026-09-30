@@ -1,5 +1,9 @@
 # Runtime ANE failure-resource retirement
 
+> Follow-up: testing was reauthorized and focused checks were executed. See
+> [resumed acceptance](2026-10-01-resumed-validation.md). The source-only
+> notes below describe the earlier stopped-test milestone.
+
 The `c4caaa2` App/ZIP is the delivered package. This subsequent source change
 does not replace it. Model inference, Core ML execution, UI checks and test
 execution remain stopped at the user's request.

@@ -56,6 +56,7 @@ NSDictionary *parse_rpc(const std::string &text) {
     // been checked; a Foundation dictionary would already have folded them.
     tc::reject_duplicate_json_keys(text);
     id request=decode(text);
+    if(!request)request=tc_service::decode_exact_jobs_envelope(text);
     check([request isKindOfClass:NSDictionary.class],"RPC must be a valid JSON object");
     if(validate_rpc(request)=="jobs") tc_service::validate_page_number_tokens(text);
     return request;

@@ -1,5 +1,9 @@
 # Dynamic-weight INT8 / Hadamard feasibility
 
+> Follow-up: testing was reauthorized and focused checks were executed. See
+> [resumed acceptance](2026-10-01-resumed-validation.md). The source-only
+> notes below describe the earlier stopped-test milestone.
+
 Testing remains stopped. This stage reads source and official interfaces, and
 adds an offline candidate exporter; it does not export/compile a Core ML graph,
 load a checkpoint or run a prediction. The delivered `c4caaa2` App is unchanged.

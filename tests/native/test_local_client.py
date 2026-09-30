@@ -1,5 +1,6 @@
 """Small CPU/socket regressions; no daemon, model, Metal or downloads."""
 import importlib.util
+import copy
 import json
 from pathlib import Path
 import socket
@@ -106,6 +107,32 @@ class ClientTests(unittest.TestCase):
             self.assertEqual(error.exception.job_id, "job")
             self.assertEqual(error.exception.last_job, value)
             self.assertTrue(all(call.args[0] == "status" for call in rpc.call_args_list))
+
+    def test_installations_validates_metadata_without_compatibility_claims(self):
+        client = api.Client("/unused")
+        valid = {"schema_version": 1, "root": "/registry", "scope": "registered_metadata",
+                 "files_verified": False, "index": {"schemaVersion": 1, "installations": []}}
+        with patch.object(client, "rpc", return_value=valid) as rpc:
+            self.assertEqual(client.installations(), valid)
+            rpc.assert_called_once_with("installations")
+        invalid = [None, {**valid, "schema_version": True}, {**valid, "scope": "scanned"},
+                   {**valid, "files_verified": True}, {**valid, "root": "relative"},
+                   {**valid, "root": "/registry\0ignored"}]
+        for key, value in (("schemaVersion", 2), ("installations", None),
+                           ("loras", {}), ("anePartitions", ["not an object"])):
+            item = copy.deepcopy(valid); item["index"][key] = value; invalid.append(item)
+        for value in invalid:
+            with self.subTest(value=value), patch.object(client, "rpc", return_value=value):
+                with self.assertRaises(api.TransportError) as error:
+                    client.installations()
+                self.assertFalse(error.exception.submission_may_have_succeeded)
+
+    def test_installations_on_old_service_has_no_fallback_or_retry(self):
+        client = api.Client("/unused")
+        with patch.object(client, "rpc", side_effect=api.APIError("unknown action")) as rpc:
+            with self.assertRaisesRegex(api.APIError, "unknown action"):
+                client.installations()
+            rpc.assert_called_once_with("installations")
 
 
 if __name__ == "__main__":

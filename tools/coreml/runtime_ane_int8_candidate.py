@@ -48,12 +48,6 @@ def prepare_inputs(x, w, spec):
     import numpy as np
 
     group = spec["hadamard_group"]
-    # Only a small group matrix is allocated; never construct hidden x hidden H.
-    rotation = np.ones((1, 1), dtype=np.float32)
-    while rotation.shape[0] < group:
-        rotation = np.block([[rotation, rotation], [rotation, -rotation]])
-    rotation *= np.float32(1 / np.sqrt(group))
-
     def prepare(value, expected):
         value = np.asarray(value)
         if (list(value.shape) != expected or value.dtype.kind != "f"
@@ -63,7 +57,18 @@ def prepare_inputs(x, w, spec):
         if not np.isfinite(value).all():
             raise ValueError("operand exceeds FP32 reference-preparation range")
         if group != 1:
-            value = (value.reshape(value.shape[0], -1, group) @ rotation).reshape(value.shape)
+            # Sylvester butterflies avoid a dense H and a BLAS dependency for
+            # this reference path. Work stays O(elements * log2(group)).
+            value = value.copy()
+            stride = 1
+            while stride < group:
+                pairs = value.reshape(value.shape[0], -1, 2 * stride)
+                left = pairs[..., :stride].copy()
+                right = pairs[..., stride:]
+                pairs[..., :stride] = left + right
+                pairs[..., stride:] = left - right
+                stride *= 2
+            value *= np.float32(1 / np.sqrt(group))
         maximum = np.max(np.abs(value), axis=1, keepdims=True)
         # Scale is an FP16 model input. Reject rather than hide clipping or
         # underflow in the normalization/restoration protocol.

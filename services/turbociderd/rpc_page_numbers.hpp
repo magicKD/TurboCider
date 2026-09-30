@@ -9,15 +9,17 @@
 namespace tc_service {
 // Foundation may round a tiny fractional part away. Check the original
 // decimal value, preserving valid integral forms such as 1.0 and 100e-2.
-inline void exact_page_integer(std::string_view token, const std::string &key,
-                               int minimum, int maximum) {
+inline int exact_page_integer(std::string_view token, const std::string &key,
+                              int minimum, int maximum) {
     auto bad = [&]() { throw std::invalid_argument(key + " must be an exact integer in the supported range"); };
     size_t at = 0;
     const bool negative = !token.empty() && token[0] == '-';
     if (negative) ++at;
+    const auto integer_begin = at;
     std::string digits;
     while (at < token.size() && token[at] >= '0' && token[at] <= '9') digits += token[at++];
     if (digits.empty()) bad();
+    if (digits.size() > 1 && token[integer_begin] == '0') bad();
     int64_t fraction = 0;
     if (at < token.size() && token[at] == '.') {
         ++at;
@@ -41,7 +43,7 @@ inline void exact_page_integer(std::string_view token, const std::string &key,
     }
     if (at != token.size()) bad();
     const auto first = digits.find_first_not_of('0');
-    if (first == std::string::npos) { if (minimum > 0) bad(); return; }
+    if (first == std::string::npos) { if (minimum > 0) bad(); return 0; }
     if (negative) bad();
     digits.erase(0, first);
     int64_t shift = exponent - fraction;
@@ -57,6 +59,60 @@ inline void exact_page_integer(std::string_view token, const std::string &key,
     for (char digit : digits) value = value * 10 + digit - '0';
     while (shift-- > 0) value *= 10;
     if (value < minimum || value > maximum) bad();
+    return int(value);
+}
+
+// Foundation cannot decode some valid exact zeros with extreme exponents.
+// This fallback accepts only the tiny jobs envelope, after shared duplicate
+// checking, and materializes bounded page integers instead of approximating
+// arbitrary JSON numbers. Strings still use Foundation's strict JSON decoder.
+inline NSDictionary *decode_exact_jobs_envelope(std::string_view text) {
+    size_t at = 0;
+    auto bad = []() { throw std::invalid_argument("RPC must be a valid jobs JSON object"); };
+    auto ws = [&]() { while (at < text.size() && (text[at] == ' ' || text[at] == '\t' || text[at] == '\r' || text[at] == '\n')) ++at; };
+    auto require = [&](char token) { if (at == text.size() || text[at++] != token) bad(); };
+    auto quoted = [&]() -> NSString * {
+        const auto begin = at;
+        require('"');
+        bool closed = false;
+        while (at < text.size()) {
+            const char value = text[at++];
+            if (value == '\\') { if (at == text.size()) bad(); ++at; }
+            else if (value == '"') { closed = true; break; }
+        }
+        if (!closed) bad();
+        id value = [NSJSONSerialization JSONObjectWithData:
+            [NSData dataWithBytes:text.data() + begin length:at - begin]
+            options:NSJSONReadingFragmentsAllowed error:nil];
+        if (![value isKindOfClass:NSString.class]) bad();
+        return value;
+    };
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    ws(); require('{'); ws();
+    if (at < text.size() && text[at] != '}') {
+        while (true) {
+            NSString *key = quoted(); ws(); require(':'); ws();
+            if (result[key]) throw std::invalid_argument("duplicate RPC page field");
+            if ([key isEqual:@"action"]) {
+                NSString *action = quoted();
+                if (![action isEqual:@"jobs"]) bad();
+                result[key] = action;
+            } else if ([key isEqual:@"offset"] || [key isEqual:@"limit"]) {
+                const auto begin = at;
+                while (at < text.size() && text[at] != ',' && text[at] != '}' && text[at] != ' ' && text[at] != '\t' && text[at] != '\r' && text[at] != '\n') ++at;
+                const bool limit = [key isEqual:@"limit"];
+                result[key] = @(exact_page_integer(text.substr(begin, at - begin), key.UTF8String,
+                    limit ? 1 : 0, limit ? 100 : 2147483647));
+            } else bad();
+            ws();
+            if (at == text.size()) bad();
+            if (text[at] == '}') break;
+            require(','); ws(); // The next iteration requires a key, rejecting trailing commas.
+        }
+    }
+    require('}'); ws();
+    if (at != text.size() || ![result[@"action"] isEqual:@"jobs"]) bad();
+    return result;
 }
 
 // Called only after the shared JSON scanner, Foundation decoding and jobs

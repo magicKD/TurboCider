@@ -1,13 +1,13 @@
+import Combine
 import Foundation
 
 // Metadata-only canvas contracts. No image reads, native planning or inference.
-// Added during the test freeze; this source has not been executed.
 @main struct EditingCanvasSizingTests {
     static func check(_ value: @autoclosure () -> Bool, _ reason: String) throws {
         guard value() else { throw NativeFailure(message: reason) }
     }
 
-    static func main() throws {
+    @MainActor static func main() throws {
         var draft = StudioDraft()
         draft.modelID = "qwen-image-2.1"; draft.operation = "image.edit"
         let reference = StudioAsset(path: "/derivative.png", name: "Reference", width: 512, height: 352,
@@ -110,6 +110,49 @@ import Foundation
         draft.modelID = "qwen-image-2.1"; draft.operation = "image.transform"
         try check(!EditingCanvasSizing.suggestion(for: draft, preset: .automatic512).canApply,
                   "Sizing invented Qwen image.transform capability")
-        print("PASS editing canvas metadata/original selection, alignment/bounds, active reference selection and LoRA/cache locks (no inference)")
+        try verifyStateApply(reference: reference)
+        print("PASS editing canvas original selection/alignment/bounds, active input and LoRA/cache locks, atomic application/persistence/import lock (no inference)")
+    }
+
+    @MainActor private static func verifyStateApply(reference: StudioAsset) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tc-canvas-apply-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = try JSONDecoder().decode(StudioModel.self, from: Data(#"{"id":"qwen-image-2.1","name":"CPU fixture","executor":true,"output":"image","operations":["image.edit"],"default_steps":40,"default_frames":1,"default_width":512,"default_height":512}"#.utf8))
+        let state = StudioState(directory: root, models: [model])
+        state.draft.modelID = model.id; state.draft.operation = "image.edit"
+        state.draft.assets = [reference]; state.draft.initImageID = reference.id
+        state.draft.prompt = "Do not change these instructions"; state.draft.seedText = "913"; state.draft.steps = 25
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        for cache in [false, true] {
+            state.draft.loras = cache ? [] : [StudioLoRA(path: "/ordinary.safetensors", strength: 0.6)]
+            state.draft.qwen21DiTCache = cache ? "balanced" : "off"
+            let before = try encoder.encode(state.draft)
+            let applied = state.applyEditingCanvas(preset: .automatic768)
+            let after = try encoder.encode(state.draft)
+            try check(!applied && before == after && state.message?.contains("512×512") == true,
+                      "Applying a blocked canvas changed parameters or lacked an explanation")
+        }
+        state.draft.loras = []; state.draft.qwen21DiTCache = "off"
+        var expected = state.draft; expected.width = 768; expected.height = 512
+        var observedDimensions: [EditingCanvasDimensions] = []
+        let observer = state.$draft.dropFirst().sink { draft in
+            observedDimensions.append(EditingCanvasDimensions(width: draft.width, height: draft.height))
+        }
+        let applied = state.applyEditingCanvas(preset: .automatic768)
+        observer.cancel()
+        let expectedBytes = try encoder.encode(expected), actualBytes = try encoder.encode(state.draft)
+        try check(applied && actualBytes == expectedBytes && observedDimensions == [EditingCanvasDimensions(width: 768, height: 512)],
+                  "Canvas application published intermediate dimensions or changed unrelated draft fields")
+        let reopened = StudioState(directory: root, models: [model])
+        let reopenedBytes = try encoder.encode(reopened.draft)
+        try check(reopenedBytes == expectedBytes, "Applying the canvas did not persist its dimensions and original metadata")
+        state.importing = true
+        let beforeImport = try encoder.encode(state.draft)
+        let duringImport = state.applyEditingCanvas(preset: .original)
+        let afterImport = try encoder.encode(state.draft)
+        state.importing = false
+        try check(!duringImport && beforeImport == afterImport && state.message?.contains("处理") == true,
+                  "Canvas application bypassed a pending image-processing lock")
+        state.save()
     }
 }

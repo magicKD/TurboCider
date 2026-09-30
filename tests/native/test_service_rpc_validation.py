@@ -24,11 +24,14 @@ class RPCValidationTests(unittest.TestCase):
         self.socket = "/private/tmp/tc-rpc-" + uuid.uuid4().hex[:8] + ".sock"
         self.log = (self.root / "service.log").open("w")
         self.addCleanup(self.log.close)
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in ("TURBOCIDER_SERVICE_PARENT_PID", "TURBOCIDER_LIBRARY_PARENT_PID")}
+        environment["TURBOCIDER_MODEL_LIBRARY"] = str(self.root / "isolated-library")
+        environment["TURBOCIDER_LIBRARY_SETTINGS"] = str(self.root / "isolated-settings.json")
         self.process = subprocess.Popen(
             [str(CLI), "serve", self.socket, str(self.root / "jobs")],
             stdout=self.log, stderr=self.log,
-            env={key: value for key, value in os.environ.items()
-                 if key != "TURBOCIDER_SERVICE_PARENT_PID"},
+            env=environment,
         )
         self.addCleanup(self.stop_service)
         deadline = time.monotonic() + 10
@@ -80,7 +83,7 @@ class RPCValidationTests(unittest.TestCase):
         for action in (None, True, 1, [], {}, "", "unknown", "jobs\0ignored"):
             with self.subTest(action=action):
                 self.assert_rejected_without_exit({"action": action})
-        for action in ("models", "doctor", "service_status", "capabilities", "jobs"):
+        for action in ("models", "doctor", "service_status", "capabilities", "installations", "jobs"):
             with self.subTest(extra_field=action):
                 self.assert_rejected_without_exit({"action": action, "unexpected": 0})
         for value in (None, True, False, "0", [], {}, -.5, .5, -1, 2147483648, 1e100):
@@ -123,6 +126,25 @@ class RPCValidationTests(unittest.TestCase):
         for request in (b'{"action":', b'[]', b'null', b'42'):
             with self.subTest(invalid_json=request):
                 self.assert_rejected_without_exit(request)
+        # Extreme exponents must not make Foundation's failure path accept
+        # invalid JSON syntax, another action or non-page envelope fields.
+        for request in (
+            b'{"action":"jobs","offset":00e-999999999}',
+            b'{"action":"jobs","offset":+0e999999999}',
+            b'{"action":"jobs","offset":.0e999999999}',
+            b'{"action":"jobs","offset":0.e999999999}',
+            b'{"action":"jobs","offset":0e+}',
+            b'{"action":"jobs","offset":0e-999999999,}',
+            b'{"action":"jobs","offset":0e-999999999} trailing',
+            b'{"action":"models","offset":0e-999999999}',
+            b'{"action":"jobs","offset":0e-999999999,"root":"/override"}',
+            b'{"action":"jobs","offset":0e-999999999,"off\\u0073et":0}',
+            b'{"action":"jobs","offset":0e-999999999,"limit":0e999999999}',
+            b'{"action":"jobs","offset":0e-999999999,"limit":99.0000000000000000001}',
+            b'{"action":"jobs","offset":0e-999999999,"limit":true}',
+        ):
+            with self.subTest(extreme_invalid=request):
+                self.assert_rejected_without_exit(request)
         for offset, limit in ((0, 1), (2147483647, 100), (0.0, 20.0)):
             with self.subTest(valid_page=(offset, limit)):
                 response = self.rpc({"action": "jobs", "offset": offset, "limit": limit})
@@ -133,6 +155,9 @@ class RPCValidationTests(unittest.TestCase):
             b'{"action":"jobs","offset":1e0,"limit":1e2}',
             b'{"action":"jobs","off\\u0073et":100e-2,"limit":20.000}',
             b'{"action":"jobs","offset":0e-999999999}',
+            b'{"action":"jobs","offset":0e999999999}',
+            b'{"action":"jobs","offset":-0.000e+999999999}',
+            b'{"off\\u0073et":-0e-999999999,"action":"j\\u006fbs","limit":100}',
         ):
             with self.subTest(exact_integral=request):
                 self.assertTrue(self.rpc(request)["ok"])
@@ -152,7 +177,10 @@ class RPCValidationTests(unittest.TestCase):
         request_file = self.root / "rpc.json"
         for raw in (b'{"action":"jobs","action":"service_status"}',
                     b'{"action":"plan","request":{"steps":4,"steps":8}}',
-                    b'{"action":"jobs","offset":{}}'):
+                    b'{"action":"jobs","offset":{}}',
+                    b'{"action":"jobs","offset":00e-999999999}',
+                    b'{"action":"jobs","offset":0e-999999999,}',
+                    b'{"action":"models","offset":0e-999999999}'):
             with self.subTest(cli_payload=raw):
                 request_file.write_bytes(raw)
                 rejected = subprocess.run([str(CLI), "rpc", self.socket, str(request_file)],
@@ -165,6 +193,14 @@ class RPCValidationTests(unittest.TestCase):
                                   capture_output=True, text=True, timeout=5)
         self.assertEqual(accepted.returncode, 0, accepted.stderr)
         self.assertTrue(json.loads(accepted.stdout)["ok"])
+        for raw in (b'{"action":"jobs","offset":0e-999999999}',
+                    b'{"action":"jobs","offset":0e999999999}',
+                    b'{"action":"jobs","offset":-0.0e+999999999}'):
+            request_file.write_bytes(raw)
+            accepted = subprocess.run([str(CLI), "rpc", self.socket, str(request_file)],
+                                      capture_output=True, text=True, timeout=5)
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertTrue(json.loads(accepted.stdout)["ok"])
 
 
 if __name__ == "__main__":

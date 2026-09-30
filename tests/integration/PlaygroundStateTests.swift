@@ -1,7 +1,30 @@
 import AppKit
+import Combine
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
+
+@MainActor private final class DeferredPlaygroundImageProvider {
+    private var reply: ((Data?, Error?) -> Void)?
+    func makeProvider() -> NSItemProvider {
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { reply in
+            Task { @MainActor in self.reply = reply }
+            return nil
+        }
+        return provider
+    }
+    func waitUntilRequested() async throws {
+        let start = ContinuousClock.now
+        while reply == nil {
+            guard start.duration(to: .now) < .seconds(3) else {
+                throw NativeFailure(message: "Deferred Playground image provider was not requested")
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+    func finish(_ data: Data) { reply?(data, nil); reply = nil }
+}
 
 // CPU-only state, persistence and immutable-input contracts. No model catalog,
 // native request planning or generation is invoked by this target.
@@ -47,7 +70,8 @@ import UniformTypeIdentifiers
         try await failedImportRollback(state, directory: stateDirectory, person: person, root: root)
         try await resultOwnership(state, directory: stateDirectory, model: model, initial: initial, output: scene)
         try damagedFileProtection(root: root, model: model, initial: initial, validDocument: state.document)
-        print("PASS Playground independent drafts, parameter copying, role order, atomic imports, protected persistence and result provenance (CPU only)")
+        try await preprocessingAndPending(root: root, model: model, initial: initial, clothing: clothing)
+        print("PASS Playground independent drafts/roles/import rollback/persistence/provenance, source-based resize/restore, parameter blocks and provider pending/cancel/context guards (CPU only)")
     }
 
     @MainActor private static func draftIsolationAndRoles(directory: URL, creation: StudioState,
@@ -209,6 +233,84 @@ import UniformTypeIdentifiers
             try check(!state.saved && state.storageError != nil && (try Data(contentsOf: file)) == payload,
                       "\(name) persistence was overwritten by a later edit/save")
         }
+    }
+
+    @MainActor private static func preprocessingAndPending(root: URL, model: StudioModel,
+        initial: StudioDraft, clothing: URL) async throws {
+        let directory = root.appendingPathComponent("processing-and-pending")
+        let state = PlaygroundState(directory: directory, initialSettings: initial, models: [model])
+        let person = root.appendingPathComponent("large-person.png")
+        try writePNG(to: person, width: 2048, height: 1024, color: CGColor(red: 0.3, green: 0.5, blue: 0.7, alpha: 1))
+        let sourceBytes = try Data(contentsOf: person)
+        let imported = await state.importFiles([person, clothing])
+        let original = state.asset(for: .person)!, clothingAsset = state.asset(for: .clothing)!
+        let settingsBytes = try bytes(state.settings)
+        let fitted = await state.prepare(.person, preset: .fit512)
+        try check(imported && fitted && state.asset(for: .person)?.id == original.id &&
+                  state.asset(for: .person)?.width == 512 && state.asset(for: .person)?.height == 256 &&
+                  state.asset(for: .clothing) == clothingAsset && (try bytes(state.settings)) == settingsBytes,
+                  "Playground resize changed role identity, other slots or output parameters")
+        let automatic = await state.prepare(.person, preset: .automatic)
+        try check(automatic && state.asset(for: .person)?.width == 1024 && state.asset(for: .person)?.height == 512,
+                  "Playground processed a smaller derivative instead of the retained original")
+        let restored = await state.prepare(.person, preset: .original)
+        try check(restored && state.asset(for: .person)?.path == original.path &&
+                  (try Data(contentsOf: URL(fileURLWithPath: original.path))) == sourceBytes &&
+                  (try Data(contentsOf: person)) == sourceBytes, "Playground restoration lost or changed original pixels")
+
+        var incompatible = initial
+        incompatible.upscaleAfterGeneration = true
+        try check(state.syncSettings(from: incompatible) && state.generationBlocker?.contains("超分") == true &&
+                  state.settings.upscaleAfterGeneration, "Playground silently ignored automatic upscaling")
+        incompatible = initial; incompatible.width = 768
+        try check(state.syncSettings(from: incompatible) && state.generationBlocker?.contains("512×512") == true &&
+                  state.settings.activeLoRAs == initial.activeLoRAs && state.settings.width == 768,
+                  "Playground bypassed or normalized an incompatible ordinary LoRA canvas")
+        incompatible = initial; incompatible.loras = []; incompatible.qwen21DiTCache = "balanced"; incompatible.steps = 6
+        try check(state.syncSettings(from: incompatible) && state.generationBlocker?.contains("20–40") == true &&
+                  state.settings.qwen21DiTCache == "balanced" && state.settings.steps == 6,
+                  "Playground disabled the cache or silently changed an incompatible schedule")
+        try check(state.syncSettings(from: initial), "Cannot restore compatible settings")
+
+        // Hold an actual NSItemProvider callback so guards are exercised after
+        // importing is set, rather than in @Published's willSet notification.
+        let deferred = DeferredPlaygroundImageProvider(), provider = deferred.makeProvider()
+        let beforePending = try bytes(state.document)
+        let pending = Task { await state.importProviders([provider], replacing: .person) }
+        try await deferred.waitUntilRequested()
+        state.selectTemplate(.identity); state.remove(.clothing); state.setInstruction("Must stay locked")
+        let syncDuringImport = state.syncSettings(from: incompatible)
+        let prepareDuringImport = await state.prepare(.person, preset: .fit512)
+        try check(state.importing && !syncDuringImport && !prepareDuringImport &&
+                  (try bytes(state.document)) == beforePending && state.generationBlocker != nil,
+                  "A pending provider allowed template/role/instruction/parameter mutation or generation")
+        deferred.finish(sourceBytes)
+        let completed = await pending.value
+        try check(completed && !state.importing && state.asset(for: .clothing) == clothingAsset &&
+                  state.asset(for: .person)?.id != original.id && FileManager.default.fileExists(atPath: original.path),
+                  "Provider replacement changed the other role or deleted a historical input")
+
+        let inputs = directory.appendingPathComponent("playground-inputs")
+        let beforeCancel = try bytes(state.document), filesBeforeCancel = try files(in: inputs)
+        let cancelledProvider = DeferredPlaygroundImageProvider(), cancelledItem = cancelledProvider.makeProvider()
+        let cancelled = Task { await state.importProviders([cancelledItem], replacing: .person) }
+        try await cancelledProvider.waitUntilRequested()
+        cancelled.cancel(); cancelledProvider.finish(sourceBytes)
+        let cancelledResult = await cancelled.value
+        try check(!cancelledResult && !state.importing && (try bytes(state.document)) == beforeCancel &&
+                  (try files(in: inputs)) == filesBeforeCancel, "Cancelled provider import changed its slot or leaked an input")
+
+        let staleProvider = DeferredPlaygroundImageProvider(), staleItem = staleProvider.makeProvider()
+        let stale = Task { await state.importProviders([staleItem], replacing: .person) }
+        try await staleProvider.waitUntilRequested()
+        // Cross-template bookkeeping may arrive independently of the editor.
+        state.recordSubmission(initial, seed: 731, template: .identity)
+        let newerDocument = try bytes(state.document)
+        staleProvider.finish(sourceBytes)
+        let staleResult = await stale.value
+        try check(!staleResult && !state.importing && (try bytes(state.document)) == newerDocument &&
+                  (try files(in: inputs)) == filesBeforeCancel,
+                  "A stale provider callback replaced a newer context or leaked its staged copy")
     }
 
     private static func modelFixture() throws -> StudioModel {
