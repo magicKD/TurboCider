@@ -106,7 +106,7 @@ def make_program(spec):
     return program
 
 
-def export(destination, spec):
+def export(destination, spec, *, program_factory=make_program, compute_precision=None):
     import coremltools as ct
 
     destination = Path(destination)
@@ -116,9 +116,10 @@ def export(destination, spec):
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".runtime-ane-", dir=destination.parent) as scratch:
         root = Path(scratch)
-        model = ct.convert(make_program(spec), convert_to="mlprogram",
+        model = ct.convert(program_factory(spec), convert_to="mlprogram",
                            minimum_deployment_target=ct.target.macOS15,
-                           compute_precision=ct.precision.FLOAT16,
+                           compute_precision=(ct.precision.FLOAT16 if compute_precision is None
+                                              else compute_precision),
                            skip_model_load=True)
         package = root / "graph.mlpackage"
         model.save(str(package))

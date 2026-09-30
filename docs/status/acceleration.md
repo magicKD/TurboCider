@@ -5,6 +5,12 @@
 当前实现层次、整理范围和已验收/未验收边界见
 [2026-09-30 代码与进度](runtime-ane-current-2026-09-30.md)。
 
+2026-10-01 笔记本接续：测试已按用户要求停止，`c4caaa2` 是已交付包。
+[失败资源退役修复](runtime-ane-failure-retirement-2026-10-01.md)和
+[动态权重 INT8/Hadamard 候选](runtime-ane-w8a8-feasibility-2026-10-01.md)
+是后续源码工作，只有静态检查，未重打包、未新增实测收益。下面历史
+性能结果不构成当前 M4 Pro 或这些源码改动的验收证据。
+
 使用入口：[请求模板与选路](../../examples/requests/README.md)；
 维护入口：[原生后端](../../native/backends/README.md)、
 [验证工具](../../tools/validation/README.md)。最快base与可复用LoRA图是两种
