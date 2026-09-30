@@ -41,6 +41,10 @@ struct Request {
     // The default remains the original 1024-reference BF16 GPU path.
     bool qwen21_w8a8 = false, qwen21_gpu_w8a16 = false;
     int qwen21_reference_size = 1024;
+    std::string qwen21_dit_cache = "off";
+    // Explicit JSON off overrides diagnostic environment defaults. Requests
+    // constructed without this option retain the legacy diagnostic route.
+    bool qwen21_dit_cache_explicit = false;
     std::vector<int> qwen21_gpu_full_ffn_blocks;
     std::string lora_strategy = "auto";
     bool vsa = false;

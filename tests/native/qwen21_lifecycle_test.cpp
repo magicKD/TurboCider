@@ -1,4 +1,5 @@
 #include "../../native/models/qwen21/transformer.hpp"
+#include "../../native/models/qwen21/diagnostic_options.hpp"
 
 #include <algorithm>
 #include <array>
@@ -7,6 +8,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <utility>
 #include <unistd.h>
 
 namespace {
@@ -30,9 +32,9 @@ struct Fixture {
     }
 };
 
-qwen21::TransformerConfig config() {
+qwen21::TransformerConfig config(int depth = layers) {
     qwen21::TransformerConfig result;
-    result.layers = layers;
+    result.layers = depth;
     result.heads = 2;
     result.head_dim = 32;
     result.channels = channels;
@@ -46,7 +48,7 @@ Tensor matrix(int out, int in, int seed) {
                      mx::random::key(seed)) / std::sqrt(float(in)), mx::bfloat16);
 }
 
-void bind_new_weights(Weights &weights) {
+void bind_new_weights(Weights &weights, int depth = layers) {
     std::vector<std::string> names;
     std::vector<Tensor> values;
     int seed = 1900;
@@ -67,7 +69,7 @@ void bind_new_weights(Weights &weights) {
     add_matrix("txt_in.out_layer", hidden, hidden);
     add_matrix("norm_out.linear", hidden, hidden);
     add_matrix("proj_out", channels, hidden);
-    for (int i = 0; i < layers; ++i) {
+    for (int i = 0; i < depth; ++i) {
         const auto p = "transformer_blocks." + std::to_string(i);
         for (const auto *projection : {"to_q", "to_k", "to_v", "to_out.0"})
             add_matrix(p + ".attn." + projection, hidden, hidden);
@@ -255,6 +257,140 @@ void run_snapshot_cycle(int variant, const std::filesystem::path &adapter, size_
         require(actual == expected, "prefix snapshot reused target noise from an earlier seed");
     }
 }
+
+void run_db_cache_regression(const std::filesystem::path &adapter) {
+    constexpr int depth = 10;
+    Weights weights;
+    bind_new_weights(weights, depth);
+    std::atomic<bool> cancelled{false};
+    require(weights.apply_loras({{adapter.string(), .75f, "transformer"}},
+                "transformer", [](const std::string &, int, int) {}, cancelled, true) == 3 * layers,
+            "DBCache tiny ordinary runtime adapter failed to bind");
+    weights.materialize();
+    auto latents = matrix(4, channels, 5900);
+    latents = mx::reshape(latents, {1, 4, channels});
+    auto text = mx::reshape(matrix(4, context, 5901), {1, 4, context});
+    std::vector<qwen21::ReferenceLatents> references{
+        {mx::reshape(matrix(4, channels, 5902), {1, 4, channels}), {2, 2, 1}},
+    };
+    mx::eval(latents, text, references[0].latents);
+    qwen21::Transformer disabled(weights, config(depth)), named_off(weights, config(depth));
+    Request off;
+    off.qwen21_dit_cache_explicit = true;
+    const auto options = qwen21::db_cache_options(off);
+    require(!options.enabled, "explicit cache Off failed to disable diagnostics");
+    named_off.configure_db_cache(options.enabled, options.threshold, 25, options.max_consecutive);
+    const auto prefill = host_values(disabled.forward(latents, text, .5f, 2, 2, true, nullptr, references));
+    require(host_values(named_off.forward(latents, text, .5f, 2, 2, true, nullptr, references)) == prefill,
+            "named cache off changed the prefill output");
+    const auto oracle = host_values(disabled.forward(latents, text, .5f, 2, 2, true, nullptr, references));
+    require(host_values(named_off.forward(latents, text, .5f, 2, 2, true, nullptr, references)) == oracle,
+            "named cache off changed the decode output");
+    // A fixed input/sigma makes every front residual identical. Exercise real
+    // 25/40-step forwards, checking both the numerical full steps and policy.
+    for (const auto &[front, warmup] : {std::pair{8, 8}, std::pair{1, 4}}) {
+        for (int steps : {25, 40}) {
+            for (int maximum : {1, 2, 3, 4}) {
+                qwen21::Transformer cached(weights, config(depth));
+                cached.configure_db_cache(true, front == 1 ? .24f : .25f, steps, maximum, front, warmup);
+                require(cached.db_cache_front_blocks() == front &&
+                            cached.db_cache_warmup_steps() == warmup,
+                        "DBCache did not retain the selected front/warmup policy");
+                int consecutive = 0, total = 0;
+                for (int step = 0; step < steps; ++step) {
+                    cached.set_db_cache_step(step);
+                    const int before = cached.db_cached_steps();
+                    const auto actual = host_values(cached.forward(latents, text, .5f,
+                                                                   2, 2, true, nullptr, references));
+                    const bool skipped = cached.db_cached_steps() > before;
+                    const bool eligible = step >= warmup && step < steps - 1 && consecutive < maximum;
+                    require(skipped == eligible, "DBCache warmup/final/consecutive policy failed at step " +
+                            std::to_string(step));
+                    if (skipped) { ++consecutive; ++total; }
+                    else {
+                        consecutive = 0;
+                        require(actual == (step == 0 ? prefill : oracle),
+                                "DBCache full step differs from uncached ordinary runtime LoRA");
+                    }
+                }
+                require(cached.db_cached_steps() == total && total > 0,
+                        "DBCache request-local skip accounting failed");
+                require(!cached.export_prefix_snapshot(std::numeric_limits<uint64_t>::max()),
+                        "DBCache exported a prefix bank on its excluded route");
+            }
+        }
+    }
+    // Count the executed blocks through the production split callback. This
+    // proves that a skip bypasses middle computation, rather than only raising
+    // a receipt counter. No Core ML runtime or large model is involved.
+    auto check_invalidation = [&](int front, int warmup) {
+        qwen21::Transformer counted(weights, config(depth));
+        int calls = 0;
+        bool fail_middle = false;
+        counted.set_decode_mlp([&](int block, const Tensor &input) {
+            ++calls;
+            if (fail_middle && block == front) throw Cancelled();
+            return mx::zeros(input.shape(), input.dtype());
+        });
+        counted.configure_db_cache(true, .25f, 25, 2, front, warmup);
+        auto forward = [&](int step, const Tensor &condition,
+                           std::unordered_map<std::string, Tensor> *trace = nullptr) {
+            counted.set_db_cache_step(step);
+            calls = 0;
+            return host_values(counted.forward(latents, condition, .5f, 2, 2, true, trace, references));
+        };
+        forward(0, text);
+        for (int step = 1; step <= warmup; ++step) {
+            forward(step, text);
+            require(calls == (step < warmup ? depth : front), "DBCache did not skip the actual middle callback");
+        }
+        forward(warmup + 1, text);
+        require(calls == front && counted.db_cached_steps() == 2, "DBCache consecutive reuse lost prior residual");
+        forward(12, text); // Gap: a stale middle residual must not be reused.
+        require(calls == depth && counted.db_cached_steps() == 2, "DBCache reused a noncontiguous step");
+        forward(13, text);
+        require(calls == front && counted.db_cached_steps() == 3, "DBCache did not resume after a fresh full step");
+        forward(13, text); // Repeated step is another discontinuity.
+        require(calls == depth && counted.db_cached_steps() == 3, "DBCache reused a repeated step");
+        forward(0, text); // New request, matching prefix may remain but residuals cannot.
+        require(calls == depth && counted.db_cached_steps() == 0, "DBCache crossed a request restart");
+        for (int step = 1; step <= warmup; ++step) forward(step, text);
+        require(counted.db_cached_steps() == 1, "DBCache restart did not reset warmup/counts");
+        auto new_text = mx::copy(text);
+        mx::eval(new_text);
+        forward(warmup + 1, new_text); // Same values/shape, distinct conditioning identity.
+        require(calls == 0 && counted.db_cached_steps() == 0,
+                "DBCache reused residuals after conditioning identity changed");
+        forward(warmup + 2, new_text);
+        require(calls == depth && counted.db_cached_steps() == 0,
+                "DBCache used first-step prefix output as a middle residual");
+        fail_middle = true;
+        bool caught = false;
+        try { forward(14, new_text); } // Gap forces full execution and callback failure.
+        catch (const Cancelled &) { caught = true; }
+        require(caught && counted.db_cached_steps() == 0,
+                "DBCache callback cancellation retained request counters");
+        fail_middle = false;
+        forward(14, new_text);
+        require(calls == depth && counted.db_cached_steps() == 0,
+                "DBCache cancellation retry reused partial front state");
+
+        // Tracing runs the ordinary GPU graph and must invalidate split-path
+        // residuals before returning to the callback route.
+        counted.set_decode_mlp({});
+        std::unordered_map<std::string, Tensor> trace;
+        forward(15, new_text, &trace);
+        require(!trace.empty() && calls == 0, "DBCache tiny trace did not use the ordinary graph");
+        counted.set_decode_mlp([&](int, const Tensor &input) {
+            ++calls; return mx::zeros(input.shape(), input.dtype());
+        });
+        forward(16, new_text);
+        require(calls == depth && counted.db_cached_steps() == 0,
+                "DBCache reused residuals across a traced forward");
+    };
+    check_invalidation(8, 8);
+    check_invalidation(1, 4);
+}
 } // namespace
 
 int main() {
@@ -265,6 +401,7 @@ int main() {
         Fixture fixture;
         const auto adapter = fixture.directory / "tiny-lora.safetensors";
         write_adapter(adapter);
+        run_db_cache_regression(adapter);
         std::array<Sample, variants> expected;
         // Prime static activation kernels and all 0/1/2/3-reference + LoRA
         // shapes before recording the idle baseline. Every visit owns a new
@@ -292,6 +429,9 @@ int main() {
         const auto minimum = *std::min_element(retained.begin(), retained.end());
         require(largest - minimum <= idle_tolerance,
                 "compiled Transformer idle active memory accumulates");
+        run_db_cache_regression(adapter);
+        require(idle_active() <= baseline + idle_tolerance,
+                "DBCache retained compiled weights or residual buffers after destruction");
         std::cout << "{\"cycles\":" << repetitions
                   << ",\"variants\":" << variants
                   << ",\"baseline_active_bytes\":" << baseline
@@ -301,7 +441,8 @@ int main() {
                   << ",\"idle_tolerance_bytes\":" << idle_tolerance
                   << ",\"deterministic_prefill_decode\":true"
                   << ",\"snapshot_cycles\":" << repetitions
-                  << ",\"snapshot_cross_transformer_parity\":true}\n";
+                  << ",\"snapshot_cross_transformer_parity\":true"
+                  << ",\"dbcache_policy_and_invalidation\":true}\n";
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         return 1;

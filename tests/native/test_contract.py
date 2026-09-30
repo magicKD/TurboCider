@@ -46,6 +46,94 @@ def plan(r):
     return status,json.loads(a) if a else None,b
 
 class ContractTests(unittest.TestCase):
+    def test_qwen21_dit_cache_request_presets_and_schema_roundtrip(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                    width=512, height=512, steps=25, audio=False, frames=1,
+                    execution='gpu', allow_approximation=True)
+        v2 = dict(schema_version=2, model=base['model'], operation=base['operation'],
+                  inputs=[dict(kind='text', role='prompt', text=base['prompt'])],
+                  outputs=[dict(kind='image', path='result.png', width=512, height=512,
+                                frames=1, audio=False)], sampling=dict(seed=42, steps=25),
+                  execution=dict(policy='gpu', allow_approximation=True))
+        with patch.dict(os.environ):
+            for key in ('TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC',
+                        'TURBOCIDER_QWEN21_DBCACHE_THRESHOLD',
+                        'TURBOCIDER_QWEN21_DBCACHE_MAX_CONSECUTIVE'):
+                os.environ.pop(key, None)
+            code, default, error = plan(base)
+            self.assertEqual(code, 0, error)
+            self.assertEqual(default['qwen21_dit_cache'], 'off')
+            for mode in ('off', 'conservative', 'balanced', 'fast'):
+                for request in ({**base, 'qwen21_dit_cache': mode},
+                                {**v2, 'execution': {**v2['execution'], 'qwen21_dit_cache': mode}}):
+                    with self.subTest(mode=mode, schema=request.get('schema_version', 1)):
+                        code, result, error = plan(request)
+                        self.assertEqual(code, 0, error)
+                        self.assertEqual(result['qwen21_dit_cache'], mode)
+                        self.assertEqual('qwen21_decode_dit_cache' in result['algorithm_approximations'],
+                                         mode != 'off')
+            for mode in ('', 'auto', 'invalid', None, True, 1):
+                with self.subTest(invalid=mode):
+                    self.assertNotEqual(plan({**base, 'qwen21_dit_cache': mode})[0], 0)
+            self.assertNotEqual(plan({**v2, 'qwen21_dit_cache': 'off'})[0], 0)
+            self.assertNotEqual(plan({**v2, 'parameters': {'qwen21_dit_cache': 'off'}})[0], 0)
+            other = dict(model='flux2-klein-4b', operation='image.generate', prompt='A teapot',
+                         width=512, height=512, steps=4, frames=1, audio=False)
+            self.assertEqual(plan({**other, 'qwen21_dit_cache': 'off'})[0], 0)
+            self.assertNotEqual(plan({**other, 'qwen21_dit_cache': 'balanced'})[0], 0)
+
+    def test_qwen21_explicit_dit_cache_off_overrides_environment(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                    width=512, height=512, steps=25, audio=False, frames=1,
+                    execution='gpu', allow_approximation=True)
+        overrides = {'TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC': '1',
+                     'TURBOCIDER_QWEN21_DBCACHE_THRESHOLD': '0.08',
+                     'TURBOCIDER_QWEN21_DBCACHE_MAX_CONSECUTIVE': '2'}
+        with patch.dict(os.environ, overrides):
+            code, diagnostic, error = plan(base)
+            self.assertEqual(code, 0, error)
+            self.assertIn('qwen21_decode_dbcache_diagnostic', diagnostic['algorithm_approximations'])
+            code, disabled, error = plan({**base, 'qwen21_dit_cache': 'off',
+                                           'allow_approximation': False})
+            self.assertEqual(code, 0, error)
+            self.assertNotIn('qwen21_decode_dbcache_diagnostic', disabled['algorithm_approximations'])
+            self.assertNotIn('qwen21_decode_dit_cache', disabled['algorithm_approximations'])
+            self.assertNotEqual(plan({**base, 'qwen21_dit_cache': 'balanced'})[0], 0)
+            with patch.dict(os.environ, {key: 'invalid' for key in overrides}):
+                self.assertEqual(plan({**base, 'qwen21_dit_cache': 'off'})[0], 0)
+                self.assertNotEqual(plan(base)[0], 0)
+
+    def test_qwen21_ordinary_gpu_lora_uses_base_sampling(self):
+        adapter = dict(path='Qwen-Image-2.1_NSFW_Image_Edit.safetensors',
+                       strength=.75, role='transformer')
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                    width=512, height=512, steps=25, audio=False, frames=1,
+                    execution='gpu', loras=[adapter], lora_strategy='auto',
+                    qwen21_dit_cache='off')
+        refs = [dict(kind='image', role='reference', path=f'ref-{i}.png') for i in range(4)]
+        for steps in (20, 25, 40):
+            for count in range(4):
+                for strength in (-8., 0., .75, 8.):
+                    with self.subTest(steps=steps, refs=count, strength=strength):
+                        request = {**base, 'steps': steps, 'loras': [{**adapter, 'strength': strength}],
+                                   'operation': 'image.edit' if count else 'image.generate',
+                                   'inputs': refs[:count]}
+                        code, result, error = plan(request)
+                        self.assertEqual(code, 0, error)
+                        self.assertEqual(result['lora_strategy'], 'inference_time')
+                        self.assertEqual(result['qwen21_reference_size'], 1024)
+                        self.assertFalse(any('6step' in label for label in result['algorithm_approximations']))
+        for invalid in (dict(steps=6), dict(steps=19), dict(steps=41), dict(width=768),
+                        dict(execution='auto'), dict(execution='gpu_ane', ane_manifest='fake.json'),
+                        dict(lora_strategy='in_memory_merge'), dict(lora_strategy='disk_premerge'),
+                        dict(loras=[adapter, adapter]), dict(loras=[{**adapter, 'role': 'text_encoder'}]),
+                        dict(loras=[{**adapter, 'strength': -8.01}]),
+                        dict(loras=[{**adapter, 'strength': 8.01}]),
+                        dict(operation='image.edit', inputs=refs),
+                        dict(operation='image.edit', inputs=refs[:1], qwen21_reference_size=512)):
+            with self.subTest(invalid=invalid):
+                self.assertNotEqual(plan({**base, **invalid})[0], 0)
+
     def test_qwen21_runtime_qkv_is_base_only_and_distinct_from_ffn(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
                     width=1024, height=1024, steps=5, audio=False, frames=1,
@@ -1874,7 +1962,7 @@ class ContractTests(unittest.TestCase):
         begin=source.index('size_t Weights::apply_loras(')
         end=source.index('Tensor linear(',begin)
         implementation=source[begin:end]
-        self.assertIn('std::atomic<bool> &cancelled,\n                            bool inference_time) try {',implementation)
+        self.assertIn('std::atomic<bool> &cancelled,\n                            bool inference_time, bool strict_targets) try {',implementation)
         self.assertIn('catch (...) {',implementation)
         self.assertIn('clear();',implementation)
         self.assertIn('throw;',implementation)

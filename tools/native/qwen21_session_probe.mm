@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
                         "staged Session probe accepts only 0 or 1");
             const bool component_staged = tc::qwen21::option_enabled(staged_flag);
             r.steps = std::stoi(argv[3]);
-            const bool db_cache = tc::qwen21::option_enabled(
+            bool db_cache = tc::qwen21::option_enabled(
                 std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC"));
             const bool rectangular_w8a8 = tc::qwen21::option_enabled(
                 std::getenv("TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC"));
@@ -80,8 +80,9 @@ int main(int argc, char **argv) {
                 tc::require(!r.qwen21_w8a8 && r.qwen21_gpu_full_ffn_blocks.empty(),
                             "GPU request cannot retain W8A8 hybrid options");
             }
+            db_cache = tc::qwen21::db_cache_options(r).enabled;
             if (db_cache) r.allow_approximation = true; // explicit diagnostic probe opt-in
-            bool snapshot_diagnostics = false;
+            bool snapshot_diagnostics = db_cache;
             for (const char *name : {
                     "TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV",
                     "TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC",
@@ -144,6 +145,13 @@ int main(int argc, char **argv) {
             };
             r.output = (directory / "must-not-export.png").string();
             auto prepared = session.prepare(r, false, event, cancelled);
+            // The production loader validates the initial adapter. Ordinary
+            // LoRAs can bind a different number of projections than Viggle;
+            // all later switches must restore this exact initial binding.
+            const auto expected_lora_projections = prepared.lora_applied_projections;
+            tc::require(r.loras.empty() ? expected_lora_projections == 0 :
+                                         expected_lora_projections > 0,
+                        "initial prepare did not bind the requested adapter");
             save("prepare.json", prepared);
             tc::require(!std::filesystem::exists(r.output), "prepare exported an image");
             const char *hybrid_final = std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC");
@@ -183,6 +191,8 @@ int main(int argc, char **argv) {
                 tc::require(setenv("TURBOCIDER_QWEN21_PREFIX_SNAPSHOT", "0", 1) == 0,
                             "cannot isolate snapshot warmup");
             auto warmed = session.prepare(warm, true, event, cancelled);
+            tc::require(warmed.lora_applied_projections == expected_lora_projections,
+                        "warmup changed the initially bound adapter projections");
             if (snapshot_probe) {
                 tc::require(warmed.selection.find("edit prefix KV snapshot") == std::string::npos,
                             "disabled warmup populated the edit prefix snapshot");
@@ -252,7 +262,7 @@ int main(int argc, char **argv) {
                         .decode_layers = int(32 - r.qwen21_gpu_full_ffn_blocks.size()),
                         .decode_tiles = rectangular_w8a8 ? 2 : 1,
                         .db_cached_steps = result.db_cache_steps,
-                        .db_skipped_layers = 32 - tc::qwen21::Transformer::db_front_blocks -
+                        .db_skipped_layers = 32 - result.db_cache_front_blocks -
                             tc::qwen21::Transformer::db_back_blocks,
                         .final_reuse_layers = tc::qwen21::option_enabled(hybrid_final) ? 32 :
                             tc::qwen21::option_enabled(hybrid_last16) ? 16 : 0,
@@ -361,13 +371,15 @@ int main(int argc, char **argv) {
                                 "unchanged reference did not repopulate prefix KV bank");
                 save("changed-reference-repeat.json", repeated);
             }
-            // Cancellation happens between prefill and decode. It must not
-            // export or leave a partially consumed hybrid prefix for a retry.
+            // For DiT cache, cancel after residual warmup so the retry exercises
+            // cleanup of populated state. Other routes cancel after prefill.
             warm.output = (directory / "cancelled.png").string();
+            const int cancel_after_steps = db_cache
+                ? tc::qwen21::db_cache_options(warm).warmup_steps + 2 : 1;
             bool caught = false;
             try {
                 session.generate(warm, [&](const std::string &phase, int completed, int) {
-                    if (phase == "denoise" && completed == 1) cancelled = true;
+                    if (phase == "denoise" && completed == cancel_after_steps) cancelled = true;
                 }, cancelled);
             } catch (const tc::Cancelled &) { caught = true; }
             tc::require(caught && !std::filesystem::exists(warm.output), "cancellation/export contract failed");
@@ -378,7 +390,7 @@ int main(int argc, char **argv) {
                 std::cout << "{\"cancelled_staged_active_bytes\":" << idle_bytes << "}" << std::endl;
             }
             cancelled = false;
-            if (component_staged || snapshot_probe || (prefix_probe && r.loras.empty() && r.steps >= 2)) {
+            if (component_staged || snapshot_probe || db_cache || (prefix_probe && r.loras.empty() && r.steps >= 2)) {
                 r.output = (directory / "after-cancellation.png").string();
                 bool reloaded_transformer = false, reloaded_vae = false;
                 auto retried = session.generate(r, [&](const std::string &phase, int step, int total) {
@@ -391,7 +403,7 @@ int main(int argc, char **argv) {
                 tc::require(retried.prompt_cache_hit &&
                                 (component_staged
                                     ? retried.selection.find("resident prefix KV") == std::string::npos
-                                    : snapshot_probe || retried.selection.find("resident prefix KV miss") != std::string::npos) &&
+                                    : snapshot_probe || db_cache || retried.selection.find("resident prefix KV miss") != std::string::npos) &&
                                 tc::sha256_file(r.output) == tc::sha256_file(directory / retry_oracle),
                             "cancellation retry lost complete conditioning or changed the output");
                 if (component_staged)
@@ -400,7 +412,7 @@ int main(int argc, char **argv) {
                 save("after-cancellation.json", retried);
             }
             if (!r.loras.empty()) {
-                // Resident requests may alternate between a student and the
+                // Resident requests may alternate between an adapter and the
                 // unchanged base checkpoint. Neither path may retain the
                 // other's runtime adapter or silently skip rebinding it.
                 auto plain = warm;
@@ -421,7 +433,7 @@ int main(int argc, char **argv) {
                 }
                 auto without_adapter = session.prepare(plain, false, event, cancelled);
                 tc::require(without_adapter.lora_applied_projections == 0,
-                            "resident base-model switch retained Viggle LoRA");
+                            "resident base-model switch retained LoRA");
                 if (lora_base_ane)
                     tc::require(setenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC", "1", 1) == 0,
                                 "cannot restore LoRA/base ANE before testing rebind");
@@ -432,18 +444,18 @@ int main(int argc, char **argv) {
                     tc::require(setenv("TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC", "1", 1) == 0,
                                 "cannot restore LoRA/512px diagnostic before testing rebind");
                 auto restored = session.prepare(warm, false, event, cancelled);
-                tc::require(restored.lora_applied_projections == 227,
-                            "resident Viggle switch did not restore all adapter projections");
-                if (prefix_probe || snapshot_probe) {
+                tc::require(restored.lora_applied_projections == expected_lora_projections,
+                            "resident LoRA switch did not restore the initially bound adapter projections");
+                if (prefix_probe || snapshot_probe || db_cache) {
                     r.output = (directory / "after-lora-rebind.png").string();
                     r.dump.clear();
                     auto rebound = session.generate(r, event, cancelled);
                     check_snapshot(rebound, false);
                     const auto rebind_oracle = test_edit_cache ? "changed-reference.png" : "run-0.png";
-                    tc::require(rebound.lora_applied_projections == 227 &&
-                                    (snapshot_probe || rebound.selection.find("resident prefix KV miss") != std::string::npos) &&
+                    tc::require(rebound.lora_applied_projections == expected_lora_projections &&
+                                    (snapshot_probe || db_cache || rebound.selection.find("resident prefix KV miss") != std::string::npos) &&
                                     tc::sha256_file(r.output) == tc::sha256_file(directory / rebind_oracle),
-                                "LoRA rebind reused stale prefix KV or changed the uncached output");
+                                "LoRA rebind reused stale prefix KV or changed the matched output");
                     save("after-lora-rebind.json", rebound);
                 }
             }

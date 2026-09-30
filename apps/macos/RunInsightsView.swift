@@ -22,6 +22,20 @@ struct RunInsightsView: View {
                     .help("参考图和指令相同时，再次生成或更换种子可复用首步计算。只保留最近一组缓存；更换内容或卸载模型后清除。缓存会占用额外内存，超过预算时自动跳过。")
                     .accessibilityIdentifier("editPrefixCacheStatus")
             }
+            if info.qwen21DiTCacheMode != nil || info.qwen21DiTCacheSteps != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    let title = info.qwen21DiTCacheMode.flatMap { Qwen21DiTCacheMode(rawValue: $0)?.title }
+                        ?? (info.qwen21DiTCacheMode == "diagnostic" ? "诊断配置" : "档位未报告")
+                    Label("DiT 缓存 · \(title)", systemImage: "square.stack.3d.up")
+                        .font(.caption.weight(.medium))
+                    HStack(spacing: 16) {
+                        if let steps = info.qwen21DiTCacheSteps { Text("复用中间层 \(steps) 步") }
+                        if let blocks = info.qwen21DiTCacheSavedBlocks { Text("节省 \(blocks) 次层计算") }
+                    }.font(.caption).monospacedDigit()
+                    Text("实际跳过的是中间层计算，仍会执行边界层。近似结果可能改变细节，与编辑参考图前缀缓存不同。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }.accessibilityIdentifier("qwen21DiTCacheMetrics")
+            }
             if let seconds = firstDenoiseStepSeconds, seconds.isFinite, seconds > 0 {
                 Text(String(format: "首步采样 %.2f 秒", seconds)).monospacedDigit()
                     .font(.caption).foregroundStyle(.secondary)

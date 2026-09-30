@@ -11,8 +11,8 @@ performed by the native runtime.
 - One to ten ordered image references. References are encoded as visual
   conditions; a separate black/white mask is an additional visual reference,
   not hard pixel-preserving inpainting.
-- Ellipse/brush annotation references, request-owned prefix KV caching, staged
-  or resident GPU execution, and native App job persistence/reuse.
+- Ellipse/brush annotation references, prefix KV caching, staged or resident
+  GPU execution, and native App job persistence/reuse.
 - Experimental PE-T2I and explicitly opt-in PE-I2I FP32 visual conditioning.
 
 The App exposes Qwen-specific examples, ten-reference import limits, RGBA
@@ -20,6 +20,48 @@ handling, mask/annotation authoring, and the PE-I2I warning. Use the GPU route
 for normal operation. The experimental GPU+ANE route requires an explicit
 manifest and approximation opt-in; it is not hardware-placement or image-quality
 proof.
+
+## Base-schedule LoRA and optional DiT cache
+
+The App's right settings column exposes **DiT cache** for 512×512, 20–40-step
+GPU generation and 1–3-reference editing with normal 1024px reference processing
+and prompt enhancement off. It defaults to **Off**. The named choices are
+`off`, `conservative`, `balanced` and `fast`; the selected value is recorded in
+the draft, submitted request and result. Unsupported combinations show a reason
+instead of silently changing the sampling steps. Viggle's six-step student is
+outside this cache's supported range.
+
+For schema v1, set `qwen21_dit_cache` at the top level; for schema v2 put it
+under `execution`. Any enabled mode also requires `allow_approximation: true`.
+This reuses the aggregate residual of the middle 24 transformer blocks within
+one sampling request. The first eight blocks always run, the first eight steps
+warm the cache, and the last step always computes all blocks. It can change
+texture, color and local details. Results report the actual cached-step and
+saved-block counts in `qwen21_dbcache`; selecting a mode alone does not prove
+that it saved work.
+
+Compatible ordinary transformer LoRAs use the **base schedule**, with 20–40
+steps on the qualified 512×512 GPU route. They remain separate runtime low-rank
+matrices, with adjustable strength, and may opt into DiT cache. A known Viggle
+v0.2.1 filename still requires its pinned contents and six-step settings; it
+cannot silently become an ordinary adapter. Unknown adapter quality and training
+settings cannot be established from tensor compatibility alone.
+
+DiT cache is separate from cross-request editing prefix reuse. The latter retains
+a bounded completed K/V bank for identical instructions and ordered reference
+contents, including new seeds, on qualified GPU edits. It is memory-only and
+cleared by unload. In this release DiT cache bypasses that prefix snapshot, so
+benchmark gains must not be multiplied together. See the
+[editing startup investigation](../status/2026-09-30-qwen21-edit-startup.md).
+
+Start with **Balanced** for a speed/detail tradeoff, **Conservative** when local
+detail matters more, and **Fast** for previews. Keep **Off** for full-step sampling.
+The local qualification covers 512×512 generation and single-reference editing:
+Base at 25/40 steps, and the supplied rank-16 ordinary LoRA at 25 steps and
+strength 1.0. This is a tested strength, not an adapter-author recommendation.
+Other prompts, adapters and reference counts can behave differently. See the
+[DiT-cache measurements and correctness report](../status/2026-09-30-qwen21-dit-cache.md)
+for timing controls, image metrics and the repeated-edit caveat.
 
 ## Viggle v0.2.1 r128 / r256: six-step GPU student (research/evaluation only)
 
@@ -185,10 +227,10 @@ decode FFNs (90.625%). These reference dimensions change the input and can lose
 details; this mode is **not** the default or a production image-quality gate.
 The resident Session now caches the text/visual conditioning and reference VAE
 latents for an unchanged prompt, reference resize and ordered reference file
-contents (checked by SHA-256 on every request). Denoising prefix KV remains
-request-owned by default; explicit resident diagnostics can retain it across
-matching requests. Replacing a reference in place invalidates the cache; staged or
-one-shot requests cannot claim this resident hit. Under the matched 512²/40-step
+contents (checked by SHA-256 on every request). The historical mixed-route
+measurements below used request-owned denoising prefix KV; the newer ordinary
+GPU bounded snapshot described above is a separate route. Replacing a reference
+in place invalidates conditioning. Under the matched 512²/40-step
 two-reference, seed-17 workload, two cached GPU requests took 44.733/44.777 s
 and W8A8 mixed requests took 37.159/37.176 s, about **1.204×** request-wall
 speedup. At 5 steps the corresponding cached figures were 6.688/6.727 s and

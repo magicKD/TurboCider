@@ -198,6 +198,26 @@ struct StudioAcceleration: Codable, Sendable {
     var exportPythonPath: String?
     var exportProfile: String?
 }
+enum Qwen21DiTCacheMode: String, CaseIterable, Identifiable {
+    case off, conservative, balanced, fast
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .off: return "关闭（默认）"
+        case .conservative: return "保守"
+        case .balanced: return "均衡"
+        case .fast: return "快速"
+        }
+    }
+    var detail: String {
+        switch self {
+        case .off: return "每一步完整计算，不复用近似中间层。"
+        case .conservative: return "阈值 0.15，最多连续复用 1 步。"
+        case .balanced: return "阈值 0.25，最多连续复用 2 步。"
+        case .fast: return "阈值 0.25，最多连续复用 4 步；细节变化风险更高。"
+        }
+    }
+}
 struct StudioDraft: Codable, Sendable {
     var modelID = "flux2-klein-4b"
     var modelPaths: [String: String] = [:]
@@ -229,6 +249,7 @@ struct StudioDraft: Codable, Sendable {
     var promptEnhance = false
     var promptEnhanceEditExperimental = false
     var promptEnhancerPath = ""
+    var qwen21DiTCache = "off"
     var residency = "resident"
     var zImageStreamingBudgetGiB = 10
     var profilePath = ""
@@ -243,6 +264,7 @@ struct StudioDraft: Codable, Sendable {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
+        case qwen21DiTCache
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -279,6 +301,7 @@ struct StudioDraft: Codable, Sendable {
         promptEnhance = try c.decodeIfPresent(Bool.self, forKey: .promptEnhance) ?? promptEnhance
         promptEnhanceEditExperimental = try c.decodeIfPresent(Bool.self, forKey: .promptEnhanceEditExperimental) ?? false
         promptEnhancerPath = try c.decodeIfPresent(String.self, forKey: .promptEnhancerPath) ?? promptEnhancerPath
+        qwen21DiTCache = try c.decodeIfPresent(String.self, forKey: .qwen21DiTCache) ?? "off"
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
         zImageStreamingBudgetGiB = try c.decodeIfPresent(Int.self, forKey: .zImageStreamingBudgetGiB) ?? 10
         profilePath = try c.decodeIfPresent(String.self, forKey: .profilePath) ?? profilePath
@@ -293,15 +316,39 @@ struct StudioDraft: Codable, Sendable {
         // selector stays Off until explicitly selected by the user.
     }
     var activeLoRAs: [StudioLoRA] { loras.filter(\.enabled) }
-    /// The public Qwen GPU executor qualifies these six-step adapters. Other
-    /// adapter files remain a native diagnostic workflow, not an App preset.
+    static let qwen21TurboAdapterNames: Set<String> = [
+        "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+        "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors"
+    ]
+    var hasQwen21TurboAdapter: Bool {
+        modelID == "qwen-image-2.1" && activeLoRAs.contains { Self.qwen21TurboAdapterNames.contains(URL(fileURLWithPath: $0.path).lastPathComponent) }
+    }
+    /// Only known six-step adapters receive the Turbo schedule. Ordinary GPU
+    /// LoRAs retain the base schedule and their editable strengths.
     var qwen21TurboLoRA: StudioLoRA? {
         guard modelID == "qwen-image-2.1", activeLoRAs.count == 1,
               let adapter = activeLoRAs.first,
-              ["Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
-               "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors"]
-                .contains(URL(fileURLWithPath: adapter.path).lastPathComponent) else { return nil }
+              Self.qwen21TurboAdapterNames.contains(URL(fileURLWithPath: adapter.path).lastPathComponent) else { return nil }
         return adapter
+    }
+    var qwen21DiTCacheUnavailableReason: String? {
+        guard modelID == "qwen-image-2.1", ["image.generate", "image.edit"].contains(operation) else { return "DiT 缓存仅支持 Qwen 2.1 生图或图片编辑。" }
+        if hasQwen21TurboAdapter { return "六步 Viggle Turbo 不支持 DiT 缓存，请保持关闭。" }
+        if (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) != "gpu" || !profilePath.isEmpty {
+            return "DiT 缓存仅支持纯 GPU，请关闭 ANE 与设备配置。"
+        }
+        if !(20...40).contains(steps) { return "DiT 缓存需要 20–40 步；请自行调整采样步数。" }
+        if width != 512 || height != 512 { return "DiT 缓存目前仅支持 512×512 画布。" }
+        if activeAssets.count > 3 { return "DiT 缓存最多支持 3 张参考图，参考编码使用正常 1024 尺寸。" }
+        if !activeLoRAs.isEmpty {
+            if activeLoRAs.count != 1 { return "DiT 缓存当前支持基础模型或单个普通 LoRA。" }
+            if activeLoRAs.contains(where: { $0.role != "transformer" || !$0.strength.isFinite || !(-8...8).contains($0.strength) }) {
+                return "普通 LoRA 需使用 Transformer 角色，强度为 −8 到 8。"
+            }
+            if !["auto", "inference_time"].contains(loraStrategy) { return "普通 LoRA 的 DiT 缓存需要运行时加载策略。" }
+        }
+        if promptEnhance { return "DiT 缓存与提示词增强暂不组合使用。" }
+        return nil
     }
     var qwen21TurboConfigurationIssues: [String] {
         guard let adapter = qwen21TurboLoRA else { return [] }
@@ -570,17 +617,28 @@ struct StudioDraft: Codable, Sendable {
         if let max = model.max_images, activeAssets.count > max { throw NativeFailure(message: "当前模型最多接受 \(max) 张输入图片。") }
         if !activeLoRAs.isEmpty && model.supports_lora != true { throw NativeFailure(message: "当前模型不支持 LoRA。") }
         if modelID == "qwen-image-2.1", !activeLoRAs.isEmpty {
-            guard qwen21TurboLoRA != nil else {
-                throw NativeFailure(message: "Qwen 2.1 当前支持单个 Viggle v0.2.1 六步 r128 / r256 LoRA，请只启用一个已支持的适配器。")
+            if hasQwen21TurboAdapter {
+                guard qwen21TurboLoRA != nil else { throw NativeFailure(message: "六步 Viggle 需单独启用一个适配器，不能与其他 LoRA 混用。") }
+                let issues = qwen21TurboConfigurationIssues
+                guard issues.isEmpty else { throw NativeFailure(message: issues.joined(separator: "；") + "。请应用 Turbo 快速设置。") }
+                guard operation != "image.edit" || activeAssets.count <= 3 else { throw NativeFailure(message: "Qwen 2.1 六步 LoRA 编辑最多支持 3 张参考图；更多参考图请关闭 LoRA。") }
+            } else {
+                guard activeLoRAs.count == 1 else { throw NativeFailure(message: "普通 Qwen LoRA 当前支持单个适配器。") }
+                guard (20...40).contains(steps) else { throw NativeFailure(message: "普通 Qwen LoRA 使用基础采样，需要 20–40 步；六步采样仅适用于已支持的 Viggle。") }
+                guard width == 512, height == 512, activeAssets.count <= 3 else {
+                    throw NativeFailure(message: "普通 Qwen LoRA 当前支持 512×512、最多 3 张参考图。")
+                }
+                guard ["auto", "inference_time"].contains(loraStrategy) else { throw NativeFailure(message: "普通 Qwen LoRA 使用运行时加载，请选择自动或运行时加载。") }
+                guard (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) == "gpu", profilePath.isEmpty else {
+                    throw NativeFailure(message: "普通 Qwen LoRA 当前仅支持纯 GPU，请关闭 ANE 与设备配置。")
+                }
             }
-            let issues = qwen21TurboConfigurationIssues
-            guard issues.isEmpty else {
-                throw NativeFailure(message: issues.joined(separator: "；") + "。请应用 Turbo 快速设置。")
-            }
-            guard operation != "image.edit" || activeAssets.count <= 3 else {
-                throw NativeFailure(message: "Qwen 2.1 六步 LoRA 编辑最多支持 3 张参考图；更多参考图请关闭 LoRA。")
+            guard activeLoRAs.allSatisfy({ $0.role == "transformer" }) else {
+                throw NativeFailure(message: "Qwen LoRA 仅支持 Transformer 角色。")
             }
         }
+        guard Qwen21DiTCacheMode(rawValue: qwen21DiTCache) != nil else { throw NativeFailure(message: "DiT 缓存档位无效，请选择关闭、保守、均衡或快速。") }
+        if qwen21DiTCache != "off", let reason = qwen21DiTCacheUnavailableReason { throw NativeFailure(message: reason) }
         if modelID == "z-image-turbo-gguf" && residency != "resident" {
             throw NativeFailure(message: "GGUF 当前只支持原生 MLX 常驻模式，请将模型驻留改为 resident。")
         }
@@ -643,6 +701,8 @@ struct StudioDraft: Codable, Sendable {
         request.prompt_enhance_edit_experimental = modelID == "qwen-image-2.1" &&
             operation == "image.edit" && promptEnhance && promptEnhanceEditExperimental
         request.prompt_enhancer_path = modelID == "qwen-image-2.1" && !promptEnhancerPath.isEmpty ? promptEnhancerPath : nil
+        request.qwen21_dit_cache = modelID == "qwen-image-2.1" ? qwen21DiTCache : nil
+        if qwen21DiTCache != "off" { request.allow_approximation = true }
         if modelID == "z-image-turbo", residency == "streamed" {
             request.memory_budget_bytes = UInt64(zImageStreamingBudgetGiB) << 30
         }
@@ -706,6 +766,7 @@ struct StudioDraft: Codable, Sendable {
                                strength: (operation == "image.transform" || operation == "video.image") ? strength : nil)
         }
         request.loras = activeLoRAs.isEmpty ? nil : activeLoRAs.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
+        if modelID == "qwen-image-2.1", !activeLoRAs.isEmpty { request.lora_strategy = "inference_time" }
         if qwen21TurboLoRA != nil {
             // The qualified six-step schedule is explicitly approximate. Base
             // Qwen ANE partitions do not include the adapter's weight delta.
@@ -1211,6 +1272,7 @@ final class StudioState: ObservableObject {
         draft.ltxVideoAttentionBatch = false
         draft.ltxAccelerationMode = "quality"
         draft.streaming = StudioStreamingState()
+        draft.qwen21DiTCache = "off"
         draft.residency = model.default_residency ?? "resident"
         draft.profilePath = ""
         draft.acceleration = StudioAcceleration(policy: "gpu")
@@ -1335,7 +1397,7 @@ final class StudioState: ObservableObject {
     // Keep the existing eight-asset staging area for smaller-input models,
     // while allowing the complete ten-reference Qwen21 input contract.
     var imageImportLimit: Int {
-        if draft.qwen21TurboLoRA != nil { return 3 }
+        if draft.modelID == "qwen-image-2.1", !draft.activeLoRAs.isEmpty || draft.qwen21DiTCache != "off" { return 3 }
         return max(8, models.first(where: { $0.id == draft.modelID })?.max_images ?? 8)
     }
     func applyQwen21Example(_ example: Qwen21PromptExample) {
@@ -1373,6 +1435,7 @@ final class StudioState: ObservableObject {
         draft.loraStrategy = "inference_time"
         draft.profilePath = ""; draft.acceleration = StudioAcceleration(policy: "gpu")
         draft.streaming = StudioStreamingState()
+        draft.qwen21DiTCache = "off"
         message = "已应用六步 LoRA 预设：512×512、6 步、纯 GPU、强度 1。编辑支持 1–3 张参考图；此加速采样为近似模式。"
         save()
     }
@@ -1548,6 +1611,7 @@ final class StudioState: ObservableObject {
         draft.promptEnhance = request.prompt_enhance ?? false
         draft.promptEnhanceEditExperimental = request.prompt_enhance_edit_experimental ?? false
         draft.promptEnhancerPath = request.prompt_enhancer_path ?? ""
+        draft.qwen21DiTCache = request.qwen21_dit_cache ?? "off"
         draft.assets = (request.inputs ?? []).map { input in
             let url = URL(fileURLWithPath: input.path)
             let source = CGImageSourceCreateWithURL(url as CFURL, nil)

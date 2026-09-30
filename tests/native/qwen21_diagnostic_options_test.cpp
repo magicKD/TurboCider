@@ -1,11 +1,117 @@
 #include "../../native/models/qwen21/diagnostic_options.hpp"
+#include <array>
 #include <cassert>
+#include <optional>
 
 using tc::qwen21::W8A8CallBudget;
 using tc::qwen21::expected_w8a8_calls;
 
+namespace {
+constexpr std::array cache_environment{
+    "TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC",
+    "TURBOCIDER_QWEN21_DBCACHE_THRESHOLD",
+    "TURBOCIDER_QWEN21_DBCACHE_MAX_CONSECUTIVE",
+    "TURBOCIDER_QWEN21_DBCACHE_FRONT_BLOCKS",
+    "TURBOCIDER_QWEN21_DBCACHE_WARMUP_STEPS",
+};
+struct CacheEnvironment {
+    std::array<std::optional<std::string>, cache_environment.size()> saved;
+    CacheEnvironment() {
+        for (size_t i = 0; i < saved.size(); ++i) {
+            if (const auto *value = std::getenv(cache_environment[i])) saved[i] = value;
+            assert(unsetenv(cache_environment[i]) == 0);
+        }
+    }
+    ~CacheEnvironment() {
+        for (size_t i = 0; i < saved.size(); ++i) {
+            if (saved[i]) setenv(cache_environment[i], saved[i]->c_str(), 1);
+            else unsetenv(cache_environment[i]);
+        }
+    }
+};
+
+void test_cache_options() {
+    using tc::qwen21::db_cache_options;
+    CacheEnvironment environment;
+    tc::Request request;
+    const auto disabled = db_cache_options(request);
+    assert(!disabled.enabled && !disabled.diagnostic && disabled.mode == "off");
+    assert(disabled.threshold == .08f && disabled.max_consecutive == 2);
+    assert(disabled.front_blocks == 8 && disabled.warmup_steps == 8);
+    for (const auto &mode : {"conservative", "balanced", "fast"}) {
+        request.qwen21_dit_cache = mode;
+        const auto options = db_cache_options(request);
+        assert(options.enabled && !options.diagnostic && options.mode == mode);
+        assert(options.threshold == (options.mode == "conservative" ? .15f : .25f));
+        assert(options.max_consecutive == (options.mode == "conservative" ? 1 :
+                                          options.mode == "balanced" ? 2 : 4));
+        assert(options.front_blocks == 8 && options.warmup_steps == 8);
+    }
+    auto rejected = [&] {
+        try { (void)db_cache_options(request); }
+        catch (const std::invalid_argument &) { return true; }
+        return false;
+    };
+    request.qwen21_dit_cache = "balanced";
+    assert(setenv(cache_environment[0], "0", 1) == 0);
+    assert(db_cache_options(request).enabled);
+    assert(setenv(cache_environment[0], "1", 1) == 0);
+    assert(rejected());
+    assert(unsetenv(cache_environment[0]) == 0);
+    for (const auto *name : {cache_environment[1], cache_environment[2],
+                             cache_environment[3], cache_environment[4]}) {
+        assert(setenv(name, "0", 1) == 0);
+        assert(rejected()); // Even a zero numeric override is not a preset input.
+        assert(setenv(name, "8", 1) == 0);
+        assert(rejected()); // Matching preset geometry is still an override.
+        assert(unsetenv(name) == 0);
+    }
+    request.qwen21_dit_cache = "unknown";
+    assert(rejected());
+    request.qwen21_dit_cache = "off";
+    assert(setenv(cache_environment[0], "1", 1) == 0);
+    assert(setenv(cache_environment[1], "0.25", 1) == 0);
+    assert(setenv(cache_environment[2], "4", 1) == 0);
+    const auto diagnostic = db_cache_options(request);
+    assert(diagnostic.enabled && diagnostic.diagnostic && diagnostic.mode == "off");
+    assert(diagnostic.threshold == .25f && diagnostic.max_consecutive == 4);
+    assert(diagnostic.front_blocks == 8 && diagnostic.warmup_steps == 8);
+    assert(setenv(cache_environment[1], "0.24", 1) == 0);
+    assert(setenv(cache_environment[2], "3", 1) == 0);
+    assert(setenv(cache_environment[3], "1", 1) == 0);
+    assert(setenv(cache_environment[4], "4", 1) == 0);
+    const auto sglang_candidate = db_cache_options(request);
+    assert(sglang_candidate.enabled && sglang_candidate.diagnostic);
+    assert(sglang_candidate.threshold == .24f && sglang_candidate.max_consecutive == 3);
+    assert(sglang_candidate.front_blocks == 1 && sglang_candidate.warmup_steps == 4);
+    request.qwen21_dit_cache_explicit = true;
+    assert(!db_cache_options(request).enabled); // Explicit Off overrides every diagnostic knob.
+    assert(setenv(cache_environment[3], "invalid", 1) == 0);
+    assert(!db_cache_options(request).enabled); // A stale malformed env cannot defeat Off.
+    request.qwen21_dit_cache_explicit = false;
+    assert(rejected());
+    assert(setenv(cache_environment[3], "1", 1) == 0);
+    assert(setenv(cache_environment[4], "5", 1) == 0);
+    assert(rejected());
+    assert(setenv(cache_environment[4], "4", 1) == 0);
+    assert(setenv(cache_environment[0], "0", 1) == 0);
+    assert(rejected()); // Retain the established max-requires-opt-in contract.
+    assert(unsetenv(cache_environment[2]) == 0);
+    assert(rejected()); // Front/warmup also require the diagnostic flag.
+    assert(unsetenv(cache_environment[3]) == 0);
+    assert(unsetenv(cache_environment[4]) == 0);
+    assert(!db_cache_options(request).enabled);
+    assert(setenv(cache_environment[1], "nan", 1) == 0);
+    assert(rejected());
+    assert(unsetenv(cache_environment[1]) == 0);
+    assert(setenv(cache_environment[0], "true", 1) == 0);
+    assert(rejected());
+}
+} // namespace
+
 int main() {
     using namespace tc::qwen21;
+    test_cache_options();
     assert(!option_enabled(nullptr));
     assert(!option_enabled("0"));
     assert(!option_enabled(""));
@@ -30,6 +136,16 @@ int main() {
     assert(db_cache_max_consecutive("0") < 0);
     assert(db_cache_max_consecutive("9") < 0);
     assert(db_cache_max_consecutive("4oops") < 0);
+    assert(db_cache_front_blocks(nullptr) == 8);
+    assert(db_cache_front_blocks("1") == 1);
+    assert(db_cache_front_blocks("8") == 8);
+    assert(db_cache_front_blocks("2") < 0);
+    assert(db_cache_front_blocks("01") < 0);
+    assert(db_cache_warmup_steps(nullptr) == 8);
+    assert(db_cache_warmup_steps("4") == 4);
+    assert(db_cache_warmup_steps("8") == 8);
+    assert(db_cache_warmup_steps("0") < 0);
+    assert(db_cache_warmup_steps("4oops") < 0);
 
     W8A8CallBudget budget{
         .steps = 20, .decode_layers = 32, .db_skipped_layers = 24,

@@ -1049,7 +1049,10 @@ struct StudioBehaviorTests {
             try studio.draft.validate()
             throw NativeFailure(message: "Multiple Turbo adapters unexpectedly validated")
         } catch {
-            try check(error.localizedDescription.contains("单个"), "Multiple adapters lost their actionable validation reason")
+            let reason = error.localizedDescription
+            let explainsIsolation = ["混用", "单个", "一个", "单独"].contains { reason.contains($0) }
+            try check(reason.contains("适配器") && explainsIsolation,
+                      "Multiple adapters lost their actionable validation reason: \(reason)")
         }
         studio.removeLoRA(secondID)
         try check(studio.draft.loras.count == 1 && studio.draft.loras[0].id == id && studio.draft.steps == 6,

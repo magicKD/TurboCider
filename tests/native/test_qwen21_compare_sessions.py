@@ -71,7 +71,7 @@ class PrefixHitSelectionTest(unittest.TestCase):
 
 
 class DBCacheAccountingTest(unittest.TestCase):
-    def record(self, *, calls, cached=None, rectangle=False):
+    def record(self, *, calls, cached=None, rectangle=False, front=8, warmup=8):
         item = dict(steps=40, hybrid=dict(runtime_calls_session_total=calls,
                                         runtime_failures_session_total=0,
                                         checkpoint_sha256_verified=True),
@@ -79,9 +79,10 @@ class DBCacheAccountingTest(unittest.TestCase):
                     plan=dict(algorithm_approximations=[
                         "qwen21_rectangular_decode_w8a8_tiled_diagnostic"] if rectangle else []))
         if cached is not None:
-            item["qwen21_dbcache"] = dict(front_blocks=8, back_blocks=0,
-                threshold=0.25, warmup_steps=8, max_consecutive=2, cached_steps=cached,
-                saved_middle_blocks=cached * 24)
+            item["qwen21_dbcache"] = dict(front_blocks=front, back_blocks=0,
+                threshold=0.24 if front == 1 else 0.25, warmup_steps=warmup,
+                max_consecutive=3 if front == 1 else 2, cached_steps=cached,
+                saved_middle_blocks=cached * (32 - front))
         return item
 
     def test_request_delta_matches_saved_blocks(self):
@@ -112,6 +113,27 @@ class DBCacheAccountingTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "changed rectangular hybrid route"):
             MODULE.validate_db_cache_pair(baseline, self.record(calls=1488, cached=21),
                                           self.record(calls=0, rectangle=True), self.record(calls=0))
+
+    def test_f1_w4_saves_31_blocks_per_cached_step(self):
+        # Different pre-request totals ensure this is per-request accounting,
+        # including the rectangular route's two predictions per skipped layer.
+        for rectangle, full_calls, tiles in ((False, 1280, 1), (True, 2496, 2)):
+            with self.subTest(rectangle=rectangle):
+                baseline = self.record(calls=1000 + full_calls, rectangle=rectangle)
+                candidate = self.record(calls=2000 + full_calls - 27 * 31 * tiles,
+                                        cached=27, rectangle=rectangle, front=1, warmup=4)
+                before_baseline = self.record(calls=1000, rectangle=rectangle)
+                before_candidate = self.record(calls=2000, rectangle=rectangle)
+                self.assertEqual(candidate["qwen21_dbcache"]["saved_middle_blocks"], 837)
+                self.assertIsNone(MODULE.validate_db_cache_pair(
+                    baseline, candidate, before_baseline, before_candidate))
+                candidate["hybrid"]["runtime_calls_session_total"] += tiles
+                with self.assertRaisesRegex(AssertionError, "per-request Core ML"):
+                    MODULE.validate_db_cache_pair(
+                        baseline, candidate, before_baseline, before_candidate)
+                candidate["qwen21_dbcache"]["saved_middle_blocks"] = 27 * 24
+                with self.assertRaisesRegex(AssertionError, "saved-block count"):
+                    MODULE.validate_db_cache_pair(baseline, candidate)
 
     def test_target_only_prefill_call_budget_depends_on_route(self):
         full_ref = dict(text_tokens=130, reference_tokens=12288, width=512, height=512,

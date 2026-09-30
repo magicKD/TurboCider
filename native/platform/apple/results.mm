@@ -248,8 +248,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         }];
     }
     NSMutableArray *algorithm_approximations = [NSMutableArray array];
-    if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
-            std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC")))
+    if (r.model == "qwen-image-2.1" && r.qwen21_dit_cache != "off")
+        [algorithm_approximations addObject:@"qwen21_decode_dit_cache"];
+    if (r.model == "qwen-image-2.1" && qwen21::db_cache_options(r).diagnostic)
         [algorithm_approximations addObject:@"qwen21_decode_dbcache_diagnostic"];
     if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
             std::getenv("TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC")))
@@ -330,10 +331,12 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
         const auto *adapter = qwen21::viggle_v021_adapter(
             std::filesystem::path(r.loras[0].path).filename().string());
-        const auto label = adapter
-            ? "qwen21_viggle_v021_" + std::string(adapter->rank) + "_6step_distillation"
-            : "qwen21_unqualified_adapter_6step_schedule";
-        [algorithm_approximations addObject:@(label.c_str())];
+        if (adapter || r.execution == "gpu_ane") {
+            const auto label = adapter
+                ? "qwen21_viggle_v021_" + std::string(adapter->rank) + "_6step_distillation"
+                : "qwen21_unqualified_adapter_6step_schedule";
+            [algorithm_approximations addObject:@(label.c_str())];
+        }
     }
     if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
         const char *fp16_lora = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
@@ -473,6 +476,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         report[@"qwen21_w8a8"] = @(r.qwen21_w8a8);
         report[@"qwen21_gpu_w8a16"] = @(r.qwen21_gpu_w8a16);
         report[@"qwen21_reference_size"] = @(r.qwen21_reference_size);
+        report[@"qwen21_dit_cache"] = @(r.qwen21_dit_cache.c_str());
         report[@"qwen21_gpu_full_ffn_blocks"] = blocks;
         if (r.qwen21_w8a8)
             report[@"planned_w8a8_ffn_layer_coverage"] = @((32. - blocks.count) / 32.);
@@ -1339,11 +1343,13 @@ NSDictionary *to_dictionary(const RunResult &result) {
     } mutableCopy];
     if (result.db_cache_enabled)
         value[@"qwen21_dbcache"] = @{
-            @"front_blocks": @8, @"back_blocks": @0, @"warmup_steps": @8,
+            @"mode": @(r.qwen21_dit_cache == "off" ? "diagnostic" : r.qwen21_dit_cache.c_str()),
+            @"front_blocks": @(result.db_cache_front_blocks), @"back_blocks": @0,
+            @"warmup_steps": @(result.db_cache_warmup_steps),
             @"threshold": @(result.db_cache_threshold),
             @"max_consecutive": @(result.db_cache_max_consecutive),
             @"cached_steps": @(result.db_cache_steps),
-            @"saved_middle_blocks": @(result.db_cache_steps * 24)
+            @"saved_middle_blocks": @(result.db_cache_steps * (32 - result.db_cache_front_blocks))
         };
     if (!r.loras.empty() && result.lora_applied_projections)
         value[@"lora_applied_projections"] = @(result.lora_applied_projections);

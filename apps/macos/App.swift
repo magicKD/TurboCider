@@ -152,8 +152,7 @@ struct StudioView: View {
         return (job.state == "failed" || job.state == "interrupted") && job.error != nil
     }
     private var referenceImportLimit: Int {
-        studio.draft.qwen21TurboLoRA != nil && studio.draft.operation == "image.edit"
-            ? 3 : studio.imageImportLimit
+        studio.imageImportLimit
     }
     private var workflowOperations: [String] {
         if imageUpscaling { return ["image.generate", "image.transform", "image.edit"] }
@@ -170,7 +169,7 @@ struct StudioView: View {
     private var workflowDescription: String {
         switch studio.draft.operation {
         case "image.transform": return "选择一张原图，描述想修改的内容。"
-        case "image.edit": return "添加 1–\(studio.draft.qwen21TurboLoRA != nil ? 3 : (model?.max_images ?? 8)) 张参考图；提示词中的图片编号与下方顺序一致。"
+        case "image.edit": return "添加 1–\(min(studio.imageImportLimit, model?.max_images ?? 8)) 张参考图；提示词中的图片编号与下方顺序一致。"
         case "video.image": return "选择首帧图片，描述镜头与动作。"
         case "video.keyframes": return "按顺序添加首帧与尾帧，描述画面如何变化。"
         case "video.reference": return "添加参考图，描述人物、场景和动作。"
@@ -723,6 +722,7 @@ struct StudioView: View {
                     Button("重置") { studio.draft.steps = studio.draft.qwen21TurboLoRA != nil ? 6 : (model?.default_steps ?? 4) }
                 }
                 Text(studio.draft.qwen21TurboLoRA != nil ? "Turbo 快速模式固定使用专用 6 步采样。"
+                     : studio.draft.modelID == "qwen-image-2.1" && (!studio.draft.activeLoRAs.isEmpty || studio.draft.qwen21DiTCache != "off") ? "普通 LoRA 与 DiT 缓存使用基础采样：20–40 步，默认 40 步。可自行选择 25 步等配置。"
                      : studio.draft.modelID.hasPrefix("z-image-turbo") ? "1–50 步，默认 \(model?.default_steps ?? 8) 步。其他步数的画质与加速收益需自行验证。" : "1–50 步，默认 \(model?.default_steps ?? 4) 步。")
                     .font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.modelID == "qwen-image-2.1", studio.draft.activeLoRAs.isEmpty, studio.draft.steps == 6 {
@@ -802,9 +802,14 @@ struct StudioView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("计算设备").font(.caption)
                 Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
-                Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE && studio.draft.qwen21TurboLoRA == nil }, set: { studio.setANEEnabled($0) }))
-                    .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true || studio.draft.zImageVariant?.id == "nvfp4" || studio.draft.qwen21TurboLoRA != nil).accessibilityIdentifier("enableANE")
-                Text(studio.draft.qwen21TurboLoRA != nil ? "六步 LoRA 使用纯 GPU，基础模型的 ANE 分区不包含适配器。" : (studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。")).font(.caption2).foregroundStyle(.secondary)
+                let qwenLoRA = studio.draft.modelID == "qwen-image-2.1" && !studio.draft.activeLoRAs.isEmpty
+                Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE && !qwenLoRA }, set: { studio.setANEEnabled($0) }))
+                    .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true || studio.draft.zImageVariant?.id == "nvfp4" || qwenLoRA).accessibilityIdentifier("enableANE")
+                Text(qwenLoRA ? "App 中 Qwen LoRA 使用纯 GPU，基础模型的 ANE 分区不包含适配器。" : (studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。")).font(.caption2).foregroundStyle(.secondary)
+                if studio.draft.modelID == "qwen-image-2.1", (studio.draft.acceleration?.policy ?? "gpu") != "gpu" || !studio.draft.profilePath.isEmpty {
+                    Button("改用纯 GPU") { studio.draft.profilePath = ""; studio.setANEEnabled(false) }
+                        .disabled(store.busy || submitting).accessibilityIdentifier("qwenLoRAUseGPU")
+                }
                 if studio.draft.usesANE, studio.draft.qwen21TurboLoRA == nil { Button("管理 ANE 分区与缓存") { page = .models } }
                 if studio.draft.usesANE, studio.draft.qwen21TurboLoRA == nil, let status = store.accelerationStatus { Text(status).font(.caption2).foregroundStyle(.secondary) }
             }
@@ -837,7 +842,9 @@ struct StudioView: View {
                         }
                     }
                 }
-                Text(studio.draft.modelID == "qwen-image-2.1" ? "六步 Viggle 使用单个适配器，强度固定为 1；关闭后保留文件。" : "强度默认 1.0；取消勾选会保留文件和强度。可输入 −8 到 8。").font(.caption2).foregroundStyle(.secondary)
+                Text(studio.draft.qwen21TurboLoRA != nil ? "六步 Viggle 使用单个适配器，强度固定为 1；关闭后保留文件。"
+                     : studio.draft.modelID == "qwen-image-2.1" ? "普通 LoRA 使用纯 GPU、20–40 步、512×512，最多 3 张参考图；单个适配器强度默认 1，可输入 −8 到 8。"
+                     : "强度默认 1.0；取消勾选会保留文件和强度。可输入 −8 到 8。").font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.qwen21TurboLoRA != nil {
                     Button("恢复 Turbo 快速设置") { studio.applyQwen21TurboPreset() }
                         .disabled(store.busy || assetControlsLocked)
@@ -852,7 +859,7 @@ struct StudioView: View {
                 } else {
                     Picker("LoRA 执行策略", selection: $studio.draft.loraStrategy) {
                         Text("自动").tag("auto")
-                        ForEach(model?.lora_strategies ?? [], id: \.self) { strategy in
+                        ForEach(studio.draft.modelID == "qwen-image-2.1" ? ["inference_time"] : (model?.lora_strategies ?? []), id: \.self) { strategy in
                             Text(strategy == "disk_premerge" ? "离线预融合" :
                                  strategy == "in_memory_merge" ? "内存融合" :
                                  strategy == "inference_time" ? "运行时加载" : strategy).tag(strategy)
@@ -864,6 +871,8 @@ struct StudioView: View {
                 }
             }
             if studio.draft.modelID == "qwen-image-2.1" {
+                Divider()
+                qwen21DiTCacheSettings
                 Divider()
                 DisclosureGroup("提示词增强") { promptEnhancementSettings.padding(.top, 8) }
             }
@@ -1010,6 +1019,31 @@ struct StudioView: View {
             Spacer(minLength: 8)
             Text("一次生成一个结果\n图片、提示词与参数均保存在本机。").font(.caption2).foregroundStyle(.secondary)
         }.disabled(assetControlsLocked)
+    }
+    private var qwen21DiTCacheSettings: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("DiT 缓存（实验性）").font(.subheadline.weight(.medium))
+            Picker("缓存档位", selection: $studio.draft.qwen21DiTCache) {
+                ForEach(Qwen21DiTCacheMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+            }.disabled(studio.draft.qwen21DiTCacheUnavailableReason != nil)
+                .accessibilityIdentifier("qwen21DiTCacheMode")
+            if let reason = studio.draft.qwen21DiTCacheUnavailableReason {
+                Text(reason).font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("qwen21DiTCacheUnavailable")
+                if studio.draft.qwen21DiTCache != "off" {
+                    Button("关闭 DiT 缓存") { studio.draft.qwen21DiTCache = "off" }
+                        .font(.caption).accessibilityIdentifier("disableQwen21DiTCache")
+                }
+            }
+            if let mode = Qwen21DiTCacheMode(rawValue: studio.draft.qwen21DiTCache) {
+                Text(mode.detail).font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Button("恢复默认关闭") { studio.draft.qwen21DiTCache = "off" }.font(.caption)
+            }
+            Text("可先试均衡；优先保留细节选保守，快速用于预览。相同参考图与提示词的重复编辑，额外收益可能较小。")
+                .font(.caption2).foregroundStyle(.secondary)
+            Text("近似复用采样步骤的中间层，可能改变细节；默认关闭。与编辑参考图前缀缓存不同，启用时两者互斥。")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
     }
     @ViewBuilder private var runStatus: some View {
         if hasDetailedRunStatus {

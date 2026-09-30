@@ -101,19 +101,23 @@ class Transformer {
     void set_ffn_cache_mode(FFNCacheMode mode) { ffn_cache_mode_ = mode; }
     void clear_step_cache() {
         cached_ffn_.clear(); ffn_cache_mode_ = FFNCacheMode::Off;
-        db_prev_front_residual_.reset(); db_middle_residual_.reset();
-        db_cached_steps_ = db_consecutive_steps_ = 0; db_step_ = -1;
+        clear_db_residuals();
+        db_cached_steps_ = 0; db_step_ = -1;
     }
-    // Request-local decode-only DBCache: front eight blocks always run; the
-    // cached middle aggregate residual is reused only after a threshold test.
+    // Request-local decode-only DBCache. Presets retain F8/W8; a restricted
+    // diagnostic can compare F1/W4 without changing the ordinary route.
     void configure_db_cache(bool enabled, float threshold = 0.08f,
-                            int total_steps = 0, int max_consecutive = 2) {
+                            int total_steps = 0, int max_consecutive = 2,
+                            int front_blocks = 8, int warmup_steps = 8) {
         db_cache_enabled_ = enabled; db_threshold_ = threshold; db_total_steps_ = total_steps;
         db_max_consecutive_ = max_consecutive;
+        db_front_blocks_ = front_blocks; db_warmup_steps_ = warmup_steps;
         clear_step_cache();
     }
     void set_db_cache_step(int step) { db_step_ = step; }
     int db_cached_steps() const { return db_cached_steps_; }
+    int db_cache_front_blocks() const { return db_front_blocks_; }
+    int db_cache_warmup_steps() const { return db_warmup_steps_; }
     static constexpr int db_front_blocks = 8;
     static constexpr int db_back_blocks = 0;
 
@@ -137,8 +141,11 @@ class Transformer {
     bool db_cache_enabled_ = false;
     float db_threshold_ = 0.08f;
     int db_max_consecutive_ = 2;
+    int db_front_blocks_ = 8, db_warmup_steps_ = 8;
     int db_step_ = -1, db_total_steps_ = 0, db_cached_steps_ = 0, db_consecutive_steps_ = 0;
+    int db_last_step_ = -1;
     std::optional<Tensor> db_prev_front_residual_, db_middle_residual_;
+    void clear_db_residuals();
     std::optional<Tensor> cached_text_;
     std::vector<Tensor> cached_references_;
     // Only the unfinished 1024-row FFN tile's prefix input is needed to

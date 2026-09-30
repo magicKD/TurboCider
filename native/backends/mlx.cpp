@@ -945,7 +945,7 @@ void Weights::materialize() {
 }
 size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::string &role,
                             const Event &event, std::atomic<bool> &cancelled,
-                            bool inference_time) try {
+                            bool inference_time, bool strict_targets) try {
     size_t applied = 0;
     for (size_t index = 0; index < adapters.size(); ++index) {
         const auto &adapter = adapters[index];
@@ -961,14 +961,22 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
             else if (remove_suffix(stem, ".lora_B.default.weight") || remove_suffix(stem, ".lora_B.weight") ||
                      remove_suffix(stem, ".lora_up.weight")) pairs[stem].up = value;
             else if (remove_suffix(stem, ".alpha") || remove_suffix(stem, ".lora_alpha")) pairs[stem].alpha = value;
+            else if (strict_targets)
+                throw std::invalid_argument("unsupported LoRA tensor: " + raw);
         }
         size_t adapter_applied = 0;
         for (auto &[stem, pair] : pairs) {
-            if (!pair.down && !pair.up) continue;
+            if (!pair.down && !pair.up) {
+                require(!strict_targets, "orphan LoRA alpha: " + stem);
+                continue;
+            }
             require(pair.down && pair.up, "incomplete LoRA pair: " + stem);
             const auto &down = *pair.down, &up = *pair.up;
             require(down.ndim() == 2 && up.ndim() == 2 && down.shape(0) == up.shape(1),
                     "invalid LoRA rank geometry: " + stem);
+            if (strict_targets)
+                require(down.shape(0) > 0 && down.shape(1) > 0 && up.shape(0) > 0,
+                        "LoRA rank and dimensions must be positive: " + stem);
             float scale = adapter.strength;
             if (pair.alpha) {
                 require(pair.alpha->size() == 1, "LoRA alpha must be scalar: " + stem);
@@ -980,6 +988,7 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
             }
             require(std::isfinite(scale), "LoRA effective scale must be finite: " + stem);
             const auto targets = lora_targets(stem);
+            const auto applied_before_pair = adapter_applied;
             auto resolve_target_key = [&](const std::string &target) {
                 auto key = target.ends_with(".weight") ? target : target + ".weight";
                 // FLUX owns a real `to_out.0.weight`; Z-Image's Comfy layout
@@ -995,6 +1004,7 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
             for (const auto &target : targets)
                 ++target_key_counts[resolve_target_key(target)];
             int offset = 0;
+            int64_t consumed_output_rows = 0;
             for (const auto &target : targets) {
                 auto key = resolve_target_key(target);
                 auto found = values_.find(key);
@@ -1020,6 +1030,7 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
                                         ? up
                                         : slice_axis(up, 0, offset, offset + rows);
                     offset += rows;
+                    consumed_output_rows += rows;
                     if (inference_time) {
                         // If multiple logical targets resolve to one fused
                         // base projection, preserve the adapter's row slice.
@@ -1058,6 +1069,7 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
                                 "Qwen21 fused gate/up LoRA geometry does not match " + target);
                         int start = qwen_mlp[2] == "gate_layer" ? 0 : up.shape(0);
                         runtime_loras_[prefix].push_back({down, up, scale, start, start + up.shape(0)});
+                        consumed_output_rows += up.shape(0);
                         ++adapter_applied;
                         continue;
                     }
@@ -1087,6 +1099,7 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
                     int rows = base.shape(0) / 3;
                     require(up.shape(0) == rows,
                             "Z-Image LoRA output does not match " + target);
+                    consumed_output_rows += rows;
                     char which = std::string(projection[2])[0];
                     int begin = which == 'q' ? 0 : (which == 'k' ? rows : 2 * rows);
                     if (inference_time) {
@@ -1110,6 +1123,12 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
                     mx::eval(fused->second);
                     ++adapter_applied;
                 }
+            }
+            if (strict_targets) {
+                require(adapter_applied - applied_before_pair == targets.size(),
+                        "LoRA target did not match all " + role + " weights: " + stem);
+                require(consumed_output_rows == up.shape(0),
+                        "LoRA output rows do not exactly match target weights: " + stem);
             }
         }
         require(adapter_applied > 0, "LoRA did not match any " + role + " weights: " + adapter.path);

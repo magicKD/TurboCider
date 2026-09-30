@@ -122,7 +122,9 @@ static void parse_ltx_options(NSDictionary *d, Request &r) {
         d, @"ltx_sparse_keep_blocks", r.ltx_sparse_keep_blocks);
 }
 static void parse_qwen21_options(NSDictionary *d, Request &r) {
+    if (d[@"qwen21_dit_cache"]) r.qwen21_dit_cache_explicit = true;
     r.hybrid_mlp_mode = string_value(d, @"hybrid_mlp_mode", r.hybrid_mlp_mode);
+    r.qwen21_dit_cache = string_value(d, @"qwen21_dit_cache", r.qwen21_dit_cache);
     r.qwen21_w8a8 = boolean(d, @"qwen21_w8a8", r.qwen21_w8a8);
     r.qwen21_gpu_w8a16 = boolean(d, @"qwen21_gpu_w8a16", r.qwen21_gpu_w8a16);
     r.qwen21_reference_size = number(d, @"qwen21_reference_size", r.qwen21_reference_size);
@@ -193,7 +195,7 @@ Request request_from_json(NSDictionary *d) {
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
-            @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_reference_size",
+            @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_reference_size", @"qwen21_dit_cache",
             @"qwen21_gpu_full_ffn_blocks",
             @"loras",        @"audio",          @"noise_path",
             @"vsa",          @"vsa_sparsity",   @"vsa_tile_size",
@@ -299,7 +301,7 @@ Request request_from_json(NSDictionary *d) {
             @[ @"policy", @"profile", @"ane_manifest", @"encoder_ane_manifest", @"allow_approximation",
                @"residency", @"memory_budget_bytes", @"warmup_iterations",
                @"hybrid_mlp_mode",
-               @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks",
+               @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks", @"qwen21_dit_cache",
                @"quantized_cache", @"memory_constrained", @"streaming" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
