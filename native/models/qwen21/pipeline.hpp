@@ -36,6 +36,10 @@ class Session final : public ModelSession {
     std::unique_ptr<Transformer> cached_prefix_transformer_;
     std::string cached_prefix_runtime_;
     float cached_prefix_sigma_ = -1.f;
+    // Compact, evaluated K/V only: unlike a Transformer this does not capture
+    // DiT weights and may outlive their release in component-staged sessions.
+    std::optional<Transformer::PrefixSnapshot> cached_prefix_snapshot_;
+    std::string cached_snapshot_runtime_;
     std::unique_ptr<HybridSession> hybrid_;
     std::unique_ptr<HybridMLP> hybrid_mlp_;
     std::unique_ptr<ane::HybridFfn> runtime_ffn_;
@@ -49,6 +53,7 @@ class Session final : public ModelSession {
     // Destroy the Transformer before invalidating its weights or callback
     // owners, and discard the identity used to admit cross-request KV reuse.
     void clear_prefix_cache();
+    void clear_prefix_snapshot();
     RunResult run(const Request &, const Event &, std::atomic<bool> &, bool warmup, bool prepare_only);
 };
 } // namespace tc::qwen21

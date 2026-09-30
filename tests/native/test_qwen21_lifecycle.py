@@ -48,6 +48,8 @@ class TransformerLifecycleTests(unittest.TestCase):
             self.assertEqual(measured["cycles"], 24)
             self.assertEqual(measured["variants"], 8)
             self.assertTrue(measured["deterministic_prefill_decode"])
+            self.assertEqual(measured["snapshot_cycles"], 24)
+            self.assertTrue(measured["snapshot_cross_transformer_parity"])
             self.assertGreater(measured["weight_bytes_per_base_cycle"], 65536)
             self.assertLessEqual(measured["maximum_active_bytes"],
                                  measured["baseline_active_bytes"] +

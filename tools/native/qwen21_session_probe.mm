@@ -35,6 +35,12 @@ int main(int argc, char **argv) {
             const bool test_edit_cache = argc == 8 && std::string(argv[7]) == "--test-edit-cache";
             const char *prefix_flag = std::getenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV");
             bool prefix_probe = prefix_flag && std::string_view(prefix_flag) == "1";
+            const char *snapshot_flag = std::getenv("TURBOCIDER_QWEN21_PREFIX_SNAPSHOT");
+            tc::require(tc::qwen21::binary_option_or_unset(snapshot_flag),
+                        "snapshot Session probe accepts only 0 or 1");
+            const bool had_snapshot_setting = snapshot_flag != nullptr;
+            const std::string original_snapshot_setting = snapshot_flag ? snapshot_flag : "";
+            const bool snapshot_requested = !snapshot_flag || tc::qwen21::option_enabled(snapshot_flag);
             tc::require(argc != 8 || dump_tensors || test_edit_cache, "unknown session probe option");
             const std::string prompt_arg = argc >= 7 ? argv[6] : "A ceramic teapot on a wooden table, warm sunlight, detailed photography.";
             if (prompt_arg.starts_with("--request=")) {
@@ -75,6 +81,47 @@ int main(int argc, char **argv) {
                             "GPU request cannot retain W8A8 hybrid options");
             }
             if (db_cache) r.allow_approximation = true; // explicit diagnostic probe opt-in
+            bool snapshot_diagnostics = false;
+            for (const char *name : {
+                    "TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV",
+                    "TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE",
+                    "TURBOCIDER_QWEN21_METAL_QK_ROPE",
+                    "TURBOCIDER_QWEN21_REF_LOCAL_ATTENTION",
+                    "TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_TILED_PREFILL_PREFIX_KV_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_TILED_PREFIX_TARGET_ONLY_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_PREFILL_LAST_TARGET_ONLY_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN",
+                    "TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_LAST16_FFN_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN",
+                    "TURBOCIDER_QWEN21_HYBRID_REUSE_PENULTIMATE_EVEN_FFN_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_VIGGLE_LORA_FP16",
+                    "TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_PROFILE_GPU_BLOCKS",
+                    "TURBOCIDER_QWEN21_PROFILE_GPU_OPS",
+                    "TURBOCIDER_QWEN21_PROFILE_PREFILL_SEGMENTS"}) {
+                const char *value = std::getenv(name);
+                if (value && std::string_view(value) != "0") snapshot_diagnostics = true;
+            }
+            const bool snapshot_probe = snapshot_requested && component_staged &&
+                !snapshot_diagnostics && r.execution == "gpu" && r.hybrid_mlp_mode == "auto" &&
+                r.width == 512 && r.height == 512 && r.operation == "image.edit" &&
+                !r.inputs.empty() && r.inputs.size() <= 2 && r.qwen21_reference_size == 1024 &&
+                r.steps >= 2 && !r.prompt_enhance && !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
+                !dump_tensors && r.dump.empty();
+            if (snapshot_probe) {
+                tc::require(repeats >= 2, "snapshot lifecycle probe needs at least two repeats to verify miss then hit");
+            } else if (snapshot_requested) {
+                // Preserve the oracle and lifecycle assertions of existing
+                // resident/tiled/diagnostic probes when the default changes.
+                std::cerr << "snapshot lifecycle skipped: only ordinary staged GPU 512px edits with 1...2 references, no PE/dumps or other diagnostics are qualified" << std::endl;
+                tc::require(setenv("TURBOCIDER_QWEN21_PREFIX_SNAPSHOT", "0", 1) == 0,
+                            "cannot isolate existing lifecycle probe from the default snapshot route");
+            }
             tc::make_plan(r);
             tc::qwen21::Session session(std::filesystem::absolute(argv[1]));
             std::atomic<bool> cancelled{false};
@@ -86,6 +133,14 @@ int main(int argc, char **argv) {
                 std::ofstream file(directory / name);
                 file << tc::json(value) << '\n';
                 tc::require(bool(file), "failed writing benchmark report");
+            };
+            auto check_snapshot = [&](const tc::RunResult &result, bool hit) {
+                if (!snapshot_probe) return;
+                const auto expected = hit ? "edit prefix KV snapshot hit" : "edit prefix KV snapshot miss";
+                const auto unexpected = hit ? "edit prefix KV snapshot miss" : "edit prefix KV snapshot hit";
+                tc::require(result.selection.find(expected) != std::string::npos &&
+                            result.selection.find(unexpected) == std::string::npos,
+                            "edit prefix snapshot did not follow its expected miss/hit lifecycle");
             };
             r.output = (directory / "must-not-export.png").string();
             auto prepared = session.prepare(r, false, event, cancelled);
@@ -122,7 +177,21 @@ int main(int argc, char **argv) {
                     tc::require(setenv("TURBOCIDER_QWEN21_TILED_PREFIX_TARGET_ONLY_DIAGNOSTIC", "0", 1) == 0,
                                 "cannot isolate lossy tiled prefix warmup");
             }
+            // Warm the kernels without filling the snapshot bank. Run zero
+            // must remain the uncached oracle, including full LoRA warmups.
+            if (snapshot_probe)
+                tc::require(setenv("TURBOCIDER_QWEN21_PREFIX_SNAPSHOT", "0", 1) == 0,
+                            "cannot isolate snapshot warmup");
             auto warmed = session.prepare(warm, true, event, cancelled);
+            if (snapshot_probe) {
+                tc::require(warmed.selection.find("edit prefix KV snapshot") == std::string::npos,
+                            "disabled warmup populated the edit prefix snapshot");
+                const int restore_status = had_snapshot_setting
+                    ? setenv("TURBOCIDER_QWEN21_PREFIX_SNAPSHOT", original_snapshot_setting.c_str(), 1)
+                    : unsetenv("TURBOCIDER_QWEN21_PREFIX_SNAPSHOT");
+                tc::require(restore_status == 0,
+                            "cannot restore snapshot experiment after warmup");
+            }
             if (tiled_prefix_probe) {
                 tc::require(setenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV", "1", 1) == 0 &&
                             setenv("TURBOCIDER_QWEN21_TILED_PREFILL_PREFIX_KV_DIAGNOSTIC", "1", 1) == 0,
@@ -146,6 +215,10 @@ int main(int argc, char **argv) {
                 // than relying only on request metadata.
                 r.dump = dump_tensors ? (directory / (name + "-dump")).string() : "";
                 auto result = session.generate(r, event, cancelled);
+                check_snapshot(result, iteration > 0);
+                // Snapshot hit/miss output need not be byte-identical: full
+                // checkpoints can have small rounding differences. Lifecycle
+                // receipts do not establish visual quality.
                 if (prefix_lora_guard)
                     tc::require(result.selection.find("resident prefix KV hit") == std::string::npos &&
                                     result.selection.find("resident prefix KV miss") == std::string::npos,
@@ -253,11 +326,13 @@ int main(int argc, char **argv) {
                     std::swap(swapped.inputs[0], swapped.inputs[1]);
                     swapped.output = (directory / "swapped-references.png").string();
                     auto reordered = session.generate(swapped, event, cancelled);
+                    check_snapshot(reordered, false);
                     tc::require(!reordered.prompt_cache_hit,
                                 "reference order reused stale conditioning");
                     save("swapped-references.json", reordered);
                     r.output = (directory / "restored-reference-order.png").string();
                     auto restored_order = session.generate(r, event, cancelled);
+                    check_snapshot(restored_order, false);
                     tc::require(!restored_order.prompt_cache_hit &&
                                     tc::sha256_file(r.output) == tc::sha256_file(directory / "run-0.png"),
                                 "restored reference order changed the same-seed output");
@@ -269,6 +344,7 @@ int main(int argc, char **argv) {
                 std::filesystem::last_write_time(mutable_reference, previous_mtime);
                 r.output = (directory / "changed-reference.png").string();
                 auto changed = session.generate(r, event, cancelled);
+                check_snapshot(changed, false);
                 tc::require(!changed.prompt_cache_hit && std::filesystem::is_regular_file(r.output),
                             "overwritten Qwen21 reference reused stale conditioning");
                 if (prefix_probe)
@@ -277,6 +353,7 @@ int main(int argc, char **argv) {
                 save("changed-reference.json", changed);
                 r.output = (directory / "changed-reference-repeat.png").string();
                 auto repeated = session.generate(r, event, cancelled);
+                check_snapshot(repeated, true);
                 tc::require(repeated.prompt_cache_hit && std::filesystem::is_regular_file(r.output),
                             "unchanged Qwen21 reference failed to repopulate conditioning cache");
                 if (prefix_probe)
@@ -301,7 +378,7 @@ int main(int argc, char **argv) {
                 std::cout << "{\"cancelled_staged_active_bytes\":" << idle_bytes << "}" << std::endl;
             }
             cancelled = false;
-            if (component_staged || (prefix_probe && r.loras.empty() && r.steps >= 2)) {
+            if (component_staged || snapshot_probe || (prefix_probe && r.loras.empty() && r.steps >= 2)) {
                 r.output = (directory / "after-cancellation.png").string();
                 bool reloaded_transformer = false, reloaded_vae = false;
                 auto retried = session.generate(r, [&](const std::string &phase, int step, int total) {
@@ -309,11 +386,12 @@ int main(int argc, char **argv) {
                     if (phase == "load_qwen21_vae") reloaded_vae = true;
                     event(phase, step, total);
                 }, cancelled);
+                check_snapshot(retried, false);
                 const auto retry_oracle = test_edit_cache ? "changed-reference.png" : "run-0.png";
                 tc::require(retried.prompt_cache_hit &&
                                 (component_staged
                                     ? retried.selection.find("resident prefix KV") == std::string::npos
-                                    : retried.selection.find("resident prefix KV miss") != std::string::npos) &&
+                                    : snapshot_probe || retried.selection.find("resident prefix KV miss") != std::string::npos) &&
                                 tc::sha256_file(r.output) == tc::sha256_file(directory / retry_oracle),
                             "cancellation retry lost complete conditioning or changed the output");
                 if (component_staged)
@@ -356,13 +434,16 @@ int main(int argc, char **argv) {
                 auto restored = session.prepare(warm, false, event, cancelled);
                 tc::require(restored.lora_applied_projections == 227,
                             "resident Viggle switch did not restore all adapter projections");
-                if (prefix_probe) {
+                if (prefix_probe || snapshot_probe) {
                     r.output = (directory / "after-lora-rebind.png").string();
                     r.dump.clear();
                     auto rebound = session.generate(r, event, cancelled);
-                    tc::require(rebound.selection.find("resident prefix KV miss") != std::string::npos &&
-                                    tc::sha256_file(r.output) == tc::sha256_file(directory / "run-0.png"),
-                                "resident LoRA rebind reused stale prefix KV or changed the output");
+                    check_snapshot(rebound, false);
+                    const auto rebind_oracle = test_edit_cache ? "changed-reference.png" : "run-0.png";
+                    tc::require(rebound.lora_applied_projections == 227 &&
+                                    (snapshot_probe || rebound.selection.find("resident prefix KV miss") != std::string::npos) &&
+                                    tc::sha256_file(r.output) == tc::sha256_file(directory / rebind_oracle),
+                                "LoRA rebind reused stale prefix KV or changed the uncached output");
                     save("after-lora-rebind.json", rebound);
                 }
             }

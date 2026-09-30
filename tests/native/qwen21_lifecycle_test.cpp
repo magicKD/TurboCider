@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <unistd.h>
 
 namespace {
@@ -112,17 +113,20 @@ struct Sample {
     size_t weight_bytes;
 };
 
-Sample run_cycle(int variant, const std::filesystem::path &adapter) {
-    Weights weights;
+void bind_variant(Weights &weights, int variant, const std::filesystem::path &adapter) {
     bind_new_weights(weights);
-    const bool lora = variant % 2;
-    if (lora) {
+    if (variant % 2) {
         std::atomic<bool> cancelled{false};
         const auto bound = weights.apply_loras(
             {{adapter.string(), 1.f, "transformer"}}, "transformer",
             [](const std::string &, int, int) {}, cancelled, true);
         require(bound == 3 * layers, "tiny runtime LoRA failed to bind");
     }
+}
+
+Sample run_cycle(int variant, const std::filesystem::path &adapter) {
+    Weights weights;
+    bind_variant(weights, variant, adapter);
     // This is the production Transformer: full compiled blocks, ordinary
     // FP32 paired RoPE, BF16 base projections and the fused gate/up FFN.
     qwen21::Transformer transformer(weights, config());
@@ -159,6 +163,98 @@ size_t idle_active() {
     require(mx::get_cache_memory() == 0, "allocator idle cache was not cleared");
     return mx::get_active_memory();
 }
+
+void run_snapshot_cycle(int variant, const std::filesystem::path &adapter, size_t baseline) {
+    auto latents = mx::astype(mx::random::normal({1, 4, channels}, mx::float32,
+                             mx::random::key(3900)), mx::bfloat16);
+    auto text = mx::astype(mx::random::normal({1, 4, context}, mx::float32,
+                          mx::random::key(3901)), mx::bfloat16);
+    std::vector<qwen21::ReferenceLatents> references;
+    for (int i = 0; i < variant / 2; ++i)
+        references.push_back({mx::astype(mx::random::normal({1, 4, channels},
+            mx::float32, mx::random::key(4000 + i)), mx::bfloat16), {2, 2, i + 1}});
+    mx::eval(latents, text);
+    std::optional<qwen21::Transformer::PrefixSnapshot> snapshot;
+    std::vector<float> first, second;
+    {
+        Weights weights;
+        bind_variant(weights, variant, adapter);
+        qwen21::Transformer source(weights, config());
+        require(!source.export_prefix_snapshot(std::numeric_limits<uint64_t>::max()),
+                "empty Transformer exported a prefix");
+        first = host_values(source.forward(latents, text, 1.f, 2, 2, true, nullptr, references));
+        snapshot = source.export_prefix_snapshot(std::numeric_limits<uint64_t>::max());
+        require(snapshot.has_value(), "completed tiny prefill did not export a snapshot");
+        require(!source.export_prefix_snapshot(snapshot->bytes - 1),
+                "snapshot exceeded its byte budget");
+        for (const auto *bank : {&snapshot->keys, &snapshot->values})
+            for (const auto &value : *bank)
+                require(value.is_available() && !value.has_primitive() &&
+                            value.inputs().empty() && value.siblings().empty() &&
+                            value.flags().row_contiguous && value.data_size() == value.size(),
+                        "snapshot contains lazy graphs or noncompact K/V buffers");
+        second = host_values(source.forward(latents, text, .5f, 2, 2, true, nullptr, references));
+    }
+    // Source Transformer and materialized weights are gone; a snapshot may
+    // retain only the compact K/V and the small immutable condition owners.
+    size_t retained_bytes = snapshot->bytes + text.nbytes() + latents.nbytes();
+    for (const auto &reference : references) retained_bytes += reference.latents.nbytes();
+    require(idle_active() <= baseline + retained_bytes + idle_tolerance,
+            "prefix snapshot retained source weights or full target backing");
+    {
+        Weights weights;
+        bind_variant(weights, variant, adapter);
+        qwen21::Transformer restored(weights, config());
+        auto rejected = [&](const auto &candidate, const Tensor &condition,
+                            int height, int width, const auto &refs) {
+            require(!restored.import_prefix_snapshot(candidate, condition, height, width, refs),
+                    "invalid prefix snapshot was accepted");
+            require(restored.cached_layers() == 0,
+                    "failed snapshot import changed the receiver");
+        };
+        rejected(*snapshot, mx::copy(text), 2, 2, references);
+        rejected(*snapshot, text, 1, 4, references);
+        auto bad = *snapshot;
+        bad.bytes += 1;
+        rejected(bad, text, 2, 2, references);
+        bad = *snapshot; bad.config.epsilon *= 2.f;
+        rejected(bad, text, 2, 2, references);
+        bad = *snapshot; bad.keys.pop_back();
+        rejected(bad, text, 2, 2, references);
+        bad = *snapshot; bad.keys[0] = mx::copy(snapshot->keys[0]);
+        rejected(bad, text, 2, 2, references);
+        bad = *snapshot;
+        bad.keys[0] = mx::astype(snapshot->keys[0], mx::float32);
+        rejected(bad, text, 2, 2, references);
+        if (!references.empty()) {
+            auto changed = references;
+            changed[0].latents = mx::copy(changed[0].latents);
+            rejected(*snapshot, text, 2, 2, changed);
+            changed = references; changed[0].geometry.text_slot += 1;
+            rejected(*snapshot, text, 2, 2, changed);
+        }
+        if (references.size() >= 2) {
+            auto reordered = references;
+            std::reverse(reordered.begin(), reordered.end());
+            rejected(*snapshot, text, 2, 2, reordered);
+        }
+        require(restored.import_prefix_snapshot(*snapshot, text, 2, 2, references),
+                "new Transformer rejected matching immutable conditions");
+        require(restored.cached_layers() == size_t(layers), "snapshot import lost layers");
+        require(host_values(restored.forward(latents, text, 1.f, 2, 2, true, nullptr, references)) == first,
+                "snapshot first-step target-only output differs from uncached prefill");
+        require(host_values(restored.forward(latents, text, .5f, 2, 2, true, nullptr, references)) == second,
+                "snapshot decode differs after source Transformer destruction");
+        auto changed_seed = mx::astype(mx::random::normal({1, 4, channels}, mx::float32,
+                                      mx::random::key(4900)), mx::bfloat16);
+        qwen21::Transformer oracle(weights, config());
+        auto expected = host_values(oracle.forward(changed_seed, text, 1.f, 2, 2,
+                                                  true, nullptr, references));
+        auto actual = host_values(restored.forward(changed_seed, text, 1.f, 2, 2,
+                                                  true, nullptr, references));
+        require(actual == expected, "prefix snapshot reused target noise from an earlier seed");
+    }
+}
 } // namespace
 
 int main() {
@@ -184,6 +280,7 @@ int main() {
             require(sample.prefill == expected[variant].prefill &&
                         sample.decode == expected[variant].decode,
                     "fresh compiled Transformer changed deterministic output");
+            run_snapshot_cycle(variant, adapter, baseline);
             const auto active = idle_active();
             retained.push_back(active);
             largest = std::max(largest, active);
@@ -202,7 +299,9 @@ int main() {
                   << ",\"final_active_bytes\":" << retained.back()
                   << ",\"weight_bytes_per_base_cycle\":" << first_weight_bytes
                   << ",\"idle_tolerance_bytes\":" << idle_tolerance
-                  << ",\"deterministic_prefill_decode\":true}\n";
+                  << ",\"deterministic_prefill_decode\":true"
+                  << ",\"snapshot_cycles\":" << repetitions
+                  << ",\"snapshot_cross_transformer_parity\":true}\n";
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         return 1;

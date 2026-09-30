@@ -18,18 +18,35 @@ struct TransformerConfig {
     std::array<int, 3> rope_axes{16, 56, 56};
     float epsilon = 1e-6f;
     int hidden() const { return heads * head_dim; }
+    bool operator==(const TransformerConfig &) const = default;
 };
 
 // Normally one request owns a Transformer. The resident Session can explicitly
 // retain one instance for a matched-conditioning prefix-KV experiment.
 class Transformer {
   public:
+    // Evaluated values only: no Transformer, compiled function or weight bank.
+    // The Session must additionally bind this entry to its checkpoint/LoRA
+    // identity and route. Tensor identities retain their immutable owners.
+    struct PrefixSnapshot {
+        TransformerConfig config;
+        std::vector<Tensor> keys, values;
+        std::optional<Tensor> text;
+        std::vector<ReferenceLatents> references;
+        int text_length = 0, height = 0, width = 0, prefix_length = 0;
+        mx::Dtype dtype = mx::bfloat16;
+        uint64_t bytes = 0; // Compact K/V buffers; conditioning is shared.
+    };
     Transformer(const Weights &, TransformerConfig = {}, const std::vector<Tensor> *fused_qkv = nullptr);
     Transformer(const Transformer &) = delete;
     Transformer &operator=(const Transformer &) = delete;
     void reset();
     bool prefix_matches(const Tensor &text, int height, int width,
                         const std::vector<ReferenceLatents> &references) const;
+    std::optional<PrefixSnapshot> export_prefix_snapshot(uint64_t max_bytes) const;
+    bool import_prefix_snapshot(const PrefixSnapshot &, const Tensor &text,
+                                int height, int width,
+                                const std::vector<ReferenceLatents> &references);
     Tensor forward(const Tensor &latents, const Tensor &text, float timestep,
                    int latent_height, int latent_width, bool cache_prefix = true,
                    std::unordered_map<std::string, Tensor> *trace = nullptr,
@@ -149,6 +166,7 @@ class Transformer {
     DecodeMLP prefill_mlp_;
     int prefill_first_block_ = 0, decode_first_block_ = 0;
     Tensor embedding(float timestep, mx::Dtype) const;
+    bool plain_prefix_route() const;
     void geometry(int text_length, int height, int width, const std::vector<ReferenceGeometry> &);
 };
 } // namespace tc::qwen21

@@ -4,6 +4,7 @@ import CoreFoundation
 /// Snapshot metrics retain their native scope; absence is never zero usage.
 struct RunInsights {
     let promptCacheHit: Bool?
+    let editPrefixCacheHit: Bool?
     let textSeconds: Double?
     let denoiseSeconds: Double?
     let activeBytes: Double?
@@ -33,6 +34,12 @@ struct RunInsights {
         }
         if let hit = raw["prompt_cache_hit"] as? NSNumber, CFGetTypeID(hit) == CFBooleanGetTypeID() { promptCacheHit = hit.boolValue }
         else { promptCacheHit = nil }
+        let selections = (raw["acceleration_selection"] as? String ?? "")
+            .split(separator: ";").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if raw["model"] as? String == "qwen-image-2.1", raw["operation"] as? String == "image.edit" {
+            editPrefixCacheHit = selections.contains("edit prefix KV snapshot hit") ? true
+                : selections.contains("edit prefix KV snapshot miss") ? false : nil
+        } else { editPrefixCacheHit = nil }
         textSeconds = number(times, "text_encode"); denoiseSeconds = number(times, "denoise")
         activeBytes = number(memory, "mlx_active_bytes"); peakBytes = number(memory, "mlx_peak_bytes")
         coreMLCalls = count(hybrid, "calls_session_total"); coreMLBlocks = count(hybrid, "block_count"); coreMLRows = count(hybrid, "bucket")

@@ -523,12 +523,56 @@ struct StudioBehaviorTests {
         let restored = StudioState(directory: root)
         try check(restored.draft.assets.map(\.id) == studio.draft.assets.map(\.id), "Draft identity/order did not persist")
         var telemetry = StepTelemetry()
-        func event(_ sequence: Int, _ completed: Int, _ seconds: Double, _ phase: String = "denoise") -> NativeEvent { NativeEvent(sequence: sequence, phase: phase, completed: completed, total: 4, elapsed_seconds: seconds) }
+        func event(_ sequence: Int, _ completed: Int, _ seconds: Double, _ phase: String = "denoise") -> NativeEvent { NativeEvent(sequence: sequence, phase: phase, completed: completed, total: 6, elapsed_seconds: seconds) }
         try check(telemetry.observe(event(1, 1, 10)) == nil, "Transform offset counted as completed sample")
         try check(telemetry.observe(event(2, 2, 12)) == nil, "Single sample shown as reliable speed")
+        try check(telemetry.firstDenoiseStepSeconds == nil, "Missing step-zero boundary fabricated a first-step timing")
         _ = telemetry.observe(event(3, 2, 13)); _ = telemetry.observe(event(4, 30, 13.5, "block"))
         try check(telemetry.observe(event(5, 3, 15)) == 2.5, "Step duration includes wrong boundaries")
         try check(telemetry.observe(event(2, 4, 50)) == 2.5, "Out-of-order telemetry altered speed")
+        try check(telemetry.firstDenoiseStepSeconds == nil, "Later progress fabricated the unobserved first interval")
+
+        // A slow initial sampling step must age out of the rolling window,
+        // while its separate duration remains available in result history.
+        var editTelemetry = StepTelemetry()
+        _ = editTelemetry.observe(event(1, 0, 10, "load_qwen21_transformer"))
+        _ = editTelemetry.observe(event(2, 1, 20, "qwen21_text_encode"))
+        try check(editTelemetry.secondsPerStep == nil && editTelemetry.firstDenoiseStepSeconds == nil,
+                  "Preparation phases created sampling timing")
+        _ = editTelemetry.observe(event(3, 0, 30))
+        try check(editTelemetry.firstDenoiseStepSeconds == nil, "Initial denoise boundary counted as a completed step")
+        _ = editTelemetry.observe(event(4, 1, 42))
+        try check(editTelemetry.firstDenoiseStepSeconds == 12 && editTelemetry.secondsPerStep == nil,
+                  "First sampling duration included preparation or appeared as a reliable average")
+        _ = editTelemetry.observe(event(5, 1, 43))
+        _ = editTelemetry.observe(event(6, 31, 43.5, "transformer_block"))
+        try check(editTelemetry.observe(event(7, 2, 44)) == 7,
+                  "Repeated boundaries or block detail altered the sampling window")
+        for completed in 3...5 {
+            _ = editTelemetry.observe(event(completed + 5, completed, 40 + Double(completed) * 2))
+        }
+        try check(editTelemetry.secondsPerStep == 4, "Five-step window dropped the first step too early")
+        try check(editTelemetry.observe(event(11, 6, 52)) == 2 && editTelemetry.firstDenoiseStepSeconds == 12,
+                  "Six-step result did not retain its first duration separately from the last five steps")
+
+        var timedJob = NativeJob(id: UUID(), createdAt: Date(), request: NativeRequest(prompt: "timing history fixture", output: root.appendingPathComponent("timing.png").path),
+                                 state: "succeeded", phase: "complete", completed: 6, total: 6, elapsed: 60)
+        timedJob.secondsPerStep = editTelemetry.secondsPerStep
+        timedJob.firstDenoiseStepSeconds = editTelemetry.firstDenoiseStepSeconds
+        let timingData = try JSONEncoder().encode(timedJob)
+        let decodedTiming = try JSONDecoder().decode(NativeJob.self, from: timingData)
+        try check(decodedTiming.firstDenoiseStepSeconds == 12 && decodedTiming.secondsPerStep == 2,
+                  "Sampling history lost the distinct first-step and rolling timings")
+        var legacyTiming = try JSONSerialization.jsonObject(with: timingData) as! [String: Any]
+        legacyTiming.removeValue(forKey: "firstDenoiseStepSeconds")
+        let decodedLegacy = try JSONDecoder().decode(NativeJob.self, from: JSONSerialization.data(withJSONObject: legacyTiming))
+        try check(decodedLegacy.firstDenoiseStepSeconds == nil && decodedLegacy.secondsPerStep == 2,
+                  "Older job history without a first-step field is no longer compatible")
+        _ = editTelemetry.observe(event(12, 0, 54))
+        try check(editTelemetry.firstDenoiseStepSeconds == nil && editTelemetry.secondsPerStep == nil,
+                  "A restarted sampling sequence retained stale timings")
+        _ = editTelemetry.observe(event(13, 1, 57))
+        try check(editTelemetry.firstDenoiseStepSeconds == 3, "Restarted sampling did not record its own first interval")
         for model in studio.models { studio.draft.modelPaths[model.id] = "/test/\(model.id)" }
         studio.selectModel("minimax-h3-turbo")
         try check(studio.draft.operation == "video.generate" && studio.draft.frames == 22 && studio.draft.fps == 24 && studio.draft.audio,

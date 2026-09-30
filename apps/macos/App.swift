@@ -110,7 +110,7 @@ struct StudioView: View {
     @State private var selected: UUID?
     @State private var selectedTasks: Set<UUID> = []
     @State private var resultSelection = HistorySelection()
-    @State private var inspector = false
+    @State private var inspector = true
     @State private var previewAssetID: UUID?
     @State private var showingRecentResults = false
     @State private var showingResources = false
@@ -133,6 +133,11 @@ struct StudioView: View {
     }
     private var outputJobs: [NativeJob] { store.jobs.filter { $0.hasOutput } }
     private var outputIDs: [UUID] { outputJobs.map(\.id) }
+    private var imageHistoryJobs: [NativeJob] {
+        outputJobs.filter { ["png", "jpg", "jpeg", "webp", "heic", "heif", "tif", "tiff", "bmp", "avif"].contains(URL(fileURLWithPath: $0.request.output).pathExtension.lowercased()) }
+    }
+    private var imageHistoryIDs: [UUID] { imageHistoryJobs.map(\.id) }
+    private var selectedHistoryIDs: Set<UUID> { resultSelection.ids.intersection(Set(imageHistoryIDs)) }
     private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
     private var preparingSubmission: Bool { submitting && !store.busy }
     private var assetControlsLocked: Bool { preparingSubmission || studio.importing }
@@ -230,18 +235,11 @@ struct StudioView: View {
             ToolbarItem(placement: .automatic) { Text(studio.saved ? "草稿已保存" : "草稿尚未保存").font(.caption).foregroundStyle(.secondary) }
             ToolbarItem { Button { studio.newDraft(); focusInput(); imageUpscaling = false; page = .studio } label: { Label("新建创作", systemImage: "square.and.pencil") }.disabled(store.busy || assetControlsLocked) }
             ToolbarItem {
-                Button { inspector.toggle() } label: { Label("设置生成参数", systemImage: "slider.horizontal.3") }
-                    .help("模型、LoRA 与生成参数")
-                    .popover(isPresented: $inspector, arrowEdge: .bottom) {
-                        ScrollView {
-                            if imageUpscaling {
-                                UpscaleSettingsView(store: store, studio: studio,
-                                    locked: store.busy || submitting || api.running || api.changing,
-                                    showsVariantPicker: true,
-                                    manageModels: { librarySelection = studio.draft.upscaleVariant.modelID; page = .models }).padding(20)
-                            } else { inspectorContents.padding(20) }
-                        }.frame(width: 350, height: 570)
-                    }
+                if page == .studio {
+                    Button { inspector.toggle() } label: { Label(inspector ? "收起设置" : "展开设置", systemImage: "sidebar.right") }
+                        .help(inspector ? "收起模型与生成设置" : "展开模型与生成设置")
+                        .accessibilityIdentifier("toggleInspector").accessibilityValue(inspector ? "已展开" : "已收起")
+                }
             }
         }
     }
@@ -261,9 +259,15 @@ struct StudioView: View {
         .onChange(of: studio.draft.operation) { _, _ in focusInput() }
         .onChange(of: studio.workspaceResetID) { _, _ in
             focusInput(); imageUpscaling = false; annotationAsset = nil
-            showingRecentResults = false; inspector = false; ignoredStatusID = store.jobs.first?.id; page = .studio
+            showingRecentResults = false; ignoredStatusID = store.jobs.first?.id; page = .studio
         }
-        .onChange(of: page) { _, _ in inspector = false; showingRecentResults = false }
+        .onChange(of: page) { _, _ in showingRecentResults = false }
+        .onChange(of: upscaleSourcePath) { _, _ in
+            if imageUpscaling { selected = nil; compareOriginal = false; resultSelection.clear() }
+        }
+        .onChange(of: imageUpscaling) { _, isUpscaling in
+            if isUpscaling { selected = nil; compareOriginal = false; resultSelection.clear() }
+        }
         .onChange(of: studio.draft.initImageID) { _, id in
             if let asset = studio.draft.assets.first(where: { $0.id == id }) { focusInput(asset) }
         }
@@ -297,8 +301,10 @@ struct StudioView: View {
         VStack(spacing: 0) {
             creationHeader.padding(.horizontal, 18).padding(.vertical, 12)
             if imageUpscaling {
-                ImageUpscaleView(store: store, studio: studio, showSettings: false, sourcePath: $upscaleSourcePath,
-                                 manageModels: { librarySelection = studio.draft.upscaleVariant.modelID; page = .models }) { job in
+                ImageUpscaleView(store: store, studio: studio, showSettings: inspector, sourcePath: $upscaleSourcePath,
+                                 manageModels: { librarySelection = studio.draft.upscaleVariant.modelID; page = .models },
+                                 historyContent: imageHistoryJobs.isEmpty ? nil : AnyView(resultStrip), selectedPreviewJob: selectedJob,
+                                 usePreviewAsSource: useHistoryAsUpscaleSource) { job in
                     selected = job.id; compareOriginal = false; resultSelection.select(job.id, orderedIDs: outputIDs)
                 }
             } else {
@@ -347,22 +353,40 @@ struct StudioView: View {
             }.labelsHidden().pickerStyle(.segmented).frame(maxWidth: model?.isVideo == true ? 330 : 240)
                 .disabled(store.busy || assetControlsLocked).accessibilityIdentifier("operation")
             Spacer(minLength: 0)
-            Button { inspector = true } label: {
+            if !inspector { Button { inspector = true } label: {
                 HStack(spacing: 5) {
                     Text(model?.displayName ?? "选择模型").lineLimit(1)
                     Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
                 }.font(.caption).foregroundStyle(.secondary)
-            }.buttonStyle(.plain).help("模型与生成设置").accessibilityIdentifier("modelSettings")
+            }.buttonStyle(.plain).help("模型与生成设置").accessibilityIdentifier("modelSettings") }
         }
     }
     private var generationWorkspace: some View {
+        HStack(spacing: 0) {
+            generationMainArea.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if inspector {
+                Divider()
+                ScrollView { inspectorContents.padding(16) }
+                    .frame(width: 270).background(Color(nsColor: .controlBackgroundColor))
+                    .accessibilityIdentifier("generationInspector")
+            }
+        }
+    }
+    private var generationMainArea: some View {
         VStack(spacing: 10) {
             if api.running {
                 HStack { Label("本地 API 正在接收任务", systemImage: "network"); Spacer(); Button("管理服务") { page = .api } }
                     .font(.caption).padding(8).background(ciderAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
             }
-            mediaStage.frame(maxWidth: .infinity, minHeight: 170, maxHeight: .infinity).layoutPriority(1)
-            if !studio.draft.assets.isEmpty { inputStrip }
+            GeometryReader { proxy in
+                ScrollView(.vertical) {
+                    VStack(spacing: 10) {
+                        mediaStage.frame(maxWidth: .infinity, minHeight: 170, maxHeight: .infinity).layoutPriority(1)
+                        if studio.creationKind == "image", !imageHistoryJobs.isEmpty { resultStrip }
+                        if !studio.draft.assets.isEmpty { inputStrip }
+                    }.frame(minHeight: proxy.size.height)
+                }.accessibilityIdentifier("canvasScrollArea")
+            }.frame(minHeight: 170, maxHeight: .infinity)
             composer
             if hasDetailedRunStatus { runStatus }
             else if let job = statusJob {
@@ -419,14 +443,8 @@ struct StudioView: View {
                     Spacer()
                 }
                 if !outputJobs.isEmpty {
-                    Button { showingRecentResults.toggle() } label: { Image(systemName: "clock.arrow.circlepath") }
-                        .buttonStyle(.borderless).help("最近结果").accessibilityLabel("最近结果")
-                        .popover(isPresented: $showingRecentResults) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack { Text("最近结果").font(.headline); Spacer(); Button("全部") { showingRecentResults = false; page = .library } }
-                                resultStrip
-                            }.padding(16).frame(width: 420)
-                        }
+                    Button { page = .library } label: { Image(systemName: "clock.arrow.circlepath") }
+                        .buttonStyle(.borderless).help("全部历史结果").accessibilityLabel("全部历史结果")
                 }
             }.controlSize(.small)
             if let job = selectedJob {
@@ -461,19 +479,46 @@ struct StudioView: View {
         return "\(dimensions) · \(detail)" + (job.routeSummary.map { " · \($0)" } ?? "")
     }
     private var resultStrip: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if resultSelection.ids.count > 1 { resultSelectionControls }
+        HStack(spacing: 8) {
+            Image(systemName: "clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary)
+                .help("历史图片：生成、编辑与超分结果").accessibilityLabel("历史图片")
             ScrollView(.horizontal) { LazyHStack(spacing: 8) {
-                ForEach(outputJobs) { job in
-                    resultThumbnail(job, height: 48).frame(width: 60)
+                ForEach(imageHistoryJobs) { job in
+                    resultThumbnail(job, height: 52, orderedIDs: imageHistoryIDs, keepsCreationMode: true).frame(width: 56)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(resultSelection.ids.contains(job.id) || (resultSelection.ids.isEmpty && selectedJob?.id == job.id) ? ciderAccent : .clear, lineWidth: 2))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(selectedJob?.id == job.id ? ciderAccent : Color.primary.opacity(0.1), lineWidth: selectedJob?.id == job.id ? 2 : 1))
                         .contextMenu {
-                            Button(resultDeletionTitle(for: job), role: .destructive) { trashResults(resultDeletionIDs(for: job)) }.disabled(store.busy)
-                        }.help("种子 \(job.request.seed) · Ctrl/⌘ 点击多选，Shift 点击连续选择")
+                            Button("查看图片") { selected = job.id; compareOriginal = false }
+                            if imageUpscaling {
+                                Button("用作超分原图") { useHistoryAsUpscaleSource(job) }
+                                    .disabled(historySourceLocked)
+                                    .accessibilityIdentifier("useHistoryAsUpscaleSource-\(job.id)")
+                            }
+                            Button("复用参数") { reuseParameters(job) }.disabled(store.busy || assetControlsLocked)
+                            Button("删除\(historyDeletionIDs(for: job).count > 1 ? "所选图片" : "图片")（移到废纸篓）", role: .destructive) { trashResults(historyDeletionIDs(for: job)) }.disabled(store.busy)
+                        }.help("\(operationName(job.request.operation ?? "image.generate")) · \(job.request.width) × \(job.request.height) · 种子 \(job.request.seed)\n单击查看；⌘ 点击多选，Shift 连续选择")
+                        .accessibilityIdentifier("historyImage-\(job.id)")
                 }
-            }.padding(2) }.frame(height: 52)
-        }
+            }.padding(2) }.frame(height: 56).accessibilityIdentifier("historyThumbnails")
+            if selectedHistoryIDs.count > 1 {
+                Menu("\(selectedHistoryIDs.count) 项") {
+                    Button("取消选择") { resultSelection.clear() }
+                    Button("删除所选 \(selectedHistoryIDs.count) 张图片", role: .destructive) { trashResults(selectedHistoryIDs) }.disabled(store.busy)
+                }.menuStyle(.borderlessButton).fixedSize().font(.caption).accessibilityIdentifier("historySelectionActions")
+            }
+        }.frame(height: 56).accessibilityIdentifier("imageHistoryStrip")
+    }
+    private func historyDeletionIDs(for job: NativeJob) -> Set<UUID> {
+        selectedHistoryIDs.contains(job.id) ? selectedHistoryIDs : [job.id]
+    }
+    private var historySourceLocked: Bool {
+        store.busy || submitting || studio.importing || api.running || api.changing
+    }
+    private func useHistoryAsUpscaleSource(_ job: NativeJob) {
+        guard imageUpscaling, !historySourceLocked, job.hasOutput else { return }
+        upscaleSourcePath = job.request.output
+        // Clear even when selecting the same path (onChange would not run).
+        selected = nil; compareOriginal = false; resultSelection.clear()
     }
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -995,13 +1040,23 @@ struct StudioView: View {
                 HStack {
                     Text("\(stateName(job.state)) · \(phaseName(job.phase)) \(job.completed)/\(job.total)")
                     Spacer()
-                    if job.phase == "denoise", let speed = job.secondsPerStep { Text(String(format: "%.2f 秒/步", speed)).monospacedDigit() }
+                    if job.phase == "denoise", let speed = job.secondsPerStep {
+                        Text(String(format: "近期均速 %.2f 秒/步", speed)).monospacedDigit()
+                            .help("最近最多 5 个已完成采样步骤的平均耗时，至少完成 2 步后显示；不含加载、文本编码、参考图编码与图像解码。首步离开统计窗口后均值可能下降，这不代表每一步都在编译。")
+                    }
                     Text(String(format: "%.1f 秒", job.elapsed)).monospacedDigit()
                     Button("取消") { store.cancel() }.disabled(job.state == "cancelling")
                 }.font(.callout)
                 if job.phase == "denoise", let speed = job.secondsPerStep, job.completed < job.total {
                     Text("采样阶段预计还需约 \(Int(ceil(speed * Double(job.total - job.completed)))) 秒，图像解码另计。")
                         .font(.caption2).foregroundStyle(.secondary)
+                }
+                if job.phase == "denoise", job.request.model == "qwen-image-2.1", job.request.operation == "image.edit",
+                   let seconds = job.firstDenoiseStepSeconds {
+                    Text(String(format: "首步采样 %.2f 秒", seconds)).monospacedDigit()
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .help(RunInsightsView.firstStepHelp)
+                        .accessibilityIdentifier("firstDenoiseStepTiming")
                 }
             } else if store.workerCleanupPending { HStack { Text(store.sessionState).font(.caption); Spacer(); Button("检查清理状态") { Task { await store.refreshWorkerCleanup() } } } }
             else if store.busy { HStack { ProgressView().controlSize(.small); Text(store.sessionState).font(.caption); Spacer(); Button("取消") { store.cancel() } } }
@@ -1084,7 +1139,11 @@ struct StudioView: View {
             List(store.jobs) { job in
                 DisclosureGroup {
                     Text(job.request.prompt).textSelection(.enabled)
-                    if let json = job.resultJSON { RunInsightsView(json: json) }
+                    if let json = job.resultJSON {
+                        RunInsightsView(json: json, firstDenoiseStepSeconds:
+                            job.request.model == "qwen-image-2.1" && job.request.operation == "image.edit"
+                            ? job.firstDenoiseStepSeconds : nil)
+                    }
                     if let error = job.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
                     HStack {
                         Button("复用参数") { reuseParameters(job) }.disabled(assetControlsLocked)
@@ -1155,7 +1214,7 @@ struct StudioView: View {
                 .accessibilityIdentifier("trashSelectedOutputs")
         }
     }
-    private func resultThumbnail(_ job: NativeJob, height: CGFloat) -> some View {
+    private func resultThumbnail(_ job: NativeJob, height: CGFloat, orderedIDs: [UUID]? = nil, keepsCreationMode: Bool = false) -> some View {
         StudioResultThumbnail(path: job.request.output).frame(height: height).frame(maxWidth: .infinity)
             .accessibilityHidden(true)
             .overlay(alignment: .topTrailing) {
@@ -1166,9 +1225,9 @@ struct StudioView: View {
             .overlay {
                 ResultSelectionTarget(label: "选择图片：\(job.request.prompt)，种子 \(job.request.seed)", selected: resultSelection.ids.contains(job.id)) { flags, clicks in
                     let toggle = !flags.intersection([.control, .command]).isEmpty
-                    resultSelection.select(job.id, orderedIDs: outputIDs, toggle: toggle, range: flags.contains(.shift))
+                    resultSelection.select(job.id, orderedIDs: orderedIDs ?? outputIDs, toggle: toggle, range: flags.contains(.shift))
                     if resultSelection.ids.contains(job.id) { selected = job.id; compareOriginal = false; showingRecentResults = false }
-                    if clicks == 2 && !toggle && !flags.contains(.shift) { showResult(job) }
+                    if clicks == 2 && !toggle && !flags.contains(.shift) && !keepsCreationMode { showResult(job) }
                 }
             }
     }

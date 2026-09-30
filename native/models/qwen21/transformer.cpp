@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 
 namespace tc::qwen21 {
 namespace {
@@ -89,6 +90,130 @@ bool Transformer::prefix_matches(const Tensor &text, int height, int width,
     for (size_t i = 0; i < references.size(); ++i)
         if (references[i].latents.id() != cached_references_[i].id() ||
             !(references[i].geometry == reference_geometry_[i])) return false;
+    return true;
+}
+
+bool Transformer::plain_prefix_route() const {
+    return !fused_qkv_ && !metal_qk_rope_ && !metal_qk_norm_rope_ &&
+        !reference_local_attention_ && !prefill_last_target_only_ &&
+        !profile_gpu_blocks_ && !profile_gpu_ops_ && !profile_prefill_segments_ &&
+        !decode_mlp_ && !prefill_mlp_ && !project_qkv_ && !plan_mlp_ &&
+        !plan_qkv_ && !stage_mlp_ && !stage_qkv_ && !observe_mlp_ && !observe_qkv_ &&
+        !capture_tile_tails_ && !db_cache_enabled_ && ffn_cache_mode_ == FFNCacheMode::Off;
+}
+
+std::optional<Transformer::PrefixSnapshot>
+Transformer::export_prefix_snapshot(uint64_t max_bytes) const {
+    if (!plain_prefix_route() || !cached_text_ ||
+        prefix_.size() != size_t(config_.layers) || sequence_.prefix_length <= 0 ||
+        cached_references_.size() != reference_geometry_.size()) return std::nullopt;
+    PrefixSnapshot snapshot;
+    snapshot.config = config_;
+    snapshot.text = cached_text_;
+    snapshot.text_length = text_length_;
+    snapshot.height = height_;
+    snapshot.width = width_;
+    snapshot.prefix_length = sequence_.prefix_length;
+    snapshot.dtype = cached_text_->dtype();
+    const mx::Shape shape{1, config_.heads, snapshot.prefix_length, config_.head_dim};
+    for (const auto &kv : prefix_) {
+        for (const auto *value : {&kv.key, &kv.value}) {
+            if (value->shape() != shape || value->dtype() != snapshot.dtype ||
+                value->nbytes() > max_bytes - snapshot.bytes) return std::nullopt;
+            snapshot.bytes += value->nbytes();
+        }
+    }
+    std::vector<Tensor> completed{*snapshot.text};
+    for (size_t i = 0; i < cached_references_.size(); ++i) {
+        snapshot.references.push_back({cached_references_[i], reference_geometry_[i]});
+        completed.push_back(cached_references_[i]);
+    }
+    for (const auto &kv : prefix_) {
+        // MLX copy alone aliases its source buffer. Explicit same-dtype
+        // AsType(copy=true) outside compile forces a value-preserving copy;
+        // the live prefix_ owner prevents allocator donation. Contiguous
+        // compacts transposed/sliced head rows instead of retaining targets.
+        snapshot.keys.push_back(mx::copy(mx::contiguous(
+            mx::astype(kv.key, kv.key.dtype(), std::optional<bool>{true}))));
+        snapshot.values.push_back(mx::copy(mx::contiguous(
+            mx::astype(kv.value, kv.value.dtype(), std::optional<bool>{true}))));
+        completed.push_back(snapshot.keys.back());
+        completed.push_back(snapshot.values.back());
+    }
+    mx::eval(completed);
+    auto leaf = [](const Tensor &value) {
+        return value.is_available() && !value.has_primitive() &&
+            value.inputs().empty() && value.siblings().empty();
+    };
+    if (!leaf(*snapshot.text)) return std::nullopt;
+    for (const auto &reference : snapshot.references)
+        if (!leaf(reference.latents)) return std::nullopt;
+    for (size_t i = 0; i < snapshot.keys.size(); ++i) {
+        for (const auto *value : {&snapshot.keys[i], &snapshot.values[i]})
+            if (!leaf(*value) || !value->flags().row_contiguous ||
+                value->data_size() != value->size()) return std::nullopt;
+        if (snapshot.keys[i].buffer().ptr() == prefix_[i].key.buffer().ptr() ||
+            snapshot.values[i].buffer().ptr() == prefix_[i].value.buffer().ptr()) return std::nullopt;
+    }
+    return snapshot;
+}
+
+bool Transformer::import_prefix_snapshot(const PrefixSnapshot &snapshot, const Tensor &text,
+                                        int height, int width,
+                                        const std::vector<ReferenceLatents> &references) {
+    if (!plain_prefix_route() || snapshot.config != config_ || !snapshot.text ||
+        snapshot.keys.size() != size_t(config_.layers) ||
+        snapshot.values.size() != snapshot.keys.size() ||
+        text.ndim() != 3 || text.shape(0) != 1 || text.shape(1) <= 0 ||
+        text.shape(2) != config_.context_dim || text.id() != snapshot.text->id() ||
+        text.dtype() != snapshot.dtype || snapshot.text_length != text.shape(1) ||
+        !text.is_available() || text.has_primitive() || !text.inputs().empty() || !text.siblings().empty() ||
+        height <= 0 || width <= 0 || height != snapshot.height || width != snapshot.width ||
+        references.size() != snapshot.references.size() || references.size() > 10) return false;
+    std::vector<ReferenceGeometry> reference_geometry;
+    int previous_slot = 0;
+    int64_t prefix_length = text.shape(1);
+    for (size_t i = 0; i < references.size(); ++i) {
+        const auto &reference = references[i];
+        const auto &expected = snapshot.references[i];
+        const auto &g = reference.geometry;
+        const int64_t reference_tokens = int64_t(g.height) * g.width;
+        if (g.height <= 0 || g.width <= 0 || g.text_slot < previous_slot ||
+            g.text_slot > text.shape(1) || g != expected.geometry ||
+            reference_tokens > std::numeric_limits<int>::max() - prefix_length ||
+            reference.latents.id() != expected.latents.id() ||
+            reference.latents.shape() != mx::Shape{1, int(reference_tokens), config_.channels} ||
+            reference.latents.dtype() != snapshot.dtype || !reference.latents.is_available() ||
+            reference.latents.has_primitive() || !reference.latents.inputs().empty() ||
+            !reference.latents.siblings().empty()) return false;
+        previous_slot = g.text_slot;
+        prefix_length += reference_tokens;
+        reference_geometry.push_back(g);
+    }
+    if (prefix_length != snapshot.prefix_length ||
+        prefix_length + int64_t(height) * width > std::numeric_limits<int>::max()) return false;
+    const mx::Shape shape{1, config_.heads, int(prefix_length), config_.head_dim};
+    uint64_t bytes = 0;
+    for (size_t i = 0; i < snapshot.keys.size(); ++i) {
+        for (const auto *value : {&snapshot.keys[i], &snapshot.values[i]}) {
+            if (value->shape() != shape || value->dtype() != snapshot.dtype ||
+                !value->is_available() || value->has_primitive() ||
+                !value->inputs().empty() || !value->siblings().empty() ||
+                !value->flags().row_contiguous || value->data_size() != value->size() ||
+                value->nbytes() > std::numeric_limits<uint64_t>::max() - bytes) return false;
+            bytes += value->nbytes();
+        }
+    }
+    if (bytes != snapshot.bytes) return false;
+    // Validate every value before changing the current request. Geometry must
+    // run before installing the bank because a shape change resets prefix_.
+    geometry(text.shape(1), height, width, reference_geometry);
+    reset();
+    prefix_.reserve(snapshot.keys.size());
+    for (size_t i = 0; i < snapshot.keys.size(); ++i)
+        prefix_.push_back({snapshot.keys[i], snapshot.values[i]});
+    cached_text_ = text;
+    for (const auto &reference : references) cached_references_.push_back(reference.latents);
     return true;
 }
 

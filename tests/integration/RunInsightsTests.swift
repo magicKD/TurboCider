@@ -4,6 +4,16 @@ import Foundation
     static func main() throws {
         func check(_ ok: Bool, _ text: String) throws { if !ok { throw NativeFailure(message: text) } }
         let empty = RunInsights(json: "{}")
+        try check(empty.editPrefixCacheHit == nil, "Missing edit-prefix telemetry became a cache miss")
+        for hit in [true, false] {
+            let marker = hit ? "hit" : "miss"
+            let edit = RunInsights(json: "{\"model\":\"qwen-image-2.1\",\"operation\":\"image.edit\",\"acceleration_selection\":\"gpu; edit prefix KV snapshot \(marker)\"}")
+            try check(edit.editPrefixCacheHit == hit, "Edit-prefix cache receipt was lost")
+        }
+        let unrelated = RunInsights(json: #"{"model":"qwen-image-2.1","operation":"image.generate","acceleration_selection":"gpu; edit prefix KV snapshot hit"}"#)
+        try check(unrelated.editPrefixCacheHit == nil, "Non-edit result advertised reference caching")
+        let textOnly = RunInsights(json: #"{"model":"qwen-image-2.1","operation":"image.edit","prompt_cache_hit":true}"#)
+        try check(textOnly.editPrefixCacheHit == nil, "Text cache hit was mistaken for a denoising prefix hit")
         let streamed = RunInsights(json: #"{"block_residency":{"streamed_blocks":17,"request_bytes_loaded":1073741824,"request_wait_seconds":1.5}}"#)
         try check(streamed.streamedBlocks == 17 && streamed.streamReadBytes == 1073741824 && streamed.streamWaitSeconds == 1.5,
                   "Streaming measurements were lost")

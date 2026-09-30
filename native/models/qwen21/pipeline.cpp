@@ -69,10 +69,15 @@ void Session::clear_prefix_cache() {
     cached_prefix_runtime_.clear();
     cached_prefix_sigma_ = -1.f;
 }
+void Session::clear_prefix_snapshot() {
+    cached_prefix_snapshot_.reset();
+    cached_snapshot_runtime_.clear();
+}
 void Session::unload() {
     runtime_ffn_.reset(); runtime_manifest_.clear();
     runtime_qkv_.reset(); qkv_manifest_.clear();
     clear_prefix_cache();
+    clear_prefix_snapshot();
     fused_qkv_weights_.clear();
     hybrid_mlp_.reset();
     hybrid_.reset();
@@ -139,6 +144,42 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         r.residency == "resident" && r.width == 512 && r.height == 512 &&
         r.steps >= 2 && r.loras.empty() && !r.prompt_enhance;
     if (!resident_prefix) clear_prefix_cache();
+    const char *snapshot_option = std::getenv("TURBOCIDER_QWEN21_PREFIX_SNAPSHOT");
+    require(binary_option_or_unset(snapshot_option), "Qwen21 prefix snapshot accepts only 0 or 1");
+    // Keep one bounded bank for repeated edits. Set the option to 0 for the
+    // original prefill path. Target-only first-step kernels can round slightly
+    // differently from full prefill, particularly with BF16 runtime LoRA.
+    const bool snapshot_enabled = !snapshot_option || option_enabled(snapshot_option);
+    // Reuse only the ordinary GPU editing path. Keep experimental routing,
+    // altered reference geometry and approximation caches out of this bank.
+    const bool snapshot_route = snapshot_enabled && !resident_prefix &&
+        !hybrid_requested && !runtime_requested && !qkv_requested &&
+        !fused_qkv && !option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE")) &&
+        !option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE")) &&
+        (!std::getenv("TURBOCIDER_QWEN21_REF_LOCAL_ATTENTION") ||
+         std::string_view(std::getenv("TURBOCIDER_QWEN21_REF_LOCAL_ATTENTION")) == "0") &&
+        !tiled_prefill && !tiled_prefix_reuse && !prefix_target_only &&
+        !last_target_only && !reuse_final_ffn && !hybrid_reuse_ffn &&
+        !hybrid_reuse_last16 && !half_reuse_ffn && !db_cache &&
+        !option_enabled(std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16")) &&
+        !option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_GPU_BLOCKS")) &&
+        !option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_GPU_OPS")) &&
+        !option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_PREFILL_SEGMENTS")) &&
+        !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
+        r.operation == "image.edit" && !r.inputs.empty() && r.inputs.size() <= 3 &&
+        r.qwen21_reference_size == 1024 && r.width == 512 && r.height == 512 &&
+        r.steps >= 2 && !r.prompt_enhance && r.dump.empty() &&
+        (r.residency == "resident" || r.residency == "component_staged");
+    if (!snapshot_route) clear_prefix_snapshot();
+    // Preparation does not enter the sampling block. Still honor a newly
+    // lowered cache budget before loading any weights for prepare(false).
+    if (cached_prefix_snapshot_) {
+        const uint64_t physical = device_info().physical_memory;
+        const uint64_t limit = r.memory_budget_bytes
+            ? std::min(physical, r.memory_budget_bytes) : physical;
+        if (cached_prefix_snapshot_->bytes > std::min(uint64_t(8) << 30, limit / 8))
+            clear_prefix_snapshot();
+    }
     // A cached Transformer holds a pointer to the fused-weight bank. Destroy
     // it before changing the bank when a resident request toggles the flag.
     if (!fused_qkv && !fused_qkv_weights_.empty()) {
@@ -243,7 +284,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                           r.qwen21_reference_size));
     }
     const bool hit = edit_hit || (r.inputs.empty() && cached_text_ && cached_prompt_ == r.prompt);
-    if (!hit) clear_prefix_cache();
+    if (!hit) { clear_prefix_cache(); clear_prefix_snapshot(); }
     Tensor text(0.f);
     std::vector<int> slots;
     auto text_start = Clock::now();
@@ -342,6 +383,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         if (runtime_ffn_) runtime_ffn_->drain();
         hybrid_mlp_.reset();
         clear_prefix_cache();
+        clear_prefix_snapshot();
         fused_qkv_weights_.clear();
         transformer_.clear();
         active_lora_identity_.clear();
@@ -630,6 +672,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.timings.text = text_seconds; result.timings.image = image_seconds;
     emit(event, (hybrid_requested || runtime_requested || qkv_requested) ? "route_gpu_ane" : "route_gpu", 1, 1);
     const uint64_t coreml_calls_before = hybrid_requested ? hybrid_->metrics().runtime_calls : 0;
+    std::optional<Transformer::PrefixSnapshot> pending_snapshot;
+    std::string pending_snapshot_runtime;
     if (!prepare_only) {
         auto schedule = r.loras.empty() ? sigmas(r.width, r.height, r.steps) :
                                       viggle_v021_sigmas(r.width, r.height);
@@ -685,6 +729,23 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             cached_prefix_transformer_ = std::make_unique<Transformer>(
                 transformer_, TransformerConfig{}, fused_qkv ? &fused_qkv_weights_ : nullptr);
         Transformer &dit = retain_prefix ? *cached_prefix_transformer_ : *request_dit;
+        const uint64_t snapshot_memory_limit = r.memory_budget_bytes
+            ? std::min(physical_bytes, r.memory_budget_bytes) : physical_bytes;
+        const uint64_t snapshot_budget = std::min(uint64_t(8) << 30, snapshot_memory_limit / 8);
+        const bool snapshot_allowed = snapshot_route && prefix_bytes <= snapshot_budget;
+        const auto checkpoint_path = root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors";
+        const std::string snapshot_runtime = snapshot_allowed ? prefix_runtime + ":" +
+            std::to_string(std::filesystem::file_size(checkpoint_path)) + ":" +
+            std::to_string(static_cast<long long>(
+                std::filesystem::last_write_time(checkpoint_path).time_since_epoch().count())) : "";
+        if (!snapshot_allowed || cached_snapshot_runtime_ != snapshot_runtime)
+            clear_prefix_snapshot();
+        const bool snapshot_hit = cached_prefix_snapshot_ &&
+            dit.import_prefix_snapshot(*cached_prefix_snapshot_, text,
+                                       r.height / 16, r.width / 16, references);
+        if (!snapshot_hit) clear_prefix_snapshot();
+        if (snapshot_allowed)
+            result.selection += snapshot_hit ? "; edit prefix KV snapshot hit" : "; edit prefix KV snapshot miss";
         dit.configure_db_cache(db_cache, db_threshold, r.steps, db_max_consecutive);
         result.selection += retain_prefix ?
             (prefix_hit ? "; experimental resident prefix KV hit" : "; experimental resident prefix KV miss") : "";
@@ -866,6 +927,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 auto noise = dit.forward(latents, text, schedule.data<float>()[step], r.height / 16, r.width / 16,
                                          true, nullptr, references);
                 latents = latents + noise * Tensor(schedule.data<float>()[step+1] - schedule.data<float>()[step], latents.dtype());
+                const auto graph_seconds = profile_steps ? seconds(step_started) : 0.;
                 mx::eval(latents);
                 require(mx::all(mx::isfinite(latents)).item<bool>(), "nonfinite Qwen21 latent");
                 if (profile_steps) {
@@ -873,8 +935,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     const auto prediction = hybrid_requested
                         ? hybrid_->metrics().prediction_seconds - prediction_before : 0.;
                     std::cerr << "{\"qwen21_step\":" << step
-                              << ",\"phase\":\"" << (step == 0 ? "prefill" : "decode")
+                              << ",\"phase\":\"" << (step == 0 && !prefix_hit && !snapshot_hit ? "prefill" : "decode")
                               << "\",\"seconds\":" << elapsed
+                              << ",\"graph_build_seconds\":" << graph_seconds
+                              << ",\"evaluate_seconds\":" << elapsed - graph_seconds
+                              << ",\"prefix_cache_hit\":" << (prefix_hit || snapshot_hit ? "true" : "false")
                               << ",\"coreml_prediction_api_seconds\":" << prediction
                               << ",\"reference_tokens\":" << result.reference_tokens
                               << ",\"hybrid\":" << (hybrid_requested ? "true" : "false")
@@ -925,6 +990,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     "Qwen21 W8A8 did not execute the required FFN layer coverage");
         }
         dump("qwen21_latents", latents);
+        if (snapshot_allowed && !snapshot_hit &&
+            mx::get_active_memory() < snapshot_memory_limit -
+                std::min(snapshot_memory_limit, prefix_bytes + (uint64_t(8) << 30))) {
+            checkpoint(cancelled);
+            pending_snapshot = dit.export_prefix_snapshot(snapshot_budget);
+            if (pending_snapshot) pending_snapshot_runtime = snapshot_runtime;
+        }
         if (r.residency == "component_staged") {
             // Compiled block functions and prefix tensors can retain weights
             // after the session map is cleared. Destroy their owner before
@@ -964,6 +1036,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         transformer_.clear(); vae_.clear();
         mx::synchronize(); mx::clear_cache();
     }
+    // Publish reusable values only after a successful request. Do not add a
+    // cancellation throw after PNG export: publication already completed.
+    if (cancelled.load()) clear_prefix_snapshot();
+    else if (pending_snapshot) {
+        cached_prefix_snapshot_ = std::move(pending_snapshot);
+        cached_snapshot_runtime_ = std::move(pending_snapshot_runtime);
+    }
     result.timings.wall = seconds(start);
     result.active_bytes = mx::get_active_memory(); result.peak_bytes = mx::get_peak_memory();
     return result;
@@ -972,6 +1051,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (runtime_qkv_) runtime_qkv_->drain();
     try { mx::synchronize(); } catch (...) {}
     clear_prefix_cache();
+    clear_prefix_snapshot();
     fused_qkv_weights_.clear();
     hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
     if (transformer_.has("transformer_blocks.0.attn.qkv_packed.weight"))
