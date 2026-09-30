@@ -1,5 +1,28 @@
 import AppKit
+import Combine
 import Foundation
+
+@MainActor private final class DeferredStudioImageProvider {
+    private var reply: ((Data?, Error?) -> Void)?
+    func makeProvider() -> NSItemProvider {
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: "public.png", visibility: .all) { reply in
+            Task { @MainActor in self.reply = reply }
+            return nil
+        }
+        return provider
+    }
+    func waitUntilRequested() async throws {
+        let start = ContinuousClock.now
+        while reply == nil {
+            guard start.duration(to: .now) < .seconds(3) else {
+                throw NativeFailure(message: "Deferred image provider was not requested")
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+    func finish(_ data: Data) { reply?(data, nil); reply = nil }
+}
 
 @main
 struct StudioBehaviorTests {
@@ -458,6 +481,7 @@ struct StudioBehaviorTests {
         let input = root.appendingPathComponent("source.png")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try png.write(to: input)
+        try await verifyEditingWorkflows(root: root.appendingPathComponent("editing-workflows"), source: input, png: png)
         await studio.addFiles([input, input])
         try check(studio.draft.assets.count == 2 && studio.draft.assets[0].id != studio.draft.assets[1].id, "Duplicate source identity collided")
         let firstID = studio.draft.assets[0].id
@@ -719,8 +743,12 @@ struct StudioBehaviorTests {
         try Data("{}".utf8).write(to: invalidConfiguration)
         try rejects { try studio.importConfiguration(from: invalidConfiguration) }
         try check(studio.draft.loras.count == 1, "Rejected configuration changed the active draft")
+        let previousSeed = studio.draft.seedText, previousRandomPolicy = studio.draft.randomSeed
+        let previousModel = studio.draft.modelID, previousLoRAs = studio.draft.loras
         studio.newDraft()
-        try check(studio.draft.seedText == "42" && !studio.draft.randomSeed && studio.draft.assets.isEmpty, "New draft defaults failed")
+        try check(studio.draft.seedText == previousSeed && studio.draft.randomSeed == previousRandomPolicy &&
+                  studio.draft.modelID == previousModel && studio.draft.loras == previousLoRAs &&
+                  studio.draft.assets.isEmpty && studio.draft.prompt.isEmpty, "New draft lost model preferences or retained its old content")
         let deletionRoot = root.appendingPathComponent("deletion")
         let deletionOutput = deletionRoot.appendingPathComponent("outputs/delete-test.png")
         try FileManager.default.createDirectory(at: deletionOutput.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -743,5 +771,175 @@ struct StudioBehaviorTests {
         try rejects { _ = try externalStore.trashOutput(externalJob.id) }
         try await StudioStreamingQueryTests.run(root: root.appendingPathComponent("worker-query-state"))
         print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/Wan/Z-Image defaults and separate LoRA forwarding")
+    }
+
+    @MainActor private static func verifyEditingWorkflows(root: URL, source: URL, png: Data) async throws {
+        func check(_ condition: @autoclosure () throws -> Bool, _ reason: String) throws {
+            if try !condition() { throw NativeFailure(message: reason) }
+        }
+        func snapshot(_ studio: StudioState) throws -> Data {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            return try encoder.encode(studio.draft)
+        }
+        func stagedCount(_ studio: StudioState) throws -> Int {
+            let path = studio.importer.directory
+            return FileManager.default.fileExists(atPath: path.path)
+                ? try FileManager.default.contentsOfDirectory(atPath: path.path).count : 0
+        }
+        let studio = StudioState(directory: root)
+        studio.selectModel("qwen-image-2.1")
+        studio.draft.modelPaths[studio.draft.modelID] = root.path
+        await studio.addFiles([source, source, source])
+        let originals = studio.draft.assets
+        try check(originals.count == 3, "Editing fixtures were not imported")
+        studio.draft.initImageID = originals[1].id
+        studio.useOnlyAssetForEditing(originals[2].id)
+        try check(studio.draft.modelID == "qwen-image-2.1" && studio.draft.operation == "image.edit" &&
+                  studio.draft.activeAssets == [originals[2]], "Single-image editing chose another Qwen input/model")
+        studio.undoAssetChange()
+        try check(studio.draft.assets == originals && studio.draft.initImageID == originals[1].id,
+                  "Single-image undo did not restore reference order and primary selection")
+        let adapter = root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors")
+        try Data([0]).write(to: adapter)
+        studio.draft.loras = [StudioLoRA(path: adapter.path)]
+        studio.applyQwen21TurboPreset()
+        try check(studio.imageImportLimit == 3, "Turbo LoRA import limit differs from the native three-image contract")
+        await studio.addFiles([source])
+        try check(studio.draft.assets == originals, "Turbo file import admitted a fourth reference")
+        let stroke = Qwen21AnnotationStroke(tool: .ellipse, points: [CGPoint(x: 0.1, y: 0.1), CGPoint(x: 0.9, y: 0.9)])
+        let overflowMask = await studio.annotateQwen21Asset(originals[0].id, strokes: [stroke], output: .separateMask)
+        try check(!overflowMask && studio.draft.assets == originals && studio.message?.contains("3") == true,
+                  "Turbo mask bypassed the reference limit or reported the base limit")
+        var request = NativeRequest(prompt: "Old generation prompt", output: source.path)
+        request.model = "qwen-image-2.1"; request.operation = "image.generate"; request.steps = 6
+        let job = NativeJob(id: UUID(), createdAt: Date(), request: request, state: "succeeded", phase: "complete",
+                            completed: 6, total: 6, elapsed: 1, modelPath: root.path)
+        studio.draft.prompt = request.prompt
+        let imported = await studio.editResult(job)
+        try check(imported && studio.draft.prompt.isEmpty && studio.draft.operation == "image.edit" &&
+                  studio.draft.assets.count == 1 && studio.draft.initImageID == studio.draft.assets[0].id &&
+                  studio.draft.steps == 6 && studio.draft.loras[0].path == adapter.path,
+                  "Continue editing kept the old prompt or lost the selected turbo setup")
+        try check(studio.draft.assets[0].path != source.path &&
+                  (try Data(contentsOf: URL(fileURLWithPath: studio.draft.assets[0].path))) == png &&
+                  (try Data(contentsOf: source)) == png, "Continue editing changed the original result or its copy")
+        studio.draft.prompt = "Change the teapot to cobalt blue"
+        let editing = try studio.draft.request(output: root.appendingPathComponent("unused-edit.png"))
+        try check(editing.inputs?.map(\.path) == studio.draft.assets.map(\.path) && editing.inputs?.first?.role == "reference" &&
+                  editing.steps == 6, "Continue editing did not forward the copied result")
+        studio.undoAssetChange()
+        try check(studio.draft.assets == originals && studio.draft.prompt == editing.prompt,
+                  "Result-input undo lost previous references or changed the new instruction")
+        studio.draft.loras = []
+        try check(studio.imageImportLimit == 10, "Disabling turbo did not restore base Qwen reference capacity")
+        // A prompt entered while the result copy is pending is the next edit's
+        // instruction. Context-preserving typing must neither erase it nor abort.
+        studio.draft.prompt = "Previous request"
+        let typing = studio.$importing.dropFirst().sink { importing in
+            if importing { studio.draft.prompt = "New instruction entered during import" }
+        }
+        let typedResult = await studio.editResult(job)
+        typing.cancel()
+        try check(typedResult && studio.draft.prompt == "New instruction entered during import",
+                  "Result import discarded or overwrote the new edit instruction")
+        studio.draft.assets = originals; studio.draft.initImageID = originals[1].id
+        let beforeConflict = try stagedCount(studio)
+        let conflict = studio.$importing.dropFirst().sink { importing in
+            if importing { studio.draft.assets.reverse() }
+        }
+        let conflicted = await studio.editResult(job)
+        conflict.cancel()
+        try check(!conflicted && studio.draft.assets == Array(originals.reversed()) &&
+                  (try stagedCount(studio)) == beforeConflict, "Result import overwrote a changed tray or leaked its copy")
+        studio.draft.assets = originals; studio.draft.initImageID = originals[1].id
+        let annotationConflict = studio.$importing.dropFirst().sink { importing in
+            if importing { studio.draft.assets.reverse() }
+        }
+        let annotated = await studio.annotateQwen21Asset(originals[0].id, strokes: [stroke])
+        annotationConflict.cancel()
+        try check(!annotated && studio.draft.assets == Array(originals.reversed()) &&
+                  (try stagedCount(studio)) == beforeConflict, "Late annotation replaced another editing context")
+        studio.draft.assets = originals; studio.draft.initImageID = originals[1].id
+        let mask = await studio.annotateQwen21Asset(originals[1].id, strokes: [stroke], output: .separateMask)
+        try check(mask && Array(studio.draft.assets.prefix(3)) == originals && studio.draft.initImageID == originals[1].id,
+                  "Mask insertion renumbered existing references or changed the primary image")
+        studio.undoAssetChange()
+        // Deferred providers exercise an actual suspension, rather than relying
+        // on file size or timing. Unrelated text/settings edits remain permitted.
+        let deferred = DeferredStudioImageProvider()
+        let pending = Task { await studio.importProviders([deferred.makeProvider()]) }
+        try await deferred.waitUntilRequested()
+        let lockedDraft = try snapshot(studio), lockedReset = studio.workspaceResetID
+        studio.remove(originals[0].id); studio.move(originals[0].id, offset: 1)
+        studio.undoAssetChange(); studio.selectModel("flux2-klein-4b"); studio.newDraft()
+        try check(try snapshot(studio) == lockedDraft && studio.workspaceResetID == lockedReset,
+                  "Asset/model/reset controls changed a pending import context")
+        studio.draft.prompt = "Keep typing while the provider waits"; studio.draft.seedText = "123"
+        deferred.finish(png); await pending.value
+        try check(studio.draft.assets.count == 4 && Array(studio.draft.assets.prefix(3)) == originals &&
+                  studio.draft.prompt == "Keep typing while the provider waits" && studio.draft.seedText == "123" && !studio.importing,
+                  "Deferred import lost input order, text or unrelated sampling edits")
+        for changedField in ["model", "operation", "assets", "primary", "cancel"] {
+            studio.draft.modelID = "qwen-image-2.1"; studio.draft.operation = "image.edit"
+            studio.draft.assets = originals; studio.draft.initImageID = originals[1].id
+            let provider = DeferredStudioImageProvider(), before = try stagedCount(studio)
+            let task = Task { await studio.importProviders([provider.makeProvider()]) }
+            try await provider.waitUntilRequested()
+            switch changedField {
+            case "model": studio.draft.modelID = "flux2-klein-4b"
+            case "operation": studio.draft.operation = "image.generate"
+            case "assets": studio.draft.assets.reverse()
+            case "primary": studio.draft.initImageID = originals[2].id
+            default: task.cancel()
+            }
+            let changed = try snapshot(studio)
+            provider.finish(png); await task.value
+            try check(try snapshot(studio) == changed && (try stagedCount(studio)) == before && !studio.importing,
+                      "Deferred \(changedField) change was overwritten or left a staged file/locked controls")
+        }
+        studio.selectModel("flux2-klein-4b")
+        studio.draft.assets = originals; studio.draft.initImageID = originals[0].id
+        studio.draft.prompt = "Modify the second image"
+        studio.useOnlyAssetForEditing(originals[1].id)
+        try check(studio.draft.operation == "image.transform" && studio.draft.activeAssets == [originals[1]] &&
+                  studio.draft.assets == originals, "FLUX single-image editing selected a wrong input or removed unused references")
+        studio.selectModel("qwen-image-2.1")
+        studio.draft.loras = [StudioLoRA(path: adapter.path)]; studio.applyQwen21TurboPreset()
+        studio.draft.operation = "image.edit"; studio.draft.assets = originals; studio.draft.initImageID = originals[2].id
+        studio.draft.seedText = "765"; studio.draft.randomSeed = true; studio.draft.dynamicText = true
+        studio.draft.strength = 0.42; studio.lastSeed = 987
+        let keptLoRAs = studio.draft.loras
+        var reset = studio.workspaceResetID
+        studio.message = "Previous failure"; studio.newDraft()
+        try check(studio.workspaceResetID != reset && studio.message == nil && studio.draft.assets.isEmpty && !studio.canUndoAssets,
+                  "New draft did not clear edit state or emit a workspace reset")
+        try check(studio.draft.modelID == "qwen-image-2.1" && studio.draft.modelPath == root.path &&
+                  studio.draft.operation == "image.generate" && studio.draft.prompt.isEmpty && studio.draft.initImageID == nil &&
+                  studio.draft.loras == keptLoRAs && studio.draft.steps == 6 && studio.draft.width == 512 && studio.draft.height == 512 &&
+                  studio.draft.acceleration?.policy == "gpu" && studio.draft.residency == "component_staged" &&
+                  studio.draft.seedText == "765" && studio.draft.randomSeed && studio.draft.dynamicText &&
+                  studio.draft.strength == 0.42 && studio.lastSeed == nil,
+                  "New draft switched away from Qwen turbo or reset generation preferences")
+        reset = studio.workspaceResetID
+        studio.newDraft()
+        try check(studio.workspaceResetID != reset, "Resetting an already empty draft did not notify the workspace")
+        studio.selectModel("ltx-2.5-distilled")
+        studio.draft.operation = "video.image"; studio.draft.assets = originals
+        studio.draft.width = 832; studio.draft.height = 480; studio.draft.frames = 97; studio.draft.steps = 11
+        studio.draft.ltxBackend = "c_metal"; studio.draft.ltxFastAV = false
+        studio.newDraft()
+        try check(studio.draft.modelID == "ltx-2.5-distilled" && studio.draft.operation == "video.generate" &&
+                  studio.draft.assets.isEmpty && studio.draft.width == 832 && studio.draft.height == 480 &&
+                  studio.draft.frames == 97 && studio.draft.steps == 11 && studio.draft.ltxBackend == "c_metal" && !studio.draft.ltxFastAV,
+                  "New video draft lost its model or sampling/backend preferences")
+        reset = studio.workspaceResetID; studio.reuse(job)
+        try check(studio.workspaceResetID != reset && studio.draft.prompt == job.request.prompt,
+                  "History reuse did not reset the workspace or incorrectly cleared its stored prompt")
+        let configuration = root.appendingPathComponent("editing-config.json")
+        try JSONEncoder().encode(studio.draft).write(to: configuration)
+        reset = studio.workspaceResetID
+        try studio.importConfiguration(from: configuration)
+        try check(studio.workspaceResetID != reset, "Configuration import did not reset the workspace")
+        print("PASS editing state: result copies/fresh instructions, single-image selection, reference/mask order, turbo limits, delayed-provider conflicts/cancellation, prompt preservation and workspace resets")
     }
 }

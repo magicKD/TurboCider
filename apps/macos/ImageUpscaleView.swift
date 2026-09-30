@@ -62,7 +62,7 @@ struct ImageUpscaleView: View {
                         MediaPreview(path: sourcePath, maxPixel: 1000).frame(height: 280)
                     } else {
                         ContentUnavailableView("选择要放大的图片", systemImage: "photo.badge.plus",
-                                               description: Text("选择原图，在右侧设置模型后开始超分。"))
+                                               description: Text("选择原图，打开「超分设置」选择模型后开始超分。"))
                             .frame(height: 280)
                     }
                 }.padding(24)

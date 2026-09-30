@@ -194,7 +194,7 @@ struct ModelLibraryView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: item.isVideo ? "film" : "photo").font(.title3).frame(width: 28, height: 30)
             VStack(alignment: .leading, spacing: 5) {
-                Text(item.name).font(.callout.weight(.medium)).multilineTextAlignment(.leading)
+                Text(item.displayName).font(.callout.weight(.medium)).multilineTextAlignment(.leading)
                 Text(item.isVideo ? "视频生成" : "图像生成").font(.caption).foregroundStyle(.secondary)
                 HStack(spacing: 5) {
                     if studio.draft.modelID == item.id { Text("当前创作").foregroundStyle(.tint) }
@@ -211,7 +211,7 @@ struct ModelLibraryView: View {
     private func details(_ item: StudioModel) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(item.name).font(.title2.weight(.semibold))
+                Text(item.displayName).font(.title2.weight(.semibold))
                 Text(item.id).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 Text(item.availableOperations.map(operationName).joined(separator: " · ")).font(.callout)
                 HStack {
