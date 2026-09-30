@@ -1478,6 +1478,83 @@ class ContractTests(unittest.TestCase):
         with patch.dict(os.environ, {'TURBOCIDER_QWEN21_VIGGLE_LORA_FP16': 'invalid'}):
             self.assertNotEqual(plan(base)[0], 0)
 
+    def test_qwen21_viggle_v021_r128_six_step_gpu_workflows(self):
+        adapter = dict(path='local/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',
+                       strength=1.0, role='transformer')
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=512, height=512, steps=6, audio=False, frames=1,
+                    execution='gpu', residency='resident', allow_approximation=True,
+                    loras=[adapter], lora_strategy='inference_time')
+        flags = {name: '0' for name in (
+            'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN',
+            'TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN',
+            'TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC',
+            'TURBOCIDER_QWEN21_LORA_GATE_UP_DIAGNOSTIC',
+            'TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC',
+            'TURBOCIDER_QWEN21_VIGGLE_LORA_FP16',
+        )}
+        refs = [dict(kind='image', role='reference', path=f'ref-{i}.png')
+                for i in range(4)]
+        with patch.dict(os.environ, flags):
+            for count in range(4):
+                request = {**base, 'operation': 'image.edit' if count else 'image.generate',
+                           'inputs': refs[:count]}
+                with self.subTest(references=count):
+                    code, result, error = plan(request)
+                    self.assertEqual(code, 0, error)
+                    self.assertEqual(result['execution'], 'gpu')
+                    self.assertEqual(result['lora_strategy'], 'inference_time')
+                    self.assertEqual(result['qwen21_reference_size'], 1024)
+                    self.assertEqual(result['lora_count'], 1)
+                    self.assertIn('qwen21_viggle_v021_r128_6step_distillation',
+                                  result['algorithm_approximations'])
+                    self.assertNotIn('qwen21_viggle_v021_r256_6step_distillation',
+                                     result['algorithm_approximations'])
+            code, automatic, error = plan({**base, 'lora_strategy': 'auto'})
+            self.assertEqual(code, 0, error)
+            self.assertEqual(automatic['lora_strategy'], 'inference_time')
+            for invalid in (
+                dict(steps=5), dict(steps=40), dict(allow_approximation=False),
+                dict(width=768), dict(execution='auto'),
+                dict(execution='gpu_ane', ane_manifest='probe.json'),
+                dict(lora_strategy='in_memory_merge'), dict(lora_strategy='disk_premerge'),
+                dict(loras=[{**adapter, 'role': 'text_encoder'}]),
+                dict(loras=[{**adapter, 'strength': 0.0}]),
+                dict(loras=[{**adapter, 'strength': 0.5}]),
+                dict(loras=[{**adapter, 'strength': 2.0}]),
+                dict(loras=[{**adapter, 'path': 'unrelated-r128.safetensors'}]),
+                dict(loras=[adapter, adapter]),
+                dict(operation='image.generate', inputs=refs[:1]),
+                dict(operation='image.edit', inputs=[]),
+                dict(operation='image.edit', inputs=refs),
+                dict(operation='image.edit', inputs=refs[:1], qwen21_reference_size=512),
+            ):
+                with self.subTest(invalid=invalid):
+                    self.assertNotEqual(plan({**base, **invalid})[0], 0)
+
+    def test_qwen21_viggle_v021_r128_schema2_three_reference_workflow(self):
+        references = [dict(kind='image', role='reference', path=f'ordered-{i}.png')
+                      for i in range(3)]
+        request = dict(
+            schema_version=2, model='qwen-image-2.1', operation='image.edit',
+            inputs=[dict(kind='text', role='prompt', text='Combine image 1, 2 and 3.'),
+                    *references],
+            outputs=[dict(kind='image', path='edit.png', width=512, height=512,
+                          frames=1, audio=False)],
+            sampling=dict(seed=42, steps=6),
+            execution=dict(policy='gpu', residency='resident', allow_approximation=True),
+            lora_strategy='inference_time',
+            loras=[dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',
+                        strength=1.0, role='transformer')],
+        )
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN': '0'}):
+            code, result, error = plan(request)
+            self.assertEqual(code, 0, error)
+            self.assertEqual(result['operation'], 'image.edit')
+            self.assertEqual(result['lora_strategy'], 'inference_time')
+            self.assertIn('qwen21_viggle_v021_r128_6step_distillation',
+                          result['algorithm_approximations'])
+
     def test_qwen21_explicit_w8a8_edit_cli_gate(self):
         refs = [dict(kind='image', role='reference', path=f'qwen-exp-{i}.png')
                 for i in range(3)]

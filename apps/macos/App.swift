@@ -8,6 +8,7 @@ struct TurboCiderNativeApp: App {
     @StateObject private var store: NativeJobStore
     @StateObject private var studio: StudioState
     @StateObject private var api: LocalAPIController
+    @State private var submitting = false
     @NSApplicationDelegateAdaptor(StudioAppDelegate.self) private var delegate
     init() {
         let directory = ProcessInfo.processInfo.environment["TURBOCIDER_NATIVE_STATE"].map { URL(fileURLWithPath: $0) }
@@ -21,13 +22,15 @@ struct TurboCiderNativeApp: App {
     }
     var body: some Scene {
         WindowGroup("TurboCider") {
-            StudioView(store: store, studio: studio, api: api).frame(minWidth: 980, minHeight: 700)
+            StudioView(store: store, studio: studio, api: api, submitting: $submitting).frame(minWidth: 980, minHeight: 700)
                 .onAppear { delegate.store = store; delegate.studio = studio; delegate.api = api }
         }
         .commands {
-            CommandGroup(replacing: .newItem) { Button("新建创作") { studio.newDraft() }.keyboardShortcut("n") }
+            CommandGroup(replacing: .newItem) { Button("新建创作") { studio.newDraft() }.keyboardShortcut("n")
+                .disabled(store.busy || submitting || studio.importing) }
             CommandGroup(after: .pasteboard) {
                 Button("粘贴图片到创作") { Task { await studio.pasteImage() } }.keyboardShortcut("v", modifiers: [.command, .shift])
+                    .disabled((submitting && !store.busy) || studio.importing)
             }
         }
         Settings { ScrollView { VStack(alignment: .leading, spacing: 14) {
@@ -71,6 +74,7 @@ private func phaseName(_ value: String) -> String {
     if value == "pack_z_image_suffix" { return "整理 GPU 权重" }
     if value == "upscale" { return "图像超分" }
     if value == "denoise" { return "采样" }
+    if ["image_encode", "vision_encode", "reference_vae_encode"].contains(value) { return "编码参考图" }
     if value.contains("text_cache_hit") { return "复用文本编码" }
     if value.contains("vae") || value.contains("decode") { return "图像编解码" }
     if value.contains("load") { return "加载权重" }
@@ -112,12 +116,66 @@ struct StudioView: View {
     @State private var upscaleSourcePath = ""
     @State private var imageUpscaling = false
     @State private var librarySelection: String?
-    @State private var submitting = false
+    @Binding var submitting: Bool
     @State private var annotationAsset: StudioAsset?
     private var selectedJob: NativeJob? { store.jobs.first { $0.id == selected && $0.hasOutput } ?? store.jobs.first { $0.hasOutput } }
     private var outputJobs: [NativeJob] { store.jobs.filter { $0.hasOutput } }
     private var outputIDs: [UUID] { outputJobs.map(\.id) }
     private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
+    private var preparingSubmission: Bool { submitting && !store.busy }
+    private var assetControlsLocked: Bool { preparingSubmission || studio.importing }
+    private var hasDetailedRunStatus: Bool {
+        if store.activeJob != nil || store.busy || store.workerCleanupPending || submitting || store.resolvingAcceleration ||
+            studio.message != nil || store.storageError != nil || studio.draft.zImageStreamingConflict() != nil { return true }
+        guard let job = store.jobs.first else { return false }
+        return (job.state == "failed" || job.state == "interrupted") && job.error != nil
+    }
+    private var referenceImportLimit: Int {
+        studio.draft.qwen21TurboLoRA != nil && studio.draft.operation == "image.edit"
+            ? 3 : studio.imageImportLimit
+    }
+    private var workflowOperations: [String] {
+        if imageUpscaling { return ["image.generate", "image.transform", "image.edit"] }
+        if studio.draft.modelID == "qwen-image-2.1" { return ["image.generate", "image.edit"] }
+        return studio.creationOperations
+    }
+    private var generationBlocker: String? {
+        guard let model, model.executor else { return "请选择可运行的本地模型。" }
+        if studio.draft.modelPath.isEmpty { return "请先选择本地模型文件夹。" }
+        if !model.supports(studio.draft.operation) { return "当前模型不支持此创作方式，请重新选择。" }
+        if studio.draft.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "请输入画面描述或编辑指令。" }
+        let count = studio.draft.activeAssets.count
+        if studio.draft.modelID == "qwen-image-2.1", !studio.draft.activeLoRAs.isEmpty, studio.draft.qwen21TurboLoRA == nil {
+            return "Qwen 2.1 请选择单个已支持的 Viggle 六步 r128 / r256 LoRA。"
+        }
+        if let adapter = studio.draft.qwen21TurboLoRA {
+            if adapter.role != "transformer" || adapter.strength != 1 {
+                return "六步 LoRA 需要 Transformer 角色、强度 1；请应用 GPU 预设。"
+            }
+            if studio.draft.width != 512 || studio.draft.height != 512 || studio.draft.steps != 6 {
+                return "六步 LoRA 需要 512×512、6 步；请在参数中应用 GPU 预设。"
+            }
+            if studio.draft.operation == "image.edit", count > 3 { return "六步 LoRA 最多使用 3 张参考图，请移除多余图片或关闭 LoRA。" }
+        }
+        if ["image.transform", "video.image"].contains(studio.draft.operation), count != 1 { return "请添加并选择一张原图。" }
+        if ["image.edit", "video.reference", "video.keyframes"].contains(studio.draft.operation), count == 0 { return "请添加至少一张参考图。" }
+        if count > (model.max_images ?? 8) { return "当前模型最多支持 \(model.max_images ?? 8) 张输入图，请移除多余图片。" }
+        if !studio.selectedStreamingTargetAvailable { return "当前流式档位不可用，请在参数中选择可用档位。" }
+        return nil
+    }
+    private var workflowDescription: String {
+        switch studio.draft.operation {
+        case "image.transform": return "选择一张原图，描述想修改的内容。"
+        case "image.edit": return "添加 1–\(studio.draft.qwen21TurboLoRA != nil ? 3 : (model?.max_images ?? 8)) 张参考图；提示词中的图片编号与下方顺序一致。"
+        case "video.image": return "选择首帧图片，描述镜头与动作。"
+        case "video.keyframes": return "按顺序添加首帧与尾帧，描述画面如何变化。"
+        case "video.reference": return "添加参考图，描述人物、场景和动作。"
+        default: return model?.isVideo == true ? "描述场景、镜头与动作，在本机生成视频。" : "描述主体、场景与风格，在本机生成图片。"
+        }
+    }
+    private var promptPlaceholder: String {
+        studio.draft.activeAssets.isEmpty ? "描述你想创作的画面…" : "描述修改内容，以及需要保留的主体、构图或细节…"
+    }
     private var loraStrategyHint: String {
         let selected = studio.draft.loraStrategy == "auto"
             ? model?.default_lora_strategy : studio.draft.loraStrategy
@@ -159,7 +217,7 @@ struct StudioView: View {
                 case .models: modelsPage
                 case .tasks: tasksPage
                 case .library: libraryPage
-                case .api: LocalAPIView(api: api, store: store)
+                case .api: LocalAPIView(api: api, store: store).disabled(preparingSubmission)
                 }
             }.background(Color(nsColor: .windowBackgroundColor))
         }
@@ -167,8 +225,8 @@ struct StudioView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) { Text("本地创作").foregroundStyle(.secondary) }
             ToolbarItem(placement: .automatic) { Text(studio.saved ? "草稿已保存" : "草稿尚未保存").font(.caption).foregroundStyle(.secondary) }
-            ToolbarItem { Button { studio.newDraft(); selected = nil; resultSelection.clear(); imageUpscaling = false; page = .studio } label: { Label("新建创作", systemImage: "square.and.pencil") } }
-            ToolbarItem { Button { inspector.toggle() } label: { Label("显示参数", systemImage: "sidebar.right") } }
+            ToolbarItem { Button { studio.newDraft(); selected = nil; resultSelection.clear(); imageUpscaling = false; page = .studio } label: { Label("新建创作", systemImage: "square.and.pencil") }.disabled(store.busy || assetControlsLocked) }
+            ToolbarItem { Button { inspector.toggle() } label: { Label(inspector ? "隐藏参数" : "显示参数", systemImage: "sidebar.right") }.help(inspector ? "收起生成参数" : "展开模型与生成参数") }
         }
         .onDisappear { studio.save() }
         .onChange(of: store.deletableJobIDs) { _, ids in selectedTasks.formIntersection(ids) }
@@ -178,7 +236,7 @@ struct StudioView: View {
         .task { library.refresh(studio: studio, migrate: true) }
         .task(id: "\(page == .studio && imageUpscaling):\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleAfterGeneration):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)") {
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            guard studio.draft.upscaleAutoPreload, (page == .studio && imageUpscaling || studio.draft.upscaleAfterGeneration),
+            guard !preparingSubmission, studio.draft.upscaleAutoPreload, (page == .studio && imageUpscaling || studio.draft.upscaleAfterGeneration),
                   (try? ImageUpscaler.validateModelURL(URL(fileURLWithPath: studio.draft.upscaleModelPath))) != nil,
                   !studio.draft.upscaleModelPath.isEmpty, !store.busy, !api.running, !api.changing else { return }
             do {
@@ -219,30 +277,43 @@ struct StudioView: View {
                         Label("图片生成", systemImage: "photo").tag("image")
                         Label("视频生成", systemImage: "video").tag("video")
                     }.pickerStyle(.segmented).frame(maxWidth: 300)
-                        .disabled(store.busy || studio.importing).accessibilityIdentifier("creationKind")
+                        .disabled(store.busy || assetControlsLocked).accessibilityIdentifier("creationKind")
                     Spacer()
                     Button { page = .models } label: { Label("模型中心", systemImage: "square.stack.3d.up") }
                 }
                 HStack {
                     Picker("创作方式", selection: Binding(get: { imageUpscaling ? "image.transform" : studio.draft.operation }, set: {
                         guard $0 != (imageUpscaling ? "image.transform" : studio.draft.operation) else { return }
-                        imageUpscaling = false; studio.changeOperation($0); compareOriginal = false
+                        imageUpscaling = false
+                        studio.changeOperation(studio.draft.modelID == "qwen-image-2.1" && $0 == "image.transform" ? "image.edit" : $0)
+                        compareOriginal = false
                     })) {
-                        ForEach(imageUpscaling ? ["image.generate", "image.transform", "image.edit"] : studio.creationOperations, id: \.self) { Text(operationName($0)).tag($0) }
-                    }.pickerStyle(.segmented).frame(maxWidth: 440).disabled(store.busy || studio.importing).accessibilityIdentifier("operation")
+                        ForEach(workflowOperations, id: \.self) { operation in
+                            Text(imageUpscaling && operation == "image.transform" ? "图像超分"
+                                 : studio.draft.modelID == "qwen-image-2.1" && operation == "image.edit" ? "图片编辑"
+                                 : operationName(operation)).tag(operation)
+                        }
+                    }.pickerStyle(.segmented).frame(maxWidth: 440).disabled(store.busy || assetControlsLocked).accessibilityIdentifier("operation")
                     Spacer()
-                    Text("STUDIO").font(.caption2).tracking(2).foregroundStyle(.secondary)
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text(model?.name ?? "请选择模型").font(.caption).lineLimit(1)
+                        Text(studio.draft.usesANE && studio.draft.qwen21TurboLoRA == nil ? "GPU + ANE" : "GPU").font(.caption2).foregroundStyle(.secondary)
+                    }.help(studio.draft.modelPath)
                 }
             if imageUpscaling || studio.draft.operation == "image.transform" {
                 Picker("单图处理", selection: Binding(get: { imageUpscaling }, set: {
                     imageUpscaling = $0
-                    if !$0 { studio.changeOperation("image.transform") }
+                    if !$0 { studio.changeOperation(model?.supports("image.transform") == true ? "image.transform" : "image.edit") }
                     else if upscaleSourcePath.isEmpty { upscaleSourcePath = studio.draft.activeAssets.first?.path ?? "" }
                 })) {
                     Text("修改内容").tag(false)
                     Text("图像超分").tag(true)
                 }.pickerStyle(.segmented).frame(maxWidth: 300)
-                    .disabled(store.busy || studio.importing).accessibilityIdentifier("singleImageTool")
+                    .disabled(store.busy || assetControlsLocked).accessibilityIdentifier("singleImageTool")
+            }
+            if !imageUpscaling {
+                Text(workflowDescription).font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -250,7 +321,8 @@ struct StudioView: View {
         HStack(spacing: 0) {
             VStack(spacing: 12) {
                 if api.running { HStack { Label("本地 API 正在接收任务", systemImage: "network"); Spacer(); Button("管理服务") { page = .api } }.font(.callout).padding(10).background(ciderAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8)) }
-                mediaStage.frame(maxWidth: .infinity, maxHeight: .infinity)
+                mediaStage.frame(maxWidth: .infinity, minHeight: selectedJob == nil ? 180 : (hasDetailedRunStatus ? 200 : 240), maxHeight: .infinity)
+                    .layoutPriority(selectedJob == nil ? 0 : 1)
                 if !store.jobs.filter({ $0.hasOutput }).isEmpty { resultStrip }
                 composer
                 runStatus
@@ -264,40 +336,59 @@ struct StudioView: View {
     private var mediaStage: some View {
         VStack(spacing: 10) {
             if let job = selectedJob, job.hasOutput {
+                let metadata = resultMetadata(job)
                 HStack {
                     Text(store.activeJob == nil ? "生成结果" : "上一结果 · 新任务进行中").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     if job.request.inputs?.first != nil { Toggle("查看原图", isOn: $compareOriginal).toggleStyle(.button).font(.caption) }
                 }
                 StudioOutputPreview(path: compareOriginal ? (job.request.inputs?.first?.path ?? job.request.output) : job.request.output)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityIdentifier("generatedImage")
-                if let route = job.routeSummary { Text("实际路径：\(route)").font(.caption2).foregroundStyle(.secondary) }
+                    .frame(maxWidth: .infinity, minHeight: hasDetailedRunStatus ? 100 : 140, maxHeight: .infinity)
+                    .layoutPriority(1).accessibilityIdentifier("generatedImage")
                 HStack(spacing: 12) {
-                    Text(job.request.operation == "image.upscale" ? "\(job.request.width) × \(job.request.height) · 超分结果" : "\(job.request.width) × \(job.request.height) · 种子 \(job.request.seed)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                    Spacer()
-                    if URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" { Button("编辑此图") { Task {
-                        let previous = Set(studio.draft.assets.map(\.id))
-                        await studio.addFiles([URL(fileURLWithPath: job.request.output)])
-                        if let added = studio.draft.assets.first(where: { !previous.contains($0.id) }) {
-                            studio.changeOperation("image.transform"); studio.draft.initImageID = added.id
-                        }
-                    } }.disabled(studio.importing) }
+                    Text(metadata).font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading).help(metadata)
+                    if URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" {
+                        Button("编辑此图") { Task {
+                            if await studio.editResult(job) {
+                                imageUpscaling = false; compareOriginal = false; page = .studio
+                            }
+                        } }
+                            .disabled(store.busy || assetControlsLocked)
+                            .help("以这张结果开始单图编辑，保留对应模型。")
+                            .accessibilityIdentifier("editResult")
+                    }
                     Menu {
                         if URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" {
                             Button("单独超分此图…") { upscaleSourcePath = job.request.output; imageUpscaling = true; page = .studio }
                         }
                         Button("另存为…") { exportResult(job.request.output) }
                         Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: job.request.output)]) }
-                        Button("复用参数") { studio.reuse(job) }
+                        Button("复用参数") { reuseParameters(job) }.disabled(store.busy || assetControlsLocked)
                         Button(resultDeletionTitle(for: job), role: .destructive) { trashResults(resultDeletionIDs(for: job)) }.disabled(store.busy)
                     } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).frame(width: 26)
                 }
+            } else if let asset = studio.draft.activeAssets.first {
+                Text(studio.draft.activeAssets.count == 1 ? "原图预览" : "参考 1 预览 · 共 \(studio.draft.activeAssets.count) 张")
+                    .font(.caption).foregroundStyle(.secondary)
+                MediaPreview(path: asset.path).frame(maxWidth: .infinity, maxHeight: .infinity)
+                Text("\(asset.name) · \(asset.width) × \(asset.height)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
             } else {
                 Image(systemName: "photo.on.rectangle.angled").font(.system(size: 42, weight: .ultraLight)).foregroundStyle(.secondary)
-                Text("把想法变成画面").font(.title2.weight(.medium))
-                Text(studio.supportsImageInputs ? "输入提示词，或添加图片开始创作\n所有生成都在这台 Mac 上完成" : "输入提示词开始创作\n所有生成都在这台 Mac 上完成").font(.callout).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                Text(["image.transform", "image.edit", "video.image", "video.reference", "video.keyframes"].contains(studio.draft.operation) ? "添加图片，开始编辑" : "把想法变成画面").font(.title2.weight(.medium))
+                Text(workflowDescription).font(.callout).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                if ["image.transform", "image.edit", "video.image", "video.reference", "video.keyframes"].contains(studio.draft.operation) {
+                    Button(action: chooseImages) { Label("选择图片…", systemImage: "plus") }
+                        .disabled(assetControlsLocked || !studio.supportsImageInputs)
+                }
             }
         }.padding(12).background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
+    }
+    private func resultMetadata(_ job: NativeJob) -> String {
+        if compareOriginal { return "输入原图" }
+        let dimensions = "\(job.request.width) × \(job.request.height)"
+        let detail = job.request.operation == "image.upscale" ? "超分结果" : "种子 \(job.request.seed)"
+        return "\(dimensions) · \(detail)" + (job.routeSummary.map { " · \($0)" } ?? "")
     }
     private var resultStrip: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -316,23 +407,49 @@ struct StudioView: View {
     }
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
+            ScrollView { composerInputs }
+                .frame(minHeight: hasDetailedRunStatus ? 80 : (selectedJob != nil ? 120 : (studio.draft.assets.isEmpty ? 120 : 180)),
+                       maxHeight: selectedJob == nil ? 280 : 200)
+            generationControls
+        }.padding(14).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(dropping ? ciderAccent : Color.primary.opacity(0.12), lineWidth: 1))
+            .onDrop(of: [.fileURL, .image], isTargeted: $dropping) { providers in
+                guard !assetControlsLocked, studio.supportsImageInputs else { return false }
+                Task { await studio.importProviders(providers) }; return true
+            }
+    }
+    private var composerInputs: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if store.busy {
+                Label("当前任务使用已提交的参数；下方修改用于下一次生成。", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if studio.supportsImageInputs || !studio.draft.assets.isEmpty {
             HStack {
-                Button(action: chooseImages) { Label("添加图片", systemImage: "plus") }.disabled(!studio.supportsImageInputs).accessibilityIdentifier("addImages")
-                Button { Task { await studio.pasteImage() } } label: { Label("粘贴图片", systemImage: "doc.on.clipboard") }.disabled(!studio.supportsImageInputs).accessibilityIdentifier("pasteImages")
+                Button(action: chooseImages) { Label("添加图片", systemImage: "plus") }.disabled(!studio.supportsImageInputs || studio.draft.assets.count >= referenceImportLimit).accessibilityIdentifier("addImages")
+                Button { Task { await studio.pasteImage() } } label: { Label("粘贴图片", systemImage: "doc.on.clipboard") }.disabled(!studio.supportsImageInputs || studio.draft.assets.count >= referenceImportLimit).accessibilityIdentifier("pasteImages")
                 if studio.canUndoAssets { Button { studio.undoAssetChange() } label: { Image(systemName: "arrow.uturn.backward") }.help("撤销素材修改") }
                 Spacer()
                 if studio.importing { ProgressView().controlSize(.small) }
-                Text("\(studio.draft.assets.count) / \(studio.imageImportLimit)").font(.caption).foregroundStyle(.secondary)
-            }.disabled(studio.importing)
+                Text("已添加 \(studio.draft.assets.count) / \(referenceImportLimit)").font(.caption).foregroundStyle(.secondary)
+            }.disabled(assetControlsLocked)
             }
             if !studio.draft.assets.isEmpty { inputStrip }
             if studio.draft.assets.count > studio.draft.activeAssets.count {
-                Text("\(studio.draft.assets.count - studio.draft.activeAssets.count) 张图片已保留，未参与当前模式。")
-                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("\(studio.draft.assets.count - studio.draft.activeAssets.count) 张图片已保留，未参与当前模式。")
+                    if studio.draft.operation == "image.generate", model?.supports("image.edit") == true {
+                        Button("用于图片编辑") { studio.changeOperation("image.edit") }.disabled(store.busy || assetControlsLocked)
+                    }
+                }.font(.caption).foregroundStyle(.secondary)
             }
-            PromptEditor(text: $studio.draft.prompt) { Task { await studio.pasteImage() } }
-                .frame(height: 72).accessibilityIdentifier("prompt")
+            HStack {
+                Text(studio.draft.activeAssets.isEmpty ? "画面描述" : "编辑指令").font(.subheadline.weight(.medium))
+                Spacer()
+                Text("⌘ Return 生成").font(.caption2).foregroundStyle(.secondary)
+            }
+            PromptEditor(text: $studio.draft.prompt, placeholder: promptPlaceholder, editable: !preparingSubmission) { Task { await studio.pasteImage() } }
+                .frame(height: 78).accessibilityIdentifier("prompt")
             if studio.draft.modelID == "qwen-image-2.1" {
                 HStack {
                     Menu("替换为 Qwen 2.1 示例提示词…") {
@@ -347,11 +464,15 @@ struct StudioView: View {
 
             }
             PromptCapacityView(studio: studio, busy: store.busy || submitting)
-
+        }
+    }
+    private var generationControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
+                    Text("生成画布 \(studio.draft.width) × \(studio.draft.height)").font(.caption).monospacedDigit()
                     Text(studio.draft.upscaleAfterGeneration && model?.isVideo != true
-                         ? "输出 \(studio.draft.width * studio.draft.upscaleVariant.scale) × \(studio.draft.height * studio.draft.upscaleVariant.scale)" : inputSummary).font(.caption)
+                         ? "超分 ×\(studio.draft.upscaleVariant.scale) → \(studio.draft.width * studio.draft.upscaleVariant.scale) × \(studio.draft.height * studio.draft.upscaleVariant.scale)" : inputSummary).font(.caption2).foregroundStyle(.secondary)
                     Text(studio.draft.randomSeed ? "每次随机 · 本次 \(studio.lastSeed.map(String.init) ?? "待确定")" : "固定种子 \(studio.draft.seedText)").font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -368,15 +489,23 @@ struct StudioView: View {
                     .accessibilityIdentifier("generationUpscale")
                 }
                 Button(action: generate) { Label(store.busy ? "正在运行" : (model?.isVideo == true ? "生成视频" : "生成图像"), systemImage: "sparkles").padding(.horizontal, 8).padding(.vertical, 4) }
-                    .buttonStyle(.borderedProminent).foregroundStyle(Color(red: 0.13, green: 0.09, blue: 0.04))
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(store.busy || api.running || api.changing || submitting || studio.importing ||
-                              model?.executor != true || !studio.selectedStreamingTargetAvailable)
+                              model?.executor != true || !studio.selectedStreamingTargetAvailable || generationBlocker != nil)
                     .accessibilityIdentifier("generate")
             }
-        }.padding(14).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(dropping ? ciderAccent : Color.primary.opacity(0.12), lineWidth: 1))
-            .onDrop(of: [.fileURL, .image], isTargeted: $dropping) { providers in Task { await studio.importProviders(providers) }; return true }
+            if !store.busy, !submitting, let blocker = generationBlocker {
+                HStack(alignment: .top) {
+                    Label(blocker, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if studio.draft.modelPath.isEmpty { Button("选择模型") { page = .models }.font(.caption) }
+                    else if studio.supportsImageInputs, studio.draft.operation != "image.generate", studio.draft.activeAssets.isEmpty {
+                        Button("添加图片", action: chooseImages).font(.caption).disabled(assetControlsLocked)
+                    }
+                }.accessibilityIdentifier("generationRequirement")
+            }
+        }
     }
     private var promptEnhancementSettings: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -417,29 +546,56 @@ struct StudioView: View {
         ScrollView(.horizontal) { HStack(alignment: .top, spacing: 10) {
             ForEach(Array(studio.draft.assets.enumerated()), id: \.element.id) { index, asset in
                 VStack(alignment: .leading, spacing: 4) {
-                    Button { if ["image.transform", "video.image"].contains(studio.draft.operation) { studio.draft.initImageID = asset.id } } label: {
-                        MediaPreview(path: asset.path, maxPixel: 160).frame(width: 78, height: 54).clipped()
-                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(studio.draft.activeAssets.contains(asset) ? ciderAccent : .clear, lineWidth: 2))
-                    }.buttonStyle(.plain).accessibilityLabel("参考图 \(index + 1)，\(asset.name)，点击选为原图")
+                    ZStack(alignment: .topTrailing) {
+                        inputAssetPreview(asset)
+                            .frame(width: 104, height: 64).clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(studio.draft.activeAssets.contains(asset) ? ciderAccent : Color.primary.opacity(0.12), lineWidth: 2))
+                        Button { studio.remove(asset.id) } label: {
+                            Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                                .frame(width: 20, height: 20).background(.regularMaterial, in: Circle())
+                        }.buttonStyle(.plain).padding(4).help("移除 \(asset.name)")
+                            .accessibilityLabel("移除参考图 \(index + 1)").accessibilityIdentifier("removeReference-\(index)")
+                    }
                     HStack(spacing: 4) {
-                        Text(["image.transform", "video.image"].contains(studio.draft.operation) && studio.draft.initImageID == asset.id ? "原图" : "参考 \(index + 1)").font(.caption2)
+                        Text(["image.transform", "video.image"].contains(studio.draft.operation) && studio.draft.initImageID == asset.id ? "原图 · 已选择" : "参考 \(index + 1)")
+                            .font(.caption2.weight(.medium))
+                        Spacer(minLength: 0)
                         Menu {
                             if studio.draft.modelID == "qwen-image-2.1" {
                                 Button("圈选 / 涂抹 / 独立蒙版…") { annotationAsset = asset }
-                                    .disabled(studio.importing || store.busy || submitting)
+                                    .disabled(store.busy || assetControlsLocked)
                             }
-                            Button("设为原图") {
-                                let operation = studio.draft.modelID == "ltx-2.5-distilled" ? "video.image" : "image.transform"
-                                studio.changeOperation(operation); studio.draft.initImageID = asset.id
-                            }
+                            Button(model?.supports("image.edit") == true && model?.supports("image.transform") != true ? "仅编辑这张" : "设为原图") { studio.useOnlyAssetForEditing(asset.id) }
+                                .disabled(store.busy)
+                            Divider()
                             Button("向前移动") { studio.move(asset.id, offset: -1) }.disabled(index == 0)
                             Button("向后移动") { studio.move(asset.id, offset: 1) }.disabled(index == studio.draft.assets.count - 1)
                             Button("移除", role: .destructive) { studio.remove(asset.id) }
-                        } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 22)
+                        } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 18)
+                            .accessibilityLabel("参考图 \(index + 1) 操作")
                     }
-                }.help("\(asset.name) · \(asset.width) × \(asset.height)")
+                    Text(asset.name).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 4) {
+                        Text(studio.draft.activeAssets.contains(asset) ? "参与生成" : "已保留").font(.caption2).foregroundStyle(studio.draft.activeAssets.contains(asset) ? ciderAccent : .secondary)
+                        Spacer(minLength: 0)
+                        Button { studio.move(asset.id, offset: -1) } label: { Image(systemName: "chevron.left") }
+                            .disabled(index == 0).help("将参考 \(index + 1) 向前移动")
+                            .accessibilityLabel("参考 \(index + 1) 向前移动")
+                        Button { studio.move(asset.id, offset: 1) } label: { Image(systemName: "chevron.right") }
+                            .disabled(index == studio.draft.assets.count - 1).help("将参考 \(index + 1) 向后移动")
+                            .accessibilityLabel("参考 \(index + 1) 向后移动")
+                    }.buttonStyle(.borderless).font(.caption2)
+                }.frame(width: 104).help("\(asset.name) · \(asset.width) × \(asset.height)").disabled(assetControlsLocked)
             }
-        }.padding(2) }.frame(height: 82)
+        }.padding(2) }.frame(height: 126)
+    }
+    @ViewBuilder private func inputAssetPreview(_ asset: StudioAsset) -> some View {
+        if ["image.transform", "video.image"].contains(studio.draft.operation) {
+            Button { studio.draft.initImageID = asset.id } label: { MediaPreview(path: asset.path, maxPixel: 208) }
+                .buttonStyle(.plain).accessibilityLabel("\(asset.name)，点击选为原图")
+        } else {
+            MediaPreview(path: asset.path, maxPixel: 208).accessibilityLabel(asset.name)
+        }
     }
     private var inspectorContents: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -448,7 +604,7 @@ struct StudioView: View {
                 Picker("模型", selection: Binding(get: { studio.draft.modelID }, set: { studio.changeModel($0) })) {
                     ForEach(studio.creationModels) { item in
                         let downloaded = !(studio.draft.modelPaths[item.id] ?? "").isEmpty
-                        Label("\(item.name) · \(downloaded ? "已下载" : "未下载")",
+                        Label("\(item.name) · \(downloaded ? "已配置" : "未配置")",
                               systemImage: downloaded ? "checkmark.circle.fill" : "arrow.down.circle")
                             .tag(item.id)
                     }
@@ -476,13 +632,25 @@ struct StudioView: View {
                     Text("采样步数")
                     TextField("采样步数", value: $studio.draft.steps, format: .number)
                         .textFieldStyle(.roundedBorder).accessibilityIdentifier("steps")
-                    Button("重置") { studio.draft.steps = model?.default_steps ?? 4 }
+                    Button("重置") { studio.draft.steps = studio.draft.qwen21TurboLoRA != nil ? 6 : (model?.default_steps ?? 4) }
                 }
-                Text(studio.draft.modelID.hasPrefix("z-image-turbo") ? "1–50 步，默认 \(model?.default_steps ?? 8) 步。其他步数的画质与加速收益需自行验证。" : "1–50 步，默认 \(model?.default_steps ?? 4) 步。")
+                Text(studio.draft.qwen21TurboLoRA != nil ? "此 Viggle 适配器使用固定 6 步采样。"
+                     : studio.draft.modelID.hasPrefix("z-image-turbo") ? "1–50 步，默认 \(model?.default_steps ?? 8) 步。其他步数的画质与加速收益需自行验证。" : "1–50 步，默认 \(model?.default_steps ?? 4) 步。")
                     .font(.caption2).foregroundStyle(.secondary)
+                if studio.draft.modelID == "qwen-image-2.1", studio.draft.activeLoRAs.isEmpty, studio.draft.steps == 6 {
+                    Button("基础模型改用 40 步") { studio.draft.steps = 40 }.font(.caption)
+                    Text("当前未启用六步 LoRA；基础模型推荐使用 40 步。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             }
             Text("输出尺寸").font(.subheadline)
-            HStack { TextField("宽", value: $studio.draft.width, format: .number).accessibilityIdentifier("width"); Text("×"); TextField("高", value: $studio.draft.height, format: .number).accessibilityIdentifier("height") }.textFieldStyle(.roundedBorder)
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 4) { Text("宽度").font(.caption2).foregroundStyle(.secondary); TextField("宽", value: $studio.draft.width, format: .number).accessibilityIdentifier("width") }
+                Text("×").padding(.bottom, 5)
+                VStack(alignment: .leading, spacing: 4) { Text("高度").font(.caption2).foregroundStyle(.secondary); TextField("高", value: $studio.draft.height, format: .number).accessibilityIdentifier("height") }
+                Button { let width = studio.draft.width; studio.draft.width = studio.draft.height; studio.draft.height = width } label: { Image(systemName: "arrow.left.arrow.right") }
+                    .disabled(studio.draft.width == studio.draft.height).help("交换宽高").accessibilityLabel("交换宽高").padding(.bottom, 3)
+            }.textFieldStyle(.roundedBorder)
             if studio.draft.modelID == "ltx-2.5-distilled" {
                 HStack {
                     Button("5 秒 · 480p 桶") {
@@ -540,11 +708,11 @@ struct StudioView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("计算设备").font(.caption)
                 Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
-                Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE }, set: { studio.setANEEnabled($0) }))
-                    .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true || studio.draft.zImageVariant?.id == "nvfp4").accessibilityIdentifier("enableANE")
-                Text(studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。").font(.caption2).foregroundStyle(.secondary)
-                if studio.draft.usesANE { Button("管理 ANE 分区与缓存") { page = .models } }
-                if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption2).foregroundStyle(.secondary) }
+                Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE && studio.draft.qwen21TurboLoRA == nil }, set: { studio.setANEEnabled($0) }))
+                    .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true || studio.draft.zImageVariant?.id == "nvfp4" || studio.draft.qwen21TurboLoRA != nil).accessibilityIdentifier("enableANE")
+                Text(studio.draft.qwen21TurboLoRA != nil ? "六步 LoRA 使用纯 GPU，基础模型的 ANE 分区不包含适配器。" : (studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。")).font(.caption2).foregroundStyle(.secondary)
+                if studio.draft.usesANE, studio.draft.qwen21TurboLoRA == nil { Button("管理 ANE 分区与缓存") { page = .models } }
+                if studio.draft.usesANE, studio.draft.qwen21TurboLoRA == nil, let status = store.accelerationStatus { Text(status).font(.caption2).foregroundStyle(.secondary) }
             }
             if model?.supports_lora == true {
                 Divider()
@@ -558,22 +726,31 @@ struct StudioView: View {
                     }.disabled(!library.loras.contains { $0.modelID == studio.draft.modelID })
                     Button("添加…", action: chooseLoRA)
                 }
-                ForEach(studio.draft.loras.indices, id: \.self) { index in
+                ForEach($studio.draft.loras) { $lora in
+                    let index = studio.draft.loras.firstIndex(where: { $0.id == lora.id }) ?? 0
                     VStack(alignment: .leading, spacing: 6) {
-                        Toggle(isOn: $studio.draft.loras[index].enabled) { Text(URL(fileURLWithPath: studio.draft.loras[index].path).lastPathComponent).font(.caption2).lineLimit(1) }.toggleStyle(.checkbox).accessibilityIdentifier("loraEnabled-\(index)")
+                        Toggle(isOn: $lora.enabled) { Text(URL(fileURLWithPath: lora.path).lastPathComponent).font(.caption2).lineLimit(1).help(lora.path) }.toggleStyle(.checkbox).accessibilityIdentifier("loraEnabled-\(index)")
                         HStack {
-                            Picker("角色", selection: $studio.draft.loras[index].role) {
+                            Picker("角色", selection: $lora.role) {
                                 Text("Transformer").tag("transformer")
                                 if studio.draft.modelID.hasPrefix("flux2-") { Text("Text Encoder").tag("text_encoder") }
                                 if studio.draft.modelID == "ltx-2.5-distilled" { Text("Refiner").tag("refiner") }
                             }.labelsHidden()
                             Text("强度").font(.caption2)
-                            TextField("强度", value: $studio.draft.loras[index].strength, format: .number).textFieldStyle(.roundedBorder).frame(width: 64).disabled(!studio.draft.loras[index].enabled).accessibilityIdentifier("loraStrength-\(index)")
-                            Button { studio.draft.loras.remove(at: index) } label: { Image(systemName: "trash") }
+                            TextField("强度", value: $lora.strength, format: .number).textFieldStyle(.roundedBorder).frame(width: 64).disabled(!lora.enabled).accessibilityIdentifier("loraStrength-\(index)")
+                            Button { studio.draft.loras.removeAll { $0.id == lora.id } } label: { Image(systemName: "trash") }
+                                .help("移除 LoRA").accessibilityLabel("移除 \(URL(fileURLWithPath: lora.path).lastPathComponent)")
                         }
                     }
                 }
-                Text("强度默认 1.0；取消勾选会保留文件和强度。可输入 −8 到 8。").font(.caption2).foregroundStyle(.secondary)
+                Text(studio.draft.modelID == "qwen-image-2.1" ? "六步 Viggle 使用单个适配器，强度固定为 1；关闭后保留文件。" : "强度默认 1.0；取消勾选会保留文件和强度。可输入 −8 到 8。").font(.caption2).foregroundStyle(.secondary)
+                if studio.draft.qwen21TurboLoRA != nil {
+                    Button("应用 512×512 / 6 步 GPU 预设") { studio.applyQwen21TurboPreset() }
+                        .disabled(store.busy || assetControlsLocked)
+                        .accessibilityIdentifier("qwen21TurboPreset")
+                    Text("已识别六步 Viggle 适配器；预设保留提示词和参考图。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
                 Picker("LoRA 执行策略", selection: $studio.draft.loraStrategy) {
                     Text("自动").tag("auto")
                     ForEach(model?.lora_strategies ?? [], id: \.self) { strategy in
@@ -731,9 +908,20 @@ struct StudioView: View {
             }
             Spacer(minLength: 8)
             Text("一次生成一个结果\n图片、提示词与参数均保存在本机。").font(.caption2).foregroundStyle(.secondary)
+        }.disabled(assetControlsLocked)
+    }
+    @ViewBuilder private var runStatus: some View {
+        if hasDetailedRunStatus {
+            ScrollView(.vertical) {
+                runStatusContents.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+            }
+            .frame(minHeight: 90, idealHeight: 120, maxHeight: 120)
+            .layoutPriority(2)
+        } else {
+            runStatusContents
         }
     }
-    private var runStatus: some View {
+    private var runStatusContents: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let job = store.activeJob {
                 HStack(alignment: .firstTextBaseline) {
@@ -743,7 +931,11 @@ struct StudioView: View {
                     Text(stateName(job.state)).font(.callout).foregroundStyle(.secondary)
                 }
                 Text(store.actualRoute.map { "实际路径：\($0)" } ?? "实际路径：准备后确认").font(.caption2).foregroundStyle(.secondary)
-                ProgressView(value: Double(job.completed), total: Double(max(1, job.total))).tint(ciderAccent)
+                if job.total > 0 {
+                    ProgressView(value: Double(min(job.completed, job.total)), total: Double(job.total)).tint(ciderAccent)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
                 HStack {
                     Text("\(stateName(job.state)) · \(phaseName(job.phase)) \(job.completed)/\(job.total)")
                     Spacer()
@@ -762,6 +954,19 @@ struct StudioView: View {
             }
             else if let job = store.jobs.first {
                 Text("\(stateName(job.state)) · 共用时 \(String(format: "%.1f", job.elapsed)) 秒 · 种子 \(job.request.seed)").font(.caption).foregroundStyle(.secondary)
+                if job.state == "failed" || job.state == "interrupted", let error = job.error {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Label(job.state == "failed" ? "生成失败" : "任务已中断", systemImage: "exclamationmark.triangle.fill").font(.callout.weight(.medium))
+                            Spacer(minLength: 8)
+                            Button("恢复这次参数") { reuseParameters(job) }.font(.caption).disabled(assetControlsLocked)
+                        }
+                        Text(error).font(.caption).textSelection(.enabled)
+                    }.foregroundStyle(.red).padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                        .accessibilityIdentifier("generationFailure")
+                }
                 if let json = job.resultJSON {
                     Text(RunInsights(json: json).cacheLabel).font(.callout).foregroundStyle(.secondary)
                 }
@@ -775,9 +980,21 @@ struct StudioView: View {
                     Text("常驻加载会使用更多内存。此问题与提示词内容或长度无关。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }.accessibilityIdentifier("zImageStreamingConflict")
-            } else if let error = studio.message ?? store.storageError {
-                HStack(alignment: .top) { Text(error).font(.caption).textSelection(.enabled); Spacer(); Button { studio.message = nil } label: { Image(systemName: "xmark") } }
-                    .foregroundStyle(.secondary).accessibilityIdentifier("statusMessage")
+            }
+            if let message = studio.message {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "info.circle").foregroundStyle(ciderAccent)
+                    Text(message).font(.caption).textSelection(.enabled)
+                    Spacer(minLength: 0)
+                    Button { studio.message = nil } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain).help("关闭提示").accessibilityLabel("关闭提示")
+                }.padding(10).background(ciderAccent.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                    .accessibilityIdentifier("statusMessage")
+            }
+            if let error = store.storageError {
+                Label(error, systemImage: "externaldrive.badge.exclamationmark")
+                    .font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    .accessibilityIdentifier("storageError")
             }
         }
     }
@@ -785,6 +1002,7 @@ struct StudioView: View {
         ModelLibraryView(store: store, studio: studio, library: library, selection: $librarySelection, chooseModel: chooseModel,
                          loadModel: loadModel, importConfiguration: importConfiguration,
                          operationName: operationName)
+            .disabled(preparingSubmission)
     }
     private var tasksPage: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -813,7 +1031,7 @@ struct StudioView: View {
                     if let json = job.resultJSON { RunInsightsView(json: json) }
                     if let error = job.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
                     HStack {
-                        Button("复用参数") { studio.reuse(job); page = .studio }
+                        Button("复用参数") { reuseParameters(job) }.disabled(assetControlsLocked)
                         if job.hasOutput {
                             Button("查看结果") { showResult(job) }
                             Button("删除图片", role: .destructive) { trashResult(job) }.disabled(store.busy)
@@ -899,9 +1117,14 @@ struct StudioView: View {
             }
     }
     private func showResult(_ job: NativeJob) {
-        selected = job.id; compareOriginal = false
+        selected = job.id; imageUpscaling = false; compareOriginal = false
         resultSelection.select(job.id, orderedIDs: outputIDs)
         page = .studio
+    }
+    private func reuseParameters(_ job: NativeJob) {
+        guard !assetControlsLocked else { return }
+        studio.reuse(job)
+        imageUpscaling = false; compareOriginal = false; page = .studio
     }
     private func resultDeletionIDs(for job: NativeJob) -> Set<UUID> {
         resultSelection.ids.contains(job.id) ? resultSelection.ids : [job.id]
@@ -935,7 +1158,10 @@ struct StudioView: View {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
         panel.message = "选择 TurboCider App 生成配置，恢复模型、LoRA、提示词和加速设置。"
         if panel.runModal() == .OK, let url = panel.url {
-            do { try studio.importConfiguration(from: url); page = .studio }
+            do {
+                try studio.importConfiguration(from: url)
+                imageUpscaling = false; compareOriginal = false; page = .studio
+            }
             catch { studio.message = "无法导入生成配置：\(error.localizedDescription)" }
         }
     }

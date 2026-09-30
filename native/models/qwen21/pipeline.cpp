@@ -1,5 +1,6 @@
 #include "pipeline.hpp"
 #include "diagnostic_options.hpp"
+#include "viggle_adapter.hpp"
 #include "conditioning.hpp"
 #include "transformer.hpp"
 #include "vae.hpp"
@@ -217,11 +218,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         std::filesystem::create_directories(r.dump);
         mx::save_safetensors((std::filesystem::path(r.dump) / (name + ".safetensors")).string(), {{"tensor", tensor}});
     };
-    // The one-entry edit cache is request-local to this resident Session. A
+    // The one-entry edit cache belongs to this Session, including staged GPU
+    // sessions. It holds completed conditioning, not encoder/DiT weights. A
     // path/mtime-only key would reuse stale visual conditions after an image
     // is overwritten in place; verify the ordered file bytes on each request.
     std::vector<std::string> image_sha256;
-    if (r.residency == "resident") {
+    const bool cache_edit_conditions = r.residency == "resident" ||
+        r.residency == "component_staged";
+    if (cache_edit_conditions) {
         image_sha256.reserve(r.inputs.size());
         for (const auto &input : r.inputs) {
             checkpoint(cancelled);
@@ -301,7 +305,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             dump("qwen21_reference_" + std::to_string(i), latent);
         }
     }
-    if (!edit_hit && !r.inputs.empty() && r.residency == "resident") {
+    if (!edit_hit && !r.inputs.empty() && cache_edit_conditions) {
         // Do not publish a cache entry if a reference changed during the
         // decode/encode pass. Hashing again also catches same-path overwrites
         // whose mtime or file size were preserved.
@@ -353,9 +357,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         transformer_.clear();
     }
     if (bind_lora) {
-        require(fused_lora_ane || runtime_requested || sha256_file(r.loras[0].path) ==
-                    "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
-                "Viggle v0.2.1 r256 LoRA hash does not match the pinned adapter");
+        const auto *adapter = viggle_v021_adapter(
+            std::filesystem::path(r.loras[0].path).filename().string());
+        require(fused_lora_ane || runtime_requested ||
+                    (adapter && sha256_file(r.loras[0].path) == adapter->sha256),
+                "Viggle v0.2.1 r128/r256 LoRA hash does not match the pinned adapter");
     }
     load(event, cancelled);
     const bool lora_fp16 = option_enabled(std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16"));
@@ -528,10 +534,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const char *profile_segments = std::getenv("TURBOCIDER_QWEN21_PROFILE_PREFILL_SEGMENTS");
     if (profile_segments && std::string_view(profile_segments) == "1")
         result.selection += "; diagnostic synchronized block-0 prefill attention segments";
-    if (!r.loras.empty())
-        result.selection += fused_lora_ane
+    if (!r.loras.empty()) {
+        const auto *adapter = viggle_v021_adapter(
+            std::filesystem::path(r.loras[0].path).filename().string());
+        result.selection += (fused_lora_ane || runtime_requested || !adapter)
             ? "; experimental runtime LoRA with Viggle six-step schedule; adapter quality unqualified"
-            : "; Viggle v0.2.1 r256 runtime LoRA; six-step student schedule";
+            : "; Viggle v0.2.1 " + std::string(adapter->rank) + " runtime LoRA; six-step student schedule";
+    }
     const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
     if (fused_qkv)
         result.selection += "; diagnostic Metal fused QKV projection, Q/K norm and RoPE";
@@ -917,8 +926,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         dump("qwen21_latents", latents);
         if (r.residency == "component_staged") {
+            // Compiled block functions and prefix tensors can retain weights
+            // after the session map is cleared. Destroy their owner before
+            // entering VAE decoding so staged residency releases the DiT.
+            request_dit.reset();
             hybrid_mlp_.reset(); clear_prefix_cache();
-            fused_qkv_weights_.clear(); transformer_.clear(); mx::clear_cache();
+            fused_qkv_weights_.clear(); transformer_.clear();
+            mx::synchronize(); mx::clear_cache();
         }
         checkpoint(cancelled);
         auto decode_start = Clock::now();
@@ -947,7 +961,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (!prepare_only && r.residency == "component_staged") {
         hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
         clear_prefix_cache(); fused_qkv_weights_.clear();
-        transformer_.clear(); vae_.clear(); mx::clear_cache();
+        transformer_.clear(); vae_.clear();
+        mx::synchronize(); mx::clear_cache();
     }
     result.timings.wall = seconds(start);
     result.active_bytes = mx::get_active_memory(); result.peak_bytes = mx::get_peak_memory();
@@ -961,6 +976,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     hybrid_mlp_.reset(); hybrid_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
     if (transformer_.has("transformer_blocks.0.attn.qkv_packed.weight"))
         transformer_.clear(); // A cancelled pack may have replaced only some layers.
+    if (requested.residency == "component_staged") {
+        // Cancellation must honor the same small idle footprint as a finished
+        // staged request. Fully evaluated conditioning remains safe to reuse.
+        transformer_.clear(); vae_.clear();
+        active_lora_identity_.clear(); lora_applied_projections_ = 0;
+        mx::clear_cache();
+    }
     throw;
 }
 } // namespace tc::qwen21

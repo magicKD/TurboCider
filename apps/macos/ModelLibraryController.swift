@@ -104,6 +104,24 @@ enum LibraryTool {
         loras = index.loras ?? []
         anePartitions = index.anePartitions ?? []
     }
+    /// Local file providers and privacy prompts can block even a metadata read.
+    /// Keep their synchronous calls off MainActor; only publish returned values
+    /// after the scan has completed and cancellation has been checked.
+    private nonisolated static func fileIO<Result: Sendable>(
+        _ work: @escaping @Sendable () throws -> Result
+    ) async throws -> Result {
+        let task = Task.detached(priority: .utility) {
+            try Task.checkCancellation()
+            let result = try work()
+            try Task.checkCancellation()
+            return result
+        }
+        return try await withTaskCancellationHandler {
+            let result = try await task.value
+            try Task.checkCancellation()
+            return result
+        } onCancel: { task.cancel() }
+    }
     func refresh(studio: StudioState, migrate: Bool = false) {
         perform { [self] in
             let location = try LibraryTool.decode([String: String].self, from: await LibraryTool.run(["location"]))
@@ -111,13 +129,19 @@ enum LibraryTool {
             if migrate {
                 // Older App versions stored bindings beside test/job output. Rebuild
                 // links from their resolved sources in the persistent library.
-                if let path = studio.draft.modelPaths["z-image-turbo"], !path.isEmpty,
-                   !path.hasPrefix(root + "/"),
-                   FileManager.default.fileExists(atPath: URL(fileURLWithPath: path).appendingPathComponent("installation.json").path),
-                   ZImageInstallation.splitDirectory(URL(fileURLWithPath: path)) != nil {
-                    let installed = try ZImageInstallation.install(model: URL(fileURLWithPath: path), sharedText: nil,
-                        directory: URL(fileURLWithPath: root).appendingPathComponent("bindings"))
-                    studio.draft.modelPaths["z-image-turbo"] = installed.path
+                let previousPath = studio.draft.modelPaths["z-image-turbo"]
+                let libraryRoot = root
+                let installedPath = try await Self.fileIO { () throws -> String? in
+                    guard let path = previousPath, !path.isEmpty,
+                          !path.hasPrefix(libraryRoot + "/"),
+                          FileManager.default.fileExists(atPath: URL(fileURLWithPath: path).appendingPathComponent("installation.json").path),
+                          ZImageInstallation.splitDirectory(URL(fileURLWithPath: path)) != nil else { return nil }
+                    try Task.checkCancellation()
+                    return try ZImageInstallation.install(model: URL(fileURLWithPath: path), sharedText: nil,
+                        directory: URL(fileURLWithPath: libraryRoot).appendingPathComponent("bindings")).path
+                }
+                if let installedPath, studio.draft.modelPaths["z-image-turbo"] == previousPath {
+                    studio.draft.modelPaths["z-image-turbo"] = installedPath
                     studio.save()
                 }
                 let data = try JSONEncoder().encode(["modelPaths": studio.libraryModelPaths])
@@ -128,15 +152,29 @@ enum LibraryTool {
                 }
             }
             if migrate {
-                for lora in studio.draft.loras where FileManager.default.isReadableFile(atPath: lora.path) {
-                    _ = try await LibraryTool.run(["register-lora", studio.draft.modelID, lora.path, "--root", root])
-                }
-                if let path = studio.draft.modelPaths["z-image-turbo"],
-                   let split = ZImageInstallation.splitDirectory(URL(fileURLWithPath: path)) {
-                    let files = (try? FileManager.default.contentsOfDirectory(at: split.appendingPathComponent("loras"), includingPropertiesForKeys: nil)) ?? []
-                    for file in files.sorted(by: { $0.path < $1.path }) where file.pathExtension == "safetensors" {
-                        _ = try await LibraryTool.run(["register-lora", "z-image-turbo", file.path, "--root", root])
+                let selectedModelID = studio.draft.modelID
+                let selectedLoRAs = studio.draft.loras
+                let zImagePath = studio.draft.modelPaths["z-image-turbo"]
+                let adapters = try await Self.fileIO {
+                    var result: [(modelID: String, path: String)] = []
+                    for lora in selectedLoRAs {
+                        try Task.checkCancellation()
+                        if FileManager.default.isReadableFile(atPath: lora.path) {
+                            result.append((selectedModelID, lora.path))
+                        }
                     }
+                    if let path = zImagePath,
+                       let split = ZImageInstallation.splitDirectory(URL(fileURLWithPath: path)) {
+                        try Task.checkCancellation()
+                        let files = (try? FileManager.default.contentsOfDirectory(at: split.appendingPathComponent("loras"), includingPropertiesForKeys: nil)) ?? []
+                        for file in files.sorted(by: { $0.path < $1.path }) where file.pathExtension == "safetensors" {
+                            result.append(("z-image-turbo", file.path))
+                        }
+                    }
+                    return result
+                }
+                for adapter in adapters {
+                    _ = try await LibraryTool.run(["register-lora", adapter.modelID, adapter.path, "--root", root])
                 }
             }
             if migrate, let config = studio.draft.acceleration {
@@ -219,11 +257,17 @@ enum LibraryTool {
         perform { [self] in
             let base = URL(fileURLWithPath: path)
             let directories = [base.appendingPathComponent("loras"), base.appendingPathComponent("split_files/loras"), base.appendingPathComponent("models/loras")]
-            for directory in directories {
-                let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-                for file in files.sorted(by: { $0.path < $1.path }) where file.pathExtension == "safetensors" {
-                    _ = try await LibraryTool.run(["register-lora", modelID, file.path, "--root", root])
+            let files = try await Self.fileIO {
+                var result: [URL] = []
+                for directory in directories {
+                    try Task.checkCancellation()
+                    let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+                    result.append(contentsOf: files.filter { $0.pathExtension == "safetensors" }.sorted { $0.path < $1.path })
                 }
+                return result
+            }
+            for file in files {
+                _ = try await LibraryTool.run(["register-lora", modelID, file.path, "--root", root])
             }
             try await readIndex()
             message = "已扫描模型的 loras 目录。登记不自动启用；请确认 LoRA 与基础模型兼容。"

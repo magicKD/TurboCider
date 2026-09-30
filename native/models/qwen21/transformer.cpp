@@ -13,8 +13,11 @@ Tensor rotate(const Tensor &x, const Tensor &cosine, const Tensor &sine) {
     auto paired_shape = shape;
     paired_shape.back() /= 2;
     paired_shape.push_back(2);
-    auto pairs = mx::split(mx::reshape(mx::astype(x, mx::float32), paired_shape), 2, -1);
-    auto a = mx::squeeze(pairs[0], -1), b = mx::squeeze(pairs[1], -1);
+    auto paired = mx::reshape(mx::astype(x, mx::float32), paired_shape);
+    // Single-output slices avoid MLX compiled multi-output sibling cycles
+    // retaining captured, materialized weights (upstream mlx issue #3932).
+    auto a = mx::squeeze(slice_axis(paired, -1, 0, 1), -1);
+    auto b = mx::squeeze(slice_axis(paired, -1, 1, 2), -1);
     auto c = mx::reshape(cosine, {1, 1, shape[2], shape[3] / 2});
     auto s = mx::reshape(sine, {1, 1, shape[2], shape[3] / 2});
     return mx::astype(mx::reshape(mx::stack({a * c - b * s, a * s + b * c}, -1), shape), x.dtype());
@@ -454,8 +457,10 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                     feed = args[9];
                 } else {
                     if (weights_.has(p + ".img_mlp.gate_up.weight")) {
-                        auto gate_up = mx::split(linear(input, weights_, p + ".img_mlp.gate_up"), 2, -1);
-                        ff = silu(gate_up[0]) * gate_up[1];
+                        auto gate_up = linear(input, weights_, p + ".img_mlp.gate_up");
+                        const int half = gate_up.shape(-1) / 2;
+                        ff = silu(slice_axis(gate_up, -1, 0, half)) *
+                             slice_axis(gate_up, -1, half, gate_up.shape(-1));
                     } else {
                         ff = silu(linear(input, weights_, p + ".img_mlp.gate_layer")) * linear(input, weights_, p + ".img_mlp.proj");
                     }

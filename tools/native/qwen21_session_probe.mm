@@ -20,6 +20,10 @@ int main(int argc, char **argv) {
             tc::Request r;
             r.model = "qwen-image-2.1";
             r.audio = false; r.width = r.height = 512; r.residency = "resident";
+            const char *staged_flag = std::getenv("TURBOCIDER_QWEN21_PROBE_COMPONENT_STAGED");
+            tc::require(tc::qwen21::binary_option_or_unset(staged_flag),
+                        "staged Session probe accepts only 0 or 1");
+            const bool component_staged = tc::qwen21::option_enabled(staged_flag);
             r.steps = std::stoi(argv[3]);
             const bool db_cache = tc::qwen21::option_enabled(
                 std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC"));
@@ -44,14 +48,14 @@ int main(int argc, char **argv) {
                               r.operation == "image.generate" && r.inputs.empty())) &&
                             r.steps == std::stoi(argv[3]) && r.residency == "component_staged",
                             "session probe needs a matching 512px or diagnostic 1024px component-staged Qwen21 request");
-                r.residency = "resident";
             } else {
                 r.prompt = prompt_arg;
             }
+            r.residency = component_staged ? "component_staged" : "resident";
             const bool lora_base_ane = tc::qwen21::lora_base_ane(r);
             const bool gate_up_ane = tc::qwen21::gate_up_ane(r);
             const bool prefix_lora_guard = prefix_probe && !r.loras.empty();
-            prefix_probe = prefix_probe && r.loras.empty();
+            prefix_probe = prefix_probe && r.loras.empty() && r.residency == "resident";
             std::filesystem::path mutable_reference;
             if (test_edit_cache) {
                 tc::require(r.inputs.size() >= 2,
@@ -162,7 +166,7 @@ int main(int argc, char **argv) {
                                     "lossy prefix hit did not write a reproducible output");
                 }
                 tc::require(result.prompt_cache_hit,
-                            "repeated resident prompt/references were not cached");
+                            "repeated prompt/references were not cached");
                 tc::require(std::filesystem::is_regular_file(r.output), "generation did not export");
                 if (r.execution == "gpu_ane") {
                     tc::require(result.hybrid.has_value() && result.request.execution == "gpu_ane",
@@ -190,12 +194,18 @@ int main(int argc, char **argv) {
                         .last_target_only = tc::qwen21::option_enabled(std::getenv(
                             "TURBOCIDER_QWEN21_PREFILL_LAST_TARGET_ONLY_DIAGNOSTIC")),
                     };
-                    tc::require(result.hybrid->runtime_calls - previous_calls ==
+                    // Staged requests create a fresh Core ML session; only
+                    // resident requests keep cumulative counters across runs.
+                    const auto request_calls = component_staged
+                        ? result.hybrid->runtime_calls
+                        : result.hybrid->runtime_calls - previous_calls;
+                    tc::require(request_calls ==
                                     tc::qwen21::expected_w8a8_calls(budget),
                                 "wrong hybrid FFN call count");
                     previous_calls = result.hybrid->runtime_calls;
-                    tc::require(result.hybrid->load_seconds == warmed.hybrid->load_seconds,
-                                "resident Core ML session was reloaded");
+                    if (!component_staged)
+                        tc::require(result.hybrid->load_seconds == warmed.hybrid->load_seconds,
+                                    "resident Core ML session was reloaded");
                 }
                 save((name + ".json").c_str(), result);
                 std::cout << "{\"iteration\":" << iteration << ",\"wall_seconds\":" << result.timings.wall
@@ -238,8 +248,25 @@ int main(int argc, char **argv) {
                                 "cannot restore lossy tiled prefix experiment");
             }
             if (test_edit_cache) {
+                if (component_staged) {
+                    auto swapped = r;
+                    std::swap(swapped.inputs[0], swapped.inputs[1]);
+                    swapped.output = (directory / "swapped-references.png").string();
+                    auto reordered = session.generate(swapped, event, cancelled);
+                    tc::require(!reordered.prompt_cache_hit,
+                                "reference order reused stale conditioning");
+                    save("swapped-references.json", reordered);
+                    r.output = (directory / "restored-reference-order.png").string();
+                    auto restored_order = session.generate(r, event, cancelled);
+                    tc::require(!restored_order.prompt_cache_hit &&
+                                    tc::sha256_file(r.output) == tc::sha256_file(directory / "run-0.png"),
+                                "restored reference order changed the same-seed output");
+                    save("restored-reference-order.json", restored_order);
+                }
+                const auto previous_mtime = std::filesystem::last_write_time(mutable_reference);
                 std::filesystem::copy_file(r.inputs[1].path, mutable_reference,
                                            std::filesystem::copy_options::overwrite_existing);
+                std::filesystem::last_write_time(mutable_reference, previous_mtime);
                 r.output = (directory / "changed-reference.png").string();
                 auto changed = session.generate(r, event, cancelled);
                 tc::require(!changed.prompt_cache_hit && std::filesystem::is_regular_file(r.output),
@@ -267,14 +294,31 @@ int main(int argc, char **argv) {
                 }, cancelled);
             } catch (const tc::Cancelled &) { caught = true; }
             tc::require(caught && !std::filesystem::exists(warm.output), "cancellation/export contract failed");
+            if (component_staged) {
+                const auto idle_bytes = tc::mx::get_active_memory();
+                tc::require(idle_bytes < (uint64_t(4) << 30),
+                            "cancelled staged request retained large GPU weights");
+                std::cout << "{\"cancelled_staged_active_bytes\":" << idle_bytes << "}" << std::endl;
+            }
             cancelled = false;
-            if (prefix_probe && r.loras.empty() && r.steps >= 2) {
+            if (component_staged || (prefix_probe && r.loras.empty() && r.steps >= 2)) {
                 r.output = (directory / "after-cancellation.png").string();
-                auto retried = session.generate(r, event, cancelled);
+                bool reloaded_transformer = false, reloaded_vae = false;
+                auto retried = session.generate(r, [&](const std::string &phase, int step, int total) {
+                    if (phase == "load_qwen21_transformer") reloaded_transformer = true;
+                    if (phase == "load_qwen21_vae") reloaded_vae = true;
+                    event(phase, step, total);
+                }, cancelled);
                 const auto retry_oracle = test_edit_cache ? "changed-reference.png" : "run-0.png";
-                tc::require(retried.selection.find("resident prefix KV miss") != std::string::npos &&
+                tc::require(retried.prompt_cache_hit &&
+                                (component_staged
+                                    ? retried.selection.find("resident prefix KV") == std::string::npos
+                                    : retried.selection.find("resident prefix KV miss") != std::string::npos) &&
                                 tc::sha256_file(r.output) == tc::sha256_file(directory / retry_oracle),
-                            "cancelled cross-request prefix KV was reused or retry output changed");
+                            "cancellation retry lost complete conditioning or changed the output");
+                if (component_staged)
+                    tc::require(reloaded_transformer && reloaded_vae,
+                                "staged cancellation retry retained checkpoint weights");
                 save("after-cancellation.json", retried);
             }
             if (!r.loras.empty()) {
@@ -403,6 +447,17 @@ int main(int argc, char **argv) {
                 save("post-local-switch.json", switched);
             }
             session.unload();
+            tc::mx::synchronize();
+            std::cerr << "unload active_bytes=" << tc::mx::get_active_memory() << std::endl;
+            tc::require(tc::mx::get_active_memory() < (uint64_t(4) << 30),
+                        "unload retained large GPU weights");
+            if (component_staged) {
+                auto reloaded = session.prepare(warm, false, event, cancelled);
+                tc::require(!reloaded.prompt_cache_hit,
+                            "unload retained conditioning cache");
+                save("after-unload-prepare.json", reloaded);
+                session.unload();
+            }
             std::cout << "{\"lifecycle\":\"passed\",\"quality\":\"requires visual inspection\"}" << std::endl;
             return 0;
         } catch (const std::exception &error) {

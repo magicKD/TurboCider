@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import ImageIO
 
 struct Qwen21AnnotationEditor: View {
@@ -11,6 +12,7 @@ struct Qwen21AnnotationEditor: View {
     @State private var strokes: [Qwen21AnnotationStroke] = []
     @State private var current: Qwen21AnnotationStroke?
     @State private var preview: NSImage?
+    @State private var previewError: String?
     private func path(_ stroke: Qwen21AnnotationStroke, in rect: CGRect) -> Path {
         let points = stroke.points.map { CGPoint(x: rect.minX + $0.x * rect.width, y: rect.minY + $0.y * rect.height) }
         var path = Path()
@@ -43,7 +45,7 @@ struct Qwen21AnnotationEditor: View {
                 Button("清空") { strokes.removeAll() }.disabled(strokes.isEmpty)
             }.disabled(studio.importing || current != nil)
             GeometryReader { proxy in
-                let ratio = CGFloat(asset.width) / CGFloat(asset.height)
+                let ratio = CGFloat(max(1, asset.width)) / CGFloat(max(1, asset.height))
                 let w = min(proxy.size.width, proxy.size.height * ratio)
                 let h = w / ratio
                 let rect = CGRect(x: (proxy.size.width-w)/2, y: (proxy.size.height-h)/2, width: w, height: h)
@@ -51,13 +53,17 @@ struct Qwen21AnnotationEditor: View {
                     Color.gray.opacity(0.2)
                     if let preview {
                         Image(nsImage: preview).resizable().frame(width: w, height: h)
+                            .opacity(output == .separateMask ? 0.3 : 1)
+                            .background(output == .separateMask ? Color.black : Color.clear)
+                    } else if previewError == nil {
+                        ProgressView("正在读取原图…")
                     }
                     Canvas { context, _ in
                         for stroke in strokes + (current.map { [$0] } ?? []) {
                             if output == .separateMask && stroke.tool == .ellipse {
-                                context.fill(path(stroke, in: rect), with: .color(.white.opacity(0.65)))
+                                context.fill(path(stroke, in: rect), with: .color(.white))
                             } else {
-                                context.stroke(path(stroke, in: rect), with: .color(output == .separateMask ? .white.opacity(0.65) : .red),
+                                context.stroke(path(stroke, in: rect), with: .color(output == .separateMask ? .white : .red),
                                     style: StrokeStyle(lineWidth: stroke.width * min(w, h), lineCap: .round, lineJoin: .round))
                             }
                         }
@@ -76,34 +82,55 @@ struct Qwen21AnnotationEditor: View {
                         current = stroke
                     }
                     .onEnded { _ in
-                        if let stroke = current,
-                           stroke.tool != .ellipse || (stroke.points.first!.x != stroke.points.last!.x &&
-                                                        stroke.points.first!.y != stroke.points.last!.y) { strokes.append(stroke) }
+                        if let stroke = current, let first = stroke.points.first, let last = stroke.points.last,
+                           stroke.tool != .ellipse || (first.x != last.x && first.y != last.y) { strokes.append(stroke) }
                         current = nil
                     })
-            }.frame(minHeight: 400)
+            }.frame(minHeight: 280, maxHeight: .infinity)
             HStack {
                 Text("\(strokes.count) / 100 笔画").font(.caption)
+                if output == .separateMask { Text("白色为编辑区；淡化原图仅用于定位。").font(.caption).foregroundStyle(.secondary) }
                 Spacer()
-                Button("取消") { dismiss() }.disabled(studio.importing)
+                Button("取消") { dismiss() }.disabled(studio.importing).keyboardShortcut(.cancelAction)
                 Button(output == .separateMask ? "添加独立蒙版" : "使用标注副本") {
                     Task { if await studio.annotateQwen21Asset(asset.id, strokes: strokes, output: output) { dismiss() } }
                 }.buttonStyle(.borderedProminent).disabled(strokes.isEmpty || current != nil || studio.importing || preview == nil)
+                    .keyboardShortcut(.return, modifiers: .command)
             }
-            if let message = studio.message { Text(message).font(.caption).foregroundStyle(.secondary) }
+            if let previewError { Label(previewError, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red) }
+            if let message = studio.message { Text(message).font(.caption).textSelection(.enabled) }
         }.padding(20).frame(width: 780, height: 620)
-            .onAppear {
-                if let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: asset.path) as CFURL, nil),
-                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 1600
-                   ] as CFDictionary) { preview = NSImage(cgImage: image, size: .zero) }
+            .task(id: asset.path) {
+                let path = asset.path
+                let image = await Task.detached(priority: .utility) { () -> CGImage? in
+                    guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil) else { return nil }
+                    return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 1600
+                    ] as CFDictionary)
+                }.value
+                guard !Task.isCancelled else { return }
+                preview = image.map { NSImage(cgImage: $0, size: .zero) }
+                previewError = image == nil ? "无法读取原图，请关闭标注窗口并重新导入图片。" : nil
             }
     }
 }
-import AppKit
-import ImageIO
+
+private struct TransparencyGrid: View {
+    var body: some View {
+        Canvas { context, size in
+            let side: CGFloat = 12
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(nsColor: .controlBackgroundColor)))
+            for row in 0..<Int(ceil(size.height / side)) {
+                for column in 0..<Int(ceil(size.width / side)) where (row + column).isMultiple(of: 2) {
+                    let rect = CGRect(x: CGFloat(column) * side, y: CGFloat(row) * side, width: side, height: side)
+                    context.fill(Path(rect), with: .color(Color.primary.opacity(0.08)))
+                }
+            }
+        }.accessibilityHidden(true).allowsHitTesting(false)
+    }
+}
 
 /// Handle Control-click as selection instead of macOS's usual secondary click.
 /// A physical right-click can still open the surrounding context menu.
@@ -135,13 +162,17 @@ struct MediaPreview: View {
     var maxPixel = 1600
     @State private var image: NSImage?
     @State private var failed = false
+    @State private var transparent = false
     var body: some View {
         Group {
-            if let image { Image(nsImage: image).resizable().scaledToFit() }
+            if let image {
+                Image(nsImage: image).resizable().scaledToFit()
+                    .background { if transparent { TransparencyGrid() } }
+            }
             else if failed { Label("无法读取图片", systemImage: "photo.badge.exclamationmark").font(.caption).foregroundStyle(.secondary) }
             else { ProgressView().controlSize(.small) }
         }.task(id: "\(path)#\(maxPixel)") {
-            image = nil; failed = false
+            image = nil; failed = false; transparent = false
             let pixelLimit = maxPixel, filePath = path
             let decoded = await Task.detached(priority: .utility) { () -> CGImage? in
                 guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: filePath) as CFURL, nil) else { return nil }
@@ -149,6 +180,9 @@ struct MediaPreview: View {
             }.value
             guard !Task.isCancelled else { return }
             image = decoded.map { NSImage(cgImage: $0, size: .zero) }; failed = decoded == nil
+            if let decoded {
+                transparent = ![CGImageAlphaInfo.none, .noneSkipFirst, .noneSkipLast].contains(decoded.alphaInfo)
+            }
         }
     }
 }
@@ -157,7 +191,17 @@ struct MediaPreview: View {
 /// workspace, without changing the insertion point or pasting rich HTML.
 private final class PromptTextView: NSTextView {
     var pasteImage: (() -> Void)?
+    var placeholder = "" { didSet { needsDisplay = true } }
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard string.isEmpty, !placeholder.isEmpty else { return }
+        (placeholder as NSString).draw(at: NSPoint(x: textContainerInset.width + 5, y: textContainerInset.height),
+                                      withAttributes: [.font: font ?? NSFont.systemFont(ofSize: 14),
+                                                       .foregroundColor: NSColor.placeholderTextColor])
+    }
+    override func didChangeText() { super.didChangeText(); needsDisplay = true }
     override func paste(_ sender: Any?) {
+        guard isEditable else { return }
         let board = NSPasteboard.general
         if board.string(forType: .string) == nil && (board.canReadObject(forClasses: [NSImage.self], options: nil) || board.availableType(from: [.fileURL]) != nil) {
             pasteImage?()
@@ -166,17 +210,22 @@ private final class PromptTextView: NSTextView {
 }
 struct PromptEditor: NSViewRepresentable {
     @Binding var text: String
+    var placeholder = ""
+    var editable = true
     let pasteImage: () -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.drawsBackground = false
         let editor = PromptTextView()
         editor.isRichText = false; editor.isAutomaticQuoteSubstitutionEnabled = false
+        editor.isAutomaticDashSubstitutionEnabled = false
+        editor.isAutomaticTextReplacementEnabled = false
         editor.font = .systemFont(ofSize: 14); editor.textColor = .labelColor; editor.drawsBackground = false
         editor.isVerticallyResizable = true; editor.isHorizontallyResizable = false
         editor.autoresizingMask = [.width]; editor.textContainer?.widthTracksTextView = true
         editor.textContainerInset = NSSize(width: 2, height: 4)
         editor.delegate = context.coordinator; editor.string = text; editor.pasteImage = pasteImage
+        editor.placeholder = placeholder; editor.isEditable = editable
         editor.setAccessibilityIdentifier("prompt"); editor.setAccessibilityLabel("提示词")
         scroll.documentView = editor
         return scroll
@@ -184,8 +233,8 @@ struct PromptEditor: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let editor = scroll.documentView as? PromptTextView else { return }
-        if editor.string != text && !editor.hasMarkedText() { editor.string = text }
-        editor.pasteImage = pasteImage
+        if editor.string != text && !editor.hasMarkedText() { editor.string = text; editor.needsDisplay = true }
+        editor.pasteImage = pasteImage; editor.placeholder = placeholder; editor.isEditable = editable
     }
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: PromptEditor

@@ -1,5 +1,6 @@
 #include "bridge.hpp"
 #include "../../models/qwen21/diagnostic_options.hpp"
+#include "../../models/qwen21/viggle_adapter.hpp"
 #include <cstdlib>
 #include <string_view>
 #include "../../runtime/memory_execution.hpp"
@@ -326,8 +327,14 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "qwen-image-2.1" && hybrid && r.operation == "image.edit" &&
         r.qwen21_w8a8 && r.qwen21_reference_size == 1024)
         [algorithm_approximations addObject:@"qwen21_w8a8_full_reference_diagnostic"];
-    if (r.model == "qwen-image-2.1" && !r.loras.empty())
-        [algorithm_approximations addObject:@"qwen21_viggle_v021_r256_6step_distillation"];
+    if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
+        const auto *adapter = qwen21::viggle_v021_adapter(
+            std::filesystem::path(r.loras[0].path).filename().string());
+        const auto label = adapter
+            ? "qwen21_viggle_v021_" + std::string(adapter->rank) + "_6step_distillation"
+            : "qwen21_unqualified_adapter_6step_schedule";
+        [algorithm_approximations addObject:@(label.c_str())];
+    }
     if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
         const char *fp16_lora = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
         if (fp16_lora && std::string_view(fp16_lora) == "1")

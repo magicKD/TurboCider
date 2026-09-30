@@ -291,6 +291,16 @@ struct StudioDraft: Codable, Sendable {
         // selector stays Off until explicitly selected by the user.
     }
     var activeLoRAs: [StudioLoRA] { loras.filter(\.enabled) }
+    /// The public Qwen GPU executor qualifies these six-step adapters. Other
+    /// adapter files remain a native diagnostic workflow, not an App preset.
+    var qwen21TurboLoRA: StudioLoRA? {
+        guard modelID == "qwen-image-2.1", activeLoRAs.count == 1,
+              let adapter = activeLoRAs.first,
+              ["Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+               "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors"]
+                .contains(URL(fileURLWithPath: adapter.path).lastPathComponent) else { return nil }
+        return adapter
+    }
     var usesANE: Bool { acceleration?.policy == "gpu_ane" }
     var usesPublicStreaming: Bool { streaming.selection.targetBytes != nil }
     var modelPath: String { modelPaths[modelID] ?? "" }
@@ -538,14 +548,25 @@ struct StudioDraft: Codable, Sendable {
         }
         if let max = model.max_images, activeAssets.count > max { throw NativeFailure(message: "当前模型最多接受 \(max) 张输入图片。") }
         if !activeLoRAs.isEmpty && model.supports_lora != true { throw NativeFailure(message: "当前模型不支持 LoRA。") }
+        if modelID == "qwen-image-2.1", !activeLoRAs.isEmpty {
+            guard let adapter = qwen21TurboLoRA else {
+                throw NativeFailure(message: "Qwen 2.1 当前支持单个 Viggle v0.2.1 六步 r128 / r256 LoRA，请只启用一个已支持的适配器。")
+            }
+            guard adapter.role == "transformer", adapter.strength == 1 else {
+                throw NativeFailure(message: "Qwen 2.1 六步 LoRA 需使用 transformer 角色、强度 1。请应用六步 GPU 预设。")
+            }
+            guard width == 512, height == 512, steps == 6 else {
+                throw NativeFailure(message: "Qwen 2.1 六步 LoRA 当前使用 512×512、6 步。请应用六步 GPU 预设。")
+            }
+            guard operation != "image.edit" || activeAssets.count <= 3 else {
+                throw NativeFailure(message: "Qwen 2.1 六步 LoRA 编辑最多支持 3 张参考图；更多参考图请关闭 LoRA。")
+            }
+        }
         if modelID == "z-image-turbo-gguf" && residency != "resident" {
             throw NativeFailure(message: "GGUF 当前只支持原生 MLX 常驻模式，请将模型驻留改为 resident。")
         }
         guard ["auto", "disk_premerge", "in_memory_merge", "inference_time"].contains(loraStrategy) else {
             throw NativeFailure(message: "不支持的 LoRA 执行策略：\(loraStrategy)")
-        }
-        if loras.isEmpty && loraStrategy != "auto" {
-            throw NativeFailure(message: "选择 LoRA 执行策略前请先添加 LoRA 文件。")
         }
         if !activeLoRAs.isEmpty, let supported = model.lora_strategies,
            loraStrategy != "auto" && !supported.contains(loraStrategy) {
@@ -631,7 +652,7 @@ struct StudioDraft: Codable, Sendable {
             }
             let imageLoRA = !activeLoRAs.isEmpty &&
                 (modelID.hasPrefix("flux2-") || modelID == "z-image-turbo" ||
-                 modelID == "z-image-turbo-gguf")
+                 modelID == "z-image-turbo-gguf" || modelID == "qwen-image-2.1")
             // Automatic/profile selection must not guess that a base artifact
             // contains the active adapter. Explicit GPU+ANE is allowed only if
             // the selected manifest declares this exact adapter set; native
@@ -640,7 +661,7 @@ struct StudioDraft: Codable, Sendable {
                 acceleration.policy == "gpu_ane" &&
                 AccelerationDiscovery.manifestBinds(manifest: acceleration.manifest,
                                                     loras: activeLoRAs)
-            let loraRequiresBaseGPU = imageLoRA && !loraManifestMatches
+            let loraRequiresBaseGPU = imageLoRA && (!loraManifestMatches || modelID == "qwen-image-2.1")
             if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true && !loraRequiresBaseGPU {
                 guard !acceleration.manifest.isEmpty else { throw NativeFailure(message: "请在模型中心选择已编译的分区 manifest，或先预编译本地源分区。") }
                 request.ane_manifest = acceleration.manifest; request.allow_approximation = true
@@ -666,6 +687,13 @@ struct StudioDraft: Codable, Sendable {
                                strength: (operation == "image.transform" || operation == "video.image") ? strength : nil)
         }
         request.loras = activeLoRAs.isEmpty ? nil : activeLoRAs.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
+        if qwen21TurboLoRA != nil {
+            // The qualified six-step schedule is explicitly approximate. Base
+            // Qwen ANE partitions do not include the adapter's weight delta.
+            request.execution = "gpu"; request.profile = nil; request.ane_manifest = nil
+            request.allow_approximation = true
+            request.lora_strategy = "inference_time"
+        }
         if modelID == "wan2.1-1.3b-qad" && !activeLoRAs.isEmpty { request.execution = "gpu" }
         return request
     }
@@ -1008,6 +1036,7 @@ final class StudioState: ObservableObject {
         var selected = imported
         selected.modelPaths = draft.modelPaths.merging(imported.modelPaths.filter { !$0.value.isEmpty }) { _, incoming in incoming }
         draft = selected
+        undoAssets = []
         message = nil
         save()
     }
@@ -1151,6 +1180,50 @@ final class StudioState: ObservableObject {
     }
     var canUndoAssets: Bool { !undoAssets.isEmpty }
     func undoAssetChange() { if let previous = undoAssets.popLast() { draft.assets = previous.0; draft.initImageID = previous.1 } }
+    /// Qwen uses reference editing for both one and multiple images. Do not ask
+    /// changeOperation to find another model just to edit a single reference.
+    func useOnlyAssetForEditing(_ id: UUID) {
+        guard !importing, let asset = draft.assets.first(where: { $0.id == id }),
+              let model = models.first(where: { $0.id == draft.modelID }) else { return }
+        let operation = model.supports("image.transform") ? "image.transform"
+            : model.supports("image.edit") ? "image.edit"
+            : model.supports("video.image") ? "video.image" : nil
+        guard let operation else { message = "当前模型不支持编辑图片。"; return }
+        rememberAssets()
+        if operation == "image.edit" { draft.assets = [asset] }
+        draft.operation = operation; draft.initImageID = asset.id
+        message = operation == "image.edit" ? "已使用这张图片进行单图编辑，其他参考图可撤销恢复。" : nil
+    }
+    @discardableResult
+    func editResult(_ job: NativeJob) async -> Bool {
+        guard !importing, job.hasOutput else { return false }
+        func editingOperation(_ model: StudioModel) -> String? {
+            model.supports("image.transform") ? "image.transform"
+                : model.supports("image.edit") ? "image.edit" : nil
+        }
+        let sourceModel = models.first { $0.id == job.request.model && editingOperation($0) != nil }
+        let currentModel = models.first { $0.id == draft.modelID && editingOperation($0) != nil }
+        guard let model = sourceModel ?? currentModel, let operation = editingOperation(model) else {
+            message = "请先选择支持图片编辑的模型，再编辑此结果。"
+            return false
+        }
+        importing = true; defer { importing = false }
+        do {
+            // Import first: an unreadable/deleted result leaves the current
+            // draft intact, and this result never consumes a ninth input slot.
+            let asset = try await importer.importFile(URL(fileURLWithPath: job.request.output))
+            rememberAssets()
+            if draft.modelID != model.id { selectModel(model.id) }
+            if model.id == job.request.model, let path = job.modelPath { draft.modelPaths[model.id] = path }
+            draft.assets = [asset]; draft.initImageID = asset.id; draft.operation = operation
+            message = "已将结果副本设为编辑原图，请输入修改要求。原结果已保留，参考图替换可撤销。"
+            save()
+            return true
+        } catch {
+            message = error.localizedDescription
+            return false
+        }
+    }
     var supportsImageInputs: Bool {
         guard let model = models.first(where: { $0.id == draft.modelID }), model.executor, model.inputs?.contains("image") != false, (model.max_images ?? 8) > 0 else { return false }
         return (model.executor_operations ?? model.operations).contains {
@@ -1173,12 +1246,28 @@ final class StudioState: ObservableObject {
         let size = (512, 512)
         draft.operation = example.referenceCount == 0 ? "image.generate" : "image.edit"
         draft.prompt = example.prompt
-        draft.width = size.0; draft.height = size.1; draft.steps = 40
+        let steps = draft.qwen21TurboLoRA != nil ? 6 : 40
+        draft.width = size.0; draft.height = size.1; draft.steps = steps
         draft.profilePath = ""
         var acceleration = draft.acceleration ?? StudioAcceleration()
         acceleration.policy = "gpu"
         draft.acceleration = acceleration
-        message = "已替换为可编辑的示例提示词，使用 GPU / 40 步 / \(size.0)×\(size.1)。这不是模型提示词重写；蒙版与标注作为视觉参考，不保证逐像素锁定未编辑区。"
+        message = "已替换为可编辑的示例提示词，使用 GPU / \(steps) 步 / \(size.0)×\(size.1)。这不是模型提示词重写；蒙版与标注作为视觉参考，不保证逐像素锁定未编辑区。"
+    }
+    func applyQwen21TurboPreset() {
+        guard !importing, let adapter = draft.qwen21TurboLoRA,
+              let index = draft.loras.firstIndex(where: { $0.id == adapter.id }) else {
+            message = "请先启用单个 Qwen 2.1 Viggle 六步 r128 / r256 LoRA。"
+            return
+        }
+        draft.width = 512; draft.height = 512; draft.steps = 6
+        draft.frames = 1; draft.audio = false
+        draft.loras[index].role = "transformer"; draft.loras[index].strength = 1
+        draft.loraStrategy = "inference_time"
+        draft.profilePath = ""; draft.acceleration = StudioAcceleration(policy: "gpu")
+        draft.streaming = StudioStreamingState()
+        message = "已应用六步 LoRA 预设：512×512、6 步、纯 GPU、强度 1。编辑支持 1–3 张参考图；此加速采样为近似模式。"
+        save()
     }
     func annotateQwen21Asset(_ id: UUID, strokes: [Qwen21AnnotationStroke],
                             output: Qwen21AnnotationOutput = .annotatedImage) async -> Bool {
@@ -1297,25 +1386,53 @@ final class StudioState: ObservableObject {
             message = "已恢复超分模型；点击图片超分可重新选择原图。"
             save(); return
         }
+        draft.modelLoRAs[draft.modelID] = draft.loras
         draft.modelID = request.model
         if let path = job.modelPath { draft.modelPaths[request.model] = path }
         draft.prompt = request.prompt; draft.width = request.width; draft.height = request.height
         draft.steps = request.steps; draft.frames = request.frames; draft.fps = request.fps ?? 24
         draft.audio = request.audio ?? false; draft.seedText = String(request.seed); draft.randomSeed = false
         draft.operation = request.operation ?? "image.generate"
+        draft.streaming = StudioStreamingState()
+        if let target = job.publicStreamingTargetBytes,
+           let selection = StudioStreamingSelection.from(targetBytes: target) {
+            draft.streaming.selection = selection
+            draft.streaming.userSelected = true
+            // Historical resolution is display data. The next run must query
+            // and validate the installation again before binding this intent.
+            draft.streaming.status = "unknown"
+        }
+        draft.ltxBackend = request.ltx_backend ?? "auto"
+        draft.ltxFastAV = request.ltx_fast_av ?? true
+        draft.ltxVideoAttentionBatch = request.ltx_video_attention_batch ?? false
+        draft.ltxAccelerationMode = request.ltx_sol_stage2 == true
+            ? (request.ltx_stage2_text_rows == 256 ? "fast_approx" : "sol") : "quality"
         draft.residency = request.residency ?? "resident"; draft.profilePath = request.profile ?? ""
         if request.model == "z-image-turbo", let budget = request.memory_budget_bytes {
             draft.zImageStreamingBudgetGiB = Int(min(budget >> 30, 12))
         }
-        draft.acceleration = StudioAcceleration(policy: request.profile == nil ? request.execution : "profile", manifest: request.ane_manifest ?? "", sourceManifest: draft.acceleration?.sourceManifest ?? "", compileGPU: request.compile_gpu)
+        draft.acceleration = StudioAcceleration(policy: request.profile == nil ? request.execution : "profile", manifest: request.ane_manifest ?? "", compileGPU: request.compile_gpu)
         draft.dynamicText = request.dynamic_text
         draft.promptEnhance = request.prompt_enhance ?? false
         draft.promptEnhanceEditExperimental = request.prompt_enhance_edit_experimental ?? false
         draft.promptEnhancerPath = request.prompt_enhancer_path ?? ""
-        draft.assets = (request.inputs ?? []).map { StudioAsset(path: $0.path, name: URL(fileURLWithPath: $0.path).lastPathComponent, width: 0, height: 0) }
+        draft.assets = (request.inputs ?? []).map { input in
+            let url = URL(fileURLWithPath: input.path)
+            let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+            let info = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
+            let width = info?[kCGImagePropertyPixelWidth] as? Int ?? 0
+            let height = info?[kCGImagePropertyPixelHeight] as? Int ?? 0
+            let rotated = (info?[kCGImagePropertyOrientation] as? Int ?? 1) >= 5
+            return StudioAsset(path: input.path, name: url.lastPathComponent,
+                               width: rotated ? height : width, height: rotated ? width : height)
+        }
         draft.loras = (request.loras ?? []).map { StudioLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
+        draft.modelLoRAs[request.model] = draft.loras
         draft.loraStrategy = request.lora_strategy ?? "auto"
         draft.initImageID = draft.assets.first?.id; draft.strength = request.inputs?.first?.strength ?? 0.75
+        undoAssets = []
+        message = "已恢复此任务的模型、输入顺序与生成参数，请核对后重新生成。"
+        save()
     }
     func selectUpscaleVariant(_ variant: UpscaleVariant) {
         draft.upscaleModelPaths[draft.upscaleVariant.rawValue] = draft.upscaleModelPath

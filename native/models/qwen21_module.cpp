@@ -1,5 +1,6 @@
 #include "qwen21/pipeline.hpp"
 #include "qwen21/diagnostic_options.hpp"
+#include "qwen21/viggle_adapter.hpp"
 #include <cmath>
 #include <cstdlib>
 #include <string_view>
@@ -194,15 +195,14 @@ ModelModule qwen21_module() {
                             !r.qwen21_gpu_w8a16 && r.loras.empty(),
                         "Qwen21 tiled prefix target-only needs explicit resident W8A8 tiled prefix reuse");
             if (!r.loras.empty()) {
-                constexpr std::string_view name =
-                    "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors";
                 const bool experimental_adapter = fused_lora_ane || runtime_ane;
                 require(r.loras.size() == 1 && r.loras[0].role == "transformer" &&
                             (experimental_adapter
                                 ? (std::isfinite(r.loras[0].strength) &&
                                    r.loras[0].strength >= -8.f && r.loras[0].strength <= 8.f)
                                 : (r.loras[0].strength == 1.f &&
-                                   std::filesystem::path(r.loras[0].path).filename().string() == name)) &&
+                                   qwen21::viggle_v021_adapter(
+                                       std::filesystem::path(r.loras[0].path).filename().string()))) &&
                             r.steps == 6 && (r.execution == "gpu" ||
                                              (r.execution == "gpu_ane" && (lora_base_ane || runtime_ane))) &&
                             r.allow_approximation &&
@@ -419,7 +419,7 @@ ModelModule qwen21_module() {
             d.inputs = {"text", "image"}; d.roles = {"reference"}; d.max_images = 10; d.output = "image";
             d.steps = 40; d.frames = 1; d.width = d.height = 1024; d.default_audio = false;
             d.supports_lora = true; d.runtime_lora = true;
-            d.lora_mode = "inference-time-viggle-v0.2.1-r256; alternate six-step adapters experimental in explicit lora_fused";
+            d.lora_mode = "inference-time-viggle-v0.2.1-r128/r256; alternate six-step adapters experimental in explicit lora_fused";
             d.lora_strategies = {"inference_time"}; d.default_lora_strategy = "inference_time";
             d.default_residency = "component_staged"; d.backend = "mlx_cpp_metal";
             d.supports_gpu_ane = true;

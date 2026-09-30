@@ -21,7 +21,30 @@ for normal operation. The experimental GPU+ANE route requires an explicit
 manifest and approximation opt-in; it is not hardware-placement or image-quality
 proof.
 
-## Viggle v0.2.1 r256: six-step GPU student (research/evaluation only)
+## Viggle v0.2.1 r128 / r256: six-step GPU student (research/evaluation only)
+
+The public GPU route also accepts the official **v0.2.1 six-step r128**
+adapter, with the same schedule, strength 1 and 227 projection bindings.
+Its SHA-256 is
+`bafb91d0047df3f9b8a5a850b0c967f051164314d8aad778dfa34d9c24ec345b`.
+The runtime checks the filename and its corresponding digest; renaming a
+different adapter does not qualify it. The two ranks remain different
+adapters, so the historical r256 timings below do not establish r128 speed
+or quality. See the [upstream adapter card](https://huggingface.co/Viggle/Qwen-Image-2.1-viggle-turbo).
+The [2026-09-30 GPU and App verification](../status/dev-verify-qwen21-gpu-uiux-2026-09-30.md)
+records the r128 generation/editing matrix, lifecycle checks, quality limits
+and the LoRA-only workflow for subsequent iterations.
+
+For an existing Comfy installation, keep its three BF16 files in
+`diffusion_models/`, `text_encoders/` and `vae/`. The native encoder also
+needs `processor/tokenizer.json` from Qwen/Qwen-Image-2.1; this small
+tokenizer configuration is separate from the weights. A directory containing
+only the three checkpoints is incomplete. No second set of model weights is
+needed. In the App, add the supported adapter and apply **512×512 / 6-step
+GPU preset**. It preserves the prompt and references, selects strength 1 and
+inference-time LoRA, and explicitly marks the distilled sampling approximate.
+Disabling or removing the adapter excludes it from the next request; reset
+the base model to 40 steps for a meaningful quality comparison.
 
 The optional `Viggle/Qwen-Image-2.1-viggle-turbo` **v0.2.1 6-step r256**
 adapter can run on the existing BF16 Qwen-Image-2.1 checkpoint for text-to-image
