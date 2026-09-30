@@ -78,6 +78,157 @@ the compiled *1,024-image-row, 5,120-intermediate-channel* manifest. See the
 request syntax and execution policy; a real generation is still required to
 verify that the model and compiled ANE artifact are compatible.
 
+For an adapter-independent Core ML FFN, select an explicitly exported
+`lora_fused` **base-only** manifest and `--hybrid-mode lora_fused` for both
+base and inference-time LoRA requests. Reuse the same manifest and resident
+CLI session across adapters; do not export/compile the adapter into Core ML
+or select `lora_merged`. The mode name is historical: **base FFN operators**
+are fused, but no LoRA weights, rank, strength or adapter identity are baked
+into the Core ML artifact. In the no-adapter request, the runtime supplies zero
+gate/up corrections. With an adapter, GPU LoRA gate/up deltas enter before the
+Core ML SiLU, and GPU computes down-LoRA from the Core ML hidden output;
+non-FFN LoRA also stays on GPU. This is a separate opt-in graph, **not** the
+default fastest base graph. Qwen-Image-2.1 runtime LoRA has not established
+a whole-request speedup over GPU; Z-Image Turbo's explicit 4096-channel
+runtime-LoRA graph has. See the [Qwen runtime LoRA experiments](../status/qwen21-runtime-lora-fused-2026-09-28.md)
+and [Z-Image runtime LoRA experiments](../status/z-image-runtime-lora-fused-2026-09-28.md)
+for exact geometry, accuracy limits and measured timings. A different LoRA
+does not need a new Core ML compilation, but still needs independent schedule
+and image-quality validation. The [route comparison and code map](../status/runtime-lora-acceleration-2026-09-28.md)
+distinguish the fastest base path, complete runtime LoRA, and deliberately
+incomplete diagnostics.
+
+The explicit [runtime-weight Core ML route](../status/runtime-ane-integration-2026-09-28.md)
+uses `--hybrid-mode runtime --ane-manifest MANIFEST` for resident
+requests with approximation consent: Qwen21 BF16, Z-Image BF16, and the explicit
+native Z-Image GGUF route. These checkpoint-independent manifests are **not**
+interchangeable with frozen-base manifests. An optional graph-v2 exported with
+`--lora-inputs` supports **inference-time LoRA on BF16 Z/Qwen** through activation
+corrections; weight slots remain base-only. A v1 graph cannot accept LoRA.
+GGUF remains base-only and streaming is unsupported. See the
+[v2 computation and switch checks](../status/runtime-ane-lora-2026-09-28.md)
+and the [maintained performance decision](../status/acceleration.md): Qwen
+six-step LoRA has not established a meaningful advantage over optimized GPU,
+so runtime is not its recommended fast path.
+Z Q8_0 has paired whole-model measurements;
+Q4_0 now has a [real-checkpoint smoke screen and padding fix](../status/runtime-ane-q4.md),
+not broad qualification. Q4_1 still has only component coverage.
+Affine staging converts packed weights to FP16; it is not INT8 ANE compute.
+See the [GGUF integration and limits](../status/runtime-ane-integration-2026-09-28.md#z-原生-gguf-q8_0整模型接入与-chunk-筛选).
+Existing LoRA paths and automatic defaults are unchanged. The component probe
+remains a separate `make build-runtime-ane-probe` developer tool.
+Use `make test-acceleration-contract` for no-inference route/report/host checks;
+`make test-runtime-ane` explicitly runs small Core ML/MLX integration tests.
+Within explicit `runtime`, `TURBOCIDER_RUNTIME_ANE_CHUNKS=auto` (the default)
+adapts the row split; it does not select runtime mode for ordinary requests.
+Qwen and Z-Image's unprofitable layers return to full GPU blocks, with periodic whole-block
+timing probes. Stable profitable hybrid blocks avoid extra whole-block timing
+fences; warmup, partition changes and periodic rechecks retain complete samples.
+With profiling off, stable hybrid blocks also submit the GPU head asynchronously
+and wait at the final output boundary. Sampling/profile paths retain synchronous
+head timings. Async host waits overlap GPU work and must not be read as exposed
+ANE latency; see the [timing semantics and regression evidence](../status/runtime-ane-async-join.md).
+The maintained [acceleration decision table](../status/acceleration.md) separates
+default/fastest base routes, optional complete LoRA paths and diagnostics, with
+build-specific timing and quality evidence. Qwen six-step runtime LoRA/editing
+still prefers GPU; the measured Z distill-patch workload benefits from runtime.
+Do not combine independent approximation flags into an untested fastest preset.
+Qwen's existing `TURBOCIDER_QWEN21_VIGGLE_LORA_FP16=1` changes only LoRA
+rank matmuls and stays opt-in; it does not merge adapters or change the base graph.
+The [matched three-reference experiment](../status/runtime-ane-qwen-lora-rank.md)
+found a small GPU benefit but no auto-runtime win. The developer screen accepts
+`--qwen-lora-fp16` to apply it equally to all compared routes and verify native
+precision receipts; this is not a native CLI argument or a new default preset.
+For explicit BF16 base experiments at 512², the [tile/chunk recipes](../status/runtime-ane-tiles.md)
+use K=1024/N=512 with Qwen chunk320 and Z chunk352. Export a separate artifact
+and supply its manifest; these are optional base recipes, not evidence of faster
+LoRA/editing, and do not change exporter or product defaults.
+For Qwen 1024² base, the [matched c1792/c320 comparison](../status/runtime-ane-qwen-chunks.md)
+measured 153.050/165.000 s warm requests (1.078× versus c320, not a new matched
+GPU/frozen comparison). Export a separate v2 graph with `--rows 1792`, K1024/N512
+and `--lora-inputs`, then select it with the existing `--hybrid-mode runtime`
+and `--ane-manifest MANIFEST` options; keep chunks `auto` and profiling off.
+This geometry is optional, not a universal preset: short 512² sequences return
+to GPU. A [three-reference runtime-LoRA screen and shared-graph switch](../status/runtime-ane-qwen-edit-chunks.md)
+exercise real predictions. The short-batch screen was 0.977×; a newer long-resident
+ABBA measured only 1.005× over all warm requests (1.018× in its predeclared late
+window). The subsequent [matched Q/K-fusion campaign](../status/runtime-ane-qwen-qk.md)
+measured 0.998× versus equally optimized GPU over all warm requests (1.016× in
+the predeclared late window). This is not a universal faster preset; broader editing/adapter
+qualification remains incomplete and the default route is unchanged.
+Graph-v2 validates unused hidden outputs without copying them for base requests;
+LoRA retains the full hidden and supplies gate/up corrections before SiLU.
+Readiness/copy optimizations are internal to the explicit route, not new flags.
+The [benchmark guide](../status/runtime-ane-validation.md) documents the shared
+GPU/runtime/frozen screen, ordered 1–3 Qwen editing references, runtime LoRA,
+ABBA trials and incomplete-result handling. Tool support is not performance
+qualification; ordinary runtime-LoRA requests are not silently promoted to ANE.
+Setting chunks to `0` instead preserves the split GPU boundary
+for diagnostics and is **not** the ordinary GPU baseline. Keep
+`TURBOCIDER_RUNTIME_ANE_PROFILE` unset for timings. Check for competing local
+inference before benchmarking; wait rather than terminating unrelated processes.
+
+The existing optional GPU Q/K norm-RoPE fusion can also be combined with explicit
+Qwen runtime ANE at **512²**, resident, BF16 GPU and approximation consent:
+
+```sh
+TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE=1 \
+  dist/cli/turbocider generate models/Comfy-Org-Qwen-Image-2.1 \
+  examples/requests/qwen21-base-512.json \
+  --hybrid-mode runtime --ane-manifest path/to/runtime-v2/manifest.json
+```
+
+Use a matching runtime graph (the measured base recipe is c320/K1024/N512),
+not an ordinary frozen manifest. Omit the environment variable to disable this
+GPU experiment; it does not enable LoRA FP16 or change base weights/SiLU.
+It cannot be combined with paired RoPE, streaming or a W8A16 GPU suffix.
+The newer build also admits **1024² resident base text-to-image only**;
+1024² LoRA/editing and rectangular canvases remain rejected. Its long-sequence
+kernel/contracts/full regression pass. The [matched 1024² comparison](../status/runtime-ane-qwen-qk-1024.md)
+completed 12 trials/36 requests: with fusion enabled equally, GPU/runtime/frozen
+took 182.961/147.349/160.718 s. Runtime was 1.242× GPU and 1.091× frozen for this
+workload; the six reviewed images were visually close for this one prompt/seed.
+This is not broader editing/LoRA, hardware-residency or memory-pressure qualification.
+Use a matching runtime graph (c1792/K1024/N512 v2); frozen
+1024² still needs its separate 4096-row graph and existing diagnostic gate.
+The [1024² request and explicit CLI command](../../examples/requests/README.md#minimal-commands)
+keep this measured fastest configuration optional, with GPU as the template default.
+The validation tools expose `--qwen-qk-norm-rope` to apply the same
+setting to **all** compared routes and check planned/actual kernel receipts;
+that flag is not a native CLI option. Only the screen extends to 1024² base;
+the runtime-LoRA shared-graph switch retains its 512² scope. The completed 512²/40-step base comparison
+measured GPU/runtime/frozen at 41.742/35.675/29.068 s with fusion enabled equally
+(1.170× runtime and 1.436× frozen speedup). See the matched report for workload,
+memory and visual limits; this is not an automatic fastest preset.
+
+The [request example index](../../examples/requests/README.md) separates GPU,
+frozen base, shared-base LoRA and runtime-weight graph choices. Portable GPU requests are provided in
+`examples/requests/z-image-runtime-lora-512.json` and
+`examples/requests/qwen21-viggle-runtime-lora-512.json`. For the explicit Qwen
+shared-base experiment use `qwen21-viggle-runtime-lora-hybrid-512.json` and
+pass `--ane-manifest` at invocation; it intentionally has no machine-specific
+manifest path. See the [commands and artifact requirements](../status/runtime-lora-acceleration-2026-09-28.md#便携-cli-示例).
+
+For the small, visually checked Z-Image-only direct-FP16 delta experiment,
+set `TURBOCIDER_Z_RUNTIME_LORA_DIRECT_FP16=1` on the CLI process while using
+the explicit `lora_fused` manifest; omit the variable for the prior numerical
+boundary. Qwen ignores this flag. It does not change the base model or merge
+an adapter, and it has not been promoted to automatic routing.
+
+To check adapter-file switching without compiling another Core ML graph,
+`tools/validation/runtime_lora_shared_graph_switch.py` uses a temporary synthetic
+second adapter and verifies base → adapter A → adapter B → base isolation;
+this is a correctness test, not quality validation for a trained adapter B.
+The switch runner requires matched requests (including prompt/seed), 512px
+output and Qwen 6 / Z 8 steps; only output and adapter binding may differ.
+Generation supports both modes; Qwen `runtime` also accepts 1–3 ordered ref512
+editing inputs. The tool checks reference byte identity, operation/token counts,
+graph/library/adapter identity and actual prediction increments on every request.
+It sets the required ref512 diagnostic for the mixed base/adapter batch and pins
+one chunk, so this is not an auto-scheduler benchmark. Its `--help` and host
+contracts do not load MLX. Use the model screen for matched timings; see the
+[switch-runner contract](../status/runtime-ane-validation.md#共图切换工具的边界).
+
 ## Model capabilities
 
 | Model ID | Executable scope | Important limits |
@@ -205,9 +356,12 @@ the requested role/strength. Merely renaming a checkpoint is not preparation.
 Wan accepts at most one verified premerged transformer adapter and currently
 restricts LoRA to GPU.
 
-GPU + ANE with LoRA requires an in-memory-merge-compatible route and artifacts
-bound to the same adapter identity and strength. Base-only artifacts are not
-interchangeable with LoRA-bound artifacts.
+GPU + ANE LoRA depends on the selected route. Explicit `lora_fused` uses a
+frozen **base-only** graph with runtime activation corrections; `runtime` can
+use the checkpoint-independent v2 interface described above. Neither merges
+the adapter into base weights. Older merged routes instead require artifacts
+bound to the same adapter identity and strength. These artifact interfaces are
+not interchangeable.
 
 ## Core ML artifacts
 

@@ -1,6 +1,6 @@
 # TurboCider 当前目标状态
 
-> 发行边界更新：本文的 sd.cpp/GGUF streaming 数据是历史实验记录。正式 App 已移除 sd.cpp，只支持 native MLX GGUF resident；当前规则见 [native-only GGUF](native-gguf-boundary-2026-09-09.md)。
+> 发行边界更新：本文的 sd.cpp/GGUF streaming 数据是历史实验记录。正式 App 已移除 sd.cpp，只支持 native MLX GGUF resident；当前规则见 [CLI 模型能力](../public/USAGE.md#model-capabilities)。
 >
 > H3/LTX 共享驻留策略与 2026-09-10 主机复测见 [最新增量状态](current-status-2026-09-10.md)。
 
@@ -66,7 +66,7 @@ streaming 慢 9.77%，footprint 降低 34.85%；correlation 0.998205、cosine
 LoRA SHA、strength=1.0 和 `inference_time` strategy 均被记录。`memory_budget_bytes`
 仍是 sd.cpp `--max-vram` working-set hint，不是整个进程的物理内存上限。
 
-完整摘要：[z-image-gguf-streaming-2026-09-09.json](../design/validation/z-image-gguf-streaming-2026-09-09.json)。
+历史原始摘要：`z-image-gguf-streaming-2026-09-09.json`（当前源码树未保留，不作为可复现验收入口）。
 
 ## 其他模型与异构路径
 

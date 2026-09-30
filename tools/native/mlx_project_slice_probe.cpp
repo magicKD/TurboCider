@@ -172,6 +172,57 @@ int main() {
         const float lora_columns = relative_l2(left + right, rows);
         tc::require(lora_rows < 1e-5f && lora_columns < 1e-5f,
                     "runtime LoRA row/column slices disagree with full fused projection");
+        const auto delta_gate = fused.lora_delta_slice(
+            input, stem + "gate_up", 0, output_width, 0, input_width);
+        const auto delta_up = fused.lora_delta_slice(
+            input, stem + "gate_up", output_width, 2 * output_width, 0, input_width);
+        const auto delta_crossing = fused.lora_delta_slice(
+            input, stem + "gate_up", 48, 144, 0, input_width);
+        const auto absent = base_fused.lora_delta_slice(
+            input, stem + "gate_up", 0, output_width, 0, input_width);
+        tc::mx::eval(delta_gate, delta_up, delta_crossing, absent);
+        const float gate_delta_relative = relative_l2(
+            tc::slice_axis(base_full, -1, 0, output_width) + delta_gate,
+            tc::slice_axis(full, -1, 0, output_width));
+        const float up_delta_relative = relative_l2(
+            tc::slice_axis(base_full, -1, output_width, 2 * output_width) + delta_up,
+            tc::slice_axis(full, -1, output_width, 2 * output_width));
+        tc::require(gate_delta_relative < 1e-5f && up_delta_relative < 1e-5f,
+                    "adapter-only gate/up deltas disagree with runtime LoRA projection");
+        tc::require(relative_l2(delta_crossing,
+                    tc::slice_axis(full - base_full, -1, 48, 144)) < 1e-5f &&
+                    tc::mx::sum(tc::mx::abs(absent)).item<float>() == 0.f,
+                    "crossing/absent runtime LoRA delta slice differs from reference");
+        // The optional Core ML boundary must preserve the FP32 low-rank
+        // accumulation until its FP16 output, without changing the standard
+        // BF16-returning slice contract or fabricating an absent adapter.
+        auto bf16_input = tc::mx::astype(input, tc::mx::bfloat16);
+        const auto direct_half = fused.lora_delta_slice(
+            bf16_input, stem + "gate_up", 0, output_width, 0, input_width,
+            tc::mx::float16);
+        const auto reference_float = fused.lora_delta_slice(
+            bf16_input, stem + "gate_up", 0, output_width, 0, input_width,
+            tc::mx::float32);
+        const auto default_bf16 = fused.lora_delta_slice(
+            bf16_input, stem + "gate_up", 0, output_width, 0, input_width);
+        const auto absent_half = base_fused.lora_delta_slice(
+            bf16_input, stem + "gate_up", 0, output_width, 0, input_width,
+            tc::mx::float16);
+        const float direct_half_relative = relative_l2(
+            direct_half, tc::mx::astype(reference_float, tc::mx::float16));
+        const float absent_half_sum = tc::mx::sum(
+            tc::mx::astype(tc::mx::abs(absent_half), tc::mx::float32)).item<float>();
+        std::cerr << "direct FP16 delta relative=" << direct_half_relative
+                  << " absent=" << absent_half_sum
+                  << " dtypes_correct="
+                  << (direct_half.dtype() == tc::mx::float16) << '/'
+                  << (default_bf16.dtype() == tc::mx::bfloat16) << '/'
+                  << (absent_half.dtype() == tc::mx::float16) << std::endl;
+        tc::require(direct_half.dtype() == tc::mx::float16 &&
+                        default_bf16.dtype() == tc::mx::bfloat16 &&
+                        absent_half.dtype() == tc::mx::float16 &&
+                        direct_half_relative == 0.f && absent_half_sum == 0.f,
+                    "FP16 Core ML LoRA delta changed its FP32 reference or default dtype");
         fused.set_runtime_lora_fp16(true);
         const float half_rank_rows = relative_l2(
             fused.project_slice(input, stem + "gate_up", 48, 144, 0, input_width),
@@ -188,6 +239,8 @@ int main() {
                   << ",\"lora_rows_relative_l2\":" << lora_rows
                   << ",\"lora_columns_relative_l2\":" << lora_columns
                   << ",\"fp16_lora_rows_relative_l2\":" << half_rank_rows
+                  << ",\"gate_delta_relative_l2\":" << gate_delta_relative
+                  << ",\"up_delta_relative_l2\":" << up_delta_relative
                   << ",\"unaligned_rejected\":true}" << std::endl;
     } catch (const std::exception &error) {
         std::cerr << error.what() << std::endl;

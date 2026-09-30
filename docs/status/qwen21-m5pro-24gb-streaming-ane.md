@@ -12,13 +12,14 @@ this change does not qualify them for the new low-memory strategy.
 | Route | Qualified request |
 | --- | --- |
 | BF16 GPU | Qwen Image 2.1, text-to-image, canvas at most 512×512, `component_staged`, no reference image, LoRA, prompt enhancement, or approximation |
-| Experimental hybrid | Same device, 512×512 text-to-image, at least two steps, `component_staged`, explicit `gpu_ane`, `qwen21_w8a8=true`, `allow_approximation=true`, checkpoint-matched 32-block W8A8 manifest with 6144/12288 MLP channels; no reference image, LoRA, prompt enhancement, GPU W8A16 suffix, or diagnostic reuse cache |
+| Experimental hybrid | Same device, 512×512 text-to-image, at least two steps, `component_staged`, explicit `gpu_ane`, `qwen21_w8a8=true`, `allow_approximation=true`, `auto`/`base_fused` MLP mode, checkpoint-matched 32-block W8A8 manifest with 6144/12288 MLP channels; no reference image, LoRA, prompt enhancement, GPU W8A16 suffix, or diagnostic reuse cache |
 
 The App exposes **Qwen 低内存 ANE（实验）** under acceleration settings. The
 control and request submission both check hardware eligibility. A saved draft
 from this machine cannot activate this experiment on another device; the user
 can turn it off and keep the existing GPU or ordinary ANE route. The flag survives
-draft persistence and history reuse. GPU remains the default.
+draft persistence and history reuse. Experimental App submissions select
+`base_fused` explicitly so a reused request cannot carry a different hybrid graph. GPU remains the default.
 
 The App's staged-release residency label describes the lifetime of complete
 components. Within that mode, eligible requests also stream individual layers.
@@ -46,6 +47,12 @@ existing additional 4 GiB system reserve remains in effect. These conservative
 estimates are admission heuristics, not hard caps or whole-machine measurements.
 Both the planner and executor consult the same hardware-gated route predicates.
 Only the qualified route receives the suffix cache or temporary wired policy.
+
+The `dev-verify` runtime-weight FFN/QKV modes keep their existing additional
+2 GiB estimate. LoRA fused/gate-up/suffix graphs and their diagnostics do not
+receive the new low-memory estimate. Upstream staged cleanup and LoRA state
+reset continue to apply to all devices. The new layer-streaming/cache/wired
+strategy remains restricted to the qualified hardware and base graph.
 
 The shared fd-backed reader also needs a correctness fix: duplicated descriptors
 share a kernel cursor. Each reader now owns a logical cursor and uses positional
@@ -111,17 +118,19 @@ configuration are excluded from the change.
 
 ## PR build verification
 
-A clean build with the exact hardware gate passed 39 focused Qwen tests, 29
-Qwen request-contract tests, the device-profile contract, CPU policy/boundary
-checks, the source-lease fixture, App workflow checks, and ANE library checks.
+After integrating `dev-verify`, a clean build with the exact hardware gate passed
+41 focused Qwen tests (one optional installed-adapter audit skipped), 36 Qwen
+request-contract tests, the device-profile contract, CPU policy/boundary checks,
+the source-lease fixture, App workflow checks, and ANE library checks. App reuse
+checks cover the newer hybrid modes and explicit `base_fused` resubmission.
 The device matrix uses synthetic hardware descriptions; physical inference was
 run on the qualified machine only. It covers M5/M5 Max, M4 Pro/Max, other M5 Pro
 memory capacities, off-by-one byte counts, unknown devices, and malformed App
 hardware descriptions.
 
-The gated build's full 512×512 / 40-step hybrid run completed in 60.308 s with
-1248 Core ML runtime calls, 5.67 GiB MLX peak, and approximately 165 KiB MLX active
-after completion. Its PNG matched the previously qualified hybrid byte for byte.
+The `dev-verify` integration build's full 512×512 / 40-step `base_fused` hybrid
+run completed in 59.063 s with 1248 Core ML runtime calls, 5.67 GiB MLX peak,
+and approximately 161 KiB MLX active after completion. Its PNG matched the previously qualified hybrid byte for byte.
 This is a functional/parity acceptance run, not another paired speed comparison.
 The gated build also passed cancellation during load and denoising, retry,
 repeat, and GPU switch checks. Every exit restored the pre-existing 256 MiB
@@ -150,6 +159,7 @@ An explicit hybrid request uses:
   "execution": "gpu_ane",
   "residency": "component_staged",
   "qwen21_w8a8": true,
+  "hybrid_mlp_mode": "base_fused",
   "allow_approximation": true,
   "ane_manifest": "/path/to/matching-compiled-manifest.json"
 }

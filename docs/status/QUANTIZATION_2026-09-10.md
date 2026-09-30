@@ -17,7 +17,7 @@
   被静默忽略。共享组件检查拒绝不符合本转换约定的 quantization 配置。
 - NVFP4 标记为实验性 GPU W4A16；此版本的 LoRA / ANE 请求会明确拒绝。
 
-完整操作说明见 [模型库](MODEL_LIBRARY.md)。磁盘大小不等于运行内存。
+完整操作说明见 [模型库](../public/MODEL_LIBRARY.md)。磁盘大小不等于运行内存。
 
 ## 图像模型：更小不代表更快
 

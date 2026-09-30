@@ -1,6 +1,6 @@
 # TurboCider 原始目标完成度审计
 
-> 发行边界更新：本文的 sd.cpp/GGUF streaming 数据是历史实验记录。正式 App 已移除 sd.cpp，只支持 native MLX GGUF resident；当前规则见 [native-only GGUF](native-gguf-boundary-2026-09-09.md)。
+> 发行边界更新：本文的 sd.cpp/GGUF streaming 数据是历史实验记录。正式 App 已移除 sd.cpp，只支持 native MLX GGUF resident；当前规则见 [CLI 模型能力](../public/USAGE.md#model-capabilities)。
 
 更新时间：2026-09-09
 

@@ -176,6 +176,8 @@ def main():
                                  "qwen21_rectangular_decode_w8a8_tiled_diagnostic",
                                  "qwen21_w8a8_full_reference_diagnostic",
                                  "qwen21_runtime_lora_base_ane_suffix_only_diagnostic",
+                                 "qwen21_w8a8_gate_up_gpu_silu_down_diagnostic",
+                                 "qwen21_w8a8_fused_lora_pre_silu_diagnostic",
                                  "qwen21_tiled_prefix_target_only_diagnostic",
                                  "qwen21_tiled_prefill_last20_w8a8_diagnostic",
                                  "qwen21_decode_dbcache_diagnostic"),
@@ -260,6 +262,19 @@ def main():
             previous = json.loads((args.candidate / prior).read_text())
             assert b["hybrid"]["runtime_calls_session_total"] - \
                 previous["hybrid"]["runtime_calls_session_total"] == (b["steps"] - 1) * 32
+        if args.candidate_approximation == "qwen21_w8a8_gate_up_gpu_silu_down_diagnostic":
+            assert args.candidate_execution == "gpu_ane_experimental"
+            assert b["hybrid"]["checkpoint_sha256_verified"] and not b["hybrid"]["runtime_failed"]
+            assert b["hybrid"]["bucket"] == 1024 and b["hybrid"]["ane_mlp_range"] == [0, 6144]
+            assert b["hybrid"]["mlp_output_kind"] == "gate_up" and \
+                b["hybrid"]["output_channels"] == 12288
+            assert b["plan"]["lora_count"] == a["plan"]["lora_count"] in (0, 1)
+            if b["plan"]["lora_count"]:
+                assert a["lora_applied_projections"] == b["lora_applied_projections"] == 227
+            prior = "warmup.json" if name == "run-0.json" else "run-0.json"
+            previous = json.loads((args.candidate / prior).read_text())
+            assert b["hybrid"]["runtime_calls_session_total"] - \
+                previous["hybrid"]["runtime_calls_session_total"] == (b["steps"] - 1) * 32
         hybrid_new_approximation = (args.baseline_execution == args.candidate_execution ==
                                     "gpu_ane_experimental" and args.candidate_approximation in
                                     ("qwen21_metal_qk_norm_rope",
@@ -329,6 +344,7 @@ def main():
                 args.candidate_approximation == "qwen21_decode_dbcache_diagnostic" or \
                 args.candidate_approximation in ("qwen21_rectangular_decode_w8a8_tiled_diagnostic",
                                                  "qwen21_w8a8_full_reference_diagnostic",
+                                                 "qwen21_w8a8_gate_up_gpu_silu_down_diagnostic",
                                                  "qwen21_runtime_lora_base_ane_suffix_only_diagnostic"):
             for approximation in [args.candidate_approximation, *args.additional_candidate_approximation]:
                 assert approximation not in a["plan"]["algorithm_approximations"]

@@ -1,5 +1,6 @@
 #include "pipeline.hpp"
 #include "diagnostic_options.hpp"
+#include "viggle_adapter.hpp"
 #include "conditioning.hpp"
 #include "transformer.hpp"
 #include "vae.hpp"
@@ -11,6 +12,7 @@
 #include "../../runtime/streaming/source_lease.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <mlx/random.h>
+#include <bit>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -50,6 +52,15 @@ class ScopedWiredResidency {
         try { mx::set_wired_limit(*previous_); } catch (...) {}
     }
 };
+size_t runtime_ane_budget(uint64_t physical, uint64_t active) {
+    constexpr uint64_t system_margin = uint64_t(4) << 30;
+    constexpr uint64_t optional_cap = uint64_t(2) << 30;
+    // Share the same optional-tier allowance between FFN and QKV. Subtract
+    // before adding active memory so even an invalidly large reading cannot
+    // wrap around and appear to leave headroom.
+    const uint64_t headroom = physical > system_margin ? physical - system_margin : 0;
+    return std::min(optional_cap, active < headroom ? headroom - active : uint64_t(0));
+}
 std::string read_utf8_file(const std::filesystem::path &path) {
     std::ifstream stream(path, std::ios::binary);
     require(stream.good(), "cannot read Qwen35 PE system prompt: " + path.string());
@@ -87,6 +98,8 @@ void Session::clear_prefix_cache() {
     cached_prefix_sigma_ = -1.f;
 }
 void Session::unload() {
+    runtime_ffn_.reset(); runtime_manifest_.clear();
+    runtime_qkv_.reset(); qkv_manifest_.clear();
     clear_prefix_cache();
     fused_qkv_weights_.clear();
     hybrid_mlp_.reset();
@@ -116,11 +129,16 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     Request r = requested;
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");
     const std::string original_prompt = r.prompt;
-    const bool hybrid_requested = r.execution == "gpu_ane";
+    const bool runtime_requested = r.hybrid_mlp_mode == "runtime";
+    const bool qkv_requested = r.hybrid_mlp_mode == "runtime_qkv";
+    const bool hybrid_requested = r.execution == "gpu_ane" && !runtime_requested && !qkv_requested;
+    if (!runtime_requested) { runtime_ffn_.reset(); runtime_manifest_.clear(); }
+    if (!qkv_requested) { runtime_qkv_.reset(); qkv_manifest_.clear(); }
     const bool rectangular_w8a8 = option_enabled(std::getenv(
         "TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC"));
-    const bool lora_base_ane = option_enabled(std::getenv(
-        "TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC"));
+    const bool lora_base_ane = qwen21::lora_base_ane(r);
+    const bool gate_up_ane = qwen21::gate_up_ane(r);
+    const bool fused_lora_ane = qwen21::fused_lora_ane(r);
     const bool fused_qkv = option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC"));
     const char *tiled_prefill_flag = std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC");
     const int tiled_prefill_layers = tiled_prefill_layer_count(tiled_prefill_flag ? tiled_prefill_flag : "0");
@@ -169,7 +187,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     ResidencyPolicy::validate_budget(plan, device.physical_memory);
     if (!hybrid_requested) {
         hybrid_mlp_.reset(); hybrid_.reset(); hybrid_source_identity_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
-        r.execution = "gpu"; // automatic selection remains conservative
+        if (!runtime_requested && !qkv_requested) r.execution = "gpu"; // automatic selection remains conservative
     }
     plan.request = r;
     checkpoint(cancelled);
@@ -235,11 +253,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         std::filesystem::create_directories(r.dump);
         mx::save_safetensors((std::filesystem::path(r.dump) / (name + ".safetensors")).string(), {{"tensor", tensor}});
     };
-    // The one-entry edit cache is request-local to this resident Session. A
+    // The one-entry edit cache belongs to this Session, including staged GPU
+    // sessions. It holds completed conditioning, not encoder/DiT weights. A
     // path/mtime-only key would reuse stale visual conditions after an image
     // is overwritten in place; verify the ordered file bytes on each request.
     std::vector<std::string> image_sha256;
-    if (r.residency == "resident") {
+    const bool cache_edit_conditions = r.residency == "resident" ||
+        r.residency == "component_staged";
+    if (cache_edit_conditions) {
         image_sha256.reserve(r.inputs.size());
         for (const auto &input : r.inputs) {
             checkpoint(cancelled);
@@ -325,7 +346,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             dump("qwen21_reference_" + std::to_string(i), latent);
         }
     }
-    if (!edit_hit && !r.inputs.empty() && r.residency == "resident") {
+    if (!edit_hit && !r.inputs.empty() && cache_edit_conditions) {
         // Do not publish a cache entry if a reference changed during the
         // decode/encode pass. Hashing again also catches same-path overwrites
         // whose mtime or file size were preserved.
@@ -346,14 +367,20 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     std::string lora_identity;
     if (!r.loras.empty()) {
         auto path = std::filesystem::canonical(r.loras[0].path);
-        require(std::filesystem::is_regular_file(path), "Viggle LoRA is not a regular file");
+        require(std::filesystem::is_regular_file(path), "Qwen21 LoRA is not a regular file");
         lora_identity = path.string() + ":" + std::to_string(std::filesystem::file_size(path)) +
             ":" + std::to_string(static_cast<long long>(
-                      std::filesystem::last_write_time(path).time_since_epoch().count()));
+                      std::filesystem::last_write_time(path).time_since_epoch().count())) +
+            ":" + std::to_string(std::bit_cast<uint32_t>(r.loras[0].strength));
+        // Alternate adapters are not pinned by filename, so a same-size,
+        // same-mtime replacement must still invalidate the resident MLX
+        // binding. The original Viggle path keeps its fast warm-request ABI.
+        if (fused_lora_ane || runtime_requested) lora_identity += ":" + sha256_file(path);
     }
     const bool bind_lora = !r.loras.empty() &&
         (active_lora_identity_ != lora_identity || !transformer_.bytes());
     if (active_lora_identity_ != lora_identity) {
+        if (runtime_ffn_) runtime_ffn_->drain();
         hybrid_mlp_.reset();
         clear_prefix_cache();
         fused_qkv_weights_.clear();
@@ -371,9 +398,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         transformer_.clear();
     }
     if (bind_lora) {
-        require(sha256_file(r.loras[0].path) ==
-                    "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
-                "Viggle v0.2.1 r256 LoRA hash does not match the pinned adapter");
+        const auto *adapter = viggle_v021_adapter(
+            std::filesystem::path(r.loras[0].path).filename().string());
+        require(fused_lora_ane || runtime_requested ||
+                    (adapter && sha256_file(r.loras[0].path) == adapter->sha256),
+                "Viggle v0.2.1 r128/r256 LoRA hash does not match the pinned adapter");
     }
     std::shared_ptr<const streaming::SourceLease> dit_source;
     const Event quiet_load = [](const std::string &, int, int) {};
@@ -396,8 +425,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     transformer_.set_runtime_lora_fp16(lora_fp16);
     if (bind_lora) {
         lora_applied_projections_ = transformer_.apply_loras(r.loras, "transformer", event, cancelled, true);
-        require(lora_applied_projections_ == 227,
-                "Viggle v0.2.1 r256 LoRA did not bind all 227 transformer projections");
+        require((fused_lora_ane || runtime_requested) ? lora_applied_projections_ > 0 : lora_applied_projections_ == 227,
+                "Qwen21 LoRA did not bind transformer projections");
         active_lora_identity_ = lora_identity;
     }
     if (fused_qkv && fused_qkv_weights_.empty()) {
@@ -421,6 +450,46 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         mx::clear_cache();
     }
     auto hybrid_start = Clock::now();
+    if (runtime_requested) {
+        auto manifest = std::filesystem::canonical(r.ane_manifest);
+        const std::string identity = manifest.string() + ":" + sha256_file(manifest) + ":" +
+            (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto");
+        if (!runtime_ffn_ || !runtime_ffn_->available() || runtime_manifest_ != identity ||
+            (!r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
+            runtime_ffn_.reset();
+            const size_t budget = runtime_ane_budget(device_info().physical_memory,
+                                                     mx::get_active_memory());
+            runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 4096, 12288, budget, cancelled,
+                                                         !r.loras.empty());
+            runtime_manifest_ = identity;
+        }
+        runtime_ffn_->begin_request(active_lora_identity_);
+    }
+    if (qkv_requested) {
+        for (int block = 0; block < 32; ++block) {
+            const auto stem = "transformer_blocks." + std::to_string(block) + ".attn.to_";
+            for (const char *projection : {"q", "k", "v"}) {
+                const auto name = stem + projection;
+                require(!transformer_.has(name + ".bias") &&
+                            transformer_.at(name + ".weight").shape() == mx::Shape{4096, 4096} &&
+                            (transformer_.at(name + ".weight").dtype() == mx::bfloat16 ||
+                             transformer_.at(name + ".weight").dtype() == mx::float16),
+                        "Qwen21 runtime QKV requires bias-free dense [4096,4096] checkpoint projections");
+            }
+        }
+        auto manifest = std::filesystem::canonical(r.ane_manifest);
+        const std::string identity = manifest.string() + ":" + sha256_file(manifest) + ":" +
+            (std::getenv("TURBOCIDER_RUNTIME_ANE_QKV_CHUNKS") ?
+                std::getenv("TURBOCIDER_RUNTIME_ANE_QKV_CHUNKS") : "1");
+        if (!runtime_qkv_ || !runtime_qkv_->available() || qkv_manifest_ != identity) {
+            runtime_qkv_.reset();
+            const size_t budget = runtime_ane_budget(device_info().physical_memory,
+                                                     mx::get_active_memory());
+            runtime_qkv_ = std::make_unique<ane::HybridQkv>(manifest, budget, cancelled);
+            qkv_manifest_ = identity;
+        }
+        runtime_qkv_->begin_request();
+    }
     if (hybrid_requested) {
         auto manifest = std::filesystem::canonical(r.ane_manifest);
         auto identity = manifest.string() + ":" + sha256_file(manifest);
@@ -476,6 +545,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             require(r.qwen21_w8a8 && hybrid_->ane_mlp_end == 6144 &&
                         r.qwen21_gpu_full_ffn_blocks.empty(),
                     "Qwen21 runtime LoRA/base ANE needs a 6144-channel full-coverage base manifest");
+        require((fused_lora_ane ? (hybrid_->mlp_output_kind == "fused_lora" &&
+                                     hybrid_->output_channels == 4096 + 6144 &&
+                                     hybrid_->a8_graph == "sq_v1_both") :
+                gate_up_ane ? (hybrid_->mlp_output_kind == "gate_up" &&
+                                   hybrid_->output_channels == 12288 &&
+                                   hybrid_->a8_graph == "sq_v1_input") :
+                               (hybrid_->mlp_output_kind.empty() &&
+                                hybrid_->output_channels == 4096)),
+                "Qwen21 alternate FFN manifest requires its matching explicit mode");
         if (r.operation == "image.edit" && r.qwen21_reference_size == 512)
             require(r.qwen21_w8a8 && hybrid_->ane_mlp_end == 6144 &&
                         r.qwen21_gpu_full_ffn_blocks.empty(),
@@ -493,7 +571,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     (r.qwen21_w8a8
                         ? hybrid_->export_variant == "int8_pc" &&
                           hybrid_->activation_precision == "int8" &&
-                          hybrid_->a8_graph == "sq_v1_both" &&
+                          hybrid_->a8_graph == (gate_up_ane ? "sq_v1_input" : "sq_v1_both") &&
                           hybrid_->projected_weight_granularity == "per_tensor"
                         : hybrid_->export_variant == "fp16" &&
                           hybrid_->activation_precision == "fp16") &&
@@ -526,13 +604,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const char *profile_segments = std::getenv("TURBOCIDER_QWEN21_PROFILE_PREFILL_SEGMENTS");
     if (profile_segments && std::string_view(profile_segments) == "1")
         result.selection += "; diagnostic synchronized block-0 prefill attention segments";
-    if (!r.loras.empty())
-        result.selection += "; Viggle v0.2.1 r256 runtime LoRA; six-step student schedule";
-    if (lora_fp16)
-        result.selection += "; experimental FP16 low-rank LoRA matmuls";
+    if (!r.loras.empty()) {
+        const auto *adapter = viggle_v021_adapter(
+            std::filesystem::path(r.loras[0].path).filename().string());
+        result.selection += (fused_lora_ane || runtime_requested || !adapter)
+            ? "; experimental runtime LoRA with Viggle six-step schedule; adapter quality unqualified"
+            : "; Viggle v0.2.1 " + std::string(adapter->rank) + " runtime LoRA; six-step student schedule";
+    }
     const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
-    if (norm_rope && std::string_view(norm_rope) == "1")
-        result.selection += "; experimental fused Metal Q/K norm-RoPE";
     if (fused_qkv)
         result.selection += "; diagnostic Metal fused QKV projection, Q/K norm and RoPE";
     const char *local_references = std::getenv("TURBOCIDER_QWEN21_REF_LOCAL_ATTENTION");
@@ -569,8 +648,6 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             result.selection += "; diagnostic final-step cached last-16 hybrid FFN approximation";
         if (hybrid_half_reuse)
             result.selection += "; diagnostic penultimate-step even-layer hybrid FFN reuse";
-        if (norm_rope && std::string_view(norm_rope) == "1")
-            result.selection += "; experimental fused Metal Q/K norm-RoPE";
         if (local_references && std::string_view(local_references) == "3")
             result.selection += "; diagnostic last-16-block reference-local prefill attention";
         if (tiled_prefill)
@@ -578,8 +655,16 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 " layers 1024-row tiled W8A8 FFN";
         if (rectangular_w8a8)
             result.selection += "; diagnostic 1536-row decode FFN in two 1024-row W8A8 tiles";
-        if (lora_base_ane)
-            result.selection += "; diagnostic runtime LoRA on GPU FFN suffix only, base W8A8 ANE prefix unchanged";
+        if (fused_lora_ane && r.loras.empty())
+            result.selection += "; experimental reusable frozen-base fused FFN with zero runtime LoRA input";
+        else if (lora_base_ane)
+            result.selection += fused_lora_ane
+                ? "; diagnostic fused base W8A8 ANE FFN with pre-SiLU runtime LoRA and GPU down LoRA"
+                : gate_up_ane
+                ? "; diagnostic base W8A8 ANE gate/up, GPU pre-SiLU LoRA and complete BF16 down projection"
+                : "; diagnostic runtime LoRA on GPU FFN suffix only, base W8A8 ANE prefix unchanged";
+        else if (gate_up_ane)
+            result.selection += "; diagnostic base W8A8 ANE gate/up, GPU SiLU and BF16 down projection";
         if (tiled_prefix_reuse)
             result.selection += "; diagnostic repeated tiled-prefill prefix KV";
         if (prefix_target_only)
@@ -592,13 +677,31 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         result.selection += "; request-owned compact BF16 GPU suffix cache";
     if (db_cache)
         result.selection += "; diagnostic decode DBCache (front 8, back 0, warmup 8)";
-    result.timings.hybrid = hybrid_requested ? seconds(hybrid_start) : 0;
+    if (runtime_requested) {
+        result.backend = "mlx_cpp_metal+coreml_runtime_weight";
+        result.precision = "bf16_gpu+runtime_fp16_ffn_bf16_io";
+        result.selection = "gpu_ane explicit runtime-weight token-row FFN; base-only weight slots with optional GPU LoRA activation corrections; physical placement unverified";
+        if (!r.loras.empty()) result.selection += "; six-step student schedule; alternate adapter quality unqualified";
+    }
+    if (qkv_requested) {
+        result.backend = "mlx_cpp_metal+coreml_runtime_qkv";
+        result.precision = "bf16_gpu+runtime_fp16_qkv_bf16_io";
+        result.selection = "gpu_ane explicit diagnostic runtime-weight QKV token-row projection + original GPU FFN; physical placement and whole-request gain unverified";
+    }
+    // Hybrid route descriptions replace the initial GPU description. Keep
+    // these GPU-kernel receipts after those replacements, on every route, and
+    // do not label base-only requests as using a LoRA approximation.
+    if (lora_fp16 && !r.loras.empty())
+        result.selection += "; experimental FP16 low-rank LoRA matmuls";
+    if (norm_rope && std::string_view(norm_rope) == "1")
+        result.selection += "; experimental fused Metal Q/K norm-RoPE";
+    result.timings.hybrid = (hybrid_requested || runtime_requested || qkv_requested) ? seconds(hybrid_start) : 0;
     result.checkpoint = "qwen_image_2.1_bf16.safetensors";
     result.text_tokens = result.valid_text_tokens = text.shape(1);
     for (const auto &ref : references) result.reference_tokens += ref.latents.shape(1);
     result.total_tokens = result.text_tokens + result.reference_tokens + r.height / 16 * (r.width / 16);
     result.timings.text = text_seconds; result.timings.image = image_seconds;
-    emit(event, hybrid_requested ? "route_gpu_ane" : "route_gpu", 1, 1);
+    emit(event, (hybrid_requested || runtime_requested || qkv_requested) ? "route_gpu_ane" : "route_gpu", 1, 1);
     const uint64_t coreml_calls_before = hybrid_requested ? hybrid_->metrics().runtime_calls : 0;
     if (!prepare_only) {
         if (layer_staged && hybrid_requested && hybrid_->ane_mlp_end == 6144)
@@ -629,7 +732,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         const std::string prefix_runtime = std::to_string(r.steps) + ":" +
             std::to_string(r.width) + ":" + std::to_string(r.height) + ":" +
             active_lora_identity_ + ":" + (lora_fp16 ? "fp16" : "fp32") + ":" +
-            (hybrid_requested ? hybrid_manifest_ + hybrid_runtime_options_ : "gpu") + ":" +
+            (hybrid_requested ? hybrid_manifest_ + hybrid_runtime_options_ :
+             runtime_requested ? runtime_manifest_ : qkv_requested ? qkv_manifest_ : "gpu") + ":" +
             (fused_qkv ? "fused-qkv" : "ordinary-qkv") + ":" +
             (norm_rope ? std::string(norm_rope) : "") + ":" +
             (std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE") ?
@@ -665,6 +769,129 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             (prefix_hit ? "; experimental resident prefix KV hit" : "; experimental resident prefix KV miss") : "";
         auto dit_start = Clock::now();
         {
+            // Keep the original fused gate/up GPU FFN on both full-GPU
+            // scheduler probes and the GPU row head. With LoRA use the same
+            // native projection path as the ordinary GPU, never raw matrices
+            // that would omit the adapter contributions.
+            std::function<std::vector<Tensor>(const std::vector<Tensor> &)> runtime_gpu;
+            if (runtime_requested) runtime_gpu = mx::compile([](const std::vector<Tensor> &a) {
+                auto gu = mx::split(mx::matmul(a[0], mx::transpose(a[1])), 2, -1);
+                return std::vector<Tensor>{mx::matmul(silu(gu[0]) * gu[1], mx::transpose(a[2]))};
+            });
+            std::vector<std::vector<Tensor>> runtime_weights;
+            using RuntimeFunction = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
+            RuntimeFunction gpu_qkv;
+            std::vector<RuntimeFunction> runtime_lora_gpu, runtime_lora_gate_up, runtime_lora_down_add;
+            if (runtime_requested) {
+                for (int block = 0; block < 32; ++block) {
+                    const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
+                    auto gu = mx::split(transformer_.at(p + "gate_up.weight"), 2, 0);
+                    runtime_weights.push_back({gu[0], gu[1], transformer_.at(p + "out.weight")});
+                    mx::eval(runtime_weights.back());
+                    if (transformer_.has_runtime_loras()) {
+                        // The ordinary GPU Transformer compiles this same
+                        // projection/low-rank arithmetic inside its blocks.
+                        // Preserve fusion across the new FFN boundary too.
+                        // Closures are request-local: never reuse captures
+                        // after a different adapter has rebound the weights.
+                        runtime_lora_gpu.push_back(mx::compile([this, p](const std::vector<Tensor> &a) {
+                            auto gu = mx::split(transformer_.project(a[0], p + "gate_up"), 2, -1);
+                            return std::vector<Tensor>{transformer_.project(silu(gu[0]) * gu[1], p + "out")};
+                        }));
+                        runtime_lora_gate_up.push_back(mx::compile([this, p](const std::vector<Tensor> &a) {
+                            // Request each logical half directly. Separate
+                            // gate/up adapters otherwise pad both corrections
+                            // with zeros to the full fused width, add them,
+                            // then split again. Keep the same per-half FP32
+                            // accumulation and final rounding; fused/stacked
+                            // adapters still intersect both requested ranges.
+                            auto gate = transformer_.lora_delta_slice(a[0], p + "gate_up",
+                                0, 12288, 0, 4096);
+                            auto up = transformer_.lora_delta_slice(a[0], p + "gate_up",
+                                12288, 24576, 0, 4096);
+                            return std::vector<Tensor>{mx::contiguous(gate), mx::contiguous(up)};
+                        }));
+                        runtime_lora_down_add.push_back(mx::compile([this, p](const std::vector<Tensor> &a) {
+                            // Keep the existing BF16 delta rounding, FP32 add
+                            // and final cast; only enlarge the GPU graph.
+                            auto delta = transformer_.lora_delta_slice(a[0], p + "out", 0, 4096, 0, 12288);
+                            return std::vector<Tensor>{mx::astype(mx::astype(a[1], mx::float32) +
+                                mx::astype(delta, mx::float32), a[1].dtype())};
+                        }));
+                    }
+                }
+                dit.set_plan_mlp([&](int block, int rows) {
+                    checkpoint(cancelled);
+                    const auto plan = runtime_ffn_->plan_block(block, rows);
+                    if (plan.mode == ane::RowScheduler::Mode::HybridUntimed)
+                        return Transformer::MLPPlan::SplitUntimed;
+                    return plan.split() ? Transformer::MLPPlan::Split :
+                        plan.mode == ane::RowScheduler::Mode::GpuProbe ? Transformer::MLPPlan::GpuProbe
+                                                                     : Transformer::MLPPlan::Gpu;
+                });
+                dit.set_observe_mlp([&](int block, int rows, double seconds) {
+                    runtime_ffn_->observe_block(block, rows, seconds);
+                });
+                dit.set_stage_mlp([&](int block, int rows) {
+                    checkpoint(cancelled);
+                    runtime_ffn_->stage(block, rows, runtime_weights.at(block));
+                });
+                auto run_ffn = [&](int block, const Tensor &input) {
+                    const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
+                    ane::HybridFfn::Adapter adapter{
+                        [&](const Tensor &x) {
+                            auto gu = runtime_lora_gate_up.at(block)({x});
+                            return std::make_pair(gu[0], gu[1]);
+                        },
+                        [&](const Tensor &h, const Tensor &base) {
+                            return runtime_lora_down_add.at(block)({h, base})[0];
+                        }};
+                    return runtime_ffn_->run(block, input, [&](const Tensor &x) {
+                        if (transformer_.has_runtime_loras()) return runtime_lora_gpu.at(block)({x})[0];
+                        return runtime_gpu({x, transformer_.at(p + "gate_up.weight"),
+                                              transformer_.at(p + "out.weight")})[0];
+                    }, cancelled, transformer_.has_runtime_loras() ? &adapter : nullptr);
+                };
+                dit.set_prefill_mlp(run_ffn);
+                dit.set_decode_mlp(run_ffn);
+            }
+            if (qkv_requested) {
+                // Keep three checkpoint matrices separate on the GPU and in
+                // the runtime slot. Neither stage nor fallback builds a
+                // resident packed bank or changes norm/RoPE/attention/FFN.
+                gpu_qkv = mx::compile([](const std::vector<Tensor> &a) {
+                    return std::vector<Tensor>{mx::concatenate({
+                        mx::matmul(a[0], mx::transpose(a[1])),
+                        mx::matmul(a[0], mx::transpose(a[2])),
+                        mx::matmul(a[0], mx::transpose(a[3]))}, -1)};
+                });
+                dit.set_plan_qkv([&](int block, int rows) {
+                    checkpoint(cancelled);
+                    const auto plan = runtime_qkv_->plan_block(block, rows);
+                    using Mode = ane::QkvScheduler::Mode;
+                    if (plan.mode == Mode::Hybrid) return Transformer::QKVPlan::HybridTimed;
+                    if (plan.mode == Mode::HybridUntimed) return Transformer::QKVPlan::Hybrid;
+                    return plan.mode == Mode::GpuProbe ? Transformer::QKVPlan::GpuProbe
+                                                        : Transformer::QKVPlan::Gpu;
+                });
+                dit.set_observe_qkv([&](int block, int rows, double seconds) {
+                    runtime_qkv_->observe_block(block, rows, seconds);
+                });
+                dit.set_stage_qkv([&](int block, int rows) {
+                    checkpoint(cancelled);
+                    const auto p = "transformer_blocks." + std::to_string(block) + ".attn.to_";
+                    runtime_qkv_->stage(block, rows, {transformer_.at(p + "q.weight"),
+                        transformer_.at(p + "k.weight"), transformer_.at(p + "v.weight")});
+                });
+                dit.set_project_qkv([&](int block, const Tensor &input) {
+                    return runtime_qkv_->run(block, input, [&](int gpu_block, const Tensor &x) {
+                        const auto p = "transformer_blocks." + std::to_string(gpu_block) + ".attn.to_";
+                        return gpu_qkv({x, transformer_.at(p + "q.weight"),
+                            transformer_.at(p + "k.weight"), transformer_.at(p + "v.weight")})[0];
+                    }, cancelled);
+                });
+                // QKV callbacks are cleared before gpu_qkv leaves this scope.
+            }
             if (tiled_prefill)
                 dit.set_prefill_mlp([this, &cancelled, last_target_only](int block, const Tensor &input) {
                     checkpoint(cancelled);
@@ -742,6 +969,17 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             }
             if (hybrid_requested) dit.set_decode_mlp({});
             if (tiled_prefill) dit.set_prefill_mlp({});
+            if (runtime_requested) {
+                dit.set_plan_mlp({}); dit.set_stage_mlp({});
+                dit.set_observe_mlp({});
+                dit.set_decode_mlp({}); dit.set_prefill_mlp({});
+                runtime_ffn_->drain();
+            }
+            if (qkv_requested) {
+                dit.set_stage_qkv({}); dit.set_project_qkv({});
+                dit.set_plan_qkv({}); dit.set_observe_qkv({});
+                runtime_qkv_->drain();
+            }
             if (retain_prefix) {
                 cached_prefix_runtime_ = prefix_runtime;
                 cached_prefix_sigma_ = first_sigma;
@@ -773,11 +1011,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         dump("qwen21_latents", latents);
         if (r.residency == "component_staged") {
-            // Compiled block functions also own weight constants. Clearing
-            // Weights alone does not release those allocations before decode.
-            if (layer_staged) request_dit.reset();
+            // Compiled block functions and prefix tensors can retain weights
+            // after the session map is cleared. Destroy their owner before
+            // entering VAE decoding so staged residency releases the DiT.
+            request_dit.reset();
             hybrid_mlp_.reset(); clear_prefix_cache();
-            fused_qkv_weights_.clear(); transformer_.clear(); mx::clear_cache();
+            fused_qkv_weights_.clear(); transformer_.clear();
+            mx::synchronize(); mx::clear_cache();
             wired_residency.reset();
         }
         checkpoint(cancelled);
@@ -801,24 +1041,40 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
     }
     if (hybrid_requested) result.hybrid = hybrid_->metrics(); // session-cumulative, including preparation
+    if (runtime_requested) {
+        result.hybrid = runtime_ffn_->metrics();
+        if (!runtime_ffn_->available()) result.selection += "; GPU fallback: " + runtime_ffn_->reason();
+    }
+    if (qkv_requested) {
+        result.qkv = runtime_qkv_->metrics();
+        if (!runtime_qkv_->available())
+            result.selection += "; GPU fallback: " + result.qkv->failure_reason;
+    }
     if (!prepare_only && r.residency == "component_staged") {
         hybrid_mlp_.reset(); hybrid_.reset(); hybrid_source_identity_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
         clear_prefix_cache(); fused_qkv_weights_.clear();
-        transformer_.clear(); vae_.clear(); mx::clear_cache();
+        transformer_.clear(); vae_.clear();
+        mx::synchronize(); mx::clear_cache();
     }
     result.timings.wall = seconds(start);
     result.active_bytes = mx::get_active_memory(); result.peak_bytes = mx::get_peak_memory();
     return result;
 } catch (...) {
+    if (runtime_ffn_) runtime_ffn_->drain();
+    if (runtime_qkv_) runtime_qkv_->drain();
     try { mx::synchronize(); } catch (...) {}
     clear_prefix_cache();
     fused_qkv_weights_.clear();
     hybrid_mlp_.reset(); hybrid_.reset(); hybrid_source_identity_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
-    if (layer_staged_t2i(requested, device_info())) {
-        transformer_.clear(); vae_.clear(); mx::clear_cache();
-    }
     if (transformer_.has("transformer_blocks.0.attn.qkv_packed.weight"))
         transformer_.clear(); // A cancelled pack may have replaced only some layers.
+    if (requested.residency == "component_staged") {
+        // Cancellation must honor the same small idle footprint as a finished
+        // staged request. Fully evaluated conditioning remains safe to reuse.
+        transformer_.clear(); vae_.clear();
+        active_lora_identity_.clear(); lora_applied_projections_ = 0;
+        mx::clear_cache();
+    }
     throw;
 }
 } // namespace tc::qwen21

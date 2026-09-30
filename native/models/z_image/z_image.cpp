@@ -2,6 +2,7 @@
 #include "z_image.hpp"
 #include "block_profile.hpp"
 #include "hybrid_math.hpp"
+#include "padding.hpp"
 #include "hybrid_stream.hpp"
 #include "vae.hpp"
 #include "metal_kernels.hpp"
@@ -666,6 +667,7 @@ std::string z_hybrid_dequant_precision() {
 ZQuantizedGeometry z_quantized_geometry(const Tensor &weight, const Tensor &scales,
                                         int logical_input) {
     require(weight.ndim() == 2 && scales.ndim() == 2 && logical_input > 0 &&
+                scales.shape(1) > 0 && weight.shape(0) == scales.shape(0) &&
                 logical_input % scales.shape(1) == 0 &&
                 (weight.shape(1) * 32) % logical_input == 0,
             "invalid Z-Image GGUF affine geometry");
@@ -679,6 +681,11 @@ ZQuantizedGeometry z_quantized_geometry(const Tensor &weight, const Tensor &scal
 
 Tensor z_hybrid_output_range(const Tensor &x, const Weights &w,
                              const std::string &prefix, int start, int end) {
+    // Both the complete shared-base route and the lossy suffix-only diagnostic
+    // need runtime LoRA on every GPU suffix projection. Only the latter leaves
+    // the Core ML prefix unchanged by the adapter.
+    if (w.has_runtime_loras() && !w.convrot(prefix))
+        return w.project_slice(x, prefix, start, end, 0, x.shape(-1), false);
     if (w.convrot(prefix)) {
         const auto &weight = w.at(prefix + ".weight");
         const int logical_input = weight.dtype() == mx::uint32
@@ -723,6 +730,9 @@ Tensor z_hybrid_output_range(const Tensor &x, const Weights &w,
 Tensor z_hybrid_input_range(const Tensor &x, const Weights &w,
                             const std::string &prefix, int full_input,
                             int start, int end) {
+    if (w.has_runtime_loras() && !w.convrot(prefix))
+        return w.project_slice(x, prefix, 0, w.at(prefix + ".weight").shape(0),
+                               start, end, false);
     if (w.convrot(prefix))
         return w.project_range(x, prefix, 0, w.at(prefix + ".weight").shape(0), start, end);
     if (!w.quantized(prefix)) {
@@ -999,6 +1009,120 @@ Tensor z_compiled_hybrid_block(const Tensor &x, const Weights &w, const std::str
     return result;
 }
 
+Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
+               const Tensor &freqs, const Tensor &temb, HybridSession *hybrid,
+               int hybrid_block, const ZImageGpuGraph *gpu_graph,
+               bool compile_hybrid_segments, std::vector<Tensor> *keepalive);
+
+Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &prefix,
+                       const Tensor &freqs, const Tensor &temb, ane::HybridFfn &runtime,
+                       int block, std::atomic<bool> &cancelled, bool gguf_compatibility) {
+    const auto plan = runtime.plan_block(block, x.shape(1));
+    // Compare identical complete block windows. A lazy preceding GPU block
+    // must not inflate this block's sample. Stable hybrid blocks return owned
+    // FFN output and can leave their final residual lazy, like the GPU route.
+    if (plan.measured()) mx::eval(x);
+    const auto start = plan.measured() ? Clock::now() : Clock::time_point{};
+    auto complete = [&](Tensor output) {
+        if (plan.measured()) {
+            mx::eval(output);
+            checkpoint(cancelled);
+            runtime.observe_block(block, x.shape(1),
+                std::chrono::duration<double>(Clock::now() - start).count());
+        }
+        return output;
+    };
+    if (!plan.split()) {
+        // Use the existing full GPU implementation, including its BF16
+        // compiled graph or GGUF/LoRA projections. No staging, split FFN
+        // callback, or extra timing fence on an unmeasured disabled block.
+        return complete(z_block(x, w, prefix, freqs, temb, nullptr, block,
+                                nullptr, false, nullptr));
+    }
+    const auto ffn = prefix + ".feed_forward";
+    if (gguf_compatibility || w.has_runtime_loras()) {
+        // GGUF can mix packed affine and floating projections, including
+        // modulation/attention. Keep the baseline's native GPU projections
+        // and dtype promotion; never feed packed uint32 into a dense graph.
+        auto source = [&](const std::string &name, int input_width) -> ane::FfnWeight {
+            require(!w.convrot(name) && !w.nvfp4(name) && !w.has(name + ".bias"),
+                    "runtime GGUF FFN requires bias-free dense or affine projections: " + name);
+            const auto &weight = w.at(name + ".weight");
+            if (!w.quantized(name)) return {weight, std::nullopt, std::nullopt};
+            const auto &scales = w.at(name + ".scales");
+            const auto geometry = z_quantized_geometry(weight, scales, input_width);
+            return {weight, scales, w.has(name + ".biases")
+                ? std::optional<Tensor>(w.at(name + ".biases")) : std::nullopt,
+                geometry.group_size, geometry.bits};
+        };
+        runtime.stage_weights(block, x.shape(1),
+            {source(ffn + ".w1", 3840), source(ffn + ".w3", 3840), source(ffn + ".w2", 10240)});
+        auto modulation = mx::expand_dims(linear_compat(temb, w, prefix + ".adaLN_modulation.0"), 1);
+        auto parts = mx::split(modulation, 4, -1);
+        auto attention = z_attention(rms(x, w.at(prefix + ".attention_norm1.weight"), 1e-5f) *
+            (Tensor(1.f, parts[0].dtype()) + parts[0]), w, prefix, freqs);
+        auto value = x + mx::tanh(parts[1]) * rms(attention, w.at(prefix + ".attention_norm2.weight"), 1e-5f);
+        auto feed_input = rms(value, w.at(prefix + ".ffn_norm1.weight"), 1e-5f) *
+            (Tensor(1.f, parts[2].dtype()) + parts[2]);
+        ane::HybridFfn::Adapter adapter{
+            [&](const Tensor &input) {
+                return std::make_pair(w.lora_delta_slice(input, ffn + ".w1", 0, 10240, 0, 3840),
+                                      w.lora_delta_slice(input, ffn + ".w3", 0, 10240, 0, 3840));
+            },
+            [&](const Tensor &hidden, const Tensor &base) {
+                auto delta = w.lora_delta_slice(hidden, ffn + ".w2", 0, 3840, 0, 10240);
+                return mx::astype(mx::astype(base, mx::float32) + mx::astype(delta, mx::float32), base.dtype());
+            }};
+        auto feed = runtime.run(block, feed_input,
+            [&](const Tensor &input) { return z_ffn(input, w, ffn); }, cancelled,
+            w.has_runtime_loras() ? &adapter : nullptr);
+        auto output = value + mx::tanh(parts[3]) * rms(feed, w.at(prefix + ".ffn_norm2.weight"), 1e-5f);
+        return complete(output);
+    }
+    std::vector<Tensor> weights{w.at(ffn + ".w1.weight"), w.at(ffn + ".w3.weight"),
+                                w.at(ffn + ".w2.weight")};
+    runtime.stage(block, x.shape(1), weights);
+    const bool small = z_image_small_shape_metal_default() && x.shape(1) <= 1056;
+    auto pre = z_hybrid_pre_graph(small, small)({x, freqs, temb,
+        w.at(prefix + ".adaLN_modulation.0.weight"), w.at(prefix + ".adaLN_modulation.0.bias"),
+        w.at(prefix + ".attention_norm1.weight"), w.at(prefix + ".attention.qkv.weight"),
+        w.at(prefix + ".attention.q_norm.weight"), w.at(prefix + ".attention.k_norm.weight"),
+        w.at(prefix + ".attention.out.weight"), w.at(prefix + ".attention_norm2.weight"),
+        w.at(prefix + ".ffn_norm1.weight")});
+    // Use the same tuned short-row projections and fused SwiGLU as the base
+    // GPU block. Weights are arguments, never captured from another layer.
+    static auto *gpu = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
+        auto project = [](const Tensor &v, const Tensor &weight) {
+            const char *mode = std::getenv("TURBOCIDER_Z_MPP_PROJECTIONS");
+            const bool tuned = !std::getenv("TURBOCIDER_Z_DISABLE_MPP_PROJECTIONS") &&
+                z_image_small_shape_metal_default() && v.shape(1) <= 1056;
+            if ((mode && std::string(mode) != "attention_out") || (!mode && tuned))
+                return z_metal::projection(v, weight);
+            return mx::matmul(v, mx::transpose(weight));
+        };
+        auto hidden = [&] {
+            if (std::getenv("TURBOCIDER_Z_MPP_SWIGLU_DUAL"))
+                return z_metal::swiglu_dual_gemm(a[0], a[1], a[2]);
+            auto up = project(a[0], a[2]);
+            if (!std::getenv("TURBOCIDER_Z_DISABLE_MPP_SWIGLU") &&
+                (std::getenv("TURBOCIDER_Z_MPP_SWIGLU") || z_image_mpp_swiglu_default()))
+                return z_metal::swiglu_gemm(a[0], a[1], up);
+            return silu(project(a[0], a[1])) * up;
+        }();
+        return std::vector<Tensor>{project(hidden, a[3])};
+    }));
+    auto feed = runtime.run(block, pre[1], [&](const Tensor &input) {
+        return (*gpu)({input, weights[0], weights[1], weights[2]})[0];
+    }, cancelled);
+    static auto *post = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
+        auto normalized = mx::astype(mx::fast::rms_norm(mx::astype(a[0], mx::float32),
+                                      mx::astype(a[3], mx::float32), 1e-5f), a[0].dtype());
+        return std::vector<Tensor>{a[1] + a[2] * normalized};
+    }));
+    auto output = (*post)({feed, pre[0], pre[2], w.at(prefix + ".ffn_norm2.weight")})[0];
+    return complete(output);
+}
+
 Tensor z_context_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs) {
     auto attention = z_attention(rms(x, w.at(prefix + ".attention_norm1.weight"), 1e-5f),
@@ -1040,6 +1164,22 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
         !w.convrot(prefix + ".feed_forward.w2") &&
         !w.quantized(prefix + ".feed_forward.w3") &&
         !w.convrot(prefix + ".feed_forward.w3");
+    // The tuned whole-block Metal graph is qualified for homogeneous BF16.
+    // GGUF refiners may have BF16 matrices but FP32 norms/modulation biases;
+    // those promote activations and do not satisfy fused norm/MPP contracts.
+    // Preserve their native arithmetic via linear_compat, without recasting
+    // the checkpoint or silently changing the GPU comparison's precision.
+    const bool bf16_graph = fully_dense && x.dtype() == mx::bfloat16 &&
+        temb.dtype() == mx::bfloat16 && [&] {
+            for (const auto *suffix : {".adaLN_modulation.0.weight", ".adaLN_modulation.0.bias",
+                 ".attention_norm1.weight", ".attention.qkv.weight", ".attention.q_norm.weight",
+                 ".attention.k_norm.weight", ".attention.out.weight", ".attention_norm2.weight",
+                 ".ffn_norm1.weight", ".feed_forward.w1.weight", ".feed_forward.w3.weight",
+                 ".feed_forward.w2.weight", ".ffn_norm2.weight"})
+                if (!w.has(prefix + suffix) || w.at(prefix + suffix).dtype() != mx::bfloat16)
+                    return false;
+            return true;
+        }();
     if (profile.split_gpu() || profile.detail_gpu())
         require(fully_dense && !w.has_runtime_loras(),
                 "Z-Image detailed GPU profiling requires dense BF16 weights without runtime LoRA");
@@ -1053,7 +1193,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
           std::getenv("TURBOCIDER_Z_W8A8_COMPILED_HYBRID")));
     if (compile_hybrid_segments && hybrid &&
         (hybrid->activation_precision != "int8" || experimental_compiled_a8) &&
-        gpu_graph && fully_dense && x.dtype() == mx::bfloat16 &&
+        gpu_graph && bf16_graph &&
         !w.has_runtime_loras() && w.has(prefix + ".adaLN_modulation.0.bias") &&
         !std::getenv("TURBOCIDER_Z_FFN_CAPTURE_DIR") &&
         !std::getenv("TURBOCIDER_Z_HYBRID_EAGER_SEGMENTS") &&
@@ -1063,7 +1203,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
         !std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE"))
         return z_compiled_hybrid_block(x, w, prefix, freqs, temb, hybrid, hybrid_block,
                                       *gpu_graph, profile);
-    if (!hybrid && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && fully_dense &&
+    if (!hybrid && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && bf16_graph &&
         !std::getenv("TURBOCIDER_Z_FFN_CAPTURE_DIR") &&
         !w.has_runtime_loras() && !profile.split_gpu() && !profile.detail_gpu()) {
         auto result = z_compiled_gpu_block(x, w, prefix, freqs, temb);
@@ -1153,6 +1293,7 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
         if (!hybrid->image_only_token_rows && actual_rows < hybrid->rows)
             packed = mx::concatenate(
                 {packed, mx::zeros({1, hybrid->rows - actual_rows, 3840}, mx::float16)}, 1);
+        if (hybrid->mlp_output_kind == "fused_lora") packed = mx::contiguous(packed);
         if (keepalive) keepalive->insert(keepalive->end(), {value, gate_mlp, feed_input, packed});
         mx::eval({feed_input, packed});
         profile.packed();
@@ -1162,7 +1303,10 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                            !w.quantized(ffn + ".w3") && !w.convrot(ffn + ".w3");
         auto image_feed = hybrid->image_only_token_rows
             ? slice_axis(feed_input, 1, 0, ane_rows) : feed_input;
-        auto gpu = dense
+        // The compiled dense suffix contains only the frozen base matrices.
+        // Runtime adapters must take the slice projection path on every FFN
+        // channel, including the suffix of the deliberately lossy diagnostic.
+        auto gpu = dense && !w.has_runtime_loras()
             ? (*gpu_graph)({image_feed, w.at(ffn + ".w1.weight"),
                             w.at(ffn + ".w3.weight"), w.at(ffn + ".w2.weight")})[0]
             : z_hybrid_gpu_suffix(image_feed, w, ffn, hybrid->ane_mlp_end,
@@ -1173,15 +1317,56 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                 z_ffn(slice_axis(feed_input, 1, ane_rows, actual_rows), w, ffn)}, 1);
         }
         if (keepalive) keepalive->push_back(gpu);
-        mx::async_eval({gpu});
-        profile.submitted(gpu);
-        auto ane = slice_axis(hybrid->predict(hybrid_block, packed), 1, 0, ane_rows);
+        if (hybrid->mlp_output_kind != "fused_lora") {
+            mx::async_eval({gpu});
+            profile.submitted(gpu);
+        }
+        Tensor ane = packed;
+        if (hybrid->mlp_output_kind == "fused_lora") {
+            const int width = hybrid->ane_mlp_end;
+            const char *direct_fp16_flag = std::getenv("TURBOCIDER_Z_RUNTIME_LORA_DIRECT_FP16");
+            const auto delta_dtype = direct_fp16_flag && std::string_view(direct_fp16_flag) == "1"
+                ? std::optional<mx::Dtype>(mx::float16) : std::nullopt;
+            auto deltas = w.has_runtime_loras()
+                ? mx::astype(mx::concatenate({
+                    w.lora_delta_slice(image_feed, ffn + ".w1", 0, width, 0, hybrid->hidden,
+                                       delta_dtype),
+                    w.lora_delta_slice(image_feed, ffn + ".w3", 0, width, 0, hybrid->hidden,
+                                       delta_dtype)
+                  }, -1), mx::float16)
+                : mx::zeros({1, ane_rows, 2 * width}, mx::float16);
+            if (ane_rows < hybrid->rows)
+                deltas = mx::concatenate({deltas,
+                    mx::zeros({1, hybrid->rows - ane_rows, 2 * width}, mx::float16)}, 1);
+            deltas = mx::contiguous(deltas);
+            // The Core ML nonlinearity depends on the GPU's runtime LoRA delta.
+            // Start the independent suffix only after this GPU-stream barrier.
+            mx::eval(deltas);
+            mx::async_eval({gpu});
+            profile.submitted(gpu);
+            ane = hybrid->predict_with_lora(hybrid_block, packed, deltas);
+        } else {
+            ane = hybrid->predict(hybrid_block, packed);
+        }
+        ane = slice_axis(ane, 1, 0, ane_rows);
         if (ane_rows < actual_rows)
             ane = mx::concatenate({ane,
                 mx::zeros({1, actual_rows - ane_rows, hybrid->hidden}, ane.dtype())}, 1);
         if (keepalive) keepalive->push_back(ane);
         profile.predicted(gpu);
-        feed = z_image::join_hybrid_ffn(gpu, ane, Tensor(z_hybrid_output_scale(hybrid), gpu.dtype()));
+        if (hybrid->mlp_output_kind == "fused_lora") {
+            auto base_down = mx::astype(slice_axis(ane, -1, 0, hybrid->hidden), gpu.dtype()) *
+                             Tensor(z_hybrid_output_scale(hybrid), gpu.dtype());
+            auto hidden = mx::astype(slice_axis(ane, -1, hybrid->hidden,
+                                                hybrid->output_channels), gpu.dtype());
+            feed = gpu + base_down;
+            if (w.has_runtime_loras())
+                feed = feed + w.lora_delta_slice(hidden, ffn + ".w2", 0,
+                                                  hybrid->hidden, 0, hybrid->ane_mlp_end);
+        } else {
+            feed = z_image::join_hybrid_ffn(gpu, ane,
+                Tensor(z_hybrid_output_scale(hybrid), gpu.dtype()));
+        }
         if (std::getenv("TURBOCIDER_Z_HYBRID_VALIDATE")) {
             auto ane_scaled = mx::astype(ane, gpu.dtype()) * Tensor(z_hybrid_output_scale(hybrid), gpu.dtype());
             auto reference = z_ffn(feed_input, w, prefix + ".feed_forward");
@@ -1323,7 +1508,8 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
                      ZImageWeightStream *weight_stream,
                      ZImageExactStream *exact_stream, uint32_t pass,
                      bool compile_hybrid_segments, ZImageHybridStream *hybrid_stream = nullptr,
-                     std::vector<Tensor> *context_cache = nullptr) {
+                     std::vector<Tensor> *context_cache = nullptr,
+                     ane::HybridFfn *runtime = nullptr, bool runtime_gguf_compatibility = false) {
     require(!hybrid_stream || (!weight_stream && !exact_stream), "hybrid/exact stream conflict");
     require(!(weight_stream && exact_stream),
             "Z-Image legacy and exact streaming cannot run together");
@@ -1342,11 +1528,13 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     if (image.shape(0) > patch.image_length)
         image = mx::concatenate(
             {slice_axis(image, 0, 0, patch.image_length),
-             mx::repeat(w.at("x_pad_token"), image.shape(0) - patch.image_length, 0)}, 0);
+             mx::repeat(z_image::padding_token_row(w.at("x_pad_token"), image.shape(1)),
+                        image.shape(0) - patch.image_length, 0)}, 0);
     if (!reuse_context && caption_emb.shape(0) > patch.caption_length)
         caption_emb = mx::concatenate(
             {slice_axis(caption_emb, 0, 0, patch.caption_length),
-             mx::repeat(w.at("cap_pad_token"), caption_emb.shape(0) - patch.caption_length, 0)}, 0);
+             mx::repeat(z_image::padding_token_row(w.at("cap_pad_token"), caption_emb.shape(1)),
+                        caption_emb.shape(0) - patch.caption_length, 0)}, 0);
     // The ConvRot checkpoint stores unquantized tensors as FP32, while Comfy
     // executes the transformer with BF16 manual-cast semantics.  Pin this
     // boundary after embedding and padding so those storage dtypes cannot
@@ -1362,7 +1550,9 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
         checkpoint(cancelled);
         const bool bf16_fallback = hybrid && z_hybrid_bf16_block(i);
         auto block_input = bf16_fallback ? mx::astype(image, mx::bfloat16) : image;
-        image = hybrid_stream ? hybrid_stream->encode_noise(uint32_t(i), image, image_freqs, temb)
+        image = runtime ? z_runtime_block(block_input, w, "noise_refiner." + std::to_string(i),
+                                          image_freqs, temb, *runtime, i, cancelled, runtime_gguf_compatibility)
+            : hybrid_stream ? hybrid_stream->encode_noise(uint32_t(i), image, image_freqs, temb)
             : z_block(block_input, w, "noise_refiner." + std::to_string(i), image_freqs, temb,
                         bf16_fallback ? nullptr : hybrid,
                         i, gpu_graph, compile_hybrid_segments);
@@ -1384,7 +1574,9 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
             auto streamed = weight_stream ? weight_stream->acquire(i) : Weights{};
             const bool bf16_fallback = hybrid && z_hybrid_bf16_block(2 + i);
             auto block_input = bf16_fallback ? mx::astype(unified, mx::bfloat16) : unified;
-            unified = z_block(block_input, weight_stream ? streamed : w,
+            unified = runtime ? z_runtime_block(block_input, w, "layers." + std::to_string(i),
+                                                 unified_freqs, temb, *runtime, 2 + i, cancelled, runtime_gguf_compatibility)
+                : z_block(block_input, weight_stream ? streamed : w,
                               "layers." + std::to_string(i), unified_freqs, temb,
                               bf16_fallback ? nullptr : hybrid,
                               2 + i, gpu_graph, compile_hybrid_segments);
@@ -2382,10 +2574,17 @@ void ZImage::select_loras(const Request &request) {
     }
     if (identity == cached_lora_identity_)
         return;
+    if (runtime_ffn_) runtime_ffn_->drain();
     cached_lora_identity_ = std::move(identity);
     active_loras_ = std::move(normalized);
     active_lora_strategy_ = strategy;
-    hybrid_.reset();
+    // This graph contains only checkpoint weights. Keep the loaded Core ML
+    // session across base/adapter switches when the explicit manifest agrees;
+    // only MLX transformer weights and the adapter-dependent suffix are reset.
+    if (!hybrid_ || hybrid_->mlp_output_kind != "fused_lora" ||
+        hybrid_->manifest != request.ane_manifest ||
+        request.hybrid_mlp_mode != "lora_fused")
+        hybrid_.reset();
     encoder_hybrid_.reset();
     hybrid_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
@@ -2458,6 +2657,7 @@ void ZImage::load_vae(
 }
 
 void ZImage::unload() {
+    runtime_ffn_.reset(); runtime_manifest_.clear();
     exact_stream_.reset();
     weight_stream_.reset();
     stream_configuration_.clear();
@@ -2553,6 +2753,14 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
 
 std::string ZImage::select_acceleration(Request &r, int rows, const Event &event,
                                         std::atomic<bool> &cancelled) {
+    if (r.hybrid_mlp_mode == "runtime") {
+        require(!nvfp4_transformer_ && !convrot_transformer_ && !diffusers_layout_ &&
+                    (active_loras_.empty() || (!gguf_transformer_ && active_lora_strategy_ == "inference_time")),
+                "runtime-weight Z-Image requires BF16 Comfy or base native GGUF; LoRA requires unmerged BF16 base weights");
+        hybrid_.reset(); hybrid_gpu_graph_ = {}; hybrid_gpu_mlp_start_ = -1;
+        return "gpu_ane explicit runtime-weight token-row FFN; base-only weight slots with optional GPU LoRA activation corrections; physical placement unverified";
+    }
+    runtime_ffn_.reset(); runtime_manifest_.clear();
     if (nvfp4_transformer_) {
         require(active_loras_.empty() && r.execution != "gpu_ane", "NVFP4 currently supports GPU without LoRA/ANE only");
         r.execution = "gpu";
@@ -2613,12 +2821,35 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
             hybrid_ = std::make_unique<HybridSession>(
                 r.ane_manifest, root_, image_only ? 1024 : rows, event, cancelled,
                 r.warmup_iterations,
-                transformer_checkpoint_, active_loras_, matched ? matched->bucket : 0);
+                transformer_checkpoint_, r.hybrid_mlp_mode == "lora_suffix" ||
+                                             r.hybrid_mlp_mode == "lora_fused"
+                    ? std::vector<LoRAAsset>{} : active_loras_, matched ? matched->bucket : 0);
         hybrid_->set_tokens(image_only ? 1024 : rows);
         require(hybrid_->hidden == 3840 &&
                     hybrid_->block_count == 32 && hybrid_->mlp_width == 10240 &&
                     hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end < 10240,
                 "Z-Image Core ML FFN partition geometry mismatch");
+        if (r.hybrid_mlp_mode == "lora_suffix")
+            require(hybrid_->checkpoint_sha_verified &&
+                        hybrid_->activation_precision == "fp16" &&
+                        hybrid_->ane_mlp_end == 4096 &&
+                        hybrid_->image_only_token_rows == 0 &&
+                        !hybrid_->lora_identity_verified,
+                    "Z-Image runtime LoRA suffix requires a verified 4096-channel FP16 base graph");
+        if (r.hybrid_mlp_mode == "lora_fused")
+            require(hybrid_->checkpoint_sha_verified &&
+                        hybrid_->mlp_output_kind == "fused_lora" &&
+                        hybrid_->tensor_layout == "z_image" &&
+                        hybrid_->activation_precision == "fp16" &&
+                        (hybrid_->ane_mlp_end == 4096 || hybrid_->ane_mlp_end == 6144 ||
+                         hybrid_->ane_mlp_end == 8192) && hybrid_->rows == 1056 &&
+                        hybrid_->image_only_token_rows == 0 &&
+                        !hybrid_->has_channel_route && !hybrid_->lora_identity_verified &&
+                        active_loras_.size() == r.loras.size(),
+                    "Z-Image runtime LoRA fused graph requires a base-only 1056-row artifact");
+        if (hybrid_->mlp_output_kind == "fused_lora")
+            require(r.hybrid_mlp_mode == "lora_fused",
+                    "Z-Image runtime LoRA artifact requires explicit lora_fused selection");
         if (image_only)
             require(hybrid_->image_only_token_rows == 1024 &&
                         !hybrid_->has_channel_route &&
@@ -2637,7 +2868,11 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
             hybrid_gpu_mlp_start_ = hybrid_->ane_mlp_end;
         }
         return automatic ? std::string("gpu_ane: measured case ") + matched->id
-                         : "gpu_ane: explicitly selected Z-Image FFN partition";
+                         : r.hybrid_mlp_mode == "lora_suffix"
+                            ? "gpu_ane: diagnostic base ANE FFN prefix with runtime LoRA GPU suffix only"
+                            : r.hybrid_mlp_mode == "lora_fused"
+                            ? "gpu_ane: experimental reusable base fused FFN with optional runtime pre-SiLU and down LoRA"
+                            : "gpu_ane: explicitly selected Z-Image FFN partition";
     } catch (const Cancelled &) {
         throw;
     } catch (const std::exception &error) {
@@ -2927,6 +3162,22 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         gpu_bf16_route_manifest_ = hybrid_->manifest;
         mx::clear_cache();
     }
+    if (r.hybrid_mlp_mode == "runtime") {
+        const auto manifest = std::filesystem::canonical(r.ane_manifest);
+        const std::string identity = manifest.string() + ":" + sha256_file(manifest) + ":" +
+            (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto");
+        if (!runtime_ffn_ || !runtime_ffn_->available() || runtime_manifest_ != identity ||
+            (!active_loras_.empty() && !runtime_ffn_->supports_lora_inputs())) {
+            runtime_ffn_.reset();
+            const auto physical = device_info().physical_memory;
+            const size_t budget = std::min(uint64_t(2) << 30,
+                physical - std::min(physical, uint64_t(mx::get_active_memory()) + (uint64_t(4) << 30)));
+            runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 3840, 10240, budget, cancelled,
+                                                         !active_loras_.empty());
+            runtime_manifest_ = identity;
+        }
+        runtime_ffn_->begin_request(cached_lora_identity_);
+    }
     if (load_only) {
         RunResult result;
         result.prepared = true;
@@ -2971,6 +3222,13 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         }
         if (hybrid_)
             result.hybrid = hybrid_->metrics();
+        if (runtime_ffn_) {
+            result.backend = gguf_transformer_ ? "mlx_cpp_metal_gguf+coreml_runtime_weight"
+                                               : "mlx_cpp_metal+coreml_runtime_weight";
+            result.precision = gguf_transformer_ ? "gguf_native_gpu+runtime_fp16_ffn"
+                                                 : "bf16_gpu+runtime_fp16_ffn_bf16_io";
+            result.hybrid = runtime_ffn_->metrics();
+        }
         result.encoder_hybrid = cached_encoder_hybrid_metrics_;
         result.timings.wall =
             std::chrono::duration<double>(Clock::now() - begin).count();
@@ -3169,6 +3427,15 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 result.precision = hybrid_precision_label(*result.hybrid);
         }
     }
+    if (runtime_ffn_) {
+        runtime_ffn_->drain();
+        result.backend = gguf_transformer_ ? "mlx_cpp_metal_gguf+coreml_runtime_weight"
+                                           : "mlx_cpp_metal+coreml_runtime_weight";
+        result.precision = gguf_transformer_ ? "gguf_native_gpu+runtime_fp16_ffn"
+                                             : "bf16_gpu+runtime_fp16_ffn_bf16_io";
+        result.hybrid = runtime_ffn_->metrics();
+        if (!runtime_ffn_->available()) result.selection += "; GPU fallback: " + runtime_ffn_->reason();
+    }
     result.encoder_hybrid = cached_encoder_hybrid_metrics_;
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
     result.timings.text = text_seconds;
@@ -3237,7 +3504,7 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
                       cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr,
                       weight_stream_.get(), exact_stream_.get(), uint32_t(step),
                       optimizations_.z_image_hybrid_segments || experimental_compiled_a8,
-                      nullptr, context_cache),
+                      nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_),
         mx::float32);
 }
 

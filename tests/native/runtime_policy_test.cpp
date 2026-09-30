@@ -54,6 +54,12 @@ int main() {
         auto request = qwen_ane; mutate(request);
         assert(!qwen21::layer_staged_t2i(request, qwen_device));
     }
+    for (const char *mode : {"lora_suffix", "lora_gate_up", "lora_fused", "runtime", "runtime_qkv"}) {
+        auto request = qwen_ane; request.hybrid_mlp_mode = mode;
+        assert(!qwen21::layer_staged_t2i(request, qwen_device));
+    }
+    auto base_fused = qwen_ane; base_fused.hybrid_mlp_mode = "base_fused";
+    assert(qwen21::layer_staged_hybrid_t2i(base_fused, qwen_device));
     const auto &m4_copy = device_optimizations("Apple M4 Pro", 48ull << 30);
     assert(std::string_view(m4_copy.id) == "m4pro48-coreml-copy-v1");
     assert(!m4_copy.qwen21_layer_streaming);

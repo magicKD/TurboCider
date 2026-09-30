@@ -1,11 +1,14 @@
 #include "bridge.hpp"
 #include "../../models/qwen21/diagnostic_options.hpp"
+#include "../../models/qwen21/viggle_adapter.hpp"
 #include <cstdlib>
 #include <string_view>
 #include "../../runtime/memory_execution.hpp"
 #include "../../runtime/streaming/actual_receipt.hpp"
 namespace tc {
 static NSString *gpu_graph_label(const Request &r) {
+    if (r.hybrid_mlp_mode == "runtime") return @"runtime_weight_token_row_ffn";
+    if (r.hybrid_mlp_mode == "runtime_qkv") return @"runtime_weight_token_row_qkv";
     if (r.model == "qwen-image-2.1")
         return r.execution == "gpu_ane" ? @"qwen21_decode_mlp_complement" : @"qwen21_compiled_prefix_blocks";
     if (r.model == "minimax-h3-vdn")
@@ -185,7 +188,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                       r.model == "llada-image-turbo" ? @"native_llada_candidate" :
                       r.model == "qwen-image-2.1" ? @"native_qwen21_experimental" :
                       @"weights_pending";
-    auto weight_validation = r.model == "z-image-turbo-gguf" ?
+    auto weight_validation = (r.hybrid_mlp_mode == "runtime" || r.hybrid_mlp_mode == "runtime_qkv")
+        ? @"runtime graph geometry, receipt and sparse weight-switch self-test checked at load; full-model quality experimental"
+        : r.model == "z-image-turbo-gguf" ?
             @"GGUF header checked at load; paired output parity pending" :
         r.model.starts_with("flux2-klein-") ? @"see parity evidence" :
         r.model == "minimax-h3-turbo" ?
@@ -213,7 +218,10 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             (r.model.starts_with("flux2-klein-") ? @"load_time_baked" : @"in_memory_delta") :
          r.model == "wan2.1-1.3b-qad" ? @"premerged_manifest_verified" :
          @"premerged_manifest_verified");
-    auto backend = hybrid ?
+    auto backend = r.hybrid_mlp_mode == "runtime_qkv" ? @"mlx_cpp_metal+coreml_runtime_qkv" :
+        r.hybrid_mlp_mode == "runtime" ?
+        (r.model == "z-image-turbo-gguf" ? @"mlx_cpp_metal_gguf+coreml_runtime_weight"
+                                       : @"mlx_cpp_metal+coreml_runtime_weight") : hybrid ?
         (r.model == "wan2.1-1.3b-qad" ? @"wan-mlx+coreml" :
          r.model == "ltx-2.5-distilled" ? @"ltx-gpu+ane" :
          r.model == "z-image-turbo-gguf" ? @"mlx_cpp_metal_gguf+coreml" : @"mlx_cpp_metal+coreml") :
@@ -246,9 +254,17 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
             std::getenv("TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC")))
         [algorithm_approximations addObject:@"qwen21_rectangular_decode_w8a8_tiled_diagnostic"];
-    if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
-            std::getenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC")))
+    if (r.model == "qwen-image-2.1" && qwen21::gate_up_ane(r))
+        [algorithm_approximations addObject:@"qwen21_w8a8_gate_up_gpu_silu_down_diagnostic"];
+    if (r.model == "qwen-image-2.1" && qwen21::fused_lora_ane(r))
+        [algorithm_approximations addObject:@"qwen21_w8a8_fused_lora_pre_silu_diagnostic"];
+    if (r.model == "qwen-image-2.1" && qwen21::lora_base_ane(r) &&
+            !qwen21::gate_up_ane(r) && !qwen21::fused_lora_ane(r))
         [algorithm_approximations addObject:@"qwen21_runtime_lora_base_ane_suffix_only_diagnostic"];
+    if (r.model == "z-image-turbo" && r.hybrid_mlp_mode == "lora_suffix")
+        [algorithm_approximations addObject:@"z_image_runtime_lora_base_ane_suffix_only_diagnostic"];
+    if (r.model == "z-image-turbo" && r.hybrid_mlp_mode == "lora_fused")
+        [algorithm_approximations addObject:@"z_image_runtime_lora_base_fused_pre_silu_experimental"];
     if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
             std::getenv("TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC")))
         [algorithm_approximations addObject:@"qwen21_viggle_reference_resize_512_diagnostic"];
@@ -287,6 +303,10 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         "TURBOCIDER_QWEN21_HYBRID_REUSE_PENULTIMATE_EVEN_FFN_DIAGNOSTIC");
     if (r.model == "qwen-image-2.1" && hybrid_half && std::string_view(hybrid_half) == "1")
         [algorithm_approximations addObject:@"qwen21_hybrid_reuse_penultimate_even_ffn_diagnostic"];
+    if (r.hybrid_mlp_mode == "runtime")
+        [algorithm_approximations addObject:@"runtime_weight_fp16_token_row_ffn"];
+    if (r.hybrid_mlp_mode == "runtime_qkv")
+        [algorithm_approximations addObject:@"runtime_weight_fp16_token_row_qkv"];
     if (r.model == "minimax-h3-vdn")
         [algorithm_approximations addObject:
             @"affine_int6_g64_base_weight_quantization"];
@@ -296,7 +316,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     else if (!r.quantized_cache.empty())
         [algorithm_approximations addObject:
             @"row_symmetric_int8_weight_quantization"];
-    else if (hybrid)
+    else if (hybrid && r.hybrid_mlp_mode != "runtime" && r.hybrid_mlp_mode != "runtime_qkv")
         [algorithm_approximations addObject:
             r.model == "qwen-image-2.1"
                 ? (r.qwen21_w8a8 ? @"qwen21_decode_mlp_w8a8_per_tensor" : @"qwen21_decode_mlp_fp16_partition")
@@ -307,8 +327,14 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "qwen-image-2.1" && hybrid && r.operation == "image.edit" &&
         r.qwen21_w8a8 && r.qwen21_reference_size == 1024)
         [algorithm_approximations addObject:@"qwen21_w8a8_full_reference_diagnostic"];
-    if (r.model == "qwen-image-2.1" && !r.loras.empty())
-        [algorithm_approximations addObject:@"qwen21_viggle_v021_r256_6step_distillation"];
+    if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
+        const auto *adapter = qwen21::viggle_v021_adapter(
+            std::filesystem::path(r.loras[0].path).filename().string());
+        const auto label = adapter
+            ? "qwen21_viggle_v021_" + std::string(adapter->rank) + "_6step_distillation"
+            : "qwen21_unqualified_adapter_6step_schedule";
+        [algorithm_approximations addObject:@(label.c_str())];
+    }
     if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
         const char *fp16_lora = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
         if (fp16_lora && std::string_view(fp16_lora) == "1")
@@ -366,7 +392,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"encoder_weight_validation" :
             encoder_weight_validation_label(r, encoder_hybrid, false),
         @"gpu_graph" : gpu_graph_label(r),
-        @"precision" : r.model == "minimax-h3-vdn" ? @"int6_g64_base+bf16_vdn+fp32_solve" :
+        @"precision" : r.hybrid_mlp_mode == "runtime_qkv" ? @"bf16_gpu+runtime_fp16_qkv_bf16_io" :
+                      r.hybrid_mlp_mode == "runtime" ?
+                          (r.model == "z-image-turbo-gguf" ? @"gguf_native_gpu+runtime_fp16_ffn"
+                                                          : @"bf16_gpu+runtime_fp16_ffn_bf16_io") :
+                      r.model == "minimax-h3-vdn" ? @"int6_g64_base+bf16_vdn+fp32_solve" :
                       r.model.starts_with("minimax-h3-fasth3-mlx-int6") ? @"int6_g64_bf16_activation" :
                       r.model == "wan2.1-1.3b-qad" ? @"fp16-int8-affine-dit+bf16-umt5+fp32-taehv" :
                       r.model == "z-image-turbo-gguf" ? @"checkpoint_defined_gguf" :
@@ -407,6 +437,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"weight_validation" : weight_validation,
         @"lora_count" : @(r.loras.size()),
         @"lora_strategy" : @(lora_strategy.c_str()),
+        @"hybrid_mlp_mode" : @(r.hybrid_mlp_mode.c_str()),
         @"lora_fusion" : lora_fusion,
         @"audio" : @(r.audio),
         @"ltx_backend" : @(r.ltx_backend.c_str()),
@@ -846,6 +877,32 @@ NSDictionary *to_dictionary(const LoadResult &r) {
 }
 NSDictionary *to_dictionary(const HybridMetrics &m) {
     return @{
+        @"runtime_weight" : m.weight_variant == "runtime_fp16" ? @{
+            @"slot_bytes" : @(m.runtime_weight_slot_bytes),
+            @"estimated_bytes" : @(m.runtime_weight_estimated_bytes),
+            @"hybrid_blocks_session_total" : @(m.runtime_weight_hybrid_blocks),
+            @"gpu_blocks_session_total" : @(m.runtime_weight_gpu_blocks),
+            @"unsplit_gpu_blocks_session_total" : @(m.runtime_weight_unsplit_gpu_blocks),
+            @"full_gpu_probe_blocks_session_total" : @(m.runtime_weight_full_gpu_probe_blocks),
+            @"untimed_hybrid_blocks_session_total" : @(m.runtime_weight_untimed_hybrid_blocks),
+            @"async_hybrid_blocks_session_total" : @(m.runtime_weight_async_hybrid_blocks),
+            @"full_gpu_probe_seconds_session_total" : @(m.runtime_weight_full_gpu_probe_seconds),
+            @"fallback_blocks_session_total" : @(m.runtime_weight_fallback_blocks),
+            @"ane_rows_session_total" : @(m.runtime_weight_ane_rows),
+            @"overflow_retries_session_total" : @(m.runtime_weight_overflow_retries),
+            @"headroom_scale" : @(m.runtime_weight_headroom),
+            @"stage_seconds_session_total" : @(m.runtime_weight_stage_seconds),
+            @"stage_wait_seconds_session_total" : @(m.runtime_weight_stage_wait_seconds),
+            @"join_seconds_session_total" : @(m.runtime_weight_join_seconds),
+            @"gpu_ffn_seconds_session_total" : @(m.runtime_weight_gpu_seconds),
+            @"async_ane_wait_seconds_session_total" : @(m.runtime_weight_async_ane_wait_seconds),
+            @"lora_gate_up_seconds_session_total" : @(m.runtime_weight_lora_gate_up_seconds),
+            @"lora_input_ready_seconds_session_total" : @(m.runtime_weight_lora_input_ready_seconds),
+            @"post_join_seconds_session_total" : @(m.runtime_weight_post_join_seconds),
+            @"hybrid_ffn_seconds_session_total" : @(m.runtime_weight_wall_seconds),
+            @"pre_ffn_seconds_session_total" : @(m.runtime_weight_pre_seconds),
+            @"failure_reason" : @(m.prefill_plan_reason.c_str())
+        } : (id)[NSNull null],
         @"weight_variant" : @(m.weight_variant.c_str()),
         @"load_seconds" : @(m.load_seconds),
         @"manifest_validation_seconds" : @(m.manifest_validation_seconds),
@@ -854,6 +911,9 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"model_interface_setup_seconds" : @(m.model_interface_setup_seconds),
         @"zero_input_warmup_seconds" : @(m.zero_input_warmup_seconds),
         @"prediction_seconds_session_total" : @(m.prediction_seconds),
+        @"feature_binding_seconds_session_total" : @(m.feature_binding_seconds),
+        @"model_prediction_seconds_session_total" : @(m.model_prediction_seconds),
+        @"output_handling_seconds_session_total" : @(m.output_handling_seconds),
         @"first_runtime_prediction_seconds_session_total" :
             @(m.first_runtime_prediction_seconds),
         @"subsequent_runtime_prediction_seconds_session_total" :
@@ -871,6 +931,8 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"bucket" : @(m.bucket),
         @"minimum_profitable_rows" : @(m.minimum_profitable_rows),
         @"hidden" : @(m.hidden),
+        @"output_channels" : @(m.output_channels),
+        @"mlp_output_kind" : @(m.mlp_output_kind.c_str()),
         @"block_count" : @(m.block_count),
         @"mlp_width" : @(m.mlp_width),
         @"ane_mlp_range" : @[ @(m.ane_mlp_start), @(m.ane_mlp_end) ],
@@ -895,9 +957,43 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"prefill_padding_tokens" : @(m.prefill_padding_tokens),
         @"prefill_fixed_shape" : @(m.prefill_fixed_shape),
         @"prefill_plan_reason" : @(m.prefill_plan_reason.c_str()),
-        @"provenance" : m.checkpoint_sha_verified
+        @"provenance" : m.weight_variant == "runtime_fp16"
+            ? @"checkpoint-independent graph receipt; weights supplied by the loaded model at runtime"
+            : m.checkpoint_sha_verified
             ? @"local checkpoint path, size and SHA-256 verified"
             : @"local checkpoint path+size; source SHA absent in legacy artifact; experimental only"
+    };
+}
+static NSDictionary *qkv_dictionary(const QkvMetrics &m) {
+    return @{
+        @"mode" : @"runtime_weight_qkv",
+        @"auto_scheduling" : @(m.auto_scheduling),
+        @"calls_session_total" : @(m.calls),
+        @"hybrid_blocks_session_total" : @(m.hybrid_blocks),
+        @"gpu_blocks_session_total" : @(m.gpu_blocks),
+        @"gpu_probe_blocks_session_total" : @(m.gpu_probe_blocks),
+        @"measured_hybrid_blocks_session_total" : @(m.measured_hybrid_blocks),
+        @"gpu_probe_seconds_session_total" : @(m.gpu_probe_seconds),
+        @"measured_hybrid_seconds_session_total" : @(m.measured_hybrid_seconds),
+        @"fallback_blocks_session_total" : @(m.fallback_blocks),
+        @"ane_rows_session_total" : @(m.ane_rows),
+        @"failures_session_total" : @(m.failures),
+        @"failure_block" : @(m.failure_block),
+        @"failed" : @(m.failed),
+        @"failure_reason" : @(m.failure_reason.c_str()),
+        @"chunk_rows" : @(m.chunk_rows),
+        @"chunks" : @(m.chunks),
+        @"slot_bytes" : @(m.slot_bytes),
+        @"estimated_bytes" : @(m.estimated_bytes),
+        @"load_seconds" : @(m.load_seconds),
+        @"stage_seconds_session_total" : @(m.stage_seconds),
+        @"stage_wait_seconds_session_total" : @(m.stage_wait_seconds),
+        @"prediction_seconds_session_total" : @(m.prediction_seconds),
+        @"output_seconds_session_total" : @(m.output_seconds),
+        // Includes lazy upstream input readiness; not a pure QKV kernel timer.
+        @"bridge_wall_seconds_session_total" : @(m.wall_seconds),
+        @"compute_units" : @"cpuAndNeuralEngine",
+        @"observed_ane_residency" : @"unknown"
     };
 }
 static NSDictionary *to_dictionary(const BlockResidencyMetrics &m) {
@@ -1141,6 +1237,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
     }
     const auto &r = result.request;
     auto hybrid = result.hybrid ? to_dictionary(*result.hybrid) : @{};
+    id qkv = result.qkv ? qkv_dictionary(*result.qkv) : (id)NSNull.null;
     auto encoder_hybrid = result.encoder_hybrid
                               ? to_dictionary(*result.encoder_hybrid)
                               : @{};
@@ -1176,6 +1273,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"mlx_active_bytes" : @(result.active_bytes),
             @"block_residency" : result.block_residency ? to_dictionary(*result.block_residency) : (id)[NSNull null],
             @"hybrid" : hybrid,
+            @"qkv" : qkv,
             @"encoder_hybrid" : encoder_hybrid
         } mutableCopy];
         if (result.memory_admission)
@@ -1235,6 +1333,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
         },
         @"memory" : memory,
         @"hybrid" : hybrid,
+        @"qkv" : qkv,
         @"encoder_hybrid" : encoder_hybrid,
         @"validation" : @"candidate; consult recorded parity suite"
     } mutableCopy];

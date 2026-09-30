@@ -1,8 +1,96 @@
 """Prevent obsolete entry points and research code re-entering shipping targets."""
 from pathlib import Path
+import json
+import subprocess
 import unittest
 ROOT=Path(__file__).resolve().parents[2]
 class LayoutTests(unittest.TestCase):
+    def test_runtime_weight_ane_stays_opt_in(self):
+        for name in ['tools/native/build.sh', 'tools/native/package.sh']:
+            source = (ROOT/name).read_text()
+            for experimental in ['ane-runtime-probe',
+                                 'export_runtime_ane.py', 'build_ane_runtime_probe.sh']:
+                self.assertNotIn(experimental, source, name)
+        makefile = (ROOT/'Makefile').read_text()
+        self.assertIn('build-runtime-ane-probe:', makefile)
+        self.assertIn('test-runtime-ane: test-runtime-ane-host', makefile)
+        default_tests = makefile.split('\ntest:\n', 1)[1].split('\n# No real model', 1)[0]
+        self.assertIn('$(MAKE) test-acceleration-contract\n', default_tests)
+        contracts = makefile.split('\ntest-acceleration-contract:', 1)[1].split('\ntest-runtime-ane-host:', 1)[0]
+        self.assertTrue(contracts.startswith(' test-runtime-ane-host\n'))
+        self.assertIn('test_runtime_ane_model_screen.py', contracts)
+        self.assertIn('test_runtime_lora_shared_graph_switch.py', contracts)
+        self.assertIn('test_cli_ane_override.py', contracts)
+        self.assertIn('test_ane_placement.py', contracts)
+        self.assertNotIn('test_ane_runtime.py', contracts)
+        self.assertNotIn('$(MAKE) test-runtime-ane\n', contracts)
+        self.assertNotIn('$(MAKE) test-runtime-ane\n', default_tests)
+        self.assertNotIn('test_ane_runtime.py', default_tests)
+        for model in ['qwen21', 'z_image']:
+            source = (ROOT/f'native/models/{model}_module.cpp').read_text()
+            self.assertIn('r.hybrid_mlp_mode == "runtime"', source)
+            self.assertIn('r.execution == "gpu_ane"', source)
+    def test_runtime_ane_sources_are_portable(self):
+        # Keep artifacts, local sibling research trees and user directories
+        # out of reusable execution code and offline preparation tools.
+        sources = [*sorted((ROOT/'native/backends').glob('ane_*'))]
+        sources += [ROOT/name for name in ['tools/coreml/export_runtime_ane.py',
+                     'tools/native/build_ane_runtime_probe.sh',
+                     'tools/native/build_ane_ffn_test.sh',
+                     'tools/native/ane_runtime_probe.cpp',
+                     'tools/validation/runtime_ane_common.py',
+                     'tools/validation/qwen21_ane_placement.py',
+                     'tools/validation/runtime_ane_memory.py',
+                     'tools/validation/runtime_ane_model_screen.py',
+                     'tools/validation/runtime_lora_shared_graph_switch.py']]
+        sources += [ROOT/'native/models/z_image/padding.hpp']
+        self.assertTrue(sources)
+        for path in sources:
+            source = path.read_text()
+            for local_path in ['/Users/', '/home/', '../references/', '../notes/']:
+                self.assertNotIn(local_path, source, str(path.relative_to(ROOT)))
+
+    def test_acceleration_examples_are_portable_and_keep_lora_at_runtime(self):
+        names = ['qwen21-base-512.json', 'qwen21-base-1024.json',
+                 'z-image-turbo-1024.json',
+                 'qwen21-viggle-runtime-lora-512.json',
+                 'qwen21-viggle-runtime-lora-hybrid-512.json',
+                 'z-image-gguf-base-512.json', 'z-image-runtime-lora-512.json']
+        def check_paths(value):
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if key in ('path', 'output', 'ane_manifest') and isinstance(item, str):
+                        self.assertFalse(Path(item).is_absolute(), item)
+                        self.assertNotIn('..', Path(item).parts, item)
+                    check_paths(item)
+            elif isinstance(value, list):
+                for item in value:
+                    check_paths(item)
+        for name in names:
+            with self.subTest(name=name):
+                data = json.loads((ROOT/'examples/requests'/name).read_text())
+                check_paths(data)
+                self.assertNotIn('ane_manifest', data, 'supply local artifacts at invocation')
+                if data.get('loras'):
+                    self.assertEqual(data.get('lora_strategy'), 'inference_time')
+                    self.assertNotEqual(data.get('hybrid_mlp_mode'), 'lora_merged')
+
+    def test_acceleration_artifacts_stay_local(self):
+        if not (ROOT/'.git').exists():
+            self.skipTest('artifact tracking check requires a Git checkout')
+        tracked = subprocess.check_output(
+            ['git', 'ls-files', '--', 'results/z-image-*', 'results/qwen21/'],
+            cwd=ROOT, text=True)
+        self.assertEqual(tracked, '', 'keep portable examples and docs, not raw acceleration runs')
+        paths = ['results/z-image-future-request.json',
+                 'results/z-image-future.png',
+                 'results/z-image-future-compiled/model/identity.json',
+                 'results/qwen21/future/manifest.json']
+        ignored = subprocess.check_output(
+            ['git', 'check-ignore', '--no-index', '--stdin'],
+            input='\n'.join(paths) + '\n', cwd=ROOT, text=True)
+        self.assertEqual(ignored.splitlines(), paths)
+
     def test_single_implementation(self):
         for name in ['src','Sources','engines','scripts','model-packs','device-profiles','pyproject.toml','Package.swift','requirements-flux2.txt']:
             self.assertFalse((ROOT/name).exists(),name)

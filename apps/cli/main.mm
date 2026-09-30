@@ -95,16 +95,19 @@ static int install_test_streaming_catalog(tc_engine *engine,char **error) {
    engine,catalog.UTF8String,error);
 }
 #endif
-static NSString *request_with_ane_manifest(NSString *request,const char *manifest_path,
-                                           std::string &failure) {
+static NSString *request_with_acceleration(NSString *request,const char *manifest_path,
+                                           const char *hybrid_mode,std::string &failure) {
  if(!request){failure="cannot read request";return nil;}
- if(!manifest_path)return request;
+ if(!manifest_path&&!hybrid_mode)return request;
  std::error_code ec;
- auto path=std::filesystem::absolute(manifest_path,ec);
- if(ec||!std::filesystem::is_regular_file(path,ec)||ec){
-  failure="--ane-manifest must name an existing manifest JSON file";return nil;
+ std::filesystem::path path;
+ if(manifest_path){
+  path=std::filesystem::absolute(manifest_path,ec);
+  if(ec||!std::filesystem::is_regular_file(path,ec)||ec){
+   failure="--ane-manifest must name an existing manifest JSON file";return nil;
+  }
+  path=path.lexically_normal();
  }
- path=path.lexically_normal();
  NSError *error=nil;
  id raw=[NSJSONSerialization JSONObjectWithData:[request dataUsingEncoding:NSUTF8StringEncoding]
                                           options:NSJSONReadingMutableContainers error:&error];
@@ -127,28 +130,46 @@ static NSString *request_with_ane_manifest(NSString *request,const char *manifes
  }
  NSMutableDictionary *execution=placement;
  NSString *key=version==1?@"execution":@"policy";
- id existing=execution[@"ane_manifest"];
- if(existing){
-  if(![existing isKindOfClass:NSString.class]){
-   failure="request ane_manifest must be a string";return nil;
+ if(manifest_path){
+  id existing=execution[@"ane_manifest"];
+  if(existing){
+   if(![existing isKindOfClass:NSString.class]){
+    failure="request ane_manifest must be a string";return nil;
+   }
+   std::error_code prior_error;
+   auto prior=std::filesystem::absolute(std::string([(NSString *)existing UTF8String]),prior_error);
+   if(prior_error||prior.lexically_normal()!=path){
+    failure="--ane-manifest conflicts with request ane_manifest";return nil;
+   }
   }
-  std::error_code prior_error;
-  auto prior=std::filesystem::absolute(std::string([(NSString *)existing UTF8String]),prior_error);
-  if(prior_error||prior.lexically_normal()!=path){
-   failure="--ane-manifest conflicts with request ane_manifest";return nil;
-  }
+  execution[key]=@"gpu_ane";
+  execution[@"ane_manifest"]=@(path.string().c_str());
  }
- execution[key]=@"gpu_ane";
- execution[@"ane_manifest"]=@(path.string().c_str());
- execution[@"allow_approximation"]=@YES;
+ if(hybrid_mode){
+  std::string_view mode(hybrid_mode);
+  if(mode!="auto"&&mode!="base_fused"&&mode!="lora_suffix"&&
+     mode!="lora_gate_up"&&mode!="lora_fused"&&mode!="lora_merged"&&mode!="runtime"){
+   failure="--hybrid-mode must be auto, base_fused, lora_suffix, lora_gate_up, lora_fused, lora_merged or runtime";return nil;
+  }
+  id existing=execution[@"hybrid_mlp_mode"];
+  if(existing&&(![existing isKindOfClass:NSString.class]||
+                ![existing isEqualToString:@(hybrid_mode)])){
+   failure="--hybrid-mode conflicts with request hybrid_mlp_mode";return nil;
+  }
+  execution[@"hybrid_mlp_mode"]=@(hybrid_mode);
+ }
+ // Selecting an algorithm must not silently waive the caller's numerical
+ // accuracy policy. The manifest override retains its original opt-in.
+ if(manifest_path)execution[@"allow_approximation"]=@YES;
  if(version==2)value[@"execution"]=execution;
  NSData *json=[NSJSONSerialization dataWithJSONObject:value options:NSJSONWritingSortedKeys error:&error];
  if(!json){failure="could not encode ANE request";return nil;}
  return [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
 }
-static NSString *cli_request(const char *file,const char *manifest_path,std::string &failure) {
+static NSString *cli_request(const char *file,const char *manifest_path,
+                             const char *hybrid_mode,std::string &failure) {
  NSString *request=[NSString stringWithContentsOfFile:@(file) encoding:NSUTF8StringEncoding error:nil];
- return request_with_ane_manifest(request,manifest_path,failure);
+ return request_with_acceleration(request,manifest_path,hybrid_mode,failure);
 }
 static int library_main(int argc,char **argv) {
  auto helper=std::filesystem::path(executable_path(argv[0])).parent_path()/"turbocider-library";
@@ -168,15 +189,24 @@ static int library_main(int argc,char **argv) {
  [task waitUntilExit];return task.terminationStatus;
 }
 int main(int argc,char**argv){@autoreleasepool{
- if(argc<2){std::cerr<<"turbocider library help | cache help | serve SOCKET STATE | rpc SOCKET REQUEST.json | coreml REQUEST.json | worker-query INPUT.json | worker-generate INPUT.json | doctor|models|self-test|plan REQUEST.json [--ane-manifest MANIFEST.json]|tokenize MODEL PROMPT|generate MODEL REQUEST.json [--ane-manifest MANIFEST.json] | batch MODEL REQUEST1.json REQUEST2.json ... [--ane-manifest MANIFEST.json] | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
+ if(argc<2){std::cerr<<"turbocider library help | cache help | serve SOCKET STATE | rpc SOCKET REQUEST.json | worker-query INPUT.json | worker-generate INPUT.json | doctor|models|self-test|plan REQUEST.json [--ane-manifest MANIFEST.json] [--hybrid-mode MODE]|tokenize MODEL PROMPT|generate MODEL REQUEST.json [--ane-manifest MANIFEST.json] [--hybrid-mode MODE] | batch MODEL REQUEST1.json REQUEST2.json ... [--ane-manifest MANIFEST.json] [--hybrid-mode MODE] | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
  std::string cmd=argv[1];char*out=nullptr,*err=nullptr;int code=0;
  const bool allows_ane=cmd=="plan"||cmd=="generate"||cmd=="batch";
- const bool has_ane=allows_ane&&argc>=5&&std::string(argv[argc-2])=="--ane-manifest";
- const char *ane_manifest=has_ane?argv[argc-1]:nullptr;
- const int request_argc=argc-(has_ane?2:0);
+ const char *ane_manifest=nullptr,*hybrid_mode=nullptr;
+ int request_argc=argc;
  if(allows_ane){
-  for(int i=2;i<request_argc;++i)if(std::string(argv[i])=="--ane-manifest"){
-   std::cerr<<"--ane-manifest MANIFEST.json must be the final two arguments\n";return 1;
+  while(request_argc>=4){
+   const std::string flag=argv[request_argc-2];
+   if(flag=="--ane-manifest"&&!ane_manifest)ane_manifest=argv[request_argc-1];
+   else if(flag=="--hybrid-mode"&&!hybrid_mode)hybrid_mode=argv[request_argc-1];
+   else break;
+   request_argc-=2;
+  }
+ }
+ if(allows_ane){
+  for(int i=2;i<request_argc;++i)if(std::string(argv[i])=="--ane-manifest"||
+                                      std::string(argv[i])=="--hybrid-mode"){
+   std::cerr<<"--ane-manifest and --hybrid-mode must be trailing argument pairs\n";return 1;
   }
  }
  if((cmd=="worker-query" || cmd=="worker-generate") &&
@@ -204,11 +234,11 @@ int main(int argc,char**argv){@autoreleasepool{
  else if(cmd=="tokenize"&&argc==4)code=tc_tokenize_json(argv[2],argv[3],&out,&err);
  else if(cmd=="batch"&&request_argc>=4){
   std::string failure;
-  NSString *first=cli_request(argv[3],ane_manifest,failure);
+  NSString *first=cli_request(argv[3],ane_manifest,hybrid_mode,failure);
   if(!first){std::cerr<<failure<<"\n";return 1;}
   code=create_for(argv[2],first,&active,&err);
   if(!code){std::signal(SIGINT,stop);for(int i=3;i<request_argc;++i){
-    NSString*request=i==3?first:cli_request(argv[i],ane_manifest,failure);
+    NSString*request=i==3?first:cli_request(argv[i],ane_manifest,hybrid_mode,failure);
     if(!request){std::cerr<<failure<<"\n";code=1;break;}
     code=tc_engine_generate(active,request.UTF8String,event,nullptr,&out,&err);
     if(out){std::cout<<out<<std::endl;tc_string_free(out);out=nullptr;}
@@ -218,7 +248,7 @@ int main(int argc,char**argv){@autoreleasepool{
  else if((cmd=="plan"&&request_argc==3)||(cmd=="generate"&&request_argc==4)||
          (cmd=="ltx-worker"&&argc==4)){
   std::string failure;
-  NSString*request=cli_request(argv[request_argc-1],ane_manifest,failure);
+  NSString*request=cli_request(argv[request_argc-1],ane_manifest,hybrid_mode,failure);
   if(!request){std::cerr<<failure<<"\n";return 1;}
   if(cmd=="plan")code=tc_plan_json(request.UTF8String,&out,&err);
   else {

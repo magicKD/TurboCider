@@ -423,6 +423,8 @@ int tc_coreml_ffn_predict(tc_coreml_ffn *bridge, int block,
         try {
             tc::require(bridge && bridge->session && input && output,
                         "missing Core ML FFN bridge or buffer");
+            tc::require(bridge->session->mlp_output_kind.empty(),
+                        "Core ML FFN C ABI only supports final FFN output, not gate/up intermediates");
             std::lock_guard<std::mutex> lock(bridge->mutex);
             require_streaming_process_healthy();
             auto metrics = bridge->session->metrics();

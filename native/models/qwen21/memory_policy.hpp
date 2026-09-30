@@ -9,7 +9,9 @@ namespace tc::qwen21 {
 // at a time, then stream DiT layers on every step, then load the VAE. Larger canvases,
 // multimodal conditioning and PE retain their existing estimate.
 inline bool layer_staged_hybrid_t2i(const Request &r, const DeviceInfo &device) {
-    if (!device.optimizations().qwen21_layer_streaming) return false;
+    if (!device.optimizations().qwen21_layer_streaming ||
+        (r.hybrid_mlp_mode != "auto" && r.hybrid_mlp_mode != "base_fused")) return false;
+    if (lora_base_ane(r) || gate_up_ane(r) || fused_lora_ane(r)) return false;
     // Existing diagnostic caches/fusions retain weights or change execution
     // geometry. Keep their established memory estimate and resident route.
     for (const char *flag : {"TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC",

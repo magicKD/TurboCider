@@ -1,5 +1,7 @@
 #include "qwen21/pipeline.hpp"
 #include "qwen21/diagnostic_options.hpp"
+#include "qwen21/viggle_adapter.hpp"
+#include <cmath>
 #include <cstdlib>
 #include <string_view>
 
@@ -40,20 +42,86 @@ ModelModule qwen21_module() {
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN")),
                         "Qwen21 rectangular W8A8 needs explicit base 768x512/512x768 GPU/ANE with 20...40 steps, 0...3 full-size references and no other cache");
             const char *lora_ane_flag = std::getenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC");
+            const char *gate_up_flag = std::getenv("TURBOCIDER_QWEN21_LORA_GATE_UP_DIAGNOSTIC");
             const char *lora_ref512_flag = std::getenv("TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC");
+            const bool runtime_ane = r.hybrid_mlp_mode == "runtime";
+            const bool runtime_qkv = r.hybrid_mlp_mode == "runtime_qkv";
+            require(r.hybrid_mlp_mode == "auto" || r.hybrid_mlp_mode == "base_fused" ||
+                        r.hybrid_mlp_mode == "lora_suffix" || r.hybrid_mlp_mode == "lora_gate_up" ||
+                        r.hybrid_mlp_mode == "lora_fused" || runtime_ane || runtime_qkv,
+                    "unsupported Qwen21 hybrid_mlp_mode");
+            if (runtime_qkv)
+                require(r.execution == "gpu_ane" && r.allow_approximation && !r.ane_manifest.empty() &&
+                            r.operation == "image.generate" && r.inputs.empty() &&
+                            r.width == 1024 && r.height == 1024 &&
+                            r.residency == "resident" && r.loras.empty() && !r.qwen21_w8a8 &&
+                            !r.qwen21_gpu_w8a16 && r.qwen21_gpu_full_ffn_blocks.empty() &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC")) &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC")) &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV")) &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN")) &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN")) &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC")) &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_LAST16_FFN_DIAGNOSTIC")) &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_PENULTIMATE_EVEN_FFN_DIAGNOSTIC")) &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_PREFILL_LAST_TARGET_ONLY_DIAGNOSTIC")) &&
+                            qwen21::tiled_prefill_layer_count(
+                                std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC") ?
+                                std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC") : "0") == 0,
+                        "Qwen21 runtime QKV needs explicit 1024px base text-to-image resident GPU/ANE MatMul, exact GPU FFN, no fused QKV or caches");
+            if (runtime_ane)
+                require(r.execution == "gpu_ane" && r.allow_approximation && !r.ane_manifest.empty() &&
+                            !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
+                            (r.loras.empty() || r.lora_strategy == "inference_time") &&
+                            r.qwen21_gpu_full_ffn_blocks.empty() && r.residency == "resident" &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC")) &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV")),
+                        "Qwen21 runtime-weight FFN requires explicit resident GPU/ANE FP16, unmerged runtime LoRA and no frozen W8A8 or DBCache/prefix reuse");
+            if (r.hybrid_mlp_mode != "auto" && !runtime_ane && !runtime_qkv)
+                require(r.execution == "gpu_ane" && r.qwen21_w8a8 &&
+                            r.allow_approximation && !r.ane_manifest.empty() &&
+                            (r.hybrid_mlp_mode == "base_fused" ? r.loras.empty() :
+                             r.hybrid_mlp_mode == "lora_fused" || !r.loras.empty()),
+                        "explicit Qwen21 hybrid_mlp_mode requires a W8A8 manifest and matching base/LoRA request");
+            const bool lora_base_ane = qwen21::lora_base_ane(r);
+            const bool gate_up_ane = qwen21::gate_up_ane(r);
+            const bool fused_lora_ane = qwen21::fused_lora_ane(r);
+            require(qwen21::binary_option_or_unset(gate_up_flag),
+                    "Qwen21 LoRA-compatible gate/up diagnostic accepts only 0 or 1");
+            if (gate_up_ane || fused_lora_ane)
+                require(r.execution == "gpu_ane" && r.qwen21_w8a8 &&
+                            r.allow_approximation && !r.qwen21_gpu_w8a16 &&
+                            r.qwen21_gpu_full_ffn_blocks.empty() &&
+                            r.width == 512 && r.height == 512 &&
+                            (r.loras.empty() ? (r.steps == 5 || r.steps == 20 || r.steps == 40 ||
+                                                (fused_lora_ane && r.steps == 6)) :
+                                (r.steps == 6 && lora_base_ane)) &&
+                            (r.operation == "image.generate" ||
+                             (r.operation == "image.edit" && !r.inputs.empty() && r.inputs.size() <= 3)) &&
+                            !qwen21::option_enabled(rect_flag) &&
+                            !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC")) &&
+                            qwen21::tiled_prefill_layer_count(
+                                std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC") ?
+                                std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC") : "0") == 0,
+                        "Qwen21 alternate W8A8 graph needs explicit 512px qualified base or six-step runtime LoRA with no cache or tiled prefill");
             require(qwen21::binary_option_or_unset(lora_ref512_flag),
                     "Qwen21 runtime LoRA/512px reference diagnostic accepts only 0 or 1");
+            // One resident batch may switch base -> LoRA -> base on the same
+            // runtime graph. The environment flag spans that whole batch;
+            // allow its base requests without relaxing GPU/frozen eligibility.
+            const bool runtime_ref512_base = runtime_ane && r.execution == "gpu_ane" &&
+                r.loras.empty();
             if (qwen21::option_enabled(lora_ref512_flag))
                 require(r.allow_approximation && r.width == 512 && r.height == 512 &&
                             r.steps == 6 && r.operation == "image.edit" &&
                             r.qwen21_reference_size == 512 && r.inputs.size() >= 1 &&
-                            r.inputs.size() <= 3 && r.loras.size() == 1 &&
+                            r.inputs.size() <= 3 && (r.loras.size() == 1 || runtime_ref512_base) &&
                             (r.execution == "gpu" ||
-                             (r.execution == "gpu_ane" && qwen21::option_enabled(lora_ane_flag))),
-                        "Qwen21 LoRA 512px reference resize requires explicit six-step Viggle editing with 1...3 references, GPU or diagnostic base-ANE suffix");
+                             (r.execution == "gpu_ane" && (lora_base_ane || runtime_ane))),
+                        "Qwen21 LoRA 512px reference resize requires explicit six-step editing with 1...3 references: Viggle on GPU/ANE or shared runtime base");
             require(qwen21::binary_option_or_unset(lora_ane_flag),
                     "Qwen21 runtime LoRA/base ANE diagnostic accepts only 0 or 1");
-            if (qwen21::option_enabled(lora_ane_flag))
+            if (lora_base_ane && (!fused_lora_ane || !r.loras.empty()))
                 require(r.allow_approximation && r.execution == "gpu_ane" && r.qwen21_w8a8 &&
                             !r.qwen21_gpu_w8a16 && r.qwen21_gpu_full_ffn_blocks.empty() &&
                             r.width == 512 && r.height == 512 && r.steps == 6 &&
@@ -127,20 +195,23 @@ ModelModule qwen21_module() {
                             !r.qwen21_gpu_w8a16 && r.loras.empty(),
                         "Qwen21 tiled prefix target-only needs explicit resident W8A8 tiled prefix reuse");
             if (!r.loras.empty()) {
-                constexpr std::string_view name =
-                    "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors";
+                const bool experimental_adapter = fused_lora_ane || runtime_ane;
                 require(r.loras.size() == 1 && r.loras[0].role == "transformer" &&
-                            r.loras[0].strength == 1.f &&
-                            std::filesystem::path(r.loras[0].path).filename().string() == name &&
+                            (experimental_adapter
+                                ? (std::isfinite(r.loras[0].strength) &&
+                                   r.loras[0].strength >= -8.f && r.loras[0].strength <= 8.f)
+                                : (r.loras[0].strength == 1.f &&
+                                   qwen21::viggle_v021_adapter(
+                                       std::filesystem::path(r.loras[0].path).filename().string()))) &&
                             r.steps == 6 && (r.execution == "gpu" ||
-                                             (r.execution == "gpu_ane" && qwen21::option_enabled(lora_ane_flag))) &&
+                                             (r.execution == "gpu_ane" && (lora_base_ane || runtime_ane))) &&
                             r.allow_approximation &&
                             r.width == 512 && r.height == 512 &&
                             (r.qwen21_reference_size == 1024 ||
                              (r.qwen21_reference_size == 512 &&
                               qwen21::option_enabled(lora_ref512_flag))) &&
                             (r.operation != "image.edit" || r.inputs.size() <= 3),
-                        "Qwen21 Viggle v0.2.1 r256 requires one inference-time transformer LoRA at scale 1, six steps, explicit 512px approximation, and at most three full-size or diagnostic resized-512 edit references");
+                        "Qwen21 requires one six-step runtime transformer LoRA with explicit 512px approximation; lora_fused/runtime permit an unqualified adapter/strength with the Viggle schedule");
             }
             const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
             const char *fused_qkv = std::getenv("TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC");
@@ -206,7 +277,7 @@ ModelModule qwen21_module() {
             if (local_references && std::string_view(local_references) != "0") {
                 const bool local_lora = !r.loras.empty() && r.steps == 6 &&
                     std::string_view(local_references) == "3" &&
-                    (r.execution == "gpu" || qwen21::option_enabled(lora_ane_flag));
+                    (r.execution == "gpu" || lora_base_ane);
                 require((r.execution == "gpu" ||
                          (std::string_view(local_references) == "3" && r.execution == "gpu_ane" &&
                           r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
@@ -221,12 +292,19 @@ ModelModule qwen21_module() {
                     "TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE accepts only 0 or 1");
             if (norm_rope && std::string_view(norm_rope) == "1") {
                 const char *paired = std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE");
+                // Reuse the same token-wise GPU kernel for long base sequences.
+                // Do not widen the separate LoRA/editing qualification here.
+                const bool base_1024 = r.width == 1024 && r.height == 1024 &&
+                    r.operation == "image.generate" && r.inputs.empty() && r.loras.empty() &&
+                    r.residency == "resident";
                 require((r.execution == "gpu" ||
-                         (r.execution == "gpu_ane" && r.qwen21_w8a8 && !r.qwen21_gpu_w8a16)) &&
+                         (r.execution == "gpu_ane" &&
+                          (r.qwen21_w8a8 || runtime_ane || (runtime_qkv && base_1024)) &&
+                          !r.qwen21_gpu_w8a16)) &&
                             r.allow_approximation &&
-                            r.width == 512 && r.height == 512 &&
+                            ((r.width == 512 && r.height == 512) || base_1024) &&
                             (!paired || std::string_view(paired) != "1"),
-                        "Qwen21 fused Q/K norm-RoPE needs explicit 512px GPU or W8A8 hybrid with BF16 GPU suffix, approximation opt-in and no paired RoPE flag");
+                        "Qwen21 fused Q/K norm-RoPE needs explicit 512px or resident 1024px base generation, GPU/W8A8/runtime FFN/QKV hybrid with BF16 GPU, approximation opt-in and no paired RoPE flag");
             }
             const char *reuse_flag = std::getenv("TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN");
             const char *hybrid_reuse = std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC");
@@ -240,14 +318,15 @@ ModelModule qwen21_module() {
             require(qwen21::binary_option_or_unset(hybrid_reuse_last16),
                     "TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_LAST16_FFN_DIAGNOSTIC accepts only 0 or 1");
             if (qwen21::option_enabled(hybrid_reuse_last16))
-                require(hybrid_edit_base && !r.qwen21_gpu_w8a16 &&
+                require(hybrid_edit_base && !gate_up_ane && !r.qwen21_gpu_w8a16 &&
                             !qwen21::option_enabled(hybrid_reuse) &&
                             !qwen21::option_enabled(reuse_flag),
                         "Qwen21 hybrid last-16 final FFN reuse needs 512px five-step W8A8 editing with last-16 tiled prefill, no LoRA or other final-step reuse");
             require(qwen21::binary_option_or_unset(hybrid_reuse),
                     "TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC accepts only 0 or 1");
             if (qwen21::option_enabled(hybrid_reuse))
-                require(hybrid_edit_base && !qwen21::option_enabled(reuse_flag),
+                require(hybrid_edit_base && !gate_up_ane &&
+                            !qwen21::option_enabled(reuse_flag),
                         "Qwen21 hybrid final-step FFN reuse needs five-step W8A8 512px editing, 1...3 resized-512 references, last-16 tiled prefill, and no GPU reuse/LoRA");
             require(qwen21::binary_option_or_unset(reuse_flag),
                     "TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN accepts only 0 or 1");
@@ -269,7 +348,8 @@ ModelModule qwen21_module() {
             require(qwen21::binary_option_or_unset(hybrid_half),
                     "Qwen21 hybrid penultimate FFN reuse accepts only 0 or 1");
             if (hybrid_half && std::string_view(hybrid_half) == "1")
-                require(hybrid_reuse_last16 && std::string_view(hybrid_reuse_last16) == "1" &&
+                require(!gate_up_ane && hybrid_reuse_last16 &&
+                            std::string_view(hybrid_reuse_last16) == "1" &&
                             (!half_reuse || std::string_view(half_reuse) != "1"),
                         "Qwen21 hybrid penultimate even FFN reuse requires last-16 final reuse and excludes GPU penultimate reuse");
             if (!r.loras.empty())
@@ -293,7 +373,7 @@ ModelModule qwen21_module() {
                     r.operation == "image.generate" && r.inputs.empty() &&
                     r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty();
                 const bool diagnostic_rectangle = qwen21::option_enabled(rect_flag);
-                const bool diagnostic_lora_base_ane = qwen21::option_enabled(lora_ane_flag);
+                const bool diagnostic_lora_base_ane = lora_base_ane;
                 // The Core ML FFN only sees the 512px output's 1024 decode
                 // tokens. Full-size references are cached as GPU prefix KV,
                 // so this tests their *actual* fidelity and prefill cost
@@ -313,7 +393,7 @@ ModelModule qwen21_module() {
                       (r.qwen21_gpu_full_ffn_blocks.empty() ||
                        r.qwen21_gpu_full_ffn_blocks == std::vector<int>{3, 5, 7})));
                 require(r.allow_approximation && !r.ane_manifest.empty() &&
-                            (diagnostic_t2i || diagnostic_rectangle || diagnostic_lora_base_ane ||
+                            (runtime_ane || runtime_qkv || diagnostic_t2i || diagnostic_rectangle || diagnostic_lora_base_ane ||
                              diagnostic_full_ref || supported_512),
                         "Qwen21 gpu_ane requires a validated 512px route; 1024px text-to-image, full-reference editing and 768x512/512x768 tiling are diagnostic-only");
             } else {
@@ -339,7 +419,7 @@ ModelModule qwen21_module() {
             d.inputs = {"text", "image"}; d.roles = {"reference"}; d.max_images = 10; d.output = "image";
             d.steps = 40; d.frames = 1; d.width = d.height = 1024; d.default_audio = false;
             d.supports_lora = true; d.runtime_lora = true;
-            d.lora_mode = "inference-time-viggle-v0.2.1-r256-only";
+            d.lora_mode = "inference-time-viggle-v0.2.1-r128/r256; alternate six-step adapters experimental in explicit lora_fused";
             d.lora_strategies = {"inference_time"}; d.default_lora_strategy = "inference_time";
             d.default_residency = "component_staged"; d.backend = "mlx_cpp_metal";
             d.supports_gpu_ane = true;

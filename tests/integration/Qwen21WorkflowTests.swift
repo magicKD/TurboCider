@@ -82,6 +82,7 @@ import ImageIO
         let savedANE = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(aneDraft))
         let savedRequest = try JSONDecoder().decode(NativeRequest.self, from: JSONEncoder().encode(aneRequest))
         try check(savedANE.acceleration?.qwen21W8A8 == true && savedRequest.qwen21_w8a8 == true &&
+                  aneRequest.hybrid_mlp_mode == "base_fused" && savedRequest.hybrid_mlp_mode == "base_fused" &&
                   aneRequest.residency == "component_staged" && aneRequest.allow_approximation == true,
                   "Low-memory ANE opt-in was not forwarded or persisted")
         for systemJSON in unsupportedHardware {
@@ -93,7 +94,8 @@ import ImageIO
             try check(rejected, "A migrated low-memory ANE draft bypassed the hardware gate")
             var ordinaryANE = savedANE; ordinaryANE.acceleration?.qwen21W8A8 = false
             let ordinaryRequest = try ordinaryANE.request(output: output, systemJSON: systemJSON)
-            try check(ordinaryRequest.execution == "gpu_ane" && ordinaryRequest.qwen21_w8a8 == nil,
+            try check(ordinaryRequest.execution == "gpu_ane" && ordinaryRequest.qwen21_w8a8 == nil &&
+                      ordinaryRequest.hybrid_mlp_mode == nil,
                       "Hardware gate disabled the existing ordinary Qwen ANE path")
         }
         let invalidANEChanges: [(inout StudioDraft) -> Void] = [
@@ -117,6 +119,17 @@ import ImageIO
         try check(reuseStudio.draft.acceleration?.qwen21W8A8 == true &&
                   (try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware)).qwen21_w8a8 == true,
                   "History reuse lost the ANE mode")
+        for oldMode in ["auto", "lora_fused", "lora_gate_up", "lora_suffix", "runtime", "runtime_qkv"] {
+            var historical = aneRequest; historical.hybrid_mlp_mode = oldMode
+            let restored = try JSONDecoder().decode(NativeRequest.self, from: JSONEncoder().encode(historical))
+            try check(restored.hybrid_mlp_mode == oldMode, "Native request roundtrip changed an existing MLP mode")
+            reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: restored,
+                state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+            let submitted = try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware)
+            try check(submitted.qwen21_w8a8 == true && submitted.hybrid_mlp_mode == "base_fused",
+                      "Low-memory ANE history retained an unqualified MLP mode")
+        }
+        try await verifyTurboAndEditing(root: root, fixture: fixture, assets: original)
         let expectedCanvases = [(2048, 2048), (2400, 1792), (1792, 2400),
                                 (2528, 1696), (1696, 2528), (2752, 1536), (1536, 2752)]
         try check(Qwen21CanvasPreset.recommended.count == expectedCanvases.count,
@@ -297,5 +310,138 @@ import ImageIO
         await studio.addFiles([fixture])
         try check(studio.draft.assets.count == 8, "Existing model overflow behavior changed")
         print("PASS Qwen21 ten-reference import/request contracts, annotation/mask rendering/orientation/alpha/copy/order/undo/limits, prompt examples (no inference quality)")
+    }
+
+    @MainActor static func verifyTurboAndEditing(root: URL, fixture: URL, assets: [StudioAsset]) async throws {
+        func check(_ condition: @autoclosure () throws -> Bool, _ reason: String) throws {
+            if try !condition() { throw NativeFailure(message: reason) }
+        }
+        func rejects(_ work: () throws -> Void, _ reason: String) throws {
+            do { try work() } catch { return }
+            throw NativeFailure(message: reason)
+        }
+        let studio = StudioState(directory: root.appendingPathComponent("turbo-state"))
+        studio.selectModel("qwen-image-2.1")
+        studio.draft.modelPaths[studio.draft.modelID] = root.path
+        studio.draft.assets = assets
+        let output = root.appendingPathComponent("turbo-unused.png")
+        for rank in [128, 256] {
+            let adapter = root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r\(rank).safetensors")
+            // Plans verify the request contract only, never load these bytes.
+            try Data([0]).write(to: adapter)
+            studio.draft.loras = [StudioLoRA(path: adapter.path, strength: 0.5, role: "text_encoder")]
+            studio.applyQwen21TurboPreset()
+            try check(studio.draft.steps == 6 && studio.draft.width == 512 && studio.draft.height == 512 &&
+                      studio.draft.loras[0].strength == 1 && studio.draft.loras[0].role == "transformer",
+                      "Qwen six-step preset failed for rank \(rank)")
+            studio.draft.operation = "image.generate"
+            studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane")
+            let text = try studio.draft.request(output: output)
+            try check(text.execution == "gpu" && text.ane_manifest == nil && text.profile == nil &&
+                      text.allow_approximation == true && text.lora_strategy == "inference_time" && text.inputs?.isEmpty != false,
+                      "Qwen Turbo request lost GPU/approximation/strategy or used stored inputs")
+            _ = try NativeEngine.plan(text)
+            studio.changeOperation("image.edit")
+            for count in 1...3 {
+                studio.draft.assets = Array(assets.prefix(count))
+                let edit = try studio.draft.request(output: output)
+                try check(edit.inputs?.map(\.path) == Array(assets.prefix(count)).map(\.path) &&
+                          edit.inputs?.allSatisfy { $0.role == "reference" && $0.strength == nil } == true,
+                          "Qwen Turbo lost ordered \(count)-reference editing inputs")
+                _ = try NativeEngine.plan(edit)
+            }
+            studio.draft.assets = Array(assets.prefix(4))
+            try rejects({ _ = try studio.draft.request(output: output) }, "Four-reference Turbo edit accepted")
+            studio.draft.assets = Array(assets.prefix(3))
+            studio.applyQwen21Example(.rgbaEdit)
+            try check(try studio.draft.request(output: output).steps == 6,
+                      "Applying a prompt example changed the active Turbo adapter to the base schedule")
+            studio.draft.loras[0].strength = 0.8
+            try rejects({ _ = try studio.draft.request(output: output) }, "Unsupported Turbo strength accepted")
+            studio.applyQwen21TurboPreset()
+            studio.draft.steps = 40
+            try rejects({ _ = try studio.draft.request(output: output) }, "Base schedule accepted for Turbo LoRA")
+            studio.applyQwen21TurboPreset()
+            studio.draft.loras.append(StudioLoRA(path: adapter.path))
+            try rejects({ _ = try studio.draft.request(output: output) }, "Multiple Turbo adapters accepted")
+            studio.draft.loras.removeLast()
+            let request = try studio.draft.request(output: output)
+            let job = NativeJob(id: UUID(), createdAt: Date(), request: request, state: "succeeded", phase: "complete",
+                                completed: 6, total: 6, elapsed: 1, modelPath: root.path)
+            studio.draft.streaming.selection = .tier20
+            studio.draft.ltxBackend = "cpp_mlx"; studio.draft.ltxAccelerationMode = "fast_approx"
+            studio.reuse(job)
+            let reused = try studio.draft.request(output: output)
+            try check(studio.draft.streaming.selection == .off && studio.draft.ltxBackend == "auto" &&
+                      studio.draft.ltxAccelerationMode == "quality" && reused.inputs?.map(\.path) == request.inputs?.map(\.path) &&
+                      reused.loras?.map(\.path) == request.loras?.map(\.path),
+                      "History reuse leaked streaming/LTX state or lost Qwen inputs/LoRA")
+            try check(studio.draft.assets.allSatisfy { $0.width == 64 && $0.height == 32 },
+                      "History reuse lost reference geometry needed for correctly aligned annotations")
+            studio.draft.loras[0].enabled = false
+            studio.draft.acceleration = StudioAcceleration(policy: "gpu")
+            let disabled = try studio.draft.request(output: output)
+            try check(disabled.loras == nil && disabled.allow_approximation != true && disabled.lora_strategy == "auto",
+                      "Disabled Turbo LoRA still changed the request")
+            studio.draft.loras = []
+            _ = try studio.draft.request(output: output)
+        }
+        var historyRequest = try studio.draft.request(output: output)
+        historyRequest.loras = [NativeLoRA(path: root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors").path)]
+        let historyJob = NativeJob(id: UUID(), createdAt: Date(), request: historyRequest, state: "succeeded", phase: "complete",
+                                   completed: 6, total: 6, elapsed: 1, modelPath: root.path)
+        studio.selectModel("flux2-klein-4b")
+        let fluxLoRA = StudioLoRA(path: fixture.path, strength: 0.6, enabled: false)
+        studio.draft.loras = [fluxLoRA]
+        studio.reuse(historyJob)
+        studio.selectModel("flux2-klein-4b")
+        try check(studio.draft.loras == [fluxLoRA], "History reuse discarded the outgoing model's LoRA selection")
+        studio.selectModel("qwen-image-2.1")
+        try check(studio.draft.loras.map(\.path) == historyRequest.loras?.map(\.path),
+                  "Switching models lost the adapter restored from history")
+        let streamed = NativeJob(id: UUID(), createdAt: Date(), request: NativeRequest(prompt: "streaming history", output: output.path),
+                                 state: "succeeded", phase: "complete", completed: 4, total: 4, elapsed: 1,
+                                 publicStreamingTargetBytes: 16 << 30)
+        studio.reuse(streamed)
+        try check(studio.draft.streaming.selection == .tier16 && studio.draft.streaming.userSelected &&
+                  studio.draft.streaming.status == "unknown" && studio.draft.streaming.requestDigest == nil,
+                  "History did not restore streaming intent without reusing old authority")
+        var ltxRequest = NativeRequest(prompt: "LTX history", output: output.path)
+        ltxRequest.model = "ltx-2.5-distilled"; ltxRequest.operation = "video.generate"
+        ltxRequest.steps = 11; ltxRequest.frames = 97; ltxRequest.fps = 24
+        ltxRequest.ltx_backend = "c_metal"; ltxRequest.ltx_fast_av = false
+        ltxRequest.ltx_sol_stage2 = true; ltxRequest.ltx_stage2_text_rows = 256
+        let ltxJob = NativeJob(id: UUID(), createdAt: Date(), request: ltxRequest, state: "succeeded", phase: "complete",
+                               completed: 11, total: 11, elapsed: 1)
+        studio.reuse(ltxJob)
+        try check(studio.draft.ltxBackend == "c_metal" && !studio.draft.ltxFastAV &&
+                  studio.draft.ltxAccelerationMode == "fast_approx", "History did not restore LTX execution controls")
+        studio.reuse(historyJob)
+        try check(studio.draft.streaming.selection == .off && studio.draft.ltxAccelerationMode == "quality",
+                  "Qwen history retained unrelated streaming/LTX execution controls")
+        studio.draft.loras = []
+        studio.draft.assets = assets
+        studio.useOnlyAssetForEditing(assets[2].id)
+        try check(studio.draft.modelID == "qwen-image-2.1" && studio.draft.operation == "image.edit" &&
+                  studio.draft.assets == [assets[2]], "Selecting one Qwen image switched to another model")
+        studio.undoAssetChange()
+        try check(studio.draft.assets == assets, "Selecting one Qwen image cannot restore references")
+        var resultRequest = try studio.draft.request(output: fixture)
+        resultRequest.operation = "image.generate"; resultRequest.inputs = []
+        let result = NativeJob(id: UUID(), createdAt: Date(), request: resultRequest, state: "succeeded", phase: "complete",
+                               completed: 6, total: 6, elapsed: 1, modelPath: root.path)
+        let imported = await studio.editResult(result)
+        try check(imported && studio.draft.modelID == "qwen-image-2.1" && studio.draft.operation == "image.edit" &&
+                  studio.draft.assets.count == 1 && studio.draft.assets[0].path != fixture.path,
+                  "Edit result failed with a full input tray or switched Qwen to FLUX")
+        try check(try Data(contentsOf: URL(fileURLWithPath: studio.draft.assets[0].path)) == Data(contentsOf: fixture),
+                  "Edit result changed source image bytes")
+        studio.undoAssetChange()
+        try check(studio.draft.assets == assets, "Edit result cannot restore old references")
+        var missingRequest = resultRequest; missingRequest.output = root.appendingPathComponent("missing-result.png").path
+        let missing = NativeJob(id: UUID(), createdAt: Date(), request: missingRequest, state: "succeeded", phase: "complete",
+                                completed: 6, total: 6, elapsed: 1)
+        let rejectedMissing = await studio.editResult(missing)
+        try check(!rejectedMissing && studio.draft.assets == assets, "Missing result changed the editing draft")
     }
 }

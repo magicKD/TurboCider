@@ -33,9 +33,10 @@ class HybridSession {
     std::string export_variant, tensor_layout;
     std::string activation_precision;
     std::string a8_graph, projected_weight_granularity;
-    int rows = 0, hidden = 0, block_count = 0;
+    int rows = 0, hidden = 0, output_channels = 0, block_count = 0;
     int minimum_profitable_rows = 0;
     int mlp_width = 0, ane_mlp_start = 0, ane_mlp_end = 0;
+    std::string mlp_output_kind;
     int image_only_token_rows = 0;
     bool has_channel_route = false;
     std::vector<std::vector<int>> gpu_channel_indices;
@@ -74,6 +75,9 @@ class HybridSession {
     void set_tokens(int tokens);
     // Typed sessions require fully padded contiguous FP16 [1,rows,hidden].
     Tensor predict(int block, const Tensor &input);
+    // Frozen-base fused FFN: pre-SiLU gate/up correction (zero for base);
+    // returns base down and the pre-down hidden for optional GPU LoRA down.
+    Tensor predict_with_lora(int block, const Tensor &input, const Tensor &gate_up_delta);
     bool runtime_available() const { return !runtime_failed; }
     void record_runtime_failure(int block);
     void record_quality(double relative_l2, double cosine, double max_abs,

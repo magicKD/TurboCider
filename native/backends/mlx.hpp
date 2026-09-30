@@ -93,6 +93,12 @@ class Weights {
     Tensor project_slice(const Tensor &, const std::string &, int row_start,
                          int row_end, int col_start, int col_end,
                          bool add_bias = true) const;
+    // Runtime adapter contribution only; Core ML supplies the frozen base
+    // gate/up projection. An optional output dtype allows the experimental
+    // Z-Image bridge to avoid BF16 rounding before its FP16 Core ML input.
+    Tensor lora_delta_slice(const Tensor &, const std::string &, int row_start,
+                            int row_end, int col_start, int col_end,
+                            std::optional<mx::Dtype> output_dtype = std::nullopt) const;
     Tensor project_range(const Tensor &, const std::string &, int row_start, int row_end,
                         int col_start, int col_end) const;
     void clear();

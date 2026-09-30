@@ -4,6 +4,8 @@
 #include "../../runtime/streaming/source_lease.hpp"
 #include "hybrid.hpp"
 #include "transformer.hpp"
+#include "../../backends/ane_ffn.hpp"
+#include "../../backends/ane_qkv.hpp"
 
 namespace tc::qwen21 {
 class Session final : public ModelSession {
@@ -38,6 +40,10 @@ class Session final : public ModelSession {
     std::unique_ptr<HybridSession> hybrid_;
     std::optional<streaming::SourceFileIdentity> hybrid_source_identity_;
     std::unique_ptr<HybridMLP> hybrid_mlp_;
+    std::unique_ptr<ane::HybridFfn> runtime_ffn_;
+    std::unique_ptr<ane::HybridQkv> runtime_qkv_;
+    std::string runtime_manifest_;
+    std::string qkv_manifest_;
     std::string hybrid_manifest_;
     std::string hybrid_runtime_options_;
     std::string active_lora_identity_;

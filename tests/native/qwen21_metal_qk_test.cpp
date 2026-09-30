@@ -7,7 +7,9 @@ int main() {
     try {
         tc::configure_streams();
         namespace mx = tc::mx;
-        for (int n : {17, 1024, 1048}) {
+        // Decode/prefill at 512px, 1/2/3-ref512, and 1024px base through
+        // its bounded 512-text-token prefill. Keep the same error threshold.
+        for (int n : {17, 1024, 1048, 2178, 3202, 4226, 4096, 4120, 4608}) {
             auto q = mx::astype(mx::random::normal({1, n, 4096}, mx::float32,
                                 mx::random::key(n)), mx::bfloat16);
             auto k = mx::astype(mx::random::normal({1, n, 4096}, mx::float32,

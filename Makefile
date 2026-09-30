@@ -5,13 +5,13 @@ PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),$(shell which python3 2>/dev/null
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-qwen21 test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
 .PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-catalog-builder test-streaming-source-identity test-streaming-source-lease test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults test-process-tree-sampler
+.PHONY: build-runtime-ane-probe test-runtime-ane test-runtime-ane-host test-acceleration-contract
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
 	@echo 'MLX_ROOT=/path/to/mlx make package  Build and create dist/TurboCider.app + dist/cli'
 	@echo 'make setup                       Install pinned, TurboCider-owned dependencies'
 	@echo 'make build                       Build engine, CLI, App and Swift tests'
-	@echo 'make package                      Build and create dist/TurboCider.app + dist/cli'
 	@echo 'make build-app                    Rebuild Swift UI after an engine build'
 	@echo 'make build-vision-quality         Build optional public-Vision quality helper'
 	@echo 'make test-app                     Run App behavior tests (macOS clipboard access)'
@@ -29,6 +29,10 @@ help:
 	@echo 'make test-ltx-streaming-lifecycle MODEL=/path OUTPUT=/path  Opt-in real LTX exact lifecycle test'
 	@echo 'make test-ltx-streaming-lifecycle-faults MODEL=/path OUTPUT=/path  Require a test-hook build and unsafe-cleanup matrix'
 	@echo 'make test-qwen21                 Run focused Qwen21 native/App contract checks (no inference)'
+	@echo 'make build-runtime-ane-probe      Build optional runtime-weight Core ML component probe (not CLI)'
+	@echo 'make test-acceleration-contract   Check optional routes, benchmark reports and host math (no inference)'
+	@echo 'make test-runtime-ane-host        Test scheduler/dense+affine conversion/geometry without Core ML'
+	@echo 'make test-runtime-ane             Test runtime-weight Core ML micrographs (small synthetic GPU/NE work)'
 	@echo 'make test-model MODEL=/path/to/FLUX.2-klein-4B OUTPUT=/tmp/new-tc-validation'
 	@echo 'make doctor                       Inspect this Mac and native dependencies'
 	@echo 'make h3-quant-cache MODEL=/path/to/transformer OUTPUT=/path/to/cache'
@@ -44,6 +48,7 @@ package: build
 	@tools/native/package.sh
 test:
 	@"$(PYTHON)" tests/native/test_qwen21_sequence.py
+	@$(MAKE) test-acceleration-contract
 	@"$(PYTHON)" tests/repository/test_layout.py
 	@"$(PYTHON)" tests/repository/test_independence.py
 	@"$(PYTHON)" tests/repository/test_cpp_boundaries.py
@@ -63,7 +68,6 @@ test:
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
 	@"$(PYTHON)" -B tests/native/test_z_image_sharded_checkpoint.py
 	@"$(PYTHON)" -B tests/native/test_z_image_smoothquant.py
-	@"$(PYTHON)" -B tests/native/test_cli_ane_override.py
 	@"$(PYTHON)" -B tests/native/test_z_image_w8a8_layers.py
 	@"$(PYTHON)" -B tests/native/test_z_image_w8a8_coreml.py
 	@"$(PYTHON)" -B tests/native/test_z_image_weight_stream.py
@@ -167,6 +171,22 @@ test-qwen21:
 	@build/native/qwen21-prompt-rewrite-test
 	@build/native/qwen35-sampling-test
 	@build/native/turbocider-qwen21-workflow-tests
+# Optional micrograph integration: build the native library first. Neither the
+# shipping build nor default tests require the Core ML Python SDK or graph artifacts.
+build-runtime-ane-probe:
+	@bash tools/native/build_ane_runtime_probe.sh
+# Keep no-inference contracts separate from opt-in GPU/Core ML micrographs.
+# CLI checks report SKIP if a native CLI has not been built.
+test-acceleration-contract: test-runtime-ane-host
+	@"$(PYTHON)" -B tests/native/test_ane_placement.py
+	@"$(PYTHON)" -B tests/native/test_runtime_ane_model_screen.py
+	@"$(PYTHON)" -B tests/native/test_runtime_ane_memory.py
+	@"$(PYTHON)" -B tests/native/test_runtime_lora_shared_graph_switch.py
+	@"$(PYTHON)" -B tests/native/test_cli_ane_override.py
+test-runtime-ane-host:
+	@"$(PYTHON)" -B tests/native/test_ane_runtime_host.py
+test-runtime-ane: test-runtime-ane-host
+	@TURBOCIDER_TEST_RUNTIME_ANE=1 "$(PYTHON)" -B tests/native/test_ane_runtime.py
 test-app:
 	@build/native/turbocider-image-transaction-tests
 	@build/native/turbocider-ltx-worker-tests

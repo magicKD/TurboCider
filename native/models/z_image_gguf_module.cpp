@@ -28,6 +28,19 @@ ModelModule z_image_gguf_module() {
             require(r.execution == "gpu" || r.execution == "auto" ||
                         r.execution == "gpu_ane",
                     "Z-Image GGUF execution must be gpu, auto or gpu_ane");
+            require(r.hybrid_mlp_mode == "auto" || r.hybrid_mlp_mode == "base_fused" ||
+                        r.hybrid_mlp_mode == "lora_merged" || r.hybrid_mlp_mode == "runtime",
+                    "unsupported Z-Image GGUF hybrid_mlp_mode");
+            if (r.hybrid_mlp_mode == "runtime")
+                require(r.execution == "gpu_ane" && r.allow_approximation &&
+                            !r.ane_manifest.empty() && r.loras.empty() &&
+                            r.encoder_ane_manifest.empty(),
+                        "Z-Image GGUF runtime-weight FFN requires explicit base-only GPU/ANE and no encoder ANE");
+            else if (r.hybrid_mlp_mode != "auto")
+                require(r.execution == "gpu_ane" && r.allow_approximation && !r.ane_manifest.empty() &&
+                            (r.hybrid_mlp_mode == "base_fused" ? r.loras.empty() :
+                             (!r.loras.empty() && r.lora_strategy == "in_memory_merge")),
+                        "Z-Image GGUF explicit frozen hybrid needs a matching base or merged-adapter request");
             if (r.execution == "gpu_ane")
                 require(r.allow_approximation,
                         "Z-Image GGUF GPU+ANE requires allow_approximation=true");
@@ -76,8 +89,9 @@ ModelModule z_image_gguf_module() {
                 "in_memory_merge requires a native-compatible Q8_0/Q4_0/Q4_1 or floating GGUF checkpoint",
                 "inference_time uses the native packed low-rank branch",
                 "streaming residency is not yet supported by the native MLX GGUF executor",
-                "GPU+ANE remains explicit until checkpoint-bound artifacts pass paired performance and quality gates",
-                "quality and speed gates require the downloaded Q4 checkpoint and paired reference run"
+                "frozen GPU+ANE uses checkpoint-bound artifacts; runtime-weight FFN uses shape-bound artifacts",
+                "runtime-weight FFN is explicit, base-only, resident, without encoder ANE; packed GPU projections stay native",
+                "Q4/Q8 runtime quality and speed require separate paired whole-model qualification"
             };
             return d;
         }};

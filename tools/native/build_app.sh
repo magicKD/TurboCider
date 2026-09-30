@@ -36,6 +36,7 @@ STATE+=(apps/macos/VideoPreview.swift)
 STATE+=(apps/macos/HistorySelection.swift apps/macos/ImageUpscaler.swift)
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/Qwen21AppTests.swift -o "$OUT/turbocider-qwen21-app-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/Qwen21WorkflowTests.swift -o "$OUT/turbocider-qwen21-workflow-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/Qwen21GPUAcceptance.swift -o "$OUT/turbocider-qwen21-gpu-acceptance"
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" services/model-library/main.swift -o "$OUT/turbocider-library"
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/LibraryStoreTests.swift -o "$OUT/turbocider-library-store-tests"
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/HubClientTests.swift -o "$OUT/turbocider-hub-tests"
@@ -46,7 +47,6 @@ STATE+=(apps/macos/HistorySelection.swift apps/macos/ImageUpscaler.swift)
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/HistoryManagementTests.swift tests/integration/PublicImageJobTests.swift -o "$OUT/turbocider-history-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/AppSmoke.swift -o "$OUT/turbocider-app-smoke"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/LifecycleTest.swift -o "$OUT/turbocider-lifecycle-test"
-printf 'Built Swift App and integration tests\n'
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/StudioModelTests.swift -o "$OUT/turbocider-studio-model-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/EndToEndBenchmark.swift -o "$OUT/turbocider-e2e-benchmark"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ZImageAppTests.swift -o "$OUT/turbocider-z-image-app-tests"
@@ -71,10 +71,10 @@ printf 'Built Swift App and integration tests\n'
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift tests/integration/WorkerTerminalEnvelopeTests.swift -o "$OUT/turbocider-worker-terminal-tests"
 
 "$TOOLCHAIN/clang" -isysroot "$SDK" -mmacosx-version-min="$DEPLOYMENT_TARGET" -Wall -Wextra -Werror tests/integration/native_process_fixture.c -o "$OUT/turbocider-process-fixture"
-"$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -parse-as-library apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift tests/integration/NativeProcessRunnerTests.swift -o "$OUT/turbocider-process-runner-tests"
+"$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift tests/integration/NativeProcessRunnerTests.swift -o "$OUT/turbocider-process-runner-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift tests/integration/NativeProcessWorkerTests.swift -o "$OUT/turbocider-process-worker-tests"
 
-"$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -parse-as-library apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift tests/integration/WorkerLaunchAdmissionTests.swift -o "$OUT/turbocider-worker-admission-tests"
+"$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift tests/integration/WorkerLaunchAdmissionTests.swift -o "$OUT/turbocider-worker-admission-tests"
 
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/PublicImageAppModelTests.swift -o "$OUT/turbocider-public-image-app-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/PublicImageStreamingSmoke.swift -o "$OUT/turbocider-public-streaming-smoke"
@@ -83,3 +83,4 @@ printf 'Built Swift App and integration tests\n'
 
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ImageUpscalerTests.swift -o "$OUT/turbocider-upscaler-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/ImageUpscaler.swift tests/integration/UpscaleComputeBenchmark.swift -o "$OUT/turbocider-upscale-benchmark"
+printf 'Built Swift App and integration tests\n'

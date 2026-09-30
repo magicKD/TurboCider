@@ -24,13 +24,35 @@ ModelModule z_image_module() {
             require(r.width % 16 == 0 && r.height % 16 == 0,
                     "Z-Image dimensions must be multiples of 16");
             require(r.steps >= 1 && r.steps <= 50,
-                    "Z-Image-Turbo steps must be 1...50 (default 8)");
+                    "Z-Image-Turbo steps must be 1...50 (default 9)");
+            require(r.hybrid_mlp_mode == "auto" || r.hybrid_mlp_mode == "base_fused" ||
+                        r.hybrid_mlp_mode == "lora_merged" || r.hybrid_mlp_mode == "lora_suffix" ||
+                        r.hybrid_mlp_mode == "lora_fused" || r.hybrid_mlp_mode == "runtime",
+                    "unsupported Z-Image hybrid_mlp_mode");
+            if (r.hybrid_mlp_mode == "runtime")
+                require(r.execution == "gpu_ane" && r.allow_approximation &&
+                            !r.ane_manifest.empty() &&
+                            (r.loras.empty() || r.lora_strategy == "inference_time") &&
+                            r.residency == "resident" && r.encoder_ane_manifest.empty(),
+                        "Z-Image runtime-weight FFN requires explicit resident GPU/ANE, unmerged runtime LoRA and no encoder ANE");
+            if (r.hybrid_mlp_mode != "auto" && r.hybrid_mlp_mode != "runtime")
+                require(r.execution == "gpu_ane" && r.allow_approximation &&
+                            !r.ane_manifest.empty() &&
+                            (r.hybrid_mlp_mode == "base_fused" ? r.loras.empty() :
+                             (r.hybrid_mlp_mode == "lora_merged" ?
+                                (!r.loras.empty() && r.lora_strategy == "in_memory_merge") :
+                                (((r.hybrid_mlp_mode == "lora_fused" && r.loras.empty()) ||
+                                  (!r.loras.empty() && r.lora_strategy == "inference_time")) &&
+                                 r.residency == "resident" && r.width == 512 &&
+                                 r.height == 512 && r.steps == 8))),
+                        "Z-Image explicit hybrid needs a matching base, merged-adapter, or resident 512px eight-step runtime LoRA request");
             require(r.model_variant == "auto" || r.model_variant == "z-image-turbo",
                     "model_variant does not match Z-Image-Turbo");
             if (r.execution == "gpu_ane") {
                 require(r.allow_approximation,
                         "Z-Image GPU+ANE requires allow_approximation=true");
-                if (!r.loras.empty())
+                if (!r.loras.empty() && r.hybrid_mlp_mode != "lora_suffix" &&
+                    r.hybrid_mlp_mode != "lora_fused" && r.hybrid_mlp_mode != "runtime")
                     require(r.lora_strategy == "in_memory_merge",
                             "Z-Image GPU+ANE LoRA requires lora_strategy=in_memory_merge");
             }
@@ -84,10 +106,10 @@ ModelModule z_image_module() {
             d.candidate_limitations = {
                 "text-to-image only",
                 "streamed residency is experimental: Comfy BF16, explicit GPU, no LoRA; INT8 ConvRot streaming, multi-layer prefetch and GPU+ANE compact suffix streaming require Apple M5 Pro with exactly 24 GiB",
-                "inference_time LoRA is an explicit GPU path and is not yet performance-qualified",
+                "inference_time LoRA defaults to GPU; the explicit 4096-channel frozen-base GPU/Core ML graph has a measured 512px eight-step speedup for one adapter, not a general quality or hardware guarantee",
                 "automatic GPU+ANE is limited to the base model on Apple M4 Max 64 GB with the measured 4096-channel 32-block manifest",
                 "the repeated warm 1024x1024 base workload measured about 1.21x end-to-end versus the optimized GPU path",
-                "LoRA GPU+ANE remains explicit and requires an artifact bound to the exact adapter path, content, role and strength"
+                "merged LoRA GPU+ANE requires an artifact bound to the exact adapter; lora_suffix omits ANE-prefix LoRA; explicit lora_fused reuses one base-only graph with zero deltas for base and runtime pre-SiLU/down-LoRA corrections for adapters (experimental)"
             };
             return d;
         },

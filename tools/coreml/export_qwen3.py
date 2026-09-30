@@ -343,6 +343,10 @@ def main():
                         default="per_channel", help="research-only W8 gate/up weight layout")
     parser.add_argument("--tap-hidden", action="store_true",
                         help="research-only output after SwiGLU/optional hidden A8; excludes down projection")
+    parser.add_argument("--qwen21-gate-up-only", action="store_true",
+                        help="Qwen21 LoRA-compatible W8A8 gate/up GEMM; host applies LoRA, SiLU and down projection")
+    parser.add_argument("--qwen21-fused-lora", action="store_true",
+                        help="experimental complete fused W8A8 FFN with runtime pre-SiLU LoRA input and hidden tap")
     parser.add_argument("--down-op", choices=["conv", "linear"], default="conv",
                         help="research-only Core ML down-projection lowering")
     parser.add_argument("--output-scale", type=float, default=1.0,
@@ -423,6 +427,24 @@ def main():
                             args.ane_mlp_width != args.hidden or
                             len(buckets) != 1):
         raise ValueError("hidden tap requires a single fixed-shape Qwen21 A8 layer and matching width")
+    if args.qwen21_gate_up_only and (args.tensor_layout != "qwen21" or
+                                    args.activation_precision != "int8" or
+                                    args.variant != "int8_pc" or
+                                    args.a8_boundary != "input" or
+                                    args.tap_hidden or args.down_op != "conv" or
+                                    args.down_weight_granularity != "per_channel" or
+                                    args.ane_mlp_width != 6144 or buckets != [1024] or
+                                    args.output_scale != 1):
+        raise ValueError("Qwen21 LoRA gate/up requires fixed 1024-row 6144-channel W8A8 input-only graph")
+    if args.qwen21_fused_lora and (args.qwen21_gate_up_only or args.tap_hidden or
+                                  args.tensor_layout != "qwen21" or args.layer_count > 32 or
+                                  args.activation_precision != "int8" or
+                                  args.variant != "int8_pc" or args.a8_boundary != "both" or
+                                  args.projected_weight_granularity != "per_tensor" or
+                                  args.down_op not in ("conv", "linear") or
+                                  args.ane_mlp_width not in (4096, 6144, 8192) or
+                                  buckets != [1024] or args.output_scale != 1):
+        raise ValueError("fused Qwen21 runtime LoRA needs fixed 1024-row, 4096/6144/8192-channel dual-A8 FFN")
     if args.down_op != "conv" and (args.activation_precision != "int8" or len(buckets) != 1):
         raise ValueError("linear down projection requires fixed-shape Qwen21 A8 calibration")
 
@@ -462,10 +484,12 @@ def main():
             "mlp_width": args.mlp_width,
             "ane_mlp_start": 0,
             "ane_mlp_end": args.ane_mlp_width,
+            **({"mlp_output_kind": "gate_up"} if args.qwen21_gate_up_only else {}),
+            **({"mlp_output_kind": "fused_lora"} if args.qwen21_fused_lora else {}),
             "output_scale": args.output_scale,
             "variant": args.variant,
             **({"activation_precision": "int8", "calibration_sha256": calibration,
-                "sq_alpha1": args.sq_alpha1, "sq_alpha2": args.sq_alpha2,
+                "sq_alpha1": args.sq_alpha1, "sq_alpha2": (0.0 if args.qwen21_gate_up_only else args.sq_alpha2),
                 "activation_scale": args.activation_scale, "a8_graph": "sq_v1_" + args.a8_boundary}
                if calibration else {}),
             **({"down_weight_granularity": args.down_weight_granularity}
@@ -523,15 +547,21 @@ def main():
                                                             buckets[0], args.hidden, np)
                         if digest != calibration[str(layer)]:
                             raise ValueError("Qwen21 calibration changed during export")
-                        gate, up, down, s1, _ = smooth_partial_ffn(
+                        gate, up, down, s1, s2 = smooth_partial_ffn(
                             gate[:width], up[:width], down[:, :width], samples,
-                            args.sq_alpha1, args.sq_alpha2, np)
+                            args.sq_alpha1, 0.0 if args.qwen21_gate_up_only else args.sq_alpha2, np)
+                        if args.qwen21_gate_up_only:
+                            # Only the input-channel rescale is legal across the
+                            # Core ML/GPU boundary. Undo the hidden-channel
+                            # rescale: the host uses the original BF16 down
+                            # matrix and injects LoRA before SiLU.
+                            up = up * s2[:, None]
                         inverse_s1 = np.ascontiguousarray(
                             (1 / s1).astype(np.float16).reshape(1, args.hidden, 1, 1))
                         maximum = max(float(np.max(np.abs(sample / s1))) for sample in samples)
                         input_a8_scale = np.float16(max(maximum / 127, 1e-6))
                         search = []
-                        if args.a8_boundary != "input":
+                        if args.a8_boundary != "input" and not args.qwen21_gate_up_only:
                             # Uniformly amplifying the hidden activation and
                             # shrinking down weights is algebraically exact.
                             # Search at scale>=1, then transform the chosen
@@ -566,9 +596,7 @@ def main():
                             default=(1, args.hidden, 1, buckets[0]))
                         convert_inputs["inputs"] = [
                             ct.TensorType(name="x", shape=shape, dtype=np.float16)]
-                    @mb.program(input_specs=[mb.TensorSpec(shape=(1, args.hidden, 1, rows), dtype=types.fp16)],
-                                opset_version=ct.target.macOS15)
-                    def branch(x):
+                    def branch_impl(x, lora_gate_up=None):
                         projected_input = x
                         if inverse_s1 is not None:
                             projected_input = mb.mul(x=x, y=inverse_s1, name="smooth_input")
@@ -578,13 +606,28 @@ def main():
                                 projected_input = mb.dequantize(input=quantized, scale=input_a8_scale,
                                                                  name="a8_input_dequantized")
                         projected = mb.conv(x=projected_input, weight=first, pad_type="valid", name="projected")
+                        if args.qwen21_gate_up_only:
+                            return mb.reshape(x=projected, shape=(1, 2 * width, 1, rows), name="y")
                         gate_value, up_value = mb.split(x=projected, num_splits=2, axis=1)
+                        if lora_gate_up is not None:
+                            gate_delta, up_delta = mb.split(x=lora_gate_up, num_splits=2, axis=1)
+                            gate_value = mb.add(x=gate_value, y=gate_delta, name="lora_gate")
+                            up_delta = mb.mul(x=up_delta,
+                                              y=np.ascontiguousarray((1 / s2).astype(np.float16).reshape(1, width, 1, 1)),
+                                              name="lora_up_rescale")
+                            up_value = mb.add(x=up_value, y=up_delta, name="lora_up")
                         activation = mb.silu(x=gate_value)
                         if hidden_a8_scale is not None:
                             reciprocal = np.float16(1 / args.activation_scale)
                             activation = mb.mul(x=activation, y=reciprocal)
                             up_value = mb.mul(x=up_value, y=reciprocal)
                         activation = mb.mul(x=activation, y=up_value)
+                        if lora_gate_up is not None:
+                            # The down LoRA consumes the *pre*-A8 SwiGLU value.
+                            # Undo SmoothQuant's hidden scale for the GPU tap.
+                            hidden = mb.mul(x=activation,
+                                y=np.ascontiguousarray((s2 * args.activation_scale ** 2).astype(np.float16).reshape(1, width, 1, 1)),
+                                name="lora_hidden_unscale")
                         if hidden_a8_scale is not None:
                             quantized = mb.quantize(input=activation, scale=hidden_a8_scale,
                                                      output_dtype="int8", name="a8_hidden")
@@ -600,11 +643,32 @@ def main():
                             tokens = mb.reshape(
                                 x=mb.transpose(x=activation, perm=[0, 3, 2, 1]),
                                 shape=(rows, width))
-                            projected = mb.linear(x=tokens, weight=last[:, :, 0, 0], name="down_linear")
-                            return mb.transpose(
+                            projected = mb.linear(x=tokens, weight=last[:, :, 0, 0],
+                                                  name="base_down" if lora_gate_up is not None else "down_linear")
+                            output = mb.transpose(
                                 x=mb.reshape(x=projected, shape=(1, rows, 1, args.hidden)),
-                                perm=[0, 3, 2, 1], name="y")
+                                perm=[0, 3, 2, 1],
+                                name="base_down_4d" if lora_gate_up is not None else "y")
+                            if lora_gate_up is not None:
+                                return mb.concat(values=[output, hidden], axis=1, name="y")
+                            return output
+                        if lora_gate_up is not None:
+                            output = mb.conv(x=activation, weight=last, pad_type="valid", name="base_down")
+                            return mb.concat(values=[output, hidden], axis=1, name="y")
                         return mb.conv(x=activation, weight=last, pad_type="valid", name="y")
+
+                    if args.qwen21_fused_lora:
+                        @mb.program(input_specs=[
+                            mb.TensorSpec(shape=(1, args.hidden, 1, rows), dtype=types.fp16),
+                            mb.TensorSpec(shape=(1, 2 * width, 1, rows), dtype=types.fp16)],
+                            opset_version=ct.target.macOS15)
+                        def branch(x, lora_gate_up):
+                            return branch_impl(x, lora_gate_up)
+                    else:
+                        @mb.program(input_specs=[mb.TensorSpec(shape=(1, args.hidden, 1, rows), dtype=types.fp16)],
+                                    opset_version=ct.target.macOS15)
+                        def branch(x):
+                            return branch_impl(x)
 
                     model = ct.convert(branch, convert_to="mlprogram",
                                        minimum_deployment_target=ct.target.macOS15,
@@ -620,7 +684,7 @@ def main():
                                             mode="linear_symmetric", dtype="int8",
                                             granularity=args.projected_weight_granularity,
                                             block_size=32, weight_threshold=0))
-                        down_w8 = (None if args.tap_hidden else
+                        down_w8 = (None if args.tap_hidden or args.qwen21_gate_up_only else
                                    w8 if args.down_weight_granularity == "per_channel" else
                                    None if args.down_weight_granularity == "fp16" else
                                    optimize.OpLinearQuantizerConfig(
@@ -631,13 +695,15 @@ def main():
                             op_name_configs={**({"projected": projected_w8}
                                                if args.projected_weight_precision == "int8" else {}),
                                              **({} if down_w8 is None else {
+                                                 "base_down" if args.qwen21_fused_lora else
                                                  "down_linear" if args.down_op == "linear" else "y": down_w8})})
                             if calibration else optimize.OptimizationConfig(global_config=w8))
                         compressed = optimize.linear_quantize_weights(model, quantizer)
-                    if calibration and args.a8_boundary == "both":
+                    if calibration and (args.a8_boundary == "both" or args.qwen21_gate_up_only):
                         expected_w8 = tuple(
                             (["projected"] if args.projected_weight_precision == "int8" else []) +
-                            (["down_linear" if args.down_op == "linear" else "y"]
+                            (["base_down" if args.qwen21_fused_lora else
+                              "down_linear" if args.down_op == "linear" else "y"]
                              if down_w8 is not None else []))
                         if expected_w8:
                             verify_w8a8(compressed.get_spec(), expected_w8)
@@ -673,6 +739,9 @@ def main():
             "source": {**provenance, "blocks": list(range(args.layer_count))},
             "shape": {"K": args.hidden, "N": args.hidden, "mlp_width": args.mlp_width,
                       "ane_mlp_start": 0, "ane_mlp_end": args.ane_mlp_width,
+                      **({"output_channels": (args.hidden + args.ane_mlp_width if args.qwen21_fused_lora
+                                              else 2 * args.ane_mlp_width)}
+                         if args.qwen21_gate_up_only or args.qwen21_fused_lora else {}),
                       "output_scale": args.output_scale,
                       "buckets": buckets,
                       **({"minimum_profitable_rows": minimum_profitable_rows}
