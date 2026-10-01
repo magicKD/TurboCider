@@ -162,3 +162,10 @@ SourceLease/managed ledger/slots已接到Z真实Q8/Q4生成。实际通过与失
 BF16→FP16浮点加载差异、明确compat profiles、取消重试及限制见
 [13](13-gguf-bounded-runtime-progress.md)。没有完整R1发布资格，没有新增production
 catalog、W8A8或ANE资格；发行库/CLI/App未替换。
+
+## 10. GGUF/ConvRot ANE staging 与 W8A8 筛选（2026-10-01）
+
+实际 API、bounded conversion workers、CPU SIMD整投影回执、公开CoreML同图换权、
+完整gate QDQ筛选与K-tile负例、既有ANE/真实Z回归见
+[14](14-packed-ane-staging-and-w8a8-screen.md)。只交付其明确列出的组件/研究增量，
+没有硬件INT8或新增GGUF+ANE整图资格，没有替换发行库或放宽生产门禁。

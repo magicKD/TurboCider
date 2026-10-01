@@ -40,6 +40,9 @@ class RuntimeHostTests(unittest.TestCase):
     def test_affine_q4_q8_layout_metadata_bounds_and_headroom(self):
         self.run_host_test("ane_runtime_quant_test")
 
+    def test_raw_gguf_convrot_no_dense_temporary_bounds_and_headroom(self):
+        self.run_host_test("ane_runtime_packed_test", ("native/core/gguf_decode.cpp",))
+
     def test_projection_layout_and_validation(self):
         spec = EXPORT.geometry("swiglu", 32, 64, 96, 33, 47)
         self.assertEqual(spec["inputs"], {"x": [32, 64], "wg": [96, 64],

@@ -36,8 +36,9 @@ struct MatrixView {
 };
 
 // MLX affine codes, not raw GGUF blocks: unsigned low-bit-first uint32 words,
-// logical [out,in], value = scale[group] * code + offset[group]. A GGUF loader
-// must first expose its native MLX representation. ConvRot/NVFP4 are different
+// logical [out,in], value = scale[group] * code + offset[group]. Legacy MLX
+// GGUF imports expose this representation; raw blocks instead use GgufView.
+// ConvRot/NVFP4 are different
 // formats and must never be passed as affine. All buffers are borrowed.
 struct AffineView {
     const void *data = nullptr;
@@ -48,7 +49,25 @@ struct AffineView {
     MatrixView scales;
     std::optional<MatrixView> offsets;
 };
-using WeightView = std::variant<MatrixView, AffineView>;
+// Raw on-disk GGML blocks, not MLX affine. Callers retain immutable packed
+// buffers through wait_stage/finish; no intermediate full dense matrix.
+struct GgufView {
+    const void *data = nullptr;
+    size_t bytes = 0;
+    int rows = 0, cols = 0;
+    size_t row_stride_bytes = 0;
+    uint32_t ggml_type = 8;
+};
+// Original signed rotated codes and FP32 row scales. The staging recipe is
+// effective W = diag(scale) * codes * Comfy H256^T; it does not requantize W.
+struct ConvrotView {
+    const int8_t *data = nullptr;
+    size_t bytes = 0;
+    int rows = 0, cols = 0;
+    size_t row_stride_bytes = 0;
+    MatrixView row_scales;
+};
+using WeightView = std::variant<MatrixView, AffineView, GgufView, ConvrotView>;
 
 struct GraphShape {
     Kind kind = Kind::SwiGLU;

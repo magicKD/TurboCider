@@ -1,0 +1,590 @@
+{
+  "raw_receipt_sha256": "7ba78fdaab3594f148000e6da0f3cec3ba8a193a55d4420287e0f669c4e87a4a",
+  "receipt": {
+    "schema": "tc-convrot-cpu-staging-screen-v1",
+    "scope": "serial CPU conversion only",
+    "recipe": "convrot-integer-h256-source-f32-scale-headroom-f16-rne-v1",
+    "time_utc": "2026-10-01T00:46:29.031196+00:00",
+    "os": "macOS-26.6.2-arm64-arm-64bit",
+    "hardware": "Apple M4 Max",
+    "binary_sha256": "a67acfa85e7bb08a33204d97ff9f76b82d2ab3e27ab23806367114ed1a8143c0",
+    "compiler_command": [
+      "clang++",
+      "-std=c++20",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-ffp-contract=off",
+      "-dynamiclib",
+      "tools/native/ane_packed_staging_probe.cpp",
+      "native/core/gguf_decode.cpp",
+      "-o",
+      "<temporary-probe>"
+    ],
+    "source_sha256": {
+      "native/backends/ane_runtime_packed.hpp": "6001c49204899db347cc40c6bc195b708ac6d74bd3426fb03e091e86b0be5b5f",
+      "native/backends/ane_runtime_convert.hpp": "117e5b6d1d5aaf3c1299c6d4694acfebc0048328e29090d1fb78b867de8a3e65",
+      "native/core/gguf_decode.cpp": "c582ba4a85fcecc9580da4cce3cf4616c6dc88b8fa3504c7f92981d8660e9400",
+      "tools/native/ane_packed_staging_probe.cpp": "6f71fa65e61d28abdb24f0cb278d769602e4fdcc73dd846549842a85f770d5a1",
+      "tools/native/benchmark_convrot_staging.py": "cfd639bd84c0efaf9f061dce79fc5a647cd45b7cecf9178ed6c425cc271bf7f7",
+      "tools/validation/run_runtime_w8a8_proof.py": "d6ef1acc3b242f1f3e918e3255ec3bfb37446ae2913975eb6251e8a4768ce7ab",
+      "tools/validation/convrot_w8a8_math.py": "b7cc9043637aa3e2747256d07976fe8700eb80dd4a9d2eade211b05d6ab8d743"
+    },
+    "excludes": [
+      "checkpoint I/O",
+      "allocation",
+      "IOSurface",
+      "Core ML prediction",
+      "GPU/ANE fork/join",
+      "model/media quality",
+      "whole-request memory qualification"
+    ],
+    "projections": [
+      {
+        "source": {
+          "kind": "real_convrot_projection_slice",
+          "tensor": "layers.0.feed_forward.w1.weight",
+          "slice_rows": 10240,
+          "weight_sha256": "7719089bde309d54523d1c8a888a869967175639c4071cc3fdd4d3213a523aac",
+          "scale_sha256": "5a7c13f3f2353f84081d3248dd0570bc75cce17a5ea6691ff2f5e55ef4b942bc",
+          "checkpoint_content_sha256": null
+        },
+        "shape": [
+          10240,
+          3840
+        ],
+        "headroom": 1,
+        "warmups_per_arm": 3,
+        "samples": [
+          {
+            "iteration": 0,
+            "arm": "scalar",
+            "seconds": 0.06246775001636706
+          },
+          {
+            "iteration": 0,
+            "arm": "simd",
+            "seconds": 0.012862082978244871
+          },
+          {
+            "iteration": 1,
+            "arm": "simd",
+            "seconds": 0.012872916995547712
+          },
+          {
+            "iteration": 1,
+            "arm": "scalar",
+            "seconds": 0.06251662501017563
+          },
+          {
+            "iteration": 2,
+            "arm": "simd",
+            "seconds": 0.012838416994782165
+          },
+          {
+            "iteration": 2,
+            "arm": "scalar",
+            "seconds": 0.06285945800482295
+          },
+          {
+            "iteration": 3,
+            "arm": "scalar",
+            "seconds": 0.06268233401351608
+          },
+          {
+            "iteration": 3,
+            "arm": "simd",
+            "seconds": 0.0128897909889929
+          },
+          {
+            "iteration": 4,
+            "arm": "scalar",
+            "seconds": 0.06267841599765234
+          },
+          {
+            "iteration": 4,
+            "arm": "simd",
+            "seconds": 0.012887457996839657
+          },
+          {
+            "iteration": 5,
+            "arm": "simd",
+            "seconds": 0.012904292001621798
+          },
+          {
+            "iteration": 5,
+            "arm": "scalar",
+            "seconds": 0.06246583300526254
+          },
+          {
+            "iteration": 6,
+            "arm": "simd",
+            "seconds": 0.012871457991423085
+          },
+          {
+            "iteration": 6,
+            "arm": "scalar",
+            "seconds": 0.06255425000563264
+          },
+          {
+            "iteration": 7,
+            "arm": "scalar",
+            "seconds": 0.06254891699063592
+          },
+          {
+            "iteration": 7,
+            "arm": "simd",
+            "seconds": 0.01289241699851118
+          },
+          {
+            "iteration": 8,
+            "arm": "scalar",
+            "seconds": 0.06243529199855402
+          },
+          {
+            "iteration": 8,
+            "arm": "simd",
+            "seconds": 0.012894916988443583
+          },
+          {
+            "iteration": 9,
+            "arm": "simd",
+            "seconds": 0.013064291008049622
+          },
+          {
+            "iteration": 9,
+            "arm": "scalar",
+            "seconds": 0.06253299998934381
+          },
+          {
+            "iteration": 10,
+            "arm": "simd",
+            "seconds": 0.01295933302026242
+          },
+          {
+            "iteration": 10,
+            "arm": "scalar",
+            "seconds": 0.06254229202750139
+          },
+          {
+            "iteration": 11,
+            "arm": "scalar",
+            "seconds": 0.06241108299582265
+          },
+          {
+            "iteration": 11,
+            "arm": "simd",
+            "seconds": 0.012983374996110797
+          },
+          {
+            "iteration": 12,
+            "arm": "scalar",
+            "seconds": 0.06268279100186191
+          },
+          {
+            "iteration": 12,
+            "arm": "simd",
+            "seconds": 0.013008042005822062
+          },
+          {
+            "iteration": 13,
+            "arm": "simd",
+            "seconds": 0.013048082997556776
+          },
+          {
+            "iteration": 13,
+            "arm": "scalar",
+            "seconds": 0.06291450001299381
+          },
+          {
+            "iteration": 14,
+            "arm": "simd",
+            "seconds": 0.012876791995950043
+          },
+          {
+            "iteration": 14,
+            "arm": "scalar",
+            "seconds": 0.06255041700205766
+          },
+          {
+            "iteration": 15,
+            "arm": "scalar",
+            "seconds": 0.0630682920163963
+          },
+          {
+            "iteration": 15,
+            "arm": "simd",
+            "seconds": 0.012963542016223073
+          },
+          {
+            "iteration": 16,
+            "arm": "scalar",
+            "seconds": 0.0629493750166148
+          },
+          {
+            "iteration": 16,
+            "arm": "simd",
+            "seconds": 0.012938875006511807
+          },
+          {
+            "iteration": 17,
+            "arm": "simd",
+            "seconds": 0.013007250003283843
+          },
+          {
+            "iteration": 17,
+            "arm": "scalar",
+            "seconds": 0.06248683400917798
+          },
+          {
+            "iteration": 18,
+            "arm": "simd",
+            "seconds": 0.012963457993464544
+          },
+          {
+            "iteration": 18,
+            "arm": "scalar",
+            "seconds": 0.06262791599147022
+          },
+          {
+            "iteration": 19,
+            "arm": "scalar",
+            "seconds": 0.06260520900832489
+          },
+          {
+            "iteration": 19,
+            "arm": "simd",
+            "seconds": 0.012970040988875553
+          },
+          {
+            "iteration": 20,
+            "arm": "scalar",
+            "seconds": 0.06284858399885707
+          },
+          {
+            "iteration": 20,
+            "arm": "simd",
+            "seconds": 0.012891999998828396
+          },
+          {
+            "iteration": 21,
+            "arm": "simd",
+            "seconds": 0.013040416990406811
+          },
+          {
+            "iteration": 21,
+            "arm": "scalar",
+            "seconds": 0.06253433300298639
+          },
+          {
+            "iteration": 22,
+            "arm": "simd",
+            "seconds": 0.013057333009783179
+          },
+          {
+            "iteration": 22,
+            "arm": "scalar",
+            "seconds": 0.06335383298574015
+          },
+          {
+            "iteration": 23,
+            "arm": "scalar",
+            "seconds": 0.06282116699730977
+          },
+          {
+            "iteration": 23,
+            "arm": "simd",
+            "seconds": 0.013007458008360118
+          }
+        ],
+        "median_seconds": {
+          "scalar": 0.06257972950697877,
+          "simd": 0.012949104013387114
+        },
+        "scalar_over_simd": 4.832745913715902,
+        "whole_target_bit_exact": true,
+        "independent_oracle_rows": [
+          0,
+          5120,
+          10239
+        ],
+        "output_sha256": "fc8b6185a5f0ec2c16829e84143dff7ce5f99dda6e349cfe573c9d4cec31a861",
+        "input_target_capacity": 196648960,
+        "per_worker_kernel_scratch_upper": 1024
+      },
+      {
+        "source": {
+          "kind": "real_convrot_projection_slice",
+          "tensor": "layers.0.feed_forward.w2.weight",
+          "slice_rows": 3840,
+          "weight_sha256": "e093eef804d2ac860a07edfac758b0217aab8056c867a01e9f41325c33cbeb0e",
+          "scale_sha256": "2f886b3e767367c8a9b14056b31cf70dff41b6cda1af71456c42e532c86f812a",
+          "checkpoint_content_sha256": null
+        },
+        "shape": [
+          3840,
+          10240
+        ],
+        "headroom": 1,
+        "warmups_per_arm": 3,
+        "samples": [
+          {
+            "iteration": 0,
+            "arm": "scalar",
+            "seconds": 0.06251424999209121
+          },
+          {
+            "iteration": 0,
+            "arm": "simd",
+            "seconds": 0.012956791993929073
+          },
+          {
+            "iteration": 1,
+            "arm": "simd",
+            "seconds": 0.013305624976055697
+          },
+          {
+            "iteration": 1,
+            "arm": "scalar",
+            "seconds": 0.06279983301647007
+          },
+          {
+            "iteration": 2,
+            "arm": "simd",
+            "seconds": 0.012982332991668954
+          },
+          {
+            "iteration": 2,
+            "arm": "scalar",
+            "seconds": 0.0635052080033347
+          },
+          {
+            "iteration": 3,
+            "arm": "scalar",
+            "seconds": 0.06269262501155026
+          },
+          {
+            "iteration": 3,
+            "arm": "simd",
+            "seconds": 0.012984125001821667
+          },
+          {
+            "iteration": 4,
+            "arm": "scalar",
+            "seconds": 0.06284224998671561
+          },
+          {
+            "iteration": 4,
+            "arm": "simd",
+            "seconds": 0.013013582996791229
+          },
+          {
+            "iteration": 5,
+            "arm": "simd",
+            "seconds": 0.013150666985893622
+          },
+          {
+            "iteration": 5,
+            "arm": "scalar",
+            "seconds": 0.0634672089945525
+          },
+          {
+            "iteration": 6,
+            "arm": "simd",
+            "seconds": 0.012906874995678663
+          },
+          {
+            "iteration": 6,
+            "arm": "scalar",
+            "seconds": 0.06347258301684633
+          },
+          {
+            "iteration": 7,
+            "arm": "scalar",
+            "seconds": 0.06309716700343415
+          },
+          {
+            "iteration": 7,
+            "arm": "simd",
+            "seconds": 0.012922458990942687
+          },
+          {
+            "iteration": 8,
+            "arm": "scalar",
+            "seconds": 0.06358820799505338
+          },
+          {
+            "iteration": 8,
+            "arm": "simd",
+            "seconds": 0.01301916700322181
+          },
+          {
+            "iteration": 9,
+            "arm": "simd",
+            "seconds": 0.013146374985808507
+          },
+          {
+            "iteration": 9,
+            "arm": "scalar",
+            "seconds": 0.06375333300093189
+          },
+          {
+            "iteration": 10,
+            "arm": "simd",
+            "seconds": 0.013006875000428408
+          },
+          {
+            "iteration": 10,
+            "arm": "scalar",
+            "seconds": 0.06272937500034459
+          },
+          {
+            "iteration": 11,
+            "arm": "scalar",
+            "seconds": 0.06257062498480082
+          },
+          {
+            "iteration": 11,
+            "arm": "simd",
+            "seconds": 0.013003708008909598
+          },
+          {
+            "iteration": 12,
+            "arm": "scalar",
+            "seconds": 0.06298399998922832
+          },
+          {
+            "iteration": 12,
+            "arm": "simd",
+            "seconds": 0.013117499998770654
+          },
+          {
+            "iteration": 13,
+            "arm": "simd",
+            "seconds": 0.013235666003311053
+          },
+          {
+            "iteration": 13,
+            "arm": "scalar",
+            "seconds": 0.06257858400931582
+          },
+          {
+            "iteration": 14,
+            "arm": "simd",
+            "seconds": 0.012993750016903505
+          },
+          {
+            "iteration": 14,
+            "arm": "scalar",
+            "seconds": 0.06296487498912029
+          },
+          {
+            "iteration": 15,
+            "arm": "scalar",
+            "seconds": 0.06298604098265059
+          },
+          {
+            "iteration": 15,
+            "arm": "simd",
+            "seconds": 0.013002042018342763
+          },
+          {
+            "iteration": 16,
+            "arm": "scalar",
+            "seconds": 0.0632987920253072
+          },
+          {
+            "iteration": 16,
+            "arm": "simd",
+            "seconds": 0.013056249998044223
+          },
+          {
+            "iteration": 17,
+            "arm": "simd",
+            "seconds": 0.013118667004164308
+          },
+          {
+            "iteration": 17,
+            "arm": "scalar",
+            "seconds": 0.06380841598729603
+          },
+          {
+            "iteration": 18,
+            "arm": "simd",
+            "seconds": 0.013013791991397738
+          },
+          {
+            "iteration": 18,
+            "arm": "scalar",
+            "seconds": 0.06351775000803173
+          },
+          {
+            "iteration": 19,
+            "arm": "scalar",
+            "seconds": 0.06323729199357331
+          },
+          {
+            "iteration": 19,
+            "arm": "simd",
+            "seconds": 0.013027207984123379
+          },
+          {
+            "iteration": 20,
+            "arm": "scalar",
+            "seconds": 0.06363749998854473
+          },
+          {
+            "iteration": 20,
+            "arm": "simd",
+            "seconds": 0.013023709005210549
+          },
+          {
+            "iteration": 21,
+            "arm": "simd",
+            "seconds": 0.013244083005702123
+          },
+          {
+            "iteration": 21,
+            "arm": "scalar",
+            "seconds": 0.06352762499591336
+          },
+          {
+            "iteration": 22,
+            "arm": "simd",
+            "seconds": 0.01297408397658728
+          },
+          {
+            "iteration": 22,
+            "arm": "scalar",
+            "seconds": 0.06249141599982977
+          },
+          {
+            "iteration": 23,
+            "arm": "scalar",
+            "seconds": 0.06268654100131243
+          },
+          {
+            "iteration": 23,
+            "arm": "simd",
+            "seconds": 0.012876458989921957
+          }
+        ],
+        "median_seconds": {
+          "scalar": 0.06304160399304237,
+          "simd": 0.013013687494094484
+        },
+        "scalar_over_simd": 4.844253715301693,
+        "whole_target_bit_exact": true,
+        "independent_oracle_rows": [
+          0,
+          1920,
+          3839
+        ],
+        "output_sha256": "2b7d2f42c1925c0421338b4c4223d522f5dbe34fa97a9b4936054a5747636f45",
+        "input_target_capacity": 196623360,
+        "per_worker_kernel_scratch_upper": 1024
+      }
+    ]
+  }
+}

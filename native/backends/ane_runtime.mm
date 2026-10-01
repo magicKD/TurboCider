@@ -1,6 +1,7 @@
 #include "ane_runtime.hpp"
 #include "ane_runtime_convert.hpp"
 #include "ane_runtime_quant.hpp"
+#include "ane_runtime_packed.hpp"
 #include "ane_memory.hpp"
 
 #import <CoreML/CoreML.h>
@@ -133,7 +134,7 @@ struct Surface {
         }
         check(CVPixelBufferUnlockBaseAddress(pixel, 0) == kCVReturnSuccess, "cannot unlock IOSurface");
     }
-    template<class Row> void fill_rows(Row row) {
+    template<class Row> void fill_rows(Row row, bool bounded_packed = false) {
         access([&](void *base, size_t pitch) {
             std::atomic<bool> bad{false};
             // Sixteen-row tasks amortize GCD dispatch for large weight matrices.
@@ -145,7 +146,25 @@ struct Surface {
                 }
             };
             const size_t groups = (size_t(rows) + 15) / 16;
-            if (size_t(rows) * cols < 65536) {
+            if (bounded_packed) {
+                // At most eight active conversion callbacks; no one-task-per-
+                // row-group fanout or layer-sized conversion scratch. The
+                // dispatch owner is a separate std::thread, never this pool.
+                const auto plan = plan_packed_conversion(rows, cols, std::thread::hardware_concurrency());
+                check(bool(plan), "invalid runtime ANE packed conversion plan");
+                std::atomic<size_t> next{0};
+                auto worker = [&] {
+                    for (;;) {
+                        if (bad.load(std::memory_order_relaxed)) break;
+                        const auto group = next.fetch_add(1, std::memory_order_relaxed);
+                        if (group >= groups) break;
+                        convert(group);
+                    }
+                };
+                auto *fn = &worker;
+                dispatch_apply(plan->workers, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                               ^(size_t) { (*fn)(); });
+            } else if (size_t(rows) * cols < 65536) {
                 for (size_t i = 0; i < groups; ++i) convert(i);
             } else {
                 // Do not copy the atomic into an Objective-C block capture.
@@ -170,6 +189,20 @@ struct Surface {
         fill_rows([&](int r, uint16_t *output) {
             return affine_fp16_row(source, r, output, scalar_only, scale);
         });
+    }
+    void fill(const GgufView &source, bool scalar_only, float scale = 1.f) {
+        validate_gguf_view(source);
+        check(source.rows == rows && source.cols == cols, "runtime ANE raw GGUF shape mismatch");
+        fill_rows([&](int row, uint16_t *output) {
+            return gguf_fp16_row(source, size_t(row), output, scalar_only, scale);
+        }, true);
+    }
+    void fill(const ConvrotView &source, bool scalar_only, float scale = 1.f) {
+        validate_convrot_view(source);
+        check(source.rows == rows && source.cols == cols, "runtime ANE ConvRot shape mismatch");
+        fill_rows([&](int row, uint16_t *output) {
+            return convrot_fp16_row(source, size_t(row), output, scalar_only, scale);
+        }, true);
     }
     void fill_matmul_parts(const std::vector<MatrixView> &parts, bool scalar_only) {
         check(!parts.empty(), "runtime ANE MatMul needs weight parts");
@@ -413,6 +446,7 @@ RuntimeGraph::RuntimeGraph(const std::filesystem::path &manifest, size_t budget,
         // Conservative admission BEFORE allocating; measured telemetry will
         // later refine Core ML's internal-buffer allowance at the model layer.
         p.estimate = 2 * weight_bytes + size_t(s.rows) * (6ull * s.width + 8ull * s.hidden) + (64ull << 20);
+        p.estimate += packed_conversion_max_workers * packed_conversion_scratch_per_worker;
         if (s.lora_inputs) p.estimate += size_t(s.rows) * s.width * 16;
         if (p.estimate > budget) throw MemoryBudgetError("runtime ANE memory budget exceeded");
         if (!cpu_only) {

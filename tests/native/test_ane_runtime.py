@@ -18,6 +18,8 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+NATIVE_LIBRARY_DIR = ROOT / Path(os.environ.get("TURBOCIDER_NATIVE_LIBRARY_DIR", "build/native"))
+HAS_NATIVE_LIBRARY = (NATIVE_LIBRARY_DIR / "libturbocider.dylib").is_file()
 SPEC = importlib.util.spec_from_file_location("runtime_ane_export", ROOT / "tools/coreml/export_runtime_ane.py")
 EXPORT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(EXPORT)
@@ -62,11 +64,12 @@ class RuntimeIntegrationTests(unittest.TestCase):
         cls.scratch = tempfile.TemporaryDirectory(prefix="tc-runtime-ane-test-")
         cls.addClassCleanup(cls.scratch.cleanup)
         cls.root = Path(cls.scratch.name)
-        env = {**os.environ, "TURBOCIDER_NATIVE_OUT": str(cls.root / "build")}
+        env = {**os.environ, "TURBOCIDER_NATIVE_OUT": str(cls.root / "build"),
+               "TURBOCIDER_NATIVE_LIBRARY_DIR": str(NATIVE_LIBRARY_DIR)}
         subprocess.run(["bash", "tools/native/build_ane_runtime_probe.sh"], cwd=ROOT, env=env,
                        check=True, capture_output=True, text=True, timeout=120)
         cls.probe = cls.root / "build/ane-runtime-probe"
-        if (ROOT / "build/native/libturbocider.dylib").is_file():
+        if HAS_NATIVE_LIBRARY:
             subprocess.run(["bash", "tools/native/build_ane_ffn_test.sh"], cwd=ROOT, env=env,
                            check=True, capture_output=True, text=True, timeout=120)
 
@@ -103,7 +106,7 @@ class RuntimeIntegrationTests(unittest.TestCase):
                                     sum(sample[key] for key in (
                                         "input_seconds", "predict_seconds", "output_seconds")))
 
-    @unittest.skipUnless((ROOT / "build/native/libturbocider.dylib").is_file(),
+    @unittest.skipUnless(HAS_NATIVE_LIBRARY,
                          "build native runtime for model-facing fallback/cancellation tests")
     def test_model_wrapper_recomputes_failed_tail_and_drains_cancellation(self):
         directory = self.root / "model-wrapper"
@@ -130,7 +133,7 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.assertIn("PASS resident memory pressure: graph release and complete GPU result", result.stdout)
         print(result.stdout.strip())
 
-    @unittest.skipUnless((ROOT / "build/native/libturbocider.dylib").is_file(),
+    @unittest.skipUnless(HAS_NATIVE_LIBRARY,
                          "build native runtime for Z-Image padding geometry")
     def test_z_gguf_padding_singleton_and_unquantized_contract(self):
         result = subprocess.run([str(self.root / "build/z-image-padding-test")],
@@ -138,7 +141,7 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PASS Z-Image GGUF padding", result.stdout)
 
-    @unittest.skipUnless((ROOT / "build/native/libturbocider.dylib").is_file(),
+    @unittest.skipUnless(HAS_NATIVE_LIBRARY,
                          "build native runtime for compiled Qwen split switching")
     def test_qwen_compiled_full_split_variants(self):
         result = subprocess.run([str(self.root / "build/qwen21-runtime-split-test")],

@@ -40,6 +40,7 @@
 | [11 固定验收与可行性](11-acceptance-profiles-and-feasibility.md) | 数值/媒体/内存/性能硬判定、runner 合同、INT8 证据与退出规则 |
 | [12 实施进度](12-implementation-progress.md) | 已实现的安全目录/CPU Q4–Q8 decoder、真实 Z 权重验证、SIMD 原始回执与剩余工作 |
 | [13 有界 GPU 实验实现](13-gguf-bounded-runtime-progress.md) | SourceLease/ledger/slots接入真实Z生成、MLX浮点加载差异、兼容profiles与通过/失败记录 |
+| [14 ANE直填与W8A8筛选](14-packed-ane-staging-and-w8a8-screen.md) | GGUF/ConvRot FP16 staging API、有界转换并行、CPU SIMD实测、动态QDQ完整投影与负结果 |
 
 ## 当前状态速查
 
@@ -53,7 +54,7 @@
 | Z 默认启用 butterfly / ConvRot W8A8 | 未启用；现有 butterfly 不是 INT8 GEMM |
 | M5 GPU ConvRot W8A8 | 设计/未实机验证；本轮无 M5，不发布默认配置 |
 | 静态 Core ML W8A8 | 已有独立研究路线；原生旋转 ConvRot+A8 仍未实现 |
-| runtime ANE | 已有 FP16 动态权重；W8A8 是独立待验证路线 |
+| runtime ANE | 新GGUF/ConvRot FP16直填API已验证，模型consumer待接；动态QDQ数值筛选通过但INT8算术unknown，见14 |
 | 低内存 GPU+ANE 全请求认证 | 本方案尚未取得；resident 历史成绩不能替代 |
 
 ## 架构决策

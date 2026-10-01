@@ -1,0 +1,2164 @@
+{
+  "raw_receipt_sha256": "d43e559ed415bca4335a17d9f5f146ab6514fe666ea391097f0a90583ac944cd",
+  "receipt": {
+    "schema": "tc-runtime-w8a8-proof-receipt-v2",
+    "scope": "single projection, public Core ML candidate; not model qualification",
+    "geometry": {
+      "schema": "tc-runtime-w8a8-proof-v1",
+      "arm": "fp16",
+      "rows": 256,
+      "hidden": 3840,
+      "width": 512,
+      "tile_k": 1024,
+      "tile_n": 512,
+      "layout": "out_in",
+      "io_dtype": "fp16",
+      "normalization_scale": 0.0078125,
+      "requested_arithmetic": "fp16",
+      "arithmetic_evidence": "unknown",
+      "production_qualified": false
+    },
+    "compute_policy": "CPU_AND_NE",
+    "coremltools": "8.3.0",
+    "managed_scratch_upper": 59179008,
+    "source": {
+      "kind": "real_convrot_projection_slice",
+      "tensor": "layers.0.feed_forward.w1.weight",
+      "slice_rows": 512,
+      "weight_sha256": "be07d63b8706530a825f0b533bcbfe0d6feaa322448a329cf78e48beffb9d7b2",
+      "scale_sha256": "3032e98524a022398e061613b6221150c9f29646fcdc70a1b3d8ec42a70d6da8",
+      "checkpoint_content_sha256": null,
+      "activation_source": "synthetic Gaussian + Comfy H256 + dynamic row A8"
+    },
+    "activation_sha256": "3f903561e4669b5fb27fd16d6296a8f521576dc392a1768a72691362bd15b60f",
+    "weight_a_sha256": "be07d63b8706530a825f0b533bcbfe0d6feaa322448a329cf78e48beffb9d7b2",
+    "weight_b_sha256": "fd4a4134d1bca22b782d1fc7c726cf4b686b5632b7bff0cadea1ff0f9bcb3d15",
+    "source_sha256": {
+      "tools/validation/run_runtime_w8a8_proof.py": "d6ef1acc3b242f1f3e918e3255ec3bfb37446ae2913975eb6251e8a4768ce7ab",
+      "tools/coreml/export_runtime_w8a8_probe.py": "a9d599ab970954c61d6e63b923e0617f3bcab816b6cfbf2e2b6c53a03ad53e64",
+      "tools/validation/convrot_w8a8_math.py": "b7cc9043637aa3e2747256d07976fe8700eb80dd4a9d2eade211b05d6ab8d743"
+    },
+    "observed_placement": "unknown",
+    "hardware_arithmetic": "unknown",
+    "production_qualified": false,
+    "compiler_framework_envelope": "unknown",
+    "scale_bias_scope": "external FP32 restoration, different nonuniform scales/bias for A/B; not graph inputs",
+    "input_preparation_scope": "codes + A8 and normalization prepared outside prediction timing",
+    "sample_order_scope": "each arm separately, A/B/A within arm; not paired cross-arm performance qualification",
+    "scale_bias_sha256": [
+      {
+        "sx": "470e6636b3f779edb819ccf306734b831c3bf1143f9b64ac4b29fee3f80e4b00",
+        "sw": "3032e98524a022398e061613b6221150c9f29646fcdc70a1b3d8ec42a70d6da8",
+        "bias": "b8349f3d21e145d8c6f8977ea9a3f1dbcb52f93517de3c970a4daa097a210261"
+      },
+      {
+        "sx": "41aa03602d7bd2e71739b00d424224b7cd252f9c1e0cca3a28e5fd0331ce5000",
+        "sw": "d689371f64fc51d5e0eff3f2d47bb910dd4487414a7a9c09795b397bda6e4f0d",
+        "bias": "62cdc83af76eb2953142ef10b181bb23bf0535cfd40a4d38d677cca7d87a519c"
+      }
+    ],
+    "arms": [
+      {
+        "arm": "fp16",
+        "status": "completed",
+        "samples": [
+          {
+            "weights": "A",
+            "binding_seconds": 5.420006345957518e-7,
+            "predict_seconds": 0.004143625003052875,
+            "restore_seconds": 0.00022437502047978342,
+            "binding_predict_restore_seconds": 0.004368542024167255,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.3300602808594704e-7,
+            "predict_seconds": 0.004119541001273319,
+            "restore_seconds": 0.00022037499002180994,
+            "binding_predict_restore_seconds": 0.004340248997323215,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 5.839974619448185e-7,
+            "predict_seconds": 0.004104457999346778,
+            "restore_seconds": 0.00022037499002180994,
+            "binding_predict_restore_seconds": 0.0043254169868305326,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 4.169996827840805e-7,
+            "predict_seconds": 0.004123874998185784,
+            "restore_seconds": 0.00022008398082107306,
+            "binding_predict_restore_seconds": 0.004344375978689641,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.500019036233425e-7,
+            "predict_seconds": 0.004106292006326839,
+            "restore_seconds": 0.00022104100207798183,
+            "binding_predict_restore_seconds": 0.0043275830103084445,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.9199873097240925e-7,
+            "predict_seconds": 0.004064957989612594,
+            "restore_seconds": 0.00022033401182852685,
+            "binding_predict_restore_seconds": 0.0042855840001720935,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 4.169996827840805e-7,
+            "predict_seconds": 0.0041183340072166175,
+            "restore_seconds": 0.00021958400611765683,
+            "binding_predict_restore_seconds": 0.004338335013017058,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.9199873097240925e-7,
+            "predict_seconds": 0.004113792005227879,
+            "restore_seconds": 0.00021933400421403348,
+            "binding_predict_restore_seconds": 0.004333418008172885,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.0800507627427578e-7,
+            "predict_seconds": 0.004062916996190324,
+            "restore_seconds": 0.0002196249843109399,
+            "binding_predict_restore_seconds": 0.004282749985577539,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.33995558321476e-7,
+            "predict_seconds": 0.0041603750141803175,
+            "restore_seconds": 0.0002289160038344562,
+            "binding_predict_restore_seconds": 0.004389625013573095,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 5.830079317092896e-7,
+            "predict_seconds": 0.004171041015069932,
+            "restore_seconds": 0.00022575000184588134,
+            "binding_predict_restore_seconds": 0.004397374024847522,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 4.1601015254855156e-7,
+            "predict_seconds": 0.00406308300443925,
+            "restore_seconds": 0.0002229579840786755,
+            "binding_predict_restore_seconds": 0.004286456998670474,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 5.420006345957518e-7,
+            "predict_seconds": 0.004117042000871152,
+            "restore_seconds": 0.00022029198589734733,
+            "binding_predict_restore_seconds": 0.004337875987403095,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.33995558321476e-7,
+            "predict_seconds": 0.004094917007023469,
+            "restore_seconds": 0.00022037499002180994,
+            "binding_predict_restore_seconds": 0.0043156259926036,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.910092007368803e-7,
+            "predict_seconds": 0.00404662499204278,
+            "restore_seconds": 0.00022029198589734733,
+            "binding_predict_restore_seconds": 0.004267207987140864,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.7500285543501377e-7,
+            "predict_seconds": 0.004178500006673858,
+            "restore_seconds": 0.00021974998526275158,
+            "binding_predict_restore_seconds": 0.004398624994792044,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.0800507627427578e-7,
+            "predict_seconds": 0.004183250013738871,
+            "restore_seconds": 0.00022158300271257758,
+            "binding_predict_restore_seconds": 0.0044050410215277225,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.0800507627427578e-7,
+            "predict_seconds": 0.004047958005685359,
+            "restore_seconds": 0.0002239159948658198,
+            "binding_predict_restore_seconds": 0.004272082005627453,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.9199873097240925e-7,
+            "predict_seconds": 0.004122957994695753,
+            "restore_seconds": 0.00022487499518319964,
+            "binding_predict_restore_seconds": 0.004348124988609925,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.66997779160738e-7,
+            "predict_seconds": 0.004130125016672537,
+            "restore_seconds": 0.00022325001191347837,
+            "binding_predict_restore_seconds": 0.004353542026365176,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.500019036233425e-7,
+            "predict_seconds": 0.004045040986966342,
+            "restore_seconds": 0.00022237500525079668,
+            "binding_predict_restore_seconds": 0.004267665994120762,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 4.159810487180948e-7,
+            "predict_seconds": 0.0041179999825544655,
+            "restore_seconds": 0.00021820800611749291,
+            "binding_predict_restore_seconds": 0.0043366239697206765,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.3300602808594704e-7,
+            "predict_seconds": 0.004108833003556356,
+            "restore_seconds": 0.00022316598915494978,
+            "binding_predict_restore_seconds": 0.0043323319987393916,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.500019036233425e-7,
+            "predict_seconds": 0.004042625019792467,
+            "restore_seconds": 0.0002209159720223397,
+            "binding_predict_restore_seconds": 0.00426379099371843,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.9199873097240925e-7,
+            "predict_seconds": 0.004115041985642165,
+            "restore_seconds": 0.00021770800231024623,
+            "binding_predict_restore_seconds": 0.004333041986683384,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.9098009690642357e-7,
+            "predict_seconds": 0.004111333022592589,
+            "restore_seconds": 0.00022095799795351923,
+            "binding_predict_restore_seconds": 0.004332582000643015,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.499727997928858e-7,
+            "predict_seconds": 0.004062874999362975,
+            "restore_seconds": 0.00022583300597034395,
+            "binding_predict_restore_seconds": 0.004288957978133112,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 4.999747034162283e-7,
+            "predict_seconds": 0.004162249999353662,
+            "restore_seconds": 0.00022412498947232962,
+            "binding_predict_restore_seconds": 0.004386874963529408,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.7500285543501377e-7,
+            "predict_seconds": 0.004176041984464973,
+            "restore_seconds": 0.00022149999858811498,
+            "binding_predict_restore_seconds": 0.004397916985908523,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 3.7500285543501377e-7,
+            "predict_seconds": 0.004055541998241097,
+            "restore_seconds": 0.0002223330084234476,
+            "binding_predict_restore_seconds": 0.004278250009519979,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          }
+        ],
+        "export_compile_seconds": 0.0716969580098521,
+        "manifest_sha256": "75ae53bcd012315040ed18021dce19bff329bae8ebe849666e5d4d70645ff211",
+        "program_ops": [
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "add",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "add",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "add",
+          "identity"
+        ],
+        "load_seconds": 0.03076758299721405,
+        "model_load_count": 1,
+        "export_compile_count": 1,
+        "runtime_compile_count": "unknown",
+        "warmup_predict_seconds": [
+          0.007374082983005792,
+          0.004261082998709753,
+          0.00419933398370631,
+          0.00413183297496289,
+          0.004065250017447397
+        ],
+        "max_ulp": 12032,
+        "max_abs": 0.0625,
+        "restored_rel_l2": 0.0004859519349009601,
+        "weight_a_repeat_exact": true,
+        "weight_b_changes_output": true,
+        "normalized_numeric_gate": false,
+        "median_predict_seconds": 0.004114416995435022,
+        "median_binding_predict_restore_seconds": 0.004333229997428134,
+        "graph_files_unchanged": true,
+        "compute_plan": {
+          "status": "available",
+          "scope": "anticipated placement, not a runtime trace",
+          "operations": [
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_0_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_0_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_1_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_1_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_1"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k0_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k0_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_2_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_2_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_2"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_3_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_3_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_3"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k1024_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k1024_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k1024"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "ios18.add",
+              "outputs": [
+                "add_0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_4_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_4_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_4"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_5_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_5_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_5"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k2048_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k2048_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k2048"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "ios18.add",
+              "outputs": [
+                "add_1"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_6_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_6_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_6"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_7_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_7_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_7"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k3072_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k3072_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k3072"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "ios18.add",
+              "outputs": [
+                "add_2"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "identity",
+              "outputs": [
+                "y"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            }
+          ]
+        },
+        "feasibility": "numeric_gate_failed"
+      },
+      {
+        "arm": "frozen_qdq",
+        "status": "completed",
+        "samples": [
+          {
+            "weights": "A",
+            "binding_seconds": 2.500019036233425e-7,
+            "predict_seconds": 0.0016890419938135892,
+            "restore_seconds": 0.00022208300651982427,
+            "binding_predict_restore_seconds": 0.0019113750022370368,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.0017004999972414225,
+            "restore_seconds": 0.00022224997519515455,
+            "binding_predict_restore_seconds": 0.0019228749733883888,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.6702688299119473e-7,
+            "predict_seconds": 0.00170341701596044,
+            "restore_seconds": 0.0002213749976363033,
+            "binding_predict_restore_seconds": 0.0019249590404797345,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.66997779160738e-7,
+            "predict_seconds": 0.0016972080047708005,
+            "restore_seconds": 0.00022179100778885186,
+            "binding_predict_restore_seconds": 0.001919166010338813,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.6600824892520905e-7,
+            "predict_seconds": 0.0016985420079436153,
+            "restore_seconds": 0.00022175000049173832,
+            "binding_predict_restore_seconds": 0.0019204580166842788,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 0.0000027500209398567677,
+            "predict_seconds": 0.0016969999996945262,
+            "restore_seconds": 0.00022179199731908739,
+            "binding_predict_restore_seconds": 0.0019215420179534703,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.6600824892520905e-7,
+            "predict_seconds": 0.0016990839794743806,
+            "restore_seconds": 0.00021933301468379796,
+            "binding_predict_restore_seconds": 0.0019185830024071038,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.66997779160738e-7,
+            "predict_seconds": 0.001706541981548071,
+            "restore_seconds": 0.00022120799985714257,
+            "binding_predict_restore_seconds": 0.0019279169791843742,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.0016981250082608312,
+            "restore_seconds": 0.00022133300080895424,
+            "binding_predict_restore_seconds": 0.0019195830100215971,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.0017029170121531934,
+            "restore_seconds": 0.00019483300275169313,
+            "binding_predict_restore_seconds": 0.0018978750158566982,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 0.0000028329959604889154,
+            "predict_seconds": 0.001759874983690679,
+            "restore_seconds": 0.00022087502293288708,
+            "binding_predict_restore_seconds": 0.001983583002584055,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.0016992919845506549,
+            "restore_seconds": 0.00022220899700187147,
+            "binding_predict_restore_seconds": 0.001921625982504338,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.0016980830114334822,
+            "restore_seconds": 0.00022029198589734733,
+            "binding_predict_restore_seconds": 0.0019184999982826412,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.6600824892520905e-7,
+            "predict_seconds": 0.0016971250006463379,
+            "restore_seconds": 0.00022158300271257758,
+            "binding_predict_restore_seconds": 0.0019188740116078407,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.0016997499915305525,
+            "restore_seconds": 0.00022158300271257758,
+            "binding_predict_restore_seconds": 0.0019214579951949418,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.3300602808594704e-7,
+            "predict_seconds": 0.0017115419905167073,
+            "restore_seconds": 0.00022095802705734968,
+            "binding_predict_restore_seconds": 0.001932833023602143,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.001721749984426424,
+            "restore_seconds": 0.0002207910001743585,
+            "binding_predict_restore_seconds": 0.001942665985552594,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.66997779160738e-7,
+            "predict_seconds": 0.0017120000266004354,
+            "restore_seconds": 0.00022066698875278234,
+            "binding_predict_restore_seconds": 0.0019328340131323785,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 8.300412446260452e-8,
+            "predict_seconds": 0.001715042017167434,
+            "restore_seconds": 0.00021791699691675603,
+            "binding_predict_restore_seconds": 0.0019330420182086527,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.0800507627427578e-7,
+            "predict_seconds": 0.0017104579892475158,
+            "restore_seconds": 0.00022154100588522851,
+            "binding_predict_restore_seconds": 0.0019322070002090186,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 0.000002749991836026311,
+            "predict_seconds": 0.0017074999923352152,
+            "restore_seconds": 0.00022108398843556643,
+            "binding_predict_restore_seconds": 0.001931333972606808,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.6600824892520905e-7,
+            "predict_seconds": 0.001710625016130507,
+            "restore_seconds": 0.00022166600683704019,
+            "binding_predict_restore_seconds": 0.0019324570312164724,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.0017114589863922447,
+            "restore_seconds": 0.00022295801318250597,
+            "binding_predict_restore_seconds": 0.0019345420005265623,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.66997779160738e-7,
+            "predict_seconds": 0.0017096250085160136,
+            "restore_seconds": 0.0002211660030297935,
+            "binding_predict_restore_seconds": 0.0019309580093249679,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.0800507627427578e-7,
+            "predict_seconds": 0.001718916988465935,
+            "restore_seconds": 0.00022124999668449163,
+            "binding_predict_restore_seconds": 0.001940374990226701,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 0.0000027919886633753777,
+            "predict_seconds": 0.00171162499464117,
+            "restore_seconds": 0.0002219580055680126,
+            "binding_predict_restore_seconds": 0.0019363749888725579,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.6600824892520905e-7,
+            "predict_seconds": 0.00171162499464117,
+            "restore_seconds": 0.00022141699446365237,
+            "binding_predict_restore_seconds": 0.0019332079973537475,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.0017068329907488078,
+            "restore_seconds": 0.00022154199541546404,
+            "binding_predict_restore_seconds": 0.0019284999871160835,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.0017121249984484166,
+            "restore_seconds": 0.00022295801318250597,
+            "binding_predict_restore_seconds": 0.0019352080125827342,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 1.2500095181167126e-7,
+            "predict_seconds": 0.0017090420005843043,
+            "restore_seconds": 0.00022166597773320973,
+            "binding_predict_restore_seconds": 0.0019308329792693257,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          }
+        ],
+        "export_compile_seconds": 0.07207229099003598,
+        "manifest_sha256": "a91200eb0afd7dbddb790984814b9a11878414a8bf8e1e6a9534da50fb66a73c",
+        "program_ops": [
+          "const",
+          "const",
+          "quantize",
+          "const",
+          "dequantize",
+          "constexpr_blockwise_shift_scale",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "add",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "add",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "add",
+          "identity"
+        ],
+        "load_seconds": 0.14066250002360903,
+        "model_load_count": 1,
+        "export_compile_count": 1,
+        "runtime_compile_count": "unknown",
+        "warmup_predict_seconds": [
+          0.001986624993151054,
+          0.0017730839899741113,
+          0.0017089169996324927,
+          0.001762707979651168,
+          0.0017252500110771507
+        ],
+        "max_ulp": 9600,
+        "max_abs": 0.015625,
+        "restored_rel_l2": 0.0004859519349009601,
+        "weight_a_repeat_exact": true,
+        "weight_b_changes_output": null,
+        "normalized_numeric_gate": false,
+        "median_predict_seconds": 0.0017071664915420115,
+        "median_binding_predict_restore_seconds": 0.0019296664831927046,
+        "graph_files_unchanged": true,
+        "compute_plan": {
+          "status": "available",
+          "scope": "anticipated placement, not a runtime trace",
+          "operations": [
+            {
+              "op": "const",
+              "outputs": [
+                "activation_q_scale_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "activation_q_output_dtype_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.quantize",
+              "outputs": [
+                "quantize_0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "activation_dq_scale_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.dequantize",
+              "outputs": [
+                "dequantize_0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "ios18.constexpr_blockwise_shift_scale",
+              "outputs": [
+                "dequantize_1_affine_dequantized"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_0_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_0_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_1_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_1_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_1"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k0_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k0_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_2_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_2_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_2"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_3_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_3_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_3"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k1024_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k1024_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k1024"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "ios18.add",
+              "outputs": [
+                "add_0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_4_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_4_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_4"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_5_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_5_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_5"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k2048_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k2048_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k2048"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "ios18.add",
+              "outputs": [
+                "add_1"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_6_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_6_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_6"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_7_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_7_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_7"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k3072_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k3072_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k3072"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "ios18.add",
+              "outputs": [
+                "add_2"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "identity",
+              "outputs": [
+                "y"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            }
+          ]
+        },
+        "feasibility": "numeric_gate_failed"
+      },
+      {
+        "arm": "runtime_qdq",
+        "status": "completed",
+        "samples": [
+          {
+            "weights": "A",
+            "binding_seconds": 0.0000030409719329327345,
+            "predict_seconds": 0.004239624977344647,
+            "restore_seconds": 0.0002244589850306511,
+            "binding_predict_restore_seconds": 0.004467124934308231,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.3300602808594704e-7,
+            "predict_seconds": 0.004159959004027769,
+            "restore_seconds": 0.00022604098194278777,
+            "binding_predict_restore_seconds": 0.004386332991998643,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.9199873097240925e-7,
+            "predict_seconds": 0.004104125022422522,
+            "restore_seconds": 0.00022004099446348846,
+            "binding_predict_restore_seconds": 0.004324458015616983,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 4.5899651013314724e-7,
+            "predict_seconds": 0.004185917001450434,
+            "restore_seconds": 0.00021845899755135179,
+            "binding_predict_restore_seconds": 0.004404834995511919,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.3300602808594704e-7,
+            "predict_seconds": 0.004316125006880611,
+            "restore_seconds": 0.00022024998906999826,
+            "binding_predict_restore_seconds": 0.004536708001978695,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 3.3300602808594704e-7,
+            "predict_seconds": 0.004291749995900318,
+            "restore_seconds": 0.0002239589812234044,
+            "binding_predict_restore_seconds": 0.004516041983151808,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 5.410111043602228e-7,
+            "predict_seconds": 0.004291666991775855,
+            "restore_seconds": 0.0002242920163553208,
+            "binding_predict_restore_seconds": 0.0045165000192355365,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 7.920025382190943e-7,
+            "predict_seconds": 0.004315124999266118,
+            "restore_seconds": 0.00022095799795351923,
+            "binding_predict_restore_seconds": 0.004536874999757856,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 4.1601015254855156e-7,
+            "predict_seconds": 0.00431074999505654,
+            "restore_seconds": 0.0002349170099478215,
+            "binding_predict_restore_seconds": 0.00454608301515691,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.7500285543501377e-7,
+            "predict_seconds": 0.004119249992072582,
+            "restore_seconds": 0.000225499999942258,
+            "binding_predict_restore_seconds": 0.004345124994870275,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.33995558321476e-7,
+            "predict_seconds": 0.00411766700563021,
+            "restore_seconds": 0.0002227500081062317,
+            "binding_predict_restore_seconds": 0.004340751009294763,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.9199873097240925e-7,
+            "predict_seconds": 0.004034249985124916,
+            "restore_seconds": 0.000222250004298985,
+            "binding_predict_restore_seconds": 0.004256791988154873,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.3300602808594704e-7,
+            "predict_seconds": 0.004098250006791204,
+            "restore_seconds": 0.00022554100723937154,
+            "binding_predict_restore_seconds": 0.004324124020058662,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.500019036233425e-7,
+            "predict_seconds": 0.0047083749959710985,
+            "restore_seconds": 0.00024233298609033227,
+            "binding_predict_restore_seconds": 0.004950957983965054,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 8.330098353326321e-7,
+            "predict_seconds": 0.00427354100975208,
+            "restore_seconds": 0.00022499999613501132,
+            "binding_predict_restore_seconds": 0.004499374015722424,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 5.409820005297661e-7,
+            "predict_seconds": 0.004136374976951629,
+            "restore_seconds": 0.0002242499904241413,
+            "binding_predict_restore_seconds": 0.0043611659493763,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.3300602808594704e-7,
+            "predict_seconds": 0.004129665991058573,
+            "restore_seconds": 0.00022200000239536166,
+            "binding_predict_restore_seconds": 0.004351998999482021,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 3.33995558321476e-7,
+            "predict_seconds": 0.004036124999402091,
+            "restore_seconds": 0.00022224997519515455,
+            "binding_predict_restore_seconds": 0.004258708970155567,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.7500285543501377e-7,
+            "predict_seconds": 0.004116665979381651,
+            "restore_seconds": 0.00022270900080911815,
+            "binding_predict_restore_seconds": 0.004339749983046204,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.500019036233425e-7,
+            "predict_seconds": 0.004100541002117097,
+            "restore_seconds": 0.00022141702356748283,
+            "binding_predict_restore_seconds": 0.0043222080275882035,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 0.0000022500171326100826,
+            "predict_seconds": 0.004047791997436434,
+            "restore_seconds": 0.00022270900080911815,
+            "binding_predict_restore_seconds": 0.004272751015378162,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.7500285543501377e-7,
+            "predict_seconds": 0.004087082983460277,
+            "restore_seconds": 0.0002213749976363033,
+            "binding_predict_restore_seconds": 0.004308832983952016,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.500019036233425e-7,
+            "predict_seconds": 0.004163000005064532,
+            "restore_seconds": 0.0002230409882031381,
+            "binding_predict_restore_seconds": 0.004386290995171294,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.499727997928858e-7,
+            "predict_seconds": 0.004043540975544602,
+            "restore_seconds": 0.0002219580055680126,
+            "binding_predict_restore_seconds": 0.004265748953912407,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 3.7500285543501377e-7,
+            "predict_seconds": 0.004109208006411791,
+            "restore_seconds": 0.0002214580017607659,
+            "binding_predict_restore_seconds": 0.004331041011027992,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 0.00000291600008495152,
+            "predict_seconds": 0.004110625013709068,
+            "restore_seconds": 0.00021958298748359084,
+            "binding_predict_restore_seconds": 0.004333124001277611,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.0902371034026146e-7,
+            "predict_seconds": 0.004041000007418916,
+            "restore_seconds": 0.00022154199541546404,
+            "binding_predict_restore_seconds": 0.00426275102654472,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.9199873097240925e-7,
+            "predict_seconds": 0.004111249989364296,
+            "restore_seconds": 0.00022237500525079668,
+            "binding_predict_restore_seconds": 0.004333916993346065,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "A",
+            "binding_seconds": 2.0800507627427578e-7,
+            "predict_seconds": 0.004101500002434477,
+            "restore_seconds": 0.0002225829812232405,
+            "binding_predict_restore_seconds": 0.004324290988733992,
+            "max_ulp": 9600,
+            "max_abs": 0.015625,
+            "restored_rel_l2": 0.0004859519349009601
+          },
+          {
+            "weights": "B",
+            "binding_seconds": 2.0899460650980473e-7,
+            "predict_seconds": 0.00404458399862051,
+            "restore_seconds": 0.00022104199160821736,
+            "binding_predict_restore_seconds": 0.004265834984835237,
+            "max_ulp": 12032,
+            "max_abs": 0.0625,
+            "restored_rel_l2": 0.00048279351696135184
+          }
+        ],
+        "export_compile_seconds": 0.060958290996495634,
+        "manifest_sha256": "fe823f03a9c328533309409b75384ff4dc6485f1414e21f06e5a6bb7f874e000",
+        "program_ops": [
+          "const",
+          "const",
+          "quantize",
+          "const",
+          "dequantize",
+          "const",
+          "const",
+          "quantize",
+          "const",
+          "dequantize",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "add",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "add",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "slice_by_index",
+          "const",
+          "const",
+          "matmul",
+          "add",
+          "identity"
+        ],
+        "load_seconds": 0.008007833996089175,
+        "model_load_count": 1,
+        "export_compile_count": 1,
+        "runtime_compile_count": "unknown",
+        "warmup_predict_seconds": [
+          0.004612499993527308,
+          0.0041679580172058195,
+          0.00416491599753499,
+          0.004184499994153157,
+          0.004140667006140575
+        ],
+        "max_ulp": 12032,
+        "max_abs": 0.0625,
+        "restored_rel_l2": 0.0004859519349009601,
+        "weight_a_repeat_exact": true,
+        "weight_b_changes_output": true,
+        "normalized_numeric_gate": false,
+        "median_predict_seconds": 0.00411716649250593,
+        "median_binding_predict_restore_seconds": 0.0043402504961704835,
+        "graph_files_unchanged": true,
+        "compute_plan": {
+          "status": "available",
+          "scope": "anticipated placement, not a runtime trace",
+          "operations": [
+            {
+              "op": "const",
+              "outputs": [
+                "activation_q_scale_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "activation_q_output_dtype_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.quantize",
+              "outputs": [
+                "quantize_0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "activation_dq_scale_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.dequantize",
+              "outputs": [
+                "dequantize_0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "weight_q_scale_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "weight_q_output_dtype_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.quantize",
+              "outputs": [
+                "quantize_1"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "weight_dq_scale_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.dequantize",
+              "outputs": [
+                "dequantize_1"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_0_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_0_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_1_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_1_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_1"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k0_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k0_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_2_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_2_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_2"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_3_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_3_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_3"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k1024_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k1024_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k1024"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "ios18.add",
+              "outputs": [
+                "add_0"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_4_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_4_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_4"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_5_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_5_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_5"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k2048_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k2048_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k2048"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "ios18.add",
+              "outputs": [
+                "add_1"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_6_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_6_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_6"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_7_begin_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "slice_by_index_7_end_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.slice_by_index",
+              "outputs": [
+                "slice_by_index_7"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k3072_transpose_y_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "const",
+              "outputs": [
+                "integer_candidate_n0_k3072_transpose_x_0"
+              ],
+              "preferred": "unknown"
+            },
+            {
+              "op": "ios18.matmul",
+              "outputs": [
+                "integer_candidate_n0_k3072"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "ios18.add",
+              "outputs": [
+                "add_2"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            },
+            {
+              "op": "identity",
+              "outputs": [
+                "y"
+              ],
+              "preferred": "MLNeuralEngineComputeDevice"
+            }
+          ]
+        },
+        "feasibility": "numeric_gate_failed"
+      }
+    ],
+    "status": "completed",
+    "screen_exit_code": 1
+  }
+}
