@@ -14,6 +14,7 @@ namespace components { class Qwen3GgufEncoder; }
 
 class ZImageExactStream;
 class ZImageGgufStream;
+namespace streaming { class GgufPackedBank; }
 
 class ZImage final : public ModelSession {
     std::filesystem::path root_;
@@ -21,6 +22,9 @@ class ZImage final : public ModelSession {
     std::string model_id_ = "z-image-turbo";
     bool diffusers_layout_ = false, gguf_transformer_ = false, convrot_transformer_ = false;
     bool nvfp4_transformer_ = false;
+    bool gguf_direct_import_ = false;
+    std::unique_ptr<MemoryLedger> gguf_packed_ledger_;
+    std::unique_ptr<streaming::GgufPackedBank> gguf_packed_bank_;
     DeviceOptimizations optimizations_;
     mutable Tokenizer tokenizer_;
     Weights text_encoder_;

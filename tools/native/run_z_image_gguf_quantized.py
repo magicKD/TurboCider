@@ -21,6 +21,9 @@ def main():
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--prefetch",type=int,nargs="+",default=[0,1])
     parser.add_argument("--source-residency",choices=["packed_resident","packed_streamed"],default="packed_resident")
+    parser.add_argument("--native-import",choices=["mlx","cpu_direct"],help="explicit experimental import recipe for --prefetch -1")
+    parser.add_argument("--native-weight-limit-bytes",type=int,help="CPU-direct packed-bank managed ceiling; NOT whole-request RAM cap")
+    parser.add_argument("--gpu-eval-blocks",action="store_true",help="explicit existing per-main-block eval boundary (separate measured candidate)")
     parser.add_argument("--runs",type=int,default=1)
     parser.add_argument("--warmup",type=int,default=0,help="retain but exclude these requests from warm timing statistics")
     parser.add_argument("--measurement",choices=["diagnostic","timing","memory"],default="diagnostic",
@@ -43,10 +46,27 @@ def main():
     parser.add_argument("--cancel-once-at-block",type=int,help="cancel the first request at a main block, then test retry")
     parser.add_argument("--cancel-once-at-encoder-layer",type=int,help="cancel first uncached Qwen3 encode, then test retry")
     parser.add_argument("--cancel-once-at-refiner",type=int,help="cancel first streamed refinement unit0..3, then test retry")
+    parser.add_argument("--cancel-once-at-import-tensor",type=int,help="cancel first CPU-direct import at tensor0..452, then test retry")
     args=parser.parse_args()
+    if args.gpu_eval_blocks: os.environ["TURBOCIDER_Z_EAGER_BLOCKS"]="1"
+    gpu_eval_policy="each-main-block-v1" if "TURBOCIDER_Z_EAGER_BLOCKS" in os.environ else "default"
     if any(p not in (-1,0,1,2) for p in args.prefetch) or not 1<=args.runs<=24: parser.error("prefetch -1=native packed, 0/1/2=bounded; runs 1..24")
     if not 0<=args.warmup<=8: parser.error("warmup 0..8")
-    cancellations=(args.cancel_once_at_block,args.cancel_once_at_encoder_layer,args.cancel_once_at_refiner)
+    cancellations=(args.cancel_once_at_block,args.cancel_once_at_encoder_layer,args.cancel_once_at_refiner,args.cancel_once_at_import_tensor)
+    if sum(c is not None for c in cancellations)>1: parser.error("cancellation selectors are mutually exclusive")
+    native_import=args.native_import or os.environ.get("TURBOCIDER_Z_GGUF_IMPORT","mlx")
+    if native_import not in ("mlx","cpu_direct"): parser.error("unknown native import recipe")
+    if native_import=="cpu_direct" and any(p!=-1 for p in args.prefetch): parser.error("CPU-direct import requires only native packed prefetch -1")
+    if args.native_import:
+        if os.environ.get("TURBOCIDER_Z_GGUF_IMPORT",native_import)!=native_import: parser.error("conflicting native import environment")
+        os.environ["TURBOCIDER_Z_GGUF_IMPORT"]=native_import
+    if args.native_weight_limit_bytes is not None:
+        if native_import!="cpu_direct" or args.native_weight_limit_bytes<=0: parser.error("positive native weight ceiling requires CPU-direct import")
+        key="TURBOCIDER_Z_GGUF_PACKED_WEIGHT_LIMIT_BYTES";value=str(args.native_weight_limit_bytes)
+        if key in os.environ and os.environ[key]!=value: parser.error("conflicting native weight ceiling environment")
+        os.environ[key]=value
+    if args.cancel_once_at_import_tensor is not None and (native_import!="cpu_direct" or not 0<=args.cancel_once_at_import_tensor<=452):
+        parser.error("import cancellation requires CPU-direct import and tensor0..452")
     if args.measurement!="diagnostic" and (args.dump or any(c is not None for c in cancellations)):
         parser.error("dump/cancellation requires diagnostic measurement")
     encoder_paths=(args.encoder_gguf,args.encoder_config,args.encoder_tokenizer)
@@ -105,6 +125,9 @@ def main():
             "library_sha256":hashlib.sha256(args.library.read_bytes()).hexdigest(),"loaded_libraries":loaded_runtime_libraries(),
             "runner_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "native_packed_math_profile":"z-mlx-compat-affine-v1",
+            "native_import":native_import,
+            "gpu_eval_policy":gpu_eval_policy,
+            "native_import_environment":{k:v for k,v in os.environ.items() if k.startswith("TURBOCIDER_Z_GGUF_")},
             "measurement":args.measurement,"warmup_requests_per_layout":args.warmup,
             "prompt_cache_policy":args.prompt_cache,"encoder_environment":encoder_environment,
             "runs":[],"status":"running"}
@@ -134,15 +157,15 @@ def main():
                     before=vm_counters()
                     if args.measurement!="timing": sampler.start()
                     with (args.output/(name+"-events.jsonl")).open("x") as events:
-                        should_cancel=(args.cancel_once_at_block is not None or args.cancel_once_at_encoder_layer is not None or args.cancel_once_at_refiner is not None) and not cancel_used
+                        should_cancel=any(c is not None for c in cancellations) and not cancel_used
                         triggered=[False]
                         @C.CFUNCTYPE(None,C.c_char_p,C.c_void_p)
                         def event(raw,_):
                             progress=json.loads(raw)
                             if args.measurement!="timing":
                                 events.write(json.dumps({**progress,"time_monotonic":time.monotonic()})+"\n"); events.flush()
-                            cancel_phase = "z_image_gguf_refiner" if args.cancel_once_at_refiner is not None else "z_image_text_encode" if args.cancel_once_at_encoder_layer is not None else "z_image_denoise_block"
-                            cancel_at = args.cancel_once_at_refiner if args.cancel_once_at_refiner is not None else args.cancel_once_at_encoder_layer if args.cancel_once_at_encoder_layer is not None else args.cancel_once_at_block
+                            cancel_phase = "load_gguf_direct_tensor" if args.cancel_once_at_import_tensor is not None else "z_image_gguf_refiner" if args.cancel_once_at_refiner is not None else "z_image_text_encode" if args.cancel_once_at_encoder_layer is not None else "z_image_denoise_block"
+                            cancel_at = args.cancel_once_at_import_tensor if args.cancel_once_at_import_tensor is not None else args.cancel_once_at_refiner if args.cancel_once_at_refiner is not None else args.cancel_once_at_encoder_layer if args.cancel_once_at_encoder_layer is not None else args.cancel_once_at_block
                             if should_cancel and not triggered[0] and progress.get("phase")==cancel_phase and progress.get("completed")==cancel_at:
                                 library.tc_engine_cancel(engine);triggered[0]=True
                         value,error=C.c_void_p(),C.c_void_p(); start=time.perf_counter()
@@ -162,7 +185,7 @@ def main():
                     row["cancellation_triggered"]=triggered[0]
                     if status==0:
                         source_identity_started=time.perf_counter()
-                        qe=row["metrics"].get("quantized_execution")
+                        qe=row["metrics"].get("quantized_execution") or row["metrics"].get("gguf_import")
                         if qe: report["dit_source_sha256"]=qe["source_sha256"]
                         elif "dit_source_sha256" not in report:
                             checkpoint=args.model/row["metrics"]["checkpoint"] if args.model.is_dir() else args.model

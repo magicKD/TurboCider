@@ -1,5 +1,6 @@
 #include "gguf_weight_pager.hpp"
 #include "../../core/gguf_affine.hpp"
+#include "gguf_storage.hpp"
 
 #include <chrono>
 #include <cstring>
@@ -44,26 +45,9 @@ uint64_t aligned(uint64_t bytes) {
     return gguf::checked_add(bytes, GgufWeightPager::buffer_alignment - 1) &
            ~(GgufWeightPager::buffer_alignment - 1);
 }
-struct Backing {
-    mx::allocator::Buffer buffer{nullptr};
-    StorageLease lease;
-    ~Backing() { if (buffer.ptr()) mx::allocator::free(buffer); }
-};
 Tensor allocate(MemoryLedger &ledger, uint64_t bytes, uint64_t upper,
                 const mx::Shape &shape, mx::Dtype dtype, MemoryClass kind, uint64_t generation) {
-    insist(bytes && upper >= bytes && upper % GgufWeightPager::buffer_alignment == 0,
-            "invalid backing capacity");
-    auto reservation = ledger.try_reserve(kind, upper, "gguf-resident-or-slot-v1");
-    insist(reservation.has_value(), "managed backing budget insufficient");
-    auto owner = std::make_shared<Backing>();
-    owner->buffer = mx::allocator::malloc(size_t(bytes));
-    insist(owner->buffer.ptr() != nullptr, "MLX allocation failed");
-    const auto actual = mx::allocator::allocator().size(owner->buffer);
-    insist(actual >= bytes && actual <= upper, "allocator capacity exceeds compiled upper");
-    owner->lease = reservation->commit({0x544347475546ull,
-        uint64_t(reinterpret_cast<uintptr_t>(owner->buffer.ptr())), uint64_t(actual), generation});
-    // Data, not the pager, owns the physical allocation and ledger claim.
-    return Tensor(owner->buffer, shape, dtype, [owner](mx::allocator::Buffer) {});
+    return gguf_storage::allocate(ledger, bytes, upper, shape, dtype, kind, generation);
 }
 bool same_ticket(const tc_stream_slot_ticket_v1 &a, const tc_stream_slot_ticket_v1 &b) {
     return a.struct_size == b.struct_size && a.version == b.version && a.pool == b.pool && a.slot == b.slot &&

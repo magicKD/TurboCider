@@ -41,6 +41,18 @@ std::map<std::string, Shape> required_shapes() {
 }
 }
 
+void validate_gguf_model_directory(const gguf::Directory &directory) {
+    const auto expected = required_shapes();
+    require(directory.tensors.size()==expected.size(),"qe_adapter_mismatch: GGUF Z tensor count mismatch");
+    for (const auto &tensor : directory.tensors) {
+        const auto found = expected.find(tensor.name);
+        require(found!=expected.end(),"qe_adapter_mismatch: unexpected GGUF Z tensor: "+tensor.name);
+        const auto logical = tensor.logical_shape();
+        const bool pad = (tensor.name=="x_pad_token" || tensor.name=="cap_pad_token") && logical==Shape{3840};
+        require(logical==found->second || pad,"qe_adapter_mismatch: GGUF Z tensor geometry mismatch: "+tensor.name);
+    }
+}
+
 GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::SourceLease> lease,
         uint32_t prefetch, uint32_t width, uint32_t height, uint32_t caption, uint32_t steps,
         const std::string &profile, const std::string &residency) {

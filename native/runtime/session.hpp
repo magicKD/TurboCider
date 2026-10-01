@@ -4,6 +4,7 @@
 #include "memory_manifest.hpp"
 #include "memory_policy.hpp"
 #include "memory_trace.hpp"
+#include "streaming/gguf_packed_metrics.hpp"
 #include <chrono>
 #include <map>
 #include <memory>
@@ -245,6 +246,7 @@ struct RunResult {
     std::optional<MemoryAdmissionMetrics> memory_admission;
     std::optional<QuantizedExecutionMetrics> quantized_execution;
     std::optional<QuantizedExecutionMetrics> encoder_quantized_execution;
+    std::optional<streaming::GgufPackedBankMetrics> gguf_import;
     std::vector<MemoryTraceEvent> memory_trace;
     std::string native_json;
 };

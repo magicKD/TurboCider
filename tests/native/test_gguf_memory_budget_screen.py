@@ -68,6 +68,19 @@ class BudgetScreenTests(unittest.TestCase):
         self.assertEqual(result["budgets"][2]["fastest_observed_candidate"], "packed_streamed:p1")
         self.assertNotIn("budget_gib", result["budgets"][2])
 
+    def test_direct_packed_import_plan_and_ceiling_are_bound(self):
+        data=reports(native=True)
+        for report in data[-2:]:
+            report["native_import"]="cpu_direct"
+            for row in report["runs"]:
+                row["metrics"]["gguf_import"]={"recipe":"gguf-mlx-compat-affine-packed-bank-v1",
+                    "source_sha256":"b"*64,"plan_digest":"f"*64,"allocator_cache_limit_bytes":0,
+                    "managed_peak_bytes":7<<30}
+        result=MODULE.screen(data)
+        self.assertEqual(result["budgets"][-1]["fastest_observed_candidate"],"native_packed:cpu_direct")
+        data[-1]["runs"][0]["metrics"]["gguf_import"]["plan_digest"]="1"*64
+        with self.assertRaisesRegex(ValueError,"import plan changed"): MODULE.screen(data)
+
     def test_warmups_are_retained_but_not_ranked(self):
         data = reports()
         row = copy.deepcopy(data[0]["runs"][0]); row["warmup"] = True; row["wall_seconds"] = 1000

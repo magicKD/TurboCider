@@ -20,6 +20,8 @@ def main():
     for path in args.reports:
         report=json.loads(path.read_text());case={"id":path.parent.name,"raw_report_sha256":digest(path),
             "library_sha256":report["library_sha256"],"runs":[]}
+        case["native_import"]=report.get("native_import","unrecorded")
+        case["gpu_eval_policy"]=report.get("gpu_eval_policy","unrecorded")
         reference=path.parent/"packed-0-tensors"
         for row in report["runs"]:
             metrics=row.get("metrics") or {}
@@ -27,6 +29,8 @@ def main():
                 "png_sha256":row.get("png_sha256"),"cancellation_triggered":row.get("cancellation_triggered",False),
                 "wall_seconds":row["wall_seconds"],"timings_seconds":metrics.get("timings_seconds"),
                 "quantized_execution":metrics.get("quantized_execution"),"mlx_memory":metrics.get("memory"),
+                "gguf_import":metrics.get("gguf_import"),"warmup":row.get("warmup",False),
+                "encoder_quantized_execution":metrics.get("encoder_quantized_execution"),
                 "vm_deltas":row.get("vm_deltas"),"size":row["request"]["outputs"][0]["width"],
                 "seed":row["request"]["sampling"]["seed"],"steps":row["request"]["sampling"]["steps"],
                 "profile":row["request"]["execution"].get("quantized_execution",{}).get("precision_profile","native-packed")}

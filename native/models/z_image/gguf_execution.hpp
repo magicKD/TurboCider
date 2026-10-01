@@ -12,9 +12,11 @@ struct GgufExecutionPlan {
     uint64_t packed_capacity_upper = 0, dense_capacity_upper = 0, read_capacity_upper = 0;
 };
 
-// This first execution profile preserves original float fields and expands
-// only the quantized main-block matrices. Already-floating fixed/refiner
-// weights alias their packed-resident source buffers, not a second dense bank.
+// Shared strict Z naming/geometry validation, also used by the experimental
+// immutable packed-bank importer. No payload allocation or inference.
+void validate_gguf_model_directory(const gguf::Directory &);
+// Source-mixed profiles preserve original floating fields. packed_streamed
+// includes interleaved refiners; packed_resident preserves its prior aliases.
 GgufExecutionPlan describe_gguf_execution(
     std::shared_ptr<const streaming::SourceLease>, uint32_t prefetch_layers,
     uint32_t width, uint32_t height, uint32_t caption_rows, uint32_t steps,

@@ -1349,6 +1349,28 @@ NSDictionary *to_dictionary(const RunResult &result) {
         @"encoder_hybrid" : encoder_hybrid,
         @"validation" : @"candidate; consult recorded parity suite"
     } mutableCopy];
+    if (result.gguf_import) {
+        const auto &m=*result.gguf_import;
+        value[@"gguf_import"]=@{
+            @"experimental":@YES,@"whole_request_bounded_certified":@NO,
+            @"recipe":@"gguf-mlx-compat-affine-packed-bank-v1",@"allocator_cache_limit_bytes":@0,
+            @"consumer_revision":@"z-serial-refiners-release-before-vae-v1",
+            @"released_before_vae":@(m.released_before_vae),@"serial_refiner_eval":@(m.serial_refiner_eval),
+            @"source_sha256":@(m.source_sha256.c_str()),@"plan_digest":@(m.plan_digest.c_str()),
+            @"planned_packed_capacity_bytes":@(m.planned_packed_capacity_bytes),
+            @"packed_capacity_bytes":@(m.packed_capacity_bytes),@"read_buffer_capacity_bytes":@(m.read_buffer_capacity_bytes),
+            @"managed_peak_bytes":@(m.managed_peak_bytes),@"output_bytes":@(m.output_bytes),
+            @"source_read_bytes":@(m.source_read_bytes),@"logical_source_bytes":@(m.logical_source_bytes),
+            @"verification_bytes":@(m.verification_bytes),@"tensor_count":@(m.tensor_count),@"field_count":@(m.field_count),
+            @"load_seconds":@(m.load_seconds),@"read_seconds":@(m.read_seconds),@"decode_seconds":@(m.decode_seconds),
+            @"scope":@"managed immutable packed bank and import buffer; excludes encoder/VAE/activations/cache/framework/OS"
+        };
+        NSMutableDictionary *private_plan=[value[@"plan"] mutableCopy];
+        private_plan[@"executable"]=@NO;
+        private_plan[@"gguf_import_qualification"]=@"experimental-unqualified";
+        value[@"plan"]=private_plan;
+        value[@"validation"]=@"experimental CPU direct packed import; not a production capability";
+    }
     if (result.quantized_execution) {
         const auto &m = *result.quantized_execution;
         value[@"quantized_execution"] = @{

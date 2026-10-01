@@ -14,6 +14,7 @@
 #include "../../runtime/residency.hpp"
 #include "../../runtime/streaming/canonical_encoding.hpp"
 #include "../../runtime/streaming/context.hpp"
+#include "../../runtime/streaming/gguf_packed_bank.hpp"
 #include "../../runtime/streaming/resolved_request.hpp"
 #include "streaming_descriptor.hpp"
 #include "gguf_execution.hpp"
@@ -1551,7 +1552,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
                      bool compile_hybrid_segments, ZImageHybridStream *hybrid_stream = nullptr,
                      std::vector<Tensor> *context_cache = nullptr,
                      ane::HybridFfn *runtime = nullptr, bool runtime_gguf_compatibility = false,
-                     ZImageGgufStream *gguf_stream = nullptr) {
+                     ZImageGgufStream *gguf_stream = nullptr, bool serial_refiner_eval = false) {
     require(!gguf_stream || (!weight_stream && !exact_stream && !hybrid_stream && !runtime && !hybrid),
             "GGUF bounded execution conflicts with another transformer backend");
     require(!hybrid_stream || (!weight_stream && !exact_stream), "hybrid/exact stream conflict");
@@ -1603,9 +1604,11 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
             : z_block(block_input, w, "noise_refiner." + std::to_string(i), image_freqs, temb,
                         bf16_fallback ? nullptr : hybrid,
                         i, gpu_graph, compile_hybrid_segments);
+        if (serial_refiner_eval) { mx::eval(image);checkpoint(cancelled); }
         if (!reuse_context)
             caption_emb = z_context_block(caption_emb, w,
                                           "context_refiner." + std::to_string(i), caption_freqs);
+        if (serial_refiner_eval && !reuse_context) { mx::eval(caption_emb);checkpoint(cancelled); }
     }
     if (context_cache && !reuse_context) context_cache->push_back(caption_emb);
     auto unified = mx::concatenate({image, caption_emb}, 1);
@@ -2503,6 +2506,17 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
                const std::filesystem::path &transformer_checkpoint)
     : root_(root), model_id_(std::move(model_id)), tokenizer_(root / "tokenizer") {
     optimizations_ = device_info().optimizations();
+    if (const char *import = std::getenv("TURBOCIDER_Z_GGUF_IMPORT")) {
+        require(std::string_view(import)=="mlx" || std::string_view(import)=="cpu_direct",
+                "qe_config_conflict: unknown TURBOCIDER_Z_GGUF_IMPORT");
+        gguf_direct_import_ = std::string_view(import)=="cpu_direct";
+        if (gguf_direct_import_) {
+#ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+            throw std::invalid_argument("qe_capability_unqualified: direct packed import requires experimental build");
+#endif
+            require(!transformer_checkpoint.empty(),"qe_config_conflict: direct packed import requires a GGUF transformer");
+        }
+    }
     const bool gguf_encoder = z_qwen3_gguf_path() != nullptr;
     auto comfy_text = root / "split_files/text_encoders/qwen_3_4b.safetensors";
     auto comfy_transformer =
@@ -2865,7 +2879,16 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
     if (transformer_cold) {
         checkpoint(cancelled);
         event("load_z_image_transformer", 0, 1);
-        if (gguf_transformer_)
+        if (gguf_transformer_ && gguf_direct_import_) {
+            streaming::SourceFileIdentity file; file.logical_id="transformer";file.path=transformer_path_;
+            auto lease=streaming::SourceLease::capture_verified({std::move(file)},&cancelled);
+            gguf_packed_ledger_=std::make_unique<MemoryLedger>(z_qwen3_gguf_integer(
+                "TURBOCIDER_Z_GGUF_PACKED_WEIGHT_LIMIT_BYTES",std::min<uint64_t>(10ull<<30,device_info().physical_memory/2),
+                device_info().physical_memory));
+            gguf_packed_bank_=std::make_unique<streaming::GgufPackedBank>(std::move(lease),"transformer",*gguf_packed_ledger_);
+            z_image::validate_gguf_model_directory(gguf_packed_bank_->directory());
+            gguf_packed_bank_->load(transformer_,&cancelled,event);
+        } else if (gguf_transformer_)
             transformer_.load_gguf_file(transformer_path_);
         else
             load_z_component(transformer_, transformer_path_, event, cancelled);
@@ -2944,6 +2967,7 @@ void ZImage::unload() {
     cached_encoder_manifest_.clear();
     text_encoder_.clear();
     transformer_.clear();
+    gguf_packed_bank_.reset();gguf_packed_ledger_.reset();
     vae_.clear();
     public_component_cache_ = false;
     mx::clear_cache();
@@ -3213,6 +3237,13 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     require(r.inputs.empty(), "Z-Image-Turbo currently supports text-to-image only");
     require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
     const bool quantized = r.quantized_execution.active();
+    if (gguf_direct_import_) {
+        require(!quantized && !public_stream_lease_ && !r.memory_constrained.enabled &&
+                r.residency=="resident" && r.execution=="gpu" && r.loras.empty() &&
+                r.ane_manifest.empty() && r.encoder_ane_manifest.empty(),
+                "qe_config_conflict: experimental direct packed import supports only private resident GPU without LoRA/ANE/guard");
+        if (gguf_packed_bank_ && transformer_.bytes()) gguf_packed_bank_->check_unchanged();
+    }
     if (quantized) {
 #ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
         throw std::invalid_argument("qe_capability_unqualified: explicit experimental build required");
@@ -3305,8 +3336,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         stream_configuration_ = configuration;
     }
     RequestCacheLimit cache_limit(
-        streamed || constrained_memory,
-        (tight_exact || quantized) ? 0 : r.allocator_cache_bytes);
+        streamed || constrained_memory || gguf_direct_import_,
+        (tight_exact || quantized || gguf_direct_import_) ? 0 : r.allocator_cache_bytes);
     mx::reset_peak_memory();
     select_loras(r);
     auto text_start = Clock::now();
@@ -3589,6 +3620,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     profile.phase("denoise_begin");
     for (int i = 0; i < r.steps; ++i) {
         checkpoint(cancelled);
+        if (gguf_packed_bank_ && gguf_direct_import_) gguf_packed_bank_->check_unchanged();
         event("denoise", i, r.steps);
         auto noise = denoise(z, caption, sigmas[i], float(r.width), r.height, i, event, cancelled,
                              cache_context ? &context_cache : nullptr);
@@ -3599,6 +3631,17 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         event("denoise", i + 1, r.steps);
     }
     const double denoise_seconds = std::chrono::duration<double>(Clock::now() - dit_start).count();
+    std::optional<streaming::GgufPackedBankMetrics> packed_import_metrics;
+    if (gguf_direct_import_ && gguf_packed_bank_) {
+        mx::synchronize();gguf_packed_bank_->check_unchanged();
+        packed_import_metrics=gguf_packed_bank_->metrics();
+        transformer_.clear();mx::clear_cache();
+        require(gguf_packed_ledger_->snapshot().storage_bytes==0,
+                "qe_drain_unproven: direct packed bank backing remains live before VAE");
+        packed_import_metrics->released_before_vae=true;
+        packed_import_metrics->serial_refiner_eval=true;
+        event("gguf_packed_bank_released_before_vae",1,1);
+    }
     std::optional<QuantizedExecutionMetrics> quantized_metrics;
     if (quantized) {
         gguf_stream_->finish(); quantized_metrics = gguf_stream_->metrics();
@@ -3694,6 +3737,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const double decode_seconds = std::chrono::duration<double>(Clock::now() - decode_start).count();
     profile.phase("decode_end");
     require(mx::all(mx::isfinite(decoded)).item<bool>(), "nonfinite Z-Image pixels");
+    if (gguf_packed_bank_ && gguf_direct_import_) { mx::synchronize();gguf_packed_bank_->check_unchanged(); }
     auto pixels = mx::transpose(decoded, {0, 2, 3, 1});
     if (!warmup) {
         event("export", 0, 1);
@@ -3715,6 +3759,10 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.valid_text_tokens = reported_tokens.valid;
     result.actual_steps = r.steps;
     result.quantized_execution = quantized_metrics;
+    if (packed_import_metrics) {
+        result.gguf_import=packed_import_metrics;
+        result.selection += "; experimental CPU direct affine packed import, allocator cache=0";
+    }
     result.lora_applied_projections = lora_applied_projections_;
     if (gguf_transformer_) {
         result.backend = hybrid_ ? "mlx_cpp_metal_gguf+coreml" : "mlx_cpp_metal_gguf";
@@ -3772,6 +3820,10 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             ? "mlx_cpp_metal_gguf_bounded_native_affine" : "mlx_cpp_metal_gguf_bounded_cpu_dequant";
         result.precision = r.quantized_execution.precision_profile.value_or("z-source-mixed-v1");
     }
+    if (gguf_direct_import_) {
+        result.backend="mlx_cpp_metal_gguf_cpu_direct_packed";
+        result.precision="z-mlx-compat-affine-v1";
+    }
     result.encoder_hybrid = cached_encoder_hybrid_metrics_;
     result.encoder_quantized_execution = cached_encoder_gguf_metrics_;
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
@@ -3809,6 +3861,11 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     return result;
 } catch (...) {
+    if (gguf_direct_import_) {
+        try { mx::synchronize(); }
+        catch (...) { streaming_quarantined_=true;throw; }
+        transformer_.clear();gguf_packed_bank_.reset();gguf_packed_ledger_.reset();vae_.clear();mx::clear_cache();
+    }
     if (gguf_stream_ && !gguf_stream_->drain_safely()) {
         streaming_quarantined_ = true;
         throw;
@@ -3848,7 +3905,7 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
                       cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr,
                       weight_stream_.get(), exact_stream_.get(), uint32_t(step),
                       optimizations_.z_image_hybrid_segments || experimental_compiled_a8,
-                      nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_, gguf_stream_.get()),
+                      nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_, gguf_stream_.get(),gguf_direct_import_),
         mx::float32);
 }
 

@@ -38,11 +38,18 @@ def identity(report, row):
     execution = request["execution"].get("quantized_execution")
     q = metrics.get("quantized_execution")
     native = execution is None
+    importer = metrics.get("gguf_import")
     if native:
         if row["prefetch"] != -1 or report.get("native_packed_math_profile") != "z-mlx-compat-affine-v1":
             raise ValueError("unbound native packed math profile")
         execution = {"schema_version": 1, "enabled": True, "precision_profile": "z-mlx-compat-affine-v1"}
         dit_sha = sha(report.get("dit_source_sha256"))
+        if report.get("native_import","mlx")=="cpu_direct":
+            if (not importer or importer.get("recipe")!="gguf-mlx-compat-affine-packed-bank-v1" or
+                    importer.get("allocator_cache_limit_bytes")!=0 or sha(importer.get("source_sha256"))!=dit_sha):
+                raise ValueError("unbound CPU-direct packed import")
+        elif importer:
+            raise ValueError("unexpected native packed import recipe")
     else:
         if (not q or q["slot_count"] != row["prefetch"] + 1 or
                 q["fill_count"] != 30 * request["sampling"]["steps"] or
@@ -77,7 +84,10 @@ def identity(report, row):
         "execution": {k: v for k, v in request["execution"].items() if k != "quantized_execution"},
         "png_sha256": sha(row["png_sha256"]),
     }
-    candidate = "native_packed" if native else f'{execution["source_residency"]}:p{row["prefetch"]}'
+    candidate = ("native_packed:cpu_direct" if importer else "native_packed") if native else f'{execution["source_residency"]}:p{row["prefetch"]}'
+    eval_policy=report.get("gpu_eval_policy","default")
+    if eval_policy not in ("default","each-main-block-v1"): raise ValueError("unknown GPU eval policy")
+    if eval_policy!="default": candidate+=":"+eval_policy
     return shared, candidate
 
 
@@ -108,7 +118,17 @@ def screen(reports, budgets=(6, 8, 10, 16), buffer_percent=10, min_samples=4, bu
             record = candidates.setdefault(name, {"timings_seconds": [], "observed_peak_bytes": 0,
                 "memory_sample_max_gap_seconds": 0, "managed_weights_peak_bytes": 0,
                 "memory_runs": 0, "sampling_inconclusive": False, "swap_observed": False})
-            if name != "native_packed":
+            if name.startswith("native_packed:cpu_direct"):
+                import_metrics=row["metrics"]["gguf_import"]
+                consumer=import_metrics.get("consumer_revision","initial-retained-bank-v1")
+                if "consumer_revision" in record and record["consumer_revision"]!=consumer:
+                    raise ValueError("candidate import consumer changed between measurements")
+                record["consumer_revision"]=consumer
+                layout = sha(import_metrics["plan_digest"])
+                if "layout_digest" in record and record["layout_digest"] != layout:
+                    raise ValueError("candidate import plan changed between measurements")
+                record["layout_digest"] = layout
+            elif not name.startswith("native_packed"):
                 layout = sha(row["metrics"]["quantized_execution"]["layout_digest"])
                 if "layout_digest" in record and record["layout_digest"] != layout:
                     raise ValueError("candidate layout changed between measurements")
@@ -131,7 +151,8 @@ def screen(reports, budgets=(6, 8, 10, 16), buffer_percent=10, min_samples=4, bu
                 peak = max(positive(s[key], "process footprint") for s in samples
                     for key in ("phys_footprint_bytes", "lifetime_max_phys_footprint_bytes"))
                 record["observed_peak_bytes"] = max(record["observed_peak_bytes"], peak)
-                q, e = row["metrics"].get("quantized_execution"), row["metrics"]["encoder_quantized_execution"]
+                q = row["metrics"].get("quantized_execution") or row["metrics"].get("gguf_import")
+                e = row["metrics"]["encoder_quantized_execution"]
                 if not q:
                     record["native_dit_managed_weights"] = "unknown; only process footprint observed"
                 record["managed_weights_peak_bytes"] = max(record["managed_weights_peak_bytes"],

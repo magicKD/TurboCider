@@ -37,6 +37,14 @@ class MeasurementOptionsTests(unittest.TestCase):
                      "--encoder-tokenizer", "missing.json"], "missing encoder")
         self.reject(["--encoder-weight-limit-bytes", "0"], "must be positive")
 
+    def test_direct_import_requires_explicit_compatible_selector(self):
+        self.reject(["--native-import","cpu_direct"], "requires only native packed")
+        self.reject(["--native-weight-limit-bytes","1024"], "requires CPU-direct")
+        self.reject(["--native-import","cpu_direct","--prefetch","-1","--native-weight-limit-bytes","0"],
+                    "positive native weight ceiling")
+        self.reject(["--cancel-once-at-import-tensor","0"], "requires CPU-direct")
+        self.reject(["--cancel-once-at-block","0","--cancel-once-at-refiner","0"], "mutually exclusive")
+
     def test_tokenizer_mismatch_and_environment_conflict(self):
         with tempfile.TemporaryDirectory(prefix="tc-gguf-probe-component-") as raw:
             root = Path(raw); (root / "tokenizer").mkdir()

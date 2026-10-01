@@ -98,6 +98,7 @@ SOURCES=(
  native/runtime/streaming/run_context.cpp
  native/runtime/streaming/mlx_weight_pager.cpp
  native/runtime/streaming/gguf_weight_pager.cpp
+ native/runtime/streaming/gguf_packed_bank.cpp
  native/runtime/streaming/c_bridge.cpp native/runtime/streaming/audit.cpp
  native/models/ltx_runtime/ltx_streaming_descriptor.cpp native/models/ltx_runtime/ltx_streaming_plan.cpp
  native/models/h3_runtime/h3_streaming_descriptor.cpp
