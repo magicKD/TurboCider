@@ -169,3 +169,9 @@ catalog、W8A8或ANE资格；发行库/CLI/App未替换。
 完整gate QDQ筛选与K-tile负例、既有ANE/真实Z回归见
 [14](14-packed-ane-staging-and-w8a8-screen.md)。只交付其明确列出的组件/研究增量，
 没有硬件INT8或新增GGUF+ANE整图资格，没有替换发行库或放宽生产门禁。
+
+## 11. Qwen3 GGUF conditioning 实验（2026-10-01）
+
+模型级SourceLease/config/tokenizer绑定、embedding gather、per-layer固定槽、Q8/Q4_K_M
+组件和真实Z组合已实现/执行，详见[15](15-qwen3-gguf-conditioning.md)。单/双槽exact不替代
+原BF16差异或媒体门；原BF16完整请求参考出现N1失败，原样保留，默认和生产资格不变。

@@ -28,6 +28,10 @@ class GgufWeightPager {
     GgufWeightPager &operator=(const GgufWeightPager &) = delete;
     void load_packed(const std::atomic<bool> *cancel = nullptr);
     void load_resident_aliases(Weights &);
+    // Explicit packed-source resident field, not a full dense embedding.
+    // Gather output is independently owned and charged to the same ledger.
+    Tensor gather_rows(const std::string &tensor, std::span<const uint64_t> rows,
+                       const std::atomic<bool> *cancel = nullptr);
     void create_pool(const PoolLayout &);
     void destroy_pool(uint32_t) noexcept;
     uint64_t fill(const Group &, const tc_stream_slot_ticket_v1 &, const std::atomic<bool> *);

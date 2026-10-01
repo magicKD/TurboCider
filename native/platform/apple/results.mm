@@ -1253,12 +1253,12 @@ NSDictionary *to_dictionary(const RunResult &result) {
     auto encoder_hybrid = result.encoder_hybrid
                               ? to_dictionary(*result.encoder_hybrid)
                               : @{};
-    auto encoder_execution = result.encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
-    auto encoder_backend = encoder_backend_label(
+    auto encoder_execution = result.encoder_quantized_execution ? @"gguf_bounded_gpu_experimental" : result.encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
+    auto encoder_backend = result.encoder_quantized_execution ? @"mlx_cpp_metal_gguf_bounded" : encoder_backend_label(
         r, result.encoder_hybrid.has_value());
     auto encoder_gpu_graph =
-        encoder_gpu_graph_label(r, result.encoder_hybrid.has_value());
-    auto encoder_precision = result.encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
+        result.encoder_quantized_execution ? @"each-layer-eager-submission" : encoder_gpu_graph_label(r, result.encoder_hybrid.has_value());
+    auto encoder_precision = result.encoder_quantized_execution ? @"source_mixed_weights+fp32_residual_rope+bf16_conditioning" : result.encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
                                                     : @"bf16";
     if (result.prepared) {
         NSMutableDictionary *prepared = [@{
@@ -1363,6 +1363,21 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"scope": @"managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS"
         };
         value[@"validation"] = @"experimental source-mixed GGUF execution; not a production capability";
+    }
+    if (result.encoder_quantized_execution) {
+        const auto &m = *result.encoder_quantized_execution;
+        value[@"encoder_quantized_execution"] = @{
+            @"experimental": @YES, @"whole_request_bounded_certified": @NO,
+            @"precision_profile": @"qwen3-z-source-mixed-v1", @"submit_policy": @"each-layer-eval-v1",
+            @"hidden_tap": @"block34-post-residual-no-final-norm", @"source_sha256": @(m.source_sha256.c_str()),
+            @"layout_digest": @(m.layout_digest.c_str()), @"packed_source_bytes": @(m.packed_bytes),
+            @"packed_capacity_bytes": @(m.packed_capacity_bytes), @"source_float_bytes": @(m.source_float_bytes),
+            @"max_dense_pool_capacity_bytes": @(m.dense_capacity_bytes), @"managed_peak_bytes": @(m.managed_peak_bytes),
+            @"slot_count": @(m.slots), @"prefetch_layers": @(m.prefetch), @"fill_count": @(m.fills),
+            @"decoded_bytes": @(m.decoded_bytes), @"source_load_seconds": @(m.source_load_seconds),
+            @"decode_active_seconds": @(m.decode_seconds), @"exposed_ready_wait_seconds": @(m.exposed_wait_seconds),
+            @"scope": @"managed encoder packed weights, refill slots and gathered embedding; excludes other activations/framework/OS"
+        };
     }
     if (result.db_cache_enabled)
         value[@"qwen21_dbcache"] = @{

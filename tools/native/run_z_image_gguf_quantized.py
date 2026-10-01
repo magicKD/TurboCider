@@ -27,11 +27,14 @@ def main():
     parser.add_argument("--prompt",default="A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture.")
     parser.add_argument("--dump",action="store_true",help="save diagnostic latents/pixels; not a performance run")
     parser.add_argument("--cancel-once-at-block",type=int,help="cancel the first request at a main block, then test retry")
+    parser.add_argument("--cancel-once-at-encoder-layer",type=int,help="cancel first uncached Qwen3 encode, then test retry")
     args=parser.parse_args()
     if any(p not in (-1,0,1) for p in args.prefetch) or not 1<=args.runs<=24: parser.error("prefetch -1=native packed, 0/1=bounded; runs 1..24")
     if args.output.exists() or args.output.is_symlink(): parser.error("output already exists")
     if args.cancel_once_at_block is not None and (not 0<=args.cancel_once_at_block<30 or args.prefetch[0]<0):
         parser.error("cancellation requires a bounded first request and block 0..29")
+    if args.cancel_once_at_encoder_layer is not None and (not 0<=args.cancel_once_at_encoder_layer<35 or args.cancel_once_at_block is not None):
+        parser.error("encoder cancellation requires layer 0..34 and no block cancellation")
     args.output.mkdir(parents=True)
     with open("/tmp/turbocider-z-image-gpu-benchmark.lock","a") as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -74,13 +77,15 @@ def main():
                     sampler=threading.Thread(target=sample,daemon=True)
                     before=vm_counters(); sampler.start()
                     with (args.output/(name+"-events.jsonl")).open("x") as events:
-                        should_cancel=args.cancel_once_at_block is not None and not cancel_used
+                        should_cancel=(args.cancel_once_at_block is not None or args.cancel_once_at_encoder_layer is not None) and not cancel_used
                         triggered=[False]
                         @C.CFUNCTYPE(None,C.c_char_p,C.c_void_p)
                         def event(raw,_):
                             events.write(raw.decode()+"\n"); events.flush()
                             progress=json.loads(raw)
-                            if should_cancel and not triggered[0] and progress.get("phase")=="z_image_denoise_block" and progress.get("completed")==args.cancel_once_at_block:
+                            cancel_phase = "z_image_text_encode" if args.cancel_once_at_encoder_layer is not None else "z_image_denoise_block"
+                            cancel_at = args.cancel_once_at_encoder_layer if args.cancel_once_at_encoder_layer is not None else args.cancel_once_at_block
+                            if should_cancel and not triggered[0] and progress.get("phase")==cancel_phase and progress.get("completed")==cancel_at:
                                 library.tc_engine_cancel(engine);triggered[0]=True
                         value,error=C.c_void_p(),C.c_void_p(); start=time.perf_counter()
                         try:

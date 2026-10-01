@@ -10,6 +10,8 @@
 
 namespace tc {
 
+namespace components { class Qwen3GgufEncoder; }
+
 class ZImageExactStream;
 class ZImageGgufStream;
 
@@ -22,6 +24,9 @@ class ZImage final : public ModelSession {
     DeviceOptimizations optimizations_;
     mutable Tokenizer tokenizer_;
     Weights text_encoder_;
+    std::unique_ptr<components::Qwen3GgufEncoder> encoder_gguf_;
+    std::string cached_encoder_gguf_identity_;
+    std::optional<QuantizedExecutionMetrics> cached_encoder_gguf_metrics_;
     Weights transformer_;
     Weights vae_;
     std::unique_ptr<ZImageWeightStream> weight_stream_;

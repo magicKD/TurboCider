@@ -239,6 +239,7 @@ struct RunResult {
     std::optional<PublicStreamingSelectionMetrics> public_streaming;
     std::optional<MemoryAdmissionMetrics> memory_admission;
     std::optional<QuantizedExecutionMetrics> quantized_execution;
+    std::optional<QuantizedExecutionMetrics> encoder_quantized_execution;
     std::vector<MemoryTraceEvent> memory_trace;
     std::string native_json;
 };

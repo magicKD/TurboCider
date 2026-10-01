@@ -18,6 +18,7 @@
 #include "streaming_descriptor.hpp"
 #include "gguf_execution.hpp"
 #include "../../components/text/qwen3.hpp"
+#include "../../components/text/qwen3_gguf.hpp"
 
 #include <array>
 #include <bit>
@@ -34,6 +35,26 @@
 namespace tc {
 
 using ZImageGpuGraph = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
+
+static const char *z_qwen3_gguf_path() {
+    const char *path = std::getenv("TURBOCIDER_Z_QWEN3_GGUF");
+    if (!path) return nullptr;
+#ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+    throw std::runtime_error("qe_capability_unqualified: Qwen3 GGUF requires an explicit experimental build");
+#else
+    require(*path && std::filesystem::path(path).extension() == ".gguf", "qe_config_conflict: invalid Qwen3 GGUF path");
+    return path;
+#endif
+}
+static uint64_t z_qwen3_gguf_integer(const char *name, uint64_t fallback, uint64_t maximum) {
+    const char *raw = std::getenv(name);
+    if (!raw) return fallback;
+    const std::string value(raw);
+    require(!value.empty() && value.find_first_not_of("0123456789") == std::string::npos,
+            std::string("qe_config_conflict: invalid ") + name);
+    const uint64_t result = std::stoull(value);
+    require(result <= maximum, std::string("qe_config_conflict: out of range ") + name); return result;
+}
 
 class ZImageGgufStream {
   public:
@@ -2406,6 +2427,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
                const std::filesystem::path &transformer_checkpoint)
     : root_(root), model_id_(std::move(model_id)), tokenizer_(root / "tokenizer") {
     optimizations_ = device_info().optimizations();
+    const bool gguf_encoder = z_qwen3_gguf_path() != nullptr;
     auto comfy_text = root / "split_files/text_encoders/qwen_3_4b.safetensors";
     auto comfy_transformer =
         root / "split_files/diffusion_models/z_image_turbo_bf16.safetensors";
@@ -2430,7 +2452,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
         transformer_checkpoint_ = transformer_path_;
         gguf_transformer_ = true;
         nvfp4_transformer_ = false;
-        if (std::filesystem::is_regular_file(comfy_text) &&
+        if ((gguf_encoder || std::filesystem::is_regular_file(comfy_text)) &&
             std::filesystem::is_regular_file(comfy_vae)) {
             text_path_ = std::move(comfy_text);
             vae_path_ = std::move(comfy_vae);
@@ -2438,7 +2460,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
         }
         text_path_ = root / "text_encoder";
         vae_path_ = root / "vae";
-        require(has_safetensors(text_path_),
+        require(gguf_encoder || has_safetensors(text_path_),
                 "missing Z-Image Qwen3 safetensors in text_encoder/");
         require(has_safetensors(vae_path_), "missing Z-Image VAE safetensors in vae/");
         return;
@@ -2449,7 +2471,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
         // App's text_encoder/ directory binding instead of a single file.
         text_path_ = has_safetensors(root / "text_encoder")
                          ? root / "text_encoder" : comfy_text;
-        require(std::filesystem::is_regular_file(text_path_) || has_safetensors(text_path_),
+        require(gguf_encoder || std::filesystem::is_regular_file(text_path_) || has_safetensors(text_path_),
                 "missing Z-Image Qwen3 weights; select a shared text model in the App");
         transformer_path_ = std::move(comfy_transformer);
         transformer_checkpoint_ = transformer_path_;
@@ -2468,7 +2490,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
     else if (std::filesystem::is_regular_file(diffusers_checkpoint))
         transformer_checkpoint_ = std::move(diffusers_checkpoint);
     vae_path_ = root / "vae";
-    require(has_safetensors(text_path_),
+    require(gguf_encoder || has_safetensors(text_path_),
             "missing Z-Image Qwen3 safetensors in text_encoder/");
     require(has_safetensors(transformer_path_),
             "missing Z-Image DiT safetensors in transformer/");
@@ -2818,6 +2840,11 @@ void ZImage::load_vae(
 }
 
 void ZImage::unload() {
+    if (encoder_gguf_ && !encoder_gguf_->drain_safely()) {
+        streaming_quarantined_ = true;
+        throw std::runtime_error("Qwen3 GGUF drain unproven; restart the process");
+    }
+    encoder_gguf_.reset(); cached_encoder_gguf_identity_.clear(); cached_encoder_gguf_metrics_.reset();
     if (gguf_stream_ && !gguf_stream_->drain_safely()) {
         streaming_quarantined_ = true;
         throw std::runtime_error("GGUF drain unproven; restart the process");
@@ -2847,6 +2874,14 @@ void ZImage::unload() {
 }
 
 Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic<bool> &cancelled) try {
+    if (encoder_gguf_) {
+        auto result = encoder_gguf_->encode(tokens);
+        cached_encoder_gguf_metrics_ = encoder_gguf_->metrics();
+        require(encoder_gguf_->drain_safely(), "Qwen3 GGUF reader drain unproven");
+        encoder_gguf_.reset();
+        result = slice_axis(mx::squeeze(result, 0), 0, 0, tokens.valid);
+        mx::eval(result); mx::clear_cache(); return result;
+    }
     if (text_encoder_.bytes() == 0) {
         if (public_stream_lease_) {
             std::vector<std::string> artifacts;
@@ -2867,6 +2902,10 @@ Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic
     mx::clear_cache();
     return result;
 } catch (...) {
+    if (encoder_gguf_) {
+        if (!encoder_gguf_->drain_safely()) streaming_quarantined_ = true;
+        else encoder_gguf_.reset();
+    }
     // An interrupted prompt must not retain Qwen3 alongside the next denoiser.
     if (optimizations_.z_image_memory_lifecycle) {
         text_encoder_.clear();
@@ -2876,13 +2915,28 @@ Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic
 }
 
 bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool> &cancelled) {
+    std::string encoder_identity;
+    if (const char *path = z_qwen3_gguf_path()) {
+        require(!public_stream_lease_ && !r.memory_constrained.enabled,
+                "qe_envelope_unknown: Qwen3 GGUF whole-request/public qualification is not available");
+        require(r.encoder_ane_manifest.empty(), "qe_config_conflict: Qwen3 GGUF encoder ANE is not supported");
+        for (const auto &lora : active_loras_) require(lora.role != "text_encoder", "qe_config_conflict: Qwen3 GGUF encoder LoRA is not supported");
+        const char *config = std::getenv("TURBOCIDER_Z_QWEN3_GGUF_CONFIG");
+        require(config && *config, "qe_config_conflict: Qwen3 GGUF requires bound original config path");
+        encoder_gguf_ = std::make_unique<components::Qwen3GgufEncoder>(path, config, root_ / "tokenizer/tokenizer.json",
+            uint32_t(z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_PREFETCH", 1, 1)),
+            z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_WEIGHT_LIMIT_BYTES", 8ull << 30, device_info().physical_memory), event, cancelled);
+        encoder_identity = encoder_gguf_->identity();
+    }
     if (cached_conditioning_ && cached_prompt_ == r.prompt && cached_dynamic_ == r.dynamic_text &&
-        cached_encoder_manifest_ == r.encoder_ane_manifest) {
+        cached_encoder_manifest_ == r.encoder_ane_manifest && cached_encoder_gguf_identity_ == encoder_identity) {
+        encoder_gguf_.reset();
         event("z_image_text_cache_hit", 1, 1);
         return true;
     }
-    auto tokens = (public_stream_tokenizer_ ? *public_stream_tokenizer_ : tokenizer_)
-                      .z_image_prompt(r.prompt, r.dynamic_text);
+    auto tokens = encoder_gguf_ ? encoder_gguf_->tokenize(r.prompt, r.dynamic_text) :
+        (public_stream_tokenizer_ ? *public_stream_tokenizer_ : tokenizer_).z_image_prompt(r.prompt, r.dynamic_text);
+    cached_encoder_gguf_metrics_.reset();
     if (!r.encoder_ane_manifest.empty()) {
         const auto prefill = components::qwen3_prefill_plan(
             r.encoder_ane_manifest, int(tokens.ids.size()));
@@ -2914,6 +2968,7 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
     cached_prompt_ = r.prompt;
     cached_dynamic_ = r.dynamic_text;
     cached_encoder_manifest_ = r.encoder_ane_manifest;
+    cached_encoder_gguf_identity_ = std::move(encoder_identity);
     return false;
 }
 
@@ -3151,7 +3206,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             vae_.clear();
         mx::clear_cache();
         stream_configuration_.clear();
-    } else if (configuration != stream_configuration_ ||
+    } else if (z_qwen3_gguf_path() || configuration != stream_configuration_ ||
                ((legacy_streamed || constrained_memory) && prompt_changed)) {
         mx::synchronize();
         weight_stream_.reset();
@@ -3419,6 +3474,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             result.hybrid = runtime_ffn_->metrics();
         }
         result.encoder_hybrid = cached_encoder_hybrid_metrics_;
+        result.encoder_quantized_execution = cached_encoder_gguf_metrics_;
         result.timings.wall =
             std::chrono::duration<double>(Clock::now() - begin).count();
         result.timings.text = text_seconds;
@@ -3440,6 +3496,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     dump("z_latent_initial", z);
     auto sigmas = z_sigmas(r.width, r.height, r.steps);
     const auto caption = *cached_conditioning_;
+    dump("z_conditioning", caption);
     // Request-local: never reuse across prompts, LoRA changes or resolutions.
     // First-step refinement remains in denoise timing and is evaluated through
     // the unified graph before subsequent steps can consume the cached tensor.
@@ -3637,6 +3694,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         result.precision = r.quantized_execution.precision_profile.value_or("z-source-mixed-v1");
     }
     result.encoder_hybrid = cached_encoder_hybrid_metrics_;
+    result.encoder_quantized_execution = cached_encoder_gguf_metrics_;
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
     result.timings.text = text_seconds;
     result.timings.denoise = denoise_seconds;

@@ -67,7 +67,12 @@ int main(int argc,char **argv) {
             return FieldSpec{"weight",t.name,t.elements*(t.type==0?4:2),GgufWeightPager::buffer_alignment,m};
         };
         for(uint32_t i=0;i<4;++i) stage.blocks.push_back({i,"same-layout",{field(directory.tensor("layers."+std::to_string(i)+".weight"),false)}});
-        stage.resident_fields.push_back(field(directory.tensor("fixed"),true)); d.stages.push_back(stage);
+        stage.resident_fields.push_back(field(directory.tensor("fixed"),true));
+        auto packed = field(directory.tensor("embedding.weight"), false);
+        packed.name = "embedding.packed"; packed.bytes = directory.tensor("embedding.weight").bytes;
+        packed.materialization->conversion = "gguf-packed-gather-source-v1";
+        packed.materialization->format = "U8"; packed.materialization->shape = {packed.bytes};
+        stage.resident_fields.push_back(std::move(packed)); d.stages.push_back(stage);
         for(uint32_t slots=1;slots<=2;++slots) {
             StreamingConfig c; c.enabled=true; c.schema_version=1; c.selection="manual"; c.retention="request";
             c.stages["denoiser"]={"streamed",1,slots,0,slots-1,1};
@@ -75,6 +80,16 @@ int main(int argc,char **argv) {
             auto pager=std::make_unique<GgufWeightPager>(lease,d,d.stages.front(),layout.stages.front(),ledger);
             pager->load_packed(); pager->load_resident_aliases(fixed);
             ensure(fixed.at("fixed").item<float>()==3.5f,"float source alias mismatch");
+            ensure(!fixed.has("embedding.weight"), "packed embedding pretended to be a full dense matrix");
+            const uint64_t rows[] = {3, 1, 1, 0};
+            auto gathered = pager->gather_rows("embedding.weight", rows);
+            ensure(gathered.shape() == mx::Shape{4, 64} && gathered.dtype() == mx::bfloat16, "gather output contract mismatch");
+            const float values[] = {4, 2, 2, 1};
+            auto expected = mx::broadcast_to(mx::reshape(Tensor(values, {4}, mx::bfloat16), {4, 1}), {4, 64});
+            ensure(mx::all(gathered == expected).item<bool>(), "gather row order/duplicates changed");
+            const uint64_t invalid[] = {4}; bool bad_row = false;
+            try { (void)pager->gather_rows("embedding.weight", invalid); } catch (...) { bad_row = true; }
+            ensure(bad_row, "invalid embedding token accepted");
             auto adapter=std::make_shared<Adapter>(*pager); std::atomic<bool> cancel{false};
             {
                 StageExecutor executor(0,100+slots,adapter); const auto counts=executor.run(layout.stages.front(),cancel);
@@ -86,7 +101,9 @@ int main(int argc,char **argv) {
                 metrics.maximum_dense_pool_capacity_bytes==slots*GgufWeightPager::buffer_alignment,"capacity accounting mismatch");
             pager.reset(); fixed.clear();
             ensure(ledger.snapshot().storage_bytes>0,"escaped MLX view lost physical storage claim");
-            adapter->escaped.reset(); adapter.reset(); mx::synchronize(); mx::clear_cache();
+            adapter->escaped.reset(); adapter.reset();
+            gathered = mx::zeros({1}, mx::bfloat16); expected = mx::zeros({1}, mx::bfloat16);
+            mx::synchronize(); mx::clear_cache();
             ensure(ledger.snapshot().storage_bytes==0 && ledger.snapshot().reserved_bytes==0,"buffer/ledger release leak");
         }
         std::cout<<"PASS GGUF pager Metal: K1/K2, two passes, GPU numerics, stale tickets, escaped-view ledger, release\n";

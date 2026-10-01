@@ -105,6 +105,7 @@ SOURCES=(
  native/platform/apple/flux_streaming_descriptor.mm
  native/platform/apple/streaming_config.mm
  native/components/text/qwen3.cpp
+ native/components/text/qwen3_gguf.cpp native/platform/apple/qwen3_gguf_config.mm
  native/components/text/umt5.cpp
  native/components/weights/affine.cpp native/platform/apple/wan_checkpoint.mm
  native/components/diffusion/wan.cpp

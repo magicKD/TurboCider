@@ -53,6 +53,9 @@ struct Metadata {
     uint64_t count = 0, unsigned_value = 0;
     int64_t signed_value = 0;
     double float_value = 0;
+    // Checked payload span for component metadata readers (e.g. vocabulary),
+    // including array element-type/count headers. Does not retain array data.
+    uint64_t value_offset = 0, value_bytes = 0;
 };
 struct TensorDescriptor {
     std::string name;
@@ -196,7 +199,9 @@ inline Directory read_directory(int fd, uint64_t file_bytes,
         check(!metadata.key.empty() && metadata.key.find('\0') == std::string::npos, "invalid metadata key");
         reader.charge(metadata.key.size() + 1);
         check(keys.insert(metadata.key).second, "duplicate metadata key");
-        metadata.type = uint32_t(reader.integer(4)); reader.value(metadata.type, &metadata);
+        metadata.type = uint32_t(reader.integer(4)); metadata.value_offset = reader.cursor();
+        reader.value(metadata.type, &metadata);
+        metadata.value_bytes = reader.cursor() - metadata.value_offset;
         directory.metadata.push_back(std::move(metadata));
     }
     if (const auto *alignment = directory.meta("general.alignment")) {

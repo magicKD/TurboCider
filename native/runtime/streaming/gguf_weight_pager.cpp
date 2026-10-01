@@ -19,6 +19,7 @@ void cancelled(const std::atomic<bool> *cancel) {
 }
 mx::Dtype mlx_dtype(std::string_view format) {
     if (format == "U32") return mx::uint32;
+    if (format == "U8") return mx::uint8;
     if (format == "BF16") return mx::bfloat16;
     if (format == "F16") return mx::float16;
     if (format == "F32") return mx::float32;
@@ -126,13 +127,15 @@ struct GgufWeightPager::State {
     FieldRecipe recipe(const FieldSpec &field, bool alias) {
         insist(field.materialization.has_value(), "field missing materialization");
         const auto &m = *field.materialization;
+        const bool packed_source = alias && m.conversion == "gguf-packed-gather-source-v1";
         std::optional<gguf::AffinePart> affine;
         if (m.conversion=="gguf-affine-codes-v1") affine=gguf::AffinePart::codes;
         if (m.conversion=="gguf-affine-scales-v1") affine=gguf::AffinePart::scales;
         if (m.conversion=="gguf-affine-biases-v1") affine=gguf::AffinePart::biases;
         insist(m.storage_mode == "mlx-metal-shared" && m.reads.size() == 1 && m.derived_from.empty() &&
                    m.derived_offset == 0 && (m.conversion == (alias ? "gguf-native-alias-v1" : "gguf-cpu-rne-v1") ||
-                     (alias && legacy_float && m.conversion=="gguf-mlx-float-alias-v1") || (affine && !alias)),
+                     (alias && legacy_float && m.conversion=="gguf-mlx-float-alias-v1") ||
+                     packed_source || (affine && !alias)),
                 "unsupported typed materialization");
         const auto &r = m.reads.front();
         insist(r.artifact < directories.size(), "source artifact out of bounds");
@@ -142,7 +145,11 @@ struct GgufWeightPager::State {
         const auto original = tensor.logical_shape();
         const bool pad_reshape = (tensor.name == "x_pad_token" || tensor.name == "cap_pad_token") &&
             original.size() == 1 && m.shape == std::vector<uint64_t>{1, original[0]};
-        if(affine) {
+        if (packed_source) {
+            insist(m.format == "U8" && m.shape == std::vector<uint64_t>{tensor.bytes} &&
+                   field.bytes == tensor.bytes && original.size() == 2 && !legacy_float,
+                   "invalid packed gather source geometry/profile");
+        } else if(affine) {
             insist(original.size()==2 && (tensor.type==2 || tensor.type==3 || tensor.type==8), "unsupported affine source");
             const uint32_t bits=tensor.type==8 ? 8 : 4;
             const std::vector<uint64_t> expected{tensor.rows(), *affine==gguf::AffinePart::codes ? tensor.columns()*bits/32 : tensor.columns()/32};
@@ -150,11 +157,11 @@ struct GgufWeightPager::State {
         } else insist(m.shape == original || pad_reshape, "target shape differs from source");
         const auto dtype = mlx_dtype(m.format);
         uint64_t elements=1; for(uint64_t dim:m.shape) elements=gguf::checked_mul(elements,dim);
-        const uint32_t item=dtype==mx::uint32 ? 4 : gguf::dtype_bytes(decode_dtype(dtype));
+        const uint32_t item=dtype==mx::uint8 ? 1 : dtype==mx::uint32 ? 4 : gguf::dtype_bytes(decode_dtype(dtype));
         insist(field.bytes == gguf::checked_mul(elements, item),
                 "target byte count differs from dtype/shape");
         insist(field.alignment == buffer_alignment, "unqualified backing alignment");
-        if (alias) {
+        if (alias && !packed_source) {
             insist((tensor.type == 0 && dtype == mx::float32) || (tensor.type == 1 && dtype == mx::float16) ||
                        (tensor.type == 30 && dtype == (legacy_float ? mx::float16 : mx::bfloat16)), "resident alias would require conversion");
         }
@@ -277,12 +284,35 @@ void GgufWeightPager::load_resident_aliases(Weights &destination) {
     std::vector<std::string> keys; std::vector<Tensor> arrays;
     uint64_t alias_bytes = 0;
     for (const auto &recipe : s.resident) {
+        if (recipe.field->materialization->conversion == "gguf-packed-gather-source-v1") continue;
         keys.push_back(binding_key(recipe));
         arrays.push_back(mx::reshape(*recipe.source->storage, mlx_shape(recipe.field->materialization->shape)));
         alias_bytes = gguf::checked_add(alias_bytes, recipe.field->bytes);
     }
     destination.bind_arrays(keys, arrays);
     s.metrics.fixed_alias_bytes = alias_bytes; s.resident_bound = true;
+}
+
+Tensor GgufWeightPager::gather_rows(const std::string &tensor, std::span<const uint64_t> rows,
+                                  const std::atomic<bool> *cancel) {
+    auto &s = *state_; s.check_owner();
+    insist(s.loaded && !s.failed && !rows.empty() && rows.size() <= 1024, "invalid/unloaded embedding gather");
+    const auto found = std::find_if(s.resident.begin(), s.resident.end(), [&](const FieldRecipe &r) {
+        return r.source->descriptor.name == tensor && r.field->materialization->conversion == "gguf-packed-gather-source-v1";
+    });
+    insist(found != s.resident.end(), "embedding source not declared by descriptor");
+    const auto &raw = *found->source; const auto &d = raw.descriptor;
+    for (uint64_t row : rows) insist(row < d.rows(), "embedding token ID out of bounds");
+    cancelled(cancel); check_unchanged();
+    const auto dtype = raw.cached_type == 0 ? mx::float32 : raw.cached_type == 1 ? mx::float16 : mx::bfloat16;
+    const auto bytes = gguf::checked_mul(gguf::checked_mul(rows.size(), d.columns()), gguf::dtype_bytes(decode_dtype(dtype)));
+    auto output = allocate(s.ledger, bytes, aligned(bytes), mlx_shape({rows.size(), d.columns()}), dtype,
+                           MemoryClass::Conditioning, s.lease->generation());
+    gguf::decode_cpu_gather({{raw.pointer, size_t(d.bytes)}, raw.cached_type, d.rows(), d.columns()},
+        rows, 0, d.columns(), {{output.data<std::byte>(), size_t(bytes)}, decode_dtype(dtype),
+        d.columns() * gguf::dtype_bytes(decode_dtype(dtype)), gguf::dtype_bytes(decode_dtype(dtype))}, cancel);
+    cancelled(cancel); check_unchanged();
+    return output;
 }
 
 void GgufWeightPager::create_pool(const PoolLayout &layout) {
