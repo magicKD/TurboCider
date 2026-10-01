@@ -1,13 +1,11 @@
 # Dynamic-weight INT8 / Hadamard feasibility
 
-> Follow-up: testing was reauthorized and focused checks were executed. See
-> [resumed acceptance](2026-10-01-resumed-validation.md). The source-only
-> notes below describe the earlier stopped-test milestone.
-
-Testing remains stopped. This stage reads source and official interfaces, and
-adds an offline candidate exporter; it does not export/compile a Core ML graph,
-load a checkpoint or run a prediction. The delivered `c4caaa2` App is unchanged.
-The preceding source milestone `a301d64` handles failed-runtime resource release.
+The user reauthorized testing. The isolated projection candidate has now been
+exported, compiled and exercised on this M4 Pro / 48 GiB laptop, with existing
+tooling and no downloaded checkpoint. The current App remains GPU-first for
+Qwen Turbo. This candidate is **not** a production W8A8 backend: neither its
+physical INT8 execution nor an end-to-end speedup has been demonstrated.
+See [measured acceptance](2026-10-01-resumed-validation.md) for raw-data locations.
 
 ## What the inspected interfaces establish
 
@@ -73,32 +71,43 @@ argument. It disables the converter's automatic FP16 rewrite so the explicit
 FP32 restoration is retained in MIL. The normal exporter retains its existing
 program factory and FP16 conversion setting.
 
-## Required next evidence
+## Measured candidate decision
 
-There is no exported graph or timing result yet. Before expanding to Qwen FFN:
+The installed tools successfully exported matching FP16 and dynamic-operand
+Q/DQ controls. Converted MIL retains both runtime matrices, both INT8 Q/DQ pairs,
+and FP32 scale restoration. Synthetic zero/signed inputs, A/B/A weight switching,
+group-64 rotation and a finite result with an overflowing FP16 intermediate
+were checked. Explicit temporary model packages/compiled graphs were removed.
 
-- Export only the small matching FP16/QDQ projections with existing tooling.
-  Inspect MIL to establish that both matrix operands remain runtime inputs and
-  both Q/DQ pairs survive; do not treat conversion success as ANE eligibility.
-- Inspect compute-device plans for projection **and** restoration. Apple's
-  [MLComputePlan](https://developer.apple.com/documentation/coreml/mlcomputeplan-85vdw?language=objc)
-  exposes preferred/supported devices and estimated costs. These are planning
-  evidence, not a hardware trace or proof of INT8 arithmetic.
-- On small synthetic matrices, compare original unrotated FP32, prepared FP16
-  control and Q/DQ output; use zero rows, signed values, changed scales and
-  A/B/A weight switching. Reject nonfinite output. Inspect device execution
-  and time the complete preparation/prediction/restoration path, including the
-  FP32 restoration placement, before considering production dimensions.
-- If that gate passes, build the complete SwiGLU candidate. Gate/up may share
-  input rotation. LoRA corrections must be added to their projections **before**
-  SiLU; down-projection rotation applies after the nonlinear hidden activation.
-  Hadamard cannot simply commute through SiLU. Preserve down-LoRA correction
-  in the original hidden basis and full GPU fallback after any failed chunk.
+| Geometry (rows / hidden / width) | FP16 total median | Q/DQ total median | MatMul preferred device |
+| --- | ---: | ---: | --- |
+| 32 / 64 / 96, butterfly preparation | 0.140 ms | 0.144 ms | CPU for both |
+| 128 / 512 / 768, earlier dense-H preparation | 2.409 ms | 2.374 ms | CPU for both |
 
-These are future checks, not commands run in this stage. Small component tests
-require lifting the current testing stop; full-model tests need separate scope.
-No new model download is needed. Production integration, GPU A8W8 kernels,
-encoder coverage and a matched sparse laptop benchmark remain open.
+These small diagnostic timings include group-one preparation, prediction and
+restoration; they exclude Hadamard rotation cost. Four warmed samples per
+variant do not establish a production speedup. Some MatMul/QDQ nodes list NE
+support, but the plans prefer CPU; scale restoration is CPU-only. A plan is not
+a hardware trace. Maximum relative L2 versus original FP64 projection was
+0.129% / 0.836% (small FP16/QDQ) and 0.335% / 1.107% (medium). The earlier failed
+arbitrary 0.3% medium-control gate is retained in the raw evidence; it is not
+silently reclassified as image-quality acceptance.
+
+The Sylvester CPU preparation now uses butterflies, with host tests of basis
+ordering, projection invariance, input ownership, zero rows and invalid scales.
+It remains a reference transform, not the GPU/ANE production stager. Current
+receipts explicitly set `hardware_int8_verified=false` and
+`production_speedup_verified=false`; the candidate is rejected by the App
+runtime manifest contract rather than silently exposed as an acceleration mode.
+
+A complete SwiGLU/LoRA backend would still need all three projections and their
+conversion/bridge costs. Gate/up may share input rotation; LoRA corrections
+must be added **before** SiLU. The down-projection rotation comes after the
+nonlinear hidden activation; Hadamard cannot commute through SiLU. Down-LoRA
+must use the corrected hidden in the original basis, and any failed chunk must
+trigger complete GPU-tail recomputation. No such complete dynamic INT8 backend,
+GPU A8W8 kernel, encoder route or matched whole-image speed comparison has been
+implemented or qualified by this single-projection experiment.
 
 ## Scheduling and disk boundary
 
@@ -119,8 +128,18 @@ disk-backed; model-dependent weights are runtime inputs. Private-lease cleanup
 does not control Core ML's system caches. Zero disk activity or zero remnants
 after every failure is not established by this design.
 
-## Static validation only
+## Reproduction
 
-Both Python sources were parsed/compiled as source without importing coremltools
-or executing numerical preparation, conversion or prediction. No functional,
-numerical, placement, performance or image-quality acceptance is claimed.
+```sh
+.venv/bin/python -B tests/native/test_runtime_ane_int8_candidate.py
+.venv/bin/python -B tools/validation/runtime_ane_int8_probe.py --output /tmp/tc-int8-small-new
+# Optional bounded second geometry, not a production-size experiment:
+.venv/bin/python -B tools/validation/runtime_ane_int8_probe.py --medium --output /tmp/tc-int8-medium-new
+```
+
+Use a new output directory. Run serially with other GPU/ANE work. The four host
+tests passed; the final small report is
+`outputs/resumed-validation-20261001/int8-fwht-final/report.json`, and the medium
+report is `outputs/resumed-validation-20261001/int8-medium-complete/report.json`.
+Current numerical/placement evidence supersedes the earlier source-only stage;
+it does not supersede the stated production and quality limits.

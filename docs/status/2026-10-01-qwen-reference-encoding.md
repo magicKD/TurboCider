@@ -1,5 +1,9 @@
 # Qwen reference encoding and Playground acceptance — 2026-10-01
 
+Follow-up: an actual exported identity-template request and the QKV lifecycle
+regression also passed; see [final laptop acceptance](2026-10-01-runtime-ane-decision.md).
+The App binaries and package described below remain unchanged.
+
 This milestone separates App input-file preparation from the Qwen encoder's
 reference resolution. Resizing an input file alone did not reduce the default
 4,096 reference tokens: Qwen resized it again to its canonical 1024-area input.

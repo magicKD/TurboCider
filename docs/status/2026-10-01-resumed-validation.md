@@ -1,5 +1,9 @@
 # Resumed local acceptance — 2026-10-01
 
+Follow-up: the [final laptop acceptance](2026-10-01-runtime-ane-decision.md)
+adds real outfit/identity workflows, optional reference encoding and the executed
+QKV retirement regression. This report preserves the earlier round's scope.
+
 The user authorized testing again. This round uses the M4 Pro / 48 GiB laptop,
 the existing local Qwen Image 2.1 checkpoint and Viggle v0.2.1 r128 Turbo LoRA.
 No model or dependency was downloaded. Real inference and Core ML probes ran

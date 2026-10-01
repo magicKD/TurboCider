@@ -1,12 +1,9 @@
 # Runtime ANE failure-resource retirement
 
-> Follow-up: testing was reauthorized and focused checks were executed. See
-> [resumed acceptance](2026-10-01-resumed-validation.md). The source-only
-> notes below describe the earlier stopped-test milestone.
-
-The `c4caaa2` App/ZIP is the delivered package. This subsequent source change
-does not replace it. Model inference, Core ML execution, UI checks and test
-execution remain stopped at the user's request.
+The user reauthorized testing. Both FFN and QKV retirement paths have now been
+executed with small synthetic Core ML/Metal fixtures on the M4 Pro laptop.
+The delivered `0f8dfa7` App includes the retirement changes; the final QKV
+regression adds tests and documentation without changing that App's binaries.
 
 ## Finding and change
 
@@ -40,18 +37,45 @@ not introduce a new retry or scheduling policy.
 
 ## Validation boundary
 
-Only C++ syntax/type checking with warnings treated as errors was performed for
-both wrappers and the FFN integration source. No test binary was linked or run,
-and no App, service, GPU inference or Core ML model was started.
+The FFN regression passed with 32 × 64 × 96 base/LoRA micrographs. It checks
+release after partial-tail failure, async adapter failure, invalid affine
+metadata, low-memory admission and injected resident memory pressure. The
+original exception from GPU tail recomputation survives after graph retirement;
+healthy cancellation still permits reuse. The test binary took 3.50 s and left
+no new private lease or explicit test graph. Evidence:
+`outputs/native-verify-20261001/focused-ffn-report.json`.
 
-The existing FFN regression source now checks release following partial-tail
-failure, async adapter failure, invalid affine metadata, low-memory admission
-and resident memory pressure. It also covers an exception from GPU tail
-recomputation after the ANE graph has been retired. These assertions remain
-unexecuted. QKV failure injection and a graph with a valid interface but failing
-capability self-test remain acceptance work, as do checking temporary snapshot
-removal and actual process memory after teardown. No RSS reduction or runtime
-speedup is claimed from source inspection.
+The QKV regression compiled with warnings as errors and passed against the
+same native library shipped in `0f8dfa7`. It uses synthetic diagonal BF16 weights,
+five input rows and two-row prediction chunks; no checkpoint is loaded:
+
+- A finite BF16 weight that overflows FP16 staging retires all wrapper resources
+  and its private lease before full-input GPU fallback.
+- The first prediction chunk succeeds and the second overflows FP16 output.
+  All four tail rows are recomputed on GPU, the result matches the complete
+  synthetic GPU reference, and resources/lease are gone while the wrapper is
+  still alive. A later request on that failed instance does not retry Core ML.
+- Cancellation after launch drains the worker, keeps the healthy lease's path
+  and inode, and permits the next request to reuse the graph. Destruction removes
+  the lease.
+
+QKV compile/export/test took 1.05 / 1.16 / 2.40 s (4.61 s total). No private lease
+remained before the runner deleted its owned fixture directory; that directory
+was removed, and source/library hashes were unchanged. Evidence:
+`outputs/runtime-ane-qkv-focused-20261001/report.json`.
+
+The focused command is:
+
+```sh
+.venv/bin/python tools/validation/runtime_ane_qkv_regression.py \
+  --native-dir build/verify-20261001-native \
+  --output outputs/runtime-ane-qkv-focused-new
+```
+
+These are ownership, fallback and reuse checks. A graph with a valid interface
+but deliberately failing capability self-test, physical ANE placement and
+RSS-level teardown measurement were not separately exercised. No RSS reduction
+or inference speedup is claimed from these tests.
 
 ## Scope still open
 
@@ -64,5 +88,6 @@ not moved to runtime ANE by this change.
 Compiled Core ML source graphs and verified private snapshots still use disk.
 Their source artifacts and Core ML system caches are outside private-lease
 cleanup, so zero disk activity/remnants is not established. Dynamic W8A8 /
-Hadamard graph construction, encoder scheduling and sparse matched M4 Pro
-performance/quality measurements remain part of the original goal.
+Hadamard projection experiments were run separately, without establishing a
+production speedup. The [laptop decision](2026-10-01-runtime-ane-decision.md)
+records the measured candidate and the encoder/GPU A8W8 research boundaries.

@@ -12,6 +12,7 @@
 | `runtime_ane_model_screen.py` | GPU/runtime/frozen整请求对照、原始结果与PNG、可选独立内存采样 | 单向screen不等于完整匹配对照 |
 | `runtime_lora_shared_graph_switch.py` | 同进程base → A → 合成B → base，检查图复用、实际调用和状态隔离 | 合成B不是第二个训练LoRA的质量资格 |
 | `runtime_ane_memory.py` | 采样进程编排、证据绑定、超时处理；复用 `tools/native/` 的采样器 | 进程footprint不是ANE独占或完整driver内存 |
+| `runtime_ane_qkv_regression.py` | 使用既有原生库运行一次合成 QKV 失败回退/取消复用检查；保存日志/hash 并清理所属临时图 | 不加载 checkpoint，不证明 ANE 驻留或推理提速；不属于默认构建 |
 | `qwen21_ane_placement.py` | 冻结/runtime manifest的离线设备计划、嵌套算子与artifact身份 | preferred设备不等于实际硬件执行或重叠 |
 
 新增验证工具应直接复用 `runtime_ane_common`，不要从screen导入runner逻辑。

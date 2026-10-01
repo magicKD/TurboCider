@@ -5,11 +5,15 @@
 当前实现层次、整理范围和已验收/未验收边界见
 [2026-09-30 代码与进度](runtime-ane-current-2026-09-30.md)。
 
-2026-10-01 笔记本接续：测试已按用户要求停止，`c4caaa2` 是已交付包。
-[失败资源退役修复](runtime-ane-failure-retirement-2026-10-01.md)和
-[动态权重 INT8/Hadamard 候选](runtime-ane-w8a8-feasibility-2026-10-01.md)
-是后续源码工作，只有静态检查，未重打包、未新增实测收益。下面历史
-性能结果不构成当前 M4 Pro 或这些源码改动的验收证据。
+2026-10-01 笔记本接续：用户重新授权测试后，已交付 `0f8dfa7` App。
+[本机验收](2026-10-01-resumed-validation.md)包含 FFN 失败回收、微型动态
+INT8/Hadamard 数值和设备计划检查；[参考编码与工作流验收](2026-10-01-qwen-reference-encoding.md)
+包含实际 App 换装和公开三参考图路径。M4 Pro / 48 GiB 的单次冷编辑中，
+可选 ref512 为 25.16 s，标准 ref1024 为 37.28 s；该近似会改变纹理，
+严格 MAE 门槛未通过，默认仍为 1024。动态 INT8 候选没有证明提速，未接入 App。
+最终[笔记本验收与决策](2026-10-01-runtime-ane-decision.md)补齐人物一致性模板、
+QKV 失败回收/取消复用检查，并区分私有临时图与 Core ML 系统缓存的生命周期。
+下面的 M4 Max 历史性能结果不构成当前笔记本的 ANE 加速证明。
 
 使用入口：[请求模板与选路](../../examples/requests/README.md)；
 维护入口：[原生后端](../../native/backends/README.md)、

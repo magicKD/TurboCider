@@ -1,5 +1,10 @@
 # TurboCider 状态文档入口
 
+2026-10-01 M4 Pro 笔记本阶段验收已整理，交付 App 为 `0f8dfa7`：
+[当前验收、包与 Runtime ANE 决策](2026-10-01-runtime-ane-decision.md)。
+本机可选参考编码 512 的单次冷编辑为 25.16 s，标准 1024 为 37.28 s；
+存在画质差异，默认仍为 1024。下面的 M4 Max 历史数据不能替代本机加速证明。
+
 ## 当前加速结论
 
 先读 [GPU/ANE 加速：当前选择与维护入口](acceleration.md)。
@@ -24,6 +29,9 @@ GPU/runtime全热为0.998×、预声明较晚窗口1.016×，不改变默认选�
 
 | 内容 | 入口 |
 | --- | --- |
+| M4 Pro App/API/工作流阶段验收、最终 QKV 回收检查、交付包和研究边界 | [2026-10-01 验收与决策](2026-10-01-runtime-ane-decision.md) |
+| 可选 Qwen 512 参考编码、冷编辑对照、公开三图路径和实际 App 换装 | [参考编码验收](2026-10-01-qwen-reference-encoding.md) |
+| FFN/QKV 失败回收、完整 GPU 回退、取消复用及私有图清理 | [生命周期回归](runtime-ane-failure-retirement-2026-10-01.md) |
 | 当前保留级别、性能表、optional、代码职责和未完成项 | [维护入口](acceleration.md) |
 | 2026-09-30 runtime ANE 代码层次、BF16/Q8/QKV 实测进度、整理范围与提交边界 | [当前代码与进度](runtime-ane-current-2026-09-30.md) |
 | 875b库 Qwen 1024² base-only v1：两提示词 v1/v2 ABBA 与 GPU/v1/冻结图正反向三路；Z v1/v2 组件收益不足 | [v1 base 筛选](runtime-ane-v1-base-2026-09-30.md) |
