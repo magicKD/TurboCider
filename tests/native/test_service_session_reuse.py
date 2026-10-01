@@ -80,14 +80,19 @@ class ServiceSessionReuseTests(unittest.TestCase):
             TURBOCIDER_LIBRARY_SETTINGS=str(self.root / "settings.json"),
             TURBOCIDER_SERVICE_PARENT_PID=str(os.getpid()),
             TC_SERVICE_REUSE_JOURNAL=str(self.journal),
+            TC_SERVICE_REUSE_HOLD_RELEASE=str(self.root / "hold-release"),
         )
+        self.environment = environment
+        self.addCleanup(self.stop_service)
+        self.start_service()
+
+    def start_service(self):
         # A separate process group lets timeout cleanup reach only this fixture
         # and its own disposable children; it cannot terminate another service.
         self.process = subprocess.Popen(
             [str(self.binary), "serve", self.socket, str(self.root / "jobs")],
-            stdout=self.log, stderr=self.log, env=environment, start_new_session=True,
+            stdout=self.log, stderr=self.log, env=self.environment, start_new_session=True,
         )
-        self.addCleanup(self.stop_service)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
@@ -116,7 +121,7 @@ class ServiceSessionReuseTests(unittest.TestCase):
                 self.process.wait(timeout=5)
         Path(self.socket + ".lock").unlink(missing_ok=True)
 
-    def rpc(self, request):
+    def rpc_response(self, request):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
             client.settimeout(3)
             client.connect(self.socket)
@@ -124,7 +129,10 @@ class ServiceSessionReuseTests(unittest.TestCase):
             with client.makefile("rb") as response:
                 raw = response.readline(1048577)
         self.assertTrue(raw.endswith(b"\n"), raw)
-        value = json.loads(raw)
+        return json.loads(raw)
+
+    def rpc(self, request):
+        value = self.rpc_response(request)
         self.assertTrue(value["ok"], value)
         return value["result"]
 
@@ -260,6 +268,57 @@ class ServiceSessionReuseTests(unittest.TestCase):
         warm = self.submit_and_wait(path, self.request())
         self.assertEqual(self.assert_native_receipt(warm, True, "qwen-image-2.1", path), after_id)
         self.assertEqual(self.records("generate"), [first_id, after_id, after_id])
+        self.assert_clean_shutdown()
+
+    def test_cancelled_queue_releases_capacity_and_survives_shutdown(self):
+        model_path = self.root / "absent-model"
+        held_request = self.request()
+        held_request["prompt"] = "CPU lifecycle fixture hold"
+        self.rpc({"action": "plan", "request": held_request})
+        active = self.rpc({"action": "submit", "model_path": str(model_path), "request": held_request})["id"]
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = self.rpc({"action": "status", "id": active})["state"]
+            if state == "running" and self.journal.exists() and self.records("holding"):
+                break
+            time.sleep(.01)
+        else:
+            self.fail("CPU fixture did not hold the active worker: " + self.log_path.read_text())
+
+        queued = []
+        for _ in range(32):
+            job = self.rpc({"action": "submit", "model_path": str(model_path), "request": self.request()})
+            self.assertEqual(job["state"], "queued")
+            queued.append(job["id"])
+        full = self.rpc_response({"action": "submit", "model_path": str(model_path), "request": self.request()})
+        self.assertIs(full["ok"], False)
+        self.assertIn("queue is full", full["error"])
+
+        for job_id in queued:
+            cancelled = self.rpc({"action": "cancel", "id": job_id})
+            self.assertEqual(cancelled["state"], "cancelled")
+        replacement = self.rpc({"action": "submit", "model_path": str(model_path), "request": self.request()})
+        self.assertEqual(replacement["state"], "queued")
+        self.assertEqual(self.rpc({"action": "status", "id": active})["state"], "running")
+
+        # Stop before the held worker could consume any cancelled queue entry.
+        # The active fixture exits via cancellation; the remaining queued job
+        # becomes interrupted while successful queued cancels remain terminal.
+        self.stop_service()
+        self.assertEqual(self.process.returncode, 0, self.log_path.read_text())
+        for job_id in queued:
+            persisted = json.loads((self.root / "jobs" / (job_id + ".json")).read_text())
+            self.assertEqual(persisted["state"], "cancelled")
+        persisted = json.loads((self.root / "jobs" / (replacement["id"] + ".json")).read_text())
+        self.assertEqual(persisted["state"], "interrupted")
+        self.assertEqual(self.records("create"), self.records("free"))
+        self.assertEqual(len(self.records("generate")), 1)
+
+        self.start_service()
+        for job_id in queued:
+            self.assertEqual(self.rpc({"action": "status", "id": job_id})["state"], "cancelled")
+        self.assertEqual(self.rpc({"action": "status", "id": replacement["id"]})["state"], "interrupted")
+        self.assertFalse(self.rpc({"action": "service_status"})["session_open"])
         self.assert_clean_shutdown()
 
 

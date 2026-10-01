@@ -156,7 +156,92 @@ import UniformTypeIdentifiers
         studio.undoAssetChange()
         try check(studio.draft.assets == originals, "Drag reorder undo did not restore reference order")
         try check(try Data(contentsOf: source) == originalBytes, "Reference workflow changed the user source file")
-        print("PASS reference preparation sizing/orientation/alpha/no-op/source preservation, batch atomicity/context, legacy metadata, annotation baseline and reorder (CPU only)")
+        try await verifyHistoryRestoration(root: root.appendingPathComponent("history-restoration"), source: source,
+                                           originalBytes: originalBytes)
+        print("PASS reference preparation sizing/orientation/alpha/no-op/source preservation, batch atomicity/context, legacy metadata, annotation baseline, reorder and history restoration (CPU only)")
+    }
+
+    @MainActor private static func verifyHistoryRestoration(root: URL, source: URL, originalBytes: Data) async throws {
+        let studio = StudioState(directory: root, models: [])
+        // This fixture tests history, not UI capability admission. Match the
+        // suite's other isolated fixtures without opening a native model.
+        let first = try await studio.importer.importFile(source)
+        let second = try await studio.importer.importFile(source)
+        let originalAssets = [first, second]
+        studio.draft.assets = originalAssets
+        try check(originalAssets.count == 2, "History reference fixtures were not imported")
+        studio.draft.modelID = "qwen-image-2.1"; studio.draft.operation = "image.edit"
+        studio.draft.modelPaths[studio.draft.modelID] = root.path
+        studio.draft.prompt = "Preserve reference order"; studio.draft.width = 512; studio.draft.height = 512
+        studio.draft.steps = 25; studio.draft.acceleration = StudioAcceleration(policy: "gpu")
+        let fit = await studio.prepareAsset(id: originalAssets[0].id, preset: .fit512)
+        let automatic = await studio.prepareAsset(id: originalAssets[1].id, preset: .automatic)
+        try check(fit && automatic, "History fixtures were not prepared")
+        studio.reorderAsset(originalAssets[1].id, to: originalAssets[0].id)
+        let submittedAssets = studio.draft.activeAssets
+        let request = try studio.draft.request(output: root.appendingPathComponent("unused.png"))
+        let captured = NativeJob.matchingInputAssets(submittedAssets, for: request)
+        try check(captured == submittedAssets && request.inputs?.map(\.path) == submittedAssets.map(\.path),
+                  "Snapshot did not match the exact submitted inputs/order")
+        let history = NativeJob(id: UUID(), createdAt: Date(), request: request, state: "succeeded", phase: "complete",
+            completed: 25, total: 25, elapsed: 1, modelPath: root.path, inputAssets: captured)
+        let data = try JSONEncoder().encode(history)
+        let restored = try JSONDecoder().decode(NativeJob.self, from: data)
+        try check(restored.inputAssets == submittedAssets, "Job JSON lost preparation/original metadata")
+
+        // Draft changes remove bindings only; both derivative and original
+        // paths remain available to saved history and to a later restoration.
+        studio.reorderAsset(submittedAssets[0].id, to: submittedAssets[1].id)
+        studio.remove(submittedAssets[0].id)
+        studio.newDraft()
+        for asset in submittedAssets {
+            try check(FileManager.default.fileExists(atPath: asset.path) &&
+                      (try Data(contentsOf: URL(fileURLWithPath: asset.originalImage.path))) == originalBytes,
+                      "Clearing a draft deleted history's derivative or original input")
+        }
+        studio.reuse(restored)
+        try check(studio.draft.assets == submittedAssets && studio.draft.assets.map(\.preparation) == [.automatic, .fit512],
+                  "History reuse lost reference order, logical IDs or preparation presets")
+        let canvas = EditingCanvasSizing.suggestion(for: studio.draft, preset: .original,
+                                                   assetID: submittedAssets[1].id)
+        try check(canvas.canApply && canvas.dimensions == EditingCanvasDimensions(width: 2048, height: 1024),
+                  "History output matching used the prepared file instead of its original dimensions")
+        let returned = await studio.prepareAsset(id: submittedAssets[1].id, preset: .original)
+        try check(returned && studio.draft.assets[1].path == originalAssets[0].path &&
+                  studio.draft.assets[1].width == 2048 && studio.draft.assets[1].height == 1024 &&
+                  (try Data(contentsOf: URL(fileURLWithPath: studio.draft.assets[1].path))) == originalBytes,
+                  "History reuse could not restore the retained original bytes/dimensions")
+        studio.undoAssetChange()
+        try check(studio.draft.assets == submittedAssets, "Restoring a historical reference broke input undo")
+
+        // Reject a whole snapshot rather than borrowing metadata by index or
+        // path lookup. This also guards histories edited outside the App.
+        var wrongPath = submittedAssets; wrongPath[0].path = source.path
+        var duplicateID = submittedAssets; duplicateID[1].id = duplicateID[0].id
+        var invalidDimensions = submittedAssets; invalidDimensions[0].original?.width = 0
+        for malformed in [Array(submittedAssets.reversed()), Array(submittedAssets.dropLast()),
+                          wrongPath, duplicateID, invalidDimensions] {
+            try check(NativeJob.matchingInputAssets(malformed, for: request) == nil,
+                      "Invalid/mismatched snapshot was accepted")
+            var invalidJob = restored; invalidJob.inputAssets = malformed
+            studio.reuse(invalidJob)
+            try check(studio.draft.assets.map(\.path) == submittedAssets.map(\.path) &&
+                      studio.draft.assets.allSatisfy { $0.original == nil && $0.preparation == nil },
+                      "Invalid history attached a different original baseline to an input")
+        }
+        var wrongKind = request; wrongKind.inputs?[0].kind = "audio"
+        try check(NativeJob.matchingInputAssets(submittedAssets, for: wrongKind) == nil,
+                  "An image snapshot matched a non-image input")
+
+        var legacyJSON = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        legacyJSON.removeValue(forKey: "inputAssets")
+        let legacy = try JSONDecoder().decode(NativeJob.self, from: JSONSerialization.data(withJSONObject: legacyJSON))
+        try check(legacy.inputAssets == nil, "Older job history requires the new optional snapshot")
+        studio.reuse(legacy)
+        try check(studio.draft.assets.map(\.path) == submittedAssets.map(\.path) &&
+                  studio.draft.assets.map(\.width) == submittedAssets.map(\.width) &&
+                  studio.draft.assets.allSatisfy { $0.original == nil && $0.preparation == nil },
+                  "Legacy history no longer uses the submitted files as its baseline")
     }
 
     private static func fixture(width: Int, height: Int) throws -> CGImage {

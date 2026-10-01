@@ -4,6 +4,7 @@
 #import <Foundation/Foundation.h>
 #include "turbocider/turbocider.h"
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -98,6 +99,19 @@ extern "C" int tc_engine_generate(tc_engine *engine, const char *request,
         engine->cancelled.store(false);
         if (callback)
             callback("{\"schema_version\":1,\"phase\":\"fixture_cpu\",\"completed\":1,\"total\":1}", context);
+        if ([parsed[@"prompt"] isEqual:@"CPU lifecycle fixture hold"]) {
+            // Keep the real worker occupied so queued cancellation and queue
+            // capacity are observable without weights, GPU work or timing luck.
+            const char *release_path = std::getenv("TC_SERVICE_REUSE_HOLD_RELEASE");
+            if (!release_path || !record("holding", engine->creation_id))
+                return failure(error, "cannot initialize CPU fixture hold");
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (!engine->cancelled.load() && !std::filesystem::exists(release_path)) {
+                if (std::chrono::steady_clock::now() >= deadline)
+                    return failure(error, "CPU fixture hold deadline exceeded");
+                usleep(10000);
+            }
+        }
         if (engine->cancelled.load()) {
             if (error) *error = ::strdup("CPU fixture cancelled");
             return 2;

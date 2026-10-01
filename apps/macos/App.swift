@@ -1463,7 +1463,8 @@ struct StudioView: View {
                 let job = try await store.generate(
                     modelURL: URL(fileURLWithPath: resolved.modelPath),
                     request: pair.legacy,
-                    streamingRequest: pair.v2)
+                    streamingRequest: pair.v2,
+                    inputAssets: resolved.activeAssets)
                 selected = job.id; compareOriginal = false
                 resultSelection.select(job.id, orderedIDs: outputIDs)
                 if snapshot.upscaleAfterGeneration && ext == "png" {

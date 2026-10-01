@@ -833,7 +833,8 @@ struct StudioDraft: Codable, Sendable {
 }
 
 /// Serial import keeps provider order stable. Source files are never removed;
-/// a draft removes bindings only, so in-flight jobs keep their immutable inputs.
+/// a draft removes bindings only, so jobs and their original-image snapshots
+/// keep immutable inputs even after a draft is cleared, resized or reordered.
 actor StudioAssetImporter {
     struct Preparation: Sendable {
         var asset: StudioAsset
@@ -1802,7 +1803,9 @@ final class StudioState: ObservableObject {
         if request.model != "qwen-image-2.1" || draft.operation == "image.edit" {
             draft.qwen21ReferenceSize = request.qwen21_reference_size ?? 1024
         }
-        draft.assets = (request.inputs ?? []).map { input in
+        // A snapshot is all-or-nothing: mismatched paths/order must not attach
+        // another input's original baseline. Older histories retain the fallback.
+        draft.assets = job.reusableInputAssets ?? (request.inputs ?? []).map { input in
             let url = URL(fileURLWithPath: input.path)
             let source = CGImageSourceCreateWithURL(url as CFURL, nil)
             let info = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }

@@ -27,6 +27,27 @@ struct NativeJob: Codable, Identifiable, Sendable {
     /// Optional provenance for independently persisted Playground templates.
     /// Missing in older histories; it does not affect native execution.
     var workflowID: String? = nil
+    /// Immutable App input metadata, in the exact submitted request order.
+    /// Native requests still contain paths only. Older/API histories can omit
+    /// this snapshot and reuse their current input files as the baseline.
+    var inputAssets: [StudioAsset]? = nil
+    static func matchingInputAssets(_ assets: [StudioAsset]?, for request: NativeRequest) -> [StudioAsset]? {
+        let inputs = request.inputs ?? []
+        guard let assets, !inputs.isEmpty, assets.count == inputs.count,
+              Set(assets.map(\.id)).count == assets.count else { return nil }
+        func valid(_ width: Int, _ height: Int) -> Bool {
+            width > 0 && height > 0 && Double(width) * Double(height) <= 80_000_000
+        }
+        guard zip(inputs, assets).allSatisfy({ input, asset in
+            let original = asset.originalImage
+            return input.kind == "image" && input.path == asset.path &&
+                valid(asset.width, asset.height) && valid(original.width, original.height) &&
+                URL(fileURLWithPath: asset.path).path == asset.path &&
+                URL(fileURLWithPath: original.path).path == original.path
+        }) else { return nil }
+        return assets
+    }
+    var reusableInputAssets: [StudioAsset]? { Self.matchingInputAssets(inputAssets, for: request) }
     var workflowName: String? {
         switch workflowID {
         case "playground.outfit": return "Playground · 换装"
@@ -648,9 +669,12 @@ final class NativeJobStore: ObservableObject {
     }
     func generate(modelURL: URL, request: NativeRequest,
                   streamingRequest: NativeRequestV2? = nil,
-                  workflowID: String? = nil) async throws -> NativeJob {
+                  workflowID: String? = nil,
+                  inputAssets: [StudioAsset]? = nil) async throws -> NativeJob {
         guard !busy else { throw NativeFailure(message: "一次只能生成一张图或一个视频。") }
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
+        // Capture before the first suspension; never read a changing UI draft.
+        let frozenInputAssets = NativeJob.matchingInputAssets(inputAssets, for: request)
         // Close the reentrancy window before any async plan/session operation.
         busy = true; cancelRequested = false; actualRoute = nil
         defer { busy = workerCleanupPending; activeID = nil; ltxTask = nil; publicWorkerTask = nil; imageValidationTask = nil }
@@ -684,7 +708,7 @@ final class NativeJobStore: ObservableObject {
         jobs.insert(NativeJob(id: id, createdAt: Date(), request: request, state: "preparing", phase: "prepare", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path,
                               publicStreamingTargetBytes: streamingRequest?.execution.streaming?.target_request_memory_bytes,
                               publicStreamingIntentJSON: publicStreamingIntentJSON,
-                              workflowID: workflowID), at: 0)
+                              workflowID: workflowID, inputAssets: frozenInputAssets), at: 0)
         let start = ContinuousClock.now
         do {
             try persist()

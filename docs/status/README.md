@@ -1,5 +1,8 @@
 # TurboCider 状态文档入口
 
+历史复用保留参考原图、App API 重启竞态和取消队列容量修复见
+[2026-10-02 历史与 API 验收](2026-10-02-history-and-api-lifecycle.md)。
+
 M4 Pro 48 GiB 的 Qwen Runtime 分阶段驻留、编译图内存释放和单图编辑冷对照见
 [2026-10-02 Runtime 生命周期验收](2026-10-02-runtime-staged-lifecycle.md)。
 该诊断路线未获得加速资格，App 默认仍使用 GPU。

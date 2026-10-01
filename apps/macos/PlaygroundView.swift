@@ -349,7 +349,8 @@ struct PlaygroundView: View {
                 try Task.checkCancellation()
                 state.generationOwnsStore = true
                 let job = try await store.generate(modelURL: URL(fileURLWithPath: resolved.modelPath),
-                    request: pair.legacy, streamingRequest: pair.v2, workflowID: workflow.workflowID)
+                    request: pair.legacy, streamingRequest: pair.v2, workflowID: workflow.workflowID,
+                    inputAssets: resolved.activeAssets)
                 state.recordResult(job, template: workflow)
                 if state.template == workflow { selectedResultID = job.id; showReference = false }
             } catch {

@@ -504,7 +504,7 @@ public:
         }
         worker_=std::thread([this]{run();});
     }
-    ~Service(){ {std::lock_guard<std::mutex> lock(mutex_);closing_=true;tc_engine_cancel(engine_);if(active_child_>0)::kill(active_child_,SIGTERM);for(auto& id:pending_){auto&job=jobs_.at(id);job.value[@"state"]=@"interrupted";try{persist(job);}catch(...){}}}available_.notify_one();worker_.join();tc_engine_free(engine_);}
+    ~Service(){ {std::lock_guard<std::mutex> lock(mutex_);closing_=true;tc_engine_cancel(engine_);if(active_child_>0)::kill(active_child_,SIGTERM);for(auto& id:pending_){auto&job=jobs_.at(id);if(![job.value[@"state"] isEqual:@"queued"])continue;job.value[@"state"]=@"interrupted";try{persist(job);}catch(...){}}}available_.notify_one();worker_.join();tc_engine_free(engine_);}
     id rpc(NSDictionary *request, const std::function<bool()> &shouldStop) {
         auto action=validate_rpc(request);
         if(action=="capabilities")return tc_service_capabilities();
@@ -552,6 +552,7 @@ public:
         if(action=="cancel") {
             if([@[@"queued",@"running",@"cancelling"] containsObject:job.value[@"state"]]){
                 job.cancellation=true;job.value[@"state"]=active_==id?@"cancelling":@"cancelled";if(active_==id){if(active_child_>0)::kill(active_child_,SIGTERM);else tc_engine_cancel(engine_);}persist(job);
+                if(active_!=id)std::erase(pending_,id);
             }
         }else check(action=="status","unknown action");
         return decode(encode(job.value));
