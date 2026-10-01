@@ -960,6 +960,127 @@ class ContractTests(unittest.TestCase):
         with patch.dict(os.environ, {local: '1', lora_hybrid: '1'}):
             self.assertNotEqual(plan({**request, 'inputs': refs[:2]})[0], 0)
 
+    def test_qwen21_reference_encoding_is_discoverable_without_weights(self):
+        models = json.loads(consume(C.c_void_p(lib.tc_models_json())))['models']
+        qwen = next(model for model in models if model['id'] == 'qwen-image-2.1')
+        option = qwen['reference_encoding']
+        self.assertEqual(option['default'], 1024)
+        self.assertEqual(option['schema_v1_field'], 'qwen21_reference_size')
+        self.assertEqual(option['schema_v2_field'], 'parameters.qwen21_reference_size')
+        self.assertEqual(option['base_approximation_sizes'], [256, 512])
+        self.assertEqual(option['viggle_r128_gpu_edit_opt_in_size'], 512)
+        self.assertTrue(option['resize_requires_allow_approximation'])
+        self.assertEqual(option['admission'], 'plan')
+        self.assertEqual(option['weight_identity_validation'], 'pinned SHA-256 at load')
+        for model in models:
+            if model['id'] != 'qwen-image-2.1':
+                self.assertNotIn('reference_encoding', model)
+
+    def test_qwen21_r128_reference_512_request_opt_in_and_schema_roundtrip(self):
+        adapter = dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',
+                       role='transformer', strength=1)
+        refs = [dict(kind='image', role='reference', path=f'ordered-{i}.png') for i in range(3)]
+        base = dict(model='qwen-image-2.1', operation='image.edit', prompt='A ceramic teapot',
+                    width=512, height=512, steps=6, audio=False, frames=1,
+                    execution='gpu', hybrid_mlp_mode='auto', allow_approximation=True,
+                    qwen21_reference_size=512, qwen21_dit_cache='off',
+                    lora_strategy='inference_time', inputs=refs, loras=[adapter])
+        with patch.dict(os.environ):
+            for key in tuple(os.environ):
+                if key.startswith('TURBOCIDER_QWEN21_'):
+                    os.environ.pop(key)
+            for flag in (None, '0'):
+                if flag is None:
+                    os.environ.pop('TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC', None)
+                else:
+                    os.environ['TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC'] = flag
+                for count in (1, 2, 3):
+                    for residency in ('resident', 'component_staged'):
+                        v1 = {**base, 'inputs': refs[:count], 'residency': residency}
+                        v2 = dict(schema_version=2, model=base['model'], operation=base['operation'],
+                                  inputs=[dict(kind='text', role='prompt', text=base['prompt']),
+                                          *refs[:count]],
+                                  outputs=[dict(kind='image', path='edit.png', width=512, height=512,
+                                                frames=1, audio=False)],
+                                  sampling=dict(seed=42, steps=6),
+                                  execution=dict(policy='gpu', residency=residency,
+                                                 hybrid_mlp_mode='auto', allow_approximation=True,
+                                                 qwen21_dit_cache='off'),
+                                  parameters=dict(qwen21_reference_size=512),
+                                  lora_strategy='inference_time', loras=[adapter])
+                        for request in (v1, v2):
+                            with self.subTest(flag=flag, count=count, residency=residency,
+                                              schema=request.get('schema_version', 1)):
+                                code, result, error = plan(request)
+                                self.assertEqual(code, 0, error)
+                                self.assertEqual(result['execution'], 'gpu')
+                                self.assertEqual(result['qwen21_reference_size'], 512)
+                                self.assertEqual(result['residency'], residency)
+                                self.assertIn('qwen21_reference_resize_512', result['algorithm_approximations'])
+                                self.assertIn('qwen21_viggle_r128_reference_resize_512',
+                                              result['algorithm_approximations'])
+                                self.assertNotIn('qwen21_viggle_reference_resize_512_diagnostic',
+                                                 result['algorithm_approximations'])
+                                self.assertNotIn('qwen21_decode_dit_cache', result['algorithm_approximations'])
+                        # The v2 field belongs under parameters, not execution/top level.
+                        self.assertNotEqual(plan({**v2, 'qwen21_reference_size': 512})[0], 0)
+                        self.assertNotEqual(plan({**v2, 'execution': {
+                            **v2['execution'], 'qwen21_reference_size': 512}})[0], 0)
+            code, automatic_strategy, error = plan({**base, 'lora_strategy': 'auto'})
+            self.assertEqual(code, 0, error)
+            self.assertEqual(automatic_strategy['lora_strategy'], 'inference_time')
+            self.assertEqual(plan({**base, 'prompt_enhancer_path': 'unused-pe-installation'})[0], 0)
+            default_request = {key: value for key, value in base.items()
+                               if key != 'qwen21_reference_size'}
+            code, default, error = plan(default_request)
+            self.assertEqual(code, 0, error)
+            self.assertEqual(default['qwen21_reference_size'], 1024)
+            self.assertNotIn('qwen21_viggle_r128_reference_resize_512',
+                             default['algorithm_approximations'])
+            for invalid in (
+                dict(execution='auto'), dict(execution='gpu_ane', ane_manifest='not-loaded.json'),
+                dict(hybrid_mlp_mode='runtime'), dict(hybrid_mlp_mode='lora_fused'),
+                dict(ane_manifest='not-loaded.json'), dict(encoder_ane_manifest='not-loaded.json'),
+                dict(qwen21_w8a8=True), dict(qwen21_gpu_w8a16=True),
+                dict(qwen21_gpu_full_ffn_blocks=[3, 5, 7]),
+                dict(steps=5), dict(steps=20), dict(steps=40),
+                dict(width=768), dict(height=768), dict(allow_approximation=False),
+                dict(inputs=[]), dict(inputs=refs + refs[:1]),
+                dict(inputs=[{**refs[0], 'role': 'mask'}]),
+                dict(inputs=[{**refs[0], 'kind': 'video'}]),
+                dict(operation='image.generate', inputs=[]),
+                dict(qwen21_reference_size=256), dict(qwen21_reference_size=768),
+                dict(qwen21_reference_size=True), dict(qwen21_reference_size=512.5),
+                dict(qwen21_reference_size='512'),
+                dict(loras=[adapter, adapter]),
+                dict(loras=[{**adapter, 'role': 'text_encoder'}]),
+                dict(loras=[{**adapter, 'strength': 0}]),
+                dict(loras=[{**adapter, 'strength': 0.5}]),
+                dict(loras=[{**adapter, 'strength': 2}]),
+                dict(loras=[{**adapter, 'path': adapter['path'].replace('r128', 'r256')}]),
+                dict(loras=[{**adapter, 'path': 'ordinary.safetensors'}]),
+                dict(lora_strategy='in_memory_merge'), dict(lora_strategy='disk_premerge'),
+                dict(prompt_enhance=True, prompt_enhance_edit_experimental=True,
+                     prompt_enhancer_path='not-loaded-pe'),
+                dict(prompt_enhance_edit_experimental=True),
+                dict(qwen21_dit_cache='conservative'), dict(qwen21_dit_cache='balanced'),
+                dict(qwen21_dit_cache='fast'),
+            ):
+                with self.subTest(invalid=invalid):
+                    self.assertNotEqual(plan({**base, **invalid})[0], 0)
+            # A legacy DBCache diagnostic cannot sneak onto the six-step route.
+            with patch.dict(os.environ, {'TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC': '1'}):
+                omitted_off = {key: value for key, value in base.items() if key != 'qwen21_dit_cache'}
+                self.assertNotEqual(plan(omitted_off)[0], 0)
+                self.assertEqual(plan(base)[0], 0)  # Explicit Off retains request ownership.
+            for resize in (256, 512):
+                for steps in (25, 40):
+                    ordinary_base = {**base, 'loras': [], 'lora_strategy': 'auto',
+                                     'steps': steps, 'qwen21_reference_size': resize}
+                    self.assertEqual(plan(ordinary_base)[0], 0)
+            self.assertNotEqual(plan({**base, 'steps': 25, 'loras': [
+                {**adapter, 'path': 'ordinary.safetensors'}]})[0], 0)
+
     def test_qwen21_viggle_resized_512_references_are_diagnostic_only(self):
         adapter = dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors',
                        role='transformer', strength=1)
@@ -1615,7 +1736,6 @@ class ContractTests(unittest.TestCase):
                 dict(operation='image.generate', inputs=refs[:1]),
                 dict(operation='image.edit', inputs=[]),
                 dict(operation='image.edit', inputs=refs),
-                dict(operation='image.edit', inputs=refs[:1], qwen21_reference_size=512),
             ):
                 with self.subTest(invalid=invalid):
                     self.assertNotEqual(plan({**base, **invalid})[0], 0)

@@ -121,6 +121,7 @@ enum EditingCanvasSizing {
             var restrictions: [String] = []
             if !draft.activeLoRAs.isEmpty { restrictions.append(draft.hasQwen21TurboAdapter ? "六步 Viggle LoRA" : "普通 Qwen LoRA") }
             if draft.qwen21DiTCache != "off" { restrictions.append("DiT 缓存") }
+            if draft.qwen21ReferenceSize == 512 { restrictions.append("快速 512 参考编码") }
             if !restrictions.isEmpty {
                 let names = restrictions.joined(separator: "与")
                 return result(dimensions, reason: "\(names)当前限定 512×512，不能应用 \(dimensions.width)×\(dimensions.height)。请保留兼容画布，或自行关闭上述选项后再匹配。", detail: description)

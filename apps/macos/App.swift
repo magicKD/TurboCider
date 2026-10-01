@@ -141,7 +141,7 @@ struct StudioView: View {
     private var editingImage: Bool { ["image.edit", "image.transform"].contains(studio.draft.operation) }
     private var qwenCanvasLocked: Bool {
         studio.draft.modelID == "qwen-image-2.1" &&
-            (!studio.draft.activeLoRAs.isEmpty || studio.draft.qwen21DiTCache != "off")
+            (!studio.draft.activeLoRAs.isEmpty || studio.draft.qwen21DiTCache != "off" || studio.draft.qwen21ReferenceSize == 512)
     }
     private func focusInput(_ asset: StudioAsset? = nil) {
         selected = nil; compareOriginal = false; resultSelection.clear()
@@ -762,7 +762,7 @@ struct StudioView: View {
                     Button("重置") { studio.draft.steps = studio.draft.qwen21TurboLoRA != nil ? 6 : (model?.default_steps ?? 4) }
                 }
                 Text(studio.draft.qwen21TurboLoRA != nil ? "Turbo 快速模式固定使用专用 6 步采样。"
-                     : studio.draft.modelID == "qwen-image-2.1" && (!studio.draft.activeLoRAs.isEmpty || studio.draft.qwen21DiTCache != "off") ? "普通 LoRA 与 DiT 缓存使用基础采样：20–40 步，默认 40 步。可自行选择 25 步等配置。"
+                     : studio.draft.modelID == "qwen-image-2.1" && (!studio.draft.activeLoRAs.isEmpty || studio.draft.qwen21DiTCache != "off" || studio.draft.qwen21ReferenceSize == 512) ? "普通 LoRA、DiT 缓存与快速 512 使用基础采样：20–40 步，默认 40 步。可自行选择 25 步等配置。"
                      : studio.draft.modelID.hasPrefix("z-image-turbo") ? "1–50 步，默认 \(model?.default_steps ?? 8) 步。其他步数的画质与加速收益需自行验证。" : "1–50 步，默认 \(model?.default_steps ?? 4) 步。")
                     .font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.modelID == "qwen-image-2.1", studio.draft.activeLoRAs.isEmpty, studio.draft.steps == 6 {
@@ -918,6 +918,10 @@ struct StudioView: View {
                 }
             }
             if studio.draft.modelID == "qwen-image-2.1" {
+                Divider()
+                Qwen21ReferenceEncodingSettings(draft: studio.draft,
+                    locked: store.busy || submitting || studio.importing || api.running || api.changing,
+                    setSize: { studio.setQwen21ReferenceSize($0) })
                 Divider()
                 qwen21DiTCacheSettings
                 Divider()
@@ -1221,6 +1225,10 @@ struct StudioView: View {
                 DisclosureGroup {
                     if let name = job.workflowName { Label(name, systemImage: "square.grid.2x2").font(.caption).foregroundStyle(.secondary) }
                     Text(job.request.prompt).textSelection(.enabled)
+                    if job.request.model == "qwen-image-2.1", job.request.operation == "image.edit" {
+                        Text("模型参考编码：\(job.request.qwen21_reference_size ?? 1024)\((job.request.qwen21_reference_size ?? 1024) == 512 ? " · 近似" : " · 标准")")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if let json = job.resultJSON {
                         RunInsightsView(json: json, firstDenoiseStepSeconds:
                             job.request.model == "qwen-image-2.1" && job.request.operation == "image.edit"

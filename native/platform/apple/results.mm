@@ -161,6 +161,20 @@ NSDictionary *to_dictionary(const ModelDescriptor &d) {
     if (!d.audio_capability.empty()) result[@"audio_capability"] = @(d.audio_capability.c_str());
     if (!d.executor_operations.empty()) result[@"executor_operations"] = strings(d.executor_operations);
     if (!d.candidate_limitations.empty()) result[@"candidate_limitations"] = strings(d.candidate_limitations);
+    if (d.id == "qwen-image-2.1") {
+        result[@"reference_encoding"] = @{
+            @"schema_v1_field": @"qwen21_reference_size",
+            @"schema_v2_field": @"parameters.qwen21_reference_size",
+            @"default": @1024,
+            @"sizing": @"approximate squared-pixel area, preserving aspect ratio with 32-aligned dimensions",
+            @"base_approximation_sizes": @[@256, @512],
+            @"viggle_r128_gpu_edit_opt_in_size": @512,
+            @"resize_requires_allow_approximation": @YES,
+            @"admission": @"plan",
+            @"weight_identity_validation": @"pinned SHA-256 at load",
+            @"constraints": @"512x512 GPU edit, hybrid_mlp_mode=auto, 1...3 references, Viggle v0.2.1 r128, six steps, strength 1, inference_time LoRA, prompt enhancement and DiT cache off; ordinary LoRA and ANE require the existing full-size or diagnostic routes"
+        };
+    }
     if (d.fps) result[@"default_fps"] = @(d.fps);
     return result;
 }
@@ -269,6 +283,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
             std::getenv("TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC")))
         [algorithm_approximations addObject:@"qwen21_viggle_reference_resize_512_diagnostic"];
+    if (qwen21::gpu_viggle_ref512_request(r))
+        [algorithm_approximations addObject:@"qwen21_viggle_r128_reference_resize_512"];
     const char *last_target = std::getenv("TURBOCIDER_QWEN21_PREFILL_LAST_TARGET_ONLY_DIAGNOSTIC");
     if (r.model == "qwen-image-2.1" && last_target && std::string_view(last_target) == "1")
         [algorithm_approximations addObject:@"qwen21_prefill_last_target_only_diagnostic"];

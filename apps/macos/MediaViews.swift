@@ -2,6 +2,38 @@ import SwiftUI
 import AppKit
 import ImageIO
 
+/// One model-encoding selector shared by Creation and independent Playground
+/// drafts. Choosing standard is always available as explicit recovery.
+struct Qwen21ReferenceEncodingSettings: View {
+    let draft: StudioDraft
+    var locked = false
+    var accessibilityPrefix = "qwen21"
+    let setSize: (Int) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("模型参考编码").font(.caption.weight(.semibold))
+            Picker("编码尺度", selection: Binding(get: { draft.qwen21ReferenceSize }, set: setSize)) {
+                Text("标准 1024").tag(1024)
+                Text("快速 512（预览）").tag(512).disabled(draft.qwen21FastReferenceUnavailableReason != nil)
+                if ![1024, 512].contains(draft.qwen21ReferenceSize) {
+                    Text("未支持 \(draft.qwen21ReferenceSize)").tag(draft.qwen21ReferenceSize).disabled(true)
+                }
+            }.labelsHidden().disabled(locked).accessibilityIdentifier(accessibilityPrefix + "ReferenceEncoding")
+            Text("按模型比例编码，与输入文件尺寸独立。快速 512 是近似预览，可能丢失参考细节；精细脸部、文字建议标准 1024。")
+                .font(.caption2).foregroundStyle(.secondary)
+            if let issue = draft.qwen21ReferenceSizeIssue {
+                Text(issue).font(.caption2).foregroundStyle(.orange).textSelection(.enabled)
+                    .accessibilityIdentifier(accessibilityPrefix + "ReferenceEncodingIssue")
+                Button("恢复标准 1024") { setSize(1024) }.font(.caption).disabled(locked)
+                    .accessibilityIdentifier(accessibilityPrefix + "ReferenceEncodingReset")
+            } else if let reason = draft.qwen21FastReferenceUnavailableReason {
+                Text(reason).font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 private struct ImageViewport {
     var zoom: CGFloat = 1
     var offset = CGSize.zero

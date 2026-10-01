@@ -36,7 +36,7 @@ struct ReferenceImagePreparationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("参考图尺寸").font(.title2.weight(.semibold))
+            Text("输入文件尺寸").font(.title2.weight(.semibold))
             HStack(spacing: 16) {
                 MediaPreview(path: asset.original?.path ?? asset.path, maxPixel: 320)
                     .frame(width: 160, height: 150)
@@ -69,7 +69,7 @@ struct ReferenceImagePreparationView: View {
             Text("原始副本保留，可随时恢复“原图”或撤销。输出画布尺寸保持当前设置。")
                 .font(.caption).foregroundStyle(.secondary)
             if studio.draft.modelID == "qwen-image-2.1" {
-                Text("Qwen 会按模型规则再次编码参考图；缩小文件不等于减少模型内部的编码尺寸。")
+                Text("当前模型参考编码尺度为 \(studio.draft.qwen21ReferenceSize)。缩小输入文件不改变此设置，可在参数区的“模型参考编码”中单独调整。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let error { Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled) }

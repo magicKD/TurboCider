@@ -145,6 +145,8 @@ struct PlaygroundView: View {
             if state.settings.modelID == "qwen-image-2.1" {
                 Text("DiT 缓存：\(Qwen21DiTCacheMode(rawValue: state.settings.qwen21DiTCache)?.title ?? state.settings.qwen21DiTCache)")
                     .font(.caption).foregroundStyle(.secondary)
+                Qwen21ReferenceEncodingSettings(draft: state.referenceEncodingDraft, locked: controlsLocked,
+                    accessibilityPrefix: "playground", setSize: { state.setQwen21ReferenceSize($0) })
             }
             Button("从创作页同步模型与参数") { state.syncSettings(from: creator.draft) }
                 .disabled(controlsLocked || creator.importing).accessibilityIdentifier("playgroundSyncSettings")
@@ -190,7 +192,7 @@ struct PlaygroundView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             if let asset = state.asset(for: role) {
-                Menu("参考图尺寸 · \((asset.preparation ?? .original).title)") {
+                Menu("输入文件尺寸 · \((asset.preparation ?? .original).title)") {
                     ForEach(ReferenceImagePreparation.allCases) { preset in
                         Button(preset.title) {
                             let template = state.template
@@ -238,6 +240,10 @@ struct PlaygroundView: View {
             if !showReference, let job = selectedJob {
                 Text("\(job.request.width)×\(job.request.height) · Seed \(job.request.seed) · \(Int(job.elapsed)) 秒")
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                if job.request.model == "qwen-image-2.1" {
+                    Text("模型参考编码：\(job.request.qwen21_reference_size ?? 1024)\((job.request.qwen21_reference_size ?? 1024) == 512 ? " · 近似" : " · 标准")")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
                 HStack(spacing: 10) {
                     Button("用作人物参考") {
                         Task {

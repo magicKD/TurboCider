@@ -107,6 +107,21 @@ struct PlaygroundDocument: Codable, Sendable {
         do { _ = try generationDraft(); return nil }
         catch { return error.localizedDescription }
     }
+    var referenceEncodingDraft: StudioDraft {
+        var draft = settings
+        draft.operation = "image.edit"; draft.assets = orderedAssets
+        return draft
+    }
+    @discardableResult func setQwen21ReferenceSize(_ size: Int) -> Bool {
+        guard !importing, generationTask == nil, [1024, 512].contains(size) else { return false }
+        if size == 512, let reason = referenceEncodingDraft.qwen21FastReferenceUnavailableReason {
+            message = reason; return false
+        }
+        var updated = document
+        updated.templates[template.rawValue]?.settings.qwen21ReferenceSize = size
+        commit(updated)
+        return true
+    }
 
     func generationDraft() throws -> StudioDraft {
         guard storageError == nil, !loadBlocked else {

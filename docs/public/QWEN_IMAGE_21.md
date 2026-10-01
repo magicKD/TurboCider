@@ -114,6 +114,34 @@ are not complete-LoRA speedups.
 FFN step reuse remains unsupported with this adapter. The previous BF16 GPU path
 remains available without `loras`.
 
+For faster **r128 GPU editing**, the request may explicitly select
+`qwen21_reference_size: 512` without setting a diagnostic environment variable.
+This requires a 512×512 output, 1–3 ordered references, six steps, strength 1,
+`hybrid_mlp_mode: "auto"`, inference-time LoRA, prompt enhancement and DiT cache
+off, and `allow_approximation: true`. The r128 filename is recognized during
+planning; its pinned SHA-256 is still checked before binding. This request
+opt-in does not widen ordinary-LoRA, r256 or GPU+ANE routes. Their existing
+full-size or explicitly gated diagnostic rules remain in force.
+
+The default is still **1024**. Reference size is an approximate squared-pixel
+area: aspect ratio is preserved and dimensions are aligned to 32 pixels, so a
+non-square reference is not forced into a 512×512 square. Reducing it can lose
+small details and change the edited image. It changes reference encoding,
+not output resolution. Base-model editing already supports explicit 256/512
+reference resizing with approximation enabled; ordinary LoRA continues to
+require 1024. The App's 512 shortcut uses the qualified base 20–40-step or
+Viggle r128 six-step GPU settings.
+
+In schema v1, add the field at the top level. In schema v2 use
+`"parameters": {"qwen21_reference_size": 512}`; keep `allow_approximation`
+under `execution`. `models` discovery reports the field locations and limits
+in `reference_encoding`. Run `plan` to validate the complete request. Plans
+and results report `qwen21_reference_size` and the
+`qwen21_reference_resize_512` approximation; qualified r128 requests also
+report `qwen21_viggle_r128_reference_resize_512`. Cross-request prefix snapshot
+reuse currently requires 1024-reference processing and is bypassed at 512;
+the conditioning cache still distinguishes the two sizes.
+
 ```json
 {
   "model": "qwen-image-2.1", "operation": "image.generate",

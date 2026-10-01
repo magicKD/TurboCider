@@ -48,6 +48,7 @@ ModelModule qwen21_module() {
             const char *lora_ane_flag = std::getenv("TURBOCIDER_QWEN21_LORA_BASE_ANE_DIAGNOSTIC");
             const char *gate_up_flag = std::getenv("TURBOCIDER_QWEN21_LORA_GATE_UP_DIAGNOSTIC");
             const char *lora_ref512_flag = std::getenv("TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC");
+            const bool gpu_viggle_ref512 = qwen21::gpu_viggle_ref512_request(r);
             const bool runtime_ane = r.hybrid_mlp_mode == "runtime";
             const bool runtime_qkv = r.hybrid_mlp_mode == "runtime_qkv";
             require(r.hybrid_mlp_mode == "auto" || r.hybrid_mlp_mode == "base_fused" ||
@@ -238,8 +239,8 @@ ModelModule qwen21_module() {
                                 r.allow_approximation &&
                                 (r.qwen21_reference_size == 1024 ||
                                  (r.qwen21_reference_size == 512 &&
-                                  qwen21::option_enabled(lora_ref512_flag))),
-                            "Viggle requires six steps and strength 1; explicit lora_fused/runtime alternate adapters retain the experimental six-step schedule");
+                                  (gpu_viggle_ref512 || qwen21::option_enabled(lora_ref512_flag)))),
+                            "Viggle requires six steps and strength 1; resized-512 references need the qualified r128 GPU edit request or the legacy diagnostic; explicit lora_fused/runtime alternate adapters retain the experimental six-step schedule");
                 } else {
                     require(r.execution == "gpu" && r.hybrid_mlp_mode == "auto" &&
                                 r.steps >= 20 && r.steps <= 40 && r.qwen21_reference_size == 1024,
@@ -461,6 +462,7 @@ ModelModule qwen21_module() {
                 "experimental: actual edit material fidelity is under investigation; not quality-qualified",
                 "BF16 Comfy checkpoint plus official processor/tokenizer.json required",
                 "reference images are resized to approximately 1024 squared pixels with 32-aligned dimensions",
+                "explicit approximate 512px reference encoding is supported for 512x512 GPU edits with 1...3 references: base model or pinned Viggle v0.2.1 r128 at six steps/strength 1; ordinary LoRA, DiT cache and ANE are outside this request opt-in",
                 "RGBA is preserved; App masks are visual references, not hard pixel-preserving inpainting",
                 "native PE-T2I is optional and slow; PE-I2I requires explicit prompt_enhance_edit_experimental with FP32 vision, supported 8-bit files, and is not quality-qualified; BF16 visual parity remains unaccepted",
                 "experimental gpu_ane: explicit FP16 512x512 text-to-image or W8A8 512x512 edit with 1...3 references scaled to 256; full 32-layer coverage is faster but changes some edited details, while GPU-only blocks 3,5,7 remain an opt-in alternative; device placement and broad quality are not qualified"

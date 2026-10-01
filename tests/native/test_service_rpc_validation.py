@@ -25,7 +25,8 @@ class RPCValidationTests(unittest.TestCase):
         self.log = (self.root / "service.log").open("w")
         self.addCleanup(self.log.close)
         environment = {key: value for key, value in os.environ.items()
-                       if key not in ("TURBOCIDER_SERVICE_PARENT_PID", "TURBOCIDER_LIBRARY_PARENT_PID")}
+                       if key not in ("TURBOCIDER_SERVICE_PARENT_PID", "TURBOCIDER_LIBRARY_PARENT_PID")
+                       and not key.startswith("TURBOCIDER_QWEN21_")}
         environment["TURBOCIDER_MODEL_LIBRARY"] = str(self.root / "isolated-library")
         environment["TURBOCIDER_LIBRARY_SETTINGS"] = str(self.root / "isolated-settings.json")
         self.process = subprocess.Popen(
@@ -78,6 +79,46 @@ class RPCValidationTests(unittest.TestCase):
         self.assertEqual(healthy["result"]["pid"], self.pid)
         self.assertEqual(healthy["result"]["history_count"], 0)
         self.assertIsNone(self.process.poll())
+
+    def test_qwen_reference_encoding_discovery_and_plan_opt_in(self):
+        models = self.rpc({"action": "models"})
+        self.assertTrue(models["ok"])
+        qwen = next(model for model in models["result"]["models"]
+                    if model["id"] == "qwen-image-2.1")
+        self.assertEqual(qwen["reference_encoding"]["default"], 1024)
+        self.assertEqual(qwen["reference_encoding"]["schema_v2_field"],
+                         "parameters.qwen21_reference_size")
+        adapter = {"path": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+                   "role": "transformer", "strength": 1}
+        request = {
+            "schema_version": 2, "model": "qwen-image-2.1", "operation": "image.edit",
+            "inputs": [{"kind": "text", "role": "prompt", "text": "A ceramic teapot"},
+                       {"kind": "image", "role": "reference", "path": "not-loaded.png"}],
+            "outputs": [{"kind": "image", "path": "edit.png", "width": 512,
+                         "height": 512, "frames": 1, "audio": False}],
+            "sampling": {"seed": 42, "steps": 6},
+            "execution": {"policy": "gpu", "residency": "component_staged",
+                          "hybrid_mlp_mode": "auto", "allow_approximation": True,
+                          "qwen21_dit_cache": "off"},
+            "parameters": {"qwen21_reference_size": 512},
+            "lora_strategy": "inference_time", "loras": [adapter],
+        }
+        planned = self.rpc({"action": "plan", "request": request})
+        self.assertTrue(planned["ok"], planned)
+        self.assertEqual(planned["result"]["qwen21_reference_size"], 512)
+        self.assertIn("qwen21_viggle_r128_reference_resize_512",
+                      planned["result"]["algorithm_approximations"])
+        for changes in (
+            {"parameters": {"qwen21_reference_size": 256}},
+            {"qwen21_reference_size": 512},
+            {"execution": {**request["execution"], "allow_approximation": False}},
+            {"execution": {**request["execution"], "qwen21_dit_cache": "balanced"}},
+            {"execution": {**request["execution"], "policy": "gpu_ane", "ane_manifest": "not-loaded.json"}},
+            {"loras": [{**adapter, "path": adapter["path"].replace("r128", "r256")}]},
+            {"loras": [{**adapter, "path": "ordinary.safetensors"}], "sampling": {"steps": 25}},
+        ):
+            with self.subTest(changes=changes):
+                self.assert_rejected_without_exit({"action": "plan", "request": {**request, **changes}})
 
     def test_strict_envelope_types_ranges_and_duplicate_keys(self):
         for action in (None, True, 1, [], {}, "", "unknown", "jobs\0ignored"):

@@ -23,6 +23,8 @@ def main():
     parser.add_argument("--then", help="Optional second editing prompt, using the first result")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--reference-size", type=int, choices=(1024, 512), default=1024,
+                        help="Reference encoding area: 1024 standard; 512 faster preview (r128 only, may lose detail). Output stays 512×512.")
     parser.add_argument("--run", action="store_true", help="Submit after planning; otherwise only inspect the first plan")
     args = parser.parse_args()
     if not 1 <= len(args.reference) <= 3:
@@ -42,6 +44,7 @@ def main():
             "output": str(output), "width": 512, "height": 512, "steps": 6, "seed": args.seed,
             "execution": "gpu", "residency": "component_staged", "dynamic_text": True,
             "prompt_enhance": False, "allow_approximation": True, "qwen21_dit_cache": "off",
+            "qwen21_reference_size": args.reference_size,
             "lora_strategy": "inference_time",
             "loras": [{"path": str(args.turbo_lora.resolve()), "role": "transformer", "strength": 1.0}],
         }

@@ -264,6 +264,7 @@ struct StudioDraft: Codable, Sendable {
     var promptEnhanceEditExperimental = false
     var promptEnhancerPath = ""
     var qwen21DiTCache = "off"
+    var qwen21ReferenceSize = 1024
     var residency = "resident"
     var zImageStreamingBudgetGiB = 10
     var profilePath = ""
@@ -278,7 +279,7 @@ struct StudioDraft: Codable, Sendable {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
-        case qwen21DiTCache
+        case qwen21DiTCache, qwen21ReferenceSize
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -316,6 +317,7 @@ struct StudioDraft: Codable, Sendable {
         promptEnhanceEditExperimental = try c.decodeIfPresent(Bool.self, forKey: .promptEnhanceEditExperimental) ?? false
         promptEnhancerPath = try c.decodeIfPresent(String.self, forKey: .promptEnhancerPath) ?? promptEnhancerPath
         qwen21DiTCache = try c.decodeIfPresent(String.self, forKey: .qwen21DiTCache) ?? "off"
+        qwen21ReferenceSize = try c.decodeIfPresent(Int.self, forKey: .qwen21ReferenceSize) ?? 1024
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
         zImageStreamingBudgetGiB = try c.decodeIfPresent(Int.self, forKey: .zImageStreamingBudgetGiB) ?? 10
         profilePath = try c.decodeIfPresent(String.self, forKey: .profilePath) ?? profilePath
@@ -345,9 +347,38 @@ struct StudioDraft: Codable, Sendable {
               Self.qwen21TurboAdapterNames.contains(URL(fileURLWithPath: adapter.path).lastPathComponent) else { return nil }
         return adapter
     }
+    var qwen21FastReferenceUnavailableReason: String? {
+        guard modelID == "qwen-image-2.1", operation == "image.edit" else { return "快速 512 仅用于 Qwen 图片编辑。" }
+        if (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) != "gpu" || !profilePath.isEmpty {
+            return "快速 512 仅支持明确的纯 GPU 设置，不与 ANE 或设备配置联动。"
+        }
+        if width != 512 || height != 512 { return "快速 512 当前需要 512×512 输出画布。" }
+        if !(1...3).contains(activeAssets.count) { return "快速 512 当前支持 1–3 张参考图；请核对编辑输入。" }
+        if promptEnhance { return "快速 512 暂不与提示词增强组合使用。" }
+        if qwen21DiTCache != "off" { return "快速 512 与 DiT 缓存不能同时使用。" }
+        if usesPublicStreaming { return "快速 512 暂不支持流式内存档位。" }
+        if activeLoRAs.isEmpty {
+            return (20...40).contains(steps) ? nil : "基础模型的快速 512 需要 20–40 步，请自行调整步数。"
+        }
+        guard let adapter = qwen21TurboLoRA else { return "普通 LoRA 或多个适配器使用标准 1024 编码；快速 512 仅开放已验证的六步 r128。" }
+        guard URL(fileURLWithPath: adapter.path).lastPathComponent == "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors" else {
+            return "此 Viggle 适配器的快速 512 尚未开放，请使用标准 1024。"
+        }
+        guard steps == 6, adapter.role == "transformer", adapter.strength == 1,
+              ["auto", "inference_time"].contains(loraStrategy) else {
+            return "r128 快速 512 需要六步、Transformer 角色、强度 1 与运行时加载策略。"
+        }
+        return nil
+    }
+    var qwen21ReferenceSizeIssue: String? {
+        guard modelID == "qwen-image-2.1" else { return nil }
+        guard [1024, 512].contains(qwen21ReferenceSize) else { return "模型参考编码设置无效，请恢复标准 1024。" }
+        return qwen21ReferenceSize == 512 ? qwen21FastReferenceUnavailableReason : nil
+    }
     var qwen21DiTCacheUnavailableReason: String? {
         guard modelID == "qwen-image-2.1", ["image.generate", "image.edit"].contains(operation) else { return "DiT 缓存仅支持 Qwen 2.1 生图或图片编辑。" }
         if hasQwen21TurboAdapter { return "六步 Viggle Turbo 不支持 DiT 缓存，请保持关闭。" }
+        if qwen21ReferenceSize != 1024 { return "DiT 缓存需要标准 1024 参考编码，请先恢复标准编码。" }
         if (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) != "gpu" || !profilePath.isEmpty {
             return "DiT 缓存仅支持纯 GPU，请关闭 ANE 与设备配置。"
         }
@@ -651,6 +682,7 @@ struct StudioDraft: Codable, Sendable {
                 throw NativeFailure(message: "Qwen LoRA 仅支持 Transformer 角色。")
             }
         }
+        if let reason = qwen21ReferenceSizeIssue { throw NativeFailure(message: reason + " 可一键恢复标准 1024，其他参数保持不变。") }
         guard Qwen21DiTCacheMode(rawValue: qwen21DiTCache) != nil else { throw NativeFailure(message: "DiT 缓存档位无效，请选择关闭、保守、均衡或快速。") }
         if qwen21DiTCache != "off", let reason = qwen21DiTCacheUnavailableReason { throw NativeFailure(message: reason) }
         if modelID == "z-image-turbo-gguf" && residency != "resident" {
@@ -716,6 +748,8 @@ struct StudioDraft: Codable, Sendable {
             operation == "image.edit" && promptEnhance && promptEnhanceEditExperimental
         request.prompt_enhancer_path = modelID == "qwen-image-2.1" && !promptEnhancerPath.isEmpty ? promptEnhancerPath : nil
         request.qwen21_dit_cache = modelID == "qwen-image-2.1" ? qwen21DiTCache : nil
+        request.qwen21_reference_size = modelID == "qwen-image-2.1" ? qwen21ReferenceSize : nil
+        if modelID == "qwen-image-2.1", qwen21ReferenceSize == 512 { request.allow_approximation = true }
         if qwen21DiTCache != "off" { request.allow_approximation = true }
         if modelID == "z-image-turbo", residency == "streamed" {
             request.memory_budget_bytes = UInt64(zImageStreamingBudgetGiB) << 30
@@ -1209,6 +1243,15 @@ final class StudioState: ObservableObject {
         draft.profilePath = ""
         draft.acceleration = config
     }
+    @discardableResult func setQwen21ReferenceSize(_ size: Int) -> Bool {
+        guard !importing, [1024, 512].contains(size) else { return false }
+        if size == 512, let reason = draft.qwen21FastReferenceUnavailableReason {
+            message = reason; return false
+        }
+        draft.qwen21ReferenceSize = size
+        save()
+        return true
+    }
     func useZImageResidentLoading() {
         guard draft.modelID == "z-image-turbo", draft.residency == "streamed" || draft.usesPublicStreaming else { return }
         setStreamingSelection(.off)
@@ -1329,6 +1372,7 @@ final class StudioState: ObservableObject {
         draft.ltxAccelerationMode = "quality"
         draft.streaming = StudioStreamingState()
         draft.qwen21DiTCache = "off"
+        draft.qwen21ReferenceSize = 1024
         draft.residency = model.default_residency ?? "resident"
         draft.profilePath = ""
         draft.acceleration = StudioAcceleration(policy: "gpu")
@@ -1502,7 +1546,7 @@ final class StudioState: ObservableObject {
     // Keep the existing eight-asset staging area for smaller-input models,
     // while allowing the complete ten-reference Qwen21 input contract.
     var imageImportLimit: Int {
-        if draft.modelID == "qwen-image-2.1", !draft.activeLoRAs.isEmpty || draft.qwen21DiTCache != "off" { return 3 }
+        if draft.modelID == "qwen-image-2.1", !draft.activeLoRAs.isEmpty || draft.qwen21DiTCache != "off" || draft.qwen21ReferenceSize == 512 { return 3 }
         return max(8, models.first(where: { $0.id == draft.modelID })?.max_images ?? 8)
     }
     func applyQwen21Example(_ example: Qwen21PromptExample) {
@@ -1719,6 +1763,7 @@ final class StudioState: ObservableObject {
         draft.promptEnhanceEditExperimental = request.prompt_enhance_edit_experimental ?? false
         draft.promptEnhancerPath = request.prompt_enhancer_path ?? ""
         draft.qwen21DiTCache = request.qwen21_dit_cache ?? "off"
+        draft.qwen21ReferenceSize = request.qwen21_reference_size ?? 1024
         draft.assets = (request.inputs ?? []).map { input in
             let url = URL(fileURLWithPath: input.path)
             let source = CGImageSourceCreateWithURL(url as CFURL, nil)

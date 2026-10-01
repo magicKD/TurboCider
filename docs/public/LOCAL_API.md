@@ -48,6 +48,13 @@ by the native `plan` action, not by a duplicate schema maintained by the client.
 `models` lists registered capabilities, not installed weights. Supply an
 existing native-compatible model path when submitting.
 
+Qwen-Image-2.1's model entry includes `reference_encoding`: the default 1024px
+processing, field locations for native request schemas 1/2, and the explicit
+512px r128 GPU editing opt-in. Reduced reference encoding requires
+`allow_approximation: true`; use `plan` for authoritative validation and see
+the [Qwen request guide](QWEN_IMAGE_21.md). `plan` does not load or verify the
+adapter; its pinned contents are checked when the model binds it.
+
 `installations` returns the service's local model-library registry, including
 registered model components, LoRAs and ANE partitions. The response contains
 `schema_version: 1`, `root`, `index`, `scope: "registered_metadata"` and
@@ -180,13 +187,16 @@ them after constructing a prompt containing image numbers.
 demonstrates one- to three-reference Qwen Turbo editing at 512×512, optionally
 followed by another edit using the first output. It uses an existing Viggle
 six-step adapter at strength 1, GPU, and DiT cache off. This is a pinned Turbo
-example, not the schedule for ordinary LoRA adapters.
+example, not the schedule for ordinary LoRA adapters. Reference encoding
+defaults to 1024. Select `--reference-size 512` for the explicit approximate
+r128 GPU edit option; this does not change the 512×512 output canvas.
 
 ```sh
 python3 examples/local_api/qwen_reference_workflow.py \
   --socket /the/app/socket \
   --model /absolute/Qwen-Image-2.1 \
-  --turbo-lora /absolute/viggle-turbo-6step.safetensors \
+  --turbo-lora /absolute/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors \
+  --reference-size 512 \
   --reference /absolute/person.png --reference /absolute/outfit.png \
   --prompt 'Put the outfit from image 2 on the person in image 1, preserving their identity.' \
   --then 'Keep the same person and outfit; change the background to a garden.' \
@@ -202,8 +212,10 @@ earlier successful jobs. A standalone CLI service can outlive the App.
 
 API jobs currently remain in their service history; they are not automatically
 inserted into the App's creation history. You can import a completed output as a
-reference through the App. Automatic installation discovery, shared App history
-and a persisted workflow scheduler are not part of this protocol revision.
+reference through the App. Installation discovery is available through
+`installations` for registered metadata; it does not verify
+files or scan for unregistered models. Shared App history and a persisted
+workflow scheduler are not part of this protocol revision.
 
 ## Troubleshooting
 

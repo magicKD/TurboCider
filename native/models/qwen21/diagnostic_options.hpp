@@ -1,9 +1,11 @@
 #pragma once
 #include "../../core/contracts.hpp"
+#include "viggle_adapter.hpp"
 #include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <stdexcept>
 #include <string_view>
 
@@ -34,6 +36,28 @@ inline bool gate_up_ane(const Request &request) {
 
 inline bool fused_lora_ane(const Request &request) {
     return request.hybrid_mlp_mode == "lora_fused";
+}
+
+// Request opt-in for the locally verified r128 GPU editing route. Planning
+// recognizes the release filename; Session still verifies its pinned SHA-256
+// before binding. This does not qualify r256 or any runtime/frozen ANE route.
+inline bool gpu_viggle_ref512_request(const Request &request) {
+    if (request.model != "qwen-image-2.1" || request.execution != "gpu" ||
+        request.hybrid_mlp_mode != "auto" || request.operation != "image.edit" ||
+        request.width != 512 || request.height != 512 || request.steps != 6 ||
+        request.qwen21_reference_size != 512 || !request.allow_approximation ||
+        request.inputs.empty() || request.inputs.size() > 3 ||
+        request.loras.size() != 1 || request.lora_strategy != "inference_time" ||
+        request.prompt_enhance || request.prompt_enhance_edit_experimental ||
+        request.qwen21_dit_cache != "off" ||
+        request.qwen21_w8a8 || request.qwen21_gpu_w8a16 ||
+        !request.qwen21_gpu_full_ffn_blocks.empty() || !request.ane_manifest.empty() ||
+        !request.encoder_ane_manifest.empty()) return false;
+    const auto &lora = request.loras.front();
+    const auto *adapter = viggle_v021_adapter(
+        std::filesystem::path(lora.path).filename().string());
+    return adapter && adapter->rank == "r128" &&
+        lora.role == "transformer" && lora.strength == 1.f;
 }
 
 // Return a negative sentinel for malformed values so planning and execution
