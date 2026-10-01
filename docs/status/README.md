@@ -1,5 +1,7 @@
 # TurboCider 状态文档入口
 
+后续 App 更新与完整 FFN 候选见 [模式隔离、LoRA 登记和 SwiGLU 对照](2026-10-01-app-refresh-and-swiglu.md)。
+
 2026-10-01 M4 Pro 笔记本阶段验收已整理，交付 App 为 `0f8dfa7`：
 [当前验收、包与 Runtime ANE 决策](2026-10-01-runtime-ane-decision.md)。
 本机可选参考编码 512 的单次冷编辑为 25.16 s，标准 1024 为 37.28 s；
