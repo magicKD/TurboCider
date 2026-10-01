@@ -6,6 +6,9 @@
 复用原 StageExecutor/IoExecutor/reader/ledger。不是全部R3/低容量硬件/whole-request
 认证；tile、更小预算和Z refiners等仍须推进，不用这个实验放宽生产catalog资格。
 
+后续 [18](18-streamed-refiners-and-bank-boundaries.md) 已增加浮点 refiners 流式银行与
+释放交接；本页的常驻 refiner 数字保留为本阶段真实历史证据，不改写旧回执。
+
 ## 1. 实际读取与 ownership
 
 `GgufWeightPager`读取descriptor中的明确`source_residency`，默认packed_resident不变：

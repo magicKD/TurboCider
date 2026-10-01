@@ -52,6 +52,7 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
             "unknown GGUF precision profile");
     require(residency == "packed_resident" || residency == "packed_streamed", "unknown GGUF source residency");
     const bool legacy_float=profile.starts_with("z-mlx-compat-");
+    const bool stream_refiners = residency == "packed_streamed";
     const auto &file = lease->file("transformer");
     auto fd = lease->duplicate_fd("transformer");
     const auto directory = gguf::read_directory(fd.get(), file.bytes);
@@ -62,11 +63,13 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
     d.model = "z-image-turbo-gguf";
     d.checkpoint_identity = std::string(lease->artifact_digest());
     d.backend_revision = "gguf-cpu-rne-mlx-v1:" + profile;
+    if (stream_refiners) d.backend_revision += ":refiner-bank-v2";
     d.artifacts.push_back({"transformer", file.content_digest, file.bytes, streaming::SourceIdentityKind::content_sha256});
     d.workload = {{"width", std::to_string(width)}, {"height", std::to_string(height)},
         {"source_residency", residency},
         {"caption_rows", std::to_string(caption)}, {"steps", std::to_string(steps)},
         {"precision", profile}, {"fixed_policy", "source-float-alias-v1"}};
+    if (stream_refiners) d.workload["refiner_policy"] = "interleaved-single-slot-v2";
     if(legacy_float)d.workload["float_loader"]="mlx-bf16-to-f16-v1";
     streaming::StageDescriptor stage;
     stage.id = "denoiser"; stage.adapter_revision = d.backend_revision;
@@ -78,6 +81,18 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
         block.id = i; block.layout_class = "z-gguf-main-source-mixed-v1";
         stage.blocks.push_back(std::move(block));
     }
+    streaming::StageDescriptor refiners;
+    if (stream_refiners) {
+        refiners.id = "refiners"; refiners.adapter_revision = d.backend_revision;
+        refiners.min_slots = refiners.max_slots = 1; refiners.max_group_size = 1;
+        refiners.pass_count = steps;
+        for (uint32_t step = 0; step < steps; ++step) refiners.passes.push_back({step, "interleaved-refinement", {width,height,caption}});
+        for (uint32_t i = 0; i < 4; ++i) {
+            streaming::BlockSpec block; block.id = i;
+            block.layout_class = i % 2 ? "z-gguf-context-refiner-v2" : "z-gguf-noise-refiner-v2";
+            refiners.blocks.push_back(std::move(block));
+        }
+    }
     for (const auto &tensor : directory.tensors) {
         const auto found = expected.find(tensor.name);
         require(found != expected.end(), "unexpected GGUF Z tensor: " + tensor.name);
@@ -85,15 +100,17 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
         const bool pad = (tensor.name == "x_pad_token" || tensor.name == "cap_pad_token") && logical == Shape{3840};
         require(logical == found->second || pad, "GGUF Z tensor geometry mismatch: " + tensor.name);
         const bool main = tensor.name.starts_with("layers.");
+        const bool refiner = tensor.name.starts_with("noise_refiner.") || tensor.name.starts_with("context_refiner.");
+        const bool block_streamed = main || (refiner && stream_refiners);
         const bool floating = gguf::type_info(tensor.type).elements == 1;
-        require(main || floating, "GGUF quantized refiners require a later streamed-refiner revision");
+        require(block_streamed || floating, "GGUF quantized stage-fixed/refiner source unsupported by this profile");
         const char *format = floating ? (tensor.type == 0 ? "F32" : tensor.type == 1 || legacy_float ? "F16" : "BF16")
             : profile == "z-source-exact-f32-v1" || profile == "z-mlx-compat-f32-v1" ? "F32"
             : profile == "z-source-mixed-f16-v1" || profile == "z-mlx-compat-f16-v1" ? "F16" : "BF16";
         const uint32_t item = std::string_view(format) == "F32" ? 4 : 2;
         streaming::Materialization materialization;
         materialization.format = format; materialization.storage_mode = "mlx-metal-shared";
-        materialization.conversion = main ? "gguf-cpu-rne-v1" : legacy_float && tensor.type==30 ? "gguf-mlx-float-alias-v1" : "gguf-native-alias-v1";
+        materialization.conversion = block_streamed ? "gguf-cpu-rne-v1" : legacy_float && tensor.type==30 ? "gguf-mlx-float-alias-v1" : "gguf-native-alias-v1";
         materialization.shape = found->second;
         materialization.reads.push_back({0,tensor.file_offset,tensor.bytes,tensor.name,
                                        gguf::type_info(tensor.type).name,logical});
@@ -101,14 +118,16 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
         field.bytes = gguf::checked_mul(tensor.elements, item);
         field.alignment = streaming::GgufWeightPager::buffer_alignment;
         field.materialization = std::move(materialization);
-        if (main) {
-            const auto separator = tensor.name.find('.', 7);
+        if (block_streamed) {
+            const size_t first = main ? 7 : tensor.name.starts_with("noise_refiner.") ? 14 : 16;
+            const auto separator = tensor.name.find('.', first);
             require(separator != std::string::npos, "invalid layer name");
-            const std::string number = tensor.name.substr(7,separator - 7);
+            const std::string number = tensor.name.substr(first,separator - first);
             const auto layer = std::stoul(number);
-            require(layer < 30 && number == std::to_string(layer), "invalid layer index");
+            require(layer < (main ? 30 : 2) && number == std::to_string(layer), "invalid layer index");
+            auto &destination = main ? stage.blocks[layer] : refiners.blocks[layer * 2 + (tensor.name.starts_with("context_refiner.") ? 1 : 0)];
             field.name = tensor.name.substr(separator + 1);
-            field.storage_id = "gguf-layer-" + std::to_string(layer) + ":" + field.name;
+            field.storage_id = main ? "gguf-layer-" + std::to_string(layer) + ":" + field.name : "gguf-refiner:" + tensor.name;
             if (!floating && (profile == "z-source-native-affine-v1" || profile == "z-mlx-compat-affine-v1")) {
                 require(tensor.type == 2 || tensor.type == 3 || tensor.type == 8, "native affine profile only supports Q4_0/Q4_1/Q8_0");
                 const uint32_t bits = tensor.type == 8 ? 8 : 4;
@@ -117,31 +136,37 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
                     auto packed = field;
                     const bool codes = std::string_view(part) == "codes";
                     packed.name = codes ? field.name : stem + "." + part;
-                    packed.storage_id = "gguf-layer-" + std::to_string(layer) + ":" + packed.name;
+                    packed.storage_id = main ? "gguf-layer-" + std::to_string(layer) + ":" + packed.name : "gguf-refiner:" + tensor.name + ":" + part;
                     auto &m = *packed.materialization;
                     m.conversion = "gguf-affine-" + std::string(part) + "-v1";
                     m.format = codes ? "U32" : "F16";
                     m.shape = {tensor.rows(),codes ? tensor.columns()*bits/32 : tensor.columns()/32};
                     packed.bytes = gguf::checked_mul(gguf::checked_mul(m.shape[0],m.shape[1]),codes ? 4 : 2);
-                    stage.blocks[layer].fields.push_back(std::move(packed));
+                    destination.fields.push_back(std::move(packed));
                 }
-            } else stage.blocks[layer].fields.push_back(std::move(field));
+            } else destination.fields.push_back(std::move(field));
         } else {
             field.name = tensor.name; field.storage_id = "gguf-source:" + tensor.name;
             stage.resident_fields.push_back(std::move(field));
         }
-        if (residency == "packed_resident" || !main)
+        if (residency == "packed_resident" || !block_streamed)
             result.packed_capacity_upper = gguf::checked_add(result.packed_capacity_upper, capacity(tensor.bytes));
     }
     for (auto &block : stage.blocks)
         std::sort(block.fields.begin(), block.fields.end(), [](const auto &a, const auto &b) { return a.name < b.name; });
+    if (stream_refiners) {
+        for (auto &block : refiners.blocks)
+            std::sort(block.fields.begin(), block.fields.end(), [](const auto &a, const auto &b) { return a.name < b.name; });
+        d.stages.push_back(std::move(refiners));
+    }
     d.stages.push_back(std::move(stage));
     auto &c = result.config;
     c.enabled = true; c.schema_version = 1; c.selection = "manual"; c.retention = "request";
     c.stages["denoiser"] = {"streamed", 1, 1 + prefetch, 0, prefetch, 1};
+    if (stream_refiners) c.stages["refiners"] = {"streamed", 1, 1, 0, 0, 1};
     result.layout = streaming::compile_layout(c, d);
-    result.dense_capacity_upper = result.layout.stages.front().peak_pool_bytes;
-    if (residency == "packed_streamed") result.read_capacity_upper = streaming::GgufWeightPager::default_read_buffer_bytes;
+    for (const auto &s : result.layout.stages) result.dense_capacity_upper = std::max(result.dense_capacity_upper, s.peak_pool_bytes);
+    if (residency == "packed_streamed") result.read_capacity_upper = d.stages.size() * streaming::GgufWeightPager::default_read_buffer_bytes;
     lease->revalidate_open_files(); lease->revalidate_paths();
     return result;
 }

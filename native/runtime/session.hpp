@@ -211,6 +211,8 @@ struct QuantizedExecutionMetrics {
     std::string source_residency;
     uint64_t source_logical_bytes = 0, read_buffer_bytes = 0, source_read_bytes = 0;
     double streamed_read_seconds = 0;
+    uint64_t refiner_fills = 0, refiner_capacity_bytes = 0, refiner_decoded_bytes = 0;
+    uint32_t refiner_slots = 0;
 };
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;

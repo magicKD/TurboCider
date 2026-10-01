@@ -200,12 +200,55 @@ void store_eight(float32x4_t a, float32x4_t b, std::byte *target, DecodeDType dt
             const auto tie = vandq_u32(vshrq_n_u32(bits, 16), vdupq_n_u32(1));
             return vshrn_n_u32(vaddq_u32(bits, vaddq_u32(vdupq_n_u32(0x7fff), tie)), 16);
         };
-        vst1q_u16(reinterpret_cast<uint16_t *>(target), vcombine_u16(round(a), round(b)));
+        const auto result = vcombine_u16(round(a), round(b));
+        decode_check(!vmaxvq_u16(vceqq_u16(vandq_u16(result, vdupq_n_u16(0x7f80)), vdupq_n_u16(0x7f80))),
+                     "BF16 conversion overflow");
+        vst1q_u16(reinterpret_cast<uint16_t *>(target), result);
     }
 }
 void store_product(int16x8_t codes, float scale, std::byte *target, DecodeDType dtype) {
     store_eight(vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(codes))), scale),
                 vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(codes))), scale), target, dtype);
+}
+uint64_t floating_dense_row(uint32_t type, const uint8_t *source, std::byte *target,
+                            uint64_t elements, DecodeDType dtype, const std::atomic<bool> *cancel) {
+    decode_check(type == 0 || type == 1 || type == 30, "invalid floating SIMD source");
+    const uint32_t input_item = type == 0 ? 4 : 2, output_item = dtype_bytes(dtype);
+    uint64_t column = 0;
+    for (; elements - column >= 8; column += 8) {
+        cancelled(cancel);
+        float32x4_t a, b;
+        if (type == 0) {
+            const auto lo = vreinterpretq_u32_u8(vld1q_u8(source + column * 4));
+            const auto hi = vreinterpretq_u32_u8(vld1q_u8(source + column * 4 + 16));
+            const auto mask = vdupq_n_u32(0x7f800000);
+            decode_check(!vmaxvq_u32(vorrq_u32(vceqq_u32(vandq_u32(lo, mask), mask),
+                                               vceqq_u32(vandq_u32(hi, mask), mask))), "nonfinite source float");
+            a = vreinterpretq_f32_u32(lo); b = vreinterpretq_f32_u32(hi);
+        } else {
+            const auto raw = vreinterpretq_u16_u8(vld1q_u8(source + column * 2));
+            const auto mask = vdupq_n_u16(type == 1 ? 0x7c00 : 0x7f80);
+            decode_check(!vmaxvq_u16(vceqq_u16(vandq_u16(raw, mask), mask)), "nonfinite source float");
+            if (type == 30) {
+                a = vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(raw), 16));
+                b = vreinterpretq_f32_u32(vshll_n_u16(vget_high_u16(raw), 16));
+            } else {
+                const auto half = vreinterpretq_f16_u16(raw);
+                a = vcvt_f32_f16(vget_low_f16(half)); b = vcvt_f32_f16(vget_high_f16(half));
+            }
+        }
+        store_eight(a, b, target + column * output_item, dtype);
+    }
+    const uint64_t vector_elements = column;
+    for (; column < elements; ++column) {
+        cancelled(cancel);
+        float value;
+        if (type == 0) value = std::bit_cast<float>(u32(source + column * input_item));
+        else if (type == 1) value = half(source + column * input_item);
+        else value = std::bit_cast<float>(uint32_t(u16(source + column * input_item)) << 16);
+        finite(value); write_value(target + column * output_item, dtype, value);
+    }
+    return vector_elements;
 }
 void quantized_dense_block(uint32_t type, const uint8_t *source, std::byte *target, DecodeDType dtype) {
     const uint32_t item = dtype_bytes(dtype);
@@ -286,6 +329,14 @@ DecodeReceipt row_into(const PackedMatrix &source, uint64_t source_row, uint64_t
             target.bytes.data() + target_row * target.row_stride, columns, source.type, options.use_simd, cancel);
         return {decode_mul(columns, type.bytes), columns, decode_mul(columns, type.bytes), 1024, vectors};
     }
+#if defined(__aarch64__)
+    if (options.use_simd && type.elements == 1 && target.column_stride == dtype_bytes(target.dtype) &&
+        (reinterpret_cast<uintptr_t>(target.bytes.data()) + target_row * target.row_stride) % dtype_bytes(target.dtype) == 0) {
+        const auto vectors = floating_dense_row(source.type, bytes + source_row * geometry.row_bytes + column_begin * type.bytes,
+            target.bytes.data() + target_row * target.row_stride, columns, target.dtype, cancel);
+        return {decode_mul(columns, type.bytes), columns, decode_mul(columns, dtype_bytes(target.dtype)), 1024, vectors};
+    }
+#endif
     const uint64_t first = column_begin / type.elements;
     const uint64_t last = (column_begin + columns - 1) / type.elements;
     uint64_t simd_blocks = 0;

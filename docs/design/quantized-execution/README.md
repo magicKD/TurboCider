@@ -44,6 +44,7 @@
 | [15 Qwen3 GGUF conditioning](15-qwen3-gguf-conditioning.md) | verified config/tokenizer与gather、逐层固定槽、Q8/mixed K真实组件及Z组合、质量差异与剩余资格 |
 | [16 CPU量化SIMD加速](16-cpu-quant-simd-acceleration.md) | Q4/Q5/K直填SIMD、同源encoder控制、独占投影/encoder实测与完整Z exact回归 |
 | [17 packed-streamed/三槽](17-packed-streamed-and-three-slots.md) | 单有界read buffer、source/task读取复用、p2真实12格与Z/取消exact，剩余floor/envelope |
+| [18 refiner流式/银行交接](18-streamed-refiners-and-bank-boundaries.md) | interleaved refiners单槽、drained银行释放重建、浮点SIMD转换、真实Q8/Q4 exact与取消；6/8/10/16 GB速度优先方向 |
 
 ## 当前状态速查
 
@@ -52,7 +53,7 @@
 | 原生 MLX Q4_0/Q4_1/Q8_0 及浮点 GGUF | 已有，仍不是全部 Q4–Q8 |
 | CPU Q4/Q5/Q6/K/Q8 有界目标解码 | 已实现，含 Q8 ARM SIMD；见12；不自动授予整图/后端资格 |
 | IQ 解码和 encoder GGUF | Qwen3-4B Q8/mixed K实验接入与Z组合已跑，未发布质量/产品资格，见15；IQ仍待实施 |
-| GGUF 0/1/2层前瞻 GPU 执行 | Z/Qwen3 resident/streamed实验已跑，见13/15/17；tiles、refiners与整体资格仍未完成 |
+| GGUF 0/1/2层前瞻 GPU 执行 | Z/Qwen3 resident/streamed及Z浮点refiner流式实验已跑，见13/15/17/18；tiles、量化refiner真实fixture与整体资格仍未完成 |
 | Z ConvRot gate/up 共用旋转 | 本轮新增显式实验路径；证据见 08 |
 | Z 默认启用 butterfly / ConvRot W8A8 | 未启用；现有 butterfly 不是 INT8 GEMM |
 | M5 GPU ConvRot W8A8 | 设计/未实机验证；本轮无 M5，不发布默认配置 |

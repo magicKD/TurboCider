@@ -125,6 +125,30 @@ int main() {
                 });
             }
         }
+        // Exhaustive finite FP16 sources through the actual vector conversion
+        // API, not just the scalar bit-converter helper. Include subnormals.
+        {
+            alignas(16) std::array<uint16_t, 63488> halves{};
+            alignas(16) std::array<std::byte, 63488 * 4> a{}, b{};
+            size_t count = 0;
+            for (uint32_t bits = 0; bits < 65536; ++bits)
+                if ((bits & 0x7c00) != 0x7c00) halves[count++] = uint16_t(bits);
+            expect(count == halves.size(), "wrong exhaustive FP16 source count");
+            PackedMatrix input{{reinterpret_cast<const std::byte *>(halves.data()), count * 2}, 1, 1, count};
+            for (auto dtype : {DecodeDType::f32, DecodeDType::bf16}) {
+                const size_t bytes = count * dtype_bytes(dtype);
+                forbid_allocation = true;
+                decode_cpu_into(input, {0, 1, 0, count}, {{a.data(), bytes}, dtype, bytes, dtype_bytes(dtype)}, nullptr, {false});
+                decode_cpu_into(input, {0, 1, 0, count}, {{b.data(), bytes}, dtype, bytes, dtype_bytes(dtype)});
+                forbid_allocation = false;
+                expect(a == b, "exhaustive finite FP16 vector conversion differs");
+            }
+            const float extremes[] = {0.f, -0.f, 0x1p-149f, -0x1p-149f, 1.f, -1.f, 65504.f, 65520.f,
+                std::bit_cast<float>(uint32_t(0x7f7fffff)), std::bit_cast<float>(uint32_t(0xff7fffff)), 2.f, 3.f, 4.f, 5.f, 6.f, 7.f};
+            input = {{reinterpret_cast<const std::byte *>(extremes), sizeof(extremes)}, 0, 1, 16};
+            for (auto dtype : {DecodeDType::f16, DecodeDType::bf16}) for (bool simd : {false, true})
+                rejected([&] { decode_cpu_into(input, {0, 1, 0, 16}, {{a.data(), 32}, dtype, 32, 2}, nullptr, {simd}); });
+        }
         std::cout << "PASS GGUF decoder safety: allocation-free, alias, unaligned, overflow, cancellation\n";
         return 0;
     } catch (const std::exception &error) {

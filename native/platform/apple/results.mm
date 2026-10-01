@@ -1363,7 +1363,10 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"scope": @"managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
             @"source_residency": @(m.source_residency.c_str()), @"source_logical_bytes": @(m.source_logical_bytes),
             @"packed_read_buffer_capacity_bytes": @(m.read_buffer_bytes), @"source_read_bytes": @(m.source_read_bytes),
-            @"streamed_read_seconds": @(m.streamed_read_seconds)
+            @"streamed_read_seconds": @(m.streamed_read_seconds),
+            @"refiner_fill_count": @(m.refiner_fills), @"refiner_slot_count": @(m.refiner_slots),
+            @"refiner_decoded_bytes": @(m.refiner_decoded_bytes),
+            @"refiner_pool_capacity_bytes": @(m.refiner_capacity_bytes)
         };
         value[@"validation"] = @"experimental source-mixed GGUF execution; not a production capability";
     }

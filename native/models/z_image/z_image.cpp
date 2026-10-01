@@ -64,6 +64,8 @@ class ZImageGgufStream {
                     const std::string &residency);
     ~ZImageGgufStream();
     void run_pass(uint32_t, Tensor &, const Tensor &, const Tensor &);
+    bool streams_refiners() const noexcept;
+    void run_refiners(uint32_t, Tensor &, Tensor &, const Tensor &, const Tensor &, const Tensor &);
     void finish();
     bool drain_safely() noexcept;
     QuantizedExecutionMetrics metrics() const;
@@ -1588,7 +1590,10 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     auto caption_freqs = z_rope(patch.caption_ids);
     image = mx::expand_dims(image, 0);
     if (!reuse_context) caption_emb = mx::expand_dims(caption_emb, 0);
-    for (int i = 0; i < 2; ++i) {
+    if (gguf_stream && gguf_stream->streams_refiners()) {
+        require(!reuse_context, "GGUF refiner streaming does not reuse a partial context stage");
+        gguf_stream->run_refiners(pass, image, caption_emb, image_freqs, caption_freqs, temb);
+    } else for (int i = 0; i < 2; ++i) {
         checkpoint(cancelled);
         const bool bf16_fallback = hybrid && z_hybrid_bf16_block(i);
         auto block_input = bf16_fallback ? mx::astype(image, mx::bfloat16) : image;
@@ -1953,12 +1958,14 @@ class GgufStageAdapter final : public streaming::ModelSlotAdapter {
     Event event_;
     std::vector<Job> jobs_;
     std::optional<Tensor> value_, freqs_, temb_;
+    std::optional<Tensor> image_, caption_, caption_freqs_;
+    bool refiners_ = false;
     Weights current_;
     uint32_t pass_ = 0, pool_ = 0;
     uint64_t sequence_ = 0;
   public:
-    GgufStageAdapter(streaming::GgufWeightPager &source, uint32_t slots, Event event, std::atomic<bool> &cancel)
-        : source_(source), cancel_(cancel), event_(std::move(event)), jobs_(slots) {
+    GgufStageAdapter(streaming::GgufWeightPager &source, uint32_t slots, Event event, std::atomic<bool> &cancel, bool refiners = false)
+        : source_(source), cancel_(cancel), event_(std::move(event)), jobs_(slots), refiners_(refiners) {
         for (auto &job : jobs_) job.owner = this;
     }
     void bind_pass(uint32_t pass, const Tensor &value, const Tensor &freqs, const Tensor &temb) {
@@ -1966,8 +1973,16 @@ class GgufStageAdapter final : public streaming::ModelSlotAdapter {
         pass_ = pass; value_ = value; freqs_ = freqs; temb_ = temb;
     }
     Tensor result() const { require(value_.has_value(), "GGUF pass not bound"); return *value_; }
+    void bind_refiners(uint32_t pass, const Tensor &image, const Tensor &caption, const Tensor &image_freqs,
+                       const Tensor &caption_freqs, const Tensor &temb) {
+        require(refiners_ && !image_ && !caption_, "GGUF refiners already bound");
+        pass_ = pass; image_ = image; caption_ = caption; freqs_ = image_freqs; caption_freqs_ = caption_freqs; temb_ = temb;
+    }
+    std::pair<Tensor, Tensor> refined() const {
+        require(image_ && caption_, "GGUF refiners not bound"); return {*image_, *caption_};
+    }
     void unbind(bool safe = true) {
-        if (safe) { current_.clear(); value_.reset(); freqs_.reset(); temb_.reset(); }
+        if (safe) { current_.clear(); value_.reset(); freqs_.reset(); temb_.reset(); image_.reset(); caption_.reset(); caption_freqs_.reset(); }
         else event_ = {};
     }
     void create_pool(const streaming::PoolLayout &pool) override { pool_ = pool.id; source_.create_pool(pool); }
@@ -1984,19 +1999,30 @@ class GgufStageAdapter final : public streaming::ModelSlotAdapter {
     std::string error() const { for (const auto &job : jobs_) if (job.error[0]) return job.error.data(); return {}; }
     void encode_prefix(uint32_t pass) override { require(pass == pass_, "GGUF prefix pass mismatch"); source_.check_unchanged(); }
     void prepare_group(const streaming::Group &group, const tc_stream_slot_ticket_v1 &ticket) override {
-        require(value_ && ticket.item.pass == pass_ && ticket.item.step == pass_, "GGUF pass identity mismatch");
+        require((value_ || image_) && ticket.item.pass == pass_ && ticket.item.step == pass_, "GGUF pass identity mismatch");
         current_ = source_.bind(group, ticket);
     }
     bool overlap_next_fill_after_claim() const noexcept override { return jobs_.size() > 1; }
     streaming::ReaderSet encode_group(const streaming::Group &group, const tc_stream_slot_ticket_v1 &ticket,
                                       streaming::CompletionMailbox &) override {
-        require(value_ && ticket.item.pass == pass_, "GGUF encode pass mismatch");
+        require((value_ || image_) && ticket.item.pass == pass_, "GGUF encode pass mismatch");
         checkpoint(cancel_);
         const uint32_t block = group.blocks.front();
-        event_("z_image_denoise_block", int(block), 30);
-        *value_ = z_block(*value_, current_, "layers." + std::to_string(block), *freqs_, *temb_,
-                          nullptr, int(2 + block), nullptr, false, nullptr, false);
-        mx::eval(*value_); // Actual last reader completion, not a submission timestamp.
+        if (refiners_) {
+            const auto prefix = std::string(block % 2 ? "context_refiner." : "noise_refiner.") + std::to_string(block / 2);
+            event_("z_image_gguf_refiner", int(block), 4);
+            if (block % 2) {
+                *caption_ = z_context_block(*caption_, current_, prefix, *caption_freqs_); mx::eval(*caption_);
+            } else {
+                *image_ = z_block(*image_, current_, prefix, *freqs_, *temb_, nullptr, int(block / 2), nullptr, false);
+                mx::eval(*image_);
+            }
+        } else {
+            event_("z_image_denoise_block", int(block), 30);
+            *value_ = z_block(*value_, current_, "layers." + std::to_string(block), *freqs_, *temb_,
+                              nullptr, int(2 + block), nullptr, false, nullptr, false);
+            mx::eval(*value_); // Actual last reader completion, not a submission timestamp.
+        }
         checkpoint(cancel_);
         require(sequence_ != UINT64_MAX, "GGUF reader sequence overflow");
         streaming::ReaderSet readers;
@@ -2015,6 +2041,9 @@ struct ZImageGgufStream::Impl {
     std::unique_ptr<streaming::GgufWeightPager> source;
     std::shared_ptr<GgufStageAdapter> adapter;
     std::unique_ptr<streaming::StageExecutor> executor;
+    std::unique_ptr<streaming::GgufWeightPager> refiner_source;
+    std::shared_ptr<GgufStageAdapter> refiner_adapter;
+    std::unique_ptr<streaming::StageExecutor> refiner_executor;
     std::atomic<bool> &cancel;
     uint32_t next = 0;
     bool finished = false;
@@ -2027,14 +2056,24 @@ struct ZImageGgufStream::Impl {
         plan = z_image::describe_gguf_execution(lease, p, width, height, caption, steps, profile, residency);
         require(gguf::checked_add(gguf::checked_add(plan.packed_capacity_upper, plan.read_capacity_upper), plan.dense_capacity_upper) <= budget,
                 "qe_budget_floor: packed source and dense slots exceed managed weight ceiling");
-        source = std::make_unique<streaming::GgufWeightPager>(lease, plan.descriptor, plan.descriptor.stages.front(),
-                                                           plan.layout.stages.front(), ledger);
+        const size_t main = plan.descriptor.stages.size() - 1;
+        source = std::make_unique<streaming::GgufWeightPager>(lease, plan.descriptor, plan.descriptor.stages[main],
+                                                           plan.layout.stages[main], ledger);
         event("load_gguf_packed_source", 0, 1);
         source->load_packed(&cancel); source->load_resident_aliases(fixed);
         event("load_gguf_packed_source", 1, 1);
-        adapter = std::make_shared<GgufStageAdapter>(*source, p + 1, std::move(event), cancel);
-        executor = std::make_unique<streaming::StageExecutor>(0, lease->generation(), adapter);
-        executor->begin(plan.layout.stages.front());
+        adapter = std::make_shared<GgufStageAdapter>(*source, p + 1, event, cancel);
+        executor = std::make_unique<streaming::StageExecutor>(uint32_t(main), lease->generation(), adapter);
+        executor->begin(plan.layout.stages[main]);
+        if (main) {
+            executor->release_drained_backing();
+            refiner_source = std::make_unique<streaming::GgufWeightPager>(lease, plan.descriptor,
+                plan.descriptor.stages.front(), plan.layout.stages.front(), ledger);
+            refiner_source->load_packed(&cancel);
+            refiner_adapter = std::make_shared<GgufStageAdapter>(*refiner_source, 1, event, cancel, true);
+            refiner_executor = std::make_unique<streaming::StageExecutor>(0, lease->generation(), refiner_adapter);
+            refiner_executor->begin(plan.layout.stages.front()); refiner_executor->release_drained_backing();
+        }
     }
 };
 ZImageGgufStream::ZImageGgufStream(const std::filesystem::path &path, uint32_t p, uint32_t width,
@@ -2045,8 +2084,22 @@ ZImageGgufStream::~ZImageGgufStream() { if (impl_ && !drain_safely()) (void)impl
 bool ZImageGgufStream::drain_safely() noexcept {
     if (!impl_) return true;
     const bool safe = !impl_->executor || impl_->executor->retry_drain();
+    const bool refiner_safe = !impl_->refiner_executor || impl_->refiner_executor->retry_drain();
     if (impl_->adapter) impl_->adapter->unbind(safe);
-    return safe;
+    if (impl_->refiner_adapter) impl_->refiner_adapter->unbind(refiner_safe);
+    return safe && refiner_safe;
+}
+bool ZImageGgufStream::streams_refiners() const noexcept { return impl_ && bool(impl_->refiner_executor); }
+void ZImageGgufStream::run_refiners(uint32_t pass, Tensor &image, Tensor &caption,
+        const Tensor &image_freqs, const Tensor &caption_freqs, const Tensor &temb) {
+    require(streams_refiners() && pass == impl_->next, "GGUF refiner pass out of order");
+    impl_->refiner_source->check_unchanged();
+    impl_->refiner_adapter->bind_refiners(pass, image, caption, image_freqs, caption_freqs, temb);
+    try {
+        impl_->refiner_executor->run_pass(pass, pass, impl_->cancel);
+        auto results = impl_->refiner_adapter->refined(); image = results.first; caption = results.second;
+        impl_->refiner_adapter->unbind(); impl_->refiner_executor->release_drained_backing();
+    } catch (...) { drain_safely(); throw; }
 }
 void ZImageGgufStream::run_pass(uint32_t pass, Tensor &value, const Tensor &freqs, const Tensor &temb) {
     require(impl_ && !impl_->finished && pass == impl_->next, "GGUF pass out of order");
@@ -2054,7 +2107,9 @@ void ZImageGgufStream::run_pass(uint32_t pass, Tensor &value, const Tensor &freq
     try {
         impl_->executor->run_pass(pass,pass,impl_->cancel);
         value = impl_->adapter->result(); impl_->adapter->unbind();
-        impl_->source->check_unchanged(); ++impl_->next;
+        impl_->source->check_unchanged();
+        if (streams_refiners()) impl_->executor->release_drained_backing();
+        ++impl_->next;
     } catch (const std::exception &error) {
         drain_safely(); checkpoint(impl_->cancel);
         const auto detail = impl_->adapter->error();
@@ -2063,9 +2118,11 @@ void ZImageGgufStream::run_pass(uint32_t pass, Tensor &value, const Tensor &freq
     }
 }
 void ZImageGgufStream::finish() {
-    require(impl_ && !impl_->finished && impl_->next == impl_->plan.layout.stages.front().pass_count,
+    require(impl_ && !impl_->finished && impl_->next == impl_->plan.layout.stages.back().pass_count,
             "GGUF execution incomplete");
-    impl_->executor->finish(); mx::synchronize(); impl_->source->check_unchanged(); impl_->finished = true;
+    impl_->executor->finish();
+    if (streams_refiners()) impl_->refiner_executor->finish();
+    mx::synchronize(); impl_->source->check_unchanged(); impl_->finished = true;
 }
 QuantizedExecutionMetrics ZImageGgufStream::metrics() const {
     const auto source = impl_->source->metrics(); const auto execution = impl_->executor->counters();
@@ -2078,10 +2135,25 @@ QuantizedExecutionMetrics ZImageGgufStream::metrics() const {
     result.fills = source.fill_count; result.decoded_bytes = source.decoded_bytes;
     result.source_load_seconds = source.packed_read_seconds; result.decode_seconds = source.decode_seconds;
     result.exposed_wait_seconds = execution.wait_seconds;
-    result.slots = impl_->plan.layout.stages.front().slot_count; result.prefetch = result.slots - 1;
+    result.slots = impl_->plan.layout.stages.back().slot_count; result.prefetch = result.slots - 1;
     result.source_residency = impl_->plan.descriptor.workload.at("source_residency");
     result.source_logical_bytes = source.source_logical_bytes; result.read_buffer_bytes = source.read_buffer_capacity_bytes;
     result.source_read_bytes = source.source_read_bytes; result.streamed_read_seconds = source.streamed_read_seconds;
+    if (streams_refiners()) {
+        const auto refiners = impl_->refiner_source->metrics();
+        const auto ref_execution = impl_->refiner_executor->counters();
+        result.packed_bytes += refiners.packed_source_bytes; result.packed_capacity_bytes += refiners.packed_capacity_bytes;
+        result.source_float_bytes += refiners.source_float_bytes;
+        result.source_logical_bytes += refiners.source_logical_bytes; result.read_buffer_bytes += refiners.read_buffer_capacity_bytes;
+        result.source_read_bytes += refiners.source_read_bytes; result.streamed_read_seconds += refiners.streamed_read_seconds;
+        result.decode_seconds += refiners.decode_seconds; result.exposed_wait_seconds += ref_execution.wait_seconds;
+        result.refiner_fills = refiners.fill_count; result.refiner_slots = 1;
+        result.refiner_decoded_bytes = refiners.decoded_bytes;
+        result.refiner_capacity_bytes = refiners.maximum_dense_pool_capacity_bytes;
+        result.dense_capacity_bytes = std::max(result.dense_capacity_bytes, result.refiner_capacity_bytes);
+        require(result.refiner_fills == uint64_t(impl_->next) * 4 && ref_execution.groups_submitted == result.refiner_fills,
+                "GGUF refiner fills/readers do not match actual passes");
+    }
     require(result.fills == uint64_t(impl_->next) * 30 && execution.groups_submitted == result.fills,
             "GGUF fill/compute counts do not match actual passes");
     return result;
