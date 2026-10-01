@@ -9,6 +9,8 @@ Core ML export and premerged LoRA preparation are separate tasks.
 ## Requests and CLI
 
 ```sh
+dist/cli/turbocider --help
+dist/cli/turbocider capabilities
 dist/cli/turbocider doctor
 dist/cli/turbocider models
 dist/cli/turbocider plan request.json

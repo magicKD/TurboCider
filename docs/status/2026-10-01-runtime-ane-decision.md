@@ -92,12 +92,17 @@ not hardware INT8 execution. Both small and medium MatMul plans preferred CPU,
 and the measured total costs did not establish useful acceleration. Full results
 are in [the updated candidate report](runtime-ane-w8a8-feasibility-2026-10-01.md).
 
-A production mixed W8A8 path still requires a complete SwiGLU implementation,
-correct LoRA placement around SiLU, an actual GPU A8W8 implementation, and matched
-end-to-end comparison including both devices' preparation costs. The current
-single-projection candidate does not satisfy those requirements and is kept
-outside App/runtime admission. Its negative small-graph result also does not
-prove every larger geometry impossible.
+At this milestone the candidate covered only one projection. The subsequent
+[complete Core ML SwiGLU](2026-10-01-app-refresh-and-swiglu.md) and
+[GPU arithmetic controls](2026-10-01-cancellable-import-and-gpu-int8.md) now cover
+gate/up/down and correctly placed LoRA branches. Their independent numerical
+checks pass, but the tested dynamic Q/DQ Core ML graph prefers CPU MatMul and
+the medium portable integer GPU route is slower than FP16. Those implementations
+remain outside App/runtime admission. They have different boundary precisions
+and are not a paired cross-device speed comparison. These negative results
+close their present production-admission proposals, not all possible W8A8
+algorithms or larger geometries. A production mixed W8A8 route still needs
+hardware execution evidence and matched complete-request benefit.
 
 Current DiT FFN runtime support and explicit QKV research code already exist.
 Qwen's text and vision encoders still run on GPU; `qwen21_module.cpp` rejects

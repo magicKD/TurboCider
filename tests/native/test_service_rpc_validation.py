@@ -88,6 +88,10 @@ class RPCValidationTests(unittest.TestCase):
         self.assertEqual(qwen["reference_encoding"]["default"], 1024)
         self.assertEqual(qwen["reference_encoding"]["schema_v2_field"],
                          "parameters.qwen21_reference_size")
+        self.assertEqual(qwen["reference_encoding"]["base_approximation_sizes"], [256, 512])
+        self.assertIn("No LoRA", qwen["reference_encoding"]["base_constraints"])
+        self.assertIn("six steps", qwen["reference_encoding"]["viggle_r128_gpu_edit_constraints"])
+        self.assertEqual(qwen["reference_encoding"]["ordinary_lora_reference_size"], 1024)
         adapter = {"path": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
                    "role": "transformer", "strength": 1}
         request = {
@@ -108,6 +112,17 @@ class RPCValidationTests(unittest.TestCase):
         self.assertEqual(planned["result"]["qwen21_reference_size"], 512)
         self.assertIn("qwen21_viggle_r128_reference_resize_512",
                       planned["result"]["algorithm_approximations"])
+        # Discovery must describe base resizing as well as the stricter r128
+        # shortcut; validate the published sizes against real request admission.
+        for size in qwen["reference_encoding"]["base_approximation_sizes"]:
+            for count in (1, 3):
+                base = {**request, "sampling": {"seed": 42, "steps": 25},
+                        "parameters": {"qwen21_reference_size": size}, "loras": [],
+                        "lora_strategy": "auto", "inputs": [request["inputs"][0]] + [request["inputs"][1]] * count}
+                with self.subTest(base_size=size, references=count):
+                    admitted = self.rpc({"action": "plan", "request": base})
+                    self.assertTrue(admitted["ok"], admitted)
+                    self.assertEqual(admitted["result"]["qwen21_reference_size"], size)
         for changes in (
             {"parameters": {"qwen21_reference_size": 256}},
             {"qwen21_reference_size": 512},
@@ -119,6 +134,12 @@ class RPCValidationTests(unittest.TestCase):
         ):
             with self.subTest(changes=changes):
                 self.assert_rejected_without_exit({"action": "plan", "request": {**request, **changes}})
+
+    def test_offline_cli_capabilities_matches_live_protocol(self):
+        result = subprocess.run([str(CLI), "capabilities"], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(result.stderr)
+        self.assertEqual(json.loads(result.stdout), self.rpc({"action": "capabilities"})["result"])
 
     def test_strict_envelope_types_ranges_and_duplicate_keys(self):
         for action in (None, True, 1, [], {}, "", "unknown", "jobs\0ignored"):

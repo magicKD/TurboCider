@@ -213,9 +213,11 @@ test-video-preview:
 	@test -n "$(VIDEO)" || (echo 'VIDEO=/path/to/generated.mp4 is required'; exit 1)
 	@build/native/turbocider-video-preview-tests "$(VIDEO)"
 test-api:
+	@"$(PYTHON)" -B tests/native/test_cli_discovery.py
 	@build/native/turbocider-local-api-tests
 	@"$(PYTHON)" tests/native/test_service_lifecycle.py
 	@"$(PYTHON)" -B tests/native/test_service_rpc_validation.py
+	@"$(PYTHON)" -B tests/native/test_service_session_reuse.py
 	@"$(PYTHON)" -B tests/native/test_local_client.py
 	@"$(PYTHON)" -B tests/native/test_service_installations.py
 test-reference-preparation:

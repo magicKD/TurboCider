@@ -71,6 +71,10 @@ inline NSDictionary *tc_service_capabilities() {
             @"submission_retry": @"never_automatic",
             @"app_history": @"API jobs are stored separately from the creation page.",
             @"app_lifecycle": @"An App-owned service stops with the App. Run CLI serve for an independent lifecycle."
+        },
+        @"generation_result_metadata": @{
+            @"service_execution_path": @"native_session, resident_session or disposable_worker; describes service process routing, not physical GPU/ANE placement.",
+            @"service_session_reused": @"True when this request reused the existing service-owned engine for the same model and path. Applies to all native model sessions; does not guarantee resident weights or a prompt-cache hit. Disposable workers report false."
         }
     };
 }

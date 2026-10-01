@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include "query_worker.hpp"
 #include "startup_gate.hpp"
+#include "../../services/turbociderd/capabilities.hpp"
 int tc_service_main(const char*,const char*,const char*);
 int tc_rpc_main(const char*,const char*);
 #ifdef TURBOCIDER_ENABLE_TEST_HOOKS
@@ -188,9 +189,58 @@ static int library_main(int argc,char **argv) {
  if(![task launchAndReturnError:&error]){std::cerr<<"Cannot launch model library: "<<error.localizedDescription.UTF8String<<"\n";return 1;}
  [task waitUntilExit];return task.terminationStatus;
 }
+static void print_usage(std::ostream &stream) {
+ stream << R"(TurboCider — local image and video generation
+
+Discovery (no model loading):
+  turbocider --help | -h | help
+  turbocider capabilities                 Local API protocol as JSON; no service needed
+  turbocider models                       Model capabilities, not installed paths
+  turbocider library list                 Registered model and LoRA paths
+  turbocider doctor                       Runtime and device diagnostics
+  turbocider plan REQUEST.json            Validate schema 1 or 2 before generation
+
+Generation:
+  turbocider generate MODEL REQUEST.json
+  turbocider batch MODEL REQUEST1.json REQUEST2.json ...
+  turbocider tokenize MODEL PROMPT
+  MODEL is a local directory or a registered @model-id.
+  plan/generate/batch accept trailing --ane-manifest MANIFEST.json and
+  --hybrid-mode MODE pairs; plan validates the complete combination.
+
+Local API and workflows:
+  turbocider serve SOCKET STATE_DIRECTORY
+  turbocider rpc SOCKET ENVELOPE.json
+  Start with {"action":"capabilities"}, then models, installations and plan.
+  Submit returns a job ID; poll status and use cancel when needed.
+  Chain stages only after succeeded, keeping reference image order and using
+  distinct absolute output paths. Do not automatically retry an uncertain submit.
+  CLI capabilities describes the protocol; it does not report a running service.
+
+Maintenance and internal workers:
+  turbocider library help | cache help
+  turbocider coreml RESOURCE_REQUEST.json
+  turbocider compile-coreml SOURCE OUTPUT
+  turbocider self-test
+  turbocider worker-query INPUT.json [--supervised]
+  turbocider worker-generate INPUT.json [--supervised]
+  LoRA preparation is offline-only: tools/native/prepare_lora.py
+
+Normal commands write final JSON to stdout and progress/errors to stderr.
+Model paths and images stay local. See docs/public/LOCAL_API.md and USAGE.md.
+)";
+}
 int main(int argc,char**argv){@autoreleasepool{
- if(argc<2){std::cerr<<"turbocider library help | cache help | serve SOCKET STATE | rpc SOCKET REQUEST.json | worker-query INPUT.json | worker-generate INPUT.json | doctor|models|self-test|plan REQUEST.json [--ane-manifest MANIFEST.json] [--hybrid-mode MODE]|tokenize MODEL PROMPT|generate MODEL REQUEST.json [--ane-manifest MANIFEST.json] [--hybrid-mode MODE] | batch MODEL REQUEST1.json REQUEST2.json ... [--ane-manifest MANIFEST.json] [--hybrid-mode MODE] | prepare-lora MODEL BASE LORA OUTPUT [options]\n";return 1;}
+ if(argc<2){print_usage(std::cerr);return 1;}
  std::string cmd=argv[1];char*out=nullptr,*err=nullptr;int code=0;
+ if(argc==2&&(cmd=="--help"||cmd=="-h"||cmd=="help")){print_usage(std::cout);return 0;}
+ if(argc==2&&cmd=="capabilities"){
+  NSError *error=nil;
+  NSData *data=[NSJSONSerialization dataWithJSONObject:tc_service_capabilities()
+    options:NSJSONWritingPrettyPrinted|NSJSONWritingSortedKeys error:&error];
+  if(!data){std::cerr<<"cannot encode capabilities\n";return 1;}
+  std::cout.write(static_cast<const char*>(data.bytes),data.length);std::cout<<"\n";return 0;
+ }
  const bool allows_ane=cmd=="plan"||cmd=="generate"||cmd=="batch";
  const char *ane_manifest=nullptr,*hybrid_mode=nullptr;
  int request_argc=argc;
@@ -261,6 +311,6 @@ int main(int argc,char**argv){@autoreleasepool{
    if(!code){std::signal(SIGINT,stop);std::signal(SIGTERM,stop);code=tc_engine_generate(active,request.UTF8String,event,nullptr,&out,&err);std::signal(SIGINT,SIG_DFL);std::signal(SIGTERM,SIG_DFL);}
    tc_engine_free(active);
   }
- }else{std::cerr<<"invalid command or arguments\n";return 1;}
+ }else{std::cerr<<"invalid command or arguments; run turbocider --help\n";return 1;}
  if(out){std::cout<<out<<std::endl;tc_string_free(out);}if(err){std::cerr<<err<<std::endl;tc_string_free(err);}return code;
 }}

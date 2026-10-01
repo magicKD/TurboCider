@@ -1,5 +1,8 @@
 # TurboCider 状态文档入口
 
+本地 AI 离线发现、两步真实 API 编辑和 48 GiB Runtime 内存准入核查见
+[2026-10-02 API 与准入报告](2026-10-02-ai-api-and-resident-admission.md)。
+
 图片导入取消修复和本机 GPU 整数候选对照见
 [导入回归与 GPU INT8 筛选](2026-10-01-cancellable-import-and-gpu-int8.md)。
 上一版实际更新 App 为 `67563e8`，模式隔离与完整 FFN 候选见 [模式隔离、LoRA 登记和 SwiGLU 对照](2026-10-01-app-refresh-and-swiglu.md)。

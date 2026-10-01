@@ -419,7 +419,9 @@ class Service {
             bool resident_candidate=job.route_resolved ?
                 job.resident_candidate :
                 resident_ltx_candidate_request(job.value[@"request"]);
-            bool resident_reuse=!external_worker && resident_candidate &&
+            // Every native model can reuse the service-owned engine. This
+            // does not promise weight residency or a conditioning-cache hit.
+            bool session_reuse=!external_worker &&
                 engine_ != nullptr && loaded_ == identity;
             char *error=nullptr,*result=nullptr;int status=0;
             try {
@@ -430,8 +432,10 @@ class Service {
                 persist(job);
             }catch(const std::exception& e){job.value[@"state"]=@"failed";job.value[@"error"]=@(e.what());continue;}
             if(external_worker){tc_engine_free(engine_);engine_=nullptr;loaded_.clear();}
-            else if(loaded_!=identity){
-                tc_engine_free(engine_);engine_=nullptr;
+            else if(!engine_ || loaded_!=identity){
+                // A failed replacement must not leave the previous identity
+                // attached to a freed engine and block a later retry.
+                tc_engine_free(engine_);engine_=nullptr;loaded_.clear();
                 status=tc_engine_create_model(
                     model.c_str(),path.c_str(),&engine_,&error);
                 if(!status)loaded_=identity;
@@ -459,7 +463,7 @@ class Service {
                 result_value[@"service_execution_path"] =
                     external_worker ? @"disposable_worker" :
                     (resident_candidate ? @"resident_session" : @"native_session");
-                result_value[@"service_session_reused"] = @(resident_reuse);
+                result_value[@"service_session_reused"] = @(session_reuse);
                 job.value[@"result"] = result_value;
             }
             try{persist(job);}catch(const std::exception& e){job.value[@"storage_error"]=@(e.what());}

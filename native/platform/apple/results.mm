@@ -172,7 +172,10 @@ NSDictionary *to_dictionary(const ModelDescriptor &d) {
             @"resize_requires_allow_approximation": @YES,
             @"admission": @"plan",
             @"weight_identity_validation": @"pinned SHA-256 at load",
-            @"constraints": @"512x512 GPU edit, hybrid_mlp_mode=auto, 1...3 references, Viggle v0.2.1 r128, six steps, strength 1, inference_time LoRA, prompt enhancement and DiT cache off; ordinary LoRA and ANE require the existing full-size or diagnostic routes"
+            @"constraints": @"Reference resizing is an explicit editing approximation. Base and Viggle r128 have different requirements below; plan validates the complete request and route. This setting does not resize the output canvas.",
+            @"base_constraints": @"No LoRA; image.edit with 1...3 references, size 256 or 512 and allow_approximation=true. Other execution, sampling and cache constraints remain subject to plan.",
+            @"viggle_r128_gpu_edit_constraints": @"512x512 GPU edit, hybrid_mlp_mode=auto, 1...3 references, Viggle v0.2.1 r128, six steps, strength 1, inference_time LoRA, prompt enhancement and DiT cache off; ANE requires its existing full-size or diagnostic routes",
+            @"ordinary_lora_reference_size": @1024
         };
     }
     if (d.fps) result[@"default_fps"] = @(d.fps);

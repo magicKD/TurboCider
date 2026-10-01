@@ -10,6 +10,18 @@ an independently launched CLI service has its own lifecycle.
 
 ## CLI lifecycle
 
+Inspect the protocol before starting a service:
+
+```sh
+dist/cli/turbocider --help
+dist/cli/turbocider capabilities
+```
+
+The second command returns the same JSON object as a service's `capabilities`
+result, using the installed CLI version. It needs no socket, model or registry
+and creates no service state. Query the live service when checking its actual
+version; use `service_status` to check whether it is running.
+
 Keep `dist/cli/` intact, then run:
 
 ```sh
@@ -48,9 +60,19 @@ by the native `plan` action, not by a duplicate schema maintained by the client.
 `models` lists registered capabilities, not installed weights. Supply an
 existing native-compatible model path when submitting.
 
+Successful generation results include `service_execution_path` and
+`service_session_reused`. The latter means the service reused its existing
+engine for the same model and path, including Qwen and other native models.
+It does not guarantee that component weights stayed resident or that prompt
+conditioning was cached; those have separate runtime fields. Disposable
+workers always report false.
+
 Qwen-Image-2.1's model entry includes `reference_encoding`: the default 1024px
-processing, field locations for native request schemas 1/2, and the explicit
-512px r128 GPU editing opt-in. Reduced reference encoding requires
+processing, field locations for native request schemas 1/2, base 256/512px
+approximation and the stricter 512px r128 GPU editing opt-in. Separate
+`base_constraints` and `viggle_r128_gpu_edit_constraints` describe those routes;
+ordinary LoRA requires the reported `ordinary_lora_reference_size` of 1024.
+Reduced reference encoding requires
 `allow_approximation: true`; use `plan` for authoritative validation and see
 the [Qwen request guide](QWEN_IMAGE_21.md). `plan` does not load or verify the
 adapter; its pinned contents are checked when the model binds it.
