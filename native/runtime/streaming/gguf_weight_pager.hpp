@@ -22,7 +22,7 @@ struct GgufWeightPagerMetrics {
 class GgufWeightPager {
   public:
     GgufWeightPager(std::shared_ptr<const SourceLease>, const Descriptor &,
-                    const StageDescriptor &, const StageLayout &, MemoryLedger &);
+                    const StageDescriptor &, const StageLayout &, MemoryLedger &, gguf::DecodeOptions = {});
     ~GgufWeightPager();
     GgufWeightPager(const GgufWeightPager &) = delete;
     GgufWeightPager &operator=(const GgufWeightPager &) = delete;

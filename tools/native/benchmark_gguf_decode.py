@@ -41,7 +41,7 @@ def main():
                        *(str(path) for path in sources), "-o", str(binary)]
             subprocess.run(command, check=True)
             receipt = {"schema_version": 1, "time_utc": datetime.now(timezone.utc).isoformat(),
-                       "scope": "real Z checkpoint tensor CPU decode; not full R0/R1 qualification",
+                       "scope": "real GGUF checkpoint tensor CPU decode; not full model/memory/performance qualification",
                        "os": platform.platform(), "machine": platform.machine(),
                        "hardware": subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip(),
                        "base_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),

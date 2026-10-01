@@ -1369,6 +1369,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"encoder_quantized_execution"] = @{
             @"experimental": @YES, @"whole_request_bounded_certified": @NO,
             @"precision_profile": @"qwen3-z-source-mixed-v1", @"submit_policy": @"each-layer-eval-v1",
+            @"decode_backend": @(m.decode_backend.c_str()),
             @"hidden_tap": @"block34-post-residual-no-final-norm", @"source_sha256": @(m.source_sha256.c_str()),
             @"layout_digest": @(m.layout_digest.c_str()), @"packed_source_bytes": @(m.packed_bytes),
             @"packed_capacity_bytes": @(m.packed_capacity_bytes), @"source_float_bytes": @(m.source_float_bytes),

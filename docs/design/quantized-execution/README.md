@@ -42,6 +42,7 @@
 | [13 有界 GPU 实验实现](13-gguf-bounded-runtime-progress.md) | SourceLease/ledger/slots接入真实Z生成、MLX浮点加载差异、兼容profiles与通过/失败记录 |
 | [14 ANE直填与W8A8筛选](14-packed-ane-staging-and-w8a8-screen.md) | GGUF/ConvRot FP16 staging API、有界转换并行、CPU SIMD实测、动态QDQ完整投影与负结果 |
 | [15 Qwen3 GGUF conditioning](15-qwen3-gguf-conditioning.md) | verified config/tokenizer与gather、逐层固定槽、Q8/mixed K真实组件及Z组合、质量差异与剩余资格 |
+| [16 CPU量化SIMD加速](16-cpu-quant-simd-acceleration.md) | Q4/Q5/K直填SIMD、同源encoder控制、独占投影/encoder实测与完整Z exact回归 |
 
 ## 当前状态速查
 

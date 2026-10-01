@@ -22,7 +22,7 @@ struct Qwen3GgufPlan {
     uint64_t packed_capacity = 0, gather_capacity = 0;
 };
 Qwen3GgufPlan describe_qwen3_gguf(std::shared_ptr<const streaming::SourceLease>,
-                                const Qwen3GgufConfig &, const Tokens &, uint32_t prefetch);
+                                const Qwen3GgufConfig &, const Tokens &, uint32_t prefetch, gguf::DecodeOptions = {});
 
 // Experimental source-bound Qwen3-4B consumer; no Core ML or LoRA route.
 // StageExecutor owns fill/reader/cancel/drain; all parameter math is shared
@@ -33,7 +33,7 @@ class Qwen3GgufEncoder {
   public:
     Qwen3GgufEncoder(const std::filesystem::path &gguf, const std::filesystem::path &config,
                     const std::filesystem::path &tokenizer_json, uint32_t prefetch,
-                    uint64_t managed_budget, const Event &, std::atomic<bool> &);
+                    uint64_t managed_budget, const Event &, std::atomic<bool> &, gguf::DecodeOptions = {});
     ~Qwen3GgufEncoder();
     Tokens tokenize(const std::string &, bool dynamic);
     Tensor encode(const Tokens &);

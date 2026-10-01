@@ -119,10 +119,11 @@ struct GgufWeightPager::State {
     GgufWeightPagerMetrics metrics;
     bool loaded = false, failed = false, resident_bound = false;
     bool legacy_float = false;
+    gguf::DecodeOptions decode_options;
 
     State(std::shared_ptr<const SourceLease> source, const Descriptor &d, const StageDescriptor &s,
-          const StageLayout &l, MemoryLedger &m)
-        : lease(std::move(source)), descriptor(d), stage(s), layout(l), ledger(m) {}
+          const StageLayout &l, MemoryLedger &m, gguf::DecodeOptions options)
+        : lease(std::move(source)), descriptor(d), stage(s), layout(l), ledger(m), decode_options(options) {}
     void check_owner() const { insist(owner == std::this_thread::get_id(), "owner thread mismatch"); }
     FieldRecipe recipe(const FieldSpec &field, bool alias) {
         insist(field.materialization.has_value(), "field missing materialization");
@@ -173,8 +174,8 @@ struct GgufWeightPager::State {
 };
 
 GgufWeightPager::GgufWeightPager(std::shared_ptr<const SourceLease> lease, const Descriptor &descriptor,
-        const StageDescriptor &stage, const StageLayout &layout, MemoryLedger &ledger)
-    : state_(std::make_unique<State>(std::move(lease), descriptor, stage, layout, ledger)) {
+        const StageDescriptor &stage, const StageLayout &layout, MemoryLedger &ledger, gguf::DecodeOptions options)
+    : state_(std::make_unique<State>(std::move(lease), descriptor, stage, layout, ledger, options)) {
     auto &s = *state_;
     const auto float_loader=descriptor.workload.find("float_loader");
     s.legacy_float=float_loader!=descriptor.workload.end() && float_loader->second=="mlx-bf16-to-f16-v1";
@@ -310,7 +311,7 @@ Tensor GgufWeightPager::gather_rows(const std::string &tensor, std::span<const u
                            MemoryClass::Conditioning, s.lease->generation());
     gguf::decode_cpu_gather({{raw.pointer, size_t(d.bytes)}, raw.cached_type, d.rows(), d.columns()},
         rows, 0, d.columns(), {{output.data<std::byte>(), size_t(bytes)}, decode_dtype(dtype),
-        d.columns() * gguf::dtype_bytes(decode_dtype(dtype)), gguf::dtype_bytes(decode_dtype(dtype))}, cancel);
+        d.columns() * gguf::dtype_bytes(decode_dtype(dtype)), gguf::dtype_bytes(decode_dtype(dtype))}, cancel, s.decode_options);
     cancelled(cancel); check_unchanged();
     return output;
 }
@@ -380,7 +381,7 @@ uint64_t GgufWeightPager::fill(const Group &group, const tc_stream_slot_ticket_v
         } else {
             const auto receipt = gguf::decode_cpu_into(matrix, {0, d.rows(), 0, d.columns()},
                 {{slot.pointers[i], size_t(recipe.field->bytes)}, decode_dtype(recipe.dtype),
-                 d.columns() * gguf::dtype_bytes(decode_dtype(recipe.dtype)), gguf::dtype_bytes(decode_dtype(recipe.dtype))}, cancel);
+                 d.columns() * gguf::dtype_bytes(decode_dtype(recipe.dtype)), gguf::dtype_bytes(decode_dtype(recipe.dtype))}, cancel, s.decode_options);
             output = gguf::checked_add(output, receipt.bytes_written);
             source_bytes = gguf::checked_add(source_bytes, receipt.source_bytes_processed);
         }

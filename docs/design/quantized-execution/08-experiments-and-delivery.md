@@ -175,3 +175,9 @@ catalog、W8A8或ANE资格；发行库/CLI/App未替换。
 模型级SourceLease/config/tokenizer绑定、embedding gather、per-layer固定槽、Q8/Q4_K_M
 组件和真实Z组合已实现/执行，详见[15](15-qwen3-gguf-conditioning.md)。单/双槽exact不替代
 原BF16差异或媒体门；原BF16完整请求参考出现N1失败，原样保留，默认和生产资格不变。
+
+## 12. Q4/Q5/K CPU SIMD 加速（2026-10-01）
+
+格式展开、FP32/目标RNE、真实mixed-K encoder同源控制与完整Z exact回归见
+[16](16-cpu-quant-simd-acceleration.md)。投影解码约9–10.6×、完整encoder筛选约5.67×，
+均不替代正式全请求/内存/媒体资格；不存在硬件W8A8的新声明。

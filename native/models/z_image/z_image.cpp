@@ -2925,7 +2925,8 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
         require(config && *config, "qe_config_conflict: Qwen3 GGUF requires bound original config path");
         encoder_gguf_ = std::make_unique<components::Qwen3GgufEncoder>(path, config, root_ / "tokenizer/tokenizer.json",
             uint32_t(z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_PREFETCH", 1, 1)),
-            z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_WEIGHT_LIMIT_BYTES", 8ull << 30, device_info().physical_memory), event, cancelled);
+            z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_WEIGHT_LIMIT_BYTES", 8ull << 30, device_info().physical_memory), event, cancelled,
+            gguf::DecodeOptions{z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_SCALAR_DECODE", 0, 1) == 0});
         encoder_identity = encoder_gguf_->identity();
     }
     if (cached_conditioning_ && cached_prompt_ == r.prompt && cached_dynamic_ == r.dynamic_text &&

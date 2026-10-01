@@ -57,7 +57,7 @@ void validate_eval_policy() {
 }
 
 Qwen3GgufPlan describe_qwen3_gguf(std::shared_ptr<const streaming::SourceLease> lease,
-        const Qwen3GgufConfig &c, const Tokens &tokens, uint32_t prefetch) {
+        const Qwen3GgufConfig &c, const Tokens &tokens, uint32_t prefetch, gguf::DecodeOptions options) {
     require(lease && lease->has_verified_content() && prefetch <= 1 &&
             c.hidden == 2560 && c.heads == 32 && c.kv_heads == 8 && c.head_dim == 128 &&
             c.layers >= 35 && c.layers <= 128 && c.intermediate && c.intermediate <= 32768 && c.vocabulary,
@@ -83,6 +83,7 @@ Qwen3GgufPlan describe_qwen3_gguf(std::shared_ptr<const streaming::SourceLease> 
     d.backend_revision = "qwen3-z-gguf-cpu-bf16-rne-v1";
     d.artifacts.push_back({"text_encoder", file.content_digest, file.bytes, streaming::SourceIdentityKind::content_sha256});
     d.workload = {{"precision", "qwen3-z-source-mixed-v1"}, {"qk_layout", "hf-half-split-v1"},
+        {"decode_backend", options.use_simd ? "cpu_simd" : "cpu_scalar"},
         {"hidden_tap", "block34-post-residual-no-final-norm"}, {"submit_policy", "each-layer-eval-v1"},
         {"token_rows", std::to_string(tokens.ids.size())}, {"valid_rows", std::to_string(tokens.valid)},
         {"tokenizer_sha256", lease->file("tokenizer").content_digest},
@@ -153,6 +154,7 @@ struct Qwen3GgufEncoder::Impl {
     std::atomic<bool> stage_cancel{false};
     Event event;
     uint32_t prefetch;
+    gguf::DecodeOptions decode_options;
     bool started = false, completed = false;
     struct Adapter final : streaming::ModelSlotAdapter {
         struct Job { Adapter *owner = nullptr; const streaming::Group *group = nullptr; std::array<char, 512> error{}; };
@@ -193,7 +195,8 @@ struct Qwen3GgufEncoder::Impl {
     std::shared_ptr<Adapter> adapter;
     std::unique_ptr<streaming::StageExecutor> executor;
     Impl(const std::filesystem::path &path, const std::filesystem::path &cfg, const std::filesystem::path &tok,
-         uint32_t p, uint64_t budget, Event e, std::atomic<bool> &c) : ledger(budget), cancel(c), event(std::move(e)), prefetch(p) {
+         uint32_t p, uint64_t budget, Event e, std::atomic<bool> &c, gguf::DecodeOptions options)
+        : ledger(budget), cancel(c), event(std::move(e)), prefetch(p), decode_options(options) {
         validate_eval_policy(); require(prefetch <= 1, "qe_config_conflict: Qwen3 GGUF supports p=0/1");
         if (!event) event = [](const std::string &, int, int) {};
         std::vector<streaming::SourceFileIdentity> files;
@@ -212,8 +215,9 @@ struct Qwen3GgufEncoder::Impl {
     }
 };
 Qwen3GgufEncoder::Qwen3GgufEncoder(const std::filesystem::path &p, const std::filesystem::path &c,
-        const std::filesystem::path &t, uint32_t prefetch, uint64_t budget, const Event &e, std::atomic<bool> &cancel)
-    : impl_(std::make_unique<Impl>(p, c, t, prefetch, budget, e, cancel)) {}
+        const std::filesystem::path &t, uint32_t prefetch, uint64_t budget, const Event &e, std::atomic<bool> &cancel,
+        gguf::DecodeOptions options)
+    : impl_(std::make_unique<Impl>(p, c, t, prefetch, budget, e, cancel, options)) {}
 Qwen3GgufEncoder::~Qwen3GgufEncoder() { if (!drain_safely()) (void)impl_.release(); }
 Tokens Qwen3GgufEncoder::tokenize(const std::string &prompt, bool dynamic) {
     impl_->lease->revalidate_open_files(); impl_->lease->revalidate_paths();
@@ -221,7 +225,8 @@ Tokens Qwen3GgufEncoder::tokenize(const std::string &prompt, bool dynamic) {
 }
 std::string Qwen3GgufEncoder::identity() const {
     return std::string(impl_->lease->artifact_digest()) + ":qwen3-z-source-mixed-v1:p=" +
-        std::to_string(impl_->prefetch) + ":managed=" + std::to_string(impl_->ledger.snapshot().budget_bytes);
+        std::to_string(impl_->prefetch) + ":managed=" + std::to_string(impl_->ledger.snapshot().budget_bytes) +
+        ":decode=" + (impl_->decode_options.use_simd ? "cpu_simd" : "cpu_scalar");
 }
 bool Qwen3GgufEncoder::drain_safely() noexcept {
     if (!impl_) return true;
@@ -229,11 +234,11 @@ bool Qwen3GgufEncoder::drain_safely() noexcept {
 }
 Tensor Qwen3GgufEncoder::encode(const Tokens &tokens) {
     auto &s = *impl_; require(!s.started, "Qwen3 GGUF encoder is request-scoped"); s.started = true;
-    s.plan = describe_qwen3_gguf(s.lease, s.config, tokens, s.prefetch);
+    s.plan = describe_qwen3_gguf(s.lease, s.config, tokens, s.prefetch, s.decode_options);
     const auto floor = gguf::checked_add(gguf::checked_add(s.plan.packed_capacity, s.plan.gather_capacity), s.plan.layout.stages.front().peak_pool_bytes);
     require(floor <= s.ledger.snapshot().budget_bytes, "qe_budget_floor: Qwen3 GGUF source/slots/gather exceed managed weight ceiling");
     s.source = std::make_unique<streaming::GgufWeightPager>(s.lease, s.plan.descriptor,
-        s.plan.descriptor.stages.front(), s.plan.layout.stages.front(), s.ledger);
+        s.plan.descriptor.stages.front(), s.plan.layout.stages.front(), s.ledger, s.decode_options);
     s.event("load_qwen3_gguf_packed", 0, 1); s.source->load_packed(&s.cancel); s.event("load_qwen3_gguf_packed", 1, 1);
     std::vector<uint64_t> rows(tokens.ids.begin(), tokens.ids.end());
     auto embedding = s.source->gather_rows("token_embd.weight", rows, &s.cancel);
@@ -262,6 +267,7 @@ QuantizedExecutionMetrics Qwen3GgufEncoder::metrics() const {
     out.managed_peak_bytes = s.ledger.snapshot().peak_committed_bytes; out.fills = m.fill_count; out.decoded_bytes = m.decoded_bytes;
     out.source_load_seconds = m.packed_read_seconds; out.decode_seconds = m.decode_seconds; out.exposed_wait_seconds = e.wait_seconds;
     out.slots = s.plan.layout.stages.front().slot_count; out.prefetch = s.prefetch;
+    out.decode_backend = s.decode_options.use_simd ? "cpu_simd" : "cpu_scalar";
     require(out.fills == 35 && e.groups_submitted == 35, "Qwen3 GGUF fill/compute count mismatch"); return out;
 }
 } // namespace tc::components

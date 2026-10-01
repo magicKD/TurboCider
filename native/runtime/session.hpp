@@ -203,7 +203,7 @@ struct PublicStreamingSelectionMetrics {
     bool actual_plan_verified = false;
 };
 struct QuantizedExecutionMetrics {
-    std::string source_sha256, layout_digest;
+    std::string source_sha256, layout_digest, decode_backend;
     uint64_t packed_bytes = 0, packed_capacity_bytes = 0, source_float_bytes = 0;
     uint64_t dense_capacity_bytes = 0, managed_peak_bytes = 0, fills = 0, decoded_bytes = 0;
     double source_load_seconds = 0, decode_seconds = 0, exposed_wait_seconds = 0;

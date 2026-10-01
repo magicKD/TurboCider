@@ -182,31 +182,94 @@ Geometry validate(const PackedMatrix &source, uint64_t target_rows,
     return {row_bytes, row_extent, target_extent, &type};
 }
 #if defined(__aarch64__)
-void q8_dense_block(const uint8_t *source, std::byte *target, DecodeDType dtype) {
-    const float scale = half(source); finite(scale);
-    // Q8 codes * finite FP16 scale cannot overflow FP32/BF16. Preserve the
-    // FP16 scale exactly, multiply in FP32, then apply integer RNE once.
-    for (uint32_t j = 0; j < 32; j += 8) {
-        const int16x8_t codes = vmovl_s8(vld1_s8(reinterpret_cast<const int8_t *>(source + 2 + j)));
-        const float32x4_t a = vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(codes))), scale);
-        const float32x4_t b = vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(codes))), scale);
+// All registered quantized blocks have finite FP16 master scales and bounded
+// integer subscales/codes: their reconstructed values fit FP32 and BF16.
+// FP16 narrowing is independently checked, never clamped. No full/row scratch.
+void store_eight(float32x4_t a, float32x4_t b, std::byte *target, DecodeDType dtype) {
+    if (dtype == DecodeDType::f32) {
+        vst1q_f32(reinterpret_cast<float *>(target), a);
+        vst1q_f32(reinterpret_cast<float *>(target + 16), b);
+    } else if (dtype == DecodeDType::f16) {
+        decode_check(vmaxvq_f32(vabsq_f32(a)) < 65520.f && vmaxvq_f32(vabsq_f32(b)) < 65520.f,
+                     "FP16 conversion overflow");
+        vst1q_u16(reinterpret_cast<uint16_t *>(target), vcombine_u16(
+            vreinterpret_u16_f16(vcvt_f16_f32(a)), vreinterpret_u16_f16(vcvt_f16_f32(b))));
+    } else {
         auto round = [](float32x4_t values) {
-            const uint32x4_t bits = vreinterpretq_u32_f32(values);
-            const uint32x4_t tie = vandq_u32(vshrq_n_u32(bits, 16), vdupq_n_u32(1));
+            const auto bits = vreinterpretq_u32_f32(values);
+            const auto tie = vandq_u32(vshrq_n_u32(bits, 16), vdupq_n_u32(1));
             return vshrn_n_u32(vaddq_u32(bits, vaddq_u32(vdupq_n_u32(0x7fff), tie)), 16);
         };
-        if (dtype == DecodeDType::f32) {
-            vst1q_f32(reinterpret_cast<float *>(target + j * 4), a);
-            vst1q_f32(reinterpret_cast<float *>(target + j * 4 + 16), b);
-        } else if (dtype == DecodeDType::f16) {
-            decode_check(vmaxvq_f32(vabsq_f32(a)) < 65520.f && vmaxvq_f32(vabsq_f32(b)) < 65520.f,
-                         "FP16 conversion overflow");
-            const uint16x8_t result = vcombine_u16(vreinterpret_u16_f16(vcvt_f16_f32(a)),
-                                                  vreinterpret_u16_f16(vcvt_f16_f32(b)));
-            vst1q_u16(reinterpret_cast<uint16_t *>(target + j * 2), result);
-        } else {
-            const uint16x8_t result = vcombine_u16(round(a), round(b));
-            vst1q_u16(reinterpret_cast<uint16_t *>(target + j * 2), result);
+        vst1q_u16(reinterpret_cast<uint16_t *>(target), vcombine_u16(round(a), round(b)));
+    }
+}
+void store_product(int16x8_t codes, float scale, std::byte *target, DecodeDType dtype) {
+    store_eight(vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(codes))), scale),
+                vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(codes))), scale), target, dtype);
+}
+void quantized_dense_block(uint32_t type, const uint8_t *source, std::byte *target, DecodeDType dtype) {
+    const uint32_t item = dtype_bytes(dtype);
+    if (type == 8) {
+        const float scale = half(source); finite(scale);
+        for (uint32_t j = 0; j < 32; j += 8)
+            store_product(vmovl_s8(vld1_s8(reinterpret_cast<const int8_t *>(source + 2 + j))),
+                          scale, target + j * item, dtype);
+    } else if (type == 2 || type == 3 || type == 6 || type == 7) {
+        const bool affine = type == 3 || type == 7, five = type == 6 || type == 7;
+        const float scale = half(source), minimum = affine ? half(source + 2) : 0.f;
+        finite(scale); finite(minimum);
+        const uint32_t offset = affine ? 4 : 2, high = five ? u32(source + offset) : 0;
+        const auto *low = source + offset + (five ? 4 : 0);
+        const uint8_t bit_masks[8] = {1, 2, 4, 8, 16, 32, 64, 128};
+        const auto lanes = vld1_u8(bit_masks);
+        for (uint32_t j = 0; j < 16; j += 8) {
+            const auto bytes = vld1_u8(low + j);
+            for (uint32_t upper = 0; upper < 2; ++upper) {
+                auto nibble = upper ? vshr_n_u8(bytes, 4) : vand_u8(bytes, vdup_n_u8(15));
+                if (five) nibble = vorr_u8(nibble, vand_u8(vtst_u8(vdup_n_u8(uint8_t(high >> (j + upper * 16))), lanes), vdup_n_u8(16)));
+                auto codes = vreinterpretq_s16_u16(vmovl_u8(nibble));
+                if (!affine) codes = vsubq_s16(codes, vdupq_n_s16(five ? 16 : 8));
+                auto a = vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(codes))), scale);
+                auto b = vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(codes))), scale);
+                // Distinct operations preserve the pinned scalar oracle order.
+                if (affine) { a = vaddq_f32(a, vdupq_n_f32(minimum)); b = vaddq_f32(b, vdupq_n_f32(minimum)); }
+                store_eight(a, b, target + (j + upper * 16) * item, dtype);
+            }
+        }
+    } else if (type == 12 || type == 13) {
+        const float scale = half(source), minimum = half(source + 2); finite(scale); finite(minimum);
+        const auto *scales = source + 4, *high = source + 16;
+        const auto *low = source + (type == 13 ? 48 : 16);
+        for (uint32_t group = 0; group < 8; ++group) {
+            uint8_t subscale, subminimum; scale_min(group, scales, subscale, subminimum);
+            const float d = scale * subscale, m = minimum * subminimum;
+            for (uint32_t j = 0; j < 32; j += 8) {
+                const auto bytes = vld1_u8(low + (group / 2) * 32 + j);
+                auto codes = (group & 1) ? vshr_n_u8(bytes, 4) : vand_u8(bytes, vdup_n_u8(15));
+                if (type == 13) codes = vorr_u8(codes, vand_u8(vtst_u8(vld1_u8(high + j), vdup_n_u8(uint8_t(1u << group))), vdup_n_u8(16)));
+                const auto wide = vmovl_u8(codes);
+                auto a = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(wide))), d);
+                auto b = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(wide))), d);
+                a = vsubq_f32(a, vdupq_n_f32(m)); b = vsubq_f32(b, vdupq_n_f32(m));
+                store_eight(a, b, target + (group * 32 + j) * item, dtype);
+            }
+        }
+    } else {
+        decode_check(type == 14, "SIMD decoder received unsupported type");
+        const float scale = half(source + 208); finite(scale);
+        for (uint32_t half_index = 0; half_index < 2; ++half_index) {
+            const auto *low = source + half_index * 64, *high = source + 128 + half_index * 32;
+            const auto *scales = source + 192 + half_index * 8;
+            for (uint32_t group = 0; group < 4; ++group) for (uint32_t j = 0; j < 32; j += 8) {
+                const auto bytes = vld1_u8(low + (group & 1) * 32 + j);
+                const auto nibble = group < 2 ? vand_u8(bytes, vdup_n_u8(15)) : vshr_n_u8(bytes, 4);
+                // Vector variable shift handles the four GGML high-bit planes.
+                const auto upper = vand_u8(vshl_u8(vld1_u8(high + j), vdup_n_s8(-int8_t(2 * group))), vdup_n_u8(3));
+                const auto combined = vorr_u8(nibble, vshl_n_u8(upper, 4));
+                const auto codes = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(combined)), vdupq_n_s16(32));
+                const float d = scale * float(signed_byte(scales[j / 16 + group * 2]));
+                store_product(codes, d, target + (half_index * 128 + group * 32 + j) * item, dtype);
+            }
         }
     }
 }
@@ -231,10 +294,10 @@ DecodeReceipt row_into(const PackedMatrix &source, uint64_t source_row, uint64_t
         const uint64_t begin = std::max(column_begin, block * type.elements);
         const uint64_t end = std::min(column_begin + columns, (block + 1) * type.elements);
 #if defined(__aarch64__)
-        if (options.use_simd && source.type == 8 && target.column_stride == dtype_bytes(target.dtype) &&
-            begin == block * 32 && end == (block + 1) * 32 &&
+        if (options.use_simd && type.elements > 1 && target.column_stride == dtype_bytes(target.dtype) &&
+            begin == block * type.elements && end == (block + 1) * type.elements &&
             (reinterpret_cast<uintptr_t>(target.bytes.data()) + target_row * target.row_stride) % dtype_bytes(target.dtype) == 0) {
-            q8_dense_block(bytes + source_row * geometry.row_bytes + block * type.bytes,
+            quantized_dense_block(source.type, bytes + source_row * geometry.row_bytes + block * type.bytes,
                           target.bytes.data() + target_row * target.row_stride + (begin - column_begin) * dtype_bytes(target.dtype), target.dtype);
             ++simd_blocks;
             continue;

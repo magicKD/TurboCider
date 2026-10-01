@@ -13,3 +13,7 @@ xcrun clang++ -std=c++20 -O2 -Wall -Wextra -Werror -mmacosx-version-min=15.0 \
   -I native/core -isystem "$MLX_ROOT/include" tools/native/qwen3_gguf_probe.cpp \
   -L"$LIB" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl \
   -Wl,-rpath,"$LIB" -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen3-gguf-probe"
+xcrun clang++ -std=c++20 -O2 -Wall -Wextra -Werror -mmacosx-version-min=15.0 \
+  -I native/core -isystem "$MLX_ROOT/include" tools/native/qwen3_decoder_benchmark.cpp \
+  -L"$LIB" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl \
+  -Wl,-rpath,"$LIB" -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/qwen3-decoder-benchmark"
