@@ -88,7 +88,7 @@ struct ReferenceImagePreparationView: View {
                         else { error = studio.message ?? "未能处理参考图，请重试。" }
                     }
                 }.keyboardShortcut(.defaultAction)
-                    .disabled(applying || studio.importing || dimensions == nil || !studio.draft.assets.contains(where: { $0.id == asset.id }))
+                    .disabled(applying || studio.imageInputsBusy || dimensions == nil || !studio.draft.assets.contains(where: { $0.id == asset.id }))
                     .accessibilityIdentifier("applyReferenceSize")
             }
         }.padding(24).frame(width: 500)

@@ -32,10 +32,10 @@ struct TurboCiderNativeApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) { Button("新建创作") { studio.newDraft() }.keyboardShortcut("n")
-                .disabled(store.busy || submitting || studio.importing) }
+                .disabled(store.busy || submitting || studio.imageInputsBusy) }
             CommandGroup(after: .pasteboard) {
-                Button("粘贴图片到创作") { Task { await studio.pasteImage() } }.keyboardShortcut("v", modifiers: [.command, .shift])
-                    .disabled((submitting && !store.busy) || studio.importing)
+                Button("粘贴图片到创作") { studio.beginPasteImage() }.keyboardShortcut("v", modifiers: [.command, .shift])
+                    .disabled((submitting && !store.busy) || studio.imageInputsBusy)
             }
         }
         Settings { ScrollView { VStack(alignment: .leading, spacing: 14) {
@@ -59,7 +59,8 @@ struct TurboCiderNativeApp: App {
         studio?.save()
         playground?.save()
         guard submitting || store?.busy == true || api?.running == true ||
-                studio?.importing == true || playground?.importing == true else { return .terminateNow }
+                studio?.imageInputsBusy == true || playground?.importing == true ||
+                playground?.importTask != nil else { return .terminateNow }
         let alert = NSAlert(); alert.messageText = "任务仍在进行中"; alert.informativeText = "退出会中断本机任务。草稿与历史记录会保留。"
         alert.addButton(withTitle: "继续运行"); alert.addButton(withTitle: "退出并中断")
         return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
@@ -156,7 +157,7 @@ struct StudioView: View {
     private var selectedHistoryIDs: Set<UUID> { resultSelection.ids.intersection(Set(imageHistoryIDs)) }
     private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
     private var preparingSubmission: Bool { submitting && !store.busy }
-    private var assetControlsLocked: Bool { preparingSubmission || studio.importing }
+    private var assetControlsLocked: Bool { preparingSubmission || studio.imageInputsBusy }
     private var statusJob: NativeJob? {
         guard let job = store.jobs.first else { return nil }
         return page == .studio && job.id == ignoredStatusID ? nil : job
@@ -427,7 +428,7 @@ struct StudioView: View {
             .frame(minWidth: 480)
             .onDrop(of: [.fileURL, .image], isTargeted: $dropping) { providers in
                 guard !assetControlsLocked, studio.supportsImageInputs else { return false }
-                Task { await studio.importProviders(providers) }; return true
+                return studio.beginImageImportProviders(providers)
             }
     }
     private var mediaStage: some View {
@@ -542,7 +543,7 @@ struct StudioView: View {
         selectedHistoryIDs.contains(job.id) ? selectedHistoryIDs : [job.id]
     }
     private var historySourceLocked: Bool {
-        store.busy || submitting || studio.importing || api.running || api.changing
+        store.busy || submitting || studio.imageInputsBusy || api.running || api.changing
     }
     private func useHistoryAsUpscaleSource(_ job: NativeJob) {
         guard imageUpscaling, !historySourceLocked, job.hasOutput else { return }
@@ -563,11 +564,11 @@ struct StudioView: View {
                                 .disabled(studio.draft.assets.count < example.referenceCount)
                         }
                     }.menuStyle(.borderlessButton).fixedSize().font(.caption)
-                        .disabled(studio.importing || store.busy || submitting)
+                        .disabled(studio.imageInputsBusy || store.busy || submitting)
                 }
             }
             PromptEditor(text: $studio.draft.prompt, placeholder: promptPlaceholder, editable: !preparingSubmission) {
-                Task { await studio.pasteImage() }
+                studio.beginPasteImage()
             }.frame(height: 58).accessibilityIdentifier("prompt")
             generationControls
             if studio.draft.modelID == "z-image-turbo" { PromptCapacityView(studio: studio, busy: store.busy || submitting) }
@@ -581,7 +582,7 @@ struct StudioView: View {
                     Menu {
                         Button("选择图片…", action: chooseImages)
                             .disabled(!studio.supportsImageInputs || studio.draft.assets.count >= referenceImportLimit)
-                        Button("粘贴图片") { Task { await studio.pasteImage() } }
+                        Button("粘贴图片") { studio.beginPasteImage() }
                             .disabled(!studio.supportsImageInputs || studio.draft.assets.count >= referenceImportLimit)
                         if studio.canUndoAssets { Divider(); Button("撤销素材修改") { studio.undoAssetChange() } }
                     } label: { Image(systemName: "plus.circle").font(.title3) }
@@ -603,18 +604,28 @@ struct StudioView: View {
                     } label: {
                         Text(studio.draft.upscaleAfterGeneration ? "超分 ×\(studio.draft.upscaleVariant.scale)" : "原始输出").font(.caption)
                     }.menuStyle(.borderlessButton).fixedSize()
-                        .disabled(store.busy || submitting || api.running || api.changing || studio.importing)
+                        .disabled(store.busy || submitting || api.running || api.changing || studio.imageInputsBusy)
                         .accessibilityIdentifier("generationUpscale").help("生成后超分")
                 }
                 Button(action: generate) {
                     Label(store.busy ? "正在生成" : (model?.isVideo == true ? "生成视频" : editingImage ? "生成修改" : "生成图片"), systemImage: "arrow.up")
                         .padding(.horizontal, 8).padding(.vertical, 4)
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.return, modifiers: .command)
-                    .disabled(store.busy || api.running || api.changing || submitting || studio.importing ||
+                    .disabled(store.busy || api.running || api.changing || submitting || studio.imageInputsBusy ||
                               model?.executor != true || !studio.selectedStreamingTargetAvailable || generationBlocker != nil)
                     .accessibilityIdentifier("generate").help("⌘ Return")
             }
-            if !store.busy, !submitting, let blocker = generationBlocker,
+            if studio.imageImportTask != nil {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(studio.cancellingImageImport ? "正在取消导入…" : "正在导入图片…")
+                    Spacer()
+                    Button("取消导入") { studio.cancelImageImport() }
+                        .disabled(studio.cancellingImageImport)
+                        .accessibilityIdentifier("cancelStudioImageImport")
+                }.font(.caption).accessibilityIdentifier("studioImageImportStatus")
+            }
+            if !store.busy, !submitting, !studio.imageInputsBusy, let blocker = generationBlocker,
                !studio.draft.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 HStack(alignment: .top) {
                     Label(blocker, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
@@ -734,7 +745,7 @@ struct StudioView: View {
                               systemImage: downloaded ? "checkmark.circle.fill" : "arrow.down.circle")
                             .tag(item.id)
                     }
-                }.disabled(store.busy || studio.importing).accessibilityIdentifier("studioModel")
+                }.disabled(store.busy || studio.imageInputsBusy).accessibilityIdentifier("studioModel")
                 if studio.draft.modelID == "z-image-turbo" {
                     let versions = ZImageInstallation.choices(library.installations, currentPath: studio.draft.modelPath)
                     if !versions.isEmpty {
@@ -743,7 +754,7 @@ struct StudioView: View {
                         })) {
                             ForEach(versions) { version in Text(version.title).tag(version.path) }
                         }
-                        .disabled(store.busy || submitting || studio.importing || library.busy || api.running || api.changing)
+                        .disabled(store.busy || submitting || studio.imageInputsBusy || library.busy || api.running || api.changing)
                         .accessibilityIdentifier("zImageWeightVersion")
                         Text("选择已安装的版本；可在模型中心下载其他版本。")
                             .font(.caption2).foregroundStyle(.secondary)
@@ -922,7 +933,7 @@ struct StudioView: View {
                 if studio.draft.operation == "image.edit" {
                     Divider()
                     Qwen21ReferenceEncodingSettings(draft: studio.draft,
-                        locked: store.busy || submitting || studio.importing || api.running || api.changing,
+                        locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing,
                         setSize: { studio.setQwen21ReferenceSize($0) })
                 }
                 Divider()
@@ -1201,7 +1212,7 @@ struct StudioView: View {
         ModelLibraryView(store: store, studio: studio, library: library, selection: $librarySelection, chooseModel: chooseModel,
                          loadModel: loadModel, importConfiguration: importConfiguration,
                          operationName: operationName)
-            .disabled(preparingSubmission)
+            .disabled(preparingSubmission || studio.imageInputsBusy)
     }
     private var tasksPage: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1384,7 +1395,7 @@ struct StudioView: View {
     }
     private func chooseImages() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = true
-        if panel.runModal() == .OK { let urls = panel.urls; Task { await studio.addFiles(urls) } }
+        if panel.runModal() == .OK { studio.beginImageImportFiles(panel.urls) }
     }
     private func chooseLoRA() {
         guard studio.draft.loras.count < 8 else { studio.message = "最多可配置 8 个 LoRA 文件。"; return }
@@ -1430,7 +1441,7 @@ struct StudioView: View {
         catch { studio.message = error.localizedDescription }
     }
     private func generate() {
-        guard !store.busy, !api.running, !api.changing, !submitting, !studio.importing else { return }
+        guard !store.busy, !api.running, !api.changing, !submitting, !studio.imageInputsBusy else { return }
         if let conflict = studio.draft.zImageStreamingConflict() { studio.message = conflict; return }
         let snapshot = studio.draft
         if snapshot.upscaleAfterGeneration && model?.isVideo != true {

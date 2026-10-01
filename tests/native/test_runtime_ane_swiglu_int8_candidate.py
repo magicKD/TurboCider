@@ -40,17 +40,34 @@ def fixture():
 class SwiGluTests(unittest.TestCase):
     def test_fwht_order_and_same_operand_basis(self):
         rng = np.random.default_rng(103)
-        for group in (1, 2, 16, 32):
-            x = rng.normal(size=(5, 64)).astype(np.float32)
-            w = rng.normal(size=(7, 64)).astype(np.float32)
+        for group in (1, 2, 16, 32, 64, 128, 256):
+            width = max(64, group * 2)
+            x = rng.normal(size=(5, width)).astype(np.float32)
+            w = rng.normal(size=(7, width)).astype(np.float32)
             dense = dense_hadamard(group)
-            rotated = (x.reshape(5, -1, group).astype(np.float64) @ dense).reshape(x.shape)
+            rotated = np.einsum("rig,gh->rih", x.reshape(5, -1, group).astype(np.float64),
+                                dense, optimize=False).reshape(x.shape)
             np.testing.assert_allclose(hadamard(x, group), rotated, atol=5e-7, rtol=2e-6)
             expected = np.einsum("ik,jk->ij", x.astype(np.float64), w.astype(np.float64), optimize=False)
             np.testing.assert_allclose(np.einsum("ik,jk->ij", hadamard(x, group), hadamard(w, group), optimize=False),
-                                       expected, atol=5e-6, rtol=2e-5)
+                                       expected, atol=5e-6 if width == 64 else 2e-5, rtol=2e-5)
             if group > 1:
                 self.assertGreater(relative(np.einsum("ik,jk->ij", hadamard(x, group), w, optimize=False), expected), .1)
+
+    def test_fwht_accepts_readonly_strided_inputs_without_borrowing_output(self):
+        original = np.arange(8 * 128, dtype=np.float32).reshape(8, 128) / 1024
+        for value in (original[::2, ::2], original.T, original[::-1, ::-1]):
+            before = value.copy()
+            value.setflags(write=False)
+            group = min(value.shape[1], 32)
+            result = hadamard(value, group)
+            expected = np.einsum("rig,gh->rih", value.reshape(value.shape[0], -1, group).astype(np.float64),
+                                 dense_hadamard(group), optimize=False).reshape(value.shape)
+            np.testing.assert_allclose(result, expected, rtol=2e-6, atol=5e-7)
+            np.testing.assert_array_equal(value, before)
+            self.assertFalse(np.shares_memory(value, result))
+            result.fill(0)
+            np.testing.assert_array_equal(value, before)
 
     def test_complete_lora_before_nonlinearity_and_original_hidden_down(self):
         x, weights, adapters = fixture()

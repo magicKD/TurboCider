@@ -40,7 +40,7 @@ STATE+=(apps/macos/ImageOutputTransaction.swift)
 STATE+=(apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift apps/macos/PublicImageWorker.swift apps/macos/PublicImageQueries.swift apps/macos/WorkerEventStream.swift)
 STATE+=(apps/macos/VideoPreview.swift)
 STATE+=(apps/macos/HistorySelection.swift apps/macos/ImageUpscaler.swift)
-STATE+=(apps/macos/EditingCanvasSizing.swift apps/macos/PlaygroundState.swift)
+STATE+=(apps/macos/EditingCanvasSizing.swift apps/macos/ItemProviderDataLoader.swift apps/macos/PlaygroundState.swift)
 if [[ "$APP_ONLY" == 0 ]]; then
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/PlaygroundStateTests.swift -o "$OUT/turbocider-playground-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/EditingCanvasSizingTests.swift -o "$OUT/turbocider-editing-canvas-tests"

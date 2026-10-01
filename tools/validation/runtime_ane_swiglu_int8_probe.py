@@ -34,7 +34,7 @@ sys.path.insert(0, str(ROOT / "tools/coreml"))
 
 def write_report(output, report):
     temporary = output / ".report.json.tmp"
-    temporary.write_text(json.dumps(report, indent=2) + "\n")
+    temporary.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
     temporary.replace(output / "report.json")
 
 
@@ -42,9 +42,16 @@ def errors(actual, expected):
     import numpy as np
     if actual.shape != expected.shape or not np.isfinite(actual).all() or not np.isfinite(expected).all():
         raise ValueError("nonfinite or incorrectly shaped candidate output")
-    difference = actual.astype(np.float64) - expected.astype(np.float64)
-    return {"relative_l2": float(np.linalg.norm(difference) / max(np.linalg.norm(expected), 1e-12)),
-            "max_absolute": float(np.max(np.abs(difference)))}
+    expected64 = expected.astype(np.float64)
+    difference = actual.astype(np.float64) - expected64
+    # A NumPy FP16 scalar can cast the 1e-12 floor back to FP16 zero.
+    # Widen both norms and perform the division with Python floats; FP16
+    # norms can also overflow even when every output value is finite.
+    relative = float(np.linalg.norm(difference)) / max(float(np.linalg.norm(expected64)), 1e-12)
+    maximum = float(np.max(np.abs(difference)))
+    if not np.isfinite(relative) or not np.isfinite(maximum):
+        raise ValueError("nonfinite candidate error metric")
+    return {"relative_l2": relative, "max_absolute": maximum}
 
 
 def verify_prediction_boundary(actual, row, spec, phase):

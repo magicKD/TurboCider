@@ -134,7 +134,7 @@ enum EditingCanvasSizing {
 @MainActor extension StudioState {
     func editingCanvasSuggestion(preset: EditingCanvasPreset, assetID: UUID? = nil) -> EditingCanvasSuggestion {
         let value = EditingCanvasSizing.suggestion(for: draft, preset: preset, assetID: assetID)
-        if importing { return value.blocking("参考图正在处理，请等待完成后再调整输出画布。") }
+        if imageInputsBusy { return value.blocking("参考图正在处理，请等待完成后再调整输出画布。") }
         guard let model = models.first(where: { $0.id == draft.modelID }), model.supports(draft.operation), !model.isVideo else {
             return value.blocking("当前模型或操作尚未开放此图片编辑画布。")
         }

@@ -60,12 +60,14 @@ struct PlaygroundDocument: Codable, Sendable {
     // workspace. Keep its cancellation handle with the persistent state object.
     @Published var generationTask: Task<Void, Never>?
     @Published var generationOwnsStore = false
+    @Published private(set) var importTask: Task<Bool, Never>?
     let models: [StudioModel]
     let importer: StudioAssetImporter
     let fileURL: URL
     private var revision = UUID()
     private var saveTask: Task<Void, Never>?
     private var loadBlocked = false
+    private var importTaskID: UUID?
 
     init(directory: URL, initialSettings: StudioDraft, models: [StudioModel]) {
         self.models = models
@@ -113,7 +115,7 @@ struct PlaygroundDocument: Codable, Sendable {
         return draft
     }
     @discardableResult func setQwen21ReferenceSize(_ size: Int) -> Bool {
-        guard !importing, generationTask == nil, [1024, 512].contains(size) else { return false }
+        guard !importing, importTask == nil, generationTask == nil, [1024, 512].contains(size) else { return false }
         if size == 512, let reason = referenceEncodingDraft.qwen21FastReferenceUnavailableReason {
             message = reason; return false
         }
@@ -127,7 +129,7 @@ struct PlaygroundDocument: Codable, Sendable {
         guard storageError == nil, !loadBlocked else {
             throw NativeFailure(message: "Playground 配置尚未成功读取或保存，请先处理保存提示。")
         }
-        guard !importing else { throw NativeFailure(message: "请等待参考图处理完成。") }
+        guard !importing, importTask == nil else { throw NativeFailure(message: "请等待参考图处理完成。") }
         guard let model, model.output == "image", model.supports("image.edit") else {
             throw NativeFailure(message: "请从创作页同步一个已开放图片编辑的本地模型。")
         }
@@ -150,17 +152,17 @@ struct PlaygroundDocument: Codable, Sendable {
     }
 
     func selectTemplate(_ value: PlaygroundTemplate) {
-        guard !importing, value != template else { return }
+        guard !importing, importTask == nil, value != template else { return }
         var updated = document; updated.selectedTemplate = value
         commit(updated); message = nil
     }
     func setInstruction(_ value: String) {
-        guard !importing else { return }
+        guard !importing, importTask == nil else { return }
         var updated = document; updated.templates[template.rawValue]?.instruction = value
         commit(updated, immediate: false)
     }
     @discardableResult func syncSettings(from draft: StudioDraft) -> Bool {
-        guard !importing else { message = "请等待参考图处理完成。"; return false }
+        guard !importing, importTask == nil else { message = "请等待参考图处理完成。"; return false }
         guard let model = models.first(where: { $0.id == draft.modelID }), model.output == "image", model.supports("image.edit") else {
             message = "当前创作模型未开放图片编辑，请先在创作页选择支持参考编辑的模型。"; return false
         }
@@ -171,10 +173,29 @@ struct PlaygroundDocument: Codable, Sendable {
         return true
     }
     func remove(_ role: PlaygroundRole) {
-        guard !importing, template.roles.contains(role), asset(for: role) != nil else { return }
+        guard !importing, importTask == nil, template.roles.contains(role), asset(for: role) != nil else { return }
         var updated = document; updated.templates[template.rawValue]?.roleAssets.removeValue(forKey: role.rawValue)
         commit(updated); message = "已移除\(role.title)绑定，历史任务的输入副本仍保留。"
     }
+
+    /// Own UI imports across page changes and clear the handle after cleanup.
+    /// Its ID cannot clear a newer retry's handle.
+    @discardableResult func startImport(
+        _ operation: @escaping @MainActor (PlaygroundState) async -> Bool
+    ) -> Task<Bool, Never>? {
+        guard !importing, importTask == nil, !loadBlocked else { return nil }
+        let id = UUID(); importTaskID = id
+        let task = Task { [weak self] in
+            defer {
+                if self?.importTaskID == id { self?.importTask = nil; self?.importTaskID = nil }
+            }
+            guard !Task.isCancelled, let self else { return false }
+            return await operation(self)
+        }
+        importTask = task
+        return task
+    }
+    func cancelImport() { importTask?.cancel() }
 
     @discardableResult func importFiles(_ urls: [URL], replacing role: PlaygroundRole? = nil) async -> Bool {
         await importImages(count: urls.count, replacing: role) { index in
@@ -187,12 +208,7 @@ struct PlaygroundDocument: Codable, Sendable {
             let type = provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ? UTType.fileURL.identifier
                 : provider.registeredTypeIdentifiers.first { UTType($0)?.conforms(to: .image) == true }
             guard let type else { throw NativeFailure(message: "请拖入图片文件。") }
-            let data: Data = try await withCheckedThrowingContinuation { continuation in
-                provider.loadDataRepresentation(forTypeIdentifier: type) { data, error in
-                    if let data { continuation.resume(returning: data) }
-                    else { continuation.resume(throwing: error ?? NativeFailure(message: "无法读取拖入的图片。")) }
-                }
-            }
+            let data = try await ItemProviderDataLoader.load(provider: provider, typeIdentifier: type)
             try Task.checkCancellation()
             if type == UTType.fileURL.identifier {
                 guard let url = URL(dataRepresentation: data, relativeTo: nil) else { throw NativeFailure(message: "无法读取图片路径。") }
@@ -287,7 +303,7 @@ struct PlaygroundDocument: Codable, Sendable {
     }
 
     func reload() {
-        guard !importing else { return }
+        guard !importing, importTask == nil else { return }
         saveTask?.cancel(); readSavedDocument()
     }
     private func readSavedDocument() {

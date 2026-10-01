@@ -24,11 +24,11 @@ struct EditingCanvasSizingView: View {
                 ForEach(Array(studio.draft.activeAssets.enumerated()), id: \.element.id) { index, asset in
                     Text("图 \(index + 1) · \(asset.name)").tag(Optional(asset.id))
                 }
-            }.disabled(studio.importing || submissionLocked)
+            }.disabled(studio.imageInputsBusy || submissionLocked)
             Picker("输出尺寸", selection: $preset) {
                 ForEach(EditingCanvasPreset.allCases) { value in Text(value.title).tag(value) }
             }.pickerStyle(.radioGroup)
-                .disabled(studio.importing || submissionLocked)
+                .disabled(studio.imageInputsBusy || submissionLocked)
             if let dimensions = suggestion.dimensions {
                 Text("\(dimensions.width) × \(dimensions.height)")
                     .font(.title3.monospacedDigit().weight(.medium))

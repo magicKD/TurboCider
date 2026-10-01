@@ -969,6 +969,60 @@ struct StudioBehaviorTests {
             try check(try snapshot(studio) == changed && (try stagedCount(studio)) == before && !studio.importing,
                       "Deferred \(changedField) change was overwritten or left a staged file/locked controls")
         }
+        // Reserve the UI task synchronously, before its async import body can
+        // run. Draft/input mutation must already be locked in this window.
+        studio.draft.modelID = "qwen-image-2.1"; studio.draft.operation = "image.edit"
+        studio.draft.assets = originals; studio.draft.initImageID = originals[1].id
+        let reservedBefore = try snapshot(studio), resetBefore = studio.workspaceResetID
+        let notStarted = DeferredStudioImageProvider()
+        try check(studio.beginImageImportProviders([notStarted.makeProvider()]), "Cannot reserve a UI provider import")
+        guard let notStartedTask = studio.imageImportTask else { throw NativeFailure(message: "Reserved import lost its task handle") }
+        try check(studio.imageInputsBusy && !studio.importing, "UI task did not lock inputs before beginning its async work")
+        studio.remove(originals[0].id); studio.move(originals[0].id, offset: 1)
+        studio.undoAssetChange(); studio.selectModel("flux2-klein-4b"); studio.newDraft()
+        let blockedPreparation = await studio.prepareAsset(id: originals[0].id, preset: .fit512)
+        try check(!blockedPreparation && (try snapshot(studio)) == reservedBefore && studio.workspaceResetID == resetBefore,
+                  "A reserved import allowed deleting/resetting/resizing its reference context")
+        studio.cancelImageImport(); await notStartedTask.value
+        try check(!studio.imageInputsBusy && studio.imageImportTask == nil && !studio.cancellingImageImport,
+                  "Cancellation before the import body began did not release its task handle")
+
+        // Unlike the earlier cancel case, the provider deliberately does NOT
+        // finish. Cancellation must complete without a callback or staged copy.
+        let stalled = DeferredStudioImageProvider(), filesBeforeCancel = try stagedCount(studio)
+        let draftBeforeCancel = try snapshot(studio)
+        var cancellationFinished = false
+        let cancelledImport = Task {
+            await studio.importProviders([stalled.makeProvider()])
+            cancellationFinished = true
+        }
+        try await stalled.waitUntilRequested()
+        cancelledImport.cancel()
+        let cancellationStart = ContinuousClock.now
+        while !cancellationFinished && cancellationStart.duration(to: .now) < .seconds(2) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try check(cancellationFinished && !studio.imageInputsBusy && (try snapshot(studio)) == draftBeforeCancel &&
+                  (try stagedCount(studio)) == filesBeforeCancel && studio.message?.contains("已取消") == true,
+                  "A provider without a callback kept the cancelled import locked or changed its inputs")
+        await cancelledImport.value
+
+        // An old provider can still attempt its callback after a fresh retry
+        // starts. It must neither append its old image nor unlock the new task.
+        let retryProvider = DeferredStudioImageProvider()
+        try check(studio.beginImageImportProviders([retryProvider.makeProvider()]), "Cannot retry after cancelling a stalled provider")
+        guard let retryTask = studio.imageImportTask else { throw NativeFailure(message: "Retry lost its task handle") }
+        try await retryProvider.waitUntilRequested()
+        try check(!studio.beginImageImportProviders([notStarted.makeProvider()]), "A second UI import replaced a pending retry")
+        stalled.finish(png)
+        try await Task.sleep(for: .milliseconds(50))
+        try check(studio.importing && studio.imageImportTask != nil && (try snapshot(studio)) == draftBeforeCancel &&
+                  (try stagedCount(studio)) == filesBeforeCancel,
+                  "A late cancelled-provider callback changed references or cleared the retry lock")
+        retryProvider.finish(png); await retryTask.value
+        try check(!studio.imageInputsBusy && studio.imageImportTask == nil && studio.draft.assets.count == originals.count + 1 &&
+                  Array(studio.draft.assets.prefix(originals.count)) == originals,
+                  "A successful retry lost original reference order or failed to release its task handle")
         studio.selectModel("flux2-klein-4b")
         studio.draft.assets = originals; studio.draft.initImageID = originals[0].id
         studio.draft.prompt = "Modify the second image"

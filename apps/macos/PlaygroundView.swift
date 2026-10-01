@@ -14,7 +14,7 @@ struct PlaygroundView: View {
     @State private var showReference = false
     @State private var showPrompt = false
 
-    private var controlsLocked: Bool { state.importing || submitting || store.busy || api.running || api.changing }
+    private var controlsLocked: Bool { state.importing || state.importTask != nil || submitting || store.busy || api.running || api.changing }
     private var executionLabel: String {
         if !state.settings.profilePath.isEmpty || state.settings.acceleration?.policy == "profile" { return "设备配置" }
         return state.settings.usesANE ? "GPU + Core ML" : "GPU"
@@ -43,7 +43,7 @@ struct PlaygroundView: View {
             return "\(state.template.title) · \(job.phase) · \(job.completed)/\(job.total) · \(Int(job.elapsed)) 秒"
         }
         if submitting { return "正在检查参数与执行资源…" }
-        if state.importing { return "正在处理参考图，原始副本与之前的任务输入会保留…" }
+        if state.importing || state.importTask != nil { return "正在处理参考图，原始副本与之前的任务输入会保留…" }
         if store.workerCleanupPending { return "正在等待工作进程清理，完成后可继续生成。" }
         if store.busy { return "引擎正在执行其他任务，完成后可生成。" }
         return state.storageError ?? submitBlocker ?? state.message
@@ -89,7 +89,7 @@ struct PlaygroundView: View {
             Text(state.saved ? "已保存" : "未保存").font(.caption).foregroundStyle(.secondary)
                 .accessibilityIdentifier("playgroundSavedState")
             Button("创作页", systemImage: "arrow.up.right") { showCreation() }
-                .disabled((submitting && !store.busy) || state.importing)
+                .disabled((submitting && !store.busy) || state.importing || state.importTask != nil)
                 .accessibilityIdentifier("playgroundShowCreation")
         }.padding(.horizontal, 18).padding(.vertical, 14)
     }
@@ -149,7 +149,7 @@ struct PlaygroundView: View {
                     accessibilityPrefix: "playground", setSize: { state.setQwen21ReferenceSize($0) })
             }
             Button("从创作页同步模型与参数") { state.syncSettings(from: creator.draft) }
-                .disabled(controlsLocked || creator.importing).accessibilityIdentifier("playgroundSyncSettings")
+                .disabled(controlsLocked || creator.imageInputsBusy).accessibilityIdentifier("playgroundSyncSettings")
             Text("同步保留模板图片和指令；参数不兼容时会提示原因。")
                 .font(.caption).foregroundStyle(.secondary)
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -195,11 +195,8 @@ struct PlaygroundView: View {
                 Menu("输入文件尺寸 · \((asset.preparation ?? .original).title)") {
                     ForEach(ReferenceImagePreparation.allCases) { preset in
                         Button(preset.title) {
-                            let template = state.template
-                            Task {
-                                guard !controlsLocked, state.template == template else { return }
-                                await state.prepare(role, preset: preset)
-                            }
+                            guard !controlsLocked else { return }
+                            state.startImport { state in await state.prepare(role, preset: preset) }
                         }
                     }
                 }.font(.caption).disabled(controlsLocked)
@@ -246,13 +243,15 @@ struct PlaygroundView: View {
                 }
                 HStack(spacing: 10) {
                     Button("用作人物参考") {
-                        Task {
-                            guard !controlsLocked else { return }
-                            if await state.useResultAsPerson(job) { showReference = true }
+                        guard !controlsLocked else { return }
+                        if let task = state.startImport({ state in await state.useResultAsPerson(job) }) {
+                            Task {
+                                if await task.value, state.template.workflowID == job.workflowID { showReference = true }
+                            }
                         }
                     }.disabled(controlsLocked).accessibilityIdentifier("playgroundUseResultAsPerson")
                     Button("在创作中继续", systemImage: "arrow.up.right") { continueInCreation(job) }
-                        .disabled(controlsLocked || creator.importing).accessibilityIdentifier("playgroundContinueInCreation")
+                        .disabled(controlsLocked || creator.imageInputsBusy).accessibilityIdentifier("playgroundContinueInCreation")
                 }.font(.caption)
             }
             if !resultJobs.isEmpty {
@@ -292,6 +291,10 @@ struct PlaygroundView: View {
                     }.font(.caption).disabled(controlsLocked)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
+            if state.importTask != nil {
+                Button("取消图片处理", role: .destructive) { state.cancelImport() }
+                    .accessibilityIdentifier("playgroundCancelImport")
+            }
             if ownedActiveJob != nil || (state.generationTask != nil && submitting) {
                 Button("取消生成", role: .destructive) {
                     state.generationTask?.cancel()
@@ -300,7 +303,7 @@ struct PlaygroundView: View {
             }
             Button("生成 · \(state.template.title)", systemImage: "sparkles") { generate() }
                 .buttonStyle(.borderedProminent).controlSize(.large)
-                .disabled(controlsLocked || submitBlocker != nil || creator.importing)
+                .disabled(controlsLocked || submitBlocker != nil || creator.imageInputsBusy)
                 .accessibilityIdentifier("playgroundGenerate")
         }.padding(.horizontal, 18).padding(.vertical, 10)
     }
@@ -313,22 +316,15 @@ struct PlaygroundView: View {
         panel.message = role.map { "选择\($0.title)参考图；替换不会覆盖历史输入。" } ?? "按人物、服装或场景的空槽顺序添加图片。"
         guard panel.runModal() == .OK else { return }
         let urls = panel.urls
-        Task {
-            guard !controlsLocked, state.template == template else { return }
-            await state.importFiles(urls, replacing: role)
-        }
+        guard !controlsLocked, state.template == template else { return }
+        state.startImport { state in await state.importFiles(urls, replacing: role) }
     }
     private func acceptDrop(_ providers: [NSItemProvider], replacing role: PlaygroundRole?) -> Bool {
         guard !controlsLocked, !providers.isEmpty else { return false }
-        let template = state.template
-        Task {
-            guard !controlsLocked, state.template == template else { return }
-            await state.importProviders(providers, replacing: role)
-        }
-        return true
+        return state.startImport { state in await state.importProviders(providers, replacing: role) } != nil
     }
     private func generate() {
-        guard !controlsLocked, !creator.importing, submitBlocker == nil else { return }
+        guard !controlsLocked, !creator.imageInputsBusy, submitBlocker == nil else { return }
         let snapshot: StudioDraft
         do {
             state.save()

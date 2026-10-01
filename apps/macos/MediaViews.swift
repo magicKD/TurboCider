@@ -211,7 +211,7 @@ struct Qwen21AnnotationEditor: View {
             Picker("输出", selection: $output) {
                 Text("红色标注副本").tag(Qwen21AnnotationOutput.annotatedImage)
                 Text("独立黑白蒙版").tag(Qwen21AnnotationOutput.separateMask)
-            }.pickerStyle(.segmented).disabled(studio.importing || current != nil)
+            }.pickerStyle(.segmented).disabled(studio.imageInputsBusy || current != nil)
             HStack {
                 Picker("工具", selection: $tool) {
                     Text("圈选").tag(AnnotationInteractionTool.ellipse)
@@ -224,7 +224,7 @@ struct Qwen21AnnotationEditor: View {
                 Button { if !strokes.isEmpty { strokes.removeLast() } } label: { Image(systemName: "arrow.uturn.backward") }
                     .disabled(strokes.isEmpty).help("撤销笔画").accessibilityLabel("撤销笔画")
                 Button("清空") { strokes.removeAll() }.disabled(strokes.isEmpty)
-            }.disabled(studio.importing || current != nil)
+            }.disabled(studio.imageInputsBusy || current != nil)
             GeometryReader { proxy in
                 let sourceSize = CGSize(width: CGFloat(max(1, asset.width)), height: CGFloat(max(1, asset.height)))
                 let rect = viewport.imageRect(source: sourceSize, bounds: proxy.size)
@@ -255,7 +255,7 @@ struct Qwen21AnnotationEditor: View {
                 }.frame(width: proxy.size.width, height: proxy.size.height).clipped()
                     .contentShape(Rectangle()).gesture(DragGesture(minimumDistance: 0)
                     .onChanged { drag in
-                        guard !studio.importing, preview != nil, magnificationOrigin == nil else { return }
+                        guard !studio.imageInputsBusy, preview != nil, magnificationOrigin == nil else { return }
                         if tool == .pan {
                             if panOrigin == nil { panOrigin = viewport.offset }
                             viewport.pan(from: panOrigin ?? .zero, by: drag.translation, source: sourceSize, bounds: proxy.size)
@@ -280,7 +280,7 @@ struct Qwen21AnnotationEditor: View {
                     })
                     .simultaneousGesture(MagnificationGesture()
                         .onChanged { value in
-                            guard !studio.importing, current == nil else { return }
+                            guard !studio.imageInputsBusy, current == nil else { return }
                             if magnificationOrigin == nil { magnificationOrigin = viewport; panOrigin = nil }
                             var next = magnificationOrigin ?? viewport
                             next.setZoom(next.zoom * value, source: sourceSize, bounds: proxy.size)
@@ -290,7 +290,7 @@ struct Qwen21AnnotationEditor: View {
                     .overlay(alignment: .bottomTrailing) {
                         ImageZoomControls(zoom: viewport.zoom, fit: { viewport = ImageViewport(); panOrigin = nil; magnificationOrigin = nil },
                                           change: { viewport.setZoom($0, source: sourceSize, bounds: proxy.size) })
-                            .disabled(studio.importing || current != nil || preview == nil).padding(12)
+                            .disabled(studio.imageInputsBusy || current != nil || preview == nil).padding(12)
                     }
                     .onChange(of: proxy.size) { _, size in viewport.constrain(source: sourceSize, bounds: size); panOrigin = nil }
             }.frame(minHeight: 280, maxHeight: .infinity)
@@ -300,12 +300,12 @@ struct Qwen21AnnotationEditor: View {
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Text("\(strokes.count) / 100 笔画").font(.caption).foregroundStyle(.secondary)
-                if studio.importing { ProgressView().controlSize(.small) }
+                if studio.imageInputsBusy { ProgressView().controlSize(.small) }
                 Spacer()
-                Button("取消") { dismiss() }.disabled(studio.importing).keyboardShortcut(.cancelAction)
+                Button("取消") { dismiss() }.disabled(studio.imageInputsBusy).keyboardShortcut(.cancelAction)
                 Button(output == .separateMask ? "添加独立蒙版" : "使用标注副本") {
                     Task { if await studio.annotateQwen21Asset(asset.id, strokes: strokes, output: output) { dismiss() } }
-                }.buttonStyle(.borderedProminent).disabled(strokes.isEmpty || current != nil || studio.importing || preview == nil)
+                }.buttonStyle(.borderedProminent).disabled(strokes.isEmpty || current != nil || studio.imageInputsBusy || preview == nil)
                     .keyboardShortcut(.return, modifiers: .command)
             }
             Text("新 PNG 最长边 2048，不修改原图。蒙版作为额外参考图提供语义引导，不保证逐像素锁定。")

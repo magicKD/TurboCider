@@ -23,6 +23,7 @@ import UniformTypeIdentifiers
             try await Task.sleep(for: .milliseconds(5))
         }
     }
+    var hasPendingReply: Bool { reply != nil }
     func finish(_ data: Data) { reply?(data, nil); reply = nil }
 }
 
@@ -295,10 +296,50 @@ import UniformTypeIdentifiers
         let cancelledProvider = DeferredPlaygroundImageProvider(), cancelledItem = cancelledProvider.makeProvider()
         let cancelled = Task { await state.importProviders([cancelledItem], replacing: .person) }
         try await cancelledProvider.waitUntilRequested()
-        cancelled.cancel(); cancelledProvider.finish(sourceBytes)
+        cancelled.cancel()
+        try await waitUntil("provider cancellation without completion") { !state.importing }
         let cancelledResult = await cancelled.value
         try check(!cancelledResult && !state.importing && (try bytes(state.document)) == beforeCancel &&
                   (try files(in: inputs)) == filesBeforeCancel, "Cancelled provider import changed its slot or leaked an input")
+        try check(cancelledProvider.hasPendingReply, "Cancellation regression completed the provider instead of cancelling its wait")
+        cancelledProvider.finish(sourceBytes)
+
+        // The UI-owned handle must unlock without the old provider completing.
+        // Its late reply arrives while a different retry is still suspended.
+        let oldProvider = DeferredPlaygroundImageProvider(), oldItem = oldProvider.makeProvider()
+        guard let ownedImport = state.startImport({ state in await state.importProviders([oldItem], replacing: .person) }) else {
+            throw NativeFailure(message: "Cannot start owned Playground import")
+        }
+        defer { oldProvider.finish(sourceBytes) }
+        try await oldProvider.waitUntilRequested()
+        let beforeOwnedCancel = try bytes(state.document), filesBeforeOwnedCancel = try files(in: inputs)
+        state.cancelImport()
+        try await waitUntil("owned provider cancellation") { state.importTask == nil && !state.importing }
+        let ownedResult = await ownedImport.value
+        try check(!ownedResult && oldProvider.hasPendingReply && (try bytes(state.document)) == beforeOwnedCancel &&
+                  (try files(in: inputs)) == filesBeforeOwnedCancel, "Owned cancellation waited for the provider or changed previous inputs")
+
+        let retryProvider = DeferredPlaygroundImageProvider(), retryItem = retryProvider.makeProvider()
+        guard let retry = state.startImport({ state in await state.importProviders([retryItem], replacing: .person) }) else {
+            throw NativeFailure(message: "Cannot retry immediately after cancelled Playground import")
+        }
+        let retryBytes = try Data(contentsOf: clothing)
+        defer { retryProvider.finish(retryBytes) }
+        try await retryProvider.waitUntilRequested()
+        oldProvider.finish(sourceBytes)
+        for _ in 0..<8 { await Task.yield() }
+        try check(state.importing && state.importTask != nil && (try bytes(state.document)) == beforeOwnedCancel &&
+                  (try files(in: inputs)) == filesBeforeOwnedCancel, "Late cancelled callback unlocked or polluted the active retry")
+        retryProvider.finish(retryBytes)
+        try await waitUntil("retry completion") { state.importTask == nil && !state.importing }
+        let retryResult = await retry.value
+        try check(retryResult && state.asset(for: .person)?.width == clothingAsset.width &&
+                  state.asset(for: .person)?.height == clothingAsset.height && state.asset(for: .clothing) == clothingAsset,
+                  "Cancelled provider's late data replaced the retry or another role")
+        let afterRetry = try bytes(state.document)
+        for _ in 0..<8 { await Task.yield() }
+        try check((try bytes(state.document)) == afterRetry, "Cancelled provider changed the successful retry afterwards")
+        let beforeStaleFiles = try files(in: inputs)
 
         let staleProvider = DeferredPlaygroundImageProvider(), staleItem = staleProvider.makeProvider()
         let stale = Task { await state.importProviders([staleItem], replacing: .person) }
@@ -309,8 +350,16 @@ import UniformTypeIdentifiers
         staleProvider.finish(sourceBytes)
         let staleResult = await stale.value
         try check(!staleResult && !state.importing && (try bytes(state.document)) == newerDocument &&
-                  (try files(in: inputs)) == filesBeforeCancel,
+                  (try files(in: inputs)) == beforeStaleFiles,
                   "A stale provider callback replaced a newer context or leaked its staged copy")
+    }
+
+    @MainActor private static func waitUntil(_ label: String, predicate: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while !predicate() {
+            guard ContinuousClock.now < deadline else { throw NativeFailure(message: "Playground timed out: \(label)") }
+            try await Task.sleep(for: .milliseconds(5))
+        }
     }
 
     private static func modelFixture() throws -> StudioModel {

@@ -1037,6 +1037,9 @@ final class StudioState: ObservableObject {
     typealias StreamingOptionsProvider = @Sendable (NativeRequestV2, URL?) async throws -> NativeStreamingOptions
     private let streamingOptionsProvider: StreamingOptionsProvider
     @Published var importing = false
+    @Published private(set) var imageImportTask: Task<Void, Never>?
+    @Published private(set) var cancellingImageImport = false
+    var imageInputsBusy: Bool { importing || imageImportTask != nil }
     @Published private(set) var workspaceResetID = UUID()
     @Published var saved = true
     @Published var lastSeed: Int?
@@ -1221,6 +1224,7 @@ final class StudioState: ObservableObject {
         save()
     }
     func importConfiguration(from url: URL) throws {
+        guard !imageInputsBusy else { throw NativeFailure(message: "请等待图片导入完成，或先取消导入。") }
         let data = try Data(contentsOf: url)
         guard let fields = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               fields["modelID"] is String, fields["modelPaths"] is [String: String] else {
@@ -1249,7 +1253,7 @@ final class StudioState: ObservableObject {
         draft.acceleration = config
     }
     @discardableResult func setQwen21ReferenceSize(_ size: Int) -> Bool {
-        guard !importing, [1024, 512].contains(size) else { return false }
+        guard !imageInputsBusy, [1024, 512].contains(size) else { return false }
         if size == 512, let reason = draft.qwen21FastReferenceUnavailableReason {
             message = reason; return false
         }
@@ -1293,7 +1297,7 @@ final class StudioState: ObservableObject {
         return try draft.request(output: output)
     }
     func changeModel(_ id: String) {
-        guard !importing, let model = models.first(where: { $0.id == id }), model.executor else { return }
+        guard !imageInputsBusy, let model = models.first(where: { $0.id == id }), model.executor else { return }
         if draft.modelID != id {
             let operation = draft.operation
             selectModel(id)
@@ -1319,7 +1323,7 @@ final class StudioState: ObservableObject {
         changeOperation(kind + ".generate")
     }
     func changeOperation(_ operation: String) {
-        guard !importing else { return }
+        guard !imageInputsBusy else { return }
         var switchedModel: StudioModel? = nil
         if models.first(where: { $0.id == draft.modelID })?.supports(operation) != true {
             let candidates = models.filter { $0.supports(operation) }
@@ -1338,7 +1342,7 @@ final class StudioState: ObservableObject {
         if draft.initImageID == nil { draft.initImageID = draft.assets.first?.id }
     }
     func selectInstallation(modelID: String, path: String) {
-        guard !importing, !path.isEmpty else { return }
+        guard !imageInputsBusy, !path.isEmpty else { return }
         if draft.modelID != modelID { selectModel(modelID) }
         guard draft.modelID == modelID, draft.modelPath != path else { return }
         draft.modelPaths[modelID] = path
@@ -1357,7 +1361,7 @@ final class StudioState: ObservableObject {
         save()
     }
     func selectModel(_ id: String) {
-        guard !importing, let model = models.first(where: { $0.id == id }), model.executor else { return }
+        guard !imageInputsBusy, let model = models.first(where: { $0.id == id }), model.executor else { return }
         applyModel(model)
     }
     private func applyModel(_ model: StudioModel) {
@@ -1390,17 +1394,17 @@ final class StudioState: ObservableObject {
     }
     func rememberAssets() { undoAssets.append((draft.assets, draft.initImageID)); undoAssets = Array(undoAssets.suffix(20)) }
     func remove(_ id: UUID) {
-        guard !importing, draft.assets.contains(where: { $0.id == id }) else { return }
+        guard !imageInputsBusy, draft.assets.contains(where: { $0.id == id }) else { return }
         rememberAssets(); draft.assets.removeAll { $0.id == id }
         if draft.initImageID == id { draft.initImageID = draft.assets.first?.id }
     }
     func move(_ id: UUID, offset: Int) {
-        guard !importing, offset != 0, let index = draft.assets.firstIndex(where: { $0.id == id }), draft.assets.indices.contains(index + offset) else { return }
+        guard !imageInputsBusy, offset != 0, let index = draft.assets.firstIndex(where: { $0.id == id }), draft.assets.indices.contains(index + offset) else { return }
         rememberAssets(); draft.assets.swapAt(index, index + offset)
         message = "参考图顺序已更新，请核对提示词中的图片编号。"
     }
     func reorderAsset(_ id: UUID, to targetID: UUID) {
-        guard !importing, id != targetID,
+        guard !imageInputsBusy, id != targetID,
               let source = draft.assets.firstIndex(where: { $0.id == id }),
               let target = draft.assets.firstIndex(where: { $0.id == targetID }) else { return }
         rememberAssets()
@@ -1414,7 +1418,7 @@ final class StudioState: ObservableObject {
     }
     @discardableResult
     func prepareAssets(ids: Set<UUID>, preset: ReferenceImagePreparation) async -> Bool {
-        guard !importing, !ids.isEmpty else { return false }
+        guard !imageInputsBusy, !ids.isEmpty else { return false }
         let assets = draft.assets.filter { ids.contains($0.id) }
         guard assets.count == ids.count, Set(assets.map(\.id)).count == assets.count else {
             message = "部分参考图已不存在或编号重复，请重新选择。"; return false
@@ -1450,14 +1454,14 @@ final class StudioState: ObservableObject {
     }
     var canUndoAssets: Bool { !undoAssets.isEmpty }
     func undoAssetChange() {
-        guard !importing else { return }
+        guard !imageInputsBusy else { return }
         if let previous = undoAssets.popLast() {
             draft.assets = previous.0; draft.initImageID = previous.1
             message = "已撤销素材修改，恢复之前的图片顺序与原图选择。"
         }
     }
     func addLoRA(_ path: String) {
-        guard !importing, !path.isEmpty else { return }
+        guard !imageInputsBusy, !path.isEmpty else { return }
         let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
         guard !draft.loras.contains(where: { URL(fileURLWithPath: $0.path).standardizedFileURL.path == normalized }) else {
             message = "此 LoRA 已添加，可使用开关启用。"; return
@@ -1469,14 +1473,14 @@ final class StudioState: ObservableObject {
         save()
     }
     func setLoRAEnabled(_ id: UUID, enabled: Bool) {
-        guard !importing, let index = draft.loras.firstIndex(where: { $0.id == id }), draft.loras[index].enabled != enabled else { return }
+        guard !imageInputsBusy, let index = draft.loras.firstIndex(where: { $0.id == id }), draft.loras[index].enabled != enabled else { return }
         let wasTurbo = draft.qwen21TurboLoRA != nil
         draft.loras[index].enabled = enabled
         synchronizeQwen21TurboSettings(wasTurbo: wasTurbo)
         save()
     }
     func removeLoRA(_ id: UUID) {
-        guard !importing, draft.loras.contains(where: { $0.id == id }) else { return }
+        guard !imageInputsBusy, draft.loras.contains(where: { $0.id == id }) else { return }
         let wasTurbo = draft.qwen21TurboLoRA != nil
         draft.loras.removeAll { $0.id == id }
         synchronizeQwen21TurboSettings(wasTurbo: wasTurbo)
@@ -1494,7 +1498,7 @@ final class StudioState: ObservableObject {
     /// Qwen uses reference editing for both one and multiple images. Do not ask
     /// changeOperation to find another model just to edit a single reference.
     func useOnlyAssetForEditing(_ id: UUID) {
-        guard !importing, let asset = draft.assets.first(where: { $0.id == id }),
+        guard !imageInputsBusy, let asset = draft.assets.first(where: { $0.id == id }),
               let model = models.first(where: { $0.id == draft.modelID }) else { return }
         let operation = model.supports("image.transform") ? "image.transform"
             : model.supports("image.edit") ? "image.edit"
@@ -1507,7 +1511,7 @@ final class StudioState: ObservableObject {
     }
     @discardableResult
     func editResult(_ job: NativeJob) async -> Bool {
-        guard !importing, job.hasOutput else { return false }
+        guard !imageInputsBusy, job.hasOutput else { return false }
         func editingOperation(_ model: StudioModel) -> String? {
             model.supports("image.transform") ? "image.transform"
                 : model.supports("image.edit") ? "image.edit" : nil
@@ -1555,7 +1559,7 @@ final class StudioState: ObservableObject {
         return max(8, models.first(where: { $0.id == draft.modelID })?.max_images ?? 8)
     }
     func applyQwen21Example(_ example: Qwen21PromptExample) {
-        guard draft.modelID == "qwen-image-2.1", !importing else { return }
+        guard draft.modelID == "qwen-image-2.1", !imageInputsBusy else { return }
         guard draft.assets.count >= example.referenceCount else {
             message = "请先添加至少 \(example.referenceCount) 张图片；蒙版示例中第一张为原图、第二张为白色编辑区蒙版。"
             return
@@ -1574,7 +1578,7 @@ final class StudioState: ObservableObject {
         message = "已替换为可编辑的示例提示词，使用 GPU / \(steps) 步 / \(size.0)×\(size.1)。这不是模型提示词重写；蒙版与标注作为视觉参考，不保证逐像素锁定未编辑区。"
     }
     func applyQwen21TurboPreset() {
-        guard !importing else { message = "请等待素材导入完成。"; return }
+        guard !imageInputsBusy else { message = "请等待素材导入完成。"; return }
         configureQwen21TurboPreset()
     }
     private func configureQwen21TurboPreset() {
@@ -1595,7 +1599,7 @@ final class StudioState: ObservableObject {
     }
     func annotateQwen21Asset(_ id: UUID, strokes: [Qwen21AnnotationStroke],
                             output: Qwen21AnnotationOutput = .annotatedImage) async -> Bool {
-        guard draft.modelID == "qwen-image-2.1", !importing,
+        guard draft.modelID == "qwen-image-2.1", !imageInputsBusy,
               let original = draft.assets.first(where: { $0.id == id }) else { return false }
         if output == .separateMask && draft.assets.count >= imageImportLimit {
             message = "独立蒙版需要一个参考图位置；请先移除一张图片（最多 \(imageImportLimit) 张，包含蒙版）。"
@@ -1645,6 +1649,36 @@ final class StudioState: ObservableObject {
         guard supportsImageInputs else { message = "当前模型未开放图片输入。已有素材会继续保留。"; return false }
         return true
     }
+    @discardableResult func beginImageImportFiles(_ urls: [URL]) -> Bool {
+        guard !urls.isEmpty else { return false }
+        return beginImageImport { await self.addFiles(urls) }
+    }
+    @discardableResult func beginImageImportProviders(_ providers: [NSItemProvider]) -> Bool {
+        guard !providers.isEmpty else { return false }
+        return beginImageImport { await self.importProviders(providers) }
+    }
+    @discardableResult func beginPasteImage(from board: NSPasteboard = .general) -> Bool {
+        beginImageImport { await self.pasteImage(from: board) }
+    }
+    private func beginImageImport(_ operation: @escaping @MainActor () async -> Void) -> Bool {
+        guard !importing, imageImportTask == nil else { return false }
+        message = nil
+        imageImportTask = Task {
+            defer { imageImportTask = nil; cancellingImageImport = false }
+            await operation()
+        }
+        return true
+    }
+    func cancelImageImport() {
+        guard let task = imageImportTask, !cancellingImageImport else { return }
+        cancellingImageImport = true
+        task.cancel()
+        // Keep the operation locked until its rollback finishes. A cancelled
+        // provider wait resumes immediately, without waiting for its callback.
+    }
+    private func imageImportErrorMessage(_ error: Error) -> String {
+        error is CancellationError ? "图片导入已取消，之前的参考图已保留。" : error.localizedDescription
+    }
     func addFiles(_ urls: [URL]) async {
         guard !urls.isEmpty else { return }
         guard validateImageImport() else { return }
@@ -1657,7 +1691,7 @@ final class StudioState: ObservableObject {
             for url in urls { try Task.checkCancellation(); staged.append(try await importer.importFile(url)) }
             try validateAssetImportContext(context, additionalImages: staged.count)
             attach(staged)
-        } catch { await importer.discard(staged); message = error.localizedDescription }
+        } catch { await importer.discard(staged); message = imageImportErrorMessage(error) }
     }
     func pasteImage(from board: NSPasteboard = .general) async {
         guard validateImageImport() else { return }
@@ -1688,7 +1722,7 @@ final class StudioState: ObservableObject {
             for image in images { try Task.checkCancellation(); staged.append(try await importer.importData(image)) }
             try validateAssetImportContext(context, additionalImages: staged.count)
             attach(staged)
-        } catch { await importer.discard(staged); message = error.localizedDescription }
+        } catch { await importer.discard(staged); message = imageImportErrorMessage(error) }
     }
     func importProviders(_ providers: [NSItemProvider]) async {
         guard !providers.isEmpty else { return }
@@ -1704,19 +1738,14 @@ final class StudioState: ObservableObject {
                 let type = provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ? UTType.fileURL.identifier
                     : provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .image) == true })
                 guard let type else { throw NativeFailure(message: "拖入的内容不是图片文件。") }
-                let data: Data = try await withCheckedThrowingContinuation { continuation in
-                    provider.loadDataRepresentation(forTypeIdentifier: type) { data, error in
-                        if let data { continuation.resume(returning: data) }
-                        else { continuation.resume(throwing: error ?? NativeFailure(message: "无法读取拖入图片。")) }
-                    }
-                }
+                let data = try await ItemProviderDataLoader.load(provider: provider, typeIdentifier: type)
                 try Task.checkCancellation()
                 if type == UTType.fileURL.identifier, let url = URL(dataRepresentation: data, relativeTo: nil) { staged.append(try await importer.importFile(url)) }
                 else { staged.append(try await importer.importData(data)) }
             }
             try validateAssetImportContext(context, additionalImages: staged.count)
             attach(staged)
-        } catch { await importer.discard(staged); message = error.localizedDescription }
+        } catch { await importer.discard(staged); message = imageImportErrorMessage(error) }
     }
     private func attach(_ assets: [StudioAsset]) {
         rememberAssets(); draft.assets.append(contentsOf: assets)
@@ -1727,7 +1756,7 @@ final class StudioState: ObservableObject {
                 : "图片已保留。请选择「单图修改」或「参考编辑」让它们参与生成。") : nil
     }
     func reuse(_ job: NativeJob) {
-        guard !importing else { message = "请等待素材导入完成。"; return }
+        guard !imageInputsBusy else { message = "请等待素材导入完成。"; return }
         let request = job.request
         if request.operation == "image.upscale" {
             draft.upscaleModelPath = job.modelPath ?? ""
@@ -1833,7 +1862,7 @@ final class StudioState: ObservableObject {
         save()
     }
     func newDraft() {
-        guard !importing else { message = "请等待素材导入完成。"; return }
+        guard !imageInputsBusy else { message = "请等待素材导入完成。"; return }
         var model = models.first { $0.id == draft.modelID && $0.executor }
         if model == nil {
             model = models.first { $0.executor && !(draft.modelPaths[$0.id] ?? "").isEmpty }
