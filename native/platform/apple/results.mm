@@ -903,6 +903,8 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"runtime_weight" : m.weight_variant == "runtime_fp16" ? @{
             @"slot_bytes" : @(m.runtime_weight_slot_bytes),
             @"estimated_bytes" : @(m.runtime_weight_estimated_bytes),
+            @"session_released" : @(m.runtime_weight_session_released),
+            @"counter_scope" : @"runtime_graph_owner; resets when reconstructed, including every component-staged request",
             @"hybrid_blocks_session_total" : @(m.runtime_weight_hybrid_blocks),
             @"gpu_blocks_session_total" : @(m.runtime_weight_gpu_blocks),
             @"unsplit_gpu_blocks_session_total" : @(m.runtime_weight_unsplit_gpu_blocks),

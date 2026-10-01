@@ -492,3 +492,21 @@ differences, and actual ANE occupancy cannot be proven without privileged
 hardware tracing. The 2K path is exposed by the model contract but is outside
 the maintained test scope; do not use its incomplete experiment as evidence
 for production quality or performance.
+
+## Phase-scoped Runtime FFN diagnostic
+
+The explicit runtime FFN route can be tested at 512×512 with
+`TURBOCIDER_QWEN21_RUNTIME_STAGED_DIAGNOSTIC=1` and
+`residency: "component_staged"`. It requires standard 1024 reference encoding,
+0–3 references, no prompt enhancement, and the existing runtime approximation
+and cache restrictions. Only base or pinned Viggle v0.2.1 r128 at six steps and
+strength 1 are admitted by this diagnostic. It does not enable encoder ANE,
+QKV or an App performance preset.
+
+The runtime owner is destroyed after denoising, before VAE decode, and after
+preparation/cancellation. Graph load and self-test therefore recur on each
+request. `hybrid.runtime_weight.session_released` reports owner destruction;
+`counter_scope` distinguishes its counters from the longer-lived model engine.
+Prepared GPU weights may still be retained. Existing memory guards remain in
+force. See [lifecycle and validation](../status/2026-10-02-runtime-staged-lifecycle.md)
+for the tested scope and performance evidence.

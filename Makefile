@@ -7,6 +7,7 @@ export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-catalog-builder test-streaming-source-identity test-streaming-source-lease test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults test-process-tree-sampler
 .PHONY: build-runtime-ane-probe test-runtime-ane test-runtime-ane-host test-acceleration-contract
 .PHONY: test-playground
+.PHONY: test-qwen21-runtime-activation
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -226,6 +227,8 @@ test-editing-canvas:
 	@build/native/turbocider-editing-canvas-tests
 test-playground:
 	@build/native/turbocider-playground-tests
+test-qwen21-runtime-activation:
+	@"$(PYTHON)" -B tests/native/test_qwen21_runtime_activation.py
 test-model:
 	@test -n "$(MODEL)" -a -n "$(OUTPUT)" || (echo 'MODEL and OUTPUT are required'; exit 1)
 	@build/native/turbocider-studio-model-tests "$(MODEL)" "$(OUTPUT)/studio"

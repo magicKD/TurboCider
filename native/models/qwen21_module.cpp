@@ -51,6 +51,21 @@ ModelModule qwen21_module() {
             const bool gpu_viggle_ref512 = qwen21::gpu_viggle_ref512_request(r);
             const bool runtime_ane = r.hybrid_mlp_mode == "runtime";
             const bool runtime_qkv = r.hybrid_mlp_mode == "runtime_qkv";
+            const char *runtime_staged_flag = std::getenv(
+                "TURBOCIDER_QWEN21_RUNTIME_STAGED_DIAGNOSTIC");
+            require(qwen21::binary_option_or_unset(runtime_staged_flag),
+                    "Qwen21 staged runtime diagnostic accepts only 0 or 1");
+            const bool runtime_staged = qwen21::option_enabled(runtime_staged_flag);
+            if (runtime_staged) {
+                const auto *adapter = r.loras.empty() ? nullptr : qwen21::viggle_v021_adapter(
+                    std::filesystem::path(r.loras[0].path).filename().string());
+                require(runtime_ane && r.execution == "gpu_ane" &&
+                            r.residency == "component_staged" && r.width == 512 && r.height == 512 &&
+                            r.inputs.size() <= 3 && r.qwen21_reference_size == 1024 && !r.prompt_enhance &&
+                            (r.loras.empty() || (r.loras.size() == 1 && adapter &&
+                             adapter->rank == "r128" && r.steps == 6 && r.loras[0].strength == 1.f)),
+                        "Qwen21 staged runtime diagnostic needs explicit 512px component-staged runtime FFN, base or six-step Viggle r128 strength 1, 0...3 full-size references and no prompt enhancement");
+            }
             require(r.hybrid_mlp_mode == "auto" || r.hybrid_mlp_mode == "base_fused" ||
                         r.hybrid_mlp_mode == "lora_suffix" || r.hybrid_mlp_mode == "lora_gate_up" ||
                         r.hybrid_mlp_mode == "lora_fused" || runtime_ane || runtime_qkv,
@@ -78,10 +93,11 @@ ModelModule qwen21_module() {
                 require(r.execution == "gpu_ane" && r.allow_approximation && !r.ane_manifest.empty() &&
                             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
                             (r.loras.empty() || r.lora_strategy == "inference_time") &&
-                            r.qwen21_gpu_full_ffn_blocks.empty() && r.residency == "resident" &&
+                            r.qwen21_gpu_full_ffn_blocks.empty() &&
+                            (r.residency == "resident" || runtime_staged) &&
                             !db_options.enabled &&
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV")),
-                        "Qwen21 runtime-weight FFN requires explicit resident GPU/ANE FP16, unmerged runtime LoRA and no frozen W8A8 or DBCache/prefix reuse");
+                        "Qwen21 runtime-weight FFN requires explicit resident GPU/ANE FP16 (or the staged diagnostic), unmerged runtime LoRA and no frozen W8A8 or DBCache/prefix reuse");
             if (r.hybrid_mlp_mode != "auto" && !runtime_ane && !runtime_qkv)
                 require(r.execution == "gpu_ane" && r.qwen21_w8a8 &&
                             r.allow_approximation && !r.ane_manifest.empty() &&

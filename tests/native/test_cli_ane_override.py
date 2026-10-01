@@ -21,6 +21,116 @@ def clean_acceleration_environment():
 
 @unittest.skipUnless(CLI.is_file(), "build the native CLI before this test")
 class CLIAneOverrideTests(unittest.TestCase):
+    def test_qwen_runtime_staged_diagnostic_preserves_admission_and_memory_budget(self):
+        flag = "TURBOCIDER_QWEN21_RUNTIME_STAGED_DIAGNOSTIC"
+        with tempfile.TemporaryDirectory(prefix="tc-runtime-staged-plan-") as temporary:
+            root = Path(temporary)
+            manifest = root / "metadata-only-manifest.json"
+            manifest.write_text("{}")
+            request = root / "request.json"
+            base = {
+                "model": "qwen-image-2.1", "operation": "image.generate", "prompt": "A fox",
+                "output": str(root / "not-generated.png"), "width": 512, "height": 512,
+                "steps": 25, "frames": 1, "audio": False, "execution": "gpu_ane",
+                "residency": "component_staged", "allow_approximation": True,
+                "hybrid_mlp_mode": "runtime", "ane_manifest": str(manifest),
+                "qwen21_reference_size": 1024, "qwen21_dit_cache": "off",
+            }
+            adapter = {
+                "path": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+                "role": "transformer", "strength": 1.0,
+            }
+            references = [{"kind": "image", "role": "reference", "path": str(root / f"ref-{i}.png")}
+                          for i in range(4)]
+
+            def plan(data, value=None):
+                environment = clean_acceleration_environment()
+                if value is not None:
+                    environment[flag] = value
+                request.write_text(json.dumps(data))
+                return subprocess.run([str(CLI), "plan", str(request)], cwd=ROOT,
+                                      env=environment, capture_output=True, text=True, timeout=10)
+
+            def accepted(data, value=None):
+                result = plan(data, value)
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                return json.loads(result.stdout)
+
+            # Standard 1024px references preserve the existing runtime contract;
+            # the staged switch does not opt into any resized-reference shortcut.
+            for count in range(4):
+                for steps, lora in ((25, False), (40, False), (6, True)):
+                    data = {**base, "steps": steps,
+                            "operation": "image.edit" if count else "image.generate",
+                            "inputs": references[:count]}
+                    if lora:
+                        data.update(lora_strategy="inference_time", loras=[adapter])
+                    with self.subTest(count=count, steps=steps, lora=lora):
+                        staged = accepted(data, "1")
+                        resident = accepted({**data, "residency": "resident"})
+                        gpu = accepted({**data, "execution": "gpu", "hybrid_mlp_mode": "auto",
+                                        "ane_manifest": ""})
+                        self.assertEqual(staged["residency"], "component_staged")
+                        self.assertEqual(staged["hybrid_mlp_mode"], "runtime")
+                        self.assertEqual(staged["backend"], "mlx_cpp_metal+coreml_runtime_weight")
+                        self.assertEqual(staged["gpu_graph"], "runtime_weight_token_row_ffn")
+                        self.assertEqual(staged["precision"], "bf16_gpu+runtime_fp16_ffn_bf16_io")
+                        self.assertIn("runtime_weight_fp16_token_row_ffn", staged["algorithm_approximations"])
+                        self.assertEqual(resident["memory_estimate_bytes"] - staged["memory_estimate_bytes"],
+                                         18 << 30)
+                        # Compare otherwise identical accepted plans instead of
+                        # copying the implementation's geometry/prefix formula.
+                        self.assertEqual(staged["memory_estimate_bytes"] - gpu["memory_estimate_bytes"],
+                                         2 << 30)
+                        self.assertEqual(staged["memory_estimate_kind"],
+                                         "conservative_heuristic_not_hard_limit")
+
+            for value in (None, "0", "", "2", "-1", "true"):
+                with self.subTest(disabled_or_invalid_flag=value):
+                    rejected = plan(base, value)
+                    self.assertNotEqual(rejected.returncode, 0, rejected.stdout)
+                    self.assertTrue(rejected.stderr)
+            # Explicitly disabled retains the established resident route too.
+            self.assertEqual(accepted({**base, "residency": "resident"}, "0")["hybrid_mlp_mode"], "runtime")
+
+            # These otherwise valid routes reject an enabled staged switch;
+            # the flag cannot silently opt a default GPU/resident request in.
+            plain_gpu = {**base, "execution": "gpu", "hybrid_mlp_mode": "auto", "ane_manifest": ""}
+            accepted(plain_gpu)
+            for change in (
+                {"residency": "resident"},
+                {"execution": "gpu", "hybrid_mlp_mode": "auto", "ane_manifest": ""},
+                {"hybrid_mlp_mode": "auto"}, {"hybrid_mlp_mode": "runtime_qkv"},
+                {"width": 768}, {"height": 768},
+                {"operation": "image.edit", "inputs": references},
+                {"operation": "image.edit", "inputs": references[:1], "qwen21_reference_size": 256},
+                {"operation": "image.edit", "inputs": references[:1], "qwen21_reference_size": 512},
+                {"prompt_enhance": True, "prompt_enhancer_path": str(root / "absent-enhancer")},
+                {"allow_approximation": False}, {"ane_manifest": ""},
+                {"qwen21_w8a8": True}, {"qwen21_gpu_w8a16": True},
+                {"qwen21_gpu_full_ffn_blocks": [0]}, {"qwen21_dit_cache": "balanced"},
+            ):
+                with self.subTest(incompatible_request=change):
+                    rejected = plan({**base, **change}, "1")
+                    self.assertNotEqual(rejected.returncode, 0, rejected.stdout)
+
+            turbo = {**base, "steps": 6, "lora_strategy": "inference_time", "loras": [adapter]}
+            for change in (
+                {"steps": 25}, {"lora_strategy": "in_memory_merge"},
+                {"loras": [adapter, adapter]},
+                {"loras": [{**adapter, "role": "text_encoder"}]},
+                {"loras": [{**adapter, "strength": .5}]},
+                {"loras": [{**adapter, "strength": 9}]},
+                {"loras": [{**adapter, "path": adapter["path"].replace("r128", "r256")}]},
+                {"loras": [{**adapter, "path": "ordinary-adapter.safetensors"}]},
+                {"operation": "image.edit", "inputs": references[:1], "qwen21_reference_size": 512},
+            ):
+                with self.subTest(incompatible_lora=change):
+                    rejected = plan({**turbo, **change}, "1")
+                    self.assertNotEqual(rejected.returncode, 0, rejected.stdout)
+            self.assertFalse(Path(base["output"]).exists())
+            self.assertTrue(all(not Path(reference["path"]).exists() for reference in references))
+
     def test_qwen_runtime_ref512_switch_accepts_base_without_relaxing_other_routes(self):
         env = clean_acceleration_environment()
         env["TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC"] = "1"
