@@ -20,8 +20,8 @@ class GgufPagerTests(unittest.TestCase):
             header=struct.pack("<IIQQ",0x46554747,3,6,0); payload=bytearray()
             for i in range(4):
                 payload.extend(bytes((-len(payload))%32)); offset=len(payload)
-                header+=string(f"layers.{i}.weight")+struct.pack("<IQQIQ",2,64,4,8,offset)
-                payload.extend((struct.pack("<e",1.)+bytes([i+1]*32))*8)
+                header+=string(f"layers.{i}.weight")+struct.pack("<IQQIQ",2,64,512,8,offset)
+                payload.extend((struct.pack("<e",1.)+bytes([i+1]*32))*1024)
             payload.extend(bytes((-len(payload))%32)); offset=len(payload)
             header+=string("embedding.weight")+struct.pack("<IQQIQ",2,64,4,8,offset)
             for row in range(4): payload.extend((struct.pack("<e",1.)+bytes([row+1]*32))*2)
@@ -37,7 +37,7 @@ class GgufPagerTests(unittest.TestCase):
                 str(ROOT/"native/core/gguf_affine.cpp"),
                 "-L",str(library/"lib"),"-lmlx","-Wl,-rpath,"+str(NATIVE_LIBRARY_DIR),
                 "-Wl,-rpath,"+str(library/"lib"),"-o",str(binary)],check=True)
-            result=subprocess.run([str(binary),str(model)],text=True,capture_output=True,timeout=60)
+            result=subprocess.run([str(binary),str(model),"--mutate-owned-fixture"],text=True,capture_output=True,timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn("PASS GGUF pager Metal",result.stdout)
             print(result.stdout,end="")

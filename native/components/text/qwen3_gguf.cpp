@@ -57,11 +57,12 @@ void validate_eval_policy() {
 }
 
 Qwen3GgufPlan describe_qwen3_gguf(std::shared_ptr<const streaming::SourceLease> lease,
-        const Qwen3GgufConfig &c, const Tokens &tokens, uint32_t prefetch, gguf::DecodeOptions options) {
-    require(lease && lease->has_verified_content() && prefetch <= 1 &&
+        const Qwen3GgufConfig &c, const Tokens &tokens, uint32_t prefetch, gguf::DecodeOptions options, const std::string &residency) {
+    require(lease && lease->has_verified_content() && prefetch <= 2 &&
             c.hidden == 2560 && c.heads == 32 && c.kv_heads == 8 && c.head_dim == 128 &&
             c.layers >= 35 && c.layers <= 128 && c.intermediate && c.intermediate <= 32768 && c.vocabulary,
             "qe_adapter_mismatch: unsupported/unverified Qwen3 consumer geometry");
+    require(residency == "packed_resident" || residency == "packed_streamed", "qe_config_conflict: unknown Qwen3 source residency");
     require(!tokens.ids.empty() && tokens.ids.size() <= 1024 && tokens.valid > 0 &&
             tokens.valid <= int(tokens.ids.size()), "qe_adapter_mismatch: invalid Qwen3 conditioning tokens");
     for (int id : tokens.ids) require(id >= 0 && uint32_t(id) < c.vocabulary, "qe_decode_invalid: token ID outside vocabulary");
@@ -84,13 +85,14 @@ Qwen3GgufPlan describe_qwen3_gguf(std::shared_ptr<const streaming::SourceLease> 
     d.artifacts.push_back({"text_encoder", file.content_digest, file.bytes, streaming::SourceIdentityKind::content_sha256});
     d.workload = {{"precision", "qwen3-z-source-mixed-v1"}, {"qk_layout", "hf-half-split-v1"},
         {"decode_backend", options.use_simd ? "cpu_simd" : "cpu_scalar"},
+        {"source_residency", residency},
         {"hidden_tap", "block34-post-residual-no-final-norm"}, {"submit_policy", "each-layer-eval-v1"},
         {"token_rows", std::to_string(tokens.ids.size())}, {"valid_rows", std::to_string(tokens.valid)},
         {"tokenizer_sha256", lease->file("tokenizer").content_digest},
         {"config_sha256", lease->file("config").content_digest}};
     streaming::StageDescriptor stage;
     stage.id = "text_encoder"; stage.adapter_revision = d.backend_revision;
-    stage.min_slots = 1; stage.max_slots = 2; stage.max_group_size = 1;
+    stage.min_slots = 1; stage.max_slots = 3; stage.max_group_size = 1;
     stage.passes.push_back({0, "conditioning-prefill", {tokens.ids.size(), uint64_t(tokens.valid)}});
     for (uint32_t i = 0; i < 35; ++i) {
         streaming::BlockSpec block; block.id = i; block.layout_class = "qwen3-z-gguf-layer-v1";
@@ -120,7 +122,7 @@ Qwen3GgufPlan describe_qwen3_gguf(std::shared_ptr<const streaming::SourceLease> 
         field.storage_id = "qwen3-gguf:" + tensor.name;
         field.bytes = embedding ? tensor.bytes : gguf::checked_mul(tensor.elements, std::string_view(format) == "F32" ? 4 : 2);
         field.alignment = streaming::GgufWeightPager::buffer_alignment; field.materialization = std::move(m);
-        result.packed_capacity = gguf::checked_add(result.packed_capacity, aligned(tensor.bytes));
+        if (residency == "packed_resident") result.packed_capacity = gguf::checked_add(result.packed_capacity, aligned(tensor.bytes));
         if (embedding) {
             stage.resident_fields.push_back(std::move(field));
             result.gather_capacity = aligned(gguf::checked_mul(gguf::checked_mul(tokens.ids.size(), c.hidden), tensor.type == 0 ? 4 : 2));
@@ -136,6 +138,7 @@ Qwen3GgufPlan describe_qwen3_gguf(std::shared_ptr<const streaming::SourceLease> 
     config.enabled = true; config.schema_version = 1; config.selection = "manual"; config.retention = "request";
     config.stages["text_encoder"] = {"streamed", 1, 1 + prefetch, 0, prefetch, 1};
     result.layout = streaming::compile_layout(config, d);
+    if (residency == "packed_streamed") result.read_capacity = streaming::GgufWeightPager::default_read_buffer_bytes;
     lease->revalidate_open_files(); lease->revalidate_paths();
     return result;
 }
@@ -155,6 +158,7 @@ struct Qwen3GgufEncoder::Impl {
     Event event;
     uint32_t prefetch;
     gguf::DecodeOptions decode_options;
+    std::string residency;
     bool started = false, completed = false;
     struct Adapter final : streaming::ModelSlotAdapter {
         struct Job { Adapter *owner = nullptr; const streaming::Group *group = nullptr; std::array<char, 512> error{}; };
@@ -195,9 +199,10 @@ struct Qwen3GgufEncoder::Impl {
     std::shared_ptr<Adapter> adapter;
     std::unique_ptr<streaming::StageExecutor> executor;
     Impl(const std::filesystem::path &path, const std::filesystem::path &cfg, const std::filesystem::path &tok,
-         uint32_t p, uint64_t budget, Event e, std::atomic<bool> &c, gguf::DecodeOptions options)
-        : ledger(budget), cancel(c), event(std::move(e)), prefetch(p), decode_options(options) {
-        validate_eval_policy(); require(prefetch <= 1, "qe_config_conflict: Qwen3 GGUF supports p=0/1");
+         uint32_t p, uint64_t budget, Event e, std::atomic<bool> &c, gguf::DecodeOptions options, std::string mode)
+        : ledger(budget), cancel(c), event(std::move(e)), prefetch(p), decode_options(options), residency(std::move(mode)) {
+        validate_eval_policy(); require(prefetch <= 2, "qe_config_conflict: Qwen3 GGUF supports p=0/1/2");
+        require(residency == "packed_resident" || residency == "packed_streamed", "qe_config_conflict: unknown Qwen3 source residency");
         if (!event) event = [](const std::string &, int, int) {};
         std::vector<streaming::SourceFileIdentity> files;
         for (const auto &[id, file] : std::vector<std::pair<std::string, std::filesystem::path>>{
@@ -216,8 +221,8 @@ struct Qwen3GgufEncoder::Impl {
 };
 Qwen3GgufEncoder::Qwen3GgufEncoder(const std::filesystem::path &p, const std::filesystem::path &c,
         const std::filesystem::path &t, uint32_t prefetch, uint64_t budget, const Event &e, std::atomic<bool> &cancel,
-        gguf::DecodeOptions options)
-    : impl_(std::make_unique<Impl>(p, c, t, prefetch, budget, e, cancel, options)) {}
+        gguf::DecodeOptions options, const std::string &residency)
+    : impl_(std::make_unique<Impl>(p, c, t, prefetch, budget, e, cancel, options, residency)) {}
 Qwen3GgufEncoder::~Qwen3GgufEncoder() { if (!drain_safely()) (void)impl_.release(); }
 Tokens Qwen3GgufEncoder::tokenize(const std::string &prompt, bool dynamic) {
     impl_->lease->revalidate_open_files(); impl_->lease->revalidate_paths();
@@ -226,7 +231,7 @@ Tokens Qwen3GgufEncoder::tokenize(const std::string &prompt, bool dynamic) {
 std::string Qwen3GgufEncoder::identity() const {
     return std::string(impl_->lease->artifact_digest()) + ":qwen3-z-source-mixed-v1:p=" +
         std::to_string(impl_->prefetch) + ":managed=" + std::to_string(impl_->ledger.snapshot().budget_bytes) +
-        ":decode=" + (impl_->decode_options.use_simd ? "cpu_simd" : "cpu_scalar");
+        ":decode=" + (impl_->decode_options.use_simd ? "cpu_simd" : "cpu_scalar") + ":source=" + impl_->residency;
 }
 bool Qwen3GgufEncoder::drain_safely() noexcept {
     if (!impl_) return true;
@@ -234,8 +239,9 @@ bool Qwen3GgufEncoder::drain_safely() noexcept {
 }
 Tensor Qwen3GgufEncoder::encode(const Tokens &tokens) {
     auto &s = *impl_; require(!s.started, "Qwen3 GGUF encoder is request-scoped"); s.started = true;
-    s.plan = describe_qwen3_gguf(s.lease, s.config, tokens, s.prefetch, s.decode_options);
-    const auto floor = gguf::checked_add(gguf::checked_add(s.plan.packed_capacity, s.plan.gather_capacity), s.plan.layout.stages.front().peak_pool_bytes);
+    s.plan = describe_qwen3_gguf(s.lease, s.config, tokens, s.prefetch, s.decode_options, s.residency);
+    const auto floor = gguf::checked_add(gguf::checked_add(gguf::checked_add(s.plan.packed_capacity, s.plan.read_capacity),
+        s.plan.gather_capacity), s.plan.layout.stages.front().peak_pool_bytes);
     require(floor <= s.ledger.snapshot().budget_bytes, "qe_budget_floor: Qwen3 GGUF source/slots/gather exceed managed weight ceiling");
     s.source = std::make_unique<streaming::GgufWeightPager>(s.lease, s.plan.descriptor,
         s.plan.descriptor.stages.front(), s.plan.layout.stages.front(), s.ledger, s.decode_options);
@@ -268,6 +274,9 @@ QuantizedExecutionMetrics Qwen3GgufEncoder::metrics() const {
     out.source_load_seconds = m.packed_read_seconds; out.decode_seconds = m.decode_seconds; out.exposed_wait_seconds = e.wait_seconds;
     out.slots = s.plan.layout.stages.front().slot_count; out.prefetch = s.prefetch;
     out.decode_backend = s.decode_options.use_simd ? "cpu_simd" : "cpu_scalar";
+    out.source_residency = s.residency; out.source_logical_bytes = m.source_logical_bytes;
+    out.read_buffer_bytes = m.read_buffer_capacity_bytes; out.source_read_bytes = m.source_read_bytes;
+    out.streamed_read_seconds = m.streamed_read_seconds;
     require(out.fills == 35 && e.groups_submitted == 35, "Qwen3 GGUF fill/compute count mismatch"); return out;
 }
 } // namespace tc::components

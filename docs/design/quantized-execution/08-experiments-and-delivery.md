@@ -181,3 +181,9 @@ catalog、W8A8或ANE资格；发行库/CLI/App未替换。
 格式展开、FP32/目标RNE、真实mixed-K encoder同源控制与完整Z exact回归见
 [16](16-cpu-quant-simd-acceleration.md)。投影解码约9–10.6×、完整encoder筛选约5.67×，
 均不替代正式全请求/内存/媒体资格；不存在硬件W8A8的新声明。
+
+## 13. packed-streamed 与三槽（2026-10-01）
+
+单有界read buffer、shared affine读取、encoder/DiT p2、真实resident/streamed 12格及
+组合取消恢复见[17](17-packed-streamed-and-three-slots.md)。Z fixed/refiner银行仍常驻，
+未授whole-request或全部R3资格，原目标仍继续。

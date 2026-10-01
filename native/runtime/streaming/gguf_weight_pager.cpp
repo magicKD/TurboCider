@@ -77,6 +77,16 @@ struct RawTensor {
     std::optional<Tensor> storage;
     const std::byte *pointer = nullptr;
     uint32_t cached_type = 0;
+    bool pinned = false;
+    uint32_t artifact = 0;
+};
+struct SourceTask { const RawTensor *source = nullptr; std::vector<size_t> fields; };
+struct StreamBorrow {
+    std::atomic_flag &flag;
+    explicit StreamBorrow(std::atomic_flag &f) : flag(f) {
+        insist(!flag.test_and_set(std::memory_order_acquire), "concurrent streamed buffer use");
+    }
+    ~StreamBorrow() { flag.clear(std::memory_order_release); }
 };
 struct FieldRecipe {
     const FieldSpec *field = nullptr;
@@ -120,6 +130,12 @@ struct GgufWeightPager::State {
     bool loaded = false, failed = false, resident_bound = false;
     bool legacy_float = false;
     gguf::DecodeOptions decode_options;
+    bool streamed = false;
+    uint64_t read_capacity = 0;
+    std::optional<Tensor> read_buffer;
+    std::byte *read_pointer = nullptr;
+    std::atomic_flag io_active = ATOMIC_FLAG_INIT;
+    std::map<uint32_t, std::vector<SourceTask>> tasks;
 
     State(std::shared_ptr<const SourceLease> source, const Descriptor &d, const StageDescriptor &s,
           const StageLayout &l, MemoryLedger &m, gguf::DecodeOptions options)
@@ -168,8 +184,38 @@ struct GgufWeightPager::State {
         }
         const Key key{r.artifact, r.tensor};
         auto [it, fresh] = sources.try_emplace(key);
-        if (fresh) { it->second.descriptor = tensor; it->second.cached_type=legacy_float && tensor.type==30 ? 1 : tensor.type; }
+        if (fresh) { it->second.descriptor = tensor; it->second.artifact = r.artifact;
+            it->second.cached_type=legacy_float && tensor.type==30 ? 1 : tensor.type; }
+        if (alias && !packed_source) it->second.pinned = true;
         return {&field, &it->second, dtype, affine};
+    }
+    uint64_t row_bytes(const RawTensor &raw) const {
+        const auto &d = raw.descriptor; const auto &type = gguf::type_info(d.type);
+        return gguf::checked_mul(d.columns() / type.elements, type.bytes);
+    }
+    void read_rows(const RawTensor &raw, uint64_t first, uint64_t count, const std::atomic<bool> *cancel) {
+        const auto &d = raw.descriptor;
+        insist(read_pointer && first < d.rows() && count && count <= d.rows() - first, "invalid streamed rows");
+        const auto stride = row_bytes(raw), bytes = gguf::checked_mul(count, stride);
+        insist(bytes <= read_capacity, "streamed read exceeds compiled buffer");
+        const auto offset = gguf::checked_add(d.file_offset, gguf::checked_mul(first, stride));
+        uint64_t done = 0;
+        while (done != bytes) {
+            cancelled(cancel);
+            // Artifact index is immutable and directory-bound, never reopen a path.
+            const auto begin = Clock::now();
+            const auto n = ::pread(fds[raw.artifact].get(), read_pointer + done,
+                                   size_t(bytes - done), off_t(offset + done));
+            {
+                std::lock_guard lock(metrics_mutex);
+                // Count actual successful bytes even if a later read/cancel
+                // fails. I/O timing is separate from decoder active time.
+                if (n > 0) metrics.source_read_bytes = gguf::checked_add(metrics.source_read_bytes, uint64_t(n));
+                metrics.streamed_read_seconds += std::chrono::duration<double>(Clock::now() - begin).count();
+            }
+            if (n < 0 && errno == EINTR) continue;
+            insist(n > 0, "qe_source_changed: short streamed read"); done += uint64_t(n);
+        }
     }
 };
 
@@ -179,6 +225,19 @@ GgufWeightPager::GgufWeightPager(std::shared_ptr<const SourceLease> lease, const
     auto &s = *state_;
     const auto float_loader=descriptor.workload.find("float_loader");
     s.legacy_float=float_loader!=descriptor.workload.end() && float_loader->second=="mlx-bf16-to-f16-v1";
+    const auto residency = descriptor.workload.find("source_residency");
+    const std::string mode = residency == descriptor.workload.end() ? "packed_resident" : residency->second;
+    insist(mode == "packed_resident" || mode == "packed_streamed", "unsupported source residency");
+    s.streamed = mode == "packed_streamed";
+    if (s.streamed) {
+        insist(layout.workers == 1, "streamed pager requires exactly one fill worker");
+        const auto configured = descriptor.workload.find("packed_read_buffer_bytes");
+        insist(configured == descriptor.workload.end() || (!configured->second.empty() &&
+            configured->second.find_first_not_of("0123456789") == std::string::npos), "malformed streamed buffer capacity");
+        s.read_capacity = configured == descriptor.workload.end() ? default_read_buffer_bytes : std::stoull(configured->second);
+        insist(s.read_capacity >= buffer_alignment && s.read_capacity <= (4ull << 20) && s.read_capacity % buffer_alignment == 0,
+                "invalid streamed read buffer capacity");
+    }
     insist(s.lease && s.lease->has_verified_content() && stage.id == layout.id && !layout.resident && !layout.groups.empty(), "invalid/unverified source/layout");
     insist(descriptor.artifacts.size() && descriptor.artifacts.size() <= 64, "artifact count out of bounds");
     check_unchanged();
@@ -200,6 +259,22 @@ GgufWeightPager::GgufWeightPager(std::shared_ptr<const SourceLease> lease, const
         for (const auto &field : block.fields) recipes.push_back(s.recipe(field, false));
     }
     for (const auto &field : stage.resident_fields) s.resident.push_back(s.recipe(field, true));
+    for (auto &[key, raw] : s.sources) {
+        (void)key;
+        s.metrics.source_logical_bytes = gguf::checked_add(s.metrics.source_logical_bytes, raw.descriptor.bytes);
+        if (s.streamed && !raw.pinned) {
+            raw.cached_type = raw.descriptor.type;
+            insist(s.row_bytes(raw) <= s.read_capacity, "qe_budget_floor: packed row exceeds bounded read buffer");
+        }
+    }
+    for (const auto &[block, recipes] : s.recipes) {
+        auto &tasks = s.tasks[block];
+        for (size_t i = 0; i < recipes.size(); ++i) {
+            auto found = std::find_if(tasks.begin(), tasks.end(), [&](const auto &t) { return t.source == recipes[i].source; });
+            if (found == tasks.end()) { tasks.push_back({recipes[i].source, {i}}); }
+            else found->fields.push_back(i);
+        }
+    }
     for (const auto &group : layout.groups) {
         insist(group.blocks.size() == 1 && s.recipes.count(group.blocks.front()), "invalid compiled group");
         const auto &recipes = s.recipes.at(group.blocks.front());
@@ -221,7 +296,14 @@ void GgufWeightPager::load_packed(const std::atomic<bool> *cancel) {
     check_unchanged();
     const auto begin = Clock::now();
     try {
+        if (s.streamed) {
+            s.read_buffer = allocate(s.ledger, s.read_capacity, s.read_capacity, mlx_shape({s.read_capacity}),
+                mx::uint8, MemoryClass::ConversionScratch, s.lease->generation());
+            s.read_pointer = s.read_buffer->data<std::byte>();
+            s.metrics.read_buffer_capacity_bytes = mx::allocator::allocator().size(s.read_buffer->data_shared_ptr()->buffer);
+        }
         for (auto &[key, raw] : s.sources) {
+            if (s.streamed && !raw.pinned) continue;
             cancelled(cancel);
             const auto &d = raw.descriptor;
             const bool floating = gguf::type_info(d.type).elements == 1;
@@ -245,6 +327,7 @@ void GgufWeightPager::load_packed(const std::atomic<bool> *cancel) {
                 insist(count > 0, "packed read failed or truncated"); done += uint64_t(count);
             }
             raw.pointer = pointer;
+            s.metrics.source_read_bytes = gguf::checked_add(s.metrics.source_read_bytes, d.bytes);
             if(d.type==30 && raw.cached_type==1) {
                 // Explicit importer-compatible representation, converted in
                 // place once; never retain a second full floating checkpoint.
@@ -309,9 +392,21 @@ Tensor GgufWeightPager::gather_rows(const std::string &tensor, std::span<const u
     const auto bytes = gguf::checked_mul(gguf::checked_mul(rows.size(), d.columns()), gguf::dtype_bytes(decode_dtype(dtype)));
     auto output = allocate(s.ledger, bytes, aligned(bytes), mlx_shape({rows.size(), d.columns()}), dtype,
                            MemoryClass::Conditioning, s.lease->generation());
-    gguf::decode_cpu_gather({{raw.pointer, size_t(d.bytes)}, raw.cached_type, d.rows(), d.columns()},
-        rows, 0, d.columns(), {{output.data<std::byte>(), size_t(bytes)}, decode_dtype(dtype),
-        d.columns() * gguf::dtype_bytes(decode_dtype(dtype)), gguf::dtype_bytes(decode_dtype(dtype))}, cancel, s.decode_options);
+    if (raw.pointer) {
+        gguf::decode_cpu_gather({{raw.pointer, size_t(d.bytes)}, raw.cached_type, d.rows(), d.columns()},
+            rows, 0, d.columns(), {{output.data<std::byte>(), size_t(bytes)}, decode_dtype(dtype),
+            d.columns() * gguf::dtype_bytes(decode_dtype(dtype)), gguf::dtype_bytes(decode_dtype(dtype))}, cancel, s.decode_options);
+    } else {
+        StreamBorrow borrow(s.io_active);
+        const uint64_t row_bytes = s.row_bytes(raw), target_row_bytes = d.columns() * gguf::dtype_bytes(decode_dtype(dtype));
+        auto *target = output.data<std::byte>(); // owner captures host pointer, not a worker MLX operation
+        for (size_t i = 0; i < rows.size(); ++i) {
+            s.read_rows(raw, rows[i], 1, cancel);
+            gguf::decode_cpu_into({{s.read_pointer, size_t(row_bytes)}, raw.cached_type, 1, d.columns()},
+                {0, 1, 0, d.columns()}, {{target + i * target_row_bytes, size_t(target_row_bytes)},
+                decode_dtype(dtype), target_row_bytes, gguf::dtype_bytes(decode_dtype(dtype))}, cancel, s.decode_options);
+        }
+    }
     cancelled(cancel); check_unchanged();
     return output;
 }
@@ -369,28 +464,50 @@ uint64_t GgufWeightPager::fill(const Group &group, const tc_stream_slot_ticket_v
     const auto &recipes = s.recipes.at(group.blocks.front());
     insist(recipes.size() == slot.arrays.size(), "fill field count mismatch");
     uint64_t output = 0, source_bytes = 0;
-    const auto begin = Clock::now();
-    for (size_t i = 0; i < recipes.size(); ++i) {
-        const auto &recipe = recipes[i]; const auto &raw = *recipe.source;
+    double decode_seconds = 0;
+    std::optional<StreamBorrow> borrow;
+    if (s.streamed) borrow.emplace(s.io_active);
+    check_unchanged();
+    for (const auto &task : s.tasks.at(group.blocks.front())) {
+        const auto &raw = *task.source;
         const auto &d = raw.descriptor;
-        const gguf::PackedMatrix matrix{{raw.pointer, size_t(d.bytes)}, raw.cached_type, d.rows(), d.columns()};
-        if(recipe.affine) {
-            output=gguf::checked_add(output,gguf::pack_native_affine(matrix,*recipe.affine,
-                {slot.pointers[i],size_t(recipe.field->bytes)},cancel));
-            source_bytes=gguf::checked_add(source_bytes,d.bytes);
-        } else {
-            const auto receipt = gguf::decode_cpu_into(matrix, {0, d.rows(), 0, d.columns()},
-                {{slot.pointers[i], size_t(recipe.field->bytes)}, decode_dtype(recipe.dtype),
-                 d.columns() * gguf::dtype_bytes(decode_dtype(recipe.dtype)), gguf::dtype_bytes(decode_dtype(recipe.dtype))}, cancel, s.decode_options);
-            output = gguf::checked_add(output, receipt.bytes_written);
-            source_bytes = gguf::checked_add(source_bytes, receipt.source_bytes_processed);
+        const uint64_t packed_row = s.row_bytes(raw);
+        const uint64_t maximum_rows = raw.pointer ? d.rows() : s.read_capacity / packed_row;
+        for (uint64_t first = 0; first < d.rows();) {
+            const uint64_t count = std::min(maximum_rows, d.rows() - first);
+            if (!raw.pointer) s.read_rows(raw, first, count, cancel);
+            const gguf::PackedMatrix matrix{{raw.pointer ? raw.pointer + first * packed_row : s.read_pointer,
+                size_t(count * packed_row)}, raw.cached_type, count, d.columns()};
+            // All affine parts sharing one source use this SAME bounded read.
+            // No per-part reread or hidden full-projection packed temporary.
+            for (size_t i : task.fields) {
+                const auto &recipe = recipes[i];
+                const uint64_t target_row = recipe.field->bytes / d.rows();
+                const auto target_bytes = gguf::checked_mul(count, target_row);
+                auto *target = slot.pointers[i] + first * target_row;
+                const auto begin = Clock::now();
+                if (recipe.affine) {
+                    output = gguf::checked_add(output, gguf::pack_native_affine(matrix, *recipe.affine,
+                        {target, size_t(target_bytes)}, cancel));
+                    source_bytes = gguf::checked_add(source_bytes, count * packed_row);
+                } else {
+                    const auto receipt = gguf::decode_cpu_into(matrix, {0, count, 0, d.columns()},
+                        {{target, size_t(target_bytes)}, decode_dtype(recipe.dtype), target_row,
+                         gguf::dtype_bytes(decode_dtype(recipe.dtype))}, cancel, s.decode_options);
+                    output = gguf::checked_add(output, receipt.bytes_written);
+                    source_bytes = gguf::checked_add(source_bytes, receipt.source_bytes_processed);
+                }
+                decode_seconds += std::chrono::duration<double>(Clock::now() - begin).count();
+            }
+            first += count;
         }
     }
+    check_unchanged();
     cancelled(cancel); insist(output == group.bytes, "fill content byte count mismatch");
     slot.block = group.blocks.front(); slot.content = ticket;
     std::lock_guard lock(s.metrics_mutex);
     ++s.metrics.fill_count; s.metrics.decoded_bytes += output; s.metrics.source_bytes_processed += source_bytes;
-    s.metrics.decode_seconds += std::chrono::duration<double>(Clock::now() - begin).count();
+    s.metrics.decode_seconds += decode_seconds;
     return output;
 }
 Weights GgufWeightPager::bind(const Group &group, const tc_stream_slot_ticket_v1 &ticket) const {

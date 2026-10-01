@@ -5,7 +5,7 @@
 int main(int argc, char **argv) {
     try {
         using namespace tc;
-        require(argc >= 6 && argc <= 10, "usage: qwen3-gguf-probe GGUF CONFIG TOKENIZER_JSON OUTDIR PREFETCH [REFERENCE_WEIGHTS|-] [PROMPT] [BUDGET] [simd|scalar]");
+        require(argc >= 6 && argc <= 11, "usage: qwen3-gguf-probe GGUF CONFIG TOKENIZER_JSON OUTDIR PREFETCH [REFERENCE_WEIGHTS|-] [PROMPT] [BUDGET] [simd|scalar] [packed_resident|packed_streamed]");
         configure_streams(); mx::set_cache_limit(0);
         const std::filesystem::path output(argv[4]);
         require(!std::filesystem::exists(output), "probe output already exists");
@@ -17,7 +17,8 @@ int main(int argc, char **argv) {
         std::atomic<bool> cancelled{false};
         Event event = [](const std::string &, int, int) {};
         const auto start = Clock::now();
-        components::Qwen3GgufEncoder encoder(argv[1], argv[2], argv[3], prefetch, budget, event, cancelled, options);
+        components::Qwen3GgufEncoder encoder(argv[1], argv[2], argv[3], prefetch, budget, event, cancelled, options,
+            argc > 10 ? argv[10] : "packed_resident");
         const auto tokens = encoder.tokenize(argc > 7 ? argv[7] : "A studio photograph of an adult ceramic artist holding a blue cup.", true);
         if (argc > 6 && std::string(argv[6]) != "-") {
             Weights reference; reference.load(argv[6], event, cancelled);
@@ -34,6 +35,9 @@ int main(int argc, char **argv) {
                   << ",\"packed_capacity_bytes\":" << m.packed_capacity_bytes << ",\"dense_capacity_bytes\":" << m.dense_capacity_bytes
                   << ",\"managed_peak_bytes\":" << m.managed_peak_bytes << ",\"decode_seconds\":" << m.decode_seconds
                   << ",\"decode_backend\":\"" << m.decode_backend << "\""
+                  << ",\"source_residency\":\"" << m.source_residency << "\",\"read_buffer_bytes\":" << m.read_buffer_bytes
+                  << ",\"source_logical_bytes\":" << m.source_logical_bytes << ",\"source_read_bytes\":" << m.source_read_bytes
+                  << ",\"streamed_read_seconds\":" << m.streamed_read_seconds
                   << ",\"wait_seconds\":" << m.exposed_wait_seconds << ",\"valid_rows\":" << tokens.valid
                   << ",\"elapsed_seconds\":" << std::chrono::duration<double>(Clock::now() - start).count()
                   << ",\"whole_request_certified\":false,\"token_ids\":[";

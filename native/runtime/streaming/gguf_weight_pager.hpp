@@ -13,6 +13,8 @@ struct GgufWeightPagerMetrics {
     uint64_t maximum_dense_pool_capacity_bytes = 0;
     uint64_t fill_count = 0, decoded_bytes = 0, source_bytes_processed = 0;
     double packed_read_seconds = 0, decode_seconds = 0;
+    uint64_t source_logical_bytes = 0, read_buffer_capacity_bytes = 0, source_read_bytes = 0;
+    double streamed_read_seconds = 0;
 };
 
 // Packed-resident source, owner-created immutable raw buffers, and a bounded
@@ -40,6 +42,7 @@ class GgufWeightPager {
     GgufWeightPagerMetrics metrics() const;
     const gguf::Directory &directory(uint32_t artifact) const;
     static constexpr uint64_t buffer_alignment = 16384;
+    static constexpr uint64_t default_read_buffer_bytes = 1ull << 20;
   private:
     struct State;
     std::unique_ptr<State> state_;

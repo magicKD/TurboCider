@@ -1360,7 +1360,10 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"fill_count": @(m.fills), @"decoded_bytes": @(m.decoded_bytes),
             @"source_load_seconds": @(m.source_load_seconds), @"decode_active_seconds": @(m.decode_seconds),
             @"exposed_ready_wait_seconds": @(m.exposed_wait_seconds),
-            @"scope": @"managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS"
+            @"scope": @"managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            @"source_residency": @(m.source_residency.c_str()), @"source_logical_bytes": @(m.source_logical_bytes),
+            @"packed_read_buffer_capacity_bytes": @(m.read_buffer_bytes), @"source_read_bytes": @(m.source_read_bytes),
+            @"streamed_read_seconds": @(m.streamed_read_seconds)
         };
         value[@"validation"] = @"experimental source-mixed GGUF execution; not a production capability";
     }
@@ -1370,6 +1373,9 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"experimental": @YES, @"whole_request_bounded_certified": @NO,
             @"precision_profile": @"qwen3-z-source-mixed-v1", @"submit_policy": @"each-layer-eval-v1",
             @"decode_backend": @(m.decode_backend.c_str()),
+            @"source_residency": @(m.source_residency.c_str()), @"source_logical_bytes": @(m.source_logical_bytes),
+            @"packed_read_buffer_capacity_bytes": @(m.read_buffer_bytes), @"source_read_bytes": @(m.source_read_bytes),
+            @"streamed_read_seconds": @(m.streamed_read_seconds),
             @"hidden_tap": @"block34-post-residual-no-final-norm", @"source_sha256": @(m.source_sha256.c_str()),
             @"layout_digest": @(m.layout_digest.c_str()), @"packed_source_bytes": @(m.packed_bytes),
             @"packed_capacity_bytes": @(m.packed_capacity_bytes), @"source_float_bytes": @(m.source_float_bytes),

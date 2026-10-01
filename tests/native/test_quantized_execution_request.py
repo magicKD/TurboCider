@@ -32,7 +32,7 @@ class QuantizedRequestTests(unittest.TestCase):
         return code,json.loads(raw) if raw else None,message
 
     def test_defaults_and_explicit_lookahead(self):
-        for p in (None,0,1):
+        for p in (None,0,1,2):
             config={"schema_version":1,"enabled":True}
             if p is not None:config["prefetch_layers"]=p
             status,value,error=self.plan(self.request(config))
@@ -40,6 +40,11 @@ class QuantizedRequestTests(unittest.TestCase):
             self.assertFalse(value["executable"])
             self.assertEqual(value["quantized_execution"]["prefetch_layers"],1 if p is None else p)
             self.assertEqual(value["quantized_execution_qualification"],"experimental-unqualified")
+        for mode in ("packed_resident", "packed_streamed"):
+            status,value,error=self.plan(self.request({"schema_version":1,"enabled":True,
+                "prefetch_layers":2,"source_residency":mode}))
+            self.assertEqual(status,0,error)
+            self.assertEqual(value["quantized_execution"]["source_residency"],mode)
 
     def test_profiles_have_separate_math_and_mode_identity(self):
         for profile in ("z-source-mixed-f16-v1","z-source-exact-f32-v1","z-source-native-affine-v1",
@@ -65,8 +70,8 @@ class QuantizedRequestTests(unittest.TestCase):
             {"schema_version":1,"enabled":1}, {"schema_version":"1","enabled":True}]
         base={"schema_version":1,"enabled":True}
         for field,value in [("schema_version",2),("prefetch_layers",True),("prefetch_layers",1.5),
-                ("prefetch_layers",-1),("prefetch_layers",2),("unknown",0),("allow_requantization",True),
-                ("persistent_dense_layers",1),("ane_compute","w8a8"),("source_residency","packed_streamed"),
+                ("prefetch_layers",-1),("prefetch_layers",3),("unknown",0),("allow_requantization",True),
+                ("persistent_dense_layers",1),("ane_compute","w8a8"),("source_residency","unknown"),
                 ("precision_profile","z-dense-bf16-v1"),("mode","packed_direct")]:
             cases.append({**base,field:value})
         for config in cases:

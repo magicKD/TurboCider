@@ -43,13 +43,14 @@ std::map<std::string, Shape> required_shapes() {
 
 GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::SourceLease> lease,
         uint32_t prefetch, uint32_t width, uint32_t height, uint32_t caption, uint32_t steps,
-        const std::string &profile) {
+        const std::string &profile, const std::string &residency) {
     require(lease && lease->has_verified_content(), "gguf execution requires native content proof");
-    require(prefetch <= 1 && width && height && width % 16 == 0 && height % 16 == 0 &&
+    require(prefetch <= 2 && width && height && width % 16 == 0 && height % 16 == 0 &&
                 caption && steps && steps <= 50, "gguf execution workload unsupported");
     require(profile == "z-source-mixed-v1" || profile == "z-source-mixed-f16-v1" || profile == "z-source-exact-f32-v1" || profile == "z-source-native-affine-v1" ||
             profile == "z-mlx-compat-affine-v1" || profile == "z-mlx-compat-f16-v1" || profile == "z-mlx-compat-f32-v1",
             "unknown GGUF precision profile");
+    require(residency == "packed_resident" || residency == "packed_streamed", "unknown GGUF source residency");
     const bool legacy_float=profile.starts_with("z-mlx-compat-");
     const auto &file = lease->file("transformer");
     auto fd = lease->duplicate_fd("transformer");
@@ -63,12 +64,13 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
     d.backend_revision = "gguf-cpu-rne-mlx-v1:" + profile;
     d.artifacts.push_back({"transformer", file.content_digest, file.bytes, streaming::SourceIdentityKind::content_sha256});
     d.workload = {{"width", std::to_string(width)}, {"height", std::to_string(height)},
+        {"source_residency", residency},
         {"caption_rows", std::to_string(caption)}, {"steps", std::to_string(steps)},
         {"precision", profile}, {"fixed_policy", "source-float-alias-v1"}};
     if(legacy_float)d.workload["float_loader"]="mlx-bf16-to-f16-v1";
     streaming::StageDescriptor stage;
     stage.id = "denoiser"; stage.adapter_revision = d.backend_revision;
-    stage.min_slots = 1; stage.max_slots = 2; stage.max_group_size = 1;
+    stage.min_slots = 1; stage.max_slots = 3; stage.max_group_size = 1;
     stage.pass_count = steps;
     for (uint32_t step = 0; step < steps; ++step) stage.passes.push_back({step, "denoise", {width,height,caption}});
     for (uint32_t i = 0; i < 30; ++i) {
@@ -128,7 +130,8 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
             field.name = tensor.name; field.storage_id = "gguf-source:" + tensor.name;
             stage.resident_fields.push_back(std::move(field));
         }
-        result.packed_capacity_upper = gguf::checked_add(result.packed_capacity_upper, capacity(tensor.bytes));
+        if (residency == "packed_resident" || !main)
+            result.packed_capacity_upper = gguf::checked_add(result.packed_capacity_upper, capacity(tensor.bytes));
     }
     for (auto &block : stage.blocks)
         std::sort(block.fields.begin(), block.fields.end(), [](const auto &a, const auto &b) { return a.name < b.name; });
@@ -138,6 +141,7 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
     c.stages["denoiser"] = {"streamed", 1, 1 + prefetch, 0, prefetch, 1};
     result.layout = streaming::compile_layout(c, d);
     result.dense_capacity_upper = result.layout.stages.front().peak_pool_bytes;
+    if (residency == "packed_streamed") result.read_capacity_upper = streaming::GgufWeightPager::default_read_buffer_bytes;
     lease->revalidate_open_files(); lease->revalidate_paths();
     return result;
 }

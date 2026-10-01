@@ -1,6 +1,7 @@
 #include "runtime/streaming/gguf_weight_pager.hpp"
 #include "runtime/streaming/context.hpp"
 #include <iostream>
+#include <fcntl.h>
 
 namespace {
 using namespace tc;
@@ -9,7 +10,7 @@ void ensure(bool value, const char *message) { if (!value) throw std::runtime_er
 class Adapter final : public ModelSlotAdapter {
     struct Job { Adapter *owner; const Group *group = nullptr; };
     GgufWeightPager &pager_;
-    std::array<Job,2> jobs_;
+    std::array<Job,3> jobs_;
     Weights bound_;
     Tensor input_;
     uint32_t pool_ = 0;
@@ -17,7 +18,7 @@ class Adapter final : public ModelSlotAdapter {
   public:
     uint64_t computes = 0;
     std::optional<Tensor> escaped;
-    explicit Adapter(GgufWeightPager &p) : pager_(p), jobs_{{{this},{this}}}, input_(mx::ones({1,64},mx::float32)) {}
+    explicit Adapter(GgufWeightPager &p) : pager_(p), jobs_{{{this},{this},{this}}}, input_(mx::ones({1,64},mx::float32)) {}
     void create_pool(const PoolLayout &pool) override { pool_ = pool.id; pager_.create_pool(pool); }
     FillJob make_fill_job(const Group &group, const tc_stream_slot_ticket_v1 &ticket) override {
         auto &job = jobs_.at(ticket.slot); job.group = &group;
@@ -50,7 +51,7 @@ class Adapter final : public ModelSlotAdapter {
 
 int main(int argc,char **argv) {
     try {
-        ensure(argc==2,"fixture required"); configure_streams(); mx::set_cache_limit(0);
+        ensure(argc==2 || (argc==3 && std::string(argv[2])=="--mutate-owned-fixture"),"fixture required"); configure_streams(); mx::set_cache_limit(0);
         SourceFileIdentity file; file.logical_id="transformer"; file.path=argv[1];
         auto lease=SourceLease::capture_verified({file});
         auto fd=lease->duplicate_fd("transformer");
@@ -59,7 +60,7 @@ int main(int argc,char **argv) {
         d.backend_revision="gguf-pager-test-v1"; d.workload={{"shape","4x64"}};
         d.artifacts.push_back({"transformer",lease->file("transformer").content_digest,lease->file("transformer").bytes,SourceIdentityKind::content_sha256});
         StageDescriptor stage; stage.id="denoiser"; stage.adapter_revision="gguf-pager-test-v1";
-        stage.max_slots=2; stage.pass_count=2; stage.passes={{0,"test",{4,64}},{1,"test",{4,64}}};
+        stage.max_slots=3; stage.pass_count=2; stage.passes={{0,"test",{512,64}},{1,"test",{512,64}}};
         auto field=[&](const gguf::TensorDescriptor &t,bool alias) {
             Materialization m; m.format=t.type==0 ? "F32" : "BF16"; m.storage_mode="mlx-metal-shared";
             m.conversion=alias?"gguf-native-alias-v1":"gguf-cpu-rne-v1"; m.shape=t.logical_shape();
@@ -73,7 +74,9 @@ int main(int argc,char **argv) {
         packed.materialization->conversion = "gguf-packed-gather-source-v1";
         packed.materialization->format = "U8"; packed.materialization->shape = {packed.bytes};
         stage.resident_fields.push_back(std::move(packed)); d.stages.push_back(stage);
-        for(uint32_t slots=1;slots<=2;++slots) {
+        for (bool streamed : {false, true}) for(uint32_t slots=1;slots<=3;++slots) {
+            d.workload["source_residency"] = streamed ? "packed_streamed" : "packed_resident";
+            d.workload["packed_read_buffer_bytes"] = "16384";
             StreamingConfig c; c.enabled=true; c.schema_version=1; c.selection="manual"; c.retention="request";
             c.stages["denoiser"]={"streamed",1,slots,0,slots-1,1};
             const auto layout=compile_layout(c,d); MemoryLedger ledger(1ull<<20); Weights fixed;
@@ -98,7 +101,35 @@ int main(int argc,char **argv) {
             }
             const auto metrics=pager->metrics();
             ensure(metrics.fill_count==8 && metrics.dense_pool_capacity_bytes==0 &&
-                metrics.maximum_dense_pool_capacity_bytes==slots*GgufWeightPager::buffer_alignment,"capacity accounting mismatch");
+                metrics.maximum_dense_pool_capacity_bytes==slots*65536,"capacity accounting mismatch");
+            if (streamed) {
+                ensure(metrics.packed_source_bytes == 4 && metrics.packed_capacity_bytes >= 4 && metrics.packed_capacity_bytes <= 16384 &&
+                       metrics.read_buffer_capacity_bytes == 16384, "streamed source retained full packed layers/embedding");
+                ensure(metrics.source_read_bytes == 4 + 8 * 34816 + 4 * 68,
+                       "streamed I/O bytes mismatch or hidden reread");
+                // Failed/cancelled contents never become bindable; the same
+                // read buffer must be usable after the synchronous failure.
+                const auto &g = layout.stages.front().groups.front();
+                const auto &p = layout.stages.front().pools.front();
+                pager->create_pool(p);
+                tc_stream_slot_ticket_v1 ticket{};
+                ticket.struct_size = sizeof(ticket); ticket.version = 1;
+                ticket.pool = g.pool; ticket.slot = g.slot; ticket.request_generation = 123;
+                ticket.content_generation = 1; ticket.item = {0, 0, 0, g.id};
+                std::atomic<bool> stopped{true}; bool cancelled_fill = false;
+                try { (void)pager->fill(g, ticket, &stopped); } catch (...) { cancelled_fill = true; }
+                ensure(cancelled_fill, "streamed pre-cancel fill succeeded");
+                bool partial_ready = false; try { (void)pager->bind(g, ticket); partial_ready = true; } catch (...) {}
+                ensure(!partial_ready, "cancelled partial source was publishable");
+                stopped.store(false);
+                ensure(pager->fill(g, ticket, &stopped) == g.bytes, "streamed refill recovery failed");
+                auto rebound = pager->bind(g, ticket); rebound.clear();
+                pager->destroy_pool(p.id);
+                auto bad = d; bad.workload["packed_read_buffer_bytes"] = "16384junk";
+                bool malformed = false;
+                try { GgufWeightPager wrong(lease, bad, bad.stages.front(), layout.stages.front(), ledger); } catch (...) { malformed = true; }
+                ensure(malformed, "malformed streamed buffer plan accepted");
+            }
             pager.reset(); fixed.clear();
             ensure(ledger.snapshot().storage_bytes>0,"escaped MLX view lost physical storage claim");
             adapter->escaped.reset(); adapter.reset();
@@ -106,7 +137,31 @@ int main(int argc,char **argv) {
             mx::synchronize(); mx::clear_cache();
             ensure(ledger.snapshot().storage_bytes==0 && ledger.snapshot().reserved_bytes==0,"buffer/ledger release leak");
         }
-        std::cout<<"PASS GGUF pager Metal: K1/K2, two passes, GPU numerics, stale tickets, escaped-view ledger, release\n";
+        if (argc == 3) {
+            const auto path = std::filesystem::canonical(argv[1]);
+            ensure(path.filename() == "fixture.gguf" && path.parent_path().filename().string().starts_with("tc-gguf-pager-"),
+                   "refusing to mutate a non-owned test fixture");
+            d.workload["source_residency"] = "packed_streamed";
+            StreamingConfig c; c.enabled=true; c.schema_version=1; c.selection="manual"; c.retention="request";
+            c.stages["denoiser"]={"streamed",1,1,0,0,1};
+            const auto layout = compile_layout(c, d); MemoryLedger ledger(1ull << 20);
+            GgufWeightPager pager(lease,d,d.stages.front(),layout.stages.front(),ledger);
+            pager.load_packed(); const auto &pool=layout.stages.front().pools.front(); pager.create_pool(pool);
+            const auto &group=layout.stages.front().groups.front();
+            tc_stream_slot_ticket_v1 ticket{};ticket.struct_size=sizeof(ticket);ticket.version=1;
+            ticket.pool=group.pool;ticket.slot=group.slot;ticket.request_generation=999;ticket.content_generation=1;
+            ticket.item={0,0,0,group.id};std::atomic<bool> cancel{false};
+            ensure(pager.fill(group,ticket,&cancel)==group.bytes,"owned mutation fixture fill failed");
+            const int writable=::open(path.c_str(),O_WRONLY|O_CLOEXEC);
+            ensure(writable>=0,"cannot open owned fault fixture");
+            const int truncated=::ftruncate(writable,0);::close(writable);
+            ensure(truncated==0,"cannot truncate owned fault fixture");
+            bool changed=false;try { (void)pager.fill(group,ticket,&cancel); }catch (...) {changed=true;}
+            ensure(changed,"changed/short source was accepted");
+            bool stale_ready=false;try { (void)pager.bind(group,ticket);stale_ready=true; }catch (...) {}
+            ensure(!stale_ready,"changed source retained old Ready contents");pager.destroy_pool(pool.id);
+        }
+        std::cout<<"PASS GGUF pager Metal: K1/K2/K3 resident/streamed, chunked I/O, two passes, GPU numerics, stale tickets, escaped-view ledger, release\n";
         return 0;
     } catch(const std::exception &error) { std::cerr<<error.what()<<'\n'; return 1; }
 }

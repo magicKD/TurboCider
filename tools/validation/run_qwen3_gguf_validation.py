@@ -106,7 +106,7 @@ def main():
                 ("wrong_config", bad_config, args.tokenizer, 0, 8 << 30, {}, "qe_adapter_mismatch"),
                 ("tokenizer_conflict", args.config, bad_tokenizer, 0, 8 << 30, {}, "tokenizer token-ID mapping differs"),
                 ("budget_floor", args.config, args.tokenizer, 0, 1, {}, "qe_budget_floor"),
-                ("unsupported_p2", args.config, args.tokenizer, 2, 8 << 30, {}, "qe_config_conflict"),
+                ("unsupported_p3", args.config, args.tokenizer, 3, 8 << 30, {}, "qe_config_conflict"),
                 ("lazy_interval", args.config, args.tokenizer, 0, 8 << 30, {"TURBOCIDER_QWEN3_EVAL_INTERVAL": "4"}, "qe_config_conflict")]:
                 import os
                 result = subprocess.run([str(args.probe), str(args.q8), str(config), str(tokenizer),

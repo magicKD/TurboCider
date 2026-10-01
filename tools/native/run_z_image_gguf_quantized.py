@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--model",type=Path,required=True)
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--prefetch",type=int,nargs="+",default=[0,1])
+    parser.add_argument("--source-residency",choices=["packed_resident","packed_streamed"],default="packed_resident")
     parser.add_argument("--runs",type=int,default=1)
     parser.add_argument("--size",type=int,default=512)
     parser.add_argument("--steps",type=int,default=4)
@@ -29,7 +30,7 @@ def main():
     parser.add_argument("--cancel-once-at-block",type=int,help="cancel the first request at a main block, then test retry")
     parser.add_argument("--cancel-once-at-encoder-layer",type=int,help="cancel first uncached Qwen3 encode, then test retry")
     args=parser.parse_args()
-    if any(p not in (-1,0,1) for p in args.prefetch) or not 1<=args.runs<=24: parser.error("prefetch -1=native packed, 0/1=bounded; runs 1..24")
+    if any(p not in (-1,0,1,2) for p in args.prefetch) or not 1<=args.runs<=24: parser.error("prefetch -1=native packed, 0/1/2=bounded; runs 1..24")
     if args.output.exists() or args.output.is_symlink(): parser.error("output already exists")
     if args.cancel_once_at_block is not None and (not 0<=args.cancel_once_at_block<30 or args.prefetch[0]<0):
         parser.error("cancellation requires a bounded first request and block 0..29")
@@ -64,7 +65,7 @@ def main():
                         "inputs":[{"kind":"text","role":"prompt","text":args.prompt}],
                         "outputs":[{"kind":"image","path":str(image.resolve()),"width":args.size,"height":args.size,"audio":False}],
                         "sampling":{"seed":args.seed,"steps":args.steps},
-                        "execution":{"policy":"gpu","quantized_execution":{"schema_version":1,"enabled":True,"prefetch_layers":p,"precision_profile":args.precision}},
+                        "execution":{"policy":"gpu","quantized_execution":{"schema_version":1,"enabled":True,"prefetch_layers":p,"precision_profile":args.precision,"source_residency":args.source_residency}},
                         "parameters":{"dynamic_text":True}}
                     if args.dump: request["dump_tensors"]=str((args.output/(name+"-tensors")).resolve())
                     if p<0: request["execution"].pop("quantized_execution")

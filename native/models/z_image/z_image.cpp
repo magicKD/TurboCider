@@ -60,7 +60,8 @@ class ZImageGgufStream {
   public:
     ZImageGgufStream(const std::filesystem::path &, uint32_t prefetch,
                     uint32_t width, uint32_t height, uint32_t caption, uint32_t steps,
-                    uint64_t managed_budget, Weights &fixed, const Event &, std::atomic<bool> &, const std::string &profile);
+                    uint64_t managed_budget, Weights &fixed, const Event &, std::atomic<bool> &, const std::string &profile,
+                    const std::string &residency);
     ~ZImageGgufStream();
     void run_pass(uint32_t, Tensor &, const Tensor &, const Tensor &);
     void finish();
@@ -2019,12 +2020,12 @@ struct ZImageGgufStream::Impl {
     bool finished = false;
     Impl(const std::filesystem::path &path, uint32_t p, uint32_t width, uint32_t height,
          uint32_t caption, uint32_t steps, uint64_t budget, Weights &fixed, Event event, std::atomic<bool> &cancelled,
-         const std::string &profile)
+         const std::string &profile, const std::string &residency)
         : ledger(budget), cancel(cancelled) {
         streaming::SourceFileIdentity file; file.logical_id = "transformer"; file.path = path;
         lease = streaming::SourceLease::capture_verified({std::move(file)}, &cancel);
-        plan = z_image::describe_gguf_execution(lease, p, width, height, caption, steps, profile);
-        require(gguf::checked_add(plan.packed_capacity_upper, plan.dense_capacity_upper) <= budget,
+        plan = z_image::describe_gguf_execution(lease, p, width, height, caption, steps, profile, residency);
+        require(gguf::checked_add(gguf::checked_add(plan.packed_capacity_upper, plan.read_capacity_upper), plan.dense_capacity_upper) <= budget,
                 "qe_budget_floor: packed source and dense slots exceed managed weight ceiling");
         source = std::make_unique<streaming::GgufWeightPager>(lease, plan.descriptor, plan.descriptor.stages.front(),
                                                            plan.layout.stages.front(), ledger);
@@ -2038,8 +2039,8 @@ struct ZImageGgufStream::Impl {
 };
 ZImageGgufStream::ZImageGgufStream(const std::filesystem::path &path, uint32_t p, uint32_t width,
         uint32_t height, uint32_t caption, uint32_t steps, uint64_t budget, Weights &fixed,
-        const Event &event, std::atomic<bool> &cancel, const std::string &profile)
-    : impl_(std::make_unique<Impl>(path,p,width,height,caption,steps,budget,fixed,event,cancel,profile)) {}
+        const Event &event, std::atomic<bool> &cancel, const std::string &profile, const std::string &residency)
+    : impl_(std::make_unique<Impl>(path,p,width,height,caption,steps,budget,fixed,event,cancel,profile,residency)) {}
 ZImageGgufStream::~ZImageGgufStream() { if (impl_ && !drain_safely()) (void)impl_.release(); }
 bool ZImageGgufStream::drain_safely() noexcept {
     if (!impl_) return true;
@@ -2078,6 +2079,9 @@ QuantizedExecutionMetrics ZImageGgufStream::metrics() const {
     result.source_load_seconds = source.packed_read_seconds; result.decode_seconds = source.decode_seconds;
     result.exposed_wait_seconds = execution.wait_seconds;
     result.slots = impl_->plan.layout.stages.front().slot_count; result.prefetch = result.slots - 1;
+    result.source_residency = impl_->plan.descriptor.workload.at("source_residency");
+    result.source_logical_bytes = source.source_logical_bytes; result.read_buffer_bytes = source.read_buffer_capacity_bytes;
+    result.source_read_bytes = source.source_read_bytes; result.streamed_read_seconds = source.streamed_read_seconds;
     require(result.fills == uint64_t(impl_->next) * 30 && execution.groups_submitted == result.fills,
             "GGUF fill/compute counts do not match actual passes");
     return result;
@@ -2924,9 +2928,10 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
         const char *config = std::getenv("TURBOCIDER_Z_QWEN3_GGUF_CONFIG");
         require(config && *config, "qe_config_conflict: Qwen3 GGUF requires bound original config path");
         encoder_gguf_ = std::make_unique<components::Qwen3GgufEncoder>(path, config, root_ / "tokenizer/tokenizer.json",
-            uint32_t(z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_PREFETCH", 1, 1)),
+            uint32_t(z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_PREFETCH", 1, 2)),
             z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_WEIGHT_LIMIT_BYTES", 8ull << 30, device_info().physical_memory), event, cancelled,
-            gguf::DecodeOptions{z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_SCALAR_DECODE", 0, 1) == 0});
+            gguf::DecodeOptions{z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_SCALAR_DECODE", 0, 1) == 0},
+            std::getenv("TURBOCIDER_QWEN3_GGUF_SOURCE_RESIDENCY") ? std::getenv("TURBOCIDER_QWEN3_GGUF_SOURCE_RESIDENCY") : "packed_resident");
         encoder_identity = encoder_gguf_->identity();
     }
     if (cached_conditioning_ && cached_prompt_ == r.prompt && cached_dynamic_ == r.dynamic_text &&
@@ -3306,8 +3311,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         gguf_stream_ = std::make_unique<ZImageGgufStream>(transformer_path_,
             r.quantized_execution.prefetch_layers.value_or(1), uint32_t(r.width), uint32_t(r.height),
             uint32_t(caption_rows), uint32_t(r.steps), std::min<uint64_t>(10ull << 30, device_info().physical_memory / 2),
-            transformer_, event, cancelled, r.quantized_execution.precision_profile.value_or("z-source-mixed-v1"));
-        selection += "; experimental packed-resident GGUF, bounded dequant, " + r.quantized_execution.precision_profile.value_or("z-source-mixed-v1");
+            transformer_, event, cancelled, r.quantized_execution.precision_profile.value_or("z-source-mixed-v1"),
+            r.quantized_execution.source_residency.value_or("packed_resident"));
+        selection += "; experimental " + r.quantized_execution.source_residency.value_or("packed_resident") + " GGUF, bounded dequant, " + r.quantized_execution.precision_profile.value_or("z-source-mixed-v1");
     } else if (exact_streaming) {
         require(!hybrid_ || hybrid_->activation_precision != "int8",
                 "streaming_route_unsupported: W8A8 ANE requires resident loading");

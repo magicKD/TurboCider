@@ -208,6 +208,9 @@ struct QuantizedExecutionMetrics {
     uint64_t dense_capacity_bytes = 0, managed_peak_bytes = 0, fills = 0, decoded_bytes = 0;
     double source_load_seconds = 0, decode_seconds = 0, exposed_wait_seconds = 0;
     uint32_t slots = 0, prefetch = 0;
+    std::string source_residency;
+    uint64_t source_logical_bytes = 0, read_buffer_bytes = 0, source_read_bytes = 0;
+    double streamed_read_seconds = 0;
 };
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
