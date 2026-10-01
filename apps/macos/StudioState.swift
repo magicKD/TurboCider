@@ -264,6 +264,7 @@ struct StudioDraft: Codable, Sendable {
     var promptEnhanceEditExperimental = false
     var promptEnhancerPath = ""
     var qwen21DiTCache = "off"
+    // Editing preference; text-to-image always requests standard encoding.
     var qwen21ReferenceSize = 1024
     var residency = "resident"
     var zImageStreamingBudgetGiB = 10
@@ -347,6 +348,10 @@ struct StudioDraft: Codable, Sendable {
               Self.qwen21TurboAdapterNames.contains(URL(fileURLWithPath: adapter.path).lastPathComponent) else { return nil }
         return adapter
     }
+    var effectiveQwen21ReferenceSize: Int { operation == "image.edit" ? qwen21ReferenceSize : 1024 }
+    var usesQwen21FastReferenceEncoding: Bool {
+        modelID == "qwen-image-2.1" && operation == "image.edit" && qwen21ReferenceSize == 512
+    }
     var qwen21FastReferenceUnavailableReason: String? {
         guard modelID == "qwen-image-2.1", operation == "image.edit" else { return "快速 512 仅用于 Qwen 图片编辑。" }
         if (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) != "gpu" || !profilePath.isEmpty {
@@ -371,14 +376,14 @@ struct StudioDraft: Codable, Sendable {
         return nil
     }
     var qwen21ReferenceSizeIssue: String? {
-        guard modelID == "qwen-image-2.1" else { return nil }
+        guard modelID == "qwen-image-2.1", operation == "image.edit" else { return nil }
         guard [1024, 512].contains(qwen21ReferenceSize) else { return "模型参考编码设置无效，请恢复标准 1024。" }
         return qwen21ReferenceSize == 512 ? qwen21FastReferenceUnavailableReason : nil
     }
     var qwen21DiTCacheUnavailableReason: String? {
         guard modelID == "qwen-image-2.1", ["image.generate", "image.edit"].contains(operation) else { return "DiT 缓存仅支持 Qwen 2.1 生图或图片编辑。" }
         if hasQwen21TurboAdapter { return "六步 Viggle Turbo 不支持 DiT 缓存，请保持关闭。" }
-        if qwen21ReferenceSize != 1024 { return "DiT 缓存需要标准 1024 参考编码，请先恢复标准编码。" }
+        if effectiveQwen21ReferenceSize != 1024 { return "DiT 缓存需要标准 1024 参考编码，请先恢复标准编码。" }
         if (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) != "gpu" || !profilePath.isEmpty {
             return "DiT 缓存仅支持纯 GPU，请关闭 ANE 与设备配置。"
         }
@@ -748,8 +753,8 @@ struct StudioDraft: Codable, Sendable {
             operation == "image.edit" && promptEnhance && promptEnhanceEditExperimental
         request.prompt_enhancer_path = modelID == "qwen-image-2.1" && !promptEnhancerPath.isEmpty ? promptEnhancerPath : nil
         request.qwen21_dit_cache = modelID == "qwen-image-2.1" ? qwen21DiTCache : nil
-        request.qwen21_reference_size = modelID == "qwen-image-2.1" ? qwen21ReferenceSize : nil
-        if modelID == "qwen-image-2.1", qwen21ReferenceSize == 512 { request.allow_approximation = true }
+        request.qwen21_reference_size = modelID == "qwen-image-2.1" ? effectiveQwen21ReferenceSize : nil
+        if usesQwen21FastReferenceEncoding { request.allow_approximation = true }
         if qwen21DiTCache != "off" { request.allow_approximation = true }
         if modelID == "z-image-turbo", residency == "streamed" {
             request.memory_budget_bytes = UInt64(zImageStreamingBudgetGiB) << 30
@@ -1546,7 +1551,7 @@ final class StudioState: ObservableObject {
     // Keep the existing eight-asset staging area for smaller-input models,
     // while allowing the complete ten-reference Qwen21 input contract.
     var imageImportLimit: Int {
-        if draft.modelID == "qwen-image-2.1", !draft.activeLoRAs.isEmpty || draft.qwen21DiTCache != "off" || draft.qwen21ReferenceSize == 512 { return 3 }
+        if draft.modelID == "qwen-image-2.1", !draft.activeLoRAs.isEmpty || draft.qwen21DiTCache != "off" || draft.usesQwen21FastReferenceEncoding { return 3 }
         return max(8, models.first(where: { $0.id == draft.modelID })?.max_images ?? 8)
     }
     func applyQwen21Example(_ example: Qwen21PromptExample) {
@@ -1763,7 +1768,11 @@ final class StudioState: ObservableObject {
         draft.promptEnhanceEditExperimental = request.prompt_enhance_edit_experimental ?? false
         draft.promptEnhancerPath = request.prompt_enhancer_path ?? ""
         draft.qwen21DiTCache = request.qwen21_dit_cache ?? "off"
-        draft.qwen21ReferenceSize = request.qwen21_reference_size ?? 1024
+        // A generated image's standard request does not describe the user's
+        // editing preference. Restore that field only for editing histories.
+        if request.model != "qwen-image-2.1" || draft.operation == "image.edit" {
+            draft.qwen21ReferenceSize = request.qwen21_reference_size ?? 1024
+        }
         draft.assets = (request.inputs ?? []).map { input in
             let url = URL(fileURLWithPath: input.path)
             let source = CGImageSourceCreateWithURL(url as CFURL, nil)

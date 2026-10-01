@@ -69,7 +69,7 @@ struct ReferenceImagePreparationView: View {
             Text("原始副本保留，可随时恢复“原图”或撤销。输出画布尺寸保持当前设置。")
                 .font(.caption).foregroundStyle(.secondary)
             if studio.draft.modelID == "qwen-image-2.1" {
-                Text("当前模型参考编码尺度为 \(studio.draft.qwen21ReferenceSize)。缩小输入文件不改变此设置，可在参数区的“模型参考编码”中单独调整。")
+                Text("图片编辑的参考编码偏好为 \(studio.draft.qwen21ReferenceSize)。缩小输入文件不改变此设置，可在图片编辑参数区单独调整；文生图不使用参考编码。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let error { Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled) }

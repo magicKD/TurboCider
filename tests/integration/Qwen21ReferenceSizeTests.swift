@@ -35,9 +35,10 @@ import Foundation
         let output = root.appendingPathComponent("never-generated.png")
         try compatibilityAndWire(draft, output: output)
         try eligibility(draft, model: model, root: root, output: output)
+        try modeIsolation(draft, model: model, root: root, output: output)
         try stateRecovery(draft, model: model, root: root, output: output)
         try await playground(draft, model: model, image: image, root: root, output: output)
-        print("PASS Qwen reference encoding: SDK v1/v2, old draft/history, explicit 1024/512, supported Base/r128 gates, parameter recovery/persistence/import/reuse/model reset, canvas lock and independent Playground role/submission contracts (CPU only)")
+        print("PASS Qwen reference encoding: SDK v1/v2, old draft/history, explicit 1024/512, supported Base/r128 gates, edit/generate preference isolation, parameter recovery/persistence/import/reuse/model reset, canvas lock and independent Playground role/submission contracts (CPU only)")
     }
 
     static func compatibilityAndWire(_ draft: StudioDraft, output: URL) throws {
@@ -91,8 +92,6 @@ import Foundation
         let r256 = root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors")
         for url in [ordinary, r128, r256] { try Data("CPU presence fixture, not weights".utf8).write(to: url) }
         let invalid: [(String, (inout StudioDraft) -> Void)] = [
-            ("generate", { $0.operation = "image.generate" }),
-            ("transform", { $0.operation = "image.transform" }),
             ("zero refs", { $0.assets = [] }),
             ("four refs", { $0.assets.append($0.assets[0]) }),
             ("canvas", { $0.width = 768 }),
@@ -135,6 +134,65 @@ import Foundation
         let suggested = EditingCanvasSizing.suggestion(for: portrait, preset: .original)
         try check(!suggested.canApply && suggested.blockedReason?.contains("快速 512") == true,
                   "Output canvas helper bypassed the fast reference encoding size lock")
+        var unsupported = base; unsupported.operation = "image.transform"
+        var rejected = false
+        do { try unsupported.validate(model: model) } catch { rejected = true }
+        try check(rejected, "Operation-specific encoding incorrectly enabled unsupported Qwen transform")
+    }
+
+    @MainActor static func modeIsolation(_ initial: StudioDraft, model: StudioModel, root: URL, output: URL) throws {
+        let directory = root.appendingPathComponent("mode-isolation")
+        let studio = StudioState(directory: directory, models: [model])
+        studio.draft = initial; studio.draft.qwen21ReferenceSize = 512
+        let editingAssets = studio.draft.assets
+        studio.changeOperation("image.generate")
+        try check(studio.draft.qwen21ReferenceSize == 512 && studio.draft.effectiveQwen21ReferenceSize == 1024 &&
+                  !studio.draft.usesQwen21FastReferenceEncoding && studio.draft.qwen21ReferenceSizeIssue == nil &&
+                  studio.draft.assets == editingAssets && studio.imageImportLimit == 10,
+                  "Switching to generation lost the editing preference or retained its domain restrictions")
+        let generated = try studio.draft.request(output: output)
+        try check(generated.qwen21_reference_size == 1024 && generated.allow_approximation != true &&
+                  generated.inputs?.isEmpty == true &&
+                  NativeRequestV2(legacy: generated).parameters.qwen21_reference_size == 1024,
+                  "Text-to-image inherited fast reference encoding, inputs or approximation")
+        studio.save()
+        let reopened = StudioState(directory: directory, models: [model])
+        try check(reopened.draft.operation == "image.generate" && reopened.draft.qwen21ReferenceSize == 512 &&
+                  (try reopened.draft.request(output: output)).qwen21_reference_size == 1024,
+                  "Generation persistence did not preserve an inactive editing preference")
+        let configuration = root.appendingPathComponent("generation-with-edit-preference.json")
+        try bytes(reopened.draft).write(to: configuration)
+        try studio.importConfiguration(from: configuration)
+        try check(studio.draft.qwen21ReferenceSize == 512 && studio.draft.qwen21ReferenceSizeIssue == nil,
+                  "Generation configuration import rejected or reset an inactive editing preference")
+        let history = NativeJob(id: UUID(), createdAt: Date(), request: generated, state: "succeeded", phase: "complete",
+                                completed: 25, total: 25, elapsed: 0)
+        studio.reuse(history)
+        try check(studio.draft.qwen21ReferenceSize == 512 && studio.draft.effectiveQwen21ReferenceSize == 1024,
+                  "Generation history's standard request overwrote the editing preference")
+        studio.draft.assets = editingAssets; studio.draft.initImageID = editingAssets.first!.id
+        studio.draft.qwen21DiTCache = "balanced"
+        try check(studio.draft.qwen21DiTCacheUnavailableReason == nil,
+                  "Inactive fast editing preference disabled text-to-image DiT caching")
+        let cached = try studio.draft.request(output: output)
+        try check(cached.qwen21_reference_size == 1024 && cached.qwen21_dit_cache == "balanced" && cached.allow_approximation == true,
+                  "Text-to-image cache no longer requested its own approximation with standard encoding")
+        studio.draft.qwen21DiTCache = "off"; studio.draft.width = 768; studio.draft.steps = 10
+        try check((try studio.draft.request(output: output)).width == 768 && studio.draft.qwen21ReferenceSizeIssue == nil,
+                  "Inactive editing preference restricted generation canvas or sampling steps")
+        studio.changeOperation("image.edit")
+        try check(studio.draft.qwen21ReferenceSize == 512 && studio.draft.usesQwen21FastReferenceEncoding &&
+                  studio.draft.qwen21ReferenceSizeIssue != nil,
+                  "Returning to editing lost the fast preference or silently accepted incompatible parameters")
+        studio.draft.width = 512; studio.draft.steps = 25
+        try check((try studio.draft.request(output: output)).qwen21_reference_size == 512 &&
+                  studio.draft.qwen21ReferenceSizeIssue == nil,
+                  "Returning to a compatible editing setup did not restore fast reference encoding")
+        var invalid = initial; invalid.qwen21ReferenceSize = 256; invalid.operation = "image.generate"
+        try check((try invalid.request(output: output)).qwen21_reference_size == 1024 && invalid.qwen21ReferenceSize == 256,
+                  "An inactive invalid editing preference blocked or contaminated a generation request")
+        invalid.operation = "image.edit"
+        try check(invalid.qwen21ReferenceSizeIssue != nil, "Invalid editing preference lost its visible recovery reason")
     }
 
     @MainActor static func stateRecovery(_ initial: StudioDraft, model: StudioModel, root: URL, output: URL) throws {
@@ -176,7 +234,7 @@ import Foundation
     }
 
     @MainActor static func playground(_ initial: StudioDraft, model: StudioModel, image: URL, root: URL, output: URL) async throws {
-        var copied = initial; copied.qwen21ReferenceSize = 512
+        var copied = initial; copied.qwen21ReferenceSize = 512; copied.operation = "image.generate"
         let beforeCreation = try bytes(copied)
         let directory = root.appendingPathComponent("playground")
         let state = PlaygroundState(directory: directory, initialSettings: copied, models: [model])

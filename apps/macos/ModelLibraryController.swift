@@ -63,7 +63,8 @@ enum LibraryTool {
 }
 
 @MainActor final class ModelLibraryController: ObservableObject {
-    @Published private(set) var root = LibraryStore.defaultRoot.path
+    typealias MetadataRunner = @MainActor ([String]) async throws -> Data
+    @Published private(set) var root: String
     @Published private(set) var installations: [LibraryInstallation] = []
     @Published private(set) var installationGeneration: UInt64 = 0
     @Published private(set) var anePartitions: [LibraryANEPartition] = []
@@ -74,12 +75,32 @@ enum LibraryTool {
     @Published private(set) var inspections: [String: InstallationInspection] = [:]
     private var operation: Task<Void, Never>?
     private weak var compilationStore: NativeJobStore?
+    private let metadataRunner: MetadataRunner
+    private struct LoRARegistration: Equatable {
+        let modelID: String
+        let path: String
+    }
+    private var pendingLoRARegistrations: [LoRARegistration] = []
+    private var activeLoRARegistration: LoRARegistration?
+    private var registrationErrors: [String] = []
+    private var cancellationMessage: String?
     var canCancel: Bool { busy }
 
-    func cancel() { operation?.cancel(); compilationStore?.cancel() }
+    init(root: URL = LibraryStore.defaultRoot,
+         metadataRunner: @escaping MetadataRunner = { try await LibraryTool.run($0) }) {
+        self.root = root.standardizedFileURL.path
+        self.metadataRunner = metadataRunner
+    }
+    func cancel() {
+        if activeLoRARegistration != nil || !pendingLoRARegistrations.isEmpty {
+            pendingLoRARegistrations.removeAll()
+            cancellationMessage = "已取消模型库操作与待处理的 LoRA 登记；已完成的登记保留，未完成的可重新添加。"
+        }
+        operation?.cancel(); compilationStore?.cancel()
+    }
     func inspection(modelID: String, path: String) -> InstallationInspection? { inspections[modelID + "\n" + path] }
     @discardableResult private func readInspection(modelID: String, path: String) async throws -> InstallationInspection {
-        let data = try await LibraryTool.run(["inspect", modelID, path, "--root", root])
+        let data = try await metadataRunner(["inspect", modelID, path, "--root", root])
         let report = try LibraryTool.decode(InstallationInspection.self, from: data)
         inspections[modelID + "\n" + path] = report
         return report
@@ -91,13 +112,24 @@ enum LibraryTool {
         guard !busy else { return }
         busy = true; event = nil; message = nil
         operation = Task { [weak self] in
-            defer { self?.busy = false; self?.operation = nil }
-            do { try await work() }
-            catch { self?.message = error is CancellationError ? "已取消；完整且已校验的文件可在重试时复用。" : error.localizedDescription }
+            defer { self?.finishOperation() }
+            do { try await work(); try Task.checkCancellation() }
+            catch {
+                self?.message = Task.isCancelled || error is CancellationError
+                    ? (self?.cancellationMessage ?? "已取消；完整且已校验的文件可在重试时复用。")
+                    : error.localizedDescription
+            }
         }
     }
-    private func readIndex() async throws {
-        let data = try await LibraryTool.run(["list", "--root", root])
+    private func finishOperation() {
+        busy = false; operation = nil; activeLoRARegistration = nil; cancellationMessage = nil
+        startNextLoRARegistration()
+    }
+    private func readIndex(root libraryRoot: String? = nil) async throws {
+        let libraryRoot = libraryRoot ?? root
+        let data = try await metadataRunner(["list", "--root", libraryRoot])
+        try Task.checkCancellation()
+        guard root == libraryRoot else { throw NativeFailure(message: "模型库目录已变化，请刷新当前模型库。") }
         let index = try LibraryTool.decode(LibraryIndex.self, from: data)
         installations = index.installations
         installationGeneration &+= 1
@@ -193,7 +225,7 @@ enum LibraryTool {
     }
     func configure(root url: URL, studio: StudioState) {
         perform { [self] in
-            let result = try LibraryTool.decode([String: String].self, from: await LibraryTool.run(["configure", url.path]))
+            let result = try LibraryTool.decode([String: String].self, from: await metadataRunner(["configure", url.path]))
             root = result["root"] ?? url.path
             try await readIndex()
             message = "模型库目录已更新。已有模型文件保持原位，可通过文件夹选择或配置重新登记。"
@@ -226,9 +258,33 @@ enum LibraryTool {
         }
     }
     func registerLoRA(_ url: URL, modelID: String) {
+        let registration = LoRARegistration(modelID: modelID, path: url.standardizedFileURL.path)
+        guard registration != activeLoRARegistration,
+              !pendingLoRARegistrations.contains(registration) else { return }
+        if activeLoRARegistration == nil && pendingLoRARegistrations.isEmpty { registrationErrors.removeAll() }
+        pendingLoRARegistrations.append(registration)
+        if busy { message = "LoRA 已排队，当前模型库操作结束后登记。" }
+        startNextLoRARegistration()
+    }
+    private func startNextLoRARegistration() {
+        guard !busy, !pendingLoRARegistrations.isEmpty else { return }
+        let registration = pendingLoRARegistrations.removeFirst()
+        activeLoRARegistration = registration
+        // Queued additions follow the active library after an in-flight configure.
+        // Once started, registration and its index read use that same directory.
+        let libraryRoot = root
         perform { [self] in
-            _ = try await LibraryTool.run(["register-lora", modelID, url.path, "--root", root])
-            try await readIndex()
+            do {
+                _ = try await metadataRunner(["register-lora", registration.modelID, registration.path, "--root", libraryRoot])
+                try Task.checkCancellation()
+                try await readIndex(root: libraryRoot)
+                let success = "LoRA 已登记：\(URL(fileURLWithPath: registration.path).lastPathComponent)。"
+                message = (registrationErrors + [success]).joined(separator: "\n")
+            } catch {
+                if Task.isCancelled || error is CancellationError { throw CancellationError() }
+                registrationErrors.append("LoRA 登记或刷新未完成（\(registration.modelID) · \(URL(fileURLWithPath: registration.path).lastPathComponent)）：\(error.localizedDescription)")
+                message = registrationErrors.joined(separator: "\n")
+            }
         }
     }
     func registerUpscaler(_ url: URL, variant: UpscaleVariant, studio: StudioState) {
