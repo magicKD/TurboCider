@@ -45,6 +45,7 @@
 | [16 CPU量化SIMD加速](16-cpu-quant-simd-acceleration.md) | Q4/Q5/K直填SIMD、同源encoder控制、独占投影/encoder实测与完整Z exact回归 |
 | [17 packed-streamed/三槽](17-packed-streamed-and-three-slots.md) | 单有界read buffer、source/task读取复用、p2真实12格与Z/取消exact，剩余floor/envelope |
 | [18 refiner流式/银行交接](18-streamed-refiners-and-bank-boundaries.md) | interleaved refiners单槽、drained银行释放重建、浮点SIMD转换、真实Q8/Q4 exact与取消；6/8/10/16 GB速度优先方向 |
+| [19 预算速度筛选](19-speed-and-memory-budget-screen.md) | 七候选完整Q8请求的独立测速/内存采样、6/8/10/16 GB及GiB经验选择，native额外驻留负结果与后续优化 |
 
 ## 当前状态速查
 
