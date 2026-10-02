@@ -25,6 +25,7 @@ class ZImage final : public ModelSession {
     bool nvfp4_transformer_ = false;
     bool runtime_convrot_ = false;
     bool gguf_direct_import_ = false;
+    bool gguf_fused_affine_ = true;
     bool gguf_compile_packed_ = false;
     bool gguf_gpu_f16_ = false;
     bool gguf_gpu_f16_mpp_ = false;

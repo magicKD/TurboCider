@@ -1357,6 +1357,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"gguf_import"]=@{
             @"experimental":@YES,@"whole_request_bounded_certified":@NO,
             @"recipe":@"gguf-mlx-compat-affine-packed-bank-v1",@"allocator_cache_limit_bytes":@(m.allocator_cache_limit_bytes),
+            @"affine_packing_recipe":@(m.affine_packing_recipe.c_str()),@"affine_packing_backend":@(m.affine_packing_backend.c_str()),
+            @"float_import_recipe":@(m.float_import_recipe.c_str()),
             @"consumer_revision":m.session_packed_retention ? @"z-session-packed-experimental-v1" : @"z-serial-refiners-release-before-vae-v1",
             @"session_packed_retention":@(m.session_packed_retention),@"reused_packed_bank":@(m.reused_packed_bank),
             @"gpu_graph_recipe":m.ref_mpp_dynamic ? @"z-gpu-affine-qmm-f16-refmpp-dynamic-v1" : m.f16_refiners ? @"z-gpu-affine-qmm-f16-ref16-fp32-io-down64-v1" : m.qmm_f16_compute ? @"z-gpu-affine-qmm-f16-fp32-io-down64-v1" : m.gpu_f16_mpp ? @"z-gpu-affine-f16-mpp-fp32-io-down64-v1" : m.gpu_f16_compute ? @"z-gpu-affine-f16-fp32-io-down64-v1" : m.compiled_packed_blocks ? @"z-parameterized-affine-block-v1" : @"native-compat-eager-v1",
@@ -1371,6 +1373,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"source_read_bytes":@(m.source_read_bytes),@"logical_source_bytes":@(m.logical_source_bytes),
             @"verification_bytes":@(m.verification_bytes),@"tensor_count":@(m.tensor_count),@"field_count":@(m.field_count),
             @"load_seconds":@(m.load_seconds),@"read_seconds":@(m.read_seconds),@"decode_seconds":@(m.decode_seconds),
+            @"affine_decode_seconds":@(m.affine_decode_seconds),@"float_decode_seconds":@(m.float_decode_seconds),
             @"request_load_seconds":@(m.reused_packed_bank ? 0 : m.load_seconds),
             @"request_source_read_bytes":@(m.reused_packed_bank ? 0 : m.source_read_bytes),
             @"scope":@"managed immutable packed bank and import buffer; excludes encoder/VAE/activations/cache/framework/OS"

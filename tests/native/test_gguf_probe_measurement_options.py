@@ -62,6 +62,7 @@ class MeasurementOptionsTests(unittest.TestCase):
                 self.reject(options, "source validation cannot contaminate timing/memory", environment)
 
     def test_direct_import_requires_explicit_compatible_selector(self):
+        self.reject(["--affine-pack","fused"], "affine packing control requires CPU-direct import")
         self.reject(["--native-import","cpu_direct"], "requires only native packed")
         self.reject(["--native-weight-limit-bytes","1024"], "requires CPU-direct")
         self.reject(["--native-import","cpu_direct","--prefetch","-1","--native-weight-limit-bytes","0"],

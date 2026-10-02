@@ -52,7 +52,7 @@ class Bf16ScreenTests(unittest.TestCase):
         self.assertFalse(module.screen(*self.inputs(4.5))["preferred_10pct_latency_pass"])
 
     def test_binding_cache_and_route_negative_cases(self):
-        for fault in ("library","component","empty_hash","seed","prompt","cache","tuning","precision","route","graph","lifecycle","source","baseline_source","device"):
+        for fault in ("library","component","empty_hash","seed","prompt","cache","tuning","precision","route","graph","lifecycle","source","baseline_source","device","packing"):
             reports = copy.deepcopy(self.inputs()); target = reports[2]; row = target["runs"][0]
             if fault=="library": target["library_sha256"]="9"*64
             if fault=="component": target["component_binding"]["encoder"][0]["sha256"]="9"*64
@@ -68,6 +68,7 @@ class Bf16ScreenTests(unittest.TestCase):
             if fault=="source": row["metrics"]["gguf_import"]["source_sha256"]="9"*64
             if fault=="baseline_source": reports[1]["dit_source_sha256"]="9"*64
             if fault=="device": reports[1]["hardware"]["gpu"]="Apple M5"
+            if fault=="packing":row["metrics"]["gguf_import"]["affine_packing_recipe"]="changed"
             with self.subTest(fault=fault), self.assertRaises(ValueError): module.screen(*reports)
 
     def test_legacy_unbound_device_never_passes_target(self):

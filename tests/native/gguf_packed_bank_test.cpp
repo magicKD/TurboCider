@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fcntl.h>
 #include <thread>
+#include <cstring>
 
 namespace {
 using namespace tc;
@@ -33,6 +34,19 @@ int main(int argc,char **argv) {
         ensure(!ledger.snapshot().storage_bytes,"metadata-only bank allocated payload backing");
         const auto upper=bank->metrics().planned_packed_capacity_bytes;
         {
+            MemoryLedger old_budget(32ull<<20);Weights legacy;
+            GgufPackedBank old(source,"weights",old_budget,16384,false);old.load(legacy);
+            ensure(old.metrics().plan_digest!=bank->metrics().plan_digest,"packing policy absent from plan digest");
+            ensure(old.metrics().affine_packing_recipe=="legacy-affine-three-pass-v1","wrong legacy packing receipt");
+            for(const auto &key:keys) {
+                const auto &a=legacy.at(key),&b=golden.at(key);
+                ensure(a.shape()==b.shape() && a.dtype()==b.dtype() &&
+                    std::memcmp(a.data<std::byte>(),b.data<std::byte>(),a.nbytes())==0,"legacy bank field bits changed");
+            }
+            legacy.clear();mx::synchronize();
+            ensure(!old_budget.snapshot().storage_bytes,"legacy control retained model payload");
+        }
+        {
             MemoryLedger too_small(upper+16384-1);Weights untouched;
             GgufPackedBank floor(source,"weights",too_small,16384);
             rejects([&]{floor.load(untouched);});
@@ -43,9 +57,10 @@ int main(int argc,char **argv) {
         for (const auto &key : keys) {
             const auto &actual=weights.at(key), &expected=golden.at(key);
             ensure(actual.dtype()==expected.dtype() && actual.shape()==expected.shape(),"native packed field geometry/dtype changed");
-            ensure(mx::all(actual==expected).item<bool>(),"native packed field bits differ");
+            ensure(std::memcmp(actual.data<std::byte>(),expected.data<std::byte>(),actual.nbytes())==0,"native packed field bits differ");
         }
         const auto metrics=bank->metrics();
+        ensure(metrics.affine_packing_recipe=="fused-affine-one-pass-v1","wrong fused packing receipt");
         ensure(metrics.tensor_count==6 && metrics.field_count==12 && metrics.plan_digest.size()==64,"wrong bank identity/counts");
         ensure(metrics.source_read_bytes==metrics.logical_source_bytes,"source reread for affine parts or hidden packed cache");
         ensure(metrics.read_buffer_capacity_bytes==16384 && metrics.managed_peak_bytes<=upper+16384,"unplanned import backing");

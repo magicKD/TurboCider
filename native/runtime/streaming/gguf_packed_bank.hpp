@@ -15,7 +15,7 @@ namespace tc::streaming {
 class GgufPackedBank final {
   public:
     GgufPackedBank(std::shared_ptr<const SourceLease>, std::string logical_id,
-                   MemoryLedger &, uint64_t read_buffer_bytes = 1ull << 20);
+                   MemoryLedger &, uint64_t read_buffer_bytes = 1ull << 20,bool fused_affine=true);
     ~GgufPackedBank();
     GgufPackedBank(const GgufPackedBank &) = delete;
     GgufPackedBank &operator=(const GgufPackedBank &) = delete;

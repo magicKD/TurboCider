@@ -2683,6 +2683,11 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
             require(!transformer_checkpoint.empty(),"qe_config_conflict: direct packed import requires a GGUF transformer");
         }
     }
+    if (const char *raw=std::getenv("TURBOCIDER_Z_GGUF_AFFINE_PACK")) {
+        require(gguf_direct_import_ && (std::string_view(raw)=="legacy" || std::string_view(raw)=="fused"),
+                "qe_config_conflict: affine packing control requires CPU-direct and legacy/fused");
+        gguf_fused_affine_=std::string_view(raw)=="fused";
+    }
     if (const char *raw = std::getenv("TURBOCIDER_Z_GGUF_COMPILE_PACKED")) {
         require(std::string_view(raw)=="0" || std::string_view(raw)=="1", "qe_config_conflict: packed compile requires 0 or 1");
         gguf_compile_packed_ = std::string_view(raw)=="1";
@@ -3081,7 +3086,7 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
             gguf_packed_ledger_=std::make_unique<MemoryLedger>(z_qwen3_gguf_integer(
                 "TURBOCIDER_Z_GGUF_PACKED_WEIGHT_LIMIT_BYTES",std::min<uint64_t>(10ull<<30,device_info().physical_memory/2),
                 device_info().physical_memory));
-            gguf_packed_bank_=std::make_unique<streaming::GgufPackedBank>(std::move(lease),"transformer",*gguf_packed_ledger_);
+            gguf_packed_bank_=std::make_unique<streaming::GgufPackedBank>(std::move(lease),"transformer",*gguf_packed_ledger_,1ull<<20,gguf_fused_affine_);
             z_image::validate_gguf_model_directory(gguf_packed_bank_->directory());
             gguf_packed_bank_->load(transformer_,&cancelled,event);
         } else if (gguf_transformer_)

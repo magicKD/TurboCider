@@ -11,7 +11,7 @@ from screen_gguf_memory_budgets import positive, sha
 
 
 REVISION = "fastest-bf16-low-memory-screen-v2"
-PRIVATE_CONTROLS = {"TURBOCIDER_Z_GGUF_IMPORT", "TURBOCIDER_Z_GGUF_PACKED_WEIGHT_LIMIT_BYTES",
+PRIVATE_CONTROLS = {"TURBOCIDER_Z_GGUF_IMPORT", "TURBOCIDER_Z_GGUF_AFFINE_PACK", "TURBOCIDER_Z_GGUF_PACKED_WEIGHT_LIMIT_BYTES",
                     "TURBOCIDER_Z_GGUF_COMPILE_PACKED", "TURBOCIDER_Z_GGUF_RETAIN_PACKED", "TURBOCIDER_Z_GGUF_COMPUTE", "TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES", "TURBOCIDER_Z_RAW_GPU_CACHE_BYTES"}
 
 
@@ -92,6 +92,9 @@ def collect(timing, memory, baseline, min_samples):
                        "layout": q.get("layout_digest", q.get("plan_digest")) if q else None,
                        "consumer": q.get("consumer_revision") if q else None,
                        "graph": q.get("gpu_graph_recipe") if q else None,
+                       "affine_packing":q.get("affine_packing_recipe") if q else None,
+                       "affine_packing_backend":q.get("affine_packing_backend") if q else None,
+                       "float_import":q.get("float_import_recipe") if q else None,
                        "allocator_cache_limit_bytes": q.get("allocator_cache_limit_bytes") if q else None,
                        "retention": q.get("session_packed_retention") if q else None}
             if not baseline and not q:

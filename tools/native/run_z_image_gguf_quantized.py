@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--prefetch",type=int,nargs="+",default=[0,1])
     parser.add_argument("--source-residency",choices=["packed_resident","packed_streamed"],default="packed_resident")
     parser.add_argument("--native-import",choices=["mlx","cpu_direct"],help="explicit experimental import recipe for --prefetch -1")
+    parser.add_argument("--affine-pack",choices=("legacy","fused"),help="CPU-direct packing: preserved scalar three-pass control or lossless fused SIMD")
     parser.add_argument("--compile-packed",action="store_true",help="explicit parameterized native QMM graph; authorized approximation, CPU-direct only")
     parser.add_argument("--packed-compute",choices=["native","f16_down64","f16_mpp_down64","qmm_f16_down64","qmm_f16_ref16_down64","qmm_f16_refmpp_dynamic"],help="experimental FP16 compute, FP32 glue; qmm mode never decodes dense W; refmpp uses dynamic per-row FP16 normalization")
     parser.add_argument("--native-allocator-cache-bytes",type=int,help="explicit FP16 experiment cache hint 0..1GiB; not a RAM cap")
@@ -84,6 +85,11 @@ def main():
     native_import=args.native_import or os.environ.get("TURBOCIDER_Z_GGUF_IMPORT","mlx")
     if native_import not in ("mlx","cpu_direct"): parser.error("unknown native import recipe")
     if native_import=="cpu_direct" and any(p!=-1 for p in args.prefetch): parser.error("CPU-direct import requires only native packed prefetch -1")
+    if args.affine_pack is not None:
+        if native_import!="cpu_direct": parser.error("affine packing control requires CPU-direct import")
+        key="TURBOCIDER_Z_GGUF_AFFINE_PACK"
+        if key in os.environ and os.environ[key]!=args.affine_pack: parser.error("conflicting affine packing environment")
+        os.environ[key]=args.affine_pack
     if args.compile_packed:
         if native_import!="cpu_direct" or args.baseline_bf16 or args.gpu_eval_blocks: parser.error("packed compile requires CPU-direct without baseline/eager controls")
         key="TURBOCIDER_Z_GGUF_COMPILE_PACKED"

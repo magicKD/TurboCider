@@ -46,18 +46,19 @@ struct GgufPackedBank::State {
     MemoryLedger &ledger;
     GgufPackedBankMetrics metrics;
     uint64_t read_bytes;
+    bool fused_affine;
     bool used = false, loaded = false;
     std::thread::id owner = std::this_thread::get_id();
-    State(std::shared_ptr<const SourceLease> source, MemoryLedger &memory, uint64_t bytes)
-        : lease(std::move(source)), ledger(memory), read_bytes(bytes) {}
+    State(std::shared_ptr<const SourceLease> source, MemoryLedger &memory, uint64_t bytes,bool fused)
+        : lease(std::move(source)), ledger(memory), read_bytes(bytes),fused_affine(fused) {}
     void owner_check() const {
         require(owner == std::this_thread::get_id(), "gguf_packed_bank: owner violation");
     }
 };
 
 GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease, std::string logical,
-                              MemoryLedger &ledger, uint64_t read_bytes)
-    : state_(std::make_unique<State>(std::move(lease), ledger, read_bytes)) {
+                              MemoryLedger &ledger, uint64_t read_bytes,bool fused_affine)
+    : state_(std::make_unique<State>(std::move(lease), ledger, read_bytes,fused_affine)) {
     auto &s = *state_;
     require(s.lease && s.lease->has_verified_content(), "gguf_packed_bank: native content proof required");
     require(read_bytes && read_bytes <= INT32_MAX && read_bytes % gguf_storage::alignment == 0,
@@ -70,7 +71,17 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease, std::st
     s.directory = gguf::read_directory(s.fd.get(), file.bytes, {}, true);
     s.metrics.source_sha256 = file.content_digest;
     s.metrics.verification_bytes = s.lease->verification_bytes_read();
+    s.metrics.affine_packing_recipe=fused_affine ? "fused-affine-one-pass-v1" : "legacy-affine-three-pass-v1";
+    s.metrics.float_import_recipe=fused_affine ? "direct-bf16-read-inplace-f16-v1" : "buffered-row-rne-v1";
+#if defined(__aarch64__)
+    s.metrics.affine_packing_backend=fused_affine ? "arm_neon" : "legacy_scalar";
+#else
+    s.metrics.affine_packing_backend=fused_affine ? "scalar" : "legacy_scalar";
+#endif
     CanonicalEncoder encoding("gguf-mlx-compat-affine-packed-bank-v1");
+    encoding.string_field("affine_packing",s.metrics.affine_packing_recipe);
+    encoding.string_field("float_import",s.metrics.float_import_recipe);
+    encoding.string_field("affine_packing_backend",s.metrics.affine_packing_backend);
     encoding.string_field("source", file.content_digest);
     encoding.string_field("logical_id", logical);
     encoding.unsigned_field("read_bytes", read_bytes);
@@ -161,13 +172,19 @@ void GgufPackedBank::load(Weights &output, const std::atomic<bool> *cancel, cons
             s.metrics.packed_capacity_bytes = gguf::checked_add(s.metrics.packed_capacity_bytes,actual(arrays.back()));
         }
         const uint64_t rows_per_chunk = s.read_bytes/task.row_bytes;
+        const bool bf16_alias=s.fused_affine && tensor.type==30 && task.fields.size()==1 &&
+            !task.fields[0].part && task.fields[0].dtype==mx::float16;
         for (uint64_t row = 0; row < tensor.rows();) {
             cancelled(cancel);
             const uint64_t rows = std::min(rows_per_chunk,tensor.rows()-row), bytes = rows*task.row_bytes;
             auto read_start = Clock::now(); uint64_t done = 0;
+            // Same-width source-float alias: read into the already-admitted
+            // final backing, convert in place, and publish only after the
+            // complete bank succeeds. No extra raw/dense floating checkpoint.
+            auto *destination=bf16_alias ? pointers[0]+row*task.row_bytes : read;
             while (done < bytes) {
                 cancelled(cancel);
-                const auto n = ::pread(s.fd.get(),read+done,size_t(bytes-done),off_t(tensor.file_offset+row*task.row_bytes+done));
+                const auto n = ::pread(s.fd.get(),destination+done,size_t(bytes-done),off_t(tensor.file_offset+row*task.row_bytes+done));
                 if (n < 0 && errno == EINTR) continue;
                 require(n > 0,"gguf_packed_bank: payload read failed or source changed");
                 done += uint64_t(n); s.metrics.source_read_bytes = gguf::checked_add(s.metrics.source_read_bytes,uint64_t(n));
@@ -175,14 +192,26 @@ void GgufPackedBank::load(Weights &output, const std::atomic<bool> *cancel, cons
             s.metrics.read_seconds += seconds(read_start);
             const gguf::PackedMatrix source{{read,size_t(bytes)},tensor.type,rows,tensor.columns()};
             const auto decode_start = Clock::now();
-            for (size_t i = 0; i < task.fields.size(); ++i) {
+            if (bf16_alias) gguf::bf16_to_fp16_inplace({destination,size_t(bytes)},cancel);
+            else if (s.fused_affine && task.fields.size()==3 && task.fields[0].part==gguf::AffinePart::codes &&
+                task.fields[1].part==gguf::AffinePart::scales && task.fields[2].part==gguf::AffinePart::biases) {
+                std::array<std::span<std::byte>,3> target;
+                for(size_t i=0;i<3;++i) {
+                    const auto stride=task.fields[i].bytes/tensor.rows();
+                    target[i]={pointers[i]+row*stride,size_t(rows*stride)};
+                }
+                gguf::pack_native_affine_all(source,target,cancel);
+            } else for (size_t i = 0; i < task.fields.size(); ++i) {
                 const auto &f = task.fields[i]; const auto stride = f.bytes/tensor.rows();
                 auto target = std::span<std::byte>(pointers[i]+row*stride,size_t(rows*stride));
                 if (f.part) gguf::pack_native_affine(source,*f.part,target,cancel);
                 else gguf::decode_cpu_into(source,{0,rows,0,tensor.columns()},
                     {target,f.dtype==mx::float32 ? gguf::DecodeDType::f32 : gguf::DecodeDType::f16,stride,f.dtype==mx::float32 ? 4u : 2u},cancel);
             }
-            s.metrics.decode_seconds += seconds(decode_start); row += rows;
+            const auto elapsed=seconds(decode_start);s.metrics.decode_seconds+=elapsed;
+            if (task.fields[0].part) s.metrics.affine_decode_seconds+=elapsed;
+            else s.metrics.float_decode_seconds+=elapsed;
+            row += rows;
         }
         require(arrays.size()==first+task.fields.size(),"gguf_packed_bank: output field accounting mismatch");
         cancelled(cancel); check_unchanged();
