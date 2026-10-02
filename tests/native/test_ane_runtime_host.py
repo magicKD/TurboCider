@@ -1,10 +1,15 @@
 """Runtime FFN host contracts; no Core ML SDK, GPU work or model fixtures."""
 
 import importlib.util
+import errno
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,6 +20,100 @@ SPEC.loader.exec_module(EXPORT)
 
 
 class RuntimeHostTests(unittest.TestCase):
+    def fake_coreml(self, parent, before_conversion=lambda: None):
+        """Only files/receipt control flow; never imports or executes Core ML."""
+        compiled = parent / "compiler-result.mlmodelc"
+
+        class Model:
+            def save(self, path):
+                package = Path(path)
+                package.mkdir()
+                (package / "source.txt").write_text("synthetic host fixture")
+
+        def convert(*_args, **_kwargs):
+            before_conversion()
+            return Model()
+
+        def compile_model(_path):
+            compiled.mkdir()
+            (compiled / "model.mil").write_text("synthetic host fixture")
+            return str(compiled)
+
+        fake = SimpleNamespace(
+            convert=convert, target=SimpleNamespace(macOS15=15),
+            precision=SimpleNamespace(FLOAT16=16), __version__="host-fixture",
+            models=SimpleNamespace(utils=SimpleNamespace(compile_model=compile_model)))
+        return fake, compiled
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS exclusive rename contract")
+    def test_export_publication_preserves_concurrent_targets_and_cleans_scratch(self):
+        for kind in ("empty_directory", "dangling_symlink", "file"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory(prefix="tc-ane-export-host-") as temporary:
+                parent = Path(temporary)
+                destination = parent / "export"
+                identity = []
+
+                def competing_owner():
+                    if kind == "empty_directory":
+                        destination.mkdir()
+                    elif kind == "dangling_symlink":
+                        destination.symlink_to("missing-user-target", target_is_directory=True)
+                    else:
+                        destination.write_text("user-owned sentinel")
+                    identity.append(destination.lstat().st_ino)
+
+                fake, compiled = self.fake_coreml(parent, competing_owner)
+                with mock.patch.dict(sys.modules, {"coremltools": fake}):
+                    with self.assertRaises(FileExistsError):
+                        EXPORT.export(destination, EXPORT.geometry("matmul", 2, 4, 6, 4, 6),
+                                      program_factory=lambda _spec: None)
+                self.assertEqual(destination.lstat().st_ino, identity[0])
+                if kind == "empty_directory":
+                    self.assertEqual(list(destination.iterdir()), [])
+                elif kind == "dangling_symlink":
+                    self.assertEqual(os.readlink(destination), "missing-user-target")
+                else:
+                    self.assertEqual(destination.read_text(), "user-owned sentinel")
+                self.assertFalse(compiled.exists())
+                self.assertEqual(sorted(path.name for path in parent.iterdir()), ["export"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS exclusive rename contract")
+    def test_export_success_and_copy_failure_keep_compiler_and_scratch_owned(self):
+        for fail_copy in (False, True):
+            with self.subTest(fail_copy=fail_copy), tempfile.TemporaryDirectory(prefix="tc-ane-export-host-") as temporary:
+                parent = Path(temporary)
+                destination = parent / "export"
+                fake, compiled = self.fake_coreml(parent)
+                with mock.patch.dict(sys.modules, {"coremltools": fake}):
+                    if fail_copy:
+                        with mock.patch.object(EXPORT.shutil, "copytree", side_effect=OSError("controlled copy failure")):
+                            with self.assertRaisesRegex(OSError, "controlled copy failure"):
+                                EXPORT.export(destination, EXPORT.geometry("matmul", 2, 4, 6, 4, 6),
+                                              program_factory=lambda _spec: None)
+                    else:
+                        receipt = EXPORT.export(destination, EXPORT.geometry("matmul", 2, 4, 6, 4, 6),
+                                                program_factory=lambda _spec: None)
+                        self.assertEqual((destination / "graph.mlmodelc/model.mil").read_text(),
+                                         "synthetic host fixture")
+                        self.assertIn("graph.mlmodelc/model.mil", receipt["files"])
+                        self.assertTrue((destination / "manifest.json").is_file())
+                self.assertFalse(compiled.exists())
+                self.assertEqual(sorted(path.name for path in parent.iterdir()), [] if fail_copy else ["export"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS exclusive rename contract")
+    def test_export_missing_exclusive_rename_fails_closed_and_cleans_scratch(self):
+        with tempfile.TemporaryDirectory(prefix="tc-ane-export-host-") as temporary:
+            parent = Path(temporary)
+            fake, compiled = self.fake_coreml(parent)
+            with mock.patch.dict(sys.modules, {"coremltools": fake}), \
+                    mock.patch.object(EXPORT.ctypes, "CDLL", return_value=SimpleNamespace()):
+                with self.assertRaises(OSError) as rejected:
+                    EXPORT.export(parent / "export", EXPORT.geometry("matmul", 2, 4, 6, 4, 6),
+                                  program_factory=lambda _spec: None)
+            self.assertEqual(rejected.exception.errno, errno.ENOTSUP)
+            self.assertFalse(compiled.exists())
+            self.assertEqual(list(parent.iterdir()), [])
+
     def run_host_test(self, name, sources=()):
         with tempfile.TemporaryDirectory(prefix="tc-ane-host-") as temporary:
             binary = Path(temporary) / name
