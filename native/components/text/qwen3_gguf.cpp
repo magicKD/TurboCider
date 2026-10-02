@@ -54,6 +54,14 @@ void validate_eval_policy() {
     require(!interval || std::string(interval) == "1",
             "qe_config_conflict: bounded Qwen3 requires each-layer eval");
 }
+uint64_t encoder_request_generation() {
+    static std::atomic<uint64_t> next{1};
+    auto value=next.load(std::memory_order_relaxed);
+    for (;;) {
+        require(value && value!=UINT64_MAX,"Qwen3 encoder request generation exhausted");
+        if (next.compare_exchange_weak(value,value+1,std::memory_order_relaxed)) return value;
+    }
+}
 }
 
 Qwen3GgufPlan describe_qwen3_gguf(std::shared_ptr<const streaming::SourceLease> lease,
@@ -143,12 +151,69 @@ Qwen3GgufPlan describe_qwen3_gguf(std::shared_ptr<const streaming::SourceLease> 
     return result;
 }
 
+struct Qwen3GgufPreparedSource::Impl {
+    std::shared_ptr<const streaming::SourceLease> lease;
+    Qwen3GgufConfig config;
+    std::unique_ptr<Tokenizer> tokenizer;
+    Impl(const std::filesystem::path &path,const std::filesystem::path &cfg,const std::filesystem::path &tok,
+         std::atomic<bool> &cancel) {
+        checkpoint(cancel);
+        std::vector<streaming::SourceFileIdentity> files;
+        for (const auto &[id,file]:std::vector<std::pair<std::string,std::filesystem::path>>{
+            {"text_encoder",path},{"config",cfg},{"tokenizer",tok}}) {
+            streaming::SourceFileIdentity f;f.logical_id=id;f.path=file;files.push_back(std::move(f));
+        }
+        lease=streaming::SourceLease::capture_verified(std::move(files),&cancel);
+        auto cfg_fd=lease->duplicate_fd("config");config=read_qwen3_gguf_config(cfg_fd.get(),lease->file("config").bytes);
+        auto source_fd=lease->duplicate_fd("text_encoder");
+        const auto directory=gguf::read_directory(source_fd.get(),lease->file("text_encoder").bytes);
+        check_metadata(directory,config);
+        auto token_fd=lease->duplicate_fd("tokenizer");
+        verify_qwen3_gguf_tokenizer(token_fd.get(),lease->file("tokenizer").bytes,source_fd.get(),directory,config);
+        tokenizer=std::make_unique<Tokenizer>(token_fd.get(),lease->file("tokenizer").bytes);
+        lease->revalidate_after_drain();checkpoint(cancel);
+    }
+};
+Qwen3GgufPreparedSource::Qwen3GgufPreparedSource(std::unique_ptr<Impl> impl):impl_(std::move(impl)) {}
+Qwen3GgufPreparedSource::~Qwen3GgufPreparedSource()=default;
+std::shared_ptr<const Qwen3GgufPreparedSource> Qwen3GgufPreparedSource::prepare(
+        const std::filesystem::path &gguf,const std::filesystem::path &config,const std::filesystem::path &tokenizer,
+        std::atomic<bool> &cancel) {
+    return std::shared_ptr<const Qwen3GgufPreparedSource>(new Qwen3GgufPreparedSource(std::make_unique<Impl>(gguf,config,tokenizer,cancel)));
+}
+void Qwen3GgufPreparedSource::revalidate() const {impl_->lease->revalidate_after_drain();}
+bool Qwen3GgufPreparedSource::reusable_for(const std::filesystem::path &gguf,const std::filesystem::path &config,
+                                        const std::filesystem::path &tokenizer) const {
+    // Rebind a new request when a named path, fd generation or symlink target
+    // changes. A newly prepared source must still pass complete verification;
+    // this false result never authorizes the old metadata for new bytes.
+    for (const auto &[id,path]:std::vector<std::pair<std::string,std::filesystem::path>>{
+        {"text_encoder",gguf},{"config",config},{"tokenizer",tokenizer}}) {
+        std::error_code error;const auto absolute=std::filesystem::absolute(path,error).lexically_normal();
+        if (error || absolute!=impl_->lease->file(id).path) return false;
+    }
+    try {revalidate();return true;} catch (const std::exception &) {return false;}
+}
+Tokens Qwen3GgufPreparedSource::tokenize(const std::string &prompt,bool dynamic) const {
+    revalidate();return impl_->tokenizer->z_image_prompt(prompt,dynamic);
+}
+std::shared_ptr<const streaming::SourceLease> Qwen3GgufPreparedSource::lease() const {return impl_->lease;}
+const Qwen3GgufConfig &Qwen3GgufPreparedSource::config() const {return impl_->config;}
+std::string Qwen3GgufPreparedSource::execution_identity(uint32_t prefetch,uint64_t budget,gguf::DecodeOptions options,
+                                                      const std::string &residency) const {
+    validate_eval_policy();require(prefetch<=2,"qe_config_conflict: Qwen3 GGUF supports p=0/1/2");
+    require(residency=="packed_resident" || residency=="packed_streamed","qe_config_conflict: unknown Qwen3 source residency");
+    revalidate();
+    return std::string(impl_->lease->artifact_digest())+":qwen3-z-source-mixed-v1:p="+std::to_string(prefetch)+
+        ":managed="+std::to_string(budget)+":decode="+(options.use_simd ? "cpu_simd" : "cpu_scalar")+":source="+residency;
+}
+
 struct Qwen3GgufEncoder::Impl {
+    std::shared_ptr<const Qwen3GgufPreparedSource> prepared;
     std::shared_ptr<const streaming::SourceLease> lease;
     Qwen3GgufConfig config;
     Qwen3GgufPlan plan;
     MemoryLedger ledger;
-    std::unique_ptr<Tokenizer> tokenizer;
     std::unique_ptr<streaming::GgufWeightPager> source;
     std::unique_ptr<Qwen3ConditioningState> math;
     std::atomic<bool> &cancel;
@@ -160,6 +225,7 @@ struct Qwen3GgufEncoder::Impl {
     gguf::DecodeOptions decode_options;
     std::string residency;
     bool started = false, completed = false;
+    uint64_t request_generation=encoder_request_generation();
     struct Adapter final : streaming::ModelSlotAdapter {
         struct Job { Adapter *owner = nullptr; const streaming::Group *group = nullptr; std::array<char, 512> error{}; };
         Impl &state;
@@ -198,40 +264,30 @@ struct Qwen3GgufEncoder::Impl {
     };
     std::shared_ptr<Adapter> adapter;
     std::unique_ptr<streaming::StageExecutor> executor;
-    Impl(const std::filesystem::path &path, const std::filesystem::path &cfg, const std::filesystem::path &tok,
+    Impl(std::shared_ptr<const Qwen3GgufPreparedSource> metadata,
          uint32_t p, uint64_t budget, Event e, std::atomic<bool> &c, gguf::DecodeOptions options, std::string mode)
-        : ledger(budget), cancel(c), event(std::move(e)), prefetch(p), decode_options(options), residency(std::move(mode)) {
+        : prepared(std::move(metadata)),ledger(budget), cancel(c), event(std::move(e)), prefetch(p), decode_options(options), residency(std::move(mode)) {
         validate_eval_policy(); require(prefetch <= 2, "qe_config_conflict: Qwen3 GGUF supports p=0/1/2");
         require(residency == "packed_resident" || residency == "packed_streamed", "qe_config_conflict: unknown Qwen3 source residency");
         if (!event) event = [](const std::string &, int, int) {};
-        std::vector<streaming::SourceFileIdentity> files;
-        for (const auto &[id, file] : std::vector<std::pair<std::string, std::filesystem::path>>{
-            {"text_encoder", path}, {"config", cfg}, {"tokenizer", tok}}) {
-            streaming::SourceFileIdentity f; f.logical_id = id; f.path = file; files.push_back(std::move(f));
-        }
-        lease = streaming::SourceLease::capture_verified(std::move(files), &cancel);
-        auto config_fd = lease->duplicate_fd("config"); config = read_qwen3_gguf_config(config_fd.get(), lease->file("config").bytes);
-        auto source_fd = lease->duplicate_fd("text_encoder"); const auto directory = gguf::read_directory(source_fd.get(), lease->file("text_encoder").bytes);
-        check_metadata(directory, config);
-        auto token_fd = lease->duplicate_fd("tokenizer");
-        verify_qwen3_gguf_tokenizer(token_fd.get(), lease->file("tokenizer").bytes, source_fd.get(), directory, config);
-        tokenizer = std::make_unique<Tokenizer>(token_fd.get(), lease->file("tokenizer").bytes);
-        lease->revalidate_open_files(); lease->revalidate_paths();
+        require(bool(prepared),"qe_adapter_mismatch: verified Qwen3 metadata required");
+        checkpoint(cancel);prepared->revalidate();lease=prepared->lease();config=prepared->config();
     }
 };
 Qwen3GgufEncoder::Qwen3GgufEncoder(const std::filesystem::path &p, const std::filesystem::path &c,
         const std::filesystem::path &t, uint32_t prefetch, uint64_t budget, const Event &e, std::atomic<bool> &cancel,
         gguf::DecodeOptions options, const std::string &residency)
-    : impl_(std::make_unique<Impl>(p, c, t, prefetch, budget, e, cancel, options, residency)) {}
+    : Qwen3GgufEncoder(Qwen3GgufPreparedSource::prepare(p,c,t,cancel),prefetch,budget,e,cancel,options,residency) {}
+Qwen3GgufEncoder::Qwen3GgufEncoder(std::shared_ptr<const Qwen3GgufPreparedSource> source,uint32_t prefetch,
+        uint64_t budget,const Event &e,std::atomic<bool> &cancel,gguf::DecodeOptions options,const std::string &residency)
+    : impl_(std::make_unique<Impl>(std::move(source),prefetch,budget,e,cancel,options,residency)) {}
 Qwen3GgufEncoder::~Qwen3GgufEncoder() { if (!drain_safely()) (void)impl_.release(); }
 Tokens Qwen3GgufEncoder::tokenize(const std::string &prompt, bool dynamic) {
-    impl_->lease->revalidate_open_files(); impl_->lease->revalidate_paths();
-    return impl_->tokenizer->z_image_prompt(prompt, dynamic);
+    return impl_->prepared->tokenize(prompt,dynamic);
 }
 std::string Qwen3GgufEncoder::identity() const {
-    return std::string(impl_->lease->artifact_digest()) + ":qwen3-z-source-mixed-v1:p=" +
-        std::to_string(impl_->prefetch) + ":managed=" + std::to_string(impl_->ledger.snapshot().budget_bytes) +
-        ":decode=" + (impl_->decode_options.use_simd ? "cpu_simd" : "cpu_scalar") + ":source=" + impl_->residency;
+    return impl_->prepared->execution_identity(impl_->prefetch,impl_->ledger.snapshot().budget_bytes,
+        impl_->decode_options,impl_->residency);
 }
 bool Qwen3GgufEncoder::drain_safely() noexcept {
     if (!impl_) return true;
@@ -250,7 +306,7 @@ Tensor Qwen3GgufEncoder::encode(const Tokens &tokens) {
     auto embedding = s.source->gather_rows("token_embd.weight", rows, &s.cancel);
     s.math = std::make_unique<Qwen3ConditioningState>(tokens, mx::expand_dims(embedding, 0), Qwen3Conditioning::z_image());
     s.adapter = std::make_shared<Impl::Adapter>(s);
-    s.executor = std::make_unique<streaming::StageExecutor>(0, s.lease->generation(), s.adapter);
+    s.executor = std::make_unique<streaming::StageExecutor>(0, s.request_generation, s.adapter);
     s.executor->begin(s.plan.layout.stages.front());
     try {
         checkpoint(s.cancel);
@@ -274,6 +330,7 @@ QuantizedExecutionMetrics Qwen3GgufEncoder::metrics() const {
     out.source_load_seconds = m.packed_read_seconds; out.decode_seconds = m.decode_seconds; out.exposed_wait_seconds = e.wait_seconds;
     out.slots = s.plan.layout.stages.front().slot_count; out.prefetch = s.prefetch;
     out.decode_backend = s.decode_options.use_simd ? "cpu_simd" : "cpu_scalar";
+    out.conditioning_producer_generation=s.request_generation;
     out.source_residency = s.residency; out.source_logical_bytes = m.source_logical_bytes;
     out.read_buffer_bytes = m.read_buffer_capacity_bytes; out.source_read_bytes = m.source_read_bytes;
     out.streamed_read_seconds = m.streamed_read_seconds;

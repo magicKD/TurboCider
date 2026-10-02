@@ -45,6 +45,7 @@ class MeasurementOptionsTests(unittest.TestCase):
                      "--retain-packed","--runs","3","--measurement","timing"], "alternate prompt requires diagnostic")
 
     def test_component_inputs_are_atomic_and_explicit(self):
+        self.reject(["--encoder-metadata-cache","on"], "encoder metadata cache requires bound GGUF encoder")
         self.reject(["--encoder-gguf", "missing.gguf"], "must be supplied together")
         self.reject(["--encoder-gguf", "missing.gguf", "--encoder-config", "missing.json",
                      "--encoder-tokenizer", "missing.json"], "missing encoder")

@@ -10,7 +10,7 @@
 
 namespace tc {
 
-namespace components { class Qwen3GgufEncoder; }
+namespace components { class Qwen3GgufEncoder;class Qwen3GgufPreparedSource; }
 
 class ZImageExactStream;
 class ZImageGgufStream;
@@ -40,6 +40,10 @@ class ZImage final : public ModelSession {
     mutable Tokenizer tokenizer_;
     Weights text_encoder_;
     std::unique_ptr<components::Qwen3GgufEncoder> encoder_gguf_;
+    std::shared_ptr<const components::Qwen3GgufPreparedSource> encoder_gguf_metadata_;
+    std::shared_ptr<const streaming::SourceLease> request_encoder_gguf_lease_;
+    uint64_t encoder_metadata_preparations_=0;
+    std::optional<Tokens> cached_encoder_tokens_;
     std::string cached_encoder_gguf_identity_;
     std::optional<QuantizedExecutionMetrics> cached_encoder_gguf_metrics_;
     Weights transformer_;

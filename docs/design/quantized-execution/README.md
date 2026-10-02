@@ -51,6 +51,7 @@
 | [22 FP16 packed compute/逐block N1](22-fp16-packed-compute-and-block-validation.md) | explicit FP16 QMM/FP32 glue、cache分账与独立source轨迹；Q8/Q4单cell全部block N1及≤20%/lower-memory screen通过，dynamic refiner中间层负结果 |
 | [23 raw-GPU affine streaming](23-raw-gpu-affine-streaming.md) | raw Ready/CPU只读与当前GPU bank、有界批量packing/claims/cache容量拒绝；K1/K2/K3和真实Q8/Q4 exact，6/8GB组合observed fit但BF16速度门失败 |
 | [24 fixed bank/dependency-ready](24-fixed-gpu-bank-and-dependency-ready.md) | 固定GPU输出bank/ticket、常驻浮点refiners、显式packing依赖；Q8/Q4全部block N1与取消exact、逐tensor压缩预测；全请求内存下降但BF16速度门仍失败 |
+| [25 verified encoder metadata](25-verified-encoder-metadata-cache.md) | 仅CPU metadata/tokenizer复用、文件/配置/取消失效与publish门；同库cache-hit省约.34s、4.93GB observed fit；非保留Q4约2s CPU repack负结果，速度/整体资格未完成 |
 
 ## 当前状态速查
 

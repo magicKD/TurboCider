@@ -46,12 +46,13 @@ def main():
     parser.add_argument("--encoder-source-residency",choices=["packed_resident","packed_streamed"],default="packed_streamed")
     parser.add_argument("--encoder-weight-limit-bytes",type=int,default=1<<30,
                         help="private encoder managed-weight ceiling, NOT whole-request RAM cap")
+    parser.add_argument("--encoder-metadata-cache",choices=("on","off"),help="verified CPU metadata/tokenizer only; no weights; off preserves reconstruct-per-request control")
     parser.add_argument("--size",type=int,default=512)
     parser.add_argument("--steps",type=int,default=4)
     parser.add_argument("--seed",type=int,default=42)
     parser.add_argument("--precision",choices=["z-source-mixed-v1","z-source-mixed-f16-v1","z-source-exact-f32-v1","z-source-native-affine-v1","z-mlx-compat-affine-v1","z-mlx-compat-f16-v1","z-mlx-compat-f32-v1","z-dense-bf16-v1","z-raw-gpu-affine-f16-v1","z-raw-gpu-fixed-f16-v1","z-raw-gpu-fixed-refresident-f16-v1","z-raw-gpu-dependency-refresident-f16-v1"],default="z-source-mixed-v1")
     parser.add_argument("--prompt",default="A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture.")
-    parser.add_argument("--alternate-prompt",help="diagnostic retained-bank A/B/A invalidation only; requires >=3 runs, no warmup/cancel")
+    parser.add_argument("--alternate-prompt",help="diagnostic retained-bank or bound-encoder A/B/A invalidation; >=3 runs, no warmup/cancel")
     parser.add_argument("--dump",action="store_true",help="save diagnostic latents/pixels; not a performance run")
     parser.add_argument("--cancel-once-at-block",type=int,help="cancel the first request at a main block, then test retry")
     parser.add_argument("--cancel-once-at-encoder-layer",type=int,help="cancel first uncached Qwen3 encode, then test retry")
@@ -115,9 +116,10 @@ def main():
         key="TURBOCIDER_Z_GGUF_RETAIN_PACKED"
         if key in os.environ and os.environ[key]!="1": parser.error("conflicting packed retention environment")
         os.environ[key]="1"
-    if args.alternate_prompt is not None and (args.measurement!="diagnostic" or not args.retain_packed or
+    encoder_for_alternation=all((args.encoder_gguf,args.encoder_config,args.encoder_tokenizer)) or bool(os.environ.get("TURBOCIDER_Z_QWEN3_GGUF"))
+    if args.alternate_prompt is not None and (args.measurement!="diagnostic" or not (args.retain_packed or encoder_for_alternation) or
             args.runs<3 or args.warmup or any(c is not None for c in cancellations) or not args.alternate_prompt.strip()):
-        parser.error("alternate prompt requires diagnostic retained-bank >=3 runs without warmup/cancel")
+        parser.error("alternate prompt requires diagnostic retained-bank or bound-encoder >=3 runs without warmup/cancel")
     if args.native_import:
         if os.environ.get("TURBOCIDER_Z_GGUF_IMPORT",native_import)!=native_import: parser.error("conflicting native import environment")
         os.environ["TURBOCIDER_Z_GGUF_IMPORT"]=native_import
@@ -155,6 +157,11 @@ def main():
         os.environ.update(encoder_environment)
     encoder_environment={key:value for key,value in os.environ.items()
         if key.startswith("TURBOCIDER_QWEN3_") or key.startswith("TURBOCIDER_Z_QWEN3_")}
+    if args.encoder_metadata_cache is not None:
+        if not encoder_environment.get("TURBOCIDER_Z_QWEN3_GGUF"): parser.error("encoder metadata cache requires bound GGUF encoder")
+        key="TURBOCIDER_QWEN3_GGUF_METADATA_CACHE";value="1" if args.encoder_metadata_cache=="on" else "0"
+        if key in os.environ and os.environ[key]!=value: parser.error("conflicting encoder metadata cache environment")
+        os.environ[key]=value;encoder_environment[key]=value
     if args.output.exists() or args.output.is_symlink(): parser.error("output already exists")
     if args.cancel_once_at_block is not None and (not 0<=args.cancel_once_at_block<30 or args.prefetch[0]<0):
         parser.error("cancellation requires a bounded first request and block 0..29")

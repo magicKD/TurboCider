@@ -61,6 +61,24 @@ def identity(report, row):
     encoder = metrics.get("encoder_quantized_execution")
     if not encoder:
         raise ValueError("budget screen requires explicit GGUF encoder identity, not an unbound dense encoder")
+    metadata_policy=encoder.get("source_metadata_policy")
+    if metadata_policy not in (None,"reconstruct-per-request-v1","engine-verified-cpu-metadata-only-v1"):
+        raise ValueError("unknown observed encoder metadata policy")
+    if metadata_policy is not None:
+        if type(encoder.get("source_metadata_reused")) is not bool:
+            raise ValueError("invalid observed encoder metadata reuse")
+        positive(encoder.get("source_metadata_preparations"),"metadata preparation count")
+        positive(encoder.get("conditioning_producer_generation"),"conditioning producer generation")
+        if any(type(encoder[key]) is not int for key in ("source_metadata_preparations","conditioning_producer_generation")):
+            raise ValueError("encoder metadata counters must be integers")
+        if metadata_policy=="reconstruct-per-request-v1" and encoder["source_metadata_reused"]:
+            raise ValueError("reconstruct encoder reported metadata reuse")
+        configured=report.get("encoder_environment",{}).get("TURBOCIDER_QWEN3_GGUF_METADATA_CACHE")
+        if configured not in (None,"0","1") or (configured is not None and
+                (configured=="1")!=(metadata_policy=="engine-verified-cpu-metadata-only-v1")):
+            raise ValueError("observed encoder metadata policy differs from configured control")
+    elif report.get("encoder_environment",{}).get("TURBOCIDER_QWEN3_GGUF_METADATA_CACHE") is not None:
+        raise ValueError("configured encoder metadata cache lacks observed policy")
     if report.get("prompt_cache_policy") == "miss" and metrics.get("prompt_cache_hit") is not False:
         raise ValueError("prompt-cache miss arm reused conditioning")
     if (report.get("prompt_cache_policy") == "hit" and row.get("measurement") == "timing" and
@@ -76,6 +94,7 @@ def identity(report, row):
         "encoder_sha256": sha(encoder["source_sha256"]),
         "encoder_layout_digest": sha(encoder["layout_digest"]),
         "encoder_profile": encoder["precision_profile"],
+        "encoder_metadata_policy":metadata_policy,
         "encoder_controls": {key: value for key, value in report.get("encoder_environment", {}).items()
             if key not in ("TURBOCIDER_Z_QWEN3_GGUF", "TURBOCIDER_Z_QWEN3_GGUF_CONFIG")},
         "prompt_cache_policy": report["prompt_cache_policy"],
@@ -177,7 +196,7 @@ def screen(reports, budgets=(6, 8, 10, 16), buffer_percent=10, min_samples=4, bu
         if len(record["timings_seconds"]) < min_samples or not record["memory_runs"]:
             raise ValueError("insufficient timing or memory evidence: " + name)
         record["warm_median_seconds"] = statistics.median(record["timings_seconds"])
-    result = {"schema": "tc-gguf-memory-budget-screen-v1", "production_qualified": False,
+    result = {"schema": "tc-gguf-memory-budget-screen-v2", "production_qualified": False,
         "scope": "fastest observed same-source packed/bounded candidate that fits sampled footprint; NOT enforced whole-request caps or true small-device qualification",
         "whole_request_memory": "unknown", "formal_performance": "not_run", "identity": common,
         "buffer_percent": buffer_percent, "budget_unit": budget_unit, "candidates": candidates, "budgets": []}

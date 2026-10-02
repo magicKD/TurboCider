@@ -48,6 +48,25 @@ def reports(native=False):
 
 
 class BudgetScreenTests(unittest.TestCase):
+    def test_encoder_metadata_lifecycle_and_controls_are_bound(self):
+        data=reports()
+        for report in data:
+            report["encoder_environment"]["TURBOCIDER_QWEN3_GGUF_METADATA_CACHE"]="1"
+            for row in report["runs"]:
+                row["metrics"]["encoder_quantized_execution"].update(source_metadata_policy="engine-verified-cpu-metadata-only-v1",
+                    source_metadata_reused=False,source_metadata_preparations=1,conditioning_producer_generation=1)
+        result=MODULE.screen(data)
+        self.assertEqual(result["identity"]["encoder_metadata_policy"],"engine-verified-cpu-metadata-only-v1")
+        for fault in ("policy","missing","reuse_type","counter","control","claimed_reuse"):
+            bad=copy.deepcopy(data);encoder=bad[1]["runs"][0]["metrics"]["encoder_quantized_execution"]
+            if fault=="policy":encoder["source_metadata_policy"]="unknown"
+            if fault=="missing":encoder.pop("source_metadata_policy")
+            if fault=="reuse_type":encoder["source_metadata_reused"]=1
+            if fault=="counter":encoder["conditioning_producer_generation"]=1.5
+            if fault=="control":bad[1]["encoder_environment"]["TURBOCIDER_QWEN3_GGUF_METADATA_CACHE"]="0"
+            if fault=="claimed_reuse":encoder.update(source_metadata_policy="reconstruct-per-request-v1",source_metadata_reused=True)
+            with self.subTest(fault=fault),self.assertRaises(ValueError):MODULE.screen(bad)
+
     def test_fastest_observed_fit_depends_on_budget_not_smallest_memory(self):
         result = MODULE.screen(reports(native=True))
         self.assertEqual([b["fastest_observed_candidate"] for b in result["budgets"]],

@@ -49,6 +49,7 @@ class ExperimentalGateTests(unittest.TestCase):
                  ("z-image-turbo-gguf",q8,{"TC_RAW_QUANTIZED_TEST":"1"}),
                  ("z-image-turbo-gguf",q8,{"TC_RAW_QUANTIZED_TEST":"1","TC_RAW_QUANTIZED_PROFILE":"z-raw-gpu-fixed-refresident-f16-v1"}),
                  ("z-image-turbo-gguf",q8,{"TC_RAW_QUANTIZED_TEST":"1","TC_RAW_QUANTIZED_PROFILE":"z-raw-gpu-dependency-refresident-f16-v1"}),
+                 ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_QWEN3_GGUF":str(ROOT/"models/Qwen3-4B-GGUF/Qwen3-4B-Q8_0.gguf"),"TURBOCIDER_QWEN3_GGUF_METADATA_CACHE":"1"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_RETAIN_PACKED":"1"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1","TURBOCIDER_Z_GGUF_COMPUTE":"f16_down64"}),

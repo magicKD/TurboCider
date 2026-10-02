@@ -222,6 +222,9 @@ struct QuantizedExecutionMetrics {
     uint64_t allocator_cache_limit_bytes=0;
     double gpu_prepare_seconds=0;
     uint64_t gpu_fixed_output_banks=0,gpu_fixed_output_bank_bytes=0;
+    std::string source_metadata_policy;
+    bool source_metadata_reused=false;
+    uint64_t source_metadata_preparations=0,conditioning_producer_generation=0;
 };
 struct QuantizedSourceComparison {
     std::string name;

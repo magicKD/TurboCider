@@ -3140,6 +3140,7 @@ void ZImage::unload() {
         throw std::runtime_error("Qwen3 GGUF drain unproven; restart the process");
     }
     encoder_gguf_.reset(); cached_encoder_gguf_identity_.clear(); cached_encoder_gguf_metrics_.reset();
+    encoder_gguf_metadata_.reset();request_encoder_gguf_lease_.reset();encoder_metadata_preparations_=0;cached_encoder_tokens_.reset();
     if (gguf_stream_ && !gguf_stream_->drain_safely()) {
         streaming_quarantined_ = true;
         throw std::runtime_error("GGUF drain unproven; restart the process");
@@ -3211,7 +3212,20 @@ Tensor ZImage::encode_text(const Tokens &tokens, const Event &event, std::atomic
 }
 
 bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool> &cancelled) {
+    checkpoint(cancelled);request_encoder_gguf_lease_.reset();
     std::string encoder_identity;
+    std::shared_ptr<const components::Qwen3GgufPreparedSource> metadata;
+    bool metadata_cache=false,metadata_reused=false;
+    uint32_t encoder_prefetch=0;uint64_t encoder_budget=0;
+    gguf::DecodeOptions encoder_decode;
+    std::string encoder_residency;
+    auto annotate_metadata=[&] {
+        if (cached_encoder_gguf_metrics_) {
+            auto &m=*cached_encoder_gguf_metrics_;
+            m.source_metadata_policy=metadata_cache ? "engine-verified-cpu-metadata-only-v1" : "reconstruct-per-request-v1";
+            m.source_metadata_reused=metadata_reused;m.source_metadata_preparations=encoder_metadata_preparations_;
+        }
+    };
     if (const char *path = z_qwen3_gguf_path()) {
         require(!public_stream_lease_ && !r.memory_constrained.enabled,
                 "qe_envelope_unknown: Qwen3 GGUF whole-request/public qualification is not available");
@@ -3219,22 +3233,43 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
         for (const auto &lora : active_loras_) require(lora.role != "text_encoder", "qe_config_conflict: Qwen3 GGUF encoder LoRA is not supported");
         const char *config = std::getenv("TURBOCIDER_Z_QWEN3_GGUF_CONFIG");
         require(config && *config, "qe_config_conflict: Qwen3 GGUF requires bound original config path");
-        encoder_gguf_ = std::make_unique<components::Qwen3GgufEncoder>(path, config, root_ / "tokenizer/tokenizer.json",
-            uint32_t(z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_PREFETCH", 1, 2)),
-            z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_WEIGHT_LIMIT_BYTES", 8ull << 30, device_info().physical_memory), event, cancelled,
-            gguf::DecodeOptions{z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_SCALAR_DECODE", 0, 1) == 0},
-            std::getenv("TURBOCIDER_QWEN3_GGUF_SOURCE_RESIDENCY") ? std::getenv("TURBOCIDER_QWEN3_GGUF_SOURCE_RESIDENCY") : "packed_resident");
-        encoder_identity = encoder_gguf_->identity();
+        encoder_prefetch=uint32_t(z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_PREFETCH",1,2));
+        encoder_budget=z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_WEIGHT_LIMIT_BYTES",8ull<<30,device_info().physical_memory);
+        encoder_decode={z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_SCALAR_DECODE",0,1)==0};
+        encoder_residency=std::getenv("TURBOCIDER_QWEN3_GGUF_SOURCE_RESIDENCY") ? std::getenv("TURBOCIDER_QWEN3_GGUF_SOURCE_RESIDENCY") : "packed_resident";
+        metadata_cache=z_qwen3_gguf_integer("TURBOCIDER_QWEN3_GGUF_METADATA_CACHE",1,1)!=0;
+        if (metadata_cache && encoder_gguf_metadata_ &&
+            encoder_gguf_metadata_->reusable_for(path,config,root_/"tokenizer/tokenizer.json")) {
+            metadata=encoder_gguf_metadata_;metadata_reused=true;
+        } else {
+            encoder_gguf_metadata_.reset();
+            metadata=components::Qwen3GgufPreparedSource::prepare(path,config,root_/"tokenizer/tokenizer.json",cancelled);
+            require(encoder_metadata_preparations_!=UINT64_MAX,"Qwen3 metadata preparation counter exhausted");
+            ++encoder_metadata_preparations_;
+            if (metadata_cache) encoder_gguf_metadata_=metadata;
+        }
+        // Even a prompt-cache hit checks the full execution policy and current
+        // fd/path generations. No stale metadata gets to bypass these gates.
+        encoder_identity=metadata->execution_identity(encoder_prefetch,encoder_budget,encoder_decode,encoder_residency);
+        request_encoder_gguf_lease_=metadata->lease();
+        event(metadata_reused ? "qwen3_gguf_metadata_reused" : "qwen3_gguf_metadata_prepared",1,1);
+    } else {
+        require(!std::getenv("TURBOCIDER_QWEN3_GGUF_METADATA_CACHE"),"qe_config_conflict: encoder metadata cache requires bound GGUF encoder");
+        encoder_gguf_metadata_.reset();
     }
     if (cached_conditioning_ && cached_prompt_ == r.prompt && cached_dynamic_ == r.dynamic_text &&
         cached_encoder_manifest_ == r.encoder_ane_manifest && cached_encoder_gguf_identity_ == encoder_identity) {
-        encoder_gguf_.reset();
+        annotate_metadata();encoder_gguf_.reset();
         event("z_image_text_cache_hit", 1, 1);
         return true;
     }
+    if (metadata) encoder_gguf_=std::make_unique<components::Qwen3GgufEncoder>(metadata,encoder_prefetch,encoder_budget,event,cancelled,encoder_decode,encoder_residency);
     auto tokens = encoder_gguf_ ? encoder_gguf_->tokenize(r.prompt, r.dynamic_text) :
         (public_stream_tokenizer_ ? *public_stream_tokenizer_ : tokenizer_).z_image_prompt(r.prompt, r.dynamic_text);
     cached_encoder_gguf_metrics_.reset();
+    // A failed new binding/prompt cannot reuse old conditioning with missing
+    // producer metrics on retry. Publish the new cache only after encode succeeds.
+    cached_conditioning_.reset();cached_encoder_tokens_.reset();
     if (!r.encoder_ane_manifest.empty()) {
         const auto prefill = components::qwen3_prefill_plan(
             r.encoder_ane_manifest, int(tokens.ids.size()));
@@ -3262,6 +3297,7 @@ bool ZImage::conditioning(const Request &r, const Event &event, std::atomic<bool
     auto encoder_metrics = encoder_hybrid_
         ? std::optional<HybridMetrics>(encoder_hybrid_->metrics()) : std::nullopt;
     cached_conditioning_ = std::move(encoded);
+    cached_encoder_tokens_=tokens;annotate_metadata();
     cached_encoder_hybrid_metrics_ = std::move(encoder_metrics);
     cached_prompt_ = r.prompt;
     cached_dynamic_ = r.dynamic_text;
@@ -4081,6 +4117,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     profile.phase("decode_end");
     require(mx::all(mx::isfinite(decoded)).item<bool>(), "nonfinite Z-Image pixels");
     if (gguf_packed_bank_ && gguf_direct_import_) { mx::synchronize();gguf_packed_bank_->check_unchanged(); }
+    if (request_encoder_gguf_lease_) request_encoder_gguf_lease_->revalidate_after_drain();
     auto pixels = mx::transpose(decoded, {0, 2, 3, 1});
     if (!warmup) {
         event("export", 0, 1);
@@ -4096,8 +4133,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.selection = selection;
     result.warmup = warmup;
     result.prompt_cache_hit = prompt_hit;
-    auto reported_tokens = (public_stream_tokenizer_ ? *public_stream_tokenizer_ : tokenizer_)
-                                   .z_image_prompt(r.prompt, r.dynamic_text);
+    auto reported_tokens = cached_encoder_tokens_ ? *cached_encoder_tokens_ :
+        (public_stream_tokenizer_ ? *public_stream_tokenizer_ : tokenizer_).z_image_prompt(r.prompt,r.dynamic_text);
     result.text_tokens = int(reported_tokens.ids.size());
     result.valid_text_tokens = reported_tokens.valid;
     result.actual_steps = r.steps;
