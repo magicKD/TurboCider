@@ -1,5 +1,9 @@
 # TurboCider 状态文档入口
 
+Playground 五模板与本地 AI 共享请求接口、透明图实测、扩图失败样本和 Runtime 导出发布竞态修复见
+[2026-10-02 共享工作流验收](2026-10-02-shared-playground-workflows.md)。
+扩图仍为试验性提示词引导；本阶段没有新增 ANE 加速结论。
+
 实际 App 的双图编辑、超分、输入缩放与原图恢复、Playground、API 和最终安装包验收见
 [2026-10-02 最终桌面验收](2026-10-02-final-app-acceptance.md)。
 此记录取代此前两份报告中的锁屏待验与旧 App 未替换状态。

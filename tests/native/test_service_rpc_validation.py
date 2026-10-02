@@ -80,6 +80,43 @@ class RPCValidationTests(unittest.TestCase):
         self.assertEqual(healthy["result"]["history_count"], 0)
         self.assertIsNone(self.process.poll())
 
+    def test_shared_workflow_discovery_composition_and_separate_plan(self):
+        capabilities = self.rpc({"action": "capabilities"})["result"]
+        self.assertEqual(capabilities["workflow"]["catalog_action"], "workflows")
+        self.assertEqual(capabilities["workflow"]["construction_action"], "workflow_request")
+        catalog = self.rpc({"action": "workflows"})["result"]
+        self.assertEqual(catalog["schema_version"], 1)
+        self.assertEqual({w["id"] for w in catalog["workflows"]},
+                         {"playground." + name for name in ("outfit", "identity", "face", "outpaint", "transparent")})
+        request = {"model": "qwen-image-2.1", "width": 512, "height": 512, "steps": 25,
+                   "execution": "gpu", "residency": "component_staged", "output": str(self.root / "result.png")}
+        value = {"workflow_id": "playground.face", "role_paths": {"target": str(self.root / "absent-target.png"),
+                 "person": str(self.root / "absent-person.png")}, "request": request, "instruction": "Keep the target scene."}
+        built = self.rpc({"action": "workflow_request", "input": value})
+        self.assertTrue(built["ok"], built)
+        composed = built["result"]
+        self.assertEqual([r["role"] for r in composed["roles"]], ["person", "target"])
+        self.assertEqual(composed["request"]["steps"], 25)
+        planned = self.rpc({"action": "plan", "request": composed["request"]})
+        self.assertTrue(planned["ok"], planned)
+        self.assertEqual(planned["result"]["operation"], "image.edit")
+        self.assertEqual(self.rpc({"action": "service_status"})["result"]["history_count"], 0)
+        self.assertFalse(Path(request["output"]).exists())
+        self.assertFalse((self.root / "absent-person.png").exists())
+        # Composition is explicitly not execution admission.
+        value["request"]["width"] = 513
+        invalid = self.rpc({"action": "workflow_request", "input": value})
+        self.assertTrue(invalid["ok"], invalid)
+        self.assert_rejected_without_exit({"action": "plan", "request": invalid["result"]["request"]})
+        for malformed in [
+            {"action": "workflows", "unexpected": True},
+            {"action": "workflow_request", "request": {}},
+            {"action": "workflow_request", "input": []},
+            {"action": "workflow_request", "input": {**value, "role_paths": {"unknown": "/file.png"}}},
+            b'{"action":"workflow_request","input":{"workflow_id":"playground.transparent","request":{},"request":{}}}',
+        ]:
+            self.assert_rejected_without_exit(malformed)
+
     def test_qwen_reference_encoding_discovery_and_plan_opt_in(self):
         models = self.rpc({"action": "models"})
         self.assertTrue(models["ok"])

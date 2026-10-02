@@ -3,35 +3,77 @@ import Combine
 import Foundation
 import UniformTypeIdentifiers
 
+private struct PlaygroundWorkflowCatalog: Decodable {
+    struct Role: Decodable {
+        let id: String
+        let title: String
+        let detail: String
+        let required: Bool
+    }
+    struct Mode: Decodable {
+        let id: String
+        let default_instruction: String?
+    }
+    struct Workflow: Decodable {
+        let id: String
+        let title: String
+        let detail: String
+        let default_instruction: String
+        let roles: [Role]
+        let modes: [Mode]
+    }
+    let schema_version: Int
+    let model: String
+    let workflows: [Workflow]
+    // A metadata-only C ABI query: no engine, planning, file access or weights.
+    static let shared: PlaygroundWorkflowCatalog? = {
+        guard let value = try? JSONDecoder().decode(Self.self, from: NativeEngine.workflows()),
+              value.schema_version == 1, value.model == "qwen-image-2.1",
+              Set(value.workflows.map(\.id)).count == value.workflows.count else { return nil }
+        return value
+    }()
+}
+
 enum PlaygroundTemplate: String, Codable, CaseIterable, Identifiable, Sendable {
-    case outfit, identity
+    case outfit, identity, face, outpaint, transparent
     var id: String { rawValue }
     var workflowID: String { "playground.\(rawValue)" }
-    var title: String { self == .outfit ? "换装" : "人物一致性" }
-    var detail: String {
-        self == .outfit ? "保留人物身份，用第二张参考图更换服装。"
-            : "保留人物外观，可加入第二张图片作为场景参考。"
+    fileprivate var definition: PlaygroundWorkflowCatalog.Workflow? {
+        PlaygroundWorkflowCatalog.shared?.workflows.first { $0.id == workflowID }
     }
-    var roles: [PlaygroundRole] { self == .outfit ? [.person, .clothing] : [.person, .scene] }
-    var requiredRoles: [PlaygroundRole] { self == .outfit ? roles : [.person] }
-    var defaultInstruction: String {
-        self == .outfit ? "服装自然贴合，保留人物的脸、发型和姿态。" : "保持人物的脸、发型和服装一致，画面自然。"
+    var title: String { definition?.title ?? rawValue }
+    var detail: String { definition?.detail ?? "工作流目录不可用，请重新安装完整 App。" }
+    var roles: [PlaygroundRole] { definition?.roles.compactMap { PlaygroundRole(rawValue: $0.id) } ?? [] }
+    var requiredRoles: [PlaygroundRole] {
+        definition?.roles.filter(\.required).compactMap { PlaygroundRole(rawValue: $0.id) } ?? []
+    }
+    var defaultInstruction: String { definition?.default_instruction ?? "" }
+    var extractionInstruction: String { definition?.modes.first { $0.id == "extract" }?.default_instruction ?? defaultInstruction }
+    func title(for role: PlaygroundRole) -> String { definition?.roles.first { $0.id == role.rawValue }?.title ?? role.title }
+    func detail(for role: PlaygroundRole) -> String { definition?.roles.first { $0.id == role.rawValue }?.detail ?? role.detail }
+    var primaryRole: PlaygroundRole {
+        switch self { case .outpaint, .transparent: return .source; case .face: return .target; default: return .person }
+    }
+    var instructionTitle: String { self == .transparent ? "主体描述或附加要求" : "附加指令" }
+    var referenceHint: String {
+        switch self {
+        case .outfit: return "人物为 <image1>，服装为 <image2>。"
+        case .identity: return "人物为 <image1>；可选场景为 <image2>。"
+        case .face: return "身份参考为 <image1>，要修改脸部的目标图为 <image2>。"
+        case .outpaint: return "原图为 <image1>。在当前画布中扩展视野，AI 会重新构图，原图细节可能变化。"
+        case .transparent: return "不添加原图时按描述生成透明图；添加原图后提取其中的主体。"
+        }
     }
 }
 
 enum PlaygroundRole: String, Codable, Identifiable, Sendable {
-    case person, clothing, scene
+    case person, clothing, scene, source, target
     var id: String { rawValue }
-    var title: String {
-        switch self { case .person: return "人物"; case .clothing: return "服装"; case .scene: return "场景" }
+    private var definition: PlaygroundWorkflowCatalog.Role? {
+        PlaygroundWorkflowCatalog.shared?.workflows.flatMap(\.roles).first { $0.id == rawValue }
     }
-    var detail: String {
-        switch self {
-        case .person: return "人物身份与外观的参考"
-        case .clothing: return "要穿上的服装参考"
-        case .scene: return "可选的背景与构图参考"
-        }
-    }
+    var title: String { definition?.title ?? rawValue }
+    var detail: String { definition?.detail ?? "选择参考图片" }
 }
 
 struct PlaygroundTemplateDraft: Codable, Sendable {
@@ -39,11 +81,12 @@ struct PlaygroundTemplateDraft: Codable, Sendable {
     var roleAssets: [String: StudioAsset] = [:]
     var instruction: String
     var lastSeed: Int?
+    var expansion: Double? = nil
     var lastJobID: UUID?
 }
 
 struct PlaygroundDocument: Codable, Sendable {
-    var schemaVersion = 1
+    var schemaVersion = 2
     var selectedTemplate = PlaygroundTemplate.outfit
     var templates: [String: PlaygroundTemplateDraft]
 }
@@ -93,17 +136,41 @@ struct PlaygroundDocument: Codable, Sendable {
         guard asset(for: role) != nil, let index = template.roles.firstIndex(of: role) else { return nil }
         return index + 1
     }
-    var prompt: String {
-        let base: String
-        switch template {
-        case .outfit:
-            base = "Use <image1> as the person reference and <image2> as the clothing reference. Dress the person from <image1> in the clothing from <image2>. Preserve the person's facial identity, hairstyle, body proportions and pose. Keep the original scene unless instructed otherwise. Make the clothing fit naturally. Do not reproduce the clothing reference as a separate image. Output one finished image."
-        case .identity:
-            base = "Use <image1> as the person identity reference. Preserve the person's facial identity, hairstyle, body proportions and clothing. "
-                + (asset(for: .scene) == nil ? "Keep a natural, coherent scene. " : "Use <image2> as the scene and composition reference, placing the person from <image1> into that scene naturally. ")
-                + "Output one finished image."
+    var previewAsset: StudioAsset? { asset(for: template.primaryRole) }
+    var outpaintExpansion: Double { current.expansion ?? 1.5 }
+    @discardableResult func setOutpaintExpansion(_ value: Double) -> Bool {
+        guard template == .outpaint, !importing, importTask == nil, generationTask == nil,
+              [1.25, 1.5, 2.0].contains(value) else { return false }
+        var updated = document; updated.templates[template.rawValue]?.expansion = value
+        commit(updated); return true
+    }
+    private struct CompiledWorkflow: Decodable {
+        let operation: String
+        let prompt: String
+    }
+    private func compileWorkflow(preview: Bool = false) throws -> CompiledWorkflow {
+        guard template.definition != nil else {
+            throw NativeFailure(message: "工作流目录不可用，请重新安装完整 App。")
         }
-        return base + "\n\nAdditional instruction:\n" + instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        var paths = Dictionary(uniqueKeysWithValues: template.roles.compactMap { role in
+            asset(for: role).map { (role.rawValue, $0.path) }
+        })
+        // Missing required images have placeholder paths only in the prompt
+        // preview. Submission always composes again using actual bound assets.
+        if preview {
+            for role in template.requiredRoles where paths[role.rawValue] == nil {
+                paths[role.rawValue] = "/reference/\(role.rawValue)"
+            }
+        }
+        var input: [String: Any] = ["workflow_id": template.workflowID, "role_paths": paths,
+            "instruction": instruction,
+            "request": ["schema_version": 1, "model": settings.modelID]]
+        if template == .outpaint { input["expansion"] = outpaintExpansion }
+        return try JSONDecoder().decode(CompiledWorkflow.self,
+            from: NativeEngine.workflowRequest(input: JSONSerialization.data(withJSONObject: input)))
+    }
+    var prompt: String {
+        (try? compileWorkflow(preview: true).prompt) ?? "工作流提示词不可用，请检查模型与参数。"
     }
     var generationBlocker: String? {
         do { _ = try generationDraft(); return nil }
@@ -111,7 +178,8 @@ struct PlaygroundDocument: Codable, Sendable {
     }
     var referenceEncodingDraft: StudioDraft {
         var draft = settings
-        draft.operation = "image.edit"; draft.assets = orderedAssets
+        draft.operation = template == .transparent && orderedAssets.isEmpty ? "image.generate" : "image.edit"
+        draft.assets = orderedAssets
         return draft
     }
     @discardableResult func setQwen21ReferenceSize(_ size: Int) -> Bool {
@@ -130,8 +198,12 @@ struct PlaygroundDocument: Codable, Sendable {
             throw NativeFailure(message: "Playground 配置尚未成功读取或保存，请先处理保存提示。")
         }
         guard !importing, importTask == nil else { throw NativeFailure(message: "请等待参考图处理完成。") }
-        guard let model, model.output == "image", model.supports("image.edit") else {
-            throw NativeFailure(message: "请从创作页同步一个已开放图片编辑的本地模型。")
+        guard let model, model.id == "qwen-image-2.1", model.output == "image", model.supports("image.edit") else {
+            throw NativeFailure(message: "这些工作流使用 Qwen Image 2.1，请从创作页同步该模型与参数。")
+        }
+        guard let definition = template.definition,
+              definition.roles.count == template.roles.count else {
+            throw NativeFailure(message: "工作流目录不完整，请重新安装完整 App。")
         }
         guard !settings.modelPath.isEmpty else {
             throw NativeFailure(message: "尚未选择本地模型目录，请在创作页选择后同步模型与参数。")
@@ -140,11 +212,12 @@ struct PlaygroundDocument: Codable, Sendable {
             throw NativeFailure(message: "Playground 首版不执行生成后自动超分。请在创作页关闭自动超分后，再同步模型与参数。")
         }
         for role in template.requiredRoles where asset(for: role) == nil {
-            throw NativeFailure(message: "请添加\(role.title)参考图。")
+            throw NativeFailure(message: "请添加\(template.title(for: role))参考图。")
         }
+        let workflow = try compileWorkflow()
         var draft = settings
-        draft.operation = "image.edit"; draft.assets = orderedAssets; draft.initImageID = orderedAssets.first?.id
-        draft.prompt = prompt
+        draft.operation = workflow.operation; draft.assets = orderedAssets; draft.initImageID = orderedAssets.first?.id
+        draft.prompt = workflow.prompt
         // Explicit local registry; never call the default Native catalog in a
         // View body and never normalize incompatible LoRA/cache parameters.
         try draft.validate(models: models)
@@ -163,8 +236,9 @@ struct PlaygroundDocument: Codable, Sendable {
     }
     @discardableResult func syncSettings(from draft: StudioDraft) -> Bool {
         guard !importing, importTask == nil else { message = "请等待参考图处理完成。"; return false }
-        guard let model = models.first(where: { $0.id == draft.modelID }), model.output == "image", model.supports("image.edit") else {
-            message = "当前创作模型未开放图片编辑，请先在创作页选择支持参考编辑的模型。"; return false
+        guard let model = models.first(where: { $0.id == draft.modelID }), model.id == "qwen-image-2.1",
+              model.output == "image", model.supports("image.edit") else {
+            message = "请在创作页选择 Qwen Image 2.1 后同步模型与参数。"; return false
         }
         var updated = document
         updated.templates[template.rawValue]?.settings = Self.parameterSettings(draft)
@@ -175,6 +249,9 @@ struct PlaygroundDocument: Codable, Sendable {
     func remove(_ role: PlaygroundRole) {
         guard !importing, importTask == nil, template.roles.contains(role), asset(for: role) != nil else { return }
         var updated = document; updated.templates[template.rawValue]?.roleAssets.removeValue(forKey: role.rawValue)
+        if template == .transparent, role == .source, current.instruction == template.extractionInstruction {
+            updated.templates[template.rawValue]?.instruction = template.defaultInstruction
+        }
         commit(updated); message = "已移除\(role.title)绑定，历史任务的输入副本仍保留。"
     }
 
@@ -237,8 +314,12 @@ struct PlaygroundDocument: Codable, Sendable {
             for (destination, asset) in zip(destinations, staged) {
                 updated.templates[workflow.rawValue]?.roleAssets[destination.rawValue] = asset
             }
+            if workflow == .transparent, asset(for: .source) == nil,
+               current.instruction == workflow.defaultInstruction {
+                updated.templates[workflow.rawValue]?.instruction = workflow.extractionInstruction
+            }
             commit(updated)
-            message = "已添加\(destinations.map(\.title).joined(separator: "、"))参考；人物始终为第一张。"
+            message = "已添加\(destinations.map(\.title).joined(separator: "、"))参考。\(template.referenceHint)"
             return true
         } catch {
             await importer.discard(staged)
@@ -295,11 +376,16 @@ struct PlaygroundDocument: Codable, Sendable {
         var updated = document; updated.templates[template.rawValue]?.lastJobID = job.id
         commit(updated)
     }
-    @discardableResult func useResultAsPerson(_ job: NativeJob) async -> Bool {
-        guard job.hasOutput, job.request.operation == "image.edit", job.workflowID == template.workflowID else {
+    @discardableResult func useResultAsReference(_ job: NativeJob) async -> Bool {
+        guard job.hasOutput, ["image.edit", "image.generate"].contains(job.request.operation), job.workflowID == template.workflowID else {
             message = "请先选择当前模板的有效生成图片。"; return false
         }
-        return await importFiles([URL(fileURLWithPath: job.request.output)], replacing: .person)
+        return await importFiles([URL(fileURLWithPath: job.request.output)], replacing: template.primaryRole)
+    }
+    // Retain the original state API for existing clients/tests.
+    @discardableResult func useResultAsPerson(_ job: NativeJob) async -> Bool {
+        guard template.primaryRole == .person else { return false }
+        return await useResultAsReference(job)
     }
 
     func reload() {
@@ -309,18 +395,33 @@ struct PlaygroundDocument: Codable, Sendable {
     private func readSavedDocument() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         do {
-            let decoded = try JSONDecoder().decode(PlaygroundDocument.self, from: Data(contentsOf: fileURL))
-            guard decoded.schemaVersion == 1, PlaygroundTemplate.allCases.allSatisfy({ decoded.templates[$0.rawValue] != nil }) else {
-                throw NativeFailure(message: "Playground 保存文件版本或模板不完整。")
+            var decoded = try JSONDecoder().decode(PlaygroundDocument.self, from: Data(contentsOf: fileURL))
+            let legacyTemplates: [PlaygroundTemplate] = [.outfit, .identity]
+            guard [1, 2].contains(decoded.schemaVersion), PlaygroundWorkflowCatalog.shared != nil else {
+                throw NativeFailure(message: "Playground 保存文件版本或工作流目录不可用。")
             }
-            for template in PlaygroundTemplate.allCases {
-                let assets = decoded.templates[template.rawValue]!.roleAssets
+            let expected = decoded.schemaVersion == 1 ? legacyTemplates : PlaygroundTemplate.allCases
+            guard Set(decoded.templates.keys) == Set(expected.map(\.rawValue)),
+                  expected.contains(decoded.selectedTemplate) else {
+                throw NativeFailure(message: "Playground 保存文件模板不完整或无法识别。")
+            }
+            for template in expected {
+                let entry = decoded.templates[template.rawValue]!, assets = entry.roleAssets
                 guard Set(assets.keys).isSubset(of: Set(template.roles.map(\.rawValue))),
-                      Set(assets.values.map(\.id)).count == assets.count else {
-                    throw NativeFailure(message: "Playground 参考图角色或标识不一致。")
+                      Set(assets.values.map(\.id)).count == assets.count,
+                      entry.expansion == nil || (template == .outpaint && [1.25, 1.5, 2.0].contains(entry.expansion!)) else {
+                    throw NativeFailure(message: "Playground 参考图角色、标识或扩图倍率不一致。")
                 }
             }
-            document = decoded; revision = UUID(); loadBlocked = false; storageError = nil; saved = true
+            let migrated = decoded.schemaVersion == 1
+            if migrated {
+                let settings = Self.parameterSettings(decoded.templates[decoded.selectedTemplate.rawValue]!.settings)
+                for template in PlaygroundTemplate.allCases where decoded.templates[template.rawValue] == nil {
+                    decoded.templates[template.rawValue] = PlaygroundTemplateDraft(settings: settings, instruction: template.defaultInstruction)
+                }
+                decoded.schemaVersion = 2
+            }
+            document = decoded; revision = UUID(); loadBlocked = false; storageError = nil; saved = !migrated
             message = nil
         } catch {
             loadBlocked = true; saved = false

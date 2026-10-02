@@ -50,6 +50,8 @@ Send one newline-terminated JSON object per connection. Responses use
 | `status`, `cancel` | `id` |
 | `jobs` | Optional `offset`, `limit` (default 20, maximum 100) |
 | `plan` | `request` |
+| `workflow_request` | `input`: workflow ID, role paths, optional instruction/expansion and native request settings |
+| `workflows` | None; shared App/API templates, role order, prompts and construction schema |
 | `capabilities`, `models`, `installations`, `doctor`, `service_status` | None |
 
 `capabilities` is the discovery entry point for scripts and local AI agents.
@@ -199,6 +201,67 @@ in the result. Changing model or relevant input identity invalidates reuse.
 The service admits up to 32 pending jobs; history is capped at 10,000 records.
 
 ## Ordered editing workflows
+
+The App and API share five Qwen templates: `playground.outfit`,
+`playground.identity`, `playground.face`, `playground.outpaint` and
+`playground.transparent`. Query `workflows` for their titles, ordered roles,
+required inputs, default instructions, prompt modes and `input_schema`.
+The catalog is compiled from one JSON source; the App does not maintain a
+separate copy of the prompt prefixes.
+
+`workflow_request` is **pure composition**. It does not read images, check
+weights, resize or pad files, load a model, call `plan`, submit work or create
+service history. It returns `request`, `operation`, `prompt` and an ordered
+`roles` receipt. It replaces the base request's operation, prompt and inputs;
+dimensions, seed, steps, execution, LoRA and cache settings remain unchanged.
+Other native settings pass through for authoritative validation by `plan`.
+Use explicit settings for generation; a minimal schema-1 request can use native
+defaults when constructing a preview. Schema 2 is also accepted, with one
+text/prompt input followed by the declared image references.
+
+```python
+catalog = client.workflows()
+composed = client.workflow_request({
+    'workflow_id': 'playground.face',
+    'role_paths': {'person': '/absolute/identity.png',
+                   'target': '/absolute/target.png'},
+    'instruction': 'Keep the target lighting and expression.',
+    'request': {'schema_version': 1, 'model': 'qwen-image-2.1',
+                'width': 512, 'height': 512, 'steps': 25, 'seed': 42,
+                'execution': 'gpu', 'residency': 'component_staged',
+                'qwen21_dit_cache': 'off', 'prompt_enhance': False,
+                'output': '/absolute/results/unique-face-result.png'},
+})
+plan = client.plan(composed['request'])
+job_id = client.submit('/absolute/Qwen-Image-2.1', composed['request'])
+print(job_id, flush=True)
+job = client.wait(job_id, on_progress=lambda job: print(job.get('progress', {})))
+# Need to stop? client.cancel(job_id), then keep querying status until terminal.
+output_path = job['result']['output']  # Local artifact; no upload/download API.
+```
+
+For the CLI, `turbocider workflows` returns the catalog and
+`turbocider workflow-request workflow-input.json` returns the same composition
+envelope. Save its `request` object separately for `turbocider plan`,
+`generate`, or an API `submit` request. Progress is available on CLI stderr or
+by polling API `status`; the service does not expose an event subscription.
+
+`outfit` requires `person` and `clothing`; `identity` requires `person` and
+accepts an optional `scene`; `face` requires `person` (facial identity) and
+`target` (the image to edit). `outpaint` requires `source` and accepts only
+`expansion` 1.25, 1.5 or 2, defaulting to 1.5. Expansion guides scene
+recomposition in the prompt: it does not change the requested output dimensions
+or guarantee fixed borders or preserved source pixels. Actual canvas dimensions
+still need to satisfy the selected model/LoRA/cache combination in `plan`.
+
+For `transparent`, omit `source` to generate a transparent subject, or supply
+`source` to extract the subject with `image.edit`. When instruction is omitted,
+generation uses the catalog's concrete subject example and extraction uses its
+source-preserving mode default. An explicit instruction is appended verbatim.
+Qwen exports RGBA PNG, but success alone does not establish correct subject
+extraction or a nonopaque alpha channel. Inspect the local image/alpha before
+using it as a transparent artifact. Masks remain visual references rather than
+hard pixel-preserving inpainting.
 
 API inputs are existing local files. Each `inputs` reference position determines
 the image number used by the model. Keep identity/outfit/scene roles in your

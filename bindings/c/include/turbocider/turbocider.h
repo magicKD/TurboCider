@@ -26,6 +26,12 @@ uint32_t tc_abi_version(void);
 char *tc_runtime_build_identity(void);
 char *tc_system_json(void);
 char *tc_models_json(void);
+/* Shared Qwen image workflow catalog and pure request composition. No model
+ * loading, plan, file reads or writes. Composition owns operation/prompt/inputs
+ * and preserves other native settings; use tc_plan_json separately to validate
+ * model/runtime admission before submission. Caller frees returned strings. */
+char *tc_workflows_json(void);
+int tc_workflow_request_json(const char *input_json, char **result_json, char **error);
 int tc_plan_json(const char *request_json, char **plan_json, char **error);
 /* Read-only public streaming preset query for the embedded App container.
  * This validates request intent and inspects the native catalog/device only;

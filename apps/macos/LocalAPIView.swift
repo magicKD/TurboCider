@@ -12,6 +12,7 @@ struct LocalAPIView: View {
         首先发送 {"action":"capabilities"} 获取操作、字段类型和限制；再发送 {"action":"models"} 查询模型能力（不是已安装模型列表）。
         发送 {"action":"installations"} 获取此服务所用模型库的 root 和 index；其中 installations、loras、anePartitions 是已登记的本机路径。files_verified=false 表示未检查权重完整性，不能据此保证可运行。
         模型库查询由服务自身配套助手执行，不使用调用方的环境或默认目录；旧版服务不支持此操作时需更新完整 App/CLI 包，不扫描目录猜模型。
+        发送 {"action":"workflows"} 获取 Playground 工作流、图片角色和参数；使用 workflow_request 的 input（workflow_id、role_paths、request、可选 instruction）组合请求。它只组合参数，不读取图片或执行生成；返回的 request 仍须经过 plan。
         响应格式为 {"ok":true,"result":...} 或 {"ok":false,"error":"..."}。
         使用 plan 检查完整生成请求，使用 submit 提交 model_path 和 request，保存返回的 id；用 status 查询直到 succeeded/failed/cancelled/interrupted。
         模型、LoRA、参考图与输出均使用本机路径；参考图按 inputs 顺序编号，每步使用独立输出路径。上一任务 succeeded 后再将其输出用于下一步。
@@ -55,7 +56,7 @@ struct LocalAPIView: View {
                     Text(api.externalWorkerActive ? "视频模型正在独立工作进程中运行" : api.sessionModel.isEmpty ? "服务尚未打开模型会话" : "服务会话已打开：\(api.sessionModel)")
                         .font(.callout).foregroundStyle(.secondary)
                 }
-                Text("先用 capabilities 获取接口格式，用 models 查询模型能力、installations 读取已登记模型与 LoRA 路径，再用 plan 检查生成参数。submit 提交后保存任务 ID，用 status 查询进度，cancel 停止任务。复制接入说明后，可以交给本机 AI 编排多步创作。")
+                Text("先用 capabilities 获取接口格式，用 models 查询模型能力、installations 读取已登记模型与 LoRA 路径。workflows 提供与 Playground 相同的工作流，workflow_request 按图片角色组合请求；再用 plan 检查生成参数。submit 提交后保存任务 ID，用 status 查询进度，cancel 停止任务。复制接入说明后，可以交给本机 AI 编排多步创作。")
                     .font(.callout)
                 Text("退出 App 会停止由此页面启动的服务；独立运行请使用 CLI 的 serve 命令。API 任务记录位于服务目录中，与创作页历史分开保存。")
                     .font(.caption).foregroundStyle(.secondary)

@@ -25,6 +25,8 @@ BUILD_SCRIPTS = (
     "tools/native/build.sh", "tools/native/dependencies.sh",
     "tools/native/generate_runtime_build_identity.py",
     "tools/native/generate_bundled_streaming_catalog.py",
+    "tools/native/generate_image_workflow_catalog.py",
+    "native/workflows/image_workflows.json",
     "tools/native/build_streaming_catalog.py",
     "tools/native/verify_streaming_campaign.py",
     "tools/native/streaming_release_policy.py",

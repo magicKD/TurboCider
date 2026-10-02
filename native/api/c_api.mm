@@ -7,6 +7,7 @@
 #include <cstring>
 #include "../runtime/execution.hpp"
 #include "../runtime/build_identity.hpp"
+#include "../workflows/image_workflows.hpp"
 #include "../runtime/memory_accounting.hpp"
 #include "../runtime/memory_execution.hpp"
 #include "../runtime/streaming/audit.hpp"
@@ -500,6 +501,28 @@ char *tc_models_json(void) {
             return copy(tc::json(tc::to_dictionary(tc::describe_modules())));
         } catch (...) {
             return strdup("{}");
+        }
+    }
+}
+char *tc_workflows_json(void) {
+    @autoreleasepool {
+        try { return copy(tc::json(tc::image_workflows_catalog())); }
+        catch (...) { return strdup("{\"error\":\"image workflow catalog unavailable\"}"); }
+    }
+}
+int tc_workflow_request_json(const char *input, char **out, char **error) {
+    if (out) *out = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(out && input, "missing workflow input or output pointer");
+            tc::require(strlen(input) <= 1048576, "workflow input exceeds 1 MiB");
+            *out = copy(tc::json(tc::image_workflow_request(tc::parse_json(input))));
+            return 0;
+        } catch (const std::exception &e) { return fail(error, e); }
+        catch (...) {
+            if (error) *error = strdup("unknown image workflow error");
+            return 1;
         }
     }
 }

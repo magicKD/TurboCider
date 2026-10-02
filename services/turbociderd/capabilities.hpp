@@ -20,6 +20,9 @@ inline NSDictionary *tc_service_capabilities() {
     NSArray *actions = @[
         action(@"capabilities", @"Describe this protocol without loading weights.", false, @{}, @[]),
         action(@"models", @"List registered model capabilities; this is not an installed-model inventory.", false, @{}, @[]),
+        action(@"workflows", @"Read the shared Qwen image-workflow catalog, ordered roles and prompt prefixes without weights or file access.", false, @{}, @[]),
+        action(@"workflow_request", @"Compose a native request from a shared workflow. No plan, file access or submission; call plan separately before submit.", false,
+               @{@"input": @{@"type": @"object", @"description": @"See workflows.input_schema: workflow_id, role_paths (absolute paths), instruction (optional), expansion (outpaint only), request (native schema 1 or 2 settings). Operation, prompt and inputs are owned by the workflow."}}, @[@"input"]),
         action(@"installations", @"Read the service's registered model, LoRA and ANE paths without loading weights or verifying files.", false, @{}, @[]),
         action(@"service_status", @"Read service ownership, active job and session state.", false, @{}, @[]),
         action(@"doctor", @"Read local runtime and device diagnostics.", false, @{}, @[]),
@@ -64,6 +67,8 @@ inline NSDictionary *tc_service_capabilities() {
             @"dispatch": @"serial RPC dispatch; inference worker remains unlocked"
         },
         @"workflow": @{
+            @"catalog_action": @"workflows", @"construction_action": @"workflow_request",
+            @"construction_scope": @"pure composition only; plan is authoritative for execution admission; files are not checked",
             @"execution": @"client_orchestrated_sequential_jobs",
             @"reference_order": @"inputs array order determines image numbering",
             @"output_paths": @"Use a distinct absolute output path for each job. Submit the next stage only after succeeded.",

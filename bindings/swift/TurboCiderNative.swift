@@ -514,6 +514,20 @@ public final class NativeEngine: @unchecked Sendable {
     public static func runtimeBuildIdentity() -> String { consume(tc_runtime_build_identity()) }
     public static func system() -> String { consume(tc_system_json()) }
     public static func models() -> String { consume(tc_models_json()) }
+    /// Shared UI/API metadata; never loads a model or reads image files.
+    public static func workflows() -> Data { Data(consume(tc_workflows_json()).utf8) }
+    /// Pure composition. The returned native request still requires plan and
+    /// the normal load-time weight checks before execution.
+    public static func workflowRequest(input: Data) throws -> Data {
+        guard !input.contains(0), let text = String(data: input, encoding: .utf8) else {
+            throw NativeFailure(message: "Workflow input must be UTF-8 JSON without NUL bytes.")
+        }
+        var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+        let status = text.withCString { tc_workflow_request_json($0, &result, &error) }
+        let message = consume(error), output = consume(result)
+        guard status == 0 else { throw NativeFailure(message: message) }
+        return Data(output.utf8)
+    }
     public static func plan(_ request: NativeRequest) throws -> Data {
         let data = try JSONEncoder().encode(request)
         var result: UnsafeMutablePointer<CChar>?

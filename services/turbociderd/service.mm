@@ -509,6 +509,12 @@ public:
         auto action=validate_rpc(request);
         if(action=="capabilities")return tc_service_capabilities();
         if(action=="models")return decode(take(tc_models_json()));
+        if(action=="workflows")return decode(take(tc_workflows_json()));
+        if(action=="workflow_request") {
+            char *result=nullptr,*error=nullptr;auto text=encode(request[@"input"]);
+            auto status=tc_workflow_request_json(text.c_str(),&result,&error);
+            auto value=take(result),message=take(error);check(status==0,message.c_str());return decode(value);
+        }
         if(action=="installations")return tc_service::library_inventory(executable_,shouldStop);
         if(action=="doctor")return decode(take(tc_system_json()));
         if(action=="plan") {char *result=nullptr,*error=nullptr;auto text=encode(request[@"request"]);auto status=tc_plan_json(text.c_str(),&result,&error);auto value=take(result),message=take(error);check(status==0,message.c_str());return decode(value);}

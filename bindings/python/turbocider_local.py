@@ -113,6 +113,18 @@ class Client:
     def models(self) -> dict[str, Any]:
         return self.rpc("models")
 
+    def workflows(self) -> dict[str, Any]:
+        """Shared Qwen templates, role order and prompts; no file/model access."""
+        return self.rpc("workflows")
+
+    def workflow_request(self, input: dict[str, Any]) -> dict[str, Any]:
+        """Compose only. Call plan(result['request']) before submitting.
+
+        Operation, prompt and inputs come from the workflow; all other native
+        request settings are retained. Paths are not read or verified here.
+        """
+        return self.rpc("workflow_request", input=input)
+
     def installations(self) -> dict[str, Any]:
         """Read the service's registered local model/LoRA metadata.
 

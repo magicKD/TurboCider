@@ -72,7 +72,8 @@ import UniformTypeIdentifiers
         try await resultOwnership(state, directory: stateDirectory, model: model, initial: initial, output: scene)
         try damagedFileProtection(root: root, model: model, initial: initial, validDocument: state.document)
         try await preprocessingAndPending(root: root, model: model, initial: initial, clothing: clothing)
-        print("PASS Playground independent drafts/roles/import rollback/persistence/provenance, source-based resize/restore, parameter blocks and provider pending/cancel/context guards (CPU only)")
+        try await expandedWorkflows(root: root, model: model, initial: initial, person: person, target: scene)
+        print("PASS five-workflow composition, face roles, outpaint bounds, transparent generate/edit, schema-1 migration; Playground independent drafts/roles/import rollback/persistence/provenance, source-based resize/restore, parameter blocks and provider pending/cancel/context guards (CPU only)")
     }
 
     @MainActor private static func draftIsolationAndRoles(directory: URL, creation: StudioState,
@@ -360,6 +361,100 @@ import UniformTypeIdentifiers
             guard ContinuousClock.now < deadline else { throw NativeFailure(message: "Playground timed out: \(label)") }
             try await Task.sleep(for: .milliseconds(5))
         }
+    }
+
+    @MainActor private static func expandedWorkflows(root: URL, model: StudioModel, initial: StudioDraft,
+        person: URL, target: URL) async throws {
+        let directory = root.appendingPathComponent("expanded-workflows")
+        let state = PlaygroundState(directory: directory, initialSettings: initial, models: [model])
+        try check(PlaygroundTemplate.allCases.count == 5 && PlaygroundTemplate.allCases.allSatisfy { !$0.roles.isEmpty && !$0.title.isEmpty },
+                  "Shared workflow catalog was not loaded")
+        state.selectTemplate(.face)
+        let targetImported = await state.importFiles([target], replacing: .target)
+        try check(targetImported && state.generationBlocker != nil && state.imageNumber(for: .target) == 2,
+                  "Face target alone enabled generation or changed reference numbering")
+        let personImported = await state.importFiles([person])
+        let face = try state.generationDraft()
+        try check(personImported && face.assets.map(\.name) == [person.lastPathComponent, target.lastPathComponent] &&
+                  state.previewAsset?.name == target.lastPathComponent && face.operation == "image.edit",
+                  "Face source/target ordering or preview was reversed")
+        try check(face.prompt.contains("<image1>") && face.prompt.contains("<image2>") && face.loras == initial.loras,
+                  "Face workflow lost reference labels or adapter configuration")
+        let faceBytes = try bytes(state.current)
+
+        state.selectTemplate(.outpaint)
+        try check(state.generationBlocker != nil, "Outpaint accepted no source")
+        let sourceImported = await state.importFiles([target])
+        let source = state.asset(for: .source)!
+        let originalBytes = try Data(contentsOf: URL(fileURLWithPath: source.path))
+        let previousSettings = try bytes(state.settings)
+        try check(sourceImported && !state.setOutpaintExpansion(0) && !state.setOutpaintExpansion(.infinity) &&
+                  !state.setOutpaintExpansion(.nan) && state.setOutpaintExpansion(2), "Outpaint expansion bounds failed")
+        let expanded = try state.generationDraft()
+        try check(expanded.assets == [source] && expanded.prompt.contains("2") &&
+                  (try bytes(state.settings)) == previousSettings && state.previewAsset == source,
+                  "Outpaint changed dimensions/settings/reference bytes instead of its workflow instruction")
+        try check(try Data(contentsOf: URL(fileURLWithPath: source.path)) == originalBytes, "Outpaint modified the original file")
+        state.save()
+        let reopened = PlaygroundState(directory: directory, initialSettings: StudioDraft(), models: [model])
+        try check(reopened.template == .outpaint && reopened.outpaintExpansion == 2 &&
+                  (try bytes(reopened.document.templates["face"]!)) == faceBytes,
+                  "Expansion persistence changed another workflow draft")
+
+        state.selectTemplate(.transparent)
+        let generatedDefault = state.instruction
+        let defaultSourceImported = await state.importFiles([person])
+        try check(defaultSourceImported && state.instruction.contains("保留原图主体") &&
+                  !state.instruction.contains("卡通狐狸"), "Transparent extraction kept the generation default")
+        state.remove(.source)
+        try check(state.instruction == generatedDefault, "Transparent source removal lost its generation default")
+        state.setInstruction("A fox sticker.\nPreserve this exact \"quoted\" instruction.  ")
+        let transparent = try state.generationDraft()
+        try check(transparent.operation == "image.generate" && transparent.activeAssets.isEmpty &&
+                  state.referenceEncodingDraft.operation == "image.generate" &&
+                  transparent.prompt.hasSuffix(state.instruction), "Transparent text generation lost its operation or verbatim instruction")
+        let extractedImported = await state.importFiles([person])
+        let extraction = try state.generationDraft()
+        try check(extractedImported && extraction.operation == "image.edit" && extraction.assets.count == 1 &&
+                  state.referenceEncodingDraft.operation == "image.edit" && state.imageNumber(for: .source) == 1,
+                  "Transparent extraction did not switch to one-source image editing")
+        try check(state.instruction == "A fox sticker.\nPreserve this exact \"quoted\" instruction.  ",
+                  "Adding a source overwrote the user's custom instruction")
+        state.remove(.source)
+        try check(try state.generationDraft().operation == "image.generate", "Removing source did not restore transparent text generation")
+        state.selectTemplate(.face)
+        try check(try bytes(state.current) == faceBytes, "Other workflow edits changed the face draft")
+
+        // Old schema-1 files have only the two original templates. Upgrade in
+        // memory without overwriting on read, retain every old field, and save
+        // the new schema atomically only when requested.
+        let legacyDirectory = root.appendingPathComponent("legacy-playground")
+        try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: true)
+        var legacy = state.document
+        legacy.schemaVersion = 1; legacy.selectedTemplate = .identity
+        legacy.templates = legacy.templates.filter { ["outfit", "identity"].contains($0.key) }
+        legacy.templates["identity"]?.instruction = "Saved legacy instruction"
+        let legacyBytes = try bytes(legacy), legacyFile = legacyDirectory.appendingPathComponent("playground.json")
+        try legacyBytes.write(to: legacyFile)
+        let migrated = PlaygroundState(directory: legacyDirectory, initialSettings: StudioDraft(), models: [model])
+        try check(migrated.storageError == nil && !migrated.saved && migrated.document.schemaVersion == 2 &&
+                  migrated.document.templates.count == 5 && migrated.instruction == "Saved legacy instruction" &&
+                  (try Data(contentsOf: legacyFile)) == legacyBytes, "Legacy migration overwrote or lost the saved draft")
+        for name in ["outfit", "identity"] {
+            try check(try bytes(migrated.document.templates[name]!) == bytes(legacy.templates[name]!), "Migration rewrote legacy settings or reference bindings")
+        }
+        migrated.save()
+        let final = PlaygroundState(directory: legacyDirectory, initialSettings: StudioDraft(), models: [model])
+        try check(final.saved && final.storageError == nil && (try bytes(final.document)) == bytes(migrated.document),
+                  "Migrated five-workflow document did not reopen")
+        var invalid = migrated.document
+        invalid.templates["outpaint"]?.expansion = 3
+        let invalidBytes = try bytes(invalid)
+        try invalidBytes.write(to: legacyFile)
+        let blocked = PlaygroundState(directory: legacyDirectory, initialSettings: initial, models: [model])
+        blocked.save()
+        try check(blocked.storageError != nil && (try Data(contentsOf: legacyFile)) == invalidBytes,
+                  "Invalid stored expansion was accepted or overwritten")
     }
 
     private static func modelFixture() throws -> StudioModel {

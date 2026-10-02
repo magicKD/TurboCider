@@ -54,6 +54,20 @@ class ClientTests(unittest.TestCase):
         payload = json.dumps({"ok": True, "result": {"name": "图片"}}, ensure_ascii=False).encode() + b"\n"
         self.assertEqual(self.exchange([payload[:7], payload[7:35], payload[35:]]), {"name": "图片"})
 
+    def test_shared_workflow_client_preserves_input_and_does_not_plan_or_submit(self):
+        client = api.Client("/unused")
+        value = {"workflow_id": "playground.outfit", "role_paths": {"person": "/person.png", "clothing": "/clothes.png"},
+                 "request": {"model": "qwen-image-2.1", "steps": 25}}
+        before = copy.deepcopy(value)
+        with patch.object(client, "rpc", return_value={"workflows": []}) as rpc:
+            self.assertEqual(client.workflows(), {"workflows": []})
+            rpc.assert_called_once_with("workflows")
+        result = {"workflow_id": "playground.outfit", "request": {"operation": "image.edit"}}
+        with patch.object(client, "rpc", return_value=result) as rpc:
+            self.assertEqual(client.workflow_request(value), result)
+            rpc.assert_called_once_with("workflow_request", input=value)
+        self.assertEqual(value, before)
+
     def test_service_error(self):
         with self.assertRaisesRegex(api.APIError, "invalid history"):
             self.exchange([b'{"ok":false,"error":"invalid history"}\n'])

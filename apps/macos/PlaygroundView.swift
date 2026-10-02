@@ -15,6 +15,7 @@ struct PlaygroundView: View {
     @State private var showPrompt = false
 
     private var controlsLocked: Bool { state.importing || state.importTask != nil || submitting || store.busy || api.running || api.changing }
+    private var referenceTitle: String { "\(state.template.title(for: state.template.primaryRole))参考" }
     private var executionLabel: String {
         if !state.settings.profilePath.isEmpty || state.settings.acceleration?.policy == "profile" { return "设备配置" }
         return state.settings.usesANE ? "GPU + Core ML" : "GPU"
@@ -72,6 +73,7 @@ struct PlaygroundView: View {
             footer
         }
         .onChange(of: state.template) { _, _ in selectedResultID = nil; showReference = false }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("playgroundWorkspace")
     }
 
@@ -79,11 +81,14 @@ struct PlaygroundView: View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Playground").font(.title2.weight(.semibold))
-                Text("独立图片编辑工作区").font(.caption).foregroundStyle(.secondary)
+                Text("独立图片工作区").font(.caption).foregroundStyle(.secondary)
             }
             Picker("模板", selection: Binding(get: { state.template }, set: { state.selectTemplate($0) })) {
-                ForEach(PlaygroundTemplate.allCases) { template in Text(template.title).tag(template) }
-            }.pickerStyle(.segmented).frame(maxWidth: 250).disabled(controlsLocked)
+                ForEach(PlaygroundTemplate.allCases) { template in
+                    Text(template.title).tag(template).accessibilityIdentifier("playgroundTemplate.\(template.rawValue)")
+                }
+            }.pickerStyle(.menu).labelsHidden().frame(width: 174).disabled(controlsLocked)
+                .help("选择 Playground 模板")
                 .accessibilityIdentifier("playgroundTemplatePicker")
             Spacer(minLength: 8)
             Text(state.saved ? "已保存" : "未保存").font(.caption).foregroundStyle(.secondary)
@@ -98,6 +103,25 @@ struct PlaygroundView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(state.template.detail).font(.callout).foregroundStyle(.secondary)
             configuration
+            if state.template == .outpaint {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("扩图范围（试验）").font(.callout.weight(.semibold))
+                    Picker("扩图倍率", selection: Binding(get: { state.outpaintExpansion }, set: { state.setOutpaintExpansion($0) })) {
+                        Text("1.25×").tag(1.25)
+                        Text("1.5×").tag(1.5)
+                        Text("2×").tag(2.0)
+                    }.pickerStyle(.segmented).disabled(controlsLocked)
+                        .accessibilityIdentifier("playgroundOutpaintExpansion")
+                    Text("倍率仅引导提示词，模型可能无法按该倍率扩展视野；原图细节也可能变化。实际输出尺寸仍使用当前画布设置。")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("playgroundOutpaintHint")
+                }
+            }
+            if state.template == .transparent {
+                Text("输出真正 RGBA PNG，效果取决于模型；可通过透明棋盘背景查看透明区域。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("playgroundTransparencyHint")
+            }
             ForEach(state.template.roles) { role in roleCard(role) }
             Button { chooseFiles(replacing: nil) } label: {
                 Label("添加图片，或拖到这里按空槽顺序填写", systemImage: "plus.rectangle.on.rectangle")
@@ -109,13 +133,14 @@ struct PlaygroundView: View {
                     acceptDrop(providers, replacing: nil)
                 }.accessibilityIdentifier("playgroundReferenceGroup")
             VStack(alignment: .leading, spacing: 6) {
-                Text("附加指令").font(.callout.weight(.semibold))
+                Text(state.template.instructionTitle).font(.callout.weight(.semibold))
                 TextEditor(text: Binding(get: { state.instruction }, set: { state.setInstruction($0) }))
                     .font(.body).frame(height: 82).scrollContentBackground(.hidden)
                     .padding(6).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
                     .disabled(controlsLocked).accessibilityIdentifier("playgroundInstruction")
-                Text("人物始终为 <image1>；服装或场景为 <image2>。参考图是视觉引导。")
+                Text(state.template.referenceHint)
                     .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("playgroundReferenceHint")
             }
             DisclosureGroup("查看实际提示词", isExpanded: $showPrompt) {
                 Text(state.prompt).font(.caption).textSelection(.enabled)
@@ -145,8 +170,13 @@ struct PlaygroundView: View {
             if state.settings.modelID == "qwen-image-2.1" {
                 Text("DiT 缓存：\(Qwen21DiTCacheMode(rawValue: state.settings.qwen21DiTCache)?.title ?? state.settings.qwen21DiTCache)")
                     .font(.caption).foregroundStyle(.secondary)
-                Qwen21ReferenceEncodingSettings(draft: state.referenceEncodingDraft, locked: controlsLocked,
-                    accessibilityPrefix: "playground", setSize: { state.setQwen21ReferenceSize($0) })
+                if state.referenceEncodingDraft.operation == "image.edit" {
+                    Qwen21ReferenceEncodingSettings(draft: state.referenceEncodingDraft, locked: controlsLocked,
+                        accessibilityPrefix: "playground", setSize: { state.setQwen21ReferenceSize($0) })
+                } else {
+                    Text("文生图不使用参考编码。").font(.caption2).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("playgroundReferenceEncodingNotApplicable")
+                }
             }
             Button("从创作页同步模型与参数") { state.syncSettings(from: creator.draft) }
                 .disabled(controlsLocked || creator.imageInputsBusy).accessibilityIdentifier("playgroundSyncSettings")
@@ -159,7 +189,7 @@ struct PlaygroundView: View {
     private func roleCard(_ role: PlaygroundRole) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(role.title).font(.callout.weight(.semibold))
+                Text(state.template.title(for: role)).font(.callout.weight(.semibold))
                 Text(state.template.requiredRoles.contains(role) ? "必填" : "可选").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if let number = state.imageNumber(for: role) {
@@ -176,6 +206,7 @@ struct PlaygroundView: View {
                     }
                 }.buttonStyle(.plain).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
                     .clipShape(RoundedRectangle(cornerRadius: 8)).disabled(controlsLocked)
+                    .accessibilityIdentifier("playgroundRoleImage.\(role.rawValue)")
                 VStack(alignment: .leading, spacing: 6) {
                     if let asset = state.asset(for: role) {
                         Text(asset.name).font(.caption).lineLimit(2)
@@ -183,11 +214,14 @@ struct PlaygroundView: View {
                             .font(.caption2).foregroundStyle(.secondary)
                         HStack(spacing: 10) {
                             Button("替换") { chooseFiles(replacing: role) }
+                                .accessibilityIdentifier("playgroundReplace.\(role.rawValue)")
                             Button("移除") { state.remove(role) }
+                                .accessibilityIdentifier("playgroundRemove.\(role.rawValue)")
                         }.font(.caption).disabled(controlsLocked)
                     } else {
-                        Text(role.detail).font(.caption).foregroundStyle(.secondary)
+                        Text(state.template.detail(for: role)).font(.caption).foregroundStyle(.secondary)
                         Button("选择图片") { chooseFiles(replacing: role) }.font(.caption).disabled(controlsLocked)
+                            .accessibilityIdentifier("playgroundChoose.\(role.rawValue)")
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -207,28 +241,32 @@ struct PlaygroundView: View {
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.1), lineWidth: 1))
             .onDrop(of: [UTType.fileURL.identifier, UTType.image.identifier], isTargeted: nil) { providers in
                 acceptDrop(providers, replacing: role)
-            }.accessibilityIdentifier("playgroundRole.\(role.rawValue)")
+            }.accessibilityElement(children: .contain)
+            .accessibilityIdentifier("playgroundRole.\(role.rawValue)")
     }
 
     private var results: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(showReference || selectedJob == nil ? "人物参考" : "生成结果").font(.callout.weight(.semibold))
+                Text(showReference || selectedJob == nil ? (state.previewAsset == nil ? "生成预览" : referenceTitle) : "生成结果")
+                    .font(.callout.weight(.semibold))
                 Spacer()
-                if selectedJob != nil, state.asset(for: .person) != nil {
-                    Button(showReference ? "查看生成结果" : "查看人物参考") { showReference.toggle() }
+                if selectedJob != nil, state.previewAsset != nil {
+                    Button(showReference ? "查看生成结果" : "查看\(referenceTitle)") { showReference.toggle() }
                         .font(.caption).accessibilityIdentifier("playgroundPreviewSource")
                 }
             }
             ZStack {
                 if !showReference, let job = selectedJob {
                     InteractiveMediaPreview(path: job.request.output)
-                } else if let asset = state.asset(for: .person) {
+                } else if let asset = state.previewAsset {
                     InteractiveMediaPreview(path: asset.path)
                 } else {
                     VStack(spacing: 10) {
-                        Image(systemName: "person.crop.rectangle").font(.largeTitle).foregroundStyle(.secondary)
-                        Text("添加人物参考，开始\(state.template.title)").font(.callout).foregroundStyle(.secondary)
+                        Image(systemName: "photo.on.rectangle").font(.largeTitle).foregroundStyle(.secondary)
+                        Text(state.template == .transparent ? "输入描述生成透明图片，或添加原图提取主体。"
+                             : "添加\(referenceTitle)，开始\(state.template.title)")
+                            .font(.callout).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }.frame(minHeight: 180, maxHeight: .infinity)
@@ -237,19 +275,19 @@ struct PlaygroundView: View {
             if !showReference, let job = selectedJob {
                 Text("\(job.request.width)×\(job.request.height) · Seed \(job.request.seed) · \(Int(job.elapsed)) 秒")
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                if job.request.model == "qwen-image-2.1" {
+                if job.request.model == "qwen-image-2.1", job.request.operation == "image.edit" {
                     Text("模型参考编码：\(job.request.qwen21_reference_size ?? 1024)\((job.request.qwen21_reference_size ?? 1024) == 512 ? " · 近似" : " · 标准")")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 10) {
-                    Button("用作人物参考") {
+                    Button("用作\(referenceTitle)") {
                         guard !controlsLocked else { return }
-                        if let task = state.startImport({ state in await state.useResultAsPerson(job) }) {
+                        if let task = state.startImport({ state in await state.useResultAsReference(job) }) {
                             Task {
                                 if await task.value, state.template.workflowID == job.workflowID { showReference = true }
                             }
                         }
-                    }.disabled(controlsLocked).accessibilityIdentifier("playgroundUseResultAsPerson")
+                    }.disabled(controlsLocked).accessibilityIdentifier("playgroundUseResultAsReference")
                     Button("在创作中继续", systemImage: "arrow.up.right") { continueInCreation(job) }
                         .disabled(controlsLocked || creator.imageInputsBusy).accessibilityIdentifier("playgroundContinueInCreation")
                 }.font(.caption)
@@ -313,7 +351,8 @@ struct PlaygroundView: View {
         let template = state.template
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]; panel.canChooseDirectories = false; panel.allowsMultipleSelection = role == nil
-        panel.message = role.map { "选择\($0.title)参考图；替换不会覆盖历史输入。" } ?? "按人物、服装或场景的空槽顺序添加图片。"
+        panel.message = role.map { "选择\(template.title(for: $0))参考图；替换不会覆盖历史输入。" }
+            ?? "按\(template.roles.map { template.title(for: $0) }.joined(separator: "、"))的空槽顺序添加图片。"
         guard panel.runModal() == .OK else { return }
         let urls = panel.urls
         guard !controlsLocked, state.template == template else { return }

@@ -52,6 +52,9 @@ struct NativeJob: Codable, Identifiable, Sendable {
         switch workflowID {
         case "playground.outfit": return "Playground · 换装"
         case "playground.identity": return "Playground · 人物一致性"
+        case "playground.face": return "Playground · 换脸"
+        case "playground.outpaint": return "Playground · 扩图"
+        case "playground.transparent": return "Playground · 透明图"
         default: return nil
         }
     }

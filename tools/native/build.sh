@@ -78,6 +78,9 @@ bundled_streaming_catalog() {
   --output "$BUILD_IDENTITY_DIR" "$@"
 }
 bundled_streaming_catalog
+"$BUILD_IDENTITY_PYTHON" tools/native/generate_image_workflow_catalog.py \
+ --input native/workflows/image_workflows.json \
+ --output "$BUILD_IDENTITY_DIR/image_workflows_catalog_generated.hpp"
 # Native identity and catalog implementations require these generated headers.
 # Missing generation fails instead of sharing a manual fallback ID/catalog.
 COMMON+=(-I "$BUILD_IDENTITY_DIR")
@@ -117,6 +120,7 @@ SOURCES=(
  native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/h3_mlx_session.mm native/platform/apple/ltx_session.mm
  native/platform/apple/llada_session.mm
  native/api/c_api.mm
+ native/workflows/image_workflows.mm
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/memory_policy.cpp native/runtime/memory_accounting.cpp native/runtime/memory_manifest.cpp native/runtime/memory_schedule.cpp native/runtime/memory_plan.cpp native/runtime/memory_scheduler.cpp native/runtime/memory_watchdog.cpp native/runtime/memory_trace.cpp native/runtime/memory_execution.cpp native/runtime/lora_identity.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
  native/backends/ane_memory.cpp native/backends/ane_runtime.mm native/backends/ane_ffn.cpp native/backends/ane_qkv.cpp

@@ -196,6 +196,8 @@ Discovery (no model loading):
   turbocider --help | -h | help
   turbocider capabilities                 Local API protocol as JSON; no service needed
   turbocider models                       Model capabilities, not installed paths
+  turbocider workflows                    Shared Qwen image-workflow catalog
+  turbocider workflow-request INPUT.json   Compose a native request; call plan next
   turbocider library list                 Registered model and LoRA paths
   turbocider doctor                       Runtime and device diagnostics
   turbocider plan REQUEST.json            Validate schema 1 or 2 before generation
@@ -279,6 +281,12 @@ int main(int argc,char**argv){@autoreleasepool{
  }
  else if(cmd=="doctor")out=tc_system_json();
  else if(cmd=="models")out=tc_models_json();
+ else if(cmd=="workflows"&&argc==2)out=tc_workflows_json();
+ else if(cmd=="workflow-request"&&argc==3){
+  NSString *input=[NSString stringWithContentsOfFile:@(argv[2]) encoding:NSUTF8StringEncoding error:nil];
+  if(!input){std::cerr<<"cannot read workflow input\n";return 1;}
+  code=tc_workflow_request_json(input.UTF8String,&out,&err);
+ }
  else if(cmd=="self-test")code=tc_native_self_test(&out,&err);
  else if(cmd=="compile-coreml"&&argc==4)code=tc_compile_coreml_json(argv[2],argv[3],&out,&err);
  else if(cmd=="tokenize"&&argc==4)code=tc_tokenize_json(argv[2],argv[3],&out,&err);

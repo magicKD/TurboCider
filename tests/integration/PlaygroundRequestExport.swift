@@ -7,7 +7,10 @@ import Foundation
         let template: PlaygroundTemplate
         let modelPath: String
         let loraPath: String?
-        let personPath: String
+        let personPath: String?
+        let sourcePath: String?
+        let targetPath: String?
+        let expansion: Double?
         let clothingPath: String?
         let scenePath: String?
         let stateDirectory: String
@@ -26,7 +29,7 @@ import Foundation
         let configuration = try JSONDecoder().decode(Configuration.self,
             from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1])))
         guard configuration.stateDirectory.hasPrefix("/"), configuration.outputPath.hasPrefix("/"),
-              configuration.modelPath.hasPrefix("/"), configuration.personPath.hasPrefix("/") else {
+              configuration.modelPath.hasPrefix("/") else {
             throw NativeFailure(message: "Use explicit absolute model, image, isolated state and output paths.")
         }
         let directory = URL(fileURLWithPath: configuration.stateDirectory, isDirectory: true)
@@ -52,15 +55,33 @@ import Foundation
         let state = PlaygroundState(directory: directory, initialSettings: settings, models: StudioModel.catalog())
         state.selectTemplate(configuration.template)
         if let instruction = configuration.instruction { state.setInstruction(instruction) }
-        var paths = [configuration.personPath]
+        var paths: [String] = []
+        if [.outfit, .identity, .face].contains(configuration.template) {
+            guard let person = configuration.personPath, person.hasPrefix("/") else {
+                throw NativeFailure(message: "This workflow requires an absolute personPath.")
+            }
+            paths.append(person)
+        }
         switch configuration.template {
         case .outfit:
             guard let clothing = configuration.clothingPath else { throw NativeFailure(message: "Outfit requires clothingPath.") }
             paths.append(clothing)
         case .identity:
             if let scene = configuration.scenePath { paths.append(scene) }
+        case .face:
+            guard let target = configuration.targetPath else { throw NativeFailure(message: "Face requires targetPath.") }
+            paths.append(target)
+        case .outpaint:
+            guard let source = configuration.sourcePath else { throw NativeFailure(message: "Outpaint requires sourcePath.") }
+            paths.append(source)
+            guard state.setOutpaintExpansion(configuration.expansion ?? 1.5) else {
+                throw NativeFailure(message: "Invalid expansion.")
+            }
+        case .transparent:
+            if let source = configuration.sourcePath { paths.append(source) }
         }
-        guard await state.importFiles(paths.map { URL(fileURLWithPath: $0) }) else {
+        guard paths.allSatisfy({ $0.hasPrefix("/") }) else { throw NativeFailure(message: "Reference paths must be absolute.") }
+        if !paths.isEmpty, !(await state.importFiles(paths.map { URL(fileURLWithPath: $0) })) {
             throw NativeFailure(message: state.message ?? "Cannot import Playground references.")
         }
         let draft = try state.generationDraft()

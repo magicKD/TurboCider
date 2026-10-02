@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "model": "qwen-image-2.1",
+  "construction": "pure_request_composition; call plan separately before submit",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["workflow_id", "request"],
+    "properties": {
+      "workflow_id": {"type": "string", "enum": ["playground.outfit", "playground.identity", "playground.face", "playground.outpaint", "playground.transparent"]},
+      "role_paths": {"type": "object", "description": "Keys must be declared roles of the selected workflow; required roles must be present. Paths are not read or verified.", "additionalProperties": {"type": "string", "minLength": 2, "pattern": "^/"}},
+      "instruction": {"type": "string", "description": "Appended verbatim; omitted uses the mode default_instruction or workflow default_instruction."},
+      "expansion": {"type": "number", "enum": [1.25, 1.5, 2], "default": 1.5, "description": "Only playground.outpaint; guides recomposition without changing files or explicit output dimensions."},
+      "request": {"type": "object", "description": "Native request schema 1 or 2 settings. Minimal schema 1 may omit fields and use native defaults. Workflow replaces operation, prompt and inputs; other fields are passed through unchanged for separate authoritative plan validation."}
+    }
+  },
+  "workflows": [
+    {
+      "id": "playground.outfit",
+      "title": "换装",
+      "detail": "保留人物身份，用第二张参考图更换服装。",
+      "default_instruction": "服装自然贴合，保留人物的脸、发型和姿态。",
+      "roles": [
+        {"id": "person", "title": "人物", "detail": "人物身份与外观的参考", "required": true},
+        {"id": "clothing", "title": "服装", "detail": "要穿上的服装参考", "required": true}
+      ],
+      "modes": [{"id": "edit", "operation": "image.edit", "required_roles": ["person", "clothing"], "absent_roles": [], "prompt_prefix": "Use <image1> as the person reference and <image2> as the clothing reference. Dress the person from <image1> in the clothing from <image2>. Preserve the person's facial identity, hairstyle, body proportions and pose. Keep the original scene unless instructed otherwise. Make the clothing fit naturally. Do not reproduce the clothing reference as a separate image. Output one finished image."}]
+    },
+    {
+      "id": "playground.identity",
+      "title": "人物一致性",
+      "detail": "保留人物外观，可加入第二张图片作为场景参考。",
+      "default_instruction": "保持人物的脸、发型和服装一致，画面自然。",
+      "roles": [
+        {"id": "person", "title": "人物", "detail": "人物身份与外观的参考", "required": true},
+        {"id": "scene", "title": "场景", "detail": "可选的背景与构图参考", "required": false}
+      ],
+      "modes": [
+        {"id": "with_scene", "operation": "image.edit", "required_roles": ["person", "scene"], "absent_roles": [], "prompt_prefix": "Use <image1> as the person identity reference. Preserve the person's facial identity, hairstyle, body proportions and clothing. Use <image2> as the scene and composition reference, placing the person from <image1> into that scene naturally. Output one finished image."},
+        {"id": "person_only", "operation": "image.edit", "required_roles": ["person"], "absent_roles": ["scene"], "prompt_prefix": "Use <image1> as the person identity reference. Preserve the person's facial identity, hairstyle, body proportions and clothing. Keep a natural, coherent scene. Output one finished image."}
+      ]
+    },
+    {
+      "id": "playground.face",
+      "title": "换脸",
+      "detail": "使用第一张人物的面部身份，编辑第二张图片中的人物。",
+      "default_instruction": "面部自然融合，保留目标图片的姿态、服装、场景与光照。",
+      "roles": [
+        {"id": "person", "title": "脸部身份", "detail": "提供面部身份的人物参考", "required": true},
+        {"id": "target", "title": "目标图片", "detail": "需要编辑面部的图片", "required": true}
+      ],
+      "modes": [{"id": "edit", "operation": "image.edit", "required_roles": ["person", "target"], "absent_roles": [], "prompt_prefix": "Use <image1> as the facial identity reference and <image2> as the target image to edit. Replace the target person's facial identity with the person from <image1>, blending the face naturally with the target's lighting and expression. Preserve the target image's pose, hairstyle, clothing, composition and scene as closely as possible. Output one finished image."}],
+      "limitations": ["Reference-guided generation does not guarantee exact facial identity or unchanged surrounding pixels."]
+    },
+    {
+      "id": "playground.outpaint",
+      "title": "扩图",
+      "detail": "参考原图扩展场景与构图；这是 AI 重新构图，不保证原图像素不变。",
+      "default_instruction": "自然延续场景，保留主体的身份、外观和画面风格。",
+      "roles": [{"id": "source", "title": "原图", "detail": "需要扩展场景的原始图片", "required": true}],
+      "parameters": {"expansion": {"type": "number", "enum": [1.25, 1.5, 2], "default": 1.5, "effect": "prompt_only_scene_recomposition; output dimensions remain explicit request settings"}},
+      "modes": [{"id": "edit", "operation": "image.edit", "required_roles": ["source"], "absent_roles": [], "prompt_prefix": "Use <image1> as the source image. Recompose the scene to show approximately {{expansion}} times the original field of view, naturally extending the surrounding environment. Keep the main subject's identity, appearance and the original scene's visual style as closely as possible. Fit the wider scene into the requested output canvas. This is reference-guided scene reconstruction, not hard pixel-preserving inpainting. Output one finished image."}],
+      "limitations": ["Expansion guides the prompt only; it does not resize or pad an input file.", "No exact source-pixel preservation, deterministic border placement or hard-mask inpainting is promised."]
+    },
+    {
+      "id": "playground.transparent",
+      "title": "透明图",
+      "detail": "无参考图时生成透明主体；有参考图时提取主体并保留透明背景。",
+      "default_instruction": "一只可爱的卡通狐狸贴纸，完整主体、边缘清晰，背景完全透明。",
+      "roles": [{"id": "source", "title": "主体参考", "detail": "可选；添加图片以提取该图主体，否则按指令生成", "required": false}],
+      "modes": [
+        {"id": "extract", "operation": "image.edit", "required_roles": ["source"], "absent_roles": [], "default_instruction": "保留原图主体，边缘自然，背景完全透明。", "prompt_prefix": "Use <image1> as the source image. Extract its main subject, preserving the subject's identity, appearance and fine edge details as closely as possible. Remove the surrounding background and output one RGBA PNG with a genuinely transparent background. Do not draw a checkerboard, solid color or fake transparency pattern into the image."},
+        {"id": "generate", "operation": "image.generate", "required_roles": [], "absent_roles": ["source"], "prompt_prefix": "Generate one finished isolated subject according to the instruction, as an RGBA PNG with a genuinely transparent background and clean natural edges. Do not draw a checkerboard, solid color or fake transparency pattern into the image."}
+      ],
+      "limitations": ["The native runtime preserves RGBA; a successful job does not by itself prove the requested subject extraction or nonopaque alpha quality."]
+    }
+  ]
+}
