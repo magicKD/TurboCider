@@ -373,9 +373,19 @@ and prints each job ID immediately. A failed stage stops the workflow. The
 service does not provide an atomic workflow transaction or automatically undo
 earlier successful jobs. A standalone CLI service can outlive the App.
 
-API jobs currently remain in their service history; they are not automatically
-inserted into the App's creation history. You can import a completed output as a
-reference through the App. Installation discovery is available through
+The App's local API page provides a read-only, paged task list with status,
+errors, creation time and result timing. Completed local image results can be
+previewed, opened, located in Finder or imported into the current creation
+draft as references. Videos and other local results provide file location.
+Importing a reference preserves the draft's model, prompt and generation
+settings; stop the API service before generating from the creation page.
+API jobs remain in their service history and are not automatically inserted
+into the App's creation history or copied into its materials. The task list
+loads when the page opens or the service starts, and on manual refresh; it does
+not continuously poll history. If the service stops or a refresh fails, the
+last successful page remains visible and is explicitly marked as possibly
+outdated, with its last refresh time. A failed read is not shown as empty
+history. Installation discovery is available through
 `installations` for registered metadata; it does not verify
 files or scan for unregistered models. Shared App history and a persisted
 workflow scheduler are not part of this protocol revision.

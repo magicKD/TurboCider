@@ -251,7 +251,7 @@ struct StudioView: View {
                 case .models: modelsPage
                 case .tasks: tasksPage
                 case .library: libraryPage
-                case .api: LocalAPIView(api: api, store: store).disabled(preparingSubmission)
+                case .api: LocalAPIView(api: api, store: store, studio: studio).disabled(preparingSubmission)
                 }
             }.background(Color(nsColor: .windowBackgroundColor))
         }
