@@ -1,7 +1,9 @@
 #include "ane_ffn.hpp"
 #include "ane_runtime_quant.hpp"
+#include "ane_runtime_packed.hpp"
 
 #include <chrono>
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <new>
@@ -23,7 +25,10 @@ MatrixView view(const Tensor &a) {
     throw std::runtime_error("runtime ANE supports only BF16/FP16/FP32 staging");
 }
 WeightView weight_view(const FfnWeight &w) {
+    require(w.transform==FfnWeight::Transform::None || w.transform==FfnWeight::Transform::ComfyH256Inverse,
+            "runtime ANE unknown FFN transform");
     if (!w.scales) {
+        require(w.transform==FfnWeight::Transform::None,"runtime ANE rotation requires explicit packed source");
         require(!w.offsets, "runtime ANE dense weights cannot have affine offsets");
         return view(w.values);
     }
@@ -35,6 +40,9 @@ WeightView weight_view(const FfnWeight &w) {
                       0, w.group_size, w.bits, view(*w.scales), std::nullopt};
     if (w.offsets) source.offsets = view(*w.offsets);
     validate_affine_view(source);
+    if (w.transform==FfnWeight::Transform::ComfyH256Inverse) {
+        ConvrotAffineView rotated{source};validate_convrot_affine_view(rotated);return rotated;
+    }
     return source;
 }
 int configured_chunks() {
@@ -214,6 +222,28 @@ void HybridFfn::stage_weights(int layer, int rows, std::vector<FfnWeight> weight
     if (!chunks_) return;
     if (!admit_scratch(chunks_ * graph_->shape().rows, false)) return;
     try {
+        uint64_t metadata_growth=0;
+        for (auto &weight : weights) if (weight.transform==FfnWeight::Transform::ComfyH256Inverse) {
+            for (auto *part : {&weight.scales,&weight.offsets}) if (*part && !(**part).flags().row_contiguous) {
+                const uint64_t bytes=(**part).nbytes();
+                require(bytes<=UINT64_MAX-metadata_growth,"runtime ConvRot metadata extent overflow");
+                metadata_growth+=bytes;
+            }
+        }
+        if (metadata_growth) {
+            const auto observed=observe_runtime_memory(mx::get_active_memory());
+            const uint64_t retained=uint64_t(output_.capacity()+hidden_.capacity())*sizeof(uint16_t);
+            const auto decision=admit_memory(observed,{uint64_t(4)<<30,memory_budget_},
+                graph_->estimated_bytes()+retained,metadata_growth);
+            if (!decision.allowed()) {
+                release_for_memory("runtime ConvRot metadata scratch admission denied");return;
+            }
+            // Only repeated scale/offset metadata, NOT codes or a dense W
+            // matrix. Broadcast MLX views cannot be advertised as contiguous.
+            for (auto &weight : weights) if (weight.transform==FfnWeight::Transform::ComfyH256Inverse)
+                for (auto *part : {&weight.scales,&weight.offsets})
+                    if (*part && !(**part).flags().row_contiguous) *part=mx::contiguous(**part);
+        }
         weights_.reserve(weights.size() * 3);
         for (const auto &weight : weights) {
             weights_.push_back(weight.values);
@@ -225,6 +255,16 @@ void HybridFfn::stage_weights(int layer, int rows, std::vector<FfnWeight> weight
         mx::eval(weights_);
         std::vector<WeightView> sources;
         for (const auto &w : weights) sources.push_back(weight_view(w));
+        const bool rotated=std::any_of(weights.begin(),weights.end(),[](const auto &w) {
+            return w.transform==FfnWeight::Transform::ComfyH256Inverse;
+        });
+        if (rotated) {
+            require(std::all_of(weights.begin(),weights.end(),[](const auto &w) {
+                return w.transform==FfnWeight::Transform::ComfyH256Inverse;
+            }),"runtime ANE mixed ConvRot FFN recipes unsupported");
+            metrics_.runtime_weight_source_recipe="convrot-legacy-packed-scale-inverse-h256-f16-v1";
+            ++metrics_.runtime_weight_convrot_stage_submissions;
+        }
         graph_->stage_weights(std::move(sources));
         pending_ = true;
     } catch (const std::exception &error) {

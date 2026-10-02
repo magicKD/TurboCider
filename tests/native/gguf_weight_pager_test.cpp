@@ -137,6 +137,57 @@ int main(int argc,char **argv) {
             mx::synchronize(); mx::clear_cache();
             ensure(ledger.snapshot().storage_bytes==0 && ledger.snapshot().reserved_bytes==0,"buffer/ledger release leak");
         }
+        {
+            auto bf16 = d;
+            bf16.workload["source_residency"] = "packed_streamed";
+            bf16.workload["precision"] = "z-dense-bf16-v1";
+            bf16.workload["packed_read_buffer_bytes"] = "16384";
+            auto &fixed_fields = bf16.stages.front().resident_fields;
+            fixed_fields.clear();
+            for (uint32_t type : {0u, 1u, 30u}) {
+                auto converted = field(directory.tensor("fixed" + std::to_string(type)), true);
+                converted.name = "fixed" + std::to_string(type);
+                converted.bytes = 257 * 64 * 2;
+                converted.materialization->format = "BF16";
+                converted.materialization->conversion = "gguf-bf16-fixed-rne-v1";
+                fixed_fields.push_back(std::move(converted));
+            }
+            StreamingConfig c; c.enabled=true; c.schema_version=1; c.selection="manual"; c.retention="request";
+            c.stages["denoiser"]={"streamed",1,1,0,0,1};
+            auto layout = compile_layout(c, bf16);
+            MemoryLedger ledger(16384 + 3 * 49152);
+            {
+                GgufWeightPager pager(lease, bf16, bf16.stages.front(), layout.stages.front(), ledger);
+                pager.load_packed(); Weights fixed; pager.load_resident_aliases(fixed);
+                for (uint32_t type : {0u, 1u, 30u}) {
+                    const auto name="fixed" + std::to_string(type);
+                    const auto &tensor=directory.tensor(name);
+                    std::vector<std::byte> raw(tensor.bytes), expected(tensor.elements * 2);
+                    ensure(::pread(fd.get(),raw.data(),raw.size(),off_t(tensor.file_offset))==ssize_t(raw.size()),"oracle read failed");
+                    gguf::decode_cpu_into({raw,type,257,64},{0,257,0,64},
+                        {expected,gguf::DecodeDType::bf16,128,2},nullptr,{false});
+                    ensure(fixed.at(name).dtype()==mx::bfloat16 &&
+                        std::memcmp(fixed.at(name).data<std::byte>(),expected.data(),expected.size())==0,
+                        "fixed BF16 conversion differs from scalar RNE oracle");
+                }
+                const auto metrics=pager.metrics();
+                ensure(metrics.source_read_bytes == 257*64*8 && metrics.packed_source_bytes == 3*257*64*2,
+                       "fixed BF16 read/output bytes mismatch");
+                ensure(ledger.snapshot().peak_committed_bytes<=16384+3*49152,"fixed BF16 conversion retained raw duplicate");
+                fixed.clear();
+            }
+            ensure(ledger.snapshot().storage_bytes==0,"fixed BF16 target escaped release");
+            for (const auto *fault : {"profile", "resident", "dtype", "alias"}) {
+                auto bad=bf16;
+                if (std::string(fault)=="profile")bad.workload.erase("precision");
+                if (std::string(fault)=="resident")bad.workload["source_residency"]="packed_resident";
+                if (std::string(fault)=="dtype")bad.stages.front().resident_fields.front().materialization->format="F16";
+                if (std::string(fault)=="alias")bad.stages.front().resident_fields.front().materialization->conversion="gguf-native-alias-v1";
+                bool rejected=false;
+                try { GgufWeightPager wrong(lease,bad,bad.stages.front(),layout.stages.front(),ledger); } catch (...) { rejected=true; }
+                ensure(rejected,"undeclared fixed BF16 conversion accepted");
+            }
+        }
         if (argc == 3) {
             const auto path = std::filesystem::canonical(argv[1]);
             ensure(path.filename() == "fixture.gguf" && path.parent_path().filename().string().starts_with("tc-gguf-pager-"),

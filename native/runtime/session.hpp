@@ -60,6 +60,8 @@ struct HybridMetrics {
     double runtime_weight_wall_seconds = 0;
     double runtime_weight_pre_seconds = 0;
     float runtime_weight_headroom = 1.f;
+    std::string runtime_weight_source_recipe;
+    uint64_t runtime_weight_convrot_stage_submissions = 0;
     // Exporter-declared weight variant; unknown for legacy manifests without it.
     std::string weight_variant = "unknown";
     double load_seconds = 0;

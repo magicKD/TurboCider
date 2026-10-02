@@ -60,9 +60,11 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
     require(prefetch <= 2 && width && height && width % 16 == 0 && height % 16 == 0 &&
                 caption && steps && steps <= 50, "gguf execution workload unsupported");
     require(profile == "z-source-mixed-v1" || profile == "z-source-mixed-f16-v1" || profile == "z-source-exact-f32-v1" || profile == "z-source-native-affine-v1" ||
-            profile == "z-mlx-compat-affine-v1" || profile == "z-mlx-compat-f16-v1" || profile == "z-mlx-compat-f32-v1",
+            profile == "z-mlx-compat-affine-v1" || profile == "z-mlx-compat-f16-v1" || profile == "z-mlx-compat-f32-v1" || profile == "z-dense-bf16-v1",
             "unknown GGUF precision profile");
     require(residency == "packed_resident" || residency == "packed_streamed", "unknown GGUF source residency");
+    const bool dense_bf16 = profile == "z-dense-bf16-v1";
+    require(!dense_bf16 || residency == "packed_streamed", "dense BF16 requires packed_streamed source");
     const bool legacy_float=profile.starts_with("z-mlx-compat-");
     const bool stream_refiners = residency == "packed_streamed";
     const auto &file = lease->file("transformer");
@@ -82,6 +84,10 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
         {"caption_rows", std::to_string(caption)}, {"steps", std::to_string(steps)},
         {"precision", profile}, {"fixed_policy", "source-float-alias-v1"}};
     if (stream_refiners) d.workload["refiner_policy"] = "interleaved-single-slot-v2";
+    if (dense_bf16) {
+        d.workload["fixed_policy"] = "bf16-cpu-rne-v1";
+        d.workload["gpu_graph"] = "z-bf16-parameterized-block-v1";
+    }
     if(legacy_float)d.workload["float_loader"]="mlx-bf16-to-f16-v1";
     streaming::StageDescriptor stage;
     stage.id = "denoiser"; stage.adapter_revision = d.backend_revision;
@@ -116,13 +122,14 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
         const bool block_streamed = main || (refiner && stream_refiners);
         const bool floating = gguf::type_info(tensor.type).elements == 1;
         require(block_streamed || floating, "GGUF quantized stage-fixed/refiner source unsupported by this profile");
-        const char *format = floating ? (tensor.type == 0 ? "F32" : tensor.type == 1 || legacy_float ? "F16" : "BF16")
+        const char *format = dense_bf16 ? "BF16" : floating ? (tensor.type == 0 ? "F32" : tensor.type == 1 || legacy_float ? "F16" : "BF16")
             : profile == "z-source-exact-f32-v1" || profile == "z-mlx-compat-f32-v1" ? "F32"
             : profile == "z-source-mixed-f16-v1" || profile == "z-mlx-compat-f16-v1" ? "F16" : "BF16";
         const uint32_t item = std::string_view(format) == "F32" ? 4 : 2;
         streaming::Materialization materialization;
         materialization.format = format; materialization.storage_mode = "mlx-metal-shared";
         materialization.conversion = block_streamed ? "gguf-cpu-rne-v1" : legacy_float && tensor.type==30 ? "gguf-mlx-float-alias-v1" : "gguf-native-alias-v1";
+        if (dense_bf16 && !block_streamed) materialization.conversion = "gguf-bf16-fixed-rne-v1";
         materialization.shape = found->second;
         materialization.reads.push_back({0,tensor.file_offset,tensor.bytes,tensor.name,
                                        gguf::type_info(tensor.type).name,logical});
@@ -162,7 +169,8 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
             stage.resident_fields.push_back(std::move(field));
         }
         if (residency == "packed_resident" || !block_streamed)
-            result.packed_capacity_upper = gguf::checked_add(result.packed_capacity_upper, capacity(tensor.bytes));
+            result.packed_capacity_upper = gguf::checked_add(result.packed_capacity_upper,
+                capacity(dense_bf16 && !block_streamed ? gguf::checked_mul(tensor.elements, 2) : tensor.bytes));
     }
     for (auto &block : stage.blocks)
         std::sort(block.fields.begin(), block.fields.end(), [](const auto &a, const auto &b) { return a.name < b.name; });

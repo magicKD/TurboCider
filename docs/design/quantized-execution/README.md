@@ -47,6 +47,7 @@
 | [18 refiner流式/银行交接](18-streamed-refiners-and-bank-boundaries.md) | interleaved refiners单槽、drained银行释放重建、浮点SIMD转换、真实Q8/Q4 exact与取消；6/8/10/16 GB速度优先方向 |
 | [19 预算速度筛选](19-speed-and-memory-budget-screen.md) | 七候选完整Q8请求的独立测速/内存采样、6/8/10/16 GB及GiB经验选择，native额外驻留负结果与后续优化 |
 | [20 direct packed导入/阶段释放](20-direct-packed-import-and-stage-release.md) | compute-ready压缩bank直填、cache0对照、refiner eval/VAE前verified释放、Q8/Q4 exact与分预算较快候选 |
+| [21 最快BF16与compiled packed](21-fastest-bf16-and-compiled-packed-screen.md) | 实际更快BF16基线、Q8/Q4原算术参数图/压缩bank复用、独立速度内存screen；BF16密集槽和ConvRot runtime FP16质量负结果 |
 
 ## 当前状态速查
 
@@ -60,7 +61,7 @@
 | Z 默认启用 butterfly / ConvRot W8A8 | 未启用；现有 butterfly 不是 INT8 GEMM |
 | M5 GPU ConvRot W8A8 | 设计/未实机验证；本轮无 M5，不发布默认配置 |
 | 静态 Core ML W8A8 | 已有独立研究路线；原生旋转 ConvRot+A8 仍未实现 |
-| runtime ANE | 新GGUF/ConvRot FP16直填API已验证，模型consumer待接；动态QDQ数值筛选通过但INT8算术unknown，见14 |
+| runtime ANE | GGUF/ConvRot FP16直填API已验证；ConvRot模型consumer实际执行但N1失败，见21；动态QDQ数值筛选通过但INT8算术unknown，见14 |
 | 低内存 GPU+ANE 全请求认证 | 本方案尚未取得；resident 历史成绩不能替代 |
 
 ## 架构决策

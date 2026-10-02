@@ -11,9 +11,11 @@ namespace tc::ane {
 // Explicit representation, never inferred from checkpoint filenames. Packed
 // matrices use MLX affine uint32 codes; scales/offsets stay owned until drain.
 struct FfnWeight {
+    enum class Transform { None, ComfyH256Inverse };
     Tensor values;
     std::optional<Tensor> scales, offsets;
     int group_size = 32, bits = 4;
+    Transform transform = Transform::None;
 };
 
 // Explicit runtime-weight FFN route. The caller supplies its optimized GPU

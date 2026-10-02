@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ane_runtime_convert.hpp"
+#include "ane_runtime_quant.hpp"
 #include "../core/gguf_decode.hpp"
 #include <array>
 
@@ -119,49 +120,87 @@ inline void convrot_integer_h256(std::array<int32_t, 256> &values, bool scalar_o
                 values[p + 3 * stride] = -a + b + c + d;
             }
 }
-// Recipe: integer H256 -> /16 -> original F32 scale -> headroom -> RNE FP16.
-// This changes rounding order versus FP32(D H^T); model quality needs separate
-// qualification, not the legacy packed profile. Scratch: 1 KiB per worker.
-inline bool convrot_fp16_row(const ConvrotView &view, size_t row, uint16_t *target,
-                             bool scalar_only = false, float headroom = 1.f) {
-    if (row >= size_t(view.rows) || !target || !std::isfinite(headroom) || headroom <= 0 ||
-        !packed_target_disjoint(view.data, view.bytes, target, size_t(view.cols)) ||
-        !packed_target_disjoint(view.row_scales.data, view.row_scales.bytes, target,
-                                size_t(view.cols))) return false;
-    const size_t pitch = view.row_stride_bytes ? view.row_stride_bytes : size_t(view.cols);
-    const size_t scale_pitch = view.row_scales.row_stride_bytes ? view.row_scales.row_stride_bytes : 4;
-    float scale;
-    std::memcpy(&scale, static_cast<const char *>(view.row_scales.data) + row * scale_pitch, 4);
-    if (!std::isfinite(scale)) return false;
-    const int8_t *source = view.data + row * pitch;
-    std::array<int32_t, 256> integer;
-    for (int begin = 0; begin < view.cols; begin += 256) {
-        for (int i = 0; i < 256; ++i) integer[i] = source[begin + i];
-        convrot_integer_h256(integer, scalar_only);
-        int offset = 0;
+inline bool convrot_integer_fp16_block(std::array<int32_t,256> &integer,float scale,float headroom,
+                                       uint16_t *target,bool scalar_only) {
+    convrot_integer_h256(integer,scalar_only);
+    int offset = 0;
 #if defined(__aarch64__)
-        if (!scalar_only) {
-            uint16x8_t invalid = vdupq_n_u16(0);
-            for (; offset < 256; offset += 8) {
-                auto convert = [&](int at) {
-                    auto value = vmulq_n_f32(vcvtq_f32_s32(vld1q_s32(integer.data() + at)), .0625f);
-                    value = vmulq_n_f32(value, scale);
-                    return vcvt_f16_f32(vmulq_n_f32(value, headroom));
-                };
-                const auto result = vreinterpretq_u16_f16(vcombine_f16(convert(offset), convert(offset + 4)));
-                vst1q_u16(target + begin + offset, result);
-                invalid = vorrq_u16(invalid, vceqq_u16(vandq_u16(result, vdupq_n_u16(0x7c00)),
-                                                      vdupq_n_u16(0x7c00)));
-            }
-            if (vmaxvq_u16(invalid)) return false;
+    if (!scalar_only) {
+        uint16x8_t invalid = vdupq_n_u16(0);
+        for (; offset < 256; offset += 8) {
+            auto convert = [&](int at) {
+                auto value = vmulq_n_f32(vcvtq_f32_s32(vld1q_s32(integer.data() + at)), .0625f);
+                value = vmulq_n_f32(value, scale);
+                return vcvt_f16_f32(vmulq_n_f32(value, headroom));
+            };
+            const auto result = vreinterpretq_u16_f16(vcombine_f16(convert(offset), convert(offset + 4)));
+            vst1q_u16(target + offset, result);
+            invalid = vorrq_u16(invalid, vceqq_u16(vandq_u16(result, vdupq_n_u16(0x7c00)),
+                                                  vdupq_n_u16(0x7c00)));
         }
+        if (vmaxvq_u16(invalid)) return false;
+    }
 #endif
-        try {
-            for (; offset < 256; ++offset) {
-                const float value = ((float(integer[offset]) * .0625f) * scale) * headroom;
-                target[begin + offset] = gguf::float_to_fp16_rne(value);
-            }
-        } catch (const std::exception &) { return false; }
+    try {
+        for (; offset < 256; ++offset) {
+            const float value = ((float(integer[offset]) * .0625f) * scale) * headroom;
+            target[offset] = gguf::float_to_fp16_rne(value);
+        }
+    } catch (const std::exception &) { return false; }
+    return true;
+}
+// Recipe: integer H256 -> /16 -> original F32 scale -> headroom -> RNE FP16.
+// Model quality needs separate qualification. Scratch: 1 KiB per worker.
+inline bool convrot_fp16_row(const ConvrotView &view,size_t row,uint16_t *target,
+                             bool scalar_only=false,float headroom=1.f) {
+    if (row>=size_t(view.rows) || !target || !std::isfinite(headroom) || headroom<=0 ||
+        !packed_target_disjoint(view.data,view.bytes,target,size_t(view.cols)) ||
+        !packed_target_disjoint(view.row_scales.data,view.row_scales.bytes,target,size_t(view.cols))) return false;
+    const size_t pitch=view.row_stride_bytes ? view.row_stride_bytes : size_t(view.cols);
+    const size_t scale_pitch=view.row_scales.row_stride_bytes ? view.row_scales.row_stride_bytes : 4;
+    float scale;std::memcpy(&scale,static_cast<const char *>(view.row_scales.data)+row*scale_pitch,4);
+    if (!std::isfinite(scale)) return false;
+    std::array<int32_t,256> integer;
+    const int8_t *source=view.data+row*pitch;
+    for (int begin=0;begin<view.cols;begin+=256) {
+        for (int i=0;i<256;++i) integer[i]=source[begin+i];
+        if (!convrot_integer_fp16_block(integer,scale,headroom,target+begin,scalar_only)) return false;
+    }
+    return true;
+}
+inline void validate_convrot_affine_view(const ConvrotAffineView &view) {
+    const auto &v=view.packed;validate_affine_view(v);
+    if (v.bits!=8 || v.cols%256 || !v.offsets)
+        throw std::runtime_error("packed ConvRot requires Q8, complete H256 and signed offsets");
+    validate_packed_storage(v.data,v.bytes,v.rows,v.cols,affine_row_stride(v),size_t(v.cols));
+    for (const auto *m : {&v.scales,&*v.offsets}) {
+        const size_t item=m->dtype==DType::FP32 ? 4 : 2;
+        const size_t pitch=m->row_stride_bytes ? m->row_stride_bytes : size_t(m->cols)*item;
+        validate_packed_storage(m->data,m->bytes,m->rows,m->cols,pitch,size_t(m->cols)*item);
+    }
+}
+// This consumes legacy rounded scales. Do not label it source-F32-scale.
+// One 256-int scratch, no signed-code bank or dense intermediate allocation.
+inline bool convrot_affine_fp16_row(const ConvrotAffineView &view,size_t row,uint16_t *target,
+                                    bool scalar_only=false,float headroom=1.f) {
+    const auto &v=view.packed;
+    if (row>=size_t(v.rows) || !target || !std::isfinite(headroom) || headroom<=0 || !v.offsets ||
+        !packed_target_disjoint(v.data,v.bytes,target,size_t(v.cols)) ||
+        !packed_target_disjoint(v.scales.data,v.scales.bytes,target,size_t(v.cols)) ||
+        !packed_target_disjoint(v.offsets->data,v.offsets->bytes,target,size_t(v.cols))) return false;
+    const auto *scales=affine_metadata_row(v.scales,row),*biases=affine_metadata_row(*v.offsets,row);
+    const float scale=load_scalar(scales,0,v.scales.dtype);
+    if (!std::isfinite(scale)) return false;
+    for (int group=0;group<v.cols/v.group_size;++group) {
+        const float s=load_scalar(scales,size_t(group),v.scales.dtype);
+        const float b=load_scalar(biases,size_t(group),v.offsets->dtype);
+        if (!std::isfinite(s) || !std::isfinite(b) || s!=scale || b!=-128.f*scale) return false;
+    }
+    const auto *codes=static_cast<const uint8_t *>(v.data)+row*affine_row_stride(v);
+    std::array<int32_t,256> integer;
+    for (int begin=0;begin<v.cols;begin+=256) {
+        for (int i=0;i<256;++i) integer[i]=int32_t(codes[begin+i])-128;
+        if (!convrot_integer_fp16_block(integer,scale,headroom,target+begin,scalar_only)) return false;
     }
     return true;
 }

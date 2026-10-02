@@ -11,5 +11,6 @@ struct GgufPackedBankMetrics {
     uint32_t tensor_count = 0, field_count = 0;
     double load_seconds = 0, read_seconds = 0, decode_seconds = 0;
     bool released_before_vae = false, serial_refiner_eval = false;
+    bool session_packed_retention = false, reused_packed_bank = false, compiled_packed_blocks = false;
 };
 } // namespace tc::streaming

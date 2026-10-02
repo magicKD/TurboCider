@@ -67,7 +67,11 @@ struct ConvrotView {
     size_t row_stride_bytes = 0;
     MatrixView row_scales;
 };
-using WeightView = std::variant<MatrixView, AffineView, GgufView, ConvrotView>;
+// Explicit legacy MLX packed ConvRot, NEVER ordinary affine/GGUF. Codes are
+// unsigned q+128; every group's scale/offset must be the same row scale and
+// -128*scale. Inverse H uses that stored scale, not original F32 provenance.
+struct ConvrotAffineView { AffineView packed; };
+using WeightView = std::variant<MatrixView, AffineView, GgufView, ConvrotView, ConvrotAffineView>;
 
 struct GraphShape {
     Kind kind = Kind::SwiGLU;

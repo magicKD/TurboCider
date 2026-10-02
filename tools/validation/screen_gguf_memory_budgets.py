@@ -85,6 +85,13 @@ def identity(report, row):
         "png_sha256": sha(row["png_sha256"]),
     }
     candidate = ("native_packed:cpu_direct" if importer else "native_packed") if native else f'{execution["source_residency"]}:p{row["prefetch"]}'
+    if importer:
+        graph = importer.get("gpu_graph_recipe", "native-compat-eager-v1")
+        retained = importer.get("session_packed_retention", False)
+        if graph not in ("native-compat-eager-v1", "z-parameterized-affine-block-v1") or type(retained) is not bool:
+            raise ValueError("unknown native packed graph/retention recipe")
+        if retained: candidate += ":session_packed"
+        if graph != "native-compat-eager-v1": candidate += ":compiled_affine"
     eval_policy=report.get("gpu_eval_policy","default")
     if eval_policy not in ("default","each-main-block-v1"): raise ValueError("unknown GPU eval policy")
     if eval_policy!="default": candidate+=":"+eval_policy

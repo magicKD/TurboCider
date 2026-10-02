@@ -204,6 +204,13 @@ struct Surface {
             return convrot_fp16_row(source, size_t(row), output, scalar_only, scale);
         }, true);
     }
+    void fill(const ConvrotAffineView &source,bool scalar_only,float scale=1.f) {
+        validate_convrot_affine_view(source);
+        check(source.packed.rows==rows && source.packed.cols==cols,"runtime ANE packed ConvRot shape mismatch");
+        fill_rows([&](int row,uint16_t *output) {
+            return convrot_affine_fp16_row(source,size_t(row),output,scalar_only,scale);
+        },true);
+    }
     void fill_matmul_parts(const std::vector<MatrixView> &parts, bool scalar_only) {
         check(!parts.empty(), "runtime ANE MatMul needs weight parts");
         std::vector<int> ends;

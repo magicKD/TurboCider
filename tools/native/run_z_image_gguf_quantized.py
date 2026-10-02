@@ -11,7 +11,8 @@ import threading
 import time
 
 from benchmark_z_image_streaming import process_memory, vm_counters
-from benchmark_z_image_metal import loaded_runtime_libraries
+from benchmark_z_image_metal import loaded_runtime_libraries, system_state_metadata
+from z_image_probe_identity import bind_components, revalidate_components
 
 
 def main():
@@ -19,9 +20,13 @@ def main():
     parser.add_argument("--library",type=Path,required=True)
     parser.add_argument("--model",type=Path,required=True)
     parser.add_argument("--output",type=Path,required=True)
+    parser.add_argument("--baseline-bf16",action="store_true",help="same measurement harness, original pure-GPU BF16; requires --prefetch -1")
+    parser.add_argument("--bind-components",action="store_true",help="hash actual local Comfy encoder/VAE/tokenizer outside timing; required for BF16 acceptance screen")
     parser.add_argument("--prefetch",type=int,nargs="+",default=[0,1])
     parser.add_argument("--source-residency",choices=["packed_resident","packed_streamed"],default="packed_resident")
     parser.add_argument("--native-import",choices=["mlx","cpu_direct"],help="explicit experimental import recipe for --prefetch -1")
+    parser.add_argument("--compile-packed",action="store_true",help="explicit parameterized native QMM graph; authorized approximation, CPU-direct only")
+    parser.add_argument("--retain-packed",action="store_true",help="experimental packed-only session retention across VAE; CPU-direct only, NOT a RAM cap")
     parser.add_argument("--native-weight-limit-bytes",type=int,help="CPU-direct packed-bank managed ceiling; NOT whole-request RAM cap")
     parser.add_argument("--gpu-eval-blocks",action="store_true",help="explicit existing per-main-block eval boundary (separate measured candidate)")
     parser.add_argument("--runs",type=int,default=1)
@@ -40,8 +45,9 @@ def main():
     parser.add_argument("--size",type=int,default=512)
     parser.add_argument("--steps",type=int,default=4)
     parser.add_argument("--seed",type=int,default=42)
-    parser.add_argument("--precision",choices=["z-source-mixed-v1","z-source-mixed-f16-v1","z-source-exact-f32-v1","z-source-native-affine-v1","z-mlx-compat-affine-v1","z-mlx-compat-f16-v1","z-mlx-compat-f32-v1"],default="z-source-mixed-v1")
+    parser.add_argument("--precision",choices=["z-source-mixed-v1","z-source-mixed-f16-v1","z-source-exact-f32-v1","z-source-native-affine-v1","z-mlx-compat-affine-v1","z-mlx-compat-f16-v1","z-mlx-compat-f32-v1","z-dense-bf16-v1"],default="z-source-mixed-v1")
     parser.add_argument("--prompt",default="A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture.")
+    parser.add_argument("--alternate-prompt",help="diagnostic retained-bank A/B/A invalidation only; requires >=3 runs, no warmup/cancel")
     parser.add_argument("--dump",action="store_true",help="save diagnostic latents/pixels; not a performance run")
     parser.add_argument("--cancel-once-at-block",type=int,help="cancel the first request at a main block, then test retry")
     parser.add_argument("--cancel-once-at-encoder-layer",type=int,help="cancel first uncached Qwen3 encode, then test retry")
@@ -54,9 +60,31 @@ def main():
     if not 0<=args.warmup<=8: parser.error("warmup 0..8")
     cancellations=(args.cancel_once_at_block,args.cancel_once_at_encoder_layer,args.cancel_once_at_refiner,args.cancel_once_at_import_tensor)
     if sum(c is not None for c in cancellations)>1: parser.error("cancellation selectors are mutually exclusive")
+    dense_bf16=args.precision=="z-dense-bf16-v1"
+    if dense_bf16 and (args.baseline_bf16 or min(args.prefetch)<0 or args.source_residency!="packed_streamed" or args.gpu_eval_blocks):
+        parser.error("dense BF16 profile requires bounded packed_streamed and compiled execution")
+    if args.baseline_bf16 and (args.prefetch!=[-1] or args.native_import or args.native_weight_limit_bytes is not None or args.retain_packed or args.compile_packed or
+            any(c is not None for c in cancellations) or args.encoder_gguf or args.precision!="z-source-mixed-v1" or
+            any(k.startswith("TURBOCIDER_Z_GGUF_") or k.startswith("TURBOCIDER_Z_QWEN3_") or
+                k.startswith("TURBOCIDER_QWEN3_GGUF_") for k in os.environ)):
+        parser.error("BF16 baseline requires prefetch -1 without GGUF import/encoder/profile/cancellation controls")
     native_import=args.native_import or os.environ.get("TURBOCIDER_Z_GGUF_IMPORT","mlx")
     if native_import not in ("mlx","cpu_direct"): parser.error("unknown native import recipe")
     if native_import=="cpu_direct" and any(p!=-1 for p in args.prefetch): parser.error("CPU-direct import requires only native packed prefetch -1")
+    if args.compile_packed:
+        if native_import!="cpu_direct" or args.baseline_bf16 or args.gpu_eval_blocks: parser.error("packed compile requires CPU-direct without baseline/eager controls")
+        key="TURBOCIDER_Z_GGUF_COMPILE_PACKED"
+        if key in os.environ and os.environ[key]!="1": parser.error("conflicting packed compile environment")
+        os.environ[key]="1"
+    compile_packed=os.environ.get("TURBOCIDER_Z_GGUF_COMPILE_PACKED","0")=="1"
+    if args.retain_packed:
+        if native_import!="cpu_direct" or args.baseline_bf16: parser.error("packed retention requires CPU-direct candidate")
+        key="TURBOCIDER_Z_GGUF_RETAIN_PACKED"
+        if key in os.environ and os.environ[key]!="1": parser.error("conflicting packed retention environment")
+        os.environ[key]="1"
+    if args.alternate_prompt is not None and (args.measurement!="diagnostic" or not args.retain_packed or
+            args.runs<3 or args.warmup or any(c is not None for c in cancellations) or not args.alternate_prompt.strip()):
+        parser.error("alternate prompt requires diagnostic retained-bank >=3 runs without warmup/cancel")
     if args.native_import:
         if os.environ.get("TURBOCIDER_Z_GGUF_IMPORT",native_import)!=native_import: parser.error("conflicting native import environment")
         os.environ["TURBOCIDER_Z_GGUF_IMPORT"]=native_import
@@ -105,29 +133,35 @@ def main():
     args.output.mkdir(parents=True)
     with open("/tmp/turbocider-z-image-gpu-benchmark.lock","a") as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        components,component_states,binding_seconds=bind_components(args.model,args.baseline_bf16,encoder_environment) if args.bind_components else (None,{},0)
         library=C.CDLL(str(args.library.resolve()))
         library.tc_engine_create_model.argtypes=[C.c_char_p,C.c_char_p,C.POINTER(C.c_void_p),C.POINTER(C.c_void_p)]
         library.tc_engine_generate.argtypes=[C.c_void_p,C.c_char_p,C.c_void_p,C.c_void_p,C.POINTER(C.c_void_p),C.POINTER(C.c_void_p)]
         library.tc_engine_free.argtypes=[C.c_void_p]
         library.tc_engine_cancel.argtypes=[C.c_void_p]
         library.tc_string_free.argtypes=[C.c_void_p]
+        library.tc_system_json.argtypes=[]
+        library.tc_system_json.restype=C.c_void_p
         def take(pointer):
             if not pointer.value: return None
             value=C.string_at(pointer).decode(); library.tc_string_free(pointer); return value
         def create_engine():
             engine,error=C.c_void_p(),C.c_void_p()
-            status=library.tc_engine_create_model(b"z-image-turbo-gguf",str(args.model.resolve()).encode(),C.byref(engine),C.byref(error))
+            status=library.tc_engine_create_model(b"z-image-turbo" if args.baseline_bf16 else b"z-image-turbo-gguf",str(args.model.resolve()).encode(),C.byref(engine),C.byref(error))
             message=take(error)
             if status: raise RuntimeError(message)
             return engine
         engine=create_engine()
-        report={"schema_version":1,"scope":"real private GGUF execution; not whole-request memory/performance qualification",
+        report={"schema_version":1,"scope":"local pure-GPU BF16/quantized execution screen; not whole-request memory/performance qualification",
+            "hardware":json.loads(take(C.c_void_p(library.tc_system_json()))),"system_state":system_state_metadata(),
             "library_sha256":hashlib.sha256(args.library.read_bytes()).hexdigest(),"loaded_libraries":loaded_runtime_libraries(),
             "runner_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            "native_packed_math_profile":"z-mlx-compat-affine-v1",
-            "native_import":native_import,
+            "native_packed_math_profile":None if args.baseline_bf16 else "z-mlx-compat-affine-v1",
+            "native_import":None if args.baseline_bf16 else native_import,
             "gpu_eval_policy":gpu_eval_policy,
             "native_import_environment":{k:v for k,v in os.environ.items() if k.startswith("TURBOCIDER_Z_GGUF_")},
+            "baseline_bf16":args.baseline_bf16,"runtime_environment":{k:v for k,v in os.environ.items() if k.startswith("TURBOCIDER_")},
+            "component_binding":components,"component_binding_seconds":binding_seconds,
             "measurement":args.measurement,"warmup_requests_per_layout":args.warmup,
             "prompt_cache_policy":args.prompt_cache,"encoder_environment":encoder_environment,
             "runs":[],"status":"running"}
@@ -139,14 +173,17 @@ def main():
                         library.tc_engine_free(engine);engine=C.c_void_p();engine=create_engine()
                     index=indexes.get(p,0);indexes[p]=index+1
                     name=f"p{p}-{index}" if p>=0 else f"packed-{index}"; image=args.output/(name+".png")
-                    request={"schema_version":2,"model":"z-image-turbo-gguf","operation":"image.generate",
-                        "inputs":[{"kind":"text","role":"prompt","text":args.prompt}],
+                    request={"schema_version":2,"model":"z-image-turbo" if args.baseline_bf16 else "z-image-turbo-gguf","operation":"image.generate",
+                        "inputs":[{"kind":"text","role":"prompt","text":args.alternate_prompt if args.alternate_prompt and run%2 else args.prompt}],
                         "outputs":[{"kind":"image","path":str(image.resolve()),"width":args.size,"height":args.size,"audio":False}],
                         "sampling":{"seed":args.seed,"steps":args.steps},
                         "execution":{"policy":"gpu","quantized_execution":{"schema_version":1,"enabled":True,"prefetch_layers":p,"precision_profile":args.precision,"source_residency":args.source_residency}},
                         "parameters":{"dynamic_text":True}}
                     if args.dump: request["dump_tensors"]=str((args.output/(name+"-tensors")).resolve())
                     if p<0: request["execution"].pop("quantized_execution")
+                    if dense_bf16 or compile_packed:
+                        request["execution"]["allow_approximation"]=True
+                        request["parameters"]["compile_gpu"]=True
                     samples=[]; errors=[]; stopped=threading.Event()
                     def sample():
                         while not stopped.is_set():
@@ -177,6 +214,7 @@ def main():
                             stopped.set()
                             if args.measurement!="timing": sampler.join()
                     elapsed=time.perf_counter()-start; raw=take(value); message=take(error); after=vm_counters()
+                    revalidate_components(component_states)
                     row={"prefetch":p,"index":index,"request":request,"status":status,"error":message,
                         "warmup":run<args.warmup,"measurement":args.measurement,
                         "wall_seconds":elapsed,"metrics":json.loads(raw) if raw else None,"memory_samples":samples,
@@ -188,7 +226,10 @@ def main():
                         qe=row["metrics"].get("quantized_execution") or row["metrics"].get("gguf_import")
                         if qe: report["dit_source_sha256"]=qe["source_sha256"]
                         elif "dit_source_sha256" not in report:
-                            checkpoint=args.model/row["metrics"]["checkpoint"] if args.model.is_dir() else args.model
+                            if args.baseline_bf16:
+                                checkpoint=Path(os.environ["TURBOCIDER_Z_IMAGE_TRANSFORMER"]) if os.environ.get("TURBOCIDER_Z_IMAGE_TRANSFORMER") else args.model/"split_files/diffusion_models/z_image_turbo_bf16.safetensors"
+                            else:
+                                checkpoint=args.model/row["metrics"]["checkpoint"] if args.model.is_dir() else args.model
                             with checkpoint.open("rb") as source:
                                 report["dit_source_sha256"]=hashlib.file_digest(source,"sha256").hexdigest()
                         row["identity_verification_seconds"]=time.perf_counter()-source_identity_started
@@ -204,6 +245,8 @@ def main():
                             raise RuntimeError("cancellation did not fail cleanly")
                     elif status: raise RuntimeError(message)
             report["status"]="completed"
+            if hashlib.sha256(args.library.read_bytes()).hexdigest()!=report["library_sha256"]:
+                raise RuntimeError("library changed during probe; evidence invalid")
             successful=[row for row in report["runs"] if row["status"]==0]
             report["png_bytes_exact"]=len({row["png_sha256"] for row in successful})==1 if len(successful)>1 else None
             bounded=[row for row in successful if row["prefetch"]>=0]

@@ -36,6 +36,7 @@ class PackedRuntimeTests(unittest.TestCase):
         self.assertEqual(data["status"], "pass")
         self.assertEqual(data["gguf_types"], 11)
         self.assertEqual(data["weight_swap_cycles"], 10)
+        self.assertEqual(data["legacy_convrot_swap_cycles"],10)
         self.assertTrue(data["failed_stage_rejected"])
         self.assertTrue(data["same_graph"])
         self.assertEqual(data["observed_placement"], "unknown")

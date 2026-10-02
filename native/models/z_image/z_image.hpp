@@ -22,7 +22,10 @@ class ZImage final : public ModelSession {
     std::string model_id_ = "z-image-turbo";
     bool diffusers_layout_ = false, gguf_transformer_ = false, convrot_transformer_ = false;
     bool nvfp4_transformer_ = false;
+    bool runtime_convrot_ = false;
     bool gguf_direct_import_ = false;
+    bool gguf_compile_packed_ = false;
+    bool gguf_retain_packed_ = false;
     std::unique_ptr<MemoryLedger> gguf_packed_ledger_;
     std::unique_ptr<streaming::GgufPackedBank> gguf_packed_bank_;
     DeviceOptimizations optimizations_;

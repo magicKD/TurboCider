@@ -99,6 +99,66 @@ int main() {
     assert(convrot_fp16_row(rotated, 0, slow.data(), true, 1.f / 4096.f));
     assert(fast == slow);
 
+    // Explicit legacy packed ConvRot: recover signed codes without a second
+    // source bank, use the ACTUAL rounded metadata, and never treat ordinary
+    // group-affine scales/offsets as a valid rotation recipe.
+    {
+        constexpr int groups=columns/32,meta_pitch=groups*2+3,packed_pitch=columns+5;
+        std::vector<uint8_t> packed(1+rows*packed_pitch);
+        std::vector<char> legacy_scales(1+rows*meta_pitch),legacy_biases(legacy_scales.size());
+        std::array<float,rows> effective_scales;
+        for (int r=0;r<rows;++r) {
+            const uint16_t bits=round_bf16(row_scales[r]);
+            effective_scales[r]=std::bit_cast<float>(uint32_t(bits)<<16);
+            const uint16_t bias=round_bf16(-128.f*effective_scales[r]);
+            for (int g=0;g<groups;++g) {
+                std::memcpy(legacy_scales.data()+1+r*meta_pitch+g*2,&bits,2);
+                std::memcpy(legacy_biases.data()+1+r*meta_pitch+g*2,&bias,2);
+            }
+            for (int c=0;c<columns;++c)
+                packed[1+r*packed_pitch+c]=uint8_t(int(original_codes[1+r*pitch+c])+128);
+        }
+        ConvrotAffineView legacy{{packed.data()+1,packed.size()-1,rows,columns,packed_pitch,32,8,
+            {legacy_scales.data()+1,legacy_scales.size()-1,rows,groups,meta_pitch,DType::BF16},
+            MatrixView{legacy_biases.data()+1,legacy_biases.size()-1,rows,groups,meta_pitch,DType::BF16}}};
+        validate_convrot_affine_view(legacy);
+        ConvrotView exact_raw{original_codes.data()+1,original_codes.size()-1,rows,columns,pitch,
+            {effective_scales.data(),sizeof(effective_scales),rows,1,0,DType::FP32}};
+        const auto original_packed=packed;
+        const auto original_metadata=legacy_scales;
+        std::fill(fast.begin(),fast.end(),0xabcd);slow=fast;
+        for (int r=0;r<rows;++r) for (float factor : {1.f,.25f,1.f/4096.f}) {
+            forbid_allocations=true;
+            assert(convrot_affine_fp16_row(legacy,r,fast.data()+1,false,factor));
+            assert(convrot_affine_fp16_row(legacy,r,slow.data()+1,true,factor));
+            forbid_allocations=false;assert(fast==slow && fast.front()==0xabcd && fast.back()==0xabcd);
+            assert(convrot_fp16_row(exact_raw,r,slow.data()+1,true,factor));assert(fast==slow);
+            for (int c=0;c<columns;++c) {
+                int64_t dot=0;for (int k=0;k<256;++k)
+                    dot+=int64_t(original_codes[1+r*pitch+c/256*256+k])*sign(k,c%256);
+                assert(fast[c+1]==tc::gguf::float_to_fp16_rne((float(dot)*.0625f*effective_scales[r])*factor));
+            }
+        }
+        assert(packed==original_packed && legacy_scales==original_metadata);
+        auto wrong=legacy;wrong.packed.bits=4;rejects([&]{validate_convrot_affine_view(wrong);});
+        wrong=legacy;wrong.packed.offsets.reset();rejects([&]{validate_convrot_affine_view(wrong);});
+        wrong=legacy;wrong.packed.bytes=columns-1;rejects([&]{validate_convrot_affine_view(wrong);});
+        wrong=legacy;wrong.packed.data=reinterpret_cast<const void *>(UINTPTR_MAX-16);
+        rejects([&]{validate_convrot_affine_view(wrong);});
+        assert(!convrot_affine_fp16_row(legacy,rows,fast.data()));
+        assert(!convrot_affine_fp16_row(legacy,0,reinterpret_cast<uint16_t *>(packed.data()+2)));
+        assert(!convrot_affine_fp16_row(legacy,0,reinterpret_cast<uint16_t *>(legacy_scales.data()+2)));
+        assert(!convrot_affine_fp16_row(legacy,0,reinterpret_cast<uint16_t *>(legacy_biases.data()+2)));
+        uint16_t bad_scale=round_bf16(.5f);
+        std::memcpy(legacy_scales.data()+1+2,&bad_scale,2);
+        assert(!convrot_affine_fp16_row(legacy,0,fast.data()));legacy_scales=original_metadata;
+        uint16_t bad_bias=round_bf16(1.f);
+        std::memcpy(legacy_biases.data()+1,&bad_bias,2);
+        assert(!convrot_affine_fp16_row(legacy,0,fast.data()));
+        for (float factor : {0.f,-1.f,std::numeric_limits<float>::infinity()})
+            assert(!convrot_affine_fp16_row(legacy,0,fast.data(),false,factor));
+    }
+
     // All registered GGUF types through the NEW staging bridge; decoder's
     // independent GGML D0 tests remain separate. Padded, unaligned source rows.
     for (const auto &type : tc::gguf::types) {

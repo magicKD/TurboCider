@@ -273,3 +273,32 @@ M5 无实机时 G1 只能完成 CPU oracle、构建隔离、能力 false→fallb
 2. D0 CPU decoder 与负 fixture；typed pager 单槽的 D1/lifetime 测试。
 3. 一个完整 Z 请求，p=0→p=1，先 correctness/memory，再性能优化。
 4. 每加格式、encoder、tile 或后端，登记独立 capability/acceptance 增量，不能一把打开所有组合。
+
+## 9. 2026-10-02 用户补充：`fastest-bf16-low-memory-v1`
+
+新增必需的性能/容量目标，不改变 D0/D1/N1/N2、媒体或物理 INT8 证据门。
+以后不能只比较一个较慢的 GGUF/ConvRot 自身控制就宣布目标完成：
+
+- 主速度参考为该设备/shape/tokens/cache cell 当前最快已验证的纯 GPU BF16 实现。
+  先比较生产优化默认与适用的额外候选，保留候选选择和回归证据；不得以 unfused
+  BF16、观察者打开的 BF16、较长 prompt 或较冷 cache 充当基线。
+- 同 source-quant 参考继续必需，用于隔离实现错误、执行精度变化与源量化损失。
+  BF16 主速度参考不替代它，不要求 GGUF 恢复未量化权重。
+- GGUF/非 W8A8 ConvRot：观测内存必须降低，warm request wall 比值优选≤1.10，
+  硬上限≤1.20。仅 denoise 更快或权重文件更小不足以通过完整请求目标。
+- ConvRot runtime ANE W8A8：完整请求 wall 目标为 BF16 的0.70–0.80（少20–30%时间），
+  不是把1.2×吞吐误写成少20%时间；内存、质量、含staging/join的时间及INT8证据仍必需。
+- M5 GPU W8A8 在本机 M4 上仅能提供明确列出的数学/能力/构建静态检查，实机数值、
+  integer lowering 和性能仍为not_run。不存在的shader/backend不能以“静态通过”命名。
+
+内存预测先按真实per-tensor dtype和压缩比例求和，加入codes/scales/biases、对齐、
+当前/前瞻槽与固定浮点字段；再按encoder/DiT/VAE/retention的live intervals求峰值。
+Q4单矩阵的约28–31%不是整个mixed模型或整个进程的保证。预期与实际差异必须分账，
+不得把MLX active/managed weights当作whole-process内存。预算同时区分GB/GiB。
+
+正式性能仍采用第5节的会话/ABBA、24样本、CI/p90/cold/drift门，并绑定实际二进制与
+组件。新速度容忍门不降低旧`accelerated`门，也不授予生产资格。较小预算装不下BF16
+时可另外与大容量设备的最快BF16测时作明确的capacity screen，但不能据此取得同预算
+加速/真实6或8GB设备资格。48-case质量与整体内存envelope不因single-cell screen被省略。
+
+实际独立测速/内存runner及严格screen、成功和负结果见[21](21-fastest-bf16-and-compiled-packed-screen.md)。

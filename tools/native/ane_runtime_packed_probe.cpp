@@ -106,7 +106,33 @@ int main(int argc, char **argv) {
               "failed staging published output");
         scales[0] = saved;
         check(evaluate(source) == reference, "fresh stage did not recover");
+        // Same graph/surfaces, explicit legacy packed view. Retain actual F32
+        // scales here; BF16 stored-scale rounding has an independent host gate.
+        const int groups=s.hidden/32;
+        std::vector<uint8_t> packed(size_t(s.width)*s.hidden);
+        std::vector<float> group_scales(size_t(s.width)*groups),offsets(group_scales.size());
+        for (int row=0;row<s.width;++row) {
+            for (int c=0;c<s.hidden;++c) packed[size_t(row)*s.hidden+c]=uint8_t(int(codes[1+size_t(row)*pitch+c])+128);
+            for (int g=0;g<groups;++g) {
+                group_scales[size_t(row)*groups+g]=scales[row];offsets[size_t(row)*groups+g]=-128.f*scales[row];
+            }
+        }
+        ConvrotAffineView legacy{{packed.data(),packed.size(),s.width,s.hidden,0,32,8,
+            {group_scales.data(),group_scales.size()*4,s.width,groups,0,DType::FP32},
+            MatrixView{offsets.data(),offsets.size()*4,s.width,groups,0,DType::FP32}}};
+        for (int cycle=0;cycle<10;++cycle) {
+            check(evaluate(legacy)==reference,"legacy packed inverse-H reference mismatch");
+            packed[0]^=1;check(evaluate(legacy)!=reference,"legacy packed changed weight ignored");
+            packed[0]^=1;check(evaluate(legacy)==reference,"legacy packed A/B/A stale source");
+        }
+        group_scales[1]*=2;
+        graph.stage_weights(std::vector<WeightView>{legacy});
+        check(!graph.wait_stage().ok,"nonuniform legacy ConvRot scale accepted");
+        graph.launch(x,discarded.data(),discarded.size(),DType::FP16);
+        check(!graph.finish().ok,"bad legacy stage left old content launchable");
+        group_scales[1]=group_scales[0];check(evaluate(legacy)==reference,"legacy fresh-stage recovery failed");
         std::cout << "{\"status\":\"pass\",\"gguf_types\":11,\"weight_swap_cycles\":10,"
+                     "\"legacy_convrot_swap_cycles\":10,"
                      "\"failed_stage_rejected\":true,\"same_graph\":true,"
                      "\"observed_placement\":\"unknown\",\"hardware_int8\":\"not_requested\"}\n";
         return 0;

@@ -62,6 +62,7 @@ struct RawTensor {
     const std::byte *pointer = nullptr;
     uint32_t cached_type = 0;
     bool pinned = false;
+    bool fixed_bf16 = false;
     uint32_t artifact = 0;
 };
 struct SourceTask { const RawTensor *source = nullptr; std::vector<size_t> fields; };
@@ -129,6 +130,12 @@ struct GgufWeightPager::State {
         insist(field.materialization.has_value(), "field missing materialization");
         const auto &m = *field.materialization;
         const bool packed_source = alias && m.conversion == "gguf-packed-gather-source-v1";
+        const bool fixed_bf16 = alias && m.conversion == "gguf-bf16-fixed-rne-v1";
+        if (fixed_bf16) {
+            const auto precision = descriptor.workload.find("precision");
+            insist(streamed && precision != descriptor.workload.end() && precision->second == "z-dense-bf16-v1" &&
+                   m.format == "BF16", "fixed BF16 conversion needs explicit streamed BF16 profile");
+        }
         std::optional<gguf::AffinePart> affine;
         if (m.conversion=="gguf-affine-codes-v1") affine=gguf::AffinePart::codes;
         if (m.conversion=="gguf-affine-scales-v1") affine=gguf::AffinePart::scales;
@@ -136,7 +143,7 @@ struct GgufWeightPager::State {
         insist(m.storage_mode == "mlx-metal-shared" && m.reads.size() == 1 && m.derived_from.empty() &&
                    m.derived_offset == 0 && (m.conversion == (alias ? "gguf-native-alias-v1" : "gguf-cpu-rne-v1") ||
                      (alias && legacy_float && m.conversion=="gguf-mlx-float-alias-v1") ||
-                     packed_source || (affine && !alias)),
+                     packed_source || fixed_bf16 || (affine && !alias)),
                 "unsupported typed materialization");
         const auto &r = m.reads.front();
         insist(r.artifact < directories.size(), "source artifact out of bounds");
@@ -162,7 +169,7 @@ struct GgufWeightPager::State {
         insist(field.bytes == gguf::checked_mul(elements, item),
                 "target byte count differs from dtype/shape");
         insist(field.alignment == buffer_alignment, "unqualified backing alignment");
-        if (alias && !packed_source) {
+        if (alias && !packed_source && !fixed_bf16) {
             insist((tensor.type == 0 && dtype == mx::float32) || (tensor.type == 1 && dtype == mx::float16) ||
                        (tensor.type == 30 && dtype == (legacy_float ? mx::float16 : mx::bfloat16)), "resident alias would require conversion");
         }
@@ -170,6 +177,12 @@ struct GgufWeightPager::State {
         auto [it, fresh] = sources.try_emplace(key);
         if (fresh) { it->second.descriptor = tensor; it->second.artifact = r.artifact;
             it->second.cached_type=legacy_float && tensor.type==30 ? 1 : tensor.type; }
+        if (fixed_bf16) {
+            insist(gguf::type_info(tensor.type).elements == 1 && fresh,
+                   "fixed BF16 source must be a unique floating tensor");
+            it->second.fixed_bf16 = true;
+            insist(row_bytes(it->second) <= read_capacity, "fixed BF16 row exceeds bounded read buffer");
+        }
         if (alias && !packed_source) it->second.pinned = true;
         return {&field, &it->second, dtype, affine};
     }
@@ -291,6 +304,29 @@ void GgufWeightPager::load_packed(const std::atomic<bool> *cancel) {
             cancelled(cancel);
             const auto &d = raw.descriptor;
             const bool floating = gguf::type_info(d.type).elements == 1;
+            if (raw.fixed_bf16) {
+                // One target allocation plus the already-reserved chunk buffer.
+                // Never load a full raw fixed matrix and then allocate its cast.
+                const auto bytes = gguf::checked_mul(d.elements, 2);
+                raw.storage = allocate(s.ledger, bytes, aligned(bytes), mlx_shape(d.logical_shape()),
+                    mx::bfloat16, MemoryClass::Weights, s.lease->generation());
+                auto *target = raw.storage->data<std::byte>();
+                const auto stride = s.row_bytes(raw), target_stride = gguf::checked_mul(d.columns(), 2);
+                for (uint64_t first = 0; first < d.rows();) {
+                    const auto count = std::min(d.rows() - first, s.read_capacity / stride);
+                    s.read_rows(raw, first, count, cancel);
+                    gguf::decode_cpu_into({{s.read_pointer, size_t(count * stride)}, d.type, count, d.columns()},
+                        {0, count, 0, d.columns()}, {{target + first * target_stride, size_t(count * target_stride)},
+                        gguf::DecodeDType::bf16, target_stride, 2}, cancel, s.decode_options);
+                    first += count;
+                }
+                raw.pointer = target; raw.cached_type = 30;
+                s.metrics.source_float_bytes = gguf::checked_add(s.metrics.source_float_bytes, d.bytes);
+                s.metrics.packed_source_bytes = gguf::checked_add(s.metrics.packed_source_bytes, bytes);
+                s.metrics.packed_capacity_bytes = gguf::checked_add(s.metrics.packed_capacity_bytes,
+                    mx::allocator::allocator().size(raw.storage->data_shared_ptr()->buffer));
+                continue;
+            }
             mx::Dtype dtype = mx::uint8;
             mx::Shape shape;
             if (floating) {

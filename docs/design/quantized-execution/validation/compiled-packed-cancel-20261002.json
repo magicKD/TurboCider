@@ -1,0 +1,183 @@
+{
+  "schema": "tc-gguf-private-diagnostics-v1",
+  "scope": "selected real inputs; not full R1/model/memory/performance certification",
+  "cases": [
+    {
+      "id": "final-compiled-retained-cancel-retry",
+      "raw_report_sha256": "ad5302a03272bf0708601673a1a41767c424763df8844f54f7b110e617a5ba89",
+      "library_sha256": "945f8253a53a56f3ede0ea751211802102975ae23a5aeb36ba040d75e30ac495",
+      "runs": [
+        {
+          "prefetch": -1,
+          "status": 2,
+          "error": "generation cancelled",
+          "png_sha256": null,
+          "cancellation_triggered": true,
+          "wall_seconds": 3.8659434170112945,
+          "timings_seconds": null,
+          "quantized_execution": null,
+          "mlx_memory": null,
+          "gguf_import": null,
+          "warmup": false,
+          "encoder_quantized_execution": null,
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 3280093184,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 42,
+          "steps": 4,
+          "profile": "native-packed"
+        },
+        {
+          "prefetch": -1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "a5065dd36b157667a930fddbf0e87f699db1c014825215174bfb6da18c3c9df1",
+          "cancellation_triggered": false,
+          "wall_seconds": 7.509725165989948,
+          "timings_seconds": {
+            "denoise": 4.849711458,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 7.507025958,
+            "text_encode": 6.1792e-05,
+            "vae_decode": 0.480141875
+          },
+          "quantized_execution": null,
+          "mlx_memory": {
+            "mlx_active_bytes": 7903806352,
+            "mlx_peak_bytes": 11283907748,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "gguf_import": {
+            "allocator_cache_limit_bytes": 0,
+            "consumer_revision": "z-session-packed-experimental-v1",
+            "decode_seconds": 1.8474834699999994,
+            "experimental": true,
+            "field_count": 813,
+            "gpu_graph_recipe": "z-parameterized-affine-block-v1",
+            "load_seconds": 2.146847542,
+            "logical_source_bytes": 7224676608,
+            "managed_peak_bytes": 7565989120,
+            "output_bytes": 7563825408,
+            "packed_capacity_bytes": 7564939520,
+            "plan_digest": "341b10530bdda02d00b09c248377eab7d3c364f8cf0d49a3623587630de35ec5",
+            "planned_packed_capacity_bytes": 7566213120,
+            "read_buffer_capacity_bytes": 1048576,
+            "read_seconds": 0.2716426410000013,
+            "recipe": "gguf-mlx-compat-affine-packed-bank-v1",
+            "released_before_vae": false,
+            "reused_packed_bank": false,
+            "scope": "managed immutable packed bank and import buffer; excludes encoder/VAE/activations/cache/framework/OS",
+            "serial_refiner_eval": true,
+            "session_packed_retention": true,
+            "source_read_bytes": 7224676608,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "tensor_count": 453,
+            "verification_bytes": 0,
+            "whole_request_bounded_certified": false
+          },
+          "warmup": false,
+          "encoder_quantized_execution": null,
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 3260416,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 42,
+          "steps": 4,
+          "profile": "native-packed"
+        }
+      ],
+      "native_import": "cpu_direct",
+      "gpu_eval_policy": "default",
+      "numerical_gates": {
+        "vs-source.json": {
+          "scope": "diagnostic tensor comparison; not complete model/media qualification",
+          "tensors": [
+            {
+              "name": "z_conditioning.safetensors",
+              "exact": true,
+              "reference_sha256": "3b84be9dbadd9614aa6bbbf29e5717d0495523e265f1cd3463f0fcc8d0f4f01d",
+              "candidate_sha256": "3b84be9dbadd9614aa6bbbf29e5717d0495523e265f1cd3463f0fcc8d0f4f01d",
+              "rel_l2": 0.0,
+              "cosine": 0.9999999999999999,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_decoded.safetensors",
+              "exact": true,
+              "reference_sha256": "c6c03cc6d750e3e80d72a6b0b31c5c9c50b4ac5b965f693cf182c3c5a15cf16e",
+              "candidate_sha256": "c6c03cc6d750e3e80d72a6b0b31c5c9c50b4ac5b965f693cf182c3c5a15cf16e",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_final.safetensors",
+              "exact": true,
+              "reference_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+              "candidate_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_initial.safetensors",
+              "exact": true,
+              "reference_sha256": "22192ff00b85447a96918c049f8a742320207d82fe41703ae85aceedb8b9ae8a",
+              "candidate_sha256": "22192ff00b85447a96918c049f8a742320207d82fe41703ae85aceedb8b9ae8a",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_1.safetensors",
+              "exact": true,
+              "reference_sha256": "9d9fae5663842a190f3ddbfa97f8eae4fba8f30a89a9a1922e4e2a3fcf3be089",
+              "candidate_sha256": "9d9fae5663842a190f3ddbfa97f8eae4fba8f30a89a9a1922e4e2a3fcf3be089",
+              "rel_l2": 0.0,
+              "cosine": 1.0000000000000002,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_2.safetensors",
+              "exact": true,
+              "reference_sha256": "f7cededd8c940f3f6561e902db44a76c0f6eea4381e1a461190fe563ad44d27c",
+              "candidate_sha256": "f7cededd8c940f3f6561e902db44a76c0f6eea4381e1a461190fe563ad44d27c",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_3.safetensors",
+              "exact": true,
+              "reference_sha256": "8f179e955da10091a0d8597a2cd498377cb64e880e30166715d996863cfbfaef",
+              "candidate_sha256": "8f179e955da10091a0d8597a2cd498377cb64e880e30166715d996863cfbfaef",
+              "rel_l2": 0.0,
+              "cosine": 1.0000000000000002,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_4.safetensors",
+              "exact": true,
+              "reference_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+              "candidate_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            }
+          ],
+          "n1_final_latent_pass": true
+        }
+      }
+    }
+  ]
+}

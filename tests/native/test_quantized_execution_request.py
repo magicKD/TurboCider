@@ -65,6 +65,25 @@ class QuantizedRequestTests(unittest.TestCase):
             config={"schema_version":1,"enabled":False,**extra}
             self.assertNotEqual(self.plan(self.request(config))[0],0)
 
+    def test_dense_bf16_is_explicit_approximate_streamed_compiled_candidate(self):
+        config={"schema_version":1,"enabled":True,"precision_profile":"z-dense-bf16-v1",
+                "source_residency":"packed_streamed"}
+        request=self.request(config)
+        request["execution"]["allow_approximation"]=True
+        request["parameters"]={"compile_gpu":True}
+        status,value,error=self.plan(request)
+        self.assertEqual(status,0,error)
+        self.assertFalse(value["executable"])
+        self.assertEqual(value["quantized_execution"]["precision_profile"],"z-dense-bf16-v1")
+        for field in ("authorization","compile","source","default_source","mode"):
+            bad=copy.deepcopy(request)
+            if field=="authorization":bad["execution"]["allow_approximation"]=False
+            if field=="compile":bad["parameters"]["compile_gpu"]=False
+            if field=="source":bad["execution"]["quantized_execution"]["source_residency"]="packed_resident"
+            if field=="default_source":bad["execution"]["quantized_execution"].pop("source_residency")
+            if field=="mode":bad["execution"]["quantized_execution"]["mode"]="bounded_packed"
+            with self.subTest(field=field):self.assertNotEqual(self.plan(bad)[0],0)
+
     def test_unknown_wrong_type_and_unimplemented_options_rejected(self):
         cases=[{}, {"schema_version":1}, {"enabled":True},
             {"schema_version":1,"enabled":1}, {"schema_version":"1","enabled":True}]

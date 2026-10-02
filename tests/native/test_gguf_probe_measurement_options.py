@@ -31,6 +31,16 @@ class MeasurementOptionsTests(unittest.TestCase):
             self.reject(["--warmup", value], "warmup 0..8")
         self.reject(["--prefetch", "3"], "prefetch -1=native packed")
 
+    def test_baseline_and_dense_bf16_controls_are_separate(self):
+        self.reject(["--baseline-bf16"], "BF16 baseline requires prefetch -1")
+        self.reject(["--baseline-bf16","--prefetch","-1","--native-import","cpu_direct"], "BF16 baseline requires")
+        self.reject(["--precision","z-dense-bf16-v1"], "requires bounded packed_streamed")
+        self.reject(["--precision","z-dense-bf16-v1","--source-residency","packed_streamed","--prefetch","-1"], "requires bounded packed_streamed")
+        self.reject(["--precision","z-dense-bf16-v1","--source-residency","packed_streamed","--gpu-eval-blocks"], "requires bounded packed_streamed")
+        self.reject(["--alternate-prompt","different"], "alternate prompt requires diagnostic")
+        self.reject(["--alternate-prompt","different","--prefetch","-1","--native-import","cpu_direct",
+                     "--retain-packed","--runs","3","--measurement","timing"], "alternate prompt requires diagnostic")
+
     def test_component_inputs_are_atomic_and_explicit(self):
         self.reject(["--encoder-gguf", "missing.gguf"], "must be supplied together")
         self.reject(["--encoder-gguf", "missing.gguf", "--encoder-config", "missing.json",
@@ -44,6 +54,10 @@ class MeasurementOptionsTests(unittest.TestCase):
                     "positive native weight ceiling")
         self.reject(["--cancel-once-at-import-tensor","0"], "requires CPU-direct")
         self.reject(["--cancel-once-at-block","0","--cancel-once-at-refiner","0"], "mutually exclusive")
+        self.reject(["--compile-packed"], "packed compile requires CPU-direct")
+        self.reject(["--retain-packed"], "packed retention requires CPU-direct")
+        self.reject(["--compile-packed","--native-import","cpu_direct","--prefetch","-1","--gpu-eval-blocks"],
+                    "packed compile requires CPU-direct")
 
     def test_tokenizer_mismatch_and_environment_conflict(self):
         with tempfile.TemporaryDirectory(prefix="tc-gguf-probe-component-") as raw:
