@@ -35,11 +35,12 @@ class Adapter final : public ModelSlotAdapter {
         ensure(rejected,"stale content ticket accepted");
     }
     bool overlap_next_fill_after_claim() const noexcept override { return true; }
-    ReaderSet encode_group(const Group &group,const tc_stream_slot_ticket_v1 &,CompletionMailbox &) override {
+    ReaderSet encode_group(const Group &group,const tc_stream_slot_ticket_v1 &ticket,CompletionMailbox &) override {
         const auto name="layers."+std::to_string(group.blocks.front());
         auto output=linear(input_,bound_,name);
         mx::eval(output);
         ensure(mx::all(output == Tensor(float(64*(group.blocks.front()+1)))).item<bool>(),"decoded GPU matrix result mismatch");
+        pager_.retire(group,ticket);
         if (!escaped) escaped=bound_.at(name+".weight");
         ++computes; bound_.clear();
         ReaderSet readers; readers.count=1; readers.fences[0]={1,++sequence_}; readers.already_complete=true; return readers;
@@ -137,10 +138,11 @@ int main(int argc,char **argv) {
             mx::synchronize(); mx::clear_cache();
             ensure(ledger.snapshot().storage_bytes==0 && ledger.snapshot().reserved_bytes==0,"buffer/ledger release leak");
         }
-        for (uint32_t slots=1;slots<=3;++slots) {
+        for (uint32_t bank_mode:{0u,1u,2u}) for (uint32_t slots=1;slots<=3;++slots) {
+            const bool fixed_bank=bank_mode!=0;
             auto raw_gpu=d;
             raw_gpu.workload["source_residency"]="packed_streamed";
-            raw_gpu.workload["precision"]="z-raw-gpu-affine-f16-v1";
+            raw_gpu.workload["precision"]=bank_mode==2 ? "z-raw-gpu-dependency-refresident-f16-v1" : fixed_bank ? "z-raw-gpu-fixed-f16-v1" : "z-raw-gpu-affine-f16-v1";
             raw_gpu.workload["packed_read_buffer_bytes"]="16384";
             raw_gpu.stages.front().resident_fields.resize(1);
             for (auto &block:raw_gpu.stages.front().blocks) {
@@ -162,6 +164,33 @@ int main(int argc,char **argv) {
             ensure(metrics.source_read_bytes==4+8*34816 && metrics.decode_seconds==0,
                    "raw GPU source reread or hidden CPU repack");
             ensure(metrics.maximum_dense_pool_capacity_bytes==slots*49152,"raw GPU slot capacity mismatch");
+            if (fixed_bank) ensure(metrics.gpu_fixed_output_banks==1 && metrics.maximum_gpu_fixed_output_bank_bytes==32768+2048+2048+4 &&
+                metrics.gpu_fixed_output_bank_bytes==0,"fixed GPU pool bank count/capacity/release mismatch");
+            if (fixed_bank && slots==2) {
+                const auto &a=layout.stages.front().groups[0],&b=layout.stages.front().groups[1];
+                const auto &pool=layout.stages.front().pools.front();pager->create_pool(pool);
+                tc_stream_slot_ticket_v1 first{};first.struct_size=sizeof(first);first.version=1;
+                first.pool=a.pool;first.slot=a.slot;first.request_generation=500;first.content_generation=1;first.item={0,0,0,a.id};
+                auto second=first;second.slot=b.slot;second.item.group=b.id;second.content_generation=2;
+                ensure(pager->fill(a,first,&cancel)==a.bytes,"fixed bank first fill failed");
+                auto old=pager->bind(a,first);
+                ensure(pager->fill(b,second,&cancel)==b.bytes,"fixed bank lookahead fill failed");
+                bool busy=false;
+                try {(void)pager->bind(b,second);} catch (const std::exception &e) {busy=std::string(e.what()).find("qe_output_busy")!=std::string::npos;}
+                ensure(busy,"fixed bank overwritten before reader retirement");
+                auto wrong=first;++wrong.content_generation;bool stale=false;
+                try {pager->retire(a,wrong);} catch (...) {stale=true;}
+                ensure(stale,"wrong fixed bank retire ticket accepted");
+                auto y=linear(mx::ones({1,64},mx::float32),old,"layers.0");mx::eval(y);
+                const auto id=old.at("layers.0.weight").buffer().ptr();
+                ensure(mx::all(y==Tensor(64.f)).item<bool>(),"busy refusal altered old fixed bank content");
+                pager->retire(a,first);old.clear();
+                auto next=pager->bind(b,second);
+                y=linear(mx::ones({1,64},mx::float32),next,"layers.1");mx::eval(y);
+                ensure(next.at("layers.1.weight").buffer().ptr()==id,"fixed bank replaced backing on next ticket");
+                ensure(mx::all(y==Tensor(128.f)).item<bool>(),"fixed bank next ticket used old content");
+                pager->retire(b,second);next.clear();pager->destroy_pool(pool.id);
+            }
             pager.reset();fixed.clear();
             ensure(ledger.snapshot().storage_count>0,"raw GPU escaped output lost claim");
             adapter->escaped.reset();adapter.reset();mx::synchronize();mx::clear_cache();

@@ -1,5 +1,6 @@
 #include "quantized_execution.hpp"
 #include "common.hpp"
+#include "quantized_execution_profiles.hpp"
 
 namespace tc {
 void validate_quantized_execution(const QuantizedExecutionConfig &c) {
@@ -14,7 +15,7 @@ void validate_quantized_execution(const QuantizedExecutionConfig &c) {
     }
     const bool native_affine = c.precision_profile == "z-source-native-affine-v1" || c.precision_profile == "z-mlx-compat-affine-v1";
     const bool dense_bf16 = c.precision_profile == "z-dense-bf16-v1";
-    const bool raw_gpu=c.precision_profile=="z-raw-gpu-affine-f16-v1";
+    const bool raw_gpu=gguf_raw_gpu_profile(c.precision_profile.value_or(""));
     const auto mode=raw_gpu ? "bounded_raw_packed" : native_affine ? "bounded_packed" : "bounded_dequant";
     require(c.mode.value_or(mode) == mode &&
                 (c.source_residency.value_or("packed_resident") == "packed_resident" || c.source_residency == "packed_streamed") &&

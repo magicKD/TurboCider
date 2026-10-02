@@ -9,6 +9,7 @@
 #include "metal_kernels.hpp"
 #include "metal/affine_fp16.hpp"
 #include "metal/affine_fp16_mpp.hpp"
+#include "../../core/quantized_execution_profiles.hpp"
 
 #include "../../media/image.hpp"
 #include "../../platform/apple/platform.hpp"
@@ -63,11 +64,11 @@ class ZImageGgufStream {
     ZImageGgufStream(const std::filesystem::path &, uint32_t prefetch,
                     uint32_t width, uint32_t height, uint32_t caption, uint32_t steps,
                     uint64_t managed_budget, Weights &fixed, const Event &, std::atomic<bool> &, const std::string &profile,
-                    const std::string &residency);
+                    const std::string &residency,bool compiled_source_reference=false);
     ~ZImageGgufStream();
-    void run_pass(uint32_t, Tensor &, const Tensor &, const Tensor &);
+    void run_pass(uint32_t, Tensor &, const Tensor &, const Tensor &,const ZImageBlockObserver &observe={});
     bool streams_refiners() const noexcept;
-    void run_refiners(uint32_t, Tensor &, Tensor &, const Tensor &, const Tensor &, const Tensor &);
+    void run_refiners(uint32_t, Tensor &, Tensor &, const Tensor &, const Tensor &, const Tensor &,const ZImageBlockObserver &observe={});
     void finish();
     bool drain_safely() noexcept;
     QuantizedExecutionMetrics metrics() const;
@@ -1718,7 +1719,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     if (!reuse_context) caption_emb = mx::expand_dims(caption_emb, 0);
     if (gguf_stream && gguf_stream->streams_refiners()) {
         require(!reuse_context, "GGUF refiner streaming does not reuse a partial context stage");
-        gguf_stream->run_refiners(pass, image, caption_emb, image_freqs, caption_freqs, temb);
+        gguf_stream->run_refiners(pass, image, caption_emb, image_freqs, caption_freqs, temb,observe);
     } else for (int i = 0; i < 2; ++i) {
         checkpoint(cancelled);
         const bool bf16_fallback = hybrid && z_hybrid_bf16_block(i);
@@ -1744,7 +1745,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
     if (hybrid_stream) {
         hybrid_stream->run_main(pass, unified, unified_freqs, temb);
     } else if (gguf_stream) {
-        gguf_stream->run_pass(pass, unified, unified_freqs, temb);
+        gguf_stream->run_pass(pass, unified, unified_freqs, temb,observe);
     } else if (exact_stream) {
         exact_stream->run_pass(pass, pass, unified, unified_freqs, temb);
     } else {
@@ -2098,30 +2099,32 @@ class GgufStageAdapter final : public streaming::ModelSlotAdapter {
     bool refiners_ = false;
     bool compiled_bf16_ = false;
     bool raw_gpu_f16_=false;
+    bool compiled_source_reference_=false;
+    ZImageBlockObserver observe_;
     Weights current_;
     uint32_t pass_ = 0, pool_ = 0;
     uint64_t sequence_ = 0;
   public:
     GgufStageAdapter(streaming::GgufWeightPager &source, uint32_t slots, Event event, std::atomic<bool> &cancel,
-                     bool refiners = false, bool compiled_bf16 = false,bool raw_gpu_f16=false)
-        : source_(source), cancel_(cancel), event_(std::move(event)), jobs_(slots), refiners_(refiners), compiled_bf16_(compiled_bf16),raw_gpu_f16_(raw_gpu_f16) {
+                     bool refiners = false, bool compiled_bf16 = false,bool raw_gpu_f16=false,bool compiled_source_reference=false)
+        : source_(source), cancel_(cancel), event_(std::move(event)), jobs_(slots), refiners_(refiners), compiled_bf16_(compiled_bf16),raw_gpu_f16_(raw_gpu_f16),compiled_source_reference_(compiled_source_reference) {
         for (auto &job : jobs_) job.owner = this;
     }
-    void bind_pass(uint32_t pass, const Tensor &value, const Tensor &freqs, const Tensor &temb) {
+    void bind_pass(uint32_t pass, const Tensor &value, const Tensor &freqs, const Tensor &temb,const ZImageBlockObserver &observe) {
         require(!value_, "GGUF pass already bound");
-        pass_ = pass; value_ = value; freqs_ = freqs; temb_ = temb;
+        pass_ = pass; value_ = value; freqs_ = freqs; temb_ = temb;observe_=observe;
     }
     Tensor result() const { require(value_.has_value(), "GGUF pass not bound"); return *value_; }
     void bind_refiners(uint32_t pass, const Tensor &image, const Tensor &caption, const Tensor &image_freqs,
-                       const Tensor &caption_freqs, const Tensor &temb) {
+                       const Tensor &caption_freqs, const Tensor &temb,const ZImageBlockObserver &observe) {
         require(refiners_ && !image_ && !caption_, "GGUF refiners already bound");
-        pass_ = pass; image_ = image; caption_ = caption; freqs_ = image_freqs; caption_freqs_ = caption_freqs; temb_ = temb;
+        pass_ = pass; image_ = image; caption_ = caption; freqs_ = image_freqs; caption_freqs_ = caption_freqs; temb_ = temb;observe_=observe;
     }
     std::pair<Tensor, Tensor> refined() const {
         require(image_ && caption_, "GGUF refiners not bound"); return {*image_, *caption_};
     }
     void unbind(bool safe = true) {
-        if (safe) { current_.clear(); value_.reset(); freqs_.reset(); temb_.reset(); image_.reset(); caption_.reset(); caption_freqs_.reset(); }
+        if (safe) { current_.clear(); value_.reset(); freqs_.reset(); temb_.reset(); image_.reset(); caption_.reset(); caption_freqs_.reset();observe_={}; }
         else event_ = {};
     }
     void create_pool(const streaming::PoolLayout &pool) override { pool_ = pool.id; source_.create_pool(pool); }
@@ -2158,10 +2161,16 @@ class GgufStageAdapter final : public streaming::ModelSlotAdapter {
             }
         } else {
             event_("z_image_denoise_block", int(block), 30);
-            *value_ = raw_gpu_f16_ ? z_compiled_packed_block(*value_,current_,"layers."+std::to_string(block),*freqs_,*temb_,true,false,true)
+            *value_ = (raw_gpu_f16_ || compiled_source_reference_) ? z_compiled_packed_block(*value_,current_,"layers."+std::to_string(block),*freqs_,*temb_,raw_gpu_f16_,false,raw_gpu_f16_)
                 : z_block(*value_, current_, "layers." + std::to_string(block), *freqs_, *temb_,
                               nullptr, int(2 + block), nullptr, false, nullptr, compiled_bf16_);
             mx::eval(*value_); // Actual last reader completion, not a submission timestamp.
+        }
+        source_.retire(group,ticket);
+        if (observe_) {
+            const auto name=refiners_ ? std::string(block%2 ? "context_refiner." : "noise_refiner.")+std::to_string(block/2)
+                : "layers."+std::to_string(block);
+            observe_(name,refiners_ ? (block%2 ? *caption_ : *image_) : *value_);
         }
         checkpoint(cancel_);
         require(sequence_ != UINT64_MAX, "GGUF reader sequence overflow");
@@ -2189,7 +2198,7 @@ struct ZImageGgufStream::Impl {
     bool finished = false;
     Impl(const std::filesystem::path &path, uint32_t p, uint32_t width, uint32_t height,
          uint32_t caption, uint32_t steps, uint64_t budget, Weights &fixed, Event event, std::atomic<bool> &cancelled,
-         const std::string &profile, const std::string &residency)
+         const std::string &profile, const std::string &residency,bool compiled_source_reference)
         : ledger(budget), cancel(cancelled) {
         streaming::SourceFileIdentity file; file.logical_id = "transformer"; file.path = path;
         lease = streaming::SourceLease::capture_verified({std::move(file)}, &cancel);
@@ -2203,7 +2212,7 @@ struct ZImageGgufStream::Impl {
         event("load_gguf_packed_source", 0, 1);
         source->load_packed(&cancel); source->load_resident_aliases(fixed);
         event("load_gguf_packed_source", 1, 1);
-        adapter = std::make_shared<GgufStageAdapter>(*source, p + 1, event, cancel, false, profile == "z-dense-bf16-v1",profile=="z-raw-gpu-affine-f16-v1");
+        adapter = std::make_shared<GgufStageAdapter>(*source, p + 1, event, cancel, false, profile == "z-dense-bf16-v1",gguf_raw_gpu_profile(profile),compiled_source_reference);
         executor = std::make_unique<streaming::StageExecutor>(uint32_t(main), lease->generation(), adapter);
         executor->begin(plan.layout.stages[main]);
         if (main) {
@@ -2219,8 +2228,8 @@ struct ZImageGgufStream::Impl {
 };
 ZImageGgufStream::ZImageGgufStream(const std::filesystem::path &path, uint32_t p, uint32_t width,
         uint32_t height, uint32_t caption, uint32_t steps, uint64_t budget, Weights &fixed,
-        const Event &event, std::atomic<bool> &cancel, const std::string &profile, const std::string &residency)
-    : impl_(std::make_unique<Impl>(path,p,width,height,caption,steps,budget,fixed,event,cancel,profile,residency)) {}
+        const Event &event, std::atomic<bool> &cancel, const std::string &profile, const std::string &residency,bool compiled_source_reference)
+    : impl_(std::make_unique<Impl>(path,p,width,height,caption,steps,budget,fixed,event,cancel,profile,residency,compiled_source_reference)) {}
 ZImageGgufStream::~ZImageGgufStream() { if (impl_ && !drain_safely()) (void)impl_.release(); }
 bool ZImageGgufStream::drain_safely() noexcept {
     if (!impl_) return true;
@@ -2232,19 +2241,19 @@ bool ZImageGgufStream::drain_safely() noexcept {
 }
 bool ZImageGgufStream::streams_refiners() const noexcept { return impl_ && bool(impl_->refiner_executor); }
 void ZImageGgufStream::run_refiners(uint32_t pass, Tensor &image, Tensor &caption,
-        const Tensor &image_freqs, const Tensor &caption_freqs, const Tensor &temb) {
+        const Tensor &image_freqs, const Tensor &caption_freqs, const Tensor &temb,const ZImageBlockObserver &observe) {
     require(streams_refiners() && pass == impl_->next, "GGUF refiner pass out of order");
     impl_->refiner_source->check_unchanged();
-    impl_->refiner_adapter->bind_refiners(pass, image, caption, image_freqs, caption_freqs, temb);
+    impl_->refiner_adapter->bind_refiners(pass, image, caption, image_freqs, caption_freqs, temb,observe);
     try {
         impl_->refiner_executor->run_pass(pass, pass, impl_->cancel);
         auto results = impl_->refiner_adapter->refined(); image = results.first; caption = results.second;
         impl_->refiner_adapter->unbind(); impl_->refiner_executor->release_drained_backing();
     } catch (...) { drain_safely(); throw; }
 }
-void ZImageGgufStream::run_pass(uint32_t pass, Tensor &value, const Tensor &freqs, const Tensor &temb) {
+void ZImageGgufStream::run_pass(uint32_t pass, Tensor &value, const Tensor &freqs, const Tensor &temb,const ZImageBlockObserver &observe) {
     require(impl_ && !impl_->finished && pass == impl_->next, "GGUF pass out of order");
-    impl_->source->check_unchanged(); impl_->adapter->bind_pass(pass,value,freqs,temb);
+    impl_->source->check_unchanged(); impl_->adapter->bind_pass(pass,value,freqs,temb,observe);
     try {
         impl_->executor->run_pass(pass,pass,impl_->cancel);
         value = impl_->adapter->result(); impl_->adapter->unbind();
@@ -2283,7 +2292,8 @@ QuantizedExecutionMetrics ZImageGgufStream::metrics() const {
     result.gpu_affine_preparations=source.gpu_affine_preparations;result.gpu_affine_output_bytes=source.gpu_affine_output_bytes;
     result.gpu_prepare_seconds=source.gpu_prepare_seconds;result.gpu_prepare_capacity_upper=impl_->plan.gpu_prepare_capacity_upper;
     result.precision_profile=impl_->plan.descriptor.workload.at("precision");
-    result.decode_backend=result.precision_profile=="z-raw-gpu-affine-f16-v1" ? "cpu_io+metal_affine-v1" : "cpu_simd";
+    result.decode_backend=gguf_dependency_gpu_profile(result.precision_profile) ? "cpu_io+metal_dependency_affine-v1" : gguf_fixed_gpu_profile(result.precision_profile) ? "cpu_io+metal_fixed_affine-v1" : gguf_raw_gpu_profile(result.precision_profile) ? "cpu_io+metal_affine-v1" : "cpu_simd";
+    result.gpu_fixed_output_banks=source.gpu_fixed_output_banks;result.gpu_fixed_output_bank_bytes=source.maximum_gpu_fixed_output_bank_bytes;
     if (streams_refiners()) {
         const auto refiners = impl_->refiner_source->metrics();
         const auto ref_execution = impl_->refiner_executor->counters();
@@ -2297,6 +2307,8 @@ QuantizedExecutionMetrics ZImageGgufStream::metrics() const {
         result.refiner_capacity_bytes = refiners.maximum_dense_pool_capacity_bytes;
         result.gpu_affine_preparations+=refiners.gpu_affine_preparations;result.gpu_affine_output_bytes+=refiners.gpu_affine_output_bytes;
         result.gpu_prepare_seconds+=refiners.gpu_prepare_seconds;
+        result.gpu_fixed_output_banks+=refiners.gpu_fixed_output_banks;
+        result.gpu_fixed_output_bank_bytes=std::max(result.gpu_fixed_output_bank_bytes,refiners.maximum_gpu_fixed_output_bank_bytes);
         result.dense_capacity_bytes = std::max(result.dense_capacity_bytes, result.refiner_capacity_bytes);
         require(result.refiner_fills == uint64_t(impl_->next) * 4 && ref_execution.groups_submitted == result.refiner_fills,
                 "GGUF refiner fills/readers do not match actual passes");
@@ -2699,7 +2711,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
     if (const char *raw=std::getenv("TURBOCIDER_Z_GGUF_VALIDATE_BLOCKS")) {
         require(std::string_view(raw)=="0" || std::string_view(raw)=="1","qe_config_conflict: source block validation requires 0 or 1");
         gguf_validate_blocks_=std::string_view(raw)=="1";
-        require(!gguf_validate_blocks_ || gguf_gpu_f16_,"qe_config_conflict: source validation requires explicit FP16 experiment");
+        require(!gguf_validate_blocks_ || gguf_gpu_f16_ || !transformer_checkpoint.empty(),"qe_config_conflict: source validation requires explicit FP16 experiment");
     }
     const bool gguf_encoder = z_qwen3_gguf_path() != nullptr;
     auto comfy_text = root / "split_files/text_encoders/qwen_3_4b.safetensors";
@@ -3424,7 +3436,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
     const bool quantized = r.quantized_execution.active();
     const bool quantized_bf16 = quantized && r.quantized_execution.precision_profile == "z-dense-bf16-v1";
-    const bool quantized_raw_gpu=quantized && r.quantized_execution.precision_profile=="z-raw-gpu-affine-f16-v1";
+    const bool quantized_raw_gpu=quantized && gguf_raw_gpu_profile(r.quantized_execution.precision_profile.value_or(""));
+    require(!gguf_validate_blocks_ || gguf_gpu_f16_ || quantized_raw_gpu,
+            "qe_config_conflict: source validation requires explicit FP16 experiment or raw GPU profile");
     uint64_t raw_gpu_cache_bytes=0;
     if (std::getenv("TURBOCIDER_Z_RAW_GPU_CACHE_BYTES")) {
         require(quantized_raw_gpu,"qe_config_conflict: raw GPU cache hint requires raw GPU profile");
@@ -3869,6 +3883,14 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         !hybrid_ && !weight_stream_ && !exact_stream_ && !gguf_transformer_ &&
         !nvfp4_transformer_ && !convrot_transformer_;
     auto dit_start = Clock::now();
+    // Diagnostic-only independent CPU-affine source trajectory. It has its
+    // own bounded slots/fillers, never borrows candidate input or GPU packing.
+    Weights source_reference_weights;
+    std::unique_ptr<ZImageGgufStream> source_reference_stream;
+    if (gguf_validate_blocks_ && quantized_raw_gpu)
+        source_reference_stream=std::make_unique<ZImageGgufStream>(transformer_path_,1,uint32_t(r.width),uint32_t(r.height),
+            uint32_t(caption_rows),uint32_t(r.steps),budget,source_reference_weights,event,cancelled,
+            "z-mlx-compat-affine-v1","packed_streamed",true);
     std::optional<Tensor> reference_latent=gguf_validate_blocks_ ? std::optional<Tensor>(z) : std::nullopt;
     std::vector<QuantizedSourceComparison> source_comparisons;
     auto compare=[&](const std::string &name,uint32_t step,const Tensor &candidate,const Tensor &reference,bool final=false) {
@@ -3902,7 +3924,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 [&](const std::string &name,const Tensor &value) {
                     auto retained=mx::contiguous(value);mx::eval(retained);
                     reference_blocks.emplace_back(name,std::move(retained));
-                });
+                },source_reference_stream.get(),source_reference_stream ? &source_reference_weights : nullptr);
             *reference_latent=euler_step(*reference_latent,noise,sigmas[i+1]-sigmas[i]);mx::eval(*reference_latent);
             require(reference_blocks.size()==34,"source validation missed a transformer block");
         }
@@ -3924,6 +3946,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     if (reference_latent) {
         compare("final_latent",uint32_t(r.steps-1),z,*reference_latent,true);
         dump("z_source_latent_final",*reference_latent);
+    }
+    if (source_reference_stream) {
+        source_reference_stream->finish();source_reference_stream.reset();source_reference_weights.clear();mx::synchronize();
     }
     const double denoise_seconds = std::chrono::duration<double>(Clock::now() - dit_start).count();
     std::optional<streaming::GgufPackedBankMetrics> packed_import_metrics;
@@ -4228,8 +4253,11 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
 
 Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma, float width,
                        int height, int step, const Event &event, std::atomic<bool> &cancelled,
-                       std::vector<Tensor> *context_cache,bool source_reference,const ZImageBlockObserver &observe) {
-    require(!source_reference || (gguf_validate_blocks_ && gguf_direct_import_ && !hybrid_ && !runtime_ffn_ && !gguf_stream_),
+                       std::vector<Tensor> *context_cache,bool source_reference,const ZImageBlockObserver &observe,
+                       ZImageGgufStream *reference_stream,const Weights *reference_weights) {
+    require(bool(reference_stream)==bool(reference_weights) && (!reference_stream || source_reference),"source reference bindings incomplete");
+    require(!source_reference || (gguf_validate_blocks_ && !hybrid_ && !runtime_ffn_ &&
+                ((gguf_direct_import_ && !gguf_stream_) || (gguf_stream_ && reference_stream && reference_stream!=gguf_stream_.get()))),
             "source reference conflicts with another execution route");
     auto model_input = mx::astype(latent, mx::bfloat16);
     const bool experimental_compiled_a8 = hybrid_ && hybrid_->activation_precision == "int8" &&
@@ -4238,11 +4266,11 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
           std::getenv("TURBOCIDER_Z_HYBRID_GPU_W8_DISABLE") &&
           std::getenv("TURBOCIDER_Z_W8A8_COMPILED_HYBRID")));
     return mx::astype(
-        z_transformer(model_input, caption, sigma, int(width), height, transformer_, event,
+        z_transformer(model_input, caption, sigma, int(width), height, reference_weights ? *reference_weights : transformer_, event,
                       cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr,
                       weight_stream_.get(), exact_stream_.get(), uint32_t(step),
                       optimizations_.z_image_hybrid_segments || experimental_compiled_a8,
-                      nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_, gguf_stream_.get(),gguf_direct_import_,gguf_compile_packed_,
+                      nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_, source_reference ? reference_stream : gguf_stream_.get(),gguf_direct_import_ || source_reference,gguf_compile_packed_,
                       !source_reference && gguf_gpu_f16_,!source_reference && gguf_gpu_f16_mpp_,!source_reference && gguf_qmm_f16_,
                       !source_reference && gguf_f16_refiners_,!source_reference && gguf_ref_mpp_dynamic_,observe),
         mx::float32);

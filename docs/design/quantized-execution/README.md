@@ -50,6 +50,7 @@
 | [21 最快BF16与compiled packed](21-fastest-bf16-and-compiled-packed-screen.md) | 实际更快BF16基线、Q8/Q4原算术参数图/压缩bank复用、独立速度内存screen；BF16密集槽和ConvRot runtime FP16质量负结果 |
 | [22 FP16 packed compute/逐block N1](22-fp16-packed-compute-and-block-validation.md) | explicit FP16 QMM/FP32 glue、cache分账与独立source轨迹；Q8/Q4单cell全部block N1及≤20%/lower-memory screen通过，dynamic refiner中间层负结果 |
 | [23 raw-GPU affine streaming](23-raw-gpu-affine-streaming.md) | raw Ready/CPU只读与当前GPU bank、有界批量packing/claims/cache容量拒绝；K1/K2/K3和真实Q8/Q4 exact，6/8GB组合observed fit但BF16速度门失败 |
+| [24 fixed bank/dependency-ready](24-fixed-gpu-bank-and-dependency-ready.md) | 固定GPU输出bank/ticket、常驻浮点refiners、显式packing依赖；Q8/Q4全部block N1与取消exact、逐tensor压缩预测；全请求内存下降但BF16速度门仍失败 |
 
 ## 当前状态速查
 
@@ -58,7 +59,7 @@
 | 原生 MLX Q4_0/Q4_1/Q8_0 及浮点 GGUF | 已有，仍不是全部 Q4–Q8 |
 | CPU Q4/Q5/Q6/K/Q8 有界目标解码 | 已实现，含 Q8 ARM SIMD；见12；不自动授予整图/后端资格 |
 | IQ 解码和 encoder GGUF | Qwen3-4B Q8/mixed K实验接入与Z组合已跑，未发布质量/产品资格，见15；IQ仍待实施 |
-| GGUF 0/1/2层前瞻 GPU 执行 | Z/Qwen3 resident/streamed及Z浮点refiner流式实验已跑，见13/15/17/18；tiles、量化refiner真实fixture与整体资格仍未完成 |
+| GGUF 0/1/2层前瞻 GPU 执行 | Z/Qwen3 resident/streamed及Z浮点refiner流式实验已跑，见13/15/17/18；24新增固定GPU bank/依赖Ready与同源全部block N1单cell；tiles、量化refiner真实fixture与整体资格仍未完成 |
 | Z ConvRot gate/up 共用旋转 | 本轮新增显式实验路径；证据见 08 |
 | Z 默认启用 butterfly / ConvRot W8A8 | 未启用；现有 butterfly 不是 INT8 GEMM |
 | M5 GPU ConvRot W8A8 | 设计/未实机验证；本轮无 M5，不发布默认配置 |

@@ -1,0 +1,154 @@
+{
+  "schema": "tc-gguf-memory-budget-screen-v1",
+  "production_qualified": false,
+  "scope": "fastest observed same-source packed/bounded candidate that fits sampled footprint; NOT enforced whole-request caps or true small-device qualification",
+  "whole_request_memory": "unknown",
+  "formal_performance": "not_run",
+  "identity": {
+    "library_sha256": "e75ec53c4e769dda5d9175da337fa729da2619a8fdc45b6f9a3b1887b71cd145",
+    "loaded_libraries": {
+      "libturbocider.dylib": {
+        "sha256": "e75ec53c4e769dda5d9175da337fa729da2619a8fdc45b6f9a3b1887b71cd145"
+      },
+      "libmlx.dylib": {
+        "sha256": "1876795e05b3434925e745fbf6e9f0c8c0446b666224c9d881609ab353e94e51"
+      },
+      "libjaccl.dylib": {
+        "sha256": "8ee82aae82996938435bcebe724d819296712b8b34fac021ce7aa66073730e1e"
+      }
+    },
+    "dit_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+    "encoder_sha256": "8c2f07f26af9747e41988551106f149b03eb9b5cb6df636027b6bf6278473300",
+    "encoder_layout_digest": "a2fe8a6aece115b9462fd09159b6811faeadb7bb13f70c40ec18ce3abd14d47d",
+    "encoder_profile": "qwen3-z-source-mixed-v1",
+    "encoder_controls": {
+      "TURBOCIDER_QWEN3_GGUF_PREFETCH": "2",
+      "TURBOCIDER_QWEN3_GGUF_SOURCE_RESIDENCY": "packed_streamed",
+      "TURBOCIDER_QWEN3_GGUF_WEIGHT_LIMIT_BYTES": "1073741824"
+    },
+    "prompt_cache_policy": "hit",
+    "math": {
+      "schema_version": 1,
+      "enabled": true,
+      "precision_profile": "z-raw-gpu-dependency-refresident-f16-v1"
+    },
+    "workload": {
+      "schema_version": 2,
+      "model": "z-image-turbo-gguf",
+      "operation": "image.generate",
+      "inputs": [
+        {
+          "kind": "text",
+          "role": "prompt",
+          "text": "A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture."
+        }
+      ],
+      "sampling": {
+        "seed": 42,
+        "steps": 4
+      },
+      "parameters": {
+        "dynamic_text": true,
+        "compile_gpu": true
+      }
+    },
+    "outputs": [
+      {
+        "kind": "image",
+        "width": 512,
+        "height": 512,
+        "audio": false
+      }
+    ],
+    "execution": {
+      "policy": "gpu",
+      "allow_approximation": true
+    },
+    "png_sha256": "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6"
+  },
+  "buffer_percent": 10,
+  "budget_unit": "GB",
+  "candidates": {
+    "packed_streamed:p1": {
+      "timings_seconds": [
+        5.294981667015236,
+        5.292052999953739,
+        5.280813916004263,
+        5.292866874951869
+      ],
+      "observed_peak_bytes": 4895622440,
+      "memory_sample_max_gap_seconds": 0.015592208015732467,
+      "managed_weights_peak_bytes": 2044682516,
+      "memory_runs": 1,
+      "sampling_inconclusive": false,
+      "swap_observed": false,
+      "layout_digest": "3c010b5b69ebeb4f2e20104f5456cd40914ec1da64d5f95a37d5c5b69ea3f43c",
+      "warm_median_seconds": 5.292459937452804
+    }
+  },
+  "budgets": [
+    {
+      "budget_value": 6,
+      "budget_unit": "GB",
+      "budget_gb": 6,
+      "limit_bytes": 6000000000,
+      "screen_available_bytes": 5400000000,
+      "observed_fitting_candidates": [
+        "packed_streamed:p1"
+      ],
+      "fastest_observed_candidate": "packed_streamed:p1",
+      "status": "observed_fit_only",
+      "bounded_certified": false
+    },
+    {
+      "budget_value": 8,
+      "budget_unit": "GB",
+      "budget_gb": 8,
+      "limit_bytes": 8000000000,
+      "screen_available_bytes": 7200000000,
+      "observed_fitting_candidates": [
+        "packed_streamed:p1"
+      ],
+      "fastest_observed_candidate": "packed_streamed:p1",
+      "status": "observed_fit_only",
+      "bounded_certified": false
+    },
+    {
+      "budget_value": 10,
+      "budget_unit": "GB",
+      "budget_gb": 10,
+      "limit_bytes": 10000000000,
+      "screen_available_bytes": 9000000000,
+      "observed_fitting_candidates": [
+        "packed_streamed:p1"
+      ],
+      "fastest_observed_candidate": "packed_streamed:p1",
+      "status": "observed_fit_only",
+      "bounded_certified": false
+    },
+    {
+      "budget_value": 16,
+      "budget_unit": "GB",
+      "budget_gb": 16,
+      "limit_bytes": 16000000000,
+      "screen_available_bytes": 14400000000,
+      "observed_fitting_candidates": [
+        "packed_streamed:p1"
+      ],
+      "fastest_observed_candidate": "packed_streamed:p1",
+      "status": "observed_fit_only",
+      "bounded_certified": false
+    }
+  ],
+  "raw_reports": [
+    {
+      "id": "final-q8-bounded-encoder-timing",
+      "sha256": "ebc148dcb23fac78aca927feaa650faf0ab3f9521fedcf8e349daa04a9ce5f9b"
+    },
+    {
+      "id": "final-q8-bounded-encoder-memory",
+      "sha256": "83cc0623a7b7fd6bd6fcd7d86637fabbbc5aed3a353ffb5bd41d899484567523"
+    }
+  ],
+  "verifier_sha256": "b5f6db3e36a5e1616fd4552ee3637549030bca809dd3d030a1c5b80d4f7bf55c"
+}

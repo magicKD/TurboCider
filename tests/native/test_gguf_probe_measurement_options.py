@@ -50,6 +50,16 @@ class MeasurementOptionsTests(unittest.TestCase):
                      "--encoder-tokenizer", "missing.json"], "missing encoder")
         self.reject(["--encoder-weight-limit-bytes", "0"], "must be positive")
 
+    def test_fixed_dependency_profiles_and_source_validation_are_explicit(self):
+        for profile in ("z-raw-gpu-fixed-f16-v1", "z-raw-gpu-fixed-refresident-f16-v1",
+                        "z-raw-gpu-dependency-refresident-f16-v1"):
+            self.reject(["--precision",profile], "raw GPU profile requires bounded packed_streamed")
+            for mode in ("timing","memory"):
+                options=["--precision",profile,"--source-residency","packed_streamed","--measurement",mode]
+                self.reject([*options,"--validate-source-blocks"], "source block validation requires diagnostic")
+                environment=dict(os.environ,TURBOCIDER_Z_GGUF_VALIDATE_BLOCKS="1")
+                self.reject(options, "source validation cannot contaminate timing/memory", environment)
+
     def test_direct_import_requires_explicit_compatible_selector(self):
         self.reject(["--native-import","cpu_direct"], "requires only native packed")
         self.reject(["--native-weight-limit-bytes","1024"], "requires CPU-direct")

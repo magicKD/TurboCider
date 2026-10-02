@@ -1,4 +1,5 @@
 #include "runtime/streaming/gguf_gpu_affine.hpp"
+#include "runtime/streaming/gguf_gpu_affine_fixed.hpp"
 #include "core/gguf_affine.hpp"
 #include <cstring>
 #include <iostream>
@@ -41,6 +42,45 @@ int main() {
             insist(ledger.snapshot().storage_count==1,"lazy GPU reader lost claim");
             mx::eval(lazy);lazy=Tensor(0.f);mx::synchronize();mx::clear_cache();
             insist(ledger.snapshot().storage_bytes==0 && ledger.snapshot().reserved_bytes==0,"GPU affine claim leak");
+            {
+                auto target=streaming::allocate_gguf_gpu_affine_fixed(type,rows,cols,ledger,44);
+                const auto identity=target.arrays[0].buffer().ptr();
+                auto second=raw;
+                for (uint64_t group=0;group<groups;++group) for (uint64_t i=type==3 ? 4 : 2;i<info.bytes;++i)
+                    second[group*info.bytes+i]^=uint8_t(0x5a);
+                for (bool dependency:{false,true}) for (const auto *payload:{&raw,&second,&raw}) {
+                    Tensor input(payload->data(),{int(rows),int(cols/32*info.bytes)},mx::uint8);
+                    if (dependency) {
+                        auto outputs=streaming::prepare_gguf_gpu_affine_fixed_dependency({input},{&target});
+                        insist(!outputs[0].is_available() && outputs[0].has_primitive(),"dependency bank published decoded Ready without evaluation");
+                        auto consumer=mx::quantized_matmul(mx::ones({7,int(cols)},mx::float32),outputs[0],outputs[1],outputs[2],true,32,type==8 ? 8 : 4);
+                        mx::eval(consumer);
+                        streaming::finish_gguf_gpu_affine_fixed_dependency(outputs);
+                        for (size_t part=0;part<4;++part) {
+                            insist(outputs[part].buffer().ptr()==target.arrays[part].buffer().ptr(),"dependency output did not reuse fixed backing");
+                            insist(!outputs[part].has_primitive(),"retired dependency output retains raw-slot primitive");
+                        }
+                    } else streaming::fill_gguf_gpu_affine_fixed({input},{&target});
+                    insist(target.arrays[0].buffer().ptr()==identity,"fixed GPU bank allocated replacement backing");
+                    for (size_t part=0;part<3;++part) {
+                        std::vector<std::byte> expected(target.arrays[part].nbytes());
+                        gguf::pack_native_affine({{reinterpret_cast<const std::byte *>(payload->data()),payload->size()},type,rows,cols},
+                            gguf::AffinePart(part),expected);
+                        auto view=streaming::gguf_gpu_affine_fixed_view(target.arrays[part]);
+                        insist(view.id()!=target.arrays[part].id() && view.buffer().ptr()==target.arrays[part].buffer().ptr(),
+                               "fixed GPU fresh view lost physical alias identity");
+                        insist(std::memcmp(view.data<std::byte>(),expected.data(),expected.size())==0,"fixed GPU A/B/A differs from CPU oracle");
+                    }
+                }
+                escaped=streaming::gguf_gpu_affine_fixed_view(target.arrays[0]);
+                insist(ledger.snapshot().storage_count==4,"fixed GPU status/backing ledger omitted");
+            }
+            mx::synchronize();
+            if (ledger.snapshot().storage_count!=1)
+                std::cerr<<"fixed escaped claims="<<ledger.snapshot().storage_count<<" bytes="<<ledger.snapshot().storage_bytes<<'\n';
+            insist(ledger.snapshot().storage_count==1,"fixed GPU escaped view lost owning Data claim");
+            escaped.reset();mx::synchronize();mx::clear_cache();
+            insist(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"fixed GPU bank claim leak");
             for (const char *fault: {"budget","type","columns","metadata"}) {
                 MemoryLedger bad(std::strcmp(fault,"budget")==0 ? 1 : 1ull<<20);bool rejected=false;
                 try { (void)streaming::gguf_gpu_affine(source,std::strcmp(fault,"type")==0 ? 12 : type,
@@ -54,6 +94,20 @@ int main() {
             Tensor source(raw.data(),{1,34},mx::uint8);MemoryLedger ledger(1ull<<20);bool rejected=false;
             try {(void)streaming::gguf_gpu_affine(source,8,1,32,ledger,43);} catch (const std::exception &) {rejected=true;}
             insist(rejected && !ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"GPU nonfinite/consumer overflow accepted or leaked");
+            {
+                auto target=streaming::allocate_gguf_gpu_affine_fixed(8,1,32,ledger,43);
+                auto outputs=streaming::prepare_gguf_gpu_affine_fixed_dependency({source},{&target});
+                rejected=false;
+                try {streaming::finish_gguf_gpu_affine_fixed_dependency(outputs);} catch (...) {rejected=true;}
+                insist(rejected,"dependency bank published nonfinite/overflow metadata");
+                const uint16_t good=gguf::float_to_fp16_rne(.125f);std::memcpy(raw.data(),&good,2);
+                Tensor clean(raw.data(),{1,34},mx::uint8);
+                outputs=streaming::prepare_gguf_gpu_affine_fixed_dependency({clean},{&target});
+                streaming::finish_gguf_gpu_affine_fixed_dependency(outputs);
+                insist(target.arrays[3].data<uint32_t>()[0]==0,"dependency bank retained prior error across clean retry");
+            }
+            mx::synchronize();mx::clear_cache();
+            insist(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"dependency failure/retry leaked");
         }
         {
             MemoryLedger ledger(1ull<<20);
@@ -86,6 +140,6 @@ int main() {
             insist(!ledger.snapshot().storage_bytes,"cached oversized backing escaped GPU capacity contract");
             const auto old=mx::set_cache_limit(0);insist(old==(512ull<<20),"GPU exact allocation did not restore cache hint");mx::clear_cache();
         }
-        std::cout<<"PASS raw GPU affine: 27 geometries, CPU fields exact, admission, escaped/lazy claims, invalid input\n";
+        std::cout<<"PASS raw GPU affine: 27 geometries, CPU fields exact, synchronous/dependency fixed A/B/A, admission, escaped/lazy claims, invalid input\n";
     } catch (const std::exception &error) { std::cerr<<error.what()<<'\n';return 1; }
 }

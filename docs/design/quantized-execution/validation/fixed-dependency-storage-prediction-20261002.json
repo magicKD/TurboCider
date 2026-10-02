@@ -1,0 +1,88 @@
+{
+  "schema": "tc-gguf-per-tensor-storage-prediction-v1",
+  "scope": "checked complete directory; source hashes match final BF16 comparison screen; logical all-BF16 and full resident affine weight payloads only, not streamed live peak, actual BF16 file bytes, or whole-request RAM",
+  "production_qualified": false,
+  "whole_request_memory": "unknown",
+  "models": [
+    {
+      "schema": "tc-gguf-storage-estimate-v1",
+      "tensor_count": 453,
+      "file_bytes": 7224707136,
+      "types": [
+        {
+          "type": 0,
+          "name": "F32",
+          "tensor_count": 245,
+          "elements": 1045568,
+          "source_payload_bytes": 4182272,
+          "logical_bf16_bytes": 2091136,
+          "native_affine_payload_bytes": 4182272,
+          "native_affine_capacity_upper_bytes": 5586944
+        },
+        {
+          "type": 8,
+          "name": "Q8_0",
+          "tensor_count": 180,
+          "elements": 5426380800,
+          "source_payload_bytes": 5765529600,
+          "logical_bf16_bytes": 10852761600,
+          "native_affine_payload_bytes": 6104678400,
+          "native_affine_capacity_upper_bytes": 6105661440
+        },
+        {
+          "type": 30,
+          "name": "BF16",
+          "tensor_count": 28,
+          "elements": 727482368,
+          "source_payload_bytes": 1454964736,
+          "logical_bf16_bytes": 1454964736,
+          "native_affine_payload_bytes": 1454964736,
+          "native_affine_capacity_upper_bytes": 1454964736
+        }
+      ],
+      "id": "q8",
+      "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+      "logical_bf16_bytes": 12309817472,
+      "source_payload_bytes": 7224676608,
+      "native_affine_payload_bytes": 7563825408,
+      "native_affine_capacity_upper_bytes": 7566213120,
+      "raw_mixed_weight_ratio": 0.5869036339842814,
+      "affine_mixed_weight_ratio": 0.6144547167498406
+    },
+    {
+      "schema": "tc-gguf-storage-estimate-v1",
+      "tensor_count": 453,
+      "file_bytes": 4509425472,
+      "types": [
+        {
+          "type": 2,
+          "name": "Q4_0",
+          "tensor_count": 180,
+          "elements": 5426380800,
+          "source_payload_bytes": 3052339200,
+          "logical_bf16_bytes": 10852761600,
+          "native_affine_payload_bytes": 3391488000,
+          "native_affine_capacity_upper_bytes": 3392471040
+        },
+        {
+          "type": 30,
+          "name": "BF16",
+          "tensor_count": 273,
+          "elements": 728527936,
+          "source_payload_bytes": 1457055872,
+          "logical_bf16_bytes": 1457055872,
+          "native_affine_payload_bytes": 1457055872,
+          "native_affine_capacity_upper_bytes": 1459503104
+        }
+      ],
+      "id": "q4",
+      "source_sha256": "687360c35c468ae1054f8a848d40a6c852c3c67d81f962dafcfbeff09e66d7d0",
+      "logical_bf16_bytes": 12309817472,
+      "source_payload_bytes": 4509395072,
+      "native_affine_payload_bytes": 4848543872,
+      "native_affine_capacity_upper_bytes": 4851974144,
+      "raw_mixed_weight_ratio": 0.366325096392136,
+      "affine_mixed_weight_ratio": 0.3938761791576953
+    }
+  ]
+}

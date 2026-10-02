@@ -81,6 +81,11 @@ class QuantizedRequestTests(unittest.TestCase):
             if field=="approximation":bad["execution"]["allow_approximation"]=False
             if field=="compile":bad["parameters"]["compile_gpu"]=False
             with self.subTest(field=field):self.assertNotEqual(self.plan(bad)[0],0)
+        for profile in ("z-raw-gpu-fixed-f16-v1","z-raw-gpu-fixed-refresident-f16-v1","z-raw-gpu-dependency-refresident-f16-v1"):
+            request["execution"]["quantized_execution"]["precision_profile"]=profile
+            status,value,error=self.plan(request);self.assertEqual(status,0,error)
+            self.assertFalse(value["executable"])
+            self.assertEqual(value["quantized_execution"]["mode"],"bounded_raw_packed")
 
     def test_dense_bf16_is_explicit_approximate_streamed_compiled_candidate(self):
         config={"schema_version":1,"enabled":True,"precision_profile":"z-dense-bf16-v1",

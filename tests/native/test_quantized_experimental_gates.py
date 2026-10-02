@@ -26,7 +26,7 @@ if not status:
         sampling=dict(seed=42,steps=1),execution=dict(policy="gpu"),parameters=dict(dynamic_text=True))
     if os.environ.get("TC_RAW_QUANTIZED_TEST")=="1":
         request["execution"].update(allow_approximation=True,quantized_execution=dict(schema_version=1,enabled=True,
-            precision_profile="z-raw-gpu-affine-f16-v1",source_residency="packed_streamed",prefetch_layers=1))
+            precision_profile=os.environ.get("TC_RAW_QUANTIZED_PROFILE","z-raw-gpu-affine-f16-v1"),source_residency="packed_streamed",prefetch_layers=1))
         request["parameters"]["compile_gpu"]=True
     status=lib.tc_engine_generate(engine,json.dumps(request).encode(),None,None,C.byref(result),C.byref(error))
     if result.value:lib.tc_string_free(result)
@@ -47,6 +47,8 @@ class ExperimentalGateTests(unittest.TestCase):
         if not (bf16.is_dir() and q8.is_dir()): self.fail("required local model fixtures missing")
         cases = [("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct"}),
                  ("z-image-turbo-gguf",q8,{"TC_RAW_QUANTIZED_TEST":"1"}),
+                 ("z-image-turbo-gguf",q8,{"TC_RAW_QUANTIZED_TEST":"1","TC_RAW_QUANTIZED_PROFILE":"z-raw-gpu-fixed-refresident-f16-v1"}),
+                 ("z-image-turbo-gguf",q8,{"TC_RAW_QUANTIZED_TEST":"1","TC_RAW_QUANTIZED_PROFILE":"z-raw-gpu-dependency-refresident-f16-v1"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_RETAIN_PACKED":"1"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1","TURBOCIDER_Z_GGUF_COMPUTE":"f16_down64"}),

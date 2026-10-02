@@ -221,6 +221,7 @@ struct QuantizedExecutionMetrics {
     uint64_t gpu_affine_preparations=0,gpu_affine_output_bytes=0,gpu_prepare_capacity_upper=0;
     uint64_t allocator_cache_limit_bytes=0;
     double gpu_prepare_seconds=0;
+    uint64_t gpu_fixed_output_banks=0,gpu_fixed_output_bank_bytes=0;
 };
 struct QuantizedSourceComparison {
     std::string name;

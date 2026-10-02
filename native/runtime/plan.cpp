@@ -1,4 +1,5 @@
 #include "session.hpp"
+#include "quantized_execution_profiles.hpp"
 #include "streaming/public_request_validation.hpp"
 #include <set>
 #include <cmath>
@@ -70,7 +71,7 @@ static ExecutionPlan make_plan_impl(
     validate_quantized_execution(r.quantized_execution);
     if (r.quantized_execution.active()) {
         const bool dense_bf16 = r.quantized_execution.precision_profile == "z-dense-bf16-v1";
-        const bool raw_gpu=r.quantized_execution.precision_profile=="z-raw-gpu-affine-f16-v1";
+        const bool raw_gpu=gguf_raw_gpu_profile(r.quantized_execution.precision_profile.value_or(""));
         require(!(dense_bf16 || raw_gpu) || (r.allow_approximation && r.compile_gpu),
                 "qe_config_conflict: dense BF16 candidate requires allow_approximation and compile_gpu");
         require(r.model == "z-image-turbo-gguf" && r.execution == "gpu" && r.operation == "image.generate" &&

@@ -49,7 +49,7 @@ def main():
     parser.add_argument("--size",type=int,default=512)
     parser.add_argument("--steps",type=int,default=4)
     parser.add_argument("--seed",type=int,default=42)
-    parser.add_argument("--precision",choices=["z-source-mixed-v1","z-source-mixed-f16-v1","z-source-exact-f32-v1","z-source-native-affine-v1","z-mlx-compat-affine-v1","z-mlx-compat-f16-v1","z-mlx-compat-f32-v1","z-dense-bf16-v1","z-raw-gpu-affine-f16-v1"],default="z-source-mixed-v1")
+    parser.add_argument("--precision",choices=["z-source-mixed-v1","z-source-mixed-f16-v1","z-source-exact-f32-v1","z-source-native-affine-v1","z-mlx-compat-affine-v1","z-mlx-compat-f16-v1","z-mlx-compat-f32-v1","z-dense-bf16-v1","z-raw-gpu-affine-f16-v1","z-raw-gpu-fixed-f16-v1","z-raw-gpu-fixed-refresident-f16-v1","z-raw-gpu-dependency-refresident-f16-v1"],default="z-source-mixed-v1")
     parser.add_argument("--prompt",default="A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture.")
     parser.add_argument("--alternate-prompt",help="diagnostic retained-bank A/B/A invalidation only; requires >=3 runs, no warmup/cancel")
     parser.add_argument("--dump",action="store_true",help="save diagnostic latents/pixels; not a performance run")
@@ -65,7 +65,7 @@ def main():
     cancellations=(args.cancel_once_at_block,args.cancel_once_at_encoder_layer,args.cancel_once_at_refiner,args.cancel_once_at_import_tensor)
     if sum(c is not None for c in cancellations)>1: parser.error("cancellation selectors are mutually exclusive")
     dense_bf16=args.precision=="z-dense-bf16-v1"
-    raw_gpu=args.precision=="z-raw-gpu-affine-f16-v1"
+    raw_gpu=args.precision in ("z-raw-gpu-affine-f16-v1","z-raw-gpu-fixed-f16-v1","z-raw-gpu-fixed-refresident-f16-v1","z-raw-gpu-dependency-refresident-f16-v1")
     if dense_bf16 and (args.baseline_bf16 or min(args.prefetch)<0 or args.source_residency!="packed_streamed" or args.gpu_eval_blocks):
         parser.error("dense BF16 profile requires bounded packed_streamed and compiled execution")
     if raw_gpu and (args.baseline_bf16 or min(args.prefetch)<0 or args.source_residency!="packed_streamed"):
@@ -104,7 +104,7 @@ def main():
         if key in os.environ and os.environ[key]!=value: parser.error("conflicting GGUF allocator cache environment")
         os.environ[key]=value
     if args.validate_source_blocks:
-        if compute=="native" or args.measurement!="diagnostic": parser.error("source block validation requires diagnostic FP16 experiment")
+        if (compute=="native" and not raw_gpu) or args.measurement!="diagnostic": parser.error("source block validation requires diagnostic FP16 experiment or raw GPU profile")
         key="TURBOCIDER_Z_GGUF_VALIDATE_BLOCKS"
         if key in os.environ and os.environ[key]!="1": parser.error("conflicting source validation environment")
         os.environ[key]="1"

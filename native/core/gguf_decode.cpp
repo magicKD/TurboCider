@@ -403,6 +403,33 @@ uint16_t float_to_fp16_rne(float value) {
     const uint32_t result = uint32_t(exponent + 15) * 1024 + round_right_even(fraction, 13);
     decode_check(result < 0x7c00, "FP16 conversion overflow"); return sign | uint16_t(result);
 }
+void bf16_to_fp16_inplace(std::span<std::byte> bytes,const std::atomic<bool> *cancel,DecodeOptions options) {
+    decode_check(bytes.data() && bytes.size() && bytes.size()%2==0,"invalid BF16 importer alias span");
+    const size_t count=bytes.size()/2;size_t i=0;
+#if defined(__aarch64__)
+    if (options.use_simd) for (;count-i>=8;i+=8) {
+        cancelled(cancel);
+        const auto bits=vreinterpretq_u16_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(bytes.data()+i*2)));
+        decode_check(vmaxvq_u16(vceqq_u16(vandq_u16(bits,vdupq_n_u16(0x7f80)),vdupq_n_u16(0x7f80)))==0,
+                     "BF16 importer alias nonfinite source");
+        const auto a=vreinterpretq_f32_u32(vshlq_n_u32(vmovl_u16(vget_low_u16(bits)),16));
+        const auto b=vreinterpretq_f32_u32(vshlq_n_u32(vmovl_u16(vget_high_u16(bits)),16));
+        const auto magnitude=vmaxq_f32(vabsq_f32(a),vabsq_f32(b));
+        const auto invalid=vorrq_u32(vcgeq_f32(magnitude,vdupq_n_f32(65520.f)),vmvnq_u32(vceqq_f32(magnitude,magnitude)));
+        decode_check(vmaxvq_u32(invalid)==0,"BF16 importer alias nonfinite/FP16 overflow");
+        const auto converted=vcombine_u16(vreinterpret_u16_f16(vcvt_f16_f32(a)),vreinterpret_u16_f16(vcvt_f16_f32(b)));
+        vst1q_u8(reinterpret_cast<uint8_t *>(bytes.data()+i*2),vreinterpretq_u8_u16(converted));
+    }
+#else
+    (void)options;
+#endif
+    for (;i<count;++i) {
+        cancelled(cancel);uint16_t bits;std::memcpy(&bits,bytes.data()+i*2,2);
+        const auto converted=float_to_fp16_rne(std::bit_cast<float>(uint32_t(bits)<<16));
+        std::memcpy(bytes.data()+i*2,&converted,2);
+    }
+    cancelled(cancel);
+}
 DecodeReceipt decode_cpu_into(const PackedMatrix &source, const DecodeSlice &slice,
                               const DecodeTarget &target, const std::atomic<bool> *cancel,
                               DecodeOptions options) {

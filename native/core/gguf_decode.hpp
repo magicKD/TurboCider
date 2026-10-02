@@ -46,6 +46,9 @@ struct DecodeOptions { bool use_simd = true; };
 float fp16_to_float(uint16_t value);
 uint16_t float_to_fp16_rne(float value);
 uint16_t float_to_bf16_rne(float value);
+// Explicit same-width importer alias conversion. No allocation; input may be
+// partially overwritten on failure and must not be published by the owner.
+void bf16_to_fp16_inplace(std::span<std::byte>,const std::atomic<bool> *cancel=nullptr,DecodeOptions = {});
 
 // Synchronous CPU-only; no I/O, MLX objects, heap allocation, or retained spans.
 // Caller must discard partial target contents on failure/cancellation. The

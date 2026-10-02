@@ -2,6 +2,8 @@
 #include "../../core/gguf_affine.hpp"
 #include "gguf_storage.hpp"
 #include "gguf_gpu_affine.hpp"
+#include "gguf_gpu_affine_fixed.hpp"
+#include "../../core/quantized_execution_profiles.hpp"
 
 #include <chrono>
 #include <cstring>
@@ -96,7 +98,16 @@ struct Slot {
     std::optional<tc_stream_slot_ticket_v1> content;
     uint32_t block = UINT32_MAX;
 };
-struct Pool { std::string layout_class; std::vector<Slot> slots; uint64_t upper = 0; };
+struct Pool {
+    std::string layout_class;std::vector<Slot> slots;uint64_t upper=0;
+    std::vector<std::optional<GgufGpuAffineFixedTarget>> gpu_targets;
+    std::vector<Tensor> gpu_dependency_outputs;
+    std::optional<tc_stream_slot_ticket_v1> gpu_ticket;
+    uint32_t gpu_block=UINT32_MAX;
+    bool gpu_unretired=false;
+    bool gpu_fixed_active=false;
+    uint64_t gpu_fixed_capacity=0;
+};
 }
 
 struct GgufWeightPager::State {
@@ -116,6 +127,8 @@ struct GgufWeightPager::State {
     GgufWeightPagerMetrics metrics;
     bool loaded = false, failed = false, resident_bound = false;
     bool legacy_float = false;
+    bool gpu_fixed=false;
+    bool gpu_dependency=false;
     gguf::DecodeOptions decode_options;
     bool streamed = false;
     uint64_t read_capacity = 0;
@@ -136,7 +149,8 @@ struct GgufWeightPager::State {
         const bool gpu_raw=!alias && m.conversion=="gguf-raw-gpu-affine-v1";
         if (gpu_raw) {
             const auto precision=descriptor.workload.find("precision");
-            insist(streamed && precision!=descriptor.workload.end() && precision->second=="z-raw-gpu-affine-f16-v1",
+            insist(streamed && precision!=descriptor.workload.end() &&
+                gguf_raw_gpu_profile(precision->second),
                    "raw GPU materialization needs explicit streamed profile");
         }
         if (fixed_bf16) {
@@ -234,6 +248,9 @@ GgufWeightPager::GgufWeightPager(std::shared_ptr<const SourceLease> lease, const
     auto &s = *state_;
     const auto float_loader=descriptor.workload.find("float_loader");
     s.legacy_float=float_loader!=descriptor.workload.end() && float_loader->second=="mlx-bf16-to-f16-v1";
+    const auto precision=descriptor.workload.find("precision");
+    s.gpu_fixed=precision!=descriptor.workload.end() && gguf_fixed_gpu_profile(precision->second);
+    s.gpu_dependency=precision!=descriptor.workload.end() && gguf_dependency_gpu_profile(precision->second);
     const auto residency = descriptor.workload.find("source_residency");
     const std::string mode = residency == descriptor.workload.end() ? "packed_resident" : residency->second;
     insist(mode == "packed_resident" || mode == "packed_streamed", "unsupported source residency");
@@ -363,19 +380,13 @@ void GgufWeightPager::load_packed(const std::atomic<bool> *cancel) {
             if(d.type==30 && raw.cached_type==1) {
                 // Explicit importer-compatible representation, converted in
                 // place once; never retain a second full floating checkpoint.
-                for(uint64_t i=0;i<d.elements;++i) {
-                    if(!(i%4096))cancelled(cancel);
-                    uint16_t bits;std::memcpy(&bits,pointer+i*2,2);
-                    const auto value=std::bit_cast<float>(uint32_t(bits)<<16);
-                    const auto half=gguf::float_to_fp16_rne(value);
-                    std::memcpy(pointer+i*2,&half,2);
-                }
+                gguf::bf16_to_fp16_inplace({pointer,size_t(d.bytes)},cancel,s.decode_options);
             }
             // Validate float aliases without constructing a second dense copy.
             // decode_cpu_into forbids overlap, so use the static finite-value
             // classification here; normal refills use the shared decoder.
             if (floating) {
-                for (uint64_t i = 0; i < d.elements; ++i) {
+                if (!(d.type==30 && raw.cached_type==1)) for (uint64_t i = 0; i < d.elements; ++i) {
                     if (!(i % 4096)) cancelled(cancel);
                     uint32_t bits = 0;
                     const uint32_t width = d.type == 0 ? 4 : 2;
@@ -476,6 +487,19 @@ void GgufWeightPager::create_pool(const PoolLayout &layout) {
     }
     s.metrics.dense_pool_capacity_bytes = gguf::checked_add(s.metrics.dense_pool_capacity_bytes, pool.upper);
     s.metrics.maximum_dense_pool_capacity_bytes = std::max(s.metrics.maximum_dense_pool_capacity_bytes, s.metrics.dense_pool_capacity_bytes);
+    if (s.gpu_fixed) {
+        for (const auto &recipe:recipes) {
+            if (!recipe.gpu_raw) {pool.gpu_targets.emplace_back();continue;}
+            const auto &d=recipe.source->descriptor;
+            pool.gpu_targets.emplace_back(allocate_gguf_gpu_affine_fixed(d.type,d.rows(),d.columns(),s.ledger,s.lease->generation()));
+            pool.gpu_fixed_active=true;
+            for (const auto &array:pool.gpu_targets.back()->arrays)
+                pool.gpu_fixed_capacity+=array.buffer_size();
+        }
+        if (pool.gpu_fixed_active) ++s.metrics.gpu_fixed_output_banks;
+        s.metrics.gpu_fixed_output_bank_bytes+=pool.gpu_fixed_capacity;
+        s.metrics.maximum_gpu_fixed_output_bank_bytes=std::max(s.metrics.maximum_gpu_fixed_output_bank_bytes,s.metrics.gpu_fixed_output_bank_bytes);
+    }
     s.pools.emplace(layout.id, std::move(pool));
 }
 void GgufWeightPager::destroy_pool(uint32_t id) noexcept {
@@ -484,6 +508,7 @@ void GgufWeightPager::destroy_pool(uint32_t id) noexcept {
     const auto found = s.pools.find(id);
     if (found == s.pools.end()) return;
     s.metrics.dense_pool_capacity_bytes -= found->second.upper;
+    s.metrics.gpu_fixed_output_bank_bytes-=found->second.gpu_fixed_capacity;
     s.pools.erase(found);
 }
 uint64_t GgufWeightPager::fill(const Group &group, const tc_stream_slot_ticket_v1 &ticket,
@@ -509,7 +534,8 @@ uint64_t GgufWeightPager::fill(const Group &group, const tc_stream_slot_ticket_v
             while (done<d.bytes) {
                 cancelled(cancel);
                 const auto begin=Clock::now();
-                const uint64_t amount=std::min<uint64_t>(d.bytes-done,default_read_buffer_bytes);
+                const uint64_t chunk=s.gpu_fixed ? (8ull<<20) : default_read_buffer_bytes;
+                const uint64_t amount=std::min<uint64_t>(d.bytes-done,chunk);
                 const auto n=::pread(s.fds[raw.artifact].get(),slot.pointers[i]+done,size_t(amount),off_t(d.file_offset+done));
                 {
                     std::lock_guard lock(s.metrics_mutex);
@@ -564,12 +590,48 @@ uint64_t GgufWeightPager::fill(const Group &group, const tc_stream_slot_ticket_v
 Weights GgufWeightPager::bind(const Group &group, const tc_stream_slot_ticket_v1 &ticket) const {
     auto &s = *state_; s.check_owner();
     insist(group.blocks.size() == 1 && ticket.pool == group.pool && ticket.slot == group.slot, "bind ticket mismatch");
-    const auto &slot = s.pools.at(group.pool).slots.at(ticket.slot);
+    auto &pool=s.pools.at(group.pool);const auto &slot = pool.slots.at(ticket.slot);
     insist(slot.content && same_ticket(*slot.content, ticket) && slot.block == group.blocks.front(), "stale/unready slot content");
     std::vector<std::string> keys;std::vector<Tensor> arrays;
     std::vector<GgufGpuAffinePending> pending;
     std::vector<std::string> gpu_keys;
     const auto &recipes=s.recipes.at(group.blocks.front());
+    if (s.gpu_fixed && pool.gpu_fixed_active) {
+        require(pool.gpu_targets.size()==recipes.size(),"fixed GPU bank missing pool fields");
+        if (pool.gpu_unretired)
+            require(pool.gpu_ticket && same_ticket(*pool.gpu_ticket,ticket) && pool.gpu_block==group.blocks.front(),
+                    "qe_output_busy: previous fixed GPU bank ticket not retired");
+        else {
+            pool.gpu_ticket.reset();pool.gpu_block=UINT32_MAX;
+            std::vector<Tensor> raw;std::vector<GgufGpuAffineFixedTarget *> targets;
+            for (size_t i=0;i<recipes.size();++i) if (recipes[i].gpu_raw) {
+                require(pool.gpu_targets[i].has_value(),"fixed GPU target absent");
+                raw.push_back(slot.arrays[i]);targets.push_back(&*pool.gpu_targets[i]);
+            }
+            const auto begin=Clock::now();
+            if (s.gpu_dependency) pool.gpu_dependency_outputs=prepare_gguf_gpu_affine_fixed_dependency(raw,targets);
+            else fill_gguf_gpu_affine_fixed(raw,targets);
+            uint64_t bytes=0;
+            for (const auto *target:targets) for (size_t i=0;i<3;++i) bytes+=target->arrays[i].nbytes();
+            pool.gpu_ticket=ticket;pool.gpu_block=group.blocks.front();pool.gpu_unretired=true;
+            std::lock_guard lock(s.metrics_mutex);
+            s.metrics.gpu_affine_preparations+=targets.size();s.metrics.gpu_affine_output_bytes+=bytes;
+            s.metrics.gpu_prepare_seconds+=std::chrono::duration<double>(Clock::now()-begin).count();
+        }
+        size_t gpu_index=0;
+        for (size_t i=0;i<recipes.size();++i) {
+            const auto &recipe=recipes[i];const auto key=binding_key(recipe);
+            if (recipe.gpu_raw) {
+                const auto stem=key.substr(0,key.size()-7);
+                keys.insert(keys.end(),{key,stem+".scales",stem+".biases"});
+                for (size_t part=0;part<3;++part) arrays.push_back(s.gpu_dependency
+                    ? pool.gpu_dependency_outputs.at(gpu_index*4+part)
+                    : gguf_gpu_affine_fixed_view(pool.gpu_targets[i]->arrays[part]));
+                ++gpu_index;
+            } else {keys.push_back(key);arrays.push_back(slot.arrays[i]);}
+        }
+        Weights result;result.bind_arrays(keys,arrays);return result;
+    }
     if (std::any_of(recipes.begin(),recipes.end(),[](const auto &r){return r.gpu_raw;})) mx::synchronize();
     const auto gpu_begin=Clock::now();
     for (size_t i=0;i<recipes.size();++i) {
@@ -593,6 +655,19 @@ Weights GgufWeightPager::bind(const Group &group, const tc_stream_slot_ticket_v1
         s.metrics.gpu_prepare_seconds+=std::chrono::duration<double>(Clock::now()-gpu_begin).count();
     }
     Weights result; result.bind_arrays(keys, arrays); return result;
+}
+void GgufWeightPager::retire(const Group &group,const tc_stream_slot_ticket_v1 &ticket) {
+    auto &s=*state_;s.check_owner();if (!s.gpu_fixed) return;
+    auto &pool=s.pools.at(group.pool);
+    if (!pool.gpu_fixed_active) return;
+    require(pool.gpu_unretired && pool.gpu_ticket && same_ticket(*pool.gpu_ticket,ticket) && pool.gpu_block==group.blocks.front(),
+            "fixed GPU bank retirement ticket mismatch");
+    mx::synchronize();
+    if (s.gpu_dependency) {
+        finish_gguf_gpu_affine_fixed_dependency(pool.gpu_dependency_outputs);
+        pool.gpu_dependency_outputs.clear();
+    }
+    pool.gpu_unretired=false;
 }
 void GgufWeightPager::check_unchanged() const {
     state_->lease->revalidate_open_files(); state_->lease->revalidate_paths();

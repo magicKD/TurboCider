@@ -86,7 +86,8 @@ class ZImage final : public ModelSession {
     Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);
     Tensor denoise(const Tensor &, const Tensor &, float, float, int, int,
                    const Event &, std::atomic<bool> &, std::vector<Tensor> * = nullptr,
-                   bool source_reference=false,const ZImageBlockObserver &observe={});
+                   bool source_reference=false,const ZImageBlockObserver &observe={},
+                   ZImageGgufStream *reference_stream=nullptr,const Weights *reference_weights=nullptr);
     Tensor decode(const Tensor &, int, int, const Event &, std::atomic<bool> &);
     bool conditioning(const Request &, const Event &, std::atomic<bool> &);
     std::string select_acceleration(Request &, int, const Event &, std::atomic<bool> &);

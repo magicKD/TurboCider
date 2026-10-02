@@ -45,6 +45,7 @@ MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
 DEPLOYMENT_TARGET="${TURBOCIDER_DEPLOYMENT_TARGET:-${MLX_MIN_MACOS:-15.0}}"
 MACOS_FLAGS=(-mmacosx-version-min="$DEPLOYMENT_TARGET")
 COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I bindings/c/include -I native/core -isystem "$MLX_ROOT/include" -Wall -Wextra -Wno-unused-parameter)
+COMMON+=(-isystem "$MLX_ROOT/include/metal_cpp")
 if [[ -n "$TEST_HOOK_FLAG" ]]; then COMMON+=("$TEST_HOOK_FLAG"); fi
 if [[ -n "$AUDIT_COUNTER_FLAG" ]]; then COMMON+=("$AUDIT_COUNTER_FLAG"); fi
 COMMON+=(-DTURBOCIDER_HAS_BUNDLED_CATALOG=1)
@@ -98,6 +99,7 @@ SOURCES=(
  native/runtime/streaming/run_context.cpp
  native/runtime/streaming/mlx_weight_pager.cpp
  native/runtime/streaming/gguf_weight_pager.cpp
+ native/runtime/streaming/gguf_gpu_affine_fixed.cpp
  native/runtime/streaming/gguf_packed_bank.cpp
  native/runtime/streaming/c_bridge.cpp native/runtime/streaming/audit.cpp
  native/models/ltx_runtime/ltx_streaming_descriptor.cpp native/models/ltx_runtime/ltx_streaming_plan.cpp

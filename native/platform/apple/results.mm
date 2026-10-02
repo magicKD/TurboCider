@@ -1,4 +1,5 @@
 #include "bridge.hpp"
+#include "../../core/quantized_execution_profiles.hpp"
 #include "../../models/qwen21/diagnostic_options.hpp"
 #include <cstdlib>
 #include <string_view>
@@ -115,9 +116,9 @@ static NSArray *strings(const std::vector<std::string> &values) {
 static NSDictionary *quantized_config(const QuantizedExecutionConfig &c) {
     if (!c.active()) return @{@"enabled": @NO, @"schema_version": @(c.schema_version.value_or(1))};
     return @{@"enabled": @YES, @"schema_version": @1,
-        @"mode": @(c.mode.value_or(c.precision_profile=="z-raw-gpu-affine-f16-v1" ? "bounded_raw_packed" : c.precision_profile == "z-source-native-affine-v1" || c.precision_profile == "z-mlx-compat-affine-v1" ? "bounded_packed" : "bounded_dequant").c_str()),
+        @"mode": @(c.mode.value_or(gguf_raw_gpu_profile(c.precision_profile.value_or("")) ? "bounded_raw_packed" : c.precision_profile == "z-source-native-affine-v1" || c.precision_profile == "z-mlx-compat-affine-v1" ? "bounded_packed" : "bounded_dequant").c_str()),
         @"source_residency": @(c.source_residency.value_or("packed_resident").c_str()),
-        @"decode_backend": @(c.decode_backend.value_or(c.precision_profile=="z-raw-gpu-affine-f16-v1" ? "cpu_io_gpu_affine" : "cpu_simd").c_str()),
+        @"decode_backend": @(c.decode_backend.value_or(gguf_raw_gpu_profile(c.precision_profile.value_or("")) ? "cpu_io_gpu_affine" : "cpu_simd").c_str()),
         @"precision_profile": @(c.precision_profile.value_or("z-source-mixed-v1").c_str()),
         @"granularity": @"layer", @"prefetch_layers": @(c.prefetch_layers.value_or(1)),
         @"persistent_dense_layers": @0, @"oversized_layer_policy": @"reject",
@@ -1403,8 +1404,11 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"decode_backend":@(m.decode_backend.c_str()),
             @"gpu_affine_preparations":@(m.gpu_affine_preparations),@"gpu_affine_output_bytes":@(m.gpu_affine_output_bytes),
             @"gpu_prepare_capacity_upper_bytes":@(m.gpu_prepare_capacity_upper),@"gpu_prepare_wall_seconds":@(m.gpu_prepare_seconds),
+            @"gpu_prepare_timing_scope":gguf_dependency_gpu_profile(m.precision_profile) ? @"host-dependency-construction-only-v1" : @"host-wall-through-packing-completion-v1",
+            @"gpu_consumer_ready":gguf_dependency_gpu_profile(m.precision_profile) ? @"dependency-ready-not-status-validated-v1" : @"packing-complete-status-validated-v1",
             @"allocator_cache_limit_bytes":@(m.allocator_cache_limit_bytes),
-            @"precision_profile":@(m.precision_profile.c_str()),@"ready_representation":m.precision_profile=="z-raw-gpu-affine-f16-v1" ? @"raw-gguf-v1" : @"cpu-materialized-v1"
+            @"gpu_fixed_output_banks_created":@(m.gpu_fixed_output_banks),@"gpu_fixed_output_bank_capacity_bytes":@(m.gpu_fixed_output_bank_bytes),
+            @"precision_profile":@(m.precision_profile.c_str()),@"ready_representation":gguf_raw_gpu_profile(m.precision_profile) ? @"raw-gguf-v1" : @"cpu-materialized-v1"
         };
         value[@"validation"] = @"experimental source-mixed GGUF execution; not a production capability";
     }
