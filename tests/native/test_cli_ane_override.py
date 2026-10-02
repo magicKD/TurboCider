@@ -43,16 +43,18 @@ class CLIAneOverrideTests(unittest.TestCase):
             references = [{"kind": "image", "role": "reference", "path": str(root / f"ref-{i}.png")}
                           for i in range(4)]
 
-            def plan(data, value=None):
+            def plan(data, value=None, early=None):
                 environment = clean_acceleration_environment()
                 if value is not None:
                     environment[flag] = value
+                if early is not None:
+                    environment["TURBOCIDER_QWEN21_RUNTIME_PREPARE_EARLY"] = early
                 request.write_text(json.dumps(data))
                 return subprocess.run([str(CLI), "plan", str(request)], cwd=ROOT,
                                       env=environment, capture_output=True, text=True, timeout=10)
 
-            def accepted(data, value=None):
-                result = plan(data, value)
+            def accepted(data, value=None, early=None):
+                result = plan(data, value, early)
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
                 return json.loads(result.stdout)
 
@@ -67,6 +69,7 @@ class CLIAneOverrideTests(unittest.TestCase):
                         data.update(lora_strategy="inference_time", loras=[adapter])
                     with self.subTest(count=count, steps=steps, lora=lora):
                         staged = accepted(data, "1")
+                        self.assertEqual(accepted(data, "1", "1"), staged)
                         resident = accepted({**data, "residency": "resident"})
                         gpu = accepted({**data, "execution": "gpu", "hybrid_mlp_mode": "auto",
                                         "ane_manifest": ""})
@@ -92,6 +95,11 @@ class CLIAneOverrideTests(unittest.TestCase):
                     self.assertTrue(rejected.stderr)
             # Explicitly disabled retains the established resident route too.
             self.assertEqual(accepted({**base, "residency": "resident"}, "0")["hybrid_mlp_mode"], "runtime")
+            for early in ("", "true", "2", "-1"):
+                with self.subTest(invalid_early_flag=early):
+                    self.assertNotEqual(plan(base, "1", early).returncode, 0)
+            self.assertEqual(accepted(base, "1", "0"), accepted(base, "1"))
+            self.assertNotEqual(plan({**base, "residency": "resident"}, None, "1").returncode, 0)
 
             # These otherwise valid routes reject an enabled staged switch;
             # the flag cannot silently opt a default GPU/resident request in.

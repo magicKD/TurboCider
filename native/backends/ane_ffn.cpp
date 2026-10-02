@@ -50,7 +50,8 @@ int configured_chunks() {
 } // namespace
 
 HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
-                     size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs)
+                     size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
+                     std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared)
     : memory_budget_(budget) {
     checkpoint(cancelled);
     const int chunks = configured_chunks();
@@ -67,14 +68,32 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     // acceleration request. A valid graph failing its capability self-test
     // is instead a reported GPU fallback on this machine.
     try {
-        graph_ = std::make_unique<RuntimeGraph>(manifest, budget, false, false,
-                                               GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs});
+        if (prepared) {
+            metrics_.runtime_weight_prepared_early = true;
+            metrics_.runtime_weight_prepare_seconds = prepared->seconds;
+            metrics_.runtime_weight_prepare_wait_seconds = prepared->wait_seconds;
+            metrics_.runtime_weight_prepare_before_join_seconds = prepared->before_join_seconds;
+            // Do not retry a failed load or turn an invalid graph into fallback.
+            if (prepared->error) std::rethrow_exception(prepared->error);
+            require(bool(prepared->value), "runtime ANE preparation returned no graph");
+            const auto &shape = prepared->value->shape();
+            require(shape.kind == Kind::SwiGLU && shape.hidden == hidden && shape.width == width &&
+                        (!require_lora_inputs || shape.lora_inputs),
+                    "runtime ANE prepared graph does not match model FFN geometry");
+            graph_ = std::make_unique<RuntimeGraph>(std::move(prepared->value), budget);
+        } else {
+            graph_ = std::make_unique<RuntimeGraph>(manifest, budget, false, false,
+                                                   GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs});
+        }
     }
     catch (const MemoryBudgetError &error) { degrade(error.what(), -1); return; }
     catch (const CapabilityError &error) { degrade(error.what(), -1); return; }
     metrics_.bucket = graph_->shape().rows;
     if (graph_->shape().lora_inputs) metrics_.mlp_output_kind = "runtime_weight_swiglu_lora_inputs";
     metrics_.load_seconds = graph_->load_seconds();
+    metrics_.manifest_validation_seconds = graph_->artifact_seconds();
+    metrics_.model_load_seconds = graph_->model_load_seconds();
+    metrics_.output_backing_setup_seconds = graph_->bind_seconds();
     metrics_.runtime_weight_slot_bytes = graph_->slot_bytes();
     metrics_.runtime_weight_estimated_bytes = graph_->estimated_bytes();
     std::string error;

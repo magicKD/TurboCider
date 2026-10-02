@@ -1,5 +1,9 @@
 # TurboCider 状态文档入口
 
+Runtime 图准备与编码重叠、分阶段计时、取消回收及两次真实编辑对照见
+[2026-10-02 Runtime 提前准备验收](2026-10-02-runtime-early-preparation.md)。
+路径仍为显式诊断；单组结果未证明稳定加速，GPU 默认不变。双参考扩图试验仍未补齐外围。
+
 Playground 五模板与本地 AI 共享请求接口、透明图实测、扩图失败样本和 Runtime 导出发布竞态修复见
 [2026-10-02 共享工作流验收](2026-10-02-shared-playground-workflows.md)。
 扩图仍为试验性提示词引导；本阶段没有新增 ANE 加速结论。

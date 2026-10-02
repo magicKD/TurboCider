@@ -262,6 +262,28 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         mx::clear_cache();
     }
     plan.request = r;
+    // Only the verified graph/model is prepared here: no IOSurface arena,
+    // prediction, MLX call, event callback or model weights on this worker.
+    // The request owner joins it on success, cancellation and all exceptions.
+    // Slot allocation and the capability self-test still happen after encoding
+    // with fresh live-memory admission on the owning thread.
+    std::unique_ptr<AsyncPreparation<ane::RuntimeGraph::Prepared>> early_runtime;
+    std::filesystem::path early_manifest;
+    std::string early_identity;
+    if (runtime_requested && staged &&
+        option_enabled(std::getenv("TURBOCIDER_QWEN21_RUNTIME_PREPARE_EARLY"))) {
+        early_manifest = std::filesystem::canonical(r.ane_manifest);
+        early_identity = early_manifest.string() + ":" + sha256_file(early_manifest) + ":" +
+            (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto");
+        const size_t budget = runtime_ane_budget(device_info().physical_memory, mx::get_active_memory());
+        emit(event, "prepare_runtime_ane_graph", 0, 1);
+        checkpoint(cancelled);
+        early_runtime = std::make_unique<AsyncPreparation<ane::RuntimeGraph::Prepared>>(
+            [manifest = early_manifest, budget, lora = !r.loras.empty()] {
+                return ane::RuntimeGraph::prepare(manifest, budget, false,
+                    ane::GraphGeometry{ane::Kind::SwiGLU, 4096, 12288, lora});
+            });
+    }
     auto dump = [&](const std::string &name, const Tensor &tensor) {
         if (r.dump.empty()) return;
         std::filesystem::create_directories(r.dump);
@@ -450,16 +472,23 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     }
     auto hybrid_start = Clock::now();
     if (runtime_requested) {
-        auto manifest = std::filesystem::canonical(r.ane_manifest);
-        const std::string identity = manifest.string() + ":" + sha256_file(manifest) + ":" +
+        auto manifest = early_runtime ? early_manifest : std::filesystem::canonical(r.ane_manifest);
+        const std::string identity = early_runtime ? early_identity :
+            manifest.string() + ":" + sha256_file(manifest) + ":" +
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto");
         if (!runtime_ffn_ || !runtime_ffn_->available() || runtime_manifest_ != identity ||
             (!r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
             runtime_ffn_.reset();
+            std::optional<PreparationResult<ane::RuntimeGraph::Prepared>> prepared;
+            if (early_runtime) {
+                prepared = early_runtime->take();
+                early_runtime.reset();
+                emit(event, "prepare_runtime_ane_graph", 1, 1);
+            }
             const size_t budget = runtime_ane_budget(device_info().physical_memory,
                                                      mx::get_active_memory());
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 4096, 12288, budget, cancelled,
-                                                         !r.loras.empty());
+                                                         !r.loras.empty(), std::move(prepared));
             runtime_manifest_ = identity;
         }
         runtime_ffn_->begin_request(active_lora_identity_);

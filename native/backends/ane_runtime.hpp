@@ -90,6 +90,38 @@ struct RunResult {
 // Source/output buffers must outlive the asynchronous job and finish().
 class RuntimeGraph {
   public:
+    // Verified private artifact and loaded model only: no IOSurfaces, feature
+    // bindings, prediction worker, self-test or model-dependent weights. It
+    // can be prepared on a separate owning thread, then transferred after
+    // that thread has joined. Concurrent use of one Prepared is unsupported.
+    class Prepared {
+      public:
+        ~Prepared();
+        Prepared(Prepared &&) noexcept;
+        Prepared &operator=(Prepared &&) noexcept;
+        Prepared(const Prepared &) = delete;
+        Prepared &operator=(const Prepared &) = delete;
+
+        const GraphShape &shape() const;
+        size_t estimated_bytes() const;
+        double artifact_seconds() const;
+        double model_load_seconds() const;
+
+      private:
+        friend class RuntimeGraph;
+        struct Impl;
+        explicit Prepared(std::unique_ptr<Impl>);
+        std::unique_ptr<Impl> impl_;
+    };
+
+    // Both prepare and bind reserve the complete graph estimate against the
+    // current budget/live-memory observation. Preparation does not prove
+    // sufficient memory remains available when the model phase changes.
+    static std::unique_ptr<Prepared> prepare(const std::filesystem::path &manifest,
+                          size_t memory_budget_bytes, bool cpu_only = false,
+                          std::optional<GraphGeometry> expected = std::nullopt);
+    explicit RuntimeGraph(std::unique_ptr<Prepared> prepared,
+                          size_t bind_memory_budget_bytes, bool scalar_staging = false);
     explicit RuntimeGraph(const std::filesystem::path &manifest,
                           size_t memory_budget_bytes, bool cpu_only = false,
                           bool scalar_staging = false,
@@ -101,6 +133,11 @@ class RuntimeGraph {
     const GraphShape &shape() const;
     size_t slot_bytes() const;
     size_t estimated_bytes() const;
+    double artifact_seconds() const;
+    double model_load_seconds() const;
+    double bind_seconds() const;
+    // Sum of artifact verification, model loading and binding work. Queue
+    // wait/encoder overlap is intentionally excluded; it is not request wall.
     double load_seconds() const;
 
     // Checks TWO weight sets and nonzero input on this actual shape. Caller

@@ -65,6 +65,11 @@ struct HybridMetrics {
     // Exporter-declared weight variant; unknown for legacy manifests without it.
     std::string weight_variant = "unknown";
     double load_seconds = 0;
+    // Host preparation spans, not measured GPU overlap or an end-to-end saving.
+    bool runtime_weight_prepared_early = false;
+    double runtime_weight_prepare_seconds = 0;
+    double runtime_weight_prepare_wait_seconds = 0;
+    double runtime_weight_prepare_before_join_seconds = 0;
     double manifest_validation_seconds = 0;
     double output_backing_setup_seconds = 0;
     double model_load_seconds = 0;

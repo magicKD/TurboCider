@@ -56,6 +56,11 @@ ModelModule qwen21_module() {
             require(qwen21::binary_option_or_unset(runtime_staged_flag),
                     "Qwen21 staged runtime diagnostic accepts only 0 or 1");
             const bool runtime_staged = qwen21::option_enabled(runtime_staged_flag);
+            const char *prepare_flag = std::getenv("TURBOCIDER_QWEN21_RUNTIME_PREPARE_EARLY");
+            require(qwen21::binary_option_or_unset(prepare_flag),
+                    "Qwen21 early runtime preparation accepts only 0 or 1");
+            require(!qwen21::option_enabled(prepare_flag) || runtime_staged,
+                    "Qwen21 early runtime preparation requires the explicit staged runtime diagnostic");
             if (runtime_staged) {
                 const auto *adapter = r.loras.empty() ? nullptr : qwen21::viggle_v021_adapter(
                     std::filesystem::path(r.loras[0].path).filename().string());
