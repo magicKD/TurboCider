@@ -137,6 +137,36 @@ int main(int argc,char **argv) {
             mx::synchronize(); mx::clear_cache();
             ensure(ledger.snapshot().storage_bytes==0 && ledger.snapshot().reserved_bytes==0,"buffer/ledger release leak");
         }
+        for (uint32_t slots=1;slots<=3;++slots) {
+            auto raw_gpu=d;
+            raw_gpu.workload["source_residency"]="packed_streamed";
+            raw_gpu.workload["precision"]="z-raw-gpu-affine-f16-v1";
+            raw_gpu.workload["packed_read_buffer_bytes"]="16384";
+            raw_gpu.stages.front().resident_fields.resize(1);
+            for (auto &block:raw_gpu.stages.front().blocks) {
+                auto &f=block.fields.front();const auto &t=directory.tensor(f.materialization->reads.front().tensor);
+                f.bytes=t.bytes;f.materialization->format="U8";f.materialization->conversion="gguf-raw-gpu-affine-v1";
+                f.materialization->shape={t.rows(),t.columns()/32*gguf::type_info(t.type).bytes};
+            }
+            StreamingConfig c;c.enabled=true;c.schema_version=1;c.selection="manual";c.retention="request";
+            c.stages["denoiser"]={"streamed",1,slots,0,slots-1,1};
+            const auto layout=compile_layout(c,raw_gpu);MemoryLedger ledger(1ull<<20);Weights fixed;
+            auto pager=std::make_unique<GgufWeightPager>(lease,raw_gpu,raw_gpu.stages.front(),layout.stages.front(),ledger);
+            pager->load_packed();pager->load_resident_aliases(fixed);
+            auto adapter=std::make_shared<Adapter>(*pager);std::atomic<bool> cancel{false};
+            { StageExecutor executor(0,220+slots,adapter);const auto counts=executor.run(layout.stages.front(),cancel);
+              ensure(counts.fills==8 && counts.groups_submitted==8,"raw GPU units/readers mismatch"); }
+            const auto metrics=pager->metrics();
+            ensure(metrics.gpu_affine_preparations==8 && metrics.gpu_affine_output_bytes==8*(32768+2048+2048),
+                   "raw GPU preparation count/bytes mismatch");
+            ensure(metrics.source_read_bytes==4+8*34816 && metrics.decode_seconds==0,
+                   "raw GPU source reread or hidden CPU repack");
+            ensure(metrics.maximum_dense_pool_capacity_bytes==slots*49152,"raw GPU slot capacity mismatch");
+            pager.reset();fixed.clear();
+            ensure(ledger.snapshot().storage_count>0,"raw GPU escaped output lost claim");
+            adapter->escaped.reset();adapter.reset();mx::synchronize();mx::clear_cache();
+            ensure(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"raw GPU slot/outputs leaked");
+        }
         {
             auto bf16 = d;
             bf16.workload["source_residency"] = "packed_streamed";

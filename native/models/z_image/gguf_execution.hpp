@@ -10,6 +10,7 @@ struct GgufExecutionPlan {
     streaming::Layout layout;
     StreamingConfig config;
     uint64_t packed_capacity_upper = 0, dense_capacity_upper = 0, read_capacity_upper = 0;
+    uint64_t gpu_prepare_capacity_upper=0;
 };
 
 // Shared strict Z naming/geometry validation, also used by the experimental

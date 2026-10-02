@@ -1,6 +1,7 @@
 #include "gguf_weight_pager.hpp"
 #include "../../core/gguf_affine.hpp"
 #include "gguf_storage.hpp"
+#include "gguf_gpu_affine.hpp"
 
 #include <chrono>
 #include <cstring>
@@ -78,6 +79,7 @@ struct FieldRecipe {
     const RawTensor *source = nullptr;
     mx::Dtype dtype = mx::bfloat16;
     std::optional<gguf::AffinePart> affine;
+    bool gpu_raw=false;
 };
 std::string binding_key(const FieldRecipe &recipe) {
     auto key=recipe.field->materialization->reads.front().tensor;
@@ -131,6 +133,12 @@ struct GgufWeightPager::State {
         const auto &m = *field.materialization;
         const bool packed_source = alias && m.conversion == "gguf-packed-gather-source-v1";
         const bool fixed_bf16 = alias && m.conversion == "gguf-bf16-fixed-rne-v1";
+        const bool gpu_raw=!alias && m.conversion=="gguf-raw-gpu-affine-v1";
+        if (gpu_raw) {
+            const auto precision=descriptor.workload.find("precision");
+            insist(streamed && precision!=descriptor.workload.end() && precision->second=="z-raw-gpu-affine-f16-v1",
+                   "raw GPU materialization needs explicit streamed profile");
+        }
         if (fixed_bf16) {
             const auto precision = descriptor.workload.find("precision");
             insist(streamed && precision != descriptor.workload.end() && precision->second == "z-dense-bf16-v1" &&
@@ -143,7 +151,7 @@ struct GgufWeightPager::State {
         insist(m.storage_mode == "mlx-metal-shared" && m.reads.size() == 1 && m.derived_from.empty() &&
                    m.derived_offset == 0 && (m.conversion == (alias ? "gguf-native-alias-v1" : "gguf-cpu-rne-v1") ||
                      (alias && legacy_float && m.conversion=="gguf-mlx-float-alias-v1") ||
-                     packed_source || fixed_bf16 || (affine && !alias)),
+                     packed_source || fixed_bf16 || gpu_raw || (affine && !alias)),
                 "unsupported typed materialization");
         const auto &r = m.reads.front();
         insist(r.artifact < directories.size(), "source artifact out of bounds");
@@ -157,6 +165,10 @@ struct GgufWeightPager::State {
             insist(m.format == "U8" && m.shape == std::vector<uint64_t>{tensor.bytes} &&
                    field.bytes == tensor.bytes && original.size() == 2 && !legacy_float,
                    "invalid packed gather source geometry/profile");
+        } else if (gpu_raw) {
+            insist(original.size()==2 && (tensor.type==2 || tensor.type==3 || tensor.type==8) &&
+                m.format=="U8" && m.shape==std::vector<uint64_t>{tensor.rows(),tensor.columns()/32*gguf::type_info(tensor.type).bytes} &&
+                field.bytes==tensor.bytes,"raw GPU target geometry/type mismatch");
         } else if(affine) {
             insist(original.size()==2 && (tensor.type==2 || tensor.type==3 || tensor.type==8), "unsupported affine source");
             const uint32_t bits=tensor.type==8 ? 8 : 4;
@@ -184,7 +196,7 @@ struct GgufWeightPager::State {
             insist(row_bytes(it->second) <= read_capacity, "fixed BF16 row exceeds bounded read buffer");
         }
         if (alias && !packed_source) it->second.pinned = true;
-        return {&field, &it->second, dtype, affine};
+        return {&field, &it->second, dtype, affine,gpu_raw};
     }
     uint64_t row_bytes(const RawTensor &raw) const {
         const auto &d = raw.descriptor; const auto &type = gguf::type_info(d.type);
@@ -491,6 +503,25 @@ uint64_t GgufWeightPager::fill(const Group &group, const tc_stream_slot_ticket_v
     for (const auto &task : s.tasks.at(group.blocks.front())) {
         const auto &raw = *task.source;
         const auto &d = raw.descriptor;
+        if (recipes[task.fields.front()].gpu_raw) {
+            insist(task.fields.size()==1 && !raw.pointer,"GPU raw fill must be one streamed field");
+            const size_t i=task.fields.front();uint64_t done=0;
+            while (done<d.bytes) {
+                cancelled(cancel);
+                const auto begin=Clock::now();
+                const uint64_t amount=std::min<uint64_t>(d.bytes-done,default_read_buffer_bytes);
+                const auto n=::pread(s.fds[raw.artifact].get(),slot.pointers[i]+done,size_t(amount),off_t(d.file_offset+done));
+                {
+                    std::lock_guard lock(s.metrics_mutex);
+                    if (n>0) s.metrics.source_read_bytes+=uint64_t(n);
+                    s.metrics.streamed_read_seconds+=std::chrono::duration<double>(Clock::now()-begin).count();
+                }
+                if (n<0 && errno==EINTR) continue;
+                insist(n>0,"qe_source_changed: short raw GPU read");done+=uint64_t(n);
+            }
+            output=gguf::checked_add(output,d.bytes);source_bytes=gguf::checked_add(source_bytes,d.bytes);
+            continue;
+        }
         const uint64_t packed_row = s.row_bytes(raw);
         const uint64_t maximum_rows = raw.pointer ? d.rows() : s.read_capacity / packed_row;
         for (uint64_t first = 0; first < d.rows();) {
@@ -535,9 +566,33 @@ Weights GgufWeightPager::bind(const Group &group, const tc_stream_slot_ticket_v1
     insist(group.blocks.size() == 1 && ticket.pool == group.pool && ticket.slot == group.slot, "bind ticket mismatch");
     const auto &slot = s.pools.at(group.pool).slots.at(ticket.slot);
     insist(slot.content && same_ticket(*slot.content, ticket) && slot.block == group.blocks.front(), "stale/unready slot content");
-    std::vector<std::string> keys;
-    for (const auto &recipe : s.recipes.at(group.blocks.front())) keys.push_back(binding_key(recipe));
-    Weights result; result.bind_arrays(keys, slot.arrays); return result;
+    std::vector<std::string> keys;std::vector<Tensor> arrays;
+    std::vector<GgufGpuAffinePending> pending;
+    std::vector<std::string> gpu_keys;
+    const auto &recipes=s.recipes.at(group.blocks.front());
+    if (std::any_of(recipes.begin(),recipes.end(),[](const auto &r){return r.gpu_raw;})) mx::synchronize();
+    const auto gpu_begin=Clock::now();
+    for (size_t i=0;i<recipes.size();++i) {
+        const auto &recipe=recipes[i];const auto key=binding_key(recipe);
+        if (recipe.gpu_raw) {
+            const auto &d=recipe.source->descriptor;
+            insist(key.ends_with(".weight"),"raw GPU projection lacks weight suffix");
+            pending.push_back(prepare_gguf_gpu_affine(slot.arrays[i],d.type,d.rows(),d.columns(),s.ledger,s.lease->generation()));
+            gpu_keys.push_back(key);
+        } else {keys.push_back(key);arrays.push_back(slot.arrays[i]);}
+    }
+    if (!pending.empty()) {
+        auto outputs=finish_gguf_gpu_affine(pending);uint64_t bytes=0;
+        for (size_t i=0;i<outputs.size();++i) {
+            const auto &key=gpu_keys[i];const auto stem=key.substr(0,key.size()-7);
+            keys.insert(keys.end(),{key,stem+".scales",stem+".biases"});
+            for (auto &part:outputs[i]) {bytes+=part.nbytes();arrays.push_back(std::move(part));}
+        }
+        std::lock_guard lock(s.metrics_mutex);
+        s.metrics.gpu_affine_preparations+=outputs.size();s.metrics.gpu_affine_output_bytes+=bytes;
+        s.metrics.gpu_prepare_seconds+=std::chrono::duration<double>(Clock::now()-gpu_begin).count();
+    }
+    Weights result; result.bind_arrays(keys, arrays); return result;
 }
 void GgufWeightPager::check_unchanged() const {
     state_->lease->revalidate_open_files(); state_->lease->revalidate_paths();

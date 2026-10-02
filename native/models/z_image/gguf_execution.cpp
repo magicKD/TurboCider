@@ -60,12 +60,14 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
     require(prefetch <= 2 && width && height && width % 16 == 0 && height % 16 == 0 &&
                 caption && steps && steps <= 50, "gguf execution workload unsupported");
     require(profile == "z-source-mixed-v1" || profile == "z-source-mixed-f16-v1" || profile == "z-source-exact-f32-v1" || profile == "z-source-native-affine-v1" ||
-            profile == "z-mlx-compat-affine-v1" || profile == "z-mlx-compat-f16-v1" || profile == "z-mlx-compat-f32-v1" || profile == "z-dense-bf16-v1",
+            profile == "z-mlx-compat-affine-v1" || profile == "z-mlx-compat-f16-v1" || profile == "z-mlx-compat-f32-v1" || profile == "z-dense-bf16-v1" || profile=="z-raw-gpu-affine-f16-v1",
             "unknown GGUF precision profile");
     require(residency == "packed_resident" || residency == "packed_streamed", "unknown GGUF source residency");
     const bool dense_bf16 = profile == "z-dense-bf16-v1";
+    const bool raw_gpu=profile=="z-raw-gpu-affine-f16-v1";
+    require(!raw_gpu || residency=="packed_streamed","raw GPU affine requires packed_streamed source");
     require(!dense_bf16 || residency == "packed_streamed", "dense BF16 requires packed_streamed source");
-    const bool legacy_float=profile.starts_with("z-mlx-compat-");
+    const bool legacy_float=profile.starts_with("z-mlx-compat-") || raw_gpu;
     const bool stream_refiners = residency == "packed_streamed";
     const auto &file = lease->file("transformer");
     auto fd = lease->duplicate_fd("transformer");
@@ -77,6 +79,7 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
     d.model = "z-image-turbo-gguf";
     d.checkpoint_identity = std::string(lease->artifact_digest());
     d.backend_revision = "gguf-cpu-rne-mlx-v1:" + profile;
+    if (raw_gpu) d.backend_revision="gguf-cpu-io-metal-affine-v1:"+profile;
     if (stream_refiners) d.backend_revision += ":refiner-bank-v2";
     d.artifacts.push_back({"transformer", file.content_digest, file.bytes, streaming::SourceIdentityKind::content_sha256});
     d.workload = {{"width", std::to_string(width)}, {"height", std::to_string(height)},
@@ -84,6 +87,10 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
         {"caption_rows", std::to_string(caption)}, {"steps", std::to_string(steps)},
         {"precision", profile}, {"fixed_policy", "source-float-alias-v1"}};
     if (stream_refiners) d.workload["refiner_policy"] = "interleaved-single-slot-v2";
+    if (raw_gpu) {
+        d.workload["ready_representation"]="raw-gguf-v1";
+        d.workload["gpu_consumer"]="owner-inline-affine-f16-qmm-v1";
+    }
     if (dense_bf16) {
         d.workload["fixed_policy"] = "bf16-cpu-rne-v1";
         d.workload["gpu_graph"] = "z-bf16-parameterized-block-v1";
@@ -147,7 +154,15 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
             auto &destination = main ? stage.blocks[layer] : refiners.blocks[layer * 2 + (tensor.name.starts_with("context_refiner.") ? 1 : 0)];
             field.name = tensor.name.substr(separator + 1);
             field.storage_id = main ? "gguf-layer-" + std::to_string(layer) + ":" + field.name : "gguf-refiner:" + tensor.name;
-            if (!floating && (profile == "z-source-native-affine-v1" || profile == "z-mlx-compat-affine-v1")) {
+            if (!floating && raw_gpu) {
+                require((tensor.type==2 || tensor.type==3 || tensor.type==8) && logical.size()==2,
+                        "raw GPU affine only supports rank2 Q4_0/Q4_1/Q8_0");
+                field.bytes=tensor.bytes;
+                field.materialization->conversion="gguf-raw-gpu-affine-v1";
+                field.materialization->format="U8";
+                field.materialization->shape={tensor.rows(),tensor.columns()/32*gguf::type_info(tensor.type).bytes};
+                destination.fields.push_back(std::move(field));
+            } else if (!floating && (profile == "z-source-native-affine-v1" || profile == "z-mlx-compat-affine-v1")) {
                 require(tensor.type == 2 || tensor.type == 3 || tensor.type == 8, "native affine profile only supports Q4_0/Q4_1/Q8_0");
                 const uint32_t bits = tensor.type == 8 ? 8 : 4;
                 const std::string stem = field.name.substr(0,field.name.size()-7);
@@ -180,6 +195,16 @@ GgufExecutionPlan describe_gguf_execution(std::shared_ptr<const streaming::Sourc
         d.stages.push_back(std::move(refiners));
     }
     d.stages.push_back(std::move(stage));
+    if (raw_gpu) for (const auto &s:d.stages) for (const auto &block:s.blocks) {
+        uint64_t current=0;
+        for (const auto &field:block.fields) if (field.materialization->conversion=="gguf-raw-gpu-affine-v1") {
+            const auto &read=field.materialization->reads.front();const auto &t=directory.tensor(read.tensor);
+            const uint64_t groups=t.elements/32,bits=t.type==8 ? 8 : 4;
+            for (const auto bytes:{gguf::checked_mul(groups,bits*4),gguf::checked_mul(groups,2),gguf::checked_mul(groups,2),groups})
+                current=gguf::checked_add(current,capacity(bytes));
+        }
+        result.gpu_prepare_capacity_upper=std::max(result.gpu_prepare_capacity_upper,current);
+    }
     auto &c = result.config;
     c.enabled = true; c.schema_version = 1; c.selection = "manual"; c.retention = "request";
     c.stages["denoiser"] = {"streamed", 1, 1 + prefetch, 0, prefetch, 1};

@@ -38,6 +38,9 @@ def main():
     if args.output.exists():p.error("output already exists")
     report={"scope":"diagnostic tensor comparison; not complete model/media qualification","tensors":[]}
     for path in sorted(args.reference.glob("*.safetensors")):
+        # Dual-forward source diagnostics are not candidate model endpoints.
+        # Their identity is checked separately against the native control.
+        if path.name.startswith("z_source_"):continue
         other=args.candidate/path.name
         a,ashape,ahash=load(other);b,bshape,bhash=load(path)
         if ashape!=bshape:raise ValueError("tensor shapes differ")

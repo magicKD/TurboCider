@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--compile-packed",action="store_true",help="explicit parameterized native QMM graph; authorized approximation, CPU-direct only")
     parser.add_argument("--packed-compute",choices=["native","f16_down64","f16_mpp_down64","qmm_f16_down64","qmm_f16_ref16_down64","qmm_f16_refmpp_dynamic"],help="experimental FP16 compute, FP32 glue; qmm mode never decodes dense W; refmpp uses dynamic per-row FP16 normalization")
     parser.add_argument("--native-allocator-cache-bytes",type=int,help="explicit FP16 experiment cache hint 0..1GiB; not a RAM cap")
+    parser.add_argument("--raw-gpu-cache-bytes",type=int,help="explicit raw GPU profile cache hint 0..1GiB; NOT a RAM cap")
     parser.add_argument("--validate-source-blocks",action="store_true",help="diagnostic independent source trajectory, FP64 every-block N1; not timing/memory")
     parser.add_argument("--retain-packed",action="store_true",help="experimental packed-only session retention across VAE; CPU-direct only, NOT a RAM cap")
     parser.add_argument("--native-weight-limit-bytes",type=int,help="CPU-direct packed-bank managed ceiling; NOT whole-request RAM cap")
@@ -48,7 +49,7 @@ def main():
     parser.add_argument("--size",type=int,default=512)
     parser.add_argument("--steps",type=int,default=4)
     parser.add_argument("--seed",type=int,default=42)
-    parser.add_argument("--precision",choices=["z-source-mixed-v1","z-source-mixed-f16-v1","z-source-exact-f32-v1","z-source-native-affine-v1","z-mlx-compat-affine-v1","z-mlx-compat-f16-v1","z-mlx-compat-f32-v1","z-dense-bf16-v1"],default="z-source-mixed-v1")
+    parser.add_argument("--precision",choices=["z-source-mixed-v1","z-source-mixed-f16-v1","z-source-exact-f32-v1","z-source-native-affine-v1","z-mlx-compat-affine-v1","z-mlx-compat-f16-v1","z-mlx-compat-f32-v1","z-dense-bf16-v1","z-raw-gpu-affine-f16-v1"],default="z-source-mixed-v1")
     parser.add_argument("--prompt",default="A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture.")
     parser.add_argument("--alternate-prompt",help="diagnostic retained-bank A/B/A invalidation only; requires >=3 runs, no warmup/cancel")
     parser.add_argument("--dump",action="store_true",help="save diagnostic latents/pixels; not a performance run")
@@ -64,8 +65,16 @@ def main():
     cancellations=(args.cancel_once_at_block,args.cancel_once_at_encoder_layer,args.cancel_once_at_refiner,args.cancel_once_at_import_tensor)
     if sum(c is not None for c in cancellations)>1: parser.error("cancellation selectors are mutually exclusive")
     dense_bf16=args.precision=="z-dense-bf16-v1"
+    raw_gpu=args.precision=="z-raw-gpu-affine-f16-v1"
     if dense_bf16 and (args.baseline_bf16 or min(args.prefetch)<0 or args.source_residency!="packed_streamed" or args.gpu_eval_blocks):
         parser.error("dense BF16 profile requires bounded packed_streamed and compiled execution")
+    if raw_gpu and (args.baseline_bf16 or min(args.prefetch)<0 or args.source_residency!="packed_streamed"):
+        parser.error("raw GPU profile requires bounded packed_streamed source")
+    if args.raw_gpu_cache_bytes is not None:
+        if not raw_gpu or not 0<=args.raw_gpu_cache_bytes<=1<<30: parser.error("raw GPU cache hint requires raw GPU profile and 0..1GiB")
+        key="TURBOCIDER_Z_RAW_GPU_CACHE_BYTES";value=str(args.raw_gpu_cache_bytes)
+        if key in os.environ and os.environ[key]!=value: parser.error("conflicting raw GPU cache environment")
+        os.environ[key]=value
     if args.baseline_bf16 and (args.prefetch!=[-1] or args.native_import or args.native_weight_limit_bytes is not None or args.retain_packed or args.compile_packed or
             any(c is not None for c in cancellations) or args.encoder_gguf or args.precision!="z-source-mixed-v1" or
             any(k.startswith("TURBOCIDER_Z_GGUF_") or k.startswith("TURBOCIDER_Z_QWEN3_") or
@@ -205,7 +214,7 @@ def main():
                         "parameters":{"dynamic_text":True}}
                     if args.dump: request["dump_tensors"]=str((args.output/(name+"-tensors")).resolve())
                     if p<0: request["execution"].pop("quantized_execution")
-                    if dense_bf16 or compile_packed:
+                    if dense_bf16 or compile_packed or raw_gpu:
                         request["execution"]["allow_approximation"]=True
                         request["parameters"]["compile_gpu"]=True
                     samples=[]; errors=[]; stopped=threading.Event()

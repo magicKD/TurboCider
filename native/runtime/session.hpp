@@ -217,6 +217,10 @@ struct QuantizedExecutionMetrics {
     double streamed_read_seconds = 0;
     uint64_t refiner_fills = 0, refiner_capacity_bytes = 0, refiner_decoded_bytes = 0;
     uint32_t refiner_slots = 0;
+    std::string precision_profile;
+    uint64_t gpu_affine_preparations=0,gpu_affine_output_bytes=0,gpu_prepare_capacity_upper=0;
+    uint64_t allocator_cache_limit_bytes=0;
+    double gpu_prepare_seconds=0;
 };
 struct QuantizedSourceComparison {
     std::string name;

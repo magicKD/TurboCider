@@ -15,6 +15,14 @@ struct Backing {
     StorageLease lease;
     ~Backing() { if (buffer.ptr()) mx::allocator::free(buffer); }
 };
+// MLX's cache may return a physically larger backing than the requested
+// bytes. Managed buffers have a frozen capacity upper, so their allocation
+// phase uses fresh bins; the owner restores the caller's compute cache hint.
+struct ExactCapacityCacheScope {
+    size_t previous;
+    ExactCapacityCacheScope() : previous(mx::set_cache_limit(0)) {mx::clear_cache();}
+    ~ExactCapacityCacheScope() {mx::set_cache_limit(previous);}
+};
 // The array Data owns both allocation and ledger claim, including escaped
 // views. A pager/bank going out of scope must not release a live reader's claim.
 inline Tensor allocate(MemoryLedger &ledger, uint64_t bytes, uint64_t upper,
@@ -24,6 +32,7 @@ inline Tensor allocate(MemoryLedger &ledger, uint64_t bytes, uint64_t upper,
     auto reservation = ledger.try_reserve(kind, upper, "gguf-resident-or-slot-v1");
     require(reservation.has_value(), "gguf_storage: managed backing budget insufficient");
     auto owner = std::make_shared<Backing>();
+    ExactCapacityCacheScope exact;
     owner->buffer = mx::allocator::malloc(size_t(bytes));
     require(owner->buffer.ptr() != nullptr, "gguf_storage: MLX allocation failed");
     const auto actual = mx::allocator::allocator().size(owner->buffer);

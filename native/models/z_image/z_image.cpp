@@ -2097,13 +2097,14 @@ class GgufStageAdapter final : public streaming::ModelSlotAdapter {
     std::optional<Tensor> image_, caption_, caption_freqs_;
     bool refiners_ = false;
     bool compiled_bf16_ = false;
+    bool raw_gpu_f16_=false;
     Weights current_;
     uint32_t pass_ = 0, pool_ = 0;
     uint64_t sequence_ = 0;
   public:
     GgufStageAdapter(streaming::GgufWeightPager &source, uint32_t slots, Event event, std::atomic<bool> &cancel,
-                     bool refiners = false, bool compiled_bf16 = false)
-        : source_(source), cancel_(cancel), event_(std::move(event)), jobs_(slots), refiners_(refiners), compiled_bf16_(compiled_bf16) {
+                     bool refiners = false, bool compiled_bf16 = false,bool raw_gpu_f16=false)
+        : source_(source), cancel_(cancel), event_(std::move(event)), jobs_(slots), refiners_(refiners), compiled_bf16_(compiled_bf16),raw_gpu_f16_(raw_gpu_f16) {
         for (auto &job : jobs_) job.owner = this;
     }
     void bind_pass(uint32_t pass, const Tensor &value, const Tensor &freqs, const Tensor &temb) {
@@ -2157,7 +2158,8 @@ class GgufStageAdapter final : public streaming::ModelSlotAdapter {
             }
         } else {
             event_("z_image_denoise_block", int(block), 30);
-            *value_ = z_block(*value_, current_, "layers." + std::to_string(block), *freqs_, *temb_,
+            *value_ = raw_gpu_f16_ ? z_compiled_packed_block(*value_,current_,"layers."+std::to_string(block),*freqs_,*temb_,true,false,true)
+                : z_block(*value_, current_, "layers." + std::to_string(block), *freqs_, *temb_,
                               nullptr, int(2 + block), nullptr, false, nullptr, compiled_bf16_);
             mx::eval(*value_); // Actual last reader completion, not a submission timestamp.
         }
@@ -2192,7 +2194,8 @@ struct ZImageGgufStream::Impl {
         streaming::SourceFileIdentity file; file.logical_id = "transformer"; file.path = path;
         lease = streaming::SourceLease::capture_verified({std::move(file)}, &cancel);
         plan = z_image::describe_gguf_execution(lease, p, width, height, caption, steps, profile, residency);
-        require(gguf::checked_add(gguf::checked_add(plan.packed_capacity_upper, plan.read_capacity_upper), plan.dense_capacity_upper) <= budget,
+        require(gguf::checked_add(gguf::checked_add(gguf::checked_add(plan.packed_capacity_upper, plan.read_capacity_upper),
+                plan.dense_capacity_upper),plan.gpu_prepare_capacity_upper) <= budget,
                 "qe_budget_floor: packed source and dense slots exceed managed weight ceiling");
         const size_t main = plan.descriptor.stages.size() - 1;
         source = std::make_unique<streaming::GgufWeightPager>(lease, plan.descriptor, plan.descriptor.stages[main],
@@ -2200,7 +2203,7 @@ struct ZImageGgufStream::Impl {
         event("load_gguf_packed_source", 0, 1);
         source->load_packed(&cancel); source->load_resident_aliases(fixed);
         event("load_gguf_packed_source", 1, 1);
-        adapter = std::make_shared<GgufStageAdapter>(*source, p + 1, event, cancel, false, profile == "z-dense-bf16-v1");
+        adapter = std::make_shared<GgufStageAdapter>(*source, p + 1, event, cancel, false, profile == "z-dense-bf16-v1",profile=="z-raw-gpu-affine-f16-v1");
         executor = std::make_unique<streaming::StageExecutor>(uint32_t(main), lease->generation(), adapter);
         executor->begin(plan.layout.stages[main]);
         if (main) {
@@ -2277,6 +2280,10 @@ QuantizedExecutionMetrics ZImageGgufStream::metrics() const {
     result.source_residency = impl_->plan.descriptor.workload.at("source_residency");
     result.source_logical_bytes = source.source_logical_bytes; result.read_buffer_bytes = source.read_buffer_capacity_bytes;
     result.source_read_bytes = source.source_read_bytes; result.streamed_read_seconds = source.streamed_read_seconds;
+    result.gpu_affine_preparations=source.gpu_affine_preparations;result.gpu_affine_output_bytes=source.gpu_affine_output_bytes;
+    result.gpu_prepare_seconds=source.gpu_prepare_seconds;result.gpu_prepare_capacity_upper=impl_->plan.gpu_prepare_capacity_upper;
+    result.precision_profile=impl_->plan.descriptor.workload.at("precision");
+    result.decode_backend=result.precision_profile=="z-raw-gpu-affine-f16-v1" ? "cpu_io+metal_affine-v1" : "cpu_simd";
     if (streams_refiners()) {
         const auto refiners = impl_->refiner_source->metrics();
         const auto ref_execution = impl_->refiner_executor->counters();
@@ -2288,6 +2295,8 @@ QuantizedExecutionMetrics ZImageGgufStream::metrics() const {
         result.refiner_fills = refiners.fill_count; result.refiner_slots = 1;
         result.refiner_decoded_bytes = refiners.decoded_bytes;
         result.refiner_capacity_bytes = refiners.maximum_dense_pool_capacity_bytes;
+        result.gpu_affine_preparations+=refiners.gpu_affine_preparations;result.gpu_affine_output_bytes+=refiners.gpu_affine_output_bytes;
+        result.gpu_prepare_seconds+=refiners.gpu_prepare_seconds;
         result.dense_capacity_bytes = std::max(result.dense_capacity_bytes, result.refiner_capacity_bytes);
         require(result.refiner_fills == uint64_t(impl_->next) * 4 && ref_execution.groups_submitted == result.refiner_fills,
                 "GGUF refiner fills/readers do not match actual passes");
@@ -3415,6 +3424,12 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     require(r.width % 16 == 0 && r.height % 16 == 0, "Z-Image dimensions must be multiples of 16");
     const bool quantized = r.quantized_execution.active();
     const bool quantized_bf16 = quantized && r.quantized_execution.precision_profile == "z-dense-bf16-v1";
+    const bool quantized_raw_gpu=quantized && r.quantized_execution.precision_profile=="z-raw-gpu-affine-f16-v1";
+    uint64_t raw_gpu_cache_bytes=0;
+    if (std::getenv("TURBOCIDER_Z_RAW_GPU_CACHE_BYTES")) {
+        require(quantized_raw_gpu,"qe_config_conflict: raw GPU cache hint requires raw GPU profile");
+        raw_gpu_cache_bytes=z_qwen3_gguf_integer("TURBOCIDER_Z_RAW_GPU_CACHE_BYTES",0,1ull<<30);
+    }
     require(!quantized_bf16 || (!std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") &&
                 !std::getenv("TURBOCIDER_Z_FFN_CAPTURE_DIR")),
             "qe_config_conflict: dense BF16 compiled profile conflicts with eager/capture overrides");
@@ -3542,7 +3557,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     RequestCacheLimit cache_limit(
         streamed || constrained_memory || gguf_direct_import_,
-        (tight_exact || quantized) ? 0 : gguf_direct_import_ ? gguf_allocator_cache_bytes_ : r.allocator_cache_bytes);
+        quantized_raw_gpu ? raw_gpu_cache_bytes : (tight_exact || quantized) ? 0 : gguf_direct_import_ ? gguf_allocator_cache_bytes_ : r.allocator_cache_bytes);
     mx::reset_peak_memory();
     select_loras(r);
     auto text_start = Clock::now();
@@ -3609,7 +3624,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     !nvfp4_transformer_ && active_lora_strategy_ != "inference_time",
                 "routed Z-Image BF16 GPU + W8A8 ANE requires resident BF16 weights");
     event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
-    r.compile_gpu = quantized_bf16 || gguf_compile_packed_ || (!exact_streaming && r.execution == "gpu" &&
+    r.compile_gpu = quantized_bf16 || quantized_raw_gpu || gguf_compile_packed_ || (!exact_streaming && r.execution == "gpu" &&
                     !gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ &&
                     active_lora_strategy_ != "inference_time" &&
                     !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS"));
@@ -3947,6 +3962,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     std::optional<QuantizedExecutionMetrics> quantized_metrics;
     if (quantized) {
         gguf_stream_->finish(); quantized_metrics = gguf_stream_->metrics();
+        quantized_metrics->allocator_cache_limit_bytes=raw_gpu_cache_bytes;
         transformer_.clear(); gguf_stream_.reset(); mx::clear_cache();
     }
     std::optional<BlockResidencyMetrics> exact_metrics;
@@ -4125,6 +4141,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     if (quantized) {
         result.backend = r.quantized_execution.precision_profile == "z-source-native-affine-v1" || r.quantized_execution.precision_profile == "z-mlx-compat-affine-v1"
             ? "mlx_cpp_metal_gguf_bounded_native_affine" : "mlx_cpp_metal_gguf_bounded_cpu_dequant";
+        if (quantized_raw_gpu) result.backend="mlx_cpp_metal_gguf_raw_cpu_io_gpu_affine";
         result.precision = r.quantized_execution.precision_profile.value_or("z-source-mixed-v1");
     }
     if (gguf_direct_import_) {

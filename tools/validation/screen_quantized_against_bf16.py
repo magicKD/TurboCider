@@ -12,7 +12,7 @@ from screen_gguf_memory_budgets import positive, sha
 
 REVISION = "fastest-bf16-low-memory-screen-v2"
 PRIVATE_CONTROLS = {"TURBOCIDER_Z_GGUF_IMPORT", "TURBOCIDER_Z_GGUF_PACKED_WEIGHT_LIMIT_BYTES",
-                    "TURBOCIDER_Z_GGUF_COMPILE_PACKED", "TURBOCIDER_Z_GGUF_RETAIN_PACKED", "TURBOCIDER_Z_GGUF_COMPUTE", "TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES"}
+                    "TURBOCIDER_Z_GGUF_COMPILE_PACKED", "TURBOCIDER_Z_GGUF_RETAIN_PACKED", "TURBOCIDER_Z_GGUF_COMPUTE", "TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES", "TURBOCIDER_Z_RAW_GPU_CACHE_BYTES"}
 
 
 def content_identity(report):
@@ -166,12 +166,18 @@ def main():
     for name in ("baseline-timing", "baseline-memory", "candidate-timing", "candidate-memory"):
         p.add_argument("--"+name, type=Path, required=True)
     p.add_argument("--min-samples", type=int, default=4)
+    p.add_argument("--candidate-prefetch",type=int,choices=(-1,0,1,2),help="explicit candidate layout cell; retains full raw report hashes")
     p.add_argument("--output", type=Path, required=True)
     a = p.parse_args()
     if a.output.exists() or a.output.is_symlink():
         p.error("output already exists")
     paths = [a.baseline_timing, a.baseline_memory, a.candidate_timing, a.candidate_memory]
-    result = screen(*(json.loads(path.read_text()) for path in paths), min_samples=a.min_samples)
+    reports=[json.loads(path.read_text()) for path in paths]
+    if a.candidate_prefetch is not None:
+        for i in (2,3):
+            reports[i]={**reports[i],"runs":[row for row in reports[i]["runs"] if row["prefetch"]==a.candidate_prefetch]}
+    result = screen(*reports, min_samples=a.min_samples)
+    result["candidate_selected_prefetch"]=a.candidate_prefetch
     result["raw_reports"] = [{"id": path.parent.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for path in paths]
     result["verifier_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     a.output.parent.mkdir(parents=True, exist_ok=True)

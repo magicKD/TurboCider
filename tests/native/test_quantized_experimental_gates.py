@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 PROBE = r'''
-import ctypes as C, json, sys
+import ctypes as C, json, sys, os
 lib=C.CDLL(sys.argv[1]);lib.tc_engine_create_model.argtypes=[C.c_char_p,C.c_char_p,C.POINTER(C.c_void_p),C.POINTER(C.c_void_p)]
 lib.tc_string_free.argtypes=[C.c_void_p];lib.tc_engine_free.argtypes=[C.c_void_p]
 engine,error=C.c_void_p(),C.c_void_p()
@@ -24,6 +24,10 @@ if not status:
         inputs=[dict(kind="text",role="prompt",text="experimental rejection fixture")],
         outputs=[dict(kind="image",path=sys.argv[4],width=512,height=512,audio=False)],
         sampling=dict(seed=42,steps=1),execution=dict(policy="gpu"),parameters=dict(dynamic_text=True))
+    if os.environ.get("TC_RAW_QUANTIZED_TEST")=="1":
+        request["execution"].update(allow_approximation=True,quantized_execution=dict(schema_version=1,enabled=True,
+            precision_profile="z-raw-gpu-affine-f16-v1",source_residency="packed_streamed",prefetch_layers=1))
+        request["parameters"]["compile_gpu"]=True
     status=lib.tc_engine_generate(engine,json.dumps(request).encode(),None,None,C.byref(result),C.byref(error))
     if result.value:lib.tc_string_free(result)
 message=C.string_at(error).decode() if error.value else None
@@ -42,6 +46,7 @@ class ExperimentalGateTests(unittest.TestCase):
         q8 = ROOT/"models/z-image-runtime-gguf-q8"
         if not (bf16.is_dir() and q8.is_dir()): self.fail("required local model fixtures missing")
         cases = [("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct"}),
+                 ("z-image-turbo-gguf",q8,{"TC_RAW_QUANTIZED_TEST":"1"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_RETAIN_PACKED":"1"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1","TURBOCIDER_Z_GGUF_COMPUTE":"f16_down64"}),

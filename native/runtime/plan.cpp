@@ -70,14 +70,15 @@ static ExecutionPlan make_plan_impl(
     validate_quantized_execution(r.quantized_execution);
     if (r.quantized_execution.active()) {
         const bool dense_bf16 = r.quantized_execution.precision_profile == "z-dense-bf16-v1";
-        require(!dense_bf16 || (r.allow_approximation && r.compile_gpu),
+        const bool raw_gpu=r.quantized_execution.precision_profile=="z-raw-gpu-affine-f16-v1";
+        require(!(dense_bf16 || raw_gpu) || (r.allow_approximation && r.compile_gpu),
                 "qe_config_conflict: dense BF16 candidate requires allow_approximation and compile_gpu");
         require(r.model == "z-image-turbo-gguf" && r.execution == "gpu" && r.operation == "image.generate" &&
                     r.frames == 1 && r.inputs.empty() && r.loras.empty() && r.ane_manifest.empty() &&
                     r.encoder_ane_manifest.empty(), "qe_config_conflict: R1 is Z GGUF GPU text-to-image only");
         require(!r.streaming_selector && !r.residency_specified && !r.memory_budget_specified &&
                     !r.streaming_offload_specified && !r.streaming_offload && r.quantized_cache.empty() &&
-                    r.profile.empty() && (dense_bf16 || !r.compile_gpu) && r.hybrid_mlp_mode == "auto",
+                    r.profile.empty() && (dense_bf16 || raw_gpu || !r.compile_gpu) && r.hybrid_mlp_mode == "auto",
                 "qe_config_conflict: legacy/profile/compile/acceleration options conflict");
         require(!r.memory_constrained.enabled, "qe_envelope_unknown: experimental GGUF is not whole-request certified");
         if (r.streaming.specified()) {

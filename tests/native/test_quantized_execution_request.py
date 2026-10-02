@@ -65,6 +65,23 @@ class QuantizedRequestTests(unittest.TestCase):
             config={"schema_version":1,"enabled":False,**extra}
             self.assertNotEqual(self.plan(self.request(config))[0],0)
 
+    def test_raw_gpu_ready_is_not_cpu_decoded_ready(self):
+        config={"schema_version":1,"enabled":True,"precision_profile":"z-raw-gpu-affine-f16-v1","source_residency":"packed_streamed"}
+        request=self.request(config);request["execution"]["allow_approximation"]=True;request["parameters"]={"compile_gpu":True}
+        status,value,error=self.plan(request);self.assertEqual(status,0,error)
+        self.assertFalse(value["executable"])
+        self.assertEqual(value["quantized_execution"]["mode"],"bounded_raw_packed")
+        self.assertEqual(value["quantized_execution"]["decode_backend"],"cpu_io_gpu_affine")
+        for field in ("mode","backend","residency","approximation","compile"):
+            bad=copy.deepcopy(request)
+            q=bad["execution"]["quantized_execution"]
+            if field=="mode":q["mode"]="bounded_packed"
+            if field=="backend":q["decode_backend"]="cpu_simd"
+            if field=="residency":q["source_residency"]="packed_resident"
+            if field=="approximation":bad["execution"]["allow_approximation"]=False
+            if field=="compile":bad["parameters"]["compile_gpu"]=False
+            with self.subTest(field=field):self.assertNotEqual(self.plan(bad)[0],0)
+
     def test_dense_bf16_is_explicit_approximate_streamed_compiled_candidate(self):
         config={"schema_version":1,"enabled":True,"precision_profile":"z-dense-bf16-v1",
                 "source_residency":"packed_streamed"}

@@ -37,6 +37,9 @@ class MeasurementOptionsTests(unittest.TestCase):
         self.reject(["--precision","z-dense-bf16-v1"], "requires bounded packed_streamed")
         self.reject(["--precision","z-dense-bf16-v1","--source-residency","packed_streamed","--prefetch","-1"], "requires bounded packed_streamed")
         self.reject(["--precision","z-dense-bf16-v1","--source-residency","packed_streamed","--gpu-eval-blocks"], "requires bounded packed_streamed")
+        self.reject(["--precision","z-raw-gpu-affine-f16-v1"], "raw GPU profile requires bounded packed_streamed")
+        self.reject(["--precision","z-raw-gpu-affine-f16-v1","--prefetch","-1","--source-residency","packed_streamed"], "raw GPU profile requires bounded packed_streamed")
+        self.reject(["--raw-gpu-cache-bytes","1"], "raw GPU cache hint requires raw GPU profile")
         self.reject(["--alternate-prompt","different"], "alternate prompt requires diagnostic")
         self.reject(["--alternate-prompt","different","--prefetch","-1","--native-import","cpu_direct",
                      "--retain-packed","--runs","3","--measurement","timing"], "alternate prompt requires diagnostic")

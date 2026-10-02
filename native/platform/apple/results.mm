@@ -115,9 +115,9 @@ static NSArray *strings(const std::vector<std::string> &values) {
 static NSDictionary *quantized_config(const QuantizedExecutionConfig &c) {
     if (!c.active()) return @{@"enabled": @NO, @"schema_version": @(c.schema_version.value_or(1))};
     return @{@"enabled": @YES, @"schema_version": @1,
-        @"mode": @(c.mode.value_or(c.precision_profile == "z-source-native-affine-v1" || c.precision_profile == "z-mlx-compat-affine-v1" ? "bounded_packed" : "bounded_dequant").c_str()),
+        @"mode": @(c.mode.value_or(c.precision_profile=="z-raw-gpu-affine-f16-v1" ? "bounded_raw_packed" : c.precision_profile == "z-source-native-affine-v1" || c.precision_profile == "z-mlx-compat-affine-v1" ? "bounded_packed" : "bounded_dequant").c_str()),
         @"source_residency": @(c.source_residency.value_or("packed_resident").c_str()),
-        @"decode_backend": @(c.decode_backend.value_or("cpu_simd").c_str()),
+        @"decode_backend": @(c.decode_backend.value_or(c.precision_profile=="z-raw-gpu-affine-f16-v1" ? "cpu_io_gpu_affine" : "cpu_simd").c_str()),
         @"precision_profile": @(c.precision_profile.value_or("z-source-mixed-v1").c_str()),
         @"granularity": @"layer", @"prefetch_layers": @(c.prefetch_layers.value_or(1)),
         @"persistent_dense_layers": @0, @"oversized_layer_policy": @"reject",
@@ -1390,15 +1390,21 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"source_float_bytes": @(m.source_float_bytes), @"max_dense_pool_capacity_bytes": @(m.dense_capacity_bytes),
             @"managed_peak_bytes": @(m.managed_peak_bytes), @"slot_count": @(m.slots), @"prefetch_layers": @(m.prefetch),
             @"fill_count": @(m.fills), @"decoded_bytes": @(m.decoded_bytes),
+            @"slot_filled_bytes":@(m.decoded_bytes),
             @"source_load_seconds": @(m.source_load_seconds), @"decode_active_seconds": @(m.decode_seconds),
             @"exposed_ready_wait_seconds": @(m.exposed_wait_seconds),
-            @"scope": @"managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            @"scope": @"managed GGUF source/slot and current GPU affine output buffers; excludes encoder/VAE/activations/framework/OS",
             @"source_residency": @(m.source_residency.c_str()), @"source_logical_bytes": @(m.source_logical_bytes),
             @"packed_read_buffer_capacity_bytes": @(m.read_buffer_bytes), @"source_read_bytes": @(m.source_read_bytes),
             @"streamed_read_seconds": @(m.streamed_read_seconds),
             @"refiner_fill_count": @(m.refiner_fills), @"refiner_slot_count": @(m.refiner_slots),
             @"refiner_decoded_bytes": @(m.refiner_decoded_bytes),
-            @"refiner_pool_capacity_bytes": @(m.refiner_capacity_bytes)
+            @"refiner_pool_capacity_bytes": @(m.refiner_capacity_bytes),
+            @"decode_backend":@(m.decode_backend.c_str()),
+            @"gpu_affine_preparations":@(m.gpu_affine_preparations),@"gpu_affine_output_bytes":@(m.gpu_affine_output_bytes),
+            @"gpu_prepare_capacity_upper_bytes":@(m.gpu_prepare_capacity_upper),@"gpu_prepare_wall_seconds":@(m.gpu_prepare_seconds),
+            @"allocator_cache_limit_bytes":@(m.allocator_cache_limit_bytes),
+            @"precision_profile":@(m.precision_profile.c_str()),@"ready_representation":m.precision_profile=="z-raw-gpu-affine-f16-v1" ? @"raw-gguf-v1" : @"cpu-materialized-v1"
         };
         value[@"validation"] = @"experimental source-mixed GGUF execution; not a production capability";
     }

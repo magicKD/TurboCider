@@ -15,6 +15,8 @@ struct GgufWeightPagerMetrics {
     double packed_read_seconds = 0, decode_seconds = 0;
     uint64_t source_logical_bytes = 0, read_buffer_capacity_bytes = 0, source_read_bytes = 0;
     double streamed_read_seconds = 0;
+    uint64_t gpu_affine_preparations=0,gpu_affine_output_bytes=0;
+    double gpu_prepare_seconds=0;
 };
 
 // Packed-resident source, owner-created immutable raw buffers, and a bounded
