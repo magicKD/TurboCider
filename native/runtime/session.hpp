@@ -5,6 +5,7 @@
 #include "memory_policy.hpp"
 #include "memory_trace.hpp"
 #include "streaming/gguf_packed_metrics.hpp"
+#include "tensor_metrics.hpp"
 #include <chrono>
 #include <map>
 #include <memory>
@@ -217,6 +218,12 @@ struct QuantizedExecutionMetrics {
     uint64_t refiner_fills = 0, refiner_capacity_bytes = 0, refiner_decoded_bytes = 0;
     uint32_t refiner_slots = 0;
 };
+struct QuantizedSourceComparison {
+    std::string name;
+    uint32_t step=0;
+    Float32Comparison metrics;
+    bool final_latent=false;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::string selection, backend, precision, checkpoint;
@@ -249,6 +256,7 @@ struct RunResult {
     std::optional<QuantizedExecutionMetrics> quantized_execution;
     std::optional<QuantizedExecutionMetrics> encoder_quantized_execution;
     std::optional<streaming::GgufPackedBankMetrics> gguf_import;
+    std::vector<QuantizedSourceComparison> quantized_source_comparisons;
     std::vector<MemoryTraceEvent> memory_trace;
     std::string native_json;
 };

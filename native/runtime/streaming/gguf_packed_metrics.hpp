@@ -12,5 +12,12 @@ struct GgufPackedBankMetrics {
     double load_seconds = 0, read_seconds = 0, decode_seconds = 0;
     bool released_before_vae = false, serial_refiner_eval = false;
     bool session_packed_retention = false, reused_packed_bank = false, compiled_packed_blocks = false;
+    bool gpu_f16_compute = false;
+    bool gpu_f16_mpp = false;
+    bool qmm_f16_compute = false;
+    bool f16_refiners = false;
+    bool ref_mpp_dynamic = false;
+    uint64_t dense_weight_capacity_upper = 0;
+    uint64_t allocator_cache_limit_bytes = 0;
 };
 } // namespace tc::streaming

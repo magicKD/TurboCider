@@ -26,6 +26,9 @@ def main():
     parser.add_argument("--source-residency",choices=["packed_resident","packed_streamed"],default="packed_resident")
     parser.add_argument("--native-import",choices=["mlx","cpu_direct"],help="explicit experimental import recipe for --prefetch -1")
     parser.add_argument("--compile-packed",action="store_true",help="explicit parameterized native QMM graph; authorized approximation, CPU-direct only")
+    parser.add_argument("--packed-compute",choices=["native","f16_down64","f16_mpp_down64","qmm_f16_down64","qmm_f16_ref16_down64","qmm_f16_refmpp_dynamic"],help="experimental FP16 compute, FP32 glue; qmm mode never decodes dense W; refmpp uses dynamic per-row FP16 normalization")
+    parser.add_argument("--native-allocator-cache-bytes",type=int,help="explicit FP16 experiment cache hint 0..1GiB; not a RAM cap")
+    parser.add_argument("--validate-source-blocks",action="store_true",help="diagnostic independent source trajectory, FP64 every-block N1; not timing/memory")
     parser.add_argument("--retain-packed",action="store_true",help="experimental packed-only session retention across VAE; CPU-direct only, NOT a RAM cap")
     parser.add_argument("--native-weight-limit-bytes",type=int,help="CPU-direct packed-bank managed ceiling; NOT whole-request RAM cap")
     parser.add_argument("--gpu-eval-blocks",action="store_true",help="explicit existing per-main-block eval boundary (separate measured candidate)")
@@ -77,6 +80,27 @@ def main():
         if key in os.environ and os.environ[key]!="1": parser.error("conflicting packed compile environment")
         os.environ[key]="1"
     compile_packed=os.environ.get("TURBOCIDER_Z_GGUF_COMPILE_PACKED","0")=="1"
+    compute=args.packed_compute or os.environ.get("TURBOCIDER_Z_GGUF_COMPUTE","native")
+    if compute not in ("native","f16_down64","f16_mpp_down64","qmm_f16_down64","qmm_f16_ref16_down64","qmm_f16_refmpp_dynamic"): parser.error("unknown packed compute")
+    if compute!="native" and (native_import!="cpu_direct" or not compile_packed or args.baseline_bf16 or args.gpu_eval_blocks):
+        parser.error("GPU FP16 compute requires CPU-direct compiled candidate without baseline/eager controls")
+    if args.packed_compute:
+        key="TURBOCIDER_Z_GGUF_COMPUTE"
+        if key in os.environ and os.environ[key]!=compute: parser.error("conflicting packed compute environment")
+        os.environ[key]=compute
+    if args.native_allocator_cache_bytes is not None:
+        if compute=="native" or native_import!="cpu_direct" or not 0<=args.native_allocator_cache_bytes<=1<<30:
+            parser.error("GGUF allocator cache requires explicit FP16 CPU-direct recipe and 0..1GiB")
+        key="TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES";value=str(args.native_allocator_cache_bytes)
+        if key in os.environ and os.environ[key]!=value: parser.error("conflicting GGUF allocator cache environment")
+        os.environ[key]=value
+    if args.validate_source_blocks:
+        if compute=="native" or args.measurement!="diagnostic": parser.error("source block validation requires diagnostic FP16 experiment")
+        key="TURBOCIDER_Z_GGUF_VALIDATE_BLOCKS"
+        if key in os.environ and os.environ[key]!="1": parser.error("conflicting source validation environment")
+        os.environ[key]="1"
+    if args.measurement!="diagnostic" and os.environ.get("TURBOCIDER_Z_GGUF_VALIDATE_BLOCKS","0")!="0":
+        parser.error("source validation cannot contaminate timing/memory")
     if args.retain_packed:
         if native_import!="cpu_direct" or args.baseline_bf16: parser.error("packed retention requires CPU-direct candidate")
         key="TURBOCIDER_Z_GGUF_RETAIN_PACKED"

@@ -7,6 +7,8 @@
 #include "hybrid_stream.hpp"
 #include "vae.hpp"
 #include "metal_kernels.hpp"
+#include "metal/affine_fp16.hpp"
+#include "metal/affine_fp16_mpp.hpp"
 
 #include "../../media/image.hpp"
 #include "../../platform/apple/platform.hpp"
@@ -1068,14 +1070,92 @@ const std::vector<std::string> &z_packed_block_fields() {
     return fields;
 }
 
+Tensor z_compiled_f16_refiner(const Tensor &x,const Weights &weights,const std::string &prefix,
+                              const Tensor &freqs,const Tensor &temb,bool noise,bool dynamic_mpp=false) {
+    auto make_fields=[](bool mod) {
+        std::vector<std::string> fields{"attention.qkv.weight","attention.out.weight","attention_norm1.weight",
+            "attention.q_norm.weight","attention.k_norm.weight","attention_norm2.weight","ffn_norm1.weight",
+            "feed_forward.w1.weight","feed_forward.w3.weight","feed_forward.w2.weight","ffn_norm2.weight"};
+        if (mod) { fields.emplace_back("adaLN_modulation.0.weight");fields.emplace_back("adaLN_modulation.0.bias"); }
+        return fields;
+    };
+    const auto fields=make_fields(noise);
+    std::vector<Tensor> args{x,freqs,temb};
+    for (const auto &field:fields) args.push_back(weights.at(prefix+"."+field));
+    auto make_graph=[&](bool mod,bool dynamic) {
+        auto names=make_fields(mod);
+        return new ZImageGpuGraph(mx::compile([mod,names,dynamic](const std::vector<Tensor> &a) {
+            std::vector<std::string> keys;
+            for (const auto &name:names) keys.push_back("ref."+name);
+            Weights w;w.bind_arrays(keys,a,3);
+            auto project=[&](const Tensor &input,const std::string &name,float divisor=1.f) {
+                return dynamic ? z_metal::dense_fp16_mpp_dynamic(input,w.at(name+".weight"),divisor)
+                    : z_metal::dense_fp16_matmul(input,w.at(name+".weight"),divisor);
+            };
+            std::vector<Tensor> modulation;
+            if (mod) modulation=mx::split(mx::expand_dims(linear_compat(a[2],w,"ref.adaLN_modulation.0"),1),4,-1);
+            auto attention_input=rms(a[0],w.at("ref.attention_norm1.weight"),1e-5f);
+            if (mod) attention_input=attention_input*(Tensor(1.f,modulation[0].dtype())+modulation[0]);
+            auto rotated=z_prepare_qkv(project(attention_input,"ref.attention.qkv"),w.at("ref.attention.q_norm.weight"),
+                w.at("ref.attention.k_norm.weight"),a[1]);
+            auto attention=project(attend(rotated[0],rotated[1],rotated[2],false,{},
+                !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA")),"ref.attention.out");
+            auto normalized_attention=rms(attention,w.at("ref.attention_norm2.weight"),1e-5f);
+            auto value=mod ? a[0]+mx::tanh(modulation[1])*normalized_attention : a[0]+normalized_attention;
+            auto input=rms(value,w.at("ref.ffn_norm1.weight"),1e-5f);
+            if (mod) input=input*(Tensor(1.f,modulation[2].dtype())+modulation[2]);
+            auto hidden=silu(project(input,"ref.feed_forward.w1"))*project(input,"ref.feed_forward.w3");
+            auto feed=rms(project(hidden,"ref.feed_forward.w2",64.f),w.at("ref.ffn_norm2.weight"),1e-5f);
+            return std::vector<Tensor>{mod ? value+mx::tanh(modulation[3])*feed : value+feed};
+        }));
+    };
+    if (dynamic_mpp) {
+        if (noise) { static auto *graph=make_graph(true,true);return (*graph)(args)[0]; }
+        static auto *graph=make_graph(false,true);return (*graph)(args)[0];
+    }
+    if (noise) { static auto *graph=make_graph(true,false);return (*graph)(args)[0]; }
+    static auto *graph=make_graph(false,false);return (*graph)(args)[0];
+}
+
 Tensor z_compiled_packed_block(const Tensor &x, const Weights &weights, const std::string &prefix,
-                               const Tensor &freqs, const Tensor &temb) {
+                               const Tensor &freqs, const Tensor &temb, bool gpu_f16 = false, bool f16_mpp = false, bool qmm_f16 = false) {
     for (const auto *stem : {"adaLN_modulation.0", "attention.qkv", "attention.out",
          "feed_forward.w1", "feed_forward.w3", "feed_forward.w2"})
         require(weights.quantized(prefix + "." + stem) && !weights.convrot(prefix + "." + stem) &&
                 !weights.nvfp4(prefix + "." + stem), "packed compiled block requires six plain affine projections");
     std::vector<Tensor> args{x, freqs, temb};
     for (const auto &key : z_packed_block_fields()) args.push_back(weights.at(prefix + "." + key));
+    if (gpu_f16) {
+        auto make_f16_graph=[](bool mpp,bool qmm) { return new ZImageGpuGraph(mx::compile([mpp,qmm](const std::vector<Tensor> &a) {
+            std::vector<std::string> keys;
+            for (const auto &field : z_packed_block_fields()) keys.push_back("packed." + field);
+            Weights w; w.bind_arrays(keys,a,3);
+            auto project=[&](const Tensor &input,const std::string &name,float divisor=1.f) {
+                if ((mpp || qmm) && name=="packed.adaLN_modulation.0") return linear_compat(input,w,name);
+                const auto &q=w.at(name+".weight"), &s=w.at(name+".scales");
+                const auto geometry=z_quantized_geometry(q,s,input.shape(-1));
+                require(geometry.group_size==32,"GPU FP16 compute only supports affine g32");
+                auto result=qmm ? z_metal::affine_qmm_fp16_matmul(input,q,s,w.at(name+".biases"),geometry.bits,divisor)
+                    : mpp ? z_metal::affine_fp16_mpp_matmul(input,q,s,w.at(name+".biases"),geometry.bits,divisor)
+                    : z_metal::affine_fp16_matmul(input,q,s,w.at(name+".biases"),geometry.bits,divisor);
+                return w.has(name+".bias") ? result+w.at(name+".bias") : result;
+            };
+            auto mod=mx::split(mx::expand_dims(project(a[2],"packed.adaLN_modulation.0"),1),4,-1);
+            auto attention_input=rms(a[0],w.at("packed.attention_norm1.weight"),1e-5f)*(Tensor(1.f,mod[0].dtype())+mod[0]);
+            auto rotated=z_prepare_qkv(project(attention_input,"packed.attention.qkv"),
+                w.at("packed.attention.q_norm.weight"),w.at("packed.attention.k_norm.weight"),a[1]);
+            auto attention=project(attend(rotated[0],rotated[1],rotated[2],false,{},
+                !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA")),"packed.attention.out");
+            auto value=a[0]+mx::tanh(mod[1])*rms(attention,w.at("packed.attention_norm2.weight"),1e-5f);
+            auto input=rms(value,w.at("packed.ffn_norm1.weight"),1e-5f)*(Tensor(1.f,mod[2].dtype())+mod[2]);
+            auto hidden=silu(project(input,"packed.feed_forward.w1"))*project(input,"packed.feed_forward.w3");
+            auto feed=project(hidden,"packed.feed_forward.w2",64.f);
+            return std::vector<Tensor>{value+mx::tanh(mod[3])*rms(feed,w.at("packed.ffn_norm2.weight"),1e-5f)};
+        })); };
+        if (qmm_f16) { static auto *qmm_graph=make_f16_graph(false,true); return (*qmm_graph)(args)[0]; }
+        if (f16_mpp) { static auto *mpp_graph=make_f16_graph(true,false); return (*mpp_graph)(args)[0]; }
+        static auto *f16_graph=make_f16_graph(false,false); return (*f16_graph)(args)[0];
+    }
     // One shape/dtype-parameterized graph; all layer contents are arguments.
     // No decoded bank or layer/backing pointer is captured by the compiler.
     static auto *graph = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
@@ -1596,7 +1676,8 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
                      std::vector<Tensor> *context_cache = nullptr,
                      ane::HybridFfn *runtime = nullptr, bool runtime_gguf_compatibility = false,
                      ZImageGgufStream *gguf_stream = nullptr, bool serial_refiner_eval = false,
-                     bool compile_packed = false) {
+                     bool compile_packed = false, bool gpu_f16 = false, bool f16_mpp = false, bool qmm_f16 = false,
+                     bool f16_refiners = false,bool ref_mpp_dynamic=false,const ZImageBlockObserver &observe={}) {
     require(!gguf_stream || (!weight_stream && !exact_stream && !hybrid_stream && !runtime && !hybrid),
             "GGUF bounded execution conflicts with another transformer backend");
     require(!hybrid_stream || (!weight_stream && !exact_stream), "hybrid/exact stream conflict");
@@ -1642,17 +1723,20 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
         checkpoint(cancelled);
         const bool bf16_fallback = hybrid && z_hybrid_bf16_block(i);
         auto block_input = bf16_fallback ? mx::astype(image, mx::bfloat16) : image;
-        image = runtime ? z_runtime_block(block_input, w, "noise_refiner." + std::to_string(i),
+        image = f16_refiners ? z_compiled_f16_refiner(block_input,w,"noise_refiner."+std::to_string(i),image_freqs,temb,true,ref_mpp_dynamic)
+            : runtime ? z_runtime_block(block_input, w, "noise_refiner." + std::to_string(i),
                                           image_freqs, temb, *runtime, i, cancelled, runtime_gguf_compatibility)
             : hybrid_stream ? hybrid_stream->encode_noise(uint32_t(i), image, image_freqs, temb)
             : z_block(block_input, w, "noise_refiner." + std::to_string(i), image_freqs, temb,
                         bf16_fallback ? nullptr : hybrid,
                         i, gpu_graph, compile_hybrid_segments);
         if (serial_refiner_eval) { mx::eval(image);checkpoint(cancelled); }
+        if (observe) observe("noise_refiner."+std::to_string(i),image);
         if (!reuse_context)
-            caption_emb = z_context_block(caption_emb, w,
-                                          "context_refiner." + std::to_string(i), caption_freqs);
+            caption_emb = f16_refiners ? z_compiled_f16_refiner(caption_emb,w,"context_refiner."+std::to_string(i),caption_freqs,temb,false,ref_mpp_dynamic)
+                : z_context_block(caption_emb, w,"context_refiner." + std::to_string(i), caption_freqs);
         if (serial_refiner_eval && !reuse_context) { mx::eval(caption_emb);checkpoint(cancelled); }
+        if (observe && !reuse_context) observe("context_refiner."+std::to_string(i),caption_emb);
     }
     if (context_cache && !reuse_context) context_cache->push_back(caption_emb);
     auto unified = mx::concatenate({image, caption_emb}, 1);
@@ -1672,12 +1756,17 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
             auto block_input = bf16_fallback ? mx::astype(unified, mx::bfloat16) : unified;
             unified = runtime ? z_runtime_block(block_input, w, "layers." + std::to_string(i),
                                                  unified_freqs, temb, *runtime, 2 + i, cancelled, runtime_gguf_compatibility)
+                : gpu_f16 ? z_compiled_packed_block(block_input,w,"layers."+std::to_string(i),unified_freqs,temb,true,f16_mpp,qmm_f16)
                 : z_block(block_input, weight_stream ? streamed : w,
                               "layers." + std::to_string(i), unified_freqs, temb,
                               bf16_fallback ? nullptr : hybrid,
                               2 + i, gpu_graph, compile_hybrid_segments, nullptr, true, compile_packed);
             const bool eager = std::getenv("TURBOCIDER_Z_EAGER_BLOCKS");
-            if (eager || hybrid || weight_stream) {
+            if (observe) observe("layers."+std::to_string(i),unified);
+            // Only the materialized-decode recipes need this matrix lifetime
+            // boundary. Packed QMM has immutable weights and no dense bank;
+            // use the original whole-pass submission instead of 30 host waits.
+            if (eager || hybrid || weight_stream || (gpu_f16 && !qmm_f16)) {
                 mx::eval(unified);
                 checkpoint(cancelled);
             }
@@ -2583,6 +2672,26 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
         gguf_retain_packed_ = std::string_view(raw)=="1";
         require(!gguf_retain_packed_ || gguf_direct_import_, "qe_config_conflict: packed retention requires CPU-direct import");
     }
+    if (const char *raw=std::getenv("TURBOCIDER_Z_GGUF_COMPUTE")) {
+        require(std::string_view(raw)=="native" || std::string_view(raw)=="f16_down64" || std::string_view(raw)=="f16_mpp_down64" || std::string_view(raw)=="qmm_f16_down64" || std::string_view(raw)=="qmm_f16_ref16_down64" || std::string_view(raw)=="qmm_f16_refmpp_dynamic",
+                "qe_config_conflict: unknown GGUF compute recipe");
+        gguf_gpu_f16_=std::string_view(raw)!="native";
+        gguf_gpu_f16_mpp_=std::string_view(raw)=="f16_mpp_down64";
+        gguf_qmm_f16_=std::string_view(raw)=="qmm_f16_down64" || std::string_view(raw)=="qmm_f16_ref16_down64" || std::string_view(raw)=="qmm_f16_refmpp_dynamic";
+        gguf_f16_refiners_=std::string_view(raw)=="qmm_f16_ref16_down64" || std::string_view(raw)=="qmm_f16_refmpp_dynamic";
+        gguf_ref_mpp_dynamic_=std::string_view(raw)=="qmm_f16_refmpp_dynamic";
+        require(!gguf_gpu_f16_ || (gguf_direct_import_ && gguf_compile_packed_),
+                "qe_config_conflict: GPU FP16 compute requires CPU-direct and compiled packed opt-ins");
+    }
+    if (std::getenv("TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES")) {
+        require(gguf_direct_import_ && gguf_gpu_f16_,"qe_config_conflict: GGUF cache experiment requires explicit CPU-direct FP16 compute");
+        gguf_allocator_cache_bytes_=z_qwen3_gguf_integer("TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES",0,1ull<<30);
+    }
+    if (const char *raw=std::getenv("TURBOCIDER_Z_GGUF_VALIDATE_BLOCKS")) {
+        require(std::string_view(raw)=="0" || std::string_view(raw)=="1","qe_config_conflict: source block validation requires 0 or 1");
+        gguf_validate_blocks_=std::string_view(raw)=="1";
+        require(!gguf_validate_blocks_ || gguf_gpu_f16_,"qe_config_conflict: source validation requires explicit FP16 experiment");
+    }
     const bool gguf_encoder = z_qwen3_gguf_path() != nullptr;
     auto comfy_text = root / "split_files/text_encoders/qwen_3_4b.safetensors";
     auto comfy_transformer =
@@ -3433,7 +3542,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     RequestCacheLimit cache_limit(
         streamed || constrained_memory || gguf_direct_import_,
-        (tight_exact || quantized || gguf_direct_import_) ? 0 : r.allocator_cache_bytes);
+        (tight_exact || quantized) ? 0 : gguf_direct_import_ ? gguf_allocator_cache_bytes_ : r.allocator_cache_bytes);
     mx::reset_peak_memory();
     select_loras(r);
     auto text_start = Clock::now();
@@ -3569,6 +3678,36 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     } else {
         reused_packed_bank = gguf_retain_packed_ && transformer_.bytes() != 0;
         load(event, cancelled);
+        if (gguf_gpu_f16_ && !reused_packed_bank) {
+            if (gguf_f16_refiners_)
+                for (const auto *family: {"noise_refiner","context_refiner"}) for (int layer=0;layer<2;++layer)
+                    for (const auto *stem: {"attention.qkv","attention.out","feed_forward.w1","feed_forward.w3","feed_forward.w2"}) {
+                        const auto name=std::string(family)+"."+std::to_string(layer)+"."+stem;
+                        require(!transformer_.quantized(name) && !transformer_.convrot(name) &&
+                            transformer_.at(name+".weight").dtype()==mx::float16,
+                            "qe_adapter_mismatch: FP16 refiner compute requires existing floating FP16 projections");
+                    }
+            std::vector<Tensor> bounds;
+            for (int layer=0;layer<30;++layer)
+                for (const auto *stem : {"adaLN_modulation.0","attention.qkv","attention.out","feed_forward.w1","feed_forward.w3","feed_forward.w2"}) {
+                    const auto name="layers."+std::to_string(layer)+"."+stem;
+                    require(transformer_.quantized(name) && !transformer_.convrot(name) && !transformer_.nvfp4(name),
+                            "qe_adapter_mismatch: GPU FP16 needs six affine main projections");
+                    const auto &q=transformer_.at(name+".weight"),&s=transformer_.at(name+".scales"),&b=transformer_.at(name+".biases");
+                    const int bits=std::string_view(stem)=="adaLN_modulation.0" ? q.shape(1)*32/256 :
+                        q.shape(1)*32/(std::string_view(stem)=="feed_forward.w2" ? 10240 : 3840);
+                    require((bits==4 || bits==8) && s.dtype()==mx::float16 && b.dtype()==mx::float16,
+                            "qe_adapter_mismatch: GPU FP16 metadata representation unsupported");
+                    bounds.push_back(mx::astype(mx::max(mx::abs(s)),mx::float32)*float((1u<<bits)-1u)+
+                                     mx::astype(mx::max(mx::abs(b)),mx::float32));
+                }
+            mx::eval(bounds);
+            for (const auto &bound:bounds) {
+                const float value=bound.item<float>();
+                require(std::isfinite(value) && value<=65504.f,"qe_decode_invalid: GPU FP16 reconstruction bound overflows");
+            }
+            checkpoint(cancelled); mx::clear_cache();
+        }
     }
     if (requested_w8_start >= 0 && gpu_w8_suffix_start_ < 0) {
         for (int ordinal = 0; ordinal < 32; ++ordinal) {
@@ -3715,18 +3854,61 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         !hybrid_ && !weight_stream_ && !exact_stream_ && !gguf_transformer_ &&
         !nvfp4_transformer_ && !convrot_transformer_;
     auto dit_start = Clock::now();
+    std::optional<Tensor> reference_latent=gguf_validate_blocks_ ? std::optional<Tensor>(z) : std::nullopt;
+    std::vector<QuantizedSourceComparison> source_comparisons;
+    auto compare=[&](const std::string &name,uint32_t step,const Tensor &candidate,const Tensor &reference,bool final=false) {
+        require(candidate.shape()==reference.shape() && candidate.dtype()==mx::float32 && reference.dtype()==mx::float32,
+                "qe_adapter_mismatch: source validation tensor geometry/dtype mismatch");
+        auto a=mx::contiguous(candidate),b=mx::contiguous(reference);mx::eval({a,b});
+        Float32ComparisonAccumulator metrics;
+        if (final) metrics.add({a.data<float>(),a.size()},{b.data<float>(),b.size()});
+        else {
+            require(a.ndim()==3 && a.shape(0)==1 && a.shape(2)==3840,"source block validation axes mismatch");
+            const size_t image_valid=size_t(r.width/16)*size_t(r.height/16),caption_valid=size_t(caption.shape(0));
+            auto rows=[&](size_t offset,size_t count) {
+                require(offset+count<=size_t(a.shape(1)),"source validation valid rows exceed tensor");
+                metrics.add({a.data<float>()+offset*3840,count*3840},{b.data<float>()+offset*3840,count*3840});
+            };
+            if (name.starts_with("layers.")) {rows(0,image_valid);rows(size_t(image_rows),caption_valid);}
+            else if (name.starts_with("noise_refiner.")) rows(0,image_valid);
+            else if (name.starts_with("context_refiner.")) rows(0,caption_valid);
+            else throw std::invalid_argument("unknown source validation block");
+        }
+        source_comparisons.push_back({name,step,metrics.result(),final});
+    };
     profile.phase("denoise_begin");
     for (int i = 0; i < r.steps; ++i) {
         checkpoint(cancelled);
         if (gguf_packed_bank_ && gguf_direct_import_) gguf_packed_bank_->check_unchanged();
         event("denoise", i, r.steps);
+        std::vector<std::pair<std::string,Tensor>> reference_blocks;
+        if (reference_latent) {
+            auto noise=denoise(*reference_latent,caption,sigmas[i],float(r.width),r.height,i,event,cancelled,nullptr,true,
+                [&](const std::string &name,const Tensor &value) {
+                    auto retained=mx::contiguous(value);mx::eval(retained);
+                    reference_blocks.emplace_back(name,std::move(retained));
+                });
+            *reference_latent=euler_step(*reference_latent,noise,sigmas[i+1]-sigmas[i]);mx::eval(*reference_latent);
+            require(reference_blocks.size()==34,"source validation missed a transformer block");
+        }
+        size_t observed=0;
+        ZImageBlockObserver observer;
+        if (reference_latent) observer=[&](const std::string &name,const Tensor &value) {
+            require(observed<reference_blocks.size() && reference_blocks[observed].first==name,"source validation block order mismatch");
+            compare(name,uint32_t(i),value,reference_blocks[observed++].second);
+        };
         auto noise = denoise(z, caption, sigmas[i], float(r.width), r.height, i, event, cancelled,
-                             cache_context ? &context_cache : nullptr);
+                             cache_context ? &context_cache : nullptr,false,observer);
+        if (reference_latent) require(observed==34,"candidate validation missed a transformer block");
         z = euler_step(z, noise, sigmas[i + 1] - sigmas[i]);
         mx::eval(z);
         dump("z_latent_step_" + std::to_string(i + 1), z);
         require(mx::all(mx::isfinite(z)).item<bool>(), "nonfinite Z-Image latent");
         event("denoise", i + 1, r.steps);
+    }
+    if (reference_latent) {
+        compare("final_latent",uint32_t(r.steps-1),z,*reference_latent,true);
+        dump("z_source_latent_final",*reference_latent);
     }
     const double denoise_seconds = std::chrono::duration<double>(Clock::now() - dit_start).count();
     std::optional<streaming::GgufPackedBankMetrics> packed_import_metrics;
@@ -3736,6 +3918,19 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         packed_import_metrics->session_packed_retention=gguf_retain_packed_;
         packed_import_metrics->reused_packed_bank=reused_packed_bank;
         packed_import_metrics->compiled_packed_blocks=gguf_compile_packed_;
+        packed_import_metrics->gpu_f16_compute=gguf_gpu_f16_;
+        packed_import_metrics->gpu_f16_mpp=gguf_gpu_f16_mpp_;
+        packed_import_metrics->qmm_f16_compute=gguf_qmm_f16_;
+        packed_import_metrics->f16_refiners=gguf_f16_refiners_;
+        packed_import_metrics->ref_mpp_dynamic=gguf_ref_mpp_dynamic_;
+        packed_import_metrics->allocator_cache_limit_bytes=gguf_allocator_cache_bytes_;
+        if (gguf_gpu_f16_ && !gguf_qmm_f16_) {
+            for (const auto *stem : {"adaLN_modulation.0","attention.qkv","attention.out","feed_forward.w1","feed_forward.w3","feed_forward.w2"}) {
+                const auto &q=transformer_.at(std::string("layers.0.")+stem+".weight");
+                const uint64_t k=std::string_view(stem)=="adaLN_modulation.0" ? 256 : std::string_view(stem)=="feed_forward.w2" ? 10240 : 3840;
+                packed_import_metrics->dense_weight_capacity_upper+=uint64_t(q.shape(0))*k*2;
+            }
+        }
         if (!gguf_retain_packed_) {
             transformer_.clear();mx::clear_cache();
             require(gguf_packed_ledger_->snapshot().storage_bytes==0,
@@ -3866,6 +4061,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.valid_text_tokens = reported_tokens.valid;
     result.actual_steps = r.steps;
     result.quantized_execution = quantized_metrics;
+    result.quantized_source_comparisons=std::move(source_comparisons);
     if (packed_import_metrics) {
         result.gguf_import=packed_import_metrics;
         result.selection += "; experimental CPU direct affine packed import, allocator cache=0";
@@ -3934,6 +4130,17 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     if (gguf_direct_import_) {
         result.backend="mlx_cpp_metal_gguf_cpu_direct_packed";
         result.precision="z-mlx-compat-affine-v1";
+        if (gguf_gpu_f16_) {
+            result.backend="mlx_cpp_metal_gguf_cpu_direct_gpu_f16";
+            result.precision="z-gpu-affine-f16-fp32-io-down64-v1";
+            if (gguf_gpu_f16_mpp_) result.precision="z-gpu-affine-f16-mpp-fp32-io-down64-v1";
+            if (gguf_qmm_f16_) {
+                result.backend="mlx_cpp_metal_gguf_cpu_direct_packed_f16_io";
+                result.precision="z-gpu-affine-qmm-f16-fp32-io-down64-v1";
+                if (gguf_f16_refiners_) result.precision="z-gpu-affine-qmm-f16-ref16-fp32-io-down64-v1";
+                if (gguf_ref_mpp_dynamic_) result.precision="z-gpu-affine-qmm-f16-refmpp-dynamic-v1";
+            }
+        }
     }
     result.encoder_hybrid = cached_encoder_hybrid_metrics_;
     result.encoder_quantized_execution = cached_encoder_gguf_metrics_;
@@ -4004,7 +4211,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
 
 Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma, float width,
                        int height, int step, const Event &event, std::atomic<bool> &cancelled,
-                       std::vector<Tensor> *context_cache) {
+                       std::vector<Tensor> *context_cache,bool source_reference,const ZImageBlockObserver &observe) {
+    require(!source_reference || (gguf_validate_blocks_ && gguf_direct_import_ && !hybrid_ && !runtime_ffn_ && !gguf_stream_),
+            "source reference conflicts with another execution route");
     auto model_input = mx::astype(latent, mx::bfloat16);
     const bool experimental_compiled_a8 = hybrid_ && hybrid_->activation_precision == "int8" &&
         (hybrid_->image_only_token_rows == 1024 ||
@@ -4016,7 +4225,9 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
                       cancelled, hybrid_.get(), hybrid_ ? &hybrid_gpu_graph_ : nullptr,
                       weight_stream_.get(), exact_stream_.get(), uint32_t(step),
                       optimizations_.z_image_hybrid_segments || experimental_compiled_a8,
-                      nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_, gguf_stream_.get(),gguf_direct_import_,gguf_compile_packed_),
+                      nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_, gguf_stream_.get(),gguf_direct_import_,gguf_compile_packed_,
+                      !source_reference && gguf_gpu_f16_,!source_reference && gguf_gpu_f16_mpp_,!source_reference && gguf_qmm_f16_,
+                      !source_reference && gguf_f16_refiners_,!source_reference && gguf_ref_mpp_dynamic_,observe),
         mx::float32);
 }
 

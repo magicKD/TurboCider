@@ -30,6 +30,7 @@ def main():
                 "wall_seconds":row["wall_seconds"],"timings_seconds":metrics.get("timings_seconds"),
                 "quantized_execution":metrics.get("quantized_execution"),"mlx_memory":metrics.get("memory"),
                 "gguf_import":metrics.get("gguf_import"),"warmup":row.get("warmup",False),
+                "quantized_source_validation":metrics.get("quantized_source_validation"),
                 "encoder_quantized_execution":metrics.get("encoder_quantized_execution"),
                 "vm_deltas":row.get("vm_deltas"),"size":row["request"]["outputs"][0]["width"],
                 "seed":row["request"]["sampling"]["seed"],"steps":row["request"]["sampling"]["steps"],

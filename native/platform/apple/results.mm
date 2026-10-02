@@ -1355,10 +1355,13 @@ NSDictionary *to_dictionary(const RunResult &result) {
         const auto &m=*result.gguf_import;
         value[@"gguf_import"]=@{
             @"experimental":@YES,@"whole_request_bounded_certified":@NO,
-            @"recipe":@"gguf-mlx-compat-affine-packed-bank-v1",@"allocator_cache_limit_bytes":@0,
+            @"recipe":@"gguf-mlx-compat-affine-packed-bank-v1",@"allocator_cache_limit_bytes":@(m.allocator_cache_limit_bytes),
             @"consumer_revision":m.session_packed_retention ? @"z-session-packed-experimental-v1" : @"z-serial-refiners-release-before-vae-v1",
             @"session_packed_retention":@(m.session_packed_retention),@"reused_packed_bank":@(m.reused_packed_bank),
-            @"gpu_graph_recipe":m.compiled_packed_blocks ? @"z-parameterized-affine-block-v1" : @"native-compat-eager-v1",
+            @"gpu_graph_recipe":m.ref_mpp_dynamic ? @"z-gpu-affine-qmm-f16-refmpp-dynamic-v1" : m.f16_refiners ? @"z-gpu-affine-qmm-f16-ref16-fp32-io-down64-v1" : m.qmm_f16_compute ? @"z-gpu-affine-qmm-f16-fp32-io-down64-v1" : m.gpu_f16_mpp ? @"z-gpu-affine-f16-mpp-fp32-io-down64-v1" : m.gpu_f16_compute ? @"z-gpu-affine-f16-fp32-io-down64-v1" : m.compiled_packed_blocks ? @"z-parameterized-affine-block-v1" : @"native-compat-eager-v1",
+            @"dense_weight_capacity_upper_bytes":@(m.dense_weight_capacity_upper),
+            @"dense_scope":m.gpu_f16_compute && !m.qmm_f16_compute ? @"current-main-block-only-eval-v1" : @"none",
+            @"main_eval_policy":m.qmm_f16_compute ? @"whole-pass-immutable-packed-v1" : m.gpu_f16_compute ? @"each-main-block-v1" : @"native-default",
             @"released_before_vae":@(m.released_before_vae),@"serial_refiner_eval":@(m.serial_refiner_eval),
             @"source_sha256":@(m.source_sha256.c_str()),@"plan_digest":@(m.plan_digest.c_str()),
             @"planned_packed_capacity_bytes":@(m.planned_packed_capacity_bytes),
@@ -1374,7 +1377,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
         NSMutableDictionary *private_plan=[value[@"plan"] mutableCopy];
         private_plan[@"executable"]=@NO;
         private_plan[@"gguf_import_qualification"]=@"experimental-unqualified";
-        if (m.compiled_packed_blocks) private_plan[@"gpu_graph"]=@"compiled_affine_blocks";
+        if (m.compiled_packed_blocks) private_plan[@"gpu_graph"]=m.qmm_f16_compute ? @"compiled_affine_qmm_fp16" : m.gpu_f16_compute ? @"compiled_affine_gpu_decode_fp16" : @"compiled_affine_blocks";
         value[@"plan"]=private_plan;
         value[@"validation"]=@"experimental CPU direct packed import; not a production capability";
     }
@@ -1398,6 +1401,18 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"refiner_pool_capacity_bytes": @(m.refiner_capacity_bytes)
         };
         value[@"validation"] = @"experimental source-mixed GGUF execution; not a production capability";
+    }
+    if (!result.quantized_source_comparisons.empty()) {
+        NSMutableArray *rows=[NSMutableArray array];bool layers_pass=true,final_pass=true;
+        for (const auto &row:result.quantized_source_comparisons) {
+            const auto &m=row.metrics;const bool pass=row.final_latent ? m.n1_final() : m.n1_layer();
+            if (row.final_latent) final_pass &= pass;else layers_pass &= pass;
+            [rows addObject:@{@"name":@(row.name.c_str()),@"step":@(row.step),@"rel_l2":@(m.rel_l2),@"cosine":@(m.cosine),
+                @"max_abs":@(m.max_abs),@"max_norm_error":@(m.max_norm_error),@"n1_pass":@(pass),@"final_latent":@(row.final_latent)}];
+        }
+        value[@"quantized_source_validation"]=@{@"source_profile":@"z-mlx-compat-affine-v1",
+            @"scope":@"diagnostic dual-forward independent source trajectory; FP64 valid-row metrics excluding padding; not timing/media/qualification",
+            @"all_block_n1_pass":@(layers_pass),@"final_latent_n1_pass":@(final_pass),@"comparisons":rows};
     }
     if (result.encoder_quantized_execution) {
         const auto &m = *result.encoder_quantized_execution;

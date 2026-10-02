@@ -48,6 +48,7 @@
 | [19 预算速度筛选](19-speed-and-memory-budget-screen.md) | 七候选完整Q8请求的独立测速/内存采样、6/8/10/16 GB及GiB经验选择，native额外驻留负结果与后续优化 |
 | [20 direct packed导入/阶段释放](20-direct-packed-import-and-stage-release.md) | compute-ready压缩bank直填、cache0对照、refiner eval/VAE前verified释放、Q8/Q4 exact与分预算较快候选 |
 | [21 最快BF16与compiled packed](21-fastest-bf16-and-compiled-packed-screen.md) | 实际更快BF16基线、Q8/Q4原算术参数图/压缩bank复用、独立速度内存screen；BF16密集槽和ConvRot runtime FP16质量负结果 |
+| [22 FP16 packed compute/逐block N1](22-fp16-packed-compute-and-block-validation.md) | explicit FP16 QMM/FP32 glue、cache分账与独立source轨迹；Q8/Q4单cell全部block N1及≤20%/lower-memory screen通过，dynamic refiner中间层负结果 |
 
 ## 当前状态速查
 

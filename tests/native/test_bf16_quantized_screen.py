@@ -78,7 +78,7 @@ class Bf16ScreenTests(unittest.TestCase):
         self.assertEqual(result["device_binding"], "unknown_legacy_reports")
 
     def test_bad_samples_memory_and_observers(self):
-        for fault in ("missing","gap","lie_gap","swap","swap_unknown","observer","nan","warmup","png","failed"):
+        for fault in ("missing","gap","lie_gap","swap","swap_unknown","observer","nan","warmup","png","failed","source_validation"):
             reports = copy.deepcopy(self.inputs()); row = reports[3]["runs"][0]
             if fault=="missing": row["memory_samples"]=[]
             if fault=="gap": row["memory_samples"][1]["time"]=1.2
@@ -90,6 +90,7 @@ class Bf16ScreenTests(unittest.TestCase):
             if fault=="warmup": reports[2]["runs"][0]["warmup"]=1
             if fault=="png": row["png_sha256"]="9"*64
             if fault=="failed": reports[2]["runs"][0]["status"]=1
+            if fault=="source_validation": reports[2]["runs"][0]["metrics"]["quantized_source_validation"]={"not_timing":True}
             with self.subTest(fault=fault), self.assertRaises(ValueError): module.screen(*reports)
 
 

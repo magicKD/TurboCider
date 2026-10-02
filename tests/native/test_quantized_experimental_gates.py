@@ -44,6 +44,10 @@ class ExperimentalGateTests(unittest.TestCase):
         cases = [("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_RETAIN_PACKED":"1"}),
+                 ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1","TURBOCIDER_Z_GGUF_COMPUTE":"f16_down64"}),
+                 ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1","TURBOCIDER_Z_GGUF_COMPUTE":"f16_mpp_down64"}),
+                 ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1","TURBOCIDER_Z_GGUF_COMPUTE":"qmm_f16_down64"}),
+                 ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1","TURBOCIDER_Z_GGUF_COMPUTE":"qmm_f16_refmpp_dynamic","TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES":"1073741824"}),
                  ("z-image-turbo",bf16,{"TURBOCIDER_Z_RUNTIME_CONVROT":"1"})]
         for model_id, root, controls in cases:
             with self.subTest(controls=controls), tempfile.TemporaryDirectory(prefix="tc-z-gate-") as raw:

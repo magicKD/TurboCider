@@ -56,6 +56,12 @@ class MeasurementOptionsTests(unittest.TestCase):
         self.reject(["--cancel-once-at-block","0","--cancel-once-at-refiner","0"], "mutually exclusive")
         self.reject(["--compile-packed"], "packed compile requires CPU-direct")
         self.reject(["--retain-packed"], "packed retention requires CPU-direct")
+        self.reject(["--packed-compute","f16_down64"], "GPU FP16 compute requires")
+        self.reject(["--packed-compute","f16_down64","--native-import","cpu_direct","--prefetch","-1"], "GPU FP16 compute requires")
+        self.reject(["--native-allocator-cache-bytes","1024"], "GGUF allocator cache requires")
+        self.reject(["--validate-source-blocks"], "source block validation requires diagnostic")
+        self.reject(["--packed-compute","qmm_f16_refmpp_dynamic","--native-import","cpu_direct","--prefetch","-1",
+                     "--compile-packed","--native-allocator-cache-bytes",str((1<<30)+1)], "GGUF allocator cache requires")
         self.reject(["--compile-packed","--native-import","cpu_direct","--prefetch","-1","--gpu-eval-blocks"],
                     "packed compile requires CPU-direct")
 

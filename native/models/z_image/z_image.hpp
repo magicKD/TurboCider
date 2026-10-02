@@ -15,6 +15,7 @@ namespace components { class Qwen3GgufEncoder; }
 class ZImageExactStream;
 class ZImageGgufStream;
 namespace streaming { class GgufPackedBank; }
+using ZImageBlockObserver=std::function<void(const std::string &,const Tensor &)>;
 
 class ZImage final : public ModelSession {
     std::filesystem::path root_;
@@ -25,6 +26,13 @@ class ZImage final : public ModelSession {
     bool runtime_convrot_ = false;
     bool gguf_direct_import_ = false;
     bool gguf_compile_packed_ = false;
+    bool gguf_gpu_f16_ = false;
+    bool gguf_gpu_f16_mpp_ = false;
+    bool gguf_qmm_f16_ = false;
+    bool gguf_f16_refiners_ = false;
+    bool gguf_ref_mpp_dynamic_ = false;
+    uint64_t gguf_allocator_cache_bytes_ = 0;
+    bool gguf_validate_blocks_ = false;
     bool gguf_retain_packed_ = false;
     std::unique_ptr<MemoryLedger> gguf_packed_ledger_;
     std::unique_ptr<streaming::GgufPackedBank> gguf_packed_bank_;
@@ -77,7 +85,8 @@ class ZImage final : public ModelSession {
     void load_vae(const Event &, std::atomic<bool> &);
     Tensor encode_text(const Tokens &, const Event &, std::atomic<bool> &);
     Tensor denoise(const Tensor &, const Tensor &, float, float, int, int,
-                   const Event &, std::atomic<bool> &, std::vector<Tensor> * = nullptr);
+                   const Event &, std::atomic<bool> &, std::vector<Tensor> * = nullptr,
+                   bool source_reference=false,const ZImageBlockObserver &observe={});
     Tensor decode(const Tensor &, int, int, const Event &, std::atomic<bool> &);
     bool conditioning(const Request &, const Event &, std::atomic<bool> &);
     std::string select_acceleration(Request &, int, const Event &, std::atomic<bool> &);

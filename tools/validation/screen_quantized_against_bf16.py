@@ -12,7 +12,7 @@ from screen_gguf_memory_budgets import positive, sha
 
 REVISION = "fastest-bf16-low-memory-screen-v2"
 PRIVATE_CONTROLS = {"TURBOCIDER_Z_GGUF_IMPORT", "TURBOCIDER_Z_GGUF_PACKED_WEIGHT_LIMIT_BYTES",
-                    "TURBOCIDER_Z_GGUF_COMPILE_PACKED", "TURBOCIDER_Z_GGUF_RETAIN_PACKED"}
+                    "TURBOCIDER_Z_GGUF_COMPILE_PACKED", "TURBOCIDER_Z_GGUF_RETAIN_PACKED", "TURBOCIDER_Z_GGUF_COMPUTE", "TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES"}
 
 
 def content_identity(report):
@@ -46,6 +46,8 @@ def workload(row):
         raise ValueError("this screen requires pure GPU arms")
     if "dump_tensors" in r or row.get("cancellation_triggered"):
         raise ValueError("diagnostics/cancellation cannot be a speed sample")
+    if m.get("quantized_source_validation"):
+        raise ValueError("dual-source validation cannot be a speed/memory sample")
     return {"inputs": r["inputs"], "sampling": r["sampling"], "operation": r["operation"],
             "parameters": {k: v for k, v in r["parameters"].items() if k != "compile_gpu"},
             "outputs": [{k: v for k, v in out.items() if k != "path"} for out in r["outputs"]],
@@ -90,6 +92,7 @@ def collect(timing, memory, baseline, min_samples):
                        "layout": q.get("layout_digest", q.get("plan_digest")) if q else None,
                        "consumer": q.get("consumer_revision") if q else None,
                        "graph": q.get("gpu_graph_recipe") if q else None,
+                       "allocator_cache_limit_bytes": q.get("allocator_cache_limit_bytes") if q else None,
                        "retention": q.get("session_packed_retention") if q else None}
             if not baseline and not q:
                 raise ValueError("candidate has no bound quantized execution/import")

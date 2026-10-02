@@ -46,7 +46,8 @@ def identity(report, row):
         dit_sha = sha(report.get("dit_source_sha256"))
         if report.get("native_import","mlx")=="cpu_direct":
             if (not importer or importer.get("recipe")!="gguf-mlx-compat-affine-packed-bank-v1" or
-                    importer.get("allocator_cache_limit_bytes")!=0 or sha(importer.get("source_sha256"))!=dit_sha):
+                    type(importer.get("allocator_cache_limit_bytes")) is not int or not 0<=importer["allocator_cache_limit_bytes"]<=1<<30 or
+                    sha(importer.get("source_sha256"))!=dit_sha):
                 raise ValueError("unbound CPU-direct packed import")
         elif importer:
             raise ValueError("unexpected native packed import recipe")
@@ -88,10 +89,11 @@ def identity(report, row):
     if importer:
         graph = importer.get("gpu_graph_recipe", "native-compat-eager-v1")
         retained = importer.get("session_packed_retention", False)
-        if graph not in ("native-compat-eager-v1", "z-parameterized-affine-block-v1") or type(retained) is not bool:
+        if graph not in ("native-compat-eager-v1", "z-parameterized-affine-block-v1", "z-gpu-affine-f16-fp32-io-down64-v1", "z-gpu-affine-f16-mpp-fp32-io-down64-v1", "z-gpu-affine-qmm-f16-fp32-io-down64-v1", "z-gpu-affine-qmm-f16-ref16-fp32-io-down64-v1", "z-gpu-affine-qmm-f16-refmpp-dynamic-v1") or type(retained) is not bool:
             raise ValueError("unknown native packed graph/retention recipe")
         if retained: candidate += ":session_packed"
-        if graph != "native-compat-eager-v1": candidate += ":compiled_affine"
+        if importer["allocator_cache_limit_bytes"]: candidate += ":cache="+str(importer["allocator_cache_limit_bytes"])
+        if graph != "native-compat-eager-v1": candidate += ":qmm_f16_refmpp_dynamic" if graph=="z-gpu-affine-qmm-f16-refmpp-dynamic-v1" else ":qmm_f16_ref16" if graph=="z-gpu-affine-qmm-f16-ref16-fp32-io-down64-v1" else ":qmm_f16" if graph=="z-gpu-affine-qmm-f16-fp32-io-down64-v1" else ":gpu_f16_mpp" if graph=="z-gpu-affine-f16-mpp-fp32-io-down64-v1" else ":gpu_f16" if graph=="z-gpu-affine-f16-fp32-io-down64-v1" else ":compiled_affine"
     eval_policy=report.get("gpu_eval_policy","default")
     if eval_policy not in ("default","each-main-block-v1"): raise ValueError("unknown GPU eval policy")
     if eval_policy!="default": candidate+=":"+eval_policy
