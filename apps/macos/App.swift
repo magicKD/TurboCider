@@ -123,6 +123,7 @@ struct StudioView: View {
     @State private var resultSelection = HistorySelection()
     @State private var inspector = true
     @State private var previewAssetID: UUID?
+    @State private var referenceDropTarget: UUID?
     @State private var showingRecentResults = false
     @State private var showingResources = false
     @State private var ignoredStatusID: UUID?
@@ -685,6 +686,13 @@ struct StudioView: View {
                 HStack(spacing: 8) {
                     ForEach(Array(studio.draft.assets.enumerated()), id: \.element.id) { index, asset in
                         HStack(spacing: 7) {
+                            Image(systemName: "line.3.horizontal")
+                                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                                .frame(width: 12, height: 46).contentShape(Rectangle())
+                                .draggable(StudioReferenceDrag(id: asset.id, workspaceID: studio.workspaceResetID))
+                                .help("拖动把手调整参考图顺序")
+                                .accessibilityLabel("调整参考图 \(index + 1) 顺序")
+                                .accessibilityIdentifier("dragReference-\(index)")
                             Button {
                                 if ["image.transform", "video.image"].contains(studio.draft.operation) { studio.draft.initImageID = asset.id }
                                 focusInput(asset)
@@ -708,18 +716,21 @@ struct StudioView: View {
                                 } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 22)
                                     .accessibilityLabel("参考图 \(index + 1) 操作")
                             }
-                        }.padding(5)
-                            .background(selectedJob == nil && previewAsset?.id == asset.id ? ciderAccent.opacity(0.1) : Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 9))
-                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(selectedJob == nil && previewAsset?.id == asset.id ? ciderAccent : .clear, lineWidth: 1.5))
+                        }.padding(5).contentShape(Rectangle())
+                            .background(referenceDropTarget == asset.id ? ciderAccent.opacity(0.18) : (selectedJob == nil && previewAsset?.id == asset.id ? ciderAccent.opacity(0.1) : Color.primary.opacity(0.025)), in: RoundedRectangle(cornerRadius: 9))
+                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(referenceDropTarget == asset.id || (selectedJob == nil && previewAsset?.id == asset.id) ? ciderAccent : .clear, lineWidth: referenceDropTarget == asset.id ? 2.5 : 1.5))
                             .opacity(studio.draft.activeAssets.contains(asset) ? 1 : 0.55)
-                            .help("\(asset.name) · \(asset.width) × \(asset.height) · 拖动可调整顺序").disabled(assetControlsLocked)
-                            .draggable(StudioReferenceDrag(id: asset.id, workspaceID: studio.workspaceResetID))
+                            .help("\(asset.name) · \(asset.width) × \(asset.height) · 拖动左侧把手可调整顺序").disabled(assetControlsLocked)
                             .dropDestination(for: StudioReferenceDrag.self) { items, _ in
+                                defer { referenceDropTarget = nil }
                                 guard !assetControlsLocked, items.count == 1,
                                       let item = items.first, item.workspaceID == studio.workspaceResetID,
                                       studio.draft.assets.contains(where: { $0.id == item.id }) else { return false }
                                 studio.reorderAsset(item.id, to: asset.id)
                                 return true
+                            } isTargeted: { targeted in
+                                if targeted && !assetControlsLocked { referenceDropTarget = asset.id }
+                                else if referenceDropTarget == asset.id { referenceDropTarget = nil }
                             }
                     }
                 }.padding(2)

@@ -92,6 +92,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>${PACKAGE_MIN_MACOS}</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>UTExportedTypeDeclarations</key><array><dict>
+<key>UTTypeIdentifier</key><string>org.turbocider.studio-reference</string>
+<key>UTTypeDescription</key><string>TurboCider reference image ordering</string>
+<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+</dict></array>
 </dict></plist>
 PLIST
 codesign --force --sign - "$DIST/cli/turbocider"

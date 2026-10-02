@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 private extension UTType {
-    static let studioReference = UTType(exportedAs: "org.turbocider.studio-reference")
+    static let studioReference = UTType(exportedAs: "org.turbocider.studio-reference", conformingTo: .data)
 }
 
 struct StudioReferenceDrag: Codable, Transferable {

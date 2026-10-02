@@ -1,5 +1,9 @@
 # TurboCider 状态文档入口
 
+实际 App 的双图编辑、超分、输入缩放与原图恢复、Playground、API 和最终安装包验收见
+[2026-10-02 最终桌面验收](2026-10-02-final-app-acceptance.md)。
+此记录取代此前两份报告中的锁屏待验与旧 App 未替换状态。
+
 历史复用保留参考原图、App API 重启竞态和取消队列容量修复见
 [2026-10-02 历史与 API 验收](2026-10-02-history-and-api-lifecycle.md)。
 
