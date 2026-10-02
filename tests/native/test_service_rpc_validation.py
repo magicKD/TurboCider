@@ -1,6 +1,7 @@
 """No weights: malformed RPC envelopes must not terminate the local service."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import socket
@@ -9,11 +10,23 @@ import tempfile
 import time
 import unittest
 import uuid
+import struct
+import zlib
 
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")) / "turbocider"
 MAX_BYTES = 1048576
+
+
+def rgba_png_bytes(width, height):
+    """One tiny/low-entropy RGBA frame using only the standard library."""
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+    return (b"\x89PNG\r\n\x1a\n" +
+            chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)) +
+            chunk(b"IDAT", zlib.compress((b"\0" + b"\x80\x40\x20\x80" * width) * height, 1)) +
+            chunk(b"IEND", b""))
 
 
 class RPCValidationTests(unittest.TestCase):
@@ -116,6 +129,137 @@ class RPCValidationTests(unittest.TestCase):
             b'{"action":"workflow_request","input":{"workflow_id":"playground.transparent","request":{},"request":{}}}',
         ]:
             self.assert_rejected_without_exit(malformed)
+
+    def test_image_preparation_discovery_cli_and_explicit_file_creation(self):
+        capabilities = self.rpc({"action": "capabilities"})["result"]
+        action = next(item for item in capabilities["actions"] if item["name"] == "image_prepare")
+        self.assertIs(action["mutates"], True)
+        envelope = action["input_schema"]
+        self.assertEqual(set(envelope["properties"]), {"action", "input"})
+        self.assertEqual(set(envelope["required"]), {"action", "input"})
+        self.assertIs(envelope["additionalProperties"], False)
+        schema = envelope["properties"]["input"]
+        self.assertIs(schema["additionalProperties"], False)
+        self.assertEqual(set(schema["required"]), {"source_path", "preset"})
+        self.assertEqual(set(schema["properties"]), {"schema_version", "source_path", "preset", "output_path"})
+        self.assertEqual(schema["properties"]["schema_version"]["type"], "integer")
+        self.assertEqual(schema["properties"]["schema_version"]["const"], 1)
+        self.assertEqual(schema["properties"]["preset"]["enum"],
+                         ["original", "automatic", "fit512", "portrait512", "landscape512"])
+        result_schema = action["result_schema"]
+        result_keys = {"schema_version", "source_path", "preset", "image_path", "output_created",
+                       "original_width", "original_height", "width", "height", "changed"}
+        self.assertEqual(set(result_schema["properties"]), result_keys)
+        self.assertEqual(set(result_schema["required"]), result_keys)
+        self.assertIs(result_schema["additionalProperties"], False)
+        self.assertEqual(capabilities["image_preparation"]["max_source_pixels"], 80000000)
+        self.assertEqual(capabilities["image_preparation"]["source_frames"], 1)
+
+        # Standard-library PNG fixture: one RGBA frame; no model or image package.
+        source = self.root / "source.png"
+        source_bytes = rgba_png_bytes(2048, 1024)
+        source.write_bytes(source_bytes)
+        source_hash = hashlib.sha256(source_bytes).hexdigest()
+
+        original = {"source_path": str(source), "preset": "original"}
+        noop = self.rpc({"action": "image_prepare", "input": original})
+        self.assertTrue(noop["ok"], noop)
+        self.assertEqual(set(noop["result"]), result_keys)
+        self.assertEqual(noop["result"]["image_path"], str(source))
+        self.assertIs(noop["result"]["output_created"], False)
+        self.assertIs(noop["result"]["changed"], False)
+        self.assertEqual((noop["result"]["width"], noop["result"]["height"]), (2048, 1024))
+        input_file = self.root / "image-preparation.json"
+        input_file.write_text(json.dumps(original))
+        cli_noop = subprocess.run([str(CLI), "prepare-image", str(input_file)],
+                                  capture_output=True, text=True, timeout=10)
+        self.assertEqual(cli_noop.returncode, 0, cli_noop.stderr)
+        self.assertEqual(json.loads(cli_noop.stdout), noop["result"])
+
+        output = self.root / "resized.png"
+        resize = {"schema_version": 1, "source_path": str(source), "preset": "fit512", "output_path": str(output)}
+        prepared = self.rpc({"action": "image_prepare", "input": resize})
+        self.assertTrue(prepared["ok"], prepared)
+        result = prepared["result"]
+        self.assertEqual(set(result), result_keys)
+        self.assertEqual(result["image_path"], str(output))
+        self.assertIs(result["output_created"], True)
+        self.assertIs(result["changed"], True)
+        self.assertEqual((result["original_width"], result["original_height"]), (2048, 1024))
+        self.assertEqual((result["width"], result["height"]), (512, 256))
+        output_bytes = output.read_bytes()
+        self.assertEqual(output_bytes[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(struct.unpack(">II", output_bytes[16:24]), (512, 256))
+        output_hash = hashlib.sha256(output_bytes).hexdigest()
+        self.assert_rejected_without_exit({"action": "image_prepare", "input": resize})
+        self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(), output_hash)
+
+        cli_output = self.root / "cli-resized.png"
+        input_file.write_text(json.dumps({**resize, "output_path": str(cli_output)}))
+        cli_resize = subprocess.run([str(CLI), "prepare-image", str(input_file)],
+                                    capture_output=True, text=True, timeout=10)
+        self.assertEqual(cli_resize.returncode, 0, cli_resize.stderr)
+        self.assertEqual(json.loads(cli_resize.stdout), {**result, "image_path": str(cli_output)})
+        self.assertTrue(cli_output.is_file())
+
+        # An already-small image returns itself and does not create the caller's
+        # requested output. Feeding this image_path into workflow composition
+        # must preserve the prepared reference rather than guess a new path.
+        unwritten = self.root / "not-written.png"
+        small = self.rpc({"action": "image_prepare", "input": {
+            "source_path": str(output), "preset": "fit512", "output_path": str(unwritten)}})
+        self.assertTrue(small["ok"], small)
+        self.assertEqual(small["result"]["image_path"], str(output))
+        self.assertIs(small["result"]["output_created"], False)
+        self.assertFalse(unwritten.exists())
+        composed = self.rpc({"action": "workflow_request", "input": {
+            "workflow_id": "playground.transparent", "role_paths": {"source": small["result"]["image_path"]},
+            "request": {"schema_version": 1, "model": "qwen-image-2.1"}}})
+        self.assertTrue(composed["ok"], composed)
+        self.assertEqual(composed["result"]["request"]["inputs"][0]["path"], str(output))
+        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), source_hash)
+        status = self.rpc({"action": "service_status"})["result"]
+        self.assertEqual(status["history_count"], 0)
+        self.assertIs(status["session_open"], False)
+
+    def test_image_preparation_strict_inputs_and_cli_errors_leave_service_healthy(self):
+        source = self.root / "valid-small.png"
+        source_bytes = rgba_png_bytes(8, 4)
+        source.write_bytes(source_bytes)
+        base = {"source_path": str(source), "preset": "original"}
+        self.assertTrue(self.rpc({"action": "image_prepare", "input": base})["ok"])
+        invalid_inputs = [None, [], "input", {}, {**base, "unknown": True},
+                          {"preset": "original"}, {"source_path": base["source_path"]}]
+        for key, values in (
+            ("schema_version", (None, True, "1", 0, 2)),
+            ("source_path", (None, True, 1, [], "", "relative.png", "/source\0.png")),
+            ("preset", (None, True, 1, "", "unknown")),
+            ("output_path", (None, True, 1, "", "relative.png", str(self.root / "upper.PNG"), "/new\0.png")),
+        ):
+            invalid_inputs.extend({**base, key: value} for value in values)
+        for value in invalid_inputs:
+            with self.subTest(input=value):
+                self.assert_rejected_without_exit({"action": "image_prepare", "input": value})
+        duplicate_preset = (json.dumps(base)[:-1] + ',"preset":"fit512"}').encode()
+        duplicate_schema = (json.dumps(base)[:-1] + ',"schema_version":1,"schema_version":2}').encode()
+        for raw in (
+            {"action": "image_prepare"},
+            {"action": "image_prepare", "input": base, "unexpected": True},
+            b'{"action":"image_prepare","input":' + duplicate_preset + b'}',
+            b'{"action":"image_prepare","input":' + duplicate_schema + b'}',
+        ):
+            self.assert_rejected_without_exit(raw)
+        input_file = self.root / "image-invalid.json"
+        for raw in (duplicate_preset,
+                    json.dumps({**base, "extra": True}).encode(),
+                    json.dumps(base).encode() + b'\0trailing'):
+            with self.subTest(cli=raw):
+                input_file.write_bytes(raw)
+                rejected = subprocess.run([str(CLI), "prepare-image", str(input_file)],
+                                          capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertTrue(rejected.stderr)
+        self.assertEqual(source.read_bytes(), source_bytes)
 
     def test_qwen_reference_encoding_discovery_and_plan_opt_in(self):
         models = self.rpc({"action": "models"})

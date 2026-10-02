@@ -1,6 +1,6 @@
 """Standard-library client for TurboCider's local Unix-socket API.
 
-No model libraries, uploads, service launch, or automatic submission retries.
+No model libraries, uploads, service launch, or automatic mutation retries.
 Use capabilities() and plan() before constructing a workflow.
 """
 from __future__ import annotations
@@ -19,11 +19,13 @@ class APIError(RuntimeError):
 
 
 class TransportError(RuntimeError):
-    """A connection or response failed; a submission may already be persisted."""
+    """A connection or response failed; a job or output file may already exist."""
 
-    def __init__(self, message: str, *, submission_may_have_succeeded: bool):
+    def __init__(self, message: str, *, submission_may_have_succeeded: bool,
+                 file_write_may_have_succeeded: bool = False):
         super().__init__(message)
         self.submission_may_have_succeeded = submission_may_have_succeeded
+        self.file_write_may_have_succeeded = file_write_may_have_succeeded
 
 
 class JobTimeout(TimeoutError):
@@ -102,9 +104,13 @@ class Client:
                 raise ValueError("RPC error response has no error message")
         except (OSError, ValueError) as error:
             ambiguous = action == "submit" and sent
-            suffix = "; inspect jobs before resubmitting" if ambiguous else ""
+            file_ambiguous = action == "image_prepare" and sent
+            suffix = "; inspect jobs before resubmitting" if ambiguous else (
+                "; inspect the requested output before retrying image_prepare; do not retry blindly"
+                if file_ambiguous else "")
             raise TransportError(str(error) + suffix,
-                                 submission_may_have_succeeded=ambiguous) from error
+                                 submission_may_have_succeeded=ambiguous,
+                                 file_write_may_have_succeeded=file_ambiguous) from error
         raise APIError(response["error"])
 
     def capabilities(self) -> dict[str, Any]:
@@ -124,6 +130,16 @@ class Client:
         request settings are retained. Paths are not read or verified here.
         """
         return self.rpc("workflow_request", input=input)
+
+    def prepare_image(self, input: dict[str, Any]) -> dict[str, Any]:
+        """Explicit CPU downsizing. Always use result['image_path'].
+
+        No crop, padding or upscaling. output_path is required only if resizing
+        is needed and is created exclusively; otherwise the original path is
+        returned and no file is written. This call is synchronous and does not
+        retry. A lost reply may follow a successful output-file write.
+        """
+        return self.rpc("image_prepare", input=input)
 
     def installations(self) -> dict[str, Any]:
         """Read the service's registered local model/LoRA metadata.

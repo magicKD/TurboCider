@@ -17,12 +17,39 @@ inline NSDictionary *tc_service_capabilities() {
     NSDictionary *string = @{@"type": @"string", @"minLength": @1};
     NSDictionary *request = @{@"type": @"object", @"description":
         @"Native request schema 1 or 2. Use models for model capabilities and plan for authoritative validation before submit."};
+    NSArray *image_presets = @[@"original", @"automatic", @"fit512", @"portrait512", @"landscape512"];
+    NSDictionary *absolute_image_path = @{@"type": @"string", @"minLength": @2,
+        @"pattern": @"^/", @"description": @"Absolute local path; embedded NUL is rejected."};
+    NSDictionary *image_prepare_input = @{@"type": @"object", @"additionalProperties": @NO,
+        @"required": @[@"source_path", @"preset"],
+        @"properties": @{
+            @"schema_version": @{@"type": @"integer", @"const": @1, @"default": @1},
+            @"source_path": absolute_image_path,
+            @"preset": @{@"type": @"string", @"enum": image_presets},
+            @"output_path": @{@"type": @"string", @"minLength": @5, @"pattern": @"^/[\\s\\S]*\\.png$",
+                @"description": @"Required only when downsizing is needed. Parent must exist; atomically creates a new lowercase .png file exclusively. No-op does not write this path."}
+        }};
+    NSDictionary *dimension = @{@"type": @"integer", @"minimum": @1, @"maximum": @80000000};
+    NSDictionary *image_prepare_result = @{@"type": @"object", @"additionalProperties": @NO,
+        @"required": @[@"schema_version", @"source_path", @"preset", @"image_path", @"output_created",
+                       @"original_width", @"original_height", @"width", @"height", @"changed"],
+        @"properties": @{
+            @"schema_version": @{@"type": @"integer", @"const": @1}, @"source_path": absolute_image_path,
+            @"preset": @{@"type": @"string", @"enum": image_presets}, @"image_path": absolute_image_path,
+            @"output_created": @{@"type": @"boolean"}, @"changed": @{@"type": @"boolean"},
+            @"original_width": dimension, @"original_height": dimension, @"width": dimension, @"height": dimension
+        }};
+    NSMutableDictionary *image_prepare = [action(@"image_prepare",
+        @"Explicit CPU image downsizing; may create a PNG. Always use result.image_path. Never retry blindly after a lost reply.",
+        true, @{@"input": image_prepare_input}, @[@"input"]) mutableCopy];
+    image_prepare[@"result_schema"] = image_prepare_result;
     NSArray *actions = @[
         action(@"capabilities", @"Describe this protocol without loading weights.", false, @{}, @[]),
         action(@"models", @"List registered model capabilities; this is not an installed-model inventory.", false, @{}, @[]),
         action(@"workflows", @"Read the shared Qwen image-workflow catalog, ordered roles and prompt prefixes without weights or file access.", false, @{}, @[]),
         action(@"workflow_request", @"Compose a native request from a shared workflow. No plan, file access or submission; call plan separately before submit.", false,
                @{@"input": @{@"type": @"object", @"description": @"See workflows.input_schema: workflow_id, role_paths (absolute paths), instruction (optional), expansion (outpaint only), request (native schema 1 or 2 settings). Operation, prompt and inputs are owned by the workflow."}}, @[@"input"]),
+        image_prepare,
         action(@"installations", @"Read the service's registered model, LoRA and ANE paths without loading weights or verifying files.", false, @{}, @[]),
         action(@"service_status", @"Read service ownership, active job and session state.", false, @{}, @[]),
         action(@"doctor", @"Read local runtime and device diagnostics.", false, @{}, @[]),
@@ -45,6 +72,24 @@ inline NSDictionary *tc_service_capabilities() {
                         @"max_request_bytes": @1048576},
         @"actions": actions, @"native_request_schema_versions": @[@1, @2],
         @"native_request_validation": @"plan",
+        @"image_preparation": @{
+            @"action": @"image_prepare", @"cli": @"prepare-image INPUT.json", @"schema_version": @1,
+            @"scope": @"explicit CPU local-file preparation; no model loading or generation",
+            @"presets": @{
+                @"original": @"Return source unchanged.",
+                @"automatic": @"Fit within 1024x1024 (long side at most 1024).",
+                @"fit512": @"Fit within 512x512.",
+                @"portrait512": @"Fit within 512x768.",
+                @"landscape512": @"Fit within 768x512."
+            },
+            @"geometry": @"Preserve aspect ratio; never crop, pad or upscale.",
+            @"max_source_pixels": @80000000, @"source_frames": @1, @"alpha": @"preserved",
+            @"source_mutation": @"never", @"output_write": @"atomic exclusive creation only when downsizing is needed",
+            @"no_op": @"image_path is source_path; output_created=false; no output file is written",
+            @"result_path": @"Always use returned image_path; do not assume output_path was written.",
+            @"dispatch": @"synchronous serial RPC dispatch; inference worker remains unlocked; no immediate cancellation guarantee",
+            @"transport_retry": @"never_automatic; a lost reply may follow a successful file write"
+        },
         @"response_schema": @{@"oneOf": @[
             @{@"type": @"object", @"properties": @{@"ok": @{@"const": @YES}, @"result": @{}},
               @"required": @[@"ok", @"result"], @"additionalProperties": @NO},

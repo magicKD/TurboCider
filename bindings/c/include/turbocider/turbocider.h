@@ -32,6 +32,15 @@ char *tc_models_json(void);
  * model/runtime admission before submission. Caller frees returned strings. */
 char *tc_workflows_json(void);
 int tc_workflow_request_json(const char *input_json, char **result_json, char **error);
+/* CPU-only reference preparation, shared by the App and local AI clients.
+ * Render returns metadata and an optional PNG buffer (empty for an unchanged
+ * source). Caller frees strings with tc_string_free and bytes with tc_buffer_free.
+ * File preparation accepts explicit paths, never overwrites an existing target,
+ * and returns image_path: use that path even when no derivative was needed. */
+int tc_reference_image_render(const char *source_path, const char *preset,
+                              char **metadata_json, uint8_t **png, uint64_t *png_bytes, char **error);
+void tc_buffer_free(uint8_t *);
+int tc_image_prepare_json(const char *input_json, char **result_json, char **error);
 int tc_plan_json(const char *request_json, char **plan_json, char **error);
 /* Read-only public streaming preset query for the embedded App container.
  * This validates request intent and inspects the native catalog/device only;

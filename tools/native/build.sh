@@ -152,6 +152,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/flux2/flux_vae.cpp native/models/flux2/flux_encode.cpp
  native/media/image.mm native/media/input.mm native/media/video.mm native/media/audio.mm
  native/media/pe_image.mm
+ native/media/reference_preparation.mm
 )
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories

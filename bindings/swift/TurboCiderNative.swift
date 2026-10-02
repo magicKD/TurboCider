@@ -1,6 +1,18 @@
 import Foundation
 import CTurboCider
 
+public struct NativeReferencePreparationMetadata: Codable, Sendable {
+    public let original_width: Int
+    public let original_height: Int
+    public let width: Int
+    public let height: Int
+    public let changed: Bool
+}
+public struct NativePreparedReferenceImage: Sendable {
+    public let metadata: NativeReferencePreparationMetadata
+    public let png: Data?
+}
+
 public struct NativeInput: Codable, Sendable, Identifiable {
     public var id: String { path + role }
     public var kind: String
@@ -516,6 +528,27 @@ public final class NativeEngine: @unchecked Sendable {
     public static func models() -> String { consume(tc_models_json()) }
     /// Shared UI/API metadata; never loads a model or reads image files.
     public static func workflows() -> Data { Data(consume(tc_workflows_json()).utf8) }
+    /// Synchronous CPU image preparation; call away from the main actor.
+    /// The same renderer backs the CLI/RPC image_prepare file operation.
+    public static func prepareReferenceImage(sourcePath: String, preset: String) throws -> NativePreparedReferenceImage {
+        guard !sourcePath.contains("\0"), !preset.contains("\0") else {
+            throw NativeFailure(message: "Image preparation arguments cannot contain NUL bytes.")
+        }
+        var metadata: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+        var png: UnsafeMutablePointer<UInt8>?
+        var size: UInt64 = 0
+        let status = sourcePath.withCString { source in
+            preset.withCString { tc_reference_image_render(source, $0, &metadata, &png, &size, &error) }
+        }
+        defer { tc_buffer_free(png) }
+        let message = consume(error), output = consume(metadata)
+        guard status == 0 else { throw NativeFailure(message: message) }
+        let info = try JSONDecoder().decode(NativeReferencePreparationMetadata.self, from: Data(output.utf8))
+        guard size <= UInt64(Int.max), info.changed == (size > 0), (png != nil) == (size > 0) else {
+            throw NativeFailure(message: "Invalid prepared image buffer.")
+        }
+        return NativePreparedReferenceImage(metadata: info, png: png.map { Data(bytes: $0, count: Int(size)) })
+    }
     /// Pure composition. The returned native request still requires plan and
     /// the normal load-time weight checks before execution.
     public static func workflowRequest(input: Data) throws -> Data {

@@ -202,6 +202,10 @@ Discovery (no model loading):
   turbocider doctor                       Runtime and device diagnostics
   turbocider plan REQUEST.json            Validate schema 1 or 2 before generation
 
+CPU image preparation:
+  turbocider prepare-image INPUT.json      Resize a local image without a model
+  Use the returned image_path. No resize means no output file is written.
+
 Generation:
   turbocider generate MODEL REQUEST.json
   turbocider batch MODEL REQUEST1.json REQUEST2.json ...
@@ -286,6 +290,15 @@ int main(int argc,char**argv){@autoreleasepool{
   NSString *input=[NSString stringWithContentsOfFile:@(argv[2]) encoding:NSUTF8StringEncoding error:nil];
   if(!input){std::cerr<<"cannot read workflow input\n";return 1;}
   code=tc_workflow_request_json(input.UTF8String,&out,&err);
+ }
+ else if(cmd=="prepare-image"&&argc==3){
+  NSString *input=[NSString stringWithContentsOfFile:@(argv[2]) encoding:NSUTF8StringEncoding error:nil];
+  if(!input){std::cerr<<"cannot read image preparation input\n";return 1;}
+  if([input lengthOfBytesUsingEncoding:NSUTF8StringEncoding]>1048576 ||
+     strlen(input.UTF8String)!=[input lengthOfBytesUsingEncoding:NSUTF8StringEncoding]){
+   std::cerr<<"image preparation input exceeds 1 MiB or contains embedded NUL\n";return 1;
+  }
+  code=tc_image_prepare_json(input.UTF8String,&out,&err);
  }
  else if(cmd=="self-test")code=tc_native_self_test(&out,&err);
  else if(cmd=="compile-coreml"&&argc==4)code=tc_compile_coreml_json(argv[2],argv[3],&out,&err);

@@ -51,6 +51,7 @@ Send one newline-terminated JSON object per connection. Responses use
 | `jobs` | Optional `offset`, `limit` (default 20, maximum 100) |
 | `plan` | `request` |
 | `workflow_request` | `input`: workflow ID, role paths, optional instruction/expansion and native request settings |
+| `image_prepare` | `input`: absolute `source_path`, `preset`, optional new absolute `.png` `output_path`; explicit CPU downsizing |
 | `workflows` | None; shared App/API templates, role order, prompts and construction schema |
 | `capabilities`, `models`, `installations`, `doctor`, `service_status` | None |
 
@@ -134,6 +135,14 @@ unique requested output path before deciding whether to submit again. A lost
 reply is not evidence that the job failed to enter the queue. Cancellation also
 requires polling until a terminal state.
 
+`image_prepare` also has no automatic retry. A transport failure after sending
+it has `file_write_may_have_succeeded=True`, while
+`submission_may_have_succeeded` stays false. Inspect the requested output before
+deciding whether to retry; the response may have been lost after a successful
+exclusive file creation. A connection failure before sending has both flags
+false. The new flag defaults to false for other operations and preserves the
+existing submission flag's meaning.
+
 The Python client's default transport timeout is 30 seconds. If overriding it,
 allow more than 10 seconds for `installations`; the CLI gives that query
 12 seconds and a larger response limit. Neither client retries a submission.
@@ -199,6 +208,75 @@ For repeated prompts, submit another request with a new seed and output path.
 A compatible resident session reuses conditioning; check `prompt_cache_hit`
 in the result. Changing model or relevant input identity invalidates reuse.
 The service admits up to 32 pending jobs; history is capped at 10,000 records.
+
+## Explicit reference-image downsizing
+
+`image_prepare` reads a local image using CPU only, without loading a model or
+creating a generation job. It preserves aspect ratio and transparency, never
+crops, pads or upscales, and does not modify the source file. Source images must
+contain one frame and at most 80 million pixels.
+
+The input is a strict object with `source_path` and `preset`, optional
+`schema_version: 1` and optional `output_path`. Both paths must be absolute and
+contain no embedded NUL. An output path must end in lowercase `.png` even when
+the operation needs no resizing. Unknown fields, duplicate JSON keys, unsupported
+versions and invalid presets are rejected.
+
+| Preset | Bounding dimensions |
+|---|---|
+| `original` | Return the original file without resizing |
+| `automatic` | 1024×1024; longest side at most 1024 |
+| `fit512` | 512×512 |
+| `portrait512` | 512×768 |
+| `landscape512` | 768×512 |
+
+These are fit bounds, not a request for a forced aspect ratio. For example, a
+2048×1024 source becomes 512×256 with `fit512`. If resizing is needed,
+`output_path` is required, its parent directory must already exist, and the
+output must be a new file. Publication is atomic and exclusive; an existing
+file, symlink or directory is not overwritten. If no resizing is needed,
+`output_path` is not written and `image_path` is the original source path.
+**Always use the returned `image_path`; do not assume `output_path` exists.**
+
+When `output_created` is true, the caller owns that PNG; the API does not
+register or automatically delete it. Keep it until every task that references
+it has reached a terminal state, and longer if it is needed for history replay
+or another workflow. When `output_created` is false, `image_path` is the source
+image, not a disposable derivative. After a lost reply or client timeout,
+confirm that preparation has finished and establish file ownership before
+removing anything; a client timeout does not cancel the operation.
+
+```python
+prepared = client.prepare_image({
+    'schema_version': 1,
+    'source_path': '/absolute/reference.png',
+    'preset': 'fit512',
+    'output_path': '/absolute/prepared/unique-reference.png',
+})
+reference_path = prepared['image_path']
+# Use reference_path in inputs or workflow_request.role_paths.
+# Keep the requested generation width/height separate from this input resize.
+```
+
+The result contains `schema_version`, `source_path`, `preset`, `image_path`,
+`output_created`, `original_width`, `original_height`, `width`, `height` and
+`changed`. Discover the exact input/result schemas and restrictions through
+`capabilities` → `image_prepare` and `image_preparation`.
+
+The equivalent CLI command is:
+
+```sh
+dist/cli/turbocider prepare-image image-preparation.json
+```
+
+For raw RPC, send
+`{"action":"image_prepare","input":{"source_path":"/absolute/reference.png","preset":"original"}}`.
+This action is marked `mutates: true` because a resize can create a file. It is
+synchronous on serial RPC dispatch and can delay other RPC replies until the
+CPU/file operation finishes, but it does not lock the inference worker.
+There is no immediate cancellation guarantee or `cancel` job ID for this call.
+Client transport timeouts do not prove that file work stopped. Do not blindly
+retry a lost reply; inspect the output and choose a fresh path when appropriate.
 
 ## Ordered editing workflows
 

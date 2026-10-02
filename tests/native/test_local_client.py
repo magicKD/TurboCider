@@ -8,7 +8,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 MODULE = Path(__file__).resolve().parents[2] / "bindings/python/turbocider_local.py"
 spec = importlib.util.spec_from_file_location("turbocider_local", MODULE)
@@ -72,15 +72,76 @@ class ClientTests(unittest.TestCase):
         with self.assertRaisesRegex(api.APIError, "invalid history"):
             self.exchange([b'{"ok":false,"error":"invalid history"}\n'])
 
+    def test_prepare_image_preserves_input_and_uses_returned_noop_path(self):
+        client = api.Client("/unused")
+        value = {"schema_version": 1, "source_path": "/source.png", "preset": "fit512",
+                 "output_path": "/unused-output.png"}
+        before = copy.deepcopy(value)
+        result = {"schema_version": 1, "source_path": "/source.png", "preset": "fit512",
+                  "image_path": "/source.png", "output_created": False, "changed": False,
+                  "original_width": 256, "original_height": 128, "width": 256, "height": 128}
+        with patch.object(client, "rpc", return_value=result) as rpc:
+            self.assertEqual(client.prepare_image(value)["image_path"], "/source.png")
+            rpc.assert_called_once_with("image_prepare", input=value)
+        self.assertEqual(value, before)
+
+    def test_prepare_image_transport_failure_is_not_retried(self):
+        for response in (b"", b'{"ok":true,"result":{}}', b'{"ok":true,"ok":false}\n'):
+            with self.subTest(response=response):
+                connection = MagicMock()
+                connection.__enter__.return_value = connection
+                stream = connection.makefile.return_value.__enter__.return_value
+                stream.readline.return_value = response
+                with patch.object(api.socket, "socket", return_value=connection) as create:
+                    with self.assertRaises(api.TransportError) as error:
+                        api.Client("/unused").prepare_image({"source_path": "/source.png", "preset": "fit512",
+                                                            "output_path": "/new.png"})
+                create.assert_called_once()
+                connection.connect.assert_called_once_with("/unused")
+                connection.sendall.assert_called_once()
+                self.assertEqual(json.loads(connection.sendall.call_args.args[0]), {
+                    "action": "image_prepare", "input": {"source_path": "/source.png", "preset": "fit512",
+                                                         "output_path": "/new.png"}})
+                self.assertTrue(error.exception.file_write_may_have_succeeded)
+                self.assertFalse(error.exception.submission_may_have_succeeded)
+                self.assertIn("do not retry blindly", str(error.exception))
+
+    def test_prepare_image_connection_failure_cannot_have_written_a_file(self):
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        connection.connect.side_effect = OSError("cannot connect")
+        with patch.object(api.socket, "socket", return_value=connection) as create:
+            with self.assertRaises(api.TransportError) as error:
+                api.Client("/unused").prepare_image({"source_path": "/source.png", "preset": "original"})
+        create.assert_called_once()
+        connection.sendall.assert_not_called()
+        self.assertFalse(error.exception.file_write_may_have_succeeded)
+        self.assertFalse(error.exception.submission_may_have_succeeded)
+
+    def test_prepare_image_service_rejection_has_no_fallback(self):
+        client = api.Client("/unused")
+        value = {"source_path": "/source.png", "preset": "unknown"}
+        with patch.object(client, "rpc", side_effect=api.APIError("unknown preset")) as rpc:
+            with self.assertRaisesRegex(api.APIError, "unknown preset"):
+                client.prepare_image(value)
+            rpc.assert_called_once_with("image_prepare", input=value)
+
+    def test_transport_error_keeps_legacy_constructor_compatible(self):
+        error = api.TransportError("legacy", submission_may_have_succeeded=True)
+        self.assertTrue(error.submission_may_have_succeeded)
+        self.assertFalse(error.file_write_may_have_succeeded)
+
     def test_lost_submit_reply_is_ambiguous(self):
         with self.assertRaises(api.TransportError) as error:
             self.exchange([], "submit", model_path="/model", request={})
         self.assertTrue(error.exception.submission_may_have_succeeded)
+        self.assertFalse(error.exception.file_write_may_have_succeeded)
 
     def test_read_failure_is_not_ambiguous_submission(self):
         with self.assertRaises(api.TransportError) as error:
             self.exchange([])
         self.assertFalse(error.exception.submission_may_have_succeeded)
+        self.assertFalse(error.exception.file_write_may_have_succeeded)
 
     def test_duplicate_or_unframed_response_rejected(self):
         for response in [b'{"ok":true,"ok":false,"result":{}}\n',
