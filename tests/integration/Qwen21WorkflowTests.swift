@@ -52,6 +52,110 @@ import ImageIO
         try check(studio.draft.assets.count == 10, "Ten-image file import failed")
         let original = studio.draft.assets
         let output = root.appendingPathComponent("unused.png")
+        // Explicit low-memory ANE opt-in must survive persistence and history,
+        // while unsupported configurations fail before model allocation.
+        let eligibleHardware = #"{"gpu":"Apple M5 Pro","physical_memory_bytes":25769803776}"#
+        try check(Qwen21LowMemoryANEHardware.isEligible(systemJSON: eligibleHardware),
+                  "M5 Pro with exactly 24 GiB was rejected")
+        let unsupportedHardware = [
+            #"{"gpu":"Apple M5","physical_memory_bytes":25769803776}"#,
+            #"{"gpu":"Apple M5 Max","physical_memory_bytes":25769803776}"#,
+            #"{"gpu":"Apple M4 Pro","physical_memory_bytes":25769803776}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":17179869184}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":34359738368}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":51539607552}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":25769803775}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":25769803777}"#,
+            #"{"gpu":"Apple M5 Pro"}"#,
+            #"{"physical_memory_bytes":25769803776}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":"25769803776"}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":25769803776.5}"#,
+            "{}", "invalid JSON"
+        ]
+        var aneDraft = studio.draft
+        aneDraft.operation = "image.generate"; aneDraft.assets = []
+        aneDraft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/qwen-compiled.json")
+        try check(try aneDraft.request(output: output, systemJSON: "{}").qwen21_w8a8 == nil,
+                  "Existing FP16 ANE selection silently enabled W8A8")
+        aneDraft.acceleration?.qwen21W8A8 = true
+        let aneRequest = try aneDraft.request(output: output, systemJSON: eligibleHardware)
+        let savedANE = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(aneDraft))
+        let savedRequest = try JSONDecoder().decode(NativeRequest.self, from: JSONEncoder().encode(aneRequest))
+        try check(savedANE.acceleration?.qwen21W8A8 == true && savedRequest.qwen21_w8a8 == true &&
+                  aneRequest.hybrid_mlp_mode == "base_fused" && savedRequest.hybrid_mlp_mode == "base_fused" &&
+                  aneRequest.qwen21_dit_cache == "off" && savedRequest.qwen21_dit_cache == "off" &&
+                  aneRequest.residency == "component_staged" && aneRequest.allow_approximation == true,
+                  "Low-memory ANE opt-in was not forwarded or persisted")
+        for systemJSON in unsupportedHardware {
+            try check(!Qwen21LowMemoryANEHardware.isEligible(systemJSON: systemJSON),
+                      "Unsupported or unknown hardware passed the low-memory ANE gate")
+            var rejected = false
+            do { _ = try savedANE.request(output: output, systemJSON: systemJSON) }
+            catch { rejected = error.localizedDescription.contains("Apple M5 Pro") }
+            try check(rejected, "A migrated low-memory ANE draft bypassed the hardware gate")
+            var ordinaryANE = savedANE; ordinaryANE.acceleration?.qwen21W8A8 = false
+            let ordinaryRequest = try ordinaryANE.request(output: output, systemJSON: systemJSON)
+            try check(ordinaryRequest.execution == "gpu_ane" && ordinaryRequest.qwen21_w8a8 == nil &&
+                      ordinaryRequest.hybrid_mlp_mode == nil,
+                      "Hardware gate disabled the existing ordinary Qwen ANE path")
+        }
+        let invalidANEChanges: [(inout StudioDraft) -> Void] = [
+            { $0.width = 1024 }, { $0.steps = 1 }, { $0.residency = "resident" },
+            { $0.operation = "image.edit"; $0.assets = Array(original.prefix(1)) },
+            { $0.promptEnhance = true },
+            { $0.loras = [StudioLoRA(path: fixture.path)] }
+        ]
+        for change in invalidANEChanges {
+            var invalid = aneDraft; change(&invalid)
+            var rejected = false
+            do { _ = try invalid.request(output: output, systemJSON: eligibleHardware) } catch { rejected = true }
+            try check(rejected, "Unsupported low-memory ANE configuration accepted")
+        }
+        var gpuDraft = aneDraft; gpuDraft.acceleration?.policy = "gpu"
+        try check(try gpuDraft.request(output: output, systemJSON: "{}").qwen21_w8a8 == nil,
+                  "Disabling ANE retained its approximation flag")
+        let reuseStudio = StudioState(directory: root.appendingPathComponent("ane-reuse"))
+        reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: aneRequest,
+            state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+        try check(reuseStudio.draft.acceleration?.qwen21W8A8 == true &&
+                  (try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware)).qwen21_w8a8 == true,
+                  "History reuse lost the ANE mode")
+        for oldMode in ["auto", "lora_fused", "lora_gate_up", "lora_suffix", "runtime", "runtime_qkv"] {
+            var historical = aneRequest; historical.hybrid_mlp_mode = oldMode
+            let restored = try JSONDecoder().decode(NativeRequest.self, from: JSONEncoder().encode(historical))
+            try check(restored.hybrid_mlp_mode == oldMode, "Native request roundtrip changed an existing MLP mode")
+            reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: restored,
+                state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+            let submitted = try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware)
+            try check(submitted.qwen21_w8a8 == true && submitted.hybrid_mlp_mode == "base_fused",
+                      "Low-memory ANE history retained an unqualified MLP mode")
+        }
+        for cacheMode in Qwen21DiTCacheMode.allCases where cacheMode != .off {
+            var cachedANE = aneDraft; cachedANE.qwen21DiTCache = cacheMode.rawValue
+            let migrated = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(cachedANE))
+            try check(migrated.qwen21DiTCache == cacheMode.rawValue &&
+                      migrated.acceleration?.qwen21W8A8 == true,
+                      "Draft migration silently changed cache or ANE selection")
+            var rejected = false
+            do { _ = try migrated.request(output: output, systemJSON: eligibleHardware) }
+            catch { rejected = error.localizedDescription.contains("DiT 缓存") }
+            try check(rejected, "Low-memory ANE accepted an approximation cache")
+
+            var historical = aneRequest; historical.qwen21_dit_cache = cacheMode.rawValue
+            reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: historical,
+                state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+            rejected = false
+            do { _ = try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware) }
+            catch { rejected = error.localizedDescription.contains("DiT 缓存") }
+            try check(rejected, "History reuse bypassed the low-memory ANE cache restriction")
+
+            cachedANE.acceleration?.policy = "gpu"
+            let gpuCacheRequest = try cachedANE.request(output: output, systemJSON: "{}")
+            try check(gpuCacheRequest.qwen21_dit_cache == cacheMode.rawValue &&
+                      gpuCacheRequest.allow_approximation == true &&
+                      gpuCacheRequest.qwen21_w8a8 == nil && gpuCacheRequest.hybrid_mlp_mode == nil,
+                      "Switching to GPU lost its selected cache or retained ANE flags")
+        }
         try await verifyTurboAndEditing(root: root, fixture: fixture, assets: original)
         try verifyDiTCacheAndOrdinaryLoRA(root: root, fixture: fixture, assets: original)
         let expectedCanvases = [(2048, 2048), (2400, 1792), (1792, 2400),

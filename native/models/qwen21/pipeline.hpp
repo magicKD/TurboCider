@@ -1,6 +1,7 @@
 #pragma once
 #include "../../runtime/session.hpp"
 #include "../../backends/mlx.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 #include "hybrid.hpp"
 #include "transformer.hpp"
 #include "../../backends/ane_ffn.hpp"
@@ -41,6 +42,7 @@ class Session final : public ModelSession {
     std::optional<Transformer::PrefixSnapshot> cached_prefix_snapshot_;
     std::string cached_snapshot_runtime_;
     std::unique_ptr<HybridSession> hybrid_;
+    std::optional<streaming::SourceFileIdentity> hybrid_source_identity_;
     std::unique_ptr<HybridMLP> hybrid_mlp_;
     std::unique_ptr<ane::HybridFfn> runtime_ffn_;
     std::unique_ptr<ane::HybridQkv> runtime_qkv_;

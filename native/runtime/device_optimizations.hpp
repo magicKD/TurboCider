@@ -17,6 +17,7 @@ struct DeviceOptimizations {
     bool external_automatic_partitions = false;
     bool coreml_output_copy = false;
     bool z_image_int8_streaming = false;
+    bool qwen21_layer_streaming = false;
 
     // This gate is shared by the native request path and the typed reader.
     // User profiles and experimental lookahead overrides cannot grant support.
@@ -43,7 +44,7 @@ inline constexpr DeviceOptimizations measured_device_optimizations[] = {
     {"m4pro48-coreml-copy-v1", "Apple M4 Pro", 48ull << 30,
      false, false, false, false, false, true, false},
     {"m5pro24-v1", "Apple M5 Pro", 24ull << 30,
-     true, true, true, true, true, true, true},
+     true, true, true, true, true, true, true, true},
 };
 inline const DeviceOptimizations &device_optimizations(std::string_view gpu, uint64_t memory) {
     for (const auto &profile : measured_device_optimizations)

@@ -52,6 +52,11 @@ class Transformer {
                    std::unordered_map<std::string, Tensor> *trace = nullptr,
                    const std::vector<ReferenceLatents> &references = {});
     size_t cached_layers() const { return prefix_.size(); }
+    // The caller restores lazy checkpoint arrays before each forward. After
+    // each GPU block completes, discard its compiled constants and weights.
+    void set_layer_release(std::function<void(const std::string &)> fn) {
+        release_layer_ = std::move(fn);
+    }
     // Decode-only FFN split: prefill remains exact GPU so cached
     // conditioning is unchanged. Caller owns the callback's runtime.
     using DecodeMLP = std::function<Tensor(int, const Tensor &)>;
@@ -124,6 +129,7 @@ class Transformer {
   private:
     struct KV { Tensor key, value; };
     const Weights &weights_;
+    std::function<void(const std::string &)> release_layer_;
     TransformerConfig config_;
     // Session-owned diagnostic bank; Q/K/V are concatenated once per model
     // load rather than rebuilding 3 GiB of matrices on every image request.

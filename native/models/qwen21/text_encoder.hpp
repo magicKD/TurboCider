@@ -24,7 +24,8 @@ class TextEncoder {
     Tensor encode(const Tokens &, const Event &, std::atomic<bool> &) const;
     Tensor encode_embeddings(const Tensor &, const Tensor &positions,
                              int valid_tokens, const Event &, std::atomic<bool> &,
-                             const std::vector<Tensor> &deepstack_deltas = {}) const;
+                             const std::vector<Tensor> &deepstack_deltas = {},
+                             const std::function<void(const std::string &)> &release_layer = {}) const;
     static std::string prompt_template(const std::string &);
     static std::string system_prefix();
 

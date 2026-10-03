@@ -72,6 +72,13 @@ int main(int argc, char **argv) {
         weights.load_lease(
             lease, {"weights.safetensors"}, event, cancelled);
         assert(weights.has("value"));
+        // Duplicate fds share an OS cursor. Each MLX reader must still begin
+        // at its own header and coexist with the first unevaluated load.
+        for (int pass = 0; pass < 3; ++pass) {
+            tc::Weights repeated;
+            repeated.load_lease(lease, {"weights.safetensors"}, event, cancelled);
+            expect_values(repeated.at("value"), original);
+        }
 
         const auto moved = root / "weights.original.safetensors";
         std::filesystem::rename(path, moved);

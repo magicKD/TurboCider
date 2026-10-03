@@ -6,9 +6,11 @@
 
 namespace tc::qwen21 {
 HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16,
-                     const std::vector<int> &gpu_full_blocks)
+                     const std::vector<int> &gpu_full_blocks, bool layer_staged)
     : weights_(weights), ane_(ane), gpu_w8a16_(gpu_w8a16),
-      runtime_lora_suffix_(weights.has_runtime_loras()) {
+      runtime_lora_suffix_(weights.has_runtime_loras()), layer_staged_(layer_staged) {
+    require(!layer_staged_ || (!gpu_w8a16_ && !runtime_lora_suffix_ && gpu_full_blocks.empty()),
+            "Qwen21 layer-staged hybrid requires BF16 GPU suffixes without LoRA/fallbacks");
     require(!runtime_lora_suffix_ || !gpu_w8a16_,
             "Qwen21 runtime LoRA GPU suffix requires BF16 weights");
     require(!runtime_lora_suffix_ || gpu_full_blocks.empty(),
@@ -30,6 +32,9 @@ HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16,
     }
     const int width = ane.ane_mlp_end;
     for (int i = 0; i < 32; ++i) {
+        // A staged request restores lazy weights on every denoising step.
+        // Do not materialize all original FFN tensors in the constructor.
+        if (layer_staged_) continue;
         auto prefix = "transformer_blocks." + std::to_string(i) + ".img_mlp.";
         const auto &fused = weights.at(prefix + "gate_up.weight");
         if (gpu_full_blocks_[i])
@@ -109,6 +114,24 @@ Tensor HybridMLP::run(int block, const Tensor &input, BridgeTiming *timing) {
         auto up = weights_.project_slice(input, stem + "gate_up",
                                          12288 + width, 24576, 0, 4096);
         gpu = weights_.project_slice(silu(gate) * up, stem + "out", 0, 4096, width, 12288);
+    } else if (layer_staged_) {
+        auto &saved = staged_suffix_[block];
+        if (!saved) {
+            const auto stem = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
+            const int width = ane_.ane_mlp_end;
+            const auto &fused = weights_.at(stem + "gate_up.weight");
+            auto gate_up = mx::contiguous(mx::concatenate({slice_axis(fused, 0, width, 12288),
+                slice_axis(fused, 0, 12288 + width, 24576)}, 0));
+            auto down = mx::contiguous(slice_axis(weights_.at(stem + "out.weight"), 1, width, 12288));
+            // Finish the copies before retaining them. A lazy slice would
+            // keep the full checkpoint FFN alive after layer release. Each
+            // later step now reloads only attention and small shared weights.
+            mx::eval(gate_up, down);
+            require(gate_up.dtype() == mx::bfloat16 && down.dtype() == mx::bfloat16,
+                    "Qwen21 staged suffix cache requires BF16 checkpoint weights");
+            saved.emplace(std::move(gate_up), std::move(down));
+        }
+        gpu = suffix_({input, saved->first, saved->second})[0];
     } else {
         gpu = gpu_w8a16_
             ? suffix_({input, fused_q_[block], fused_scales_[block], fused_biases_[block],

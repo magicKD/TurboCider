@@ -3,6 +3,20 @@ import Combine
 import ImageIO
 import UniformTypeIdentifiers
 
+enum Qwen21LowMemoryANEHardware {
+    private struct Hardware: Decodable {
+        let gpu: String
+        let physical_memory_bytes: UInt64
+    }
+
+    static func isEligible(systemJSON: String = NativeEngine.system()) -> Bool {
+        guard let hardware = try? JSONDecoder().decode(Hardware.self, from: Data(systemJSON.utf8)) else {
+            return false
+        }
+        return hardware.gpu == "Apple M5 Pro" && hardware.physical_memory_bytes == 24 << 30
+    }
+}
+
 /// A local convenience preset, separate from the calibrated native catalog.
 struct StudioLocalStreamingProfile: Decodable {
     let schemaVersion: Int
@@ -192,6 +206,7 @@ struct StudioAcceleration: Codable, Sendable {
     var sourceManifest = ""
     var knownManifests: [String]?
     var compileGPU: Bool?
+    var qwen21W8A8: Bool?
     var coreMLStorage: String?
     var coreMLCache: String?
     var exportPython: String?
@@ -671,7 +686,8 @@ struct StudioDraft: Codable, Sendable {
         guard let value = Int(seedText), (0...2147483647).contains(value) else { throw NativeFailure(message: "种子需为 0–2147483647 的整数。") }
         return value
     }
-    func request(output: URL, random: () -> Int = { Int.random(in: 0...2147483647) }) throws -> NativeRequest {
+    func request(output: URL, systemJSON: String? = nil,
+                 random: () -> Int = { Int.random(in: 0...2147483647) }) throws -> NativeRequest {
         let model = StudioModel.catalog().first { $0.id == modelID }
         guard let model, model.executor else { throw NativeFailure(message: "当前模型没有可用执行器。") }
         try validate(model: model)
@@ -744,6 +760,19 @@ struct StudioDraft: Codable, Sendable {
             if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true && !loraRequiresBaseGPU {
                 guard !acceleration.manifest.isEmpty else { throw NativeFailure(message: "请在模型中心选择已编译的分区 manifest，或先预编译本地源分区。") }
                 request.ane_manifest = acceleration.manifest; request.allow_approximation = true
+                if modelID == "qwen-image-2.1", acceleration.qwen21W8A8 == true {
+                    guard Qwen21LowMemoryANEHardware.isEligible(systemJSON: systemJSON ?? NativeEngine.system()) else {
+                        throw NativeFailure(message: "Qwen 低内存 ANE 实验仅适用于 Apple M5 Pro、24 GiB 内存；请关闭此实验选项。")
+                    }
+                    guard operation == "image.generate", activeAssets.isEmpty,
+                          width == 512, height == 512, steps >= 2,
+                          residency == "component_staged", activeLoRAs.isEmpty,
+                          !promptEnhance, qwen21DiTCache == "off" else {
+                        throw NativeFailure(message: "Qwen 低内存 ANE 仅支持 512×512 文生图、至少 2 步和分阶段加载；请关闭参考图、LoRA、提示词增强与 DiT 缓存。")
+                    }
+                    request.qwen21_w8a8 = true
+                    request.hybrid_mlp_mode = "base_fused"
+                }
             }
             // A base Core ML artifact does not contain an active LoRA delta.
             // Keep App requests safe and usable by selecting the native GPU path
@@ -1606,7 +1635,7 @@ final class StudioState: ObservableObject {
         if request.model == "z-image-turbo", let budget = request.memory_budget_bytes {
             draft.zImageStreamingBudgetGiB = Int(min(budget >> 30, 12))
         }
-        draft.acceleration = StudioAcceleration(policy: request.profile == nil ? request.execution : "profile", manifest: request.ane_manifest ?? "", compileGPU: request.compile_gpu)
+        draft.acceleration = StudioAcceleration(policy: request.profile == nil ? request.execution : "profile", manifest: request.ane_manifest ?? "", compileGPU: request.compile_gpu, qwen21W8A8: request.qwen21_w8a8)
         draft.dynamicText = request.dynamic_text
         draft.promptEnhance = request.prompt_enhance ?? false
         draft.promptEnhanceEditExperimental = request.prompt_enhance_edit_experimental ?? false

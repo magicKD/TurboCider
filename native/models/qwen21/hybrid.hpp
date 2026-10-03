@@ -2,6 +2,7 @@
 #include "../../backends/coreml.hpp"
 #include <array>
 #include <map>
+#include <optional>
 
 namespace tc::qwen21 {
 // Experimental checkpoint-bound MLP channel split, explicitly opted into.
@@ -9,7 +10,7 @@ namespace tc::qwen21 {
 class HybridMLP {
   public:
     HybridMLP(const Weights &, HybridSession &, bool gpu_w8a16 = false,
-              const std::vector<int> &gpu_full_blocks = {});
+              const std::vector<int> &gpu_full_blocks = {}, bool layer_staged = false);
     // The result borrows the session-wide Core ML output backing. Caller must
     // materialize its consumer before any subsequent prediction on ane_.
     // Transformer::forward enforces this at the residual-update boundary.
@@ -32,6 +33,11 @@ class HybridMLP {
     HybridSession &ane_;
     bool gpu_w8a16_ = false;
     bool runtime_lora_suffix_ = false;
+    bool layer_staged_ = false;
+    // Populate only while visiting each decode layer, after materializing
+    // compact slices. Original checkpoint tensors are released that layer.
+    // 6144-channel W8A8 leaves exactly 4.5 GiB of BF16 suffixes across 32 layers.
+    std::array<std::optional<std::pair<Tensor, Tensor>>, 32> staged_suffix_;
     std::array<bool, 32> gpu_full_blocks_{};
     std::map<int, std::pair<Tensor, Tensor>> full_weights_;
     std::vector<Tensor> fused_, down_;
