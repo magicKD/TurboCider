@@ -60,7 +60,8 @@ def chunk_policy(value):
     return str(int(value))
 
 
-def validate_results(rows, route, expected_count, model_id="z-image-turbo", expect_lora=False):
+def validate_results(rows, route, expected_count, model_id="z-image-turbo", expect_lora=False,
+                     runtime_backend="public", expect_device_io=False, expected_data_path=None):
     """Do not report a failed/degraded route as a successful acceleration run.
 
     Raw JSONL/PNG evidence is already saved by the caller. Adaptive GPU probes
@@ -69,12 +70,21 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
     """
     if len(rows) != expected_count:
         raise ValueError("wrong result count")
+    if runtime_backend not in ("public", "private", "auto"):
+        raise ValueError("unknown runtime executor backend")
+    if expected_data_path not in (None, "fp16", "w8a8_hadamard"):
+        raise ValueError("unknown runtime data path")
     base_backend = {"z-image-turbo": "mlx_cpp_metal",
                     "qwen-image-2.1": "mlx_cpp_metal",
                     "z-image-turbo-gguf": "mlx_cpp_metal_gguf"}[model_id]
     backend = base_backend + {"gpu": "", "frozen": "+coreml",
                               "runtime": "+coreml_runtime_weight",
                               "qkv": "+coreml_runtime_qkv"}[route]
+    private_backend = base_backend + "+private_ane_runtime_weight_experimental"
+    allowed_backends = {backend}
+    if route == "runtime" and runtime_backend != "public":
+        allowed_backends = {private_backend} if runtime_backend == "private" else {backend, private_backend}
+    session_backend = None
     previous_calls = 0
     previous_qkv_gpu = 0
     previous_full_probes = 0
@@ -83,10 +93,19 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
     previous_async_wait = 0.0
     async_receipt = None
     previous_serial = (0.0, 0.0)
+    previous_device_calls = 0
     previous_ready = (0.0, 0.0)
+    previous_a8 = (0, 0.0)
+    a8_policy = None
+    stage_policy = None
+    previous_stage_variants = 0
     for row in rows:
-        if row.get("runtime_backend") != backend:
+        actual_backend = row.get("runtime_backend")
+        if actual_backend not in allowed_backends:
             raise ValueError(f"requested {route} backend was not reported")
+        if session_backend is not None and actual_backend != session_backend:
+            raise ValueError("runtime backend changed within resident session")
+        session_backend = actual_backend
         if expect_lora and (row.get("lora_strategy") != "inference_time" or
                             session_counter(row, "lora_applied_projections") == 0):
             raise ValueError("runtime LoRA was not bound without merging")
@@ -148,6 +167,58 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
         previous_calls = calls
         if route == "runtime":
             runtime = hybrid.get("runtime_weight") or {}
+            has_stage = any(n in runtime for n in ("stage_specialized","stage_pipeline_variants"))
+            if stage_policy is not None and not has_stage:
+                raise ValueError("stage specialization receipt disappeared within session")
+            if has_stage:
+                specialized=runtime.get("stage_specialized")
+                variants=session_counter(runtime,"stage_pipeline_variants")
+                if (type(specialized) is not bool or variants>(18 if specialized else 1) or
+                        variants<previous_stage_variants or (stage_policy is not None and specialized is not stage_policy)):
+                    raise ValueError("invalid bounded stage specialization receipt")
+                stage_policy,previous_stage_variants = specialized,variants
+            has_a8 = any(name in runtime for name in ("a8_lookahead_enabled", "a8_prefetches_session_total", "a8_wait_seconds_session_total"))
+            if a8_policy is not None and not has_a8:
+                raise ValueError("bounded A8 lookahead receipt disappeared within session")
+            if has_a8:
+                enabled = runtime.get("a8_lookahead_enabled")
+                prefetches = session_counter(runtime, "a8_prefetches_session_total")
+                waiting = runtime.get("a8_wait_seconds_session_total")
+                if (type(enabled) is not bool or prefetches > calls or (not enabled and prefetches) or
+                        isinstance(waiting, bool) or not isinstance(waiting, (int, float)) or
+                        not math.isfinite(waiting) or waiting < previous_a8[1] or prefetches < previous_a8[0] or
+                        (a8_policy is not None and a8_policy is not enabled)):
+                    raise ValueError("invalid bounded A8 lookahead receipt")
+                previous_a8, a8_policy = (prefetches, waiting), enabled
+            if "scale_cache_enabled" in runtime:
+                enabled=runtime.get("scale_cache_enabled")
+                counts=tuple(session_counter(runtime,n) for n in ("scale_cache_hits_session_total","scale_cache_misses_session_total",
+                    "scale_cache_entries","scale_cache_bytes","scale_cache_evictions_session_total"))
+                if(type(enabled) is not bool or counts[2]>128 or counts[3]>(4<<20) or
+                   (not enabled and any(counts)) or (counts[2]==0)!=(counts[3]==0)):
+                    raise ValueError("invalid bounded weight scale-cache receipt")
+            if "prefetch_enabled" in runtime:
+                enabled=runtime.get("prefetch_enabled")
+                names=("prefetch_submissions_session_total","prefetch_hits_session_total",
+                       "prefetch_discards_session_total","prefetch_failures_session_total")
+                counts=tuple(session_counter(runtime,name) for name in names)
+                waiting=runtime.get("prefetch_wait_seconds_session_total")
+                if (type(enabled) is not bool or counts[1]+counts[2]>counts[0] or
+                    isinstance(waiting,bool) or not isinstance(waiting,(int,float)) or not math.isfinite(waiting) or waiting<0 or
+                    (not enabled and (any(counts) or waiting))):
+                    raise ValueError("invalid future-bank prefetch receipt")
+            if expect_device_io:
+                device_calls = session_counter(runtime, "device_io_calls_session_total")
+                if (runtime.get("io_path") != "gpu_iosurface" or runtime.get("executor_backend") != "private_ane" or
+                        not previous_device_calls <= device_calls == calls):
+                    raise ValueError("private GPU I/O was not reported consistently for every prediction")
+                previous_device_calls = device_calls
+            if expected_data_path is not None and runtime.get("data_path") != expected_data_path:
+                raise ValueError("requested runtime data path was not reported")
+            if runtime_backend != "public" or "executor_backend" in runtime:
+                expected_executor = "private_ane" if actual_backend == private_backend else "public_coreml"
+                if runtime.get("executor_backend") != expected_executor:
+                    raise ValueError("executor telemetry disagrees with runtime backend")
             if "lora_input_ready_seconds_session_total" in runtime:
                 ready = (runtime.get("lora_input_ready_seconds_session_total"),
                          runtime.get("pre_ffn_seconds_session_total"))
@@ -286,7 +357,9 @@ def validate_qwen_qk_receipts(rows, enabled):
 def benchmark_environment():
     """Do not inherit unrelated model experiments into a matched comparison."""
     return {key: value for key, value in os.environ.items()
-            if not key.startswith(("TURBOCIDER_QWEN21_", "TURBOCIDER_Z_", "TURBOCIDER_RUNTIME_ANE_"))}
+            if key not in ("TURBOCIDER_ANE_BACKEND", "TURBOCIDER_ALLOW_PRIVATE_ANE") and
+            not key.startswith("TURBOCIDER_PRIVATE_ANE_") and
+            not key.startswith(("TURBOCIDER_QWEN21_", "TURBOCIDER_Z_", "TURBOCIDER_RUNTIME_ANE_"))}
 
 
 def system_memory():

@@ -111,10 +111,28 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('_ANEInMemoryModel',disabled)
         self.assertFalse((ROOT/'native/models/h3_runtime/h3_ane_bridge.m').exists())
         self.assertFalse((ROOT/'native/models/h3_runtime/h3_ane_bridge.h').exists())
-        for private_class in ['_ANEInMemoryModel','_ANERequest','_ANEIOSurfaceObject']:
+        # v2 permits ONE dynamically loaded private implementation, omitted
+        # from the default public/distributable build. It must not leak into
+        # shared runtime/model code; legacy H3 private bindings stay excluded.
+        private_loader=ROOT/'native/backends/private/ane_program.mm'
+        public_sources=build.split('SOURCES=(',1)[1].split('\n)',1)[0]
+        self.assertNotIn('backends/private/',public_sources)
+        self.assertIn('PRIVATE_ANE="${TURBOCIDER_ENABLE_PRIVATE_ANE:-0}"',build)
+        private_gate=build.split('if [[ "$PRIVATE_ANE" == "1" ]]; then\n SOURCES+=(',1)[1].split('\nfi',1)[0]
+        self.assertIn('native/backends/private/ane_program.mm',private_gate)
+        loader=private_loader.read_text()
+        self.assertIn('dlopen(',loader)
+        self.assertIn('NSClassFromString',loader)
+        for private_class in ['_ANEInMemoryModel','_ANEClient','_ANERequest','_ANEIOSurfaceObject','_ANESharedEvents']:
             for p in (ROOT/'native').rglob('*'):
                 if p.suffix in ['.c','.cpp','.m','.mm','.h','.hpp']:
+                    if p==private_loader and private_class!='_ANEInMemoryModel':
+                        continue
                     self.assertNotIn(private_class,p.read_text(),str(p))
+        release=(ROOT/'tools/native/check_release_binary.py').read_text()
+        self.assertIn('TURBOCIDER_ENABLE_PRIVATE_ANE',release)
+        self.assertIn("'strings'",release)
+        self.assertIn("'otool'",release)
         for p in (ROOT/'native').rglob('*'):
             if p.suffix in ['.cpp','.mm','.hpp','.h']:
                 self.assertNotIn('vendor/',p.read_text(),str(p))

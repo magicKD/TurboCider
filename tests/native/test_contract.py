@@ -3812,7 +3812,8 @@ class ContractTests(unittest.TestCase):
         self.assertIn('np.float16(1.0 / args.output_scale)', exporter)
         self.assertIn('ane = ane * Tensor(active_hybrid->output_scale', qwen)
         self.assertIn('bool used_hybrid_output = false', qwen)
-        self.assertIn('if (used_hybrid_output ||', qwen)
+        self.assertIn('const bool used_hybrid = state.advance(', qwen)
+        self.assertIn('if (used_hybrid ||', qwen)
         self.assertIn('allow_flexible_backing', coreml)
         self.assertIn('output_ = (!flexible_ || allow_flexible_backing_) ? output : nil',
                       coreml)

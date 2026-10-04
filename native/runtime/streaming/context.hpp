@@ -70,6 +70,10 @@ public:
     void begin(const StageLayout &);
     void run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &cancel,
                   std::chrono::milliseconds stall_timeout = std::chrono::seconds(60));
+    // Explicit private bank transition, only at a fully drained reload pass
+    // boundary. Logical plan is unchanged; next pass recreates its backing.
+    // Not valid for carried content or certified actual-receipt execution.
+    void release_drained_backing();
     // Opt-in only. Must be called by the owner after begin() and before the
     // first pass. The default/private executor path leaves this disabled.
     void enable_receipt(ExecutionReceiptOptions);

@@ -4,6 +4,8 @@
 #include "memory_manifest.hpp"
 #include "memory_policy.hpp"
 #include "memory_trace.hpp"
+#include "streaming/gguf_packed_metrics.hpp"
+#include "tensor_metrics.hpp"
 #include <chrono>
 #include <map>
 #include <memory>
@@ -33,6 +35,26 @@ ExecutionPlan make_plan(const Request &);
 ExecutionPlan make_plan_after_public_streaming_preflight(const Request &);
 std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
+    std::string runtime_weight_backend, runtime_weight_backend_fallback_reason;
+    std::string runtime_weight_io_path;
+    std::string runtime_weight_data_path;
+    std::string runtime_weight_partition_axis = "rows";
+    int runtime_weight_ane_channels = 0, runtime_weight_gpu_channels = 0;
+    uint64_t runtime_weight_channel_blocks = 0;
+    bool runtime_weight_prefetch_enabled = false;
+    uint64_t runtime_weight_prefetch_submissions = 0, runtime_weight_prefetch_hits = 0;
+    uint64_t runtime_weight_prefetch_discards = 0, runtime_weight_prefetch_failures = 0;
+    double runtime_weight_prefetch_wait_seconds = 0;
+    bool runtime_weight_scale_cache_enabled = false;
+    bool runtime_weight_stage_specialized = false;
+    uint64_t runtime_weight_stage_pipeline_variants = 0;
+    bool runtime_weight_launch_fence_enabled = false;
+    bool runtime_weight_a8_lookahead_enabled = false;
+    uint64_t runtime_weight_a8_prefetches = 0;
+    double runtime_weight_a8_wait_seconds = 0;
+    uint64_t runtime_weight_scale_cache_hits = 0, runtime_weight_scale_cache_misses = 0;
+    uint64_t runtime_weight_scale_cache_entries = 0, runtime_weight_scale_cache_bytes = 0, runtime_weight_scale_cache_evictions = 0;
+    uint64_t runtime_weight_device_io_calls = 0;
     // Runtime-weight route only; all times/counts are session cumulative.
     uint64_t runtime_weight_slot_bytes = 0, runtime_weight_estimated_bytes = 0;
     // Owner destroyed before returning from a phase-scoped request. Core ML
@@ -62,6 +84,8 @@ struct HybridMetrics {
     double runtime_weight_wall_seconds = 0;
     double runtime_weight_pre_seconds = 0;
     float runtime_weight_headroom = 1.f;
+    std::string runtime_weight_source_recipe;
+    uint64_t runtime_weight_convrot_stage_submissions = 0;
     // Exporter-declared weight variant; unknown for legacy manifests without it.
     std::string weight_variant = "unknown";
     double load_seconds = 0;
@@ -210,6 +234,32 @@ struct PublicStreamingSelectionMetrics {
     std::string receipt_digest, receipt_verifier_revision;
     bool actual_plan_verified = false;
 };
+struct QuantizedExecutionMetrics {
+    std::string source_sha256, layout_digest, decode_backend;
+    uint64_t packed_bytes = 0, packed_capacity_bytes = 0, source_float_bytes = 0;
+    uint64_t dense_capacity_bytes = 0, managed_peak_bytes = 0, fills = 0, decoded_bytes = 0;
+    double source_load_seconds = 0, decode_seconds = 0, exposed_wait_seconds = 0;
+    uint32_t slots = 0, prefetch = 0;
+    std::string source_residency;
+    uint64_t source_logical_bytes = 0, read_buffer_bytes = 0, source_read_bytes = 0;
+    double streamed_read_seconds = 0;
+    uint64_t refiner_fills = 0, refiner_capacity_bytes = 0, refiner_decoded_bytes = 0;
+    uint32_t refiner_slots = 0;
+    std::string precision_profile;
+    uint64_t gpu_affine_preparations=0,gpu_affine_output_bytes=0,gpu_prepare_capacity_upper=0;
+    uint64_t allocator_cache_limit_bytes=0;
+    double gpu_prepare_seconds=0;
+    uint64_t gpu_fixed_output_banks=0,gpu_fixed_output_bank_bytes=0;
+    std::string source_metadata_policy;
+    bool source_metadata_reused=false;
+    uint64_t source_metadata_preparations=0,conditioning_producer_generation=0;
+};
+struct QuantizedSourceComparison {
+    std::string name;
+    uint32_t step=0;
+    Float32Comparison metrics;
+    bool final_latent=false;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::string selection, backend, precision, checkpoint;
@@ -240,6 +290,10 @@ struct RunResult {
         streaming_receipt;
     std::optional<PublicStreamingSelectionMetrics> public_streaming;
     std::optional<MemoryAdmissionMetrics> memory_admission;
+    std::optional<QuantizedExecutionMetrics> quantized_execution;
+    std::optional<QuantizedExecutionMetrics> encoder_quantized_execution;
+    std::optional<streaming::GgufPackedBankMetrics> gguf_import;
+    std::vector<QuantizedSourceComparison> quantized_source_comparisons;
     std::vector<MemoryTraceEvent> memory_trace;
     std::string native_json;
 };

@@ -13,6 +13,11 @@ case "$PACKAGE_ONLY" in
  *) printf 'TURBOCIDER_BUILD_PACKAGE_ONLY must be 0 or 1\n' >&2; exit 2 ;;
 esac
 EXPERIMENTAL_PROBES="${TURBOCIDER_BUILD_EXPERIMENTAL_PROBES:-0}"
+PRIVATE_ANE="${TURBOCIDER_ENABLE_PRIVATE_ANE:-0}"
+case "$PRIVATE_ANE" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_ENABLE_PRIVATE_ANE must be 0 or 1\n' >&2; exit 2 ;;
+esac
 case "$EXPERIMENTAL_PROBES" in
  0|1) ;;
  *) printf 'TURBOCIDER_BUILD_EXPERIMENTAL_PROBES must be 0 or 1\n' >&2; exit 2 ;;
@@ -50,9 +55,16 @@ MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
 DEPLOYMENT_TARGET="${TURBOCIDER_DEPLOYMENT_TARGET:-${MLX_MIN_MACOS:-15.0}}"
 MACOS_FLAGS=(-mmacosx-version-min="$DEPLOYMENT_TARGET")
 COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I bindings/c/include -I native/core -isystem "$MLX_ROOT/include" -Wall -Wextra -Wno-unused-parameter)
+COMMON+=(-isystem "$MLX_ROOT/include/metal_cpp")
 if [[ -n "$TEST_HOOK_FLAG" ]]; then COMMON+=("$TEST_HOOK_FLAG"); fi
 if [[ -n "$AUDIT_COUNTER_FLAG" ]]; then COMMON+=("$AUDIT_COUNTER_FLAG"); fi
 COMMON+=(-DTURBOCIDER_HAS_BUNDLED_CATALOG=1)
+if [[ "$EXPERIMENTAL_PROBES" == "1" ]]; then
+ COMMON+=(-DTURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS=1)
+fi
+if [[ "$PRIVATE_ANE" == "1" ]]; then
+ COMMON+=(-DTURBOCIDER_ENABLE_PRIVATE_ANE=1)
+fi
 BUILD_IDENTITY_DIR="$OUT/runtime-build"
 BUILD_IDENTITY_PYTHON="${TURBOCIDER_BUILD_PYTHON:-python3}"
 BUILD_IDENTITY_FLAGS=("${COMMON[@]}")
@@ -88,6 +100,9 @@ OBJECTS=()
 SOURCES=(
  native/runtime/build_identity.cpp
  native/core/common.cpp
+ native/core/gguf_decode.cpp
+ native/core/gguf_affine.cpp
+ native/core/quantized_execution.cpp
  native/core/json_keys.cpp
  native/runtime/streaming/config.cpp native/runtime/streaming/layout.cpp
  native/runtime/streaming/public_request_validation.cpp
@@ -99,6 +114,9 @@ SOURCES=(
  native/runtime/streaming/slot_pool.cpp native/runtime/streaming/io_executor.cpp native/runtime/streaming/context.cpp
  native/runtime/streaming/run_context.cpp
  native/runtime/streaming/mlx_weight_pager.cpp
+ native/runtime/streaming/gguf_weight_pager.cpp
+ native/runtime/streaming/gguf_gpu_affine_fixed.cpp
+ native/runtime/streaming/gguf_packed_bank.cpp
  native/runtime/streaming/c_bridge.cpp native/runtime/streaming/audit.cpp
  native/models/ltx_runtime/ltx_streaming_descriptor.cpp native/models/ltx_runtime/ltx_streaming_plan.cpp
  native/models/h3_runtime/h3_streaming_descriptor.cpp
@@ -106,6 +124,7 @@ SOURCES=(
  native/platform/apple/flux_streaming_descriptor.mm
  native/platform/apple/streaming_config.mm
  native/components/text/qwen3.cpp
+ native/components/text/qwen3_gguf.cpp native/platform/apple/qwen3_gguf_config.mm
  native/components/text/umt5.cpp
  native/components/weights/affine.cpp native/platform/apple/wan_checkpoint.mm
  native/components/diffusion/wan.cpp
@@ -123,11 +142,12 @@ SOURCES=(
  native/workflows/image_workflows.mm
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/memory_policy.cpp native/runtime/memory_accounting.cpp native/runtime/memory_manifest.cpp native/runtime/memory_schedule.cpp native/runtime/memory_plan.cpp native/runtime/memory_scheduler.cpp native/runtime/memory_watchdog.cpp native/runtime/memory_trace.cpp native/runtime/memory_execution.cpp native/runtime/lora_identity.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
- native/backends/ane_memory.cpp native/backends/ane_runtime.mm native/backends/ane_ffn.cpp native/backends/ane_qkv.cpp
+ native/backends/ane_memory.cpp native/backends/ane_runtime.mm native/backends/ane_backend.mm native/backends/ane_ffn.cpp native/backends/ane_qkv.cpp
  native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/h3_mlx_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
 native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_mlx/vdn_mlx.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
  native/models/z_image/gguf.cpp
+ native/models/z_image/gguf_execution.cpp
  native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/platform/apple/z_image_coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp
  native/models/qwen21/transformer.cpp
  native/models/qwen21/hybrid.cpp
@@ -154,6 +174,9 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/media/pe_image.mm
  native/media/reference_preparation.mm
 )
+if [[ "$PRIVATE_ANE" == "1" ]]; then
+ SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm)
+fi
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories
  # intentionally contain common names such as dit.cpp and pipeline.cpp.

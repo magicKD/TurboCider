@@ -1,4 +1,5 @@
 #include "session.hpp"
+#include "quantized_execution_profiles.hpp"
 #include "streaming/public_request_validation.hpp"
 #include "../models/qwen21/memory_policy.hpp"
 #include <set>
@@ -68,6 +69,30 @@ static ExecutionPlan make_plan_impl(
         const Request &requested,
         bool public_streaming_prevalidated) {
     Request r = requested;
+    validate_quantized_execution(r.quantized_execution);
+    if (r.quantized_execution.active()) {
+        const bool dense_bf16 = r.quantized_execution.precision_profile == "z-dense-bf16-v1";
+        const bool raw_gpu=gguf_raw_gpu_profile(r.quantized_execution.precision_profile.value_or(""));
+        require(!(dense_bf16 || raw_gpu) || (r.allow_approximation && r.compile_gpu),
+                "qe_config_conflict: dense BF16 candidate requires allow_approximation and compile_gpu");
+        require(r.model == "z-image-turbo-gguf" && r.execution == "gpu" && r.operation == "image.generate" &&
+                    r.frames == 1 && r.inputs.empty() && r.loras.empty() && r.ane_manifest.empty() &&
+                    r.encoder_ane_manifest.empty(), "qe_config_conflict: R1 is Z GGUF GPU text-to-image only");
+        require(!r.streaming_selector && !r.residency_specified && !r.memory_budget_specified &&
+                    !r.streaming_offload_specified && !r.streaming_offload && r.quantized_cache.empty() &&
+                    r.profile.empty() && (dense_bf16 || raw_gpu || !r.compile_gpu) && r.hybrid_mlp_mode == "auto",
+                "qe_config_conflict: legacy/profile/compile/acceleration options conflict");
+        require(!r.memory_constrained.enabled, "qe_envelope_unknown: experimental GGUF is not whole-request certified");
+        if (r.streaming.specified()) {
+            require(r.streaming.active() && r.streaming.stages.size() == 1 && r.streaming.stages.count("denoiser"),
+                    "qe_config_conflict: manual layout must select only denoiser");
+            const auto &s = r.streaming.stages.at("denoiser");
+            const auto p = r.quantized_execution.prefetch_layers.value_or(1);
+            require(s.residency == "streamed" && s.slot_count == 1 + p && s.prefetch_distance == p &&
+                        s.resident_prefix_blocks == 0 && s.block_group_size == 1 && s.io_workers == 1,
+                    "qe_config_conflict: manual layout differs from quantized lookahead");
+        }
+    }
     const bool selector_active = r.streaming_selector &&
         r.streaming_selector->active();
     if (r.streaming.specified()) validate_streaming_config(r.streaming);

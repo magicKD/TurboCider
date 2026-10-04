@@ -21,6 +21,123 @@ with mock.patch.object(sys, "path", [str(ROOT / "tools/validation"), *sys.path])
 
 
 class ScreenTests(unittest.TestCase):
+    def test_specialized_stage_receipts_are_complete_and_bounded(self):
+        row=copy.deepcopy(self.row)
+        row["hybrid"]["runtime_weight"].update(stage_specialized=True,stage_pipeline_variants=18)
+        SCREEN.validate_results([row],"runtime",1)
+        for change in ({"stage_specialized":False},{"stage_specialized":1},{"stage_pipeline_variants":19},
+                       {"stage_pipeline_variants":True}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+        for name in ("stage_specialized","stage_pipeline_variants"):
+            bad=copy.deepcopy(row);del bad["hybrid"]["runtime_weight"][name]
+            with self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+        later=copy.deepcopy(row);later["hybrid"]["runtime_weight"]["stage_pipeline_variants"]=17
+        with self.assertRaises(ValueError):SCREEN.validate_results([row,later],"runtime",1)
+        later=copy.deepcopy(row)
+        for name in ("stage_specialized","stage_pipeline_variants"):del later["hybrid"]["runtime_weight"][name]
+        with self.assertRaises(ValueError):SCREEN.validate_results([row,later],"runtime",1)
+    def test_a8_lookahead_receipts_are_complete_and_bounded(self):
+        row = copy.deepcopy(self.row)
+        runtime = row["hybrid"]["runtime_weight"]
+        good = {"a8_lookahead_enabled": True, "a8_prefetches_session_total": 1,
+                "a8_wait_seconds_session_total": .001}
+        runtime.update(good)
+        SCREEN.validate_results([row], "runtime", 1)
+        for change in ({"a8_lookahead_enabled": False}, {"a8_lookahead_enabled": 1},
+                       {"a8_prefetches_session_total": True}, {"a8_prefetches_session_total": 999},
+                       {"a8_wait_seconds_session_total": float("nan")}, {"a8_wait_seconds_session_total": True}):
+            bad = copy.deepcopy(row)
+            bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                SCREEN.validate_results([bad], "runtime", 1)
+        for name in good:
+            bad = copy.deepcopy(row)
+            del bad["hybrid"]["runtime_weight"][name]
+            with self.assertRaises(ValueError):
+                SCREEN.validate_results([bad], "runtime", 1)
+        for change in ({"a8_prefetches_session_total": 0}, {"a8_wait_seconds_session_total": 0},
+                       {"a8_lookahead_enabled": False, "a8_prefetches_session_total": 0}):
+            later = copy.deepcopy(row)
+            later["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                SCREEN.validate_results([row, later], "runtime", 1)
+        runtime.update(a8_lookahead_enabled=False, a8_prefetches_session_total=0)
+        SCREEN.validate_results([row], "runtime", 1)
+    def test_scale_cache_receipts_are_complete_bounded_metadata(self):
+        row=copy.deepcopy(self.row);runtime=row["hybrid"]["runtime_weight"]
+        good={"scale_cache_enabled":True,"scale_cache_hits_session_total":4,"scale_cache_misses_session_total":3,
+              "scale_cache_entries":3,"scale_cache_bytes":1536,"scale_cache_evictions_session_total":0}
+        runtime.update(good);SCREEN.validate_results([row],"runtime",1)
+        for change in ({"scale_cache_enabled":False},{"scale_cache_enabled":1},{"scale_cache_entries":129},
+                       {"scale_cache_bytes":(4<<20)+1},{"scale_cache_hits_session_total":True},{"scale_cache_entries":0}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+        for name in good:
+            if name=="scale_cache_enabled":continue
+            bad=copy.deepcopy(row);del bad["hybrid"]["runtime_weight"][name]
+            with self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+    def test_future_bank_receipts_require_complete_bounded_counters(self):
+        row=copy.deepcopy(self.row)
+        receipt=row["hybrid"]["runtime_weight"]
+        good={"prefetch_enabled":True,"prefetch_submissions_session_total":5,"prefetch_hits_session_total":3,
+              "prefetch_discards_session_total":1,"prefetch_failures_session_total":0,"prefetch_wait_seconds_session_total":.01}
+        receipt.update(good);SCREEN.validate_results([row],"runtime",1)
+        for change in ({"prefetch_hits_session_total":5},{"prefetch_enabled":False},{"prefetch_enabled":1},
+                       {"prefetch_discards_session_total":True},{"prefetch_wait_seconds_session_total":float("nan")}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+        for name in good:
+            if name=="prefetch_enabled":continue
+            bad=copy.deepcopy(row);del bad["hybrid"]["runtime_weight"][name]
+            with self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+    def test_w8a8_screen_rejects_fp16_or_missing_data_path(self):
+        row = copy.deepcopy(self.row)
+        row["runtime_backend"] = "mlx_cpp_metal+private_ane_runtime_weight_experimental"
+        runtime = row["hybrid"]["runtime_weight"]
+        runtime.update(executor_backend="private_ane", io_path="gpu_iosurface", data_path="w8a8_hadamard",
+                       device_io_calls_session_total=row["hybrid"]["runtime_calls_session_total"])
+        SCREEN.validate_results([row], "runtime", 1, runtime_backend="private", expect_device_io=True,
+                                expected_data_path="w8a8_hadamard")
+        for path in (None, "fp16", "w8a8"):
+            bad = copy.deepcopy(row); bad["hybrid"]["runtime_weight"]["data_path"] = path
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "data path"):
+                SCREEN.validate_results([bad], "runtime", 1, runtime_backend="private", expect_device_io=True,
+                                        expected_data_path="w8a8_hadamard")
+
+    def test_private_gpu_io_requires_matching_receipt_for_all_predictions(self):
+        row = copy.deepcopy(self.row)
+        row["runtime_backend"] = "mlx_cpp_metal+private_ane_runtime_weight_experimental"
+        runtime = row["hybrid"]["runtime_weight"]
+        runtime.update(executor_backend="private_ane", io_path="gpu_iosurface",
+                       device_io_calls_session_total=row["hybrid"]["runtime_calls_session_total"])
+        SCREEN.validate_results([row], "runtime", 1, runtime_backend="private", expect_device_io=True)
+        for change in ({"io_path": "host"}, {"device_io_calls_session_total": 0},
+                       {"device_io_calls_session_total": True}, {"executor_backend": "public_coreml"}):
+            bad = copy.deepcopy(row); bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                SCREEN.validate_results([bad], "runtime", 1, runtime_backend="private", expect_device_io=True)
+    def test_private_backend_is_explicit_and_cannot_masquerade_as_public(self):
+        row = copy.deepcopy(self.row)
+        row["runtime_backend"] = "mlx_cpp_metal+private_ane_runtime_weight_experimental"
+        runtime = row["hybrid"]["runtime_weight"]
+        runtime["executor_backend"] = "private_ane"
+        for policy in ("private", "auto"):
+            SCREEN.validate_results([row], "runtime", 1, runtime_backend=policy)
+        with self.assertRaisesRegex(ValueError, "backend"):
+            SCREEN.validate_results([row], "runtime", 1)
+        runtime["executor_backend"] = "public_coreml"
+        with self.assertRaisesRegex(ValueError, "telemetry"):
+            SCREEN.validate_results([row], "runtime", 1, runtime_backend="private")
+        row["runtime_backend"] = "mlx_cpp_metal+coreml_runtime_weight"
+        SCREEN.validate_results([row], "runtime", 1, runtime_backend="auto")
+        with self.assertRaisesRegex(ValueError, "backend"):
+            SCREEN.validate_results([row], "runtime", 1, runtime_backend="private")
+        private = copy.deepcopy(row)
+        private["runtime_backend"] = "mlx_cpp_metal+private_ane_runtime_weight_experimental"
+        private["hybrid"]["runtime_weight"]["executor_backend"] = "private_ane"
+        with self.assertRaisesRegex(ValueError, "changed"):
+            SCREEN.validate_results([row, private], "runtime", 2, runtime_backend="auto")
     def test_qkv_receipts_do_not_accept_gpu_fallback_or_ffn_counts(self):
         row = {"runtime_backend": "mlx_cpp_metal+coreml_runtime_qkv",
                "timings_seconds": {"request_wall": 2., "denoise": 1.},
@@ -130,6 +247,8 @@ assert not any(name in sys.modules for name in (
         with tempfile.TemporaryDirectory() as scratch:
             output = Path(scratch)/"screen"
             for option in (("--chunks", "129"), ("--timeout", "0"),
+                           ("--private-data-path", "w8a8"),
+                           ("--private-channels", "512"), ("--private-channels", "-1"),
                            ("--sample-memory", "--memory-interval-ms", "0"),
                            ("--sample-memory", "--memory-max-gap-ms", "99"),
                            ("--memory-interval-ms", "200"), ("--qwen-qk-norm-rope",)):
@@ -222,7 +341,7 @@ assert not any(name in sys.modules for name in (
             with mock.patch.object(SCREEN, "ROOT", root), \
                     mock.patch.object(SCREEN, "wait_for_idle", return_value="idle"), \
                     mock.patch.object(SCREEN, "system_memory", return_value={}), \
-                    mock.patch.object(SCREEN.subprocess, "run", side_effect=run), \
+                    mock.patch.object(SCREEN, "run_owned", side_effect=run), \
                     mock.patch.dict(COMMON.os.environ, {"TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE": "1"}), \
                     mock.patch("builtins.print"):
                 for enabled in (False, True):
@@ -315,7 +434,7 @@ assert not any(name in sys.modules for name in (
             with mock.patch.object(SCREEN, "ROOT", root), \
                     mock.patch.object(SCREEN, "wait_for_idle", return_value="idle"), \
                     mock.patch.object(SCREEN, "system_memory", return_value={}), \
-                    mock.patch.object(SCREEN.subprocess, "run", side_effect=run), \
+                    mock.patch.object(SCREEN, "run_owned", side_effect=run), \
                     mock.patch.dict(COMMON.os.environ, {"TURBOCIDER_QWEN21_VIGGLE_LORA_FP16": "1",
                                                       "TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE": "1"}), \
                     mock.patch("builtins.print"):
@@ -505,7 +624,7 @@ assert not any(name in sys.modules for name in (
             with mock.patch.object(SCREEN, "ROOT", root), \
                     mock.patch.object(SCREEN, "wait_for_idle", return_value="idle"), \
                     mock.patch.object(SCREEN, "system_memory", return_value={}), \
-                    mock.patch.object(SCREEN.subprocess, "run", side_effect=run), \
+                    mock.patch.object(SCREEN, "run_owned", side_effect=run), \
                     mock.patch("builtins.print"):
                 output = root/"good"
                 with mock.patch.object(sys, "argv", [*args, "--output", str(output)]):
@@ -551,7 +670,7 @@ assert not any(name in sys.modules for name in (
                 (isolated / "libturbocider.dylib").write_bytes(b"isolated library")
                 output = root / "isolated-screen"
                 with mock.patch.object(sys, "argv", [*args, "--cli", str(cli), "--output", str(output)]), \
-                        mock.patch.object(SCREEN.subprocess, "run", side_effect=run) as launch:
+                        mock.patch.object(SCREEN, "run_owned", side_effect=run) as launch:
                     SCREEN.main()
                 summary = json.loads((output / "summary.json").read_text())
                 self.assertEqual(summary["library_sha256"], hashlib.sha256(b"isolated library").hexdigest())
@@ -620,6 +739,8 @@ assert not any(name in sys.modules for name in (
     def test_benchmark_environment_is_shared_and_does_not_modify_parent(self):
         source = {"PATH": "bin", "TURBOCIDER_QWEN21_PROFILE_GPU_OPS": "1",
                   "TURBOCIDER_Z_RUNTIME_LORA_DIRECT_FP16": "1",
+                  "TURBOCIDER_PRIVATE_ANE_DATA_PATH": "w8a8",
+                  "TURBOCIDER_ALLOW_PRIVATE_ANE": "1", "TURBOCIDER_ANE_BACKEND": "private",
                   "TURBOCIDER_RUNTIME_ANE_CHUNKS": "99"}
         with mock.patch.dict(COMMON.os.environ, source, clear=True):
             self.assertEqual(SCREEN.benchmark_environment(), {"PATH": "bin"})

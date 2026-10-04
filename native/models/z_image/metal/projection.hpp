@@ -45,4 +45,33 @@ inline mx::array projection(const mx::array &x, const mx::array &w) {
                   {{"T",x.dtype()},{"M",m},{"N",n},{"K",k},{"BM",bm},{"BN",bn}},
                   {}, false, {})[0];
 }
+// Logical projection range over the ORIGINAL dense [out, physical_in]
+// tensor. Keep physical leading dimension for down columns; never compact W.
+inline mx::array projection_range(const mx::array &x, const mx::array &w,
+                                  int row_begin, int row_end, int col_begin, int col_end,
+                                  int bm = 32) {
+    if (x.ndim() != 3 || x.shape(0) != 1 || w.ndim() != 2 || row_begin < 0 || row_end <= row_begin || row_end > w.shape(0) ||
+        col_begin < 0 || col_end <= col_begin || col_end > w.shape(1) || x.shape(2) != col_end-col_begin ||
+        !w.flags().row_contiguous || (x.dtype() != mx::bfloat16 && x.dtype() != mx::float16) || w.dtype() != x.dtype() ||
+        (bm != 16 && bm != 32))
+        throw std::invalid_argument("Z-Image Metal physical projection range geometry/dtype mismatch");
+    const int m=x.shape(1), n=row_end-row_begin, k=col_end-col_begin, pitch=w.shape(1), bn=128;
+    static auto kernel=mx::fast::metal_kernel("tc_z_mpp_projection_range",{"x","w"},{"out"},R"metal(
+        using namespace mpp::tensor_ops;
+        uint row=threadgroup_position_in_grid.y*BM, col=threadgroup_position_in_grid.x*BN;
+        auto a=tensor(const_cast<device T*>(x),dextents<int,2>{K,M},array<int,2>{1,K});
+        auto b=tensor(const_cast<device T*>(w)+ROW_BEGIN*WP+COL_BEGIN,dextents<int,2>{K,N},array<int,2>{1,WP});
+        auto aa=a.slice(0,row),bb=b.slice(0,col);
+        matmul2d<matmul2d_descriptor(BM,BN,K,false,true,false),execution_simdgroups<4>> op;
+        auto acc=op.template get_destination_cooperative_tensor<decltype(aa),decltype(bb),float>();op.run(aa,bb,acc);
+        for(uint i=0;i<acc.get_capacity();++i) {
+            if(!acc.is_valid_element(i))continue;
+            auto coord=acc.get_multidimensional_index(i);
+            if(row+coord[1]<M&&col+coord[0]<N)out[(row+coord[1])*N+col+coord[0]]=T(acc[i]);
+        }
+    )metal","#include <metal_tensor>\n#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>\n");
+    return kernel({x,w},{{1,m,n}},{x.dtype()}, {((n+bn-1)/bn)*128,(m+bm-1)/bm,1},{128,1,1},
+        {{"T",x.dtype()},{"M",m},{"N",n},{"K",k},{"WP",pitch},{"ROW_BEGIN",row_begin},{"COL_BEGIN",col_begin},
+         {"BM",bm},{"BN",bn}}, {},false,{})[0];
+}
 } // namespace tc::z_metal

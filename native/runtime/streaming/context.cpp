@@ -21,6 +21,7 @@ struct StageExecutor::State {
     uint32_t active_pool_index = std::numeric_limits<uint32_t>::max();
     std::optional<tc_stream_slot_ticket_v1> carry_ticket;
     bool setup_complete = false, failed = false, finished = false;
+    bool backing_released = false, bank_transitions_used = false;
     std::thread::id owner = std::this_thread::get_id();
 };
 StageExecutor::StageExecutor(uint32_t stage, uint64_t request,
@@ -61,6 +62,7 @@ void StageExecutor::destroy_pools() noexcept {
 }
 bool StageExecutor::retry_drain() noexcept {
     if (state_ && state_->owner!=std::this_thread::get_id()) return false;
+    if (state_) state_->backing_released = false;
     if (state_ && state_->io) state_->io->shutdown_and_join();
     if (pools_live_) {
         bool active_drained = false;
@@ -266,9 +268,10 @@ void StageExecutor::run_pass(uint32_t pass, uint32_t step, std::atomic<bool> &ca
     if (!state_ || state_->owner!=std::this_thread::get_id())
         throw std::logic_error("streaming_owner_violation");
     try {
-        if (state_->failed || state_->finished || !pools_live_ ||
+        if (state_->failed || state_->finished || (!pools_live_ && !state_->backing_released) ||
             pass!=state_->passes || pass>=state_->layout.pass_count || timeout.count()<=0)
             throw std::logic_error("streaming invalid pass/lifecycle");
+        if (!pools_live_) { activate_pool(0); state_->backing_released = false; }
         auto &layout=state_->layout;
         if (layout.pass_transition == PassTransition::carry_first_group) {
             const uint64_t offset =
@@ -466,10 +469,26 @@ void StageExecutor::enable_receipt(ExecutionReceiptOptions options) {
     if (!state_ || state_->owner != std::this_thread::get_id())
         throw std::logic_error("streaming_owner_violation");
     if (!state_->setup_complete || state_->failed || state_->finished ||
-        state_->passes != 0 || receipt_recorder_ || receipt_)
+        state_->passes != 0 || receipt_recorder_ || receipt_ || state_->bank_transitions_used)
         throw std::logic_error("streaming invalid receipt lifecycle");
     receipt_recorder_ = std::make_unique<ActualReceiptRecorder>(
         state_->layout, stage_, request_, std::move(options));
+}
+void StageExecutor::release_drained_backing() {
+    if (!state_ || state_->owner != std::this_thread::get_id())
+        throw std::logic_error("streaming_owner_violation");
+    if (!state_->setup_complete || state_->failed || state_->finished || !pools_live_ ||
+        state_->layout.pass_transition != PassTransition::reload ||
+        state_->layout.multi_pool_policy != MultiPoolPolicy::serial || receipt_recorder_)
+        throw std::logic_error("streaming invalid backing release lifecycle");
+    for (const auto &pool : state_->pools)
+        if (pool.live && (!pool.drained || !pool.safety || !pool.safety->quiescent()))
+            throw std::logic_error("streaming backing release before all readers drained");
+    // run_pass has drained I/O, adapter callbacks and completion records.
+    // Initial begin() has issued no jobs. Never stop the reusable I/O worker.
+    if (mailbox_->overflowed() || consume())
+        throw std::logic_error("streaming pending completion at backing release");
+    destroy_pools(); state_->backing_released = true; state_->bank_transitions_used = true;
 }
 ExecutionCounters StageExecutor::counters() const {
     if (!state_ || state_->owner!=std::this_thread::get_id())

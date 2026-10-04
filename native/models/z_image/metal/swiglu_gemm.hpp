@@ -46,6 +46,35 @@ inline mx::array swiglu_gemm(const mx::array &x, const mx::array &w,
                   {{"T",x.dtype()},{"M",x.shape(1)},{"BN",bn}}, {}, false, {})[0];
 }
 
+// Same BF16 rounding/epilogue as the full GPU kernel, selecting immutable
+// leading output rows rather than copying a compact gate matrix.
+inline mx::array swiglu_gemm_range(const mx::array &x,const mx::array &w,const mx::array &up,int first,int count) {
+    if(x.ndim()!=3||x.shape(0)!=1||x.shape(2)!=3840||w.shape()!=mx::Shape({10240,3840})||
+       first<0||count<=0||first+count>10240||count%128||up.shape()!=mx::Shape({1,x.shape(1),count})||
+       x.dtype()!=mx::bfloat16||w.dtype()!=x.dtype()||up.dtype()!=x.dtype())
+        throw std::invalid_argument("Z-Image physical SwiGLU channel range mismatch");
+    static auto kernel=mx::fast::metal_kernel("tc_z_swiglu_gemm_range",{"x","w","up"},{"out"},R"metal(
+        using namespace mpp::tensor_ops;
+        uint row=threadgroup_position_in_grid.y*32,col=threadgroup_position_in_grid.x*128;
+        auto a=tensor(const_cast<device T*>(x),dextents<int,2>{3840,M},array<int,2>{1,3840});
+        auto b=tensor(const_cast<device T*>(w)+FIRST*3840,dextents<int,2>{3840,N},array<int,2>{1,3840});
+        auto aa=a.slice(0,row),bb=b.slice(0,col);
+        matmul2d<matmul2d_descriptor(32,128,3840,false,true,false),execution_simdgroups<4>> op;
+        auto acc=op.template get_destination_cooperative_tensor<decltype(aa),decltype(bb),float>();op.run(aa,bb,acc);
+        for(uint i=0;i<acc.get_capacity();++i) {
+            if(!acc.is_valid_element(i))continue;
+            auto coord=acc.get_multidimensional_index(i);
+            if(row+coord[1]<M&&col+coord[0]<N) {
+                uint offset=(row+coord[1])*N+col+coord[0];T gate=T(acc[i]);
+                auto y=1/(1+metal::exp(metal::abs(gate)));T sigmoid=gate<0?y:1-y;
+                out[offset]=T(T(gate*sigmoid)*up[offset]);
+            }
+        }
+    )metal","#include <metal_tensor>\n#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>\n");
+    return kernel({x,w,up},{up.shape()},{x.dtype()}, {(count/128)*128,(x.shape(1)+31)/32,1},{128,1,1},
+                  {{"T",x.dtype()},{"M",x.shape(1)},{"N",count},{"FIRST",first}}, {},false,{})[0];
+}
+
 // Dual-projection variant: gate and up share the input tile and threadgroup
 // residency. It removes the intermediate `up` dispatch and keeps two FP32
 // accumulators. Full-image parity is required; epilogue arithmetic can still

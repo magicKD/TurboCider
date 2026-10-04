@@ -98,8 +98,12 @@ private struct NearestPredictor: UpscalePredictor {
         try check(restored.upscaleAfterGeneration && restored.upscaleModelPath == missing.path && restored.upscaleCompute == .ane, "Upscale settings did not persist")
         let studio = StudioState(directory: root.appendingPathComponent("draft-store"))
         studio.draft = draft; studio.newDraft()
-        try check(studio.draft.upscaleModelPath == missing.path && !studio.draft.upscaleAfterGeneration && studio.draft.upscaleCompute == .ane,
-                  "New creation lost the installed upscale model or enabled processing implicitly")
+        try check(studio.draft.upscaleModelPath == missing.path && studio.draft.upscaleAfterGeneration && studio.draft.upscaleCompute == .ane,
+                  "New creation lost the installed model or the user's explicit upscale preference")
+        studio.selectGenerationUpscale(nil)
+        studio.newDraft()
+        try check(!studio.draft.upscaleAfterGeneration && studio.draft.upscaleModelPath == missing.path,
+                  "New creation enabled upscaling after the user opted out")
         studio.draft.upscaleModelPaths["x2plus"] = "/local/x2.mlpackage"
         studio.selectGenerationUpscale(.x2plus)
         try check(studio.generationUpscaleVariant == .x2plus && studio.draft.upscaleModelPath == "/local/x2.mlpackage", "2x choice did not select its model")

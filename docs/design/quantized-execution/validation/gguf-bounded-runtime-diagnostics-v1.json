@@ -1,0 +1,1400 @@
+{
+  "schema": "tc-gguf-private-diagnostics-v1",
+  "scope": "selected real inputs; not full R1/model/memory/performance certification",
+  "cases": [
+    {
+      "id": "gguf-r1-q8-source-compare",
+      "raw_report_sha256": "9cbb56f26177f5af3441f8773d6c0eb1bc9a47c8df92446661ba23002bff75f2",
+      "library_sha256": "f438bd2ce41555d12b4da8f607ade5b8118f27aff058ae2ceeffe9b9d39fba5b",
+      "runs": [
+        {
+          "prefetch": -1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "a5065dd36b157667a930fddbf0e87f699db1c014825215174bfb6da18c3c9df1",
+          "cancellation_triggered": false,
+          "wall_seconds": 7.962013791999198,
+          "timings_seconds": {
+            "denoise": 4.696392333,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 7.806476875,
+            "text_encode": 0.271474083,
+            "vae_decode": 0.3140455
+          },
+          "quantized_execution": null,
+          "mlx_memory": {
+            "mlx_active_bytes": 7903806348,
+            "mlx_peak_bytes": 11283907744,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 5488640,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 42,
+          "steps": 4,
+          "profile": "native-packed",
+          "reference_tensors_bytes_exact": true
+        },
+        {
+          "prefetch": 1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "272e75cb902532f3acd1df6816790d09dc58f6afde462d08a00a53f0cdf54e6d",
+          "cancellation_triggered": false,
+          "wall_seconds": 8.808351082989248,
+          "timings_seconds": {
+            "denoise": 3.92635475,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 8.807916958,
+            "text_encode": 0.000162667,
+            "vae_decode": 0.419748459
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 2.871234079000001,
+            "decoded_bytes": 43425914880,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 0.103995041,
+            "fill_count": 120,
+            "layout_digest": "42ae4b2898264c120339a2bd6457e81a673fc52814126c5a2d7a12fc9423a4e7",
+            "managed_peak_bytes": 7949073664,
+            "max_dense_pool_capacity_bytes": 723845120,
+            "packed_capacity_bytes": 7225299200,
+            "packed_source_bytes": 7224676608,
+            "prefetch_layers": 1,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 2,
+            "source_float_bytes": 1459147008,
+            "source_load_seconds": 1.991814916,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 338866828,
+            "mlx_peak_bytes": 8355078662,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 3719168,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 42,
+          "steps": 4,
+          "profile": "native-packed",
+          "reference_tensors_bytes_exact": false
+        }
+      ],
+      "numerical_gates": {
+        "n1-bf16-failure.json": {
+          "scope": "diagnostic tensor comparison; not complete model/media qualification",
+          "tensors": [
+            {
+              "name": "z_decoded.safetensors",
+              "exact": false,
+              "reference_sha256": "c6c03cc6d750e3e80d72a6b0b31c5c9c50b4ac5b965f693cf182c3c5a15cf16e",
+              "candidate_sha256": "76741a022edff0c29599d1e44af0f723bf8d551cb4a3e0e7feeba404ed828f20",
+              "rel_l2": 0.040162085795500437,
+              "cosine": 0.9991971070183762,
+              "max_abs": 1.5297107696533203
+            },
+            {
+              "name": "z_latent_final.safetensors",
+              "exact": false,
+              "reference_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+              "candidate_sha256": "1aa0c317e6133a771a1d2b9ae82bb44f44ab759c0f2a9992c8285df40e2d5006",
+              "rel_l2": 0.05850040667948514,
+              "cosine": 0.9982994335033325,
+              "max_abs": 2.597120523452759
+            },
+            {
+              "name": "z_latent_initial.safetensors",
+              "exact": true,
+              "reference_sha256": "22192ff00b85447a96918c049f8a742320207d82fe41703ae85aceedb8b9ae8a",
+              "candidate_sha256": "22192ff00b85447a96918c049f8a742320207d82fe41703ae85aceedb8b9ae8a",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_1.safetensors",
+              "exact": false,
+              "reference_sha256": "9d9fae5663842a190f3ddbfa97f8eae4fba8f30a89a9a1922e4e2a3fcf3be089",
+              "candidate_sha256": "0b1e55c1efe3eb0b21eda8b8708c974438d1a1e207bfa9c2aced4d1e2811f67c",
+              "rel_l2": 0.002137289185743648,
+              "cosine": 0.9999977199966995,
+              "max_abs": 0.03306376934051514
+            },
+            {
+              "name": "z_latent_step_2.safetensors",
+              "exact": false,
+              "reference_sha256": "f7cededd8c940f3f6561e902db44a76c0f6eea4381e1a461190fe563ad44d27c",
+              "candidate_sha256": "0db02876dfff3cf0b92d49d35253e71cedf6a0533f0999dd2143bf66a5d3ac2d",
+              "rel_l2": 0.010600649030590326,
+              "cosine": 0.9999439071824907,
+              "max_abs": 0.20722341537475586
+            },
+            {
+              "name": "z_latent_step_3.safetensors",
+              "exact": false,
+              "reference_sha256": "8f179e955da10091a0d8597a2cd498377cb64e880e30166715d996863cfbfaef",
+              "candidate_sha256": "0eaaba07698be195e816fc0368d92d1d29f2053ac691ab58e6d6d625ad661583",
+              "rel_l2": 0.03348592682669577,
+              "cosine": 0.9994420749494742,
+              "max_abs": 0.8522721529006958
+            },
+            {
+              "name": "z_latent_step_4.safetensors",
+              "exact": false,
+              "reference_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+              "candidate_sha256": "1aa0c317e6133a771a1d2b9ae82bb44f44ab759c0f2a9992c8285df40e2d5006",
+              "rel_l2": 0.05850040667948514,
+              "cosine": 0.9982994335033325,
+              "max_abs": 2.597120523452759
+            }
+          ],
+          "n1_final_latent_pass": false
+        }
+      }
+    },
+    {
+      "id": "gguf-r1-q8-f16-1024",
+      "raw_report_sha256": "0f4bd9a7ab68c555dc77abcf98408e581d1b9bc8ba0a15c47ea93cf639ae4ad6",
+      "library_sha256": "2e4f582d2ce4549141de1d1e3bf40e96d1b4704c1545a9c2efff2ecf650815fa",
+      "runs": [
+        {
+          "prefetch": -1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "84dde8c871e277e50563fe7f2ffdb19c050a926f0a84b7c0631fa8875b7745f6",
+          "cancellation_triggered": false,
+          "wall_seconds": 24.035439166007563,
+          "timings_seconds": {
+            "denoise": 19.968000417,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 23.878069083,
+            "text_encode": 0.272228084,
+            "vae_decode": 1.076999292
+          },
+          "quantized_execution": null,
+          "mlx_memory": {
+            "mlx_active_bytes": 7914029964,
+            "mlx_peak_bytes": 20888994984,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 10010624,
+            "Compressions": 102400000,
+            "Decompressions": 868352
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "native-packed",
+          "reference_tensors_bytes_exact": true
+        },
+        {
+          "prefetch": 0,
+          "status": 0,
+          "error": null,
+          "png_sha256": "875534612218ae66996d46b9d198c1dfb156150e2173c9e59b79cb4a71c28b8b",
+          "cancellation_triggered": false,
+          "wall_seconds": 29.000970124994637,
+          "timings_seconds": {
+            "denoise": 22.6851485,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 29.000504125,
+            "text_encode": 0.00019375,
+            "vae_decode": 1.657713375
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 3.461993835000001,
+            "decoded_bytes": 43425914880,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 3.463615404,
+            "fill_count": 120,
+            "layout_digest": "53894c3faec07e857c1a4a453152dc035acdee3132313ef80590f942816d9b08",
+            "managed_peak_bytes": 7587186944,
+            "max_dense_pool_capacity_bytes": 361922560,
+            "packed_capacity_bytes": 7225299200,
+            "packed_source_bytes": 7224676608,
+            "prefetch_layers": 0,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 1,
+            "source_float_bytes": 1459147008,
+            "source_load_seconds": 2.016129667,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 349090444,
+            "mlx_peak_bytes": 13324055464,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 3618799616,
+            "Compressions": 0,
+            "Decompressions": 3899392
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "z-source-mixed-f16-v1",
+          "reference_tensors_bytes_exact": false
+        },
+        {
+          "prefetch": 1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "875534612218ae66996d46b9d198c1dfb156150e2173c9e59b79cb4a71c28b8b",
+          "cancellation_triggered": false,
+          "wall_seconds": 23.229034374991897,
+          "timings_seconds": {
+            "denoise": 19.43425975,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 23.228590917,
+            "text_encode": 9.8083e-05,
+            "vae_decode": 1.661374666
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 3.7308232940000003,
+            "decoded_bytes": 43425914880,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 0.12053595699999999,
+            "fill_count": 120,
+            "layout_digest": "8976fd62ad5aa42cad158bf21f455e05bd46b768bf7af2feac6bd78936f15a1a",
+            "managed_peak_bytes": 7949073664,
+            "max_dense_pool_capacity_bytes": 723845120,
+            "packed_capacity_bytes": 7225299200,
+            "packed_source_bytes": 7224676608,
+            "prefetch_layers": 1,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 2,
+            "source_float_bytes": 1459147008,
+            "source_load_seconds": 2.042221333,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 349090444,
+            "mlx_peak_bytes": 13324055464,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 6275072,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "z-source-mixed-f16-v1",
+          "reference_tensors_bytes_exact": false
+        }
+      ],
+      "numerical_gates": {
+        "d1-f16-1024.json": {
+          "scope": "diagnostic tensor comparison; not complete model/media qualification",
+          "tensors": [
+            {
+              "name": "z_decoded.safetensors",
+              "exact": true,
+              "reference_sha256": "8237238c720a23ffebed1598cf3a152c7be916df6746f58958432538d4d6818c",
+              "candidate_sha256": "8237238c720a23ffebed1598cf3a152c7be916df6746f58958432538d4d6818c",
+              "rel_l2": 0.0,
+              "cosine": 0.9999999999999999,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_final.safetensors",
+              "exact": true,
+              "reference_sha256": "55a4fd13ca7197868417cb40b2ef32144404e459035a39b19271e3f912d679c1",
+              "candidate_sha256": "55a4fd13ca7197868417cb40b2ef32144404e459035a39b19271e3f912d679c1",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_initial.safetensors",
+              "exact": true,
+              "reference_sha256": "b64a9191a1f943d7ef42728c9df5e85d4281d4301a81e4dd3cc50dc8af288a07",
+              "candidate_sha256": "b64a9191a1f943d7ef42728c9df5e85d4281d4301a81e4dd3cc50dc8af288a07",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_1.safetensors",
+              "exact": true,
+              "reference_sha256": "9fb9801b573c94df499f0e35201c0a91627ac28924a08d0b4621195a118530c2",
+              "candidate_sha256": "9fb9801b573c94df499f0e35201c0a91627ac28924a08d0b4621195a118530c2",
+              "rel_l2": 0.0,
+              "cosine": 1.0000000000000002,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_2.safetensors",
+              "exact": true,
+              "reference_sha256": "e8c7794368a5d1a884b88c925a4924764dfa45ea172b5c28e156b6b23b0dbeb3",
+              "candidate_sha256": "e8c7794368a5d1a884b88c925a4924764dfa45ea172b5c28e156b6b23b0dbeb3",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_3.safetensors",
+              "exact": true,
+              "reference_sha256": "438ce99ca762e713abdd633c2999cfd2d59b45ce6a66a12430e115046f2e2fe0",
+              "candidate_sha256": "438ce99ca762e713abdd633c2999cfd2d59b45ce6a66a12430e115046f2e2fe0",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_4.safetensors",
+              "exact": true,
+              "reference_sha256": "55a4fd13ca7197868417cb40b2ef32144404e459035a39b19271e3f912d679c1",
+              "candidate_sha256": "55a4fd13ca7197868417cb40b2ef32144404e459035a39b19271e3f912d679c1",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            }
+          ],
+          "n1_final_latent_pass": true
+        },
+        "n1-f16-1024.json": {
+          "scope": "diagnostic tensor comparison; not complete model/media qualification",
+          "tensors": [
+            {
+              "name": "z_decoded.safetensors",
+              "exact": false,
+              "reference_sha256": "ac5e442c857bf68f5bdd3b2272a542d23dc7474b44086950c2c84f73d26bb5e4",
+              "candidate_sha256": "8237238c720a23ffebed1598cf3a152c7be916df6746f58958432538d4d6818c",
+              "rel_l2": 0.1091064568048688,
+              "cosine": 0.9940415869328393,
+              "max_abs": 1.795913279056549
+            },
+            {
+              "name": "z_latent_final.safetensors",
+              "exact": false,
+              "reference_sha256": "c68a5d1c5c7979d026d3aa013a16fbb791c1c1c712e62a7107b748f2fc67c9ac",
+              "candidate_sha256": "55a4fd13ca7197868417cb40b2ef32144404e459035a39b19271e3f912d679c1",
+              "rel_l2": 0.09211287755337956,
+              "cosine": 0.9957625344058402,
+              "max_abs": 4.4413899183273315
+            },
+            {
+              "name": "z_latent_initial.safetensors",
+              "exact": true,
+              "reference_sha256": "b64a9191a1f943d7ef42728c9df5e85d4281d4301a81e4dd3cc50dc8af288a07",
+              "candidate_sha256": "b64a9191a1f943d7ef42728c9df5e85d4281d4301a81e4dd3cc50dc8af288a07",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_1.safetensors",
+              "exact": false,
+              "reference_sha256": "9475d58492299fbfcc34333c9fbbc95bd9d4126b59ec1b31a17f8e8d1bd5099c",
+              "candidate_sha256": "9fb9801b573c94df499f0e35201c0a91627ac28924a08d0b4621195a118530c2",
+              "rel_l2": 0.0016508829383926134,
+              "cosine": 0.9999986381051654,
+              "max_abs": 0.029307842254638672
+            },
+            {
+              "name": "z_latent_step_2.safetensors",
+              "exact": false,
+              "reference_sha256": "60fb2b7db065b7ec87b077db6161c2868dec0c1469af9e1c57831342b06e33bc",
+              "candidate_sha256": "e8c7794368a5d1a884b88c925a4924764dfa45ea172b5c28e156b6b23b0dbeb3",
+              "rel_l2": 0.02011076124820696,
+              "cosine": 0.9997977859951952,
+              "max_abs": 0.7500385344028473
+            },
+            {
+              "name": "z_latent_step_3.safetensors",
+              "exact": false,
+              "reference_sha256": "44b6c7b780237746751dcc5f9528e3cb41721e4d8c8d6a6c6b56c3db45c92553",
+              "candidate_sha256": "438ce99ca762e713abdd633c2999cfd2d59b45ce6a66a12430e115046f2e2fe0",
+              "rel_l2": 0.055508923857349846,
+              "cosine": 0.9984595606356932,
+              "max_abs": 2.0149903893470764
+            },
+            {
+              "name": "z_latent_step_4.safetensors",
+              "exact": false,
+              "reference_sha256": "c68a5d1c5c7979d026d3aa013a16fbb791c1c1c712e62a7107b748f2fc67c9ac",
+              "candidate_sha256": "55a4fd13ca7197868417cb40b2ef32144404e459035a39b19271e3f912d679c1",
+              "rel_l2": 0.09211287755337956,
+              "cosine": 0.9957625344058402,
+              "max_abs": 4.4413899183273315
+            }
+          ],
+          "n1_final_latent_pass": false
+        }
+      }
+    },
+    {
+      "id": "gguf-r1-q8-affine-eager-1024",
+      "raw_report_sha256": "b31878f8a14d6d2e07f17b4dd11d81dfebe5d8d6f2bf26a7eb23da041116dfc2",
+      "library_sha256": "e638253f034f8445f812c528ebdc6ef2927eb4a456ee17371148517589a74966",
+      "runs": [
+        {
+          "prefetch": -1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "84dde8c871e277e50563fe7f2ffdb19c050a926f0a84b7c0631fa8875b7745f6",
+          "cancellation_triggered": false,
+          "wall_seconds": 25.025575167004718,
+          "timings_seconds": {
+            "denoise": 20.0360335,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 24.867543125,
+            "text_encode": 1.233517792,
+            "vae_decode": 1.051049708
+          },
+          "quantized_execution": null,
+          "mlx_memory": {
+            "mlx_active_bytes": 7914029964,
+            "mlx_peak_bytes": 20888994984,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 7767654400,
+            "Compressions": 0,
+            "Decompressions": 3309568
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "native-packed",
+          "reference_tensors_bytes_exact": true
+        },
+        {
+          "prefetch": 0,
+          "status": 0,
+          "error": null,
+          "png_sha256": "e0c2afa6c8096393fe9374445590b0ca1d46743c62528e81b9fa7b720c48623d",
+          "cancellation_triggered": false,
+          "wall_seconds": 32.89812579199497,
+          "timings_seconds": {
+            "denoise": 26.638729334,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 32.897663084,
+            "text_encode": 0.000162958,
+            "vae_decode": 1.645640459
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 6.283715287999999,
+            "decoded_bytes": 24433582080,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 6.285065112000002,
+            "fill_count": 120,
+            "layout_digest": "ea7cbd51e12db894000bf7ff79fa0ae22520f9a75856fae4bb0ebede407a1319",
+            "managed_peak_bytes": 7428950272,
+            "max_dense_pool_capacity_bytes": 203685888,
+            "packed_capacity_bytes": 7225299200,
+            "packed_source_bytes": 7224676608,
+            "prefetch_layers": 0,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 1,
+            "source_float_bytes": 1459147008,
+            "source_load_seconds": 2.005831125,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 349090444,
+            "mlx_peak_bytes": 13324055464,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 2816557056,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "z-source-native-affine-v1",
+          "reference_tensors_bytes_exact": false
+        },
+        {
+          "prefetch": 1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "e0c2afa6c8096393fe9374445590b0ca1d46743c62528e81b9fa7b720c48623d",
+          "cancellation_triggered": false,
+          "wall_seconds": 24.80968679099169,
+          "timings_seconds": {
+            "denoise": 21.012347416,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 24.809239542,
+            "text_encode": 8.1875e-05,
+            "vae_decode": 1.660588917
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 7.574823746999998,
+            "decoded_bytes": 24433582080,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 0.21978716400000003,
+            "fill_count": 120,
+            "layout_digest": "01c8370fde8c545265bc7c0e86fe732fa8cf8e1377d21acbb7577880f47fce83",
+            "managed_peak_bytes": 7632600320,
+            "max_dense_pool_capacity_bytes": 407371776,
+            "packed_capacity_bytes": 7225299200,
+            "packed_source_bytes": 7224676608,
+            "prefetch_layers": 1,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 2,
+            "source_float_bytes": 1459147008,
+            "source_load_seconds": 2.046647334,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 349090444,
+            "mlx_peak_bytes": 13324055464,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 6488064,
+            "Compressions": 0,
+            "Decompressions": 8437760
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "z-source-native-affine-v1",
+          "reference_tensors_bytes_exact": false
+        }
+      ],
+      "numerical_gates": {
+        "d1-eager-native-affine.json": {
+          "scope": "diagnostic tensor comparison; not complete model/media qualification",
+          "tensors": [
+            {
+              "name": "z_decoded.safetensors",
+              "exact": false,
+              "reference_sha256": "ac5e442c857bf68f5bdd3b2272a542d23dc7474b44086950c2c84f73d26bb5e4",
+              "candidate_sha256": "8ae613db2699c2d1295c5c408bd70b68f435675d31fca3d282ce6967866be766",
+              "rel_l2": 0.11023665454592982,
+              "cosine": 0.9939169745987955,
+              "max_abs": 1.775891900062561
+            },
+            {
+              "name": "z_latent_final.safetensors",
+              "exact": false,
+              "reference_sha256": "c68a5d1c5c7979d026d3aa013a16fbb791c1c1c712e62a7107b748f2fc67c9ac",
+              "candidate_sha256": "0631f98eb311f7e1835cdb39fd58dfab405ada7d692cba800b74149820e3b5f8",
+              "rel_l2": 0.09342777122682956,
+              "cosine": 0.9956404596780182,
+              "max_abs": 4.346897482872009
+            },
+            {
+              "name": "z_latent_initial.safetensors",
+              "exact": true,
+              "reference_sha256": "b64a9191a1f943d7ef42728c9df5e85d4281d4301a81e4dd3cc50dc8af288a07",
+              "candidate_sha256": "b64a9191a1f943d7ef42728c9df5e85d4281d4301a81e4dd3cc50dc8af288a07",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_1.safetensors",
+              "exact": false,
+              "reference_sha256": "9475d58492299fbfcc34333c9fbbc95bd9d4126b59ec1b31a17f8e8d1bd5099c",
+              "candidate_sha256": "00f5f617c56347634d9b80dd0c3c9aa8d22867999f36403b8ee17edb4ec454d7",
+              "rel_l2": 0.0016696371409499972,
+              "cosine": 0.9999986068116912,
+              "max_abs": 0.035039424896240234
+            },
+            {
+              "name": "z_latent_step_2.safetensors",
+              "exact": false,
+              "reference_sha256": "60fb2b7db065b7ec87b077db6161c2868dec0c1469af9e1c57831342b06e33bc",
+              "candidate_sha256": "568003e693cac87f0497435ef96a035ce494107f6a984c2b23de973b776e53a4",
+              "rel_l2": 0.02084729198669509,
+              "cosine": 0.9997827029959517,
+              "max_abs": 0.7692422568798065
+            },
+            {
+              "name": "z_latent_step_3.safetensors",
+              "exact": false,
+              "reference_sha256": "44b6c7b780237746751dcc5f9528e3cb41721e4d8c8d6a6c6b56c3db45c92553",
+              "candidate_sha256": "d02963749c316976bfe8a25dde1dfd3ed7389f0b7ed6a391422cf4ae89138717",
+              "rel_l2": 0.05664198078524777,
+              "cosine": 0.9983960257595541,
+              "max_abs": 2.029359817504883
+            },
+            {
+              "name": "z_latent_step_4.safetensors",
+              "exact": false,
+              "reference_sha256": "c68a5d1c5c7979d026d3aa013a16fbb791c1c1c712e62a7107b748f2fc67c9ac",
+              "candidate_sha256": "0631f98eb311f7e1835cdb39fd58dfab405ada7d692cba800b74149820e3b5f8",
+              "rel_l2": 0.09342777122682956,
+              "cosine": 0.9956404596780182,
+              "max_abs": 4.346897482872009
+            }
+          ],
+          "n1_final_latent_pass": false
+        }
+      }
+    },
+    {
+      "id": "gguf-r1-q8-compat-affine-1024",
+      "raw_report_sha256": "5a581fe56c8d789f07ba83bd96c1621081fa54e6e523071a1d77381b18c0c046",
+      "library_sha256": "0cbc85b12b6394c7c380a3286f975e479312226a4fcb3ed73442eb0aa8161d2c",
+      "runs": [
+        {
+          "prefetch": -1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "84dde8c871e277e50563fe7f2ffdb19c050a926f0a84b7c0631fa8875b7745f6",
+          "cancellation_triggered": false,
+          "wall_seconds": 24.962002665997716,
+          "timings_seconds": {
+            "denoise": 19.956009958,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 24.794086875,
+            "text_encode": 1.23426125,
+            "vae_decode": 1.067072209
+          },
+          "quantized_execution": null,
+          "mlx_memory": {
+            "mlx_active_bytes": 7914029964,
+            "mlx_peak_bytes": 20888994984,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 7766097920,
+            "Compressions": 0,
+            "Decompressions": 524288
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "native-packed",
+          "reference_tensors_bytes_exact": true
+        },
+        {
+          "prefetch": 0,
+          "status": 0,
+          "error": null,
+          "png_sha256": "84dde8c871e277e50563fe7f2ffdb19c050a926f0a84b7c0631fa8875b7745f6",
+          "cancellation_triggered": false,
+          "wall_seconds": 34.37053237500368,
+          "timings_seconds": {
+            "denoise": 26.875333958,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 34.370041,
+            "text_encode": 0.000159333,
+            "vae_decode": 1.647157416
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 6.277192327999998,
+            "decoded_bytes": 24433582080,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 6.2785187920000025,
+            "fill_count": 120,
+            "layout_digest": "f98446bf0539d39dcf5006abc060850d31866fccb0d315061fac02ec49c97586",
+            "managed_peak_bytes": 7428950272,
+            "max_dense_pool_capacity_bytes": 203685888,
+            "packed_capacity_bytes": 7225299200,
+            "packed_source_bytes": 7224676608,
+            "prefetch_layers": 0,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 1,
+            "source_float_bytes": 1459147008,
+            "source_load_seconds": 3.175626917,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 349090444,
+            "mlx_peak_bytes": 13324055464,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 3542106112,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "z-mlx-compat-affine-v1",
+          "reference_tensors_bytes_exact": true
+        },
+        {
+          "prefetch": 1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "84dde8c871e277e50563fe7f2ffdb19c050a926f0a84b7c0631fa8875b7745f6",
+          "cancellation_triggered": false,
+          "wall_seconds": 26.228517083000042,
+          "timings_seconds": {
+            "denoise": 21.245599958,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 26.228061333,
+            "text_encode": 0.000100583,
+            "vae_decode": 1.6528705
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 7.578203882999997,
+            "decoded_bytes": 24433582080,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 0.22191791800000005,
+            "fill_count": 120,
+            "layout_digest": "61c32a07d01840a56e93d73c97d2626a2db0a680074d54d2b6c32594f30c8024",
+            "managed_peak_bytes": 7632600320,
+            "max_dense_pool_capacity_bytes": 407371776,
+            "packed_capacity_bytes": 7225299200,
+            "packed_source_bytes": 7224676608,
+            "prefetch_layers": 1,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 2,
+            "source_float_bytes": 1459147008,
+            "source_load_seconds": 3.235433833,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 349090444,
+            "mlx_peak_bytes": 13324055464,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 10797056,
+            "Compressions": 0,
+            "Decompressions": 196608
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "z-mlx-compat-affine-v1",
+          "reference_tensors_bytes_exact": true
+        }
+      ],
+      "numerical_gates": {
+        "d1-compat-affine.json": {
+          "scope": "diagnostic tensor comparison; not complete model/media qualification",
+          "tensors": [
+            {
+              "name": "z_decoded.safetensors",
+              "exact": true,
+              "reference_sha256": "ac5e442c857bf68f5bdd3b2272a542d23dc7474b44086950c2c84f73d26bb5e4",
+              "candidate_sha256": "ac5e442c857bf68f5bdd3b2272a542d23dc7474b44086950c2c84f73d26bb5e4",
+              "rel_l2": 0.0,
+              "cosine": 0.9999999999999999,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_final.safetensors",
+              "exact": true,
+              "reference_sha256": "c68a5d1c5c7979d026d3aa013a16fbb791c1c1c712e62a7107b748f2fc67c9ac",
+              "candidate_sha256": "c68a5d1c5c7979d026d3aa013a16fbb791c1c1c712e62a7107b748f2fc67c9ac",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_initial.safetensors",
+              "exact": true,
+              "reference_sha256": "b64a9191a1f943d7ef42728c9df5e85d4281d4301a81e4dd3cc50dc8af288a07",
+              "candidate_sha256": "b64a9191a1f943d7ef42728c9df5e85d4281d4301a81e4dd3cc50dc8af288a07",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_1.safetensors",
+              "exact": true,
+              "reference_sha256": "9475d58492299fbfcc34333c9fbbc95bd9d4126b59ec1b31a17f8e8d1bd5099c",
+              "candidate_sha256": "9475d58492299fbfcc34333c9fbbc95bd9d4126b59ec1b31a17f8e8d1bd5099c",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_2.safetensors",
+              "exact": true,
+              "reference_sha256": "60fb2b7db065b7ec87b077db6161c2868dec0c1469af9e1c57831342b06e33bc",
+              "candidate_sha256": "60fb2b7db065b7ec87b077db6161c2868dec0c1469af9e1c57831342b06e33bc",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_3.safetensors",
+              "exact": true,
+              "reference_sha256": "44b6c7b780237746751dcc5f9528e3cb41721e4d8c8d6a6c6b56c3db45c92553",
+              "candidate_sha256": "44b6c7b780237746751dcc5f9528e3cb41721e4d8c8d6a6c6b56c3db45c92553",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_4.safetensors",
+              "exact": true,
+              "reference_sha256": "c68a5d1c5c7979d026d3aa013a16fbb791c1c1c712e62a7107b748f2fc67c9ac",
+              "candidate_sha256": "c68a5d1c5c7979d026d3aa013a16fbb791c1c1c712e62a7107b748f2fc67c9ac",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            }
+          ],
+          "n1_final_latent_pass": true
+        }
+      }
+    },
+    {
+      "id": "gguf-r1-q4-compat-affine-512",
+      "raw_report_sha256": "9088faae81059c3ee03e62081d3195d8797590d0b8ca4bbb1103cf2c0fac9daa",
+      "library_sha256": "0cbc85b12b6394c7c380a3286f975e479312226a4fcb3ed73442eb0aa8161d2c",
+      "runs": [
+        {
+          "prefetch": -1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "20e7d1268aaea80bb5446a856e46f70cf820207fd79815b36400eaa66b76f828",
+          "cancellation_triggered": false,
+          "wall_seconds": 13.441570541996043,
+          "timings_seconds": {
+            "denoise": 4.712694542,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 13.283849208,
+            "text_encode": 1.238567667,
+            "vae_decode": 0.309461584
+          },
+          "quantized_execution": null,
+          "mlx_memory": {
+            "mlx_active_bytes": 5188459276,
+            "mlx_peak_bytes": 8976332168,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 12289081344,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 20260930,
+          "steps": 4,
+          "profile": "native-packed",
+          "reference_tensors_bytes_exact": true
+        },
+        {
+          "prefetch": 0,
+          "status": 0,
+          "error": null,
+          "png_sha256": "20e7d1268aaea80bb5446a856e46f70cf820207fd79815b36400eaa66b76f828",
+          "cancellation_triggered": false,
+          "wall_seconds": 16.822249874996487,
+          "timings_seconds": {
+            "denoise": 11.88765125,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 16.82177075,
+            "text_encode": 0.000197333,
+            "vae_decode": 0.424705458
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 6.958007834000002,
+            "decoded_bytes": 13573386240,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 6.959464108999993,
+            "fill_count": 120,
+            "layout_digest": "3c7e4e137d12d378e648625cc9a6a11fdd710e130ad6c64bec2cbf276dc63526",
+            "managed_peak_bytes": 4623107200,
+            "max_dense_pool_capacity_bytes": 113213440,
+            "packed_capacity_bytes": 4509952128,
+            "packed_source_bytes": 4509395072,
+            "prefetch_layers": 0,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 1,
+            "source_float_bytes": 1457055872,
+            "source_load_seconds": 2.95104525,
+            "source_sha256": "687360c35c468ae1054f8a848d40a6c852c3c67d81f962dafcfbeff09e66d7d0",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 338866828,
+            "mlx_peak_bytes": 6508260240,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 6356992,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 20260930,
+          "steps": 4,
+          "profile": "z-mlx-compat-affine-v1",
+          "reference_tensors_bytes_exact": true
+        },
+        {
+          "prefetch": 1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "20e7d1268aaea80bb5446a856e46f70cf820207fd79815b36400eaa66b76f828",
+          "cancellation_triggered": false,
+          "wall_seconds": 11.025005124989548,
+          "timings_seconds": {
+            "denoise": 7.571370458,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 11.024566125,
+            "text_encode": 8.6666e-05,
+            "vae_decode": 0.429412
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 7.181811252000002,
+            "decoded_bytes": 13573386240,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 2.6297996559999994,
+            "fill_count": 120,
+            "layout_digest": "0cbb04d8ae038d4cc626543536a059fdf5757f434c7f20ec04beefd8cb6ea9e9",
+            "managed_peak_bytes": 4736253568,
+            "max_dense_pool_capacity_bytes": 226426880,
+            "packed_capacity_bytes": 4509952128,
+            "packed_source_bytes": 4509395072,
+            "prefetch_layers": 1,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 2,
+            "source_float_bytes": 1457055872,
+            "source_load_seconds": 2.9713965,
+            "source_sha256": "687360c35c468ae1054f8a848d40a6c852c3c67d81f962dafcfbeff09e66d7d0",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 338866828,
+            "mlx_peak_bytes": 6621406608,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 3276800,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 20260930,
+          "steps": 4,
+          "profile": "z-mlx-compat-affine-v1",
+          "reference_tensors_bytes_exact": true
+        }
+      ],
+      "numerical_gates": {
+        "d1-q4-affine.json": {
+          "scope": "diagnostic tensor comparison; not complete model/media qualification",
+          "tensors": [
+            {
+              "name": "z_decoded.safetensors",
+              "exact": true,
+              "reference_sha256": "b513f551170851b9a22e5d6080db46efe55ffd35846237003b40c72191755b8d",
+              "candidate_sha256": "b513f551170851b9a22e5d6080db46efe55ffd35846237003b40c72191755b8d",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_final.safetensors",
+              "exact": true,
+              "reference_sha256": "c0d9746dfd838fd42b9f6e5ed3dd805cbb93929aebf1e4b2db4c46c65bdb1fa1",
+              "candidate_sha256": "c0d9746dfd838fd42b9f6e5ed3dd805cbb93929aebf1e4b2db4c46c65bdb1fa1",
+              "rel_l2": 0.0,
+              "cosine": 0.9999999999999999,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_initial.safetensors",
+              "exact": true,
+              "reference_sha256": "e7c96a94b102134bbbe0e82fa1daaa42f0788a8a251b287cf428b11d39d9e766",
+              "candidate_sha256": "e7c96a94b102134bbbe0e82fa1daaa42f0788a8a251b287cf428b11d39d9e766",
+              "rel_l2": 0.0,
+              "cosine": 0.9999999999999998,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_1.safetensors",
+              "exact": true,
+              "reference_sha256": "47ff66fce60d8b8325b847bc674cd3e014fe3061ef19398f7a6ec10577e4affa",
+              "candidate_sha256": "47ff66fce60d8b8325b847bc674cd3e014fe3061ef19398f7a6ec10577e4affa",
+              "rel_l2": 0.0,
+              "cosine": 1.0000000000000002,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_2.safetensors",
+              "exact": true,
+              "reference_sha256": "0078713e2e69794a14cfaa9f4000cd1633648e2e7c041473d6a1310b3eaa1b3e",
+              "candidate_sha256": "0078713e2e69794a14cfaa9f4000cd1633648e2e7c041473d6a1310b3eaa1b3e",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_3.safetensors",
+              "exact": true,
+              "reference_sha256": "01cd0fa37c09894c1971dc2bccea99aa0a0395c4f3c37503dc6e0ba7714466ee",
+              "candidate_sha256": "01cd0fa37c09894c1971dc2bccea99aa0a0395c4f3c37503dc6e0ba7714466ee",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_4.safetensors",
+              "exact": true,
+              "reference_sha256": "c0d9746dfd838fd42b9f6e5ed3dd805cbb93929aebf1e4b2db4c46c65bdb1fa1",
+              "candidate_sha256": "c0d9746dfd838fd42b9f6e5ed3dd805cbb93929aebf1e4b2db4c46c65bdb1fa1",
+              "rel_l2": 0.0,
+              "cosine": 0.9999999999999999,
+              "max_abs": 0.0
+            }
+          ],
+          "n1_final_latent_pass": true
+        }
+      }
+    },
+    {
+      "id": "gguf-r1-q8-compat-f16-1024",
+      "raw_report_sha256": "debdca08eba5f016051257d1b01579851b46c72a5d38e1c10b3df43e67ad16cc",
+      "library_sha256": "0cbc85b12b6394c7c380a3286f975e479312226a4fcb3ed73442eb0aa8161d2c",
+      "runs": [
+        {
+          "prefetch": -1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "84dde8c871e277e50563fe7f2ffdb19c050a926f0a84b7c0631fa8875b7745f6",
+          "cancellation_triggered": false,
+          "wall_seconds": 24.954821208011708,
+          "timings_seconds": {
+            "denoise": 19.9612635,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 24.796951334,
+            "text_encode": 1.234815041,
+            "vae_decode": 1.050444083
+          },
+          "quantized_execution": null,
+          "mlx_memory": {
+            "mlx_active_bytes": 7914029964,
+            "mlx_peak_bytes": 20888994984,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 7764819968,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "native-packed",
+          "reference_tensors_bytes_exact": true
+        },
+        {
+          "prefetch": 0,
+          "status": 0,
+          "error": null,
+          "png_sha256": "af0a18b4b2894ccd47808a483878f2d83da42e992876be7eb95c1ef50c153476",
+          "cancellation_triggered": false,
+          "wall_seconds": 30.463811833004,
+          "timings_seconds": {
+            "denoise": 23.011446167,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 30.463336708,
+            "text_encode": 0.000180209,
+            "vae_decode": 1.638666208
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 3.5054989130000016,
+            "decoded_bytes": 43425914880,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 3.5070882169999975,
+            "fill_count": 120,
+            "layout_digest": "9262ea2c1776331a89ea01033339e84a39f2cd8adc483699e7cc48b7460dfdd8",
+            "managed_peak_bytes": 7587186944,
+            "max_dense_pool_capacity_bytes": 361922560,
+            "packed_capacity_bytes": 7225299200,
+            "packed_source_bytes": 7224676608,
+            "prefetch_layers": 0,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 1,
+            "source_float_bytes": 1459147008,
+            "source_load_seconds": 3.187168875,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 349090444,
+            "mlx_peak_bytes": 13324055464,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 3421863936,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "z-mlx-compat-f16-v1",
+          "reference_tensors_bytes_exact": false
+        },
+        {
+          "prefetch": 1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "af0a18b4b2894ccd47808a483878f2d83da42e992876be7eb95c1ef50c153476",
+          "cancellation_triggered": false,
+          "wall_seconds": 24.61863316700328,
+          "timings_seconds": {
+            "denoise": 19.618404125,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 24.618170417,
+            "text_encode": 8.8875e-05,
+            "vae_decode": 1.668978208
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 3.651233758,
+            "decoded_bytes": 43425914880,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 0.11968087600000003,
+            "fill_count": 120,
+            "layout_digest": "8f27b875da2a133680d928ec4ada5c360937e6c957e28cf2e210a37d320053a7",
+            "managed_peak_bytes": 7949073664,
+            "max_dense_pool_capacity_bytes": 723845120,
+            "packed_capacity_bytes": 7225299200,
+            "packed_source_bytes": 7224676608,
+            "prefetch_layers": 1,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 2,
+            "source_float_bytes": 1459147008,
+            "source_load_seconds": 3.243435833,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 349090444,
+            "mlx_peak_bytes": 13324055464,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 10534912,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 1024,
+          "seed": 1234,
+          "steps": 4,
+          "profile": "z-mlx-compat-f16-v1",
+          "reference_tensors_bytes_exact": false
+        }
+      ],
+      "numerical_gates": {
+        "n1-compat-f16.json": {
+          "scope": "diagnostic tensor comparison; not complete model/media qualification",
+          "tensors": [
+            {
+              "name": "z_decoded.safetensors",
+              "exact": false,
+              "reference_sha256": "ac5e442c857bf68f5bdd3b2272a542d23dc7474b44086950c2c84f73d26bb5e4",
+              "candidate_sha256": "1675b055b861fb623036d056e40fbe1a4352b9769b5ae0c0cd33635d45d65fcf",
+              "rel_l2": 0.005781772542691657,
+              "cosine": 0.9999832931389785,
+              "max_abs": 0.17873401939868927
+            },
+            {
+              "name": "z_latent_final.safetensors",
+              "exact": false,
+              "reference_sha256": "c68a5d1c5c7979d026d3aa013a16fbb791c1c1c712e62a7107b748f2fc67c9ac",
+              "candidate_sha256": "49ebad42fb5a0a68a8f29eb66de8e090f18466a2ed46505abaabf6b57aab5776",
+              "rel_l2": 0.006638921251874148,
+              "cosine": 0.999977965338756,
+              "max_abs": 0.5451929569244385
+            },
+            {
+              "name": "z_latent_initial.safetensors",
+              "exact": true,
+              "reference_sha256": "b64a9191a1f943d7ef42728c9df5e85d4281d4301a81e4dd3cc50dc8af288a07",
+              "candidate_sha256": "b64a9191a1f943d7ef42728c9df5e85d4281d4301a81e4dd3cc50dc8af288a07",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_1.safetensors",
+              "exact": false,
+              "reference_sha256": "9475d58492299fbfcc34333c9fbbc95bd9d4126b59ec1b31a17f8e8d1bd5099c",
+              "candidate_sha256": "63a22e1dcda54d4b3092c647c4786d71e4bfa35834ce2c26fdd08c0ee2163f7a",
+              "rel_l2": 0.00012890389189097916,
+              "cosine": 0.9999999917000536,
+              "max_abs": 0.005250990390777588
+            },
+            {
+              "name": "z_latent_step_2.safetensors",
+              "exact": false,
+              "reference_sha256": "60fb2b7db065b7ec87b077db6161c2868dec0c1469af9e1c57831342b06e33bc",
+              "candidate_sha256": "6fce9904f91c079a4647fc9717f44669eb0094850e96371494b3363e8a29225c",
+              "rel_l2": 0.0008286333078746569,
+              "cosine": 0.9999996567121929,
+              "max_abs": 0.042280882596969604
+            },
+            {
+              "name": "z_latent_step_3.safetensors",
+              "exact": false,
+              "reference_sha256": "44b6c7b780237746751dcc5f9528e3cb41721e4d8c8d6a6c6b56c3db45c92553",
+              "candidate_sha256": "6dfce6a0340efffb08997d5823d6551eab70da3d417a08ff5b95ca9cccc7bf99",
+              "rel_l2": 0.0026812618357236395,
+              "cosine": 0.9999964056815285,
+              "max_abs": 0.09546057879924774
+            },
+            {
+              "name": "z_latent_step_4.safetensors",
+              "exact": false,
+              "reference_sha256": "c68a5d1c5c7979d026d3aa013a16fbb791c1c1c712e62a7107b748f2fc67c9ac",
+              "candidate_sha256": "49ebad42fb5a0a68a8f29eb66de8e090f18466a2ed46505abaabf6b57aab5776",
+              "rel_l2": 0.006638921251874148,
+              "cosine": 0.999977965338756,
+              "max_abs": 0.5451929569244385
+            }
+          ],
+          "n1_final_latent_pass": true
+        }
+      }
+    },
+    {
+      "id": "gguf-r1-q8-cancel-retry",
+      "raw_report_sha256": "70aaf861d0ef7d232d8f9b8d591e171beabd2e4fa365edb89b93a8bad23a3802",
+      "library_sha256": "2e4f582d2ce4549141de1d1e3bf40e96d1b4704c1545a9c2efff2ecf650815fa",
+      "runs": [
+        {
+          "prefetch": 1,
+          "status": 2,
+          "error": "generation cancelled",
+          "png_sha256": null,
+          "cancellation_triggered": true,
+          "wall_seconds": 5.295303541992325,
+          "timings_seconds": null,
+          "quantized_execution": null,
+          "mlx_memory": null,
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 16384,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 42,
+          "steps": 4,
+          "profile": "z-source-mixed-f16-v1"
+        },
+        {
+          "prefetch": 1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "087845662b7faf17cbfcc8a2f4cc7bdd8b6009b69e2bf8a7a5dd99f8d54eac26",
+          "cancellation_triggered": false,
+          "wall_seconds": 7.599120124999899,
+          "timings_seconds": {
+            "denoise": 5.117339458,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 7.5986405,
+            "text_encode": 8.6958e-05,
+            "vae_decode": 0.418240709
+          },
+          "quantized_execution": {
+            "decode_active_seconds": 3.558715879,
+            "decoded_bytes": 43425914880,
+            "experimental": true,
+            "exposed_ready_wait_seconds": 0.11683958399999998,
+            "fill_count": 120,
+            "layout_digest": "84afe6e3ea77de4bbe1bb9aabccdecb7990281bfcde49cb453c2a7f58dba5d87",
+            "managed_peak_bytes": 7949073664,
+            "max_dense_pool_capacity_bytes": 723845120,
+            "packed_capacity_bytes": 7225299200,
+            "packed_source_bytes": 7224676608,
+            "prefetch_layers": 1,
+            "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+            "slot_count": 2,
+            "source_float_bytes": 1459147008,
+            "source_load_seconds": 1.990772375,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "whole_request_bounded_certified": false
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 338866828,
+            "mlx_peak_bytes": 9070085128,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 3260416,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 42,
+          "steps": 4,
+          "profile": "z-source-mixed-f16-v1"
+        }
+      ],
+      "numerical_gates": {}
+    }
+  ]
+}

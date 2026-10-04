@@ -93,6 +93,11 @@ class Weights {
     Tensor project_slice(const Tensor &, const std::string &, int row_start,
                          int row_end, int col_start, int col_end,
                          bool add_bias = true) const;
+    // Immutable checkpoint contribution only, for partial down reductions.
+    // Down-LoRA must be applied once to joined hidden, not rounded per slice.
+    Tensor project_base_slice(const Tensor &, const std::string &, int row_start,
+                              int row_end, int col_start, int col_end,
+                              bool add_bias = true) const;
     // Runtime adapter contribution only; Core ML supplies the frozen base
     // gate/up projection. An optional output dtype allows the experimental
     // Z-Image bridge to avoid BF16 rounding before its FP16 Core ML input.

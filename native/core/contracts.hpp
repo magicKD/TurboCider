@@ -4,6 +4,7 @@
 #include <vector>
 #include "memory_contracts.hpp"
 #include "streaming_contracts.hpp"
+#include "quantized_execution.hpp"
 
 namespace tc {
 struct InputAsset {
@@ -90,6 +91,7 @@ struct Request {
     // memory_budget_bytes field remains a denoiser working-set hint.
     MemoryConstrainedConfig memory_constrained;
     StreamingConfig streaming;
+    QuantizedExecutionConfig quantized_execution;
     std::optional<StreamingConfig> streaming_requested;
     std::optional<StreamingSelector> streaming_selector;
     std::optional<StreamingSelector> streaming_selector_requested;

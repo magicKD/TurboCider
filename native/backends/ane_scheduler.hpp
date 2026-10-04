@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 #include <utility>
+#include "ane_runtime.hpp"
 
 namespace tc::ane {
 
@@ -30,6 +31,7 @@ class RowScheduler {
     };
     std::map<std::pair<int, int>, State> states_;
     int chunk_, fixed_chunks_;
+    PartitionAxis axis_;
     static double ema(double old, double value) { return old ? .75 * old + .25 * value : value; }
   public:
     enum class Mode { Hybrid, HybridUntimed, GpuProbe, SplitProbe, Gpu };
@@ -42,9 +44,13 @@ class RowScheduler {
         bool measured() const { return mode != Mode::Gpu && mode != Mode::HybridUntimed; }
     };
     // fixed_chunks: -1 adaptive, 0 GPU-only split-boundary ablation, >0 fixed.
-    RowScheduler(int chunk, int fixed_chunks = -1) : chunk_(chunk), fixed_chunks_(fixed_chunks) {}
+    RowScheduler(int chunk, int fixed_chunks = -1, PartitionAxis axis = PartitionAxis::Rows)
+        : chunk_(chunk), fixed_chunks_(fixed_chunks), axis_(axis) {
+        if (axis == PartitionAxis::IntermediateChannels && fixed_chunks > 1)
+            throw std::runtime_error("channel split supports chunks=auto, 0 or 1 (all rows use the same channel range)");
+    }
     Plan plan(int layer, int rows) {
-        const int max_chunks = (rows - 1) / chunk_;
+        const int max_chunks = axis_ == PartitionAxis::IntermediateChannels ? 1 : (rows - 1) / chunk_;
         // The explicit zero-chunk ablation keeps the measured split boundary.
         // An unprofitable/too-short automatic route must instead be able to
         // run the family's ordinary unsplit GPU block, without a timing fence.
@@ -72,6 +78,9 @@ class RowScheduler {
     // Compatibility for callers that still keep a split GPU path. Do not call
     // both plan and select for one visit: each advances the controller once.
     int select(int layer, int rows) { return plan(layer, rows).chunks; }
+    // Forecast only: prefetch must never consume the next layer's visit or
+    // warmup sample. Decisions use the same controller, not another policy.
+    Plan peek_plan(int layer, int rows) const { auto snapshot = *this; return snapshot.plan(layer,rows); }
     void observe(int layer, int rows, int chunks, double wall,
                  double gpu_seconds = 0, double ane_seconds = 0) {
         if (fixed_chunks_ >= 0 || !std::isfinite(wall) || wall <= 0) return;
@@ -84,7 +93,7 @@ class RowScheduler {
             // a new kernel. Warm each split once, not just the first one.
             if (s.warmed_chunks.insert(chunks).second) return;
             s.hybrid = ema(s.hybrid, wall);
-            if (std::isfinite(gpu_seconds) && std::isfinite(ane_seconds) &&
+            if (axis_ == PartitionAxis::Rows && std::isfinite(gpu_seconds) && std::isfinite(ane_seconds) &&
                 gpu_seconds > 0 && ane_seconds > 0) {
                 s.gpu_row = ema(s.gpu_row, gpu_seconds / (rows - chunks * chunk_));
                 s.ane_chunk = ema(s.ane_chunk, ane_seconds / chunks);

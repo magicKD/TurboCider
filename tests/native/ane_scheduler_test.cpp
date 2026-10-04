@@ -4,9 +4,31 @@
 int main() {
     using tc::ane::RowScheduler;
     using Mode = RowScheduler::Mode;
+    using tc::ane::PartitionAxis;
+    // Channels cover ALL rows, including a short/tail bucket. The common
+    // whole-block on/off controller must not apply the row chunk balancer.
+    RowScheduler channels(32,-1,PartitionAxis::IntermediateChannels);
+    for(int visit=1;visit<=4;++visit) {
+        auto p=channels.plan(0,17);
+        assert(p.chunks==(visit<=2?1:0));
+        channels.observe(0,17,p.chunks,p.chunks?.5:1.,100.,.0001);
+    }
+    assert(channels.plan(0,17).chunks==1);
+    assert(channels.plan(1,17).chunks==1);
+    assert(channels.plan(0,65).chunks==1);
+    assert(RowScheduler(32,1,PartitionAxis::IntermediateChannels).plan(0,1).chunks==1);
+    bool rejected=false;
+    try { RowScheduler invalid(32,2,PartitionAxis::IntermediateChannels); } catch(const std::runtime_error&) { rejected=true; }
+    assert(rejected);
     // Decisions distinguish measured GPU probes from genuinely unsplit GPU
     // work. Shape and layer isolation still apply, and disabled layers retry.
     RowScheduler plans(32);
+    const auto preview=plans.peek_plan(0,97);
+    assert(preview.chunks==1&&plans.peek_plan(0,97).chunks==1);
+    assert(plans.plan(0,97).chunks==1); // only this call advances the visit
+    assert(plans.plan(0,97).chunks==1);
+    assert(plans.plan(0,97).mode==Mode::GpuProbe);
+    plans=RowScheduler(32);
     assert(plans.plan(0, 32).mode == Mode::Gpu);
     for (int visit = 1; visit <= 4; ++visit) {
         const auto plan = plans.plan(0, 97);

@@ -1,0 +1,157 @@
+{
+  "schema": "fastest-bf16-low-memory-screen-v2",
+  "production_qualified": false,
+  "whole_request_memory": "unknown",
+  "formal_performance": "not_run",
+  "quality": "not_run",
+  "baseline_fastest_qualification": "screen_only",
+  "identity": {
+    "components": {
+      "vae": [
+        {
+          "bytes": 335304388,
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+        }
+      ],
+      "tokenizer": [
+        {
+          "bytes": 11422654,
+          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        }
+      ],
+      "encoder": [
+        {
+          "bytes": 8044982048,
+          "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a"
+        }
+      ]
+    },
+    "libraries": {
+      "libturbocider.dylib": "733ea1c716b45e97ba9f2ed48272c6b53d6ae3218af615eba766a2909581813d",
+      "libmlx.dylib": "1876795e05b3434925e745fbf6e9f0c8c0446b666224c9d881609ab353e94e51",
+      "libjaccl.dylib": "8ee82aae82996938435bcebe724d819296712b8b34fac021ce7aa66073730e1e"
+    },
+    "device": {
+      "gpu": "Apple M4 Max",
+      "physical_memory_bytes": 68719476736,
+      "os": "Version 26.6.2 (Build 25G83)",
+      "mlx_version": "0.32.0"
+    },
+    "cache": "hit",
+    "gpu_controls": {
+      "TURBOCIDER_Z_MPP_SWIGLU": "1",
+      "TURBOCIDER_Z_MPP_PROJECTIONS": "1",
+      "TURBOCIDER_Z_MPP_QKV_PREPARE": "1",
+      "TURBOCIDER_Z_GATE_NORM_VIRTUAL_THREADS": "128",
+      "TURBOCIDER_Z_CACHE_CONTEXT": "1"
+    }
+  },
+  "workload": {
+    "inputs": [
+      {
+        "kind": "text",
+        "role": "prompt",
+        "text": "A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture."
+      }
+    ],
+    "sampling": {
+      "seed": 42,
+      "steps": 4
+    },
+    "operation": "image.generate",
+    "parameters": {
+      "dynamic_text": true
+    },
+    "outputs": [
+      {
+        "kind": "image",
+        "width": 512,
+        "height": 512,
+        "audio": false
+      }
+    ],
+    "tokens": 34
+  },
+  "baseline": {
+    "samples_seconds": [
+      3.7500650830043014,
+      3.7335313749790657,
+      3.7323139579966664,
+      3.73298629198689
+    ],
+    "median_seconds": 3.733258833482978,
+    "denoise_median_seconds": 3.4994136245,
+    "observed_peak_bytes": 23013746360,
+    "maximum_memory_gap_seconds": 0.01530800000182353,
+    "recipe": {
+      "config": null,
+      "import": null,
+      "controls": {},
+      "layout": null,
+      "consumer": null,
+      "graph": null,
+      "allocator_cache_limit_bytes": null,
+      "retention": null
+    },
+    "source_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+    "png_sha256": "633e96cff5e02dcc95fc43ea5e29609a9616fe7d44d21b87d9cc6e254f135cc9"
+  },
+  "candidate": {
+    "samples_seconds": [
+      6.302326250006445,
+      6.316083959012758,
+      6.303044833010063,
+      6.294982040999457
+    ],
+    "median_seconds": 6.302685541508254,
+    "denoise_median_seconds": 5.8223663125,
+    "observed_peak_bytes": 9083427488,
+    "maximum_memory_gap_seconds": 0.015668541978811845,
+    "recipe": {
+      "config": {
+        "schema_version": 1,
+        "enabled": true,
+        "prefetch_layers": 2,
+        "precision_profile": "z-raw-gpu-affine-f16-v1",
+        "source_residency": "packed_streamed"
+      },
+      "import": "mlx",
+      "controls": {},
+      "layout": "b96d22d199ee2ffee68549763287f2724df2c2e8585444d0d28a785fef898b32",
+      "consumer": null,
+      "graph": null,
+      "allocator_cache_limit_bytes": 536870912,
+      "retention": null
+    },
+    "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+    "png_sha256": "01595981cfda38f61718f2118139031e54f47a060228160d1aaa06bd4c2c7cc2"
+  },
+  "warm_wall_ratio": 1.6882530310999373,
+  "observed_process_memory_ratio": 0.3946957329723521,
+  "preferred_10pct_latency_pass": false,
+  "hard_20pct_latency_pass": false,
+  "observed_lower_memory": true,
+  "device_binding": "recorded",
+  "empirical_speed_memory_target_pass": false,
+  "scope": "paired local warm screen; no formal fastest/quality/cold/whole-request certification",
+  "candidate_selected_prefetch": 2,
+  "raw_reports": [
+    {
+      "id": "capacity-final-bf16-timing",
+      "sha256": "be74739d38ad1b7a0f57188258bc04e3baa2f9063cff49185c5cd699c514f361"
+    },
+    {
+      "id": "capacity-final-bf16-memory",
+      "sha256": "6276301cf7466c622034af102d31b1139bb9288cb46bd47780538297b83cded4"
+    },
+    {
+      "id": "capacity-final-q8-timing",
+      "sha256": "55fd68b745aa22bfd93fd2372d39c992907ff49ab423dbbc4d768e0e693bda92"
+    },
+    {
+      "id": "capacity-final-q8-memory",
+      "sha256": "bb4d609904bf75883dcc28918810641372ac5a57b256b6b33d1f76fcb7ec6ce5"
+    }
+  ],
+  "verifier_sha256": "0dc6dc4675293923316f92d65c8f75bd89591dbb9b30aaf268a64becedd8db41"
+}

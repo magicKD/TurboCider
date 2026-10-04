@@ -73,9 +73,12 @@ cp "$OUT"/turbocider "$DIST/cli/"
 # intentionally not copied into the App bundle: production sessions accept
 # provenance-verified premerged checkpoints and never launch Python.
 cp native/THIRD_PARTY_NOTICES.md "$RES/"
+cp THIRD_PARTY_NOTICES/splash-ane.md "$RES/Splash-ANE-NOTICE.md"
+cp THIRD_PARTY_NOTICES/Apache-2.0.txt "$RES/Splash-Apache-2.0.txt"
 cp LICENSE "$RES/TurboCider-LICENSE.txt"
 cp "$MLX_LICENSE_PATH" "$RES/MLX-LICENSE.txt"
 cp "$RES/THIRD_PARTY_NOTICES.md" "$RES/MLX-LICENSE.txt" "$DIST/cli/"
+cp "$RES/Splash-ANE-NOTICE.md" "$RES/Splash-Apache-2.0.txt" "$DIST/cli/"
 cp native/licenses/FastVideo-LICENSE.txt native/licenses/TAEHV-LICENSE.txt "$RES/"
 cp native/licenses/FastVideo-LICENSE.txt native/licenses/TAEHV-LICENSE.txt "$DIST/cli/"
 cp "$RES/TurboCider-LICENSE.txt" "$DIST/cli/"

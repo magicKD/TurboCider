@@ -1,6 +1,7 @@
 #include "ane_runtime.hpp"
 #include "ane_runtime_convert.hpp"
 #include "ane_runtime_quant.hpp"
+#include "ane_runtime_packed.hpp"
 #include "ane_memory.hpp"
 #include "ane_artifact_lease.hpp"
 
@@ -134,7 +135,7 @@ struct Surface {
         }
         check(CVPixelBufferUnlockBaseAddress(pixel, 0) == kCVReturnSuccess, "cannot unlock IOSurface");
     }
-    template<class Row> void fill_rows(Row row) {
+    template<class Row> void fill_rows(Row row, bool bounded_packed = false) {
         access([&](void *base, size_t pitch) {
             std::atomic<bool> bad{false};
             // Sixteen-row tasks amortize GCD dispatch for large weight matrices.
@@ -146,7 +147,25 @@ struct Surface {
                 }
             };
             const size_t groups = (size_t(rows) + 15) / 16;
-            if (size_t(rows) * cols < 65536) {
+            if (bounded_packed) {
+                // At most eight active conversion callbacks; no one-task-per-
+                // row-group fanout or layer-sized conversion scratch. The
+                // dispatch owner is a separate std::thread, never this pool.
+                const auto plan = plan_packed_conversion(rows, cols, std::thread::hardware_concurrency());
+                check(bool(plan), "invalid runtime ANE packed conversion plan");
+                std::atomic<size_t> next{0};
+                auto worker = [&] {
+                    for (;;) {
+                        if (bad.load(std::memory_order_relaxed)) break;
+                        const auto group = next.fetch_add(1, std::memory_order_relaxed);
+                        if (group >= groups) break;
+                        convert(group);
+                    }
+                };
+                auto *fn = &worker;
+                dispatch_apply(plan->workers, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                               ^(size_t) { (*fn)(); });
+            } else if (size_t(rows) * cols < 65536) {
                 for (size_t i = 0; i < groups; ++i) convert(i);
             } else {
                 // Do not copy the atomic into an Objective-C block capture.
@@ -171,6 +190,27 @@ struct Surface {
         fill_rows([&](int r, uint16_t *output) {
             return affine_fp16_row(source, r, output, scalar_only, scale);
         });
+    }
+    void fill(const GgufView &source, bool scalar_only, float scale = 1.f) {
+        validate_gguf_view(source);
+        check(source.rows == rows && source.cols == cols, "runtime ANE raw GGUF shape mismatch");
+        fill_rows([&](int row, uint16_t *output) {
+            return gguf_fp16_row(source, size_t(row), output, scalar_only, scale);
+        }, true);
+    }
+    void fill(const ConvrotView &source, bool scalar_only, float scale = 1.f) {
+        validate_convrot_view(source);
+        check(source.rows == rows && source.cols == cols, "runtime ANE ConvRot shape mismatch");
+        fill_rows([&](int row, uint16_t *output) {
+            return convrot_fp16_row(source, size_t(row), output, scalar_only, scale);
+        }, true);
+    }
+    void fill(const ConvrotAffineView &source,bool scalar_only,float scale=1.f) {
+        validate_convrot_affine_view(source);
+        check(source.packed.rows==rows && source.packed.cols==cols,"runtime ANE packed ConvRot shape mismatch");
+        fill_rows([&](int row,uint16_t *output) {
+            return convrot_affine_fp16_row(source,size_t(row),output,scalar_only,scale);
+        },true);
     }
     void fill_matmul_parts(const std::vector<MatrixView> &parts, bool scalar_only) {
         check(!parts.empty(), "runtime ANE MatMul needs weight parts");
@@ -216,9 +256,10 @@ bool matches_digest(NSData *bytes, NSString *digest) {
     return [digest isEqualToString:@(hex)];
 }
 
-std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphShape &shape,
-                                      ArtifactLease &lease) {
+NSDictionary *read_manifest_shape(const std::filesystem::path &path, GraphShape &shape) {
     check(!std::filesystem::is_symlink(path), "runtime ANE manifest must not be a symlink");
+    check(std::filesystem::is_regular_file(path) && std::filesystem::file_size(path) <= (1u << 20),
+          "runtime ANE manifest must be a bounded regular file");
     NSData *data = [NSData dataWithContentsOfFile:@(path.c_str())];
     NSError *error = nil;
     id decoded = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&error] : nil;
@@ -243,6 +284,11 @@ std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphSh
     shape.width = dimension(manifest, @"width");
     shape.tile_k = dimension(manifest, @"tile_k");
     shape.tile_n = dimension(manifest, @"tile_n");
+    return manifest;
+}
+std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphShape &shape,
+                                      ArtifactLease &lease) {
+    NSDictionary *manifest = read_manifest_shape(path, shape);
     NSDictionary *files = manifest[@"files"];
     check([files isKindOfClass:NSDictionary.class] && files.count > 0, "missing runtime ANE artifact receipt");
     const auto root = path.parent_path();
@@ -295,6 +341,7 @@ size_t graph_estimate(const GraphShape &s) {
     const size_t weight_bytes = matrices * size_t(s.hidden) * s.width * 2;
     size_t estimate = 2 * weight_bytes + size_t(s.rows) * (6ull * s.width + 8ull * s.hidden) +
                       (64ull << 20);
+    estimate += packed_conversion_max_workers * packed_conversion_scratch_per_worker;
     if (s.lora_inputs) estimate += size_t(s.rows) * s.width * 16;
     return estimate;
 }
@@ -344,6 +391,14 @@ void check_model_interface(MLModel *model, const GraphShape &s) {
     }
 }
 } // namespace
+
+GraphShape runtime_template_shape(const std::filesystem::path &manifest) {
+    @autoreleasepool {
+        GraphShape shape;
+        read_manifest_shape(manifest, shape);
+        return shape;
+    }
+}
 
 struct RuntimeGraph::Prepared::Impl {
     // The lease is destroyed last. Model load can keep lazy reads/file handles

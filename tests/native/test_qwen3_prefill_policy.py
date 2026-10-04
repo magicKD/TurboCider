@@ -7,7 +7,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PROBE = ROOT / "build/native/qwen3-prefill-plan-probe"
+PROBE = ROOT / os.environ.get("TURBOCIDER_NATIVE_PROBE_DIR", "build/native") / "qwen3-prefill-plan-probe"
 
 
 def run_plan(tmp_path: Path, shape: dict, *tokens: int) -> list[dict]:

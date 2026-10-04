@@ -1,0 +1,166 @@
+{
+  "schema": "tc-gguf-ane-staging-regression-v1",
+  "scope": "GPU-only Q8 regression; not GGUF+ANE model integration or qualification",
+  "raw_report_sha256": "43d7c78648cf09fd84dc37065aa2627eec955cf1230bd1069e27f49572698eb6",
+  "library_sha256": "7a2f091d104d8a99c409234f01f19d654422aee03d673d48ed02c569deb68075",
+  "runs": [
+    {
+      "prefetch": 0,
+      "status": 0,
+      "png_sha256": "a5065dd36b157667a930fddbf0e87f699db1c014825215174bfb6da18c3c9df1",
+      "wall_seconds": 17.511269166017883,
+      "quantized_execution": {
+        "decode_active_seconds": 6.065018534999999,
+        "decoded_bytes": 24433582080,
+        "experimental": true,
+        "exposed_ready_wait_seconds": 6.066480967000002,
+        "fill_count": 120,
+        "layout_digest": "37e67be30778c6ecb6ec3e85cd0efb223af6d3660a31a2eb8943078067136050",
+        "managed_peak_bytes": 7428950272,
+        "max_dense_pool_capacity_bytes": 203685888,
+        "packed_capacity_bytes": 7225299200,
+        "packed_source_bytes": 7224676608,
+        "prefetch_layers": 0,
+        "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+        "slot_count": 1,
+        "source_float_bytes": 1459147008,
+        "source_load_seconds": 3.107614084,
+        "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+        "whole_request_bounded_certified": false
+      },
+      "timings_seconds": {
+        "denoise": 10.988405292,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 17.355044792,
+        "text_encode": 0.428560708,
+        "vae_decode": 0.430409834
+      },
+      "vm_deltas": {
+        "Swapins": 0,
+        "Swapouts": 0,
+        "Pageins": 6324224,
+        "Compressions": 0,
+        "Decompressions": 0
+      }
+    },
+    {
+      "prefetch": 1,
+      "status": 0,
+      "png_sha256": "a5065dd36b157667a930fddbf0e87f699db1c014825215174bfb6da18c3c9df1",
+      "wall_seconds": 10.387195916991914,
+      "quantized_execution": {
+        "decode_active_seconds": 6.318364125999999,
+        "decoded_bytes": 24433582080,
+        "experimental": true,
+        "exposed_ready_wait_seconds": 1.7671976249999999,
+        "fill_count": 120,
+        "layout_digest": "27d80637d3cc4db7b78b6eea19ab28f469a9b150653f48cc15b4ee0372207ce1",
+        "managed_peak_bytes": 7632600320,
+        "max_dense_pool_capacity_bytes": 407371776,
+        "packed_capacity_bytes": 7225299200,
+        "packed_source_bytes": 7224676608,
+        "prefetch_layers": 1,
+        "scope": "managed GGUF source/slot buffers; excludes encoder/VAE/activations/framework/OS",
+        "slot_count": 2,
+        "source_float_bytes": 1459147008,
+        "source_load_seconds": 3.139891,
+        "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+        "whole_request_bounded_certified": false
+      },
+      "timings_seconds": {
+        "denoise": 6.749355041,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 10.386742416,
+        "text_encode": 0.000088958,
+        "vae_decode": 0.432341
+      },
+      "vm_deltas": {
+        "Swapins": 0,
+        "Swapouts": 0,
+        "Pageins": 3817472,
+        "Compressions": 0,
+        "Decompressions": 0
+      }
+    }
+  ],
+  "input": {
+    "size": 512,
+    "seed": 42,
+    "steps": 4,
+    "profile": "z-mlx-compat-affine-v1"
+  },
+  "bounded_png_bytes_exact": true,
+  "comparison_sha256": "c4d417088c4b635c55b4c50c34de94da8fd02e53f1c9d590e58569c3485b3bf5",
+  "comparison": {
+    "scope": "diagnostic tensor comparison; not complete model/media qualification",
+    "tensors": [
+      {
+        "name": "z_decoded.safetensors",
+        "exact": true,
+        "reference_sha256": "c6c03cc6d750e3e80d72a6b0b31c5c9c50b4ac5b965f693cf182c3c5a15cf16e",
+        "candidate_sha256": "c6c03cc6d750e3e80d72a6b0b31c5c9c50b4ac5b965f693cf182c3c5a15cf16e",
+        "rel_l2": 0,
+        "cosine": 1,
+        "max_abs": 0
+      },
+      {
+        "name": "z_latent_final.safetensors",
+        "exact": true,
+        "reference_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+        "candidate_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+        "rel_l2": 0,
+        "cosine": 1,
+        "max_abs": 0
+      },
+      {
+        "name": "z_latent_initial.safetensors",
+        "exact": true,
+        "reference_sha256": "22192ff00b85447a96918c049f8a742320207d82fe41703ae85aceedb8b9ae8a",
+        "candidate_sha256": "22192ff00b85447a96918c049f8a742320207d82fe41703ae85aceedb8b9ae8a",
+        "rel_l2": 0,
+        "cosine": 1,
+        "max_abs": 0
+      },
+      {
+        "name": "z_latent_step_1.safetensors",
+        "exact": true,
+        "reference_sha256": "9d9fae5663842a190f3ddbfa97f8eae4fba8f30a89a9a1922e4e2a3fcf3be089",
+        "candidate_sha256": "9d9fae5663842a190f3ddbfa97f8eae4fba8f30a89a9a1922e4e2a3fcf3be089",
+        "rel_l2": 0,
+        "cosine": 1.0000000000000002,
+        "max_abs": 0
+      },
+      {
+        "name": "z_latent_step_2.safetensors",
+        "exact": true,
+        "reference_sha256": "f7cededd8c940f3f6561e902db44a76c0f6eea4381e1a461190fe563ad44d27c",
+        "candidate_sha256": "f7cededd8c940f3f6561e902db44a76c0f6eea4381e1a461190fe563ad44d27c",
+        "rel_l2": 0,
+        "cosine": 1,
+        "max_abs": 0
+      },
+      {
+        "name": "z_latent_step_3.safetensors",
+        "exact": true,
+        "reference_sha256": "8f179e955da10091a0d8597a2cd498377cb64e880e30166715d996863cfbfaef",
+        "candidate_sha256": "8f179e955da10091a0d8597a2cd498377cb64e880e30166715d996863cfbfaef",
+        "rel_l2": 0,
+        "cosine": 1.0000000000000002,
+        "max_abs": 0
+      },
+      {
+        "name": "z_latent_step_4.safetensors",
+        "exact": true,
+        "reference_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+        "candidate_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+        "rel_l2": 0,
+        "cosine": 1,
+        "max_abs": 0
+      }
+    ],
+    "n1_final_latent_pass": true
+  },
+  "production_qualified": false
+}

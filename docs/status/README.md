@@ -1,5 +1,8 @@
 # TurboCider 状态文档入口
 
+`dev` 合并至 `dev-verify` 的冲突处理、新构建/测试、两次 BF16 Z 生图及 GGUF/Private
+功能与性能缺口见 [2026-10-04 整合评估](2026-10-04-dev-merge-review.md)。本轮没有下载模型。
+
 Runtime 图准备与编码重叠、分阶段计时、取消回收及两次真实编辑对照见
 [2026-10-02 Runtime 提前准备验收](2026-10-02-runtime-early-preparation.md)。
 路径仍为显式诊断；单组结果未证明稳定加速，GPU 默认不变。双参考扩图试验仍未补齐外围。
@@ -32,6 +35,39 @@ M4 Pro 48 GiB 的 Qwen Runtime 分阶段驻留、编译图内存释放和单图�
 存在画质差异，默认仍为 1024。下面的 M4 Max 历史数据不能替代本机加速证明。
 
 ## 当前加速结论
+
+以下 Private ANE 接续记录按实验时间归档；构建哈希和“未提交”等说明描述
+当时快照。组件测试或单向初筛通过，不等于产品默认路线或正式性能/质量验收。
+
+2026-10-03 双后端接续见
+[Private ANE 基础执行器](private-ane-foundation-2026-10-03.md)。这是原生
+私有同步/共用 Executor 的阶段实现，尚非 W8A8 或四格性能目标验收。
+当前接续实现与完整请求负结果见
+[GPU IOSurface I/O](private-ane-gpu-io-2026-10-03.md)。
+GPU 权重转换与实机 W8A8 MatMul 组件见
+[W8 stager](private-ane-w8-stager-2026-10-03.md)。完整 SwiGLU、统一 W8A8
+Executor、两套银行和模型初筛接续见
+[W8A8 Executor](private-ane-w8-executor-2026-10-03.md)；层间预取、性能和
+完整质量验收尚未完成。
+已集成的 intermediate-channel 分区与完整 down-LoRA join 接续见
+[Private channel split](private-ane-channel-split-2026-10-03.md)。原任务四格
+≥1.2×、层间 staging 重叠和画质资格仍未验收。
+下一层 source-matched bank、独立 worker/queue、lease 与双 reuse fence 的
+实现和 matched prefetch 负结果见
+[Private weight prefetch](private-ane-prefetch-2026-10-03.md)。默认 Public 不变。
+紧凑 FP16 scale cache 与 generation/stride/recipe 失效、同库性能接续见
+[Private scale cache](private-ane-scale-cache-2026-10-04.md)，Z512 初筛约1.080×，
+未达到原任务四格1.2×。
+有界 A8 双槽、不可变符号元数据、Z512 channel share 搜索与 Z1024 对照见
+[A8 lookahead 接续](private-ane-a8-lookahead-2026-10-04.md)。Z512 新库初筛
+约1.155×、Qwen512/Fa5120 初筛1.212×，Z1024 lookahead 后仍慢于 GPU；
+单格单向初筛不等于四格性能与完整画质验收，原目标仍 active。
+1024² 的较大固定 bucket、私有行数边界和 fallback 标签修正见
+[大 bucket 接续](private-ane-large-bucket-2026-10-04.md)：Z1024约1.120×、
+Qwen1024约1.187×，仍未达到要求的四格正式1.2×。
+W8 Metal format/dtype/block 专用化、逐位回归和连续负载观察见
+[staging 专用化](private-ane-stage-specialization-2026-10-04.md)。组件有正信号，
+三次完整请求比较被 competing CPU load 拒绝，未填新的有效端到端倍率。
 
 先读 [GPU/ANE 加速：当前选择与维护入口](acceleration.md)。
 它统一维护默认/最快 base、完整 runtime LoRA、optional 和诊断边界。

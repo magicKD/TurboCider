@@ -661,7 +661,7 @@ std::vector<Tensor> Weights::project_many(
     return outputs;
 }
 
-Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
+Tensor Weights::project_base_slice(const Tensor &x, const std::string &prefix,
                               int row_start, int row_end,
                               int col_start, int col_end,
                               bool add_bias) const {
@@ -709,6 +709,14 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
         selected = slice_axis(selected, 1, col_start, col_end);
         output = mx::matmul(x, mx::transpose(selected));
     }
+    if (add_bias && has(prefix + ".bias"))
+        output = output + mx::astype(slice_axis(at(prefix + ".bias"), 0, row_start, row_end),output.dtype());
+    return output;
+}
+
+Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
+                              int row_start, int row_end, int col_start, int col_end, bool add_bias) const {
+    auto output = project_base_slice(x,prefix,row_start,row_end,col_start,col_end,false);
     auto runtime = runtime_loras_.find(prefix);
     if (runtime != runtime_loras_.end()) {
         for (const auto &adapter : runtime->second) {
