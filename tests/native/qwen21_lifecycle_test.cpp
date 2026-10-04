@@ -391,6 +391,78 @@ void run_db_cache_regression(const std::filesystem::path &adapter) {
     check_invalidation(8, 8);
     check_invalidation(1, 4);
 }
+
+void run_db_cache_reference_shapes(const std::filesystem::path &adapter) {
+    constexpr int depth = 10;
+    for (bool use_lora : {false, true}) {
+        Weights weights;
+        bind_new_weights(weights, depth);
+        if (use_lora) {
+            std::atomic<bool> cancelled{false};
+            require(weights.apply_loras({{adapter.string(), .75f, "transformer"}},
+                        "transformer", [](const std::string &, int, int) {}, cancelled, true) == 3 * layers,
+                    "resized-reference ordinary runtime adapter failed to bind");
+        }
+        weights.materialize();
+        auto latents = mx::reshape(matrix(4, channels, 6900), {1, 4, channels});
+        auto text = mx::reshape(matrix(4, context, 6901), {1, 4, context});
+        for (int count : {1, 2, 3}) {
+            // A scaled-down 512/1024 pair preserves the fourfold reference
+            // token ratio while exercising the actual compiled Transformer.
+            std::vector<qwen21::ReferenceLatents> small, large;
+            for (int i = 0; i < count; ++i) {
+                small.push_back({mx::reshape(matrix(4, channels, 6910 + i),
+                                             {1, 4, channels}), {2, 2, i + 1}});
+                large.push_back({mx::reshape(matrix(16, channels, 6920 + i),
+                                             {1, 16, channels}), {4, 4, i + 1}});
+                mx::eval(small.back().latents, large.back().latents);
+            }
+            for (const char *mode : {"conservative", "balanced", "fast"}) {
+                Request request;
+                request.qwen21_dit_cache = mode;
+                const auto options = qwen21::db_cache_options(request);
+                qwen21::Transformer cached(weights, config(depth)), oracle(weights, config(depth));
+                cached.configure_db_cache(options.enabled, options.threshold, 25,
+                                          options.max_consecutive, options.front_blocks, options.warmup_steps);
+                for (int step = 0; step <= options.warmup_steps; ++step) {
+                    cached.set_db_cache_step(step);
+                    const auto expected = host_values(oracle.forward(latents, text, .5f,
+                                                                      2, 2, true, nullptr, small));
+                    const auto actual = host_values(cached.forward(latents, text, .5f,
+                                                                   2, 2, true, nullptr, small));
+                    require(cached.db_cached_steps() == (step == options.warmup_steps ? 1 : 0),
+                            "resized-reference DiT preset warmup/skip policy changed");
+                    require(actual.size() == size_t(4 * channels), "reference resize changed target output shape");
+                    if (step < options.warmup_steps)
+                        require(actual == expected, "resized-reference DiT full step differs from exact base/LoRA");
+                }
+                auto verify_reset = [&](int step, const auto &references) {
+                    cached.set_db_cache_step(step);
+                    const auto actual = host_values(cached.forward(latents, text, .5f,
+                                                                   2, 2, true, nullptr, references));
+                    qwen21::Transformer fresh(weights, config(depth));
+                    const auto expected = host_values(fresh.forward(latents, text, .5f,
+                                                                    2, 2, true, nullptr, references));
+                    require(cached.db_cached_steps() == 0 && actual == expected,
+                            "DiT residual/prefix survived changed reference geometry, content or order");
+                };
+                verify_reset(options.warmup_steps + 1, large);
+                verify_reset(options.warmup_steps + 2, small);
+                auto changed = small;
+                changed[0].latents = mx::copy(small[0].latents);
+                mx::eval(changed[0].latents);
+                verify_reset(options.warmup_steps + 3, changed);
+                if (count > 1) {
+                    std::reverse(changed.begin(), changed.end());
+                    // Reordered image contents still occupy image1/image2/...
+                    // in ascending prompt slots, as a real reordered request.
+                    for (int i = 0; i < count; ++i) changed[i].geometry.text_slot = i + 1;
+                    verify_reset(options.warmup_steps + 4, changed);
+                }
+            }
+        }
+    }
+}
 } // namespace
 
 int main() {
@@ -402,6 +474,7 @@ int main() {
         const auto adapter = fixture.directory / "tiny-lora.safetensors";
         write_adapter(adapter);
         run_db_cache_regression(adapter);
+        run_db_cache_reference_shapes(adapter);
         std::array<Sample, variants> expected;
         // Prime static activation kernels and all 0/1/2/3-reference + LoRA
         // shapes before recording the idle baseline. Every visit owns a new
@@ -430,6 +503,7 @@ int main() {
         require(largest - minimum <= idle_tolerance,
                 "compiled Transformer idle active memory accumulates");
         run_db_cache_regression(adapter);
+        run_db_cache_reference_shapes(adapter);
         require(idle_active() <= baseline + idle_tolerance,
                 "DBCache retained compiled weights or residual buffers after destruction");
         std::cout << "{\"cycles\":" << repetitions
@@ -442,7 +516,8 @@ int main() {
                   << ",\"deterministic_prefill_decode\":true"
                   << ",\"snapshot_cycles\":" << repetitions
                   << ",\"snapshot_cross_transformer_parity\":true"
-                  << ",\"dbcache_policy_and_invalidation\":true}\n";
+                  << ",\"dbcache_policy_and_invalidation\":true"
+                  << ",\"dbcache_reference_geometry_and_lora\":true}\n";
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         return 1;

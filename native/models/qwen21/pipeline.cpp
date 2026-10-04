@@ -5,6 +5,7 @@
 #include "transformer.hpp"
 #include "vae.hpp"
 #include "scheduler.hpp"
+#include "runtime_activation.hpp"
 #include "pe_generation.hpp"
 #include "memory_policy.hpp"
 #include "../../media/image.hpp"
@@ -137,8 +138,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool runtime_requested = r.hybrid_mlp_mode == "runtime";
     const bool qkv_requested = r.hybrid_mlp_mode == "runtime_qkv";
     const bool hybrid_requested = r.execution == "gpu_ane" && !runtime_requested && !qkv_requested;
-    if (!runtime_requested) { runtime_ffn_.reset(); runtime_manifest_.clear(); }
-    if (!qkv_requested) { runtime_qkv_.reset(); qkv_manifest_.clear(); }
+    // A staged request must not overlap the previous resident runtime graph
+    // and its host slots with prompt/vision encoding or memory admission.
+    const bool staged = r.residency == "component_staged";
+    if (!runtime_requested || staged) { runtime_ffn_.reset(); runtime_manifest_.clear(); }
+    if (!qkv_requested || staged) { runtime_qkv_.reset(); qkv_manifest_.clear(); }
     const bool rectangular_w8a8 = option_enabled(std::getenv(
         "TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC"));
     const bool lora_base_ane = qwen21::lora_base_ane(r);
@@ -293,6 +297,28 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         mx::clear_cache();
     }
     plan.request = r;
+    // Only the verified graph/model is prepared here: no IOSurface arena,
+    // prediction, MLX call, event callback or model weights on this worker.
+    // The request owner joins it on success, cancellation and all exceptions.
+    // Slot allocation and the capability self-test still happen after encoding
+    // with fresh live-memory admission on the owning thread.
+    std::unique_ptr<AsyncPreparation<ane::RuntimeGraph::Prepared>> early_runtime;
+    std::filesystem::path early_manifest;
+    std::string early_identity;
+    if (runtime_requested && staged &&
+        option_enabled(std::getenv("TURBOCIDER_QWEN21_RUNTIME_PREPARE_EARLY"))) {
+        early_manifest = std::filesystem::canonical(r.ane_manifest);
+        early_identity = early_manifest.string() + ":" + sha256_file(early_manifest) + ":" +
+            (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto");
+        const size_t budget = runtime_ane_budget(device_info().physical_memory, mx::get_active_memory());
+        emit(event, "prepare_runtime_ane_graph", 0, 1);
+        checkpoint(cancelled);
+        early_runtime = std::make_unique<AsyncPreparation<ane::RuntimeGraph::Prepared>>(
+            [manifest = early_manifest, budget, lora = !r.loras.empty()] {
+                return ane::RuntimeGraph::prepare(manifest, budget, false,
+                    ane::GraphGeometry{ane::Kind::SwiGLU, 4096, 12288, lora});
+            });
+    }
     auto dump = [&](const std::string &name, const Tensor &tensor) {
         if (r.dump.empty()) return;
         std::filesystem::create_directories(r.dump);
@@ -447,7 +473,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         fused_qkv_weights_.clear();
         transformer_.clear();
     }
-    const bool pinned_student = student_adapter && !fused_lora_ane && !runtime_requested;
+    const bool pinned_student = student_adapter && !fused_lora_ane && (!runtime_requested || staged);
     if (bind_lora && pinned_student) {
         const auto digest = lora_sha256.empty() ? sha256_file(r.loras[0].path) : lora_sha256;
         require(digest == student_adapter->sha256,
@@ -476,7 +502,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         lora_applied_projections_ = transformer_.apply_loras(r.loras, "transformer", event, cancelled, true, true);
         require(pinned_student ? lora_applied_projections_ == 227 : lora_applied_projections_ > 0,
                 "Qwen21 LoRA did not bind transformer projections");
-        if (!pinned_student)
+        if (!pinned_student || runtime_requested)
             require(sha256_file(r.loras[0].path) == lora_sha256,
                     "Qwen21 LoRA changed while binding runtime projections");
         active_lora_identity_ = lora_identity;
@@ -503,16 +529,23 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     }
     auto hybrid_start = Clock::now();
     if (runtime_requested) {
-        auto manifest = std::filesystem::canonical(r.ane_manifest);
-        const std::string identity = manifest.string() + ":" + sha256_file(manifest) + ":" +
+        auto manifest = early_runtime ? early_manifest : std::filesystem::canonical(r.ane_manifest);
+        const std::string identity = early_runtime ? early_identity :
+            manifest.string() + ":" + sha256_file(manifest) + ":" +
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto");
         if (!runtime_ffn_ || !runtime_ffn_->available() || runtime_manifest_ != identity ||
             (!r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
             runtime_ffn_.reset();
+            std::optional<PreparationResult<ane::RuntimeGraph::Prepared>> prepared;
+            if (early_runtime) {
+                prepared = early_runtime->take();
+                early_runtime.reset();
+                emit(event, "prepare_runtime_ane_graph", 1, 1);
+            }
             const size_t budget = runtime_ane_budget(device_info().physical_memory,
                                                      mx::get_active_memory());
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 4096, 12288, budget, cancelled,
-                                                         !r.loras.empty());
+                                                         !r.loras.empty(), std::move(prepared));
             runtime_manifest_ = identity;
         }
         runtime_ffn_->begin_request(active_lora_identity_);
@@ -739,7 +772,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         result.backend = "mlx_cpp_metal+coreml_runtime_weight";
         result.precision = "bf16_gpu+runtime_fp16_ffn_bf16_io";
         result.selection = "gpu_ane explicit runtime-weight token-row FFN; base-only weight slots with optional GPU LoRA activation corrections; physical placement unverified";
-        if (!r.loras.empty()) result.selection += "; six-step student schedule; alternate adapter quality unqualified";
+        if (!r.loras.empty()) result.selection += student_adapter
+            ? "; six-step Viggle student schedule"
+            : "; six-step student schedule; alternate adapter quality unqualified";
+        if (staged) result.selection += "; diagnostic phase-scoped runtime session";
     }
     if (qkv_requested) {
         result.backend = "mlx_cpp_metal+coreml_runtime_qkv";
@@ -758,6 +794,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.text_tokens = result.valid_text_tokens = text.shape(1);
     for (const auto &ref : references) result.reference_tokens += ref.latents.shape(1);
     result.total_tokens = result.text_tokens + result.reference_tokens + r.height / 16 * (r.width / 16);
+    // Capture counters/fallback reason before destroying a phase-scoped graph.
+    // Its historical slot-byte counters do not mean those slots remain live.
+    auto capture_runtime_ffn = [&] {
+        if (!runtime_ffn_) return;
+        result.hybrid = runtime_ffn_->metrics();
+        if (!runtime_ffn_->available()) result.selection += "; GPU fallback: " + runtime_ffn_->reason();
+    };
     result.timings.text = text_seconds; result.timings.image = image_seconds;
     emit(event, (hybrid_requested || runtime_requested || qkv_requested) ? "route_gpu_ane" : "route_gpu", 1, 1);
     const uint64_t coreml_calls_before = hybrid_requested ? hybrid_->metrics().runtime_calls : 0;
@@ -853,8 +896,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             // that would omit the adapter contributions.
             std::function<std::vector<Tensor>(const std::vector<Tensor> &)> runtime_gpu;
             if (runtime_requested) runtime_gpu = mx::compile([](const std::vector<Tensor> &a) {
-                auto gu = mx::split(mx::matmul(a[0], mx::transpose(a[1])), 2, -1);
-                return std::vector<Tensor>{mx::matmul(silu(gu[0]) * gu[1], mx::transpose(a[2]))};
+                auto gu = mx::matmul(a[0], mx::transpose(a[1]));
+                return std::vector<Tensor>{mx::matmul(runtime_ffn_activation(gu), mx::transpose(a[2]))};
             });
             std::vector<std::vector<Tensor>> runtime_weights;
             using RuntimeFunction = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
@@ -873,8 +916,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         // Closures are request-local: never reuse captures
                         // after a different adapter has rebound the weights.
                         runtime_lora_gpu.push_back(mx::compile([this, p](const std::vector<Tensor> &a) {
-                            auto gu = mx::split(transformer_.project(a[0], p + "gate_up"), 2, -1);
-                            return std::vector<Tensor>{transformer_.project(silu(gu[0]) * gu[1], p + "out")};
+                            auto gu = transformer_.project(a[0], p + "gate_up");
+                            return std::vector<Tensor>{transformer_.project(runtime_ffn_activation(gu), p + "out")};
                         }));
                         runtime_lora_gate_up.push_back(mx::compile([this, p](const std::vector<Tensor> &a) {
                             // Request each logical half directly. Separate
@@ -1106,6 +1149,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             // after the session map is cleared. Destroy their owner before
             // entering VAE decoding so staged residency releases the DiT.
             request_dit.reset();
+            if (runtime_requested) {
+                capture_runtime_ffn();
+                runtime_ffn_.reset(); runtime_manifest_.clear();
+                result.hybrid->runtime_weight_session_released = true;
+            }
             hybrid_mlp_.reset(); clear_prefix_cache();
             fused_qkv_weights_.clear(); transformer_.clear();
             mx::synchronize(); mx::clear_cache();
@@ -1132,9 +1180,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
     }
     if (hybrid_requested) result.hybrid = hybrid_->metrics(); // session-cumulative, including preparation
-    if (runtime_requested) {
-        result.hybrid = runtime_ffn_->metrics();
-        if (!runtime_ffn_->available()) result.selection += "; GPU fallback: " + runtime_ffn_->reason();
+    if (runtime_requested && runtime_ffn_) {
+        capture_runtime_ffn();
+        // prepare(false) has no denoising phase. Keep its established weight
+        // preparation semantics, but release optional Core ML resources too.
+        if (staged) {
+            runtime_ffn_.reset(); runtime_manifest_.clear();
+            result.hybrid->runtime_weight_session_released = true;
+        }
     }
     if (qkv_requested) {
         result.qkv = runtime_qkv_->metrics();
@@ -1170,6 +1223,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (requested.residency == "component_staged") {
         // Cancellation must honor the same small idle footprint as a finished
         // staged request. Fully evaluated conditioning remains safe to reuse.
+        runtime_ffn_.reset(); runtime_manifest_.clear();
+        runtime_qkv_.reset(); qkv_manifest_.clear();
         transformer_.clear(); vae_.clear();
         active_lora_identity_.clear(); lora_applied_projections_ = 0;
         mx::clear_cache();

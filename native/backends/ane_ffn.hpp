@@ -5,6 +5,7 @@
 #include "ane_scheduler.hpp"
 #include "mlx.hpp"
 #include "../runtime/session.hpp"
+#include "../runtime/async_preparation.hpp"
 
 namespace tc::ane {
 
@@ -31,7 +32,8 @@ class HybridFfn {
         std::function<Tensor(const Tensor &, const Tensor &)> down_and_add;
     };
     HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
-              size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs = false);
+              size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs = false,
+              std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared = std::nullopt);
     ~HybridFfn();
     // Observation override is for deterministic host tests; production callers
     // use an owner-thread Mach observation on every resident request.
@@ -55,6 +57,11 @@ class HybridFfn {
     HybridMetrics metrics() const;
     const std::string &reason() const { return reason_; }
     bool available() const { return graph_ && !failed_; }
+    // Current ownership, unlike the historical slot-byte metrics. A failed
+    // optional route must release all of these before returning GPU output.
+    bool retains_resources() const {
+        return graph_ || !weights_.empty() || output_.capacity() || hidden_.capacity();
+    }
     bool supports_lora_inputs() const { return graph_ && graph_->shape().lora_inputs; }
   private:
     std::unique_ptr<RuntimeGraph> graph_;

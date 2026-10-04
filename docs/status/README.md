@@ -1,5 +1,36 @@
 # TurboCider 状态文档入口
 
+Runtime 图准备与编码重叠、分阶段计时、取消回收及两次真实编辑对照见
+[2026-10-02 Runtime 提前准备验收](2026-10-02-runtime-early-preparation.md)。
+路径仍为显式诊断；单组结果未证明稳定加速，GPU 默认不变。双参考扩图试验仍未补齐外围。
+
+Playground 五模板与本地 AI 共享请求接口、透明图实测、扩图失败样本和 Runtime 导出发布竞态修复见
+[2026-10-02 共享工作流验收](2026-10-02-shared-playground-workflows.md)。
+扩图仍为试验性提示词引导；本阶段没有新增 ANE 加速结论。
+
+实际 App 的双图编辑、超分、输入缩放与原图恢复、Playground、API 和最终安装包验收见
+[2026-10-02 最终桌面验收](2026-10-02-final-app-acceptance.md)。
+此记录取代此前两份报告中的锁屏待验与旧 App 未替换状态。
+
+历史复用保留参考原图、App API 重启竞态和取消队列容量修复见
+[2026-10-02 历史与 API 验收](2026-10-02-history-and-api-lifecycle.md)。
+
+M4 Pro 48 GiB 的 Qwen Runtime 分阶段驻留、编译图内存释放和单图编辑冷对照见
+[2026-10-02 Runtime 生命周期验收](2026-10-02-runtime-staged-lifecycle.md)。
+该诊断路线未获得加速资格，App 默认仍使用 GPU。
+
+本地 AI 离线发现、两步真实 API 编辑和 48 GiB Runtime 内存准入核查见
+[2026-10-02 API 与准入报告](2026-10-02-ai-api-and-resident-admission.md)。
+
+图片导入取消修复和本机 GPU 整数候选对照见
+[导入回归与 GPU INT8 筛选](2026-10-01-cancellable-import-and-gpu-int8.md)。
+上一版实际更新 App 为 `67563e8`，模式隔离与完整 FFN 候选见 [模式隔离、LoRA 登记和 SwiGLU 对照](2026-10-01-app-refresh-and-swiglu.md)。
+
+更早的 M4 Pro 笔记本阶段验收（历史交付 `0f8dfa7`）：
+[当前验收、包与 Runtime ANE 决策](2026-10-01-runtime-ane-decision.md)。
+本机可选参考编码 512 的单次冷编辑为 25.16 s，标准 1024 为 37.28 s；
+存在画质差异，默认仍为 1024。下面的 M4 Max 历史数据不能替代本机加速证明。
+
 ## 当前加速结论
 
 先读 [GPU/ANE 加速：当前选择与维护入口](acceleration.md)。
@@ -24,6 +55,9 @@ GPU/runtime全热为0.998×、预声明较晚窗口1.016×，不改变默认选�
 
 | 内容 | 入口 |
 | --- | --- |
+| M4 Pro App/API/工作流阶段验收、最终 QKV 回收检查、交付包和研究边界 | [2026-10-01 验收与决策](2026-10-01-runtime-ane-decision.md) |
+| 可选 Qwen 512 参考编码、冷编辑对照、公开三图路径和实际 App 换装 | [参考编码验收](2026-10-01-qwen-reference-encoding.md) |
+| FFN/QKV 失败回收、完整 GPU 回退、取消复用及私有图清理 | [生命周期回归](runtime-ane-failure-retirement-2026-10-01.md) |
 | 当前保留级别、性能表、optional、代码职责和未完成项 | [维护入口](acceleration.md) |
 | 2026-09-30 runtime ANE 代码层次、BF16/Q8/QKV 实测进度、整理范围与提交边界 | [当前代码与进度](runtime-ane-current-2026-09-30.md) |
 | 875b库 Qwen 1024² base-only v1：两提示词 v1/v2 ABBA 与 GPU/v1/冻结图正反向三路；Z v1/v2 组件收益不足 | [v1 base 筛选](runtime-ane-v1-base-2026-09-30.md) |

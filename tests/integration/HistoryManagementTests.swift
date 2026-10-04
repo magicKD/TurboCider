@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Combine
 
 @main
 struct HistoryManagementTests {
@@ -203,6 +204,49 @@ struct HistoryManagementTests {
                           restored.jobs.first?.publicStreamingIntentJSON == job.publicStreamingIntentJSON,
                           "Preflight failure and original intent did not survive reopening")
             }
+        }
+        // Exercise the real submission/persistence entry without weights or
+        // inference: cancel before preflight, or fail on a missing installation.
+        // Input files remain immutable, including a distinct original baseline.
+        let originalInput = root.appendingPathComponent("history-original.png")
+        let preparedInput = root.appendingPathComponent("history-prepared.png")
+        try png.write(to: originalInput); try png.write(to: preparedInput)
+        let asset = StudioAsset(path: preparedInput.path, name: "Reference", width: 64, height: 64,
+            original: StudioAssetOriginal(path: originalInput.path, name: "Original", width: 64, height: 64),
+            preparation: .fit512)
+        for cancelBeforePreflight in [false, true] {
+            let folder = root.appendingPathComponent(cancelBeforePreflight ? "snapshot-cancelled" : "snapshot-failed")
+            let submitted = NativeJobStore(directory: folder)
+            var request = NativeRequest(prompt: "Input snapshot durability", output: folder.appendingPathComponent("outputs/result.png").path)
+            request.model = "z-image-turbo"; request.width = 512; request.height = 512; request.steps = 9
+            request.inputs = [NativeInput(kind: "image", role: "reference", path: asset.path)]
+            let intent = NativeRequestV2(legacy: request, targetBytes: 10 << 30)
+            var didCancel = false
+            let observer = submitted.$jobs.dropFirst().sink { jobs in
+                if cancelBeforePreflight && !didCancel && !jobs.isEmpty {
+                    didCancel = true
+                    submitted.cancel()
+                }
+            }
+            var failure: Error?
+            do {
+                _ = try await submitted.generate(modelURL: folder.appendingPathComponent("missing-model"),
+                    request: request, streamingRequest: intent, inputAssets: [asset])
+            } catch { failure = error }
+            observer.cancel()
+            let expectedState = cancelBeforePreflight ? "cancelled" : "failed"
+            try check(failure != nil && !submitted.busy && submitted.jobs.first?.state == expectedState,
+                      "Snapshot submission did not finish with the expected preflight terminal state")
+            try check(submitted.jobs.first?.inputAssets == [asset], "Submission did not persist its frozen input snapshot")
+            let reopened = NativeJobStore(directory: folder)
+            try check(reopened.storageError == nil && reopened.jobs.first?.state == expectedState &&
+                      reopened.jobs.first?.reusableInputAssets == [asset],
+                      "Failed/cancelled input metadata did not survive reopening history")
+            try check((try Data(contentsOf: originalInput)) == png && (try Data(contentsOf: preparedInput)) == png,
+                      "Failed/cancelled submission cleaned up retained input/original files")
+            let studio = StudioState(directory: folder.appendingPathComponent("draft"), models: [])
+            studio.reuse(reopened.jobs[0])
+            try check(studio.draft.assets == [asset], "Failed/cancelled parameters lost the original baseline on reuse")
         }
         try await PublicImageJobTests.run(root: root.appendingPathComponent("public-worker-tests"))
         print("PASS: history operations, hybrid precision, finalizing recovery, durable public submission and public worker jobs")

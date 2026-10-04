@@ -42,7 +42,27 @@ y = h Wd^T + LoRA_down(h)
   加载 Core ML；先 drain worker/释放模型，后删快照。不可改回从用户原图
   延迟加载，否则源文件在校验后被替换会产生验证—使用间隙。真实移动源图
   后继续 prediction 的回归与旧/新库比较见[图快照记录](../../docs/status/runtime-ane-artifact-lease.md)。
+- 私有快照的新格式在 0700 目录中持有独占 `flock`；仅在锁已释放且
+  marker 的 uid/device/inode 与目录及锁文件一致时回收崩溃遗留。回收及析构删除
+  使用 descriptor-relative、no-follow 操作，拒绝外部链接、不明条目和
+  身份变化，失败写入 stderr。每次建图最多回收 16 个；旧格式、无完整
+  marker 的极早期崩溃空目录、最后移除 marker 后留下的空目录及权限受损
+  目录保守保留，不自动推断归属。
+  最后 rmdir 失败且原目录身份仍可证明时，重新独占创建并锁定 marker
+  以供重试；恢复失败或该短窗口崩溃仍可能留空目录，不承诺任意点零残留。
+  临时目录扫描最多 4096 项，单图删除最多 4096 项/32 层；超过限制保留
+  未删内容并记录诊断。快照子目录/文件显式采用 0700/0600，独立于 umask。
+  这是临时图生命周期保护，不承诺 Core ML 系统缓存完全不落盘，也不
+  改变权重、精度、选路或硬件资格。对应纯 host 回归不加载模型。
 - 部分 chunk 失败也不能发布半成品；保留整段 GPU 重算和失败计数。
+- runtime FFN/QKV 永久降级时立即退役本实例的 graph、worker、slots 和
+  host scratch，不把不可再用的图留到 GPU fallback 请求结束。先析构图
+  并等待 worker，再释放其借用的权重/输出存储；私有 lease 随图销毁。
+  失败的 GPU 尾段重算仍抛出原异常，清理不再访问已释放的图。取消及
+  外部 GPU/adapter callback 异常保持原有 drain/可重用语义，不因此
+  将正常图标为永久失效。模型层下一请求的重新准入策略保持不变。
+  这是源码修正；[本轮记录](../../docs/status/runtime-ane-failure-retirement-2026-10-01.md)
+  只有编译/静态证据，测试仍暂停。
 - 同 adapter 的 resident 请求可保留调度状态，切换 adapter/返回 base
   必须隔离。保留数值、非有限值、headroom、失败后状态回归。
   Qwen ref512 的 batch 诊断开关也允许显式 runtime 的 base 请求，便于

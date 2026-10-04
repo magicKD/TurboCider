@@ -50,7 +50,8 @@ int configured_chunks() {
 } // namespace
 
 HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
-                     size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs)
+                     size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
+                     std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared)
     : memory_budget_(budget) {
     checkpoint(cancelled);
     const int chunks = configured_chunks();
@@ -67,20 +68,43 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     // acceleration request. A valid graph failing its capability self-test
     // is instead a reported GPU fallback on this machine.
     try {
-        graph_ = std::make_unique<RuntimeGraph>(manifest, budget, false, false,
-                                               GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs});
+        if (prepared) {
+            metrics_.runtime_weight_prepared_early = true;
+            metrics_.runtime_weight_prepare_seconds = prepared->seconds;
+            metrics_.runtime_weight_prepare_wait_seconds = prepared->wait_seconds;
+            metrics_.runtime_weight_prepare_before_join_seconds = prepared->before_join_seconds;
+            // Do not retry a failed load or turn an invalid graph into fallback.
+            if (prepared->error) std::rethrow_exception(prepared->error);
+            require(bool(prepared->value), "runtime ANE preparation returned no graph");
+            const auto &shape = prepared->value->shape();
+            require(shape.kind == Kind::SwiGLU && shape.hidden == hidden && shape.width == width &&
+                        (!require_lora_inputs || shape.lora_inputs),
+                    "runtime ANE prepared graph does not match model FFN geometry");
+            graph_ = std::make_unique<RuntimeGraph>(std::move(prepared->value), budget);
+        } else {
+            graph_ = std::make_unique<RuntimeGraph>(manifest, budget, false, false,
+                                                   GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs});
+        }
     }
     catch (const MemoryBudgetError &error) { degrade(error.what(), -1); return; }
     catch (const CapabilityError &error) { degrade(error.what(), -1); return; }
     metrics_.bucket = graph_->shape().rows;
     if (graph_->shape().lora_inputs) metrics_.mlp_output_kind = "runtime_weight_swiglu_lora_inputs";
     metrics_.load_seconds = graph_->load_seconds();
+    metrics_.manifest_validation_seconds = graph_->artifact_seconds();
+    metrics_.model_load_seconds = graph_->model_load_seconds();
+    metrics_.output_backing_setup_seconds = graph_->bind_seconds();
     metrics_.runtime_weight_slot_bytes = graph_->slot_bytes();
     metrics_.runtime_weight_estimated_bytes = graph_->estimated_bytes();
     std::string error;
     const auto start = Clock::now();
-    if (!graph_->self_test(error)) degrade("self_test_failed: " + error, -1);
+    const bool verified = graph_->self_test(error);
     metrics_.zero_input_warmup_seconds = elapsed(start); // sparse nonzero self-test, not measured FFN
+    if (!verified) {
+        degrade("self_test_failed: " + error, -1);
+        checkpoint(cancelled);
+        return;
+    }
     scheduler_ = std::make_unique<RowScheduler>(graph_->shape().rows, chunks);
     checkpoint(cancelled);
 }
@@ -90,15 +114,7 @@ void HybridFfn::drain() {
     weights_.clear();
 }
 void HybridFfn::release_for_memory(const std::string &reason) {
-    // Owner-thread safe point: finish the worker while its borrowed weights
-    // and scratch still exist, then release the optional graph and buffers.
-    drain();
-    graph_.reset();
-    scheduler_.reset();
-    std::vector<uint16_t>().swap(output_);
-    std::vector<uint16_t>().swap(hidden_);
     degrade(reason, -1);
-    chunks_ = 0;
 }
 bool HybridFfn::admit_scratch(int ane_rows, bool adapter) {
     if (!graph_ || ane_rows <= 0) return false;
@@ -195,6 +211,17 @@ void HybridFfn::degrade(const std::string &error, int layer) {
     ++metrics_.runtime_failures;
     metrics_.runtime_failure_block = layer;
     reason_ = error;
+    // A failed optional route is never retried by this instance. Retire its
+    // Core ML worker/model/lease now, rather than retaining them throughout
+    // the GPU fallback session. RuntimeGraph destruction drains the worker;
+    // keep every borrowed tensor and scratch buffer alive until it returns.
+    graph_.reset();
+    pending_ = false;
+    weights_.clear();
+    scheduler_.reset();
+    std::vector<uint16_t>().swap(output_);
+    std::vector<uint16_t>().swap(hidden_);
+    chunks_ = 0;
 }
 void HybridFfn::stage(int layer, int rows, std::vector<Tensor> weights) {
     std::vector<FfnWeight> sources;
@@ -433,7 +460,7 @@ Tensor HybridFfn::run(int layer, const Tensor &input, const Gpu &gpu,
             << ",\"ffn_seconds\":" << wall << ",\"ok\":" << (result.ok ? "true" : "false") << "}\n";
         return output;
     } catch (...) {
-        graph_->finish(); pending_ = false;
+        if (graph_ && pending_) { graph_->finish(); pending_ = false; }
         // Cancellation/down-callback errors may precede the final ownership
         // fence. Drain the submitted GPU head as well, preserving the original
         // exception if the GPU reports an error during cleanup.

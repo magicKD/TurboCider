@@ -2,6 +2,7 @@
 #include "ane_runtime_convert.hpp"
 #include "ane_runtime_quant.hpp"
 #include "ane_memory.hpp"
+#include "ane_artifact_lease.hpp"
 
 #import <CoreML/CoreML.h>
 #import <CoreVideo/CoreVideo.h>
@@ -204,26 +205,7 @@ int dimension(NSDictionary *manifest, NSString *key) {
 // Core ML may keep referring to the compiled directory after model load.
 // Keep this verified, private copy alive until the model and worker are gone;
 // changes to the user's artifact must not change the bytes Core ML sees.
-struct ArtifactLease {
-    std::filesystem::path root;
-    ArtifactLease() {
-        auto pattern = (std::filesystem::temp_directory_path() /
-                        "turbocider-runtime-ane-XXXXXX").string();
-        std::vector<char> name(pattern.begin(), pattern.end());
-        name.push_back('\0');
-        const char *created = mkdtemp(name.data());
-        check(created != nullptr, "cannot create private runtime ANE artifact directory");
-        root = created;
-    }
-    ~ArtifactLease() {
-        if (!root.empty()) {
-            std::error_code error;
-            std::filesystem::remove_all(root, error);
-        }
-    }
-    ArtifactLease(const ArtifactLease &) = delete;
-    ArtifactLease &operator=(const ArtifactLease &) = delete;
-};
+using ArtifactLease = detail::ArtifactLease;
 
 bool matches_digest(NSData *bytes, NSString *digest) {
     if (!bytes || bytes.length > 64 * 1024 * 1024) return false;
@@ -269,6 +251,9 @@ std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphSh
           "runtime ANE compiled artifact must be a real directory");
     const auto private_model = lease.root / "graph.mlmodelc";
     std::filesystem::create_directory(private_model);
+    // Do not depend on the host application's umask. Nested directories and
+    // copied files must remain private and eligible for guarded lease cleanup.
+    std::filesystem::permissions(private_model, std::filesystem::perms::owner_all);
     size_t observed = 0;
     for (const auto &entry : std::filesystem::recursive_directory_iterator(root / "graph.mlmodelc")) {
         check(!entry.is_symlink(), "runtime ANE compiled artifact contains a symlink");
@@ -276,6 +261,7 @@ std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphSh
         const auto private_path = lease.root / relative;
         if (entry.is_directory()) {
             std::filesystem::create_directory(private_path);
+            std::filesystem::permissions(private_path, std::filesystem::perms::owner_all);
             continue;
         }
         check(entry.is_regular_file(), "runtime ANE compiled artifact contains a nonregular entry");
@@ -289,6 +275,8 @@ std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphSh
         check(matches_digest(bytes, digest), "runtime ANE artifact digest mismatch");
         check([bytes writeToFile:@(private_path.c_str()) atomically:NO],
               "cannot snapshot runtime ANE compiled artifact");
+        std::filesystem::permissions(private_path, std::filesystem::perms::owner_read |
+                                                  std::filesystem::perms::owner_write);
         check(matches_digest([NSData dataWithContentsOfFile:@(private_path.c_str())], digest),
               "runtime ANE private artifact digest mismatch");
         ++observed;
@@ -301,7 +289,125 @@ std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphSh
     check(observed > 0 && observed == expected, "runtime ANE compiled artifact receipt is incomplete");
     return private_model;
 }
+
+size_t graph_estimate(const GraphShape &s) {
+    const size_t matrices = s.kind == Kind::Matmul ? 1 : s.kind == Kind::GELU ? 2 : 3;
+    const size_t weight_bytes = matrices * size_t(s.hidden) * s.width * 2;
+    size_t estimate = 2 * weight_bytes + size_t(s.rows) * (6ull * s.width + 8ull * s.hidden) +
+                      (64ull << 20);
+    if (s.lora_inputs) estimate += size_t(s.rows) * s.width * 16;
+    return estimate;
+}
+
+void admit_graph(size_t estimate, size_t budget, bool cpu_only) {
+    if (estimate > budget) throw MemoryBudgetError("runtime ANE memory budget exceeded");
+    if (!cpu_only) {
+        const auto observed = observe_runtime_memory(0);
+        const auto decision = admit_memory(observed, {uint64_t(4) << 30, budget}, 0, estimate);
+        if (!decision.allowed())
+            throw MemoryBudgetError("runtime ANE system memory admission denied (" +
+                                    memory_denial_reason(decision.denial, observed) + ")");
+    }
+}
+
+NSArray<NSString *> *weight_names(Kind kind) {
+    return kind == Kind::Matmul ? @[@"w"] :
+           kind == Kind::GELU ? @[@"wu", @"wd"] : @[@"wg", @"wu", @"wd"];
+}
+
+// Validate the loaded interface without allocating an IOSurface. An explicit
+// invalid artifact must still fail preparation rather than become GPU fallback.
+void check_model_interface(MLModel *model, const GraphShape &s) {
+    NSDictionary *inputs = model.modelDescription.inputDescriptionsByName;
+    NSDictionary *outputs = model.modelDescription.outputDescriptionsByName;
+    NSArray<NSString *> *names = weight_names(s.kind);
+    const NSUInteger input_count = 1 + names.count + (s.lora_inputs ? 2 : 0);
+    check(inputs.count == input_count && outputs.count == (s.lora_inputs ? 2u : 1u),
+          "runtime ANE feature count mismatch");
+    auto check_feature = [&](NSString *name, int rows, int cols, NSDictionary *descriptions) {
+        MLFeatureDescription *feature = descriptions[name];
+        check(feature && feature.type == MLFeatureTypeMultiArray &&
+                  feature.multiArrayConstraint.dataType == MLMultiArrayDataTypeFloat16 &&
+                  [feature.multiArrayConstraint.shape isEqual:@[@(rows), @(cols)]],
+              "runtime ANE compiled graph interface does not match its manifest");
+    };
+    check_feature(@"x", s.rows, s.hidden, inputs);
+    for (NSString *name in names) {
+        const bool down = [name isEqual:@"wd"];
+        check_feature(name, down ? s.hidden : s.width, down ? s.width : s.hidden, inputs);
+    }
+    check_feature(@"y", s.rows, s.output_width(), outputs);
+    if (s.lora_inputs) {
+        check_feature(@"dg", s.rows, s.width, inputs);
+        check_feature(@"du", s.rows, s.width, inputs);
+        check_feature(@"h", s.rows, s.width, outputs);
+    }
+}
 } // namespace
+
+struct RuntimeGraph::Prepared::Impl {
+    // The lease is destroyed last. Model load can keep lazy reads/file handles
+    // into the snapshot even though this owner never predicts or creates slots.
+    std::unique_ptr<ArtifactLease> lease;
+    GraphShape shape;
+    MLModel *model = nil;
+    size_t estimate = 0;
+    double artifact_time = 0, model_load_time = 0;
+    bool cpu_only = false;
+    ~Impl() { model = nil; }
+};
+
+RuntimeGraph::Prepared::Prepared(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
+RuntimeGraph::Prepared::~Prepared() = default;
+RuntimeGraph::Prepared::Prepared(Prepared &&) noexcept = default;
+RuntimeGraph::Prepared &RuntimeGraph::Prepared::operator=(Prepared &&) noexcept = default;
+const GraphShape &RuntimeGraph::Prepared::shape() const {
+    check(bool(impl_), "runtime ANE prepared graph was moved");
+    return impl_->shape;
+}
+size_t RuntimeGraph::Prepared::estimated_bytes() const {
+    check(bool(impl_), "runtime ANE prepared graph was moved");
+    return impl_->estimate;
+}
+double RuntimeGraph::Prepared::artifact_seconds() const {
+    check(bool(impl_), "runtime ANE prepared graph was moved");
+    return impl_->artifact_time;
+}
+double RuntimeGraph::Prepared::model_load_seconds() const {
+    check(bool(impl_), "runtime ANE prepared graph was moved");
+    return impl_->model_load_time;
+}
+
+std::unique_ptr<RuntimeGraph::Prepared> RuntimeGraph::prepare(const std::filesystem::path &manifest,
+        size_t budget, bool cpu_only, std::optional<GraphGeometry> expected) {
+    @autoreleasepool {
+        auto p = std::make_unique<Prepared::Impl>();
+        auto artifact_start = Clock::now();
+        p->lease = std::make_unique<ArtifactLease>();
+        const auto path = verify_manifest(manifest, p->shape, *p->lease);
+        const auto &s = p->shape;
+        if (expected)
+            check(s.kind == expected->kind && s.hidden == expected->hidden && s.width == expected->width &&
+                      (!expected->require_lora_inputs || s.lora_inputs),
+                  "runtime ANE graph does not match model FFN geometry");
+        p->estimate = graph_estimate(s);
+        p->cpu_only = cpu_only;
+        // Charge the complete eventual graph before loading, not merely this
+        // lightweight owner's currently visible payload.
+        admit_graph(p->estimate, budget, cpu_only);
+        p->artifact_time = seconds(artifact_start);
+        auto model_start = Clock::now();
+        MLModelConfiguration *configuration = [MLModelConfiguration new];
+        configuration.computeUnits = cpu_only ? MLComputeUnitsCPUOnly : MLComputeUnitsCPUAndNeuralEngine;
+        NSError *error = nil;
+        p->model = [MLModel modelWithContentsOfURL:[NSURL fileURLWithPath:@(path.c_str())]
+                                   configuration:configuration error:&error];
+        if (!p->model) throw CapabilityError("runtime ANE model load failed: " + message(error));
+        check_model_interface(p->model, s);
+        p->model_load_time = seconds(model_start);
+        return std::unique_ptr<Prepared>(new Prepared(std::move(p)));
+    }
+}
 
 struct RuntimeGraph::Impl {
     // First member is destroyed last, after Worker and MLModel have released
@@ -315,7 +421,7 @@ struct RuntimeGraph::Impl {
     std::unique_ptr<Surface> delta_gate, delta_up, hidden;
     std::vector<std::unique_ptr<Surface>> weights;
     size_t allocated = 0, estimate = 0;
-    double load_time = 0;
+    double artifact_time = 0, model_load_time = 0, bind_time = 0;
     bool staged = false, verified = false, scalar_staging = false;
     float headroom = 1.f;
     RunResult result;
@@ -396,36 +502,31 @@ struct RuntimeGraph::Impl {
 
 RuntimeGraph::RuntimeGraph(const std::filesystem::path &manifest, size_t budget, bool cpu_only,
                            bool scalar_staging, std::optional<GraphGeometry> expected)
-    : impl_(std::make_unique<Impl>()) {
+    : RuntimeGraph(prepare(manifest, budget, cpu_only, expected), budget, scalar_staging) {}
+
+RuntimeGraph::RuntimeGraph(std::unique_ptr<Prepared> prepared, size_t budget, bool scalar_staging) {
     @autoreleasepool {
+        const auto start = Clock::now();
+        check(prepared && prepared->impl_, "runtime ANE binding requires a prepared graph");
+        auto &source = *prepared->impl_;
+        // A prepared model may have waited through encoder/weight loading.
+        // Recheck the complete estimate against the NEW phase's live memory
+        // before starting a worker or allocating the large slot bank.
+        admit_graph(source.estimate, budget, source.cpu_only);
+        impl_ = std::make_unique<Impl>();
         auto &p = *impl_;
+        p.lease = std::move(source.lease);
+        p.model = source.model;
+        source.model = nil;
+        p.shape = source.shape;
+        p.estimate = source.estimate;
+        p.artifact_time = source.artifact_time;
+        p.model_load_time = source.model_load_time;
         p.scalar_staging = scalar_staging;
-        auto start = Clock::now();
-        p.lease = std::make_unique<ArtifactLease>();
-        const auto path = verify_manifest(manifest, p.shape, *p.lease);
         const auto &s = p.shape;
-        if (expected)
-            check(s.kind == expected->kind && s.hidden == expected->hidden && s.width == expected->width &&
-                      (!expected->require_lora_inputs || s.lora_inputs),
-                  "runtime ANE graph does not match model FFN geometry");
-        const size_t matrices = s.kind == Kind::Matmul ? 1 : s.kind == Kind::GELU ? 2 : 3;
-        const size_t weight_bytes = matrices * size_t(s.hidden) * s.width * 2;
-        // Conservative admission BEFORE allocating; measured telemetry will
-        // later refine Core ML's internal-buffer allowance at the model layer.
-        p.estimate = 2 * weight_bytes + size_t(s.rows) * (6ull * s.width + 8ull * s.hidden) + (64ull << 20);
-        if (s.lora_inputs) p.estimate += size_t(s.rows) * s.width * 16;
-        if (p.estimate > budget) throw MemoryBudgetError("runtime ANE memory budget exceeded");
-        if (!cpu_only) {
-            const auto observed = observe_runtime_memory(0);
-            const auto decision = admit_memory(observed, {uint64_t(4) << 30, budget}, 0, p.estimate);
-            if (!decision.allowed())
-                throw MemoryBudgetError("runtime ANE system memory admission denied (" +
-                                        memory_denial_reason(decision.denial, observed) + ")");
-        }
         p.input = std::make_unique<Surface>(s.rows, s.hidden);
         p.output = std::make_unique<Surface>(s.rows, s.output_width());
-        NSArray<NSString *> *names = s.kind == Kind::Matmul ? @[@"w"] :
-            s.kind == Kind::GELU ? @[@"wu", @"wd"] : @[@"wg", @"wu", @"wd"];
+        NSArray<NSString *> *names = weight_names(s.kind);
         NSMutableDictionary *values = [NSMutableDictionary dictionary];
         values[@"x"] = [MLFeatureValue featureValueWithMultiArray:p.input->array];
         if (s.lora_inputs) {
@@ -444,12 +545,9 @@ RuntimeGraph::RuntimeGraph(const std::filesystem::path &manifest, size_t budget,
         for (const auto &weight : p.weights) p.allocated += weight->bytes();
         p.allocated += p.input->bytes() + p.output->bytes();
         if (p.allocated > budget) throw MemoryBudgetError("runtime ANE padded IOSurfaces exceed memory budget");
-        MLModelConfiguration *configuration = [MLModelConfiguration new];
-        configuration.computeUnits = cpu_only ? MLComputeUnitsCPUOnly : MLComputeUnitsCPUAndNeuralEngine;
         NSError *error = nil;
-        p.model = [MLModel modelWithContentsOfURL:[NSURL fileURLWithPath:@(path.c_str())]
-                                  configuration:configuration error:&error];
-        if (!p.model) throw CapabilityError("runtime ANE model load failed: " + message(error));
+        // Also check the real backing shapes when binding. Preparation's ABI
+        // validation cannot prove that newly allocated padded surfaces match.
         auto check_feature = [&](NSString *name, Surface &surface, NSDictionary *descriptions) {
             MLFeatureDescription *feature = descriptions[name];
             check(feature && feature.type == MLFeatureTypeMultiArray &&
@@ -474,14 +572,19 @@ RuntimeGraph::RuntimeGraph(const std::filesystem::path &manifest, size_t budget,
         p.options = [MLPredictionOptions new];
         p.options.outputBackings = s.lora_inputs ? @{@"y": p.output->array, @"h": p.hidden->array} :
                                                  @{@"y": p.output->array};
-        p.load_time = seconds(start);
+        p.bind_time = seconds(start);
     }
 }
 RuntimeGraph::~RuntimeGraph() = default;
 const GraphShape &RuntimeGraph::shape() const { return impl_->shape; }
 size_t RuntimeGraph::slot_bytes() const { return impl_->allocated; }
 size_t RuntimeGraph::estimated_bytes() const { return impl_->estimate; }
-double RuntimeGraph::load_seconds() const { return impl_->load_time; }
+double RuntimeGraph::artifact_seconds() const { return impl_->artifact_time; }
+double RuntimeGraph::model_load_seconds() const { return impl_->model_load_time; }
+double RuntimeGraph::bind_seconds() const { return impl_->bind_time; }
+double RuntimeGraph::load_seconds() const {
+    return artifact_seconds() + model_load_seconds() + bind_seconds();
+}
 
 bool RuntimeGraph::self_test(std::string &error) {
     auto &p = *impl_;

@@ -12,6 +12,9 @@
 | `runtime_ane_model_screen.py` | GPU/runtime/frozen整请求对照、原始结果与PNG、可选独立内存采样 | 单向screen不等于完整匹配对照 |
 | `runtime_lora_shared_graph_switch.py` | 同进程base → A → 合成B → base，检查图复用、实际调用和状态隔离 | 合成B不是第二个训练LoRA的质量资格 |
 | `runtime_ane_memory.py` | 采样进程编排、证据绑定、超时处理；复用 `tools/native/` 的采样器 | 进程footprint不是ANE独占或完整driver内存 |
+| `runtime_ane_qkv_regression.py` | 使用既有原生库运行一次合成 QKV 失败回退/取消复用检查；保存日志/hash 并清理所属临时图 | 不加载 checkpoint，不证明 ANE 驻留或推理提速；不属于默认构建 |
+| `runtime_ane_swiglu_int8_probe.py` | 完整动态 SwiGLU/LoRA 的 FP16/QDQ 对照，包含 CPU 准备、FP32桥接、数值/设备计划与严格 Python 输出边界检查 | 两个小几何的诊断不是生产加速或图像质量资格；不接入 App |
+| `runtime_gpu_swiglu_a8w8_probe.py` | 两个受限小尺寸的完整动态 SwiGLU/LoRA GPU 对照：FP16、INT8 存储后 FP16、普通整数 ALU；含准备/同步/回读和独立 CPU 数值校验 | 整数 ALU 不是原生 INT8 矩阵加速；不接入 App，不与不同输入边界的旧 Core ML 跑分直接相除 |
 | `qwen21_ane_placement.py` | 冻结/runtime manifest的离线设备计划、嵌套算子与artifact身份 | preferred设备不等于实际硬件执行或重叠 |
 
 新增验证工具应直接复用 `runtime_ane_common`，不要从screen导入runner逻辑。

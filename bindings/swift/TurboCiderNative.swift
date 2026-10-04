@@ -1,6 +1,18 @@
 import Foundation
 import CTurboCider
 
+public struct NativeReferencePreparationMetadata: Codable, Sendable {
+    public let original_width: Int
+    public let original_height: Int
+    public let width: Int
+    public let height: Int
+    public let changed: Bool
+}
+public struct NativePreparedReferenceImage: Sendable {
+    public let metadata: NativeReferencePreparationMetadata
+    public let png: Data?
+}
+
 public struct NativeInput: Codable, Sendable, Identifiable {
     public var id: String { path + role }
     public var kind: String
@@ -44,6 +56,7 @@ public struct NativeRequest: Codable, Sendable {
     public var prompt_enhance: Bool?
     public var prompt_enhance_edit_experimental: Bool?
     public var qwen21_dit_cache: String?
+    public var qwen21_reference_size: Int?
     public var inputs: [NativeInput]?
     public var profile: String?
     public var residency: String?
@@ -120,6 +133,7 @@ public struct NativeParametersV2: Codable, Sendable {
     public var dynamic_text: Bool
     public var compile_gpu: Bool?
     public var noise_path: String?
+    public var qwen21_reference_size: Int? = nil
 }
 public struct NativeRequestV2: Codable, Sendable {
     public var schema_version = 2
@@ -167,7 +181,7 @@ public struct NativeRequestV2: Codable, Sendable {
             qwen21_dit_cache: request.qwen21_dit_cache)
         parameters = NativeParametersV2(
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
-            noise_path: request.noise_path)
+            noise_path: request.noise_path, qwen21_reference_size: request.qwen21_reference_size)
         dump_tensors = request.dump_tensors
         loras = request.loras
         lora_strategy = request.lora_strategy
@@ -514,6 +528,41 @@ public final class NativeEngine: @unchecked Sendable {
     public static func runtimeBuildIdentity() -> String { consume(tc_runtime_build_identity()) }
     public static func system() -> String { consume(tc_system_json()) }
     public static func models() -> String { consume(tc_models_json()) }
+    /// Shared UI/API metadata; never loads a model or reads image files.
+    public static func workflows() -> Data { Data(consume(tc_workflows_json()).utf8) }
+    /// Synchronous CPU image preparation; call away from the main actor.
+    /// The same renderer backs the CLI/RPC image_prepare file operation.
+    public static func prepareReferenceImage(sourcePath: String, preset: String) throws -> NativePreparedReferenceImage {
+        guard !sourcePath.contains("\0"), !preset.contains("\0") else {
+            throw NativeFailure(message: "Image preparation arguments cannot contain NUL bytes.")
+        }
+        var metadata: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+        var png: UnsafeMutablePointer<UInt8>?
+        var size: UInt64 = 0
+        let status = sourcePath.withCString { source in
+            preset.withCString { tc_reference_image_render(source, $0, &metadata, &png, &size, &error) }
+        }
+        defer { tc_buffer_free(png) }
+        let message = consume(error), output = consume(metadata)
+        guard status == 0 else { throw NativeFailure(message: message) }
+        let info = try JSONDecoder().decode(NativeReferencePreparationMetadata.self, from: Data(output.utf8))
+        guard size <= UInt64(Int.max), info.changed == (size > 0), (png != nil) == (size > 0) else {
+            throw NativeFailure(message: "Invalid prepared image buffer.")
+        }
+        return NativePreparedReferenceImage(metadata: info, png: png.map { Data(bytes: $0, count: Int(size)) })
+    }
+    /// Pure composition. The returned native request still requires plan and
+    /// the normal load-time weight checks before execution.
+    public static func workflowRequest(input: Data) throws -> Data {
+        guard !input.contains(0), let text = String(data: input, encoding: .utf8) else {
+            throw NativeFailure(message: "Workflow input must be UTF-8 JSON without NUL bytes.")
+        }
+        var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+        let status = text.withCString { tc_workflow_request_json($0, &result, &error) }
+        let message = consume(error), output = consume(result)
+        guard status == 0 else { throw NativeFailure(message: message) }
+        return Data(output.utf8)
+    }
     public static func plan(_ request: NativeRequest) throws -> Data {
         let data = try JSONEncoder().encode(request)
         var result: UnsafeMutablePointer<CChar>?

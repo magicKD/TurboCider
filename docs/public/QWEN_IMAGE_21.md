@@ -24,8 +24,10 @@ proof.
 ## Base-schedule LoRA and optional DiT cache
 
 The App's right settings column exposes **DiT cache** for 512×512, 20–40-step
-GPU generation and 1–3-reference editing with normal 1024px reference processing
-and prompt enhancement off. It defaults to **Off**. The named choices are
+GPU generation and 1–3-reference editing with standard 1024px or explicitly
+approximate 512px reference processing and prompt enhancement off. Output
+canvas size and reference encoding size are separate settings. It defaults to
+**Off**. The named choices are
 `off`, `conservative`, `balanced` and `fast`; the selected value is recorded in
 the draft, submitted request and result. Unsupported combinations show a reason
 instead of silently changing the sampling steps. Viggle's six-step student is
@@ -113,6 +115,41 @@ The older `lora_suffix` experiment omits ANE-prefix LoRA; its faster results
 are not complete-LoRA speedups.
 FFN step reuse remains unsupported with this adapter. The previous BF16 GPU path
 remains available without `loras`.
+
+For faster **r128 GPU editing**, the request may explicitly select
+`qwen21_reference_size: 512` without setting a diagnostic environment variable.
+This requires a 512×512 output, 1–3 ordered references, six steps, strength 1,
+`hybrid_mlp_mode: "auto"`, inference-time LoRA, prompt enhancement and DiT cache
+off, and `allow_approximation: true`. The r128 filename is recognized during
+planning; its pinned SHA-256 is still checked before binding. This request
+opt-in does not widen r256 or GPU+ANE routes. Their existing full-size or
+explicitly gated diagnostic rules remain in force. Ordinary runtime LoRA has
+its own 20–40-step GPU editing route described below.
+
+The default is still **1024**. Reference size is an approximate squared-pixel
+area: aspect ratio is preserved and dimensions are aligned to 32 pixels, so a
+non-square reference is not forced into a 512×512 square. Reducing it can lose
+small details and change the edited image. It changes reference encoding,
+not output resolution. Base-model editing already supports explicit 256/512
+reference resizing with approximation enabled. Ordinary runtime LoRA also
+supports 512px reference encoding for explicitly approximate 512×512 GPU
+editing, 20–40 steps and 1–3 references. It uses one Transformer adapter with
+finite strength in −8…8. The App's 512 shortcut supports base or ordinary LoRA
+with DiT cache off or a named preset; Viggle r128 retains its six-step route
+with DiT cache off. The former mutual exclusion between 512px reference
+encoding and DiT cache was a conservative admission rule, not a residual-cache
+shape requirement. Combining these approximations can affect detail; previous
+1024-reference timing/quality measurements do not qualify the combined route.
+
+In schema v1, add the field at the top level. In schema v2 use
+`"parameters": {"qwen21_reference_size": 512}`; keep `allow_approximation`
+under `execution`. `models` discovery reports the field locations and limits
+in `reference_encoding`. Run `plan` to validate the complete request. Plans
+and results report `qwen21_reference_size` and the
+`qwen21_reference_resize_512` approximation; qualified r128 requests also
+report `qwen21_viggle_r128_reference_resize_512`. Cross-request prefix snapshot
+reuse currently requires 1024-reference processing and is bypassed at 512;
+the conditioning cache still distinguishes the two sizes.
 
 ```json
 {
@@ -464,3 +501,21 @@ differences, and actual ANE occupancy cannot be proven without privileged
 hardware tracing. The 2K path is exposed by the model contract but is outside
 the maintained test scope; do not use its incomplete experiment as evidence
 for production quality or performance.
+
+## Phase-scoped Runtime FFN diagnostic
+
+The explicit runtime FFN route can be tested at 512×512 with
+`TURBOCIDER_QWEN21_RUNTIME_STAGED_DIAGNOSTIC=1` and
+`residency: "component_staged"`. It requires standard 1024 reference encoding,
+0–3 references, no prompt enhancement, and the existing runtime approximation
+and cache restrictions. Only base or pinned Viggle v0.2.1 r128 at six steps and
+strength 1 are admitted by this diagnostic. It does not enable encoder ANE,
+QKV or an App performance preset.
+
+The runtime owner is destroyed after denoising, before VAE decode, and after
+preparation/cancellation. Graph load and self-test therefore recur on each
+request. `hybrid.runtime_weight.session_released` reports owner destruction;
+`counter_scope` distinguishes its counters from the longer-lived model engine.
+Prepared GPU weights may still be retained. Existing memory guards remain in
+force. See [lifecycle and validation](../status/2026-10-02-runtime-staged-lifecycle.md)
+for the tested scope and performance evidence.

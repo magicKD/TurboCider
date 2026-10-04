@@ -7,6 +7,8 @@
 #include <cstring>
 #include "../runtime/execution.hpp"
 #include "../runtime/build_identity.hpp"
+#include "../workflows/image_workflows.hpp"
+#include "../media/reference_preparation.hpp"
 #include "../runtime/memory_accounting.hpp"
 #include "../runtime/memory_execution.hpp"
 #include "../runtime/streaming/audit.hpp"
@@ -500,6 +502,78 @@ char *tc_models_json(void) {
             return copy(tc::json(tc::to_dictionary(tc::describe_modules())));
         } catch (...) {
             return strdup("{}");
+        }
+    }
+}
+char *tc_workflows_json(void) {
+    @autoreleasepool {
+        try { return copy(tc::json(tc::image_workflows_catalog())); }
+        catch (...) { return strdup("{\"error\":\"image workflow catalog unavailable\"}"); }
+    }
+}
+int tc_workflow_request_json(const char *input, char **out, char **error) {
+    if (out) *out = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(out && input, "missing workflow input or output pointer");
+            tc::require(strlen(input) <= 1048576, "workflow input exceeds 1 MiB");
+            *out = copy(tc::json(tc::image_workflow_request(tc::parse_json(input))));
+            return 0;
+        } catch (const std::exception &e) { return fail(error, e); }
+        catch (...) {
+            if (error) *error = strdup("unknown image workflow error");
+            return 1;
+        }
+    }
+}
+int tc_reference_image_render(const char *source, const char *preset, char **metadata,
+                              uint8_t **png, uint64_t *png_bytes, char **error) {
+    if (metadata) *metadata = nullptr;
+    if (png) *png = nullptr;
+    if (png_bytes) *png_bytes = 0;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(source && preset && metadata && png && png_bytes,
+                        "missing reference preparation input or output pointer");
+            tc::require(strlen(source) <= 1048576 && strlen(preset) <= 64,
+                        "reference preparation argument is too long");
+            const auto prepared = tc::prepare_reference_image(source, preset);
+            std::unique_ptr<char, decltype(&std::free)> description(
+                copy(tc::json(tc::reference_preparation_metadata(prepared))), &std::free);
+            tc::require(bool(description), "cannot allocate reference preparation metadata");
+            std::unique_ptr<uint8_t, decltype(&std::free)> bytes(nullptr, &std::free);
+            if (!prepared.png.empty()) {
+                bytes.reset(static_cast<uint8_t *>(std::malloc(prepared.png.size())));
+                tc::require(bool(bytes), "cannot allocate prepared PNG");
+                std::memcpy(bytes.get(), prepared.png.data(), prepared.png.size());
+            }
+            *metadata = description.release();
+            *png = bytes.release();
+            *png_bytes = prepared.png.size();
+            return 0;
+        } catch (const std::exception &e) { return fail(error, e); }
+        catch (...) {
+            if (error) *error = strdup("unknown reference preparation error");
+            return 1;
+        }
+    }
+}
+void tc_buffer_free(uint8_t *bytes) { std::free(bytes); }
+int tc_image_prepare_json(const char *input, char **out, char **error) {
+    if (out) *out = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(input && out, "missing image preparation input or output pointer");
+            tc::require(strlen(input) <= 1048576, "image preparation input exceeds 1 MiB");
+            *out = copy(tc::json(tc::prepare_image_file(tc::parse_json(input))));
+            return 0;
+        } catch (const std::exception &e) { return fail(error, e); }
+        catch (...) {
+            if (error) *error = strdup("unknown image preparation error");
+            return 1;
         }
     }
 }

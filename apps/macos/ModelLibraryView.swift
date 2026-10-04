@@ -47,7 +47,7 @@ struct ModelLibraryView: View {
                 }
                 Spacer()
                 Button(action: importConfiguration) { Label("导入配置", systemImage: "square.and.arrow.down") }
-                    .disabled(store.busy || studio.importing).accessibilityIdentifier("importConfiguration")
+                    .disabled(store.busy || studio.imageInputsBusy).accessibilityIdentifier("importConfiguration")
             }
             sessionBanner
             HStack {
@@ -262,7 +262,7 @@ struct ModelLibraryView: View {
                                 Text(installation.path).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
                                 HStack {
                                     Button("使用此安装") { studio.selectInstallation(modelID: item.id, path: installation.path) }
-                                        .disabled(store.busy || store.resolvingAcceleration || studio.importing || library.busy || studio.draft.modelPaths[item.id] == installation.path)
+                                        .disabled(store.busy || store.resolvingAcceleration || studio.imageInputsBusy || library.busy || studio.draft.modelPaths[item.id] == installation.path)
                                     if ["z-image-turbo", "flux2-klein-4b", "flux2-klein-9b"].contains(item.id) {
                                         Button("校验文件") {
                                             Task {
@@ -270,7 +270,7 @@ struct ModelLibraryView: View {
                                                 catch { studio.message = error.localizedDescription }
                                             }
                                         }
-                                        .disabled(store.busy || store.requiresProcessRestart || store.externalServiceActive || store.resolvingAcceleration || studio.importing || library.busy)
+                                        .disabled(store.busy || store.requiresProcessRestart || store.externalServiceActive || store.resolvingAcceleration || studio.imageInputsBusy || library.busy)
                                         .help("读取模型文件并核对内容身份；首次校验可能需要一些时间。校验不会授予加速预设资格。")
                                     }
                                     Button("移除登记") { library.remove(installation, studio: studio) }.disabled(store.busy || library.busy)
@@ -283,7 +283,7 @@ struct ModelLibraryView: View {
                 Divider()
                 HStack {
                     Button(studio.draft.modelID == item.id ? "当前创作模型" : "用于创作") { studio.selectModel(item.id) }
-                        .buttonStyle(.borderedProminent).disabled(studio.draft.modelID == item.id || store.busy || studio.importing)
+                        .buttonStyle(.borderedProminent).disabled(studio.draft.modelID == item.id || store.busy || studio.imageInputsBusy)
                     Button("加载权重") { loadModel(item.id) }
                         .disabled(store.busy || (studio.draft.modelPaths[item.id] ?? "").isEmpty).accessibilityIdentifier("loadModel")
                 }

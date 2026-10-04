@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
 
 
 def main() -> None:
@@ -27,7 +28,7 @@ def main() -> None:
             "MLX C++ headers/libraries are unavailable; run make setup or "
             "set MLX_ROOT"
         )
-    dylib = ROOT / "build/native/libturbocider.dylib"
+    dylib = NATIVE / "libturbocider.dylib"
     if not dylib.is_file():
         raise FileNotFoundError("native dylib is unavailable; run make build")
     compiler = subprocess.check_output(
@@ -54,10 +55,10 @@ def main() -> None:
             "-I", str(ROOT / "native/core"),
             "-isystem", str(include),
             str(ROOT / "tests/native/mlx_weights_lease_test.cpp"),
-            "-L", str(ROOT / "build/native"), "-lturbocider",
+            "-L", str(NATIVE), "-lturbocider",
             "-L", str(library), "-lmlx", "-ljaccl", "-licucore",
             "-framework", "Foundation", "-framework", "Metal",
-            "-Wl,-rpath," + str(ROOT / "build/native"),
+            "-Wl,-rpath," + str(NATIVE),
             "-Wl,-rpath," + str(library),
             "-o", str(binary),
         ], check=True)

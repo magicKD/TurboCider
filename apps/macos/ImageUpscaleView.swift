@@ -61,7 +61,7 @@ struct ImageUpscaleView: View {
                                 Spacer()
                                 if selectedPreviewJob != nil, let usePreviewAsSource {
                                     Button("用作超分原图") { usePreviewAsSource(result) }
-                                        .disabled(locked || studio.importing)
+                                        .disabled(locked || studio.imageInputsBusy)
                                         .accessibilityIdentifier("usePreviewAsUpscaleSource")
                                 }
                                 Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: result.request.output)]) }

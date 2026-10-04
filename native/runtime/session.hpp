@@ -35,6 +35,9 @@ std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
     // Runtime-weight route only; all times/counts are session cumulative.
     uint64_t runtime_weight_slot_bytes = 0, runtime_weight_estimated_bytes = 0;
+    // Owner destroyed before returning from a phase-scoped request. Core ML
+    // system caches are outside this lifetime; byte counters remain historical.
+    bool runtime_weight_session_released = false;
     uint64_t runtime_weight_hybrid_blocks = 0, runtime_weight_gpu_blocks = 0;
     uint64_t runtime_weight_untimed_hybrid_blocks = 0; // hybrid subset without whole-block timing fences
     uint64_t runtime_weight_async_hybrid_blocks = 0; // untimed subset without a separate GPU-head wait
@@ -62,6 +65,11 @@ struct HybridMetrics {
     // Exporter-declared weight variant; unknown for legacy manifests without it.
     std::string weight_variant = "unknown";
     double load_seconds = 0;
+    // Host preparation spans, not measured GPU overlap or an end-to-end saving.
+    bool runtime_weight_prepared_early = false;
+    double runtime_weight_prepare_seconds = 0;
+    double runtime_weight_prepare_wait_seconds = 0;
+    double runtime_weight_prepare_before_join_seconds = 0;
     double manifest_validation_seconds = 0;
     double output_backing_setup_seconds = 0;
     double model_load_seconds = 0;

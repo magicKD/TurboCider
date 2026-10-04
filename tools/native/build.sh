@@ -7,6 +7,11 @@ if [[ -z "${DEVELOPER_DIR:-}" ]]; then
  fi
 fi
 source tools/native/dependencies.sh
+PACKAGE_ONLY="${TURBOCIDER_BUILD_PACKAGE_ONLY:-0}"
+case "$PACKAGE_ONLY" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_BUILD_PACKAGE_ONLY must be 0 or 1\n' >&2; exit 2 ;;
+esac
 EXPERIMENTAL_PROBES="${TURBOCIDER_BUILD_EXPERIMENTAL_PROBES:-0}"
 case "$EXPERIMENTAL_PROBES" in
  0|1) ;;
@@ -73,6 +78,9 @@ bundled_streaming_catalog() {
   --output "$BUILD_IDENTITY_DIR" "$@"
 }
 bundled_streaming_catalog
+"$BUILD_IDENTITY_PYTHON" tools/native/generate_image_workflow_catalog.py \
+ --input native/workflows/image_workflows.json \
+ --output "$BUILD_IDENTITY_DIR/image_workflows_catalog_generated.hpp"
 # Native identity and catalog implementations require these generated headers.
 # Missing generation fails instead of sharing a manual fallback ID/catalog.
 COMMON+=(-I "$BUILD_IDENTITY_DIR")
@@ -112,6 +120,7 @@ SOURCES=(
  native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/h3_mlx_session.mm native/platform/apple/ltx_session.mm
  native/platform/apple/llada_session.mm
  native/api/c_api.mm
+ native/workflows/image_workflows.mm
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/memory_policy.cpp native/runtime/memory_accounting.cpp native/runtime/memory_manifest.cpp native/runtime/memory_schedule.cpp native/runtime/memory_plan.cpp native/runtime/memory_scheduler.cpp native/runtime/memory_watchdog.cpp native/runtime/memory_trace.cpp native/runtime/memory_execution.cpp native/runtime/lora_identity.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
  native/backends/ane_memory.cpp native/backends/ane_runtime.mm native/backends/ane_ffn.cpp native/backends/ane_qkv.cpp
@@ -143,6 +152,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/flux2/flux_vae.cpp native/models/flux2/flux_encode.cpp
  native/media/image.mm native/media/input.mm native/media/video.mm native/media/audio.mm
  native/media/pe_image.mm
+ native/media/reference_preparation.mm
 )
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories
@@ -215,11 +225,24 @@ if [[ "${TURBOCIDER_BUILD_LIB_ONLY:-0}" == "1" ]]; then
  printf 'Built %s/libturbocider.dylib (library only)\n' "$OUT"
  exit 0
 fi
-"$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_dit_streaming_probe.c -o "$VIDEO_OUT/h3_dit_streaming_probe.o"
-"$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_dit_streaming_probe.o" -L"$OUT" -lturbocider -o "$OUT/h3-dit-streaming-probe" -Wl,-rpath,@executable_path
+if [[ "$PACKAGE_ONLY" == "0" ]]; then
+ "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_dit_streaming_probe.c -o "$VIDEO_OUT/h3_dit_streaming_probe.o"
+ "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_dit_streaming_probe.o" -L"$OUT" -lturbocider -o "$OUT/h3-dit-streaming-probe" -Wl,-rpath,@executable_path
+fi
 "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_quantize_stream_cache.c -o "$VIDEO_OUT/h3_quantize_stream_cache.o"
 "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_quantize_stream_cache.o" -L"$OUT" -lturbocider -o "$OUT/h3-quantize-stream-cache" -Wl,-rpath,@executable_path
-"$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
+"$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm native/core/json_keys.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
+if [[ "$PACKAGE_ONLY" == "1" ]]; then
+ runtime_build_identity --verify
+ bundled_streaming_catalog --verify
+ if [[ "${TURBOCIDER_NATIVE_ONLY:-0}" != "1" ]]; then
+  export TURBOCIDER_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
+  export TURBOCIDER_BUILD_OUTPUT_DIR="$OUT"
+  TURBOCIDER_BUILD_APP_ONLY=1 tools/native/build_app.sh
+ fi
+ printf 'Built package binaries; test and auxiliary probe targets skipped\n'
+ exit 0
+fi
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tensor_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-tensor-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tokenizer_probe.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/h3-mlx-tokenizer-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_conditioner_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-conditioner-probe"

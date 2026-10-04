@@ -3,9 +3,11 @@
 LOCAL_PYTHON := $(firstword $(wildcard .venv/bin/python3 .deps/bin/python3))
 PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),$(shell which python3 2>/dev/null || echo python3.11))
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
-.PHONY: help setup build build-app build-vision-quality package test test-qwen21 test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
+.PHONY: help setup build build-app build-vision-quality package test test-qwen21 test-app test-reference-preparation test-editing-canvas test-model doctor h3-quant-cache test-library test-api test-video-preview
 .PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-catalog-builder test-streaming-source-identity test-streaming-source-lease test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults test-process-tree-sampler
 .PHONY: build-runtime-ane-probe test-runtime-ane test-runtime-ane-host test-acceleration-contract
+.PHONY: test-playground
+.PHONY: test-qwen21-runtime-activation
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -13,6 +15,7 @@ help:
 	@echo 'make setup                       Install pinned, TurboCider-owned dependencies'
 	@echo 'make build                       Build engine, CLI, App and Swift tests'
 	@echo 'make build-app                    Rebuild Swift UI after an engine build'
+	@echo 'TURBOCIDER_BUILD_APP_ONLY=1 make build-app  Build App/helper without compiling test targets'
 	@echo 'make build-vision-quality         Build optional public-Vision quality helper'
 	@echo 'make test-app                     Run App behavior tests (macOS clipboard access)'
 	@echo 'make test-library                 Verify model library using tiny loopback downloads'
@@ -188,6 +191,9 @@ test-runtime-ane-host:
 test-runtime-ane: test-runtime-ane-host
 	@TURBOCIDER_TEST_RUNTIME_ANE=1 "$(PYTHON)" -B tests/native/test_ane_runtime.py
 test-app:
+	@$(MAKE) test-reference-preparation
+	@$(MAKE) test-editing-canvas
+	@$(MAKE) test-playground
 	@build/native/turbocider-image-transaction-tests
 	@build/native/turbocider-ltx-worker-tests
 	@build/native/turbocider-streaming-resolution-tests
@@ -208,8 +214,21 @@ test-video-preview:
 	@test -n "$(VIDEO)" || (echo 'VIDEO=/path/to/generated.mp4 is required'; exit 1)
 	@build/native/turbocider-video-preview-tests "$(VIDEO)"
 test-api:
+	@"$(PYTHON)" -B tests/native/test_cli_discovery.py
 	@build/native/turbocider-local-api-tests
 	@"$(PYTHON)" tests/native/test_service_lifecycle.py
+	@"$(PYTHON)" -B tests/native/test_service_rpc_validation.py
+	@"$(PYTHON)" -B tests/native/test_service_session_reuse.py
+	@"$(PYTHON)" -B tests/native/test_local_client.py
+	@"$(PYTHON)" -B tests/native/test_service_installations.py
+test-reference-preparation:
+	@build/native/turbocider-reference-preparation-tests
+test-editing-canvas:
+	@build/native/turbocider-editing-canvas-tests
+test-playground:
+	@build/native/turbocider-playground-tests
+test-qwen21-runtime-activation:
+	@"$(PYTHON)" -B tests/native/test_qwen21_runtime_activation.py
 test-model:
 	@test -n "$(MODEL)" -a -n "$(OUTPUT)" || (echo 'MODEL and OUTPUT are required'; exit 1)
 	@build/native/turbocider-studio-model-tests "$(MODEL)" "$(OUTPUT)/studio"

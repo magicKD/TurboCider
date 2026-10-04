@@ -7,7 +7,11 @@
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <set>
+#include <sstream>
 #include <stdexcept>
+#include <type_traits>
+#include <utility>
 
 namespace mx = mlx::core;
 using Clock = std::chrono::steady_clock;
@@ -47,8 +51,152 @@ static tc::ane::MatrixView view(const mx::array &tensor) {
     return {data, tensor.nbytes(), tensor.shape(0), tensor.shape(1), 0, dtype};
 }
 
+// Tiny CPU-only lifecycle mode. It runs before any MLX work and only accepts
+// the owned 32x64x96 SwiGLU v2 fixture created by the integration test.
+static void prepared_lifecycle_test(const std::filesystem::path &manifest,
+                                    const std::filesystem::path &bad_abi_manifest) {
+    using Graph = tc::ane::RuntimeGraph;
+    static_assert(!std::is_copy_constructible_v<Graph::Prepared>);
+    static_assert(std::is_nothrow_move_constructible_v<Graph::Prepared>);
+    static_assert(std::is_nothrow_move_assignable_v<Graph::Prepared>);
+    constexpr size_t budget = 2ull << 30;
+    const tc::ane::GraphGeometry expected{Kind::SwiGLU, 64, 96, true};
+    auto require = [](bool good, const char *why) { if (!good) throw std::runtime_error(why); };
+    auto leases = [&] {
+        std::set<std::filesystem::path> result;
+        for (const auto &entry : std::filesystem::directory_iterator(std::filesystem::temp_directory_path())) {
+            if (entry.path().filename().string().starts_with("turbocider-runtime-ane-")) {
+                require(!entry.is_symlink() && entry.is_directory(), "invalid test snapshot entry");
+                result.insert(entry.path());
+            }
+        }
+        return result;
+    };
+    require(leases().empty(), "Prepared test requires an isolated empty lease directory");
+    auto prepare = [&] {
+        auto p = Graph::prepare(manifest, budget, true, expected);
+        const auto &s = p->shape();
+        require(s.rows == 32 && s.hidden == 64 && s.width == 96 && s.lora_inputs,
+                "Prepared test must use the tiny v2 fixture");
+        require(std::isfinite(p->artifact_seconds()) && p->artifact_seconds() >= 0 &&
+                    std::isfinite(p->model_load_seconds()) && p->model_load_seconds() >= 0,
+                "invalid Prepared phase timings");
+        return p;
+    };
+    {
+        auto p = prepare();
+        require(leases().size() == 1, "unbound Prepared must own one snapshot");
+    }
+    require(leases().empty(), "unbound Prepared leaked its snapshot");
+    {
+        auto a = prepare();
+        const auto first = leases();
+        auto b = prepare();
+        require(leases().size() == 2, "two Prepared owners must own distinct snapshots");
+        Graph::Prepared moved(std::move(*a));
+        a.reset();
+        require(leases().size() == 2, "moved-from destruction released a live snapshot");
+        moved = std::move(*b);
+        b.reset();
+        require(leases().size() == 1 && !leases().contains(*first.begin()),
+                "move assignment must release the previous owner only");
+        require(moved.shape().rows == 32, "move assignment lost the model metadata");
+    }
+    require(leases().empty(), "moved Prepared leaked its snapshot");
+    {
+        auto p = prepare();
+        bool rejected = false;
+        try { Graph denied(std::move(p), 1); }
+        catch (const tc::ane::MemoryBudgetError &) { rejected = true; }
+        require(rejected && !p && leases().empty(), "bind budget rejection retained prepared resources");
+    }
+    {
+        bool rejected = false;
+        try { auto invalid = Graph::prepare(bad_abi_manifest, budget, true, expected); }
+        catch (const std::runtime_error &error) {
+            rejected = std::string(error.what()).find("interface does not match its manifest") != std::string::npos;
+        }
+        require(rejected && leases().empty(), "loaded-model ABI rejection leaked or used the wrong failure path");
+    }
+    auto timings = [&](const Graph &g) {
+        for (double value : {g.artifact_seconds(), g.model_load_seconds(), g.bind_seconds(), g.load_seconds()})
+            require(std::isfinite(value) && value >= 0, "invalid bound graph phase timings");
+        require(std::abs(g.load_seconds() - (g.artifact_seconds() + g.model_load_seconds() + g.bind_seconds())) < 1e-12,
+                "load_seconds is not the sum of phase work");
+        std::ostringstream out;
+        out << std::setprecision(17) << "{\"artifact\":" << g.artifact_seconds()
+            << ",\"model_load\":" << g.model_load_seconds() << ",\"bind\":" << g.bind_seconds()
+            << ",\"load\":" << g.load_seconds() << '}';
+        return out.str();
+    };
+    auto predict = [&](Graph &g) {
+        const auto &s = g.shape();
+        std::string error;
+        require(g.self_test(error), ("tiny Prepared self-test failed: " + error).c_str());
+        auto half = [](float f) { return std::bit_cast<uint16_t>(_Float16(f)); };
+        std::vector<uint16_t> gate(size_t(s.width) * s.hidden), up(gate.size()), down(size_t(s.hidden) * s.width);
+        for (int i = 0; i < s.hidden; ++i) {
+            gate[size_t(i) * s.hidden + i] = half(.125f);
+            up[size_t(i) * s.hidden + i] = half(.25f);
+            down[size_t(i) * s.width + i] = half(.125f);
+        }
+        auto matrix = [](const std::vector<uint16_t> &v, int rows, int cols) {
+            return tc::ane::MatrixView{v.data(), v.size() * 2, rows, cols, 0, tc::ane::DType::FP16};
+        };
+        g.stage({matrix(gate, s.width, s.hidden), matrix(up, s.width, s.hidden), matrix(down, s.hidden, s.width)});
+        const auto staged = g.wait_stage();
+        require(staged.ok, ("tiny Prepared staging failed: " + staged.error).c_str());
+        std::vector<uint16_t> x(size_t(s.rows) * s.hidden), y(size_t(s.rows) * s.hidden);
+        for (size_t i = 0; i < x.size(); ++i) x[i] = half(float(int(i % 17) - 8) * .0625f);
+        g.launch(matrix(x, s.rows, s.hidden), y.data(), y.size());
+        const auto result = g.finish();
+        require(result.ok && result.calls == 1, ("tiny Prepared prediction failed: " + result.error).c_str());
+        require(std::any_of(y.begin(), y.end(), [](uint16_t bits) { return (bits & 0x7fff) != 0; }),
+                "tiny prediction unexpectedly returned only zero");
+        return y;
+    };
+    std::vector<uint16_t> baseline;
+    size_t slots = 0, estimate = 0;
+    std::string old_timings, prepared_timings;
+    {
+        Graph old(manifest, budget, true, false, expected);
+        baseline = predict(old);
+        slots = old.slot_bytes(); estimate = old.estimated_bytes(); old_timings = timings(old);
+    }
+    require(leases().empty(), "synchronous graph leaked its snapshot");
+    {
+        auto p = prepare();
+        const auto live = leases();
+        const auto source = manifest.parent_path() / "graph.mlmodelc";
+        const auto moved = manifest.parent_path() / "graph.moved";
+        require(!std::filesystem::exists(moved), "test source-move destination exists");
+        std::filesystem::rename(source, moved);
+        bool source_rejected = false;
+        try { auto missing = Graph::prepare(manifest, budget, true, expected); }
+        catch (const std::runtime_error &) { source_rejected = true; }
+        require(source_rejected && leases() == live, "missing-source rejection damaged live Prepared ownership");
+        Graph restored(std::move(p), budget);
+        require(leases() == live, "bind copied or lost the Prepared snapshot");
+        require(restored.slot_bytes() == slots && restored.estimated_bytes() == estimate,
+                "constructors disagree on geometry allocation");
+        require(predict(restored) == baseline, "constructors produce different tiny CPU output bits");
+        prepared_timings = timings(restored);
+    }
+    require(leases().empty(), "bound Prepared graph leaked its snapshot");
+    std::cout << "{\"passed\":true,\"cpu_only\":true,\"rows\":32,\"hidden\":64,\"width\":96,"
+              << "\"unbound_cleanup\":true,\"move_cleanup\":true,\"bind_budget_rejected\":true,"
+              << "\"abi_rejected\":true,\"source_move_survived\":true,\"same_output_bits\":true,"
+              << "\"same_snapshot_after_bind\":true,\"leases_after_destroy\":0,\"slot_bytes\":" << slots
+              << ",\"estimated_bytes\":" << estimate << ",\"synchronous_timings\":" << old_timings
+              << ",\"prepared_timings\":" << prepared_timings << "}\n";
+}
+
 int main(int argc, char **argv) {
     try {
+        if (argc == 4 && std::string(argv[2]) == "prepared-lifecycle-self-test") {
+            prepared_lifecycle_test(argv[1], argv[3]);
+            return 0;
+        }
         if (argc == 3 && std::string(argv[2]) == "lease-source-move-self-test") {
             // This probe-only mode operates on a disposable exported fixture.
             // The loaded graph must keep working when the original compiled
