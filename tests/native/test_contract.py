@@ -103,6 +103,92 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(plan({**base, 'qwen21_dit_cache': 'off'})[0], 0)
                 self.assertNotEqual(plan(base)[0], 0)
 
+    def test_qwen21_dit_cache_with_resized_512_edit_references(self):
+        adapter = dict(path='Qwen-Image-2.1_NSFW_Image_Edit.safetensors',
+                       strength=.75, role='transformer')
+        refs = [dict(kind='image', role='reference', path=f'ordered-{i}.png') for i in range(3)]
+        base = dict(model='qwen-image-2.1', operation='image.edit', prompt='Keep the person.',
+                    width=512, height=512, frames=1, audio=False, execution='gpu',
+                    allow_approximation=True, qwen21_reference_size=512,
+                    lora_strategy='auto')
+        with patch.dict(os.environ):
+            for key in tuple(os.environ):
+                if key.startswith('TURBOCIDER_QWEN21_'):
+                    os.environ.pop(key)
+            for mode in ('off', 'conservative', 'balanced', 'fast'):
+                for steps in (20, 25, 40):
+                    for count in (1, 2, 3):
+                        for loras in ([], [adapter]):
+                            strategy = 'inference_time' if loras else 'auto'
+                            v1 = {**base, 'steps': steps, 'inputs': refs[:count],
+                                  'loras': loras, 'qwen21_dit_cache': mode, 'lora_strategy': strategy}
+                            v2 = dict(schema_version=2, model=base['model'], operation=base['operation'],
+                                      inputs=[dict(kind='text', role='prompt', text=base['prompt']),
+                                              *refs[:count]],
+                                      outputs=[dict(kind='image', path='edit.png', width=512, height=512,
+                                                    frames=1, audio=False)],
+                                      sampling=dict(seed=42, steps=steps),
+                                      execution=dict(policy='gpu', allow_approximation=True,
+                                                     qwen21_dit_cache=mode),
+                                      parameters=dict(qwen21_reference_size=512),
+                                      lora_strategy=strategy, loras=loras)
+                            for request in (v1, v2):
+                                with self.subTest(mode=mode, steps=steps, count=count, lora=bool(loras),
+                                                  schema=request.get('schema_version', 1)):
+                                    code, result, error = plan(request)
+                                    self.assertEqual(code, 0, error)
+                                    self.assertEqual(result['execution'], 'gpu')
+                                    self.assertEqual(result['qwen21_reference_size'], 512)
+                                    self.assertEqual(result['qwen21_dit_cache'], mode)
+                                    self.assertEqual(result['lora_strategy'], 'inference_time' if loras else 'none')
+                                    labels = result['algorithm_approximations']
+                                    self.assertIn('qwen21_reference_resize_512', labels)
+                                    self.assertEqual('qwen21_decode_dit_cache' in labels, mode != 'off')
+                                    self.assertFalse(any('6step' in label or 'viggle' in label for label in labels))
+            for request in (v1, v2):
+                code, _, error = plan({**request, 'loras': [], 'lora_strategy': 'inference_time'})
+                self.assertNotEqual(code, 0)
+                self.assertIn('at least one LoRA adapter', error)
+
+    def test_qwen21_dit_cache_resized_512_preserves_route_guards(self):
+        adapter = dict(path='ordinary.safetensors', strength=.75, role='transformer')
+        viggle = dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',
+                      strength=1., role='transformer')
+        refs = [dict(kind='image', role='reference', path=f'ref-{i}.png') for i in range(4)]
+        base = dict(model='qwen-image-2.1', operation='image.edit', prompt='A teapot',
+                    width=512, height=512, steps=25, frames=1, audio=False,
+                    execution='gpu', allow_approximation=True, qwen21_reference_size=512,
+                    qwen21_dit_cache='balanced', lora_strategy='auto', inputs=refs[:1])
+        with patch.dict(os.environ):
+            for key in tuple(os.environ):
+                if key.startswith('TURBOCIDER_QWEN21_'):
+                    os.environ.pop(key)
+            for loras in ([], [adapter]):
+                candidate = {**base, 'loras': loras,
+                             'lora_strategy': 'inference_time' if loras else 'auto'}
+                code, _, error = plan(candidate)
+                self.assertEqual(code, 0, error)
+                for invalid in (
+                    dict(allow_approximation=False), dict(qwen21_reference_size=256),
+                    dict(operation='image.generate', inputs=[]), dict(inputs=[]), dict(inputs=refs),
+                    dict(width=768), dict(height=768), dict(steps=6), dict(steps=19), dict(steps=41),
+                    dict(execution='auto'), dict(execution='gpu_ane', ane_manifest='not-loaded.json'),
+                    dict(hybrid_mlp_mode='runtime'), dict(qwen21_w8a8=True),
+                    dict(prompt_enhance=True, prompt_enhance_edit_experimental=True,
+                         prompt_enhancer_path='not-loaded-pe'),
+                    dict(inputs=[{**refs[0], 'role': 'mask'}]),
+                ):
+                    with self.subTest(lora=bool(loras), invalid=invalid):
+                        self.assertNotEqual(plan({**candidate, **invalid})[0], 0)
+            for invalid in (dict(loras=[adapter, adapter]),
+                            dict(loras=[{**adapter, 'role': 'text_encoder'}]),
+                            dict(loras=[{**adapter, 'strength': 8.01}]),
+                            dict(lora_strategy='in_memory_merge', loras=[adapter])):
+                self.assertNotEqual(plan({**base, **invalid})[0], 0)
+            for mode in ('conservative', 'balanced', 'fast'):
+                self.assertNotEqual(plan({**base, 'qwen21_dit_cache': mode,
+                                          'steps': 6, 'loras': [viggle]})[0], 0)
+
     def test_qwen21_ordinary_gpu_lora_uses_base_sampling(self):
         adapter = dict(path='Qwen-Image-2.1_NSFW_Image_Edit.safetensors',
                        strength=.75, role='transformer')
@@ -969,6 +1055,11 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(option['schema_v2_field'], 'parameters.qwen21_reference_size')
         self.assertEqual(option['base_approximation_sizes'], [256, 512])
         self.assertEqual(option['viggle_r128_gpu_edit_opt_in_size'], 512)
+        self.assertEqual(option['ordinary_lora_reference_size'], 1024)  # Legacy default stays stable.
+        self.assertEqual(option['ordinary_lora_supported_reference_sizes'], [512, 1024])
+        self.assertEqual(option['dit_cache_supported_reference_sizes'], [512, 1024])
+        self.assertIn('20...40-step base schedule', option['ordinary_lora_constraints'])
+        self.assertIn('Viggle six-step', option['dit_cache_constraints'])
         self.assertTrue(option['resize_requires_allow_approximation'])
         self.assertEqual(option['admission'], 'plan')
         self.assertEqual(option['weight_identity_validation'], 'pinned SHA-256 at load')
@@ -1078,8 +1169,11 @@ class ContractTests(unittest.TestCase):
                     ordinary_base = {**base, 'loras': [], 'lora_strategy': 'auto',
                                      'steps': steps, 'qwen21_reference_size': resize}
                     self.assertEqual(plan(ordinary_base)[0], 0)
-            self.assertNotEqual(plan({**base, 'steps': 25, 'loras': [
-                {**adapter, 'path': 'ordinary.safetensors'}]})[0], 0)
+            code, ordinary, error = plan({**base, 'steps': 25, 'loras': [
+                {**adapter, 'path': 'ordinary.safetensors'}]})
+            self.assertEqual(code, 0, error)
+            self.assertFalse(any('viggle' in label or '6step' in label
+                                 for label in ordinary['algorithm_approximations']))
 
     def test_qwen21_viggle_resized_512_references_are_diagnostic_only(self):
         adapter = dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors',

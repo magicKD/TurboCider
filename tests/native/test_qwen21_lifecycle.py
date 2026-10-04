@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class TransformerLifecycleTests(unittest.TestCase):
     def test_compiled_transformers_release_materialized_weights(self):
         mlx_root = Path(sysconfig.get_paths()["purelib"]) / "mlx"
-        native = ROOT / "build/native"
+        native = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
         self.assertTrue((native / "libturbocider.dylib").is_file(),
                         "build the native library before the lifecycle test")
         with tempfile.TemporaryDirectory(prefix="turbocider-qwen21-lifecycle-") as directory:
@@ -42,8 +42,9 @@ class TransformerLifecycleTests(unittest.TestCase):
                            key not in {"MLX_DISABLE_COMPILE",
                                        "TURBOCIDER_DISABLE_FUSED_RMSNORM"}}
             completed = subprocess.run([str(binary)], capture_output=True, text=True,
-                                       check=True, cwd=ROOT, env=environment,
+                                       check=False, cwd=ROOT, env=environment,
                                        timeout=180)
+            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
             measured = json.loads(completed.stdout)
             self.assertEqual(measured["cycles"], 24)
             self.assertEqual(measured["variants"], 8)
@@ -51,6 +52,7 @@ class TransformerLifecycleTests(unittest.TestCase):
             self.assertEqual(measured["snapshot_cycles"], 24)
             self.assertTrue(measured["snapshot_cross_transformer_parity"])
             self.assertTrue(measured["dbcache_policy_and_invalidation"])
+            self.assertTrue(measured["dbcache_reference_geometry_and_lora"])
             self.assertGreater(measured["weight_bytes_per_base_cycle"], 65536)
             self.assertLessEqual(measured["maximum_active_bytes"],
                                  measured["baseline_active_bytes"] +

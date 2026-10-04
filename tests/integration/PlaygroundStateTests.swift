@@ -73,6 +73,8 @@ import UniformTypeIdentifiers
         try damagedFileProtection(root: root, model: model, initial: initial, validDocument: state.document)
         try await preprocessingAndPending(root: root, model: model, initial: initial, clothing: clothing)
         try await expandedWorkflows(root: root, model: model, initial: initial, person: person, target: scene)
+        try await editableConfiguration(root: root, model: model, initial: initial, person: person, clothing: clothing)
+        try await modelDefaults(root: root, model: model, initial: initial, person: person)
         print("PASS five-workflow composition, face roles, outpaint bounds, transparent generate/edit, schema-1 migration; Playground independent drafts/roles/import rollback/persistence/provenance, source-based resize/restore, parameter blocks and provider pending/cancel/context guards (CPU only)")
     }
 
@@ -282,8 +284,9 @@ import UniformTypeIdentifiers
         try await deferred.waitUntilRequested()
         state.selectTemplate(.identity); state.remove(.clothing); state.setInstruction("Must stay locked")
         let syncDuringImport = state.syncSettings(from: incompatible)
+        let editedDuringImport = state.updateSettings { $0.steps = 6; $0.width = 1024 }
         let prepareDuringImport = await state.prepare(.person, preset: .fit512)
-        try check(state.importing && !syncDuringImport && !prepareDuringImport &&
+        try check(state.importing && !syncDuringImport && !editedDuringImport && !prepareDuringImport &&
                   (try bytes(state.document)) == beforePending && state.generationBlocker != nil,
                   "A pending provider allowed template/role/instruction/parameter mutation or generation")
         deferred.finish(sourceBytes)
@@ -434,6 +437,8 @@ import UniformTypeIdentifiers
         legacy.schemaVersion = 1; legacy.selectedTemplate = .identity
         legacy.templates = legacy.templates.filter { ["outfit", "identity"].contains($0.key) }
         legacy.templates["identity"]?.instruction = "Saved legacy instruction"
+        legacy.templates["identity"]?.settings.width = 1024
+        legacy.templates["identity"]?.settings.height = 768
         let legacyBytes = try bytes(legacy), legacyFile = legacyDirectory.appendingPathComponent("playground.json")
         try legacyBytes.write(to: legacyFile)
         let migrated = PlaygroundState(directory: legacyDirectory, initialSettings: StudioDraft(), models: [model])
@@ -442,6 +447,11 @@ import UniformTypeIdentifiers
                   (try Data(contentsOf: legacyFile)) == legacyBytes, "Legacy migration overwrote or lost the saved draft")
         for name in ["outfit", "identity"] {
             try check(try bytes(migrated.document.templates[name]!) == bytes(legacy.templates[name]!), "Migration rewrote legacy settings or reference bindings")
+        }
+        for name in ["face", "outpaint", "transparent"] {
+            try check(migrated.document.templates[name]?.settings.width == 512 &&
+                      migrated.document.templates[name]?.settings.height == 512,
+                      "A newly introduced template inherited the saved large canvas")
         }
         migrated.save()
         let final = PlaygroundState(directory: legacyDirectory, initialSettings: StudioDraft(), models: [model])
@@ -455,6 +465,116 @@ import UniformTypeIdentifiers
         blocked.save()
         try check(blocked.storageError != nil && (try Data(contentsOf: legacyFile)) == invalidBytes,
                   "Invalid stored expansion was accepted or overwritten")
+    }
+
+    @MainActor private static func editableConfiguration(root: URL, model: StudioModel, initial: StudioDraft,
+        person: URL, clothing: URL) async throws {
+        var largeCreation = initial
+        largeCreation.width = 1024; largeCreation.height = 768
+        let creationBefore = try bytes(largeCreation)
+        let directory = root.appendingPathComponent("editable-configuration")
+        let state = PlaygroundState(directory: directory, initialSettings: largeCreation, models: [model])
+        try check(PlaygroundTemplate.allCases.allSatisfy {
+            state.document.templates[$0.rawValue]?.settings.width == 512 &&
+            state.document.templates[$0.rawValue]?.settings.height == 512
+        }, "New templates inherited a large Creation canvas")
+        let imported = await state.importFiles([person, clothing])
+        state.setInstruction("Preserve this template instruction")
+        let assets = state.orderedAssets
+        let firstID = state.settings.loras[0].id
+        try check(state.updateLoRA(firstID, { $0.enabled = false }), "Cannot explicitly disable the ordinary adapter")
+        let edited = state.updateSettings {
+            $0.width = 768; $0.height = 512; $0.steps = 25
+            $0.seedText = "867"; $0.randomSeed = false
+        }
+        try check(imported && edited, "Direct template configuration was rejected")
+        let submitted = try state.generationDraft()
+        try check(submitted.width == 768 && submitted.height == 512 && submitted.steps == 25 && (try submitted.fixedSeed()) == 867 &&
+                  submitted.assets == assets && state.instruction == "Preserve this template instruction" &&
+                  state.settings.assets.isEmpty && state.settings.prompt.isEmpty,
+                  "Direct settings edits lost role inputs, instruction or submit parameters")
+        let secondPath = root.appendingPathComponent("second-ordinary.safetensors")
+        try Data("CPU-only adapter placeholder".utf8).write(to: secondPath)
+        try check(state.addLoRA(secondPath.path) && !state.addLoRA(secondPath.path), "LoRA duplicate guard failed")
+        let secondID = state.settings.loras[1].id
+        try check(state.removeLoRA(firstID) && !state.updateLoRA(firstID, { $0.strength = 7 }) &&
+                  state.updateLoRA(secondID, { $0.strength = -0.75; $0.enabled = false }) &&
+                  state.settings.loras.count == 1 && state.settings.loras[0].id == secondID && state.settings.loras[0].strength == -0.75,
+                  "A removed LoRA's UUID binding changed another row")
+        try check(!state.updateLoRA(secondID, { $0.strength = .nan }) && state.settings.loras[0].strength == -0.75,
+                  "Non-finite LoRA strength poisoned saved settings")
+        state.updateSettings { $0.width = 512; $0.height = 512; $0.qwen21DiTCache = "balanced"; $0.upscaleAfterGeneration = true }
+        try check(state.generationBlocker?.contains("超分") == true && state.settings.upscaleAfterGeneration,
+                  "Automatic upscaling was silently ignored")
+        state.updateSettings { $0.upscaleAfterGeneration = false }
+        try check(try state.generationDraft().qwen21DiTCache == "balanced", "Editable cache was not passed to submission")
+        let turboPath = root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors")
+        try Data("CPU-only turbo placeholder".utf8).write(to: turboPath)
+        try check(state.addLoRA(turboPath.path) && state.settings.steps == 25 && state.settings.qwen21DiTCache == "balanced" &&
+                  state.generationBlocker != nil, "Adding Turbo silently rewrote the sampling/cache preferences")
+        try check(state.applyTurboPreset() && state.settings.steps == 6 && state.settings.qwen21DiTCache == "off" &&
+                  state.settings.width == 512 && state.settings.height == 512 && state.settings.acceleration?.policy == "gpu" &&
+                  state.settings.qwen21TurboLoRA?.strength == 1 && state.orderedAssets == assets &&
+                  state.instruction == "Preserve this template instruction",
+                  "Explicit Turbo preset lost its parameters or template content")
+        try check(try state.generationDraft().steps == 6, "Explicit Turbo preset did not produce a valid submission draft")
+        let outfitBefore = try bytes(state.current)
+        state.selectTemplate(.identity)
+        try check(state.settings.width == 512 && state.settings.steps == initial.steps && state.settings.qwen21DiTCache == "off",
+                  "Editing outfit configuration polluted another template")
+        try check(state.syncSettings(from: largeCreation) && state.settings.width == 1024 && state.settings.height == 768,
+                  "Explicit synchronization did not preserve a deliberate Creation canvas")
+        state.save()
+        let reopened = PlaygroundState(directory: directory, initialSettings: StudioDraft(), models: [model])
+        try check(reopened.settings.width == 1024 && reopened.settings.height == 768 &&
+                  (try bytes(reopened.document.templates["outfit"]!)) == outfitBefore,
+                  "Saved dimensions or per-template editable settings were overwritten on reopen")
+        let lockedBefore = try bytes(reopened.document)
+        reopened.generationTask = Task {}
+        try check(!reopened.canEditSettings && !reopened.updateSettings({ $0.steps = 6 }) &&
+                  !reopened.addLoRA(secondPath.path) && !reopened.syncSettings(from: initial),
+                  "Submission preparation allowed parameter mutation")
+        reopened.selectTemplate(.outfit); reopened.setInstruction("Must remain locked")
+        try check(try bytes(reopened.document) == lockedBefore, "Submission lock failed to preserve its template context")
+        reopened.generationTask = nil
+        try check(reopened.canEditSettings && reopened.updateSettings({ $0.steps = 30 }), "Configuration did not unlock after preparation")
+        try check(try bytes(largeCreation) == creationBefore, "Playground direct editing modified Creation settings")
+    }
+
+    @MainActor private static func modelDefaults(root: URL, model: StudioModel, initial: StudioDraft, person: URL) async throws {
+        var other = StudioDraft()
+        other.modelPaths = initial.modelPaths
+        let state = PlaygroundState(directory: root.appendingPathComponent("model-defaults"), initialSettings: other, models: [model])
+        try check(PlaygroundTemplate.allCases.allSatisfy {
+            let draft = state.document.templates[$0.rawValue]!.settings
+            return draft.modelID == model.id && draft.width == 512 && draft.height == 512 &&
+                draft.residency == "component_staged" && draft.frames == 1 && !draft.audio
+        }, "First use from another model did not apply Qwen staged defaults")
+        let imported = await state.importFiles([person])
+        try check(imported, "Model recovery fixture import failed")
+        state.setInstruction("Keep the role and instruction")
+        let assets = state.orderedAssets
+        state.updateSettings {
+            $0.modelID = "legacy-video"; $0.frames = 97; $0.fps = 24; $0.audio = true
+            $0.width = 1024; $0.height = 768; $0.steps = 4; $0.residency = "resident"
+            $0.profilePath = "/old/profile.json"; $0.qwen21DiTCache = "balanced"
+            $0.qwen21ReferenceSize = 512; $0.promptEnhance = true; $0.promptEnhanceEditExperimental = true
+            $0.streaming.selection = .tier8; $0.seedText = "987"; $0.randomSeed = false
+            $0.modelLoRAs[model.id] = initial.loras
+        }
+        try check(state.selectModel(model.id), "Cannot recover a saved incompatible model")
+        let draft = state.settings
+        try check(draft.residency == "component_staged" && draft.width == 512 && draft.height == 512 &&
+            draft.frames == 1 && draft.fps == 1 && !draft.audio && draft.steps == model.default_steps &&
+            draft.profilePath.isEmpty && draft.acceleration?.policy == "gpu" && !draft.usesPublicStreaming &&
+            draft.qwen21DiTCache == "off" && draft.qwen21ReferenceSize == 1024 && !draft.promptEnhance &&
+            !draft.promptEnhanceEditExperimental && draft.seedText == "987" && !draft.randomSeed &&
+            draft.loras == initial.loras && draft.modelPaths == initial.modelPaths &&
+            state.orderedAssets == assets && state.instruction == "Keep the role and instruction",
+            "Model recovery retained incompatible execution parameters or erased template content")
+        state.updateSettings { $0.width = 768; $0.residency = "resident" }
+        try check(state.selectModel(model.id) && state.settings.width == 768 && state.settings.residency == "resident",
+                  "Reselecting the current model silently reset deliberate settings")
     }
 
     private static func modelFixture() throws -> StudioModel {

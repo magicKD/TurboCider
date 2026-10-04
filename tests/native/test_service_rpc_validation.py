@@ -273,6 +273,8 @@ class RPCValidationTests(unittest.TestCase):
         self.assertIn("No LoRA", qwen["reference_encoding"]["base_constraints"])
         self.assertIn("six steps", qwen["reference_encoding"]["viggle_r128_gpu_edit_constraints"])
         self.assertEqual(qwen["reference_encoding"]["ordinary_lora_reference_size"], 1024)
+        self.assertEqual(qwen["reference_encoding"]["ordinary_lora_supported_reference_sizes"], [512, 1024])
+        self.assertEqual(qwen["reference_encoding"]["dit_cache_supported_reference_sizes"], [512, 1024])
         adapter = {"path": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
                    "role": "transformer", "strength": 1}
         request = {
@@ -304,6 +306,21 @@ class RPCValidationTests(unittest.TestCase):
                     admitted = self.rpc({"action": "plan", "request": base})
                     self.assertTrue(admitted["ok"], admitted)
                     self.assertEqual(admitted["result"]["qwen21_reference_size"], size)
+        ordinary = {**adapter, "path": "ordinary.safetensors", "strength": .75}
+        for size in qwen["reference_encoding"]["dit_cache_supported_reference_sizes"]:
+            for mode in ("conservative", "balanced", "fast"):
+                for loras in ([], [ordinary]):
+                    candidate = {**request, "sampling": {"seed": 42, "steps": 25},
+                                 "parameters": {"qwen21_reference_size": size}, "loras": loras,
+                                 "lora_strategy": "inference_time" if loras else "auto",
+                                 "execution": {**request["execution"], "qwen21_dit_cache": mode}}
+                    with self.subTest(reference_size=size, dit_cache=mode, ordinary_lora=bool(loras)):
+                        admitted = self.rpc({"action": "plan", "request": candidate})
+                        self.assertTrue(admitted["ok"], admitted)
+                        self.assertEqual(admitted["result"]["qwen21_reference_size"], size)
+                        self.assertIn("qwen21_decode_dit_cache", admitted["result"]["algorithm_approximations"])
+        self.assert_rejected_without_exit({"action": "plan", "request": {
+            **candidate, "loras": [], "lora_strategy": "inference_time"}})
         for changes in (
             {"parameters": {"qwen21_reference_size": 256}},
             {"qwen21_reference_size": 512},
@@ -311,7 +328,6 @@ class RPCValidationTests(unittest.TestCase):
             {"execution": {**request["execution"], "qwen21_dit_cache": "balanced"}},
             {"execution": {**request["execution"], "policy": "gpu_ane", "ane_manifest": "not-loaded.json"}},
             {"loras": [{**adapter, "path": adapter["path"].replace("r128", "r256")}]},
-            {"loras": [{**adapter, "path": "ordinary.safetensors"}], "sampling": {"steps": 25}},
         ):
             with self.subTest(changes=changes):
                 self.assert_rejected_without_exit({"action": "plan", "request": {**request, **changes}})

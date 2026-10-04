@@ -116,7 +116,16 @@ struct PlaygroundDocument: Codable, Sendable {
         self.models = models
         fileURL = directory.appendingPathComponent("playground.json")
         importer = StudioAssetImporter(directory: directory.appendingPathComponent("playground-inputs"))
-        let settings = Self.parameterSettings(initialSettings)
+        var settings = Self.newTemplateSettings(initialSettings)
+        if settings.modelID != "qwen-image-2.1",
+           let qwen = models.first(where: { $0.id == "qwen-image-2.1" && $0.supports("image.edit") }) {
+            // A new local workspace starts with its supported model, rather
+            // than inheriting another model's sampler or adapters.
+            settings = StudioDraft()
+            settings.modelID = qwen.id; settings.modelPaths = initialSettings.modelPaths
+            Self.applyModelDefaults(qwen, to: &settings)
+            settings = Self.newTemplateSettings(settings)
+        }
         document = PlaygroundDocument(templates: Dictionary(uniqueKeysWithValues: PlaygroundTemplate.allCases.map {
             ($0.rawValue, PlaygroundTemplateDraft(settings: settings, instruction: $0.defaultInstruction))
         }))
@@ -182,15 +191,86 @@ struct PlaygroundDocument: Codable, Sendable {
         draft.assets = orderedAssets
         return draft
     }
+    var canEditSettings: Bool { !loadBlocked && !importing && importTask == nil && generationTask == nil }
+
+    /// Edit this template's parameters without copying Creation content or
+    /// normalizing incompatible combinations. The shared draft validator
+    /// explains those combinations before a request can be submitted.
+    @discardableResult func updateSettings(_ update: (inout StudioDraft) -> Void) -> Bool {
+        guard canEditSettings else { return false }
+        var settings = self.settings
+        update(&settings)
+        guard settings.loras.allSatisfy({ $0.strength.isFinite }) else {
+            message = "LoRA 强度需为有限数字。"; return false
+        }
+        var updated = document
+        updated.templates[template.rawValue]?.settings = Self.parameterSettings(settings)
+        commit(updated, immediate: false); message = nil
+        return true
+    }
+    @discardableResult func selectModel(_ id: String) -> Bool {
+        guard canEditSettings, let model = models.first(where: { $0.id == id }),
+              id == "qwen-image-2.1", model.output == "image", model.supports("image.edit") else { return false }
+        return updateSettings { settings in
+            if settings.modelID != id {
+                settings.modelLoRAs[settings.modelID] = settings.loras
+                settings.loras = settings.modelLoRAs[id] ?? []
+                Self.applyModelDefaults(model, to: &settings)
+            }
+        }
+    }
+    private static func applyModelDefaults(_ model: StudioModel, to settings: inout StudioDraft) {
+        settings.modelID = model.id
+        settings.width = 512; settings.height = 512; settings.steps = model.default_steps
+        settings.frames = model.default_frames; settings.fps = model.default_fps ?? 1
+        settings.audio = model.default_audio ?? false
+        settings.residency = model.default_residency ?? "component_staged"
+        settings.streaming = StudioStreamingState()
+        settings.profilePath = ""; settings.acceleration = StudioAcceleration()
+        settings.qwen21DiTCache = "off"; settings.qwen21ReferenceSize = 1024
+        settings.promptEnhance = false; settings.promptEnhanceEditExperimental = false
+        settings.loraStrategy = "inference_time"
+    }
+    @discardableResult func addLoRA(_ path: String) -> Bool {
+        guard canEditSettings, !path.isEmpty else { return false }
+        let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard !settings.loras.contains(where: { URL(fileURLWithPath: $0.path).standardizedFileURL.path == normalized }) else {
+            message = "此 LoRA 已添加，可使用开关启用。"; return false
+        }
+        guard settings.loras.count < 8 else { message = "最多可配置 8 个 LoRA 文件。"; return false }
+        return updateSettings { $0.loras.append(StudioLoRA(path: normalized)) }
+    }
+    @discardableResult func updateLoRA(_ id: UUID, _ update: (inout StudioLoRA) -> Void) -> Bool {
+        guard canEditSettings, settings.loras.contains(where: { $0.id == id }) else { return false }
+        return updateSettings { settings in
+            guard let index = settings.loras.firstIndex(where: { $0.id == id }) else { return }
+            update(&settings.loras[index])
+        }
+    }
+    @discardableResult func removeLoRA(_ id: UUID) -> Bool {
+        guard canEditSettings, settings.loras.contains(where: { $0.id == id }) else { return false }
+        return updateSettings { $0.loras.removeAll { $0.id == id } }
+    }
+    @discardableResult func applyTurboPreset() -> Bool {
+        guard canEditSettings, let adapter = settings.qwen21TurboLoRA else { return false }
+        let applied = updateSettings { settings in
+            settings.width = 512; settings.height = 512; settings.steps = 6
+            settings.frames = 1; settings.audio = false; settings.loraStrategy = "inference_time"
+            settings.profilePath = ""; settings.acceleration = StudioAcceleration()
+            settings.streaming = StudioStreamingState(); settings.qwen21DiTCache = "off"
+            if let index = settings.loras.firstIndex(where: { $0.id == adapter.id }) {
+                settings.loras[index].role = "transformer"; settings.loras[index].strength = 1
+            }
+        }
+        if applied { message = "已应用 512×512 / 6 步 / 纯 GPU / 强度 1 预设；图片和指令已保留。" }
+        return applied
+    }
     @discardableResult func setQwen21ReferenceSize(_ size: Int) -> Bool {
-        guard !importing, importTask == nil, generationTask == nil, [1024, 512].contains(size) else { return false }
+        guard canEditSettings, [1024, 512].contains(size) else { return false }
         if size == 512, let reason = referenceEncodingDraft.qwen21FastReferenceUnavailableReason {
             message = reason; return false
         }
-        var updated = document
-        updated.templates[template.rawValue]?.settings.qwen21ReferenceSize = size
-        commit(updated)
-        return true
+        return updateSettings { $0.qwen21ReferenceSize = size }
     }
 
     func generationDraft() throws -> StudioDraft {
@@ -199,17 +279,17 @@ struct PlaygroundDocument: Codable, Sendable {
         }
         guard !importing, importTask == nil else { throw NativeFailure(message: "请等待参考图处理完成。") }
         guard let model, model.id == "qwen-image-2.1", model.output == "image", model.supports("image.edit") else {
-            throw NativeFailure(message: "这些工作流使用 Qwen Image 2.1，请从创作页同步该模型与参数。")
+            throw NativeFailure(message: "这些工作流使用 Qwen Image 2.1，请在生成设置中选择该模型。")
         }
         guard let definition = template.definition,
               definition.roles.count == template.roles.count else {
             throw NativeFailure(message: "工作流目录不完整，请重新安装完整 App。")
         }
         guard !settings.modelPath.isEmpty else {
-            throw NativeFailure(message: "尚未选择本地模型目录，请在创作页选择后同步模型与参数。")
+            throw NativeFailure(message: "尚未选择本地模型目录，请在生成设置中选择，或从创作页同步。")
         }
         guard !settings.upscaleAfterGeneration else {
-            throw NativeFailure(message: "Playground 首版不执行生成后自动超分。请在创作页关闭自动超分后，再同步模型与参数。")
+            throw NativeFailure(message: "Playground 不执行生成后自动超分，请在生成设置中关闭此选项。")
         }
         for role in template.requiredRoles where asset(for: role) == nil {
             throw NativeFailure(message: "请添加\(template.title(for: role))参考图。")
@@ -225,17 +305,17 @@ struct PlaygroundDocument: Codable, Sendable {
     }
 
     func selectTemplate(_ value: PlaygroundTemplate) {
-        guard !importing, importTask == nil, value != template else { return }
+        guard canEditSettings, value != template else { return }
         var updated = document; updated.selectedTemplate = value
         commit(updated); message = nil
     }
     func setInstruction(_ value: String) {
-        guard !importing, importTask == nil else { return }
+        guard canEditSettings else { return }
         var updated = document; updated.templates[template.rawValue]?.instruction = value
         commit(updated, immediate: false)
     }
     @discardableResult func syncSettings(from draft: StudioDraft) -> Bool {
-        guard !importing, importTask == nil else { message = "请等待参考图处理完成。"; return false }
+        guard canEditSettings else { message = "请等待当前图片处理或生成准备完成。"; return false }
         guard let model = models.first(where: { $0.id == draft.modelID }), model.id == "qwen-image-2.1",
               model.output == "image", model.supports("image.edit") else {
             message = "请在创作页选择 Qwen Image 2.1 后同步模型与参数。"; return false
@@ -415,7 +495,7 @@ struct PlaygroundDocument: Codable, Sendable {
             }
             let migrated = decoded.schemaVersion == 1
             if migrated {
-                let settings = Self.parameterSettings(decoded.templates[decoded.selectedTemplate.rawValue]!.settings)
+                let settings = Self.newTemplateSettings(decoded.templates[decoded.selectedTemplate.rawValue]!.settings)
                 for template in PlaygroundTemplate.allCases where decoded.templates[template.rawValue] == nil {
                     decoded.templates[template.rawValue] = PlaygroundTemplateDraft(settings: settings, instruction: template.defaultInstruction)
                 }
@@ -454,6 +534,11 @@ struct PlaygroundDocument: Codable, Sendable {
     private static func parameterSettings(_ value: StudioDraft) -> StudioDraft {
         var result = value
         result.operation = "image.edit"; result.assets = []; result.initImageID = nil; result.prompt = ""
+        return result
+    }
+    private static func newTemplateSettings(_ value: StudioDraft) -> StudioDraft {
+        var result = parameterSettings(value)
+        result.width = 512; result.height = 512
         return result
     }
 }

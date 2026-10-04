@@ -34,11 +34,33 @@ import Foundation
         draft.initImageID = draft.assets.first!.id
         let output = root.appendingPathComponent("never-generated.png")
         try compatibilityAndWire(draft, output: output)
+        try defaultCanvases(root: root)
         try eligibility(draft, model: model, root: root, output: output)
         try modeIsolation(draft, model: model, root: root, output: output)
         try stateRecovery(draft, model: model, root: root, output: output)
         try await playground(draft, model: model, image: image, root: root, output: output)
-        print("PASS Qwen reference encoding: SDK v1/v2, old draft/history, explicit 1024/512, supported Base/r128 gates, edit/generate preference isolation, parameter recovery/persistence/import/reuse/model reset, canvas lock and independent Playground role/submission contracts (CPU only)")
+        print("PASS Qwen reference encoding: SDK v1/v2, old draft/history, explicit 1024/512, Base/ordinary LoRA DiT combinations and r128 gates, edit/generate preference isolation, parameter recovery/persistence/import/reuse/model reset, canvas lock and independent Playground role/submission contracts (CPU only)")
+    }
+
+    @MainActor static func defaultCanvases(root: URL) throws {
+        let directory = root.appendingPathComponent("default-canvases")
+        let models = StudioModel.catalog().filter(\.executor)
+        let studio = StudioState(directory: directory, models: models)
+        for model in models {
+            studio.selectModel(model.id)
+            try check(studio.draft.width == (model.isVideo ? model.default_width : 512) &&
+                      studio.draft.height == (model.isVideo ? model.default_height : 512),
+                      "New model selection did not preserve image/video canvas defaults: \(model.id)")
+        }
+        studio.selectModel("qwen-image-2.1")
+        studio.draft.width = 512; studio.draft.height = 768
+        studio.save()
+        let reopened = StudioState(directory: directory, models: models)
+        try check(reopened.draft.width == 512 && reopened.draft.height == 768,
+                  "New square defaults overwrote an explicit saved portrait canvas")
+        reopened.changeOperation("image.edit")
+        try check(reopened.draft.width == 512 && reopened.draft.height == 768,
+                  "Changing operation unexpectedly reset the user's aspect ratio")
     }
 
     static func compatibilityAndWire(_ draft: StudioDraft, output: URL) throws {
@@ -91,19 +113,44 @@ import Foundation
         let r128 = root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors")
         let r256 = root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors")
         for url in [ordinary, r128, r256] { try Data("CPU presence fixture, not weights".utf8).write(to: url) }
+        // Reference encoding and DiT caching are independent approximations.
+        // Cover each public cache mode for base and ordinary LoRA, preserving
+        // dimensions, input order and explicit opt-in on both wire schemas.
+        for withLoRA in [false, true] {
+            for mode in Qwen21DiTCacheMode.allCases {
+                for count in 1...3 {
+                    var candidate = base
+                    candidate.assets = Array(original.assets.prefix(count))
+                    candidate.qwen21DiTCache = mode.rawValue
+                    candidate.loras = withLoRA ? [StudioLoRA(path: ordinary.path, strength: 0.7)] : []
+                    let before = try bytes(candidate)
+                    try check(candidate.qwen21ReferenceSizeIssue == nil && candidate.qwen21DiTCacheUnavailableReason == nil,
+                              "512 encoding still conflicts with base-schedule DiT/LoRA")
+                    let request = try candidate.request(output: output)
+                    let v2 = NativeRequestV2(legacy: request)
+                    try check(request.qwen21_reference_size == 512 && request.qwen21_dit_cache == mode.rawValue &&
+                              request.allow_approximation == true && request.inputs?.map(\.path) == candidate.assets.map(\.path) &&
+                              request.width == 512 && request.height == 512 && request.steps == 25 &&
+                              v2.parameters.qwen21_reference_size == 512 &&
+                              (try bytes(candidate)) == before,
+                              "512 + DiT request changed the draft or lost encoding/cache/input settings")
+                }
+            }
+        }
         let invalid: [(String, (inout StudioDraft) -> Void)] = [
             ("zero refs", { $0.assets = [] }),
             ("four refs", { $0.assets.append($0.assets[0]) }),
             ("canvas", { $0.width = 768 }),
             ("PE", { $0.promptEnhance = true }),
-            ("DiT", { $0.qwen21DiTCache = "conservative" }),
             ("ANE", { $0.acceleration?.policy = "gpu_ane" }),
             ("auto", { $0.acceleration?.policy = "auto" }),
             ("profile", { $0.profilePath = "profile.json" }),
             ("streaming", { $0.streaming.selection = .tier8 }),
             ("nineteen steps", { $0.steps = 19 }),
             ("forty one steps", { $0.steps = 41 }),
-            ("ordinary LoRA", { $0.loras = [StudioLoRA(path: ordinary.path)] }),
+            ("ordinary LoRA role", { $0.loras = [StudioLoRA(path: ordinary.path, role: "text_encoder")] }),
+            ("ordinary LoRA strategy", { $0.loras = [StudioLoRA(path: ordinary.path)]; $0.loraStrategy = "disk_premerge" }),
+            ("multiple LoRAs", { $0.loras = [StudioLoRA(path: ordinary.path), StudioLoRA(path: ordinary.path)] }),
             ("r256", { $0.loras = [StudioLoRA(path: r256.path)]; $0.steps = 6 }),
             ("invalid size", { $0.qwen21ReferenceSize = 256 })
         ]
@@ -124,6 +171,7 @@ import Foundation
         for mutate: (inout StudioDraft) -> Void in [
             { $0.loras[0].strength = 0.9 }, { $0.loras[0].role = "text_encoder" },
             { $0.steps = 25 }, { $0.loraStrategy = "disk_premerge" },
+            { $0.qwen21DiTCache = "balanced" },
             { $0.loras.append(StudioLoRA(path: ordinary.path)) }
         ] {
             var candidate = turbo; mutate(&candidate)
@@ -207,6 +255,9 @@ import Foundation
         var recovered = studio.draft; recovered.qwen21ReferenceSize = 1024
         try check(studio.setQwen21ReferenceSize(1024) && (try bytes(studio.draft)) == (try bytes(recovered)),
                   "Restore standard changed prompt/assets/steps/cache/LoRA instead of only encoding size")
+        try check(studio.setQwen21ReferenceSize(512) && studio.draft.qwen21DiTCache == "balanced",
+                  "Selecting fast encoding unexpectedly removed compatible DiT caching")
+        studio.draft.width = 768
         let before = try bytes(studio.draft)
         try check(!studio.setQwen21ReferenceSize(512) && (try bytes(studio.draft)) == before,
                   "Invalid selector choice silently changed the draft")
@@ -254,8 +305,10 @@ import Foundation
         try check(state.setQwen21ReferenceSize(1024) && state.orderedAssets == roles,
                   "Playground standard recovery changed role references")
         copied.qwen21DiTCache = "balanced"
-        try check(state.syncSettings(from: copied) && state.referenceEncodingDraft.qwen21ReferenceSizeIssue != nil &&
-                  state.generationBlocker != nil, "Incompatible synchronized fast settings had no blocker")
+        try check(state.syncSettings(from: copied) && state.referenceEncodingDraft.qwen21ReferenceSizeIssue == nil &&
+                  state.generationBlocker == nil &&
+                  (try state.generationDraft().request(output: output)).qwen21_dit_cache == "balanced",
+                  "Playground still rejects combined fast encoding and DiT cache")
         try check(state.setQwen21ReferenceSize(1024) && state.settings.qwen21DiTCache == "balanced" && state.generationBlocker == nil,
                   "Playground recovery disabled cache or failed to recover generation")
         state.selectTemplate(.identity)

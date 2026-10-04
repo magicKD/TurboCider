@@ -172,10 +172,14 @@ NSDictionary *to_dictionary(const ModelDescriptor &d) {
             @"resize_requires_allow_approximation": @YES,
             @"admission": @"plan",
             @"weight_identity_validation": @"pinned SHA-256 at load",
-            @"constraints": @"Reference resizing is an explicit editing approximation. Base and Viggle r128 have different requirements below; plan validates the complete request and route. This setting does not resize the output canvas.",
+            @"constraints": @"Reference resizing is an explicit editing approximation. Base, ordinary LoRA, DiT cache and Viggle r128 have different requirements below; plan validates the complete request and route. This setting does not resize the output canvas.",
             @"base_constraints": @"No LoRA; image.edit with 1...3 references, size 256 or 512 and allow_approximation=true. Other execution, sampling and cache constraints remain subject to plan.",
             @"viggle_r128_gpu_edit_constraints": @"512x512 GPU edit, hybrid_mlp_mode=auto, 1...3 references, Viggle v0.2.1 r128, six steps, strength 1, inference_time LoRA, prompt enhancement and DiT cache off; ANE requires its existing full-size or diagnostic routes",
-            @"ordinary_lora_reference_size": @1024
+            @"ordinary_lora_reference_size": @1024,
+            @"ordinary_lora_supported_reference_sizes": @[@512, @1024],
+            @"ordinary_lora_constraints": @"Default reference size 1024; size 512 requires image.edit with 1...3 references and allow_approximation=true. GPU 512x512, hybrid_mlp_mode=auto, 20...40-step base schedule, one transformer adapter, finite strength -8...8 and inference_time LoRA. Ordinary adapter content identity is checked each request; all paired targets must bind. DiT cache presets are supported subject to their constraints.",
+            @"dit_cache_supported_reference_sizes": @[@512, @1024],
+            @"dit_cache_constraints": @"conservative/balanced/fast require allow_approximation=true, GPU 512x512, hybrid_mlp_mode=auto, 20...40-step base schedule, prompt enhancement off, base or one ordinary runtime LoRA. Generation uses size 1024 and no references; editing allows 1...3 references at size 1024 or 512. Viggle six-step, ANE and other experimental cache routes are excluded."
         };
     }
     if (d.fps) result[@"default_fps"] = @(d.fps);

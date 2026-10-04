@@ -176,12 +176,14 @@ ModelModule qwen21_module() {
                 require(r.allow_approximation && r.execution == "gpu" &&
                             r.hybrid_mlp_mode == "auto" && r.width == 512 && r.height == 512 &&
                             r.steps >= 20 && r.steps <= 40 && !r.prompt_enhance &&
-                            r.qwen21_reference_size == 1024 && !r.qwen21_w8a8 &&
+                            (r.qwen21_reference_size == 1024 ||
+                             (r.qwen21_reference_size == 512 && r.operation == "image.edit")) &&
+                            !r.qwen21_w8a8 &&
                             !r.qwen21_gpu_w8a16 && r.qwen21_gpu_full_ffn_blocks.empty() &&
                             r.dump.empty() &&
                             (r.operation == "image.generate" ? r.inputs.empty() :
                              (!r.inputs.empty() && r.inputs.size() <= 3)),
-                        "Qwen21 DiT cache presets require explicit approximation, 20...40-step 512px GPU base-schedule generation or 1...3 full-size edit references, with prompt enhancement off");
+                        "Qwen21 DiT cache presets require explicit approximation, 20...40-step 512px GPU base-schedule generation or 1...3 full-size/resized-512 edit references, with prompt enhancement off");
                 for (const char *name : {
                         "TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV",
                         "TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC",
@@ -264,8 +266,11 @@ ModelModule qwen21_module() {
                             "Viggle requires six steps and strength 1; resized-512 references need the qualified r128 GPU edit request or the legacy diagnostic; explicit lora_fused/runtime alternate adapters retain the experimental six-step schedule");
                 } else {
                     require(r.execution == "gpu" && r.hybrid_mlp_mode == "auto" &&
-                                r.steps >= 20 && r.steps <= 40 && r.qwen21_reference_size == 1024,
-                            "ordinary Qwen21 LoRA requires GPU execution, the 20...40-step base schedule and full-size references");
+                                r.steps >= 20 && r.steps <= 40 &&
+                                (r.qwen21_reference_size == 1024 ||
+                                 (r.qwen21_reference_size == 512 && r.allow_approximation &&
+                                  r.operation == "image.edit" && !r.inputs.empty() && r.inputs.size() <= 3)),
+                            "ordinary Qwen21 LoRA requires GPU execution, the 20...40-step base schedule and full-size or explicitly approximate resized-512 edit references");
                 }
             }
             const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
@@ -483,7 +488,7 @@ ModelModule qwen21_module() {
                 "experimental: actual edit material fidelity is under investigation; not quality-qualified",
                 "BF16 Comfy checkpoint plus official processor/tokenizer.json required",
                 "reference images are resized to approximately 1024 squared pixels with 32-aligned dimensions",
-                "explicit approximate 512px reference encoding is supported for 512x512 GPU edits with 1...3 references: base model or pinned Viggle v0.2.1 r128 at six steps/strength 1; ordinary LoRA, DiT cache and ANE are outside this request opt-in",
+                "explicit approximate 512px reference encoding is supported for 512x512 GPU edits with 1...3 references: base model, ordinary runtime LoRA at 20...40 steps and DiT cache presets; pinned Viggle v0.2.1 r128 uses six steps/strength 1 with DiT cache off; ANE is outside this request opt-in",
                 "RGBA is preserved; App masks are visual references, not hard pixel-preserving inpainting",
                 "native PE-T2I is optional and slow; PE-I2I requires explicit prompt_enhance_edit_experimental with FP32 vision, supported 8-bit files, and is not quality-qualified; BF16 visual parity remains unaccepted",
                 "experimental gpu_ane: explicit FP16 512x512 text-to-image or W8A8 512x512 edit with 1...3 references scaled to 256; full 32-layer coverage is faster but changes some edited details, while GPU-only blocks 3,5,7 remain an opt-in alternative; device placement and broad quality are not qualified"

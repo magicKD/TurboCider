@@ -74,7 +74,12 @@ Qwen-Image-2.1's model entry includes `reference_encoding`: the default 1024px
 processing, field locations for native request schemas 1/2, base 256/512px
 approximation and the stricter 512px r128 GPU editing opt-in. Separate
 `base_constraints` and `viggle_r128_gpu_edit_constraints` describe those routes;
-ordinary LoRA requires the reported `ordinary_lora_reference_size` of 1024.
+`ordinary_lora_reference_size` retains the legacy default of 1024;
+`ordinary_lora_supported_reference_sizes` and `ordinary_lora_constraints`
+describe explicit 512px editing support. `dit_cache_supported_reference_sizes`
+reports both 512 and 1024. Named DiT presets can combine 512px reference encoding
+with 512×512 GPU edits, 20–40 steps and 1–3 references, on base or ordinary
+runtime LoRA. The six-step Viggle route still requires DiT cache off.
 Reduced reference encoding requires
 `allow_approximation: true`; use `plan` for authoritative validation and see
 the [Qwen request guide](QWEN_IMAGE_21.md). `plan` does not load or verify the

@@ -360,12 +360,20 @@ struct StudioDraft: Codable, Sendable {
         if width != 512 || height != 512 { return "快速 512 当前需要 512×512 输出画布。" }
         if !(1...3).contains(activeAssets.count) { return "快速 512 当前支持 1–3 张参考图；请核对编辑输入。" }
         if promptEnhance { return "快速 512 暂不与提示词增强组合使用。" }
-        if qwen21DiTCache != "off" { return "快速 512 与 DiT 缓存不能同时使用。" }
         if usesPublicStreaming { return "快速 512 暂不支持流式内存档位。" }
         if activeLoRAs.isEmpty {
             return (20...40).contains(steps) ? nil : "基础模型的快速 512 需要 20–40 步，请自行调整步数。"
         }
-        guard let adapter = qwen21TurboLoRA else { return "普通 LoRA 或多个适配器使用标准 1024 编码；快速 512 仅开放已验证的六步 r128。" }
+        if !hasQwen21TurboAdapter {
+            guard activeLoRAs.count == 1, let adapter = activeLoRAs.first,
+                  adapter.role == "transformer", adapter.strength.isFinite, (-8...8).contains(adapter.strength),
+                  ["auto", "inference_time"].contains(loraStrategy), (20...40).contains(steps) else {
+                return "普通 LoRA 的快速 512 需要单个 Transformer 适配器、强度 −8 到 8、运行时加载与 20–40 步。"
+            }
+            return nil
+        }
+        guard let adapter = qwen21TurboLoRA else { return "快速 512 的六步 Turbo 需要单独启用一个 r128 适配器。" }
+        if qwen21DiTCache != "off" { return "六步 Viggle Turbo 不支持 DiT 缓存，请保持关闭。" }
         guard URL(fileURLWithPath: adapter.path).lastPathComponent == "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors" else {
             return "此 Viggle 适配器的快速 512 尚未开放，请使用标准 1024。"
         }
@@ -383,13 +391,13 @@ struct StudioDraft: Codable, Sendable {
     var qwen21DiTCacheUnavailableReason: String? {
         guard modelID == "qwen-image-2.1", ["image.generate", "image.edit"].contains(operation) else { return "DiT 缓存仅支持 Qwen 2.1 生图或图片编辑。" }
         if hasQwen21TurboAdapter { return "六步 Viggle Turbo 不支持 DiT 缓存，请保持关闭。" }
-        if effectiveQwen21ReferenceSize != 1024 { return "DiT 缓存需要标准 1024 参考编码，请先恢复标准编码。" }
+        if ![1024, 512].contains(effectiveQwen21ReferenceSize) { return "DiT 缓存支持标准 1024 或快速 512 参考编码。" }
         if (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) != "gpu" || !profilePath.isEmpty {
             return "DiT 缓存仅支持纯 GPU，请关闭 ANE 与设备配置。"
         }
         if !(20...40).contains(steps) { return "DiT 缓存需要 20–40 步；请自行调整采样步数。" }
         if width != 512 || height != 512 { return "DiT 缓存目前仅支持 512×512 画布。" }
-        if activeAssets.count > 3 { return "DiT 缓存最多支持 3 张参考图，参考编码使用正常 1024 尺寸。" }
+        if activeAssets.count > 3 { return "DiT 缓存最多支持 3 张参考图，可选择标准 1024 或快速 512 编码。" }
         if !activeLoRAs.isEmpty {
             if activeLoRAs.count != 1 { return "DiT 缓存当前支持基础模型或单个普通 LoRA。" }
             if activeLoRAs.contains(where: { $0.role != "transformer" || !$0.strength.isFinite || !(-8...8).contains($0.strength) }) {
@@ -1372,8 +1380,10 @@ final class StudioState: ObservableObject {
         draft.modelID = id
         draft.operation = (model.executor_operations ?? model.operations).first ??
             (model.isVideo ? "video.generate" : "image.generate")
-        draft.width = model.default_width; draft.height = model.default_height
-        if id == "z-image-turbo" || id == "qwen-image-2.1" { draft.width = 512; draft.height = 512 }
+        // Image work starts small; explicit dimensions in saved drafts/history
+        // remain intact. Video keeps its model-specific supported defaults.
+        draft.width = model.isVideo ? model.default_width : 512
+        draft.height = model.isVideo ? model.default_height : 512
         draft.steps = model.default_steps; draft.frames = model.default_frames
         draft.fps = model.default_fps ?? (model.isVideo ? 24 : 1)
         draft.audio = model.default_audio ?? false

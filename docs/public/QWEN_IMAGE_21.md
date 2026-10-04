@@ -24,8 +24,10 @@ proof.
 ## Base-schedule LoRA and optional DiT cache
 
 The App's right settings column exposes **DiT cache** for 512×512, 20–40-step
-GPU generation and 1–3-reference editing with normal 1024px reference processing
-and prompt enhancement off. It defaults to **Off**. The named choices are
+GPU generation and 1–3-reference editing with standard 1024px or explicitly
+approximate 512px reference processing and prompt enhancement off. Output
+canvas size and reference encoding size are separate settings. It defaults to
+**Off**. The named choices are
 `off`, `conservative`, `balanced` and `fast`; the selected value is recorded in
 the draft, submitted request and result. Unsupported combinations show a reason
 instead of silently changing the sampling steps. Viggle's six-step student is
@@ -120,17 +122,24 @@ This requires a 512×512 output, 1–3 ordered references, six steps, strength 1
 `hybrid_mlp_mode: "auto"`, inference-time LoRA, prompt enhancement and DiT cache
 off, and `allow_approximation: true`. The r128 filename is recognized during
 planning; its pinned SHA-256 is still checked before binding. This request
-opt-in does not widen ordinary-LoRA, r256 or GPU+ANE routes. Their existing
-full-size or explicitly gated diagnostic rules remain in force.
+opt-in does not widen r256 or GPU+ANE routes. Their existing full-size or
+explicitly gated diagnostic rules remain in force. Ordinary runtime LoRA has
+its own 20–40-step GPU editing route described below.
 
 The default is still **1024**. Reference size is an approximate squared-pixel
 area: aspect ratio is preserved and dimensions are aligned to 32 pixels, so a
 non-square reference is not forced into a 512×512 square. Reducing it can lose
 small details and change the edited image. It changes reference encoding,
 not output resolution. Base-model editing already supports explicit 256/512
-reference resizing with approximation enabled; ordinary LoRA continues to
-require 1024. The App's 512 shortcut uses the qualified base 20–40-step or
-Viggle r128 six-step GPU settings.
+reference resizing with approximation enabled. Ordinary runtime LoRA also
+supports 512px reference encoding for explicitly approximate 512×512 GPU
+editing, 20–40 steps and 1–3 references. It uses one Transformer adapter with
+finite strength in −8…8. The App's 512 shortcut supports base or ordinary LoRA
+with DiT cache off or a named preset; Viggle r128 retains its six-step route
+with DiT cache off. The former mutual exclusion between 512px reference
+encoding and DiT cache was a conservative admission rule, not a residual-cache
+shape requirement. Combining these approximations can affect detail; previous
+1024-reference timing/quality measurements do not qualify the combined route.
 
 In schema v1, add the field at the top level. In schema v2 use
 `"parameters": {"qwen21_reference_size": 512}`; keep `allow_approximation`
