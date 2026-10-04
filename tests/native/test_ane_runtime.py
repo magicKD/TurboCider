@@ -77,6 +77,13 @@ class RuntimeIntegrationTests(unittest.TestCase):
         return subprocess.run([str(self.probe), str(manifest), "2", "97", policy],
                               cwd=ROOT, capture_output=True, text=True, timeout=120)
 
+    @unittest.skipUnless(HAS_NATIVE_LIBRARY, "build native runtime for receipt serialization")
+    def test_runtime_receipts_cover_w8a8_and_fp16_without_precision_coupling(self):
+        result = subprocess.run([str(self.root / "build/ane-runtime-receipt-test")],
+                                cwd=ROOT, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PASS runtime receipt", result.stdout)
+
     def assert_probe_samples(self, data, chunks, repeats=2):
         self.assertEqual(data["warmup_iterations"], 2)
         self.assertEqual(data["measured_iterations"], repeats)

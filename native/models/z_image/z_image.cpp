@@ -1170,6 +1170,18 @@ Tensor z_compiled_packed_block(const Tensor &x, const Weights &weights, const st
     return (*graph)(args)[0];
 }
 
+std::vector<ane::FfnWeight> z_runtime_sources(const Weights &w,const std::string &ffn) {
+    auto source=[&](const std::string &name,int input_width)->ane::FfnWeight {
+        const bool rotated=w.convrot(name);
+        require(!w.nvfp4(name)&&!w.has(name+".bias"),"runtime FFN requires bias-free projections: "+name);
+        const auto &weight=w.at(name+".weight");
+        if(!rotated&&!w.quantized(name))return {weight,std::nullopt,std::nullopt};
+        const auto &scales=w.at(name+".scales");const auto geometry=z_quantized_geometry(weight,scales,input_width);
+        return {weight,scales,w.has(name+".biases")?std::optional<Tensor>(w.at(name+".biases")):std::nullopt,
+            geometry.group_size,geometry.bits,rotated?ane::FfnWeight::Transform::ComfyH256Inverse:ane::FfnWeight::Transform::None};
+    };
+    return {source(ffn+".w1",3840),source(ffn+".w3",3840),source(ffn+".w2",10240)};
+}
 Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs, const Tensor &temb, ane::HybridFfn &runtime,
                        int block, std::atomic<bool> &cancelled, bool gguf_compatibility) {
@@ -1196,25 +1208,16 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
                                 nullptr, false, nullptr));
     }
     const auto ffn = prefix + ".feed_forward";
+    ane::HybridFfn::NextWeights next_weights=[&](int next) {
+        if(next>=32)return std::vector<ane::FfnWeight>{};
+        const auto stem=next<2?"noise_refiner."+std::to_string(next):"layers."+std::to_string(next-2);
+        return z_runtime_sources(w,stem+".feed_forward");
+    };
     if (gguf_compatibility || w.convrot(ffn+".w1") || w.has_runtime_loras()) {
         // GGUF can mix packed affine and floating projections, including
         // modulation/attention. Keep the baseline's native GPU projections
         // and dtype promotion; never feed packed uint32 into a dense graph.
-        auto source = [&](const std::string &name, int input_width) -> ane::FfnWeight {
-            const bool rotated=w.convrot(name);
-            require(!w.nvfp4(name) && !w.has(name + ".bias"),
-                    "runtime packed FFN requires bias-free projections: " + name);
-            const auto &weight = w.at(name + ".weight");
-            if (!rotated && !w.quantized(name)) return {weight, std::nullopt, std::nullopt};
-            const auto &scales = w.at(name + ".scales");
-            const auto geometry = z_quantized_geometry(weight, scales, input_width);
-            return {weight, scales, w.has(name + ".biases")
-                ? std::optional<Tensor>(w.at(name + ".biases")) : std::nullopt,
-                geometry.group_size, geometry.bits,rotated ? ane::FfnWeight::Transform::ComfyH256Inverse
-                                                          : ane::FfnWeight::Transform::None};
-        };
-        runtime.stage_weights(block, x.shape(1),
-            {source(ffn + ".w1", 3840), source(ffn + ".w3", 3840), source(ffn + ".w2", 10240)});
+        runtime.stage_weights(block,x.shape(1),z_runtime_sources(w,ffn));
         auto modulation = mx::expand_dims(linear_compat(temb, w, prefix + ".adaLN_modulation.0"), 1);
         auto parts = mx::split(modulation, 4, -1);
         auto attention = z_attention(rms(x, w.at(prefix + ".attention_norm1.weight"), 1e-5f) *
@@ -1233,7 +1236,14 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
             }};
         auto feed = runtime.run(block, feed_input,
             [&](const Tensor &input) { return z_ffn(input, w, ffn); }, cancelled,
-            w.has_runtime_loras() ? &adapter : nullptr);
+            w.has_runtime_loras() ? &adapter : nullptr,
+            [&](const Tensor &input,int first,int count) {
+                auto g = w.project_slice(input,ffn+".w1",first,first+count,0,3840,false);
+                auto u = w.project_slice(input,ffn+".w3",first,first+count,0,3840,false);
+                auto hidden = silu(g)*u;
+                auto base = w.project_base_slice(hidden,ffn+".w2",0,3840,first,first+count,false);
+                return std::make_pair(base,hidden);
+            },next_weights);
         auto output = value + mx::tanh(parts[3]) * rms(feed, w.at(prefix + ".ffn_norm2.weight"), 1e-5f);
         return complete(output);
     }
@@ -1271,7 +1281,19 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
     }));
     auto feed = runtime.run(block, pre[1], [&](const Tensor &input) {
         return (*gpu)({input, weights[0], weights[1], weights[2]})[0];
-    }, cancelled);
+    }, cancelled, nullptr, [&](const Tensor &input,int first,int count) {
+        if (input.dtype() == mx::bfloat16 && z_image_small_shape_metal_default() && input.shape(1)<=1056) {
+            auto u = z_metal::projection_range(input,weights[1],first,first+count,0,3840);
+            auto hidden = z_metal::swiglu_gemm_range(input,weights[0],u,first,count);
+            auto base = z_metal::projection_range(hidden,weights[2],0,3840,first,first+count);
+            return std::make_pair(base,hidden);
+        }
+        auto g = mx::matmul(input,mx::transpose(slice_axis(weights[0],0,first,first+count)));
+        auto u = mx::matmul(input,mx::transpose(slice_axis(weights[1],0,first,first+count)));
+        auto hidden = silu(g)*u;
+        auto base = mx::matmul(hidden,mx::transpose(slice_axis(weights[2],1,first,first+count)));
+        return std::make_pair(base,hidden);
+    },next_weights);
     static auto *post = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
         auto normalized = mx::astype(mx::fast::rms_norm(mx::astype(a[0], mx::float32),
                                       mx::astype(a[3], mx::float32), 1e-5f), a[0].dtype());
@@ -3320,7 +3342,7 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
         hybrid_.reset(); hybrid_gpu_graph_ = {}; hybrid_gpu_mlp_start_ = -1;
         return runtime_convrot_
             ? "gpu_ane experimental legacy ConvRot packed inverse-H256 FP16 FFN; source rounded scales retained; physical placement/arithmetic unverified"
-            : "gpu_ane explicit runtime-weight token-row FFN; base-only weight slots with optional GPU LoRA activation corrections; physical placement unverified";
+            : "gpu_ane requested runtime-weight FFN; executor/data-path/partition pending; base-only weight slots with optional GPU LoRA activation corrections; physical placement unverified";
     }
     runtime_ffn_.reset(); runtime_manifest_.clear();
     if (nvfp4_transformer_) {
@@ -3826,6 +3848,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         const auto manifest = std::filesystem::canonical(r.ane_manifest);
         const std::string identity = manifest.string() + ":" + sha256_file(manifest) + ":" +
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto")+
+            ane::HybridFfn::executor_configuration_identity()+
             (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "");
         if (!runtime_ffn_ || !runtime_ffn_->available() || runtime_manifest_ != identity ||
             (!active_loras_.empty() && !runtime_ffn_->supports_lora_inputs())) {
@@ -3884,11 +3907,10 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         if (hybrid_)
             result.hybrid = hybrid_->metrics();
         if (runtime_ffn_) {
-            result.backend = gguf_transformer_ ? "mlx_cpp_metal_gguf+coreml_runtime_weight"
-                                               : "mlx_cpp_metal+coreml_runtime_weight";
-            result.precision = gguf_transformer_ ? "gguf_native_gpu+runtime_fp16_ffn"
-                                                 : "bf16_gpu+runtime_fp16_ffn_bf16_io";
+            result.backend = runtime_ffn_->backend_label(gguf_transformer_);
+            result.precision = runtime_ffn_->precision_label(gguf_transformer_);
             result.hybrid = runtime_ffn_->metrics();
+            if (!runtime_convrot_) result.selection = runtime_ffn_->resolve_selection(result.selection);
         }
         result.encoder_hybrid = cached_encoder_hybrid_metrics_;
         result.encoder_quantized_execution = cached_encoder_gguf_metrics_;
@@ -4194,11 +4216,10 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     if (runtime_ffn_) {
         runtime_ffn_->drain();
-        result.backend = gguf_transformer_ ? "mlx_cpp_metal_gguf+coreml_runtime_weight"
-                                           : "mlx_cpp_metal+coreml_runtime_weight";
-        result.precision = gguf_transformer_ ? "gguf_native_gpu+runtime_fp16_ffn"
-                                             : "bf16_gpu+runtime_fp16_ffn_bf16_io";
+        result.backend = runtime_ffn_->backend_label(gguf_transformer_);
+        result.precision = runtime_ffn_->precision_label(gguf_transformer_);
         result.hybrid = runtime_ffn_->metrics();
+        if (!runtime_convrot_) result.selection = runtime_ffn_->resolve_selection(result.selection);
         if (!runtime_ffn_->available()) result.selection += "; GPU fallback: " + runtime_ffn_->reason();
         if (runtime_convrot_) {
             result.backend="mlx_cpp_metal_convrot+coreml_runtime_weight_experimental";

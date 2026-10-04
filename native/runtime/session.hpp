@@ -35,6 +35,26 @@ ExecutionPlan make_plan(const Request &);
 ExecutionPlan make_plan_after_public_streaming_preflight(const Request &);
 std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
+    std::string runtime_weight_backend, runtime_weight_backend_fallback_reason;
+    std::string runtime_weight_io_path;
+    std::string runtime_weight_data_path;
+    std::string runtime_weight_partition_axis = "rows";
+    int runtime_weight_ane_channels = 0, runtime_weight_gpu_channels = 0;
+    uint64_t runtime_weight_channel_blocks = 0;
+    bool runtime_weight_prefetch_enabled = false;
+    uint64_t runtime_weight_prefetch_submissions = 0, runtime_weight_prefetch_hits = 0;
+    uint64_t runtime_weight_prefetch_discards = 0, runtime_weight_prefetch_failures = 0;
+    double runtime_weight_prefetch_wait_seconds = 0;
+    bool runtime_weight_scale_cache_enabled = false;
+    bool runtime_weight_stage_specialized = false;
+    uint64_t runtime_weight_stage_pipeline_variants = 0;
+    bool runtime_weight_launch_fence_enabled = false;
+    bool runtime_weight_a8_lookahead_enabled = false;
+    uint64_t runtime_weight_a8_prefetches = 0;
+    double runtime_weight_a8_wait_seconds = 0;
+    uint64_t runtime_weight_scale_cache_hits = 0, runtime_weight_scale_cache_misses = 0;
+    uint64_t runtime_weight_scale_cache_entries = 0, runtime_weight_scale_cache_bytes = 0, runtime_weight_scale_cache_evictions = 0;
+    uint64_t runtime_weight_device_io_calls = 0;
     // Runtime-weight route only; all times/counts are session cumulative.
     uint64_t runtime_weight_slot_bytes = 0, runtime_weight_estimated_bytes = 0;
     uint64_t runtime_weight_hybrid_blocks = 0, runtime_weight_gpu_blocks = 0;

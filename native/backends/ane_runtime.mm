@@ -274,9 +274,10 @@ bool matches_digest(NSData *bytes, NSString *digest) {
     return [digest isEqualToString:@(hex)];
 }
 
-std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphShape &shape,
-                                      ArtifactLease &lease) {
+NSDictionary *read_manifest_shape(const std::filesystem::path &path, GraphShape &shape) {
     check(!std::filesystem::is_symlink(path), "runtime ANE manifest must not be a symlink");
+    check(std::filesystem::is_regular_file(path) && std::filesystem::file_size(path) <= (1u << 20),
+          "runtime ANE manifest must be a bounded regular file");
     NSData *data = [NSData dataWithContentsOfFile:@(path.c_str())];
     NSError *error = nil;
     id decoded = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&error] : nil;
@@ -301,6 +302,11 @@ std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphSh
     shape.width = dimension(manifest, @"width");
     shape.tile_k = dimension(manifest, @"tile_k");
     shape.tile_n = dimension(manifest, @"tile_n");
+    return manifest;
+}
+std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphShape &shape,
+                                      ArtifactLease &lease) {
+    NSDictionary *manifest = read_manifest_shape(path, shape);
     NSDictionary *files = manifest[@"files"];
     check([files isKindOfClass:NSDictionary.class] && files.count > 0, "missing runtime ANE artifact receipt");
     const auto root = path.parent_path();
@@ -342,6 +348,14 @@ std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphSh
     return private_model;
 }
 } // namespace
+
+GraphShape runtime_template_shape(const std::filesystem::path &manifest) {
+    @autoreleasepool {
+        GraphShape shape;
+        read_manifest_shape(manifest, shape);
+        return shape;
+    }
+}
 
 struct RuntimeGraph::Impl {
     // First member is destroyed last, after Worker and MLModel have released

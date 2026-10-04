@@ -390,7 +390,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (runtime_requested) {
         auto manifest = std::filesystem::canonical(r.ane_manifest);
         const std::string identity = manifest.string() + ":" + sha256_file(manifest) + ":" +
-            (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto");
+            (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto") +
+            ane::HybridFfn::executor_configuration_identity();
         if (!runtime_ffn_ || !runtime_ffn_->available() || runtime_manifest_ != identity ||
             (!r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
             runtime_ffn_.reset();
@@ -596,9 +597,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (db_cache)
         result.selection += "; diagnostic decode DBCache (front 8, back 0, warmup 8)";
     if (runtime_requested) {
-        result.backend = "mlx_cpp_metal+coreml_runtime_weight";
-        result.precision = "bf16_gpu+runtime_fp16_ffn_bf16_io";
-        result.selection = "gpu_ane explicit runtime-weight token-row FFN; base-only weight slots with optional GPU LoRA activation corrections; physical placement unverified";
+        result.backend = runtime_ffn_->backend_label();
+        result.precision = runtime_ffn_->precision_label();
+        result.selection = runtime_ffn_->selection_label();
         if (!r.loras.empty()) result.selection += "; six-step student schedule; alternate adapter quality unqualified";
     }
     if (qkv_requested) {
@@ -762,7 +763,18 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         if (transformer_.has_runtime_loras()) return runtime_lora_gpu.at(block)({x})[0];
                         return runtime_gpu({x, transformer_.at(p + "gate_up.weight"),
                                               transformer_.at(p + "out.weight")})[0];
-                    }, cancelled, transformer_.has_runtime_loras() ? &adapter : nullptr);
+                    }, cancelled, transformer_.has_runtime_loras() ? &adapter : nullptr,
+                    [&](const Tensor &x,int first,int count) {
+                        auto g=transformer_.project_slice(x,p+"gate_up",first,first+count,0,4096,false);
+                        auto u=transformer_.project_slice(x,p+"gate_up",12288+first,12288+first+count,0,4096,false);
+                        auto hidden=silu(g)*u;
+                        auto base=transformer_.project_base_slice(hidden,p+"out",0,4096,first,first+count,false);
+                        return std::make_pair(base,hidden);
+                    },[&](int next) {
+                        std::vector<ane::FfnWeight> sources;
+                        if(next<32)for(const auto &weight:runtime_weights.at(next))sources.push_back({weight,std::nullopt,std::nullopt});
+                        return sources;
+                    });
                 };
                 dit.set_prefill_mlp(run_ffn);
                 dit.set_decode_mlp(run_ffn);

@@ -20,7 +20,8 @@ from runtime_ane_common import (
     system_memory, validate_edit_results, validate_results, wait_for_idle,
     qwen_qk_environment, validate_qwen_qk_receipts,
 )
-from runtime_ane_memory import run_sampled
+from runtime_ane_memory import run_sampled, run_owned
+from runtime_ane_load import LoadObservation
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -91,6 +92,23 @@ def main():
     p.add_argument("--model", type=Path, required=True)
     p.add_argument("--model-id", choices=("z-image-turbo", "qwen-image-2.1", "z-image-turbo-gguf"), required=True)
     p.add_argument("--runtime-manifest", type=Path)
+    p.add_argument("--runtime-backend", choices=("public", "private", "auto"), default="public",
+                   help="private/auto explicitly authorize experimental private API in a private-enabled build")
+    p.add_argument("--private-gpu-io", action="store_true", help="explicit private IOSurface GPU transfer experiment; verifies actual I/O receipt")
+    p.add_argument("--private-data-path", choices=("fp16", "w8a8"), default="fp16",
+                   help="private runtime representation; W8A8 requires private backend and GPU I/O")
+    p.add_argument("--private-channels", type=int, default=0,
+                   help="0: row split; positive 512-aligned ANE intermediate channels with W8A8; all tokens use that split")
+    p.add_argument("--private-prefetch", choices=("0","1"), default="0",
+                   help="private W8 future-bank staging ablation; source-matched activation/reuse fences remain checked")
+    p.add_argument("--private-scale-cache",choices=("0","1"),default="1",
+                   help="private W8 compact immutable-generation row-scale cache ablation")
+    p.add_argument("--private-launch-fence",choices=("0","1"),default="0",
+                   help="wait for first ANE request/ready-producer submission before the GPU branch, not completed ANE output")
+    p.add_argument("--private-a8-lookahead",choices=("0","1"),default="0",
+                   help="bounded two-slot A8 staging: prepare next row chunk while current ANE request runs")
+    p.add_argument("--private-stage-specialize",choices=("0","1"),default="0",
+                   help="format/dtype/H-block Metal function-constant specialization; same weights/recipe")
     p.add_argument("--qkv-manifest", type=Path,
                    help="Qwen base-only Q/K/V MatMul runtime graph; separate from FFN runtime")
     p.add_argument("--frozen-manifest", type=Path)
@@ -109,6 +127,8 @@ def main():
     p.add_argument("--profile", action="store_true")
     p.add_argument("--sample-memory", action="store_true",
                    help="independent per-trial process-tree sampling on every route")
+    p.add_argument("--observe-load", action="store_true",
+                   help="continuous competing-process CPU checks on every route; incomplete/contaminated runs rejected")
     p.add_argument("--memory-interval-ms", type=int, default=100)
     p.add_argument("--memory-max-gap-ms", type=int, default=500)
     p.add_argument("--lora", type=Path, help="optional inference-time adapter; never merged into weights")
@@ -134,6 +154,17 @@ def main():
     routes = args.routes.split(",")
     if not routes or any(route not in ("gpu", "runtime", "qkv", "frozen") for route in routes):
         p.error("routes must be comma-separated gpu,runtime,qkv,frozen")
+    if args.runtime_backend != "public" and "runtime" not in routes:
+        p.error("runtime backend selection requires runtime route")
+    if args.private_gpu_io and (args.runtime_backend == "public" or "runtime" not in routes):
+        p.error("private GPU I/O requires an explicitly private/auto runtime route")
+    if args.private_data_path == "w8a8" and (args.runtime_backend != "private" or not args.private_gpu_io):
+        p.error("W8A8 requires --runtime-backend private --private-gpu-io")
+    full_width = 12288 if args.model_id == "qwen-image-2.1" else 10240
+    if args.private_channels < 0 or (args.private_channels and
+            (args.private_channels % 512 or args.private_channels >= full_width or args.private_data_path != "w8a8" or
+             args.chunks not in ("auto","0","1"))):
+        p.error("private channels require W8A8, a positive 512 multiple below FFN width and chunks=auto,0,1")
     if "qkv" in routes and (args.model_id != "qwen-image-2.1" or args.lora or args.reference or
                              args.qkv_chunks == "0"):
         p.error("qkv screen requires Qwen base generation and positive or auto QKV chunks")
@@ -168,8 +199,18 @@ def main():
     summary = {"status": "incomplete", "model": args.model_id, "size": args.size, "steps": args.steps,
                "prompt": args.prompt, "seed": args.seed,
                "routes": routes, "chunks": args.chunks, "qkv_chunks": args.qkv_chunks,
+               "runtime_backend_preference": args.runtime_backend,
+               "private_gpu_io": args.private_gpu_io,
+               "private_data_path": args.private_data_path,
+               "private_channels": args.private_channels,
+               "private_prefetch": args.private_prefetch,
+               "private_scale_cache": args.private_scale_cache,
+               "private_launch_fence": args.private_launch_fence,
+               "private_a8_lookahead": args.private_a8_lookahead,
+               "private_stage_specialize": args.private_stage_specialize,
                "placement": "unknown",
                "profile": args.profile, "warm_repeats": args.warm_repeats,
+               "continuous_load_observation": args.observe_load,
                "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request",
                "library_sha256": sha256_file(library),
                "trials": []}
@@ -229,6 +270,18 @@ def main():
         route_env.update(reference_environment(route, edit, bool(args.lora)))
         if route == "runtime":
             route_env["TURBOCIDER_RUNTIME_ANE_CHUNKS"] = args.chunks
+            route_env["TURBOCIDER_ANE_BACKEND"] = args.runtime_backend
+            if args.runtime_backend != "public":
+                route_env["TURBOCIDER_ALLOW_PRIVATE_ANE"] = "1"
+                route_env["TURBOCIDER_PRIVATE_ANE_DATA_PATH"] = args.private_data_path
+                route_env["TURBOCIDER_PRIVATE_ANE_CHANNELS"] = str(args.private_channels)
+                route_env["TURBOCIDER_PRIVATE_ANE_PREFETCH"] = args.private_prefetch
+                route_env["TURBOCIDER_PRIVATE_ANE_SCALE_CACHE"] = args.private_scale_cache
+                route_env["TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE"] = args.private_launch_fence
+                route_env["TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD"] = args.private_a8_lookahead
+                route_env["TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE"] = args.private_stage_specialize
+            if args.private_gpu_io:
+                route_env["TURBOCIDER_PRIVATE_ANE_GPU_IO"] = "1"
             if args.profile:
                 route_env["TURBOCIDER_RUNTIME_ANE_PROFILE"] = "1"
         if route == "qkv":
@@ -239,6 +292,7 @@ def main():
         print(json.dumps({"starting": route, "trial": trial}), flush=True)
         memory_before = system_memory()
         sampled_memory = None
+        observed_load = LoadObservation(args.output / f"{trial}-{route}-load.jsonl") if args.observe_load else None
         command = [str(cli), "batch", str(args.model.resolve()), *(str(path) for path in requests)]
         with (args.output / f"{trial}-{route}.stdout.jsonl").open("w") as stdout, \
              (args.output / f"{trial}-{route}.stderr.txt").open("w") as stderr:
@@ -246,15 +300,37 @@ def main():
                 sampled_memory = run_sampled(
                     command, repo=ROOT, output=args.output, stem=f"{trial}-{route}",
                     env=route_env, stdout=stdout, stderr=stderr, timeout=args.timeout,
-                    interval_ms=args.memory_interval_ms, max_gap_ms=args.memory_max_gap_ms)
+                    interval_ms=args.memory_interval_ms, max_gap_ms=args.memory_max_gap_ms, observer=observed_load)
             else:
-                result = subprocess.run(command, cwd=ROOT, env=route_env, stdout=stdout,
-                                        stderr=stderr, timeout=args.timeout)
+                result = run_owned(command, cwd=ROOT, env=route_env, stdout=stdout,
+                                   stderr=stderr, timeout=args.timeout, observer=observed_load)
                 if result.returncode:
                     raise RuntimeError(f"{route} failed ({result.returncode}); inspect saved stderr")
         check_references(edit, references)
+        load_receipt = observed_load.verify() if observed_load else None
         rows = [json.loads(line) for line in (args.output / f"{trial}-{route}.stdout.jsonl").read_text().splitlines()]
-        validate_results(rows, route, len(requests), args.model_id, bool(args.lora))
+        validate_results(rows, route, len(requests), args.model_id, bool(args.lora), args.runtime_backend, args.private_gpu_io,
+                         "w8a8_hadamard" if args.private_data_path == "w8a8" else None)
+        if route == "runtime" and args.private_channels:
+            for row in rows:
+                receipt = row["hybrid"]["runtime_weight"]
+                if (receipt.get("partition_axis") != "intermediate_channels" or
+                        receipt.get("ane_channels") != args.private_channels or
+                        receipt.get("gpu_channels") != full_width-args.private_channels):
+                    raise ValueError("requested physical channel partition was not reported")
+        if route == "runtime" and args.private_data_path=="w8a8":
+            for row in rows:
+                receipt=row["hybrid"]["runtime_weight"]
+                if receipt.get("prefetch_enabled") is not (args.private_prefetch=="1"):
+                    raise ValueError("requested W8 future-bank prefetch policy was not reported")
+                if receipt.get("scale_cache_enabled") is not (args.private_scale_cache=="1"):
+                    raise ValueError("requested W8 scale-cache policy was not reported")
+                if receipt.get("launch_fence_enabled") is not (args.private_launch_fence=="1"):
+                    raise ValueError("requested first-submission policy was not reported")
+                if receipt.get("a8_lookahead_enabled") is not (args.private_a8_lookahead=="1"):
+                    raise ValueError("requested bounded A8 lookahead policy was not reported")
+                if receipt.get("stage_specialized") is not (args.private_stage_specialize=="1"):
+                    raise ValueError("requested W8 pipeline specialization was not reported")
         if args.model_id == "qwen-image-2.1":
             validate_qwen_qk_receipts(rows, args.qwen_qk_norm_rope)
         if args.model_id == "qwen-image-2.1" and args.lora:
@@ -271,8 +347,17 @@ def main():
                   "hybrid": rows[-1].get("hybrid"), "qkv": rows[-1].get("qkv"),
                   "memory": rows[-1].get("memory"),
                   "system_memory_before": memory_before, "system_memory_after": system_memory()}
+        if route == "runtime":
+            # Auto may validly decline every warm block after its cold probe.
+            # Make that visible: a private session label with zero new calls
+            # must not be mistaken for steady W8A8 acceleration evidence.
+            cumulative = [row["hybrid"]["runtime_calls_session_total"] for row in rows]
+            record["runtime_calls_per_request"] = [current - prior for current, prior in
+                                                   zip(cumulative, [0, *cumulative[:-1]])]
         if sampled_memory is not None:
             record["sampled_memory"] = sampled_memory
+        if load_receipt is not None:
+            record["load_observation"] = load_receipt
         summary["trials"].append(record)
         (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
         print(json.dumps(record), flush=True)

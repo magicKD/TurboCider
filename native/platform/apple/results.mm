@@ -41,6 +41,15 @@ static NSString *gpu_graph_label(const Request &r) {
                                        : @"compiled_single_blocks";
 }
 static NSString *gpu_graph_label(const RunResult &result) {
+    if (result.request.hybrid_mlp_mode == "runtime" && result.hybrid) {
+        const auto &m = *result.hybrid;
+        if (m.runtime_weight_backend.empty()) {
+            Request gpu = result.request;gpu.execution="gpu";gpu.hybrid_mlp_mode="auto";
+            return gpu_graph_label(gpu);
+        }
+        if (m.runtime_weight_partition_axis == "intermediate_channels")
+            return @"runtime_weight_intermediate_channel_ffn";
+    }
     if (result.request.model == "minimax-h3-vdn")
         return @"h3_vdn_int6_window_delta";
     if (result.backend == "mlx_cpp_metal" &&
@@ -821,7 +830,9 @@ static NSDictionary *runtime_plan(const RunResult &result) {
     if (!result.precision.empty())
         plan[@"precision"] = @(result.precision.c_str());
     plan[@"gpu_graph"] = gpu_graph_label(result);
-    const bool hybrid = result.request.execution == "gpu_ane";
+    const bool runtime_unselected = result.request.hybrid_mlp_mode == "runtime" && result.hybrid &&
+        result.hybrid->runtime_weight_backend.empty();
+    const bool hybrid = result.request.execution == "gpu_ane" && !runtime_unselected;
     const bool encoder_hybrid = result.encoder_hybrid.has_value();
     plan[@"execution"] = hybrid ? @"gpu_ane_experimental" : @"gpu";
     plan[@"encoder_execution"] = encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
@@ -857,6 +868,28 @@ static NSDictionary *runtime_plan(const RunResult &result) {
             [approximations addObject:encoder_approximation_label(result.request)];
         plan[@"algorithm_approximations"] = approximations;
     }
+    if (result.request.hybrid_mlp_mode == "runtime" && result.hybrid) {
+        const auto &m = *result.hybrid;
+        NSMutableArray *approximations = [plan[@"algorithm_approximations"] mutableCopy];
+        [approximations removeObject:@"runtime_weight_fp16_token_row_ffn"];
+        // The runtime graph's actual representation/axis, not environment
+        // intent. Auto->Core ML fallback must not retain a W8/channel label.
+        [approximations removeObject:@"single_block_mlp_coreml_approximation"];
+        if (!m.runtime_weight_backend.empty()) {
+            const bool channels = m.runtime_weight_partition_axis == "intermediate_channels";
+            const bool w8 = m.runtime_weight_data_path == "w8a8_hadamard";
+            [approximations addObject:w8 ?
+                (channels ? @"runtime_weight_w8a8_hadamard_channel_ffn" : @"runtime_weight_w8a8_hadamard_token_row_ffn") :
+                (channels ? @"runtime_weight_fp16_channel_ffn" : @"runtime_weight_fp16_token_row_ffn")];
+        }
+        plan[@"algorithm_approximations"] = approximations;
+        plan[@"runtime_weight_contract"] = @{
+            @"executor_backend": m.runtime_weight_backend.empty() ? (id)NSNull.null : @(m.runtime_weight_backend.c_str()),
+            @"data_path": @(m.runtime_weight_data_path.c_str()),
+            @"partition_axis": @(m.runtime_weight_partition_axis.c_str()),
+            @"source": @"selected_executor_receipt_not_environment_or_physical_placement",
+        };
+    }
     if (result.streaming_runtime) {
         NSDictionary *actual = actual_streaming_layout(
             *result.streaming_runtime);
@@ -889,8 +922,39 @@ NSDictionary *to_dictionary(const LoadResult &r) {
     };
 }
 NSDictionary *to_dictionary(const HybridMetrics &m) {
+    // Runtime provenance/counters belong to the graph contract, not a
+    // particular precision label. W8A8 and FP16 share the same receipt.
+    const bool runtime_weight = m.mlp_output_kind == "runtime_weight_swiglu" ||
+                                m.mlp_output_kind == "runtime_weight_swiglu_lora_inputs";
     return @{
-        @"runtime_weight" : m.weight_variant == "runtime_fp16" ? @{
+        @"runtime_weight" : runtime_weight ? @{
+            @"executor_backend" : m.runtime_weight_backend.empty() ? [NSNull null] : @(m.runtime_weight_backend.c_str()),
+            @"backend_fallback_reason" : @(m.runtime_weight_backend_fallback_reason.c_str()),
+            @"io_path" : @(m.runtime_weight_io_path.c_str()),
+            @"data_path" : @(m.runtime_weight_data_path.c_str()),
+            @"partition_axis" : @(m.runtime_weight_partition_axis.c_str()),
+            @"ane_channels" : @(m.runtime_weight_ane_channels),
+            @"gpu_channels" : @(m.runtime_weight_gpu_channels),
+            @"channel_blocks_session_total" : @(m.runtime_weight_channel_blocks),
+            @"prefetch_enabled" : @(m.runtime_weight_prefetch_enabled),
+            @"prefetch_submissions_session_total" : @(m.runtime_weight_prefetch_submissions),
+            @"prefetch_hits_session_total" : @(m.runtime_weight_prefetch_hits),
+            @"prefetch_discards_session_total" : @(m.runtime_weight_prefetch_discards),
+            @"prefetch_failures_session_total" : @(m.runtime_weight_prefetch_failures),
+            @"prefetch_wait_seconds_session_total" : @(m.runtime_weight_prefetch_wait_seconds),
+            @"scale_cache_enabled" : @(m.runtime_weight_scale_cache_enabled),
+            @"stage_specialized" : @(m.runtime_weight_stage_specialized),
+            @"stage_pipeline_variants" : @(m.runtime_weight_stage_pipeline_variants),
+            @"launch_fence_enabled" : @(m.runtime_weight_launch_fence_enabled),
+            @"a8_lookahead_enabled" : @(m.runtime_weight_a8_lookahead_enabled),
+            @"a8_prefetches_session_total" : @(m.runtime_weight_a8_prefetches),
+            @"a8_wait_seconds_session_total" : @(m.runtime_weight_a8_wait_seconds),
+            @"scale_cache_hits_session_total" : @(m.runtime_weight_scale_cache_hits),
+            @"scale_cache_misses_session_total" : @(m.runtime_weight_scale_cache_misses),
+            @"scale_cache_entries" : @(m.runtime_weight_scale_cache_entries),
+            @"scale_cache_bytes" : @(m.runtime_weight_scale_cache_bytes),
+            @"scale_cache_evictions_session_total" : @(m.runtime_weight_scale_cache_evictions),
+            @"device_io_calls_session_total" : @(m.runtime_weight_device_io_calls),
             @"slot_bytes" : @(m.runtime_weight_slot_bytes),
             @"estimated_bytes" : @(m.runtime_weight_estimated_bytes),
             @"hybrid_blocks_session_total" : @(m.runtime_weight_hybrid_blocks),
@@ -953,7 +1017,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"ane_mlp_range" : @[ @(m.ane_mlp_start), @(m.ane_mlp_end) ],
         @"output_scale" : @(m.output_scale),
         @"qualified_flexible_backing" : @(m.qualified_flexible_backing),
-        @"compute_units" : @"cpuAndNeuralEngine",
+        @"compute_units" : m.runtime_weight_backend == "private_ane" ? @"not_applicable_private_ane_client" : @"cpuAndNeuralEngine",
         @"observed_ane_residency" : @"unknown",
         @"output_copy_bytes_session_total" : @(m.copied_bytes),
         @"checkpoint_sha256_verified" : @(m.checkpoint_sha_verified),
@@ -972,7 +1036,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"prefill_padding_tokens" : @(m.prefill_padding_tokens),
         @"prefill_fixed_shape" : @(m.prefill_fixed_shape),
         @"prefill_plan_reason" : @(m.prefill_plan_reason.c_str()),
-        @"provenance" : m.weight_variant == "runtime_fp16"
+        @"provenance" : runtime_weight
             ? @"checkpoint-independent graph receipt; weights supplied by the loaded model at runtime"
             : m.checkpoint_sha_verified
             ? @"local checkpoint path, size and SHA-256 verified"
