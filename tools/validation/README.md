@@ -16,6 +16,19 @@
 
 新增验证工具应直接复用 `runtime_ane_common`，不要从screen导入runner逻辑。
 screen现有helper重导出和switch兼容接口保留，避免破坏已保存的复核脚本。
+Private W8A8 初筛使用 `--runtime-backend private --private-gpu-io
+--private-data-path w8a8`；tool 明确设置已清理的私有环境，并校验实际
+data-path 和所有 prediction 的 device I/O 回执。runtime 每请求调用增量
+另存为 `runtime_calls_per_request`；auto 的热态零调用不是 ANE 加速资格。
+Private/纯 GPU 的库、工作负载和 Q/K/LoRA 精度仍必须相同。
+`--private-a8-lookahead 0|1` 独立控制 chunk-sized A8 双槽，默认关闭。
+多块序列校验累计 producer 数、等待 span 与 policy 一致；单块无 future
+producer，不能把其它优化的收益算作 A8 pipeline 收益。详见
+[A8 接续](../../docs/status/private-ane-a8-lookahead-2026-10-04.md)。
+`--private-stage-specialize 0|1` 消融 Metal format/dtype/block function
+constants；默认0、同库测量，不改变 recipe 或原始 weight layout。
+`--observe-load` 连续记录 CPU 负载并排除 owned launch tree，检测到竞争或
+观察不完整就保留 raw output、拒绝比较；不是实际 GPU/ANE 独占证明。
 placement保留历史文件名和冻结图 `--blocks` 接口；runtime只有一个共享图，
 不是每层一个图，且不接受 `--blocks`。不要仅为命名统一移动这些入口。
 

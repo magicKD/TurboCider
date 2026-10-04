@@ -3,12 +3,6 @@
 `native/core/gguf_decode.cpp` adapts scalar decoding expressions and block layouts from
 `ggml/src/ggml-quants.c` and `ggml/src/ggml-common.h` in ggml-org/llama.cpp,
 commit `64e9bceb2c3a856efed96feda784a50947049feb`. No inference engine is linked.
-`native/backends/private/ane_w8_kernels.hpp` also adapts these pinned
-Q4_0/Q4_K/Q8_0/Q6_K layouts and expressions for GPU decode+rotation staging
-(2026-10-03). The upstream MIT notice below applies to these adaptations.
-`native/backends/private/ane_w8_kernels.hpp` also adapts these pinned
-Q4_0/Q4_K/Q8_0/Q6_K layouts and expressions for GPU decode+rotation staging
-(2026-10-03). The upstream MIT notice below applies to these adaptations.
 `native/backends/private/ane_w8_kernels.hpp` additionally adapts the same pinned
 Q4_0/Q4_K/Q8_0/Q6_K layouts and expressions for checked GPU decode+rotation
 staging (2026-10-03). The GPU source retains original physical row addressing;

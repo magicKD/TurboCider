@@ -1,0 +1,389 @@
+{
+  "schema": "tc-private-ane-fp16-foundation-pilot-v1",
+  "date": "2026-10-03",
+  "hardware": "Apple M4 Max 64GB",
+  "objective_complete": false,
+  "production_qualified": false,
+  "data_path": "private_fp16_native_mil_host_bridged",
+  "private_w8a8_implemented": false,
+  "gpu_weight_staging_implemented": false,
+  "double_buffer_implemented": false,
+  "measured_scope": "one prompt/seed; each arm one cold then one hot; request_wall includes VAE/PNG; no formal speed qualification",
+  "public_only_library_sha256": "eb8b0eb8f57ca2bd7cace46dd3731b84cb4b99e23662f36c349570f969cd98c7",
+  "public_private_selectors_observed": [],
+  "cases": [
+    {
+      "case": "z512",
+      "model": "z-image-turbo",
+      "size": 512,
+      "steps": 8,
+      "seed": 42,
+      "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+      "measured_hot_samples_per_arm": 1,
+      "order": "gpu,private",
+      "reversed_order_verified": false,
+      "library_sha256": "7a2f9895d82fb7e654e8d5db94d5a774f6a6b77ee7c90bb2afbbab8f8b23c70c",
+      "qk_norm_rope": false,
+      "chunk_policy": "auto",
+      "raw_screen_status": "complete",
+      "gpu_request_wall_seconds": [
+        7.581612041,
+        6.99024525
+      ],
+      "private_request_wall_seconds": [
+        8.621773125,
+        6.991197666
+      ],
+      "pilot_hot_speedup": 0.9998637692645094,
+      "meets_1_2_pilot": false,
+      "runtime_session_calls": [
+        68,
+        68
+      ],
+      "private_calls_in_hot_request": 0,
+      "hybrid_blocks_in_hot_request": 0,
+      "runtime_failed": false,
+      "fallback_blocks": 0,
+      "headroom": 16,
+      "slot_bytes": 241336320,
+      "estimated_bytes": 571473920,
+      "whole_request_memory_certified": false,
+      "placement_trace": "not_collected",
+      "media_holdout_qualified": false,
+      "receipts": [
+        {
+          "file": "outputs/private-ane-z512-headroom-screen-20261003/summary.json",
+          "sha256": "536325f09f0c1bafc809ba9da932ba32b031091b05b6749883db6cebf6988e83"
+        },
+        {
+          "file": "outputs/private-ane-z512-headroom-screen-20261003/0-gpu.stdout.jsonl",
+          "sha256": "e95a3f38f5fdd62d831e4a239648346b1878cf4265dbd5de9d1ca7709f272a41"
+        },
+        {
+          "file": "outputs/private-ane-z512-headroom-screen-20261003/1-runtime.stdout.jsonl",
+          "sha256": "d7aca8c78ece3aa7ecd066f3b86002e76e718b3e2ef5cc67cf0629133f6cd1d4"
+        },
+        {
+          "file": "outputs/private-ane-z512-headroom-screen-20261003/0-gpu-1.png",
+          "sha256": "f872c1ad9beb5cea4e4a6d5fd691e65b07799d40700ecb0f71658f7223f14e18"
+        },
+        {
+          "file": "outputs/private-ane-z512-headroom-screen-20261003/1-runtime-1.png",
+          "sha256": "f872c1ad9beb5cea4e4a6d5fd691e65b07799d40700ecb0f71658f7223f14e18"
+        }
+      ]
+    },
+    {
+      "case": "z1024",
+      "model": "z-image-turbo",
+      "size": 1024,
+      "steps": 8,
+      "seed": 42,
+      "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+      "measured_hot_samples_per_arm": 1,
+      "order": "gpu,private",
+      "reversed_order_verified": false,
+      "library_sha256": "7a2f9895d82fb7e654e8d5db94d5a774f6a6b77ee7c90bb2afbbab8f8b23c70c",
+      "qk_norm_rope": false,
+      "chunk_policy": "auto",
+      "raw_screen_status": "complete",
+      "gpu_request_wall_seconds": [
+        31.992723459,
+        31.243714833
+      ],
+      "private_request_wall_seconds": [
+        36.112003792,
+        30.383426833
+      ],
+      "pilot_hot_speedup": 1.028314383519953,
+      "meets_1_2_pilot": false,
+      "runtime_session_calls": [
+        192,
+        440
+      ],
+      "private_calls_in_hot_request": 248,
+      "hybrid_blocks_in_hot_request": 248,
+      "runtime_failed": false,
+      "fallback_blocks": 0,
+      "headroom": 64,
+      "slot_bytes": 246743040,
+      "estimated_bytes": 603914240,
+      "whole_request_memory_certified": false,
+      "placement_trace": "not_collected",
+      "media_holdout_qualified": false,
+      "receipts": [
+        {
+          "file": "outputs/private-ane-z1024-headroom-screen-20261003/summary.json",
+          "sha256": "eb4a0fa70778c884381315b4c0d018c3fe5eb367ca3b1d7c0af3fa6ad16fb20b"
+        },
+        {
+          "file": "outputs/private-ane-z1024-headroom-screen-20261003/0-gpu.stdout.jsonl",
+          "sha256": "e079671bf4594ada7189297ea13feeb69b977d8050bb31d878c169837d452521"
+        },
+        {
+          "file": "outputs/private-ane-z1024-headroom-screen-20261003/1-runtime.stdout.jsonl",
+          "sha256": "e3ac608defc68bfd5d131a29d6e4ba037b4ac1b4ab9b39e10cf70bd655c879c5"
+        },
+        {
+          "file": "outputs/private-ane-z1024-headroom-screen-20261003/0-gpu-1.png",
+          "sha256": "3846868cf4197ba1b66a2b8740e591b0f1400865d74a0f7b3fec60a107c6bd6e"
+        },
+        {
+          "file": "outputs/private-ane-z1024-headroom-screen-20261003/1-runtime-1.png",
+          "sha256": "608af7e7278a3fa5f4d47f4c11b4bac53bd3fa480dd62d9b9e777b69c715ab38"
+        }
+      ]
+    },
+    {
+      "case": "qwen512",
+      "model": "qwen-image-2.1",
+      "size": 512,
+      "steps": 40,
+      "seed": 42,
+      "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+      "measured_hot_samples_per_arm": 1,
+      "order": "gpu,private",
+      "reversed_order_verified": false,
+      "library_sha256": "7a2f9895d82fb7e654e8d5db94d5a774f6a6b77ee7c90bb2afbbab8f8b23c70c",
+      "qk_norm_rope": true,
+      "chunk_policy": "auto",
+      "raw_screen_status": "complete",
+      "gpu_request_wall_seconds": [
+        46.885828458,
+        41.688283584
+      ],
+      "private_request_wall_seconds": [
+        46.570079042,
+        42.169277291
+      ],
+      "pilot_hot_speedup": 0.9885937408013711,
+      "meets_1_2_pilot": false,
+      "runtime_session_calls": [
+        128,
+        192
+      ],
+      "private_calls_in_hot_request": 64,
+      "hybrid_blocks_in_hot_request": 64,
+      "runtime_failed": false,
+      "fallback_blocks": 0,
+      "headroom": 1,
+      "slot_bytes": 307232768,
+      "estimated_bytes": 705232896,
+      "whole_request_memory_certified": false,
+      "placement_trace": "not_collected",
+      "media_holdout_qualified": false,
+      "receipts": [
+        {
+          "file": "outputs/private-ane-qwen512-headroom-screen-20261003/summary.json",
+          "sha256": "397f968562038b3bfa7978dd43bbe9df5d82d6dda8342a6a4284f4643c335a7a"
+        },
+        {
+          "file": "outputs/private-ane-qwen512-headroom-screen-20261003/0-gpu.stdout.jsonl",
+          "sha256": "ee98b27ec9b445e8c1d053ddb9153cab34b9fa94d8f85eed26d2cb5642ce3117"
+        },
+        {
+          "file": "outputs/private-ane-qwen512-headroom-screen-20261003/1-runtime.stdout.jsonl",
+          "sha256": "68ea40fa424cddec661938d904d2f36c86b3419734ab74bb301ec76ebdc31ba7"
+        },
+        {
+          "file": "outputs/private-ane-qwen512-headroom-screen-20261003/0-gpu-1.png",
+          "sha256": "69030b02825ce0d46b334fb875eeae8737e06be0e366c8030ca8f5a2cbf9823c"
+        },
+        {
+          "file": "outputs/private-ane-qwen512-headroom-screen-20261003/1-runtime-1.png",
+          "sha256": "7458521106715fa259ee90b7a727811018ce0a19039c8989f47ccec765d6950c"
+        }
+      ]
+    },
+    {
+      "case": "qwen1024",
+      "model": "qwen-image-2.1",
+      "size": 1024,
+      "steps": 40,
+      "seed": 42,
+      "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+      "measured_hot_samples_per_arm": 1,
+      "order": "gpu,private",
+      "reversed_order_verified": false,
+      "library_sha256": "7a2f9895d82fb7e654e8d5db94d5a774f6a6b77ee7c90bb2afbbab8f8b23c70c",
+      "qk_norm_rope": true,
+      "chunk_policy": "auto",
+      "raw_screen_status": "complete",
+      "gpu_request_wall_seconds": [
+        184.294356666,
+        183.150991375
+      ],
+      "private_request_wall_seconds": [
+        194.301545833,
+        184.314913458
+      ],
+      "pilot_hot_speedup": 0.9936851442937349,
+      "meets_1_2_pilot": false,
+      "runtime_session_calls": [
+        128,
+        192
+      ],
+      "private_calls_in_hot_request": 64,
+      "hybrid_blocks_in_hot_request": 64,
+      "runtime_failed": false,
+      "fallback_blocks": 0,
+      "headroom": 1,
+      "slot_bytes": 331350016,
+      "estimated_bytes": 861995008,
+      "whole_request_memory_certified": false,
+      "placement_trace": "not_collected",
+      "media_holdout_qualified": false,
+      "receipts": [
+        {
+          "file": "outputs/private-ane-qwen1024-headroom-screen-20261003/summary.json",
+          "sha256": "8217a08df0d44f9df59ce48d1aee1da1fbc67dddd2729c7280303e47b2075cfa"
+        },
+        {
+          "file": "outputs/private-ane-qwen1024-headroom-screen-20261003/0-gpu.stdout.jsonl",
+          "sha256": "c494c04780a11dc917e10dcd18f30c4e62c07caee3e66c6b17a79606f1cd6434"
+        },
+        {
+          "file": "outputs/private-ane-qwen1024-headroom-screen-20261003/1-runtime.stdout.jsonl",
+          "sha256": "f657ca84d2cff8514c859896f49661578e3ba4bb42bd685b6e830e3b2ec06f8c"
+        },
+        {
+          "file": "outputs/private-ane-qwen1024-headroom-screen-20261003/0-gpu-1.png",
+          "sha256": "0b52e030f84ef582dbb29c78f54bf3d70c52002504260b81efa74ff67bd89e80"
+        },
+        {
+          "file": "outputs/private-ane-qwen1024-headroom-screen-20261003/1-runtime-1.png",
+          "sha256": "34b97eacb6f858790931e44beb289e6848126fbf6743e823caa8689e207e0763"
+        }
+      ]
+    },
+    {
+      "case": "z512-lora",
+      "model": "z-image-turbo",
+      "size": 512,
+      "steps": 8,
+      "seed": 42,
+      "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+      "library_sha256": "7a2f9895d82fb7e654e8d5db94d5a774f6a6b77ee7c90bb2afbbab8f8b23c70c",
+      "lora": {
+        "sha256": "340cc573d887681b89a45d850af77db43fb82dd994872be5d0a9d48649eb91c8",
+        "strength": 1,
+        "strategy": "inference_time"
+      },
+      "measured_hot_samples_per_arm": 1,
+      "order": "gpu,private",
+      "reversed_order_verified": false,
+      "gpu_request_wall_seconds": [
+        11.817676458,
+        8.54118275
+      ],
+      "private_request_wall_seconds": [
+        14.368162583,
+        8.563518041
+      ],
+      "pilot_hot_speedup": 0.9973918089629679,
+      "meets_1_2_pilot": false,
+      "runtime_session_calls": [
+        68,
+        68
+      ],
+      "private_calls_in_hot_request": 0,
+      "hybrid_blocks_in_hot_request": 0,
+      "lora_applied_projections": [
+        238,
+        238
+      ],
+      "runtime_failed": false,
+      "fallback_blocks": 0,
+      "headroom": 16,
+      "media_holdout_qualified": false,
+      "whole_request_memory_certified": false,
+      "receipts": [
+        {
+          "file": "outputs/private-ane-z512-lora-first-screen-20261003/summary.json",
+          "sha256": "0883a8991eb3a0e4346d670c649ebe2b633a71961197113d95f1d55cf7212e50"
+        },
+        {
+          "file": "outputs/private-ane-z512-lora-first-screen-20261003/0-gpu.stdout.jsonl",
+          "sha256": "3a5074f610ab0828fce2383204f5b24dada124fc81a3fbfc0826d5ad16cc4438"
+        },
+        {
+          "file": "outputs/private-ane-z512-lora-first-screen-20261003/1-runtime.stdout.jsonl",
+          "sha256": "ed92b70a88abe34a9abf2373b9a219e29d96bb7249ba071fb747ea09bc3af9ef"
+        },
+        {
+          "file": "outputs/private-ane-z512-lora-first-screen-20261003/0-gpu-1.png",
+          "sha256": "a833054c008ccf9b2dda33469a52c4ef4da67c97ec9dd3c2bb5c817f1b83c6f3"
+        },
+        {
+          "file": "outputs/private-ane-z512-lora-first-screen-20261003/1-runtime-1.png",
+          "sha256": "a833054c008ccf9b2dda33469a52c4ef4da67c97ec9dd3c2bb5c817f1b83c6f3"
+        }
+      ]
+    },
+    {
+      "case": "qwen512-lora",
+      "model": "qwen-image-2.1",
+      "size": 512,
+      "steps": 6,
+      "seed": 42,
+      "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+      "library_sha256": "7a2f9895d82fb7e654e8d5db94d5a774f6a6b77ee7c90bb2afbbab8f8b23c70c",
+      "lora": {
+        "sha256": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
+        "strength": 1,
+        "strategy": "inference_time",
+        "rank_matmul_dtype": "fp32"
+      },
+      "measured_hot_samples_per_arm": 1,
+      "order": "gpu,private",
+      "reversed_order_verified": false,
+      "gpu_request_wall_seconds": [
+        13.748821458,
+        8.145099875
+      ],
+      "private_request_wall_seconds": [
+        17.138148125,
+        9.813386334
+      ],
+      "pilot_hot_speedup": 0.8299989012742764,
+      "meets_1_2_pilot": false,
+      "runtime_session_calls": [
+        96,
+        128
+      ],
+      "private_calls_in_hot_request": 32,
+      "hybrid_blocks_in_hot_request": 32,
+      "lora_applied_projections": [
+        227,
+        227
+      ],
+      "runtime_failed": false,
+      "fallback_blocks": 0,
+      "headroom": 1,
+      "media_holdout_qualified": false,
+      "whole_request_memory_certified": false,
+      "receipts": [
+        {
+          "file": "outputs/private-ane-qwen512-lora-first-screen-20261003/summary.json",
+          "sha256": "d747c52d63e1602a4bb119e6391abad85a0ef561e7f558c981cc2afa88c5558b"
+        },
+        {
+          "file": "outputs/private-ane-qwen512-lora-first-screen-20261003/0-gpu.stdout.jsonl",
+          "sha256": "343de3d3dd0d709d3d1a97761878082bb40a444594b46b2754e0333328606656"
+        },
+        {
+          "file": "outputs/private-ane-qwen512-lora-first-screen-20261003/1-runtime.stdout.jsonl",
+          "sha256": "30baa9046c764f9c2bddbc1cbbbb0db4720d75f15cd72af436b9a6fbe8835d01"
+        },
+        {
+          "file": "outputs/private-ane-qwen512-lora-first-screen-20261003/0-gpu-1.png",
+          "sha256": "3d5698155f623b59d7268d93800d5185a928410e04c3ea5402adcd6342601834"
+        },
+        {
+          "file": "outputs/private-ane-qwen512-lora-first-screen-20261003/1-runtime-1.png",
+          "sha256": "dab80775cfd5b7abee938330973da98f8889f7c673413e8acc3a4a64a014c14d"
+        }
+      ]
+    }
+  ]
+}

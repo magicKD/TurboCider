@@ -1,6 +1,24 @@
 # GPU/ANE 后端维护说明
 
 本页说明代码职责与不可破坏的边界，不维护另一套跑分。
+双后端共用 Executor/graph/source/scheduler 合同，Public Core ML 仍是默认；
+Private client 动态加载，仅显式启用的 private build 包含私有 API。
+[W8A8 Executor](../../docs/status/private-ane-w8-executor-2026-10-03.md) 已接
+GPU dense/affine/raw-GGUF decode + Hadamard staging、完整 SwiGLU、LoRA
+hidden ABI 和恰好两套权重银行；[channel split](../../docs/status/private-ane-channel-split-2026-10-03.md)
+与[layer-ahead prefetch](../../docs/status/private-ane-prefetch-2026-10-03.md)也已实现。
+[compact scale cache 与首次提交 ordering](../../docs/status/private-ane-scale-cache-2026-10-04.md)
+保留 immutable generation、实际 pitch 与完整 GPU 失败重算边界。
+实现存在不等于资格通过：四格 ≥1.2×、完整 LoRA/画质、实际 device overlap、
+带宽校准与低内存资格仍未完成；不声称已观察到硬件 INT8 MAC。
+有界 A8 双槽、只读符号 metadata 与最新 share/LoRA 初筛见
+[A8 接续](../../docs/status/private-ane-a8-lookahead-2026-10-04.md)。稳定
+App package 检查 manifest flags、实际 private class strings 和 private
+framework link，拒绝 private research build；Public 默认与可分发边界不变。
+较大固定 bucket 与加载失败的真实 GPU label 见
+[1024² 接续](../../docs/status/private-ane-large-bucket-2026-10-04.md)。
+W8 staging 的 bounded function-constant variants 与同库开关见
+[专用化接续](../../docs/status/private-ane-stage-specialization-2026-10-04.md)。
 选路、性能、optional 开关及未完成项统一见
 [加速维护入口](../../docs/status/acceleration.md)；调用方式见
 [CLI 文档](../../docs/public/USAGE.md)。
@@ -11,9 +29,12 @@
 | --- | --- | --- |
 | 模型计算 | `../models/qwen21/`、`../models/z_image/` | 完整 GPU block、模型自己的 LoRA 修正与残差；不在通用后端复制模型实现 |
 | 冻结图桥接 | `coreml.mm`、模型 hybrid 实现 | 保留已测最快 base 图和独立的 base-only `lora_fused` 图；两类 manifest 不混用 |
-| FFN 编排 | `ane_ffn.hpp`、`ane_ffn.cpp` | token-row 分区、staging/输入就绪、GPU head 与 Core ML tail、输出所有权、失败后完整 GPU 重算 |
+| 共用执行器/选路 | `ane_runtime.hpp::Executor`、`ane_backend.{hpp,mm}` | 统一 shape/WeightView/LoRA/lifetime 合同；Public 默认，显式 Private 自测与 auto 失败回退 |
+| FFN 编排 | `ane_ffn.hpp`、`ane_ffn.cpp` | row/channel 分区、staging/输入就绪、future source callback、GPU/ANE 分支、一次 full-hidden down-LoRA、输出所有权、失败后完整 GPU 重算 |
 | 调度 | `ane_scheduler.hpp` | 按 layer/rows 采样完整 block，调整 chunks、周期复测；adapter 切换重置状态 |
 | Core ML 执行 | `ane_runtime.hpp`、`ane_runtime.mm` | 单个固定形状 runtime-weight 图、单层 slots、持久 worker、逐 chunk 执行与有限性检查 |
+| Private 基础执行 | `private/ane_{program,mil,executor}.*` | 动态 client、原生 FP16 MIL、对齐 surfaces、shared events/async owners、up-only headroom；非 W8A8/双缓冲资格 |
+| Private W8A8 | `private/ane_w8_executor.*`、`private/ane_w8_kernels.hpp`、`ane_w8a8_math.hpp` | GPU dense/affine/GGUF decode + H128/H512、row/channel、两套 W bank、有界 A8 双槽、ANE hidden rotation/quantization、GPU FP32 epilogue；prefetch 的两种机制可独立消融，不以 hits 推断收益 |
 | QKV 研究路由 | `ane_qkv.hpp`、`ane_qkv.cpp`、`ane_qkv_scheduler.hpp` | Qwen 1024² base 三份独立 Q/K/V 权重直填单一 MatMul 图；GPU 保留 norm/RoPE/attention/FFN，单独计数与失败重算 |
 | 可选内存准入 | `ane_memory.hpp`、`ane_memory.cpp` | 图加载前、resident 请求与 host scratch 扩容前的机会性余量检查；压力不足安全释放并回 GPU，非内存认证 |
 | 数据转换 | `ane_runtime_convert.hpp`、`ane_runtime_quant.hpp` | dense/affine SIMD staging、dtype/headroom 处理；不是 INT8 ANE 算术 |
