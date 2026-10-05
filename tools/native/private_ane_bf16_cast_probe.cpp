@@ -9,7 +9,10 @@
 using namespace tc::ane;
 using namespace tc::ane::private_api;
 int main(int argc,char **argv) {
-    if(argc!=2)return 2;
+    if(argc!=2 && argc!=3)return 2;
+    const bool parity=argc==3 && std::string(argv[2])=="split-rne";
+    const bool split=parity || (argc==3 && std::string(argv[2])=="split-powers");
+    if(argc==3 && !split)return 2;
     try {
         Device device;
         Surface x(device,1,256,Element::FP16),y(device,1,256,Element::FP16);
@@ -42,7 +45,7 @@ int main(int argc,char **argv) {
                 if(dtype=="fp16" || !Program::healthy())return 1;
             }
         }
-        if(!probe_bf16_emulation(device,std::filesystem::path(argv[1]),timeline))return 1;
+        if(!probe_bf16_emulation(device,std::filesystem::path(argv[1]),timeline,split,parity))return 1;
         std::cout<<"scope=actual compiler/driver capability, not native BF16 arithmetic, a model route or performance claim\n";
     } catch(const std::exception &e) {std::cerr<<e.what()<<'\n';return 1;}
 }

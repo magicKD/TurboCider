@@ -14,10 +14,14 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
         throw std::runtime_error("private ANE requires explicit authorization");
     const bool try_private = policy.allow_private &&
         (policy.preferred == BackendPreference::Auto || policy.preferred == BackendPreference::Private);
+    const bool bf16_boundaries=configured_convrot_bf16_boundaries();
+    if(bf16_boundaries && (!try_private || expected.require_lora_inputs))
+        throw std::runtime_error("BF16 value boundaries require authorized base-only Private Comfy recipe");
     const char *group=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE");
     if(group && std::string(group)!="0" && std::string(group)!="256")
         throw std::runtime_error("private ANE A8 group size requires 0 or 256");
     const bool requested_group=group && std::string(group)=="256";
+    if(bf16_boundaries && requested_group)throw std::runtime_error("BF16 value boundaries cannot combine with grouped A8");
     const char *scope=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE");
     if(scope && std::string(scope)!="input" && std::string(scope)!="hidden" && std::string(scope)!="both")
         throw std::runtime_error("private ANE A8 group scope requires input, hidden or both");
@@ -38,6 +42,7 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
             if (path != "fp16" && path != "w8a8" && path != "convrot_w8a8")
                 throw std::runtime_error("TURBOCIDER_PRIVATE_ANE_DATA_PATH requires fp16, w8a8 or convrot_w8a8");
             if(requested_group && path!="convrot_w8a8")throw std::runtime_error("group A8 requires convrot_w8a8 data path");
+            if(bf16_boundaries && path!="convrot_w8a8")throw std::runtime_error("BF16 value boundaries require convrot_w8a8 data path");
             if (channels && path == "fp16") throw std::runtime_error("channel split requires the W8A8 data path");
             if (channels) shape.width = channels; // base template still validated against the FULL model
             std::unique_ptr<Executor> graph = path != "fp16" ? std::unique_ptr<Executor>(std::make_unique<PrivateW8Graph>(shape,budget,

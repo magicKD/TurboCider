@@ -5,6 +5,12 @@
 namespace tc::ane {
 enum class BackendPreference { Public, Private, Auto, Off };
 struct BackendPolicy { BackendPreference preferred = BackendPreference::Public; bool allow_private = false; };
+inline bool configured_convrot_bf16_boundaries() {
+    const char *raw=std::getenv("TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES");
+    if(raw && std::string(raw)!="0" && std::string(raw)!="1")
+        throw std::runtime_error("ConvRot BF16 value boundaries require 0 or 1");
+    return raw && std::string(raw)=="1";
+}
 inline int private_channel_count(int full_width) {
     const char *raw = std::getenv("TURBOCIDER_PRIVATE_ANE_CHANNELS");
     if (!raw) return 0;

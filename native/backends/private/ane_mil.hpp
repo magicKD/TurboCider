@@ -18,5 +18,5 @@ struct W8FfnProgram {
 };
 W8FfnProgram w8_swiglu_program(const GraphShape &, uint64_t rotation_seed = 20260930, float headroom = 64.f,
                              W8Basis basis = W8Basis::SylvesterDH, int activation_group_size = 0,
-                             int hidden_group_size = -1);
+                             int hidden_group_size = -1, bool bf16_value_boundaries = false);
 }

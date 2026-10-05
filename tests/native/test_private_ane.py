@@ -134,6 +134,16 @@ class PrivateAneHardwareTests(unittest.TestCase):
             self.assertEqual(result.stdout.count(f"scope={scope}"), 4)
             print(result.stdout.strip())
 
+    def test_convrot_numeric_bf16_boundaries_base_only(self):
+        result = subprocess.run([str(self.build / "private-ane-convrot-executor-test"),
+                                 str(self.root / "convrot-bf16-values-cache"), "bf16-values"],
+                                cwd=ROOT, capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("bf16_values=1"), 4)
+        self.assertIn("base-only source oracle", result.stdout)
+        self.assertNotIn("LoRA-hidden", result.stdout)
+        print(result.stdout.strip())
+
     def test_private_w8a8_normalized_matmul_two_banks_and_gpu_epilogue(self):
         result = subprocess.run([str(self.build / "private-ane-w8-pipeline-test"), str(self.root / "w8-pipeline-cache")],
                                 cwd=ROOT, capture_output=True, text=True, timeout=120)

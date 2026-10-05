@@ -10,6 +10,14 @@ using namespace tc::ane;
 int main() {
     static_assert(std::is_base_of_v<Executor, RuntimeGraph>);
     unsetenv("TURBOCIDER_PRIVATE_ANE_CHANNELS");
+    unsetenv("TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES");
+    if(configured_convrot_bf16_boundaries())return 1;
+    for(const char *value:{"0","1"}) {setenv("TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES",value,1);configured_convrot_bf16_boundaries();}
+    for(const char *value:{"","true","2"," 1"}) {
+        setenv("TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES",value,1);
+        try {configured_convrot_bf16_boundaries();return 1;}catch(const std::runtime_error&) {}
+    }
+    unsetenv("TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES");
     if (private_channel_count(10240) != 0) return 1;
     for (const auto &value : {"0","512","3072"}) { setenv("TURBOCIDER_PRIVATE_ANE_CHANNELS",value,1); private_channel_count(10240); }
     for (const auto &value : {"","-512","513","10240","9999999999999"," 512"}) {
@@ -59,6 +67,18 @@ int main() {
     if (w8.mil.find("wg_d = dequantize") != std::string::npos || w8.mil.find("xd = dequantize") != std::string::npos)
         return 1;
     const auto comfy=private_api::w8_swiglu_program({Kind::SwiGLU,33,512,512,256,512,true},0,1,W8Basis::ComfyH256);
+    const auto rounded=private_api::w8_swiglu_program({Kind::SwiGLU,33,512,512,256,512,false},0,1,W8Basis::ComfyH256,0,0,true);
+    for(const char *name:{"gate_bf16_value_out","up_bf16_value_out","silu_bf16_value_out","hidden_bf16_value_out","rotated_hidden_bf16_value_out"})
+        if(rounded.mil.find(name)==std::string::npos)return 1;
+    if(rounded.constants!=comfy.constants || rounded.mil.find("round(")!=std::string::npos ||
+        rounded.mil.find("fp16(0x1p-23)")!=std::string::npos || rounded.mil.find("gate_bf16_value_even_lower = add(")==std::string::npos)return 1;
+    if(rounded.mil.find("rotated_hidden_bf16_value_guard_token")==std::string::npos ||
+       rounded.mil.find("select(cond = carrier_ok, a = hscale_positive, b = fp16(-1))")==std::string::npos)return 1;
+    for(const auto &bad:{GraphShape{Kind::SwiGLU,33,512,512,256,512,true},GraphShape{Kind::SwiGLU,33,384,512,256,512,false}}) {
+        try {private_api::w8_swiglu_program(bad,0,1,W8Basis::ComfyH256,0,0,true);return 1;}catch(const CapabilityError&) {}
+    }
+    try {private_api::w8_swiglu_program({Kind::SwiGLU,33,512,512,256,512,false},0,4,W8Basis::ComfyH256,0,0,true);return 1;}
+    catch(const CapabilityError&) {}
     const auto grouped=private_api::w8_swiglu_program({Kind::SwiGLU,33,512,512,256,512,true},0,1,W8Basis::ComfyH256,256);
     if(grouped.packed_rows!=comfy.packed_rows || grouped.constants!=comfy.constants ||
         grouped.mil.find("[1, 2, 256, 33]")==std::string::npos ||

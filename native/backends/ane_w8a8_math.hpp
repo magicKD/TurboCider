@@ -15,6 +15,7 @@ inline constexpr const char *w8a8_recipe = "sylvester-dh-b128-b512-rne-norm-f16-
 // second W8 quantization. X is Comfy-rotated and rounded to its source dtype
 // before RNE A8. Distinct from both Sylvester and the Public inverse recipe.
 inline constexpr const char *convrot_w8a8_recipe = "comfy-h256-direct-q8-source-round-a8-rne-norm-f16-v1";
+inline constexpr const char *convrot_bf16_value_recipe = "comfy-h256-direct-q8-source-round-row-a8-rne-bf16-value-guarded-zeros-canonical-v2";
 inline constexpr const char *convrot_group_w8a8_recipe = "comfy-h256-direct-q8-source-round-group256-a8-rne-ratio-norm-f16-v2";
 inline constexpr const char *convrot_input_group_w8a8_recipe = "comfy-h256-direct-q8-source-round-input256-hiddenrow-a8-rne-ratio-norm-f16-v2";
 inline constexpr const char *convrot_hidden_group_w8a8_recipe = "comfy-h256-direct-q8-source-round-inputrow-hidden256-a8-rne-ratio-norm-f16-v2";

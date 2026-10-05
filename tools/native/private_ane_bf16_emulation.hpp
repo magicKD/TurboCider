@@ -3,9 +3,10 @@
 #include <cmath>
 #include <iomanip>
 #include <sstream>
+#include "../../native/backends/private/ane_mil_round.hpp"
 
 inline bool probe_bf16_emulation(tc::ane::private_api::Device &device,
-    const std::filesystem::path &cache,uint64_t &timeline) {
+    const std::filesystem::path &cache,uint64_t &timeline,bool split_powers=false,bool ties_even=false) {
     using namespace tc::ane;
     using namespace tc::ane::private_api;
     constexpr int columns=4096;
@@ -20,19 +21,64 @@ inline bool probe_bf16_emulation(tc::ane::private_api::Device &device,
     // FP16 values below 2^-16 already fit BF16 exactly, including signed zero.
     std::string body=" "+type+" magnitude = abs(x = xt);\n";
     body+=" "+type+" zero = mul(x = magnitude, y = fp16(0));\n";
-    body+=" "+type+" step0 = add(x = zero, y = fp16(1));\n";
+    if(!split_powers)body+=" "+type+" step0 = add(x = zero, y = fp16(1));\n";
+    if(split_powers) for(const char *name:{"normalize_a","normalize_b","restore_a","restore_b"})
+        body+=" "+type+" "+name+"0 = add(x = zero, y = fp16(1));\n";
     std::string previous="step0";
     for(int exponent=-16;exponent<=15;++exponent) {
         const auto suffix=std::to_string(exponent+17),next="step"+suffix;
         body+=" "+boolean+" bin"+suffix+" = greater_equal(x = magnitude, y = "+power2(exponent)+");\n";
-        body+=" "+type+" "+next+" = select(cond = bin"+suffix+", a = "+power2(exponent-7)+", b = "+previous+");\n";
+        if(!split_powers)body+=" "+type+" "+next+" = select(cond = bin"+suffix+", a = "+power2(exponent-7)+", b = "+previous+");\n";
+        if(split_powers) {
+            // No reciprocal and no subnormal multiplier. Each normalization
+            // factor is finite normal FP16; the intermediate remains <=256.
+            // Restore via two normal factors, retaining the same exact power.
+            const int powers[]={std::min(7-exponent,10),std::max(7-exponent-10,0),
+                std::max(exponent-7,-14),std::min(exponent+7,0)};
+            const char *names[]={"normalize_a","normalize_b","restore_a","restore_b"};
+            for(int factor=0;factor<4;++factor) {
+                const auto prior=std::string(names[factor])+std::to_string(exponent+16);
+                body+=" "+type+" "+names[factor]+suffix+" = select(cond = bin"+suffix+", a = "+
+                    power2(powers[factor])+", b = "+prior+");\n";
+            }
+        }
         previous=next;
     }
-    body+=" "+type+" scaled = real_div(x = xt, y = "+previous+");\n";
-    body+=" "+type+" rounded = round(x = scaled);\n";
-    body+=" "+type+" restored = mul(x = rounded, y = "+previous+");\n";
+    if(split_powers) {
+        body+=" "+type+" scaled_first = mul(x = xt, y = normalize_a32);\n";
+        body+=" "+type+" scaled = mul(x = scaled_first, y = normalize_b32);\n";
+    } else body+=" "+type+" scaled = real_div(x = xt, y = "+previous+");\n";
+    if(ties_even) {
+        // Do not trust MIL round's lowering: the actual driver rounds ties
+        // away on this tuple. Resolve exact binary fractions and parity.
+        body+=" "+type+" scaled_abs = abs(x = scaled);\n";
+        body+=" "+type+" lower = floor(x = scaled_abs);\n";
+        body+=" "+type+" fraction = sub(x = scaled_abs, y = lower);\n";
+        body+=" "+type+" lower_half = mul(x = lower, y = fp16(0.5));\n";
+        body+=" "+type+" parity_floor = floor(x = lower_half);\n";
+        body+=" "+type+" even_lower = add(x = parity_floor, y = parity_floor);\n";
+        body+=" "+type+" parity = sub(x = lower, y = even_lower);\n";
+        body+=" "+boolean+" above = greater(x = fraction, y = fp16(0.5));\n";
+        body+=" "+boolean+" tie = equal(x = fraction, y = fp16(0.5));\n";
+        body+=" "+type+" above_add = select(cond = above, a = fp16(1), b = zero);\n";
+        body+=" "+type+" tie_add = select(cond = tie, a = parity, b = zero);\n";
+        body+=" "+type+" round_first = add(x = lower, y = above_add);\n";
+        body+=" "+type+" round_abs = add(x = round_first, y = tie_add);\n";
+        body+=" "+type+" round_negative = mul(x = round_abs, y = fp16(-1));\n";
+        body+=" "+boolean+" negative = less(x = scaled, y = fp16(0));\n";
+        body+=" "+type+" rounded = select(cond = negative, a = round_negative, b = round_abs);\n";
+    } else body+=" "+type+" rounded = round(x = scaled);\n";
+    if(split_powers) {
+        body+=" "+type+" restored_first = mul(x = rounded, y = restore_a32);\n";
+        body+=" "+type+" restored = mul(x = restored_first, y = restore_b32);\n";
+    } else body+=" "+type+" restored = mul(x = rounded, y = "+previous+");\n";
     body+=" "+boolean+" tiny = less(x = magnitude, y = "+power2(-16)+");\n";
     body+=" "+type+" h = select(cond = tiny, a = xt, b = restored);\n";
+    if(ties_even) {
+        body.clear();
+        const auto value=tc::ane::private_api::emit_bf16_value_round(body,"xt","diagnostic_bf16_value",shape);
+        body+=" "+type+" h = mul(x = "+value+", y = fp16(1));\n";
+    }
     const auto mil="program(1.3)\n{\n func main_ane<ios18>("+buffer+" x) {\n "+type+
         " xt = tensor_buffer_to_tensor<ios17>(input = x);\n"+body+" "+buffer+
         " y = tensor_to_tensor_buffer<ios17>(input = h, interleave_factors = tensor<uint8, [4]>([1, 1, 1, 1]), strides = tensor<int64, [4]>("+strides+"));\n } -> (y);\n}\n";
@@ -47,8 +93,9 @@ inline bool probe_bf16_emulation(tc::ane::private_api::Device &device,
             if(std::abs(bf)>65504.f) {++overflow_excluded;continue;}
             pairs.emplace_back(uint16_t(raw),tc::gguf::float_to_fp16_rne(bf));
         }
-        Program model(device,mil,{},cache/"fp16-bf16-rne-bins-v1");
-        size_t wrong=0,calls=0;
+        Program model(device,mil,{},cache/(ties_even?"fp16-bf16-value-native-emitter-v6":split_powers?"fp16-bf16-rne-split-powers-v3":"fp16-bf16-rne-bins-v1"));
+        size_t wrong=0,calls=0,zero_sign_mismatches=0;
+        std::array<size_t,32> mismatches_by_exponent{};
         for(size_t first=0;first<pairs.size();first+=columns) {
             const auto count=std::min<size_t>(columns,pairs.size()-first);
             auto *input=static_cast<uint16_t*>(x.data());
@@ -63,12 +110,17 @@ inline bool probe_bf16_emulation(tc::ane::private_api::Device &device,
                 const auto actual=static_cast<const uint16_t*>(y.data())[i];
                 if(actual!=expected) {
                     if(wrong<8)std::cout<<"MISMATCH input="<<input[i]<<" expected="<<expected<<" actual="<<actual<<std::endl;
+                    ++mismatches_by_exponent[(input[i]>>10)&31];
+                    if((actual&0x7fff)==0 && (expected&0x7fff)==0)++zero_sign_mismatches;
                     ++wrong;
                 }
             }
         }
-        std::cout<<"EMULATION compiled=1 finite_half_cases="<<pairs.size()<<" half_overflow_excluded="<<overflow_excluded
-            <<" driver_calls="<<calls<<" bf16_rne_oracle_mismatches="<<wrong<<std::endl;
+        std::cout<<"EMULATION recipe="<<(ties_even?"native-value-emitter-v6":split_powers?"split-powers-v3":"divide-v1")<<" compiled=1 finite_half_cases="<<pairs.size()<<" half_overflow_excluded="<<overflow_excluded
+            <<" driver_calls="<<calls<<" bf16_rne_oracle_mismatches="<<wrong
+            <<" numeric_mismatches="<<(wrong-zero_sign_mismatches)<<" zero_sign_mismatches="<<zero_sign_mismatches<<std::endl;
+        for(size_t exponent=0;exponent<mismatches_by_exponent.size();++exponent)
+            if(mismatches_by_exponent[exponent])std::cout<<"ERROR_BIN half_exponent="<<exponent<<" mismatches="<<mismatches_by_exponent[exponent]<<std::endl;
         return wrong==0;
     } catch(const CapabilityError &error) {
         std::cout<<"EMULATION supported=0 reason="<<error.what()<<std::endl;

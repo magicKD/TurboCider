@@ -67,7 +67,9 @@ int main(int argc,char **argv) {
       try {
         constexpr int bucket=33,rows=bucket*3,h=512,f=512,physical_width=1024;
         const bool grouped=argc>=3 && std::string(argv[2])=="group256";
-        if(argc>=3 && !grouped)return 2;
+        const bool bf16=argc>=3 && std::string(argv[2])=="bf16-values";
+        if(argc>=3 && !grouped && !bf16)return 2;
+        setenv("TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES",bf16?"1":"0",1);
         const std::string scope=argc==4?argv[3]:"both";
         if(grouped)setenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE",scope.c_str(),1);
         else unsetenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE");
@@ -83,8 +85,8 @@ int main(int argc,char **argv) {
             setenv("TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD",lookahead?"1":"0",1);
             setenv("TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE","1",1);
             const auto cache=std::filesystem::path(argv[1])/(packed?"packed":"signed")/(lookahead?"lookahead":"serial");
-            PrivateW8Graph graph({Kind::SwiGLU,bucket,h,f,256,512,true},256u<<20,cache,W8Basis::ComfyH256);
-            const auto recipe=input_group && hidden_group?convrot_group_w8a8_recipe:
+            PrivateW8Graph graph({Kind::SwiGLU,bucket,h,f,256,512,!bf16},256u<<20,cache,W8Basis::ComfyH256);
+            const auto recipe=bf16?convrot_bf16_value_recipe:input_group && hidden_group?convrot_group_w8a8_recipe:
                 input_group?convrot_input_group_w8a8_recipe:hidden_group?convrot_hidden_group_w8a8_recipe:convrot_w8a8_recipe;
             check(graph.data_path()=="w8a8_convrot" && graph.weight_recipe()==recipe &&
                 graph.activation_group_size()==input_group && graph.hidden_activation_group_size()==hidden_group,"recipe/group identity missing");
@@ -99,6 +101,7 @@ int main(int argc,char **argv) {
                 graph.stage_device_weight_regions(regions());const auto result=graph.wait_stage();check(result.ok,result.error);
             };
             auto run=[&](bool adapter,float gv,float uv,float dv) {
+                adapter=adapter && !bf16;
                 graph.launch_device(x.view,y.view,adapter?std::optional<DeviceAdapterInput>({dg.view,du.view,hidden.view}):std::nullopt);
                 const auto result=graph.finish();check(result.ok,result.error);
                 check(result.calls==3 && result.activation_prefetches==(lookahead?2u:0u),"chunk/lookahead counts wrong");
@@ -146,8 +149,25 @@ int main(int argc,char **argv) {
             graph.stage_device_weight_regions(malformed);check(!graph.wait_stage().ok,"bad second W producer accepted");
             graph.launch_device(x.view,y.view);check(!graph.finish().ok,"failed W bank reused as ready");
             stage(.125f,-.25f,.25f);run(true,.125f,-.25f,.25f);
+            if(bf16) {
+                // BF16-rounded 65504 would need 65536, outside the FP16
+                // carrier. Do not clamp or silently change the headroom/
+                // recipe after writing an earlier chunk into scratch.
+                stage(.125f,65504.f,.25f);
+                graph.launch_device(x.view,y.view);
+                const auto overflow=graph.finish();
+                if(overflow.ok || overflow.overflow_retries || overflow.error.find("cannot change headroom")==std::string::npos)
+                    std::cerr<<"OVERFLOW diagnostic ok="<<overflow.ok<<" retries="<<overflow.overflow_retries
+                        <<" calls="<<overflow.calls<<" error="<<overflow.error<<'\n';
+                check(!overflow.ok && overflow.overflow_retries==0 &&
+                    overflow.error.find("cannot change headroom")!=std::string::npos,
+                    "BF16 value recipe hid a carrier overflow/headroom change");
+                stage(.125f,-.25f,.25f);run(false,.125f,-.25f,.25f);
+            }
             std::cout<<"PASS direct ConvRot Executor packed="<<packed<<" lookahead="<<lookahead<<" group="<<(grouped?256:0)<<" scope="<<scope
-                <<": Comfy H256/A8, signed down scales, source/LoRA-hidden oracles, physical channels, future-basis identity, late failure and refill\n";
+                <<" bf16_values="<<bf16<<": Comfy H256/A8, signed down scales, "
+                <<(bf16?"base-only source oracle":"source/LoRA-hidden oracles")
+                <<", physical channels, future-basis identity, late failure and refill\n";
         }
       } catch(const std::exception &e) {std::cerr<<e.what()<<"\n";return 1;}
     }

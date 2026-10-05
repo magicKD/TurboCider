@@ -3,6 +3,7 @@
 #include "ane_mil.hpp"
 #include "../ane_memory.hpp"
 #include "../ane_w8a8_math.hpp"
+#include "../ane_backend.hpp"
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #include <array>
@@ -75,6 +76,7 @@ struct PrivateW8Graph::Impl {
     W8Basis basis = W8Basis::SylvesterDH;
     int activation_group_size = 0;
     int hidden_group_size = 0;
+    bool bf16_value_boundaries = false;
     private_api::Device device;
     std::unique_ptr<private_api::Program> program;
     // Exactly two source-independent banks, reused across every layer/step.
@@ -110,7 +112,8 @@ struct PrivateW8Graph::Impl {
     Worker staging_worker;
     Worker worker; // destroyed first, draining before any source/slot release
     void build(float scale) {
-        auto emitted = private_api::w8_swiglu_program(shape, basis==W8Basis::ComfyH256?0:20260930, scale, basis,activation_group_size,hidden_group_size);
+        check(!bf16_value_boundaries || scale==1.f,"BF16 value-boundary recipe cannot change headroom; whole-operation GPU recompute required");
+        auto emitted = private_api::w8_swiglu_program(shape, basis==W8Basis::ComfyH256?0:20260930, scale, basis,activation_group_size,hidden_group_size,bf16_value_boundaries);
         program = std::make_unique<private_api::Program>(device, emitted.mil, emitted.constants, cache);
         headroom = scale;
     }
@@ -164,6 +167,7 @@ struct PrivateW8Graph::Impl {
                 (output.dtype == DType::FP32 && basis==W8Basis::ComfyH256 && !adapter)), "W8 launch geometry/slots unavailable");
         check(!adapter || (s.lora_inputs && adapter->gate.rows == input.rows && adapter->up.rows == input.rows && adapter->hidden.rows == input.rows &&
             adapter->gate.cols == s.width && adapter->up.cols == s.width && adapter->hidden.cols == s.width && adapter->hidden.dtype == output.dtype), "W8 LoRA geometry mismatch");
+        check(!bf16_value_boundaries || input.dtype==DType::BF16,"BF16 value-boundary recipe requires original BF16 activation input");
         check(input.buffer != output.buffer && (!adapter || (adapter->hidden.buffer != output.buffer && adapter->hidden.buffer != input.buffer &&
             adapter->gate.buffer != output.buffer && adapter->up.buffer != output.buffer)), "W8 source/output aliases");
         if (s.lora_inputs && !adapter) for (auto *slot : {dg.get(),du.get()}) std::memset(slot->data(),0,slot->rows()*slot->pitch());
@@ -254,6 +258,7 @@ struct PrivateW8Graph::Impl {
 PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesystem::path &cache,W8Basis basis) : impl_(std::make_unique<Impl>()) {
     @autoreleasepool {
         auto start=Clock::now(); auto &p=*impl_; p.shape=shape;p.basis=basis;
+        p.bf16_value_boundaries=configured_convrot_bf16_boundaries();
         const char *group=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE");
         check(!group || std::string(group)=="0" || std::string(group)=="256","private ANE A8 group size requires 0 or 256");
         p.activation_group_size=group && std::string(group)=="256"?256:0;
@@ -268,8 +273,11 @@ PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesys
         const char *lookahead=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD");
         check(!lookahead || std::string(lookahead)=="0" || std::string(lookahead)=="1", "private ANE A8 lookahead requires 0 or 1");
         p.a8_lookahead=lookahead && std::string(lookahead)=="1";
-        auto spec=private_api::w8_swiglu_program(shape,basis==W8Basis::ComfyH256?0:20260930,1.f,basis,p.activation_group_size,p.hidden_group_size);
+        auto spec=private_api::w8_swiglu_program(shape,basis==W8Basis::ComfyH256?0:20260930,1.f,basis,p.activation_group_size,p.hidden_group_size,p.bf16_value_boundaries);
         p.estimate=uint64_t(shape.hidden)*shape.width*6 + uint64_t(shape.rows)*(8ull*shape.width+12ull*shape.hidden) + spec.constants.size()*2 + (128ull<<20) + private_api::scale_cache_budget_bytes;
+        // Extra compiler/pointwise workspace allowance, not a physical ANE
+        // scratch-size observation. End-to-end footprint still needs audit.
+        if(p.bf16_value_boundaries)p.estimate+=uint64_t(shape.rows)*shape.width*2*16+(64ull<<20);
         if (p.a8_lookahead) p.estimate += uint64_t(shape.hidden + 1) * ((uint64_t(shape.rows) + 63) / 64 * 64 + 128);
         if(p.activation_group_size)p.estimate+=uint64_t(shape.hidden/256-1)*
             ((uint64_t(shape.rows)*2+63)/64*64+128)*(p.a8_lookahead?2:1)+(64u<<10);
@@ -299,6 +307,7 @@ size_t PrivateW8Graph::slot_bytes() const{return impl_->allocated;}
 size_t PrivateW8Graph::estimated_bytes() const{return impl_->estimate;}
 double PrivateW8Graph::load_seconds() const{return impl_->load_time;}
 std::string PrivateW8Graph::weight_recipe() const {
+    if(impl_->bf16_value_boundaries)return convrot_bf16_value_recipe;
     if(impl_->activation_group_size && impl_->hidden_group_size)return convrot_group_w8a8_recipe;
     if(impl_->activation_group_size)return convrot_input_group_w8a8_recipe;
     if(impl_->hidden_group_size)return convrot_hidden_group_w8a8_recipe;
@@ -393,7 +402,11 @@ bool PrivateW8Graph::self_test(std::string &error){
         Buffer g(gpu,size_t(s.width)*s.hidden*4),u(gpu,size_t(s.width)*s.hidden*4),d(gpu,size_t(s.hidden)*s.width*4),
             x(gpu,size_t(s.rows)*s.hidden*4),y(gpu,size_t(s.rows)*s.hidden*2),
             sg(gpu,size_t(s.width)*4),su(gpu,size_t(s.width)*4),sd(gpu,size_t(s.hidden)*4);
-        for(int r=0;r<s.rows;++r)for(int c=0;c<s.hidden;++c)static_cast<float*>(x.value.contents)[r*s.hidden+c]=((r*3+c*7)%17-8)/8.f;
+        for(int r=0;r<s.rows;++r)for(int c=0;c<s.hidden;++c) {
+            const float value=((r*3+c*7)%17-8)/8.f;
+            if(p.bf16_value_boundaries)static_cast<uint16_t*>(x.value.contents)[r*s.hidden+c]=gguf::float_to_bf16_rne(value);
+            else static_cast<float*>(x.value.contents)[r*s.hidden+c]=value;
+        }
         for(float scale:{.125f,-.25f,.125f}){
             std::memset(g.value.contents,0,g.value.length);std::memset(u.value.contents,0,u.value.length);std::memset(d.value.contents,0,d.value.length);
             if(p.basis==W8Basis::ComfyH256) {
@@ -416,9 +429,10 @@ bool PrivateW8Graph::self_test(std::string &error){
                     {u.weight(s.width,s.hidden),{0,s.width,0,s.hidden,128}},
                     {d.weight(s.hidden,s.width),{0,s.hidden,0,s.width,512}}});
             }
-            p.result={};p.run(x.matrix(s.rows,s.hidden),y.matrix(s.rows,s.hidden,DType::BF16),std::nullopt);
+            p.result={};p.run(x.matrix(s.rows,s.hidden,p.bf16_value_boundaries?DType::BF16:DType::FP32),y.matrix(s.rows,s.hidden,DType::BF16),std::nullopt);
             double diff=0,norm=0;
-            for(int r=0;r<s.rows;++r)for(int c=0;c<s.hidden;++c){const int input=(c%s.width)%s.hidden;const float v=static_cast<const float*>(x.value.contents)[r*s.hidden+input]*scale;
+            for(int r=0;r<s.rows;++r)for(int c=0;c<s.hidden;++c){const int input=(c%s.width)%s.hidden;
+                const float xv=p.bf16_value_boundaries?((r*3+input*7)%17-8)/8.f:static_cast<const float*>(x.value.contents)[r*s.hidden+input];const float v=xv*scale;
                 const float expected=v/(1+std::exp(-v))*v*scale;const float actual=std::bit_cast<float>(uint32_t(static_cast<const uint16_t*>(y.value.contents)[r*s.hidden+c])<<16);
                 check(std::isfinite(actual),"W8 self-test nonfinite");
                 // Aggregate L2 alone can hide a missing/corrupt final row in
