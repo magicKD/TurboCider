@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Darwin
 
 struct NativeJob: Codable, Identifiable, Sendable {
     let id: UUID
@@ -24,6 +25,13 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var publicStreamingResolutionJSON: String? = nil
     var publicStreamingIntentJSON: String? = nil
     var publicWorker: PublicImageWorker.Reference? = nil
+    var runtimeWorker: PublicImageWorker.Reference? = nil
+    var runtimeOptions: RuntimeImageWorker.Options? = nil
+    var runtimeReceipt: RuntimeImageWorker.Receipt? = nil
+    var supervisedWorker: PublicImageWorker.Reference? {
+        get { runtimeWorker ?? publicWorker }
+        set { if runtimeWorker != nil { runtimeWorker = newValue } else { publicWorker = newValue } }
+    }
     /// Optional provenance for independently persisted Playground templates.
     /// Missing in older histories; it does not affect native execution.
     var workflowID: String? = nil
@@ -60,6 +68,7 @@ struct NativeJob: Codable, Identifiable, Sendable {
     }
     var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
     var routeSummary: String? {
+        if let runtimeReceipt { return runtimeReceipt.label }
         if request.operation == "image.upscale" {
             let scale = request.model == "real-esrgan-x2plus" ? 2 : 4
             return request.execution == "ane" ? "Core ML · \(scale)× 图像超分 · CPU/ANE（ANE 驻留未知）" : "Core ML · \(scale)× 图像超分 · CPU/GPU"
@@ -170,7 +179,7 @@ final class NativeJobStore: ObservableObject {
             if FileManager.default.fileExists(atPath: file.path) {
                 jobs = try JSONDecoder().decode([NativeJob].self, from: Data(contentsOf: file))
                 for i in jobs.indices where !jobs[i].isTerminal {
-                    if var worker = jobs[i].publicWorker, !worker.exitConfirmed {
+                    if var worker = jobs[i].supervisedWorker, !worker.exitConfirmed {
                         let admission = worker.admission(jobID: jobs[i].id, store: directory)
                         let hasJournal = FileManager.default.fileExists(atPath: admission.journal.path)
                         if (worker.started || hasJournal) && admission.observe() != .exited {
@@ -180,7 +189,7 @@ final class NativeJobStore: ObservableObject {
                             sessionState = "等待旧工作进程退出"
                             continue
                         }
-                        worker.exitConfirmed = true; jobs[i].publicWorker = worker
+                        worker.exitConfirmed = true; jobs[i].supervisedWorker = worker
                         if jobs[i].state != "finalizing" {
                             try ImageOutputTransaction.discardWorkerStaging(worker.stagedOutput, destination: jobs[i].request.output)
                         }
@@ -212,9 +221,9 @@ final class NativeJobStore: ObservableObject {
         guard await NativeProcessRunner.shared.pollCleanup() else { return }
         do {
             for i in jobs.indices where jobs[i].state == "cleanup_pending" {
-                guard var worker = jobs[i].publicWorker else { continue }
+                guard var worker = jobs[i].supervisedWorker else { continue }
                 guard worker.exitConfirmed || worker.admission(jobID: jobs[i].id, store: directory).observe() == .exited else { continue }
-                worker.exitConfirmed = true; jobs[i].publicWorker = worker
+                worker.exitConfirmed = true; jobs[i].supervisedWorker = worker
                 try ImageOutputTransaction.discardWorkerStaging(worker.stagedOutput, destination: jobs[i].request.output)
                 jobs[i].state = "interrupted"; jobs[i].error = "工作进程已退出，可重新生成。"
             }
@@ -222,6 +231,9 @@ final class NativeJobStore: ObservableObject {
             workerCleanupPending = jobs.contains { $0.state == "cleanup_pending" }
             busy = workerCleanupPending
             sessionState = workerCleanupPending ? "等待旧工作进程退出" : "未加载"
+            if !workerCleanupPending, jobs.contains(where: { $0.runtimeWorker != nil }) {
+                await trimRuntimeProgramsAfterExit()
+            }
         } catch { storageError = error.localizedDescription }
     }
 
@@ -310,12 +322,67 @@ final class NativeJobStore: ObservableObject {
         }
         return moved.map(\.trashed)
     }
+    func clearRuntimeProgramCache() async throws {
+        guard !busy, !workerCleanupPending, !resolvingAcceleration, !externalServiceActive else {
+            throw NativeFailure(message: "请等待进程退出并停止本地 API 后再清理实验缓存。")
+        }
+        busy = true
+        defer { busy = false }
+        let idle = await NativeProcessRunner.shared.pollCleanup()
+        guard idle else { throw NativeFailure(message: "工作进程尚未确认退出，请稍后再清理实验缓存。") }
+        let cache = RuntimeImageWorker.programCache(store: directory)
+        if FileManager.default.fileExists(atPath: cache.path) {
+            _ = try RuntimeImageWorker.trimProgramCache(store: directory, workerIsIdle: true,
+                budget: .init(maximumBytes: 0, maximumEntries: 0))
+            // Only an empty directory can be removed; unknown content is never
+            // recursively deleted, even for the user's explicit clear action.
+            guard rmdir(cache.path) == 0 else { throw NativeFailure(message: "程序缓存目录仍有未知内容，已保留。") }
+        }
+        accelerationStatus = "已清理 App 程序源缓存；系统缓存保留，不等于冷启动。"
+    }
+    private func trimRuntimeProgramsAfterExit() async {
+        guard !workerCleanupPending, !externalServiceActive else { return }
+        do {
+            let idle = await NativeProcessRunner.shared.pollCleanup()
+            let report = try RuntimeImageWorker.trimProgramCache(store: directory, workerIsIdle: idle)
+            if !report.evictedKeys.isEmpty {
+                accelerationStatus = "Runtime 程序缓存已清理 \(report.evictedKeys.count) 项 · \(report.afterBytes / (1 << 20)) / 128 MiB · \(report.afterEntries) / 64 项"
+            }
+        } catch {
+            // A completed image remains valid. Fail closed before the next
+            // launch, and expose the cleanup issue instead of deleting extras.
+            accelerationStatus = "Runtime 缓存未能安全清理：\(error.localizedDescription)"
+        }
+    }
     /// Resolve on each request so changing an adapter/strength cannot reuse a stale partition.
     func resolveAcceleration(_ draft: StudioDraft) async throws -> StudioDraft {
+        if draft.usesRuntimeANE {
+            guard !busy, !resolvingAcceleration, !externalServiceActive, !requiresProcessRestart else {
+                throw NativeFailure(message: "请等待工作进程清理并停止本地 API，再准备 Runtime 实验。")
+            }
+            if let issue = draft.runtimeANEIssue { throw NativeFailure(message: issue) }
+            guard RuntimeImageWorker.hardwareEligible() else {
+                throw NativeFailure(message: "Runtime 实验当前仅验收 Apple M4 Pro、48 GiB 内存，请使用 GPU。")
+            }
+            resolvingAcceleration = true
+            defer { resolvingAcceleration = false }
+            let store = directory, model = draft.modelID
+            let options = try await Task.detached { try RuntimeImageWorker.options(model: model, store: store) }.value
+            var resolved = draft
+            resolved.acceleration?.runtimeDescriptor = options.descriptor_path
+            accelerationStatus = "本机 Runtime 实验描述已就绪 · 不导出完整模型；实际路线以执行回执为准"
+            return resolved
+        }
         // Public streaming v1 is GPU-only. Do not perform ANE discovery or
         // mutate the request before the public validator reports a conflict.
         guard !draft.usesPublicStreaming else { return draft }
         guard draft.usesANE, ["flux2-klein-4b", "z-image-turbo"].contains(draft.modelID) else { return draft }
+        // The App request selects GPU for a separately loaded runtime LoRA.
+        // Do not require or compile a frozen partition that will not be used.
+        if draft.aneLoRARequiresGPU {
+            accelerationStatus = draft.aneConfigurationNotice
+            return draft
+        }
         guard !busy, !resolvingAcceleration else { throw NativeFailure(message: "请等待当前任务完成。") }
         resolvingAcceleration = true
         defer { resolvingAcceleration = false }
@@ -672,10 +739,15 @@ final class NativeJobStore: ObservableObject {
     }
     func generate(modelURL: URL, request: NativeRequest,
                   streamingRequest: NativeRequestV2? = nil,
+                  runtimeOptions: RuntimeImageWorker.Options? = nil,
                   workflowID: String? = nil,
                   inputAssets: [StudioAsset]? = nil) async throws -> NativeJob {
         guard !busy else { throw NativeFailure(message: "一次只能生成一张图或一个视频。") }
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
+        guard runtimeOptions == nil || streamingRequest == nil,
+              (request.hybrid_mlp_mode == "runtime") == (runtimeOptions != nil) else {
+            throw NativeFailure(message: "Runtime 实验必须通过独立工作进程提交，不能与流式选择器混用。")
+        }
         // Capture before the first suspension; never read a changing UI draft.
         let frozenInputAssets = NativeJob.matchingInputAssets(inputAssets, for: request)
         // Close the reentrancy window before any async plan/session operation.
@@ -694,7 +766,7 @@ final class NativeJobStore: ObservableObject {
                 stagedStreamingRequest?.outputs[0].path = imageTransaction.stagedURL.path
             }
         }
-        if streamingRequest == nil {
+        if streamingRequest == nil && runtimeOptions == nil {
             let planRequest = generationRequest
             do { _ = try await Task.detached { try NativeEngine.plan(planRequest) }.value }
             catch { throw error }
@@ -710,7 +782,7 @@ final class NativeJobStore: ObservableObject {
         let id = UUID(); activeID = id; telemetry = StepTelemetry(); lastSequence = -1; denoiseStart = nil; lastDetailUpdate = 0
         jobs.insert(NativeJob(id: id, createdAt: Date(), request: request, state: "preparing", phase: "prepare", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path,
                               publicStreamingTargetBytes: streamingRequest?.execution.streaming?.target_request_memory_bytes,
-                              publicStreamingIntentJSON: publicStreamingIntentJSON,
+                              publicStreamingIntentJSON: publicStreamingIntentJSON, runtimeOptions: runtimeOptions,
                               workflowID: workflowID, inputAssets: frozenInputAssets), at: 0)
         let start = ContinuousClock.now
         do {
@@ -738,7 +810,66 @@ final class NativeJobStore: ObservableObject {
             var result: Data
             let usesLTXWorker = request.model == "ltx-2.5-distilled" &&
                 (streamingRequest != nil || LTXWorker.accepts(request))
-            if usesImageWorker, let intent = stagedStreamingRequest {
+            if let runtimeOptions {
+                guard !externalServiceActive, !requiresProcessRestart else {
+                    throw NativeFailure(message: "请停止本地 API 并等待原生会话安全清理，再运行 Runtime 实验。")
+                }
+                if let old = engine { _ = try await old.unload() }
+                engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil
+                if cancelRequested { throw CancellationError() }
+                guard runtimeOptions.cache_dir == RuntimeImageWorker.programCache(store: directory).path else {
+                    throw NativeFailure(message: "App Runtime 实验必须使用 App 自有的程序缓存目录。")
+                }
+                // The job is preparing, but no worker owns this cache yet.
+                // The store's busy latch blocks another App/API submission.
+                let idle = await NativeProcessRunner.shared.pollCleanup()
+                _ = try RuntimeImageWorker.trimProgramCache(store: directory, workerIsIdle: idle)
+                let prepared = try RuntimeImageWorker.prepare(jobID: id, model: modelURL, legacy: generationRequest,
+                    options: runtimeOptions, store: directory)
+                guard let index = jobs.firstIndex(where: { $0.id == id }) else { throw NativeFailure(message: "Missing job") }
+                jobs[index].runtimeWorker = prepared.reference
+                try persist()
+                let executable = try workerExecutable ?? PublicImageWorker.executable()
+                let environment = try RuntimeImageWorker.environment(options: runtimeOptions, model: request.model)
+                jobs[index].runtimeWorker?.started = true; jobs[index].state = "running"
+                try persist()
+                sessionState = "Runtime 本机实验运行中 · 独立进程"
+                let events = RuntimeWorkerEventStream(jobID: id, reference: prepared.reference, callback: callback)
+                let admission = prepared.reference.admission(jobID: id, store: directory)
+                let work = Task { try await NativeProcessRunner.shared.run(executable: executable,
+                    arguments: ["worker-runtime-generate", prepared.inputURL.path], environment: environment,
+                    admission: admission, onStderr: { try events.consume($0) }) }
+                publicWorkerTask = work
+                let process: NativeProcessRunner.Result
+                do { process = try await work.value }
+                catch {
+                    jobs[index].runtimeWorker?.exitConfirmed = true
+                    await trimRuntimeProgramsAfterExit() // Runner failed before spawning.
+                    throw error
+                }
+                if process.cleanupPending {
+                    workerCleanupPending = true; imageTransaction?.retainForWorkerCleanup()
+                    throw PublicImageWorker.Failure.cleanupPending
+                }
+                jobs[index].runtimeWorker?.exitConfirmed = true
+                await trimRuntimeProgramsAfterExit()
+                try persist()
+                try PublicImageWorker.saveDiagnostics(process, reference: prepared.reference, jobID: id, store: directory)
+                if cancelRequested || process.cancellationRequested { throw CancellationError() }
+                if let failure = process.failure { throw NativeFailure(message: failure) }
+                guard let exitCode = process.exitCode else { throw NativeFailure(message: "runtime_worker_terminated: 工作进程异常退出。") }
+                let verified = try RuntimeImageWorker.validateTerminal(process.stdout, prepared: prepared, exitCode: exitCode)
+                try events.finish()
+                if verified.status == "cancelled" { throw CancellationError() }
+                guard verified.status == "succeeded", let data = verified.result, let artifact = verified.artifact,
+                      let receipt = verified.receipt else {
+                    throw NativeFailure(message: verified.errorMessage ?? "runtime_worker_result_invalid", code: verified.errorCode)
+                }
+                jobs[index].runtimeReceipt = receipt
+                actualRoute = receipt.label; publicWorkerArtifact = artifact
+                try persist()
+                result = data
+            } else if usesImageWorker, let intent = stagedStreamingRequest {
                 guard !externalServiceActive else { throw NativeFailure(message: "本地 API 正在运行，请先停止服务。") }
                 guard !requiresProcessRestart else { throw NativeFailure(message: "原生会话未安全清理，请先重启 App。") }
                 if let old = engine { _ = try await old.unload() }
@@ -864,7 +995,7 @@ final class NativeJobStore: ObservableObject {
             jobs[i].resultJSON = String(decoding: result, as: UTF8.self)
             sessionReport = jobs[i].resultJSON
             jobs[i].elapsed = Self.seconds(start.duration(to: .now))
-            sessionState = usesImageWorker ? "图片完成 · 工作进程已释放" : usesLTXWorker ? "视频完成 · 独立进程已释放" : request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
+            sessionState = runtimeOptions != nil ? "图片完成 · Runtime 实验进程已释放" : usesImageWorker ? "图片完成 · 工作进程已释放" : usesLTXWorker ? "视频完成 · 独立进程已释放" : request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
             try persist()
             return jobs[i]
         } catch {
@@ -903,7 +1034,13 @@ final class NativeJobStore: ObservableObject {
         guard activeID == id, event.sequence > lastSequence, let i = jobs.firstIndex(where: { $0.id == id }), !jobs[i].isTerminal else { return }
         lastSequence = event.sequence
         if event.phase.hasPrefix("route_") {
-            actualRoute = event.phase == "route_gpu_ane" ? "GPU + Core ML · ANE 驻留未知" : "Metal GPU · BF16"
+            if let receipt = jobs[i].runtimeReceipt {
+                actualRoute = receipt.label
+            } else if jobs[i].runtimeOptions != nil {
+                actualRoute = event.phase == "route_gpu_ane" ? "Runtime 实验运行中 · 实际路线等待回执" : "GPU · Runtime 实验"
+            } else {
+                actualRoute = event.phase == "route_gpu_ane" ? "GPU + Core ML · ANE 驻留未知" : "Metal GPU · BF16"
+            }
             return
         }
         if cancelRequested { engine?.cancel() }

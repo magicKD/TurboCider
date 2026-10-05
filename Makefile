@@ -5,7 +5,7 @@ PYTHON ?= $(if $(LOCAL_PYTHON),$(LOCAL_PYTHON),$(shell which python3 2>/dev/null
 export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-qwen21 test-app test-reference-preparation test-editing-canvas test-model doctor h3-quant-cache test-library test-api test-video-preview
 .PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-catalog-builder test-streaming-source-identity test-streaming-source-lease test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults test-process-tree-sampler
-.PHONY: build-runtime-ane-probe test-runtime-ane test-runtime-ane-host test-acceleration-contract test-quantized-host
+.PHONY: build-runtime-ane-probe test-runtime-ane test-runtime-ane-host test-runtime-ane-cpu-bridge test-acceleration-contract test-quantized-host
 .PHONY: test-playground
 .PHONY: test-qwen21-runtime-activation
 help:
@@ -35,7 +35,8 @@ help:
 	@echo 'make build-runtime-ane-probe      Build optional runtime-weight Core ML component probe (not CLI)'
 	@echo 'make test-acceleration-contract   Check optional routes, benchmark reports and host math (no inference)'
 	@echo 'make test-quantized-host          Verify GGUF decoding, W8A8 math and quantized request contracts'
-	@echo 'make test-runtime-ane-host        Test scheduler/dense+affine conversion/geometry without Core ML'
+	@echo 'make test-runtime-ane-host        Test scheduler, calibration, LoRA and worker contracts without inference'
+	@echo 'make test-runtime-ane-cpu-bridge  Test calibration/S1 against the native library on CPU (build required)'
 	@echo 'make test-runtime-ane             Test runtime-weight Core ML micrographs (small synthetic GPU/NE work)'
 	@echo 'make test-model MODEL=/path/to/FLUX.2-klein-4B OUTPUT=/tmp/new-tc-validation'
 	@echo 'make doctor                       Inspect this Mac and native dependencies'
@@ -190,6 +191,17 @@ test-acceleration-contract: test-runtime-ane-host
 	@"$(PYTHON)" -B tests/native/test_cli_ane_override.py
 test-runtime-ane-host:
 	@"$(PYTHON)" -B tests/native/test_ane_runtime_host.py
+	@PYTHONPATH=tests/native "$(PYTHON)" -B -m unittest \
+		test_private_ane.PrivateAneHostTests test_private_ane.PrivateAneDescriptorTests \
+		test_ane_calibration test_ane_smoothquant test_ane_a8_single_pass test_async_lora_preflight
+	@"$(PYTHON)" -B tests/native/test_runtime_worker_contract.py
+# These tiny CPU fixtures link the selected native library; they never load
+# checkpoints or submit Metal/ANE work. Override TURBOCIDER_TEST_NATIVE_DIR
+# for an isolated build, and use the repository MLX dependency environment.
+# MLX initialization still requires Metal device visibility for these CPU tests.
+test-runtime-ane-cpu-bridge:
+	@PYTHONPATH=tests/native "$(PYTHON)" -B -m unittest \
+		test_ane_calibration_mlx test_ane_smoothquant_ffn
 test-quantized-host:
 	@TURBOCIDER_TEST_GPU=0 "$(PYTHON)" -B -m unittest discover -s tests/native -p 'test_gguf*.py'
 	@TURBOCIDER_TEST_GPU=0 PYTHONPATH=tests/native "$(PYTHON)" -B -m unittest \
@@ -198,6 +210,7 @@ test-quantized-host:
 test-runtime-ane: test-runtime-ane-host
 	@TURBOCIDER_TEST_RUNTIME_ANE=1 "$(PYTHON)" -B tests/native/test_ane_runtime.py
 test-app:
+	@build/native/turbocider-runtime-image-worker-tests
 	@build/native/turbocider-upscaler-tests
 	@$(MAKE) test-reference-preparation
 	@$(MAKE) test-editing-canvas

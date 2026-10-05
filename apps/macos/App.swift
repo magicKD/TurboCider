@@ -872,16 +872,16 @@ struct StudioView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("计算设备").font(.caption)
                 Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
-                let qwenLoRA = studio.draft.modelID == "qwen-image-2.1" && !studio.draft.activeLoRAs.isEmpty
+                let qwenLoRA = studio.draft.modelID == "qwen-image-2.1" && !studio.draft.activeLoRAs.isEmpty && !studio.draft.usesRuntimeANE
                 Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE && !qwenLoRA }, set: { studio.setANEEnabled($0) }))
                     .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true || studio.draft.zImageVariant?.id == "nvfp4" || qwenLoRA).accessibilityIdentifier("enableANE")
-                Text(qwenLoRA ? "App 中 Qwen LoRA 使用纯 GPU，基础模型的 ANE 分区不包含适配器。" : (studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。")).font(.caption2).foregroundStyle(.secondary)
+                Text(studio.draft.aneConfigurationNotice ?? (qwenLoRA ? "App 中 Qwen LoRA 使用纯 GPU，基础模型的 ANE 分区不包含适配器。" : (studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。"))).font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.modelID == "qwen-image-2.1", (studio.draft.acceleration?.policy ?? "gpu") != "gpu" || !studio.draft.profilePath.isEmpty {
                     Button("改用纯 GPU") { studio.draft.profilePath = ""; studio.setANEEnabled(false) }
                         .disabled(store.busy || submitting).accessibilityIdentifier("qwenLoRAUseGPU")
                 }
-                if studio.draft.usesANE, studio.draft.qwen21TurboLoRA == nil { Button("管理 ANE 分区与缓存") { page = .models } }
-                if studio.draft.usesANE, studio.draft.qwen21TurboLoRA == nil, let status = store.accelerationStatus { Text(status).font(.caption2).foregroundStyle(.secondary) }
+                if ["z-image-turbo", "qwen-image-2.1"].contains(studio.draft.modelID) { Button("高级加速与缓存配置") { librarySelection = studio.draft.modelID; page = .models } }
+                if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption2).foregroundStyle(.secondary) }
             }
             if model?.supports_lora == true {
                 Divider()
@@ -1087,7 +1087,7 @@ struct StudioView: View {
                     Button(studio.draft.profilePath.isEmpty ? "选择加速配置…" : "更换加速配置…", action: chooseProfile)
                     if !studio.draft.profilePath.isEmpty {
                         Text(URL(fileURLWithPath: studio.draft.profilePath).lastPathComponent).font(.caption2)
-                        Button("恢复默认 GPU") { studio.draft.profilePath = ""; if studio.draft.acceleration != nil { studio.draft.acceleration?.policy = "gpu" } }
+                        Button("恢复默认 GPU") { studio.draft.profilePath = ""; studio.setANEEnabled(false) }
                     }
                     Text("加速配置由引擎校验。本次请求的真实执行计划可在任务详情中查看。").font(.caption2).foregroundStyle(.secondary)
                 }.padding(.top, 12)
@@ -1431,6 +1431,7 @@ struct StudioView: View {
         Task { do {
             let resolved = try await store.resolveAcceleration(snapshot)
             studio.rememberAcceleration(resolved)
+            if resolved.usesRuntimeANE { studio.message = "实验描述已准备，点击生成后独立进程会加载模型。"; return }
             if resolved.usesPublicStreaming {
                 throw NativeFailure(message: "public 流式加载会在生成时解析并锁定档位；请直接点击生成。")
             }
@@ -1475,6 +1476,7 @@ struct StudioView: View {
                     modelURL: URL(fileURLWithPath: resolved.modelPath),
                     request: pair.legacy,
                     streamingRequest: pair.v2,
+                    runtimeOptions: try resolved.runtimeOptions(store: store.directory),
                     inputAssets: resolved.activeAssets)
                 selected = job.id; compareOriginal = false
                 resultSelection.select(job.id, orderedIDs: outputIDs)

@@ -226,6 +226,8 @@ struct StudioAcceleration: Codable, Sendable {
     var exportPython: String?
     var exportPythonPath: String?
     var exportProfile: String?
+    var runtimeAneProfileID: String?
+    var runtimeDescriptor: String?
 }
 enum Qwen21DiTCacheMode: String, CaseIterable, Identifiable {
     case off, conservative, balanced, fast
@@ -440,6 +442,77 @@ struct StudioDraft: Codable, Sendable {
         return qwen21TurboConfigurationIssues.isEmpty ? "Turbo · 6 步" : "Turbo · 待配置"
     }
     var usesANE: Bool { acceleration?.policy == "gpu_ane" }
+    var usesRuntimeANE: Bool { usesANE && acceleration?.runtimeAneProfileID != nil }
+    var runtimeANEIssue: String? {
+        guard usesRuntimeANE else { return nil }
+        guard acceleration?.runtimeAneProfileID == RuntimeImageWorker.profileID else { return "实验配置版本未识别，请关闭并重新选择。" }
+        guard ["z-image-turbo", "qwen-image-2.1"].contains(modelID), width == 512, height == 512, frames == 1, !audio else {
+            return "本机 Runtime 实验仅验收 Z-Image 与 Qwen Image 2.1 的 512×512 单图。"
+        }
+        guard !usesPublicStreaming, profilePath.isEmpty, !promptEnhance, dynamicText, qwen21DiTCache == "off",
+              acceleration?.compileGPU != true, acceleration?.qwen21W8A8 != true else {
+            return "Runtime 实验需开启变长文本，关闭流式加载、设备配置、提示词增强、DiT 缓存与冻结量化实验。"
+        }
+        guard activeLoRAs.allSatisfy({ $0.role == "transformer" }),
+              activeLoRAs.isEmpty || ["auto", "inference_time"].contains(loraStrategy) else {
+            return "Runtime 实验的 LoRA 需要 Transformer 角色与自动或运行时加载策略。"
+        }
+        if modelID == "z-image-turbo" {
+            guard zImageVariant == nil || zImageVariant?.id == "bf16" else { return "Z-Image Runtime 实验只验收本地 BF16 权重。" }
+            guard operation == "image.generate", activeAssets.isEmpty, residency == "resident", steps == 8 else {
+                return "Z-Image Runtime 实验固定为文生图、常驻加载、8 步；其他组合尚未验收。"
+            }
+        } else {
+            guard residency == "component_staged", activeAssets.count <= 2,
+                  operation == (activeAssets.isEmpty ? "image.generate" : "image.edit"), effectiveQwen21ReferenceSize == 1024 else {
+                return "Qwen Runtime 实验需要分阶段加载、标准 1024 参考编码，支持文生图或 1–2 张参考图编辑。"
+            }
+            if activeLoRAs.isEmpty {
+                guard steps == 20 else { return "Qwen 基础模型 Runtime 实验固定为 20 步；其他步数尚未验收。" }
+            } else {
+                guard activeLoRAs.count == 1,
+                      URL(fileURLWithPath: activeLoRAs[0].path).lastPathComponent == "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+                      activeLoRAs[0].strength == 1, steps == 6 else {
+                    return "Qwen Runtime LoRA 仅验收单个 Viggle r128、6 步、强度 1。"
+                }
+            }
+        }
+        return nil
+    }
+    func runtimeOptions(store: URL) throws -> RuntimeImageWorker.Options? {
+        guard usesRuntimeANE else { return nil }
+        if let issue = runtimeANEIssue { throw NativeFailure(message: issue) }
+        guard let descriptor = acceleration?.runtimeDescriptor, !descriptor.isEmpty else { throw NativeFailure(message: "请先准备本机 Runtime 实验配置。") }
+        return RuntimeImageWorker.Options(profile_id: RuntimeImageWorker.profileID, descriptor_path: descriptor,
+                                          cache_dir: RuntimeImageWorker.programCache(store: store).path)
+    }
+    // These App routes forward adapter deltas separately and therefore use GPU.
+    // A frozen ANE partition is eligible only through the existing manifest
+    // binding checks; runtime/private ANE admission remains a native decision.
+    var aneLoRARequiresGPU: Bool {
+        guard !activeLoRAs.isEmpty else { return false }
+        if usesRuntimeANE && runtimeANEIssue == nil { return false }
+        if modelID == "qwen-image-2.1" { return true }
+        return loraStrategy == "inference_time" &&
+            (modelID.hasPrefix("flux2-") || ["z-image-turbo", "z-image-turbo-gguf"].contains(modelID))
+    }
+    var executionDeviceLabel: String {
+        if usesRuntimeANE { return "GPU + Private ANE（本机实验，实际以回执为准）" }
+        if qwen21TurboLoRA != nil { return "GPU" }
+        if !profilePath.isEmpty || acceleration?.policy == "profile" { return "设备配置" }
+        return usesANE && !aneLoRARequiresGPU ? "GPU + Core ML" : "GPU"
+    }
+    var aneConfigurationNotice: String? {
+        if usesRuntimeANE { return runtimeANEIssue ?? "Hadamard W8A8 数据路径；若容量或执行条件不满足会退回 GPU，生成后显示实际路线。" }
+        guard usesANE, aneLoRARequiresGPU else { return nil }
+        if qwen21TurboLoRA != nil {
+            return "当前六步 Qwen LoRA 使用 GPU 运行时加载；已选 ANE 分区不会参与本次生成。"
+        }
+        if modelID == "qwen-image-2.1" {
+            return "当前 App 中普通 Qwen LoRA 需要纯 GPU，请关闭 ANE 后生成。"
+        }
+        return "当前 LoRA 采用运行时加载，生成时使用 GPU。冻结 ANE 分区需要与 LoRA 文件和强度匹配，并采用支持的合并策略。"
+    }
     var usesPublicStreaming: Bool { streaming.selection.targetBytes != nil }
     var modelPath: String { modelPaths[modelID] ?? "" }
     var zImageVariant: ZImageVariant? {
@@ -480,7 +553,9 @@ struct StudioDraft: Codable, Sendable {
         return true
     }
     var accelerationHint: String {
+        if usesRuntimeANE { return "Runtime · Hadamard W8A8 数据路径（本机实验）· 实际路线以回执为准" }
         if qwen21TurboLoRA != nil { return "GPU · BF16 · LoRA 运行时加载" }
+        if usesANE, aneLoRARequiresGPU { return "GPU · LoRA 运行时加载" }
         let policy = acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")
         if policy == "gpu", let variant = zImageVariant, variant.id != "bf16" {
             return "GPU · \(variant.title)"
@@ -589,6 +664,7 @@ struct StudioDraft: Codable, Sendable {
     func validate(model: StudioModel) throws {
         guard !modelPath.isEmpty else { throw NativeFailure(message: "请先在模型中心选择模型文件夹。") }
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
+        if let issue = runtimeANEIssue { throw NativeFailure(message: issue) }
         guard model.supports(operation) else { throw NativeFailure(message: "当前模型不支持“\(operation)”操作。") }
         // Bound user-entered integers before any model-specific token/latent
         // arithmetic, including LTX's Stage-2 row product below.
@@ -817,8 +893,8 @@ struct StudioDraft: Codable, Sendable {
                 acceleration.policy == "gpu_ane" &&
                 AccelerationDiscovery.manifestBinds(manifest: acceleration.manifest,
                                                     loras: activeLoRAs)
-            let loraRequiresBaseGPU = imageLoRA && (!loraManifestMatches || modelID == "qwen-image-2.1")
-            if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true && !loraRequiresBaseGPU {
+            let loraRequiresBaseGPU = imageLoRA && !usesRuntimeANE && (!loraManifestMatches || modelID == "qwen-image-2.1")
+            if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true && !loraRequiresBaseGPU && !usesRuntimeANE {
                 guard !acceleration.manifest.isEmpty else { throw NativeFailure(message: "请在模型中心选择已编译的分区 manifest，或先预编译本地源分区。") }
                 request.ane_manifest = acceleration.manifest; request.allow_approximation = true
                 if modelID == "qwen-image-2.1", acceleration.qwen21W8A8 == true {
@@ -857,7 +933,7 @@ struct StudioDraft: Codable, Sendable {
         }
         request.loras = activeLoRAs.isEmpty ? nil : activeLoRAs.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
         if modelID == "qwen-image-2.1", !activeLoRAs.isEmpty { request.lora_strategy = "inference_time" }
-        if qwen21TurboLoRA != nil {
+        if qwen21TurboLoRA != nil && !usesRuntimeANE {
             // The qualified six-step schedule is explicitly approximate. Base
             // Qwen ANE partitions do not include the adapter's weight delta.
             request.execution = "gpu"; request.profile = nil; request.ane_manifest = nil
@@ -865,6 +941,19 @@ struct StudioDraft: Codable, Sendable {
             request.lora_strategy = "inference_time"
         }
         if modelID == "wan2.1-1.3b-qad" && !activeLoRAs.isEmpty { request.execution = "gpu" }
+        if usesRuntimeANE {
+            guard RuntimeImageWorker.hardwareEligible(systemJSON: systemJSON ?? NativeEngine.system()) else {
+                throw NativeFailure(message: "Runtime 实验当前仅验收 Apple M4 Pro、48 GiB 内存，请改用 GPU。")
+            }
+            guard let descriptor = acceleration.runtimeDescriptor, !descriptor.isEmpty else {
+                throw NativeFailure(message: "请先准备本机 Runtime 实验描述。")
+            }
+            request.execution = "gpu_ane"; request.profile = nil
+            request.ane_manifest = descriptor; request.allow_approximation = true
+            request.hybrid_mlp_mode = "runtime"; request.qwen21_w8a8 = false
+            request.fps = 24
+            request.lora_strategy = activeLoRAs.isEmpty ? "auto" : "inference_time"
+        }
         return request
     }
 }
@@ -1286,6 +1375,7 @@ final class StudioState: ObservableObject {
     func setANEEnabled(_ enabled: Bool) {
         var config = draft.acceleration ?? StudioAcceleration()
         config.policy = enabled ? "gpu_ane" : "gpu"
+        if !enabled { config.runtimeAneProfileID = nil; config.runtimeDescriptor = nil }
         config.automaticVersion = 1
         draft.profilePath = ""
         draft.acceleration = config
@@ -1326,7 +1416,8 @@ final class StudioState: ObservableObject {
     }
     func rememberAcceleration(_ resolved: StudioDraft) {
         guard draft.modelID == resolved.modelID, draft.activeLoRAs == resolved.activeLoRAs,
-              draft.acceleration?.policy == resolved.acceleration?.policy else { return }
+              draft.acceleration?.policy == resolved.acceleration?.policy,
+              draft.acceleration?.runtimeAneProfileID == resolved.acceleration?.runtimeAneProfileID else { return }
         draft.acceleration = resolved.acceleration
         save()
     }
@@ -1832,6 +1923,11 @@ final class StudioState: ObservableObject {
             draft.zImageStreamingBudgetGiB = Int(min(budget >> 30, 12))
         }
         draft.acceleration = StudioAcceleration(policy: request.profile == nil ? request.execution : "profile", manifest: request.ane_manifest ?? "", compileGPU: request.compile_gpu, qwen21W8A8: request.qwen21_w8a8)
+        if let options = job.runtimeOptions {
+            draft.acceleration?.runtimeAneProfileID = options.profile_id
+            draft.acceleration?.runtimeDescriptor = options.descriptor_path
+            draft.acceleration?.manifest = ""
+        }
         draft.dynamicText = request.dynamic_text
         draft.promptEnhance = request.prompt_enhance ?? false
         draft.promptEnhanceEditExperimental = request.prompt_enhance_edit_experimental ?? false

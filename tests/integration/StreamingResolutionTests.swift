@@ -10,6 +10,23 @@ struct StreamingResolutionTests {
             do { try work() } catch { return }
             throw NativeFailure(message: "Expected mismatched streaming evidence to fail")
         }
+        let hybridOptions: [(String?, Bool?)] = [(nil, nil), ("runtime", false), ("base_fused", true)]
+        for (mode, w8a8) in hybridOptions {
+            var legacy = NativeRequest(prompt: "fixture", output: "/tmp/fixture.png")
+            legacy.model = "qwen-image-2.1"
+            legacy.hybrid_mlp_mode = mode; legacy.qwen21_w8a8 = w8a8
+            let restoredLegacy = try JSONDecoder().decode(NativeRequest.self, from: JSONEncoder().encode(legacy))
+            let converted = NativeRequestV2(legacy: restoredLegacy)
+            let encoded = try JSONEncoder().encode(converted)
+            let restored = try JSONDecoder().decode(NativeRequestV2.self, from: encoded)
+            try require(restored.execution.hybrid_mlp_mode == mode && restored.execution.qwen21_w8a8 == w8a8,
+                        "Legacy conversion or V2 Codable round trip lost explicit hybrid options")
+            let wire = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+            let execution = wire["execution"] as! [String: Any]
+            try require(wire["hybrid_mlp_mode"] == nil && wire["qwen21_w8a8"] == nil &&
+                        execution["hybrid_mlp_mode"] as? String == mode && execution["qwen21_w8a8"] as? Bool == w8a8,
+                        "Hybrid options must match the native V2 execution field layout")
+        }
         let original = NativeRequestV2(legacy: NativeRequest(prompt: "fixture", output: "/tmp/fixture.png"), targetBytes: 10 << 30)
         let requested = original.execution.streaming!
         var exact = requested

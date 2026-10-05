@@ -35,7 +35,10 @@ class ProjectSliceTests(unittest.TestCase):
                 "-Wl,-rpath," + str(mlx_root / "lib"),
                 "-o", str(binary),
             ], check=True, cwd=ROOT)
-            report = subprocess.run([str(binary)], capture_output=True, text=True,
+            arguments = [str(binary)]
+            if os.environ.get("TURBOCIDER_TEST_MLX_CPU") == "1":
+                arguments.append("--cpu")
+            report = subprocess.run(arguments, capture_output=True, text=True,
                                     check=True, cwd=ROOT)
             measured = json.loads(report.stdout)
             self.assertLess(measured["lora_rows_relative_l2"], 1e-5)
@@ -43,6 +46,10 @@ class ProjectSliceTests(unittest.TestCase):
             self.assertLess(measured["fp16_lora_rows_relative_l2"], 1e-5)
             self.assertLess(measured["gate_delta_relative_l2"], 1e-5)
             self.assertLess(measured["up_delta_relative_l2"], 1e-5)
+            self.assertEqual(measured["workspace_rows_relative_l2"], 0)
+            self.assertTrue(measured["workspace_identity_checks"])
+            self.assertTrue(measured["supplied_base_identity_checks"])
+            self.assertTrue(measured["disjoint_channel_correction_checks"])
 
 
 if __name__ == "__main__":

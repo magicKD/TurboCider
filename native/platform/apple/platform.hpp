@@ -18,4 +18,6 @@ struct FluxConfiguration {
 };
 FluxConfiguration flux_configuration(const std::filesystem::path &, const std::string &);
 std::string sha256_file(const std::filesystem::path &);
+// Cancellable CPU-only overload. Caller retains and validates source identity.
+std::string sha256_file(int source_fd, const std::atomic<bool> &cancelled);
 } // namespace tc

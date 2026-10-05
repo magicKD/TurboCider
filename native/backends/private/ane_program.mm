@@ -4,8 +4,10 @@
 #include "ane_program.hpp"
 #include "ane_transfer_kernels.hpp"
 #include "ane_w8_kernels.hpp"
+#include "ane_a8_single_pass.hpp"
 #include "../ane_runtime.hpp"
 #include "../ane_w8a8_math.hpp"
+#include "../ane_w8_stage.hpp"
 #import <Foundation/Foundation.h>
 #import <IOSurface/IOSurface.h>
 #import <Metal/Metal.h>
@@ -167,32 +169,6 @@ std::vector<std::string> symbols(NSDictionary *attributes, NSString *key) {
 } // namespace
 
 namespace {
-bool same_generation(const std::weak_ptr<void>&a,const std::weak_ptr<void>&b) {
-    return !a.owner_before(b)&&!b.owner_before(a);
-}
-bool same_scale_matrix(const DeviceMatrixView&a,const DeviceMatrixView&b) {
-    return same_generation(a.allocation_identity,b.allocation_identity)&&
-        std::tie(a.buffer,a.buffer_bytes,a.offset_bytes,a.rows,a.cols,a.row_stride_bytes,a.dtype)==
-        std::tie(b.buffer,b.buffer_bytes,b.offset_bytes,b.rows,b.cols,b.row_stride_bytes,b.dtype);
-}
-bool same_scale_key(const DeviceWeightRegion&a,const DeviceWeightRegion&b) {
-    const auto &x=a.source,&y=b.source;const auto &p=a.selection,&q=b.selection;
-    const auto meta=[](const auto&a,const auto&b){return bool(a)==bool(b)&&(!a||same_scale_matrix(*a,*b));};
-    return same_generation(x.allocation_identity,y.allocation_identity)&&meta(x.scales,y.scales)&&meta(x.offsets,y.offsets)&&
-        std::tie(x.buffer,x.buffer_bytes,x.offset_bytes,x.row_stride_bytes,x.rows,x.cols,x.encoding,x.dense_dtype,x.group_size)==
-        std::tie(y.buffer,y.buffer_bytes,y.offset_bytes,y.row_stride_bytes,y.rows,y.cols,y.encoding,y.dense_dtype,y.group_size)&&
-        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose)==
-        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose);
-}
-bool live_scale_key(const DeviceWeightRegion&key) {
-    return !key.source.allocation_identity.expired() &&
-        (!key.source.scales||!key.source.scales->allocation_identity.expired()) &&
-        (!key.source.offsets||!key.source.offsets->allocation_identity.expired());
-}
-DeviceWeightRegion weak_scale_key(DeviceWeightView source,W8StageSpec spec) {
-    source.owner.reset();if(source.scales)source.scales->owner.reset();if(source.offsets)source.offsets->owner.reset();
-    return {std::move(source),spec}; // no strong source/model allocation lease retained in the cache
-}
 struct ScaleCacheEntry {
     DeviceWeightRegion key;
     id<MTLBuffer> buffer;
@@ -216,6 +192,36 @@ struct Device::Impl {
     // At most (3 dense dtypes + 6 packed encodings) * 2 rotation blocks.
     // Keys retain no source allocation or model/adapter values.
     std::map<std::array<uint32_t,3>,W8Pipelines> w8_pipelines;
+    bool a8_single_pass_requested = false;
+    id<MTLLibrary> a8_library;
+    std::map<uint32_t, id<MTLComputePipelineState>> a8_pipelines;
+    std::atomic<uint64_t> a8_eligible_submissions{0}, a8_ineligible_submissions{0};
+    id<MTLComputePipelineState> a8_pipeline(uint32_t columns) {
+        std::lock_guard lock(pipelines_mutex);
+        require(a8_single_pass_requested && (columns == 3840 || columns == 4096), "A8 single-pass pipeline geometry unsupported");
+        auto found = a8_pipelines.find(columns);
+        if (found != a8_pipelines.end()) return found->second;
+        NSError *error = nil;
+        if (!a8_library) {
+            MTLCompileOptions *options = [MTLCompileOptions new]; options.fastMathEnabled = NO;
+            // This library is intentionally independent of w8_source. The
+            // default two-pass path cannot fail on candidate shader syntax.
+            const std::string shader = std::string(transfer_source) + a8_single_pass_source;
+            a8_library = [device newLibraryWithSource:@(shader.c_str()) options:options error:&error];
+            require(a8_library != nil, "requested A8 single-pass shader compile failed: " + description(error));
+        }
+        MTLFunctionConstantValues *constants = [MTLFunctionConstantValues new];
+        [constants setConstantValue:&columns type:MTLDataTypeUInt atIndex:0];
+        id<MTLFunction> function = [a8_library newFunctionWithName:@"tc_ane_a8_single_pass" constantValues:constants error:&error];
+        require(function != nil, "requested A8 single-pass function unavailable: " + description(error));
+        id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:function error:&error];
+        require(pipeline != nil, "requested A8 single-pass pipeline compile failed: " + description(error));
+        require(pipeline.threadExecutionWidth == 32 && pipeline.maxTotalThreadsPerThreadgroup >= 128 &&
+                pipeline.staticThreadgroupMemoryLength <= device.maxThreadgroupMemoryLength,
+                "requested A8 single-pass SIMD/threadgroup capacity unsupported");
+        a8_pipelines.emplace(columns, pipeline);
+        return pipeline;
+    }
     W8Pipelines pipelines(DeviceWeightEncoding encoding,DType dtype,int block) {
         std::lock_guard lock(pipelines_mutex);
         NSError *error=nil;
@@ -287,6 +293,7 @@ Device::Device() : impl_(std::make_shared<Impl>()) {
     const char *specialize=std::getenv("TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE");
     require(!specialize||std::string(specialize)=="0"||std::string(specialize)=="1","private ANE stage specialization requires 0 or 1");
     impl_->specialize_staging=specialize&&std::string(specialize)=="1";
+    impl_->a8_single_pass_requested = a8_single_pass::requested_flag(std::getenv("TURBOCIDER_PRIVATE_ANE_A8_SINGLE_PASS"));
 }
 WeightCacheStats Device::scale_cache_stats() const {
     std::lock_guard lock(impl_->scale_cache_mutex);auto stats=impl_->scale_stats;stats.entries=impl_->scale_cache.size();return stats;
@@ -294,6 +301,12 @@ WeightCacheStats Device::scale_cache_stats() const {
 StagePipelineStats Device::stage_pipeline_stats() const {
     std::lock_guard lock(impl_->pipelines_mutex);
     return {impl_->specialize_staging,impl_->w8_pipelines.size()};
+}
+A8SinglePassStats Device::a8_single_pass_stats() const {
+    std::lock_guard lock(impl_->pipelines_mutex);
+    return {impl_->a8_single_pass_requested, !impl_->a8_pipelines.empty(),
+            impl_->a8_eligible_submissions.load(std::memory_order_relaxed),
+            impl_->a8_ineligible_submissions.load(std::memory_order_relaxed)};
 }
 std::string Device::name() const { return impl_->device.name.UTF8String; }
 uint64_t Device::value() const { return impl_->event.signaledValue; }
@@ -375,7 +388,9 @@ struct Transfer::Impl {
     std::condition_variable cv;
     bool submitted = false, done = false, ok = false;
     void fail() {
-        std::atomic_ref<uint32_t>(*static_cast<uint32_t *>(failed.contents)).store(1, std::memory_order_release);
+        // This flag lives in Metal shared storage, not an atomic object. Clang
+        // builtins preserve atomic_ref ordering on older supported libc++ SDKs.
+        __atomic_store_n(static_cast<uint32_t *>(failed.contents), uint32_t(1), __ATOMIC_RELEASE);
     }
 };
 namespace {
@@ -523,7 +538,7 @@ Completion Transfer::finish(std::chrono::milliseconds timeout) {
         impl_->fail(); process_healthy = false; impl_->device->release(impl_->done_value);
         return {false, true, "private ANE transfer timeout; resources retained until GPU completion"};
     }
-    const bool failed = std::atomic_ref<uint32_t>(*static_cast<uint32_t *>(impl_->failed.contents)).load(std::memory_order_acquire);
+    const bool failed = __atomic_load_n(static_cast<uint32_t *>(impl_->failed.contents), __ATOMIC_ACQUIRE);
     return {impl_->ok && !failed, false, !impl_->ok ? "private ANE GPU transfer failed" : failed ? "private ANE transfer suppressed after failure" : ""};
 }
 uint32_t Transfer::validation_flags() const {
@@ -541,7 +556,7 @@ struct QuantStage::Impl {
     std::shared_ptr<ScaleCacheEntry> cached_scales;
     std::mutex mutex;
     std::condition_variable cv;
-    bool done = false, ok = false;
+    bool done = false, ok = false, single_pass = false;
     Impl(Surface a, Surface b) : codes(std::move(a)), scales(std::move(b)) {}
 };
 namespace {
@@ -550,8 +565,10 @@ struct W8Params {
     uint32_t meta_pitch, meta_dtype, offset_pitch, offset_dtype, has_offset;
     uint32_t row_begin, rows, column_begin, columns, block, code_pitch, scale_pitch, transpose;
     uint32_t seed_low, seed_high;
+    uint32_t has_column_scale, inverse_column_scale;
     float norm;
 };
+static_assert(sizeof(W8Params) == 23 * sizeof(uint32_t), "W8 host/Metal scalar ABI mismatch");
 size_t w8_source_row_bytes(const DeviceWeightView &v) {
     switch (v.encoding) {
     case DeviceWeightEncoding::Dense:
@@ -604,6 +621,8 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
                         "W8 affine metadata physical geometry mismatch");
             }
         }
+        w8_stage::validate_column_scale(source, spec);
+        if (spec.column_scale) validate_device(*spec.column_scale, impl_->device, false);
         // Alias includes unused physical storage: an immutable source/metadata
         // must not be overwritten by either target, even for a logical slice.
         auto disjoint = [&](void *native) {
@@ -612,25 +631,37 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
         };
         disjoint(source.buffer);
         for (const auto *meta : {&source.scales, &source.offsets}) if (*meta) disjoint((**meta).buffer);
+        if (spec.column_scale) disjoint(spec.column_scale->buffer);
         require(codes.impl_->buffer != scales.impl_->buffer, "W8 code/scale target aliases");
-        const auto pipelines=impl_->pipelines(source.encoding,source.dense_dtype,spec.rotation_block);
-        require(pipelines.scales.maxTotalThreadsPerThreadgroup>=uint32_t(spec.rotation_block) &&
-                pipelines.codes.maxTotalThreadsPerThreadgroup>=uint32_t(spec.rotation_block),"W8 cached pipeline rotation capacity unsupported");
+        const bool single_pass = impl_->a8_single_pass_requested && a8_single_pass::eligible(source, spec);
+        id<MTLComputePipelineState> a8_pipeline = nil;
+        Device::Impl::W8Pipelines pipelines{};
+        if (single_pass) a8_pipeline = impl_->a8_pipeline(uint32_t(spec.columns));
+        else {
+            pipelines = impl_->pipelines(source.encoding, source.dense_dtype, spec.rotation_block);
+            require(pipelines.scales.maxTotalThreadsPerThreadgroup >= uint32_t(spec.rotation_block) &&
+                    pipelines.codes.maxTotalThreadsPerThreadgroup >= uint32_t(spec.rotation_block), "W8 cached pipeline rotation capacity unsupported");
+        }
         auto state = std::make_shared<QuantStage::Impl>(std::move(codes), std::move(scales));
         state->device = impl_; state->source = std::move(source); state->spec = spec;
+        state->single_pass = single_pass;
         state->signs = impl_->signs(spec.rotation_seed);
         state->status = [impl_->device newBufferWithLength:4 options:MTLResourceStorageModeShared];
         state->event = [impl_->device newSharedEvent];
         require(state->status && state->event, "W8 stage status/event allocation failed");
+        // Initialize only this fresh Shared resource before any GPU submission;
+        // never reset a live/reused status. Completion retains the entire state,
+        // including this buffer, across timeout and delayed GPU completion.
+        *static_cast<uint32_t *>(state->status.contents) = 0;
         bool scale_hit=false;
-        const DeviceWeightRegion key=weak_scale_key(state->source,spec);
-        if(impl_->scale_stats.enabled && state->source.immutable_generation && !spec.transpose && live_scale_key(key)) {
+        const DeviceWeightRegion key=w8_stage::weak_key(state->source,spec);
+        if(impl_->scale_stats.enabled && state->source.immutable_generation && !spec.transpose && w8_stage::live_key(key)) {
             std::lock_guard lock(impl_->scale_cache_mutex);
             for(auto it=impl_->scale_cache.begin();it!=impl_->scale_cache.end();) {
-                if(!live_scale_key((*it)->key)) {impl_->scale_stats.bytes-=(*it)->buffer.length;it=impl_->scale_cache.erase(it);++impl_->scale_stats.evictions;}
+                if(!w8_stage::live_key((*it)->key)) {impl_->scale_stats.bytes-=(*it)->buffer.length;it=impl_->scale_cache.erase(it);++impl_->scale_stats.evictions;}
                 else ++it;
             }
-            for(const auto &entry:impl_->scale_cache)if(entry->valid.load(std::memory_order_acquire)&&same_scale_key(entry->key,key)) {
+            for(const auto &entry:impl_->scale_cache)if(entry->valid.load(std::memory_order_acquire)&&w8_stage::same_region(entry->key,key)) {
                 state->cached_scales=entry;entry->last_use=++impl_->scale_clock;scale_hit=true;++impl_->scale_stats.hits;break;
             }
             if(!scale_hit) {
@@ -652,19 +683,21 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             uint32_t(s.offsets ? device_pitch(*s.offsets) : 0), uint32_t(s.offsets ? s.offsets->dtype : DType::FP16), uint32_t(s.offsets.has_value()),
             uint32_t(spec.row_begin), uint32_t(spec.rows), uint32_t(spec.column_begin), uint32_t(spec.columns), uint32_t(spec.rotation_block),
             uint32_t(state->codes.pitch()), uint32_t(spec.transpose ? 2 : state->scales.pitch()), uint32_t(spec.transpose),
-            uint32_t(spec.rotation_seed), uint32_t(spec.rotation_seed >> 32), 1.f / std::sqrt(float(spec.rotation_block))};
+            uint32_t(spec.rotation_seed), uint32_t(spec.rotation_seed >> 32), uint32_t(spec.column_scale.has_value()),
+            uint32_t(spec.inverse_column_scale), 1.f / std::sqrt(float(spec.rotation_block))};
         // A8 must not queue behind an independently prepared future W bank.
         id<MTLCommandBuffer> command = [(spec.transpose ? impl_->activation_queue : impl_->staging_queue) commandBuffer];
         require(command != nil, "W8 stage command buffer unavailable");
-        id<MTLBlitCommandEncoder> clear = [command blitCommandEncoder];
-        require(clear != nil, "W8 stage clear encoder unavailable");
-        [clear fillBuffer:state->status range:NSMakeRange(0, 4) value:0]; [clear endEncoding];
         auto bind = [&](id<MTLComputeCommandEncoder> encoder) {
             [encoder setBuffer:(__bridge id<MTLBuffer>)s.buffer offset:s.offset_bytes atIndex:0];
             if (s.scales) [encoder setBuffer:(__bridge id<MTLBuffer>)s.scales->buffer offset:s.scales->offset_bytes atIndex:1];
             else [encoder setBuffer:state->status offset:0 atIndex:1];
             if (s.offsets) [encoder setBuffer:(__bridge id<MTLBuffer>)s.offsets->buffer offset:s.offsets->offset_bytes atIndex:2];
             else [encoder setBuffer:state->status offset:0 atIndex:2];
+        };
+        auto bind_column_scale = [&](id<MTLComputeCommandEncoder> encoder, NSUInteger index) {
+            if (spec.column_scale) [encoder setBuffer:(__bridge id<MTLBuffer>)spec.column_scale->buffer offset:spec.column_scale->offset_bytes atIndex:index];
+            else [encoder setBuffer:state->status offset:0 atIndex:index];
         };
         auto copy_scales=[&](bool restore) {
             id<MTLComputeCommandEncoder> copy=[command computeCommandEncoder];require(copy!=nil,"W8 scale cache encoder unavailable");
@@ -675,25 +708,28 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             [copy setBytes:params length:sizeof(params) atIndex:2];
             [copy dispatchThreads:MTLSizeMake(spec.rows,1,1) threadsPerThreadgroup:MTLSizeMake(64,1,1)];[copy endEncoding];
         };
-        if(scale_hit)copy_scales(true);
-        else {
+        if (!single_pass && scale_hit) copy_scales(true);
+        else if (!single_pass) {
             id<MTLComputeCommandEncoder> scale = [command computeCommandEncoder];
             require(scale != nil, "W8 scale encoder unavailable"); bind(scale);
             [scale setComputePipelineState:pipelines.scales];
             [scale setBuffer:state->scales.impl_->buffer offset:size_t(state->scales.row_begin_) * state->scales.pitch() atIndex:3];
             [scale setBuffer:state->status offset:0 atIndex:4]; [scale setBytes:&p length:sizeof(p) atIndex:5];
             [scale setBuffer:state->signs offset:0 atIndex:6];
+            bind_column_scale(scale, 7);
             [scale dispatchThreadgroups:MTLSizeMake(spec.rows, 1, 1) threadsPerThreadgroup:MTLSizeMake(spec.rotation_block, 1, 1)]; [scale endEncoding];
             if(state->cached_scales)copy_scales(false);
         }
         id<MTLComputeCommandEncoder> quant = [command computeCommandEncoder];
         require(quant != nil, "W8 code encoder unavailable"); bind(quant);
-        [quant setComputePipelineState:pipelines.codes];
+        [quant setComputePipelineState:single_pass ? a8_pipeline : pipelines.codes];
         [quant setBuffer:state->scales.impl_->buffer offset:size_t(state->scales.row_begin_) * state->scales.pitch() atIndex:3];
         [quant setBuffer:state->codes.impl_->buffer offset:size_t(state->codes.row_begin_) * state->codes.pitch() atIndex:4];
         [quant setBuffer:state->status offset:0 atIndex:5]; [quant setBytes:&p length:sizeof(p) atIndex:6];
         [quant setBuffer:state->signs offset:0 atIndex:7];
-        [quant dispatchThreadgroups:MTLSizeMake(spec.rows, spec.columns / spec.rotation_block, 1) threadsPerThreadgroup:MTLSizeMake(spec.rotation_block, 1, 1)]; [quant endEncoding];
+        bind_column_scale(quant, 8);
+        [quant dispatchThreadgroups:MTLSizeMake(spec.rows, single_pass ? 1 : spec.columns / spec.rotation_block, 1)
+            threadsPerThreadgroup:MTLSizeMake(spec.rotation_block, 1, 1)]; [quant endEncoding];
         [command encodeSignalEvent:state->event value:1];
         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
             if (completed.status == MTLCommandBufferStatusError && state->event.signaledValue < 1) state->event.signaledValue = 1;
@@ -702,7 +738,12 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             { std::lock_guard lock(state->mutex); state->ok = completed.status == MTLCommandBufferStatusCompleted; state->done = true; }
             state->cv.notify_all();
         }];
-        [command commit]; QuantStage ticket; ticket.impl_ = std::move(state); return ticket;
+        [command commit];
+        // Selection counters certify a committed candidate/old A8 command,
+        // not completion, numerical validity or measured kernel speed.
+        if (single_pass) impl_->a8_eligible_submissions.fetch_add(1, std::memory_order_relaxed);
+        else if (impl_->a8_single_pass_requested && spec.transpose) impl_->a8_ineligible_submissions.fetch_add(1, std::memory_order_relaxed);
+        QuantStage ticket; ticket.impl_ = std::move(state); return ticket;
       } @catch (NSException *exception) {
         throw CapabilityError("W8 stager exception: " + std::string(exception.reason.UTF8String ?: "unknown"));
       }
@@ -716,11 +757,12 @@ Completion QuantStage::finish(std::chrono::milliseconds timeout) {
         return {false, true, "W8 GPU stage timeout; resources retained until completion"};
     }
     const uint32_t flags = *static_cast<const uint32_t *>(impl_->status.contents);
-    return {impl_->ok && !flags, false, !impl_->ok ? "W8 GPU staging failed" : flags ? "W8 source/rotation/scale/quantization nonfinite or overflow" : ""};
+    return {impl_->ok && !flags, false, !impl_->ok ? "W8 GPU staging failed" : flags & 16u ? "W8 S1 outside [1/16,16] or scaled source nonfinite" : flags ? "W8 source/rotation/scale/quantization nonfinite or overflow" : ""};
 }
 uint32_t QuantStage::validation_flags() const {
     require(impl_ && impl_->done, "W8 stage status not ready"); return *static_cast<const uint32_t *>(impl_->status.contents);
 }
+bool QuantStage::single_pass() const { return impl_ && impl_->single_pass; }
 void *QuantStage::ready_event() const { return impl_ ? (__bridge void *)impl_->event : nullptr; }
 
 struct Program::Impl {

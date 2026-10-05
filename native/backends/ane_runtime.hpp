@@ -73,6 +73,11 @@ struct W8StageSpec {
     int rotation_block = 128;
     uint64_t rotation_seed = 20260930;
     bool transpose = false; // A8 channel-major vs W8 out/in
+    // Validated immutable SmoothQuant S1, one FP32 value per FULL source
+    // column. Applied before H128: W*S1, or X/S1 for transpose A8. H512 does
+    // not use S1. The ticket/bank owns its allocation; cache keys stay weak.
+    std::optional<DeviceMatrixView> column_scale{};
+    bool inverse_column_scale = false;
 };
 // Logical selection over an unchanged physical source. In particular a down
 // channel slice keeps the full packed row pitch/metadata geometry and owner.
@@ -124,8 +129,17 @@ struct GraphShape {
     int output_width() const { return kind == Kind::Matmul ? width : hidden; }
 };
 
-// Parse the runtime template's geometry/ABI only. Private executors emit their
-// own native MIL and do not load or claim validation of its Core ML artifact.
+enum class RuntimeArtifactKind { PublicCoreML, PrivateShape };
+struct RuntimeTemplateDescriptor {
+    GraphShape shape;
+    RuntimeArtifactKind artifact = RuntimeArtifactKind::PublicCoreML;
+    bool has_public_artifact() const { return artifact == RuntimeArtifactKind::PublicCoreML; }
+};
+
+// A private_runtime_shape descriptor contains geometry only, without a Core ML
+// model or checkpoint. Legacy runtime_weight_fp16 templates remain supported.
+// Parsing either format does not claim validation of a compiled artifact.
+RuntimeTemplateDescriptor runtime_template_descriptor(const std::filesystem::path &manifest);
 GraphShape runtime_template_shape(const std::filesystem::path &manifest);
 
 // Per-request activation corrections, NEVER merged into weight slots.
@@ -158,6 +172,12 @@ struct StagePipelineStats {
     bool specialized = false;
     uint64_t variants = 0;
 };
+struct A8SinglePassStats {
+    bool requested = false, pipeline_compiled = false;
+    // Committed staging submissions, including executor capability self-test.
+    // No kernel timing, successful completion or physical overlap claim.
+    uint64_t eligible_submissions = 0, ineligible_submissions = 0;
+};
 
 // Model/scheduler contract, independent of Core ML and private ObjC classes.
 // All executors share the same source views, row chunks, adapter corrections,
@@ -189,6 +209,7 @@ class Executor {
     virtual std::string weight_recipe() const { return {}; }
     virtual WeightCacheStats weight_cache_stats() const { return {}; }
     virtual StagePipelineStats stage_pipeline_stats() const { return {}; }
+    virtual A8SinglePassStats activation_stage_stats() const { return {}; }
     virtual bool device_submission_fence_enabled() const { return false; }
     virtual bool activation_lookahead_enabled() const { return false; }
     virtual void stage_device_weights(std::vector<DeviceWeightView>) {

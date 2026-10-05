@@ -10,8 +10,11 @@
 #include "memory_policy.hpp"
 #include "../../media/image.hpp"
 #include "../../runtime/residency.hpp"
+#include "../../runtime/async_lora_preflight.hpp"
 #include "../../runtime/streaming/source_lease.hpp"
 #include "../../backends/ane_backend.hpp"
+#include "../../backends/ane_calibration_mlx.hpp"
+#include "../../backends/ane_smoothquant_mlx.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <mlx/random.h>
 #include <bit>
@@ -134,6 +137,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     auto start = Clock::now();
     ScopedWiredResidency wired_residency;
     Request r = requested;
+    ane::smoothquant::validate_request(r);
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");
     const std::string original_prompt = r.prompt;
     const bool runtime_requested = r.hybrid_mlp_mode == "runtime";
@@ -241,6 +245,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     }
     plan.request = r;
     checkpoint(cancelled);
+    // Only the existing mandatory Runtime/staged LoRA digest is moved off the
+    // critical path. This request owns the task; its factory performs no MLX
+    // work and borrows neither r, cancelled nor the event callback.
+    std::unique_ptr<AsyncLoraPreflight> early_lora;
+    PreparationResult<LoraFileFingerprint> lora_verification;
+    if (runtime_requested && staged && !r.loras.empty()) {
+        early_lora = std::make_unique<AsyncLoraPreflight>(r.loras[0].path,
+            [](int fd, const std::atomic<bool> &stop) { return sha256_file(fd, stop); });
+    }
     // Include prompt enhancement in whole-request allocator accounting and
     // apply the requested cache policy before allocating PE tensors.
     mx::reset_peak_memory();
@@ -442,6 +455,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     std::string lora_identity;
     std::string lora_sha256;
     if (!r.loras.empty()) {
+        if (early_lora) {
+            lora_verification = early_lora->take(cancelled);
+            // Binding uses the verified physical name, so a source symlink
+            // cannot select a different checkpoint during the binding pass.
+            r.loras[0].path = lora_verification.value->canonical().string();
+        }
         auto path = std::filesystem::canonical(r.loras[0].path);
         require(std::filesystem::is_regular_file(path), "Qwen21 LoRA is not a regular file");
         lora_identity = path.string() + ":" + std::to_string(std::filesystem::file_size(path)) +
@@ -452,9 +471,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         // same-mtime replacement must still invalidate the resident MLX
         // binding. The original Viggle path keeps its fast warm-request ABI.
         if (!student_adapter || fused_lora_ane || runtime_requested) {
-            lora_sha256 = sha256_file(path);
+            lora_sha256 = lora_verification.value ? lora_verification.value->digest : sha256_file(path);
             lora_identity += ":" + lora_sha256;
         }
+        if (lora_verification.value) lora_verification.value->revalidate();
     }
     const bool bind_lora = !r.loras.empty() &&
         (active_lora_identity_ != lora_identity || !transformer_.bytes());
@@ -503,12 +523,21 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool lora_fp16 = option_enabled(std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16"));
     transformer_.set_runtime_lora_fp16(lora_fp16);
     if (bind_lora) {
+        if (lora_verification.value) lora_verification.value->revalidate();
         lora_applied_projections_ = transformer_.apply_loras(r.loras, "transformer", event, cancelled, true, true);
         require(pinned_student ? lora_applied_projections_ == 227 : lora_applied_projections_ > 0,
                 "Qwen21 LoRA did not bind transformer projections");
-        if (!pinned_student || runtime_requested)
-            require(sha256_file(r.loras[0].path) == lora_sha256,
+        if (!pinned_student || runtime_requested) {
+            // Keep the second complete digest after binding. The async path
+            // additionally validates the held fd and named source generation.
+            if (lora_verification.value) lora_verification.value->revalidate();
+            const auto after_binding = lora_verification.value
+                ? sha256_file(lora_verification.value->descriptor(), cancelled)
+                : sha256_file(r.loras[0].path);
+            require(after_binding == lora_sha256,
                     "Qwen21 LoRA changed while binding runtime projections");
+            if (lora_verification.value) lora_verification.value->revalidate();
+        }
         active_lora_identity_ = lora_identity;
     }
     if (fused_qkv && fused_qkv_weights_.empty()) {
@@ -550,10 +579,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             const size_t budget = runtime_ane_budget(device_info().physical_memory,
                                                      mx::get_active_memory());
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 4096, 12288, budget, cancelled,
-                                                         !r.loras.empty(), std::move(prepared));
+                                                         !r.loras.empty(), std::move(prepared),
+                ane::HybridFfn::scheduler_source_identity(
+                    root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors"));
             runtime_manifest_ = identity;
         }
-        runtime_ffn_->begin_request(active_lora_identity_);
+        ane::smoothquant::bind_request(*runtime_ffn_,r,
+            root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors",active_lora_identity_,4096);
     }
     if (qkv_requested) {
         for (int block = 0; block < 32; ++block) {
@@ -675,6 +707,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
     }
     RunResult result;
+    if (lora_verification.value) {
+        result.lora_verification_async = true;
+        result.lora_verification_seconds = lora_verification.seconds;
+        result.lora_verification_wait_seconds = lora_verification.wait_seconds;
+        result.lora_verification_before_join_seconds = lora_verification.before_join_seconds;
+    }
     result.original_prompt = original_prompt;
     result.enhanced_prompt = r.prompt_enhance ? r.prompt : "";
     result.enhanced_wh_ratio = enhanced_ratio;
@@ -812,6 +850,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     std::optional<Transformer::PrefixSnapshot> pending_snapshot;
     std::string pending_snapshot_runtime;
     if (!prepare_only) {
+        ane::calibration::ScopedCapture calibration_capture(r,
+            root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors",active_lora_identity_);
         if (layer_staged && hybrid_requested && hybrid_->ane_mlp_end == 6144)
             wired_residency.activate(6ull << 30);
         auto schedule = student_schedule ? viggle_v021_sigmas(r.width, r.height) :
@@ -841,7 +881,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             std::to_string(r.width) + ":" + std::to_string(r.height) + ":" +
             active_lora_identity_ + ":" + (lora_fp16 ? "fp16" : "fp32") + ":" +
             (hybrid_requested ? hybrid_manifest_ + hybrid_runtime_options_ :
-             runtime_requested ? runtime_manifest_ : qkv_requested ? qkv_manifest_ : "gpu") + ":" +
+             runtime_requested ? runtime_manifest_ + ":s1:" + runtime_ffn_->metrics().runtime_weight_s1_digest +
+                ":available:" + std::to_string(runtime_ffn_->available()) :
+             qkv_requested ? qkv_manifest_ : "gpu") + ":" +
             (fused_qkv ? "fused-qkv" : "ordinary-qkv") + ":" +
             (norm_rope ? std::string(norm_rope) : "") + ":" +
             (std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE") ?
@@ -962,15 +1004,55 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     checkpoint(cancelled);
                     runtime_ffn_->stage(block, rows, runtime_weights.at(block));
                 });
-                auto run_ffn = [&](int block, const Tensor &input) {
+                auto run_ffn = [&](int block, const Tensor &input, const char *phase) {
                     const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
+                    if (auto *capture = ane::calibration::ScopedCapture::current(); capture && capture->wants(block)) {
+                        const size_t rows = input.shape(1), target_rows = size_t(r.height / 16) * (r.width / 16);
+                        ane::calibration::Point point{block,0,phase,{}};
+                        if (rows == target_rows) point.regions.push_back({"target",0,rows});
+                        else {
+                            std::vector<ReferenceGeometry> geometry;
+                            for (const auto &reference : references) geometry.push_back(reference.geometry);
+                            const auto sequence = make_sequence_geometry(text.shape(1),r.height / 16,r.width / 16,geometry);
+                            require(sequence.positions.size() == rows,"bounded calibration sequence layout mismatch");
+                            int text_index = 0;
+                            for (const auto &segment : sequence.segments) {
+                                auto name = segment.image_index < 0 ? "text-" + std::to_string(text_index++) :
+                                    size_t(segment.image_index) < references.size()
+                                        ? "reference-" + std::to_string(segment.image_index) : "target";
+                                point.regions.push_back({std::move(name),size_t(segment.start),size_t(segment.end)});
+                            }
+                        }
+                        capture->observe(block,input,transformer_,{p + "gate_up"},std::move(point));
+                    }
+                    Weights::LoRAWorkspace workspace;
+                    auto *lora_workspace = runtime_ffn_->channel_split() ? &workspace : nullptr;
                     ane::HybridFfn::Adapter adapter{
                         [&](const Tensor &x) {
+                            if (lora_workspace) {
+                                // The ANE correction and GPU head consume the
+                                // same x @ A. Reuse it across the correction
+                                // fence without retaining a previous block,
+                                // denoising step, or request's activations.
+                                return std::make_pair(
+                                    mx::contiguous(transformer_.lora_delta_slice(x, p + "gate_up",
+                                        0, 12288, 0, 4096, std::nullopt, lora_workspace)),
+                                    mx::contiguous(transformer_.lora_delta_slice(x, p + "gate_up",
+                                        12288, 24576, 0, 4096, std::nullopt, lora_workspace)));
+                            }
                             auto gu = runtime_lora_gate_up.at(block)({x});
                             return std::make_pair(gu[0], gu[1]);
                         },
                         [&](const Tensor &h, const Tensor &base) {
                             return runtime_lora_down_add.at(block)({h, base})[0];
+                        },
+                        [&](const Tensor &x, int first, int count) {
+                            return std::make_pair(
+                                mx::contiguous(transformer_.lora_delta_slice(x, p + "gate_up",
+                                    first, first + count, 0, 4096, std::nullopt, lora_workspace)),
+                                mx::contiguous(transformer_.lora_delta_slice(x, p + "gate_up",
+                                    12288 + first, 12288 + first + count, 0, 4096,
+                                    std::nullopt, lora_workspace)));
                         }};
                     return runtime_ffn_->run(block, input, [&](const Tensor &x) {
                         if (transformer_.has_runtime_loras()) return runtime_lora_gpu.at(block)({x})[0];
@@ -978,8 +1060,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                               transformer_.at(p + "out.weight")})[0];
                     }, cancelled, transformer_.has_runtime_loras() ? &adapter : nullptr,
                     [&](const Tensor &x,int first,int count) {
-                        auto g=transformer_.project_slice(x,p+"gate_up",first,first+count,0,4096,false);
-                        auto u=transformer_.project_slice(x,p+"gate_up",12288+first,12288+first+count,0,4096,false);
+                        auto g=transformer_.project_slice(x,p+"gate_up",first,first+count,0,4096,false,lora_workspace);
+                        auto u=transformer_.project_slice(x,p+"gate_up",12288+first,12288+first+count,0,4096,false,lora_workspace);
                         auto hidden=silu(g)*u;
                         auto base=transformer_.project_base_slice(hidden,p+"out",0,4096,first,first+count,false);
                         return std::make_pair(base,hidden);
@@ -989,8 +1071,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         return sources;
                     });
                 };
-                dit.set_prefill_mlp(run_ffn);
-                dit.set_decode_mlp(run_ffn);
+                dit.set_prefill_mlp([run_ffn](int block, const Tensor &input) {
+                    return run_ffn(block,input,"prefill");
+                });
+                dit.set_decode_mlp([run_ffn](int block, const Tensor &input) {
+                    return run_ffn(block,input,"denoise");
+                });
             }
             if (qkv_requested) {
                 // Keep three checkpoint matrices separate on the GPU and in
@@ -1043,6 +1129,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             emit(event, "denoise", 0, r.steps);
             for (int step = 0; step < r.steps; ++step) {
                 checkpoint(cancelled);
+                calibration_capture.step(step);
                 if (layer_staged && step > 0) {
                     dit_source->revalidate_after_drain();
                     transformer_.clear();
@@ -1110,6 +1197,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 }
                 emit(event, "denoise", step + 1, r.steps);
             }
+            calibration_capture.finish();
+            if (calibration_capture.enabled()) result.selection += "; calibration capture: timings are not performance evidence";
             if (hybrid_requested) dit.set_decode_mlp({});
             if (tiled_prefill) dit.set_prefill_mlp({});
             if (runtime_requested) {

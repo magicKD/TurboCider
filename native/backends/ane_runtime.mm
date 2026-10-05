@@ -256,7 +256,8 @@ bool matches_digest(NSData *bytes, NSString *digest) {
     return [digest isEqualToString:@(hex)];
 }
 
-NSDictionary *read_manifest_shape(const std::filesystem::path &path, GraphShape &shape) {
+NSDictionary *read_manifest_shape(const std::filesystem::path &path, GraphShape &shape,
+                                 RuntimeArtifactKind *artifact = nullptr) {
     check(!std::filesystem::is_symlink(path), "runtime ANE manifest must not be a symlink");
     check(std::filesystem::is_regular_file(path) && std::filesystem::file_size(path) <= (1u << 20),
           "runtime ANE manifest must be a bounded regular file");
@@ -265,14 +266,28 @@ NSDictionary *read_manifest_shape(const std::filesystem::path &path, GraphShape 
     id decoded = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&error] : nil;
     check([decoded isKindOfClass:NSDictionary.class], "cannot read runtime ANE manifest");
     NSDictionary *manifest = decoded;
-    shape.lora_inputs = [manifest[@"graph_version"] isEqual:@2];
-    check([manifest[@"schema_version"] isEqual:@1] &&
-              ([manifest[@"graph_version"] isEqual:@1] || shape.lora_inputs) &&
-              (shape.lora_inputs ? [manifest[@"lora_inputs"] isEqual:@YES] :
-                  (!manifest[@"lora_inputs"] || [manifest[@"lora_inputs"] isEqual:@NO])) &&
-              [manifest[@"backend"] isEqual:@"runtime_weight_fp16"] &&
-              [manifest[@"layout"] isEqual:@"out_in"] && [manifest[@"biases"] isEqual:@NO] &&
-              [manifest[@"compiled_model"] isEqual:@"graph.mlmodelc"], "unsupported runtime ANE graph ABI");
+    const bool private_shape = [manifest[@"backend"] isEqual:@"private_runtime_shape"];
+    if (artifact) *artifact = private_shape ? RuntimeArtifactKind::PrivateShape : RuntimeArtifactKind::PublicCoreML;
+    if (private_shape) {
+        check(dimension(manifest, @"schema_version") == 1 &&
+                  dimension(manifest, @"descriptor_version") == 1 &&
+                  [manifest[@"layout"] isEqual:@"out_in"] && [manifest[@"biases"] isEqual:@NO] &&
+                  CFGetTypeID((__bridge CFTypeRef)manifest[@"biases"]) == CFBooleanGetTypeID() &&
+                  [manifest[@"lora_inputs"] isKindOfClass:NSNumber.class] &&
+                  CFGetTypeID((__bridge CFTypeRef)manifest[@"lora_inputs"]) == CFBooleanGetTypeID() &&
+                  !manifest[@"compiled_model"] && !manifest[@"files"] && !manifest[@"graph_version"],
+              "unsupported private runtime ANE shape descriptor ABI");
+        shape.lora_inputs = [manifest[@"lora_inputs"] boolValue];
+    } else {
+        shape.lora_inputs = [manifest[@"graph_version"] isEqual:@2];
+        check([manifest[@"schema_version"] isEqual:@1] &&
+                  ([manifest[@"graph_version"] isEqual:@1] || shape.lora_inputs) &&
+                  (shape.lora_inputs ? [manifest[@"lora_inputs"] isEqual:@YES] :
+                      (!manifest[@"lora_inputs"] || [manifest[@"lora_inputs"] isEqual:@NO])) &&
+                  [manifest[@"backend"] isEqual:@"runtime_weight_fp16"] &&
+                  [manifest[@"layout"] isEqual:@"out_in"] && [manifest[@"biases"] isEqual:@NO] &&
+                  [manifest[@"compiled_model"] isEqual:@"graph.mlmodelc"], "unsupported runtime ANE graph ABI");
+    }
     if ([manifest[@"kind"] isEqual:@"matmul"]) shape.kind = Kind::Matmul;
     else if ([manifest[@"kind"] isEqual:@"swiglu"]) shape.kind = Kind::SwiGLU;
     else if ([manifest[@"kind"] isEqual:@"gelu"]) shape.kind = Kind::GELU;
@@ -288,7 +303,10 @@ NSDictionary *read_manifest_shape(const std::filesystem::path &path, GraphShape 
 }
 std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphShape &shape,
                                       ArtifactLease &lease) {
-    NSDictionary *manifest = read_manifest_shape(path, shape);
+    RuntimeArtifactKind artifact;
+    NSDictionary *manifest = read_manifest_shape(path, shape, &artifact);
+    check(artifact == RuntimeArtifactKind::PublicCoreML,
+          "private runtime ANE shape descriptor has no Public Core ML artifact");
     NSDictionary *files = manifest[@"files"];
     check([files isKindOfClass:NSDictionary.class] && files.count > 0, "missing runtime ANE artifact receipt");
     const auto root = path.parent_path();
@@ -392,12 +410,15 @@ void check_model_interface(MLModel *model, const GraphShape &s) {
 }
 } // namespace
 
-GraphShape runtime_template_shape(const std::filesystem::path &manifest) {
+RuntimeTemplateDescriptor runtime_template_descriptor(const std::filesystem::path &manifest) {
     @autoreleasepool {
-        GraphShape shape;
-        read_manifest_shape(manifest, shape);
-        return shape;
+        RuntimeTemplateDescriptor descriptor;
+        read_manifest_shape(manifest, descriptor.shape, &descriptor.artifact);
+        return descriptor;
     }
+}
+GraphShape runtime_template_shape(const std::filesystem::path &manifest) {
+    return runtime_template_descriptor(manifest).shape;
 }
 
 struct RuntimeGraph::Prepared::Impl {

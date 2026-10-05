@@ -1,8 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <map>
+#include <mutex>
 #include <set>
 #include <utility>
 #include "ane_runtime.hpp"
@@ -32,6 +34,7 @@ class RowScheduler {
     std::map<std::pair<int, int>, State> states_;
     int chunk_, fixed_chunks_;
     PartitionAxis axis_;
+    bool measure_fixed_;
     static double ema(double old, double value) { return old ? .75 * old + .25 * value : value; }
   public:
     enum class Mode { Hybrid, HybridUntimed, GpuProbe, SplitProbe, Gpu };
@@ -44,8 +47,11 @@ class RowScheduler {
         bool measured() const { return mode != Mode::Gpu && mode != Mode::HybridUntimed; }
     };
     // fixed_chunks: -1 adaptive, 0 GPU-only split-boundary ablation, >0 fixed.
-    RowScheduler(int chunk, int fixed_chunks = -1, PartitionAxis axis = PartitionAxis::Rows)
-        : chunk_(chunk), fixed_chunks_(fixed_chunks), axis_(axis) {
+    RowScheduler(int chunk, int fixed_chunks = -1, PartitionAxis axis = PartitionAxis::Rows,
+                 bool measure_fixed = true)
+        : chunk_(chunk), fixed_chunks_(fixed_chunks), axis_(axis), measure_fixed_(measure_fixed) {
+        if (chunk <= 0 || fixed_chunks < -1 || fixed_chunks > 128)
+            throw std::runtime_error("runtime ANE scheduler geometry/partition invalid");
         if (axis == PartitionAxis::IntermediateChannels && fixed_chunks > 1)
             throw std::runtime_error("channel split supports chunks=auto, 0 or 1 (all rows use the same channel range)");
     }
@@ -56,7 +62,8 @@ class RowScheduler {
         // run the family's ordinary unsplit GPU block, without a timing fence.
         if (fixed_chunks_ == 0) return {Mode::SplitProbe, 0};
         if (max_chunks < 1) return {Mode::Gpu, 0};
-        if (fixed_chunks_ > 0) return {Mode::Hybrid, std::min(fixed_chunks_, max_chunks)};
+        if (fixed_chunks_ > 0) return {measure_fixed_ ? Mode::Hybrid : Mode::HybridUntimed,
+                                     std::min(fixed_chunks_, max_chunks)};
         auto &s = states_[{layer, rows}];
         ++s.visits;
         // Warm two hybrid executions, then measure GPU on the same layer.
@@ -81,6 +88,7 @@ class RowScheduler {
     // Forecast only: prefetch must never consume the next layer's visit or
     // warmup sample. Decisions use the same controller, not another policy.
     Plan peek_plan(int layer, int rows) const { auto snapshot = *this; return snapshot.plan(layer,rows); }
+    bool cacheable() const { return fixed_chunks_ == -1 && !states_.empty() && states_.size() <= 256; }
     void observe(int layer, int rows, int chunks, double wall,
                  double gpu_seconds = 0, double ane_seconds = 0) {
         if (fixed_chunks_ >= 0 || !std::isfinite(wall) || wall <= 0) return;
@@ -116,6 +124,48 @@ class RowScheduler {
             else if (s.disabled && chunks && s.hybrid < kReenableHybridBlockRatio * s.gpu) s.disabled = false;
         }
     }
+};
+
+// Only CPU scheduling metadata survives phase-scoped graph retirement. Never
+// retain model tensors, IOSurfaces or an executor here. The process/TTL bound
+// also limits how long an old thermal/load measurement can guide a request.
+class RowSchedulerCache {
+    using Clock = std::chrono::steady_clock;
+    struct Entry { RowScheduler scheduler; Clock::time_point saved; uint64_t access; };
+    std::map<std::string, Entry> entries_;
+    std::mutex mutex_;
+    uint64_t access_ = 0;
+    void expire(Clock::time_point now) {
+        std::erase_if(entries_, [&](const auto &item) {
+            return now - item.second.saved > std::chrono::minutes(10);
+        });
+    }
+  public:
+    static constexpr size_t capacity = 8;
+    bool restore(const std::string &key, RowScheduler &scheduler) {
+        std::lock_guard lock(mutex_);
+        expire(Clock::now());
+        const auto found = entries_.find(key);
+        if (found == entries_.end()) return false;
+        scheduler = found->second.scheduler;
+        found->second.access = ++access_;
+        return true;
+    }
+    void save(const std::string &key, const RowScheduler &scheduler) {
+        if (key.empty() || !scheduler.cacheable()) return;
+        std::lock_guard lock(mutex_);
+        const auto now = Clock::now();
+        expire(now);
+        if (!entries_.contains(key) && entries_.size() == capacity) {
+            auto oldest = std::min_element(entries_.begin(), entries_.end(), [](const auto &a, const auto &b) {
+                return a.second.access < b.second.access;
+            });
+            entries_.erase(oldest);
+        }
+        entries_.insert_or_assign(key, Entry{scheduler, now, ++access_});
+    }
+    void erase(const std::string &key) { std::lock_guard lock(mutex_); entries_.erase(key); }
+    size_t size() { std::lock_guard lock(mutex_); expire(Clock::now()); return entries_.size(); }
 };
 
 } // namespace tc::ane

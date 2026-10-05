@@ -24,6 +24,7 @@ struct AccelerationView: View {
     private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration(policy: studio.draft.profilePath.isEmpty ? "gpu" : "profile") }
     @State private var zImageBucket: Int?
     @State private var qwenLowMemoryANEAvailable = false
+    @State private var runtimeANEAvailable = false
     private var zImageCapacity: String? {
         guard studio.draft.modelID == "z-image-turbo", let zImageBucket else { return nil }
         let imageRows = ((studio.draft.width / 16) * (studio.draft.height / 16) + 31) / 32 * 32
@@ -40,8 +41,57 @@ struct AccelerationView: View {
             Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
             Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE }, set: { studio.setANEEnabled($0) }))
                 .toggleStyle(.checkbox).disabled(store.busy || !supportsGPUANE).accessibilityIdentifier("enableANE")
-            Text("默认只使用 GPU；勾选 ANE 后先复用已编译缓存，缺失时才编译源分区。").font(.caption).foregroundStyle(.secondary)
+            Text("默认只使用 GPU；普通 ANE 使用匹配的冻结分区，本机 Runtime 实验使用独立进程。").font(.caption).foregroundStyle(.secondary)
+            Text("本次执行设备：\(studio.draft.executionDeviceLabel)").font(.caption)
+                .accessibilityIdentifier("accelerationExecutionDevice")
+            if let notice = studio.draft.aneConfigurationNotice {
+                Text(notice).font(.caption).foregroundStyle(.orange)
+                    .accessibilityIdentifier("accelerationLoRANotice")
+                Button("改用纯 GPU") { studio.setANEEnabled(false) }
+                    .disabled(store.busy).accessibilityIdentifier("accelerationLoRAUseGPU")
+            }
             if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption).foregroundStyle(.secondary) }
+            if ["z-image-turbo", "qwen-image-2.1"].contains(studio.draft.modelID) {
+                Toggle("Runtime · Hadamard W8A8 数据路径（本机实验）", isOn: Binding(
+                    get: { studio.draft.usesRuntimeANE },
+                    set: { enabled in
+                        guard !enabled || runtimeANEAvailable else { return }
+                        update {
+                            $0.runtimeAneProfileID = enabled ? RuntimeImageWorker.profileID : nil
+                            $0.runtimeDescriptor = nil
+                            $0.policy = enabled ? "gpu_ane" : "gpu"
+                            if enabled { $0.qwen21W8A8 = false; $0.compileGPU = false }
+                        }
+                        studio.draft.profilePath = ""
+                    }))
+                    .disabled(store.busy || (!runtimeANEAvailable && !studio.draft.usesRuntimeANE))
+                    .accessibilityIdentifier("runtimeANEExperiment")
+                Text("本机实验仅限 Apple M4 Pro / 48 GiB：Z-Image BF16 8 步，Qwen 基础 20 步或 Viggle r128 6 步、强度 1。固定 512 输出；Qwen 最多 2 张参考图、标准 1024 编码。当前版本待图像性能与质量复验，不保证更快；实际回退会显示在结果中。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if studio.draft.usesRuntimeANE {
+                    Button("应用实验设置") {
+                        studio.draft.width = 512; studio.draft.height = 512; studio.draft.frames = 1; studio.draft.audio = false; studio.draft.fps = 24
+                        studio.draft.steps = studio.draft.modelID == "z-image-turbo" ? 8 : studio.draft.activeLoRAs.isEmpty ? 20 : 6
+                        studio.draft.residency = studio.draft.modelID == "z-image-turbo" ? "resident" : "component_staged"
+                        studio.draft.dynamicText = true; studio.draft.promptEnhance = false
+                        studio.draft.promptEnhanceEditExperimental = false; studio.draft.qwen21DiTCache = "off"
+                        studio.draft.qwen21ReferenceSize = 1024; studio.draft.streaming = StudioStreamingState()
+                        studio.draft.loraStrategy = "inference_time"
+                    }.disabled(store.busy).accessibilityIdentifier("runtimeANEQualifiedSettings")
+                    Text("仅生成很小的形状描述，不导出完整权重。独立进程结束后释放模型；首次编译可能更慢。清理只删除 App 程序源缓存，系统缓存保留，不等于冷启动。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("清理 App 程序源缓存") {
+                        Task {
+                            do { try await store.clearRuntimeProgramCache() } catch { studio.message = error.localizedDescription }
+                        }
+                    }.disabled(store.busy || store.externalServiceActive || store.resolvingAcceleration)
+                        .accessibilityIdentifier("runtimeANEClearCache")
+                }
+                if !runtimeANEAvailable {
+                    Text("当前设备尚未验收此实验；可关闭已有选择并继续使用 GPU。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             if config.policy == "auto" {
                 Text(discoveryMessage).font(.caption).foregroundStyle(.secondary)
                 Text(supportsAutomaticGPUANE
@@ -50,9 +100,9 @@ struct AccelerationView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 if supportsAutomaticGPUANE { Button("重新检测本机加速") { Task { await discover() } }.disabled(store.busy) }
             }
-            if config.policy == "gpu_ane" {
+            if config.policy == "gpu_ane" && !studio.draft.usesRuntimeANE {
                 if studio.draft.modelID == "qwen-image-2.1" {
-                    Toggle("Qwen 低内存 ANE（实验）", isOn: Binding(
+                    Toggle("Qwen 固定量化分区（实验）", isOn: Binding(
                         get: { config.qwen21W8A8 ?? false },
                         set: { value in
                             guard !value || qwenLowMemoryANEAvailable else { return }
@@ -61,7 +111,9 @@ struct AccelerationView: View {
                         }))
                         .disabled(store.busy || (!qwenLowMemoryANEAvailable && config.qwen21W8A8 != true))
                         .accessibilityIdentifier("qwenLowMemoryANE")
-                    Text("此实验仅支持 Apple M5 Pro、24 GiB 内存，需选择匹配的 Qwen 量化分区。限 512×512 文生图，不支持参考图、LoRA 或提示词增强；画面可能与纯 GPU 不同。")
+                    Text("使用已编译的冻结量化分区，仅支持 Apple M5 Pro、24 GiB 内存和 512×512 文生图。需选择匹配分区并关闭参考图、LoRA 与提示词增强；画面可能与纯 GPU 不同。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("此选项是冻结量化分区，与上面的 Runtime 实验不同。")
                         .font(.caption).foregroundStyle(.secondary)
                     if !qwenLowMemoryANEAvailable {
                         Text("当前设备不支持此实验；已保存的实验选项可关闭，普通 Qwen ANE 配置仍可使用。")
@@ -70,7 +122,7 @@ struct AccelerationView: View {
                 } else {
                     Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定或变长分区的容量必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
                 }
-                if (studio.draft.modelID.hasPrefix("flux2-") || studio.draft.modelID == "z-image-turbo") && !studio.draft.activeLoRAs.isEmpty {
+                if (studio.draft.modelID.hasPrefix("flux2-") || studio.draft.modelID == "z-image-turbo") && !studio.draft.activeLoRAs.isEmpty && !studio.draft.aneLoRARequiresGPU {
                     Text("带 LoRA 的 ANE 加速需要匹配同一文件与强度的分区。没有匹配缓存时会提示选择对应分区，或关闭 ANE 使用 GPU。")
                         .font(.caption).foregroundStyle(.orange)
                 }
@@ -88,18 +140,18 @@ struct AccelerationView: View {
                 }
             }
             HStack {
-                Button("加载当前配置") { prepare(warmup: false) }.accessibilityIdentifier("prepareModel")
-                Button("预热当前任务") { prepare(warmup: true) }.accessibilityIdentifier("warmupModel")
+                Button(studio.draft.usesRuntimeANE ? "准备实验描述" : "加载当前配置") { prepare(warmup: false) }.accessibilityIdentifier("prepareModel")
+                Button("预热当前任务") { prepare(warmup: true) }.disabled(studio.draft.usesRuntimeANE).accessibilityIdentifier("warmupModel")
                 Button("卸载模型") { Task { do { try await store.unload() } catch { studio.message = error.localizedDescription } } }.disabled(!store.canUnload).accessibilityIdentifier("unloadModel")
             }.disabled(store.busy || store.externalServiceActive || studio.draft.modelPath.isEmpty)
-            Text("预热使用当前提示词、输入图、尺寸和模式，实际运行一次但不保存结果；更换这些条件后可能需要重新准备。").font(.caption).foregroundStyle(.secondary)
+            if !studio.draft.usesRuntimeANE { Text("预热使用当前提示词、输入图、尺寸和模式，实际运行一次但不保存结果；更换这些条件后可能需要重新准备。").font(.caption).foregroundStyle(.secondary) }
             Divider()
-            if studio.draft.modelID == "flux2-klein-4b" || studio.draft.modelID == "z-image-turbo" {
+            if !studio.draft.usesRuntimeANE && (studio.draft.modelID == "flux2-klein-4b" || studio.draft.modelID == "z-image-turbo") {
                 Button("选择已有 Core ML 源分区…") { choose(compiled: false) }.disabled(store.busy)
                 CoreMLStorageView(store: store, studio: studio)
             }
         }.task(id: discoveryID) { await discover() }
-            .task { qwenLowMemoryANEAvailable = Qwen21LowMemoryANEHardware.isEligible() }
+            .task { qwenLowMemoryANEAvailable = Qwen21LowMemoryANEHardware.isEligible(); runtimeANEAvailable = RuntimeImageWorker.hardwareEligible() }
             .task(id: "\(studio.draft.modelID)|\(config.manifest)") { await readZImageBucket() }
             .padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
     }
@@ -119,6 +171,7 @@ struct AccelerationView: View {
         zImageBucket = bucket
     }
     private func discover() async {
+        guard !studio.draft.usesRuntimeANE else { return }
         guard supportsAutomaticGPUANE else {
             discoveryMessage = supportsGPUANE
                 ? "当前模型的 GPU + ANE 仍为显式实验配置；自动模式不会启用。"
@@ -168,6 +221,7 @@ struct AccelerationView: View {
         Task { do {
             let resolved = try await store.resolveAcceleration(snapshot)
             studio.rememberAcceleration(resolved)
+            if resolved.usesRuntimeANE { studio.message = "实验描述已准备，生成时由独立进程加载并显示实际路线。"; return }
             let output = store.directory.appendingPathComponent("unused-warmup.png")
             let request = try await Task.detached { try resolved.request(output: output) }.value
             try await store.prepare(modelURL: URL(fileURLWithPath: resolved.modelPath), request: request, warmup: warmup)

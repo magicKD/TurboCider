@@ -1,5 +1,6 @@
 #include "bridge.hpp"
 #include "platform.hpp"
+#include "sha256_fd.hpp"
 #import <Metal/Metal.h>
 #include <CommonCrypto/CommonDigest.h>
 #include <vector>
@@ -82,6 +83,9 @@ std::string sha256_file(const std::filesystem::path &path) {
         result[i * 2 + 1] = hex[digest[i] & 15];
     }
     return result;
+}
+std::string sha256_file(int source_fd, const std::atomic<bool> &cancelled) {
+    return detail::sha256_fd(source_fd, cancelled);
 }
 } // namespace tc
 

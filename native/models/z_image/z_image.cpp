@@ -10,6 +10,8 @@
 #include "metal/affine_fp16.hpp"
 #include "metal/affine_fp16_mpp.hpp"
 #include "../../core/quantized_execution_profiles.hpp"
+#include "../../backends/ane_calibration_mlx.hpp"
+#include "../../backends/ane_smoothquant_mlx.hpp"
 
 #include "../../media/image.hpp"
 #include "../../platform/apple/platform.hpp"
@@ -1213,6 +1215,14 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
         const auto stem=next<2?"noise_refiner."+std::to_string(next):"layers."+std::to_string(next-2);
         return z_runtime_sources(w,stem+".feed_forward");
     };
+    auto capture_input = [&](const Tensor &value) {
+        if (auto *capture = ane::calibration::ScopedCapture::current(); capture && capture->wants(block)) {
+            const size_t rows = value.shape(1), image_rows = std::min<size_t>(1024,rows);
+            ane::calibration::Point point{block,0,"denoise",{{"target",0,image_rows}}};
+            if (rows > image_rows) point.regions.push_back({"text",image_rows,rows});
+            capture->observe(block,value,w,{ffn + ".w1",ffn + ".w3"},std::move(point));
+        }
+    };
     if (gguf_compatibility || w.convrot(ffn+".w1") || w.has_runtime_loras()) {
         // GGUF can mix packed affine and floating projections, including
         // modulation/attention. Keep the baseline's native GPU projections
@@ -1225,21 +1235,69 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
         auto value = x + mx::tanh(parts[1]) * rms(attention, w.at(prefix + ".attention_norm2.weight"), 1e-5f);
         auto feed_input = rms(value, w.at(prefix + ".ffn_norm1.weight"), 1e-5f) *
             (Tensor(1.f, parts[2].dtype()) + parts[2]);
+        capture_input(feed_input);
+        // The correction readiness fence completes x @ A before the GPU
+        // complement is submitted. Keep that small result for this FFN only;
+        // GPU and ANE still project their own B output ranges independently.
+        Weights::LoRAWorkspace workspace;
+        auto *lora_workspace = runtime.channel_split() ? &workspace : nullptr;
         ane::HybridFfn::Adapter adapter{
             [&](const Tensor &input) {
-                return std::make_pair(w.lora_delta_slice(input, ffn + ".w1", 0, 10240, 0, 3840),
-                                      w.lora_delta_slice(input, ffn + ".w3", 0, 10240, 0, 3840));
+                return std::make_pair(w.lora_delta_slice(input, ffn + ".w1", 0, 10240, 0, 3840,
+                                                          std::nullopt, lora_workspace),
+                                      w.lora_delta_slice(input, ffn + ".w3", 0, 10240, 0, 3840,
+                                                          std::nullopt, lora_workspace));
             },
             [&](const Tensor &hidden, const Tensor &base) {
                 auto delta = w.lora_delta_slice(hidden, ffn + ".w2", 0, 3840, 0, 10240);
                 return mx::astype(mx::astype(base, mx::float32) + mx::astype(delta, mx::float32), base.dtype());
+            },
+            [&](const Tensor &input, int first, int count) {
+                return std::make_pair(
+                    w.lora_delta_slice(input, ffn + ".w1", first, first + count, 0, 3840,
+                                       std::nullopt, lora_workspace),
+                    w.lora_delta_slice(input, ffn + ".w3", first, first + count, 0, 3840,
+                                       std::nullopt, lora_workspace));
             }};
         auto feed = runtime.run(block, feed_input,
             [&](const Tensor &input) { return z_ffn(input, w, ffn); }, cancelled,
             w.has_runtime_loras() ? &adapter : nullptr,
             [&](const Tensor &input,int first,int count) {
-                auto g = w.project_slice(input,ffn+".w1",first,first+count,0,3840,false);
-                auto u = w.project_slice(input,ffn+".w3",first,first+count,0,3840,false);
+                // Explicit component-qualified experiment. M4 Pro is not in
+                // the established M4 Max default profile; selecting this
+                // physical kernel must not widen that default policy.
+                const char *mpp_option = std::getenv("TURBOCIDER_Z_RUNTIME_LORA_MPP");
+                bool use_mpp = mpp_option && std::string_view(mpp_option) == "1" &&
+                    runtime.channel_split() && w.has_runtime_loras() &&
+                    input.dtype() == mx::bfloat16 && input.ndim() == 3 && input.shape(0) == 1 &&
+                    input.shape(1) >= 512 && input.shape(1) <= 1056 && input.shape(2) == 3840 &&
+                    first >= 0 && count > 0 && first + count <= 10240 && count % 128 == 0;
+                if (use_mpp) {
+                    const std::vector<std::pair<std::string, mx::Shape>> physical_weights{
+                        {ffn + ".w1", {10240,3840}}, {ffn + ".w3", {10240,3840}},
+                        {ffn + ".w2", {3840,10240}}};
+                    for (const auto &[name, shape] : physical_weights) {
+                        const auto &weight = w.at(name + ".weight");
+                        use_mpp = use_mpp && !w.quantized(name) && !w.convrot(name) && !w.nvfp4(name) &&
+                            weight.shape() == shape && weight.dtype() == input.dtype() && weight.flags().row_contiguous;
+                    }
+                }
+                if (use_mpp) {
+                    auto gate_base = z_metal::projection_range(input, w.at(ffn + ".w1.weight"),
+                        first, first + count, 0, 3840);
+                    auto up_base = z_metal::projection_range(input, w.at(ffn + ".w3.weight"),
+                        first, first + count, 0, 3840);
+                    auto g = w.apply_runtime_lora_slice(gate_base, input, ffn + ".w1",
+                        first, first + count, 0, 3840, false, lora_workspace);
+                    auto u = w.apply_runtime_lora_slice(up_base, input, ffn + ".w3",
+                        first, first + count, 0, 3840, false, lora_workspace);
+                    auto hidden = silu(g) * u;
+                    auto base = z_metal::projection_range(hidden, w.at(ffn + ".w2.weight"),
+                        0, 3840, first, first + count);
+                    return std::make_pair(base, hidden);
+                }
+                auto g = w.project_slice(input,ffn+".w1",first,first+count,0,3840,false,lora_workspace);
+                auto u = w.project_slice(input,ffn+".w3",first,first+count,0,3840,false,lora_workspace);
                 auto hidden = silu(g)*u;
                 auto base = w.project_base_slice(hidden,ffn+".w2",0,3840,first,first+count,false);
                 return std::make_pair(base,hidden);
@@ -1257,6 +1315,7 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
         w.at(prefix + ".attention.q_norm.weight"), w.at(prefix + ".attention.k_norm.weight"),
         w.at(prefix + ".attention.out.weight"), w.at(prefix + ".attention_norm2.weight"),
         w.at(prefix + ".ffn_norm1.weight")});
+    capture_input(pre[1]);
     // Use the same tuned short-row projections and fused SwiGLU as the base
     // GPU block. Weights are arguments, never captured from another layer.
     static auto *gpu = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
@@ -3487,6 +3546,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                       bool warmup, bool load_only) try {
     require(!streaming_quarantined_, "streaming_process_quarantined: restart the process");
     auto r = requested;
+    ane::smoothquant::validate_request(r);
     ZProfileRequest profile(r);
     auto begin = Clock::now();
     require(r.model == model_id_, "Z-Image session received a different model id");
@@ -3857,10 +3917,11 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             const size_t budget = std::min(uint64_t(2) << 30,
                 physical - std::min(physical, uint64_t(mx::get_active_memory()) + (uint64_t(4) << 30)));
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 3840, 10240, budget, cancelled,
-                                                         !active_loras_.empty());
+                                                         !active_loras_.empty(), std::nullopt,
+                ane::HybridFfn::scheduler_source_identity(transformer_checkpoint_));
             runtime_manifest_ = identity;
         }
-        runtime_ffn_->begin_request(cached_lora_identity_);
+        ane::smoothquant::bind_request(*runtime_ffn_,r,transformer_checkpoint_,cached_lora_identity_,3840);
     }
     if (load_only) {
         RunResult result;
@@ -3935,6 +3996,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     dump("z_latent_initial", z);
     auto sigmas = z_sigmas(r.width, r.height, r.steps);
     const auto caption = *cached_conditioning_;
+    ane::calibration::ScopedCapture calibration_capture(r,transformer_checkpoint_,cached_lora_identity_);
     dump("z_conditioning", caption);
     // Request-local: never reuse across prompts, LoRA changes or resolutions.
     // First-step refinement remains in denoise timing and is evaluated through
@@ -3979,6 +4041,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     profile.phase("denoise_begin");
     for (int i = 0; i < r.steps; ++i) {
         checkpoint(cancelled);
+        calibration_capture.step(i);
         if (gguf_packed_bank_ && gguf_direct_import_) gguf_packed_bank_->check_unchanged();
         event("denoise", i, r.steps);
         std::vector<std::pair<std::string,Tensor>> reference_blocks;
@@ -4006,6 +4069,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         require(mx::all(mx::isfinite(z)).item<bool>(), "nonfinite Z-Image latent");
         event("denoise", i + 1, r.steps);
     }
+    calibration_capture.finish();
     if (reference_latent) {
         compare("final_latent",uint32_t(r.steps-1),z,*reference_latent,true);
         dump("z_source_latent_final",*reference_latent);
@@ -4158,6 +4222,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.request = r;
     result.plan = std::move(plan);
     result.selection = selection;
+    if (calibration_capture.enabled()) result.selection += "; calibration capture: timings are not performance evidence";
     result.warmup = warmup;
     result.prompt_cache_hit = prompt_hit;
     auto reported_tokens = cached_encoder_tokens_ ? *cached_encoder_tokens_ :
@@ -4284,6 +4349,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     return result;
 } catch (...) {
+    // A stage submitted before attention may outlive cancellation before the
+    // FFN run callback. Join its producers/future bank before any retry.
+    if (runtime_ffn_) { try { runtime_ffn_->drain(); } catch (...) {} }
     if (gguf_direct_import_) {
         try { mx::synchronize(); }
         catch (...) { streaming_quarantined_=true;throw; }

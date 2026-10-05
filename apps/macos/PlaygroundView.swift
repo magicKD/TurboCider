@@ -18,8 +18,7 @@ struct PlaygroundView: View {
     private var controlsLocked: Bool { state.importing || state.importTask != nil || submitting || store.busy || api.running || api.changing }
     private var referenceTitle: String { "\(state.template.title(for: state.template.primaryRole))参考" }
     private var executionLabel: String {
-        if !state.settings.profilePath.isEmpty || state.settings.acceleration?.policy == "profile" { return "设备配置" }
-        return state.settings.usesANE ? "GPU + Core ML" : "GPU"
+        state.settings.executionDeviceLabel
     }
     private var workflowJobs: [NativeJob] {
         store.jobs.filter { $0.workflowID == state.template.workflowID }.sorted { $0.createdAt > $1.createdAt }
@@ -303,6 +302,10 @@ struct PlaygroundView: View {
     private var executionSettings: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack { Text("执行设备").font(.caption); Spacer(); Text(executionLabel).font(.caption.weight(.medium)) }
+            if let notice = state.settings.aneConfigurationNotice {
+                Text(notice).font(.caption2).foregroundStyle(.orange)
+                    .accessibilityIdentifier("playgroundANEConfigurationNotice")
+            }
             Picker("内存管理", selection: settingsBinding(\.residency)) {
                 Text("分阶段加载（推荐）").tag("component_staged")
                 Text("全部常驻").tag("resident")
@@ -641,7 +644,8 @@ struct PlaygroundView: View {
                 try Task.checkCancellation()
                 state.generationOwnsStore = true
                 let job = try await store.generate(modelURL: URL(fileURLWithPath: resolved.modelPath),
-                    request: pair.legacy, streamingRequest: pair.v2, workflowID: workflow.workflowID,
+                    request: pair.legacy, streamingRequest: pair.v2,
+                    runtimeOptions: try resolved.runtimeOptions(store: store.directory), workflowID: workflow.workflowID,
                     inputAssets: resolved.activeAssets)
                 state.recordResult(job, template: workflow)
                 if state.template == workflow { selectedResultID = job.id; showReference = false }

@@ -714,9 +714,56 @@ Tensor Weights::project_base_slice(const Tensor &x, const std::string &prefix,
     return output;
 }
 
+Tensor Weights::runtime_lora_low(const Tensor &x, const RuntimeLoRA &adapter,
+                                int col_start, int col_end,
+                                LoRAWorkspace *workspace) const {
+    const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
+    if (workspace) {
+        for (const auto &entry : workspace->entries_) {
+            if (entry.owner == this && entry.input.id() == x.id() &&
+                entry.down.id() == adapter.down.id() &&
+                entry.column_start == col_start && entry.column_end == col_end &&
+                entry.rank_dtype == rank_dtype)
+                return entry.low;
+        }
+    }
+    auto down = mx::astype(slice_axis(adapter.down, 1, col_start, col_end), rank_dtype);
+    auto low = mx::matmul(mx::astype(x, rank_dtype), mx::transpose(down));
+    if (workspace)
+        workspace->entries_.push_back({this, x, adapter.down, low,
+                                       col_start, col_end, rank_dtype});
+    return low;
+}
+
 Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
-                              int row_start, int row_end, int col_start, int col_end, bool add_bias) const {
-    auto output = project_base_slice(x,prefix,row_start,row_end,col_start,col_end,false);
+                              int row_start, int row_end, int col_start, int col_end, bool add_bias,
+                              LoRAWorkspace *workspace) const {
+    const auto base = project_base_slice(x,prefix,row_start,row_end,col_start,col_end,false);
+    return apply_runtime_lora_slice(base, x, prefix, row_start, row_end,
+                                    col_start, col_end, add_bias, workspace);
+}
+
+Tensor Weights::apply_runtime_lora_slice(const Tensor &base, const Tensor &x,
+                                       const std::string &prefix,
+                                       int row_start, int row_end,
+                                       int col_start, int col_end, bool add_bias,
+                                       LoRAWorkspace *workspace) const {
+    const auto &weight = at(prefix + ".weight");
+    require(weight.ndim() == 2, "supplied-base LoRA requires matrix weights: " + prefix);
+    if (quantized(prefix))
+        require(at(prefix + ".scales").ndim() == 2,
+                "supplied-base LoRA requires matrix scales: " + prefix);
+    const int logical_input = quantized(prefix) ? at(prefix + ".scales").shape(1) * 32 :
+                                                weight.shape(1);
+    require(x.ndim() > 0 && row_start >= 0 && row_start < row_end &&
+                row_end <= weight.shape(0) && col_start >= 0 && col_start < col_end &&
+                col_end <= logical_input && x.shape(-1) == col_end - col_start,
+            "invalid supplied-base LoRA slice geometry: " + prefix);
+    auto expected_shape = x.shape();
+    expected_shape.back() = row_end - row_start;
+    require(base.shape() == expected_shape,
+            "supplied base projection shape does not match LoRA slice: " + prefix);
+    auto output = base;
     auto runtime = runtime_loras_.find(prefix);
     if (runtime != runtime_loras_.end()) {
         for (const auto &adapter : runtime->second) {
@@ -727,10 +774,9 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
             // fused gate/up adapter, intersect its global output row range
             // before selecting the corresponding low-rank B rows.
             const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
-            auto down = mx::astype(slice_axis(adapter.down, 1, col_start, col_end), rank_dtype);
             auto up = mx::astype(slice_axis(adapter.up, 0,
                 first - adapter.output_start, last - adapter.output_start), rank_dtype);
-            auto low = mx::matmul(mx::astype(x, rank_dtype), mx::transpose(down));
+            auto low = runtime_lora_low(x, adapter, col_start, col_end, workspace);
             auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
                 Tensor(adapter.scale, mx::float32);
             const int begin = first - row_start, end = last - row_start;
@@ -757,7 +803,8 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
 Tensor Weights::lora_delta_slice(const Tensor &x, const std::string &prefix,
                                  int row_start, int row_end,
                                  int col_start, int col_end,
-                                 std::optional<mx::Dtype> output_dtype) const {
+                                 std::optional<mx::Dtype> output_dtype,
+                                 LoRAWorkspace *workspace) const {
     const auto &weight = at(prefix + ".weight");
     require(weight.ndim() == 2 && row_start >= 0 && row_start < row_end &&
                 row_end <= weight.shape(0) && col_start >= 0 && col_start < col_end &&
@@ -777,10 +824,9 @@ Tensor Weights::lora_delta_slice(const Tensor &x, const std::string &prefix,
         const int last = std::min(row_end, adapter.output_end);
         if (first >= last) continue;
         const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
-        auto down = mx::astype(slice_axis(adapter.down, 1, col_start, col_end), rank_dtype);
         auto up = mx::astype(slice_axis(adapter.up, 0,
             first - adapter.output_start, last - adapter.output_start), rank_dtype);
-        auto low = mx::matmul(mx::astype(x, rank_dtype), mx::transpose(down));
+        auto low = runtime_lora_low(x, adapter, col_start, col_end, workspace);
         auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
             Tensor(adapter.scale, mx::float32);
         const int begin = first - row_start, end = last - row_start;

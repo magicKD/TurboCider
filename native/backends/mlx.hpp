@@ -17,6 +17,24 @@ void configure_streams();
 namespace mx = mlx::core;
 using Tensor = mx::array;
 class Weights {
+  public:
+    // One FFN invocation only. Sharing the rank-sized x @ A result between
+    // ANE correction and GPU channel ranges avoids repeating it after the
+    // correction's readiness fence. Retained input/A values prevent identity
+    // reuse, and a rebound adapter or different input cannot hit an old entry.
+    class LoRAWorkspace {
+        friend class Weights;
+        struct Entry {
+            const Weights *owner;
+            Tensor input, down, low;
+            int column_start, column_end;
+            mx::Dtype rank_dtype;
+        };
+        std::vector<Entry> entries_;
+      public:
+        size_t low_rank_projections() const { return entries_.size(); }
+    };
+  private:
     struct RuntimeLoRA {
         Tensor down;
         Tensor up;
@@ -31,6 +49,8 @@ class Weights {
     std::vector<std::shared_ptr<mlx::core::io::Reader>> lease_readers_;
     bool metal_convrot_ = false;
     bool runtime_lora_fp16_ = false;
+    Tensor runtime_lora_low(const Tensor &, const RuntimeLoRA &, int, int,
+                            LoRAWorkspace *) const;
 
   public:
     void load(const std::filesystem::path &, const Event &, std::atomic<bool> &);
@@ -92,7 +112,14 @@ class Weights {
     // rows (including separately trained fused gate/up row ranges).
     Tensor project_slice(const Tensor &, const std::string &, int row_start,
                          int row_end, int col_start, int col_end,
-                         bool add_bias = true) const;
+                         bool add_bias = true, LoRAWorkspace * = nullptr) const;
+    // Apply the same ordered adapter additions to a caller-supplied base
+    // projection (for example, a physical Metal matrix range). Keep each
+    // adapter's FP32 add/output cast and apply the optional bias once last.
+    Tensor apply_runtime_lora_slice(const Tensor &base, const Tensor &input,
+                                   const std::string &, int row_start, int row_end,
+                                   int col_start, int col_end, bool add_bias = true,
+                                   LoRAWorkspace * = nullptr) const;
     // Immutable checkpoint contribution only, for partial down reductions.
     // Down-LoRA must be applied once to joined hidden, not rounded per slice.
     Tensor project_base_slice(const Tensor &, const std::string &, int row_start,
@@ -103,7 +130,8 @@ class Weights {
     // Z-Image bridge to avoid BF16 rounding before its FP16 Core ML input.
     Tensor lora_delta_slice(const Tensor &, const std::string &, int row_start,
                             int row_end, int col_start, int col_end,
-                            std::optional<mx::Dtype> output_dtype = std::nullopt) const;
+                            std::optional<mx::Dtype> output_dtype = std::nullopt,
+                            LoRAWorkspace * = nullptr) const;
     Tensor project_range(const Tensor &, const std::string &, int row_start, int row_end,
                         int col_start, int col_end) const;
     void clear();

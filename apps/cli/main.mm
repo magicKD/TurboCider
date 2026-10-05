@@ -11,6 +11,7 @@
 #include <vector>
 #include <unistd.h>
 #include "query_worker.hpp"
+#include "runtime_worker_protocol.hpp"
 #include "startup_gate.hpp"
 #include "../../services/turbociderd/capabilities.hpp"
 int tc_service_main(const char*,const char*,const char*);
@@ -230,6 +231,7 @@ Maintenance and internal workers:
   turbocider self-test
   turbocider worker-query INPUT.json [--supervised]
   turbocider worker-generate INPUT.json [--supervised]
+  turbocider worker-runtime-generate INPUT.json [--supervised]
   LoRA preparation is offline-only: tools/native/prepare_lora.py
 
 Normal commands write final JSON to stdout and progress/errors to stderr.
@@ -265,9 +267,10 @@ int main(int argc,char**argv){@autoreleasepool{
    std::cerr<<"--ane-manifest and --hybrid-mode must be trailing argument pairs\n";return 1;
   }
  }
- if((cmd=="worker-query" || cmd=="worker-generate") &&
+ if((cmd=="worker-query" || cmd=="worker-generate" || cmd=="worker-runtime-generate") &&
     (argc==3 || (argc==4 && std::string(argv[3])=="--supervised"))) {
    if(argc==4 && !tc_worker::await_admission()) {std::cerr<<"worker_start_not_admitted\n";return 1;}
+   if(cmd=="worker-runtime-generate")return tc_worker::runtime::generate(argv[2]);
    return cmd=="worker-query"?tc_worker::query(argv[2]):tc_worker::generate(argv[2]);
  }
  if(cmd=="library"||cmd=="cache")return library_main(argc,argv);

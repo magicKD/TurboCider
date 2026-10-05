@@ -70,6 +70,7 @@ class Device {
     QuantStage stage_w8(DeviceWeightView, W8StageSpec, Surface codes, Surface scales);
     WeightCacheStats scale_cache_stats() const;
     StagePipelineStats stage_pipeline_stats() const;
+    A8SinglePassStats a8_single_pass_stats() const;
   private:
     struct Impl;
     std::shared_ptr<Impl> impl_;
@@ -87,6 +88,7 @@ class QuantStage {
   public:
     Completion finish(std::chrono::milliseconds timeout = std::chrono::seconds(30));
     uint32_t validation_flags() const;
+    bool single_pass() const;
     void *ready_event() const; // opaque MTLSharedEvent retained by this ticket
     uint64_t ready_value() const { return 1; }
   private:

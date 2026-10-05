@@ -2,12 +2,14 @@
 #include "ane_backend.hpp"
 #include "ane_runtime_quant.hpp"
 #include "ane_runtime_packed.hpp"
+#include "../platform/apple/platform.hpp"
 
 #include <chrono>
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <new>
+#include <sys/stat.h>
 #include <mlx/allocator.h>
 
 namespace tc::ane {
@@ -94,11 +96,14 @@ int configured_chunks() {
     require(chunks <= 128, "runtime ANE chunk count exceeds 128");
     return int(chunks);
 }
+RowSchedulerCache &scheduler_cache() { static RowSchedulerCache cache; return cache; }
+std::string identity_part(const std::string &value) { return ":" + std::to_string(value.size()) + ":" + value; }
 } // namespace
 
 HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
                      size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
-                     std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared)
+                     std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared,
+                     std::string scheduler_identity)
     : memory_budget_(budget) {
     checkpoint(cancelled);
     const int chunks = configured_chunks();
@@ -178,7 +183,16 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
         checkpoint(cancelled);
         return;
     }
-    scheduler_ = std::make_unique<RowScheduler>(graph_->shape().rows, chunks, axis_);
+    scheduler_ = std::make_unique<RowScheduler>(graph_->shape().rows, chunks, axis_, profile_);
+    if (!scheduler_identity.empty() && !profile_ && chunks == -1) {
+        const auto &shape = graph_->shape();
+        scheduler_identity_ = "runtime-scheduler-v2" + identity_part(scheduler_identity) +
+            identity_part(std::filesystem::canonical(manifest).string()) + identity_part(sha256_file(manifest)) +
+            identity_part(executor_configuration_identity()) + identity_part(metrics_.runtime_weight_backend) +
+            identity_part(metrics_.runtime_weight_data_path) + identity_part(metrics_.runtime_weight_partition_axis) +
+            ":" + std::to_string(shape.rows) + ":" + std::to_string(hidden) + ":" + std::to_string(width) +
+            ":" + std::to_string(shape.width) + ":" + std::to_string(shape.lora_inputs);
+    }
     const char *prefetch = std::getenv("TURBOCIDER_PRIVATE_ANE_PREFETCH");
     require(!prefetch || std::string(prefetch)=="0" || std::string(prefetch)=="1", "private ANE prefetch requires 0 or 1");
     // Matched M4 Max channel pilots show real future-bank hits but a net
@@ -188,18 +202,99 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     metrics_.runtime_weight_prefetch_enabled = prefetch_;
     checkpoint(cancelled);
 }
-HybridFfn::~HybridFfn() { drain(); }
+HybridFfn::~HybridFfn() { drain(); save_scheduler(); }
+void HybridFfn::save_scheduler() {
+    if (available() && scheduler_ && !scheduler_cache_key_.empty()) {
+        try { scheduler_cache().save(scheduler_cache_key_, *scheduler_); }
+        catch (const std::bad_alloc &) { /* Optional metadata must not prevent resource retirement. */ }
+    }
+}
+std::string HybridFfn::scheduler_source_identity(const std::filesystem::path &source) {
+    const auto path = std::filesystem::canonical(source);
+    struct stat info{};
+    require(::stat(path.c_str(), &info) == 0 && S_ISREG(info.st_mode), "runtime scheduler source is not a regular file");
+    std::string value = identity_part(path.string()) + ":" + std::to_string(info.st_dev) + ":" +
+        std::to_string(info.st_ino) + ":" + std::to_string(info.st_size);
+#if defined(__APPLE__)
+    value += ":" + std::to_string(info.st_mtimespec.tv_sec) + ":" + std::to_string(info.st_mtimespec.tv_nsec) +
+             ":" + std::to_string(info.st_ctimespec.tv_sec) + ":" + std::to_string(info.st_ctimespec.tv_nsec);
+#else
+    value += ":" + std::to_string(info.st_mtim.tv_sec) + ":" + std::to_string(info.st_mtim.tv_nsec) +
+             ":" + std::to_string(info.st_ctim.tv_sec) + ":" + std::to_string(info.st_ctim.tv_nsec);
+#endif
+    return value;
+}
 std::string HybridFfn::executor_configuration_identity() {
     std::string identity;
     for (const char *key : {"TURBOCIDER_ANE_BACKEND","TURBOCIDER_ALLOW_PRIVATE_ANE","TURBOCIDER_PRIVATE_ANE_DATA_PATH",
                            "TURBOCIDER_PRIVATE_ANE_GPU_IO","TURBOCIDER_PRIVATE_ANE_CHANNELS","TURBOCIDER_PRIVATE_ANE_PREFETCH",
                            "TURBOCIDER_PRIVATE_ANE_SCALE_CACHE","TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE",
-                           "TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD","TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE"}) {
+                           "TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD","TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE",
+                           "TURBOCIDER_PRIVATE_ANE_A8_SINGLE_PASS",
+                           "TURBOCIDER_RUNTIME_ANE_PROFILE","TURBOCIDER_PRIVATE_ANE_CACHE_DIR",
+                           "TURBOCIDER_PRIVATE_ANE_S1_PROFILE",
+                           "TURBOCIDER_Z_RUNTIME_LORA_MPP","TURBOCIDER_Z_MPP_PROJECTIONS",
+                           "TURBOCIDER_Z_DISABLE_MPP_PROJECTIONS","TURBOCIDER_Z_MPP_SWIGLU",
+                           "TURBOCIDER_Z_DISABLE_MPP_SWIGLU","TURBOCIDER_Z_MPP_SWIGLU_DUAL",
+                           "TURBOCIDER_QWEN21_RUNTIME_LORA_FP16"}) {
         const char *raw = std::getenv(key);
         const std::string value = raw ? raw : "<unset>";
         identity += ":" + std::to_string(value.size()) + ":" + value;
     }
     return identity;
+}
+uint64_t HybridFfn::retained_bytes() const {
+    return uint64_t(output_.capacity() + hidden_.capacity()) * sizeof(uint16_t) +
+        metrics_.runtime_weight_s1_bytes + smoothquant_bank_margin();
+}
+uint64_t HybridFfn::smoothquant_bank_margin() const {
+    // Even after replacing/clearing the full profile, the two weight banks
+    // can retain up to two previous layer vectors until overwritten.
+    return graph_ && graph_->data_path() == "w8a8_hadamard"
+        ? uint64_t(2) * metrics_.hidden * sizeof(float) : 0;
+}
+void HybridFfn::set_smoothquant(const std::string &digest,
+                              const std::function<std::vector<Tensor>()> &make_scales) {
+    require(bool(make_scales) == !digest.empty(), "runtime S1 producer and digest must be supplied together");
+    if (!digest.empty()) {
+        require(digest.size() == 64 && digest.find_first_not_of("0123456789abcdef") == std::string::npos &&
+                bool(make_scales), "runtime S1 requires a validated profile digest");
+        require(!graph_ || (graph_->backend() == BackendKind::PrivateANE &&
+                    graph_->data_path() == "w8a8_hadamard" && graph_->supports_device_io() &&
+                    graph_->supports_device_weight_regions() && channel_split()),
+                "runtime S1 requires the private W8A8 device channel executor");
+    }
+    if (digest == metrics_.runtime_weight_s1_digest &&
+            (digest.empty() || !smoothquant_.empty())) return;
+    // Current and prefetched banks borrow these vectors until completion.
+    drain();
+    smoothquant_.clear();
+    metrics_.runtime_weight_s1_requested = !digest.empty();
+    metrics_.runtime_weight_s1_digest = digest;
+    metrics_.runtime_weight_s1_bytes = 0;
+    metrics_.runtime_weight_s1_stage_submissions = 0;
+    metrics_.runtime_weight_s1_hybrid_blocks = 0;
+    if (digest.empty() || !graph_) return;
+    const uint64_t growth = uint64_t(32) * metrics_.hidden * sizeof(float);
+    const auto observed = observe_runtime_memory(mx::get_active_memory());
+    const auto decision = admit_memory(observed, {uint64_t(4) << 30, memory_budget_},
+        graph_->estimated_bytes() + retained_bytes(), growth);
+    if (!decision.allowed()) {
+        release_for_memory("runtime S1 vector admission denied (" +
+            memory_denial_reason(decision.denial, observed) + ")");
+        return;
+    }
+    // MLX's host-vector constructor allocates immediately. The factory must
+    // run AFTER admission, and a same-digest hit must never call it.
+    auto scales = make_scales();
+    require(scales.size() == 32, "runtime S1 requires a complete 32-layer profile");
+    for (const auto &scale : scales)
+        require(scale.ndim() == 2 && scale.shape(0) == 1 && scale.shape(1) == metrics_.hidden &&
+                scale.dtype() == mx::float32 && scale.flags().row_contiguous,
+                "runtime S1 requires immutable FP32 [1,H] vectors");
+    mx::eval(scales);
+    smoothquant_ = std::move(scales);
+    metrics_.runtime_weight_s1_bytes = growth;
 }
 void HybridFfn::drain(bool discard_future) {
     if (graph_ && pending_) { graph_->finish(); pending_ = false; }
@@ -219,9 +314,10 @@ bool HybridFfn::admit_scratch(int ane_rows, bool adapter) {
     const auto existing_hidden = uint64_t(hidden_.capacity()) * sizeof(uint16_t);
     const auto scratch = plan_host_scratch(ane_rows, metrics_.hidden, metrics_.mlp_width,
                                            adapter, existing_output, existing_hidden);
-    if (!scratch || graph_->estimated_bytes() > memory_budget_ ||
-        existing_output > memory_budget_ - graph_->estimated_bytes() ||
-        existing_hidden > memory_budget_ - graph_->estimated_bytes() - existing_output) {
+    const auto resident = graph_->estimated_bytes() + metrics_.runtime_weight_s1_bytes + smoothquant_bank_margin();
+    if (!scratch || resident > memory_budget_ ||
+        existing_output > memory_budget_ - resident ||
+        existing_hidden > memory_budget_ - resident - existing_output) {
         release_for_memory("runtime ANE host scratch exceeds memory budget");
         return false;
     }
@@ -232,7 +328,7 @@ bool HybridFfn::admit_scratch(int ane_rows, bool adapter) {
         const auto observed = observe_runtime_memory(mx::get_active_memory());
         const auto decision = admit_memory(observed,
             {uint64_t(4) << 30, memory_budget_},
-            graph_->estimated_bytes() + existing_output + existing_hidden,
+            resident + existing_output + existing_hidden,
             scratch->new_payload_bytes);
         if (!decision.allowed()) {
             release_for_memory("runtime ANE host scratch admission denied (" +
@@ -245,8 +341,9 @@ bool HybridFfn::admit_scratch(int ane_rows, bool adapter) {
 void HybridFfn::begin_request(const std::string &adapter_identity,
                               std::optional<MemoryObservation> observation) {
     drain();
+    save_scheduler();
     if (graph_) {
-        const auto retained = uint64_t(output_.capacity() + hidden_.capacity()) * sizeof(uint16_t);
+        const auto retained = retained_bytes();
         const auto observed = observation ? *observation : observe_runtime_memory(mx::get_active_memory());
         const auto decision = admit_memory(observed,
             {uint64_t(4) << 30, memory_budget_}, graph_->estimated_bytes() + retained, 0);
@@ -254,12 +351,18 @@ void HybridFfn::begin_request(const std::string &adapter_identity,
             release_for_memory("runtime ANE resident memory admission denied (" +
                                memory_denial_reason(decision.denial, observed) + ")");
     }
-    if (adapter_identity != adapter_identity_) {
+    const auto cache_key = scheduler_identity_.empty() ? std::string{} :
+        scheduler_identity_ + identity_part(adapter_identity);
+    if (adapter_identity != adapter_identity_ || cache_key != scheduler_cache_key_) {
         // A new adapter changes GPU correction costs and may change the best
         // split. Keep the executable, but not another adapter's timing model.
-        if (graph_) scheduler_ = std::make_unique<RowScheduler>(graph_->shape().rows, configured_chunks(), axis_);
+        if (graph_) scheduler_ = std::make_unique<RowScheduler>(graph_->shape().rows, configured_chunks(), axis_, profile_);
         adapter_identity_ = adapter_identity;
+        scheduler_cache_key_ = cache_key;
+        if (scheduler_ && !cache_key.empty())
+            metrics_.runtime_weight_scheduler_cache_hit = scheduler_cache().restore(cache_key, *scheduler_);
     }
+    metrics_.runtime_weight_scheduler_cache_entries = scheduler_cache().size();
     // Retain warm scheduling samples and capability state across resident
     // requests, but all timing/counters below are explicitly session totals.
     layer_ = -1; rows_ = chunks_ = 0;
@@ -307,6 +410,7 @@ void HybridFfn::observe_block(int layer, int rows, double wall) {
     block_plan_.reset();
 }
 void HybridFfn::degrade(const std::string &error, int layer) {
+    if (!scheduler_cache_key_.empty()) scheduler_cache().erase(scheduler_cache_key_);
     failed_ = metrics_.runtime_failed = true;
     ++metrics_.runtime_failures;
     metrics_.runtime_failure_block = layer;
@@ -315,9 +419,12 @@ void HybridFfn::degrade(const std::string &error, int layer) {
     // Core ML worker/model/lease now, rather than retaining them throughout
     // the GPU fallback session. RuntimeGraph destruction drains the worker;
     // keep every borrowed tensor and scratch buffer alive until it returns.
+    fill_activation_stage_metrics(metrics_);
     graph_.reset();
     pending_ = false;
     weights_.clear();
+    smoothquant_.clear();
+    metrics_.runtime_weight_s1_bytes = 0;
     scheduler_.reset();
     std::vector<uint16_t>().swap(output_);
     std::vector<uint16_t>().swap(hidden_);
@@ -351,7 +458,7 @@ void HybridFfn::stage_weights(int layer, int rows, std::vector<FfnWeight> weight
         }
         if (metadata_growth) {
             const auto observed=observe_runtime_memory(mx::get_active_memory());
-            const uint64_t retained=uint64_t(output_.capacity()+hidden_.capacity())*sizeof(uint16_t);
+            const uint64_t retained=retained_bytes();
             const auto decision=admit_memory(observed,{uint64_t(4)<<30,memory_budget_},
                 graph_->estimated_bytes()+retained,metadata_growth);
             if (!decision.allowed()) {
@@ -385,7 +492,7 @@ void HybridFfn::stage_weights(int layer, int rows, std::vector<FfnWeight> weight
             ++metrics_.runtime_weight_convrot_stage_submissions;
         }
         if (graph_->supports_device_weights()) {
-            auto regions=device_regions(weights);
+            auto regions=device_regions(weights,layer);
             const auto prefetch_wait=Clock::now();
             auto hit=prefetched_layer_==layer ? graph_->activate_prefetched_weights(regions) : std::nullopt;
             if(hit) {
@@ -401,19 +508,29 @@ void HybridFfn::stage_weights(int layer, int rows, std::vector<FfnWeight> weight
             }
         } else graph_->stage_weights(std::move(sources));
         pending_ = true;
+        if (!smoothquant_.empty()) ++metrics_.runtime_weight_s1_stage_submissions;
     } catch (const std::exception &error) {
         if(graph_)graph_->discard_prefetched_weights();prefetched_layer_=-1;
         degrade(error.what(), layer); chunks_ = 0;
     }
 }
-std::vector<DeviceWeightRegion> HybridFfn::device_regions(const std::vector<FfnWeight> &weights) const {
+std::vector<DeviceWeightRegion> HybridFfn::device_regions(const std::vector<FfnWeight> &weights,int layer) const {
     require(graph_ && weights.size()==3,"device SwiGLU requires three immutable sources");
     std::vector<DeviceWeightView> source;for(const auto&w:weights)source.push_back(device_weight_view(w));
     require(source[0].rows==metrics_.mlp_width&&source[1].rows==metrics_.mlp_width&&source[2].cols==metrics_.mlp_width,
             "device FFN requires complete physical sources");
     const int first=channel_split()?gpu_channels():0,width=graph_->shape().width,h=metrics_.hidden;
-    return {{std::move(source[0]),{first,width,0,h,128}}, {std::move(source[1]),{first,width,0,h,128}},
+    std::vector<DeviceWeightRegion> regions = {{std::move(source[0]),{first,width,0,h,128}}, {std::move(source[1]),{first,width,0,h,128}},
             {std::move(source[2]),{0,h,first,width,512}}};
+    if (!smoothquant_.empty()) {
+        require(layer >= 0 && size_t(layer) < smoothquant_.size(), "runtime S1 layer outside profile");
+        for (const auto &weight : weights)
+            require(!weight.scales && !weight.offsets && weight.transform == FfnWeight::Transform::None,
+                    "runtime S1 requires dense local base weights");
+        const auto scale = device_view(smoothquant_[size_t(layer)],1,h);
+        regions[0].selection.column_scale = regions[1].selection.column_scale = scale;
+    }
+    return regions;
 }
 void HybridFfn::maybe_prefetch(int next,int rows,const NextWeights &provider) {
     if(!prefetch_ || !available() || !provider || prefetched_layer_>=0)return;
@@ -426,7 +543,7 @@ void HybridFfn::maybe_prefetch(int next,int rows,const NextWeights &provider) {
         std::vector<Tensor> ready;
         for(const auto&w:sources){ready.push_back(w.values);if(w.scales)ready.push_back(*w.scales);if(w.offsets)ready.push_back(*w.offsets);}
         mx::eval(ready);
-        graph_->prefetch_device_weight_regions(device_regions(sources));prefetched_layer_=next;
+        graph_->prefetch_device_weight_regions(device_regions(sources,next));prefetched_layer_=next;
         ++metrics_.runtime_weight_prefetch_submissions;
     }catch(const std::exception&) {
         graph_->discard_prefetched_weights();prefetched_layer_=-1;++metrics_.runtime_weight_prefetch_failures;
@@ -687,9 +804,10 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
     const uint64_t scratch = padded64 * (uint64_t(h) * 2 + (adapter ? uint64_t(fa) * 10 : 0)) +
         (padded != rows_ ? padded64 * h * input.itemsize() : 0) +
         (adapter ? uint64_t(rows_) * metrics_.mlp_width * input.itemsize() : 0) + uint64_t(rows_) * h * 4;
-    if (graph_->estimated_bytes() > memory_budget_ || scratch > memory_budget_ - graph_->estimated_bytes() ||
+    const uint64_t resident = graph_->estimated_bytes() + retained_bytes();
+    if (resident > memory_budget_ || scratch > memory_budget_ - resident ||
         !admit_memory(observe_runtime_memory(mx::get_active_memory()), {uint64_t(4)<<30,memory_budget_},
-                      graph_->estimated_bytes(), scratch).allowed()) {
+                      resident, scratch).allowed()) {
         release_for_memory("runtime channel scratch memory admission denied");
         ++metrics_.runtime_weight_fallback_blocks;
         return fallback();
@@ -706,11 +824,13 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
         packed = pad(input,h);
         if (adapter) {
             const auto ready_start = Clock::now();
-            auto deltas = adapter->gate_up(input);
-            require(deltas.first.shape() == mx::Shape({1,rows_,metrics_.mlp_width}) &&
-                    deltas.second.shape() == deltas.first.shape(), "channel LoRA full correction geometry mismatch");
-            gate = pad(slice_axis(deltas.first,-1,fg,fg+fa),fa);
-            up = pad(slice_axis(deltas.second,-1,fg,fg+fa),fa);
+            auto deltas = adapter->channel_gate_up ? adapter->channel_gate_up(input,fg,fa) :
+                                                   adapter->gate_up(input);
+            const int correction_width = adapter->channel_gate_up ? fa : metrics_.mlp_width;
+            require(deltas.first.shape() == mx::Shape({1,rows_,correction_width}) &&
+                    deltas.second.shape() == deltas.first.shape(), "channel LoRA correction geometry mismatch");
+            gate = pad(adapter->channel_gate_up ? deltas.first : slice_axis(deltas.first,-1,fg,fg+fa),fa);
+            up = pad(adapter->channel_gate_up ? deltas.second : slice_axis(deltas.second,-1,fg,fg+fa),fa);
             mx::eval({*packed,*gate,*up}); lora_ready = elapsed(ready_start);
         } else mx::eval(*packed);
         output = device_output(padded,h,dtype);
@@ -782,6 +902,7 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
             block_gpu_seconds_ = gpu_seconds; block_ane_seconds_ = result.total_seconds;
         } else if (!result.overflow_retries) scheduler_->observe(layer,rows_,1,pre_seconds+wall);
         ++metrics_.runtime_weight_hybrid_blocks; ++metrics_.runtime_weight_channel_blocks;
+        if (!smoothquant_.empty()) ++metrics_.runtime_weight_s1_hybrid_blocks;
         metrics_.runtime_weight_ane_rows += rows_;
         metrics_.runtime_weight_wall_seconds += wall;
         if (block_plan_ && block_plan_->mode == RowScheduler::Mode::HybridUntimed) ++metrics_.runtime_weight_untimed_hybrid_blocks;
@@ -792,13 +913,23 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
             << ",\"ane_seconds\":" << result.total_seconds << ",\"ffn_seconds\":" << wall << "}\n";
         return merged;
     } catch (...) {
-        graph_->finish(); pending_ = false;
+        if (graph_ && pending_) { graph_->finish(); pending_ = false; }
         if (head) { try { mx::eval({head->first,head->second}); } catch (...) {} }
         throw;
     }
 }
+void HybridFfn::fill_activation_stage_metrics(HybridMetrics &metrics) const {
+    if (!graph_) return;
+    const auto activation=graph_->activation_stage_stats();
+    metrics.runtime_weight_a8_single_pass_requested=activation.requested;
+    metrics.runtime_weight_a8_single_pass_pipeline_compiled=activation.pipeline_compiled;
+    metrics.runtime_weight_a8_single_pass_submissions=activation.eligible_submissions;
+    metrics.runtime_weight_a8_single_pass_ineligible_submissions=activation.ineligible_submissions;
+}
 HybridMetrics HybridFfn::metrics() const {
     auto metrics = metrics_;
+    metrics.runtime_weight_s1_bank_margin_bytes = smoothquant_bank_margin();
+    fill_activation_stage_metrics(metrics);
     if(graph_) {
         const auto pipelines=graph_->stage_pipeline_stats();
         metrics.runtime_weight_stage_specialized=pipelines.specialized;
@@ -810,6 +941,8 @@ HybridMetrics HybridFfn::metrics() const {
         metrics.runtime_weight_scale_cache_evictions=cache.evictions;
     }
     metrics.prefill_plan_reason = reason_;
+    if (metrics.runtime_weight_s1_hybrid_blocks)
+        metrics.runtime_weight_source_recipe += ":smoothquant-s1-fp32-v1:" + metrics.runtime_weight_s1_digest;
     return metrics;
 }
 

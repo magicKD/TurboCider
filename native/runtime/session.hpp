@@ -52,6 +52,8 @@ struct HybridMetrics {
     bool runtime_weight_a8_lookahead_enabled = false;
     uint64_t runtime_weight_a8_prefetches = 0;
     double runtime_weight_a8_wait_seconds = 0;
+    bool runtime_weight_a8_single_pass_requested = false, runtime_weight_a8_single_pass_pipeline_compiled = false;
+    uint64_t runtime_weight_a8_single_pass_submissions = 0, runtime_weight_a8_single_pass_ineligible_submissions = 0;
     uint64_t runtime_weight_scale_cache_hits = 0, runtime_weight_scale_cache_misses = 0;
     uint64_t runtime_weight_scale_cache_entries = 0, runtime_weight_scale_cache_bytes = 0, runtime_weight_scale_cache_evictions = 0;
     uint64_t runtime_weight_device_io_calls = 0;
@@ -60,6 +62,8 @@ struct HybridMetrics {
     // Owner destroyed before returning from a phase-scoped request. Core ML
     // system caches are outside this lifetime; byte counters remain historical.
     bool runtime_weight_session_released = false;
+    bool runtime_weight_scheduler_cache_hit = false;
+    uint64_t runtime_weight_scheduler_cache_entries = 0;
     uint64_t runtime_weight_hybrid_blocks = 0, runtime_weight_gpu_blocks = 0;
     uint64_t runtime_weight_untimed_hybrid_blocks = 0; // hybrid subset without whole-block timing fences
     uint64_t runtime_weight_async_hybrid_blocks = 0; // untimed subset without a separate GPU-head wait
@@ -86,6 +90,11 @@ struct HybridMetrics {
     float runtime_weight_headroom = 1.f;
     std::string runtime_weight_source_recipe;
     uint64_t runtime_weight_convrot_stage_submissions = 0;
+    bool runtime_weight_s1_requested = false;
+    std::string runtime_weight_s1_digest;
+    uint64_t runtime_weight_s1_bytes = 0, runtime_weight_s1_stage_submissions = 0;
+    uint64_t runtime_weight_s1_hybrid_blocks = 0;
+    uint64_t runtime_weight_s1_bank_margin_bytes = 0;
     // Exporter-declared weight variant; unknown for legacy manifests without it.
     std::string weight_variant = "unknown";
     double load_seconds = 0;
@@ -273,6 +282,11 @@ struct RunResult {
     int text_tokens = 0, valid_text_tokens = 0, total_tokens = 0, reference_tokens = 0,
         actual_steps = 0;
     size_t lora_applied_projections = 0;
+    // Initial request-owned CPU digest only; post-bind verification stays
+    // synchronous. Time spent before joining is not measured time saved.
+    bool lora_verification_async = false;
+    double lora_verification_seconds = 0, lora_verification_wait_seconds = 0;
+    double lora_verification_before_join_seconds = 0;
     bool db_cache_enabled = false;
     float db_cache_threshold = 0.f;
     int db_cache_steps = 0, db_cache_max_consecutive = 0;

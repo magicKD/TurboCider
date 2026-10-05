@@ -5,6 +5,7 @@ Hardware tests require TURBOCIDER_TEST_PRIVATE_ANE=1, and propagate all failures
 """
 import os
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -12,6 +13,73 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+DESCRIPTOR_SPEC = importlib.util.spec_from_file_location(
+    "private_ane_descriptor", ROOT / "tools/coreml/create_private_ane_descriptor.py")
+DESCRIPTOR = importlib.util.module_from_spec(DESCRIPTOR_SPEC)
+DESCRIPTOR_SPEC.loader.exec_module(DESCRIPTOR)
+
+
+class PrivateAneDescriptorTests(unittest.TestCase):
+    def test_model_independent_shape_and_no_compiled_receipt(self):
+        for hidden, width in ((3840, 10240), (4096, 12288)):
+            spec = DESCRIPTOR.descriptor("swiglu", 1056, hidden, width, lora_inputs=True)
+            self.assertEqual(spec["backend"], "private_runtime_shape")
+            self.assertNotIn("compiled_model", spec)
+            self.assertNotIn("files", spec)
+            self.assertLess(len(json.dumps(spec)), 1024)
+        for values in ((0, 128, 512), (33, True, 512), (33, 128, 32769), (33, 128.0, 512)):
+            with self.assertRaises(ValueError):
+                DESCRIPTOR.descriptor("swiglu", *values)
+        with self.assertRaises(ValueError):
+            DESCRIPTOR.descriptor("matmul", 33, 128, 512, lora_inputs=True)
+
+    def test_exclusive_small_file_preserves_existing_destinations(self):
+        spec = DESCRIPTOR.descriptor("swiglu", 33, 128, 512, lora_inputs=True)
+        with tempfile.TemporaryDirectory(prefix="tc-private-shape-") as temporary:
+            root = Path(temporary)
+            output = root / "manifest.json"
+            DESCRIPTOR.write_descriptor(output, spec)
+            self.assertEqual(json.loads(output.read_text()), spec)
+            before = output.read_bytes()
+            with self.assertRaises(FileExistsError):
+                DESCRIPTOR.write_descriptor(output, spec)
+            self.assertEqual(output.read_bytes(), before)
+            link = root / "link.json"
+            link.symlink_to("absent-user-file")
+            with self.assertRaises(FileExistsError):
+                DESCRIPTOR.write_descriptor(link, spec)
+            self.assertTrue(link.is_symlink())
+            self.assertFalse((root / "absent-user-file").exists())
+            with self.assertRaises(ValueError):
+                DESCRIPTOR.write_descriptor(root / "invalid.json", {**spec, "files": {}})
+            self.assertFalse((root / "invalid.json").exists())
+
+    @unittest.skipUnless(sys.platform == "darwin", "Foundation/Core ML parser contracts on macOS")
+    def test_native_parser_public_rejection_gpu_fallback_and_legacy_compatibility(self):
+        with tempfile.TemporaryDirectory(prefix="tc-private-shape-host-") as temporary:
+            root = Path(temporary).resolve()
+            binary = root / "descriptor-test"
+            subprocess.run(["xcrun", "clang++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
+                            "-Wno-deprecated-declarations", "-fobjc-arc", "-mmacosx-version-min=15.0",
+                            "tests/native/ane_runtime_descriptor_test.mm", "native/backends/ane_backend.mm",
+                            "native/backends/ane_runtime.mm", "native/backends/ane_memory.cpp",
+                            "native/core/gguf_decode.cpp", "-framework", "Foundation", "-framework", "CoreML",
+                            "-framework", "CoreVideo", "-framework", "IOSurface", "-o", str(binary)],
+                           cwd=ROOT, check=True, capture_output=True, text=True, timeout=120)
+            spec = DESCRIPTOR.descriptor("swiglu", 33, 128, 512, lora_inputs=True)
+            path = root / "manifest.json"
+            DESCRIPTOR.write_descriptor(path, spec)
+            subprocess.run([str(binary), str(path), "private"], check=True, timeout=10)
+            for changes in ({"schema_version": True}, {"descriptor_version": True},
+                            {"lora_inputs": 1}, {"biases": 0}, {"hidden": 128.5},
+                            {"compiled_model": "graph.mlmodelc"}, {"files": {}}, {"graph_version": 2}):
+                with self.subTest(changes=changes):
+                    path.write_text(json.dumps({**spec, **changes}))
+                    subprocess.run([str(binary), str(path), "reject"], check=True, timeout=10)
+            legacy = {key: value for key, value in spec.items() if key != "descriptor_version"}
+            legacy.update(backend="runtime_weight_fp16", graph_version=2, compiled_model="graph.mlmodelc")
+            path.write_text(json.dumps(legacy))
+            subprocess.run([str(binary), str(path), "public"], check=True, timeout=10)
 
 
 class PrivateAneHostTests(unittest.TestCase):

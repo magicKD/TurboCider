@@ -916,6 +916,8 @@ static NSDictionary *runtime_plan(const RunResult &result) {
                 (channels ? @"runtime_weight_w8a8_hadamard_channel_ffn" : @"runtime_weight_w8a8_hadamard_token_row_ffn") :
                 (channels ? @"runtime_weight_fp16_channel_ffn" : @"runtime_weight_fp16_token_row_ffn")];
         }
+        if (m.runtime_weight_s1_hybrid_blocks)
+            [approximations addObject:@"runtime_smoothquant_s1_experimental"];
         plan[@"algorithm_approximations"] = approximations;
         plan[@"runtime_weight_contract"] = @{
             @"executor_backend": m.runtime_weight_backend.empty() ? (id)NSNull.null : @(m.runtime_weight_backend.c_str()),
@@ -983,6 +985,11 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"a8_lookahead_enabled" : @(m.runtime_weight_a8_lookahead_enabled),
             @"a8_prefetches_session_total" : @(m.runtime_weight_a8_prefetches),
             @"a8_wait_seconds_session_total" : @(m.runtime_weight_a8_wait_seconds),
+            @"a8_single_pass_requested" : @(m.runtime_weight_a8_single_pass_requested),
+            @"a8_single_pass_pipeline_compiled" : @(m.runtime_weight_a8_single_pass_pipeline_compiled),
+            @"a8_single_pass_submissions_session_total" : @(m.runtime_weight_a8_single_pass_submissions),
+            @"a8_single_pass_ineligible_submissions_session_total" : @(m.runtime_weight_a8_single_pass_ineligible_submissions),
+            @"a8_single_pass_counter_scope" : @"committed_staging_including_capability_self_test; not_completion_or_speed_evidence",
             @"scale_cache_hits_session_total" : @(m.runtime_weight_scale_cache_hits),
             @"scale_cache_misses_session_total" : @(m.runtime_weight_scale_cache_misses),
             @"scale_cache_entries" : @(m.runtime_weight_scale_cache_entries),
@@ -998,6 +1005,8 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"unsplit_gpu_blocks_session_total" : @(m.runtime_weight_unsplit_gpu_blocks),
             @"full_gpu_probe_blocks_session_total" : @(m.runtime_weight_full_gpu_probe_blocks),
             @"untimed_hybrid_blocks_session_total" : @(m.runtime_weight_untimed_hybrid_blocks),
+            @"scheduler_cache_hit" : @(m.runtime_weight_scheduler_cache_hit),
+            @"scheduler_cache_entries" : @(m.runtime_weight_scheduler_cache_entries),
             @"async_hybrid_blocks_session_total" : @(m.runtime_weight_async_hybrid_blocks),
             @"full_gpu_probe_seconds_session_total" : @(m.runtime_weight_full_gpu_probe_seconds),
             @"fallback_blocks_session_total" : @(m.runtime_weight_fallback_blocks),
@@ -1005,6 +1014,13 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"overflow_retries_session_total" : @(m.runtime_weight_overflow_retries),
             @"headroom_scale" : @(m.runtime_weight_headroom),
             @"source_recipe" : @(m.runtime_weight_source_recipe.c_str()),
+            @"s1_requested" : @(m.runtime_weight_s1_requested),
+            @"s1_profile_digest" : @(m.runtime_weight_s1_digest.c_str()),
+            @"s1_vector_bytes" : @(m.runtime_weight_s1_bytes),
+            @"s1_bank_margin_bytes" : @(m.runtime_weight_s1_bank_margin_bytes),
+            @"s1_stage_submissions_profile_total" : @(m.runtime_weight_s1_stage_submissions),
+            @"s1_hybrid_blocks_profile_total" : @(m.runtime_weight_s1_hybrid_blocks),
+            @"s1_counter_scope" : @"since_current_profile_binding; submission_does_not_attest_quality_or_physical_INT8",
             @"convrot_stage_submissions_session_total" : @(m.runtime_weight_convrot_stage_submissions),
             @"stage_seconds_session_total" : @(m.runtime_weight_stage_seconds),
             @"stage_wait_seconds_session_total" : @(m.runtime_weight_stage_wait_seconds),
@@ -1566,6 +1582,14 @@ NSDictionary *to_dictionary(const RunResult &result) {
         };
     if (!r.loras.empty() && result.lora_applied_projections)
         value[@"lora_applied_projections"] = @(result.lora_applied_projections);
+    if (result.lora_verification_async)
+        value[@"lora_verification"] = @{
+            @"async_initial_digest": @YES,
+            @"seconds": @(result.lora_verification_seconds),
+            @"join_wait_seconds": @(result.lora_verification_wait_seconds),
+            @"before_join_seconds": @(result.lora_verification_before_join_seconds),
+            @"scope": @"initial full-file SHA-256; post-bind verification remains synchronous; before-join time is not measured speedup"
+        };
     if (result.block_residency)
         value[@"block_residency"] = to_dictionary(*result.block_residency);
     if (result.streaming_runtime) {

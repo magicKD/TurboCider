@@ -36,15 +36,26 @@ class HybridFfn {
         // graph fuse low-rank output handling without merging any weights.
         // Preserve the delta's existing rounding boundary, return base dtype.
         std::function<Tensor(const Tensor &, const Tensor &)> down_and_add;
+        // Optional channel-only correction. Project B over the ANE's output
+        // range directly; the GPU complement handles its disjoint range.
+        // This avoids computing the GPU channels twice and does not retain a
+        // full-size correction cache. Row executors keep gate_up above.
+        ChannelGpu channel_gate_up;
     };
     HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
               size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs = false,
-              std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared = std::nullopt);
+              std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared = std::nullopt,
+              std::string scheduler_identity = {});
     ~HybridFfn();
     // Observation override is for deterministic host tests; production callers
     // use an owner-thread Mach observation on every resident request.
     void begin_request(const std::string &adapter_identity = {},
                        std::optional<MemoryObservation> observation = std::nullopt);
+    // Experimental request-bound S1 only. Values are immutable FP32 [1,H]
+    // and small enough to retain alongside the current/future W8 banks.
+    // Empty scales clear a previous profile after all device work is drained.
+    void set_smoothquant(const std::string &content_digest = {},
+                        const std::function<std::vector<Tensor>()> &make_scales = {});
     // Optional early decision, before the family chooses its compiled block.
     // Hybrid/HybridUntimed/SplitProbe: stage/run once. HybridUntimed owns its
     // completed output and ends the plan in run(), with no observe callback.
@@ -67,13 +78,15 @@ class HybridFfn {
     // Current ownership, unlike the historical slot-byte metrics. A failed
     // optional route must release all of these before returning GPU output.
     bool retains_resources() const {
-        return graph_ || !weights_.empty() || output_.capacity() || hidden_.capacity();
+        return graph_ || !weights_.empty() || !smoothquant_.empty() || output_.capacity() || hidden_.capacity();
     }
     bool supports_lora_inputs() const { return graph_ && graph_->shape().lora_inputs; }
     bool channel_split() const { return axis_ == PartitionAxis::IntermediateChannels; }
     int gpu_channels() const { return metrics_.runtime_weight_gpu_channels; }
     int ane_channels() const { return metrics_.runtime_weight_ane_channels; }
     static std::string executor_configuration_identity();
+    // Lightweight file identity for scheduling only, never model validation.
+    static std::string scheduler_source_identity(const std::filesystem::path &);
     std::string backend_label(bool gguf = false) const {
         if (metrics_.runtime_weight_backend.empty()) return gguf ? "mlx_cpp_metal_gguf" : "mlx_cpp_metal";
         return std::string(gguf ? "mlx_cpp_metal_gguf+" : "mlx_cpp_metal+") +
@@ -102,6 +115,7 @@ class HybridFfn {
     std::unique_ptr<RowScheduler> scheduler_;
     PartitionAxis axis_ = PartitionAxis::Rows;
     std::vector<Tensor> weights_;
+    std::vector<Tensor> smoothquant_;
     // Worker scratch only. Copy completed results into independently owned
     // tensors before publishing them to GPU consumers or adapter callbacks.
     std::vector<uint16_t> output_, hidden_;
@@ -118,14 +132,19 @@ class HybridFfn {
     size_t memory_budget_ = 0;
     std::string reason_;
     std::string adapter_identity_;
+    std::string scheduler_identity_, scheduler_cache_key_;
     std::chrono::steady_clock::time_point pre_start_;
     void degrade(const std::string &, int layer);
     void release_for_memory(const std::string &reason);
     bool admit_scratch(int ane_rows, bool adapter);
     Tensor run_channels(int, const Tensor &, const Gpu &, const ChannelGpu &,
                         std::atomic<bool> &, const Adapter *, const NextWeights &);
-    std::vector<DeviceWeightRegion> device_regions(const std::vector<FfnWeight> &) const;
+    std::vector<DeviceWeightRegion> device_regions(const std::vector<FfnWeight> &, int layer) const;
+    uint64_t retained_bytes() const;
+    uint64_t smoothquant_bank_margin() const;
+    void fill_activation_stage_metrics(HybridMetrics &) const;
     void maybe_prefetch(int, int, const NextWeights &);
+    void save_scheduler();
 };
 
 } // namespace tc::ane
