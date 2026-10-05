@@ -1,6 +1,7 @@
 // Small native correctness/alternating benchmark for the production helper.
 // No checkpoint download, persistent dense cache, or ANE performance claim.
 #include "models/z_image/ffn.hpp"
+#include "backends/convrot_rotation.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -79,6 +80,26 @@ void parity() {
               << ",\"passed\":true,\"exact\":true}\n";
 }
 
+void rotation_integration() {
+    for (int rows : {1056, 4224}) {
+        auto weights = fixture(3840, 10240, false, false);
+        weights.pack_convrot_q8(32, mx::bfloat16); weights.set_metal_convrot(true);
+        auto x = input(rows, 3840, mx::bfloat16, true); mx::eval(x);
+        auto control_project = [&](const Tensor &value, const std::string &name) {
+            auto rotated = convrot_kernel::rotate(value, convrot_kernel::Rotation::Shared);
+            return mx::astype(mx::quantized_matmul(rotated, weights.at(name + ".weight"),
+                weights.at(name + ".scales"), weights.at(name + ".biases"), true, 32, 8, "affine"), value.dtype());
+        };
+        auto control = control_project(silu(control_project(x, "ffn.w1")) * control_project(x, "ffn.w3"), "ffn.w2");
+        auto candidate = z_image::feed_forward(x, weights, "ffn", true);
+        mx::eval({control, candidate});
+        require(mx::all(mx::isfinite(candidate)).item<bool>() && mx::all(control == candidate).item<bool>(),
+                "integrated large-row quad ConvRot changed packed Q8 FFN output");
+        std::cout << "PASS integrated ConvRot quad: original packed BF16 scales, rows=" << rows
+                  << " hidden=3840 width=10240 exact shared-kernel full FFN oracle\n";
+    }
+}
+
 double median(std::vector<double> values) {
     std::sort(values.begin(), values.end());
     const size_t mid = values.size() / 2;
@@ -130,6 +151,7 @@ void benchmark(int rows, int hidden, int width, int iterations) {
 int main(int argc, char **argv) {
     try {
         if (argc == 1) parity();
+        else if (argc == 2 && std::string(argv[1]) == "rotation-integration") rotation_integration();
         else {
             require(argc == 5, "usage: convrot-ffn-probe [rows hidden width iterations]");
             benchmark(std::stoi(argv[1]), std::stoi(argv[2]), std::stoi(argv[3]), std::stoi(argv[4]));

@@ -1,7 +1,9 @@
 #include "mlx.hpp"
+#include "convrot_rotation.hpp"
 #include "mlx_fd_reader.hpp"
 #include "../core/gguf.hpp"
 #include "../runtime/streaming/source_lease.hpp"
+#include "../platform/apple/platform.hpp"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -93,6 +95,15 @@ static Tensor convrot_rotate_metal(const Tensor &x) {
     require(x.dtype() == mx::bfloat16 || x.dtype() == mx::float16 ||
                 x.dtype() == mx::float32,
             "Metal ConvRot requires a floating-point activation");
+    // Only the existing explicit Metal ConvRot path takes this candidate.
+    // Dense-H / legacy default, other devices, small modulation vectors and
+    // unmeasured dtypes keep their previous implementation. Four H256 groups
+    // share one TG without changing radix-4 ordering or final BF16 rounding.
+    static const bool qualified_device = device_info().gpu == "Apple M4 Max";
+    const auto quad_rows = x.size() / size_t(x.shape(-1));
+    if (qualified_device && x.dtype() == mx::bfloat16 && quad_rows >= 1024 && quad_rows <= 4224 &&
+        (x.shape(-1) == 3840 || x.shape(-1) == 10240))
+        return convrot_kernel::rotate(x, convrot_kernel::Rotation::SimdQuad);
     /* H_256 = H_4 kron H_4 kron H_4 kron H_4.  One threadgroup owns one
      * contiguous 256-value tile, reducing the transform from a dense
      * 256x256 matmul to four radix-4 butterflies.  Accumulation stays FP32
