@@ -56,13 +56,14 @@ Qwen512 使用真正 base-only v1 模板：
 
 ## 数值证据的限度
 
-同一 fox/seed42 的首个热输出，GPU vs Private uint8 RGB 比较：
+同一 fox/seed42 的首个热输出，GPU vs Private uint8 比较；旧脚本直接
+比较PNG全部通道，Z为RGB、Qwen为RGBA，不能把Qwen旧值冒称RGB-only：
 
 | case | RMSE | PSNR (dB) | correlation | max abs |
 | --- | ---: | ---: | ---: | ---: |
 | Z512/4096 正向 | 5.279503 | 33.678942 | 0.996773 | 185 |
 | Z1024/5120 | 8.271751 | 29.778854 | 0.992795 | 209 |
-| Qwen512/5120 v1 | 4.706274 | 34.677259 | 0.998477 | 142 |
+| Qwen512/5120 v1（RGBA） | 4.706274 | 34.677259 | 0.998477 | 142 |
 
 Qwen512 的两幅图已查看，未见该固定样本的明显结构破坏。这不等于多提示词、
 latent、感知质量或 LoRA 资格；尤其 Z1024 的像素差异不得藏在相关系数后。
@@ -94,7 +95,9 @@ Z 25,455,781,656 / 24,204,732,304 bytes，Qwen 22,133,094,512 /
 decompression 活动，因此不是零内存压力或完整 driver/wired/低内存资格。
 单图 GPU/Private RMSE/PSNR/correlation/max abs：Z
 10.736828 / 27.513284dB / 0.987757 / 229，Qwen
-3.690081 / 36.790085dB / 0.999059 / 107。尚未完成正式 LoRA 质量验收。
+3.690081 / 36.790085dB / 0.999059 / 107（RGBA全部通道，非RGB-only）。
+尚未完成正式 LoRA 质量验收。后续CPU PNG工具将RGB/alpha明确分开，
+不重写旧原始性能或质量证据。
 
 原始目录：`outputs/private-ane-quiet-z512-lora-a4096-fixed/` 与
 `outputs/private-ane-quiet-qwen512-lora-a5120-fixed/`。

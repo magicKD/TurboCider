@@ -50,6 +50,10 @@ counters不证明device overlap，两个runtime arm仍无有效速度比较。
 [quiet window](private-ane-quiet-window-2026-10-05.md)：Qwen512 base v1 两方向
 约1.263–1.265×；Z512 中位约1.20×但裕量窄，两个1024²格仍未达标。正式四格、
 LoRA/质量/内存/device trace资格未完成，不升级默认路线。
+1024²显式4224-row bucket、逐元素self-test与长行数physical MPP接续见
+[full bucket](private-ane-full-bucket-2026-10-05.md)：新库Z1024狐/灯塔约
+1.214×/1.209×，Qwen1024约1.258×；保守边界亦超过1.2，但同提示词
+反序、最新库512/LoRA、完整质量/内存/并发与带宽calibration仍待验收。
 
 先读 [GPU/ANE 加速：当前选择与维护入口](acceleration.md)。
 它统一维护默认/最快 base、完整 runtime LoRA、optional 和诊断边界。

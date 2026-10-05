@@ -1,0 +1,479 @@
+{
+  "schema": "tc-private-ane-full-bucket-pilot-v1",
+  "implementation_commit": "73cf497",
+  "clean_staged_tree_rebuilt": false,
+  "archived_binaries_include_independent_convrot_worktree_edits": true,
+  "public_library_rebuilt_this_turn": false,
+  "existing_public_binary_distribution_guard_passed": true,
+  "date": "2026-10-05",
+  "hardware": "Apple M4 Max 64GB",
+  "objective_complete": false,
+  "formal_four_way_1_2x_qualified": false,
+  "model_media_latent_quality_qualified": false,
+  "native_int8_mac_observed": false,
+  "public_default_retained": true,
+  "full_bucket_automatic_default": false,
+  "private_row_software_bound": 4224,
+  "first_invalid_row": 4225,
+  "weight_recipe": "sylvester-dh-b128-b512-rne-norm-f16-v2",
+  "self_test": {
+    "previous_aggregate_relative_l2_limit_retained": 0.05,
+    "additional_scalar_absolute_tolerance": 0.0003,
+    "additional_scalar_relative_tolerance": 0.08,
+    "all_scalars_finite_required": true,
+    "actual_driver_rows": 4224,
+    "weight_generations": 3
+  },
+  "builds": {
+    "full_bucket": "bc76c398eb170d4dbbb55554d2425403fa463b1a9d56613e8d3e3fdd53286bf5",
+    "full_bucket_mpp": "86144106019f15a289007f148a1ba1a447ef0f77d98ceb5627457a9fe976fa3f"
+  },
+  "policy": {
+    "data_path": "w8a8_hadamard",
+    "gpu_io": true,
+    "chunk_policy": 1,
+    "weight_prefetch": 0,
+    "scale_cache": 1,
+    "launch_fence": 1,
+    "a8_lookahead": 0,
+    "stage_specialize": 1,
+    "fixed_async": 1
+  },
+  "cases": [
+    {
+      "case": "private-ane-full-bucket-z1024-a4608-c4224-quiet",
+      "summary": "outputs/private-ane-full-bucket-z1024-a4608-c4224-quiet/summary.json",
+      "summary_sha256": "6c74730d646db65be3b2f9d8ea073c1f43cd1b44d33de945df0a8f38500bf0bb",
+      "library_sha256": "bc76c398eb170d4dbbb55554d2425403fa463b1a9d56613e8d3e3fdd53286bf5",
+      "template_manifest": "outputs/runtime-ane/private-channel-z-c4224-k1024-n512-v1/manifest.json",
+      "template_manifest_sha256": "3af965ecb66ef3e682f55e448499d700551c9cbd59adc046d3112f5acae5f01d",
+      "model": "z-image-turbo",
+      "size": 1024,
+      "steps": 8,
+      "ane_channels": 4608,
+      "route_order": [
+        "runtime",
+        "gpu"
+      ],
+      "gpu_hot_seconds": [
+        31.262904459,
+        31.276799333
+      ],
+      "private_hot_seconds": [
+        26.098521125,
+        26.143250833
+      ],
+      "gpu_hot_median_seconds": 31.269851896,
+      "private_hot_median_seconds": 26.120885979,
+      "median_speedup": 1.1971206459512718,
+      "conservative_min_gpu_over_max_private": 1.1958307962044867,
+      "load": {
+        "runtime": {
+          "samples": 157,
+          "evidence_sha256": "4aab152f824cf52a12b9c0864be0a147e1f03a0df4479cb7d890da6648f2b1ec",
+          "observed_max_gap_ns": 577419292
+        },
+        "gpu": {
+          "samples": 175,
+          "evidence_sha256": "7c511dde8e55fa4ac88150bdc331c21c4ed0ba1ae2f6b9021551c4a14249a26f",
+          "observed_max_gap_ns": 597604750
+        }
+      },
+      "runtime_calls_per_request": [
+        256,
+        256,
+        256
+      ],
+      "fallback_blocks_session": 0,
+      "overflow_retries_session": 0,
+      "slot_bytes": 156532736,
+      "estimated_bytes": 604373248,
+      "untimed_blocks_session": 768,
+      "async_blocks_session": 768
+    },
+    {
+      "case": "private-ane-full-bucket-z1024-a5120-c4224-quiet",
+      "summary": "outputs/private-ane-full-bucket-z1024-a5120-c4224-quiet/summary.json",
+      "summary_sha256": "dde83bd80a789d7e5de2abb19ffb569c3a1fc8ff0f382efa91cc64b935fd1dfa",
+      "library_sha256": "bc76c398eb170d4dbbb55554d2425403fa463b1a9d56613e8d3e3fdd53286bf5",
+      "template_manifest": "outputs/runtime-ane/private-channel-z-c4224-k1024-n512-v1/manifest.json",
+      "template_manifest_sha256": "3af965ecb66ef3e682f55e448499d700551c9cbd59adc046d3112f5acae5f01d",
+      "model": "z-image-turbo",
+      "size": 1024,
+      "steps": 8,
+      "ane_channels": 5120,
+      "route_order": [
+        "gpu",
+        "runtime"
+      ],
+      "gpu_hot_seconds": [
+        31.232899458,
+        31.310964625
+      ],
+      "private_hot_seconds": [
+        26.729881333,
+        26.818445291
+      ],
+      "gpu_hot_median_seconds": 31.2719320415,
+      "private_hot_median_seconds": 26.774163312,
+      "median_speedup": 1.1679891422595503,
+      "conservative_min_gpu_over_max_private": 1.1646051484006585,
+      "load": {
+        "gpu": {
+          "samples": 176,
+          "evidence_sha256": "ab459606f71916457120e737b6d0ecbcd5c5433f87ccbfd61ae161ab8b82c7e0",
+          "observed_max_gap_ns": 597127167
+        },
+        "runtime": {
+          "samples": 161,
+          "evidence_sha256": "73f1942b9b132394c5017f0027ac354a3bf75c3f8fe7b0bb215a327f0e541b86",
+          "observed_max_gap_ns": 570826083
+        }
+      },
+      "runtime_calls_per_request": [
+        256,
+        256,
+        256
+      ],
+      "fallback_blocks_session": 0,
+      "overflow_retries_session": 0,
+      "slot_bytes": 168460288,
+      "estimated_bytes": 634519808,
+      "untimed_blocks_session": 768,
+      "async_blocks_session": 768
+    },
+    {
+      "case": "private-ane-full-bucket-mpp-z1024-a4608-quiet",
+      "summary": "outputs/private-ane-full-bucket-mpp-z1024-a4608-quiet/summary.json",
+      "summary_sha256": "3ade324617a35de7ada190be4c5c8b69e2fea1cf5676d5934702f1811c33408e",
+      "library_sha256": "86144106019f15a289007f148a1ba1a447ef0f77d98ceb5627457a9fe976fa3f",
+      "template_manifest": "outputs/runtime-ane/private-channel-z-c4224-k1024-n512-v1/manifest.json",
+      "template_manifest_sha256": "3af965ecb66ef3e682f55e448499d700551c9cbd59adc046d3112f5acae5f01d",
+      "model": "z-image-turbo",
+      "size": 1024,
+      "steps": 8,
+      "ane_channels": 4608,
+      "route_order": [
+        "gpu",
+        "runtime"
+      ],
+      "gpu_hot_seconds": [
+        31.286677459,
+        31.303811292,
+        31.309993542
+      ],
+      "private_hot_seconds": [
+        25.780713375,
+        25.828577084,
+        25.583057542
+      ],
+      "gpu_hot_median_seconds": 31.303811292,
+      "private_hot_median_seconds": 25.780713375,
+      "median_speedup": 1.2142337117155122,
+      "conservative_min_gpu_over_max_private": 1.2113202116109263,
+      "load": {
+        "gpu": {
+          "samples": 236,
+          "evidence_sha256": "5540625bc63f53bb32463215a8896b6ae8fcb5cbacf0be2a6db2c7d8380de56a",
+          "observed_max_gap_ns": 609460417
+        },
+        "runtime": {
+          "samples": 204,
+          "evidence_sha256": "35121e47bbfb7173816f6a58721d89f17e8e10384d42268cf29351c3aa7d7122",
+          "observed_max_gap_ns": 569605417
+        }
+      },
+      "runtime_calls_per_request": [
+        256,
+        256,
+        256,
+        256
+      ],
+      "fallback_blocks_session": 0,
+      "overflow_retries_session": 0,
+      "slot_bytes": 156532736,
+      "estimated_bytes": 604373248,
+      "untimed_blocks_session": 1024,
+      "async_blocks_session": 1024
+    },
+    {
+      "case": "private-ane-full-bucket-qwen1024-a5120-c4224-quiet",
+      "summary": "outputs/private-ane-full-bucket-qwen1024-a5120-c4224-quiet/summary.json",
+      "summary_sha256": "9965a2da6ceaee9e5410178bc052a04437750a8b0a5121a18433a9228621a6c4",
+      "library_sha256": "86144106019f15a289007f148a1ba1a447ef0f77d98ceb5627457a9fe976fa3f",
+      "template_manifest": "outputs/runtime-ane/private-channel-qwen-c4224-k1024-n512-v1/manifest.json",
+      "template_manifest_sha256": "149cdbc2262ab63d6c53adbefd875aa40397e4aff757cc73a970a6f4eac1760d",
+      "model": "qwen-image-2.1",
+      "size": 1024,
+      "steps": 40,
+      "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+      "seed": 42,
+      "ane_channels": 5120,
+      "route_order": [
+        "runtime",
+        "gpu"
+      ],
+      "gpu_hot_seconds": [
+        183.201318125,
+        183.184767292
+      ],
+      "private_hot_seconds": [
+        145.671839875,
+        145.521115917
+      ],
+      "gpu_hot_median_seconds": 183.1930427085,
+      "private_hot_median_seconds": 145.596477896,
+      "median_speedup": 1.25822441144047,
+      "conservative_min_gpu_over_max_private": 1.257516672056793,
+      "load": {
+        "runtime": {
+          "samples": 812,
+          "evidence_sha256": "2f53040d0e28c14a1d37140b8e91a269ca558e03cd1c23fb8cd217d56d2ab954",
+          "observed_max_gap_ns": 594206167
+        },
+        "gpu": {
+          "samples": 1002,
+          "evidence_sha256": "74586f84ee7b333c28e162a9d7671a3c2a1f177b792b540d545f92b8e42a917d",
+          "observed_max_gap_ns": 593236375
+        }
+      },
+      "runtime_calls_per_request": [
+        1280,
+        1280,
+        1280
+      ],
+      "fallback_blocks_session": 0,
+      "overflow_retries_session": 0,
+      "slot_bytes": 179601408,
+      "estimated_bytes": 655360256,
+      "untimed_blocks_session": 3840,
+      "async_blocks_session": 3840,
+      "qwen_qk_norm_rope": true,
+      "independent_process_tree_memory": null
+    },
+    {
+      "case": "private-ane-full-bucket-mpp-z1024-lighthouse-reverse-memory",
+      "summary": "outputs/private-ane-full-bucket-mpp-z1024-lighthouse-reverse-memory/summary.json",
+      "summary_sha256": "071ca348539c63e9121c0afac68f8c98aaa48f0a3e40592230565522101c9ab4",
+      "library_sha256": "86144106019f15a289007f148a1ba1a447ef0f77d98ceb5627457a9fe976fa3f",
+      "template_manifest": "outputs/runtime-ane/private-channel-z-c4224-k1024-n512-v1/manifest.json",
+      "template_manifest_sha256": "3af965ecb66ef3e682f55e448499d700551c9cbd59adc046d3112f5acae5f01d",
+      "model": "z-image-turbo",
+      "size": 1024,
+      "steps": 8,
+      "prompt": "A lighthouse on a rocky coastline at sunset, dramatic clouds, waves breaking on rocks, warm light, realistic landscape photography.",
+      "seed": 17,
+      "ane_channels": 4608,
+      "route_order": [
+        "runtime",
+        "gpu"
+      ],
+      "gpu_hot_seconds": [
+        31.472496417,
+        31.40064375
+      ],
+      "private_hot_seconds": [
+        25.928635708,
+        26.072650083
+      ],
+      "gpu_hot_median_seconds": 31.4365700835,
+      "private_hot_median_seconds": 26.0006428955,
+      "median_speedup": 1.2090689530196506,
+      "conservative_min_gpu_over_max_private": 1.2043518265323547,
+      "load": {
+        "runtime": {
+          "samples": 158,
+          "evidence_sha256": "58fffed76cc20697f1144381b5cce27388eddda921b4c38652fa4cf966106bda",
+          "observed_max_gap_ns": 577577917
+        },
+        "gpu": {
+          "samples": 176,
+          "evidence_sha256": "92125c1a559fa74a5d0441a2edf78ad0d8d712d50ff453a783b12cc8a6b735ce",
+          "observed_max_gap_ns": 596488917
+        }
+      },
+      "runtime_calls_per_request": [
+        256,
+        256,
+        256
+      ],
+      "fallback_blocks_session": 0,
+      "overflow_retries_session": 0,
+      "slot_bytes": 156532736,
+      "estimated_bytes": 604373248,
+      "untimed_blocks_session": 768,
+      "async_blocks_session": 768,
+      "qwen_qk_norm_rope": false,
+      "independent_process_tree_memory": {
+        "runtime": {
+          "sample_count": 864,
+          "max_gap_ns": 110009917,
+          "tree_peak_rss_bytes": 13064519680,
+          "tree_peak_phys_footprint_bytes": 45241165472,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 2686976,
+          "evidence_sha256": "6ff55c15d17bd417c7f46c78f7497d371bd716b18935e91d9eb694ff804c88da",
+          "report_sha256": "5de80cdca7f1701142c9b45978520fec23b5152d88d57fc3bae0be5104591909"
+        },
+        "gpu": {
+          "sample_count": 973,
+          "max_gap_ns": 110011584,
+          "tree_peak_rss_bytes": 12756369408,
+          "tree_peak_phys_footprint_bytes": 45547562584,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "evidence_sha256": "a2337e64f35b6c5739aff77949a47712a3953feabf244b038313cc390e076b7a",
+          "report_sha256": "be75881dbc34df51274b6602d90fc8853bcb4066bed3b0b4c5b3bedba5c58a37"
+        }
+      }
+    }
+  ],
+  "rejected_cases": [
+    {
+      "case": "private-ane-full-bucket-z1024-a4096-c4224",
+      "summary_status": "incomplete",
+      "gpu_arm_executed": false,
+      "continuous_load_samples": 164,
+      "busy_samples": 5,
+      "speedup": null,
+      "performance_qualified": false
+    }
+  ],
+  "numerical_compatibility": {
+    "mpp_before_after_z1024_a4608_first_hot_pixels_bit_exact": true,
+    "max_abs_u8": 0,
+    "gpu_private_single_fox_seed42": {
+      "rmse_u8": 8.492609532364584,
+      "psnr_db": 29.549980471944902,
+      "correlation": 0.9924360084292329,
+      "max_abs_u8": 205
+    },
+    "formal_quality_qualified": false
+  },
+  "tests": {
+    "full_bucket_private_passed": 13,
+    "mpp_long_rows_subset_passed": 4,
+    "mpp_long_rows_subset_skipped": 9,
+    "mpp_full_private_passed": 13,
+    "screen_host_passed": 54,
+    "layout_passed": 8,
+    "git_diff_check_passed": true,
+    "full_make_test_executed": false
+  },
+  "download_window": {
+    "user_authorized": true,
+    "signal": "SIGSTOP",
+    "identity_revalidated": true,
+    "previously_stopped_by_someone_else": false,
+    "download_files_modified_or_removed": false,
+    "resume_ledger": "outputs/private-ane-full-bucket-download-pause-ledger.json",
+    "resumed": true,
+    "identity_revalidated_before_resume": true
+  },
+  "pending": [
+    "same-workload reversed Z1024 and Qwen1024 controls and current-library 512 base tests",
+    "Qwen1024 LoRA request gate expansion with retained FP32 rank policy; actual 1024 LoRA model compatibility/performance",
+    "full multi-prompt latent/perceptual/media/memory qualification",
+    "bandwidth-aware share/prefetch calibration and actual device trace"
+  ],
+  "png_quality": {
+    "z_mpp_before_after": {
+      "schema": "tc-runtime-ane-png-comparison-v1",
+      "size": [
+        1024,
+        1024
+      ],
+      "png_pixel_exact": true,
+      "source_sha256": [
+        "3088211f0ca19c469b62cae39c6fdf34f82000ebee4c1c60e96749a9c05546fb",
+        "3088211f0ca19c469b62cae39c6fdf34f82000ebee4c1c60e96749a9c05546fb"
+      ],
+      "metrics": {
+        "pixel_exact": true,
+        "rmse_u8": 0,
+        "psnr_db": null,
+        "max_abs_u8": 0,
+        "rgb_correlation": 1,
+        "rgb_ssim_gaussian11_valid": 1,
+        "ssim_per_channel": [
+          1,
+          1,
+          1
+        ]
+      },
+      "scope": "CPU-only unresized PNG numerical comparison; not latent/perceptual/semantic qualification",
+      "qualification_passed": false
+    },
+    "z_gpu_private": {
+      "schema": "tc-runtime-ane-png-comparison-v1",
+      "size": [
+        1024,
+        1024
+      ],
+      "png_pixel_exact": false,
+      "source_sha256": [
+        "3846868cf4197ba1b66a2b8740e591b0f1400865d74a0f7b3fec60a107c6bd6e",
+        "3088211f0ca19c469b62cae39c6fdf34f82000ebee4c1c60e96749a9c05546fb"
+      ],
+      "metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.492609532364584,
+        "psnr_db": 29.549980471944902,
+        "max_abs_u8": 205,
+        "rgb_correlation": 0.9924360084299481,
+        "rgb_ssim_gaussian11_valid": 0.9711248772893752,
+        "ssim_per_channel": [
+          0.9714404650558791,
+          0.9715915280075818,
+          0.9703426388046071
+        ]
+      },
+      "scope": "CPU-only unresized PNG numerical comparison; not latent/perceptual/semantic qualification",
+      "qualification_passed": false
+    },
+    "qwen_gpu_private": {
+      "schema": "tc-runtime-ane-png-comparison-v1",
+      "size": [
+        1024,
+        1024
+      ],
+      "png_pixel_exact": false,
+      "source_sha256": [
+        "0b52e030f84ef582dbb29c78f54bf3d70c52002504260b81efa74ff67bd89e80",
+        "87331a341db62d3592d7a7cfd7579ac9849e7cfef6d7f8286bfb3bb4ff31a103"
+      ],
+      "metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 2.585337466477462,
+        "psnr_db": 39.88045880891332,
+        "max_abs_u8": 142,
+        "rgb_correlation": 0.9993959482379925,
+        "rgb_ssim_gaussian11_valid": 0.9949981965851284,
+        "ssim_per_channel": [
+          0.9949804134756438,
+          0.9946974701256516,
+          0.9953167061540433
+        ],
+        "alpha": {
+          "pixel_exact": false,
+          "rmse_u8": 0.11313382783450882,
+          "max_abs_u8": 3
+        }
+      },
+      "scope": "CPU-only unresized PNG numerical comparison; not latent/perceptual/semantic qualification",
+      "qualification_passed": false
+    }
+  },
+  "png_comparison_tool": {
+    "path": "tools/validation/runtime_ane_image_compare.py",
+    "cpu_only": true,
+    "learned_weights_downloaded": false,
+    "tests_passed": 4,
+    "qualification_passed": false
+  },
+  "all_owned_benchmark_build_test_handles_terminal": true
+}
