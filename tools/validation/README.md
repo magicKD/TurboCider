@@ -29,6 +29,13 @@ producer，不能把其它优化的收益算作 A8 pipeline 收益。详见
 constants；默认0、同库测量，不改变 recipe 或原始 weight layout。
 `--observe-load` 连续记录 CPU 负载并排除 owned launch tree，检测到竞争或
 观察不完整就保留 raw output、拒绝比较；不是实际 GPU/ANE 独占证明。
+`--private-lora-channel-range 0|1` 对比旧 full gate/up correction 与仅 ANE
+子范围 correction；限定 private W8A8 channel LoRA，并验证实际 narrow/full
+callback counters，不能将 env 或 self-test 当作模型执行。Public/row和
+没有子范围 callback 的调用方保持完整路径；down-LoRA仍用一次完整 hidden。
+`--fixed-async 0|1` 仅用于positive fixed chunks且关闭profile的runtime消融。
+1复用untimed/async head，0保持固定分区计时；verifier要求实际成功block的
+untimed/async counters符合选择。该计数不是物理GPU/ANE overlap证据。
 placement保留历史文件名和冻结图 `--blocks` 接口；runtime只有一个共享图，
 不是每层一个图，且不接受 `--blocks`。不要仅为命名统一移动这些入口。
 
