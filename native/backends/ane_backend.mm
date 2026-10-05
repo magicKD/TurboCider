@@ -18,6 +18,10 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
     if(group && std::string(group)!="0" && std::string(group)!="256")
         throw std::runtime_error("private ANE A8 group size requires 0 or 256");
     const bool requested_group=group && std::string(group)=="256";
+    const char *scope=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE");
+    if(scope && std::string(scope)!="input" && std::string(scope)!="hidden" && std::string(scope)!="both")
+        throw std::runtime_error("private ANE A8 group scope requires input, hidden or both");
+    if(scope && !requested_group)throw std::runtime_error("A8 group scope requires explicit group size 256");
     if(requested_group && !try_private)throw std::runtime_error("group A8 requires an authorized private backend");
     const int channels = private_channel_count(expected.width);
     if (channels && !try_private) throw std::runtime_error("channel split requires an authorized private W8A8 backend");

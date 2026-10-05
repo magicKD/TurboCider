@@ -62,12 +62,16 @@ struct Weight {
 };
 }
 int main(int argc,char **argv) {
-    if(argc!=2 && argc!=3)return 2;
+    if(argc<2 || argc>4)return 2;
     @autoreleasepool {
       try {
         constexpr int bucket=33,rows=bucket*3,h=512,f=512,physical_width=1024;
-        const bool grouped=argc==3 && std::string(argv[2])=="group256";
-        if(argc==3 && !grouped)return 2;
+        const bool grouped=argc>=3 && std::string(argv[2])=="group256";
+        if(argc>=3 && !grouped)return 2;
+        const std::string scope=argc==4?argv[3]:"both";
+        if(grouped)setenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE",scope.c_str(),1);
+        else unsetenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE");
+        const int input_group=grouped && scope!="hidden"?256:0,hidden_group=grouped && scope!="input"?256:0;
         setenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE",grouped?"256":"0",1);
         auto gpu=MTLCreateSystemDefaultDevice();
         Storage x(gpu,rows,h),y(gpu,rows,h),hidden(gpu,rows,f),dg(gpu,rows,f,DType::FP32),du(gpu,rows,f,DType::FP32);
@@ -80,8 +84,10 @@ int main(int argc,char **argv) {
             setenv("TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE","1",1);
             const auto cache=std::filesystem::path(argv[1])/(packed?"packed":"signed")/(lookahead?"lookahead":"serial");
             PrivateW8Graph graph({Kind::SwiGLU,bucket,h,f,256,512,true},256u<<20,cache,W8Basis::ComfyH256);
-            check(graph.data_path()=="w8a8_convrot" && graph.weight_recipe()==(grouped?convrot_group_w8a8_recipe:convrot_w8a8_recipe) &&
-                graph.activation_group_size()==(grouped?256:0),"recipe/group identity missing");
+            const auto recipe=input_group && hidden_group?convrot_group_w8a8_recipe:
+                input_group?convrot_input_group_w8a8_recipe:hidden_group?convrot_hidden_group_w8a8_recipe:convrot_w8a8_recipe;
+            check(graph.data_path()=="w8a8_convrot" && graph.weight_recipe()==recipe &&
+                graph.activation_group_size()==input_group && graph.hidden_activation_group_size()==hidden_group,"recipe/group identity missing");
             check(graph.slot_bytes()<=graph.estimated_bytes(),"memory estimate understated");
             std::string error;check(graph.self_test(error),error);
             Weight g(gpu,physical_width,h,packed),u(gpu,physical_width,h,packed),d(gpu,h,physical_width,packed);
@@ -140,7 +146,7 @@ int main(int argc,char **argv) {
             graph.stage_device_weight_regions(malformed);check(!graph.wait_stage().ok,"bad second W producer accepted");
             graph.launch_device(x.view,y.view);check(!graph.finish().ok,"failed W bank reused as ready");
             stage(.125f,-.25f,.25f);run(true,.125f,-.25f,.25f);
-            std::cout<<"PASS direct ConvRot Executor packed="<<packed<<" lookahead="<<lookahead<<" group="<<(grouped?256:0)
+            std::cout<<"PASS direct ConvRot Executor packed="<<packed<<" lookahead="<<lookahead<<" group="<<(grouped?256:0)<<" scope="<<scope
                 <<": Comfy H256/A8, signed down scales, source/LoRA-hidden oracles, physical channels, future-basis identity, late failure and refill\n";
         }
       } catch(const std::exception &e) {std::cerr<<e.what()<<"\n";return 1;}

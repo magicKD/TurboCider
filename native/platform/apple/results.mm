@@ -953,6 +953,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"a8_lookahead_enabled" : @(m.runtime_weight_a8_lookahead_enabled),
             @"fp32_channel_join_enabled" : @(m.runtime_weight_fp32_channel_join_enabled),
             @"a8_group_size" : @(m.runtime_weight_a8_group_size),
+            @"hidden_a8_group_size" : @(m.runtime_weight_hidden_a8_group_size),
             @"a8_prefetches_session_total" : @(m.runtime_weight_a8_prefetches),
             @"a8_wait_seconds_session_total" : @(m.runtime_weight_a8_wait_seconds),
             @"scale_cache_hits_session_total" : @(m.runtime_weight_scale_cache_hits),

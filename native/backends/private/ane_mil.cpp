@@ -130,7 +130,7 @@ std::string w8_matmul_program(const GraphShape &s) {
     return "program(1.3)\n{\n    func main_ane<ios18>(" + input_buffer(s.hidden, s.rows) + " x, " + input_buffer(s.width, s.hidden) +
         " w) {\n" + body + "    } -> (y);\n}\n";
 }
-W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroom, W8Basis basis,int activation_group_size) {
+W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroom, W8Basis basis,int activation_group_size,int hidden_group_size) {
     // An explicit 4224-row bucket can cover 1024px image tokens and up to
     // 128 caption tokens in one request. Keep the existing smaller buckets
     // available: fewer handoffs are not a model-speed/quality guarantee.
@@ -141,8 +141,12 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
         throw CapabilityError("private W8A8 SwiGLU geometry/headroom unsupported");
     const bool comfy=basis==W8Basis::ComfyH256;
     const bool grouped=activation_group_size==256;
+    if(hidden_group_size==-1)hidden_group_size=activation_group_size;
+    const bool hidden_grouped=hidden_group_size==256;
     if(activation_group_size!=0 && (!grouped || !comfy))
         throw CapabilityError("group A8 MIL requires explicit Comfy group256 recipe");
+    if(hidden_group_size!=0 && (!hidden_grouped || !comfy))
+        throw CapabilityError("hidden group A8 MIL requires explicit Comfy group256 recipe");
     if ((basis!=W8Basis::SylvesterDH && !comfy) || (comfy && (s.hidden%256 || seed!=0)))
         throw CapabilityError("private W8A8 Comfy basis/seed/geometry unsupported");
     const int rotation_block=comfy?256:512;
@@ -179,7 +183,8 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
     auto f = [&](const std::string &name, int r, const std::string &expression) { line(typed("fp16", r, s.rows) + " " + name + " = " + expression); };
     auto projection = [&](const std::string &name, const std::string &w, const std::string &x, int n, int k,
                           const std::string &group_scales=std::string{},const std::string &row_scales=std::string{}) {
-        const int tile = grouped ? 256 : s.tile_k > 0 ? std::min(s.tile_k, 2048) : 2048;
+        const bool group_projection=name=="d"?hidden_grouped:grouped;
+        const int tile = group_projection ? 256 : s.tile_k > 0 ? std::min(s.tile_k, 2048) : 2048;
         if (tile < 128) throw CapabilityError("private W8A8 K tile too small");
         std::string total;
         for (int begin = 0; begin < k; begin += tile) {
@@ -196,7 +201,7 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
             f(xt, width, "dequantize(input = " + xt + "q, scale = fp16(0x1p-7))");
             f(p, n, "matmul(transpose_x = bool(false), transpose_y = bool(false), x = " + wt + ", y = " + xt + ")");
             std::string partial=p;
-            if(grouped) {
+            if(group_projection) {
                 const auto scale=name+"scale"+suffix;
                 f(scale,1,"slice_by_size(x = "+group_scales+", begin = tensor<int32, [4]>([0, 0, "+
                     std::to_string(begin/256)+", 0]), size = tensor<int32, [4]>("+shape(1,s.rows)+"))");
@@ -245,7 +250,7 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
     line("tensor<fp16, [1, " + c + ", 1, " + m + "]> hr4 = conv(dilations = tensor<int32, [2]>([1, 1]), groups = int32(" +
         std::to_string(s.width / rotation_block) + "), pad = tensor<int32, [4]>([0, 0, 0, 0]), pad_type = string(\"valid\"), strides = tensor<int32, [2]>([1, 1]), weight = rotation, x = h4)");
     f("hr", s.width, "reshape(x = hr4, shape = tensor<int32, [4]>(" + shape(s.width, s.rows) + "))");
-    if(grouped) {
+    if(hidden_grouped) {
         const auto groups=std::to_string(s.width/256),gshape="[1, "+groups+", 256, "+m+"]",pshape="[1, "+groups+", 1, "+m+"]";
         line("tensor<fp16, "+gshape+"> hg = reshape(x = hr, shape = tensor<int32, [4]>("+gshape+"))");
         line("tensor<fp16, "+gshape+"> hgabs = abs(x = hg)");
@@ -265,7 +270,7 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
         line(typed("int8", s.width, s.rows) + " hq = quantize(input = a8, scale = fp16(1), output_dtype = string(\"int8\"))");
     }
     f("hscale", 1, "mul(x = floor, y = fp16(0x1.0204081020408p+0))");
-    const auto y = projection("d", "wd", "hq", s.hidden, s.width,grouped?"hratio_group":"");
+    const auto y = projection("d", "wd", "hq", s.hidden, s.width,hidden_grouped?"hratio_group":"");
     const std::string outputs = "(" + y + ", hscale" + (s.lora_inputs ? ", hsafe" : "") + ")";
     f("packed", result.packed_rows, "concat(values = " + outputs + ", axis = int32(2), interleave = bool(false))");
     const int pitch = (s.rows + 31) / 32 * 32; const auto plane = std::to_string(uint64_t(result.packed_rows) * pitch);

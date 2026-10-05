@@ -214,6 +214,7 @@ class Executor {
     // model-dtype rounding. Does not imply an FP32 ANE graph or hidden ABI.
     virtual bool supports_fp32_device_output() const { return false; }
     virtual int activation_group_size() const { return 0; }
+    virtual int hidden_activation_group_size() const { return 0; }
 };
 
 // Explicit opt-in runtime-weight backend; never selected by auto routing.

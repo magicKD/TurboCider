@@ -37,6 +37,7 @@ class PrivateW8Graph final : public Executor {
     RunResult finish() override;
     bool supports_fp32_device_output() const override;
     int activation_group_size() const override;
+    int hidden_activation_group_size() const override;
   private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

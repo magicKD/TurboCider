@@ -166,6 +166,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     metrics_.runtime_weight_launch_fence_enabled=graph_->device_submission_fence_enabled();
     metrics_.runtime_weight_a8_lookahead_enabled=graph_->activation_lookahead_enabled();
     metrics_.runtime_weight_a8_group_size=graph_->activation_group_size();
+    metrics_.runtime_weight_hidden_a8_group_size=graph_->hidden_activation_group_size();
     if (graph_->shape().width != width) {
         require(graph_->shape().width > 0 && graph_->shape().width < width && graph_->supports_device_weight_regions() &&
                 graph_->supports_device_io(), "runtime channel split requires a smaller device-source graph");
@@ -211,7 +212,7 @@ std::string HybridFfn::executor_configuration_identity() {
                            "TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD","TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE",
                            "TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",
                            "TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN","TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN",
-                           "TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE"}) {
+                           "TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE","TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE"}) {
         const char *raw = std::getenv(key);
         const std::string value = raw ? raw : "<unset>";
         identity += ":" + std::to_string(value.size()) + ":" + value;

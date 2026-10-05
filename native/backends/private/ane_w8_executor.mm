@@ -74,6 +74,7 @@ struct PrivateW8Graph::Impl {
     GraphShape shape;
     W8Basis basis = W8Basis::SylvesterDH;
     int activation_group_size = 0;
+    int hidden_group_size = 0;
     private_api::Device device;
     std::unique_ptr<private_api::Program> program;
     // Exactly two source-independent banks, reused across every layer/step.
@@ -109,7 +110,7 @@ struct PrivateW8Graph::Impl {
     Worker staging_worker;
     Worker worker; // destroyed first, draining before any source/slot release
     void build(float scale) {
-        auto emitted = private_api::w8_swiglu_program(shape, basis==W8Basis::ComfyH256?0:20260930, scale, basis,activation_group_size);
+        auto emitted = private_api::w8_swiglu_program(shape, basis==W8Basis::ComfyH256?0:20260930, scale, basis,activation_group_size,hidden_group_size);
         program = std::make_unique<private_api::Program>(device, emitted.mil, emitted.constants, cache);
         headroom = scale;
     }
@@ -256,11 +257,18 @@ PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesys
         const char *group=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE");
         check(!group || std::string(group)=="0" || std::string(group)=="256","private ANE A8 group size requires 0 or 256");
         p.activation_group_size=group && std::string(group)=="256"?256:0;
-        check(!p.activation_group_size || basis==W8Basis::ComfyH256,"group A8 requires the explicit Comfy direct-code basis");
+        p.hidden_group_size=p.activation_group_size;
+        const char *scope=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE");
+        check(!scope || std::string(scope)=="both" || std::string(scope)=="input" || std::string(scope)=="hidden",
+              "private ANE A8 group scope requires input, hidden or both");
+        check(!scope || p.activation_group_size==256,"A8 group scope requires explicit group size 256");
+        if(scope && std::string(scope)=="input")p.hidden_group_size=0;
+        if(scope && std::string(scope)=="hidden")p.activation_group_size=0;
+        check(!(p.activation_group_size || p.hidden_group_size) || basis==W8Basis::ComfyH256,"group A8 requires the explicit Comfy direct-code basis");
         const char *lookahead=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD");
         check(!lookahead || std::string(lookahead)=="0" || std::string(lookahead)=="1", "private ANE A8 lookahead requires 0 or 1");
         p.a8_lookahead=lookahead && std::string(lookahead)=="1";
-        auto spec=private_api::w8_swiglu_program(shape,basis==W8Basis::ComfyH256?0:20260930,1.f,basis,p.activation_group_size);
+        auto spec=private_api::w8_swiglu_program(shape,basis==W8Basis::ComfyH256?0:20260930,1.f,basis,p.activation_group_size,p.hidden_group_size);
         p.estimate=uint64_t(shape.hidden)*shape.width*6 + uint64_t(shape.rows)*(8ull*shape.width+12ull*shape.hidden) + spec.constants.size()*2 + (128ull<<20) + private_api::scale_cache_budget_bytes;
         if (p.a8_lookahead) p.estimate += uint64_t(shape.hidden + 1) * ((uint64_t(shape.rows) + 63) / 64 * 64 + 128);
         if(p.activation_group_size)p.estimate+=uint64_t(shape.hidden/256-1)*
@@ -290,8 +298,12 @@ const GraphShape &PrivateW8Graph::shape() const{return impl_->shape;}
 size_t PrivateW8Graph::slot_bytes() const{return impl_->allocated;}
 size_t PrivateW8Graph::estimated_bytes() const{return impl_->estimate;}
 double PrivateW8Graph::load_seconds() const{return impl_->load_time;}
-std::string PrivateW8Graph::weight_recipe() const{return impl_->activation_group_size?convrot_group_w8a8_recipe:
-    impl_->basis==W8Basis::ComfyH256?convrot_w8a8_recipe:w8a8_recipe;}
+std::string PrivateW8Graph::weight_recipe() const {
+    if(impl_->activation_group_size && impl_->hidden_group_size)return convrot_group_w8a8_recipe;
+    if(impl_->activation_group_size)return convrot_input_group_w8a8_recipe;
+    if(impl_->hidden_group_size)return convrot_hidden_group_w8a8_recipe;
+    return impl_->basis==W8Basis::ComfyH256?convrot_w8a8_recipe:w8a8_recipe;
+}
 std::string PrivateW8Graph::data_path() const{return impl_->basis==W8Basis::ComfyH256?"w8a8_convrot":"w8a8_hadamard";}
 WeightCacheStats PrivateW8Graph::weight_cache_stats() const{return impl_->device.scale_cache_stats();}
 StagePipelineStats PrivateW8Graph::stage_pipeline_stats() const{return impl_->device.stage_pipeline_stats();}
@@ -299,6 +311,7 @@ bool PrivateW8Graph::device_submission_fence_enabled() const{return impl_->launc
 bool PrivateW8Graph::activation_lookahead_enabled() const{return impl_->a8_lookahead;}
 bool PrivateW8Graph::supports_fp32_device_output() const{return impl_->basis==W8Basis::ComfyH256;}
 int PrivateW8Graph::activation_group_size() const{return impl_->activation_group_size;}
+int PrivateW8Graph::hidden_activation_group_size() const{return impl_->hidden_group_size;}
 void PrivateW8Graph::stage_weights(std::vector<WeightView>){throw CapabilityError("W8 requires explicit GPU weight bindings");}
 void PrivateW8Graph::launch(MatrixView,uint16_t*,size_t,DType,std::optional<AdapterInput>){throw CapabilityError("W8 requires explicit GPU I/O bindings");}
 void PrivateW8Graph::stage_device_weights(std::vector<DeviceWeightView> sources){

@@ -16,6 +16,8 @@ inline constexpr const char *w8a8_recipe = "sylvester-dh-b128-b512-rne-norm-f16-
 // before RNE A8. Distinct from both Sylvester and the Public inverse recipe.
 inline constexpr const char *convrot_w8a8_recipe = "comfy-h256-direct-q8-source-round-a8-rne-norm-f16-v1";
 inline constexpr const char *convrot_group_w8a8_recipe = "comfy-h256-direct-q8-source-round-group256-a8-rne-ratio-norm-f16-v2";
+inline constexpr const char *convrot_input_group_w8a8_recipe = "comfy-h256-direct-q8-source-round-input256-hiddenrow-a8-rne-ratio-norm-f16-v2";
+inline constexpr const char *convrot_hidden_group_w8a8_recipe = "comfy-h256-direct-q8-source-round-inputrow-hidden256-a8-rne-ratio-norm-f16-v2";
 inline int comfy_h256_sign(unsigned out, unsigned in) {
     constexpr int h4[4][4] = {{1,1,1,-1},{1,1,-1,1},{1,-1,1,1},{-1,1,1,1}};
     int sign = 1;
