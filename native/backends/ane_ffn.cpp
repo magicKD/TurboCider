@@ -101,10 +101,20 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     : memory_budget_(budget) {
     checkpoint(cancelled);
     const int chunks = configured_chunks();
+    const char *lora_range = std::getenv("TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE");
+    require(!lora_range || std::string(lora_range)=="0" || std::string(lora_range)=="1",
+            "runtime ANE LoRA channel range requires 0 or 1");
+    lora_channel_range_ = !lora_range || std::string(lora_range)=="1";
     const char *profile = std::getenv("TURBOCIDER_RUNTIME_ANE_PROFILE");
     require(!profile || std::string(profile) == "0" || std::string(profile) == "1",
             "TURBOCIDER_RUNTIME_ANE_PROFILE accepts 0 or 1");
     profile_ = profile && std::string(profile) == "1";
+    const char *fixed_async = std::getenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+    require(!fixed_async || std::string(fixed_async)=="0" || std::string(fixed_async)=="1",
+            "runtime ANE fixed async requires 0 or 1");
+    fixed_async_ = fixed_async && std::string(fixed_async)=="1";
+    require(!fixed_async_ || (chunks>0 && !profile_),
+            "runtime ANE fixed async requires positive fixed chunks and profiling disabled");
     metrics_.weight_variant = "runtime_fp16";
     metrics_.mlp_output_kind = "runtime_weight_swiglu";
     metrics_.hidden = metrics_.output_channels = hidden;
@@ -167,7 +177,8 @@ std::string HybridFfn::executor_configuration_identity() {
     for (const char *key : {"TURBOCIDER_ANE_BACKEND","TURBOCIDER_ALLOW_PRIVATE_ANE","TURBOCIDER_PRIVATE_ANE_DATA_PATH",
                            "TURBOCIDER_PRIVATE_ANE_GPU_IO","TURBOCIDER_PRIVATE_ANE_CHANNELS","TURBOCIDER_PRIVATE_ANE_PREFETCH",
                            "TURBOCIDER_PRIVATE_ANE_SCALE_CACHE","TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE",
-                           "TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD","TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE"}) {
+                           "TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD","TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE",
+                           "TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC"}) {
         const char *raw = std::getenv(key);
         const std::string value = raw ? raw : "<unset>";
         identity += ":" + std::to_string(value.size()) + ":" + value;
@@ -250,8 +261,14 @@ void HybridFfn::begin_request(const std::string &adapter_identity,
 RowScheduler::Plan HybridFfn::plan_block(int layer, int rows) {
     require(!planned_ && !block_plan_ && rows > 0, "runtime ANE block already planned or invalid rows");
     drain(false);
-    const auto plan = available() ? scheduler_->plan(layer, rows)
+    auto plan = available() ? scheduler_->plan(layer, rows)
                                  : RowScheduler::Plan{RowScheduler::Mode::Gpu, 0};
+    // Fixed partitions do not learn from timing samples. Let an explicit
+    // ablation use the already-owned untimed plan instead of adding a GPU
+    // head completion fence and a whole-block measurement on every visit.
+    // Zero-chunk probes and adaptive calibration keep their original plan.
+    if (fixed_async_ && plan.mode==RowScheduler::Mode::Hybrid)
+        plan.mode=RowScheduler::Mode::HybridUntimed;
     if(!plan.split() && graph_ && prefetched_layer_>=0) {
         graph_->discard_prefetched_weights();prefetched_layer_=-1;++metrics_.runtime_weight_prefetch_discards;
     }
@@ -676,12 +693,15 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
         packed = pad(input,h);
         if (adapter) {
             const auto ready_start = Clock::now();
-            auto deltas = adapter->gate_up(input);
-            require(deltas.first.shape() == mx::Shape({1,rows_,metrics_.mlp_width}) &&
-                    deltas.second.shape() == deltas.first.shape(), "channel LoRA full correction geometry mismatch");
-            gate = pad(slice_axis(deltas.first,-1,fg,fg+fa),fa);
-            up = pad(slice_axis(deltas.second,-1,fg,fg+fa),fa);
+            const bool narrow = lora_channel_range_ && bool(adapter->gate_up_channels);
+            auto deltas = narrow ? adapter->gate_up_channels(input,fg,fa) : adapter->gate_up(input);
+            require(deltas.first.shape() == mx::Shape({1,rows_,narrow ? fa : metrics_.mlp_width}) &&
+                    deltas.second.shape() == deltas.first.shape(), "channel LoRA correction geometry mismatch");
+            gate = pad(narrow ? deltas.first : slice_axis(deltas.first,-1,fg,fg+fa),fa);
+            up = pad(narrow ? deltas.second : slice_axis(deltas.second,-1,fg,fg+fa),fa);
             mx::eval({*packed,*gate,*up}); lora_ready = elapsed(ready_start);
+            if (narrow) ++metrics_.runtime_weight_lora_channel_range_calls;
+            else ++metrics_.runtime_weight_lora_channel_full_calls;
         } else mx::eval(*packed);
         output = device_output(padded,h,dtype);
         if (adapter) hidden = device_output(padded,fa,dtype);

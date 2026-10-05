@@ -1,6 +1,7 @@
 #include "../../native/backends/ane_ffn.hpp"
 #include "../../native/backends/ane_runtime_quant.hpp"
 #include <cassert>
+#include <array>
 #include <iostream>
 #include <limits>
 
@@ -513,9 +514,25 @@ void output_lifetime_tests(const char *manifest) {
 
 void async_head_tests(const char *base_manifest, const char *lora_manifest) {
     using namespace tc;
-    setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS", "auto", 1);
+    {
+        std::atomic<bool> cancelled{false};
+        for (const auto &policy : {std::array<const char*,3>{"2","1","0"}, {"1","auto","0"},
+                                   {"1","0","0"}, {"1","1","1"}}) {
+            setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",policy[0],1);
+            setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS",policy[1],1);
+            setenv("TURBOCIDER_RUNTIME_ANE_PROFILE",policy[2],1);
+            bool rejected=false;
+            try { ane::HybridFfn invalid(base_manifest,64,96,128ull<<20,cancelled); }
+            catch (const std::invalid_argument&) { rejected=true; }
+            assert(rejected);
+        }
+    }
+    for (bool fixed : {false,true})
     for (bool profile : {false, true}) for (bool with_adapter : {false, true})
     for (auto dtype : {mx::bfloat16, mx::float16, mx::float32}) {
+        if (fixed && profile) continue; // invalid combinations tested above
+        setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS", fixed ? "1" : "auto", 1);
+        setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC", fixed ? "1" : "0", 1);
         setenv("TURBOCIDER_RUNTIME_ANE_PROFILE", profile ? "1" : "0", 1);
         std::atomic<bool> cancelled{false};
         std::vector<Tensor> weights{mx::full({96, 64}, .01f, dtype),
@@ -550,6 +567,7 @@ void async_head_tests(const char *base_manifest, const char *lora_manifest) {
         // make the controller choose its steady plan, never claim a speedup.
         for (int visit = 1; visit <= 12; ++visit) {
             const auto plan = runtime.plan_block(0, 64);
+            if (fixed) assert(plan.mode==ane::RowScheduler::Mode::HybridUntimed && plan.chunks==1 && !plan.measured());
             auto input = mx::full({1, 64, 64}, visit == 11 ? .25f : .5f, dtype);
             const auto before = runtime.metrics();
             if (plan.split()) {
@@ -581,7 +599,7 @@ void async_head_tests(const char *base_manifest, const char *lora_manifest) {
                                       mx::astype(expected, mx::float32))).item<float>() < .03f);
                 if (poison_gate) assert(mx::all(output == expected).item<bool>());
                 const auto after = runtime.metrics();
-                const bool asynchronous = !profile && visit >= 7;
+                const bool asynchronous = !profile && (fixed || visit >= 7);
                 assert(after.runtime_weight_async_hybrid_blocks - before.runtime_weight_async_hybrid_blocks ==
                        uint64_t(asynchronous));
                 if (asynchronous) {
@@ -602,10 +620,12 @@ void async_head_tests(const char *base_manifest, const char *lora_manifest) {
         if (retained_hidden) assert(mx::all(*retained_hidden == *hidden_snapshot).item<bool>());
         assert(mx::all(*saved == *snapshot).item<bool>());
     }
+    unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
     setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS", "2", 1);
     unsetenv("TURBOCIDER_RUNTIME_ANE_PROFILE");
     std::cout << "PASS async head join: base/LoRA, BF16/FP16/FP32, profile isolation, "
                  "owned output, cancellation/down failure drain and complete tail fallback\n";
+    std::cout << "PASS fixed async row plan: policy validation, untimed ownership, base/LoRA, failure/cancellation drain\n";
 }
 
 void request_scheduler_tests(const char *manifest) {

@@ -549,7 +549,7 @@ struct W8Params {
     uint32_t source_pitch, physical_cols, encoding, dtype, group_size;
     uint32_t meta_pitch, meta_dtype, offset_pitch, offset_dtype, has_offset;
     uint32_t row_begin, rows, column_begin, columns, block, code_pitch, scale_pitch, transpose;
-    uint32_t seed_low, seed_high;
+    uint32_t source_aligned, seed_low, seed_high;
     float norm;
 };
 size_t w8_source_row_bytes(const DeviceWeightView &v) {
@@ -647,12 +647,15 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             }
         }
         const auto &s = state->source;
+        const size_t dense_item = s.dense_dtype == DType::FP32 ? 4 : 2;
+        const bool source_aligned = s.encoding == DeviceWeightEncoding::Dense &&
+            s.offset_bytes % dense_item == 0 && pitch % dense_item == 0;
         W8Params p{uint32_t(pitch), uint32_t(s.cols), uint32_t(s.encoding), uint32_t(s.dense_dtype), uint32_t(s.group_size),
             uint32_t(s.scales ? device_pitch(*s.scales) : 0), uint32_t(s.scales ? s.scales->dtype : DType::FP16),
             uint32_t(s.offsets ? device_pitch(*s.offsets) : 0), uint32_t(s.offsets ? s.offsets->dtype : DType::FP16), uint32_t(s.offsets.has_value()),
             uint32_t(spec.row_begin), uint32_t(spec.rows), uint32_t(spec.column_begin), uint32_t(spec.columns), uint32_t(spec.rotation_block),
             uint32_t(state->codes.pitch()), uint32_t(spec.transpose ? 2 : state->scales.pitch()), uint32_t(spec.transpose),
-            uint32_t(spec.rotation_seed), uint32_t(spec.rotation_seed >> 32), 1.f / std::sqrt(float(spec.rotation_block))};
+            uint32_t(source_aligned), uint32_t(spec.rotation_seed), uint32_t(spec.rotation_seed >> 32), 1.f / std::sqrt(float(spec.rotation_block))};
         // A8 must not queue behind an independently prepared future W bank.
         id<MTLCommandBuffer> command = [(spec.transpose ? impl_->activation_queue : impl_->staging_queue) commandBuffer];
         require(command != nil, "W8 stage command buffer unavailable");

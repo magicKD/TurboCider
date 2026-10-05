@@ -13,6 +13,8 @@ int main() {
                 metrics.runtime_weight_data_path = "w8a8_hadamard";
                 metrics.runtime_weight_source_recipe = "sylvester-dh-b128-b512-rne-norm-f16-v2";
                 metrics.runtime_weight_device_io_calls = 3;
+                metrics.runtime_weight_lora_channel_range_calls = 1;
+                metrics.runtime_weight_lora_channel_full_calls = 2;
                 metrics.runtime_weight_a8_lookahead_enabled = true;
                 metrics.runtime_weight_a8_prefetches = 2;
                 metrics.runtime_weight_a8_wait_seconds = .001;
@@ -27,6 +29,8 @@ int main() {
                     ![runtime[@"io_path"] isEqual:@"gpu_iosurface"] ||
                     ![runtime[@"source_recipe"] isEqual:@"sylvester-dh-b128-b512-rne-norm-f16-v2"] ||
                     [runtime[@"device_io_calls_session_total"] unsignedLongLongValue] != 3 ||
+                    [runtime[@"lora_channel_range_calls_session_total"] unsignedLongLongValue] != 1 ||
+                    [runtime[@"lora_channel_full_calls_session_total"] unsignedLongLongValue] != 2 ||
                     ![runtime[@"a8_lookahead_enabled"] boolValue] ||
                     [runtime[@"a8_prefetches_session_total"] unsignedLongLongValue] != 2 ||
                     [runtime[@"a8_wait_seconds_session_total"] doubleValue] != .001 ||

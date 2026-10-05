@@ -136,6 +136,7 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.assertIn("PASS LoRA alpha: F32/BF16/F16/integer", result.stdout)
         self.assertIn("PASS output lifetime: BF16/FP16/FP32", result.stdout)
         self.assertIn("PASS async head join: base/LoRA", result.stdout)
+        self.assertIn("PASS fixed async row plan", result.stdout)
         self.assertIn("PASS request scheduler isolation: base/A/same-A/B/base", result.stdout)
         self.assertIn("PASS resident memory pressure: graph release and complete GPU result", result.stdout)
         print(result.stdout.strip())

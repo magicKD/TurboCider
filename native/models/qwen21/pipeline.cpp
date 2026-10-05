@@ -695,6 +695,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             using RuntimeFunction = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
             RuntimeFunction gpu_qkv;
             std::vector<RuntimeFunction> runtime_lora_gpu, runtime_lora_gate_up, runtime_lora_down_add;
+            std::vector<RuntimeFunction> runtime_lora_gate_up_channels;
             if (runtime_requested) {
                 for (int block = 0; block < 32; ++block) {
                     const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
@@ -724,6 +725,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                 12288, 24576, 0, 4096);
                             return std::vector<Tensor>{mx::contiguous(gate), mx::contiguous(up)};
                         }));
+                        if (runtime_ffn_->channel_split()) {
+                            const int first=runtime_ffn_->gpu_channels(),count=runtime_ffn_->ane_channels();
+                            runtime_lora_gate_up_channels.push_back(mx::compile([this,p,first,count](const std::vector<Tensor> &a) {
+                                auto gate=transformer_.lora_delta_slice(a[0],p+"gate_up",first,first+count,0,4096);
+                                auto up=transformer_.lora_delta_slice(a[0],p+"gate_up",12288+first,12288+first+count,0,4096);
+                                return std::vector<Tensor>{mx::contiguous(gate),mx::contiguous(up)};
+                            }));
+                        }
                         runtime_lora_down_add.push_back(mx::compile([this, p](const std::vector<Tensor> &a) {
                             // Keep the existing BF16 delta rounding, FP32 add
                             // and final cast; only enlarge the GPU graph.
@@ -758,6 +767,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         },
                         [&](const Tensor &h, const Tensor &base) {
                             return runtime_lora_down_add.at(block)({h, base})[0];
+                        },
+                        [&](const Tensor &x, int first, int count) {
+                            require(first==runtime_ffn_->gpu_channels() && count==runtime_ffn_->ane_channels(),
+                                    "Qwen channel LoRA correction range changed within request");
+                            auto gu=runtime_lora_gate_up_channels.at(block)({x});
+                            return std::make_pair(gu[0],gu[1]);
                         }};
                     return runtime_ffn_->run(block, input, [&](const Tensor &x) {
                         if (transformer_.has_runtime_loras()) return runtime_lora_gpu.at(block)({x})[0];

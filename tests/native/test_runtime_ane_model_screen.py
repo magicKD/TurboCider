@@ -21,6 +21,48 @@ with mock.patch.object(sys, "path", [str(ROOT / "tools/validation"), *sys.path])
 
 
 class ScreenTests(unittest.TestCase):
+    def test_fixed_async_requires_actual_successful_untimed_heads(self):
+        row=copy.deepcopy(self.row);runtime=row["hybrid"]["runtime_weight"]
+        runtime.update(hybrid_blocks_session_total=8,untimed_hybrid_blocks_session_total=8,async_hybrid_blocks_session_total=8)
+        SCREEN.validate_fixed_async([row],True)
+        with self.assertRaises(ValueError):SCREEN.validate_fixed_async([row],False)
+        for change in ({"hybrid_blocks_session_total":0},{"untimed_hybrid_blocks_session_total":7},
+                       {"async_hybrid_blocks_session_total":7},{"async_hybrid_blocks_session_total":True}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):SCREEN.validate_fixed_async([bad],True)
+        runtime.update(untimed_hybrid_blocks_session_total=0,async_hybrid_blocks_session_total=0)
+        SCREEN.validate_fixed_async([row],False)
+        with self.assertRaises(ValueError):SCREEN.validate_fixed_async([],True)
+    def test_lora_channel_correction_counters_are_complete_and_monotonic(self):
+        row=copy.deepcopy(self.row)
+        row["hybrid"]["runtime_weight"].update(lora_channel_range_calls_session_total=2,lora_channel_full_calls_session_total=1)
+        SCREEN.validate_results([row],"runtime",1)
+        for key in ("lora_channel_range_calls_session_total","lora_channel_full_calls_session_total"):
+            for value in (-1,True,.5):
+                bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"][key]=value
+                with self.subTest(key=key,value=value),self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+            bad=copy.deepcopy(row);del bad["hybrid"]["runtime_weight"][key]
+            with self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+            later=copy.deepcopy(row);later["hybrid"]["runtime_weight"][key]=0
+            with self.assertRaises(ValueError):SCREEN.validate_results([row,later],"runtime",2)
+        later=copy.deepcopy(self.row)
+        with self.assertRaises(ValueError):SCREEN.validate_results([row,later],"runtime",2)
+
+    def test_explicit_lora_channel_ablation_requires_actual_executed_receipt(self):
+        row=copy.deepcopy(self.row);row["lora_strategy"]="inference_time"
+        runtime=row["hybrid"]["runtime_weight"]
+        runtime.update(executor_backend="private_ane",partition_axis="intermediate_channels",
+                       lora_channel_range_calls_session_total=2,lora_channel_full_calls_session_total=0)
+        SCREEN.validate_lora_channel_range([row],True)
+        with self.assertRaises(ValueError):SCREEN.validate_lora_channel_range([row],False)
+        for change in ({"lora_channel_range_calls_session_total":0},{"lora_channel_full_calls_session_total":1},
+                       {"executor_backend":"public_coreml"},{"partition_axis":"rows"}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):SCREEN.validate_lora_channel_range([bad],True)
+        runtime.update(lora_channel_range_calls_session_total=0,lora_channel_full_calls_session_total=2)
+        SCREEN.validate_lora_channel_range([row],False)
+        with self.assertRaises(ValueError):SCREEN.validate_lora_channel_range([],False)
+
     def test_specialized_stage_receipts_are_complete_and_bounded(self):
         row=copy.deepcopy(self.row)
         row["hybrid"]["runtime_weight"].update(stage_specialized=True,stage_pipeline_variants=18)
@@ -248,6 +290,8 @@ assert not any(name in sys.modules for name in (
             output = Path(scratch)/"screen"
             for option in (("--chunks", "129"), ("--timeout", "0"),
                            ("--private-data-path", "w8a8"),
+                           ("--private-lora-channel-range", "0"), ("--private-lora-channel-range", "1"),
+                           ("--fixed-async", "1"),
                            ("--private-channels", "512"), ("--private-channels", "-1"),
                            ("--sample-memory", "--memory-interval-ms", "0"),
                            ("--sample-memory", "--memory-max-gap-ms", "99"),

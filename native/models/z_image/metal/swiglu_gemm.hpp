@@ -75,6 +75,49 @@ inline mx::array swiglu_gemm_range(const mx::array &x,const mx::array &w,const m
                   {{"T",x.dtype()},{"M",x.shape(1)},{"N",count},{"FIRST",first}}, {},false,{})[0];
 }
 
+// Channel-head variant over immutable gate/up rows. Keeping both projections
+// in one dispatch avoids materializing the intermediate up tensor. Compact
+// matrices are also accepted for the physical-view bit-exact oracle.
+inline mx::array swiglu_dual_gemm_range(const mx::array &x, const mx::array &gate_w,
+                                      const mx::array &up_w, int first, int count,
+                                      int bn = 128) {
+    if (x.ndim() != 3 || x.shape(0) != 1 || x.shape(1) <= 0 || x.shape(2) != 3840 ||
+        gate_w.ndim() != 2 || gate_w.shape(1) != 3840 || up_w.shape() != gate_w.shape() ||
+        first < 0 || count <= 0 || count % 128 || first > gate_w.shape(0) - count ||
+        !gate_w.flags().row_contiguous || !up_w.flags().row_contiguous ||
+        x.dtype() != mx::bfloat16 || gate_w.dtype() != x.dtype() || up_w.dtype() != x.dtype() ||
+        (bn != 128 && bn != 256))
+        throw std::invalid_argument("Z-Image dual SwiGLU physical range geometry/dtype mismatch");
+    static auto kernel = mx::fast::metal_kernel(
+        "tc_z_swiglu_dual_gemm_range", {"x", "gate", "up"}, {"out"}, R"metal(
+        using namespace mpp::tensor_ops;
+        uint row = threadgroup_position_in_grid.y * 32;
+        uint col = threadgroup_position_in_grid.x * BN;
+        auto a = tensor(const_cast<device T*>(x), dextents<int,2>{3840,M}, array<int,2>{1,3840});
+        auto bg = tensor(const_cast<device T*>(gate) + FIRST*3840, dextents<int,2>{3840,N}, array<int,2>{1,3840});
+        auto bu = tensor(const_cast<device T*>(up) + FIRST*3840, dextents<int,2>{3840,N}, array<int,2>{1,3840});
+        auto aa = a.slice(0,row), gg = bg.slice(0,col), uu = bu.slice(0,col);
+        matmul2d<matmul2d_descriptor(32,BN,3840,false,true,false),execution_simdgroups<4>> op;
+        auto ag = op.template get_destination_cooperative_tensor<decltype(aa),decltype(gg),float>();
+        auto au = op.template get_destination_cooperative_tensor<decltype(aa),decltype(uu),float>();
+        op.run(aa,gg,ag); op.run(aa,uu,au);
+        for (uint i = 0; i < ag.get_capacity(); ++i) {
+            if (!ag.is_valid_element(i)) continue;
+            auto coord = ag.get_multidimensional_index(i);
+            if (row + coord[1] < M && col + coord[0] < N) {
+                uint offset = (row+coord[1])*N+col+coord[0];
+                T gate_value = T(ag[i]), up_value = T(au[i]);
+                auto y = 1 / (1 + metal::exp(metal::abs(gate_value)));
+                T sigmoid = gate_value < 0 ? y : 1-y;
+                out[offset] = T(T(gate_value*sigmoid)*up_value);
+            }
+        }
+        )metal", "#include <metal_tensor>\n#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>\n");
+    return kernel({x,gate_w,up_w}, {{1,x.shape(1),count}}, {x.dtype()},
+                  {((count+bn-1)/bn)*128,(x.shape(1)+31)/32,1}, {128,1,1},
+                  {{"T",x.dtype()},{"M",x.shape(1)},{"N",count},{"FIRST",first},{"BN",bn}}, {}, false, {})[0];
+}
+
 // Dual-projection variant: gate and up share the input tile and threadgroup
 // residency. It removes the intermediate `up` dispatch and keeps two FP32
 // accumulators. Full-image parity is required; epilogue arithmetic can still

@@ -18,7 +18,7 @@ import subprocess
 from runtime_ane_common import (
     benchmark_environment, check_load, chunk_policy, session_counter, sha256_file,
     system_memory, validate_edit_results, validate_results, wait_for_idle,
-    qwen_qk_environment, validate_qwen_qk_receipts,
+    qwen_qk_environment, validate_qwen_qk_receipts, validate_lora_channel_range, validate_fixed_async,
 )
 from runtime_ane_memory import run_sampled, run_owned
 from runtime_ane_load import LoadObservation
@@ -109,6 +109,10 @@ def main():
                    help="bounded two-slot A8 staging: prepare next row chunk while current ANE request runs")
     p.add_argument("--private-stage-specialize",choices=("0","1"),default="0",
                    help="format/dtype/H-block Metal function-constant specialization; same weights/recipe")
+    p.add_argument("--private-lora-channel-range",choices=("0","1"),default=None,
+                   help="explicit full-vs-ANE-only gate/up LoRA correction ablation; requires private channel LoRA")
+    p.add_argument("--fixed-async",choices=("0","1"),default=None,
+                   help="explicit fixed-partition untimed/async head ablation; requires positive fixed chunks and no profile")
     p.add_argument("--qkv-manifest", type=Path,
                    help="Qwen base-only Q/K/V MatMul runtime graph; separate from FFN runtime")
     p.add_argument("--frozen-manifest", type=Path)
@@ -165,6 +169,11 @@ def main():
             (args.private_channels % 512 or args.private_channels >= full_width or args.private_data_path != "w8a8" or
              args.chunks not in ("auto","0","1"))):
         p.error("private channels require W8A8, a positive 512 multiple below FFN width and chunks=auto,0,1")
+    if args.private_lora_channel_range is not None and (args.runtime_backend!="private" or
+            not args.private_channels or not args.lora or args.chunks=="0"):
+        p.error("LoRA channel range ablation requires private W8A8 channels, an adapter and nonzero chunks")
+    if args.fixed_async is not None and ("runtime" not in routes or args.chunks in ("auto","0") or args.profile):
+        p.error("fixed async ablation requires runtime, positive fixed chunks and profiling disabled")
     if "qkv" in routes and (args.model_id != "qwen-image-2.1" or args.lora or args.reference or
                              args.qkv_chunks == "0"):
         p.error("qkv screen requires Qwen base generation and positive or auto QKV chunks")
@@ -208,6 +217,8 @@ def main():
                "private_launch_fence": args.private_launch_fence,
                "private_a8_lookahead": args.private_a8_lookahead,
                "private_stage_specialize": args.private_stage_specialize,
+               "private_lora_channel_range": args.private_lora_channel_range,
+               "fixed_async": args.fixed_async,
                "placement": "unknown",
                "profile": args.profile, "warm_repeats": args.warm_repeats,
                "continuous_load_observation": args.observe_load,
@@ -270,6 +281,8 @@ def main():
         route_env.update(reference_environment(route, edit, bool(args.lora)))
         if route == "runtime":
             route_env["TURBOCIDER_RUNTIME_ANE_CHUNKS"] = args.chunks
+            if args.fixed_async is not None:
+                route_env["TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC"] = args.fixed_async
             route_env["TURBOCIDER_ANE_BACKEND"] = args.runtime_backend
             if args.runtime_backend != "public":
                 route_env["TURBOCIDER_ALLOW_PRIVATE_ANE"] = "1"
@@ -280,6 +293,8 @@ def main():
                 route_env["TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE"] = args.private_launch_fence
                 route_env["TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD"] = args.private_a8_lookahead
                 route_env["TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE"] = args.private_stage_specialize
+                if args.private_lora_channel_range is not None:
+                    route_env["TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE"] = args.private_lora_channel_range
             if args.private_gpu_io:
                 route_env["TURBOCIDER_PRIVATE_ANE_GPU_IO"] = "1"
             if args.profile:
@@ -311,6 +326,10 @@ def main():
         rows = [json.loads(line) for line in (args.output / f"{trial}-{route}.stdout.jsonl").read_text().splitlines()]
         validate_results(rows, route, len(requests), args.model_id, bool(args.lora), args.runtime_backend, args.private_gpu_io,
                          "w8a8_hadamard" if args.private_data_path == "w8a8" else None)
+        if route=="runtime" and args.private_lora_channel_range is not None:
+            validate_lora_channel_range(rows,args.private_lora_channel_range=="1")
+        if route=="runtime" and args.fixed_async is not None:
+            validate_fixed_async(rows,args.fixed_async=="1")
         if route == "runtime" and args.private_channels:
             for row in rows:
                 receipt = row["hybrid"]["runtime_weight"]

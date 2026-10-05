@@ -955,6 +955,8 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"scale_cache_bytes" : @(m.runtime_weight_scale_cache_bytes),
             @"scale_cache_evictions_session_total" : @(m.runtime_weight_scale_cache_evictions),
             @"device_io_calls_session_total" : @(m.runtime_weight_device_io_calls),
+            @"lora_channel_range_calls_session_total" : @(m.runtime_weight_lora_channel_range_calls),
+            @"lora_channel_full_calls_session_total" : @(m.runtime_weight_lora_channel_full_calls),
             @"slot_bytes" : @(m.runtime_weight_slot_bytes),
             @"estimated_bytes" : @(m.runtime_weight_estimated_bytes),
             @"hybrid_blocks_session_total" : @(m.runtime_weight_hybrid_blocks),

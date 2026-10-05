@@ -24,21 +24,23 @@ int main(int argc, char **argv) {
             bf(mx::random::normal({10240,3840},mx::float32,mx::random::key(3))*.01f),
             bf(mx::random::normal({3840,10240},mx::float32,mx::random::key(4))*.01f)};
         mx::eval(args);
-        const std::vector<std::string> labels{"native", "native_fused_gate", "mpp32", "mpp_down16", "mpp_up_down16"};
+        const std::vector<std::string> labels{"native", "native_fused_gate", "mpp32", "mpp_down16", "mpp_up_down16",
+                                              "mpp_dual128", "mpp_dual256"};
         std::vector<Graph> graphs;
         for (int mode=0;mode<int(labels.size());++mode) graphs.push_back(mx::compile([mode,fg](const std::vector<mx::array>&a) {
             auto select=[&](const mx::array&w,int axis) {
                 return axis==0 ? mx::slice(w,{0,0},{fg,w.shape(1)}) : mx::slice(w,{0,0},{w.shape(0),fg});
             };
-            auto up=mode<2 ? mx::matmul(a[0],mx::transpose(select(a[2],0))) :
-                tc::z_metal::projection_range(a[0],a[2],0,fg,0,3840,mode==4?16:32);
             auto hidden=[&] {
+                if (mode >= 5) return tc::z_metal::swiglu_dual_gemm_range(a[0],a[1],a[2],0,fg,mode==6?256:128);
+                auto up=mode<2 ? mx::matmul(a[0],mx::transpose(select(a[2],0))) :
+                    tc::z_metal::projection_range(a[0],a[2],0,fg,0,3840,mode==4?16:32);
                 if (mode) return tc::z_metal::swiglu_gemm_range(a[0],a[1],up,0,fg);
                 auto gate=mx::matmul(a[0],mx::transpose(select(a[1],0)));
                 return (gate*mx::sigmoid(gate))*up;
             }();
             auto down=mode<2 ? mx::matmul(hidden,mx::transpose(select(a[3],1))) :
-                tc::z_metal::projection_range(hidden,a[3],0,3840,0,fg,mode>=3?16:32);
+                tc::z_metal::projection_range(hidden,a[3],0,3840,0,fg,(mode==3||mode==4)?16:32);
             // A trace tag checks each captured mode really reached its own
             // compiled function; equal arithmetic must not hide cache aliasing.
             return std::vector<mx::array>{down,hidden,mx::array(mode,mx::int32)};

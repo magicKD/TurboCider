@@ -97,6 +97,7 @@ class PrivateAneHardwareTests(unittest.TestCase):
         self.assertIn("PASS W8 compact scale cache",result.stdout)
         self.assertIn("PASS W8 immutable sign metadata",result.stdout)
         self.assertIn("PASS W8 pipeline specialization",result.stdout)
+        self.assertIn("PASS W8 dense typed loads",result.stdout)
         print(result.stdout.strip())
 
     def test_private_w8a8_normalized_matmul_two_banks_and_gpu_epilogue(self):
@@ -184,6 +185,8 @@ class PrivateAneChannelMlxTests(unittest.TestCase):
                                     cwd=ROOT,capture_output=True,text=True,timeout=120)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertIn("PASS channel MLX/W8 Executor",result.stdout)
+            self.assertIn("PASS channel LoRA range callback",result.stdout)
+            self.assertIn("PASS fixed async channel",result.stdout)
             print(result.stdout.strip())
 
 

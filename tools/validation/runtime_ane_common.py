@@ -99,6 +99,8 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
     a8_policy = None
     stage_policy = None
     previous_stage_variants = 0
+    previous_lora_channels = (0, 0)
+    lora_channel_receipt_seen = False
     for row in rows:
         actual_backend = row.get("runtime_backend")
         if actual_backend not in allowed_backends:
@@ -167,6 +169,15 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
         previous_calls = calls
         if route == "runtime":
             runtime = hybrid.get("runtime_weight") or {}
+            lora_keys=("lora_channel_range_calls_session_total","lora_channel_full_calls_session_total")
+            has_lora_channels=any(name in runtime for name in lora_keys)
+            if lora_channel_receipt_seen and not has_lora_channels:
+                raise ValueError("LoRA channel correction receipt disappeared within session")
+            if has_lora_channels:
+                counts=tuple(session_counter(runtime,name) for name in lora_keys)
+                if any(value<prior for value,prior in zip(counts,previous_lora_channels)):
+                    raise ValueError("LoRA channel correction counters reset within session")
+                previous_lora_channels,lora_channel_receipt_seen=counts,True
             has_stage = any(n in runtime for n in ("stage_specialized","stage_pipeline_variants"))
             if stage_policy is not None and not has_stage:
                 raise ValueError("stage specialization receipt disappeared within session")
@@ -352,6 +363,44 @@ def validate_qwen_qk_receipts(rows, enabled):
                 ("experimental fused Metal Q/K norm-RoPE" in selection) != enabled or
                 ("qwen21_metal_qk_norm_rope" in labels) != enabled):
             raise ValueError("Q/K norm-RoPE selection does not match the requested experiment")
+
+
+def validate_fixed_async(rows, enabled):
+    """Require actual successful model-block receipts for this ablation.
+
+    These host scheduling counters do not prove physical device overlap.
+    A self-test, omitted executor or timed fallback cannot stand in for a
+    fixed async head actually consumed by the model.
+    """
+    if not rows:
+        raise ValueError("missing fixed async results")
+    for row in rows:
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        blocks,untimed,asynchronous=(session_counter(runtime,name) for name in
+            ("hybrid_blocks_session_total","untimed_hybrid_blocks_session_total","async_hybrid_blocks_session_total"))
+        if blocks<=0 or (enabled and (untimed!=blocks or asynchronous!=blocks)) or (
+                not enabled and (untimed!=0 or asynchronous!=0)):
+            raise ValueError("requested fixed async head policy was not executed")
+
+
+def validate_lora_channel_range(rows, enabled):
+    """Verify an explicit correction ablation actually executed that path.
+
+    Counters are per-session callback executions, not prediction counts or
+    environment intent. Auto may stop using ANE in later requests; it cannot
+    invent a narrow/full callback receipt from the executor self-test.
+    """
+    if not rows:
+        raise ValueError("missing LoRA channel correction results")
+    for row in rows:
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        counts=tuple(session_counter(runtime,name) for name in
+                     ("lora_channel_range_calls_session_total","lora_channel_full_calls_session_total"))
+        if (row.get("lora_strategy")!="inference_time" or
+                runtime.get("executor_backend")!="private_ane" or
+                runtime.get("partition_axis")!="intermediate_channels" or
+                counts[0 if enabled else 1]<=0 or counts[1 if enabled else 0]!=0):
+            raise ValueError("requested LoRA channel correction path was not executed")
 
 
 def benchmark_environment():

@@ -1233,6 +1233,10 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
             [&](const Tensor &hidden, const Tensor &base) {
                 auto delta = w.lora_delta_slice(hidden, ffn + ".w2", 0, 3840, 0, 10240);
                 return mx::astype(mx::astype(base, mx::float32) + mx::astype(delta, mx::float32), base.dtype());
+            },
+            [&](const Tensor &input, int first, int count) {
+                return std::make_pair(w.lora_delta_slice(input, ffn + ".w1", first, first+count, 0, 3840),
+                                      w.lora_delta_slice(input, ffn + ".w3", first, first+count, 0, 3840));
             }};
         auto feed = runtime.run(block, feed_input,
             [&](const Tensor &input) { return z_ffn(input, w, ffn); }, cancelled,

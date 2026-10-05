@@ -55,6 +55,7 @@ struct HybridMetrics {
     uint64_t runtime_weight_scale_cache_hits = 0, runtime_weight_scale_cache_misses = 0;
     uint64_t runtime_weight_scale_cache_entries = 0, runtime_weight_scale_cache_bytes = 0, runtime_weight_scale_cache_evictions = 0;
     uint64_t runtime_weight_device_io_calls = 0;
+    uint64_t runtime_weight_lora_channel_range_calls = 0, runtime_weight_lora_channel_full_calls = 0;
     // Runtime-weight route only; all times/counts are session cumulative.
     uint64_t runtime_weight_slot_bytes = 0, runtime_weight_estimated_bytes = 0;
     uint64_t runtime_weight_hybrid_blocks = 0, runtime_weight_gpu_blocks = 0;

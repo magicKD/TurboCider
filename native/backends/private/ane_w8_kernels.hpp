@@ -13,7 +13,7 @@ struct W8Params {
     uint source_pitch, physical_cols, encoding, dtype, group_size;
     uint meta_pitch, meta_dtype, offset_pitch, offset_dtype, has_offset;
     uint row_begin, rows, column_begin, columns, block, code_pitch, scale_pitch, transpose;
-    uint seed_low, seed_high;
+    uint source_aligned, seed_low, seed_high;
     float norm;
 };
 inline uint w8_u16(device const uchar *p) { return uint(p[0]) | (uint(p[1]) << 8); }
@@ -26,7 +26,18 @@ inline float w8_decode(device const uchar *src, device const uchar *scales, devi
     device const uchar *a = src + ulong(row) * p.source_pitch;
     const uint encoding = tc_w8_specialize ? tc_w8_encoding : p.encoding;
     const uint dtype = tc_w8_specialize ? tc_w8_dtype : p.dtype;
-    if (!encoding) return w8_float(a + ulong(col) * (dtype == 2 ? 4 : 2), dtype);
+    if (!encoding) {
+        // Only the specialized path uses typed loads, and only after the
+        // host checked BOTH the binding offset and physical row pitch.
+        // Keep byte decoding for unaligned views and the generic oracle;
+        // half subnormals still use our exact integer FP16 conversion.
+        if (tc_w8_specialize && p.source_aligned) {
+            if (dtype == 2) return ((device const float *)a)[col];
+            ushort bits = ((device const ushort *)a)[col];
+            return dtype == 1 ? as_type<float>(uint(bits) << 16) : from_half(bits);
+        }
+        return w8_float(a + ulong(col) * (dtype == 2 ? 4 : 2), dtype);
+    }
     if (encoding == 1 || encoding == 2) {
         uint bits = encoding == 1 ? 4 : 8;
         uint code = (w8_u32(a + (col / (32 / bits)) * 4) >> ((col % (32 / bits)) * bits)) & ((1u << bits) - 1);

@@ -95,6 +95,25 @@ int main() {
                        std::memcmp(codes.data(),fast_codes.data(),codes.rows()*codes.pitch()) ||
                        std::memcmp(scales.data(),fast_scales.data(),scales.rows()*scales.pitch()))
                         throw std::runtime_error("specialized stage differs from generic codes/scales/padding");
+                    if (encoding == DeviceWeightEncoding::Dense) {
+                        for (size_t extra_offset : {size_t(0),size_t(1)}) for (size_t extra_pitch : {size_t(0),size_t(1)}) {
+                            const size_t shifted_offset=256+extra_offset,shifted_pitch=packed+32+extra_pitch;
+                            Buffer shifted(gpu,shifted_offset+rows*shifted_pitch+256);
+                            for (int row=0;row<rows;++row)
+                                std::memcpy(static_cast<uint8_t*>(shifted.value.contents)+shifted_offset+row*shifted_pitch,
+                                            static_cast<const uint8_t*>(src.value.contents)+offset+row*pitch,packed);
+                            auto shifted_view=view;shifted_view.buffer=(__bridge void*)shifted.value;
+                            shifted_view.buffer_bytes=shifted.value.length;shifted_view.owner=shifted.owner;
+                            shifted_view.offset_bytes=shifted_offset;shifted_view.row_stride_bytes=shifted_pitch;
+                            std::memset(fast_codes.data(),0x5a,fast_codes.rows()*fast_codes.pitch());
+                            std::memset(fast_scales.data(),0x5a,fast_scales.rows()*fast_scales.pitch());
+                            auto moved=specialized.stage_w8(shifted_view,spec,fast_codes,fast_scales);
+                            if(!moved.finish().ok || moved.validation_flags()!=job.validation_flags() ||
+                               std::memcmp(codes.data(),fast_codes.data(),codes.rows()*codes.pitch()) ||
+                               std::memcmp(scales.data(),fast_scales.data(),scales.rows()*scales.pitch()))
+                                throw std::runtime_error("typed-load alignment fallback changed codes/scales/padding");
+                        }
+                    }
                     if (device.value() != old_value || !job.ready_event() ||
                         ((__bridge id<MTLSharedEvent>)job.ready_event()).signaledValue != 1) throw std::runtime_error("weight staging advanced current ANE timeline");
                     for (int r = 0; r < rows; ++r) {
@@ -200,6 +219,7 @@ int main() {
         if(invalid_hit.finish().ok||!(invalid_hit.validation_flags()&1))throw std::runtime_error("cached scale path hid nonfinite source");
         std::cout<<"PASS W8 immutable sign metadata: H128/H512 unsigned64 seed oracle and in-flight table replacement\n";
         std::cout<<"PASS W8 pipeline specialization: 9 encodings/dtypes H128/H512 W/A bit-exact, bounded 18 variants\n";
+        std::cout<<"PASS W8 dense typed loads: FP16/BF16/FP32 aligned and independently unaligned offset/pitch, H128/H512 W/A bit-exact\n";
         std::cout<<"PASS W8 compact scale cache: 9 encodings/dtypes H128/H512 bit-exact, recipe identity, weak generations/address reuse, mutable bypass, bounded metadata\n";
       } catch (const std::exception &error) { std::cerr << error.what() << "\n"; return 1; }
     }

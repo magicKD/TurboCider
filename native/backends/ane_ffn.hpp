@@ -35,6 +35,10 @@ class HybridFfn {
         // graph fuse low-rank output handling without merging any weights.
         // Preserve the delta's existing rounding boundary, return base dtype.
         std::function<Tensor(const Tensor &, const Tensor &)> down_and_add;
+        // Optional channel-only correction: exactly [first, first+count) of
+        // each logical gate/up half. Row executors keep the full callback;
+        // channel callers without this extension remain compatible.
+        std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)> gate_up_channels = {};
     };
     HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
               size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs = false);
@@ -107,6 +111,8 @@ class HybridFfn {
     int layer_ = -1, rows_ = 0, chunks_ = 0;
     bool profile_ = false;
     bool prefetch_ = false;
+    bool lora_channel_range_ = true;
+    bool fixed_async_ = false;
     int prefetched_layer_ = -1;
     size_t memory_budget_ = 0;
     std::string reason_;
