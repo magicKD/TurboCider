@@ -94,8 +94,8 @@ void rotation_integration() {
         auto candidate = z_image::feed_forward(x, weights, "ffn", true);
         mx::eval({control, candidate});
         require(mx::all(mx::isfinite(candidate)).item<bool>() && mx::all(control == candidate).item<bool>(),
-                "integrated large-row quad ConvRot changed packed Q8 FFN output");
-        std::cout << "PASS integrated ConvRot quad: original packed BF16 scales, rows=" << rows
+                "integrated large-row register ConvRot changed packed Q8 FFN output");
+        std::cout << "PASS integrated ConvRot register: original packed BF16 scales, rows=" << rows
                   << " hidden=3840 width=10240 exact shared-kernel full FFN oracle\n";
     }
 }

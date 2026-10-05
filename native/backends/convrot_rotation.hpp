@@ -6,7 +6,7 @@
 
 namespace tc::convrot_kernel {
 namespace mx = mlx::core;
-enum class Rotation { Shared, Simd, SimdQuad };
+enum class Rotation { Shared, Simd, SimdQuad, SimdRegister };
 
 // Exact Comfy H4^k ordering, NOT the Sylvester H256 used by ANE staging.
 // Both paths retain FP32 radix-4 arithmetic and one final dtype rounding.
@@ -91,7 +91,62 @@ inline mx::array rotate(const mx::array &x, Rotation kind) {
         for (uint group = 0; group < 4; ++group)
             if (offset + group * 256 < K) out[row + offset + group * 256] = T(value[group] * 0.0625f);
     )metal");
+    // One SIMD group owns all 256 coefficients: each lane keeps eight
+    // values, 32 columns apart. The first two digits use lane shuffles;
+    // digit 16 crosses two registers and two lanes, digit 64 is entirely
+    // register-local. Four independent groups per TG, no shared scratch or
+    // barriers. Keep the SAME left-to-right radix-4 expressions as Shared.
+    static auto registers = mx::fast::metal_kernel("tc_convrot_h256_simd_register_candidate", {"x", "columns"}, {"out"}, R"metal(
+        uint lane = thread_index_in_simdgroup, warp = simdgroup_index_in_threadgroup;
+        uint K = uint(columns), group = threadgroup_position_in_grid.x * 4 + warp;
+        uint base = threadgroup_position_in_grid.y * K + group * 256 + lane;
+        float value[8], next[8];
+        for (uint j = 0; j < 8; ++j)
+            value[j] = group * 256 < K ? float(x[base + j * 32]) : 0;
+        for (uint stride = 1; stride <= 4; stride *= 4) {
+            uint digit = (lane / stride) & 3, first = lane - digit * stride;
+            for (uint j = 0; j < 8; ++j) {
+                float a = simd_shuffle(value[j], first), b = simd_shuffle(value[j], first + stride);
+                float c = simd_shuffle(value[j], first + 2 * stride), d = simd_shuffle(value[j], first + 3 * stride);
+                switch (digit) {
+                    case 0: next[j] = a + b + c - d; break;
+                    case 1: next[j] = a + b - c + d; break;
+                    case 2: next[j] = a - b + c + d; break;
+                    default: next[j] = -a + b + c + d; break;
+                }
+            }
+            for (uint j = 0; j < 8; ++j) value[j] = next[j];
+        }
+        for (uint j = 0; j < 8; ++j) {
+            uint even = j & ~1u, first = lane & 15u;
+            uint digit = (lane / 16) + (j & 1u) * 2;
+            float a = simd_shuffle(value[even], first), b = simd_shuffle(value[even], first + 16);
+            float c = simd_shuffle(value[even + 1], first), d = simd_shuffle(value[even + 1], first + 16);
+            switch (digit) {
+                case 0: next[j] = a + b + c - d; break;
+                case 1: next[j] = a + b - c + d; break;
+                case 2: next[j] = a - b + c + d; break;
+                default: next[j] = -a + b + c + d; break;
+            }
+        }
+        for (uint j = 0; j < 8; ++j) value[j] = next[j];
+        for (uint j = 0; j < 8; ++j) {
+            uint first = j & 1u, digit = j / 2;
+            float a = value[first], b = value[first + 2], c = value[first + 4], d = value[first + 6];
+            float result;
+            switch (digit) {
+                case 0: result = a + b + c - d; break;
+                case 1: result = a + b - c + d; break;
+                case 2: result = a - b + c + d; break;
+                default: result = -a + b + c + d; break;
+            }
+            if (group * 256 < K) out[base + j * 32] = T(result * 0.0625f);
+        }
+    )metal");
     const int columns = x.shape(-1), rows = int(x.size() / columns);
+    if (kind == Rotation::SimdRegister)
+        return registers({x, mx::array(columns)}, {x.shape()}, {x.dtype()}, {((columns + 1023) / 1024) * 128, rows, 1}, {128, 1, 1},
+                         {{"T", x.dtype()}}, {}, false, {})[0];
     if (kind == Rotation::SimdQuad)
         return quad({x, mx::array(columns)}, {x.shape()}, {x.dtype()}, {((columns + 1023) / 1024) * 256, rows, 1}, {256, 1, 1},
                     {{"T", x.dtype()}}, {}, false, {})[0];

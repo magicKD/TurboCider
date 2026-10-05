@@ -98,13 +98,14 @@ static Tensor convrot_rotate_metal(const Tensor &x) {
             "Metal ConvRot requires a floating-point activation");
     // Only the existing explicit Metal ConvRot path takes this candidate.
     // Dense-H / legacy default, other devices, small modulation vectors and
-    // unmeasured dtypes keep their previous implementation. Four H256 groups
-    // share one TG without changing radix-4 ordering or final BF16 rounding.
+    // unmeasured dtypes keep their previous implementation. Four independent
+    // SIMD groups keep H256 entirely in registers, with the same radix-4
+    // ordering and final BF16 rounding as the original shared-memory kernel.
     static const bool qualified_device = device_info().gpu == "Apple M4 Max";
     const auto quad_rows = x.size() / size_t(x.shape(-1));
     if (qualified_device && x.dtype() == mx::bfloat16 && quad_rows >= 1024 && quad_rows <= 4224 &&
         (x.shape(-1) == 3840 || x.shape(-1) == 10240))
-        return convrot_kernel::rotate(x, convrot_kernel::Rotation::SimdQuad);
+        return convrot_kernel::rotate(x, convrot_kernel::Rotation::SimdRegister);
     /* H_256 = H_4 kron H_4 kron H_4 kron H_4.  One threadgroup owns one
      * contiguous 256-value tile, reducing the transform from a dense
      * 256x256 matmul to four radix-4 butterflies.  Accumulation stays FP32
