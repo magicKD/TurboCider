@@ -31,6 +31,9 @@ class RuntimeHostTests(unittest.TestCase):
     def test_channel_bandwidth_fit_and_memory_constrained_selection(self):
         self.run_host_test("ane_cost_model_test")
 
+    def test_shared_gpu_calibration_order_samples_and_exception_drain(self):
+        self.run_host_test("ane_calibration_timing_test")
+
     def test_qkv_complete_block_controller_and_periodic_reprobe(self):
         self.run_host_test("ane_qkv_scheduler_test")
 

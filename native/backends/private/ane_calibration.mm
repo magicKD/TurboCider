@@ -281,27 +281,6 @@ W8GpuCalibrationStats W8GpuCalibrationWork::stats() const { return impl_->counte
 uint64_t W8GpuCalibrationWork::estimated_bytes() const { return impl_->estimate; }
 uint64_t W8GpuCalibrationWork::allocated_surface_bytes() const { return impl_->allocated; }
 
-GpuCalibrationSamples measure_full_gpu_calibration(const std::function<void()> &reset,
-    const std::function<void(int)> &submit,const std::function<void()> &finish,int warmups,int repeats) {
-    if(!reset || !submit || !finish || warmups<1 || warmups>8 || repeats<3 || repeats>31 || !(repeats%2))
-        throw std::invalid_argument("GPU calibration requires complete callbacks and bounded odd repeats");
-    GpuCalibrationSamples result;
-    for(int sweep=0;sweep<warmups+repeats;++sweep)for(int position=0;position<2;++position) {
-        const int index=(sweep+position)%2,count=index?4:1;
-        reset();
-        const auto start=std::chrono::steady_clock::now();std::exception_ptr error;
-        try {submit(count);}catch(...) {error=std::current_exception();}
-        try {finish();}catch(...) {if(!error)error=std::current_exception();}
-        const double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
-        if(error)std::rethrow_exception(error);
-        if(!std::isfinite(seconds) || seconds<=0)throw CapabilityError("invalid full GPU calibration span");
-        if(sweep>=warmups)result.seconds[index].push_back(seconds);
-    }
-    auto median=[](std::vector<double> values){std::sort(values.begin(),values.end());return values[values.size()/2];};
-    result.layer_seconds=calibration_layer_seconds(median(result.seconds[0]),median(result.seconds[1]));
-    return result;
-}
-
 ChannelCalibrationSamples measure_w8_channel_point(Device &device,Program &program,
     const std::array<std::vector<CalibrationBindings>,2> &bindings,W8GpuCalibrationWork &work,
     uint64_t &timeline,double share,bool prefetch,const std::function<void()> &reset,
@@ -309,7 +288,7 @@ ChannelCalibrationSamples measure_w8_channel_point(Device &device,Program &progr
     const W8GpuCalibrationWork::Join &join,const W8GpuCalibrationWork::Fence &joins,
     int warmups,int repeats) {
     if(!std::isfinite(share) || share<=0 || share>=1 || bindings[0].size()!=1 || bindings[1].size()!=4 ||
-        !reset || !head || !heads || !join || !joins || warmups<1 || warmups>8 || repeats<3 || repeats>31 || !(repeats%2))
+        !reset || !head || !heads || !join || !joins || !calibration_sampling_valid(warmups,repeats))
         throw std::invalid_argument("channel calibration requires complete one/four bindings, callbacks and bounded odd repeats");
     ChannelCalibrationSamples result;result.prefetch=prefetch;
     for(int sweep=0;sweep<warmups+repeats;++sweep) for(int position=0;position<6;++position) {

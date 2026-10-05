@@ -3,6 +3,7 @@
 #include "ane_program.hpp"
 #include "../ane_calibration_memory.hpp"
 #include "../ane_cost_model.hpp"
+#include "../ane_calibration_timing.hpp"
 #include <array>
 
 namespace tc::ane::private_api {
@@ -91,13 +92,10 @@ struct ChannelCalibrationSamples {
     bool prefetch = false;
     uint64_t ane_calls = 0;
 };
-struct GpuCalibrationSamples {
-    std::array<std::vector<double>,2> seconds; // one/four full optimized GPU FFNs
-    double layer_seconds = 0;
-};
-GpuCalibrationSamples measure_full_gpu_calibration(const std::function<void()> &reset,
-    const std::function<void(int)> &submit,const std::function<void()> &finish,
-    int warmups = 2,int repeats = 7);
+// Preserve the earlier qualified API while sharing its CPU-only timing
+// implementation with Public calibration consumers.
+using tc::ane::GpuCalibrationSamples;
+using tc::ane::measure_full_gpu_calibration;
 // Connect independent prepared ANE submissions and complete GPU traffic to
 // the shared cost policy. This does not select an inference graph or cache a
 // model qualification. Every cell is warmed; serial cyclic order and medians
