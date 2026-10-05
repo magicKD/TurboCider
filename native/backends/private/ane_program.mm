@@ -379,7 +379,7 @@ struct Transfer::Impl {
     uint64_t ready = 0, done_value = 0;
     std::mutex mutex;
     std::condition_variable cv;
-    bool submitted = false, done = false, ok = false;
+    bool submitted = false, done = false, ok = false, independent_gpu = false;
     void fail() {
         std::atomic_ref<uint32_t>(*static_cast<uint32_t *>(failed.contents)).store(1, std::memory_order_release);
     }
@@ -403,8 +403,17 @@ struct TransferParams { uint32_t rows, cols, source_pitch, target_pitch, dtype, 
 }
 Transfer Device::prepare_transfer(std::vector<Upload> uploads, std::vector<Download> downloads,
                                   uint64_t ready, uint64_t done) {
+    return prepare_transfer_impl(std::move(uploads), std::move(downloads), std::pair{ready, done});
+}
+Transfer Device::prepare_gpu_transfer(std::vector<Upload> uploads, std::vector<Download> downloads) {
+    return prepare_transfer_impl(std::move(uploads), std::move(downloads), std::nullopt);
+}
+Transfer Device::prepare_transfer_impl(std::vector<Upload> uploads, std::vector<Download> downloads,
+                                      std::optional<std::pair<uint64_t, uint64_t>> dependency) {
     @autoreleasepool {
-        require(!downloads.empty() && ready > impl_->last_signal && ready > value() && done >= ready,
+        require(!downloads.empty() && (!dependency ||
+                (dependency->first > impl_->last_signal && dependency->first > value() &&
+                 dependency->second >= dependency->first)),
                 "private ANE invalid transfer timeline/bindings");
         for (const auto &u : uploads) {
             validate_device(u.source, impl_->device, false);
@@ -440,7 +449,8 @@ Transfer Device::prepare_transfer(std::vector<Upload> uploads, std::vector<Downl
         }
         auto state = std::make_shared<Transfer::Impl>();
         state->device = impl_; state->uploads = std::move(uploads); state->downloads = std::move(downloads);
-        state->ready = ready; state->done_value = done;
+        state->independent_gpu = !dependency;
+        if (dependency) { state->ready = dependency->first; state->done_value = dependency->second; }
         state->status = [impl_->device newBufferWithLength:4 options:MTLResourceStorageModeShared];
         state->failed = [impl_->device newBufferWithLength:4 options:MTLResourceStorageModeShared];
         require(state->status && state->failed, "private ANE transfer status allocation failed");
@@ -451,14 +461,19 @@ Transfer Device::prepare_transfer(std::vector<Upload> uploads, std::vector<Downl
 std::function<void()> Transfer::failure_callback() const {
     auto state = impl_; return [state] { state->fail(); };
 }
+bool Transfer::independent_gpu() const {
+    require(bool(impl_), "private ANE empty transfer");
+    return impl_->independent_gpu;
+}
 void Transfer::submit() {
     @autoreleasepool {
       @try {
         auto state = impl_;
         require(state && !state->submitted, "private ANE transfer already submitted");
         auto dev = state->device;
-        require(state->ready > dev->last_signal, "private ANE transfer timeline reused");
-        id<MTLCommandBuffer> input = [dev->queue commandBuffer], output = [dev->queue commandBuffer];
+        require(state->independent_gpu || state->ready > dev->last_signal, "private ANE transfer timeline reused");
+        id<MTLCommandBuffer> input = [dev->queue commandBuffer];
+        id<MTLCommandBuffer> output = state->independent_gpu ? input : [dev->queue commandBuffer];
         require(input && output, "private ANE transfer command buffer unavailable");
         id<MTLBlitCommandEncoder> clear = [input blitCommandEncoder];
         require(clear != nil, "private ANE transfer blit encoder unavailable");
@@ -475,13 +490,17 @@ void Transfer::submit() {
             [pack setBuffer:state->status offset:0 atIndex:2]; [pack setBytes:&p length:sizeof(p) atIndex:3];
             [pack dispatchThreadgroups:MTLSizeMake((p.rows + 31) / 32, (p.cols + 31) / 32, 1) threadsPerThreadgroup:MTLSizeMake(32, 8, 1)];
         }
-        [pack endEncoding]; [input encodeSignalEvent:dev->event value:state->ready];
+        [pack endEncoding];
+        if (!state->independent_gpu) [input encodeSignalEvent:dev->event value:state->ready];
         [input addCompletedHandler:^(id<MTLCommandBuffer> completed) {
-            if (completed.status == MTLCommandBufferStatusError) { state->fail(); dev->release(state->done_value); }
+            if (completed.status == MTLCommandBufferStatusError) {
+                state->fail();
+                if (!state->independent_gpu) dev->release(state->done_value);
+            }
         }];
         // Construct both encoders BEFORE committing. After leading commit,
         // no exception may leave an untracked GPU consumer or ANE wait.
-        [output encodeWaitForEvent:dev->event value:state->done_value];
+        if (!state->independent_gpu) [output encodeWaitForEvent:dev->event value:state->done_value];
         id<MTLComputeCommandEncoder> restore = [output computeCommandEncoder];
         require(restore != nil, "private ANE restore encoder unavailable");
         [restore setComputePipelineState:dev->restore];
@@ -512,11 +531,12 @@ void Transfer::submit() {
             { std::lock_guard lock(state->mutex); state->ok = completed.status == MTLCommandBufferStatusCompleted; state->done = true; }
             state->cv.notify_all();
         }];
-        state->submitted = true; dev->last_signal = state->ready;
+        state->submitted = true;
+        if (!state->independent_gpu) dev->last_signal = state->ready;
         [input commit]; // leading signal must be submitted before dependent wait
-        [output commit];
+        if (!state->independent_gpu) [output commit];
       } @catch (NSException *exception) {
-        if (impl_) { impl_->fail(); impl_->device->release(impl_->done_value); }
+        if (impl_) { impl_->fail(); if (!impl_->independent_gpu) impl_->device->release(impl_->done_value); }
         process_healthy = false;
         throw CapabilityError("private ANE GPU transfer exception: " + std::string(exception.reason.UTF8String ?: "unknown"));
       }
@@ -526,7 +546,8 @@ Completion Transfer::finish(std::chrono::milliseconds timeout) {
     if (!impl_ || !impl_->submitted) return {false, false, "private ANE transfer not submitted"};
     std::unique_lock lock(impl_->mutex);
     if (!impl_->cv.wait_for(lock, timeout, [&] { return impl_->done; })) {
-        impl_->fail(); process_healthy = false; impl_->device->release(impl_->done_value);
+        impl_->fail(); process_healthy = false;
+        if (!impl_->independent_gpu) impl_->device->release(impl_->done_value);
         return {false, true, "private ANE transfer timeout; resources retained until GPU completion"};
     }
     const bool failed = std::atomic_ref<uint32_t>(*static_cast<uint32_t *>(impl_->failed.contents)).load(std::memory_order_acquire);

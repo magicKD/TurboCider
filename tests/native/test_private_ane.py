@@ -87,6 +87,7 @@ class PrivateAneHardwareTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PASS GPU Executor", result.stdout)
         self.assertIn("PASS GPU tiled I/O", result.stdout)
+        self.assertIn("PASS independent GPU I/O", result.stdout)
         print(result.stdout.strip())
 
     def test_gpu_w8_stager_raw_gguf_affine_and_dense(self):
@@ -209,6 +210,7 @@ class PrivateAneCalibrationMlxTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.count("PASS prepared W8 calibration channels="), 2)
             self.assertIn("PASS prepared calibration ownership", result.stdout)
+            self.assertEqual(result.stdout.count("PASS complete GPU calibration:"), 2)
             self.assertIn("not model/E2E calibration or physical overlap proof", result.stdout)
             print(result.stdout.strip())
 

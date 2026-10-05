@@ -71,6 +71,11 @@ class Device {
     uint64_t value() const;
     Transfer prepare_transfer(std::vector<Upload>, std::vector<Download>,
                               uint64_t ready, uint64_t done);
+    // Calibration GPU arm: one command buffer, no shared-event signal/wait
+    // and no live ANE output dependency. Producers/source snapshots must be
+    // ready and remain immutable until completion; normal inference uses
+    // prepare_transfer(), never this independent restore path.
+    Transfer prepare_gpu_transfer(std::vector<Upload>, std::vector<Download>);
     // A separate staging queue/event: next-layer readiness MUST NOT advance
     // the current layer's activation/ANE-done timeline.
     QuantStage stage_w8(DeviceWeightView, W8StageSpec, Surface codes, Surface scales);
@@ -79,6 +84,8 @@ class Device {
   private:
     struct Impl;
     std::shared_ptr<Impl> impl_;
+    Transfer prepare_transfer_impl(std::vector<Upload>, std::vector<Download>,
+                                  std::optional<std::pair<uint64_t, uint64_t>>);
     friend class Surface;
     friend class Program;
     friend class Transfer;
@@ -109,6 +116,7 @@ class Transfer {
     void submit();
     Completion finish(std::chrono::milliseconds timeout = std::chrono::seconds(30));
     uint32_t validation_flags() const;
+    bool independent_gpu() const;
   private:
     struct Impl;
     std::shared_ptr<Impl> impl_;
