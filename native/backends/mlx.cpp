@@ -1,5 +1,6 @@
 #include "mlx.hpp"
 #include "convrot_rotation.hpp"
+#include "affine_gpu_fp32.hpp"
 #include "mlx_fd_reader.hpp"
 #include "../core/gguf.hpp"
 #include "../runtime/streaming/source_lease.hpp"
@@ -860,6 +861,13 @@ Tensor Weights::project_range(const Tensor &x, const std::string &prefix,
     auto dense = mx::astype(q, mx::float32) * mx::astype(scale, mx::float32);
     return mx::astype(mx::matmul(mx::astype(rotated, mx::float32),
                                  mx::transpose(dense)), x.dtype());
+}
+
+Tensor Weights::project_range_fp32(const Tensor &x,const std::string &prefix,int rb,int re,int cb,int ce) const {
+    require(convrot(prefix) && at(prefix+".weight").dtype()==mx::uint32 && !has_runtime_loras(),
+            "F32 ConvRot partial requires packed base-only source: "+prefix);
+    return affine_gpu::projection_fp32(convrot_rotate(x,metal_convrot_),at(prefix+".weight"),
+        at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce);
 }
 
 void Weights::dequantize(const std::vector<std::string> &prefixes) {

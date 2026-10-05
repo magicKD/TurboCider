@@ -25,6 +25,8 @@ class HybridFfn {
   public:
     using Gpu = std::function<Tensor(const Tensor &)>;
     // Base-down partial and corrected hidden for a logical channel range.
+    // Explicit fp32_channel_join() uses an F32 base partial; hidden retains
+    // the input dtype. Default callers preserve both original dtypes.
     // Do NOT apply down-LoRA here: it must consume joined hidden exactly once.
     using ChannelGpu = std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)>;
     using NextWeights = std::function<std::vector<FfnWeight>(int)>;
@@ -70,6 +72,7 @@ class HybridFfn {
     bool channel_split() const { return axis_ == PartitionAxis::IntermediateChannels; }
     int gpu_channels() const { return metrics_.runtime_weight_gpu_channels; }
     int ane_channels() const { return metrics_.runtime_weight_ane_channels; }
+    bool fp32_channel_join() const { return fp32_channel_join_; }
     static std::string executor_configuration_identity();
     std::string backend_label(bool gguf = false) const {
         if (metrics_.runtime_weight_backend.empty()) return gguf ? "mlx_cpp_metal_gguf" : "mlx_cpp_metal";
@@ -112,6 +115,7 @@ class HybridFfn {
     int layer_ = -1, rows_ = 0, chunks_ = 0;
     bool profile_ = false;
     bool prefetch_ = false;
+    bool fp32_channel_join_ = false;
     bool lora_channel_range_ = true;
     bool fixed_async_ = false;
     bool defer_channel_join_ = false;

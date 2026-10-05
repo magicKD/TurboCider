@@ -1245,7 +1245,8 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
                 auto g = w.project_slice(input,ffn+".w1",first,first+count,0,3840,false);
                 auto u = w.project_slice(input,ffn+".w3",first,first+count,0,3840,false);
                 auto hidden = silu(g)*u;
-                auto base = w.project_base_slice(hidden,ffn+".w2",0,3840,first,first+count,false);
+                auto base = runtime.fp32_channel_join() ? w.project_range_fp32(hidden,ffn+".w2",0,3840,first,first+count) :
+                    w.project_base_slice(hidden,ffn+".w2",0,3840,first,first+count,false);
                 return std::make_pair(base,hidden);
             },next_weights);
         auto output = value + mx::tanh(parts[3]) * rms(feed, w.at(prefix + ".ffn_norm2.weight"), 1e-5f);

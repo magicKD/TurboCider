@@ -209,6 +209,9 @@ class Executor {
                                std::optional<DeviceAdapterInput> = std::nullopt) {
         throw CapabilityError("executor has no device-buffer I/O path");
     }
+    // Base-down partial only. Retain FP32 until a channel join's ONE final
+    // model-dtype rounding. Does not imply an FP32 ANE graph or hidden ABI.
+    virtual bool supports_fp32_device_output() const { return false; }
 };
 
 // Explicit opt-in runtime-weight backend; never selected by auto routing.

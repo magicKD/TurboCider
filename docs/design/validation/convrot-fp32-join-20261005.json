@@ -1,0 +1,120 @@
+{
+  "schema": "tc-convrot-fp32-join-validation-v1",
+  "date": "2026-10-05",
+  "scope": "real frozen-input error decomposition and opt-in partial precision; no model performance qualification",
+  "production_qualified": false,
+  "default_changed": false,
+  "native_fp32_ane_arithmetic_claimed": false,
+  "native_int8_macs_observed": false,
+  "physical_overlap_proven": false,
+  "weight_source_changed": false,
+  "capture": {
+    "model": "z-image-turbo",
+    "checkpoint": "z_image_turbo_int8_convrot.safetensors",
+    "source_sha256": "be517ebd47c912a5626a588e1aeea43e6be4a43c0cdcd2b48a2a780d9f358635",
+    "stored_source_profile": "legacy packed BF16 scales",
+    "size512_blocks": [0,7,23,31],
+    "size512_samples": 16,
+    "size1024_blocks": [31],
+    "size1024_samples": 4,
+    "capture_dtype": "FP16",
+    "exact_bf16_representability_checked": true,
+    "includes_physical_padding": true,
+    "is_whole_model_quality_gate": false
+  },
+  "replay512": {
+    "evidence": "outputs/convrot-ffn-error-decoded-f32-replay512.json",
+    "split_gate_up_hidden_exact_cases": 16,
+    "new_full_down_bf16_decode_fp32_accum_final_bf16_exact_cases": 16,
+    "old_split_output_rel_l2_approx": [0.0025,0.0030],
+    "new_split_output_rel_l2_range": [0.0000013421202220854511,0.00019386333497729258],
+    "metadata_widening_without_split_changes_source": true,
+    "fp32_restore_final_bf16_matches_old_private": true,
+    "group_a8_gpu_is_not_actual_ane_proof": true
+  },
+  "regressions": {
+    "affine_gpu_cases": 24,
+    "affine_gpu_dtypes": ["FP16","BF16"],
+    "affine_gpu_bits": [4,8],
+    "affine_gpu_groups": [32,64,128],
+    "affine_gpu_reference": "dequantize in original dtype, then F32 dense GEMM",
+    "affine_gpu_physical_offsets_and_tails": true,
+    "invalid_affine_ranges_rejected": true,
+    "private_tests_passed": 14,
+    "private_tests_opt_in_skipped": 2,
+    "public_tests_passed": 13,
+    "host_tests_passed": 8,
+    "gpu_tests_passed": 6,
+    "screen_tests_passed": 60,
+    "fp32_restore_all_finite_fp16_encodings": true,
+    "fp32_restore_failed_read_suppression": true,
+    "fp32_restore_validation_only_overflow": true,
+    "private_fp32_output_byte_receipts_checked": true,
+    "experimental_fp32_with_adapter_rejected": true,
+    "full_make_test_run": false
+  },
+  "implementation": {
+    "opt_in": "TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN=1",
+    "scope": "base-only BF16 Private ConvRot intermediate channels",
+    "source_recipe_suffix": "+fp32-partial-join-v1",
+    "fp32_extra_output_storage_admitted": true,
+    "executor_identity_includes_opt_in": true,
+    "whole_operation_gpu_fallback_preserved": true,
+    "lora_hidden_abi_unchanged": true
+  },
+  "builds": {
+    "scope": "working-tree snapshot retaining original ConvRot drafts; not clean staged-tree rebuild",
+    "private_sha256": "2c0c8bfe585db6aa6cdac4f671d836674991361b41f27ad76082dbd000411e46",
+    "public_sha256": "922649a81d4ae4a94f238d06d60e835efcc13e3ec5f64d2f4dcd6bb84ed7ed08",
+    "public_actual_release_guard_passed": true
+  },
+  "model_four_step": {
+    "same_binary_for_gpu_candidate": true,
+    "seed": 42,
+    "ane_channels": 4096,
+    "gpu_channels": 6144,
+    "threshold": {"max_rel_l2": 0.03,"min_cosine": 0.999},
+    "cells": [
+      {
+        "size": 512,
+        "evidence": "outputs/convrot-fp32-join-512-private4096-4-diagnostic",
+        "fp32_channel_join_enabled": true,
+        "channel_blocks": 128,
+        "driver_calls": 248,
+        "fallback_blocks": 0,
+        "conditioning_exact": true,
+        "initial_latent_exact": true,
+        "old_final_rel_l2": 0.047039741157945646,
+        "new_final_rel_l2": 0.043367339540968844,
+        "new_final_cosine": 0.9990597695220401,
+        "n1_pass": false,
+        "performance_qualified": false,
+        "media_qualified": false
+      },
+      {
+        "size": 1024,
+        "evidence": "outputs/convrot-fp32-join-1024-private4096-4-diagnostic",
+        "fp32_channel_join_enabled": true,
+        "channel_blocks": 128,
+        "driver_calls": 512,
+        "fallback_blocks": 0,
+        "conditioning_exact": true,
+        "initial_latent_exact": true,
+        "old_final_rel_l2": 0.08725382937879246,
+        "new_final_rel_l2": 0.08632566804594585,
+        "new_final_cosine": 0.9962754170578616,
+        "n1_pass": false,
+        "performance_qualified": false,
+        "media_qualified": false
+      }
+    ]
+  },
+  "remaining": [
+    "actual group input and hidden A8 graph quality qualification",
+    "source-sensitive layer GPU/Public strategy",
+    "GGUF bounded dense consumer A/B and reuse/bandwidth accounting",
+    "adaptive bandwidth fit identity cache and runtime share/prefetch integration",
+    "all four Z/Qwen base cells matched optimized GPU >=1.2x",
+    "full actual-model LoRA, latent/media/memory/device trace acceptance"
+  ]
+}

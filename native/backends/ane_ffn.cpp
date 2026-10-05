@@ -38,10 +38,10 @@ DeviceMatrixView device_view(const Tensor &a, int rows, int cols, int begin_row 
             rows, cols, pitch, dtype, std::make_shared<Tensor>(a),a.data_shared_ptr()};
 }
 Tensor device_output(int rows, int cols, DType dtype) {
-    const size_t bytes = size_t(rows) * cols * 2;
+    const size_t bytes = size_t(rows) * cols * (dtype==DType::FP32?4:2);
     auto buffer = mx::allocator::malloc(bytes);
     if (!buffer.ptr()) throw std::bad_alloc();
-    return Tensor(buffer, {1, rows, cols}, dtype == DType::FP16 ? mx::float16 : mx::bfloat16);
+    return Tensor(buffer, {1, rows, cols}, dtype == DType::FP32 ? mx::float32 : dtype == DType::FP16 ? mx::float16 : mx::bfloat16);
 }
 WeightView weight_view(const FfnWeight &w) {
     require(w.transform==FfnWeight::Transform::None || w.transform==FfnWeight::Transform::ComfyH256Inverse,
@@ -130,6 +130,10 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     require(!defer || std::string(defer)=="0" || std::string(defer)=="1",
             "runtime ANE deferred channel join requires 0 or 1");
     const bool requested_defer = defer && std::string(defer)=="1";
+    const char *f32=std::getenv("TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN");
+    require(!f32 || std::string(f32)=="0" || std::string(f32)=="1","runtime ANE F32 channel join requires 0 or 1");
+    const bool requested_fp32=f32 && std::string(f32)=="1";
+    require(!requested_fp32 || !require_lora_inputs,"experimental F32 channel join is base-only; LoRA hidden ABI unchanged");
     require(!requested_defer || (fixed_async_ && private_channel_count(width)>0 &&
             configured_backend().allow_private &&
             (configured_backend().preferred==BackendPreference::Private ||
@@ -172,6 +176,10 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     if (metrics_.runtime_weight_data_path == "w8a8_hadamard" || metrics_.runtime_weight_data_path == "w8a8_convrot") {
         metrics_.weight_variant = "runtime_w8a8";
     }
+    require(!requested_fp32 || (channel_split() && graph_->supports_fp32_device_output()),
+            "F32 channel join requires a supported Private ConvRot channel executor");
+    fp32_channel_join_=requested_fp32;
+    metrics_.runtime_weight_fp32_channel_join_enabled=fp32_channel_join_;
     defer_channel_join_ = requested_defer && channel_split();
     metrics_.runtime_weight_deferred_join_enabled = defer_channel_join_;
     metrics_.bucket = graph_->shape().rows;
@@ -201,7 +209,7 @@ std::string HybridFfn::executor_configuration_identity() {
                            "TURBOCIDER_PRIVATE_ANE_SCALE_CACHE","TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE",
                            "TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD","TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE",
                            "TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",
-                           "TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN"}) {
+                           "TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN","TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN"}) {
         const char *raw = std::getenv(key);
         const std::string value = raw ? raw : "<unset>";
         identity += ":" + std::to_string(value.size()) + ":" + value;
@@ -393,6 +401,7 @@ void HybridFfn::stage_weights(int layer, int rows, std::vector<FfnWeight> weight
             }),"runtime ANE mixed ConvRot FFN recipes unsupported");
             metrics_.runtime_weight_source_recipe=graph_->data_path()=="w8a8_convrot"?graph_->weight_recipe():
                 "convrot-legacy-packed-scale-inverse-h256-f16-v1";
+            if(fp32_channel_join_)metrics_.runtime_weight_source_recipe+="+fp32-partial-join-v1";
             ++metrics_.runtime_weight_convrot_stage_submissions;
         }
         if (graph_->supports_device_weights()) {
@@ -686,6 +695,8 @@ Tensor HybridFfn::run(int layer, const Tensor &input, const Gpu &gpu,
 Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, const ChannelGpu &channel_gpu,
                               std::atomic<bool> &cancelled, const Adapter *adapter,const NextWeights &next_weights) {
     require(bool(channel_gpu), "channel split requires a complete GPU range/hidden implementation");
+    require(!fp32_channel_join_ || (!adapter && input.dtype()==mx::bfloat16),
+            "experimental F32 channel join requires base-only BF16 activations");
     auto fallback = [&] {
         block_sample_valid_ = false;
         ++metrics_.runtime_weight_gpu_blocks;
@@ -699,7 +710,7 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
     const int padded = int(padded64);
     // Optional-tier allocations, including temporary padding/corrections and
     // the complete hidden needed for ONE down-LoRA. No checkpoint W copies.
-    const uint64_t scratch = padded64 * (uint64_t(h) * 2 + (adapter ? uint64_t(fa) * 10 : 0)) +
+    const uint64_t scratch = padded64 * (uint64_t(h) * (fp32_channel_join_?4:2) + (adapter ? uint64_t(fa) * 10 : 0)) +
         (padded != rows_ ? padded64 * h * input.itemsize() : 0) +
         (adapter ? uint64_t(rows_) * metrics_.mlp_width * input.itemsize() : 0) + uint64_t(rows_) * h * 4;
     if (graph_->estimated_bytes() > memory_budget_ || scratch > memory_budget_ - graph_->estimated_bytes() ||
@@ -716,6 +727,7 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
     };
     std::optional<Tensor> packed, gate, up, output, hidden;
     const DType dtype = input.dtype() == mx::float16 ? DType::FP16 : DType::BF16;
+    const DType output_dtype=fp32_channel_join_?DType::FP32:dtype;
     double lora_ready = 0;
     try {
         packed = pad(input,h);
@@ -731,7 +743,7 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
             if (narrow) ++metrics_.runtime_weight_lora_channel_range_calls;
             else ++metrics_.runtime_weight_lora_channel_full_calls;
         } else mx::eval(*packed);
-        output = device_output(padded,h,dtype);
+        output = device_output(padded,h,output_dtype);
         if (adapter) hidden = device_output(padded,fa,dtype);
     } catch (const std::bad_alloc &) {
         release_for_memory("runtime channel scratch allocation failed");
@@ -758,7 +770,7 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
     try {
         const auto gpu_start = Clock::now(); head = channel_gpu(input,0,fg);
         require(head->first.shape() == input.shape() && head->second.shape() == mx::Shape({1,rows_,fg}) &&
-                head->first.dtype() == input.dtype() && head->second.dtype() == input.dtype(),
+                head->first.dtype() == (fp32_channel_join_?mx::float32:input.dtype()) && head->second.dtype() == input.dtype(),
                 "channel GPU base-down/hidden contract mismatch");
         if (async_head) mx::async_eval({head->first,head->second}); else mx::eval({head->first,head->second});
         const double gpu_seconds = async_head ? 0 : elapsed(gpu_start);
@@ -784,7 +796,7 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
             return fallback();
         }
         const auto post_start = Clock::now();
-        auto tail = mx::astype(slice_axis(*output,1,0,rows_),input.dtype());
+        auto tail = mx::astype(slice_axis(*output,1,0,rows_),fp32_channel_join_?mx::float32:input.dtype());
         auto merged = mx::astype(mx::astype(head->first,mx::float32)+mx::astype(tail,mx::float32),input.dtype());
         if (adapter) {
             auto ane_hidden = mx::astype(slice_axis(*hidden,1,0,rows_),input.dtype());

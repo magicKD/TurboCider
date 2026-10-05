@@ -392,8 +392,8 @@ size_t device_pitch(const DeviceMatrixView &v) {
 }
 void validate_device(const DeviceMatrixView &v, id<MTLDevice> device, bool output) {
     require(v.owner && v.buffer && v.rows > 0 && v.rows <= 1048576 && v.cols > 0 && v.cols <= 32768 &&
-        (v.dtype == DType::FP16 || v.dtype == DType::BF16 || (!output && v.dtype == DType::FP32)),
-        "private ANE invalid device binding/type/owner");
+        (v.dtype == DType::FP16 || v.dtype == DType::BF16 || v.dtype == DType::FP32),
+        output ? "private ANE invalid device output binding/type/owner" : "private ANE invalid device binding/type/owner");
     id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)v.buffer;
     const size_t item = v.dtype == DType::FP32 ? 4 : 2, pitch = device_pitch(v), row = size_t(v.cols) * item;
     require(buffer.device == device && v.buffer_bytes <= buffer.length && v.offset_bytes % item == 0 &&
@@ -434,7 +434,7 @@ Transfer Device::prepare_transfer_impl(std::vector<Upload> uploads, std::vector<
                 d.row_scales->columns() == 1 && d.token_scales->element() == Element::FP16 && d.token_scales->rows() == 1 &&
                 d.token_scales->columns() == d.source.columns(), "private ANE W8 epilogue scale geometry mismatch");
             require(d.source.element() == Element::FP16 && d.begin_row >= 0 && std::isfinite(d.scale) && d.scale > 0 &&
-                (d.dtype == DType::FP16 || d.dtype == DType::BF16), "private ANE download geometry/dtype/scale mismatch");
+                (d.dtype == DType::FP16 || d.dtype == DType::BF16 || d.dtype == DType::FP32), "private ANE download geometry/dtype/scale mismatch");
             if (d.destination) {
                 validate_device(*d.destination, impl_->device, true);
                 require(d.destination->dtype == d.dtype && d.destination->cols == int(d.source.rows()) &&

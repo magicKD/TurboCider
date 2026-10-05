@@ -106,6 +106,8 @@ class Weights {
                             std::optional<mx::Dtype> output_dtype = std::nullopt) const;
     Tensor project_range(const Tensor &, const std::string &, int row_start, int row_end,
                         int col_start, int col_end) const;
+    Tensor project_range_fp32(const Tensor &, const std::string &, int row_start, int row_end,
+                             int col_start, int col_end) const;
     void clear();
     size_t bytes() const;
     void materialize();

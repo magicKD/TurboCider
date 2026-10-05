@@ -50,6 +50,7 @@ struct HybridMetrics {
     uint64_t runtime_weight_stage_pipeline_variants = 0;
     bool runtime_weight_launch_fence_enabled = false;
     bool runtime_weight_a8_lookahead_enabled = false;
+    bool runtime_weight_fp32_channel_join_enabled = false;
     uint64_t runtime_weight_a8_prefetches = 0;
     double runtime_weight_a8_wait_seconds = 0;
     uint64_t runtime_weight_scale_cache_hits = 0, runtime_weight_scale_cache_misses = 0;

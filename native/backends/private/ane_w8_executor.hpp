@@ -35,6 +35,7 @@ class PrivateW8Graph final : public Executor {
     void launch(MatrixView, uint16_t *, size_t, DType, std::optional<AdapterInput>) override;
     void launch_device(DeviceMatrixView, DeviceMatrixView, std::optional<DeviceAdapterInput> = std::nullopt) override;
     RunResult finish() override;
+    bool supports_fp32_device_output() const override;
   private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

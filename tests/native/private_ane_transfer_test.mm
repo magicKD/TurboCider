@@ -2,6 +2,7 @@
 #include "../../native/backends/private/ane_mil.hpp"
 #include "../../native/backends/private/ane_executor.hpp"
 #include "../../native/backends/ane_runtime_convert.hpp"
+#include "../../native/core/gguf_decode.hpp"
 #import <Metal/Metal.h>
 #include <bit>
 #include <cmath>
@@ -103,6 +104,35 @@ int main(int argc, char **argv) {
             if (!rejected) throw std::runtime_error("independent transfer accepted invalid device extent");
         }
         std::cout << "PASS independent GPU I/O: single-CB upload/restore, exact FP16/BF16/F32 conversion, unchanged ANE timeline, failed-read suppression\n";
+        {
+            constexpr int rows=257,cols=257;
+            Surface source(device,cols,rows,Element::FP16);
+            Storage fp32(gpu,rows,cols,DType::FP32);
+            for(int c=0;c<cols;++c)for(int r=0;r<rows;++r) {
+                uint16_t bits=uint16_t(c*rows+r);
+                if((bits&0x7c00)==0x7c00)bits=0;
+                reinterpret_cast<uint16_t*>(static_cast<char*>(source.data())+c*source.pitch())[r]=bits;
+            }
+            auto restore=device.prepare_gpu_transfer({},{{source,fp32.view,0,DType::FP32,3.25f}});
+            restore.submit();if(!restore.finish().ok || restore.validation_flags())throw std::runtime_error("F32 restore failed");
+            for(int r=0;r<rows;++r)for(int c=0;c<cols;++c) {
+                const auto bits=reinterpret_cast<const uint16_t*>(static_cast<const char*>(source.data())+c*source.pitch())[r];
+                const float expected=tc::gguf::fp16_to_float(bits)*3.25f;
+                if(std::bit_cast<uint32_t>(static_cast<float*>(fp32.row(r))[c])!=std::bit_cast<uint32_t>(expected))
+                    throw std::runtime_error("F32 restore exact finite-FP16/scale oracle mismatch");
+            }
+            fp32.guard();
+            std::memset(fp32.buffer.contents,0x5a,fp32.buffer.length);
+            auto suppressed=device.prepare_gpu_transfer({},{{source,fp32.view,0,DType::FP32,1.f}});
+            suppressed.failure_callback()();suppressed.submit();
+            if(suppressed.finish().ok)throw std::runtime_error("failed F32 restore reported success");
+            for(size_t i=0;i<fp32.buffer.length;++i)if(static_cast<const uint8_t*>(fp32.buffer.contents)[i]!=0x5a)
+                throw std::runtime_error("failed F32 restore published bytes");
+            reinterpret_cast<uint16_t*>(source.data())[0]=0x7bff;
+            auto overflow=device.prepare_gpu_transfer({},{{source,std::nullopt,0,DType::FP32,1e38f}});
+            overflow.submit();if(!overflow.finish().ok || !(overflow.validation_flags()&4))throw std::runtime_error("F32 restore overflow hidden");
+            std::cout<<"PASS F32 partial restore: every finite FP16 encoding, exact scaling, strided tails, failed-read suppression and validation-only overflow\n";
+        }
         GraphShape shape{Kind::Matmul, 33, 65, 65, 32, 32, false};
         Program program(device, fp16_program(shape), {}, argv[1]);
         Surface x(device, 65, 33, Element::FP16), w(device, 65, 65, Element::FP16), y(device, 65, 33, Element::FP16);

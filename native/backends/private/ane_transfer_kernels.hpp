@@ -93,10 +93,15 @@ kernel void tc_ane_restore(device const ushort *src [[buffer(0)]], device uchar 
                 if (!isfinite(x) || x <= 0) { atomic_fetch_or_explicit(status, 2u, memory_order_relaxed); x = 1; }
                 value = value * x;
             }
-            ushort out = p.dtype == 1 ? to_bfloat(value) : to_half(value);
-            uint mask = p.dtype == 1 ? 0x7f80 : 0x7c00;
-            if ((out & mask) == mask) atomic_fetch_or_explicit(status, 4u, memory_order_relaxed);
-            if (!p.validate_only) ((device ushort *)(dst + r * p.target_pitch))[c] = out;
+            if (p.dtype == 2) {
+                if (!isfinite(value)) atomic_fetch_or_explicit(status,4u,memory_order_relaxed);
+                if (!p.validate_only) ((device float *)(dst+r*p.target_pitch))[c]=value;
+            } else {
+                ushort out = p.dtype == 1 ? to_bfloat(value) : to_half(value);
+                uint mask = p.dtype == 1 ? 0x7f80 : 0x7c00;
+                if ((out & mask) == mask) atomic_fetch_or_explicit(status, 4u, memory_order_relaxed);
+                if (!p.validate_only) ((device ushort *)(dst + r * p.target_pitch))[c] = out;
+            }
         }
     }
 }

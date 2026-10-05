@@ -19,11 +19,11 @@ struct Storage {
         std::memset(buffer.contents,0x5a,buffer.length);
     }
     void *row(int r) {return static_cast<char*>(buffer.contents)+view.offset_bytes+r*view.row_stride_bytes;}
-    float value(int r,int c) {return std::bit_cast<float>(uint32_t(static_cast<uint16_t*>(row(r))[c])<<16);}
+    float value(int r,int c) {return view.dtype==DType::FP32?static_cast<float*>(row(r))[c]:std::bit_cast<float>(uint32_t(static_cast<uint16_t*>(row(r))[c])<<16);}
     void guard() {
         const auto *p=static_cast<const uint8_t*>(buffer.contents);
         for(size_t i=0;i<view.offset_bytes;++i)check(p[i]==0x5a,"prefix overwritten");
-        for(int r=0;r<view.rows;++r)for(size_t c=size_t(view.cols)*2;c<view.row_stride_bytes;++c)
+        for(int r=0;r<view.rows;++r)for(size_t c=size_t(view.cols)*(view.dtype==DType::FP32?4:2);c<view.row_stride_bytes;++c)
             check(static_cast<const uint8_t*>(row(r))[c]==0x5a,"row padding overwritten");
         for(size_t i=view.offset_bytes+view.rows*view.row_stride_bytes;i<buffer.length;++i)check(p[i]==0x5a,"suffix overwritten");
     }
@@ -107,6 +107,15 @@ int main(int argc,char **argv) {
                 y.guard();if(adapter)hidden.guard();
             };
             for(bool adapter:{false,true,false}) {stage(.125f,-.25f,.25f);run(adapter,.125f,-.25f,.25f);}
+            Storage f32(gpu,rows,h,DType::FP32);
+            check(graph.supports_fp32_device_output(),"direct F32 output capability absent");
+            graph.launch_device(x.view,f32.view);const auto f32_result=graph.finish();check(f32_result.ok,f32_result.error);
+            check(f32_result.copied_output_bytes==size_t(rows)*h*4,"F32 byte receipt incorrect");
+            for(int r=0;r<rows;++r)for(int c=0;c<h;++c)
+                check(tc::gguf::float_to_bf16_rne(f32.value(r,c))==static_cast<uint16_t*>(y.row(r))[c],"F32 restore changed normalized computation or final BF16 rounding");
+            f32.guard();
+            graph.launch_device(x.view,f32.view,DeviceAdapterInput{dg.view,du.view,hidden.view});
+            check(!graph.finish().ok,"experimental F32 output silently widened/dropped LoRA hidden ABI");
             stage(-.25f,.125f,-.5f);run(true,-.25f,.125f,-.5f);
             stage(.125f,-.25f,0);run(true,.125f,-.25f,0);
             stage(.125f,-.25f,.25f);

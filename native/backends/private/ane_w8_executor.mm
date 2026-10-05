@@ -156,7 +156,9 @@ struct PrivateW8Graph::Impl {
              const std::function<void()> &first_submit={}) {
         const auto &s = shape;
         check(!disabled && current >= 0 && banks[current]->ready && input.rows > 0 && input.rows % s.rows == 0 && input.cols == s.hidden &&
-            output.rows == input.rows && output.cols == s.hidden && (output.dtype == DType::FP16 || output.dtype == DType::BF16), "W8 launch geometry/slots unavailable");
+            output.rows == input.rows && output.cols == s.hidden &&
+            (output.dtype == DType::FP16 || output.dtype == DType::BF16 ||
+                (output.dtype == DType::FP32 && basis==W8Basis::ComfyH256 && !adapter)), "W8 launch geometry/slots unavailable");
         check(!adapter || (s.lora_inputs && adapter->gate.rows == input.rows && adapter->up.rows == input.rows && adapter->hidden.rows == input.rows &&
             adapter->gate.cols == s.width && adapter->up.cols == s.width && adapter->hidden.cols == s.width && adapter->hidden.dtype == output.dtype), "W8 LoRA geometry mismatch");
         check(input.buffer != output.buffer && (!adapter || (adapter->hidden.buffer != output.buffer && adapter->hidden.buffer != input.buffer &&
@@ -239,7 +241,8 @@ struct PrivateW8Graph::Impl {
                     check(headroom<4096, "W8 exhausted headroom"); build(headroom*4); ++result.overflow_retries; continue;
                 }
                 check(!(flags&4), "W8 restored output exceeds target dtype");
-                result.copied_output_bytes += size_t(s.rows)*(s.hidden+(adapter?s.width:0))*2; break;
+                result.copied_output_bytes += size_t(s.rows)*s.hidden*(output.dtype==DType::FP32?4:2)+
+                    size_t(s.rows)*(adapter?s.width:0)*2; break;
             }
         }
         result.headroom_scale=headroom;
@@ -285,6 +288,7 @@ WeightCacheStats PrivateW8Graph::weight_cache_stats() const{return impl_->device
 StagePipelineStats PrivateW8Graph::stage_pipeline_stats() const{return impl_->device.stage_pipeline_stats();}
 bool PrivateW8Graph::device_submission_fence_enabled() const{return impl_->launch_fence;}
 bool PrivateW8Graph::activation_lookahead_enabled() const{return impl_->a8_lookahead;}
+bool PrivateW8Graph::supports_fp32_device_output() const{return impl_->basis==W8Basis::ComfyH256;}
 void PrivateW8Graph::stage_weights(std::vector<WeightView>){throw CapabilityError("W8 requires explicit GPU weight bindings");}
 void PrivateW8Graph::launch(MatrixView,uint16_t*,size_t,DType,std::optional<AdapterInput>){throw CapabilityError("W8 requires explicit GPU I/O bindings");}
 void PrivateW8Graph::stage_device_weights(std::vector<DeviceWeightView> sources){

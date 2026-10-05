@@ -60,6 +60,17 @@ class ConvRotFfnContractTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PASS 24 ConvRot GPU base/channel projection cases", result.stdout)
 
+    @unittest.skipUnless(os.environ.get("TURBOCIDER_TEST_GPU") == "1", "explicit Metal opt-in required")
+    def test_affine_fp32_partial_keeps_original_decode_dtype(self):
+        with tempfile.TemporaryDirectory(prefix="tc-affine-f32-") as directory:
+            root = Path(directory)
+            subprocess.run(["bash", "tools/native/build_affine_fp32_projection_test.sh"], cwd=ROOT, check=True,
+                           env={**os.environ, "TURBOCIDER_NATIVE_OUT": str(root)}, capture_output=True, text=True)
+            result = subprocess.run([str(root / "affine-fp32-projection-test")], cwd=ROOT,
+                                    capture_output=True, text=True, timeout=180)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("PASS 24 affine F32 partial cases", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
