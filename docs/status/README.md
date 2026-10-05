@@ -54,6 +54,10 @@ LoRA/质量/内存/device trace资格未完成，不升级默认路线。
 [full bucket](private-ane-full-bucket-2026-10-05.md)：新库Z1024狐/灯塔约
 1.214×/1.209×，Qwen1024约1.258×；保守边界亦超过1.2，但同提示词
 反序、最新库512/LoRA、完整质量/内存/并发与带宽calibration仍待验收。
+1024² Qwen LoRA限定生成开关、FP32 rank门禁、request-local编译GPU
+channel head及实机兼容接续见 [LoRA1024](private-ane-lora1024-2026-10-05.md)：
+Qwen1024约1.055×、Z1024现有LoRA约1.131×，Qwen512仍稍慢于GPU；
+同进程strength切换返回base逐位一致，完整质量与原目标仍未验收。
 
 先读 [GPU/ANE 加速：当前选择与维护入口](acceleration.md)。
 它统一维护默认/最快 base、完整 runtime LoRA、optional 和诊断边界。

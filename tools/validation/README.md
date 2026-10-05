@@ -37,6 +37,10 @@ callback counters，不能将 env 或 self-test 当作模型执行。Public/row�
 `--fixed-async 0|1` 仅用于positive fixed chunks且关闭profile的runtime消融。
 1复用untimed/async head，0保持固定分区计时；verifier要求实际成功block的
 untimed/async counters符合选择。该计数不是物理GPU/ANE overlap证据。
+`--qwen-lora-1024` 显式开启六步1024² LoRA生成diagnostic，对每条GPU/
+runtime路线采用同样的原FP32 rank，拒绝编辑、frozen和FP16混用；核验
+planned与actual 1024 LoRA标记、实际尺寸/步数/未合并binding，不把flag
+或self-test当模型执行/画质资格。原512²精度与入口不变。
 placement保留历史文件名和冻结图 `--blocks` 接口；runtime只有一个共享图，
 不是每层一个图，且不接受 `--blocks`。不要仅为命名统一移动这些入口。
 

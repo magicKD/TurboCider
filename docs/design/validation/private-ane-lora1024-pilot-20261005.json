@@ -1,0 +1,359 @@
+{
+  "schema": "tc-private-ane-lora1024-pilot-v1",
+  "implementation_commit": "e2c4be5",
+  "clean_staged_tree_rebuilt": false,
+  "archived_binaries_include_independent_convrot_worktree_edits": true,
+  "date": "2026-10-05",
+  "hardware": "Apple M4 Max 64GB",
+  "objective_complete": false,
+  "formal_four_way_1_2x_qualified": false,
+  "full_lora_media_latent_quality_qualified": false,
+  "native_int8_mac_observed": false,
+  "public_default_retained": true,
+  "lora_1024_default_enabled": false,
+  "lora_1024_scope": "explicit 1024x1024 resident 6-step generation; GPU/runtime only; original FP32 rank; no edit/PE/frozen/QKV/FP16 widening",
+  "initial_private_library": "401a447b4e55be67b42c936cf66538007d55ac576381186ceacfba7561ae1182",
+  "initial_public_library": "ae91aab4f9e6fd7f51cca1a57906aa26d7005054c02aa45a38c934a972367271",
+  "compiled_head_private_library": "f8399098537ef86260d23c7ba9b5ff88954510bfa7e58e719309e6339f947f99",
+  "compiled_head_public_library": "4d10b2fa00d9485ed854fb7849d53a66c5ea9a922d89ee4ce5601c1a5aaaa7c3",
+  "tests": {
+    "screen_host_passed": 57,
+    "diagnostic_options_host_passed": 1,
+    "initial_qwen_native_contract_private_passed": 32,
+    "initial_qwen_native_contract_public_passed": 32,
+    "compiled_qwen_native_contract_private_passed": 32,
+    "compiled_qwen_native_contract_public_passed": 32,
+    "initial_private_hardware_host_mlx_passed": 13,
+    "initial_public_coreml_mlx_passed": 13,
+    "compiled_private_hardware_host_mlx_passed": 13,
+    "compiled_public_coreml_mlx_passed": 13,
+    "actual_new_public_distribution_guards_passed": true,
+    "full_make_test_executed": false
+  },
+  "cases": [
+    {
+      "case": "private-ane-qwen1024-lora-c4224-first",
+      "summary": "outputs/private-ane-qwen1024-lora-c4224-first/summary.json",
+      "summary_sha256": "a2b0725dd6f659204d3a9ef07cb00f31694a625c05e537e1f022227300f90902",
+      "library_sha256": "401a447b4e55be67b42c936cf66538007d55ac576381186ceacfba7561ae1182",
+      "template_manifest": "outputs/runtime-ane/private-channel-qwen-c4224-k1024-n512-v2/manifest.json",
+      "template_manifest_sha256": "54d096382e5dcff94521f52f9cc80610dcb6fcf2e92d8fcea9874d974a4eed7e",
+      "model": "qwen-image-2.1",
+      "size": 1024,
+      "steps": 6,
+      "lora": {
+        "sha256": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
+        "strength": 1,
+        "strategy": "inference_time",
+        "rank_matmul_dtype": "fp32"
+      },
+      "ane_channels": 5120,
+      "route_order": [
+        "runtime",
+        "gpu"
+      ],
+      "gpu_hot_seconds": [
+        34.072644333,
+        34.1086965
+      ],
+      "private_hot_seconds": [
+        32.489281541,
+        32.544400083
+      ],
+      "median_speedup": 1.0484004462056844,
+      "conservative_min_gpu_over_max_private": 1.0469587470072401,
+      "load": {
+        "runtime": {
+          "samples": 198,
+          "evidence_sha256": "939e810a9f061b8c6896711c3a2229e7ad416a73cdfb50b1226bb20cdccaed76",
+          "observed_max_gap_ns": 577437208
+        },
+        "gpu": {
+          "samples": 189,
+          "evidence_sha256": "064e1003b3743a2ac9493893e387bfc32d07031ee4c301d4b8c818a30606eae1",
+          "observed_max_gap_ns": 579173167
+        }
+      },
+      "runtime_calls_per_request": [
+        192,
+        192,
+        192
+      ],
+      "fallback_blocks_session": 0,
+      "overflow_retries_session": 0,
+      "narrow_callbacks_session": 576,
+      "full_callbacks_session": 0,
+      "memory": {
+        "runtime": {
+          "sample_count": 1096,
+          "tree_peak_rss_bytes": 17831936000,
+          "tree_peak_phys_footprint_bytes": 32464925176,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 868352,
+          "evidence_sha256": "a50ded3653d7217dcddaa433192c6e96ca5d6e4ff4534c2c30d08f66a37e62a2",
+          "report_sha256": "f1c572898d4c4662f1eeec890475258501bad23fa7934a79e4a80d6a3fffeb17"
+        },
+        "gpu": {
+          "sample_count": 1058,
+          "tree_peak_rss_bytes": 17738072064,
+          "tree_peak_phys_footprint_bytes": 33343420288,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 113803264,
+          "decompression_bytes": 15351808,
+          "evidence_sha256": "a80b33c90c79f831aac6af62733545f3e779c26cdf02be5c8e5deadd9260a3f9",
+          "report_sha256": "b431906eb4c1da2738f915b9d69e9fae84027d759ad7f5d7e3cb2bbd2453a9c2"
+        }
+      },
+      "qwen_lora_1024_diagnostic": true
+    },
+    {
+      "case": "private-ane-qwen1024-lora-c4224-compiled",
+      "summary": "outputs/private-ane-qwen1024-lora-c4224-compiled/summary.json",
+      "summary_sha256": "da632a6590f1844e6a068a37bd5b57855fb1d7706f199bd2de83996acc667ac8",
+      "library_sha256": "f8399098537ef86260d23c7ba9b5ff88954510bfa7e58e719309e6339f947f99",
+      "template_manifest": "outputs/runtime-ane/private-channel-qwen-c4224-k1024-n512-v2/manifest.json",
+      "template_manifest_sha256": "54d096382e5dcff94521f52f9cc80610dcb6fcf2e92d8fcea9874d974a4eed7e",
+      "model": "qwen-image-2.1",
+      "size": 1024,
+      "steps": 6,
+      "lora": {
+        "sha256": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
+        "strength": 1,
+        "strategy": "inference_time",
+        "rank_matmul_dtype": "fp32"
+      },
+      "ane_channels": 5120,
+      "route_order": [
+        "gpu",
+        "runtime"
+      ],
+      "gpu_hot_seconds": [
+        34.036343666,
+        34.076063791
+      ],
+      "private_hot_seconds": [
+        32.374512791,
+        32.209547208
+      ],
+      "median_speedup": 1.054631862073314,
+      "conservative_min_gpu_over_max_private": 1.0513314558809974,
+      "load": {
+        "gpu": {
+          "samples": 191,
+          "evidence_sha256": "bab4d55c657d094bf8e9dc9bd71dd78bcbd1f9655ce9ae619d7c1fc128cf9797",
+          "observed_max_gap_ns": 587000291
+        },
+        "runtime": {
+          "samples": 192,
+          "evidence_sha256": "07b7102e8b52ba3457009e87799b343fcd7c5f16a5b1c7d300510f8b6085a238",
+          "observed_max_gap_ns": 580307709
+        }
+      },
+      "runtime_calls_per_request": [
+        192,
+        192,
+        192
+      ],
+      "fallback_blocks_session": 0,
+      "overflow_retries_session": 0,
+      "narrow_callbacks_session": 576,
+      "full_callbacks_session": 0,
+      "memory": {
+        "gpu": {
+          "sample_count": 1068,
+          "tree_peak_rss_bytes": 17738006528,
+          "tree_peak_phys_footprint_bytes": 34308274000,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 98304,
+          "evidence_sha256": "fc9a7cf796e3176c4de7343bf1cfd0cd440c0f92605289d559d4c1c55048465d",
+          "report_sha256": "c71f4c35261e63d0231e9c0ccfcf6e666bda9b0e9c71b41ef3938001f7cd0f0f"
+        },
+        "runtime": {
+          "sample_count": 1065,
+          "tree_peak_rss_bytes": 18913705984,
+          "tree_peak_phys_footprint_bytes": 30721961288,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 49152,
+          "evidence_sha256": "99e4f034b9dd788b9cc9bda9ac7bcbf5c699605890e5f95ee2f0d55e48dbf1f8",
+          "report_sha256": "52b017123246cead5a0763edbf43e8a23ceb9447e2f944d8de9cadd000aafb7d"
+        }
+      },
+      "qwen_lora_1024_diagnostic": true
+    },
+    {
+      "case": "private-ane-qwen512-lora-compiled-compat",
+      "summary": "outputs/private-ane-qwen512-lora-compiled-compat/summary.json",
+      "summary_sha256": "9c703f551ebdbdab14f5623f4b01f2ca4871b71821689332aa0641c249a0d594",
+      "library_sha256": "f8399098537ef86260d23c7ba9b5ff88954510bfa7e58e719309e6339f947f99",
+      "template_manifest": "outputs/runtime-ane/private-channel-qwen-c1056-k1024-n512-v2/manifest.json",
+      "template_manifest_sha256": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+      "model": "qwen-image-2.1",
+      "size": 512,
+      "steps": 6,
+      "lora": {
+        "sha256": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
+        "strength": 1,
+        "strategy": "inference_time",
+        "rank_matmul_dtype": "fp32"
+      },
+      "ane_channels": 5120,
+      "route_order": [
+        "runtime",
+        "gpu"
+      ],
+      "gpu_hot_seconds": [
+        8.033264416,
+        8.070048
+      ],
+      "private_hot_seconds": [
+        8.139823416,
+        8.217667666
+      ],
+      "median_speedup": 0.9844610237153237,
+      "conservative_min_gpu_over_max_private": 0.9775601475388259,
+      "load": {
+        "runtime": {
+          "samples": 49,
+          "evidence_sha256": "b014b388096f2b5ce4b7aa3880345a1a81c9508ec3e8c9357f7b3613fed55ebd",
+          "observed_max_gap_ns": 592646708
+        },
+        "gpu": {
+          "samples": 47,
+          "evidence_sha256": "c5818a9d8724e41daac1b3a84bb21b4441324b00a8c9a2d13f5b065551ccd4d4",
+          "observed_max_gap_ns": 593589583
+        }
+      },
+      "runtime_calls_per_request": [
+        192,
+        192,
+        192
+      ],
+      "fallback_blocks_session": 0,
+      "overflow_retries_session": 0,
+      "narrow_callbacks_session": 576,
+      "full_callbacks_session": 0,
+      "memory": null,
+      "qwen_lora_1024_diagnostic": false
+    },
+    {
+      "case": "private-ane-z1024-lora-c4224-compat",
+      "summary": "outputs/private-ane-z1024-lora-c4224-compat/summary.json",
+      "summary_sha256": "10fd24d96b0712c246a86c681485bea7a1b744cc75b106c75992ad6b2ff2423d",
+      "library_sha256": "f8399098537ef86260d23c7ba9b5ff88954510bfa7e58e719309e6339f947f99",
+      "template_manifest": "outputs/runtime-ane/private-channel-z-c4224-k1024-n512-v2/manifest.json",
+      "template_manifest_sha256": "20bdd4e619197d9ffa5060b5a1d3af000a15ed3f20135d7904d138e24fca2e77",
+      "model": "z-image-turbo",
+      "size": 1024,
+      "steps": 8,
+      "lora": {
+        "sha256": "340cc573d887681b89a45d850af77db43fb82dd994872be5d0a9d48649eb91c8",
+        "strength": 1,
+        "strategy": "inference_time"
+      },
+      "ane_channels": 4608,
+      "route_order": [
+        "gpu",
+        "runtime"
+      ],
+      "gpu_hot_seconds": [
+        36.964618459,
+        36.923258708
+      ],
+      "private_hot_seconds": [
+        32.724694333,
+        32.598425
+      ],
+      "median_speedup": 1.1311137300461591,
+      "conservative_min_gpu_over_max_private": 1.1282995750021754,
+      "load": {
+        "gpu": {
+          "samples": 207,
+          "evidence_sha256": "016b771e646da53d4210c5245ce9560eefeb1bdadead52d774f1f056adecb262",
+          "observed_max_gap_ns": 603816083
+        },
+        "runtime": {
+          "samples": 214,
+          "evidence_sha256": "161cdc1f361232c3e3df6daa8a79e8dbcbf646271750e8a1613a0ecade6c77e6",
+          "observed_max_gap_ns": 579733000
+        }
+      },
+      "runtime_calls_per_request": [
+        258,
+        256,
+        256
+      ],
+      "fallback_blocks_session": 0,
+      "overflow_retries_session": 2,
+      "narrow_callbacks_session": 768,
+      "full_callbacks_session": 0,
+      "memory": {
+        "gpu": {
+          "sample_count": 1147,
+          "tree_peak_rss_bytes": 12921634816,
+          "tree_peak_phys_footprint_bytes": 48988464872,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 32768,
+          "evidence_sha256": "7f89f116b96064de9a1a60b86aa0002fb4bfc5b1dc849fb234548f460b5ba9ba",
+          "report_sha256": "2ad6527794fb37bb3918523eae94b8c24fce4481100f9d6090b841e389751e30"
+        },
+        "runtime": {
+          "sample_count": 1179,
+          "tree_peak_rss_bytes": 13296599040,
+          "tree_peak_phys_footprint_bytes": 49019316064,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "evidence_sha256": "a1cf2901b5030a0dc8cf66c3ec06c58ee8b6c7ee02f3635ba549d78955ffa56e",
+          "report_sha256": "7c26a8064fc83b734b248311f4b25851be1ca46f46e0d5d2dc78ee45e08c54de"
+        }
+      },
+      "qwen_lora_1024_diagnostic": false
+    }
+  ],
+  "compiled_before_after": {
+    "qwen1024_two_hot_RGBA_pixels_bit_exact": true,
+    "qwen512_first_hot_vs_prior_private_RGBA_pixels_bit_exact": true,
+    "max_abs_u8": 0
+  },
+  "same_process_state": {
+    "verification": "outputs/private-ane-qwen1024-lora-shared-state/verification.json",
+    "original_summary_kept_incomplete": true,
+    "original_error": "base omits lora_applied_projections; fixed validation uses none strategy and plan lora_count=0",
+    "stdout_sha256": "091aca7550024c5f57089ca74834b751d87f749f75be1b0fce3bff875832572e",
+    "verification_scope": "independent CPU revalidation of preserved four-row CLI evidence; NOT performance or learned-adapter quality",
+    "actual_calls_per_request": [
+      192,
+      192,
+      192,
+      192
+    ],
+    "graph_rebuilt": false,
+    "base_before_after_RGBA_bit_exact": true,
+    "strength1_and_strength_half_outputs_differ": true,
+    "formal_quality_qualified": false
+  },
+  "download_window": {
+    "authorized": true,
+    "download_files_modified_or_removed": false,
+    "resumed": true,
+    "identity_revalidated_before_SIGCONT": true,
+    "ledger": "outputs/private-ane-lora1024-download-pause-ledger.json"
+  },
+  "all_owned_inference_handles_terminal": true,
+  "remaining": [
+    "same-library latest 512/1024 base forward/reverse >=1.2x with robust Z512 margin",
+    "multi-prompt/latent/perceptual/media and low-memory/driver/device-overlap qualification",
+    "more 512/1024 LoRA adapters and strengths; Qwen512 Private still slower than GPU",
+    "bandwidth-aware share/prefetch calibration"
+  ]
+}
