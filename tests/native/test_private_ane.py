@@ -121,6 +121,7 @@ class PrivateAneHardwareTests(unittest.TestCase):
                                     cwd=ROOT, capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("PASS W8 Executor", result.stdout)
+            self.assertIn("PASS full 4224-row W8 bucket", result.stdout)
             self.assertIn(f"bounded A8 lookahead={lookahead}", result.stdout)
             print(result.stdout.strip())
 

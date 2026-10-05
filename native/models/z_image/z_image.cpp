@@ -1286,7 +1286,11 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
     auto feed = runtime.run(block, pre[1], [&](const Tensor &input) {
         return (*gpu)({input, weights[0], weights[1], weights[2]})[0];
     }, cancelled, nullptr, [&](const Tensor &input,int first,int count) {
-        if (input.dtype() == mx::bfloat16 && z_image_small_shape_metal_default() && input.shape(1)<=1056) {
+        // This callback is consumed only by an explicit private channel
+        // split. Preserve the existing short-row path and use the same
+        // immutable physical-pitch kernels for the tested 1024px geometry.
+        // Ordinary GPU blocks and Public row executors do not take this path.
+        if (input.dtype() == mx::bfloat16 && z_image_small_shape_metal_default() && input.shape(1)<=4224) {
             auto u = z_metal::projection_range(input,weights[1],first,first+count,0,3840);
             auto hidden = z_metal::swiglu_gemm_range(input,weights[0],u,first,count);
             auto base = z_metal::projection_range(hidden,weights[2],0,3840,first,first+count);

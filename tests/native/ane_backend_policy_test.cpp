@@ -46,7 +46,9 @@ int main() {
     const auto w8 = private_api::w8_swiglu_program({Kind::SwiGLU, 33, 384, 512, 256, 512, true});
     const auto large = private_api::w8_swiglu_program({Kind::SwiGLU, 2112, 384, 512, 256, 512, false});
     if (large.mil.find("[1, 1, 384, 2112]")==std::string::npos || large.packed_rows!=385) return 1;
-    try { private_api::w8_swiglu_program({Kind::SwiGLU,4097,384,512,256,512,false});return 1; }
+    const auto full = private_api::w8_swiglu_program({Kind::SwiGLU,4224,384,512,256,512,false});
+    if (full.mil.find("[1, 1, 384, 4224]")==std::string::npos || full.packed_rows!=385) return 1;
+    try { private_api::w8_swiglu_program({Kind::SwiGLU,4225,384,512,256,512,false});return 1; }
     catch (const CapabilityError&) {}
     for (const auto &text : {"gw0q = slice_by_size(x = wg_t", "gw0 = dequantize(input = gw0q",
                             "gx256q = slice_by_size(x = x_t", "gx256 = dequantize(input = gx256q",

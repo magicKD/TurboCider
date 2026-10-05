@@ -131,11 +131,11 @@ std::string w8_matmul_program(const GraphShape &s) {
         " w) {\n" + body + "    } -> (y);\n}\n";
 }
 W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroom) {
-    // 1024px channel workloads exceed 4096 logical rows. A 2112-row bucket
-    // covers them in two calls without padding an entire third 2048-row
-    // chunk. Actual IOSurface allocations and optional-tier memory admission
-    // remain checked by the executor; this is not a hardware-speed claim.
-    if (s.kind != Kind::SwiGLU || s.rows <= 0 || s.rows > 4096 || s.hidden <= 0 || s.hidden > 4096 || s.hidden % 128 ||
+    // An explicit 4224-row bucket can cover 1024px image tokens and up to
+    // 128 caption tokens in one request. Keep the existing smaller buckets
+    // available: fewer handoffs are not a model-speed/quality guarantee.
+    // IOSurface extents, memory admission and full fallback remain checked.
+    if (s.kind != Kind::SwiGLU || s.rows <= 0 || s.rows > 4224 || s.hidden <= 0 || s.hidden > 4096 || s.hidden % 128 ||
         s.width <= 0 || s.width > 16384 || s.width % 512 || !std::isfinite(headroom) || headroom < 1 || headroom > 4096 ||
         std::log2(headroom) != std::floor(std::log2(headroom)))
         throw CapabilityError("private W8A8 SwiGLU geometry/headroom unsupported");

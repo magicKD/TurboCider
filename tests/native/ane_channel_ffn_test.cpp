@@ -12,8 +12,8 @@ int main(int argc,char**argv) {
         std::atomic<bool> cancelled{false};
         // Same kernel math on original physical pitch vs compact reference.
         // Include nonzero row/column starts, tails, both supported dtypes.
-        for(auto dtype:{mx::bfloat16,mx::float16}) for(int tile:{16,32}) {
-            auto x=mx::astype(mx::random::normal({1,33,512},mx::float32,mx::random::key(3))*.1f,dtype);
+        for(auto dtype:{mx::bfloat16,mx::float16}) for(int tile:{16,32}) for(int rows:{33,4128}) {
+            auto x=mx::astype(mx::random::normal({1,rows,512},mx::float32,mx::random::key(3))*.1f,dtype);
             auto w=mx::astype(mx::random::normal({96,1024},mx::float32,mx::random::key(4))*.1f,dtype);
             auto compact=mx::contiguous(slice_axis(slice_axis(w,0,7,72),1,512,1024));
             auto wide=z_metal::projection_range(x,w,7,72,512,1024,tile);
@@ -24,8 +24,8 @@ int main(int argc,char**argv) {
             catch(const std::invalid_argument&) { bad_tile=true; }
             check(bad_tile,"invalid MPP range tile accepted");
         }
-        {
-            auto x=mx::astype(mx::random::normal({1,33,3840},mx::float32,mx::random::key(13))*.1f,mx::bfloat16);
+        for(int rows:{33,4128}) {
+            auto x=mx::astype(mx::random::normal({1,rows,3840},mx::float32,mx::random::key(13))*.1f,mx::bfloat16);
             auto g=mx::astype(mx::random::normal({10240,3840},mx::float32,mx::random::key(14))*.01f,mx::bfloat16);
             auto u=mx::astype(mx::random::normal({10240,3840},mx::float32,mx::random::key(15))*.01f,mx::bfloat16);
             auto snap_g=mx::copy(g),snap_u=mx::copy(u);mx::eval({x,g,u,snap_g,snap_u});

@@ -183,6 +183,11 @@ int main(int argc, char **argv) {
                                   std::filesystem::path(argv[1])/"large-rows");
         check(large_graph.self_test(error),error);
         check(large_graph.slot_bytes()<=large_graph.estimated_bytes(),"large-row slot estimate understated");
+        PrivateW8Graph full_graph({Kind::SwiGLU,4224,384,512,256,512,false},256u<<20,
+                                 std::filesystem::path(argv[1])/"full-rows");
+        check(full_graph.self_test(error),error);
+        check(full_graph.slot_bytes()<=full_graph.estimated_bytes(),"full-row slot estimate understated");
+        std::cout<<"PASS full 4224-row W8 bucket: actual driver, three weight generations and every output row\n";
         std::cout<<"PASS W8 Executor: two W banks, bounded A8 lookahead="<<lookahead<<", three-chunk A8 reuse, padded GPU sources/I/O, base-A-base, hidden ABI, headroom retry, failed staging/alias/nonfinite rejection and recovery\n";
       } catch(const std::exception&e) { std::cerr<<e.what()<<"\n";return 1; }
     }

@@ -353,7 +353,13 @@ bool PrivateW8Graph::self_test(std::string &error){
             double diff=0,norm=0;
             for(int r=0;r<s.rows;++r)for(int c=0;c<s.hidden;++c){const int input=(c%s.width)%s.hidden;const float v=static_cast<const float*>(x.value.contents)[r*s.hidden+input]*scale;
                 const float expected=v/(1+std::exp(-v))*v*scale;const float actual=std::bit_cast<float>(uint32_t(static_cast<const uint16_t*>(y.value.contents)[r*s.hidden+c])<<16);
-                check(std::isfinite(actual),"W8 self-test nonfinite");diff+=double(actual-expected)*(actual-expected);norm+=double(expected)*expected;}
+                check(std::isfinite(actual),"W8 self-test nonfinite");
+                // Aggregate L2 alone can hide a missing/corrupt final row in
+                // a large bucket. Retain that original gate AND independently
+                // bound every scalar against this sparse source oracle.
+                check(std::abs(actual-expected)<=.0003f+.08f*std::abs(expected),
+                      "W8 self-test pointwise source mismatch");
+                diff+=double(actual-expected)*(actual-expected);norm+=double(expected)*expected;}
             check(norm>0&&std::sqrt(diff/norm)<.05,"W8 numerical/weight-switch self-test failed");
         }
         p.verified=true;for(auto&b:p.banks)b->ready=false;p.current=-1;p.result={};
