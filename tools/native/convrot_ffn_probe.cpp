@@ -100,6 +100,30 @@ void rotation_integration() {
     }
 }
 
+void projection_ranges() {
+    int cases=0;
+    for(bool metal:{false,true})for(int group:{0,32,64,128})
+        for(auto dtype:{mx::bfloat16,mx::float16,mx::float32}) {
+            auto weights=fixture(512,1024,true,false);
+            weights.set_metal_convrot(metal);
+            if(group)weights.pack_convrot_q8(group,mx::bfloat16);
+            auto x=input(33,512,dtype,true);
+            auto base=weights.project_base_slice(x,"ffn.w1",512,1024,0,512,false);
+            auto control=weights.project_range(x,"ffn.w1",512,1024,0,512);
+            auto biased=weights.project_slice(x,"ffn.w1",512,1024,0,512,true);
+            auto expected_bias=control+mx::astype(slice_axis(weights.at("ffn.w1.bias"),0,512,1024),control.dtype());
+            auto hidden=input(33,512,dtype,true);
+            auto down=weights.project_base_slice(hidden,"ffn.w2",0,512,512,1024,false);
+            auto down_control=weights.project_range(hidden,"ffn.w2",0,512,512,1024);
+            mx::eval({base,control,biased,expected_bias,down,down_control});
+            require(mx::all(base==control).item<bool>() && mx::all(biased==expected_bias).item<bool>() &&
+                mx::all(down==down_control).item<bool>(),"ConvRot base/channel projection changed source semantics");
+            ++cases;
+        }
+    std::cout<<"PASS 24 ConvRot GPU base/channel projection cases: raw/packed, dense/Metal H256, all dtypes, sliced bias and base-only down\n";
+    require(cases==24,"ConvRot range case count mismatch");
+}
+
 double median(std::vector<double> values) {
     std::sort(values.begin(), values.end());
     const size_t mid = values.size() / 2;
@@ -152,6 +176,7 @@ int main(int argc, char **argv) {
     try {
         if (argc == 1) parity();
         else if (argc == 2 && std::string(argv[1]) == "rotation-integration") rotation_integration();
+        else if (argc == 2 && std::string(argv[1]) == "projection-ranges") projection_ranges();
         else {
             require(argc == 5, "usage: convrot-ffn-probe [rows hidden width iterations]");
             benchmark(std::stoi(argv[1]), std::stoi(argv[2]), std::stoi(argv[3]), std::stoi(argv[4]));

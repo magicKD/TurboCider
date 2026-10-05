@@ -49,6 +49,17 @@ class ConvRotFfnContractTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(result.stdout.count("PASS integrated ConvRot quad:"), 2)
 
+    @unittest.skipUnless(os.environ.get("TURBOCIDER_TEST_GPU") == "1", "explicit Metal opt-in required")
+    def test_convrot_base_channel_projection_preserves_source_basis(self):
+        with tempfile.TemporaryDirectory(prefix="tc-convrot-ranges-") as directory:
+            root = Path(directory)
+            subprocess.run(["bash", "tools/native/build_convrot_ffn_probe.sh"], cwd=ROOT, check=True,
+                           env={**os.environ, "TURBOCIDER_NATIVE_OUT": str(root)}, capture_output=True, text=True)
+            result = subprocess.run([str(root / "convrot-ffn-probe"), "projection-ranges"], cwd=ROOT,
+                                    capture_output=True, text=True, timeout=180)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("PASS 24 ConvRot GPU base/channel projection cases", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,7 @@ namespace tc::ane::private_api {
 inline constexpr const char *transfer_source = R"metal(
 #include <metal_stdlib>
 using namespace metal;
-struct Params { uint rows, cols, source_pitch, target_pitch, dtype, validate_only; float scale; uint row_scale_pitch, scaled, second_scaled; };
+struct Params { uint rows, cols, source_pitch, target_pitch, dtype, validate_only; float scale; uint row_scale_pitch, scaled, second_scaled, signed_row_scale; };
 inline float from_half(ushort h) {
     uint sign = uint(h & 0x8000) << 16, e = (h >> 10) & 31, m = h & 1023;
     if (!e) {
@@ -83,7 +83,7 @@ kernel void tc_ane_restore(device const ushort *src [[buffer(0)]], device uchar 
             float value = from_half(block[t.x][j]) * p.scale;
             if (p.scaled) {
                 float w = from_half(row_scales[c * p.row_scale_pitch / 2]), x = from_half(token_scales[r]);
-                if (!isfinite(w) || !isfinite(x) || w <= 0 || x <= 0) {
+                if (!isfinite(w) || !isfinite(x) || (!p.signed_row_scale && w <= 0) || x <= 0) {
                     atomic_fetch_or_explicit(status, 2u, memory_order_relaxed); w = x = 1;
                 }
                 value = (value * w) * x;

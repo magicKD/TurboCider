@@ -880,7 +880,9 @@ static NSDictionary *runtime_plan(const RunResult &result) {
         if (!m.runtime_weight_backend.empty()) {
             const bool channels = m.runtime_weight_partition_axis == "intermediate_channels";
             const bool w8 = m.runtime_weight_data_path == "w8a8_hadamard";
-            [approximations addObject:w8 ?
+            const bool comfy = m.runtime_weight_data_path == "w8a8_convrot";
+            [approximations addObject:comfy ?
+                (channels ? @"runtime_weight_w8a8_convrot_channel_ffn" : @"runtime_weight_w8a8_convrot_token_row_ffn") : w8 ?
                 (channels ? @"runtime_weight_w8a8_hadamard_channel_ffn" : @"runtime_weight_w8a8_hadamard_token_row_ffn") :
                 (channels ? @"runtime_weight_fp16_channel_ffn" : @"runtime_weight_fp16_token_row_ffn")];
         }

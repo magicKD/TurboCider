@@ -6,7 +6,8 @@ namespace tc::ane {
 // Actual ANE INT8 arithmetic is not asserted. Caller owns one host thread.
 class PrivateW8Graph final : public Executor {
   public:
-    PrivateW8Graph(GraphShape, size_t budget, const std::filesystem::path &cache = {});
+    PrivateW8Graph(GraphShape, size_t budget, const std::filesystem::path &cache = {},
+                   W8Basis basis = W8Basis::SylvesterDH);
     ~PrivateW8Graph() override;
     BackendKind backend() const override { return BackendKind::PrivateANE; }
     const GraphShape &shape() const override;
@@ -18,7 +19,7 @@ class PrivateW8Graph final : public Executor {
     bool supports_device_weights() const override { return true; }
     bool supports_device_weight_regions() const override { return true; }
     bool supports_weight_prefetch() const override { return true; }
-    std::string data_path() const override { return "w8a8_hadamard"; }
+    std::string data_path() const override;
     std::string weight_recipe() const override;
     WeightCacheStats weight_cache_stats() const override;
     StagePipelineStats stage_pipeline_stats() const override;

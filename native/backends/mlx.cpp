@@ -683,7 +683,11 @@ Tensor Weights::project_base_slice(const Tensor &x, const std::string &prefix,
             "invalid sliced projection geometry: " + prefix);
 
     Tensor output = x;
-    if (quantized(prefix)) {
+    if (convrot(prefix)) {
+        // Base projection only: project_slice applies gate/up LoRA below;
+        // channel callers join full corrected hidden before ONE down-LoRA.
+        output=project_range(x,prefix,row_start,row_end,col_start,col_end);
+    } else if (quantized(prefix)) {
         const auto &all_scales = at(prefix + ".scales");
         // GGUF/MLX affine tensors store one scale per 32 logical input
         // values.  Derive the full logical width from the scale matrix,

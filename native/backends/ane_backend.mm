@@ -26,10 +26,12 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
         try {
 #ifdef TURBOCIDER_ENABLE_PRIVATE_ANE
             const std::string path = std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH") ? std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH") : "fp16";
-            if (path != "fp16" && path != "w8a8") throw std::runtime_error("TURBOCIDER_PRIVATE_ANE_DATA_PATH requires fp16 or w8a8");
-            if (channels && path != "w8a8") throw std::runtime_error("channel split requires the W8A8 data path");
+            if (path != "fp16" && path != "w8a8" && path != "convrot_w8a8")
+                throw std::runtime_error("TURBOCIDER_PRIVATE_ANE_DATA_PATH requires fp16, w8a8 or convrot_w8a8");
+            if (channels && path == "fp16") throw std::runtime_error("channel split requires the W8A8 data path");
             if (channels) shape.width = channels; // base template still validated against the FULL model
-            std::unique_ptr<Executor> graph = path == "w8a8" ? std::unique_ptr<Executor>(std::make_unique<PrivateW8Graph>(shape,budget)) :
+            std::unique_ptr<Executor> graph = path != "fp16" ? std::unique_ptr<Executor>(std::make_unique<PrivateW8Graph>(shape,budget,
+                std::filesystem::path{},path=="convrot_w8a8"?W8Basis::ComfyH256:W8Basis::SylvesterDH)) :
                 std::unique_ptr<Executor>(std::make_unique<PrivateGraph>(shape,budget));
             std::string error;
             const auto start = std::chrono::steady_clock::now();

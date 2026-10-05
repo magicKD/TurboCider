@@ -181,8 +181,8 @@ bool same_scale_key(const DeviceWeightRegion&a,const DeviceWeightRegion&b) {
     return same_generation(x.allocation_identity,y.allocation_identity)&&meta(x.scales,y.scales)&&meta(x.offsets,y.offsets)&&
         std::tie(x.buffer,x.buffer_bytes,x.offset_bytes,x.row_stride_bytes,x.rows,x.cols,x.encoding,x.dense_dtype,x.group_size)==
         std::tie(y.buffer,y.buffer_bytes,y.offset_bytes,y.row_stride_bytes,y.rows,y.cols,y.encoding,y.dense_dtype,y.group_size)&&
-        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose)==
-        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose);
+        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose,p.basis)==
+        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose,q.basis);
 }
 bool live_scale_key(const DeviceWeightRegion&key) {
     return !key.source.allocation_identity.expired() &&
@@ -213,7 +213,7 @@ struct Device::Impl {
     bool specialize_staging = false;
     struct W8Pipelines { id<MTLComputePipelineState> scales, codes; };
     std::mutex pipelines_mutex;
-    // At most (3 dense dtypes + 6 packed encodings) * 2 rotation blocks.
+    // At most 18 Sylvester variants + 3 Comfy A dtypes + 2 direct W formats.
     // Keys retain no source allocation or model/adapter values.
     std::map<std::array<uint32_t,3>,W8Pipelines> w8_pipelines;
     W8Pipelines pipelines(DeviceWeightEncoding encoding,DType dtype,int block) {
@@ -230,9 +230,10 @@ struct Device::Impl {
             require(w8_scale_copy!=nil,"W8 scale metadata copy pipeline unavailable");
         }
         std::array<uint32_t,3> key{0,0,0};
-        if(specialize_staging)key={uint32_t(encoding),encoding==DeviceWeightEncoding::Dense?uint32_t(dtype):0u,uint32_t(block)};
+        const bool direct = encoding==DeviceWeightEncoding::ConvrotQ8Signed || encoding==DeviceWeightEncoding::ConvrotQ8Packed;
+        if(specialize_staging || direct)key={uint32_t(encoding),encoding==DeviceWeightEncoding::Dense?uint32_t(dtype):0u,uint32_t(block)};
         auto found=w8_pipelines.find(key);if(found!=w8_pipelines.end())return found->second;
-        require(w8_pipelines.size()<18,"W8 pipeline variant bound exceeded");
+        require(w8_pipelines.size()<23,"W8 pipeline variant bound exceeded");
         MTLFunctionConstantValues *constants=[MTLFunctionConstantValues new];
         const bool specialized=specialize_staging;
         [constants setConstantValue:&specialized type:MTLDataTypeBool atIndex:0];
@@ -246,7 +247,8 @@ struct Device::Impl {
                     "W8 pipeline rotation/SIMD capacity unsupported");
             return pipeline;
         };
-        result.scales=make(@"tc_ane_w8_scales");result.codes=make(@"tc_ane_w8_codes");
+        result.scales=make(direct?@"tc_ane_convrot_scales":@"tc_ane_w8_scales");
+        result.codes=make(direct?@"tc_ane_convrot_codes":@"tc_ane_w8_codes");
         w8_pipelines.emplace(key,result);return result;
     }
     std::mutex scale_cache_mutex;
@@ -399,7 +401,7 @@ void validate_device(const DeviceMatrixView &v, id<MTLDevice> device, bool outpu
         v.offset_bytes <= v.buffer_bytes && size_t(v.rows - 1) * pitch + row <= v.buffer_bytes - v.offset_bytes,
         "private ANE device binding extent/device mismatch");
 }
-struct TransferParams { uint32_t rows, cols, source_pitch, target_pitch, dtype, validate_only; float scale; uint32_t row_scale_pitch, scaled, second_scaled; };
+struct TransferParams { uint32_t rows, cols, source_pitch, target_pitch, dtype, validate_only; float scale; uint32_t row_scale_pitch, scaled, second_scaled, signed_row_scale; };
 }
 Transfer Device::prepare_transfer(std::vector<Upload> uploads, std::vector<Download> downloads,
                                   uint64_t ready, uint64_t done) {
@@ -425,6 +427,9 @@ Transfer Device::prepare_transfer_impl(std::vector<Upload> uploads, std::vector<
             if (d.second_token_scales) require(d.second_token_scales->element() == Element::FP16 && d.second_token_scales->rows() == 1 &&
                 d.second_token_scales->columns() == d.source.columns(), "private ANE secondary scale geometry mismatch");
             require(bool(d.row_scales) == bool(d.token_scales), "private ANE W8 epilogue requires both scales");
+            require(d.row_scale_policy==RowScalePolicy::Positive ||
+                (d.row_scale_policy==RowScalePolicy::SignedFinite && d.row_scales),
+                "private ANE signed row-scale policy requires explicit row/token scales");
             if (d.row_scales) require(d.row_scales->element() == Element::FP16 && d.row_scales->rows() == d.source.rows() &&
                 d.row_scales->columns() == 1 && d.token_scales->element() == Element::FP16 && d.token_scales->rows() == 1 &&
                 d.token_scales->columns() == d.source.columns(), "private ANE W8 epilogue scale geometry mismatch");
@@ -484,7 +489,7 @@ void Transfer::submit() {
         for (const auto &u : state->uploads) {
             const auto &v = u.source;
             TransferParams p{u.destination.columns(), u.destination.rows(), uint32_t(device_pitch(v)),
-                uint32_t(u.destination.pitch()), uint32_t(v.dtype), 0, u.scale, 0, 0, 0};
+                uint32_t(u.destination.pitch()), uint32_t(v.dtype), 0, u.scale, 0, 0, 0, 0};
             [pack setBuffer:(__bridge id<MTLBuffer>)v.buffer offset:v.offset_bytes + size_t(u.begin_row) * device_pitch(v) atIndex:0];
             [pack setBuffer:u.destination.impl_->buffer offset:size_t(u.destination.row_begin_) * u.destination.pitch() atIndex:1];
             [pack setBuffer:state->status offset:0 atIndex:2]; [pack setBytes:&p length:sizeof(p) atIndex:3];
@@ -507,7 +512,8 @@ void Transfer::submit() {
         for (const auto &d : state->downloads) {
             TransferParams p{d.source.columns(), d.source.rows(), uint32_t(d.source.pitch()),
                 uint32_t(d.destination ? device_pitch(*d.destination) : 2), uint32_t(d.dtype), uint32_t(!d.destination), d.scale,
-                uint32_t(d.row_scales ? d.row_scales->pitch() : 0), uint32_t(d.row_scales.has_value()), uint32_t(d.second_token_scales.has_value())};
+                uint32_t(d.row_scales ? d.row_scales->pitch() : 0), uint32_t(d.row_scales.has_value()), uint32_t(d.second_token_scales.has_value()),
+                uint32_t(d.row_scale_policy==RowScalePolicy::SignedFinite)};
             [restore setBuffer:d.source.impl_->buffer offset:size_t(d.source.row_begin_) * d.source.pitch() atIndex:0];
             if (d.destination) {
                 const auto &v = *d.destination;
@@ -576,7 +582,7 @@ struct W8Params {
     uint32_t source_pitch, physical_cols, encoding, dtype, group_size;
     uint32_t meta_pitch, meta_dtype, offset_pitch, offset_dtype, has_offset;
     uint32_t row_begin, rows, column_begin, columns, block, code_pitch, scale_pitch, transpose;
-    uint32_t source_aligned, seed_low, seed_high;
+    uint32_t source_aligned, seed_low, seed_high, basis;
     float norm;
 };
 size_t w8_source_row_bytes(const DeviceWeightView &v) {
@@ -588,6 +594,8 @@ size_t w8_source_row_bytes(const DeviceWeightView &v) {
         const int bits = v.encoding == DeviceWeightEncoding::AffineQ4 ? 4 : 8;
         require(v.cols % (32 / bits) == 0, "W8 affine packed width mismatch"); return size_t(v.cols) * bits / 8;
     }
+    case DeviceWeightEncoding::ConvrotQ8Signed: case DeviceWeightEncoding::ConvrotQ8Packed:
+        require(v.cols % 256 == 0, "W8 ConvRot requires complete H256 groups"); return size_t(v.cols);
     case DeviceWeightEncoding::GgufQ4_0:
         require(v.cols % 32 == 0, "W8 Q4_0 block geometry mismatch"); return size_t(v.cols) / 32 * 18;
     case DeviceWeightEncoding::GgufQ4_K:
@@ -607,6 +615,12 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
                 "W8 source binding invalid");
         const size_t row_bytes = w8_source_row_bytes(source);
         const size_t pitch = source.row_stride_bytes ? source.row_stride_bytes : row_bytes;
+        const bool comfy = spec.basis==W8Basis::ComfyH256;
+        const bool direct = source.encoding==DeviceWeightEncoding::ConvrotQ8Signed || source.encoding==DeviceWeightEncoding::ConvrotQ8Packed;
+        require((spec.basis==W8Basis::SylvesterDH || comfy) &&
+            (!comfy ? !direct : spec.rotation_block==256 && spec.rotation_seed==0 &&
+                (direct ? !spec.transpose : spec.transpose && source.encoding==DeviceWeightEncoding::Dense)),
+            "W8 Comfy direct-W/activation basis mismatch");
         id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)source.buffer;
         require(buffer.device == impl_->device && source.buffer_bytes <= buffer.length && pitch >= row_bytes && pitch <= UINT32_MAX &&
             pitch <= SIZE_MAX / size_t(source.rows) && source.offset_bytes <= source.buffer_bytes &&
@@ -614,14 +628,16 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             "W8 source device/extent/pitch mismatch");
         require(spec.rows > 0 && spec.rows <= 32768 && spec.row_begin >= 0 && spec.row_begin <= source.rows && spec.rows <= source.rows - spec.row_begin &&
             spec.columns > 0 && spec.column_begin >= 0 && spec.column_begin <= source.cols && spec.columns <= source.cols - spec.column_begin &&
-            (spec.rotation_block == 128 || spec.rotation_block == 512) && spec.columns % spec.rotation_block == 0 &&
+            (comfy ? spec.rotation_block==256 : spec.rotation_block == 128 || spec.rotation_block == 512) && spec.columns % spec.rotation_block == 0 &&
             spec.column_begin % spec.rotation_block == 0, "W8 slice/rotation geometry mismatch");
         require(codes.element() == Element::I8 && scales.element() == Element::FP16 &&
+            codes.impl_->buffer.device==impl_->device && scales.impl_->buffer.device==impl_->device &&
             codes.rows() == uint32_t(spec.transpose ? spec.columns : spec.rows) && codes.columns() == uint32_t(spec.transpose ? spec.rows : spec.columns) &&
             scales.rows() == uint32_t(spec.transpose ? 1 : spec.rows) && scales.columns() == uint32_t(spec.transpose ? spec.rows : 1),
             "W8 target surface geometry/type mismatch");
-        const bool affine = source.encoding == DeviceWeightEncoding::AffineQ4 || source.encoding == DeviceWeightEncoding::AffineQ8;
-        require(affine || (!source.scales && !source.offsets), "W8 non-affine source cannot have affine metadata");
+        const bool packed_comfy = source.encoding==DeviceWeightEncoding::ConvrotQ8Packed;
+        const bool affine = source.encoding == DeviceWeightEncoding::AffineQ4 || source.encoding == DeviceWeightEncoding::AffineQ8 || packed_comfy;
+        require(affine || direct || (!source.scales && !source.offsets), "W8 non-affine source cannot have affine metadata");
         if (affine) {
             require(source.scales && (source.group_size == 32 || source.group_size == 64 || source.group_size == 128 || source.group_size == 256) &&
                 source.cols % source.group_size == 0, "W8 affine group/scale mismatch");
@@ -630,6 +646,13 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
                 require((**meta).rows == source.rows && (**meta).cols == source.cols / source.group_size,
                         "W8 affine metadata physical geometry mismatch");
             }
+        }
+        if (packed_comfy) require(source.offsets.has_value(), "W8 packed ConvRot requires signed offsets");
+        if (source.encoding==DeviceWeightEncoding::ConvrotQ8Signed) {
+            require(source.scales && !source.offsets, "W8 signed ConvRot requires original row scales only");
+            validate_device(*source.scales,impl_->device,false);
+            require(source.scales->rows==source.rows && source.scales->cols==1 && source.scales->dtype==DType::FP32,
+                    "W8 signed ConvRot requires one FP32 scale per physical row");
         }
         // Alias includes unused physical storage: an immutable source/metadata
         // must not be overwritten by either target, even for a logical slice.
@@ -651,7 +674,7 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
         require(state->status && state->event, "W8 stage status/event allocation failed");
         bool scale_hit=false;
         const DeviceWeightRegion key=weak_scale_key(state->source,spec);
-        if(impl_->scale_stats.enabled && state->source.immutable_generation && !spec.transpose && live_scale_key(key)) {
+        if(impl_->scale_stats.enabled && state->source.immutable_generation && !spec.transpose && !direct && live_scale_key(key)) {
             std::lock_guard lock(impl_->scale_cache_mutex);
             for(auto it=impl_->scale_cache.begin();it!=impl_->scale_cache.end();) {
                 if(!live_scale_key((*it)->key)) {impl_->scale_stats.bytes-=(*it)->buffer.length;it=impl_->scale_cache.erase(it);++impl_->scale_stats.evictions;}
@@ -682,7 +705,7 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             uint32_t(s.offsets ? device_pitch(*s.offsets) : 0), uint32_t(s.offsets ? s.offsets->dtype : DType::FP16), uint32_t(s.offsets.has_value()),
             uint32_t(spec.row_begin), uint32_t(spec.rows), uint32_t(spec.column_begin), uint32_t(spec.columns), uint32_t(spec.rotation_block),
             uint32_t(state->codes.pitch()), uint32_t(spec.transpose ? 2 : state->scales.pitch()), uint32_t(spec.transpose),
-            uint32_t(source_aligned), uint32_t(spec.rotation_seed), uint32_t(spec.rotation_seed >> 32), 1.f / std::sqrt(float(spec.rotation_block))};
+            uint32_t(source_aligned), uint32_t(spec.rotation_seed), uint32_t(spec.rotation_seed >> 32), uint32_t(spec.basis), 1.f / std::sqrt(float(spec.rotation_block))};
         // A8 must not queue behind an independently prepared future W bank.
         id<MTLCommandBuffer> command = [(spec.transpose ? impl_->activation_queue : impl_->staging_queue) commandBuffer];
         require(command != nil, "W8 stage command buffer unavailable");
@@ -713,7 +736,9 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             [scale setBuffer:state->scales.impl_->buffer offset:size_t(state->scales.row_begin_) * state->scales.pitch() atIndex:3];
             [scale setBuffer:state->status offset:0 atIndex:4]; [scale setBytes:&p length:sizeof(p) atIndex:5];
             [scale setBuffer:state->signs offset:0 atIndex:6];
-            [scale dispatchThreadgroups:MTLSizeMake(spec.rows, 1, 1) threadsPerThreadgroup:MTLSizeMake(spec.rotation_block, 1, 1)]; [scale endEncoding];
+            if (direct) [scale dispatchThreads:MTLSizeMake(spec.rows,1,1) threadsPerThreadgroup:MTLSizeMake(64,1,1)];
+            else [scale dispatchThreadgroups:MTLSizeMake(spec.rows, 1, 1) threadsPerThreadgroup:MTLSizeMake(spec.rotation_block, 1, 1)];
+            [scale endEncoding];
             if(state->cached_scales)copy_scales(false);
         }
         id<MTLComputeCommandEncoder> quant = [command computeCommandEncoder];
@@ -723,7 +748,9 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
         [quant setBuffer:state->codes.impl_->buffer offset:size_t(state->codes.row_begin_) * state->codes.pitch() atIndex:4];
         [quant setBuffer:state->status offset:0 atIndex:5]; [quant setBytes:&p length:sizeof(p) atIndex:6];
         [quant setBuffer:state->signs offset:0 atIndex:7];
-        [quant dispatchThreadgroups:MTLSizeMake(spec.rows, spec.columns / spec.rotation_block, 1) threadsPerThreadgroup:MTLSizeMake(spec.rotation_block, 1, 1)]; [quant endEncoding];
+        if (direct) [quant dispatchThreads:MTLSizeMake(spec.columns,spec.rows,1) threadsPerThreadgroup:MTLSizeMake(256,1,1)];
+        else [quant dispatchThreadgroups:MTLSizeMake(spec.rows, spec.columns / spec.rotation_block, 1) threadsPerThreadgroup:MTLSizeMake(spec.rotation_block, 1, 1)];
+        [quant endEncoding];
         [command encodeSignalEvent:state->event value:1];
         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
             if (completed.status == MTLCommandBufferStatusError && state->event.signaledValue < 1) state->event.signaledValue = 1;

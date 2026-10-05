@@ -130,7 +130,7 @@ std::string w8_matmul_program(const GraphShape &s) {
     return "program(1.3)\n{\n    func main_ane<ios18>(" + input_buffer(s.hidden, s.rows) + " x, " + input_buffer(s.width, s.hidden) +
         " w) {\n" + body + "    } -> (y);\n}\n";
 }
-W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroom) {
+W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroom, W8Basis basis) {
     // An explicit 4224-row bucket can cover 1024px image tokens and up to
     // 128 caption tokens in one request. Keep the existing smaller buckets
     // available: fewer handoffs are not a model-speed/quality guarantee.
@@ -139,20 +139,26 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
         s.width <= 0 || s.width > 16384 || s.width % 512 || !std::isfinite(headroom) || headroom < 1 || headroom > 4096 ||
         std::log2(headroom) != std::floor(std::log2(headroom)))
         throw CapabilityError("private W8A8 SwiGLU geometry/headroom unsupported");
+    const bool comfy=basis==W8Basis::ComfyH256;
+    if ((basis!=W8Basis::SylvesterDH && !comfy) || (comfy && (s.hidden%256 || seed!=0)))
+        throw CapabilityError("private W8A8 Comfy basis/seed/geometry unsupported");
+    const int rotation_block=comfy?256:512;
     W8FfnProgram result;
     result.headroom = headroom; result.packed_rows = s.hidden + 1 + (s.lora_inputs ? s.width : 0);
     if (result.packed_rows > 32768) throw CapabilityError("private W8A8 packed output too tall");
-    // A model-independent grouped H512 convolution blob, never checkpoint W.
-    const uint64_t count = uint64_t(s.width) * 512, bytes = count * 2;
+    // Model-independent grouped H, never checkpoint W. Comfy is a distinct
+    // direct-code basis, NOT a different seed of the Sylvester recipe.
+    const uint64_t count = uint64_t(s.width) * rotation_block, bytes = count * 2;
     result.constants.resize(128 + bytes);
     auto put = [&](size_t at, auto value) { std::memcpy(result.constants.data() + at, &value, sizeof(value)); };
     put(0, uint32_t(1)); put(4, uint32_t(2)); put(64, uint32_t(0xdeadbeef)); put(68, uint32_t(1));
     put(72, bytes); put(80, uint64_t(128));
-    const float norm = 1.f / std::sqrt(512.f);
-    for (int out = 0; out < s.width; ++out) for (int in = 0; in < 512; ++in) {
-        const int lane = out % 512;
-        const float h = (std::popcount(unsigned(lane & in)) & 1) ? -1.f : 1.f;
-        put(128 + (size_t(out) * 512 + in) * 2, std::bit_cast<uint16_t>(_Float16(float(rotation_sign(seed, in)) * h * norm)));
+    const float norm = 1.f / std::sqrt(float(rotation_block));
+    for (int out = 0; out < s.width; ++out) for (int in = 0; in < rotation_block; ++in) {
+        const int lane = out % rotation_block;
+        const float sign = comfy ? float(comfy_h256_sign(lane,in)) :
+            float(rotation_sign(seed,in))*((std::popcount(unsigned(lane&in))&1)?-1.f:1.f);
+        put(128 + (size_t(out) * rotation_block + in) * 2, std::bit_cast<uint16_t>(_Float16(sign * norm)));
     }
     const auto typed = [](const char *type, int r, int c) { return std::string("tensor<") + type + ", " + shape(r, c) + ">"; };
     const auto in_buffer = [](const char *type, int r, int c) {
@@ -212,9 +218,10 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
     f("hsafe", s.width, "mul(x = silu, y = " + up + ")");
     const auto c = std::to_string(s.width), m = std::to_string(s.rows);
     line("tensor<fp16, [1, " + c + ", 1, " + m + "]> h4 = reshape(x = hsafe, shape = tensor<int32, [4]>([1, " + c + ", 1, " + m + "]))");
-    line("tensor<fp16, [" + c + ", 512, 1, 1]> rotation = const()[name = string(\"rotation\"), val = tensor<fp16, [" + c + ", 512, 1, 1]>(BLOBFILE(path = string(\"@model_path/weights.bin\"), offset = uint64(64)))]");
+    const auto rb=std::to_string(rotation_block);
+    line("tensor<fp16, [" + c + ", " + rb + ", 1, 1]> rotation = const()[name = string(\"rotation\"), val = tensor<fp16, [" + c + ", " + rb + ", 1, 1]>(BLOBFILE(path = string(\"@model_path/weights.bin\"), offset = uint64(64)))]");
     line("tensor<fp16, [1, " + c + ", 1, " + m + "]> hr4 = conv(dilations = tensor<int32, [2]>([1, 1]), groups = int32(" +
-        std::to_string(s.width / 512) + "), pad = tensor<int32, [4]>([0, 0, 0, 0]), pad_type = string(\"valid\"), strides = tensor<int32, [2]>([1, 1]), weight = rotation, x = h4)");
+        std::to_string(s.width / rotation_block) + "), pad = tensor<int32, [4]>([0, 0, 0, 0]), pad_type = string(\"valid\"), strides = tensor<int32, [2]>([1, 1]), weight = rotation, x = h4)");
     f("hr", s.width, "reshape(x = hr4, shape = tensor<int32, [4]>(" + shape(s.width, s.rows) + "))");
     f("habs", s.width, "abs(x = hr)"); f("peak", 1, "reduce_max(x = habs, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
     f("floor", 1, "maximum(x = peak, y = fp16(0x1p-12))");

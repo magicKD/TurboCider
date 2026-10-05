@@ -1,6 +1,8 @@
 #include "../../native/backends/ane_backend.hpp"
 #include "../../native/backends/private/ane_mil.hpp"
 #include <cstdlib>
+#include <bit>
+#include <cstring>
 #include <iostream>
 #include <type_traits>
 
@@ -56,5 +58,17 @@ int main() {
         if (w8.mil.find(text) == std::string::npos) { std::cerr << text; return 1; }
     if (w8.mil.find("wg_d = dequantize") != std::string::npos || w8.mil.find("xd = dequantize") != std::string::npos)
         return 1;
+    const auto comfy=private_api::w8_swiglu_program({Kind::SwiGLU,33,512,512,256,512,true},0,1,W8Basis::ComfyH256);
+    if(comfy.constants.size()!=128+512*256*2 || comfy.mil.find("groups = int32(2)")==std::string::npos ||
+        comfy.mil.find("[512, 256, 1, 1]")==std::string::npos) return 1;
+    constexpr int h4[4][4]={{1,1,1,-1},{1,1,-1,1},{1,-1,1,1},{-1,1,1,1}};
+    for(int out=0;out<512;++out)for(int in=0;in<256;++in) {
+        int sign=1;
+        for(int shift=0;shift<8;shift+=2)sign*=h4[(out>>shift)&3][(in>>shift)&3];
+        uint16_t bits;std::memcpy(&bits,comfy.constants.data()+128+(out*256+in)*2,2);
+        if(bits!=std::bit_cast<uint16_t>(_Float16(sign/16.f)))return 1;
+    }
+    try {private_api::w8_swiglu_program({Kind::SwiGLU,33,512,512,256,512,true},1,1,W8Basis::ComfyH256);return 1;}
+    catch(const CapabilityError&) {}
     std::cout << "PASS backend public default/private authorization and native MIL bounds/LoRA/exp lowering\n";
 }

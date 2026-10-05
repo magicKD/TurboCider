@@ -13,7 +13,7 @@ struct W8Params {
     uint source_pitch, physical_cols, encoding, dtype, group_size;
     uint meta_pitch, meta_dtype, offset_pitch, offset_dtype, has_offset;
     uint row_begin, rows, column_begin, columns, block, code_pitch, scale_pitch, transpose;
-    uint source_aligned, seed_low, seed_high;
+    uint source_aligned, seed_low, seed_high, basis;
     float norm;
 };
 inline uint w8_u16(device const uchar *p) { return uint(p[0]) | (uint(p[1]) << 8); }
@@ -74,6 +74,33 @@ inline float w8_decode(device const uchar *src, device const uchar *scales, devi
 // Never recompute the same 64-bit hash for every value/rotation block on GPU.
 inline float w8_rotate(float value, threadgroup float *v, uint lane, constant W8Params &p,
                        constant float *signs) {
+    if (p.basis == 1) {
+        // Comfy H4^4, no random signs and NOT Sylvester ordering. Preserve
+        // the GPU ConvRot radix-4 arithmetic and original dtype boundary.
+        for (uint stride = 1; stride < 256; stride *= 4) {
+            uint digit = (lane / stride) & 3, first = lane - digit * stride;
+            float a,b,c,d;
+            if (stride < 8) {
+                uint local = first & 31;
+                a=simd_shuffle(value,local); b=simd_shuffle(value,local+stride);
+                c=simd_shuffle(value,local+2*stride); d=simd_shuffle(value,local+3*stride);
+            } else {
+                v[lane]=value; threadgroup_barrier(mem_flags::mem_threadgroup);
+                a=v[first]; b=v[first+stride]; c=v[first+2*stride]; d=v[first+3*stride];
+            }
+            switch (digit) {
+                case 0: value=a+b+c-d; break;
+                case 1: value=a+b-c+d; break;
+                case 2: value=a-b+c+d; break;
+                default: value=-a+b+c+d; break;
+            }
+            // The scale pass reuses this scratch for the NEXT H256 group.
+            if (stride >= 16) threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        value *= .0625f;
+        return p.dtype == 0 ? from_half(to_half(value)) :
+            p.dtype == 1 ? as_type<float>(uint(to_bfloat(value)) << 16) : value;
+    }
     value = value * signs[lane];
     const uint block = tc_w8_specialize ? tc_w8_block : p.block;
     for (uint span = 1; span < block; span <<= 1) {
@@ -138,6 +165,39 @@ kernel void tc_ane_w8_codes(device const uchar *src [[buffer(0)]], device const 
 kernel void tc_ane_w8_scale_copy(device const ushort *src [[buffer(0)]],device ushort *dst [[buffer(1)]],
     constant uint3 &p [[buffer(2)]],uint row [[thread_position_in_grid]]) {
     if(row<p.x)dst[ulong(row)*p.z]=src[ulong(row)*p.y];
+}
+// Direct W staging never rotates/requantizes W. Validate ALL physical row
+// metadata, not only a selected channel range; legacy packed is q+128.
+kernel void tc_ane_convrot_scales(device const uchar *src [[buffer(0)]], device const uchar *scales [[buffer(1)]],
+    device const uchar *offsets [[buffer(2)]], device ushort *dst [[buffer(3)]], device atomic_uint *status [[buffer(4)]],
+    constant W8Params &p [[buffer(5)]], uint row [[thread_position_in_grid]]) {
+    if (row >= p.rows) return;
+    const uint physical_row = p.row_begin + row;
+    device const uchar *s = scales + ulong(physical_row) * p.meta_pitch;
+    const uint item = p.meta_dtype == 2 ? 4 : 2;
+    float scale = w8_float(s,p.meta_dtype);
+    if (!isfinite(scale)) { atomic_fetch_or_explicit(status,1u,memory_order_relaxed); scale=0; }
+    if (p.encoding == 8) {
+        device const uchar *b = offsets + ulong(physical_row) * p.offset_pitch;
+        for (uint group=0; group<p.physical_cols/p.group_size; ++group) {
+            float sg=w8_float(s+group*item,p.meta_dtype);
+            float bg=w8_float(b+group*(p.offset_dtype==2?4:2),p.offset_dtype);
+            if (!isfinite(sg) || !isfinite(bg) || sg!=scale || bg!=-128.f*scale)
+                atomic_fetch_or_explicit(status,16u,memory_order_relaxed);
+        }
+    }
+    ushort normalized=to_half(scale*128.f);
+    if ((normalized&0x7c00)==0x7c00 || (scale!=0 && !(normalized&0x7fff))) {
+        atomic_fetch_or_explicit(status,4u,memory_order_relaxed); normalized=0;
+    }
+    dst[ulong(row)*p.scale_pitch/2]=normalized;
+}
+kernel void tc_ane_convrot_codes(device const uchar *src [[buffer(0)]], device const uchar *scales [[buffer(1)]],
+    device const uchar *offsets [[buffer(2)]], device const ushort *row_scales [[buffer(3)]], device char *dst [[buffer(4)]],
+    device atomic_uint *status [[buffer(5)]], constant W8Params &p [[buffer(6)]], uint2 index [[thread_position_in_grid]]) {
+    if (index.x>=p.columns || index.y>=p.rows) return;
+    uchar code=src[ulong(p.row_begin+index.y)*p.source_pitch+p.column_begin+index.x];
+    dst[ulong(index.y)*p.code_pitch+index.x]=p.encoding==7 ? char(code) : char(int(code)-128);
 }
 )metal";
 }

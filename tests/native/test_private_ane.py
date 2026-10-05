@@ -101,6 +101,22 @@ class PrivateAneHardwareTests(unittest.TestCase):
         self.assertIn("PASS W8 dense typed loads",result.stdout)
         print(result.stdout.strip())
 
+    def test_convrot_direct_codes_and_comfy_activation_staging(self):
+        result = subprocess.run([str(self.build / "private-ane-convrot-stage-test")], cwd=ROOT,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PASS 37 direct raw/packed Q8 cases", result.stdout)
+        self.assertIn("PASS 9 Comfy H256 A8 typed/strided cases", result.stdout)
+        print(result.stdout.strip())
+
+    def test_convrot_direct_executor_lora_channels_and_failure_recovery(self):
+        result = subprocess.run([str(self.build / "private-ane-convrot-executor-test"),
+                                 str(self.root / "convrot-executor-cache")], cwd=ROOT,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("PASS direct ConvRot Executor"), 4)
+        print(result.stdout.strip())
+
     def test_private_w8a8_normalized_matmul_two_banks_and_gpu_epilogue(self):
         result = subprocess.run([str(self.build / "private-ane-w8-pipeline-test"), str(self.root / "w8-pipeline-cache")],
                                 cwd=ROOT, capture_output=True, text=True, timeout=120)

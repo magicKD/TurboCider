@@ -78,9 +78,10 @@ class HybridFfn {
     }
     std::string precision_label(bool gguf = false) const {
         if (metrics_.runtime_weight_backend.empty()) return gguf ? "gguf_native_gpu" : "bf16";
-        const bool w8 = metrics_.runtime_weight_data_path == "w8a8_hadamard";
+        const bool comfy = metrics_.runtime_weight_data_path == "w8a8_convrot";
+        const bool w8 = metrics_.runtime_weight_data_path == "w8a8_hadamard" || comfy;
         return std::string(gguf ? "gguf_native_gpu+" : "bf16_gpu+") +
-            (w8 ? "runtime_w8a8_ffn" : "runtime_fp16_ffn") + (gguf ? "" : "_bf16_io");
+            (comfy ? "runtime_convrot_w8a8_ffn" : w8 ? "runtime_w8a8_ffn" : "runtime_fp16_ffn") + (gguf ? "" : "_bf16_io");
     }
     std::string selection_label() const {
         if (metrics_.runtime_weight_backend.empty())

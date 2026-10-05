@@ -31,8 +31,8 @@ bool same_region(const DeviceWeightRegion &a,const DeviceWeightRegion &b) {
     return std::tie(x.buffer,x.buffer_bytes,x.offset_bytes,x.row_stride_bytes,x.rows,x.cols,x.encoding,x.dense_dtype,x.group_size)==
            std::tie(y.buffer,y.buffer_bytes,y.offset_bytes,y.row_stride_bytes,y.rows,y.cols,y.encoding,y.dense_dtype,y.group_size)&&
         same_optional(x.scales,y.scales)&&same_optional(x.offsets,y.offsets)&&
-        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose)==
-        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose);
+        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose,p.basis)==
+        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose,q.basis);
 }
 class Worker {
     std::mutex mutex_;
@@ -72,6 +72,7 @@ struct Buffer {
 }
 struct PrivateW8Graph::Impl {
     GraphShape shape;
+    W8Basis basis = W8Basis::SylvesterDH;
     private_api::Device device;
     std::unique_ptr<private_api::Program> program;
     // Exactly two source-independent banks, reused across every layer/step.
@@ -107,26 +108,43 @@ struct PrivateW8Graph::Impl {
     Worker staging_worker;
     Worker worker; // destroyed first, draining before any source/slot release
     void build(float scale) {
-        auto emitted = private_api::w8_swiglu_program(shape, 20260930, scale);
+        auto emitted = private_api::w8_swiglu_program(shape, basis==W8Basis::ComfyH256?0:20260930, scale, basis);
         program = std::make_unique<private_api::Program>(device, emitted.mil, emitted.constants, cache);
         headroom = scale;
     }
     void fill_bank(int target,const std::vector<DeviceWeightRegion> &weights) {
         check(weights.size() == 3, "W8 SwiGLU requires gate/up/down");
         const auto &s = shape;
+        const bool comfy=basis==W8Basis::ComfyH256;
+        const int up_block=comfy?256:128,down_block=comfy?256:512;
+        const uint64_t seed=comfy?0:20260930;
         const auto &gsel = weights[0].selection, &usel = weights[1].selection, &dsel = weights[2].selection;
         check(gsel.rows == s.width && gsel.columns == s.hidden && usel.rows == s.width && usel.columns == s.hidden &&
-            dsel.rows == s.hidden && dsel.columns == s.width && gsel.rotation_block == 128 && usel.rotation_block == 128 &&
-            dsel.rotation_block == 512 && !gsel.transpose && !usel.transpose && !dsel.transpose &&
-            gsel.rotation_seed == 20260930 && usel.rotation_seed == 20260930 && dsel.rotation_seed == 20260930,
+            dsel.rows == s.hidden && dsel.columns == s.width && gsel.rotation_block == up_block && usel.rotation_block == up_block &&
+            dsel.rotation_block == down_block && !gsel.transpose && !usel.transpose && !dsel.transpose &&
+            gsel.rotation_seed == seed && usel.rotation_seed == seed && dsel.rotation_seed == seed &&
+            gsel.basis==basis && usel.basis==basis && dsel.basis==basis,
             "W8 source projection selection/recipe mismatch");
         auto &b = *banks[target]; b.ready = false;
-        auto g = device.stage_w8(weights[0].source, gsel, b.g,b.sg);
-        auto u = device.stage_w8(weights[1].source, usel, b.u,b.su);
-        auto d = device.stage_w8(weights[2].source, dsel, b.d,b.sd);
+        std::array<std::optional<private_api::QuantStage>,3> producers;
+        struct ProducerDrain {
+            decltype(producers) &tickets;
+            std::atomic<bool> &disabled;
+            ~ProducerDrain() {
+                for(auto &ticket:tickets)if(ticket) {
+                    try {if(ticket->finish().timed_out)disabled=true;}
+                    catch(...) {disabled=true;}
+                }
+            }
+        } drain{producers,disabled};
+        producers[0]=device.stage_w8(weights[0].source,gsel,b.g,b.sg);
+        producers[1]=device.stage_w8(weights[1].source,usel,b.u,b.su);
+        producers[2]=device.stage_w8(weights[2].source,dsel,b.d,b.sd);
         // Wait ALL producers even on the first failure; source owners and slot
         // leases must not be released while another GPU encoder still uses them.
-        const auto gr = g.finish(), ur = u.finish(), dr = d.finish();
+        const auto gr = producers[0]->finish(), ur = producers[1]->finish(), dr = producers[2]->finish();
+        if(gr.timed_out || ur.timed_out || dr.timed_out)disabled=true;
+        for(auto &producer:producers)producer.reset(); // callbacks retain timed-out GPU resources
         check(gr.ok && ur.ok && dr.ok, "W8 GPU weight staging failed");
         b.ready = true;
     }
@@ -163,7 +181,8 @@ struct PrivateW8Graph::Impl {
         auto stage_activation = [&](int row, int slot) {
             DeviceWeightView activation{input.buffer,input.buffer_bytes,input.offset_bytes + size_t(row)*(input.row_stride_bytes ? input.row_stride_bytes : size_t(s.hidden)*(input.dtype==DType::FP32?4:2)),
                 input.row_stride_bytes,s.rows,s.hidden,DeviceWeightEncoding::Dense,input.dtype,32,{}, {},input.owner};
-            activations[slot] = device.stage_w8(activation,{0,s.rows,0,s.hidden,128,20260930,true},*x[slot],*tx[slot]);
+            const bool comfy=basis==W8Basis::ComfyH256;
+            activations[slot] = device.stage_w8(activation,{0,s.rows,0,s.hidden,comfy?256:128,comfy?0u:20260930u,true,basis},*x[slot],*tx[slot]);
         };
         for (int row = 0; row < input.rows; row += s.rows) {
             const int slot = a8_lookahead ? (row / s.rows) % 2 : 0;
@@ -186,6 +205,7 @@ struct PrivateW8Graph::Impl {
                     if (adapter) { uploads.push_back({adapter->gate,*dg,row}); uploads.push_back({adapter->up,*du,row}); } }
                 auto norm = y->slice_rows(0,s.hidden), hs = y->slice_rows(s.hidden,1);
                 std::vector<private_api::Download> downloads{{norm,output,row,output.dtype,headroom,b.sd,hs}};
+                if(basis==W8Basis::ComfyH256)downloads[0].row_scale_policy=private_api::RowScalePolicy::SignedFinite;
                 if (s.lora_inputs) downloads.push_back({y->slice_rows(s.hidden+1,s.width),adapter ? std::optional<DeviceMatrixView>(adapter->hidden) : std::nullopt,row,output.dtype,headroom});
                 const auto submit_start = Clock::now();
                 auto io = device.prepare_transfer(std::move(uploads),std::move(downloads),ready,done);
@@ -225,13 +245,13 @@ struct PrivateW8Graph::Impl {
         result.headroom_scale=headroom;
     }
 };
-PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesystem::path &cache) : impl_(std::make_unique<Impl>()) {
+PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesystem::path &cache,W8Basis basis) : impl_(std::make_unique<Impl>()) {
     @autoreleasepool {
-        auto start=Clock::now(); auto &p=*impl_; p.shape=shape;
+        auto start=Clock::now(); auto &p=*impl_; p.shape=shape;p.basis=basis;
         const char *lookahead=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD");
         check(!lookahead || std::string(lookahead)=="0" || std::string(lookahead)=="1", "private ANE A8 lookahead requires 0 or 1");
         p.a8_lookahead=lookahead && std::string(lookahead)=="1";
-        auto spec=private_api::w8_swiglu_program(shape,20260930,1.f);
+        auto spec=private_api::w8_swiglu_program(shape,basis==W8Basis::ComfyH256?0:20260930,1.f,basis);
         p.estimate=uint64_t(shape.hidden)*shape.width*6 + uint64_t(shape.rows)*(8ull*shape.width+12ull*shape.hidden) + spec.constants.size()*2 + (128ull<<20) + private_api::scale_cache_budget_bytes;
         if (p.a8_lookahead) p.estimate += uint64_t(shape.hidden + 1) * ((uint64_t(shape.rows) + 63) / 64 * 64 + 128);
         if (p.estimate>budget) throw MemoryBudgetError("W8 graph/banks exceed memory budget");
@@ -259,7 +279,8 @@ const GraphShape &PrivateW8Graph::shape() const{return impl_->shape;}
 size_t PrivateW8Graph::slot_bytes() const{return impl_->allocated;}
 size_t PrivateW8Graph::estimated_bytes() const{return impl_->estimate;}
 double PrivateW8Graph::load_seconds() const{return impl_->load_time;}
-std::string PrivateW8Graph::weight_recipe() const{return w8a8_recipe;}
+std::string PrivateW8Graph::weight_recipe() const{return impl_->basis==W8Basis::ComfyH256?convrot_w8a8_recipe:w8a8_recipe;}
+std::string PrivateW8Graph::data_path() const{return impl_->basis==W8Basis::ComfyH256?"w8a8_convrot":"w8a8_hadamard";}
 WeightCacheStats PrivateW8Graph::weight_cache_stats() const{return impl_->device.scale_cache_stats();}
 StagePipelineStats PrivateW8Graph::stage_pipeline_stats() const{return impl_->device.stage_pipeline_stats();}
 bool PrivateW8Graph::device_submission_fence_enabled() const{return impl_->launch_fence;}
@@ -272,8 +293,11 @@ void PrivateW8Graph::stage_device_weights(std::vector<DeviceWeightView> sources)
     check(sources[0].rows == s.width && sources[0].cols == s.hidden && sources[1].rows == s.width &&
           sources[1].cols == s.hidden && sources[2].rows == s.hidden && sources[2].cols == s.width,
           "W8 full weight geometry mismatch (use regions for a physical source slice)");
-    stage_device_weight_regions({{std::move(sources[0]),{0,s.width,0,s.hidden,128}},
-        {std::move(sources[1]),{0,s.width,0,s.hidden,128}}, {std::move(sources[2]),{0,s.hidden,0,s.width,512}}});
+    const bool comfy=impl_->basis==W8Basis::ComfyH256;
+    const int up=comfy?256:128,down=comfy?256:512;const uint64_t seed=comfy?0:20260930;
+    stage_device_weight_regions({{std::move(sources[0]),{0,s.width,0,s.hidden,up,seed,false,impl_->basis}},
+        {std::move(sources[1]),{0,s.width,0,s.hidden,up,seed,false,impl_->basis}},
+        {std::move(sources[2]),{0,s.hidden,0,s.width,down,seed,false,impl_->basis}}});
 }
 void PrivateW8Graph::stage_device_weight_regions(std::vector<DeviceWeightRegion> sources){
     discard_prefetched_weights();
@@ -340,15 +364,31 @@ bool PrivateW8Graph::self_test(std::string &error){
     p.worker.submit([&p]{
         const auto&s=p.shape;auto gpu=MTLCreateSystemDefaultDevice();
         Buffer g(gpu,size_t(s.width)*s.hidden*4),u(gpu,size_t(s.width)*s.hidden*4),d(gpu,size_t(s.hidden)*s.width*4),
-            x(gpu,size_t(s.rows)*s.hidden*4),y(gpu,size_t(s.rows)*s.hidden*2);
+            x(gpu,size_t(s.rows)*s.hidden*4),y(gpu,size_t(s.rows)*s.hidden*2),
+            sg(gpu,size_t(s.width)*4),su(gpu,size_t(s.width)*4),sd(gpu,size_t(s.hidden)*4);
         for(int r=0;r<s.rows;++r)for(int c=0;c<s.hidden;++c)static_cast<float*>(x.value.contents)[r*s.hidden+c]=((r*3+c*7)%17-8)/8.f;
         for(float scale:{.125f,-.25f,.125f}){
             std::memset(g.value.contents,0,g.value.length);std::memset(u.value.contents,0,u.value.length);std::memset(d.value.contents,0,d.value.length);
-            for(int r=0;r<s.width;++r){static_cast<float*>(g.value.contents)[size_t(r)*s.hidden+r%s.hidden]=scale;static_cast<float*>(u.value.contents)[size_t(r)*s.hidden+r%s.hidden]=scale;}
-            for(int r=0;r<s.hidden;++r)static_cast<float*>(d.value.contents)[size_t(r)*s.width+r%s.width]=scale;
-            p.stage({{g.weight(s.width,s.hidden),{0,s.width,0,s.hidden,128}},
-                {u.weight(s.width,s.hidden),{0,s.width,0,s.hidden,128}},
-                {d.weight(s.hidden,s.width),{0,s.hidden,0,s.width,512}}});
+            if(p.basis==W8Basis::ComfyH256) {
+                auto source=[&](Buffer &codes,Buffer &scales,int rows,int cols) {
+                    for(int r=0;r<rows;++r) {
+                        const int index=r%cols,begin=index/256*256;
+                        for(int c=0;c<256;++c)static_cast<int8_t*>(codes.value.contents)[size_t(r)*cols+begin+c]=int8_t(64*comfy_h256_sign(index%256,c));
+                        static_cast<float*>(scales.value.contents)[r]=scale/1024.f;
+                    }
+                    auto w=codes.weight(rows,cols);w.encoding=DeviceWeightEncoding::ConvrotQ8Signed;
+                    w.row_stride_bytes=cols;w.scales=scales.matrix(rows,1);return w;
+                };
+                p.stage({{source(g,sg,s.width,s.hidden),{0,s.width,0,s.hidden,256,0,false,p.basis}},
+                    {source(u,su,s.width,s.hidden),{0,s.width,0,s.hidden,256,0,false,p.basis}},
+                    {source(d,sd,s.hidden,s.width),{0,s.hidden,0,s.width,256,0,false,p.basis}}});
+            } else {
+                for(int r=0;r<s.width;++r){static_cast<float*>(g.value.contents)[size_t(r)*s.hidden+r%s.hidden]=scale;static_cast<float*>(u.value.contents)[size_t(r)*s.hidden+r%s.hidden]=scale;}
+                for(int r=0;r<s.hidden;++r)static_cast<float*>(d.value.contents)[size_t(r)*s.width+r%s.width]=scale;
+                p.stage({{g.weight(s.width,s.hidden),{0,s.width,0,s.hidden,128}},
+                    {u.weight(s.width,s.hidden),{0,s.width,0,s.hidden,128}},
+                    {d.weight(s.hidden,s.width),{0,s.hidden,0,s.width,512}}});
+            }
             p.result={};p.run(x.matrix(s.rows,s.hidden),y.matrix(s.rows,s.hidden,DType::BF16),std::nullopt);
             double diff=0,norm=0;
             for(int r=0;r<s.rows;++r)for(int c=0;c<s.hidden;++c){const int input=(c%s.width)%s.hidden;const float v=static_cast<const float*>(x.value.contents)[r*s.hidden+input]*scale;

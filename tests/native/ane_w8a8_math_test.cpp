@@ -23,5 +23,18 @@ int main() {
     const auto scale = tc::gguf::float_to_fp16_rne(128.f);
     for (const auto [value, expected] : {std::pair{.5f, 0}, {1.5f, 2}, {2.5f, 2}, {-.5f, 0}, {-1.5f, -2}, {-2.5f, -2}, {1000.f, 127}, {-1000.f, -127}})
         if (quantize_rotated(value, scale) != expected) return 1;
+    // All independent Comfy H4^4 basis vectors distinguish ordering/signs
+    // from Sylvester; every coefficient is exactly representable in FP32.
+    for (int basis=0;basis<256;++basis) {
+        std::vector<float> x(256);x[basis]=1;rotate_comfy_block(x,DType::FP32);
+        constexpr int h4[4][4]={{1,1,1,-1},{1,1,-1,1},{1,-1,1,1},{-1,1,1,1}};
+        for (int out=0;out<256;++out) {
+            int sign=1;
+            for (int shift=0;shift<8;shift+=2) sign*=h4[(out>>shift)&3][(basis>>shift)&3];
+            if (x[out]!=sign/16.f || comfy_h256_sign(out,basis)!=sign) return 1;
+        }
+    }
+    if (std::string(convrot_w8a8_recipe)==w8a8_recipe) return 1;
     std::cout << "PASS independent H128/H512 orthogonality/dense oracle, deterministic signs, scale tiny/zero, signed RNE ties/clipping\n";
+    std::cout << "PASS independent 256 Comfy H4^4 basis rows and distinct direct-Q8 recipe\n";
 }

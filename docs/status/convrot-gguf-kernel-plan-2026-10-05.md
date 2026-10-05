@@ -1,5 +1,9 @@
 # ConvRot / GGUF：GPU kernel、提前解码与混合 ANE 接续
 
+后续 direct-code ANE 实现与新验证见
+[ConvRot W8A8 接续](convrot-direct-ane-w8a8-2026-10-05.md)。下文保留本次
+接续之前的 GPU／GGUF 分析与历史缺口，不将旧记录改写成已通过资格。
+
 用户于2026-10-05明确将现有ConvRot与GGUF优化纳入范围。本轮审查已有
 working-tree实现/记录并新增GPU旋转候选；不将旧的未提交研究改动
 悄然视为发布默认。原双后端四格base≥1.2×、LoRA与质量目标仍未完成。

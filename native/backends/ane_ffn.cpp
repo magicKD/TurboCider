@@ -65,7 +65,8 @@ WeightView weight_view(const FfnWeight &w) {
     return source;
 }
 DeviceWeightView device_weight_view(const FfnWeight &w) {
-    require(w.transform == FfnWeight::Transform::None, "W8 source transform requires separate qualification");
+    const bool comfy=w.transform==FfnWeight::Transform::ComfyH256Inverse;
+    require(w.transform == FfnWeight::Transform::None || comfy, "W8 source transform unsupported");
     const auto &a=w.values;
     require(a.ndim()==2 && a.flags().row_contiguous && a.offset()>=0 && a.buffer().ptr(), "W8 weight requires produced contiguous buffer");
     DeviceWeightView source;
@@ -73,12 +74,22 @@ DeviceWeightView device_weight_view(const FfnWeight &w) {
     source.rows=a.shape(0);source.owner=std::make_shared<Tensor>(a);source.group_size=w.group_size;
     source.allocation_identity=a.data_shared_ptr();source.immutable_generation=true;
     if (!w.scales) {
+        require(!comfy,"W8 ConvRot requires explicit row scales");
         const auto view=device_view(a,a.shape(0),a.shape(1));source.cols=view.cols;source.row_stride_bytes=view.row_stride_bytes;source.dense_dtype=view.dtype;
         require(!w.offsets,"W8 dense source has affine offsets");
     } else {
+        if(comfy && a.dtype()==mx::int8) {
+            require(!w.offsets,"W8 raw ConvRot cannot have affine offsets");
+            source.cols=a.shape(1);source.row_stride_bytes=size_t(source.cols);
+            source.encoding=DeviceWeightEncoding::ConvrotQ8Signed;
+            source.scales=device_view(*w.scales,a.shape(0),1);
+            require(source.scales->dtype==DType::FP32,"W8 raw ConvRot requires original FP32 scales");
+            return source;
+        }
         require(a.dtype()==mx::uint32 && (w.bits==4||w.bits==8),"W8 affine source requires Q4/Q8 words");
+        require(!comfy || (w.bits==8 && w.offsets),"W8 packed ConvRot requires Q8 signed offsets");
         source.cols=a.shape(1)*(32/w.bits);source.row_stride_bytes=size_t(a.shape(1))*4;
-        source.encoding=w.bits==4?DeviceWeightEncoding::AffineQ4:DeviceWeightEncoding::AffineQ8;
+        source.encoding=comfy?DeviceWeightEncoding::ConvrotQ8Packed:w.bits==4?DeviceWeightEncoding::AffineQ4:DeviceWeightEncoding::AffineQ8;
         source.scales=device_view(*w.scales,w.scales->shape(0),w.scales->shape(1));
         if (w.offsets) source.offsets=device_view(*w.offsets,w.offsets->shape(0),w.offsets->shape(1));
     }
@@ -158,7 +169,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
         metrics_.runtime_weight_ane_channels = graph_->shape().width;
         metrics_.runtime_weight_gpu_channels = width - graph_->shape().width;
     }
-    if (metrics_.runtime_weight_data_path == "w8a8_hadamard") {
+    if (metrics_.runtime_weight_data_path == "w8a8_hadamard" || metrics_.runtime_weight_data_path == "w8a8_convrot") {
         metrics_.weight_variant = "runtime_w8a8";
     }
     defer_channel_join_ = requested_defer && channel_split();
@@ -380,7 +391,8 @@ void HybridFfn::stage_weights(int layer, int rows, std::vector<FfnWeight> weight
             require(std::all_of(weights.begin(),weights.end(),[](const auto &w) {
                 return w.transform==FfnWeight::Transform::ComfyH256Inverse;
             }),"runtime ANE mixed ConvRot FFN recipes unsupported");
-            metrics_.runtime_weight_source_recipe="convrot-legacy-packed-scale-inverse-h256-f16-v1";
+            metrics_.runtime_weight_source_recipe=graph_->data_path()=="w8a8_convrot"?graph_->weight_recipe():
+                "convrot-legacy-packed-scale-inverse-h256-f16-v1";
             ++metrics_.runtime_weight_convrot_stage_submissions;
         }
         if (graph_->supports_device_weights()) {
@@ -411,8 +423,12 @@ std::vector<DeviceWeightRegion> HybridFfn::device_regions(const std::vector<FfnW
     require(source[0].rows==metrics_.mlp_width&&source[1].rows==metrics_.mlp_width&&source[2].cols==metrics_.mlp_width,
             "device FFN requires complete physical sources");
     const int first=channel_split()?gpu_channels():0,width=graph_->shape().width,h=metrics_.hidden;
-    return {{std::move(source[0]),{first,width,0,h,128}}, {std::move(source[1]),{first,width,0,h,128}},
-            {std::move(source[2]),{0,h,first,width,512}}};
+    const bool comfy=graph_->data_path()=="w8a8_convrot";
+    const int up=comfy?256:128,down=comfy?256:512;const uint64_t seed=comfy?0:20260930;
+    const auto basis=comfy?W8Basis::ComfyH256:W8Basis::SylvesterDH;
+    return {{std::move(source[0]),{first,width,0,h,up,seed,false,basis}},
+            {std::move(source[1]),{first,width,0,h,up,seed,false,basis}},
+            {std::move(source[2]),{0,h,first,width,down,seed,false,basis}}};
 }
 void HybridFfn::maybe_prefetch(int next,int rows,const NextWeights &provider) {
     if(!prefetch_ || !available() || !provider || prefetched_layer_>=0)return;

@@ -4230,8 +4230,18 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         if (!runtime_convrot_) result.selection = runtime_ffn_->resolve_selection(result.selection);
         if (!runtime_ffn_->available()) result.selection += "; GPU fallback: " + runtime_ffn_->reason();
         if (runtime_convrot_) {
-            result.backend="mlx_cpp_metal_convrot+coreml_runtime_weight_experimental";
-            result.precision="convrot-legacy-packed-scale-inverse-h256-f16-v1";
+            const auto &metrics=runtime_ffn_->metrics();
+            if (!runtime_ffn_->available()) {
+                result.backend="mlx_cpp_metal_convrot_packed_q8";
+                result.precision="int8_tensorwise_convrot_g256";
+            } else {
+                result.backend=metrics.runtime_weight_backend=="private_ane" ?
+                    "mlx_cpp_metal_convrot+private_ane_runtime_weight_experimental" :
+                    "mlx_cpp_metal_convrot+coreml_runtime_weight_experimental";
+                result.precision=metrics.runtime_weight_data_path=="w8a8_convrot" ? metrics.runtime_weight_source_recipe :
+                    "convrot-legacy-packed-scale-inverse-h256-f16-v1";
+            }
+            result.selection=runtime_ffn_->resolve_selection(result.selection);
         }
     }
     if (quantized) {

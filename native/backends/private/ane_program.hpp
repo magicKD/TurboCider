@@ -45,6 +45,7 @@ class Surface {
 };
 
 struct Upload { DeviceMatrixView source; Surface destination; int begin_row = 0; float scale = 1.f; };
+enum class RowScalePolicy : uint32_t { Positive, SignedFinite };
 struct Download {
     Surface source;
     std::optional<DeviceMatrixView> destination; // null: finite/range validation only
@@ -53,6 +54,9 @@ struct Download {
     float scale = 1.f;
     std::optional<Surface> row_scales = std::nullopt, token_scales = std::nullopt;
     std::optional<Surface> second_token_scales = std::nullopt;
+    // Direct ConvRot retains finite signed/zero checkpoint row scales. Token
+    // quantizer scales stay strictly positive; Sylvester's default unchanged.
+    RowScalePolicy row_scale_policy = RowScalePolicy::Positive;
 };
 
 class Device {

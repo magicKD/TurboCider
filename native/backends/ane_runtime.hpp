@@ -53,7 +53,11 @@ struct DeviceMatrixView {
 };
 struct DeviceAdapterInput { DeviceMatrixView gate, up, hidden; };
 
-enum class DeviceWeightEncoding : uint32_t { Dense, AffineQ4, AffineQ8, GgufQ4_0, GgufQ4_K, GgufQ8_0, GgufQ6_K };
+enum class DeviceWeightEncoding : uint32_t {
+    Dense, AffineQ4, AffineQ8, GgufQ4_0, GgufQ4_K, GgufQ8_0, GgufQ6_K,
+    ConvrotQ8Signed, ConvrotQ8Packed
+};
+enum class W8Basis : uint32_t { SylvesterDH, ComfyH256 };
 // Immutable physical source matrix, independent of an executor's W8/FP16
 // representation. cols/pitch remain the FULL source row when staging a slice.
 struct DeviceWeightView {
@@ -73,6 +77,7 @@ struct W8StageSpec {
     int rotation_block = 128;
     uint64_t rotation_seed = 20260930;
     bool transpose = false; // A8 channel-major vs W8 out/in
+    W8Basis basis = W8Basis::SylvesterDH;
 };
 // Logical selection over an unchanged physical source. In particular a down
 // channel slice keeps the full packed row pitch/metadata geometry and owner.
